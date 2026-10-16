@@ -151,6 +151,8 @@ describe("state memory", () => {
       top_platform: "wordpress",
       fee_categories_with_peers: 1,
       memory_stored: true,
+      notes_schema_ready: false,
+      notes_written: 0,
       provider_call_queued: false,
     });
     const upsert = db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO state_memory"));

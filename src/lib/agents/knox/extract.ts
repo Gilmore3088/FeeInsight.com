@@ -10,7 +10,7 @@ import { chooseStrategy } from "@/lib/agents/learning/router";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { confidenceFor, type DroppedLineReason, type ExtractedFeeCandidate, type HeldFeeCandidate } from "@/lib/agents/knox/rules";
 import type { RateFeeCandidate } from "@/lib/agents/knox/percent";
-import { groundLineup, LINEUP_CATEGORY, withLineupFromText } from "@/lib/agents/knox/lineup";
+import { ACCOUNT_PRODUCT_CATEGORIES, groundLineup, LINEUP_CATEGORY, withLineupFromText } from "@/lib/agents/knox/lineup";
 import { ownCells } from "@/lib/agents/knox/own-cells";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists, type SpecialistRun } from "@/lib/agents/knox/specialists";
 import { applyKnoxLesson, loadKnoxLessons } from "@/lib/agents/knox/lessons";
@@ -21,6 +21,7 @@ import { knoxFreeSignature, MISSING_FEES_DETAIL, RULES_RECHECK_STRATEGY } from "
 import { currentCopySchemaReady } from "@/lib/agents/magellan/current-copy";
 import { loadMarketLeaderIds } from "@/lib/data-store/market-leaders";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
+import { KNOX_TAKEOVER_FROM_PREFIX } from "@/lib/agents/darwin/category-change";
 
 type SqlTag = typeof sql;
 
@@ -74,8 +75,23 @@ export const KNOX_STALE_READ_BELOW_VERSION = 26;
  * A current copy with a monthly fee row missing its account name, or both the balance that
  * avoids it and its waiver, last read below this version, is read again once so v49-v51 can
  * fill them (2026-10-09: 8,928 rows on 3,223 current copies had no account name). Free: rules only.
+ * v73 (#1100): raised from 51 so current copies are read once more and every monthly maintenance
+ * and minimum balance row records its account (`accountProductFor`); a minimum balance row with no
+ * account counts as due too. 5,511 current copies at 3,385 banks qualified on 2026-10-16.
  */
-export const KNOX_LINEUP_READ_BELOW_VERSION = 51;
+export const KNOX_LINEUP_READ_BELOW_VERSION = 73;
+/**
+ * v73 (#1100): the raw-row flag a read that recorded the account carries. A product stored without
+ * it was written by an older Knox version, and a v73+ read may replace it; one with it is kept.
+ */
+export const ACCOUNT_PRODUCT_FLAG = "account_product:v73";
+/**
+ * Stored product names that name no account (`account-name-exclusions.ts`, as a Postgres regex):
+ * a v73+ read replaces them, and a copy holding one is due a re-read. Prod on Oct 16: 14 "Truth in
+ * Savings", 8 "Health Savings Card" and 2 "Savings Bank/Loan" names, stored at v55.
+ */
+export const NON_ACCOUNT_PRODUCT_SQL =
+  "\\y(truth[[:space:]-]+in[[:space:]-]+savings|(?<!(kids?|youth|junior|student|teen|children.?s?)[[:space:]])savings[[:space:]]+(cards?|programs?|discounts?|benefits?)|(savings|savers)[[:space:]]+(networks?|plans?|rewards?|clubs?)\\y(?![[:space:]]+(accounts?|savings|shares?)\\y)|discount[[:space:]]+savings|savings[[:space:]]+(and[[:space:]]+loan|&[[:space:]]*loan|banks?|institution|association))\\y";
 /**
  * Banks whose pages are read first while the stale backlog lasts, besides each state's market
  * leaders: banks one or two headline fees short of the report rule, whose own schedule shows
@@ -344,8 +360,17 @@ function textArtifactQuery(
                SELECT 1 FROM raw_fee_observations unnamed
                 WHERE unnamed.source = 'knox'
                   AND unnamed.source_document_id = adt.source_document_id
-                  AND (unnamed.product_name IS NULL OR (unnamed.min_balance_to_avoid IS NULL AND unnamed.waiver_text IS NULL))
-                  AND COALESCE(unnamed.extraction_note, unnamed.conditions) LIKE '%canonical_hint=${LINEUP_CATEGORY};%'
+                  AND (
+                    (COALESCE(unnamed.extraction_note, unnamed.conditions) LIKE '%canonical_hint=${LINEUP_CATEGORY};%'
+                     AND (unnamed.product_name IS NULL OR (unnamed.min_balance_to_avoid IS NULL AND unnamed.waiver_text IS NULL)))
+                    -- v73 (#1100): a minimum balance fee with no account recorded.
+                    OR (COALESCE(unnamed.extraction_note, unnamed.conditions) LIKE '%canonical_hint=minimum_balance;%'
+                        AND unnamed.product_name IS NULL)
+                    -- v73 (#1100): a stored account that names no account ("Truth in Savings").
+                    OR ((COALESCE(unnamed.extraction_note, unnamed.conditions) LIKE '%canonical_hint=${LINEUP_CATEGORY};%'
+                         OR COALESCE(unnamed.extraction_note, unnamed.conditions) LIKE '%canonical_hint=minimum_balance;%')
+                        AND unnamed.product_name ~* '${NON_ACCOUNT_PRODUCT_SQL}')
+                  )
              )
              AND NOT EXISTS (
                SELECT 1 FROM source_documents copy
@@ -605,16 +630,21 @@ export async function insertCandidate(
     flags.push(`knox_specialist:${options.candidate.strategy}`);
   }
   flags.push(...(options.extraFlags ?? []));
+  // v73: this read records the account, so a later read keeps it (`ACCOUNT_PRODUCT_FLAG`).
+  if (ACCOUNT_PRODUCT_CATEGORIES.has(options.candidate.canonicalHint) && options.candidate.lineup?.productName) flags.push(ACCOUNT_PRODUCT_FLAG);
   const conditions =
     `Knox ${options.method ?? "deterministic extraction"} from Rosetta artifact #${documentTextId}. ` +
     `canonical_hint=${options.candidate.canonicalHint}; text_hash=${options.row.text_hash ?? "unknown"}; ` +
     (options.calibratedConfidence === undefined ? "" : `calibrated_confidence=${options.calibratedConfidence.toFixed(2)}; `) +
     // #1394: only the fee's own cells, not the neighbouring column's fee on the same line.
     `excerpt="${ownCells(options.candidate.excerpt, options.candidate.feeName, options.candidate.amount).slice(0, 180)}"`;
-  // A checking account's lineup facts, already grounded in the text (`lineup.ts`); only a
-  // monthly maintenance fee carries them.
+  // A checking account's lineup facts, already grounded in the text (`lineup.ts`): a monthly
+  // maintenance fee carries them all, a minimum balance fee only its account (v73).
   const applicability = feeApplicability(options.candidate.feeName, options.candidate.excerpt, options.candidate.amount);
-  const lineup = options.candidate.canonicalHint === LINEUP_CATEGORY ? (options.candidate.lineup ?? null) : null;
+  const read = ACCOUNT_PRODUCT_CATEGORIES.has(options.candidate.canonicalHint) ? (options.candidate.lineup ?? null) : null;
+  const lineup = read && options.candidate.canonicalHint !== LINEUP_CATEGORY
+    ? { productName: read.productName, minBalanceToAvoid: null, minOpeningDeposit: null, waiverText: null }
+    : read;
   // The dedupe index is (document, lowercased fee name, amount, audience), so an existing
   // row would block this fee forever. Two kinds take the new read instead:
   //   - a line an older version held as unclassified or untraced;
@@ -625,7 +655,9 @@ export async function insertCandidate(
   // flags: Darwin reads the first one (`canonicalHintFrom` in darwin/verify.ts), so a fee
   // today's rules file under a new category was judged under the old one. 12 of the 54 rows
   // re-reads took over by 14 Oct were ("Wire Transfer - International" $45 judged as an
-  // overdraft fee and rejected for category, #1093).
+  // overdraft fee and rejected for category, #1093). When the take-over changes the category,
+  // `knox_takeover_from:<old>` keeps the old one (#1295): Darwin's earlier decision was made under
+  // it, and without the flag nothing on the row says so (`darwin/category-change.ts`).
   const inserted = await db`
     INSERT INTO raw_fee_observations AS fr (
       institution_id,
@@ -675,7 +707,12 @@ export async function insertCandidate(
       conditions = NULL,
       audience_evidence = EXCLUDED.audience_evidence,
       fee_treatment = EXCLUDED.fee_treatment,
-      product_name = COALESCE(fr.product_name, EXCLUDED.product_name),
+      -- v73: a product an older Knox wrote, or one that names no account, gives way to this read's.
+      product_name = CASE WHEN EXCLUDED.product_name IS NOT NULL AND (
+                            fr.product_name IS NULL
+                            OR NOT (COALESCE(fr.outlier_flags, '[]'::jsonb) ? ${ACCOUNT_PRODUCT_FLAG})
+                            OR fr.product_name ~* ${NON_ACCOUNT_PRODUCT_SQL})
+                          THEN EXCLUDED.product_name ELSE fr.product_name END,
       min_balance_to_avoid = COALESCE(fr.min_balance_to_avoid, EXCLUDED.min_balance_to_avoid),
       min_opening_deposit = COALESCE(fr.min_opening_deposit, EXCLUDED.min_opening_deposit),
       waiver_text = COALESCE(fr.waiver_text, EXCLUDED.waiver_text),
@@ -689,6 +726,24 @@ export async function insertCandidate(
                       || CASE WHEN fr.outlier_flags ? 'superseded_by_reread'
                               THEN '["knox_reread_took_over"]'::jsonb
                               ELSE '["knox_promoted_from_held"]'::jsonb END
+                      -- #1295: a take-over that changes the category keeps the old one, the proof
+                      -- Darwin needs that its earlier decision was made under another category.
+                      || COALESCE((
+                           SELECT jsonb_build_array(${KNOX_TAKEOVER_FROM_PREFIX}::text || old_hint.hint)
+                             FROM (
+                               SELECT COALESCE(
+                                        (SELECT substring(h.flag FROM '^canonical_hint:(.+)$')
+                                           FROM jsonb_array_elements_text(COALESCE(fr.outlier_flags, '[]'::jsonb)) WITH ORDINALITY AS h(flag, ord)
+                                          WHERE h.flag LIKE 'canonical_hint:%'
+                                          ORDER BY h.ord
+                                          LIMIT 1),
+                                        substring(COALESCE(fr.extraction_note, fr.conditions) FROM 'canonical_hint=([a-z0-9_]+);')
+                                      ) AS hint
+                             ) old_hint
+                            WHERE fr.outlier_flags ? 'superseded_by_reread'
+                              AND old_hint.hint IS NOT NULL
+                              AND old_hint.hint IS DISTINCT FROM ${options.candidate.canonicalHint}::text
+                         ), '[]'::jsonb)
      WHERE fr.source = 'knox'
        AND NOT fr.outlier_flags ? 'needs_darwin_verification'
        AND (
@@ -705,7 +760,14 @@ export async function insertCandidate(
     // left empty, and change nothing else about the row.
     await db`
       UPDATE raw_fee_observations
-         SET product_name = COALESCE(product_name, ${lineup.productName}),
+         SET product_name = CASE WHEN ${lineup.productName}::text IS NOT NULL AND (
+                                  product_name IS NULL
+                                  OR NOT (COALESCE(outlier_flags, '[]'::jsonb) ? ${ACCOUNT_PRODUCT_FLAG})
+                                  OR product_name ~* ${NON_ACCOUNT_PRODUCT_SQL})
+                                 THEN ${lineup.productName}::text ELSE product_name END,
+             outlier_flags = CASE WHEN ${lineup.productName}::text IS NOT NULL AND NOT (COALESCE(outlier_flags, '[]'::jsonb) ? ${ACCOUNT_PRODUCT_FLAG})
+                                  THEN COALESCE(outlier_flags, '[]'::jsonb) || jsonb_build_array(${ACCOUNT_PRODUCT_FLAG}::text)
+                                  ELSE outlier_flags END,
              min_balance_to_avoid = COALESCE(min_balance_to_avoid, ${lineup.minBalanceToAvoid}),
              min_opening_deposit = COALESCE(min_opening_deposit, ${lineup.minOpeningDeposit}),
              waiver_text = COALESCE(waiver_text, ${lineup.waiverText})
@@ -1072,7 +1134,7 @@ export async function runKnoxExtract(
         if (calibrated < PUBLISH_FLOOR) calibratedBelowPublishFloor += 1;
         const takenDownBy = takedownLessonFor(candidate, takedownLessons, Number(row.institution_id));
         if (takenDownBy) takedownHolds[takenDownBy] = (takedownHolds[takenDownBy] ?? 0) + 1;
-        const named = withLineupFromText(candidate, row.normalized_text);
+        const named = withLineupFromText(candidate, row.normalized_text, { institutionName: row.institution_name });
         if (
           await insertCandidate(db, {
             runId: options.runId,

@@ -21,6 +21,8 @@
     { "pr": 1392, "issue": 1100, "metric": "accuracy_recall", "direction": "up", "min_change": 0.002, "note": "Knox v70: low-balance and maintenance fees the account expert missed (answer keys +12 right, 0 wrong; monthly maintenance 47 to 57 of 105 key fees)" },
     { "pr": 1385, "issue": 1102, "metric": "accuracy_recall", "direction": "up", "min_change": 0.001, "note": "Held lines whose name the store settles across banks (or a person labels) go to Darwin by that name: 71 lines at 40 banks on 15 Oct" },
     { "pr": 1438, "issue": 1100, "metric": "accuracy_recall", "direction": "up", "min_change": 0.0005, "note": "Knox v71: each checking product's monthly fee in an account comparison table, read by its column (answer keys +1 right, 0 wrong)" },
-    { "pr": 1534, "issue": 1099, "metric": "accuracy_recall", "direction": "up", "min_change": 0.001, "note": "Knox v72: loan payments by phone, card or ACH and returned loan payments read as other lending (Texas key +5 right, 0 wrong; 65 held lines to Darwin)" }
+    { "pr": 1534, "issue": 1099, "metric": "accuracy_recall", "direction": "up", "min_change": 0.001, "note": "Knox v72: loan payments by phone, card or ACH and returned loan payments read as other lending (Texas key +5 right, 0 wrong; 65 held lines to Darwin)" },
+    { "pr": 1632, "issue": 1442, "metric": "detail.goal.accuracy.accuracy", "direction": "up", "min_change": 0.001, "note": "Darwin switch-on: 830 per-hour fees set hourly; 92 lending/card and 7 brokerage-page fees archived after the 12-hour second look; 14 due tier-perk $0s archived" },
+    { "pr": 1638, "issue": 1440, "metric": "detail.goal.accuracy.accuracy", "direction": "up", "min_change": 0.0002, "note": "Switch on: 29 live rows that read one printed line a second way archived after the 12-hour second look; Selco's $10 optional overdraft plan (143753) held beside its per-item fee" }
   ]
 }

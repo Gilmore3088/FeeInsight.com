@@ -104,7 +104,8 @@ export interface StateOrder {
  * it states: "Consent Order" or "Order Terminating Consent Order" names none.
  */
 const TITLE_SUBJECTS: ReadonlyArray<[RegExp, string]> = [
-  [/unfair,? (?:or|and)(?: | \/ )?(?:abusive )?(?:or |and )?deceptive|\bUDAA?P\b/i, "Unfair or deceptive practices (UDAP)"],
+  // "Unfair or deceptive", "unfair, abusive or deceptive" and "Unfair, Deceptive, or Abusive Acts".
+  [/unfair,? (?:or|and)(?: | \/ )?(?:abusive )?(?:or |and )?deceptive|unfair,? deceptive\b|\bUDAA?P\b/i, "Unfair or deceptive practices (UDAP)"],
   [/overdraft/i, "Overdraft"],
   [/\bNSF\b|non-?sufficient funds|insufficient funds/i, "NSF fees"],
   [/truth in savings|\breg(?:ulation|\.)? DD\b/i, "Truth in Savings (Regulation DD)"],
@@ -230,6 +231,9 @@ export function mapColumns(headers: readonly string[]): Partial<Record<Column, n
     if (map.end === undefined && /terminat|rescind|lifted|vacat/.test(h)) map.end = i;
     else if (map.date === undefined && /date|effective|issued|signed/.test(h)) map.date = i;
     else if (map.party === undefined && /institution|bank|name|respondent|party|entity|company|licensee/.test(h)) map.party = i;
+    // A header naming the action or its type ("Nature of Action", "Action Type/Category") is the
+    // type column, even when it also carries a subject word.
+    else if (map.type === undefined && /\baction\b|\btype\b/.test(h)) map.type = i;
     // The page's own subject column (Maryland's "Regulated Activity"); never the party column.
     else if (map.subject === undefined && !/party/.test(h) && /reason|subject|regulated activity|violation|basis|nature of|category|topic/.test(h)) map.subject = i;
     else if (map.type === undefined && /action|type|order|document|description/.test(h)) map.type = i;
@@ -337,7 +341,7 @@ export function parseLabelled(text: string): StateOrder | null {
     termination_date: parseActionDate(end) ?? dateIn(end),
     document_url: null,
     // New Jersey's cell ends "Reason: Fund Management. Order": the link's label is not the reason.
-    subject: statedSubject((fields.reason ?? fields.subject ?? fields.violations ?? "").replace(/\.\s+(?:order|pdf|view|download|link)\b.*$/i, ""), type),
+    subject: statedSubject((fields.reason ?? fields.subject ?? fields.violations ?? fields.violation ?? "").replace(/\.\s+(?:order|pdf|view|download|link)\b.*$/i, ""), type),
   };
 }
 

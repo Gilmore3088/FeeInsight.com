@@ -85,6 +85,17 @@ describe("readSampleLadder", () => {
     expect(read.ladder?.rows.map((r) => r.label)).toEqual(["Local competitors", "Texas", "The nation"]);
   });
 
+  it("reports a failed state read the same way, and keeps the charter row (#1586)", async () => {
+    peerIndex.mockImplementation(async (filter) => {
+      if ("state_code" in filter) throw new Error("connection reset");
+      return [entry("overdraft")];
+    });
+    const read = await readSampleLadder(sample, national);
+    expect(read.failed).toBe(true);
+    expect(read.ladder?.rows.map((r) => r.label)).not.toContain("Texas");
+    expect(read.ladder?.rows).toHaveLength(3);
+  });
+
   it("reports no failure when both reads answer", async () => {
     peerIndex.mockResolvedValue([entry("overdraft")]);
     const read = await readSampleLadder(sample, national);

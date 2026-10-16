@@ -5,7 +5,7 @@ import { ContactForm, type ContactHeadings } from "./contact-form";
 
 export const metadata: Metadata = {
   title: "Contact",
-  description: `Get in touch with ${SITE_NAME} about a Hamilton demo, Pro seats, the ${REPORT_OFFER.name}, Advisory work, data licensing, or anything else.`,
+  description: `Get in touch with ${SITE_NAME} about a Hamilton demo, Pro seats, the ${REPORT_OFFER.name}, data licensing, or anything else.`,
 };
 
 /**

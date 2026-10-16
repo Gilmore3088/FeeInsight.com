@@ -8,10 +8,13 @@ type SqlTag = typeof sql;
 
 /**
  * Hand takedowns: a short, reviewed list of live fees confirmed wrong against their bank's own
- * stored text. James, Oct 16 (DECISIONS.md): up to about 25 such fees, each confirmed wrong on
- * amount or category against the bank's stored text and checked by a reviewer, come down this way
- * without a per-fee approval; a ledger line goes on #1026. Category or policy questions, large
- * batches, migrations and switches still go to him.
+ * stored text. James, Oct 16 03:37 UTC (DECISIONS.md): a batch of fewer than 20 such fees, each
+ * confirmed wrong on amount or category against the bank's stored text and checked by a reviewer,
+ * comes down this way without asking him ("I don't want to be nickel and dimed every time we have
+ * a problem with less than 20 fees"); a ledger line goes on #1026. A batch is the entries filed
+ * under one issue (`issue`); the limit is per batch (`HAND_TAKEDOWN_BATCH_LIMIT`), not a total for
+ * the list. A batch of 20 or more, category or policy questions, migrations and switches still go
+ * to him.
  *
  * A fixed list, not a takedown tool. A row comes down only while it still reads as listed (live,
  * same institution, category, name and price). Its verified row is rejected too, so no later
@@ -24,6 +27,8 @@ type SqlTag = typeof sql;
  */
 export const HAND_TAKEDOWN_CHECK = "hamilton.hand_takedown";
 export const HAND_TAKEDOWN_FLAG = "hand_rejected:hand_takedown";
+/** Most entries one batch (one issue) may hold: James's rule covers fewer than 20 fees at a time. */
+export const HAND_TAKEDOWN_BATCH_LIMIT = 19;
 
 export interface HandTakedown {
   feePublishedId: number;
@@ -32,13 +37,20 @@ export interface HandTakedown {
   amount: number;
   /** The name the live row carries now. */
   feeName: string;
-  /** `rolled_back_reason`, e.g. `source_mismatch: #1496`. */
+  /** `rolled_back_reason`, e.g. `source_mismatch: #1496`, or `duplicate of #<kept id> (#<issue>)` for a repeat. */
   reason: string;
-  /** The issue that holds the evidence. */
+  /** The issue that holds the evidence; the entries under one issue are one batch. */
   issue: number;
-  kind: Extract<FeedbackKind, "wrong_amount" | "wrong_category" | "not_a_fee">;
+  kind: Extract<FeedbackKind, "wrong_amount" | "wrong_category" | "not_a_fee" | "duplicate">;
   /** What the bank's own text says, in one line. */
   evidence: string;
+  /**
+   * A live row this takedown waits on (#1659): the entry comes down only while that row is live at
+   * this amount and name, so a duplicate never leaves before the fee it repeats is right. Hand
+   * amount corrections run before takedowns in the same publish transaction, so normally both
+   * land in one step.
+   */
+  requiresLive?: { feePublishedId: number; amount: number; feeName: string };
 }
 
 export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
@@ -75,6 +87,102 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
   { feePublishedId: 134962, institutionId: 8566, canonicalFeeKey: "account_research", amount: 29.5, feeName: "Loan Payment with Debit Card - Chargeback",
     reason: "source_mismatch: #1534", issue: 1534, kind: "wrong_category",
     evidence: "Texell CU (doc 29092): \"Loan Payment with Debit Card - Chargeback $29.50 per item\", next to \"Loan Payment with Debit Card - Return Item\": a loan payment fee, not account research." },
+  // #1571 (read-only, Oct 16): live $0s whose own schedule row prices them under a condition; each
+  // re-read against the stored text by the advisor session and checked by a separate reviewer.
+  { feePublishedId: 43512, institutionId: 4669, canonicalFeeKey: "dormant_account", amount: 0, feeName: "Dormant Account Fee Accounts with no activity for 12 months. Dormant accounts with",
+    reason: "source_mismatch: #1571", issue: 1571, kind: "wrong_amount",
+    evidence: "Jersey Central FCU (doc 3614): \"Dormant Account Fee ... Dormant accounts with $0.00 balance will be closed. | $10.00 per quarter\"; the fee is $10.00 a quarter, $0.00 is the closing balance." },
+  { feePublishedId: 54014, institutionId: 8259, canonicalFeeKey: "cashiers_check", amount: 0, feeName: "CASHIER’S CHECKS: first three (3)",
+    reason: "source_mismatch: #1571", issue: 1571, kind: "wrong_amount",
+    evidence: "Southeast Missouri Community FCU (doc 16700): \"CASHIER’S CHECKS: first three (3) FREE per month, $1.50 thereafter; members only\"." },
+  { feePublishedId: 61335, institutionId: 6219, canonicalFeeKey: "monthly_maintenance", amount: 0, feeName: "Standard Checking Monthly Fee - Balance over",
+    reason: "source_mismatch: #1571", issue: 1571, kind: "wrong_amount",
+    evidence: "Irco Community FCU (doc 18184): \"Balance over $250 | FREE\" and the next row \"Balance under $250 | $10.00\"; a balance band, not the price." },
+  { feePublishedId: 68893, institutionId: 8536, canonicalFeeKey: "overdraft", amount: 0, feeName: "Courtesy Pay fees are",
+    reason: "source_mismatch: #1571", issue: 1571, kind: "wrong_amount",
+    evidence: "Downeast FCU (doc 20241): \"Courtesy Pay fees are $0 for transactions $15 and under and then just $15 per item over $15\"." },
+  { feePublishedId: 70121, institutionId: 4197, canonicalFeeKey: "card_replacement", amount: 0, feeName: "Lost Card",
+    reason: "source_mismatch: #1571", issue: 1571, kind: "wrong_amount",
+    evidence: "Carrollton Federal Bank (doc 25216): \"ATM or Debit Card No Charge For First Card --- $10.00 For Lost Card\"; a lost card is $10.00." },
+  { feePublishedId: 73737, institutionId: 6300, canonicalFeeKey: "coin_counting", amount: 0, feeName: "Coin Counting (Mbr up to /Mbr over /Non-Mbr)",
+    reason: "source_mismatch: #1571", issue: 1571, kind: "wrong_amount",
+    evidence: "Aurora FCU (doc 20537): \"Coin Counting (Mbr up to $100/Mbr over $100/Non-Mbr) | FREE/5%/10%\"; free only for members up to $100." },
+  { feePublishedId: 77121, institutionId: 5313, canonicalFeeKey: "check_image", amount: 0, feeName: "Check copy that has cleared (per item) - Online copies are",
+    reason: "source_mismatch: #1571", issue: 1571, kind: "wrong_amount",
+    evidence: "Lakeshore FCU (doc 18957): \"Check copy that has cleared (per item) - Online copies are FREE up to 12 months old | $5.00\"." },
+  { feePublishedId: 77122, institutionId: 5313, canonicalFeeKey: "document_reproduction", amount: 0, feeName: "Statement copies (per statement) - Online copies are",
+    reason: "source_mismatch: #1571", issue: 1571, kind: "wrong_amount",
+    evidence: "Lakeshore FCU (doc 18957): \"Statement copies (per statement) - Online copies are FREE up to 18 months | $5.00\"." },
+  { feePublishedId: 77618, institutionId: 7383, canonicalFeeKey: "coin_counting", amount: 0, feeName: "Coin Counting, Free for Kids Club Member or for amounts less than",
+    reason: "source_mismatch: #1571", issue: 1571, kind: "wrong_amount",
+    evidence: "Members First FCU (doc 16105): \"2.00% of amount | Coin Counting, Free for Kids Club Member or for amounts less than $50.00\"." },
+  { feePublishedId: 84553, institutionId: 8221, canonicalFeeKey: "collection_item", amount: 0, feeName: "Foreign Check Deposit (below $10,000)",
+    reason: "source_mismatch: #1571", issue: 1571, kind: "wrong_amount",
+    evidence: "First Community FCU (doc 6206): \"Foreign Check Deposit (below $10,000) ....FREE\" and \"Foreign Check Deposit ($10,000 or more) .... $125.00\"; an amount band." },
+  { feePublishedId: 87079, institutionId: 7736, canonicalFeeKey: "notary_fee", amount: 0, feeName: "Notary Public – (per notarized document)",
+    reason: "source_mismatch: #1571", issue: 1571, kind: "wrong_amount",
+    evidence: "Del Norte FCU (doc 21594): \"Notary Public – (per notarized document)- FREE for members $5.00\"." },
+  { feePublishedId: 87461, institutionId: 8259, canonicalFeeKey: "document_reproduction", amount: 0, feeName: "FAX TRANSMISSION: first five (5) pages",
+    reason: "source_mismatch: #1571", issue: 1571, kind: "wrong_amount",
+    evidence: "Southeast Missouri Community FCU (doc 16700): \"FAX TRANSMISSION: first five (5) pages FREE per month, $1.00 per page thereafter\"." },
+  { feePublishedId: 88213, institutionId: 4236, canonicalFeeKey: "monthly_maintenance", amount: 0, feeName: "Service charge",
+    reason: "source_mismatch: #1571", issue: 1571, kind: "wrong_amount",
+    evidence: "Citizens State Bank (doc 19551): \"No Charge\" only \"if a minimum balance of $100.00 is maintained\"; \"$5.00\" if it is NOT maintained." },
+  { feePublishedId: 91505, institutionId: 4808, canonicalFeeKey: "cashiers_check", amount: 0, feeName: "Third-Party Official Check – Over",
+    reason: "source_mismatch: #1571", issue: 1571, kind: "wrong_amount",
+    evidence: "NCPD FCU (doc 21964): \"Third-Party Official Check – Over $3,000 | No Charge\" and \"Under $3,000 | $3.00\"; an amount band." },
+  { feePublishedId: 120559, institutionId: 5313, canonicalFeeKey: "cashiers_check", amount: 0, feeName: "Cashier's checks - One",
+    reason: "source_mismatch: #1571", issue: 1571, kind: "wrong_amount",
+    evidence: "Lakeshore FCU (doc 3367): \"Cashier's checks - One FREE check per month (additonal checks each) | $1.00\"." },
+  // #1512 (James approved, Oct 16 03:37 UTC, roadmap item 3.8): a joined row whose own price is
+  // not the overdraft fee. The other seven #1512/#1513 rows are renamed or re-filed in place
+  // (taxonomy-fold HAND_REFILES).
+  { feePublishedId: 142965, institutionId: 4965, canonicalFeeKey: "overdraft", amount: 10, feeName: "Courtesy Pay Fee (per transaction) Research & Reconcilement (per hour)",
+    reason: "source_mismatch: #1512", issue: 1512, kind: "wrong_amount",
+    evidence: "Access FCU (doc 33871): \"Courtesy Pay Fee (per transaction) ……Research & Reconcilement (per hour)…. $10.00$25.00\" joins two lines; the bank's fee table (doc 26372) prints \"Courtesy Pay Fee | $25.00\" and \"Research & Reconcilement (per hour) | $10.00\", so $10 is not the courtesy pay fee." },
+  // #1302 leftovers (read-only, Oct 16): near-name pairs the near-name collapse keeps apart. 13188
+  // repeats a live read of one printed fee; 144352 (and 114273, the same line on an older copy of
+  // the page) publish a rate fee's $35 floor as a flat fee; 114270 reads the page's line-of-credit
+  // "$35.00 or 5%" line as a flat $35.
+  { feePublishedId: 13188, institutionId: 44, canonicalFeeKey: "gift_card_purchase", amount: 4.25, feeName: "Visa Gift Card",
+    reason: "duplicate of #103400 (#1302)", issue: 1302, kind: "duplicate",
+    evidence: "Valley (doc 23731, text 20802) prints \"Visa® Gift Cards, each: $4.25.\" once per schedule; 103400 is the Oct 9 read of it. 13188 is the Apr 17 load (raw 5056: no excerpt, no source URL) of the same fee, and the page has no \"Visa Gift Card\" line." },
+  { feePublishedId: 144352, institutionId: 6152, canonicalFeeKey: "late_payment", amount: 35, feeName: "Late payment fees",
+    reason: "source_mismatch: #1302", issue: 1302, kind: "wrong_amount",
+    evidence: "Patriot FCU (doc 34341, text 32389), Flex Equity Line: \"Late payment fees of 5% of the monthly payment or $35.00 whichever is greater\": $35 is the floor of a 5% fee, live as rate fee 114271 (5%, min $35), not a flat $35 a month." },
+  { feePublishedId: 114273, institutionId: 6152, canonicalFeeKey: "late_payment", amount: 35, feeName: "Late payment fees",
+    reason: "source_mismatch: #1302", issue: 1302, kind: "wrong_amount",
+    evidence: "Patriot FCU (doc 21882, text 18514, the Oct 8 copy of the same rates page): the same \"Late payment fees of 5% of the monthly payment or $35.00 whichever is greater\" line read as a flat $35; the 5% fee is live as 114271." },
+  { feePublishedId: 114270, institutionId: 6152, canonicalFeeKey: "late_payment", amount: 35, feeName: "Late payment fee",
+    reason: "source_mismatch: #1302", issue: 1302, kind: "wrong_amount",
+    evidence: "Patriot FCU (doc 34341, text 32389), the line of credit on the same rates page: \"Late payment fee of $35.00 or 5% of the minimum payment may apply\": the fee is $35 or 5% of the payment, not a flat $35." },
+  // #1655 (read-only, Oct 16): rows the consumer overdraft guide showed, each read against its own
+  // stored text. 5827 repeats the continuous overdraft charge as a daily OD/NSF cap; 84637 puts the
+  // personal small-item price on the business line. Primis's 5600 is corrected in place instead
+  // (hand-amount-corrections.ts): it is the bank's only live overdraft row.
+  { feePublishedId: 5827, institutionId: 1968, canonicalFeeKey: "od_daily_cap", amount: 3.29, feeName: "Continuous Overdraft Charge Daily Cap",
+    reason: "duplicate of #43265 (#1655)", issue: 1655, kind: "duplicate",
+    evidence: "Welch State Bank (doc 809, text 6350): \"Continuous Overdraft Charge* daily limit not to exceed..$3.29\" is the continuous overdraft charge, live as continuous_od 43265; the OD/NSF cap is \"NSF/OD Fees* daily limit not to exceed…$179.82\" (live as 5825)." },
+  { feePublishedId: 84637, institutionId: 97, canonicalFeeKey: "overdraft", amount: 10, feeName: "Overdraft or Returned Item fee (business accounts)",
+    reason: "source_mismatch: #1655", issue: 1655, kind: "wrong_amount",
+    evidence: "Mechanics Bank (doc 9078, text 2235): \"Overdraft or Returned Item fee (business accounts)…$35.00/presentment\" (live as 125484); the $10 is the personal line \"…for any item $10 or less… (personal accounts)1…$10.00/presentment\"." },
+  // #1659 (read-only, Oct 16): rows James saw in the guide comparisons. U.S. Bank's brokerage fees
+  // page is not a deposit schedule (the 50 have no brokerage type); 102973 repeats the Bank Smartly
+  // fee that 102971 carries once corrected (hand-amount-corrections.ts); 15727 is Navy Federal's
+  // credit card cash advance price filed as an ATM fee.
+  { feePublishedId: 104565, institutionId: 5, canonicalFeeKey: "nsf", amount: 30, feeName: "Returned check",
+    reason: "source_mismatch: #1659", issue: 1659, kind: "wrong_category",
+    evidence: "U.S. Bank brokerage fees page (doc 34203, text 32252), under \"Additional brokerage account fees\": \"Returned check | $30 per occurrence\", a self-directed brokerage account fee, not a deposit NSF." },
+  { feePublishedId: 104566, institutionId: 5, canonicalFeeKey: "stop_payment", amount: 25, feeName: "Stop payment",
+    reason: "source_mismatch: #1659", issue: 1659, kind: "wrong_category",
+    evidence: "U.S. Bank brokerage fees page (doc 34203, text 32252), the same table: \"Stop payment | $25 per occurrence\", a brokerage account fee, not a deposit account's stop payment." },
+  { feePublishedId: 102973, institutionId: 5, canonicalFeeKey: "monthly_maintenance", amount: 12, feeName: "Monthly maintenance fee",
+    reason: "duplicate of #102971 (#1659)", issue: 1659, kind: "duplicate",
+    requiresLive: { feePublishedId: 102971, amount: 12, feeName: "Bank Smartly Checking Monthly Maintenance Fee" },
+    evidence: "U.S. Bank student checking page (doc 23630, text 20684) prints the $12 only as waived: \"For young adults and students (18 - 24 years old), we always waive the $12 Monthly Maintenance Fee.\" The Bank Smartly Checking price is 102971 (checking-accounts.html, \"$12 Monthly Maintenance Fee can be waived in multiple ways1\")." },
+  { feePublishedId: 15727, institutionId: 4956, canonicalFeeKey: "atm_non_network", amount: 1, feeName: "plus ATM owner fees",
+    reason: "source_mismatch: #1659", issue: 1659, kind: "wrong_category",
+    evidence: "Navy Federal (doc 13439, text 890, the Oct 3 copy of fees-and-charges): \"Credit card cash advance§ / None / $0.50 / $1.00 plus ATM owner fees\": a credit card cash advance at a non-network ATM, named by the price's trailing words; not an ATM use fee." },
 ];
 
 export interface LiveTakedownRow {
@@ -101,6 +209,13 @@ export interface HandTakedownResult {
   error: string | null;
 }
 
+/** Pure: how many listed entries each batch (issue) holds, largest first. */
+export function handTakedownBatchSizes(list: readonly HandTakedown[] = HAND_TAKEDOWNS): Array<{ issue: number; entries: number }> {
+  const sizes = new Map<number, number>();
+  for (const entry of list) sizes.set(entry.issue, (sizes.get(entry.issue) ?? 0) + 1);
+  return [...sizes].map(([issue, entries]) => ({ issue, entries })).sort((a, b) => b.entries - a.entries || a.issue - b.issue);
+}
+
 const sameAmount = (a: number | string | null, b: number) => a != null && Math.abs(Number(a) - b) < 0.005;
 
 /** Pure: which listed rows come down, from their live rows. */
@@ -119,6 +234,13 @@ export function planHandTakedowns(live: LiveTakedownRow[], list: readonly HandTa
       skipped.push({ feePublishedId: entry.feePublishedId, reason: "changed since listed" });
       continue;
     }
+    if (entry.requiresLive) {
+      const needed = byId.get(entry.requiresLive.feePublishedId);
+      if (!needed || needed.fee_name !== entry.requiresLive.feeName || !sameAmount(needed.amount, entry.requiresLive.amount)) {
+        skipped.push({ feePublishedId: entry.feePublishedId, reason: `waiting on #${entry.requiresLive.feePublishedId}` });
+        continue;
+      }
+    }
     takenDown.push({ feePublishedId: entry.feePublishedId, feeVerifiedId: row.lineage_ref == null ? null : Number(row.lineage_ref), reason: entry.reason });
   }
   return { takenDown, skipped };
@@ -135,7 +257,8 @@ export async function applyHandTakedowns(
   const list = options.list ?? HAND_TAKEDOWNS;
   const result: HandTakedownResult = { dryRun: options.dryRun, takenDown: [], skipped: [], error: null };
   if (list.length === 0) return result;
-  const ids = [...new Set(list.map((entry) => entry.feePublishedId))];
+  // Each listed row, and each live row an entry waits on (`requiresLive`).
+  const ids = [...new Set(list.flatMap((entry) => entry.requiresLive ? [entry.feePublishedId, entry.requiresLive.feePublishedId] : [entry.feePublishedId]))];
   let live: LiveTakedownRow[];
   try {
     live = await inSavepoint(db, (scope) => scope<LiveTakedownRow[]>`
@@ -221,5 +344,213 @@ export async function applyHandTakedowns(
     return { ...result, takenDown: [], error: await recordStepWarning(db, { runId: options.runId, stepId: options.stepId, check: HAND_TAKEDOWN_CHECK, what: "Hand takedowns write", error }) };
   }
   if (result.takenDown.length > 0) invalidatePublicReadCache();
+  return result;
+}
+
+/**
+ * Hand audience fixes (#1302): a short, reviewed list of live fees whose audience is wrong against
+ * their bank's own stored text, under the same Oct 16 rule as the takedowns above. The fee stays
+ * live; only its audience changes.
+ *
+ * A fixed list, not an audience editor. A row is fixed only while it still reads as listed (live,
+ * same verified row, institution, category, name and price, and still the listed old audience).
+ * The verified row takes the new audience with `darwin:` evidence, which the audience trigger keeps
+ * (migration 20270110000047), and the live row is touched so it inherits it, as the audience
+ * relabel does (`darwin/audience-relabel.ts`). The old value goes to `pipeline_feedback` first
+ * (weight 0, a record, not a lesson): setting the verified row back to that audience and evidence
+ * and touching the live row undoes it. Running it again changes nothing. Add later rows below as
+ * one entry each. A failed read or write never fails the publish: it is kept in the result
+ * (`error`) and as a `step.warning` run event.
+ */
+export const HAND_AUDIENCE_CHECK = "hamilton.hand_audience_fix";
+export const HAND_AUDIENCE_KIND = "audience_hand_fixed";
+export const HAND_AUDIENCE_EVIDENCE_PREFIX = "darwin:hand_fix";
+
+type ListedAudience = "consumer" | "business" | "both";
+
+export interface HandAudienceFix {
+  feePublishedId: number;
+  feeVerifiedId: number;
+  institutionId: number;
+  canonicalFeeKey: string;
+  amount: number;
+  /** The name the live row carries now. */
+  feeName: string;
+  /** The verified row's audience now. */
+  from: ListedAudience | "unknown";
+  to: ListedAudience;
+  /** The issue that holds the evidence. */
+  issue: number;
+  /** What the bank's own text says, in one line. */
+  evidence: string;
+}
+
+export const HAND_AUDIENCE_FIXES: readonly HandAudienceFix[] = [
+  // #1302 (read-only, Oct 16): Rave FCU prints its consumer and business schedules in one document.
+  { feePublishedId: 55401, feeVerifiedId: 45477, institutionId: 8652, canonicalFeeKey: "gift_card_purchase", amount: 5, feeName: "Gift Cards",
+    from: "unknown", to: "business", issue: 1302,
+    evidence: "Rave (doc 2183, text 9544): \"Gift Cards | $ 5.00\" is under \"2019 Business Fee Schedule\"; the consumer schedule's line is \"Gift Card | $5.00\" (55397)." },
+  // #1655 (read-only, Oct 16): Mechanics Bank prints personal and business lines side by side; these
+  // two business rows showed in the consumer overdraft guide.
+  { feePublishedId: 67110, feeVerifiedId: 77129, institutionId: 97, canonicalFeeKey: "od_daily_cap", amount: 350,
+    feeName: "Maximum daily Overdraft or Returned Item fees (per day, business accounts)", from: "unknown", to: "business", issue: 1655,
+    evidence: "Mechanics Bank (doc 9078, text 2235): \"Maximum daily Overdraft or Returned Item fees (per day, business accounts)…$350.00\"; the personal cap is $140.00 (67109)." },
+  { feePublishedId: 125484, feeVerifiedId: 93865, institutionId: 97, canonicalFeeKey: "overdraft", amount: 35,
+    feeName: "Overdraft or Returned Item fee (business accounts)", from: "unknown", to: "business", issue: 1655,
+    evidence: "Mechanics Bank (doc 9078, text 2235): \"Overdraft or Returned Item fee (business accounts)…$35.00/presentment\"." },
+];
+
+export interface LiveAudienceRow {
+  fee_published_id: number | string;
+  lineage_ref: number | string | null;
+  institution_id: number | string;
+  canonical_fee_key: string;
+  fee_name: string;
+  amount: number | string | null;
+  /** The verified row's audience and evidence. */
+  fee_audience: string | null;
+  audience_evidence: string | null;
+}
+
+export interface PlannedAudienceFix {
+  feePublishedId: number;
+  feeVerifiedId: number;
+  from: string;
+  fromEvidence: string | null;
+  to: ListedAudience;
+}
+
+export interface HandAudienceResult {
+  dryRun: boolean;
+  fixed: PlannedAudienceFix[];
+  /** Listed rows left alone, with why (not live, already fixed, or changed since it was listed). */
+  skipped: Array<{ feePublishedId: number; reason: string }>;
+  /** A failed read or write (nothing written); also a `step.warning` run event. */
+  error: string | null;
+}
+
+/** The evidence a fix writes; it starts with `darwin:` so the trigger keeps it on the verified row. */
+export function handAudienceEvidence(fix: HandAudienceFix): string {
+  return `${HAND_AUDIENCE_EVIDENCE_PREFIX}: #${fix.issue} ${fix.evidence}`.slice(0, 500);
+}
+
+/** Pure: which listed rows take their new audience, from their live rows (verified audience joined in). */
+export function planHandAudienceFixes(
+  live: LiveAudienceRow[],
+  list: readonly HandAudienceFix[] = HAND_AUDIENCE_FIXES,
+): Pick<HandAudienceResult, "fixed" | "skipped"> {
+  const byId = new Map(live.map((row) => [Number(row.fee_published_id), row]));
+  const fixed: PlannedAudienceFix[] = [];
+  const skipped: HandAudienceResult["skipped"] = [];
+  for (const entry of list) {
+    const row = byId.get(entry.feePublishedId);
+    if (!row) {
+      skipped.push({ feePublishedId: entry.feePublishedId, reason: "not live" });
+      continue;
+    }
+    if (row.fee_audience === entry.to) {
+      skipped.push({ feePublishedId: entry.feePublishedId, reason: "already fixed" });
+      continue;
+    }
+    if (Number(row.lineage_ref) !== entry.feeVerifiedId || Number(row.institution_id) !== entry.institutionId ||
+        row.canonical_fee_key !== entry.canonicalFeeKey || row.fee_name !== entry.feeName ||
+        !sameAmount(row.amount, entry.amount) || row.fee_audience !== entry.from) {
+      skipped.push({ feePublishedId: entry.feePublishedId, reason: "changed since listed" });
+      continue;
+    }
+    fixed.push({ feePublishedId: entry.feePublishedId, feeVerifiedId: entry.feeVerifiedId, from: entry.from, fromEvidence: row.audience_evidence, to: entry.to });
+  }
+  return { fixed, skipped };
+}
+
+/** Runs in the publish step after the takedowns. A dry run reports what it would fix and writes nothing. */
+export async function applyHandAudienceFixes(
+  db: SqlTag,
+  options: { runId: number; stepId?: number | null; dryRun: boolean; list?: readonly HandAudienceFix[] },
+): Promise<HandAudienceResult> {
+  const list = options.list ?? HAND_AUDIENCE_FIXES;
+  const result: HandAudienceResult = { dryRun: options.dryRun, fixed: [], skipped: [], error: null };
+  if (list.length === 0) return result;
+  const ids = [...new Set(list.map((entry) => entry.feePublishedId))];
+  let live: LiveAudienceRow[];
+  try {
+    live = await inSavepoint(db, (scope) => scope<LiveAudienceRow[]>`
+      SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fp.canonical_fee_key, fp.fee_name, fp.amount,
+             v.fee_audience, v.audience_evidence
+        FROM published_fee_records fp
+        JOIN verified_fee_observations v ON v.fee_verified_id = fp.lineage_ref
+       WHERE fp.fee_published_id = ANY(${ids}::bigint[])
+         AND fp.rolled_back_at IS NULL
+    `);
+  } catch (error) {
+    console.error("hand audience fixes read failed:", error);
+    return { ...result, error: await recordStepWarning(db, { runId: options.runId, stepId: options.stepId, check: HAND_AUDIENCE_CHECK, what: "Hand audience fixes read", error }) };
+  }
+  const plan = planHandAudienceFixes(live, list);
+  result.skipped = plan.skipped;
+  if (options.dryRun) return { ...result, fixed: plan.fixed };
+  if (plan.fixed.length === 0) return result;
+
+  try {
+    await inSavepoint(db, async (scope) => {
+      for (const item of plan.fixed) {
+        const entry = list.find((candidate) => candidate.feePublishedId === item.feePublishedId)!;
+        const updated = await scope<{ fee_verified_id: number | string }[]>`
+          UPDATE verified_fee_observations
+             SET fee_audience = ${item.to},
+                 audience_evidence = ${handAudienceEvidence(entry)}
+           WHERE fee_verified_id = ${item.feeVerifiedId}
+             AND fee_audience = ${entry.from}
+          RETURNING fee_verified_id
+        `;
+        if (updated.length === 0) continue;
+        // Touching the audience column fires the trigger, which copies the verified row's audience.
+        await scope`
+          UPDATE published_fee_records SET fee_audience = fee_audience
+           WHERE fee_published_id = ${item.feePublishedId}
+             AND rolled_back_at IS NULL
+        `;
+        result.fixed.push(item);
+      }
+      // The old values, so each fix can be undone; a record, never a lesson.
+      const records: FeedbackRow[] = result.fixed.map((item) => {
+        const entry = list.find((candidate) => candidate.feePublishedId === item.feePublishedId)!;
+        return {
+          aboutStage: "verify" as const,
+          signal: "wrong" as const,
+          kind: HAND_AUDIENCE_KIND,
+          reportedBy: "gutenberg" as const,
+          checkName: HAND_AUDIENCE_CHECK,
+          institutionId: entry.institutionId,
+          feeVerifiedId: item.feeVerifiedId,
+          feePublishedId: item.feePublishedId,
+          canonicalFeeKey: entry.canonicalFeeKey,
+          amount: entry.amount,
+          weight: 0,
+          runId: options.runId,
+          dedupeKey: `${HAND_AUDIENCE_CHECK}:pub:${item.feePublishedId}`,
+          evidence: { fee_name: entry.feeName, from_audience: item.from, from_evidence: item.fromEvidence, to_audience: item.to, issue: entry.issue, source: entry.evidence },
+        };
+      });
+      if (records.length > 0) await recordFeedback(scope, records);
+      if (result.fixed.length > 0) {
+        await scope`
+          INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+          VALUES (
+            ${options.runId}, ${HAND_AUDIENCE_CHECK}, 'completed',
+            ${`Set the audience of ${result.fixed.length} listed live fee(s) from their bank's own text`},
+            ${JSON.stringify({
+              fixed: result.fixed.map((item) => ({ fee_published_id: item.feePublishedId, fee_verified_id: item.feeVerifiedId, from: item.from, to: item.to })),
+              skipped: result.skipped,
+            })}::jsonb
+          )
+        `;
+      }
+    });
+  } catch (error) {
+    console.error("hand audience fixes write failed:", error);
+    return { ...result, fixed: [], error: await recordStepWarning(db, { runId: options.runId, stepId: options.stepId, check: HAND_AUDIENCE_CHECK, what: "Hand audience fixes write", error }) };
+  }
+  if (result.fixed.length > 0) invalidatePublicReadCache();
   return result;
 }

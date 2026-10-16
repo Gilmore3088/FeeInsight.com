@@ -5,11 +5,13 @@ import { notFound } from "next/navigation";
 import { hasPermission, requireAuth } from "@/lib/auth";
 import { sql } from "@/lib/data-store/connection";
 import { getHeldFees, type HeldFee } from "@/lib/fee-hold";
+import { canCorrectFees, getInstitutionCorrections, type InstitutionCorrections } from "@/lib/fee-corrections";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { formatAssets } from "@/lib/format";
 import { notOnlineStatus, type NotOnlineStatus } from "@/lib/agents/magellan/escalation";
 import { FeeTable } from "./fee-table";
 import { HeldFeesTable } from "./fee-hold-controls";
+import { CorrectionsPanel } from "./fee-correction-controls";
 import {
   getInstitution,
   getInstitutionFees,
@@ -54,6 +56,7 @@ export default async function InstitutionDetailPage({
     learnedNotes,
     heldFees,
     paidLadder,
+    corrections,
   ] =
     await Promise.all([
       getInstitution(institutionId),
@@ -72,7 +75,13 @@ export default async function InstitutionDetailPage({
         console.error("[admin] paid search ladder unavailable", { institutionId, error });
         return null;
       }),
+      getInstitutionCorrections(sql, institutionId).catch((error): InstitutionCorrections => {
+        console.error("[admin] fee corrections unavailable", { institutionId, error });
+        return { enabled: false, versions: {}, history: [], conflicts: [] };
+      }),
     ]);
+  const canCorrect = canCorrectFees(user.role) && corrections.enabled;
+  const correctionDocuments = crawlHistory.map((doc) => ({ id: doc.id, url: doc.document_url, crawledAt: doc.crawled_at }));
 
   if (!institution) notFound();
 
@@ -255,6 +264,20 @@ export default async function InstitutionDetailPage({
         </div>
       )}
 
+      {(corrections.history.length > 0 || corrections.conflicts.length > 0) && (
+        <div className="admin-card overflow-hidden mb-8">
+          <div className="px-4 py-2.5 border-b border-gray-100 dark:border-white/[0.04]">
+            <h2 className="text-[11px] font-bold text-blue-600 uppercase tracking-[0.08em]">
+              Fee Corrections ({corrections.history.length})
+            </h2>
+            <p className="mt-0.5 text-[11px] text-gray-500">
+              Every version is kept. A reversal publishes the earlier value again as a new version.
+            </p>
+          </div>
+          <CorrectionsPanel history={corrections.history} conflicts={corrections.conflicts} canCorrect={canCorrect} />
+        </div>
+      )}
+
       {/* Published Fees */}
       <div className="admin-card overflow-hidden mb-8">
         <div className="px-4 py-2.5 border-b border-gray-100 dark:border-white/[0.04]">
@@ -263,7 +286,14 @@ export default async function InstitutionDetailPage({
           </h2>
         </div>
         {fees.length > 0 ? (
-          <FeeTable fees={fees} institutionName={institution.institution_name} canHold={canHold} />
+          <FeeTable
+            fees={fees}
+            institutionName={institution.institution_name}
+            canHold={canHold}
+            canCorrect={canCorrect}
+            correctionVersions={corrections.versions}
+            documents={correctionDocuments}
+          />
         ) : (
           <div className="p-6 text-xs text-gray-400 text-center">
             No published fees yet. Set a fee schedule URL and run the agentic pipeline.

@@ -12,6 +12,11 @@ Darwin owns verification and classification.
   Darwin or publish joins Darwin's live re-check in the same PR, with a dry-run count of the live
   fees it would take down. Takedowns go through the shared second look and the run ledger
   (`docs/project/DECISIONS.md`, 2026-10-15).
+  The account type hold (#1100 gap 1, James Oct 16: a savings, money market, club, business or
+  IRA/HSA/CD account's monthly fee is not consumer checking monthly maintenance) has its live
+  re-check in Hamilton's publish step (`hamilton/account-type-hold.ts`, part 1), which reads every
+  live `monthly_maintenance` fee each step and holds a typed one as verified; see Hamilton
+  `AGENTS.md` item 10b.
   The Oct 15 re-file of excess withdrawals and returned mail out of account research (#1398) has
   no Darwin-only live pass yet: its live re-check is Hamilton's fold step (`taxonomy-fold.ts`,
   every publish step), which reads up to 2,000 live and verified account research fees whose name
@@ -73,6 +78,13 @@ Darwin owns verification and classification.
   stale first flag qualify once #1291's repair (inside its switched-off re-file pass) runs, and the
   re-file pass adds its rows when it is on. The 216 rows #1093 step 2 sent back carry the category
   they were rejected under, so this rule does not reach them.
+- A Knox take-over that changes a retired row's category writes `knox_takeover_from:<old>`
+  (#1295, `knox/extract.ts`), since the take-over drops the old `canonical_hint:` flags and left
+  no proof. It counts as proof, like `knox_refiled_from:`, only with
+  `DARWIN_TAKEOVER_CATEGORY_PROOF_LIVE` on (off, gated on James). Off, each verify step counts and
+  samples the rows only it would add in `detail.category_change_rejudge.takeover_proof`. Measured
+  Oct 16 (read-only): no row carries the flag yet, so it would add 0 today; the pool a take-over
+  can reach is 1,356 retired, unverified Knox rows (1,269 with a v3 decision).
 - `not_in_source` (2026-10-06) runs the same check Hamilton's live-fee source check runs, so a
   fee the bank's schedule does not state is stopped before it is verified instead of being
   published and then taken down. It joined version 3 without a bump: a bump re-selects every
@@ -95,7 +107,7 @@ Darwin owns verification and classification.
   prices it free on its own line with no other dollar figure, outside overdraft, NSF, monthly
   maintenance and minimum balance, and not on one account tier's own schedule (`tier-perk.ts`,
   #1397); (b) otherwise rejected, for Knox's next read of the line.
-- `verify.recheck` (`verified-recheck.ts`, version 4, 2026-10-16) ends every learning verify step
+- `verify.recheck` (`verified-recheck.ts`, version 5, 2026-10-16) ends every learning verify step
   by reading up to 200 rows `verify.rules` v3 verified (the rows the `not_in_source` re-select
   verified first, then newest first), once each under `postSourceCheck` and, from version 3, the
   tier-perk test (`tier_perk_zero`, #1397). Version 4 (#1571, #1574): on a run-on line with no
@@ -103,7 +115,25 @@ Darwin owns verification and classification.
   any terms after it ("FREE with e-Statements"), so "Notary Services No Charge" is free even when
   the line also holds "Record Searches $30"; a cell with its own label ("Certified Letter Fee:
   $10") is never this fee's price. The tier-perk name test skips an account's own monthly or
-  minimum-balance price ("Premier Checking" $0, "NONE"); a tier's own schedule still refuses it. A failing row that is
+  minimum-balance price ("Premier Checking" $0, "NONE"); a tier's own schedule still refuses it.
+  Version 5 (#1593): the conditional-$0 test reads a two-column page by its columns, failing safe:
+  the other column must be positively another fee. A cell after this fee's own "name $0" is the
+  other column only when its label is a Title Case name the page prints as its own priced row
+  elsewhere or under a right-column heading naming fees ("Bill Pay | Other Fees" over "Bill Pay
+  ---- No Charge | Account History ---- $3.00 each"); a fee noun alone is no proof. A delivery
+  tier, channel, activity or holder's choice ("Overnight Shipping", "Verbal Request", "Low
+  Activity", "Opted Out Of Overdraft"), or a label opening with No, Range of, Multiple, Each
+  additional or Per, never is. A price opening the fee's
+  table cell after another fee's label cell is that fee's ("5x10x20 Safe Deposit Box Annually |
+  $75.00 Bill Pay | No Charge"). On a run-on line, text after the $0 that states a condition
+  anywhere, parentheses included, stays the fee's terms; otherwise it is the other column only
+  with document evidence (a label under the right column's fee heading that opens that column on
+  a neighbouring line, or the same "name $0" row repeated next to a two-cell line with a tail the
+  page prints as its own row). A label priced $0 is the next row; and
+  a domestic wire's row reads its international price as another fee's. A $0 traced to a line
+  that lacks a word of its name is read on the line that prints its whole name with its $0
+  (`sourceLineFor`), unless that $0 is one audience's. A fee named for one audience ("Check
+  Printing (members over 62)") is never freed by the column reading. A failing row that is
   not live is rejected with an `outlier_flags` entry `darwin_recheck:<code>[:<rule>]`; a live one
   is archived in the same step (`published_fee_records` rolled back with that reason, batch
   `darwin-recheck-<run>`, never deleted), the verified row rejected with the same flag and the
@@ -136,7 +166,14 @@ Darwin owns verification and classification.
   `darwin.verified_recheck` flag is at least 12 hours old, oldest first, and the shared second look
   archives the ones still failing and clears the rest. Off, step detail `recheck.dueSecondLooks`
   gives `due`, `wouldConfirm` by reason code, `wouldClear` and 20 samples, and nothing is written.
-  It turns on by PR once James approves the count of due flags. `DARWIN_RECHECK_OLDER_LIVE` only
+  It turns on by PR once James approves the count of due flags. It is still off for every code but
+  one: `DARWIN_RECHECK_SECOND_LOOK_LIVE_CODES` (`["tier_perk_zero"]`, James's yes 2026-10-16 03:37
+  UTC; 15 live due flags then, 14 on one large bank's premium-account schedule and 1 "Premier
+  Checking" $0 that v4 now passes) gives only those codes' due first looks their second read. Such
+  a row is archived only when it fails again under a switched-on code, cleared when it passes, and
+  left flagged when it now fails under another code (step detail `recheck.secondLookOtherCode`);
+  `recheck.dueSecondLooks` keeps reporting every other code (conditional_zero, name_rule and the
+  rest). Roll back by emptying the list. `DARWIN_RECHECK_OLDER_LIVE` only
   flags; without this switch its first looks would never be confirmed, so it turns on with or after
   this one.
 - `verify.document_owner` (`document-owner.ts`, version 1, 2026-10-15, #1455) ends every learning
@@ -627,9 +664,10 @@ Darwin owns verification and classification.
   15 min", "per half hour"), `category` (`HOURLY_EXEMPT_KEYS`: monthly maintenance, minimum balance,
   dormant, continuous OD, paper statement, NSF, overdraft, returned item), `period_word` (the name
   also says monthly, annual, daily...) and `stated_period`. "24 hour", "within 48 hours", "after
-  hours" and "1 hour photo" never match. `HOURLY_FREQUENCY_LIVE` is false: the pass only reports
-  (step detail `hourly_frequency_check`: `would_set`, `would_set_by_frequency`, `exempt_by_reason`,
-  samples). Switched on by PR after James has seen the whole-table count, the live row and its
+  hours" and "1 hour photo" never match. `HOURLY_FREQUENCY_LIVE` is on (James's yes 2026-10-16
+  03:37 UTC, on a whole-table count of 830 to set: 825 with no frequency, 4 `per_item`, 1
+  `per_occurrence`; 17 exempt). Off, the pass only reports (step detail `hourly_frequency_check`:
+  `would_set`, `would_set_by_frequency`, `exempt_by_reason`, samples). On, the live row and its
   verified row take `hourly` guarded on the old value, each change is logged to `pipeline_feedback`
   (check `darwin.hourly_frequency_check`, evidence `from`/`to`, so it reverses), and a
   `darwin.hourly_frequency_set` event lists them. Whole-table dry run: a verify run with
@@ -661,10 +699,11 @@ Darwin owns verification and classification.
   (kept on purpose; fee-stats drops them from medians) and always pass. Every verify/classify step
   reads the next `NON_DEPOSIT_BATCH` (2,000) live fees after a cursor on the run ledger (the
   `darwin.non_deposit_document` event's `next_after_id`, 0 at the end of a pass); an
-  institution-scoped run leaves the cursor alone. `NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE` is false: the
-  pass only reports (step detail `non_deposit_document_check`: `would_take_down`, `by_kind`,
-  `kept_deposit_category`, `documents`, `institutions`, samples of both with the document address). Switched on by PR after James
-  has seen the whole-table count and a sample, a match goes through the shared 12-hour second look
+  institution-scoped run leaves the cursor alone. `NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE` is on (James's
+  yes 2026-10-16 03:37 UTC, on a whole-table count of 92 lending or card fees on 42 documents at 36
+  institutions). Off, the pass only reports (step detail `non_deposit_document_check`: `would_take_down`, `by_kind`,
+  `kept_deposit_category`, `documents`, `institutions`, samples of both with the document address). On,
+  a match goes through the shared 12-hour second look
   (check `darwin.non_deposit_document`; fees that pass clear a pending flag) and is archived on its
   second failure (rolled back with `non_deposit_document: <kind> #<doc>`, batch
   `darwin-non-deposit-<run>`, the verified row rejected with the `non_deposit_document` flag, never
@@ -697,8 +736,9 @@ Darwin owns verification and classification.
   "debit card cash advance", "coin appraisal" and "Mortgage payment at teller". Same switch as v1. `brokerage_document` counts every deposit-category fee on a
   brokerage, wealth or investing document (U.S. Bank's brokerage pages: wire, "Research", returned
   check, stop payment, overnight check, IRA fees; the taxonomy has no brokerage category): those come
-  down only when `BROKERAGE_DOCUMENT_TAKEDOWN_LIVE` is on as well (false, and it stays off when the
-  main switch goes on: James's call on a count); until then they pass and clear any pending flag.
+  down only when `BROKERAGE_DOCUMENT_TAKEDOWN_LIVE` is on as well (its own switch, James's call on a
+  count: on since 2026-10-16, 7 live U.S. Bank brokerage-page fees on 4 documents); with it off they
+  pass and clear any pending flag.
   Step detail adds `by_rule`, `brokerage_document`, `kept_generic_on_rate_page`,
   `brokerage_switch_live`, `samples_lending_wording` and `samples_brokerage_document`. Read-only
   SQL: `nonDepositCountSql()` (counts by kind and verdict), `nonDepositSamplesSql()` (by document)
@@ -706,6 +746,37 @@ Darwin owns verification and classification.
   the fee fixtures in `darwin/non-deposit-document-check.fixtures.ts` crossed with the URL fixtures
   on a local Postgres 16 (UTF8). The `documents` and `judged` CTEs are `MATERIALIZED` (the
   reviewer's prod-size run went from over 5 minutes to about 1 second with the same output).
+- One printed line, two reads (`line-conflict-check.ts`, #1440). James's catalog review (Oct 15)
+  found live fees sharing institution, name, amount and source address under two categories (1st
+  Summit's "Prepaid Card" $5 as document reproduction and gift card purchase) or one category with
+  two frequencies (Abound's safe deposit boxes, per item and annual). Hamilton's exact collapse and
+  publish-time refusal partition by category and keep conflicting frequency classes apart, so
+  neither reaches them. Every verify step reads every such line (one grouped read; an
+  institution-scoped run reads that bank's) and keeps one reading (`lineConflictVerdict`): for two
+  categories, the guard's re-file into another category of the line (`refile`), else the only
+  category the guard does not refuse (`guard`), else the category the model gives at least 0.95
+  while disputing the others (`model`; never on a line with loan origination, other lending fee
+  or late payment on it, whose borders the taxonomy has not settled, and never on a name that opens
+  as a clause, "No contents (e.g. check) included in the ATM"; a name saying "foreign" on a line
+  filed as a non-network ATM fee and an international or foreign-transaction fee is undecided
+  before any step); for two frequencies, the frequency
+  the schedule line states for the price (`line`; not from a line with a rate on it, and a per-item
+  reading never beats a period category's period). Kept apart, never retired: rows stating
+  different audiences (`audiences`), a name joining two fees outside its notes that the guard
+  accepts under each guarded category ("Money order/Cashier check fee"), a name with an NSF word and
+  an overdraft word on an NSF/overdraft line, or a name whose parts are each the model's pick for a
+  different category of the line ("Charge-Back Fee Check Printing Fee") (`joint_line`), and anything
+  else (`undecided`). Each step reports (detail `line_conflict_check`: `by_kind`, `by_basis`,
+  `by_exempt`, `would_retire`, samples with the model's scores). `LINE_CONFLICT_TAKEDOWN_LIVE` is
+  true (switched on Oct 16, James 04:53 UTC: "Retire wrong copy"; `live: false` reports only): a
+  retired row goes through the
+  shared second look (`darwin.line_conflict`) and is archived on its second failure with `one line,
+  two reads: kept #<id> (<kind>, <basis>: <reading>)` while the kept row is still live, its
+  verified row rejected with `one_line_two_reads`, never deleted, and a
+  `darwin.line_conflict_takedown` event lists them. `lineConflictCountSql()` counts the lines for
+  someone with prod access. Dry run on Oct 16 (117 lines, 236 live rows): 30 rows retired (22 by
+  the model, 8 by the line), 69 undecided, 18 joint lines; re-counted at switch-on (04:57 UTC,
+  run 7161): 29 (22 by the model, 7 by the line), 70 undecided, 18 joint lines.
 - Released-fee category re-check (`release-repair.ts`, the repair half of #1367; decision
   2026-10-15, "Darwin re-checks every live fee against today's rules"). Until PR #1468 the release
   check passed "." as the category pattern, so every fee the release published before then went live
@@ -767,7 +838,9 @@ Darwin owns verification and classification.
   twin on that same document is selected once more.
 - Darwin decides each verified fee's audience (#1059; James, Oct 13). A label Knox read on the
   fee's own line stands. A fee Knox left `unknown` takes Knox's context suggestion
-  (`knox/audience-context.ts`, via `darwin/audience.ts`), in this order: the schedule's address,
+  (`knox/audience-context.ts`, via `darwin/audience.ts`), in this order: the fee's own name
+  (`nameAudience`: a name that lists both sides is both; a product, an exception clause or a
+  business day names no audience, #1626), the schedule's address,
   then the section heading above the fee's line, then its title, a schedule that prices nothing
   for businesses (consumer), or a schedule that also prices business items and does not limit
   the fee (both). In a schedule that also prices business items, a heading for all accounts
@@ -789,7 +862,7 @@ Darwin owns verification and classification.
   - `off`: the tick queues one dry run a day over a sample of documents (md5 order by day) that
     counts decisions by audience and evidence source, and writes nothing.
   - `dry_run_full` (shipped, the gate before live): the same cursor chain as live over every
-    document, one batch per tick, key chain `darwin:audience-relabel:dry:v1:after:<cursor>`,
+    document, one batch per tick, key chain `darwin:audience-relabel:dry:v2:after:<cursor>`,
     writing nothing but each batch's counts. The last batch adds the chain's totals to its detail
     (`dry_run_totals`) and writes an `audience_relabel.dry_run_totals` event. Live waits until the
     totals show unknown at most 10%, and consumer, both and business each within about 5 points
@@ -1141,7 +1214,7 @@ fails a PR that changes one of these constants without updating its line here (#
 
 | Constant | Strategy | Version | File |
 |---|---|---|---|
-| `AUDIENCE_RELABEL_VERSION` | `darwin.audience_relabel` | v1 | `darwin/audience-relabel.ts` |
+| `AUDIENCE_RELABEL_VERSION` | `darwin.audience_relabel` | v2 | `darwin/audience-relabel.ts` |
 | `DARWIN_ADJUDICATE_STRATEGY` | `verify.adjudicate` | v2 | `darwin/adjudicate.ts` |
 | `DARWIN_CATEGORY_MODEL_STRATEGY` | `verify.category_model` | v1 | `darwin/category-model.ts` |
 | `DARWIN_PEER_STRATEGY` | `verify.peer_range` | v4 | `darwin/peer-checks.ts` |
@@ -1151,10 +1224,11 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_RELEASE_REVIEW_STRATEGY` | `verify.release_review` | v17 | `darwin/release-review.ts` |
 | `DARWIN_SCHEDULE_REFILE_STRATEGY` | `verify.schedule_refile` | v1 | `darwin/schedule-refile.ts` |
 | `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v1 | `darwin/verdict-score.ts` |
-| `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v4 | `darwin/verified-recheck.ts` |
+| `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v5 | `darwin/verified-recheck.ts` |
 | `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v6 | `darwin/live-fragment-check.ts` |
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v1 | `darwin/hourly-frequency-check.ts` |
 | `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v2 | `darwin/non-deposit-document-check.ts` |
+| `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v1 | `darwin/line-conflict-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |
 | `DARWIN_SOURCE_CHECK_VERSION` | — | v2 | `darwin/verify.ts` |

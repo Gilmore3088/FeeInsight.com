@@ -76,10 +76,35 @@ describe("feeDisplayName", () => {
 
 describe("fee-name helpers stay pure (#1483)", () => {
   it("import no agent, database or crypto code, so public pages can use them", async () => {
-    const { readFileSync } = await import("node:fs");
-    for (const file of ["src/lib/fee-display-name.ts", "src/lib/fee-name-fragments.ts", "src/lib/coverage-labels.ts"]) {
-      const source = readFileSync(file, "utf8");
-      expect(source, file).not.toMatch(/from\s+["'](?:@\/lib\/agents|@\/lib\/data-store|node:)/);
+    const { existsSync, readFileSync } = await import("node:fs");
+    const { dirname, join, normalize } = await import("node:path");
+    // Follow every import, relative or "@/", through the files it reaches (#1586): a check of
+    // direct "@/lib/agents" imports alone misses "../agents/x" or a helper that reads the database.
+    const resolve = (from: string, spec: string): string | null => {
+      const base = spec.startsWith("@/") ? join("src", spec.slice(2)) : spec.startsWith(".") ? join(dirname(from), spec) : null;
+      if (!base) return null;
+      for (const candidate of [base, `${base}.ts`, `${base}.tsx`, join(base, "index.ts")]) {
+        if (/\.tsx?$/.test(candidate) && existsSync(candidate)) return normalize(candidate);
+      }
+      return null;
+    };
+    const IMPORT = /(?:^|\n)\s*(?:import|export)\b[^;]*?from\s+["']([^"']+)["']|import\(\s*["']([^"']+)["']\s*\)|(?:^|\n)\s*import\s+["']([^"']+)["']/g;
+    const BANNED_PACKAGE = /^(?:node:|crypto$|fs$|path$|postgres$|@supabase\/)/;
+    const seen = new Set<string>();
+    const queue = ["src/lib/fee-display-name.ts", "src/lib/fee-name-fragments.ts", "src/lib/coverage-labels.ts"];
+    while (queue.length > 0) {
+      const file = queue.shift() as string;
+      if (seen.has(file)) continue;
+      seen.add(file);
+      expect(file, "reached an agent or database module").not.toMatch(/^src\/lib\/(?:agents|data-store)\//);
+      for (const m of readFileSync(file, "utf8").matchAll(IMPORT)) {
+        const spec = m[1] ?? m[2] ?? m[3];
+        expect(spec, `${file} imports ${spec}`).not.toMatch(BANNED_PACKAGE);
+        const next = resolve(file, spec);
+        if (next) queue.push(next);
+      }
     }
+    // The walk reached past the three entry files (fee-taxonomy, fee-fold).
+    expect(seen.size).toBeGreaterThan(3);
   });
 });

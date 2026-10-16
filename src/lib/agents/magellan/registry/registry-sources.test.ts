@@ -137,6 +137,36 @@ describe("identity matching", () => {
     expect(matchCompany("FMS Inc.", idx)).toMatchObject({ status: "needs_review" });
   });
 
+  it("sends a non-bank company that matched a small bank, or matched only after its generic words were stripped, to review (v5)", () => {
+    const bank = (id: number, name: string, assets: number, via: "institution_name" | "holding_company_name" = "institution_name") =>
+      ({ id, name, holdingCompanyRssd: null, assetSize: assets, via });
+    const idx: IdentityIndex = {
+      byName: new Map([
+        ["PROGRESSIVE", [bank(3580, "Progressive National Bank", 300_000)]],
+        ["NELNET", [bank(500, "Nelnet Bank", 1_500_000)]],
+        ["AMERICA", [bank(1, "Bank of America, National Association", 2_500_000_000)]],
+        ["SANTANDER", [bank(2, "Santander Bank, N.A.", 100_000_000)]],
+        ["FIFTH THIRD", [bank(3, "Fifth Third Bank, National Association", 200_000_000)]],
+        ["GOLDMAN SACHS", [bank(4, "Goldman Sachs Bank USA", 500_000_000)]],
+      ]),
+      byHoldingName: new Map([
+        ["BERKSHIRE FINANCIAL SERVICES", [bank(1630, "Lee Bank", 591_159, "holding_company_name")]],
+        ["SYNCHRONY FINANCIAL", [bank(29, "Synchrony Bank", 115_217_000, "holding_company_name")]],
+      ]),
+    };
+    const cfpb = { rejectNonBankNames: true };
+    for (const name of ["Progressive Financial Services, Inc.", "Nelnet, Inc.", "Financial Services of America", "Berkshire Financial Services, LLC"]) {
+      expect(matchCompany(name, idx, cfpb)).toMatchObject({ status: "needs_review", method: "non_bank_name_review" });
+    }
+    // A $10B bank whose name leads the company's name, or whose parent's full name it is, keeps its complaints.
+    expect(matchCompany("SANTANDER HOLDINGS USA, INC.", idx, cfpb)).toMatchObject({ institutionId: 2, status: "accepted" });
+    expect(matchCompany("FIFTH THIRD FINANCIAL CORPORATION", idx, cfpb)).toMatchObject({ institutionId: 3, status: "accepted" });
+    expect(matchCompany("SYNCHRONY FINANCIAL", idx, cfpb)).toMatchObject({ institutionId: 29, status: "accepted", method: "holding_company_full_name" });
+    // A bank word keeps the old rule; the SEC matcher never downgrades this way.
+    expect(matchCompany("GOLDMAN SACHS BANK USA", idx, cfpb)).toMatchObject({ institutionId: 4, status: "accepted" });
+    expect(matchCompany("Progressive Financial Services, Inc.", idx)).toMatchObject({ status: "accepted" });
+  });
+
   it("records a person's decision and re-queues the source's past partitions only on accept", async () => {
     const accept = createDb([["UPDATE institution_identity_links", () => [{ id: 1 }]]]);
     await expect(decideIdentityLink(accept.db, { linkType: "cfpb_company", externalKey: "COMMERCE BANK", decision: "accepted", verifiedBy: "james" })).resolves.toBe(true);
