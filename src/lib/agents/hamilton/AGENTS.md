@@ -813,7 +813,8 @@ run gets one `hamilton.taxonomy_fold.hand_refile` event naming every row and its
 ## Source Link Repair
 
 `hamilton/source-link.ts` (#1342), step `source-link-repair`, started by hand from Atlas details
-(dry run first; `runSourceLinkRepair`). Never runs on its own. A live fee with no source URL at
+(dry run first; `runSourceLinkRepair`). Its takedowns never run on their own; its re-source
+pass (below) also runs in every publish step. A live fee with no source URL at
 any tier takes its own document's `document_url` when that document is the institution's and,
 when the fee carries a stored file key, the same file; the verified row takes it too. Any other
 is taken down with `rolled_back_reason = 'source_link_untraceable: <why>'`. Each change writes
@@ -827,6 +828,27 @@ the error text and rolls its transaction back (#1349); it never reads as a compl
 links. Frequency fill does the same in its own `frequency-fill` step. Inside the publish step it
 runs in a savepoint (`fillFrequenciesInPublish`): a failed write undoes the fill's writes, the
 publish carries on, and the error is kept in `frequency_fill_error` and a `step.warning` event.
+
+**Re-source first (v2, `resourceSourceLinks`, `SOURCE_LINK_RESOURCE_ON`).** Before a fee comes
+down as untraceable, and for every fee already down as `source_link_untraceable`, Hamilton looks
+for another stored document of the fee's own institution that is not replaced by a newer copy,
+has an http(s) link, whose newest text is `completed`, and that states the fee's name at its
+amount under the shared `checkFeeAgainstSource`. Found: the raw row takes that document
+(`source_document_id`, and its URL when it has none), the published and verified rows take its
+URL when they have none, and a fee that was down comes back live (rollback fields cleared,
+queued for the source check with `markRestoredForSourceCheck`), unless the same name and price
+is already live. Not found: nothing changes, and the repair takes it down as before. Only an
+imported fee is re-sourced (a Knox fee answers to the document Knox read it from), and a
+document that already holds another imported row of the same name is skipped (the import's
+unique key). The pass runs in every publish step (in a savepoint: a failed write is rolled back,
+kept in the step's `source_link_resource.error`, and publishing carries on) and first in the
+hand-started repair (where a failed write fails the step). Each change writes one
+`pipeline_feedback` row (check `hamilton.source_link`, evidence `action` `resourced` or
+`restored`, `from_source_document_id`, `to_source_document_id`, `previous_reason`) and the run
+gets a `hamilton.source_link_resource` event. Reverse one by setting the raw row's
+`source_document_id` back to `from_source_document_id`, the URLs back to NULL, and for a restore
+`rolled_back_reason` back to `previous_reason` with `rolled_back_at` set. Roll the pass back by
+setting `SOURCE_LINK_RESOURCE_ON` to false.
 
 ## Source Check
 
@@ -924,7 +946,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `REFRESH_COPY_STRATEGY` | `hamilton.refresh_copy` | v2 | `hamilton/refresh-copy.ts` |
 | `RULES_RECHECK_STRATEGY` | `hamilton.rules_recheck` | v4 | `hamilton/rules-recheck.ts` |
 | `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v16 | `hamilton/source-check.ts` |
-| `SOURCE_LINK_VERSION` | `hamilton.source_link` | v1 | `hamilton/source-link.ts` |
+| `SOURCE_LINK_VERSION` | `hamilton.source_link` | v2 | `hamilton/source-link.ts` |
 | `FEE_DEPENDENCE_VERSION` | — | v1 | `hamilton/studies/fee-dependence.ts` |
 | `PRICE_STUDY_VERSION` | — | v1 | `hamilton/studies/index.ts` |
 | `INFERRED_VOLUME_VERSION` | — | v2 | `hamilton/studies/inferred-volume.ts` |
