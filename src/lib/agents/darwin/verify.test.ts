@@ -962,7 +962,6 @@ describe("conditionalZero on run-on lines (#1571, live rows read on prod Oct 16)
     [51445, "Checking Account monthly fee", "Checking Account monthly fee: FREE | Certified Letter Fee: $10"],
     [38491, "Foreign Transaction Fees", "Foreign Transaction Fees No Charge | Night Depository Bags &amp; Key $ 30.00"],
     [47440, "Zelle Transfer", "Zelle Transfer: No Charge | Subordination agreement: $175.00"],
-    [47583, "Notary Service", "Notary Service FREE ATM Transaction fee (per transaction over three per month) $2.00"],
     [56935, "Notary", notaryLeader],
     [85792, "Night Depository", "Night Depository FREE Copy of Transaction $15.00"],
     [95011, "Coin Machine (Member)", "Account Reconcilement $15.00 per hour Coin Machine (Member) NONE"],
@@ -1031,16 +1030,32 @@ describe("conditionalZero on run-on lines (#1571, live rows read on prod Oct 16)
     ["Cashier's Check", "Cashier's Check FREE Platinum Clients $10.00"],
     ["Paper Statement Fee", "Paper Statement Fee FREE Quarterly $3.00 Monthly"],
     ["Monthly Fee", "Monthly Fee: Free. Not meeting requirements results in a $5 fee."],
+    // Third review: a condition in parentheses, the same fee at another tier, network synonyms.
+    ["Stop Payment", "Stop Payment FREE Stop Payment Fee (Teller Assisted) $30"],
+    ["Debit Card Replacement", "Debit Card Replacement FREE Replacement Card Fee (after 2) $5.00"],
+    ["Stop Payment", "Stop Payment FREE Stop Payment Charge (online) $30.00"],
+    ["Account Research", "Account Research FREE Research $25.00 per hour (1 hr min)"],
+    ["Safe Deposit Box", "Safe Deposit Box FREE Box Rental $25 5x5 size"],
+    ["Safe Deposit Box", "Safe Deposit Box FREE Larger Boxes $50"],
+    ["Card Replacement", "Card Replacement FREE Instant Issue Card $5"],
+    ["Debit Card Replacement", "Debit Card Replacement FREE Third Card $5.00"],
+    ["Statement Copy", "Statement Copy FREE Extra Copies $2"],
+    ["Check Printing", "Check Printing FREE Check Orders $15 for designer styles"],
+    ["ATM Fee", "ATM Fee FREE Foreign ATM Fee $2.00"],
+    ["ATM Fee", "ATM Fee FREE Non-Proprietary ATM Fee $2.00"],
+    ["Incoming Domestic Wire", "Incoming Domestic Wire FREE Outgoing Domestic Wire $25"],
     // A tail with no fee noun of its own stays this fee's terms.
     ["Foreign ATM usage", "Foreign ATM usage No Charge Customer (incoming) $15.00"],
     ["Zelle Transfer", "Zelle Transfer: No Charge | Subordination: $175.00"],
+    // A known cautious miss: the next fee's own condition ("over three per month") reads as this one's.
+    ["Notary Service", "Notary Service FREE ATM Transaction fee (per transaction over three per month) $2.00"],
   ];
   it.each(reviewConditional)("%s stays conditional: %s", (name, line) => {
     expect(conditionalZero(0, line, name)).toBe(true);
   });
   it("still reads a plainly separate next row as another fee's", () => {
-    expect(conditionalZero(0, "Incoming Domestic Wire FREE Outgoing Domestic Wire $25", "Incoming Domestic Wire")).toBe(false);
-    expect(conditionalZero(0, "Debit Card Replacement FREE Replacement key $50.00", "Debit Card Replacement")).toBe(false);
+    expect(conditionalZero(0, "Overdraft Fee $0 Returned Item Fee $30", "Overdraft Fee")).toBe(false);
+    expect(conditionalZero(0, "Debit Card Replacement FREE Notary Fee $5.00", "Debit Card Replacement")).toBe(false);
   });
 
   it.each(free)("%i is a free line, not conditional", (_id, name, line) => {

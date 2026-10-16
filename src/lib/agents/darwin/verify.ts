@@ -198,13 +198,13 @@ function bestPart(parts: string[], tokens: string[]): number {
 // statements: $5", "Without Direct Deposit: $10", "Each Additional Item: $30"; review of #1571).
 const LABELLED_CELL = /^\s*([A-Za-z][^$\d:|]*\s[^$\d:|]*[A-Za-z]):\s*(?:\$|\d|free\b|no charge\b|none\b)/i;
 
-function labelledCell(cell: string): boolean {
+function labelledCell(cell: string, feeName: string | null | undefined): boolean {
   const label = LABELLED_CELL.exec(cell)?.[1];
-  return label != null && namesOtherFee(label);
+  return label != null && namesOtherFee(label, feeName);
 }
 
-function isPriceCell(cell: string | undefined): boolean {
-  return cell != null && PRICE_CELL.test(cell) && (cell.match(/[a-z]+/gi)?.length ?? 0) <= 4 && !labelledCell(cell);
+function isPriceCell(cell: string | undefined, feeName?: string | null): boolean {
+  return cell != null && PRICE_CELL.test(cell) && (cell.match(/[a-z]+/gi)?.length ?? 0) <= 4 && !labelledCell(cell, feeName);
 }
 
 // A $0 price as a schedule prints it.
@@ -213,14 +213,24 @@ const ZERO_PRICE = /\bfree\b|\bno charge\b|\bn\/c\b|\bnone\b|\bno fee\b|\$\s*0(?
 // channel, a statement or account type, a member or age tier, a requirement ("FREE Balance under
 // $500 $5", "No Charge Online $30 In Branch", "FREE Premium Checking $5.00 All Others"; review of
 // #1571).
-const CONDITION_WORDS = /\b(?:bal|avg|average|balances?|e-?statements?|statements?|paper|members?|online|branch(?:es)?|phone|mobile|telephone|teller|person|others?|everyone|requires?|required|requirements?|senior|seniors|students?|ages?|youth|adults?|military|premium|platinum|gold|relationship|standard|basic|club|regular|clients?|months?|monthly|quarterly|years?|days?|thereafter|otherwise|waived?|minimum|maximum|deposits?|with|without|if|when|unless|after|first|second|each|additional|subsequent|over|under|below|above|less|more|fewer|via|network|non-network|out-of-network|written|self-service|assisted|tier|level|consumers?|business|personal|qualif\w*|enroll\w*|limit|charged|pays?|applies|apply|will|not)\b/i;
+const CONDITION_WORDS = /\b(?:bal|avg|average|balances?|e-?statements?|statements?|paper|members?|online|branch(?:es)?|phone|mobile|telephone|teller|person|others?|everyone|requires?|required|requirements?|senior|seniors|students?|ages?|youth|adults?|military|premium|platinum|gold|relationship|standard|basic|club|regular|clients?|months?|monthly|quarterly|years?|days?|thereafter|otherwise|waived?|minimum|maximum|deposits?|with|without|if|when|unless|after|first|second|each|additional|subsequent|over|under|below|above|less|more|fewer|via|network|non-network|out-of-network|written|self-service|assisted|tier|level|consumers?|business|personal|qualif\w*|enroll\w*|limit|charged|pays?|applies|apply|will|not|foreign|non-?proprietary|proprietary|surcharge|extra|third|rush|instant|expedited|larger|designer|duplicate|hr|min)\b/i;
 // A noun that names a fee of its own ("Replacement key", "Copy of Transaction", "ATM Transaction
 // fee"): only a label carrying one is read as the next row.
 const FEE_NOUN = /\b(?:fees?|charges?|cards?|checks?|wires?|cop(?:y|ies)|keys?|depository|box(?:es)?|orders?|stamps?|notary|research|printing|reconcil\w*|agreements?)\b/i;
 
-/** True when a label names another fee: a fee noun and no word that states a condition. */
-function namesOtherFee(label: string): boolean {
-  return FEE_NOUN.test(label) && !CONDITION_WORDS.test(label);
+const GENERIC_LABEL_WORDS = new Set(["fee", "fees", "charge", "charges", "service", "services", "per", "each", "item", "items", "the", "and", "for"]);
+
+/**
+ * True when a label names another fee: a fee noun, no word that states a condition (parentheses
+ * included: "Stop Payment Fee (Teller Assisted) $30"), and no specific word of this fee's own name,
+ * since "Safe Deposit Box FREE Larger Boxes $50" or "Card Replacement FREE Third Card $5" price the
+ * same fee at another tier (third review of #1571).
+ */
+function namesOtherFee(label: string, feeName: string | null | undefined): boolean {
+  if (!FEE_NOUN.test(label.replace(/\([^)]*\)/g, " ")) || CONDITION_WORDS.test(label)) return false;
+  const stem = (word: string) => word.replace(/(?:es|s)$/, "");
+  const own = new Set(words(feeName ?? "").map((entry) => stem(entry.word)).filter((word) => word.length >= 3 && !GENERIC_LABEL_WORDS.has(word)));
+  return !words(label).some((entry) => own.has(stem(entry.word)));
 }
 const PRICE_AT = /\$\s*\d|\b\d[\d,]*\.\d{2}\b/;
 
@@ -231,13 +241,12 @@ const PRICE_AT = /\$\s*\d|\b\d[\d,]*\.\d{2}\b/;
  * ("FREE Replacement key $50.00", "FREE ATM Transaction fee (per transaction ...) $2.00").
  * Anything else stays the fee's own terms, so an unclear tail keeps the $0 conditional. Pure.
  */
-function nextRow(tail: string): boolean {
+function nextRow(tail: string, feeName: string | null | undefined): boolean {
   const text = tail.replace(/^[\s.;,:*\u2013\u2014-]+/, "");
   if (!/^[A-Z]/.test(text)) return false;
   const price = PRICE_AT.exec(text);
   if (!price) return false;
-  const label = text.slice(0, price.index).replace(/\([^)]*\)/g, " ");
-  if (!namesOtherFee(label)) return false;
+  if (!namesOtherFee(text.slice(0, price.index), feeName)) return false;
   const after = text.slice(price.index + price[0].length).replace(/^[\d,.]*/, "").slice(0, 40);
   return !CONDITION_WORDS.test(after.split(PRICE_AT)[0]);
 }
@@ -294,7 +303,7 @@ function ownRow(cell: string, feeName: string | null | undefined): string | null
   // e-Statements)"): nothing before the name is dropped.
   if (!zero || /^\s*\$?\s*\d/.test(group)) return group;
   const zeroEnd = run.end + zero.index + zero[0].length;
-  return nextRow(group.slice(zeroEnd)) ? group.slice(run.start, zeroEnd) : group.slice(run.start);
+  return nextRow(group.slice(zeroEnd), feeName) ? group.slice(run.start, zeroEnd) : group.slice(run.start);
 }
 
 /**
@@ -317,9 +326,9 @@ export function ownSegment(line: string, feeName: string | null | undefined): st
   // No cell carries a word of the name: the line's prices cannot be this fee's.
   if (best < 0) return "";
   const next = cells[best + 1];
-  const comparisonRow = isPriceCell(next) && isPriceCell(cells[best + 2]);
+  const comparisonRow = isPriceCell(next, feeName) && isPriceCell(cells[best + 2], feeName);
   const own = ownPart(cells[best], feeName, tokens);
-  return isPriceCell(next) && !comparisonRow ? `${own} | ${next}` : own;
+  return isPriceCell(next, feeName) && !comparisonRow ? `${own} | ${next}` : own;
 }
 
 /**
