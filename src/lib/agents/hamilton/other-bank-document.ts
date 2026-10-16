@@ -102,14 +102,37 @@ function truthy(value: boolean | string | null | undefined): boolean {
 }
 
 /**
- * Which live fees a host read covers: all (`false`), one institution (`true`, `$1` is its id),
- * or a list of fees (`"fees"`, `$1` is a bigint[] of `fee_published_id`, Deming's fresh audit).
+ * Which fees a host read covers: all live fees (`false`), one institution's (`true`, `$1` is its
+ * id), a list of live fees (`"fees"`, `$1` is a bigint[] of `fee_published_id`, Deming's fresh
+ * audit), or verified rows about to publish (`"verified"`, `$1` is a bigint[] of
+ * `fee_verified_id`). #1069: the publish step's refusal reads the same rule as this sweep. A
+ * verified row reads with a null `fee_published_id`.
  */
-export type HostReadScope = boolean | "fees";
+export type HostReadScope = boolean | "fees" | "verified";
 
 function scopeFilter(scope: HostReadScope): string {
   if (scope === "fees") return "AND fp.fee_published_id = ANY($1::bigint[])";
   return scope ? "AND fp.institution_id = $1" : "";
+}
+
+/** The rows a host read judges: live fees, or (scope `"verified"`) verified rows about to publish. */
+function hostReadRowsSql(scope: HostReadScope): string {
+  if (scope === "verified") {
+    return `
+      SELECT NULL::bigint AS fee_published_id, fv.fee_verified_id, fv.institution_id, fr.source_document_id
+        FROM verified_fee_observations fv
+        JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+       WHERE fv.fee_verified_id = ANY($1::bigint[])
+         AND fr.source_document_id IS NOT NULL`;
+  }
+  return `
+      SELECT fp.fee_published_id, fv.fee_verified_id, fp.institution_id, fr.source_document_id
+        FROM published_fee_records fp
+        JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+        JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+       WHERE fp.rolled_back_at IS NULL
+         AND fr.source_document_id IS NOT NULL
+         ${scopeFilter(scope)}`;
 }
 
 /** The live-fee read: every fee whose document is on another institution's own website. */
@@ -117,14 +140,7 @@ export function otherBankFeesSql(scope: HostReadScope): string {
   // Hosts are worked out once per table (CTEs), then matched by equality: one host pattern per
   // row inside a join ran past a minute on prod.
   return `
-    WITH live AS (
-      SELECT fp.fee_published_id, fv.fee_verified_id, fp.institution_id, fr.source_document_id
-        FROM published_fee_records fp
-        JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
-        JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
-       WHERE fp.rolled_back_at IS NULL
-         AND fr.source_document_id IS NOT NULL
-         ${scopeFilter(scope)}
+    WITH live AS (${hostReadRowsSql(scope)}
     ),
     docs AS (
       SELECT sd.id, sd.document_url, ${hostSql("sd.document_url")} AS host
@@ -161,7 +177,7 @@ export function otherBankFeesSql(scope: HostReadScope): string {
          WHERE s.host = m.document_host AND s.id <> m.institution_id
          ORDER BY s.id LIMIT 1
       ) o ON true
-     ORDER BY m.fee_published_id`;
+     ORDER BY m.fee_published_id, m.fee_verified_id`;
 }
 
 /**
@@ -173,14 +189,7 @@ export function unconfirmedHostFeesSql(scope: HostReadScope): string {
   const label = (host: string) =>
     `split_part(${host}, '.', greatest(array_length(string_to_array(${host}, '.'), 1) - 1, 1))`;
   return `
-    WITH live AS (
-      SELECT fp.fee_published_id, fv.fee_verified_id, fp.institution_id, fr.source_document_id
-        FROM published_fee_records fp
-        JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
-        JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
-       WHERE fp.rolled_back_at IS NULL
-         AND fr.source_document_id IS NOT NULL
-         ${scopeFilter(scope)}
+    WITH live AS (${hostReadRowsSql(scope)}
     ),
     docs AS (
       SELECT sd.id, sd.document_url, ${hostSql("sd.document_url")} AS host
@@ -233,7 +242,7 @@ export function unconfirmedHostFeesSql(scope: HostReadScope): string {
              )
            ) AS names_own_bank
       FROM matched m
-     ORDER BY m.fee_published_id`;
+     ORDER BY m.fee_published_id, m.fee_verified_id`;
 }
 
 /**
