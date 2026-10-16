@@ -16,16 +16,16 @@ function mockDb(due: number) {
 }
 
 describe("account type hold feedback repair (#1100)", () => {
-  it("is off by default and only counts", async () => {
+  it("is off by default and then reads nothing", async () => {
     expect(ACCOUNT_TYPE_HOLD_FEEDBACK_REPAIR_ON).toBe(false);
-    const { db, calls } = mockDb(1422);
+    const { db, calls } = mockDb(1428);
     const result = await repairAccountTypeHoldFeedback(db, { runId: 1, dryRun: false });
-    expect(result).toMatchObject({ on: false, due: 1422, zeroed: 0 });
-    expect(calls.some((text) => text.includes("UPDATE"))).toBe(false);
+    expect(result).toMatchObject({ on: false, due: null, zeroed: 0 });
+    expect(calls).toHaveLength(0);
   });
 
   it("counts in a dry run even when on", async () => {
-    const { db, calls } = mockDb(1422);
+    const { db, calls } = mockDb(1428);
     const result = await repairAccountTypeHoldFeedback(db, { runId: 1, dryRun: true, on: true });
     expect(result.zeroed).toBe(0);
     expect(calls.some((text) => text.includes("UPDATE"))).toBe(false);

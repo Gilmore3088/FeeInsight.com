@@ -109,31 +109,36 @@ function planned(row: HoldRow, accountType: AccountType): PlannedHold {
 /**
  * Fees the hold leaves live although their stored product reads as another kind of account,
  * because a hand check against the bank's own text found the product wrong. One line per fee, keyed
- * by the institution, the fee's name and its price, so a new copy of the same fee (a new published
- * or verified row from a re-read) is left live too; read as untyped (checking or unknown).
+ * by the institution, the fee's name, its price and the stored document the hand check read, so a
+ * new published or verified row from a re-read of that document is left live too, and the same name
+ * and price on another document (another account's list) is not; read as untyped.
  */
 export interface KeepLiveFee {
   institutionId: number;
   feeName: string;
   amount: number;
+  /** The stored document (`source_documents.id`) the hand check read the fee on. */
+  sourceDocumentId: number;
   reason: string;
 }
 
 export const ACCOUNT_TYPE_KEEP_LIVE: readonly KeepLiveFee[] = [
   // Ontario Public Employees FCU (fee 28834): the $5 "Monthly Service Fee" row sits under "SHARE
   // DRAFT FEES"; the v55 product "REGULAR SHARE FEES" is the heading of the share section above it.
-  { institutionId: 5800, feeName: "Monthly Service Fee", amount: 5, reason: "a share draft (checking) fee; the stored product \"REGULAR SHARE FEES\" is wrong" },
+  { institutionId: 5800, feeName: "Monthly Service Fee", amount: 5, sourceDocumentId: 3633, reason: "a share draft (checking) fee; the stored product \"REGULAR SHARE FEES\" is wrong" },
 ];
 
-const keepLiveKey = (institutionId: number, feeName: string, amount: number) =>
-  `${institutionId}|${feeName.toLowerCase().replace(/\s+/g, " ").trim()}|${Math.round(amount * 100)}`;
-const KEEP_LIVE_KEYS = new Set(ACCOUNT_TYPE_KEEP_LIVE.map((fee) => keepLiveKey(fee.institutionId, fee.feeName, fee.amount)));
+const keepLiveKey = (institutionId: number, feeName: string, amount: number, sourceDocumentId: number) =>
+  `${institutionId}|${feeName.toLowerCase().replace(/\s+/g, " ").trim()}|${Math.round(amount * 100)}|${sourceDocumentId}`;
+const KEEP_LIVE_KEYS = new Set(
+  ACCOUNT_TYPE_KEEP_LIVE.map((fee) => keepLiveKey(fee.institutionId, fee.feeName, fee.amount, fee.sourceDocumentId)),
+);
 
 /** Pure: whether a row is a listed fee the hold leaves live. */
-export function isKeptLive(row: Pick<HoldRow, "institution_id" | "fee_name" | "amount">): boolean {
+export function isKeptLive(row: Pick<HoldRow, "institution_id" | "fee_name" | "amount" | "source_document_id">): boolean {
   const amount = amountOf(row.amount);
-  if (amount == null || !row.fee_name) return false;
-  return KEEP_LIVE_KEYS.has(keepLiveKey(Number(row.institution_id), row.fee_name, amount));
+  if (amount == null || !row.fee_name || row.source_document_id == null) return false;
+  return KEEP_LIVE_KEYS.has(keepLiveKey(Number(row.institution_id), row.fee_name, amount, Number(row.source_document_id)));
 }
 
 /** Pure: the typed rows of a list, each with its type. */
@@ -178,7 +183,7 @@ export async function applyAccountTypeHold(
   try {
     live = await inSavepoint(db, (scope) => scope<HoldRow[]>`
       SELECT fp.fee_published_id, fp.lineage_ref AS fee_verified_id, fp.institution_id, fp.fee_name, fr.product_name, fp.amount,
-             inst.institution_name
+             fr.source_document_id, inst.institution_name
         FROM published_fee_records fp
         JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -190,7 +195,7 @@ export async function applyAccountTypeHold(
        LIMIT ${ACCOUNT_TYPE_HOLD_LIMIT}
     `);
     waiting = await inSavepoint(db, (scope) => scope<HoldRow[]>`
-      SELECT fv.fee_verified_id, fv.institution_id, fv.fee_name, fr.product_name, fv.amount, inst.institution_name
+      SELECT fv.fee_verified_id, fv.institution_id, fv.fee_name, fr.product_name, fv.amount, fr.source_document_id, inst.institution_name
         FROM verified_fee_observations fv
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
         LEFT JOIN institution_sources inst ON inst.id = fv.institution_id
