@@ -1,6 +1,7 @@
 "use client";
 
 import Form from "next/form";
+import { FeePicker } from "./fee-picker";
 
 export interface FeeOption {
   key: string;
@@ -35,23 +36,29 @@ export function ExplorerControls({
   const submit = (e: React.ChangeEvent<HTMLSelectElement>) => e.currentTarget.form?.requestSubmit();
   return (
     <Form action="/fees" scroll={false} className="grid gap-3 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end">
-      <label className="block">
-        <span className="text-[13px] font-medium text-ink">Fee</span>
-        <select name="fee" defaultValue={fee} onChange={submit} className={SELECT}>
-          {families.map((family) => (
-            <optgroup key={family} label={family}>
-              {fees
-                .filter((f) => f.family === family)
-                .map((f) => (
-                  <option key={f.key} value={f.key}>
-                    {f.label}
-                    {f.locked ? " (full access)" : ""}
-                  </option>
-                ))}
-            </optgroup>
-          ))}
-        </select>
-      </label>
+      <div className="block">
+        <span id="fee-picker-label" className="text-[13px] font-medium text-ink">
+          Fee
+        </span>
+        {/* Without JavaScript the plain list does the picking; it comes first, so its value wins. */}
+        <noscript>
+          <select name="fee" defaultValue={fee} aria-labelledby="fee-picker-label" className={SELECT}>
+            {families.map((family) => (
+              <optgroup key={family} label={family}>
+                {fees
+                  .filter((f) => f.family === family)
+                  .map((f) => (
+                    <option key={f.key} value={f.key}>
+                      {f.label}
+                      {f.locked ? " (full access)" : ""}
+                    </option>
+                  ))}
+              </optgroup>
+            ))}
+          </select>
+        </noscript>
+        <FeePicker fees={fees} fee={fee} labelId="fee-picker-label" />
+      </div>
       <label className="block">
         <span className="text-[13px] font-medium text-ink">Headquartered in</span>
         <select name="state" defaultValue={state ?? ""} onChange={submit} className={SELECT}>

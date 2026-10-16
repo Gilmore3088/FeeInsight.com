@@ -193,9 +193,14 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
           state={sel.state}
           charter={sel.charter}
         />
-        <p className="mt-2 text-[12px] text-ink-muted">
-          A state counts the institutions headquartered there, wherever their branches are.
-        </p>
+        <div className="mt-2 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 text-[12px] text-ink-muted">
+          <p>A state counts the institutions headquartered there, wherever their branches are.</p>
+          {!full && (
+            <Link href="/subscribe#pro" className={LINK}>
+              Full access: all {TAXONOMY_COUNT} categories, peer filters and exports
+            </Link>
+          )}
+        </div>
 
         {locked ? (
           <div className="mt-6 rounded-2xl border border-border bg-surface-0 p-5 sm:p-6">
@@ -257,6 +262,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
                     median={stats.median_amount}
                     medianBin={medianBin}
                     hrefFor={(i) => selectionHref(sel, { bin: String(i) }, "institutions")}
+                    allHref={selectionHref(sel, { bin: "all" }, "institutions")}
                   />
                 )}
               </figure>
@@ -283,7 +289,9 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
                         : `${listed.length.toLocaleString()} institutions`}
                     </h3>
                     <p className="mt-1 text-[13px] text-ink-muted">
-                      Pick a bar to see who charges that price. Open a row for the fee in its schedule&apos;s words.
+                      Where an institution lists several prices for this fee, one per account or condition, it counts once, at the{" "}
+                      {HIGHEST_TIER_CATEGORIES.has(sel.fee) ? "highest" : "middle"} of them. Open a row to see every price and the
+                      account it applies to.
                       {activeBin != null ? (
                         <>
                           {" "}
@@ -465,12 +473,14 @@ function Histogram({
   median,
   medianBin,
   hrefFor,
+  allHref,
 }: {
   buckets: ReturnType<typeof histogram>;
   activeBin: number | null;
   median: number | null;
   medianBin: number;
   hrefFor: (i: number) => string;
+  allHref: string;
 }) {
   const top = Math.max(...buckets.map((b) => b.total), 1);
   // Every other label when the bars are many, so none truncates; each bar's full range stays its name.
@@ -535,6 +545,11 @@ function Histogram({
             <span className="inline-block h-3 w-3 rounded-sm bg-ink" aria-hidden="true" /> Selected:{" "}
             <span className="font-semibold text-ink">{buckets[activeBin].label}</span>
           </span>
+        )}
+        {activeBin != null && (
+          <Link href={allHref} scroll={false} className={LINK}>
+            All prices
+          </Link>
         )}
       </p>
     </div>
