@@ -1,50 +1,33 @@
-import { describe, expect, it } from "vitest";
-import type { FeeCategorySummary } from "@/lib/data-store/fees";
-import { scenarioCost } from "./scenarios";
+import { describe, it, expect } from "vitest";
+import { atmCost, overdraftDayCost, scenarioCost } from "./scenarios";
 
-function s(fee_category: string, median_amount: number | null): FeeCategorySummary {
-  return {
-    fee_category,
-    institution_count: 10,
-    total_observations: 10,
-    min_amount: 0,
-    max_amount: 50,
-    avg_amount: 30,
-    median_amount,
-    p25_amount: 25,
-    p75_amount: 35,
-    bank_count: 5,
-    cu_count: 5,
-    zero_count: 0,
-    bank_median_amount: null,
-    cu_median_amount: null,
-  };
-}
+const policy = { perItem: 35, maxPerDay: 3, extended: 10, transfer: 12 };
 
-const summaries = [s("overdraft", 30), s("od_daily_cap", 125), s("continuous_od", 25)];
-
-describe("cost scenarios", () => {
-  it("adds the charges at their medians", () => {
-    const cost = scenarioCost(
-      { title: "Overdrawn a week", charges: [{ category: "overdraft", count: 1 }, { category: "continuous_od", count: 1 }] },
-      summaries,
-    );
-    expect(cost.total).toBe(55);
-    expect(cost.capped).toBe(55);
-    expect(cost.binds).toBe(false);
+describe("cost scenarios under one illustrative policy", () => {
+  it("multiplies the per-item fee and applies the daily limit", () => {
+    expect(scenarioCost(policy, { title: "One", items: 1 })).toMatchObject({ total: 35, limited: false });
+    expect(scenarioCost(policy, { title: "Six", items: 6 })).toMatchObject({ total: 105, limited: true });
   });
 
-  it("applies a daily limit only when the total passes it", () => {
-    const four = scenarioCost({ title: "Four", charges: [{ category: "overdraft", count: 4 }], capCategory: "od_daily_cap" }, summaries);
-    expect(four).toMatchObject({ total: 120, cap: 125, capped: 120, binds: false });
-    const six = scenarioCost({ title: "Six", charges: [{ category: "overdraft", count: 6 }], capCategory: "od_daily_cap" }, summaries);
-    expect(six).toMatchObject({ total: 180, cap: 125, capped: 125, binds: true });
+  it("adds the extended charge and prices a transfer on its own", () => {
+    expect(scenarioCost(policy, { title: "Negative", items: 1, extended: true }).total).toBe(45);
+    expect(scenarioCost(policy, { title: "Transfer", items: 1, transfer: true }).total).toBe(12);
   });
 
-  it("shows no total rather than a wrong one when a median is missing", () => {
-    const cost = scenarioCost({ title: "Missing", charges: [{ category: "nsf", count: 1 }] }, summaries);
-    expect(cost.total).toBeNull();
-    expect(cost.capped).toBeNull();
-    expect(cost.parts).toEqual([]);
+  it("charges every item when there is no daily limit", () => {
+    expect(scenarioCost({ ...policy, maxPerDay: null }, { title: "Six", items: 6 }).total).toBe(210);
+  });
+});
+
+describe("reader calculators", () => {
+  it("caps a day's overdraft fees at the account's limit", () => {
+    expect(overdraftDayCost(35, 5, 3)).toEqual({ charged: 3, total: 105 });
+    expect(overdraftDayCost(35, 5, null)).toEqual({ charged: 5, total: 175 });
+  });
+
+  it("nets a monthly ATM rebate and never goes below zero", () => {
+    expect(atmCost(4, 3, 2, 0)).toEqual({ monthly: 20, yearly: 240 });
+    expect(atmCost(4, 3, 2, 10)).toEqual({ monthly: 10, yearly: 120 });
+    expect(atmCost(2, 3, 2, 15)).toEqual({ monthly: 0, yearly: 0 });
   });
 });

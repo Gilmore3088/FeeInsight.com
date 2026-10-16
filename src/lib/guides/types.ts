@@ -83,10 +83,30 @@ export type GuideBlock =
       outcomes: GuideOutcome[];
     }
   | {
-      /** Costs computed from live medians, so no single feature is declared most important. */
+      /**
+       * Costs under one stated, illustrative account policy. The policy is labeled as no
+       * institution's terms, so medians of different policies are never combined into one account.
+       */
       type: "scenarios";
       intro?: string;
+      policy: IllustrativePolicy;
       scenarios: CostScenario[];
+    }
+  | {
+      /** A reader enters their own account's terms; the defaults are the illustrative policy's. */
+      type: "calculator";
+      kind: "overdraft" | "atm";
+      intro?: string;
+      /** Starting values, labeled as illustrative in the form. */
+      defaults: Record<string, number>;
+    }
+  | {
+      /** An illustrative breakdown of one transaction: each amount is labeled as illustrative. */
+      type: "breakdown";
+      title: string;
+      items: { label: string; amount: number; sign?: "plus" | "minus" }[];
+      totalLabel: string;
+      note: string;
     }
   | {
       /** The live distribution of one category, placed where the guide discusses prices. */
@@ -104,7 +124,7 @@ export type GuideBlock =
       type: "policy_table";
       rows: PolicyFeature[];
       /** When set, the reader can compare institutions' published lines on these features. */
-      compare?: { intro: string };
+      compare?: { intro: string; set?: "overdraft" | "atm" };
     }
   | {
       /** Complaint themes as context, never a ranking. */
@@ -130,12 +150,26 @@ export type GuideOutcome = {
   after: string;
 }
 
+/** An account policy used only to illustrate arithmetic; every guide labels it as no institution's terms. */
+export type IllustrativePolicy = {
+  /** Fee per overdraft or returned item. */
+  perItem: number;
+  /** Most fees charged in one day, or null for no limit. */
+  maxPerDay: number | null;
+  /** A one-time extra charge when the balance stays negative, or null. */
+  extended: number | null;
+  /** Fee for a transfer from a linked savings account, or null. */
+  transfer: number | null;
+}
+
 export type CostScenario = {
   title: string;
-  /** Each charge is a category's live median, times how many times it applies. */
-  charges: { category: string; count: number }[];
-  /** A category whose median is applied as a daily limit on the total, when one is published. */
-  capCategory?: string;
+  /** Items that would each draw a fee on the same day. */
+  items: number;
+  /** The balance stays negative long enough for the extended charge. */
+  extended?: boolean;
+  /** A linked savings transfer covers the shortfall instead. */
+  transfer?: boolean;
   note?: string;
 }
 
@@ -144,6 +178,11 @@ export type PolicyFeature = {
   question: string;
   /** The Index category that answers it, or none when the Index does not track it yet. */
   category?: string;
+  /**
+   * Show how many institutions publish it instead of a median, when the published values do not
+   * measure the same thing (daily limits cover different fees).
+   */
+  countOnly?: boolean;
 }
 
 export type RegulatoryStatus = "proposed" | "effective" | "blocked" | "withdrawn" | "repealed";
@@ -193,6 +232,11 @@ export interface Guide {
   methodologyHref?: string;
   /** Ranked related guides. Empty means "derive from shared family". */
   relatedSlugs?: string[];
+  /**
+   * Practical links that lead the sidebar (e.g. where to find a fee-free ATM). When set, the
+   * national benchmarks move below the guide's contents.
+   */
+  helpLinks?: { title: string; links: { label: string; href: string; note?: string }[] };
 
   /**
    * True when the guide makes regulatory claims (Reg E, Reg DD, CFPB). These cannot be

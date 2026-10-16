@@ -165,26 +165,20 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "scenarios",
-            intro: "Your cost depends on the fee, how often it applies, any daily limit and any charge for staying negative. At the national medians:",
+            intro: "The arithmetic below uses one illustrative account so its terms fit together. The national median overdraft fee is {{overdraft.median}}.",
+            policy: { perItem: 35, maxPerDay: 3, extended: 10, transfer: 12 },
             scenarios: [
-              { title: "One overdraft, repaid the next day", charges: [{ category: "overdraft", count: 1 }] },
-              { title: "Four payments overdraw on the same day", charges: [{ category: "overdraft", count: 4 }], capCategory: "od_daily_cap" },
-              { title: "Six payments overdraw on the same day", charges: [{ category: "overdraft", count: 6 }], capCategory: "od_daily_cap" },
-              {
-                title: "One overdraft, still negative a week later",
-                charges: [{ category: "overdraft", count: 1 }, { category: "continuous_od", count: 1 }],
-                note: "Some institutions repeat the extended charge daily.",
-              },
-              {
-                title: "A linked savings transfer covers it",
-                charges: [{ category: "od_protection_transfer", count: 1 }],
-                note: "Only when the savings account holds enough.",
-              },
+              { title: "One overdraft, repaid the next day", items: 1 },
+              { title: "Four payments overdraw on the same day", items: 4 },
+              { title: "One overdraft, still negative a week later", items: 1, extended: true, note: "Some accounts repeat the extended charge." },
+              { title: "A linked savings transfer covers it", items: 1, transfer: true, note: "Only when the savings account holds enough." },
             ],
           },
           {
-            type: "paragraph",
-            text: "The median daily limit, {{od_daily_cap.median}}, comes from the {{od_daily_cap.institutions}} institutions that publish one in dollars.",
+            type: "calculator",
+            kind: "overdraft",
+            intro: "Now use your own account's terms from its fee schedule:",
+            defaults: { perItem: 35, items: 4, maxPerDay: 3 },
           },
           { type: "cap_scope", category: "od_daily_cap" },
           {
@@ -208,7 +202,7 @@ export const CONSUMER_GUIDES: Guide[] = [
             rows: [
               { feature: "Overdraft fee", question: "What do I pay when the institution covers a shortfall?", category: "overdraft" },
               { feature: "NSF fee", question: "What happens if it returns my payment unpaid?", category: "nsf" },
-              { feature: "Daily limit", question: "How many fees, or how much, can I be charged in one day?", category: "od_daily_cap" },
+              { feature: "Daily limit", question: "How many fees, or how much, can I be charged in one day?", category: "od_daily_cap", countOnly: true },
               { feature: "Grace period", question: "Can I restore my balance before a fee applies?" },
               { feature: "Small-shortfall exemption", question: "How far below zero can I go before a fee applies?" },
               { feature: "Small-payment exemption", question: "Are small payments exempt from the fee?" },
@@ -356,7 +350,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "The median daily limit, {{od_daily_cap.median}}, comes from the {{od_daily_cap.institutions}} institutions that publish one in dollars.",
+            text: "{{od_daily_cap.institutions}} institutions publish a daily limit in dollars. A limit can cover NSF fees, overdraft fees or both, so ask what yours covers.",
           },
           { type: "cap_scope", category: "od_daily_cap" },
           {
@@ -499,99 +493,202 @@ export const CONSUMER_GUIDES: Guide[] = [
     title: "ATM Fees",
     seoTitle: "ATM Fees by Bank: What Out-of-Network Withdrawals Really Cost",
     description:
-      "Why one ATM withdrawal can carry two separate fees, what banks and credit unions charge, and how to stop paying to reach your own money.",
+      "Why one ATM withdrawal can carry two fees, how to find cash without paying them, and how to compare accounts' ATM policies.",
     primaryCategory: "atm_non_network",
-    relatedCategories: ["card_foreign_txn"],
+    relatedCategories: ["card_foreign_txn", "monthly_maintenance"],
     family: "ATM & Card",
     featured: true,
     relatedSlugs: ["foreign-transaction-fees", "monthly-maintenance-fees", "overdraft-fees"],
+    helpLinks: {
+      title: "Find a fee-free ATM",
+      links: [
+        { label: "Your bank or credit union's ATM locator", href: "#find-cash", note: "In its app or on its website. It shows the machines that cost you nothing." },
+        { label: "Allpoint network", href: "https://www.allpointnetwork.com", note: "Surcharge-free for customers of member institutions." },
+        { label: "MoneyPass network", href: "https://www.moneypass.com", note: "Surcharge-free for customers of member institutions." },
+        { label: "CO-OP network", href: "https://co-opcreditunions.org", note: "Used by many credit unions for ATMs and shared branches." },
+      ],
+    },
     sections: [
       {
-        id: "what-it-is",
-        heading: "What is an ATM fee?",
+        id: "start-here",
+        heading: "Start here",
+        blocks: [
+          {
+            type: "paths",
+            paths: [
+              { question: "I was charged twice", answer: "Why one withdrawal can carry two fees, and when to dispute one.", href: "#charged-twice" },
+              { question: "Find cheaper cash access", answer: "Fee-free machines, cash back and rebates, with their conditions.", href: "#find-cash" },
+              { question: "Compare account ATM policies", answer: "Published ATM fees side by side, and what to ask about rebates and networks.", href: "#compare-your-bank" },
+            ],
+          },
+        ],
+      },
+      {
+        id: "charged-twice",
+        heading: "Why was I charged twice?",
         blocks: [
           {
             type: "paragraph",
-            text: "When you use an ATM that does not belong to your bank's network, you can be charged twice for one withdrawal.",
+            text: "At an ATM outside your bank's network, one withdrawal can carry two fees from two different companies.",
+          },
+          {
+            type: "breakdown",
+            title: "One out-of-network withdrawal",
+            items: [
+              { label: "Cash you take out", amount: 40 },
+              { label: "Machine owner's fee, shown on screen", amount: 3, sign: "plus" },
+              { label: "Your bank's out-of-network fee, on your statement", amount: 2, sign: "plus" },
+            ],
+            totalLabel: "Taken from your account",
+            note: "Illustrative amounts, not any institution's prices. Your receipt shows the first fee and your statement shows the second.",
           },
           {
             type: "list",
             items: [
-              "The surcharge comes from whoever owns the machine. You see it on screen and have to accept it before the cash comes out.",
-              "The out-of-network fee comes from your own bank, for the same transaction. You usually do not see this one until your statement.",
+              "The machine owner's fee appears on screen, and you accept it before the cash comes out.",
+              "Your own bank's fee is set in your account terms. It is not shown at the machine, so it often appears days later.",
+              "Some banks also charge for a balance inquiry at another bank's machine.",
             ],
           },
           {
-            type: "paragraph",
-            text: "The second fee is the one people miss. You approved a $3 surcharge, and a few days later a second charge from your own bank appears against the same withdrawal.",
-          },
-        ],
-      },
-      {
-        id: "what-it-costs",
-        heading: "How much does it cost?",
-        blocks: [
-          {
-            type: "paragraph",
-            text: "Across {{atm_non_network.institutions}} institutions, the median out-of-network ATM fee charged by your own bank is {{atm_non_network.median}}, with most falling between {{atm_non_network.p25}} and {{atm_non_network.p75}}. Add the machine owner's surcharge on top, and a single withdrawal costs both fees together.",
-          },
-          {
-            type: "paragraph",
-            text: "Using an ATM abroad adds another layer: the median flat charge for using an ATM or a card abroad is {{card_foreign_txn.median}}, and that is before any currency conversion charge on the same transaction.",
-          },
-          {
             type: "callout",
-            tone: "warning",
-            text: "Some banks also charge for a balance inquiry at an out-of-network machine, to be told a number you can see for free in your app. Check your balance before you leave, not at the ATM.",
-          },
-          {
-            type: "paragraph",
-            text: "The cost is worst on small withdrawals. Taking out $20 and paying $5 in combined fees is a 25% charge on your own money.",
-          },
-          {
-            type: "paragraph",
-            text: "That percentage framing is the useful one, because a flat few dollars is easy to overlook. At $5 a withdrawal, twice a week, the cost reaches $520 over a year.",
-          },
-          {
-            type: "paragraph",
-            text: "Some banks include a small number of out-of-network withdrawals per month before charging, and others rebate a capped dollar amount. Both are worth finding in your fee schedule, because they change the calculation entirely: a fee you get four free passes on every month is not really a fee for most people.",
+            tone: "regulatory",
+            title: "When to dispute a charge",
+            text: "Under Regulation E, the machine must tell you about its fee and let you cancel before you are charged. If no notice appeared, or the machine took the money but gave you no cash, report it to your bank within 60 days of the statement that shows it. The bank must investigate.",
+            source: { label: "12 CFR 1005.16 and 1005.11", url: "https://www.ecfr.gov/current/title-12/chapter-X/part-1005/section-1005.16" },
           },
         ],
       },
       {
-        id: "who-charges-what",
-        heading: "Who charges the most, and who charges the least?",
-        blocks: [
-          {
-            type: "paragraph",
-            text: "Many credit unions belong to shared branching and surcharge-free networks, so members can use machines far beyond their own branches without a surcharge. A small credit union can offer a larger fee-free ATM footprint than its branch count suggests.",
-          },
-          {
-            type: "paragraph",
-            text: "Some online-only banks, having no branches of their own, rebate other banks' ATM fees up to a monthly limit. The limit and the rules are in the account agreement, so read them before counting on it.",
-          },
-          {
-            type: "comparison",
-            category: "atm_non_network",
-            dimension: "charter",
-            caption: "Out-of-network ATM fee by institution type",
-          },
-        ],
-      },
-      {
-        id: "how-to-avoid",
-        heading: "How to avoid or reduce this fee",
+        id: "find-cash",
+        heading: "Find cheaper cash access",
         blocks: [
           {
             type: "list",
             ordered: true,
             items: [
-              "Get cash back at a supermarket or pharmacy checkout. Many retailers offer it free, though some charge, so check the screen before you confirm.",
-              "Ask your institution which shared network it belongs to, and open its ATM locator. You may have more free machines nearby than you thought.",
-              "Take out more, less often. If you cannot avoid a fee, one larger withdrawal beats three small ones. The fee is flat, so the percentage falls as the amount rises.",
-              "Never accept the ATM's currency conversion offer abroad. Choosing to be charged in dollars hands the machine owner the exchange rate. Always pick the local currency.",
-              "Check your balance in the app, never at the machine, if your bank charges for inquiries.",
-              "If you use cash regularly, compare accounts on ATM access and rebates. For a frequent cash user this can outweigh other fee differences between two accounts.",
+              "Open your institution's ATM locator in its app or on its website before you go. Its own machines and its partners' cost you nothing.",
+              "Ask which surcharge-free network your institution belongs to, such as Allpoint, MoneyPass or the CO-OP network, and search that network's locator.",
+              "Ask for cash back at a store checkout. Some stores require a purchase, set a limit or charge a fee, so check the screen before you confirm.",
+              "Check your balance in the app, not at another bank's machine.",
+              "If you must pay, withdraw more at once. Each fee is flat, so one withdrawal costs less than three.",
+              "Abroad, choose to be charged in the local currency when the machine offers dollars.",
+            ],
+          },
+          {
+            type: "paragraph",
+            text: "If your account reimburses ATM fees, keep your receipts and check your statement. A reimbursement can have a monthly limit and may be credited later.",
+          },
+        ],
+      },
+      {
+        id: "what-it-costs",
+        heading: "What it costs over a month",
+        blocks: [
+          {
+            type: "paragraph",
+            text: "Across {{atm_non_network.institutions}} institutions, the median fee a bank charges its own customer for using another bank's machine is {{atm_non_network.median}}; most fall between {{atm_non_network.p25}} and {{atm_non_network.p75}}. The machine owner's fee comes on top.",
+          },
+          {
+            type: "distribution",
+            category: "atm_non_network",
+            caption: "Your bank's out-of-network ATM fee, one value per institution",
+          },
+          {
+            type: "calculator",
+            kind: "atm",
+            intro: "Enter your own numbers from your receipts and your account terms:",
+            defaults: { withdrawals: 4, operatorFee: 3, bankFee: 2, rebate: 0 },
+          },
+        ],
+      },
+      {
+        id: "banks-versus-credit-unions",
+        heading: "Banks versus credit unions",
+        blocks: [
+          {
+            type: "comparison",
+            category: "atm_non_network",
+            dimension: "charter",
+            caption: "Out-of-network ATM fee, banks versus credit unions",
+          },
+          {
+            type: "paragraph",
+            text: "These medians compare published prices, not accounts. Many credit unions belong to shared networks, and some banks reimburse other banks' fees, so the account you hold decides what you pay.",
+          },
+        ],
+      },
+      {
+        id: "abroad",
+        heading: "Using an ATM abroad",
+        blocks: [
+          {
+            type: "paragraph",
+            text: "A withdrawal abroad can carry up to four separate charges. Check each one in your account terms:",
+          },
+          {
+            type: "list",
+            items: [
+              "Your bank's international ATM fee, a flat amount per withdrawal.",
+              "A foreign transaction fee, usually a percentage of the amount.",
+              "The machine owner's fee, shown on screen.",
+              "The exchange rate. If you accept the machine's offer to charge you in dollars, the machine owner sets the rate.",
+            ],
+          },
+          {
+            type: "paragraph",
+            text: "The foreign transaction guide covers the percentage and the exchange rate in detail.",
+          },
+        ],
+      },
+      {
+        id: "compare-your-bank",
+        heading: "Compare account ATM policies",
+        blocks: [
+          {
+            type: "paragraph",
+            text: "The fee is only part of an ATM policy. Check each of these for the account you hold or plan to open. Where we do not track a feature, we say so.",
+          },
+          {
+            type: "policy_table",
+            rows: [
+              { feature: "Out-of-network fee", question: "What does my bank charge when I use another bank's machine?", category: "atm_non_network" },
+              { feature: "Machine owner's fee reimbursed", question: "Does the account pay back the fee the machine owner charges?" },
+              { feature: "Monthly limit", question: "How many withdrawals, or how many dollars of fees, are free or reimbursed each month?" },
+              { feature: "Networks", question: "Which surcharge-free networks can I use?" },
+              { feature: "Account requirements", question: "Does the ATM benefit need a minimum balance, direct deposit or a premium account?" },
+              { feature: "International ATM fee", question: "What does a withdrawal abroad cost, before any percentage?", category: "card_foreign_txn" },
+              { feature: "Monthly maintenance", question: "What does the account cost each month?", category: "monthly_maintenance" },
+            ],
+            compare: {
+              intro: "Compare up to three institutions' published ATM lines: the account each line names, its conditions, the source and the date we read it.",
+              set: "atm",
+            },
+          },
+          {
+            type: "benchmark",
+            category: "atm_non_network",
+            rows: [
+              { condition: "$0, or fees reimbursed", meaning: "Best available" },
+              { condition: "{{atm_non_network.p25}} or less", meaning: "In the lowest-priced quarter" },
+              { condition: "Around {{atm_non_network.median}}", meaning: "Right at the national median" },
+              { condition: "More than {{atm_non_network.p75}}", meaning: "In the highest-priced quarter" },
+            ],
+          },
+        ],
+      },
+      {
+        id: "questions-to-ask",
+        heading: "Questions to ask your bank",
+        blocks: [
+          {
+            type: "list",
+            items: [
+              "Which ATMs can I use without any fee, and which network are you part of?",
+              "Do you reimburse other machine owners' fees? Up to how much, and how many times a month?",
+              "Does the reimbursement need a certain account, balance or direct deposit?",
+              "Do you charge for a balance inquiry at another bank's machine?",
+              "What do you charge for a withdrawal abroad, and is there a percentage on top?",
             ],
           },
         ],
@@ -601,48 +698,13 @@ export const CONSUMER_GUIDES: Guide[] = [
         heading: "What regulators say",
         blocks: [
           {
-            type: "callout",
-            tone: "regulatory",
-            text: "Under Regulation E, an ATM operator must tell you a surcharge is coming and let you cancel the transaction before it is charged. If cash came out without you seeing a fee notice, that is worth disputing.",
-            source: { label: "12 CFR 1005.16", url: "https://www.ecfr.gov/current/title-12/chapter-X/part-1005/section-1005.16" },
-          },
-          {
             type: "paragraph",
-            text: "That protection covers the machine owner's surcharge. It does not cover your own bank's out-of-network fee, which is disclosed in your account agreement under Regulation DD rather than at the point of withdrawal. This is why the second fee catches people out: only one of the two has to be shown to you at the moment you decide.",
+            text: "The machine owner's fee must be disclosed at the machine. Your own bank's fee is disclosed in your account terms under Regulation DD instead, which is why the second fee can come as a surprise.",
             source: { label: "12 CFR part 1030", url: "https://www.ecfr.gov/current/title-12/chapter-X/part-1030" },
           },
           {
             type: "paragraph",
-            text: "There is no federal cap on either fee. Both are set by the institution, which is why the range between the cheapest and most expensive is so wide.",
-          },
-          {
-            type: "paragraph",
-            text: "If a machine took the money from your account but did not give you the cash, that is an error under Regulation E. Report it to your bank within 60 days of the statement that shows it, and the bank must investigate and correct it.",
-            source: { label: "12 CFR 1005.11", url: "https://www.ecfr.gov/current/title-12/chapter-X/part-1005/section-1005.11" },
-          },
-        ],
-      },
-      {
-        id: "compare-your-bank",
-        heading: "Compare your own bank",
-        blocks: [
-          {
-            type: "paragraph",
-            text: "Find the ATM lines in your fee schedule. There are usually two or three of them, and the one that matters most is your own bank's out-of-network charge.",
-          },
-          {
-            type: "benchmark",
-            category: "atm_non_network",
-            rows: [
-              { condition: "$0, or fees rebated", meaning: "Best available" },
-              { condition: "{{atm_non_network.p25}} or less", meaning: "In the lowest-priced quarter" },
-              { condition: "Around {{atm_non_network.median}}", meaning: "Right at the national median" },
-              { condition: "More than {{atm_non_network.p75}}", meaning: "In the highest-priced quarter" },
-            ],
-          },
-          {
-            type: "paragraph",
-            text: "Then ask the question the fee schedule will not answer: how many free machines can you actually reach from home and from work? A slightly higher fee you never trigger beats a lower fee you pay weekly. Open your bank's ATM locator and check both places before deciding. For a regular cash user, the map can tell you more than the price list.",
+            text: "There is no federal cap on either fee. Each institution and machine owner sets its own.",
           },
         ],
       },

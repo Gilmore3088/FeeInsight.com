@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { AccountPolicy, PolicyLine } from "@/lib/data-store/overdraft-policies";
 import { formatAmount } from "@/lib/format";
+import { getDisplayName } from "@/lib/fee-taxonomy";
 
 export interface CompareFeature {
   feature: string;
@@ -51,25 +52,28 @@ function writeHash(ids: number[]) {
  * A feature the Index does not track, or a line a schedule does not list, says "ask"; it never
  * reads as "no protection".
  */
-export function AccountCompare({ features }: { features: CompareFeature[] }) {
+export function AccountCompare({ features, set = "overdraft" }: { features: CompareFeature[]; set?: "overdraft" | "atm" }) {
   const hash = useSyncExternalStore(subscribeHash, () => window.location.hash, () => "");
   const ids = useMemo(() => parseHash(hash), [hash]);
   const key = ids.join(",");
   const [loaded, setLoaded] = useState<{ key: string; policies: AccountPolicy[] }>({ key: "", policies: [] });
-  const loading = key !== "" && loaded.key !== key;
+  const loadKey = `${set}:${key}`;
+  const loading = key !== "" && loaded.key !== loadKey;
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<SearchHit[]>([]);
+  /** The account chosen in each column, by institution id; unset means the first account named. */
+  const [chosen, setChosen] = useState<Record<number, string>>({});
   const searching = query.trim().length >= 2;
 
   useEffect(() => {
     if (!key) return;
     const controller = new AbortController();
-    fetch(`/api/guides/account-policies?ids=${key}`, { signal: controller.signal })
+    fetch(`/api/guides/account-policies?ids=${key}&set=${set}`, { signal: controller.signal })
       .then((res) => (res.ok ? res.json() : { institutions: [] }))
-      .then((data) => setLoaded({ key, policies: data.institutions ?? [] }))
+      .then((data) => setLoaded({ key: loadKey, policies: data.institutions ?? [] }))
       .catch(() => {});
     return () => controller.abort();
-  }, [key]);
+  }, [key, set, loadKey]);
 
   useEffect(() => {
     const q = query.trim();
@@ -155,7 +159,15 @@ export function AccountCompare({ features }: { features: CompareFeature[] }) {
       {shown.length > 0 && (
         <div className={`mt-5 grid items-start gap-4 ${shown.length > 1 ? "md:grid-cols-2" : ""} ${shown.length > 2 ? "2xl:grid-cols-3" : ""}`}>
           {shown.map((p) => (
-            <InstitutionColumn key={p.institution_id} policy={p} features={features} onRemove={() => remove(p.institution_id)} />
+            <InstitutionColumn
+              key={p.institution_id}
+              policy={p}
+              features={features}
+              set={set}
+              account={chosen[p.institution_id] ?? p.accounts[0] ?? null}
+              onAccount={(a) => setChosen((c) => ({ ...c, [p.institution_id]: a }))}
+              onRemove={() => remove(p.institution_id)}
+            />
           ))}
         </div>
       )}
@@ -174,8 +186,27 @@ function access(p: AccountPolicy): string {
   return `${p.branch_count.toLocaleString()} ${p.branch_count === 1 ? "branch" : "branches"} in ${p.branch_states} ${p.branch_states === 1 ? "state" : "states"}.`;
 }
 
-function InstitutionColumn({ policy, features, onRemove }: { policy: AccountPolicy; features: CompareFeature[]; onRemove: () => void }) {
+function InstitutionColumn({
+  policy,
+  features,
+  set,
+  account,
+  onAccount,
+  onRemove,
+}: {
+  policy: AccountPolicy;
+  features: CompareFeature[];
+  set: "overdraft" | "atm";
+  account: string | null;
+  onAccount: (account: string) => void;
+  onRemove: () => void;
+}) {
   const cu = policy.charter_type === "credit_union";
+  // A line that names another account is not this account's fee; a line that names none comes
+  // from the general schedule and is shown with that caveat.
+  const applies = (l: PolicyLine) => l.status === "listed" && (!l.account || !account || l.account === account);
+  const verify = policy.lines.filter((l) => l.status === "verify");
+  const untracked = features.filter((f) => !f.category).map((f) => f.feature);
   return (
     <article className="rounded-xl border border-border bg-surface-0">
       <header className="border-b border-border px-4 py-3">
@@ -193,23 +224,64 @@ function InstitutionColumn({ policy, features, onRemove }: { policy: AccountPoli
           {policy.city || policy.state_code ? ". " : ""}
           {access(policy)}
         </p>
+        <div className="mt-3">
+          {policy.accounts.length > 1 ? (
+            <label className="block">
+              <span className="text-[12.5px] font-medium text-ink">Account</span>
+              <select
+                value={account ?? ""}
+                onChange={(e) => onAccount(e.target.value)}
+                className="mt-1 min-h-10 w-full rounded-lg border border-border bg-surface-0 px-3 text-[14px] text-ink"
+              >
+                {policy.accounts.map((a) => (
+                  <option key={a} value={a}>
+                    {a}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <p className="text-[12.5px] text-ink">
+              <span className="font-medium">Account:</span> {account ?? "the schedules we hold name no account"}
+            </p>
+          )}
+          <p className="mt-1 text-[12px] text-ink-muted">
+            Lines that name no account come from the general fee schedule. Ask whether each applies to {account ? "this account" : "the account you choose"}.
+          </p>
+        </div>
       </header>
       <dl className="divide-y divide-border">
-        {features.map((f) => (
+        {features.filter((f) => f.category).map((f) => (
           <div key={f.feature} className="px-4 py-3">
             <dt className="text-[13px] font-semibold text-ink">{f.feature}</dt>
             <dd className="mt-1">
-              <FeatureLines feature={f} lines={f.category ? policy.lines.filter((l) => l.category === f.category) : null} />
+              <FeatureLines feature={f} lines={policy.lines.filter((l) => l.category === f.category && applies(l))} />
             </dd>
           </div>
         ))}
       </dl>
-      <Complaints policy={policy} />
+      {untracked.length > 0 && (
+        <div className="border-t border-border px-4 py-3 text-[12.5px] text-ink-muted">
+          <span className="font-semibold text-ink">Not verified, ask the institution:</span> {untracked.join(", ").toLowerCase()}.
+        </div>
+      )}
+      {verify.length > 0 && (
+        <details className="border-t border-border px-4 py-3">
+          <summary className="min-h-9 cursor-pointer text-[13px] font-semibold text-ink">Needs verification ({verify.length})</summary>
+          <p className="mt-1 text-[12px] text-ink-muted">
+            We could not tie these lines to an account, or they read like a waiver rather than a price. Check them with the institution before relying on them.
+          </p>
+          <div className="mt-2">
+            <FeatureLines feature={{ feature: "", question: "", category: null }} lines={verify} showCategory />
+          </div>
+        </details>
+      )}
+      {set === "overdraft" && <Complaints policy={policy} />}
     </article>
   );
 }
 
-function FeatureLines({ feature, lines }: { feature: CompareFeature; lines: PolicyLine[] | null }) {
+function FeatureLines({ feature, lines, showCategory = false }: { feature: CompareFeature; lines: PolicyLine[] | null; showCategory?: boolean }) {
   if (lines === null) return <p className="text-[13px] text-ink-muted">Not verified. Ask the institution.</p>;
   if (lines.length === 0) {
     return <p className="text-[13px] text-ink-muted">Not listed in the schedule we hold. Ask the institution.</p>;
@@ -219,7 +291,11 @@ function FeatureLines({ feature, lines }: { feature: CompareFeature; lines: Poli
       {lines.map((l, i) => (
         <li key={i} className="text-[13px] leading-relaxed">
           <span className="flex items-baseline justify-between gap-3">
-            <span className="text-ink-soft">{l.fee_name}</span>
+            <span className="text-ink-soft">
+              {showCategory && <span className="block text-[11.5px] font-medium uppercase tracking-[0.06em] text-ink-muted">{getDisplayName(l.category)}</span>}
+              {l.fee_name}
+              {l.account && <span className="block text-[12px] text-ink-muted">Account: {l.account}</span>}
+            </span>
             <span className="shrink-0 font-semibold tabular-nums text-ink">{formatAmount(l.amount)}</span>
           </span>
           {l.amount === 0 && feature.category === "overdraft" && (
@@ -247,7 +323,7 @@ function FeatureLines({ feature, lines }: { feature: CompareFeature; lines: Poli
 
 function Complaints({ policy }: { policy: AccountPolicy }) {
   if (policy.complaints.length === 0) {
-    return <p className="border-t border-border px-4 py-3 text-[12px] text-ink-muted">We hold no CFPB complaint counts on overdraft or returned payments for this institution.</p>;
+    return <div className="border-t border-border px-4 py-3 text-[12px] text-ink-muted">We hold no CFPB complaint counts on overdraft or returned payments for this institution.</div>;
   }
   const years = `${policy.complaints[0].from_year} to ${policy.complaints[0].to_year}`;
   return (

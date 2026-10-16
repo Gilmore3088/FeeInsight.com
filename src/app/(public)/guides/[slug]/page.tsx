@@ -55,6 +55,14 @@ function withDistribution(sections: GuideSection[], category: string): GuideSect
   );
 }
 import { PRODUCT_NAME, SITE_URL } from "@/lib/constants";
+import { PAGE_HEADER } from "@/components/public/page-header";
+
+/**
+ * Categories whose single median misleads as a headline (James's guides review, Oct 16 2026):
+ * most foreign transaction fees are a percentage, which the flat figure leaves out, and published
+ * daily limits cover different fees, so their median describes no one account.
+ */
+const SIDEBAR_HIDDEN = new Set(["card_foreign_txn", "od_daily_cap"]);
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -152,6 +160,7 @@ export default async function GuidePage({ params }: PageProps) {
   // Editorial order — never the global sort by institution count.
   const summaryFor = new Map(allSummaries.map((s) => [s.fee_category, s]));
   const relevantFees = categories
+    .filter((c) => !SIDEBAR_HIDDEN.has(c))
     .map((c) => summaryFor.get(c))
     .filter((s): s is FeeCategorySummary => Boolean(s));
   const primarySummary = summaryFor.get(guide.primaryCategory);
@@ -209,6 +218,57 @@ export default async function GuidePage({ params }: PageProps) {
   const reviewDate = formatDate(guide.reviewedAt);
   const plain = (text: string) => resolveTokensToText(text, allSummaries);
 
+  // A guide with practical help links leads with them; national medians follow its contents.
+  const benchmarksBox = relevantFees.length > 0 && (
+                <div className="relative overflow-hidden rounded-xl border border-border bg-white/80 px-5 py-5 backdrop-blur-sm">
+                  <div
+                    className="absolute left-0 right-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-brick/30 to-transparent"
+                    aria-hidden="true"
+                  />
+                  <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-brick/60">
+                    Live National Benchmarks
+                  </p>
+                  <div className="mt-4 space-y-4">
+                    {relevantFees.map((fee) => (
+                      <div
+                        key={fee.fee_category}
+                        className="border-b border-border/60 pb-3.5 last:border-0 last:pb-0"
+                      >
+                        <Link
+                          href={`/fees/${fee.fee_category}`}
+                          className="text-[13px] font-semibold text-ink transition-colors hover:text-brick"
+                          style={{ fontFamily: "var(--fi-font-sans)" }}
+                        >
+                          {getDisplayName(fee.fee_category)}
+                        </Link>
+                        <div className="mt-1.5 flex items-baseline gap-2">
+                          <span
+                            className="text-[22px] font-semibold tracking-tight tabular-nums text-ink"
+                            style={{
+                              fontFamily: "var(--fi-font-mono)",
+                            }}
+                          >
+                            {formatAmount(fee.median_amount)}
+                            <UnstatedAudienceMark show={medianHasUnstatedAudience(fee)} />
+                          </span>
+                          <span className="text-[10px] text-ink-muted">median</span>
+                        </div>
+                        <div className="mt-1 text-[11px] tabular-nums text-ink-muted">
+                          P25: {formatAmount(fee.p25_amount)} &middot; P75:{" "}
+                          {formatAmount(fee.p75_amount)}
+                        </div>
+                        <Link
+                          href={`/fees/${fee.fee_category}`}
+                          className="mt-2 inline-block rounded-full border border-border/60 bg-paper px-2.5 py-0.5 text-[10px] font-medium text-ink-muted no-underline transition-colors hover:border-brick/30 hover:text-brick"
+                        >
+                          Full analysis
+                        </Link>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+
   return (
     <div className="mx-auto max-w-page px-6 py-14">
       <BreadcrumbJsonLd
@@ -221,7 +281,7 @@ export default async function GuidePage({ params }: PageProps) {
 
       <nav
         aria-label="Breadcrumb"
-        className="sticky top-14 z-30 -mx-6 mb-8 flex items-center gap-2 bg-paper/95 px-6 py-2 text-[12px] text-ink-muted backdrop-blur-sm sm:static sm:mx-0 sm:bg-transparent sm:px-0 sm:py-0 sm:backdrop-blur-none"
+        className="sticky top-14 z-30 -mx-6 mb-8 flex items-center justify-center gap-2 bg-paper/95 px-6 py-2 text-[12px] text-ink-muted backdrop-blur-sm sm:static sm:mx-0 sm:bg-transparent sm:px-0 sm:py-0 sm:justify-start sm:backdrop-blur-none"
       >
         <Link href="/" className="transition-colors hover:text-ink">
           Home
@@ -239,8 +299,8 @@ export default async function GuidePage({ params }: PageProps) {
       </nav>
 
       {/* ── HERO ── */}
-      <div className="max-w-3xl">
-        <div className="mb-4 flex items-center gap-2">
+      <div className={`max-w-3xl ${PAGE_HEADER}`}>
+        <div className="mb-4 flex items-center justify-center gap-2 sm:justify-start">
           <span className="h-px w-8 bg-brick/40" aria-hidden="true" />
           <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
             Consumer Guide
@@ -254,11 +314,11 @@ export default async function GuidePage({ params }: PageProps) {
           {guide.title}
         </h1>
 
-        <p className="mt-4 text-[15px] leading-relaxed text-ink-muted">
+        <p className="mx-auto mt-4 max-w-[34rem] text-[15px] leading-relaxed text-ink-muted sm:mx-0 sm:max-w-none">
           {guide.description}
         </p>
 
-        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-muted">
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[12px] text-ink-muted sm:justify-start">
           <span>{guide.author}</span>
           {reviewDate && (
             <>
@@ -522,56 +582,26 @@ export default async function GuidePage({ params }: PageProps) {
 
             {/* ── SIDEBAR ── */}
             <aside className="space-y-5 xl:sticky xl:top-20 xl:self-start">
-              {relevantFees.length > 0 && (
-                <div className="relative overflow-hidden rounded-xl border border-border bg-white/80 px-5 py-5 backdrop-blur-sm">
-                  <div
-                    className="absolute left-0 right-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-brick/30 to-transparent"
-                    aria-hidden="true"
-                  />
-                  <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-brick/60">
-                    Live National Benchmarks
-                  </p>
-                  <div className="mt-4 space-y-4">
-                    {relevantFees.map((fee) => (
-                      <div
-                        key={fee.fee_category}
-                        className="border-b border-border/60 pb-3.5 last:border-0 last:pb-0"
-                      >
-                        <Link
-                          href={`/fees/${fee.fee_category}`}
-                          className="text-[13px] font-semibold text-ink transition-colors hover:text-brick"
-                          style={{ fontFamily: "var(--fi-font-sans)" }}
+              {guide.helpLinks && (
+                <div className="rounded-xl border border-brick/25 bg-surface-0 px-5 py-5">
+                  <p className="text-[15px] font-semibold text-ink">{guide.helpLinks.title}</p>
+                  <ul className="mt-3 space-y-3">
+                    {guide.helpLinks.links.map((l) => (
+                      <li key={l.href + l.label}>
+                        <a
+                          href={l.href}
+                          {...(l.href.startsWith("http") ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+                          className="text-[14px] font-medium text-brick hover:underline"
                         >
-                          {getDisplayName(fee.fee_category)}
-                        </Link>
-                        <div className="mt-1.5 flex items-baseline gap-2">
-                          <span
-                            className="text-[22px] font-semibold tracking-tight tabular-nums text-ink"
-                            style={{
-                              fontFamily: "var(--fi-font-mono)",
-                            }}
-                          >
-                            {formatAmount(fee.median_amount)}
-                            <UnstatedAudienceMark show={medianHasUnstatedAudience(fee)} />
-                          </span>
-                          <span className="text-[10px] text-ink-muted">median</span>
-                        </div>
-                        <div className="mt-1 text-[11px] tabular-nums text-ink-muted">
-                          P25: {formatAmount(fee.p25_amount)} &middot; P75:{" "}
-                          {formatAmount(fee.p75_amount)}
-                        </div>
-                        <Link
-                          href={`/fees/${fee.fee_category}`}
-                          className="mt-2 inline-block rounded-full border border-border/60 bg-paper px-2.5 py-0.5 text-[10px] font-medium text-ink-muted no-underline transition-colors hover:border-brick/30 hover:text-brick"
-                        >
-                          Full analysis
-                        </Link>
-                      </div>
+                          {l.label}
+                        </a>
+                        {l.note && <p className="text-[12.5px] text-ink-muted">{l.note}</p>}
+                      </li>
                     ))}
-                  </div>
+                  </ul>
                 </div>
               )}
-
+              {!guide.helpLinks && benchmarksBox}
               <nav
                 aria-label="Guide contents"
                 className="rounded-xl border border-border bg-white/80 px-5 py-4"
@@ -596,6 +626,7 @@ export default async function GuidePage({ params }: PageProps) {
                   ))}
                 </ul>
               </nav>
+              {guide.helpLinks && benchmarksBox}
 
             </aside>
           </div>

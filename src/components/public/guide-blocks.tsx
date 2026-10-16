@@ -5,7 +5,9 @@ import { benchmarkPositionMeaning } from "@/lib/guides/benchmark-position";
 import type { DimensionBreakdown, FeeCategorySummary } from "@/lib/data-store/fees";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
+import { GuideCalculator } from "./guide-calculator";
 import {
+  BreakdownBlock,
   CapScopeBlock,
   ComplaintsBlock,
   DistributionBlock,
@@ -299,6 +301,19 @@ export function GuideBlockRenderer({
       return <OutcomesBlock block={block} summaries={summaries} />;
     case "scenarios":
       return <ScenariosBlock block={block} summaries={summaries} />;
+    case "calculator":
+      return (
+        <div>
+          {block.intro && (
+            <p className="mt-5 text-[15px] leading-[1.75] text-ink-soft">
+              <Prose text={block.intro} summaries={summaries} />
+            </p>
+          )}
+          <GuideCalculator kind={block.kind} defaults={block.defaults} />
+        </div>
+      );
+    case "breakdown":
+      return <BreakdownBlock block={block} />;
     case "distribution":
       return <DistributionBlock block={block} extras={extras} />;
     case "cap_scope":

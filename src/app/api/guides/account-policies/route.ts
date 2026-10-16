@@ -1,14 +1,16 @@
 import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 import { NextResponse } from "next/server";
-import { MAX_COMPARED, getAccountPolicies } from "@/lib/data-store/overdraft-policies";
+import { MAX_COMPARED, getAccountPolicies, policySetOf } from "@/lib/data-store/overdraft-policies";
 
 /**
- * Published overdraft-policy lines for up to three institutions, for the overdraft guide's
- * account comparison. A client island calls it, so the guide page itself stays static and
+ * Published policy lines for up to three institutions, for a guide's account comparison
+ * (`set=overdraft` or `set=atm`). A client island calls it, so the guide page itself stays static and
  * identical for every reader. Public data only: the same rows the fee pages show.
  */
 async function handleGET(request: Request): Promise<NextResponse> {
-  const raw = new URL(request.url).searchParams.get("ids") ?? "";
+  const params = new URL(request.url).searchParams;
+  const raw = params.get("ids") ?? "";
+  const set = policySetOf(params.get("set"));
   const ids = raw
     .split(",")
     .map((part) => Number(part.trim()))
@@ -17,7 +19,7 @@ async function handleGET(request: Request): Promise<NextResponse> {
   if (ids.length === 0) return NextResponse.json({ institutions: [] }, { status: 400 });
 
   try {
-    const institutions = await getAccountPolicies(ids);
+    const institutions = await getAccountPolicies(ids, set);
     return NextResponse.json(
       { institutions },
       { headers: { "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400" } },

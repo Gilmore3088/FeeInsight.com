@@ -22,6 +22,7 @@ export type {
   GuideStatus,
   GuideOutcome,
   CostScenario,
+  IllustrativePolicy,
   PolicyFeature,
   RegulatoryStatus,
   RegulatoryUpdate,
@@ -109,6 +110,10 @@ export function blockText(block: GuideBlock): string[] {
       return [block.setup, ...block.outcomes.flatMap((o) => [o.title, o.payment, o.cost, o.after])];
     case "scenarios":
       return [block.intro, ...block.scenarios.flatMap((s) => [s.title, s.note])].filter((t): t is string => Boolean(t));
+    case "calculator":
+      return block.intro ? [block.intro] : [];
+    case "breakdown":
+      return [block.title, ...block.items.map((i) => i.label), block.totalLabel, block.note];
     case "cap_scope":
       return [];
     case "policy_table":

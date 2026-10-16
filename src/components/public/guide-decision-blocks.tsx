@@ -89,8 +89,15 @@ export function OutcomesBlock({ block, summaries }: { block: Extract<GuideBlock,
 }
 
 export function ScenariosBlock({ block, summaries }: { block: Extract<GuideBlock, { type: "scenarios" }>; summaries: FeeCategorySummary[] }) {
-  const costs = block.scenarios.map((s) => scenarioCost(s, summaries)).filter((c) => c.total != null);
+  const { policy } = block;
+  const costs = block.scenarios.map((s) => scenarioCost(policy, s));
   if (costs.length === 0) return null;
+  const terms = [
+    `${formatAmount(policy.perItem)} per fee`,
+    policy.maxPerDay != null ? `at most ${policy.maxPerDay} fees a day` : "no daily limit",
+    policy.extended != null ? `${formatAmount(policy.extended)} if the balance stays negative` : null,
+    policy.transfer != null ? `${formatAmount(policy.transfer)} per savings transfer` : null,
+  ].filter(Boolean);
   return (
     <div className="mt-5">
       {block.intro && (
@@ -98,35 +105,50 @@ export function ScenariosBlock({ block, summaries }: { block: Extract<GuideBlock
           <Prose text={block.intro} summaries={summaries} />
         </p>
       )}
-      <ul className="mt-4 divide-y divide-border rounded-xl border border-border bg-surface-0">
+      <p className="mt-4 rounded-lg border border-dashed border-border bg-paper px-4 py-3 text-[13px] text-ink-soft">
+        <span className="font-semibold text-ink">Illustrative account, not any institution&rsquo;s terms:</span> {terms.join(", ")}.
+      </p>
+      <ul className="mt-3 divide-y divide-border rounded-xl border border-border bg-surface-0">
         {costs.map((c) => (
           <li key={c.title} className="flex flex-col gap-1 px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6 sm:px-5">
             <div className="min-w-0">
               <p className="text-[14.5px] font-semibold text-ink">{c.title}</p>
               <p className="mt-0.5 text-[12.5px] text-ink-muted">
-                {c.parts
-                  .map((p) => `${p.count > 1 ? `${p.count} × ` : ""}${getDisplayName(p.category).replace(/\s*\([^)]*\)/g, "")} at the median ${formatAmount(p.median)}`)
-                  .join(" + ")}
+                {c.parts.map((p) => `${p.label} ${formatAmount(p.amount)}`).join(" + ")}
+                {c.limited ? ". The daily limit stops the rest." : ""}
               </p>
               {c.note && <p className="mt-1 text-[12.5px] text-ink-muted">{c.note}</p>}
             </div>
-            <div className="shrink-0 sm:text-right">
-              <p className="text-[18px] font-semibold tabular-nums text-ink">{formatAmount(c.total)}</p>
-              {c.cap != null && (
-                <p className="text-[12px] text-ink-muted">
-                  {c.binds
-                    ? `With the median daily limit: ${formatAmount(c.capped)}`
-                    : `Below the median daily limit of ${formatAmount(c.cap)}`}
-                </p>
-              )}
-            </div>
+            <p className="shrink-0 text-[18px] font-semibold tabular-nums text-ink sm:text-right">{formatAmount(c.total)}</p>
           </li>
         ))}
       </ul>
-      <p className="mt-2 text-[12px] text-ink-muted">
-        National medians from published schedules. Your institution&rsquo;s own fees decide your cost.
-      </p>
     </div>
+  );
+}
+
+export function BreakdownBlock({ block }: { block: Extract<GuideBlock, { type: "breakdown" }> }) {
+  const total = block.items.reduce((sum, i) => sum + (i.sign === "minus" ? -i.amount : i.amount), 0);
+  return (
+    <figure className="mt-5 max-w-md rounded-xl border border-border bg-surface-0 p-4 sm:p-5">
+      <figcaption className="text-[14px] font-semibold text-ink">{block.title}</figcaption>
+      <dl className="mt-3 space-y-2 text-[14px]">
+        {block.items.map((i, n) => (
+          <div key={i.label} className="flex items-baseline justify-between gap-4">
+            <dt className="text-ink-soft">
+              {n > 0 && <span aria-hidden="true" className="mr-1.5 text-ink-muted">{i.sign === "minus" ? "−" : "+"}</span>}
+              {i.label}
+            </dt>
+            <dd className="tabular-nums text-ink">{formatAmount(i.amount)}</dd>
+          </div>
+        ))}
+        <div className="flex items-baseline justify-between gap-4 border-t border-ink pt-2 font-semibold">
+          <dt className="text-ink">{block.totalLabel}</dt>
+          <dd className="tabular-nums text-ink">{formatAmount(total)}</dd>
+        </div>
+      </dl>
+      <p className="mt-3 text-[12px] text-ink-muted">{block.note}</p>
+    </figure>
   );
 }
 
@@ -192,7 +214,9 @@ export function PolicyTableBlock({
               <dt className="text-[14px] font-semibold text-ink">{row.feature}</dt>
               <dd className="text-[13.5px] text-ink-soft">{row.question}</dd>
               <dd className="text-[13px] text-ink-muted">
-                {s && s.median_amount != null ? (
+                {s && row.countOnly ? (
+                  `Published by ${s.institution_count.toLocaleString()} institutions, with different scopes. Ask what yours covers.`
+                ) : s && s.median_amount != null ? (
                   <Link href={`/fees?fee=${row.category}#explorer`} className="text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
                     Median {formatAmount(s.median_amount)}, {s.institution_count.toLocaleString()} institutions
                   </Link>
@@ -209,7 +233,7 @@ export function PolicyTableBlock({
           <p className="text-[15px] leading-[1.75] text-ink-soft">
             <Prose text={block.compare.intro} summaries={summaries} />
           </p>
-          <AccountCompare features={features} />
+          <AccountCompare features={features} set={block.compare.set ?? "overdraft"} />
         </div>
       )}
     </div>

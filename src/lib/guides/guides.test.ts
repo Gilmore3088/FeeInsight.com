@@ -430,15 +430,12 @@ describe("overdraft and NSF guides state only what they can support", () => {
     }
   });
 
-  it("declares every category its scenarios and distribution use", () => {
+  it("labels scenarios illustrative and keeps distributions on the primary fee", () => {
     for (const guide of rebuilt) {
-      const declared = new Set(guideCategories(guide));
       for (const block of guide.sections.flatMap((s) => s.blocks)) {
         if (block.type === "scenarios") {
-          for (const s of block.scenarios) {
-            for (const c of s.charges) expect(declared.has(c.category), `${guide.slug} -> ${c.category}`).toBe(true);
-            if (s.capCategory) expect(declared.has(s.capCategory)).toBe(true);
-          }
+          // Scenarios use one illustrative account; the intro must say so and never mix medians in.
+          expect(block.intro ?? "", guide.slug).toMatch(/illustrative/i);
         }
         if (block.type === "distribution") expect(block.category).toBe(guide.primaryCategory);
       }
