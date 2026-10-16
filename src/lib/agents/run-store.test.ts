@@ -158,6 +158,7 @@ import {
   expectedStepMs,
   TICK_EXCLUDED_STEP_KEYS,
   isLaneRoomRun,
+  LANE_ROOM_MAX_IDLE_MS,
   executeQueuedAgentRuns,
   heldByPause,
   startAgentRun,
@@ -1245,6 +1246,56 @@ describe("agentic run store", () => {
     expect(isLaneRoomRun(null)).toBe(false);
     // Without the lane's room it would have run as the tick's first run.
     expect(result.results[0]).toMatchObject({ runId: 101, executedSteps: 0, heldForDeadline: true });
+  });
+
+  it("starts a state re-search run within three ticks behind a steady stream of fresh lanes", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    const tickMs = 5 * 60_000;
+    // Each tick a new fresh lane (175 s to first work) queues behind the waiting runs (#1421).
+    const tick = async (n: number, direct: { source: string; step: string }) => {
+      sqlMock.mockReset();
+      withTransactionMock.mockClear();
+      // Claiming the step finds nothing here; reaching the claim is what counts.
+      txMock.mockResolvedValue([]);
+      sqlMock.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+        const text = templateText(strings);
+        if (text.includes("SELECT r.id")) {
+          return Promise.resolve([
+            { id: 101, run_kind: "manual_repair", source: direct.source, idle_ms: String(n * tickMs) },
+            { id: 200 + n, run_kind: "workflow_lane", source: null, idle_ms: "0" },
+          ]);
+        }
+        if (text.includes("SELECT step_key")) {
+          return Promise.resolve(values[0] === 101
+            ? [{ step_key: direct.step }]
+            : [{ step_key: "enhance" }, { step_key: "state-expert" }, { step_key: "discover" }]);
+        }
+        if (text.includes("FROM agent_runs")) {
+          // The lanes are already finished here, so they do nothing; the direct run is queued.
+          return Promise.resolve([{ ...runRow, id: values[0], status: values[0] === 101 ? "queued" : "completed" }]);
+        }
+        return Promise.resolve([]);
+      });
+      const result = await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10, deadlineAt: Date.now() + 270_000 });
+      return result.results[0];
+    };
+
+    const research = { source: "atlas.priority_state_research", step: "discover" };
+    // Its discover (115 s) does not fit the 95 s the lane's first work leaves, so it waits ...
+    for (const n of [0, 1, 2]) {
+      expect(await tick(n, research)).toMatchObject({ runId: 101, executedSteps: 0, heldForDeadline: true });
+    }
+    // ... until it has been idle LANE_ROOM_MAX_IDLE_MS (three ticks), then it goes to claim its step.
+    expect(3 * tickMs).toBe(LANE_ROOM_MAX_IDLE_MS);
+    const started = await tick(3, research);
+    expect(started.heldForDeadline).toBeUndefined();
+    expect(withTransactionMock).toHaveBeenCalled();
+
+    // A Read-now run keeps leaving the lane its room however long it waits.
+    const readNow = { source: "atlas.priority_institution", step: "publish" };
+    for (const n of [0, 3, 12]) {
+      expect(await tick(n, readNow)).toMatchObject({ runId: 101, executedSteps: 0, heldForDeadline: true });
+    }
   });
 
   it("counts a lane run's quick first steps together with the first real step", () => {

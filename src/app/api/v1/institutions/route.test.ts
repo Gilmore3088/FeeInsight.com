@@ -4,7 +4,7 @@ import { validateApiKey } from "@/lib/api-auth";
 import { checkRateLimitWithTier } from "@/lib/api-rate-limit";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
-import { getInstitutionById, getInstitutionsByFilter } from "@/lib/data-store";
+import { getFeesByInstitution, getInstitutionById, getInstitutionsByFilter } from "@/lib/data-store";
 import { searchInstitutions } from "@/lib/data-store/search";
 import { getInstitutionBenchmark } from "@/lib/data-store/benchmark-export";
 import { getRegulatoryWatch } from "@/lib/data-store/regulatory-watch";
@@ -87,6 +87,22 @@ describe("/api/v1/institutions", () => {
     expect(body).toMatchObject({ id: 12, name: "Example Bank", asset_size: 1000000, fees: [], call_reports: [] });
   });
 
+  it("flags a fee name that is the category's name standing in for a cut-off stored name (#1482)", async () => {
+    vi.mocked(validateApiKey).mockResolvedValue({ valid: true, organizationId: 7, tier: "enterprise" });
+    vi.mocked(getInstitutionById).mockResolvedValue({ id: "12", institution_name: "Example Bank", state_code: "TX" } as never);
+    vi.mocked(getFeesByInstitution).mockResolvedValueOnce([
+      { fee_name: "Chase Mobile to send a wire from your account to", fee_category: "wire_domestic_outgoing", amount: 25, review_status: "approved" },
+      { fee_name: "Overdraft Fee", fee_category: "overdraft", amount: 35, review_status: "approved" },
+    ] as never);
+
+    const body = await (await GET(new NextRequest("https://feeinsight.com/api/v1/institutions?id=12"))).json();
+
+    expect(body.fees).toEqual([
+      expect.objectContaining({ fee_name: "Wire Transfer (Domestic Out)", name_is_category_fallback: true, amount: 25 }),
+      expect.objectContaining({ fee_name: "Overdraft Fee", name_is_category_fallback: false, amount: 35 }),
+    ]);
+  });
+
   it("lists rate fees apart from dollar fees on institution detail", async () => {
     vi.mocked(validateApiKey).mockResolvedValue({ valid: true, organizationId: 7, tier: "enterprise" });
     vi.mocked(getInstitutionById).mockResolvedValue({ id: "12", institution_name: "Example Bank", state_code: "TX" } as never);
@@ -113,7 +129,12 @@ describe("/api/v1/institutions", () => {
     expect(getRateFeesByInstitution).toHaveBeenCalledWith(12);
     expect(body.fee_count).toBe(0);
     expect(body.rate_fees).toEqual([
-      expect.objectContaining({ fee_name: "Foreign Transaction Fee", rate_percent: 3, rate_terms: "3% of the transaction" }),
+      expect.objectContaining({
+        fee_name: "Foreign Transaction Fee",
+        name_is_category_fallback: false,
+        rate_percent: 3,
+        rate_terms: "3% of the transaction",
+      }),
     ]);
   });
 

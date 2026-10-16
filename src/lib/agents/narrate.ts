@@ -270,6 +270,11 @@ function narrateFinished(
       const collapses = Array.isArray(detail.collapses) ? detail.collapses.length : 0;
       return `Deming checked the benchmarks: ${n(detail, "groups_meeting_target")} of ${n(detail, "groups_total")} state and size groups meet the coverage target, ${collapses === 0 ? "no benchmark collapsed" : `ALARM: ${count(collapses, "benchmark")} lost a sharp share of its institutions`}.`;
     }
+    case "deming-data-quality": {
+      const failing = Array.isArray(detail.failing) ? detail.failing.length : 0;
+      const dollar = (detail.dollar ?? {}) as Record<string, unknown>;
+      return `Deming ran the daily data checks on ${count(n(dollar, "live_fees"), "live dollar fee")}: ${failing === 0 ? "no check failed its threshold" : `ALARM: ${count(failing, "check")} failed its threshold`}.`;
+    }
     case "deming-knox-misses": {
       if (detail.ready === false) return "Deming could not replay Knox's answer-key misses: the case store or the answer key is not there.";
       const regressions = Array.isArray(detail.regressions) ? detail.regressions.length : 0;
@@ -642,6 +647,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "atlas-city-repair": "atlas",
   "deming-fresh-audit": "atlas",
   "deming-benchmark-health": "atlas",
+  "deming-data-quality": "atlas",
   "deming-knox-misses": "atlas",
   "deming-playbook-check": "atlas",
   "deming-change-outcomes": "atlas",

@@ -6,7 +6,7 @@ import { formatCount } from "@/lib/public-stats";
 import { SectionHeading } from "./research-hero";
 import { ExhibitSource } from "./exhibits";
 import { BENCHMARK_KEYS } from "@/lib/research-report/benchmark-keys";
-import { UnstatedAudienceFootnote, UnstatedAudienceMark, hasUnstatedAudience } from "@/components/unstated-audience";
+import { UnstatedAudienceFootnote, UnstatedAudienceMark, medianHasUnstatedAudience } from "@/components/unstated-audience";
 
 export { BENCHMARK_KEYS };
 
@@ -45,7 +45,7 @@ function BenchmarkCard({ fee }: { fee: FeeCategorySummary }) {
       <p className="mt-2 flex items-baseline gap-1.5">
         <span className="text-[2.25rem] font-semibold leading-none tabular-nums text-ink" style={MONO_FIGURE}>
           {formatAmount(median)}
-          <UnstatedAudienceMark show={hasUnstatedAudience(fee)} />
+          <UnstatedAudienceMark show={medianHasUnstatedAudience(fee)} />
         </span>
         <span className="text-[11px] font-medium uppercase tracking-wider text-ink-muted">median</span>
       </p>
@@ -129,7 +129,7 @@ export function BenchmarkBoard({ benchmarks, institutionsLabel, asOf }: { benchm
       <ExhibitSource asOf={asOf}>
         Median and 25th to 75th percentile of one value per institution. Fees shown only with at least 10 institutions.
       </ExhibitSource>
-      <UnstatedAudienceFootnote show={benchmarks.some(hasUnstatedAudience)} className="mt-2" />
+      <UnstatedAudienceFootnote show={benchmarks.some(medianHasUnstatedAudience)} className="mt-2" />
     </section>
   );
 }

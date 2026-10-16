@@ -10,6 +10,19 @@ import { traceLiveFee, type InstitutionText, type LiveFeeRow } from "@/lib/agent
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { runFreeSpecialists } from "@/lib/agents/knox/specialists";
 import { classifyFeeText } from "@/lib/agents/knox/rules";
+import {
+  FEE_NOUN,
+  LIVE_PRONOUN,
+  LIVE_SENTENCE_END,
+  LIVE_SENTENCE_END_ARTICLE,
+  LIVE_TRAILING_RANGE,
+  PARENTHETICAL,
+  PRONOUN_WORDS,
+  SENTENCE_END_WORDS,
+  endsIn,
+  trailingRange,
+  wordsIn,
+} from "@/lib/fee-name-fragments";
 
 type SqlTag = typeof sql;
 
@@ -23,8 +36,6 @@ type SqlTag = typeof sql;
  */
 const VERB_END =
   /\b(?:is|are|was|were|be|will|shall|may|can|incur|incurs|receive|receives|charges|charged|imposed|assessed|apply|applies|pay|pays|cost|costs|maintain|exceed|exceeds|lesser|greater|up|than|least|over|under|varies)$/i;
-const FEE_NOUN =
-  /\b(?:fees?|charges?|service|transfers?|wires?|checks?|cards?|statements?|overdrafts?|nsf|payments?|box|boxes|orders?|deposits?|withdrawals?|cop(?:y|ies)|research|address|items?|atms?|accounts?|drafts?|stop|fax|notary|photocop(?:y|ies)|printing|coins?|money|cashier'?s?|official|bill|replacement|closing|closure|inactivity|inactive|dormant|maintenance|balance|garnishments?|levy|levies|subpoenas?|returned|returns?|counter|temporary|starter|rush|express|expedited|delivery|ach|zelle|p2p|transactions?|reissue|key|drilling|advances?)\b/i;
 const MAX_WORDS = 12;
 /** A cell that qualifies a price ("Per quarter (inactive ...)", "each request"), not a name. */
 const QUALIFIER_START = /^(?:per|each|a|an|the|\/|for|if|when|plus|includes?)\b/i;
@@ -55,8 +66,6 @@ const TRAILING_FEE_OF = /\s+(?:a|an|the)\s+(?:(?:monthly|service|annual)\s+)?(?:
 const LEADING_HEADER = /^(?:Fees?|Charge)\s+(?=[A-Z])(?!(?:Backs?|Off|Cards?|Schedule|Type|Description|Structure|Amount|Name|Above|Below|Per|Each|For|To|Of|If|When)\b)/;
 /** A header cell cut to its first letters, or a header word, left after the name ("... | F", "... | Fee"). */
 const TRAILING_HEADER_CELL = /\s*\|\s*(?:[A-Za-z]{1,2}|fees?|charges?|amount|cost|price)\s*$/i;
-/** A name that ends in one of `words`, after any separator ("Late Fee | Up to"); shared with the live twin. */
-const trailingRange = (words: string) => new RegExp(String.raw`[\s\-–—|:,]*\b(?:${words})\s*$`, "i");
 /** The start of a range or unit left dangling after the name ("Late Fee | Up to", "NSF fee (ACH, ATM, or check) - per"). */
 const TRAILING_RANGE = trailingRange(String.raw`up\s+to|per|each`);
 /**
@@ -106,13 +115,9 @@ const CONDITION_TAIL = /\s+(?:(?:is|are)\s+)?(?:waived\s+)?(?:if|when|unless|oth
 const UNIT_AFTER_NAME = /\s+(?:per|each|a)\s+(?:month|statement(?:\s+cycle)?|year|quarter|item|day|occurrence|transaction)$/i;
 /** A parenthetical condition after the name ("(Dormant Account Fee assessed after 12 months of inactivity.)"). */
 const CONDITION_PARENTHETICAL = /\s*\([^()]*\b(?:after|if|when|assessed|within|inactivity|no activity|unless)\b[^()]*\)\s*$/i;
-const PRONOUN_WORDS = ["i", "we", "you", "my", "our", "your", "will", "would", "may", "must", "shall"] as const;
-const wordsIn = (words: readonly string[], flags = "i") => new RegExp(String.raw`\b(?:${words.join("|")})\b`, flags);
 const PRONOUN = wordsIn(PRONOUN_WORDS);
 /** A verb that makes the words a sentence ("Checking accounts are considered dormant"). */
 const SENTENCE_VERB = /\b(?:is|are|was|were|be|been|considered|incurs?|applies|apply|impose|assessed|excluding|including|includes?|do(?:es)?\s+not)\b/i;
-const SENTENCE_END_WORDS = ["of", "to", "from", "for", "at", "is", "and", "or", "with", "by", "a", "an", "the", "per", "than", "below", "above", "up to", "each"] as const;
-const endsIn = (words: readonly string[], flags = "i") => new RegExp(String.raw`\b(?:${words.join("|")})$`, flags);
 const SENTENCE_END = endsIn(SENTENCE_END_WORDS);
 
 /** True when the words still read as a sentence or a condition, not a fee's name. */
@@ -192,34 +197,6 @@ export function isCutoffName(name: string): boolean {
   );
 }
 
-/**
- * The live twin of `isCutoffName` (#1443, #1436): the cut-off shapes narrow enough to take a
- * live fee down. `isCutoffName` matched 1,571 live fees on Oct 15 and a labelled sample of 155
- * found about half were real fees, so only the shapes the sample found to be fragments are kept:
- * - `sentence_end`: the name ends on a joining word ("... reduce your monthly fee to"). "a", "an"
- *   and "the" count only in lower case, so "N/A" never fires; "above" ("... not listed above") and
- *   "each" ("Loan Application, each") are real fees and are left out.
- * - `trailing_range`: a dangling "up to" or "per"; never "each".
- * - `pronoun`: "will" or "you" (a sentence); not "my", "our", "your", "we" or "i", which name
- *   products ("my Value Checking", "Save Your Way", "i.e.").
- * - `plus`: a leading "+" with no fee noun after it; "+Returned Item Fee" is a list bullet.
- * Not kept: LEADING_HEADER, TRAILING_HEADER_CELL, CONDITION_TAIL, SENTENCE_VERB, FEE_OF_SENTENCE.
- */
-export type LiveFragmentPattern = "plus" | "trailing_range" | "sentence_end" | "pronoun";
-const LIVE_TRAILING_RANGE = trailingRange(String.raw`up\s+to|per`);
-const LIVE_SENTENCE_END = endsIn(SENTENCE_END_WORDS.filter((word) => !["a", "an", "the", "above", "each"].includes(word)));
-/** Case-sensitive: "N/A" ends in a capital A and never reads as a dangling article. */
-const LIVE_SENTENCE_END_ARTICLE = endsIn(["a", "an", "the"], "");
-const LIVE_PRONOUN = wordsIn(PRONOUN_WORDS.filter((word) => word === "will" || word === "you"));
-/**
- * #1443 switch-on prerequisites: a balanced parenthetical ("Stop Payment (per item, if you request
- * it)") qualifies the fee; a pronoun inside one is not a sentence. Only `pronoun` can sit inside one:
- * the other shapes are read at the end of the name, which a closing ")" never is.
- */
-const PARENTHETICAL = /\([^()]*\)/g;
-export function withoutParentheticals(name: string): string {
-  return name.replace(PARENTHETICAL, " ").replace(/\s+/g, " ").trim();
-}
 
 /**
  * #1443: the words a fee's real name ends on, case-free ("Overdraft Fee", "Stop Payment",
@@ -432,26 +409,6 @@ export const LIVE_FRAGMENT_REGEXES = {
   glued_generic_bars: GLUED_GENERIC_BARS,
 } as const;
 
-/** The live fragment shape a name carries, parentheticals included (the shape before #1443's exemption). */
-export function liveFragmentShape(name: string | null | undefined): LiveFragmentPattern | null {
-  const current = (name ?? "").replace(/\s+/g, " ").trim();
-  if (!current) return null;
-  if (/^\+/.test(current) && !FEE_NOUN.test(current.replace(/^\++\s*/, ""))) return "plus";
-  if (LIVE_TRAILING_RANGE.test(current)) return "trailing_range";
-  if (LIVE_SENTENCE_END.test(current) || LIVE_SENTENCE_END_ARTICLE.test(current)) return "sentence_end";
-  if (LIVE_PRONOUN.test(current)) return "pronoun";
-  return null;
-}
-
-/**
- * The live fragment shape a live fee's name carries, or null (the name may stay live). #1443: a
- * pronoun only inside a parenthetical ("Stop Payment (per item, if you request it)") is no fragment.
- */
-export function liveFragmentName(name: string | null | undefined): LiveFragmentPattern | null {
-  const shape = liveFragmentShape(name);
-  if (shape === "pronoun" && !LIVE_PRONOUN.test(withoutParentheticals((name ?? "").replace(/\s+/g, " ").trim()))) return null;
-  return shape;
-}
 
 /** v7: a word that joins the name to the sentence before it ("Otherwise, a monthly service fee"); Knox v57's tidy drops it. */
 const LEADING_DISCOURSE = /^\s*(?:otherwise|additionally|also|however|in addition|furthermore|further)\s*,?\s/i;

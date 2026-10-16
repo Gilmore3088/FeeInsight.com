@@ -142,6 +142,29 @@ It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model c
   `search_from_entries`, as is `layout_never_recorded` (no stage writes a layout fingerprint yet).
 - Read-only, deterministic, no model calls, pause-exempt. It changes no row.
 
+## Daily data-quality checks
+
+- `data-quality.ts` (`DATA_QUALITY_VERSION` v1): the `deming-data-quality` step in Atlas's daily
+  scoreboard run, before `scoreboard-snapshot` (#1065). It runs the SQL checks of the
+  `data-quality-audit` and `audit-data` skills every day; the skills point here instead of
+  describing a manual run. The sampled source trace those skills ask for is the fresh audit above.
+- Over the live dollar fees (`published_fee_catalog`) and, apart, the live rate fees
+  (`published_fee_rate_catalog`), never pooled: duplicates (rows beyond the first for one
+  institution, category and amount or rate), stale fees (document last fetched or checked over
+  `STALE_AFTER_DAYS` 90 days ago, the scoreboard's freshness clock), fees with no category (a
+  category outside the 50-type taxonomy counted beside it), fees with no source link (no stored
+  document counted beside it), and each category's share of live institutions against its median
+  over the previous `SHARE_BASELINE_CHECKS` (7) checks.
+- Thresholds are the skills' own (PASS / WARN / FAIL): duplicates 1% / 3%, no category 3% / 8%,
+  stale 15% / 30%; no source link takes the duplicate thresholds (the skills give none). A
+  category share is out of line below 70% (`COLLAPSE_KEEPS_BELOW`) or above 150% of normal, for
+  categories with at least 10 institutions before. A catalog under 100 live fees is counted, not
+  graded. **Alarm:** each check at FAIL is named in the step summary as an ALARM.
+- Each number names its query (`DATA_QUALITY_QUERIES`, `deming.dq_*`). The scorecard reads the
+  latest check (`goal.deming_data_quality_latest`) into `detail.goal.dataQuality`: the "Data
+  checks failing" card on /admin/scoreboard and a line in the morning brief.
+- Read-only, deterministic, no model calls, pause-exempt. Up to 20 fee ids per check in the detail.
+
 ## Boundaries
 
 - Deming never writes fee rows, flags or takedowns. It reads `pipeline_feedback` and the fee tiers.
@@ -159,4 +182,5 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DEMING_REGRESSION_VERSION` | — | v1 | `deming/regression.ts` |
 | `BENCHMARK_HEALTH_VERSION` | — | v1 | `deming/benchmark-health.ts` |
 | `PLAYBOOK_CHECK_VERSION` | — | v1 | `deming/playbook-contradictions.ts` |
+| `DATA_QUALITY_VERSION` | — | v1 | `deming/data-quality.ts` |
 | `KNOX_MISSES_VERSION` | — | v1 | `deming/knox-misses.ts` |
