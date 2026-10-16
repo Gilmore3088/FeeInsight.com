@@ -70,7 +70,7 @@ export function DemoVideoSection({ board }: { board: CompetitorBoard | null }) {
                   <path d="M3 1.5v9l7.5-4.5z" fill="currentColor" />
                 </svg>
               </span>
-              <span className="rounded-full bg-white/10 px-3 py-1 text-[12px] font-semibold tracking-wide text-white/80">
+              <span className="relative z-10 rounded-full bg-warm-ink-900 px-3 py-1 text-[12px] font-semibold tracking-wide text-white/80 shadow-[0_0_0_6px_var(--color-warm-ink-900)] ring-1 ring-white/20">
                 Tour coming soon
               </span>
             </span>

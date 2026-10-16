@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ProductFrame } from "@/components/marketing/product-frame";
 import { positionFor } from "@/lib/custom-report/analysis";
 import { PRODUCT_NAME } from "@/lib/constants";
+import { SAMPLE_REPORT_HREF } from "@/app/landing-shared";
 import {
   POSITION_TEXT,
   chargingLess,
@@ -21,9 +22,6 @@ import {
 const DOT = 10;
 const DOT_GAP = 3;
 const STRIP_BASE = 18;
-
-/** The free sample report every exhibit here is drawn from (funnel step 1). */
-export const SAMPLE_REPORT_PATH = "/reports/sample-competitive-fee-position";
 
 function FeeTabs({
   lines,
@@ -152,13 +150,16 @@ export function DotStrip({
   );
 }
 
-/** Where every figure in an exhibit comes from, with the newest read date behind it. */
-function SourceFooter({ board, children }: { board: CompetitorBoard; children?: ReactNode }) {
-  const readOn = readOnLabel(board.readOn);
+/**
+ * Where every figure in an exhibit comes from, with the newest read date behind it (or no date
+ * when none is known). The one wording for every workspace exhibit on the page, the ladder too.
+ */
+export function SourceFooter({ readOn: iso, children }: { readOn: string | null; children?: ReactNode }) {
+  const readOn = readOnLabel(iso);
   return (
     <p className="max-w-[none] flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-t border-border bg-paper/60 px-4 py-2.5 text-[11.5px] leading-5 text-ink-muted sm:px-5">
       <span>
-        {PRODUCT_NAME} · each fee from the bank&rsquo;s own published schedule{readOn ? ` · read ${readOn}` : ""}
+        {PRODUCT_NAME} · each fee from the bank&rsquo;s own published schedule{readOn ? ` · latest read ${readOn}` : ""}
       </span>
       {children}
     </p>
@@ -269,13 +270,24 @@ export function CompetitorBoardExhibit({ board }: { board: CompetitorBoard }) {
           </p>
         ) : null}
       </div>
-      <SourceFooter board={board}>
-        <Link href={SAMPLE_REPORT_PATH} className="font-semibold text-ink underline underline-offset-2">
+      <SourceFooter readOn={board.readOn}>
+        <Link href={SAMPLE_REPORT_HREF} className="font-semibold text-ink underline underline-offset-2">
           From the free sample report
         </Link>
       </SourceFooter>
     </ProductFrame>
   );
+}
+
+/**
+ * Arrow keys move the price by $1, Shift+arrow by $10 (dragging still lands on cents), kept
+ * between $0 and the axis top; null for any other key, so the browser handles it.
+ */
+export function keyboardPrice(price: number, key: string, shift: boolean, top: number): number | null {
+  const sign = key === "ArrowRight" || key === "ArrowUp" ? 1 : key === "ArrowLeft" || key === "ArrowDown" ? -1 : 0;
+  if (sign === 0) return null;
+  const next = price + sign * (shift ? 10 : 1);
+  return Math.round(Math.min(top, Math.max(0, next)) * 100) / 100;
 }
 
 /**
@@ -331,6 +343,12 @@ export function PriceTesterExhibit({ board }: { board: CompetitorBoard }) {
           step={0.01}
           value={price}
           onChange={(e) => setPrice(Math.round(Number(e.target.value) * 100) / 100)}
+          onKeyDown={(e) => {
+            const next = keyboardPrice(price, e.key, e.shiftKey, top);
+            if (next === null) return;
+            e.preventDefault();
+            setPrice(next);
+          }}
           className="h-11 w-full cursor-pointer accent-brick"
           aria-valuetext={`${feeMoney(price)}: ${less} of ${line.peers.length} local competitors charge less`}
         />
@@ -353,7 +371,7 @@ export function PriceTesterExhibit({ board }: { board: CompetitorBoard }) {
           <DotStrip line={line} price={price} top={top} focus={focus} onFocus={setFocus} under subject={board.institutionName} />
         </div>
       </div>
-      <SourceFooter board={board} />
+      <SourceFooter readOn={board.readOn} />
     </ProductFrame>
   );
 }

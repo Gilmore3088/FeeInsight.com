@@ -130,6 +130,13 @@ describe("lead line and read dates", () => {
     expect(leadLineKey([])).toBeNull();
   });
 
+  it("scores a line whose median is zero or below as the largest gap, in the same unit as the rest", () => {
+    const at = (key: string, own: number, median: number, position: "in_market" | "above_market" | "below_market") => ({ key, own, median, position });
+    expect(leadLineKey([at("c", 75, 50, "above_market"), at("free", 5, 0, "above_market")])).toBe("free");
+    expect(leadLineKey([at("a", 35, 35, "in_market"), at("free", 5, 0, "in_market")])).toBe("a");
+    expect(leadLineKey([at("z", 5, 0, "above_market"), at("y", 3, -1, "above_market")])).toBe("z");
+  });
+
   it("takes the newest read date", () => {
     expect(latestReadOn(["2026-10-03", null, "2026-10-12", "bad"])).toBe("2026-10-12");
     expect(latestReadOn([null])).toBeNull();

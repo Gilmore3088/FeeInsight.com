@@ -1,7 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { CompetitorBoard } from "./board-math";
-import { CompetitorBoardExhibit, PriceTesterExhibit, SAMPLE_REPORT_PATH } from "./workspace-exhibits";
+import { CompetitorBoardExhibit, PriceTesterExhibit, keyboardPrice } from "./workspace-exhibits";
+import { SAMPLE_REPORT_HREF } from "@/app/landing-shared";
 
 const peer = (id: number, name: string, amount: number) => ({ id, name, amount });
 
@@ -45,8 +46,8 @@ describe("CompetitorBoardExhibit", () => {
     expect(screen.getByText("Hamilton · My fees")).toBeTruthy();
     expect(screen.getByText(/3 of 5 local competitors charge less/)).toBeTruthy();
     expect(screen.getByText(/Capital City Bank’s schedule: “Overdraft Item Fee\* \| \$35”/)).toBeTruthy();
-    expect(screen.getByText(/Bank Fee Index · each fee from the bank’s own published schedule · read Oct 12, 2026/)).toBeTruthy();
-    expect(screen.getByRole("link", { name: "From the free sample report" }).getAttribute("href")).toBe(SAMPLE_REPORT_PATH);
+    expect(screen.getByText(/Bank Fee Index · each fee from the bank’s own published schedule · latest read Oct 12, 2026/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "From the free sample report" }).getAttribute("href")).toBe(SAMPLE_REPORT_HREF);
   });
 
   it("names a competitor on hover, and keeps the dots out of the tab order", () => {
@@ -95,6 +96,21 @@ describe("PriceTesterExhibit", () => {
     expect(slider.getAttribute("aria-valuetext")).toBe("$35.00: 3 of 5 local competitors charge less");
     expect(document.querySelector("[aria-live]")).toBeNull();
     expect(screen.getByText(/Bank Fee Index · each fee/)).toBeTruthy();
+  });
+
+  it("moves $1 per arrow key and $10 with Shift, within the axis", () => {
+    expect(keyboardPrice(35, "ArrowRight", false, 60)).toBe(36);
+    expect(keyboardPrice(35.5, "ArrowDown", false, 60)).toBe(34.5);
+    expect(keyboardPrice(35, "ArrowUp", true, 60)).toBe(45);
+    expect(keyboardPrice(5, "ArrowLeft", true, 60)).toBe(0);
+    expect(keyboardPrice(55, "ArrowRight", true, 60)).toBe(60);
+    expect(keyboardPrice(35, "Home", false, 60)).toBeNull();
+    render(<PriceTesterExhibit board={board} />);
+    const slider = screen.getByLabelText("Price to try") as HTMLInputElement;
+    fireEvent.keyDown(slider, { key: "ArrowLeft", shiftKey: true });
+    expect(slider.getAttribute("aria-valuetext")).toBe("$25.00: 1 of 5 local competitors charge less");
+    fireEvent.keyDown(slider, { key: "ArrowRight" });
+    expect(slider.getAttribute("aria-valuetext")).toMatch(/^\$26\.00: /);
   });
 
   it("labels the axis in dollars and cents", () => {

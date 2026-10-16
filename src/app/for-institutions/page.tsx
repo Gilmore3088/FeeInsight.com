@@ -68,8 +68,9 @@ export default async function ForInstitutionsPage({
   ]);
   const heroCategory = snapshot.categories.find((c) => c.fee_category === HERO_CATEGORY) ?? null;
   const liveSample = sampleLive ? sample : null;
-  const ladder = liveSample ? await loadSampleLadder(liveSample, snapshot.categories) : null;
   const board = buildCompetitorBoard(liveSample);
+  // The ladder opens on the same lead line as the board, when the index can place it.
+  const ladder = liveSample ? await loadSampleLadder(liveSample, snapshot.categories, board?.leadKey ?? null) : null;
   const scenario = board ? null : buildScenario("Overdraft", heroCategory);
 
   return (

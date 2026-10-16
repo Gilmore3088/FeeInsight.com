@@ -48,10 +48,12 @@ export interface CompetitorBoard {
  * local median (relative to it); with none outside, the first line. A finding, not a tie.
  */
 export function leadLineKey(lines: Pick<BoardLine, "key" | "own" | "median" | "position">[]): string | null {
+  // Relative to the median, so every score is in the same unit; a median of $0 or less (most
+  // competitors charge nothing) ranks with the free lines, as the furthest out.
   const gap = (line: Pick<BoardLine, "own" | "median">) =>
-    line.median > 0 ? Math.abs(line.own - line.median) / line.median : Math.abs(line.own - line.median);
+    line.median > 0 ? Math.abs(line.own - line.median) / line.median : Number.POSITIVE_INFINITY;
   const outside = lines.filter((line) => line.position !== "in_market");
-  const lead = [...outside].sort((a, b) => gap(b) - gap(a))[0] ?? lines[0];
+  const lead = [...outside].sort((a, b) => (gap(a) === gap(b) ? 0 : gap(b) > gap(a) ? 1 : -1))[0] ?? lines[0];
   return lead?.key ?? null;
 }
 
