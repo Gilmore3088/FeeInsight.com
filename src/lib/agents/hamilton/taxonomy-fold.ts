@@ -630,7 +630,14 @@ export const HAND_REFILES: readonly HandRefile[] = [
     why: "#1513, inst 2657, doc 916: \"Undeliverable Mail ……… $15 | Account Reconciliation ……… $35 / One-time fee upon return of 2nd undeliverable item\"; returned mail, renamed under account research while the #1398 split is off" },
   { feePublishedId: 63055, from: "wire_domestic_outgoing", amount: 35, to: "wire_intl_outgoing", name: "Wire Trans. (Intern. Outgoing)",
     oldName: "Wire Trans. (Intern. Outgoing) ………",
-    why: "#1513, inst 5653, doc 18876: \"Wire Trans. (Intern. Outgoing) ………...$35.00 per Wire\", an international wire; the domestic one is \"Wire Trans. (Dom. Outgoing) …$18.00 per Wire\" (live as 63054)" },
+    why: "#1513, inst 5653, doc 18876: \"Wire Trans. (Intern. Outgoing) ………...$35.00 per Wire\", an international wire; the domestic one is \"Wire Trans. (Dom. Outgoing) …$18.00 per Wire\" (live as 63054)" },  // #1655 (read-only, Oct 16): two Navy Federal home equity line fees filed as deposit fees, so they
+  // showed in the consumer overdraft guide. Each price is right; both are loan fees, so they move to
+  // other lending (the 50 have no returned-loan-payment type). Both keep their printed names, so neither
+  // carries an `oldName`. Undo: re-file back under `from`; the run event and `pipeline_feedback` row keep both.
+  { feePublishedId: 122342, from: "nsf", amount: 29, to: "other_lending_fee", name: "Home Equity Line Check returned (due to non-sufficient funds)",
+    why: "#1655, inst 4956, doc 26712: under \"Equity Loan\", \"Home Equity Line Check returned (due to non-sufficient funds) | $29.00\"; a home equity line fee, not a deposit NSF (checking's own NSF line is \"No charge\", live as 122347)" },
+  { feePublishedId: 122343, from: "monthly_maintenance", amount: 25, to: "other_lending_fee", name: "Tax Service Charge",
+    why: "#1655, inst 4956, doc 26712: under \"Equity Loan\", \"Tax Service Charge | $25.00\"; a home equity loan fee, not a monthly maintenance fee" },
 ];
 
 interface HandRow {

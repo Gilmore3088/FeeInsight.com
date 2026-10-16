@@ -8,6 +8,9 @@ import { HAND_REFILES, handFixedPassing, planHandRefiles, previewResearchSplit }
 
 /** The schedule lines each hand re-file was read from (copied data: the banks' own text). */
 const PAGE_LINES: Record<number, string> = {
+  // #1655: Navy Federal's home equity line fees (doc 26712).
+  122342: "Equity Loan\n\nFee | Amount\n\nHome Equity Line Check returned (due to non-sufficient funds) | $29.00\n\nReturned loan payment | $29.00",
+  122343: "Copy of Home Equity Line check | $1.00 per copy\n\nTax Service Charge | $25.00\n\nHome Equity Line modification to Fixed-Rate Equity Loan | $150.00",
   // #1299: cut-cents names renamed in place (docs 8040, 12872, 6817, 13851, 6231, 13904).
   49593: "Wire transfers – outgoing\nSafe Deposit Box drill fee | $200 00\nDomestic – U S dollar | $25 00",
   49594: "Wire transfers – incoming\nSPECIAL SERVICES | Domestic – U S dollar | $25 00\nInternational | $30 00",
