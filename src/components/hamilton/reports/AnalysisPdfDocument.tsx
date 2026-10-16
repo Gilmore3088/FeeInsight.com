@@ -226,12 +226,19 @@ function savedEvidence(analysis: AnalyzeResponse): SavedEvidenceAppendix | null 
   return savedEvidenceAppendix(bound);
 }
 
+/** The two calculations Hamilton records, in words; any other formula prints as recorded. */
+const FORMULA_WORDS: Record<string, string> = {
+  "left - right": "The first figure minus the second",
+  "(current - prior) / prior * 100": "The change from the earlier figure, as a percent of it",
+};
+
 /** Plain notes under the record; the appendix's own limitation codes are written for auditors. */
 function evidenceRecordNotes(record: SavedEvidenceAppendix): string[] {
   const incomplete = record.facts.some((f) => f.problems.length > 0) || record.derivations.some((f) => f.problems.length > 0);
   return [
-    "These are the records saved with this answer, as they stood when it was written. They show where each figure came from. They do not check every sentence of the written answer.",
-    ...(incomplete ? ["Some records could not be traced in full, and are marked."] : []),
+    "These records were saved with this answer and show where each figure came from.",
+    "Each figure matches the bank document Hamilton had stored at the time. It was not re-checked against the bank's current schedule, and the sentences around the figures were not checked one by one.",
+    ...(incomplete ? ["Records marked \"Source not fully traceable\" or \"Inputs incomplete\" could not be traced in full."] : []),
   ];
 }
 
@@ -386,7 +393,7 @@ export function AnalysisPdfDocument({
               label: recordLabel(fact.scope, null),
               value: recordedValue(fact.value, fact.unit),
               note: [
-                `${fact.formula}, from ${fact.inputFactIds.length} recorded figure${fact.inputFactIds.length === 1 ? "" : "s"}`,
+                `${FORMULA_WORDS[fact.formula] ?? fact.formula}, from ${fact.inputFactIds.length} recorded figure${fact.inputFactIds.length === 1 ? "" : "s"}`,
                 fact.problems.length > 0 ? "Inputs incomplete" : null,
               ].filter(Boolean).join(" · "),
             }))].map((row, i) => (
