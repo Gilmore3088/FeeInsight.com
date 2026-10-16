@@ -1,5 +1,6 @@
 "use client";
 
+import { LocalDate } from "@/components/hamilton/common/LocalDate";
 import { checkMessageFigures, confidenceFromFigureCheck, type FigureCheckResult } from "@/lib/hamilton/figure-check";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
@@ -819,7 +820,7 @@ function AnalyzeConversationWorkspace({
                     >
                       <FileText aria-hidden className="h-5 w-5 shrink-0 text-[var(--fi-muted)]" strokeWidth={1.75} />
                       <span className="min-w-0 flex-1">{r.title}</span>
-                      <span className="shrink-0 text-sm text-[var(--fi-muted)]">{shortDate(r.updated_at)}</span>
+                      <LocalDate iso={r.updated_at} options={SHORT_DATE} className="shrink-0 text-sm text-[var(--fi-muted)]" />
                       <ArrowRight aria-hidden className="h-4 w-4 shrink-0 text-[var(--fi-muted)]" />
                     </a>
                   </li>
@@ -997,11 +998,8 @@ function AnalyzeConversationWorkspace({
   );
 }
 
-/** "Oct 8" for a saved answer's date; empty when the date can't be read. */
-function shortDate(iso: string): string {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
+/** "Oct 8" for a saved answer's date, in the reader's time zone. */
+const SHORT_DATE: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
 
 /** The focus a deep link asks for (?intent=benchmark → Peer Position, etc.). */
 function focusForIntent(intent: string | null | undefined): AnalysisFocus {
