@@ -4,6 +4,10 @@ vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 
 import {
   answerQualityFrom,
+  bucketReaderMissWeeks,
+  readerMissSince,
+  summarizeReaderRemedies,
+  weekStartUtc,
   coverageTarget,
   goalBriefLines,
   goalHeadline,
@@ -152,6 +156,59 @@ describe("Deming accuracy over the week", () => {
   });
 });
 
+describe("text-reading misses (#1054)", () => {
+  // Invented counts for tests only. 2026-10-15 is a Thursday; its week starts Monday 10-12.
+  const now = new Date("2026-10-15T07:00:00Z");
+
+  it("starts each week on Monday, UTC", () => {
+    expect(weekStartUtc(new Date("2026-10-12T00:00:00Z"))).toBe("2026-10-12");
+    expect(weekStartUtc(new Date("2026-10-18T23:59:59Z"))).toBe("2026-10-12");
+    expect(weekStartUtc(new Date("2026-10-11T23:59:59Z"))).toBe("2026-10-05");
+    expect(readerMissSince(now, 3)).toBe("2026-09-28");
+  });
+
+  it("sums batches into their week by kind and keeps an empty week as empty", () => {
+    const weeks = bucketReaderMissWeeks([
+      { at: "2026-10-13T01:00:00Z", evidence: { reads: 50, errors: 10, by_kind: { no_fees_found: 6, unread: 4 } } },
+      { at: "2026-10-15T02:00:00Z", evidence: { reads: 50, errors: 5, by_kind: { short_text: 5 } } },
+      { at: "2026-09-30T02:00:00Z", evidence: { reads: 50, errors: 20, by_kind: { missed_fee_page: 20 } } },
+      // Outside the shown weeks, or unreadable: left out.
+      { at: "2026-09-20T02:00:00Z", evidence: { reads: 50, errors: 50, by_kind: { unread: 50 } } },
+      { at: "2026-10-14T02:00:00Z", evidence: null },
+    ], now, 3);
+    expect(weeks.map((week) => week.weekStart)).toEqual(["2026-09-28", "2026-10-05", "2026-10-12"]);
+    expect(weeks[0]).toMatchObject({ batches: 1, reads: 50, errors: 20, rate: 0.4 });
+    expect(weeks[0].byKind.missed_fee_page).toBe(20);
+    expect(weeks[1]).toEqual({
+      weekStart: "2026-10-05", batches: 0, reads: 0, errors: 0, rate: null,
+      byKind: { no_fees_found: 0, short_text: 0, missed_fee_page: 0, unresolved_fee_page: 0, unread: 0 },
+    });
+    expect(weeks[2]).toMatchObject({ batches: 2, reads: 100, errors: 15, rate: 0.15 });
+    expect(weeks[2].byKind).toMatchObject({ no_fees_found: 6, short_text: 5, unread: 4 });
+  });
+
+  it("gives every week empty when no batch was reviewed", () => {
+    const weeks = bucketReaderMissWeeks([], now);
+    expect(weeks).toHaveLength(8);
+    expect(weeks.every((week) => week.batches === 0 && week.rate === null)).toBe(true);
+    expect(weeks.at(-1)?.weekStart).toBe("2026-10-12");
+  });
+
+  it("counts remedies that later gave Knox fees as a share", () => {
+    expect(summarizeReaderRemedies([
+      { remedy: "reread_js_fallback", remedied: 30, knox_found: 6 },
+      { remedy: "paid_read", remedied: 10, knox_found: 4 },
+    ])).toEqual({
+      remedied: 40, knoxFound: 10, share: 0.25,
+      byRemedy: [
+        { remedy: "reread_js_fallback", remedied: 30, knoxFound: 6, share: 0.2 },
+        { remedy: "paid_read", remedied: 10, knoxFound: 4, share: 0.4 },
+      ],
+    });
+    expect(summarizeReaderRemedies([])).toEqual({ remedied: 0, knoxFound: 0, share: null, byRemedy: [] });
+  });
+});
+
 /** A tagged-template stand-in that answers each query by a word it contains. */
 function fakeDb(answers: Array<[RegExp, unknown[] | Error]>) {
   const queries: string[] = [];
@@ -179,6 +236,8 @@ describe("readGoalScorecard", () => {
       { paid: true, rows_kept: 1000, documents: 200, institutions: 150 },
     ]],
     [/unknown_fees/, [{ live_fees: 75000, unknown_fees: 74000 }]],
+    [/kind = 'batch_error_rate'/, [{ created_at: new Date("2026-10-12T03:00:00Z"), evidence: { reads: 50, errors: 7, by_kind: { no_fees_found: 7 } } }]],
+    [/AS knox_found/, [{ remedy: "reread_js_fallback", remedied: 7, knox_found: 2 }]],
   ];
 
   it("reads every number, each naming its query, without counting refresh copies", async () => {
@@ -199,6 +258,11 @@ describe("readGoalScorecard", () => {
     expect(goal.spend?.byAgent[0]).toMatchObject({ agent: "knox", monthUsd: 75, monthlyCapUsd: 200 });
     expect(goal.knoxPasses).toMatchObject({ zeroCostShare: 0.75, paid: { spendUsd: 20, calls: 700, costPerRowUsd: 0.02 } });
     expect(goal.unstatedAudience?.share).toBeCloseTo(74000 / 75000, 4);
+    expect(goal.readerMisses?.query).toBe("goal.rosetta_miss_rate_weekly");
+    expect(goal.readerMisses?.weeks.at(-1)).toMatchObject({ weekStart: "2026-10-12", reads: 50, errors: 7, rate: 0.14 });
+    expect(goal.readerRemedies).toMatchObject({ query: "goal.rosetta_remedy_outcomes", remedied: 7, knoxFound: 2 });
+    // A new link search counts fees from the institution; every other fix, from the same document.
+    expect(queries.find((q) => /AS knox_found/.test(q))).toContain("fr.institution_id = f.institution_id");
     // "Added" means no live fee a week ago, and refresh copies leave the publish count.
     expect(queries.find((q) => /AS added/.test(q))).toContain("rolled_back_at IS NULL OR fp.rolled_back_at >=");
     expect(queries.find((q) => /refresh_copy/.test(q))).toContain("NOT EXISTS (SELECT 1 FROM refresh_copy");
