@@ -76,7 +76,7 @@ const SHAPES: Record<string, ShapeInfo> = {
   range_band: {
     label: "A rate or balance band, not a fee",
     owner: "Knox's range-band pass",
-    wayOut: `Set aside as not a fee: kept, never deleted. Taking off \`${RANGE_BAND_FLAG}\` puts it back.`,
+    wayOut: `Set aside as not a fee: kept, never deleted. Taking off \`${RANGE_BAND_FLAG}\` (and \`knox_set_aside\` where \`knox_set_aside_by:range_band\` says this pass set it) puts it back.`,
     hasExit: true,
   },
   percentage: {

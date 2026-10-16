@@ -765,13 +765,19 @@ After the extract itself, each extract step runs these passes in order (`run-sto
 - `setAsideRangeBands` (#1102, `RANGE_BAND_SET_ASIDE_LIVE`, off until James switches it on): a held
   range line with no category that is a rate or balance band ("Tier 3 | $25,000.00 – $49,999.99 |
   0.75%", "Loan amounts range from $1,000 to $75,000"). A band says a rate or balance, says nothing a
-  fee line says (fee, charge, waive, "per", "/month", a box, a wire, a card, …), and prints no price
-  under $100 beside its ranges ("Tier 1 | $50.00 - $149.99 | $2.00" is a fee and stays held). On, a
-  band gets `knox_range_band` and `knox_set_aside` and a `knox.range_band` row in the store, up to
-  2,000 a step in the run's lane: kept, never deleted, and taking off the two flags puts it back.
-  Off, the step only counts (`range_band_set_aside`). It touches no line with a category and no
-  live fee. On 16 Oct 2026 (the pass's own SQL, read only): 5,210 of the 7,485 held range lines
-  with no category, at 673 banks, none ever verified; a random 60 were all bands.
+  fee line says (fee, charge, waive, "per", "/month", a box, a wire, a card, …), prints no price
+  under $100 beside its ranges ("Tier 1 | $50.00 - $149.99 | $2.00" is a fee and stays held), and
+  has no range whose upper end is under $100 (a price that is itself a range: "Balance Verification
+  Letters | $5.00 to $25.00", "Personal Checking $8-$9 (based on balance)" stay held). On, a band
+  gets `knox_range_band` and a `knox.range_band` row in the store, up to 2,000 a step in the run's
+  lane; a line not already set aside also gets `knox_set_aside` and `knox_set_aside_by:range_band`.
+  Kept, never deleted. To undo, take off `knox_range_band`, and `knox_set_aside` only where
+  `knox_set_aside_by:range_band` is present, so another pass's set-aside stays. Off, the step only
+  counts (`range_band_set_aside`: `candidates` uncapped for the lane, `checked` at most 2,000). It
+  touches no line with a category and no live fee. On 16 Oct 2026 (the pass's own SQL, read only):
+  5,047 of the 7,485 held range lines with no category, at 652 banks, none ever verified. The first
+  version took 5,210, including real fees priced as small ranges that a review found; a random 60
+  of the 5,047 read as bands by eye, a sample rather than proof.
 - `consumeRereadRequests` (#1511, `KNOX_REREAD_FEEDBACK_LIVE`, off): Darwin's re-read requests for
   live fees named by a sentence fragment (below).
 - Batch review (`batch-review.ts`, below).

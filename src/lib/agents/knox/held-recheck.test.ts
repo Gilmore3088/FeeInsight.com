@@ -31,6 +31,7 @@ import {
   refiledRead,
   isRangeBand,
   RANGE_BAND_FLAG,
+  RANGE_BAND_SET_ASIDE_BY_FLAG,
   RANGE_BAND_SET_ASIDE_LIVE,
   setAsideRangeBands,
   refileSupersededRows,
@@ -773,6 +774,13 @@ describe("held range lines that are rate or balance bands, not fees (#1102)", ()
     [range(8, "$0 -$999.99 -- Service charge: $11.00/month. No interest."), false],
     [range(9, "Box Rental | Range from $20-$100/Year ⓘDepending on size"), false],
     [range(10, "$50.01 - $500 | 4% (Waived w/combined Deposit & Loan Balance Relationship of $10,000 or greater)"), false],
+    // A price that is itself a small range is a fee, not a band (review of #1622; production raw ids).
+    [range(115327, "Balance Verification Letters | $5.00 to $25.00"), false],
+    [range(408784, "Pay-By-Phone Loan Payment | $1.00 - $5.00"), false],
+    [range(376138, "Personal Checking $8-$9 (based on balance)"), false],
+    [range(376139, "Commercial Checking $6-$15 (based on balance)"), false],
+    [range(423664, "Negative account balance $0-$9.99 | Medallion Signature guarantee, members | 5.00"), false],
+    [range(152384, "Health Savings Account | $0.00 - $3.00 | $500.00 - $2000.00"), false],
     // No rate or balance word: left held.
     [range(11, "Available in any denomination from $10 to $1,000."), false],
     // A range with a fee category is a real fee priced as a range (#1060), never a band.
@@ -786,6 +794,9 @@ describe("held range lines that are rate or balance bands, not fees (#1102)", ()
     const db = createDb([tier, loan, range(5, "Tier 1 | $50.00 - $149.99 | $2.00")]);
     const result = await setAsideRangeBands(db as never, { stateCode: "tx" });
     expect(result).toMatchObject({ live: false, dryRun: true, checked: 3, bands: 2, institutions: 2, setAside: 0 });
+    // The uncapped lane count comes from the query itself, not from the rows read.
+    const counted = createDb([{ ...tier, candidates: "5047" }]);
+    expect(await setAsideRangeBands(counted as never)).toMatchObject({ candidates: 5047, checked: 1 });
     expect(result.examples.map((example) => example.feeRawId)).toEqual([1, 2]);
     expect(db.mock.calls.some(([strings]) => /UPDATE|INSERT/.test(templateText(strings)))).toBe(false);
   });
@@ -794,7 +805,8 @@ describe("held range lines that are rate or balance bands, not fees (#1102)", ()
     const db = vi.fn((strings: TemplateStringsArray) => {
       const text = templateText(strings);
       if (text.includes("SELECT fr.fee_raw_id")) return Promise.resolve([tier, apy]);
-      if (text.includes("UPDATE raw_fee_observations")) return Promise.resolve([{ fee_raw_id: 1 }, { fee_raw_id: 3 }]);
+      // Raw 3 was already set aside by another pass, so this pass did not set it aside.
+      if (text.includes("UPDATE raw_fee_observations")) return Promise.resolve([{ fee_raw_id: 1, set_aside_here: true }, { fee_raw_id: 3, set_aside_here: false }]);
       if (text.includes("to_regclass")) return Promise.resolve([{ ready: true }]);
       if (text.includes("INSERT INTO pipeline_feedback")) return Promise.resolve([{ id: 1 }, { id: 2 }]);
       return Promise.resolve([]);
@@ -803,8 +815,14 @@ describe("held range lines that are rate or balance bands, not fees (#1102)", ()
     expect(result).toMatchObject({ live: true, dryRun: false, bands: 2, setAside: 2 });
     const update = db.mock.calls.find(([strings]) => templateText(strings).includes("UPDATE raw_fee_observations"));
     expect(templateText(update?.[0])).not.toMatch(/DELETE/);
-    expect(update?.slice(1)).toContain(JSON.stringify([RANGE_BAND_FLAG, HELD_SET_ASIDE_FLAG]));
-    expect(db.mock.calls.some(([strings]) => templateText(strings).includes("INSERT INTO pipeline_feedback"))).toBe(true);
+    // A line already set aside keeps its own flag; only a line this pass sets aside is marked as such.
+    expect(templateText(update?.[0])).not.toMatch(/ - /);
+    expect(update?.slice(1)).toContain(JSON.stringify([RANGE_BAND_FLAG]));
+    expect(update?.slice(1)).toContain(JSON.stringify([RANGE_BAND_FLAG, HELD_SET_ASIDE_FLAG, RANGE_BAND_SET_ASIDE_BY_FLAG]));
+    const insert = db.mock.calls.find(([strings]) => templateText(strings).includes("INSERT INTO pipeline_feedback"));
+    const logged = JSON.stringify(insert?.slice(1));
+    expect(logged).toContain('\\"set_aside_by_this_pass\\":true');
+    expect(logged).toContain('\\"set_aside_by_this_pass\\":false');
   });
 
   it("a dry run writes nothing even with the switch on", async () => {
