@@ -52,7 +52,7 @@ export function SampleLines({ sample }: { sample: SampleExhibit }) {
                 aria-pressed={pressed}
                 onClick={() => setPicked(l.key)}
                 aria-label={`${l.label}: ${money(l.own)}; local middle half ${money(l.p25)} to ${money(l.p75)}; ${POSITION[l.position].word.toLowerCase()}`}
-                className={`-mx-2 grid w-[calc(100%+1rem)] grid-cols-[7rem_minmax(0,1fr)_3.5rem] items-center gap-3 rounded-lg px-2 py-2 text-left text-[14px] transition-colors hover:bg-paper focus-visible:outline-2 focus-visible:outline-ink sm:grid-cols-[11rem_minmax(0,1fr)_4.5rem] ${
+                className={`-mx-2 grid w-[calc(100%+1rem)] grid-cols-[7rem_minmax(0,1fr)_3.5rem] items-center gap-3 min-h-11 rounded-lg px-2 py-2 text-left text-[14px] transition-colors hover:bg-paper focus-visible:outline-2 focus-visible:outline-ink sm:grid-cols-[11rem_minmax(0,1fr)_4.5rem] ${
                   pressed ? "bg-paper ring-1 ring-ink/30" : ""
                 }`}
               >
@@ -111,7 +111,7 @@ export function StateReportMap({ states }: { states: MapState[] }) {
 
   return (
     <div className="mx-auto max-w-[60rem]">
-      <svg viewBox="0 0 960 600" className="h-auto w-full" role="group" aria-label="State fee reports">
+      <svg viewBox="0 0 960 600" className="h-auto w-full" aria-hidden="true">
         {US_STATES.map((s) => {
           const state = byCode.get(s.id);
           const active = s.id === shown.code;
@@ -148,7 +148,7 @@ export function StateReportMap({ states }: { states: MapState[] }) {
         </div>
         <div className="flex flex-col gap-2 sm:w-[16rem]">
           <label className="block text-[12px] text-ink-muted">
-            <span className="sr-only">Pick a state</span>
+            <span className="mb-1 block">Pick a state</span>
             <select
               value={shown.code}
               onChange={(e) => setCode(e.target.value)}
@@ -170,12 +170,12 @@ export function StateReportMap({ states }: { states: MapState[] }) {
             Open the {shown.name} report
           </Link>
           {shown.reportReady && (
-            <a
+            <Link
               href={`/reports?report=institution&src=reports-map-${shown.code}#request`}
-              className="text-center text-[13px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+              className="inline-flex min-h-11 items-center justify-center text-[13px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
             >
               Get a competitor report for {shown.name}
-            </a>
+            </Link>
           )}
         </div>
       </div>

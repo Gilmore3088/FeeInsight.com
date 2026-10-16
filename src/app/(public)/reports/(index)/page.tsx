@@ -228,7 +228,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
               event="sample_report_click"
               eventProps={{ placement: "reports_inside_sample" }}
               href={SAMPLE_REPORT_HREF}
-              className="text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+              className="inline-flex min-h-11 items-center text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
             >
               Read the whole sample, with sources
             </TrackLink>
@@ -243,9 +243,9 @@ export default async function ReportsPage({ searchParams }: PageProps) {
           <h2 id="request-heading" className={`${H2} text-center`}>
             Get your fee report
           </h2>
-          <ol className="mt-5 grid gap-2 sm:grid-cols-3">
+          <ol className="mt-5 grid gap-2">
             {STEPS.map((step, i) => (
-              <li key={step.title} className="flex items-start gap-3 rounded-xl bg-paper px-4 py-3 sm:flex-col sm:gap-1">
+              <li key={step.title} className="flex items-center gap-4 rounded-xl bg-paper px-4 py-3">
                 <span className="font-mono text-[20px] font-semibold leading-none text-brick">{i + 1}</span>
                 <span>
                   <span className="block text-[14px] font-semibold text-ink">{step.title}</span>
@@ -259,7 +259,6 @@ export default async function ReportsPage({ searchParams }: PageProps) {
               contactEmail={CONTACT_EMAIL}
               defaultSrc="reports-hub"
               defaultReportType="institution"
-              title="Tell us your institution"
             />
           </div>
         </div>
@@ -274,7 +273,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
           {states.length > 0 && (
             <p className="mt-2 text-[14px] text-ink-muted">
               {coveredInstitutions.toLocaleString("en-US")} institutions with verified fees. Tap a state.{" "}
-              <Link href="/methodology" className="font-medium text-ink underline decoration-border underline-offset-2 hover:decoration-ink">
+              <Link href="/methodology" className="inline-flex min-h-11 items-center font-medium text-ink underline decoration-border underline-offset-2 hover:decoration-ink">
                 How we verify
               </Link>
             </p>

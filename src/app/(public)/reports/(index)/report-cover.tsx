@@ -10,7 +10,7 @@ export function ReportShowcase() {
   const [cover, second, third] = REPORT_SHOWCASE.pages;
   const page = "rounded-[3px] bg-white shadow-[0_18px_48px_-18px_rgba(26,24,21,0.45)] ring-1 ring-border";
   return (
-    <div className="relative mx-auto mt-10 h-[19rem] w-full max-w-[44rem] sm:mt-12 sm:h-[30rem]">
+    <div className="relative mx-auto mt-10 h-[15rem] w-full max-w-[44rem] sm:mt-12 sm:h-[25rem]">
       <span aria-hidden="true" className="absolute inset-x-[8%] bottom-0 top-[18%] rounded-[2rem] bg-brick-tint/60" />
       {second && (
         <Image
