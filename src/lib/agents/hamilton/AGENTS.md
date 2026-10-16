@@ -639,7 +639,7 @@ names the kept row's document) pairs with the kept row under another name that s
 (#1348): the newer copy reading "Temporary checks" as "Temporary checks (sheet of 3 checks)" is one
 line, and closes on the same tests unless the newer copy prints both names as lines of their own. A
 line the newer copy dropped ("Money Order" beside "Temporary checks") shares no word and never
-pairs. A partner of the same name is taken first, then a near name, then a renamed one. `renamed`
+pairs; a box size counts as a word ("Safe Deposit Box - 3x5" / "3 x 5"). A partner of the same name is taken first, then a near name, then a renamed one. `renamed`
 in the step detail counts these pairs, closed or kept, and `renamed_samples` lists those that close. Up to 25 institutions per step, picked by the run id; each
 step reports `page_copy_collapse` (live, institutions, pairs, apart on page, unproven, other
 document, renamed, would close, samples, and `error` when the read or the close failed). `PAGE_COPY_COLLAPSE_LIVE` stays

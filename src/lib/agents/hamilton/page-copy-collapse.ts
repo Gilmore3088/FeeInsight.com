@@ -81,7 +81,11 @@ export interface PageCopyResult {
 const NAME_FILLER = new Set(["fee", "fees", "charge", "charges", "per", "each", "item", "items", "the", "a", "an", "of", "for", "and", "or", "to", "on", "in", "account", "accounts"]);
 
 function nameWords(name: string | null): Set<string> {
-  return new Set((name ?? "").toLowerCase().split(/[^a-z]+/).filter((word) => word.length > 1 && !NAME_FILLER.has(word)));
+  const lower = (name ?? "").toLowerCase();
+  const words = lower.split(/[^a-z]+/).filter((word) => word.length > 1 && !NAME_FILLER.has(word));
+  // A box size counts as a word: "Safe Deposit Box - 3x5" and "3 x 5" name one box.
+  const sizes = [...lower.matchAll(/(\d+(?:\.\d+)?)\s*["”']?\s*(?:x|by)\s*(\d+(?:\.\d+)?)/g)].map((m) => `${m[1]}x${m[2]}`);
+  return new Set([...words, ...sizes]);
 }
 
 /** The two names share a word beyond "fee", "charge", "each" and the like. */

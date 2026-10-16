@@ -236,6 +236,16 @@ describe("pageCopyRepeats: a copy the newer copy replaced (#1348)", () => {
     expect(pageCopyRepeats(pair("Online Stop Payment", "Temporary checks (sheet of 3 checks)"), texts).pairs).toBe(0);
   });
 
+  it("reads a box size as a shared word (\"Safe Deposit Box - 3x5\" / \"3 x 5\")", () => {
+    const box = "Safe Deposit Boxes 3 x 5 $30.00 3 x 10 $45.00 Stop Payment $30.00 Cashier's Check $10.00 Wire Transfer Incoming $15.00";
+    const rows = pair("Safe Deposit Box - 3x5", "3 x 5").map((one) => ({ ...one, canonical_fee_key: "safe_deposit_box", amount: 30 }));
+    const found = pageCopyRepeats(rows, new Map([["297", box], ["20497", box]]));
+    expect(found).toMatchObject({ renamed: 1 });
+    expect(found.collapses).toEqual([expect.objectContaining({ feePublishedId: 7255, keptFeePublishedId: 32758 })]);
+    const other = pair("Safe Deposit Box - 3x10", "3 x 5").map((one) => ({ ...one, canonical_fee_key: "safe_deposit_box", amount: 30 }));
+    expect(pageCopyRepeats(other, new Map([["297", box], ["20497", box]])).pairs).toBe(0);
+  });
+
   it("never pairs other names across documents that only share a page key", () => {
     const [older, newer] = pair("Counter Checks", "Temporary checks (sheet of 3 checks)");
     const found = pageCopyRepeats([{ ...older, superseded: false, superseded_by_id: null }, newer], texts);
