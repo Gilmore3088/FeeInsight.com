@@ -12,7 +12,7 @@ import { currentCopySchemaReady } from "@/lib/agents/magellan/current-copy";
 import { CATEGORY_GUARD_VERSION, checkFeeCategory, refileCategory, refileFromLine } from "@/lib/fee-category-guard";
 import { RETIRED_CATEGORIES } from "@/lib/fee-fold";
 import { RULE_WHY, ruleFor } from "@/lib/agents/hamilton/eval-verdicts";
-import { checkFeeAgainstSource, checkRateAgainstSource } from "@/lib/custom-report/source-check";
+import { checkFeeAgainstSource, checkRateAgainstSource, sourceLines } from "@/lib/custom-report/source-check";
 import { perEventFrequency, settledFrequency } from "@/lib/fee-frequency";
 import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
 import { sourceLinkSkipReason } from "@/lib/agents/hamilton/source-link";
@@ -248,6 +248,10 @@ function nextRow(tail: string, feeName: string | null | undefined): boolean {
   const text = tail.replace(/^[\s.;,:*\u2013\u2014-]+/, "");
   if (!/^[A-Z]/.test(text)) return false;
   const price = PRICE_AT.exec(text);
+  // #1593: a label priced $0 before any other price is the next free row ("Mobile Deposit FREE MX
+  // Personal Financial Management FREE Online Banking FREE ... $25.00"), never this fee's condition.
+  const zero = ZERO_PRICE.exec(text);
+  if (zero && zero.index > 0 && (!price || zero.index < price.index) && otherFeeLabel(text.slice(0, zero.index), feeName)) return true;
   if (!price) return false;
   if (!namesOtherFee(text.slice(0, price.index), feeName)) return false;
   const after = text.slice(price.index + price[0].length).replace(/^[\d,.]*/, "").slice(0, 40);
@@ -280,7 +284,7 @@ function nameRun(text: string, feeName: string): { start: number; end: number; l
  * the fee name. Text before the name is dropped only when a $0 follows it and the row does not
  * open with a price. Pure.
  */
-function ownRow(cell: string, feeName: string | null | undefined): string | null {
+function ownRow(cell: string, feeName: string | null | undefined, documentText: string | null = null): string | null {
   // A name that opens with its own $0 ("Free official checks", "No Monthly Maintenance Fee") is an
   // account's feature list, not a priced row: read the cell whole (final review of #1571).
   if (!feeName || LEADING_ZERO_NAME.test(feeName)) return null;
@@ -316,7 +320,67 @@ function ownRow(cell: string, feeName: string | null | undefined): string | null
   // In prose, words before the name in its own sentence are its terms ("One credit = $2 off your
   // monthly service charge"): only a run-on row of cells drops them (final review of #1571).
   const from = sentences.length > 1 ? 0 : run.start;
-  return nextRow(group.slice(zeroEnd), feeName) ? group.slice(from, zeroEnd) : group.slice(from);
+  const tail = group.slice(zeroEnd);
+  return nextRow(tail, feeName) || otherColumnTail(tail, feeName, documentText) ? group.slice(from, zeroEnd) : group.slice(from);
+}
+
+/**
+ * True when the text after a fee's $0 on a run-on line is the other column of a two-column page
+ * (#1593), on the document's own evidence:
+ * - a line of two text cells sits next to it ("Blue Lion Checking | Account Early Closure"), the
+ *   tail does not open with a condition word, and the same row, the fee's whole name and its $0,
+ *   prints on another line followed by a priced text that shares no word with this tail
+ *   ("Maintenance Fee (per statement cycle) $0.00" then "(closed within 90 days of opening) $20.00",
+ *   "(per account, per hour) $25.00" and "Lost Debit Card (per card) $10.00" on three lines: each
+ *   tail is the right column's row); or
+ * - the tail opens with another fee's label whose first word opens the other column on a line next
+ *   to it ("Foreign ATM usage No Charge Customer (incoming) $15.00" over "Replacement Card $10.00
+ *   Customer Domestic (outgoing) $30.00" under the right column's "Wire Transfers").
+ * Without the document, or with no such evidence, the tail stays the fee's terms. Pure.
+ */
+function otherColumnTail(tail: string, feeName: string | null | undefined, documentText: string | null): boolean {
+  if (!documentText || !feeName || AUDIENCE_NAME.test(feeName)) return false;
+  const text = tail.replace(/^[\s.;,:*–—-]+/, "");
+  const price = PRICE_AT.exec(text);
+  if (!price) return false;
+  const lines = documentText.split(/\r?\n/).map((line) => line.replace(/\s+/g, " ").trim()).filter((line) => line.length > 0);
+  const flat = text.replace(/\s+/g, " ").trim();
+  const here = lines.flatMap((line, index) => (line.includes(flat) ? [index] : []));
+  const near = (index: number) => [index - 2, index - 1, index + 1, index + 2].map((k) => lines[k]).filter((line): line is string => line != null);
+  // A line of two text cells next to it ("Blue Lion Checking | Account Early Closure"): the page
+  // is laid out in two columns here.
+  const twoColumns = here.some((index) => near(index).some((line) => {
+    const cells = line.split(/\s\|\s/);
+    return cells.length === 2 && cells.every((cell) => (cell.match(/[a-z]{3,}/gi) ?? []).length >= 2);
+  }));
+  const firstWord = /^\(?\s*([a-z]+)/i.exec(text)?.[1] ?? "";
+  if (twoColumns && firstWord && !CONDITION_WORDS.test(firstWord)) {
+    const own = new Set(labelWords(flat));
+    const repeated = lines.some((line) => {
+      const after = rowTail(line, feeName);
+      return after != null && after.replace(/\s+/g, " ").trim() !== flat && PRICE_AT.test(after) && !labelWords(after).some((word) => own.has(word));
+    });
+    if (repeated) return true;
+  }
+  const label = text.slice(0, price.index);
+  if (!otherFeeLabel(label, feeName)) return false;
+  const lead = labelWords(label)[0];
+  if (!lead) return false;
+  const opensColumn = (part: string) => part.toLowerCase().startsWith(lead) && PRICE_AT.test(part);
+  return here.some((index) => near(index).some((line) => {
+    const first = PRICE_AT.exec(line);
+    const right = first ? line.slice(first.index + first[0].length).replace(/^[\d,.]*\s*/, "") : "";
+    return opensColumn(right) || opensColumn(line);
+  }));
+}
+
+/** The text after the fee's whole name and its $0 on a line, or null when the line does not print that row. */
+function rowTail(line: string, feeName: string): string | null {
+  if (!printsOwnZero(line, feeName)) return null;
+  const run = nameRun(line, feeName);
+  if (!run) return null;
+  const zero = ZERO_PRICE.exec(line.slice(run.end));
+  return zero ? line.slice(run.end + zero.index + zero[0].length) : null;
 }
 
 /**
@@ -329,19 +393,82 @@ function ownRow(cell: string, feeName: string | null | undefined): string | null
  * inside a cell that lists several "Label: value" pairs, only the fee's own label and value count.
  * Pure.
  */
-export function ownSegment(line: string, feeName: string | null | undefined): string {
+export function ownSegment(line: string, feeName: string | null | undefined, documentText: string | null = null): string {
   // Cells: table columns (" | "), items of a comma list ("FREE Debit Card, FREE Bill Pay, ... up to
   // $10"), and dot-leader entries ("Garnish & Levy Fee ……… $25.00 per Item Research ……… $20.00").
   const cells = line.split(/\s\|\s|,\s+|[.…]{3,}\s*/).filter((cell) => cell.trim().length > 0);
   const tokens = nameTokens(feeName);
-  if (cells.length < 2) return bestPart(cells, tokens) < 0 ? "" : ownPart(line, feeName, tokens);
+  if (cells.length < 2) return bestPart(cells, tokens) < 0 ? "" : ownPart(line, feeName, tokens, documentText);
   const best = bestPart(cells, tokens);
   // No cell carries a word of the name: the line's prices cannot be this fee's.
   if (best < 0) return "";
   const next = cells[best + 1];
   const comparisonRow = isPriceCell(next, feeName) && isPriceCell(cells[best + 2], feeName);
-  const own = ownPart(cells[best], feeName, tokens);
-  return isPriceCell(next, feeName) && !comparisonRow ? `${own} | ${next}` : own;
+  // #1593: a price that opens the fee's cell right after another fee's label cell is that fee's
+  // ("5x10x20 Safe Deposit Box Annually | $75.00 Bill Pay | No Charge"); with no label before it,
+  // the price stays this fee's ("$5.00 Paper Statement Fee (FREE with e-Statements)").
+  const cell = best > 0 && priceOfLabelBefore(line, cells[best - 1], cells[best], feeName) ? cells[best].replace(LEADING_PRICE, "") : cells[best];
+  const own = ownPart(cell, feeName, tokens, documentText);
+  return isPriceCell(next, feeName) && !comparisonRow && !otherColumnCell(own, next, feeName) ? `${own} | ${next}` : own;
+}
+
+const LEADING_PRICE = /^\s*\$\s*\d[\d,]*(?:\.\d{1,2})?\s*/;
+
+/**
+ * The price opening this table cell closes the table cell before it: the cells are split by " | "
+ * and the one before names another fee with a fee noun and no price of its own ("Account research
+ * and reconciliation | $40 per hour Notary | FREE"). A comma list ("Debit card only account, $10.95
+ * monthly account fee") is prose, and keeps its price (#1593). Pure.
+ */
+function priceOfLabelBefore(line: string, before: string, cell: string, feeName: string | null | undefined): boolean {
+  if (!LEADING_PRICE.test(cell) || !FEE_NOUN.test(before) || !otherFeeLabel(before, feeName, false)) return false;
+  const at = line.indexOf(`${before}`);
+  return at >= 0 && /^\s\|\s/.test(line.slice(at + before.length));
+}
+
+// A fee name that is one audience's or age band's own price ("Check Printing (members over 62)"):
+// whether its $0 is the bank's price is a person's call, so the two-column reading never frees it.
+const AUDIENCE_NAME = /\b(?:members?|non-?members?|seniors?|students?|youth|ages?|over\s+\d+|under\s+\d+|\d+\s*\+)\b/i;
+// Words left out when two labels are compared.
+const OTHER_LABEL_SKIP = new Set([...GENERIC_LABEL_WORDS, "per"]);
+
+/** A label's content words: three letters or more, generic words and "per" left out. */
+function labelWords(text: string): string[] {
+  return (text.toLowerCase().match(/[a-z]{3,}/g) ?? []).filter((word) => !OTHER_LABEL_SKIP.has(word));
+}
+
+/**
+ * True when text is another fee's label: words of its own, no word that states a condition, no
+ * price of its own and no specific word of this fee's name. `capitalised` asks for a label that
+ * opens like a row's name ("Account History", "Night Depository Bags & Key"). Pure (#1593).
+ */
+function otherFeeLabel(text: string | undefined, feeName: string | null | undefined, capitalised = true): boolean {
+  if (!text || !feeName) return false;
+  const label = text.replace(/[\s.…:|*_–—-]+$/, "").trim();
+  if (capitalised && !/^[A-Z]/.test(label)) return false;
+  // "Safe Deposit Box", "Night Deposit" and "Personal Financial Management" name services; "deposit"
+  // or "personal" alone is a condition ("with direct deposit", "personal accounts").
+  const conditionText = label.replace(/\b(?:safe|night)\s+deposit\b|\bpersonal\s+financial\s+management\b/gi, " ");
+  if (labelWords(label).length === 0 || CONDITION_WORDS.test(conditionText) || PRICE_AT.test(label) || ZERO_PRICE.test(label)) return false;
+  const stem = (word: string) => word.replace(/ies$/, "y").replace(/s$/, "").replace(/e$/, "");
+  const own = new Set(labelWords(feeName).map(stem));
+  return !labelWords(label).some((word) => own.has(stem(word)));
+}
+
+/**
+ * The next cell is the other column of a two-column page, not this fee's price: the fee's own cell
+ * already prints its $0 after its whole name, and the next cell opens with another fee's label
+ * before its own price ("Bill Pay ---- No Charge | Account History ---- $3.00 each", "Foreign
+ * Transaction Fees No Charge | Night Depository Bags & Key $ 30.00"). A label that states a
+ * condition ("Paper statements: $5") or shares the fee's words stays this fee's terms (#1593). Pure.
+ */
+function otherColumnCell(own: string, next: string | undefined, feeName: string | null | undefined): boolean {
+  if (!next || !feeName || AUDIENCE_NAME.test(feeName) || !printsOwnZero(own, feeName)) return false;
+  const price = PRICE_AT.exec(next);
+  if (!price) return false;
+  const label = next.slice(0, price.index);
+  // One bare word ("Subordination: $175.00") is too little to call it a row of its own.
+  return otherFeeLabel(label, feeName) && (labelWords(label).length >= 2 || FEE_NOUN.test(label));
 }
 
 /**
@@ -349,9 +476,9 @@ export function ownSegment(line: string, feeName: string | null | undefined): st
  * clauses ("Monthly Service Charge: FREE Minimum Balance: $1.00"), else its own row of a run-on
  * cell (`ownRow`, #1571), else the cell.
  */
-function ownPart(cell: string, feeName: string | null | undefined, tokens: string[]): string {
+function ownPart(cell: string, feeName: string | null | undefined, tokens: string[], documentText: string | null = null): string {
   const clause = ownClause(cell, tokens);
-  return clause !== cell ? clause : ownRow(cell, feeName) ?? cell;
+  return clause !== cell ? clause : ownRow(cell, feeName, documentText) ?? cell;
 }
 
 /** The "Label: value" clause of a cell that names this fee, when the cell holds several. */
@@ -378,14 +505,41 @@ function ownClause(cell: string, tokens: string[]): string {
  * Service Charge: FREE Minimum Balance: $1.00 | Monthly Balance Fee: $7.50"); and the deposit that
  * opens the account ("No monthly service fee and just $1 minimum opening requirement"). Pure.
  */
-export function conditionalZero(amount: number | null, line: string | null | undefined, feeName: string | null | undefined): boolean {
+export function conditionalZero(
+  amount: number | null,
+  line: string | null | undefined,
+  feeName: string | null | undefined,
+  context: { documentText?: string | null; canonicalFeeKey?: string | null } = {},
+): boolean {
   if (amount !== 0) return false;
   // In a completed audience-specific elimination, the other audience's old/new
   // prices are not conditions on this consumer's $0. Exact source pairing only.
   if (scopedFeeStatements(line ?? "").some((fee) =>
     fee.amount === 0 && fee.feeTreatment === "eliminated" && fee.feeName.toLowerCase() === feeName?.toLowerCase())) return false;
-  const text = `${line ? ownSegment(line, feeName) : ""} ${feeName ?? ""}`.replace(NON_CUSTOMER_PRICE, " ").replace(OPENING_DEPOSIT, " ");
+  const segment = line ? ownSegment(line, feeName, context.documentText ?? null) : "";
+  const text = otherWireSide(`${segment} ${feeName ?? ""}`, context.canonicalFeeKey)
+    .replace(NON_CUSTOMER_PRICE, " ").replace(OPENING_DEPOSIT, " ");
   return [...text.matchAll(NONZERO_DOLLAR)].some((match) => Number(match[1].replace(/,/g, "")) > 0);
+}
+
+const MONEY = "\\$\\s*\\d[\\d,]*(?:\\.\\d{1,2})?";
+const INTL_SIDE = "(?:international|foreign|intl)";
+// A row labels each side either after its price ("$25.00 (International)") or before it
+// ("International $25.00"); the row's own convention decides which label a price carries.
+const SIDE_AFTER_PRICE = new RegExp(`${MONEY}\\s*\\(\\s*(?:domestic|${INTL_SIDE})\\b`, "i");
+const sidePrice = (side: string, after: boolean) =>
+  new RegExp(after ? `${MONEY}\\s*\\(\\s*${side}\\b` : `\\b${side}\\b\\)?\\s*[:\\u2013-]?\\s*${MONEY}`, "gi");
+
+/**
+ * #1593: a wire row that prices both sides ("Wire Transfers: Incoming | No Charge(Domestic) $25.00
+ * (International)") gives a domestic wire fee the international price as another fee's, not as a
+ * condition on its $0, and the other way round. Only when the row names the fee's own side. Pure.
+ */
+function otherWireSide(text: string, canonicalFeeKey: string | null | undefined): string {
+  const after = SIDE_AFTER_PRICE.test(text);
+  if (canonicalFeeKey?.startsWith("wire_domestic_") && /\bdomestic\b/i.test(text)) return text.replace(sidePrice(INTL_SIDE, after), " ");
+  if (canonicalFeeKey?.startsWith("wire_intl_") && new RegExp(`\\b${INTL_SIDE}\\b`, "i").test(text)) return text.replace(sidePrice("domestic", after), " ");
+  return text;
 }
 
 /**
@@ -639,8 +793,55 @@ export function sourceLineFor(
   const text = texts.get(Number(row.source_document_id));
   if (!text) return null;
   const result = checkFeeAgainstSource(text, row.fee_name, amount, ".", canonicalFeeKey);
-  return result.ok ? result.sourceLine : null;
+  if (!result.ok) return null;
+  // #1593: a $0 traced to a line that does not print it ("If an individual overdraft payment is
+  // $20 or less any overdraft fees are waived" for "Overdraft Transfer Fee | $0"; a long line cut
+  // off before "Mobile Deposit FREE") is read on the line that prints its whole name with its $0.
+  // Only when the traced line lacks a word of the fee's own name: a line that carries them all keeps
+  // its own terms ("Monthly Service Charge 0.00 for 1st account 2nd account $5.00").
+  if (amount !== 0 || !missesOwnWord(result.sourceLine, row.fee_name)) return result.sourceLine;
+  return ownZeroLine(text, row.fee_name, canonicalFeeKey) ?? result.sourceLine;
 }
+
+/** The line lacks a word of the fee's name other than the generic ones ("fee", "service", "charge"). */
+function missesOwnWord(line: string, feeName: string | null | undefined): boolean {
+  const present = new Set(words(line).map((entry) => entry.word));
+  return words(feeName ?? "").some((entry) => !GENERIC_NAME_WORDS.has(entry.word) && !present.has(entry.word));
+}
+
+// What may sit between a fee's name and its price on its own row: leaders, a colon, a cell break.
+const NAME_TO_PRICE = /^[\s.…:|*_–—)-]*$/;
+
+/** The line prints the fee's whole name (two words or more) with a $0 straight after it. Pure. */
+function printsOwnZero(line: string, feeName: string | null | undefined): boolean {
+  if (!feeName) return false;
+  const length = words(feeName).length;
+  if (length < 2) return false;
+  const run = nameRun(line, feeName);
+  if (!run || run.length < length) return false;
+  const zero = ZERO_PRICE.exec(line.slice(run.end));
+  return zero != null && NAME_TO_PRICE.test(line.slice(run.end, run.end + zero.index));
+}
+
+/**
+ * The first line of the document that prints the fee's whole name with its $0 straight after it
+ * and that the shared source check traces on its own, or null (#1593). A long run-on line is read
+ * from the fee's name on, as far as the shared check's own trace length, so the name is never cut
+ * off. Pure.
+ */
+function ownZeroLine(text: string, feeName: string, canonicalFeeKey?: string | null): string | null {
+  for (const line of sourceLines(text)) {
+    if (!printsOwnZero(line, feeName) || !checkFeeAgainstSource(line, feeName, 0, ".", canonicalFeeKey).ok) continue;
+    const start = nameRun(line, feeName)?.start ?? 0;
+    // A $0 that is one audience's price ("Monthly Maintenance Service Charge | $0 for students ages
+    // 15-25") is not read in place of the traced line.
+    if (AUDIENCE_NAME.test((rowTail(line, feeName) ?? "").slice(0, 60))) continue;
+    return line.length <= TRACED_LINE_LENGTH ? line : line.slice(start, start + TRACED_LINE_LENGTH);
+  }
+  return null;
+}
+// The shared source check's traced line is at most this long.
+const TRACED_LINE_LENGTH = 240;
 
 /**
  * The checks a verified row must still pass after the shared source check has traced it:
@@ -653,9 +854,10 @@ export function postSourceCheck(
   feeName: string,
   amount: number | null,
   line: string | null,
+  documentText: string | null = null,
 ): { code: "retired_category" | "conditional_zero" | "name_rule"; rule?: string } | null {
   if (canonicalFeeKey in RETIRED_CATEGORIES) return { code: "retired_category" };
-  if (conditionalZero(amount, line, feeName)) return { code: "conditional_zero" };
+  if (conditionalZero(amount, line, feeName, { documentText, canonicalFeeKey })) return { code: "conditional_zero" };
   const rule = ruleFor(canonicalFeeKey, feeName, amount, line);
   return rule ? { code: "name_rule", rule } : null;
 }
@@ -1286,7 +1488,7 @@ export async function runDarwinVerify(
     // Traced to its line: the line must also price it as read, in a live category, under
     // Hamilton's own name rules (2026-10-09: the re-select verified "$0 if condition" fees).
     const sourceLine = reasonCode || !canonicalFeeKey ? null : sourceLineFor(row, sourceTexts, canonicalFeeKey) ?? excerptOf(row.conditions);
-    const postCheck = reasonCode || !canonicalFeeKey ? null : postSourceCheck(canonicalFeeKey, row.fee_name, normalizedAmount(row.amount), sourceLine);
+    const postCheck = reasonCode || !canonicalFeeKey ? null : postSourceCheck(canonicalFeeKey, row.fee_name, normalizedAmount(row.amount), sourceLine, sourceText);
     if (postCheck) reasonCode = postCheck.code;
     // #1397: a $0 a premium or private-banking schedule grants is that tier's perk, not the bank's price.
     if (!reasonCode && tierPerkZero(normalizedAmount(row.amount), row.fee_name, row.source_url, sourceText, canonicalFeeKey)) reasonCode = "tier_perk_zero";
