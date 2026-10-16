@@ -73,6 +73,13 @@ Darwin owns verification and classification.
   stale first flag qualify once #1291's repair (inside its switched-off re-file pass) runs, and the
   re-file pass adds its rows when it is on. The 216 rows #1093 step 2 sent back carry the category
   they were rejected under, so this rule does not reach them.
+- A Knox take-over that changes a retired row's category writes `knox_takeover_from:<old>`
+  (#1295, `knox/extract.ts`), since the take-over drops the old `canonical_hint:` flags and left
+  no proof. It counts as proof, like `knox_refiled_from:`, only with
+  `DARWIN_TAKEOVER_CATEGORY_PROOF_LIVE` on (off, gated on James). Off, each verify step counts and
+  samples the rows only it would add in `detail.category_change_rejudge.takeover_proof`. Measured
+  Oct 16 (read-only): no row carries the flag yet, so it would add 0 today; the pool a take-over
+  can reach is 1,356 retired, unverified Knox rows (1,269 with a v3 decision).
 - `not_in_source` (2026-10-06) runs the same check Hamilton's live-fee source check runs, so a
   fee the bank's schedule does not state is stopped before it is verified instead of being
   published and then taken down. It joined version 3 without a bump: a bump re-selects every

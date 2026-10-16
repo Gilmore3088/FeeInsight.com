@@ -9,11 +9,14 @@ import { DARWIN_CATEGORY_MODEL_STRATEGY, resetCategoryModelCache } from "./categ
 import { categoryChangeCandidates, type CategoryChangeRow, type PriorDecision } from "./category-change";
 
 // Tests set the #1295 switch through this getter; the shipped value is read from the real module.
-const categoryChangeSwitch = vi.hoisted(() => ({ on: false }));
+const categoryChangeSwitch = vi.hoisted(() => ({ on: false, takeover: false }));
 vi.mock("./category-change", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./category-change")>()),
   get DARWIN_CATEGORY_CHANGE_REJUDGE_LIVE() {
     return categoryChangeSwitch.on;
+  },
+  get DARWIN_TAKEOVER_CATEGORY_PROOF_LIVE() {
+    return categoryChangeSwitch.takeover;
   },
 }));
 
@@ -874,6 +877,31 @@ describe("category change re-judge (#1295)", () => {
     expect(categoryChangeCandidates([input], canonicalHintFrom).length).toBe(qualifies ? 1 : 0);
   });
 
+  it("ships with the take-over proof switched off (gated on James)", async () => {
+    const real = await vi.importActual<typeof import("./category-change")>("./category-change");
+    expect(real.DARWIN_TAKEOVER_CATEGORY_PROOF_LIVE).toBe(false);
+  });
+
+  // Production rows (read-only, Oct 16): raw 308091 "By fax" $5 (institution 97) and raw 353324
+  // were judged as account_research and are now filed document_reproduction after a take-over
+  // that left no proof. A `knox_takeover_from:` flag is that proof, counted only with the switch on.
+  const FAX_DECISIONS: PriorDecision[] = [{ canonical_fee_key: "account_research", reason_code: "peer_outlier" }];
+  it.each<[string, CategoryChangeRow, boolean, boolean]>([
+    ["a take-over from account_research to document_reproduction",
+      row(308091, "By fax", ["canonical_hint:document_reproduction", "needs_darwin_verification", "knox_reread_took_over", "knox_takeover_from:account_research"], FAX_DECISIONS), false, true],
+    ["the same row without the flag (today's rows)",
+      row(308091, "By fax", ["canonical_hint:document_reproduction", "needs_darwin_verification", "knox_reread_took_over"], FAX_DECISIONS), false, false],
+    ["a take-over back to the category Darwin already judged",
+      row(9010, "Overdraft fee", ["canonical_hint:overdraft", "knox_reread_took_over", "knox_takeover_from:nsf"], [{ canonical_fee_key: "overdraft", reason_code: "category_mismatch" }]), false, false],
+    ["a decision after the take-over that recorded today's Knox category",
+      row(9011, "By fax", ["canonical_hint:document_reproduction", "knox_reread_took_over", "knox_takeover_from:account_research"], [{ canonical_fee_key: "account_research", knox_category: "document_reproduction", reason_code: "peer_outlier" }, ...FAX_DECISIONS]), false, false],
+  ])("take-over proof: %s", (_label, input, off, on) => {
+    expect(categoryChangeCandidates([input], canonicalHintFrom, { takeoverProof: false }).length).toBe(off ? 1 : 0);
+    const proven = categoryChangeCandidates([input], canonicalHintFrom, { takeoverProof: true });
+    expect(proven.length).toBe(on ? 1 : 0);
+    if (on) expect(proven[0].takeoverFrom).toBe("account_research");
+  });
+
   describe("in runDarwinVerify", () => {
     const wireRaw = {
       fee_raw_id: 126752, institution_id: 7114, source_url: "https://cu.example/fees", document_r2_key: null,
@@ -905,6 +933,30 @@ describe("category change re-judge (#1295)", () => {
 
     beforeEach(() => {
       categoryChangeSwitch.on = false;
+      categoryChangeSwitch.takeover = false;
+    });
+
+    it.each([
+      ["take-over proof off: counted for James, not a candidate", false, { candidates: 2, takeoverProof: { live: false, rows: 1 } }],
+      ["take-over proof on: a candidate", true, { candidates: 3, takeoverProof: { live: true, rows: 1 } }],
+    ])("%s", async (_label, takeover, summary) => {
+      categoryChangeSwitch.takeover = takeover;
+      const db = rejudgeDb();
+      const fax = {
+        ...wireRaw, fee_raw_id: 308091, institution_id: 97, fee_name: "By fax", amount: "5.00",
+        outlier_flags: ["canonical_hint:document_reproduction", "needs_darwin_verification", "knox_reread_took_over", "knox_takeover_from:account_research"],
+        attempts: [{ canonical_fee_key: "account_research", reason_code: "peer_outlier" }],
+      };
+      const scan = db.unsafe.getMockImplementation() as (query: string, params?: unknown[]) => Promise<unknown[]>;
+      db.unsafe.mockImplementation((query: string, params?: unknown[]) =>
+        query.includes("'knox_category'")
+          ? scan(query, params).then((rows) => [...rows, fax])
+          : scan(query, params));
+
+      const result = await runDarwinVerify({ runId: 9004, dryRun: true, db: asVerifyDb(db) });
+
+      expect(result.categoryChange).toMatchObject(summary);
+      expect(result.categoryChange?.takeoverProof.sample[0]).toMatchObject({ fee_raw_id: 308091, takeover_from: "account_research", category_now: "document_reproduction" });
     });
 
     it.each([

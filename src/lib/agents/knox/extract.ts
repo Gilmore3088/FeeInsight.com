@@ -21,6 +21,7 @@ import { knoxFreeSignature, MISSING_FEES_DETAIL, RULES_RECHECK_STRATEGY } from "
 import { currentCopySchemaReady } from "@/lib/agents/magellan/current-copy";
 import { loadMarketLeaderIds } from "@/lib/data-store/market-leaders";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
+import { KNOX_TAKEOVER_FROM_PREFIX } from "@/lib/agents/darwin/category-change";
 
 type SqlTag = typeof sql;
 
@@ -625,7 +626,9 @@ export async function insertCandidate(
   // flags: Darwin reads the first one (`canonicalHintFrom` in darwin/verify.ts), so a fee
   // today's rules file under a new category was judged under the old one. 12 of the 54 rows
   // re-reads took over by 14 Oct were ("Wire Transfer - International" $45 judged as an
-  // overdraft fee and rejected for category, #1093).
+  // overdraft fee and rejected for category, #1093). When the take-over changes the category,
+  // `knox_takeover_from:<old>` keeps the old one (#1295): Darwin's earlier decision was made under
+  // it, and without the flag nothing on the row says so (`darwin/category-change.ts`).
   const inserted = await db`
     INSERT INTO raw_fee_observations AS fr (
       institution_id,
@@ -689,6 +692,24 @@ export async function insertCandidate(
                       || CASE WHEN fr.outlier_flags ? 'superseded_by_reread'
                               THEN '["knox_reread_took_over"]'::jsonb
                               ELSE '["knox_promoted_from_held"]'::jsonb END
+                      -- #1295: a take-over that changes the category keeps the old one, the proof
+                      -- Darwin needs that its earlier decision was made under another category.
+                      || COALESCE((
+                           SELECT jsonb_build_array(${KNOX_TAKEOVER_FROM_PREFIX}::text || old_hint.hint)
+                             FROM (
+                               SELECT COALESCE(
+                                        (SELECT substring(h.flag FROM '^canonical_hint:(.+)$')
+                                           FROM jsonb_array_elements_text(COALESCE(fr.outlier_flags, '[]'::jsonb)) WITH ORDINALITY AS h(flag, ord)
+                                          WHERE h.flag LIKE 'canonical_hint:%'
+                                          ORDER BY h.ord
+                                          LIMIT 1),
+                                        substring(COALESCE(fr.extraction_note, fr.conditions) FROM 'canonical_hint=([a-z0-9_]+);')
+                                      ) AS hint
+                             ) old_hint
+                            WHERE fr.outlier_flags ? 'superseded_by_reread'
+                              AND old_hint.hint IS NOT NULL
+                              AND old_hint.hint IS DISTINCT FROM ${options.candidate.canonicalHint}::text
+                         ), '[]'::jsonb)
      WHERE fr.source = 'knox'
        AND NOT fr.outlier_flags ? 'needs_darwin_verification'
        AND (
