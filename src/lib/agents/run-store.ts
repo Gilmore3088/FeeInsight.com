@@ -102,6 +102,7 @@ import { runDemingRegression, summarizeDemingRegression, DEMING_REGRESSION_VERSI
 import { freshAuditDetail, runFreshAudit, summarizeFreshAudit } from "@/lib/agents/deming/fresh-audit";
 import { benchmarkHealthDetail, runBenchmarkHealth, summarizeBenchmarkHealth } from "@/lib/agents/deming/benchmark-health";
 import { playbookContradictionsDetail, runPlaybookContradictions, summarizePlaybookContradictions } from "@/lib/agents/deming/playbook-contradictions";
+import { dataQualityDetail, runDataQuality, summarizeDataQuality } from "@/lib/agents/deming/data-quality";
 import { knoxMissesDetail, runKnoxMisses, summarizeKnoxMisses } from "@/lib/agents/deming/knox-misses";
 import { runBayesLedger, summarizeBayesLedger, BAYES_LEDGER_VERSION } from "@/lib/agents/bayes/ledger";
 import { runScheduleCheck, summarizeScheduleCheck, SCHEDULE_CHECK_VERSION } from "@/lib/agents/atlas/schedule-check";
@@ -1923,6 +1924,7 @@ async function executeAgenticStep(
             apart_on_page: pageCopyCollapse.apartOnPage,
             unproven: pageCopyCollapse.unproven,
             other_document: pageCopyCollapse.otherDocument,
+            renamed: pageCopyCollapse.renamed,
             [pageCopyCollapse.live && run.runKind !== "dry_run" ? "closed" : "would_close"]: pageCopyCollapse.collapses.length,
             samples: pageCopyCollapse.collapses.slice(0, 10).map((row) => ({
               fee_published_id: row.feePublishedId,
@@ -1931,6 +1933,14 @@ async function executeAgenticStep(
               kept_fee_published_id: row.keptFeePublishedId,
               kept_fee_name: row.keptFeeName,
               kept_source_document_id: row.keptSourceDocumentId,
+              amount: row.amount,
+              ...(row.renamed ? { renamed: true } : {}),
+            })),
+            renamed_samples: pageCopyCollapse.collapses.filter((row) => row.renamed).slice(0, 10).map((row) => ({
+              fee_published_id: row.feePublishedId,
+              fee_name: row.feeName,
+              kept_fee_published_id: row.keptFeePublishedId,
+              kept_fee_name: row.keptFeeName,
               amount: row.amount,
             })),
           },
@@ -2418,6 +2428,11 @@ async function executeAgenticStep(
     case "deming-benchmark-health": {
       const result = await runBenchmarkHealth({ db: tx });
       return { status: "completed", summary: summarizeBenchmarkHealth(result), detail: benchmarkHealthDetail(result) };
+    }
+    case "deming-data-quality": {
+      // Read-only (#1065): two SELECTs over the live catalogs and one over the step's own history.
+      const result = await runDataQuality({ db: tx });
+      return { status: "completed", summary: summarizeDataQuality(result), detail: dataQualityDetail(result) };
     }
     case "deming-knox-misses": {
       // #1099: writes only eval_cases (new missed-fee cases and each case's replay); never a fee row.
@@ -3368,6 +3383,19 @@ export function isLaneRoomRun(source: string | null | undefined): boolean {
   return source != null && (LANE_ROOM_SOURCES as readonly string[]).includes(source);
 }
 
+/**
+ * A state re-search run (`atlas.priority_state_research`) idle this long, with no step finished
+ * since it was queued or since its last step, takes one step without leaving lane room: about three
+ * 5-minute ticks. Its `discover` (115 s) never fits the ~95 s a fresh lane's first work (~175 s)
+ * leaves of the 270 s tick, so while fresh lanes kept arriving behind it, it never started (#1421).
+ * Read-now runs keep lane room: their steps are short.
+ */
+export const LANE_ROOM_MAX_IDLE_MS = 15 * 60_000;
+
+export function waitedOutLaneRoom(source: string | null | undefined, idleMs: number | null | undefined): boolean {
+  return source === "atlas.priority_state_research" && Number(idleMs ?? 0) >= LANE_ROOM_MAX_IDLE_MS;
+}
+
 /** Expected time to a lane run's first real work, from its queued steps (`expectedMsToFirstWork`). */
 async function laneFirstWorkMs(runId: number): Promise<number> {
   try {
@@ -3641,7 +3669,11 @@ export async function executeQueuedAgentRuns({
   // When provider steps cannot run this tick, skip runs whose next queued step is a
   // provider step so they do not crowd deterministic work out of the run limit.
   const rows = await sql`
-    SELECT r.id, r.run_kind, r.params_json->>'source' AS source
+    SELECT r.id, r.run_kind, r.params_json->>'source' AS source,
+           -- Time since the run last did anything: its last finished step, else when it was queued.
+           EXTRACT(EPOCH FROM NOW() - COALESCE(
+             (SELECT MAX(done.completed_at) FROM agent_run_steps done WHERE done.agent_run_id = r.id),
+             r.started_at)) * 1000 AS idle_ms
       FROM agent_runs r
       LEFT JOIN agent_state_lanes lane
         ON r.run_kind = 'workflow_lane' AND lane.state_code = upper(btrim(r.state_code))
@@ -3771,9 +3803,13 @@ export async function executeQueuedAgentRuns({
     }
     const providerSlot = allowProviderSteps && (providerRunLimit === null || providerRuns < providerRunLimit);
     if (providerSlot) providerRuns += 1;
-    const leavesLaneRoom = laneRoomMs > 0 && index < firstLaneIndex && isLaneRoomRun(row.source);
+    const laneRoomRun = laneRoomMs > 0 && index < firstLaneIndex && isLaneRoomRun(row.source);
+    // A re-search run that has waited out lane room takes one step on the full deadline, then
+    // leaves lane room again (`LANE_ROOM_MAX_IDLE_MS`).
+    const waitedOut = laneRoomRun && waitedOutLaneRoom(row.source, row.idle_ms);
+    const leavesLaneRoom = laneRoomRun && !waitedOut;
     const result = await executeAgentRun(runId, {
-      maxSteps: maxStepsPerRun,
+      maxSteps: waitedOut ? 1 : maxStepsPerRun,
       allowProviderSteps,
       deadlineAt: leavesLaneRoom && deadlineAt != null ? deadlineAt - laneRoomMs : deadlineAt,
       // The tick's first step always runs, unless it is a direct run that would take the lane's room.

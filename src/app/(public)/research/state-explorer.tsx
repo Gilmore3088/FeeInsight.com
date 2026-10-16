@@ -4,13 +4,14 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { US_STATES } from "@/lib/us-map-paths";
 import { STATE_NAMES, US_TERRITORIES } from "@/lib/us-states";
+import { COVERAGE_LABELS } from "@/lib/coverage-labels";
 import type { StateCoverage } from "@/lib/data-store/geographic";
 
 type Metric = "institutions" | "fees" | "coverage";
 
 const METRICS: { key: Metric; label: string; blurb: string }[] = [
   { key: "institutions", label: "Institutions", blurb: "Banks and credit unions with published fees" },
-  { key: "fees", label: "Published fees", blurb: "Published fee entries" },
+  { key: "fees", label: COVERAGE_LABELS.observations, blurb: COVERAGE_LABELS.observations },
   { key: "coverage", label: "Coverage", blurb: "Share of monitored institutions with published fees" },
 ];
 

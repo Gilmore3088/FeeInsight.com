@@ -6,12 +6,10 @@ import {
   feeOfSentenceTail,
   gluedReadable,
   gluedSentenceSplit,
-  liveFragmentName,
-  liveFragmentShape,
   writeLiveRenames,
-  type LiveFragmentPattern,
   type RetidyRename,
 } from "@/lib/agents/knox/name-retidy";
+import { liveFragmentName, liveFragmentShape, type LiveFragmentPattern } from "@/lib/fee-name-fragments";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 

@@ -38,6 +38,31 @@ describe("buildMarketLadder", () => {
     expect(ladder?.value).toBe(35);
     expect(ladder?.rows.map((r) => r.label)).toEqual(["Local competitors", "Banks nationwide", "The nation"]);
   });
+
+  it("opens on the preferred fee when it can be placed, else falls back, and carries the latest read date", () => {
+    const withWire = {
+      ...sample,
+      analysis: {
+        lines: [
+          ...sample.analysis.lines,
+          {
+            key: "wire_intl_outgoing",
+            label: "Wire",
+            comparable: true,
+            own: { amount: 45, schedule_read_on: "2026-10-01" },
+            peers: { n: 6, p25: 40, median: 45, p75: 50, min: 35, max: 55 },
+            peerFigures: [{ schedule_read_on: "2026-10-09" }, { schedule_read_on: null }],
+          },
+        ],
+      },
+    } as unknown as MarketReport;
+    const base = { sample: withWire, stateIndex: [], charterIndex: [entry("overdraft"), entry("wire_intl_outgoing")], national: [] };
+    const wire = buildMarketLadder({ ...base, preferKey: "wire_intl_outgoing" });
+    expect(wire?.value).toBe(45);
+    expect(wire?.readOn).toBe("2026-10-09");
+    expect(buildMarketLadder({ ...base, preferKey: "monthly_maintenance" })?.value).toBe(35);
+    expect(buildMarketLadder(base)?.value).toBe(35);
+  });
 });
 
 describe("readSampleLadder", () => {

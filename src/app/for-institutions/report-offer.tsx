@@ -7,7 +7,7 @@ import type { CustomReportAnalysis, ReportLine } from "@/lib/custom-report/analy
 import type { MarketReport } from "@/lib/custom-report/report-data";
 import { POSITION_LABEL } from "@/app/market-report/report-body";
 // One money format on every marketing exhibit: always with cents ("$10.00").
-import { money } from "@/app/landing-shared";
+import { SAMPLE_REPORT_HREF, money } from "@/app/landing-shared";
 import { verifiedSourceQuote } from "./sample-sources";
 
 /** The one report request form (site v3 brief 05 §3-4, #1171): /reports sells the one-off. */
@@ -66,7 +66,7 @@ export function ReportOfferSection({
               {REPORT_OFFER.institutionCtaLabel}
             </Link>
             {sampleLive ? (
-              <Link href={SAMPLE_HREF} className="text-[14px] font-semibold text-ink underline underline-offset-2">
+              <Link href={SAMPLE_REPORT_HREF} className="text-[14px] font-semibold text-ink underline underline-offset-2">
                 Read the full sample report
               </Link>
             ) : null}
@@ -103,7 +103,6 @@ export function SamplePages() {
   );
 }
 
-const SAMPLE_HREF = "/reports/sample-competitive-fee-position";
 const EXCERPT_ROWS = 3;
 
 /**
@@ -175,7 +174,7 @@ export function SampleExcerpt({ report }: { report: MarketReport }) {
       </table>
       <p className="max-w-[none] flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-t border-border px-4 py-2 text-[11px] text-ink-muted">
         <span>Live, each line from the bank&apos;s own fee schedule</span>
-        <Link href={SAMPLE_HREF} className="font-semibold text-ink underline underline-offset-2">
+        <Link href={SAMPLE_REPORT_HREF} className="font-semibold text-ink underline underline-offset-2">
           Read the full sample report
         </Link>
       </p>

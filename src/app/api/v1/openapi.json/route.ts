@@ -6,7 +6,7 @@ const spec = {
   openapi: "3.0.3",
   info: {
     title: "Bank Fee Index API",
-    version: "1.5.0",
+    version: "1.6.0",
     description:
       "Programmatic access to bank and credit union fee benchmarking data across thousands of U.S. financial institutions. Covers a curated catalog of consumer and commercial fee categories, sourced from published fee schedules, FDIC, and NCUA registries. Access is by invitation: every request needs an API key, issued by hand.",
     contact: {
@@ -196,7 +196,16 @@ const spec = {
             items: {
               type: "object",
               properties: {
-                fee_name: { type: "string", example: "Overdraft Fee" },
+                fee_name: {
+                  type: "string",
+                  example: "Overdraft Fee",
+                  description: "The fee's name as the bank's schedule words it, or the fee category's name when the stored name was cut off mid-line.",
+                },
+                name_is_category_fallback: {
+                  type: "boolean",
+                  description:
+                    "True when fee_name is the fee category's name standing in for a stored name that was cut off mid-line; false when fee_name is the schedule's own wording.",
+                },
                 amount: { type: "number", example: 35.0 },
                 frequency: {
                   type: "string",
@@ -231,6 +240,11 @@ const spec = {
               type: "object",
               properties: {
                 fee_name: { type: "string", example: "Foreign Transaction Fee" },
+                name_is_category_fallback: {
+                  type: "boolean",
+                  description:
+                    "True when fee_name is the fee category's name standing in for a stored name that was cut off mid-line; false when fee_name is the schedule's own wording.",
+                },
                 category: { type: "string", nullable: true, example: "foreign_transaction" },
                 rate_percent: { type: "number", example: 3 },
                 rate_min_amount: { type: "number", nullable: true, description: "Dollar floor, when the schedule states one." },
