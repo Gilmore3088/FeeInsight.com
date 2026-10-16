@@ -746,8 +746,10 @@ describe("held names with footnote marks (Oct 15, after #1385)", () => {
 });
 
 // #1102: held range lines with no category. Production excerpts, read 16 Oct 2026.
-describe("held range lines that are rate or balance bands, not fees (#1102)", () => {
-  const range = (fee_raw_id: number, excerpt: string, hint = "none") => ({
+describe("held range lines that are deposit or loan rate bands, not fees (#1102)", () => {
+  // The text just before the line in its document; a rate table's own header by default.
+  const RATE_HEADER = "Savings Rates | Balance | Dividend Rate | APY";
+  const range = (fee_raw_id: number, excerpt: string, hint = "none", prev_context: string | null = RATE_HEADER) => ({
     fee_raw_id,
     amount: "0.00",
     fee_name: "Tier",
@@ -755,6 +757,7 @@ describe("held range lines that are rate or balance bands, not fees (#1102)", ()
     source_document_id: 9,
     conditions: `Knox held for review (range) from Rosetta artifact #704. canonical_hint=${hint}; text_hash=abc; excerpt="${excerpt}"`,
     outlier_flags: hint === "none" ? ["knox_review:range", "amount_max:49999.99"] : ["knox_review:range", `canonical_hint:${hint}`],
+    prev_context,
   });
   const tier = range(1, "Tier 3 | $25,000.00 – $49,999.99 | 0.75% | 2.02 to 1.39%");
   const loan = range(2, "Loan amounts range from $1,000 to $75,000 and loan term lengths range from 24 months to 84 months");
@@ -763,9 +766,28 @@ describe("held range lines that are rate or balance bands, not fees (#1102)", ()
 
   it.each([
     [tier, true],
-    [loan, true],
     [apy, true],
     [minimums, true],
+    [range(13, "$3,500 to $20,000 | 11.25% | 48 months"), true],
+    [range(14, "If your daily balance is from $10,000.00 to $19,999.99, the second dividend rate and annual percentage yield will apply"), true],
+    // No deposit or loan rate signal: a loan amount alone stays held.
+    [loan, false],
+    // A band whose text cannot be found, or that sits under a fee heading, stays held.
+    [range(15, "Tier 3 | $25,000.00 – $49,999.99 | 0.75%", "none", null), false],
+    [range(16, "Tier 3 | $25,000.00 – $49,999.99 | 0.75%", "none", "Large Amount (currency) Withdrawal Fee\n"), false],
+    // Real fees a second review of #1622 found among the bands, checked against the stored text
+    // (production raw ids): a rate charged on an amount, a big-dollar fee, a commission table.
+    [range(114351, "$25,000.00 - $49,999.99…… 1.25% of amount withdrawn(1)", "none", "Large Amount (currency) Withdrawal Fee\n"), false],
+    [range(114352, "$50,000.00 - $99,999.99…… 1.25% of amount withdrawn(1)"), false],
+    [range(114536, "$25,000.00 - $49,999.99…… 1.25% of amount withdrawn(1)"), false],
+    [range(114537, "$50,000.00 - $99,999.99…… 1.25% of amount withdrawn(1)"), false],
+    [range(325674, "$25,000.00 - $49,999.99…… 1.25% of amount withdrawn(1)"), false],
+    [range(325675, "$50,000.00 - $99,999.99…… 1.25% of amount withdrawn(1)"), false],
+    [range(484337, "Foreign $15,001-$25,000 | ½ of 1%"), false],
+    [range(662023, "First Mortgage rate modification | $1,500 - $2,500 based on mortgage balance"), false],
+    [range(154206, "First Mortgage rate modification | $1,500 - $2,500 based on mortgage balance"), false],
+    [range(454859, "$50,001 - $100,000 | $125 + 0.55% of principal"), false],
+    [range(454862, "$0 - $10,000 | The lesser of 5% of principal"), false],
     // A balance band priced in its own cell is a fee: it stays held.
     [range(5, "Tier 1 | $50.00 - $149.99 | $2.00"), false],
     [range(6, "Average monthly balance from $0.00 to $99.99: $5.00"), false],
@@ -791,13 +813,13 @@ describe("held range lines that are rate or balance bands, not fees (#1102)", ()
 
   it("is switched off: counts the bands and writes nothing", async () => {
     expect(RANGE_BAND_SET_ASIDE_LIVE).toBe(false);
-    const db = createDb([tier, loan, range(5, "Tier 1 | $50.00 - $149.99 | $2.00")]);
+    const db = createDb([tier, apy, range(5, "Tier 1 | $50.00 - $149.99 | $2.00")]);
     const result = await setAsideRangeBands(db as never, { stateCode: "tx" });
     expect(result).toMatchObject({ live: false, dryRun: true, checked: 3, bands: 2, institutions: 2, setAside: 0 });
     // The uncapped lane count comes from the query itself, not from the rows read.
     const counted = createDb([{ ...tier, candidates: "5047" }]);
     expect(await setAsideRangeBands(counted as never)).toMatchObject({ candidates: 5047, checked: 1 });
-    expect(result.examples.map((example) => example.feeRawId)).toEqual([1, 2]);
+    expect(result.examples.map((example) => example.feeRawId)).toEqual([1, 3]);
     expect(db.mock.calls.some(([strings]) => /UPDATE|INSERT/.test(templateText(strings)))).toBe(false);
   });
 

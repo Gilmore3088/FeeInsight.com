@@ -414,76 +414,99 @@ export async function previewHeldNameRules(
 }
 
 /**
- * #1102: held range lines with no fee category that are a rate or balance band, not a fee.
- * Knox holds every "$X–$Y" line it cannot price as one amount (`knox_review:range`). Most of the
- * pile has no category and is a deposit rate table, a balance tier or a loan amount
- * ("Tier 3 | $25,000.00 – $49,999.99 | 0.75%", "$10,000 – $49,999.99 (Tier 5) | 0.70%",
- * "Loan amounts range from $1,000 to $75,000"), and nothing re-reads it. Fees do hide in it: a price
- * that is itself a small range ("Balance Verification Letters | $5.00 to $25.00", "Personal Checking
- * $8-$9 (based on balance)"), so the test below keeps those held.
+ * #1102: held range lines with no fee category that are a deposit or loan rate band, not a fee.
+ * Knox holds every "$X–$Y" line it cannot price as one amount (`knox_review:range`). Much of the
+ * pile has no category and is a deposit rate table or a rate tier ("Tier 3 | $25,000.00 –
+ * $49,999.99 | 0.75%", "$10,000 – $49,999.99 (Tier 5) | 0.70%"), and nothing re-reads it. Fees hide
+ * in it too, and two reviews of #1622 found them by the cases a negative test missed: a price that
+ * is itself a small range ("Balance Verification Letters | $5.00 to $25.00"), a rate charged on an
+ * amount ("$25,000.00 - $49,999.99…… 1.25% of amount withdrawn" under a "Large Amount Withdrawal
+ * Fee" heading, "Foreign $15,001-$25,000 | ½ of 1%" in a wire table), a big-dollar fee ("First
+ * Mortgage rate modification | $1,500 - $2,500") and a commission table ("$50,001 - $100,000 | $125
+ * + 0.55% of principal").
  *
- * A line is a band when it has no category, says a rate or a balance (`RANGE_BAND_SIGNAL`), and
- * says nothing a fee line says (`RANGE_BAND_FEE_WORDS`: fee, charge, waive, "per", "/month", a
- * box, a wire, a card, …), and prints no small price beside its range (`RANGE_BAND_SMALL_PRICE`: a
- * dollar figure under $100 once the "$X–$Y" ranges are taken out), since a balance band priced in its
- * own cell ("Tier 1 | $50.00 - $149.99 | $2.00", "Average monthly balance from $0.00 to $99.99: $5.00")
- * is a fee, and has no range whose upper end is under $100 (`RANGE_BAND_SMALL_RANGE`: "$1.00 - $5.00",
- * "$0-$9.99"), since a balance or rate band runs into the hundreds or more and a small range is a
- * price. Switched on, the pass flags each band `knox_range_band` and logs it (`knox.range_band`,
- * deduped with the held decision log, its evidence saying whether this pass set the line aside). A
- * line not already set aside also gets `knox_set_aside` and `knox_set_aside_by:range_band`; a line
- * another pass set aside keeps its flag untouched. Kept, never deleted. To undo: take off
+ * So the test asks for positive evidence. A line is a band only when all of these hold:
+ * - it has no category;
+ * - it carries a deposit or loan rate signal (`RANGE_BAND_RATE_WORDS`: APY, APR, annual
+ *   percentage, dividend, interest rate, rate, tier; or `RANGE_BAND_RATE_COLUMN`: a percentage
+ *   standing in its own cell, "| 0.75% |", "0.150% 0.15%");
+ * - it carries no fee signal: no fee noun (`RANGE_BAND_FEE_WORDS`: fee, charge, waive, "per", a
+ *   box, a wire, modification, commission, subordination, withdrawal, penalty, foreign, …), no rate
+ *   charged on something (`RANGE_BAND_FEE_RATE`: "1.25% of amount", "½ of 1%", "$125 + 0.55%",
+ *   "lesser of", "greater of"), no range whose upper end is under $100 (`RANGE_BAND_SMALL_RANGE`)
+ *   and no price under $100 beside its ranges (`RANGE_BAND_SMALL_PRICE`);
+ * - the 200 characters before it in the document's current text are found and name no fee
+ *   (`RANGE_BAND_CONTEXT_FEE`), so a band under a fee heading stays held; a line whose text cannot be
+ *   found stays held.
+ *
+ * Switched on, the pass flags each band `knox_range_band` and logs it (`knox.range_band`, deduped
+ * with the held decision log, its evidence saying whether this pass set the line aside). A line not
+ * already set aside also gets `knox_set_aside` and `knox_set_aside_by:range_band`; a line another
+ * pass set aside keeps its flag untouched. Kept, never deleted. To undo: take off
  * `knox_range_band`, and `knox_set_aside` only where `knox_set_aside_by:range_band` is present (then
- * that flag too). A range line with a
- * category (a safe deposit box "$20–$100", an incoming wire "$20–$70") is a real fee priced as a
- * range and stays held until a range has somewhere to live (#1060).
+ * that flag too). A range line with a category (a safe deposit box "$20–$100", an incoming wire
+ * "$20–$70") is a real fee priced as a range and stays held until a range has somewhere to live
+ * (#1060).
  *
- * Production, 16 Oct 2026 (the pass's own SQL, read only): 5,047 of the 7,485 held range lines with
- * no category, at 652 banks, none of them ever verified. The first version of this test took 5,210,
- * and a review found real fees priced as small ranges among them (raw 115327, 408784, 376138,
- * 376139); this version leaves those held. A random 60 of the 5,047 read as bands by eye: a sample,
- * not proof that no fee is left in them.
- * Switched off, the extract step writes nothing and its detail (`range_band_set_aside`) carries
- * the dry-run count for the lane: `candidates` is every line in the lane the SQL picks, and
- * `checked` the ones read this step (at most `RANGE_BAND_LIMIT`). It holds, rejects or re-files no live fee.
+ * Production, 16 Oct 2026 (the pass's own SQL, read only): see the PR for the count, the hand-read
+ * sample and the adversarial queries. A sample is not proof that no fee is left in the set.
+ * Switched off, the extract step writes nothing and its detail (`range_band_set_aside`) carries the
+ * dry-run count for the lane: `candidates` is every line in the lane the SQL picks, and `checked`
+ * the ones read this step (at most `RANGE_BAND_LIMIT`). It holds, rejects or re-files no live fee.
  */
 export const RANGE_BAND_SET_ASIDE_LIVE = false;
 export const RANGE_BAND_FLAG = "knox_range_band";
 /** On a line this pass set aside (and only then), so an undo leaves other passes' set-asides alone. */
 export const RANGE_BAND_SET_ASIDE_BY_FLAG = "knox_set_aside_by:range_band";
 export const RANGE_BAND_LIMIT = 2000;
+/** Characters of the document's text before the line read for a fee heading. */
+export const RANGE_BAND_CONTEXT_CHARS = 200;
 const RANGE_BAND_EXAMPLES = 10;
-/** A rate or a balance: what a band says. */
-export const RANGE_BAND_SIGNAL = /(%|\bAPY|\bAPR|dividend|interest|balance|\btier|money market|savings|certificate|\bloans?\b)/i;
-/** What a fee line says; a line with any of these is never a band. */
-export const RANGE_BAND_FEE_WORDS =
-  /(fee|charge|cost|price|waive|\bper\b|\/\s*(year|yr|mo|month|item|check)|\bbox|rental|wire|stop|\batm\b|overdraft|\bnsf\b|courtesy|card|statement|notary|coin|returned|research|photocop|money order|cashier)/i;
 
-/** A "$X–$Y" or "$X to $Y" range, taken out before looking for a price beside it. */
-export const RANGE_BAND_RANGE = /\$\s?[\d,]*\.?\d+\s*(-|–|—|to)\s*\$?\s?[\d,]*\.?\d+/gi;
-/** A dollar figure under $100 ("$2.00", "$5", "$.50"), not the start of "$1,000" or "$250". */
-export const RANGE_BAND_SMALL_PRICE = /\$\s?(\d{1,2}(\.\d+)?|\.\d+)(?![\d,]|\.\d)/;
+// Each test in JavaScript and in Postgres (`\m`/`\M` for word edges): the SQL picks the lines and
+// the pure test (`isRangeBand`) decides, so the two must agree.
+/** A deposit or loan rate word. */
+export const RANGE_BAND_RATE_WORDS = /(\bAPY|\bAPR\b|annual percentage|dividend|interest rate|\brates?\b|\btiers?\b)/i;
+export const RANGE_BAND_RATE_WORDS_SQL = String.raw`(\mAPY|\mAPR\M|annual percentage|dividend|interest rate|\mrates?\M|\mtiers?\M)`;
+/** A percentage standing in its own cell or beside another figure ("| 0.75% |", "0.150% 0.15%"). */
+export const RANGE_BAND_RATE_COLUMN = /\d\s*%\s*(\||$|[\d.]|APY|\*)/i;
+export const RANGE_BAND_RATE_COLUMN_SQL = String.raw`\d\s*%\s*(\||$|[\d.]|APY|\*)`;
+/** A fee noun or what a fee line says; a line with any of these is never a band. */
+export const RANGE_BAND_FEE_WORDS =
+  /(fee|charge|cost|price|waive|\bper\b|\/\s*(year|yr|mo|month|item|check)|\bbox|rental|wire|stop|\batm\b|overdraft|\bnsf\b|courtesy|card|statement|notary|coin|returned|research|photocop|money order|cashier|modification|commission|subordination|withdrawal|withdrawn|penalty|assess|foreign)/i;
+export const RANGE_BAND_FEE_WORDS_SQL =
+  String.raw`(fee|charge|cost|price|waive|\mper\M|/\s*(year|yr|mo|month|item|check)|\mbox|rental|wire|stop|\matm\M|overdraft|\mnsf\M|courtesy|card|statement|notary|coin|returned|research|photocop|money order|cashier|modification|commission|subordination|withdrawal|withdrawn|penalty|assess|foreign)`;
+/** A rate charged on something: "1.25% of amount", "½ of 1%", "$125 + 0.55%", "lesser of". */
+export const RANGE_BAND_FEE_RATE = /(%\s*of\b|\bof\s+[\d.½¼¾]*\s*%|\$\s?[\d,.]+\s*\+\s*[\d.]+\s*%|%\s*\+\s*\$|lesser of|greater of)/i;
+export const RANGE_BAND_FEE_RATE_SQL = String.raw`(%\s*of\M|\mof\s+[\d.½¼¾]*\s*%|\$\s?[\d,.]+\s*\+\s*[\d.]+\s*%|%\s*\+\s*\$|lesser of|greater of)`;
 /** A range whose upper end is under $100 ("$5.00 to $25.00", "$8-$9", "$0-$9.99"): a price, not a band. */
 export const RANGE_BAND_SMALL_RANGE = /\$\s?[\d,]*\.?\d+\s*(-|–|—|to)\s*\$?\s?(\d{1,2}(\.\d+)?|\.\d+)(?![\d,]|\.\d)/i;
 export const RANGE_BAND_SMALL_RANGE_SQL = String.raw`\$\s?[\d,]*\.?\d+\s*(-|–|—|to)\s*\$?\s?(\d{1,2}(\.\d+)?|\.\d+)(?![\d,]|\.\d)`;
+/** A "$X–$Y" or "$X to $Y" range, taken out before looking for a price beside it. */
+export const RANGE_BAND_RANGE = /\$\s?[\d,]*\.?\d+\s*(-|–|—|to)\s*\$?\s?[\d,]*\.?\d+/gi;
 export const RANGE_BAND_RANGE_SQL = String.raw`\$\s?[\d,]*\.?\d+\s*(-|–|—|to)\s*\$?\s?[\d,]*\.?\d+`;
+/** A dollar figure under $100 ("$2.00", "$5", "$.50"), not the start of "$1,000" or "$250". */
+export const RANGE_BAND_SMALL_PRICE = /\$\s?(\d{1,2}(\.\d+)?|\.\d+)(?![\d,]|\.\d)/;
 export const RANGE_BAND_SMALL_PRICE_SQL = String.raw`\$\s?(\d{1,2}(\.\d+)?|\.\d+)(?![\d,]|\.\d)`;
+/** A fee noun in the text just before the line (its heading or the line above). */
+export const RANGE_BAND_CONTEXT_FEE = /(fee|charge|commission|penalty|modification|subordination|surcharge)/i;
+export const RANGE_BAND_CONTEXT_FEE_SQL = String.raw`(fee|charge|commission|penalty|modification|subordination|surcharge)`;
 
-/** The same tests in Postgres (`\m`/`\M` for word edges), so the pass reads only bands. */
-export const RANGE_BAND_SIGNAL_SQL = String.raw`(%|\mAPY|\mAPR|dividend|interest|balance|\mtier|money market|savings|certificate|\mloans?\M)`;
-export const RANGE_BAND_FEE_WORDS_SQL =
-  String.raw`(fee|charge|cost|price|waive|\mper\M|/\s*(year|yr|mo|month|item|check)|\mbox|rental|wire|stop|\matm\M|overdraft|\mnsf\M|courtesy|card|statement|notary|coin|returned|research|photocop|money order|cashier)`;
+/** A held range line as the pass reads it: with the text just before it in its document, if found. */
+export type RangeBandRow = HeldRow & { prev_context?: string | null };
 
-/** A held range line with no category that is a rate or balance band, not a fee. Pure. */
-export function isRangeBand(row: HeldRow): boolean {
+/** A held range line with no category that is a deposit or loan rate band, not a fee. Pure. */
+export function isRangeBand(row: RangeBandRow): boolean {
   const flags = flagList(row.outlier_flags);
   if (!flags.includes("knox_review:range") || flags.includes("needs_darwin_verification")) return false;
   if (flags.some((flag) => flag.startsWith("canonical_hint:")) || heldHint(row.conditions)) return false;
   const excerpt = heldExcerpt(row.conditions);
   if (!excerpt) return false;
-  return RANGE_BAND_SIGNAL.test(excerpt) && !RANGE_BAND_FEE_WORDS.test(excerpt) &&
-    !RANGE_BAND_SMALL_RANGE.test(excerpt) &&
-    !RANGE_BAND_SMALL_PRICE.test(excerpt.replace(RANGE_BAND_RANGE, " "));
+  // Positive evidence of a rate band, then no fee signal on the line or just before it.
+  if (!RANGE_BAND_RATE_WORDS.test(excerpt) && !RANGE_BAND_RATE_COLUMN.test(excerpt)) return false;
+  if (RANGE_BAND_FEE_WORDS.test(excerpt) || RANGE_BAND_FEE_RATE.test(excerpt) || RANGE_BAND_SMALL_RANGE.test(excerpt)) return false;
+  if (RANGE_BAND_SMALL_PRICE.test(excerpt.replace(RANGE_BAND_RANGE, " "))) return false;
+  return typeof row.prev_context === "string" && !RANGE_BAND_CONTEXT_FEE.test(row.prev_context);
 }
 
 export interface RangeBandResult {
@@ -493,7 +516,7 @@ export interface RangeBandResult {
   candidates: number;
   /** Of those, the ones read this step (at most `RANGE_BAND_LIMIT`). */
   checked: number;
-  /** Of those, rate or balance bands. */
+  /** Of those, deposit or loan rate bands. */
   bands: number;
   institutions: number;
   /** Bands flagged and set aside in this pass (0 while the switch is off). */
@@ -510,21 +533,38 @@ export async function setAsideRangeBands(
   const limit = Math.max(1, Math.min(Number(options.limit) || RANGE_BAND_LIMIT, RANGE_BAND_LIMIT));
   const institutionId = options.institutionId ?? null;
   const stateCode = options.stateCode?.trim().toUpperCase() || null;
-  const rows = await db<Array<HeldRow & { candidates?: number | string }>>`
+  const rows = await db<Array<RangeBandRow & { candidates?: number | string }>>`
     SELECT fr.fee_raw_id, fr.amount, COALESCE(fr.extraction_note, fr.conditions) AS conditions, fr.institution_id, fr.source_document_id,
-           fr.fee_name, fr.outlier_flags, count(*) OVER () AS candidates
+           fr.fee_name, fr.outlier_flags, ctx.prev_context, count(*) OVER () AS candidates
       FROM raw_fee_observations fr
       JOIN institution_sources inst ON inst.id = fr.institution_id
+     CROSS JOIN LATERAL (SELECT substring(COALESCE(fr.extraction_note, fr.conditions) from 'excerpt="(.*)"') AS excerpt) ex
+      -- The text just before the line in the document's current text: its heading or the line above.
+      LEFT JOIN LATERAL (
+        SELECT substring(adt.normalized_text from greatest(1, pos.p - ${RANGE_BAND_CONTEXT_CHARS}::int)
+                         for least(pos.p - 1, ${RANGE_BAND_CONTEXT_CHARS}::int)) AS prev_context
+          FROM agent_source_texts adt
+         CROSS JOIN LATERAL (SELECT position(left(ex.excerpt, 50) IN adt.normalized_text) AS p) pos
+         WHERE adt.source_document_id = fr.source_document_id
+           AND adt.status = 'completed'
+           AND adt.text_hash IS NOT NULL
+           AND position(('text_hash=' || adt.text_hash || ';') IN COALESCE(fr.extraction_note, fr.conditions, '')) > 0
+           AND pos.p > 0
+         LIMIT 1
+      ) ctx ON TRUE
      WHERE fr.source = 'knox'
        AND fr.outlier_flags ? 'knox_review:range'
        AND NOT fr.outlier_flags ? 'needs_darwin_verification'
        AND NOT fr.outlier_flags ? ${RANGE_BAND_FLAG}
        AND NOT fr.outlier_flags ?| array['superseded_by_newer_copy', 'superseded_by_reread']
        AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(fr.outlier_flags) g WHERE g LIKE 'canonical_hint:%')
-       AND substring(COALESCE(fr.extraction_note, fr.conditions) from 'excerpt="(.*)"') ~* ${RANGE_BAND_SIGNAL_SQL}
-       AND substring(COALESCE(fr.extraction_note, fr.conditions) from 'excerpt="(.*)"') !~* ${RANGE_BAND_FEE_WORDS_SQL}
-       AND substring(COALESCE(fr.extraction_note, fr.conditions) from 'excerpt="(.*)"') !~* ${RANGE_BAND_SMALL_RANGE_SQL}
-       AND regexp_replace(substring(COALESCE(fr.extraction_note, fr.conditions) from 'excerpt="(.*)"'), ${RANGE_BAND_RANGE_SQL}, ' ', 'gi') !~ ${RANGE_BAND_SMALL_PRICE_SQL}
+       AND (ex.excerpt ~* ${RANGE_BAND_RATE_WORDS_SQL} OR ex.excerpt ~* ${RANGE_BAND_RATE_COLUMN_SQL})
+       AND ex.excerpt !~* ${RANGE_BAND_FEE_WORDS_SQL}
+       AND ex.excerpt !~* ${RANGE_BAND_FEE_RATE_SQL}
+       AND ex.excerpt !~* ${RANGE_BAND_SMALL_RANGE_SQL}
+       AND regexp_replace(ex.excerpt, ${RANGE_BAND_RANGE_SQL}, ' ', 'gi') !~ ${RANGE_BAND_SMALL_PRICE_SQL}
+       AND ctx.prev_context IS NOT NULL
+       AND ctx.prev_context !~* ${RANGE_BAND_CONTEXT_FEE_SQL}
        AND (${institutionId}::int IS NULL OR fr.institution_id = ${institutionId}::int)
        AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode}::text)
      ORDER BY fr.fee_raw_id

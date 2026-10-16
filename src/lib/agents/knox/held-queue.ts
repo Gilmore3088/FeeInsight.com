@@ -22,7 +22,7 @@ type SqlTag = typeof sql;
  * - `superseded`: a newer copy or a re-read retired the line (any shape). Knox's superseded
  *   re-check owns it, not the held pile (all 766 held $0 lines on 16 Oct 2026 were these).
  * - `range_no_category` vs `range`: a range with a fee category is a real fee priced as a range
- *   and waits on range storage (#1060); one with none is mostly a rate or balance band.
+ *   and waits on range storage (#1060); one with none is often a deposit or loan rate band.
  * - `range_band`: a band Knox set aside as not a fee (`setAsideRangeBands`, behind its switch).
  * `rereadThrice` counts lines a versioned re-check has read under `HELD_SET_ASIDE_AFTER_VERSIONS`
  * or more rules versions without moving them: the part of the pile its owner is not shrinking.
@@ -69,12 +69,12 @@ const SHAPES: Record<string, ShapeInfo> = {
       ? "Knox's range-band pass"
       : "Knox's range-band pass, switched off: James switches it on",
     wayOut: RANGE_BAND_SET_ASIDE_LIVE
-      ? "A rate or balance band (\"Tier 3 | $25,000–$49,999 | 0.75%\") is set aside as not a fee, kept and never deleted. The rest stay held."
-      : "Switched on, a rate or balance band is set aside as not a fee, kept and never deleted; the extract step counts them meanwhile. The rest stay held.",
+      ? "A deposit or loan rate band (\"Tier 3 | $25,000–$49,999 | 0.75%\") is set aside as not a fee, kept and never deleted. The rest stay held."
+      : "Switched on, a deposit or loan rate band is set aside as not a fee, kept and never deleted; the extract step counts them meanwhile. The rest stay held.",
     hasExit: RANGE_BAND_SET_ASIDE_LIVE,
   },
   range_band: {
-    label: "A rate or balance band, not a fee",
+    label: "A deposit or loan rate band, not a fee",
     owner: "Knox's range-band pass",
     wayOut: `Set aside as not a fee: kept, never deleted. Taking off \`${RANGE_BAND_FLAG}\` (and \`knox_set_aside\` where \`knox_set_aside_by:range_band\` says this pass set it) puts it back.`,
     hasExit: true,
