@@ -139,7 +139,7 @@ describe("Darwin verified re-check", () => {
 
     it("off (the default): reports what the recheck would do and writes nothing for them", async () => {
       const db = dbWith([], older);
-      const result = await recheckVerifiedFees(db as never, { runId: 601 });
+      const result = await recheckVerifiedFees(db as never, { runId: 600 });
 
       expect(DARWIN_RECHECK_OLDER_LIVE).toBe(false);
       expect(result).toMatchObject({ checked: 0, flagged: 0, takenDown: [] });
@@ -147,9 +147,11 @@ describe("Darwin verified re-check", () => {
       expect(result.olderLive?.samples).toEqual([expect.objectContaining({ feePublishedId: 142869, code: "tier_perk_zero" })]);
       const writes = db.mock.calls.map((call) => templateText(call[0])).filter((text) => /\b(?:UPDATE|INSERT)\b/.test(text));
       expect(writes).toEqual([]);
-      // The sample changes with the run, so steps cover the backlog in turn.
+      // A sample reads up from a random id; other runs skip the report.
       const lateral = db.mock.calls.find((call) => templateText(call[0]).includes("JOIN LATERAL"));
-      expect(lateral?.slice(1)).toContain("601");
+      expect(templateText(lateral?.[0])).toContain("random()");
+      const skipped = await recheckVerifiedFees(dbWith([], older) as never, { runId: 601 });
+      expect(skipped.olderLive).toBeUndefined();
     });
 
     it("on: they join the recheck, and a failing live one goes to the second look", async () => {

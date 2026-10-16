@@ -54,8 +54,9 @@ export const RECHECK_REJECTED_FLAG_PREFIX = "darwin_recheck";
  * the dry-run count by reason.
  */
 export const DARWIN_RECHECK_OLDER_LIVE = false;
-/** Older live rows read per step for the shadow report. */
+/** Older live rows read per step for the shadow report, on every `OLDER_LIVE_SHADOW_EVERY`th run. */
 export const OLDER_LIVE_SHADOW_LIMIT = 200;
+export const OLDER_LIVE_SHADOW_EVERY = 4;
 
 interface RecheckRow extends RawFeeRow {
   fee_verified_id: number | string;
@@ -84,7 +85,7 @@ export interface VerifiedRecheckResult {
 }
 
 export interface OlderLiveShadow {
-  /** Older live rows read this step (a sample picked by the run id). */
+  /** Older live rows read this step (a sample read up from a random id). */
   read: number;
   /** Of those, the ones the recheck would fail, by reason code. */
   wouldFail: Record<string, number>;
@@ -96,10 +97,11 @@ const EMPTY: VerifiedRecheckResult = { checked: 0, passed: 0, rejected: [], rest
 
 /**
  * Live verified rows the recheck never selects (#1568): their `verify.rules` attempt is not a
- * `verified` one at the current version, and this recheck version has not read them. `sampleKey`
- * (the shadow report) picks a different sample each step; without it, newest first.
+ * `verified` one at the current version, and this recheck version has not read them. A sample (the
+ * shadow report) reads up from a random id, in id order, so it walks the index and stops at the
+ * limit instead of sorting the whole backlog; otherwise newest first.
  */
-function selectOlderLiveRows(db: SqlTag, limit: number, sampleKey: string | null): Promise<RecheckRow[]> {
+function selectOlderLiveRows(db: SqlTag, limit: number, sample: boolean): Promise<RecheckRow[]> {
   return inSavepoint(db, (scope) => scope<RecheckRow[]>`
       SELECT v.fee_verified_id, v.review_status, v.canonical_fee_key, v.amount AS verified_amount,
              r.fee_raw_id, r.institution_id, r.source_url, r.document_r2_key, r.extraction_confidence,
@@ -113,6 +115,7 @@ function selectOlderLiveRows(db: SqlTag, limit: number, sampleKey: string | null
            ORDER BY p.fee_published_id DESC LIMIT 1
         ) live ON true
        WHERE v.review_status IN ('verified', 'approved')
+         AND (NOT ${sample}::boolean OR v.fee_verified_id >= (SELECT floor(random() * max(fee_verified_id))::bigint FROM verified_fee_observations))
          AND NOT EXISTS (
            SELECT 1 FROM pipeline_attempts pa
             WHERE pa.input_fingerprint = 'raw:' || v.fee_raw_id::text
@@ -126,7 +129,7 @@ function selectOlderLiveRows(db: SqlTag, limit: number, sampleKey: string | null
               AND pa.strategy = ${DARWIN_RECHECK_STRATEGY.strategy}
               AND pa.strategy_version = ${DARWIN_RECHECK_STRATEGY.version}
          )
-       ORDER BY CASE WHEN ${sampleKey}::text IS NULL THEN NULL ELSE md5(v.fee_verified_id::text || ${sampleKey}::text) END,
+       ORDER BY CASE WHEN ${sample}::boolean THEN v.fee_verified_id END ASC,
                 v.fee_verified_id DESC
        LIMIT ${limit}::int
     `);
@@ -192,7 +195,7 @@ function textsFor(db: SqlTag, rows: RecheckRow[]): Promise<Map<number, string>> 
 export async function olderLiveShadow(db: SqlTag, options: { runId: number; limit?: number }): Promise<OlderLiveShadow> {
   const shadow: OlderLiveShadow = { read: 0, wouldFail: {}, samples: [] };
   try {
-    const rows = await selectOlderLiveRows(db, options.limit ?? OLDER_LIVE_SHADOW_LIMIT, String(options.runId));
+    const rows = await selectOlderLiveRows(db, options.limit ?? OLDER_LIVE_SHADOW_LIMIT, true);
     if (rows.length === 0) return shadow;
     const texts = await textsFor(db, rows);
     for (const row of rows) {
@@ -226,8 +229,9 @@ export async function recheckVerifiedFees(
   const olderLive = options.olderLive ?? DARWIN_RECHECK_OLDER_LIVE;
   options = { ...options, sameStepTakedown: options.sameStepTakedown ?? DARWIN_RECHECK_SAME_STEP_TAKEDOWN };
   const result: VerifiedRecheckResult = { ...EMPTY, rejected: [], restored: [], takenDown: [] };
-  // Off: report what reading older live rows would do, and change nothing for them (#1568).
-  if (!olderLive) result.olderLive = await olderLiveShadow(db, { runId: options.runId });
+  // Off: every fourth run reports what reading older live rows would do, and changes nothing for
+  // them (#1568). It is a per-step sample; the whole backlog's count is a separate read-only query.
+  if (!olderLive && options.runId % OLDER_LIVE_SHADOW_EVERY === 0) result.olderLive = await olderLiveShadow(db, { runId: options.runId });
   let rows: RecheckRow[];
   try {
     // The rows the not_in_source re-select verified (#883, the cohort UAT checked) are read first;
@@ -235,7 +239,7 @@ export async function recheckVerifiedFees(
     rows = await selectRows(db, limit, true);
     if (rows.length === 0) rows = await selectRows(db, limit, false);
     // On: older live rows get their own share of each step, so new rows never starve them (#1568).
-    if (olderLive) rows = [...rows, ...(await selectOlderLiveRows(db, Math.ceil(limit / 2), null))];
+    if (olderLive) rows = [...rows, ...(await selectOlderLiveRows(db, Math.ceil(limit / 2), false))];
   } catch (error) {
     console.warn("[darwin] verified recheck read failed", error instanceof Error ? error.message : error);
     return result;
