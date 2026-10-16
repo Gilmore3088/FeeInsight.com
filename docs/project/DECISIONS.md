@@ -5,6 +5,22 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-16
 
+**Agent trackers stay separate; the lanes keep them current.** James, 2026-10-16 04:03 UTC, when
+asked whether to fold the per-agent trackers into #1026: "I'd rather keep them separate ... the data
+quality thread can just update those agent trackers accordingly." #1026 stays the master tracker.
+The Data quality lane keeps #1027 (Magellan), #1050 (Rosetta), #1092 (Knox), #1110 (Darwin) and
+#1048 (Foundation) current. The Hamilton lane does the same for #975. The same day, work moved to
+four lanes (Website, Page templates, Data quality, Hamilton) that run from the second-account
+roadmap on branch `claude/project-thread-awcc9c`. CLAUDE.md "How work runs" now says so.
+
+**Fee Insight is not marketed as advisory.** James, 2026-10-16 (#1174): "Fee insight advisory was
+scrapped many times ago so we should not add it back. I'm happy to have demos and phone
+conversations but we should not market the product as advisory." No page, form or offer names a
+"Fee Insight Advisory" service; demos and calls stay. Custom data and API work is "Data licensing".
+
+**Free visitors keep each fee's national range.** James, 2026-10-16 (#1449): free visitors see the
+range on the national index ("consumer facing high-level data").
+
 **A few confirmed-wrong live fees come down without asking James.** James, 2026-10-16, approving
 #1496 (Barksdale FCU's two fax fees that took a price from the next column): fixes like this
 should not wait for him. A small number of live fees (up to about 25), each confirmed wrong on
