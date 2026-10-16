@@ -19,28 +19,50 @@ export const dynamicParams = true;
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { guideCategories, resolveTokensToText } from "@/lib/guides";
+import { blockText, guideCategories, resolveTokensToText } from "@/lib/guides";
 import {
   loadGuide,
   loadRelatedGuides,
 } from "@/lib/guides/source";
 import {
+  getDailyCapScopeCached,
   getDataFreshnessCached,
-  getFeeCategoryDetailCached,
+  getFeeCategoryGuideDetailCached,
+  getOverdraftComplaintThemesCached,
 } from "@/lib/data-store/public-cached-reads";
 import { getPublicSnapshot } from "@/lib/public-stats";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
 import { getDisplayName, getSpotlightCategories } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
-import { DistributionChart } from "@/components/public/distribution-chart";
 import {
   GuideSectionRenderer,
   type GuideBreakdowns,
+  type GuideExtras,
 } from "@/components/public/guide-blocks";
+import type { GuideBlock, GuideSection } from "@/lib/guides";
 import { SavedInstitutionsPanel } from "@/components/public/saved-institutions-panel";
 import { UnstatedAudienceFootnote, UnstatedAudienceMark, medianHasUnstatedAudience } from "@/components/unstated-audience";
+
+/** Sections with the price chart placed under "what it costs" when the guide does not place it. */
+function withDistribution(sections: GuideSection[], category: string): GuideSection[] {
+  const placed = sections.some((s) => s.blocks.some((b) => b.type === "distribution"));
+  if (placed) return sections;
+  return sections.map((s) =>
+    s.id === "what-it-costs"
+      ? { ...s, blocks: [...s.blocks, { type: "distribution", category } satisfies GuideBlock] }
+      : s,
+  );
+}
 import { PRODUCT_NAME, SITE_URL } from "@/lib/constants";
+import { PAGE_HEADER } from "@/components/public/page-header";
+
+/**
+ * Categories whose single median misleads as a headline (James's guides review, Oct 16 2026):
+ * most foreign transaction fees are a percentage, which the flat figure leaves out, and published
+ * daily limits cover different fees, so their median describes no one account.
+ */
+const SIDEBAR_HIDDEN = new Set(["card_foreign_txn", "od_daily_cap"]);
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -117,22 +139,28 @@ export default async function GuidePage({ params }: PageProps) {
   if (!guide || guide.audience !== "consumer") notFound();
 
   const categories = guideCategories(guide);
+  const blocks = guide.sections.flatMap((s) => s.blocks);
+  const needsCapScope = blocks.some((b) => b.type === "cap_scope");
+  const needsComplaints = blocks.some((b) => b.type === "complaints");
 
   // National medians and counts from the shared public snapshot (same as the fee index).
-  const [{ summary, categories: allSummaries }, freshness, primaryDetail, related] =
+  const [{ summary, categories: allSummaries }, freshness, primaryDetail, related, capScope, complaints] =
     await Promise.all([
       getPublicSnapshot(),
       // The shared public cache, as the fee pages read it: a guide rebuilt after a takedown
       // reuses the reads the first page computed instead of running its own (Oct 9: about
       // 190 freshness reads an hour against about 8 refreshes).
       getDataFreshnessCached(),
-      getFeeCategoryDetailCached(guide.primaryCategory),
+      getFeeCategoryGuideDetailCached(guide.primaryCategory),
       loadRelatedGuides(guide),
+      needsCapScope ? getDailyCapScopeCached().catch(() => null) : null,
+      needsComplaints ? getOverdraftComplaintThemesCached().catch(() => null) : null,
     ]);
 
   // Editorial order — never the global sort by institution count.
   const summaryFor = new Map(allSummaries.map((s) => [s.fee_category, s]));
   const relevantFees = categories
+    .filter((c) => !SIDEBAR_HIDDEN.has(c))
     .map((c) => summaryFor.get(c))
     .filter((s): s is FeeCategorySummary => Boolean(s));
   const primarySummary = summaryFor.get(guide.primaryCategory);
@@ -149,7 +177,7 @@ export default async function GuidePage({ params }: PageProps) {
     (c) => c !== guide.primaryCategory,
   );
   const extraDetails = await Promise.all(
-    extraCategories.map((c) => getFeeCategoryDetailCached(c)),
+    extraCategories.map((c) => getFeeCategoryGuideDetailCached(c)),
   );
   if (comparisonCategories.has(guide.primaryCategory)) {
     breakdowns.set(guide.primaryCategory, {
@@ -169,7 +197,18 @@ export default async function GuidePage({ params }: PageProps) {
   // One value per institution, the same population as the median printed beside it.
   const primaryAmounts = primaryDetail.institution_values ?? [];
 
-  const zeroFeeCount = primarySummary?.zero_count ?? 0;
+  const extras: GuideExtras = {
+    distribution: {
+      category: guide.primaryCategory,
+      values: primaryAmounts,
+      median: primarySummary?.median_amount ?? null,
+    },
+    capScope,
+    complaints,
+  };
+  const sections = withDistribution(guide.sections, guide.primaryCategory);
+  // The overdraft guide compares institutions itself; other guides keep the lookup band.
+  const comparesAccounts = blocks.some((b) => b.type === "policy_table" && b.compare);
 
   const spotlight = new Set(getSpotlightCategories());
   const primaryName = getDisplayName(guide.primaryCategory);
@@ -178,6 +217,57 @@ export default async function GuidePage({ params }: PageProps) {
   const crawlDate = formatDate(freshness.last_crawl_at);
   const reviewDate = formatDate(guide.reviewedAt);
   const plain = (text: string) => resolveTokensToText(text, allSummaries);
+
+  // A guide with practical help links leads with them; national medians follow its contents.
+  const benchmarksBox = relevantFees.length > 0 && (
+                <div className="relative overflow-hidden rounded-xl border border-border bg-white/80 px-5 py-5 backdrop-blur-sm">
+                  <div
+                    className="absolute left-0 right-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-brick/30 to-transparent"
+                    aria-hidden="true"
+                  />
+                  <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-brick/60">
+                    Live National Benchmarks
+                  </p>
+                  <div className="mt-4 space-y-4">
+                    {relevantFees.map((fee) => (
+                      <div
+                        key={fee.fee_category}
+                        className="border-b border-border/60 pb-3.5 last:border-0 last:pb-0"
+                      >
+                        <Link
+                          href={`/fees/${fee.fee_category}`}
+                          className="text-[13px] font-semibold text-ink transition-colors hover:text-brick"
+                          style={{ fontFamily: "var(--fi-font-sans)" }}
+                        >
+                          {getDisplayName(fee.fee_category)}
+                        </Link>
+                        <div className="mt-1.5 flex items-baseline gap-2">
+                          <span
+                            className="text-[22px] font-semibold tracking-tight tabular-nums text-ink"
+                            style={{
+                              fontFamily: "var(--fi-font-mono)",
+                            }}
+                          >
+                            {formatAmount(fee.median_amount)}
+                            <UnstatedAudienceMark show={medianHasUnstatedAudience(fee)} />
+                          </span>
+                          <span className="text-[10px] text-ink-muted">median</span>
+                        </div>
+                        <div className="mt-1 text-[11px] tabular-nums text-ink-muted">
+                          P25: {formatAmount(fee.p25_amount)} &middot; P75:{" "}
+                          {formatAmount(fee.p75_amount)}
+                        </div>
+                        <Link
+                          href={`/fees/${fee.fee_category}`}
+                          className="mt-2 inline-block rounded-full border border-border/60 bg-paper px-2.5 py-0.5 text-[10px] font-medium text-ink-muted no-underline transition-colors hover:border-brick/30 hover:text-brick"
+                        >
+                          Full analysis
+                        </Link>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
 
   return (
     <div className="mx-auto max-w-page px-6 py-14">
@@ -191,7 +281,7 @@ export default async function GuidePage({ params }: PageProps) {
 
       <nav
         aria-label="Breadcrumb"
-        className="sticky top-14 z-30 -mx-6 mb-8 flex items-center gap-2 bg-paper/95 px-6 py-2 text-[12px] text-ink-muted backdrop-blur-sm sm:static sm:mx-0 sm:bg-transparent sm:px-0 sm:py-0 sm:backdrop-blur-none"
+        className="sticky top-14 z-30 -mx-6 mb-8 flex items-center justify-center gap-2 bg-paper/95 px-6 py-2 text-[12px] text-ink-muted backdrop-blur-sm sm:static sm:mx-0 sm:bg-transparent sm:px-0 sm:py-0 sm:justify-start sm:backdrop-blur-none"
       >
         <Link href="/" className="transition-colors hover:text-ink">
           Home
@@ -209,8 +299,8 @@ export default async function GuidePage({ params }: PageProps) {
       </nav>
 
       {/* ── HERO ── */}
-      <div className="max-w-3xl">
-        <div className="mb-4 flex items-center gap-2">
+      <div className={`max-w-3xl ${PAGE_HEADER}`}>
+        <div className="mb-4 flex items-center justify-center gap-2 sm:justify-start">
           <span className="h-px w-8 bg-brick/40" aria-hidden="true" />
           <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
             Consumer Guide
@@ -224,11 +314,11 @@ export default async function GuidePage({ params }: PageProps) {
           {guide.title}
         </h1>
 
-        <p className="mt-4 text-[15px] leading-relaxed text-ink-muted">
+        <p className="mx-auto mt-4 max-w-[34rem] text-[15px] leading-relaxed text-ink-muted sm:mx-0 sm:max-w-none">
           {guide.description}
         </p>
 
-        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-muted">
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[12px] text-ink-muted sm:justify-start">
           <span>{guide.author}</span>
           {reviewDate && (
             <>
@@ -257,10 +347,35 @@ export default async function GuidePage({ params }: PageProps) {
       </div>
 
       <>
+          {/* ── YOUR SAVED INSTITUTIONS — client island; placed after the CTA so its late arrival cannot shift the hero ── */}
+          <SavedInstitutionsPanel
+            category={guide.primaryCategory}
+            categoryLabel={primaryNamePlain}
+            median={primarySummary?.median_amount ?? null}
+          />
+
+          {/* ── MAIN + SIDEBAR ── */}
+          <div className="mt-12 grid grid-cols-1 gap-10 xl:grid-cols-[1fr_300px]">
+            <div>
+              <div className="space-y-10">
+                {sections.map((section, i) => (
+                  <GuideSectionRenderer
+                    key={section.id}
+                    section={section}
+                    summaries={allSummaries}
+                    breakdowns={breakdowns}
+                    isLast={i === sections.length - 1}
+                    extras={extras}
+                  />
+                ))}
+              </div>
+
+              {!comparesAccounts && (
+                <>
           {/* ── CHECK YOUR OWN BANK ── */}
           <section
             aria-labelledby="check-your-bank-heading"
-            className="mt-8 rounded-xl border border-brick/15 bg-gradient-to-r from-surface-0 to-paper px-6 py-5"
+            className="mt-12 rounded-xl border border-brick/15 bg-gradient-to-r from-surface-0 to-paper px-6 py-5"
           >
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -290,73 +405,32 @@ export default async function GuidePage({ params }: PageProps) {
             </div>
           </section>
 
-          {/* ── YOUR SAVED INSTITUTIONS — client island; placed after the CTA so its late arrival cannot shift the hero ── */}
-          <SavedInstitutionsPanel
-            category={guide.primaryCategory}
-            categoryLabel={primaryNamePlain}
-            median={primarySummary?.median_amount ?? null}
-          />
-
-          {/* ── ACTION LINKS ── */}
-          <div className="mt-5 flex flex-wrap items-center gap-3">
-            <Link
-              href="/fees"
-              className="inline-flex items-center gap-1.5 rounded-full border border-border bg-white/80 px-4 py-2 text-[12px] font-medium text-ink-soft no-underline transition-all hover:border-brick/30 hover:text-brick"
-            >
-              View the full fee index
-              <Arrow />
-            </Link>
-            <Link
-              href={`/fees/${guide.primaryCategory}`}
-              className="inline-flex items-center gap-1.5 rounded-full bg-brick px-4 py-2 text-[12px] font-medium text-white no-underline shadow-sm shadow-[#b23a32]/15 transition-all hover:shadow-md hover:shadow-[#b23a32]/25"
-            >
-              {primaryName} analysis
-              <Arrow />
-            </Link>
-          </div>
-
-          {/* ── MAIN + SIDEBAR ── */}
-          <div className="mt-12 grid grid-cols-1 gap-10 xl:grid-cols-[1fr_300px]">
-            <div>
-              {primaryAmounts.length >= 5 && primarySummary && (
-                <section aria-labelledby="distribution-heading" className="mb-12">
-                  <h2
-                    id="distribution-heading"
-                    className="text-[18px] font-bold tracking-tight text-ink"
-                    style={{ fontFamily: "var(--fi-font-sans)" }}
-                  >
-                    {primaryName} Fee Distribution
-                  </h2>
-                  <p className="mt-1.5 text-[13px] text-ink-muted">
-                    How {primaryAmounts.length.toLocaleString()} institutions price this
-                    fee. National median:{" "}
-                    <span className="font-medium text-ink">
-                      {formatAmount(primarySummary.median_amount)}
-                      <UnstatedAudienceMark show={medianHasUnstatedAudience(primarySummary)} />
-                    </span>
-                  </p>
-                  <div className="mt-4 rounded-xl border border-border/80 bg-white/70 p-5 backdrop-blur-sm">
-                    <DistributionChart
-                      values={primaryAmounts}
-                      median={primarySummary.median_amount}
-                      bucketCount={16}
-                    />
-                  </div>
-                </section>
+                </>
               )}
 
-              <div className="space-y-10">
-                {guide.sections.map((section, i) => (
-                  <GuideSectionRenderer
-                    key={section.id}
-                    section={section}
-                    summaries={allSummaries}
-                    breakdowns={breakdowns}
-                    isLast={i === guide.sections.length - 1}
-                  />
-                ))}
-              </div>
-
+              {/* ── Optional alerts, after the help (James, Oct 16) ── */}
+              <div className="mt-12 rounded-xl border border-border bg-white/80 px-5 py-5">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-brick/60">
+                    Optional: follow this fee
+                  </p>
+                  <p
+                    className="mt-2 text-[15px] font-semibold text-ink"
+                    style={{ fontFamily: "var(--fi-font-sans)" }}
+                  >
+                    Get an email when your bank updates this fee
+                  </p>
+                  <p className="mt-1.5 text-[12px] leading-relaxed text-ink-muted">
+                    Free account. Save your institution and Fee Insight emails you when its published{" "}
+                    {primaryNamePlain} is updated.
+                  </p>
+                  <Link
+                    href={`/register?intent=fee-alert&category=${guide.primaryCategory}`}
+                    className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-ink px-5 py-2 text-[12px] font-semibold text-white no-underline transition-all hover:bg-[#33302B]"
+                  >
+                    Create a free account
+                    <Arrow />
+                  </Link>
+                </div>
               {/* ── Attribution ── */}
               <footer className="mt-12 rounded-xl border border-border/70 bg-paper/60 px-5 py-4 text-[12.5px] leading-relaxed text-ink-muted">
                 <p>
@@ -389,6 +463,12 @@ export default async function GuidePage({ params }: PageProps) {
                   show={medianHasUnstatedAudience(primarySummary) || relevantFees.some(medianHasUnstatedAudience)}
                   className="mt-2"
                 />
+                <p className="mt-2 text-[11.5px] text-ink-muted">
+                  For bank and credit union teams:{" "}
+                  <Link href="/subscribe" className="text-ink-muted underline underline-offset-2 hover:text-ink">
+                    Hamilton
+                  </Link>
+                </p>
               </footer>
 
               {/* ── Explore the Data ── */}
@@ -502,64 +582,26 @@ export default async function GuidePage({ params }: PageProps) {
 
             {/* ── SIDEBAR ── */}
             <aside className="space-y-5 xl:sticky xl:top-20 xl:self-start">
-              {relevantFees.length > 0 && (
-                <div className="relative overflow-hidden rounded-xl border border-border bg-white/80 px-5 py-5 backdrop-blur-sm">
-                  <div
-                    className="absolute left-0 right-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-brick/30 to-transparent"
-                    aria-hidden="true"
-                  />
-                  <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-brick/60">
-                    Live National Benchmarks
-                  </p>
-                  <div className="mt-4 space-y-4">
-                    {relevantFees.map((fee) => (
-                      <div
-                        key={fee.fee_category}
-                        className="border-b border-border/60 pb-3.5 last:border-0 last:pb-0"
-                      >
-                        <Link
-                          href={`/fees/${fee.fee_category}`}
-                          className="text-[13px] font-semibold text-ink transition-colors hover:text-brick"
-                          style={{ fontFamily: "var(--fi-font-sans)" }}
+              {guide.helpLinks && (
+                <div className="rounded-xl border border-brick/25 bg-surface-0 px-5 py-5">
+                  <p className="text-[15px] font-semibold text-ink">{guide.helpLinks.title}</p>
+                  <ul className="mt-3 space-y-3">
+                    {guide.helpLinks.links.map((l) => (
+                      <li key={l.href + l.label}>
+                        <a
+                          href={l.href}
+                          {...(l.href.startsWith("http") ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+                          className="text-[14px] font-medium text-brick hover:underline"
                         >
-                          {getDisplayName(fee.fee_category)}
-                        </Link>
-                        <div className="mt-1.5 flex items-baseline gap-2">
-                          <span
-                            className="text-[22px] font-semibold tracking-tight tabular-nums text-ink"
-                            style={{
-                              fontFamily: "var(--fi-font-mono)",
-                            }}
-                          >
-                            {formatAmount(fee.median_amount)}
-                            <UnstatedAudienceMark show={medianHasUnstatedAudience(fee)} />
-                          </span>
-                          <span className="text-[10px] text-ink-muted">median</span>
-                        </div>
-                        <div className="mt-1 text-[11px] tabular-nums text-ink-muted">
-                          P25: {formatAmount(fee.p25_amount)} &middot; P75:{" "}
-                          {formatAmount(fee.p75_amount)}
-                        </div>
-                        <Link
-                          href={`/fees/${fee.fee_category}`}
-                          className="mt-2 inline-block rounded-full border border-border/60 bg-paper px-2.5 py-0.5 text-[10px] font-medium text-ink-muted no-underline transition-colors hover:border-brick/30 hover:text-brick"
-                        >
-                          Full analysis
-                        </Link>
-                      </div>
+                          {l.label}
+                        </a>
+                        {l.note && <p className="text-[12.5px] text-ink-muted">{l.note}</p>}
+                      </li>
                     ))}
-                  </div>
+                  </ul>
                 </div>
               )}
-
-              {/* #1172: no institution is named outside a buyer's own report. */}
-              {zeroFeeCount > 0 && (
-                <div className="rounded-xl border border-border bg-white/80 px-5 py-4 text-[12px] text-ink-soft">
-                  <span className="font-bold tabular-nums">{zeroFeeCount}</span>{" "}
-                  institution{zeroFeeCount !== 1 ? "s" : ""} in our index charge nothing for {primaryNamePlain}.
-                </div>
-              )}
-
+              {!guide.helpLinks && benchmarksBox}
               <nav
                 aria-label="Guide contents"
                 className="rounded-xl border border-border bg-white/80 px-5 py-4"
@@ -584,36 +626,8 @@ export default async function GuidePage({ params }: PageProps) {
                   ))}
                 </ul>
               </nav>
+              {guide.helpLinks && benchmarksBox}
 
-              {/* ── CTA: a consumer page offers the consumer something ── */}
-              <div className="rounded-xl border border-border bg-white/80 px-5 py-5">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-brick/60">
-                    Follow this fee
-                  </p>
-                  <p
-                    className="mt-2 text-[15px] font-semibold text-ink"
-                    style={{ fontFamily: "var(--fi-font-sans)" }}
-                  >
-                    Get an email when your bank updates this fee
-                  </p>
-                  <p className="mt-1.5 text-[12px] leading-relaxed text-ink-muted">
-                    Free account. Save your institution and we&rsquo;ll email you when its published{" "}
-                    {primaryNamePlain} is updated.
-                  </p>
-                  <Link
-                    href={`/register?intent=fee-alert&category=${guide.primaryCategory}`}
-                    className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-ink px-5 py-2 text-[12px] font-semibold text-white no-underline transition-all hover:bg-[#33302B]"
-                  >
-                    Create a free account
-                    <Arrow />
-                  </Link>
-                  <p className="mt-3 text-[11px] text-ink-muted">
-                    Benchmarking for your institution?{" "}
-                    <Link href="/subscribe" className="text-brick/80 hover:text-brick">
-                      See professional plans
-                    </Link>
-                  </p>
-                </div>
             </aside>
           </div>
       </>
@@ -646,19 +660,7 @@ export default async function GuidePage({ params }: PageProps) {
                 name: section.heading,
                 acceptedAnswer: {
                   "@type": "Answer",
-                  text: plain(
-                    section.blocks
-                      .flatMap((b) =>
-                        b.type === "paragraph"
-                          ? [b.text]
-                          : b.type === "list"
-                            ? b.items
-                            : b.type === "callout"
-                              ? [b.text]
-                              : [],
-                      )
-                      .join(" "),
-                  ),
+                  text: plain(section.blocks.flatMap(blockText).join(" ")),
                   url: `${SITE_URL}/guides/${slug}#${section.id}`,
                 },
               })),
