@@ -234,6 +234,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v1 (#1059): a new step that reads every live fee verified as unknown on each run (a daily dry
   // run while off), so there is no backlog for a replay to count. v2 (#1626) changes the fee-name
   // reading; the full dry run's chain is keyed by the version, so it reads every document again.
+  // v3 (#1059 unknown review) changes the context reading; the live chain is keyed by the version,
+  // so it reads every document's still-unknown fees again.
   AUDIENCE_RELABEL_VERSION: "Its own step reads every live unknown-audience fee on each run; nothing to replay.",
   // v2 (#1068) changes how a refresh is written (in place), not which fee moves; the stale fees
   // it works through are picked by the same query every publish step, so there is nothing to replay.

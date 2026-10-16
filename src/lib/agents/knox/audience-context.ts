@@ -10,6 +10,7 @@
 export type ContextAudience = "consumer" | "business" | "both";
 export type AudienceSource =
   | "fee_name"
+  | "fee_price_cell"
   | "document_url"
   | "document_title"
   | "section_heading"
@@ -65,7 +66,16 @@ const NOT_AN_AUDIENCE = /(?:\/\s*)?\bnon[- ]?(?:personal|consumer)\s+(?:checks?|
  * (check cashing for a consumer), so they stay no audience (review of d31c9248).
  */
 const NON_PERSONAL = /(?:\/\s*)?\bnon[- ]?(?:personal|consumer)\b(?!\s+(?:checks?|identification|information|data)\b)/gi;
-const neutral = (text: string) => text.replace(NON_PERSONAL, " business").replace(NOT_AN_AUDIENCE, " ");
+/**
+ * Prose that names no audience (#1059 unknown review, 2026-10-16): a change notice's sign-off ("We
+ * appreciate your continued business", "thank you for your business"; Merchants Commercial 16221),
+ * a "business days" wrapped after its number ("after 2 business" / "days"; document 24481) and "each
+ * individual check" (a check, not a person). "Your business account" still reads as business.
+ */
+const NOT_AN_AUDIENCE_PROSE =
+  /\b(?:your|continued|appreciate|thank you for)\s+(?:continued\s+)?business\b(?!\s+(?:accounts?|checking|savings|banking|customers?|clients?|members?|loans?|cards?|debit|credit|online|deposits?|money market|services|products|fees?)\b)|\b\d+\s+business\s*$|\bindividual\s+checks?\b/gim;
+const neutral = (text: string) =>
+  text.replace(NON_PERSONAL, " business").replace(NOT_AN_AUDIENCE, " ").replace(NOT_AN_AUDIENCE_PROSE, " ");
 
 function audienceOf(raw: string): ContextAudience | null {
   const text = neutral(raw);
@@ -89,6 +99,14 @@ const SECTION_HEADING = new RegExp(
 );
 /** A title names the schedule itself ("Consumer Fee Schedule", "Business Schedule of Fees"). */
 const SCHEDULE_TITLE = /\b(?:fee schedule|schedule of (?:fees|charges)|fees and charges|service charges?|fee disclosure)\b/i;
+/**
+ * A heading for fees every account pays ("Other Service Fees", "OTHER SERVICES", "Miscellaneous
+ * Fees", "General Fees", "Additional Services", "Common Fee Schedule"). With a schedule's own title
+ * that names no audience, it ends the climb for a heading (#1059 unknown review, F1B).
+ */
+const NEUTRAL_SECTION = /^\s*(?:other|miscellaneous|general|additional|common)\b/i;
+/** A bullet ("• Basic Business Checking", "- Free incoming wires") lists an item, never a heading (F5). */
+const BULLET = /^[•▪●◦*-]\s/;
 
 /**
  * A short line with no price. A table row ("Xplore Spend Account* | Xplore Business Savings")
@@ -265,7 +283,7 @@ export function sectionHeadingAudience(
       }
       continue;
     }
-    if (!isHeading(line) || trimmed.startsWith("(")) continue;
+    if (!isHeading(line) || trimmed.startsWith("(") || BULLET.test(trimmed)) continue;
     // Any line that names an audience directly above a price line could head a section ("Business
     // Fees" / "$35.00 Stop Payment") or be a fee priced below it ("Business Checking Maintenance" /
     // "$10.00"): the fee below stays unknown rather than take a guessed audience, and the search
@@ -276,6 +294,14 @@ export function sectionHeadingAudience(
       continue;
     }
     if (ALL_ACCOUNTS.test(line)) return sentenceAudience ? { ambiguous: trimmed } : { audience: "both", heading: trimmed };
+    // A heading-case section for every account ("OTHER SERVICES", "Other Service Fees") or the
+    // schedule's own title ("Common Fee Schedule", "FEE SCHEDULE") that names no audience heads the
+    // fee: the climb stops there and never reaches a menu link, a perk list or a sign-off further up
+    // (#1059 unknown review, F1B). Only these: stopping at any line with a fee word took 4 correct
+    // consumer labels off doc 22705 (F1A, rejected).
+    if (headingCase(trimmed) && (SCHEDULE_TITLE.test(line) || NEUTRAL_SECTION.test(trimmed)) && !audienceOf(line)) {
+      return sentenceAudience && sentenceMayHead ? { ambiguous: trimmed } : null;
+    }
     if (!SECTION_HEADING.test(line)) continue;
     const audience = audienceOf(line);
     if (!audience) continue;
@@ -367,6 +393,8 @@ export function suggestAudience(input: {
   const businessLine = businessFeeLine(lines);
   const feeIndex = feeLineIndex(lines, input.feeName, input.amount);
   if (feeIndex >= 0) {
+    const cell = priceCellAudience(lines, feeIndex, input.amount);
+    if (cell) return { audience: cell, source: "fee_price_cell", evidence: lines[feeIndex].trim().slice(0, 200) };
     const section = sectionHeadingAudience(lines, feeIndex);
     // A fee in one of two audience columns stays unknown: the text does not say which column.
     // So does one under an unclear section, except a consumer sentence with no heading above it
@@ -426,6 +454,31 @@ export function suggestAudience(input: {
   // Its line found, with nothing that limits it to one audience (its name, a section above
   // it), the fee is listed for every account.
   return { audience: "both", source: "mixed_schedule_unqualified", evidence: lines[businessLine].trim().slice(0, 200) };
+}
+
+const CELL_AUDIENCE = /^\s*(personal|consumer|business|commercial)\b/i;
+const OTHER_CELL = /^\s*\|?\s*\$\s*\d[\d,]*(?:\.\d{2})?\s+(personal|consumer|business|commercial)\b/i;
+const cellAudience = (word: string): ContextAudience => (/^(?:personal|consumer)$/i.test(word) ? "consumer" : "business");
+
+/**
+ * Two prices in the fee's own cell, each with its audience ("$2.00 personal / $5.00 business", or
+ * "| $2.00 personal" over "| $5.00 business"): the fee's price names its audience (True Sky fee
+ * 43451, #1059 unknown review). Only when the other price names the other audience, so a lone
+ * "$10.00 business" note decides nothing.
+ */
+function priceCellAudience(lines: string[], feeIndex: number, amount: number | null): ContextAudience | null {
+  if (amount == null) return null;
+  const line = lines[feeIndex];
+  const match = priceToken(amount).exec(line);
+  if (!match) return null;
+  const after = line.slice(match.index + match[0].length);
+  const own = CELL_AUDIENCE.exec(after);
+  if (!own) return null;
+  const rest = after.slice(own[0].length).replace(/^\s*[/|,;]\s*/, "");
+  const other = OTHER_CELL.exec(rest) ?? OTHER_CELL.exec(nextLine(lines, feeIndex) ?? "");
+  if (!other) return null;
+  const audience = cellAudience(own[1]);
+  return cellAudience(other[1]) !== audience ? audience : null;
 }
 
 /**

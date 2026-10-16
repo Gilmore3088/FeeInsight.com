@@ -847,6 +847,16 @@ Darwin owns verification and classification.
   gives both, and a heading naming one audience leaves the fee `unknown` unless it is a business
   heading under a business schedule title: on unseen schedules those headings agreed with a blind
   reading on 14 of 36 fees (#1059, Oct 14). A business heading never takes the consumer default.
+  The climb for a heading stops at a heading-case line that names no audience and is a schedule
+  title ("Common Fee Schedule") or starts with Other, Miscellaneous, General, Additional or Common
+  ("OTHER SERVICES"), so a menu link, a perk list or a sign-off further up never claims the fee; a
+  bullet ("• Basic Business Checking") is never a heading. A change notice's sign-off ("your
+  continued business"), a "business" wrapped before "days" and "individual check" name no
+  audience. A fee whose own price cell names its audience beside the other audience's price
+  ("$2.00 personal" over "$5.00 business") takes it (`fee_price_cell`). A consumer heading in a
+  mixed schedule still decides nothing: loosening it fails #1059 holdout 4, where the same fee at
+  the same price sits under both a consumer and a business heading (#1059 unknown review,
+  2026-10-16).
   The evidence is written as `darwin:<source>: <words>`, and migration 20270110000047 lets the
   audience trigger keep a `darwin:` decision on the verified row (every other verified write
   still inherits the raw row's audience). The decision is the audience the batch duplicate key,
@@ -862,7 +872,7 @@ Darwin owns verification and classification.
   - `off`: the tick queues one dry run a day over a sample of documents (md5 order by day) that
     counts decisions by audience and evidence source, and writes nothing.
   - `dry_run_full` (shipped, the gate before live): the same cursor chain as live over every
-    document, one batch per tick, key chain `darwin:audience-relabel:dry:v2:after:<cursor>`,
+    document, one batch per tick, key chain `darwin:audience-relabel:dry:v3:after:<cursor>`,
     writing nothing but each batch's counts. The last batch adds the chain's totals to its detail
     (`dry_run_totals`) and writes an `audience_relabel.dry_run_totals` event. Live waits until the
     totals show unknown at most 10%, and consumer, both and business each within about 5 points
@@ -1218,7 +1228,7 @@ fails a PR that changes one of these constants without updating its line here (#
 
 | Constant | Strategy | Version | File |
 |---|---|---|---|
-| `AUDIENCE_RELABEL_VERSION` | `darwin.audience_relabel` | v2 | `darwin/audience-relabel.ts` |
+| `AUDIENCE_RELABEL_VERSION` | `darwin.audience_relabel` | v3 | `darwin/audience-relabel.ts` |
 | `DARWIN_ADJUDICATE_STRATEGY` | `verify.adjudicate` | v2 | `darwin/adjudicate.ts` |
 | `DARWIN_CATEGORY_MODEL_STRATEGY` | `verify.category_model` | v1 | `darwin/category-model.ts` |
 | `DARWIN_PEER_STRATEGY` | `verify.peer_range` | v4 | `darwin/peer-checks.ts` |
