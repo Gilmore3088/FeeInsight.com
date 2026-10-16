@@ -107,6 +107,28 @@ describe("lineConflictVerdict (#1440)", () => {
     }
   });
 
+  it("never lets the model decide a line with any lending category on it (55406, 11427)", () => {
+    const sure = trainCategoryModel([
+      ...Array.from({ length: 30 }, (_, i) => ({ name: `faxed documentation copy ${i}`, categoryKey: "document_reproduction", count: 5 })),
+      ...Array.from({ length: 30 }, (_, i) => ({ name: `consumer loan processing ${i}`, categoryKey: "other_lending_fee", count: 5 })),
+      ...Array.from({ length: 30 }, (_, i) => ({ name: `account research ${i}`, categoryKey: "account_research", count: 5 })),
+    ]);
+    for (const [name, keys, sureOf] of [
+      ["Faxed Documentation", ["document_reproduction", "other_lending_fee"], "document_reproduction"],
+      ["Consumer Loan Processing Fee", ["account_research", "other_lending_fee"], "other_lending_fee"],
+    ] as const) {
+      const verdict = lineConflictVerdict(keys.map((key) => row({ fee_name: name, canonical_fee_key: key, amount: 10 })), sure)!;
+      expect(verdict.model![sureOf]).toBeGreaterThan(0.95);
+      expect(verdict).toMatchObject({ exempt: "undecided", retired: [] });
+    }
+  });
+
+  it("leaves a foreign ATM fee filed as non-network and foreign transaction undecided (126315)", () => {
+    const name = "ATM – Surcharge for Foreign Transactions";
+    const rows = ["atm_non_network", "card_foreign_txn"].map((key) => row({ fee_name: name, canonical_fee_key: key, amount: 2 }));
+    expect(lineConflictVerdict(rows, model)).toMatchObject({ exempt: "undecided", retired: [] });
+  });
+
   it("keeps rows that state different audiences apart", () => {
     const a = row({ fee_name: "Photocopy of cleared check", canonical_fee_key: "document_reproduction", fee_audience: "consumer" });
     const b = row({ fee_name: "Photocopy of cleared check", canonical_fee_key: "check_image", fee_audience: "business" });

@@ -33,9 +33,12 @@ type SqlTag = typeof sql;
  *      category with no guard rule neither passes nor fails).
  *   3. `model`: Darwin's category model (`category-model.ts`, trained on the live catalog and the
  *      answer key) gives one of the line's categories at least `LINE_MODEL_MIN` (0.95) and disputes
- *      every other (at most `LINE_MODEL_OTHER_MAX`, its 0.05 dispute threshold). Never between the
- *      unsettled lending categories alone (`UNSETTLED_LENDING_KEYS`), and never on a name that opens
- *      as a clause ("No contents (e.g. check) included in the ATM", `CLAUSE_NAME`).
+ *      every other (at most `LINE_MODEL_OTHER_MAX`, its 0.05 dispute threshold). Never on a line
+ *      with any unsettled lending category on it (`UNSETTLED_LENDING_KEYS`), and never on a name
+ *      that opens as a clause ("No contents (e.g. check) included in the ATM", `CLAUSE_NAME`).
+ *   A name that says "foreign" on a line filed as a non-network ATM fee and an international or
+ *   foreign-transaction fee is `undecided` before any step: "foreign" may mean another bank's ATM or
+ *   another country (`FOREIGN_ATM_OR_INTERNATIONAL`).
  *   Otherwise the line is `undecided` and stays as it is.
  * - `frequency` conflicts: the frequency the line states for the fee's own price
  *   (`frequencyFromLine` on the schedule line Knox read, `excerpt=` in its conditions). Rows of that
@@ -78,8 +81,9 @@ export const LINE_MODEL_OTHER_MAX = 0.05;
  * and a loan extension under loan origination and a skip-a-pay under late payment, while the fold
  * files a mortgage modification under other lending fee. The model, trained on the live catalog,
  * leans to other lending fee for all of them ("Mortgage loan application fee", "Loan Processing
- * Fee"), so it never decides between these; a line filed only under them stays `undecided` unless
- * the guard decides.
+ * Fee"), so it never decides a line with any of them on it: "Faxed Documentation" (55406) was other
+ * lending fee beside document reproduction, and the bank prints it under "Lending Fees". Such a line
+ * stays `undecided` unless the guard decides it.
  */
 export const UNSETTLED_LENDING_KEYS: ReadonlySet<string> = new Set(["loan_origination", "other_lending_fee", "late_payment"]);
 export const LINE_CONFLICT_SAMPLES = 25;
@@ -237,6 +241,20 @@ function onePartPerCategory(model: CategoryModel, name: string, categories: stri
  */
 const CLAUSE_NAME = /^\W*(?:no|not|none|without|if|when|unless|only)\b/i;
 
+/**
+ * "Foreign" on an ATM fee is either another bank's ATM (non-network) or another country: "ATM –
+ * Surcharge for Foreign Transactions | $2" (126315) sits in a table that prints "Non-Proprietary ATM
+ * Withdrawal ... No Fee". On a line filed both ways, no step decides which.
+ */
+const FOREIGN_WORD = /\bforeign\b/i;
+function foreignAtmOrInternational(name: string, categories: string[]): boolean {
+  return (
+    FOREIGN_WORD.test(name) &&
+    categories.includes("atm_non_network") &&
+    categories.some((key) => key === "card_foreign_txn" || /intl|international/.test(key))
+  );
+}
+
 /** A rate on the line ("5% of the monthly payment or $35.00"): its period words belong to the rate. */
 const RATE_ON_LINE = /\d\s?%/;
 
@@ -293,6 +311,7 @@ export function lineConflictVerdict(rows: LineConflictRow[], model: CategoryMode
     const ok = new Map(categories.map((key) => [key, checkFeeCategory(key, name, context).ok]));
     if (joinsTwoFees(name) && categories.every((key) => guarded(key) && ok.get(key))) return { ...verdict, exempt: "joint_line" };
     if (namesNsfAndOverdraft(name, categories)) return { ...verdict, exempt: "joint_line" };
+    if (foreignAtmOrInternational(name, categories)) return { ...verdict, exempt: "undecided" };
     if (model && onePartPerCategory(model, name, categories)) return { ...verdict, exempt: "joint_line" };
     // 1. The guard re-files one category of the line into another, which stays put.
     const refiledTo = new Set(
@@ -316,7 +335,7 @@ export function lineConflictVerdict(rows: LineConflictRow[], model: CategoryMode
     if (model) {
       const scores = scoreCategories(model, name);
       verdict.model = Object.fromEntries(categories.map((key) => [key, Math.round((scores.get(key) ?? 0) * 1000) / 1000]));
-      if (!basis && !categories.every((key) => UNSETTLED_LENDING_KEYS.has(key))) {
+      if (!basis && !categories.some((key) => UNSETTLED_LENDING_KEYS.has(key))) {
         const ranked = [...categories].sort((a, b) => (scores.get(b) ?? 0) - (scores.get(a) ?? 0));
         const [top, next] = ranked.map((key) => scores.get(key) ?? 0);
         if (top >= LINE_MODEL_MIN && next <= LINE_MODEL_OTHER_MAX && !CLAUSE_NAME.test(name)) {

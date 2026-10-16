@@ -740,9 +740,11 @@ Darwin owns verification and classification.
   institution-scoped run reads that bank's) and keeps one reading (`lineConflictVerdict`): for two
   categories, the guard's re-file into another category of the line (`refile`), else the only
   category the guard does not refuse (`guard`), else the category the model gives at least 0.95
-  while disputing the others (`model`; never between loan origination, other lending fee and late
-  payment alone, whose borders the taxonomy has not settled, and never on a name that opens as a
-  clause, "No contents (e.g. check) included in the ATM"); for two frequencies, the frequency
+  while disputing the others (`model`; never on a line with loan origination, other lending fee
+  or late payment on it, whose borders the taxonomy has not settled, and never on a name that opens
+  as a clause, "No contents (e.g. check) included in the ATM"; a name saying "foreign" on a line
+  filed as a non-network ATM fee and an international or foreign-transaction fee is undecided
+  before any step); for two frequencies, the frequency
   the schedule line states for the price (`line`; not from a line with a rate on it, and a per-item
   reading never beats a period category's period). Kept apart, never retired: rows stating
   different audiences (`audiences`), a name joining two fees outside its notes that the guard
@@ -756,8 +758,8 @@ Darwin owns verification and classification.
   two reads: kept #<id> (<kind>, <basis>: <reading>)` while the kept row is still live, its
   verified row rejected with `one_line_two_reads`, never deleted, and a
   `darwin.line_conflict_takedown` event lists them. `lineConflictCountSql()` counts the lines for
-  someone with prod access. Dry run on Oct 16 (117 lines, 236 live rows): 35 rows retired (27 by
-  the model, 8 by the line), 64 undecided, 18 joint lines.
+  someone with prod access. Dry run on Oct 16 (117 lines, 236 live rows): 30 rows retired (22 by
+  the model, 8 by the line), 69 undecided, 18 joint lines.
 - Released-fee category re-check (`release-repair.ts`, the repair half of #1367; decision
   2026-10-15, "Darwin re-checks every live fee against today's rules"). Until PR #1468 the release
   check passed "." as the category pattern, so every fee the release published before then went live
