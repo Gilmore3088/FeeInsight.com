@@ -1,5 +1,5 @@
 {
-  "ignoreCommand": "[ \"$VERCEL_ENV\" != production ] && { git rev-parse -q --verify HEAD^ >/dev/null 2>&1 || exit 1; } && git diff --quiet HEAD^ HEAD -- . \":!docs\" \":!supabase\" \":!src/lib/agents\" \":!scripts\" \":!.github\" \":!.claude\" \":!handoff\" \":!*.md\" \":!*.test.ts\" \":!*.test.tsx\"",
+  "ignoreCommand": "[ \"$VERCEL_ENV\" != production ] && { git cat-file -e HEAD^ 2>/dev/null || exit 1; } && git diff --quiet HEAD^ HEAD -- . \":!docs\" \":!supabase\" \":!src/lib/agents\" \":!scripts\" \":!.github\" \":!.claude\" \":!handoff\" \":!*.md\" \":!*.test.ts\" \":!*.test.tsx\"",
   "crons": [
     {
       "path": "/api/admin/agents/tick",

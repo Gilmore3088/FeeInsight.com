@@ -173,8 +173,8 @@ export interface HomeData {
  * background (ISR), and a render made while a read was failing would otherwise be served
  * for the whole revalidate window, or baked into the build. A read that failed (as opposed
  * to one that answered "nothing today", such as no sample bank passing the bar) makes the
- * render uncacheable: the build then serves the page per request, and a background
- * regeneration keeps the last good page.
+ * render uncacheable: the page then caches it for a minute instead of fifteen
+ * (`shortenPageLife`, #1572), so the next render reads the database again.
  */
 export function homeReadsCacheable({
   summary,
