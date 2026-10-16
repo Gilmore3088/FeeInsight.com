@@ -120,8 +120,8 @@ Darwin owns verification and classification.
   here never reached them (#1568: 15 live tier-perk $0s stayed up after version 3).
   `DARWIN_RECHECK_OLDER_LIVE` (default off) adds them: on, each step also reads up to half its
   limit of those live rows, newest first, and they fail or pass like any other row. Off, every
-  fourth run reads a sample of 200 of them (in id order up from a random id, so it never sorts the
-  backlog), runs the same checks and writes nothing: step detail `recheck.olderLive` gives `read`,
+  fourth run reads a sample of 200 of them (in id order up from a random id, wrapping round to the
+  lowest ids, so it never sorts the backlog), runs the same checks and writes nothing: step detail `recheck.olderLive` gives `read`,
   `wouldFail` by reason code and 20 samples. That is a per-step sample; the whole backlog's count
   is a separate read-only query. It turns on by PR once James approves that count by reason.
 - `verify.document_owner` (`document-owner.ts`, version 1, 2026-10-15, #1455) ends every learning

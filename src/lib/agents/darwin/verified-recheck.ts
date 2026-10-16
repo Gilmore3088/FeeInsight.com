@@ -98,10 +98,12 @@ const EMPTY: VerifiedRecheckResult = { checked: 0, passed: 0, rejected: [], rest
 /**
  * Live verified rows the recheck never selects (#1568): their `verify.rules` attempt is not a
  * `verified` one at the current version, and this recheck version has not read them. A sample (the
- * shadow report) reads up from a random id, in id order, so it walks the index and stops at the
- * limit instead of sorting the whole backlog; otherwise newest first.
+ * shadow report) reads up from `from` in id order, so it walks the index and stops at the limit
+ * instead of sorting the whole backlog; otherwise newest first.
  */
-function selectOlderLiveRows(db: SqlTag, limit: number, sample: boolean): Promise<RecheckRow[]> {
+function selectOlderLiveRows(db: SqlTag, limit: number, from: "random" | "start" | null): Promise<RecheckRow[]> {
+  const sample = from != null;
+  const randomStart = from === "random";
   return inSavepoint(db, (scope) => scope<RecheckRow[]>`
       SELECT v.fee_verified_id, v.review_status, v.canonical_fee_key, v.amount AS verified_amount,
              r.fee_raw_id, r.institution_id, r.source_url, r.document_r2_key, r.extraction_confidence,
@@ -111,11 +113,11 @@ function selectOlderLiveRows(db: SqlTag, limit: number, sample: boolean): Promis
         JOIN raw_fee_observations r ON r.fee_raw_id = v.fee_raw_id
         JOIN LATERAL (
           SELECT p.fee_published_id FROM published_fee_records p
-           WHERE p.lineage_ref = v.fee_verified_id AND p.rolled_back_at IS NULL
+           WHERE p.lineage_ref = v.fee_verified_id AND p.rolled_back_at IS NULL AND p.quarantined_at IS NULL
            ORDER BY p.fee_published_id DESC LIMIT 1
         ) live ON true
        WHERE v.review_status IN ('verified', 'approved')
-         AND (NOT ${sample}::boolean OR v.fee_verified_id >= (SELECT floor(random() * max(fee_verified_id))::bigint FROM verified_fee_observations))
+         AND (NOT ${randomStart}::boolean OR v.fee_verified_id >= (SELECT floor(random() * max(fee_verified_id))::bigint FROM verified_fee_observations))
          AND NOT EXISTS (
            SELECT 1 FROM pipeline_attempts pa
             WHERE pa.input_fingerprint = 'raw:' || v.fee_raw_id::text
@@ -195,7 +197,14 @@ function textsFor(db: SqlTag, rows: RecheckRow[]): Promise<Map<number, string>> 
 export async function olderLiveShadow(db: SqlTag, options: { runId: number; limit?: number }): Promise<OlderLiveShadow> {
   const shadow: OlderLiveShadow = { read: 0, wouldFail: {}, samples: [] };
   try {
-    const rows = await selectOlderLiveRows(db, options.limit ?? OLDER_LIVE_SHADOW_LIMIT, true);
+    const limit = options.limit ?? OLDER_LIVE_SHADOW_LIMIT;
+    let rows = await selectOlderLiveRows(db, limit, "random");
+    // A start near the top finds fewer than the limit: wrap round to the lowest ids.
+    if (rows.length < limit) {
+      const seen = new Set(rows.map((row) => String(row.fee_verified_id)));
+      const wrapped = await selectOlderLiveRows(db, limit - rows.length, "start");
+      rows = [...rows, ...wrapped.filter((row) => !seen.has(String(row.fee_verified_id)))];
+    }
     if (rows.length === 0) return shadow;
     const texts = await textsFor(db, rows);
     for (const row of rows) {
@@ -239,7 +248,7 @@ export async function recheckVerifiedFees(
     rows = await selectRows(db, limit, true);
     if (rows.length === 0) rows = await selectRows(db, limit, false);
     // On: older live rows get their own share of each step, so new rows never starve them (#1568).
-    if (olderLive) rows = [...rows, ...(await selectOlderLiveRows(db, Math.ceil(limit / 2), false))];
+    if (olderLive) rows = [...rows, ...(await selectOlderLiveRows(db, Math.ceil(limit / 2), null))];
   } catch (error) {
     console.warn("[darwin] verified recheck read failed", error instanceof Error ? error.message : error);
     return result;
