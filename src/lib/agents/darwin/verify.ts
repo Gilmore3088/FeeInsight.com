@@ -24,6 +24,7 @@ import {
   categoryChangeCandidates,
   DARWIN_CATEGORY_CHANGE_LIMIT,
   DARWIN_CATEGORY_CHANGE_REJUDGE_LIVE,
+  DARWIN_TAKEOVER_CATEGORY_PROOF_LIVE,
   selectCategoryChangeRows,
   summarizeCategoryChange,
   type CategoryChangeRejudgeSummary,
@@ -1507,7 +1508,14 @@ async function categoryChangeRejudge(
     return null;
   });
   if (!scanned) return { rows: [], summary: null };
-  const candidates = categoryChangeCandidates(scanned, canonicalHintFrom);
+  // Rows only a take-over's `knox_takeover_from:` flag proves join only with that switch on;
+  // off, they are counted and sampled for James.
+  const takeoverLive = DARWIN_TAKEOVER_CATEGORY_PROOF_LIVE;
+  const withoutTakeover = categoryChangeCandidates(scanned, canonicalHintFrom, { takeoverProof: false });
+  const withTakeover = categoryChangeCandidates(scanned, canonicalHintFrom, { takeoverProof: true });
+  const provenWithout = new Set(withoutTakeover.map((candidate) => candidate.feeRawId));
+  const takeoverOnly = withTakeover.filter((candidate) => !provenWithout.has(candidate.feeRawId));
+  const candidates = takeoverLive ? withTakeover : withoutTakeover;
   const live = DARWIN_CATEGORY_CHANGE_REJUDGE_LIVE && options.learning;
   const ids = live
     ? candidates
@@ -1518,7 +1526,7 @@ async function categoryChangeRejudge(
   const rows = ids.length > 0
     ? await selectRawFees(db, ids.length, options.learning, options.institutionId, options.stateCode, options.currentCopy, ids)
     : [];
-  return { rows, summary: summarizeCategoryChange(candidates, scanned.length, rows.length, live) };
+  return { rows, summary: summarizeCategoryChange(candidates, scanned.length, rows.length, live, takeoverOnly, takeoverLive) };
 }
 
 export async function runDarwinVerify(

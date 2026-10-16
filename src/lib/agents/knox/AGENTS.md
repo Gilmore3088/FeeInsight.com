@@ -699,7 +699,10 @@ After the extract itself, each extract step runs these passes in order (`run-sto
 - A re-read that takes over a row (`knox_reread_took_over`, `knox_promoted_from_held`) drops the
   row's old `canonical_hint:` flags. Darwin reads the first such flag, so before this a fee today's
   rules filed under a new category was judged under the old one: 12 of the 54 take-overs by 14 Oct
-  ("Wire Transfer - International" $45 judged as an overdraft fee).
+  ("Wire Transfer - International" $45 judged as an overdraft fee). When a take-over of a retired
+  row changes its category, `knox_takeover_from:<old>` keeps the old first category (#1295): the
+  proof Darwin's category-change re-judge needs that its earlier decision was made under another
+  category. The flag changes no decision on its own (Darwin's `DARWIN_TAKEOVER_CATEGORY_PROOF_LIVE`).
 - `recheckHeldRates`: held percentage lines (below).
 - `fileHeldByName` (#1102, up to 300 per extract step, scoped to the run's lane): one decision per
   held name, across banks. A line held as unclassified whose exact name (`lessonName`) has a
