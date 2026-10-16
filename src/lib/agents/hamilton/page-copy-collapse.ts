@@ -46,6 +46,8 @@ export interface PageCopyRow {
 
 export interface PageCopyCollapse extends DuplicateCollapse {
   keptFeeName: string;
+  /** Paired only through the replaced-copy link, under another name (#1348). */
+  renamed?: boolean;
   sourceDocumentId: number;
   keptSourceDocumentId: number;
 }
@@ -65,14 +67,27 @@ export interface PageCopyResult {
    */
   otherDocument: number;
   /**
-   * Of `pairs`, those matched only because the row's document was replaced by the kept row's
-   * (#1348): the replacing copy reads the line under another name ("Temporary checks" / "Temporary
-   * checks (sheet of 3 checks)"). They close on the same tests as any other pair.
+   * Of `pairs` (closed or kept), those matched only because the row's document was replaced by the
+   * kept row's (#1348): the replacing copy reads the line under another name sharing a word
+   * ("Temporary checks" / "Temporary checks (sheet of 3 checks)"). They close on the same tests as
+   * any other pair.
    */
   renamed: number;
   collapses: PageCopyCollapse[];
   /** Set when the read or the close failed, so a failed step does not read as "nothing found". */
   error?: string;
+}
+
+const NAME_FILLER = new Set(["fee", "fees", "charge", "charges", "per", "each", "item", "items", "the", "a", "an", "of", "for", "and", "or", "to", "on", "in", "account", "accounts"]);
+
+function nameWords(name: string | null): Set<string> {
+  return new Set((name ?? "").toLowerCase().split(/[^a-z]+/).filter((word) => word.length > 1 && !NAME_FILLER.has(word)));
+}
+
+/** The two names share a word beyond "fee", "charge", "each" and the like. */
+function shareWord(a: string | null, b: string | null): boolean {
+  const words = nameWords(b);
+  return [...nameWords(a)].some((word) => words.has(word) || words.has(word.replace(/s$/, "")) || words.has(`${word}s`));
 }
 
 function sameLine(a: string | null, b: string | null): boolean {
@@ -214,22 +229,30 @@ export function pageCopyRepeats(rows: PageCopyRow[], texts: Map<string, string>)
     const kept: PageCopyRow[] = [];
     // The kept row's document replaced this row's (`superseded_by_id`): the same line under another
     // name is still one fee unless the replacing copy prints both names as lines of their own.
+    // The two names must share a word ("Online Stop Payment" / "Stop Payment"), so a line the newer
+    // copy dropped never closes as another line's copy. A partner of the same name wins, then a near
+    // name ("Stop Payment" pairs with "Stop Payment", not "ACH Stop Payment", when both are kept).
     const replacedBy = (row: PageCopyRow, keep: PageCopyRow) =>
-      row.superseded_by_id != null && String(row.superseded_by_id) === String(keep.source_document_id);
+      row.superseded_by_id != null && String(row.superseded_by_id) === String(keep.source_document_id) && shareWord(row.fee_name, keep.fee_name);
+    const agree = (row: PageCopyRow, keep: PageCopyRow) => {
+      if (String(keep.source_document_id) === String(row.source_document_id)) return false;
+      const [f1, f2] = [frequencyClass(keep.frequency), frequencyClass(row.frequency)];
+      const [a1, a2] = [keep.fee_audience ?? "unknown", row.fee_audience ?? "unknown"];
+      return (f1 == null || f2 == null || f1 === f2) && (a1 === "unknown" || a2 === "unknown" || a1 === a2);
+    };
     for (const row of ordered) {
-      const match = kept.find((keep) => {
-        if (String(keep.source_document_id) === String(row.source_document_id)) return false;
-        if (!sameLine(keep.fee_name, row.fee_name) && !replacedBy(row, keep)) return false;
-        const [f1, f2] = [frequencyClass(keep.frequency), frequencyClass(row.frequency)];
-        const [a1, a2] = [keep.fee_audience ?? "unknown", row.fee_audience ?? "unknown"];
-        return (f1 == null || f2 == null || f1 === f2) && (a1 === "unknown" || a2 === "unknown" || a1 === a2);
-      });
+      const exact = (keep: PageCopyRow) => (keep.fee_name ?? "").trim().toLowerCase() === (row.fee_name ?? "").trim().toLowerCase();
+      const match =
+        kept.find((keep) => agree(row, keep) && exact(keep)) ??
+        kept.find((keep) => agree(row, keep) && sameLine(keep.fee_name, row.fee_name)) ??
+        kept.find((keep) => agree(row, keep) && replacedBy(row, keep));
       if (!match) {
         kept.push(row);
         continue;
       }
       result.pairs += 1;
-      if (!sameLine(match.fee_name, row.fee_name)) result.renamed += 1;
+      const renamed = !sameLine(match.fee_name, row.fee_name);
+      if (renamed) result.renamed += 1;
       const text = texts.get(String(match.source_document_id)) ?? null;
       if (!text || !printedAtPrice(text, match.fee_name ?? "", match.amount)) {
         result.unproven += 1;
@@ -255,6 +278,7 @@ export function pageCopyRepeats(rows: PageCopyRow[], texts: Map<string, string>)
           amount: Number(row.amount),
           sourceDocumentId: Number(row.source_document_id),
           keptSourceDocumentId: Number(match.source_document_id),
+          ...(renamed ? { renamed: true } : {}),
         });
       }
     }

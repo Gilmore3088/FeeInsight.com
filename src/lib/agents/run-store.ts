@@ -1933,6 +1933,14 @@ async function executeAgenticStep(
               kept_fee_name: row.keptFeeName,
               kept_source_document_id: row.keptSourceDocumentId,
               amount: row.amount,
+              ...(row.renamed ? { renamed: true } : {}),
+            })),
+            renamed_samples: pageCopyCollapse.collapses.filter((row) => row.renamed).slice(0, 10).map((row) => ({
+              fee_published_id: row.feePublishedId,
+              fee_name: row.feeName,
+              kept_fee_published_id: row.keptFeePublishedId,
+              kept_fee_name: row.keptFeeName,
+              amount: row.amount,
             })),
           },
           duplicate_collapse_samples: duplicateCollapses.slice(0, 10).map((row) => ({

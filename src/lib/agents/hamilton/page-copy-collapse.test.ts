@@ -213,9 +213,27 @@ describe("pageCopyRepeats: a copy the newer copy replaced (#1348)", () => {
 
   it("keeps both when the newer copy prints the two names as lines of their own", () => {
     const apart = "Fees Counter Checks $1.00 Temporary checks (sheet of 3 checks) $1.00 Stop Payment $30.00 Cashier's Check $10.00 Wire Transfer Incoming $15.00 Outgoing $25.00";
-    const found = pageCopyRepeats(pair("Counter Checks", "Temporary checks (sheet of 3 checks)"), new Map([["297", apart], ["20497", apart]]));
+    const found = pageCopyRepeats(pair("Counter Checks", "Temporary checks (sheet of 3 checks)").map((one, i) => (i === 1 ? { ...one, fee_name: "Counter checks (sheet of 3)" } : one)), new Map([["297", apart], ["20497", apart.replace("Temporary checks (sheet of 3 checks)", "Counter checks (sheet of 3)")]]));
     expect(found).toMatchObject({ pairs: 1, renamed: 1, apartOnPage: 1 });
     expect(found.collapses).toEqual([]);
+  });
+
+  it("pairs with the newer copy's row of the same name before one of another name", () => {
+    const text = "Fees ACH Stop Payment $30.00 Stop Payment $30.00 Temporary checks $1.00 Cashier's Check $10.00 Wire Transfer Incoming $15.00 Outgoing $25.00";
+    const rows = [
+      row({ fee_published_id: 1, source_document_id: 297, crawled_at: "2026-02-01", superseded: true, superseded_by_id: 20497, amount: 30, fee_name: "Stop Payment" }),
+      row({ fee_published_id: 3, source_document_id: 20497, crawled_at: "2026-10-01", amount: 30, fee_name: "Stop Payment" }),
+      row({ fee_published_id: 9, source_document_id: 20497, crawled_at: "2026-10-01", amount: 30, fee_name: "ACH Stop Payment" }),
+    ];
+    const found = pageCopyRepeats(rows, new Map([["297", text], ["20497", text]]));
+    expect(found).toMatchObject({ renamed: 0, apartOnPage: 0 });
+    expect(found.collapses).toEqual([expect.objectContaining({ feePublishedId: 1, keptFeePublishedId: 3 })]);
+  });
+
+  it("never closes a line the newer copy dropped as a copy of an unrelated line", () => {
+    const found = pageCopyRepeats(pair("Money Order", "Temporary checks (sheet of 3 checks)"), texts);
+    expect(found).toMatchObject({ pairs: 0, renamed: 0 });
+    expect(pageCopyRepeats(pair("Online Stop Payment", "Temporary checks (sheet of 3 checks)"), texts).pairs).toBe(0);
   });
 
   it("never pairs other names across documents that only share a page key", () => {
