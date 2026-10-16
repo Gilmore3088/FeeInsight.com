@@ -106,12 +106,24 @@ function planned(row: HoldRow, accountType: AccountType): PlannedHold {
   };
 }
 
+/**
+ * Live fees the hold leaves live although their stored product reads as another kind of account,
+ * because a hand check against the bank's own text found the product wrong. One line per fee
+ * (fee_published_id), with the reason; read as untyped (checking or unknown).
+ */
+export const ACCOUNT_TYPE_KEEP_LIVE: ReadonlyMap<number, string> = new Map([
+  // Ontario Public Employees FCU: the $5 "Monthly Service Fee" row sits under "SHARE DRAFT FEES";
+  // the v55 product "REGULAR SHARE FEES" is the heading of the share section above it (#1566 hand check).
+  [28834, "a share draft (checking) fee; the stored product \"REGULAR SHARE FEES\" is wrong"],
+]);
+
 /** Pure: the typed rows of a list, each with its type. */
 export function planHolds(rows: HoldRow[]): { typed: PlannedHold[]; untyped: HoldRow[] } {
   const typed: PlannedHold[] = [];
   const untyped: HoldRow[] = [];
   for (const row of rows) {
-    const type = accountTypeOf(row.product_name, row.fee_name, row.institution_name);
+    const keepLive = row.fee_published_id != null && ACCOUNT_TYPE_KEEP_LIVE.has(Number(row.fee_published_id));
+    const type = keepLive ? null : accountTypeOf(row.product_name, row.fee_name, row.institution_name);
     if (type) typed.push(planned(row, type));
     else untyped.push(row);
   }

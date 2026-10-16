@@ -110,4 +110,15 @@ describe("accountTypeOf (#1100 gap 1)", () => {
     // The institution's name is stripped only as whole words.
     expect(accountTypeOf("Super Bank Savings", "Monthly fee", "R Bank")).toBe("savings");
   });
+
+  it("reads a kids' club as savings unless it says checking", () => {
+    // 643669: "Minimum balance service charge" of the "Money Tree Kids Club" savings account.
+    expect(accountTypeOf("Money Tree Kids Club", "Minimum balance service charge")).toBe("savings");
+    expect(accountTypeOf("Kids Club", "Monthly fee")).toBe("savings");
+    expect(accountTypeOf("Kids Club Checking", "Monthly fee")).toBeNull();
+    // Club checking packages stay checking or untyped.
+    for (const name of ["Century Club Account", "VIP Club Account", "Club Five CheckingSM", "Premier Club", "Prime Time Club", "Eagle Club Account"]) {
+      expect(accountTypeOf(name, "Monthly fee"), name).toBeNull();
+    }
+  });
 });

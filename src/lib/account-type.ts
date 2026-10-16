@@ -36,9 +36,11 @@ const CLUB = /\b(?:christmas|holiday|vacation)\b|\bclub\s+(?:savings|account\s+s
  * 72)" sits under "Share Draft Account", and "Share-to-Share Overdraft Transfer Fee" is a checking
  * account's transfer). A share counts only with a savings word: "share savings", "share account",
  * "regular/primary/membership share", "FAT CAT Share".
+ * A kids' club ("Money Tree Kids Club", 643669) is a kids' savings account, unless its name says
+ * checking (checked before this).
  */
 const SAVINGS =
-  /\b(?:savings?|savers?|passbook|statement\s+savings|shares?\s+(?:savings|accounts?|relationship)|(?:regular|primary|prime|basic|base|membership|member|youth|kids?|junior|statement|holiday|fat\s+cat)\s+shares?)\b/i;
+  /\b(?:savings?|savers?|passbook|statement\s+savings|shares?\s+(?:savings|accounts?|relationship)|(?:regular|primary|prime|basic|base|membership|member|youth|kids?|junior|statement|holiday|fat\s+cat)\s+shares?|kids?'?s?\s+club)\b/i;
 const CHECKING = /checking\b|\b(?:share\s*drafts?|draft\s+account)\b/i;
 
 /** The account type one text names, or null for checking or no type. */

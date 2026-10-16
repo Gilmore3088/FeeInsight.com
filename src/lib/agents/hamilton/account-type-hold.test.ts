@@ -125,4 +125,10 @@ describe("account type hold (#1100 gap 1)", () => {
     const update = calls.find((call) => call.text.includes("UPDATE published_fee_records"))!;
     expect(update.values[2]).toEqual(["account_type_hold: money_market (#1100)", "account_type_hold: savings (#1100)", "account_type_hold: business (#1100)"]);
   });
+
+  it("leaves a listed fee live whatever its stored product says (keep-live list)", () => {
+    const row: HoldRow = { fee_published_id: 28834, fee_verified_id: 9, institution_id: 5800, fee_name: "Monthly Service Fee", product_name: "REGULAR SHARE FEES", amount: "5.00" };
+    expect(planHolds([row]).typed).toEqual([]);
+    expect(planHolds([{ ...row, fee_published_id: 28835 }]).typed.map((hold) => hold.accountType)).toEqual(["savings"]);
+  });
 });
