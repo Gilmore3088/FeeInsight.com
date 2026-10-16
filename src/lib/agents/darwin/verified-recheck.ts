@@ -176,7 +176,7 @@ function selectDueSecondLookRows(db: SqlTag, limit: number): Promise<RecheckRow[
        WHERE f.check_name = ${DARWIN_RECHECK_CHECK}
          AND f.kind = ${PENDING_KIND}
          AND (f.evidence->>'flagged_at')::timestamptz <= NOW() - make_interval(mins => ${SECOND_LOOK_MIN_MINUTES})
-         AND p.rolled_back_at IS NULL
+         AND p.rolled_back_at IS NULL AND p.quarantined_at IS NULL
          AND v.review_status IN ('verified', 'approved')
        ORDER BY (f.evidence->>'flagged_at')::timestamptz ASC, p.fee_published_id
        LIMIT ${limit}::int
@@ -189,7 +189,8 @@ export async function dueSecondLookShadow(db: SqlTag, options: { limit?: number 
   try {
     const rows = await selectDueSecondLookRows(db, options.limit ?? SECOND_LOOK_DUE_LIMIT);
     if (rows.length === 0) return shadow;
-    const texts = await textsFor(db, rows);
+    // In a savepoint, so a failed text read cannot abort the step's transaction.
+    const texts = await inSavepoint(db, (scope) => textsFor(scope, rows));
     for (const row of rows) {
       shadow.due += 1;
       const { canonicalFeeKey, amount, check } = recheckOf(row, texts);
@@ -277,7 +278,8 @@ export async function olderLiveShadow(db: SqlTag, options: { runId: number; limi
       rows = [...rows, ...wrapped.filter((row) => !seen.has(String(row.fee_verified_id)))];
     }
     if (rows.length === 0) return shadow;
-    const texts = await textsFor(db, rows);
+    // In a savepoint, so a failed text read cannot abort the step's transaction.
+    const texts = await inSavepoint(db, (scope) => textsFor(scope, rows));
     for (const row of rows) {
       shadow.read += 1;
       const { canonicalFeeKey, amount, check } = recheckOf(row, texts);

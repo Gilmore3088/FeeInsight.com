@@ -121,7 +121,7 @@ Darwin owns verification and classification.
   `DARWIN_RECHECK_OLDER_LIVE` (default off) adds them: on, each step also reads up to half its
   limit of those live rows, newest first, and they fail or pass like any other row. Off, every
   fourth run reads a sample of 200 of them (in id order up from a random id, wrapping round to the
-  lowest ids, so it never sorts the backlog), runs the same checks and writes nothing: step detail `recheck.olderLive` gives `read`,
+  lowest ids), runs the same checks and writes nothing: step detail `recheck.olderLive` gives `read`,
   `wouldFail` by reason code and 20 samples. That is a per-step sample; the whole backlog's count
   is a separate read-only query. It turns on by PR once James approves that count by reason.
   The 12-hour path never reached its second look: a row is read once per recheck version, so a
