@@ -255,6 +255,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v3 (#1397): the recheck reads every verified row once per version, so each verify step works
   // through the whole verified set under v3 itself (200 a step).
   // v4 (#1571, #1574): the same selector re-reads every verified row once under v4.
+  // v5 (#1593): and once more under v5.
   DARWIN_RECHECK_STRATEGY: "Its selector re-reads every verified row not yet read at the current version (200 a verify step); there is nothing to replay.",
   // v1 (#1511): a new shadow pass over Darwin's re-read requests. Its resolution key carries its
   // version and the Knox rules version, so every request is read again by the extract steps themselves.
