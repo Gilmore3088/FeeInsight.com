@@ -7,7 +7,7 @@ import { STATE_TO_FIPS } from "@/lib/geo/state-fips";
 import { DistributionChart } from "@/components/public/distribution-chart";
 import { CountyPriceMap, type CountyDetail } from "@/components/public/county-price-map";
 import { countyFeatures } from "@/lib/geo/counties";
-import { getNationalIndexCached } from "@/lib/data-store/fee-index";
+import { getNationalIndexCached, getNationalUnstatedAudienceCountsCached } from "@/lib/data-store/fee-index";
 import { getCountyFeeMapCached, getStateDemographicsCached } from "@/lib/data-store/public-cached-reads";
 import { countyPriceMap, PRICE_MAP_FILLS, PRICE_MAP_LEGEND, priceStep } from "@/lib/report-templates/base/state-charts";
 import {
@@ -55,14 +55,19 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
   const check = prices && price !== null ? priceCheck(price, prices) : null;
   const stateName = state ? STATE_NAMES[state] : "";
   const fips = state ? STATE_TO_FIPS[state] : undefined;
-  const [national, demographics, countyMap] = check && state
+  const [national, unstatedCounts, demographics, countyMap] = check && state
     ? await Promise.all([
         getNationalIndexCached().catch(() => []),
+        getNationalUnstatedAudienceCountsCached(),
         fips ? getStateDemographicsCached(fips).catch(() => null) : Promise.resolve(null),
         fips ? getCountyFeeMapCached(state, fee).catch(() => null) : Promise.resolve(null),
       ])
-    : [[], null, null];
-  const nationalEntry = national.find((entry) => entry.fee_category === fee) ?? null;
+    : [[], new Map<string, number>(), null, null];
+  const indexEntry = national.find((entry) => entry.fee_category === fee) ?? null;
+  // The cached index carries no unstated-audience count (#1595); a live fallback index does.
+  const nationalEntry = indexEntry
+    ? { ...indexEntry, unstated_audience_institution_count: indexEntry.unstated_audience_institution_count ?? unstatedCounts.get(fee) ?? 0 }
+    : null;
   const charters = prices && price !== null ? charterChecks(price, prices) : [];
   const markets = prices && price !== null ? marketChecks(price, prices) : [];
   const countyValues = (countyMap?.counties ?? []).map((c) => ({ fips: c.fips, value: c.overdraft, deposits: c.deposits, covered_deposits: c.covered_deposits }));

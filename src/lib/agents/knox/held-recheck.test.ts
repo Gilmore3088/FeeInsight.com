@@ -29,6 +29,11 @@ import {
   refiledConditions,
   refiledFlags,
   refiledRead,
+  isRangeBand,
+  RANGE_BAND_FLAG,
+  RANGE_BAND_SET_ASIDE_BY_FLAG,
+  RANGE_BAND_SET_ASIDE_LIVE,
+  setAsideRangeBands,
   refileSupersededRows,
   STALE_HINT_REPAIRED_FLAG,
   supersededConditions,
@@ -737,5 +742,115 @@ describe("held names with footnote marks (Oct 15, after #1385)", () => {
     expect(nameFileCheckedFlag(now)).toBe("knox_name_file_checked:k2:2026-W42");
     // The v1 mark the IN lane wrote on Oct 15 is not this week's mark any more.
     expect(nameFileCheckedFlag(now)).not.toBe("knox_name_file_checked:2026-W42");
+  });
+});
+
+// #1102: held range lines with no category. Production excerpts, read 16 Oct 2026.
+describe("held range lines that are deposit or loan rate bands, not fees (#1102)", () => {
+  // The text just before the line in its document; a rate table's own header by default.
+  const RATE_HEADER = "Savings Rates | Balance | Dividend Rate | APY";
+  const range = (fee_raw_id: number, excerpt: string, hint = "none", prev_context: string | null = RATE_HEADER) => ({
+    fee_raw_id,
+    amount: "0.00",
+    fee_name: "Tier",
+    institution_id: fee_raw_id % 3,
+    source_document_id: 9,
+    conditions: `Knox held for review (range) from Rosetta artifact #704. canonical_hint=${hint}; text_hash=abc; excerpt="${excerpt}"`,
+    outlier_flags: hint === "none" ? ["knox_review:range", "amount_max:49999.99"] : ["knox_review:range", `canonical_hint:${hint}`],
+    prev_context,
+  });
+  const tier = range(1, "Tier 3 | $25,000.00 – $49,999.99 | 0.75% | 2.02 to 1.39%");
+  const loan = range(2, "Loan amounts range from $1,000 to $75,000 and loan term lengths range from 24 months to 84 months");
+  const apy = range(3, "Balances $25,000.00 to $34,999.99 earn 0.75% APY");
+  const minimums = range(4, "$2,500 to $24,999.99 | 0.35% | 0.35% | $2,500.00 | $500.00");
+
+  it.each([
+    [tier, true],
+    [apy, true],
+    [minimums, true],
+    [range(13, "$3,500 to $20,000 | 11.25% | 48 months"), true],
+    [range(14, "If your daily balance is from $10,000.00 to $19,999.99, the second dividend rate and annual percentage yield will apply"), true],
+    // No deposit or loan rate signal: a loan amount alone stays held.
+    [loan, false],
+    // A band whose text cannot be found, or that sits under a fee heading, stays held.
+    [range(15, "Tier 3 | $25,000.00 – $49,999.99 | 0.75%", "none", null), false],
+    [range(16, "Tier 3 | $25,000.00 – $49,999.99 | 0.75%", "none", "Large Amount (currency) Withdrawal Fee\n"), false],
+    // Real fees a second review of #1622 found among the bands, checked against the stored text
+    // (production raw ids): a rate charged on an amount, a big-dollar fee, a commission table.
+    [range(114351, "$25,000.00 - $49,999.99…… 1.25% of amount withdrawn(1)", "none", "Large Amount (currency) Withdrawal Fee\n"), false],
+    [range(114352, "$50,000.00 - $99,999.99…… 1.25% of amount withdrawn(1)"), false],
+    [range(114536, "$25,000.00 - $49,999.99…… 1.25% of amount withdrawn(1)"), false],
+    [range(114537, "$50,000.00 - $99,999.99…… 1.25% of amount withdrawn(1)"), false],
+    [range(325674, "$25,000.00 - $49,999.99…… 1.25% of amount withdrawn(1)"), false],
+    [range(325675, "$50,000.00 - $99,999.99…… 1.25% of amount withdrawn(1)"), false],
+    [range(484337, "Foreign $15,001-$25,000 | ½ of 1%"), false],
+    [range(662023, "First Mortgage rate modification | $1,500 - $2,500 based on mortgage balance"), false],
+    [range(154206, "First Mortgage rate modification | $1,500 - $2,500 based on mortgage balance"), false],
+    [range(454859, "$50,001 - $100,000 | $125 + 0.55% of principal"), false],
+    [range(454862, "$0 - $10,000 | The lesser of 5% of principal"), false],
+    // A balance band priced in its own cell is a fee: it stays held.
+    [range(5, "Tier 1 | $50.00 - $149.99 | $2.00"), false],
+    [range(6, "Average monthly balance from $0.00 to $99.99: $5.00"), false],
+    [range(7, "Money Market Account | $.01 - $1499.99 | $10.00 if below $1500"), false],
+    // A fee word, a box, a wire or a waiver: a fee line.
+    [range(8, "$0 -$999.99 -- Service charge: $11.00/month. No interest."), false],
+    [range(9, "Box Rental | Range from $20-$100/Year ⓘDepending on size"), false],
+    [range(10, "$50.01 - $500 | 4% (Waived w/combined Deposit & Loan Balance Relationship of $10,000 or greater)"), false],
+    // A price that is itself a small range is a fee, not a band (review of #1622; production raw ids).
+    [range(115327, "Balance Verification Letters | $5.00 to $25.00"), false],
+    [range(408784, "Pay-By-Phone Loan Payment | $1.00 - $5.00"), false],
+    [range(376138, "Personal Checking $8-$9 (based on balance)"), false],
+    [range(376139, "Commercial Checking $6-$15 (based on balance)"), false],
+    [range(423664, "Negative account balance $0-$9.99 | Medallion Signature guarantee, members | 5.00"), false],
+    [range(152384, "Health Savings Account | $0.00 - $3.00 | $500.00 - $2000.00"), false],
+    // No rate or balance word: left held.
+    [range(11, "Available in any denomination from $10 to $1,000."), false],
+    // A range with a fee category is a real fee priced as a range (#1060), never a band.
+    [range(12, "Safe Deposit Boxes (Annual) $20.00-$100.00 interest", "safe_deposit_box"), false],
+  ] as const)("reads held range line %# as a band or not", (row, band) => {
+    expect(isRangeBand(row)).toBe(band);
+  });
+
+  it("is switched off: counts the bands and writes nothing", async () => {
+    expect(RANGE_BAND_SET_ASIDE_LIVE).toBe(false);
+    const db = createDb([tier, apy, range(5, "Tier 1 | $50.00 - $149.99 | $2.00")]);
+    const result = await setAsideRangeBands(db as never, { stateCode: "tx" });
+    expect(result).toMatchObject({ live: false, dryRun: true, checked: 3, bands: 2, institutions: 2, setAside: 0 });
+    // The uncapped lane count comes from the query itself, not from the rows read.
+    const counted = createDb([{ ...tier, candidates: "5047" }]);
+    expect(await setAsideRangeBands(counted as never)).toMatchObject({ candidates: 5047, checked: 1 });
+    expect(result.examples.map((example) => example.feeRawId)).toEqual([1, 3]);
+    expect(db.mock.calls.some(([strings]) => /UPDATE|INSERT/.test(templateText(strings)))).toBe(false);
+  });
+
+  it("switched on, flags each band set aside (kept, never deleted) and logs it", async () => {
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (text.includes("SELECT fr.fee_raw_id")) return Promise.resolve([tier, apy]);
+      // Raw 3 was already set aside by another pass, so this pass did not set it aside.
+      if (text.includes("UPDATE raw_fee_observations")) return Promise.resolve([{ fee_raw_id: 1, set_aside_here: true }, { fee_raw_id: 3, set_aside_here: false }]);
+      if (text.includes("to_regclass")) return Promise.resolve([{ ready: true }]);
+      if (text.includes("INSERT INTO pipeline_feedback")) return Promise.resolve([{ id: 1 }, { id: 2 }]);
+      return Promise.resolve([]);
+    });
+    const result = await setAsideRangeBands(db as never, { live: true, runId: 5 });
+    expect(result).toMatchObject({ live: true, dryRun: false, bands: 2, setAside: 2 });
+    const update = db.mock.calls.find(([strings]) => templateText(strings).includes("UPDATE raw_fee_observations"));
+    expect(templateText(update?.[0])).not.toMatch(/DELETE/);
+    // A line already set aside keeps its own flag; only a line this pass sets aside is marked as such.
+    expect(templateText(update?.[0])).not.toMatch(/ - /);
+    expect(update?.slice(1)).toContain(JSON.stringify([RANGE_BAND_FLAG]));
+    expect(update?.slice(1)).toContain(JSON.stringify([RANGE_BAND_FLAG, HELD_SET_ASIDE_FLAG, RANGE_BAND_SET_ASIDE_BY_FLAG]));
+    const insert = db.mock.calls.find(([strings]) => templateText(strings).includes("INSERT INTO pipeline_feedback"));
+    const logged = JSON.stringify(insert?.slice(1));
+    expect(logged).toContain('\\"set_aside_by_this_pass\\":true');
+    expect(logged).toContain('\\"set_aside_by_this_pass\\":false');
+  });
+
+  it("a dry run writes nothing even with the switch on", async () => {
+    const db = createDb([tier]);
+    const result = await setAsideRangeBands(db as never, { live: true, dryRun: true });
+    expect(result).toMatchObject({ bands: 1, setAside: 0, dryRun: true });
+    expect(db.mock.calls.some(([strings]) => /UPDATE|INSERT/.test(templateText(strings)))).toBe(false);
   });
 });

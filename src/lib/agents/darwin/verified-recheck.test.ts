@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { DARWIN_RECHECK_CHECK, DARWIN_RECHECK_OLDER_LIVE, DARWIN_RECHECK_SECOND_LOOK_LIVE, DARWIN_RECHECK_SAME_STEP_TAKEDOWN, DARWIN_RECHECK_STRATEGY, recheckVerifiedFees } from "./verified-recheck";
+import { DARWIN_RECHECK_CHECK, DARWIN_RECHECK_OLDER_LIVE, DARWIN_RECHECK_SECOND_LOOK_LIVE, DARWIN_RECHECK_SECOND_LOOK_LIVE_CODES, DARWIN_RECHECK_SAME_STEP_TAKEDOWN, DARWIN_RECHECK_STRATEGY, recheckVerifiedFees } from "./verified-recheck";
 
 type DbMock = ReturnType<typeof vi.fn>;
 
@@ -31,6 +31,7 @@ function dbWith(
   older: Array<Record<string, unknown>> = [],
   due: Array<Record<string, unknown>> = [],
   firstLooks: Array<Record<string, unknown>> = [],
+  texts: Array<{ source_document_id: number; normalized_text: string }> = [{ source_document_id: 55, normalized_text: TEXT }],
 ): DbMock {
   const db = vi.fn((strings: TemplateStringsArray) => {
     const text = templateText(strings);
@@ -40,7 +41,7 @@ function dbWith(
     // Live rows verified under an older verify version (#1568).
     if (text.includes("JOIN LATERAL")) return Promise.resolve(older);
     if (text.includes("FROM verified_fee_observations v")) return Promise.resolve(rows);
-    if (text.includes("FROM agent_source_texts")) return Promise.resolve([{ source_document_id: 55, normalized_text: TEXT }]);
+    if (text.includes("FROM agent_source_texts")) return Promise.resolve(texts);
     if (text.includes("to_regclass")) return Promise.resolve([{ ready: true }]);
     if (text.includes("UPDATE published_fee_records")) return Promise.resolve([{ fee_published_id: 7001 }]);
     return Promise.resolve([]);
@@ -114,13 +115,38 @@ describe("Darwin verified re-check", () => {
     expect(JSON.stringify(attempts[1].slice(1))).toContain("still_rejected");
   });
 
+  it("v5 reads a two-column page by its columns: restores the real free fee, keeps the audience one held (#1593)", async () => {
+    // Poca Valley (89048) and TCFCU (44979, 44978), lines as stored on prod Oct 16.
+    const poca = [
+      "POS transactions No Charge Wire Transfers",
+      "Foreign ATM usage No Charge Customer (incoming) $15.00",
+      "Replacement Card $10.00 Customer Domestic (outgoing) $30.00",
+      "Customer International $60.00",
+    ].join("\n");
+    const tcfcu = [
+      "Check Printing (members over 62) ----------- No Charge | Money Orders ------------------------------------ $3.00 each",
+      "Bill Pay | Other Fees",
+      "Bill Pay ------------------------------------------- No Charge | Account History ---------------------------------- $3.00 each",
+    ].join("\n");
+    const rejected = { ...verifiedRow, review_status: "rejected", verified_amount: "0.00", amount: "0.00", outlier_flags: ["darwin_recheck:conditional_zero"], fee_published_id: null };
+    const db = dbWith([
+      { ...rejected, fee_verified_id: 99305, fee_raw_id: 362033, source_document_id: 21787, canonical_fee_key: "atm_non_network", fee_name: "Foreign ATM usage", conditions: null },
+      { ...rejected, fee_verified_id: 42464, fee_raw_id: 167176, source_document_id: 2339, canonical_fee_key: "bill_pay", fee_name: "Bill Pay", conditions: null },
+      { ...rejected, fee_verified_id: 42463, fee_raw_id: 167175, source_document_id: 2339, canonical_fee_key: "check_printing", fee_name: "Check Printing (members over 62)", conditions: null },
+    ], [], [], [], [{ source_document_id: 21787, normalized_text: poca }, { source_document_id: 2339, normalized_text: tcfcu }]);
+
+    const result = await recheckVerifiedFees(db as never, { runId: 504 });
+
+    expect(result).toMatchObject({ checked: 3, passed: 0, restored: [99305, 42464], rejected: [], takenDown: [] });
+  });
+
   it("does nothing when every verified row has been re-checked under this version", async () => {
     const db = dbWith([]);
     const result = await recheckVerifiedFees(db as never, { runId: 501 });
     expect(result).toMatchObject({ checked: 0, passed: 0, takenDown: [] });
   });
 
-  it("flags an already verified $0 from a tier's own schedule, live or not (v3, #1397; v4 keeps it)", async () => {
+  it("flags an already verified $0 from a tier's own schedule, live or not (v3, #1397; v4 and v5 keep it)", async () => {
     const premium = { ...verifiedRow, source_url: "https://www.examplebank.com/agreements-disclosures/truth-in-savings/premium-account-fees" };
     const db = dbWith([
       { ...premium, fee_verified_id: 130001, fee_raw_id: 300001, canonical_fee_key: "stop_payment", verified_amount: "0.00", fee_name: "Stop Payment", amount: "0.00", outlier_flags: [], conditions: null, fee_published_id: 7101 },
@@ -130,7 +156,7 @@ describe("Darwin verified re-check", () => {
 
     const result = await recheckVerifiedFees(db as never, { runId: 503 });
 
-    expect(DARWIN_RECHECK_STRATEGY.version).toBe(4);
+    expect(DARWIN_RECHECK_STRATEGY.version).toBe(5);
     expect(result).toMatchObject({ checked: 3, passed: 1, flagged: 1, rejected: [{ feeVerifiedId: 130002, code: "tier_perk_zero" }] });
     const rejects = db.mock.calls.filter((call) => templateText(call[0]).includes("UPDATE verified_fee_observations"));
     expect(rejects).toHaveLength(1);
@@ -185,9 +211,9 @@ describe("Darwin verified re-check", () => {
       evidence: { flag_run_id: 6715, flagged_at: "2026-10-15T08:35:53Z", reason: "darwin_recheck:tier_perk_zero" },
     }));
 
-    it("off (the default): reports what the second looks would do and writes nothing", async () => {
+    it("off for every code: reports what the second looks would do and writes nothing", async () => {
       const db = dbWith([], [], due, flagged);
-      const result = await recheckVerifiedFees(db as never, { runId: 701 });
+      const result = await recheckVerifiedFees(db as never, { runId: 701, secondLookCodes: [] });
 
       expect(DARWIN_RECHECK_SECOND_LOOK_LIVE).toBe(false);
       expect(result).toMatchObject({ checked: 0, takenDown: [] });
@@ -208,6 +234,44 @@ describe("Darwin verified re-check", () => {
       expect(JSON.stringify(rollback?.slice(1))).not.toContain("142870");
       const feedback = db.mock.calls.filter((call) => templateText(call[0]).includes("INSERT INTO pipeline_feedback"));
       expect(JSON.stringify(feedback.map((call) => call.slice(1)))).toContain("takedown_cleared");
+    });
+
+    it("tier_perk_zero only (the default since 2026-10-16): confirms tier-perk flags, every other code stays in the shadow", async () => {
+      // A tier-perk $0 still failing, a tier-perk flag that now passes, a tier-perk flag that now fails
+      // under another code, and a conditional_zero flag (not switched on).
+      const narrowDue = [
+        { ...due[0], reason: "darwin_recheck:tier_perk_zero" },
+        { ...due[1], reason: "darwin_recheck:tier_perk_zero" },
+        { ...verifiedRow, fee_verified_id: 172161, fee_raw_id: 679669, canonical_fee_key: "bill_pay", verified_amount: "0.00", fee_name: "Bill Pay", amount: "0.00", outlier_flags: [], conditions: "excerpt=\"Bill Pay - FREE\"", fee_published_id: 142871, reason: "darwin_recheck:tier_perk_zero" },
+        { ...verifiedRow, fee_verified_id: 172162, fee_raw_id: 679670, canonical_fee_key: "bill_pay", verified_amount: "0.00", fee_name: "Bill Pay", amount: "0.00", outlier_flags: [], conditions: "excerpt=\"Bill Pay - FREE\"", fee_published_id: 142872, reason: "darwin_recheck:conditional_zero" },
+      ];
+      const firstLooks = [142869, 142870, 142871, 142872].map((id) => ({ ...flagged[0], fee_published_id: id }));
+      const code = (row: Record<string, unknown>) => String(row.reason).split(":")[1];
+      const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+        const text = templateText(strings);
+        if (text.includes("FROM pipeline_feedback f")) {
+          // values: prefix, check, kind, minutes, only, only, except, except, limit.
+          const only = values[4] as string[] | null;
+          const except = values[6] as string[] | null;
+          return Promise.resolve(narrowDue.filter((row) => (only == null || only.includes(code(row))) && (except == null || !except.includes(code(row)))));
+        }
+        if (text.includes("SELECT fee_published_id, kind, evidence")) return Promise.resolve(firstLooks);
+        if (text.includes("FROM agent_source_texts")) return Promise.resolve([{ source_document_id: 55, normalized_text: TEXT }]);
+        if (text.includes("to_regclass")) return Promise.resolve([{ ready: true }]);
+        if (text.includes("UPDATE published_fee_records")) return Promise.resolve([{ fee_published_id: 142869 }]);
+        return Promise.resolve([]);
+      }) as DbMock;
+      const result = await recheckVerifiedFees(db as never, { runId: 703, now: new Date("2026-10-16T01:00:00Z") });
+
+      expect(DARWIN_RECHECK_SECOND_LOOK_LIVE_CODES).toEqual(["tier_perk_zero"]);
+      // The conditional_zero flag is only reported.
+      expect(result.dueSecondLooks).toMatchObject({ due: 1, wouldConfirm: { conditional_zero: 1 }, wouldClear: 0 });
+      expect(result).toMatchObject({ checked: 2, passed: 1, cleared: 1, flagged: 0, waiting: 0, secondLookOtherCode: 1, takenDown: [142869] });
+      const rollback = db.mock.calls.find((call) => templateText(call[0]).includes("UPDATE published_fee_records"));
+      expect(rollback?.slice(1)).toEqual(expect.arrayContaining([[142869], ["darwin_recheck:tier_perk_zero"]]));
+      const written = JSON.stringify(db.mock.calls.filter((call) => /\b(?:UPDATE|INSERT)\b/.test(templateText(call[0]))).map((call) => call.slice(1)));
+      expect(written).not.toContain("142871");
+      expect(written).not.toContain("142872");
     });
   });
 });

@@ -537,3 +537,77 @@ export async function getPriceMovementSummary(days: number = 90): Promise<PriceM
     return [];
   }
 }
+
+/** One published fee row as the Bank Fee Index explorer counts it: no text, so a category stays small to cache. */
+export interface IndexRow {
+  id: number;
+  institution_id: number;
+  institution_name: string;
+  amount: number;
+  charter_type: string;
+  state_code: string | null;
+}
+
+/**
+ * Every row the statistics count for one category (the same filter as getFeeCategoryDetail),
+ * with only the fields the explorer's numbers need. Text for the rows a page lists comes from
+ * getFeeRowDetails.
+ */
+export async function getIndexRows(category: string): Promise<IndexRow[]> {
+  const rows = (await sql`
+    SELECT ef.id, ef.institution_id, ct.institution_name, ef.amount, ct.charter_type, ct.state_code
+      FROM published_fee_catalog ef
+      JOIN institution_sources ct ON ef.institution_id = ct.id
+     WHERE ef.fee_category = ${category} AND ef.review_status = 'approved'
+       AND ${sql.unsafe(STATS_ROW_FILTER)}
+       AND ef.amount IS NOT NULL AND ef.amount >= 0
+  `) as Record<string, unknown>[];
+  return rows.map((r) => ({
+    id: Number(r.id),
+    institution_id: Number(r.institution_id),
+    institution_name: String(r.institution_name),
+    amount: Number(r.amount),
+    charter_type: String(r.charter_type),
+    state_code: r.state_code == null ? null : String(r.state_code),
+  }));
+}
+
+/**
+ * A listed row's facts: the fee as its schedule names it, its amount, how often it is charged,
+ * the account it names, its conditions, the document and when it was read. The words of the
+ * schedule that print its price come from `getFeeEvidence` (fee-evidence.ts).
+ */
+export interface FeeRowDetail {
+  fee_name: string | null;
+  amount: number | null;
+  frequency: string | null;
+  account: string | null;
+  conditions: string | null;
+  document_url: string | null;
+  read_on: string | null;
+}
+
+export async function getFeeRowDetails(ids: number[]): Promise<Map<number, FeeRowDetail>> {
+  const clean = [...new Set(ids.filter((id) => Number.isSafeInteger(id) && id > 0))];
+  if (clean.length === 0) return new Map();
+  const rows = (await sql`
+    SELECT id, fee_name, amount, frequency, account_product_type, conditions,
+           COALESCE(document_url, source_url) AS document_url, created_at::date::text AS read_on
+      FROM published_fee_catalog
+     WHERE id = ANY(${clean}::bigint[])
+  `) as Record<string, unknown>[];
+  return new Map(
+    rows.map((r) => [
+      Number(r.id),
+      {
+        fee_name: r.fee_name == null ? null : String(r.fee_name),
+        amount: r.amount == null ? null : Number(r.amount),
+        frequency: r.frequency == null ? null : String(r.frequency),
+        account: r.account_product_type == null ? null : String(r.account_product_type),
+        conditions: readerFeeConditions(r.conditions == null ? null : String(r.conditions)),
+        document_url: r.document_url == null ? null : String(r.document_url),
+        read_on: r.read_on == null ? null : String(r.read_on),
+      },
+    ]),
+  );
+}

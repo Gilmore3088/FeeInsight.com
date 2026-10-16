@@ -3,8 +3,34 @@
 /**
  * Personal / Business tabs over the fee list (#1062). Both lists are already rendered on the
  * server, so a tab switches at once. Arrow keys, Home and End move between tabs (WAI-ARIA tabs).
+ * A `#fee-<category>` link followed on the page opens the tab that lists that fee and scrolls
+ * to its row, so the link never lands on a hidden row (#1592).
  */
-import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { flushSync } from "react-dom";
+
+/** The category a `#fee-<category>` hash names, or null for any other or malformed hash. */
+export function feeHashCategory(hash: string): string | null {
+  if (!hash.startsWith("#fee-")) return null;
+  try {
+    return decodeURIComponent(hash.slice("#fee-".length)) || null;
+  } catch {
+    return null;
+  }
+}
+
+/** The tab to show for a `#fee-<category>` hash: the active one when it lists the fee, else the first that does. */
+export function tabForHash(
+  hash: string,
+  active: FeeAudienceTab["key"] | undefined,
+  lists: (key: FeeAudienceTab["key"], category: string) => boolean,
+  keys: FeeAudienceTab["key"][],
+): FeeAudienceTab["key"] | null {
+  const category = feeHashCategory(hash);
+  if (!category) return null;
+  if (active && lists(active, category)) return active;
+  return keys.find((key) => lists(key, category)) ?? null;
+}
 
 export interface FeeAudienceTab {
   key: "personal" | "business";
@@ -15,6 +41,24 @@ export interface FeeAudienceTab {
 export function FeeAudienceTabs({ tabs, initial }: { tabs: FeeAudienceTab[]; initial: FeeAudienceTab["key"] }) {
   const [active, setActive] = useState(tabs.some((t) => t.key === initial) ? initial : tabs[0]?.key);
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
+  const panels = useRef<Partial<Record<FeeAudienceTab["key"], HTMLDivElement | null>>>({});
+
+  useEffect(() => {
+    const onHash = () => {
+      const lists = (key: FeeAudienceTab["key"], category: string) =>
+        Boolean(panels.current[key]?.querySelector(`[data-fee-anchor="${CSS.escape(category)}"]`));
+      const target = tabForHash(window.location.hash, active, lists, tabs.map((tab) => tab.key));
+      if (!target) return;
+      const category = feeHashCategory(window.location.hash)!;
+      // Show the tab now, so the row below is displayed before we scroll to it.
+      flushSync(() => setActive(target));
+      const anchors = panels.current[target]?.querySelectorAll<HTMLElement>(`[data-fee-anchor="${CSS.escape(category)}"]`);
+      // Scroll to the copy that is actually displayed (table or phone list).
+      Array.from(anchors ?? []).find((el) => el.offsetParent !== null)?.scrollIntoView({ block: "start" });
+    };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, [active, tabs]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     const last = tabs.length - 1;
@@ -62,6 +106,9 @@ export function FeeAudienceTabs({ tabs, initial }: { tabs: FeeAudienceTab[]; ini
       {tabs.map((tab) => (
         <div
           key={tab.key}
+          ref={(el) => {
+            panels.current[tab.key] = el;
+          }}
           role="tabpanel"
           id={`fee-panel-${tab.key}`}
           aria-labelledby={`fee-tab-${tab.key}`}

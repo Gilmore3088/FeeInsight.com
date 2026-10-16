@@ -6,6 +6,7 @@
  * represents a prepared selection, never permission to execute a paid request.
  * The host Analyze page supplies a server-validated selection after Pro auth.
  */
+import { hamiltonInstitutionHref } from "@/lib/hamilton/context-link";
 import { useRef, useState } from "react";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import {
@@ -173,7 +174,7 @@ function LandingResearchResultsForSelection({ selection }: { selection: LandingR
                 </tr>
                 {result.competitors.map(peer => (
                   <tr key={peer.institutionId} className="border-b border-warm-100">
-                    <th scope="row" className="p-2 font-medium"><a className="underline" href={`/institution/${peer.institutionId}`}>{peer.name}</a><div className="text-xs font-normal">{peer.evidenceUrl && /^https?:\/\//i.test(peer.evidenceUrl) ? <a className="underline" href={peer.evidenceUrl} target="_blank" rel="noreferrer">Published schedule</a> : "Schedule link unavailable"}{peer.evidenceDate ? ` · ${peer.evidenceDate}` : ""}</div></th>
+                    <th scope="row" className="p-2 font-medium"><a className="underline" href={hamiltonInstitutionHref(peer.institutionId)}>{peer.name}</a><div className="text-xs font-normal">{peer.evidenceUrl && /^https?:\/\//i.test(peer.evidenceUrl) ? <a className="underline" href={peer.evidenceUrl} target="_blank" rel="noreferrer">Published schedule</a> : "Schedule link unavailable"}{peer.evidenceDate ? ` · ${peer.evidenceDate}` : ""}</div></th>
                     <td className="p-2">{peer.branches ?? "Unavailable"}</td>
                     {selection.categories.map(category => <td key={category} className="p-2">{dollars(peer.fees[category])}</td>)}
                   </tr>

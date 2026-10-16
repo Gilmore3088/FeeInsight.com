@@ -6,6 +6,7 @@ import { feePageKey } from "@/lib/agents/hamilton/page-key";
 import { disputedRestoreVerdict } from "@/lib/agents/hamilton/restore-guard";
 import { markRestoredForSourceCheck } from "@/lib/agents/hamilton/source-check";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { ACCOUNT_TYPE_HOLD_REASON } from "@/lib/agents/hamilton/account-type-hold";
 
 type SqlTag = typeof sql;
 
@@ -24,9 +25,17 @@ type SqlTag = typeof sql;
  * schedule's fee whose consumer replacement is live stays down: the business-schedule rule
  * (`business-schedule.ts`) would take it down anyway, and a page last read more than
  * `CROSS_PAGE_READ_WINDOW_DAYS` before its replacement stays down (it may be gone). Nothing is deleted.
+ *
+ * A replacement the account type hold took down (`account_type_hold:`, #1100) still counts as
+ * live, here and in the no-second-copy guard: the hold is a publish policy, not a sign the
+ * consumer price is gone, so it must not bring a business fee back (finding
+ * 2026-10-16-hold-revives-business-takedowns; none such on prod that day).
  */
 export const CROSS_PAGE_RESTORE_FLAG = "cross_page_supersede_restored";
 export const CROSS_PAGE_RESTORE_LIMIT = 500;
+/** True for a row that is live or held by the account type hold, as SQL on `alias`. */
+const LIVE_OR_HELD_SQL = (alias: string) =>
+  `(${alias}.rolled_back_at IS NULL OR ${alias}.rolled_back_reason LIKE '${ACCOUNT_TYPE_HOLD_REASON}:%')`;
 
 const BUSINESS_PATH = new RegExp(BUSINESS_PATH_SQL, "i");
 const CONSUMER_PATH = new RegExp(CONSUMER_PATH_SQL, "i");
@@ -130,7 +139,7 @@ export async function restoreCrossPageSupersedes(
               COALESCE(sd.document_url, closed.source_url) AS closed_url,
               closed.replacement_id,
               COALESCE(nsd.document_url, n.source_url) AS replacement_url,
-              (n.rolled_back_at IS NULL) AS replacement_live,
+              ${LIVE_OR_HELD_SQL("n")} AS replacement_live,
               sd.crawled_at AS closed_read_at,
               nsd.crawled_at AS replacement_read_at,
               newest.normalized_text AS newest_text
@@ -224,7 +233,7 @@ export async function restoreCrossPageSupersedes(
              AND fp.rolled_back_reason ~ '^superseded by #[0-9]+$'
              AND NOT EXISTS (
                SELECT 1 FROM published_fee_records live
-                WHERE live.rolled_back_at IS NULL
+                WHERE (live.rolled_back_at IS NULL OR live.rolled_back_reason LIKE ${`${ACCOUNT_TYPE_HOLD_REASON}:%`})
                   AND live.institution_id = fp.institution_id
                   AND live.canonical_fee_key = fp.canonical_fee_key
                   AND live.amount IS NOT DISTINCT FROM fp.amount

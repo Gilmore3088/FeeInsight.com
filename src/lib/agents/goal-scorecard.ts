@@ -65,6 +65,8 @@ export interface ReaderMissWeek {
   /** Misses ÷ reads; null in a week with no reviewed batch. */
   rate: number | null;
   byKind: Record<BatchMissKind, number>;
+  /** True for the week still running: its counts are not a full week yet. */
+  partial: boolean;
 }
 
 export interface ReaderMissWeeks {
@@ -76,7 +78,7 @@ export interface ReaderRemedyOutcome {
   remedy: string;
   /** Misses the batch review sent to a fix. */
   remedied: number;
-  /** Of those, misses whose document (or, for a new link search, institution) later gave Knox fees. */
+  /** Of those, misses whose document (or, for `INSTITUTION_JUDGED_REMEDIES`, institution) later gave Knox fees. */
   knoxFound: number;
   share: number | null;
 }
@@ -525,6 +527,8 @@ export const HOUSEKEEPING_REASON_KEYS: ReadonlySet<string> = new Set([
   "rules_recheck_restore",
   "taxonomy_fold",
   "closed_institution",
+  // A non-checking account's monthly fee held as verified (#1100): publish policy, not a wrong fee.
+  "account_type_hold",
 ]);
 
 /** The reason's key: "source_check_untraceable:no_amount" → "source_check_untraceable", "refreshed by #9" → "refreshed by". */
@@ -849,7 +853,7 @@ export function bucketReaderMissWeeks(
   for (let index = 0; index < weeks; index += 1) {
     const start = new Date(first);
     start.setUTCDate(first.getUTCDate() + index * 7);
-    buckets.push({ weekStart: start.toISOString().slice(0, 10), batches: 0, reads: 0, errors: 0, rate: null, byKind: emptyKinds() });
+    buckets.push({ weekStart: start.toISOString().slice(0, 10), batches: 0, reads: 0, errors: 0, rate: null, byKind: emptyKinds(), partial: index === weeks - 1 });
   }
   const byWeek = new Map(buckets.map((bucket) => [bucket.weekStart, bucket]));
   for (const row of rows) {
@@ -873,7 +877,7 @@ async function readReaderMissWeeks(db: SqlTag, now: Date): Promise<ReaderMissWee
       FROM pipeline_feedback
      WHERE check_name = ${BATCH_REVIEW_CHECK}
        AND kind = 'batch_error_rate'
-       AND created_at >= ${readerMissSince(now)}::timestamptz
+       AND created_at >= ${`${readerMissSince(now)}T00:00:00Z`}::timestamptz
   `;
   return {
     query: GOAL_QUERIES.readerMissWeeks,
@@ -896,20 +900,27 @@ export function summarizeReaderRemedies(rows: Array<{ remedy: string; remedied: 
 }
 
 /**
+ * Remedies whose Knox fees can land on another document row: a new link search, a JS re-read of
+ * a linked document stored as its own row (`covered_by`), and a reopened fee page's new copy.
+ * Their success is judged by the institution, not the document (#1581).
+ */
+const INSTITUTION_JUDGED_REMEDIES = ["magellan_paid_find", "reread_js_fallback", "reopen_fee_page"];
+
+/**
  * Misses the batch review sent to a fix (every remedy but `lesson_only`) in the shown weeks,
  * and how many later gave Knox fees: a Knox fee from the same document after the review, or,
- * for a new link search (`magellan_paid_find`), from the same institution.
+ * for the remedies in `INSTITUTION_JUDGED_REMEDIES`, from the same institution.
  */
 async function readReaderRemedies(db: SqlTag, now: Date): Promise<ReaderRemedies> {
   const rows = await db<Array<{ remedy: string; remedied: number; knox_found: number }>>`
     SELECT f.evidence->>'remedy' AS remedy,
            COUNT(*)::int AS remedied,
            (COUNT(*) FILTER (WHERE
-             (f.evidence->>'remedy' <> 'magellan_paid_find' AND EXISTS (
+             (NOT (f.evidence->>'remedy' = ANY(${INSTITUTION_JUDGED_REMEDIES}::text[])) AND EXISTS (
                SELECT 1 FROM raw_fee_observations fr
                 WHERE fr.source = 'knox' AND fr.source_document_id = f.source_document_id AND fr.created_at > f.created_at
              ))
-             OR (f.evidence->>'remedy' = 'magellan_paid_find' AND EXISTS (
+             OR (f.evidence->>'remedy' = ANY(${INSTITUTION_JUDGED_REMEDIES}::text[]) AND EXISTS (
                SELECT 1 FROM raw_fee_observations fr
                 WHERE fr.source = 'knox' AND fr.institution_id = f.institution_id AND fr.created_at > f.created_at
              ))
@@ -919,7 +930,7 @@ async function readReaderRemedies(db: SqlTag, now: Date): Promise<ReaderRemedies
        AND f.kind = ANY(${READER_MISS_KINDS}::text[])
        AND f.evidence->>'remedy' IS NOT NULL
        AND f.evidence->>'remedy' <> 'lesson_only'
-       AND f.created_at >= ${readerMissSince(now)}::timestamptz
+       AND f.created_at >= ${`${readerMissSince(now)}T00:00:00Z`}::timestamptz
      GROUP BY 1
   `;
   return { query: GOAL_QUERIES.readerRemedies, ...summarizeReaderRemedies(rows) };

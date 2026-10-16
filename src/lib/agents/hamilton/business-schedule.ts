@@ -1,9 +1,10 @@
 import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
-import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
+import { BUSINESS_SCHEDULE_RESTORED_KIND, recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL } from "@/lib/agents/magellan/link-coverage";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { ACCOUNT_TYPE_HOLD_REASON } from "@/lib/agents/hamilton/account-type-hold";
 
 type SqlTag = typeof sql;
 
@@ -222,6 +223,71 @@ export async function selectFootnoteBusinessFeeIds(db: SqlTag, institutionId?: n
 }
 
 /**
+ * Which fees the business-schedule read judges: every live fee (`false`; `$1` is the live
+ * footnoted fee ids), one institution's (`true`; `$1` its id, `$2` the footnoted ids), or
+ * verified rows about to publish (`"verified"`; `$1` a bigint[] of `fee_verified_id`, `$2` the
+ * live footnoted ids). #1069: the publish step's refusal reads this same rule. A verified row
+ * reads with a null `fee_published_id`, is business by its document's address or its own name
+ * (a footnote needs the page read, so the sweep keeps that part), and is weighed against the
+ * live consumer fees of its own bank.
+ */
+export type BusinessReadScope = boolean | "verified";
+
+/** The business-schedule read: business fees, each with the bank's first live consumer fee in its category. */
+export function businessScheduleFeesSql(scope: BusinessReadScope): string {
+  const verified = scope === "verified";
+  const footnoteParam = scope === false ? "$1" : "$2";
+  const liveFilter = verified
+    ? "AND fp.institution_id IN (SELECT institution_id FROM candidates)"
+    : scope
+      ? "AND fp.institution_id = $1"
+      : "";
+  const candidates = verified
+    ? `candidates AS (
+         SELECT NULL::bigint AS fee_published_id, fv.fee_verified_id, fv.institution_id, fr.source_document_id,
+                sd.document_url, fv.canonical_fee_key, fv.amount,
+                ${BUSINESS_DOC_SQL("sd.document_url")} AS business_document,
+                ${BUSINESS_DOC_SQL("sd.document_url")} OR ${BUSINESS_NAME_SQL("fv.fee_name")} AS business
+           FROM verified_fee_observations fv
+           JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+           JOIN source_documents sd ON sd.id = fr.source_document_id
+          WHERE fv.fee_verified_id = ANY($1::bigint[])
+            AND COALESCE(fv.fee_audience, 'unknown') = 'unknown'
+       ),
+       `
+    : "";
+  return `WITH ${candidates}live AS (
+         SELECT fp.fee_published_id, fv.fee_verified_id, fp.institution_id, fr.source_document_id,
+                sd.document_url, fp.canonical_fee_key, fp.amount,
+                ${BUSINESS_DOC_SQL("sd.document_url")} AS business_document,
+                ${BUSINESS_DOC_SQL("sd.document_url")} OR ${BUSINESS_NAME_SQL("fp.fee_name")}
+                  OR fp.fee_published_id = ANY(${footnoteParam}::bigint[]) AS business
+           FROM published_fee_records fp
+           JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+           JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+           JOIN source_documents sd ON sd.id = fr.source_document_id
+          WHERE fp.rolled_back_at IS NULL
+          AND fp.quarantined_at IS NULL
+          AND fp.fee_audience = 'unknown'
+            ${liveFilter}
+       ),
+       -- The first live consumer fee per bank and category, grouped once. A subquery per
+       -- business fee rescanned the whole CTE each time: 12.5 s average on Oct 8.
+       consumer AS (
+         SELECT institution_id, canonical_fee_key, min(fee_published_id) AS consumer_fee_id
+           FROM live
+          WHERE NOT business
+          GROUP BY institution_id, canonical_fee_key
+       )
+       SELECT b.fee_published_id, b.fee_verified_id, b.institution_id, b.source_document_id, b.document_url,
+              b.canonical_fee_key, b.amount, c.consumer_fee_id, b.business_document
+         FROM ${verified ? "candidates" : "live"} b
+         LEFT JOIN consumer c ON c.institution_id = b.institution_id AND c.canonical_fee_key = b.canonical_fee_key
+        WHERE b.business
+        ORDER BY b.fee_published_id, b.fee_verified_id`;
+}
+
+/**
  * Runs the business-schedule check for one publish step. A dry run reports what it would
  * flag, take down and restore, and writes nothing. Never blocks the step it runs in.
  */
@@ -245,39 +311,10 @@ export async function retireBusinessScheduleFees(
   } catch (error) {
     console.error("selectFootnoteBusinessFeeIds failed:", error);
   }
-  const footnoteParam = options.institutionId ? "$2" : "$1";
   let rows: BusinessFeeRow[];
   try {
     rows = await inSavepoint(db, (scope) => scope.unsafe<BusinessFeeRow[]>(
-      `WITH live AS (
-         SELECT fp.fee_published_id, fv.fee_verified_id, fp.institution_id, fr.source_document_id,
-                sd.document_url, fp.canonical_fee_key, fp.amount,
-                ${BUSINESS_DOC_SQL("sd.document_url")} AS business_document,
-                ${BUSINESS_DOC_SQL("sd.document_url")} OR ${BUSINESS_NAME_SQL("fp.fee_name")}
-                  OR fp.fee_published_id = ANY(${footnoteParam}::bigint[]) AS business
-           FROM published_fee_records fp
-           JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
-           JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
-           JOIN source_documents sd ON sd.id = fr.source_document_id
-          WHERE fp.rolled_back_at IS NULL
-          AND fp.quarantined_at IS NULL
-          AND fp.fee_audience = 'unknown'
-            ${options.institutionId ? "AND fp.institution_id = $1" : ""}
-       ),
-       -- The first live consumer fee per bank and category, grouped once. A subquery per
-       -- business fee rescanned the whole CTE each time: 12.5 s average on Oct 8.
-       consumer AS (
-         SELECT institution_id, canonical_fee_key, min(fee_published_id) AS consumer_fee_id
-           FROM live
-          WHERE NOT business
-          GROUP BY institution_id, canonical_fee_key
-       )
-       SELECT b.fee_published_id, b.fee_verified_id, b.institution_id, b.source_document_id, b.document_url,
-              b.canonical_fee_key, b.amount, c.consumer_fee_id, b.business_document
-         FROM live b
-         LEFT JOIN consumer c ON c.institution_id = b.institution_id AND c.canonical_fee_key = b.canonical_fee_key
-        WHERE b.business
-        ORDER BY b.fee_published_id`,
+      businessScheduleFeesSql(Boolean(options.institutionId)),
       options.institutionId ? [options.institutionId, footnoteIds] : [footnoteIds],
     ));
   } catch (error) {
@@ -413,9 +450,19 @@ export async function retireBusinessScheduleFees(
   return result;
 }
 
+export { BUSINESS_SCHEDULE_RESTORED_KIND };
+
 /**
  * Brings back business-schedule takedowns whose bank no longer has a live consumer fee in
  * that category, with the verified row. Returns the count (what would come back, in a dry run).
+ *
+ * A fee the account type hold took down (`account_type_hold:`, #1100) still counts as the
+ * consumer fee being there: the hold is a publish policy about a savings or money market
+ * account's monthly fee, not a sign the bank has no consumer price. Without this, the hold
+ * taking a bank's last consumer monthly fee brought its business monthly fees back live
+ * (First American Bank 111321, 111322 and 111353, 16 Oct; finding
+ * 2026-10-16-hold-revives-business-takedowns). Each restore names its fees in the run event
+ * and writes one `pipeline_feedback` row per fee, so the ledger shows what came back.
  */
 export async function restoreBusinessScheduleTakedowns(
   db: SqlTag,
@@ -433,19 +480,31 @@ export async function restoreBusinessScheduleTakedowns(
            ${options.institutionId ? scope`AND fp.institution_id = ${options.institutionId}` : scope``}
            AND NOT EXISTS (
              SELECT 1 FROM published_fee_records live
-              WHERE live.rolled_back_at IS NULL
+              WHERE (live.rolled_back_at IS NULL OR live.rolled_back_reason LIKE ${`${ACCOUNT_TYPE_HOLD_REASON}:%`})
                 AND live.institution_id = fp.institution_id
                 AND live.canonical_fee_key = fp.canonical_fee_key
            )
          LIMIT ${BUSINESS_SCHEDULE_ROLLBACK_LIMIT}
       `;
       if (options.dryRun || candidates.length === 0) return candidates.length;
-      const restored = await scope<{ lineage_ref: number | string }[]>`
+      const restored = await scope<{
+        fee_published_id: number | string;
+        lineage_ref: number | string;
+        institution_id: number | string;
+        canonical_fee_key: string;
+        amount: number | string | null;
+        fee_name: string | null;
+        source_url: string | null;
+        taken_down_for: string | null;
+      }[]>`
         UPDATE published_fee_records fp
            SET rolled_back_at = NULL, rolled_back_by_batch_id = NULL, rolled_back_reason = NULL
-         WHERE fp.fee_published_id = ANY(${candidates.map((row) => Number(row.fee_published_id))}::bigint[])
+          FROM published_fee_records before
+         WHERE before.fee_published_id = fp.fee_published_id
+           AND fp.fee_published_id = ANY(${candidates.map((row) => Number(row.fee_published_id))}::bigint[])
            AND fp.rolled_back_reason LIKE ${`${BUSINESS_SCHEDULE_REASON}:%`}
-        RETURNING fp.lineage_ref
+        RETURNING fp.fee_published_id, fp.lineage_ref, fp.institution_id, fp.canonical_fee_key, fp.amount,
+                  fp.fee_name, fp.source_url, before.rolled_back_reason AS taken_down_for
       `;
       if (restored.length === 0) return 0;
       await scope`
@@ -455,11 +514,31 @@ export async function restoreBusinessScheduleTakedowns(
          WHERE fee_verified_id = ANY(${restored.map((row) => Number(row.lineage_ref))}::bigint[])
            AND review_status = 'rejected'
       `;
+      const ids = restored.map((row) => Number(row.fee_published_id));
+      await recordFeedback(scope, restored.map((row): FeedbackRow => ({
+        aboutStage: "publish",
+        signal: "restored",
+        kind: BUSINESS_SCHEDULE_RESTORED_KIND,
+        reportedBy: "hamilton",
+        checkName: BUSINESS_SCHEDULE_CHECK,
+        institutionId: Number(row.institution_id),
+        sourceUrl: row.source_url,
+        feeVerifiedId: Number(row.lineage_ref),
+        feePublishedId: Number(row.fee_published_id),
+        canonicalFeeKey: row.canonical_fee_key,
+        amount: row.amount == null ? null : Number(row.amount),
+        // A record of what came back, not a verdict on anyone's read.
+        weight: 0,
+        runId: options.runId,
+        // A fee can be taken down and restored more than once: one row per restore.
+        dedupeKey: `${BUSINESS_SCHEDULE_CHECK}:restored:pub:${row.fee_published_id}:run:${options.runId}`,
+        evidence: { reason: "no_consumer_fee", fee_name: row.fee_name, taken_down_for: row.taken_down_for },
+      })));
       await scope`
         INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
         VALUES (${options.runId}, 'hamilton.business_schedule_restored', 'completed',
                 ${`Restored ${restored.length} business-schedule fee(s) whose consumer fee is no longer live`},
-                ${JSON.stringify({ restored: restored.length, reason: "no_consumer_fee" })}::jsonb)
+                ${JSON.stringify({ restored: restored.length, reason: "no_consumer_fee", fee_published_ids: ids })}::jsonb)
       `;
       invalidatePublicReadCache();
       return restored.length;

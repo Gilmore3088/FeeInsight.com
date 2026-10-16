@@ -1,4 +1,7 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { isProviderStep } from "./types";
 
 const mocks = vi.hoisted(() => ({
   getAutomationControl: vi.fn(),
@@ -67,7 +70,59 @@ describe("assertAtlasDispatchReady (#1402)", () => {
     await expect(assertAtlasDispatchReady(["verify"])).rejects.toThrow("Worker backend is off");
   });
 
+  it("refuses an empty step list instead of checking no control (#1580)", async () => {
+    stop(null);
+    await expect(assertAtlasDispatchReady([])).rejects.toThrow(/no steps/);
+    expect(mocks.getAutomationControl).not.toHaveBeenCalled();
+  });
+
+  it("the guide draft waits on the provider stop: it makes a paid model call (#1580)", async () => {
+    stop("global");
+    await expect(assertAtlasDispatchReady(["guide-draft"])).rejects.toThrow(/provider stop \(global control\).*guide-draft/);
+  });
+
   it("a paid marketing step needs both the provider stop and the marketing control", () => {
     expect([...dispatchControlsForSteps(["marketing-write"]).keys()].sort()).toEqual(["global", "marketing"]);
+  });
+});
+
+/**
+ * Every agent module that sends a model request, and the step keys that reach it. A new caller
+ * fails here until its steps are mapped, and every mapped step must be a provider step, so the
+ * provider stop and the tick's budget gate see it (#1580). `paid-pass.ts` is the shared sender.
+ */
+const PAID_CALLERS: Record<string, string[]> = {
+  "src/lib/agents/guides/draft.ts": ["guide-draft"],
+  "src/lib/agents/darwin/adjudicate.ts": ["verify-paid"],
+  "src/lib/agents/darwin/release-review.ts": ["verify-paid"],
+  "src/lib/agents/knox/paid-extract.ts": ["extract-paid"],
+  "src/lib/agents/rosetta/paid-read.ts": ["read-paid"],
+  "src/lib/agents/magellan/paid-find.ts": ["discover-paid"],
+  "src/lib/agents/magellan/website-find.ts": ["discover-paid"],
+  "src/lib/agents/magellan/schedule-search.ts": ["discover-paid"],
+  "src/lib/agents/magellan/blocked-fetch.ts": ["discover-paid"],
+  "src/lib/agents/magellan/registry/wire-research.ts": ["registry-wire-research"],
+  "src/lib/agents/marketing/monthly.ts": ["marketing-write"],
+  "src/lib/report-engine/editor.ts": ["report-render"],
+};
+const SENDS_MODEL_REQUEST = /\b(?:paidModelCall|getAnthropicMessagesClient|getAnthropicLanguageModel)\(/;
+
+function sourceFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) return sourceFiles(path);
+    return /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [path] : [];
+  });
+}
+
+describe("provider steps cover every paid caller (#1580)", () => {
+  it("lists each agent module that sends a model request, and its steps are provider steps", () => {
+    const callers = [...sourceFiles("src/lib/agents"), ...sourceFiles("src/lib/report-engine")]
+      .filter((file) => !file.endsWith("paid-pass.ts") && SENDS_MODEL_REQUEST.test(readFileSync(file, "utf8")))
+      .sort();
+    expect(callers).toEqual(Object.keys(PAID_CALLERS).sort());
+    for (const steps of Object.values(PAID_CALLERS)) {
+      for (const step of steps) expect(isProviderStep(step), step).toBe(true);
+    }
   });
 });

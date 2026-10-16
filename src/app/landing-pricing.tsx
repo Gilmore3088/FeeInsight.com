@@ -1,22 +1,27 @@
 import Link from "next/link";
 import { DEMO_REQUEST_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
 import { TrackLink } from "@/components/track-link";
-import { REPORT_OFFER, REPORT_PRICE_INLINE } from "@/lib/constants";
+import { PRODUCT_NAME, REPORT_OFFER, REPORT_PRICE_INLINE } from "@/lib/constants";
 import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import { PRO_TIERS, tierPriceLabel } from "@/lib/pro-tiers";
+import { PlanIncludes } from "./subscribe/plans-exhibit";
 import { REPORT_REQUEST_HREF, SECTION_INNER, SectionHeading, TEXT_LINK } from "./landing-shared";
 
-/** Brief 06 §4.3 item 6: Pro first, every price from PRO_TIERS; the report as one line under it. */
+/**
+ * Section 5, subscribe (James's homepage reset, Oct 16): what every plan includes, the price by
+ * institution size (every price from PRO_TIERS), and the next step; the report as one line under it.
+ */
 export function LandingPricing() {
   return (
-    <section className="border-t border-border bg-paper">
+    <section id="plans" aria-label="Plans" className="scroll-mt-24 border-t border-border bg-paper">
       <div className={`${SECTION_INNER} py-16 sm:py-24`}>
         <SectionHeading
           center
           eyebrow="Hamilton Pro"
           title="Priced by your institution's size"
-          line={`One plan covers up to ${WORKSPACE_SEAT_LIMIT} people, paid monthly or annually.`}
+          line={`Hamilton Pro is the plan that includes Hamilton and the full ${PRODUCT_NAME}, for up to ${WORKSPACE_SEAT_LIMIT} people.`}
         />
+        <PlanIncludes />
         <ul className="mx-auto mt-10 grid max-w-4xl gap-3 sm:grid-cols-3 sm:gap-4">
           {PRO_TIERS.map((tier) => (
             <li
@@ -42,7 +47,7 @@ export function LandingPricing() {
             href={PRO_PLANS_NAV.href}
             className="fi-btn fi-btn-primary min-h-11"
           >
-            {PRO_PLANS_NAV.label}
+            See plans
           </TrackLink>
           <TrackLink
             event="contact_sales"

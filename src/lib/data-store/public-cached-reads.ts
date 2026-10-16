@@ -1,8 +1,9 @@
 import { cachedPublicRead } from "./public-read-cache";
 import { getDataFreshness, getPublicStats, getStats } from "./core";
 import { getDistrictMetrics } from "./dashboard";
-import { getCheapestAndMostExpensive, getFeeCategoryDetail } from "./fees";
-import { getPeerIndex, getStateFeeIndexes } from "./fee-index";
+import { getCheapestAndMostExpensive, getFeeCategoryDetail, getIndexRows } from "./fees";
+import { getFeeEvidence } from "./fee-evidence";
+import { getDistrictFeeIndexes, getPeerIndex, getStateFeeIndexes } from "./fee-index";
 import {
   getCitiesInState,
   getCityFeeAverages,
@@ -32,6 +33,7 @@ import {
 import { getMarketBranchFootprint } from "./branches";
 import { getNationalRateStats } from "./rate-fees";
 import { getCountyFeeMap } from "./state-visuals";
+import { getDistrictHub, isEmptyDistrictHub } from "./district-hub";
 
 /**
  * Cached variants of the catalog-wide reads that public pages run on every request.
@@ -51,6 +53,12 @@ export const getFeeCategoryDetailCached = cachedPublicRead(
   getFeeCategoryDetail,
   (detail) => detail.fees.length === 0,
 );
+// The Bank Fee Index explorer's rows: numbers only, so the largest category stays well under 2 MB.
+export const getIndexRowsCached = cachedPublicRead("index-rows-v1", getIndexRows);
+/** Fee evidence for one page of listed rows, as entries (a Map does not survive the cache). */
+export const getFeeEvidenceEntriesCached = cachedPublicRead("fee-evidence-v1", async (ids: number[]) => [
+  ...(await getFeeEvidence(ids)).entries(),
+]);
 export const getCheapestAndMostExpensiveCached = cachedPublicRead(
   "cheapest-and-most-expensive",
   getCheapestAndMostExpensive,
@@ -106,6 +114,11 @@ export const getStateFeeIndexesCached = cachedPublicRead(
   getStateFeeIndexes,
   (indexes) => indexes.all.length === 0,
 );
+export const getDistrictFeeIndexesCached = cachedPublicRead(
+  "district-fee-indexes-v1",
+  getDistrictFeeIndexes,
+  (indexes) => indexes.all.length === 0,
+);
 export const getStateEconomicContextCached = cachedPublicRead(
   "state-economic-context",
   getStateEconomicContext,
@@ -136,3 +149,5 @@ export async function getInstitutionPeerRankCached(institutionId: number): Promi
   return peerRankFromGroupValues(institutionId, rule, filters, values);
 }
 export const getMarketBranchFootprintCached = cachedPublicRead("market-branch-footprint", getMarketBranchFootprint);
+/** The district hub's exhibits beyond the fee board (district-hub.ts), one entry per district. */
+export const getDistrictHubCached = cachedPublicRead("district-hub-v2", getDistrictHub, isEmptyDistrictHub);

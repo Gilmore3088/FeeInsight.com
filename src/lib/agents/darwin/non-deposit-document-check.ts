@@ -59,13 +59,13 @@ type SqlTag = typeof sql;
  *   (U.S. Bank's brokerage pages: wire, "Research", returned check, stop payment, overnight check,
  *   IRA fees). The taxonomy has no brokerage category, so whether these come down is James's call:
  *   they are counted on their own and come down only when `BROKERAGE_DOCUMENT_TAKEDOWN_LIVE` is
- *   also on (off by default, even with the main switch on); until then they pass.
+ *   also on (its own switch; both on since 2026-10-16); with it off they pass.
  *
  * Each Darwin verify step reads the next `NON_DEPOSIT_BATCH` live fees after a cursor kept on the
  * run ledger (the `darwin.non_deposit_document` event's `next_after_id`, 0 once a pass reaches the
  * end). An institution-scoped run reads that institution's live fees and leaves the cursor alone.
  *
- * Shadow first (CLAUDE.md standing rule): while `NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE` is false, or in
+ * Shadow first (CLAUDE.md standing rule; switched on 2026-10-16): with `NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE` false, or in
  * a dry run, the step only reports what it would take down (by kind, with samples). Switched on, a
  * matching fee goes through the shared 12-hour second look (check `darwin.non_deposit_document`)
  * and is archived on its second failure: rolled back with `non_deposit_document: <kind> #<doc>`,
@@ -75,17 +75,21 @@ type SqlTag = typeof sql;
 export const NON_DEPOSIT_CHECK = "darwin.non_deposit_document";
 export const NON_DEPOSIT_CHECK_VERSION = 2;
 /**
- * Default-off switch. It turns on by PR after the dry-run count over the whole live table
+ * The switch. It turned on by PR after the dry-run count over the whole live table
  * (`nonDepositCountSql`, or the verify step's `non_deposit_full_count` param) and a sample
- * (`nonDepositSamplesSql`) have been shown to James.
+ * (`nonDepositSamplesSql`) were shown to James: on 2026-10-16 (James, "2-4' yes", 03:37 UTC) the
+ * count was 92 live lending or card fees (87 `lending_category`, 5
+ * `lending_wording_on_loan_document`) on 42 documents at 36 institutions. Roll back by setting it
+ * to false.
  */
-export const NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE = false;
+export const NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE = true;
 /**
- * Default-off sub-switch for the `brokerage_document` rule (deposit-category fees on brokerage,
- * wealth and investing documents, #1518). It acts only with `NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE`
- * and stays off when that one goes on, so James can say yes to one without the other.
+ * The sub-switch for the `brokerage_document` rule (deposit-category fees on brokerage, wealth and
+ * investing documents, #1518). It acts only with `NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE`, so James
+ * could say yes to one without the other. On since 2026-10-16 (same yes): 7 live U.S. Bank
+ * brokerage-page fees on 4 documents. Roll back by setting it to false.
  */
-export const BROKERAGE_DOCUMENT_TAKEDOWN_LIVE = false;
+export const BROKERAGE_DOCUMENT_TAKEDOWN_LIVE = true;
 export const NON_DEPOSIT_REASON = "non_deposit_document";
 /** The rules a matched fee comes down under (each its own reason prefix and count). */
 export type NonDepositRule = "lending_category" | "lending_wording_on_loan_document" | "brokerage_document";

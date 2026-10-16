@@ -3,6 +3,7 @@ import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { HAMILTON_PUBLISH_STRATEGY, sameLineDuplicateOf, unclearName, type VerifiedFeeRow } from "@/lib/agents/hamilton/publish";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { ACCOUNT_TYPE_HOLD_REASON } from "@/lib/agents/hamilton/account-type-hold";
 
 type SqlTag = typeof sql;
 
@@ -278,7 +279,13 @@ async function liveRepeat(db: SqlTag, feePublishedId: number, kept: number): Pro
   }
 }
 
-/** Brings back takedowns whose older line is no longer live, with the verified row. Returns the count. */
+/**
+ * Brings back takedowns whose older line is no longer live, with the verified row. Returns the count.
+ * An older line the account type hold took down (`account_type_hold:`, #1100) still counts as
+ * live: the hold is a publish policy, and bringing back its same-line copy would put the held
+ * fee back on the catalog (finding 2026-10-16-hold-revives-business-takedowns; none such on prod
+ * that day).
+ */
 export async function restoreSameLineDuplicates(
   db: SqlTag,
   options: { runId: number; dryRun: boolean; institutionId?: number },
@@ -293,7 +300,9 @@ export async function restoreSameLineDuplicates(
          WHERE fp.rolled_back_at IS NOT NULL
            AND fp.rolled_back_reason LIKE ${`${SAME_LINE_DUPLICATE_REASON}:%`}
            ${options.institutionId ? scope`AND fp.institution_id = ${options.institutionId}` : scope``}
-           AND (older.fee_published_id IS NULL OR older.rolled_back_at IS NOT NULL)
+           AND (older.fee_published_id IS NULL
+                OR (older.rolled_back_at IS NOT NULL
+                    AND older.rolled_back_reason NOT LIKE ${`${ACCOUNT_TYPE_HOLD_REASON}:%`}))
          LIMIT ${SAME_LINE_DUPLICATE_LIMIT}
       `;
       if (options.dryRun || candidates.length === 0) return candidates.length;

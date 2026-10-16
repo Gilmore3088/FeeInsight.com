@@ -45,9 +45,9 @@ const asDb = (db: DbMock) => db as unknown as Parameters<typeof recheckNonDeposi
 const texts = (db: DbMock) => db.mock.calls.map(([strings]) => (strings as TemplateStringsArray).join("?"));
 
 describe("Darwin live non-deposit document re-check (#1442)", () => {
-  it("ships with the switch off", () => {
-    expect(NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE).toBe(false);
-    expect(BROKERAGE_DOCUMENT_TAKEDOWN_LIVE).toBe(false);
+  it("ships with both switches on (James, 2026-10-16)", () => {
+    expect(NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE).toBe(true);
+    expect(BROKERAGE_DOCUMENT_TAKEDOWN_LIVE).toBe(true);
     expect(NON_DEPOSIT_CHECK_VERSION).toBe(2);
     expect(NON_DEPOSIT_BATCH).toBe(2_000);
   });
@@ -76,7 +76,7 @@ describe("Darwin live non-deposit document re-check (#1442)", () => {
 
   it("in shadow, reports and moves the cursor but writes no fee and logs no flag", async () => {
     const db = dbFor(ROWS, { cursor: "100" });
-    const result = await recheckNonDepositDocuments(asDb(db), { runId: 7, stepId: 70, dryRun: false });
+    const result = await recheckNonDepositDocuments(asDb(db), { runId: 7, stepId: 70, dryRun: false, live: false });
     expect(result).toMatchObject({ live: false, matched: 2, afterId: 100, nextAfterId: 0, flagged: 0, takenDown: [] });
     const sent = texts(db);
     expect(sent.some((text) => text.includes("UPDATE"))).toBe(false);
@@ -216,7 +216,7 @@ describe("v2 rules: lending wording on loan documents, brokerage documents, gene
   it("switched on, takes down lending wording on a loan page but not a brokerage_document fee while its sub-switch is off", async () => {
     // 1000: brokerage Wire; 1008: yourgcu mortgage processing; 1025: Siouxland Late Fee.
     const db = feeDb([1000, 1008, 1025]);
-    const result = await recheckNonDepositDocuments(asDb(db), { runId: 7, dryRun: false, live: true, now });
+    const result = await recheckNonDepositDocuments(asDb(db), { runId: 7, dryRun: false, live: true, brokerageLive: false, now });
     expect(result.brokerageLive).toBe(false);
     expect(result.takenDown).toEqual([1008]);
     expect(archivedIds(db)).toEqual([1008]);
@@ -226,7 +226,8 @@ describe("v2 rules: lending wording on loan documents, brokerage documents, gene
 
   it("with the brokerage sub-switch on as well, a brokerage_document fee comes down under its own reason", async () => {
     const db = feeDb([1000, 1008]);
-    const result = await recheckNonDepositDocuments(asDb(db), { runId: 7, dryRun: false, live: true, brokerageLive: true, now });
+    const result = await recheckNonDepositDocuments(asDb(db), { runId: 7, dryRun: false, now });
+    expect(result).toMatchObject({ live: true, brokerageLive: true });
     expect(result.takenDown).toEqual([1000, 1008]);
     const update = db.mock.calls.find(([strings]) => (strings as TemplateStringsArray).join("?").includes("UPDATE published_fee_records"));
     expect(update?.[3]).toEqual(["brokerage_document: brokerage #100", "lending_wording_on_loan_document: loan #108"]);

@@ -626,3 +626,85 @@ describe("checkFeeAgainstSource daily caps", () => {
     expect(checkFeeAgainstSource(bare, "Overdraft", 30, ".", "overdraft").ok).toBe(false);
   });
 });
+
+// #1646: a name stem matches where a word begins, never inside another word.
+describe("name words match whole words", () => {
+  // Bay Cities' checking comparison (source document 31579) has no Star Checking; "Star" was found in "started".
+  const bayCities = [
+    "Express Checking For members who want more financial control | 1st Checking Students just getting started, ages 16-24 | Dividend Checking For Members who maintain higher balances and want to earn interest",
+    "",
+    "Monthly Service Charge | $0 Monthly Service Charge with e-Statements & Direct Deposit $5 Monthly Service Charge with either e-Statements or Direct Deposit $10 Monthly Service Charge without e-Statements or Direct Deposit",
+  ].join("\n");
+
+  it("does not find \"Star\" inside \"started\"", () => {
+    expect(checkFeeAgainstSource(bayCities, "Star Checking Monthly Fee", 10, ".", "monthly_maintenance").ok).toBe(false);
+    expect(checkFeeAgainstSource("Upstart Checking Monthly Fee | $10.00", "Star Checking Monthly Fee", 10, ".").ok).toBe(false);
+  });
+
+  it("still finds the name where it is printed", () => {
+    expect(checkFeeAgainstSource("Star Checking Monthly Fee | $10.00", "Star Checking Monthly Fee", 10, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("STAR CHECKING - Monthly Fee | $10.00", "Star Checking Monthly Fee", 10, ".").ok).toBe(true);
+  });
+
+  it("keeps matching longer words that begin with the stem", () => {
+    // Plurals and suffixes: "Stop Payment" in "Stop Payments", "Overdraft" in "Overdrafts".
+    expect(checkFeeAgainstSource("Stop Payments | $30.00", "Stop Payment", 30, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Overdrafts (per item) | $35.00", "Overdraft Fee", 35, ".").ok).toBe(true);
+    // A word after punctuation still begins a word ("Non-Sufficient", "(Outgoing").
+    expect(checkFeeAgainstSource("Wire Transfer (Outgoing) | $25.00", "Outgoing Wire", 25, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("NSF/Non-Sufficient Funds | $32.00", "Non-Sufficient Funds Fee", 32, ".").ok).toBe(true);
+  });
+
+  it("reads a word against a footnote number or run into a label", () => {
+    expect(checkFeeAgainstSource("Safe deposit box fees\nFee type | Fee amount\nLost key13 | $18", "Lost key", 18, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Product/ServiceStop Payments | Fee $30.00\nProduct/ServiceTemporary Checks | Fee $5.00 per set", "Temporary Checks", 5, ".").ok).toBe(true);
+  });
+
+  it("reads the name's own words closed up into one", () => {
+    expect(checkFeeAgainstSource("Nonsufficient Funds Fee | $32.00", "Non-Sufficient Funds Fee", 32, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Overlimit Fee | $25.00", "Over Limit Fee", 25, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Representment Fee | $30.00", "Re-presentment Fee", 30, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Prepaid Card Reload | $3.00", "Pre-paid Card Reload", 3, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Debitcard Replacement | $10.00", "Debit Card Replacement", 10, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Billpay Monthly | $5.00", "Bill Pay Monthly", 5, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Nonmember ATM Withdrawal | $2.00", "Non-Member ATM Withdrawal", 2, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Cardholder Replacement | $10.00", "Card Replacement", 10, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Returned Mailing | $5.00", "Returned Mail", 5, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("after that it's just $4.95 per month, Electronic Bill Payment. Login To Online Account Access Above To Sign Up", "Online Bill Pay", 4.95, ".").ok).toBe(true);
+    // Closed-up words still have to be the name's own: "Unpaid" is not "Paid", "Reprint" is not "Print".
+    expect(checkFeeAgainstSource("Unpaid Items | $30.00", "Paid Items", 30, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource("Statement Reprint | $5.00", "Statement Print", 5, ".").ok).toBe(false);
+  });
+
+  it("reads text printed without its spaces", () => {
+    // MassMutual FCU (document 16621) and Northpointe (document 128) as their text reads.
+    const glued = [
+      "Replacelostdebitcard(each)..............$15",
+      "Wiretransfers(domestic,outgoing)$20",
+      "Officialchecks$2",
+      "Stoppayment...........$15",
+      "Earlyclosurefee! $10",
+      "Canceledcheckcopy $5",
+    ].join("\n");
+    expect(checkFeeAgainstSource(glued, "Replace Lost Debit Card", 15, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(glued, "Wire Transfers Domestic Outgoing", 20, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(glued, "Official Checks", 2, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(glued, "Stop Payment", 15, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(glued, "Early closure fee", 10, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(glued, "Canceled check copy", 5, ".").ok).toBe(true);
+    // Spaced text keeps the rule: "NSF" is not in "transfers".
+    expect(checkFeeAgainstSource("Online transfers | $30.00", "NSF Fee", 30, ".").ok).toBe(false);
+  });
+
+  it("reads an abbreviation as its one word, and \"-ment\" only after \"Pay\"", () => {
+    expect(checkFeeAgainstSource("Regulation D Transfers** | $15.00 Per Item", "Reg D", 15, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Register D Transfers | $15.00 Per Item", "Reg D", 15, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource("Department Fee | $5.00", "Dep Fee", 5, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource("Starment Checking Monthly Fee | $10.00", "Star Checking Monthly Fee", 10, ".").ok).toBe(false);
+  });
+
+  it("does not find a word inside a longer compound", () => {
+    // "Draft" is not the "Overdraft" fee.
+    expect(checkFeeAgainstSource("Overdraft Fee | $35.00", "Draft Fee", 35, ".").ok).toBe(false);
+  });
+});
