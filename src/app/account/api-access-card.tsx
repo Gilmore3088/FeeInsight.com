@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { CONTACT_EMAIL, PRODUCT_NAME, SITE_URL } from "@/lib/constants";
-import { API_PLANS_LABEL } from "@/lib/api-subscriber-access";
+import { API_MONTHLY_CALLS_LABEL, API_PLANS_LABEL } from "@/lib/api-subscriber-access";
 import { AccountCard } from "./account-card";
 import { createAccountApiKey, revokeAccountApiKey } from "./api-key-actions";
 
@@ -96,7 +96,7 @@ export function ApiAccessCard({ access }: { access: ApiAccess }) {
       id="api"
       title="API and Claude connector"
       compact
-      note={`Your plan includes the ${PRODUCT_NAME} API, with 10,000 calls a month.`}
+      note={`Your plan includes the ${PRODUCT_NAME} API, with ${API_MONTHLY_CALLS_LABEL} calls a month.`}
     >
       {newKey ? (
         <div>
@@ -129,7 +129,7 @@ export function ApiAccessCard({ access }: { access: ApiAccess }) {
         </p>
       )}
 
-      <details className="mt-4 text-[13px] text-ink-muted">
+      <details open={newKey ? true : undefined} className="mt-4 text-[13px] text-ink-muted">
         <summary className="cursor-pointer font-medium text-ink">How to connect</summary>
         <ol className="mt-2 list-decimal space-y-1.5 pl-5">
           <li>

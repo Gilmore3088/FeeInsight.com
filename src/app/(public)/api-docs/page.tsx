@@ -5,7 +5,9 @@ import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { CONTACT_EMAIL, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { getPublicStatsSummary } from "@/lib/public-stats";
 import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT } from "@/lib/data-store/maturity";
-import { API_PLANS_LABEL } from "@/lib/api-subscriber-access";
+import { API_MONTHLY_CALLS_LABEL, API_PLANS_LABEL } from "@/lib/api-subscriber-access";
+import { PAST_DUE_GRACE_DAYS } from "@/lib/access";
+import { PRO_PLANS_NAV } from "@/components/nav-items";
 import { NON_INSTITUTION_TIER, tierAmountLabel, tierPriceLabel } from "@/lib/pro-tiers";
 
 const PRO_LABEL = `${SITE_NAME} Pro`;
@@ -239,9 +241,9 @@ export default async function ApiDocsPage() {
         Bank Fee Index API
       </h1>
       <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-ink-soft">
-        Programmatic access to fee benchmarking data for U.S. banks and credit
-        unions. {categoriesLabel} fee categories, national and peer medians, percentile ranges,
-        and institution-level detail, through a REST API or the Claude connector.
+        Published fees for U.S. banks and credit unions, from national and district medians down to
+        one institution, with call-report fee revenue and branch locations. Use it in your own code,
+        in Excel, or by asking Claude. {categoriesLabel} fee categories.
       </p>
 
       {/* Access first: which plans include a key, and where to make it. */}
@@ -258,7 +260,7 @@ export default async function ApiDocsPage() {
             <span className="font-semibold text-ink">Subscribe to {PRO_LABEL} on the {API_PLANS_LABEL}.</span>{" "}
             Consultants pay the {tierAmountLabel(NON_INSTITUTION_TIER, "monthly")} price, so their plan includes it too.{" "}
             <Link href="/subscribe" className="font-medium text-brick underline underline-offset-2">
-              See plans
+              {PRO_PLANS_NAV.label}
             </Link>
           </li>
           <li>
@@ -267,7 +269,7 @@ export default async function ApiDocsPage() {
           </li>
           <li>
             <span className="font-semibold text-ink">Call any endpoint below,</span> or add the
-            connector to Claude and ask in plain English. Each key gets 10,000 calls a month.
+            connector to Claude and ask in plain English. Each key gets {API_MONTHLY_CALLS_LABEL} calls a month.
           </li>
         </ol>
         <p className="mt-3 text-[12px] text-ink-muted">
@@ -338,9 +340,9 @@ export default async function ApiDocsPage() {
         <CodeBlock title="Query parameter authentication">{`curl "${BASE}/fees?api_key=YOUR_API_KEY"`}</CodeBlock>
 
         <p className="mt-4 text-[13px] text-ink-muted">
-          A key keeps working while your subscription is active, and for 7 days after a failed payment
-          while the card is retried. It stops when the subscription ends. Keep it private: anyone who has it
-          uses your monthly calls.
+          A key keeps working while your subscription is active, and for {PAST_DUE_GRACE_DAYS} days after a failed payment
+          while the card is retried. It stops when the subscription ends. Keep it private.
+          Anyone who has it can use your monthly calls.
         </p>
       </div>
 
@@ -348,13 +350,13 @@ export default async function ApiDocsPage() {
       <SectionHeading id="claude">Claude connector</SectionHeading>
       <div className="rounded-xl border border-border/80 bg-white px-6 py-5">
         <p className="text-[13px] text-ink-muted">
-          Add the connector once, then ask Claude in plain English: who charges the most for overdrafts in
-          Ohio, or how banks and credit unions in Texas compare. In Claude, open Settings, then Connectors,
-          add a custom connector and paste this link with your key:
+          Add the connector once and ask Claude in plain English, for example which banks in Ohio have
+          the highest overdraft fee, or how banks and credit unions in Texas compare. To add it, open
+          Settings in Claude, then Connectors, add a custom connector and paste this link with your key.
         </p>
         <CodeBlock title="Connector link">{`${BASE}/mcp?api_key=YOUR_API_KEY`}</CodeBlock>
         <p className="mt-3 text-[13px] text-ink-muted">
-          Each question Claude answers uses a few calls from the same 10,000-a-month allowance.
+          Each question Claude answers uses a few calls from the same {API_MONTHLY_CALLS_LABEL}-a-month allowance.
         </p>
       </div>
 
@@ -381,7 +383,7 @@ export default async function ApiDocsPage() {
             <tbody className="text-ink-soft">
               <tr className="border-t border-border/60">
                 <td className="px-4 py-2 font-medium">{PRO_LABEL} key</td>
-                <td className="px-4 py-2">10,000 requests</td>
+                <td className="px-4 py-2">{API_MONTHLY_CALLS_LABEL} requests</td>
                 <td className="px-4 py-2">Account page, {API_PLANS_LABEL}</td>
               </tr>
               <tr className="border-t border-border/60">
@@ -697,23 +699,20 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
           features={[
             "Your own API key, made on your account page",
             "Claude connector",
-            "10,000 calls a month",
+            `${API_MONTHLY_CALLS_LABEL} calls a month`,
             `All ${categoriesLabel} fee categories`,
             "Institution-level fees, fee revenue and branches",
             "CSV output for Excel",
           ]}
-          cta="See plans"
-          ctaHref="/subscribe"
+          cta={PRO_PLANS_NAV.label}
+          ctaHref={PRO_PLANS_NAV.href}
         />
         <TierCard
           name="Data licensing"
           price="Custom"
           features={[
-            "Unlimited requests",
-            "Full dataset access",
-            "Bulk data export",
-            "Dedicated support",
-            "Custom SLA",
+            "The full dataset as files",
+            "Rights to load it into your own systems",
           ]}
           cta="Talk to us"
           ctaHref={`mailto:${CONTACT_EMAIL}?subject=Data%20licensing`}
