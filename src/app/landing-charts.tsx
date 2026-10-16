@@ -6,7 +6,6 @@ import Link from "next/link";
 import { trackEvent } from "@/lib/analytics";
 import { US_STATES } from "@/lib/us-map-paths";
 import { DISTRICT_NAMES, STATE_TO_DISTRICT } from "@/lib/fed-districts";
-import type { MarketLadderData } from "@/app/for-institutions/market-ladder";
 import type { DistrictPoint, HomeData, RangeEntry, SampleRow, SampleView } from "./landing-shared";
 
 /**
@@ -100,14 +99,18 @@ function scaleOf(districts: DistrictPoint[], metric: Metric) {
  * previews a district in the panel; a click or Enter picks it. The map is one tab stop:
  * arrow keys move between districts.
  */
-export function DistrictMap({ data }: { data: HomeData }) {
+export function DistrictMap({ data, compact = false }: { data: HomeData; compact?: boolean }) {
   const { districts, overdraft, summary } = data;
   const [selected, setSelected] = useState<number | null>(() => firstDistrict(districts));
   const [hovered, setHovered] = useState<number | null>(null);
   const [metric, setMetric] = useState<Metric>("median");
-  /** Phones show the map and one takeaway; the comparison views open on request. */
+  /**
+   * Phones show the map and one takeaway; the comparison views open on request. `compact` does
+   * the same at every width, for a half-width frame (the homepage's product intro, James's notes
+   * of Oct 16: the district ranking collapsed by default, the map and takeaway kept).
+   */
   const [more, setMore] = useState(false);
-  const onPhoneUnlessMore = more ? "" : "max-sm:hidden";
+  const onPhoneUnlessMore = more ? "" : compact ? "hidden" : "max-sm:hidden";
   const byNumber = new Map(districts.map((d) => [d.district, d]));
   const activeNumber = hovered ?? selected;
   const active = activeNumber !== null ? byNumber.get(activeNumber) ?? null : null;
@@ -177,7 +180,7 @@ export function DistrictMap({ data }: { data: HomeData }) {
 
   return (
     <div className="p-4 sm:px-6 sm:pb-4 sm:pt-5">
-     <div className="grid gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] lg:items-start lg:gap-10">
+     <div className={compact ? "grid gap-4" : "grid gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] lg:items-start lg:gap-10"}>
       <div className="min-w-0">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <p className="text-[13px] font-semibold text-ink">Overdraft by Fed district</p>
@@ -285,7 +288,7 @@ export function DistrictMap({ data }: { data: HomeData }) {
       {/* Phones: one takeaway and one link under the map; the panel, the dot plot and the 12
           report links wait behind "View comparison details" (James's notes of Oct 16). */}
       {active && activeNumber !== null ? (
-        <div className="sm:hidden" data-district-takeaway="">
+        <div className={compact ? "" : "sm:hidden"} data-district-takeaway="">
           <p className="text-[16px] leading-snug text-ink-soft">
             <span className="font-semibold text-ink">{active.name}</span>
             {active.median !== null && overdraft
@@ -887,71 +890,6 @@ export function PriceSlider({ data }: { data: HomeData }) {
           </span>
         ) : null}
         <span>A scenario, not advice</span>
-      </p>
-    </div>
-  );
-}
-
-/* ───────────────────────── Market ladder ───────────────────────── */
-
-/**
- * One fee in every market: a column per market (its median), the middle half as a whisker,
- * and the bank's own fee as a line across them all. A column opens its market's figures.
- */
-export function LadderColumns({ ladder }: { ladder: MarketLadderData }) {
-  const [selected, setSelected] = useState(0);
-  const hi = top10(Math.max(ladder.value, ...ladder.rows.map((r) => r.q3)) * 1.1);
-  const row = ladder.rows[selected] ?? ladder.rows[0];
-  const H = 170;
-  const y = (v: number) => H - (v / hi) * H;
-  return (
-    <div className="p-4 sm:p-6">
-      <p className="text-[13px] text-ink-soft">
-        <span className="font-semibold text-ink">{ladder.institutionName}</span> · {ladder.feeLabel}
-      </p>
-      <div className="relative mt-6" style={{ height: `${H}px` }}>
-        <span className="absolute inset-x-0 bottom-0 h-px bg-border" aria-hidden="true" />
-        <span className="absolute inset-x-0 z-10 h-[2px] bg-brick" style={{ top: `${y(ladder.value)}px` }} aria-hidden="true" />
-        <span
-          className="absolute right-0 z-10 -translate-y-full whitespace-nowrap pb-1 text-[11px] font-semibold text-ink"
-          style={{ top: `${y(ladder.value)}px` }}
-        >
-          Its fee {money(ladder.value)}
-        </span>
-        <div className="absolute inset-0 grid gap-3" style={{ gridTemplateColumns: `repeat(${ladder.rows.length}, minmax(0, 1fr))` }}>
-          {ladder.rows.map((r, i) => {
-            const on = i === selected;
-            return (
-              <button
-                key={r.label}
-                type="button"
-                aria-pressed={on}
-                aria-label={`${r.label}: median ${money(r.median)}`}
-                onClick={() => setSelected(i)}
-                className="fi-map-cell group relative h-full"
-              >
-                <span
-                  className="fi-a-col absolute inset-x-[22%] bottom-0 rounded-t-[4px] transition-colors"
-                  style={{ height: `${H - y(r.median)}px`, background: on ? "var(--fi-ink)" : "var(--fi-viz-inside)", ...at(150 + i * 120) }}
-                />
-                <span className="absolute left-1/2 w-px -translate-x-1/2 bg-ink-muted" style={{ top: `${y(r.q3)}px`, height: `${y(r.q1) - y(r.q3)}px` }} />
-                <span className="absolute left-1/2 h-px w-3 -translate-x-1/2 bg-ink-muted" style={{ top: `${y(r.q3)}px` }} />
-                <span className="absolute left-1/2 h-px w-3 -translate-x-1/2 bg-ink-muted" style={{ top: `${y(r.q1)}px` }} />
-              </button>
-            );
-          })}
-        </div>
-      </div>
-      <div className="mt-2 grid gap-3 text-center text-[12px] leading-4" style={{ gridTemplateColumns: `repeat(${ladder.rows.length}, minmax(0, 1fr))` }}>
-        {ladder.rows.map((r, i) => (
-          <span key={r.label} className={i === selected ? "font-semibold text-ink" : "text-ink-muted"}>
-            {r.label}
-          </span>
-        ))}
-      </div>
-      <p className="mt-4 border-t border-border pt-3 text-[13px] text-ink-soft" aria-live="polite">
-        <span className="font-semibold text-ink">{row.label}</span>: median {money(row.median)}, middle half {money(row.q1)} to{" "}
-        {money(row.q3)}, {COUNT.format(row.institutions)} institutions
       </p>
     </div>
   );
