@@ -100,6 +100,10 @@ export interface HamiltonClaimBinding {
   feeCategory?: string | null;
   unit?: HamiltonFactUnit;
   reportingDate?: string | null;
+  /** The figure the claim states; the record must hold that value, not merely share its scope. */
+  value?: number;
+  /** A consumer claim binds a consumer or both-audience record; unknown audience binds nothing. */
+  accountApplicability?: Exclude<HamiltonAccountApplicability, "unknown" | "both">;
 }
 
 function unique<T>(values: readonly T[]): T[] {
@@ -214,14 +218,24 @@ function derivedFact(input: {
   };
 }
 
+/**
+ * Does this record support the claim (#981, H06-T04)? Subject, category, unit, period, audience and
+ * the stated value must all be the record's own, so Bank B's $35 or a $25 gap never supports
+ * "Bank A charges $35" or "Bank A charges $25", and an undated record never supports a dated claim.
+ */
 export function claimBindingMatches(
-  fact: Pick<HamiltonEvidenceFact | HamiltonDerivedFact, "scope" | "unit">,
+  fact: Pick<HamiltonEvidenceFact | HamiltonDerivedFact, "scope" | "unit" | "value">,
   claim: HamiltonClaimBinding,
 ): boolean {
   if (claim.institutionId !== undefined && fact.scope.institutionId !== claim.institutionId) return false;
   if (claim.feeCategory !== undefined && fact.scope.feeCategory !== claim.feeCategory) return false;
   if (claim.unit !== undefined && fact.unit !== claim.unit) return false;
   if (claim.reportingDate !== undefined && fact.scope.reportingDate !== claim.reportingDate) return false;
+  if (claim.accountApplicability !== undefined && fact.scope.accountApplicability !== claim.accountApplicability
+    && fact.scope.accountApplicability !== "both") return false;
+  // Unknown is never a match for a stated figure; a genuine $0 is.
+  if (claim.value !== undefined && (typeof fact.value !== "number" || !Number.isFinite(fact.value)
+    || Math.abs(fact.value - claim.value) > 0.005)) return false;
   return true;
 }
 

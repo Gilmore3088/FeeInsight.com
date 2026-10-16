@@ -14,11 +14,12 @@ import {
   deriveDifference,
   derivePercentChange,
   type HamiltonClaimBinding,
+  type HamiltonDerivedFact,
   type HamiltonEvidenceFact,
 } from "./evidence-contract";
 import { readDerivation } from "./evidence-reading";
 
-export const EVIDENCE_REGRESSION_SET_VERSION = "2026-10-15.2";
+export const EVIDENCE_REGRESSION_SET_VERSION = "2026-10-16.1";
 
 /** Who has checked the expected outcomes. Change only with a link to the actual review record. */
 export const HUMAN_REVIEW = {
@@ -62,12 +63,14 @@ const B_RATE = fee(9, BANK_B, 3, "2026-06-30", { unit: "percent", currency: null
 const B_PROVISIONAL = fee(10, BANK_B, 35, "2026-06-30", { status: "provisional" });
 const B_AUDIENCE_UNKNOWN = fee(11, BANK_B, 35, "2026-06-30", { scope: { ...B35.scope, accountApplicability: "unknown" } });
 const B_NO_FREQUENCY = fee(12, BANK_B, 35, "2026-06-30", { frequency: null });
+/** Bank B's $35 less Bank A's $10: a gap between two banks, owned by neither. */
+const GAP_B_A = deriveDifference("derived:difference:b-a", B35, A10).fact!;
 
 export type RegressionGroup = "false_attribution" | "control" | "zero_and_unknown" | "rate" | "period" | "coverage";
 
 export type RegressionCase = { id: string; group: RegressionGroup; description: string } & (
   | { check: "figures"; text: string; data: unknown; expect: { level: "high" | "medium" | "low"; unmatched: string[] } }
-  | { check: "binding"; fact: HamiltonEvidenceFact; claim: HamiltonClaimBinding; expect: { binds: boolean } }
+  | { check: "binding"; fact: HamiltonEvidenceFact | HamiltonDerivedFact; claim: HamiltonClaimBinding; expect: { binds: boolean } }
   | { check: "difference" | "percent_change"; left: HamiltonEvidenceFact; right: HamiltonEvidenceFact;
       expect: { value: number | null; problems?: string[]; reading?: string } }
 );
@@ -83,11 +86,19 @@ export const EVIDENCE_REGRESSION_CASES: readonly RegressionCase[] = [
     check: "figures", text: "Bank A charges $35.", data: PEERS, expect: { level: "medium", unmatched: [] } },
   { id: "fa-1-binding", group: "false_attribution", description: "Bank B's $35 record doesn't bind to a claim about Bank A",
     check: "binding", fact: B35, claim: { institutionId: BANK_A, feeCategory: "overdraft", unit: "usd" }, expect: { binds: false } },
+  { id: "fa-1-own-record", group: "false_attribution", description: "Bank A's own $10 record doesn't support \"Bank A charges $35\"",
+    check: "binding", fact: A10, claim: { institutionId: BANK_A, feeCategory: "overdraft", unit: "usd", value: 35 }, expect: { binds: false } },
+  { id: "fa-1-category", group: "false_attribution", description: "Bank A's $10 overdraft record doesn't support a $10 NSF claim",
+    check: "binding", fact: A10, claim: { institutionId: BANK_A, feeCategory: "nsf", unit: "usd", value: 10 }, expect: { binds: false } },
   { id: "fa-2-figure", group: "false_attribution", description: "figure check alone: \"Bank A charges $25\" matches the gap, not a fee, and is not caught",
     check: "figures", text: "Bank A charges $25.", data: PEERS, expect: { level: "medium", unmatched: [] } },
   { id: "fa-2-difference", group: "false_attribution", description: "the $25 gap keeps both inputs and reads as a gap, not as Bank A's fee",
     check: "difference", left: A10, right: B35,
     expect: { value: -25, reading: "Bank A's overdraft fee is $25 lower than Bank B's ($10 vs $35, both as of Jun 30, 2026)." } },
+  { id: "fa-2-own-record", group: "false_attribution", description: "Bank A's own $10 record doesn't support \"Bank A charges $25\"",
+    check: "binding", fact: A10, claim: { institutionId: BANK_A, feeCategory: "overdraft", unit: "usd", value: 25 }, expect: { binds: false } },
+  { id: "fa-2-gap-as-fee", group: "false_attribution", description: "the $25 gap between two banks doesn't support a claim about Bank A's fee",
+    check: "binding", fact: GAP_B_A, claim: { institutionId: BANK_A, feeCategory: "overdraft", unit: "usd", value: 25 }, expect: { binds: false } },
   { id: "fa-3-figure", group: "false_attribution", description: "figure check alone: \"increased by 10%\" for a -10% change is not caught",
     check: "figures", text: "Revenue increased by 10%.", data: { revenue_growth: -10 }, expect: { level: "medium", unmatched: [] } },
   { id: "fa-3-change", group: "false_attribution", description: "a -10% change reads as a fall, with both dates",
@@ -103,6 +114,8 @@ export const EVIDENCE_REGRESSION_CASES: readonly RegressionCase[] = [
     check: "figures", text: "Bank A charges $99.", data: PEERS, expect: { level: "low", unmatched: ["$99"] } },
   { id: "control-binding", group: "control", description: "Bank A's own $10 record binds to a claim about Bank A",
     check: "binding", fact: A10, claim: { institutionId: BANK_A, feeCategory: "overdraft", unit: "usd", reportingDate: "2026-06-30" }, expect: { binds: true } },
+  { id: "control-binding-value", group: "control", description: "Bank A's own $10 record supports \"Bank A charges $10\" for consumers in 2026",
+    check: "binding", fact: A10, claim: { institutionId: BANK_A, feeCategory: "overdraft", unit: "usd", reportingDate: "2026-06-30", value: 10, accountApplicability: "consumer" }, expect: { binds: true } },
   { id: "control-higher", group: "control", description: "a positive gap reads as higher",
     check: "difference", left: B35, right: A10,
     expect: { value: 25, reading: "Bank B's overdraft fee is $25 higher than Bank A's ($35 vs $10, both as of Jun 30, 2026)." } },
@@ -116,6 +129,10 @@ export const EVIDENCE_REGRESSION_CASES: readonly RegressionCase[] = [
   // Genuine zero against unknown (H06-AC3).
   { id: "zero-binds", group: "zero_and_unknown", description: "a genuine $0 fee is a known value and binds",
     check: "binding", fact: A0, claim: { institutionId: BANK_A, unit: "usd" }, expect: { binds: true } },
+  { id: "zero-binds-value", group: "zero_and_unknown", description: "a genuine $0 record supports a $0 claim",
+    check: "binding", fact: A0, claim: { institutionId: BANK_A, unit: "usd", value: 0 }, expect: { binds: true } },
+  { id: "unknown-binds-no-value", group: "zero_and_unknown", description: "an unknown amount doesn't support a $0 claim",
+    check: "binding", fact: A_UNKNOWN, claim: { institutionId: BANK_A, unit: "usd", value: 0 }, expect: { binds: false } },
   { id: "zero-difference", group: "zero_and_unknown", description: "a $0 fee still takes part in a comparison",
     check: "difference", left: A0, right: B35,
     expect: { value: -35, reading: "Bank A's overdraft fee is $35 lower than Bank B's ($0 vs $35, both as of Jun 30, 2026)." } },
@@ -143,6 +160,10 @@ export const EVIDENCE_REGRESSION_CASES: readonly RegressionCase[] = [
     check: "difference", left: A10, right: B_PROVISIONAL, expect: { value: null, problems: ["source_record_unverified"] } },
   { id: "unknown-audience-peer", group: "coverage", description: "a peer fee of unknown audience isn't used",
     check: "difference", left: A10, right: B_AUDIENCE_UNKNOWN, expect: { value: null, problems: ["consumer_audience_unverified"] } },
+  { id: "unknown-audience-binding", group: "coverage", description: "a fee of unknown audience doesn't support a consumer claim",
+    check: "binding", fact: B_AUDIENCE_UNKNOWN, claim: { institutionId: BANK_B, value: 35, accountApplicability: "consumer" }, expect: { binds: false } },
+  { id: "business-claim-binding", group: "coverage", description: "a consumer fee doesn't support a business-account claim",
+    check: "binding", fact: B35, claim: { institutionId: BANK_B, value: 35, accountApplicability: "business" }, expect: { binds: false } },
   { id: "no-frequency-peer", group: "coverage", description: "a peer fee with no stated frequency isn't used",
     check: "difference", left: A10, right: B_NO_FREQUENCY, expect: { value: null, problems: ["fee_frequency_unknown"] } },
 ];
