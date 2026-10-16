@@ -1,9 +1,10 @@
 /**
  * /reports — the report's one home (page template briefs, "Reports").
- * One column throughout: the promise and two actions over the report as delivered (its pictures
- * come from `REPORT_SHOWCASE`); then the video, the sample's own fee lines as one tappable
- * exhibit, the request (steps over the form), every state's free report on one full-width map,
- * Hamilton once, the questions, and published research (hidden while empty). Every figure is read from the live sample or the cached catalog reads; when either is
+ * One column throughout: the promise and two actions over the report as delivered (drawn from
+ * the live sample, so the picture and the sample agree); then the sample's own fee lines as one
+ * tappable exhibit, the paid request (steps, what the price includes, the form), the free
+ * national and district reports in their own section, every state's free report on one
+ * full-width map, Hamilton once, the questions, and published research (hidden while empty). Every figure is read from the live sample or the cached catalog reads; when either is
  * slow or down, its section drops its figures rather than show stale ones.
  */
 
@@ -13,7 +14,7 @@ import { getSql } from "@/lib/data-store/connection";
 import type { PublishedReport, ReportType } from "@/lib/report-engine/types";
 import { timeAgo } from "@/lib/format";
 import { TrackLink } from "@/components/track-link";
-import { CONTACT_EMAIL, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
+import { CONTACT_EMAIL, REPORT_INCLUDES, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
 import { REPORT_SHOWCASE } from "@/lib/report-showcase";
 import { loadSampleReport } from "@/lib/custom-report/sample-report";
 import { ReportFaq } from "./report-faq";
@@ -23,7 +24,7 @@ import { getMarketReadinessCached, getStatesWithFeeDataCached } from "@/lib/data
 import type { MarketReadiness } from "@/lib/data-store/market-readiness";
 import { STATE_CODES, STATE_NAMES } from "@/lib/us-states";
 import { REPORT_TYPE_LABELS, ReportFilters } from "./report-filters";
-import { ReportShowcase, ReportVideo } from "./report-cover";
+import { ReportShowcase } from "./report-cover";
 import { SampleLines, StateReportMap } from "./report-exhibits";
 import { formatReadOn, mapStates, sampleExhibit, type StateCoverage } from "./report-view";
 
@@ -142,6 +143,10 @@ function PublishedReportItem({ report }: { report: PublishedReport }) {
 
 export default async function ReportsPage({ searchParams }: PageProps) {
   const params = await searchParams;
+  // A link that asks for a free report (`?report=national|district#request`, from the research
+  // pages) lands on the free form; every other #request lands on the paid one.
+  const rawReport = Array.isArray(params.report) ? params.report[0] : params.report;
+  const freeAsked = rawReport === "national" || rawReport === "district";
   const rawType = Array.isArray(params.type) ? params.type[0] : params.type;
   const rawRange = Array.isArray(params.range) ? params.range[0] : params.range;
 
@@ -174,7 +179,8 @@ export default async function ReportsPage({ searchParams }: PageProps) {
             Know where your fees stand against your market
           </h1>
           <p className="mx-auto mt-4 max-w-[34rem] text-[16px] text-ink-soft sm:text-[18px]">
-            Your published fees next to the competitors you name.
+            Every fee you publish against the competitors you name, each figure sourced to their schedule, with the
+            differences marked for your next fee review.
           </p>
           <div className="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <TrackLink
@@ -204,12 +210,9 @@ export default async function ReportsPage({ searchParams }: PageProps) {
               </li>
             ))}
           </ul>
-          <ReportShowcase />
+          <ReportShowcase sample={sample} preparedOn={new Date()} />
         </div>
       </section>
-
-      {/* 2. The video, in its own section. */}
-      <ReportVideo sample={sample} />
 
       {/* 3. What's inside: the live sample's own fee lines. */}
       {sample && (
@@ -237,8 +240,8 @@ export default async function ReportsPage({ searchParams }: PageProps) {
         </section>
       )}
 
-      {/* 4. The request: how it runs, then the form, in one column. */}
-      <section id="request" aria-labelledby="request-heading" className="scroll-mt-24 mx-auto max-w-page px-4 pt-14 sm:px-6 sm:pt-20">
+      {/* 4. The paid request: how it runs, what the price includes, then the form, in one column. */}
+      <section id={freeAsked ? "institution-request" : "request"} aria-labelledby="request-heading" className="scroll-mt-24 mx-auto max-w-page px-4 pt-14 sm:px-6 sm:pt-20">
         <div className="mx-auto max-w-[36rem]">
           <h2 id="request-heading" className={`${H2} text-center`}>
             Get your fee report
@@ -254,17 +257,42 @@ export default async function ReportsPage({ searchParams }: PageProps) {
               </li>
             ))}
           </ol>
+          <div className="mt-5 rounded-xl border border-border px-4 py-3">
+            <p className="text-[14px] font-semibold text-ink">{REPORT_OFFER.priceLabel} includes</p>
+            <ul className="mt-1.5 space-y-1 text-[13px] text-ink-soft">
+              {REPORT_INCLUDES.map((item) => (
+                <li key={item} className="flex gap-2">
+                  <span aria-hidden="true" className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-brick" />
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </div>
           <div className="mt-5">
             <RequestReportForm
               contactEmail={CONTACT_EMAIL}
               defaultSrc="reports-hub"
               defaultReportType="institution"
+              offer="institution"
             />
           </div>
         </div>
       </section>
 
-      {/* 5. Every state's free report on one map, full width. */}
+      {/* 5. The free reports, apart from the paid request. */}
+      <section id={freeAsked ? "request" : "free-reports"} aria-labelledby="free-heading" className="scroll-mt-24 mx-auto max-w-page px-4 pt-14 sm:px-6 sm:pt-20">
+        <div className="mx-auto max-w-[36rem]">
+          <h2 id="free-heading" className={`${H2} text-center`}>
+            Free national and Fed district reports
+          </h2>
+          <p className="mt-2 text-center text-[14px] text-ink-muted">The headline fees for the U.S. or one Fed district, sent at once.</p>
+          <div className="mt-5">
+            <RequestReportForm contactEmail={CONTACT_EMAIL} defaultSrc="reports-hub-free" defaultReportType="national" offer="free" idScope="-free" />
+          </div>
+        </div>
+      </section>
+
+      {/* 6. Every state's free report on one map, full width. */}
       <section aria-labelledby="states-heading" className="mx-auto max-w-page px-4 pt-14 sm:px-6 sm:pt-20">
         <div className="mx-auto max-w-[44rem] text-center">
           <h2 id="states-heading" className={H2}>
@@ -294,7 +322,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
         )}
       </section>
 
-      {/* 6. Hamilton, once. */}
+      {/* 7. Hamilton, once. */}
       <section className="mx-auto max-w-page px-4 pt-14 sm:px-6 sm:pt-20">
         <div className="rounded-2xl border border-border bg-surface-0 px-6 py-7 sm:px-8">
           <p className="text-[20px] font-semibold tracking-[-0.02em] text-ink">After the report</p>

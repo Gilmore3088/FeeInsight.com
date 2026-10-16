@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildMarketBranchFootprint } from "@/lib/data-store/branches";
-import { footprintLine } from "./report-body";
+import { footprintLine, notComparableNote } from "./report-body";
 
 const footprint = buildMarketBranchFootprint(
   2025,
@@ -51,5 +51,16 @@ describe("cityLabel and placeLabel", () => {
     expect(cityLabel("Blue Bell")).toBe("Blue Bell");
     expect(placeLabel("READING, PA")).toBe("Reading, PA");
     expect(placeLabel("Ambler, PA")).toBe("Ambler, PA");
+  });
+});
+
+describe("notComparableNote", () => {
+  it("says the fee was not found when enough competitors publish it", () => {
+    expect(notComparableNote({ own: null, peers: { n: 12 } as never })).toBe("Your fee not found");
+  });
+
+  it("keeps the small-group wording for thin lines", () => {
+    expect(notComparableNote({ own: null, peers: { n: 2 } as never })).toBe("Too few local competitors");
+    expect(notComparableNote({ own: { amount: 10 } as never, peers: { n: 3 } as never })).toBe("Too few local competitors");
   });
 });

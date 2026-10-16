@@ -77,6 +77,24 @@ export function ReportHero({
   );
 }
 
+/** The axis end: the next round amount above the largest figure, so the scale reads as dollars. */
+export function niceMax(value: number): number {
+  if (!(value > 0)) return 1;
+  const step = 10 ** Math.floor(Math.log10(value));
+  for (const m of [1, 2, 2.5, 5, 10]) if (m * step >= value) return m * step;
+  return 10 * step;
+}
+
+/**
+ * Plain words for a headline fee whose name alone reads two ways, shown under its name.
+ * The international line is flat dollar fees only: a fee stated as a rate is never pooled
+ * with dollar amounts (src/lib/percent-fees.ts).
+ */
+export const FEE_NOTES: Record<string, string> = {
+  minimum_balance: "The fee charged when an account falls below its required balance, not the balance itself.",
+  card_foreign_txn: "Flat dollar fees for card or ATM use abroad. Percentage fees, like 1% of a purchase, are counted apart.",
+};
+
 function pct(value: number, scaleMax: number): number {
   return Math.max(0, Math.min(100, (value / scaleMax) * 100));
 }
@@ -99,7 +117,7 @@ function RangeTrack({
   const band = tone === "area" ? "bg-brick/25" : "bg-ink/12";
   const tick = tone === "area" ? "bg-brick" : "bg-ink/70";
   return (
-    <div className="grid grid-cols-[34px_minmax(0,1fr)_56px] items-center gap-2">
+    <div className="grid grid-cols-[34px_minmax(0,1fr)_56px] items-center gap-x-2 gap-y-1">
       <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-muted">{label}</span>
       <div className="relative h-2.5 rounded-full bg-surface-200" aria-hidden="true">
         {p25 != null && p75 != null && (
@@ -111,17 +129,23 @@ function RangeTrack({
         <div className={`absolute -top-1 h-[18px] w-1 -translate-x-1/2 rounded-full ${tick}`} style={{ left: `${pct(median, scaleMax)}%` }} />
       </div>
       <span className="text-right text-[12px] font-semibold tabular-nums text-ink">{formatAmount(median)}</span>
+      {p25 != null && p75 != null && (
+        <span className="col-start-2 text-[11px] tabular-nums text-ink-muted">
+          Middle half {formatAmount(p25)} to {formatAmount(p75)}
+        </span>
+      )}
     </div>
   );
 }
 
 function BenchmarkCard({ row, areaLabel }: { row: StateComparison; areaLabel: string }) {
   const values = [row.median_amount, row.p75_amount ?? 0, row.national_median ?? 0, row.national_p75 ?? 0];
-  const scaleMax = Math.max(...values) * 1.35 || 1;
+  const scaleMax = niceMax(Math.max(...values) * 1.1);
   const delta = row.delta_pct;
   return (
     <div className="flex flex-col rounded-2xl border border-border bg-white p-5 print:break-inside-avoid">
       <p className="text-[12px] font-semibold text-ink-soft">{getDisplayName(row.fee_category)}</p>
+      {FEE_NOTES[row.fee_category] && <p className="mt-0.5 text-[11px] leading-snug text-ink-muted">{FEE_NOTES[row.fee_category]}</p>}
       <p className="mt-2 flex items-baseline gap-2">
         <span className="text-[2.25rem] font-semibold leading-none tabular-nums text-ink" style={MONO_FIGURE}>
           {formatAmount(row.median_amount)}
@@ -141,6 +165,15 @@ function BenchmarkCard({ row, areaLabel }: { row: StateComparison; areaLabel: st
         {row.national_median != null && (
           <RangeTrack label="US" median={row.national_median} p25={row.national_p25} p75={row.national_p75} scaleMax={scaleMax} tone="national" />
         )}
+        {/* The scale, so the band's ends can be read against it. */}
+        <div className="grid grid-cols-[34px_minmax(0,1fr)_56px] gap-2 text-[10px] tabular-nums text-ink-muted" aria-hidden="true">
+          <span />
+          <span className="flex justify-between border-t border-border pt-1">
+            <span>$0</span>
+            <span>{formatAmount(scaleMax / 2)}</span>
+            <span>{formatAmount(scaleMax)}</span>
+          </span>
+        </div>
       </div>
       <p className="mt-auto pt-4 text-[11px] text-ink-muted">
         <span className="font-semibold tabular-nums text-ink">{row.institution_count.toLocaleString()}</span> institutions
@@ -172,7 +205,9 @@ export function BenchmarkBoard({
   return (
     <section id="benchmarks" className="scroll-mt-28">
       <SectionHeading eyebrow="Exhibit 1 · Headline fees" title={`What institutions in ${place} charge`}>
-        The tick is the median; the shaded band is where the middle half of institutions land.
+        The tick is the median; the shaded band runs from the 25th to the 75th percentile, where the middle half of
+        institutions land, on the dollar scale under each card. Each fee counts only the institutions whose published
+        schedule we hold for it, so every card rests on its own set.
         {comparing && " The top bar is the district, the bottom bar is the whole country."}
       </SectionHeading>
       <div className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -201,7 +236,7 @@ const POSITION_WORDS = { above_market: "above", in_market: "inside", below_marke
 
 /**
  * The paid next step, shown for real: one live institution's report lines against its own
- * local market, then the video slot for the clip of Hamilton building it, in its own section.
+ * local market.
  */
 export function InstitutionView({ teaser, asOf }: { teaser: InstitutionTeaser | null; asOf: string | null }) {
   return (
@@ -280,42 +315,6 @@ export function InstitutionView({ teaser, asOf }: { teaser: InstitutionTeaser | 
         </section>
       )}
 
-      <section aria-labelledby="video-heading" className="print:hidden">
-        <figure className="mx-auto w-full max-w-3xl">
-          <figcaption className="mb-3 flex items-baseline justify-between gap-4">
-            <h2 id="video-heading" className="text-[18px] font-semibold tracking-[-0.02em] text-ink sm:text-[20px]">
-              Watch Hamilton build a report for one bank
-            </h2>
-            <span className="shrink-0 text-[13px] text-ink-muted">Video coming</span>
-          </figcaption>
-          <div className="relative aspect-video overflow-hidden rounded-2xl bg-warm-ink-900 shadow-fi-2 ring-1 ring-ink/10" aria-hidden="true">
-            {teaser && (
-              <div className="absolute inset-x-[10%] inset-y-[18%] flex flex-col justify-between opacity-40">
-                {teaser.lines.map((l) => {
-                  const x = teaserScale(l);
-                  return (
-                    <span key={l.key} className="relative block h-2">
-                      <span className="absolute inset-x-0 top-1/2 border-t border-white/20" />
-                      <span
-                        className="absolute inset-y-0 rounded-full bg-[#e0716a]/60"
-                        style={{ left: `${x(l.p25)}%`, width: `${Math.max(x(l.p75) - x(l.p25), 1)}%` }}
-                      />
-                      <span className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white" style={{ left: `${x(l.own)}%` }} />
-                    </span>
-                  );
-                })}
-              </div>
-            )}
-            <span className="absolute inset-0 flex items-center justify-center">
-              <span className="flex h-16 w-16 items-center justify-center rounded-full bg-white shadow-fi-2">
-                <svg viewBox="0 0 12 12" className="ml-1 h-6 w-6 text-ink">
-                  <path d="M3 1.5v9l7.5-4.5z" fill="currentColor" />
-                </svg>
-              </span>
-            </span>
-          </div>
-        </figure>
-      </section>
     </>
   );
 }
@@ -367,7 +366,9 @@ export function ReportMethodology({ area, district = false }: { area: string; di
         <p>
           <span className="block font-semibold text-ink">Sources.</span>
           Published fee schedules from FDIC-insured banks and NCUA-insured credit unions in {area}. Every fee is read from
-          the institution&apos;s own document and verified before it is published.
+          the institution&apos;s own document. A fee is published only after a line of that document is found that names
+          the fee, states the amount as the fee itself (not a limit or a balance), and matches the fee type it is filed
+          under.
           {district && " Institutions are placed in a Fed district by their headquarters state."}
         </p>
         <p>

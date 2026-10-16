@@ -61,3 +61,25 @@ describe("RequestReportForm report type", () => {
     query = "";
   });
 });
+
+describe("RequestReportForm offers", () => {
+  it("shows only the paid institution report when offer is institution", () => {
+    suspend = false;
+    query = "";
+    const html = renderToString(<RequestReportForm contactEmail="hello@example.com" offer="institution" />);
+    expect(html).not.toContain("Which report?");
+    expect(html).toContain("Request your institution report");
+  });
+
+  it("offers national and district reports when offer is free, with its own ids", () => {
+    suspend = false;
+    query = "";
+    const free = renderToString(<RequestReportForm contactEmail="hello@example.com" offer="free" idScope="-free" />);
+    const paid = renderToString(<RequestReportForm contactEmail="hello@example.com" offer="institution" />);
+    expect(free).toContain("Which report?");
+    expect(free).toContain("National");
+    expect(free).toContain("Fed district");
+    const ids = [...reportIds(free), ...reportIds(paid)];
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+});

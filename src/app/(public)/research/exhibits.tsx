@@ -6,6 +6,8 @@ import type { Finding } from "./findings";
 import { SectionHeading } from "./research-hero";
 
 /** Half-width of the shared % axis in the bank vs credit union chart. */
+/** Widest the scale goes; past it, a gap sits at the edge with an arrow. */
+const MAX_AXIS_PCT = 100;
 const AXIS_PCT = 40;
 
 const MONO_FIGURE = { fontFamily: "var(--fi-font-mono)" } as const;
@@ -68,12 +70,16 @@ export function CharterExhibit({
   const rows = benchmarks.filter((b) => b.bank_median_amount != null && b.cu_median_amount != null);
   if (rows.length === 0) return null;
   const cuCheaper = rows.filter((b) => b.cu_median_amount! < b.bank_median_amount!).length;
+  const gaps = rows.map((b) => (b.bank_median_amount! > 0 ? ((b.cu_median_amount! - b.bank_median_amount!) / b.bank_median_amount!) * 100 : 0));
+  // The scale covers every gap up to MAX_AXIS_PCT; a gap past that is drawn at the edge with an arrow.
+  const axis = Math.min(MAX_AXIS_PCT, Math.max(AXIS_PCT, Math.ceil(Math.max(...gaps.map(Math.abs)) / 20) * 20));
+  const overflow = gaps.some((g) => Math.abs(g) > axis);
 
   return (
     <section id="charters" className="scroll-mt-28 print:break-inside-avoid">
       <SectionHeading
         eyebrow={eyebrow}
-        title={`${place ? `${place} credit` : "Credit"} unions are lower on ${cuCheaper} of ${rows.length} ${place ? "fees" : "everyday fees"}`}
+        title={`${place ? `${place} credit` : "Credit"} union medians are lower on ${cuCheaper} of ${rows.length} fees`}
       >
         Median price at banks and at credit unions for each fee{place ? ` in ${place}` : ""}. The gap between the dots is
         the difference between the two medians.
@@ -91,7 +97,8 @@ export function CharterExhibit({
             const pct = bank > 0 ? ((cu - bank) / bank) * 100 : 0;
             const rounded = Math.round(pct);
             // Shared axis: bank median at the center, credit union dot at its % difference.
-            const pos = 50 + (Math.max(-AXIS_PCT, Math.min(AXIS_PCT, pct)) / AXIS_PCT) * 50;
+            const pos = 50 + (Math.max(-axis, Math.min(axis, pct)) / axis) * 50;
+            const past = Math.abs(pct) > axis;
             return (
               <li key={b.fee_category} className="grid items-center gap-x-6 gap-y-2 sm:grid-cols-[200px_minmax(0,1fr)_170px]">
                 <span className="text-[13px] font-semibold text-ink">{getDisplayName(b.fee_category)}</span>
@@ -104,6 +111,11 @@ export function CharterExhibit({
                   />
                   <div className="absolute left-1/2 top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-ink shadow" />
                   <div className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-below-market shadow" style={{ left: `${pos}%` }} />
+                  {past && (
+                    <span className={`absolute top-1/2 -translate-y-1/2 text-[12px] font-bold text-ink-muted ${pct > 0 ? "right-0 translate-x-3" : "left-0 -translate-x-3"}`}>
+                      {pct > 0 ? "›" : "‹"}
+                    </span>
+                  )}
                 </div>
                 <span className="whitespace-nowrap text-[12px] tabular-nums text-ink-soft sm:text-right">
                   {formatAmount(bank)} vs {formatAmount(cu)}{" "}
@@ -118,12 +130,13 @@ export function CharterExhibit({
         <div className="mt-3 grid text-[10px] uppercase tracking-wider text-ink-muted sm:grid-cols-[200px_minmax(0,1fr)_170px] sm:gap-x-6">
           <span />
           <span className="flex justify-between">
-            <span>&larr; CUs lower (&minus;{AXIS_PCT}%)</span>
+            <span>&larr; CUs lower (&minus;{axis}%)</span>
             <span>bank median</span>
-            <span>CUs higher (+{AXIS_PCT}%) &rarr;</span>
+            <span>CUs higher (+{axis}%) &rarr;</span>
           </span>
         </div>
-        <p className="mt-4 text-[11px] text-ink-muted">Percent is the credit union median relative to the bank median. Gaps beyond {AXIS_PCT}% are pinned to the edge.</p>
+        <p className="mt-4 text-[11px] text-ink-muted">Percent is the credit union median relative to the bank median, not the total a customer pays.
+          {overflow ? ` Gaps beyond ${axis}% sit at the edge with an arrow; the percent beside them is exact.` : ""}</p>
       </div>
       <ExhibitSource asOf={asOf}>One value per institution; a charter is shown only where it has enough institutions for a median.</ExhibitSource>
     </section>

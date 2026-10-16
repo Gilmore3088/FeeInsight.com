@@ -72,6 +72,14 @@ interface RequestReportFormProps {
   title?: string;
   /** Lead `src` when the URL carries none, so each page's requests are attributable. */
   defaultSrc?: string;
+  /**
+   * Which reports this form offers: the paid institution report alone, the free national and
+   * district reports alone, or (unset) all three. /reports keeps the paid request apart from
+   * the free ones, so a buyer is never asked to reconsider the product mid-request.
+   */
+  offer?: "institution" | "free";
+  /** Added to every field id, so two forms on one page keep their ids unique. */
+  idScope?: string;
 }
 
 interface Prefill {
@@ -134,17 +142,22 @@ function RequestReportFormInner({
   defaultSrc = DEFAULT_SRC,
   defaultReportType = "national",
   title,
+  offer,
+  idScope = "",
   prefill,
   idSuffix = "",
 }: RequestReportFormProps & { prefill: Prefill | null; idSuffix?: string }) {
-  const fieldId = (base: string) => base + idSuffix;
+  const fieldId = (base: string) => base + idScope + idSuffix;
+  const choices = REPORT_TYPES.filter((o) => (offer === "institution" ? o.paid : offer === "free" ? !o.paid : true));
+  const firstType = prefill?.reportType ?? defaultReportType;
+  const startType = choices.some((o) => o.value === firstType) ? firstType : choices[0].value;
   const [status, setStatus] = useState<Status>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<ConfirmationStatus>("unknown");
   const [institutionLocked, setInstitutionLocked] = useState(
     Boolean(prefill?.institutionName),
   );
-  const [reportType, setReportType] = useState<ReportType>(prefill?.reportType ?? defaultReportType);
+  const [reportType, setReportType] = useState<ReportType>(startType);
   const [freeReport, setFreeReport] = useState<BenchmarkScope | null>(null);
   const [pickedInstitution, setPickedInstitution] = useState<PickedInstitution | null>(null);
   const [reportState, setReportState] = useState("");
@@ -272,11 +285,12 @@ function RequestReportFormInner({
         </div>
       )}
 
+      {choices.length > 1 && (
       <fieldset aria-describedby={fieldId("report-type-detail")}>
         <legend className={LABEL_CLASS}>Which report?</legend>
         {/* One row of equal choices; the price sits on each, so none reads as switched off. */}
-        <div className="grid grid-cols-3 gap-1 rounded-xl bg-paper p-1 ring-1 ring-border">
-          {REPORT_TYPES.map((option) => {
+        <div className={`grid ${choices.length === 3 ? "grid-cols-3" : "grid-cols-2"} gap-1 rounded-xl bg-paper p-1 ring-1 ring-border`}>
+          {choices.map((option) => {
             const on = reportType === option.value;
             return (
               <label
@@ -310,6 +324,7 @@ function RequestReportFormInner({
           .
         </p>
       </fieldset>
+      )}
 
       {reportType === "district" && (
         <div>

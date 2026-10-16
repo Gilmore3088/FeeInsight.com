@@ -22,6 +22,7 @@ import { AtAGlance, SinceBought } from "./[token]/at-a-glance";
 import { HamiltonClose } from "./[token]/hamilton-close";
 import type { CheckingLineupView } from "@/lib/custom-report/checking-lineup";
 import { CheckingLineupSection } from "./checking-lineup-section";
+import { NamedCompetitorsPhone } from "./named-competitors-phone";
 
 const SERIF = { fontFamily: "var(--fi-font-sans)" };
 const MONO_FIGURE = { fontFamily: "var(--fi-font-mono)" } as const;
@@ -33,26 +34,44 @@ export function money(value: number | null | undefined): string {
 }
 
 export const POSITION_LABEL: Record<LinePosition, string> = {
-  above_market: "Above local range",
-  in_market: "Inside local range",
-  below_market: "Below local range",
+  above_market: "Above the local middle half",
+  in_market: "Inside the local middle half",
+  below_market: "Below the local middle half",
+  free: "Free",
+};
+
+const POSITION_SHORT: Record<LinePosition, string> = {
+  above_market: "Above",
+  in_market: "Inside",
+  below_market: "Below",
   free: "Free",
 };
 
 const POSITION_CLASS: Record<LinePosition, string> = {
   above_market: "bg-[#FBE9E4] text-brick",
-  in_market: "bg-[#EEF3EC] text-[#3D6B3A]",
-  below_market: "bg-[#E8EEF6] text-[#2F5585]",
-  free: "bg-[#E8EEF6] text-[#2F5585]",
+  in_market: "bg-surface-200 text-ink",
+  below_market: "bg-[#EAF0EC] text-below-market",
+  free: "bg-[#EAF0EC] text-below-market",
 };
 
 function PositionChip({ line }: { line: ReportLine }) {
   if (!line.position) return <span className="text-[12px] text-ink-muted">—</span>;
   return (
     <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${POSITION_CLASS[line.position]}`}>
-      {POSITION_LABEL[line.position]}
+      {/* Phones show the short word; the legend above the table says what it is the middle half of. */}
+      <span className="sm:hidden print:hidden">{POSITION_SHORT[line.position]}</span>
+      <span className="hidden sm:inline print:inline">{POSITION_LABEL[line.position]}</span>
     </span>
   );
+}
+
+/**
+ * Why a line has no position: the institution's own fee is missing from its schedule, or too few
+ * local competitors publish the line to compare it.
+ */
+export function notComparableNote(line: Pick<ReportLine, "own" | "peers">): string {
+  if (!line.own && (line.peers?.n ?? 0) >= MIN_LOCAL_PEERS_PER_LINE) return "Your fee not found";
+  return "Too few local competitors";
 }
 
 const DOT_CLASS: Record<LinePosition, string> = {
@@ -240,7 +259,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
           )}
           <AtAGlance lines={analysis.lines} />
           {sinceBought && <SinceBought savedAt={sinceBought.savedAt} changes={sinceBought.changes} />}
-          <section className="mt-8 rounded-xl border border-border bg-surface-0 p-6" aria-labelledby="findings-heading">
+          <section className="mt-8 rounded-xl border border-border bg-surface-0 p-4 sm:p-6" aria-labelledby="findings-heading">
             <h2 id="findings-heading" className="font-bold text-xl text-ink" style={SERIF}>
               What stands out
             </h2>
@@ -254,7 +273,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
             </ul>
           </section>
 
-          <section className="mt-8 overflow-x-auto rounded-xl border border-border bg-surface-0 p-6" aria-labelledby="lines-heading">
+          <section className="mt-8 rounded-xl border border-border bg-surface-0 p-4 sm:overflow-x-auto sm:p-6" aria-labelledby="lines-heading">
             <h2 id="lines-heading" className="font-bold text-xl text-ink" style={SERIF}>
               Your fees against local competitors
             </h2>
@@ -278,16 +297,17 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                 <span className="h-2.5 w-2.5 rounded-full bg-below-market" /> Below
               </span>
             </p>
-            <table className="mt-4 w-full min-w-[760px] text-left text-sm print:min-w-0">
+            {/* Phones get the four columns that fit; every figure is also in the named competitors and method below. */}
+            <table className="mt-4 w-full text-left text-sm sm:min-w-[760px] print:min-w-0">
               <thead className="border-b border-border text-[11px] uppercase tracking-[0.08em] text-ink-muted">
                 <tr>
                   <th className="py-2 pr-3 font-semibold">Fee</th>
                   <th className="py-2 pr-3 text-right font-semibold">Yours</th>
-                  <td className="w-[22%] py-2 pr-4 print:hidden" aria-hidden="true" />
+                  <td className="hidden w-[22%] py-2 pr-4 sm:table-cell print:hidden" aria-hidden="true" />
                   <th className="py-2 pr-3 text-right font-semibold">Local median</th>
-                  <th className="py-2 pr-3 text-right font-semibold">Middle half</th>
-                  <th className="py-2 pr-3 text-right font-semibold">Competitors</th>
-                  <th className="py-2 pr-3 text-right font-semibold">Charging less</th>
+                  <th className="hidden py-2 pr-3 text-right font-semibold sm:table-cell print:table-cell">Middle half</th>
+                  <th className="hidden py-2 pr-3 text-right font-semibold sm:table-cell print:table-cell">Competitors</th>
+                  <th className="hidden py-2 pr-3 text-right font-semibold sm:table-cell print:table-cell">Charging less</th>
                   <th className="py-2 font-semibold">Position</th>
                 </tr>
               </thead>
@@ -303,19 +323,19 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                         </span>
                       )}
                     </td>
-                    <td className="py-2 pr-4 print:hidden" aria-hidden="true">
+                    <td className="hidden py-2 pr-4 sm:table-cell print:hidden" aria-hidden="true">
                       <LineRange line={line} />
                     </td>
                     <td className="py-2 pr-3 text-right tabular-nums">{line.comparable ? money(line.peers?.median) : "—"}</td>
-                    <td className="py-2 pr-3 text-right tabular-nums">
+                    <td className="hidden py-2 pr-3 text-right tabular-nums sm:table-cell print:table-cell">
                       {line.comparable && line.peers ? `${money(line.peers.p25)}–${money(line.peers.p75)}` : "—"}
                     </td>
-                    <td className="py-2 pr-3 text-right tabular-nums">{line.peers?.n ?? 0}</td>
-                    <td className="py-2 pr-3 text-right tabular-nums">
+                    <td className="hidden py-2 pr-3 text-right tabular-nums sm:table-cell print:table-cell">{line.peers?.n ?? 0}</td>
+                    <td className="hidden py-2 pr-3 text-right tabular-nums sm:table-cell print:table-cell">
                       {line.chargingLess !== null && line.peers ? `${line.chargingLess} of ${line.peers.n}` : "—"}
                     </td>
                     <td className="py-2">
-                      {line.comparable ? <PositionChip line={line} /> : <span className="text-[12px] text-ink-muted">Not enough local data</span>}
+                      {line.comparable ? <PositionChip line={line} /> : <span className="text-[12px] text-ink-muted">{notComparableNote(line)}</span>}
                     </td>
                   </tr>
                 ))}
@@ -328,7 +348,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
           {revenue && <RevenueSection name={name} charterType={data.subject.charter_type} revenue={revenue} />}
 
           {analysis.named.length > 0 && (
-            <section className="mt-8 overflow-x-auto rounded-xl border border-border bg-surface-0 p-6" aria-labelledby="named-heading">
+            <section className="mt-8 rounded-xl border border-border bg-surface-0 p-4 sm:overflow-x-auto sm:p-6" aria-labelledby="named-heading">
               <h2 id="named-heading" className="font-bold text-xl text-ink" style={SERIF}>
                 Named competitors, same lines
               </h2>
@@ -339,7 +359,31 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                 {branches &&
                   ` The market's ${branches.totalBranches.toLocaleString("en-US")} bank branches hold ${depositsLabel(branches.totalDeposits)} in deposits; under each bank are its branches and share of those deposits. Credit unions show branches only, in the market's cities, because NCUA reports no deposits by branch.`}
               </p>
-              <table className="mt-4 w-full min-w-[760px] text-left text-sm">
+              <NamedCompetitorsPhone
+                lines={tableKeys.map((key) => ({ key, label: FEE_LINE_LABELS[key] ?? key }))}
+                subject={{
+                  id: data.subject.institution_id,
+                  name,
+                  detail: footprintLine(branches, data.subject.institution_id),
+                  href: null,
+                  fees: Object.fromEntries(tableKeys.map((key) => [key, key in ownFees ? { amount: ownFees[key], url: null, line: null } : undefined])),
+                }}
+                competitors={analysis.named.map((competitor) => ({
+                  id: competitor.institution_id,
+                  name: competitor.institution_name,
+                  detail: [competitor.city ? cityLabel(competitor.city) : null, footprintLine(branches, competitor.institution_id)].filter(Boolean).join(" · ") || null,
+                  href: `/institution/${competitor.institution_id}`,
+                  fees: Object.fromEntries(
+                    tableKeys.map((key) => [
+                      key,
+                      competitor.fees[key] === undefined
+                        ? undefined
+                        : { amount: competitor.fees[key], url: competitor.sources[key]?.source_url ?? null, line: competitor.sources[key]?.source_line ?? null },
+                    ]),
+                  ),
+                }))}
+              />
+              <table className="mt-4 hidden w-full min-w-[760px] text-left text-sm sm:table print:table">
                 <thead className="border-b border-border text-[11px] uppercase tracking-[0.08em] text-ink-muted">
                   <tr>
                     <th className="min-w-[240px] py-2 pr-3 font-semibold">Institution</th>
@@ -402,7 +446,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
             </section>
           )}
 
-          <section className="mt-8 rounded-xl border border-border bg-surface-0 p-6 text-[13px] leading-relaxed text-ink-soft" aria-labelledby="method-heading">
+          <section className="mt-8 rounded-xl border border-border bg-surface-0 p-4 text-[13px] sm:p-6 leading-relaxed text-ink-soft" aria-labelledby="method-heading">
             <h2 id="method-heading" className="font-bold text-lg text-ink" style={SERIF}>
               Sources and method
             </h2>
@@ -454,18 +498,18 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                 Every competitor figure behind the local numbers, with its source
               </summary>
               {comparable.map((line) => (
-                <div key={line.key} className="mt-4 overflow-x-auto">
+                <div key={line.key} className="mt-4">
                   <h3 className="text-[13px] font-semibold text-ink">
                     {line.label} ({line.peerFigures.length} competitors)
                   </h3>
-                  <table className="mt-1 w-full min-w-[640px] text-left text-[12px]">
-                    <tbody>
+                  {/* One stacked row per figure, so the schedule's words wrap instead of scrolling sideways. */}
+                  <ul className="mt-1 text-[12px]">
                       {line.peerFigures.map((figure) => (
-                        <tr key={figure.institution_id} className="border-b border-surface-200 last:border-0 align-top">
-                          <td className="py-1 pr-3 text-ink">{competitorName.get(figure.institution_id) ?? `Institution ${figure.institution_id}`}</td>
-                          <td className="py-1 pr-3 text-right tabular-nums text-ink">{money(figure.amount)}</td>
-                          <td className="py-1 pr-3">“{figure.source_line}”</td>
-                          <td className="whitespace-nowrap py-1">
+                        <li key={figure.institution_id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 border-b border-surface-200 py-1 last:border-0 sm:grid-cols-[minmax(0,14rem)_4rem_minmax(0,1fr)_auto]">
+                          <span className="text-ink">{competitorName.get(figure.institution_id) ?? `Institution ${figure.institution_id}`}</span>
+                          <span className="text-right tabular-nums text-ink">{money(figure.amount)}</span>
+                          <span className="col-span-2 sm:col-span-1">“{figure.source_line}”</span>
+                          <span className="col-span-2 sm:col-span-1 sm:whitespace-nowrap">
                             {figure.source_url ? (
                               <a href={figure.source_url} className="underline" rel="noopener noreferrer" target="_blank">
                                 source
@@ -474,11 +518,10 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                               "stored copy"
                             )}
                             {figure.schedule_read_on ? `, read ${figure.schedule_read_on}` : ""}
-                          </td>
-                        </tr>
+                          </span>
+                        </li>
                       ))}
-                    </tbody>
-                  </table>
+                  </ul>
                 </div>
               ))}
             </details>

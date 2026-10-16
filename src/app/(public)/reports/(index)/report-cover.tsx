@@ -1,97 +1,84 @@
-import Image from "next/image";
-import { REPORT_SHOWCASE } from "@/lib/report-showcase";
 import { lineScale, type SampleExhibit } from "./report-view";
 
+const PREPARED = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
+
+const PAGE = "aspect-[17/22] overflow-hidden rounded-[3px] bg-white text-left shadow-[0_18px_48px_-18px_rgba(26,24,21,0.45)] ring-1 ring-border";
+
+const DOT = { above_market: "bg-brick", in_market: "bg-ink", below_market: "bg-[#2f6b4f]", free: "bg-[#2f6b4f]" } as const;
+
 /**
- * The report as delivered, its pages fanned under the hero. The pictures come from
- * `REPORT_SHOWCASE` (src/lib/report-showcase.ts), the one place to update when the report changes.
+ * The report as delivered, drawn from the live sample itself: the same institution, competitor
+ * count, date and fee lines a reader finds in the full sample, so the picture and the sample
+ * never tell two stories. Phones show the cover; wider screens fan the summary and position
+ * pages behind it. Hidden when the sample is offline, so no stale picture stands in for it.
  */
-export function ReportShowcase() {
-  const [cover, second, third] = REPORT_SHOWCASE.pages;
-  const page = "rounded-[3px] bg-white shadow-[0_18px_48px_-18px_rgba(26,24,21,0.45)] ring-1 ring-border";
+export function ReportShowcase({ sample, preparedOn }: { sample: SampleExhibit | null; preparedOn: Date }) {
+  if (!sample) return null;
+  const lines = sample.lines.slice(0, 7);
   return (
-    <div className="relative mx-auto mt-10 h-[15rem] w-full max-w-[44rem] sm:mt-12 sm:h-[25rem]">
-      <span aria-hidden="true" className="absolute inset-x-[8%] bottom-0 top-[18%] rounded-[2rem] bg-brick-tint/60" />
-      {second && (
-        <Image
-          src={second.src}
-          alt={second.alt}
-          width={REPORT_SHOWCASE.width}
-          height={REPORT_SHOWCASE.height}
-          sizes="(min-width: 640px) 260px, 40vw"
-          className={`absolute left-[2%] top-[14%] w-[38%] -rotate-[5deg] sm:left-[6%] sm:w-[34%] ${page}`}
-        />
-      )}
-      {third && (
-        <Image
-          src={third.src}
-          alt={third.alt}
-          width={REPORT_SHOWCASE.width}
-          height={REPORT_SHOWCASE.height}
-          sizes="(min-width: 640px) 260px, 40vw"
-          className={`absolute right-[2%] top-[14%] w-[38%] rotate-[5deg] sm:right-[6%] sm:w-[34%] ${page}`}
-        />
-      )}
-      {cover && (
-        <Image
-          src={cover.src}
-          alt={cover.alt}
-          width={REPORT_SHOWCASE.width}
-          height={REPORT_SHOWCASE.height}
-          sizes="(min-width: 640px) 300px, 46vw"
-          priority
-          className={`absolute left-1/2 top-0 w-[46%] -translate-x-1/2 sm:w-[40%] ${page}`}
-        />
-      )}
+    <div aria-hidden="true" className="relative mx-auto mt-10 h-[22rem] w-full max-w-[44rem] sm:mt-12 sm:h-[26rem]">
+      <span className="absolute inset-x-[8%] bottom-0 top-[18%] rounded-[2rem] bg-brick-tint/60" />
+      {/* Summary page, left. */}
+      <div className={`absolute left-[6%] top-[14%] hidden w-[34%] -rotate-[5deg] p-4 sm:block ${PAGE}`}>
+        <p className="text-[8px] font-bold uppercase tracking-[0.14em] text-brick">What stands out</p>
+        <ul className="mt-2 space-y-2">
+          {sample.findings.map((f) => (
+            <li key={f} className="flex gap-1.5 text-[9px] leading-[1.35] text-ink">
+              <span className="mt-[3px] h-1.5 w-1.5 shrink-0 rounded-full bg-brick" />
+              <span className="line-clamp-4">{f}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+      {/* Position page, right. */}
+      <div className={`absolute right-[6%] top-[14%] hidden w-[34%] rotate-[5deg] p-4 sm:block ${PAGE}`}>
+        <p className="text-[8px] font-bold uppercase tracking-[0.14em] text-brick">Against local competitors</p>
+        <ul className="mt-2 space-y-2.5">
+          {lines.map((l) => {
+            const x = lineScale(l);
+            return (
+              <li key={l.key}>
+                <span className="flex justify-between text-[8px] leading-none text-ink">
+                  <span className="truncate pr-1">{l.label}</span>
+                  <span className="font-mono tabular-nums">{money(l.own)}</span>
+                </span>
+                <span className="relative mt-1 block h-2">
+                  <span className="absolute inset-x-0 top-1/2 border-t border-border" />
+                  <span className="absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-brick-tint" style={{ left: `${x(l.p25)}%`, width: `${Math.max(x(l.p75) - x(l.p25), 1)}%` }} />
+                  <span className={`absolute top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full ${DOT[l.position]}`} style={{ left: `${x(l.own)}%` }} />
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+      {/* Cover, in front. */}
+      <div className={`absolute left-1/2 top-0 w-[62%] -translate-x-1/2 p-5 sm:w-[40%] ${PAGE}`}>
+        <p className="text-[8px] font-bold uppercase tracking-[0.14em] text-brick">Competitive Fee Position Report</p>
+        <p className="mt-3 text-[17px] font-semibold leading-[1.15] tracking-[-0.02em] text-ink sm:text-[18px]">
+          {sample.name} against its local market
+        </p>
+        <p className="mt-2 text-[10px] leading-snug text-ink-muted">
+          {sample.place ? `${sample.place} area · ` : ""}verified fees for {sample.competitorsWithData} of {sample.competitorsInMarket} local competitors
+        </p>
+        <p className="mt-1 text-[10px] text-ink-muted">Prepared {PREPARED.format(preparedOn)}</p>
+        <ul className="mt-4 space-y-2">
+          {lines.slice(0, 4).map((l) => {
+            const x = lineScale(l);
+            return (
+              <li key={l.key} className="relative block h-2">
+                <span className="absolute inset-x-0 top-1/2 border-t border-border" />
+                <span className="absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-brick-tint" style={{ left: `${x(l.p25)}%`, width: `${Math.max(x(l.p75) - x(l.p25), 1)}%` }} />
+                <span className={`absolute top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full ${DOT[l.position]}`} style={{ left: `${x(l.own)}%` }} />
+              </li>
+            );
+          })}
+        </ul>
+      </div>
     </div>
   );
 }
 
-/**
- * The video, in its own section under the hero. Until the clip exists the poster draws the
- * sample's own fee lines, so the slot shows the product.
- */
-export function ReportVideo({ sample }: { sample: SampleExhibit | null }) {
-  const lines = sample?.lines.slice(0, 6) ?? [];
-  return (
-    <section aria-labelledby="video-heading" className="mx-auto max-w-page px-4 pt-12 sm:px-6 sm:pt-16 print:hidden">
-      <figure className="mx-auto max-w-3xl">
-        <figcaption className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <h2 id="video-heading" className="text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-[24px]">
-            Watch a report come together
-          </h2>
-          <span className="text-[13px] text-ink-muted">Video coming</span>
-        </figcaption>
-        <div className="relative aspect-video overflow-hidden rounded-2xl bg-warm-ink-900 shadow-fi-2 ring-1 ring-ink/10" aria-hidden="true">
-          {lines.length > 0 && (
-            <div className="absolute inset-x-[10%] inset-y-[16%] flex flex-col justify-between opacity-40">
-              {lines.map((l) => {
-                const x = lineScale(l);
-                return (
-                  <span key={l.key} className="relative block h-3">
-                    <span className="absolute inset-x-0 top-1/2 border-t border-white/30" />
-                    <span
-                      className="absolute top-1/2 h-2.5 -translate-y-1/2 rounded-full bg-[#e0716a]/60"
-                      style={{ left: `${x(l.p25)}%`, width: `${Math.max(x(l.p75) - x(l.p25), 1)}%` }}
-                    />
-                    <span
-                      className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white"
-                      style={{ left: `${x(l.own)}%` }}
-                    />
-                  </span>
-                );
-              })}
-            </div>
-          )}
-          <span className="absolute inset-0 flex items-center justify-center">
-            <span className="flex h-16 w-16 items-center justify-center rounded-full bg-white shadow-fi-2 sm:h-20 sm:w-20">
-              <svg viewBox="0 0 12 12" className="ml-1 h-6 w-6 text-ink sm:h-7 sm:w-7">
-                <path d="M3 1.5v9l7.5-4.5z" fill="currentColor" />
-              </svg>
-            </span>
-          </span>
-        </div>
-      </figure>
-    </section>
-  );
+function money(n: number): string {
+  return Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`;
 }

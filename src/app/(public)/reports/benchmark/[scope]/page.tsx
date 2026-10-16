@@ -41,7 +41,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   if (!scope) return { title: "Report not found" };
   return {
     title: benchmarkReportTitle(scope),
-    description: `Median and typical range for the 15 headline bank and credit union fees, from the ${PRODUCT_NAME}.`,
+    description: `Median and typical range for 15 common bank and credit union fees, from the ${PRODUCT_NAME}.`,
     robots: { index: false, follow: true },
   };
 }
@@ -134,7 +134,7 @@ export default async function BenchmarkReportPage({ params }: PageProps) {
         <ReportHero
           eyebrow="Free report · United States"
           title="National fee benchmark"
-          lede="What U.S. banks and credit unions charge for the 15 fees customers notice most. Every number comes from an institution's own published fee schedule."
+          lede="What U.S. banks and credit unions charge for 15 common banking fees, among the institutions whose published schedule we hold. Each fee's median counts only the institutions that publish that fee, so the count sits on every card."
           stats={[
             { value: summary.institutionsLabel, label: "institutions with published fees", note: `of ${summary.monitoredLabel} we monitor` },
             { value: `${rows.length} of 15`, label: "headline fees with a median", note: "each with 20 or more institutions" },
@@ -165,7 +165,7 @@ export default async function BenchmarkReportPage({ params }: PageProps) {
       <ReportHero
         eyebrow={`Free report · Federal Reserve District ${district}`}
         title={`${name} district fee benchmark`}
-        lede={`What banks and credit unions in the ${name} Fed district charge for the 15 fees customers notice most, measured against the national ${PRODUCT_NAME}. Every number comes from an institution's own published fee schedule.`}
+        lede={`What banks and credit unions in the ${name} Fed district charge for 15 common banking fees, measured against the national ${PRODUCT_NAME}. Every number comes from an institution's own published fee schedule.`}
         stats={districtStats(district, stats, rows.length)}
         freshnessLabel={summary.freshnessLabel}
       />
