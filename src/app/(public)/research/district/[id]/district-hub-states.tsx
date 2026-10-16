@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { formatFeeAmount } from "@/lib/format";
+import { OVERSEAS_TERRITORIES } from "@/lib/us-states";
 
 /**
  * The district's states as small multiples: one card per state, each showing the same picked fee
@@ -71,6 +72,12 @@ export function HubStates({ states, shapes, fees, districtName, panels, columns,
 
   const th = "px-3 py-2 text-[10px] font-bold uppercase tracking-[0.08em] text-ink-muted";
   const all = states.length <= 10 ? WORDS[states.length] : String(states.length);
+  // Guam, Puerto Rico and the other territories are not states, so the count would mislabel them.
+  const compareLabel = states.some((s) => OVERSEAS_TERRITORIES.has(s.code))
+    ? "Compare all states and territories"
+    : states.length === 2
+      ? "Compare both states"
+      : `Compare all ${all} states`;
 
   return (
     <div className="space-y-6">
@@ -147,7 +154,7 @@ export function HubStates({ states, shapes, fees, districtName, panels, columns,
             <span aria-hidden="true" className="transition-transform group-open/disc:rotate-90">
               &rsaquo;
             </span>
-            {states.length === 2 ? "Compare both states" : `Compare all ${all} states`}
+            {compareLabel}
           </summary>
           <div className="mt-3 overflow-x-auto">
             <table className="w-full text-left text-[13px] sm:min-w-[560px]">

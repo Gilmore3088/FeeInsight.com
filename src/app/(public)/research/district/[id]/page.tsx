@@ -10,7 +10,7 @@ import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { getStatesForDistrict } from "@/lib/us-map-paths";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessAllCategories, canAccessFullDistrict, canAccessPremium } from "@/lib/access";
-import { STATE_NAMES } from "@/lib/us-states";
+import { OVERSEAS_TERRITORIES, STATE_NAMES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { TrackLink } from "@/components/track-link";
 import { Button, SearchInput } from "@/brand/components";
@@ -59,6 +59,7 @@ import {
   hubFeeKeys,
   hubFeeName,
   monthYear,
+  openingFinding,
   quarterLabel,
   revenueTrend,
   stateHubRows,
@@ -206,6 +207,13 @@ export default async function DistrictReportPage({ params }: PageProps) {
       }
     : null;
   const leaders = branches ? leadersShare(branches) : null;
+  // Deposits are counted by whole state, so the deposit heading names the states, not the district.
+  const depositArea =
+    states.length === 1
+      ? STATE_NAMES[states[0]]
+      : states.some((code) => OVERSEAS_TERRITORIES.has(code))
+        ? "the district's states and territories"
+        : `the district's ${NUMBER_WORDS[states.length] ?? states.length} states`;
 
   const facts = [
     ...(indexes.verified_institutions > 0
@@ -221,9 +229,8 @@ export default async function DistrictReportPage({ params }: PageProps) {
       : []),
     ...(againstUs.length >= 3 ? [{ value: `${insideBand} of ${againstUs.length}`, label: "fee medians sit inside the U.S. middle half" }] : []),
   ];
-  const differs = charter.some((f) => f.bank !== f.cu);
-  const statement =
-    againstUs.length >= 3 && insideBand === againstUs.length && differs ? "National-looking medians. Meaningful differences underneath." : takeaway;
+  // The opening takeaway is the district's sharpest specific gap; the band count sits beside it as context.
+  const statement = openingFinding(againstUs, STATE_FINDING_MIN_INSTITUTIONS) ?? takeaway;
 
   // The state cards: one fee at a time across every state, on one scale.
   const stateFees: HubFeeOption[] = feeKeys
@@ -429,7 +436,7 @@ export default async function DistrictReportPage({ params }: PageProps) {
         {(bankTrend || cuTrend) && (
           <HubSection
             id="income"
-            collapsible
+            collapse="income trends"
             kicker="Fee income"
             title={
               bankTrend?.yoyPct != null
@@ -452,11 +459,11 @@ export default async function DistrictReportPage({ params }: PageProps) {
         {(tiers.length > 0 || branches) && (
           <HubSection
             id="market"
-            collapsible
+            collapse="deposit share"
             kicker="Who serves the district"
             title={
               leaders
-                ? `The ${NUMBER_WORDS[leaders.banks] ?? leaders.banks} largest banks hold ${Math.round(leaders.pct)}% of bank deposits`
+                ? `The ${NUMBER_WORDS[leaders.banks] ?? leaders.banks} largest banks hold ${Math.round(leaders.pct)}% of bank deposits in ${depositArea}`
                 : `${count(institutionsTracked)} banks and credit unions`
             }
             line={
@@ -470,7 +477,7 @@ export default async function DistrictReportPage({ params }: PageProps) {
               <>
                 Institutions tracked by {SITE_NAME}, sized by total assets.
                 {branches &&
-                  ` Bank deposits from the FDIC Summary of Deposits, ${branches.sod_year}, across the district's states; credit union branches from NCUA. Leading banks count banks with ${MIN_LEADER_BRANCHES} or more branches here.`}
+                  ` Bank deposits from the FDIC Summary of Deposits, ${branches.sod_year}, counted for each whole state, even where the district line splits one; credit union branches from NCUA. Leading banks count banks with ${MIN_LEADER_BRANCHES} or more branches here.`}
               </>
             }
           >
@@ -488,7 +495,7 @@ export default async function DistrictReportPage({ params }: PageProps) {
         {(cpi || beigeHeadline || economyRows.length > 0) && (
           <HubSection
             id="economy"
-            collapsible
+            collapse="economic context"
             kicker="Economic context"
             title={
               cpi

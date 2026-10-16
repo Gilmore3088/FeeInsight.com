@@ -6,6 +6,8 @@ import { CPI_BANK_SERVICES_SERIES } from "@/lib/regulatory/fed";
 import { getDisplayName, isFeaturedFee } from "@/lib/fee-taxonomy";
 import { FDIC_TIER_LABELS, FDIC_TIER_ORDER } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
+import { formatFeeAmount } from "@/lib/format";
+import { lowerName } from "@/lib/research-report/finding";
 
 /**
  * Pure shaping for the district hub: every figure the hub draws, computed from the one hub
@@ -266,4 +268,56 @@ export function hubFeeName(key: string): string {
 /** "Jun 2026" from an ISO date. */
 export function monthYear(date: string): string {
   return new Date(`${date.slice(0, 10)}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
+}
+
+/** A district fee against the U.S. median, as the opening finding reads it. */
+export interface OpeningFee {
+  key: string;
+  median: number;
+  institutions: number;
+  us: { median: number } | null;
+}
+
+/** Gaps under this share of the U.S. median read as matching it (the heading's "above" rule). */
+const MATCH_SHARE = 0.01;
+
+function gapOf(f: OpeningFee): number {
+  const gap = f.median - f.us!.median;
+  return Math.abs(gap) < f.us!.median * MATCH_SHARE ? 0 : gap;
+}
+
+function gapWords(gap: number): string {
+  return `${formatFeeAmount(Math.abs(gap))} ${gap > 0 ? "above" : "below"}`;
+}
+
+/**
+ * The district's opening takeaway: its overdraft and NSF medians against the national benchmark,
+ * or, when both match it, the fee with the widest gap. Only fees with at least `minInstitutions`
+ * district institutions count. Null when nothing qualifies.
+ */
+export function openingFinding(fees: OpeningFee[], minInstitutions: number): string | null {
+  const solid = fees.filter((f) => f.us && f.us.median > 0 && f.institutions >= minInstitutions);
+  const od = solid.find((f) => f.key === "overdraft");
+  const nsf = solid.find((f) => f.key === "nsf");
+  if (od && nsf) {
+    const [a, b] = [gapOf(od), gapOf(nsf)];
+    if (a !== 0 && b !== 0 && Math.sign(a) === Math.sign(b)) {
+      const amounts = a === b ? formatFeeAmount(Math.abs(a)) : `${formatFeeAmount(Math.abs(a))} and ${formatFeeAmount(Math.abs(b))}`;
+      return `Overdraft and NSF medians are ${amounts} ${a > 0 ? "above" : "below"} the national benchmark.`;
+    }
+    if (a !== 0 && b !== 0) return `The overdraft median is ${gapWords(a)} the national benchmark and the NSF median ${gapWords(b)} it.`;
+    if (a !== 0) return `The overdraft median is ${gapWords(a)} the national benchmark; NSF matches it.`;
+    if (b !== 0) return `The NSF median is ${gapWords(b)} the national benchmark; overdraft matches it.`;
+  }
+  const widest = [...solid]
+    .filter((f) => gapOf(f) !== 0)
+    .sort((x, y) => Math.abs(gapOf(y)) / y.us!.median - Math.abs(gapOf(x)) / x.us!.median)[0];
+  // Reached with both present only when both match the benchmark.
+  const matched = od && nsf
+    ? `Overdraft and NSF medians match the national benchmark${od.median === nsf.median ? ` at ${formatFeeAmount(od.median)}` : ""}. `
+    : "";
+  if (!widest) return matched ? matched.trim() : null;
+  const short = HUB_FEE_SHORT[widest.key];
+  const name = short ? short[0].toLowerCase() + short.slice(1) : lowerName(widest.key);
+  return `${matched}The ${name} median is ${gapWords(gapOf(widest))} ${matched ? "it" : "the national benchmark"}.`;
 }

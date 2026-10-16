@@ -1454,6 +1454,11 @@ details[open] summary .expand-icon { transform: rotate(180deg); }
   --fi-viz-below: #b23a32;
   --fi-viz-inside: #9aa1a9;
   --fi-viz-bar: #55606f;
+  /* District bank/credit union tiles: which charter has the lower median. Three restrained
+     fills, always named in words beside them. */
+  --fi-charter-cu: #e7c79d;
+  --fi-charter-bank: #c4b6a4;
+  --fi-charter-same: #e4ded3;
 }
 [data-theme="dark"], .dark {
   --fi-viz-none: #22354f;
@@ -1466,6 +1471,9 @@ details[open] summary .expand-icon { transform: rotate(180deg); }
   --fi-viz-below: #d65f57;
   --fi-viz-inside: #6b7a8c;
   --fi-viz-bar: #a9b3c1;
+  --fi-charter-cu: #6b5240;
+  --fi-charter-bank: #4b4640;
+  --fi-charter-same: #2e2c2a;
 }
 
 /* The map: a district outlines in ink when it is hovered, focused or chosen. */

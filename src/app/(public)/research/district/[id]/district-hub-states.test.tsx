@@ -7,12 +7,13 @@ const rows: HubTableRow[] = [
   { code: "MO", name: "Missouri", cells: { institutions: { v: 300, t: "300" }, overdraft: { v: 32, t: "$32" } } },
 ];
 
-function setup() {
+function setup(extra: { code: string; name: string }[] = []) {
   return render(
     <HubStates
       states={[
         { code: "AR", name: "Arkansas" },
         { code: "MO", name: "Missouri" },
+        ...extra,
       ]}
       shapes={{ AR: { d: "M0 0h1v1z", viewBox: "0 0 1 1" } }}
       fees={[
@@ -72,6 +73,11 @@ describe("HubStates", () => {
   it("keeps the full table behind a disclosure named for the state count", () => {
     setup();
     expect(screen.getByText("Compare both states").closest("details")?.open).toBe(false);
+  });
+
+  it("names territories in the disclosure when the list holds one", () => {
+    setup([{ code: "GU", name: "Guam" }]);
+    expect(screen.getByText("Compare all states and territories")).toBeTruthy();
   });
 
   it("hides the columns a phone has no room for", () => {

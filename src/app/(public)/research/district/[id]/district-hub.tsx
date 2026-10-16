@@ -39,7 +39,7 @@ export function HubSection({
   line,
   source,
   children,
-  collapsible = false,
+  collapse,
 }: {
   id: string;
   kicker?: string;
@@ -47,8 +47,8 @@ export function HubSection({
   line?: ReactNode;
   source: ReactNode;
   children: ReactNode;
-  /** Context below the fee findings: closed on phones behind its heading, open on wider screens. */
-  collapsible?: boolean;
+  /** Context below the fee findings: closed on phones behind a "View {collapse}" button, open on wider screens. */
+  collapse?: string;
 }) {
   const head = (
     <div className="max-w-3xl">
@@ -69,8 +69,10 @@ export function HubSection({
   );
   return (
     <section id={id} aria-labelledby={`${id}-heading`} className="scroll-mt-20 space-y-8">
-      {collapsible ? (
-        <PhoneCollapse summary={head}>{body}</PhoneCollapse>
+      {collapse ? (
+        <PhoneCollapse summary={head} label={collapse}>
+          {body}
+        </PhoneCollapse>
       ) : (
         <>
           {head}

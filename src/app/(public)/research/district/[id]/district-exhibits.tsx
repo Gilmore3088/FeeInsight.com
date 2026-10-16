@@ -112,6 +112,9 @@ export function DistrictHero({ district, name, states, facts, statement, freshne
             {name} Fed &middot; District {district}
           </p>
           <h1 className="mt-2 text-[36px] font-semibold leading-[1.05] tracking-[-0.035em] text-ink sm:text-[56px]">Bank fees in {region}</h1>
+          {statement && (
+            <p className="mt-5 text-[21px] font-semibold leading-[1.2] tracking-[-0.02em] text-ink sm:mx-0 sm:text-[28px]">{statement}</p>
+          )}
 
           {facts.length > 0 && (
             <dl className="mt-8 grid grid-cols-2 gap-6 text-left sm:max-w-xl">
@@ -140,11 +143,6 @@ export function DistrictHero({ district, name, states, facts, statement, freshne
           <DistrictMap states={states} />
         </div>
       </div>
-      {statement && (
-        <div className="mx-auto max-w-page border-t border-border px-4 py-10 sm:px-6 sm:py-14">
-          <p className="max-w-4xl text-[28px] font-semibold leading-[1.12] tracking-[-0.03em] text-ink sm:text-[44px]">{statement}</p>
-        </div>
-      )}
     </section>
   );
 }
