@@ -5,6 +5,7 @@ import {
   OPEN_STATES_REQUEST_INTERVAL_MS,
   STATE_BILL_JURISDICTIONS,
   type BillStage,
+  type StateBillCoverage,
 } from "@/lib/regulatory/open-states";
 import { recordRegistryPartition, type RegistryDb } from "./partitions";
 import { flagOn } from "./live-flag";
@@ -67,6 +68,8 @@ export interface RegistryStateBillsResult {
   /** Stored bills that no longer pass the bank fee test and had their topics cleared. */
   untagged: number;
   stages: Record<BillStage, number>;
+  /** "no_source_data" when Open States holds no searchable bill text for the state in the window. */
+  coverage: StateBillCoverage | null;
   shadow: boolean;
   dryRun: boolean;
 }
@@ -110,6 +113,7 @@ export async function runRegistryStateBills(
     stored: 0,
     untagged: 0,
     stages,
+    coverage: null,
     shadow,
     dryRun: Boolean(options.dryRun),
   };
@@ -129,7 +133,7 @@ export async function runRegistryStateBills(
     return result;
   }
 
-  const { items, rejectedIds, rejectedSample, searched, requests, anyDateHits } = await fetchStateFeeBills(
+  const { items, rejectedIds, rejectedSample, searched, requests, anyDateHits, searchableTextHits, coverage } = await fetchStateFeeBills(
     stateCode,
     since,
     apiKey,
@@ -140,6 +144,7 @@ export async function runRegistryStateBills(
   result.searched = searched;
   result.requests = requests;
   result.fetched = items.length;
+  result.coverage = coverage;
   if (options.dryRun) return result;
 
   if (!shadow && items.length > 0) {
@@ -194,9 +199,13 @@ export async function runRegistryStateBills(
       stages,
       searched,
       requests,
-      // Only when nothing matched in the lookback (PR, SD, DE, CT, DC, IN, VA and ME on Oct 8 2026):
-      // 0 points to Open States holding no searchable bill text for the state, not a quiet year.
+      coverage,
+      // Only when nothing matched in the lookback (PR, SD, DE, CT, DC, IN, VA and ME on Oct 8 2026, #1427):
+      // fee search hits at any date, and bills with any searchable text in the lookback. Zero on the
+      // second is recorded as no_source_data: Open States holds no bill text to search there.
       ...(anyDateHits === null ? {} : { any_date_overdraft_hits: anyDateHits }),
+      ...(searchableTextHits === null ? {} : { searchable_text_hits: searchableTextHits }),
+      ...(coverage === "no_source_data" ? { no_source_data: true } : {}),
       shadow,
       tagging_version: STATE_BILLS_TAGGING_VERSION,
       untagged: result.untagged,
@@ -214,6 +223,8 @@ export interface RegistryStateBillsBatchResult {
   missingKey: boolean;
   states: string[];
   failedStates: string[];
+  /** States read this run where Open States holds no searchable bill text in the lookback. */
+  noSourceData: string[];
   /** True when Open States answered 429: the run stopped and the rest stay due. */
   rateLimited: boolean;
   remaining: number;
@@ -258,6 +269,7 @@ export async function runRegistryStateBillsBatch(
     missingKey: !apiKey,
     states: [],
     failedStates: [],
+    noSourceData: [],
     rateLimited: false,
     remaining: 0,
     fetched: 0,
@@ -309,6 +321,7 @@ export async function runRegistryStateBillsBatch(
       result.stored += one.stored;
       result.untagged += one.untagged;
       for (const key of Object.keys(stages) as BillStage[]) stages[key] += one.stages[key];
+      if (one.coverage === "no_source_data") result.noSourceData.push(stateCode);
       batch.push(stateCode);
     } catch (error) {
       // Rate limited: stop here and leave this state due rather than marking it failed for hours.
@@ -357,6 +370,7 @@ export async function runRegistryStateBillsBatch(
     detail: {
       states: batch,
       failed: errors,
+      no_source_data: result.noSourceData,
       rate_limited: result.rateLimited,
       remaining: result.remaining,
       untagged: result.untagged,
