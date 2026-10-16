@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { DARWIN_RECHECK_CHECK, DARWIN_RECHECK_OLDER_LIVE, DARWIN_RECHECK_SECOND_LOOK_LIVE, DARWIN_RECHECK_SAME_STEP_TAKEDOWN, DARWIN_RECHECK_STRATEGY, recheckVerifiedFees } from "./verified-recheck";
+import { DARWIN_RECHECK_CHECK, DARWIN_RECHECK_OLDER_LIVE, DARWIN_RECHECK_SECOND_LOOK_LIVE, DARWIN_RECHECK_SECOND_LOOK_LIVE_CODES, DARWIN_RECHECK_SAME_STEP_TAKEDOWN, DARWIN_RECHECK_STRATEGY, recheckVerifiedFees } from "./verified-recheck";
 
 type DbMock = ReturnType<typeof vi.fn>;
 
@@ -211,9 +211,9 @@ describe("Darwin verified re-check", () => {
       evidence: { flag_run_id: 6715, flagged_at: "2026-10-15T08:35:53Z", reason: "darwin_recheck:tier_perk_zero" },
     }));
 
-    it("off (the default): reports what the second looks would do and writes nothing", async () => {
+    it("off for every code: reports what the second looks would do and writes nothing", async () => {
       const db = dbWith([], [], due, flagged);
-      const result = await recheckVerifiedFees(db as never, { runId: 701 });
+      const result = await recheckVerifiedFees(db as never, { runId: 701, secondLookCodes: [] });
 
       expect(DARWIN_RECHECK_SECOND_LOOK_LIVE).toBe(false);
       expect(result).toMatchObject({ checked: 0, takenDown: [] });
@@ -234,6 +234,44 @@ describe("Darwin verified re-check", () => {
       expect(JSON.stringify(rollback?.slice(1))).not.toContain("142870");
       const feedback = db.mock.calls.filter((call) => templateText(call[0]).includes("INSERT INTO pipeline_feedback"));
       expect(JSON.stringify(feedback.map((call) => call.slice(1)))).toContain("takedown_cleared");
+    });
+
+    it("tier_perk_zero only (the default since 2026-10-16): confirms tier-perk flags, every other code stays in the shadow", async () => {
+      // A tier-perk $0 still failing, a tier-perk flag that now passes, a tier-perk flag that now fails
+      // under another code, and a conditional_zero flag (not switched on).
+      const narrowDue = [
+        { ...due[0], reason: "darwin_recheck:tier_perk_zero" },
+        { ...due[1], reason: "darwin_recheck:tier_perk_zero" },
+        { ...verifiedRow, fee_verified_id: 172161, fee_raw_id: 679669, canonical_fee_key: "bill_pay", verified_amount: "0.00", fee_name: "Bill Pay", amount: "0.00", outlier_flags: [], conditions: "excerpt=\"Bill Pay - FREE\"", fee_published_id: 142871, reason: "darwin_recheck:tier_perk_zero" },
+        { ...verifiedRow, fee_verified_id: 172162, fee_raw_id: 679670, canonical_fee_key: "bill_pay", verified_amount: "0.00", fee_name: "Bill Pay", amount: "0.00", outlier_flags: [], conditions: "excerpt=\"Bill Pay - FREE\"", fee_published_id: 142872, reason: "darwin_recheck:conditional_zero" },
+      ];
+      const firstLooks = [142869, 142870, 142871, 142872].map((id) => ({ ...flagged[0], fee_published_id: id }));
+      const code = (row: Record<string, unknown>) => String(row.reason).split(":")[1];
+      const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+        const text = templateText(strings);
+        if (text.includes("FROM pipeline_feedback f")) {
+          // values: prefix, check, kind, minutes, only, only, except, except, limit.
+          const only = values[4] as string[] | null;
+          const except = values[6] as string[] | null;
+          return Promise.resolve(narrowDue.filter((row) => (only == null || only.includes(code(row))) && (except == null || !except.includes(code(row)))));
+        }
+        if (text.includes("SELECT fee_published_id, kind, evidence")) return Promise.resolve(firstLooks);
+        if (text.includes("FROM agent_source_texts")) return Promise.resolve([{ source_document_id: 55, normalized_text: TEXT }]);
+        if (text.includes("to_regclass")) return Promise.resolve([{ ready: true }]);
+        if (text.includes("UPDATE published_fee_records")) return Promise.resolve([{ fee_published_id: 142869 }]);
+        return Promise.resolve([]);
+      }) as DbMock;
+      const result = await recheckVerifiedFees(db as never, { runId: 703, now: new Date("2026-10-16T01:00:00Z") });
+
+      expect(DARWIN_RECHECK_SECOND_LOOK_LIVE_CODES).toEqual(["tier_perk_zero"]);
+      // The conditional_zero flag is only reported.
+      expect(result.dueSecondLooks).toMatchObject({ due: 1, wouldConfirm: { conditional_zero: 1 }, wouldClear: 0 });
+      expect(result).toMatchObject({ checked: 2, passed: 1, cleared: 1, flagged: 0, waiting: 0, secondLookOtherCode: 1, takenDown: [142869] });
+      const rollback = db.mock.calls.find((call) => templateText(call[0]).includes("UPDATE published_fee_records"));
+      expect(rollback?.slice(1)).toEqual(expect.arrayContaining([[142869], ["darwin_recheck:tier_perk_zero"]]));
+      const written = JSON.stringify(db.mock.calls.filter((call) => /\b(?:UPDATE|INSERT)\b/.test(templateText(call[0]))).map((call) => call.slice(1)));
+      expect(written).not.toContain("142871");
+      expect(written).not.toContain("142872");
     });
   });
 });

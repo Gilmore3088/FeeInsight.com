@@ -161,7 +161,14 @@ Darwin owns verification and classification.
   `darwin.verified_recheck` flag is at least 12 hours old, oldest first, and the shared second look
   archives the ones still failing and clears the rest. Off, step detail `recheck.dueSecondLooks`
   gives `due`, `wouldConfirm` by reason code, `wouldClear` and 20 samples, and nothing is written.
-  It turns on by PR once James approves the count of due flags. `DARWIN_RECHECK_OLDER_LIVE` only
+  It turns on by PR once James approves the count of due flags. It is still off for every code but
+  one: `DARWIN_RECHECK_SECOND_LOOK_LIVE_CODES` (`["tier_perk_zero"]`, James's yes 2026-10-16 03:37
+  UTC; 15 live due flags then, 14 on one large bank's premium-account schedule and 1 "Premier
+  Checking" $0 that v4 now passes) gives only those codes' due first looks their second read. Such
+  a row is archived only when it fails again under a switched-on code, cleared when it passes, and
+  left flagged when it now fails under another code (step detail `recheck.secondLookOtherCode`);
+  `recheck.dueSecondLooks` keeps reporting every other code (conditional_zero, name_rule and the
+  rest). Roll back by emptying the list. `DARWIN_RECHECK_OLDER_LIVE` only
   flags; without this switch its first looks would never be confirmed, so it turns on with or after
   this one.
 - `verify.document_owner` (`document-owner.ts`, version 1, 2026-10-15, #1455) ends every learning
@@ -652,9 +659,10 @@ Darwin owns verification and classification.
   15 min", "per half hour"), `category` (`HOURLY_EXEMPT_KEYS`: monthly maintenance, minimum balance,
   dormant, continuous OD, paper statement, NSF, overdraft, returned item), `period_word` (the name
   also says monthly, annual, daily...) and `stated_period`. "24 hour", "within 48 hours", "after
-  hours" and "1 hour photo" never match. `HOURLY_FREQUENCY_LIVE` is false: the pass only reports
-  (step detail `hourly_frequency_check`: `would_set`, `would_set_by_frequency`, `exempt_by_reason`,
-  samples). Switched on by PR after James has seen the whole-table count, the live row and its
+  hours" and "1 hour photo" never match. `HOURLY_FREQUENCY_LIVE` is on (James's yes 2026-10-16
+  03:37 UTC, on a whole-table count of 830 to set: 825 with no frequency, 4 `per_item`, 1
+  `per_occurrence`; 17 exempt). Off, the pass only reports (step detail `hourly_frequency_check`:
+  `would_set`, `would_set_by_frequency`, `exempt_by_reason`, samples). On, the live row and its
   verified row take `hourly` guarded on the old value, each change is logged to `pipeline_feedback`
   (check `darwin.hourly_frequency_check`, evidence `from`/`to`, so it reverses), and a
   `darwin.hourly_frequency_set` event lists them. Whole-table dry run: a verify run with
@@ -686,10 +694,11 @@ Darwin owns verification and classification.
   (kept on purpose; fee-stats drops them from medians) and always pass. Every verify/classify step
   reads the next `NON_DEPOSIT_BATCH` (2,000) live fees after a cursor on the run ledger (the
   `darwin.non_deposit_document` event's `next_after_id`, 0 at the end of a pass); an
-  institution-scoped run leaves the cursor alone. `NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE` is false: the
-  pass only reports (step detail `non_deposit_document_check`: `would_take_down`, `by_kind`,
-  `kept_deposit_category`, `documents`, `institutions`, samples of both with the document address). Switched on by PR after James
-  has seen the whole-table count and a sample, a match goes through the shared 12-hour second look
+  institution-scoped run leaves the cursor alone. `NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE` is on (James's
+  yes 2026-10-16 03:37 UTC, on a whole-table count of 92 lending or card fees on 42 documents at 36
+  institutions). Off, the pass only reports (step detail `non_deposit_document_check`: `would_take_down`, `by_kind`,
+  `kept_deposit_category`, `documents`, `institutions`, samples of both with the document address). On,
+  a match goes through the shared 12-hour second look
   (check `darwin.non_deposit_document`; fees that pass clear a pending flag) and is archived on its
   second failure (rolled back with `non_deposit_document: <kind> #<doc>`, batch
   `darwin-non-deposit-<run>`, the verified row rejected with the `non_deposit_document` flag, never
@@ -722,8 +731,9 @@ Darwin owns verification and classification.
   "debit card cash advance", "coin appraisal" and "Mortgage payment at teller". Same switch as v1. `brokerage_document` counts every deposit-category fee on a
   brokerage, wealth or investing document (U.S. Bank's brokerage pages: wire, "Research", returned
   check, stop payment, overnight check, IRA fees; the taxonomy has no brokerage category): those come
-  down only when `BROKERAGE_DOCUMENT_TAKEDOWN_LIVE` is on as well (false, and it stays off when the
-  main switch goes on: James's call on a count); until then they pass and clear any pending flag.
+  down only when `BROKERAGE_DOCUMENT_TAKEDOWN_LIVE` is on as well (its own switch, James's call on a
+  count: on since 2026-10-16, 7 live U.S. Bank brokerage-page fees on 4 documents); with it off they
+  pass and clear any pending flag.
   Step detail adds `by_rule`, `brokerage_document`, `kept_generic_on_rate_page`,
   `brokerage_switch_live`, `samples_lending_wording` and `samples_brokerage_document`. Read-only
   SQL: `nonDepositCountSql()` (counts by kind and verdict), `nonDepositSamplesSql()` (by document)
