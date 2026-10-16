@@ -27,6 +27,7 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // v69 (#1102): price lines named by their heading, CA 137 to 140, MN 110 to 111, all 788 to 791.
   // v70 (#1100): low-balance and maintenance fees, CA 140 to 141, FL 116 to 117, GA 161 to 164,
   // NY 42 to 43, all 791 to 797; no state gained a wrong read.
+  // v73 (#1100): reads record their account; every state unchanged.
   CA: { right: 141, wrong: 5 },
   FL: { right: 117, wrong: 7 },
   GA: { right: 164, wrong: 9 },

@@ -4,6 +4,7 @@ import { FAMILY_EXPERTS, priceWindows, runFamilyExpert } from "./families";
 import { composableTail, namesALimit, splitCapsHeading, titleTail } from "./layout";
 import { runFreeSpecialists } from "./specialists";
 import { extractFromTableRows, tableRowsFromText } from "./table-rows";
+import { extractAccountTableCandidates } from "./account-table";
 
 type Row = [string, number, string];
 
@@ -441,5 +442,13 @@ describe("Knox v70 monthly maintenance and low-balance fees (#1100)", () => {
     expect(fees("Monthly Service Charge Below $500.00 minimum $5.00 per Month")).toContainEqual(["Monthly Service Charge Below minimum", 5, "monthly_maintenance"]);
     // The balance itself is never the fee.
     expect(fees("Monthly Service Charge Below $500.00 minimum $5.00 per Month")).not.toContainEqual(expect.arrayContaining([500]));
+  });
+});
+
+describe("account table reads carry their column's product (v73, #1100)", () => {
+  it("records each column's product as the read's account", () => {
+    const text = ["Account | Great Checking | Better Checking", "Minimum to open | $25 | $100", "Monthly Service Fees | $3 | $5"].join("\n");
+    const reads = extractAccountTableCandidates(text).candidates.map((candidate) => [candidate.feeName, candidate.lineup?.productName]);
+    expect(reads).toEqual([["Great Checking Monthly Service Fees", "Great Checking"], ["Better Checking Monthly Service Fees", "Better Checking"]]);
   });
 });

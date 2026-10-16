@@ -300,3 +300,20 @@ export function accountTableRow(text: string, feeName: string, amount: number): 
   const cell = accountTableCells(text).find((entry) => comparable(entry.feeName) === name && Math.round(entry.amount * 100) === cents);
   return cell?.row ?? null;
 }
+
+/**
+ * v73 (#1100): the product whose column states this price on the account-table row a read came
+ * from (its excerpt), or null when the row is no account table or the price is in no column, or in
+ * more than one. Knox records it as the read's account (`knox/lineup.ts`). Pure.
+ */
+export function accountTableProduct(text: string, excerpt: string, amount: number): string | null {
+  const probe = squash(excerpt).slice(0, 60);
+  if (probe.length < 8) return null;
+  const cents = Math.round(amount * 100);
+  const products = new Set(
+    accountTableCells(text)
+      .filter((cell) => cell.row.startsWith(probe) && Math.round(cell.amount * 100) === cents)
+      .map((cell) => cell.product),
+  );
+  return products.size === 1 ? [...products][0] : null;
+}

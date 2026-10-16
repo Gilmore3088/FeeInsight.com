@@ -78,8 +78,8 @@ text Knox has read before is picked again when any one of these holds:
 5. Stale read: the current copy has no `extract.rules` attempt at v26 or later
    (`KNOX_STALE_READ_BELOW_VERSION`).
 6. Lineup gap: the current copy has a `monthly_maintenance` row with no account name, or with
-   neither the balance that avoids it nor its waiver, and no attempt at v51 or later
-   (`KNOX_LINEUP_READ_BELOW_VERSION`).
+   neither the balance that avoids it nor its waiver, or (v73) a `minimum_balance` row with no
+   account name, and no attempt at v73 or later (`KNOX_LINEUP_READ_BELOW_VERSION`).
 7. Priority bank: the bank is in `KNOX_PRIORITY_REREAD_IDS` or is a state market leader, the
    document is its current copy, and the bank has no live overdraft fee. A run for one institution
    (Atlas's read-now runs) uses that institution alone as the list and drops the overdraft
@@ -500,6 +500,25 @@ hand check found wrong, from their real lines.
 - A bare "Overdrafts" priced per transfer is the share transfer that covers them ("Share
   Transfer for\nOverdrafts - $2.00 per transfer", raw 112570). A bare "Overdrafts" priced per
   item is still the overdraft fee.
+
+v73 (#1100, Oct 16): every monthly maintenance and minimum balance read records the account it belongs
+to (`product_name`, the catalog's `account_product_type`; `accountProductFor` in `lineup.ts`).
+- Sources, in order: the account lineup's product (the read's own row label, or a model read); the
+  account table's column header (#1438: an `extract.account_table` read carries its column's
+  product, and a rules read of the table's fee row takes the column whose price it read); the
+  nearest account heading above the fee; then the fee's own name. A heading that names only the
+  kind of account ("Savings Accounts", "Business Checking Accounts", "Christmas Club") counts. When
+  the fee's own name names another kind of account than the heading ("Star Checking Monthly Fee"
+  under "Savings / Money Market"), the fee's own name wins.
+- Null when no source names the account. An account is never assumed to be checking.
+- A minimum balance fee records only its account; the balance, opening deposit and waiver stay
+  monthly maintenance's.
+- The fee's line is found by its whole excerpt first, so a sentence that opens two paragraphs no
+  longer takes the first paragraph's heading.
+- `KNOX_LINEUP_READ_BELOW_VERSION` rises from 51 to 73, so current copies with a lineup gap are read
+  once more: rules only, no provider spend.
+- `lineupCorrections` (LINEUP_CORRECT_STRATEGY v2) keeps v55's name order, so the stored-lineup
+  correction step is unchanged.
 
 v72 (#1099, Oct 16): a loan's own servicing fees from Deming's answer-key misses (`rules.ts`, other lending).
 - A loan, lease or mortgage payment made by phone, by debit or credit card, or by ACH ("Loan Payment
@@ -1049,7 +1068,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v19 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v72 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v73 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v6 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v1 | `knox/takedown-lessons.ts` |

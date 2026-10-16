@@ -390,3 +390,65 @@ describe("account names read from page text (whole-record sample, 9 Oct)", () =>
     ]);
   });
 });
+
+describe("the account a read records (v73, #1100)", () => {
+  const read = (feeName: string, excerpt: string, extra: Partial<{ canonicalHint: string; amount: number; productName: string }> = {}) => ({
+    canonicalHint: extra.canonicalHint ?? "monthly_maintenance",
+    feeName,
+    excerpt,
+    amount: extra.amount ?? 5,
+    lineup: extra.productName ? { productName: extra.productName, minBalanceToAvoid: null, minOpeningDeposit: null, waiverText: null } : null,
+  });
+  const productOf = (candidate: ReturnType<typeof read>, text: string) => withLineupFromText(candidate, text).lineup?.productName ?? null;
+
+  it("takes the lineup's product first", () => {
+    const text = "Savings Accounts\nPremier Checking | Monthly fee $5.00";
+    expect(productOf(read("Monthly fee", "Premier Checking | Monthly fee $5.00", { productName: "Premier Checking" }), text)).toBe("Premier Checking");
+  });
+
+  it("takes the account table's column header for a read of the table's fee row", () => {
+    const text = ["Account | Great Checking | Better Checking", "Minimum to open | $25 | $100", "Monthly Service Fees | $0 | $5"].join("\n");
+    expect(productOf(read("Monthly Service Fees", "Monthly Service Fees | $0 | $5", { amount: 5 }), text)).toBe("Better Checking");
+  });
+
+  it("takes the nearest account heading before the fee's own name", () => {
+    const text = "Statement Savings\nMinimum balance to avoid the fee: $100\nMonthly Service Charge $3.00";
+    expect(productOf(read("Monthly Service Charge", "Monthly Service Charge $3.00"), text)).toBe("Statement Savings");
+    // A heading that names only the kind of account is that kind's account.
+    expect(productOf(read("Monthly fee", "Monthly fee $2.00"), "Savings Accounts\nMonthly fee $2.00")).toBe("Savings Accounts");
+    // The nearer heading wins: a product under the kind heading is that product.
+    expect(productOf(read("Monthly fee", "Monthly fee $2.00"), "Savings Accounts\nRegular Share\nMonthly fee $2.00")).toBe("Regular Share");
+  });
+
+  it("takes the fee's own account over a heading of another kind of account", () => {
+    // Inst 8434 doc 17805, prod: "Star Checking Monthly Fee" printed under "Savings / Money Market".
+    const text = "Savings / Money Market\nBelow minimum balance: $5 monthly.\nStar Checking Monthly Fee: $5 with either e-Statements or Direct Deposit.";
+    expect(productOf(read("Star Checking Monthly Fee", "Star Checking Monthly Fee: $5 with either e-Statements or Direct Deposit."), text)).toBe("Star Checking");
+  });
+
+  it("reads the heading above the excerpt's own line when its opening words repeat earlier", () => {
+    // Platte Valley Bank (doc 29120), prod: the same sentence opens the CD and the HSA paragraphs.
+    const text = [
+      "Certificates of Deposit",
+      "Call or see a Platte Valley Bank representative for more information.",
+      "Health Savings Account",
+      "Call or see a Platte Valley Bank representative for eligibility and more information. $3.00 Monthly service charge",
+    ].join("\n");
+    const excerpt = "Call or see a Platte Valley Bank representative for eligibility and more information. $3.00 Monthly service charge";
+    expect(productOf(read("Monthly service charge", excerpt, { amount: 3 }), text)).toBe("Health Savings Account");
+  });
+
+  it("falls back to the fee's own name, and records nothing when no source names the account", () => {
+    expect(productOf(read("Freedom Checking Monthly Fee", "Freedom Checking Monthly Fee $10.00"), "Fees\nFreedom Checking Monthly Fee $10.00")).toBe("Freedom Checking");
+    // Never assumed to be checking: no lineup, table, heading or named account is no account.
+    expect(productOf(read("Monthly Service Charge", "Monthly Service Charge $6.00"), "Personal Accounts\nMonthly Service Charge $6.00")).toBeNull();
+  });
+
+  it("records a minimum balance fee's account only", () => {
+    const text = "Money Market Accounts\nMinimum balance fee if below $2,500 $10.00";
+    const named = withLineupFromText(read("Minimum balance fee", "Minimum balance fee if below $2,500 $10.00", { canonicalHint: "minimum_balance", amount: 10 }), text);
+    expect(named.lineup).toEqual({ productName: "Money Market Accounts", minBalanceToAvoid: null, minOpeningDeposit: null, waiverText: null });
+    // Other categories record none.
+    expect(withLineupFromText(read("Stop payment", "Stop payment $30.00", { canonicalHint: "stop_payment" }), text).lineup).toBeNull();
+  });
+});

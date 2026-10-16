@@ -10,7 +10,7 @@ import { chooseStrategy } from "@/lib/agents/learning/router";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { confidenceFor, type DroppedLineReason, type ExtractedFeeCandidate, type HeldFeeCandidate } from "@/lib/agents/knox/rules";
 import type { RateFeeCandidate } from "@/lib/agents/knox/percent";
-import { groundLineup, LINEUP_CATEGORY, withLineupFromText } from "@/lib/agents/knox/lineup";
+import { ACCOUNT_PRODUCT_CATEGORIES, groundLineup, LINEUP_CATEGORY, withLineupFromText } from "@/lib/agents/knox/lineup";
 import { ownCells } from "@/lib/agents/knox/own-cells";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists, type SpecialistRun } from "@/lib/agents/knox/specialists";
 import { applyKnoxLesson, loadKnoxLessons } from "@/lib/agents/knox/lessons";
@@ -74,8 +74,11 @@ export const KNOX_STALE_READ_BELOW_VERSION = 26;
  * A current copy with a monthly fee row missing its account name, or both the balance that
  * avoids it and its waiver, last read below this version, is read again once so v49-v51 can
  * fill them (2026-10-09: 8,928 rows on 3,223 current copies had no account name). Free: rules only.
+ * v73 (#1100): raised from 51 so current copies are read once more and every monthly maintenance
+ * and minimum balance row records its account (`accountProductFor`); a minimum balance row with no
+ * account counts as due too. 5,511 current copies at 3,385 banks qualified on 2026-10-16.
  */
-export const KNOX_LINEUP_READ_BELOW_VERSION = 51;
+export const KNOX_LINEUP_READ_BELOW_VERSION = 73;
 /**
  * Banks whose pages are read first while the stale backlog lasts, besides each state's market
  * leaders: banks one or two headline fees short of the report rule, whose own schedule shows
@@ -344,8 +347,13 @@ function textArtifactQuery(
                SELECT 1 FROM raw_fee_observations unnamed
                 WHERE unnamed.source = 'knox'
                   AND unnamed.source_document_id = adt.source_document_id
-                  AND (unnamed.product_name IS NULL OR (unnamed.min_balance_to_avoid IS NULL AND unnamed.waiver_text IS NULL))
-                  AND COALESCE(unnamed.extraction_note, unnamed.conditions) LIKE '%canonical_hint=${LINEUP_CATEGORY};%'
+                  AND (
+                    (COALESCE(unnamed.extraction_note, unnamed.conditions) LIKE '%canonical_hint=${LINEUP_CATEGORY};%'
+                     AND (unnamed.product_name IS NULL OR (unnamed.min_balance_to_avoid IS NULL AND unnamed.waiver_text IS NULL)))
+                    -- v73 (#1100): a minimum balance fee with no account recorded.
+                    OR (COALESCE(unnamed.extraction_note, unnamed.conditions) LIKE '%canonical_hint=minimum_balance;%'
+                        AND unnamed.product_name IS NULL)
+                  )
              )
              AND NOT EXISTS (
                SELECT 1 FROM source_documents copy
@@ -611,10 +619,13 @@ export async function insertCandidate(
     (options.calibratedConfidence === undefined ? "" : `calibrated_confidence=${options.calibratedConfidence.toFixed(2)}; `) +
     // #1394: only the fee's own cells, not the neighbouring column's fee on the same line.
     `excerpt="${ownCells(options.candidate.excerpt, options.candidate.feeName, options.candidate.amount).slice(0, 180)}"`;
-  // A checking account's lineup facts, already grounded in the text (`lineup.ts`); only a
-  // monthly maintenance fee carries them.
+  // A checking account's lineup facts, already grounded in the text (`lineup.ts`): a monthly
+  // maintenance fee carries them all, a minimum balance fee only its account (v73).
   const applicability = feeApplicability(options.candidate.feeName, options.candidate.excerpt, options.candidate.amount);
-  const lineup = options.candidate.canonicalHint === LINEUP_CATEGORY ? (options.candidate.lineup ?? null) : null;
+  const read = ACCOUNT_PRODUCT_CATEGORIES.has(options.candidate.canonicalHint) ? (options.candidate.lineup ?? null) : null;
+  const lineup = read && options.candidate.canonicalHint !== LINEUP_CATEGORY
+    ? { productName: read.productName, minBalanceToAvoid: null, minOpeningDeposit: null, waiverText: null }
+    : read;
   // The dedupe index is (document, lowercased fee name, amount, audience), so an existing
   // row would block this fee forever. Two kinds take the new read instead:
   //   - a line an older version held as unclassified or untraced;
