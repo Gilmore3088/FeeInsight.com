@@ -1658,6 +1658,7 @@ async function executeAgenticStep(
             restored_held: accountTypeHold.restoredHeld.length,
             typed_rejected: accountTypeHold.typedRejected.length,
             checked_untyped: accountTypeHold.checkedUntyped,
+            recheck_no_product: accountTypeHold.recheckNoProduct,
           },
           cut_name_duplicate: {
             taken_down: cutNameDuplicates.takenDown.map((item) => ({ fee_published_id: item.feePublishedId, kept_fee_published_id: item.keepFeePublishedId })),

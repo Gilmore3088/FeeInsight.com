@@ -31,10 +31,20 @@ type SqlTag = typeof sql;
  */
 export const ACCOUNT_TYPE_HOLD_CHECK = "hamilton.account_type_hold";
 export const ACCOUNT_TYPE_HOLD_REASON = "account_type_hold";
-/** The flag a checked row with no type carries, so part 2 reads each row once per version. */
+/**
+ * The flag a checked row with no type carries, so parts 1 and 2 read it once per version. Only a
+ * row with a lineup product takes it: Knox fills an empty `product_name` on a later read
+ * (`COALESCE(fr.product_name, EXCLUDED.product_name)`) and never changes one already set, so a
+ * product's answer is final but a row with no product can still gain one.
+ */
 export const ACCOUNT_TYPE_CHECKED_FLAG = "account_type_checked:v1";
-/** Rows each part reads per run; a checked row is not read again, so later runs read the rest. */
-export const ACCOUNT_TYPE_HOLD_LIMIT = 5_000;
+/**
+ * Rows each part reads per step. A checked row is not read again; a row with no product is read on
+ * every step (2,183 live and 5,059 waiting on Oct 16: a pure read, 0.12 s and 0.20 s warm on
+ * prod, up to 1.6 s cold). The limit sits above the whole unchecked set, so rows with no product never crowd out new
+ * ones; if that set ever passes it, checked rows drain first and the rest follow on later steps.
+ */
+export const ACCOUNT_TYPE_HOLD_LIMIT = 20_000;
 export const HOLD_CATEGORY = "monthly_maintenance";
 
 /** The account words set aside before part 3's checks ("Business Checking Monthly Fee" is a "Monthly Fee"). */
@@ -67,8 +77,10 @@ export interface AccountTypeHoldResult {
   heldLive: PlannedHold[];
   /** Part 2: verified, unpublished rows flagged before publish. */
   heldWaiting: PlannedHold[];
-  /** Part 2: verified rows checked and left as they are (no type). */
+  /** Parts 1 and 2: rows with a product checked and left as they are (no type), flagged checked. */
   checkedUntyped: number;
+  /** Parts 1 and 2: rows with no product and no type, left unflagged so the next step reads them again. */
+  recheckNoProduct: number;
   /** Part 3: guard-refused rows back to verified, held. */
   restoredHeld: PlannedHold[];
   /** Part 3: guard-refused rows typed but left rejected (a check other than the account words fails). */
@@ -101,6 +113,16 @@ export function planHolds(rows: HoldRow[]): { typed: PlannedHold[]; untyped: Hol
   return { typed, untyped };
 }
 
+const hasProduct = (row: HoldRow) => Boolean(row.product_name?.trim());
+
+/**
+ * Pure: the untyped rows that take the checked flag (a product is set, so the answer is final) and
+ * the ones read again next step (no product yet; a later Knox read may fill it).
+ */
+export function splitUntyped(untyped: HoldRow[]): { check: HoldRow[]; recheck: HoldRow[] } {
+  return { check: untyped.filter(hasProduct), recheck: untyped.filter((row) => !hasProduct(row)) };
+}
+
 /** Pure: whether a guard-refused typed row is a real monthly fee once its account words are set aside. */
 export function passesWithoutAccountWords(row: HoldRow): boolean {
   const amount = amountOf(row.amount);
@@ -114,7 +136,7 @@ export async function applyAccountTypeHold(
   db: SqlTag,
   options: { runId: number; batchId: string; dryRun: boolean },
 ): Promise<AccountTypeHoldResult> {
-  const result: AccountTypeHoldResult = { dryRun: options.dryRun, heldLive: [], heldWaiting: [], checkedUntyped: 0, restoredHeld: [], typedRejected: [] };
+  const result: AccountTypeHoldResult = { dryRun: options.dryRun, heldLive: [], heldWaiting: [], checkedUntyped: 0, recheckNoProduct: 0, restoredHeld: [], typedRejected: [] };
   let live: HoldRow[];
   let waiting: HoldRow[];
   let refused: HoldRow[];
@@ -171,6 +193,8 @@ export async function applyAccountTypeHold(
   const livePlan = planHolds(live);
   const waitingPlan = planHolds(waiting);
   const refusedPlan = planHolds(refused);
+  const liveUntyped = splitUntyped(livePlan.untyped);
+  const waitingUntyped = splitUntyped(waitingPlan.untyped);
   const refusedById = new Map(refused.map((row) => [Number(row.fee_verified_id), row]));
   const restored = refusedPlan.typed.filter((hold) => passesWithoutAccountWords(refusedById.get(hold.feeVerifiedId)!));
   const restoredIds = new Set(restored.map((hold) => hold.feeVerifiedId));
@@ -178,13 +202,15 @@ export async function applyAccountTypeHold(
     dryRun: options.dryRun,
     heldLive: livePlan.typed,
     heldWaiting: waitingPlan.typed,
-    checkedUntyped: waitingPlan.untyped.length,
+    checkedUntyped: liveUntyped.check.length + waitingUntyped.check.length,
+    recheckNoProduct: liveUntyped.recheck.length + waitingUntyped.recheck.length,
     restoredHeld: restored,
     typedRejected: refusedPlan.typed.filter((hold) => !restoredIds.has(hold.feeVerifiedId)),
   };
   if (options.dryRun) return plan;
   const changed = plan.heldLive.length + plan.heldWaiting.length + plan.restoredHeld.length + plan.typedRejected.length;
-  if (changed === 0 && plan.checkedUntyped === 0 && livePlan.untyped.length === 0) return result;
+  result.recheckNoProduct = plan.recheckNoProduct;
+  if (changed === 0 && plan.checkedUntyped === 0) return result;
 
   try {
     await inSavepoint(db, async (scope) => {
@@ -216,16 +242,13 @@ export async function applyAccountTypeHold(
         result.heldLive = plan.heldLive.filter((hold) => done.has(hold.feePublishedId!));
         await addFlags(result.heldLive.map((hold) => hold.feeVerifiedId), result.heldLive.map((hold) => accountTypeFlag(hold.accountType)), "keep");
       }
-      // A live fee of a checking account (or of no stated type) is marked checked, so the next run
-      // reads the rest of the catalog.
-      const liveUntyped = livePlan.untyped.map((row) => Number(row.fee_verified_id));
-      await addFlags(liveUntyped, liveUntyped.map(() => ACCOUNT_TYPE_CHECKED_FLAG), "keep");
-      // Part 2: waiting rows flagged; untyped ones marked checked.
+      // A fee of a checking product is marked checked, so the next step reads the rest. A fee with
+      // no product is left unflagged and read again next step, in case Knox fills its product.
       result.heldWaiting = plan.heldWaiting;
       await addFlags(plan.heldWaiting.map((hold) => hold.feeVerifiedId), plan.heldWaiting.map((hold) => accountTypeFlag(hold.accountType)), "keep");
-      const untypedIds = waitingPlan.untyped.map((row) => Number(row.fee_verified_id));
-      await addFlags(untypedIds, untypedIds.map(() => ACCOUNT_TYPE_CHECKED_FLAG), "keep");
-      result.checkedUntyped = untypedIds.length;
+      const checkedIds = [...liveUntyped.check, ...waitingUntyped.check].map((row) => Number(row.fee_verified_id));
+      await addFlags(checkedIds, checkedIds.map(() => ACCOUNT_TYPE_CHECKED_FLAG), "keep");
+      result.checkedUntyped = checkedIds.length;
       // Part 3: refused rows typed; the ones that pass go back to verified, held.
       result.restoredHeld = plan.restoredHeld;
       await addFlags(plan.restoredHeld.map((hold) => hold.feeVerifiedId), plan.restoredHeld.map((hold) => accountTypeFlag(hold.accountType)), "verified");
@@ -258,6 +281,7 @@ export async function applyAccountTypeHold(
               restored_held: rows(result.restoredHeld),
               typed_rejected: rows(result.typedRejected),
               checked_untyped: result.checkedUntyped,
+              recheck_no_product: result.recheckNoProduct,
             })}::jsonb
           )
         `;
@@ -265,7 +289,7 @@ export async function applyAccountTypeHold(
     });
   } catch (error) {
     console.error("account type hold write failed:", error);
-    return { ...result, heldLive: [], heldWaiting: [], restoredHeld: [], typedRejected: [], checkedUntyped: 0 };
+    return { ...result, heldLive: [], heldWaiting: [], restoredHeld: [], typedRejected: [], checkedUntyped: 0, recheckNoProduct: 0 };
   }
   if (result.heldLive.length > 0) invalidatePublicReadCache();
   return result;

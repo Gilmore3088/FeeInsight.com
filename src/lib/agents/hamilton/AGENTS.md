@@ -360,8 +360,9 @@ the detail.
     (`publishSkipReason`). A verified, unpublished row of such an account is flagged before
     publish reads it. A row the guard refused only for its account words goes back to verified,
     held, when it passes every check with those words set aside and traces in its own text;
-    otherwise it stays rejected with the flag. A checked row with no type gets
-    `account_type_checked:v1` and is not read again. One event per run names every row.
+    otherwise it stays rejected with the flag. A checked row with no type and a lineup
+    product gets `account_type_checked:v1` and is not read again; a row with no product is read
+    again on every step, since a later Knox read can fill its product. One event per run names every row.
 10a. Hand fixes James approved, fixed lists checked against the live row before each write:
     `hand-amount-corrections.ts` (#1334, cut cents corrected in place) and
     `cut-name-duplicates.ts` (#1196): a cut-name row that repeats a clean live row at the same

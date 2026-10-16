@@ -29,7 +29,7 @@ const IRA_HSA_CD = /\b(?:ira|roth|hsa|health\s+savings|certificates?(?:\s+of\s+d
  * "VIP Club Account" and "Prime Time Club" are checking packages.
  */
 const CLUB = /\b(?:christmas|holiday|vacation)\b|\bclub\s+(?:savings|account\s+savings)\b|\bsavings\s+club\b/i;
-const SAVINGS = /\b(?:savings?|saver|share(?!\s*drafts?)\s*(?:account|savings)?|passbook|statement\s+savings)\b/i;
+const SAVINGS = /\b(?:savings?|savers?|share(?!\s*drafts?)\s*(?:account|savings)?|passbook|statement\s+savings)\b/i;
 const CHECKING = /\b(?:checking|share\s*drafts?|draft\s+account)\b/i;
 
 /** The account type one text names, or null for checking or no type. */

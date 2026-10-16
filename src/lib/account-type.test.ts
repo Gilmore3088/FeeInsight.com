@@ -10,6 +10,8 @@ describe("accountTypeOf (#1100 gap 1)", () => {
     expect(accountTypeOf("Super Money Market", "Monthly Service Fee with minimum balance")).toBe("money_market");
     expect(accountTypeOf("Health Savings Account (HSA)", "Monthly fee")).toBe("ira_hsa_cd");
     expect(accountTypeOf("Christmas Club Savings", "Monthly fee")).toBe("club");
+    // Fee 131974, prod, Oct 16: a kids' savings account named for its savers.
+    expect(accountTypeOf("Kids' Super Savers Club Account*", "monthly maintenance fee if minimum balance is not maintained")).toBe("savings");
   });
 
   it("keeps a checking product checking, whatever the fee's words", () => {

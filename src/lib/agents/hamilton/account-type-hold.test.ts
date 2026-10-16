@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { applyAccountTypeHold, passesWithoutAccountWords, planHolds, type HoldRow } from "./account-type-hold";
+import { ACCOUNT_TYPE_CHECKED_FLAG, applyAccountTypeHold, passesWithoutAccountWords, planHolds, splitUntyped, type HoldRow } from "./account-type-hold";
 import { publishSkipReason } from "./publish";
 
 const LIVE: HoldRow[] = [
@@ -53,5 +53,49 @@ describe("account type hold (#1100 gap 1)", () => {
     const result = await applyAccountTypeHold(db, { runId: 1, batchId: "agentic-run-1", dryRun: true });
     expect(result.heldLive).toHaveLength(3);
     expect(calls.some((text) => /UPDATE|INSERT/.test(text))).toBe(false);
+  });
+
+  it("marks an untyped row checked only when it has a product, so a product Knox fills later is still held", async () => {
+    expect(splitUntyped(planHolds(LIVE).untyped)).toEqual({ check: [LIVE[3]], recheck: [LIVE[4]] });
+
+    // A stateful fake of the live read: rows carry their flags, the read skips checked rows, and
+    // the flag UPDATE writes back.
+    const flags = new Map<number, string[]>();
+    const product = new Map<number, string | null>(LIVE.map((row) => [Number(row.fee_verified_id), row.product_name]));
+    const down = new Set<number>();
+    const liveRows = () => LIVE
+      .filter((row) => !down.has(Number(row.fee_published_id)))
+      .map((row) => ({ ...row, product_name: product.get(Number(row.fee_verified_id)) ?? null }));
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = strings.join("?");
+      if (text.includes("UPDATE published_fee_records")) {
+        const ids = values[1] as number[];
+        ids.forEach((id) => down.add(Number(id)));
+        return Promise.resolve(ids.map((id) => ({ fee_published_id: id })));
+      }
+      if (text.includes("UPDATE verified_fee_observations")) {
+        const [, ids, types] = values as [string, number[], string[]];
+        ids.forEach((id, index) => flags.set(Number(id), [...(flags.get(Number(id)) ?? []), types[index]]));
+        return Promise.resolve([]);
+      }
+      if (text.includes("FROM published_fee_records fp")) {
+        return Promise.resolve(liveRows().filter((row) => !(flags.get(Number(row.fee_verified_id)) ?? []).includes(ACCOUNT_TYPE_CHECKED_FLAG)));
+      }
+      return Promise.resolve([]);
+    }) as unknown as Parameters<typeof applyAccountTypeHold>[0];
+
+    const first = await applyAccountTypeHold(db, { runId: 1, batchId: "agentic-run-1", dryRun: false });
+    expect(first.heldLive.map((hold) => hold.feePublishedId)).toEqual([141227, 65609, 126011]);
+    expect(first.checkedUntyped).toBe(1);
+    expect(first.recheckNoProduct).toBe(1);
+    expect(flags.get(4)).toEqual([ACCOUNT_TYPE_CHECKED_FLAG]);
+    expect(flags.get(5)).toBeUndefined();
+
+    // A later Knox read fills fee 5's product with a savings account: the next step holds it.
+    product.set(5, "Statement Savings");
+    const second = await applyAccountTypeHold(db, { runId: 2, batchId: "agentic-run-2", dryRun: false });
+    expect(second.heldLive.map((hold) => [hold.feePublishedId, hold.accountType])).toEqual([[998, "savings"]]);
+    expect(flags.get(5)).toEqual(["account_type:savings"]);
+    expect(second.checkedUntyped).toBe(0);
   });
 });
