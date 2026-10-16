@@ -741,7 +741,11 @@ async function readNationalIndexCached(): Promise<IndexEntry[]> {
       return getNationalIndex();
     }
 
-    const unstated = await loadNationalUnstatedAudienceCounts();
+    // The count only marks medians; a failed read must not push every caller onto the live index.
+    const unstated = await loadNationalUnstatedAudienceCounts().catch((error: unknown) => {
+      console.error("[fee-index] unstated-audience count failed; cached index served without it", error);
+      return new Map<string, number>();
+    });
     return rows.map((row) => ({
       fee_category: row.fee_category,
       fee_family: row.fee_family,
