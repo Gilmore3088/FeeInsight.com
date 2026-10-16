@@ -3,6 +3,7 @@ import type { IndexRow } from "@/lib/data-store";
 import {
   accountName,
   companion,
+  countedAs,
   findings,
   histogram,
   inBucket,
@@ -86,7 +87,7 @@ describe("Bank Fee Index explorer", () => {
     const sel = { fee: "wire_domestic_outgoing", state: null, charter: "all" as const };
     const out = findings(rows, sel, institutionsFor(rows, sel.fee, null, "all"));
     expect(out[0]).toBe("The bank median is $27, $12 above the credit union median.");
-    expect(out[1]).toBe("50% of the 12 institutions charge exactly $15.");
+    expect(out[1]).toBe("50% of the 12 institutions have a midpoint of exactly $15.");
     expect(out[2]).toBe("In 48 of the 50 states, fewer than 5 institutions headquartered there publish this fee, so they get no state median yet.");
     expect(out.join(" ")).not.toMatch(/cheapest|rais|increas|cut|within|only/i);
   });
@@ -123,5 +124,12 @@ describe("Bank Fee Index explorer", () => {
     expect(out).toContain("No institution headquartered in Georgia publishes this fee in a schedule we hold yet.");
     const fl = findings(rows, { ...sel, state: "FL", charter: "credit_union" }, []);
     expect(fl).toContain("No institution headquartered in Florida publishes this fee in a schedule we hold yet.");
+  });
+});
+
+describe("countedAs", () => {
+  it("names the counted value as a calculation, the highest price for overdraft", () => {
+    expect(countedAs("monthly_maintenance").headline).toBe("Median of institution midpoints");
+    expect(countedAs("overdraft").one).toBe("highest listed price");
   });
 });

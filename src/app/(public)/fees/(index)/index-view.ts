@@ -1,5 +1,5 @@
 import type { IndexRow } from "@/lib/data-store";
-import { summarizeFees, valuePerInstitution, type FeeStatistics } from "@/lib/data-store/fee-stats";
+import { HIGHEST_TIER_CATEGORIES, summarizeFees, valuePerInstitution, type FeeStatistics } from "@/lib/data-store/fee-stats";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { buildHistogramBuckets, type HistogramBucket } from "@/lib/fee-histogram-buckets";
 import { STATE_NAMES } from "@/lib/us-states";
@@ -203,6 +203,17 @@ export function companion(rows: IndexRow[], sel: Selection): { title: string; gr
   };
 }
 
+/**
+ * What the Index counts for one institution, in words: the middle of the prices it lists, or the
+ * highest for overdraft. A midpoint is a calculation, so the page never says an institution
+ * "charges" it (James, Oct 16).
+ */
+export function countedAs(fee: string): { one: string; many: string; headline: string } {
+  return HIGHEST_TIER_CATEGORIES.has(fee)
+    ? { one: "highest listed price", many: "highest listed prices", headline: "Median of each institution's highest listed price" }
+    : { one: "midpoint", many: "midpoints", headline: "Median of institution midpoints" };
+}
+
 export function money(n: number): string {
   return Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`;
 }
@@ -239,10 +250,12 @@ export function findings(rows: IndexRow[], sel: Selection, institutions: IndexIn
     for (const i of institutions) counts.set(i.value, (counts.get(i.value) ?? 0) + 1);
     const [price, n] = [...counts.entries()].sort((x, y) => y[1] - x[1] || x[0] - y[0])[0];
     const share = n / institutions.length;
+    // Counted per institution, so the share is of midpoints (or highest prices), not of prices charged.
+    const { one } = countedAs(sel.fee);
     if (share >= CONCENTRATED) {
-      out.push(`${Math.round(share * 100)}% of the ${institutions.length.toLocaleString()} institutions charge exactly ${money(price)}.`);
+      out.push(`${Math.round(share * 100)}% of the ${institutions.length.toLocaleString()} institutions have a ${one} of exactly ${money(price)}.`);
     } else {
-      out.push(`No single price dominates: the most common, ${money(price)}, is charged by ${Math.round(share * 100)}% of the ${institutions.length.toLocaleString()} institutions.`);
+      out.push(`No single ${one} dominates: the most common, ${money(price)}, is the ${one} for ${Math.round(share * 100)}% of the ${institutions.length.toLocaleString()} institutions.`);
     }
   }
 
