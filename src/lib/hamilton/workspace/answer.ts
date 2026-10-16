@@ -7,6 +7,7 @@
  * Decision support only: nothing here says to raise, lower or drop a fee.
  */
 
+import { revenueLineName } from "./revenue";
 import { subjectPossessive } from "./subject";
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
 import { proseFeeName } from "./names";
@@ -122,10 +123,9 @@ function revenueClaims(research: FeeResearch, name: string): Fact[] {
   const out: Fact[] = [];
   const line = research.revenueLine;
   if (line) {
-    // One filing line covers both fees: "NSF / returned item and overdraft income".
-    const combined = line.combinedWith ? ` and ${line.combinedWith}` : "";
+    // One bank filing line covers both fees, so it is named as combined for either (#1543).
     out.push({
-      text: `${subjectPossessive(research)} filing reports ${formatDollarsInWords(line.annualIncome)} in ${name} income${combined} over the four quarters to ${longDate(line.quarterEnd)}.`,
+      text: `${subjectPossessive(research)} filing reports ${formatDollarsInWords(line.annualIncome)} in ${revenueLineName(line, name)} over the four quarters to ${longDate(line.quarterEnd)}.`,
       source: { ...line.source, asOf: line.quarterEnd },
     });
   }
