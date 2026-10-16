@@ -1,6 +1,7 @@
 import { sql } from "@/lib/data-store/connection";
 
-const TIER_LIMITS: Record<string, number> = {
+/** Monthly request allowance per API key tier (enterprise is unlimited). /api-docs shows these. */
+export const API_TIER_LIMITS: Readonly<Record<"free" | "pro" | "enterprise", number>> = {
   free: 100,
   pro: 10_000,
   enterprise: Infinity,
@@ -105,7 +106,7 @@ export async function checkRateLimitWithTier(
   tier: string,
   routeId = "api.v1.default"
 ): Promise<RateLimitResult> {
-  const limit = TIER_LIMITS[tier] ?? TIER_LIMITS.free;
+  const limit = API_TIER_LIMITS[tier as keyof typeof API_TIER_LIMITS] ?? API_TIER_LIMITS.free;
 
   if (limit === Infinity) {
     return { allowed: true, remaining: Infinity, limit: Infinity, reset: getMonthReset() };
