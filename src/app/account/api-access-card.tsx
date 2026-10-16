@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { CONTACT_EMAIL, PRODUCT_NAME, SITE_URL } from "@/lib/constants";
+import { API_PLANS_LABEL } from "@/lib/api-subscriber-access";
 import { AccountCard } from "./account-card";
 import { createAccountApiKey, revokeAccountApiKey } from "./api-key-actions";
 
@@ -56,7 +57,7 @@ export function ApiAccessCard({ access }: { access: ApiAccess }) {
     return (
       <AccountCard id="api" title="API and Claude connector" compact>
         <p className="text-[14px] text-ink">
-          The {PRODUCT_NAME} API and the Claude connector come with the $300 and $500 plans.
+          The {PRODUCT_NAME} API and the Claude connector come with the {API_PLANS_LABEL}.
         </p>
         <a
           href={`mailto:${CONTACT_EMAIL}?subject=Add%20the%20API%20to%20my%20plan`}

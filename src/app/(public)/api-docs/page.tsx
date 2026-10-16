@@ -5,17 +5,15 @@ import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { CONTACT_EMAIL, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { getPublicStatsSummary } from "@/lib/public-stats";
 import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT } from "@/lib/data-store/maturity";
-import { PLAN_TEAM_LABEL } from "@/app/subscribe/pricing";
-import { PRO_ANNUAL_RANGE_LABEL } from "@/lib/pro-tiers";
+import { API_PLANS_LABEL } from "@/lib/api-subscriber-access";
+import { NON_INSTITUTION_TIER, tierAmountLabel, tierPriceLabel } from "@/lib/pro-tiers";
 
 const PRO_LABEL = `${SITE_NAME} Pro`;
-const API_ACCESS_HREF = `mailto:${CONTACT_EMAIL}?subject=API%20access`;
-const API_ACCESS_CTA = "Contact us about API access";
 
 export const metadata: Metadata = {
   title: "API Documentation",
   description:
-    `REST API for accessing bank and credit union fee benchmarking data. Access is by invitation: every request needs an API key that Fee Insight issues by hand.`,
+    `REST API and Claude connector for bank and credit union fee data. Included with the ${API_PLANS_LABEL} of ${SITE_NAME} Pro: make your key on your account page.`,
 };
 
 /* ---------- small reusable pieces ---------- */
@@ -243,10 +241,10 @@ export default async function ApiDocsPage() {
       <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-ink-soft">
         Programmatic access to fee benchmarking data for U.S. banks and credit
         unions. {categoriesLabel} fee categories, national and peer medians, percentile ranges,
-        and institution-level detail — all via a simple REST API.
+        and institution-level detail, through a REST API or the Claude connector.
       </p>
 
-      {/* Access first: what works today without a key, and how a Pro key is issued. */}
+      {/* Access first: which plans include a key, and where to make it. */}
       <section aria-labelledby="getting-access" className="mt-6 rounded-xl border border-border bg-white px-6 py-5">
         <h2
           id="getting-access"
@@ -257,23 +255,19 @@ export default async function ApiDocsPage() {
         </h2>
         <ol className="mt-3 list-decimal space-y-2 pl-5 text-[13px] leading-relaxed text-ink-soft">
           <li>
-            <span className="font-semibold text-ink">Free, no key.</span> Call any JSON endpoint
-            below. The free tier returns the 6 spotlight categories and allows 100 requests a month.
-          </li>
-          <li>
-            <span className="font-semibold text-ink">{PRO_LABEL}, {PRO_ANNUAL_RANGE_LABEL} by institution size, {PLAN_TEAM_LABEL}.</span>{" "}
+            <span className="font-semibold text-ink">Subscribe to {PRO_LABEL} on the {API_PLANS_LABEL}.</span>{" "}
+            Consultants pay the {tierAmountLabel(NON_INSTITUTION_TIER, "monthly")} price, so their plan includes it too.{" "}
             <Link href="/subscribe" className="font-medium text-brick underline underline-offset-2">
-              Subscribe
-            </Link>{" "}
-            for all {categoriesLabel} categories and signed-in CSV exports from Account.
+              See plans
+            </Link>
           </li>
           <li>
-            <span className="font-semibold text-ink">API key.</span> Keys are issued by hand to{" "}
-            {PRO_LABEL} workspaces; there is no self-serve key page yet.{" "}
-            <a href={API_ACCESS_HREF} className="font-medium text-brick underline underline-offset-2">
-              Email us to request one
-            </a>{" "}
-            and we reply with the key and its limits.
+            <span className="font-semibold text-ink">Make your key on your account page.</span>{" "}
+            It shows once, with your Claude connector link. You can replace it or turn it off there.
+          </li>
+          <li>
+            <span className="font-semibold text-ink">Call any endpoint below,</span> or add the
+            connector to Claude and ask in plain English. Each key gets 10,000 calls a month.
           </li>
         </ol>
         <p className="mt-3 text-[12px] text-ink-muted">
@@ -290,6 +284,9 @@ export default async function ApiDocsPage() {
       <div className="mt-5 flex flex-wrap gap-3 text-[13px]">
         <a href="#authentication" className="rounded-md border border-border px-3 py-1.5 text-ink-soft hover:bg-paper transition-colors">
           Authentication
+        </a>
+        <a href="#claude" className="rounded-md border border-border px-3 py-1.5 text-ink-soft hover:bg-paper transition-colors">
+          Claude connector
         </a>
         <a href="#fees" className="rounded-md border border-border px-3 py-1.5 text-ink-soft hover:bg-paper transition-colors">
           Fees
@@ -327,7 +324,8 @@ export default async function ApiDocsPage() {
       <SectionHeading id="authentication">Authentication</SectionHeading>
       <div className="rounded-xl border border-border/80 bg-white px-6 py-5">
         <p className="text-[13px] text-ink-muted">
-          Every request needs an API key. Fee Insight issues keys by hand to invited partners. Pass yours in the{" "}
+          Every request needs an API key. Subscribers on the {API_PLANS_LABEL} make theirs on the{" "}
+          <Link href="/account" className="font-medium text-brick underline underline-offset-2">account page</Link>. Pass yours in the{" "}
           <code className="rounded bg-border/40 px-1 text-[12px]">Authorization</code>{" "}
           header as a Bearer token, or as an{" "}
           <code className="rounded bg-border/40 px-1 text-[12px]">api_key</code>{" "}
@@ -339,10 +337,25 @@ export default async function ApiDocsPage() {
 
         <CodeBlock title="Query parameter authentication">{`curl "${BASE}/fees?api_key=YOUR_API_KEY"`}</CodeBlock>
 
-        <div className="mt-4 rounded-md border border-amber-200 bg-amber-50/50 px-4 py-2.5 text-[13px] text-amber-800">
-          Self-serve API key creation is not exposed yet. {PRO_LABEL} users should use signed-in CSV exports from Account; managed API keys are set up by hand.{" "}
-          <a href={API_ACCESS_HREF} className="font-medium underline underline-offset-2">{API_ACCESS_CTA}</a>.
-        </div>
+        <p className="mt-4 text-[13px] text-ink-muted">
+          A key keeps working while your subscription is active, and for 7 days after a failed payment
+          while the card is retried. It stops when the subscription ends. Keep it private: anyone who has it
+          uses your monthly calls.
+        </p>
+      </div>
+
+      {/* Claude connector */}
+      <SectionHeading id="claude">Claude connector</SectionHeading>
+      <div className="rounded-xl border border-border/80 bg-white px-6 py-5">
+        <p className="text-[13px] text-ink-muted">
+          Add the connector once, then ask Claude in plain English: who charges the most for overdrafts in
+          Ohio, or how banks and credit unions in Texas compare. In Claude, open Settings, then Connectors,
+          add a custom connector and paste this link with your key:
+        </p>
+        <CodeBlock title="Connector link">{`${BASE}/mcp?api_key=YOUR_API_KEY`}</CodeBlock>
+        <p className="mt-3 text-[13px] text-ink-muted">
+          Each question Claude answers uses a few calls from the same 10,000-a-month allowance.
+        </p>
       </div>
 
       {/* Rate Limits */}
@@ -362,19 +375,19 @@ export default async function ApiDocsPage() {
               <tr className="bg-paper">
                 <th className="px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Tier</th>
                 <th className="px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Monthly limit</th>
-                <th className="px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Burst rate</th>
+                <th className="px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">How to get it</th>
               </tr>
             </thead>
             <tbody className="text-ink-soft">
               <tr className="border-t border-border/60">
                 <td className="px-4 py-2 font-medium">{PRO_LABEL} key</td>
                 <td className="px-4 py-2">10,000 requests</td>
-                <td className="px-4 py-2">Manual setup</td>
+                <td className="px-4 py-2">Account page, {API_PLANS_LABEL}</td>
               </tr>
               <tr className="border-t border-border/60">
                 <td className="px-4 py-2">Data licensing</td>
                 <td className="px-4 py-2">Custom</td>
-                <td className="px-4 py-2">Custom</td>
+                <td className="px-4 py-2">Talk to us</td>
               </tr>
             </tbody>
           </table>
@@ -679,18 +692,18 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
       <div className="grid gap-4 sm:grid-cols-2">
         <TierCard
           name={PRO_LABEL}
-          price={`${PRO_ANNUAL_RANGE_LABEL} by institution size`}
+          price={`${tierPriceLabel("mid", "monthly")} and up`}
           highlighted
           features={[
-            `Signed-in ${PRO_LABEL} exports`,
+            "Your own API key, made on your account page",
+            "Claude connector",
+            "10,000 calls a month",
             `All ${categoriesLabel} fee categories`,
-            "Peer group filtering",
-            "Category detail breakdowns",
-            "Institution-level data",
-            "Managed API key setup by request",
+            "Institution-level fees, fee revenue and branches",
+            "CSV output for Excel",
           ]}
-          cta={API_ACCESS_CTA}
-          ctaHref={API_ACCESS_HREF}
+          cta="See plans"
+          ctaHref="/subscribe"
         />
         <TierCard
           name="Data licensing"
@@ -699,7 +712,6 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
             "Unlimited requests",
             "Full dataset access",
             "Bulk data export",
-            "Historical data",
             "Dedicated support",
             "Custom SLA",
           ]}
