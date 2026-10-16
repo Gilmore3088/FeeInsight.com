@@ -23,6 +23,36 @@ const BEACON_GARNISHMENT_LIVE: LiveTakedownRow = {
   fee_published_id: 112876, lineage_ref: 179813, institution_id: 7204, canonical_fee_key: "garnishment_levy", fee_name: "Judicial Attachment (Garnishment)", amount: "36.00",
 };
 
+// #1668: Beacon's rows from its 2022 PDF (30627), 2025 PDF (30629) and an Oct 10 page copy (25830), live on prod, read-only, Oct 16.
+const BEACON_STALE_1668: LiveTakedownRow[] = [
+  { fee_published_id: 138828, lineage_ref: 162442, institution_id: 7204, canonical_fee_key: "deposited_item_return", fee_name: "Return Deposit Item (1 party)", amount: "34.00" },
+  { fee_published_id: 138832, lineage_ref: 162448, institution_id: 7204, canonical_fee_key: "nsf", fee_name: "NSF DRAFT, NSF ACH item, or NSF Bill Pay", amount: "34.00" },
+  { fee_published_id: 138833, lineage_ref: 162450, institution_id: 7204, canonical_fee_key: "nsf", fee_name: "NSF/Overdrawn ATM Withdrawal", amount: "34.00" },
+  { fee_published_id: 138839, lineage_ref: 162459, institution_id: 7204, canonical_fee_key: "overdraft", fee_name: "Courtesy Pay fee (if applicable)", amount: "34.00" },
+  { fee_published_id: 138827, lineage_ref: 162441, institution_id: 7204, canonical_fee_key: "deposited_item_return", fee_name: "Return Deposit Item", amount: "34.00" },
+  { fee_published_id: 138834, lineage_ref: 162451, institution_id: 7204, canonical_fee_key: "card_replacement", fee_name: "Fees: Replacement Card", amount: "10.00" },
+  { fee_published_id: 138841, lineage_ref: 162462, institution_id: 7204, canonical_fee_key: "counter_check", fee_name: "Starter/Temporary Checks", amount: "3.00" },
+  { fee_published_id: 148352, lineage_ref: 132704, institution_id: 7204, canonical_fee_key: "counter_check", fee_name: "Starter/Temporary Checks", amount: "3.00" },
+  { fee_published_id: 138831, lineage_ref: 162445, institution_id: 7204, canonical_fee_key: "wire_domestic_outgoing", fee_name: "Wire Transfer Out fee", amount: "20.00" },
+  { fee_published_id: 138830, lineage_ref: 162444, institution_id: 7204, canonical_fee_key: "document_reproduction", fee_name: "Minimum Balance Requirements: 3 months’ dividends on the deposit; on certificates of greater than: Document Copy", amount: "4.00" },
+  { fee_published_id: 138848, lineage_ref: 162472, institution_id: 7204, canonical_fee_key: "atm_non_network", fee_name: "ATM SERVICE FEESInitial CardNSF/Overdrawn ATM Withdrawal", amount: "3.00" },
+  { fee_published_id: 138849, lineage_ref: 162473, institution_id: 7204, canonical_fee_key: "cashiers_check", fee_name: "Paper statement feeSAVINGS SERVICESCertified Checks/Official Checks-MembersCertified Checks/Official Checks-Non-MembersV", amount: "3.00" },
+  { fee_published_id: 138850, lineage_ref: 162474, institution_id: 7204, canonical_fee_key: "deposited_item_return", fee_name: "Return Deposit Item (2 party)Return Deposit Item (1 party)", amount: "3.00" },
+  { fee_published_id: 138851, lineage_ref: 162478, institution_id: 7204, canonical_fee_key: "deposited_item_return", fee_name: "Return Deposit Item from Shared Branch", amount: "3.00" },
+];
+// The current fee schedule page's rows (doc 35662) each one waits on, live on prod, read-only, Oct 16.
+const BEACON_CURRENT_1668: LiveTakedownRow[] = [
+  { fee_published_id: 112893, lineage_ref: 179812, institution_id: 7204, canonical_fee_key: "deposited_item_return", fee_name: "Return Deposit Item (1 party)", amount: "36.00" },
+  { fee_published_id: 112881, lineage_ref: 179820, institution_id: 7204, canonical_fee_key: "nsf", fee_name: "NSF Draft, NSF ACH item or NSF Bill Pay item", amount: "36.00" },
+  { fee_published_id: 112915, lineage_ref: 179827, institution_id: 7204, canonical_fee_key: "nsf", fee_name: "NSF/Overdrawn ATM Withdrawal", amount: "36.00" },
+  { fee_published_id: 112887, lineage_ref: 179821, institution_id: 7204, canonical_fee_key: "overdraft", fee_name: "Courtesy Pay Fee (if applicable)", amount: "36.00" },
+  { fee_published_id: 112892, lineage_ref: 179811, institution_id: 7204, canonical_fee_key: "deposited_item_return", fee_name: "Return Deposit Item (2 party)", amount: "15.00" },
+  { fee_published_id: 112883, lineage_ref: 179828, institution_id: 7204, canonical_fee_key: "card_replacement", fee_name: "Replacement Card", amount: "10.00" },
+  { fee_published_id: 112895, lineage_ref: 179824, institution_id: 7204, canonical_fee_key: "counter_check", fee_name: "Starter/Temporary Checks", amount: "3.00" },
+  { fee_published_id: 112877, lineage_ref: 179816, institution_id: 7204, canonical_fee_key: "wire_domestic_outgoing", fee_name: "Wire transfer (domestic) Outgoing", amount: "20.00" },
+  { fee_published_id: 112894, lineage_ref: 179815, institution_id: 7204, canonical_fee_key: "document_reproduction", fee_name: "Document Copy", amount: "4.00" },
+];
+
 // The two #1496 rows as they read live on prod, read-only, Oct 16.
 const LIVE: LiveTakedownRow[] = [
   { fee_published_id: 80423, lineage_ref: 90425, institution_id: 5433, canonical_fee_key: "document_reproduction", fee_name: "Fax (Local)", amount: "15.00" },
@@ -71,9 +101,11 @@ const LIVE: LiveTakedownRow[] = [
   // #1666's run-together North Central row, live on prod, read-only, Oct 16.
   { fee_published_id: 140689, lineage_ref: 166209, institution_id: 7363, canonical_fee_key: "od_protection_transfer",
     fee_name: "See How to avoid them next to the listed fee.Checking AccountsAutomatic Overdraft TransferCopy of DraftCourtesy PayForei", amount: "10.00" },
+  ...BEACON_STALE_1668,
+  ...BEACON_CURRENT_1668,
 ];
 const CONDITIONAL_ZERO = [43512, 54014, 61335, 68893, 70121, 73737, 77121, 77122, 77618, 84553, 87079, 87461, 88213, 91505, 120559];
-const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689];
+const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689, 138828, 138832, 138833, 138839, 138827, 138834, 138841, 148352, 138831, 138830, 138848, 138849, 138850, 138851];
 
 function fakeDb(live: LiveTakedownRow[], failOn?: string) {
   const writes: Array<{ text: string; values: unknown[] }> = [];
@@ -117,6 +149,20 @@ describe("hand takedowns (James, Oct 16)", () => {
       [131129, "source_mismatch: #1196"],
       [70319, "source_mismatch: #1196"],
       [140689, "source_mismatch: #1666"],
+      [138828, "duplicate of #112893 (#1668)"],
+      [138832, "duplicate of #112881 (#1668)"],
+      [138833, "duplicate of #112915 (#1668)"],
+      [138839, "duplicate of #112887 (#1668)"],
+      [138827, "source_mismatch: #1668"],
+      [138834, "duplicate of #112883 (#1668)"],
+      [138841, "duplicate of #112895 (#1668)"],
+      [148352, "duplicate of #112895 (#1668)"],
+      [138831, "duplicate of #112877 (#1668)"],
+      [138830, "duplicate of #112894 (#1668)"],
+      [138848, "source_mismatch: #1668"],
+      [138849, "source_mismatch: #1668"],
+      [138850, "source_mismatch: #1668"],
+      [138851, "source_mismatch: #1668"],
     ]);
     // A wrong read names its issue; a second read of one printed fee names the live copy it repeats too.
     expect(HAND_TAKEDOWNS.every((entry) => entry.evidence.length > 0 && (entry.kind === "duplicate"
@@ -157,6 +203,20 @@ describe("hand takedowns (James, Oct 16)", () => {
         { feePublishedId: 131129, feeVerifiedId: 150786, reason: "source_mismatch: #1196" },
         { feePublishedId: 70319, feeVerifiedId: 84116, reason: "source_mismatch: #1196" },
         { feePublishedId: 140689, feeVerifiedId: 166209, reason: "source_mismatch: #1666" },
+        { feePublishedId: 138828, feeVerifiedId: 162442, reason: "duplicate of #112893 (#1668)" },
+        { feePublishedId: 138832, feeVerifiedId: 162448, reason: "duplicate of #112881 (#1668)" },
+        { feePublishedId: 138833, feeVerifiedId: 162450, reason: "duplicate of #112915 (#1668)" },
+        { feePublishedId: 138839, feeVerifiedId: 162459, reason: "duplicate of #112887 (#1668)" },
+        { feePublishedId: 138827, feeVerifiedId: 162441, reason: "source_mismatch: #1668" },
+        { feePublishedId: 138834, feeVerifiedId: 162451, reason: "duplicate of #112883 (#1668)" },
+        { feePublishedId: 138841, feeVerifiedId: 162462, reason: "duplicate of #112895 (#1668)" },
+        { feePublishedId: 148352, feeVerifiedId: 132704, reason: "duplicate of #112895 (#1668)" },
+        { feePublishedId: 138831, feeVerifiedId: 162445, reason: "duplicate of #112877 (#1668)" },
+        { feePublishedId: 138830, feeVerifiedId: 162444, reason: "duplicate of #112894 (#1668)" },
+        { feePublishedId: 138848, feeVerifiedId: 162472, reason: "source_mismatch: #1668" },
+        { feePublishedId: 138849, feeVerifiedId: 162473, reason: "source_mismatch: #1668" },
+        { feePublishedId: 138850, feeVerifiedId: 162474, reason: "source_mismatch: #1668" },
+        { feePublishedId: 138851, feeVerifiedId: 162478, reason: "source_mismatch: #1668" },
       ],
       skipped: [],
     });
@@ -196,6 +256,22 @@ describe("hand takedowns (James, Oct 16)", () => {
     expect(planHandTakedowns([beaconStale, { ...BEACON_GARNISHMENT_LIVE, amount: "34.00" }], beaconCopy).skipped).toEqual([{ feePublishedId: 138829, reason: "waiting on #112876" }]);
     expect(planHandTakedowns([beaconStale, BEACON_GARNISHMENT_LIVE], beaconCopy)).toEqual({
       takenDown: [{ feePublishedId: 138829, feeVerifiedId: 162443, reason: "duplicate of #112876 (#1661)" }], skipped: [],
+    });
+    // #1668: each Beacon copy waits on the current page's row it repeats; none comes down without it.
+    const beacon1668 = HAND_TAKEDOWNS.filter((entry) => entry.issue === 1668);
+    expect(beacon1668).toHaveLength(14);
+    expect(beacon1668.filter((entry) => entry.requiresLive).map((entry) => entry.requiresLive!.feePublishedId)).toEqual(
+      [112893, 112881, 112915, 112887, 112892, 112883, 112895, 112895, 112877, 112894]);
+    const waiting = planHandTakedowns(BEACON_STALE_1668, beacon1668);
+    expect(waiting.takenDown.map((item) => item.feePublishedId)).toEqual([138848, 138849, 138850, 138851]);
+    expect(waiting.skipped).toEqual(beacon1668.filter((entry) => entry.requiresLive)
+      .map((entry) => ({ feePublishedId: entry.feePublishedId, reason: `waiting on #${entry.requiresLive!.feePublishedId}` })));
+    // A current row re-priced since (the NSF back at $34) holds its copy back.
+    const repriced = BEACON_CURRENT_1668.map((row) => (row.fee_published_id === 112881 ? { ...row, amount: "34.00" } : row));
+    expect(planHandTakedowns([...BEACON_STALE_1668, ...repriced], beacon1668).skipped).toEqual([{ feePublishedId: 138832, reason: "waiting on #112881" }]);
+    expect(planHandTakedowns([...BEACON_STALE_1668, ...BEACON_CURRENT_1668], beacon1668)).toEqual({
+      takenDown: BEACON_STALE_1668.map((row) => ({ feePublishedId: row.fee_published_id, feeVerifiedId: row.lineage_ref, reason: beacon1668.find((entry) => entry.feePublishedId === row.fee_published_id)!.reason })),
+      skipped: [],
     });
     // Another institution or category at the same id, name and price is not the listed row.
     const moved = [{ ...LIVE[4], institution_id: 1 }, { ...LIVE[5], canonical_fee_key: "legal_process" }];

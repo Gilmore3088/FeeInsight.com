@@ -103,6 +103,8 @@ const PAGE_LINES: Record<number, string> = {
   139131: "IRA Closure Fee IRA Minimum Balance Fee8 | $5.00 $4.00/month\n\nMoney Order | $2.50",
   43277: "Stop Payment ……………………………………………..……......... $32 | OTHER FEES AND SERVICES\nUndeliverable Mail ……...………………………….......……....… $15 | Account Reconciliation .………......………....…….….…........ $35\nOne-time fee upon return of 2nd undeliverable item",
   63055: "Stop Payments\nWire Trans. (Dom. Outgoing) …........…$18.00 per Wire\nDebit, ACH, Personal Check…..$35.00 per Item\nWire Trans. (Intern. Outgoing) ………...$35.00 per Wire\nStop Payment",
+  // #1668: Beacon's current fee schedule page (text 33767, prod, read-only, Oct 16).
+  112882: "Courtesy Pay Fee (if applicable) | $36.00 per item\n\nStop Payment, if item would not cause NSF | $17.00 per item\n\nStop Payment, if item would cause NSF | $36.00 per item",
   // #1646 re-review: cut-off names renamed to the page's own words.
   138829: "credited and compounded to your account quarterly. | the dividend rate last declared on Regular Share Savings from | Judicial Attachment (Garnishment) $34.00\n• If you close your account before the accrued dividends are | the date of issuance or renewal until the date of withdrawal. | Notary Public Free",
   137077: "Replace Lost Card | $7.00\nyour account. | Replace Damaged Card | $3.50\nInsufficient Funds (per item) | $35.00",
@@ -158,6 +160,17 @@ describe("hand re-files of misread live fees (retidy v15 review, Oct 9)", () => 
     // Renamed already, or renamed by another check since: left alone.
     expect(planHandRefiles(rows.map((row) => ({ ...row, fee_name: HAND_REFILES.find((entry) => entry.feePublishedId === row.fee_published_id)!.name })))).toEqual([]);
     expect(planHandRefiles([{ ...rows[0], fee_name: "Carefree Checking Service Charge" }])).toEqual([]);
+  });
+
+  it("#1668: moves Beacon's $17 stop payment from NSF to stop payment under its printed name, once", () => {
+    const name = "Stop Payment, if item would not cause NSF";
+    // 112882 as it reads live on prod, read-only, Oct 16.
+    const row = { ...liveRow(112882, "nsf", "17.00", name), fee_verified_id: 179822, institution_id: 7204, source_document_id: 35662 };
+    expect(planHandRefiles([row]).map((move) => [move.currentKey, move.refile.to, move.oldName, move.refile.name])).toEqual([["nsf", "stop_payment", name, name]]);
+    expect(checkFeeAgainstSource(PAGE_LINES[112882], name, 17, ".", "stop_payment")).toMatchObject({ ok: true, sourceLine: "Stop Payment, if item would not cause NSF | $17.00 per item" });
+    // Moved already, or re-priced since: left alone.
+    expect(planHandRefiles([{ ...row, canonical_fee_key: "stop_payment" }])).toEqual([]);
+    expect(planHandRefiles([{ ...row, amount: "36.00" }])).toEqual([]);
   });
 
   it("moves a live fee only while it is still under its old category at its listed price", () => {

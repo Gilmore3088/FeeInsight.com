@@ -690,6 +690,11 @@ export const HAND_REFILES: readonly HandRefile[] = [
   { feePublishedId: 60940, from: "monthly_maintenance", amount: 10, to: "monthly_maintenance", name: "NOW Checking Monthly Service Charge",
     oldName: "Account Fees: The monthly service charge",
     why: "#1664, inst 2454, doc 18090: \"NOW Checking\" / \"Account Fees: The monthly service charge if the daily balance drops below $500.00 any day of the statement cycle is $10.00.\"" },
+  // #1668 (read-only, Oct 16): Beacon Community FCU's $17 stop payment, filed as NSF because its
+  // name says "NSF". The price and name are right; it moves to stop payment under its printed name.
+  // Undo: re-file back under `from`; the run event and `pipeline_feedback` row keep both.
+  { feePublishedId: 112882, from: "nsf", amount: 17, to: "stop_payment", name: "Stop Payment, if item would not cause NSF",
+    why: "#1668, inst 7204, doc 35662: \"Stop Payment, if item would not cause NSF | $17.00 per item\"; a stop payment fee (the NSF line is \"NSF Draft, NSF ACH item or NSF Bill Pay item | $36.00 per item\", live as 112881)" },
 ];
 
 interface HandRow {
