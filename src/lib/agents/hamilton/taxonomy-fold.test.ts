@@ -95,6 +95,9 @@ const PAGE_LINES: Record<number, string> = {
   139131: "IRA Closure Fee IRA Minimum Balance Fee8 | $5.00 $4.00/month\n\nMoney Order | $2.50",
   43277: "Stop Payment ……………………………………………..……......... $32 | OTHER FEES AND SERVICES\nUndeliverable Mail ……...………………………….......……....… $15 | Account Reconciliation .………......………....…….….…........ $35\nOne-time fee upon return of 2nd undeliverable item",
   63055: "Stop Payments\nWire Trans. (Dom. Outgoing) …........…$18.00 per Wire\nDebit, ACH, Personal Check…..$35.00 per Item\nWire Trans. (Intern. Outgoing) ………...$35.00 per Wire\nStop Payment",
+  // #1646: names v17 cannot find where the price is printed, renamed to the page's own words (docs 22481, 20748).
+  96663: "Free notary services\n\n$50 minimum deposit to open\n\nAccounts with balances below $50 on the last day of the month are subject to a $2 fee.\n\n{{ savings-goal-calc }}",
+  88058: "MONEY MARKET ACCOUNTS\nMoney Market Account\nLow Balance Fee\n(charged if the average daily balance is less than $2,500 for the calendar month) ...... $15.00\nDEBIT CARDS",
 };
 
 function liveRow(id: number, key: string, amount: string, name = "(misread cell)") {

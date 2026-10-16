@@ -395,8 +395,8 @@ function nameStems(feeName: string): NameStems {
   return withNameWords(Array.from(new Set(words.map((word) => (/^\d+x\d+$/.test(word) ? ` ${word} ` : word.slice(0, STEM_LENGTH))))), all);
 }
 
-/** What may follow a short name word: the word's end, a plural or a common ending ("Mailing", "Cardholder"). */
-const WHOLE_WORD_END = /^(?:'?s|es|ing|ed|ers?|holders?)?(?![a-z])/;
+/** What may follow a short name word: the word's end, a plural or a common ending ("Mailing", "Cardholder", "Payment"). */
+const WHOLE_WORD_END = /^(?:'?s|es|ing|ed|ers?|holders?|ments?)?(?![a-z])/;
 
 /**
  * Text printed without its spaces: a long run of letters ("Replacelostdebitcard(each)"), or words

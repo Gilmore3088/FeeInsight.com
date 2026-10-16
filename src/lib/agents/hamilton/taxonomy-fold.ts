@@ -631,6 +631,16 @@ export const HAND_REFILES: readonly HandRefile[] = [
   { feePublishedId: 63055, from: "wire_domestic_outgoing", amount: 35, to: "wire_intl_outgoing", name: "Wire Trans. (Intern. Outgoing)",
     oldName: "Wire Trans. (Intern. Outgoing) ………",
     why: "#1513, inst 5653, doc 18876: \"Wire Trans. (Intern. Outgoing) ………...$35.00 per Wire\", an international wire; the domestic one is \"Wire Trans. (Dom. Outgoing) …$18.00 per Wire\" (live as 63054)" },
+  // #1646 (source check v17 reads name words whole): two right fees whose names the page does not
+  // print where it prints the price. v16 traced them only through letters inside other words
+  // ("low" in "below" and in "following"). Each is renamed in place to the page's own words, so it
+  // stays live. Undo: rename back to `oldName`; the run event and `pipeline_feedback` row keep both.
+  { feePublishedId: 96663, from: "minimum_balance", amount: 2, to: "minimum_balance", name: "Accounts with balances below $50 on the last day of the month",
+    oldName: "Low balance fee",
+    why: "#1646, inst 6863, doc 22481: \"Accounts with balances below $50 on the last day of the month are subject to a $2 fee.\"" },
+  { feePublishedId: 88058, from: "minimum_balance", amount: 15, to: "minimum_balance", name: "Money Market Account Low Balance Fee",
+    oldName: "Low Balance Fee",
+    why: "#1646, inst 4613, doc 20748: \"MONEY MARKET ACCOUNTS / Money Market Account / Low Balance Fee / (charged if the average daily balance is less than $2,500 for the calendar month) ...... $15.00\"" },
 ];
 
 interface HandRow {
