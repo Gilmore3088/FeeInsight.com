@@ -395,3 +395,107 @@ describe("the account each monthly price belongs to", () => {
     expect(feeEvidence({ fee_name: "Monthly maintenance fee", amount: 12, fee_category: "monthly_maintenance" }, other)?.condition).toBeNull();
   });
 });
+
+
+describe("review fixes (PR #1679)", () => {
+  it("ends a condition where another fee starts (catalog 89454, doc as stored)", () => {
+    const text = [
+      "Fees & Charges | A maintenance fee of $5 will be imposed every statement cycle if the account balance falls below $700 on any day of the cycle Excess debit fee of $.25 will be charged for each debit transaction (excluding electronic transfers) in excess of 50 during statement cycle Paid item fee: For each overdraft paid -$30 Returned item fee - $30 ATM charges (for ATMs we do not own/operate) $1",
+      "Total Checking",
+      "Minimum balance to open | $5,000",
+      "Minimum Balance Requirements | $5,000",
+      "Interest-earning | Yes/Tiered Rates*",
+      "Incentives | Online banking with optional electronic statements Online bill pay Access to telebanking Free debit card Free basic checks Free ATM usage Free cashier’s checks",
+      "Transaction Limitations | Unlimited",
+      "Fees & Charges | A maintenance fee of $25 will be imposed every statement cycle if the account balance falls below $5,000 on any day of the cycle Paid item fee: For each overdraft paid -$30 Returned item fee - $30",
+      "*Rates may change at any time. Certain limitations and other fees may apply. Visit one of our branches for additional limitations, fees and rate information.",
+      "NOW Account",
+    ].join("\n");
+    const evidence = feeEvidence({ fee_name: "Fees & Charges: A maintenance fee", amount: "25.00", fee_category: "monthly_maintenance" }, text);
+    expect(evidence?.heading).toBe("Total Checking");
+    expect(evidence?.condition).toBe("if the account balance falls below $5,000 on any day of the cycle");
+  });
+
+  it("keeps a comparison row's line when its header names only the kind of account", () => {
+    const text = BANK_IOWA.replace(/^Business Checking for Ag .*$/m, "Checking | Checking | Checking | Checking");
+    expect(feeEvidence({ fee_name: "Monthly service charge", amount: "20.00", fee_category: "monthly_maintenance", extraction_note: BANK_IOWA_NOTE }, text)).toEqual({
+      line: "Monthly Service Charge | $20",
+      heading: null,
+      condition: null,
+      basis: expect.any(String),
+    });
+  });
+
+  it("gives no account when the fee's own name says another, and no condition with alternatives (catalog 80662)", () => {
+    // Knox named the fee Simply Basic Checking; the shared check traces its $3.00 to the E-Vantage
+    // Checking line, whose waiver goes on "; or have 25 debit card ... transactions".
+    const text = [
+      "BROWSE OUR CHECKING ACCOUNTS",
+      "SIMPLY BASIC CHECKING",
+      "The Classic Checking Account Now Has Cutting Edge Convenience.",
+      "Simply Basic gets you started with a low required minimum deposit of $100.00 and a $3.00 monthly service charge will be assessed unless your account meets these requirements:",
+      "Have one ACH to or from this account and receive an e-Statement; or have 25 debit card point of sale transactions which post and settle to this account during the monthly statement cycle and one ACH to or from this account. ATM transactions do not count toward the 25 POS transactions.",
+      "E-VANTAGE CHECKING",
+      "By Doing More Banking Online Your Fees Are Lowered.",
+      "E-Vantage Checking rewards you with a competitive interest rate and a $100 minimum deposit to open account.",
+      "$3.00 monthly service charge will be assessed during the monthly statement cycle unless you receive one ACH to or from this account and receive an e-Statement; or have 25 debit card point of sale transactions which post and settle to this account during the monthly statement cycle and one ACH to or from this account. ATM transactions do not count toward the 25 POS transactions.",
+      "ADVANTAGE CHECKING",
+    ].join("\n");
+    const evidence = feeEvidence(
+      {
+        fee_name: "Simply Basic Checking Monthly service charge",
+        amount: "3.00",
+        fee_category: "monthly_maintenance",
+        extraction_note: "Knox deterministic extraction from Rosetta artifact #1. excerpt=\"Simply Basic gets you started with a low required minimum deposit of $100.00 and a $3.00 monthly service charge will be assessed unless your account meets these requirements:\"",
+      },
+      text,
+    );
+    expect(evidence).not.toBeNull();
+    expect(evidence?.heading).toBeNull();
+    expect(evidence?.condition).toBeNull();
+  });
+
+  it("never takes a feature printed under two accounts for the account (catalog 64102)", () => {
+    const text = [
+      "Totally Free Checking",
+      "Totally Free Checking account provides all the features that you would expect in a checking account. There are no fees for transactions or monthly maintenance.",
+      "No Monthly fee",
+      "Free Debit Card",
+      "Free Internet Banking",
+      "Free Telephone Banking",
+      "Free Mobile Banking",
+      "Unlimited Checking",
+      "E-Statements (required)",
+      "Opening Deposit: A minimum of $50.00 is required to open a Totally Free Checking account.",
+      "Account Fees: There are no monthly maintenance or transaction fees. If your account is overdrawn, you will be assessed a fee on the negative balance at the rate of eighteen percent (18% APR).",
+      "Traditional Checking",
+      "Traditional Checking account provides all the features that you would expect in a checking account. Paper statements are available.",
+      "Free Debit Card",
+      "Free Internet Banking",
+      "Free Telephone Banking",
+      "Free Mobile Banking",
+      "Unlimited Checking",
+      "Choice of E-Statements or Paper Statements",
+      "$3.00 Monthly fee",
+      "Opening Deposit: A minimum of $50.00 is required to open a Traditional Checking account.",
+      "Account Fees: There is a 3.00 per month maintenance fee, there are no transaction fees. If your account is overdrawn, you will be assessed a fee on the negative balance at the rate of eighteen percent (18% APR).",
+      "55 Plus Checking",
+    ].join("\n");
+    const evidence = feeEvidence({ fee_name: "Monthly fee", amount: "3.00", fee_category: "monthly_maintenance" }, text);
+    expect(evidence?.line).toBe("$3.00 Monthly fee");
+    expect(evidence?.heading).toBeNull();
+  });
+
+  it("keeps an acronym in an account name (TVFCU, catalog 141238)", () => {
+    const text = [
+      "Checking Accounts1",
+      "TVFCU Perks Checking",
+      "$6.00 monthly service charge.  Free Perks checking tools include YOUR$ digital banking and BillPay, unlimited Visa® debit card usage, and eStatements. Cell phone protection – receive up to $400 per claim ($800 per year) if your cell phone is broken or stolen. ID theft aid includes payment card fraud resolution, $5,000 in personal identity theft benefit and identity restoration. Buyer’s protection and extended warranty protects newly purchased items for up to $2,500 per item if theft or accidental breakage occurs during the first 180 days of purchase, when purchased using your TVFCU Perks checking account. Shop local, save local with TVFCU Perks savings. Roadside assistance available 24/7 and free to use, up to $80 in covered service charges. Includes $10,000 travel accidental death coverage and a Health Savings Card. There is no minimum required to open.",
+      "TVFCU Perks Plus Checking",
+      "$8.00 monthly service charge. Maintain a $1,500 daily balance and we’ll waive the $8.00 fee.  Free Perks checking tools include YOUR$ digital banking and BillPay, unlimited Visa® debit card usage, and eStatements. Cell phone protection – receive up to $400 per claim ($800 per year) if your cell phone is broken or stolen. ID theft aid includes payment card fraud resolution, $5,000 in personal identity theft benefit and identity restoration. Buyer’s protection and extended warranty protects newly purchased items for up to $2,500 per item if theft or accidental breakage occurs during the first 180 days of purchase, when purchased using your TVFCU Perks Plus checking account. Shop local, save local with TVFCU Perks savings. Roadside assistance available 24/7 and free to use, up to $80 in covered service charges. Includes $10,000 travel accidental death coverage and a Health Savings Card. This account pays monthly dividends. Dividends are calculated by the daily balance method, which applies a daily periodic rate to the balance in the account each day. There is no minimum required to open.",
+      "TVFCU Perks Platinum Checking",
+      "$10.00 monthly service charge. Free Perks checking tools include YOUR$ digital banking and BillPay, unlimited Visa® debit card usage, and eStatements. Cell phone protection – receive up to $600 per claim ($1,200 per year) if your cell phone is broken or stolen. ID theft aid includes payment card fraud resolution, $10,000 in personal identity theft benefit and identity restoration. Your personal information and your credit report are monitored for suspicious activity, and a free quarterly credit report and quarterly updated credit score are provided (activation required for these services to begin). Buyer’s protection and extended warranty protects newly purchased items for up to $2,500 per item if theft or accidental breakage occurs during the first 180 days of purchase, when purchased using your TVFCU Perks Platinum checking account. Shop local, save local with TVFCU Perks savings. Roadside assistance available 24/7 and free to use, up to $80 in covered service charges. Includes $25,000 accidental death coverage and a Health Savings Card. This account pays monthly dividends. Dividends are calculated by the daily balance method, which applies a daily periodic rate to the balance in the account each day. There is no minimum required to open.",
+    ].join("\n");
+    expect(feeEvidence({ fee_name: "Monthly service charge", amount: "10.00", fee_category: "monthly_maintenance" }, text)?.heading).toBe("TVFCU Perks Platinum Checking");
+  });
+});

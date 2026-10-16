@@ -131,6 +131,16 @@ function capitalized(text: string): string {
     : text;
 }
 
+/**
+ * The shared reader writes long all-caps words in title case ("TVFCU" -> "Tvfcu"). In a name that
+ * is not all caps, an all-caps word of two to five letters is an acronym and keeps its capitals.
+ */
+function keepAcronyms(original: string, tidied: string): string {
+  if (original === original.toUpperCase()) return tidied;
+  const acronyms = new Set(original.match(/\b[A-Z]{2,5}\b/g) ?? []);
+  return tidied.replace(/\b[A-Za-z]{2,5}\b/g, (word) => (acronyms.has(word.toUpperCase()) && word !== word.toUpperCase() ? word.toUpperCase() : word));
+}
+
 /** The account kinds a name states, a club inside a checking name ("Premier Club Checking") not counted. */
 function kindsIn(text: string): string[] {
   const kinds = (text.match(ACCOUNT_KINDS) ?? []).map((kind) => kind.toLowerCase().replace(/\s+/g, " "));
@@ -163,7 +173,7 @@ function oneAccountName(cell: string): HeadingRead {
   const kinds = kindsIn(text);
   if (kinds.length > 1) return MANY;
   if (/,|\s&\s|\band\b|\bor\b|\//i.test(text)) return null;
-  text = accountHeading(text) ?? text;
+  text = keepAcronyms(text, accountHeading(text) ?? text);
   if (/^NOW Account$/i.test(text)) return "NOW Account";
   const kind = [...text.matchAll(ACCOUNT_KINDS)].pop();
   if (kind) {
@@ -254,10 +264,41 @@ function headingOver(lines: string[], index: number, amount: number | null): str
     looked += 1;
     const name = accountNameIn(row);
     if (name === MANY) return null;
-    if (name) return name;
+    if (name) return featureLine(lines, i) ? null : name;
     if (endsBlock(row, amount)) return null;
   }
   return null;
+}
+
+/**
+ * A name printed as one item of a feature list repeated under several accounts: "Unlimited
+ * Checking" follows "Free Mobile Banking" under both "Totally Free Checking" and "Traditional
+ * Checking". The name and the feature line before it are printed together under two accounts.
+ */
+function featureLine(lines: string[], index: number): boolean {
+  const before = (at: number): string | null => {
+    for (let i = at - 1; i >= 0; i -= 1) if (lines[i]) return lines[i];
+    return null;
+  };
+  const feature = before(index);
+  if (!feature || accountNameIn(feature) !== null || ANY_PRICE.test(feature) || /^(?:learn|open|apply|view|see|get|start|enroll)\b/i.test(feature)) return false;
+  // Printed under two different accounts, not one block printed twice.
+  const blocks = new Set<string>();
+  for (let at = 0; at < lines.length; at += 1) {
+    if (lines[at] !== lines[index] || before(at) !== feature) continue;
+    let looked = 0;
+    for (let i = at - 1; i >= 0 && looked < HEADING_LOOKBACK; i -= 1) {
+      if (!lines[i]) continue;
+      looked += 1;
+      const name = accountNameIn(lines[i]);
+      if (name === MANY) break;
+      if (name) {
+        blocks.add(name);
+        break;
+      }
+    }
+  }
+  return blocks.size >= 2;
 }
 
 /** A short title naming an account kind ("PERSONAL SAVINGS", "More About Gold Owl Checking"), named or not. */
@@ -393,8 +434,16 @@ function conditionClause(segment: string, amount: number): string | null {
     const at = clause.search(new RegExp(String.raw`[\s,]*(?:is|of|will be|=|:|[-–])?\s*\$\s?0*${whole.replace(".", String.raw`\.`)}(?:\.00)?(?!\d|,\d)`, "i"));
     if (at > 0) clause = clause.slice(0, at).replace(/,?\s+(?:(?:there\s+(?:is|will be)\s+)?(?:a|an|the)\s+)?[^,]*\b(?:fee|charge)s?\s*(?:of|is|will be)?$/i, "");
   }
+  // "... on any day of the cycle Paid item fee: For each overdraft paid -$30": the clause ends
+  // where another fee's label or price starts.
+  const next = clause.search(OTHER_FEE_START);
+  if (next > 0) clause = clause.slice(0, next);
+  if (PRICED_FEE_LINE.test(clause) && !WAIVER_WORD.test(clause)) return null;
   return tidyCondition(clause);
 }
+
+/** Where another fee starts inside a run-on line: its label ("Paid item fee:") or its price ("$30 returned item fee"). */
+const OTHER_FEE_START = /\s+[A-Z][\w ]{0,40}\b(?:[Ff]ee|[Cc]harge)s?\b\s*[:\-–]|\s+\$\s?\d[\d,.]*\s+(?:(?![Aa]void|[Ww]aive|to\b)[\w-]+\s+){0,3}(?:[Ff]ee|[Cc]harge)s?\b/;
 
 /** Opens a line that only states the condition of the price above it ("Waived with $500 minimum balance"). */
 const CONDITION_LINE = /^\(?\s*(?:waived?|avoid(?:ed)?|unless|if|when|no (?:monthly )?(?:service |maintenance )?(?:fee|charge)s? (?:if|when|with))\b/i;
@@ -408,8 +457,24 @@ const CONDITION_LINE = /^\(?\s*(?:waived?|avoid(?:ed)?|unless|if|when|no (?:mont
  * condition by itself, and a clause beside another fee's price ("The fee is $4.95 if receiving
  * E-Statements") is that price's.
  */
-function conditionFor(raw: string, amount: number, next: string | null): string | null {
+function conditionFor(raw: string, amount: number, next: string | null, whole: string = raw): string | null {
   if (LIST_INTRO.test(raw)) return null;
+  const found = conditionOnLine(raw, amount, next);
+  // "unless you receive one ACH ... and receive an e-Statement; or have 25 debit card ...": the
+  // waiver goes on with alternatives in the source, so the quoted part alone is not the condition.
+  if (found && hasAlternatives(found, whole, next)) return null;
+  return found;
+}
+
+function hasAlternatives(condition: string, whole: string, next: string | null): boolean {
+  const tidied = whole.replace(/\s+/g, " ");
+  const at = tidied.indexOf(condition);
+  if (at < 0) return false;
+  const after = tidied.slice(at + condition.length);
+  return /^\W{0,3}(?:;|,)?\s*or\b/i.test(after) || (/^[\s.;,]*$/.test(after) && /[;,]\s*$/.test(tidied) && next != null && /^\s*or\b/i.test(next));
+}
+
+function conditionOnLine(raw: string, amount: number, next: string | null): string | null {
   const segments = raw
     .split(CELL_SPLIT)
     .flatMap((cell) => cell.split(/(?<=[.;])\s+(?=[A-Z($\d*])/))
@@ -442,7 +507,7 @@ function conditionIn(text: string | null | undefined, raw: string, own: string, 
     at.map((index) => {
       let next = index + 1;
       while (next < lines.length && !lines[next]) next += 1;
-      return conditionFor(own, amount, next < lines.length ? lines[next] : null);
+      return conditionFor(own, amount, next < lines.length ? lines[next] : null, lines[index]);
     }),
   );
 }
@@ -546,9 +611,11 @@ function ownPart(
     const lines = text.split(/\r?\n/).map((row) => row.replace(/\s+/g, " ").trim());
     const rowIndex = lineIndex(lines, raw);
     if (rowIndex == null) return null;
-    const header = namesOneAccount(columnHeader(lines, rowIndex, all.length, at[0]));
+    const header = columnHeader(lines, rowIndex, all.length, at[0]);
+    if (!header) return null;
     const cut = `${all[0]} | ${all[at[0]]}`;
-    return header ? { line: cut, heading: header, condition: conditionFor(cut, amount, null) } : null;
+    // A header naming only the kind ("Checking") still places the column: the line stays, unnamed.
+    return { line: cut, heading: namesOneAccount(header), condition: conditionFor(cut, amount, null) };
   }
   let kept = cells(own);
   if (kept.length >= 2 && kept.some((cell) => cellPrice(cell) !== null && Math.abs((cellPrice(cell) as number) - amount) < 0.005)) {
@@ -562,6 +629,18 @@ function ownPart(
   return { line, heading: text ? headingAbove(text, raw, amount) : null, condition: conditionIn(text, raw, own, amount) };
 }
 
+/** The account a fee's own name opens with ("Simply Basic Checking Monthly service charge"), if any. */
+function accountInFeeName(feeName: string | null): string | null {
+  const head = (feeName ?? "").split(/\s+(?:monthly|maintenance|service|account maintenance|min(?:imum)?\s+balance|fees?|charges?)\b/i)[0];
+  const name = head && head !== feeName ? oneAccountName(head) : null;
+  return typeof name === "string" ? name : null;
+}
+
+function sameAccount(a: string, b: string): boolean {
+  const key = (name: string) => name.toLowerCase().replace(/\baccount\b/g, "").replace(/[^a-z0-9]+/g, "");
+  return key(a).includes(key(b)) || key(b).includes(key(a));
+}
+
 /** The fee's evidence from its own document's text, or null when no line shows its price. */
 export function feeEvidence(fee: EvidenceFee, text: string | null | undefined): FeeEvidence | null {
   if (fee.amount == null || fee.amount === "") return null;
@@ -569,7 +648,12 @@ export function feeEvidence(fee: EvidenceFee, text: string | null | undefined): 
   if (!Number.isFinite(amount) || amount < 0) return null;
   const build = (raw: string, basis: EvidenceBasis): FeeEvidence | null => {
     const part = ownPart(raw, fee.fee_name ?? "", amount, text);
-    return part ? { line: aroundPrice(tidy(part.line), amount), heading: part.heading, condition: part.condition, basis } : null;
+    if (!part) return null;
+    // "Simply Basic Checking Monthly service charge" traced to a line under "E-Vantage Checking":
+    // the fee's own name says another account, so the line's heading is not this fee's.
+    const named = accountInFeeName(fee.fee_name);
+    const heading = part.heading && named && !sameAccount(named, part.heading) ? null : part.heading;
+    return { line: aroundPrice(tidy(part.line), amount), heading, condition: part.condition, basis };
   };
   if (text && fee.fee_name) {
     const traced = checkFeeAgainstSource(text, fee.fee_name, amount, ".", fee.fee_category);
