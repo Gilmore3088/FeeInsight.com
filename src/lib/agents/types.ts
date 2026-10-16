@@ -119,8 +119,11 @@ export const MAX_STEP_ATTEMPTS = 3;
 /**
  * Steps that report on the pipeline rather than change data. They still run while
  * the pipeline control is paused, so the operator keeps hearing from Atlas.
+ * `answer-key-relabel` writes only the hand-checked answer key (never a fee row) and opens
+ * the scoreboard run, so a pause must not hold the day's score behind it (#1550 review).
  */
 export const PAUSE_EXEMPT_STEP_KEYS: readonly string[] = [
+  "answer-key-relabel",
   "bayes-replay-ledger",
   "briefing-refresh",
   "competitor-alerts",

@@ -26,9 +26,11 @@ Atlas is the orchestration and operator-visibility agent. Atlas-specific code ma
 
 `answer-key-relabel`, the first step of Atlas's daily scoreboard run, applies James's category
 decisions to a fixed list of answer-key lines before the day's score reads them. First list (Oct 16,
-night deposit option A): 28 bag and key purchase lines at 11 banks leave scoring
-(`canonical_key = 'unmapped'`, a note in `conditions`); the answer-key score and Deming's Knox replay
-skip `unmapped` lines. A line changes only while it reads as listed (id, institution, category, price,
+night deposit option A): 28 confirmed bag and key purchase lines at 11 banks, and 6 prefilled ones at
+6 more, leave scoring (`canonical_key = 'unmapped'`, a note in `conditions`); the answer-key score and
+Deming's Knox replay skip `unmapped` lines. The step is pause-exempt: it writes only the answer key, so a
+pipeline pause does not hold the score behind it. The repo copies of these lines (the Knox gate
+fixtures and `darwin/answer-key-fees.json`) carry the same `unmapped` labels. A line changes only while it reads as listed (id, institution, category, price,
 source line); every change goes in the step's ledger detail, and a second run changes nothing.
 
 ## City repair (`city-repair.ts`, #1213)

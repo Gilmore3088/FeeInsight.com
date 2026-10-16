@@ -247,7 +247,11 @@ function narrateFinished(
     }
     case "answer-key-relabel": {
       const changed = Array.isArray(detail.changed) ? detail.changed.length : 0;
-      return changed === 0 ? "Atlas found no answer-key line left to relabel." : `Atlas relabelled ${count(changed, "answer-key line")} by James's decisions.`;
+      if (changed === 0) return "Atlas found no answer-key line left to relabel.";
+      // A dry run lists the lines and changes none.
+      return detail.dry_run === true
+        ? `Atlas would relabel ${count(changed, "answer-key line")} by James's decisions (dry run, nothing changed).`
+        : `Atlas relabelled ${count(changed, "answer-key line")} by James's decisions.`;
     }
     case "atlas-city-repair": {
       const found = n(detail, "candidates");

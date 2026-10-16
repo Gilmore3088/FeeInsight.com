@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 
+import { narrateStepFinished } from "@/lib/agents/narrate";
+import { pauseScopeForStep } from "@/lib/agents/types";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { ANSWER_KEY_RELABELS, OUT_OF_SCOPE_KEY, planAnswerKeyRelabels, runAnswerKeyRelabels, summarizeAnswerKeyRelabels, type KeyFeeRow } from "./answer-key-relabels";
 
@@ -10,9 +12,11 @@ const asRow = (entry: (typeof ANSWER_KEY_RELABELS)[number]): KeyFeeRow => ({
 });
 
 describe("Atlas answer-key relabels (James, Oct 16: night deposit is the service only)", () => {
-  it("lists 28 bag and key purchase lines at 11 banks, all leaving scoring", () => {
-    expect(ANSWER_KEY_RELABELS).toHaveLength(28);
-    expect(new Set(ANSWER_KEY_RELABELS.map((entry) => entry.institutionId)).size).toBe(11);
+  it("lists 34 bag and key purchase lines at 17 banks, all leaving scoring", () => {
+    // 28 confirmed lines at 11 banks, and 6 prefilled ones at 6 more (#1550 review).
+    expect(ANSWER_KEY_RELABELS).toHaveLength(34);
+    expect(new Set(ANSWER_KEY_RELABELS.map((entry) => entry.institutionId)).size).toBe(17);
+    expect(ANSWER_KEY_RELABELS.slice(28).map((entry) => entry.feeId)).toEqual([498, 675, 692, 834, 870, 957]);
     for (const entry of ANSWER_KEY_RELABELS) {
       expect(entry.fromKey).toBe("night_deposit");
       expect(entry.toKey).toBe(OUT_OF_SCOPE_KEY);
@@ -27,7 +31,7 @@ describe("Atlas answer-key relabels (James, Oct 16: night deposit is the service
 
   it("relabels a line only while it reads as listed", () => {
     const rows = ANSWER_KEY_RELABELS.map(asRow);
-    expect(planAnswerKeyRelabels(rows).changed).toHaveLength(28);
+    expect(planAnswerKeyRelabels(rows).changed).toHaveLength(34);
     const edited = [{ ...rows[0], canonical_key: "safe_deposit_box" }, { ...rows[1], amount: "9.00" }, { ...rows[2], canonical_key: OUT_OF_SCOPE_KEY }];
     expect(planAnswerKeyRelabels(edited, ANSWER_KEY_RELABELS.slice(0, 3)).skipped).toEqual([
       { feeId: 49, reason: "changed since listed" },
@@ -46,16 +50,28 @@ describe("Atlas answer-key relabels (James, Oct 16: night deposit is the service
       return [{ id: values[values.length - 1] }];
     });
     const result = await runAnswerKeyRelabels({ db: db as never });
-    expect(result.changed).toHaveLength(28);
-    expect(writes).toHaveLength(28);
+    expect(result.changed).toHaveLength(34);
+    expect(writes).toHaveLength(34);
     expect(writes[0].text).toContain("AND canonical_key = ?");
     expect(writes[0].text).toContain("AND COALESCE(source_line, '') = ?");
     expect(writes.every((write) => !/DELETE|published_fee|raw_fee|verified_fee/i.test(write.text))).toBe(true);
-    expect(summarizeAnswerKeyRelabels(result)).toContain("relabelled 28 answer-key lines at 11 banks");
+    expect(summarizeAnswerKeyRelabels(result)).toContain("relabelled 34 answer-key lines at 17 banks");
 
     writes.length = 0;
     const dry = await runAnswerKeyRelabels({ db: db as never, dryRun: true });
-    expect(dry.changed).toHaveLength(28);
+    expect(dry.changed).toHaveLength(34);
     expect(writes).toHaveLength(0);
+    expect(summarizeAnswerKeyRelabels(dry)).toContain("would relabel 34 answer-key lines");
+  });
+
+  it("runs through a pipeline pause, so it never holds the scoreboard run it opens", () => {
+    expect(pauseScopeForStep("answer-key-relabel")).toBe("none");
+  });
+
+  it("narrates a dry run as what it would change", () => {
+    const changed = [{ answer_key_fee_id: 49 }];
+    expect(narrateStepFinished("answer-key-relabel", { dry_run: true, changed })).toContain("would relabel 1 answer-key line");
+    expect(narrateStepFinished("answer-key-relabel", { dry_run: true, changed })).not.toContain("relabelled");
+    expect(narrateStepFinished("answer-key-relabel", { dry_run: false, changed })).toContain("relabelled 1 answer-key line");
   });
 });

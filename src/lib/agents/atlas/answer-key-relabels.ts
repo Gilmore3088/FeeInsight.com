@@ -69,6 +69,14 @@ export const ANSWER_KEY_RELABELS: readonly AnswerKeyRelabel[] = [
   bag(2232, 7288, 3, "Zipper Bag | $3"),
   bag(2714, 8448, 0.25, "Night Depository Tamper Resistant Bags | $0.25 each or $100 per box/500"),
   bag(2715, 8448, 100, "Night Depository Tamper Resistant Bags | $0.25 each or $100 per box/500"),
+  // Six bag purchase lines on keys still prefilled (not yet confirmed), so a later confirm
+  // cannot bring the old reading back into scoring (#1550 review).
+  bag(498, 389, 15, "Night Deposit Bags Lock Bag $15"),
+  bag(675, 933, 25, "Night depository bag with lock/keys .... $25.00"),
+  bag(692, 1149, 35, "Night deposit bag with lock and key - per bag $35.00"),
+  bag(834, 1467, 20, "Nightly Depository Bag Purchase - Per Bag $20.00"),
+  bag(870, 1559, 25, "Night Deposit Bag (Locking) | $25.00"),
+  bag(957, 1780, 25, "Night Depository Bags $25.00"),
 ];
 
 export interface KeyFeeRow {

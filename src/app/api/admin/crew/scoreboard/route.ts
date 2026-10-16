@@ -35,7 +35,8 @@ async function handleGET(request: NextRequest) {
     triggerSource: "schedule",
     idempotencyKey: `atlas:scoreboard:${day}`,
     steps: [
-      // First: James's answer-key decisions reach the key before the day's score reads it.
+      // First: James's answer-key decisions reach the key before the day's score reads it. It
+      // writes only the answer key, so it is pause-exempt and a pipeline pause still runs the score.
       { key: "answer-key-relabel", agent: "atlas", title: "Atlas: apply James's answer-key category decisions to the listed key lines" },
       { key: "score-answer-key", agent: "atlas", title: "Score the pipeline against the answer key" },
       { key: "deming-regression", agent: "atlas", title: "Deming: turn confirmed mistakes into test cases and replay them" },
@@ -51,6 +52,7 @@ async function handleGET(request: NextRequest) {
   });
   const result = started.reused
     ? { runId: started.run.id, status: started.run.status, message: "Today's scoreboard already ran." }
+    // 10 steps is executeAgentRun's hard cap: an 11th step here would be left for the tick.
     : await executeAgentRun(started.run.id, { maxSteps: 10 });
   return NextResponse.json({ ok: true, runId: started.run.id, reused: started.reused, result });
 }
