@@ -3,13 +3,15 @@ import { NATIONAL_INDEX_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
 import { TrackLink } from "@/components/track-link";
 import { PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
-import { Eyebrow, InstitutionSearchForm, SANS, hasFigure } from "./landing-shared";
+import { InstitutionSearchForm, SANS, hasFigure } from "./landing-shared";
 
 const CHIP =
   "inline-flex min-h-10 shrink-0 items-center whitespace-nowrap rounded-full border border-border bg-surface-0 px-3.5 text-[13px] font-medium text-ink hover:border-ink";
 
 /**
- * Brief 06 §4.3 item 1: parchment, one centred column at every width. The promise, one
+ * Brief 06 §4.3 item 1: parchment, one centred column at every width. Brand order: the header
+ * names Fee Insight, the line under the search names the Bank Fee Index as its dataset, and the
+ * subhead names Hamilton as its Pro workspace. The promise, one
  * sentence, the search, live microcopy and three working chips. It stays short so the
  * product frame under it, centred at the full container width, shows in the first screen.
  */
@@ -17,9 +19,10 @@ export function LandingHero({ summary }: { summary: Pick<PublicStatsSummary, "in
   return (
     <section className="bg-paper">
       <div className="mx-auto flex max-w-6xl flex-col items-center px-4 pb-5 pt-5 text-center sm:px-6 sm:pb-6 sm:pt-8 lg:pt-6">
-        <Eyebrow>The {PRODUCT_NAME}</Eyebrow>
+        {/* No eyebrow: the header already names the site, and a product name above the h1 read as the
+            site's name. The Bank Fee Index is named where its data is (the line under the search). */}
         <h1
-          className="mt-3 max-w-4xl text-[2.25rem] !font-semibold leading-[1.04] !tracking-[-0.04em] text-ink sm:text-[3rem] lg:text-[3.25rem]"
+          className="max-w-4xl text-[2.25rem] !font-semibold leading-[1.04] !tracking-[-0.04em] text-ink sm:text-[3rem] lg:text-[3.25rem]"
           style={SANS}
         >
           Know where your fees stand, with a source for every figure
@@ -31,7 +34,7 @@ export function LandingHero({ summary }: { summary: Pick<PublicStatsSummary, "in
 
         <InstitutionSearchForm id="hero-search" className="mt-4 w-full max-w-2xl [&_.fi-field]:max-w-none [&_label]:sr-only sm:mt-4" />
         <p className="mt-2.5 text-[13px] leading-5 text-ink-muted">
-          {hasFigure(summary.institutionsLabel) ? `${summary.institutionsLabel} institutions with published fees · ` : ""}
+          {hasFigure(summary.institutionsLabel) ? `${summary.institutionsLabel} institutions in the ${PRODUCT_NAME} · ` : ""}
           {summary.freshnessLabel}
         </p>
 

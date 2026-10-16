@@ -152,7 +152,9 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     expect(html).toContain('name="q"');
     const t = text(html);
     expect(t).toContain("Know where your fees stand, with a source for every figure");
-    expect(t).toContain("1,234 institutions with published fees · Data refreshed Oct 14, 2026");
+    expect(t).toContain("1,234 institutions in the Bank Fee Index · Data refreshed Oct 14, 2026");
+    // Brand order: no product name above the h1, where it read as the site's name.
+    expect(t.indexOf("Bank Fee Index")).toBeGreaterThan(t.indexOf("Know where your fees stand"));
     expect(t).toContain("Hamilton, the Fee Insight Pro workspace");
     // The Pro plans chip comes first, so a phone shows it whole in the first screen (re-walk R3).
     const chips = [...html.matchAll(/<li><a href="([^"]+)"/g)].map(([, href]) => href);
@@ -161,7 +163,7 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     for (const href of ["/fees/overdraft", "/research/national-fee-index", "/subscribe"]) expect(html).toContain(`href="${href}"`);
     expect(t).not.toContain(REPORT_PRICE_INLINE);
     const unavailable = text(renderToStaticMarkup(<LandingHero summary={{ ...summary, institutionsLabel: "—" }} />));
-    expect(unavailable).not.toContain("institutions with published fees");
+    expect(unavailable).not.toContain("institutions in the");
   });
 
   it("server-renders one demo window: tabs for navigation, the district map open, no time bar", () => {
