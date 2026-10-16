@@ -80,24 +80,25 @@ export function DistrictHero({ district, name, figures, freshnessLabel, reportHr
   );
 }
 
-/** The district's states: the map again, each state a tap away, with the same links as text. */
-export function DistrictStates({ district, states }: { district: number; states: string[] }) {
+/**
+ * The map the state picker sits on: the district's states drawn as pickable shapes (data-state),
+ * the rest of the country muted. The picker reads the tap; the state chips are the same choice
+ * for keyboard and screen reader users.
+ */
+export function PickMap({ district }: { district: number }) {
   return (
-    <div className="grid gap-4 rounded-2xl border border-border bg-surface-0 p-4 shadow-fi-1 sm:p-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] lg:items-center">
-      <DistrictMap district={district} tone="light" />
-      <ul className="grid grid-cols-2 gap-2">
-        {states.map((code) => (
-          <li key={code}>
-            <Link
-              href={`/research/state/${code}`}
-              className="flex min-h-11 items-center justify-between rounded-lg border border-border px-3 text-[14px] font-medium text-ink transition-colors hover:border-ink/30"
-            >
-              {STATE_NAMES[code]}
-              <span aria-hidden="true" className="text-ink-muted">&rarr;</span>
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </div>
+    <svg viewBox="0 0 960 600" className="h-auto w-full">
+      {US_STATES.map((s) => {
+        const inDistrict = STATE_TO_DISTRICT[s.id] === district && STATE_NAMES[s.id];
+        return inDistrict ? (
+          <g key={s.id} data-state={s.id}>
+            <title>{STATE_NAMES[s.id]}</title>
+            <path d={s.d} className="fill-[#e8b4ae] stroke-[#fbf7f1] transition-colors hover:fill-[#d98b83]" strokeWidth={1.2} />
+          </g>
+        ) : (
+          <path key={s.id} d={s.d} className="fill-[#ece4d8] stroke-[#fbf7f1]" strokeWidth={1.2} />
+        );
+      })}
+    </svg>
   );
 }

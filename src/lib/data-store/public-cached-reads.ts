@@ -32,6 +32,7 @@ import {
 import { getMarketBranchFootprint } from "./branches";
 import { getNationalRateStats } from "./rate-fees";
 import { getCountyFeeMap } from "./state-visuals";
+import { getDistrictHub, isEmptyDistrictHub } from "./district-hub";
 
 /**
  * Cached variants of the catalog-wide reads that public pages run on every request.
@@ -141,3 +142,5 @@ export async function getInstitutionPeerRankCached(institutionId: number): Promi
   return peerRankFromGroupValues(institutionId, rule, filters, values);
 }
 export const getMarketBranchFootprintCached = cachedPublicRead("market-branch-footprint", getMarketBranchFootprint);
+/** The district hub's exhibits beyond the fee board (district-hub.ts), one entry per district. */
+export const getDistrictHubCached = cachedPublicRead("district-hub-v1", getDistrictHub, isEmptyDistrictHub);
