@@ -51,7 +51,12 @@ describe("explicit, similar-size and saved selection", () => {
     expect(result.criteria?.sort).toBe("closest_assets");
     expect(result.criteria?.descriptions.join(" ")).toContain("2026-06-30");
   });
-  it("does not add a size restriction to a simple list of banks in a state", () => { const c = plan("List 10 banks in Florida").criteria; expect(c?.minAssets).toBeNull(); expect(c?.sort).toBe("name"); expect(c?.states).toEqual(["FL"]); });
+  it("does not add a size restriction to a simple list of banks in a state", () => { const c = plan("List 10 banks in Florida").criteria; expect(c?.minAssets).toBeNull(); expect(c?.requiresAssets).toBe(false); expect(c?.sort).toBe("largest_assets"); expect(c?.states).toEqual(["FL"]); });
+  it("keeps the largest when a filtered list is capped, and the closest for a similar-size list (#1540)", () => {
+    expect(plan("List Florida institutions with assets above $5B").criteria?.sort).toBe("largest_assets");
+    expect(plan("List Florida institutions with assets above $5B").criteria?.descriptions).toContain("Ordered by total assets, largest first, then institution name and ID.");
+    expect(plan("List ten similarly sized credit unions").criteria?.sort).toBe("closest_assets");
+  });
   it("does not treat all institutions as just the subject's type", () => { expect(plan("List institutions above $1B").criteria?.charterType).toBeNull(); });
   it("honors the active saved group for generic peers", () => { const c = plan("List ten peers", saved).criteria; expect(c?.basis).toBe("saved_peer_set"); expect(c?.institutionIds).toEqual([202, 203]); expect(c?.minAssets).toBeNull(); });
   it("lets explicit criteria replace defaults without retaining unrelated saved IDs", () => { const c = plan("List ten banks in Florida", saved).criteria; expect(c?.basis).toBe("explicit_filters"); expect(c?.institutionIds).toBeNull(); expect(c?.charterType).toBe("bank"); });
