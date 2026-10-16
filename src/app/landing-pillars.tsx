@@ -19,7 +19,6 @@ export const PILLAR_VIDEOS: Record<"fee" | "market" | "workspace", FrameVideo | 
 };
 
 function Pillar({
-  eyebrow,
   title,
   line,
   frameLabel,
@@ -28,7 +27,6 @@ function Pillar({
   after,
   children,
 }: {
-  eyebrow: string;
   title: string;
   line: string;
   frameLabel: string;
@@ -44,7 +42,7 @@ function Pillar({
       }`}
     >
       <div className={`min-w-0 ${flip ? "lg:order-2" : ""}`}>
-        <SectionHeading eyebrow={eyebrow} title={title} line={line} />
+        <SectionHeading title={title} line={line} />
         {after}
       </div>
       <ProductFrame label={frameLabel} className={`fi-window-lift ${flip ? "lg:order-1" : ""}`}>
@@ -59,21 +57,20 @@ function Pillar({
  * samples, each a heading, one line and one visual drawn from published schedules. None
  * repeats a demo view: the schedule drawn to the index, the bank's fee as a column chart
  * across its markets, and Hamilton answering with a chart. A pillar without its live
- * figures is left out.
+ * figures is left out. No section intro and no eyebrows (James, Oct 16): the demo above
+ * already introduces them, and the product name sits on each frame.
  */
 export function LandingPillars({ data }: { data: HomeData }) {
   if (!data.overdraft) return null;
   const sourced = Boolean(data.sample && data.sample.fees.length > 0);
   return (
-    <section id="live-samples" className="bg-paper">
-      <div className={`${SECTION_INNER} pb-16 pt-8 sm:pb-24 sm:pt-12`}>
-        <SectionHeading eyebrow="Live samples" title="See it in action" line="Each sample is drawn live from published fee schedules." center />
-        <div className="mt-10 space-y-16 sm:mt-14 sm:space-y-24">
+    <section id="live-samples" aria-label="Live samples" className="bg-paper">
+      <div className={`${SECTION_INNER} pb-16 pt-6 sm:pb-24 sm:pt-10`}>
+        <div className="space-y-16 sm:space-y-20">
           {sourced ? (
             <Pillar
-              eyebrow="Every fee"
-              title="Each fee, quoted from the bank's own schedule"
-              line="Every figure keeps the document and the date we read it."
+              title="Trace every fee to its source"
+              line="Inspect the published schedule and the date it was read."
               frameLabel={PRODUCT_NAME}
               video={PILLAR_VIDEOS.fee}
             >
@@ -82,9 +79,8 @@ export function LandingPillars({ data }: { data: HomeData }) {
           ) : null}
           {data.ladder ? (
             <Pillar
-              eyebrow="Every market"
-              title="One fee, in every market"
-              line="A bank's fee against its local competitors, its state, its charter and the nation."
+              title="Compare across markets"
+              line="See the same fee against local competitors, your state, banks nationwide and the full index."
               frameLabel="Hamilton · Markets"
               video={PILLAR_VIDEOS.market}
               flip
@@ -93,9 +89,8 @@ export function LandingPillars({ data }: { data: HomeData }) {
             </Pillar>
           ) : null}
           <Pillar
-            eyebrow="One workspace"
-            title="Ask, compare and take it to committee"
-            line="Hamilton answers each question with a chart and its source."
+            title="Bring the findings to committee"
+            line="Explore an answer with its chart and supporting sources."
             frameLabel="Hamilton · Ask"
             video={PILLAR_VIDEOS.workspace}
             flip={!data.ladder}

@@ -17,6 +17,7 @@ import {
   dotLayout,
   firstDistrict,
   gapWords,
+  placeDots,
   openingPrice,
   scrollTargetTop,
   stepOf,
@@ -72,13 +73,32 @@ describe("district map", () => {
     expect(panelName()).toBe("Dallas");
     expect(group(11).getAttribute("aria-pressed")).toBe("true");
     expect(group(3).getAttribute("aria-pressed")).toBe("false");
-    const p = within(panel());
-    expect(p.getByText("The same as the national median")).toBeTruthy();
-    expect(panel().textContent).toContain("238 institutions publish an overdraft fee");
-    expect(p.getByRole("link").getAttribute("href")).toBe("/research/district/11");
+    expect(panel().querySelector("[data-panel-gap]")?.textContent).toContain("median · same as national");
+    expect(panel().textContent).toContain("Dallas · District 11");
+    expect(panel().textContent).toContain("238 institutions with published overdraft fees");
+    const footer = document.querySelector("[data-district-footer]") as HTMLElement;
+    expect(within(footer).getByRole("link", { name: /Dallas district report/ }).getAttribute("href")).toBe("/research/district/11");
     fireEvent.click(group(12));
-    expect(panel().querySelector("[data-panel-gap]")?.textContent).toBe(gapWords(25 - 30));
-    expect(gapWords(-5)).toBe("$5.00 below the national median");
+    expect(panel().querySelector("[data-panel-gap]")?.textContent).toBe(`$25.00 median · ${gapWords(25 - 30)}`);
+    expect(gapWords(-5)).toBe("$5.00 below national");
+  });
+
+  it("places each district dot at its true median and stacks dots that would overlap", () => {
+    const { dots, rows, nationLeft } = placeDots(
+      [
+        { district: 1, median: 30 },
+        { district: 2, median: 30 },
+        { district: 3, median: 40 },
+        { district: 4, median: 20 },
+      ],
+      30,
+    );
+    const at = (n: number) => dots.find((d) => d.district === n)!;
+    expect([at(4).left, at(1).left, at(3).left]).toEqual([4, 50, 96]);
+    expect(at(2).left).toBe(at(1).left);
+    expect([at(1).row, at(2).row]).toEqual([0, 1]);
+    expect(rows).toBe(2);
+    expect(nationLeft).toBe(50);
   });
 
   it("selects with Enter, moves with the arrow keys and previews on hover", () => {

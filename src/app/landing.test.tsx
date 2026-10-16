@@ -189,8 +189,8 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     const html = renderToStaticMarkup(<LandingDemo data={data} />);
     const t = text(html);
     // District map: the highest district median opens in the panel, against the nation.
-    expect(t).toContain("District 1 Boston");
-    expect(t).toContain("Boston $27.25 Nation $29.00 $1.75 below the national median");
+    expect(t).toContain("Boston · District 1 $27.25 median · $1.75 below national");
+    expect(t).toContain("Boston $27.25 Nation $29.00");
     expect(html).toContain('href="/research/district/1"');
     // My fees: the sample bank's fees, each a bar against its local median.
     expect(t).toContain("Sample Bank against 15 local competitors");
@@ -246,11 +246,14 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     expect(pillars).not.toMatch(/Federal Reserve districts|type="range"|Report preview|data-fee="/);
   });
 
-  it("heads the pillars as live samples, the level under the demo", () => {
+  it("opens the live samples straight on the first sample, one heading and one line each", () => {
     const html = renderToStaticMarkup(<LandingPillars data={data} />);
     expect(html).toContain('id="live-samples"');
     const t = text(html);
-    expect(t).toMatch(/^ ?Live samples See it in action Each sample is drawn live from published fee schedules\./);
+    expect(t).toMatch(/^ ?Trace every fee to its source Inspect the published schedule and the date it was read\./);
+    expect(t).toContain("Compare across markets");
+    expect(t).toContain("Bring the findings to committee");
+    expect(t).not.toMatch(/See it in action|Every fee|Every market|One workspace/);
     // The demo comes first on the page, then the live samples.
     const page = wholePage();
     expect(page.indexOf('aria-label="Hamilton demo"')).toBeGreaterThan(-1);

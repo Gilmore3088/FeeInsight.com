@@ -165,6 +165,7 @@ export function DistrictMap({ data }: { data: HomeData }) {
     metricRadios.current[next]?.focus();
   };
   const chosen = selected !== null ? byNumber.get(selected) : undefined;
+  const drawn = districts.filter((d): d is DistrictPoint & { median: number } => d.median !== null);
 
   const label = (d: DistrictPoint | undefined, n: number) =>
     d
@@ -172,7 +173,8 @@ export function DistrictMap({ data }: { data: HomeData }) {
       : `District ${n}: no overdraft figures`;
 
   return (
-    <div className="grid gap-5 p-4 sm:px-6 sm:pb-5 sm:pt-4 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] lg:gap-8">
+    <div className="p-4 sm:px-6 sm:pb-4 sm:pt-5">
+     <div className="grid gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] lg:items-start lg:gap-10">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <p className="text-[13px] font-semibold text-ink">Overdraft by Fed district</p>
@@ -277,19 +279,35 @@ export function DistrictMap({ data }: { data: HomeData }) {
       <p className="sr-only" aria-live="polite" data-district-announce="">
         {selected !== null ? label(chosen, selected) : ""}
       </p>
-      <DistrictPanel district={active} number={activeNumber} districts={districts} national={overdraft} onPick={pick} swatchOf={swatchOf} />
-      <DistrictReportLinks />
+      <DistrictPanel district={active} number={activeNumber} national={overdraft} swatchOf={swatchOf} />
+     </div>
+      {drawn.length > 1 && overdraft ? (
+        <DistrictGroups districts={drawn} national={overdraft.median_amount} active={activeNumber} onPick={pick} swatchOf={swatchOf} />
+      ) : null}
+      {/* One compact footer row across the demo: the shown district's report, then all 12. */}
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-x-6 gap-y-1 border-t border-border pt-2" data-district-footer="">
+        {activeNumber !== null ? (
+          <Link
+            href={`/research/district/${activeNumber}`}
+            className="inline-flex min-h-10 items-center gap-1 text-[13px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+          >
+            {active ? `The ${active.name} district report` : "The district report"}
+            <span aria-hidden="true">→</span>
+          </Link>
+        ) : null}
+        <DistrictReportLinks />
+      </div>
     </div>
   );
 }
 
 /**
  * All 12 district reports as plain links, in the server render whichever district is chosen,
- * so crawlers and keyboard visitors reach each one. Closed by default under the map.
+ * so crawlers and keyboard visitors reach each one. Closed by default, in the demo's footer row.
  */
 export function DistrictReportLinks() {
   return (
-    <details className="group text-[13px] lg:col-span-2" data-district-reports="">
+    <details className="group text-[13px] open:basis-full" data-district-reports="">
       <summary className="inline-flex min-h-10 cursor-pointer list-none items-center gap-1.5 font-semibold text-ink-soft hover:text-ink [&::-webkit-details-marker]:hidden">
         <span aria-hidden="true" className="inline-block transition-transform group-open:rotate-90 motion-reduce:transition-none">
           ›
@@ -312,86 +330,100 @@ export function DistrictReportLinks() {
   );
 }
 
-/** The panel beside the map: the chosen district against the nation, and where all 12 sit. */
+/**
+ * The panel beside the map: the shown district in three short lines, then its median against
+ * the nation's as two bars with the amounts on one right edge (James's notes of Oct 16).
+ */
 function DistrictPanel({
   district,
   number,
-  districts,
   national,
-  onPick,
   swatchOf,
 }: {
   district: DistrictPoint | null;
   number: number | null;
-  districts: DistrictPoint[];
   national: RangeEntry | null;
-  onPick: (n: number) => void;
   swatchOf: (n: number) => { fill: string; text: string };
 }) {
-  const drawn = districts.filter((d): d is DistrictPoint & { median: number } => d.median !== null);
-  const scaleHi = top10(Math.max(national?.median_amount ?? 0, ...drawn.map((d) => d.median)));
+  const scaleHi = top10(Math.max(national?.median_amount ?? 0, district?.median ?? 0));
   return (
-    <div className="flex min-w-0 flex-col" data-district-panel="">
+    <div className="min-w-0 rounded-xl border border-border bg-paper/60 p-5 sm:p-7" data-district-panel="">
       {district && number !== null ? (
         <>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-muted">District {number}</p>
-          <p className="mt-1 text-[24px] font-semibold leading-tight tracking-[-0.02em] text-ink" data-panel-name="">
-            {district.name}
+          <p className="text-[22px] font-semibold leading-tight tracking-[-0.02em] text-ink">
+            <span data-panel-name="">{district.name}</span>
+            <span className="font-normal text-ink-muted"> · District {number}</span>
           </p>
           {district.median !== null && national ? (
-            <div className="mt-4 space-y-2.5" data-panel-bars="">
+            <p className="mt-2 text-[14px] text-ink-soft" data-panel-gap="">
+              <span className="font-semibold tabular-nums text-ink">{money(district.median)}</span> median · {gapWords(district.median - national.median_amount)}
+            </p>
+          ) : (
+            <p className="mt-2 text-[14px] text-ink-muted">Too few institutions here for a median.</p>
+          )}
+          <p className="mt-1 text-[14px] text-ink-soft">
+            <span className="font-semibold tabular-nums text-ink">{COUNT.format(district.institutions)}</span> institutions with published overdraft fees
+          </p>
+          {district.median !== null && national ? (
+            <div className="mt-6 space-y-3" data-panel-bars="">
               {[
                 { name: district.name, value: district.median, color: swatchOf(number).fill },
                 { name: "Nation", value: national.median_amount, color: "var(--fi-viz-bar)" },
               ].map((row) => (
-                <div key={row.name} className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-3 text-[13px]">
+                <div key={row.name} className="grid grid-cols-[6rem_minmax(0,1fr)_4.5rem] items-center gap-3 text-[13px]">
                   <span className="truncate text-ink-soft">{row.name}</span>
-                  <span className="flex items-center gap-2">
-                    <span
-                      className="block h-4 rounded-r-[4px] transition-[width] duration-500 ease-out motion-reduce:transition-none"
-                      style={{ width: pct(row.value, scaleHi), background: row.color }}
-                    />
-                    <span className="shrink-0 font-mono text-[13px] font-semibold tabular-nums text-ink">{money(row.value)}</span>
-                  </span>
+                  <span
+                    className="block h-4 rounded-r-[4px] transition-[width] duration-500 ease-out motion-reduce:transition-none"
+                    style={{ width: pct(row.value, scaleHi), background: row.color }}
+                  />
+                  <span className="text-right font-mono text-[13px] font-semibold tabular-nums text-ink">{money(row.value)}</span>
                 </div>
               ))}
-              <p className="text-[13px] text-ink-muted" data-panel-gap="">
-                {gapWords(district.median - national.median_amount)}
-              </p>
             </div>
-          ) : (
-            <p className="mt-4 text-[13px] text-ink-muted">Too few institutions here for a median.</p>
-          )}
-          <p className="mt-3 text-[13px] text-ink-soft">
-            <span className="font-semibold tabular-nums text-ink">{COUNT.format(district.institutions)}</span> institutions publish an overdraft fee
-          </p>
+          ) : null}
         </>
       ) : (
         <p className="text-[13px] text-ink-muted">Pick a district on the map.</p>
       )}
-      {drawn.length > 1 && national ? <DistrictGroups districts={drawn} national={national.median_amount} active={number} onPick={onPick} swatchOf={swatchOf} /> : null}
-      {number !== null ? (
-        <Link
-          href={`/research/district/${number}`}
-          className="mt-4 inline-flex min-h-10 items-center gap-1 self-start text-[13px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
-        >
-          {district ? `The ${district.name} district report` : "The district report"}
-          <span aria-hidden="true">→</span>
-        </Link>
-      ) : null}
     </div>
   );
 }
 
-/** The district's median against the nation's, in words. */
+/** The district's median against the nation's, in a few words. */
 export function gapWords(gap: number): string {
-  if (Math.abs(gap) < 0.005) return "The same as the national median";
-  return `${money(Math.abs(gap))} ${gap > 0 ? "above" : "below"} the national median`;
+  if (Math.abs(gap) < 0.005) return "same as national";
+  return `${money(Math.abs(gap))} ${gap > 0 ? "above" : "below"} national`;
+}
+
+/** Dots closer than this share of the plot's width stack instead of overlapping. */
+const DOT_GAP_PCT = 7;
+const DOT_ROW_PX = 26;
+
+/**
+ * Each dot's place on the plot: its true median along the axis (never spread out to fill
+ * space), lifted one row whenever it would overlap a dot already placed, so ties stack.
+ */
+export function placeDots<T extends { district: number; median: number }>(medians: T[], national: number) {
+  const lo = Math.min(national, ...medians.map((d) => d.median));
+  const hi = Math.max(national, ...medians.map((d) => d.median));
+  const x = (v: number) => (hi > lo ? 4 + ((v - lo) / (hi - lo)) * 92 : 50);
+  const rows: number[][] = [];
+  const dots = [...medians]
+    .sort((a, b) => a.median - b.median || a.district - b.district)
+    .map((d) => {
+      const left = x(d.median);
+      let row = rows.findIndex((taken) => taken.every((t) => Math.abs(t - left) >= DOT_GAP_PCT));
+      if (row === -1) row = rows.push([]) - 1;
+      rows[row].push(left);
+      return { ...d, left, row };
+    });
+  return { dots, rows: Math.max(1, rows.length), lo, hi, nationLeft: x(national) };
 }
 
 /**
- * All 12 districts grouped by their median: each district is its numbered map dot, in its
- * map color; the group holding the national median is marked. A dot picks its district.
+ * All 12 districts on one full-width axis by their median: each district is its numbered map
+ * dot, in its map color, at its true position; the national median is a marked line. A dot
+ * picks its district.
  */
 function DistrictGroups({
   districts,
@@ -406,44 +438,45 @@ function DistrictGroups({
   onPick: (n: number) => void;
   swatchOf: (n: number) => { fill: string; text: string };
 }) {
-  const groups = new Map<number, number[]>();
-  for (const d of [...districts].sort((a, b) => a.district - b.district)) {
-    const key = Math.round(d.median * 100) / 100;
-    groups.set(key, [...(groups.get(key) ?? []), d.district]);
-  }
-  const ordered = [...groups.entries()].sort((a, b) => a[0] - b[0]);
+  const { dots, rows, lo, hi, nationLeft } = placeDots(districts, national);
+  const plotHeight = rows * DOT_ROW_PX + 8;
   return (
-    <div className="mt-5 border-t border-border pt-3" data-district-groups="">
+    <div className="mt-6 border-t border-border pt-4" data-district-groups="">
       <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-muted">Districts by median</p>
-      <div className="mt-2.5 flex flex-wrap items-end gap-x-5 gap-y-3">
-        {ordered.map(([value, members]) => (
-          <div key={value} className="flex flex-col items-center">
-            <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${Math.min(3, members.length)}, 1.375rem)` }}>
-              {members.map((n) => {
-                const sw = swatchOf(n);
-                return (
-                  <button
-                    key={n}
-                    type="button"
-                    tabIndex={-1}
-                    aria-hidden="true"
-                    onClick={() => onPick(n)}
-                    className={`flex h-[1.375rem] w-[1.375rem] items-center justify-center rounded-full text-[11px] font-semibold tabular-nums ${
-                      n === active ? "ring-2 ring-ink ring-offset-1 ring-offset-surface-0" : ""
-                    }`}
-                    style={{ background: sw.fill, color: sw.text }}
-                  >
-                    {n}
-                  </button>
-                );
-              })}
-            </div>
-            <span className={`mt-1 font-mono text-[11px] tabular-nums ${Math.abs(value - national) < 0.005 ? "font-semibold text-ink" : "text-ink-muted"}`}>
-              {money(value)}
-            </span>
-            {Math.abs(value - national) < 0.005 ? <span className="text-[10px] text-ink-muted">nation</span> : null}
-          </div>
-        ))}
+      <div className="relative mt-8" style={{ height: plotHeight }}>
+        <div aria-hidden="true" className="absolute inset-y-0 w-px -translate-x-1/2 border-l border-dashed border-ink-muted" style={{ left: `${nationLeft}%` }}>
+          <span
+            className={`absolute -top-6 whitespace-nowrap font-mono text-[11px] font-semibold tabular-nums text-ink ${
+              nationLeft < 15 ? "left-0" : nationLeft > 85 ? "right-0" : "left-1/2 -translate-x-1/2"
+            }`}
+          >
+            Nation {money(national)}
+          </span>
+        </div>
+        {dots.map((d) => {
+          const sw = swatchOf(d.district);
+          return (
+            <button
+              key={d.district}
+              type="button"
+              tabIndex={-1}
+              aria-hidden="true"
+              title={`${d.district} ${d.name}: ${money(d.median)}`}
+              onClick={() => onPick(d.district)}
+              className={`absolute flex h-[1.375rem] w-[1.375rem] -translate-x-1/2 items-center justify-center rounded-full text-[11px] font-semibold tabular-nums ${
+                d.district === active ? "ring-2 ring-ink ring-offset-1 ring-offset-surface-0" : ""
+              }`}
+              style={{ left: `${d.left}%`, bottom: d.row * DOT_ROW_PX + 4, background: sw.fill, color: sw.text }}
+            >
+              {d.district}
+            </button>
+          );
+        })}
+      </div>
+      <div aria-hidden="true" className="border-t border-border" />
+      <div aria-hidden="true" className="mt-2 flex justify-between font-mono text-[11px] tabular-nums text-ink-muted">
+        <span>{money(lo)}</span>
+        <span>{money(hi)}</span>
       </div>
     </div>
   );
