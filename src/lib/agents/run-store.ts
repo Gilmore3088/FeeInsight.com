@@ -3393,6 +3393,10 @@ export function isLaneRoomRun(source: string | null | undefined): boolean {
  * 5-minute ticks. Its `discover` (115 s) never fits the ~95 s a fresh lane's first work (~175 s)
  * leaves of the 270 s tick, so while fresh lanes kept arriving behind it, it never started (#1421).
  * Read-now runs keep lane room: their steps are short.
+ *
+ * The bound is firm only when the re-search run is the tick's first row. Several waiting re-search
+ * runs in one tick can each take a step ahead of the lane, so together they can still eat into
+ * its room (#1586).
  */
 export const LANE_ROOM_MAX_IDLE_MS = 15 * 60_000;
 

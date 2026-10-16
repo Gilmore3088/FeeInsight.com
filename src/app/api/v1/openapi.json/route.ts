@@ -2,6 +2,13 @@ import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 import { NextResponse } from "next/server";
 import { SITE_NAME, SITE_URL } from "@/lib/constants";
 
+// The fee name pair (#1482, #1583), shared by fees[] and rate_fees[]. A completed name
+// ("3 X 10" shown as "Safe Deposit Box 3 X 10") is the schedule's own name, so its flag is false.
+const FEE_NAME =
+  "The fee's name as the bank's schedule words it, made complete where the schedule's row leaves its heading out (a safe deposit box row reading \"3 X 10\" becomes \"Safe Deposit Box 3 X 10\"). When the stored name was cut off mid-line, the fee category's name stands in.";
+const NAME_IS_CATEGORY_FALLBACK =
+  "True when fee_name is the fee category's name standing in for a stored name that was cut off mid-line; false when fee_name is the schedule's own name, or that name made complete.";
+
 const spec = {
   openapi: "3.0.3",
   info: {
@@ -201,16 +208,8 @@ const spec = {
             items: {
               type: "object",
               properties: {
-                fee_name: {
-                  type: "string",
-                  example: "Overdraft Fee",
-                  description: "The fee's name as the bank's schedule words it, or the fee category's name when the stored name was cut off mid-line.",
-                },
-                name_is_category_fallback: {
-                  type: "boolean",
-                  description:
-                    "True when fee_name is the fee category's name standing in for a stored name that was cut off mid-line; false when fee_name is the schedule's own wording.",
-                },
+                fee_name: { type: "string", example: "Overdraft Fee", description: FEE_NAME },
+                name_is_category_fallback: { type: "boolean", description: NAME_IS_CATEGORY_FALLBACK },
                 amount: { type: "number", example: 35.0 },
                 frequency: {
                   type: "string",
@@ -244,12 +243,8 @@ const spec = {
             items: {
               type: "object",
               properties: {
-                fee_name: { type: "string", example: "Foreign Transaction Fee" },
-                name_is_category_fallback: {
-                  type: "boolean",
-                  description:
-                    "True when fee_name is the fee category's name standing in for a stored name that was cut off mid-line; false when fee_name is the schedule's own wording.",
-                },
+                fee_name: { type: "string", example: "Foreign Transaction Fee", description: FEE_NAME },
+                name_is_category_fallback: { type: "boolean", description: NAME_IS_CATEGORY_FALLBACK },
                 category: { type: "string", nullable: true, example: "foreign_transaction" },
                 rate_percent: { type: "number", example: 3 },
                 rate_min_amount: { type: "number", nullable: true, description: "Dollar floor, when the schedule states one." },
