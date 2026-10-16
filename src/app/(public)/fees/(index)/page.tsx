@@ -1,4 +1,5 @@
 export const dynamic = "force-dynamic";
+import { PAGE_HEADER, PAGE_LEDE } from "@/components/public/page-header";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { FEE_FAMILIES, getDisplayName, getSpotlightCategories, TAXONOMY_COUNT } from "@/lib/fee-taxonomy";
@@ -119,14 +120,14 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
 
       {/* 1. What the Index is */}
       <section className="border-b border-border bg-paper">
-        <div className="mx-auto max-w-page px-4 pb-8 pt-8 sm:px-6 sm:pt-12">
+        <div className={`mx-auto max-w-page px-4 pb-8 pt-8 sm:px-6 sm:pt-12 ${PAGE_HEADER}`}>
           <p className="inline-flex items-center rounded-full border border-brick/40 px-3 py-1 text-[12px] font-semibold uppercase tracking-[0.12em] text-brick">
             The {PRODUCT_NAME}
           </p>
-          <h1 className="mt-4 max-w-3xl text-[32px] font-semibold leading-[1.08] tracking-[-0.03em] text-ink sm:text-[48px]">
+          <h1 className="mx-auto mt-4 max-w-3xl text-[32px] font-semibold leading-[1.08] tracking-[-0.03em] text-ink sm:mx-0 sm:text-[48px]">
             What U.S. banks and credit unions charge, fee by fee
           </h1>
-          <p className="mt-3 max-w-2xl text-[15px] text-ink-soft">
+          <p className={`mt-3 ${PAGE_LEDE}`}>
             Read from {summary.institutionsLabel} institutions&apos; own published schedules across {TAXONOMY_COUNT} fee
             categories, with a source behind every figure. {summary.freshnessLabel}.
           </p>
