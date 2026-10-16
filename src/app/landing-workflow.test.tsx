@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { LandingWorkflow, dollars, findingSentence, plainQuote, workflowLead } from "./landing-workflow";
+import { HamiltonAnswer, ReportPreview, dollars, findingSentence, plainQuote, workflowLead } from "./landing-workflow";
 import { sampleWorkflowReport } from "./landing-workflow.test-fixture";
 
 vi.mock("@/components/track-link", () => ({
@@ -12,7 +12,13 @@ vi.mock("@/components/track-link", () => ({
 }));
 
 const report = sampleWorkflowReport();
-const html = renderToStaticMarkup(<LandingWorkflow report={report} />);
+const lead0 = workflowLead(report)!;
+const html = renderToStaticMarkup(
+  <>
+    <HamiltonAnswer lead={lead0} />
+    <ReportPreview report={report} lead={lead0} />
+  </>,
+);
 const text = (s: string) => s.replace(/<[^>]+>/g, " ").replace(/&#x27;|&apos;/g, "'").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/\s+/g, " ");
 const answer = html.slice(html.indexOf("data-workflow-compare"), html.indexOf("data-workflow-report"));
 const reportPart = html.slice(html.indexOf("data-workflow-report"));
@@ -28,7 +34,6 @@ describe("homepage example: one question, one finding, the same fee in the repor
 
   it("asks one question and answers it with the bank, the median and three named peers as bars", () => {
     const t = text(html);
-    expect(t).toContain("See where your fees stand locally");
     expect(t).toContain("How does our outgoing international wire fee compare with local competitors?");
     const a = text(answer);
     expect(a).toContain("$75 $25 above the local median");
@@ -63,6 +68,7 @@ describe("homepage example: one question, one finding, the same fee in the repor
     const t = text(reportPart);
     expect(t).toContain("Capital City Bank against its local market");
     expect(t).toContain("At a glance");
+    expect(t).toContain("4 more fees in the full report");
     expect(t).toMatch(/Of your 7 comparable fees, 2 above the local middle range/);
     expect(reportPart.match(/data-highlight=""/g)).toHaveLength(1);
     expect(reportPart).toMatch(/data-highlight=""[^>]*>\s*<span[^>]*>Outgoing international wire</);
@@ -70,10 +76,10 @@ describe("homepage example: one question, one finding, the same fee in the repor
     expect(t).not.toMatch(/Sources and method|Named competitors, same lines/);
   });
 
-  it("is left out without a ready sample report", () => {
-    expect(renderToStaticMarkup(<LandingWorkflow report={null} />)).toBe("");
+  it("finds no lead without a ready sample report", () => {
+    expect(workflowLead(null)).toBeNull();
     const notReady = { ...report, analysis: { ...report.analysis, readiness: { ...report.analysis.readiness, ready: false } } };
-    expect(renderToStaticMarkup(<LandingWorkflow report={notReady} />)).toBe("");
+    expect(workflowLead(notReady)).toBeNull();
   });
 
   it("keeps the copy free of em-dashes and agent names", () => {

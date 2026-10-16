@@ -27,8 +27,7 @@ import { SearchModal } from "@/components/public/search-modal";
 import { getFeeCategoryDetailCached } from "@/lib/data-store/public-cached-reads";
 import { shortenPageLife } from "@/lib/data-store/public-read-cache";
 import { LandingHero } from "./landing-hero";
-import { LandingProblem, LandingProducts } from "./landing-products";
-import { LandingWorkflow } from "./landing-workflow";
+import { LandingProducts } from "./landing-products";
 import { LandingPricing } from "./landing-pricing";
 import { LandingFaq } from "./landing-faq";
 import { buildHomeData, buildSampleView, homeReadsCacheable } from "./landing-shared";
@@ -129,12 +128,10 @@ export default async function LandingPage() {
       />
       <ConsumerNav />
       <main id="main-content">
-        {/* James's five sections (Oct 16): the promise, the problem, the two products, one
-            example, then the plans with the questions buyers ask. */}
-        <LandingHero summary={summary} />
-        <LandingProblem />
-        <LandingProducts data={data} summary={summary} />
-        <LandingWorkflow report={liveSample} />
+        {/* James's order (Oct 16): the promise, the Index and Hamilton with a useful answer
+            and the report, the subscription, then the questions buyers ask. */}
+        <LandingHero />
+        <LandingProducts data={data} summary={summary} report={liveSample} />
         <LandingPricing />
         <LandingFaq summary={summary} />
       </main>

@@ -5,8 +5,7 @@ import { PRO_TIERS, tierPriceLabel } from "@/lib/pro-tiers";
 import { REPORT_PRICE_INLINE } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
 import { LandingHero } from "./landing-hero";
-import { LandingProblem, LandingProducts } from "./landing-products";
-import { LandingWorkflow } from "./landing-workflow";
+import { LandingProducts } from "./landing-products";
 import { sampleWorkflowReport } from "./landing-workflow.test-fixture";
 import { LandingPricing } from "./landing-pricing";
 import { LandingFaq, faqItems } from "./landing-faq";
@@ -112,10 +111,8 @@ const words = (html: string) => text(html).split(" ").filter((w) => /[A-Za-z0-9$
 const wholePage = () =>
   renderToStaticMarkup(
     <>
-      <LandingHero summary={summary} />
-      <LandingProblem />
-      <LandingProducts data={data} summary={summary} />
-      <LandingWorkflow report={sampleWorkflowReport()} />
+      <LandingHero />
+      <LandingProducts data={data} summary={summary} report={sampleWorkflowReport()} />
       <LandingPricing />
       <LandingFaq summary={summary} />
     </>,
@@ -133,41 +130,45 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     expect(buildHomeData(summary, [category("overdraft", { p25_amount: null })], null).overdraft).toBeNull();
   });
 
-  it("leads with James's promise and two actions, the search kept as a secondary way in", () => {
-    const html = renderToStaticMarkup(<LandingHero summary={summary} />);
+  it("leads with James's promise and two actions, nothing else", () => {
+    const html = renderToStaticMarkup(<LandingHero />);
     const t = text(html);
-    expect(t).toContain("Your next fee review doesn't need to take weeks, or cost thousands.");
+    expect(t).toContain("Your next fee review doesn't need to take weeks.");
+    expect(t).not.toMatch(/cost thousands/);
     expect(t).toContain(
       "Fee Insight helps you compare competitors with the Bank Fee Index. Turn the evidence into analysis and board reports with Hamilton.",
     );
     expect(html).toMatch(/<a href="\/subscribe"[^>]*fi-btn-primary[^>]*data-event="upgrade_click" data-placement="home_hero">See plans</);
     expect(html).toMatch(/<a href="\/reports\/sample-competitive-fee-position"[^>]*>Explore a sample report</);
-    expect(t.indexOf("See plans")).toBeLessThan(t.indexOf("Or look up any bank or credit union"));
-    expect(html).toMatch(/<form[^>]*action="\/institutions"[^>]*method="get"/);
-    expect(html).toContain("fi-btn-secondary min-h-11 justify-center");
-    expect(t).toContain("1,234 institutions in the Bank Fee Index · Data refreshed Oct 14, 2026");
+    // The search moved to the Bank Fee Index, out of the hero.
+    expect(html).not.toContain("<form");
     expect(t).not.toContain(REPORT_PRICE_INLINE);
-    const unavailable = text(renderToStaticMarkup(<LandingHero summary={{ ...summary, institutionsLabel: "—" }} />));
-    expect(unavailable).not.toContain("institutions in the");
   });
 
-  it("introduces the two products by their marks, each with one visual from live data", () => {
-    const html = renderToStaticMarkup(<LandingProducts data={data} summary={summary} />);
+  it("introduces the Index with the search and the map, and Hamilton with one answer, then the report", () => {
+    const html = renderToStaticMarkup(<LandingProducts data={data} summary={summary} report={sampleWorkflowReport()} />);
     const t = text(html);
+    const at = (marker: string) => html.indexOf(marker);
     expect(html).toContain('role="img" aria-label="Bank Fee Index"');
     expect(html).toContain('role="img" aria-label="Hamilton"');
-    expect(html).toContain('aria-label="Map of the 12 Federal Reserve districts, shaded by overdraft median"');
-    expect(t).toContain("Boston · District 1 $27.25 median · $1.75 below national");
-    // The district ranking waits behind the toggle; the map and its takeaway show.
+    // Index: search, live count, map with its ranking folded away.
+    expect(html).toMatch(/<form[^>]*action="\/institutions"[^>]*method="get"/);
+    expect(t).toContain("1,234 institutions · Data refreshed Oct 14, 2026");
+    expect(at("<form")).toBeLessThan(at("data-district-map"));
+    expect(at('aria-label="Hamilton"')).toBeGreaterThan(at("data-district-map"));
     expect(html).toMatch(/data-district-takeaway=""/);
-    expect(html).toContain("data-hamilton-snapshot");
-    expect(t).toContain("Sample Bank against 15 local competitors");
-    expect(t).toContain("5,678 fee entries from 1,234 institutions");
+    // Hamilton: the question and answer, no separate fee list.
+    expect(html).not.toContain("data-hamilton-snapshot");
+    expect(at("data-example-question")).toBeGreaterThan(at('aria-label="Hamilton"'));
+    // One compact report preview after both, linked to the full report.
+    expect(at("data-workflow-report")).toBeGreaterThan(at("data-workflow-compare"));
+    expect(html.match(/data-workflow-report/g)).toHaveLength(1);
     expect(html).toContain('href="/methodology"');
-    // No figures, no frames: a failed read leaves the products' words and drops their visuals.
-    const bare = renderToStaticMarkup(<LandingProducts data={buildHomeData(summary, [], null)} summary={{ ...summary, observationsLabel: "—" }} />);
+    // Without a sample: the Index stays; the answer and the report preview are left out.
+    const bare = renderToStaticMarkup(<LandingProducts data={buildHomeData(summary, [], null)} summary={summary} report={null} />);
     expect(bare).not.toContain("fi-window");
-    expect(text(bare)).not.toMatch(/fee entries/);
+    expect(bare).toContain("<form");
+    expect(bare).not.toContain("data-workflow-report");
   });
 
   it("renders Pro prices from PRO_TIERS with the report as one line", () => {
@@ -180,15 +181,14 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     expect(renderToStaticMarkup(<LandingPricing />)).toContain("/reports?report=institution#request");
   });
 
-  it("runs the five sections in order: promise, problem, products, example, plans", () => {
+  it("runs promise, products with the answer and report, then plans and the FAQ", () => {
     const page = wholePage();
     const at = (marker: string) => page.indexOf(marker);
-    expect(at("<h1")).toBeGreaterThan(-1);
-    expect(at("<h1")).toBeLessThan(at('id="problem-heading"'));
-    expect(at('id="problem-heading"')).toBeLessThan(at('id="products-heading"'));
-    expect(at('id="products-heading"')).toBeLessThan(at('id="example"'));
-    expect(at('id="example"')).toBeLessThan(at('id="plans"'));
-    expect(page).toContain("Every plan includes");
+    expect(at("<h1")).toBeLessThan(at('id="products-heading"'));
+    expect(at('id="products-heading"')).toBeLessThan(at("data-workflow-report"));
+    expect(at("data-workflow-report")).toBeLessThan(at('id="plans"'));
+    expect(page).not.toContain("weeks of gathering");
+    expect(page).toContain("Full Bank Fee Index access");
   });
 
   it("keeps at most five short FAQ answers", () => {
