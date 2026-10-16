@@ -8,6 +8,9 @@ import { HAND_REFILES, handFixedPassing, planHandRefiles, previewResearchSplit }
 
 /** The schedule lines each hand re-file was read from (copied data: the banks' own text). */
 const PAGE_LINES: Record<number, string> = {
+  // #1664: 1NB Bank's services page (doc 18090, text 13604), each account's heading and fee line.
+  60939: "Carefree Checking\n\nCarefree Checking\n\nMinimum Average Daily Balance: $300.00\n\nLimitations: You must deposit $300.00 to open this account.\n\nAccount Fees: The monthly service charge if the average daily balance drops below $300.00 during the statement cycle is $5.95. The fee is $4.95 if receiving E-Statements.",
+  60940: "NOW Checking\n\nNOW Checking\n\nMinimum Balance: $500\n\nLimitations: You must deposit $500.00 to open this account.\n\nAccount Fees: The monthly service charge if the daily balance drops below $500.00 any day of the statement cycle is $10.00.",
   // #1659: U.S. Bank's checking-accounts page (doc 23628, text 20686).
   102970: "BANKING MADE SIMPLE\n\nSafe Debit account2\n\n$4.95 Monthly Maintenance Fee with no minimum balance requirement\n\nMoney management with a debit card – no checks, no overdraft fees3",
   // #1655: Navy Federal's home equity line fees (doc 26712).
@@ -100,7 +103,23 @@ const PAGE_LINES: Record<number, string> = {
   139131: "IRA Closure Fee IRA Minimum Balance Fee8 | $5.00 $4.00/month\n\nMoney Order | $2.50",
   43277: "Stop Payment ……………………………………………..……......... $32 | OTHER FEES AND SERVICES\nUndeliverable Mail ……...………………………….......……....… $15 | Account Reconciliation .………......………....…….….…........ $35\nOne-time fee upon return of 2nd undeliverable item",
   63055: "Stop Payments\nWire Trans. (Dom. Outgoing) …........…$18.00 per Wire\nDebit, ACH, Personal Check…..$35.00 per Item\nWire Trans. (Intern. Outgoing) ………...$35.00 per Wire\nStop Payment",
+  // #1668: Beacon's current fee schedule page (text 33767, prod, read-only, Oct 16).
+  112882: "Courtesy Pay Fee (if applicable) | $36.00 per item\n\nStop Payment, if item would not cause NSF | $17.00 per item\n\nStop Payment, if item would cause NSF | $36.00 per item",
+  // #1646 re-review: cut-off names renamed to the page's own words.
+  138829: "credited and compounded to your account quarterly. | the dividend rate last declared on Regular Share Savings from | Judicial Attachment (Garnishment) $34.00\n• If you close your account before the accrued dividends are | the date of issuance or renewal until the date of withdrawal. | Notary Public Free",
+  137077: "Replace Lost Card | $7.00\nyour account. | Replace Damaged Card | $3.50\nInsufficient Funds (per item) | $35.00",
+  15595: "SCHEDULE OF FEES - BUSINESS\nAccount Balancing Assistance, per hour ......................................................................................... $27.50",
+  135314: "Stop Payments. Before placing a stop payment online, verify the check has not cleared your account. The stop payment will remain in effect for six months. A charge of $30.00 will be assessed to the account holder as payment for implementing the stop payment request.",
+  97924: "Fees and Charges:\n* We do not charge for any preauthorized EFTs.\n* We will charge $25.00 for each stop-payment order for\npreauthorized transfers.",
+  98545: "etc.) while it is in dormant status, subject to applicable law. For New York State residents,\nthe monthly dormant fee of $3 for Savings and $10 for Money Market accounts will be\nwaived.",
+  130805: "the account balance of your checking account(s) with an ATM card or Visa Check Card\n\nthere is a charge of $1.50 at ATMs we do not own or operate",
+  // #1646: names v17 cannot find where the price is printed, renamed to the page's own words (docs 22481, 20748).
+  96663: "Free notary services\n\n$50 minimum deposit to open\n\nAccounts with balances below $50 on the last day of the month are subject to a $2 fee.\n\n{{ savings-goal-calc }}",
+  88058: "MONEY MARKET ACCOUNTS\nMoney Market Account\nLow Balance Fee\n(charged if the average daily balance is less than $2,500 for the calendar month) ...... $15.00\nDEBIT CARDS",
 };
+
+/** Renames whose price the page ties to a balance band (`tiered_fee`), before and after (#1664). */
+const TIERED_RENAMES = new Set([60939, 60940]);
 
 function liveRow(id: number, key: string, amount: string, name = "(misread cell)") {
   return { fee_published_id: id, fee_verified_id: id + 1000, institution_id: 1, source_document_id: 9, canonical_fee_key: key, fee_name: name, amount };
@@ -117,8 +136,41 @@ describe("hand re-files of misread live fees (retidy v15 review, Oct 9)", () => 
   it("names every one as its page does, at its price", () => {
     for (const refile of HAND_REFILES) {
       const traced = checkFeeAgainstSource(PAGE_LINES[refile.feePublishedId], refile.name, refile.amount, ".", refile.to);
-      expect(traced.ok, `${refile.feePublishedId}: ${traced.ok ? "" : traced.reason}`).toBe(true);
+      // A price tied to a balance band reads as `tiered_fee`, which the live trace counts as traced (#1664).
+      const ok = traced.ok || (TIERED_RENAMES.has(refile.feePublishedId) && traced.reason === "tiered_fee");
+      expect(ok, `${refile.feePublishedId}: ${traced.ok ? "" : traced.reason}`).toBe(true);
     }
+  });
+
+  it("#1664: names 1NB Bank's two monthly service charges for their accounts, once, and the new names trace as the old one did", () => {
+    const oldName = "Account Fees: The monthly service charge";
+    const rows = [
+      { ...liveRow(60939, "monthly_maintenance", "5.95", oldName), fee_verified_id: 63859, institution_id: 2454, source_document_id: 18090 },
+      { ...liveRow(60940, "monthly_maintenance", "10.00", oldName), fee_verified_id: 63860, institution_id: 2454, source_document_id: 18090 },
+    ];
+    expect(planHandRefiles(rows).map((move) => [move.refile.feePublishedId, move.oldName, move.refile.name])).toEqual([
+      [60939, oldName, "Carefree Checking Monthly Service Charge"],
+      [60940, oldName, "NOW Checking Monthly Service Charge"],
+    ]);
+    for (const [id, amount] of [[60939, 5.95], [60940, 10]] as const) {
+      const refile = HAND_REFILES.find((entry) => entry.feePublishedId === id)!;
+      expect(checkFeeAgainstSource(PAGE_LINES[id], oldName, amount, ".", "monthly_maintenance")).toEqual({ ok: false, reason: "tiered_fee" });
+      expect(checkFeeAgainstSource(PAGE_LINES[id], refile.name, amount, ".", "monthly_maintenance")).toEqual({ ok: false, reason: "tiered_fee" });
+    }
+    // Renamed already, or renamed by another check since: left alone.
+    expect(planHandRefiles(rows.map((row) => ({ ...row, fee_name: HAND_REFILES.find((entry) => entry.feePublishedId === row.fee_published_id)!.name })))).toEqual([]);
+    expect(planHandRefiles([{ ...rows[0], fee_name: "Carefree Checking Service Charge" }])).toEqual([]);
+  });
+
+  it("#1668: moves Beacon's $17 stop payment from NSF to stop payment under its printed name, once", () => {
+    const name = "Stop Payment, if item would not cause NSF";
+    // 112882 as it reads live on prod, read-only, Oct 16.
+    const row = { ...liveRow(112882, "nsf", "17.00", name), fee_verified_id: 179822, institution_id: 7204, source_document_id: 35662 };
+    expect(planHandRefiles([row]).map((move) => [move.currentKey, move.refile.to, move.oldName, move.refile.name])).toEqual([["nsf", "stop_payment", name, name]]);
+    expect(checkFeeAgainstSource(PAGE_LINES[112882], name, 17, ".", "stop_payment")).toMatchObject({ ok: true, sourceLine: "Stop Payment, if item would not cause NSF | $17.00 per item" });
+    // Moved already, or re-priced since: left alone.
+    expect(planHandRefiles([{ ...row, canonical_fee_key: "stop_payment" }])).toEqual([]);
+    expect(planHandRefiles([{ ...row, amount: "36.00" }])).toEqual([]);
   });
 
   it("moves a live fee only while it is still under its old category at its listed price", () => {
