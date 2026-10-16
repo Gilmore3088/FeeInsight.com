@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { HamiltonAnswer, ReportPreview, dollars, findingSentence, plainQuote, workflowLead } from "./landing-workflow";
+import { HamiltonAnswer, ReportPreview, dollars, findingSentence, plainQuote, scorecardRows, workflowLead } from "./landing-workflow";
 import { sampleWorkflowReport } from "./landing-workflow.test-fixture";
 
 vi.mock("@/components/track-link", () => ({
@@ -15,7 +15,7 @@ const report = sampleWorkflowReport();
 const lead0 = workflowLead(report)!;
 const html = renderToStaticMarkup(
   <>
-    <HamiltonAnswer lead={lead0} />
+    <HamiltonAnswer report={report} lead={lead0} />
     <ReportPreview report={report} lead={lead0} />
   </>,
 );
@@ -23,7 +23,7 @@ const text = (s: string) => s.replace(/<[^>]+>/g, " ").replace(/&#x27;|&apos;/g,
 const answer = html.slice(html.indexOf("data-workflow-compare"), html.indexOf("data-workflow-report"));
 const reportPart = html.slice(html.indexOf("data-workflow-report"));
 
-describe("homepage example: one question, one finding, the same fee in the report", () => {
+describe("homepage example: Hamilton's scorecard, the source, the same fee in the report", () => {
   it("leads with the fee furthest above its local median whose schedule line states it", () => {
     const lead = workflowLead(report)!;
     expect(lead.line.key).toBe("wire_intl_outgoing");
@@ -32,18 +32,15 @@ describe("homepage example: one question, one finding, the same fee in the repor
     expect([dollars(75), dollars(2.5)]).toEqual(["$75", "$2.50"]);
   });
 
-  it("asks one question and answers it with the bank, the median and three named peers as bars", () => {
+  it("shows Hamilton's own fee scorecard, furthest from the local median first, not a chat mock", () => {
     const t = text(html);
-    expect(t).toContain("How does our outgoing international wire fee compare with local competitors?");
-    const a = text(answer);
-    expect(a).toContain("$75 $25 above the local median");
-    expect(a).toContain("Local median $50 · 8 local competitors publish this fee · 8 charge less");
-    expect(a).toMatch(/Capital City Bank \$75 Local median \$50 Wells Fargo Bank, N\.A\. \$45 Ameris Bank \$50 Regions Bank \$55/);
-    // Names wrap rather than being cut.
-    expect(answer.slice(0, answer.indexOf("data-workflow-evidence"))).not.toContain("truncate");
-    // Labelled as a sample, never as a signed-in screen.
-    expect(t).toContain("Hamilton · Sample answer · Capital City Bank");
-    expect(html).not.toContain("Hamilton · Research");
+    expect(html).not.toContain("data-example-question");
+    expect(t).toContain("Fee scorecard Every fee against its peers");
+    expect(t).toContain("Ask Hamilton · Capital City Bank · Sample");
+    const rows = scorecardRows(report);
+    expect(rows).toHaveLength(7);
+    expect(rows[0]).toMatchObject({ feeCategory: "wire_intl_outgoing", current: 75, peerMedian: 50, direction: "higher", peerCount: 8 });
+    expect(rows[0].peerLabel).toBe("local competitors, Tallahassee, FL area (3 counties)");
   });
 
   it("never quotes a schedule line that names what the fee excludes", () => {
@@ -55,7 +52,7 @@ describe("homepage example: one question, one finding, the same fee in the repor
 
   it("shows the schedule line behind the answer, with every competitor and its source on request", () => {
     const t = text(answer);
-    expect(t).toContain("From Capital City Bank's fee schedule “Outgoing International Wire … $75.00 ”");
+    expect(t).toContain("Outgoing international wire, from Capital City Bank's fee schedule “Outgoing International Wire … $75.00 ”");
     expect(t).toContain("Read Oct 8, 2026 · Published schedule");
     expect(answer).toContain('href="https://example.com/323/fee-schedule.pdf"');
     expect(answer).toMatch(/<details[^>]*data-workflow-more/);

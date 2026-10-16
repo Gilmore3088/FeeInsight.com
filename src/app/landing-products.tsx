@@ -79,9 +79,9 @@ export function LandingProducts({
                 {PRO_PLANS_NAV.label}
               </TrackLink>
             </p>
-            {lead ? (
+            {report && lead ? (
               <div className="mt-6">
-                <HamiltonAnswer lead={lead} />
+                <HamiltonAnswer report={report} lead={lead} />
               </div>
             ) : null}
           </Product>

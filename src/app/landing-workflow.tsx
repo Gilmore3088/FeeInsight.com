@@ -1,11 +1,13 @@
 import type { ReactNode } from "react";
 import { DEMO_REQUEST_NAV } from "@/components/nav-items";
+import { SchedulePositionsChart } from "@/components/hamilton/analyze/schedule-answer";
 import { ProductFrame } from "@/components/marketing/product-frame";
 import { TrackLink } from "@/components/track-link";
 import type { ReportLine } from "@/lib/custom-report/analysis";
 import type { MarketReport } from "@/lib/custom-report/report-data";
 import { FEE_LINE_RULES } from "@/lib/custom-report/rules";
 import type { MarketFeeLine } from "@/lib/data-store/custom-report-market";
+import type { SchedulePosition } from "@/lib/hamilton/workspace/types";
 import { REPORT_OFFER } from "@/lib/constants";
 import { AtAGlance } from "./market-report/[token]/at-a-glance";
 import { placeLabel } from "./market-report/report-body";
@@ -141,53 +143,22 @@ function marked(quote: string): ReactNode[] {
 const MORE = "cursor-pointer list-none text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink [&::-webkit-details-marker]:hidden";
 
 /**
- * The answer: the finding in one line, the bank against the local median and three named
- * competitors as bars, then the schedule line that states the bank's fee. Checking the source is
- * part of trusting the comparison, so both sit in one card (James's notes of Oct 16).
+ * The schedule line behind the answer's fee, and every competitor with its source on request.
+ * Checking the source is part of trusting the comparison (James's notes of Oct 16).
  */
-function Answer({ lead }: { lead: WorkflowLead }) {
+function Evidence({ lead }: { lead: WorkflowLead }) {
   const { line } = lead;
-  const rows = [
-    { label: lead.name, amount: line.own.amount, kind: "own" as const },
-    { label: "Local median", amount: line.peers.median, kind: "median" as const },
-    ...lead.peers.map((p) => ({ label: p.name, amount: p.amount, kind: "peer" as const })),
-  ];
-  const hi = Math.max(...rows.map((r) => r.amount), line.peers.max) || 1;
-  const gapWords =
-    lead.gap === 0 ? "At the local median" : `${dollars(Math.abs(lead.gap))} ${lead.gap > 0 ? "above" : "below"} the local median`;
   return (
-    <div className="p-5 sm:p-6" data-workflow-compare>
-      <p className="text-[13px] font-semibold text-ink-muted">{lineName(line.label)}</p>
-      <p className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className="font-mono text-[2.25rem] font-semibold leading-none text-ink">{dollars(line.own.amount)}</span>
-        <span className="text-[15px] font-semibold text-ink">{gapWords}</span>
-      </p>
-      <p className="mt-2 text-[13px] text-ink-muted">
-        Local median {dollars(line.peers.median)} · {line.peers.n} local competitors publish this fee · {line.chargingLess ?? 0} charge less
-      </p>
-      <ul className="mt-5 space-y-3" aria-label={`${lineName(line.label)}: ${lead.name} against its local market`}>
-        {rows.map((row) => (
-          <li key={`${row.kind}-${row.label}`} className="grid grid-cols-[minmax(0,8.5rem)_minmax(0,1fr)_3.75rem] items-center gap-3 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)_4rem]">
-            {/* Names wrap to a second line rather than being cut. */}
-            <span className={`text-[14px] leading-snug ${row.kind === "peer" ? "text-ink-soft" : "font-semibold text-ink"}`}>{row.label}</span>
-            <span className="relative h-3 rounded-full bg-paper">
-              {/* The bank in the report's accent (as its At a glance marks it), the median in ink. */}
-              <span
-                className={`absolute inset-y-0 left-0 rounded-full ${row.kind === "own" ? "bg-brick" : row.kind === "median" ? "bg-ink" : "bg-ink-muted/50"}`}
-                style={{ width: `${Math.max(2, (row.amount / hi) * 100)}%` }}
-              />
-            </span>
-            <span className="text-right font-mono text-[14px] font-semibold text-ink">{dollars(row.amount)}</span>
-          </li>
-        ))}
-      </ul>
-      <figure className="mt-6 rounded-lg border border-border bg-paper px-4 py-4" data-workflow-evidence>
-        <figcaption className="text-[12px] font-semibold uppercase tracking-[0.08em] text-ink-muted">From {lead.name}&apos;s fee schedule</figcaption>
+    <div className="border-t border-border p-5 sm:p-6" data-workflow-compare>
+      <figure className="rounded-lg border border-border bg-paper px-4 py-4" data-workflow-evidence>
+        <figcaption className="text-[12px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
+          {lineName(line.label)}, from {lead.name}&apos;s fee schedule
+        </figcaption>
         <blockquote className="mt-2 font-mono text-[14px] leading-relaxed text-ink">&ldquo;{marked(lead.quote)}&rdquo;</blockquote>
         <SourceNote readOn={line.own.schedule_read_on} href={line.own.source_url} />
       </figure>
       {lead.all.length > lead.peers.length || lead.peers.length > 0 ? (
-        <details className="mt-5 border-t border-border pt-4" data-workflow-more>
+        <details className="mt-5" data-workflow-more>
           <summary className={MORE}>Every competitor and its source</summary>
           <ul className="mt-3 space-y-4 text-[14px]">
             {lead.peers.map((p) => (
@@ -224,19 +195,53 @@ function Answer({ lead }: { lead: WorkflowLead }) {
   );
 }
 
+/** "Tallahassee, FL area (3 counties)". */
+function marketLabelOf(report: MarketReport): string {
+  const market = report.data.market!;
+  return `${placeLabel(market.places[0])} area${market.county_fips.length > 1 ? ` (${market.county_fips.length} counties)` : ""}`;
+}
+
 /**
- * Hamilton's demonstration on the homepage (James's notes of Oct 16): a question a pricing team
- * asks, answered from the live sample report, with the schedule line behind it.
+ * The sample report's comparable fees as Hamilton's own fee scorecard rows, furthest from the
+ * local median first (the order the scorecard states). Within half a cent counts as "at".
  */
-export function HamiltonAnswer({ lead }: { lead: WorkflowLead }) {
-  const fee = lineName(lead.line.label).toLowerCase();
+export function scorecardRows(report: MarketReport): SchedulePosition[] {
+  const peerLabel = `local competitors, ${marketLabelOf(report)}`;
+  return report.analysis.lines
+    .filter((l): l is FindingLine => l.comparable && !!l.own && !!l.peers && l.peers.median > 0)
+    .map((l) => {
+      const diff = l.own.amount - l.peers.median;
+      return {
+        feeCategory: l.key,
+        displayName: lineName(l.label),
+        current: l.own.amount,
+        peerMedian: l.peers.median,
+        peerCount: l.peers.n,
+        peerLabel,
+        direction: Math.abs(diff) < 0.005 ? ("at" as const) : diff > 0 ? ("higher" as const) : ("lower" as const),
+        band: { p25: l.peers.p25, p75: l.peers.p75 },
+      };
+    })
+    .sort((a, b) => Math.abs(b.current - b.peerMedian) / b.peerMedian - Math.abs(a.current - a.peerMedian) / a.peerMedian);
+}
+
+/**
+ * Hamilton on the homepage (James, Oct 16 14:09: "a screenshot of that info from the Hamilton
+ * workstation", not a chat mock): Hamilton's own fee scorecard component, drawn from the live
+ * sample report, then the schedule line behind the lead fee.
+ */
+export function HamiltonAnswer({ report, lead }: { report: MarketReport; lead: WorkflowLead }) {
+  const rows = scorecardRows(report);
   return (
     <div className="min-w-0" data-hamilton-answer="">
-      <p className="ml-auto w-fit max-w-[90%] rounded-2xl rounded-br-sm bg-ink px-4 py-3 text-[15px] leading-snug text-on-ink" data-example-question>
-        How does our {fee} fee compare with local competitors?
-      </p>
-      <ProductFrame label={`Hamilton · Sample answer · ${lead.name}`} className="mt-4">
-        <Answer lead={lead} />
+      <ProductFrame label={`Ask Hamilton · ${lead.name} · Sample`}>
+        {/* Cropped like a screenshot: the scorecard's summary and distance bars; the per-fee
+            cards below them fade out, and the full scorecard is one click into Hamilton. */}
+        <div className="relative max-h-[31rem] overflow-hidden p-3 sm:p-4 [&_section]:shadow-none" data-hamilton-scorecard>
+          <SchedulePositionsChart rows={rows} />
+          <span aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-surface-0 to-transparent" />
+        </div>
+        <Evidence lead={lead} />
       </ProductFrame>
     </div>
   );
@@ -248,8 +253,7 @@ export function HamiltonAnswer({ lead }: { lead: WorkflowLead }) {
  */
 export function ReportPreview({ report, lead }: { report: MarketReport; lead: WorkflowLead }) {
   const { data, analysis } = report;
-  const market = data.market!;
-  const marketLabel = `${placeLabel(market.places[0])} area${market.county_fips.length > 1 ? ` (${market.county_fips.length} counties)` : ""}`;
+  const marketLabel = marketLabelOf(report);
   return (
     <div className="mx-auto max-w-3xl">
       <ProductFrame label={`${REPORT_OFFER.name} · Sample`}>
