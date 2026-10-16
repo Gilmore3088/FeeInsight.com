@@ -36,7 +36,9 @@ async function handleGET(request: NextRequest) {
     triggerSource: "schedule",
     idempotencyKey: `atlas:scoreboard:${day}`,
     steps: [
-      { key: "score-answer-key", agent: "atlas", title: "Score the pipeline against the answer key" },
+      // First, James's answer-key decisions reach the key (`atlas/answer-key-relabels.ts`), then the
+      // score reads it, in one pause-exempt step: both write only the answer key and score rows.
+      { key: "score-answer-key", agent: "atlas", title: "Apply James's answer-key decisions, then score the pipeline against the answer key" },
       { key: "deming-regression", agent: "atlas", title: "Deming: turn confirmed mistakes into test cases and replay them" },
       { key: "deming-fresh-audit", agent: "atlas", title: "Deming: check a fresh sample of live fees against the banks' own schedules" },
       { key: "deming-benchmark-health", agent: "atlas", title: "Deming: check benchmark sample sizes, ranges and coverage, and alarm on a collapse" },

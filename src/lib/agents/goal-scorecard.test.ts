@@ -121,6 +121,16 @@ describe("wrong after publish", () => {
     expect(summary.topErrors.map((row) => row.reason)).toContain("some_new_reason");
   });
 
+  it("counts an account type hold as housekeeping, not a wrong fee (#1100)", () => {
+    const summary = summarizeWrongAfterPublish([
+      { reason: null, count: 100 },
+      { reason: "account_type_hold: savings (#1100)", count: 12 },
+      { reason: "source_check_untraceable:no_amount", count: 2 },
+    ]);
+    expect(summary.housekeeping).toBe(12);
+    expect(summary.wrong).toBe(2);
+  });
+
   it("has no rate without publishes", () => {
     expect(summarizeWrongAfterPublish([]).rate).toBeNull();
   });

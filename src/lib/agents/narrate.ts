@@ -216,10 +216,11 @@ function narrateFinished(
     case "registry-wire-research":
       return narrateRegistryStep(stepKey, detail);
     case "score-answer-key": {
-      if (detail.schema_ready === false) return "Skipped the answer-key score (migration not applied yet).";
+      const relabel = narrateAnswerKeyRelabel((detail.answer_key_relabel ?? null) as Detail | null);
+      if (detail.schema_ready === false) return `${relabel}Skipped the answer-key score (migration not applied yet).`;
       const banks = n(detail, "banks_scored");
-      if (banks === 0) return "Had no confirmed answer-key banks to score yet.";
-      return `Scored the pipeline against ${count(banks, "hand-checked bank")}: ${percentOf(detail.precision)} precision, ${percentOf(detail.recall)} recall.`;
+      if (banks === 0) return `${relabel}Had no confirmed answer-key banks to score yet.`;
+      return `${relabel}Scored the pipeline against ${count(banks, "hand-checked bank")}: ${percentOf(detail.precision)} precision, ${percentOf(detail.recall)} recall.`;
     }
     case "study-fee-dependence":
     case "study-local-income":
@@ -603,6 +604,20 @@ export function narrateEvent(event: NarratableEvent): string | null {
     default:
       return null;
   }
+}
+
+/**
+ * The answer-key relabel that opens the score step (#1099), as a lead-in sentence; empty when it
+ * changed nothing. A dry run lists the lines and changes none, so it never says "relabelled".
+ */
+function narrateAnswerKeyRelabel(relabel: Detail | null): string {
+  if (!relabel) return "";
+  if (typeof relabel.error === "string") return `Atlas's answer-key relabel failed (${shorten(relabel.error, 80)}). `;
+  const changed = Array.isArray(relabel.changed) ? relabel.changed.length : 0;
+  if (changed === 0) return "";
+  return relabel.dry_run === true
+    ? `Atlas would relabel ${count(changed, "answer-key line")} by James's decisions (dry run, nothing changed). `
+    : `Atlas relabelled ${count(changed, "answer-key line")} by James's decisions. `;
 }
 
 function shorten(message: string, max = 140): string {

@@ -29,9 +29,14 @@ import { combineScores, scoreAnswerKeys, type AnswerKeyDocument, type GateScore 
 // payment, read as other lending, took all to 557 / 14; held out stayed 54 / 4; the seven states unchanged.
 // v73 (#1100, Oct 16): reads record their account; no read changes (all 557 / 14, held out 54 / 4, the
 // seven states unchanged; every answer-key text's reads are identical to v72's).
+// Night deposit option A (James, Oct 16, #1099): the deposit for a night depository receptacle key
+// (Prosperity, tid 2451, $6, held out) is a key charge, not the service. #1550 files it out of scope
+// in the key, which made Knox's night deposit read of it wrong (556 / 15, held out 53 / 5); guard v66
+// (#1605) refuses key deposits, so Knox no longer reads it and the wrong read leaves: all 556 / 14,
+// held out 53 / 4.
 const FLOORS = {
-  all: { right: 557, wrong: 14 },
-  holdout: { right: 54, wrong: 4 },
+  all: { right: 556, wrong: 14 },
+  holdout: { right: 53, wrong: 4 },
 };
 
 const fixture = JSON.parse(

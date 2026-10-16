@@ -32,6 +32,7 @@ import { rollBackRetiredCompanionFees } from "@/lib/agents/hamilton/companion-re
 import { restoreOutliersNowInRange, rollBackPublishedOutliers } from "@/lib/agents/hamilton/outlier-rollback";
 import { rollBackUnreproducedFees } from "@/lib/agents/hamilton/rules-recheck";
 import { syncPipelineFeedback } from "@/lib/agents/learning/feedback-sync";
+import { repairAccountTypeHoldFeedback } from "@/lib/agents/learning/account-type-hold-feedback";
 import { linkImportedFeesToTwins, takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
 import { retidyLiveFeeNames } from "@/lib/agents/knox/name-retidy";
 import { moveExtractionNotes } from "@/lib/agents/knox/extraction-note";
@@ -109,6 +110,8 @@ import { knoxMissesDetail, runKnoxMisses, summarizeKnoxMisses } from "@/lib/agen
 import { runBayesLedger, summarizeBayesLedger, BAYES_LEDGER_VERSION } from "@/lib/agents/bayes/ledger";
 import { runScheduleCheck, summarizeScheduleCheck, SCHEDULE_CHECK_VERSION } from "@/lib/agents/atlas/schedule-check";
 import { cityRepairDetail, runCityRepair, summarizeCityRepair } from "@/lib/agents/atlas/city-repair";
+import { answerKeyRelabelDetail, runAnswerKeyRelabels, summarizeAnswerKeyRelabels } from "@/lib/agents/atlas/answer-key-relabels";
+import { inSavepoint } from "@/lib/agents/savepoint";
 import { MARKET_SPREAD_WORKFLOW, runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
 import { FEE_DEPTH_WORKFLOW, runFeeDepth, summarizeFeeDepth } from "@/lib/agents/content/fee-depth";
 import { runOdByState, summarizeOdByStateResult } from "@/lib/agents/content/od-by-state";
@@ -1457,6 +1460,8 @@ async function executeAgenticStep(
       // Every agent learns from what happened to its output: this step's takedowns and
       // restores (and a batch of older outcomes) go into the shared learning store.
       const feedbackSync = await syncPipelineFeedback(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
+      // #1100: the sync's old rows for account type holds go to weight 0, behind a switch (off).
+      const holdFeedback = await repairAccountTypeHoldFeedback(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
       const indexRefresh = published.dryRun
         ? null
         : await refreshFeeIndexCache(tx, {
@@ -1936,6 +1941,12 @@ async function executeAgenticStep(
             fee_name: rollback.feeName,
             amount: rollback.amount,
           })),
+          account_type_hold_feedback: {
+            on: holdFeedback.on,
+            due: holdFeedback.due,
+            zeroed: holdFeedback.zeroed,
+            error: holdFeedback.error,
+          },
           learning_feedback: feedbackSync.ready
             ? {
                 takedowns: feedbackSync.takedowns,
@@ -2450,12 +2461,20 @@ async function executeAgenticStep(
       };
     }
     case "score-answer-key": {
+      // First James's answer-key decisions (atlas/answer-key-relabels.ts, #1099), so today's score
+      // reads the corrected key. It writes only answer_key_fees.canonical_key/conditions on the
+      // listed lines, in its own savepoint: a failed relabel is reported and never stops the score.
+      const relabel = await inSavepoint(tx, (scope) => runAnswerKeyRelabels({ db: scope, dryRun: run.runKind === "dry_run" }))
+        .then((value) => ({ value, error: null as string | null }))
+        .catch((error: unknown) => ({ value: null, error: error instanceof Error ? error.message : String(error) }));
       const result = await runAnswerKeyScore({ runId: run.id, dryRun: run.runKind === "dry_run", db: tx });
       const score = result.score;
+      const relabelLine = relabel.value ? summarizeAnswerKeyRelabels(relabel.value) : `Atlas's answer-key relabel failed: ${relabel.error}.`;
       return {
         status: "completed",
-        summary: summarizeAnswerKeyScore(result),
+        summary: `${relabelLine} ${summarizeAnswerKeyScore(result)}`,
         detail: {
+          answer_key_relabel: relabel.value ? answerKeyRelabelDetail(relabel.value) : { error: relabel.error },
           schema_ready: result.schemaReady,
           score_run_id: result.scoreRunId,
           scorer_version: score?.scorerVersion ?? null,

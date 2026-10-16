@@ -1,0 +1,63 @@
+/**
+ * One plain sentence per fee category: what the charge is for. Shown beside each category in
+ * the Bank Fee Index catalog, so a visitor can see what every category covers before choosing
+ * one. No amounts here: figures always come from published schedules.
+ */
+export const FEE_DEFINITIONS: Record<string, string> = {
+  monthly_maintenance: "A recurring charge for keeping a checking or savings account open, often waived when a balance or deposit condition is met.",
+  minimum_balance: "A charge when an account's balance falls below the level its terms require.",
+  early_closure: "A charge for closing an account within a set period after opening it.",
+  dormant_account: "A charge on an account with no customer activity for a set period.",
+  account_research: "A charge for staff time spent researching or reconciling an account, usually billed by the hour.",
+  paper_statement: "A charge for receiving statements on paper instead of electronically.",
+  excess_withdrawal: "A charge for withdrawals from a savings or money market account beyond the number its terms allow.",
+  returned_mail: "A charge when mail sent to the address on file comes back undeliverable.",
+  overdraft: "A charge when the institution pays a transaction that takes the account below zero.",
+  nsf: "A charge when the institution returns or declines an item because the account lacks the funds to cover it.",
+  continuous_od: "An added charge when an account stays overdrawn for a set number of days.",
+  od_protection_transfer: "A charge for moving money from a linked account to cover a shortfall.",
+  od_daily_cap: "The most an institution will charge in overdraft or returned-item fees in one day.",
+  atm_non_network: "A charge for using an ATM outside the institution's own or partner network.",
+  card_replacement: "A charge for replacing a lost, stolen or damaged debit card.",
+  rush_card: "A charge for expedited delivery of a replacement card.",
+  card_foreign_txn: "A charge on card purchases or withdrawals made in a foreign currency or processed abroad.",
+  wire_domestic_outgoing: "A charge for sending a wire transfer to another U.S. account.",
+  wire_domestic_incoming: "A charge for receiving a wire transfer from another U.S. account.",
+  wire_intl_outgoing: "A charge for sending a wire transfer to an account outside the U.S.",
+  wire_intl_incoming: "A charge for receiving a wire transfer from outside the U.S.",
+  cashiers_check: "A charge for a check drawn on the institution itself, guaranteed by it.",
+  money_order: "A charge for buying a money order.",
+  check_printing: "A charge for ordering checks, which varies with style and quantity.",
+  stop_payment: "A charge for stopping payment on a check or scheduled payment before it clears.",
+  counter_check: "A charge for printed checks issued at a branch, typically for a new account.",
+  check_cashing: "A charge for cashing a check, often applied to non-customers.",
+  collection_item: "A charge for sending a check or item to another institution for collection.",
+  check_image: "A charge for a copy or image of a cleared check.",
+  ach_origination: "A charge for sending an electronic ACH payment or transfer.",
+  ach_return: "A charge when an electronic ACH payment is returned unpaid.",
+  bill_pay: "A charge for using the institution's online bill payment service.",
+  mobile_deposit: "A charge for depositing a check through the mobile app.",
+  coin_counting: "A charge for counting loose coins brought to a branch.",
+  cash_advance: "A charge for taking cash against a credit card or line of credit.",
+  deposited_item_return: "A charge when a check you deposited is returned unpaid by the payer's institution.",
+  night_deposit: "A charge for using the after-hours night depository service.",
+  notary_fee: "A charge for notarizing a document.",
+  safe_deposit_box: "The yearly rent for a safe deposit box, which varies with box size.",
+  garnishment_levy: "A charge for processing a garnishment or tax levy against an account.",
+  legal_process: "A charge for responding to a subpoena or other legal order about an account.",
+  account_verification: "A charge for confirming account details or balances to a third party.",
+  late_payment: "A charge when a loan payment arrives after its grace period.",
+  loan_origination: "A charge for setting up a new loan.",
+  appraisal_fee: "A charge for appraising property that secures a loan.",
+  ira_administration: "A yearly charge for maintaining an individual retirement account.",
+  ira_termination: "A charge for closing or transferring an individual retirement account.",
+  vehicle_title: "A charge for handling a vehicle title on a car loan.",
+  gift_card_purchase: "A charge for buying a gift or prepaid card.",
+  courier_delivery: "A charge for delivering documents or items by courier.",
+  document_reproduction: "A charge for copies of statements or account documents.",
+  other_lending_fee: "Other charges tied to loans that fit none of the lending categories above.",
+};
+
+export function getFeeDefinition(category: string): string | null {
+  return FEE_DEFINITIONS[category] ?? null;
+}
