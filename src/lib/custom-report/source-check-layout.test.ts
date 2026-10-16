@@ -696,6 +696,13 @@ describe("name words match whole words", () => {
     expect(checkFeeAgainstSource("Online transfers | $30.00", "NSF Fee", 30, ".").ok).toBe(false);
   });
 
+  it("reads an abbreviation as its one word, and \"-ment\" only after \"Pay\"", () => {
+    expect(checkFeeAgainstSource("Regulation D Transfers** | $15.00 Per Item", "Reg D", 15, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Register D Transfers | $15.00 Per Item", "Reg D", 15, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource("Department Fee | $5.00", "Dep Fee", 5, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource("Starment Checking Monthly Fee | $10.00", "Star Checking Monthly Fee", 10, ".").ok).toBe(false);
+  });
+
   it("does not find a word inside a longer compound", () => {
     // "Draft" is not the "Overdraft" fee.
     expect(checkFeeAgainstSource("Overdraft Fee | $35.00", "Draft Fee", 35, ".").ok).toBe(false);

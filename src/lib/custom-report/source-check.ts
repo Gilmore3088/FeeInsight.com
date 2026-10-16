@@ -395,8 +395,11 @@ function nameStems(feeName: string): NameStems {
   return withNameWords(Array.from(new Set(words.map((word) => (/^\d+x\d+$/.test(word) ? ` ${word} ` : word.slice(0, STEM_LENGTH))))), all);
 }
 
-/** What may follow a short name word: the word's end, a plural or a common ending ("Mailing", "Cardholder", "Payment"). */
-const WHOLE_WORD_END = /^(?:'?s|es|ing|ed|ers?|holders?|ments?)?(?![a-z])/;
+/** What may follow a short name word: the word's end, a plural or a common ending ("Mailing", "Cardholder"). */
+const WHOLE_WORD_END = /(?:'?s|es|ing|ed|ers?|holders?)?(?![a-z])/y;
+
+/** "Pay" also reads as "Payment" ("Online Bill Pay" in "Electronic Bill Payment"). */
+const PAYMENT_END = /ments?(?![a-z])/y;
 
 /**
  * Text printed without its spaces: a long run of letters ("Replacelostdebitcard(each)"), or words
@@ -404,11 +407,32 @@ const WHOLE_WORD_END = /^(?:'?s|es|ing|ed|ers?|holders?|ments?)?(?![a-z])/;
  */
 const GLUED = /[a-z]{16,}|[a-z]\$\s?\d|\d\.\d{2}[a-z]{3,}/;
 
-/** Short name words that stand for a longer word: "Reg D" is "Regulation D". */
-const ABBREVIATIONS: ReadonlySet<string> = new Set(["reg", "dep", "min", "max", "int", "info", "misc", "admin", "temp", "doc"]);
+/** Short name words that stand for one longer word: "Reg D" is "Regulation D", never "Register". */
+const ABBREVIATIONS: ReadonlyMap<string, readonly string[]> = new Map([
+  ["reg", ["regulation"]],
+  ["dep", ["deposit", "deposits"]],
+  ["min", ["minimum"]],
+  ["max", ["maximum"]],
+  ["int", ["international"]],
+  ["info", ["information"]],
+  ["misc", ["miscellaneous"]],
+  ["admin", ["administrative", "administration"]],
+  ["temp", ["temporary"]],
+  ["doc", ["document", "documents", "documentation"]],
+]);
 
 /** A name's "Non-" is also printed "In-" or "Un-" ("Non-Sufficient Funds" as "Insufficient Funds"). */
 const NEGATIONS: ReadonlySet<string> = new Set(["non", "in", "un"]);
+
+/** A line as name words are looked for in it, with whether it was printed without its spaces. */
+interface Haystack {
+  text: string;
+  glued: boolean;
+}
+
+function isLetter(code: number): boolean {
+  return code >= 97 && code <= 122;
+}
 
 /**
  * A name stem matches only where a word begins, never inside another word (#1646). A stem cut from
@@ -422,21 +446,39 @@ const NEGATIONS: ReadonlySet<string> = new Set(["non", "in", "un"]);
  * Two spellings close the name's own words up, and match anyway: a word made of the name's words
  * run together ("Nonsufficient", "Re-presentment" as "Representment", "Debitcard"), and text
  * printed without its spaces at all ("Officialchecks$2", `GLUED`), which is read as it always
- * was, letters anywhere. A known abbreviation ("Reg") matches the word it stands for, and a name's
- * "Non-" matches "In-" or "Un-" closed up ("Insufficient").
+ * was, letters anywhere. A known abbreviation ("Reg") matches only the word it stands for, and a
+ * name's "Non-" matches "In-" or "Un-" closed up ("Insufficient").
  */
-function stemAt(haystack: string, stem: string, nameWords: readonly string[]): boolean {
-  if (stem.startsWith(" ") || GLUED.test(haystack)) return haystack.includes(stem);
-  for (let at = haystack.indexOf(stem); at >= 0; at = haystack.indexOf(stem, at + 1)) {
+function stemAt(haystack: Haystack, stem: string, nameWords: readonly string[]): boolean {
+  const text = haystack.text;
+  if (haystack.glued || stem.charCodeAt(0) === 32) return text.includes(stem);
+  const short = stem.length < STEM_LENGTH;
+  for (let at = text.indexOf(stem); at >= 0; at = text.indexOf(stem, at + 1)) {
     let start = at;
-    while (start > 0 && /[a-z]/.test(haystack[start - 1])) start -= 1;
-    const before = haystack.slice(start, at);
-    const after = haystack.slice(at + stem.length);
-    const opens = before === "" || closesUpNameWords(before, stem, nameWords);
-    const ends = stem.length >= STEM_LENGTH || ABBREVIATIONS.has(stem) || WHOLE_WORD_END.test(after) || runsIntoNextNameWord(stem, after, nameWords);
-    if (opens && ends) return true;
+    while (start > 0 && isLetter(text.charCodeAt(start - 1))) start -= 1;
+    const opens = start === at || closesUpNameWords(text.slice(start, at), stem, nameWords);
+    if (!opens) continue;
+    if (!short) return true;
+    const end = at + stem.length;
+    WHOLE_WORD_END.lastIndex = end;
+    if (WHOLE_WORD_END.test(text)) return true;
+    if (stem === "pay") {
+      PAYMENT_END.lastIndex = end;
+      if (PAYMENT_END.test(text)) return true;
+    }
+    if (isLetter(text.charCodeAt(end)) && (abbreviates(text, stem, at) || runsIntoNextNameWord(stem, text, end, nameWords))) return true;
   }
   return false;
+}
+
+/** The word at `at` is the one word this abbreviation stands for ("reg" in "Regulation"). */
+function abbreviates(text: string, stem: string, at: number): boolean {
+  const words = ABBREVIATIONS.get(stem);
+  if (!words) return false;
+  let end = at + stem.length;
+  while (isLetter(text.charCodeAt(end))) end += 1;
+  const word = text.slice(at, end);
+  return words.includes(word);
 }
 
 /** The letters before a stem are the name's words just before it, run together ("non" + "suffi"). */
@@ -453,9 +495,19 @@ function closesUpNameWords(before: string, stem: string, nameWords: readonly str
 }
 
 /** A short name word runs straight into the name's next word ("bill" + "pay" in "Billpay"). */
-function runsIntoNextNameWord(stem: string, after: string, nameWords: readonly string[]): boolean {
-  if (stem.length >= STEM_LENGTH || !/^[a-z]/.test(after)) return false;
-  return nameWords.some((word, i) => word === stem && i + 1 < nameWords.length && after.startsWith(nameWords[i + 1].slice(0, 3)));
+function runsIntoNextNameWord(stem: string, text: string, end: number, nameWords: readonly string[]): boolean {
+  for (let i = 0; i + 1 < nameWords.length; i += 1) {
+    if (nameWords[i] === stem && text.startsWith(nameWords[i + 1].slice(0, 3), end)) return true;
+  }
+  return false;
+}
+
+/** Recent lines' haystacks: callers ask about one line for many stems and many fees. */
+const haystackCache = new Map<string, Haystack[]>();
+const HAYSTACK_CACHE_LIMIT = 20_000;
+
+function haystackOf(text: string): Haystack {
+  return { text, glued: GLUED.test(text) };
 }
 
 /**
@@ -463,10 +515,14 @@ function runsIntoNextNameWord(stem: string, after: string, nameWords: readonly s
  * ("Product/ServiceTemporary Checks") also reads with a space where a capital follows a small
  * letter, so the run-in word begins a word; the text as printed still reads too ("eStatement").
  */
-function nameHaystacks(text: string): string[] {
-  const plain = ` ${comparable(text)} `;
-  if (!/[a-z][A-Z]/.test(text)) return [plain];
-  return [plain, ` ${comparable(text.replace(/([a-z])([A-Z])/g, "$1 $2"))} `];
+function nameHaystacks(text: string): Haystack[] {
+  const cached = haystackCache.get(text);
+  if (cached) return cached;
+  const plain = haystackOf(` ${comparable(text)} `);
+  const haystacks = /[a-z][A-Z]/.test(text) ? [plain, haystackOf(` ${comparable(text.replace(/([a-z])([A-Z])/g, "$1 $2"))} `)] : [plain];
+  if (haystackCache.size >= HAYSTACK_CACHE_LIMIT) haystackCache.clear();
+  haystackCache.set(text, haystacks);
+  return haystacks;
 }
 
 function hasStem(text: string, stem: string, stems: NameStems): boolean {
