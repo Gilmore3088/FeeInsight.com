@@ -49,7 +49,7 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
           if (resolved.status === "unavailable")
             return message("unavailable", "Hamilton could not check which institution is linked to your account. Nothing was compared.");
           if (resolved.status !== "identified" || !resolved.institution)
-            return message("needs_criteria", `${noAccountInstitution(resolved.status)} To compare it with its peers, ask for a peer list first, then "Compare their NSF fees".`);
+            return message("needs_criteria", `${noAccountInstitution(resolved.status)} To see peers' NSF fees, ask for a peer list first, then "Compare their NSF fees".`);
           return message("needs_criteria", `Ask for a peer list first, for example "List ten similarly sized peers". Then ask "How does this compare with us?" to add ${resolved.institution.name}.`);
         }
         if (!prior || !isPeerListContinuationQuestion(question))

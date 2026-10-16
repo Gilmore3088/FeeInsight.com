@@ -131,6 +131,18 @@ describe("exact displayed peer-list continuation", () => {
     expect(result.shortAnswer).toContain("Synthetic Account CU");
     expect(mocks.fees).not.toHaveBeenCalled();
   });
+  it("says which problem it is when several institutions are linked and no list was shown", async () => {
+    mocks.account.mockResolvedValue({ status: "ambiguous", institution: null });
+    const result = (await answerPeerList(user, { institutionId: 202, question: "How does this compare with us?", previousPeerList: null }))!;
+    expect(result.peerList.status).toBe("needs_criteria");
+    expect(result.shortAnswer).toMatch(/^More than one institution is linked to your account/);
+    expect(mocks.fees).not.toHaveBeenCalled();
+  });
+  it("keeps the old refusal for other follow-ups with no list", async () => {
+    const result = (await answerPeerList(user, { institutionId: 202, question: "Compare their NSF fees", previousPeerList: null }))!;
+    expect(result.shortAnswer).toBe("This follow-up has no valid prior peer list. Run the peer list again; no replacement list was selected.");
+    expect(mocks.account).not.toHaveBeenCalled();
+  });
   it("keeps an account lookup failure on 'compare with us' unavailable", async () => {
     mocks.account.mockResolvedValue({ status: "unavailable", institution: null });
     const result = (await answerPeerList(user, { institutionId: 202, question: "How does this compare with us?", previousPeerList: null }))!;
