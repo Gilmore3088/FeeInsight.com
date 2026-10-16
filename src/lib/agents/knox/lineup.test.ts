@@ -500,6 +500,10 @@ describe("the account a read records (v73, #1100)", () => {
     // 441754 (Regions, prod): a waiver cell naming a checking account is no header.
     const regions = ["PREMIUM MONEY MARKET", "You May Avoid Monthly Fee By | Minimum daily balance of $15,000 OR opening or maintaining a", "Maintaining One Or More Of The | LifeGreen Preferred Checking account", "Following:", "Minimum Opening Deposit | $25", "Monthly Fee | $15"].join("\n");
     expect(productOf(read("Monthly Fee", "Monthly Fee | $15", { amount: 15 }), regions)).toBe("PREMIUM MONEY MARKET");
+    // 643669 (prod): the kids' club heading records the account; a checking fee under it keeps its own.
+    const kids = "Money Tree Kids Club\nFor children 0-12 years old.\nMinimum balance service charge of $2.00 will be applied if account falls below $10.00";
+    expect(productOf(read("Minimum balance service charge", "Minimum balance service charge of $2.00 will be applied if account falls below $10.00", { amount: 2 }), kids)).toBe("Money Tree Kids Club");
+    expect(productOf(read("Star Checking Monthly Fee", "Star Checking Monthly Fee: $5"), "Money Tree Kids Club\nStar Checking Monthly Fee: $5")).toBe("Star Checking");
     // The institution's own name.
     const named = withLineupFromText(read("Monthly fee", "Monthly fee $5.00"), "Peoples Savings\nMonthly fee $5.00", { institutionName: "Peoples Savings" });
     expect(named.lineup?.productName ?? null).toBeNull();

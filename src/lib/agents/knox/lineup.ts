@@ -503,7 +503,8 @@ function accountKind(name: string): string | null {
   if (/\b(?:ira|hsa|health savings|certificates?|cds?)\b/i.test(name)) return "ira_hsa_cd";
   if (CHECKING_WORDS.test(name)) return "checking";
   if (/\b(?:christmas|holiday|vacation)\b/i.test(name)) return "club";
-  if (/\b(?:savings?|savers?|share|passbook)\b/i.test(name)) return "savings";
+  // A kids' club is a kids' savings account ("Money Tree Kids Club", 643669); checking is checked above.
+  if (/\b(?:savings?|savers?|share|passbook)\b|\bkids?'?s?\s+club\b/i.test(name)) return "savings";
   return null;
 }
 
