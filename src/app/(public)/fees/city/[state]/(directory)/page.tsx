@@ -4,6 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { STATE_NAMES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
+import { PAGE_CRUMBS, PAGE_H1, PAGE_HEADER, PAGE_LEDE } from "@/components/public/page-header";
 import { SITE_URL } from "@/lib/constants";
 import { getStateMarketCitiesCached } from "@/lib/data-store/public-cached-reads";
 import { CityList, type CityLink } from "./city-list";
@@ -57,19 +58,21 @@ export default async function StateCityDirectory({ params }: PageProps) {
 
       <section className="border-b border-border bg-paper">
         <div className="mx-auto max-w-page px-4 pb-10 pt-6 sm:px-6 sm:pt-10">
-          <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12px] text-ink-muted">
-            <Link href="/fees" className="hover:text-ink">Fees</Link>
-            <span aria-hidden="true">/</span>
-            <span className="text-ink-soft">{stateName}</span>
-          </nav>
-          <h1 className="mt-4 text-[32px] font-semibold leading-[1.08] tracking-[-0.03em] text-ink sm:text-[44px]">
-            {stateName} bank fees by city
-          </h1>
-          <p className="mt-2 max-w-2xl text-[15px] text-ink-soft">
-            {links.length > 0
-              ? "Each city page compares the banks and credit unions with a branch there, using the fees they publish."
-              : `No ${stateName} city has an institution with published fees yet.`}
-          </p>
+          <div className={PAGE_HEADER}>
+            <nav aria-label="Breadcrumb" className={PAGE_CRUMBS}>
+              <Link href="/fees" className="hover:text-ink">Fees</Link>
+              <span aria-hidden="true">/</span>
+              <span className="text-ink-soft">{stateName}</span>
+            </nav>
+            <h1 className={`mt-4 ${PAGE_H1}`}>
+              {stateName} bank fees by city
+            </h1>
+            <p className={`mt-2 ${PAGE_LEDE}`}>
+              {links.length > 0
+                ? "Each city page compares the banks and credit unions with a branch there, using the fees they publish."
+                : `No ${stateName} city has an institution with published fees yet.`}
+            </p>
+          </div>
           <div className="mt-6">
             <CityList cities={links} stateName={stateName} stateCode={stateCode} shortcuts={links.slice(0, SHORTCUTS)} />
           </div>

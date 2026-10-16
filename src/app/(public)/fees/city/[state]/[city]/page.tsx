@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { getPublicNationalIndex } from "@/lib/public-stats";
 import { STATE_NAMES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
+import { PAGE_CRUMBS, PAGE_H1, PAGE_HEADER, PAGE_HEADER_BLOCK, PAGE_LEDE } from "@/components/public/page-header";
 import { TrackLink } from "@/components/track-link";
 import { PRO_PLANS_NAV } from "@/components/nav-items";
 import { SITE_URL } from "@/lib/constants";
@@ -142,15 +143,15 @@ export default async function CityFeePage({ params, searchParams }: PageProps) {
 
       {/* 1. The place, its boundary and what this page covers. */}
       <section className="border-b border-border bg-paper">
-        <div className="mx-auto max-w-page px-4 pb-10 pt-6 sm:px-6 sm:pb-12 sm:pt-10">
-          <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12px] text-ink-muted">
+        <div className={`mx-auto max-w-page px-4 pb-10 pt-6 sm:px-6 sm:pb-12 sm:pt-10 ${PAGE_HEADER}`}>
+          <nav aria-label="Breadcrumb" className={PAGE_CRUMBS}>
             <Link href="/fees" className="hover:text-ink">Fees</Link>
             <span aria-hidden="true">/</span>
             <Link href={`/fees/city/${stateCode.toLowerCase()}`} className="hover:text-ink">{stateName}</Link>
             <span aria-hidden="true">/</span>
             <span className="text-ink-soft">{cityName}</span>
           </nav>
-          <h1 className="mt-4 text-[32px] font-semibold leading-[1.08] tracking-[-0.03em] text-ink sm:text-[44px]">
+          <h1 className={`mt-4 ${PAGE_H1}`}>
             Banking and fees in {placeName}
           </h1>
           {market.metro && (
@@ -171,15 +172,13 @@ export default async function CityFeePage({ params, searchParams }: PageProps) {
               </Link>
             </div>
           )}
-          <p className="mt-4 max-w-3xl text-[15px] leading-relaxed text-ink-soft">
-            {isMetro
-              ? `Every bank and credit union with a branch in the ${market.metro!.name} metro area, wherever it is based.`
-              : `Every bank and credit union with a branch in the city of ${cityName}, wherever it is based.`}{" "}
-            <strong className="font-semibold text-ink">{cov.institutions}</strong> serve it ({cov.banks} banks, {cov.credit_unions} credit
-            unions); we publish fees for <strong className="font-semibold text-ink">{cov.with_fees}</strong> of them.
+          <p className="mt-2 text-[12px] text-ink-muted">Counts every bank and credit union with a branch here, including those based elsewhere.</p>
+          <p className={`mt-4 ${PAGE_LEDE}`}>
+            <strong className="font-semibold text-ink">{cov.institutions}</strong> institutions have branches in {isMetro ? `the ${placeName} metro area` : cityName}.
+            Published fee data is available for <strong className="font-semibold text-ink">{cov.with_fees}</strong>.
           </p>
           {findings.length > 0 && (
-            <ul className="mt-5 max-w-3xl space-y-2.5">
+            <ul className={`mt-5 space-y-2.5 ${PAGE_HEADER_BLOCK}`}>
               {findings.map((f) => (
                 <li key={f} className="flex gap-2.5 text-[15px] leading-snug text-ink">
                   <span aria-hidden="true" className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-brick" />
@@ -231,7 +230,15 @@ export default async function CityFeePage({ params, searchParams }: PageProps) {
               </div>
             )}
           </div>
-          <BranchMap points={market.points} label={placeName} />
+          <div>
+            <BranchMap points={market.points} label={placeName} />
+            {market.points.length < cov.branches && (
+              <p className="mt-2 text-[12px] text-ink-muted">
+                {market.points.length >= 2 ? `The map shows ${market.points.length} of ${cov.branches} branch locations. ` : ""}
+                {cov.branches - market.points.length} {cov.branches - market.points.length === 1 ? "has" : "have"} no map coordinates in the FDIC or NCUA branch records, so {cov.branches - market.points.length === 1 ? "it is" : "they are"} counted but not plotted.
+              </p>
+            )}
+          </div>
         </div>
       </section>
 
