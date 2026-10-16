@@ -630,7 +630,8 @@ export const HAND_REFILES: readonly HandRefile[] = [
     why: "#1513, inst 2657, doc 916: \"Undeliverable Mail ……… $15 | Account Reconciliation ……… $35 / One-time fee upon return of 2nd undeliverable item\"; returned mail, renamed under account research while the #1398 split is off" },
   { feePublishedId: 63055, from: "wire_domestic_outgoing", amount: 35, to: "wire_intl_outgoing", name: "Wire Trans. (Intern. Outgoing)",
     oldName: "Wire Trans. (Intern. Outgoing) ………",
-    why: "#1513, inst 5653, doc 18876: \"Wire Trans. (Intern. Outgoing) ………...$35.00 per Wire\", an international wire; the domestic one is \"Wire Trans. (Dom. Outgoing) …$18.00 per Wire\" (live as 63054)" },  // #1655 (read-only, Oct 16): two Navy Federal home equity line fees filed as deposit fees, so they
+    why: "#1513, inst 5653, doc 18876: \"Wire Trans. (Intern. Outgoing) ………...$35.00 per Wire\", an international wire; the domestic one is \"Wire Trans. (Dom. Outgoing) …$18.00 per Wire\" (live as 63054)" },
+  // #1655 (read-only, Oct 16): two Navy Federal home equity line fees filed as deposit fees, so they
   // showed in the consumer overdraft guide. Each price is right; both are loan fees, so they move to
   // other lending (the 50 have no returned-loan-payment type). Both keep their printed names, so neither
   // carries an `oldName`. Undo: re-file back under `from`; the run event and `pipeline_feedback` row keep both.
