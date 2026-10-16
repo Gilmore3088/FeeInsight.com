@@ -85,8 +85,17 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
   const medianBin = stats.median_amount != null ? buckets.findIndex((b) => inBucket(b, stats.median_amount!)) : -1;
   const list = parseListState(params);
   // A name search with no bar picked looks through every institution, not only the median's bar.
-  const activeBin =
-    sel.bin != null && sel.bin < buckets.length ? sel.bin : list.q ? null : medianBin >= 0 ? medianBin : null;
+  // "bin=all" shows every institution; otherwise the list opens on the median's bar.
+  const allBars = params.bin === "all";
+  const activeBin = allBars
+    ? null
+    : sel.bin != null && sel.bin < buckets.length
+      ? sel.bin
+      : list.q
+        ? null
+        : medianBin >= 0
+          ? medianBin
+          : null;
   const listed = activeBin != null ? institutions.filter((i) => inBucket(buckets[activeBin], i.value)) : institutions;
   const shown = listPage(listed, list);
   // Every price each shown institution lists for the fee, so a counted middle value is shown with the prices behind it.
@@ -101,10 +110,14 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
   const takeaways = locked ? [] : findings(rows, sel, institutions);
   const where = placeName(sel.state);
   const who = CHARTER_LABELS[sel.charter].toLowerCase();
+  // The search says what it searches: the picked bar's institutions, or all of them.
+  const searchLabel =
+    activeBin != null ? `Search these ${listed.length.toLocaleString()} institutions` : `Search all ${institutions.length.toLocaleString()} institutions`;
   /** The list's own links keep the selection, the picked bar and the search. */
   const listHref = (extra: Record<string, string>) => {
     const keep: Record<string, string> = {};
     if (activeBin != null) keep.bin = String(activeBin);
+    else if (allBars) keep.bin = "all";
     if (list.q && !("q" in extra) && Object.keys(extra).length > 0) keep.q = list.q;
     if (list.all && !("view" in extra)) keep.view = "all";
     return selectionHref(sel, { ...keep, ...extra }, "institutions");
@@ -231,6 +244,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
                   <Histogram
                     buckets={buckets}
                     activeBin={activeBin}
+                    median={stats.median_amount}
                     medianBin={medianBin}
                     hrefFor={(i) => selectionHref(sel, { bin: String(i) }, "institutions")}
                   />
@@ -258,21 +272,35 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
                         ? `${listed.length.toLocaleString()} ${listed.length === 1 ? "institution charges" : "institutions charge"} ${buckets[activeBin].label}`
                         : `${listed.length.toLocaleString()} institutions`}
                     </h3>
-                    <p className="mt-1 text-[13px] text-ink-muted">Pick a bar to see who charges that price. Open a row for the fee in its schedule&apos;s words.</p>
+                    <p className="mt-1 text-[13px] text-ink-muted">
+                      Pick a bar to see who charges that price. Open a row for the fee in its schedule&apos;s words.
+                      {activeBin != null ? (
+                        <>
+                          {" "}
+                          <Link href={selectionHref(sel, { bin: "all" }, "institutions")} scroll={false} className={LINK}>
+                            Show all {institutions.length.toLocaleString()}
+                          </Link>
+                        </>
+                      ) : null}
+                    </p>
                   </div>
                   <form action="/fees#institutions" className="flex w-full gap-2 sm:w-auto" role="search">
                     <input type="hidden" name="fee" value={sel.fee} />
                     {sel.state && <input type="hidden" name="state" value={sel.state} />}
                     {sel.charter !== "all" && <input type="hidden" name="charter" value={sel.charter} />}
-                    {activeBin != null && <input type="hidden" name="bin" value={activeBin} />}
+                    {activeBin != null ? (
+                      <input type="hidden" name="bin" value={activeBin} />
+                    ) : allBars ? (
+                      <input type="hidden" name="bin" value="all" />
+                    ) : null}
                     {list.all && <input type="hidden" name="view" value="all" />}
                     <label className="min-w-0 flex-1 sm:w-64">
-                      <span className="sr-only">Find an institution</span>
+                      <span className="sr-only">{searchLabel}</span>
                       <input
                         type="search"
                         name="q"
                         defaultValue={list.q}
-                        placeholder="Find an institution"
+                        placeholder={searchLabel}
                         className="min-h-11 w-full rounded-full border border-ink bg-surface-0 px-4 text-[14px] text-ink placeholder:text-ink-muted"
                       />
                     </label>
@@ -419,20 +447,31 @@ function barLabel(b: ReturnType<typeof histogram>[number]): string {
 function Histogram({
   buckets,
   activeBin,
+  median,
   medianBin,
   hrefFor,
 }: {
   buckets: ReturnType<typeof histogram>;
   activeBin: number | null;
+  median: number | null;
   medianBin: number;
   hrefFor: (i: number) => string;
 }) {
   const top = Math.max(...buckets.map((b) => b.total), 1);
   // Every other label when the bars are many, so none truncates; each bar's full range stays its name.
   const step = buckets.length > 8 ? 2 : 1;
+  // The median's own place on the price axis: within its bar, by where it falls in the bar's range.
+  const n = buckets.length;
+  let medianAt: string | null = null;
+  if (median != null && medianBin >= 0) {
+    const b = buckets[medianBin];
+    const frac = b.min != null && b.max != null ? Math.min(Math.max((median - b.min) / (b.max + 0.01 - b.min), 0), 1) : 0.5;
+    medianAt = `calc((100% - ${(n - 1) * 4}px) * ${(medianBin + frac) / n} + ${medianBin * 4}px)`;
+  }
   return (
-    <div className="mt-5">
-      <ul className="flex h-52 items-end gap-1 sm:h-64" aria-label="Institutions by price">
+    <div className="mt-10">
+      <div className="relative">
+        <ul className="flex h-52 items-end gap-1 sm:h-64" aria-label="Institutions by price">
         {buckets.map((b, i) => (
           <li key={b.label} className="relative flex h-full min-w-0 flex-1">
             <Link
@@ -443,18 +482,24 @@ function Histogram({
               aria-current={i === activeBin ? "true" : undefined}
               className="group flex h-full w-full flex-col justify-end"
             >
-              <span className="mb-1 text-center font-mono text-[10px] tabular-nums text-ink-muted sm:text-[11px]">{b.total > 0 ? b.total : ""}</span>
+              <span className="relative z-10 mx-auto mb-1 rounded bg-surface-0 px-0.5 text-center font-mono text-[10px] tabular-nums text-ink-muted sm:text-[11px]">{b.total > 0 ? b.total : ""}</span>
               <span
-                className={`block w-full rounded-t-md transition-colors ${i === activeBin ? "bg-brick" : "bg-ink/25 group-hover:bg-ink/45"}`}
+                className={`block w-full rounded-t-md transition-colors ${i === activeBin ? "bg-ink" : "bg-ink/20 group-hover:bg-ink/40"}`}
                 style={{ height: `${Math.max((b.total / top) * 100, b.total > 0 ? 2 : 0)}%` }}
               />
             </Link>
-            {i === medianBin && (
-              <span className="pointer-events-none absolute -bottom-5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-brick">Median</span>
-            )}
           </li>
         ))}
-      </ul>
+        </ul>
+        {medianAt && median != null && (
+          <div className="pointer-events-none absolute inset-y-0" style={{ left: medianAt }} aria-hidden="true">
+            <span className="absolute inset-y-0 w-0.5 -translate-x-1/2 bg-brick" />
+            <span className="absolute -top-6 -translate-x-1/2 whitespace-nowrap rounded-full bg-brick px-2 py-0.5 text-[10px] font-semibold text-on-brick">
+              Median {money(median)}
+            </span>
+          </div>
+        )}
+      </div>
       <ul className="mt-6 hidden gap-1 text-[11px] tabular-nums text-ink-muted sm:flex" aria-hidden="true">
         {buckets.map((b, i) => (
           <li key={b.label} className="min-w-0 flex-1 text-center">
@@ -466,11 +511,17 @@ function Histogram({
         <span>{barLabel(buckets[0])}</span>
         <span>{barLabel(buckets[buckets.length - 1])}</span>
       </p>
-      {activeBin != null && (
-        <p className="mt-3 text-[12px] text-ink-muted">
-          Selected: <span className="font-semibold text-ink">{buckets[activeBin].label}</span>
-        </p>
-      )}
+      <p className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-ink-muted">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block h-3 w-0.5 bg-brick" aria-hidden="true" /> Median
+        </span>
+        {activeBin != null && (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="inline-block h-3 w-3 rounded-sm bg-ink" aria-hidden="true" /> Selected:{" "}
+            <span className="font-semibold text-ink">{buckets[activeBin].label}</span>
+          </span>
+        )}
+      </p>
     </div>
   );
 }
@@ -589,8 +640,8 @@ function InstitutionRow({ inst, prices, highest }: { inst: IndexInstitution; pri
         <div className="mt-3 space-y-3 text-[13px] text-ink-soft">
           {amounts.size > 1 && (
             <p className="text-ink-muted">
-              It lists {amounts.size} prices for this fee. The Index counts it once, at {money(inst.value)}, the {highest ? "highest" : "middle"} of
-              them.
+              It lists {amounts.size} prices for this fee, each for its own account or condition, shown below. The Index counts it once, at{" "}
+              {money(inst.value)}, the {highest ? "highest" : "middle"} of them.
             </p>
           )}
           {listed.map((p) => {
