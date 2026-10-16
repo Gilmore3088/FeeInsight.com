@@ -6,6 +6,7 @@ import { FEE_FAMILIES, getDisplayName, getSpotlightCategories, TAXONOMY_COUNT } 
 import { getFeeDefinition } from "@/lib/fee-definitions";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { PRODUCT_NAME, SITE_URL } from "@/lib/constants";
+import { Logo } from "@/brand/components";
 import { getPublicSnapshot } from "@/lib/public-stats";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessAllCategories } from "@/lib/access";
@@ -121,10 +122,10 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
       {/* 1. What the Index is */}
       <section className="border-b border-border bg-paper">
         <div className={`mx-auto max-w-page px-4 pb-8 pt-8 sm:px-6 sm:pt-12 ${PAGE_HEADER}`}>
-          <p className="inline-flex items-center rounded-full border border-brick/40 px-3 py-1 text-[12px] font-semibold uppercase tracking-[0.12em] text-brick">
-            The {PRODUCT_NAME}
-          </p>
-          <h1 className="mx-auto mt-4 max-w-3xl text-[32px] font-semibold leading-[1.08] tracking-[-0.03em] text-ink sm:mx-0 sm:text-[48px]">
+          {/* The index's own lockup (design system: Bank Fee Index data pages). Height keeps the
+              wordmark above its 16px minimum cap height; the margins give it its clear space. */}
+          <Logo mark="bank-fee-index-lockup" height={40} className="mx-auto h-9 w-auto sm:mx-0 sm:h-11" />
+          <h1 className="mx-auto mt-6 max-w-3xl text-[32px] font-semibold leading-[1.08] tracking-[-0.03em] text-ink sm:mx-0 sm:text-[48px]">
             What U.S. banks and credit unions charge, fee by fee
           </h1>
           <p className={`mt-3 ${PAGE_LEDE}`}>
@@ -267,7 +268,8 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
       {!full && (
         <section aria-labelledby="access-heading" className="mx-auto max-w-page px-4 pb-16 pt-14 sm:px-6 sm:pt-20">
           <div className="rounded-2xl bg-ink p-6 text-on-ink sm:p-10">
-            <h2 id="access-heading" className="text-[24px] font-semibold tracking-[-0.02em] sm:text-[32px]">
+            <Logo mark="bank-fee-index-wordmark" tone="reverse" height={22} className="h-5 w-auto sm:h-6" />
+            <h2 id="access-heading" className="mt-5 text-[24px] font-semibold tracking-[-0.02em] sm:text-[32px]">
               Every category, explored the same way
             </h2>
             <ul className="mt-4 grid gap-3 text-[15px] text-on-ink/85 sm:grid-cols-3">
