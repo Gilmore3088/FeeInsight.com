@@ -108,7 +108,7 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
             [...new Set([...ids, ...(account ? [account.institutionId] : [])])], category) : [];
           feeComparison = {
             category, label, comparedPeerIds: ids, fees, account, includesAccount: account !== null,
-            note: `Each published consumer ${label} fee row is shown separately, including zero fees and distinct charges. Missing records mean no published matching fee on file; no amount is inferred.`,
+            note: `Each consumer ${label} fee a peer publishes is listed on its own line, $0 fees included. A peer with no line has no matching published fee on file, and Hamilton fills in no amount for it.`,
           };
         }
         return {

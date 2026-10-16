@@ -17,7 +17,7 @@ describe("saved output notice", () => {
     expect(notice?.count).toBe(1);
     expect(notice?.text).toBe(
       "This institution's fee data changed after this answer was saved: 1 fee corrected on Oct 16, 2026. " +
-        "The saved answer keeps the figures it showed then.",
+        "This answer still shows the figures from when it was saved.",
     );
   });
 
@@ -29,7 +29,7 @@ describe("saved output notice", () => {
     ], saved, "report");
     expect(notice?.latestAt).toBe("2026-10-15T12:00:00.000Z");
     expect(notice?.text).toContain("2 fees corrected and 1 fee taken out for review, the latest on Oct 15, 2026.");
-    expect(notice?.text).toContain("The saved report keeps");
+    expect(notice?.text).toContain("This report still shows the figures");
   });
 
   it("should_never_name_a_pipeline_agent_or_suggest_a_fee_change", () => {

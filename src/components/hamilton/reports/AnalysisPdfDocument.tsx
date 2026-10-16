@@ -21,7 +21,6 @@ import { BriefPages, hasBriefContent } from "./BriefPages";
 import { headFigure, humanizeAnswerText, shapeHamiltonView, splitSentences, tidyEvidence } from "@/components/hamilton/analyze/parse-response";
 import { RD_PDF } from "@/lib/report-design/tokens";
 import { hamiltonIdentityLines, readHamiltonIdentitySnapshot } from "@/lib/hamilton/identity-display";
-import { evidenceRecordsExhibit, savedAnswerLimits } from "@/lib/hamilton/board-brief";
 
 // Words wrap whole; react-pdf's default hyphenation broke figures and words mid-way ("medi-an").
 Font.registerHyphenationCallback((word) => [word]);
@@ -162,11 +161,6 @@ const styles = StyleSheet.create({
     lineHeight: 1.4,
     paddingTop: 1,
   },
-  // A record ID prints exactly as saved, so it can be matched to its record.
-  recordId: {
-    textTransform: "none",
-    letterSpacing: 0,
-  },
   evidenceBody: {
     flex: 1,
   },
@@ -241,10 +235,6 @@ export function AnalysisPdfDocument({
   // Implications longer than three sentences read as a list of points, not a block.
   const meaningSentences = splitSentences(humanizeAnswerText(analysis.whatThisMeans ?? ""));
   const meaningAsList = meaningSentences.length > 3;
-
-  // The saved records and limits print as the Reports screen shows them (#981, H06-T08).
-  const records = evidenceRecordsExhibit(analysis);
-  const limits = savedAnswerLimits(analysis);
 
   const identity = readHamiltonIdentitySnapshot(analysis.identityContext);
   const identityLines = identity ? hamiltonIdentityLines(identity) : ["Historical institution, account and peer context: Not recorded"];
@@ -332,38 +322,6 @@ export function AnalysisPdfDocument({
                     {metric.note ? <Text style={styles.evidenceNote}>{metric.note}</Text> : null}
                   </View>
                 </View>
-              </View>
-            ))}
-          </View>
-        ) : null}
-
-        {/* Each saved record: its ID, value, stored source and check. Never a live re-check. */}
-        {records ? (
-          <View style={styles.lastSection}>
-            {records.rows.map(([id, value, source, check], i) => (
-              <View key={id} wrap={false}>
-                {i === 0 ? <Text style={styles.sectionHeading}>{records.title}</Text> : null}
-                <View style={styles.evidenceRow}>
-                  <Text style={[styles.evidenceLabel, styles.recordId]}>{id}</Text>
-                  <View style={styles.evidenceBody}>
-                    <Text style={styles.evidenceValue}>{value}</Text>
-                    <Text style={styles.evidenceNote}>{source}</Text>
-                    <Text style={styles.evidenceNote}>{check}</Text>
-                  </View>
-                </View>
-              </View>
-            ))}
-            {records.note ? <Text style={styles.evidenceNote}>{records.note}</Text> : null}
-          </View>
-        ) : null}
-
-        {limits.length > 0 ? (
-          <View style={styles.section} wrap={false}>
-            <Text style={styles.sectionHeading}>Limits of This Evidence</Text>
-            {limits.map((limit) => (
-              <View key={limit} style={styles.bulletRow}>
-                <Text style={styles.bulletMark}>{"\u2022"}</Text>
-                <Text style={styles.bulletText}>{limit}</Text>
               </View>
             ))}
           </View>

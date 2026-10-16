@@ -71,7 +71,7 @@ export function savedOutputNotice(changes: FeeChangeSince[], savedAt: string, no
   return {
     text:
       `This institution's fee data changed after this ${noun} was saved: ${list}${when}. ` +
-      `The saved ${noun} keeps the figures it showed then.`,
+      `This ${noun} still shows the figures from when it was saved.`,
     latestAt,
     count: after.length,
   };

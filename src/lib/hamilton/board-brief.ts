@@ -1,4 +1,5 @@
 import type { AnalyzeResponse, ReportExhibit, ReportSummaryResponse } from "./types";
+import { getDisplayName } from "@/lib/fee-taxonomy";
 import type { EvidenceBoundAnalyzeResponse, HamiltonEvidenceBundle } from "./evidence-contract";
 import {
   CLAIM_BINDING_LIMITATION,
@@ -56,14 +57,17 @@ function recordProblems(problems: string[]): string {
   return problems.map((p) => p.replace(/_/g, " ")).join("; ");
 }
 
+// A board reads the fee first; the record ID stays in the source line so an auditor can match it.
 function factRow(fact: SavedEvidenceFactRow, names: ReadonlyMap<number, string>): string[] {
   const { scope, source } = fact;
-  const fee = [scope.product, scope.feeCategory].filter(Boolean).join(", ");
+  const name = scope.feeCategory ? getDisplayName(scope.feeCategory) : null;
+  // A product that only repeats the fee's name ("Overdraft fee") adds nothing.
+  const product = scope.product && !(name && scope.product.toLowerCase().includes(name.split(/[\s(]/)[0].toLowerCase())) ? scope.product : null;
+  const fee = [name, product].filter(Boolean).join(", ") || "Recorded figure";
   const value = [recordValue(fact.value, fact.unit), fact.frequency].filter(Boolean).join(" ");
   const institution = scope.institutionId === null ? "Institution not recorded" : names.get(scope.institutionId) ?? `Institution ${scope.institutionId}`;
   const detail = [
-    institution,
-    source.recordId === null ? "fee record not recorded" : `fee record ${source.recordId}`,
+    source.recordId === null ? `record ${fact.id}; fee record not recorded` : `record ${fact.id}`,
     source.sourceDocumentIds.length ? `document ${source.sourceDocumentIds.join(", ")}` : "document not recorded",
     // The document's content fingerprint is its version: a changed schedule gets a new one.
     source.documentContentHash ? `version ${source.documentContentHash.slice(0, 12)}` : "version not recorded",
@@ -73,14 +77,21 @@ function factRow(fact: SavedEvidenceFactRow, names: ReadonlyMap<number, string>)
     ...(source.lastCheckedAt ? [`source last checked ${readerAsOf(source.lastCheckedAt)}`] : []),
     ...(source.location ? [source.location] : []),
   ].join(" · ");
-  return [fact.id, fee ? `${fee}: ${value}` : value, detail, fact.problems.length ? `Incomplete record: ${recordProblems(fact.problems)}` : "Matches the stored source"];
+  return [`${fee}, ${institution}`, value, detail, fact.problems.length ? `Incomplete record: ${recordProblems(fact.problems)}` : "Matches the stored source"];
 }
+
+/** The two calculations Hamilton records, in words; any other formula prints as recorded. */
+const FORMULA_WORDS: Record<string, string> = {
+  "left - right": "the first record minus the second",
+  "(current - prior) / prior * 100": "the change from the earlier record, as a percent of it",
+};
 
 function derivationRow(fact: SavedEvidenceDerivationRow): string[] {
   const denominator = fact.denominatorFactId ? `; divided by ${fact.denominatorFactId}` : "";
-  const detail = `Calculated as ${fact.formula} from ${fact.inputFactIds.join(" and ") || "no recorded inputs"}${denominator}; rounding: ${fact.rounding}`
+  const detail = `record ${fact.id} · ${FORMULA_WORDS[fact.formula] ?? fact.formula}, from ${fact.inputFactIds.join(" and ") || "no recorded inputs"}${denominator}; rounded to ${fact.rounding.replace(/;/g, ",")}`
     + ` · reporting date ${fact.scope.reportingDate ? readerAsOf(fact.scope.reportingDate) : "not recorded"}`;
-  return [fact.id, recordValue(fact.value, fact.unit), detail, fact.problems.length ? `Does not check: ${recordProblems(fact.problems)}` : "Recalculated from the saved records"];
+  const label = fact.scope.feeCategory ? `${getDisplayName(fact.scope.feeCategory)}, calculated` : "Calculated figure";
+  return [label, recordValue(fact.value, fact.unit), detail, fact.problems.length ? `Cannot be recalculated: ${recordProblems(fact.problems)}` : "Recalculated from the saved records"];
 }
 
 /**
@@ -106,7 +117,7 @@ export function evidenceRecordsExhibit(analysis: EvidenceBoundAnalyzeResponse): 
     id: "evidence_records",
     title: "Records behind the saved answer",
     subtitle: `As saved ${appendix.generatedAt ? readerAsOf(appendix.generatedAt) : "on a date not recorded"}; not refreshed`,
-    columns: ["Record", "Value", "Source as saved", "Check"],
+    columns: ["Figure", "Value", "Source as saved", "Check"],
     rows: [...appendix.facts.map((fact) => factRow(fact, names)), ...appendix.derivations.map(derivationRow)],
     note: "\"Matches the stored source\" means the figure equals the bank document Hamilton had stored when the answer was saved. Hamilton did not re-check it against the bank's current live schedule for this report.",
   };
@@ -148,7 +159,7 @@ export function boardBriefFromAnalysis(analysis: AnalyzeResponse & { factEvidenc
       ...(edits.includeEvidence && analysis.evidence.metrics.length ? [{ id: "statistical_appendix" as const, title: "Evidence from the saved answer", subtitle: "Original values and source notes; not refreshed", columns: ["Measure", "Value", "Source / note"], rows: analysis.evidence.metrics.map(m => [m.label, m.value, m.note ?? ""]), note: "Values as first saved with the answer." }] : []),
       ...(records ? [records] : []),
     ],
-    sources: unique.length ? unique.map(s => ({ label: s.label, detail: s.asOf ? `As of ${readerAsOf(s.asOf)}` : "As cited in the saved answer", url: s.url ?? null })) : [{ label: "Saved Hamilton analysis", detail: "Source details were not saved with this answer. Open the saved answer to see its evidence.", url: null }],
+    sources: unique.length ? unique.map(s => ({ label: s.label, detail: s.asOf ? `As of ${readerAsOf(s.asOf)}` : "As cited in the saved answer", url: s.url ?? null })) : [{ label: "Saved Hamilton analysis", detail: records ? "Each figure's source is in the records table above." : "Source details were not saved with this answer. Open the saved answer to see its evidence.", url: null }],
     exportControls: { pdfEnabled: true, shareEnabled: false },
   };
 }

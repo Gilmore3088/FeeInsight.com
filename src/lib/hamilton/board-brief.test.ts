@@ -39,7 +39,8 @@ describe("board brief reuses frozen analysis", () => {
     const records = report.exhibits?.find(e => e.id === "evidence_records");
     const ids = [...frozen.factEvidence!.facts, ...frozen.factEvidence!.derivations].map(f => f.id);
     expect(ids.length).toBeGreaterThan(0);
-    expect(records?.rows.map(r => r[0])).toEqual(ids);
+    // The record ID leads each row's source line, so an auditor can match it.
+    expect(records?.rows.map(r => r[2].match(/^record (\S+?)[;\s]/)?.[1])).toEqual(ids);
     expect(records?.note).toContain("did not re-check it against the bank's current live schedule");
     expect(report.recommendation).toContain("not re-checked against the bank's current live schedule");
     expect(JSON.stringify(report)).not.toMatch(/verified against the (current )?live/i);

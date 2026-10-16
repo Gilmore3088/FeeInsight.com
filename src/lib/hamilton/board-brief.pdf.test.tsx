@@ -6,7 +6,6 @@ import { expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { PdfDocument } from "@/components/hamilton/reports/PdfDocument";
 import { ReportOutput } from "@/components/hamilton/reports/ReportOutput";
-import { AnalysisPdfDocument } from "@/components/hamilton/reports/AnalysisPdfDocument";
 import { boardBriefFromAnalysis, editBoardBrief } from "./board-brief";
 import {
   CLAIM_BINDING_LIMITATION,
@@ -60,7 +59,8 @@ function evidenceAnalysis(): EvidenceBoundAnalyzeResponse {
 const RECORD_PHRASES = [
   "fee:published:501", "fee:published:502", "derived:difference:a-b", "Research CU", "Institution 3",
   "document 1501", "version abcdef123456", "reporting date Jun 30, 2026", "published Jul 1, 2026", "source last checked Jul 2, 2026",
-  "-$25", "Calculated as left - right from fee:published:501 and fee:published:502", "Recalculated from the saved records",
+  "-$25", "the first record minus the second, from fee:published:501 and fee:published:502", "Recalculated from the saved records",
+  "Overdraft (OD), Synthetic checking, Research CU", "Overdraft (OD), calculated", "record fee:published:501",
   "Matches the stored source", "not re-checked against the bank's current live schedule",
 ];
 
@@ -79,9 +79,8 @@ it("keeps fact IDs, source versions, dates, limits and calculations through save
 
   const pdf = await pdfText(createElement(PdfDocument, { report: reopened, reportType: "board_brief" }));
   const screen = renderToStaticMarkup(createElement(ReportOutput, { report: reopened, reportType: "board_brief" })).replace(/&quot;/g, "\"").replace(/&#x27;/g, "'");
-  // The Analyze PDF of the reopened answer prints the same records and limits.
-  const answerPdf = await pdfText(createElement(AnalysisPdfDocument, { analysis: JSON.parse(JSON.stringify(analysis)), analysisFocus: "Pricing" }));
-  for (const output of [pdf, screen, answerPdf]) {
+  // The Analyze PDF prints its own Evidence Record (#1636); the board brief prints this table.
+  for (const output of [pdf, screen]) {
     for (const phrase of RECORD_PHRASES) expect(output).toContain(phrase);
     expect(output).not.toMatch(/verified against the (current )?live/i);
   }
@@ -94,10 +93,7 @@ it("exports a legacy high answer with its limit and no stored-source claim (H06-
   });
   expect(legacy.confidence.level).toBe("medium");
   const report = boardBriefFromAnalysis(legacy, "legacy", { title: "", teamNote: "", includeEvidence: true });
-  for (const pdf of [
-    await pdfText(createElement(PdfDocument, { report, reportType: "board_brief" })),
-    await pdfText(createElement(AnalysisPdfDocument, { analysis: legacy, analysisFocus: "Pricing" })),
-  ]) {
+  for (const pdf of [await pdfText(createElement(PdfDocument, { report, reportType: "board_brief" }))]) {
     expect(pdf).toContain("saved before Hamilton kept a source for each figure");
     expect(pdf).not.toContain("Matches the stored source");
     expect(pdf).not.toContain("Records behind the saved answer");
@@ -108,9 +104,10 @@ it("prints an incomplete saved record as incomplete, never as matching its sourc
   const analysis = evidenceAnalysis();
   const [first, second] = analysis.factEvidence!.facts;
   analysis.factEvidence!.facts = [{ ...first, source: { ...first.source, sourceDocumentIds: [], documentContentHash: null } }, second];
-  const pdf = await pdfText(createElement(AnalysisPdfDocument, { analysis, analysisFocus: "Pricing" }));
+  const report = boardBriefFromAnalysis(analysis, "a1", { title: "", teamNote: "", includeEvidence: true });
+  const pdf = await pdfText(createElement(PdfDocument, { report, reportType: "board_brief" }));
   expect(pdf).toContain("document not recorded · version not recorded");
   expect(pdf).toContain("Incomplete record: missing source document id");
-  expect(pdf).toContain("Does not check: incomplete input:fee:published:501");
+  expect(pdf).toContain("Cannot be recalculated: incomplete input:fee:published:501");
   expect(pdf).toContain("Some records behind this answer are incomplete");
 }, 20000);
