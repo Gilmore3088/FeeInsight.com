@@ -9,11 +9,12 @@ name: tests
 # unit suite in two shards, Knox's answer-key gates (the slowest files, on their own), and the
 # end-to-end run on a real database. `app-tests` is the check branch protection and the merge rule
 # read; it passes only when every job above it passed.
+#
+# A pull request always runs, so `app-tests` always reports and can be a required check (#982 B8);
+# when the PR changes only Markdown and docs/, the `changes` job skips the test jobs and
+# `app-tests` passes on its own.
 on:
   pull_request:
-    paths-ignore:
-      - "**/*.md"
-      - "docs/**"
   push:
     branches: [main]
     paths-ignore:
@@ -32,7 +33,25 @@ env:
   E2E_TESTS: src/lib/agents/pipeline.e2e.test.ts src/lib/data-store/hamilton-peer-list.db.test.ts src/lib/data-store/pro-accounts.db.test.ts src/lib/agents/knox/reread.db.test.ts src/lib/agents/deming/playbook-contradictions.db.test.ts src/lib/agents/deming/knox-misses.db.test.ts
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Does this change anything but Markdown and docs/?
+        id: diff
+        run: |
+          if [ "${{ github.event_name }}" != pull_request ]; then echo "code=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          changed=$(git diff --name-only "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}" | grep -v -E '\.md$|^docs/' || true)
+          if [ -n "$changed" ]; then echo "code=true" >> "$GITHUB_OUTPUT"; else echo "code=false" >> "$GITHUB_OUTPUT"; fi
+          echo "Changed outside Markdown and docs/:"; echo "${changed:-(nothing)}"
+
   checks:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -49,6 +68,8 @@ jobs:
         run: npm run lint
 
   unit:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -80,6 +101,8 @@ jobs:
           npx vitest run --shard=${{ matrix.shard }}/2 $excludes
 
   knox-gates:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -92,6 +115,8 @@ jobs:
         run: npx vitest run $KNOX_GATES
 
   e2e:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -113,18 +138,22 @@ jobs:
   app-tests:
     # The one required check: green only when every job above passed.
     if: always()
-    needs: [checks, unit, knox-gates, e2e]
+    needs: [changes, checks, unit, knox-gates, e2e]
     runs-on: ubuntu-latest
     steps:
       - name: Every job passed
         run: |
-          echo "checks=${{ needs.checks.result }} unit=${{ needs.unit.result }} knox-gates=${{ needs.knox-gates.result }} e2e=${{ needs.e2e.result }}"
+          echo "changes=${{ needs.changes.result }} code=${{ needs.changes.outputs.code }} checks=${{ needs.checks.result }} unit=${{ needs.unit.result }} knox-gates=${{ needs.knox-gates.result }} e2e=${{ needs.e2e.result }}"
+          test "${{ needs.changes.result }}" = success
+          if [ "${{ needs.changes.outputs.code }}" = false ]; then echo "Markdown and docs/ only: no tests to run."; exit 0; fi
           test "${{ needs.checks.result }}" = success
           test "${{ needs.unit.result }}" = success
           test "${{ needs.knox-gates.result }}" = success
           test "${{ needs.e2e.result }}" = success
 
   fee-audience-sql:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

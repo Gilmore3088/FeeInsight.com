@@ -27,6 +27,8 @@ import { combineScores, scoreAnswerKeys, type AnswerKeyDocument, type GateScore 
 // column) took all to 552 / 14; held out stayed 54 / 4; the seven states unchanged.
 // v72 (#1099, Oct 16): a loan's payment by phone, card or ACH, and a returned loan or mortgage
 // payment, read as other lending, took all to 557 / 14; held out stayed 54 / 4; the seven states unchanged.
+// v73 (#1100, Oct 16): reads record their account; no read changes (all 557 / 14, held out 54 / 4, the
+// seven states unchanged; every answer-key text's reads are identical to v72's).
 const FLOORS = {
   all: { right: 557, wrong: 14 },
   holdout: { right: 54, wrong: 4 },

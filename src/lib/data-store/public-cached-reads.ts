@@ -2,7 +2,7 @@ import { cachedPublicRead } from "./public-read-cache";
 import { getDataFreshness, getPublicStats, getStats } from "./core";
 import { getDistrictMetrics } from "./dashboard";
 import { getCheapestAndMostExpensive, getFeeCategoryDetail } from "./fees";
-import { getPeerIndex, getStateFeeIndexes } from "./fee-index";
+import { getDistrictFeeIndexes, getPeerIndex, getStateFeeIndexes } from "./fee-index";
 import {
   getCitiesInState,
   getCityFeeAverages,
@@ -32,6 +32,7 @@ import {
 import { getMarketBranchFootprint } from "./branches";
 import { getNationalRateStats } from "./rate-fees";
 import { getCountyFeeMap } from "./state-visuals";
+import { getDistrictHub, isEmptyDistrictHub } from "./district-hub";
 
 /**
  * Cached variants of the catalog-wide reads that public pages run on every request.
@@ -106,6 +107,11 @@ export const getStateFeeIndexesCached = cachedPublicRead(
   getStateFeeIndexes,
   (indexes) => indexes.all.length === 0,
 );
+export const getDistrictFeeIndexesCached = cachedPublicRead(
+  "district-fee-indexes-v1",
+  getDistrictFeeIndexes,
+  (indexes) => indexes.all.length === 0,
+);
 export const getStateEconomicContextCached = cachedPublicRead(
   "state-economic-context",
   getStateEconomicContext,
@@ -136,3 +142,5 @@ export async function getInstitutionPeerRankCached(institutionId: number): Promi
   return peerRankFromGroupValues(institutionId, rule, filters, values);
 }
 export const getMarketBranchFootprintCached = cachedPublicRead("market-branch-footprint", getMarketBranchFootprint);
+/** The district hub's exhibits beyond the fee board (district-hub.ts), one entry per district. */
+export const getDistrictHubCached = cachedPublicRead("district-hub-v2", getDistrictHub, isEmptyDistrictHub);
