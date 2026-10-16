@@ -1068,3 +1068,11 @@ keeps working. `apply_migration`, edits under `supabase/migrations/`, Supabase p
 production deploys and direct GitHub file commits still ask. Supabase `execute_sql` stays allowed
 (Oct 13 decision), so the rule that production data changes never go through raw SQL from a
 session still rests on the session, not on a prompt.
+
+**Back-end PRs skip the Vercel preview, and lanes batch their PRs.** James, 2026-10-16 (Hamilton
+thread, 03:51 and 04:05 UTC). Open PRs went from under 10 to about 40 in two hours, and each preview
+was queueing 30 to 45 minutes. He uses previews only to check how pages look, so a PR that changes
+no page merges on green CI without waiting for one. `vercel.json` `ignoreCommand` skips a preview
+build when the newest commit changes only `docs`, `supabase`, `src/lib/agents`, `scripts`,
+`.github`, `.claude`, `handoff`, Markdown or test files; production builds always run. Each lane
+also puts its next several items on one branch and opens one PR, instead of one PR per item.
