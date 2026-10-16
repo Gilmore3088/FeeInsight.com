@@ -111,6 +111,13 @@ const RATE_TAIL = "rates?|sheets?|page|information|info";
 export const LOAN_SEGMENT = `/(?:(?:${LOAN_CORE})(?: (?:${LOAN_TAIL}))*|(?:${RATE_CORE})(?: (?:${RATE_TAIL}))*)/`;
 /** The same, as the address's last segment. */
 export const LOAN_LAST_SEGMENT = `${LOAN_SEGMENT}$`;
+/**
+ * A segment that names a loan, card, mortgage, HELOC or line-of-credit product (the loan half of
+ * `LOAN_SEGMENT`, without the rate-page names). A "loan" document with no such segment is a rate
+ * page ("current-rates", "rate-sheet"): prod showed many of those hold a credit union's whole
+ * deposit schedule (#1442, #1518), so Darwin's re-check reads their fees more carefully.
+ */
+export const LOAN_PRODUCT_SEGMENT = `/(?:${LOAN_CORE})(?: (?:${LOAN_TAIL}))*/`;
 /** The address's last segment names a fee document ("fee schedule", "fees", "schedule of charges", "pricing"). */
 export const FEE_LAST_SEGMENT = "(?:^|/)(?:[^/]* )?(?:fees?|charges?|schedule|pricing)(?: [^/]*)?/$";
 
@@ -130,6 +137,7 @@ const DEPOSIT_RE = re(DEPOSIT_TOKEN);
 const BROKERAGE_RE = re(BROKERAGE_SEGMENT);
 const LOAN_RE = re(LOAN_SEGMENT);
 const LOAN_LAST_RE = re(LOAN_LAST_SEGMENT);
+const LOAN_PRODUCT_RE = re(LOAN_PRODUCT_SEGMENT);
 const FEE_LAST_RE = re(FEE_LAST_SEGMENT);
 const COMPILED = new Map<string, RegExp>();
 
@@ -197,6 +205,15 @@ export function nonDepositDocumentKind(url: string | null | undefined, title?: s
   return kindOf(documentPathSegments(url), titleSegment, documentHostLabel(url));
 }
 
+/**
+ * Pure: a "loan" document named only as a rate page ("/current-rates", "/rate-sheet.pdf"), with
+ * no segment naming a loan, card, mortgage or HELOC product. False for every other document.
+ * Address only, like the Postgres mirror `ratePageSql`.
+ */
+export function ratePageDocument(url: string | null | undefined): boolean {
+  return nonDepositDocumentKind(url) === "loan" && !LOAN_PRODUCT_RE.test(documentPathSegments(url));
+}
+
 /** A pattern as a Postgres string literal (quotes doubled; standard_conforming_strings). */
 function pgLiteral(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
@@ -231,4 +248,12 @@ export function nonDepositKindSql(path: string, host: string): string {
     WHEN ${path} ~ ${pgLiteral(LOAN_LAST_SEGMENT)} OR (${path} ~ ${pgLiteral(LOAN_SEGMENT)} AND ${path} !~ ${pgLiteral(FEE_LAST_SEGMENT)}) THEN 'loan'
     ELSE NULL
   END`;
+}
+
+/**
+ * Postgres: `ratePageDocument` over a normalised path expression `path` whose kind expression is
+ * `kind` (from `nonDepositKindSql`).
+ */
+export function ratePageSql(path: string, kind: string): string {
+  return `(${kind} IS NOT DISTINCT FROM 'loan' AND ${path} !~ ${pgLiteral(LOAN_PRODUCT_SEGMENT)})`;
 }

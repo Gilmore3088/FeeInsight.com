@@ -279,6 +279,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   HOURLY_CHECK_VERSION: "Its cursor re-reads every live fee name for an hourly price each pass (2,000 a verify step); there is nothing to replay.",
   // v1 (#1442): a new shadow pass. Its ledger cursor re-reads every live fee's source document address
   // each pass (2,000 a verify step), and nonDepositCountSql counts the whole live table read-only.
+  // v2 (#1518): lending wording on loan documents and brokerage_document (own sub-switch) as their
+  // own reasons, generic lending fees on rate pages kept live; same cursor, shadow, nothing written.
   NON_DEPOSIT_CHECK_VERSION: "Its cursor re-reads every live fee's source document address each pass (2,000 a verify step); there is nothing to replay.",
   // v1 (#1455): a new shadow pass. Its selector reads every shared or vendor-path document pair not
   // yet read at v1 (25 a verify step), and documentOwnerCountSql counts the whole backlog read-only.
