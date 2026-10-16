@@ -1067,6 +1067,10 @@ export function darwinStandingDecisionSql(currentCopy = true): string {
                 AND COALESCE((pa.detail->>'source_check_version')::int, 0) < ${DARWIN_SOURCE_CHECK_VERSION}
               )
               AND NOT (
+                pa.detail->>'reason_code' = 'peer_outlier'
+                AND COALESCE((pa.detail->>'peer_version')::int, 0) < ${DARWIN_PEER_STRATEGY.version}
+              )
+              AND NOT (
                 pa.detail->>'reason_code' = 'outside_envelope'
                 AND ${envelopes} ? (pa.detail->>'canonical_fee_key')
                 AND (pa.detail->>'amount')::numeric
@@ -1422,7 +1426,7 @@ async function recordPassTwoAttempts(
         amount: result.amount,
         peer_outlier: result.peerCheck.outlier,
         peer_scope: result.peerCheck.scope,
-        peer_held: holdsForPeerReview(result.peerCheck),
+        peer_held: holdsForPeerReview(result.peerCheck, result.canonicalFeeKey),
         peer_low: result.peerCheck.low,
         peer_high: result.peerCheck.high,
         peer_p25: result.peerCheck.p25,
@@ -1634,7 +1638,7 @@ export async function runDarwinVerify(
         },
         sourceCopies,
       );
-      if (holdsForPeerReview(peer)) reasonCode = "peer_outlier";
+      if (holdsForPeerReview(peer, canonicalFeeKey)) reasonCode = "peer_outlier";
     }
 
     let result: DarwinVerificationResult;
@@ -1713,6 +1717,8 @@ export async function runDarwinVerify(
           reason: result.reason,
           category_guard_version: CATEGORY_GUARD_VERSION,
           source_check_version: DARWIN_SOURCE_CHECK_VERSION,
+          // A peer hold is re-decided once when the peer check's version rises (v5, #1112).
+          peer_version: DARWIN_PEER_STRATEGY.version,
           batch_key_version: DARWIN_BATCH_KEY_VERSION,
           // Darwin's audience decision (#1059), when it made one; else the raw row's stands.
           fee_audience: row.fee_audience ?? "unknown",

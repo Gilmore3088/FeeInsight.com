@@ -654,6 +654,16 @@ describe("Darwin agentic verification", () => {
       expect(query).toContain(`source_check_version')::int, 0) < ${DARWIN_SOURCE_CHECK_VERSION}`);
     });
 
+    it("re-decides peer holds once after the peer check changes (v5, #1112)", async () => {
+      const db = learningDb([]);
+
+      await runDarwinVerify({ runId: 406, db: asVerifyDb(db) });
+
+      const [query] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      expect(query).toMatch(/reason_code' = 'peer_outlier'[\s\S]*COALESCE\(\(pa\.detail->>'peer_version'\)::int, 0\) </);
+      expect(query).toContain(`peer_version')::int, 0) < ${DARWIN_PEER_STRATEGY.version}`);
+    });
+
     it("re-checks old batch duplicates on a current copy that has no verified twin", async () => {
       const db = learningDb([]);
 

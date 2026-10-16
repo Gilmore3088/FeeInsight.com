@@ -60,7 +60,13 @@ type SqlTag = typeof sql;
  * stays a waiver as "Monthly Service Charge", and a labelled row matches under either name.
  */
 export const EVAL_VERDICT_CHECK = "hamilton.eval_verdict";
-export const EVAL_VERDICT_VERSION = 7;
+/**
+ * v8 (#1112, Oct 16): the name rules learn the no-fee, discount and allowance lines Darwin's peer
+ * check used to hold as price outliers: "No-Fee on Skip-a-Pay", "There is no … monthly service fee
+ * after a $50 opening deposit", a leading "Fee-free …", "Safe Deposit Box Discount", "$5 Allowance",
+ * and a loan's own term amount read as its application fee.
+ */
+export const EVAL_VERDICT_VERSION = 8;
 /** Why v5 cleared v4's price_in_name flags; written on the rule_revised lesson and each reconstructed first look. */
 const RULE_REVISED_VERSION = 5;
 export const RULE_REVISED_WHY = "A dollar figure in a fee's name is a threshold, floor, cap, balance or range more often than the fee's price; price_in_name now fires only on a price the name presents as the fee's own";
@@ -328,8 +334,24 @@ export const HAND_CHECKED_VERDICTS: readonly (EvalVerdict & { pattern: string })
 const REBATE_WORDING = /\b(rebate|reimburse|refund)/i;
 const NON_REFUNDABLE = /non[- ]?refundable/i;
 const ATM_KEYS = new Set(["atm_non_network", "atm_international"]);
-/** A sentence about what is free ("No fee for stop payments"), not a priced row. */
-const NO_FEE_SENTENCE = /^\s*(no|without)\s+(fee|charge)s?\s+(for|to|on|when|if)\b/i;
+/** A sentence about what is free ("No fee for stop payments", "No-Fee on Skip-a-Pay"), not a priced row. */
+const NO_FEE_SENTENCE = /^\s*(no|without)[\s-]+(fee|charge)s?\s+(for|to|on|when|if)\b/i;
+/** v8: "There is no minimum balance or monthly service fee after a $50 opening deposit". */
+const NO_FEE_CLAUSE = /\bthere\s+(?:is|are)\s+no\s+(?:[\w-]+\s+){0,5}(?:fees?|charges?)\b/i;
+/** v8: a line that opens on what is free ("Fee-free debit card use at any Allpoint® Network ATM"). */
+const FEE_FREE_LEAD = /^\s*\*?\s*fee-free\b/i;
+/**
+ * v8: a discount the bank gives, published as a fee ("Safe Deposit Box Discount", "$5.00 discount for
+ * direct debit of safe deposit fees", "Maintenance Charge discount"). A discounted price ("Discounted
+ * overdraft item fee", "3x5 …… w/ discount") is the fee itself and stays.
+ */
+const DISCOUNT_NAME = /\bdiscounts?\s*$|\bdiscount\s+(?:by|of)\b|^\s*(?:annual\s+)?discount\s+(?:on|for)\b/i;
+const DISCOUNTED_PRICE = /\bdiscounted\b|w\/\s*discount/i;
+/** v8: an allowance the bank grants, in the name or right after the price on the line ("Courtesy Pay / $5 Allowance"). */
+const ALLOWANCE_NAME = /\ballowance\s*$/i;
+const ALLOWANCE_PRICE = /\$\s?\d[\d,]*(?:\.\d{1,2})?\s+allowance\b/i;
+/** v8: a loan's own term amount read as its fee ("Budget Assist Loan Application Fee (4 month term/$1,000)"). */
+const LOAN_TERM_AMOUNT = /\bterm\s*\/\s*\$\s?(\d[\d,]*(?:\.\d{1,2})?)/i;
 
 /** The condition under which a fee is waived, or the balance that avoids it, as a $0 "fee". */
 const WAIVER_SENTENCE = /\b(if|when|unless)\s+you\b|\bof\s+the\s+following\b|\bqualifications?\s+(are|is)\s+met\b|^\s*to\s+avoid\b|\bto\s+avoid\s+(a\s+|an\s+|the\s+)?(monthly\s+|maintenance\s+)?(service\s+charge|monthly\s+fee|maintenance\s+fee|fee)/i;
@@ -419,7 +441,7 @@ export function distinctPrices(text: string | null | undefined): number {
  */
 const RATE_BOUND_NAME = /\d\s*%.*\b(minimum|maximum|min|max)\.?:?\s*$/i;
 
-export type NameRule = "rebate" | "no_fee_sentence" | "waiver_sentence" | "merchant_payer" | "two_fees_one_line" | "price_in_name" | "rate_bound" | "balance_threshold";
+export type NameRule = "rebate" | "no_fee_sentence" | "waiver_sentence" | "merchant_payer" | "two_fees_one_line" | "price_in_name" | "rate_bound" | "balance_threshold" | "discount_or_allowance" | "loan_amount";
 export const RULE_VERDICTS: Readonly<Record<NameRule, Verdict>> = {
   rebate: "not_a_fee",
   no_fee_sentence: "not_a_fee",
@@ -429,6 +451,8 @@ export const RULE_VERDICTS: Readonly<Record<NameRule, Verdict>> = {
   price_in_name: "wrong_amount",
   rate_bound: "wrong_amount",
   balance_threshold: "not_a_fee",
+  discount_or_allowance: "not_a_fee",
+  loan_amount: "wrong_amount",
 };
 export const RULE_WHY: Readonly<Record<NameRule, string>> = {
   rebate: "A surcharge rebate or reimbursement the bank gives, published as the ATM fee it charges",
@@ -439,13 +463,20 @@ export const RULE_WHY: Readonly<Record<NameRule, string>> = {
   price_in_name: "The name states a price that is not the published amount, so the amount came from another cell",
   rate_bound: "The name states a percent and ends on minimum or maximum: the amount is the rate fee's floor or cap, not the fee",
   balance_threshold: "The balance that avoids a fee, published as a fee: the amount is the threshold or another cell, not a charge",
+  discount_or_allowance: "A discount or allowance the bank gives, published as a fee it charges",
+  loan_amount: "The loan's own term amount, published as its fee",
 };
 
 /** Which name rule, if any, takes a live fee down. `excerpt` is the schedule line Knox read. Pure. */
 export function ruleFor(canonicalFeeKey: string, feeName: string | null | undefined, amount?: number | null, excerpt?: string | null): NameRule | null {
   const name = feeName ?? "";
   if (ATM_KEYS.has(canonicalFeeKey) && REBATE_WORDING.test(name) && !NON_REFUNDABLE.test(name)) return "rebate";
-  if (NO_FEE_SENTENCE.test(name)) return "no_fee_sentence";
+  if (NO_FEE_SENTENCE.test(name) || NO_FEE_CLAUSE.test(name) || FEE_FREE_LEAD.test(name)) return "no_fee_sentence";
+  if ((DISCOUNT_NAME.test(name) && !DISCOUNTED_PRICE.test(name)) || ALLOWANCE_NAME.test(name) || ALLOWANCE_PRICE.test(excerpt ?? "")) {
+    return "discount_or_allowance";
+  }
+  const term = LOAN_TERM_AMOUNT.exec(name) ?? LOAN_TERM_AMOUNT.exec(excerpt ?? "");
+  if (term && amount != null && Math.abs(Number(term[1].replace(/,/g, "")) - amount) < 0.005) return "loan_amount";
   if (amount != null && Math.abs(amount) < 0.005 && WAIVER_SENTENCE.test(name)) return "waiver_sentence";
   if (BALANCE_THRESHOLD.test(name) && !STATES_FEE.test(name)) return "balance_threshold";
   if (MERCHANT_PAYER.test(name)) return "merchant_payer";

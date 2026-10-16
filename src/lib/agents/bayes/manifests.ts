@@ -220,6 +220,10 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
  * in a manifest above.
  */
 export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
+  // v8 (#1112): new no-fee, discount, allowance and loan-amount name rules. Every live fee is read
+  // under them on each step (Hamilton's eval-verdict pass, then the second look), and Darwin reads
+  // each new row under them; there is no backlog for a replay to count.
+  EVAL_VERDICT_VERSION: "Every live fee is re-read under the name rules each step, and each new row at verify; nothing to replay.",
   // v1 (#1100 gap 3): a new pass 2 specialist inside the free team, logged under extract.rules.
   // Old texts are read again only when KNOX_RULES_STRATEGY moves, and the knox.rules manifest
   // counts that replay.

@@ -953,7 +953,7 @@ fails a PR that changes one of these constants without updating its line here (#
 |---|---|---|---|
 | `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v1 | `hamilton/account-names.ts` |
 | `CURRENT_COPY_STRATEGY` | `hamilton.current_copy_check` | v2 | `hamilton/current-copy.ts` |
-| `EVAL_VERDICT_VERSION` | — | v7 | `hamilton/eval-verdicts.ts` |
+| `EVAL_VERDICT_VERSION` | — | v8 | `hamilton/eval-verdicts.ts` |
 | `FREQUENCY_FILL_VERSION` | — | v14 | `hamilton/frequency-fill.ts` |
 | `GUARD_REQUEUE_STRATEGY` | `publish.guard_requeue` | v1 | `hamilton/guard-requeue.ts` |
 | `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v1 | `hamilton/newer-copy-retire.ts` |

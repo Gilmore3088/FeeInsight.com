@@ -38,7 +38,11 @@ type SqlTag = typeof sql;
 // v3: consumer/both-only source-grounded peer population; unknown/business inputs skip checks.
 // v4 (#1112): an unknown-audience fee is compared too, as the benchmarks count it (#1058), unless
 // its schedule's address is business-only. A business fee still never is.
-export const DARWIN_PEER_STRATEGY = { strategy: "verify.peer_range", version: 4 } as const;
+// v5 (#1112, Oct 16): an outlier is held only in the categories whose real prices sit in a narrow
+// band, where an outlier is usually a misread (`PEER_HOLD_CATEGORIES`). Elsewhere a real fee's
+// unusual price (a $0.25 photocopy, a $250 box drilling, a $5 stop payment) is kept as evidence
+// on the attempt and no longer held. Every audience the check admits is treated alike.
+export const DARWIN_PEER_STRATEGY = { strategy: "verify.peer_range", version: 5 } as const;
 export const DARWIN_SECOND_SOURCE_STRATEGY = { strategy: "verify.second_source", version: 2 } as const;
 
 /**
@@ -126,8 +130,25 @@ export function peerCheck(
 }
 
 /** Only a state-level outlier is held; a district or national one is recorded evidence. */
-export function holdsForPeerReview(check: PeerCheckResult | null): boolean {
-  return Boolean(check?.outlier && check.scope === "state");
+/**
+ * Where a state-level peer outlier is held for review (v5, #1112). Graded on the 123 v4 holds
+ * and the 113 v3 holds of Oct 15, read against their banks' stored text: outside these
+ * categories nearly every outlier was a real fee at its printed price, and inside them most were
+ * misreads (another service filed under the ATM, overdraft or wire fee; a free allowance; a
+ * balance requirement read as a fee). A no-fee, discount or allowance line in any category is
+ * the shared name rule's (`ruleFor` in `hamilton/eval-verdicts.ts`), not this check's.
+ */
+export const PEER_HOLD_CATEGORIES: ReadonlySet<string> = new Set([
+  "atm_non_network",
+  "overdraft",
+  "od_protection_transfer",
+  "rush_card",
+  "minimum_balance",
+  "wire_domestic_outgoing",
+]);
+
+export function holdsForPeerReview(check: PeerCheckResult | null, canonicalFeeKey: string | null | undefined): boolean {
+  return Boolean(check?.outlier && check.scope === "state" && canonicalFeeKey && PEER_HOLD_CATEGORIES.has(canonicalFeeKey));
 }
 
 export function peerOutlierReason(check: PeerCheckResult, amount: number): string {

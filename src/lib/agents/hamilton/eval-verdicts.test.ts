@@ -39,6 +39,62 @@ function createDb(pendingFlag: { flag_run_id: number; flagged_at: string } | nul
 const writes = (db: ReturnType<typeof createDb>) => db.mock.calls.map((call) => templateText(call[0]));
 const options = { runId: 5, batchId: "agentic-run-5", dryRun: false };
 
+describe("v8 name rules: no-fee, discount, allowance and loan-amount lines (#1112)", () => {
+  it("reads a no-fee line as no fee: the hyphen, a there-is-no clause and a leading fee-free", () => {
+    expect(ruleFor("other_lending_fee", "No-Fee on Skip-a-Pay", 4.95)).toBe("no_fee_sentence");
+    expect(ruleFor("monthly_maintenance", "There is no minimum balance or monthly service fee after a $50 opening deposit is made.", 50)).toBe("no_fee_sentence");
+    expect(ruleFor("atm_non_network", "Fee-free debit card use at any Allpoint® Network ATM", 10)).toBe("no_fee_sentence");
+    expect(ruleFor("atm_non_network", "*Fee-free debit card use at any Allpoint® Network ATM", 10)).toBe("no_fee_sentence");
+  });
+
+  it("reads a discount or an allowance as no fee", () => {
+    for (const name of [
+      "Safe Deposit Box Discount",
+      "Safe deposit box discounts",
+      "Safe deposit box rental fee discount by $10.00 per year",
+      "Safe Deposit Boxes First Club customers receive a discount of",
+      "Discount on Safe Deposit Box",
+      "Annual Discount on Safe Deposit Box",
+      "discount for direct debit of safe deposit fees",
+      "Maintenance Charge discount",
+      "Safe Deposit Auto Debit Discount",
+    ]) {
+      expect(ruleFor("safe_deposit_box", name, 10), name).toBe("discount_or_allowance");
+    }
+    expect(ruleFor("overdraft", "Courtesy Pay", 5, "Courtesy Pay / $5 Allowance")).toBe("discount_or_allowance");
+    expect(ruleFor("check_printing", "Order Checks", 5, "Order Checks / $5 Allowance")).toBe("discount_or_allowance");
+  });
+
+  it("reads a loan's own term amount as the wrong amount", () => {
+    expect(ruleFor("other_lending_fee", "Budget Assist Loan Application Fee (4 month term/$1,000)", 1000)).toBe("loan_amount");
+    expect(ruleFor("other_lending_fee", "Budget Assist Loan Application Fee (4 month term/$1,000)", 25)).not.toBe("loan_amount");
+    // The name is often cut before the term; the line Knox read still carries it (raw 752508, live 120626).
+    expect(ruleFor("other_lending_fee", "Budget Assist Loan Application Fee (4 month term", 1000, "Budget Assist Loan Application Fee (4 month term/$1,000)")).toBe("loan_amount");
+    expect(ruleFor("other_lending_fee", "Loan Application Fee", 25, "Loan Application Fee | $25.00 | 12 month term")).toBeNull();
+  });
+
+  it("keeps real fees whose names only mention these words", () => {
+    for (const [key, name, amount, excerpt] of [
+      ["overdraft", "Discounted overdraft item fee", 24.99, null],
+      ["nsf", "Discounted return item fee", 24.99, null],
+      ["money_order", "Discounted money order fee", 0.5, null],
+      ["safe_deposit_box", "3x5 .................w/ discount", 20, null],
+      ["safe_deposit_box", "10x10 Safe Deposit Box $2 discount/year if auto debit from a", 60, null],
+      ["other_lending_fee", "Mortgage Loan Processing Fee .50% discount fee 1.% origination", 200, null],
+      ["other_lending_fee", "No Hassle Loan Application Fee", 29, null],
+      ["nsf", "If there are no funds in the savings account then the standard NSF fee applies", 28, null],
+      ["card_replacement", "Debit Card Replacement Fee Free if stolen/fraud, otherwise", 5, null],
+      ["nsf", "NSF Fee Free Day5 Exhausted", 12, null],
+      ["ach_return", "Credit allowance for monthly maintenance ACH Stop Payment Return Fee", 10, "Credit allowance for monthly maintenance | ACH Stop Payment Return Fee | $10.00"],
+      ["document_reproduction", "Photocopies", 0.25, "Photocopies | $0.25 per page"],
+      ["safe_deposit_box", "Box Drilling", 250, "Box Drilling | $250.00"],
+      ["stop_payment", "Stop Payment on a check", 5, "Stop Payment on a check – $5.00"],
+    ] as const) {
+      expect(ruleFor(key, name, amount, excerpt), name).toBeNull();
+    }
+  });
+});
+
 describe("eval verdicts (Oct 8 complete-record eval)", () => {
   it("lists the 11 critical rows once each", () => {
     expect(EVAL_CRITICAL_VERDICTS).toHaveLength(11);
