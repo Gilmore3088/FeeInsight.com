@@ -14,9 +14,10 @@ vi.mock("@/components/track-link", () => ({
 const report = sampleWorkflowReport();
 const html = renderToStaticMarkup(<LandingWorkflow report={report} />);
 const text = (s: string) => s.replace(/<[^>]+>/g, " ").replace(/&#x27;|&apos;/g, "'").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/\s+/g, " ");
-const panel = (key: string) => html.match(new RegExp(`data-sample="${key}"[^>]*>([\\s\\S]*?)(?=<div[^>]*data-sample="|$)`))?.[1] ?? "";
+const answer = html.slice(html.indexOf("data-workflow-compare"), html.indexOf("data-workflow-report"));
+const reportPart = html.slice(html.indexOf("data-workflow-report"));
 
-describe("homepage live samples: one institution, one finding per visual", () => {
+describe("homepage example: one question, one finding, the same fee in the report", () => {
   it("leads with the fee furthest above its local median whose schedule line states it", () => {
     const lead = workflowLead(report)!;
     expect(lead.line.key).toBe("wire_intl_outgoing");
@@ -25,21 +26,19 @@ describe("homepage live samples: one institution, one finding per visual", () =>
     expect([dollars(75), dollars(2.5)]).toEqual(["$75", "$2.50"]);
   });
 
-  it("opens on Compare: the finding, the bank against the median and three named peers as bars", () => {
-    const tabs = [...html.matchAll(/aria-selected="(true|false)"[^>]*data-sample-tab="(\w+)"/g)].map(([, on, key]) => `${key}:${on}`);
-    expect(tabs).toEqual(["compare:true", "inspect:false", "report:false"]);
-    const t = text(panel("compare"));
-    expect(t).toContain("Capital City Bank's outgoing international wire fee is $25 above the local median.");
-    expect(t).toContain("$75 against a local median of $50");
-    expect(t).toContain("8 local competitors publish this fee");
-    expect(t).toMatch(/Capital City Bank \$75 Local median \$50 Wells Fargo Bank, N\.A\. \$45 Ameris Bank \$50 Regions Bank \$55/);
-    // The full comparison opens on request, every named competitor in it.
-    expect(panel("compare")).toMatch(/<details[^>]*data-workflow-more/);
-    expect(t).toContain("View the full comparison");
-    expect(t).toContain("Truist Bank $50");
-    // No signed-in product claim on a frame.
+  it("asks one question and answers it with the bank, the median and three named peers as bars", () => {
+    const t = text(html);
+    expect(t).toContain("See where your fees stand locally");
+    expect(t).toContain("How does our outgoing international wire fee compare with local competitors?");
+    const a = text(answer);
+    expect(a).toContain("$75 $25 above the local median");
+    expect(a).toContain("Local median $50 · 8 local competitors publish this fee · 8 charge less");
+    expect(a).toMatch(/Capital City Bank \$75 Local median \$50 Wells Fargo Bank, N\.A\. \$45 Ameris Bank \$50 Regions Bank \$55/);
+    // Names wrap rather than being cut.
+    expect(answer.slice(0, answer.indexOf("data-workflow-evidence"))).not.toContain("truncate");
+    // Labelled as a sample, never as a signed-in screen.
+    expect(t).toContain("Sample answer · Capital City Bank");
     expect(html).not.toContain("Hamilton · Research");
-    expect(t).toContain("Capital City Bank · live sample");
   });
 
   it("never quotes a schedule line that names what the fee excludes", () => {
@@ -49,25 +48,25 @@ describe("homepage live samples: one institution, one finding per visual", () =>
     expect(lead.peers.map((p) => p.name)).toEqual(["Wells Fargo Bank, N.A.", "Ameris Bank", "Regions Bank"]);
   });
 
-  it("Inspect shows the fee and the exact schedule line, with other sources on request", () => {
-    const p = panel("inspect");
-    const t = text(p);
-    expect(t).toContain("Capital City Bank · Outgoing international wire $75");
-    expect(t).toContain("From its fee schedule “Outgoing International Wire … $75.00 ”");
+  it("shows the schedule line behind the answer, with every competitor and its source on request", () => {
+    const t = text(answer);
+    expect(t).toContain("From Capital City Bank's fee schedule “Outgoing International Wire … $75.00 ”");
     expect(t).toContain("Read Oct 8, 2026 · Published schedule");
-    expect(p).toContain('href="https://example.com/323/fee-schedule.pdf"');
-    expect(p).toMatch(/<details[^>]*data-workflow-more/);
-    expect(p.match(/data-workflow-peer/g)).toHaveLength(3);
+    expect(answer).toContain('href="https://example.com/323/fee-schedule.pdf"');
+    expect(answer).toMatch(/<details[^>]*data-workflow-more/);
+    expect(answer.match(/data-workflow-peer/g)).toHaveLength(3);
+    expect(t).toContain("Truist Bank $50");
     expect(t).not.toMatch(/Incoming/);
   });
 
-  it("Report shows the report's first page and links to the whole report", () => {
-    const p = panel("report");
-    const t = text(p);
+  it("marks the same fee in the report's first page and links to the whole report", () => {
+    const t = text(reportPart);
     expect(t).toContain("Capital City Bank against its local market");
     expect(t).toContain("At a glance");
     expect(t).toMatch(/Of your 7 comparable fees, 2 above the local middle range/);
-    expect(p).toContain('href="/reports/sample-competitive-fee-position"');
+    expect(reportPart.match(/data-highlight=""/g)).toHaveLength(1);
+    expect(reportPart).toMatch(/data-highlight=""[^>]*>\s*<span[^>]*>Outgoing international wire</);
+    expect(reportPart).toContain('href="/reports/sample-competitive-fee-position"');
     expect(t).not.toMatch(/Sources and method|Named competitors, same lines/);
   });
 

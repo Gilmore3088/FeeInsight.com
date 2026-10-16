@@ -99,14 +99,18 @@ function scaleOf(districts: DistrictPoint[], metric: Metric) {
  * previews a district in the panel; a click or Enter picks it. The map is one tab stop:
  * arrow keys move between districts.
  */
-export function DistrictMap({ data }: { data: HomeData }) {
+export function DistrictMap({ data, compact = false }: { data: HomeData; compact?: boolean }) {
   const { districts, overdraft, summary } = data;
   const [selected, setSelected] = useState<number | null>(() => firstDistrict(districts));
   const [hovered, setHovered] = useState<number | null>(null);
   const [metric, setMetric] = useState<Metric>("median");
-  /** Phones show the map and one takeaway; the comparison views open on request. */
+  /**
+   * Phones show the map and one takeaway; the comparison views open on request. `compact` does
+   * the same at every width, for a half-width frame (the homepage's product intro, James's notes
+   * of Oct 16: the district ranking collapsed by default, the map and takeaway kept).
+   */
   const [more, setMore] = useState(false);
-  const onPhoneUnlessMore = more ? "" : "max-sm:hidden";
+  const onPhoneUnlessMore = more ? "" : compact ? "hidden" : "max-sm:hidden";
   const byNumber = new Map(districts.map((d) => [d.district, d]));
   const activeNumber = hovered ?? selected;
   const active = activeNumber !== null ? byNumber.get(activeNumber) ?? null : null;
@@ -176,7 +180,7 @@ export function DistrictMap({ data }: { data: HomeData }) {
 
   return (
     <div className="p-4 sm:px-6 sm:pb-4 sm:pt-5">
-     <div className="grid gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] lg:items-start lg:gap-10">
+     <div className={compact ? "grid gap-4" : "grid gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] lg:items-start lg:gap-10"}>
       <div className="min-w-0">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <p className="text-[13px] font-semibold text-ink">Overdraft by Fed district</p>
@@ -284,7 +288,7 @@ export function DistrictMap({ data }: { data: HomeData }) {
       {/* Phones: one takeaway and one link under the map; the panel, the dot plot and the 12
           report links wait behind "View comparison details" (James's notes of Oct 16). */}
       {active && activeNumber !== null ? (
-        <div className="sm:hidden" data-district-takeaway="">
+        <div className={compact ? "" : "sm:hidden"} data-district-takeaway="">
           <p className="text-[16px] leading-snug text-ink-soft">
             <span className="font-semibold text-ink">{active.name}</span>
             {active.median !== null && overdraft

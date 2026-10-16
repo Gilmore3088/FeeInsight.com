@@ -27,20 +27,18 @@ import { SearchModal } from "@/components/public/search-modal";
 import { getFeeCategoryDetailCached } from "@/lib/data-store/public-cached-reads";
 import { shortenPageLife } from "@/lib/data-store/public-read-cache";
 import { LandingHero } from "./landing-hero";
-import { LandingResearch } from "./landing-demo";
+import { LandingProblem, LandingProducts } from "./landing-products";
 import { LandingWorkflow } from "./landing-workflow";
-import { LandingProvenance } from "./landing-provenance";
 import { LandingPricing } from "./landing-pricing";
 import { LandingFaq } from "./landing-faq";
-import { LandingClose } from "./landing-close";
 import { buildHomeData, buildSampleView, homeReadsCacheable } from "./landing-shared";
 import { buildScenario } from "./subscribe/scenario";
 
-// The buyer promise from site v3 brief 08 §B.3 (h1) and its subhead; no counts, so nothing goes stale.
-const HOME_TITLE = `Know where your fees stand, with a source for every figure | ${SITE_NAME}`;
+// The promise (James, Oct 16); no counts, so nothing goes stale.
+const HOME_TITLE = `Your next fee review doesn't need to take weeks | ${SITE_NAME}`;
 const HOME_DESCRIPTION =
-  `The ${PRODUCT_NAME} reads the published fee schedules of U.S. banks and credit unions. ` +
-  "See each of your fees against your market, your state, your Fed district, your peer group and the nation.";
+  `Compare your fees with competitors using the ${PRODUCT_NAME}, then turn the evidence into analysis and ` +
+  "board reports with Hamilton. Every figure traces to the institution's own published fee schedule.";
 
 export const metadata: Metadata = {
   title: { absolute: HOME_TITLE },
@@ -131,13 +129,14 @@ export default async function LandingPage() {
       />
       <ConsumerNav />
       <main id="main-content">
+        {/* James's five sections (Oct 16): the promise, the problem, the two products, one
+            example, then the plans with the questions buyers ask. */}
         <LandingHero summary={summary} />
-        <LandingResearch data={data} />
+        <LandingProblem />
+        <LandingProducts data={data} summary={summary} />
         <LandingWorkflow report={liveSample} />
-        <LandingProvenance summary={summary} />
         <LandingPricing />
         <LandingFaq summary={summary} />
-        <LandingClose />
       </main>
       <CustomerFooter />
       <SearchModal />

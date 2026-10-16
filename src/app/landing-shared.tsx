@@ -66,7 +66,16 @@ export const hasFigure = (label: string) => /\d/.test(label);
  * The institution search: a plain GET to /institutions?q=, the same target as the
  * homepage's WEBSITE_JSON_LD SearchAction, so it works before any script loads.
  */
-export function InstitutionSearchForm({ className, id }: { className?: string; id?: string }) {
+export function InstitutionSearchForm({
+  className,
+  id,
+  secondary = false,
+}: {
+  className?: string;
+  id?: string;
+  /** Under a page's main action, the search's button steps back to the secondary style. */
+  secondary?: boolean;
+}) {
   return (
     <form
       action="/institutions"
@@ -83,7 +92,7 @@ export function InstitutionSearchForm({ className, id }: { className?: string; i
         autoComplete="off"
         className="w-full min-w-0 text-left sm:flex-1"
       />
-      <Button type="submit" variant="primary" className="min-h-11 justify-center whitespace-nowrap">
+      <Button type="submit" variant={secondary ? "secondary" : "primary"} className="min-h-11 justify-center whitespace-nowrap">
         See where your fees stand
       </Button>
     </form>

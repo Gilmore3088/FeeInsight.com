@@ -20,7 +20,7 @@ export { PUBLIC_NAV_ITEMS, PRO_NAV_ITEMS, PRO_PLANS_NAV, PRIMARY_CTA_NAV } from 
  */
 export function ConsumerNav() {
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-paper/95">
+    <header className="sticky top-0 z-40 border-b border-border bg-paper">
       <SkipLink />
       <div className="mx-auto max-w-page px-6">
         {/* Phones: search on the left, the logo centred, the menu on the right. From `sm` up the

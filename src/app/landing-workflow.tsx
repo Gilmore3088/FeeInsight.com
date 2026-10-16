@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { DEMO_REQUEST_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
+import { DEMO_REQUEST_NAV } from "@/components/nav-items";
 import { ProductFrame } from "@/components/marketing/product-frame";
 import { TrackLink } from "@/components/track-link";
 import type { ReportLine } from "@/lib/custom-report/analysis";
@@ -11,11 +11,12 @@ import { AtAGlance } from "./market-report/[token]/at-a-glance";
 import { placeLabel } from "./market-report/report-body";
 import { feeMoney, lineName, readOnLabel, shortInstitutionName } from "./for-institutions/board-math";
 import { verifiedSourceQuote } from "./for-institutions/sample-sources";
-import { SampleTabs } from "./landing-sample-tabs";
-import { SAMPLE_REPORT_HREF, SECTION_INNER, SectionHeading, TEXT_LINK } from "./landing-shared";
+import { DISPLAY_H2, SAMPLE_REPORT_HREF, SANS, SECTION_INNER, TEXT_LINK } from "./landing-shared";
 
 /** Named competitors shown beside the finding; the rest open on request. */
 const SHOWN_PEERS = 3;
+/** Report rows in the excerpt, the example's fee among them; the full report has the rest. */
+const EXCERPT_ROWS = 4;
 
 type FindingLine = ReportLine & { own: NonNullable<ReportLine["own"]>; peers: NonNullable<ReportLine["peers"]> };
 
@@ -139,8 +140,12 @@ function marked(quote: string): ReactNode[] {
 
 const MORE = "cursor-pointer list-none text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink [&::-webkit-details-marker]:hidden";
 
-/** Compare: the bank's fee against the local median and three named competitors, as bars. */
-function CompareChart({ lead }: { lead: WorkflowLead }) {
+/**
+ * The answer: the finding in one line, the bank against the local median and three named
+ * competitors as bars, then the schedule line that states the bank's fee. Checking the source is
+ * part of trusting the comparison, so both sit in one card (James's notes of Oct 16).
+ */
+function Answer({ lead }: { lead: WorkflowLead }) {
   const { line } = lead;
   const rows = [
     { label: lead.name, amount: line.own.amount, kind: "own" as const },
@@ -148,20 +153,23 @@ function CompareChart({ lead }: { lead: WorkflowLead }) {
     ...lead.peers.map((p) => ({ label: p.name, amount: p.amount, kind: "peer" as const })),
   ];
   const hi = Math.max(...rows.map((r) => r.amount), line.peers.max) || 1;
+  const gapWords =
+    lead.gap === 0 ? "At the local median" : `${dollars(Math.abs(lead.gap))} ${lead.gap > 0 ? "above" : "below"} the local median`;
   return (
-    <div className="p-5 sm:p-7" data-workflow-compare>
+    <div className="p-5 sm:p-6" data-workflow-compare>
       <p className="text-[13px] font-semibold text-ink-muted">{lineName(line.label)}</p>
-      <p className="mt-1 flex flex-wrap items-baseline gap-x-3">
+      <p className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <span className="font-mono text-[2.25rem] font-semibold leading-none text-ink">{dollars(line.own.amount)}</span>
-        <span className="text-[15px] text-ink-soft">against a local median of {dollars(line.peers.median)}</span>
+        <span className="text-[15px] font-semibold text-ink">{gapWords}</span>
       </p>
       <p className="mt-2 text-[13px] text-ink-muted">
-        {line.peers.n} local competitors publish this fee · {line.chargingLess ?? 0} charge less
+        Local median {dollars(line.peers.median)} · {line.peers.n} local competitors publish this fee · {line.chargingLess ?? 0} charge less
       </p>
-      <ul className="mt-6 space-y-3" aria-label={`${lineName(line.label)}: ${lead.name} against its local market`}>
+      <ul className="mt-5 space-y-3" aria-label={`${lineName(line.label)}: ${lead.name} against its local market`}>
         {rows.map((row) => (
-          <li key={`${row.kind}-${row.label}`} className="grid grid-cols-[minmax(0,8.5rem)_minmax(0,1fr)_3.75rem] items-center gap-3 sm:grid-cols-[minmax(0,11rem)_minmax(0,1fr)_4rem]">
-            <span className={`truncate text-[14px] ${row.kind === "peer" ? "text-ink-soft" : "font-semibold text-ink"}`}>{row.label}</span>
+          <li key={`${row.kind}-${row.label}`} className="grid grid-cols-[minmax(0,8.5rem)_minmax(0,1fr)_3.75rem] items-center gap-3 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)_4rem]">
+            {/* Names wrap to a second line rather than being cut. */}
+            <span className={`text-[14px] leading-snug ${row.kind === "peer" ? "text-ink-soft" : "font-semibold text-ink"}`}>{row.label}</span>
             <span className="relative h-3 rounded-full bg-paper">
               {/* The bank in the report's accent (as its At a glance marks it), the median in ink. */}
               <span
@@ -173,61 +181,15 @@ function CompareChart({ lead }: { lead: WorkflowLead }) {
           </li>
         ))}
       </ul>
-      {lead.all.length > lead.peers.length ? (
-        <details className="mt-6 border-t border-border pt-4" data-workflow-more>
-          <summary className={MORE}>View the full comparison</summary>
-          <table className="mt-3 w-full text-[14px]">
-            <thead>
-              <tr className="border-b border-border text-left text-[12px] text-ink-muted">
-                <th scope="col" className="py-1.5 font-medium">Institution</th>
-                <th scope="col" className="py-1.5 text-right font-medium">{lineName(line.label)}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {lead.all.map((c) => (
-                <tr key={c.name}>
-                  <th scope="row" className="py-1.5 text-left font-normal text-ink">{c.name}</th>
-                  <td className="py-1.5 text-right font-mono text-ink">{dollars(c.amount)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </details>
-      ) : null}
-    </div>
-  );
-}
-
-/** Inspect: the fee and the exact line of the bank's schedule that states it. */
-function InspectSource({ lead }: { lead: WorkflowLead }) {
-  const { line } = lead;
-  const tiers = (line.own.tiers ?? [])
-    .slice(1)
-    .map((t) => ({ ...t, quote: plainQuote(line.key, verifiedSourceQuote({ key: line.key, own: { ...line.own, ...t } })) }))
-    .filter((t) => t.quote);
-  return (
-    <div className="p-5 sm:p-7" data-workflow-inspect>
-      <p className="text-[13px] font-semibold text-ink-muted">
-        {lead.name} · {lineName(line.label)}
-      </p>
-      <p className="mt-1 font-mono text-[2.25rem] font-semibold leading-none text-ink">{dollars(line.own.amount)}</p>
-      <figure className="mt-5 rounded-lg border border-border bg-paper px-4 py-4" data-workflow-evidence>
-        <figcaption className="text-[12px] font-semibold uppercase tracking-[0.08em] text-ink-muted">From its fee schedule</figcaption>
+      <figure className="mt-6 rounded-lg border border-border bg-paper px-4 py-4" data-workflow-evidence>
+        <figcaption className="text-[12px] font-semibold uppercase tracking-[0.08em] text-ink-muted">From {lead.name}&apos;s fee schedule</figcaption>
         <blockquote className="mt-2 font-mono text-[14px] leading-relaxed text-ink">&ldquo;{marked(lead.quote)}&rdquo;</blockquote>
         <SourceNote readOn={line.own.schedule_read_on} href={line.own.source_url} />
       </figure>
-      {tiers.length > 0 || lead.peers.length > 0 ? (
-        <details className="mt-6 border-t border-border pt-4" data-workflow-more>
-          <summary className={MORE}>Conditions and other sources</summary>
+      {lead.all.length > lead.peers.length || lead.peers.length > 0 ? (
+        <details className="mt-5 border-t border-border pt-4" data-workflow-more>
+          <summary className={MORE}>Every competitor and its source</summary>
           <ul className="mt-3 space-y-4 text-[14px]">
-            {tiers.map((t) => (
-              <li key={`tier-${t.amount}-${t.fee_name}`}>
-                <p className="font-medium text-ink">
-                  {lead.name}, also stated: {dollars(t.amount)}
-                </p>
-                <p className="mt-1 font-mono text-[13px] text-ink-soft">&ldquo;{t.quote}&rdquo;</p>
-              </li>
-            ))}
             {lead.peers.map((p) => (
               <li key={p.name} data-workflow-peer>
                 <p className="font-medium text-ink">
@@ -238,127 +200,95 @@ function InspectSource({ lead }: { lead: WorkflowLead }) {
               </li>
             ))}
           </ul>
+          {lead.all.length > lead.peers.length ? (
+            <table className="mt-4 w-full text-[14px]">
+              <thead>
+                <tr className="border-b border-border text-left text-[12px] text-ink-muted">
+                  <th scope="col" className="py-1.5 font-medium">All local competitors</th>
+                  <th scope="col" className="py-1.5 text-right font-medium">{lineName(line.label)}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {lead.all.map((c) => (
+                  <tr key={c.name}>
+                    <th scope="row" className="py-1.5 text-left font-normal text-ink">{c.name}</th>
+                    <td className="py-1.5 text-right font-mono text-ink">{dollars(c.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : null}
         </details>
       ) : null}
     </div>
   );
 }
 
-/** Report: the report's first page, drawn by the report's own At a glance section. */
-function ReportPage({ report }: { report: MarketReport }) {
+/** The report's first page, drawn by the report's own At a glance, with the example's fee marked. */
+function ReportExcerpt({ report, lead }: { report: MarketReport; lead: WorkflowLead }) {
   const { data, analysis } = report;
   const market = data.market!;
   const marketLabel = `${placeLabel(market.places[0])} area${market.county_fips.length > 1 ? ` (${market.county_fips.length} counties)` : ""}`;
   return (
     <div className="p-4 sm:p-6" data-workflow-report>
       <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-brick">{REPORT_OFFER.name}</p>
-      <p className="mt-2 text-[1.35rem] font-semibold leading-tight tracking-[-0.02em] text-ink sm:text-[1.6rem]">
+      <p className="mt-2 text-[1.25rem] font-semibold leading-tight tracking-[-0.02em] text-ink sm:text-[1.4rem]">
         {data.subject.institution_name} against its local market
       </p>
       <p className="mt-1 text-[13px] text-ink-muted">
         {marketLabel} · {analysis.readiness.competitorsWithData} local competitors with published fees
       </p>
-      <div className="[&>section]:mt-5 [&>section]:p-5 sm:[&>section]:p-6">
-        <AtAGlance lines={analysis.lines} />
+      <div className="[&>section]:mt-5 [&>section]:p-4 sm:[&>section]:p-5">
+        <AtAGlance lines={analysis.lines} narrow highlight={lead.line.key} limit={EXCERPT_ROWS} />
       </div>
-    </div>
-  );
-}
-
-function Pillar({
-  title,
-  line,
-  frameLabel,
-  after,
-  wide = false,
-  children,
-}: {
-  title: string;
-  line: string;
-  frameLabel: string;
-  after?: ReactNode;
-  /** The frame under the text at full width, for a report page that needs the room. */
-  wide?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <div className={wide ? "grid gap-8" : "grid items-center gap-6 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-16"}>
-      <div className="min-w-0">
-        <SectionHeading title={title} line={line} />
-        {after}
-      </div>
-      <ProductFrame label={frameLabel} className="fi-window-lift">
-        {children}
-      </ProductFrame>
     </div>
   );
 }
 
 /**
- * The homepage's live samples (James's notes of Oct 16): one sample institution, the live
- * sample report's, through compare, inspect and report. Each visual makes one point from that
- * report; the full comparison, the conditions and the full report open on request. Without a
- * ready sample report and a finding whose schedule line states it plainly, the section is left out.
+ * Section 4, one convincing example (James's homepage reset, Oct 16): a question a pricing
+ * team asks, the answer from the live sample report with the schedule line behind it, and the
+ * same fee marked in the report it becomes. Without a ready sample report and a finding whose
+ * schedule line states it plainly, the section is left out.
  */
 export function LandingWorkflow({ report }: { report: MarketReport | null }) {
   const lead = workflowLead(report);
   if (!report || !lead) return null;
-  const frameLabel = `${lead.name} · live sample`;
-  const tabs = [
-    {
-      key: "compare",
-      label: "Compare",
-      panel: (
-        <Pillar
-          title={findingSentence(lead)}
-          line="Compared with the local competitors that publish it, each figure from the bank's own schedule."
-          frameLabel={frameLabel}
-        >
-          <CompareChart lead={lead} />
-        </Pillar>
-      ),
-    },
-    {
-      key: "inspect",
-      label: "Inspect",
-      panel: (
-        <Pillar title="See the line behind the number" line="Every figure opens to the schedule that states it and the date it was read." frameLabel={frameLabel}>
-          <InspectSource lead={lead} />
-        </Pillar>
-      ),
-    },
-    {
-      key: "report",
-      label: "Report",
-      panel: (
-        <Pillar
-          title="Bring the findings to committee"
-          line="One report shows where each fee sits in the local market, with a source for every figure."
-          frameLabel={`${REPORT_OFFER.name} · sample`}
-          wide
-          after={
+  const fee = lineName(lead.line.label).toLowerCase();
+  return (
+    <section id="example" aria-labelledby="example-heading" className="scroll-mt-24 border-t border-border bg-surface-0">
+      <div className={`${SECTION_INNER} py-16 sm:py-20`}>
+        <div className="mx-auto max-w-2xl text-center">
+          <h2 id="example-heading" className={DISPLAY_H2} style={SANS}>
+            See where your fees stand locally
+          </h2>
+          <p className="mt-4 text-[17px] leading-relaxed text-ink-soft">
+            One question, answered from a live sample with the schedule behind it, then marked in the report.
+          </p>
+        </div>
+        <div className="mt-10 grid items-start gap-8 lg:mt-12 lg:grid-cols-2 lg:gap-10">
+          <div className="min-w-0">
+            <p className="ml-auto w-fit max-w-[90%] rounded-2xl rounded-br-sm bg-ink px-4 py-3 text-[15px] leading-snug text-on-ink" data-example-question>
+              How does our {fee} fee compare with local competitors?
+            </p>
+            <ProductFrame label={`Sample answer · ${lead.name}`} className="fi-window-lift mt-4">
+              <Answer lead={lead} />
+            </ProductFrame>
+          </div>
+          <div className="min-w-0">
+            <ProductFrame label={`${REPORT_OFFER.name} · sample`} className="fi-window-lift">
+              <ReportExcerpt report={report} lead={lead} />
+            </ProductFrame>
             <p className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-3 max-sm:justify-center">
               <a href={SAMPLE_REPORT_HREF} className="fi-btn fi-btn-secondary min-h-11">
                 Open the full report
               </a>
-              <TrackLink event="upgrade_click" eventProps={{ placement: "home_workspace" }} href={PRO_PLANS_NAV.href} className={`text-[14px] ${TEXT_LINK}`}>
-                {PRO_PLANS_NAV.label}
-              </TrackLink>
               <TrackLink event="contact_sales" eventProps={{ placement: "home_workspace_demo" }} href={DEMO_REQUEST_NAV.href} className={`text-[14px] ${TEXT_LINK}`}>
-                {DEMO_REQUEST_NAV.label}
+                {DEMO_REQUEST_NAV.standaloneLabel}
               </TrackLink>
             </p>
-          }
-        >
-          <ReportPage report={report} />
-        </Pillar>
-      ),
-    },
-  ];
-  return (
-    <section id="live-samples" aria-label="Live samples" className="scroll-mt-24 bg-paper">
-      <div className={`${SECTION_INNER} pb-16 pt-6 sm:pb-24 sm:pt-10`}>
-        <SampleTabs tabs={tabs} label="Live samples" />
+          </div>
+        </div>
       </div>
     </section>
   );
