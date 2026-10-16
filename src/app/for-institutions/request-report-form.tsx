@@ -3,7 +3,6 @@
 import { Suspense, useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Lock } from "lucide-react";
 import { trackEvent } from "@/lib/analytics";
 import { REPORT_OFFER } from "@/lib/constants";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
@@ -23,7 +22,7 @@ const DISTRICT_REPORT_SOURCE = "report_district";
 /** Each bank's free page is the instant own-institution snapshot (James, 8 Oct 2026). */
 const OWN_INSTITUTION_HREF = "/institutions";
 const DEFAULT_SRC = "for-institutions";
-const INSTITUTION_REPORT_HREF = "/for-institutions?report=institution#report";
+const INSTITUTION_REPORT_HREF = "/reports?report=institution#request";
 const SRC_PATTERN = /^[a-z0-9][a-z0-9_-]{0,39}$/i;
 const FALLBACK_ID_SUFFIX = "-fallback";
 
@@ -44,17 +43,18 @@ const GENERIC_ERROR = "We couldn't send that request. Please try again or email 
 
 const INPUT_CLASS =
   "w-full rounded-md border border-border bg-white px-3 py-2 text-sm text-ink " +
-  "placeholder:text-ink-muted focus:outline-none focus:ring-2 focus:ring-brick focus:border-transparent " +
+  "placeholder:text-ink-muted focus:outline-none focus:ring-2 focus:ring-ink focus:border-transparent " +
   "read-only:bg-surface-200 read-only:text-ink-soft";
 const LABEL_CLASS = "block text-sm font-medium text-ink mb-1";
 
 type Status = "idle" | "submitting" | "success" | "error";
 type ReportType = "national" | "district" | "institution";
 
+// The paid report first: it is the one that answers "where do our fees stand" (site brief, /reports).
 const REPORT_TYPES: { value: ReportType; title: string; detail: string; paid: boolean }[] = [
-  { value: "national", title: "National report", detail: "The headline fees across the U.S.", paid: false },
-  { value: "district", title: "Fed district report", detail: "The same fees for one Fed district, against the nation.", paid: false },
-  { value: "institution", title: "Your institution vs. competitors", detail: "Your fees against named local competitors.", paid: true },
+  { value: "institution", title: "Your institution", detail: "Your fees against named local competitors.", paid: true },
+  { value: "national", title: "National", detail: "The headline fees across the U.S.", paid: false },
+  { value: "district", title: "Fed district", detail: "The same fees for one Fed district, against the nation.", paid: false },
 ];
 type ConfirmationStatus = "sent" | "not_configured" | "failed" | "unknown";
 
@@ -265,50 +265,42 @@ function RequestReportFormInner({
         </div>
       )}
 
-      <fieldset>
+      <fieldset aria-describedby={fieldId("report-type-detail")}>
         <legend className={LABEL_CLASS}>Which report?</legend>
-        <div className="space-y-2">
-          {REPORT_TYPES.map((option) => (
-            <label
-              key={option.value}
-              className={
-                "flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2.5 text-sm " +
-                (option.paid ? "border-dashed bg-surface-200 " : "bg-white ") +
-                (reportType === option.value ? "border-brick ring-1 ring-brick" : "border-border")
-              }
-            >
-              <input
-                type="radio"
-                name="report-type"
-                value={option.value}
-                checked={reportType === option.value}
-                onChange={() => setReportType(option.value)}
-                className="mt-1 accent-brick"
-              />
-              <span className="min-w-0 flex-1">
-                <span className={"flex items-center gap-2 font-medium " + (option.paid ? "text-ink-soft" : "text-ink")}>
-                  {option.paid && <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />}
-                  {option.title}
-                  <span
-                    className={
-                      "ml-auto rounded-full px-2 py-0.5 text-[11px] font-semibold " +
-                      (option.paid ? "bg-[#EADFCB] text-[#7A5A1E]" : "bg-[#E3EFE8] text-[#2F6B4F]")
-                    }
-                  >
-                    {option.paid ? REPORT_OFFER.priceLabel : "Free, instant"}
-                  </span>
+        {/* One row of equal choices; the price sits on each, so none reads as switched off. */}
+        <div className="grid grid-cols-3 gap-1 rounded-xl bg-paper p-1 ring-1 ring-border">
+          {REPORT_TYPES.map((option) => {
+            const on = reportType === option.value;
+            return (
+              <label
+                key={option.value}
+                className={
+                  "relative flex cursor-pointer flex-col items-center rounded-lg px-1.5 py-2 text-center transition-colors focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ink " +
+                  (on ? "bg-ink text-on-ink shadow-fi-1" : "text-ink hover:bg-surface-0")
+                }
+              >
+                <input
+                  type="radio"
+                  name="report-type"
+                  value={option.value}
+                  checked={on}
+                  onChange={() => setReportType(option.value)}
+                  className="sr-only"
+                />
+                <span className="text-[13px] font-semibold leading-tight">{option.title}</span>
+                <span className={"mt-0.5 text-[11px] font-medium " + (on ? "text-on-ink/75" : "text-ink-muted")}>
+                  {option.paid ? REPORT_OFFER.priceLabel : "Free"}
                 </span>
-                <span className="mt-0.5 block text-[13px] text-ink-muted">{option.detail}</span>
-              </span>
-            </label>
-          ))}
+              </label>
+            );
+          })}
         </div>
-        <p className="mt-2 text-[13px] text-ink-muted">
-          Want your own bank or credit union right now?{" "}
-          <Link href={OWN_INSTITUTION_HREF} className="font-medium text-brick underline underline-offset-2">
-            Look it up free
-          </Link>{" "}
-          to see its published fees against state and national medians.
+        <p id={fieldId("report-type-detail")} className="mt-2 text-[13px] text-ink-muted">
+          {REPORT_TYPES.find((o) => o.value === reportType)?.detail}{" "}
+          <Link href={OWN_INSTITUTION_HREF} className="font-medium text-ink underline underline-offset-2">
+            Look up your own fees free
+          </Link>
+          .
         </p>
       </fieldset>
 
@@ -553,7 +545,7 @@ export function institutionReportHref(prefill: Pick<Prefill, "institutionId" | "
     name: prefill.institutionName,
     src: prefill.src,
   });
-  return `/for-institutions?${params.toString()}#report`;
+  return `/reports?${params.toString()}#request`;
 }
 
 function FreeReportSuccess({

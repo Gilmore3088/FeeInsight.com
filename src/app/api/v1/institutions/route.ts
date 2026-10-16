@@ -1,4 +1,4 @@
-import { feeDisplayName } from "@/lib/fee-display-name";
+import { apiFeeName } from "@/lib/fee-display-name";
 import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 import { NextRequest, NextResponse } from "next/server";
 import {
@@ -191,7 +191,7 @@ async function handleGET(request: NextRequest) {
     const fees = (await getFeesByInstitution(id))
       .filter((f) => f.review_status !== "rejected")
       .map((f) => ({
-        fee_name: feeDisplayName(f.fee_name, f.fee_category),
+        ...apiFeeName(f.fee_name, f.fee_category),
         category: f.fee_category,
         amount: f.amount,
         frequency: f.frequency,
@@ -229,7 +229,7 @@ async function handleGET(request: NextRequest) {
         fee_count: fees.length,
         fees,
         rate_fees: rateFees.map((f) => ({
-          fee_name: f.fee_name,
+          ...apiFeeName(f.fee_name, f.fee_category),
           category: f.fee_category,
           rate_percent: f.rate_percent,
           rate_min_amount: f.rate_min_amount,

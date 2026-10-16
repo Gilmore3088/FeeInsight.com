@@ -7,6 +7,14 @@ import { normalizeCanonicalInstitutionId } from "./context-link";
 import { resolveHamiltonInstitutionContext } from "./workspace-context";
 import { isPeerListContinuationQuestion, peerListFeeFollowUp, parsePeerListQuestion, peerListRefinementState, validatePeerListContinuation, peerListReferencesUnchanged, planPeerList, type PeerListData, type PeerListResponse, type PeerListSubject } from "./peer-list";
 
+/** Why "us" has no institution: none linked, or more than one. Never the researched institution. */
+function noAccountInstitution(status: string): string {
+  const why = status === "ambiguous"
+    ? "More than one institution is linked to your account, so Hamilton can't tell which one is \"us\"."
+    : "No institution is linked to your account, so there is no \"us\" to compare.";
+  return `${why} Hamilton did not treat the institution you are researching as yours.`;
+}
+
 interface PeerAskBody { institutionId?: unknown; question?: unknown; answer?: unknown; previousPeerList?: unknown }
 interface PeerAsker { id: number; institution_name?: string | null }
 
@@ -34,6 +42,16 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
         const prior = validatePeerListContinuation(body.previousPeerList);
         const state = peerListRefinementState(question);
         const feeIntent = peerListFeeFollowUp(question);
+        // "Compare with us" with no list yet: say whether the account has an institution to be "us",
+        // from the account alone. The researched institution is never taken to be the asker's.
+        if (!prior && feeIntent === "with_account") {
+          const resolved = await loadHamiltonAccountContext(user);
+          if (resolved.status === "unavailable")
+            return message("unavailable", "Hamilton could not check which institution is linked to your account. Nothing was compared.");
+          if (resolved.status !== "identified" || !resolved.institution)
+            return message("needs_criteria", `${noAccountInstitution(resolved.status)} To see peers' NSF fees, ask for a peer list first, then "Compare their NSF fees".`);
+          return message("needs_criteria", `Ask for a peer list first, for example "List ten similarly sized peers". Then ask "How does this compare with us?" to add ${resolved.institution.name}.`);
+        }
         if (!prior || !isPeerListContinuationQuestion(question))
           return message("needs_criteria", "This follow-up has no valid prior peer list. Run the peer list again; no replacement list was selected.");
         const suppliedId = body.institutionId === undefined || body.institutionId === null || body.institutionId === ""
@@ -62,8 +80,9 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
           if (feeIntent === "with_account") {
             const resolved = await loadHamiltonAccountContext(user);
             if (resolved.status !== "identified" || !resolved.institution)
-              return message(resolved.status === "unavailable" ? "unavailable" : "needs_criteria",
-                "Your account institution is not verified. The researched institution was not assumed to be yours.");
+              return resolved.status === "unavailable"
+                ? message("unavailable", "Hamilton could not check which institution is linked to your account. Nothing was compared.")
+                : message("needs_criteria", `${noAccountInstitution(resolved.status)} To compare the listed peers, ask "Compare their NSF fees".`);
             account = { institutionId: Number(resolved.institution.id), name: resolved.institution.name };
             if (!Number.isSafeInteger(account.institutionId) || account.institutionId <= 0)
               return message("unavailable", "The account institution ID is invalid. No comparison was generated.");
@@ -137,7 +156,9 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
         const found = await getPeerListRows(subject.institutionId, criteria, asOf);
         const notes = ["Assets are from each institution's latest stored FDIC or NCUA filing, not a live check. Reporting dates may differ.", "Stored financial amounts are in USD thousands and are converted once to dollars here; dollar formatting does not imply more source precision."];
         if (criteria.requestedCount === null || (criteria.requestedCount ?? 0) > criteria.limit) notes.push(`This view is limited to ${criteria.limit} rows. Narrow the criteria to inspect a smaller group.`);
-        if (criteria.requestedCount !== null && found.totalMatches < criteria.requestedCount) notes.push(`Only ${found.totalMatches} institutions meet these criteria; the filters were not widened to reach ${criteria.requestedCount}.`);
+        if (criteria.requestedCount !== null && found.totalMatches < criteria.requestedCount) notes.push(found.totalMatches === 0
+          ? `No institution meets these criteria. The filters above were not widened to find ${criteria.requestedCount}.`
+          : `Only ${found.totalMatches} institution${found.totalMatches === 1 ? " meets" : "s meet"} these criteria. The filters above were not widened to reach ${criteria.requestedCount}.`);
         const older = found.rows.filter(row => row.reportDate && now.getTime() - new Date(`${row.reportDate}T00:00:00Z`).getTime() > 365 * 86400000).length;
         if (older) notes.push(`${older} displayed asset filing${older === 1 ? " is" : "s are"} more than 365 days old. Review the reporting dates before comparing.`);
         result = {

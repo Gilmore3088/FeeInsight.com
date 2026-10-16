@@ -22,8 +22,8 @@ import { chunk, recordRegistryPartition, type RegistryDb } from "./partitions";
  * shows up in the run ledger rather than as an empty card.
  */
 
-/** Bumped when a reader changes, so the scheduler re-reads at once (REGISTRY_PARSER_VERSIONS). */
-export const STATE_ENFORCEMENT_PARSER_VERSION = 5;
+/** Bumped when a reader changes, so the scheduler re-reads at once (REGISTRY_PARSER_VERSIONS). 6: stated subjects (#1428). */
+export const STATE_ENFORCEMENT_PARSER_VERSION = 6;
 export const STATE_ENFORCEMENT_SOURCE = "state-enforcement";
 export const STATE_ENFORCEMENT_PARTITION = "current";
 const REFRESH_HOURS = 24 * 7;
@@ -40,7 +40,9 @@ export interface StateEnforcementStateResult {
   /** Rows from an earlier read that the state's list no longer has (or an older reader misread). */
   removed: number;
   matched: number;
-  sample: Array<Pick<StateOrder, "party_name" | "action_type" | "start_date" | "document_url">>;
+  /** Orders whose page states a subject (its subject column, "Reason:" field or title). */
+  with_subject: number;
+  sample: Array<Pick<StateOrder, "party_name" | "action_type" | "start_date" | "document_url" | "subject">>;
   /** The first page's shape when nothing was found on it, so the reader can be fixed. */
   shape?: ReturnType<typeof describePage> & { url: string };
   /** Table rows on each page where nothing was found (a table with rows the reader missed). */
@@ -113,7 +115,7 @@ export async function runRegistryStateEnforcement(
   const rows: Array<Record<string, unknown>> = [];
 
   for (const source of sources) {
-    const stats: StateEnforcementStateResult = { state: source.state, pages: 0, missing: 0, failed: [], orders: 0, removed: 0, matched: 0, sample: [] };
+    const stats: StateEnforcementStateResult = { state: source.state, pages: 0, missing: 0, failed: [], orders: 0, removed: 0, matched: 0, with_subject: 0, sample: [] };
     const byKey = new Map<string, StateOrder>();
     const queue = [...source.urls(today)];
     const visited = new Set<string>();
@@ -154,7 +156,7 @@ export async function runRegistryStateEnforcement(
         party_city: order.party_city,
         party_state: source.state,
         action_type: order.action_type,
-        subject: null,
+        subject: order.subject,
         start_date: order.start_date,
         termination_date: order.termination_date,
         penalty_amount: null,
@@ -163,7 +165,12 @@ export async function runRegistryStateEnforcement(
       });
     }
     stats.orders = byKey.size;
-    stats.sample = [...byKey.values()].slice(0, 3).map((o) => ({ party_name: o.party_name, action_type: o.action_type, start_date: o.start_date, document_url: o.document_url }));
+    stats.with_subject = [...byKey.values()].filter((o) => o.subject !== null).length;
+    // Orders with a stated subject first, so the run detail shows what the reader recorded.
+    stats.sample = [...byKey.values()]
+      .sort((a, b) => Number(b.subject !== null) - Number(a.subject !== null))
+      .slice(0, 3)
+      .map((o) => ({ party_name: o.party_name, action_type: o.action_type, start_date: o.start_date, document_url: o.document_url, subject: o.subject }));
     result.byState.push(stats);
   }
 
@@ -188,6 +195,8 @@ export async function runRegistryStateEnforcement(
           match_method = EXCLUDED.match_method,
           party_city = EXCLUDED.party_city,
           action_type = EXCLUDED.action_type,
+          -- Rows read before subjects were kept (#1428) take them on the next read.
+          subject = EXCLUDED.subject,
           termination_date = EXCLUDED.termination_date,
           document_url = EXCLUDED.document_url,
           agent_run_id = EXCLUDED.agent_run_id,

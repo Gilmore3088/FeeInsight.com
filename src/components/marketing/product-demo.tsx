@@ -45,7 +45,7 @@ export function ProductDemo({ mark, label, views }: { mark?: ReactNode; label?: 
 
   return (
     <div className="fi-demo" data-active-view={views[active]?.key}>
-      <div className="fi-window fi-window-hero relative min-w-0 overflow-hidden rounded-2xl border border-border bg-surface-0">
+      <div data-demo-window="" className="fi-window fi-window-hero relative min-w-0 overflow-hidden rounded-2xl border border-border bg-surface-0">
         <div className="flex items-center gap-3 border-b border-border bg-paper/70 pl-4 pr-2 sm:pr-4">
           <span aria-hidden className="hidden gap-1.5 sm:flex">
             <span className="h-2.5 w-2.5 rounded-full bg-border" />

@@ -6,6 +6,28 @@ import { joinWrappedLeaderNames } from "@/lib/custom-report/source-check";
 import { withBoxSizeCellsSplit, withDroppedDecimalPoints, withSidewaysBoxTable, withoutBusinessOnlyFees } from "./rules";
 import { tidyFeeName } from "./layout";
 
+describe("v72 (#1099): a loan's own payment and return fees are other lending", () => {
+  const hint = (line: string) => extractFromSegment(line).candidates.map((c) => [c.canonicalHint, c.amount]);
+  it("reads a loan payment by phone, card or ACH, and a returned loan or mortgage payment", () => {
+    // Lines from held rows on prod (Oct 16): 134626, 145324, 110453, 126936, 109464.
+    expect(hint("Loan Payment by Phone Fee | $12.00")).toEqual([["other_lending_fee", 12]]);
+    expect(hint("Loan Payment by Phone Fee (ACH) | $15.00")).toEqual([["other_lending_fee", 15]]);
+    expect(hint("Loan payment by debit card fee | $7.00")).toEqual([["other_lending_fee", 7]]);
+    expect(hint("Returned Loan Payment Fee (Credit Cards & Loans) | $25.00")).toEqual([["other_lending_fee", 25]]);
+    expect(hint("Bad Check Fee (Returned Mortgage Payment) | $20.00")).toEqual([["other_lending_fee", 20]]);
+  });
+
+  it("leaves a bare returned payment or returned item to the NSF and returned-item rules", () => {
+    for (const line of ["Returned Payment (Check, ACH, Debit/Credit Card) | $40.00/item", "Returned Item Fee | $30.00", "Returned Check | $25.00"]) {
+      expect(hint(line).map(([key]) => key)).not.toContain("other_lending_fee");
+    }
+  });
+
+  it("leaves an amortization schedule alone (a category question for James, #1099)", () => {
+    expect(hint("Amortization Schedule | $10.00").map(([key]) => key)).not.toContain("other_lending_fee");
+  });
+});
+
 function fees(text: string): Array<[string, number, string]> {
   return extractCandidatesFromText(text).candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint]);
 }

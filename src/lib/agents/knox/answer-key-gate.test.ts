@@ -23,8 +23,12 @@ import { combineScores, scoreAnswerKeys, type AnswerKeyDocument, type GateScore 
 // v69 (#1102, Oct 15): price lines named by their heading took all to 545 / 14; held out stayed 53 / 4.
 // v70 (#1100, Oct 15): low-balance and maintenance fees the account expert missed took all to 551 / 14
 // and held out to 54 / 4.
+// v71 (#1100 gap 3, Oct 15): account comparison tables read by column (Texas Capital's $25 checking
+// column) took all to 552 / 14; held out stayed 54 / 4; the seven states unchanged.
+// v72 (#1099, Oct 16): a loan's payment by phone, card or ACH, and a returned loan or mortgage
+// payment, read as other lending, took all to 557 / 14; held out stayed 54 / 4; the seven states unchanged.
 const FLOORS = {
-  all: { right: 551, wrong: 14 },
+  all: { right: 557, wrong: 14 },
   holdout: { right: 54, wrong: 4 },
 };
 

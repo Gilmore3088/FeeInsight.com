@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   NON_INSTITUTION_TIER,
   PRO_ANNUAL_RANGE_LABEL,
+  PRO_TIERS,
   annualMonthsFree,
   annualPerMonthLabel,
   annualSavingsLabel,
@@ -43,6 +44,11 @@ describe("Pro tiers", () => {
     expect(PRO_ANNUAL_RANGE_LABEL).toBe("$1,500 to $5,000 a year");
   });
 
+  it("gives every tier the same months free, so the billing toggle can state one figure", () => {
+    const counts = PRO_TIERS.map((tier) => annualMonthsFree(tier.key));
+    expect(new Set(counts).size).toBe(1);
+  });
+
   it("puts consultants and other organizations on the middle tier", () => {
     expect(NON_INSTITUTION_TIER).toBe("mid");
   });
@@ -63,7 +69,7 @@ describe("Pro tiers", () => {
 
   it("states the annual plan as a monthly figure and its saving", () => {
     expect(annualPerMonthLabel("small")).toBe("$125");
-    expect(annualPerMonthLabel("large")).toBe("$416.67");
+    expect(annualPerMonthLabel("large")).toBe("$416");
     expect(annualSavingsLabel("small")).toBe("$300");
     expect(annualSavingsLabel("mid")).toBe("$600");
   });

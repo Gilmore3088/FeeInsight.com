@@ -222,6 +222,71 @@ export async function selectFootnoteBusinessFeeIds(db: SqlTag, institutionId?: n
 }
 
 /**
+ * Which fees the business-schedule read judges: every live fee (`false`; `$1` is the live
+ * footnoted fee ids), one institution's (`true`; `$1` its id, `$2` the footnoted ids), or
+ * verified rows about to publish (`"verified"`; `$1` a bigint[] of `fee_verified_id`, `$2` the
+ * live footnoted ids). #1069: the publish step's refusal reads this same rule. A verified row
+ * reads with a null `fee_published_id`, is business by its document's address or its own name
+ * (a footnote needs the page read, so the sweep keeps that part), and is weighed against the
+ * live consumer fees of its own bank.
+ */
+export type BusinessReadScope = boolean | "verified";
+
+/** The business-schedule read: business fees, each with the bank's first live consumer fee in its category. */
+export function businessScheduleFeesSql(scope: BusinessReadScope): string {
+  const verified = scope === "verified";
+  const footnoteParam = scope === false ? "$1" : "$2";
+  const liveFilter = verified
+    ? "AND fp.institution_id IN (SELECT institution_id FROM candidates)"
+    : scope
+      ? "AND fp.institution_id = $1"
+      : "";
+  const candidates = verified
+    ? `candidates AS (
+         SELECT NULL::bigint AS fee_published_id, fv.fee_verified_id, fv.institution_id, fr.source_document_id,
+                sd.document_url, fv.canonical_fee_key, fv.amount,
+                ${BUSINESS_DOC_SQL("sd.document_url")} AS business_document,
+                ${BUSINESS_DOC_SQL("sd.document_url")} OR ${BUSINESS_NAME_SQL("fv.fee_name")} AS business
+           FROM verified_fee_observations fv
+           JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+           JOIN source_documents sd ON sd.id = fr.source_document_id
+          WHERE fv.fee_verified_id = ANY($1::bigint[])
+            AND COALESCE(fv.fee_audience, 'unknown') = 'unknown'
+       ),
+       `
+    : "";
+  return `WITH ${candidates}live AS (
+         SELECT fp.fee_published_id, fv.fee_verified_id, fp.institution_id, fr.source_document_id,
+                sd.document_url, fp.canonical_fee_key, fp.amount,
+                ${BUSINESS_DOC_SQL("sd.document_url")} AS business_document,
+                ${BUSINESS_DOC_SQL("sd.document_url")} OR ${BUSINESS_NAME_SQL("fp.fee_name")}
+                  OR fp.fee_published_id = ANY(${footnoteParam}::bigint[]) AS business
+           FROM published_fee_records fp
+           JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+           JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+           JOIN source_documents sd ON sd.id = fr.source_document_id
+          WHERE fp.rolled_back_at IS NULL
+          AND fp.quarantined_at IS NULL
+          AND fp.fee_audience = 'unknown'
+            ${liveFilter}
+       ),
+       -- The first live consumer fee per bank and category, grouped once. A subquery per
+       -- business fee rescanned the whole CTE each time: 12.5 s average on Oct 8.
+       consumer AS (
+         SELECT institution_id, canonical_fee_key, min(fee_published_id) AS consumer_fee_id
+           FROM live
+          WHERE NOT business
+          GROUP BY institution_id, canonical_fee_key
+       )
+       SELECT b.fee_published_id, b.fee_verified_id, b.institution_id, b.source_document_id, b.document_url,
+              b.canonical_fee_key, b.amount, c.consumer_fee_id, b.business_document
+         FROM ${verified ? "candidates" : "live"} b
+         LEFT JOIN consumer c ON c.institution_id = b.institution_id AND c.canonical_fee_key = b.canonical_fee_key
+        WHERE b.business
+        ORDER BY b.fee_published_id, b.fee_verified_id`;
+}
+
+/**
  * Runs the business-schedule check for one publish step. A dry run reports what it would
  * flag, take down and restore, and writes nothing. Never blocks the step it runs in.
  */
@@ -245,39 +310,10 @@ export async function retireBusinessScheduleFees(
   } catch (error) {
     console.error("selectFootnoteBusinessFeeIds failed:", error);
   }
-  const footnoteParam = options.institutionId ? "$2" : "$1";
   let rows: BusinessFeeRow[];
   try {
     rows = await inSavepoint(db, (scope) => scope.unsafe<BusinessFeeRow[]>(
-      `WITH live AS (
-         SELECT fp.fee_published_id, fv.fee_verified_id, fp.institution_id, fr.source_document_id,
-                sd.document_url, fp.canonical_fee_key, fp.amount,
-                ${BUSINESS_DOC_SQL("sd.document_url")} AS business_document,
-                ${BUSINESS_DOC_SQL("sd.document_url")} OR ${BUSINESS_NAME_SQL("fp.fee_name")}
-                  OR fp.fee_published_id = ANY(${footnoteParam}::bigint[]) AS business
-           FROM published_fee_records fp
-           JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
-           JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
-           JOIN source_documents sd ON sd.id = fr.source_document_id
-          WHERE fp.rolled_back_at IS NULL
-          AND fp.quarantined_at IS NULL
-          AND fp.fee_audience = 'unknown'
-            ${options.institutionId ? "AND fp.institution_id = $1" : ""}
-       ),
-       -- The first live consumer fee per bank and category, grouped once. A subquery per
-       -- business fee rescanned the whole CTE each time: 12.5 s average on Oct 8.
-       consumer AS (
-         SELECT institution_id, canonical_fee_key, min(fee_published_id) AS consumer_fee_id
-           FROM live
-          WHERE NOT business
-          GROUP BY institution_id, canonical_fee_key
-       )
-       SELECT b.fee_published_id, b.fee_verified_id, b.institution_id, b.source_document_id, b.document_url,
-              b.canonical_fee_key, b.amount, c.consumer_fee_id, b.business_document
-         FROM live b
-         LEFT JOIN consumer c ON c.institution_id = b.institution_id AND c.canonical_fee_key = b.canonical_fee_key
-        WHERE b.business
-        ORDER BY b.fee_published_id`,
+      businessScheduleFeesSql(Boolean(options.institutionId)),
       options.institutionId ? [options.institutionId, footnoteIds] : [footnoteIds],
     ));
   } catch (error) {
@@ -370,7 +406,7 @@ export async function retireBusinessScheduleFees(
     aboutStage: "discover",
     signal: "wrong",
     kind: "wrong_document",
-    reportedBy: "hamilton",
+    reportedBy: "gutenberg",
     checkName: BUSINESS_SCHEDULE_CHECK,
     institutionId: fee.institutionId,
     sourceDocumentId: fee.sourceDocumentId,

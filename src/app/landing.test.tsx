@@ -11,7 +11,7 @@ import { LandingProvenance } from "./landing-provenance";
 import { LandingPricing } from "./landing-pricing";
 import { LandingFaq, faqItems } from "./landing-faq";
 import { LandingClose } from "./landing-close";
-import { buildHomeData, buildSampleView } from "./landing-shared";
+import { buildHomeData, buildSampleView, homeReadsCacheable } from "./landing-shared";
 import type { MarketReport } from "@/lib/custom-report/report-data";
 import type { ReportLine } from "@/lib/custom-report/analysis";
 import { buildScenario } from "./subscribe/scenario";
@@ -195,11 +195,11 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     expect(html).toContain('data-fee="stop_payment"');
     // Try a price: a slider on the live national range.
     expect(html).toMatch(/type="range"[^>]*min="0"[^>]*max="40"/);
-    // Reports: a page of the report, with one name per fee (the taxonomy's display name).
+    // Reports: a page of the report, with one name per fee (the report line's own, as the ladder shows it).
     expect(html).toContain('aria-label="Report preview"');
     expect(t).toContain("Sample Bank against its local market");
-    expect(t).toContain("Wire Transfer (Int'l Out)");
-    expect(t).not.toMatch(/Outgoing international wire|Overdraft \(per item\)/);
+    expect(t).toContain("Outgoing international wire");
+    expect(t).not.toMatch(/Wire Transfer \(Int'l Out\)|Overdraft \(OD\)/);
     expect(html).toContain('href="/reports/sample-competitive-fee-position"');
   });
 
@@ -288,5 +288,15 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
       "contact_sales home_pricing_demo /contact?source=demo Or ask for a demo",
       "upgrade_click home_closing /subscribe See Hamilton plans",
     ]);
+  });
+
+  it("keeps a render out of the page cache when any read failed, but not when the sample is simply absent", () => {
+    const ok = { summary, categories, sampleFailed: false, overdraftFailed: false, ladderFailed: false };
+    expect(homeReadsCacheable(ok)).toBe(true);
+    expect(homeReadsCacheable({ ...ok, summary: { ...summary, complete: false } })).toBe(false);
+    expect(homeReadsCacheable({ ...ok, categories: [] })).toBe(false);
+    expect(homeReadsCacheable({ ...ok, sampleFailed: true })).toBe(false);
+    expect(homeReadsCacheable({ ...ok, overdraftFailed: true })).toBe(false);
+    expect(homeReadsCacheable({ ...ok, ladderFailed: true })).toBe(false);
   });
 });

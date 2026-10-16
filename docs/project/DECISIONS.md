@@ -3,6 +3,18 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-16
+
+**A few confirmed-wrong live fees come down without asking James.** James, 2026-10-16, approving
+#1496 (Barksdale FCU's two fax fees that took a price from the next column): fixes like this
+should not wait for him. A small number of live fees (up to about 25), each confirmed wrong on
+amount or category against its bank's own stored text and checked by a reviewer, come down through
+the normal tracked takedown path without a per-fee approval. A ledger line goes on #1026. Category
+or policy questions, large batches, migrations and switches still go to him. The path is Hamilton's
+hand-takedown list (`src/lib/agents/hamilton/hand-takedowns.ts`): one entry per fee, with the issue
+that holds the evidence and the reason (`source_mismatch: #<issue>`); a row comes down only while it
+still reads as listed, its verified row is rejected, and the publish step's run ledger names it.
+
 ## 2026-10-15
 
 **Darwin re-checks every live fee against today's rules.** James, 2026-10-15 ("This needs to be
@@ -1025,3 +1037,24 @@ the header, footer, sign-in screens and report chrome. The Bank Fee Index is nam
 the index pages, data credits and the API attribution. Hamilton's name and mark appear on the pages
 that sell it (/for-institutions, /subscribe, Pro buttons in page bodies) and inside the workspace,
 never in the header or footer; the header calls it "Pro workspace" and "Pro plans".
+
+**CFPB complaint peer comparisons use verified matches only, or are hidden.** James, 2026-10-15
+(decision card "CFPB complaint benchmarks": "Hide"; #1523, under H06 #981). Institutions without an
+accepted CFPB identity match are left out of complaint peer groups, since missing evidence is not
+zero complaints. When fewer than 10 similar institutions have a verified match even nationwide, the
+peer rate is not shown and a coverage note says how many of how many are verified. Keeping the old
+numbers with a warning was rejected.
+
+**Routine commands run without a prompt; the hard limits are blocked outright.** James, 2026-10-15
+("Add the allow-list to .claude/settings.json"), so threads stop stalling on prompts overnight and
+while he travels. `.claude/settings.json` now allows git work on `claude/*` branches, opening,
+reviewing and merging PRs, the lint, build, test and guard commands, read-only shell commands, edits
+under `src`, `docs`, `growth-os`, `.agents`, `public` and `Reports`, and Vercel preview and log reads.
+GitHub issue, PR, review and merge writes are allowed too. Force pushes (including `+` refspecs),
+pushes to main (including `refs/heads/main`), remote branch deletion (`--delete`, `-d` and empty-source
+`:branch` refspecs), `--all`, `--prune`, `--mirror`, `gh repo delete`,
+`gh api` DELETE and `gh pr merge --admin` are denied, so a thread gets an immediate refusal and
+keeps working. `apply_migration`, edits under `supabase/migrations/`, Supabase project changes,
+production deploys and direct GitHub file commits still ask. Supabase `execute_sql` stays allowed
+(Oct 13 decision), so the rule that production data changes never go through raw SQL from a
+session still rests on the session, not on a prompt.

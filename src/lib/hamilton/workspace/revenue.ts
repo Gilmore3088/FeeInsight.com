@@ -155,6 +155,14 @@ export function feeRevenueLine(rows: ServiceChargeRow[], feeCategory: string, ch
   };
 }
 
+/**
+ * What a filed income line covers, in a few words. A bank's RIAD H032 holds overdraft and NSF
+ * together, so both fees' answers name it as combined, never as that fee alone (#1543).
+ */
+export function revenueLineName(line: Pick<RevenueLine, "combinedWith">, feeName: string): string {
+  return line.combinedWith ? "overdraft and NSF income combined (call report)" : `${feeName} income`;
+}
+
 /** The latest four quarters against the four before, only when all eight are on file. */
 export function serviceChargeTrend(rows: ServiceChargeRow[]): ServiceChargeTrend | null {
   const f = institutionFinancials(rows);

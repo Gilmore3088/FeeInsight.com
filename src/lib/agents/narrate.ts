@@ -270,6 +270,20 @@ function narrateFinished(
       const collapses = Array.isArray(detail.collapses) ? detail.collapses.length : 0;
       return `Deming checked the benchmarks: ${n(detail, "groups_meeting_target")} of ${n(detail, "groups_total")} state and size groups meet the coverage target, ${collapses === 0 ? "no benchmark collapsed" : `ALARM: ${count(collapses, "benchmark")} lost a sharp share of its institutions`}.`;
     }
+    case "deming-data-quality": {
+      const failing = Array.isArray(detail.failing) ? detail.failing.length : 0;
+      const dollar = (detail.dollar ?? {}) as Record<string, unknown>;
+      return `Deming ran the daily data checks on ${count(n(dollar, "live_fees"), "live dollar fee")}: ${failing === 0 ? "no check failed its threshold" : `ALARM: ${count(failing, "check")} failed its threshold`}.`;
+    }
+    case "deming-knox-misses": {
+      if (detail.ready === false) return "Deming could not replay Knox's answer-key misses: the case store or the answer key is not there.";
+      const regressions = Array.isArray(detail.regressions) ? detail.regressions.length : 0;
+      return `Deming replayed the answer key against today's Knox: ${n(detail, "fees_missed")} of ${n(detail, "fees_scored")} key fees missed, ${n(detail, "activated")} newly read, ${regressions === 0 ? "no regressions" : count(regressions, "regression")}.`;
+    }
+    case "deming-playbook-check": {
+      if (detail.ready === false) return "Deming could not check the playbooks: the playbook table is not there.";
+      return `Deming checked ${count(n(detail, "profiles"), "playbook")}: ${n(detail, "institutions")} contradict themselves, ${n(detail, "search_from_entries")} carry a second-document search entry on their current link.`;
+    }
     case "deming-change-outcomes": {
       if (detail.ready === false) return "Skipped the 7-day change check (migration not applied yet).";
       const judged = Array.isArray(detail.judged) ? (detail.judged as Array<{ verdict?: string }>) : [];
@@ -595,7 +609,11 @@ function shorten(message: string, max = 140): string {
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
 }
 
-/** Which crew member a step key belongs to, for steps recorded without an agent. */
+/**
+ * Which crew member a step key belongs to, for steps recorded without an agent. Publisher steps
+ * are Gutenberg's from #1075 step 2 (`gutenberg/names.ts` `PUBLISHER_STEP_KEYS`, a test keeps the two
+ * equal); Hamilton keeps the product's steps.
+ */
 export const STEP_OWNER: Record<string, AdminAgent> = {
   enhance: "atlas",
   "state-expert": "atlas",
@@ -633,6 +651,9 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "atlas-city-repair": "atlas",
   "deming-fresh-audit": "atlas",
   "deming-benchmark-health": "atlas",
+  "deming-data-quality": "atlas",
+  "deming-knox-misses": "atlas",
+  "deming-playbook-check": "atlas",
   "deming-change-outcomes": "atlas",
   "deming-sunday-maintenance": "atlas",
   "deming-regression": "atlas",
@@ -682,15 +703,15 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "verify-paid": "darwin",
   verify: "darwin",
   "public-cluster": "darwin",
-  publish: "hamilton",
-  "publish-index": "hamilton",
-  "publish-context": "hamilton",
+  publish: "gutenberg",
+  "publish-index": "gutenberg",
+  "publish-context": "gutenberg",
   "report-render": "hamilton",
   "report-reconcile": "hamilton",
   "report-close": "hamilton",
-  "category-guard": "hamilton",
-  "frequency-fill": "hamilton",
-  "source-link-repair": "hamilton",
+  "category-guard": "gutenberg",
+  "frequency-fill": "gutenberg",
+  "source-link-repair": "gutenberg",
   "audience-relabel": "darwin",
-  "public-diagnose": "hamilton",
+  "public-diagnose": "gutenberg",
 };

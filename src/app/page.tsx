@@ -1,10 +1,24 @@
-// Renders live DB-backed stats at request time; must not be statically prerendered.
-export const dynamic = "force-dynamic";
+/**
+ * Regenerated in the background (ISR) at most every 15 minutes, and sooner when a
+ * takedown invalidates the public read cache, whose tag every read below carries.
+ *
+ * The page reads no session, cookies or search params: the header's signed-in parts are
+ * client islands (consumer-nav.tsx). It used to render per request (`force-dynamic`), and
+ * on Oct 8-15 its function TTFB was 146 ms at p50 but 3,834 ms at p75 (#1168), the slow
+ * renders being the ones whose cached reads had to go to the database.
+ *
+ * A render with a failed read is never cached (`homeReadsCacheable`): at build time it
+ * falls back to rendering per request for that deployment, and in a background
+ * regeneration it fails, so the last good page keeps being served. A database blip
+ * therefore never bakes a homepage with blank numbers.
+ */
+export const revalidate = 900;
 
 import type { Metadata } from "next";
+import { connection } from "next/server";
 import { getPublicSnapshot } from "@/lib/public-stats";
 import { CONTACT_EMAIL, LEGAL_ENTITY_NAME, PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
-import { loadSampleReport, sampleReportAvailable } from "@/lib/custom-report/sample-report";
+import { loadSampleReport } from "@/lib/custom-report/sample-report";
 import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
@@ -16,8 +30,8 @@ import { LandingProvenance } from "./landing-provenance";
 import { LandingPricing } from "./landing-pricing";
 import { LandingFaq } from "./landing-faq";
 import { LandingClose } from "./landing-close";
-import { buildHomeData, buildSampleView } from "./landing-shared";
-import { loadSampleLadder } from "./for-institutions/market-ladder";
+import { buildHomeData, buildSampleView, homeReadsCacheable } from "./landing-shared";
+import { readSampleLadder } from "./for-institutions/market-ladder";
 import { buildScenario } from "./subscribe/scenario";
 
 // The buyer promise from site v3 brief 08 §B.3 (h1) and its subhead; no counts, so nothing goes stale.
@@ -70,21 +84,39 @@ export default async function LandingPage() {
   // read /fees/overdraft already makes; a failed read only hides the district rows. The
   // live sample report (the same one /for-institutions and the sample page show) gives the
   // named bank's fees, their source lines and its market ladder; a failed read hides them.
-  const [{ summary, categories }, sampleLive, sample, overdraftDetail] = await Promise.all([
+  // The sample is read once: it is null both when none passes the bar today and on error.
+  const [{ summary, categories }, sampleRead, overdraftRead] = await Promise.all([
     getPublicSnapshot(),
-    sampleReportAvailable(),
-    loadSampleReport().catch((error: unknown) => {
-      console.error("[home] sample report read failed; sample exhibits hidden", error);
-      return null;
-    }),
-    getFeeCategoryDetailCached("overdraft").catch((error: unknown) => {
-      console.error("[home] overdraft district read failed; district rows hidden", error);
-      return null;
-    }),
+    loadSampleReport().then(
+      (report) => ({ report, failed: false }),
+      (error: unknown) => {
+        console.error("[home] sample report read failed; sample exhibits hidden", error);
+        return { report: null, failed: true };
+      },
+    ),
+    getFeeCategoryDetailCached("overdraft").then(
+      // The overdraft category always has fees; an empty detail is a read that went wrong.
+      (detail) => ({ detail, failed: detail.fees.length === 0 }),
+      (error: unknown) => {
+        console.error("[home] overdraft district read failed; district rows hidden", error);
+        return { detail: null, failed: true };
+      },
+    ),
   ]);
-  const liveSample = sampleLive ? sample : null;
-  const ladder = liveSample ? await loadSampleLadder(liveSample, categories) : null;
-  const data = buildHomeData(summary, categories, overdraftDetail?.by_fed_district, {
+  const liveSample = sampleRead.report;
+  // A failed state or charter read only drops that ladder row, but it still counts as a failed read.
+  const ladderRead = liveSample ? await readSampleLadder(liveSample, categories) : { ladder: null, failed: false };
+  const ladder = ladderRead.ladder;
+  const cacheable = homeReadsCacheable({
+    summary,
+    categories,
+    sampleFailed: sampleRead.failed,
+    overdraftFailed: overdraftRead.failed,
+    ladderFailed: ladderRead.failed,
+  });
+  // Opts this render out of the page cache (see the note at the top of the file).
+  if (!cacheable) await connection();
+  const data = buildHomeData(summary, categories, overdraftRead.detail?.by_fed_district, {
     sample: buildSampleView(liveSample),
     ladder,
     scenario: buildScenario("Overdraft", categories.find((c) => c.fee_category === "overdraft")),

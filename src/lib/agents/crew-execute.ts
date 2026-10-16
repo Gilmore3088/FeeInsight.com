@@ -13,6 +13,7 @@ import {
   titleCase,
   type CrewCommand,
 } from "./crew-commands";
+import { PUBLISHER_AGENT_NAMES, PUBLISHER_STEP_KEYS } from "./gutenberg/names";
 import { startAgentRun } from "./run-store";
 import { scheduleDueStateLaneRuns, startStateLaneRun, STATE_LANE_STEPS } from "./state-lane-scheduler";
 
@@ -217,8 +218,8 @@ export async function executeCrewWrite(command: CrewCommand, actor: string): Pro
       const institutionId = command.scope.kind === "institution" ? command.scope.institutionId : undefined;
       let institutionName: string | undefined;
       if (institutionId !== undefined) {
-        if (command.agent !== "hamilton") {
-          return { speaker, lines: ["Institution-only publication is available through Hamilton."] };
+        if (command.agent !== "gutenberg") {
+          return { speaker, lines: ["Institution-only publication is available through Gutenberg."] };
         }
         const [institution] = await sql`
           SELECT institution_name FROM institution_sources WHERE id = ${institutionId}
@@ -258,13 +259,18 @@ export async function executeCrewWrite(command: CrewCommand, actor: string): Pro
       };
     }
     case "retry": {
+      // A failed step belongs to whoever owns it today (`ledgerAgent`): a publisher step written
+      // under Hamilton's name before #1075 step 2 is Gutenberg's, and Hamilton keeps the rest.
+      const retryNames = command.agent === "gutenberg" ? [...PUBLISHER_AGENT_NAMES] : [command.agent];
       const [failed] = await sql`
         SELECT r.id, r.state_code, s.step_key
           FROM agent_runs r
           JOIN agent_run_steps s ON s.agent_run_id = r.id
          WHERE r.status IN ('failed', 'blocked')
            AND s.status IN ('failed', 'blocked')
-           AND s.agent_name = ${command.agent}
+           AND s.agent_name = ANY(${retryNames}::text[])
+           AND (CASE WHEN s.agent_name = 'hamilton' AND s.step_key = ANY(${[...PUBLISHER_STEP_KEYS]}::text[])
+                     THEN 'gutenberg' ELSE s.agent_name END) = ${command.agent}
          ORDER BY r.updated_at DESC
          LIMIT 1
       `;

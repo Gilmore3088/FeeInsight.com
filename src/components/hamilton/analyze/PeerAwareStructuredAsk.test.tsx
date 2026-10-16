@@ -178,6 +178,15 @@ describe("exact-list follow-ups within one Ask conversation", () => {
     expect(screen.getByRole("alert").textContent).toContain("Ask for a peer list first");
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
+  it("asks the server about 'compare with us' with no list, sending no peers (#1536)", async () => {
+    const noLink: PeerListResponse = { kind: "peer_list", shortAnswer: "No institution is linked to your account, so there is no \"us\" to compare.", peerList: { version: 1, status: "needs_criteria", subject: null, criteria: null, rows: [], totalMatches: null, queriedAt: "2026-10-16T00:00:00Z", notes: [] } };
+    fetcher.mockReset().mockResolvedValue(ok(noLink));
+    render(<PeerAwareStructuredAsk {...props} question="How does this compare with us?" />);
+    expect(await screen.findByText(/No institution is linked to your account/)).toBeTruthy();
+    expect(screen.queryByText(/Ask for a peer list first/)).toBeNull();
+    expect(JSON.parse(fetcher.mock.calls[0][1].body as string)).toEqual({ question: "How does this compare with us?", institutionId: "101", previousPeerList: null });
+    expect(fallback).not.toHaveBeenCalled();
+  });
   it("refuses list-relative questions when there is no list or context changed", () => {
     const view = render(<PeerAwareStructuredAsk {...props} question="Only Florida" />);
     expect(screen.getByRole("alert").textContent).toContain("Ask for a peer list first");

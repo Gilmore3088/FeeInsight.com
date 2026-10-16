@@ -10,6 +10,19 @@ import { traceLiveFee, type InstitutionText, type LiveFeeRow } from "@/lib/agent
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { runFreeSpecialists } from "@/lib/agents/knox/specialists";
 import { classifyFeeText } from "@/lib/agents/knox/rules";
+import {
+  FEE_NOUN,
+  LIVE_PRONOUN,
+  LIVE_SENTENCE_END,
+  LIVE_SENTENCE_END_ARTICLE,
+  LIVE_TRAILING_RANGE,
+  PARENTHETICAL,
+  PRONOUN_WORDS,
+  SENTENCE_END_WORDS,
+  endsIn,
+  trailingRange,
+  wordsIn,
+} from "@/lib/fee-name-fragments";
 
 type SqlTag = typeof sql;
 
@@ -23,8 +36,6 @@ type SqlTag = typeof sql;
  */
 const VERB_END =
   /\b(?:is|are|was|were|be|will|shall|may|can|incur|incurs|receive|receives|charges|charged|imposed|assessed|apply|applies|pay|pays|cost|costs|maintain|exceed|exceeds|lesser|greater|up|than|least|over|under|varies)$/i;
-const FEE_NOUN =
-  /\b(?:fees?|charges?|service|transfers?|wires?|checks?|cards?|statements?|overdrafts?|nsf|payments?|box|boxes|orders?|deposits?|withdrawals?|cop(?:y|ies)|research|address|items?|atms?|accounts?|drafts?|stop|fax|notary|photocop(?:y|ies)|printing|coins?|money|cashier'?s?|official|bill|replacement|closing|closure|inactivity|inactive|dormant|maintenance|balance|garnishments?|levy|levies|subpoenas?|returned|returns?|counter|temporary|starter|rush|express|expedited|delivery|ach|zelle|p2p|transactions?|reissue|key|drilling|advances?)\b/i;
 const MAX_WORDS = 12;
 /** A cell that qualifies a price ("Per quarter (inactive ...)", "each request"), not a name. */
 const QUALIFIER_START = /^(?:per|each|a|an|the|\/|for|if|when|plus|includes?)\b/i;
@@ -55,26 +66,58 @@ const TRAILING_FEE_OF = /\s+(?:a|an|the)\s+(?:(?:monthly|service|annual)\s+)?(?:
 const LEADING_HEADER = /^(?:Fees?|Charge)\s+(?=[A-Z])(?!(?:Backs?|Off|Cards?|Schedule|Type|Description|Structure|Amount|Name|Above|Below|Per|Each|For|To|Of|If|When)\b)/;
 /** A header cell cut to its first letters, or a header word, left after the name ("... | F", "... | Fee"). */
 const TRAILING_HEADER_CELL = /\s*\|\s*(?:[A-Za-z]{1,2}|fees?|charges?|amount|cost|price)\s*$/i;
-/** A name that ends in one of `words`, after any separator ("Late Fee | Up to"); shared with the live twin. */
-const trailingRange = (words: string) => new RegExp(String.raw`[\s\-–—|:,]*\b(?:${words})\s*$`, "i");
 /** The start of a range or unit left dangling after the name ("Late Fee | Up to", "NSF fee (ACH, ATM, or check) - per"). */
 const TRAILING_RANGE = trailingRange(String.raw`up\s+to|per|each`);
-/** A sentence that ends at its own price: "Our overdraft fee of", "Avoid the monthly service charge of". */
-const FEE_OF_SENTENCE =
-  /\b(?:a|an|the|our|your|this)\s+(?:(?:normal|standard|regular|usual|individual|applicable|current)\s+)?((?!(?:minimum|maximum|additional|same|following)\b)(?:(?!(?:a|an|the|for|of|to)\b)[A-Za-z'’\-]+\s+){1,4}(?:fees?|charges?))(?:\s+for\s+[A-Za-z\s\-]{1,40}?)?\s+(?:of|is|are|will be)\s*$/i;
+/**
+ * A sentence that ends at its own price: "Our overdraft fee of", "Avoid the monthly service charge
+ * of"; group 1 is the fee's name. `leads` are the words the name never opens on. Shared by Knox's
+ * cut-off repair (`FEE_OF_SENTENCE`) and Darwin's live tail name (`FEE_OF_SENTENCE_TAIL`, #1499).
+ * The "for ..." clause is greedy (it was lazy until #1499): the match is anchored at the end, so
+ * group 1 is the same either way, and Postgres reads a regex that mixes greedy and lazy
+ * quantifiers differently from JS (the count SQL runs the tail there).
+ */
+const feeOfSentence = (leads: string, word = String.raw`[A-Za-z'’\-]+`) =>
+  new RegExp(
+    String.raw`\b(?:a|an|the|our|your|this)\s+(?:(?:normal|standard|regular|usual|individual|applicable|current)\s+)?((?!(?:${leads})\b)(?:(?!(?:a|an|the|for|of|to)\b)${word}\s+){1,4}(?:fees?|charges?))(?:\s+for\s+[A-Za-z\s\-]{1,40})?\s+(?:of|is|are|will be)\s*$`,
+    "i",
+  );
+const FEE_OF_SENTENCE = feeOfSentence("minimum|maximum|additional|same|following");
+/**
+ * #1499: the live tail name. "a minimum fee of" is a minimum, but "a minimum balance fee of" is a
+ * fee, so "minimum" bars the name only right before the fee word.
+ */
+const FEE_OF_SENTENCE_TAIL = feeOfSentence(
+  String.raw`minimum(?=\s+(?:fees?|charges?)\b)|maximum|additional|same|following`,
+  // v4 (#1499): a word may hold "/" or be a parenthetical ("Return Item/Insufficient Funds Fee",
+  // "Consecutive days overdrawn (OD) fee").
+  String.raw`(?:\([^()]*\)|[A-Za-z'’/\-]+)`,
+);
+/**
+ * v4 (#1499): qualifiers dropped from the front of a tail name ("Appropriate returned item fee",
+ * "Bank's normal overdraft item charge", "Low activation fee").
+ */
+const TAIL_QUALIFIERS = /^(?:(?:bank'?s|bank’s|appropriate|normal|standard|regular|usual|applicable|current|small|low)\s+)+/i;
+/** v4 (#1499): a tail made only of these words names no fee ("Handling fee", "Monthly flat fee", "Late charge"); v6 adds "discounted" (74073). */
+const TAIL_GENERIC_WORDS = ["handling", "flat", "small", "low", "late", "monthly", "service", "additional", "discounted", "fees?", "charges?"];
+const TAIL_GENERIC_ONLY = new RegExp(String.raw`^(?:${TAIL_GENERIC_WORDS.join("|")})(?:\s+(?:${TAIL_GENERIC_WORDS.join("|")}))*$`, "i");
+/** v4 (#1499): whose fee it is inside a tail ("Allpoint network our ATM fee") means the phrase is no name. */
+const TAIL_PERSON = /\b(?:our|your)\b/i;
+/** v4 (#1499 review): a tail that opens on a parenthetical ("(OD) fee", "(see schedule) fee") names no fee. */
+const TAIL_PAREN_START = /^\(/;
+/**
+ * v4 (#1499): a lower-case line's head is read capitalised, but only when a lower-case "if"/"when"
+ * follows it. v5: "only if" / "only when" too (132041).
+ */
+const GLUED_LOWER_CONDITION = /^\s+(?:only\s+)?(?:if|when)\b/;
 /** The condition that follows a name on its line ("Service Charge if balance falls below"). */
 const CONDITION_TAIL = /\s+(?:(?:is|are)\s+)?(?:waived\s+)?(?:if|when|unless|otherwise|charged\s+(?:if|when))\b.*$/i;
 /** A unit left after a name once its condition is cut ("Service charge per month"). */
 const UNIT_AFTER_NAME = /\s+(?:per|each|a)\s+(?:month|statement(?:\s+cycle)?|year|quarter|item|day|occurrence|transaction)$/i;
 /** A parenthetical condition after the name ("(Dormant Account Fee assessed after 12 months of inactivity.)"). */
 const CONDITION_PARENTHETICAL = /\s*\([^()]*\b(?:after|if|when|assessed|within|inactivity|no activity|unless)\b[^()]*\)\s*$/i;
-const PRONOUN_WORDS = ["i", "we", "you", "my", "our", "your", "will", "would", "may", "must", "shall"] as const;
-const wordsIn = (words: readonly string[], flags = "i") => new RegExp(String.raw`\b(?:${words.join("|")})\b`, flags);
 const PRONOUN = wordsIn(PRONOUN_WORDS);
 /** A verb that makes the words a sentence ("Checking accounts are considered dormant"). */
 const SENTENCE_VERB = /\b(?:is|are|was|were|be|been|considered|incurs?|applies|apply|impose|assessed|excluding|including|includes?|do(?:es)?\s+not)\b/i;
-const SENTENCE_END_WORDS = ["of", "to", "from", "for", "at", "is", "and", "or", "with", "by", "a", "an", "the", "per", "than", "below", "above", "up to", "each"] as const;
-const endsIn = (words: readonly string[], flags = "i") => new RegExp(String.raw`\b(?:${words.join("|")})$`, flags);
 const SENTENCE_END = endsIn(SENTENCE_END_WORDS);
 
 /** True when the words still read as a sentence or a condition, not a fee's name. */
@@ -154,26 +197,197 @@ export function isCutoffName(name: string): boolean {
   );
 }
 
+
 /**
- * The live twin of `isCutoffName` (#1443, #1436): the cut-off shapes narrow enough to take a
- * live fee down. `isCutoffName` matched 1,571 live fees on Oct 15 and a labelled sample of 155
- * found about half were real fees, so only the shapes the sample found to be fragments are kept:
- * - `sentence_end`: the name ends on a joining word ("... reduce your monthly fee to"). "a", "an"
- *   and "the" count only in lower case, so "N/A" never fires; "above" ("... not listed above") and
- *   "each" ("Loan Application, each") are real fees and are left out.
- * - `trailing_range`: a dangling "up to" or "per"; never "each".
- * - `pronoun`: "will" or "you" (a sentence); not "my", "our", "your", "we" or "i", which name
- *   products ("my Value Checking", "Save Your Way", "i.e.").
- * - `plus`: a leading "+" with no fee noun after it; "+Returned Item Fee" is a list bullet.
- * Not kept: LEADING_HEADER, TRAILING_HEADER_CELL, CONDITION_TAIL, SENTENCE_VERB, FEE_OF_SENTENCE.
+ * #1443: the words a fee's real name ends on, case-free ("Overdraft Fee", "Stop Payment",
+ * "Returned Item"), for `gluedSentenceHead`. A name ending on any other word ("Dormant accounts
+ * will be charged") is not a name with a sentence glued on. v2 (#1499) adds "ATM" ("ATM Withdrawal
+ * Service Charge at Non-BankFive ATM").
  */
-export type LiveFragmentPattern = "plus" | "trailing_range" | "sentence_end" | "pronoun";
-const LIVE_TRAILING_RANGE = trailingRange(String.raw`up\s+to|per`);
-const LIVE_SENTENCE_END = endsIn(SENTENCE_END_WORDS.filter((word) => !["a", "an", "the", "above", "each"].includes(word)));
-/** Case-sensitive: "N/A" ends in a capital A and never reads as a dangling article. */
-const LIVE_SENTENCE_END_ARTICLE = endsIn(["a", "an", "the"], "");
-const LIVE_PRONOUN = wordsIn(PRONOUN_WORDS.filter((word) => word === "will" || word === "you"));
-/** The regexes `liveFragmentName` uses, by pattern, for the record and the hand-off SQL. */
+const anyCase = (pattern: string) => pattern.replace(/[a-z]/g, (letter) => `[${letter.toUpperCase()}${letter}]`);
+const GLUED_HEAD_ENDINGS = [
+  "fees?", "charges?", "penalty", "payments?", "transfers?", "items?", "checks?", "statements?", "cards?", "orders?",
+  "overdrafts?", "nsf", "research", "cop(?:y|ies)", "withdrawals?", "deposits?", "wires?", "drafts?", "atms?",
+].map(anyCase);
+/** v2 (#1499): the endings a lower-case condition may follow ("Monthly maintenance fee if the balance falls below"). */
+const GLUED_FEE_ENDINGS = ["fees?", "charges?"].map(anyCase);
+/**
+ * The words a glued sentence opens with: a capitalised sentence start, or a lower-case "you", "we" or "will".
+ * v5 (#1499): "THERE" in capitals too ("10NON-MEMBER LOAN APPLICATION FEE THERE IS A $10.00 ...", 109893).
+ */
+const GLUED_SENTENCE_STARTS = [
+  "You", "YOU", "you", "Your", "YOUR", "your", "We", "WE", "we", "This", "THIS", "These", "If", "IF", "When", "WHEN",
+  "It", "There", "THERE", "Our", "Any", "Each", "Will", "WILL", "will", "The", "THE", "Please", "Note",
+];
+/** v2 (#1499): the price's own lead-in opens the sentence ("... Garnishment Fee A fee of", "The fee", "the charge"). */
+const GLUED_FEE_LEAD = String.raw`(?:[Aa]n?|AN?|[Tt]he|THE)\s+(?:(?:${["monthly", "service", "annual"].map(anyCase).join("|")})\s+)?(?:${GLUED_FEE_ENDINGS.join("|")})`;
+/**
+ * v2 (#1499): a named subject and a modal verb open the sentence ("... at Non-BankFive ATM BankFive
+ * may impose a"). The subject is never a word a name ends on ("Returned Item Fee may be charged"
+ * stays whole, and so has no head).
+ */
+const GLUED_SUBJECT_MODAL = String.raw`(?!(?:${GLUED_HEAD_ENDINGS.join("|")})\b)[A-Z][A-Za-z0-9&'’-]*\s+(?:may|MAY|will|WILL|can|CAN|might|must|MUST)`;
+/** Words a head never holds, in any case: whose fee it is ("Checks Your order") is the sentence, not the name. */
+const GLUED_HEAD_PERSON = ["you", "your", "we", "our"].map(anyCase);
+/**
+ * A head never opens on an article, a quantifier or a numbered ordinal ("A Fee", "Each Item", "2nd
+ * Item"). A spelled ordinal can open a real name ("Second Party Check Fee", "First Check Order
+ * Fee"), so it bars a head only when the rest is fee nouns ("Second Item", in GLUED_GENERIC_WORDS).
+ */
+const GLUED_HEAD_LEADS = ["a", "an", "any", "each", "every"].map(anyCase).concat(String.raw`\d+(?:[Ss][Tt]|[Nn][Dd]|[Rr][Dd]|[Tt][Hh])`);
+/**
+ * One word of a head: no sentence or cell break in it, and never a sentence start, a person, a
+ * lower-case "if" or "when", the price's lead-in or a subject with a modal verb. v2 (#1499): a
+ * balanced parenthetical is one word ("Returned/Non-Sufficient Funds (NSF) fee").
+ */
+const GLUED_WORD = String.raw`(?!(?:${[...GLUED_SENTENCE_STARTS, ...GLUED_HEAD_PERSON, "if", "when"].join("|")})\b|${GLUED_FEE_LEAD}\b|${GLUED_SUBJECT_MODAL}\b)(?:\([^()]*\)|[^\s.:|;()]+)`;
+const GLUED_HEAD_MAX_WORDS = 8;
+/** A cell or sentence break between the name and the sentence, or a plain space. */
+const GLUED_CELL_BREAK = String.raw`\s*[|:.;–—-]\s*`;
+const GLUED_BREAK = String.raw`(?:${GLUED_CELL_BREAK}|\s+)`;
+/** What opens the glued sentence: a sentence start, the price's lead-in, or a subject and a modal verb. */
+const GLUED_TERMINATOR = String.raw`(?:${GLUED_SENTENCE_STARTS.join("|")}|${GLUED_FEE_LEAD}|${GLUED_SUBJECT_MODAL})\b`;
+/**
+ * A real fee name of 2 to 8 words (capital or digit first, ending on a fee word) followed by a
+ * sentence: "Overdraft Fee You will be charged when ...", "Inactive fee: This account may be
+ * subject to an Inactive fee of". No head word is a sentence start, so the name ends just before
+ * the first one and the split is the same whichever way a regex engine prefers to match (the
+ * count SQL runs it in Postgres). Case-sensitive so a capitalised sentence start splits and a
+ * lower-case "the" inside a name does not. The match is the head alone (group 1); what follows
+ * is read by lookahead, which Postgres supports (it has no lookbehind).
+ *
+ * v2 (#1499) widens the split for `sentence_end` names, most of which were real fees:
+ * - the head's last fee word may carry a parenthetical when a cell or sentence break follows it
+ *   ("... fee (per item). This fee applies to"; "Paper Statement (monthly) you will" has no head);
+ * - the sentence may open with the price's lead-in ("... Garnishment Fee A fee of") or a named
+ *   subject and a modal verb ("... ATM BankFive may impose a");
+ * - a name ending on "fee" or "charge" splits at a lower-case "if" or "when" whose condition names
+ *   no person ("Monthly maintenance fee if the average daily balance falls below"). A condition on
+ *   the customer ("Wire Fee if you request") still has no head, as in v1.
+ *
+ * v5 (#1499, Darwin's live check only): the lower-case split also takes "only if" / "only when"
+ * (132041), and "your" in a balance-below condition ("... fee if your daily balance falls below",
+ * 142684); "you", "we", "our" and "your" in any other condition still give no head.
+ */
+/** v5 (#1499): a balance-below condition, any case; the one place "your" may sit in a lower-case condition. */
+const GLUED_BALANCE_BELOW = String.raw`\b${anyCase("balance")}s?\b.*\b(?:${anyCase("below")}|${anyCase("under")}|${anyCase("less")}\s+${anyCase("than")})\s*$`;
+const GLUED_SENTENCE = new RegExp(
+  String.raw`^((?!(?:${GLUED_HEAD_LEADS.join("|")})\b)(?=[A-Z0-9])${GLUED_WORD}(?:\s+${GLUED_WORD}){0,${GLUED_HEAD_MAX_WORDS - 2}}\s+` +
+    String.raw`(?:(?:${GLUED_FEE_ENDINGS.join("|")})(?=\s+(?:only\s+)?(?:if|when)\b(?!.*\b(?:you|we|our)\b)(?:(?!.*\byour\b)|(?=.*${GLUED_BALANCE_BELOW})))` +
+    String.raw`|(?:${GLUED_HEAD_ENDINGS.join("|")})(?:\s+\([^()]*\)(?=${GLUED_CELL_BREAK}${GLUED_TERMINATOR})|(?=${GLUED_BREAK}${GLUED_TERMINATOR}))))`,
+);
+/**
+ * v2 (#1499): marks glued to the front of a name, dropped before the head is read: a footnote
+ * number on a capitalised word ("10NON-MEMBER LOAN APPLICATION FEE", "6A monthly fee", which then
+ * opens on an article and has no head), never an ordinal or a time ("1ST", "24HR", "24 Hour",
+ * "2nd", "1099"); and a leading "To request " when a capitalised name follows ("To request
+ * Overnight/2-day shipping of a debit card"). What is left must still pass every bar.
+ */
+const GLUED_LEAD_STRIP = /^(?:(?:\d{2}(?=[A-Z]{2})|\d(?=[A-Z]{3}))(?!(?:ST|ND|RD|TH|HRS?|HOURS?|DAYS?|MOS?|YRS?)\b)|\d{1,2}(?=A\s+[a-z])|To\s+request\s+(?=[A-Z0-9]))/;
+/**
+ * v3 (#1499): a "continued" mark is no part of a name ("Inactive Accounts Fee (cont.)"); dropped
+ * wherever it sits before the head is read. A single digit on exactly two capitals ("2FA Token
+ * Fee", "2FA-Token Fee", "2FA: Fee") is a name, not a footnote, so the strip above leaves it; a
+ * single digit is stripped only before three capitals ("7NSF Fee").
+ */
+const GLUED_CONT_MARK = /\s*\((?:cont\.?|continued)\)/gi;
+/** Fee nouns and joining words: a head made only of these ("Fee Per Item") names no fee. */
+const GLUED_GENERIC_WORDS = ["fees?", "charges?", "items?", "per", "payments?", "each", "a", "an", "the", "of", "for", "and", "or", "services?", "transactions?", "first", "second", "third", "fourth", "fifth"];
+const GLUED_GENERIC_ONLY = new RegExp(String.raw`^(?:${GLUED_GENERIC_WORDS.join("|")})(?:\s+(?:${GLUED_GENERIC_WORDS.join("|")}))*$`, "i");
+/**
+ * v2 (#1499): an account, a period or "other" and fee words alone name no fee ("Account Fees",
+ * "Monthly Fee", "Quarterly fee", "Additional fees", "Other Charges"); "Monthly Service Fee" and
+ * "Monthly maintenance fee" still do. v5: a period alone too ("Per quarter charge", 64144; "Per
+ * month fee", "Per year fee").
+ */
+const GLUED_ACCOUNT_WORDS = ["accounts?", "monthly", "quarterly", "annual(?:ly)?", "months?", "quarters?", "years?", "additional", "other", "misc(?:ellaneous)?", "fees?", "charges?", "per", "each", "a", "an", "the", "of", "for", "and", "or", "&"];
+const GLUED_ACCOUNT_GENERIC = new RegExp(String.raw`^(?:${GLUED_ACCOUNT_WORDS.join("|")})(?:\s+(?:${GLUED_ACCOUNT_WORDS.join("|")}))*$`, "i");
+/**
+ * v2 (#1499): a clause, not a name: who pays ("Customers who opt to receive paper statements"),
+ * another bank's charge ("Bank sending the wire"), a condition ("No matter how many drafts", "To
+ * request ...", "All ...").
+ */
+const GLUED_CLAUSE_HEAD = /^(?:customers?|no\s+matter|to\s+request|all)\b|\b(?:who|sending|receiving)\b/i;
+/**
+ * v2 (#1499): a list of services that does not end on "fee", "charge" or "penalty" is a section
+ * heading, not a fee ("ATM & Visa Debit Card", "ATM5, Telephone Banking and Bill Payment");
+ * "Legal Attachments, Levies, and Garnishment Fee" is a name.
+ */
+const GLUED_SERVICE_LIST = /^(?=.*(?:&|\band\b))(?!.*\b(?:fees?|charges?|penalty)(?:\s+\([^()]*\))?$)/i;
+/** v5 (#1499): a bare "Activation fee" names no product (98668 was a gift card's). "Card activation fee" still does. */
+const GLUED_BARE_ACTIVATION = /^activation\s+(?:fees?|charges?)$/i;
+/** The head is no name when it is itself a sentence, a condition, a clause, a heading or a bare activation fee. */
+const GLUED_HEAD_BARS = [LIVE_PRONOUN, SENTENCE_VERB, CONDITION_CLAUSE, GLUED_CLAUSE_HEAD, GLUED_SERVICE_LIST, GLUED_BARE_ACTIVATION] as const;
+/**
+ * v5 (#1499): generic words alone ("Monthly Fee", "Service charge", "Per quarter charge") name no
+ * fee. Split from `GLUED_HEAD_BARS` so Darwin can let a generic head through on a balance-below
+ * condition only (`gluedSentenceSplit(name, { allowGeneric: true })`); every other caller refuses it.
+ */
+const GLUED_GENERIC_BARS = [GLUED_GENERIC_ONLY, GLUED_ACCOUNT_GENERIC] as const;
+
+/**
+ * #1443: the real fee name a live fragment opens with, when the rest is a sentence glued on
+ * ("Overdraft Fee You will be charged when ..." is "Overdraft Fee"); null when the name opens with
+ * no such name. Pure; the caller decides whether the fee is renamed (amount, waiver wording).
+ */
+export function gluedSentenceHead(name: string | null | undefined): string | null {
+  return gluedSentenceSplit(name)?.head ?? null;
+}
+
+/**
+ * The name as the head is read from it: whitespace collapsed, "continued" marks dropped, then a
+ * glued footnote number or "To request" (`GLUED_LEAD_STRIP`).
+ */
+export function gluedReadable(name: string | null | undefined): string {
+  return (name ?? "").replace(/\s+/g, " ").trim().replace(GLUED_CONT_MARK, "").trim().replace(GLUED_LEAD_STRIP, "");
+}
+
+/**
+ * v3 (#1499): `gluedSentenceHead` with the rest of the line after the head (its break included),
+ * so the caller can read the condition the head was split from ("if the balance falls below").
+ * v5: with `allowGeneric`, a head of generic words alone (`GLUED_GENERIC_BARS`) is returned with
+ * `generic: true` instead of null, for the caller to gate; every other bar still refuses it.
+ */
+export function gluedSentenceSplit(
+  name: string | null | undefined,
+  options: { allowGeneric?: boolean } = {},
+): { head: string; rest: string; generic: boolean } | null {
+  let current = gluedReadable(name);
+  let match = current.match(GLUED_SENTENCE);
+  if (!match && /^[a-z]/.test(current)) {
+    // v4 (#1499): "monthly service fee if balance falls below" is read as "Monthly service fee ...".
+    const capital = current.charAt(0).toUpperCase() + current.slice(1);
+    const lowered = capital.match(GLUED_SENTENCE);
+    if (lowered && GLUED_LOWER_CONDITION.test(capital.slice(lowered[0].length))) {
+      current = capital;
+      match = lowered;
+    }
+  }
+  if (!match) return null;
+  const head = match[1];
+  if (GLUED_HEAD_BARS.some((bar) => bar.test(head))) return null;
+  const generic = GLUED_GENERIC_BARS.some((bar) => bar.test(head));
+  if (generic && !options.allowGeneric) return null;
+  return { head, rest: current.slice(match[0].length), generic };
+}
+
+/**
+ * v3 (#1499): the fee a sentence ends on, for a `sentence_end` line with no head ("There will be a
+ * card replacement fee of" is "Card replacement fee"): Knox's fee-of-sentence phrase, under every
+ * head bar, with its first letter capitalised as Knox's cut-off repair writes it; the rest of the
+ * case is the source's. Null when the line ends on no such phrase or the phrase names no fee ("a
+ * service charge fee of").
+ */
+export function feeOfSentenceTail(name: string | null | undefined): string | null {
+  const current = (name ?? "").replace(/\s+/g, " ").trim();
+  const raw = current.match(FEE_OF_SENTENCE_TAIL)?.[1]?.trim();
+  if (!raw || TAIL_PERSON.test(raw)) return null;
+  const phrase = raw.replace(TAIL_QUALIFIERS, "").trim();
+  if (!phrase || TAIL_PAREN_START.test(phrase) || TAIL_GENERIC_ONLY.test(phrase) || [...GLUED_HEAD_BARS, ...GLUED_GENERIC_BARS].some((bar) => bar.test(phrase))) return null;
+  return phrase.replace(/^[a-z]/, (letter) => letter.toUpperCase());
+}
+
+/** The regexes `liveFragmentName` and `gluedSentenceHead` use, for the record and the hand-off SQL. */
 export const LIVE_FRAGMENT_REGEXES = {
   plus: /^\+/,
   plus_fee_noun: FEE_NOUN,
@@ -181,18 +395,20 @@ export const LIVE_FRAGMENT_REGEXES = {
   sentence_end: LIVE_SENTENCE_END,
   sentence_end_article: LIVE_SENTENCE_END_ARTICLE,
   pronoun: LIVE_PRONOUN,
+  parenthetical: PARENTHETICAL,
+  glued_cont_mark: GLUED_CONT_MARK,
+  glued_lead_strip: GLUED_LEAD_STRIP,
+  fee_of_sentence_tail: FEE_OF_SENTENCE_TAIL,
+  tail_qualifiers: TAIL_QUALIFIERS,
+  tail_generic_only: TAIL_GENERIC_ONLY,
+  tail_person: TAIL_PERSON,
+  tail_paren_start: TAIL_PAREN_START,
+  glued_lower_condition: GLUED_LOWER_CONDITION,
+  glued_sentence: GLUED_SENTENCE,
+  glued_head_bars: GLUED_HEAD_BARS,
+  glued_generic_bars: GLUED_GENERIC_BARS,
 } as const;
 
-/** The live fragment shape a live fee's name carries, or null (the name may stay live). */
-export function liveFragmentName(name: string | null | undefined): LiveFragmentPattern | null {
-  const current = (name ?? "").replace(/\s+/g, " ").trim();
-  if (!current) return null;
-  if (/^\+/.test(current) && !FEE_NOUN.test(current.replace(/^\++\s*/, ""))) return "plus";
-  if (LIVE_TRAILING_RANGE.test(current)) return "trailing_range";
-  if (LIVE_SENTENCE_END.test(current) || LIVE_SENTENCE_END_ARTICLE.test(current)) return "sentence_end";
-  if (LIVE_PRONOUN.test(current)) return "pronoun";
-  return null;
-}
 
 /** v7: a word that joins the name to the sentence before it ("Otherwise, a monthly service fee"); Knox v57's tidy drops it. */
 const LEADING_DISCOURSE = /^\s*(?:otherwise|additionally|also|however|in addition|furthermore|further)\s*,?\s/i;
@@ -1291,6 +1507,60 @@ export function planRetidy(
   return { renames, skipped };
 }
 
+/**
+ * The one write path for renaming a live fee (Knox's retidy, and Darwin's live fragment re-check
+ * since #1443): each rename is logged in `pipeline_feedback` (kind `name_retidied`, the old and new
+ * name, one row per name replaced) and the live name changes only while it still reads the old
+ * name. `checkName` is the writer's strategy, so Knox's own restore pass (v15, which reads
+ * `check_name = knox.name_retidy`) never puts back a sentence another check cut off.
+ */
+export async function writeLiveRenames(
+  scope: SqlTag,
+  renames: RetidyRename[],
+  meta: { strategy: string; version: number; reportedBy: "knox" | "darwin"; runId: number },
+): Promise<number[]> {
+  if (renames.length === 0) return [];
+  await recordFeedback(
+    scope,
+    renames.map((rename) => ({
+      aboutStage: "publish",
+      aboutStrategy: meta.strategy,
+      aboutVersion: meta.version,
+      signal: "right",
+      kind: NAME_RETIDY_KIND,
+      reportedBy: meta.reportedBy,
+      checkName: meta.strategy,
+      institutionId: rename.institutionId,
+      sourceDocumentId: rename.sourceDocumentId,
+      feePublishedId: rename.feePublishedId,
+      canonicalFeeKey: rename.canonicalFeeKey,
+      amount: rename.amount,
+      // A rename is housekeeping, not a judgement on the read: it carries no weight in lessons.
+      weight: 0,
+      evidence: { old_name: rename.oldName, new_name: rename.newName },
+      runId: meta.runId,
+      // v15: one row per rename, keyed on the name it replaced, so a second rename of the
+      // same fee no longer overwrites the first one's old name.
+      dedupeKey: `${meta.strategy}:pub:${rename.feePublishedId}:${createHash("sha1").update(rename.oldName).digest("hex").slice(0, 12)}`,
+    })),
+  );
+  // The fees the guarded update renamed: one whose name changed since the read is left as it is.
+  const updated = await scope<Array<{ fee_published_id: number | string }>>`
+    UPDATE published_fee_records fp
+       SET fee_name = rename.new_name
+      FROM unnest(
+             ${renames.map((rename) => rename.feePublishedId)}::bigint[],
+             ${renames.map((rename) => rename.oldName)}::text[],
+             ${renames.map((rename) => rename.newName)}::text[]
+           ) AS rename(fee_published_id, old_name, new_name)
+     WHERE fp.fee_published_id = rename.fee_published_id
+       AND fp.rolled_back_at IS NULL
+       AND fp.fee_name = rename.old_name
+    RETURNING fp.fee_published_id
+  `;
+  return updated.map((row) => Number(row.fee_published_id));
+}
+
 export interface RetidyResult extends RetidyPlan {
   dryRun: boolean;
   institutionsChecked: number;
@@ -1530,42 +1800,12 @@ export async function retidyLiveFeeNames(
   try {
     await inSavepoint(db, async (scope) => {
       if (result.renames.length > 0) {
-        await recordFeedback(
-          scope,
-          result.renames.map((rename) => ({
-            aboutStage: "publish",
-            aboutStrategy: NAME_RETIDY_STRATEGY.strategy,
-            aboutVersion: NAME_RETIDY_STRATEGY.version,
-            signal: "right",
-            kind: NAME_RETIDY_KIND,
-            reportedBy: "knox",
-            checkName: NAME_RETIDY_STRATEGY.strategy,
-            institutionId: rename.institutionId,
-            sourceDocumentId: rename.sourceDocumentId,
-            feePublishedId: rename.feePublishedId,
-            canonicalFeeKey: rename.canonicalFeeKey,
-            amount: rename.amount,
-            // A rename is housekeeping, not a judgement on the read: it carries no weight in lessons.
-            weight: 0,
-            evidence: { old_name: rename.oldName, new_name: rename.newName },
-            runId: options.runId,
-            // v15: one row per rename, keyed on the name it replaced, so a second rename of the
-            // same fee no longer overwrites the first one's old name.
-            dedupeKey: `${NAME_RETIDY_STRATEGY.strategy}:pub:${rename.feePublishedId}:${createHash("sha1").update(rename.oldName).digest("hex").slice(0, 12)}`,
-          })),
-        );
-        await scope`
-          UPDATE published_fee_records fp
-             SET fee_name = rename.new_name
-            FROM unnest(
-                   ${result.renames.map((rename) => rename.feePublishedId)}::bigint[],
-                   ${result.renames.map((rename) => rename.oldName)}::text[],
-                   ${result.renames.map((rename) => rename.newName)}::text[]
-                 ) AS rename(fee_published_id, old_name, new_name)
-           WHERE fp.fee_published_id = rename.fee_published_id
-             AND fp.rolled_back_at IS NULL
-             AND fp.fee_name = rename.old_name
-        `;
+        await writeLiveRenames(scope, result.renames, {
+          strategy: NAME_RETIDY_STRATEGY.strategy,
+          version: NAME_RETIDY_STRATEGY.version,
+          reportedBy: "knox",
+          runId: options.runId,
+        });
       }
       for (const [institutionId, counts] of perInstitution) {
         await recordAttempt(scope, {
