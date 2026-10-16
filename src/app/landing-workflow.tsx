@@ -226,16 +226,20 @@ function Answer({ lead }: { lead: WorkflowLead }) {
 
 /**
  * Hamilton's demonstration on the homepage (James's notes of Oct 16): a question a pricing team
- * asks, answered from the live sample report, with the schedule line behind it.
+ * asks, answered from the live sample report, with the schedule line behind it. The question sits
+ * in the frame as Hamilton's Ask bar shows it, not as a chat bubble (James, 14:09 and 14:43).
  */
 export function HamiltonAnswer({ lead }: { lead: WorkflowLead }) {
   const fee = lineName(lead.line.label).toLowerCase();
   return (
-    <div className="min-w-0" data-hamilton-answer="">
-      <p className="ml-auto w-fit max-w-[90%] rounded-2xl rounded-br-sm bg-ink px-4 py-3 text-[15px] leading-snug text-on-ink" data-example-question>
-        How does our {fee} fee compare with local competitors?
-      </p>
-      <ProductFrame label={`Hamilton · Sample answer · ${lead.name}`} className="mt-4">
+    <div className="flex min-w-0 flex-1 flex-col" data-hamilton-answer="">
+      <ProductFrame label={`Hamilton · Sample answer · ${lead.name}`} className="flex flex-1 flex-col">
+        <div className="border-b border-border bg-paper/60 px-5 py-4 sm:px-6" data-example-question>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-muted">Ask Hamilton</p>
+          <p className="mt-1.5 rounded-md border border-border bg-surface-0 px-3 py-2 text-[15px] leading-snug text-ink">
+            How does our {fee} fee compare with local competitors?
+          </p>
+        </div>
         <Answer lead={lead} />
       </ProductFrame>
     </div>
@@ -243,36 +247,49 @@ export function HamiltonAnswer({ lead }: { lead: WorkflowLead }) {
 }
 
 /**
- * The report the answer becomes, kept compact: the report's own At a glance, its first rows with
- * the answer's fee marked, and a link to the whole sample report.
+ * The report the answer becomes, kept compact: one short explanation that names the answer's fee,
+ * then the report's own At a glance with that fee marked, and a link to the whole sample report.
  */
 export function ReportPreview({ report, lead }: { report: MarketReport; lead: WorkflowLead }) {
   const { data, analysis } = report;
   const market = data.market!;
   const marketLabel = `${placeLabel(market.places[0])} area${market.county_fips.length > 1 ? ` (${market.county_fips.length} counties)` : ""}`;
   return (
-    <div className="mx-auto max-w-3xl">
-      <ProductFrame label={`${REPORT_OFFER.name} · Sample`}>
-        <div className="p-4 sm:p-6" data-workflow-report>
-          <p className="text-[1.15rem] font-semibold leading-tight tracking-[-0.02em] text-ink sm:text-[1.3rem]">
-            {data.subject.institution_name} against its local market
-          </p>
-          <p className="mt-1 text-[13px] text-ink-muted">
-            {marketLabel} · {analysis.readiness.competitorsWithData} local competitors with published fees
-          </p>
-          <div className="[&>section]:mt-4 [&>section]:p-4 sm:[&>section]:p-5">
-            <AtAGlance lines={analysis.lines} highlight={lead.line.key} limit={EXCERPT_ROWS} />
+    // One centered column: the report's own table needs about 700px to keep its columns.
+    <div className="mx-auto grid max-w-3xl gap-8">
+      <div className="text-center" data-report-intro="">
+        <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-ink-muted">{REPORT_OFFER.name}</p>
+        <h3 className="mt-3 text-[1.6rem] font-semibold leading-tight tracking-[-0.025em] text-ink sm:text-[2rem]">
+          The report your committee reads
+        </h3>
+        <p className="mx-auto mt-4 max-w-md text-[17px] leading-relaxed text-ink-soft">
+          It sets each of your published fees against your local competitors, ties every figure to its source and marks the{" "}
+          {lineName(lead.line.label).toLowerCase()} fee from the answer above.
+        </p>
+        <p className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-3">
+          <a href={SAMPLE_REPORT_HREF} className="fi-btn fi-btn-secondary min-h-11">
+            Open the full report
+          </a>
+          <TrackLink event="contact_sales" eventProps={{ placement: "home_workspace_demo" }} href={DEMO_REQUEST_NAV.href} className={`text-[14px] ${TEXT_LINK}`}>
+            {DEMO_REQUEST_NAV.standaloneLabel}
+          </TrackLink>
+        </p>
+      </div>
+      <div className="min-w-0">
+        <ProductFrame label={`${REPORT_OFFER.name} · Sample`}>
+          <div className="p-4 sm:p-6" data-workflow-report>
+            <p className="text-[1.15rem] font-semibold leading-tight tracking-[-0.02em] text-ink sm:text-[1.3rem]">
+              {data.subject.institution_name} against its local market
+            </p>
+            <p className="mt-1 text-[13px] text-ink-muted">
+              {marketLabel} · {analysis.readiness.competitorsWithData} local competitors with published fees
+            </p>
+            <div className="[&>section]:mt-4 [&>section]:p-4 sm:[&>section]:p-5">
+              <AtAGlance lines={analysis.lines} highlight={lead.line.key} limit={EXCERPT_ROWS} />
+            </div>
           </div>
-        </div>
-      </ProductFrame>
-      <p className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-3">
-        <a href={SAMPLE_REPORT_HREF} className="fi-btn fi-btn-secondary min-h-11">
-          Open the full report
-        </a>
-        <TrackLink event="contact_sales" eventProps={{ placement: "home_workspace_demo" }} href={DEMO_REQUEST_NAV.href} className={`text-[14px] ${TEXT_LINK}`}>
-          {DEMO_REQUEST_NAV.standaloneLabel}
-        </TrackLink>
-      </p>
+        </ProductFrame>
+      </div>
     </div>
   );
 }

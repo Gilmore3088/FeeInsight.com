@@ -135,6 +135,9 @@ export interface DistrictPoint {
   /** The district's lowest and highest fee; null when the district is thin. */
   min: number | null;
   max: number | null;
+  /** The middle half of the district's institution prices; null when thin or not read. */
+  p25: number | null;
+  p75: number | null;
   institutions: number;
 }
 
@@ -255,6 +258,8 @@ export function buildHomeData(
         median: thin ? null : Number(row.median_amount),
         min: thin || row.min_amount === null ? null : Number(row.min_amount),
         max: thin || row.max_amount === null ? null : Number(row.max_amount),
+        p25: thin || row.p25_amount == null ? null : Number(row.p25_amount),
+        p75: thin || row.p75_amount == null ? null : Number(row.p75_amount),
         institutions: row.count,
       };
     })
