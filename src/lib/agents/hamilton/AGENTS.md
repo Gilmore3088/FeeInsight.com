@@ -352,6 +352,23 @@ the detail.
     `eval_critical:<verdict>`; the name rules learned from them (a rebate as an ATM fee, a
     "no fee for" or waiver sentence as a $0 fee, and others) on their second look,
     `not_a_fee:<rule>`.
+10b. Account type hold (`account-type-hold.ts`, #1100 gap 1, James Oct 16): monthly maintenance
+    is the consumer checking account's fee. A live monthly maintenance fee of a savings, money
+    market, club, business or IRA/HSA/CD account (`accountTypeOf` in `src/lib/account-type.ts`:
+    the fee's name when it says checking, then the lineup product, then the fee's name; a
+    disclosure title such as "Truth in Savings", a perk such as "Health Savings Card" and the
+    bank's own name name no account) comes down, `account_type_hold: <type> (#1100)`, and
+    its verified row stays verified with `account_type:<type>`; publish skips a flagged row
+    (`publishSkipReason`). A verified, unpublished row of such an account is flagged before
+    publish reads it. A row the guard refused only for its account words goes back to verified,
+    held, when it passes every check with those words set aside and traces in its own text;
+    otherwise it stays rejected with the flag. A checked row with no type and a lineup
+    product gets `account_type_checked:v1` and is not read again; a row with no product is read
+    again on every step, since a later Knox read can fill its product. One event per run names every row.
+    A fee a hand check found wrongly typed stays live through `ACCOUNT_TYPE_KEEP_LIVE` (one line per
+    fee with its reason; 28834 first).
+    A failed read or write writes nothing; the error is kept in `detail.account_type_hold.error`
+    and as a `step.warning` run event.
 10a. Hand fixes James approved, fixed lists checked against the live row before each write:
     `hand-amount-corrections.ts` (#1334, cut cents corrected in place) and
     `cut-name-duplicates.ts` (#1196): a cut-name row that repeats a clean live row at the same

@@ -12,6 +12,11 @@ Darwin owns verification and classification.
   Darwin or publish joins Darwin's live re-check in the same PR, with a dry-run count of the live
   fees it would take down. Takedowns go through the shared second look and the run ledger
   (`docs/project/DECISIONS.md`, 2026-10-15).
+  The account type hold (#1100 gap 1, James Oct 16: a savings, money market, club, business or
+  IRA/HSA/CD account's monthly fee is not consumer checking monthly maintenance) has its live
+  re-check in Hamilton's publish step (`hamilton/account-type-hold.ts`, part 1), which reads every
+  live `monthly_maintenance` fee each step and holds a typed one as verified; see Hamilton
+  `AGENTS.md` item 10b.
   The Oct 15 re-file of excess withdrawals and returned mail out of account research (#1398) has
   no Darwin-only live pass yet: its live re-check is Hamilton's fold step (`taxonomy-fold.ts`,
   every publish step), which reads up to 2,000 live and verified account research fees whose name
