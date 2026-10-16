@@ -20,14 +20,16 @@ export { PUBLIC_NAV_ITEMS, PRO_NAV_ITEMS, PRO_PLANS_NAV, PRIMARY_CTA_NAV } from 
  */
 export function ConsumerNav() {
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-paper/95">
+    <header className="sticky top-0 z-40 border-b border-border bg-paper">
       <SkipLink />
       <div className="mx-auto max-w-page px-6">
-        <div className="flex h-14 items-center justify-between">
-          <div className="flex items-center gap-8">
+        {/* Phones: search on the left, the logo centred, the menu on the right. From `sm` up the
+            wrappers below fall away (`contents`) and the row is the usual logo-left flex. */}
+        <div className="grid h-14 grid-cols-[1fr_auto_1fr] items-center sm:flex sm:justify-between">
+          <div className="contents sm:flex sm:items-center sm:gap-8">
             <Link
               href="/"
-              className="flex items-center gap-2 text-ink no-underline"
+              className="col-start-2 row-start-1 flex items-center gap-2 text-ink no-underline"
               aria-label={`${SITE_NAME} home`}
             >
               <Logo mark="fee-insight-oneline" height={22} title="" />
@@ -35,13 +37,17 @@ export function ConsumerNav() {
             </Link>
             <NavLinks />
           </div>
-          <div className="flex items-center gap-3">
-            <SearchTrigger />
+          <div className="contents sm:flex sm:items-center sm:gap-3">
+            <div className="col-start-1 row-start-1 -ml-2.5 justify-self-start sm:contents">
+              <SearchTrigger />
+            </div>
             <NavPrimaryCtaTablet />
             <div className="hidden lg:block">
               <NavAccount />
             </div>
-            <ConsumerMobileNav />
+            <div className="col-start-3 row-start-1 -mr-2.5 justify-self-end sm:contents">
+              <ConsumerMobileNav />
+            </div>
           </div>
         </div>
       </div>

@@ -172,6 +172,33 @@ describe("Darwin held-fee release review", () => {
     ]);
   });
 
+  it("never reads a business-schedule restore as a lesson (#1671)", async () => {
+    const restoreRows = [
+      { kind: "restored_after_takedown", fee_published_id: 1, fee_verified_id: 11, canonical_fee_key: "stop_payment", fee_name: "Stop Payment", amount: "25.00" },
+      { kind: "business_schedule_restored", fee_published_id: 2, fee_verified_id: 12, canonical_fee_key: "stop_payment", fee_name: "Business Stop Payment", amount: "35.00" },
+    ];
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+      if (text.includes("FROM pipeline_feedback pf")) {
+        // The restore branch, evaluated on the rows: a kind the query excludes is no lesson.
+        const excluded = text.includes("AND pf.kind <>") ? values.filter((value) => typeof value === "string") : [];
+        return Promise.resolve(restoreRows
+          .filter((row) => !excluded.includes(row.kind))
+          .map((row) => ({ canonical_fee_key: row.canonical_fee_key, fee_name: row.fee_name, amount: row.amount, excerpt: null, kind: "restored" })));
+      }
+      return Promise.resolve([]);
+    });
+    const lessons = await loadReviewLessons(db as never, ["stop_payment"]);
+    expect(lessons.map((lesson) => lesson.feeName)).toEqual(["Stop Payment"]);
+    const call = db.mock.calls.find(([strings]) => templateText(strings).includes("FROM pipeline_feedback pf"))!;
+    const text = templateText(call[0]);
+    // Left out of both the restore lessons and the restores that cancel a category lesson.
+    expect(text).toContain("AND pf.kind <>");
+    expect(text).toContain("AND back.kind <>");
+    expect(call.slice(1).filter((value) => value === "business_schedule_restored")).toHaveLength(2);
+  });
+
   it("reviews without lessons when the learning store cannot be read", async () => {
     const db = vi.fn(() => Promise.reject(new Error("relation does not exist")));
     await expect(loadReviewLessons(db as never, ["stop_payment"])).resolves.toEqual([]);

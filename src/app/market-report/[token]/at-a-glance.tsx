@@ -47,13 +47,30 @@ function gap(line: PlottedLine): string {
 /**
  * The top of the report: every comparable fee ranked against the same local market on one
  * shared scale, highest-ranked first, with the dollar gap to the local median beside it.
+ * The homepage's excerpt (`narrow`) keeps the phone layout at every width, since it sits in a
+ * half-width frame, and marks the one fee its example follows (`highlight`, a line key).
  */
-export function AtAGlance({ lines }: { lines: ReportLine[] }) {
+export function AtAGlance({
+  lines,
+  narrow = false,
+  highlight,
+  limit,
+}: {
+  lines: ReportLine[];
+  narrow?: boolean;
+  highlight?: string;
+  /** Rows shown (the highlighted one always among them); the rest are counted under the list. */
+  limit?: number;
+}) {
+  const wide = (classes: string) => (narrow ? "" : classes);
   const counts = positionCounts(lines);
   const plotted = lines
     .filter((l): l is PlottedLine => l.comparable && !!l.own && !!l.peers)
     .map((line) => ({ line, rank: rankOf(line), tone: toneFor(line) }))
     .sort((a, b) => b.rank - a.rank);
+  const shown = limit && plotted.length > limit
+    ? plotted.filter((p, i) => i < limit - 1 || p.line.key === highlight || (i === limit - 1 && !plotted.slice(limit).some((q) => q.line.key === highlight)))
+    : plotted;
   const total = counts.above + counts.inside + counts.below;
   const summary = [
     { n: counts.above, text: "above the local middle half", tone: TONE.above },
@@ -77,7 +94,7 @@ export function AtAGlance({ lines }: { lines: ReportLine[] }) {
       <div className="mt-6" role="table" aria-label="Each comparable fee ranked against local competitors">
         <div
           role="row"
-          className="hidden border-b border-border pb-2 text-[11px] uppercase tracking-[0.08em] text-ink-muted sm:grid sm:grid-cols-[13rem_1fr_5.5rem_6rem] sm:gap-x-5"
+          className={`hidden border-b border-border pb-2 text-[11px] uppercase tracking-[0.08em] text-ink-muted ${wide("sm:grid sm:grid-cols-[13rem_1fr_5.5rem_6rem] sm:gap-x-5")}`}
         >
           <span role="columnheader">Fee</span>
           <span role="columnheader" className="flex justify-between">
@@ -89,16 +106,19 @@ export function AtAGlance({ lines }: { lines: ReportLine[] }) {
           <span role="columnheader" className="text-right">vs median</span>
         </div>
 
-        {plotted.map(({ line, rank, tone }) => (
+        {shown.map(({ line, rank, tone }) => (
           <div
             key={line.key}
             role="row"
-            className="grid grid-cols-[1fr_auto_auto] items-center gap-x-4 border-b border-[#F1ECE4] py-2.5 last:border-0 sm:grid-cols-[13rem_1fr_5.5rem_6rem] sm:gap-x-5 sm:border-0 sm:py-0"
+            data-highlight={line.key === highlight ? "" : undefined}
+            className={`grid grid-cols-[1fr_auto_auto] items-center gap-x-4 border-b border-[#F1ECE4] py-2.5 last:border-0 ${wide("sm:grid-cols-[13rem_1fr_5.5rem_6rem] sm:gap-x-5 sm:border-0 sm:py-0")} ${
+              line.key === highlight ? "-mx-3 rounded-lg bg-ink/[0.04] px-3 ring-1 ring-inset ring-border" : ""
+            }`}
           >
-            <span role="cell" className="text-[14px] text-ink">{line.label}</span>
+            <span role="cell" className={`text-[14px] text-ink ${line.key === highlight ? "font-semibold" : ""}`}>{line.label}</span>
             <span
               role="cell"
-              className="relative order-last col-span-3 mt-2 block h-6 sm:order-none sm:col-span-1 sm:mt-0 sm:h-10"
+              className={`relative order-last col-span-3 mt-2 block h-6 ${wide("sm:order-none sm:col-span-1 sm:mt-0 sm:h-10")}`}
               title={`${line.label}: yours ${money(line.own.amount)}; local median ${money(line.peers.median)}; middle half ${money(line.peers.p25)}–${money(line.peers.p75)} across ${line.peers.n} competitors`}
             >
               <span className="absolute inset-y-0 left-1/4 right-1/4 bg-surface-200" aria-hidden="true" />
@@ -119,11 +139,16 @@ export function AtAGlance({ lines }: { lines: ReportLine[] }) {
           </div>
         ))}
 
-        <div className="mt-2 flex justify-between text-[11px] text-ink-muted sm:hidden" aria-hidden="true">
+        <div className={`mt-2 flex justify-between text-[11px] text-ink-muted ${wide("sm:hidden")}`} aria-hidden="true">
           <span>Lower</span>
           <span>Median</span>
           <span>Higher</span>
         </div>
+        {shown.length < plotted.length ? (
+          <p className="mt-3 text-[13px] text-ink-muted" data-glance-more="">
+            {plotted.length - shown.length} more fees in the full report
+          </p>
+        ) : null}
       </div>
 
       <p className="mt-5 text-[12px] leading-relaxed text-ink-muted">

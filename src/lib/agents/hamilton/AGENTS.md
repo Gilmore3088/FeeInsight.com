@@ -266,6 +266,14 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
   no URL, the fee takes its document's (`publishSourceLink`); refresh-copy does the same.
 - `published_by_adversarial_event_id` holds Darwin's verification event id, the gate
   that actually ran.
+- Operators' holds and corrections win over a re-read (#978, docs/plans/hamilton-h03-corrections.md).
+  A held line is not republished. A fee an admin corrected (`published_fee_corrections`, a new
+  version per correction; the replaced row is quarantined `admin_correction: ...`) is matched by
+  its logical fee, not its row id or amount: `correctionBlockFor` (`src/lib/fee-correction-guard.ts`)
+  skips a re-read of the old or the same document, and writes one from a newer document that
+  disagrees to `published_fee_correction_conflicts` for an admin to accept or dismiss. A hold,
+  release, correction or reversal is a completed `manual_repair` run and rebuilds
+  `fee_index_cache` at once (`src/lib/fee-admin-run.ts`).
 - One live price per fee: when the same institution, canonical key, variant and
   frequency is published at a new amount, the prior live row is closed
   (`rolled_back_at`, `rolled_back_by_batch_id`, `rolled_back_reason = 'superseded by
@@ -367,8 +375,11 @@ the detail.
     otherwise it stays rejected with the flag. A checked row with no type and a lineup
     product gets `account_type_checked:v1` and is not read again; a row with no product is read
     again on every step, since a later Knox read can fill its product. One event per run names every row.
-    A fee a hand check found wrongly typed stays live through `ACCOUNT_TYPE_KEEP_LIVE` (one line per
-    fee with its reason; 28834 first).
+    A fee a hand check found wrongly typed stays live through `ACCOUNT_TYPE_KEEP_LIVE`: one line per
+    fee with its reason, keyed by institution, name, price and the stored document the hand check read,
+    so a re-read's new row stays live too (28834: inst 5800, doc 3633). The key is bound to that
+    document: a re-collected schedule (a new `source_documents` row) needs its own keep-live line. The feedback sync skips these takedowns and the goal scorecard counts them as
+    housekeeping: the hold is publish policy, not a wrong read.
     A failed read or write writes nothing; the error is kept in `detail.account_type_hold.error`
     and as a `step.warning` run event.
 10a. Hand fixes James approved, fixed lists checked against the live row before each write:
@@ -582,7 +593,11 @@ comes down on its second look (check `hamilton.business_schedule`): `rolled_back
 flag. A business fee with no consumer fee beside it stays live until Magellan finds the consumer
 schedule. The lesson is Magellan's: one `wrong_document` row per document (stage discover); the
 feedback sync writes no Knox or Darwin lesson for these. A takedown whose consumer fee is no
-longer live comes back. First dry run (7 Oct, prod): 1,028 business-sourced live fees at 91
+longer live comes back. A consumer fee held by the account type hold (`account_type_hold:`)
+still counts as there, so the hold never brings a business fee back (Oct 16, #1671). The same
+goes for the cross-page and same-line duplicate restores. Each restore names its fees in
+`hamilton.business_schedule_restored` (`fee_published_ids`) and writes one weight-0
+`business_schedule_restored` feedback row per fee. First dry run (7 Oct, prod): 1,028 business-sourced live fees at 91
 banks, 61 beside a consumer fee.
 
 ## Other Bank's Document
@@ -945,7 +960,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `HAMILTON_PUBLISH_STRATEGY` | `publish.rules` | v3 | `hamilton/publish.ts` |
 | `REFRESH_COPY_STRATEGY` | `hamilton.refresh_copy` | v2 | `hamilton/refresh-copy.ts` |
 | `RULES_RECHECK_STRATEGY` | `hamilton.rules_recheck` | v4 | `hamilton/rules-recheck.ts` |
-| `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v16 | `hamilton/source-check.ts` |
+| `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v17 | `hamilton/source-check.ts` |
 | `SOURCE_LINK_VERSION` | `hamilton.source_link` | v2 | `hamilton/source-link.ts` |
 | `FEE_DEPENDENCE_VERSION` | — | v1 | `hamilton/studies/fee-dependence.ts` |
 | `PRICE_STUDY_VERSION` | — | v1 | `hamilton/studies/index.ts` |

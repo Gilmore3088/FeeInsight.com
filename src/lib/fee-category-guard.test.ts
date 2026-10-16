@@ -289,6 +289,41 @@ describe("checkFeeCategory", () => {
     }
   });
 
+  it("keeps a deposit for the depository key out of night deposit (v66, James's option A, #1605)", () => {
+    // The 10 live key deposits, each read on its bank's own schedule (Oct 16).
+    for (const name of [
+      "Key Deposit - Night Depository",
+      "Night Deposit Box Key (Refundable Deposit)",
+      "Night Deposit Key to Outside Deposit Box (Refundable )",
+      "Night Depository - Security Deposit (key refundable)",
+      "Night Depository Key Deposit",
+      "Night Depository Key, deposit fee",
+      "Night Depository, Deposit for Receptacle Key",
+      "Night Depository: Key Deposit",
+      "Night Drop Chute Key (Refundable Deposit)",
+    ]) {
+      expect(checkFeeCategory("night_deposit", name).ok, name).toBe(false);
+    }
+    // The service, a lost or replaced key, and (until James decides the batch) a key purchase stay.
+    for (const name of [
+      "Night Depository Service",
+      "Lost Night Deposit Key",
+      "Night Depository - Lost Key",
+      "Night Depository Key Replacement",
+      "Night Deposit Bag – Lost Key",
+      "Night Depository Key",
+      "Night Deposit Additional Key Fee",
+      "Night Deposit Service - per key",
+      "Charge for night deposit key for after hours business access",
+      // A service, annual or rental line that names a key deposit is still the service (#1640 review).
+      "Night Deposit Service (key deposit required)",
+      "Night Depository Annual Fee includes key deposit",
+      "Night Depository Rental, key deposit $10",
+    ]) {
+      expect(checkFeeCategory("night_deposit", name), name).toEqual({ ok: true });
+    }
+  });
+
   it("keeps other banks' customers at our ATMs out of non-network ATM fees (live rows, Oct 6)", () => {
     for (const name of [
       "Non-Member ATM Transaction Fee",

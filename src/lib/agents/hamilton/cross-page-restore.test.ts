@@ -98,6 +98,16 @@ describe("restoreCrossPageSupersedes", () => {
     expect(texts.some((text) => /DELETE/i.test(text))).toBe(false);
   });
 
+  it("counts a replacement the account type hold took down as live, so a business fee stays down (#1100)", async () => {
+    const db = createDb(rows);
+    await restoreCrossPageSupersedes(db, { runId: 9, dryRun: false, categoryModel });
+    const read = String(db.unsafe.mock.calls[0][0]);
+    expect(read).toContain("(n.rolled_back_at IS NULL OR n.rolled_back_reason LIKE 'account_type_hold:%') AS replacement_live");
+    const update = db.mock.calls.find((call) => templateText(call[0]).includes("SET rolled_back_at = NULL"))!;
+    expect(templateText(update[0])).toContain("OR live.rolled_back_reason LIKE");
+    expect(update.slice(1)).toContain("account_type_hold:%");
+  });
+
   it("restores nothing without Darwin's category model", async () => {
     const db = createDb(rows);
     const result = await restoreCrossPageSupersedes(db, { runId: 9, dryRun: false, categoryModel: null });

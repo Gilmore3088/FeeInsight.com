@@ -476,6 +476,11 @@ v65 (rules 65, Oct 9, customer audience):
   cannot become two audiences, so the document's re-read writes them. Pinnacle (47) heads
   `KNOX_PRIORITY_REREAD_IDS` for that re-read.
 
+Column climb, D6 (#1653, Oct 16, no version change, so no document is re-read for it): a table
+row's fee stops climbing for its column header at a row of another width that has no price, so a
+stacked table's header ("Free | Gold" directly above "Monthly fee | $0 | $10") is never taken. The
+re-read replay on 7,272 named rows and 1,983 unnamed live fees recorded no different product.
+
 Stored excerpt, #1394 (Oct 15, no version change, so no document is re-read for it): the
 `excerpt="..."` Knox stores with an extracted fee holds only the fee's own cells of a two-column
 line (`own-cells.ts`): the cell at its price that names it best, the price-less label cells before
