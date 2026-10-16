@@ -943,6 +943,59 @@ export function stripFootnoteMarks(name: string): string {
     .trim();
 }
 
+/**
+ * v74: a footnote number glued to the front of a name, where the page prints a footnote as its own
+ * line ("1Monthly fee of $5.95 applies when ...", "3Automated Overdraft item fee of $32.00",
+ * "2Monthly fee of $10 is waived ..." under "requirements2"). Never a box size ("3x10", "5X 6"),
+ * an ordinal ("1st", "2nd", "3rd party", "1ST"), a time or period ("24hr", "24 Hour", "12 Months"),
+ * one capital standing alone ("3D Secure", but "1A dormant fee" is a mark on "A"), or a single digit
+ * on exactly two capitals ("2FA Token Fee"). The bank's own text decides the rest: the glued token
+ * ("3Hill") must open a line or a table cell wherever the text prints it, never sit inside a line
+ * ("Call 3Hill CU for Details": 3Hill CU is the credit union's name). With no text, nothing is cut.
+ */
+const LEADING_FOOTNOTE_MARK = /^(\d{1,2})([A-Za-z][A-Za-z'’\-]*)/;
+const NOT_A_LEADING_MARK =
+  /^(?:\d+\s*[x×]\s*\d|\d+(?:st|nd|rd|th)\b|\d+(?:hrs?|hours?|days?|mos?|months?|yrs?|years?|wks?|weeks?|mins?|minutes?)\b)/i;
+/** Case matters here: one capital alone ("3D Secure") or exactly two ("2FA") is a name; "1A dormant fee" is not. */
+const CAPITALS_NAME = /^(?:\d[A-Z](?![A-Za-z])(?!\s+[a-z])|\d[A-Z]{2}(?![A-Za-z]))/;
+
+/** True when every place the text prints `token` opens a line or a "|" cell. */
+function printedAsLineStart(token: string, texts: readonly string[]): boolean {
+  let seen = false;
+  for (const text of texts) {
+    let index = text.indexOf(token);
+    while (index >= 0) {
+      const before = text.slice(text.lastIndexOf("\n", index - 1) + 1, index);
+      // A longer number ("13Hill" for "3Hill") or a letter right before it is another token.
+      const previous = index > 0 ? text[index - 1] : "";
+      if (!/[0-9A-Za-z]/.test(previous)) {
+        if (!(before.trim() === "" || /\|\s*$/.test(before))) return false;
+        seen = true;
+      }
+      index = text.indexOf(token, index + token.length);
+    }
+  }
+  return seen;
+}
+
+/** True when the name opens the way a glued footnote number does, before the page is read. Pure. */
+export function hasLeadingFootnoteShape(name: string): boolean {
+  const trimmed = name.trim();
+  return LEADING_FOOTNOTE_MARK.test(trimmed) && !NOT_A_LEADING_MARK.test(trimmed) && !CAPITALS_NAME.test(trimmed);
+}
+
+/** The name without its leading footnote number, or null when it has none (see above). Pure. */
+export function withoutLeadingFootnoteMark(name: string, texts: readonly string[]): string | null {
+  const trimmed = name.trim();
+  const match = trimmed.match(LEADING_FOOTNOTE_MARK);
+  if (!match || !hasLeadingFootnoteShape(trimmed)) return null;
+  if (!printedAsLineStart(`${match[1]}${match[2]}`, texts)) return null;
+  const rest = trimmed.slice(match[1].length).trim();
+  if (!usableName(rest)) return null;
+  // A mark on a lower-case word leaves the name opening in lower case ("1monthly minimum balance fee").
+  return rest.replace(/^[a-z]/, (letter) => letter.toUpperCase());
+}
+
 export function usableName(name: string): boolean {
   return name.length >= 3 && /[a-z]/i.test(name) && !/^\$/.test(name);
 }

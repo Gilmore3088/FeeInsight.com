@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { amountsIn, classifyFeeText, isConditionAmount, nameFrom, joinWrappedProse, foldedCategory, classifyPatternKey, extractCandidatesFromText, extractFromSegment, notAZeroPrice, stripFootnoteMarks } from "./rules";
 import { runFreeSpecialists } from "./specialists";
 import { joinWrappedLeaderNames } from "@/lib/custom-report/source-check";
-import { withBoxSizeCellsSplit, withDroppedDecimalPoints, withSidewaysBoxTable, withoutBusinessOnlyFees } from "./rules";
+import { withBoxSizeCellsSplit, withDroppedDecimalPoints, withSidewaysBoxTable, withoutBusinessOnlyFees, withoutLeadingFootnoteMark } from "./rules";
 import { tidyFeeName } from "./layout";
 
 describe("v72 (#1099): a loan's own payment and return fees are other lending", () => {
@@ -1417,5 +1417,53 @@ describe("Knox v70 balance-word prices stay thresholds where they are not fees (
     expect(condition("Monthly Service Charge Below $500.00 minimum $5.00 per Month", "$5.00")).toBe(false);
     expect(condition("Low balance $ 5.00 per month", "$ 5.00")).toBe(false);
     expect(condition("Savvy Spending - Minimum Balance $4.95/Month if the minimum average daily balance is not met", "$4.95")).toBe(false);
+  });
+});
+
+describe("withoutLeadingFootnoteMark (v74)", () => {
+  // Bank 409 (doc 34088), 1172 (doc 31519), 8016 (doc 28881), 1470 (doc 36224) on prod, Oct 16.
+  const footnotes = [
+    "Account bears no interest\n\n1Monthly fee of $5.95 applies when you do not meet any of the following requirements:",
+    "No monthly maintenance fee by completing ONE of the requirements2\n2Monthly fee of $10 is waived with one of the following:",
+    "No monthly fee if enrolled in eStatements1\n1Paper statement charge of $5.00 will apply if not enrolled in eStatements.",
+    "3Automated Overdraft item fee of $32.00 imposed for each Automated Overdraft item.",
+    "1A dormant fee of $5.00 may be charged each cycle period",
+    "1monthly minimum balance fee $10.00 per month",
+    "$10.00 each | 10NON-MEMBER Loan Application Fee",
+    "7NSF Fee | $30.00",
+  ];
+
+  it("cuts a footnote number the page prints opening a line or a cell", () => {
+    expect(withoutLeadingFootnoteMark("1Monthly fee", [footnotes[0]])).toBe("Monthly fee");
+    expect(withoutLeadingFootnoteMark("2Monthly fee", [footnotes[1]])).toBe("Monthly fee");
+    expect(withoutLeadingFootnoteMark("1Paper statement charge", [footnotes[2]])).toBe("Paper statement charge");
+    expect(withoutLeadingFootnoteMark("3Automated Overdraft item fee", [footnotes[3]])).toBe("Automated Overdraft item fee");
+    expect(withoutLeadingFootnoteMark("1A dormant fee", [footnotes[4]])).toBe("A dormant fee");
+    expect(withoutLeadingFootnoteMark("1monthly minimum balance fee", [footnotes[5]])).toBe("Monthly minimum balance fee");
+    expect(withoutLeadingFootnoteMark("10NON-MEMBER Loan Application Fee", [footnotes[6]])).toBe("NON-MEMBER Loan Application Fee");
+    expect(withoutLeadingFootnoteMark("7NSF Fee", [footnotes[7]])).toBe("NSF Fee");
+  });
+
+  it("keeps a name the page also prints inside a line: 3Hill CU is the credit union (bank 8427, doc 14143)", () => {
+    const page = "Share Draft Order (Price varies according to style) | Call 3Hill CU for Details\n3Hill CU Cashier’s Checks | $ 5.00";
+    expect(withoutLeadingFootnoteMark("3Hill CU Cashier’s Checks", [page])).toBeNull();
+  });
+
+  it("keeps box sizes, ordinals, times, a lone capital and two capitals, whatever the page", () => {
+    const page = (name: string) => [`${name} | $10.00`];
+    for (const name of ["3x10", "5X 6", "10x10 Box", "1st Rewards Checking Monthly Fee", "2nd ATM/Debit Card or Replacement", "3rd Party Written Account Verification", "1ST CONTINUOUS OVERDRAFT CHARGE", "24hr Virtual Branch", "3D Secure Fee", "2FA Token Fee", "2FA-Token Fee"]) {
+      expect(withoutLeadingFootnoteMark(name, page(name))).toBeNull();
+    }
+  });
+
+  it("cuts nothing without the page, or when the page never prints the token", () => {
+    expect(withoutLeadingFootnoteMark("1Monthly fee", [])).toBeNull();
+    expect(withoutLeadingFootnoteMark("1Monthly fee", ["Monthly fee $5.95"])).toBeNull();
+    expect(withoutLeadingFootnoteMark("Monthly fee", [footnotes[0]])).toBeNull();
+  });
+
+  it("is applied to every read, so Knox stores the name without its mark", () => {
+    const read = runFreeSpecialists("Basic Checking\n" + footnotes[0]).candidates.map((fee) => fee.feeName);
+    expect(read.some((name) => /^\d/.test(name))).toBe(false);
   });
 });

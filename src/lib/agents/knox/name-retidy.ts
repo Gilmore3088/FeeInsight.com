@@ -5,7 +5,7 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { feedbackSchemaReady, recordFeedback } from "@/lib/agents/learning/feedback";
 import { repairNameShape, tidyFeeName } from "@/lib/agents/knox/layout";
-import { stripFootnoteMarks, usableName } from "@/lib/agents/knox/rules";
+import { hasLeadingFootnoteShape, stripFootnoteMarks, usableName, withoutLeadingFootnoteMark } from "@/lib/agents/knox/rules";
 import { traceLiveFee, type InstitutionText, type LiveFeeRow } from "@/lib/agents/hamilton/source-check";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { runFreeSpecialists } from "@/lib/agents/knox/specialists";
@@ -642,8 +642,13 @@ function fullyTidiedName(name: string, canonicalKey: string): string | null {
  * Nonsufficient funds" read as "00 per month Nonsufficient funds"), and a row number read as a
  * cell ("13 | Outgoing domestic wire transfer"). 44 live fees at 21 banks on 2026-10-13. A name
  * that begins with its own number ("30 Day Late Charge", "12 Months of Inactivity") is left alone.
+ * v20: a footnote number glued to the front of the name ("1Monthly fee", "3Automated Overdraft item
+ * fee", "10NON-MEMBER Loan Application Fee"), cut only where the fee's own page prints that token
+ * opening a line or a cell and never inside a line (`withoutLeadingFootnoteMark`, Knox rules v74):
+ * "3Hill CU Cashier's Checks" keeps its name, since the page also says "Call 3Hill CU for Details".
+ * 35 live fees at 25 banks carried one on 2026-10-16.
  */
-export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 19 } as const;
+export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 20 } as const;
 export const NAME_RETIDY_KIND = "name_retidied";
 /**
  * Institutions the scan visits first after a version change, then the rest in id order. v9:
@@ -1398,7 +1403,17 @@ export function planRetidy(
     const controlRead = spacedControlName(storedName) ?? (fontMapped ? fontDecodedName(storedName) : null);
     const fontRead = controlRead ?? unligated;
     // v17: and junk glyphs cut from its start and end.
-    const spaced = junkStrippedName(fontRead ?? stored.fee_name) ?? fontRead;
+    const junkFree = junkStrippedName(fontRead ?? stored.fee_name) ?? fontRead;
+    // v20: a footnote number glued to the front of the name, where the fee's own page prints the
+    // footnote as its own line or cell ("1Monthly fee" from "1Monthly fee of $5.95 applies ...").
+    const unmarked = withoutLeadingFootnoteMark(junkFree ?? stored.fee_name, storedOwnTexts);
+    // A name whose only flaw was the mark's shape, and whose page shows it is no mark ("3Hill CU"),
+    // stays as it is: the earlier versions never tidied it.
+    if (!unmarked && !junkFree && hasLeadingFootnoteShape(stored.fee_name) && !messyBeforeV16(stored.fee_name) && !openerOnlyName(stored.fee_name)) {
+      skipped.no_better_name += 1;
+      continue;
+    }
+    const spaced = unmarked ?? junkFree;
     const fee = spaced ? { ...stored, fee_name: spaced } : stored;
     const readTexts = fontRead
       ? texts.map((text) =>
@@ -1608,6 +1623,8 @@ export function retidyDueInstitutions(
                    OR fp.fee_name ~* '\\m(i|we|you|my|our|your|will|may|must|shall)\\M'
                    OR length(fp.fee_name) > 80
                    OR fp.fee_name ~ ${FOOTNOTE_SQL}
+                   -- v20: a number glued to the front of a word; planRetidy reads the page to decide.
+                   OR (fp.fee_name ~ '^[0-9]{1,2}[A-Za-z]' AND fp.fee_name !~* '^[0-9]+[[:space:]]*x[[:space:]]*[0-9]')
                    OR fp.fee_name <> btrim(fp.fee_name)
                    OR fp.fee_name ~* ${DOUBLED_WORD_SQL}
                    OR length(fp.fee_name) - length(replace(fp.fee_name, '(', ''))
@@ -1857,7 +1874,8 @@ export async function retidyLiveFeeNames(
  * footnote number, untrimmed space, a doubled word or a cut-off parenthesis.
  */
 export function isMessyName(name: string): boolean {
-  return messyBeforeV16(name) || openerOnlyName(name);
+  // v20: or a number glued to its front the way a footnote mark is (the page decides in planRetidy).
+  return messyBeforeV16(name) || openerOnlyName(name) || hasLeadingFootnoteShape(name);
 }
 
 /** v16: a name the earlier versions left alone whose only flaw is how it opens (lower case, a list marker, an article). */

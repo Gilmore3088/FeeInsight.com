@@ -893,3 +893,35 @@ describe("v19: cut cents or a row number in front of the name (#1196)", () => {
   });
 });
 
+
+describe("planRetidy v20: a footnote number glued to the front of a live name", () => {
+  const own = (normalized_text: string) => [{ source_document_id: 70, normalized_text }];
+
+  it("cuts it where the fee's own page prints the footnote (bank 8016, doc 28881)", () => {
+    const page = own("No monthly fee if enrolled in eStatements1\n\n1Paper statement charge of $5.00 will apply if not enrolled in eStatements.");
+    const row = fee({ fee_name: "1Paper statement charge", canonical_fee_key: "paper_statement", amount: 5 });
+    expect(planRetidy([row], page).renames.map((rename) => [rename.oldName, rename.newName])).toEqual([["1Paper statement charge", "Paper statement charge"]]);
+  });
+
+  it("cuts it from a table cell (bank 7239, doc 20097)", () => {
+    const page = own("$25.00 each | 8Legal Process Service (Garnishment/Levy)");
+    const row = fee({ fee_name: "8Legal Process Service (Garnishment/Levy)", canonical_fee_key: "garnishment_levy", amount: 25 });
+    expect(planRetidy([row], page).renames.map((rename) => rename.newName)).toEqual(["Legal Process Service (Garnishment/Levy)"]);
+  });
+
+  it("keeps 3Hill CU, which the page prints inside a line too (bank 8427, doc 14143)", () => {
+    const page = own("Share Draft Order | Call 3Hill CU for Details\n3Hill CU Cashier’s Checks | $ 5.00");
+    const row = fee({ fee_name: "3Hill CU Cashier’s Checks", canonical_fee_key: "cashiers_check", amount: 5 });
+    expect(planRetidy([row], page).renames).toEqual([]);
+  });
+
+  it("keeps box sizes, ordinals and 2FA", () => {
+    const rows = [
+      fee({ fee_published_id: 1, fee_name: "3x10", canonical_fee_key: "safe_deposit_box", amount: 30 }),
+      fee({ fee_published_id: 2, fee_name: "2nd ATM/Debit Card or Replacement", canonical_fee_key: "card_replacement", amount: 10 }),
+      fee({ fee_published_id: 3, fee_name: "2FA Token Fee", canonical_fee_key: "card_replacement", amount: 15 }),
+    ];
+    const page = own("3x10 | $30.00\n2nd ATM/Debit Card or Replacement | $10.00\n2FA Token Fee | $15.00");
+    expect(planRetidy(rows, page).renames).toEqual([]);
+  });
+});
