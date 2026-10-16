@@ -112,6 +112,46 @@ describe("feeEvidence", () => {
     expect(printsAmount("Check Cashing Fee - Members | Waived", 0)).toBe(true);
   });
 
+  // Bank Iowa's account comparison (doc 31875, lines 533-539 of its stored text, read Oct 16).
+  const BANK_IOWA = [
+    "Learn More",
+    "",
+    "Business Checking for Ag Our interest-earning account for higher balances Learn More | Freebird Business Checking for Ag No-fee checking** Learn More | Interest Checking for Ag Our interest-earning account for higher balances Learn More | Commercial Checking for Ag Our interest-earning account for higher balances Learn More",
+    "",
+    "Minimum Opening Deposit | $100 | $100 | $100 | $100",
+    "",
+    "Monthly Service Charge | $10 monthly service charge ($1,000 minimum balance to avoid monthly service charge)* | $0 | $10 monthly service charge ($500 minimum balance to avoid monthly service charge)* | $20",
+    "",
+    "Minimum Balance Required | $1,000 to avoid monthly service charge | $0 | $500 to avoid monthly service charge | $0",
+  ].join("\n");
+  const BANK_IOWA_NOTE =
+    'Knox deterministic extraction from Rosetta artifact #29776. excerpt="Monthly Service Charge | $10 monthly service charge ($1,000 minimum balance to avoid monthly service charge)* | $0 | $10 monthly service charge ($500 minimum balance to avoid month"';
+
+  it("cuts an account-comparison row to the fee's own column, named by its header (Bank Iowa 141041)", () => {
+    const evidence = feeEvidence({ fee_name: "Monthly service charge", amount: "20.00", fee_category: "monthly_maintenance", extraction_note: BANK_IOWA_NOTE }, BANK_IOWA);
+    expect(evidence).toEqual({ line: "Monthly Service Charge | $20", heading: "Commercial Checking for Ag", basis: expect.any(String) });
+  });
+
+  it("gives nothing for a several-price row with no header to name the column", () => {
+    const text = BANK_IOWA.split("\n").slice(4).join("\n");
+    expect(feeEvidence({ fee_name: "Monthly service charge", amount: 20, fee_category: "monthly_maintenance", extraction_note: BANK_IOWA_NOTE }, text)).toBeNull();
+    // Nor from the stored line alone: its first price is another account's.
+    expect(feeEvidence({ fee_name: "Monthly service charge", amount: 20, fee_category: "monthly_maintenance", extraction_note: BANK_IOWA_NOTE }, null)).toBeNull();
+  });
+
+  it("drops a leading cell that belongs to a neighbouring column (American Bank & Trust 23078)", () => {
+    const evidence = feeEvidence(
+      {
+        fee_name: "AB&T Bill Pay +PLUS",
+        amount: "10.00",
+        fee_category: "bill_pay",
+        extraction_note: 'Knox deterministic extraction from Rosetta artifact #5108. excerpt="Non-customer | AB&T Bill Pay +PLUS | $10.00 per month unlimited use"',
+      },
+      null,
+    );
+    expect(evidence?.line).toBe("AB&T Bill Pay +PLUS | $10.00 per month unlimited use");
+  });
+
   it("falls back to the stored line only when it prints the price", () => {
     const fee = {
       fee_name: "Stop Payment",

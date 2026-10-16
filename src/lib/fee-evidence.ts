@@ -136,24 +136,118 @@ function namedPriceLine(text: string, feeName: string, amount: number): string |
   return found.length === 1 ? found[0] : null;
 }
 
+const CELL_SPLIT = /\s*\|\s*/;
+const CELL_PRICE = /\$\s*(\d[\d,]*(?:\.\d{1,2})?)|(?<![\d.])\$?\.(\d{2})\b|\b(free|no charge|no fee|none|n\/c)\b/i;
+const NAME_WORD = /[a-z][a-z'&+]{2,}/g;
+const NOT_NAME_WORDS = new Set(["fee", "fees", "charge", "charges", "per", "the", "and", "for", "each", "item", "items", "with", "only", "monthly", "month"]);
+/** Header rows a column search looks up before giving up. */
+const HEADER_LOOKBACK = 12;
+/** An account column's name: its words up to the account word, plus a "for Ag"-style tail. */
+const COLUMN_NAME = /^\s*((?:[A-Z0-9][\w&'’®+-]*\s+){0,5}?(?:checking|savings|money market|share draft|account|club|certificate|ira|cd)\b(?:\s+for\s+[A-Z][\w&]*)?)/i;
+
+function cells(line: string): string[] {
+  return line.split(CELL_SPLIT).map((cell) => cell.trim()).filter((cell) => cell.length > 0);
+}
+
+/** A cell's price: the first figure it prints after "$", or 0 for a word for free; null for none. */
+function cellPrice(cell: string): number | null {
+  const match = cell.match(CELL_PRICE);
+  if (!match) return null;
+  if (match[3]) return 0;
+  if (match[2]) return Number(match[2]) / 100;
+  return Number(match[1].replace(/,/g, ""));
+}
+
+function nameWords(text: string): Set<string> {
+  const words = text.toLowerCase().replace(/[‘’ʼ`]/g, "'").match(NAME_WORD) ?? [];
+  return new Set(words.map((word) => word.replace(/'s?$/, "")).filter((word) => !NOT_NAME_WORDS.has(word)));
+}
+
+/** The index of the text line that is `line` (or, failing that, the one line holding its start). */
+function lineIndex(lines: string[], line: string): number | null {
+  const whole = line.replace(/\s+/g, " ").trim();
+  const exact = lines.flatMap((row, index) => (row === whole ? [index] : []));
+  if (exact.length === 1) return exact[0];
+  const needle = whole.slice(0, 80);
+  const holding = lines.flatMap((row, index) => (needle.length >= 8 && row.includes(needle) ? [index] : []));
+  return holding.length === 1 ? holding[0] : null;
+}
+
+/**
+ * The account an account-comparison column names, from the header row above a row of `width`
+ * cells: a price-less row of the same width, or one cell narrower when the row opens with its
+ * label ("Business Checking for Ag ... | Freebird Business Checking for Ag ... | ..." over
+ * "Monthly Service Charge | $10 ... | $0 | $10 ... | $20"). Null when no header row is found or the
+ * column's cell names no account.
+ */
+function columnHeader(lines: string[], rowIndex: number, width: number, column: number): string | null {
+  let looked = 0;
+  for (let i = rowIndex - 1; i >= 0 && looked < HEADER_LOOKBACK; i -= 1) {
+    const row = lines[i];
+    if (!row) continue;
+    looked += 1;
+    const header = cells(row);
+    if (header.length < 2 || header.some((cell) => cellPrice(cell) !== null)) continue;
+    const cell = header.length === width ? header[column] : header.length === width - 1 ? header[column - 1] : null;
+    if (cell == null) continue;
+    const name = cell.match(COLUMN_NAME)?.[1]?.trim();
+    return name ? name.replace(/[®™℠*]/g, "").trim() : null;
+  }
+  return null;
+}
+
+/**
+ * The fee's own part of a schedule line. A one-price line is kept, its fee's own cells only
+ * (`ownCells`, #1394), less any leading price-less cell that shares no word with the fee's name
+ * ("Non-customer | AB&T Bill Pay +PLUS | $10.00 ...": "Non-customer" is the next column's).
+ * A row printing several prices must be cut to the fee's own price cell: by `ownCells`, or as an
+ * account-comparison row, its label plus the one cell at the fee's price, under the column's
+ * header ("Commercial Checking for Ag"). A row that can't be cut is null: a row whose first price
+ * is another account's is never shown as this fee's evidence (Bank Iowa 141041's $20, Oct 16).
+ */
+function ownPart(raw: string, feeName: string, amount: number, text: string | null | undefined): { line: string; heading: string | null } | null {
+  const all = cells(raw);
+  const own = ownCells(raw, feeName, amount);
+  const isolated = own !== raw;
+  const distinct = new Set(all.map(cellPrice).filter((price): price is number => price !== null).map((price) => price.toFixed(2)));
+  if (all.length >= 2 && distinct.size > 1 && !isolated) {
+    const at = all.flatMap((cell, index) => (index > 0 && cellPrice(cell) !== null && Math.abs((cellPrice(cell) as number) - amount) < 0.005 ? [index] : []));
+    if (at.length !== 1 || !text) return null;
+    const lines = text.split(/\r?\n/).map((row) => row.replace(/\s+/g, " ").trim());
+    const rowIndex = lineIndex(lines, raw);
+    if (rowIndex == null) return null;
+    const header = columnHeader(lines, rowIndex, all.length, at[0]);
+    return header ? { line: `${all[0]} | ${all[at[0]]}`, heading: header } : null;
+  }
+  let kept = cells(own);
+  if (kept.length >= 2 && kept.some((cell) => cellPrice(cell) !== null && Math.abs((cellPrice(cell) as number) - amount) < 0.005)) {
+    const wanted = nameWords(feeName);
+    while (kept.length > 1 && cellPrice(kept[0]) === null && ![...nameWords(kept[0])].some((word) => wanted.has(word))) kept = kept.slice(1);
+  }
+  const line = kept.length === cells(own).length ? own : kept.join(" | ");
+  // Still several cells with the first price another fee's: not this fee's line.
+  const first = cells(line).map(cellPrice).find((price) => price !== null);
+  if (cells(line).length >= 2 && first != null && Math.abs(first - amount) >= 0.005) return null;
+  return { line, heading: text ? headingAbove(text, raw) : null };
+}
+
 /** The fee's evidence from its own document's text, or null when no line shows its price. */
 export function feeEvidence(fee: EvidenceFee, text: string | null | undefined): FeeEvidence | null {
   if (fee.amount == null || fee.amount === "") return null;
   const amount = Number(fee.amount);
   if (!Number.isFinite(amount) || amount < 0) return null;
-  // A two-column row keeps only the fee's own cells, never the neighbouring column's fee (#1394).
-  const build = (raw: string, basis: EvidenceBasis): FeeEvidence => ({
-    line: aroundPrice(tidy(fee.fee_name ? ownCells(raw, fee.fee_name, amount) : raw), amount),
-    heading: text ? headingAbove(text, raw) : null,
-    basis,
-  });
+  const build = (raw: string, basis: EvidenceBasis): FeeEvidence | null => {
+    const part = ownPart(raw, fee.fee_name ?? "", amount, text);
+    return part ? { line: aroundPrice(tidy(part.line), amount), heading: part.heading, basis } : null;
+  };
   if (text && fee.fee_name) {
     const traced = checkFeeAgainstSource(text, fee.fee_name, amount, ".", fee.fee_category);
-    if (traced.ok && printsAmount(traced.sourceLine, amount)) return build(traced.sourceLine, "traced");
+    const tracedLine = traced.ok && printsAmount(traced.sourceLine, amount) ? build(traced.sourceLine, "traced") : null;
+    if (tracedLine) return tracedLine;
     const banded = !traced.ok && traced.reason === "tiered_fee" ? namedPriceLine(text, fee.fee_name, amount) : null;
-    if (banded) return build(banded, "traced");
+    const bandedLine = banded ? build(banded, "traced") : null;
+    if (bandedLine) return bandedLine;
   }
   const stored = storedLineOf(fee);
-  if (stored && printsAmount(stored, amount)) return build(stored, "stored_line");
-  return null;
+  return stored && printsAmount(stored, amount) ? build(stored, "stored_line") : null;
 }
