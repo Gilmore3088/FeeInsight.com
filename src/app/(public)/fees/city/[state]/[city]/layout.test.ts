@@ -5,6 +5,7 @@ const fullCityForCut = vi.fn();
 vi.mock("@/lib/data-store", () => ({
   getCityInstitutions: (...args: unknown[]) => getCityInstitutions(...args),
   fullCityForCut: (...args: unknown[]) => fullCityForCut(...args),
+  cityHasBranches: async () => false,
 }));
 vi.mock("next/navigation", () => ({
   notFound: () => {

@@ -229,6 +229,7 @@ export async function getCityInstitutions(city: string, stateCode: string): Prom
     LEFT JOIN (
       SELECT institution_id, COUNT(*) as fee_count
       FROM published_fee_catalog WHERE review_status = 'approved'
+        AND ${sql.unsafe(statsRowFilter("published_fee_catalog"))}
       GROUP BY institution_id
     ) fc ON ct.id = fc.institution_id
     WHERE LOWER(ct.city) = LOWER(${city}) AND ct.state_code = ${upperState}

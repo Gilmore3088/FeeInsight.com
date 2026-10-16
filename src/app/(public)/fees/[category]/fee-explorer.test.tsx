@@ -19,7 +19,7 @@ const dots: MarketDot[] = [
 function renderExplorer() {
   render(
     <FeeExplorer points={points}>
-      <ExplorerChart median={30} />
+      <ExplorerChart median={30} measure="median published price" />
       <ExplorerMarkets dots={dots} band={band} dim="district" ariaLabel="By district" />
     </FeeExplorer>,
   );
@@ -32,7 +32,7 @@ describe("fee explorer", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /^\$25 to \$29\.99: 2 institutions/ }));
     expect(screen.getByText("2 institutions")).toBeTruthy();
-    expect(screen.getByText("charge $25 to $29.99, 20% of all")).toBeTruthy();
+    expect(screen.getByText("with a median published price of $25 to $29.99, 20% of all")).toBeTruthy();
     // Both $25 fees are in San Francisco: half its institutions, none of Philadelphia's.
     expect(screen.getByText("50%")).toBeTruthy();
     expect(screen.getByText("0%")).toBeTruthy();

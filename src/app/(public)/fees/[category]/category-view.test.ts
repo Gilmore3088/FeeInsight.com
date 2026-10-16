@@ -73,7 +73,7 @@ describe("fee category view", () => {
       ["Credit unions", 27, 900],
     ]);
     expect(charterFinding(dots, "Overdraft (OD)")).toBe(
-      "Banks charge a median $32 for an overdraft fee, $5 more than credit unions ($27).",
+      "The bank median overdraft fee is $32, $5 above the credit union median of $27.",
     );
     expect(charterDots(summary({ cu_count: 2 }), band)).toHaveLength(1);
   });

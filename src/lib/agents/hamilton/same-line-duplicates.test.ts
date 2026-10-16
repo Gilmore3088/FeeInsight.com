@@ -7,7 +7,7 @@ vi.mock("./publish", () => ({
   unclearName: vi.fn((name: string | null) => /\ba$/.test(name ?? "")),
 }));
 
-import { retireSameLineDuplicates, REVIEWED_REPEATS, SOURCE_CHECKED_SEPARATE_LINES } from "./same-line-duplicates";
+import { restoreSameLineDuplicates, retireSameLineDuplicates, REVIEWED_REPEATS, SOURCE_CHECKED_SEPARATE_LINES } from "./same-line-duplicates";
 
 function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
@@ -94,5 +94,17 @@ describe("retireSameLineDuplicates", () => {
     expect([...SOURCE_CHECKED_SEPARATE_LINES.keys()]).toEqual([104713, 104650, 104875, 104615, 104906]);
     // Reviewed repeats map to the line that stays (104758 stays; its garbled twin 14458 goes).
     expect([...REVIEWED_REPEATS]).toEqual([[14458, 104758], [83889, 83890], [87575, 85596], [99504, 58624], [121442, 121441]]);
+  });
+});
+
+describe("restoreSameLineDuplicates and the account type hold (#1100)", () => {
+  it("keeps a copy down while its older line is held, so the held fee does not come back", async () => {
+    const db = vi.fn(() => Promise.resolve([])) as unknown as Parameters<typeof restoreSameLineDuplicates>[0] & ReturnType<typeof vi.fn>;
+    expect(await restoreSameLineDuplicates(db, { runId: 5, dryRun: true })).toBe(0);
+    const [strings, ...values] = db.mock.calls.find((call) => templateText(call[0]).includes("LEFT JOIN published_fee_records older")) as [TemplateStringsArray, ...unknown[]];
+    const text = templateText(strings);
+    expect(text).toContain("older.rolled_back_at IS NOT NULL");
+    expect(text).toContain("AND older.rolled_back_reason NOT LIKE");
+    expect(values).toContain("account_type_hold:%");
   });
 });

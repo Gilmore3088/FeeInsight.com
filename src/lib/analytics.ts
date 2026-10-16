@@ -40,6 +40,8 @@ export type AnalyticsEvent =
   | "market_report_view"
   /** The public sample report opened while it is live (value funnel A5). */
   | "sample_report_view"
+  /** A link to the free sample report was clicked (first step of the report funnel). */
+  | "sample_report_click"
   /** The private pay page for a quoted institution report (/pay/report/[token]) opened. */
   | "report_pay_view"
   /** The pay page shown after Stripe confirmed the card payment. */

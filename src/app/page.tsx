@@ -27,21 +27,17 @@ import { SearchModal } from "@/components/public/search-modal";
 import { getFeeCategoryDetailCached } from "@/lib/data-store/public-cached-reads";
 import { shortenPageLife } from "@/lib/data-store/public-read-cache";
 import { LandingHero } from "./landing-hero";
-import { LandingDemo } from "./landing-demo";
-import { LandingPillars } from "./landing-pillars";
-import { LandingProvenance } from "./landing-provenance";
+import { LandingProducts } from "./landing-products";
 import { LandingPricing } from "./landing-pricing";
 import { LandingFaq } from "./landing-faq";
-import { LandingClose } from "./landing-close";
 import { buildHomeData, buildSampleView, homeReadsCacheable } from "./landing-shared";
-import { readSampleLadder } from "./for-institutions/market-ladder";
 import { buildScenario } from "./subscribe/scenario";
 
-// The buyer promise from site v3 brief 08 §B.3 (h1) and its subhead; no counts, so nothing goes stale.
-const HOME_TITLE = `Know where your fees stand, with a source for every figure | ${SITE_NAME}`;
+// The promise (James, Oct 16); no counts, so nothing goes stale.
+const HOME_TITLE = `Your next fee review doesn't need to take weeks | ${SITE_NAME}`;
 const HOME_DESCRIPTION =
-  `The ${PRODUCT_NAME} reads the published fee schedules of U.S. banks and credit unions. ` +
-  "See each of your fees against your market, your state, your Fed district, your peer group and the nation.";
+  `Compare your fees with competitors using the ${PRODUCT_NAME}, then turn the evidence into analysis and ` +
+  "board reports with Hamilton. Every figure traces to the institution's own published fee schedule.";
 
 export const metadata: Metadata = {
   title: { absolute: HOME_TITLE },
@@ -86,7 +82,7 @@ export default async function LandingPage() {
   // index, research hub and directory to the number. The district medians are the cached
   // read /fees/overdraft already makes; a failed read only hides the district rows. The
   // live sample report (the same one /for-institutions and the sample page show) gives the
-  // named bank's fees, their source lines and its market ladder; a failed read hides them.
+  // named bank, its competitors and its report for the workflow section; a failed read hides it.
   // The sample is read once: it is null both when none passes the bar today and on error.
   const [{ summary, categories }, sampleRead, overdraftRead] = await Promise.all([
     getPublicSnapshot(),
@@ -107,21 +103,16 @@ export default async function LandingPage() {
     ),
   ]);
   const liveSample = sampleRead.report;
-  // A failed state or charter read only drops that ladder row, but it still counts as a failed read.
-  const ladderRead = liveSample ? await readSampleLadder(liveSample, categories) : { ladder: null, failed: false };
-  const ladder = ladderRead.ladder;
   const cacheable = homeReadsCacheable({
     summary,
     categories,
     sampleFailed: sampleRead.failed,
     overdraftFailed: overdraftRead.failed,
-    ladderFailed: ladderRead.failed,
   });
   // A render with a failed read is cached for a minute, not fifteen (see the note at the top).
   if (!cacheable) await shortenPageLife();
   const data = buildHomeData(summary, categories, overdraftRead.detail?.by_fed_district, {
     sample: buildSampleView(liveSample),
-    ladder,
     scenario: buildScenario("Overdraft", categories.find((c) => c.fee_category === "overdraft")),
   });
 
@@ -137,13 +128,12 @@ export default async function LandingPage() {
       />
       <ConsumerNav />
       <main id="main-content">
-        <LandingHero summary={summary} />
-        <LandingDemo data={data} />
-        <LandingPillars data={data} />
-        <LandingProvenance summary={summary} />
+        {/* James's order (Oct 16): the promise, the Index and Hamilton with a useful answer
+            and the report, the subscription, then the questions buyers ask. */}
+        <LandingHero />
+        <LandingProducts data={data} summary={summary} report={liveSample} />
         <LandingPricing />
         <LandingFaq summary={summary} />
-        <LandingClose />
       </main>
       <CustomerFooter />
       <SearchModal />

@@ -110,6 +110,8 @@ import { knoxMissesDetail, runKnoxMisses, summarizeKnoxMisses } from "@/lib/agen
 import { runBayesLedger, summarizeBayesLedger, BAYES_LEDGER_VERSION } from "@/lib/agents/bayes/ledger";
 import { runScheduleCheck, summarizeScheduleCheck, SCHEDULE_CHECK_VERSION } from "@/lib/agents/atlas/schedule-check";
 import { cityRepairDetail, runCityRepair, summarizeCityRepair } from "@/lib/agents/atlas/city-repair";
+import { answerKeyRelabelDetail, runAnswerKeyRelabels, summarizeAnswerKeyRelabels } from "@/lib/agents/atlas/answer-key-relabels";
+import { inSavepoint } from "@/lib/agents/savepoint";
 import { MARKET_SPREAD_WORKFLOW, runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
 import { FEE_DEPTH_WORKFLOW, runFeeDepth, summarizeFeeDepth } from "@/lib/agents/content/fee-depth";
 import { runOdByState, summarizeOdByStateResult } from "@/lib/agents/content/od-by-state";
@@ -2459,12 +2461,20 @@ async function executeAgenticStep(
       };
     }
     case "score-answer-key": {
+      // First James's answer-key decisions (atlas/answer-key-relabels.ts, #1099), so today's score
+      // reads the corrected key. It writes only answer_key_fees.canonical_key/conditions on the
+      // listed lines, in its own savepoint: a failed relabel is reported and never stops the score.
+      const relabel = await inSavepoint(tx, (scope) => runAnswerKeyRelabels({ db: scope, dryRun: run.runKind === "dry_run" }))
+        .then((value) => ({ value, error: null as string | null }))
+        .catch((error: unknown) => ({ value: null, error: error instanceof Error ? error.message : String(error) }));
       const result = await runAnswerKeyScore({ runId: run.id, dryRun: run.runKind === "dry_run", db: tx });
       const score = result.score;
+      const relabelLine = relabel.value ? summarizeAnswerKeyRelabels(relabel.value) : `Atlas's answer-key relabel failed: ${relabel.error}.`;
       return {
         status: "completed",
-        summary: summarizeAnswerKeyScore(result),
+        summary: `${relabelLine} ${summarizeAnswerKeyScore(result)}`,
         detail: {
+          answer_key_relabel: relabel.value ? answerKeyRelabelDetail(relabel.value) : { error: relabel.error },
           schema_ready: result.schemaReady,
           score_run_id: result.scoreRunId,
           scorer_version: score?.scorerVersion ?? null,

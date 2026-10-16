@@ -1140,10 +1140,14 @@ Darwin owns verification and classification.
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v64, and v65 once `RESEARCH_SPLIT_LIVE` is on (`CATEGORY_GUARD_VERSION` in
-  `src/lib/fee-category-guard.ts`; off, v65's rules read every live fee as v64 did, so the re-read
-  waits for switch-on). The notes for v43 to v65 are the version comments above that constant, not
-  this guide; v58 is the bond-return lesson above. v65 (James, Oct 15, #1398) adds guard rules for `excess_withdrawal` and
+- The guard is at v66, and v67 once `RESEARCH_SPLIT_LIVE` is on (`CATEGORY_GUARD_VERSION` in
+  `src/lib/fee-category-guard.ts`; off, v65's rules read every live fee as v64 did, so v66 is v64
+  plus v66's rule and v67 is v65 plus it). v66 (James, Oct 16, #1099 option A; #1605): a deposit for
+  the night depository key is a key charge, not the service, so `night_deposit` refuses it; a lost or
+  replaced key stays. Its live re-check is the category guard's live sweep (Hamilton's guard
+  catch-up on the first tick after the deploy, then every publish step): 10 live key deposits fail
+  it, each flagged for the second look and then taken down. The notes for v43 to v67 are the version
+  comments above that constant, not this guide; v58 is the bond-return lesson above. v65 (James, Oct 15, #1398) adds guard rules for `excess_withdrawal` and
   `returned_mail` (amount envelopes $1 to $50 in `envelopes.ts`), re-files research filed under
   either back to account research. Once `RESEARCH_SPLIT_LIVE` is on, an over-limit activity charge
   on a monthly maintenance row's own line (`refileFromLine`) that names savings, money market or

@@ -4,12 +4,20 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { STATE_NAMES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
+import { PAGE_CRUMBS, PAGE_H1, PAGE_HEADER, PAGE_LEDE } from "@/components/public/page-header";
 import { SITE_URL } from "@/lib/constants";
-import { getCitiesInStateCached } from "@/lib/data-store/public-cached-reads";
+import { getStateMarketCitiesCached } from "@/lib/data-store/public-cached-reads";
+import { CityList, type CityLink } from "./city-list";
+import { titleCase } from "../[city]/city-lookup";
 
 interface PageProps {
   params: Promise<{ state: string }>;
 }
+
+/** Markets offered as one-tap links under the search. */
+const SHORTCUTS = 6;
+
+const LINK = "font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink";
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { state } = await params;
@@ -17,14 +25,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   if (!stateName) notFound();
 
   return {
-    title: `Bank Fees by City in ${stateName} - Local Fee Comparison`,
-    description: `Compare bank fees by city in ${stateName}. Find banks and credit unions with lower fees in your area. Overdraft fees, monthly charges, and more.`,
-    keywords: [
-      `${stateName} bank fees by city`,
-      `${stateName} banks with lower fees`,
-      `${stateName} bank fee comparison`,
-      `${stateName} credit union fees`,
-    ],
+    title: `Bank Fees by City in ${stateName}`,
+    description: `Compare the published fees of the banks and credit unions with branches in each ${stateName} city: overdraft, monthly maintenance, ATM and more, each with its source.`,
   };
 }
 
@@ -35,7 +37,14 @@ export default async function StateCityDirectory({ params }: PageProps) {
 
   if (!stateName) notFound();
 
-  const cities = await getCitiesInStateCached(stateCode);
+  const cities = await getStateMarketCitiesCached(stateCode);
+  // getStateMarketCities ranks by institutions with a branch in the city, most first.
+  const links: CityLink[] = cities.map((c) => ({
+    name: titleCase(c.city),
+    href: `/fees/city/${stateCode.toLowerCase()}/${encodeURIComponent(c.city.toLowerCase())}`,
+    institutions: c.institutions,
+    withFees: c.with_fees,
+  }));
 
   return (
     <>
@@ -47,85 +56,44 @@ export default async function StateCityDirectory({ params }: PageProps) {
         ]}
       />
 
-      <div className="max-w-page mx-auto px-6 py-14">
-        <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12px] text-ink-muted mb-6">
-          <Link href="/fees" className="hover:text-ink transition-colors">Fees</Link>
-          <span className="text-border">/</span>
-          <span className="text-ink-soft">{stateName}</span>
-        </nav>
-
-        <div className="flex items-center gap-2 mb-4">
-          <span className="h-px w-8 bg-brick/40" />
-          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
-            City Directory
-          </span>
-        </div>
-
-        <h1
-          className="font-extrabold text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-ink mb-2"
-          style={{ fontFamily: "var(--fi-font-sans)" }}
-        >
-          Bank Fees by City in {stateName}
-        </h1>
-        <p className="text-[14px] text-ink-muted mb-8">
-          {cities.length} cities with fee data from {cities.reduce((s, c) => s + c.with_fees, 0)} institutions
-        </p>
-
-        {cities.length === 0 ? (
-          <p className="text-ink-muted py-12 text-center">
-            No fee data available for {stateName} yet. Check back soon.
-          </p>
-        ) : (
-          <div className="rounded-xl border border-border/80 bg-white/70 backdrop-blur-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm sm:min-w-[520px]">
-                <thead>
-                  <tr className="border-b border-border/60 bg-paper/60">
-                    <th className="px-3 py-2.5 sm:px-4 text-left text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">City</th>
-                    <th className="px-3 py-2.5 sm:px-4 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">Institutions</th>
-                    <th className="px-3 py-2.5 sm:px-4 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">With fees</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/40">
-                  {cities.map((c) => (
-                    <tr key={`${c.city}-${c.state_code}`} className="hover:bg-paper/60 transition-colors">
-                      <td className="px-3 py-2.5 sm:px-4">
-                        <Link
-                          href={`/fees/city/${stateCode.toLowerCase()}/${encodeURIComponent(c.city.toLowerCase())}`}
-                          className="font-medium text-ink hover:text-brick transition-colors"
-                        >
-                          {c.city}
-                        </Link>
-                      </td>
-                      <td className="px-3 py-2.5 sm:px-4 text-right tabular-nums text-ink-muted">
-                        {c.institution_count}
-                      </td>
-                      <td className="px-3 py-2.5 sm:px-4 text-right tabular-nums font-medium text-ink">
-                        {c.with_fees}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+      <section className="border-b border-border bg-paper">
+        <div className="mx-auto max-w-page px-4 pb-10 pt-6 sm:px-6 sm:pt-10">
+          <div className={PAGE_HEADER}>
+            <nav aria-label="Breadcrumb" className={PAGE_CRUMBS}>
+              <Link href="/fees" className="hover:text-ink">Fees</Link>
+              <span aria-hidden="true">/</span>
+              <span className="text-ink-soft">{stateName}</span>
+            </nav>
+            <h1 className={`mt-4 ${PAGE_H1}`}>
+              {stateName} bank fees by city
+            </h1>
+            <p className={`mt-2 ${PAGE_LEDE}`}>
+              {links.length > 0
+                ? "Each city page compares the banks and credit unions with a branch there, using the fees they publish."
+                : `No ${stateName} city has an institution with published fees yet.`}
+            </p>
           </div>
-        )}
-
-        <div className="mt-6 flex flex-wrap gap-3">
-          <Link
-            href={`/research/state/${stateCode}`}
-            className="rounded-full border border-border px-4 py-1.5 text-[12px] font-medium text-ink-soft hover:border-brick/30 hover:text-brick transition-colors no-underline"
-          >
-            {stateName} Fee Report
-          </Link>
-          <Link
-            href="/fees"
-            className="rounded-full border border-border px-4 py-1.5 text-[12px] font-medium text-ink-soft hover:border-brick/30 hover:text-brick transition-colors no-underline"
-          >
-            Bank Fee Index
-          </Link>
+          <div className="mt-6">
+            <CityList cities={links} stateName={stateName} stateCode={stateCode} shortcuts={links.slice(0, SHORTCUTS)} />
+          </div>
+          <p className="mt-4 text-[12px] text-ink-muted">
+            A city is listed once at least one bank or credit union with a branch there has published fees. Counts are
+            institutions with a branch in the city, from the FDIC Summary of Deposits and NCUA branch records.
+          </p>
         </div>
-      </div>
+      </section>
+
+      <nav aria-label="More fee pages" className="mx-auto flex max-w-page flex-wrap gap-x-6 gap-y-2 px-4 pb-16 pt-10 text-[14px] sm:px-6">
+        <Link href={`/research/state/${stateCode}`} className={LINK}>
+          {stateName} fee report
+        </Link>
+        <Link href="/institutions" className={LINK}>
+          Search institutions
+        </Link>
+        <Link href="/fees" className={LINK}>
+          Every fee category
+        </Link>
+      </nav>
     </>
   );
 }

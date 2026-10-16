@@ -2,126 +2,66 @@ import Link from "next/link";
 import { ProLock } from "@/components/public/pro-lock";
 import { formatAbsoluteDate } from "@/lib/public-stats";
 import type { ArticleSummary } from "@/lib/data-store/articles";
+import { MARKET_CONCENTRATION_YEAR } from "@/lib/data-store/financial";
 import { SectionHeading } from "./research-hero";
 
 const SERIF = { fontFamily: "var(--fi-font-sans)" };
 
 interface Study {
   href: string;
-  kicker: string;
-  title: string;
-  body: string;
+  /** The question the study asks. */
+  question: string;
+  /** What the study shows today, said plainly; no finding is claimed before one is published. */
+  status: string;
+  /** Which data the study reads and how current it is. */
+  data: (asOf: string | null) => string;
   pro: boolean;
-  /** Tiny drawn motif for the card face; decoration only. */
-  motif: "bars" | "grid" | "book" | "sources";
 }
 
 const STUDIES: Study[] = [
   {
     href: "/research/fee-revenue-analysis",
-    kicker: "Study",
-    title: "Fee-to-revenue analysis",
-    body: "How published fee schedules line up with the service charge income reported in FDIC call reports.",
+    question: "Do institutions that publish higher fees earn more service-charge income?",
+    status: "Published so far: fee levels beside service-charge income, by asset size and by charter.",
+    data: (asOf) => `Fees as of ${asOf ?? "the latest refresh"}; income from each institution's latest call report.`,
     pro: true,
-    motif: "bars",
   },
   {
     href: "/research/market-concentration",
-    kicker: "Study",
-    title: "Market concentration & fees",
-    body: "Deposit market competition (HHI) across U.S. metro areas from FDIC Summary of Deposits data, set against fees.",
+    question: "Are fees higher where fewer banks compete for deposits?",
+    status: "Published so far: deposit concentration (HHI) for U.S. metro areas. The comparison with fees isn't published yet.",
+    data: () => `Deposits from the FDIC Summary of Deposits, ${MARKET_CONCENTRATION_YEAR}.`,
     pro: true,
-    motif: "grid",
-  },
-  {
-    href: "/guides",
-    kicker: "Guides",
-    title: "Consumer fee guides",
-    body: "Plain-language guides to overdraft, NSF, ATM, wire and maintenance fees, with live benchmarks.",
-    pro: false,
-    motif: "book",
-  },
-  {
-    href: "/research/data-sources",
-    kicker: "Reference",
-    title: "Data sources",
-    body: "Where every input comes from: fee schedules, call reports, NCUA 5300 data and the Beige Book.",
-    pro: false,
-    motif: "sources",
   },
 ];
 
-function Motif({ kind }: { kind: Study["motif"] }) {
-  const ink = "#132338";
-  const accent = "#b23a32";
+/** Studies without a published result yet, kept small and near the bottom so they don't interrupt the findings. */
+export function ResearchLibrary({ articles, asOf }: { articles: ArticleSummary[]; asOf: string | null }) {
   return (
-    <svg aria-hidden="true" viewBox="0 0 120 64" className="h-16 w-full">
-      {kind === "bars" &&
-        [18, 30, 24, 42, 36, 52].map((h, i) => (
-          <rect key={i} x={6 + i * 19} y={60 - h} width="12" height={h} rx="2" fill={i === 5 ? accent : ink} fillOpacity={i === 5 ? 1 : 0.14} />
-        ))}
-      {kind === "grid" &&
-        Array.from({ length: 24 }).map((_, i) => (
-          <rect key={i} x={6 + (i % 8) * 14} y={6 + Math.floor(i / 8) * 18} width="11" height="14" rx="2" fill={[3, 10, 11, 18].includes(i) ? accent : ink} fillOpacity={[3, 10, 11, 18].includes(i) ? 0.9 : 0.1} />
-        ))}
-      {kind === "book" && (
-        <g fill="none" stroke={ink} strokeOpacity="0.35" strokeWidth="2">
-          <path d="M60 14c-10-6-24-6-34-2v40c10-4 24-4 34 2 10-6 24-6 34-2V12c-10-4-24-4-34 2z" />
-          <path d="M60 14v40" />
-          <path d="M34 24h16M34 32h16M70 24h16M70 32h12" stroke={accent} strokeOpacity="0.9" />
-        </g>
-      )}
-      {kind === "sources" && (
-        <g>
-          {[0, 1, 2, 3].map((i) => (
-            <g key={i}>
-              <circle cx="14" cy={10 + i * 15} r="4" fill={ink} fillOpacity="0.2" />
-              <path d={`M20 ${10 + i * 15} C 60 ${10 + i * 15}, 70 32, 100 32`} stroke={ink} strokeOpacity="0.2" strokeWidth="1.5" fill="none" />
-            </g>
-          ))}
-          <circle cx="104" cy="32" r="7" fill={accent} />
-        </g>
-      )}
-    </svg>
-  );
-}
-
-export function ResearchLibrary({ articles }: { articles: ArticleSummary[] }) {
-  return (
-    <section id="library" className="scroll-mt-28">
-      <SectionHeading eyebrow="Studies & guides" title="Go deeper">
-        Original studies that connect fees to revenue and competition, plus guides written for consumers.
+    <section id="in-progress" className="scroll-mt-28">
+      <SectionHeading eyebrow="Further research" title="Research in progress">
+        Each study sets the published fees beside public financial data to answer one question. Each page shows what is published so far.
       </SectionHeading>
 
-      <div className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <ul className="mt-5 divide-y divide-border overflow-hidden rounded-2xl border border-border bg-white">
         {STUDIES.map((s) => (
-          <Link
-            key={s.href}
-            href={s.href}
-            className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-white transition-all hover:-translate-y-0.5 hover:border-brick/30 hover:shadow-lg hover:shadow-[#b23a32]/5"
-          >
-            <div className="border-b border-surface-200 bg-paper px-5 py-4">
-              <Motif kind={s.motif} />
-            </div>
-            <div className="flex flex-1 flex-col px-5 py-4">
-              <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-muted">
-                {s.kicker}
-                {s.pro && <ProLock />}
-              </p>
-              <h3 className="mt-1.5 text-[17px] font-bold leading-snug text-ink group-hover:text-brick" style={SERIF}>
-                {s.title}
-              </h3>
-              <p className="mt-1.5 flex-1 text-[13px] leading-relaxed text-ink-muted">{s.body}</p>
-              <span className="mt-3 text-[12px] font-semibold text-brick">
-                Open <span className="inline-block transition-transform group-hover:translate-x-0.5">&rarr;</span>
+          <li key={s.href}>
+            <Link href={s.href} className="group block px-5 py-4 hover:bg-paper">
+              <span className="flex items-start justify-between gap-3">
+                <span className="text-[15px] font-semibold leading-snug text-ink group-hover:text-brick" style={SERIF}>
+                  {s.question}
+                </span>
+                {s.pro && <ProLock className="mt-0.5 shrink-0" />}
               </span>
-            </div>
-          </Link>
+              <span className="mt-1 block text-[13px] leading-relaxed text-ink-soft">{s.status}</span>
+              <span className="mt-1 block text-[11px] text-ink-muted">{s.data(asOf)}</span>
+            </Link>
+          </li>
         ))}
-      </div>
+      </ul>
 
       {articles.length > 0 && (
-        <div className="mt-8">
+        <div className="mt-6">
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-muted">Latest analysis</p>
           <ul className="mt-3 divide-y divide-surface-200 rounded-2xl border border-border bg-white">
             {articles.map((a) => (
@@ -139,6 +79,18 @@ export function ResearchLibrary({ articles }: { articles: ArticleSummary[] }) {
           </ul>
         </div>
       )}
+
+      <p className="mt-4 text-[13px] text-ink-muted">
+        Also:{" "}
+        <Link href="/guides" className="font-semibold text-ink underline decoration-border underline-offset-2 hover:decoration-ink">
+          consumer fee guides
+        </Link>{" "}
+        and{" "}
+        <Link href="/research/data-sources" className="font-semibold text-ink underline decoration-border underline-offset-2 hover:decoration-ink">
+          where the data comes from
+        </Link>
+        .
+      </p>
     </section>
   );
 }

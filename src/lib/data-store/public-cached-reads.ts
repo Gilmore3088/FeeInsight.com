@@ -1,7 +1,9 @@
 import { cachedPublicRead } from "./public-read-cache";
+import { getCityMarket, getStateMarketCities } from "./city-market";
 import { getDataFreshness, getPublicStats, getStats } from "./core";
 import { getDistrictMetrics } from "./dashboard";
-import { getCheapestAndMostExpensive, getFeeCategoryDetail } from "./fees";
+import { getCheapestAndMostExpensive, getFeeCategoryDetail, getIndexRows } from "./fees";
+import { getFeeEvidence } from "./fee-evidence";
 import { getDailyCapScope, getOverdraftComplaintThemes } from "./overdraft-policies";
 import { getDistrictFeeIndexes, getPeerIndex, getStateFeeIndexes } from "./fee-index";
 import {
@@ -73,6 +75,12 @@ export const getFeeCategoryDetailCached = cachedPublicRead(
   getFeeCategoryDetail,
   (detail) => detail.fees.length === 0,
 );
+// The Bank Fee Index explorer's rows: numbers only, so the largest category stays well under 2 MB.
+export const getIndexRowsCached = cachedPublicRead("index-rows-v1", getIndexRows);
+/** Fee evidence for one page of listed rows, as entries (a Map does not survive the cache). */
+export const getFeeEvidenceEntriesCached = cachedPublicRead("fee-evidence-v1", async (ids: number[]) => [
+  ...(await getFeeEvidence(ids)).entries(),
+]);
 export const getCheapestAndMostExpensiveCached = cachedPublicRead(
   "cheapest-and-most-expensive",
   getCheapestAndMostExpensive,
@@ -88,6 +96,8 @@ export const getStateStatsCached = cachedPublicRead("state-stats", getStateStats
 export const getDistrictStatsCached = cachedPublicRead("district-stats", getDistrictStats);
 export const getStatesWithFeeDataCached = cachedPublicRead("states-with-fee-data", getStatesWithFeeData);
 export const getCitiesInStateCached = cachedPublicRead("cities-in-state", getCitiesInState);
+export const getCityMarketCached = cachedPublicRead("city-market-v1", getCityMarket);
+export const getStateMarketCitiesCached = cachedPublicRead("state-market-cities-v1", getStateMarketCities);
 export const getCityFeeAveragesCached = cachedPublicRead("city-fee-averages", getCityFeeAverages);
 export const getDataCoverageSummaryCached = cachedPublicRead("data-coverage-summary", getDataCoverageSummary);
 export const getMarketConcentrationCached = cachedPublicRead("market-concentration", getMarketConcentration);

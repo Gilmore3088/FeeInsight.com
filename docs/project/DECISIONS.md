@@ -28,6 +28,14 @@ conversations but we should not market the product as advisory." No page, form o
 **Free visitors keep each fee's national range.** James, 2026-10-16 (#1449): free visitors see the
 range on the national index ("consumer facing high-level data").
 
+**Night deposit is the service only; bag and key purchases are not scored.** James, 2026-10-16,
+option A on #1099's night deposit misses: `night_deposit` stays the night depository service, and a
+bag or key bought for it stays out, as the v60 category guard has it. A lost or replaced bag or
+key, and an annual or service fee, stay night deposit. The answer key followed the old reading, so
+its 28 confirmed bag and key purchase lines at 11 banks, 6 prefilled ones and one receptacle-key deposit leave scoring (`canonical_key = 'unmapped'`, which the
+answer-key score and Deming's Knox replay leave out), through Atlas's answer-key relabels, run by the score step
+(`src/lib/agents/atlas/answer-key-relabels.ts`) in the scoreboard run, with every line in its ledger.
+
 **A few confirmed-wrong live fees come down without asking James.** James, 2026-10-16, approving
 #1496 (Barksdale FCU's two fax fees that took a price from the next column): fixes like this
 should not wait for him. A small number of live fees (up to about 25), each confirmed wrong on
@@ -1102,3 +1110,11 @@ no page merges on green CI without waiting for one. `vercel.json` `ignoreCommand
 build when the newest commit changes only `docs`, `supabase`, `src/lib/agents`, `scripts`,
 `.github`, `.claude`, `handoff`, Markdown or test files; production builds always run. Each lane
 also puts its next several items on one branch and opens one PR, instead of one PR per item.
+
+**The API and Claude connector come with the $300 and $500 Pro plans.** James, 2026-10-16 (API and
+MCP planning thread, 05:54 to 14:56 UTC). The $300 and $500 plans, consultants included, get the
+API and the Claude connector; the $150 plan gets neither. Each paying subscriber makes their own key
+on the account page; it works while Pro is active or inside the past-due grace window, stops when
+the subscription ends, and is revoked if the plan moves to $150. No free keys unless James makes one
+himself in `/admin/api-keys`; researchers pay like everyone else. No data license (bulk downloads,
+republishing) until someone asks. Planning notes: `/mnt/project-files/api-mcp/planning-notes.md`.

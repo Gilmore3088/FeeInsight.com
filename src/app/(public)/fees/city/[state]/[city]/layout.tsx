@@ -1,9 +1,9 @@
 import { notFound, permanentRedirect } from "next/navigation";
-import { fullCityForCut } from "@/lib/data-store";
+import { cityHasBranches, fullCityForCut } from "@/lib/data-store";
 import { cityPath, dottedCityName, loadCityInstitutions, titleCase } from "./city-lookup";
 
 /**
- * A city with no institutions answers 404 (#1165). The check sits in this layout, outside the
+ * A city with no institutions and no bank or credit union branch answers 404 (#1165). The check sits in this layout, outside the
  * page's loading boundary: once a loading skeleton streams, the status is fixed at 200. The
  * state is checked by the `[state]` layout above.
  *
@@ -25,7 +25,8 @@ export default async function CityLayout({
   const stateCode = state.toUpperCase();
   const cityName = titleCase(city);
   const institutions = await loadCityInstitutions(cityName, stateCode);
-  if (institutions.length === 0) {
+  // A city is a market when a bank or credit union has a branch there, wherever it is headquartered.
+  if (institutions.length === 0 && !(await cityHasBranches(cityName, stateCode))) {
     const dotted = dottedCityName(cityName);
     if (dotted && (await loadCityInstitutions(dotted, stateCode)).length > 0) {
       permanentRedirect(cityPath(state, dotted));

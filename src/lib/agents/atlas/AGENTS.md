@@ -22,6 +22,24 @@ Atlas is the orchestration and operator-visibility agent. Atlas-specific code ma
 - Do not use free-text institution names as execution identity. Use canonical numeric institution IDs.
 - Do not collapse data trust states into generic success/failure labels; preserve source, extraction, verification, publication, and refresh states separately.
 
+## Answer-key relabels (`answer-key-relabels.ts`, #1099)
+
+The score step of Atlas's daily scoreboard run (`score-answer-key`) first applies James's category
+decisions to a fixed list of answer-key lines, then scores, so the day's score reads the corrected key.
+The relabel has no step of its own, so the score can never run before it (the scoreboard runs in
+passes since #1579).
+`score-answer-key` is pause-exempt, since it writes only the answer key and score rows, never a fee
+row, so a pipeline pause does not hold the score. A failed relabel runs in its own savepoint, is
+reported in the step detail (`answer_key_relabel`), and never stops the score.
+
+First list (Oct 16, night deposit option A): 28 confirmed bag and key purchase lines at 11 banks, 6
+prefilled ones at 6 more, and bank 61's deposit for the receptacle key (line 48) leave scoring
+(`canonical_key = 'unmapped'`, a note in `conditions`). A key deposit is a key charge, not the night
+depository service. The answer-key score and Deming's Knox replay skip `unmapped` lines. The repo
+copies of these lines (the Knox gate fixtures and `darwin/answer-key-fees.json`) carry the same
+`unmapped` labels. A line changes only while it reads as listed (id, institution, category, price,
+source line); every change goes in the step's ledger detail, and a second run changes nothing.
+
 ## City repair (`city-repair.ts`, #1213)
 
 NCUA's FOICU file cuts a credit union's city at 15 characters ("Colorado Spring", "North Little
@@ -204,3 +222,4 @@ fails a PR that changes one of these constants without updating its line here (#
 | Constant | Strategy | Version | File |
 |---|---|---|---|
 | `SCHEDULE_CHECK_VERSION` | — | v1 | `atlas/schedule-check.ts` |
+| `ANSWER_KEY_RELABEL_VERSION` | — | v1 | `atlas/answer-key-relabels.ts` |

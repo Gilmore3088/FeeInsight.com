@@ -10,34 +10,40 @@ import { RD, RD_FONTS, RD_TYPE } from "@/lib/report-design/tokens";
 
 /** The state and national reports read the shared report design (src/lib/report-design). */
 export const PALETTE = {
-  text: RD.ink,              // warm black — all body copy
+  text: RD.ink,              // Oxford Navy ink — all body copy
   textSecondary: RD.inkSoft, // secondary text
   textMuted: RD.muted,       // labels, captions, footnotes
-  background: RD.cream,      // cream page background
+  background: RD.cream,      // surface-0 page background
   sectionBg: RD.sand,        // alternating section background
-  accent: RD.terra,          // terracotta — rules, highlights
-  accentText: RD.terraText,  // terracotta for small text (labels)
-  accentLight: RD.terraSoft, // terracotta tint — callout backgrounds
-  border: RD.rule2,          // warm border — cards, tables
+  accent: RD.terra,          // brick — rules, highlights
+  accentText: RD.terraText,  // brick for small text (labels)
+  accentLight: RD.terraSoft, // brick-tint — callout backgrounds
+  border: RD.rule2,          // border — cards, tables
   borderLight: RD.rule,      // lighter border — table rows
   textDark2: RD.ink,         // heading level 2
   textDark3: RD.ink2,        // heading level 3
 } as const;
 
 export const TYPOGRAPHY = {
-  // Newsreader, Geist and Geist Mono load via @import in REPORT_CSS — fallbacks for pre-load
-  serif: RD_FONTS.serif,
+  // Geist and Geist Mono load via @import in REPORT_CSS — fallbacks for pre-load.
+  // Titles and headings use Geist at a heavier weight; the brand has no serif.
+  display: RD_FONTS.display,
   sans: RD_FONTS.sans,
   mono: RD_FONTS.mono,
 } as const;
 
 export const REPORT_CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400;1,500;1,600&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap');
 
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+}
+
+html {
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
 }
 
 body {
@@ -88,7 +94,7 @@ p, li, .report-narrative, .finding-detail, .figure-finding-detail, .footnote {
 }
 
 .report-cover-title {
-  font-family: ${TYPOGRAPHY.serif};
+  font-family: ${TYPOGRAPHY.display};
   font-size: 40px;
   font-weight: 600;
   line-height: 1.15;
@@ -98,7 +104,7 @@ p, li, .report-narrative, .finding-detail, .figure-finding-detail, .footnote {
 }
 
 .report-cover-subtitle {
-  font-family: ${TYPOGRAPHY.serif};
+  font-family: ${TYPOGRAPHY.display};
   font-size: 18px;
   font-weight: 400;
   font-style: italic;
@@ -145,7 +151,7 @@ p, li, .report-narrative, .finding-detail, .figure-finding-detail, .footnote {
 }
 
 .report-heading {
-  font-family: ${TYPOGRAPHY.serif};
+  font-family: ${TYPOGRAPHY.display};
   font-size: ${RD_TYPE.headline}px;
   font-weight: 600;
   line-height: 1.3;
@@ -155,7 +161,7 @@ p, li, .report-narrative, .finding-detail, .figure-finding-detail, .footnote {
 }
 
 .report-subheading {
-  font-family: ${TYPOGRAPHY.serif};
+  font-family: ${TYPOGRAPHY.display};
   font-size: 18px;
   font-weight: 400;
   font-style: italic;
@@ -178,7 +184,7 @@ p, li, .report-narrative, .finding-detail, .figure-finding-detail, .footnote {
 
 /* Pull quote */
 .report-pull-quote {
-  font-family: ${TYPOGRAPHY.serif};
+  font-family: ${TYPOGRAPHY.display};
   font-size: 20px;
   font-weight: 400;
   font-style: italic;
@@ -523,7 +529,7 @@ p, li, .report-narrative, .finding-detail, .figure-finding-detail, .footnote {
 .col-chart {
   margin: 24px 0;
   --col-seg-0: ${PALETTE.accent};
-  --col-seg-1: #E3A98F;
+  --col-seg-1: ${RD.ramp[1]};
   --col-seg-2: ${PALETTE.border};
 }
 
@@ -632,7 +638,7 @@ p, li, .report-narrative, .finding-detail, .figure-finding-detail, .footnote {
 
 .chapter-title,
 .chapter-divider-title {
-  font-family: ${TYPOGRAPHY.serif};
+  font-family: ${TYPOGRAPHY.display};
   font-size: 24px;
   font-weight: 600;
   line-height: 1.2;
@@ -672,7 +678,7 @@ p, li, .report-narrative, .finding-detail, .figure-finding-detail, .footnote {
 }
 
 .toc-chapter-num {
-  font-family: ${TYPOGRAPHY.serif};
+  font-family: ${TYPOGRAPHY.display};
   font-size: 28px;
   font-weight: 300;
   color: ${PALETTE.border};
@@ -693,7 +699,7 @@ p, li, .report-narrative, .finding-detail, .figure-finding-detail, .footnote {
 }
 
 .toc-entry-title {
-  font-family: ${TYPOGRAPHY.serif};
+  font-family: ${TYPOGRAPHY.display};
   font-size: 14px;
   font-weight: 600;
   color: ${PALETTE.text};
@@ -768,7 +774,7 @@ p, li, .report-narrative, .finding-detail, .figure-finding-detail, .footnote {
 
 /* Trend indicators */
 .trend-up {
-  color: #16a34a;
+  color: ${RD.good};
 }
 
 .trend-down {
@@ -794,7 +800,7 @@ p, li, .report-narrative, .finding-detail, .figure-finding-detail, .footnote {
 }
 
 .finding-number {
-  font-family: ${TYPOGRAPHY.serif};
+  font-family: ${TYPOGRAPHY.display};
   font-size: 28px;
   font-weight: 600;
   color: ${PALETTE.accent};
@@ -862,7 +868,7 @@ p, li, .report-narrative, .finding-detail, .figure-finding-detail, .footnote {
 }
 
 .insight-card-number {
-  font-family: ${TYPOGRAPHY.serif};
+  font-family: ${TYPOGRAPHY.display};
   font-size: 36px;
   font-weight: 600;
   color: ${PALETTE.accent};
@@ -954,7 +960,7 @@ p, li, .report-narrative, .finding-detail, .figure-finding-detail, .footnote {
 
 .comp-right-bar {
   height: 100%;
-  background: #3B82F6;
+  background: ${RD.series[1]};
   border-radius: 4px;
 }
 
@@ -992,7 +998,7 @@ p, li, .report-narrative, .finding-detail, .figure-finding-detail, .footnote {
 }
 
 .playbook-heading {
-  font-family: ${TYPOGRAPHY.serif};
+  font-family: ${TYPOGRAPHY.display};
   font-size: 20px;
   font-weight: 600;
   color: ${PALETTE.text};
@@ -1160,7 +1166,7 @@ p, li, .report-narrative, .finding-detail, .figure-finding-detail, .footnote {
 }
 
 .figure-finding-figure {
-  font-family: ${TYPOGRAPHY.serif};
+  font-family: ${TYPOGRAPHY.display};
   font-size: 30px;
   font-weight: 600;
   line-height: 1;
@@ -1294,7 +1300,7 @@ p, li, .report-narrative, .finding-detail, .figure-finding-detail, .footnote {
 
 .position-bar-down {
   right: 50%;
-  background: #7A7F3F;
+  background: ${RD.good};
   opacity: 0.75;
   border-radius: 4px 0 0 4px;
 }
@@ -1318,8 +1324,8 @@ p, li, .report-narrative, .finding-detail, .figure-finding-detail, .footnote {
   white-space: nowrap;
 }
 
-.position-up { color: #A93D25; font-weight: 700; }
-.position-down { color: #4F6B3A; font-weight: 700; }
+.position-up { color: ${PALETTE.accentText}; font-weight: 700; }
+.position-down { color: ${RD.good}; font-weight: 700; }
 .position-flat { color: ${PALETTE.textMuted}; font-weight: 700; }
 
 .position-scale {
@@ -1359,7 +1365,7 @@ p, li, .report-narrative, .finding-detail, .figure-finding-detail, .footnote {
 
 /*
  * Print. Rules that keep every page used:
- * - The page is white; the cream screen background would print as a box on each page.
+ * - The page is white; the surface-0 screen background would print as a box on each page.
  * - The cover is exactly one page and nothing else shares it.
  * - Headings and labels never end a page: each stays with the first block that follows.
  * - Sections flow; no rule forces a page break that would strand white space, except the

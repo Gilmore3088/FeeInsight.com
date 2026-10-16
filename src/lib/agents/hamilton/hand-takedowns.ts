@@ -44,6 +44,13 @@ export interface HandTakedown {
   kind: Extract<FeedbackKind, "wrong_amount" | "wrong_category" | "not_a_fee" | "duplicate">;
   /** What the bank's own text says, in one line. */
   evidence: string;
+  /**
+   * A live row this takedown waits on (#1659): the entry comes down only while that row is live at
+   * this amount and name, so a duplicate never leaves before the fee it repeats is right. Hand
+   * amount corrections run before takedowns in the same publish transaction, so normally both
+   * land in one step.
+   */
+  requiresLive?: { feePublishedId: number; amount: number; feeName: string };
 }
 
 export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
@@ -149,6 +156,153 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
   { feePublishedId: 114270, institutionId: 6152, canonicalFeeKey: "late_payment", amount: 35, feeName: "Late payment fee",
     reason: "source_mismatch: #1302", issue: 1302, kind: "wrong_amount",
     evidence: "Patriot FCU (doc 34341, text 32389), the line of credit on the same rates page: \"Late payment fee of $35.00 or 5% of the minimum payment may apply\": the fee is $35 or 5% of the payment, not a flat $35." },
+  // #1655 (read-only, Oct 16): rows the consumer overdraft guide showed, each read against its own
+  // stored text. 5827 repeats the continuous overdraft charge as a daily OD/NSF cap; 84637 puts the
+  // personal small-item price on the business line. Primis's 5600 is corrected in place instead
+  // (hand-amount-corrections.ts): it is the bank's only live overdraft row.
+  { feePublishedId: 5827, institutionId: 1968, canonicalFeeKey: "od_daily_cap", amount: 3.29, feeName: "Continuous Overdraft Charge Daily Cap",
+    reason: "duplicate of #43265 (#1655)", issue: 1655, kind: "duplicate",
+    evidence: "Welch State Bank (doc 809, text 6350): \"Continuous Overdraft Charge* daily limit not to exceed..$3.29\" is the continuous overdraft charge, live as continuous_od 43265; the OD/NSF cap is \"NSF/OD Fees* daily limit not to exceed…$179.82\" (live as 5825)." },
+  { feePublishedId: 84637, institutionId: 97, canonicalFeeKey: "overdraft", amount: 10, feeName: "Overdraft or Returned Item fee (business accounts)",
+    reason: "source_mismatch: #1655", issue: 1655, kind: "wrong_amount",
+    evidence: "Mechanics Bank (doc 9078, text 2235): \"Overdraft or Returned Item fee (business accounts)…$35.00/presentment\" (live as 125484); the $10 is the personal line \"…for any item $10 or less… (personal accounts)1…$10.00/presentment\"." },
+  // #1659 (read-only, Oct 16): rows James saw in the guide comparisons. U.S. Bank's brokerage fees
+  // page is not a deposit schedule (the 50 have no brokerage type); 102973 repeats the Bank Smartly
+  // fee that 102971 carries once corrected (hand-amount-corrections.ts); 15727 is Navy Federal's
+  // credit card cash advance price filed as an ATM fee.
+  { feePublishedId: 104565, institutionId: 5, canonicalFeeKey: "nsf", amount: 30, feeName: "Returned check",
+    reason: "source_mismatch: #1659", issue: 1659, kind: "wrong_category",
+    evidence: "U.S. Bank brokerage fees page (doc 34203, text 32252), under \"Additional brokerage account fees\": \"Returned check | $30 per occurrence\", a self-directed brokerage account fee, not a deposit NSF." },
+  { feePublishedId: 104566, institutionId: 5, canonicalFeeKey: "stop_payment", amount: 25, feeName: "Stop payment",
+    reason: "source_mismatch: #1659", issue: 1659, kind: "wrong_category",
+    evidence: "U.S. Bank brokerage fees page (doc 34203, text 32252), the same table: \"Stop payment | $25 per occurrence\", a brokerage account fee, not a deposit account's stop payment." },
+  { feePublishedId: 102973, institutionId: 5, canonicalFeeKey: "monthly_maintenance", amount: 12, feeName: "Monthly maintenance fee",
+    reason: "duplicate of #102971 (#1659)", issue: 1659, kind: "duplicate",
+    requiresLive: { feePublishedId: 102971, amount: 12, feeName: "Bank Smartly Checking Monthly Maintenance Fee" },
+    evidence: "U.S. Bank student checking page (doc 23630, text 20684) prints the $12 only as waived: \"For young adults and students (18 - 24 years old), we always waive the $12 Monthly Maintenance Fee.\" The Bank Smartly Checking price is 102971 (checking-accounts.html, \"$12 Monthly Maintenance Fee can be waived in multiple ways1\")." },
+  { feePublishedId: 15727, institutionId: 4956, canonicalFeeKey: "atm_non_network", amount: 1, feeName: "plus ATM owner fees",
+    reason: "source_mismatch: #1659", issue: 1659, kind: "wrong_category",
+    evidence: "Navy Federal (doc 13439, text 890, the Oct 3 copy of fees-and-charges): \"Credit card cash advance§ / None / $0.50 / $1.00 plus ATM owner fees\": a credit card cash advance at a non-network ATM, named by the price's trailing words; not an ATM use fee." },
+  // #1664 (read-only, Oct 16): First National Bank Alaska's Direct Deposit Checking fee, read at $0
+  // from its waiver line. The account's price is $7.00, live once already as 125197 from the bank's
+  // checking page; correcting this row to $7 would leave a second copy under another name and page,
+  // which no duplicate collapse removes. It comes down only while 125197 is live at $7.
+  { feePublishedId: 67859, institutionId: 281, canonicalFeeKey: "monthly_maintenance", amount: 0, feeName: "Monthly Service Fee with 1 direct deposit per",
+    reason: "duplicate of #125197 (#1664)", issue: 1664, kind: "duplicate",
+    requiresLive: { feePublishedId: 125197, amount: 7, feeName: "Monthly Service Fees" },
+    evidence: "FNB Alaska personal fee schedule (doc 19925, text 15731): \"Direct Deposit Checking | per statement cycle\" / \"Monthly Service Fee | $7.00\" / \"Monthly Service Fee with 1 direct deposit per | Waived\"; the $0 is the waiver, not the price. The $7 is live as 125197 (checking page, doc 33839): \"Monthly Service Fees | $7, waived each statement cycle with a direct deposit.\"" },
+  // #1661 (read-only, Oct 16): Beacon Community FCU's garnishment fee, live from two documents. Doc
+  // 30627 is the 2022 rate and fee disclosure PDF ("Last Updated 04/01/2022", Last-Modified Jul 18
+  // 2022); doc 35662 is the bank's fee schedule page (its registered fee_schedule_url, fetched Oct
+  // 16, rates "as of 07/01/2025"), which supersedes every earlier copy of that page. The $34 is the
+  // old price; it comes down only while the current $36 row (112876) is live as listed.
+  { feePublishedId: 138829, institutionId: 7204, canonicalFeeKey: "garnishment_levy", amount: 34, feeName: "Judicial Attachment (Garnishment)",
+    reason: "duplicate of #112876 (#1661)", issue: 1661, kind: "duplicate",
+    requiresLive: { feePublishedId: 112876, amount: 36, feeName: "Judicial Attachment (Garnishment)" },
+    evidence: "Beacon Community FCU: the 2022 disclosure PDF (doc 30627, text 28238, \"Last Updated 04/01/2022\") prints \"Judicial Attachment (Garnishment) $34.00\"; the current fee schedule page (doc 35662, text 33767, fetched Oct 16, rates as of 07/01/2025) prints \"Judicial Attachment (Garnishment) | $36.00 per attachment\", live as 112876." },
+  // #1196 (read-only, Oct 16): the two category questions left after the #1459 renames. Neither fee
+  // has a home among the 50: an own-ATM charge is not what a customer pays at another network's
+  // ATM (fee-fold's `ownAtmSection` gives the bank's own ATM no home), and a gift card's inactivity
+  // fee is neither a dormant deposit account nor a gift card purchase (the category guard refuses
+  // its name under gift_card_purchase: name_contradicts on "Inactiv"). Each price is right for its line, so neither is re-priced.
+  { feePublishedId: 131129, institutionId: 5100, canonicalFeeKey: "atm_non_network", amount: 2, feeName: "ATM Transactions at DFCU ATM (Local ATM)",
+    reason: "source_mismatch: #1196", issue: 1196, kind: "wrong_category",
+    evidence: "Dynamic FCU (doc 28876, text 26315): \"ATM Transactions at DFCU ATM (Local ATM) | 15 free ATM transactions per month and 15 free balance inquiries per month; then $2.00/transaction or balance inquiry\": the credit union's own ATMs, not a non-network ATM fee (that line is \"ATM Transactions at Non-DFCU ATM (Out of Network/Foreign ATM)\")." },
+  { feePublishedId: 70319, institutionId: 986, canonicalFeeKey: "dormant_account", amount: 2.95, feeName: "VISA Gift Card Inactivity Fee",
+    reason: "source_mismatch: #1196", issue: 1196, kind: "wrong_category",
+    evidence: "Bank Forward (doc 20361, text 16150), under MISCELLANEOUS SERVICES: \"VISA Gift Card – Inactivity Fee after 12 Months of Inactivity $2.95/month\": a gift card's fee, not a dormant deposit account (the bank's dormant account fees are 70302 and 105451, $5.00)." },
+  // #1666 (read-only, Oct 16): North Central Area FCU's PDF reads its fee names as one run-together
+  // line and its prices as another column. The row's name is that line; its $10 is the money
+  // market's excessive withdrawal on the same line (live as 130870), not an overdraft transfer.
+  { feePublishedId: 140689, institutionId: 7363, canonicalFeeKey: "od_protection_transfer", amount: 10,
+    feeName: "See How to avoid them next to the listed fee.Checking AccountsAutomatic Overdraft TransferCopy of DraftCourtesy PayForei",
+    reason: "source_mismatch: #1666", issue: 1666, kind: "wrong_amount",
+    evidence: "North Central Area FCU (doc 31668, text 29547): names \"…Checking AccountsAutomatic Overdraft TransferCopy of DraftCourtesy PayForeign Check Processing…Money Market Excessive Withdrawal $10.00/withdrawal…\", prices \"Fee$5.00/transfer$5.00$30.00/item…\": the overdraft transfer is $5.00/transfer (live as 41322); the only $10 on the line is the money market's (live as 130870)." },
+  // #1668 (read-only, Oct 16): Beacon Community FCU's other rows from documents its current fee
+  // schedule page (doc 35662) replaces. The 2022 PDF's $34 prices are now $36; its same-price rows
+  // and an Oct 10 copy of the page double-count fees the current page carries; the 2025 PDF (doc
+  // 30629) lost every digit after "$3", so its rows read $3 for fees the page prices at $36. Each
+  // copy comes down only while the current row it repeats is live as listed.
+  { feePublishedId: 138828, institutionId: 7204, canonicalFeeKey: "deposited_item_return", amount: 34, feeName: "Return Deposit Item (1 party)",
+    reason: "duplicate of #112893 (#1668)", issue: 1668, kind: "duplicate",
+    requiresLive: { feePublishedId: 112893, amount: 36, feeName: "Return Deposit Item (1 party)" },
+    evidence: "Beacon 2022 disclosure PDF (doc 30627, text 28238, \"Last Updated 04/01/2022\"): \"Return Deposit Item (1 party) $34.00\"; the current fee schedule page (doc 35662, text 33767, fetched Oct 16): \"Return Deposit Item (1 party) | $36.00 per item\", live as 112893." },
+  { feePublishedId: 138832, institutionId: 7204, canonicalFeeKey: "nsf", amount: 34, feeName: "NSF DRAFT, NSF ACH item, or NSF Bill Pay",
+    reason: "duplicate of #112881 (#1668)", issue: 1668, kind: "duplicate",
+    requiresLive: { feePublishedId: 112881, amount: 36, feeName: "NSF Draft, NSF ACH item or NSF Bill Pay item" },
+    evidence: "Beacon 2022 disclosure PDF (doc 30627, text 28238, \"Last Updated 04/01/2022\"): \"NSF DRAFT, NSF ACH item, or NSF Bill Pay $34.00\"; the current fee schedule page (doc 35662, text 33767, fetched Oct 16): \"NSF Draft, NSF ACH item or NSF Bill Pay item | $36.00 per item\", live as 112881." },
+  { feePublishedId: 138833, institutionId: 7204, canonicalFeeKey: "nsf", amount: 34, feeName: "NSF/Overdrawn ATM Withdrawal",
+    reason: "duplicate of #112915 (#1668)", issue: 1668, kind: "duplicate",
+    requiresLive: { feePublishedId: 112915, amount: 36, feeName: "NSF/Overdrawn ATM Withdrawal" },
+    evidence: "Beacon 2022 disclosure PDF (doc 30627, text 28238, \"Last Updated 04/01/2022\"): \"NSF/Overdrawn ATM Withdrawal $34.00\"; the current fee schedule page (doc 35662, text 33767, fetched Oct 16): \"NSF/Overdrawn ATM Withdrawal | $36.00 per item\", live as 112915." },
+  { feePublishedId: 138839, institutionId: 7204, canonicalFeeKey: "overdraft", amount: 34, feeName: "Courtesy Pay fee (if applicable)",
+    reason: "duplicate of #112887 (#1668)", issue: 1668, kind: "duplicate",
+    requiresLive: { feePublishedId: 112887, amount: 36, feeName: "Courtesy Pay Fee (if applicable)" },
+    evidence: "Beacon 2022 disclosure PDF (doc 30627, text 28238, \"Last Updated 04/01/2022\"): \"Courtesy Pay fee (if applicable) $34.00\"; the current fee schedule page (doc 35662, text 33767, fetched Oct 16): \"Courtesy Pay Fee (if applicable) | $36.00 per item\", live as 112887." },
+  { feePublishedId: 138827, institutionId: 7204, canonicalFeeKey: "deposited_item_return", amount: 34, feeName: "Return Deposit Item",
+    reason: "source_mismatch: #1668", issue: 1668, kind: "wrong_amount",
+    requiresLive: { feePublishedId: 112892, amount: 15, feeName: "Return Deposit Item (2 party)" },
+    evidence: "Beacon 2022 disclosure PDF (doc 30627, text 28238, \"Last Updated 04/01/2022\"): \"Return Deposit Item from Shared Branch $34.00\" / \"Return Deposit Item (2 party) $34.00\"; the current fee schedule page (doc 35662, text 33767, fetched Oct 16) has no shared-branch return line and prints \"Return Deposit Item (2 party) | $15.00 per item\", live as 112892: no current return item fee is $34." },
+  { feePublishedId: 138834, institutionId: 7204, canonicalFeeKey: "card_replacement", amount: 10, feeName: "Fees: Replacement Card",
+    reason: "duplicate of #112883 (#1668)", issue: 1668, kind: "duplicate",
+    requiresLive: { feePublishedId: 112883, amount: 10, feeName: "Replacement Card" },
+    evidence: "Beacon 2022 disclosure PDF (doc 30627, text 28238, \"Last Updated 04/01/2022\"): \"Replacement Card $10.00\" under ATM and debit card services; the current fee schedule page (doc 35662, text 33767, fetched Oct 16): \"Replacement Card | $10.00 per card\", live as 112883." },
+  { feePublishedId: 138841, institutionId: 7204, canonicalFeeKey: "counter_check", amount: 3, feeName: "Starter/Temporary Checks",
+    reason: "duplicate of #112895 (#1668)", issue: 1668, kind: "duplicate",
+    requiresLive: { feePublishedId: 112895, amount: 3, feeName: "Starter/Temporary Checks" },
+    evidence: "Beacon 2022 disclosure PDF (doc 30627, text 28238, \"Last Updated 04/01/2022\"): \"Starter/Temporary Checks $3.00\"; the current fee schedule page (doc 35662, text 33767, fetched Oct 16): \"Starter/Temporary Checks | $3.00 per sheet\", live as 112895." },
+  { feePublishedId: 148352, institutionId: 7204, canonicalFeeKey: "counter_check", amount: 3, feeName: "Starter/Temporary Checks",
+    reason: "duplicate of #112895 (#1668)", issue: 1668, kind: "duplicate",
+    requiresLive: { feePublishedId: 112895, amount: 3, feeName: "Starter/Temporary Checks" },
+    evidence: "Beacon fee schedule page, Oct 10 copy (doc 25830, superseded by doc 35662): \"Starter/Temporary Checks | $3.00 per sheet\"; the current copy (doc 35662, text 33767) prints the same line, live as 112895." },
+  { feePublishedId: 138831, institutionId: 7204, canonicalFeeKey: "wire_domestic_outgoing", amount: 20, feeName: "Wire Transfer Out fee",
+    reason: "duplicate of #112877 (#1668)", issue: 1668, kind: "duplicate",
+    requiresLive: { feePublishedId: 112877, amount: 20, feeName: "Wire transfer (domestic) Outgoing" },
+    evidence: "Beacon 2022 disclosure PDF (doc 30627, text 28238, \"Last Updated 04/01/2022\"): \"Wire Transfer Out fee $20.00\", its only outgoing wire line; the current fee schedule page (doc 35662, text 33767, fetched Oct 16): \"Wire transfer (domestic) Outgoing | $20.00 per wire\", live as 112877." },
+  { feePublishedId: 138830, institutionId: 7204, canonicalFeeKey: "document_reproduction", amount: 4, feeName: "Minimum Balance Requirements: 3 months’ dividends on the deposit; on certificates of greater than: Document Copy",
+    reason: "duplicate of #112894 (#1668)", issue: 1668, kind: "duplicate",
+    requiresLive: { feePublishedId: 112894, amount: 4, feeName: "Document Copy" },
+    evidence: "Beacon 2022 disclosure PDF (doc 30627, text 28238, \"Last Updated 04/01/2022\"): \"Minimum Balance Requirements | 3 months’ dividends on the deposit; on certificates of greater than | Document Copy $4.00\" (two cells of another column joined to the name); the current fee schedule page (doc 35662, text 33767, fetched Oct 16): \"Document Copy | $4.00 per item\", live as 112894." },
+  { feePublishedId: 138848, institutionId: 7204, canonicalFeeKey: "atm_non_network", amount: 3, feeName: "ATM SERVICE FEESInitial CardNSF/Overdrawn ATM Withdrawal",
+    reason: "source_mismatch: #1668", issue: 1668, kind: "wrong_amount",
+    evidence: "Beacon 2025 fee PDF (doc 30629, text 28236), which drops every digit after \"$3\" (\"Judicial Attachment (Garnishment) ....$3\", \"Negative Balance Fee .... up to $3\"): \"ATM SERVICE FEESInitial CardNSF/Overdrawn ATM Withdrawal ....$3\"; the current fee schedule page (doc 35662, text 33767, fetched Oct 16): \"NSF/Overdrawn ATM Withdrawal | $36.00 per item\" (live as 112915), an NSF fee, not a $3 ATM fee." },
+  { feePublishedId: 138849, institutionId: 7204, canonicalFeeKey: "cashiers_check", amount: 3, feeName: "Paper statement feeSAVINGS SERVICESCertified Checks/Official Checks-MembersCertified Checks/Official Checks-Non-MembersV",
+    reason: "source_mismatch: #1668", issue: 1668, kind: "wrong_amount",
+    evidence: "Beacon 2025 fee PDF (doc 30629, text 28236), which drops every digit after \"$3\" (\"Judicial Attachment (Garnishment) ....$3\", \"Negative Balance Fee .... up to $3\"): names run together from \"Paper statement fee\" to \"Visa Gift Cards…Return Deposit Item from Shared Branch....$3\"; the current fee schedule page (doc 35662, text 33767, fetched Oct 16): \"Certified Checks/Official Checks-Members | $5.00 per item\" and \"-Non-Members | $10.00 per item\" (live as 112889, 112890); no cashier's check is $3." },
+  { feePublishedId: 138850, institutionId: 7204, canonicalFeeKey: "deposited_item_return", amount: 3, feeName: "Return Deposit Item (2 party)Return Deposit Item (1 party)",
+    reason: "source_mismatch: #1668", issue: 1668, kind: "wrong_amount",
+    evidence: "Beacon 2025 fee PDF (doc 30629, text 28236), which drops every digit after \"$3\" (\"Judicial Attachment (Garnishment) ....$3\", \"Negative Balance Fee .... up to $3\"): \"Return Deposit Item (2 party)Return Deposit Item (1 party) ....$3\"; the current fee schedule page (doc 35662, text 33767, fetched Oct 16): \"Return Deposit Item (2 party) | $15.00 per item\" and \"(1 party) | $36.00 per item\" (live as 112892, 112893)." },
+  { feePublishedId: 138851, institutionId: 7204, canonicalFeeKey: "deposited_item_return", amount: 3, feeName: "Return Deposit Item from Shared Branch",
+    reason: "source_mismatch: #1668", issue: 1668, kind: "wrong_amount",
+    evidence: "Beacon 2025 fee PDF (doc 30629, text 28236), which drops every digit after \"$3\" (\"Judicial Attachment (Garnishment) ....$3\", \"Negative Balance Fee .... up to $3\"): \"Return Deposit Item from Shared Branch....$3\"; the 2022 PDF prints it at \"$34.00\" (doc 30627) and the current fee schedule page (doc 35662, text 33767, fetched Oct 16) no longer prints the line: $3 is a cut price." },
+  // #1671 (read-only, Oct 16): business-schedule monthly fees the account type hold brought back.
+  // The hold took each bank's consumer monthly fee at 04:35:32 and the business-schedule restore,
+  // finding no live consumer fee, put these back at 04:36:07 (run 7160). Each was first taken down
+  // Oct 7-12 as `business_schedule: consumer fee #<id>`. The restore now counts a held fee as present.
+  { feePublishedId: 42961, institutionId: 436, canonicalFeeKey: "monthly_maintenance", amount: 7, feeName: "Monthly fee",
+    reason: "source_mismatch: #1671", issue: 1671, kind: "wrong_category",
+    evidence: "FFL business fee schedule flyer (doc 252): \"Business Checking / Account Services ... Business Interest Checking Account ... Monthly fee if daily balance is below $1,500 | $7.00\". A business account's fee; taken down Oct 12 as business_schedule: consumer fee #140097, restored when the hold took 140097 (savings)." },
+  { feePublishedId: 86536, institutionId: 891, canonicalFeeKey: "monthly_maintenance", amount: 5, feeName: "Monthly maintenance fee",
+    reason: "source_mismatch: #1671", issue: 1671, kind: "wrong_category",
+    evidence: "Legacy Bank business checking page (doc 17391, legacyar.com/business/checking): \"Non-Profit/Government Entities ... $1,000 minimum balance required to avoid $5.00 monthly maintenance fee\". A non-profit/government account's fee; taken down Oct 8 as business_schedule: consumer fee #62696, restored when the hold took 62696 (ira_hsa_cd)." },
+  { feePublishedId: 66721, institutionId: 1689, canonicalFeeKey: "monthly_maintenance", amount: 5, feeName: "Monthly service charge",
+    reason: "source_mismatch: #1671", issue: 1671, kind: "wrong_category",
+    evidence: "Fifth District Savings Bank business checking page (doc 19686): \"Business Savings ... $5 monthly service charge, if balance falls below $100\". A business savings fee; taken down Oct 11 as business_schedule: consumer fee #135231, restored when the hold took 135231 (ira_hsa_cd)." },
+  { feePublishedId: 66722, institutionId: 1689, canonicalFeeKey: "monthly_maintenance", amount: 10, feeName: "Monthly service charge",
+    reason: "source_mismatch: #1671", issue: 1671, kind: "wrong_category",
+    evidence: "Fifth District Savings Bank business checking page (doc 19686): \"Business Money Market ... $10 monthly service charge, if balance falls below $500\". A business money market fee; taken down Oct 11 as business_schedule: consumer fee #135231, restored when the hold took 135231 (ira_hsa_cd)." },
+  // #1549 follow-ups (read-only, Oct 16; under James's Oct 16 rule for fewer than 20 wrong fees). Flagstar's overdraft price
+  // from its older form, and two Pinnacle NSF paid/returned prices read into the overdraft
+  // transfer line beside them (two-column brochures). The NSF re-file itself is a category call.
+  { feePublishedId: 83125, institutionId: 33, canonicalFeeKey: "overdraft", amount: 10, feeName: "Overdraft Charge (each)",
+    reason: "source_mismatch: #1549", issue: 1549, kind: "wrong_amount",
+    evidence: "Flagstar's 2024 CRA public file (doc 21266, forms dated 02/2024) prints \"Overdraft Charge (each) | $10.00\"; its overdraft terms Rev. 06/2026 (doc 21228, live as 83117) say \"assess an Overdraft Charge of $30 per Item\" (at most three, $90, a day)." },
+  { feePublishedId: 97335, institutionId: 184, canonicalFeeKey: "od_protection_transfer", amount: 10, feeName: "OVERDRAFT TRANSFER",
+    reason: "source_mismatch: #1549", issue: 1549, kind: "wrong_category",
+    evidence: "Pinnacle Bank NE (doc 22621): \"OVERDRAFT TRANSFER | $10 NSF Paid Item Fee/NSF Returned Item Fee for items $10 or less\" joins two columns; the transfer is \"$2 fee for each Overdraft Transfer\" ($20 set-up)." },
+  { feePublishedId: 97904, institutionId: 850, canonicalFeeKey: "od_protection_transfer", amount: 32, feeName: "overdrawn. Features of Overdraft Transfer include",
+    reason: "source_mismatch: #1549", issue: 1549, kind: "wrong_category",
+    evidence: "Pinnacle Bank Wyoming (doc 22705): the $32 is the next column's \"$32 per item NSF Paid Item Fee/Returned Item Fee for items paid over $10\" (live as 98267); the transfer is \"$2 fee for each Overdraft Transfer\" (live as 97975)." },
 ];
 
 export interface LiveTakedownRow {
@@ -200,6 +354,13 @@ export function planHandTakedowns(live: LiveTakedownRow[], list: readonly HandTa
       skipped.push({ feePublishedId: entry.feePublishedId, reason: "changed since listed" });
       continue;
     }
+    if (entry.requiresLive) {
+      const needed = byId.get(entry.requiresLive.feePublishedId);
+      if (!needed || needed.fee_name !== entry.requiresLive.feeName || !sameAmount(needed.amount, entry.requiresLive.amount)) {
+        skipped.push({ feePublishedId: entry.feePublishedId, reason: `waiting on #${entry.requiresLive.feePublishedId}` });
+        continue;
+      }
+    }
     takenDown.push({ feePublishedId: entry.feePublishedId, feeVerifiedId: row.lineage_ref == null ? null : Number(row.lineage_ref), reason: entry.reason });
   }
   return { takenDown, skipped };
@@ -216,7 +377,8 @@ export async function applyHandTakedowns(
   const list = options.list ?? HAND_TAKEDOWNS;
   const result: HandTakedownResult = { dryRun: options.dryRun, takenDown: [], skipped: [], error: null };
   if (list.length === 0) return result;
-  const ids = [...new Set(list.map((entry) => entry.feePublishedId))];
+  // Each listed row, and each live row an entry waits on (`requiresLive`).
+  const ids = [...new Set(list.flatMap((entry) => entry.requiresLive ? [entry.feePublishedId, entry.requiresLive.feePublishedId] : [entry.feePublishedId]))];
   let live: LiveTakedownRow[];
   try {
     live = await inSavepoint(db, (scope) => scope<LiveTakedownRow[]>`
@@ -285,9 +447,9 @@ export async function applyHandTakedowns(
       if (feedback.length > 0) await recordFeedback(scope, feedback);
       if (result.takenDown.length > 0) {
         await scope`
-          INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+          INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
           VALUES (
-            ${options.runId}, ${HAND_TAKEDOWN_CHECK}, 'completed',
+            ${options.runId}, ${options.stepId ?? null}, ${HAND_TAKEDOWN_CHECK}, 'completed',
             ${`Took down ${result.takenDown.length} listed live fee(s) confirmed wrong against their bank's own text`},
             ${JSON.stringify({
               taken_down: result.takenDown.map((item) => ({ fee_published_id: item.feePublishedId, fee_verified_id: item.feeVerifiedId, reason: item.reason })),
@@ -348,6 +510,23 @@ export const HAND_AUDIENCE_FIXES: readonly HandAudienceFix[] = [
   { feePublishedId: 55401, feeVerifiedId: 45477, institutionId: 8652, canonicalFeeKey: "gift_card_purchase", amount: 5, feeName: "Gift Cards",
     from: "unknown", to: "business", issue: 1302,
     evidence: "Rave (doc 2183, text 9544): \"Gift Cards | $ 5.00\" is under \"2019 Business Fee Schedule\"; the consumer schedule's line is \"Gift Card | $5.00\" (55397)." },
+  // #1655 (read-only, Oct 16): Mechanics Bank prints personal and business lines side by side; these
+  // two business rows showed in the consumer overdraft guide.
+  { feePublishedId: 67110, feeVerifiedId: 77129, institutionId: 97, canonicalFeeKey: "od_daily_cap", amount: 350,
+    feeName: "Maximum daily Overdraft or Returned Item fees (per day, business accounts)", from: "unknown", to: "business", issue: 1655,
+    evidence: "Mechanics Bank (doc 9078, text 2235): \"Maximum daily Overdraft or Returned Item fees (per day, business accounts)…$350.00\"; the personal cap is $140.00 (67109)." },
+  { feePublishedId: 125484, feeVerifiedId: 93865, institutionId: 97, canonicalFeeKey: "overdraft", amount: 35,
+    feeName: "Overdraft or Returned Item fee (business accounts)", from: "unknown", to: "business", issue: 1655,
+    evidence: "Mechanics Bank (doc 9078, text 2235): \"Overdraft or Returned Item fee (business accounts)…$35.00/presentment\"." },
+  // #1664 (read-only, Oct 16): Bank Iowa's ag checking page (doc 31875) prints one table of four
+  // business accounts for farms ("Bank Iowa Business Checking Accounts - For Ag"); both live rows
+  // from it are business fees.
+  { feePublishedId: 141041, feeVerifiedId: 166941, institutionId: 511, canonicalFeeKey: "monthly_maintenance", amount: 20,
+    feeName: "Monthly service charge", from: "unknown", to: "business", issue: 1664,
+    evidence: "Bank Iowa (doc 31875, text 29776): \"Bank Iowa Business Checking Accounts - For Ag\"; \"Monthly Service Charge | … | $20\" is the Commercial Checking for Ag column." },
+  { feePublishedId: 141040, feeVerifiedId: 166940, institutionId: 511, canonicalFeeKey: "monthly_maintenance", amount: 10,
+    feeName: "Monthly Service Charge", from: "unknown", to: "business", issue: 1664,
+    evidence: "Bank Iowa (doc 31875, text 29776): \"Bank Iowa Business Checking Accounts - For Ag\"; \"$10 monthly service charge\" is the Business Checking for Ag and Interest Checking for Ag columns." },
 ];
 
 export interface LiveAudienceRow {

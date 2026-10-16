@@ -127,12 +127,28 @@ describe("account type hold (#1100 gap 1)", () => {
   });
 
   it("leaves a listed fee live whatever its stored product says, in any copy (keep-live list)", () => {
-    const row: HoldRow = { fee_published_id: 28834, fee_verified_id: 9, institution_id: 5800, fee_name: "Monthly Service Fee", product_name: "REGULAR SHARE FEES", amount: "5.00" };
+    const row: HoldRow = { fee_published_id: 28834, fee_verified_id: 9, institution_id: 5800, fee_name: "Monthly Service Fee", product_name: "REGULAR SHARE FEES", amount: "5.00", source_document_id: 3633 };
     expect(planHolds([row]).typed).toEqual([]);
     // A new copy of the same fee (new published and verified ids, the name's case changed) stays live.
     expect(planHolds([{ ...row, fee_published_id: 150000, fee_verified_id: 99, fee_name: "monthly service fee" }]).typed).toEqual([]);
     // Another bank's fee, or another price, is still held.
     expect(planHolds([{ ...row, institution_id: 5801 }]).typed.map((hold) => hold.accountType)).toEqual(["savings"]);
     expect(planHolds([{ ...row, amount: "6.00" }]).typed.map((hold) => hold.accountType)).toEqual(["savings"]);
+    // The same name and price on another document (another account's list) is held.
+    expect(planHolds([{ ...row, source_document_id: 9999 }]).typed.map((hold) => hold.accountType)).toEqual(["savings"]);
+  });
+
+  it("every hold read selects the stored document, so the keep-live list can match (#1653 review)", async () => {
+    const reads: string[] = [];
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const text = strings.join("?");
+      if (/^\s*SELECT/.test(text)) reads.push(text);
+      return Promise.resolve([]);
+    }) as unknown as Parameters<typeof applyAccountTypeHold>[0];
+    await applyAccountTypeHold(db, { runId: 1, batchId: "agentic-run-1", dryRun: true });
+    expect(reads.length).toBeGreaterThanOrEqual(3);
+    // In each read's own select list (before its first FROM), not only somewhere in the query:
+    // the third read also names it in its LATERAL text lookup.
+    for (const text of reads) expect(text.split(/\bFROM\b/)[0]).toMatch(/\bfr\.source_document_id\b/);
   });
 });

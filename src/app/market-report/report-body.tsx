@@ -22,6 +22,7 @@ import { AtAGlance, SinceBought } from "./[token]/at-a-glance";
 import { HamiltonClose } from "./[token]/hamilton-close";
 import type { CheckingLineupView } from "@/lib/custom-report/checking-lineup";
 import { CheckingLineupSection } from "./checking-lineup-section";
+import { NamedCompetitorsPhone } from "./named-competitors-phone";
 
 const SERIF = { fontFamily: "var(--fi-font-sans)" };
 const MONO_FIGURE = { fontFamily: "var(--fi-font-mono)" } as const;
@@ -33,24 +34,77 @@ export function money(value: number | null | undefined): string {
 }
 
 export const POSITION_LABEL: Record<LinePosition, string> = {
-  above_market: "Above local range",
-  in_market: "Inside local range",
-  below_market: "Below local range",
+  above_market: "Above the local middle half",
+  in_market: "Inside the local middle half",
+  below_market: "Below the local middle half",
+  free: "Free",
+};
+
+const POSITION_SHORT: Record<LinePosition, string> = {
+  above_market: "Above",
+  in_market: "Inside",
+  below_market: "Below",
   free: "Free",
 };
 
 const POSITION_CLASS: Record<LinePosition, string> = {
   above_market: "bg-[#FBE9E4] text-brick",
-  in_market: "bg-[#EEF3EC] text-[#3D6B3A]",
-  below_market: "bg-[#E8EEF6] text-[#2F5585]",
-  free: "bg-[#E8EEF6] text-[#2F5585]",
+  in_market: "bg-surface-200 text-ink",
+  below_market: "bg-[#EAF0EC] text-below-market",
+  free: "bg-[#EAF0EC] text-below-market",
 };
 
 function PositionChip({ line }: { line: ReportLine }) {
   if (!line.position) return <span className="text-[12px] text-ink-muted">—</span>;
   return (
     <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${POSITION_CLASS[line.position]}`}>
-      {POSITION_LABEL[line.position]}
+      {/* Phones show the short word; the legend above the table says what it is the middle half of. */}
+      <span className="sm:hidden print:hidden">{POSITION_SHORT[line.position]}</span>
+      <span className="hidden sm:inline print:inline">{POSITION_LABEL[line.position]}</span>
+    </span>
+  );
+}
+
+/**
+ * Why a line has no position: the institution's own fee is missing from its schedule, or too few
+ * local competitors publish the line to compare it.
+ */
+export function notComparableNote(line: Pick<ReportLine, "own" | "peers">): string {
+  if (!line.own && (line.peers?.n ?? 0) >= MIN_LOCAL_PEERS_PER_LINE) return "Not found in your schedule";
+  return "Too few local competitors";
+}
+
+const DOT_CLASS: Record<LinePosition, string> = {
+  above_market: "bg-brick",
+  in_market: "bg-ink",
+  below_market: "bg-below-market",
+  free: "bg-below-market",
+};
+
+/**
+ * The line as a picture: the local middle half shaded, the local median as a tick, the
+ * institution's own amount as a dot. The axis widens so the dot always fits.
+ */
+export function LineRange({ line }: { line: ReportLine }) {
+  if (!line.comparable || !line.peers || !line.own || !line.position) return null;
+  const { p25, p75, median } = line.peers;
+  const own = line.own.amount;
+  const lo = Math.min(own, p25);
+  const hi = Math.max(own, p75);
+  const pad = Math.max((hi - lo) * 0.2, 1);
+  // Not clamped at $0: the axis is never labelled, and a $0 dot needs room to sit whole.
+  const min = lo - pad;
+  const span = hi + pad - min;
+  const x = (v: number) => ((v - min) / span) * 100;
+  return (
+    <span className="relative block h-4 w-full min-w-[7rem] [print-color-adjust:exact]" aria-hidden="true">
+      <span className="absolute inset-x-0 top-1/2 border-t border-border" />
+      <span className="absolute top-1/2 h-2 -translate-y-1/2 rounded-full bg-brick-tint" style={{ left: `${x(p25)}%`, width: `${Math.max(x(p75) - x(p25), 1)}%` }} />
+      <span className="absolute top-0 h-4 w-[2px] bg-ink/60" style={{ left: `${x(median)}%` }} />
+      <span
+        className={`absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-surface-0 ${DOT_CLASS[line.position]}`}
+        style={{ left: `${x(own)}%` }}
+      />
     </span>
   );
 }
@@ -205,7 +259,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
           )}
           <AtAGlance lines={analysis.lines} />
           {sinceBought && <SinceBought savedAt={sinceBought.savedAt} changes={sinceBought.changes} />}
-          <section className="mt-8 rounded-xl border border-border bg-surface-0 p-6" aria-labelledby="findings-heading">
+          <section className="mt-8 rounded-xl border border-border bg-surface-0 p-4 sm:p-6" aria-labelledby="findings-heading">
             <h2 id="findings-heading" className="font-bold text-xl text-ink" style={SERIF}>
               What stands out
             </h2>
@@ -219,22 +273,41 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
             </ul>
           </section>
 
-          <section className="mt-8 overflow-x-auto rounded-xl border border-border bg-surface-0 p-6" aria-labelledby="lines-heading">
+          <section className="mt-8 rounded-xl border border-border bg-surface-0 p-4 sm:overflow-x-auto sm:p-6" aria-labelledby="lines-heading">
             <h2 id="lines-heading" className="font-bold text-xl text-ink" style={SERIF}>
               Your fees against local competitors
             </h2>
             <p className="mt-1 text-[13px] text-ink-muted">
               A line is compared only when at least {MIN_LOCAL_PEERS_PER_LINE} local competitors publish it.
             </p>
-            <table className="mt-4 w-full min-w-[640px] text-left text-sm">
+            <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-muted print:hidden" aria-hidden="true">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2 w-5 rounded-full bg-brick-tint" /> Local middle half
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-3 w-[2px] bg-ink/60" /> Local median
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full bg-brick" /> {name}, above
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full bg-ink" /> Inside
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full bg-below-market" /> Below
+              </span>
+            </p>
+            {/* Phones get the four columns that fit; every figure is also in the named competitors and method below. */}
+            <table className="mt-4 w-full text-left text-sm sm:min-w-[760px] print:min-w-0">
               <thead className="border-b border-border text-[11px] uppercase tracking-[0.08em] text-ink-muted">
                 <tr>
                   <th className="py-2 pr-3 font-semibold">Fee</th>
                   <th className="py-2 pr-3 text-right font-semibold">Yours</th>
+                  <td className="hidden w-[22%] py-2 pr-4 sm:table-cell print:hidden" aria-hidden="true" />
                   <th className="py-2 pr-3 text-right font-semibold">Local median</th>
-                  <th className="py-2 pr-3 text-right font-semibold">Middle half</th>
-                  <th className="py-2 pr-3 text-right font-semibold">Competitors</th>
-                  <th className="py-2 pr-3 text-right font-semibold">Charging less</th>
+                  <th className="hidden py-2 pr-3 text-right font-semibold sm:table-cell print:table-cell">Middle half</th>
+                  <th className="hidden py-2 pr-3 text-right font-semibold sm:table-cell print:table-cell">Competitors</th>
+                  <th className="hidden py-2 pr-3 text-right font-semibold sm:table-cell print:table-cell">Charging less</th>
                   <th className="py-2 font-semibold">Position</th>
                 </tr>
               </thead>
@@ -250,16 +323,19 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                         </span>
                       )}
                     </td>
+                    <td className="hidden py-2 pr-4 sm:table-cell print:hidden" aria-hidden="true">
+                      <LineRange line={line} />
+                    </td>
                     <td className="py-2 pr-3 text-right tabular-nums">{line.comparable ? money(line.peers?.median) : "—"}</td>
-                    <td className="py-2 pr-3 text-right tabular-nums">
+                    <td className="hidden py-2 pr-3 text-right tabular-nums sm:table-cell print:table-cell">
                       {line.comparable && line.peers ? `${money(line.peers.p25)}–${money(line.peers.p75)}` : "—"}
                     </td>
-                    <td className="py-2 pr-3 text-right tabular-nums">{line.peers?.n ?? 0}</td>
-                    <td className="py-2 pr-3 text-right tabular-nums">
+                    <td className="hidden py-2 pr-3 text-right tabular-nums sm:table-cell print:table-cell">{line.peers?.n ?? 0}</td>
+                    <td className="hidden py-2 pr-3 text-right tabular-nums sm:table-cell print:table-cell">
                       {line.chargingLess !== null && line.peers ? `${line.chargingLess} of ${line.peers.n}` : "—"}
                     </td>
                     <td className="py-2">
-                      {line.comparable ? <PositionChip line={line} /> : <span className="text-[12px] text-ink-muted">Not enough local data</span>}
+                      {line.comparable ? <PositionChip line={line} /> : <span className="text-[12px] text-ink-muted">{notComparableNote(line)}</span>}
                     </td>
                   </tr>
                 ))}
@@ -272,7 +348,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
           {revenue && <RevenueSection name={name} charterType={data.subject.charter_type} revenue={revenue} />}
 
           {analysis.named.length > 0 && (
-            <section className="mt-8 overflow-x-auto rounded-xl border border-border bg-surface-0 p-6" aria-labelledby="named-heading">
+            <section className="mt-8 rounded-xl border border-border bg-surface-0 p-4 sm:overflow-x-auto sm:p-6" aria-labelledby="named-heading">
               <h2 id="named-heading" className="font-bold text-xl text-ink" style={SERIF}>
                 Named competitors, same lines
               </h2>
@@ -283,7 +359,31 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                 {branches &&
                   ` The market's ${branches.totalBranches.toLocaleString("en-US")} bank branches hold ${depositsLabel(branches.totalDeposits)} in deposits; under each bank are its branches and share of those deposits. Credit unions show branches only, in the market's cities, because NCUA reports no deposits by branch.`}
               </p>
-              <table className="mt-4 w-full min-w-[760px] text-left text-sm">
+              <NamedCompetitorsPhone
+                lines={tableKeys.map((key) => ({ key, label: FEE_LINE_LABELS[key] ?? key }))}
+                subject={{
+                  id: data.subject.institution_id,
+                  name,
+                  detail: footprintLine(branches, data.subject.institution_id),
+                  href: null,
+                  fees: Object.fromEntries(tableKeys.map((key) => [key, key in ownFees ? { amount: ownFees[key], url: null, line: null } : undefined])),
+                }}
+                competitors={analysis.named.map((competitor) => ({
+                  id: competitor.institution_id,
+                  name: competitor.institution_name,
+                  detail: [competitor.city ? cityLabel(competitor.city) : null, footprintLine(branches, competitor.institution_id)].filter(Boolean).join(" · ") || null,
+                  href: `/institution/${competitor.institution_id}`,
+                  fees: Object.fromEntries(
+                    tableKeys.map((key) => [
+                      key,
+                      competitor.fees[key] === undefined
+                        ? undefined
+                        : { amount: competitor.fees[key], url: competitor.sources[key]?.source_url ?? null, line: competitor.sources[key]?.source_line ?? null },
+                    ]),
+                  ),
+                }))}
+              />
+              <table className="mt-4 hidden w-full min-w-[760px] text-left text-sm sm:table print:table">
                 <thead className="border-b border-border text-[11px] uppercase tracking-[0.08em] text-ink-muted">
                   <tr>
                     <th className="min-w-[240px] py-2 pr-3 font-semibold">Institution</th>
@@ -346,27 +446,51 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
             </section>
           )}
 
-          <section className="mt-8 rounded-xl border border-border bg-surface-0 p-6 text-[13px] leading-relaxed text-ink-soft" aria-labelledby="method-heading">
+          <section className="mt-8 rounded-xl border border-border bg-surface-0 p-4 text-[13px] sm:p-6 leading-relaxed text-ink-soft" aria-labelledby="method-heading">
             <h2 id="method-heading" className="font-bold text-lg text-ink" style={SERIF}>
               Sources and method
             </h2>
-            <p className="mt-2">
-              Your market is the {market.county_fips.length === 1 ? "county" : `${market.county_fips.length} counties`}{" "}
-              {market.basis === "branch_counties" ? "holding most of your deposits" : "around your headquarters"} (FDIC
-              Summary of Deposits, {market.sod_year}). Competitors are every bank with a branch there and every
-              institution headquartered there. Each figure is a published, verified fee from the institution&apos;s own
-              schedule; one representative amount per institution and fee line, with fee caps excluded. A figure is used only
-              when a line of that institution&apos;s own stored schedule states that amount as the fee; amounts that are
-              balance thresholds, depend on a balance band, or can&apos;t be found in the schedule are left out, and so
-              are fees under review for a correction, business prices, savings fees on the checking line, and records
-              whose fee name was not read cleanly
-              {droppedCount > 0 ? ` (${droppedCount} published figures in this market were left out this way)` : ""}.
-              When a schedule lists several versions of a fee, the comparison uses the standard consumer version (not an
-              online, business or other special variant); if several still remain, it uses the lowest monthly maintenance
-              fee and the highest amount for every other fee. &ldquo;Read&rdquo; dates are the day we saved the copy of the
-              schedule that states the fee.
-            </p>
-            <ul className="mt-3 space-y-1">
+            <dl className="mt-3 grid gap-x-6 gap-y-3 sm:grid-cols-3">
+              <div>
+                <dt className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">Market</dt>
+                <dd className="mt-1">
+                  The {market.county_fips.length === 1 ? "county" : `${market.county_fips.length} counties`}{" "}
+                  {market.basis === "branch_counties" ? "holding most of your deposits" : "around your headquarters"}, from the
+                  FDIC Summary of Deposits, {market.sod_year}.
+                </dd>
+              </div>
+              <div>
+                <dt className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">Competitors</dt>
+                <dd className="mt-1">Every bank with a branch there and every institution headquartered there.</dd>
+              </div>
+              <div>
+                <dt className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">Figures</dt>
+                <dd className="mt-1">
+                  One published fee per institution and line, each a line of its own schedule. &ldquo;Read&rdquo; is the day we
+                  saved that schedule.
+                </dd>
+              </div>
+            </dl>
+            <details className="mt-4 rounded-md border border-border bg-white/60 p-3">
+              <summary className="cursor-pointer font-semibold text-ink">How each figure is chosen</summary>
+              <ul className="mt-2 list-disc space-y-1.5 pl-5">
+                <li>A figure is used only when a line of the institution&apos;s stored schedule states that amount as the fee.</li>
+                <li>
+                  Left out: balance thresholds, amounts that depend on a balance band, amounts not found in the schedule, fee
+                  caps, fees under review for a correction, business prices, savings fees on the checking line, and records
+                  whose fee name was not read cleanly
+                  {droppedCount > 0 ? ` (${droppedCount} published figures in this market)` : ""}.
+                </li>
+                <li>
+                  When a schedule lists several versions of a fee, the standard consumer version is used, not an online,
+                  business or other special one. If several remain, the lowest monthly maintenance fee and the highest amount
+                  for every other fee.
+                </li>
+              </ul>
+            </details>
+            <details className="mt-3 rounded-md border border-border bg-white/60 p-3">
+              <summary className="cursor-pointer font-semibold text-ink">Your fees, in your schedule&apos;s words</summary>
+            <ul className="mt-2 space-y-1.5">
               {analysis.lines
                 .filter((line) => line.own)
                 .map((line) => (
@@ -393,23 +517,24 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                   </li>
                 ))}
             </ul>
-            <details className="mt-4 rounded-md border border-border bg-white/60 p-3">
+            </details>
+            <details className="mt-3 rounded-md border border-border bg-white/60 p-3">
               <summary className="cursor-pointer font-semibold text-ink">
                 Every competitor figure behind the local numbers, with its source
               </summary>
               {comparable.map((line) => (
-                <div key={line.key} className="mt-4 overflow-x-auto">
+                <div key={line.key} className="mt-4">
                   <h3 className="text-[13px] font-semibold text-ink">
                     {line.label} ({line.peerFigures.length} competitors)
                   </h3>
-                  <table className="mt-1 w-full min-w-[640px] text-left text-[12px]">
-                    <tbody>
+                  {/* One stacked row per figure, so the schedule's words wrap instead of scrolling sideways. */}
+                  <ul className="mt-1 text-[12px]">
                       {line.peerFigures.map((figure) => (
-                        <tr key={figure.institution_id} className="border-b border-surface-200 last:border-0 align-top">
-                          <td className="py-1 pr-3 text-ink">{competitorName.get(figure.institution_id) ?? `Institution ${figure.institution_id}`}</td>
-                          <td className="py-1 pr-3 text-right tabular-nums text-ink">{money(figure.amount)}</td>
-                          <td className="py-1 pr-3">“{figure.source_line}”</td>
-                          <td className="whitespace-nowrap py-1">
+                        <li key={figure.institution_id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 border-b border-surface-200 py-1 last:border-0 sm:grid-cols-[minmax(0,14rem)_4rem_minmax(0,1fr)_auto]">
+                          <span className="text-ink">{competitorName.get(figure.institution_id) ?? `Institution ${figure.institution_id}`}</span>
+                          <span className="text-right tabular-nums text-ink">{money(figure.amount)}</span>
+                          <span className="col-span-2 sm:col-span-1">“{figure.source_line}”</span>
+                          <span className="col-span-2 sm:col-span-1 sm:whitespace-nowrap">
                             {figure.source_url ? (
                               <a href={figure.source_url} className="underline" rel="noopener noreferrer" target="_blank">
                                 source
@@ -418,11 +543,10 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                               "stored copy"
                             )}
                             {figure.schedule_read_on ? `, read ${figure.schedule_read_on}` : ""}
-                          </td>
-                        </tr>
+                          </span>
+                        </li>
                       ))}
-                    </tbody>
-                  </table>
+                  </ul>
                 </div>
               ))}
             </details>
