@@ -951,7 +951,7 @@ describe("category change re-judge (#1295)", () => {
 });
 
 describe("conditionalZero on run-on lines (#1571, live rows read on prod Oct 16)", () => {
-  const notaryLeader = `DraŌ/Check Copy${" .".repeat(35)} $5.00 Notary${" .".repeat(45)}.FREE`;
+  const notaryLeader = `DraŌ/Check Copy${" .".repeat(35)} $5.00 Notary${" .".repeat(45)}FREE`;
   // [published id, fee name, stored line]: a neighbour's price is not this free fee's condition.
   const free: Array<[number, string, string]> = [
     [74, "Paper Statements or eStatements", "Replace Debit Card (first 2 cards free) $5.00 Paper Statements or eStatements Free"],
