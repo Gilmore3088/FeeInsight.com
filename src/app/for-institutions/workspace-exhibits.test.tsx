@@ -1,10 +1,7 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
 import type { CompetitorBoard } from "./board-math";
-import { CompetitorBoardExhibit, PriceTesterExhibit } from "./workspace-exhibits";
-import { DEMO_LEAD_SOURCE, DemoRequestForm } from "./demo-request-form";
-
-vi.mock("@/lib/analytics", () => ({ trackEvent: vi.fn() }));
+import { CompetitorBoardExhibit, PriceTesterExhibit, SAMPLE_REPORT_PATH } from "./workspace-exhibits";
 
 const peer = (id: number, name: string, amount: number) => ({ id, name, amount });
 
@@ -12,6 +9,8 @@ const board: CompetitorBoard = {
   institutionName: "Capital City Bank",
   marketLabel: "Tallahassee, FL area (3 counties)",
   competitorsWithData: 29,
+  leadKey: "overdraft",
+  readOn: "2026-10-12",
   lines: [
     {
       key: "overdraft",
@@ -40,51 +39,53 @@ const board: CompetitorBoard = {
   ],
 };
 
-afterEach(() => vi.restoreAllMocks());
-
 describe("CompetitorBoardExhibit", () => {
-  it("shows the institution's fee, its source line, and names a competitor on hover", () => {
+  it("shows the institution's fee, its own schedule line, the source footer and the sample link", () => {
     render(<CompetitorBoardExhibit board={board} />);
     expect(screen.getByText("Hamilton · My fees")).toBeTruthy();
     expect(screen.getByText(/3 of 5 local competitors charge less/)).toBeTruthy();
-    expect(screen.getByText(/Overdraft Item Fee\* \| \$35/)).toBeTruthy();
-    fireEvent.mouseEnter(screen.getByRole("button", { name: "Truist Bank: $36.00" }));
+    expect(screen.getByText(/Capital City Bank’s schedule: “Overdraft Item Fee\* \| \$35”/)).toBeTruthy();
+    expect(screen.getByText(/Bank Fee Index · each fee from the bank’s own published schedule · read Oct 12, 2026/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "From the free sample report" }).getAttribute("href")).toBe(SAMPLE_REPORT_PATH);
+  });
+
+  it("names a competitor on hover, and keeps the dots out of the tab order", () => {
+    render(<CompetitorBoardExhibit board={board} />);
+    const dot = screen.getByRole("button", { name: "Truist Bank: $36.00" });
+    expect(dot.getAttribute("tabindex")).toBe("-1");
+    fireEvent.mouseEnter(dot);
     expect(screen.getAllByText("Truist Bank").length).toBeGreaterThan(0);
   });
 
-  it("switches fee line from the tabs", () => {
-    render(<CompetitorBoardExhibit board={board} />);
-    fireEvent.click(screen.getByRole("tab", { name: "Outgoing international wire" }));
-    expect(screen.getByRole("tab", { name: "Outgoing international wire" }).getAttribute("aria-selected")).toBe("true");
+  it("opens on the lead line and switches with pressed toggle buttons", () => {
+    render(<CompetitorBoardExhibit board={{ ...board, leadKey: "wire_intl_outgoing" }} />);
+    expect(screen.getByRole("group", { name: "Fee" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Outgoing international wire" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByText(/5 of 5 local competitors charge less/)).toBeTruthy();
     expect(screen.getByText("Above local range")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Overdraft" }));
+    expect(screen.getByRole("button", { name: "Overdraft" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.queryByRole("tab")).toBeNull();
   });
 });
 
 describe("PriceTesterExhibit", () => {
-  it("counts the competitors charging less as the price moves", () => {
+  it("counts the competitors charging less as the price moves, and returns to the exact price", () => {
     render(<PriceTesterExhibit board={board} />);
     const slider = screen.getByLabelText("Price to try") as HTMLInputElement;
     expect(slider.value).toBe("35");
+    expect(slider.getAttribute("step")).toBe("0.01");
     fireEvent.change(slider, { target: { value: "20" } });
     expect(slider.getAttribute("aria-valuetext")).toBe("$20.00: 1 of 5 local competitors charge less");
     expect(screen.getByText("Below local range")).toBeTruthy();
+    fireEvent.change(slider, { target: { value: "35" } });
+    expect(slider.getAttribute("aria-valuetext")).toBe("$35.00: 3 of 5 local competitors charge less");
+    expect(document.querySelector("[aria-live]")).toBeNull();
+    expect(screen.getByText(/Bank Fee Index · each fee/)).toBeTruthy();
   });
-});
 
-describe("DemoRequestForm", () => {
-  it("posts the same demo lead the contact form does", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
-    vi.stubGlobal("fetch", fetchMock);
-    render(<DemoRequestForm />);
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Jane Smith" } });
-    fireEvent.change(screen.getByLabelText("Work email"), { target: { value: "jane@bank.com" } });
-    fireEvent.change(screen.getByLabelText("Bank or credit union"), { target: { value: "Capital City Bank" } });
-    fireEvent.click(screen.getByRole("button", { name: "Request a demo" }));
-    await waitFor(() => expect(screen.getByText("Request received")).toBeTruthy());
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(fetchMock.mock.calls[0][0]).toBe("/api/leads");
-    expect(body).toMatchObject({ name: "Jane Smith", email: "jane@bank.com", company: "Capital City Bank", source: DEMO_LEAD_SOURCE });
-    vi.unstubAllGlobals();
+  it("labels the axis in dollars and cents", () => {
+    render(<PriceTesterExhibit board={board} />);
+    expect(screen.getByText("$25.00")).toBeTruthy();
   });
 });

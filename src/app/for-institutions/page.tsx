@@ -36,10 +36,10 @@ const HERO_CATEGORY = "overdraft";
 
 // Title keeps the buyer's category terms (site v3 brief 05, section 6).
 const PAGE_TITLE = "Bank Fee Benchmarking and Competitive Fee Reports";
+// Kept under 160 characters so search results show it whole.
 const PAGE_DESCRIPTION =
-  `Know where your fees stand in your market, with a source for every figure. The ${PRODUCT_NAME} reads ` +
-  `the published fee schedules of U.S. banks and credit unions, and Hamilton, the Pro workspace, takes you ` +
-  `from that figure to a decision and a board document.`;
+  `Know where your fees stand against named local competitors, with a source for every figure. ` +
+  `Hamilton, the Pro workspace, is built on the ${PRODUCT_NAME}.`;
 
 export const metadata: Metadata = {
   title: PAGE_TITLE,
@@ -123,7 +123,7 @@ function Hero({ exhibit }: { exhibit: ReactNode }) {
   const { fromMonthly } = proPlanFacts();
   return (
     <section id="hamilton" aria-labelledby="hero-heading" className="scroll-mt-16 border-b border-border">
-      <div className="mx-auto grid max-w-page gap-10 px-4 pb-14 pt-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:items-center lg:gap-10 lg:pb-20 lg:pt-14 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] xl:gap-14">
+      <div className="mx-auto grid max-w-page gap-10 px-4 pb-14 pt-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:items-center lg:gap-10 lg:pb-14 lg:pt-14 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] xl:gap-14">
         <div>
           <p className={EYEBROW}>Bank fee benchmarking</p>
           {/* The homepage hero's display face: Geist 600, one colour, no trailing period. The size
@@ -135,7 +135,7 @@ function Hero({ exhibit }: { exhibit: ReactNode }) {
             className="mt-4 text-[length:clamp(1.5rem,7.8vw,2rem)] !font-semibold leading-[1.04] !tracking-[-0.04em] text-ink sm:text-[3rem] lg:text-[2.25rem] xl:text-[2.75rem]"
             style={SANS}
           >
-            Benchmark every fee against your competitors&apos; own schedules
+            Benchmark every fee against your competitors&rsquo; own schedules
           </h1>
           <p className="mt-5 max-w-xl text-[17px] leading-relaxed text-ink-soft">
             Hamilton, the Pro workspace, names each competitor and its fee, from your counties to the nation.
@@ -292,7 +292,7 @@ function PlansSection() {
   );
 }
 
-/** Closing band (navy): the demo request beside the two buttons (B2B landing pattern). */
+/** Closing band (navy): the demo request is its one button (B2B landing pattern); the search repeats as a text link. */
 function DemoClose() {
   return (
     <section id="demo" aria-labelledby="demo-heading" className="scroll-mt-16 bg-ink text-on-ink">
@@ -304,19 +304,11 @@ function DemoClose() {
           <p className="mt-4 max-w-md text-[16px] leading-relaxed text-on-ink/80">
             Tell us your institution. We&apos;ll walk you through its fees against its competitors.
           </p>
-          <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
-            <Link href={PRIMARY_CTA_NAV.href} className="fi-btn justify-center bg-paper text-ink hover:opacity-90">
+          <p className="mt-6 text-[14px]">
+            <Link href={PRIMARY_CTA_NAV.href} className="font-semibold underline underline-offset-2">
               {PRIMARY_CTA_NAV.label}
             </Link>
-            <TrackLink
-              event="upgrade_click"
-              eventProps={{ placement: "for_institutions_closing" }}
-              href={PRO_PLANS_NAV.href}
-              className="text-[14px] font-semibold underline underline-offset-2"
-            >
-              {PRO_PLANS_NAV.label}
-            </TrackLink>
-          </div>
+          </p>
         </div>
         <DemoRequestForm />
       </div>

@@ -1,7 +1,15 @@
 import type { MarketReport } from "@/lib/custom-report/report-data";
 import { placeLabel } from "@/app/market-report/report-body";
 import { verifiedSourceQuote } from "./sample-sources";
-import { MIN_MEDIAN_INSTITUTIONS, shortInstitutionName, type BoardLine, type BoardPeer, type CompetitorBoard } from "./board-math";
+import {
+  MIN_MEDIAN_INSTITUTIONS,
+  latestReadOn,
+  leadLineKey,
+  shortInstitutionName,
+  type BoardLine,
+  type BoardPeer,
+  type CompetitorBoard,
+} from "./board-math";
 
 /** Fee lines the workspace exhibits offer, in the order a pricing committee asks about them. */
 export const BOARD_LINE_ORDER = [
@@ -32,6 +40,7 @@ export function buildCompetitorBoard(report: MarketReport | null): CompetitorBoa
     return i < 0 ? BOARD_LINE_ORDER.length : i;
   };
   const lines: BoardLine[] = [];
+  const readDates: (string | null)[] = [];
   for (const line of [...analysis.lines].sort((a, b) => rank(a.key) - rank(b.key))) {
     if (!line.comparable || !line.own || !line.peers || !line.position) continue;
     const peers: BoardPeer[] = [];
@@ -39,7 +48,10 @@ export function buildCompetitorBoard(report: MarketReport | null): CompetitorBoa
       const name = names.get(figure.institution_id);
       if (name) peers.push({ id: figure.institution_id, name: shortInstitutionName(name), amount: figure.amount });
     }
-    if (peers.length < MIN_MEDIAN_INSTITUTIONS || line.peers.n < MIN_MEDIAN_INSTITUTIONS) continue;
+    // The count ("N of M charge less") and the quartiles must rest on the same institutions: a
+    // line shows only when every competitor behind the report's quartiles can be named here.
+    if (peers.length !== line.peers.n || peers.length < MIN_MEDIAN_INSTITUTIONS) continue;
+    readDates.push(line.own.schedule_read_on, ...line.peerFigures.map((figure) => figure.schedule_read_on));
     lines.push({
       key: line.key,
       // The sample report's own line name, without its qualifier: "Overdraft (per item)" reads "Overdraft".
@@ -66,5 +78,7 @@ export function buildCompetitorBoard(report: MarketReport | null): CompetitorBoa
     marketLabel,
     competitorsWithData: analysis.readiness.competitorsWithData,
     lines,
+    leadKey: leadLineKey(lines) ?? lines[0].key,
+    readOn: latestReadOn(readDates),
   };
 }

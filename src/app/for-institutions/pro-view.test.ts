@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ReportLine } from "@/lib/custom-report/analysis";
 import type { MarketReport } from "@/lib/custom-report/report-data";
 import { buildCompetitorBoard } from "./pro-view";
-import { chargingLess, lineAxisMax, rankWindow, shortInstitutionName, stackDots } from "./board-math";
+import { chargingLess, latestReadOn, leadLineKey, lineAxisMax, rankWindow, shortInstitutionName, stackDots } from "./board-math";
 import { proPlanFacts } from "./plan-facts";
 
 const competitors = [
@@ -15,10 +15,16 @@ const competitors = [
 ].map((c) => ({ ...c, city: null, state_code: "FL", charter_type: "bank", market_deposits: null }));
 
 function figure(id: number, amount: number) {
-  return { institution_id: id, line: "x", amount, fee_name: "x", source_url: null, updated_at: null, schedule_read_on: null, source_line: "" };
+  return { institution_id: id, line: "x", amount, fee_name: "x", source_url: null, updated_at: null, schedule_read_on: "2026-10-01", source_line: "" };
 }
 
-function line(key: string, own: number | null, amounts: number[], comparable = true): ReportLine {
+function line(
+  key: string,
+  own: number | null,
+  amounts: number[],
+  comparable = true,
+  position: ReportLine["position"] = "in_market",
+): ReportLine {
   const sorted = [...amounts].sort((a, b) => a - b);
   return {
     key,
@@ -26,7 +32,7 @@ function line(key: string, own: number | null, amounts: number[], comparable = t
     own: own === null ? null : { amount: own, fee_name: key, source_url: null, updated_at: null, schedule_read_on: "2026-10-03", source_line: "" },
     peers: sorted.length ? { n: sorted.length, p25: sorted[1], median: sorted[2], p75: sorted[3], min: sorted[0], max: sorted[sorted.length - 1] } : null,
     comparable,
-    position: comparable ? "in_market" : null,
+    position: comparable ? position : null,
     percentile: null,
     chargingLess: null,
     peerFigures: sorted.map((amount, i) => figure(i + 1, amount)),
@@ -58,6 +64,28 @@ describe("buildCompetitorBoard", () => {
     expect(board.competitorsWithData).toBe(29);
     expect(board.lines.map((l) => l.key)).toEqual(["overdraft", "stop_payment"]);
     expect(board.lines[0].peers[0]).toEqual({ id: 1, name: "Wells Fargo Bank, N.A.", amount: 10 });
+    // Nothing sits outside the local middle half, so the lead is the first line.
+    expect(board.leadKey).toBe("overdraft");
+    expect(board.readOn).toBe("2026-10-03");
+  });
+
+  it("opens on the line furthest outside the local middle half (a finding, not a tie)", () => {
+    const board = buildCompetitorBoard(
+      report([
+        line("overdraft", 35, [10, 31.5, 35, 36, 40]),
+        line("stop_payment", 40, [20, 30, 33, 35, 36], true, "above_market"),
+        line("wire_intl_outgoing", 75, [20, 30, 45, 50, 50], true, "above_market"),
+      ]),
+    )!;
+    expect(board.lines.map((l) => l.key)).toEqual(["overdraft", "stop_payment", "wire_intl_outgoing"]);
+    expect(board.leadKey).toBe("wire_intl_outgoing");
+  });
+
+  it("drops a line when a competitor behind its quartiles cannot be named, so the count and quartiles match", () => {
+    const partial = line("overdraft", 35, [10, 31.5, 35, 36, 40, 34]);
+    partial.peerFigures.push(figure(99, 50));
+    partial.peers = { ...partial.peers!, n: 7 };
+    expect(buildCompetitorBoard(report([partial]))).toBeNull();
   });
 
   it("leaves out lines that are not comparable or name fewer than five competitors (thin rule)", () => {
@@ -82,14 +110,28 @@ describe("board math", () => {
 
   it("stacks equal amounts and finds a clean axis top", () => {
     expect(stackDots([35, 10, 35, 35])).toEqual([0, 0, 1, 2]);
-    expect(lineAxisMax({ peers, own: 35 })).toBe(40);
-    expect(lineAxisMax({ peers, own: 75 })).toBe(75);
+    expect(lineAxisMax({ peers, own: 35 })).toBe(50);
+    expect(lineAxisMax({ peers, own: 75 })).toBe(100);
     expect(lineAxisMax({ peers: [], own: 2 })).toBe(10);
   });
 
   it("shortens National Association only", () => {
     expect(shortInstitutionName("Bank of America, National Association")).toBe("Bank of America, N.A.");
     expect(shortInstitutionName("Truist Bank")).toBe("Truist Bank");
+  });
+});
+
+describe("lead line and read dates", () => {
+  it("ranks lines outside the range by their gap from the median, else takes the first", () => {
+    const at = (key: string, own: number, median: number, position: "in_market" | "above_market" | "below_market") => ({ key, own, median, position });
+    expect(leadLineKey([at("a", 35, 35, "in_market"), at("b", 9, 11, "below_market"), at("c", 75, 50, "above_market")])).toBe("c");
+    expect(leadLineKey([at("a", 35, 35, "in_market"), at("b", 36, 35, "in_market")])).toBe("a");
+    expect(leadLineKey([])).toBeNull();
+  });
+
+  it("takes the newest read date", () => {
+    expect(latestReadOn(["2026-10-03", null, "2026-10-12", "bad"])).toBe("2026-10-12");
+    expect(latestReadOn([null])).toBeNull();
   });
 });
 

@@ -5,14 +5,16 @@ import { SANS } from "@/app/landing-shared";
 
 /**
  * The tour video's place, in its own section under the hero (never over it). Until a clip is
- * approved, the 16:9 poster draws the live sample's own fee lines, and it is a picture, not a
- * control: the only action here is the demo request.
+ * approved, the 16:9 poster draws the live sample's own fee lines under a static "Tour coming
+ * soon" mark: a picture, not a control, so the only action here is the on-page demo request.
+ * With no live sample there is nothing to draw, and the section is left out.
  */
 export function DemoVideoSection({ board }: { board: CompetitorBoard | null }) {
-  const lines = board?.lines ?? [];
+  if (!board) return null;
+  const lines = board.lines;
   return (
     <section aria-labelledby="tour-heading" className="border-b border-border bg-paper">
-      <div className="mx-auto max-w-5xl px-4 py-14 sm:px-6 sm:py-20">
+      <div className="mx-auto max-w-5xl px-4 pb-14 pt-10 sm:px-6 sm:pb-20 sm:pt-12">
         <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
           <h2
             id="tour-heading"
@@ -24,7 +26,7 @@ export function DemoVideoSection({ board }: { board: CompetitorBoard | null }) {
           <TrackLink
             event="contact_sales"
             eventProps={{ placement: "for_institutions_tour" }}
-            href={DEMO_REQUEST_NAV.href}
+            href="#demo"
             className="fi-btn fi-btn-secondary justify-center"
           >
             {DEMO_REQUEST_NAV.standaloneLabel}
@@ -33,7 +35,8 @@ export function DemoVideoSection({ board }: { board: CompetitorBoard | null }) {
         <figure className="mt-6">
           <div
             data-video-placeholder=""
-            aria-hidden="true"
+            role="img"
+            aria-label="Tour coming soon"
             className="relative aspect-video overflow-hidden rounded-2xl bg-warm-ink-900 shadow-fi-2 ring-1 ring-ink/10"
           >
             {lines.length > 0 ? (
@@ -60,17 +63,18 @@ export function DemoVideoSection({ board }: { board: CompetitorBoard | null }) {
                 })}
               </div>
             ) : null}
+            {/* A mark, not a button: muted and flat, with the static label under it. */}
             <span className="absolute inset-0 flex flex-col items-center justify-center gap-3">
-              <span className="flex h-16 w-16 items-center justify-center rounded-full bg-white shadow-fi-2 sm:h-20 sm:w-20">
-                <svg viewBox="0 0 12 12" className="ml-1 h-6 w-6 text-ink sm:h-7 sm:w-7">
+              <span className="flex h-14 w-14 items-center justify-center rounded-full bg-white/10 ring-1 ring-white/25 sm:h-16 sm:w-16">
+                <svg viewBox="0 0 12 12" className="ml-1 h-5 w-5 text-white/60 sm:h-6 sm:w-6">
                   <path d="M3 1.5v9l7.5-4.5z" fill="currentColor" />
                 </svg>
               </span>
+              <span className="rounded-full bg-white/10 px-3 py-1 text-[12px] font-semibold tracking-wide text-white/80">
+                Tour coming soon
+              </span>
             </span>
           </div>
-          <figcaption className="mt-3 text-[13px] text-ink-muted">
-            Tour video coming{board ? `. The poster shows ${board.institutionName}'s live fee lines.` : "."}
-          </figcaption>
         </figure>
       </div>
     </section>

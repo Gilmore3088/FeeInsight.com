@@ -1,14 +1,17 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId, useState, type ReactNode } from "react";
+import Link from "next/link";
 import { ProductFrame } from "@/components/marketing/product-frame";
 import { positionFor } from "@/lib/custom-report/analysis";
+import { PRODUCT_NAME } from "@/lib/constants";
 import {
   POSITION_TEXT,
   chargingLess,
   feeMoney,
   lineAxisMax,
   rankWindow,
+  readOnLabel,
   stackDots,
   type BoardLine,
   type BoardPeer,
@@ -19,13 +22,8 @@ const DOT = 10;
 const DOT_GAP = 3;
 const STRIP_BASE = 18;
 
-/** "2026-10-03" as "Oct 3, 2026". */
-function readOnLabel(iso: string | null): string | null {
-  const match = iso?.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!match) return null;
-  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
-}
+/** The free sample report every exhibit here is drawn from (funnel step 1). */
+export const SAMPLE_REPORT_PATH = "/reports/sample-competitive-fee-position";
 
 function FeeTabs({
   lines,
@@ -40,9 +38,9 @@ function FeeTabs({
 }) {
   return (
     <div
-      role="tablist"
+      role="group"
       aria-label={label}
-      className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:px-0"
+      className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-1 [mask-image:linear-gradient(to_right,black_82%,transparent)] [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:px-0 sm:[mask-image:none]"
     >
       {lines.map((line) => {
         const on = line.key === active;
@@ -50,8 +48,7 @@ function FeeTabs({
           <button
             key={line.key}
             type="button"
-            role="tab"
-            aria-selected={on}
+            aria-pressed={on}
             onClick={() => onPick(line.key)}
             className={
               "min-h-9 shrink-0 whitespace-nowrap rounded-full px-3 text-[12.5px] font-semibold transition-colors " +
@@ -109,11 +106,10 @@ export function DotStrip({
             <button
               key={peer.id}
               type="button"
+              tabIndex={-1}
               aria-label={`${peer.name}: ${feeMoney(peer.amount)}`}
               onMouseEnter={() => onFocus(peer.id)}
               onMouseLeave={() => onFocus(null)}
-              onFocus={() => onFocus(peer.id)}
-              onBlur={() => onFocus(null)}
               onClick={() => onFocus(peer.id)}
               className={
                 "absolute -translate-x-1/2 rounded-full transition-[background-color,transform] duration-200 focus:outline-none " +
@@ -148,11 +144,24 @@ export function DotStrip({
             className={`absolute ${i === 0 ? "" : i === ticks.length - 1 ? "-translate-x-full" : "-translate-x-1/2"}`}
             style={{ left: x(t) }}
           >
-            ${t}
+            {feeMoney(t)}
           </span>
         ))}
       </div>
     </div>
+  );
+}
+
+/** Where every figure in an exhibit comes from, with the newest read date behind it. */
+function SourceFooter({ board, children }: { board: CompetitorBoard; children?: ReactNode }) {
+  const readOn = readOnLabel(board.readOn);
+  return (
+    <p className="max-w-[none] flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-t border-border bg-paper/60 px-4 py-2.5 text-[11.5px] leading-5 text-ink-muted sm:px-5">
+      <span>
+        {PRODUCT_NAME} · each fee from the bank&rsquo;s own published schedule{readOn ? ` · read ${readOn}` : ""}
+      </span>
+      {children}
+    </p>
   );
 }
 
@@ -180,7 +189,7 @@ function Legend() {
  * that publishes the same fee, by name. Pick a fee; point at a dot to name it.
  */
 export function CompetitorBoardExhibit({ board }: { board: CompetitorBoard }) {
-  const [active, setActive] = useState(board.lines[0].key);
+  const [active, setActive] = useState(board.leadKey);
   const [focus, setFocus] = useState<number | null>(null);
   const line = board.lines.find((l) => l.key === active) ?? board.lines[0];
   const top = lineAxisMax(line);
@@ -210,11 +219,11 @@ export function CompetitorBoardExhibit({ board }: { board: CompetitorBoard }) {
           </p>
         </div>
         <div>
-          <p className="max-w-[none] mb-2 flex min-h-5 items-baseline justify-between gap-3 text-[12.5px]" aria-live="polite">
+          <p className="max-w-[none] mb-2 flex min-h-5 items-baseline justify-between gap-3 text-[12.5px]">
             {focused ? (
               <>
-                <span className="min-w-0 truncate font-semibold text-ink">{focused.name}</span>
-                <span className="shrink-0 font-mono tabular-nums text-ink">{feeMoney(focused.amount)}</span>
+                <span aria-hidden className="min-w-0 truncate font-semibold text-ink">{focused.name}</span>
+                <span aria-hidden className="shrink-0 font-mono tabular-nums text-ink">{feeMoney(focused.amount)}</span>
               </>
             ) : (
               <>
@@ -256,10 +265,15 @@ export function CompetitorBoardExhibit({ board }: { board: CompetitorBoard }) {
         </ol>
         {line.quote ? (
           <p className="max-w-[none] border-t border-border pt-3 text-[11.5px] leading-5 text-ink-muted">
-            Its schedule: &ldquo;{line.quote}&rdquo;{readOn ? ` · read ${readOn}` : ""}
+            {board.institutionName}&rsquo;s schedule: &ldquo;{line.quote}&rdquo;{readOn ? ` · read ${readOn}` : ""}
           </p>
         ) : null}
       </div>
+      <SourceFooter board={board}>
+        <Link href={SAMPLE_REPORT_PATH} className="font-semibold text-ink underline underline-offset-2">
+          From the free sample report
+        </Link>
+      </SourceFooter>
     </ProductFrame>
   );
 }
@@ -270,12 +284,11 @@ export function CompetitorBoardExhibit({ board }: { board: CompetitorBoard }) {
  */
 export function PriceTesterExhibit({ board }: { board: CompetitorBoard }) {
   const sliderId = useId();
-  const [active, setActive] = useState(board.lines[0].key);
+  const [active, setActive] = useState(board.leadKey);
   const line = board.lines.find((l) => l.key === active) ?? board.lines[0];
   const [price, setPrice] = useState(line.own);
   const [focus, setFocus] = useState<number | null>(null);
   const top = lineAxisMax(line, line.own * 1.25);
-  const step = top > 50 ? 1 : 0.5;
   const less = chargingLess(line.peers, price);
   const position = positionFor(price, line);
   const focused = line.peers.find((p) => p.id === focus) ?? null;
@@ -302,7 +315,7 @@ export function PriceTesterExhibit({ board }: { board: CompetitorBoard }) {
               {feeMoney(price)}
             </p>
           </div>
-          <div className="text-right" aria-live="polite">
+          <div className="text-right">
             <p className="font-mono text-[34px] font-semibold leading-none tabular-nums tracking-tight text-ink sm:text-[40px]">
               {less}
               <span className="text-[18px] text-ink-muted sm:text-[20px]">/{line.peers.length}</span>
@@ -315,9 +328,9 @@ export function PriceTesterExhibit({ board }: { board: CompetitorBoard }) {
           type="range"
           min={0}
           max={top}
-          step={step}
+          step={0.01}
           value={price}
-          onChange={(e) => setPrice(Number(e.target.value))}
+          onChange={(e) => setPrice(Math.round(Number(e.target.value) * 100) / 100)}
           className="h-11 w-full cursor-pointer accent-brick"
           aria-valuetext={`${feeMoney(price)}: ${less} of ${line.peers.length} local competitors charge less`}
         />
@@ -325,8 +338,8 @@ export function PriceTesterExhibit({ board }: { board: CompetitorBoard }) {
           <p className="max-w-[none] mb-2 flex min-h-5 items-baseline justify-between gap-3 text-[12.5px]">
             {focused ? (
               <>
-                <span className="min-w-0 truncate font-semibold text-ink">{focused.name}</span>
-                <span className="shrink-0 font-mono tabular-nums text-ink">{feeMoney(focused.amount)}</span>
+                <span aria-hidden className="min-w-0 truncate font-semibold text-ink">{focused.name}</span>
+                <span aria-hidden className="shrink-0 font-mono tabular-nums text-ink">{feeMoney(focused.amount)}</span>
               </>
             ) : (
               <>
@@ -340,6 +353,7 @@ export function PriceTesterExhibit({ board }: { board: CompetitorBoard }) {
           <DotStrip line={line} price={price} top={top} focus={focus} onFocus={setFocus} under subject={board.institutionName} />
         </div>
       </div>
+      <SourceFooter board={board} />
     </ProductFrame>
   );
 }

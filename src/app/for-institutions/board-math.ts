@@ -37,6 +37,36 @@ export interface CompetitorBoard {
   /** Local competitors with verified fees, as the report counts them. */
   competitorsWithData: number;
   lines: BoardLine[];
+  /** The line both exhibits open on: the finding (see `leadLineKey`). */
+  leadKey: string;
+  /** The newest day a schedule behind these lines was read (YYYY-MM-DD), or null. */
+  readOn: string | null;
+}
+
+/**
+ * The line to open on: of the lines outside the local middle half, the one furthest from the
+ * local median (relative to it); with none outside, the first line. A finding, not a tie.
+ */
+export function leadLineKey(lines: Pick<BoardLine, "key" | "own" | "median" | "position">[]): string | null {
+  const gap = (line: Pick<BoardLine, "own" | "median">) =>
+    line.median > 0 ? Math.abs(line.own - line.median) / line.median : Math.abs(line.own - line.median);
+  const outside = lines.filter((line) => line.position !== "in_market");
+  const lead = [...outside].sort((a, b) => gap(b) - gap(a))[0] ?? lines[0];
+  return lead?.key ?? null;
+}
+
+/** The latest of a set of YYYY-MM-DD read dates, or null. */
+export function latestReadOn(dates: (string | null | undefined)[]): string | null {
+  const valid = dates.filter((d): d is string => typeof d === "string" && /^\d{4}-\d{2}-\d{2}/.test(d));
+  return valid.length ? valid.map((d) => d.slice(0, 10)).sort().at(-1)! : null;
+}
+
+/** "2026-10-03" as "Oct 3, 2026"; anything else is null. */
+export function readOnLabel(iso: string | null): string | null {
+  const match = iso?.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 }
 
 /** "Wells Fargo Bank, National Association" reads "Wells Fargo Bank, N.A." in a tight exhibit. */
@@ -67,7 +97,8 @@ export function rankWindow(
 
 /** A clean axis top above every figure on a line (and a price being tried). */
 export function lineAxisMax(line: Pick<BoardLine, "peers" | "own">, extra = 0): number {
-  const max = Math.max(line.own, extra, ...line.peers.map((peer) => peer.amount));
+  // A tenth of headroom, so the highest fee never sits on the chart's edge.
+  const max = Math.max(line.own, extra, ...line.peers.map((peer) => peer.amount)) * 1.1;
   if (max <= 10) return 10;
   const step = max <= 50 ? 10 : 25;
   return Math.ceil(max / step) * step;
