@@ -53,6 +53,11 @@ export interface SavedEvidenceAppendix {
   limitations: string[];
 }
 
+export const APPENDIX_LINEAGE_LIMITATION =
+  "This appendix records saved input lineage; it does not independently verify the written claims.";
+export const NO_RECORD_EVIDENCE_LIMITATION = "No record-bound evidence was saved with this answer.";
+export const INCOMPLETE_RECORDS_LIMITATION = "Some recorded inputs are incomplete or not independently inspectable.";
+
 function copySource(source: HamiltonFactSource): HamiltonFactSource {
   return {
     ...source,
@@ -251,13 +256,13 @@ export function savedEvidenceAppendix(
   const limitations = new Set([
     ...(evidence?.limitations ?? []),
     CLAIM_BINDING_LIMITATION,
-    "This appendix records saved input lineage; it does not independently verify the written claims.",
+    APPENDIX_LINEAGE_LIMITATION,
   ]);
   if (!evidence || (facts.length === 0 && derivations.length === 0)) {
-    limitations.add("No record-bound evidence was saved with this answer.");
+    limitations.add(NO_RECORD_EVIDENCE_LIMITATION);
   }
   if (facts.some((fact) => fact.problems.length > 0) || derivations.some((fact) => fact.problems.length > 0)) {
-    limitations.add("Some recorded inputs are incomplete or not independently inspectable.");
+    limitations.add(INCOMPLETE_RECORDS_LIMITATION);
   }
 
   return {

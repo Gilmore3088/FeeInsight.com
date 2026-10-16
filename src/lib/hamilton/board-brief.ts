@@ -1,6 +1,20 @@
 import type { AnalyzeResponse, ReportExhibit, ReportSummaryResponse } from "./types";
-import type { HamiltonEvidenceBundle } from "./evidence-contract";
-import { CLAIM_BINDING_LIMITATION, LEGACY_HIGH_CONFIDENCE_LIMITATION } from "./evidence-contract";
+import type { EvidenceBoundAnalyzeResponse, HamiltonEvidenceBundle } from "./evidence-contract";
+import {
+  CLAIM_BINDING_LIMITATION,
+  LEGACY_HIGH_CONFIDENCE_LIMITATION,
+  OWN_AGGREGATE_LIMITATION,
+  PEER_AGGREGATE_LIMITATION,
+  STORED_SNAPSHOT_LIMITATION,
+} from "./evidence-contract";
+import {
+  APPENDIX_LINEAGE_LIMITATION,
+  INCOMPLETE_RECORDS_LIMITATION,
+  NO_RECORD_EVIDENCE_LIMITATION,
+  savedEvidenceAppendix,
+  type SavedEvidenceDerivationRow,
+  type SavedEvidenceFactRow,
+} from "./evidence-export";
 import type { SourceRef } from "./workspace/types";
 
 /** A source date as a board reads it: "2026-10-12T00:00:00.000Z" -> "Oct 12, 2026"; anything else as saved. */
@@ -13,11 +27,89 @@ export function readerAsOf(asOf: string): string {
 
 /** The saved answer's evidence limits in a board's words. The stored wording stays as the audit record. */
 export function readerLimitation(text: string): string {
-  if (text === CLAIM_BINDING_LIMITATION) return "Each figure is tied to its source; the sentences around the figures were not checked one by one.";
+  if (text === CLAIM_BINDING_LIMITATION || text === APPENDIX_LINEAGE_LIMITATION) return "Each figure is tied to its source; the sentences around the figures were not checked one by one.";
   if (text === LEGACY_HIGH_CONFIDENCE_LIMITATION) return "This answer was saved before Hamilton kept a source for each figure, so treat it as directional.";
   if (/^\d+ structured evidence records? saved with explicit identity\/source context\.$/.test(text)) return "Hamilton saved the figures behind this answer with the institution and source each came from.";
-  if (text === "Deterministic storyline saved without claim-level structured evidence records.") return "This answer was saved without a source for each individual figure.";
+  if (text === "Deterministic storyline saved without claim-level structured evidence records." || text === NO_RECORD_EVIDENCE_LIMITATION) return "This answer was saved without a source for each individual figure.";
+  if (text === STORED_SNAPSHOT_LIMITATION) return "Each figure matches the bank document Hamilton had stored when the answer was saved. It was not re-checked against the bank's current live schedule.";
+  if (text === OWN_AGGREGATE_LIMITATION) return "The institution's figure combines fee lines that differ in product, frequency or source document, so it is not tied to one listed fee.";
+  if (text === INCOMPLETE_RECORDS_LIMITATION) return "Some records behind this answer are incomplete; the records table marks which.";
+  if (text === PEER_AGGREGATE_LIMITATION) return "Peer figures are medians with no single fee record behind them; read them as directional.";
   return text;
+}
+
+function money(value: number): string {
+  const digits = Number.isInteger(value) ? 0 : 2;
+  const amount = Math.abs(value).toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  return `${value < 0 ? "-" : ""}$${amount}`;
+}
+
+function recordValue(value: number | string | null, unit: SavedEvidenceFactRow["unit"]): string {
+  if (value === null) return "Not recorded";
+  if (typeof value === "string") return value;
+  if (unit === "usd") return money(value);
+  if (unit === "percent") return `${value}%`;
+  return value.toLocaleString("en-US");
+}
+
+function recordProblems(problems: string[]): string {
+  return problems.map((p) => p.replace(/_/g, " ")).join("; ");
+}
+
+function factRow(fact: SavedEvidenceFactRow, names: ReadonlyMap<number, string>): string[] {
+  const { scope, source } = fact;
+  const fee = [scope.product, scope.feeCategory].filter(Boolean).join(", ");
+  const value = [recordValue(fact.value, fact.unit), fact.frequency].filter(Boolean).join(" ");
+  const institution = scope.institutionId === null ? "Institution not recorded" : names.get(scope.institutionId) ?? `Institution ${scope.institutionId}`;
+  const detail = [
+    institution,
+    source.recordId === null ? "fee record not recorded" : `fee record ${source.recordId}`,
+    source.sourceDocumentIds.length ? `document ${source.sourceDocumentIds.join(", ")}` : "document not recorded",
+    // The document's content fingerprint is its version: a changed schedule gets a new one.
+    source.documentContentHash ? `version ${source.documentContentHash.slice(0, 12)}` : "version not recorded",
+    `reporting date ${scope.reportingDate ? readerAsOf(scope.reportingDate) : "not recorded"}`,
+    ...(source.asOf ? [`published ${readerAsOf(source.asOf)}`] : []),
+    ...(source.retrievedAt ? [`retrieved ${readerAsOf(source.retrievedAt)}`] : []),
+    ...(source.lastCheckedAt ? [`source last checked ${readerAsOf(source.lastCheckedAt)}`] : []),
+    ...(source.location ? [source.location] : []),
+  ].join(" · ");
+  return [fact.id, fee ? `${fee}: ${value}` : value, detail, fact.problems.length ? `Incomplete record: ${recordProblems(fact.problems)}` : "Matches the stored source"];
+}
+
+function derivationRow(fact: SavedEvidenceDerivationRow): string[] {
+  const denominator = fact.denominatorFactId ? `; divided by ${fact.denominatorFactId}` : "";
+  const detail = `Calculated as ${fact.formula} from ${fact.inputFactIds.join(" and ") || "no recorded inputs"}${denominator}; rounding: ${fact.rounding}`
+    + ` · reporting date ${fact.scope.reportingDate ? readerAsOf(fact.scope.reportingDate) : "not recorded"}`;
+  return [fact.id, recordValue(fact.value, fact.unit), detail, fact.problems.length ? `Does not check: ${recordProblems(fact.problems)}` : "Recalculated from the saved records"];
+}
+
+/**
+ * Every saved limit on an answer in a reader's words: its confidence basis, then its evidence
+ * records' own (stored source, not a live re-check; incomplete records). Read from the saved answer only.
+ */
+export function savedAnswerLimits(analysis: EvidenceBoundAnalyzeResponse): string[] {
+  return [...new Set([...analysis.confidence.basis, ...savedEvidenceAppendix(analysis).limitations].map(readerLimitation))];
+}
+
+/**
+ * The saved answer's evidence records as an exhibit (#981, H06-T08): each record keeps its ID, source
+ * document and version, dates and calculation, frozen at save time so the screen, a reopened report
+ * and the PDF read the same rows. "Matches the stored source" is never a live-source check.
+ */
+export function evidenceRecordsExhibit(analysis: EvidenceBoundAnalyzeResponse): ReportExhibit | null {
+  const appendix = savedEvidenceAppendix(analysis);
+  if (!appendix.facts.length && !appendix.derivations.length) return null;
+  const identity = analysis.identityContext;
+  const names = new Map<number, string>();
+  if (identity?.researchInstitutionName && identity.researchInstitutionId) names.set(identity.researchInstitutionId, identity.researchInstitutionName);
+  return {
+    id: "evidence_records",
+    title: "Records behind the saved answer",
+    subtitle: `As saved ${appendix.generatedAt ? readerAsOf(appendix.generatedAt) : "on a date not recorded"}; not refreshed`,
+    columns: ["Record", "Value", "Source as saved", "Check"],
+    rows: [...appendix.facts.map((fact) => factRow(fact, names)), ...appendix.derivations.map(derivationRow)],
+    note: "\"Matches the stored source\" means the figure equals the bank document Hamilton had stored when the answer was saved. Hamilton did not re-check it against the bank's current live schedule for this report.",
+  };
 }
 
 export interface BoardBriefEdits { title: string; teamNote: string; includeEvidence: boolean }
@@ -36,6 +128,8 @@ export function boardBriefFromAnalysis(analysis: AnalyzeResponse & { factEvidenc
   const subject = analysis.identityContext?.researchInstitutionName;
   const fallback = subject && !analysis.title.includes(subject) ? `${subject}: ${analysis.title}` : analysis.title;
   const title = edits.title.trim().slice(0,200) || fallback;
+  const limits = savedAnswerLimits(analysis);
+  const records = edits.includeEvidence ? evidenceRecordsExhibit(analysis) : null;
   return {
     title,
     ...(analysis.identityContext ? { identityContext: analysis.identityContext } : {}),
@@ -47,10 +141,13 @@ export function boardBriefFromAnalysis(analysis: AnalyzeResponse & { factEvidenc
     executiveSummary: [analysis.hamiltonView],
     snapshot: [],
     strategicRationale: [analysis.whatThisMeans, ...analysis.whyItMatters].filter(Boolean).join("\n\n"),
-    tradeoffs: analysis.confidence.basis.map(value => ({ label: "Evidence limitation", value: readerLimitation(value) })),
-    recommendation: analysis.confidence.basis.length ? analysis.confidence.basis.map(readerLimitation).join("\n\n") : "Hamilton recorded no limits for this answer.",
+    tradeoffs: limits.map(value => ({ label: "Evidence limitation", value })),
+    recommendation: limits.length ? limits.join("\n\n") : "Hamilton recorded no limits for this answer.",
     implementationNotes: ["Built from a saved Hamilton answer. Figures are as first saved and were not refreshed.", ...(edits.teamNote.trim() ? [`Team note (user-authored): ${edits.teamNote.trim().slice(0,5000)}`] : [])],
-    exhibits: edits.includeEvidence && analysis.evidence.metrics.length ? [{ id: "statistical_appendix", title: "Evidence from the saved answer", subtitle: "Original values and source notes; not refreshed", columns: ["Measure", "Value", "Source / note"], rows: analysis.evidence.metrics.map(m => [m.label, m.value, m.note ?? ""]), note: "Values as first saved with the answer." }] : [],
+    exhibits: [
+      ...(edits.includeEvidence && analysis.evidence.metrics.length ? [{ id: "statistical_appendix" as const, title: "Evidence from the saved answer", subtitle: "Original values and source notes; not refreshed", columns: ["Measure", "Value", "Source / note"], rows: analysis.evidence.metrics.map(m => [m.label, m.value, m.note ?? ""]), note: "Values as first saved with the answer." }] : []),
+      ...(records ? [records] : []),
+    ],
     sources: unique.length ? unique.map(s => ({ label: s.label, detail: s.asOf ? `As of ${readerAsOf(s.asOf)}` : "As cited in the saved answer", url: s.url ?? null })) : [{ label: "Saved Hamilton analysis", detail: "Source details were not saved with this answer. Open the saved answer to see its evidence.", url: null }],
     exportControls: { pdfEnabled: true, shareEnabled: false },
   };
