@@ -77,8 +77,9 @@ describe("buildCompetitorBoard", () => {
         line("wire_intl_outgoing", 75, [20, 30, 45, 50, 50], true, "above_market"),
       ]),
     )!;
-    expect(board.lines.map((l) => l.key)).toEqual(["overdraft", "stop_payment", "wire_intl_outgoing"]);
     expect(board.leadKey).toBe("wire_intl_outgoing");
+    // The lead line comes first in the picker order (visible at first load on a phone); the rest keep their order.
+    expect(board.lines.map((l) => l.key)).toEqual(["wire_intl_outgoing", "overdraft", "stop_payment"]);
   });
 
   it("drops a line when a competitor behind its quartiles cannot be named, so the count and quartiles match", () => {

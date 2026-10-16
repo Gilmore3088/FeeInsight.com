@@ -69,6 +69,19 @@ describe("CompetitorBoardExhibit", () => {
   });
 });
 
+describe("picker order", () => {
+  it("draws the pickers in the board's order, so the lead line (first) is the first picker in both exhibits", () => {
+    const lead = { ...board, lines: [board.lines[1], board.lines[0]], leadKey: "wire_intl_outgoing" };
+    for (const Exhibit of [CompetitorBoardExhibit, PriceTesterExhibit]) {
+      const { unmount } = render(<Exhibit board={lead} />);
+      const first = screen.getAllByRole("group")[0].querySelector("button")!;
+      expect(first.textContent).toBe("Outgoing international wire");
+      expect(first.getAttribute("aria-pressed")).toBe("true");
+      unmount();
+    }
+  });
+});
+
 describe("PriceTesterExhibit", () => {
   it("counts the competitors charging less as the price moves, and returns to the exact price", () => {
     render(<PriceTesterExhibit board={board} />);

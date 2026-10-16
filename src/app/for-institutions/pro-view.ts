@@ -73,12 +73,16 @@ export function buildCompetitorBoard(report: MarketReport | null): CompetitorBoa
     market && market.places.length > 0
       ? `${placeLabel(market.places[0])} area${market.county_fips.length > 1 ? ` (${market.county_fips.length} counties)` : ""}`
       : null;
+  // The lead line goes first, so its picker shows at first load on a phone, where the
+  // pickers scroll sideways; the rest keep the committee order.
+  const leadKey = leadLineKey(lines) ?? lines[0].key;
+  const ordered = [...lines.filter((l) => l.key === leadKey), ...lines.filter((l) => l.key !== leadKey)];
   return {
     institutionName: data.subject.institution_name,
     marketLabel,
     competitorsWithData: analysis.readiness.competitorsWithData,
-    lines,
-    leadKey: leadLineKey(lines) ?? lines[0].key,
+    lines: ordered,
+    leadKey,
     readOn: latestReadOn(readDates),
   };
 }
