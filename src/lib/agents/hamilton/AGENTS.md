@@ -85,6 +85,8 @@ Hamilton supports the decision; it does not make it.
   names the institution's own regulator, lists the Regulatory Wire's recent items for it when
   the Wire holds any (`wireFailures`, #1090), and a state question names its state. Read-only, no
   provider calls; the step detail lists the weakest questions and the commonest failures.
+  A run stops at its time budget, so each run asks the day's sampled institutions that no earlier
+  run reached today first (`institutionsAskedToday`), and the day's runs together cover the sample (#1076).
   It first replays the questions Pro readers really asked in the last 90 days (the `pro.ask`
   ledger keeps each question and short answer; saved analyses keep the rest) through today's
   engine. `detail.pro` counts how many meet the bar and how many Hamilton still asks back on,
@@ -377,14 +379,22 @@ the detail.
     institution, category and price comes down while the clean row is still live,
     `cut_name_duplicate: live fee #<kept id>`, and its verified row is rejected
     (`hand_rejected:cut_name_duplicate`). Each run that changes a row writes one event naming them.
-    `hand-takedowns.ts` (James, Oct 16, DECISIONS.md): up to about 25 live fees, each confirmed
-    wrong on amount or category against its bank's own stored text and checked by a reviewer, as
-    one entry each (first: #1496's two fax fees). A row comes down only while it still reads as
+    `hand-takedowns.ts` (James, Oct 16 03:37 UTC, DECISIONS.md): live fees in batches of fewer
+    than 20, each confirmed wrong on amount or category against its bank's own stored text and
+    checked by a reviewer, as one entry each (first: #1496's two fax fees). A batch is the entries
+    under one issue; `HAND_TAKEDOWN_BATCH_LIMIT` (19) caps each batch, not the whole list, and a
+    bigger batch goes to James. A row comes down only while it still reads as
     listed (institution, category, name, price), checked in the read and again in the `UPDATE`,
-    with the entry's reason (`source_mismatch: #<issue>`); its verified row is rejected
+    with the entry's reason (`source_mismatch: #<issue>`, or `duplicate of #<kept id> (#<issue>)`
+    for a second read of one printed fee); its verified row is rejected
     (`hand_rejected:hand_takedown`), a feedback row and one run event name it, and a ledger line
-    goes on #1026. In both lists a failed read or write never fails the publish: the step detail
-    carries its `error` and the run gets a `step.warning` event.
+    goes on #1026. The same file's `HAND_AUDIENCE_FIXES` (#1302) sets a listed live fee's
+    audience from its bank's own text while it still reads as listed (verified row, institution,
+    category, name, price, old audience): the verified row takes it with `darwin:hand_fix`
+    evidence, which the audience trigger keeps, the live row is touched to inherit it, and the
+    old value is recorded first (`audience_hand_fixed`, weight 0). In these lists a failed read or
+    write never fails the publish: the step detail carries its `error` and the run gets a
+    `step.warning` event.
 11. Article page (`article-page.ts`): a fee read from an article, on its second look,
     `article_page: #<document id>`.
 12. Product page (`product-page.ts`): a $0 benefit bullet Knox's free reader took from a
@@ -440,13 +450,14 @@ the detail.
     (`hamilton.frequency_fill:v<N>:fix:<id>:<from>:<to>`), because `pipeline_feedback` upserts
     on its key and an old key was silently overwritten. The excerpt is read from
     `COALESCE(extraction_note, conditions)`.
-    Overdraft plan hold (#1360, no version change, `OVERDRAFT_PLAN_HOLD_LIVE` off): an overdraft
-    program the keep above leaves monthly was, in every case checked on the bank's own page, an
-    optional plan, not the overdraft fee. With the switch on it is held (`frequency_hold: an
-    optional overdraft plan ...`) when its bank has another live overdraft fee charged per item
-    (or blank) above $0; a bank's only overdraft row keeps it (92746, James's call). Off, each step
-    lists them in `frequency_plan_would_hold`. Oct 16 dry run: 1 (Selco's 143753, $10 a month,
-    beside its $25 per-item Courtesy Pay).
+    Overdraft plan hold (#1360, no version change, `OVERDRAFT_PLAN_HOLD_LIVE` on since Oct 16,
+    James 04:53 UTC: "Retire wrong copy"): an overdraft program the keep above leaves monthly was,
+    in every case checked on the bank's own page, an optional plan, not the overdraft fee. It is
+    held (`frequency_hold: an optional overdraft plan ...`) when its bank has another live overdraft
+    fee charged per item (or blank) above $0; a bank's only overdraft row keeps it (92746, James's
+    call). Off (`planHoldLive: false`), a step lists them in `frequency_plan_would_hold`. Oct 16
+    dry run, re-counted at switch-on: 1 (Selco's 143753, $10 a month, beside its $25 per-item
+    Courtesy Pay).
 19. Newer-copy check (`newer-copy-retire.ts`): a fee line gone from a newer copy of its page,
     `newer_copy_drops_fee:#<newer document id>` (`NEWER_COPY_RETIRE_LIVE` is true; false makes
     it a shadow run).

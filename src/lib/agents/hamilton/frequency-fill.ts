@@ -68,11 +68,12 @@ export const FREQUENCY_FILL_VERSION = 14;
  * (taken down with `frequency_hold:`) when its bank has another live overdraft fee charged per item
  * (or with no frequency) above $0. A bank whose only live overdraft row is the program keeps it
  * (First Community FCU's "Overdraft Boost", 92746, which James keeps until its tiered fees are
- * captured). Off (the default), each step only lists the fees it would hold (`planWouldHold`).
+ * captured). Switched on Oct 16 (James, 04:53 UTC: "Retire wrong copy"; the dry run held 1, Selco's
+ * 143753). Off (`planHoldLive: false`), a step only lists the fees it would hold (`planWouldHold`).
  * Hamilton's fill re-reads every live overdraft fee stored by the period on each publish step, so
  * this is the rule's live re-check.
  */
-export const OVERDRAFT_PLAN_HOLD_LIVE = false;
+export const OVERDRAFT_PLAN_HOLD_LIVE = true;
 export const OVERDRAFT_PLAN_HOLD_REASON = "an optional overdraft plan priced by the period beside the bank's per-item overdraft fee";
 
 /** The rolled_back_reason prefix of a fee the frequency fill holds (v11). */
@@ -147,8 +148,9 @@ export function excerptOf(conditions: string | null | undefined): string | null 
 
 export async function fillBlankFrequencies(
   db: SqlTag,
-  options: { runId: number; dryRun: boolean; institutionId?: number; limit?: number },
+  options: { runId: number; dryRun: boolean; institutionId?: number; limit?: number; planHoldLive?: boolean },
 ): Promise<FrequencyFillResult> {
+  const planHoldLive = options.planHoldLive ?? OVERDRAFT_PLAN_HOLD_LIVE;
   const limit = Math.max(1, Math.min(options.limit ?? FREQUENCY_FILL_LIMIT, 10_000));
   const result: FrequencyFillResult = { scanned: 0, filled: [], held: [], planWouldHold: [], dryRun: options.dryRun };
   let rows: BlankFrequencyRow[];
@@ -269,7 +271,7 @@ export async function fillBlankFrequencies(
       ?? continuousOverdraftPeriodCheck(row.canonical_fee_key, stated, sourceLine, amount, row.fee_name);
     // #1360: a kept overdraft program priced by the period, beside the bank's per-item overdraft fee.
     const plan = check?.action === "keep" && row.canonical_fee_key === "overdraft" && row.has_per_item_overdraft === true;
-    if (plan && !OVERDRAFT_PLAN_HOLD_LIVE) {
+    if (plan && !planHoldLive) {
       result.planWouldHold.push({
         feePublishedId: Number(row.fee_published_id),
         feeVerifiedId: num(row.fee_verified_id),
