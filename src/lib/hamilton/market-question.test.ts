@@ -32,4 +32,11 @@ describe("parseMarketQuestion", () => {
   it("links to the brief without carrying a parsed selection", () => {
     expect(marketBriefHref(" Tell me about Ohio ", "42")).toBe("/pro/analyze?brief=Tell+me+about+Ohio&instId=42");
   });
+
+  it("leaves a list of institutions, or a follow-up to one, to the peer list (#1538, #1539)", () => {
+    expect(parseMarketQuestion("Florida institutions with assets above 5 billion.")).toBeNull();
+    expect(parseMarketQuestion("Florida institutions with assets above $5,000M.")).toBeNull();
+    expect(parseMarketQuestion("Only show the California ones.")).toBeNull();
+    expect(parseMarketQuestion("Tell me about Ohio")).not.toBeNull();
+  });
 });

@@ -20,6 +20,8 @@ export interface PeerListIntent {
   largest: boolean;
   saved: boolean;
   accountSubject: boolean;
+  /** "Similarly sized … to SchoolsFirst": the institution the size is measured against, as typed. */
+  similarTo?: string | null;
   problems: string[];
 }
 export interface AssetEvidence {
@@ -201,7 +203,10 @@ export function isPeerListQuestion(question: string): boolean {
   if (/\b(fees?|overdrafts?|nsf|prices?|pricing|revenue|income|median|reports?|recommend\w*|strateg\w*|compar(?:e|ison|ing))\b/i.test(question)) return false;
   const institutions = /\b(peers?|competitors?|banks?|credit unions?|institutions?|CUs?)\b/i.test(question);
   const request = /\b(list|show|find|give|return|identify|name|who|which|what|largest|biggest)\b/i.test(question);
-  return institutions && (request || /^\s*(?:(?:my|our|similar|saved|custom)\s+)*(?:peers|competitors)\s*[?.!]*\s*$/i.test(question));
+  // "Florida institutions with assets above $5,000M" asks for a list as plainly as "List …" does.
+  const assetFilter = /\b(?:over|above|under|below|more than|greater than|less than|at least|at most|up to|between)\s+\$?\d/i.test(question)
+    || new RegExp(`${AMOUNT}\\s*(?:\\+|and up|or more|and above)`, "i").test(question);
+  return institutions && (request || assetFilter || /^\s*(?:(?:my|our|similar|saved|custom)\s+)*(?:peers|competitors)\s*[?.!]*\s*$/i.test(question));
 }
 
 const COUNT_WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, fifteen: 15, twenty: 20, twentyfive: 25, thirty: 30, forty: 40, fifty: 50 };
@@ -292,7 +297,17 @@ export function parsePeerListQuestion(question: string): PeerListIntent | null {
   const bothTypes = (hasCu && hasBank) || /\bboth(?:\s+types)?\b/i.test(question);
   const charterType = bothTypes ? null : hasCu ? "credit_union" : hasBank ? "bank" : null;
   const sameState = /\b(?:same|this|our|my|selected institution's) state\b/i.test(question);
-  const similarSize = /\bsimilar(?:ly)?(?:[- ]sized?)?\b|\bcomparable\b|\bclosest\b|\bsame size\b/i.test(question);
+  const similarSize = /\bsimilar(?:ly)?(?:[- ]sized?)?\b|\bcomparable\b|\bclosest\b|\b(?:the\s+)?same size\b|\babout (?:our|its|the same) size\b/i.test(question);
+  // "… to SchoolsFirst": the size reference is named at the end. planPeerList checks it is the
+  // research institution; another name is refused rather than silently measured against the subject.
+  let similarTo: string | null = null;
+  if (similarSize) {
+    const named = remaining.match(/\b(?:to|as|like)\s+((?:[A-Z0-9][\w&'.-]*)(?:\s+[A-Z0-9][\w&'.-]*)*)\s*[?.!]*\s*$/);
+    if (named && !/^(?:us|me|this institution|the selected institution)$/i.test(named[1])) {
+      similarTo = named[1].replace(/[.]+$/, "").replace(/'s$/i, "");
+      remaining = replaceMatch(remaining, named);
+    }
+  }
   const largest = /\b(largest|biggest|top)\b/i.test(question);
   const peerBased = /\bpeers?\b/i.test(question);
   const saved = /\b(saved|custom|default)\s+(?:peer\s+)?(?:peers?|group|set)\b/i.test(question);
@@ -302,12 +317,21 @@ export function parsePeerListQuestion(question: string): PeerListIntent | null {
   if (/\b(local|nearby|county|counties|miles?|radius|metro|branches|competitors?)\b/i.test(question)) problems.push("Branch-market selection is not supported in this list yet. Specify a US state or an asset-size group instead; local competitors and asset-size peers are different groups.");
   // A finite grammar is safer than silently ignoring 'not', a named bank, a foreign
   // geography, a reporting year or a metric this list cannot yet apply.
-  const allowed = /\b(please|can|could|would|you|give|me|a|an|the|list|show|find|return|identify|name|who|which|what|are|is|of|for|with|in|across|from|and|or|to|by|total|assets?|size|sized|similarly|similar|comparable|closest|same|type|types|peer|peers|competitors?|banks?|credit|unions?|institutions?|financial|cu|cus|us|my|our|this|selected|saved|custom|group|set|default|national|nationally|nationwide|largest|biggest|top|first|all|only|state|states|both|that|have)\b/gi;
+  const allowed = /\b(please|can|could|would|you|give|me|a|an|the|list|show|find|return|identify|name|who|which|what|are|is|of|for|with|in|across|from|and|or|to|by|total|assets?|size|sized|similarly|similar|comparable|closest|same|type|types|peer|peers|competitors?|banks?|credit|unions?|institutions?|financial|cu|cus|us|my|our|this|selected|saved|custom|group|set|default|national|nationally|nationwide|largest|biggest|top|first|all|only|state|states|both|that|have|about|as|like|ones)\b/gi;
   const residue = remaining.replace(allowed, " ").replace(/['?.,!\s-]/g, "");
   if (residue && !problems.length) problems.push(LIST_HELP);
   if (largest && similarSize) problems.push("Choose largest institutions or closest asset-size peers; those are different sort orders.");
   if (sameState && states.length) problems.push("Choose the subject's state or explicitly named states, not both.");
-  return { requestedCount, limit, charterType, bothTypes, states: [...new Set(states)].sort(), sameState, minAssets, maxAssets, similarSize, peerBased, largest, saved, accountSubject, problems };
+  return { requestedCount, limit, charterType, bothTypes, states: [...new Set(states)].sort(), sameState, minAssets, maxAssets, similarSize, peerBased, largest, saved, accountSubject, similarTo, problems };
+}
+
+/** "SchoolsFirst" names "Schoolsfirst Federal Credit Union": letters and digits only, case ignored. */
+function sameInstitutionName(typed: string, name: string): boolean {
+  const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "")
+    .replace(/(?:federalcreditunion|creditunion|fcu|nationalassociation|na|bank)$/, "");
+  const a = squash(typed);
+  const b = squash(name);
+  return a.length >= 4 && (b.startsWith(a) || a.startsWith(b));
 }
 
 export function formatPeerAssets(value: number | null): string {
@@ -318,6 +342,8 @@ export function formatPeerAssets(value: number | null): string {
 /** Uses explicit filters ahead of defaults. A requested saved group is never replaced. */
 export function planPeerList(intent: PeerListIntent, subject: PeerListSubject, active: ActivePeerSet | null): { criteria: PeerListCriteria | null; problem: string | null } {
   if (intent.problems.length) return { criteria: null, problem: intent.problems.join(" ") };
+  if (intent.similarTo && !sameInstitutionName(intent.similarTo, subject.name))
+    return { criteria: null, problem: `This list measures size against the institution you are researching, ${subject.name}. To list peers sized like ${intent.similarTo}, open ${intent.similarTo} in the workspace first.` };
   const explicit = Boolean(intent.charterType || intent.bothTypes || intent.states.length || intent.sameState || intent.minAssets || intent.maxAssets || intent.similarSize || intent.largest);
   const useSaved = intent.saved || (!explicit && active !== null);
   if (intent.saved && !active) return { criteria: null, problem: "No authorized active saved peer group is available for this institution. Choose one in Settings or specify state, type and asset criteria." };
