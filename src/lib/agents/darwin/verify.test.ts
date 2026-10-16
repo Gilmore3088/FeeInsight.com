@@ -1044,6 +1044,8 @@ describe("conditionalZero on run-on lines (#1571, live rows read on prod Oct 16)
     ["ATM Fee", "ATM Fee FREE Foreign ATM Fee $2.00"],
     ["ATM Fee", "ATM Fee FREE Non-Proprietary ATM Fee $2.00"],
     ["Incoming Domestic Wire", "Incoming Domestic Wire FREE Outgoing Domestic Wire $25"],
+    ["Copies", "Copies FREE Copy Fee $5"],
+    ["Account Inquiry", "Account Inquiry FREE Inquiries Fee $2"],
     // A tail with no fee noun of its own stays this fee's terms.
     ["Foreign ATM usage", "Foreign ATM usage No Charge Customer (incoming) $15.00"],
     ["Zelle Transfer", "Zelle Transfer: No Charge | Subordination: $175.00"],

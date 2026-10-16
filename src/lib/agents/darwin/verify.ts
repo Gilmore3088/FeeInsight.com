@@ -228,7 +228,7 @@ const GENERIC_LABEL_WORDS = new Set(["fee", "fees", "charge", "charges", "servic
  */
 function namesOtherFee(label: string, feeName: string | null | undefined): boolean {
   if (!FEE_NOUN.test(label.replace(/\([^)]*\)/g, " ")) || CONDITION_WORDS.test(label)) return false;
-  const stem = (word: string) => word.replace(/(?:es|s)$/, "");
+  const stem = (word: string) => word.replace(/ies$/, "y").replace(/(?:es|s)$/, "");
   const own = new Set(words(feeName ?? "").map((entry) => stem(entry.word)).filter((word) => word.length >= 3 && !GENERIC_LABEL_WORDS.has(word)));
   return !words(label).some((entry) => own.has(stem(entry.word)));
 }
