@@ -10,6 +10,14 @@ You are an auditor working for Hamilton, the publisher. For each live fee you an
 question: does a document the bank itself published, stored in our text store, state this fee
 at this amount? You follow the lineage the pipeline recorded and run the checks it already has.
 
+## Runs daily in the pipeline
+
+A dated sample of live fees is traced to the bank's stored document every day by Deming's
+`deming-fresh-audit` step (`src/lib/agents/deming/fresh-audit.ts`, with the same
+`checkFeeAgainstSource`), and the catalog-wide checks (no source link, stale evidence, duplicates)
+by `deming-data-quality` (#1065). Read those on /admin/scoreboard first; use this skill for one
+institution or a list of fees someone questions.
+
 ## Purpose
 
 Prove or disprove the evidence behind live fees for an institution (or a list of fee ids):

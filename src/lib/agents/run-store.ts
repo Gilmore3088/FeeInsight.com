@@ -102,6 +102,7 @@ import { runDemingRegression, summarizeDemingRegression, DEMING_REGRESSION_VERSI
 import { freshAuditDetail, runFreshAudit, summarizeFreshAudit } from "@/lib/agents/deming/fresh-audit";
 import { benchmarkHealthDetail, runBenchmarkHealth, summarizeBenchmarkHealth } from "@/lib/agents/deming/benchmark-health";
 import { playbookContradictionsDetail, runPlaybookContradictions, summarizePlaybookContradictions } from "@/lib/agents/deming/playbook-contradictions";
+import { dataQualityDetail, runDataQuality, summarizeDataQuality } from "@/lib/agents/deming/data-quality";
 import { knoxMissesDetail, runKnoxMisses, summarizeKnoxMisses } from "@/lib/agents/deming/knox-misses";
 import { runBayesLedger, summarizeBayesLedger, BAYES_LEDGER_VERSION } from "@/lib/agents/bayes/ledger";
 import { runScheduleCheck, summarizeScheduleCheck, SCHEDULE_CHECK_VERSION } from "@/lib/agents/atlas/schedule-check";
@@ -1923,6 +1924,7 @@ async function executeAgenticStep(
             apart_on_page: pageCopyCollapse.apartOnPage,
             unproven: pageCopyCollapse.unproven,
             other_document: pageCopyCollapse.otherDocument,
+            renamed: pageCopyCollapse.renamed,
             [pageCopyCollapse.live && run.runKind !== "dry_run" ? "closed" : "would_close"]: pageCopyCollapse.collapses.length,
             samples: pageCopyCollapse.collapses.slice(0, 10).map((row) => ({
               fee_published_id: row.feePublishedId,
@@ -1931,6 +1933,14 @@ async function executeAgenticStep(
               kept_fee_published_id: row.keptFeePublishedId,
               kept_fee_name: row.keptFeeName,
               kept_source_document_id: row.keptSourceDocumentId,
+              amount: row.amount,
+              ...(row.renamed ? { renamed: true } : {}),
+            })),
+            renamed_samples: pageCopyCollapse.collapses.filter((row) => row.renamed).slice(0, 10).map((row) => ({
+              fee_published_id: row.feePublishedId,
+              fee_name: row.feeName,
+              kept_fee_published_id: row.keptFeePublishedId,
+              kept_fee_name: row.keptFeeName,
               amount: row.amount,
             })),
           },
@@ -2418,6 +2428,11 @@ async function executeAgenticStep(
     case "deming-benchmark-health": {
       const result = await runBenchmarkHealth({ db: tx });
       return { status: "completed", summary: summarizeBenchmarkHealth(result), detail: benchmarkHealthDetail(result) };
+    }
+    case "deming-data-quality": {
+      // Read-only (#1065): two SELECTs over the live catalogs and one over the step's own history.
+      const result = await runDataQuality({ db: tx });
+      return { status: "completed", summary: summarizeDataQuality(result), detail: dataQualityDetail(result) };
     }
     case "deming-knox-misses": {
       // #1099: writes only eval_cases (new missed-fee cases and each case's replay); never a fee row.

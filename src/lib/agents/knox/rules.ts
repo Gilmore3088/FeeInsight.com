@@ -327,6 +327,14 @@ export const FEE_PATTERNS: FeePattern[] = [
   { key: "balance_inquiry", pattern: /\bbalance inquiry\b/i },
   { key: "mortgage_modification", pattern: /\bloan modification\b/i },
   { key: "other_lending_fee", pattern: /\bskip[- ]a[- ]pay(ment)?\b|\bloan (processing|extension)\b/i },
+  // #1099 (Deming's answer-key misses, Oct 15): a loan's own servicing fees. A returned payment
+  // is a loan fee only when the line names the loan, lease or mortgage; a bare "returned payment"
+  // or "returned item" stays NSF / returned-item.
+  {
+    key: "other_lending_fee",
+    pattern:
+      /\b(?:loan|lease|mortgage)s?\b[^|$]{0,25}\bpayments?\b[^|$]{0,30}\b(?:by|via|using|over the)\s+(?:tele)?phone\b|\b(?:loan|lease|mortgage)s?\b[^|$]{0,25}\bpayments?\b[^|$]{0,30}\b(?:by|via|using|with)\s+(?:a\s+)?(?:debit|credit)(?: or (?:debit|credit))?\s*card|\b(?:loan|lease|mortgage)s?\b[^|$]{0,25}\bpayments?\b[^|$]{0,30}\b(?:by|via|using)\s+ACH\b|\breturned (?:check (?:for|on) )?(?:loan|lease|mortgage) payments?\b|\breturned (?:loan|lease|mortgage) (?:check|payment)s?\b/i,
+  },
   { key: "late_payment", pattern: /\blate (payment|charge|fee)\b/i },
   { key: "loan_origination", pattern: /\bloan origination\b/i },
   { key: "appraisal_fee", pattern: /\bappraisal\b/i },
@@ -420,8 +428,8 @@ export const FEE_PATTERNS: FeePattern[] = [
   },
   {
     // A loan's due date change. A skipped payment stays with the v5 rule above ("skip-a-pay"):
-    // the keys file the other wordings as late fees. A payment by phone or card stays out: the
-    // seven-state keys leave it unfiled.
+    // the keys file the other wordings as late fees. A loan payment by phone, card or ACH is the
+    // #1099 rule above (the production answer key files it as a lending fee).
     key: "other_lending_fee",
     pattern: /\bdue date change|\bchange (?:of |in )?(?:the )?(?:loan |payment )?due date\b/i,
   },

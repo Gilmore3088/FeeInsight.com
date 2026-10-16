@@ -47,6 +47,14 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
   { feePublishedId: 102440, institutionId: 5433, canonicalFeeKey: "document_reproduction", amount: 2, feeName: "Fax (Long Distance) Minimum Balance",
     reason: "source_mismatch: #1496", issue: 1496, kind: "wrong_amount",
     evidence: "Fax (Long Distance) is $7.00 for 2 pages, $2.00 for additional pages; \"Minimum Balance:\" is the next column's heading." },
+  // #1549: Flagstar's overdraft terms (doc 21228, read-only, Oct 16): the $20 is a worked example's remainder.
+  { feePublishedId: 83118, institutionId: 33, canonicalFeeKey: "overdraft", amount: 20, feeName: "we may use Overdraft Protection Coverage to pay the remaining",
+    reason: "source_mismatch: #1549", issue: 1549, kind: "wrong_amount",
+    evidence: "Example: \"…$20 is transferred from your linked account, we may use Overdraft Protection Coverage to pay the remaining $20\"; the same document's price is \"Overdraft Charge $30.00 per Item\"." },
+  // #1512: Utility District FCU's two-column fee schedule (doc 3497, read-only, Oct 16).
+  { feePublishedId: 45619, institutionId: 7229, canonicalFeeKey: "check_printing", amount: 20, feeName: "Check printing…………………………………………………......…...…(varies by style) | Domestic",
+    reason: "source_mismatch: #1512", issue: 1512, kind: "wrong_amount",
+    evidence: "Check printing has no price (\"varies by style\"); the $20.00 is the next column's \"Domestic\" line under outgoing wire transfers." },
 ];
 
 export interface LiveTakedownRow {

@@ -322,6 +322,15 @@ const GOAL_CARDS: GoalCardSpec[] = [
       </>
     ) : "No answer eval in the last 7 days.",
   },
+  {
+    label: "Data checks failing",
+    query: "goal.deming_data_quality_latest",
+    value: (goal) => goal.dataQuality?.failing.length,
+    format: n,
+    unit: "of Deming's daily checks on live fees over their threshold (duplicates, stale, no category, no source, category share)",
+    lowerIsBetter: true,
+    detail: (goal) => goal.dataQuality ? <DataQualityDetail quality={goal.dataQuality} /> : "No data check in the last 7 days.",
+  },
 ];
 
 /** The snapshot at least 7 days older than the latest, for the week-over-week change. */
@@ -520,6 +529,34 @@ function AccuracyDetail({ accuracy }: { accuracy: NonNullable<GoalScorecard["acc
       ) : (
         <span className="block">No audit in the window.</span>
       )}
+    </>
+  );
+}
+
+const DATA_CHECK_LABELS: Record<NonNullable<GoalScorecard["dataQuality"]>["lines"][number]["check"], string> = {
+  duplicates: "Duplicates",
+  stale: "Stale (over 90 days)",
+  noCategory: "No category",
+  noSource: "No source link",
+  categoryShare: "Categories off their normal share",
+};
+
+/** One line per check and catalog, with its status and query (#1065). */
+function DataQualityDetail({ quality }: { quality: NonNullable<GoalScorecard["dataQuality"]> }) {
+  return (
+    <>
+      Checked {quality.at.slice(0, 16).replace("T", " ")} UTC.
+      {quality.lines.map((line) => (
+        <span key={`${line.catalog}.${line.check}`} className={`block ${line.status === "fail" ? "font-semibold text-red-600" : ""}`}>
+          {line.catalog === "rate" ? "Rate fees, " : ""}{DATA_CHECK_LABELS[line.check]}: {n(line.count)}{line.rate == null ? "" : ` (${share(line.rate)})`}, {line.status.replace("_", " ")}{" "}
+          <span className="font-mono text-[10px] text-gray-400">{line.query}</span>
+        </span>
+      ))}
+      {quality.drifts.length > 0 ? (
+        <span className="block">
+          Off their normal share: {quality.drifts.slice(0, 8).map((drift) => `${drift.category} ${share(drift.share)} (normally ${share(drift.normalShare)})`).join(" · ")}
+        </span>
+      ) : null}
     </>
   );
 }
