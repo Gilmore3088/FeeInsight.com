@@ -1156,7 +1156,7 @@ export async function runDarwinVerify(
     const postCheck = reasonCode || !canonicalFeeKey ? null : postSourceCheck(canonicalFeeKey, row.fee_name, normalizedAmount(row.amount), sourceLine);
     if (postCheck) reasonCode = postCheck.code;
     // #1397: a $0 a premium or private-banking schedule grants is that tier's perk, not the bank's price.
-    if (!reasonCode && tierPerkZero(normalizedAmount(row.amount), row.fee_name, row.source_url, sourceText)) reasonCode = "tier_perk_zero";
+    if (!reasonCode && tierPerkZero(normalizedAmount(row.amount), row.fee_name, row.source_url, sourceText, canonicalFeeKey)) reasonCode = "tier_perk_zero";
     if (!reasonCode && canonicalFeeKey && verifiedInBatch.has(batchKey(row, canonicalFeeKey))) {
       reasonCode = "duplicate_in_batch";
     }

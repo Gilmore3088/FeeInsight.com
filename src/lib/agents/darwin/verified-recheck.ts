@@ -153,7 +153,7 @@ export async function recheckVerifiedFees(
     const line = sourceLineFor(row, texts, canonicalFeeKey) ?? excerptOf(row.conditions);
     const text = row.source_document_id == null ? null : texts.get(Number(row.source_document_id)) ?? null;
     const check: { code: string; rule?: string } | null = postSourceCheck(canonicalFeeKey, row.fee_name, amount, line)
-      ?? (tierPerkZero(amount, row.fee_name, row.source_url, text) ? { code: "tier_perk_zero" } : null);
+      ?? (tierPerkZero(amount, row.fee_name, row.source_url, text, canonicalFeeKey) ? { code: "tier_perk_zero" } : null);
     const publishedId = row.fee_published_id == null ? null : Number(row.fee_published_id);
     const wasRejected = row.review_status === "rejected";
     result.checked += 1;
