@@ -111,19 +111,9 @@ export const DATA_SOURCES: readonly DataSource[] = [
     refresh: "Weekly",
     href: "https://apps.occ.gov/EASearch/",
   },
-  {
-    // registry-federal-register: reg_tracker_items, CFPB, FDIC, OCC, Fed and NCUA rules,
-    // FEDERAL_REGISTER_REFRESH_HOURS = 24 (src/lib/agents/magellan/registry/federal-register.ts);
-    // stored only when FEDERAL_REGISTER_TRACKER_LIVE=true; shown in the regulatory watch on
-    // /institution/[id] (src/lib/data-store/regulatory-watch.ts).
-    id: "federal-register",
-    name: "Federal Register",
-    publisher: "Office of the Federal Register",
-    group: "regulation",
-    takes: "Proposed and final rules from the CFPB, FDIC, OCC, Fed and NCUA.",
-    refresh: "Daily",
-    href: "https://www.federalregister.gov/",
-  },
+  // The Federal Register (registry-federal-register, reg_tracker_items) returns here once
+  // FEDERAL_REGISTER_TRACKER_LIVE is confirmed on in prod: until then it stores nothing, so no
+  // customer page is known to show it (src/lib/agents/magellan/registry/federal-register.ts).
   {
     // fed_district comes from FDIC for banks; credit unions take the nearest bank head office's
     // district (deriveOtherDistricts, src/lib/agents/magellan/registry/fdic-universe.ts).
