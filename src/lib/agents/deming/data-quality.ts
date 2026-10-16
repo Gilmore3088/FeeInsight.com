@@ -185,7 +185,10 @@ export function categoryShares(
     }
   }
   drifts.sort((a, b) => b.normalShare - a.normalShare || a.category.localeCompare(b.category));
-  return { query: DATA_QUALITY_QUERIES.categoryShare, status: drifts.length > 0 ? "fail" : "pass", baselineChecks: usable.length, drifts, shares };
+  // A share that falls is lost data and fails; one that rises is usually coverage growth or a
+  // fold rule landing, so it is a warning to watch, not an alarm (#1579).
+  const status: CheckStatus = drifts.some((drift) => drift.direction === "down") ? "fail" : drifts.length > 0 ? "warn" : "pass";
+  return { query: DATA_QUALITY_QUERIES.categoryShare, status, baselineChecks: usable.length, drifts, shares };
 }
 
 /** Pure: one catalog's counts into graded checks and its category shares. */
@@ -220,6 +223,7 @@ export function alarms(catalogs: CatalogQuality[]): { failing: string[]; warning
       if (status === "warn") warning.push(`${quality.catalog}.${check}`);
     }
     if (quality.categoryShare.status === "fail") failing.push(`${quality.catalog}.categoryShare`);
+    if (quality.categoryShare.status === "warn") warning.push(`${quality.catalog}.categoryShare`);
   }
   return { failing, warning };
 }
