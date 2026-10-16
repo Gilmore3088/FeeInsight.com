@@ -7,7 +7,7 @@ import { getDisplayName } from "@/lib/fee-taxonomy";
 import type { PublicStatsSummary } from "@/lib/public-stats";
 import type { LinePosition } from "@/lib/custom-report/analysis";
 import type { MarketReport } from "@/lib/custom-report/report-data";
-import type { MarketLadderData } from "@/app/for-institutions/market-ladder";
+import { lineName } from "@/app/for-institutions/board-math";
 import { sourcedFees, type SourcedFee } from "@/app/for-institutions/sample-sources";
 import type { AnalyzeScenario } from "@/app/subscribe/scenario";
 
@@ -41,7 +41,8 @@ export function SectionHeading({
   center?: boolean;
 }) {
   return (
-    <div className={center ? "mx-auto max-w-2xl text-center" : "max-w-xl"}>
+    // Every heading is centered on a phone (James, Oct 16); wider screens keep the left edge.
+    <div className={center ? "mx-auto max-w-2xl text-center" : "max-w-xl max-sm:mx-auto max-sm:text-center"}>
       {eyebrow ? <Eyebrow>{eyebrow}</Eyebrow> : null}
       <h2 className={`${eyebrow ? "mt-3" : ""} ${DISPLAY_H2}`} style={SANS}>
         {title}
@@ -65,7 +66,16 @@ export const hasFigure = (label: string) => /\d/.test(label);
  * The institution search: a plain GET to /institutions?q=, the same target as the
  * homepage's WEBSITE_JSON_LD SearchAction, so it works before any script loads.
  */
-export function InstitutionSearchForm({ className, id }: { className?: string; id?: string }) {
+export function InstitutionSearchForm({
+  className,
+  id,
+  secondary = false,
+}: {
+  className?: string;
+  id?: string;
+  /** Under a page's main action, the search's button steps back to the secondary style. */
+  secondary?: boolean;
+}) {
   return (
     <form
       action="/institutions"
@@ -82,7 +92,7 @@ export function InstitutionSearchForm({ className, id }: { className?: string; i
         autoComplete="off"
         className="w-full min-w-0 text-left sm:flex-1"
       />
-      <Button type="submit" variant="primary" className="min-h-11 justify-center whitespace-nowrap">
+      <Button type="submit" variant={secondary ? "secondary" : "primary"} className="min-h-11 justify-center whitespace-nowrap">
         See where your fees stand
       </Button>
     </form>
@@ -161,7 +171,6 @@ export interface HomeData {
   /** The live sample report; null when none is published or it failed to read. */
   sample: SampleView | null;
   /** The sample's headline fee in each market layer; null without a sample. */
-  ladder: MarketLadderData | null;
   /** Try a price, worked from the live national overdraft benchmark. */
   scenario: AnalyzeScenario | null;
 }
@@ -171,8 +180,8 @@ export interface HomeData {
  * background (ISR), and a render made while a read was failing would otherwise be served
  * for the whole revalidate window, or baked into the build. A read that failed (as opposed
  * to one that answered "nothing today", such as no sample bank passing the bar) makes the
- * render uncacheable: the build then serves the page per request, and a background
- * regeneration keeps the last good page.
+ * render uncacheable: the page then caches it for a minute instead of fifteen
+ * (`shortenPageLife`, #1572), so the next render reads the database again.
  */
 export function homeReadsCacheable({
   summary,
@@ -196,7 +205,7 @@ export function buildSampleView(report: MarketReport | null): SampleView | null 
     if (!line.comparable || !line.own || !line.peers || !line.position) continue;
     rows.push({
       key: line.key,
-      label: getDisplayName(line.key),
+      label: lineName(line.label),
       amount: line.own.amount,
       median: line.peers.median,
       p25: line.peers.p25,
@@ -208,8 +217,8 @@ export function buildSampleView(report: MarketReport | null): SampleView | null 
   return {
     institutionName: report.data.subject.institution_name,
     competitors: report.analysis.readiness.competitorsWithData,
-    // One name per fee on every exhibit: the fee taxonomy's display name, not the report line's.
-    fees: sourcedFees(report.analysis.lines).map((fee) => ({ ...fee, label: getDisplayName(fee.key) })),
+    // One name per fee on every sample exhibit: the report line's own, as the ladder shows it.
+    fees: sourcedFees(report.analysis.lines).map((fee) => ({ ...fee, label: lineName(fee.label) })),
     rows,
   };
 }
@@ -229,7 +238,7 @@ export function buildHomeData(
   summary: PublicStatsSummary,
   categories: FeeCategorySummary[],
   byDistrict: DimensionBreakdown[] | null | undefined,
-  extras: Partial<Pick<HomeData, "sample" | "ladder" | "scenario">> = {},
+  extras: Partial<Pick<HomeData, "sample" | "scenario">> = {},
 ): HomeData {
   const lines = FEE_LINE_ORDER.map((key) => categories.find((c) => c.fee_category === key))
     .filter(isComplete)
@@ -256,7 +265,6 @@ export function buildHomeData(
     overdraft: nationalRange(categories, "overdraft"),
     districts,
     sample: extras.sample ?? null,
-    ladder: extras.ladder ?? null,
     scenario: extras.scenario ?? null,
   };
 }

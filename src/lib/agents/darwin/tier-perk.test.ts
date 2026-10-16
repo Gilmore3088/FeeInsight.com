@@ -37,6 +37,22 @@ describe("a $0 that is one account tier's perk (#1397)", () => {
     expect(tierPerkZero(null, "Stop Payment", EXAMPLE_PREMIUM, EXAMPLE_PREMIUM_TEXT)).toBe(false);
   });
 
+  it("keeps an account's own $0 price named for the account (#1574)", () => {
+    const general = "https://www.centuryfcu.example/fee-schedule";
+    // Century FCU, live 130995: the Premier Checking account's own monthly fee is none.
+    expect(tierPerkZero(0, "Premier Checking", general, GENERAL_TEXT, "monthly_maintenance")).toBe(false);
+    expect(tierPerkZero(0, "Premium Checking", general, GENERAL_TEXT, "minimum_balance")).toBe(false);
+    // Another fee named for the tier's account is still its perk.
+    expect(tierPerkZero(0, "BankOn Checking Account Overdraft Fee", general, GENERAL_TEXT, "overdraft")).toBe(true);
+    // A tier's own schedule still refuses its $0 monthly fee.
+    expect(tierPerkZero(0, "Monthly Service Charge", EXAMPLE_PREMIUM, EXAMPLE_PREMIUM_TEXT, "monthly_maintenance")).toBe(true);
+    // A tier-named account's own $0 monthly fee on a general schedule is left to the conditional-$0
+    // check, which holds it when the line prices a waiver.
+    expect(tierPerkZero(0, "Private Banking Checking", general, GENERAL_TEXT, "monthly_maintenance")).toBe(false);
+    // Without the category, the name test applies as before.
+    expect(tierPerkZero(0, "Premier Checking", general, GENERAL_TEXT)).toBe(true);
+  });
+
   it("reads only the title line, cut at its first figure (review of PR 1400)", () => {
     const general = "https://bank.example/docs/x.pdf";
     // PDF text that runs the title into the first row.

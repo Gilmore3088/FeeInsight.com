@@ -111,7 +111,7 @@ export function takedownFeedback(row: TakedownRow, runId: number | null): Feedba
   const shared = {
     signal: takedownSignal(row.rolled_back_reason),
     kind,
-    reportedBy: "hamilton" as const,
+    reportedBy: "gutenberg" as const,
     checkName: takedownCheck(row.rolled_back_reason),
     institutionId: num(row.institution_id),
     sourceDocumentId: num(row.source_document_id),
@@ -203,6 +203,9 @@ export async function syncPipelineFeedback(
          -- Published with no traceable document: the lesson is publish's, and the repair writes
          -- it with its rollback record (hamilton/source-link.ts), not one against Knox's read.
          AND fp.rolled_back_reason NOT LIKE 'source_link_untraceable:%'
+         -- A non-checking account's monthly fee held as verified (#1100, account-type-hold.ts): a
+         -- publish policy, not a wrong read. The hold writes its own weight-0 row per fee.
+         AND fp.rolled_back_reason NOT LIKE 'account_type_hold:%'
          AND NOT EXISTS (
            SELECT 1 FROM pipeline_feedback f
             WHERE f.dedupe_key = 'hamilton.takedown:pub:' || fp.fee_published_id || ':extract'
@@ -226,6 +229,8 @@ export async function syncPipelineFeedback(
         FROM pipeline_feedback f
         JOIN published_fee_records fp ON fp.fee_published_id = f.fee_published_id
        WHERE f.dedupe_key LIKE 'hamilton.takedown:pub:%:extract'
+         -- An account type hold that comes back was never a wrong read (#1100): no restore lesson.
+         AND f.kind <> 'account_type_hold'
          AND fp.rolled_back_at IS NULL
          -- Logged unless a takedown came after its last restore: 12213 was restored Oct 6, taken
          -- down again by the guard Oct 9 and restored as rush_card, a second cycle.
@@ -250,7 +255,7 @@ export async function syncPipelineFeedback(
         aboutStrategy: row.about_strategy,
         signal: "restored",
         kind: "restored_after_takedown",
-        reportedBy: "hamilton",
+        reportedBy: "gutenberg",
         checkName: "hamilton.restore",
         institutionId: num(row.institution_id),
         sourceDocumentId: num(row.source_document_id),

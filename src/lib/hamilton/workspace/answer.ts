@@ -7,6 +7,8 @@
  * Decision support only: nothing here says to raise, lower or drop a fee.
  */
 
+import { revenueLineName } from "./revenue";
+import { MAX_STORY_LINE_WORDS, words } from "./four-roles";
 import { subjectPossessive } from "./subject";
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
 import { proseFeeName } from "./names";
@@ -122,10 +124,12 @@ function revenueClaims(research: FeeResearch, name: string): Fact[] {
   const out: Fact[] = [];
   const line = research.revenueLine;
   if (line) {
-    // One filing line covers both fees: "NSF / returned item and overdraft income".
-    const combined = line.combinedWith ? ` and ${line.combinedWith}` : "";
+    // One bank filing line covers both fees, so it is named as combined for either (#1543).
+    // The line stays within a storyline line's 20 words; a long name gives way to "The filing" (#1076).
+    const said = (who: string) => `${who} filing reports ${formatDollarsInWords(line.annualIncome)} in ${revenueLineName(line, name)} in the year to ${longDate(line.quarterEnd)}.`;
+    const named = said(subjectPossessive(research));
     out.push({
-      text: `${subjectPossessive(research)} filing reports ${formatDollarsInWords(line.annualIncome)} in ${name} income${combined} over the four quarters to ${longDate(line.quarterEnd)}.`,
+      text: words(named) <= MAX_STORY_LINE_WORDS ? named : said("The"),
       source: { ...line.source, asOf: line.quarterEnd },
     });
   }
@@ -259,6 +263,7 @@ function competitorExhibit(research: FeeResearch, name: string): Exhibit | null 
     own: research.current,
     ownLabel: research.institutionName,
     items,
+    ...(list.length > MAX_COMPETITORS ? { allAmounts: list.map((p) => p.amount) } : {}),
     sources: [research.localMarket?.source ?? feeSource(research)],
     note: list.length > MAX_COMPETITORS ? `The ${MAX_COMPETITORS} largest by local deposits of ${list.length}.` : undefined,
   };

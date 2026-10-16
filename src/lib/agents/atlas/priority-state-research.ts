@@ -47,7 +47,7 @@ export function stateResearchSteps(): AgentRunStepDefinition[] {
     { key: "read", agent: "rosetta", title: "Read and normalize the fee documents" },
     { key: "extract", agent: "knox", title: "Extract fee observations" },
     { key: "classify", agent: "darwin", title: "Classify and verify extracted fees", input: { verify_limit: DARWIN_VERIFY_MAX_LIMIT } },
-    { key: "publish", agent: "hamilton", title: "Publish verified fees", input: { publish_limit: HAMILTON_PUBLISH_MAX_LIMIT } },
+    { key: "publish", agent: "gutenberg", title: "Publish verified fees", input: { publish_limit: HAMILTON_PUBLISH_MAX_LIMIT } },
   ];
 }
 

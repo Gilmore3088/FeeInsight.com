@@ -35,6 +35,25 @@ export interface HandAmountCorrection {
   /** The fee's name as its line prints it (the cut cents taken off the front where they were). */
   feeName: string;
   why: string;
+  /** The lesson's pattern; the #1334 entries leave it out (`cut_cents`). */
+  pattern?: string;
+  /** The issue that holds the evidence; the #1334 entries leave it out. */
+  issue?: number;
+  /**
+   * A wrong read whose name the document never prints. The shared check matches such a name
+   * loosely to other fees' lines (#1655: "Overdraft Item Fee" at $0 traces to Primis's "to cover
+   * overdrafts. There is no fee for this service." and "Overdraft Protection Transfer | No Fee"), so
+   * the wrong-read test is instead that the old name appears nowhere in the stored text.
+   */
+  oldNameNotPrinted?: boolean;
+  /**
+   * The other fee's line the wrong read was taken from, when the old name is printed (#1659: U.S.
+   * Bank's "$12 Monthly Maintenance Fee waived on every U.S. Bank Smartly® Checking account1" read
+   * at the next line's $10). The shared check still traces the wrong read there; the correction
+   * applies only while that exact line is the one it traces to, and is left alone if the wrong read
+   * traces anywhere else.
+   */
+  wrongReadTracesTo?: string;
 }
 
 export const HAND_AMOUNT_CORRECTIONS: readonly HandAmountCorrection[] = [
@@ -77,6 +96,29 @@ export const HAND_AMOUNT_CORRECTIONS: readonly HandAmountCorrection[] = [
     feePublishedId: 79237, institution: "American Heritage Federal Credit Union", institutionId: 4972, sourceDocumentId: 20917,
     canonicalFeeKey: "gift_card_purchase", from: 3, to: 3.5, feeName: "Gift Card",
     why: "\"Gift Card | $3 50 | Late Payment Fee\"",
+  },
+  // #1655 (read-only, Oct 16): Primis's only live overdraft row, an April read of an older Perks
+  // Checking packet at $0, now linked to a document (text 20768) that prints no "Overdraft Item"
+  // line. Knox read the $35 line twice (raw 456416, Oct 9, doc 23695; raw 633316, Oct 11, doc
+  // 28523), but Darwin never verified either read, so the row is corrected in place rather than
+  // taken down (a takedown would drop Primis from the overdraft stats).
+  {
+    feePublishedId: 5600, institution: "Primis Bank", institutionId: 341, sourceDocumentId: 23695,
+    canonicalFeeKey: "overdraft", from: 0, to: 35, feeName: "Overdraft or Returned-Item Fee",
+    why: "\"Overdraft or Returned-Item Fee | $35 Per Item\"; the stored text has no \"Overdraft Item Fee\" line and no $0 overdraft price",
+    pattern: "wrong_read", issue: 1655,
+    oldNameNotPrinted: true,
+  },
+  // #1659 (read-only, Oct 16): U.S. Bank's Bank Smartly Checking row on checking-accounts.html (text
+  // 20686) took its price from the Elite Money Market waiver line after its own. Corrected in place
+  // to the account's printed $12 and named for the account; the student page's copy (102973) comes
+  // down as its duplicate (hand-takedowns.ts), which runs after this in the same publish step.
+  {
+    feePublishedId: 102971, institution: "U.S. Bank", institutionId: 5, sourceDocumentId: 23628,
+    canonicalFeeKey: "monthly_maintenance", from: 10, to: 12, feeName: "Bank Smartly Checking Monthly Maintenance Fee",
+    why: "\"Bank Smartly Checking\" / \"$12 Monthly Maintenance Fee can be waived in multiple ways1\"; the $10 is the next line's \"$10 Monthly Maintenance Fee waived on all Elite Money Market account with a U.S. Bank Smartly® Checking account\"",
+    pattern: "wrong_read", issue: 1659,
+    wrongReadTracesTo: "$10 Monthly Maintenance Fee waived on all Elite Money Market account with a U.S. Bank Smartly® Checking account",
   },
 ];
 
@@ -182,6 +224,8 @@ export interface HandAmountResult {
 }
 
 const sameAmount = (a: number | string | null, b: number) => a != null && Math.abs(Number(a) - b) < 0.005;
+/** Lowercase with runs of whitespace as one space, for a printed-name test. */
+const squash = (value: string) => value.toLowerCase().replace(/\s+/g, " ").trim();
 
 /** Pure: which listed fees are corrected, from their live rows and stored texts. */
 export function planHandAmountCorrections(rows: LiveRow[]): Pick<HandAmountResult, "corrected" | "skipped"> {
@@ -200,8 +244,14 @@ export function planHandAmountCorrections(rows: LiveRow[]): Pick<HandAmountResul
     const text = row.normalized_text;
     const traced = checkFeeAgainstSource(text, fix.feeName, fix.to, ".", fix.canonicalFeeKey);
     if (!traced.ok) { skipped.push({ feePublishedId: fix.feePublishedId, reason: `corrected price does not trace: ${traced.reason}` }); continue; }
-    if (checkFeeAgainstSource(text, row.fee_name, fix.from, ".", fix.canonicalFeeKey).ok) {
-      skipped.push({ feePublishedId: fix.feePublishedId, reason: "cut amount still traces" });
+    const wrongRead = fix.oldNameNotPrinted ? null : checkFeeAgainstSource(text, row.fee_name, fix.from, ".", fix.canonicalFeeKey);
+    const wrongReadStands = wrongRead == null
+      ? squash(text ?? "").includes(squash(row.fee_name))
+      : wrongRead.ok && (fix.wrongReadTracesTo == null || wrongRead.sourceLine !== fix.wrongReadTracesTo);
+    if (wrongReadStands) {
+      const reason = fix.oldNameNotPrinted ? "old name still printed"
+        : fix.wrongReadTracesTo != null ? "wrong read traces to another line" : "cut amount still traces";
+      skipped.push({ feePublishedId: fix.feePublishedId, reason });
       continue;
     }
     corrected.push({
@@ -331,7 +381,7 @@ export async function applyHandAmountCorrections(
             aboutStage: "extract" as const,
             signal: "wrong" as const,
             kind: "wrong_amount",
-            reportedBy: "hamilton" as const,
+            reportedBy: "gutenberg" as const,
             checkName: HAND_AMOUNT_CHECK,
             institutionId: entry.institutionId,
             sourceDocumentId: entry.sourceDocumentId,
@@ -341,7 +391,7 @@ export async function applyHandAmountCorrections(
             amount: fix.to,
             runId: options.runId,
             dedupeKey: `${HAND_AMOUNT_CHECK}:pub:${fix.feePublishedId}`,
-            evidence: { old_amount: fix.from, new_amount: fix.to, old_name: fix.oldName, new_name: fix.newName, source_line: fix.sourceLine, why: entry.why, pattern: "cut_cents", issue: 1334 },
+            evidence: { old_amount: fix.from, new_amount: fix.to, old_name: fix.oldName, new_name: fix.newName, source_line: fix.sourceLine, why: entry.why, pattern: entry.pattern ?? "cut_cents", issue: entry.issue ?? 1334 },
           };
         }),
         ...result.rejectedTwins.map((id) => {
@@ -350,7 +400,7 @@ export async function applyHandAmountCorrections(
             aboutStage: "extract" as const,
             signal: "wrong" as const,
             kind: "wrong_amount",
-            reportedBy: "hamilton" as const,
+            reportedBy: "gutenberg" as const,
             checkName: HAND_AMOUNT_CHECK,
             sourceDocumentId: twin.sourceDocumentId,
             feeVerifiedId: id,
@@ -367,7 +417,7 @@ export async function applyHandAmountCorrections(
         INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, ${HAND_AMOUNT_CHECK}, 'completed',
-          ${`Corrected ${result.corrected.length} live fee(s) read with their cents cut off (#1334) and rejected ${result.rejectedTwins.length} unpublished cop(ies) of hand-checked wrong reads`},
+          ${`Corrected ${result.corrected.length} listed live fee(s) to their printed price and rejected ${result.rejectedTwins.length} unpublished cop(ies) of hand-checked wrong reads`},
           ${JSON.stringify({
             corrected: result.corrected.map((fix) => ({ fee_published_id: fix.feePublishedId, from: fix.from, to: fix.to, old_name: fix.oldName, new_name: fix.newName })),
             rejected_twins: result.rejectedTwins,

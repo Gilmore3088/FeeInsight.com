@@ -494,6 +494,8 @@ export type Exhibit =
       ownLabel: string;
       /** deposits: the institution's deposits in the bank's market counties (FDIC Summary of Deposits), local competitors only. */
       items: { name: string; amount: number; url: string | null; deposits?: number | null }[];
+      /** Every competitor's amount when items shows only the largest, so counts use the whole market. */
+      allAmounts?: number[];
       sources: SourceRef[];
       note?: string;
     }

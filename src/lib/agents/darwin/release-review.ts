@@ -11,7 +11,7 @@ import {
   type PaidPassResult,
   type PaidStepOptions,
 } from "@/lib/agents/paid-pass";
-import { feedbackSchemaReady } from "@/lib/agents/learning/feedback";
+import { BUSINESS_SCHEDULE_RESTORED_KIND, feedbackSchemaReady } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { checkFeeCategory, neighbourCategories, refileCategory } from "@/lib/fee-category-guard";
 import { PER_ITEM_WORDING, PERIODIC_WORDING, wordsAfterPrice } from "@/lib/fee-frequency";
@@ -28,6 +28,7 @@ import {
 } from "./release-held";
 import { loadCategoryModel, type CategoryModel } from "./category-model";
 import { isCutoffName } from "@/lib/agents/knox/name-retidy";
+import { nameHasCutShape } from "@/lib/fee-name-fragments";
 
 import { withinAmountEnvelope } from "./envelopes";
 import { loadReviewMisses } from "./verdict-score";
@@ -151,27 +152,10 @@ const BUSINESS_SERVICE_ROWS = /(night deposit|deposit bag|lockbox|remote deposit
 const PLAIN_RETURNED_ITEM = /^\s*return(ed)?\s+(check|item)s?(\s+(fee|charge)s?)?\s*$/i;
 /** NSF fees run $25-$35; a plain "Returned check fee" far below that is often a deposited check coming back. */
 const SMALL_NSF_AMOUNT = 10;
-/**
- * A name cut from the middle of a line ("/hr incl. reproduction", "account research fee may apply)"),
- * or text that is not a name: dot leaders or a footnote mark glued on ("Replacement ………", "00/item
- * Counter Checks"), a sentence or bullet fragment ("charge for each one-time debit", "Fees: o A
- * Minimum Balance Fee", "(for each overdraft item"), or a table header kept ("Garnishment / Levy: Fee").
- */
-// #1196: the cents of a price cut at its decimal point ("00 Monthly fee") or a row number cell ("13 | ...").
-const NAME_FRAGMENT = /^\s*\/|^[^(]*\)\s*$|[.…]{3,}|(\.\s){3,}|^\s*\d+\s*\/|^\s*\(|^\s*[Ff]ees?:\s|\bo\s[A-Z]|:\s*[Ff]ee\s*$|^\s*0\d\s+(?![xX]\s)[A-Za-z]|^\s*\d{1,2}\s*\|/;
-/** A name that starts lowercase is a sentence cut from its line, unless it is a product spelled that way. */
-const SENTENCE_START = /^\s*[a-z]/;
-const LOWERCASE_PRODUCT_NAME = /^\s*e-?(statement|banking|bill)/i;
-
 export function nameIsFragment(name: string): boolean {
   return nameHasCutShape(name) || isCutoffName(name);
 }
 
-/** The shapes of a name cut from its line, without the cut-off shapes the rename pass may repair. */
-export function nameHasCutShape(name: string): boolean {
-  if (NAME_FRAGMENT.test(name)) return true;
-  return SENTENCE_START.test(name) && !LOWERCASE_PRODUCT_NAME.test(name);
-}
 
 /** A fee the merchant or payee pays ("Merchant presenting NSF check from member"), not the member. */
 const CHARGED_TO_MERCHANT = /\bmerchants?\b/i;
@@ -500,7 +484,8 @@ const LESSON_FOUND: Readonly<Record<string, string>> = {
  * live fees Hamilton's category checks took down as filed in the wrong category (not undone
  * since), and fees a takedown got wrong that a later check restored. Every such takedown and
  * restore becomes an example the next review reads, so the review learns from the
- * pipeline's own outcomes, not only from rules written into this prompt.
+ * pipeline's own outcomes, not only from rules written into this prompt. A business-schedule
+ * restore (`business_schedule_restored`, weight 0) is a record, not a lesson, and is left out.
  *
  * Only judgements that hold up are lessons. The source check's amount judgements
  * (`wrong_amount`, `threshold`) are left out: of 20 random ones from the 24 hours to
@@ -534,12 +519,17 @@ export async function loadReviewLessons(db: SqlTag, keys: string[]): Promise<Rev
                AND NOT EXISTS (
                  SELECT 1 FROM pipeline_feedback back
                   WHERE back.signal = 'restored' AND back.fee_published_id = pf.fee_published_id
+                    -- A business-schedule restore says nothing about the category (#1671).
+                    AND back.kind <> ${BUSINESS_SCHEDULE_RESTORED_KIND}
                )
             UNION ALL
             SELECT fp.lineage_ref, 'restored', pf.created_at
               FROM pipeline_feedback pf
               JOIN published_fee_records fp ON fp.fee_published_id = pf.fee_published_id
              WHERE pf.signal = 'restored'
+               -- Brought back for want of a consumer fee, not because a check was wrong: no
+               -- lesson that the price is real in its category (#1671).
+               AND pf.kind <> ${BUSINESS_SCHEDULE_RESTORED_KIND}
                AND fp.rolled_back_at IS NULL
           ) lesson
           JOIN verified_fee_observations fv ON fv.fee_verified_id = lesson.fee_verified_id

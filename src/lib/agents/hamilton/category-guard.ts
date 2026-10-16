@@ -705,7 +705,7 @@ function refileFeedback({ row, to }: Restore, runId: number): FeedbackRow {
     aboutVersion: FOLD_RULES_VERSION,
     signal: "right",
     kind: TAXONOMY_FOLD_KIND,
-    reportedBy: "hamilton",
+    reportedBy: "gutenberg",
     checkName: TAXONOMY_FOLD_CHECK,
     institutionId: Number(row.institution_id),
     sourceDocumentId: row.source_document_id == null ? null : Number(row.source_document_id),

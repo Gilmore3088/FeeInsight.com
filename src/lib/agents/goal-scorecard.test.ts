@@ -4,6 +4,10 @@ vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 
 import {
   answerQualityFrom,
+  bucketReaderMissWeeks,
+  readerMissSince,
+  summarizeReaderRemedies,
+  weekStartUtc,
   coverageTarget,
   goalBriefLines,
   goalHeadline,
@@ -117,6 +121,16 @@ describe("wrong after publish", () => {
     expect(summary.topErrors.map((row) => row.reason)).toContain("some_new_reason");
   });
 
+  it("counts an account type hold as housekeeping, not a wrong fee (#1100)", () => {
+    const summary = summarizeWrongAfterPublish([
+      { reason: null, count: 100 },
+      { reason: "account_type_hold: savings (#1100)", count: 12 },
+      { reason: "source_check_untraceable:no_amount", count: 2 },
+    ]);
+    expect(summary.housekeeping).toBe(12);
+    expect(summary.wrong).toBe(2);
+  });
+
   it("has no rate without publishes", () => {
     expect(summarizeWrongAfterPublish([]).rate).toBeNull();
   });
@@ -152,18 +166,74 @@ describe("Deming accuracy over the week", () => {
   });
 });
 
+describe("text-reading misses (#1054)", () => {
+  // Invented counts for tests only. 2026-10-15 is a Thursday; its week starts Monday 10-12.
+  const now = new Date("2026-10-15T07:00:00Z");
+
+  it("starts each week on Monday, UTC", () => {
+    expect(weekStartUtc(new Date("2026-10-12T00:00:00Z"))).toBe("2026-10-12");
+    expect(weekStartUtc(new Date("2026-10-18T23:59:59Z"))).toBe("2026-10-12");
+    expect(weekStartUtc(new Date("2026-10-11T23:59:59Z"))).toBe("2026-10-05");
+    expect(readerMissSince(now, 3)).toBe("2026-09-28");
+  });
+
+  it("sums batches into their week by kind and keeps an empty week as empty", () => {
+    const weeks = bucketReaderMissWeeks([
+      { at: "2026-10-13T01:00:00Z", evidence: { reads: 50, errors: 10, by_kind: { no_fees_found: 6, unread: 4 } } },
+      { at: "2026-10-15T02:00:00Z", evidence: { reads: 50, errors: 5, by_kind: { short_text: 5 } } },
+      { at: "2026-09-30T02:00:00Z", evidence: { reads: 50, errors: 20, by_kind: { missed_fee_page: 20 } } },
+      // Outside the shown weeks, or unreadable: left out.
+      { at: "2026-09-20T02:00:00Z", evidence: { reads: 50, errors: 50, by_kind: { unread: 50 } } },
+      { at: "2026-10-14T02:00:00Z", evidence: null },
+    ], now, 3);
+    expect(weeks.map((week) => week.weekStart)).toEqual(["2026-09-28", "2026-10-05", "2026-10-12"]);
+    expect(weeks[0]).toMatchObject({ batches: 1, reads: 50, errors: 20, rate: 0.4 });
+    expect(weeks[0].byKind.missed_fee_page).toBe(20);
+    expect(weeks[1]).toEqual({
+      weekStart: "2026-10-05", batches: 0, reads: 0, errors: 0, rate: null,
+      byKind: { no_fees_found: 0, short_text: 0, missed_fee_page: 0, unresolved_fee_page: 0, unread: 0 }, partial: false,
+    });
+    // The current week is still running, so it is marked partial (#1581).
+    expect(weeks[2]).toMatchObject({ batches: 2, reads: 100, errors: 15, rate: 0.15, partial: true });
+    expect(weeks[2].byKind).toMatchObject({ no_fees_found: 6, short_text: 5, unread: 4 });
+  });
+
+  it("gives every week empty when no batch was reviewed", () => {
+    const weeks = bucketReaderMissWeeks([], now);
+    expect(weeks).toHaveLength(8);
+    expect(weeks.every((week) => week.batches === 0 && week.rate === null)).toBe(true);
+    expect(weeks.at(-1)?.weekStart).toBe("2026-10-12");
+  });
+
+  it("counts remedies that later gave Knox fees as a share", () => {
+    expect(summarizeReaderRemedies([
+      { remedy: "reread_js_fallback", remedied: 30, knox_found: 6 },
+      { remedy: "paid_read", remedied: 10, knox_found: 4 },
+    ])).toEqual({
+      remedied: 40, knoxFound: 10, share: 0.25,
+      byRemedy: [
+        { remedy: "reread_js_fallback", remedied: 30, knoxFound: 6, share: 0.2 },
+        { remedy: "paid_read", remedied: 10, knoxFound: 4, share: 0.4 },
+      ],
+    });
+    expect(summarizeReaderRemedies([])).toEqual({ remedied: 0, knoxFound: 0, share: null, byRemedy: [] });
+  });
+});
+
 /** A tagged-template stand-in that answers each query by a word it contains. */
 function fakeDb(answers: Array<[RegExp, unknown[] | Error]>) {
   const queries: string[] = [];
-  const db = vi.fn(async (parts: TemplateStringsArray) => {
+  const values: unknown[][] = [];
+  const db = vi.fn(async (parts: TemplateStringsArray, ...params: unknown[]) => {
     const text = parts.join("?");
     queries.push(text);
+    values.push(params);
     const match = answers.find(([pattern]) => pattern.test(text));
     if (!match) return [];
     if (match[1] instanceof Error) throw match[1];
     return match[1];
   });
-  return { db: db as unknown as Parameters<typeof readGoalScorecard>[0], queries };
+  return { db: db as unknown as Parameters<typeof readGoalScorecard>[0], queries, values };
 }
 
 describe("readGoalScorecard", () => {
@@ -179,10 +249,12 @@ describe("readGoalScorecard", () => {
       { paid: true, rows_kept: 1000, documents: 200, institutions: 150 },
     ]],
     [/unknown_fees/, [{ live_fees: 75000, unknown_fees: 74000 }]],
+    [/kind = 'batch_error_rate'/, [{ created_at: new Date("2026-10-12T03:00:00Z"), evidence: { reads: 50, errors: 7, by_kind: { no_fees_found: 7 } } }]],
+    [/AS knox_found/, [{ remedy: "reread_js_fallback", remedied: 7, knox_found: 2 }]],
   ];
 
   it("reads every number, each naming its query, without counting refresh copies", async () => {
-    const { db, queries } = fakeDb(answers);
+    const { db, queries, values } = fakeDb(answers);
     const goal = await readGoalScorecard(db, new Date("2026-10-12T07:00:00Z"));
     expect(goal.coverageCells).toMatchObject({ query: "goal.coverage_cells", readyCells: 1, totalCells: 1 });
     // TN was 3 short a week ago; 4 newly live institutions closed those 3.
@@ -199,6 +271,16 @@ describe("readGoalScorecard", () => {
     expect(goal.spend?.byAgent[0]).toMatchObject({ agent: "knox", monthUsd: 75, monthlyCapUsd: 200 });
     expect(goal.knoxPasses).toMatchObject({ zeroCostShare: 0.75, paid: { spendUsd: 20, calls: 700, costPerRowUsd: 0.02 } });
     expect(goal.unstatedAudience?.share).toBeCloseTo(74000 / 75000, 4);
+    expect(goal.readerMisses?.query).toBe("goal.rosetta_miss_rate_weekly");
+    expect(goal.readerMisses?.weeks.at(-1)).toMatchObject({ weekStart: "2026-10-12", reads: 50, errors: 7, rate: 0.14 });
+    expect(goal.readerRemedies).toMatchObject({ query: "goal.rosetta_remedy_outcomes", remedied: 7, knoxFound: 2 });
+    // A new link search, a JS re-read and a reopened fee page count fees from the institution
+    // (their fees can land on another document row); every other fix, from the same document (#1581).
+    const remedyAt = queries.findIndex((q) => /AS knox_found/.test(q));
+    expect(queries[remedyAt]).toContain("fr.institution_id = f.institution_id");
+    expect(values[remedyAt]).toContainEqual(["magellan_paid_find", "reread_js_fallback", "reopen_fee_page"]);
+    // The window opens at midnight UTC, whatever the session's timezone.
+    expect(values[remedyAt]).toContain(`${readerMissSince(new Date("2026-10-12T07:00:00Z"))}T00:00:00Z`);
     // "Added" means no live fee a week ago, and refresh copies leave the publish count.
     expect(queries.find((q) => /AS added/.test(q))).toContain("rolled_back_at IS NULL OR fp.rolled_back_at >=");
     expect(queries.find((q) => /refresh_copy/.test(q))).toContain("NOT EXISTS (SELECT 1 FROM refresh_copy");
@@ -308,5 +390,31 @@ describe("Hamilton answer quality (#1079)", () => {
     expect(line).toContain("paid sample of 2026-10-15 15:17 UTC");
     expect(line).toContain("Memo (paid): form 100.0%");
     expect(line).toContain("Simulate (paid) (sample of 2026-10-14): form 0.0% (0 of 1)");
+  });
+});
+
+describe("Deming's daily data checks on the scorecard (#1065)", () => {
+  it("shows each check with its query and names the failing ones in the brief", async () => {
+    const detail = {
+      version: 1,
+      failing: ["dollar.duplicates"],
+      warning: [],
+      dollar: {
+        checks: {
+          duplicates: { query: "deming.dq_duplicates", count: 400, rate: 0.04, status: "fail" },
+          stale: { query: "deming.dq_stale_fees", count: 100, rate: 0.01, status: "pass" },
+          noCategory: { query: "deming.dq_no_category", count: 0, rate: 0, status: "pass" },
+          noSource: { query: "deming.dq_no_source", count: 10, rate: 0.001, status: "pass" },
+        },
+        category_share: { query: "deming.dq_category_share", status: "pass", drifts: [] },
+      },
+      rate: { checks: {}, category_share: { query: "deming.dq_category_share", status: "no_baseline", drifts: [] } },
+    };
+    const { db } = fakeDb([[/deming-data-quality/, [{ created_at: new Date("2026-10-16T06:00:00Z"), detail }]]]);
+    const goal = await readGoalScorecard(db);
+    expect(goal.dataQuality).toMatchObject({ query: "goal.deming_data_quality_latest", failing: ["dollar.duplicates"] });
+    expect(goal.dataQuality?.lines).toHaveLength(6);
+    expect(goal.dataQuality?.lines[0]).toEqual({ catalog: "dollar", check: "duplicates", query: "deming.dq_duplicates", count: 400, rate: 0.04, status: "fail" });
+    expect(goalBriefLines(goal).at(-1)).toBe("Data checks (2026-10-16): ALARM, 1 failed their threshold (dollar.duplicates).");
   });
 });

@@ -14,6 +14,7 @@ import { getSql } from "@/lib/data-store/connection";
 import { SITE_URL } from "@/lib/constants";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import { MIN_VERIFIED_FEES_FOR_OFFER } from "./(public)/institution/[id]/profile-copy";
+import { SAMPLE_REPORT_HREF } from "./landing-shared";
 
 
 // Serve a cached copy and rebuild it in the background at most once an hour. Rendered per
@@ -22,7 +23,6 @@ export const dynamic = "force-static";
 export const revalidate = 3600;
 
 const BASE_URL = SITE_URL;
-const SAMPLE_REPORT_PATH = "/reports/sample-competitive-fee-position";
 /** City pages below this many verified institutions are noindexed and left out of the sitemap. */
 const MIN_INDEXABLE_CITY_INSTITUTIONS = 3;
 const TOP_CITIES_PER_STATE = 20;
@@ -184,7 +184,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // and the sample stay listed.
   const reportPages: Entry[] = [
     entry("/reports", dataUpdated, "weekly", reportsPriority),
-    ...((await sampleReportAvailable()) ? [entry(SAMPLE_REPORT_PATH, dataUpdated, "monthly", 0.7)] : []),
+    ...((await sampleReportAvailable()) ? [entry(SAMPLE_REPORT_HREF, dataUpdated, "monthly", 0.7)] : []),
   ];
 
   // Category and state pages below the median floor are noindexed (thin), so they stay out

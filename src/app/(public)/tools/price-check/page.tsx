@@ -7,7 +7,7 @@ import { STATE_TO_FIPS } from "@/lib/geo/state-fips";
 import { DistributionChart } from "@/components/public/distribution-chart";
 import { CountyPriceMap, type CountyDetail } from "@/components/public/county-price-map";
 import { countyFeatures } from "@/lib/geo/counties";
-import { getNationalIndexCached } from "@/lib/data-store/fee-index";
+import { getNationalIndexCached, getNationalUnstatedAudienceCountsCached } from "@/lib/data-store/fee-index";
 import { getCountyFeeMapCached, getStateDemographicsCached } from "@/lib/data-store/public-cached-reads";
 import { countyPriceMap, PRICE_MAP_FILLS, PRICE_MAP_LEGEND, priceStep } from "@/lib/report-templates/base/state-charts";
 import {
@@ -21,6 +21,7 @@ import {
   PRICE_CHECK_FEES,
   type PriceCheckFee,
 } from "@/lib/price-check";
+import { PriceStats } from "./price-stats";
 
 const EYEBROW = "text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted";
 const SERIF = { fontFamily: "var(--fi-font-sans)" };
@@ -54,14 +55,19 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
   const check = prices && price !== null ? priceCheck(price, prices) : null;
   const stateName = state ? STATE_NAMES[state] : "";
   const fips = state ? STATE_TO_FIPS[state] : undefined;
-  const [national, demographics, countyMap] = check && state
+  const [national, unstatedCounts, demographics, countyMap] = check && state
     ? await Promise.all([
         getNationalIndexCached().catch(() => []),
+        getNationalUnstatedAudienceCountsCached(),
         fips ? getStateDemographicsCached(fips).catch(() => null) : Promise.resolve(null),
         fips ? getCountyFeeMapCached(state, fee).catch(() => null) : Promise.resolve(null),
       ])
-    : [[], null, null];
-  const nationalEntry = national.find((entry) => entry.fee_category === fee) ?? null;
+    : [[], new Map<string, number>(), null, null];
+  const indexEntry = national.find((entry) => entry.fee_category === fee) ?? null;
+  // The cached index carries no unstated-audience count (#1595); a live fallback index does.
+  const nationalEntry = indexEntry
+    ? { ...indexEntry, unstated_audience_institution_count: indexEntry.unstated_audience_institution_count ?? unstatedCounts.get(fee) ?? 0 }
+    : null;
   const charters = prices && price !== null ? charterChecks(price, prices) : [];
   const markets = prices && price !== null ? marketChecks(price, prices) : [];
   const countyValues = (countyMap?.counties ?? []).map((c) => ({ fips: c.fips, value: c.overdraft, deposits: c.deposits, covered_deposits: c.covered_deposits }));
@@ -180,12 +186,15 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
           <PositionBar lower={check.lower} same={check.same} higher={check.higher} />
           <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] lg:items-start">
             <div>
-          <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-2">
-            <Stat label="Institutions counted" value={String(check.count)} />
-            <Stat label={`${state} median`} value={money(check.median)} />
-            {nationalMedian !== null ? <Stat label="National median" value={money(nationalMedian)} /> : <Stat label="Charge less" value={`${check.lowerShare}%`} />}
-            <Stat label="Charge $0" value={String(check.zero)} />
-          </dl>
+          <PriceStats
+            state={state ?? ""}
+            count={check.count}
+            stateMedian={{ median_amount: check.median, unstated_audience_institution_count: prices.unstated_audience_institution_count }}
+            nationalMedian={nationalMedian !== null ? nationalEntry : null}
+            lowerShare={check.lowerShare}
+            zero={check.zero}
+            money={money}
+          />
           {prices.uncheckedCount > 0 && (
             <p className="mt-4 max-w-prose text-[13px] text-ink-muted">
               {plural(prices.uncheckedCount, "other institution has", "other institutions have")} a published {FEE_NOUN[fee]}{" "}
@@ -362,15 +371,6 @@ function GroupTable({ rows, price, firstColumn }: { rows: GroupCheck[]; price: n
           ))}
         </tbody>
       </table>
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border border-border/80 bg-white/70 px-4 py-3">
-      <dt className={EYEBROW}>{label}</dt>
-      <dd className="mt-1 text-[1.25rem] tabular-nums text-ink">{value}</dd>
     </div>
   );
 }

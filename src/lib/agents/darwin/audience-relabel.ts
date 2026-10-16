@@ -30,11 +30,17 @@ type SqlTag = typeof sql;
 /**
  * "dry_run_full" (#1059 gate before live): the same cursor chain as live, one bounded batch per
  * tick over every document, writing nothing but each batch's counts; the last batch adds the
- * chain's totals (`dryRunFullTotals`). Live waits until those totals pass.
+ * chain's totals (`dryRunFullTotals`).
+ *
+ * Live since James's typed "switch it on" in the Data quality thread, 2026-10-16 16:40 UTC.
  */
 export type AudienceRelabelMode = "off" | "dry_run_full" | "live" | "rollback";
-export const AUDIENCE_RELABEL_MODE: AudienceRelabelMode = "dry_run_full";
-export const AUDIENCE_RELABEL_VERSION = 1;
+export const AUDIENCE_RELABEL_MODE: AudienceRelabelMode = "live";
+/**
+ * v2 (#1626): the fee-name reading changed (product words, exceptions and two-sided lists), so the
+ * full dry run's key chain and totals start again from the first document under v2.
+ */
+export const AUDIENCE_RELABEL_VERSION = 2;
 export const AUDIENCE_RELABEL_SOURCE = "darwin.audience_relabel";
 export const AUDIENCE_RELABEL_KIND = "audience_relabeled";
 const SAMPLE_SIZE = 25;

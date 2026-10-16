@@ -32,22 +32,23 @@ const LINK_CLASS = "text-warm-ink-300 transition-colors hover:text-warm-ink-50";
 /**
  * A navy band, so the page ends on a finished block rather than a fade (James's review of the light
  * version on a phone, 2026-10-15: "Footer just doesn't look good"). Links sit in three even columns
- * on a phone so none is left alone on a line; the signup is one framed unit.
+ * on a phone so none is left alone on a line; the signup is one framed unit. On a phone the mark,
+ * the line and the links are centred, as every header is (James, Oct 16).
  */
 export function CustomerFooter() {
   return (
     <footer className="fi-on-navy bg-warm-ink-900 text-warm-ink-50">
       <div className="mx-auto max-w-page px-6 pb-6 pt-10 lg:pt-12">
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:gap-16">
-          <div className="min-w-0">
+          <div className="min-w-0 max-sm:text-center">
             <Link href="/" className="inline-flex no-underline" aria-label={`${SITE_NAME}: home`}>
               <Logo mark="fee-insight-oneline" tone="reverse" height={24} title="" />
             </Link>
-            <p className="mt-3 max-w-sm text-[13px] leading-snug text-warm-ink-300">
+            <p className="mt-3 max-w-sm text-[13px] max-sm:mx-auto leading-snug text-warm-ink-300">
               Published fees from U.S. banks and credit unions, with a source for every figure.
             </p>
             <nav aria-label="Footer" className="mt-6">
-              <ul className="grid grid-cols-3 gap-x-4 gap-y-2.5 text-[13px] font-medium sm:flex sm:flex-wrap sm:gap-x-6">
+              <ul className="grid grid-cols-3 gap-x-4 gap-y-2.5 text-[13px] font-medium max-sm:justify-items-center sm:flex sm:flex-wrap sm:gap-x-6">
                 {FOOTER_LINKS.map((link) => (
                   <li key={link.href}>
                     <Link href={link.href} className={LINK_CLASS}>
@@ -64,11 +65,11 @@ export function CustomerFooter() {
           </div>
         </div>
 
-        <div className="mt-10 flex flex-col gap-2 border-t border-warm-ink-700 pt-5 text-[11px] text-warm-ink-500 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+        <div className="mt-10 flex flex-col gap-2 border-t border-warm-ink-700 pt-5 text-[11px] text-warm-ink-500 max-sm:items-center max-sm:text-center sm:flex-row sm:items-center sm:justify-between sm:gap-6">
           <span>
             &copy; {new Date().getFullYear()} {LEGAL_ENTITY_NAME}. {TRADEMARK_NOTICE}
           </span>
-          <ul className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <ul className="flex flex-wrap items-center gap-x-4 gap-y-1 max-sm:justify-center">
             {FOOTER_LEGAL_LINKS.map((link) => (
               <li key={link.href}>
                 <Link href={link.href} className={LINK_CLASS}>

@@ -7,15 +7,17 @@
  * on Oct 8-15 its function TTFB was 146 ms at p50 but 3,834 ms at p75 (#1168), the slow
  * renders being the ones whose cached reads had to go to the database.
  *
- * A render with a failed read is never cached (`homeReadsCacheable`): at build time it
- * falls back to rendering per request for that deployment, and in a background
- * regeneration it fails, so the last good page keeps being served. A database blip
- * therefore never bakes a homepage with blank numbers.
+ * Each read keeps serving its last good value while the database is down
+ * (`cachedPublicRead`), so a render only has a failed read when no good value is cached
+ * at all. Such a render (`homeReadsCacheable` false) is cached for one minute instead of
+ * fifteen (`shortenPageLife`): the visitor gets the page with the failed parts hidden,
+ * never an error page, and the next render a minute later reads the database again
+ * (#1572). It used to opt out of the cache with `connection()`, which on a cold cache
+ * miss turned the failed read into a 500.
  */
 export const revalidate = 900;
 
 import type { Metadata } from "next";
-import { connection } from "next/server";
 import { getPublicSnapshot } from "@/lib/public-stats";
 import { CONTACT_EMAIL, LEGAL_ENTITY_NAME, PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { loadSampleReport } from "@/lib/custom-report/sample-report";
@@ -23,22 +25,19 @@ import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
 import { getFeeCategoryDetailCached } from "@/lib/data-store/public-cached-reads";
+import { shortenPageLife } from "@/lib/data-store/public-read-cache";
 import { LandingHero } from "./landing-hero";
-import { LandingDemo } from "./landing-demo";
-import { LandingPillars } from "./landing-pillars";
-import { LandingProvenance } from "./landing-provenance";
+import { LandingProducts } from "./landing-products";
 import { LandingPricing } from "./landing-pricing";
 import { LandingFaq } from "./landing-faq";
-import { LandingClose } from "./landing-close";
 import { buildHomeData, buildSampleView, homeReadsCacheable } from "./landing-shared";
-import { loadSampleLadder } from "./for-institutions/market-ladder";
 import { buildScenario } from "./subscribe/scenario";
 
-// The buyer promise from site v3 brief 08 §B.3 (h1) and its subhead; no counts, so nothing goes stale.
-const HOME_TITLE = `Know where your fees stand, with a source for every figure | ${SITE_NAME}`;
+// The promise (James, Oct 16); no counts, so nothing goes stale.
+const HOME_TITLE = `Your next fee review doesn't need to take weeks | ${SITE_NAME}`;
 const HOME_DESCRIPTION =
-  `The ${PRODUCT_NAME} reads the published fee schedules of U.S. banks and credit unions. ` +
-  "See each of your fees against your market, your state, your Fed district, your peer group and the nation.";
+  `Compare your fees with competitors using the ${PRODUCT_NAME}, then turn the evidence into analysis and ` +
+  "board reports with Hamilton. Every figure traces to the institution's own published fee schedule.";
 
 export const metadata: Metadata = {
   title: { absolute: HOME_TITLE },
@@ -83,7 +82,7 @@ export default async function LandingPage() {
   // index, research hub and directory to the number. The district medians are the cached
   // read /fees/overdraft already makes; a failed read only hides the district rows. The
   // live sample report (the same one /for-institutions and the sample page show) gives the
-  // named bank's fees, their source lines and its market ladder; a failed read hides them.
+  // named bank, its competitors and its report for the workflow section; a failed read hides it.
   // The sample is read once: it is null both when none passes the bar today and on error.
   const [{ summary, categories }, sampleRead, overdraftRead] = await Promise.all([
     getPublicSnapshot(),
@@ -103,19 +102,17 @@ export default async function LandingPage() {
       },
     ),
   ]);
+  const liveSample = sampleRead.report;
   const cacheable = homeReadsCacheable({
     summary,
     categories,
     sampleFailed: sampleRead.failed,
     overdraftFailed: overdraftRead.failed,
   });
-  // Opts this render out of the page cache (see the note at the top of the file).
-  if (!cacheable) await connection();
-  const liveSample = sampleRead.report;
-  const ladder = liveSample ? await loadSampleLadder(liveSample, categories) : null;
+  // A render with a failed read is cached for a minute, not fifteen (see the note at the top).
+  if (!cacheable) await shortenPageLife();
   const data = buildHomeData(summary, categories, overdraftRead.detail?.by_fed_district, {
     sample: buildSampleView(liveSample),
-    ladder,
     scenario: buildScenario("Overdraft", categories.find((c) => c.fee_category === "overdraft")),
   });
 
@@ -131,13 +128,12 @@ export default async function LandingPage() {
       />
       <ConsumerNav />
       <main id="main-content">
-        <LandingHero summary={summary} />
-        <LandingDemo data={data} />
-        <LandingPillars data={data} />
-        <LandingProvenance summary={summary} />
+        {/* James's order (Oct 16): the promise, the Index and Hamilton with a useful answer
+            and the report, the subscription, then the questions buyers ask. */}
+        <LandingHero />
+        <LandingProducts data={data} summary={summary} report={liveSample} />
         <LandingPricing />
         <LandingFaq summary={summary} />
-        <LandingClose />
       </main>
       <CustomerFooter />
       <SearchModal />

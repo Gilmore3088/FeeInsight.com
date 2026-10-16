@@ -32,6 +32,7 @@ const AGENT_NAMES: Record<string, AdminAgent> = {
   knox: "knox",
   darwin: "darwin",
   hamilton: "hamilton",
+  gutenberg: "gutenberg",
 };
 
 const STATE_BY_NAME = new Map<string, string>(
@@ -45,7 +46,7 @@ export const CREW_COMMAND_EXAMPLES = [
   "Atlas, run Georgia",
   "Atlas, run all due states",
   "Magellan, run Texas",
-  "Hamilton, publish institution 47",
+  "Gutenberg, publish institution 47",
   "Knox, retry failed",
   "pause / resume",
   "show First Credit Union",
@@ -114,8 +115,11 @@ export function parseCrewCommand(input: string): CrewCommand {
   const run = text.match(/^(run|publish|refresh|crawl|work on|do)\b\s*(.*)$/i);
   if (run) {
     const scope = parseScope(run[2]);
-    if ((run[1].toLowerCase() === "publish" || scope?.kind === "institution") && agent !== "hamilton") {
-      return { kind: "help", agent, reason: "Use Hamilton, publish institution <ID> to publish one bank's verified fees." };
+    // Publishing is Gutenberg's (#1075 step 2). "Hamilton, publish ..." still works and runs as
+    // Gutenberg, since publishing was the only work Hamilton's name could start here.
+    if (agent === "hamilton") agent = "gutenberg";
+    if ((run[1].toLowerCase() === "publish" || scope?.kind === "institution") && agent !== "gutenberg") {
+      return { kind: "help", agent, reason: "Use Gutenberg, publish institution <ID> to publish one bank's verified fees." };
     }
     return scope
       ? { kind: "run", agent, scope }
@@ -138,9 +142,9 @@ export const AGENT_RUN_STEPS: Record<AdminAgent, Array<{ key: string; title: str
   rosetta: [{ key: "read", title: "Read downloaded documents" }],
   knox: [{ key: "extract", title: "Pull fees out of documents" }],
   darwin: [{ key: "classify", title: "Verify extracted fees" }],
-  hamilton: [{ key: "publish", title: "Publish verified fees" }],
-  // Gutenberg takes over "publish" in #1075 step 2; until then Hamilton's steps run it.
-  gutenberg: [],
+  // Hamilton's product steps run from their own crons; a "run" addressed to Hamilton runs as Gutenberg.
+  hamilton: [],
+  gutenberg: [{ key: "publish", title: "Publish verified fees" }],
   // Growth runs from its own crons (content, marketing); the command bar does not start it.
   growth: [],
 };

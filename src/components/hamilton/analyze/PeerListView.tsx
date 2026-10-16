@@ -1,5 +1,6 @@
 "use client";
 
+import { hamiltonInstitutionHref, publicInstitutionHref } from "@/lib/hamilton/context-link";
 import { useMemo, useRef, useState } from "react";
 import { createPeerSet } from "@/app/pro/(hamilton)/settings/actions";
 import { formatPeerAssets, type PeerListResponse, type PeerListContinuation } from "@/lib/hamilton/peer-list";
@@ -115,6 +116,7 @@ function SelectablePeerList({ response, saveContext }: { response: PeerListRespo
           className="rounded-md border border-warm-300 px-3 py-2 text-sm font-medium text-warm-900 disabled:opacity-50">
           {savingResearch ? "Saving research..." : "Save this peer research"}
         </button>
+        {!savedResearchId && !savingResearch ? <p className="text-sm text-warm-700">Fee answers save on their own. A peer list is saved only when you save it.</p> : null}
         {researchError ? <p role="alert" className="text-sm text-terra-text">{researchError}</p> : null}
         {savedResearchId ? <p role="status" className="text-sm text-warm-700">Research snapshot saved. <a className="font-medium text-terra-text underline" href={`/pro/peer-research/${encodeURIComponent(savedResearchId)}`}>Reopen saved research</a></p> : null}
       </div> : null}
@@ -190,8 +192,8 @@ function SelectablePeerList({ response, saveContext }: { response: PeerListRespo
                     onChange={() => toggleSelection(row.institutionId)} disabled={isSaving || (!selected.has(row.institutionId) && selected.size >= 50) || !data.subject}
                     className="accent-terra" /></td>
                   <th scope="row" className="max-w-[240px] p-3 font-normal">
-                    <a href={`/institution/${row.institutionId}`} className="font-semibold text-terra-text underline">{row.name}</a>
-                    <p className="mt-1 text-xs text-warm-600">{row.charterType === "credit_union" ? "Credit union" : row.charterType === "bank" ? "Bank" : "Type unavailable"}</p>
+                    <a href={hamiltonInstitutionHref(row.institutionId)} className="font-semibold text-terra-text underline">{row.name}</a>
+                    <p className="mt-1 text-xs text-warm-600">{row.charterType === "credit_union" ? "Credit union" : row.charterType === "bank" ? "Bank" : "Type unavailable"} · <a href={publicInstitutionHref(row.institutionId)} className="underline">Public page</a></p>
                     <details className="mt-1 text-xs text-warm-600"><summary className="cursor-pointer">Why included</summary><p>{row.inclusionReason}</p></details>
                   </th>
                   <td className="p-3">{[row.city, row.stateCode].filter(Boolean).join(", ") || "Not available"}</td>

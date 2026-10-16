@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildFeeAnswer, economicDrivers, proseFeeName } from "./answer";
 import { economicBackdrop, beigeBookExcerpt } from "./economy";
-import { evaluateFourRoles, sentences } from "./four-roles";
+import { evaluateFourRoles, MAX_STORY_LINE_WORDS, sentences, words } from "./four-roles";
 import { economyContext, overdraftResearch } from "./test-fixtures";
 import type { HamiltonAnswer } from "./types";
 
@@ -131,10 +131,43 @@ describe("answer edge cases", () => {
         },
       }),
     );
-    expect(answer.claims.map((c) => c.text)).toContain("Your filing reports $1.3 million in overdraft income over the four quarters to June 30, 2026.");
+    expect(answer.claims.map((c) => c.text)).toContain("Your filing reports $1.3 million in overdraft income in the year to June 30, 2026.");
     expect(answer.evidenceLevel).toBe("working_estimate");
     expect(answer.question).toBeNull();
     expect(evaluateFourRoles(answer).pass).toBe(true);
+  });
+
+  it("names a bank's combined overdraft and NSF line as combined in both fees' answers (#1543)", () => {
+    const combined = (combinedWith: string) => ({
+      annualIncome: 241_000_000,
+      label: "Consumer overdraft and NSF fee income (call report Schedule RI-E, RIAD H032)",
+      quarterEnd: "2026-06-30",
+      source: { label: "Consumer overdraft and NSF fee income (call report Schedule RI-E, RIAD H032)", table: "institution_financial_records" },
+      combinedWith,
+    });
+    for (const [feeCategory, other] of [["overdraft", "NSF"], ["nsf", "overdraft"]]) {
+      const texts = buildFeeAnswer(overdraftResearch({ feeCategory, revenueLine: combined(other) })).claims.map((c) => c.text);
+      expect(texts).toContain("Your filing reports $241 million in overdraft and NSF income combined (call report) in the year to June 30, 2026.");
+      expect(texts.join(" ")).not.toMatch(/returned item income|NSF income over/i);
+    }
+  });
+
+  it("keeps the combined income line within 20 words when the institution is named (#1076)", () => {
+    const revenueLine = {
+      annualIncome: 10_100_000,
+      label: "Consumer overdraft and NSF fee income (call report Schedule RI-E, RIAD H032)",
+      quarterEnd: "2026-06-30",
+      source: { label: "Consumer overdraft and NSF fee income (call report Schedule RI-E, RIAD H032)", table: "institution_financial_records" },
+      combinedWith: "NSF",
+    };
+    for (const subjectName of [undefined, "U.S. Bank", "Capital City Bank"]) {
+      const lines = buildFeeAnswer(overdraftResearch({ revenueLine, ...(subjectName ? { subjectName } : {}) })).claims
+        .map((c) => c.text).filter((t) => t.includes("income combined"));
+      expect(lines).toHaveLength(1);
+      expect(words(lines[0])).toBeLessThanOrEqual(MAX_STORY_LINE_WORDS);
+    }
+    const named = buildFeeAnswer(overdraftResearch({ revenueLine, subjectName: "Capital City Bank" })).claims.map((c) => c.text);
+    expect(named).toContain("The filing reports $10.1 million in overdraft and NSF income combined (call report) in the year to June 30, 2026.");
   });
 
   it("draws local competitors when asked for that view", () => {

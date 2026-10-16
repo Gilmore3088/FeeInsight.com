@@ -17,6 +17,7 @@ import {
   dotLayout,
   firstDistrict,
   gapWords,
+  placeDots,
   openingPrice,
   scrollTargetTop,
   stepOf,
@@ -72,13 +73,46 @@ describe("district map", () => {
     expect(panelName()).toBe("Dallas");
     expect(group(11).getAttribute("aria-pressed")).toBe("true");
     expect(group(3).getAttribute("aria-pressed")).toBe("false");
-    const p = within(panel());
-    expect(p.getByText("The same as the national median")).toBeTruthy();
-    expect(panel().textContent).toContain("238 institutions publish an overdraft fee");
-    expect(p.getByRole("link").getAttribute("href")).toBe("/research/district/11");
+    expect(panel().querySelector("[data-panel-gap]")?.textContent).toContain("median · same as national");
+    expect(panel().textContent).toContain("Dallas · District 11");
+    expect(panel().textContent).toContain("238 institutions with published overdraft fees");
+    const footer = document.querySelector("[data-district-footer]") as HTMLElement;
+    expect(within(footer).getByRole("link", { name: /Dallas district report/ }).getAttribute("href")).toBe("/research/district/11");
     fireEvent.click(group(12));
-    expect(panel().querySelector("[data-panel-gap]")?.textContent).toBe(gapWords(25 - 30));
-    expect(gapWords(-5)).toBe("$5.00 below the national median");
+    expect(panel().querySelector("[data-panel-gap]")?.textContent).toBe(`$25.00 median · ${gapWords(25 - 30)}`);
+    expect(gapWords(-5)).toBe("$5.00 below national");
+  });
+
+  it("gives phones one takeaway and one link, with the comparison one tap away", () => {
+    render(<DistrictMap data={data} />);
+    const takeaway = document.querySelector("[data-district-takeaway]") as HTMLElement;
+    expect(takeaway.textContent).toContain(`Philadelphia: $32.00 median, ${gapWords(32 - 30)}`);
+    expect(within(takeaway).getByRole("link", { name: /Explore the Philadelphia district/ }).getAttribute("href")).toBe("/research/district/3");
+    const toggle = within(takeaway).getByRole("button", { name: "View comparison details" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(panel().parentElement?.className).toContain("max-sm:hidden");
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(toggle.textContent).toBe("Hide comparison details");
+    expect(panel().parentElement?.className).not.toContain("max-sm:hidden");
+  });
+
+  it("places each district dot at its true median and stacks dots that would overlap", () => {
+    const { dots, rows, nationLeft } = placeDots(
+      [
+        { district: 1, median: 30 },
+        { district: 2, median: 30 },
+        { district: 3, median: 40 },
+        { district: 4, median: 20 },
+      ],
+      30,
+    );
+    const at = (n: number) => dots.find((d) => d.district === n)!;
+    expect([at(4).left, at(1).left, at(3).left]).toEqual([4, 50, 96]);
+    expect(at(2).left).toBe(at(1).left);
+    expect([at(1).row, at(2).row]).toEqual([0, 1]);
+    expect(rows).toBe(2);
+    expect(nationLeft).toBe(50);
   });
 
   it("selects with Enter, moves with the arrow keys and previews on hover", () => {
@@ -184,7 +218,7 @@ describe("district map", () => {
 const sample: SampleView = {
   institutionName: "Sample Bank",
   competitors: 29,
-  fees: [{ key: "wire_intl_outgoing", label: "Wire Transfer (Int'l Out)", amount: 75, quote: "Outgoing International Fee | $75", readOn: "2026-10-03" }],
+  fees: [{ key: "wire_intl_outgoing", label: "Wire Transfer (Int'l Out)", amount: 75, quote: "Outgoing International Fee … $75", readOn: "2026-10-03" }],
   rows: [
     { key: "overdraft", label: "Overdraft (OD)", amount: 35, median: 35, p25: 33, p75: 36, competitors: 19, position: "in_market" },
     { key: "wire_intl_outgoing", label: "Wire Transfer (Int'l Out)", amount: 75, median: 50, p25: 45, p75: 50, competitors: 16, position: "above_market" },
@@ -197,7 +231,7 @@ describe("my fees", () => {
     render(<MyFeesChart sample={sample} freshness={summary.freshnessLabel} />);
     const detail = () => document.querySelector("[data-fee-detail]")?.textContent ?? "";
     expect(detail()).toContain("$75.00");
-    expect(detail()).toContain("Outgoing International Fee | $75");
+    expect(detail()).toContain("Outgoing International Fee … $75");
     fireEvent.click(document.querySelector('[data-fee="paper_statement"]') as HTMLElement);
     expect(detail()).toContain("$2.00");
     expect(detail()).toContain("Below the local middle half");

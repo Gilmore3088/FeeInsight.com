@@ -2,7 +2,7 @@ import Link from "next/link";
 import { CONSULTANT_PRICE_NOTE } from "@/lib/pro-tiers";
 import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import { TrackLink } from "@/components/track-link";
-import { CONTACT_EMAIL, PRODUCT_NAME, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
+import { CONTACT_EMAIL, PRODUCT_NAME, REPORT_OFFER } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
 import { DEMO_REQUEST_NAV } from "@/components/nav-items";
 import { REPORT_PRICE_LABEL } from "./pricing";
@@ -12,13 +12,13 @@ const LINK_CLASS = "inline-flex min-h-11 items-center text-sm font-medium text-i
 const REPORT_ANCHOR_HREF = "/reports?report=institution&src=pricing#request";
 // Contact form, not mailto, so every ask lands in /admin/leads with a due time.
 const CONTACT_SALES_HREF = "/contact?source=enterprise";
-const ADVISORY_HREF = "/contact?source=advisory";
 
 const DISPLAY = { fontFamily: "var(--fi-font-sans)" };
 
 /**
  * The rest of the catalog for a direct visit (James, 9 Oct 2026): a Pro demo, the one-time
- * report, the free index and Advisory, one line each, so Pro stays the page's subject.
+ * report and the free index, one line each, so Pro stays the page's subject. No "Advisory" row:
+ * Fee Insight is not marketed as advisory (James, 16 Oct 2026, #1174); demos and calls stay.
  */
 export function OtherOptions() {
   const rows = [
@@ -47,15 +47,6 @@ export function OtherOptions() {
         <Link href="/institutions" className={LINK_CLASS}>
           Search the index
         </Link>
-      ),
-    },
-    {
-      name: `${SITE_NAME} Advisory`,
-      note: "Custom research, teams over 5, data feeds",
-      link: (
-        <TrackLink event="contact_sales" eventProps={{ placement: "pricing_advisory" }} href={ADVISORY_HREF} className={LINK_CLASS}>
-          Talk to us
-        </TrackLink>
       ),
     },
   ];

@@ -366,7 +366,7 @@ function moveFeedback(move: FoldMove, runId: number): FeedbackRow {
     // A fold is a taxonomy decision, not a judgement of Knox's read.
     signal: "right",
     kind: TAXONOMY_FOLD_KIND,
-    reportedBy: "hamilton",
+    reportedBy: "gutenberg",
     checkName: TAXONOMY_FOLD_CHECK,
     institutionId: move.institutionId,
     sourceDocumentId: move.sourceDocumentId,
@@ -602,6 +602,99 @@ export const HAND_REFILES: readonly HandRefile[] = [
   { feePublishedId: 70319, from: "dormant_account", amount: 2.95, to: "dormant_account", name: "VISA Gift Card Inactivity Fee",
     oldName: "12 Months of Inactivity",
     why: "inst 986, doc 20361: \"VISA Gift Card – Inactivity Fee after 12 Months of Inactivity $2.95/month\"; category kept as filed, its question is on #1196" },
+  // #1512, #1513 (James approved, Oct 16 03:37 UTC, roadmap item 3.8): two schedule lines joined
+  // into one name, or one line under the wrong category. Each price is right for the line named
+  // here, read from the row's own stored text; the eighth joined row (142965) comes down instead
+  // (hand-takedowns.ts). Undo: rename or re-file back to `oldName` under `from`; the run event and
+  // `pipeline_feedback` row keep both.
+  { feePublishedId: 139453, from: "rush_card", amount: 10, to: "card_replacement", name: "Credit or debit card replacement fee",
+    oldName: "Credit or debit card replacement fee Rush Order Fee",
+    why: "#1512, inst 6228, doc 30968: \"Card Replacement / Credit or debit card replacement fee Rush Order Fee / $10 per card; $45 per card\"; $10 is the replacement, the rush order is $45" },
+  { feePublishedId: 61871, from: "bill_pay", amount: 2.99, to: "bill_pay", name: "Bill Pay Gift Check",
+    oldName: "Returned Wire Fee Varies Bill Pay Gift Check ………………………………",
+    why: "#1512, inst 6940, doc 18323: \"Returned Wire Fee Varies Bill Pay Gift Check ……… $2.99\"; the returned wire fee \"Varies\", the $2.99 is the gift check" },
+  { feePublishedId: 73876, from: "safe_deposit_box", amount: 10, to: "safe_deposit_box", name: "Key Deposit Fee",
+    oldName: "Change of Lock Fee: Current locksmith charges Drilling of Box Fee: Current locksmith charges Key Deposit Fee",
+    why: "#1512, inst 8567, doc 13490: \"• Change of Lock Fee: Current locksmith charges • Drilling of Box Fee: Current locksmith charges • Key Deposit Fee: $10.00\"; only the key deposit is $10" },
+  { feePublishedId: 14294, from: "monthly_maintenance", amount: 5, to: "monthly_maintenance", name: "Renew Spend Account: Monthly Service Charge",
+    oldName: "Renew Spend Account Monthly Service Charge ………………………..…………… Student Spend Account Monthly Service Charge …………………………………….",
+    why: "#1512, inst 6636, doc 12872: \"Renew Spend Account* | …\" then \"Monthly Service Charge ……… $5.00\"; the Student Spend line below is $0.00 (live as 99385)" },
+  { feePublishedId: 70046, from: "monthly_maintenance", amount: 12, to: "monthly_maintenance", name: "Fresh Start Checking: Monthly maintenance fee with Direct Deposit",
+    oldName: "Fresh Start Checking: Monthly maintenance fee with Direct Deposit. Monthly maintenance fee w/o Direct Deposit",
+    why: "#1512, inst 7006, doc 27023: \"Fresh Start Checking* | Monthly maintenance fee with Direct Deposit. Monthly maintenance fee w/o Direct Deposit | $12.00/mo $15.00/mo\"; $12 is with direct deposit" },
+  { feePublishedId: 139131, from: "ira_termination", amount: 5, to: "ira_termination", name: "IRA Closure Fee",
+    oldName: "IRA Closure Fee IRA Minimum Balance Fee",
+    why: "#1512, inst 4554, doc 30829: \"IRA Closure Fee IRA Minimum Balance Fee8 | $5.00 $4.00/month\"; the closure is $5, the minimum balance fee $4/month" },
+  { feePublishedId: 43277, from: "account_research", amount: 15, to: researchSplitTarget("returned_mail"), name: "Undeliverable Mail",
+    oldName: "Undeliverable Mail ……...………………………….......……....…",
+    why: "#1513, inst 2657, doc 916: \"Undeliverable Mail ……… $15 | Account Reconciliation ……… $35 / One-time fee upon return of 2nd undeliverable item\"; returned mail, renamed under account research while the #1398 split is off" },
+  { feePublishedId: 63055, from: "wire_domestic_outgoing", amount: 35, to: "wire_intl_outgoing", name: "Wire Trans. (Intern. Outgoing)",
+    oldName: "Wire Trans. (Intern. Outgoing) ………",
+    why: "#1513, inst 5653, doc 18876: \"Wire Trans. (Intern. Outgoing) ………...$35.00 per Wire\", an international wire; the domestic one is \"Wire Trans. (Dom. Outgoing) …$18.00 per Wire\" (live as 63054)" },
+  // #1646 (source check v17 reads name words whole): two right fees whose names the page does not
+  // print where it prints the price. v16 traced them only through letters inside other words
+  // ("low" in "below" and in "following"). Each is renamed in place to the page's own words, so it
+  // stays live. Undo: rename back to `oldName`; the run event and `pipeline_feedback` row keep both.
+  { feePublishedId: 96663, from: "minimum_balance", amount: 2, to: "minimum_balance", name: "Accounts with balances below $50 on the last day of the month",
+    oldName: "Low balance fee",
+    why: "#1646, inst 6863, doc 22481: \"Accounts with balances below $50 on the last day of the month are subject to a $2 fee.\"" },
+  { feePublishedId: 88058, from: "minimum_balance", amount: 15, to: "minimum_balance", name: "Money Market Account Low Balance Fee",
+    oldName: "Low Balance Fee",
+    why: "#1646, inst 4613, doc 20748: \"MONEY MARKET ACCOUNTS / Money Market Account / Low Balance Fee / (charged if the average daily balance is less than $2,500 for the calendar month) ...... $15.00\"" },
+  // #1646 re-review: right prices whose stored names were cut off or were sentence fragments; v16
+  // traced them only through a cut word or letters inside other words. Each is renamed in place to
+  // the page's own name for the line, so it stays live. Undo: rename back to `oldName`.
+  { feePublishedId: 138829, from: "garnishment_levy", amount: 34, to: "garnishment_levy", name: "Judicial Attachment (Garnishment)",
+    oldName: "Jud",
+    why: "#1646, inst 7204, doc 30627: \"Judicial Attachment (Garnishment) $34.00\"" },
+  { feePublishedId: 137077, from: "card_replacement", amount: 3.5, to: "card_replacement", name: "Replace Damaged Card",
+    oldName: "Replace Dam",
+    why: "#1646, inst 6852, doc 29845: \"Replace Damaged Card | $3.50\"" },
+  { feePublishedId: 15595, from: "account_research", amount: 27.5, to: "account_research", name: "Account Balancing Assistance, per hour",
+    oldName: "Account Bala",
+    why: "#1646, inst 61, doc 14695: \"Account Balancing Assistance, per hour ..... $27.50\"" },
+  { feePublishedId: 135314, from: "stop_payment", amount: 30, to: "stop_payment", name: "Stop payment request",
+    oldName: "Stop payment wil",
+    why: "#1646, inst 2176, doc 29210: \"A charge of $30.00 will be assessed to the account holder as payment for implementing the stop payment request.\"" },
+  { feePublishedId: 97924, from: "stop_payment", amount: 25, to: "stop_payment", name: "Stop-payment order",
+    oldName: "stop payment order is made verbally, we may also require you to put your request in writing and get it to us within four",
+    why: "#1646, inst 2796, doc 15170: \"* We will charge $25.00 for each stop-payment order for / preauthorized transfers.\"" },
+  { feePublishedId: 98545, from: "dormant_account", amount: 3, to: "dormant_account", name: "Monthly dormant fee for Savings",
+    oldName: "account fees in addition to the normal service charges (e.g., monthly maintenance fees, etc.) while it is in dormant sta",
+    why: "#1646, inst 1484, doc 15002: \"the monthly dormant fee of $3 for Savings and $10 for Money Market accounts\"" },
+  { feePublishedId: 130805, from: "atm_non_network", amount: 1.5, to: "atm_non_network", name: "Charge at ATMs we do not own or operate",
+    oldName: "transfer funds from checking to savings account(s) with an ATM or Visa Check card get information about: the account bal",
+    why: "#1646, inst 2094, doc 27953: \"there is a charge of $1.50 at ATMs we do not own or operate\"" },
+  // 67412 (inst 71, doc 16337, $12) is not renamed: as "Sweep Transfer Fee" it would duplicate live
+  // 144309 (same institution, document, name and price), so v17 takes it down as the duplicate it is.
+  // #1655 (read-only, Oct 16): two Navy Federal home equity line fees filed as deposit fees, so they
+  // showed in the consumer overdraft guide. Each price is right; both are loan fees, so they move to
+  // other lending (the 50 have no returned-loan-payment type). Both keep their printed names, so neither
+  // carries an `oldName`. Undo: re-file back under `from`; the run event and `pipeline_feedback` row keep both.
+  { feePublishedId: 122342, from: "nsf", amount: 29, to: "other_lending_fee", name: "Home Equity Line Check returned (due to non-sufficient funds)",
+    why: "#1655, inst 4956, doc 26712: under \"Equity Loan\", \"Home Equity Line Check returned (due to non-sufficient funds) | $29.00\"; a home equity line fee, not a deposit NSF (checking's own NSF line is \"No charge\", live as 122347)" },
+  { feePublishedId: 122343, from: "monthly_maintenance", amount: 25, to: "other_lending_fee", name: "Tax Service Charge",
+    why: "#1655, inst 4956, doc 26712: under \"Equity Loan\", \"Tax Service Charge | $25.00\"; a home equity loan fee, not a monthly maintenance fee" },
+  // #1659 (read-only, Oct 16): U.S. Bank's $4.95 row named no account; the page prints it under
+  // "Safe Debit account". Renamed in place once (`oldName`); price and category are right.
+  { feePublishedId: 102970, from: "monthly_maintenance", amount: 4.95, to: "monthly_maintenance", name: "Safe Debit account Monthly Maintenance Fee",
+    oldName: "Monthly Maintenance Fee with no minimum balance requirement",
+    why: "#1659, inst 5, doc 23628: \"Safe Debit account2\" / \"$4.95 Monthly Maintenance Fee with no minimum balance requirement\"" },
+  // #1664 (read-only, Oct 16): 1NB Bank's two monthly service charges share one generic name; the
+  // page prints each under its own account heading. Renamed in place once (`oldName`); price and
+  // category are right. The shared check reads both as `tiered_fee` (a price tied to a balance
+  // band), which `traceLiveFee` counts as traced, before and after the rename.
+  { feePublishedId: 60939, from: "monthly_maintenance", amount: 5.95, to: "monthly_maintenance", name: "Carefree Checking Monthly Service Charge",
+    oldName: "Account Fees: The monthly service charge",
+    why: "#1664, inst 2454, doc 18090: \"Carefree Checking\" / \"Account Fees: The monthly service charge if the average daily balance drops below $300.00 during the statement cycle is $5.95.\"" },
+  { feePublishedId: 60940, from: "monthly_maintenance", amount: 10, to: "monthly_maintenance", name: "NOW Checking Monthly Service Charge",
+    oldName: "Account Fees: The monthly service charge",
+    why: "#1664, inst 2454, doc 18090: \"NOW Checking\" / \"Account Fees: The monthly service charge if the daily balance drops below $500.00 any day of the statement cycle is $10.00.\"" },
+  // #1668 (read-only, Oct 16): Beacon Community FCU's $17 stop payment, filed as NSF because its
+  // name says "NSF". The price and name are right; it moves to stop payment under its printed name.
+  // Undo: re-file back under `from`; the run event and `pipeline_feedback` row keep both.
+  { feePublishedId: 112882, from: "nsf", amount: 17, to: "stop_payment", name: "Stop Payment, if item would not cause NSF",
+    why: "#1668, inst 7204, doc 35662: \"Stop Payment, if item would not cause NSF | $17.00 per item\"; a stop payment fee (the NSF line is \"NSF Draft, NSF ACH item or NSF Bill Pay item | $36.00 per item\", live as 112881)" },
 ];
 
 interface HandRow {
@@ -745,7 +838,7 @@ function handFeedback(move: HandMove, runId: number): FeedbackRow {
     // Knox read a neighbouring cell as the name: a wrong read, logged with the page's own line.
     signal: "wrong",
     kind: TAXONOMY_FOLD_KIND,
-    reportedBy: "hamilton",
+    reportedBy: "gutenberg",
     checkName: TAXONOMY_FOLD_CHECK,
     institutionId: move.institutionId,
     sourceDocumentId: move.sourceDocumentId,

@@ -105,6 +105,8 @@ export const PROVIDER_STEP_KEYS: readonly string[] = [
   "registry-wire-research",
   // Hamilton's paid answer eval (#1079): at most five memos a day.
   "hamilton-paid-answer-eval",
+  // The consumer guide draft writes with a model (src/lib/agents/guides/draft.ts, #1580).
+  "guide-draft",
 ];
 
 export function isProviderStep(stepKey: string): boolean {
@@ -119,6 +121,8 @@ export const MAX_STEP_ATTEMPTS = 3;
 /**
  * Steps that report on the pipeline rather than change data. They still run while
  * the pipeline control is paused, so the operator keeps hearing from Atlas.
+ * `score-answer-key` first applies James's answer-key relabels (atlas/answer-key-relabels.ts),
+ * which write only the hand-checked answer key and never a fee row, so the step stays exempt.
  */
 export const PAUSE_EXEMPT_STEP_KEYS: readonly string[] = [
   "bayes-replay-ledger",
@@ -127,6 +131,7 @@ export const PAUSE_EXEMPT_STEP_KEYS: readonly string[] = [
   "daily-brief",
   "deming-benchmark-health",
   "deming-change-outcomes",
+  "deming-data-quality",
   "deming-fresh-audit",
   "deming-knox-misses",
   "deming-playbook-check",

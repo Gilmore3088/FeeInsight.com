@@ -99,6 +99,19 @@ describe("news page reader", () => {
     expect(dateInText("2026-07-01 release")?.slice(0, 10)).toBe("2026-07-01");
     expect(dateInText("no date here")).toBeNull();
   });
+
+  it.each([
+    ["September 30, 2026", "2026-09-30T00:00:00.000Z"],
+    ["Posted Oct. 3, 2026 by staff", "2026-10-03T00:00:00.000Z"],
+    ["- 09/12/2026", "2026-09-12T00:00:00.000Z"],
+    ["2026-07-01 release", "2026-07-01T00:00:00.000Z"],
+    ["Dec 31 2026", "2026-12-31T00:00:00.000Z"],
+    ["Sept. 30, 2026", "2026-09-30T00:00:00.000Z"],
+    ["Sept 30 2026", "2026-09-30T00:00:00.000Z"],
+    ["Feb 30, 2026", null],
+  ])("keeps the calendar date of %s whatever the host timezone (#1008)", (text, iso) => {
+    expect(dateInText(text)).toBe(iso);
+  });
 });
 
 describe("news coverage", () => {

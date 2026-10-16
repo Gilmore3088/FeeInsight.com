@@ -10,6 +10,11 @@ import { grantInstitutionWorkspaceMembership } from "@/lib/hamilton/institution-
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 import { setHamiltonWorkspaceContext } from "@/lib/hamilton/workspace-context";
 
+// Outside submissions (fee schedule links, typed fees, institution claims) reach the pipeline
+// or a Pro workspace only after James reviews them; he is the only admin (2026-10-16).
+// "edit" is admin-only, so an analyst can see the queue but cannot accept, reject or ask.
+const SUBMISSION_REVIEW = "edit" as const;
+
 const idSchema = z.coerce.number().int().positive();
 const noteSchema = z.string().trim().max(2_000).optional();
 
@@ -93,7 +98,7 @@ function claimInstitutionLabel(claim: Awaited<ReturnType<typeof claimExists>>): 
 }
 
 export async function acceptSourceSubmission(formData: FormData): Promise<void> {
-  const user = await requireAuth("approve");
+  const user = await requireAuth(SUBMISSION_REVIEW);
   const id = formId(formData);
   if (!id) return;
   const notes = formNotes(formData);
@@ -202,7 +207,7 @@ export async function acceptSourceSubmission(formData: FormData): Promise<void> 
 }
 
 export async function rejectSourceSubmission(formData: FormData): Promise<void> {
-  const user = await requireAuth("approve");
+  const user = await requireAuth(SUBMISSION_REVIEW);
   const id = formId(formData);
   if (!id) return;
   const notes = formNotes(formData);
@@ -261,7 +266,7 @@ export async function rejectSourceSubmission(formData: FormData): Promise<void> 
 }
 
 export async function requestSourceSubmissionInfo(formData: FormData): Promise<void> {
-  const user = await requireAuth("approve");
+  const user = await requireAuth(SUBMISSION_REVIEW);
   const id = formId(formData);
   if (!id) return;
   const notes = formNotes(formData);
@@ -318,7 +323,7 @@ export async function requestSourceSubmissionInfo(formData: FormData): Promise<v
 }
 
 export async function acceptInstitutionClaim(formData: FormData): Promise<void> {
-  const user = await requireAuth("approve");
+  const user = await requireAuth(SUBMISSION_REVIEW);
   const id = formClaimId(formData);
   if (!id) return;
   const notes = formNotes(formData);
@@ -404,7 +409,7 @@ export async function acceptInstitutionClaim(formData: FormData): Promise<void> 
 }
 
 export async function rejectInstitutionClaim(formData: FormData): Promise<void> {
-  const user = await requireAuth("approve");
+  const user = await requireAuth(SUBMISSION_REVIEW);
   const id = formClaimId(formData);
   if (!id) return;
   const notes = formNotes(formData);
@@ -472,7 +477,7 @@ export async function rejectInstitutionClaim(formData: FormData): Promise<void> 
 }
 
 export async function requestInstitutionClaimInfo(formData: FormData): Promise<void> {
-  const user = await requireAuth("approve");
+  const user = await requireAuth(SUBMISSION_REVIEW);
   const id = formClaimId(formData);
   if (!id) return;
   const notes = formNotes(formData);

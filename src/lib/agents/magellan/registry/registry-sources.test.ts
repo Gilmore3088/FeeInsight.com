@@ -137,6 +137,36 @@ describe("identity matching", () => {
     expect(matchCompany("FMS Inc.", idx)).toMatchObject({ status: "needs_review" });
   });
 
+  it("sends a non-bank company that matched a small bank, or matched only after its generic words were stripped, to review (v5)", () => {
+    const bank = (id: number, name: string, assets: number, via: "institution_name" | "holding_company_name" = "institution_name") =>
+      ({ id, name, holdingCompanyRssd: null, assetSize: assets, via });
+    const idx: IdentityIndex = {
+      byName: new Map([
+        ["PROGRESSIVE", [bank(3580, "Progressive National Bank", 300_000)]],
+        ["NELNET", [bank(500, "Nelnet Bank", 1_500_000)]],
+        ["AMERICA", [bank(1, "Bank of America, National Association", 2_500_000_000)]],
+        ["SANTANDER", [bank(2, "Santander Bank, N.A.", 100_000_000)]],
+        ["FIFTH THIRD", [bank(3, "Fifth Third Bank, National Association", 200_000_000)]],
+        ["GOLDMAN SACHS", [bank(4, "Goldman Sachs Bank USA", 500_000_000)]],
+      ]),
+      byHoldingName: new Map([
+        ["BERKSHIRE FINANCIAL SERVICES", [bank(1630, "Lee Bank", 591_159, "holding_company_name")]],
+        ["SYNCHRONY FINANCIAL", [bank(29, "Synchrony Bank", 115_217_000, "holding_company_name")]],
+      ]),
+    };
+    const cfpb = { rejectNonBankNames: true };
+    for (const name of ["Progressive Financial Services, Inc.", "Nelnet, Inc.", "Financial Services of America", "Berkshire Financial Services, LLC"]) {
+      expect(matchCompany(name, idx, cfpb)).toMatchObject({ status: "needs_review", method: "non_bank_name_review" });
+    }
+    // A $10B bank whose name leads the company's name, or whose parent's full name it is, keeps its complaints.
+    expect(matchCompany("SANTANDER HOLDINGS USA, INC.", idx, cfpb)).toMatchObject({ institutionId: 2, status: "accepted" });
+    expect(matchCompany("FIFTH THIRD FINANCIAL CORPORATION", idx, cfpb)).toMatchObject({ institutionId: 3, status: "accepted" });
+    expect(matchCompany("SYNCHRONY FINANCIAL", idx, cfpb)).toMatchObject({ institutionId: 29, status: "accepted", method: "holding_company_full_name" });
+    // A bank word keeps the old rule; the SEC matcher never downgrades this way.
+    expect(matchCompany("GOLDMAN SACHS BANK USA", idx, cfpb)).toMatchObject({ institutionId: 4, status: "accepted" });
+    expect(matchCompany("Progressive Financial Services, Inc.", idx)).toMatchObject({ status: "accepted" });
+  });
+
   it("records a person's decision and re-queues the source's past partitions only on accept", async () => {
     const accept = createDb([["UPDATE institution_identity_links", () => [{ id: 1 }]]]);
     await expect(decideIdentityLink(accept.db, { linkType: "cfpb_company", externalKey: "COMMERCE BANK", decision: "accepted", verifiedBy: "james" })).resolves.toBe(true);
@@ -647,19 +677,45 @@ describe("registry state bills worker", () => {
     expect(statements.some((s) => s.text.includes("INSERT INTO reg_tracker_items"))).toBe(false);
   });
 
-  it("asks once more with no date limit when a state has no search hits, and logs the count", async () => {
-    const { db, statements } = createDb([]);
-    const fetchImpl = vi.fn().mockImplementation(async (url: string) =>
-      json(String(url).includes("action_since") ? { results: [], pagination: { max_page: 1 } } : { results: [], pagination: { max_page: 1, total_items: 0 } }),
-    );
-    const result = await runRegistryStateBills({ partitionKey: "VA", db, now, apiKey: "k", live: true, requestIntervalMs: 0, fetchOptions: { fetchImpl, backoffMs: 0 } });
-    expect(result).toMatchObject({ searched: 0, fetched: 0, requests: 4 });
-    const probeUrl = String(fetchImpl.mock.calls[3][0]);
-    expect(probeUrl).not.toContain("action_since");
-    expect(probeUrl).toContain("q=overdraft");
-    const partition = statements.find((s) => s.text.includes("INSERT INTO registry_ingest_partitions"));
-    const detail = partition?.values.find((v) => typeof v === "string" && v.startsWith("{")) as string;
-    expect(JSON.parse(detail)).toMatchObject({ searched: 0, any_date_overdraft_hits: 0 });
+  it("probes a state with no search hits and records no source data when Open States holds no bill text (#1427)", async () => {
+    for (const [textHits, coverage] of [
+      [0, "no_source_data"],
+      [140, "no_fee_bills"],
+    ] as const) {
+      const { db, statements } = createDb([]);
+      const fetchImpl = vi.fn().mockImplementation(async (url: string) => {
+        const q = new URL(String(url)).searchParams.get("q");
+        if (q === "act or ley") return json({ results: [], pagination: { max_page: 1, total_items: textHits } });
+        return json(String(url).includes("action_since") ? { results: [], pagination: { max_page: 1 } } : { results: [], pagination: { max_page: 1, total_items: 11 } });
+      });
+      const result = await runRegistryStateBills({ partitionKey: "VA", db, now, apiKey: "k", live: true, requestIntervalMs: 0, fetchOptions: { fetchImpl, backoffMs: 0 } });
+      expect(result).toMatchObject({ searched: 0, fetched: 0, requests: 5, coverage });
+      const anyDateUrl = String(fetchImpl.mock.calls[3][0]);
+      expect(anyDateUrl).not.toContain("action_since");
+      expect(anyDateUrl).toContain("q=overdraft");
+      // The text probe covers the same window as the fee searches.
+      expect(new URL(String(fetchImpl.mock.calls[4][0])).searchParams.get("action_since")).toBe(result.since);
+      const partition = statements.find((s) => s.text.includes("INSERT INTO registry_ingest_partitions"));
+      const detail = JSON.parse(partition?.values.find((v) => typeof v === "string" && v.startsWith("{")) as string);
+      expect(detail).toMatchObject({ searched: 0, any_date_overdraft_hits: 11, searchable_text_hits: textHits, coverage });
+      expect(Boolean(detail.no_source_data)).toBe(coverage === "no_source_data");
+    }
+  });
+
+  it("searches Puerto Rico in Spanish and keeps a Spanish overdraft fee bill (#1427)", async () => {
+    const { db } = createDb([]);
+    const pr = {
+      ...bill,
+      id: "ocd-bill/pr1",
+      identifier: "PC 100",
+      title: "Para prohibir a los bancos y cooperativas cobrar cargos por sobregiro en cuentas de depósito",
+    };
+    const fetchImpl = vi.fn().mockImplementation(async () => json({ results: [pr], pagination: { max_page: 1 } }));
+    const result = await runRegistryStateBills({ partitionKey: "PR", db, now, apiKey: "k", live: false, requestIntervalMs: 0, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    const queries = fetchImpl.mock.calls.map(([url]) => new URL(String(url)).searchParams.get("q"));
+    expect(queries).toEqual(["sobregiro", "fondos insuficientes", "cargos bancarios"]);
+    expect(String(fetchImpl.mock.calls[0][0])).toContain("territory%3Apr");
+    expect(result).toMatchObject({ fetched: 1, coverage: "fee_hits" });
   });
 
   it("skips the extra request when the searches found bills", async () => {

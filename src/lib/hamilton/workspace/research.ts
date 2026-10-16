@@ -136,8 +136,8 @@ function peerLabel(filters: HamiltonPeerFilters): string {
  * Peers per fee: the first of the institution's default peer groups (state, charter, size
  * and district, then progressively wider, then national) where at least
  * MIN_PEERS_FOR_POSITION other institutions publish that fee. With `activeFirst`, the first
- * candidate is the bank's own peer group from Settings; a fee it is too thin for widens to
- * the next group, and the label says how many the bank's group had.
+ * candidate is the bank's own peer group from Settings. A fee the first group is too thin for
+ * widens to the next group, and the label says how many the first group had.
  */
 export function choosePeers(
   candidates: HamiltonPeerFilters[],
@@ -151,9 +151,13 @@ export function choosePeers(
       const values = valuesBySet[index]?.get(category) ?? [];
       if (values.length >= MIN_PEERS_FOR_POSITION || index === candidates.length - 1) {
         const ownCount = valuesBySet[0]?.get(category)?.length ?? 0;
-        const label = options.activeFirst && index > 0
-          ? `${peerLabel(filters)}; your group ${peerLabel(candidates[0])} has ${ownCount} publishing this fee`
-          : peerLabel(filters);
+        // A wider group than the default always says why (#1544): "OH · bank peers; only 3 of
+        // bank · over $250B peers publish this fee".
+        const label = index === 0
+          ? peerLabel(filters)
+          : options.activeFirst
+            ? `${peerLabel(filters)}; your group ${peerLabel(candidates[0])} has ${ownCount} publishing this fee`
+            : `${peerLabel(filters)}; ${ownCount === 0 ? "none" : `only ${ownCount}`} of ${peerLabel(candidates[0])} publish this fee`;
         chosen.set(category, { label, values });
         break;
       }
@@ -495,8 +499,8 @@ export async function loadWire(
       topics: textList(r.topics),
       url: r.url ? String(r.url) : null,
     })),
-    // Only actions whose agency subject names consumer law; state orders carry no subject, so
-    // they are left out rather than guessed at.
+    // Only actions whose agency subject names consumer law. A state order carries a subject only
+    // when its regulator's page states one (#1428); one with none is left out, never guessed at.
     actions: (actions as Record<string, unknown>[])
       .filter((r) => isConsumerLaw(r.subject ? String(r.subject) : null))
       .map((r) => ({

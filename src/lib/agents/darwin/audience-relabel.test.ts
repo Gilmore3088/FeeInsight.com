@@ -56,10 +56,10 @@ describe("Darwin audience relabel (#1059)", () => {
     expect(writes(db)).toEqual([]);
   });
 
-  it("ships as the full dry run: the cursor chain as live, counts only, no migration needed", async () => {
-    expect(AUDIENCE_RELABEL_MODE).toBe("dry_run_full");
+  it("ships live (James, Oct 16); the full dry run still counts only, no migration needed", async () => {
+    expect(AUDIENCE_RELABEL_MODE).toBe("live");
     const db = createDb({ rows: [row()], remaining: 40, migrated: false });
-    const result = await runAudienceRelabel(db as never, { afterId: 20 });
+    const result = await runAudienceRelabel(db as never, { afterId: 20, mode: "dry_run_full" });
     expect(result).toMatchObject({ mode: "dry_run_full", dryRun: true, fees: 1, byAudience: { consumer: 1 }, relabeled: 0, nextAfterId: 21, remaining: 40, done: false });
     expect(writes(db)).toEqual([]);
   });
@@ -108,13 +108,13 @@ describe("audience relabel schedule", () => {
     const result = await scheduleAudienceRelabelRun(createDb(db) as never, new Date("2026-10-15T00:00:00Z"), "live");
     expect(result).toMatchObject(expected);
     if (afterId == null) expect(startAgentRun).not.toHaveBeenCalled();
-    else expect(startAgentRun.mock.calls[0][0]).toMatchObject({ params: { mode: "live", after_id: afterId }, idempotencyKey: `darwin:audience-relabel:live:v1:after:${afterId}` });
+    else expect(startAgentRun.mock.calls[0][0]).toMatchObject({ params: { mode: "live", after_id: afterId }, idempotencyKey: `darwin:audience-relabel:live:v2:after:${afterId}` });
   });
 
   it("full dry run: its own key chain, from the cursor, with no migration check", async () => {
     const lastBatch = { id: 5, status: "completed", after_id: "0", next_after_id: "900", done: false };
     await scheduleAudienceRelabelRun(createDb({ migrated: false, lastBatch }) as never, new Date("2026-10-15T00:00:00Z"), "dry_run_full");
-    expect(startAgentRun.mock.calls[0][0]).toMatchObject({ kind: "dry_run", params: { mode: "dry_run_full", after_id: 900 }, idempotencyKey: "darwin:audience-relabel:dry:v1:after:900" });
+    expect(startAgentRun.mock.calls[0][0]).toMatchObject({ kind: "dry_run", params: { mode: "dry_run_full", after_id: 900 }, idempotencyKey: "darwin:audience-relabel:dry:v2:after:900" });
   });
 
   it("off: one sampled dry run a day", async () => {

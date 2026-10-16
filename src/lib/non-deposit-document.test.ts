@@ -11,6 +11,8 @@ import {
   LOAN_SEGMENT,
   nonDepositDocumentKind,
   nonDepositKindSql,
+  ratePageDocument,
+  ratePageSql,
 } from "./non-deposit-document";
 import { NON_DEPOSIT_URL_FIXTURES } from "./non-deposit-document.fixtures";
 
@@ -61,5 +63,20 @@ describe("nonDepositDocumentKind (#1442)", () => {
     expect(`${path}${kind}`).not.toMatch(/\\[bsdw]/);
     // The apostrophe class is doubled inside the literal.
     expect(path).toContain("'[''’]'");
+  });
+});
+
+describe("ratePageDocument (#1518)", () => {
+  it("is true only for a loan document named as a rate page, with no loan product segment", () => {
+    expect(ratePageDocument("https://www.siouxlandfederalcu.org/current-rates")).toBe(true);
+    expect(ratePageDocument("https://www.bankofgreene.com/current-rates/")).toBe(true);
+    expect(ratePageDocument("https://www.example.com/rate-sheet.pdf")).toBe(true);
+    expect(ratePageDocument("https://www.example-cu.org/rates/loan-rates")).toBe(false);
+    expect(ratePageDocument("https://www.example.com/personal/borrowing/todays-rates?type=mortgage")).toBe(false);
+    expect(ratePageDocument("https://www.example.com/Personal/Fees%20and%20Rates/Consumer-Loan-Rate-Sheet_Jan2025.pdf")).toBe(false);
+    expect(ratePageDocument("https://www.example.com/heloc")).toBe(false);
+    expect(ratePageDocument("https://www.usbank.com/investing/self-directed-investing/pricing.html")).toBe(false);
+    expect(ratePageDocument("https://www.example.com/fee-schedule")).toBe(false);
+    expect(ratePageSql("p.path", "p.kind")).toContain("p.kind IS NOT DISTINCT FROM 'loan' AND p.path !~ '/(?:");
   });
 });

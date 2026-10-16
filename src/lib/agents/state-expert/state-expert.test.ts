@@ -16,6 +16,7 @@ import {
   type StateMemory,
 } from "./memory";
 import { STATE_EXPERTS, stateExpertFor } from "./roster";
+import { rankStateExperts, stateWideLevels } from "./admin-view";
 import { runStateExpertStep } from "./step";
 import { peerCheck, secondSourceCheck } from "../darwin/peer-checks";
 
@@ -150,6 +151,8 @@ describe("state memory", () => {
       top_platform: "wordpress",
       fee_categories_with_peers: 1,
       memory_stored: true,
+      notes_schema_ready: false,
+      notes_written: 0,
       provider_call_queued: false,
     });
     const upsert = db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO state_memory"));
@@ -210,5 +213,49 @@ describe("second-source check", () => {
     expect(secondSourceCheck(row, [
       { feeRawId: 5, institutionId: 42, sourceDocumentId: 9, canonicalFeeKey: "nsf", amount: 25, feeAudience: "consumer" },
     ])?.verdict).toBe("disagrees");
+  });
+});
+
+describe("state expert admin index", () => {
+  const gap = (total: number, covered: number) => ({ total, covered, target: 0, short: 0 });
+
+  it("ranks experts by institutions short, then groups still below target, then state code", () => {
+    const roster = STATE_EXPERTS.filter((expert) => ["CA", "TX", "VT", "WY", "GU"].includes(expert.stateCode));
+    const gaps = new Map([
+      // TX: 30 - 10 = 20 short in one group, one group at target.
+      ["TX|under_300m", gap(60, 10)],
+      ["TX|300m_1b", gap(50, 30)],
+      // CA: 30 - 18 = 12 and 30 - 22 = 8, 20 short across two groups.
+      ["CA|under_300m", gap(45, 18)],
+      ["CA|300m_1b", gap(40, 22)],
+      // VT: a small group (target ceil(10 * 0.75) = 8), 3 short.
+      ["VT|under_300m", gap(10, 5)],
+      // WY: at target.
+      ["WY|under_300m", gap(8, 6)],
+    ]);
+    const memories = new Map([["TX", { stateCode: "TX", institutions: 900, publishedFees: 12000, refreshedAt: "2026-10-15T00:00:00.000Z" }]]);
+    const rows = rankStateExperts(roster, gaps, memories);
+
+    expect(rows.map((row) => row.stateCode)).toEqual(["CA", "TX", "VT", "GU", "WY"]);
+    expect(rows[0]).toMatchObject({ institutionsShort: 20, readyGroups: 0, totalGroups: 2, institutions: null, refreshedAt: null });
+    expect(rows[1]).toMatchObject({ expertName: "Jesse H. Jones", institutionsShort: 20, readyGroups: 1, totalGroups: 2, institutions: 900, publishedFees: 12000 });
+    expect(rows[2]).toMatchObject({ institutionsShort: 3 });
+    expect(rows[3]).toMatchObject({ stateCode: "GU", institutionsShort: 0, totalGroups: 0 });
+    expect(rows[4]).toMatchObject({ stateCode: "WY", institutionsShort: 0, readyGroups: 1, totalGroups: 1 });
+  });
+
+  it("lists every roster expert even when coverage is unread", () => {
+    const rows = rankStateExperts(STATE_EXPERTS, new Map());
+    expect(rows).toHaveLength(STATE_EXPERTS.length);
+    expect(rows.every((row) => row.institutionsShort === 0)).toBe(true);
+  });
+
+  it("shows only state-wide peer levels, most institutions first", () => {
+    const levels = stateWideLevels([
+      level({ canonicalFeeKey: "nsf", count: 4 }),
+      level({ canonicalFeeKey: "overdraft", count: 12 }),
+      level({ canonicalFeeKey: "overdraft", tier: "community_small", count: 9 }),
+    ]);
+    expect(levels.map((entry) => `${entry.canonicalFeeKey}:${entry.tier}`)).toEqual(["overdraft:all", "nsf:all"]);
   });
 });

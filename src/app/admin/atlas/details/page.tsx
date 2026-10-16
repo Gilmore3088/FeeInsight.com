@@ -325,7 +325,7 @@ function workflowLanes(
     {
       id: "publish" as const,
       title: "Publish verified fee intelligence",
-      owner: "hamilton",
+      owner: "gutenberg",
       metric: "Verified rows ready",
       detail: "Publish eligible verified rows into product read models.",
       commandLabel: "publish",
