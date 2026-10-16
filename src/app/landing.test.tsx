@@ -195,11 +195,11 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     expect(html).toContain('data-fee="stop_payment"');
     // Try a price: a slider on the live national range.
     expect(html).toMatch(/type="range"[^>]*min="0"[^>]*max="40"/);
-    // Reports: a page of the report, with one name per fee (the taxonomy's display name).
+    // Reports: a page of the report, with one name per fee (the report line's own, as the ladder shows it).
     expect(html).toContain('aria-label="Report preview"');
     expect(t).toContain("Sample Bank against its local market");
-    expect(t).toContain("Wire Transfer (Int'l Out)");
-    expect(t).not.toMatch(/Outgoing international wire|Overdraft \(per item\)/);
+    expect(t).toContain("Outgoing international wire");
+    expect(t).not.toMatch(/Wire Transfer \(Int'l Out\)|Overdraft \(OD\)/);
     expect(html).toContain('href="/reports/sample-competitive-fee-position"');
   });
 
