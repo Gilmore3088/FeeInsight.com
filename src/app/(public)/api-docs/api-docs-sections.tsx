@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import { TrackLink } from "@/components/track-link";
-import { DEMO_REQUEST_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
+import { DEMO_REQUEST_NAV } from "@/components/nav-items";
 import {
   ACCESS_LABEL,
+  API_KEY_REQUEST_HREF,
   COPY,
   fullPath,
   paramNote,
@@ -270,8 +271,8 @@ export function GetKeyCta() {
       </h2>
       <p className="mt-2 text-[15px] text-ink-soft">{COPY.ctaLine}</p>
       <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
-        <TrackLink event="upgrade_click" eventProps={{ placement: "api_docs" }} href={PRO_PLANS_NAV.href} className={PRIMARY}>
-          {PRO_PLANS_NAV.label}
+        <TrackLink event="contact_sales" eventProps={{ placement: "api_docs_key" }} href={API_KEY_REQUEST_HREF} className={PRIMARY}>
+          {COPY.ctaButton}
         </TrackLink>
         <TrackLink
           event="contact_sales"
@@ -279,7 +280,7 @@ export function GetKeyCta() {
           href={DEMO_REQUEST_NAV.href}
           className={SECONDARY}
         >
-          {DEMO_REQUEST_NAV.standaloneLabel}
+          {DEMO_REQUEST_NAV.label}
         </TrackLink>
       </div>
     </section>

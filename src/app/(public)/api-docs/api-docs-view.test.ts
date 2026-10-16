@@ -1,14 +1,16 @@
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readdirSync, readFileSync } from "fs";
 import { resolve } from "path";
 import { describe, expect, it } from "vitest";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
 import {
   ACCESS_LABEL,
   API_ENDPOINTS,
+  API_KEY_REQUEST_HREF,
   API_ERRORS,
   COPY,
   coverageStrip,
   curlFor,
+  distinctPaths,
   fullPath,
   keyTiers,
   liveFeesSample,
@@ -26,6 +28,13 @@ const plain = (source: string) => source.replace(/(\d)_(\d)/g, "$1$2");
 const V1_HELPERS = ["src/lib/api-v1.ts", "src/lib/api-v1-auth.ts", "src/lib/api-auth.ts"].map(read).join("\n");
 
 const LIMITS = { free: 100, pro: 10_000, enterprise: Infinity };
+const DASH = "\u2014";
+
+function filesUnder(dir: string): string[] {
+  return readdirSync(resolve(ROOT, dir), { withFileTypes: true }).flatMap((entry) =>
+    entry.isDirectory() ? filesUnder(`${dir}/${entry.name}`) : [`${dir}/${entry.name}`],
+  );
+}
 
 function collectStrings(value: unknown, out: string[] = []): string[] {
   if (typeof value === "string") out.push(value);
@@ -35,7 +44,7 @@ function collectStrings(value: unknown, out: string[] = []): string[] {
 }
 
 function visibleStrings(): string[] {
-  const tiers = keyTiers({ spotlightCount: 6, categoriesLabel: "49", limits: LIMITS });
+  const tiers = keyTiers({ spotlightCount: 6, categoriesLabel: "49", unavailableLabel: DASH, limits: LIMITS });
   return collectStrings([
     COPY,
     ACCESS_LABEL,
@@ -45,6 +54,7 @@ function visibleStrings(): string[] {
     coverageStrip(
       { institutionsLabel: "1", observationsLabel: "2", categoriesLabel: "3", statesLabel: "4" },
       { institutions: "a", observations: "b", categories: "c" },
+      DASH,
     ),
     API_ENDPOINTS.map((e) => [e.summary, fullPath(e), e.params.map((p) => [p.name, p.type, paramNote(p)]), responseShape(e.fields)]),
   ]);
@@ -111,6 +121,39 @@ describe("api-docs endpoint list matches the route code", () => {
     }
   });
 
+  it("documents every error code any v1 route or helper returns through apiError", () => {
+    const sources = [
+      ...filesUnder("src/app/api/v1").filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts")),
+      "src/lib/api-v1.ts",
+      "src/lib/api-v1-auth.ts",
+    ].map(read);
+    const found = new Set<string>();
+    for (const source of sources) {
+      for (const match of source.matchAll(/apiError\(\s*(\d+),\s*"([a-z_]+)"/g)) found.add(`${match[1]} ${match[2]}`);
+    }
+    expect(found.size).toBeGreaterThan(0);
+    const documented = new Set(API_ERRORS.map((e) => `${e.status} ${e.code}`));
+    for (const code of found) expect(documented.has(code), code).toBe(true);
+  });
+
+  it("the q length bounds stated are the route's own", () => {
+    expect(read("src/app/api/v1/institutions/route.ts")).toContain("query.length < 2 || query.length > 100");
+    expect(paramNote(API_ENDPOINTS.find((e) => e.id === "institutions")!.params.find((p) => p.name === "q")!)).toContain(
+      "2 to 100 characters",
+    );
+  });
+
+  it("the limit line matches the headers an unlimited key gets", () => {
+    const helpers = read("src/lib/api-v1.ts");
+    expect(helpers).toMatch(/if \(Number\.isFinite\(rateLimit\.limit\)\) \{\s*response\.headers\.set\("X-RateLimit-Limit"/);
+    expect(COPY.limitLine).toContain("Unlimited keys get Reset only.");
+  });
+
+  it("the key request opens the contact form on an option it accepts", () => {
+    const source = API_KEY_REQUEST_HREF.split("source=")[1];
+    expect(read("src/app/(public)/contact/contact-form.tsx")).toContain(`{ value: "${source}", label: "Data licensing / API" }`);
+  });
+
   it("the tier limits shown are the rate limiter's constants", async () => {
     const source = plain(read("src/lib/api-rate-limit.ts"));
     expect(source).toContain(`free: ${LIMITS.free},`);
@@ -136,12 +179,35 @@ describe("api-docs visible copy", () => {
 
 describe("api-docs helpers", () => {
   it("keyTiers reads allowances from the limits passed in; enterprise is unlimited", () => {
-    const tiers = keyTiers({ spotlightCount: 6, categoriesLabel: "49", limits: LIMITS });
+    const tiers = keyTiers({ spotlightCount: 6, categoriesLabel: "49", unavailableLabel: DASH, limits: LIMITS });
     expect(tiers.map((t) => t.allowance)).toEqual(["100", "10,000", "Unlimited"]);
     expect(tiers[0].categories).toBe("6 spotlight");
     expect(tiers[1].categories).toBe("All 49");
-    const open = API_ENDPOINTS.filter((e) => e.access !== "pro").length;
-    expect(tiers[0].endpoints).toBe(`${open} of ${API_ENDPOINTS.length}`);
+    const paths = new Set(API_ENDPOINTS.map((e) => e.path)).size;
+    const open = new Set(API_ENDPOINTS.filter((e) => e.access !== "pro").map((e) => e.path)).size;
+    expect(tiers[0].endpoints).toBe(`${open} of ${paths}`);
+    expect(tiers[1].endpoints).toBe(`All ${paths}`);
+    expect(paths).toBeLessThan(API_ENDPOINTS.length);
+  });
+
+  it("distinctPaths counts /fees and /fees?category= once", () => {
+    expect(distinctPaths([{ path: "/fees" }, { path: "/fees" }, { path: "/index" }])).toBe(2);
+  });
+
+  it("a failed category read shows All categories, never the dash", () => {
+    const tiers = keyTiers({ spotlightCount: 6, categoriesLabel: DASH, unavailableLabel: DASH, limits: LIMITS });
+    expect(tiers[1].categories).toBe("All categories");
+    expect(tiers[2].categories).toBe("All categories");
+    for (const tier of tiers) expect(Object.values(tier).join(" ")).not.toContain(DASH);
+  });
+
+  it("coverageStrip leaves out a figure whose read failed", () => {
+    const strip = coverageStrip(
+      { institutionsLabel: "1,200", observationsLabel: DASH, categoriesLabel: DASH, statesLabel: "50" },
+      { institutions: "Institutions", observations: "Entries", categories: "Categories" },
+      DASH,
+    );
+    expect(strip.map((s) => s.label)).toEqual(["Institutions", COPY.statesLabel]);
   });
 
   it("paramNote states bounds only when the route has them", () => {

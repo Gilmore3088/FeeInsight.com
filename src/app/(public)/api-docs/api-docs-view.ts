@@ -11,6 +11,12 @@ import { getDisplayName, getFeeFamily, getFeeTier } from "@/lib/fee-taxonomy";
 
 export const API_BASE_PATH = "/api/v1";
 
+/**
+ * Where a key request goes: the contact form opened on its "Data licensing / API" option, so the
+ * ask lands in /admin/leads. The form accepts only its own option values as ?source=.
+ */
+export const API_KEY_REQUEST_HREF = "/contact?source=partnership";
+
 /** Who can call an endpoint: any issued key, a Pro or Enterprise key, or anyone. */
 export type ApiAccess = "key" | "pro" | "public";
 
@@ -156,11 +162,11 @@ export const API_ENDPOINTS: readonly ApiEndpoint[] = [
     summary: "Find banks and credit unions by name, place or size",
     access: "key",
     params: [
-      { name: "q", type: "string", note: "Name search" },
+      { name: "q", type: "string", note: "Name search, 2 to 100 characters" },
       STATE_PARAM,
       CHARTER_PARAM,
-      { name: "city", type: "string", note: "City name; not with q" },
-      { ...ASSET_TIER_PARAM, note: `${ASSET_TIER_PARAM.note}; not with q` },
+      { name: "city", type: "string", note: "City name; not with q or fee_category" },
+      { ...ASSET_TIER_PARAM, note: `${ASSET_TIER_PARAM.note}; not with q or fee_category` },
       { name: "has_fees", type: "boolean", note: "true for institutions with published fees only" },
       PAGE_PARAM,
       LIMIT_PARAM,
@@ -198,9 +204,14 @@ export const API_ENDPOINTS: readonly ApiEndpoint[] = [
       { name: "fee_category", type: "string" },
       { name: "display_name", type: "string" },
       { name: "sort", type: "string" },
+      { name: "note", type: "string" },
       ...PAGE_FIELDS,
       { name: "data[].id", type: "integer" },
       { name: "data[].name", type: "string" },
+      { name: "data[].state", type: "string" },
+      { name: "data[].city", type: "string" },
+      { name: "data[].charter_type", type: "string" },
+      { name: "data[].asset_size", type: "number | null" },
       { name: "data[].fee_amount", type: "number | null" },
       { name: "data[].fee_count", type: "integer" },
       ATTRIBUTION_FIELD,
@@ -363,9 +374,10 @@ export const API_ERRORS: readonly { status: number; code: string; when: string }
   { status: 401, code: "api_key_required", when: "No key sent" },
   { status: 401, code: "invalid_api_key", when: "Key unknown or revoked" },
   { status: 403, code: "plan_required", when: "The endpoint needs a Pro key" },
-  { status: 404, code: "not_found", when: "No such category or institution" },
+  { status: 404, code: "not_found", when: "No such category, institution or local market" },
   { status: 429, code: "rate_limited", when: "Monthly allowance used up" },
   { status: 503, code: "rate_limit_unavailable", when: "Usage tracking is down; retry shortly" },
+  { status: 503, code: "data_unavailable", when: "Revenue data is down; retry shortly" },
 ];
 
 export const RATE_LIMIT_HEADERS = ["X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"] as const;
@@ -409,12 +421,16 @@ export interface KeyTier {
 export function keyTiers(input: {
   spotlightCount: number;
   categoriesLabel: string;
+  /** UNAVAILABLE_LABEL from public-stats: the category count's read failed, so no count is shown. */
+  unavailableLabel: string;
   /** API_TIER_LIMITS from api-rate-limit (passed in so this module stays free of database imports). */
   limits: Readonly<Record<"free" | "pro" | "enterprise", number>>;
 }): KeyTier[] {
   const { limits } = input;
-  const open = API_ENDPOINTS.filter((e) => e.access !== "pro").length;
-  const all = API_ENDPOINTS.length;
+  const open = distinctPaths(API_ENDPOINTS.filter((e) => e.access !== "pro"));
+  const all = distinctPaths(API_ENDPOINTS);
+  const allCategories =
+    input.categoriesLabel === input.unavailableLabel ? COPY.allCategories : `All ${input.categoriesLabel}`;
   return [
     {
       name: "Free key",
@@ -425,16 +441,21 @@ export function keyTiers(input: {
     {
       name: "Pro key",
       allowance: formatAllowance(limits.pro),
-      categories: `All ${input.categoriesLabel}`,
+      categories: allCategories,
       endpoints: `All ${all}`,
     },
     {
       name: "Enterprise key",
       allowance: formatAllowance(limits.enterprise),
-      categories: `All ${input.categoriesLabel}`,
+      categories: allCategories,
       endpoints: `All ${all}`,
     },
   ];
+}
+
+/** Endpoints count by route path: /fees and /fees?category= are one endpoint. */
+export function distinctPaths(endpoints: readonly Pick<ApiEndpoint, "path">[]): number {
+  return new Set(endpoints.map((e) => e.path)).size;
 }
 
 export function curlFor(siteUrl: string, path: string): string {
@@ -519,13 +540,16 @@ export function coverageStrip(
   summary: Pick<PublicStatsSummary, "institutionsLabel" | "observationsLabel" | "categoriesLabel" | "statesLabel">,
   /** COVERAGE_LABELS from public-stats, passed in so this module stays free of database imports. */
   labels: { institutions: string; observations: string; categories: string },
+  /** UNAVAILABLE_LABEL from public-stats: a figure whose read failed is left out, never shown as a dash. */
+  unavailableLabel: string,
 ): { label: string; value: string }[] {
-  return [
+  const strip = [
     { label: labels.institutions, value: summary.institutionsLabel },
     { label: labels.observations, value: summary.observationsLabel },
     { label: labels.categories, value: summary.categoriesLabel },
     { label: COPY.statesLabel, value: summary.statesLabel },
   ];
+  return strip.filter((item) => item.value !== unavailableLabel);
 }
 
 export function liveResponseNote(total: number): string {
@@ -550,10 +574,12 @@ export const COPY = {
   openSpec: "Open the spec",
   accessHeading: "Keys and limits",
   authLine: "Send your key as a Bearer token, or as the api_key query parameter. Keys start with bfi_.",
-  limitLine: "Each key has one monthly allowance across all endpoints, reset at the start of each month (UTC).",
+  limitLine: "Each key has one monthly allowance across all endpoints, reset at the start of each month (UTC). Unlimited keys get Reset only.",
   tierColumns: ["requests a month", "Fee categories", "Endpoints"],
   errorsHeading: "Errors",
+  allCategories: "All categories",
   ctaHeading: "Get a key",
+  ctaButton: "Ask for a key",
   ctaLine: "We issue keys by hand. Ask and we will set one up.",
   copy: "Copy",
   copied: "Copied",

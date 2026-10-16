@@ -2,7 +2,12 @@ export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { API_ATTRIBUTION, PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
-import { COVERAGE_LABELS, getPublicCategorySummaries, getPublicStatsSummary } from "@/lib/public-stats";
+import {
+  COVERAGE_LABELS,
+  UNAVAILABLE_LABEL,
+  getPublicCategorySummaries,
+  getPublicStatsSummary,
+} from "@/lib/public-stats";
 import { API_TIER_LIMITS } from "@/lib/api-rate-limit";
 import { getSpotlightCategories } from "@/lib/fee-taxonomy";
 import {
@@ -41,7 +46,7 @@ export default async function ApiDocsPage() {
           { name: "API Docs", href: "/api-docs" },
         ]}
       />
-      <ApiHero coverage={coverageStrip(summary, COVERAGE_LABELS)} freshnessLabel={summary.freshnessLabel} />
+      <ApiHero coverage={coverageStrip(summary, COVERAGE_LABELS, UNAVAILABLE_LABEL)} freshnessLabel={summary.freshnessLabel} />
       <div className="mx-auto max-w-5xl space-y-14 px-4 py-12 sm:px-6">
         <Quickstart
           request={curlFor(SITE_URL, fullPath(fees ?? { path: "/fees" }))}
@@ -54,6 +59,7 @@ export default async function ApiDocsPage() {
           tiers={keyTiers({
             spotlightCount: spotlight.length,
             categoriesLabel: summary.categoriesLabel,
+            unavailableLabel: UNAVAILABLE_LABEL,
             limits: API_TIER_LIMITS,
           })}
           errors={API_ERRORS}

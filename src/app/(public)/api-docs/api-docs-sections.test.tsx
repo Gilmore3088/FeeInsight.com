@@ -12,7 +12,7 @@ vi.mock("@/components/track-link", () => ({
 }));
 
 import { ApiHero, CodeBlock, EndpointList, GetKeyCta, KeysAndLimits, Quickstart } from "./api-docs-sections";
-import { API_ENDPOINTS, API_ERRORS, RATE_LIMIT_HEADERS, keyTiers } from "./api-docs-view";
+import { API_ENDPOINTS, API_ERRORS, RATE_LIMIT_HEADERS, coverageStrip, keyTiers } from "./api-docs-view";
 
 const NO_DASH = /[–—]/;
 
@@ -56,7 +56,12 @@ describe("api-docs sections", () => {
   it("keys and limits shows each tier's allowance and every error code", () => {
     render(
       <KeysAndLimits
-        tiers={keyTiers({ spotlightCount: 6, categoriesLabel: "49", limits: { free: 100, pro: 10_000, enterprise: Infinity } })}
+        tiers={keyTiers({
+          spotlightCount: 6,
+          categoriesLabel: "49",
+          unavailableLabel: "\u2014",
+          limits: { free: 100, pro: 10_000, enterprise: Infinity },
+        })}
         errors={API_ERRORS}
         headers={RATE_LIMIT_HEADERS}
       />,
@@ -68,13 +73,38 @@ describe("api-docs sections", () => {
     expect(document.body.textContent).not.toMatch(NO_DASH);
   });
 
-  it("the one next action is Pro plans, or a demo, with tracked links", () => {
+  it("a failed category read renders no dash in the hero or the tiers", () => {
+    const dash = "\u2014";
+    render(
+      <>
+        <ApiHero
+          coverage={coverageStrip(
+            { institutionsLabel: "1,200", observationsLabel: dash, categoriesLabel: dash, statesLabel: dash },
+            { institutions: "Institutions with published fees", observations: "Entries", categories: "Categories" },
+            dash,
+          )}
+          freshnessLabel="Data refresh pending"
+        />
+        <KeysAndLimits
+          tiers={keyTiers({ spotlightCount: 6, categoriesLabel: dash, unavailableLabel: dash, limits: { free: 100, pro: 10_000, enterprise: Infinity } })}
+          errors={API_ERRORS}
+          headers={RATE_LIMIT_HEADERS}
+        />
+      </>,
+    );
+    expect(screen.getAllByText("All categories")).toHaveLength(2);
+    expect(screen.getByText("1,200")).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(NO_DASH);
+  });
+
+  it("the one next action is asking for a key, or a demo, with tracked links", () => {
     render(<GetKeyCta />);
-    const plans = screen.getByRole("link", { name: "See Hamilton plans" });
-    expect(plans).toHaveAttribute("href", "/subscribe");
-    expect(plans).toHaveAttribute("data-event", "upgrade_click");
-    expect(plans).toHaveAttribute("data-placement", "api_docs");
-    const demo = screen.getByRole("link", { name: "Ask for a demo" });
+    expect(screen.queryByRole("link", { name: /Hamilton plans/ })).toBeNull();
+    const key = screen.getByRole("link", { name: "Ask for a key" });
+    expect(key).toHaveAttribute("href", "/contact?source=partnership");
+    expect(key).toHaveAttribute("data-event", "contact_sales");
+    expect(key).toHaveAttribute("data-placement", "api_docs_key");
+    const demo = screen.getByRole("link", { name: "Or ask for a demo" });
     expect(demo).toHaveAttribute("href", "/contact?source=demo");
     expect(demo).toHaveAttribute("data-event", "contact_sales");
   });
