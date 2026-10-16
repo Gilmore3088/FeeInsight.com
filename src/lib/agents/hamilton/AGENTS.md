@@ -593,7 +593,11 @@ comes down on its second look (check `hamilton.business_schedule`): `rolled_back
 flag. A business fee with no consumer fee beside it stays live until Magellan finds the consumer
 schedule. The lesson is Magellan's: one `wrong_document` row per document (stage discover); the
 feedback sync writes no Knox or Darwin lesson for these. A takedown whose consumer fee is no
-longer live comes back. First dry run (7 Oct, prod): 1,028 business-sourced live fees at 91
+longer live comes back. A consumer fee held by the account type hold (`account_type_hold:`)
+still counts as there, so the hold never brings a business fee back (Oct 16, #1671). The same
+goes for the cross-page and same-line duplicate restores. Each restore names its fees in
+`hamilton.business_schedule_restored` (`fee_published_ids`) and writes one weight-0
+`business_schedule_restored` feedback row per fee. First dry run (7 Oct, prod): 1,028 business-sourced live fees at 91
 banks, 61 beside a consumer fee.
 
 ## Other Bank's Document

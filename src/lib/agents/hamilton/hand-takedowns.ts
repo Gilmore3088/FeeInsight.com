@@ -274,7 +274,22 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
     evidence: "Beacon 2025 fee PDF (doc 30629, text 28236), which drops every digit after \"$3\" (\"Judicial Attachment (Garnishment) ....$3\", \"Negative Balance Fee .... up to $3\"): \"Return Deposit Item (2 party)Return Deposit Item (1 party) ....$3\"; the current fee schedule page (doc 35662, text 33767, fetched Oct 16): \"Return Deposit Item (2 party) | $15.00 per item\" and \"(1 party) | $36.00 per item\" (live as 112892, 112893)." },
   { feePublishedId: 138851, institutionId: 7204, canonicalFeeKey: "deposited_item_return", amount: 3, feeName: "Return Deposit Item from Shared Branch",
     reason: "source_mismatch: #1668", issue: 1668, kind: "wrong_amount",
-    evidence: "Beacon 2025 fee PDF (doc 30629, text 28236), which drops every digit after \"$3\" (\"Judicial Attachment (Garnishment) ....$3\", \"Negative Balance Fee .... up to $3\"): \"Return Deposit Item from Shared Branch....$3\"; the 2022 PDF prints it at \"$34.00\" (doc 30627) and the current fee schedule page (doc 35662, text 33767, fetched Oct 16) no longer prints the line: $3 is a cut price." },
+    evidence: "Beacon 2025 fee PDF (doc 30629, text 28236), which drops every digit after \"$3\" (\"Judicial Attachment (Garnishment) ....$3\", \"Negative Balance Fee .... up to $3\"): \"Return Deposit Item from Shared Branch....$3\"; the 2022 PDF prints it at \"$34.00\" (doc 30627) and the current fee schedule page (doc 35662, text 33767, fetched Oct 16) no longer prints the line: $3 is a cut price." },  // #1671 (read-only, Oct 16): business-schedule monthly fees the account type hold brought back.
+  // The hold took each bank's consumer monthly fee at 04:35:32 and the business-schedule restore,
+  // finding no live consumer fee, put these back at 04:36:07 (run 7160). Each was first taken down
+  // Oct 7-12 as `business_schedule: consumer fee #<id>`. The restore now counts a held fee as present.
+  { feePublishedId: 42961, institutionId: 436, canonicalFeeKey: "monthly_maintenance", amount: 7, feeName: "Monthly fee",
+    reason: "source_mismatch: #1671", issue: 1671, kind: "wrong_category",
+    evidence: "FFL business fee schedule flyer (doc 252): \"Business Checking / Account Services ... Business Interest Checking Account ... Monthly fee if daily balance is below $1,500 | $7.00\". A business account's fee; taken down Oct 12 as business_schedule: consumer fee #140097, restored when the hold took 140097 (savings)." },
+  { feePublishedId: 86536, institutionId: 891, canonicalFeeKey: "monthly_maintenance", amount: 5, feeName: "Monthly maintenance fee",
+    reason: "source_mismatch: #1671", issue: 1671, kind: "wrong_category",
+    evidence: "Legacy Bank business checking page (doc 17391, legacyar.com/business/checking): \"Non-Profit/Government Entities ... $1,000 minimum balance required to avoid $5.00 monthly maintenance fee\". A non-profit/government account's fee; taken down Oct 8 as business_schedule: consumer fee #62696, restored when the hold took 62696 (ira_hsa_cd)." },
+  { feePublishedId: 66721, institutionId: 1689, canonicalFeeKey: "monthly_maintenance", amount: 5, feeName: "Monthly service charge",
+    reason: "source_mismatch: #1671", issue: 1671, kind: "wrong_category",
+    evidence: "Fifth District Savings Bank business checking page (doc 19686): \"Business Savings ... $5 monthly service charge, if balance falls below $100\". A business savings fee; taken down Oct 11 as business_schedule: consumer fee #135231, restored when the hold took 135231 (ira_hsa_cd)." },
+  { feePublishedId: 66722, institutionId: 1689, canonicalFeeKey: "monthly_maintenance", amount: 10, feeName: "Monthly service charge",
+    reason: "source_mismatch: #1671", issue: 1671, kind: "wrong_category",
+    evidence: "Fifth District Savings Bank business checking page (doc 19686): \"Business Money Market ... $10 monthly service charge, if balance falls below $500\". A business money market fee; taken down Oct 11 as business_schedule: consumer fee #135231, restored when the hold took 135231 (ira_hsa_cd)." },
 ];
 
 export interface LiveTakedownRow {
