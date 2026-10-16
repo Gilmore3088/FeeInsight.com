@@ -16,7 +16,8 @@
 const NOT_AN_ACCOUNT: readonly RegExp[] = [
   /\btruth[\s-]+in[\s-]+savings(?:[\s-]+(?:act|disclosures?|fee\s+schedules?|schedules?|statements?))?\b/gi,
   /\b(?:health|dental|vision|prescription|travel|shopping|dining|entertainment|identity)\s+savings\s+(?:cards?|programs?|discounts?|benefits?|network)\b/gi,
-  /\bsavings\s+(?:cards?|programs?|discounts?|benefits?)\b/gi,
+  // A kids' or youth savings program is a savings account ("Kids Savings Program"); other programs are perks.
+  /(?<!\b(?:kids?|youth|junior|student|teen|children'?s?)\s)\bsavings\s+(?:cards?|programs?|discounts?|benefits?)\b/gi,
   /\b(?:savings|savers)\s+(?:networks?|plans?|rewards?|clubs?)\b(?!\s+(?:accounts?|savings|shares?))/gi,
   /\bdiscount\s+savings\b/gi,
   /\b(?:federal\s+)?savings\s+(?:and\s+loan|&\s*loan|bank(?:s|,?\s+fsb)?|institution|association)\b/gi,
