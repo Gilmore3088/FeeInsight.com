@@ -19,6 +19,7 @@ import {
 } from "@/lib/data-store/answer-key";
 import { assertAtlasDispatchReady } from "@/lib/agents/dispatch-readiness";
 import { executeAgentRun, startAgentRun } from "@/lib/agents/run-store";
+import type { AgentRunStepDefinition } from "@/lib/agents/types";
 
 const idSchema = z.coerce.number().int().positive();
 const MAX_PREFILL_BYTES = 5_000_000;
@@ -160,7 +161,11 @@ export async function reopenAnswerKeyAction(formData: FormData): Promise<void> {
 /** Runs Atlas's score and scoreboard now, as a visible run (same steps as the daily cron). */
 export async function runScoreboardNowAction(): Promise<void> {
   const user = await requireAuth("trigger_jobs");
-  await assertAtlasDispatchReady();
+  const steps: AgentRunStepDefinition[] = [
+    { key: "score-answer-key", agent: "atlas", title: "Score the pipeline against the answer key" },
+    { key: "scoreboard-snapshot", agent: "atlas", title: "Record the daily scoreboard" },
+  ];
+  await assertAtlasDispatchReady(steps.map((step) => step.key));
   const started = await startAgentRun({
     agent: "atlas",
     kind: "workflow",
@@ -169,10 +174,7 @@ export async function runScoreboardNowAction(): Promise<void> {
     triggeredBy: user.username,
     triggerSource: "admin",
     idempotencyKey: `atlas:scoreboard:manual:${new Date().toISOString().slice(0, 16)}`,
-    steps: [
-      { key: "score-answer-key", agent: "atlas", title: "Score the pipeline against the answer key" },
-      { key: "scoreboard-snapshot", agent: "atlas", title: "Record the daily scoreboard" },
-    ],
+    steps,
   });
   if (!started.reused) await executeAgentRun(started.run.id, { maxSteps: 2 });
   refresh();
