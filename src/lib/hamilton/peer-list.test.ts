@@ -109,7 +109,7 @@ describe("James's live wordings (#1537, #1539)", () => {
     expect(va.states).toEqual(["VA"]);
   });
   it("never treats a different institution with a similar name as the research institution", () => {
-    for (const [typed, name] of [["TDECU", "TD Bank, N.A."], ["First Citizens", "FirstBank"], ["Citizens Business Bank", "Citizens Bank, N.A."], ["Citi", "Citizens Bank, N.A."], ["Capital", "Capital One, N.A."]]) {
+    for (const [typed, name] of [["TDECU", "TD Bank, N.A."], ["First Citizens", "FirstBank"], ["Citizens Business Bank", "Citizens Bank, N.A."], ["Citi", "Citizens Bank, N.A."], ["Capital", "Capital One, N.A."], ["Citizens Bank", "Citizens National Bank"], ["First Federal", "First National Bank"], ["American Bank", "American National Bank"]]) {
       expect(planPeerList(intent(`List ten similarly sized banks to ${typed}`), { ...subject, name }, null).problem).toContain("open");
     }
   });

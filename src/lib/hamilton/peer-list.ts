@@ -327,11 +327,20 @@ export function parsePeerListQuestion(question: string): PeerListIntent | null {
   return { requestedCount, limit, charterType, bothTypes, states: [...new Set(states)].sort(), sameState, minAssets, maxAssets, similarSize, peerBased, largest, saved, accountSubject, similarTo, problems };
 }
 
-const LEGAL_WORDS = new Set(["bank", "na", "national", "association", "federal", "credit", "union", "fcu", "cu", "inc", "company", "co", "the"]);
+// Whole legal endings only: "national" and "federal" alone stay part of a name ("Citizens National").
+const LEGAL_ENDINGS = [["national", "association"], ["federal", "credit", "union"], ["credit", "union"], ["na"], ["fcu"], ["cu"], ["bank"], ["inc"], ["company"], ["co"]];
 /** Words of a name with legal endings dropped: "Schoolsfirst Federal Credit Union" -> ["schoolsfirst"]. */
 function nameCore(name: string): string[] {
   const words = name.toLowerCase().replace(/[.'’]/g, "").split(/[^a-z0-9&]+/).filter(Boolean);
-  while (words.length > 1 && LEGAL_WORDS.has(words[words.length - 1])) words.pop();
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const ending of LEGAL_ENDINGS) {
+      if (words.length > ending.length && ending.every((word, i) => words[words.length - ending.length + i] === word)) {
+        words.splice(words.length - ending.length);
+        changed = true;
+      }
+    }
+  }
   return words;
 }
 
@@ -350,7 +359,7 @@ export function formatPeerAssets(value: number | null): string {
 export function planPeerList(intent: PeerListIntent, subject: PeerListSubject, active: ActivePeerSet | null): { criteria: PeerListCriteria | null; problem: string | null } {
   if (intent.problems.length) return { criteria: null, problem: intent.problems.join(" ") };
   if (intent.similarTo && !sameInstitutionName(intent.similarTo, subject.name))
-    return { criteria: null, problem: `This list measures size against the institution you are researching, ${subject.name}. To list peers sized like ${intent.similarTo}, open ${intent.similarTo} in the workspace first.` };
+    return { criteria: null, problem: `This list measures size against the institution you are researching, ${subject.name.replace(/\.$/, "")}. To list peers sized like ${intent.similarTo}, open ${intent.similarTo} in the workspace first.` };
   const explicit = Boolean(intent.charterType || intent.bothTypes || intent.states.length || intent.sameState || intent.minAssets || intent.maxAssets || intent.similarSize || intent.largest);
   const useSaved = intent.saved || (!explicit && active !== null);
   if (intent.saved && !active) return { criteria: null, problem: "No authorized active saved peer group is available for this institution. Choose one in Settings or specify state, type and asset criteria." };
