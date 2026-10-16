@@ -392,7 +392,10 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // v60: a lost or replaced night deposit bag or its key ("Replacement Key for Bag", "Bag
     // Replacement/Lost Key" under Night Depository Services) is the night deposit fee too.
     include: /(night|depository|after[- ]hours|drop box|\bbags?\b.{0,20}\b(lost|replac\w*)|\b(lost|replac\w*)\b.{0,20}\bbags?\b)/i,
-    exclude: /^(?!.*(lost|replac|per month|monthly|annual|rental)).*(\bbags?\b|zipper|pouch|wrapper|strap)/i,
+    // v66 (James, Oct 16, #1099 option A; #1605): a deposit paid for the depository key ("Night
+    // Depository Key Deposit", "Night Deposit Box Key (Refundable Deposit)", "Deposit for Receptacle
+    // Key") is a key charge, not the service. A lost or replaced key stays the night deposit fee.
+    exclude: /(^(?!.*(lost|replac|per month|monthly|annual|rental)).*(\bbags?\b|zipper|pouch|wrapper|strap)|^(?!.*(lost|replac)).*(\bkeys?\b[^|]{0,30}?\b(deposit|refundable)\b|\bdeposit for\b[^|]{0,30}\bkeys?\b|\bsecurity deposit\b[^|]{0,30}\bkeys?\b))/i,
   },
   // v60: a night deposit bag, its key or a bag bundle is not a safe deposit box fee (UAT 104666,
   // "Deposit Bags & Night Deposit Drop Box: Disposable 9" x 12" bundle" $15; 6/6 on source, Oct 9).
@@ -488,7 +491,13 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // and every one while the switch is off, still re-files to account research. While the switch is off
 // the guard reads every live fee exactly as v64 did, so the version stays 64 and Hamilton's catch-up
 // sweep and Darwin's re-read of older category rejections run once, at switch-on.
-export const CATEGORY_GUARD_VERSION = RESEARCH_SPLIT_LIVE ? 65 : 64;
+// v66 (switch off) / v67 (switch on): v64 and v65 plus one night deposit rule (James, Oct 16, #1099
+// option A; #1605): a deposit for the night depository key ("Night Depository Key Deposit", "Night
+// Deposit Box Key (Refundable Deposit)", "Deposit for Receptacle Key") is a key charge, not the
+// service; a lost or replaced key stays night deposit. 10 live fees, each a key deposit on its own
+// schedule, fail it (#1605). A key bought for the depository is out too under option A, but the 43
+// live key purchases are a large batch for James, so this version does not refuse them yet.
+export const CATEGORY_GUARD_VERSION = RESEARCH_SPLIT_LIVE ? 67 : 66;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed

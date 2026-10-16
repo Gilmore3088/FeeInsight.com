@@ -204,9 +204,9 @@ export async function applyHandTakedowns(
       if (feedback.length > 0) await recordFeedback(scope, feedback);
       if (result.takenDown.length > 0) {
         await scope`
-          INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+          INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
           VALUES (
-            ${options.runId}, ${HAND_TAKEDOWN_CHECK}, 'completed',
+            ${options.runId}, ${options.stepId ?? null}, ${HAND_TAKEDOWN_CHECK}, 'completed',
             ${`Took down ${result.takenDown.length} listed live fee(s) confirmed wrong against their bank's own text`},
             ${JSON.stringify({
               taken_down: result.takenDown.map((item) => ({ fee_published_id: item.feePublishedId, fee_verified_id: item.feeVerifiedId, reason: item.reason })),

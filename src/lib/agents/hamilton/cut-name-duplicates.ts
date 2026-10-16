@@ -185,9 +185,9 @@ export async function applyCutNameDuplicates(
       // No event when every guarded UPDATE matched nothing (a row changed after the read).
       if (result.takenDown.length === 0) return;
       await scope`
-        INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+        INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
         VALUES (
-          ${options.runId}, ${CUT_NAME_DUPLICATE_CHECK}, 'completed',
+          ${options.runId}, ${options.stepId ?? null}, ${CUT_NAME_DUPLICATE_CHECK}, 'completed',
           ${`Took down ${result.takenDown.length} live fee(s) whose cut names repeat a clean live row (#1196)`},
           ${JSON.stringify({
             taken_down: result.takenDown.map((item) => ({
