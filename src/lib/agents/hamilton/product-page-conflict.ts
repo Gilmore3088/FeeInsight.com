@@ -275,7 +275,7 @@ export async function retireProductPageConflicts(
     aboutStage: "publish",
     signal: "wrong",
     kind: "schedule_conflict",
-    reportedBy: "hamilton",
+    reportedBy: "gutenberg",
     checkName: PRODUCT_PAGE_CONFLICT_CHECK,
     institutionId: fee.institutionId,
     sourceDocumentId: fee.sourceDocumentId,
