@@ -450,23 +450,47 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
             <h2 id="method-heading" className="font-bold text-lg text-ink" style={SERIF}>
               Sources and method
             </h2>
-            <p className="mt-2">
-              Your market is the {market.county_fips.length === 1 ? "county" : `${market.county_fips.length} counties`}{" "}
-              {market.basis === "branch_counties" ? "holding most of your deposits" : "around your headquarters"} (FDIC
-              Summary of Deposits, {market.sod_year}). Competitors are every bank with a branch there and every
-              institution headquartered there. Each figure is a published, verified fee from the institution&apos;s own
-              schedule; one representative amount per institution and fee line, with fee caps excluded. A figure is used only
-              when a line of that institution&apos;s own stored schedule states that amount as the fee; amounts that are
-              balance thresholds, depend on a balance band, or can&apos;t be found in the schedule are left out, and so
-              are fees under review for a correction, business prices, savings fees on the checking line, and records
-              whose fee name was not read cleanly
-              {droppedCount > 0 ? ` (${droppedCount} published figures in this market were left out this way)` : ""}.
-              When a schedule lists several versions of a fee, the comparison uses the standard consumer version (not an
-              online, business or other special variant); if several still remain, it uses the lowest monthly maintenance
-              fee and the highest amount for every other fee. &ldquo;Read&rdquo; dates are the day we saved the copy of the
-              schedule that states the fee.
-            </p>
-            <ul className="mt-3 space-y-1">
+            <dl className="mt-3 grid gap-x-6 gap-y-3 sm:grid-cols-3">
+              <div>
+                <dt className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">Market</dt>
+                <dd className="mt-1">
+                  The {market.county_fips.length === 1 ? "county" : `${market.county_fips.length} counties`}{" "}
+                  {market.basis === "branch_counties" ? "holding most of your deposits" : "around your headquarters"}, from the
+                  FDIC Summary of Deposits, {market.sod_year}.
+                </dd>
+              </div>
+              <div>
+                <dt className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">Competitors</dt>
+                <dd className="mt-1">Every bank with a branch there and every institution headquartered there.</dd>
+              </div>
+              <div>
+                <dt className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">Figures</dt>
+                <dd className="mt-1">
+                  One published fee per institution and line, each a line of its own schedule. &ldquo;Read&rdquo; is the day we
+                  saved that schedule.
+                </dd>
+              </div>
+            </dl>
+            <details className="mt-4 rounded-md border border-border bg-white/60 p-3">
+              <summary className="cursor-pointer font-semibold text-ink">How each figure is chosen</summary>
+              <ul className="mt-2 list-disc space-y-1.5 pl-5">
+                <li>A figure is used only when a line of the institution&apos;s stored schedule states that amount as the fee.</li>
+                <li>
+                  Left out: balance thresholds, amounts that depend on a balance band, amounts not found in the schedule, fee
+                  caps, fees under review for a correction, business prices, savings fees on the checking line, and records
+                  whose fee name was not read cleanly
+                  {droppedCount > 0 ? ` (${droppedCount} published figures in this market)` : ""}.
+                </li>
+                <li>
+                  When a schedule lists several versions of a fee, the standard consumer version is used, not an online,
+                  business or other special one. If several remain, the lowest monthly maintenance fee and the highest amount
+                  for every other fee.
+                </li>
+              </ul>
+            </details>
+            <details className="mt-3 rounded-md border border-border bg-white/60 p-3">
+              <summary className="cursor-pointer font-semibold text-ink">Your fees, in your schedule&apos;s words</summary>
+            <ul className="mt-2 space-y-1.5">
               {analysis.lines
                 .filter((line) => line.own)
                 .map((line) => (
@@ -493,7 +517,8 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                   </li>
                 ))}
             </ul>
-            <details className="mt-4 rounded-md border border-border bg-white/60 p-3">
+            </details>
+            <details className="mt-3 rounded-md border border-border bg-white/60 p-3">
               <summary className="cursor-pointer font-semibold text-ink">
                 Every competitor figure behind the local numbers, with its source
               </summary>
