@@ -88,6 +88,13 @@ describe("James's live wordings (#1537, #1539)", () => {
     }
     expect(planPeerList(intent("List credit unions the same size as SchoolsFirst"), schoolsFirst, null).problem).toBeNull();
   });
+  it("accepts short names of the research institution (U.S. Bank, M&T)", () => {
+    const usBank: PeerListSubject = { ...subject, institutionId: 5, name: "U.S. Bank National Association", totalAssetsUsd: 660_000_000_000 };
+    const mt: PeerListSubject = { ...subject, institutionId: 21, name: "Manufacturers and Traders Trust Company", totalAssetsUsd: 210_000_000_000 };
+    expect(planPeerList(intent("List ten similarly sized banks to U.S. Bank"), usBank, null).problem).toBeNull();
+    expect(planPeerList(intent("List ten similarly sized banks to M&T Bank"), { ...mt, name: "M&T Bank" }, null).problem).toBeNull();
+    expect(planPeerList(intent("List ten similarly sized banks to M&T Bank"), mt, null).problem).toContain("open M&T Bank in the workspace first");
+  });
   it("refuses a size reference that is not the research institution, rather than measuring against it", () => {
     const result = planPeerList(intent("List ten similarly sized credit unions to Navy Federal."), schoolsFirst, null);
     expect(result.criteria).toBeNull();

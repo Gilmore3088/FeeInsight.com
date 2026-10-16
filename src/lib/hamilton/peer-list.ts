@@ -327,8 +327,14 @@ export function parsePeerListQuestion(question: string): PeerListIntent | null {
 
 /** "SchoolsFirst" names "Schoolsfirst Federal Credit Union": letters and digits only, case ignored. */
 function sameInstitutionName(typed: string, name: string): boolean {
-  const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "")
-    .replace(/(?:federalcreditunion|creditunion|fcu|nationalassociation|na|bank)$/, "");
+  const letters = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const squash = (s: string) => {
+    let out = letters(s);
+    for (let prev = ""; prev !== out;) { prev = out; out = out.replace(/(?:federalcreditunion|creditunion|fcu|nationalassociation|na|bank)$/, ""); }
+    return out;
+  };
+  // Short names ("U.S. Bank", "M&T") match only exactly; a prefix needs four letters.
+  if (letters(typed) === letters(name) || (squash(typed) && squash(typed) === squash(name))) return true;
   const a = squash(typed);
   const b = squash(name);
   return a.length >= 4 && (b.startsWith(a) || a.startsWith(b));
