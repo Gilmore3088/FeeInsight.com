@@ -266,6 +266,14 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
   no URL, the fee takes its document's (`publishSourceLink`); refresh-copy does the same.
 - `published_by_adversarial_event_id` holds Darwin's verification event id, the gate
   that actually ran.
+- Operators' holds and corrections win over a re-read (#978, docs/plans/hamilton-h03-corrections.md).
+  A held line is not republished. A fee an admin corrected (`published_fee_corrections`, a new
+  version per correction; the replaced row is quarantined `admin_correction: ...`) is matched by
+  its logical fee, not its row id or amount: `correctionBlockFor` (`src/lib/fee-correction-guard.ts`)
+  skips a re-read of the old or the same document, and writes one from a newer document that
+  disagrees to `published_fee_correction_conflicts` for an admin to accept or dismiss. A hold,
+  release, correction or reversal is a completed `manual_repair` run and rebuilds
+  `fee_index_cache` at once (`src/lib/fee-admin-run.ts`).
 - One live price per fee: when the same institution, canonical key, variant and
   frequency is published at a new amount, the prior live row is closed
   (`rolled_back_at`, `rolled_back_by_batch_id`, `rolled_back_reason = 'superseded by
@@ -367,8 +375,10 @@ the detail.
     otherwise it stays rejected with the flag. A checked row with no type and a lineup
     product gets `account_type_checked:v1` and is not read again; a row with no product is read
     again on every step, since a later Knox read can fill its product. One event per run names every row.
-    A fee a hand check found wrongly typed stays live through `ACCOUNT_TYPE_KEEP_LIVE` (one line per
-    fee with its reason; 28834 first).
+    A fee a hand check found wrongly typed stays live through `ACCOUNT_TYPE_KEEP_LIVE`: one line per
+    fee with its reason, keyed by institution, name, price and the stored document the hand check read,
+    so a re-read's new row stays live too (28834: inst 5800, doc 3633). The feedback sync skips these takedowns and the goal scorecard counts them as
+    housekeeping: the hold is publish policy, not a wrong read.
     A failed read or write writes nothing; the error is kept in `detail.account_type_hold.error`
     and as a `step.warning` run event.
 10a. Hand fixes James approved, fixed lists checked against the live row before each write:

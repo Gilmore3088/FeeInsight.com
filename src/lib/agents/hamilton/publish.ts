@@ -1,6 +1,7 @@
 import type { FeeAudience } from "@/lib/fee-audience";
 import { CHECKING_ONLY_CATEGORIES, heldAccountType } from "@/lib/account-type";
 import { ADMIN_HOLD_PREFIX } from "@/lib/fee-hold-rules";
+import { correctionBlockFor, type CorrectionBlock } from "@/lib/fee-correction-guard";
 import { publishSourceLink, sourceLinkSkipReason } from "@/lib/agents/hamilton/source-link";
 import { feePageKey } from "@/lib/agents/hamilton/page-key";
 import { sql } from "@/lib/data-store/connection";
@@ -605,6 +606,14 @@ async function institutionFeeDepth(
   return new Map(Array.from(depth, ([id, keys]) => [id, keys.size]));
 }
 
+/** The skip reason when an admin correction blocked a publish (H03-T07). Pure. */
+export function correctedReason(block: CorrectionBlock | null): string | null {
+  if (!block) return null;
+  return block.kind === "conflict"
+    ? `Newer source disagrees with an admin correction (correction #${block.correctionId}); queued for admin review`
+    : `Protected by an admin correction (correction #${block.correctionId})`;
+}
+
 export async function insertPublishedFee(
   db: SqlTag,
   options: {
@@ -613,6 +622,10 @@ export async function insertPublishedFee(
     row: VerifiedFeeRow;
     /** Called when an operator's hold on the same fee line blocked this publish. */
     onHeld?: (heldFeePublishedId: number) => void;
+    /** The live row this publish would supersede, when the step chose one. */
+    priorFeePublishedId?: number | null;
+    /** Called when an admin correction of the same logical fee blocked this publish. */
+    onCorrected?: (block: CorrectionBlock) => void;
   },
 ): Promise<number | null> {
   const feeVerifiedId = Number(options.row.fee_verified_id);
@@ -647,6 +660,26 @@ export async function insertPublishedFee(
   `;
   if (held.length > 0) {
     options.onHeld?.(Number(held[0].fee_published_id));
+    return null;
+  }
+  // An admin correction (H03-T07, #978) stays the live value: a re-read of the old or the same
+  // source never republishes the corrected-away line (at any amount), and a newer source that
+  // disagrees becomes an open conflict for an admin rather than silently winning.
+  const corrected = await correctionBlockFor(db, {
+    feeVerifiedId,
+    institutionId,
+    canonicalFeeKey: options.row.canonical_fee_key,
+    feeName,
+    amount,
+    frequency: options.row.frequency,
+    variantType: options.row.variant_type,
+    feeAudience: audience,
+    sourceDocumentId: options.row.source_document_id == null ? null : Number(options.row.source_document_id),
+    priorFeePublishedId: options.priorFeePublishedId ?? null,
+    runId: options.runId,
+  });
+  if (corrected) {
+    options.onCorrected?.(corrected);
     return null;
   }
   const inserted = await db`
@@ -2090,12 +2123,15 @@ export async function runHamiltonPublish(
       // Insert and supersede succeed or fail together: never two live prices for one
       // fee, and never a closed row without its replacement.
       let heldBy: number | null = null;
+      let correctedBy: CorrectionBlock | null = null;
       const written = await inSavepoint(db, async (scope) => {
         const feePublishedId = await insertPublishedFee(scope, {
           runId: options.runId,
           batchId,
           row,
           onHeld: (heldId) => { heldBy = heldId; },
+          priorFeePublishedId: priorPublishedFee?.fee_published_id == null ? null : Number(priorPublishedFee.fee_published_id),
+          onCorrected: (block) => { correctedBy = block; },
         });
         if (!feePublishedId || !priorPublishedFee) {
           return { feePublishedId, superseded: false, changeRecorded: false };
@@ -2112,7 +2148,7 @@ export async function runHamiltonPublish(
       result = {
         ...base,
         status: feePublishedId ? "published" : "skipped",
-        reason: feePublishedId ? null : heldBy ? `Held by an operator (fee #${heldBy})` : "Duplicate published row",
+        reason: feePublishedId ? null : heldBy ? `Held by an operator (fee #${heldBy})` : correctedReason(correctedBy) ?? "Duplicate published row",
         feePublishedId,
         ...(feePublishedId ? movementFor(priorPublishedFee, row) : NO_MOVEMENT),
         supersededFeePublishedId:
