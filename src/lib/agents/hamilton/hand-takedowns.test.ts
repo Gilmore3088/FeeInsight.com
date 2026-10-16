@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/data-store/fee-cache", () => ({ invalidatePublicReadCache: vi.fn() }));
 
-import { applyHandTakedowns, HAND_TAKEDOWNS, planHandTakedowns, type LiveTakedownRow } from "./hand-takedowns";
+import {
+  applyHandAudienceFixes, applyHandTakedowns, HAND_AUDIENCE_FIXES, HAND_TAKEDOWNS, handAudienceEvidence, planHandAudienceFixes,
+  planHandTakedowns, type LiveAudienceRow, type LiveTakedownRow,
+} from "./hand-takedowns";
 
 // The two #1496 rows as they read live on prod, read-only, Oct 16.
 const LIVE: LiveTakedownRow[] = [
@@ -18,8 +21,12 @@ const LIVE: LiveTakedownRow[] = [
   { fee_published_id: 48113, lineage_ref: 53370, institution_id: 7483, canonical_fee_key: "safe_deposit_box", fee_name: "Returned loan payment", amount: "25.00" },
   { fee_published_id: 87307, lineage_ref: 96812, institution_id: 5054, canonical_fee_key: "ach_return", fee_name: "Returned Loan Payment (check or ACH returned unpaid; per item)", amount: "25.00" },
   { fee_published_id: 134962, lineage_ref: 156021, institution_id: 8566, canonical_fee_key: "account_research", fee_name: "Loan Payment with Debit Card - Chargeback", amount: "29.50" },
+  // #1302's two leftovers as they read live on prod, read-only, Oct 16.
+  { fee_published_id: 13188, lineage_ref: 5161, institution_id: 44, canonical_fee_key: "gift_card_purchase", fee_name: "Visa Gift Card", amount: "4.25" },
+  { fee_published_id: 144352, lineage_ref: 174382, institution_id: 6152, canonical_fee_key: "late_payment", fee_name: "Late payment fees", amount: "35.00" },
+  { fee_published_id: 114273, lineage_ref: 101242, institution_id: 6152, canonical_fee_key: "late_payment", fee_name: "Late payment fees", amount: "35.00" },
 ];
-const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962];
+const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, 13188, 144352, 114273];
 
 function fakeDb(live: LiveTakedownRow[], failOn?: string) {
   const writes: Array<{ text: string; values: unknown[] }> = [];
@@ -46,8 +53,14 @@ describe("hand takedowns (James, Oct 16)", () => {
       [48113, "source_mismatch: #1534"],
       [87307, "source_mismatch: #1534"],
       [134962, "source_mismatch: #1534"],
+      [13188, "duplicate of #103400 (#1302)"],
+      [144352, "source_mismatch: #1302"],
+      [114273, "source_mismatch: #1302"],
     ]);
-    expect(HAND_TAKEDOWNS.every((entry) => entry.evidence.length > 0 && entry.reason === `source_mismatch: #${entry.issue}`)).toBe(true);
+    // A wrong read names its issue; a second read of one printed fee names the live copy it repeats too.
+    expect(HAND_TAKEDOWNS.every((entry) => entry.evidence.length > 0 && (entry.kind === "duplicate"
+      ? /^duplicate of #\d+ \(#\d+\)$/.test(entry.reason) && entry.reason.endsWith(`(#${entry.issue})`)
+      : entry.reason === `source_mismatch: #${entry.issue}`))).toBe(true);
     // Up to about 25 rows go this way; more go to James.
     expect(HAND_TAKEDOWNS.length).toBeLessThanOrEqual(25);
   });
@@ -64,6 +77,9 @@ describe("hand takedowns (James, Oct 16)", () => {
         { feePublishedId: 48113, feeVerifiedId: 53370, reason: "source_mismatch: #1534" },
         { feePublishedId: 87307, feeVerifiedId: 96812, reason: "source_mismatch: #1534" },
         { feePublishedId: 134962, feeVerifiedId: 156021, reason: "source_mismatch: #1534" },
+        { feePublishedId: 13188, feeVerifiedId: 5161, reason: "duplicate of #103400 (#1302)" },
+        { feePublishedId: 144352, feeVerifiedId: 174382, reason: "source_mismatch: #1302" },
+        { feePublishedId: 114273, feeVerifiedId: 101242, reason: "source_mismatch: #1302" },
       ],
       skipped: [],
     });
@@ -128,5 +144,72 @@ describe("hand takedowns (James, Oct 16)", () => {
     const warning = write.writes.find((entry) => entry.text.includes("'step.warning'"));
     expect(warning?.values).toEqual(expect.arrayContaining([4, 40]));
     expect(String(warning?.values.at(-1))).toContain("hamilton.hand_takedown");
+  });
+});
+
+// 55401 as it reads live on prod with its verified row 45477 joined, read-only, Oct 16.
+const AUDIENCE_LIVE: LiveAudienceRow[] = [
+  { fee_published_id: 55401, lineage_ref: 45477, institution_id: 8652, canonical_fee_key: "gift_card_purchase", fee_name: "Gift Cards", amount: "5.00", fee_audience: "unknown", audience_evidence: null },
+];
+
+function fakeAudienceDb(live: LiveAudienceRow[], failOn?: string) {
+  const writes: Array<{ text: string; values: unknown[] }> = [];
+  const db = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+    const text = strings.join("?");
+    if (failOn && text.includes(failOn)) throw new Error(`boom: ${failOn}`);
+    if (text.includes("SELECT fp.fee_published_id")) return live;
+    writes.push({ text, values });
+    if (text.includes("UPDATE verified_fee_observations")) return [{ fee_verified_id: 45477 }];
+    return [];
+  });
+  return { db, writes };
+}
+
+describe("hand audience fixes (#1302)", () => {
+  it("lists 55401 as a business fee, with darwin: evidence the audience trigger keeps", () => {
+    expect(HAND_AUDIENCE_FIXES.map((fix) => [fix.feePublishedId, fix.from, fix.to])).toEqual([[55401, "unknown", "business"]]);
+    expect(HAND_AUDIENCE_FIXES.every((fix) => handAudienceEvidence(fix).startsWith("darwin:hand_fix: #1302 "))).toBe(true);
+    expect(HAND_AUDIENCE_FIXES.length + HAND_TAKEDOWNS.length).toBeLessThanOrEqual(25);
+  });
+
+  it("fixes a row only while it still reads as listed, and once", () => {
+    expect(planHandAudienceFixes(AUDIENCE_LIVE)).toEqual({
+      fixed: [{ feePublishedId: 55401, feeVerifiedId: 45477, from: "unknown", fromEvidence: null, to: "business" }],
+      skipped: [],
+    });
+    expect(planHandAudienceFixes([]).skipped).toEqual([{ feePublishedId: 55401, reason: "not live" }]);
+    expect(planHandAudienceFixes([{ ...AUDIENCE_LIVE[0], fee_audience: "business" }]).skipped).toEqual([{ feePublishedId: 55401, reason: "already fixed" }]);
+    // Another audience, a newer verified row, or another name or price is not the listed row.
+    for (const changed of [{ fee_audience: "consumer" }, { lineage_ref: 99 }, { amount: "4.00" }, { fee_name: "Gift Card" }]) {
+      expect(planHandAudienceFixes([{ ...AUDIENCE_LIVE[0], ...changed }]).skipped).toEqual([{ feePublishedId: 55401, reason: "changed since listed" }]);
+    }
+  });
+
+  it("sets the verified audience, touches the live row, records the old value and one run event", async () => {
+    const { db, writes } = fakeAudienceDb(AUDIENCE_LIVE);
+    const result = await applyHandAudienceFixes(db as never, { runId: 9, stepId: 90, dryRun: false });
+    expect(result).toMatchObject({ fixed: [{ feePublishedId: 55401, to: "business" }], error: null });
+    const verified = writes.find((write) => write.text.includes("UPDATE verified_fee_observations"));
+    expect(verified?.text).toContain("AND fee_audience = ?");
+    expect(verified?.values).toEqual(["business", handAudienceEvidence(HAND_AUDIENCE_FIXES[0]), 45477, "unknown"]);
+    const touched = writes.find((write) => write.text.includes("UPDATE published_fee_records"));
+    expect(touched?.text).toContain("SET fee_audience = fee_audience");
+    expect(touched?.values).toEqual([55401]);
+    expect(writes.some((write) => write.text.includes("INSERT INTO pipeline_feedback"))).toBe(true);
+    expect(writes.filter((write) => write.text.includes("INSERT INTO agent_run_events"))).toHaveLength(1);
+    expect(writes.some((write) => /\bDELETE\b|rolled_back_at = NOW/i.test(write.text))).toBe(false);
+  });
+
+  it("writes nothing on a dry run or once fixed, and logs a failed write instead of failing the publish", async () => {
+    const dry = fakeAudienceDb(AUDIENCE_LIVE);
+    expect((await applyHandAudienceFixes(dry.db as never, { runId: 1, dryRun: true })).fixed).toHaveLength(1);
+    expect(dry.writes).toHaveLength(0);
+    const done = fakeAudienceDb([{ ...AUDIENCE_LIVE[0], fee_audience: "business" }]);
+    expect((await applyHandAudienceFixes(done.db as never, { runId: 2, dryRun: false })).fixed).toEqual([]);
+    expect(done.writes).toHaveLength(0);
+    const failed = fakeAudienceDb(AUDIENCE_LIVE, "UPDATE verified_fee_observations");
+    const result = await applyHandAudienceFixes(failed.db as never, { runId: 4, stepId: 40, dryRun: false });
+    expect(result).toMatchObject({ fixed: [], error: "boom: UPDATE verified_fee_observations" });
+    expect(String(failed.writes.find((entry) => entry.text.includes("'step.warning'"))?.values.at(-1))).toContain("hamilton.hand_audience_fix");
   });
 });

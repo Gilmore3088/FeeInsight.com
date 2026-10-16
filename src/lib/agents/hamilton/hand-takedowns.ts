@@ -32,11 +32,11 @@ export interface HandTakedown {
   amount: number;
   /** The name the live row carries now. */
   feeName: string;
-  /** `rolled_back_reason`, e.g. `source_mismatch: #1496`. */
+  /** `rolled_back_reason`, e.g. `source_mismatch: #1496`, or `duplicate of #<kept id> (#<issue>)` for a repeat. */
   reason: string;
   /** The issue that holds the evidence. */
   issue: number;
-  kind: Extract<FeedbackKind, "wrong_amount" | "wrong_category" | "not_a_fee">;
+  kind: Extract<FeedbackKind, "wrong_amount" | "wrong_category" | "not_a_fee" | "duplicate">;
   /** What the bank's own text says, in one line. */
   evidence: string;
 }
@@ -75,6 +75,18 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
   { feePublishedId: 134962, institutionId: 8566, canonicalFeeKey: "account_research", amount: 29.5, feeName: "Loan Payment with Debit Card - Chargeback",
     reason: "source_mismatch: #1534", issue: 1534, kind: "wrong_category",
     evidence: "Texell CU (doc 29092): \"Loan Payment with Debit Card - Chargeback $29.50 per item\", next to \"Loan Payment with Debit Card - Return Item\": a loan payment fee, not account research." },
+  // #1302 leftovers (read-only, Oct 16): near-name pairs the near-name collapse keeps apart. 13188
+  // repeats a live read of one printed fee; 144352 (and 114273, the same line on an older copy of
+  // the page) publish a rate fee's $35 floor as a flat fee.
+  { feePublishedId: 13188, institutionId: 44, canonicalFeeKey: "gift_card_purchase", amount: 4.25, feeName: "Visa Gift Card",
+    reason: "duplicate of #103400 (#1302)", issue: 1302, kind: "duplicate",
+    evidence: "Valley (doc 23731, text 20802) prints \"Visa® Gift Cards, each: $4.25.\" once per schedule; 103400 is the Oct 9 read of it. 13188 is the Apr 17 load (raw 5056: no excerpt, no source URL) of the same fee, and the page has no \"Visa Gift Card\" line." },
+  { feePublishedId: 144352, institutionId: 6152, canonicalFeeKey: "late_payment", amount: 35, feeName: "Late payment fees",
+    reason: "source_mismatch: #1302", issue: 1302, kind: "wrong_amount",
+    evidence: "Patriot FCU (doc 34341, text 32389), Flex Equity Line: \"Late payment fees of 5% of the monthly payment or $35.00 whichever is greater\": $35 is the floor of a 5% fee, live as rate fee 114271 (5%, min $35), not a flat $35 a month." },
+  { feePublishedId: 114273, institutionId: 6152, canonicalFeeKey: "late_payment", amount: 35, feeName: "Late payment fees",
+    reason: "source_mismatch: #1302", issue: 1302, kind: "wrong_amount",
+    evidence: "Patriot FCU (doc 21882, text 18514, the Oct 8 copy of the same rates page): the same \"Late payment fees of 5% of the monthly payment or $35.00 whichever is greater\" line read as a flat $35; the 5% fee is live as 114271." },
 ];
 
 export interface LiveTakedownRow {
@@ -221,5 +233,205 @@ export async function applyHandTakedowns(
     return { ...result, takenDown: [], error: await recordStepWarning(db, { runId: options.runId, stepId: options.stepId, check: HAND_TAKEDOWN_CHECK, what: "Hand takedowns write", error }) };
   }
   if (result.takenDown.length > 0) invalidatePublicReadCache();
+  return result;
+}
+
+/**
+ * Hand audience fixes (#1302): a short, reviewed list of live fees whose audience is wrong against
+ * their bank's own stored text, under the same Oct 16 rule as the takedowns above. The fee stays
+ * live; only its audience changes.
+ *
+ * A fixed list, not an audience editor. A row is fixed only while it still reads as listed (live,
+ * same verified row, institution, category, name and price, and still the listed old audience).
+ * The verified row takes the new audience with `darwin:` evidence, which the audience trigger keeps
+ * (migration 20270110000047), and the live row is touched so it inherits it, as the audience
+ * relabel does (`darwin/audience-relabel.ts`). The old value goes to `pipeline_feedback` first
+ * (weight 0, a record, not a lesson): setting the verified row back to that audience and evidence
+ * and touching the live row undoes it. Running it again changes nothing. Add later rows below as
+ * one entry each. A failed read or write never fails the publish: it is kept in the result
+ * (`error`) and as a `step.warning` run event.
+ */
+export const HAND_AUDIENCE_CHECK = "hamilton.hand_audience_fix";
+export const HAND_AUDIENCE_KIND = "audience_hand_fixed";
+export const HAND_AUDIENCE_EVIDENCE_PREFIX = "darwin:hand_fix";
+
+type ListedAudience = "consumer" | "business" | "both";
+
+export interface HandAudienceFix {
+  feePublishedId: number;
+  feeVerifiedId: number;
+  institutionId: number;
+  canonicalFeeKey: string;
+  amount: number;
+  /** The name the live row carries now. */
+  feeName: string;
+  /** The verified row's audience now. */
+  from: ListedAudience | "unknown";
+  to: ListedAudience;
+  /** The issue that holds the evidence. */
+  issue: number;
+  /** What the bank's own text says, in one line. */
+  evidence: string;
+}
+
+export const HAND_AUDIENCE_FIXES: readonly HandAudienceFix[] = [
+  // #1302 (read-only, Oct 16): Rave FCU prints its consumer and business schedules in one document.
+  { feePublishedId: 55401, feeVerifiedId: 45477, institutionId: 8652, canonicalFeeKey: "gift_card_purchase", amount: 5, feeName: "Gift Cards",
+    from: "unknown", to: "business", issue: 1302,
+    evidence: "Rave (doc 2183, text 9544): \"Gift Cards | $ 5.00\" is under \"2019 Business Fee Schedule\"; the consumer schedule's line is \"Gift Card | $5.00\" (55397)." },
+];
+
+export interface LiveAudienceRow {
+  fee_published_id: number | string;
+  lineage_ref: number | string | null;
+  institution_id: number | string;
+  canonical_fee_key: string;
+  fee_name: string;
+  amount: number | string | null;
+  /** The verified row's audience and evidence. */
+  fee_audience: string | null;
+  audience_evidence: string | null;
+}
+
+export interface PlannedAudienceFix {
+  feePublishedId: number;
+  feeVerifiedId: number;
+  from: string;
+  fromEvidence: string | null;
+  to: ListedAudience;
+}
+
+export interface HandAudienceResult {
+  dryRun: boolean;
+  fixed: PlannedAudienceFix[];
+  /** Listed rows left alone, with why (not live, already fixed, or changed since it was listed). */
+  skipped: Array<{ feePublishedId: number; reason: string }>;
+  /** A failed read or write (nothing written); also a `step.warning` run event. */
+  error: string | null;
+}
+
+/** The evidence a fix writes; it starts with `darwin:` so the trigger keeps it on the verified row. */
+export function handAudienceEvidence(fix: HandAudienceFix): string {
+  return `${HAND_AUDIENCE_EVIDENCE_PREFIX}: #${fix.issue} ${fix.evidence}`.slice(0, 500);
+}
+
+/** Pure: which listed rows take their new audience, from their live rows (verified audience joined in). */
+export function planHandAudienceFixes(
+  live: LiveAudienceRow[],
+  list: readonly HandAudienceFix[] = HAND_AUDIENCE_FIXES,
+): Pick<HandAudienceResult, "fixed" | "skipped"> {
+  const byId = new Map(live.map((row) => [Number(row.fee_published_id), row]));
+  const fixed: PlannedAudienceFix[] = [];
+  const skipped: HandAudienceResult["skipped"] = [];
+  for (const entry of list) {
+    const row = byId.get(entry.feePublishedId);
+    if (!row) {
+      skipped.push({ feePublishedId: entry.feePublishedId, reason: "not live" });
+      continue;
+    }
+    if (row.fee_audience === entry.to) {
+      skipped.push({ feePublishedId: entry.feePublishedId, reason: "already fixed" });
+      continue;
+    }
+    if (Number(row.lineage_ref) !== entry.feeVerifiedId || Number(row.institution_id) !== entry.institutionId ||
+        row.canonical_fee_key !== entry.canonicalFeeKey || row.fee_name !== entry.feeName ||
+        !sameAmount(row.amount, entry.amount) || row.fee_audience !== entry.from) {
+      skipped.push({ feePublishedId: entry.feePublishedId, reason: "changed since listed" });
+      continue;
+    }
+    fixed.push({ feePublishedId: entry.feePublishedId, feeVerifiedId: entry.feeVerifiedId, from: entry.from, fromEvidence: row.audience_evidence, to: entry.to });
+  }
+  return { fixed, skipped };
+}
+
+/** Runs in the publish step after the takedowns. A dry run reports what it would fix and writes nothing. */
+export async function applyHandAudienceFixes(
+  db: SqlTag,
+  options: { runId: number; stepId?: number | null; dryRun: boolean; list?: readonly HandAudienceFix[] },
+): Promise<HandAudienceResult> {
+  const list = options.list ?? HAND_AUDIENCE_FIXES;
+  const result: HandAudienceResult = { dryRun: options.dryRun, fixed: [], skipped: [], error: null };
+  if (list.length === 0) return result;
+  const ids = [...new Set(list.map((entry) => entry.feePublishedId))];
+  let live: LiveAudienceRow[];
+  try {
+    live = await inSavepoint(db, (scope) => scope<LiveAudienceRow[]>`
+      SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fp.canonical_fee_key, fp.fee_name, fp.amount,
+             v.fee_audience, v.audience_evidence
+        FROM published_fee_records fp
+        JOIN verified_fee_observations v ON v.fee_verified_id = fp.lineage_ref
+       WHERE fp.fee_published_id = ANY(${ids}::bigint[])
+         AND fp.rolled_back_at IS NULL
+    `);
+  } catch (error) {
+    console.error("hand audience fixes read failed:", error);
+    return { ...result, error: await recordStepWarning(db, { runId: options.runId, stepId: options.stepId, check: HAND_AUDIENCE_CHECK, what: "Hand audience fixes read", error }) };
+  }
+  const plan = planHandAudienceFixes(live, list);
+  result.skipped = plan.skipped;
+  if (options.dryRun) return { ...result, fixed: plan.fixed };
+  if (plan.fixed.length === 0) return result;
+
+  try {
+    await inSavepoint(db, async (scope) => {
+      for (const item of plan.fixed) {
+        const entry = list.find((candidate) => candidate.feePublishedId === item.feePublishedId)!;
+        const updated = await scope<{ fee_verified_id: number | string }[]>`
+          UPDATE verified_fee_observations
+             SET fee_audience = ${item.to},
+                 audience_evidence = ${handAudienceEvidence(entry)}
+           WHERE fee_verified_id = ${item.feeVerifiedId}
+             AND fee_audience = ${entry.from}
+          RETURNING fee_verified_id
+        `;
+        if (updated.length === 0) continue;
+        // Touching the audience column fires the trigger, which copies the verified row's audience.
+        await scope`
+          UPDATE published_fee_records SET fee_audience = fee_audience
+           WHERE fee_published_id = ${item.feePublishedId}
+             AND rolled_back_at IS NULL
+        `;
+        result.fixed.push(item);
+      }
+      // The old values, so each fix can be undone; a record, never a lesson.
+      const records: FeedbackRow[] = result.fixed.map((item) => {
+        const entry = list.find((candidate) => candidate.feePublishedId === item.feePublishedId)!;
+        return {
+          aboutStage: "verify" as const,
+          signal: "wrong" as const,
+          kind: HAND_AUDIENCE_KIND,
+          reportedBy: "gutenberg" as const,
+          checkName: HAND_AUDIENCE_CHECK,
+          institutionId: entry.institutionId,
+          feeVerifiedId: item.feeVerifiedId,
+          feePublishedId: item.feePublishedId,
+          canonicalFeeKey: entry.canonicalFeeKey,
+          amount: entry.amount,
+          weight: 0,
+          runId: options.runId,
+          dedupeKey: `${HAND_AUDIENCE_CHECK}:pub:${item.feePublishedId}`,
+          evidence: { fee_name: entry.feeName, from_audience: item.from, from_evidence: item.fromEvidence, to_audience: item.to, issue: entry.issue, source: entry.evidence },
+        };
+      });
+      if (records.length > 0) await recordFeedback(scope, records);
+      if (result.fixed.length > 0) {
+        await scope`
+          INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+          VALUES (
+            ${options.runId}, ${HAND_AUDIENCE_CHECK}, 'completed',
+            ${`Set the audience of ${result.fixed.length} listed live fee(s) from their bank's own text`},
+            ${JSON.stringify({
+              fixed: result.fixed.map((item) => ({ fee_published_id: item.feePublishedId, fee_verified_id: item.feeVerifiedId, from: item.from, to: item.to })),
+              skipped: result.skipped,
+            })}::jsonb
+          )
+        `;
+      }
+    });
+  } catch (error) {
+    console.error("hand audience fixes write failed:", error);
+    return { ...result, fixed: [], error: await recordStepWarning(db, { runId: options.runId, stepId: options.stepId, check: HAND_AUDIENCE_CHECK, what: "Hand audience fixes write", error }) };
+  }
+  if (result.fixed.length > 0) invalidatePublicReadCache();
   return result;
 }

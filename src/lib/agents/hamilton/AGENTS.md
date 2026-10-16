@@ -362,10 +362,16 @@ the detail.
     wrong on amount or category against its bank's own stored text and checked by a reviewer, as
     one entry each (first: #1496's two fax fees). A row comes down only while it still reads as
     listed (institution, category, name, price), checked in the read and again in the `UPDATE`,
-    with the entry's reason (`source_mismatch: #<issue>`); its verified row is rejected
+    with the entry's reason (`source_mismatch: #<issue>`, or `duplicate of #<kept id> (#<issue>)`
+    for a second read of one printed fee); its verified row is rejected
     (`hand_rejected:hand_takedown`), a feedback row and one run event name it, and a ledger line
-    goes on #1026. In both lists a failed read or write never fails the publish: the step detail
-    carries its `error` and the run gets a `step.warning` event.
+    goes on #1026. The same file's `HAND_AUDIENCE_FIXES` (#1302) sets a listed live fee's
+    audience from its bank's own text while it still reads as listed (verified row, institution,
+    category, name, price, old audience): the verified row takes it with `darwin:hand_fix`
+    evidence, which the audience trigger keeps, the live row is touched to inherit it, and the
+    old value is recorded first (`audience_hand_fixed`, weight 0). In these lists a failed read or
+    write never fails the publish: the step detail carries its `error` and the run gets a
+    `step.warning` event.
 11. Article page (`article-page.ts`): a fee read from an article, on its second look,
     `article_page: #<document id>`.
 12. Product page (`product-page.ts`): a $0 benefit bullet Knox's free reader took from a

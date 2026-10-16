@@ -18,7 +18,7 @@ import { retireOtherBankDocumentFees } from "@/lib/agents/hamilton/other-bank-do
 import { retireEvalVerdictFees } from "@/lib/agents/hamilton/eval-verdicts";
 import { applyHandAmountCorrections } from "@/lib/agents/hamilton/hand-amount-corrections";
 import { applyCutNameDuplicates } from "@/lib/agents/hamilton/cut-name-duplicates";
-import { applyHandTakedowns } from "@/lib/agents/hamilton/hand-takedowns";
+import { applyHandAudienceFixes, applyHandTakedowns } from "@/lib/agents/hamilton/hand-takedowns";
 import { requeueGuardRejectedFees } from "@/lib/agents/hamilton/guard-requeue";
 import { retireArticlePageFees } from "@/lib/agents/hamilton/article-page";
 import { retireProductPageFees } from "@/lib/agents/hamilton/product-page";
@@ -1158,6 +1158,8 @@ async function executeAgenticStep(
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
       });
+      // Listed live fees whose audience is wrong against their bank's own text (#1302 first).
+      const handAudience = await applyHandAudienceFixes(tx, { runId: run.id, stepId: step.id, dryRun: run.runKind === "dry_run" });
       // An institution that no longer operates keeps no live fee (#1200).
       const closedInstitution = await retireClosedInstitutionFees(tx, {
         runId: run.id,
@@ -1656,6 +1658,11 @@ async function executeAgenticStep(
             taken_down: handTakedowns.takenDown.map((item) => ({ fee_published_id: item.feePublishedId, reason: item.reason })),
             skipped: handTakedowns.skipped.length,
             error: handTakedowns.error,
+          },
+          hand_audience_fix: {
+            fixed: handAudience.fixed.map((item) => ({ fee_published_id: item.feePublishedId, from: item.from, to: item.to })),
+            skipped: handAudience.skipped.length,
+            error: handAudience.error,
           },
           eval_verdict: {
             eval_matched: evalVerdicts.evalMatched,
