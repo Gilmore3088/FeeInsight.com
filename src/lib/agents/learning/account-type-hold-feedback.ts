@@ -6,7 +6,8 @@ type SqlTag = typeof sql;
 /**
  * #1100: before the feedback sync skipped `account_type_hold:` takedowns, it wrote one `wrong` row
  * about Knox's read and one about Darwin's verdict for each fee the account type hold took down
- * (1,428 rows for 714 fees on Oct 16, written 04:35-04:36 UTC; kind `account_type_hold`, weight 1). The hold is publish
+ * (1,432 rows on Oct 16: 1,428 for 714 fees written 04:35-04:36 UTC and 4 at 05:55, before the skip
+ * merged; kind `account_type_hold`, weight 1). The hold is publish
  * policy, not a wrong read, and the hold's own rows carry weight 0. This step sets those rows to
  * weight 0 too, keeping each row and its old weight in `evidence.weight_was`. Idempotent: a row at
  * weight 0 is never read again. Off until James switches it on (a prod data change). Off, it does

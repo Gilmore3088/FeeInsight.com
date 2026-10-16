@@ -103,9 +103,14 @@ const LIVE: LiveTakedownRow[] = [
     fee_name: "See How to avoid them next to the listed fee.Checking AccountsAutomatic Overdraft TransferCopy of DraftCourtesy PayForei", amount: "10.00" },
   ...BEACON_STALE_1668,
   ...BEACON_CURRENT_1668,
+  // #1671's business-schedule monthly fees the account type hold brought back, live on prod, read-only, Oct 16.
+  { fee_published_id: 42961, lineage_ref: 35153, institution_id: 436, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly fee", amount: "7.00" },
+  { fee_published_id: 86536, lineage_ref: 96124, institution_id: 891, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly maintenance fee", amount: "5.00" },
+  { fee_published_id: 66721, lineage_ref: 75768, institution_id: 1689, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly service charge", amount: "5.00" },
+  { fee_published_id: 66722, lineage_ref: 75769, institution_id: 1689, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly service charge", amount: "10.00" },
 ];
 const CONDITIONAL_ZERO = [43512, 54014, 61335, 68893, 70121, 73737, 77121, 77122, 77618, 84553, 87079, 87461, 88213, 91505, 120559];
-const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689, 138828, 138832, 138833, 138839, 138827, 138834, 138841, 148352, 138831, 138830, 138848, 138849, 138850, 138851];
+const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689, 138828, 138832, 138833, 138839, 138827, 138834, 138841, 148352, 138831, 138830, 138848, 138849, 138850, 138851, 42961, 86536, 66721, 66722];
 
 function fakeDb(live: LiveTakedownRow[], failOn?: string) {
   const writes: Array<{ text: string; values: unknown[] }> = [];
@@ -163,6 +168,10 @@ describe("hand takedowns (James, Oct 16)", () => {
       [138849, "source_mismatch: #1668"],
       [138850, "source_mismatch: #1668"],
       [138851, "source_mismatch: #1668"],
+      [42961, "source_mismatch: #1671"],
+      [86536, "source_mismatch: #1671"],
+      [66721, "source_mismatch: #1671"],
+      [66722, "source_mismatch: #1671"],
     ]);
     // A wrong read names its issue; a second read of one printed fee names the live copy it repeats too.
     expect(HAND_TAKEDOWNS.every((entry) => entry.evidence.length > 0 && (entry.kind === "duplicate"
@@ -217,6 +226,10 @@ describe("hand takedowns (James, Oct 16)", () => {
         { feePublishedId: 138849, feeVerifiedId: 162473, reason: "source_mismatch: #1668" },
         { feePublishedId: 138850, feeVerifiedId: 162474, reason: "source_mismatch: #1668" },
         { feePublishedId: 138851, feeVerifiedId: 162478, reason: "source_mismatch: #1668" },
+        { feePublishedId: 42961, feeVerifiedId: 35153, reason: "source_mismatch: #1671" },
+        { feePublishedId: 86536, feeVerifiedId: 96124, reason: "source_mismatch: #1671" },
+        { feePublishedId: 66721, feeVerifiedId: 75768, reason: "source_mismatch: #1671" },
+        { feePublishedId: 66722, feeVerifiedId: 75769, reason: "source_mismatch: #1671" },
       ],
       skipped: [],
     });
