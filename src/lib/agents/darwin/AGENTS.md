@@ -95,10 +95,15 @@ Darwin owns verification and classification.
   prices it free on its own line with no other dollar figure, outside overdraft, NSF, monthly
   maintenance and minimum balance, and not on one account tier's own schedule (`tier-perk.ts`,
   #1397); (b) otherwise rejected, for Knox's next read of the line.
-- `verify.recheck` (`verified-recheck.ts`, version 3, 2026-10-15) ends every learning verify step
+- `verify.recheck` (`verified-recheck.ts`, version 4, 2026-10-16) ends every learning verify step
   by reading up to 200 rows `verify.rules` v3 verified (the rows the `not_in_source` re-select
   verified first, then newest first), once each under `postSourceCheck` and, from version 3, the
-  tier-perk test (`tier_perk_zero`, #1397). A failing row that is
+  tier-perk test (`tier_perk_zero`, #1397). Version 4 (#1571, #1574): on a run-on line with no
+  cell break the conditional-$0 test reads only the fee's own row, from its name to its $0 and
+  any terms after it ("FREE with e-Statements"), so "Notary Services No Charge" is free even when
+  the line also holds "Record Searches $30"; a cell with its own label ("Certified Letter Fee:
+  $10") is never this fee's price. The tier-perk name test skips an account's own monthly or
+  minimum-balance price ("Premier Checking" $0, "NONE"); a tier's own schedule still refuses it. A failing row that is
   not live is rejected with an `outlier_flags` entry `darwin_recheck:<code>[:<rule>]`; a live one
   is archived in the same step (`published_fee_records` rolled back with that reason, batch
   `darwin-recheck-<run>`, never deleted), the verified row rejected with the same flag and the
@@ -1128,7 +1133,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_RELEASE_REVIEW_STRATEGY` | `verify.release_review` | v17 | `darwin/release-review.ts` |
 | `DARWIN_SCHEDULE_REFILE_STRATEGY` | `verify.schedule_refile` | v1 | `darwin/schedule-refile.ts` |
 | `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v1 | `darwin/verdict-score.ts` |
-| `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v3 | `darwin/verified-recheck.ts` |
+| `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v4 | `darwin/verified-recheck.ts` |
 | `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v6 | `darwin/live-fragment-check.ts` |
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v1 | `darwin/hourly-frequency-check.ts` |
 | `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v2 | `darwin/non-deposit-document-check.ts` |

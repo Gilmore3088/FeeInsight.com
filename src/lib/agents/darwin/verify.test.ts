@@ -949,3 +949,49 @@ describe("category change re-judge (#1295)", () => {
     });
   });
 });
+
+describe("conditionalZero on run-on lines (#1571, live rows read on prod Oct 16)", () => {
+  const notaryLeader = `DraŌ/Check Copy${" .".repeat(35)} $5.00 Notary${" .".repeat(45)}.FREE`;
+  // [published id, fee name, stored line]: a neighbour's price is not this free fee's condition.
+  const free: Array<[number, string, string]> = [
+    [74, "Paper Statements or eStatements", "Replace Debit Card (first 2 cards free) $5.00 Paper Statements or eStatements Free"],
+    [11929, "Automatic Overdraft Fee - Line of Credit Transfer", "Automatic Overdraft Fee: Express Checking – $1 for each share savings transfer. Transfer from Automatic Overdraft Line of Credit Loans – $0."],
+    [12134, "Business Online Bill Pay - Business Essentials", "Wire Transfer Services Incoming - Domestic/Foreign $15.00/Transfer Outgoing - Domestic $25.00/Transfer Outgoing - Foreign $40.00/Transfer Business Online Banking Free Business Online Bill Pay Free BUSINESS ADVANTAGE CHECKING Monthly Account"],
+    [13040, "Check Free (bill pay)", "Check Free (bill pay) FREE Replacement key $50.00"],
+    [13124, "Notary Services", "Record Searches (per hour/minimum) $30/$25 Notary Services No Charge"],
+    [89048, "Foreign ATM usage", "Foreign ATM usage No Charge Customer (incoming) $15.00"],
+    [51445, "Checking Account monthly fee", "Checking Account monthly fee: FREE | Certified Letter Fee: $10"],
+    [38491, "Foreign Transaction Fees", "Foreign Transaction Fees No Charge | Night Depository Bags &amp; Key $ 30.00"],
+    [47440, "Zelle Transfer", "Zelle Transfer: No Charge | Subordination agreement: $175.00"],
+    [47583, "Notary Service", "Notary Service FREE ATM Transaction fee (per transaction over three per month) $2.00"],
+    [56935, "Notary", notaryLeader],
+    [85792, "Night Depository", "Night Depository FREE Copy of Transaction $15.00"],
+    [95011, "Coin Machine (Member)", "Account Reconcilement $15.00 per hour Coin Machine (Member) NONE"],
+  ];
+  // A $0 whose own row prices it under a condition still fails.
+  const conditional: Array<[number, string, string]> = [
+    [10808, "Service charge (NOW Account, minimum daily balance $1,000)", "balance of $1,000 (per statement cycle) . . . . ... No Charge"],
+    [11756, "Express Checking Monthly Fee", "Express Checking Monthly Fee: $0 with e-Statements and Direct Deposit. With e-Statements OR Direct Deposit – $5. Without e-Statements &amp; Direct Deposit – $10."],
+    [11772, "1st Checking Monthly Fee", "Star Checking Monthly Fee: $5 with either e-Statements or Direct Deposit. Without e-Statements or Direct Deposit – $10. 1st Checking Monthly Fee: $0 with e-Statements. Without e-Statements – $5."],
+    [13219, "Notary Fee", "Checking Non-Sufficient Funds (NSF) &amp; Overdraft (OD)* ................. $30.00 | Notary Fee ($5.00 charge for non-F&amp;M customers) ....................No Charge"],
+    [61335, "Standard Checking Monthly Fee - Balance over", "Standard Checking Monthly Fee - Balance over $250 | FREE"],
+    [68893, "Courtesy Pay fees are", "Courtesy pay that covers purchases when you have an oops moment and overdraw. No fee for transactions $15 and under!**"],
+    [49541, "Copy of Statement: Online", "Copy of Statement: Online-FREE; In Branch | $3.00 Each | Transcripts at Branch"],
+    [73737, "Coin Counting (Mbr up to /Mbr over /Non-Mbr)", "Coin Counting (Mbr up to $100/Mbr over $100/Non-Mbr) | FREE/5%/10%"],
+    [43512, "Dormant Account Fee Accounts with no activity for 12 months. Dormant accounts with", "Dormant Account Fee Accounts with no activity for 12 months. Dormant accounts with $0.00 balance will be closed. | $10.00 per quarter | Conduct a transaction (deposit or withdrawal) at least once per year"],
+    [39407, `Overdraft Transfer Fee${"…".repeat(29)}`, "If an individual overdraft payment is $20 or less any overdraft fees are waived or refunded."],
+    [44978, "Check Printing (members over 62)", "Check Printing (members over 62) ----------- No Charge | Money Orders ------------------------------------ $3.00 each"],
+    [54014, "CASHIER’S CHECKS: first three (3)", "CASHIER’S CHECKS: first three (3) FREE per month, $1.50 thereafter; members only"],
+    [84553, "Foreign Check Deposit (below )", "Return NSF Item*.................................................................. $27.50 | Foreign Check Deposit (below $10,000) .................................FREE"],
+    // Read as free by the advisor, still held here: the $15 and $5 sit in the fee's own row.
+    [90675, "Returned Deposit Item Fee", "| Returned Deposit Item Fee *$0.00 for consumer accounts* *$15.00 for business accounts* | $15 |"],
+    [22672, "Monthly Service Fee", "Monthly Service Charge 0.00 for 1st account 2nd account $5.00"],
+  ];
+
+  it.each(free)("%i is a free line, not conditional", (_id, name, line) => {
+    expect(conditionalZero(0, line, name)).toBe(false);
+  });
+  it.each(conditional)("%i stays conditional", (_id, name, line) => {
+    expect(conditionalZero(0, line, name)).toBe(true);
+  });
+});
