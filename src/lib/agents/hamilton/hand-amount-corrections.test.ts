@@ -104,7 +104,7 @@ describe("hand amount corrections (#1334)", () => {
     })]);
     // Were the $10 printed on the row's own line, the row would be left alone.
     const elsewhere = { ...usbank, normalized_text: `$10 Monthly Maintenance Fee waived on every U.S. Bank Smartly® Checking account\n${USBANK_CHECKING}` };
-    expect(planHandAmountCorrections([elsewhere]).skipped).toContainEqual({ feePublishedId: 102971, reason: "cut amount still traces" });
+    expect(planHandAmountCorrections([elsewhere]).skipped).toContainEqual({ feePublishedId: 102971, reason: "wrong read traces to another line" });
   });
 
   it("is a fixed list that leaves a changed, corrected or untraceable row alone", () => {

@@ -249,7 +249,9 @@ export function planHandAmountCorrections(rows: LiveRow[]): Pick<HandAmountResul
       ? squash(text ?? "").includes(squash(row.fee_name))
       : wrongRead.ok && (fix.wrongReadTracesTo == null || wrongRead.sourceLine !== fix.wrongReadTracesTo);
     if (wrongReadStands) {
-      skipped.push({ feePublishedId: fix.feePublishedId, reason: fix.oldNameNotPrinted ? "old name still printed" : "cut amount still traces" });
+      const reason = fix.oldNameNotPrinted ? "old name still printed"
+        : fix.wrongReadTracesTo != null ? "wrong read traces to another line" : "cut amount still traces";
+      skipped.push({ feePublishedId: fix.feePublishedId, reason });
       continue;
     }
     corrected.push({

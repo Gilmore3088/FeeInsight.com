@@ -7,6 +7,13 @@ import {
   handTakedownBatchSizes, planHandAudienceFixes, planHandTakedowns, type LiveAudienceRow, type LiveTakedownRow,
 } from "./hand-takedowns";
 
+// #1659: U.S. Bank's Bank Smartly row, live at $10 now; the hand amount correction makes it $12.
+const US_BANK_SMARTLY_LIVE: LiveTakedownRow = {
+  fee_published_id: 102971, lineage_ref: 117576, institution_id: 5, canonical_fee_key: "monthly_maintenance",
+  fee_name: "Maintenance Fee waived on every U.S. Bank Smartly® Checking account", amount: "10.00",
+};
+const US_BANK_SMARTLY_CORRECTED: LiveTakedownRow = { ...US_BANK_SMARTLY_LIVE, fee_name: "Bank Smartly Checking Monthly Maintenance Fee", amount: "12.00" };
+
 // The two #1496 rows as they read live on prod, read-only, Oct 16.
 const LIVE: LiveTakedownRow[] = [
   { fee_published_id: 80423, lineage_ref: 90425, institution_id: 5433, canonical_fee_key: "document_reproduction", fee_name: "Fax (Local)", amount: "15.00" },
@@ -41,6 +48,8 @@ const LIVE: LiveTakedownRow[] = [
   { fee_published_id: 104566, lineage_ref: 173294, institution_id: 5, canonical_fee_key: "stop_payment", fee_name: "Stop payment", amount: "25.00" },
   { fee_published_id: 102973, lineage_ref: 117579, institution_id: 5, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly maintenance fee", amount: "12.00" },
   { fee_published_id: 15727, lineage_ref: 9064, institution_id: 4956, canonical_fee_key: "atm_non_network", fee_name: "plus ATM owner fees", amount: "1.00" },
+  // 102971 as it reads once its hand amount correction has run (102973 waits on it).
+  US_BANK_SMARTLY_CORRECTED,
 ];
 const CONDITIONAL_ZERO = [43512, 54014, 61335, 68893, 70121, 73737, 77121, 77122, 77618, 84553, 87079, 87461, 88213, 91505, 120559];
 const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727];
@@ -129,6 +138,16 @@ describe("hand takedowns (James, Oct 16)", () => {
       ],
     });
     expect(planHandTakedowns([]).skipped.map((row) => row.reason)).toEqual(IDS.map(() => "not live"));
+    // #1659: the student page's copy waits until 102971 reads as corrected ($12, the account's name).
+    const studentCopy = HAND_TAKEDOWNS.filter((entry) => entry.feePublishedId === 102973);
+    const student = LIVE.find((row) => row.fee_published_id === 102973)!;
+    expect(planHandTakedowns([student, US_BANK_SMARTLY_LIVE], studentCopy)).toEqual({
+      takenDown: [], skipped: [{ feePublishedId: 102973, reason: "waiting on #102971" }],
+    });
+    expect(planHandTakedowns([student], studentCopy).skipped).toEqual([{ feePublishedId: 102973, reason: "waiting on #102971" }]);
+    expect(planHandTakedowns([student, US_BANK_SMARTLY_CORRECTED], studentCopy)).toEqual({
+      takenDown: [{ feePublishedId: 102973, feeVerifiedId: 117579, reason: "duplicate of #102971 (#1659)" }], skipped: [],
+    });
     // Another institution or category at the same id, name and price is not the listed row.
     const moved = [{ ...LIVE[4], institution_id: 1 }, { ...LIVE[5], canonical_fee_key: "legal_process" }];
     expect(planHandTakedowns(moved, HAND_TAKEDOWNS.slice(4, 6)).skipped.map((row) => row.reason)).toEqual(["changed since listed", "changed since listed"]);
@@ -152,6 +171,13 @@ describe("hand takedowns (James, Oct 16)", () => {
     expect(writes.some((write) => write.text.includes("INSERT INTO pipeline_feedback"))).toBe(true);
     expect(writes.filter((write) => write.text.includes("INSERT INTO agent_run_events"))).toHaveLength(1);
     expect(writes.some((write) => /\bDELETE\b/i.test(write.text))).toBe(false);
+  });
+
+  it("reads the rows an entry waits on along with the listed rows (#1659)", async () => {
+    const { db } = fakeDb(LIVE);
+    await applyHandTakedowns(db as never, { runId: 5, batchId: "b", dryRun: true });
+    const read = db.mock.calls.find(([strings]) => (strings as TemplateStringsArray).join("?").includes("SELECT fp.fee_published_id"));
+    expect(read?.[1]).toEqual(expect.arrayContaining([102973, 102971]));
   });
 
   it("writes nothing on a dry run, and nothing again once the rows are down", async () => {
