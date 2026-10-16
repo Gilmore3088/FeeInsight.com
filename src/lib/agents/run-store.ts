@@ -410,6 +410,7 @@ async function executeAgenticStep(
       return runStateExpertStep({
         db: tx,
         runId: run.id,
+        stepId: step.id,
         stateCode,
         dryRun: run.runKind === "dry_run",
       });

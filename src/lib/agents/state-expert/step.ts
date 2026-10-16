@@ -3,6 +3,7 @@ import type { sql } from "@/lib/data-store/connection";
 import { notPublishedOnlineCounts, type NotOnlineTierCount } from "@/lib/agents/magellan/escalation";
 
 import { PEER_MIN_INSTITUTIONS, refreshStateMemory, ALL_TIERS } from "./memory";
+import { recordStateExpertNotes } from "./notes";
 import { loadGroupGaps, stateGroupOrder } from "./work-list";
 
 type SqlTag = typeof sql;
@@ -22,6 +23,7 @@ export interface StateExpertStepResult {
 export async function runStateExpertStep(options: {
   db: SqlTag;
   runId: number;
+  stepId?: number | null;
   stateCode?: string;
   dryRun?: boolean;
 }): Promise<StateExpertStepResult> {
@@ -58,6 +60,19 @@ export async function runStateExpertStep(options: {
   // target first. The paid passes take this state's institutions in this order.
   const workListGroups = stateGroupOrder(await loadGroupGaps(options.db), memory.stateCode);
 
+  // Dated notes (#1573): document types common in the state and signed state fee bills, stored
+  // when new, with a `state_expert.notes` event (a skipped one before the migration).
+  const notes = await recordStateExpertNotes({
+    db: options.db,
+    runId: options.runId,
+    stepId: options.stepId ?? null,
+    stateCode: memory.stateCode,
+    dryRun: options.dryRun,
+  });
+  const notesText = notes.dryRun || !notes.schemaReady
+    ? notes.found > 0 ? `, ${notes.found.toLocaleString()} new note(s) not stored` : ""
+    : notes.written > 0 ? `, ${notes.written.toLocaleString()} new note(s)` : "";
+
   const stateWide = memory.peerLevels.filter((level) => level.tier === ALL_TIERS);
   const feesWithPeers = stateWide.filter((level) => level.count >= PEER_MIN_INSTITUTIONS);
   const topFinder = memory.strategies.finder[0]?.strategy ?? null;
@@ -69,7 +84,7 @@ export async function runStateExpertStep(options: {
       `${memory.expertName} refreshed the ${memory.stateCode} memory: ${memory.institutionCount.toLocaleString()} institutions, ` +
       `${memory.publishedFeeCount.toLocaleString()} published fees, peer levels for ${feesWithPeers.length.toLocaleString()} fee categories ` +
       `with ${PEER_MIN_INSTITUTIONS}+ institutions` +
-      `${notOnlineTotal ? `, ${notOnlineTotal.toLocaleString()} not published online` : ""}${stored ? "" : " (memory not stored)"}.`,
+      `${notOnlineTotal ? `, ${notOnlineTotal.toLocaleString()} not published online` : ""}${notesText}${stored ? "" : " (memory not stored)"}.`,
     detail: {
       state_code: memory.stateCode,
       expert_name: memory.expertName,
@@ -92,6 +107,10 @@ export async function runStateExpertStep(options: {
       not_published_online_total: notOnlineTotal,
       work_list_groups: workListGroups,
       memory_stored: stored,
+      notes_schema_ready: notes.schemaReady,
+      notes_found: notes.found,
+      notes_written: notes.written,
+      notes_kinds: notes.kinds,
       dry_run: Boolean(options.dryRun),
       provider_call_queued: false,
     },
