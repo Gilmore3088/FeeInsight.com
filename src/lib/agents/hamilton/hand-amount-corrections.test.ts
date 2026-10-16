@@ -33,10 +33,16 @@ const PRIMIS_DISCLOSURE =
   "DISCRETIONARY OVERDRAFT SERVICES DISCLOSURE\nWhat You Need to Know About Overdrafts and Overdraft Fees\n" +
   "Primis offers the following services to help manage overdrafts:\n1. Account Transfer Service: You may establish an automatic transfer from an eligible Primis deposit account\n" +
   "to cover overdrafts. There is no fee for this service.\n";
-const TEXTS: Record<number, string> = { 23695: `${PRIMIS_DISCLOSURE}${PRIMIS_PRICING}` };
+/**
+ * #1659: U.S. Bank's checking-accounts page as stored (text 20686, doc 23628, read-only, Oct 16),
+ * lines 445-503 and 543-579 in order (some lines between left out). The first "$10" anywhere in the
+ * text is the Elite Money Market line at the end.
+ */
+const USBANK_CHECKING = "SMARTER BANKING + REWARDS\n\nBank Smartly Checking\n\n$12 Monthly Maintenance Fee can be waived in multiple ways1\n\nFlexible banking with perks and rewards, debit card access, interest earning and optional checks\n\nTrack spending, savings and subscriptions to help you manage your budget, all in one place\n\n$25 minimum opening deposit\n\nOpen an account\n\nLearn about Bank Smartly Checking\n\nNO MONTHLY MAINTENANCE FEES\n\nYoung adult & student checking (ages 18 to 24)\n\n$0 Monthly Maintenance Fee; $12 fee is waived for ages 18 to 241\n\nBank Smartly Checking with special benefits for young adults, including perks and rewards that grow with you\n\nSpending and savings goal tracking available anytime with the mobile app\n\nOverdraft Fee Forgiven and protection options\n\n$25 minimum opening deposit\n\nOpen an account\n\nLearn about young adult checking\n\nBUILD FINANCIAL SKILLS + DEBIT CARD\n\nTeen checking (ages 13 to 17)\n\n$0 Monthly Maintenance Fee; $12 fee is waived for ages 13 to 171\n\nBank Smartly Checking with special benefits for teens, including money management with a debit card and optional checks\n\nTools for saving, spending tracking and overdraft protection\n\n$25 minimum opening deposit\n\nOpen an account\n\nLearn about teen checking account\n\nBANKING MADE SIMPLE\n\nSafe Debit account2\n\n$4.95 Monthly Maintenance Fee with no minimum balance requirement\n\nMoney management with a debit card – no checks, no overdraft fees3\n\n$25 minimum opening deposit\n\nSeniors (age 65 or over)\n\n$12 Monthly Maintenance Fee waived on every U.S. Bank Smartly® Checking account1\n\n50% discount on personal check re-orders (U.S. Bank logo or personal)8 and the annual safe deposit box rental fees*\n\nNon-U.S. Bank ATM Surcharge reimbursed for the first fee charged by an ATM Owner (one per statement period, domestic only)45\n\n$10 Monthly Maintenance Fee waived on all Elite Money Market account with a U.S. Bank Smartly® Checking account\n";
+const TEXTS: Record<number, string> = { 23695: `${PRIMIS_DISCLOSURE}${PRIMIS_PRICING}`, 23628: USBANK_CHECKING };
 
 /** Each live row as it reads on prod (Oct 15; 5600 Oct 16), with its document's stored text. */
-const OLD_NAMES: Record<number, string> = { 49175: "00 Loan Skip A Pay Fee", 29166: "00 ATM Transactions (per item)", 5600: "Overdraft Item Fee" };
+const OLD_NAMES: Record<number, string> = { 49175: "00 Loan Skip A Pay Fee", 29166: "00 ATM Transactions (per item)", 5600: "Overdraft Item Fee", 102971: "Maintenance Fee waived on every U.S. Bank Smartly® Checking account" };
 const liveRows = HAND_AMOUNT_CORRECTIONS.map((fix) => ({
   fee_published_id: fix.feePublishedId,
   lineage_ref: fix.feePublishedId + 1_000_000,
@@ -56,12 +62,12 @@ describe("hand amount corrections (#1334)", () => {
     }
   });
 
-  it("corrects all nine on their own stored text: the corrected price traces and the wrong one no longer does", () => {
+  it("corrects all ten on their own stored text: the corrected price traces and the wrong one no longer does", () => {
     const plan = planHandAmountCorrections(liveRows);
     expect(plan.skipped).toEqual([]);
     expect(plan.corrected.map((fix) => [fix.feePublishedId, fix.from, fix.to])).toEqual([
       [49175, 29, 29.95], [29166, 1, 1.5], [141772, 1, 1.5], [97435, 1, 1.5],
-      [61650, 1, 1.5], [61934, 4, 4.5], [79234, 7, 7.5], [79237, 3, 3.5], [5600, 0, 35],
+      [61650, 1, 1.5], [61934, 4, 4.5], [79234, 7, 7.5], [79237, 3, 3.5], [5600, 0, 35], [102971, 10, 12],
     ]);
     expect(plan.corrected.find((fix) => fix.feePublishedId === 49175)).toMatchObject({ oldName: "00 Loan Skip A Pay Fee", newName: "Loan Skip A Pay Fee" });
     expect(plan.corrected.find((fix) => fix.feePublishedId === 5600)).toMatchObject({
@@ -82,6 +88,23 @@ describe("hand amount corrections (#1334)", () => {
     // Were the old name printed, the row would be left alone.
     const printed = { ...primis, normalized_text: `${PRIMIS_PRICING}Overdraft  item fee | $0.00\n` };
     expect(planHandAmountCorrections([printed]).skipped).toContainEqual({ feePublishedId: 5600, reason: "old name still printed" });
+  });
+
+  it("#1659: U.S. Bank's Bank Smartly row takes its printed $12, and its $10 traces only to the Elite Money Market line", () => {
+    expect(checkFeeAgainstSource(USBANK_CHECKING, "Bank Smartly Checking Monthly Maintenance Fee", 12, ".", "monthly_maintenance"))
+      .toEqual({ ok: true, sourceLine: "$12 Monthly Maintenance Fee can be waived in multiple ways1" });
+    const fix = HAND_AMOUNT_CORRECTIONS.find((entry) => entry.feePublishedId === 102971)!;
+    // The wrong read still traces, but only to the other fee's line it was taken from.
+    expect(checkFeeAgainstSource(USBANK_CHECKING, "Maintenance Fee waived on every U.S. Bank Smartly® Checking account", 10, ".", "monthly_maintenance"))
+      .toEqual({ ok: true, sourceLine: fix.wrongReadTracesTo });
+    const usbank = liveRows.find((row) => row.fee_published_id === 102971)!;
+    expect(planHandAmountCorrections([usbank]).corrected).toEqual([expect.objectContaining({
+      feePublishedId: 102971, from: 10, to: 12, oldName: "Maintenance Fee waived on every U.S. Bank Smartly® Checking account",
+      newName: "Bank Smartly Checking Monthly Maintenance Fee", sourceLine: "$12 Monthly Maintenance Fee can be waived in multiple ways1",
+    })]);
+    // Were the $10 printed on the row's own line, the row would be left alone.
+    const elsewhere = { ...usbank, normalized_text: `$10 Monthly Maintenance Fee waived on every U.S. Bank Smartly® Checking account\n${USBANK_CHECKING}` };
+    expect(planHandAmountCorrections([elsewhere]).skipped).toContainEqual({ feePublishedId: 102971, reason: "wrong read traces to another line" });
   });
 
   it("is a fixed list that leaves a changed, corrected or untraceable row alone", () => {
@@ -120,10 +143,10 @@ describe("hand amount corrections (#1334)", () => {
       return Promise.resolve([]);
     });
     const result = await applyHandAmountCorrections(db as never, { runId: 7, dryRun: false });
-    expect(result.corrected).toHaveLength(9);
+    expect(result.corrected).toHaveLength(10);
     expect(result.rejectedTwins).toEqual([113133, 112658, 157467, 125738, 66392, 167844, 102462]);
     const verifiedUpdates = calls.filter((call) => call.text.includes("UPDATE verified_fee_observations") && call.text.includes("SET amount"));
-    expect(verifiedUpdates).toHaveLength(9);
+    expect(verifiedUpdates).toHaveLength(10);
     // Each update lands only while the row still holds the cut amount.
     expect(calls.filter((call) => call.text.includes("UPDATE published_fee_records")).every((call) => call.text.includes("AND amount ="))).toBe(true);
     const feedback = calls.find((call) => call.text.includes("INSERT INTO pipeline_feedback"));
@@ -147,7 +170,7 @@ describe("hand amount corrections (#1334)", () => {
       return Promise.resolve([]);
     });
     const result = await applyHandAmountCorrections(db as never, { runId: 7, dryRun: true });
-    expect(result.corrected).toHaveLength(9);
+    expect(result.corrected).toHaveLength(10);
     expect(db.mock.calls.some(([strings]) => /UPDATE|INSERT/.test((strings as TemplateStringsArray).join(" ")))).toBe(false);
   });
 });
