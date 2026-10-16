@@ -75,8 +75,8 @@ export function CharterExhibit({
         eyebrow={eyebrow}
         title={`${place ? `${place} credit` : "Credit"} unions are lower on ${cuCheaper} of ${rows.length} ${place ? "fees" : "everyday fees"}`}
       >
-        Median price at banks and at credit unions for each fee{place ? ` in ${place}` : ""}. The gap between the dots is
-        the difference between the two medians.
+        For each fee{place ? ` in ${place}` : ""}, the median of institution medians at banks and at credit unions
+        (overdraft: each institution&apos;s highest price). The gap between the dots is the difference.
       </SectionHeading>
 
       <div className="mt-7 rounded-2xl border border-border bg-white p-5 sm:p-7">
