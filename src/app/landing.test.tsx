@@ -115,8 +115,8 @@ const wholePage = () =>
   renderToStaticMarkup(
     <>
       <LandingHero summary={summary} />
-      <LandingWorkflow report={sampleWorkflowReport()} />
       <LandingResearch data={data} />
+      <LandingWorkflow report={sampleWorkflowReport()} />
       <LandingProvenance summary={summary} />
       <LandingPricing />
       <LandingFaq summary={summary} />
@@ -160,7 +160,8 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     const html = renderToStaticMarkup(<LandingResearch data={data} />);
     const t = text(html);
     expect(html).toContain('aria-label="Bank Fee Index research"');
-    expect(t).toContain("Overdraft fees by Fed district");
+    expect(t).toContain("Overdraft by Fed district");
+    expect(html).toContain('role="img" aria-label="Bank Fee Index"');
     expect(html).toContain('aria-label="Map of the 12 Federal Reserve districts, shaded by overdraft median"');
     expect(t).toContain("Boston · District 1 $27.25 median · $1.75 below national");
     expect(html).toContain('href="/research/district/1"');
@@ -187,10 +188,10 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     expect(t).not.toMatch(/rolling calendar|every month/i);
   });
 
-  it("puts the one-institution workflow before the research map", () => {
+  it("puts the research map under the hero, then the live samples", () => {
     const page = wholePage();
-    expect(page.indexOf('id="see-it-work"')).toBeGreaterThan(-1);
-    expect(page.indexOf('id="see-it-work"')).toBeLessThan(page.indexOf('aria-label="Bank Fee Index research"'));
+    expect(page.indexOf('aria-label="Bank Fee Index research"')).toBeGreaterThan(-1);
+    expect(page.indexOf('aria-label="Bank Fee Index research"')).toBeLessThan(page.indexOf('id="live-samples"'));
   });
 
   it("keeps at most five short FAQ answers", () => {
@@ -203,10 +204,9 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
   });
 
   it("keeps the copy rules and the word budget", () => {
-    // The report excerpt is the sample report itself, in the report's own words; the rules are for the page's copy.
-    // The Compare screen's tables are names and figures, not copy.
+    // The report page is the report's own section, in its words; tables are names and figures, not copy.
     const html = wholePage()
-      .replace(/<div inert=""[\s\S]*?(?=<div aria-hidden="true" class="pointer-events-none)/, "")
+      .replace(/<div class="\[&amp;&gt;section\][\s\S]*?<\/section><\/div>/, "")
       .replace(/<table[\s\S]*?<\/table>/g, "");
     expect(text(html)).not.toMatch(/—|!|real-time|recommend|\bAI\b|verified|99%/i);
     // The markup holds all three steps (two hidden) and still stays under the old page's 889

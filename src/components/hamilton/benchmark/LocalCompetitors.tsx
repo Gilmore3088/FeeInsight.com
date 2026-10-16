@@ -36,12 +36,9 @@ export function competitorColumns(market: BriefingLocalMarket, notCompared: read
 export function LocalCompetitors({
   market,
   notCompared = [],
-  headingId = "local-competitors",
 }: {
   market: BriefingLocalMarket;
   notCompared?: readonly string[];
-  /** For a page that shows the table more than once (the homepage's phone and wide crops). */
-  headingId?: string;
 }) {
   const columns = competitorColumns(market, notCompared);
   if (columns.length === 0) return null;
@@ -49,8 +46,8 @@ export function LocalCompetitors({
   const places = market.info.places.join("; ");
   const institutionName = market.rows.find((row) => row.own)?.name ?? "Research institution";
   return (
-    <section aria-labelledby={headingId} className="flex flex-col gap-3">
-      <h2 id={headingId} className="text-lg font-semibold text-warm-900">
+    <section aria-labelledby="local-competitors" className="flex flex-col gap-3">
+      <h2 id="local-competitors" className="text-lg font-semibold text-warm-900">
         {institutionName}&apos;s local competitors
       </h2>
       <p className="text-sm text-warm-700">

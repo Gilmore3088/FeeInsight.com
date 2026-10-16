@@ -21,6 +21,7 @@ const COMPETITORS: [number, string, string, number | null][] = [
 
 /** key, label, schedule name, own amount, competitor amounts (in COMPETITORS order). */
 const LINES: [string, string, string, number, number[]][] = [
+  ["wire_intl_outgoing", "Outgoing international wire", "Outgoing International Wire", 75, [45, 50, 50, 55, 40, 50, 35, 60]],
   ["overdraft", "Overdraft (per item)", "Overdraft Fee (per item)", 37, [35, 34, 36, 36, 35, 33, 30, 25]],
   ["nsf", "NSF / returned item", "Returned Item Fee", 35, [35, 34, 36, 36, 35, 33, 30, 25]],
   ["stop_payment", "Stop payment", "Stop Payment", 30, [31, 35, 30, 32, 30, 25, 25, 20]],
@@ -30,6 +31,8 @@ const LINES: [string, string, string, number, number[]][] = [
 ];
 
 const READ_ON = "2026-10-08";
+/** A schedule cell that states two charges at once: it passes the source check but names "incoming". */
+const SHARED_CELL: Record<string, string> = { "12:wire_intl_outgoing": "Incoming or Outgoing International Wire…… $50.00" };
 const url = (id: number) => `https://example.com/${id}/fee-schedule.pdf`;
 const money = (v: number) => `$${v.toFixed(2)}`;
 
@@ -42,7 +45,7 @@ function feeLine(id: number, key: string, name: string, amount: number): MarketF
     source_url: url(id),
     updated_at: `${READ_ON}T12:00:00Z`,
     schedule_read_on: READ_ON,
-    source_line: `${name}…… ${money(amount)}`,
+    source_line: SHARED_CELL[`${id}:${key}`] ?? `${name}…… ${money(amount)}`,
   };
 }
 
@@ -93,7 +96,7 @@ export function sampleWorkflowReport(): MarketReport {
     readiness: { ready: true, comparableLines: lines.length, ownLines: lines.length, competitorsWithData: 21, competitorsInMarket: 24, reason: null },
     lines,
     named,
-    findings: ["Overdraft (per item) is above the local middle half: $37.00 against a local median of $34.50."],
+    findings: ["Outgoing international wire is above the local middle half: $75.00 against a local median of $50.00."],
   };
   return {
     data: {

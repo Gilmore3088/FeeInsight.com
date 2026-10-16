@@ -129,8 +129,8 @@ export default async function LandingPage() {
       <ConsumerNav />
       <main id="main-content">
         <LandingHero summary={summary} />
-        <LandingWorkflow report={liveSample} />
         <LandingResearch data={data} />
+        <LandingWorkflow report={liveSample} />
         <LandingProvenance summary={summary} />
         <LandingPricing />
         <LandingFaq summary={summary} />

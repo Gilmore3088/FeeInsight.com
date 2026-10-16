@@ -23,7 +23,7 @@ export function SampleTabs({ tabs, label }: { tabs: { key: string; label: string
   return (
     <div>
       {tabs.length > 1 ? (
-        <div role="tablist" aria-label={label} className="flex w-fit max-w-full max-sm:mx-auto gap-1 rounded-full border border-border bg-surface-0 p-1">
+        <div role="tablist" aria-label={label} className="mx-auto flex w-fit max-w-full gap-1 rounded-full border border-border bg-surface-0 p-1">
           {tabs.map((tab, i) => {
             const on = tab.key === active;
             return (
