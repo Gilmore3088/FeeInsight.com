@@ -1,6 +1,8 @@
 import { TrackLink } from "@/components/track-link";
 import { UnstatedAudienceFootnote, UnstatedAudienceMark } from "@/components/unstated-audience";
 import { DEMO_REQUEST_NAV } from "@/components/nav-items";
+import Link from "next/link";
+import { PRODUCT_NAME } from "@/lib/constants";
 import type { ActionLink, ComputeRule, ExampleBenchmark, PipelineStage } from "./methodology-view";
 
 const SANS = { fontFamily: "var(--fi-font-sans)" } as const;
@@ -15,7 +17,7 @@ export const METHODOLOGY_SECTIONS = [
 /** Dark band: what the page is, how fresh the data is, and where to jump. */
 export function MethodologyHero({ freshnessLabel }: { freshnessLabel: string }) {
   return (
-    <section className="bg-ink text-paper">
+    <section className="fi-on-navy bg-ink text-paper">
       <div className="mx-auto max-w-page px-4 pb-8 pt-10 sm:px-6 sm:pb-10 sm:pt-14">
         <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e0716a]">
           <span aria-hidden="true" className="h-px w-8 bg-[#e0716a]/60" />
@@ -25,7 +27,7 @@ export function MethodologyHero({ freshnessLabel }: { freshnessLabel: string }) 
           How a fee becomes a published number
         </h1>
         <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-paper/80 sm:text-base">
-          Every figure in the Bank Fee Index starts as a line in a schedule the institution published itself.
+          Every figure in the {PRODUCT_NAME} starts as a line in a schedule the institution published itself.
         </p>
         <p className="mt-5 inline-flex items-center gap-2 text-[12px] text-paper/75">
           <span aria-hidden="true" className="h-2 w-2 rounded-full bg-[#7fb59b]" />
@@ -86,7 +88,7 @@ export function PipelineFlow({ stages }: { stages: PipelineStage[] }) {
   return (
     <section aria-labelledby="pipeline-heading" id="pipeline" className="scroll-mt-24">
       <SectionTitle id="pipeline-heading" eyebrow="How it flows" title="From the institution's schedule to the index">
-        Six steps, each logged. Counts are live; a step without a public count shows none.
+        Six steps, each logged.
       </SectionTitle>
 
       <div className="mt-6 flex items-center gap-3 rounded-2xl border border-border bg-white px-4 py-3 text-ink">
@@ -125,13 +127,14 @@ export function PipelineFlow({ stages }: { stages: PipelineStage[] }) {
                 {stage.figures.length > 0 && (
                   <dl className="grid shrink-0 grid-cols-2 gap-3 sm:w-56 sm:grid-cols-1">
                     {stage.figures.map((f) => (
-                      <div key={f.label}>
-                        <dt className="sr-only">{f.label}</dt>
-                        <dd>
-                          <span className="block text-[1.6rem] font-semibold leading-none tabular-nums text-ink" style={MONO}>
+                      <div key={f.label} className="flex min-w-0 flex-col">
+                        <dt className="order-2 mt-1 text-[12px] text-ink-muted">{f.label}</dt>
+                        <dd className="order-1 min-w-0">
+                          <span className="block text-[1.35rem] font-semibold leading-none tabular-nums text-ink sm:text-[1.6rem]" style={MONO}>
                             {f.value}
                           </span>
-                          <span className="mt-1 block text-[12px] text-ink-muted">{f.label}</span>
+                        </dd>
+                        <dd className="order-3 min-w-0">
                           {f.share !== null && (
                             <span
                               role="img"
@@ -160,7 +163,7 @@ export function PipelineFlow({ stages }: { stages: PipelineStage[] }) {
           Every day · Deming
         </p>
         <p className="mt-1 text-[14px] leading-relaxed text-ink-soft">
-          Confirmed mistakes are replayed against today&apos;s rules, so a fixed error stays fixed.
+          Every day, fees we took down for a confirmed error are run through today&apos;s checks again. If a check stops catching one, we&apos;re alerted.
         </p>
       </div>
     </section>
@@ -189,7 +192,7 @@ export function MedianExhibit({ example, freshnessLabel }: { example: ExampleBen
         <span aria-hidden="true" className="absolute inset-x-0 top-1/2 h-2 -translate-y-1/2 rounded-full bg-paper" />
         <span
           aria-hidden="true"
-          className="absolute top-1/2 h-2 -translate-y-1/2 rounded-full bg-brick/35"
+          className="absolute top-1/2 h-2 -translate-y-1/2 rounded-full bg-brick/60"
           style={{ left: `${example.lowPct}%`, width: `${Math.max(1, example.highPct - example.lowPct)}%` }}
         />
         <span aria-hidden="true" className="absolute top-0 h-8 w-0.5 -translate-x-1/2 rounded bg-ink" style={{ left: `${example.medianPct}%` }} />
@@ -210,7 +213,7 @@ export function MedianExhibit({ example, freshnessLabel }: { example: ExampleBen
           <dd className="font-semibold tabular-nums text-ink">{example.institutions}, one value each</dd>
         </div>
       </dl>
-      <p className="mt-3 text-[12px] text-ink-muted">From published fees in the Bank Fee Index. {freshnessLabel}.</p>
+      <p className="mt-3 text-[12px] text-ink-muted">From published fees in the {PRODUCT_NAME}. {freshnessLabel}.</p>
       <UnstatedAudienceFootnote show={example.unstatedAudience} className="mt-2" />
     </figure>
   );
@@ -232,7 +235,7 @@ export function ComputeRules({ rules }: { rules: ComputeRule[] }) {
           </div>
           <p className="mt-1 text-[14px] leading-relaxed text-ink-soft">{rule.line}</p>
           {rule.detail.length > 0 && (
-            <details className="group mt-1">
+            <details className="group mt-1" open={rule.open}>
               <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1.5 text-[13px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink [&::-webkit-details-marker]:hidden">
                 <span className="group-open:hidden">More</span>
                 <span className="hidden group-open:inline">Less</span>
@@ -264,13 +267,17 @@ const LIMITS = [
     title: "Published prices, not revenue",
     body: "Waivers and negotiated terms do not appear on a schedule, so they are not in the index.",
   },
+  {
+    title: "Coverage is uneven",
+    body: "Thinner where schedules are not online, and for business, loan and investment fees.",
+  },
 ] as const;
 
 export function Limits() {
   return (
     <section aria-labelledby="limits-heading" id="limits" className="scroll-mt-24">
       <SectionTitle id="limits-heading" eyebrow="Limits" title="What we do not do" />
-      <ul className="mt-5 grid gap-3 md:grid-cols-3">
+      <ul className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {LIMITS.map((l) => (
           <li key={l.title} className="rounded-2xl border border-border bg-white px-4 py-4">
             <p className="flex items-center gap-2 text-[15px] font-bold text-ink" style={SANS}>
@@ -290,7 +297,7 @@ export function Limits() {
 /** The one next action: the sample report when it is live, else the report request; a demo second. */
 export function NextAction({ action }: { action: ActionLink }) {
   return (
-    <section aria-labelledby="next-heading" id="next" className="scroll-mt-24 rounded-2xl bg-ink px-5 py-6 text-paper sm:px-8 sm:py-8">
+    <section aria-labelledby="next-heading" id="next" className="fi-on-navy scroll-mt-24 rounded-2xl bg-ink px-5 py-6 text-paper sm:px-8 sm:py-8">
       <h2 id="next-heading" className="text-[1.4rem] font-bold leading-tight text-white sm:text-[1.75rem]" style={SANS}>
         See the method on one institution
       </h2>
@@ -315,6 +322,12 @@ export function NextAction({ action }: { action: ActionLink }) {
           {DEMO_REQUEST_NAV.label}
         </TrackLink>
       </div>
+      <Link
+        href="/institutions"
+        className="mt-3 inline-flex min-h-11 items-center text-[13px] text-paper/75 underline decoration-white/20 underline-offset-4 hover:text-white"
+      >
+        Or look up your own bank
+      </Link>
     </section>
   );
 }

@@ -6,6 +6,7 @@
 
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
 import { formatCount } from "@/lib/public-stats";
+import { PRODUCT_NAME } from "@/lib/constants";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT } from "@/lib/data-store/maturity";
 
@@ -53,7 +54,7 @@ function institutionFigure(n: number | null, label: string, monitored: number | 
 }
 
 /**
- * The six pipeline agents in order. A stage with no public live read (Rosetta, Knox, Darwin)
+ * The six pipeline agents in order. A stage with no public live read (Atlas, Rosetta, Knox, Darwin)
  * shows no number: the page never invents one.
  */
 export function pipelineStages(counts: PipelineCounts): PipelineStage[] {
@@ -62,18 +63,21 @@ export function pipelineStages(counts: PipelineCounts): PipelineStage[] {
     {
       key: "atlas",
       agent: "Atlas",
-      title: "Start from the regulators",
-      body: "Every bank and credit union in FDIC and NCUA records. Atlas schedules and logs each step.",
-      output: "Institution list",
-      figures: usable(monitored) ? [{ value: formatCount(monitored), label: "institutions monitored", share: null }] : [],
+      title: "Schedule and log every step",
+      body: "Atlas runs the pipeline and records each step, so every fee's path can be retraced.",
+      output: "A logged run for each institution",
+      figures: [],
     },
     {
       key: "magellan",
       agent: "Magellan",
       title: "Find the fee schedule",
-      body: "Finds the schedule on the institution's own site and keeps a dated copy.",
+      body: "Loads every bank and credit union from FDIC and NCUA records, finds each one's schedule on its own site and keeps a dated copy.",
       output: "Stored copy of the schedule",
-      figures: institutionFigure(counts.scheduleLinks, "with a schedule link on file", monitored),
+      figures: [
+        ...(usable(monitored) ? [{ value: formatCount(monitored), label: "institutions monitored", share: null }] : []),
+        ...institutionFigure(counts.scheduleLinks, "with a schedule link on file", monitored),
+      ],
     },
     {
       key: "rosetta",
@@ -95,7 +99,7 @@ export function pipelineStages(counts: PipelineCounts): PipelineStage[] {
       key: "darwin",
       agent: "Darwin",
       title: "Verify",
-      body: "Checks each fee against the stored text, its category and its usual range. Anything unsure waits for a person.",
+      body: "Checks each fee against the stored text, its category and its usual range. Anything unsure is held. It goes live only after a second check against the schedule confirms it; the rest wait for a person.",
       output: "Verified fees",
       figures: [],
     },
@@ -103,8 +107,8 @@ export function pipelineStages(counts: PipelineCounts): PipelineStage[] {
       key: "hamilton",
       agent: "Hamilton",
       title: "Publish",
-      body: "Publishes verified fees, each linked to the institution's own schedule.",
-      output: "The Bank Fee Index",
+      body: "Publishes verified fees to the index.",
+      output: `The ${PRODUCT_NAME}`,
       figures: [
         ...(usable(counts.observations)
           ? [{ value: formatCount(counts.observations), label: "published fee entries", share: null }]
@@ -195,6 +199,8 @@ export interface ComputeRule {
   detail: string[];
   /** Shown as a tag when the rule is not live yet. */
   status: string | null;
+  /** The disclosure starts open: the rule other pages link to. */
+  open?: boolean;
 }
 
 /**
@@ -204,6 +210,13 @@ export interface ComputeRule {
  */
 export function computeRules(sharedScheduleOnce: boolean): ComputeRule[] {
   return [
+    {
+      id: "sourced",
+      title: "Only traced fees count",
+      line: "Only fees traced to a stored schedule enter a median.",
+      detail: [],
+      status: null,
+    },
     {
       id: "median",
       title: "The median, not the average",
@@ -233,9 +246,9 @@ export function computeRules(sharedScheduleOnce: boolean): ComputeRule[] {
       title: "Sibling charters count once",
       line: sharedScheduleOnce
         ? "Charters under one holding company that publish one shared schedule count as one institution."
-        : "Charters under one holding company that publish one shared schedule will count as one institution. Until this is on, each charter counts.",
+        : "Charters under one holding company that publish one shared schedule are meant to count as one institution. Until this is on, each charter counts.",
       detail: ["Each charter's own page still shows its fees."],
-      status: sharedScheduleOnce ? null : "Being switched on",
+      status: sharedScheduleOnce ? null : "Not live yet",
     },
     {
       id: "audience",
@@ -243,8 +256,16 @@ export function computeRules(sharedScheduleOnce: boolean): ComputeRule[] {
       line: "Figures describe personal accounts. A fee whose schedule never says who it is for counts as personal and carries an asterisk (*).",
       detail: [
         "Business fees stay on the institution's own page, labeled Business, and never enter a personal median.",
-        "A fee is Business when its line names business or commercial accounts, or the whole schedule is a business one.",
+        "A fee is Business when its line, the section it sits under, or the schedule's title names business or commercial accounts.",
       ],
+      status: null,
+      open: true,
+    },
+    {
+      id: "names",
+      title: "Same fee, different names",
+      line: "\"Monthly service charge\" and \"maintenance fee\" file under one category, so like is compared with like.",
+      detail: [],
       status: null,
     },
     {

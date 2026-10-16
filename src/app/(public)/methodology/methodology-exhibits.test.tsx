@@ -10,6 +10,9 @@ describe("PipelineFlow", () => {
     const steps = within(screen.getByRole("list", { name: "Pipeline steps" })).getAllByRole("listitem");
     expect(steps).toHaveLength(6);
     expect(screen.getByText("1,000")).toBeInTheDocument();
+    // The visible label is the term itself, so it is read once.
+    expect(screen.getAllByText("institutions monitored")).toHaveLength(1);
+    expect(screen.getByText("institutions monitored").tagName).toBe("DT");
     expect(screen.getByRole("img", { name: "60% of institutions monitored" })).toBeInTheDocument();
     expect(screen.getByText("4,321")).toBeInTheDocument();
     expect(screen.queryByText("institutions with published fees")).not.toBeInTheDocument();
@@ -57,7 +60,9 @@ describe("ComputeRules", () => {
   it("anchors each rule and keeps the detail behind a disclosure", () => {
     const { container } = render(<ComputeRules rules={computeRules(false)} />);
     expect(container.querySelector("#audience")).not.toBeNull();
-    expect(screen.getByText("Being switched on")).toBeInTheDocument();
+    expect(screen.getByText("Not live yet")).toBeInTheDocument();
+    expect(container.querySelector("#audience details")).toHaveAttribute("open");
+    expect(container.querySelector("#median details")).not.toHaveAttribute("open");
     expect(container.querySelectorAll("details").length).toBeGreaterThan(0);
   });
 });
@@ -67,6 +72,7 @@ describe("Limits", () => {
     render(<Limits />);
     expect(screen.getByText("No pricing advice")).toBeInTheDocument();
     expect(screen.getByText("Data can lag")).toBeInTheDocument();
+    expect(screen.getByText("Coverage is uneven")).toBeInTheDocument();
   });
 });
 
@@ -78,5 +84,6 @@ describe("NextAction", () => {
       "/reports?report=institution&src=methodology#request",
     );
     expect(screen.getByRole("link", { name: "Or ask for a demo" })).toHaveAttribute("href", "/contact?source=demo");
+    expect(screen.getByRole("link", { name: "Or look up your own bank" })).toHaveAttribute("href", "/institutions");
   });
 });

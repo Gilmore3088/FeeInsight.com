@@ -39,8 +39,11 @@ describe("pipelineStages", () => {
 
   it("puts each live count on its stage, with institution shares of the monitored total", () => {
     const stages = Object.fromEntries(pipelineStages(all).map((s) => [s.key, s.figures]));
-    expect(stages.atlas).toEqual([{ value: "1,000", label: "institutions monitored", share: null }]);
-    expect(stages.magellan).toEqual([{ value: "600", label: "with a schedule link on file", share: 60 }]);
+    expect(stages.atlas).toEqual([]);
+    expect(stages.magellan).toEqual([
+      { value: "1,000", label: "institutions monitored", share: null },
+      { value: "600", label: "with a schedule link on file", share: 60 },
+    ]);
     expect(stages.hamilton).toEqual([
       { value: "4,321", label: "published fee entries", share: null },
       { value: "250", label: "institutions with published fees", share: 25 },
@@ -49,7 +52,7 @@ describe("pipelineStages", () => {
 
   it("never shows a number on a stage with no public read", () => {
     const stages = pipelineStages(all);
-    for (const key of ["rosetta", "knox", "darwin"]) {
+    for (const key of ["atlas", "rosetta", "knox", "darwin"]) {
       expect(stages.find((s) => s.key === key)!.figures).toEqual([]);
     }
   });
@@ -111,11 +114,15 @@ describe("computeRules", () => {
 
   it("does not claim the sibling rule while its switch is off", () => {
     const off = computeRules(false).find((r) => r.id === "siblings")!;
-    expect(off.status).toBe("Being switched on");
-    expect(off.line).toMatch(/will count as one institution/);
+    expect(off.status).toBe("Not live yet");
+    expect(off.line).toMatch(/are meant to count as one institution/);
     const on = computeRules(true).find((r) => r.id === "siblings")!;
     expect(on.status).toBeNull();
-    expect(on.line).not.toMatch(/will/);
+    expect(on.line).not.toMatch(/meant to/);
+  });
+
+  it("opens only the audience detail by default, the #audience landing", () => {
+    expect(computeRules(false).filter((r) => r.open).map((r) => r.id)).toEqual(["audience"]);
   });
 
   it("uses no em dashes in visible copy", () => {
