@@ -8,11 +8,10 @@ const MONO_FIGURE = { fontFamily: "var(--fi-font-mono)" } as const;
 
 export const RESEARCH_SECTIONS = [
   { id: "findings", label: "Key findings" },
+  { id: "studies", label: "Studies" },
   { id: "benchmarks", label: "Benchmarks" },
   { id: "charters", label: "Banks vs CUs" },
-  { id: "states", label: "States" },
-  { id: "districts", label: "Fed districts" },
-  { id: "library", label: "Studies & guides" },
+  { id: "geography", label: "States & districts" },
   { id: "methodology", label: "How it's built" },
 ] as const;
 
@@ -40,25 +39,24 @@ export function ResearchHero({ summary, stateCount, hasDc, territoryCount }: Res
 
   return (
     <section className="relative overflow-hidden bg-ink text-paper">
-      {/* Faint grid of bars as texture: decoration only, carries no data. */}
-      <svg aria-hidden="true" className="pointer-events-none absolute -right-10 bottom-0 h-full w-[46rem] opacity-[0.07]" viewBox="0 0 460 300" preserveAspectRatio="xMaxYMax meet">
-        {Array.from({ length: 18 }).map((_, i) => {
-          const h = 40 + ((i * 53) % 220);
-          return <rect key={i} x={i * 25} y={300 - h} width="14" height={h} rx="2" fill="#f3efe6" />;
-        })}
-      </svg>
-
       <div className="relative mx-auto max-w-page px-4 pb-10 pt-12 sm:px-6 sm:pb-12 sm:pt-16">
         <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e0716a]">
           <span aria-hidden="true" className="h-px w-8 bg-[#e0716a]/60" />
           Research
         </p>
         <h1 className="mt-3 max-w-3xl text-[2.25rem] font-extrabold leading-[1.05] tracking-[-0.015em] text-white sm:text-[3.25rem]" style={SERIF}>
-          What banks and credit unions actually charge
+          What published bank and credit union fees reveal
         </h1>
         <p className="mt-4 max-w-2xl text-[15px] leading-relaxed text-paper/80 sm:text-base">
-          National benchmarks, state and Federal Reserve district coverage, and original studies from the{" "}
-          {PRODUCT_NAME}. Every number on this page comes from verified, published fee schedules.
+          Findings, original studies and national benchmarks from the {PRODUCT_NAME}. To look up prices, use the{" "}
+          <Link href="/fees" className="underline decoration-paper/40 underline-offset-2 hover:decoration-white">
+            fee explorer
+          </Link>
+          . Every number here comes from{" "}
+          <a href="#verified" className="underline decoration-paper/40 underline-offset-2 hover:decoration-white">
+            verified
+          </a>{" "}
+          published fee schedules.
         </p>
 
         <dl className="mt-9 grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-white/10 lg:grid-cols-4">

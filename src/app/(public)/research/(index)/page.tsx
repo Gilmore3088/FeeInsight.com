@@ -2,7 +2,6 @@ export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import { US_TERRITORIES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
-import { AudiencePaths } from "@/components/public/audience-paths";
 import { SITE_URL } from "@/lib/constants";
 import { getPublicSnapshot } from "@/lib/public-stats";
 import {
@@ -12,17 +11,16 @@ import {
 import type { ArticleSummary } from "@/lib/data-store/articles";
 import { ResearchHero, ResearchSectionNav, SectionHeading } from "../research-hero";
 import { BenchmarkBoard, pickBenchmarks } from "../benchmark-board";
-import { StateExplorer } from "../state-explorer";
-import { DistrictBoard } from "../district-board";
+import { GeoReports } from "../geo-reports";
 import { ResearchLibrary } from "../research-library";
 import { MethodFlow } from "../method-flow";
-import { CharterExhibit, ExhibitSource, KeyFindings } from "../exhibits";
+import { CharterExhibit, KeyFindings } from "../exhibits";
 import { computeFindings } from "../findings";
 
 export const metadata: Metadata = {
   title: "Research - Bank & Credit Union Fee Analysis",
   description:
-    "National fee benchmarks, state and Federal Reserve district coverage, and original studies on bank and credit union fees — every figure traced to a published schedule.",
+    "Findings and original studies on bank and credit union fees, with national benchmarks and state and Federal Reserve district reports. Every figure traces to a published schedule.",
 };
 
 const ARTICLE_LIMIT = 5;
@@ -70,47 +68,27 @@ export default async function ResearchHubPage() {
       <div className="mx-auto max-w-page space-y-20 px-4 py-14 sm:px-6">
         <KeyFindings findings={findings} asOf={asOf} />
 
+        <ResearchLibrary articles={articles} asOf={asOf} />
+
         <BenchmarkBoard benchmarks={benchmarks} institutionsLabel={summary.institutionsLabel} asOf={asOf} />
 
         <CharterExhibit benchmarks={benchmarks} asOf={asOf} />
 
-        <section id="states" className="scroll-mt-28">
-          <SectionHeading eyebrow="Exhibit 3 · State reports" title="Where the data is">
-            Every state report is built from the same published fees. Switch the map between how many institutions we
-            have, how many fees, and what share of each state&apos;s institutions are covered so far.
+        <section id="geography" className="scroll-mt-28">
+          <SectionHeading eyebrow="Geographic reports" title="Every state and Federal Reserve district">
+            Each report applies the same benchmarks to one state or district, with its own coverage and local context.
           </SectionHeading>
           <div className="mt-7">
-            <StateExplorer states={coverage.states} />
+            <GeoReports states={coverage.states} districts={coverage.districts} />
           </div>
-          <ExhibitSource asOf={asOf}>
-            Coverage is institutions with at least one published fee divided by institutions monitored in the state.
-          </ExhibitSource>
         </section>
-
-        <section id="districts" className="scroll-mt-28">
-          <SectionHeading eyebrow="Exhibit 4 · Federal Reserve districts" title="Twelve districts, one view">
-            District reports pair fees with Beige Book economic context. The bars show how many of each
-            district&apos;s monitored institutions have published fees today.
-          </SectionHeading>
-          <div className="mt-7">
-            <DistrictBoard districts={coverage.districts} />
-          </div>
-          <ExhibitSource asOf={asOf}>Counts use each institution&apos;s own Federal Reserve district.</ExhibitSource>
-        </section>
-
-        <ResearchLibrary articles={articles} />
 
         <MethodFlow coverageLabel={coverageLabel} />
-
-        <section aria-label="Where to start" className="print:hidden">
-          <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-muted">Not sure where to start?</p>
-          <AudiencePaths />
-        </section>
       </div>
 
       {/* Print / Save as PDF: drop site chrome and interactive controls, keep exhibits whole. */}
       <style>{`@media print {
-        header, footer, nextjs-portal, #state-filter, #state-sort, [role="radiogroup"] { display: none !important; }
+        header, footer, nextjs-portal, #geo-filter, [role="radiogroup"] { display: none !important; }
         body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         section { break-inside: avoid-page; }
         a { text-decoration: none !important; }

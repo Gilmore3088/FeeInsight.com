@@ -5,6 +5,7 @@ import { formatAmount } from "@/lib/format";
 import { formatCount } from "@/lib/public-stats";
 import { SectionHeading } from "./research-hero";
 import { ExhibitSource } from "./exhibits";
+import { institutionValues, shareLabel } from "./findings";
 import { BENCHMARK_KEYS } from "@/lib/research-report/benchmark-keys";
 import { UnstatedAudienceFootnote, UnstatedAudienceMark, medianHasUnstatedAudience } from "@/components/unstated-audience";
 
@@ -32,7 +33,6 @@ function BenchmarkCard({ fee }: { fee: FeeCategorySummary }) {
   const p75 = fee.p75_amount!;
   // Each card has its own $0-based scale wide enough to show the middle half with room.
   const scaleMax = Math.max(p75 * 1.5, median * 2, 1);
-  const zeroShare = fee.institution_count > 0 ? fee.zero_count / fee.institution_count : 0;
   const charterTotal = fee.bank_count + fee.cu_count;
   const bankShare = charterTotal > 0 ? fee.bank_count / charterTotal : 0;
 
@@ -68,7 +68,8 @@ function BenchmarkCard({ fee }: { fee: FeeCategorySummary }) {
         </div>
       </div>
       <p className="mt-1 text-[12px] text-ink-soft">
-        Middle half pay <span className="font-semibold tabular-nums text-ink">{formatAmount(p25)}</span> to{" "}
+        Middle half of {institutionValues(fee.fee_category)}:{" "}
+        <span className="font-semibold tabular-nums text-ink">{formatAmount(p25)}</span> to{" "}
         <span className="font-semibold tabular-nums text-ink">{formatAmount(p75)}</span>
       </p>
 
@@ -89,9 +90,11 @@ function BenchmarkCard({ fee }: { fee: FeeCategorySummary }) {
           </p>
         </div>
         <div>
-          <p className="font-semibold tabular-nums text-ink">{Math.round(zeroShare * 100)}%</p>
-          <p>list it at $0</p>
-          <p className="mt-1 text-[10px] text-ink-muted">{formatCount(fee.zero_count)} institutions</p>
+          <p className="font-semibold tabular-nums text-ink">{shareLabel(fee.zero_count, fee.institution_count)}</p>
+          <p>publish only $0</p>
+          <p className="mt-1 text-[10px] text-ink-muted">
+            {formatCount(fee.zero_count)} {fee.zero_count === 1 ? "institution" : "institutions"} whose every price is $0
+          </p>
         </div>
       </div>
     </Link>
@@ -110,9 +113,9 @@ export function BenchmarkBoard({ benchmarks, institutionsLabel, asOf }: { benchm
           </Link>
         }
       >
-        Medians and the middle half of prices from {institutionsLabel} institutions with published fees. Each card
-        shows how many institutions its median covers. The tick marks the median; the shaded band is where the
-        middle 50% of institutions land.
+        Each institution counts once, at the median of its published prices for the fee (overdraft: its highest).
+        The tick marks the median of those values across {institutionsLabel} institutions; the band is their
+        middle half.
       </SectionHeading>
 
       {benchmarks.length > 0 ? (

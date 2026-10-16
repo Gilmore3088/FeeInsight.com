@@ -9,7 +9,14 @@ const STEPS = [
   { n: "01", title: "Find the schedule", body: "Locate each bank's and credit union's own published fee schedule or disclosure." },
   { n: "02", title: "Read it", body: "Turn web pages and PDFs into clean text, one whole document at a time." },
   { n: "03", title: "Extract each fee", body: "Pull every fee line with its amount and conditions, linked to the source document." },
-  { n: "04", title: "Verify, then publish", body: "Check amounts against expected ranges. Only verified fees reach this page." },
+  { n: "04", title: "Verify, then publish", body: "Check each fee against its own schedule before it can be published. Only verified fees reach this page." },
+];
+
+const VERIFIED_CHECKS = [
+  "The amount appears in the stored text of the institution's own published schedule.",
+  "For the main fee categories, the fee's name names that fee and not a different one.",
+  "The price sits inside the expected range for that category.",
+  "The fee links back to its source document.",
 ];
 
 const SOURCES = [
@@ -48,6 +55,22 @@ export function MethodFlow({ coverageLabel }: { coverageLabel: string }) {
         ))}
       </ol>
 
+      <div id="verified" className="mt-8 scroll-mt-28 rounded-2xl border border-border bg-white px-6 py-5">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-muted">What &ldquo;verified&rdquo; means</p>
+        <ul className="mt-3 space-y-2 text-[13px] text-ink-soft">
+          {VERIFIED_CHECKS.map((c) => (
+            <li key={c} className="flex items-start gap-2">
+              <span aria-hidden="true" className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brick/70" />
+              {c}
+            </li>
+          ))}
+        </ul>
+        <p className="mt-3 text-[12px] text-ink-muted">
+          Not yet checked: which account each price belongs to. A schedule with several accounts can list several prices
+          for one fee, so each institution counts once, at the median of its prices (overdraft: its highest).
+        </p>
+      </div>
+
       <div className="mt-8 grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <div className="rounded-2xl border border-border bg-white px-6 py-5">
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-muted">Sources</p>
@@ -61,6 +84,7 @@ export function MethodFlow({ coverageLabel }: { coverageLabel: string }) {
           </ul>
           <p className="mt-4 text-[12px] text-ink-muted">
             Coverage: banks and credit unions of every asset size, all 12 Federal Reserve districts, {coverageLabel}.
+            Each state and district report shows how many of its institutions have published fees so far.
           </p>
         </div>
 
