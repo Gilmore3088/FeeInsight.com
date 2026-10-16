@@ -271,6 +271,19 @@ export function parsePeerListQuestion(question: string): PeerListIntent | null {
   if (requestedCount !== null && (!Number.isSafeInteger(requestedCount) || requestedCount < 1)) problems.push("Request at least one peer.");
   const limit = requestedCount === null ? MAX_PEER_LIST_ROWS : Math.min(Math.max(requestedCount, 1), MAX_PEER_LIST_ROWS);
 
+  const similarSize = /\bsimilar(?:ly)?(?:[- ]sized?)?\b|\bcomparable\b|\bclosest\b|\bsame size\b|\babout (?:our|its|the same) size\b/i.test(question);
+  // "… to SchoolsFirst" or "… like Navy Federal in VA": the size reference is named at the end. It is
+  // read before state names are removed, so "Texas Capital" stays a name and never becomes a Texas
+  // filter. planPeerList checks it is the research institution; another name is refused.
+  let similarTo: string | null = null;
+  if (similarSize) {
+    const named = remaining.match(/\b(?:to|as|like)\s+([A-Z0-9][\w&'.-]*(?:(?:,?\s+|\s+(?:of|and|the)\s+)[A-Z0-9][\w&'.-]*)*)(?=(?:\s+in\s+[A-Za-z][\w.]*(?:\s+[A-Z][\w.]*)?)?\s*[?.!]*\s*$)/);
+    if (named && !/^(?:us|me|this institution|the selected institution)$/i.test(named[1])) {
+      similarTo = named[1].replace(/[.]+$/, "").replace(/'s$/i, "");
+      remaining = replaceMatch(remaining, named);
+    }
+  }
+
   const states: string[] = [];
   remaining = remaining.replace(/\bDistrict of Columbia\b/gi, "Washington DC");
   for (const [code, name] of Object.entries(STATE_NAMES).sort((a, b) => b[1].length - a[1].length)) {
@@ -297,17 +310,6 @@ export function parsePeerListQuestion(question: string): PeerListIntent | null {
   const bothTypes = (hasCu && hasBank) || /\bboth(?:\s+types)?\b/i.test(question);
   const charterType = bothTypes ? null : hasCu ? "credit_union" : hasBank ? "bank" : null;
   const sameState = /\b(?:same|this|our|my|selected institution's) state\b/i.test(question);
-  const similarSize = /\bsimilar(?:ly)?(?:[- ]sized?)?\b|\bcomparable\b|\bclosest\b|\b(?:the\s+)?same size\b|\babout (?:our|its|the same) size\b/i.test(question);
-  // "… to SchoolsFirst": the size reference is named at the end. planPeerList checks it is the
-  // research institution; another name is refused rather than silently measured against the subject.
-  let similarTo: string | null = null;
-  if (similarSize) {
-    const named = remaining.match(/\b(?:to|as|like)\s+((?:[A-Z0-9][\w&'.-]*)(?:\s+[A-Z0-9][\w&'.-]*)*)\s*[?.!]*\s*$/);
-    if (named && !/^(?:us|me|this institution|the selected institution)$/i.test(named[1])) {
-      similarTo = named[1].replace(/[.]+$/, "").replace(/'s$/i, "");
-      remaining = replaceMatch(remaining, named);
-    }
-  }
   const largest = /\b(largest|biggest|top)\b/i.test(question);
   const peerBased = /\bpeers?\b/i.test(question);
   const saved = /\b(saved|custom|default)\s+(?:peer\s+)?(?:peers?|group|set)\b/i.test(question);
@@ -325,19 +327,18 @@ export function parsePeerListQuestion(question: string): PeerListIntent | null {
   return { requestedCount, limit, charterType, bothTypes, states: [...new Set(states)].sort(), sameState, minAssets, maxAssets, similarSize, peerBased, largest, saved, accountSubject, similarTo, problems };
 }
 
-/** "SchoolsFirst" names "Schoolsfirst Federal Credit Union": letters and digits only, case ignored. */
+const LEGAL_WORDS = new Set(["bank", "na", "national", "association", "federal", "credit", "union", "fcu", "cu", "inc", "company", "co", "the"]);
+/** Words of a name with legal endings dropped: "Schoolsfirst Federal Credit Union" -> ["schoolsfirst"]. */
+function nameCore(name: string): string[] {
+  const words = name.toLowerCase().replace(/[.'’]/g, "").split(/[^a-z0-9&]+/).filter(Boolean);
+  while (words.length > 1 && LEGAL_WORDS.has(words[words.length - 1])) words.pop();
+  return words;
+}
+
+/** "SchoolsFirst" names "Schoolsfirst Federal Credit Union" and "U.S. Bank" names "U.S. Bank National
+ * Association". Only the whole name counts: "Capital" is not "Capital One", nor "TDECU" "TD Bank". */
 function sameInstitutionName(typed: string, name: string): boolean {
-  const letters = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-  const squash = (s: string) => {
-    let out = letters(s);
-    for (let prev = ""; prev !== out;) { prev = out; out = out.replace(/(?:federalcreditunion|creditunion|fcu|nationalassociation|na|bank)$/, ""); }
-    return out;
-  };
-  // Short names ("U.S. Bank", "M&T") match only exactly; a prefix needs four letters.
-  if (letters(typed) === letters(name) || (squash(typed) && squash(typed) === squash(name))) return true;
-  const a = squash(typed);
-  const b = squash(name);
-  return a.length >= 4 && (b.startsWith(a) || a.startsWith(b));
+  return nameCore(typed).join(" ") === nameCore(name).join(" ");
 }
 
 export function formatPeerAssets(value: number | null): string {

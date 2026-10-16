@@ -39,4 +39,15 @@ describe("parseMarketQuestion", () => {
     expect(parseMarketQuestion("Only show the California ones.")).toBeNull();
     expect(parseMarketQuestion("Tell me about Ohio")).not.toBeNull();
   });
+
+  it("keeps market questions that mention an asset size or a list word (#1604 review)", () => {
+    for (const q of [
+      "What does the market look like for Texas banks?",
+      "Give me a brief on Ohio credit unions over $500M",
+      "Tell me about Texas credit unions over $1B",
+      "How are Texas banks above $1B doing?",
+      "What's happening with California credit unions?",
+      "Only overdraft in Texas",
+    ]) expect(parseMarketQuestion(q), q).not.toBeNull();
+  });
 });

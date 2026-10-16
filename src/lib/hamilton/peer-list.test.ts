@@ -95,6 +95,24 @@ describe("James's live wordings (#1537, #1539)", () => {
     expect(planPeerList(intent("List ten similarly sized banks to M&T Bank"), { ...mt, name: "M&T Bank" }, null).problem).toBeNull();
     expect(planPeerList(intent("List ten similarly sized banks to M&T Bank"), mt, null).problem).toContain("open M&T Bank in the workspace first");
   });
+  it("keeps a state inside a named size reference as part of the name (#1604 review)", () => {
+    const idaho: PeerListSubject = { ...subject, institutionId: 900, name: "Idaho Central Credit Union", stateCode: "ID", totalAssetsUsd: 10_000_000_000 };
+    const i = intent("List ten similarly sized credit unions to Idaho Central");
+    expect(i.similarTo).toBe("Idaho Central");
+    expect(i.states).toEqual([]);
+    expect(planPeerList(i, idaho, null).problem).toBeNull();
+    const tx = intent("List ten similarly sized banks to Texas Capital");
+    expect(tx.states).toEqual([]);
+    expect(planPeerList(tx, { ...subject, name: "Capital One, N.A." }, null).problem).toContain("open Texas Capital in the workspace first");
+    const va = intent("List ten similarly sized credit unions like Navy Federal in VA");
+    expect(va.similarTo).toBe("Navy Federal");
+    expect(va.states).toEqual(["VA"]);
+  });
+  it("never treats a different institution with a similar name as the research institution", () => {
+    for (const [typed, name] of [["TDECU", "TD Bank, N.A."], ["First Citizens", "FirstBank"], ["Citizens Business Bank", "Citizens Bank, N.A."], ["Citi", "Citizens Bank, N.A."], ["Capital", "Capital One, N.A."]]) {
+      expect(planPeerList(intent(`List ten similarly sized banks to ${typed}`), { ...subject, name }, null).problem).toContain("open");
+    }
+  });
   it("refuses a size reference that is not the research institution, rather than measuring against it", () => {
     const result = planPeerList(intent("List ten similarly sized credit unions to Navy Federal."), schoolsFirst, null);
     expect(result.criteria).toBeNull();

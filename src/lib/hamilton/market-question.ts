@@ -12,7 +12,7 @@ import { resolveLocalMarketCategories } from "./local-market-request";
 import { STATE_NAMES } from "@/lib/us-states";
 import { charterIn, parseSegment, SEGMENT_AMOUNTS, stateIn } from "./workspace/segment";
 import { feeCategoriesIn, pricesIn } from "./workspace/ask";
-import { isPeerListContinuationQuestion, isPeerListQuestion } from "./peer-list";
+import { isPeerListContinuationQuestion, isPeerListQuestion, parsePeerListQuestion } from "./peer-list";
 import type { AskSegment } from "./workspace/types";
 
 export const INTELLIGENCE_LENSES = [
@@ -54,7 +54,10 @@ export function parseMarketQuestion(question: string): MarketQuestion | null {
   if (!text || LIST.test(text) || OWN.test(text) || OPINION.test(text) || FOLLOW_UP.test(text)) return null;
   // A list of institutions ("Florida institutions above 5 billion") or a follow-up to one ("Only show
   // the California ones") belongs to the peer list in the conversation, not a market brief.
-  if (isPeerListQuestion(text) || isPeerListContinuationQuestion(text)) return null;
+  // Only a question the peer list can answer as written gives way; "Give me a brief on Ohio credit
+  // unions over $500M" still gets its brief. A follow-up that names a fee stays a market question.
+  if (isPeerListQuestion(text) && parsePeerListQuestion(text)?.problems.length === 0) return null;
+  if (isPeerListContinuationQuestion(text) && feeCategoriesIn(text).length === 0) return null;
   const segment = parseSegment(text);
   if (pricesIn(segment ? text.replace(SEGMENT_AMOUNTS, " ") : text).length > 0) return null;
   const stateCode = stateIn(text);
