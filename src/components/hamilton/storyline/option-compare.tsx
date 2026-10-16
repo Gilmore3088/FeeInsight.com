@@ -61,8 +61,9 @@ export function optionScale(story: Storyline): OptionScale {
   );
   return {
     band: position ? position.band : null,
+    // Every competitor when the chart shows only the largest, so the cards count what the title counts.
     local:
-      local && local.items.length > 0 ? local.items.map((i) => i.amount) : null,
+      local && local.items.length > 0 ? (local.allAmounts ?? local.items.map((i) => i.amount)) : null,
   };
 }
 
