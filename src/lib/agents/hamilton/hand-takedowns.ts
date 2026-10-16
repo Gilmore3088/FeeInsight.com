@@ -75,6 +75,18 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
   { feePublishedId: 134962, institutionId: 8566, canonicalFeeKey: "account_research", amount: 29.5, feeName: "Loan Payment with Debit Card - Chargeback",
     reason: "source_mismatch: #1534", issue: 1534, kind: "wrong_category",
     evidence: "Texell CU (doc 29092): \"Loan Payment with Debit Card - Chargeback $29.50 per item\", next to \"Loan Payment with Debit Card - Return Item\": a loan payment fee, not account research." },
+  // #1549 follow-ups (read-only, Oct 16; James's call before merge). Flagstar's overdraft price
+  // from its older form, and two Pinnacle NSF paid/returned prices read into the overdraft
+  // transfer line beside them (two-column brochures). The NSF re-file itself is a category call.
+  { feePublishedId: 83125, institutionId: 33, canonicalFeeKey: "overdraft", amount: 10, feeName: "Overdraft Charge (each)",
+    reason: "source_mismatch: #1549", issue: 1549, kind: "wrong_amount",
+    evidence: "Flagstar's 2024 CRA public file (doc 21266, forms dated 02/2024) prints \"Overdraft Charge (each) | $10.00\"; its overdraft terms Rev. 06/2026 (doc 21228, live as 83117) say \"assess an Overdraft Charge of $30 per Item\" (at most three, $90, a day)." },
+  { feePublishedId: 97335, institutionId: 184, canonicalFeeKey: "od_protection_transfer", amount: 10, feeName: "OVERDRAFT TRANSFER",
+    reason: "source_mismatch: #1549", issue: 1549, kind: "wrong_category",
+    evidence: "Pinnacle Bank NE (doc 22621): \"OVERDRAFT TRANSFER | $10 NSF Paid Item Fee/NSF Returned Item Fee for items $10 or less\" joins two columns; the transfer is \"$2 fee for each Overdraft Transfer\" ($20 set-up)." },
+  { feePublishedId: 97904, institutionId: 850, canonicalFeeKey: "od_protection_transfer", amount: 32, feeName: "overdrawn. Features of Overdraft Transfer include",
+    reason: "source_mismatch: #1549", issue: 1549, kind: "wrong_category",
+    evidence: "Pinnacle Bank Wyoming (doc 22705): the $32 is the next column's \"$32 per item NSF Paid Item Fee/Returned Item Fee for items paid over $10\" (live as 98267); the transfer is \"$2 fee for each Overdraft Transfer\" (live as 97975)." },
 ];
 
 export interface LiveTakedownRow {

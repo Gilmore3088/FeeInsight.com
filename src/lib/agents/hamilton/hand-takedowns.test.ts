@@ -18,8 +18,12 @@ const LIVE: LiveTakedownRow[] = [
   { fee_published_id: 48113, lineage_ref: 53370, institution_id: 7483, canonical_fee_key: "safe_deposit_box", fee_name: "Returned loan payment", amount: "25.00" },
   { fee_published_id: 87307, lineage_ref: 96812, institution_id: 5054, canonical_fee_key: "ach_return", fee_name: "Returned Loan Payment (check or ACH returned unpaid; per item)", amount: "25.00" },
   { fee_published_id: 134962, lineage_ref: 156021, institution_id: 8566, canonical_fee_key: "account_research", fee_name: "Loan Payment with Debit Card - Chargeback", amount: "29.50" },
+  // The #1549 follow-ups (Flagstar's older-form overdraft, two Pinnacle transfer lines), as they read live, read-only, Oct 16.
+  { fee_published_id: 83125, lineage_ref: 92572, institution_id: 33, canonical_fee_key: "overdraft", fee_name: "Overdraft Charge (each)", amount: "10.00" },
+  { fee_published_id: 97335, lineage_ref: 110368, institution_id: 184, canonical_fee_key: "od_protection_transfer", fee_name: "OVERDRAFT TRANSFER", amount: "10.00" },
+  { fee_published_id: 97904, lineage_ref: 111117, institution_id: 850, canonical_fee_key: "od_protection_transfer", fee_name: "overdrawn. Features of Overdraft Transfer include", amount: "32.00" },
 ];
-const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962];
+const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, 83125, 97335, 97904];
 
 function fakeDb(live: LiveTakedownRow[], failOn?: string) {
   const writes: Array<{ text: string; values: unknown[] }> = [];
@@ -46,6 +50,9 @@ describe("hand takedowns (James, Oct 16)", () => {
       [48113, "source_mismatch: #1534"],
       [87307, "source_mismatch: #1534"],
       [134962, "source_mismatch: #1534"],
+      [83125, "source_mismatch: #1549"],
+      [97335, "source_mismatch: #1549"],
+      [97904, "source_mismatch: #1549"],
     ]);
     expect(HAND_TAKEDOWNS.every((entry) => entry.evidence.length > 0 && entry.reason === `source_mismatch: #${entry.issue}`)).toBe(true);
     // Up to about 25 rows go this way; more go to James.
@@ -64,6 +71,9 @@ describe("hand takedowns (James, Oct 16)", () => {
         { feePublishedId: 48113, feeVerifiedId: 53370, reason: "source_mismatch: #1534" },
         { feePublishedId: 87307, feeVerifiedId: 96812, reason: "source_mismatch: #1534" },
         { feePublishedId: 134962, feeVerifiedId: 156021, reason: "source_mismatch: #1534" },
+        { feePublishedId: 83125, feeVerifiedId: 92572, reason: "source_mismatch: #1549" },
+        { feePublishedId: 97335, feeVerifiedId: 110368, reason: "source_mismatch: #1549" },
+        { feePublishedId: 97904, feeVerifiedId: 111117, reason: "source_mismatch: #1549" },
       ],
       skipped: [],
     });
@@ -95,6 +105,9 @@ describe("hand takedowns (James, Oct 16)", () => {
     expect(takedowns[0].text).toContain("AND fee_name = ?");
     expect(takedowns[0].values).toEqual(expect.arrayContaining(["agentic-run-9", "source_mismatch: #1496", 80423, 5433, "document_reproduction", "Fax (Local)", 15]));
     expect(takedowns[5].values).toEqual(expect.arrayContaining(["source_mismatch: #1370", 134129, 4815, "other_lending_fee", "Subordination Fee: Business", 10]));
+    // Flagstar's $10 overdraft comes down; its current $30 (83117) is not listed and stays live.
+    expect(takedowns[9].values).toEqual(expect.arrayContaining(["source_mismatch: #1549", 83125, 33, "overdraft", "Overdraft Charge (each)", 10]));
+    expect(HAND_TAKEDOWNS.some((entry) => entry.feePublishedId === 83117)).toBe(false);
     expect(writes.filter((write) => write.text.includes("UPDATE verified_fee_observations"))).toHaveLength(IDS.length);
     expect(writes.some((write) => write.text.includes("INSERT INTO pipeline_feedback"))).toBe(true);
     expect(writes.filter((write) => write.text.includes("INSERT INTO agent_run_events"))).toHaveLength(1);
