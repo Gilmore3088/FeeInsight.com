@@ -266,6 +266,14 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
   no URL, the fee takes its document's (`publishSourceLink`); refresh-copy does the same.
 - `published_by_adversarial_event_id` holds Darwin's verification event id, the gate
   that actually ran.
+- Operators' holds and corrections win over a re-read (#978, docs/plans/hamilton-h03-corrections.md).
+  A held line is not republished. A fee an admin corrected (`published_fee_corrections`, a new
+  version per correction; the replaced row is quarantined `admin_correction: ...`) is matched by
+  its logical fee, not its row id or amount: `correctionBlockFor` (`src/lib/fee-correction-guard.ts`)
+  skips a re-read of the old or the same document, and writes one from a newer document that
+  disagrees to `published_fee_correction_conflicts` for an admin to accept or dismiss. A hold,
+  release, correction or reversal is a completed `manual_repair` run and rebuilds
+  `fee_index_cache` at once (`src/lib/fee-admin-run.ts`).
 - One live price per fee: when the same institution, canonical key, variant and
   frequency is published at a new amount, the prior live row is closed
   (`rolled_back_at`, `rolled_back_by_batch_id`, `rolled_back_reason = 'superseded by
