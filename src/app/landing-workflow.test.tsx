@@ -69,7 +69,7 @@ describe("homepage example: one question, one finding, the same fee in the repor
     expect(t).toContain("Capital City Bank against its local market");
     expect(t).toContain("At a glance");
     expect(t).toContain("4 more fees in the full report");
-    expect(t).toMatch(/Of your 7 comparable fees, 2 above the local middle range/);
+    expect(t).toMatch(/Of your 7 comparable fees, 2 above the local middle half/);
     expect(reportPart.match(/data-highlight=""/g)).toHaveLength(1);
     expect(reportPart).toMatch(/data-highlight=""[^>]*>\s*<span[^>]*>Outgoing international wire</);
     expect(reportPart).toContain('href="/reports/sample-competitive-fee-position"');

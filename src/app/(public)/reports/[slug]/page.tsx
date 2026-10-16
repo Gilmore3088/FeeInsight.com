@@ -15,6 +15,9 @@ import { getSql } from "@/lib/data-store/connection";
 import type { ReportType } from "@/lib/report-engine/types";
 import { EmailGate } from "./email-gate";
 import { RESEARCH_IMPRINT, SITE_NAME, SITE_URL } from "@/lib/constants";
+import { TrackLink } from "@/components/track-link";
+import { PAGE_CRUMBS, PAGE_H1, PAGE_HEADER } from "@/components/public/page-header";
+import { DEMO_REQUEST_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
 
 export const revalidate = 3600;
 
@@ -135,97 +138,80 @@ export default async function ReportPage({
   const typeLabel = humanType(report.report_type);
 
   return (
-    <div>
-      <div style={{ maxWidth: "720px", margin: "0 auto", padding: "64px 24px 96px" }}>
-
-        {/* Breadcrumb */}
-        <nav aria-label="Breadcrumb" style={{ marginBottom: "32px", fontSize: "13px", color: "#55606f" }}>
-          <Link href="/reports" style={{ color: "#354252", textDecoration: "none" }}>
-            Research Reports
-          </Link>
-          <span style={{ margin: "0 8px" }}>/</span>
-          <span style={{ color: "#132338" }}>{report.title}</span>
-        </nav>
-
-        {/* Header */}
-        <div style={{
-          borderBottom: "2px solid #132338",
-          paddingBottom: "24px",
-          marginBottom: "48px",
-        }}>
-          <p style={{
-            fontSize: "11px",
-            textTransform: "uppercase",
-            letterSpacing: "0.12em",
-            color: "#b23a32",
-            fontWeight: 700,
-            marginBottom: "12px",
-          }}>
-            {typeLabel}
-          </p>
-
-          <h1 style={{
-            fontSize: "36px",
-            fontWeight: 600,
-            letterSpacing: "-0.02em",
-            color: "#132338",
-            marginBottom: "16px",
-            fontFamily: "var(--fi-font-sans)",
-            lineHeight: 1.2,
-          }}>
-            {report.title}
-          </h1>
-
-          <p style={{ fontSize: "13px", color: "#55606f" }}>
-            {RESEARCH_IMPRINT} &middot; Published {formatDate(report.published_at)}
-          </p>
+    <div className="pb-20">
+      <section className="border-b border-border bg-paper">
+        <div className="mx-auto grid max-w-page gap-x-12 gap-y-8 px-4 pb-12 pt-6 sm:px-6 sm:pt-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)] lg:items-center">
+          <div className={PAGE_HEADER}>
+            <nav aria-label="Breadcrumb" className={PAGE_CRUMBS}>
+              <Link href="/reports" className="hover:text-ink">Reports</Link>
+              <span aria-hidden="true">/</span>
+              <span className="text-ink-soft">{typeLabel}</span>
+            </nav>
+            <h1 className={`mt-4 ${PAGE_H1}`}>{report.title}</h1>
+            <p className="mt-3 text-[14px] text-ink-muted">
+              {RESEARCH_IMPRINT} · Published {formatDate(report.published_at)}
+            </p>
+            <ReportCoverArt title={report.title} typeLabel={typeLabel} published={formatDate(report.published_at)} />
+          </div>
+          <div className="rounded-2xl border border-border bg-surface-0 p-5 shadow-fi-2 sm:p-6">
+            <h2 className="text-[20px] font-semibold tracking-[-0.02em] text-ink">Get the full PDF</h2>
+            <p className="mt-1 mb-4 text-[14px] text-ink-muted">Free. Every figure in it has a source.</p>
+            <EmailGate slug={slug} artifactExists={artifactExists} />
+          </div>
         </div>
+      </section>
 
-        {/* What this page is. Until a report has a written summary and real charts, say so
-            plainly rather than showing placeholder text and empty chart boxes. */}
-        <section style={{ marginBottom: "48px" }}>
-          <p style={{ fontSize: "15px", color: "#354252", lineHeight: 1.75 }}>
-            This {typeLabel.toLowerCase()} is delivered as a PDF. Download it below, or{" "}
-            <Link href="/for-institutions#report" style={{ color: "#b23a32", textDecoration: "underline" }}>
-              request a competitive fee report for your own institution
+      <section className="mx-auto max-w-page px-4 pt-12 sm:px-6">
+        <div className="flex flex-col gap-4 rounded-2xl border border-border bg-surface-0 px-5 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-7">
+          <div>
+            <h2 className="text-[18px] font-semibold tracking-[-0.02em] text-ink">Want your own institution in it?</h2>
+            <p className="mt-1 max-w-[36rem] text-[14px] text-ink-muted">
+              Hamilton sets your fees against the competitors you choose and updates when their published schedules change.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+            <TrackLink
+              event="upgrade_click"
+              eventProps={{ placement: "published_report" }}
+              href={PRO_PLANS_NAV.href}
+              className="inline-flex min-h-11 items-center rounded-full bg-ink px-5 text-[14px] font-semibold text-on-ink hover:opacity-90"
+            >
+              {PRO_PLANS_NAV.label}
+            </TrackLink>
+            <Link href={DEMO_REQUEST_NAV.href} className="text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
+              {DEMO_REQUEST_NAV.label}
             </Link>
-            .
-          </p>
-        </section>
-
-        {/* Email gate — full PDF download */}
-        <section style={{
-          borderTop: "1px solid #ddd5c6",
-          paddingTop: "40px",
-        }}>
-          <h2 style={{
-            fontSize: "20px",
-            fontWeight: 600,
-            color: "#132338",
-            marginBottom: "8px",
-            fontFamily: "var(--fi-font-sans)",
-            letterSpacing: "-0.01em",
-          }}>
-            Download Full Report
-          </h2>
-          <p style={{ fontSize: "14px", color: "#354252", marginBottom: "24px", lineHeight: 1.6 }}>
-            Enter your email to receive a download link for the complete PDF.
-          </p>
-
-          <EmailGate slug={slug} artifactExists={artifactExists} />
-        </section>
-
-        {/* Methodology link */}
-        <div style={{ marginTop: "64px", paddingTop: "24px", borderTop: "1px solid #ddd5c6", fontSize: "12px", color: "#55606f" }}>
-          <p>
-            Data collected and verified by the Bank Fee Index.{" "}
-            <a href="/methodology" style={{ color: "#354252", textDecoration: "underline" }}>
-              Read our methodology
-            </a>
-            .
-          </p>
+          </div>
         </div>
+        <p className="mt-6 text-[12px] text-ink-muted">
+          Read from banks&apos; and credit unions&apos; own published fee schedules.{" "}
+          <Link href="/methodology" className="underline decoration-border underline-offset-2 hover:text-ink">
+            How we verify
+          </Link>
+        </p>
+      </section>
+    </div>
+  );
+}
 
+/** The report's cover, drawn: its type, title and date on stacked pages, so the page shows what arrives. */
+function ReportCoverArt({ title, typeLabel, published }: { title: string; typeLabel: string; published: string }) {
+  return (
+    <div className="relative mx-auto mt-8 w-full max-w-[26rem] py-4 text-left lg:mx-0" aria-hidden="true">
+      <div className="absolute inset-x-6 inset-y-2 -rotate-3 rounded-xl bg-brick-tint" />
+      <div className="absolute inset-x-4 inset-y-3 rotate-2 rounded-xl bg-surface-200" />
+      <div className="relative rounded-xl border border-border bg-surface-0 p-6 shadow-fi-2">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-brick">{typeLabel}</p>
+        <p className="mt-3 text-[20px] font-semibold leading-tight tracking-[-0.02em] text-ink">{title}</p>
+        <div className="mt-6 space-y-2.5">
+          {[62, 78, 48, 70].map((w, i) => (
+            <span key={i} className="relative block h-2 rounded-full bg-paper">
+              <span className="absolute inset-y-0 left-[18%] rounded-full bg-brick-tint" style={{ width: `${w - 18}%` }} />
+              <span className="absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-ink" style={{ left: `${w - 8}%` }} />
+            </span>
+          ))}
+        </div>
+        <p className="mt-6 text-[11px] text-ink-muted">{RESEARCH_IMPRINT} · {published}</p>
       </div>
     </div>
   );

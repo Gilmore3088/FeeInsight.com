@@ -66,8 +66,20 @@ interface LeadsResponse {
 
 interface RequestReportFormProps {
   contactEmail: string;
+  /** The report picked when the URL names none. */
+  defaultReportType?: ReportType;
+  /** A heading inside the card, for a form that stands alone (the reports page's hero). */
+  title?: string;
   /** Lead `src` when the URL carries none, so each page's requests are attributable. */
   defaultSrc?: string;
+  /**
+   * Which reports this form offers: the paid institution report alone, the free national and
+   * district reports alone, or (unset) all three. /reports keeps the paid request apart from
+   * the free ones, so a buyer is never asked to reconsider the product mid-request.
+   */
+  offer?: "institution" | "free";
+  /** Added to every field id, so two forms on one page keep their ids unique. */
+  idScope?: string;
 }
 
 interface Prefill {
@@ -78,7 +90,7 @@ interface Prefill {
   district: number | null;
 }
 
-function readPrefill(params: URLSearchParams, defaultSrc: string): Prefill {
+function readPrefill(params: URLSearchParams, defaultSrc: string, defaultReportType: ReportType): Prefill {
   const idRaw = Number(params.get("institution"));
   const srcRaw = (params.get("src") ?? "").trim();
   const districtRaw = Number(params.get("district"));
@@ -90,7 +102,7 @@ function readPrefill(params: URLSearchParams, defaultSrc: string): Prefill {
       ? requested
       : institutionName
         ? "institution"
-        : "national";
+        : defaultReportType;
   return {
     institutionId: Number.isInteger(idRaw) && idRaw > 0 ? idRaw : null,
     institutionName,
@@ -119,7 +131,7 @@ export function RequestReportForm(props: RequestReportFormProps) {
 
 function RequestReportFormWithParams(props: RequestReportFormProps) {
   const params = useSearchParams();
-  const prefill = readPrefill(params, props.defaultSrc ?? DEFAULT_SRC);
+  const prefill = readPrefill(params, props.defaultSrc ?? DEFAULT_SRC, props.defaultReportType ?? "national");
   // Keyed on the query so a same-page link that changes `?report=` or the bank reloads the
   // form with that option selected (useState reads the prefill only on first render).
   return <RequestReportFormInner key={params.toString()} {...props} prefill={prefill} />;
@@ -128,17 +140,24 @@ function RequestReportFormWithParams(props: RequestReportFormProps) {
 function RequestReportFormInner({
   contactEmail,
   defaultSrc = DEFAULT_SRC,
+  defaultReportType = "national",
+  title,
+  offer,
+  idScope = "",
   prefill,
   idSuffix = "",
 }: RequestReportFormProps & { prefill: Prefill | null; idSuffix?: string }) {
-  const fieldId = (base: string) => base + idSuffix;
+  const fieldId = (base: string) => base + idScope + idSuffix;
+  const choices = REPORT_TYPES.filter((o) => (offer === "institution" ? o.paid : offer === "free" ? !o.paid : true));
+  const firstType = prefill?.reportType ?? defaultReportType;
+  const startType = choices.some((o) => o.value === firstType) ? firstType : choices[0].value;
   const [status, setStatus] = useState<Status>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<ConfirmationStatus>("unknown");
   const [institutionLocked, setInstitutionLocked] = useState(
     Boolean(prefill?.institutionName),
   );
-  const [reportType, setReportType] = useState<ReportType>(prefill?.reportType ?? "national");
+  const [reportType, setReportType] = useState<ReportType>(startType);
   const [freeReport, setFreeReport] = useState<BenchmarkScope | null>(null);
   const [pickedInstitution, setPickedInstitution] = useState<PickedInstitution | null>(null);
   const [reportState, setReportState] = useState("");
@@ -252,9 +271,10 @@ function RequestReportFormInner({
   return (
     <form
       onSubmit={handleSubmit}
-      className="rounded-lg border border-border bg-surface-0 p-6 space-y-4"
+      className="space-y-4 rounded-2xl border border-border bg-surface-0 p-5 shadow-fi-2 sm:p-6"
       aria-label="Request a fee report"
     >
+      {title && <h2 className="text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-[22px]">{title}</h2>}
       <HoneypotField />
       {status === "error" && errorMessage && (
         <div
@@ -265,11 +285,12 @@ function RequestReportFormInner({
         </div>
       )}
 
+      {choices.length > 1 && (
       <fieldset aria-describedby={fieldId("report-type-detail")}>
         <legend className={LABEL_CLASS}>Which report?</legend>
         {/* One row of equal choices; the price sits on each, so none reads as switched off. */}
-        <div className="grid grid-cols-3 gap-1 rounded-xl bg-paper p-1 ring-1 ring-border">
-          {REPORT_TYPES.map((option) => {
+        <div className={`grid ${choices.length === 3 ? "grid-cols-3" : "grid-cols-2"} gap-1 rounded-xl bg-paper p-1 ring-1 ring-border`}>
+          {choices.map((option) => {
             const on = reportType === option.value;
             return (
               <label
@@ -303,6 +324,7 @@ function RequestReportFormInner({
           .
         </p>
       </fieldset>
+      )}
 
       {reportType === "district" && (
         <div>
@@ -477,7 +499,7 @@ function RequestReportFormInner({
       <button
         type="submit"
         disabled={status === "submitting"}
-        className="w-full rounded-md bg-brick px-4 py-2.5 text-sm font-semibold text-white hover:bg-brick-ink disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
+        className="min-h-11 w-full rounded-full bg-ink px-4 py-2.5 text-sm font-semibold text-on-ink transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {status === "submitting"
           ? "Sending…"
