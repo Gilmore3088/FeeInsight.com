@@ -30,7 +30,7 @@ export function CityList({
   cities: CityLink[];
   stateName: string;
   stateCode: string;
-  /** The largest markets, shown as one-tap links under the search until the reader types. */
+  /** The cities with the most institutions, shown as one-tap links under the search until the reader types. */
   shortcuts?: CityLink[];
 }) {
   const [query, setQuery] = useState("");
@@ -66,7 +66,7 @@ export function CityList({
       </p>
       {!q && shortcuts.length > 0 && (
         <div className="mt-4">
-          <p className="text-[13px] font-medium text-ink">Largest markets</p>
+          <p className="text-[13px] font-medium text-ink">Cities with the most institutions</p>
           <ul className="mt-2 flex flex-wrap gap-2">
             {shortcuts.map((c) => (
               <li key={c.href}>
@@ -75,7 +75,9 @@ export function CityList({
                   className="inline-flex min-h-11 items-center gap-2 rounded-full border border-border bg-surface-0 px-4 text-[14px] font-medium text-ink hover:border-ink"
                 >
                   {c.name}
-                  <span className="text-[12px] font-normal text-ink-muted">{c.institutions} institutions</span>
+                  <span className="text-[12px] font-normal tabular-nums text-ink-muted">
+                    {c.withFees} of {c.institutions} with fees
+                  </span>
                 </Link>
               </li>
             ))}

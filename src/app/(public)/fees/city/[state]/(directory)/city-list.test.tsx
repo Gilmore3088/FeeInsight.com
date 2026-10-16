@@ -25,6 +25,12 @@ describe("CityList", () => {
     expect(screen.getByText("2 of 3 cities with fee coverage")).toBeTruthy();
   });
 
+  it("labels shortcuts by institution count and shows coverage the same way as the list", () => {
+    render(<CityList cities={cities} stateName="Florida" stateCode="FL" shortcuts={[cities[1]]} />);
+    expect(screen.getByText("Cities with the most institutions")).toBeTruthy();
+    expect(screen.getAllByText("40 of 70 with fees")).toHaveLength(2);
+  });
+
   it("answers a town it doesn't cover with ways on, not an empty list", () => {
     render(<CityList cities={cities} stateName="Florida" stateCode="FL" />);
     fireEvent.change(screen.getByLabelText("Find your city"), { target: { value: "Sarasota" } });
