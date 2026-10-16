@@ -42,7 +42,7 @@ describe("homepage example: one question, one finding, the same fee in the repor
     // Names wrap rather than being cut.
     expect(answer.slice(0, answer.indexOf("data-workflow-evidence"))).not.toContain("truncate");
     // Labelled as a sample, never as a signed-in screen.
-    expect(t).toContain("Sample answer · Capital City Bank");
+    expect(t).toContain("Hamilton · Sample answer · Capital City Bank");
     expect(html).not.toContain("Hamilton · Research");
   });
 

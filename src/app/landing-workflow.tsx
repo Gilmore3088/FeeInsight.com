@@ -235,7 +235,7 @@ export function HamiltonAnswer({ lead }: { lead: WorkflowLead }) {
       <p className="ml-auto w-fit max-w-[90%] rounded-2xl rounded-br-sm bg-ink px-4 py-3 text-[15px] leading-snug text-on-ink" data-example-question>
         How does our {fee} fee compare with local competitors?
       </p>
-      <ProductFrame label={`Sample answer · ${lead.name}`} className="fi-window-lift mt-4">
+      <ProductFrame label={`Hamilton · Sample answer · ${lead.name}`} className="mt-4">
         <Answer lead={lead} />
       </ProductFrame>
     </div>
@@ -252,7 +252,7 @@ export function ReportPreview({ report, lead }: { report: MarketReport; lead: Wo
   const marketLabel = `${placeLabel(market.places[0])} area${market.county_fips.length > 1 ? ` (${market.county_fips.length} counties)` : ""}`;
   return (
     <div className="mx-auto max-w-3xl">
-      <ProductFrame label={`${REPORT_OFFER.name} · sample`} className="fi-window-lift">
+      <ProductFrame label={`${REPORT_OFFER.name} · Sample`}>
         <div className="p-4 sm:p-6" data-workflow-report>
           <p className="text-[1.15rem] font-semibold leading-tight tracking-[-0.02em] text-ink sm:text-[1.3rem]">
             {data.subject.institution_name} against its local market

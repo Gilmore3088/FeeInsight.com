@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MOBILE_NAV_SECTIONS, navItemsFor, PRIMARY_CTA_NAV, PRO_PLANS_NAV, PRODUCT_NAV_GROUPS, PUBLIC_NAV_ITEMS, RESOURCES_NAV } from "./nav-items";
+import { HEADER_CTA_NAV, MOBILE_NAV_SECTIONS, navItemsFor, PRIMARY_CTA_NAV, PRO_PLANS_NAV, PRODUCT_NAV_GROUPS, PUBLIC_NAV_ITEMS, RESOURCES_NAV } from "./nav-items";
 
 describe("navItemsFor", () => {
   it("gives Pro users the Hamilton workspace menu, not the old tool names", () => {
@@ -52,6 +52,7 @@ describe("navItemsFor", () => {
 
   it("points the navy CTA at the institution search and the Pro button at the plans", () => {
     expect(PRIMARY_CTA_NAV).toEqual({ label: "See where your fees stand", href: "/institutions" });
+    expect(HEADER_CTA_NAV).toEqual({ label: "See plans", href: "/subscribe" });
     expect(PRO_PLANS_NAV).toEqual({ label: "See Hamilton plans", href: "/subscribe" });
   });
 

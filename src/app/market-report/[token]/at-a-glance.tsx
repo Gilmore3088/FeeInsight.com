@@ -112,7 +112,7 @@ export function AtAGlance({
             role="row"
             data-highlight={line.key === highlight ? "" : undefined}
             className={`grid grid-cols-[1fr_auto_auto] items-center gap-x-4 border-b border-[#F1ECE4] py-2.5 last:border-0 ${wide("sm:grid-cols-[13rem_1fr_5.5rem_6rem] sm:gap-x-5 sm:border-0 sm:py-0")} ${
-              line.key === highlight ? "-mx-3 rounded-lg bg-brick-tint/60 px-3" : ""
+              line.key === highlight ? "-mx-3 rounded-lg bg-ink/[0.04] px-3 ring-1 ring-inset ring-border" : ""
             }`}
           >
             <span role="cell" className={`text-[14px] text-ink ${line.key === highlight ? "font-semibold" : ""}`}>{line.label}</span>

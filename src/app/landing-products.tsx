@@ -11,12 +11,13 @@ import { DistrictMap } from "./landing-charts";
 import { DISPLAY_H2, InstitutionSearchForm, SANS, SECTION_INNER, TEXT_LINK, hasFigure, type HomeData } from "./landing-shared";
 import { HamiltonAnswer, ReportPreview, workflowLead } from "./landing-workflow";
 
-function Product({ mark, benefit, children }: { mark: ReactNode; benefit: string; children: ReactNode }) {
+/** One product's column: its mark and line centered over the column (James, Oct 16). */
+function Product({ mark, benefit, children, className = "" }: { mark: ReactNode; benefit: string; children: ReactNode; className?: string }) {
   return (
-    <div className="flex min-w-0 flex-col">
-      <div className="max-sm:text-center">
-        <h3 className="flex h-8 items-center max-sm:justify-center">{mark}</h3>
-        <p className="mt-3 max-w-md text-[17px] leading-relaxed text-ink-soft max-sm:mx-auto">{benefit}</p>
+    <div className={`flex min-w-0 flex-col ${className}`}>
+      <div className="text-center">
+        <h3 className="flex h-8 items-center justify-center">{mark}</h3>
+        <p className="mx-auto mt-3 max-w-md text-[17px] leading-relaxed text-ink-soft">{benefit}</p>
       </div>
       {children}
     </div>
@@ -47,13 +48,15 @@ export function LandingProducts({
         <h2 id="products-heading" className={`mx-auto max-w-3xl text-center ${DISPLAY_H2}`} style={SANS}>
           The fee data, and the workspace built on it
         </h2>
-        <div className="mt-10 grid items-start gap-14 lg:mt-12 lg:grid-cols-2 lg:gap-10">
+        {/* A faint rule between the two products on desktop shows the split. */}
+        <div className="mt-10 grid gap-14 lg:mt-12 lg:grid-cols-2 lg:gap-0 lg:divide-x lg:divide-border/70">
           <Product
             mark={<Logo mark="bank-fee-index-wordmark" height={24} />}
             benefit="See what banks and credit unions charge, with the spread and the benchmark for each fee, from the nation down to your market."
+            className="lg:pr-10"
           >
             <InstitutionSearchForm id="index-search" secondary className="mt-5 w-full [&_.fi-field]:max-w-none [&_label]:sr-only" />
-            <p className="mt-2.5 text-[13px] leading-5 text-ink-muted max-sm:text-center">
+            <p className="mt-2.5 text-center text-[13px] leading-5 text-ink-muted">
               {hasFigure(summary.institutionsLabel) ? `${summary.institutionsLabel} institutions · ` : ""}
               {summary.freshnessLabel} ·{" "}
               <Link href="/fees" className={`whitespace-nowrap ${TEXT_LINK}`}>
@@ -61,16 +64,17 @@ export function LandingProducts({
               </Link>
             </p>
             {map ? (
-              <ProductFrame label="Live data" className="fi-window-lift mt-6">
+              <ProductFrame label={`${PRODUCT_NAME} · National`} className="mt-6">
                 <DistrictMap data={data} compact />
               </ProductFrame>
             ) : null}
           </Product>
           <Product
             mark={<Logo mark="hamilton-wordmark" height={24} />}
-            benefit="Ask about your own fees and get an answer against your market, with the source behind it, ready for your board."
+            benefit="Compare your fees, investigate the differences, and produce reports for your board, with the source behind every figure."
+            className="lg:pl-10"
           >
-            <p className="mt-3 text-[14px] max-sm:text-center">
+            <p className="mt-3 text-center text-[14px]">
               <TrackLink event="upgrade_click" eventProps={{ placement: "home_products" }} href={PRO_PLANS_NAV.href} className={TEXT_LINK}>
                 {PRO_PLANS_NAV.label}
               </TrackLink>

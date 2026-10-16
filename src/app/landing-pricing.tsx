@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { DEMO_REQUEST_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
 import { TrackLink } from "@/components/track-link";
-import { REPORT_OFFER, REPORT_PRICE_INLINE } from "@/lib/constants";
+import { PRODUCT_NAME, REPORT_OFFER, REPORT_PRICE_INLINE } from "@/lib/constants";
 import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import { PRO_TIERS, tierPriceLabel } from "@/lib/pro-tiers";
 import { PlanIncludes } from "./subscribe/plans-exhibit";
@@ -19,7 +19,7 @@ export function LandingPricing() {
           center
           eyebrow="Hamilton Pro"
           title="Priced by your institution's size"
-          line={`One plan covers up to ${WORKSPACE_SEAT_LIMIT} people, paid monthly or annually.`}
+          line={`Hamilton Pro is the plan that includes Hamilton and the full ${PRODUCT_NAME}, for up to ${WORKSPACE_SEAT_LIMIT} people.`}
         />
         <PlanIncludes />
         <ul className="mx-auto mt-10 grid max-w-4xl gap-3 sm:grid-cols-3 sm:gap-4">

@@ -1,18 +1,19 @@
 import { PRO_PLANS_NAV } from "@/components/nav-items";
 import { TrackLink } from "@/components/track-link";
 import { PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
-import { SAMPLE_REPORT_HREF, SANS } from "./landing-shared";
+import { Eyebrow, SAMPLE_REPORT_HREF, SANS } from "./landing-shared";
 
 /**
- * The promise (James's homepage reset, Oct 16): his headline and line, then the two actions, see
- * the plans or open a real report. The institution search lives with the Bank Fee Index below.
+ * The promise (James's homepage reset, Oct 16): who it is for, his headline and line, then the two
+ * actions, see the plans or open a real report. The institution search lives with the Bank Fee Index below.
  */
 export function LandingHero() {
   return (
     <section className="bg-paper">
       <div className="mx-auto flex max-w-6xl flex-col items-center px-4 pb-12 pt-10 text-center sm:px-6 sm:pb-16 sm:pt-16">
+        <Eyebrow>For banks and credit unions</Eyebrow>
         <h1
-          className="max-w-4xl text-[2.25rem] !font-semibold leading-[1.04] !tracking-[-0.04em] text-ink sm:text-[3rem] lg:text-[3.5rem]"
+          className="mt-4 max-w-4xl text-[2.25rem] !font-semibold leading-[1.04] !tracking-[-0.04em] text-ink sm:text-[3rem] lg:text-[3.5rem]"
           style={SANS}
         >
           Your next fee review doesn&apos;t need to take weeks.
