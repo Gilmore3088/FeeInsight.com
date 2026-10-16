@@ -631,6 +631,42 @@ export const HAND_REFILES: readonly HandRefile[] = [
   { feePublishedId: 63055, from: "wire_domestic_outgoing", amount: 35, to: "wire_intl_outgoing", name: "Wire Trans. (Intern. Outgoing)",
     oldName: "Wire Trans. (Intern. Outgoing) ………",
     why: "#1513, inst 5653, doc 18876: \"Wire Trans. (Intern. Outgoing) ………...$35.00 per Wire\", an international wire; the domestic one is \"Wire Trans. (Dom. Outgoing) …$18.00 per Wire\" (live as 63054)" },
+  // #1646 (source check v17 reads name words whole): two right fees whose names the page does not
+  // print where it prints the price. v16 traced them only through letters inside other words
+  // ("low" in "below" and in "following"). Each is renamed in place to the page's own words, so it
+  // stays live. Undo: rename back to `oldName`; the run event and `pipeline_feedback` row keep both.
+  { feePublishedId: 96663, from: "minimum_balance", amount: 2, to: "minimum_balance", name: "Accounts with balances below $50 on the last day of the month",
+    oldName: "Low balance fee",
+    why: "#1646, inst 6863, doc 22481: \"Accounts with balances below $50 on the last day of the month are subject to a $2 fee.\"" },
+  { feePublishedId: 88058, from: "minimum_balance", amount: 15, to: "minimum_balance", name: "Money Market Account Low Balance Fee",
+    oldName: "Low Balance Fee",
+    why: "#1646, inst 4613, doc 20748: \"MONEY MARKET ACCOUNTS / Money Market Account / Low Balance Fee / (charged if the average daily balance is less than $2,500 for the calendar month) ...... $15.00\"" },
+  // #1646 re-review: right prices whose stored names were cut off or were sentence fragments; v16
+  // traced them only through a cut word or letters inside other words. Each is renamed in place to
+  // the page's own name for the line, so it stays live. Undo: rename back to `oldName`.
+  { feePublishedId: 138829, from: "garnishment_levy", amount: 34, to: "garnishment_levy", name: "Judicial Attachment (Garnishment)",
+    oldName: "Jud",
+    why: "#1646, inst 7204, doc 30627: \"Judicial Attachment (Garnishment) $34.00\"" },
+  { feePublishedId: 137077, from: "card_replacement", amount: 3.5, to: "card_replacement", name: "Replace Damaged Card",
+    oldName: "Replace Dam",
+    why: "#1646, inst 6852, doc 29845: \"Replace Damaged Card | $3.50\"" },
+  { feePublishedId: 15595, from: "account_research", amount: 27.5, to: "account_research", name: "Account Balancing Assistance, per hour",
+    oldName: "Account Bala",
+    why: "#1646, inst 61, doc 14695: \"Account Balancing Assistance, per hour ..... $27.50\"" },
+  { feePublishedId: 135314, from: "stop_payment", amount: 30, to: "stop_payment", name: "Stop payment request",
+    oldName: "Stop payment wil",
+    why: "#1646, inst 2176, doc 29210: \"A charge of $30.00 will be assessed to the account holder as payment for implementing the stop payment request.\"" },
+  { feePublishedId: 97924, from: "stop_payment", amount: 25, to: "stop_payment", name: "Stop-payment order",
+    oldName: "stop payment order is made verbally, we may also require you to put your request in writing and get it to us within four",
+    why: "#1646, inst 2796, doc 15170: \"* We will charge $25.00 for each stop-payment order for / preauthorized transfers.\"" },
+  { feePublishedId: 98545, from: "dormant_account", amount: 3, to: "dormant_account", name: "Monthly dormant fee for Savings",
+    oldName: "account fees in addition to the normal service charges (e.g., monthly maintenance fees, etc.) while it is in dormant sta",
+    why: "#1646, inst 1484, doc 15002: \"the monthly dormant fee of $3 for Savings and $10 for Money Market accounts\"" },
+  { feePublishedId: 130805, from: "atm_non_network", amount: 1.5, to: "atm_non_network", name: "Charge at ATMs we do not own or operate",
+    oldName: "transfer funds from checking to savings account(s) with an ATM or Visa Check card get information about: the account bal",
+    why: "#1646, inst 2094, doc 27953: \"there is a charge of $1.50 at ATMs we do not own or operate\"" },
+  // 67412 (inst 71, doc 16337, $12) is not renamed: as "Sweep Transfer Fee" it would duplicate live
+  // 144309 (same institution, document, name and price), so v17 takes it down as the duplicate it is.
   // #1655 (read-only, Oct 16): two Navy Federal home equity line fees filed as deposit fees, so they
   // showed in the consumer overdraft guide. Each price is right; both are loan fees, so they move to
   // other lending (the 50 have no returned-loan-payment type). Both keep their printed names, so neither

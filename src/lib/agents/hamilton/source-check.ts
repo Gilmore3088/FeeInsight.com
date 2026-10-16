@@ -61,7 +61,9 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // week" is a sustained overdraft charge too (Origin's $10 rows, Oct 8).
 // Version 16: a price from a fee-change notice's earlier column ("Money Orders | $2.00 | $5.00"
 // under "Fee through | Fee as of") is what the fee was, not the fee now (Jeanne D'Arc, Oct 8).
-export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 16 } as const;
+// Version 17: a fee name's words are matched where a word begins, and a short word ("Star") only
+// as that word or its plural, so "Star Checking" no longer traces to "getting started" (#1646).
+export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 17 } as const;
 
 /**
  * An institution is checked again whenever a newer live fee appears, so a fee

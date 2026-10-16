@@ -378,28 +378,179 @@ function regridRows(lines: string[]): string[] {
   return out;
 }
 
-function nameStems(feeName: string): string[] {
-  const words = comparable(feeName)
-    .replace(/[^a-z0-9' ]/g, " ")
-    .split(" ")
-    .filter((word) => (word.length >= 3 && !STOP_WORDS.has(word) && !/^\d+$/.test(word)) || /^\d+x\d+$/.test(word));
-  // A size is matched whole, so "5x10" never matches inside "15x10".
-  return Array.from(new Set(words.map((word) => (/^\d+x\d+$/.test(word) ? ` ${word} ` : word.slice(0, STEM_LENGTH)))));
+/**
+ * A fee name's stems, with the name's own words in order: a closed-up spelling of two of them
+ * ("Nonsufficient" for "Non-Sufficient", "Billpay" for "Bill Pay") is read against them.
+ */
+type NameStems = string[] & { readonly words: readonly string[] };
+
+function withNameWords(stems: string[], words: readonly string[]): NameStems {
+  return Object.assign(stems, { words });
 }
 
-function namesFee(line: string, stems: string[], atLeast?: number): boolean {
+function nameStems(feeName: string): NameStems {
+  const all = comparable(feeName).replace(/[^a-z0-9' ]/g, " ").split(" ").filter((word) => word.length > 0);
+  const words = all.filter((word) => (word.length >= 3 && !STOP_WORDS.has(word) && !/^\d+$/.test(word)) || /^\d+x\d+$/.test(word));
+  // A size is matched whole, so "5x10" never matches inside "15x10".
+  return withNameWords(Array.from(new Set(words.map((word) => (/^\d+x\d+$/.test(word) ? ` ${word} ` : word.slice(0, STEM_LENGTH))))), all);
+}
+
+/** What may follow a short name word: the word's end, a plural or a common ending ("Mailing", "Cardholder"). */
+const WHOLE_WORD_END = /(?:'?s|es|ing|ed|ers?|holders?)?(?![a-z])/y;
+
+/** "Pay" also reads as "Payment" ("Online Bill Pay" in "Electronic Bill Payment"). */
+const PAYMENT_END = /ments?(?![a-z])/y;
+
+/**
+ * Text printed without its spaces: a long run of letters ("Replacelostdebitcard(each)"), or words
+ * run straight into a price ("closedwithin 6 months$10.00/Hour", "$10.00minimum charge").
+ */
+const GLUED = /[a-z]{16,}|[a-z]\$\s?\d|\d\.\d{2}[a-z]{3,}/;
+
+/** Short name words that stand for one longer word: "Reg D" is "Regulation D", never "Register". */
+const ABBREVIATIONS: ReadonlyMap<string, readonly string[]> = new Map([
+  ["reg", ["regulation"]],
+  ["dep", ["deposit", "deposits"]],
+  ["min", ["minimum"]],
+  ["max", ["maximum"]],
+  ["int", ["international"]],
+  ["info", ["information"]],
+  ["misc", ["miscellaneous"]],
+  ["admin", ["administrative", "administration"]],
+  ["temp", ["temporary"]],
+  ["doc", ["document", "documents", "documentation"]],
+]);
+
+/** A name's "Non-" is also printed "In-" or "Un-" ("Non-Sufficient Funds" as "Insufficient Funds"). */
+const NEGATIONS: ReadonlySet<string> = new Set(["non", "in", "un"]);
+
+/** A line as name words are looked for in it, with whether it was printed without its spaces. */
+interface Haystack {
+  text: string;
+  glued: boolean;
+}
+
+function isLetter(code: number): boolean {
+  return code >= 97 && code <= 122;
+}
+
+/**
+ * A name stem matches only where a word begins, never inside another word (#1646). A stem cut from
+ * a longer name word ("overd" from "Overdraft") is its first letters, so it matches the words
+ * that begin with them ("Overdrafts"). A short name word kept whole ("Star", "Stop", "ATM") is a
+ * word itself: it matches that word, its plural or a common ending ("Stops", "ATMs",
+ * "Cardholder"), never a longer word that merely begins with it ("started", "stopped"). Only
+ * letters join a word, so a footnote number printed against it still leaves it whole
+ * ("Lost key13 | $18"). A size stem carries its own spaces (" 5x10 ") and is matched as written.
+ *
+ * Two spellings close the name's own words up, and match anyway: a word made of the name's words
+ * run together ("Nonsufficient", "Re-presentment" as "Representment", "Debitcard"), and text
+ * printed without its spaces at all ("Officialchecks$2", `GLUED`), which is read as it always
+ * was, letters anywhere. A known abbreviation ("Reg") matches only the word it stands for, and a
+ * name's "Non-" matches "In-" or "Un-" closed up ("Insufficient").
+ */
+function stemAt(haystack: Haystack, stem: string, nameWords: readonly string[]): boolean {
+  const text = haystack.text;
+  if (haystack.glued || stem.charCodeAt(0) === 32) return text.includes(stem);
+  const short = stem.length < STEM_LENGTH;
+  for (let at = text.indexOf(stem); at >= 0; at = text.indexOf(stem, at + 1)) {
+    let start = at;
+    while (start > 0 && isLetter(text.charCodeAt(start - 1))) start -= 1;
+    const opens = start === at || closesUpNameWords(text.slice(start, at), stem, nameWords);
+    if (!opens) continue;
+    if (!short) return true;
+    const end = at + stem.length;
+    WHOLE_WORD_END.lastIndex = end;
+    if (WHOLE_WORD_END.test(text)) return true;
+    if (stem === "pay") {
+      PAYMENT_END.lastIndex = end;
+      if (PAYMENT_END.test(text)) return true;
+    }
+    if (isLetter(text.charCodeAt(end)) && (abbreviates(text, stem, at) || runsIntoNextNameWord(stem, text, end, nameWords))) return true;
+  }
+  return false;
+}
+
+/** The word at `at` is the one word this abbreviation stands for ("reg" in "Regulation"). */
+function abbreviates(text: string, stem: string, at: number): boolean {
+  const words = ABBREVIATIONS.get(stem);
+  if (!words) return false;
+  let end = at + stem.length;
+  while (isLetter(text.charCodeAt(end))) end += 1;
+  const word = text.slice(at, end);
+  return words.includes(word);
+}
+
+/** The letters before a stem are the name's words just before it, run together ("non" + "suffi"). */
+function closesUpNameWords(before: string, stem: string, nameWords: readonly string[]): boolean {
+  for (let j = 1; j < nameWords.length; j += 1) {
+    if (!nameWords[j].startsWith(stem)) continue;
+    let joined = "";
+    for (let i = j - 1; i >= 0 && joined.length < before.length; i -= 1) {
+      joined = nameWords[i] + joined;
+      if (joined === before || (joined === "non" && NEGATIONS.has(before))) return true;
+    }
+  }
+  return false;
+}
+
+/** A short name word runs straight into the name's next word ("bill" + "pay" in "Billpay"). */
+function runsIntoNextNameWord(stem: string, text: string, end: number, nameWords: readonly string[]): boolean {
+  for (let i = 0; i + 1 < nameWords.length; i += 1) {
+    if (nameWords[i] === stem && text.startsWith(nameWords[i + 1].slice(0, 3), end)) return true;
+  }
+  return false;
+}
+
+/** Recent lines' haystacks: callers ask about one line for many stems and many fees. */
+const haystackCache = new Map<string, Haystack[]>();
+const HAYSTACK_CACHE_LIMIT = 20_000;
+
+function haystackOf(text: string): Haystack {
+  return { text, glued: GLUED.test(text) };
+}
+
+/**
+ * The text as name words are looked for in it. A label run into its value by the text reader
+ * ("Product/ServiceTemporary Checks") also reads with a space where a capital follows a small
+ * letter, so the run-in word begins a word; the text as printed still reads too ("eStatement").
+ */
+function nameHaystacks(text: string): Haystack[] {
+  const cached = haystackCache.get(text);
+  if (cached) return cached;
+  const plain = haystackOf(` ${comparable(text)} `);
+  const haystacks = /[a-z][A-Z]/.test(text) ? [plain, haystackOf(` ${comparable(text.replace(/([a-z])([A-Z])/g, "$1 $2"))} `)] : [plain];
+  if (haystackCache.size >= HAYSTACK_CACHE_LIMIT) haystackCache.clear();
+  haystackCache.set(text, haystacks);
+  return haystacks;
+}
+
+function hasStem(text: string, stem: string, stems: NameStems): boolean {
+  return nameHaystacks(text).some((haystack) => stemAt(haystack, stem, stems.words));
+}
+
+function namesFee(line: string, stems: NameStems, atLeast?: number): boolean {
   if (stems.length === 0) return false;
-  const haystack = ` ${comparable(line)} `;
-  const found = stems.filter((stem) => haystack.includes(stem)).length;
+  const found = stemCount(line, stems);
   return found >= (atLeast ?? Math.max(1, Math.ceil(stems.length * NAME_WORD_SHARE)));
 }
 
-function stemCount(text: string, stems: string[]): number {
+/**
+ * Which of a row's prices sits nearest the name's letters, once the row names the fee: letters
+ * anywhere, as before #1646 ("Low Balance Fee | $5 ... below $100 | $10 ..."). Whether a line names
+ * the fee at all is `namesFee`, which reads whole words.
+ */
+function nearNameCount(text: string, stems: string[]): number {
   const haystack = ` ${comparable(text)} `;
   return stems.filter((stem) => haystack.includes(stem)).length;
 }
 
-function statesAmount(line: string, amount: number, stems: string[]): SourceCheckFailure | null {
+function stemCount(text: string, stems: NameStems): number {
+  const haystacks = nameHaystacks(text);
+  return stems.filter((stem) => haystacks.some((haystack) => stemAt(haystack, stem, stems.words))).length;
+}
+
+function statesAmount(line: string, amount: number, stems: NameStems): SourceCheckFailure | null {
   const money = moneyTokens(line);
   if (amount === 0 && !money.some((t) => t.value > 0 && !isThreshold(line, t))) {
     // A $0 balance in a condition ("if your Available Balance ... is at least $0") is not a $0 fee.
@@ -426,8 +577,8 @@ function statesAmount(line: string, amount: number, stems: string[]): SourceChec
   // not the fee's price when the row prints another; alone ("5 free, $2.00 each additional") it is.
   const base = noted.filter((t) => !ADD_ON_RATE.test(line.slice(t.end)));
   const prices = base.length > 0 ? base : noted;
-  const before = prices.map((price, i) => stemCount(line.slice(i === 0 ? 0 : prices[i - 1].end, price.start), stems));
-  const after = prices.map((price, i) => stemCount(line.slice(price.end, prices[i + 1]?.start ?? line.length), stems));
+  const before = prices.map((price, i) => nearNameCount(line.slice(i === 0 ? 0 : prices[i - 1].end, price.start), stems));
+  const after = prices.map((price, i) => nearNameCount(line.slice(price.end, prices[i + 1]?.start ?? line.length), stems));
   // A line that opens with a price and ends with a name ("$25 (3 X 5), $35 (3 X 10)")
   // names each fee after its price.
   const priceFirst =
@@ -470,7 +621,7 @@ function statesAmount(line: string, amount: number, stems: string[]): SourceChec
  * table whose next column prices the same fee ("NSF | NONE | $14.00"), not a free word
  * for a later name ("$3.95 FEE FOR PRINTED STATEMENT | NO CHARGE FOR PAPER STATEMENT").
  */
-function freeWordIsThePrice(line: string, prices: MoneyToken[], index: number, stems: string[]): boolean {
+function freeWordIsThePrice(line: string, prices: MoneyToken[], index: number, stems: NameStems): boolean {
   const word = prices[index];
   if (/\d\s*$/.test(line.slice(0, word.start)) || line.lastIndexOf("(", word.start) > line.lastIndexOf(")", word.start)) return false;
   const next = prices[index + 1];
@@ -878,7 +1029,8 @@ function checkAgainstLines(
   perItem = false,
 ): SourceCheckResult {
   // A cap's row names the fee it caps ("Overdraft/Non-Sufficient Funds"), rarely the cap.
-  const stems = dailyCap ? nameStems(feeName).filter((stem) => !DAILY_CAP_NAME_WORDS.has(stem)) : nameStems(feeName);
+  const named = nameStems(feeName);
+  const stems = dailyCap ? withNameWords(named.filter((stem) => !DAILY_CAP_NAME_WORDS.has(stem)), named.words) : named;
   const category = new RegExp(categoryPattern.replace(/\\m|\\M/g, "\\b"), "i");
   const rounded = Math.round(amount * 100) / 100;
 
@@ -910,7 +1062,7 @@ function checkAgainstLines(
     }
     const underHeading =
       namesFee(line, stems, 1) &&
-      !headings.some((above) => namesFee(above, stems) && stems.every((stem) => !` ${comparable(line)} `.includes(stem) || ` ${comparable(above)} `.includes(stem))) &&
+      !headings.some((above) => namesFee(above, stems) && stems.every((stem) => !hasStem(line, stem, stems) || hasStem(above, stem, stems))) &&
       namesFee(`${headings.join(" ")} ${line}`, stems, stems.length);
     if (!namesFee(line, stems) && !underHeading) continue;
     let row = feeRow(lines, i);
@@ -1053,7 +1205,7 @@ export function checkRateAgainstSource(
     // each rate belongs to the words since the previous rate, as prices do.
     const rates = [...row.matchAll(RATE)].map((match) => ({ value: Number(match[1]), start: match.index ?? 0, end: (match.index ?? 0) + match[0].length }));
     const own = rates.filter(
-      (rate, k) => rates.length === 1 || stemCount(row.slice(k === 0 ? 0 : rates[k - 1].end, rate.start), stems) > 0,
+      (rate, k) => rates.length === 1 || nearNameCount(row.slice(k === 0 ? 0 : rates[k - 1].end, rate.start), stems) > 0,
     );
     if (!own.some((rate) => Math.abs(rate.value - ratePercent) < 0.00005)) {
       best = "amount_not_the_fee";
