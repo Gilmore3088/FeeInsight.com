@@ -654,19 +654,24 @@ Darwin owns verification and classification.
   (`nonDepositVerdict`), each rule its own reason prefix and count (`by_rule`).
   `lending_category` is v1's rule, except that on a rate page (a loan document named only "current
   rates" or "rate sheet", with no loan product segment: `ratePageDocument`) a lending-category fee
-  also needs lending wording in its name, so Siouxland's `/current-rates` "Late Fee" $5
-  (late_payment, doc 25773, among the safe deposit box lines) stays live
-  (`kept_generic_on_rate_page`). `lending_wording_on_loan_document` takes down a deposit-category
+  also needs lending wording in its name (`hasRatePageLendingWording`: the allowlist below plus,
+  for this branch only, "application", "credit report" and "processing"), so Siouxland's
+  `/current-rates` "Late Fee" $5 (late_payment, fee 114953, among the safe deposit box lines) stays
+  live (`kept_generic_on_rate_page`) while Bank of Greene's "Application fee" and "Credit Report
+  fee" and Independent Bank's "Standard processing fee" come down. `lending_wording_on_loan_document` takes down a deposit-category
   fee on a loan, HELOC, card or rate document whose name carries lending wording
   (`hasLendingWording`: a closed allowlist of mortgage, HELOC, home equity, cash advance, late
-  payment, payoff, appraisal, closing cost, origination, escrow, subordination, and "loan" only as
-  "loan late", "loan application", "loan processing", "loan modification", "loan extension" or "loan
-  documentation"), unless the name also carries deposit-side wording (safe deposit, deposit box,
-  checking, savings, share draft, overdraft, transfer, phone): "Mortgage processing and research
+  payment, payoff, appraisal, closing cost, escrow, subordination, origination only after loan,
+  mortgage or HELOC, and "loan" only as "loan late", "loan application", "loan processing", "loan
+  modification", "loan extension" or "loan documentation"), unless the name also carries
+  deposit-side wording (safe deposit, box, SDB, checking, savings, share, certificate, CD, club,
+  coin, debit, ACH, wire, overdraft, transfer, phone, or a "mortgage/loan/HELOC/home equity
+  payment" phrase, a payment-channel fee): "Mortgage processing and research
   fee" (account_research), "Late Payment — Return Check" (nsf), "Cash Advance ATM"
   (atm_non_network), a $250 subordination (legal_process). A bare "loan" ("Loan payment by phone",
   "transfer to pay a loan", "Loan coupon book") and a bare "late fee" are not lending wording, and
-  such fees stay. Same switch as v1. `brokerage_document` counts every deposit-category fee on a
+  such fees stay; so do "ACH origination", "share certificate early payoff", "SDB late payment",
+  "debit card cash advance", "coin appraisal" and "Mortgage payment at teller". Same switch as v1. `brokerage_document` counts every deposit-category fee on a
   brokerage, wealth or investing document (U.S. Bank's brokerage pages: wire, "Research", returned
   check, stop payment, overnight check, IRA fees; the taxonomy has no brokerage category): those come
   down only when `BROKERAGE_DOCUMENT_TAKEDOWN_LIVE` is on as well (false, and it stays off when the
@@ -676,7 +681,8 @@ Darwin owns verification and classification.
   SQL: `nonDepositCountSql()` (counts by kind and verdict), `nonDepositSamplesSql()` (by document)
   and `nonDepositFeeVerdictsSql()` (one row per fee with its verdict), checked equal to the JS on
   the fee fixtures in `darwin/non-deposit-document-check.fixtures.ts` crossed with the URL fixtures
-  (391 fees on matched documents) on a local Postgres 16 (UTF8).
+  on a local Postgres 16 (UTF8). The `documents` and `judged` CTEs are `MATERIALIZED` (the
+  reviewer's prod-size run went from over 5 minutes to about 1 second with the same output).
 - Released-fee category re-check (`release-repair.ts`, the repair half of #1367; decision
   2026-10-15, "Darwin re-checks every live fee against today's rules"). Until PR #1468 the release
   check passed "." as the category pattern, so every fee the release published before then went live

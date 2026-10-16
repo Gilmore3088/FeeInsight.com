@@ -46,7 +46,8 @@ type SqlTag = typeof sql;
  *   (a "loan" document named only as "current rates" or "rate sheet", `ratePageDocument`), which
  *   often holds the whole deposit schedule, it also needs lending wording in its name: Siouxland's
  *   `/current-rates` "Late Fee" $5 (late_payment) sits among the safe deposit box lines and stays
- *   live (`keptGenericOnRatePage`).
+ *   live (`keptGenericOnRatePage`), while "Application fee", "Credit Report fee" and "Standard
+ *   processing fee" there come down (`hasRatePageLendingWording`).
  * - `lending_wording_on_loan_document`: a deposit-category fee on a loan, HELOC, card or rate
  *   document whose name carries clear lending wording (`hasLendingWording`, a closed allowlist:
  *   "Mortgage processing and research fee" filed as account_research, "Late Payment - Return
@@ -100,21 +101,33 @@ export const NON_DEPOSIT_SAMPLES = 20;
  * cut to lower-case words padded with a space (`lendingWordingText`). Written once for JS and
  * Postgres (no `\b`, no lookaround). Each entry names a loan, card-credit or mortgage service and
  * no deposit one: mortgage, HELOC, home equity, cash advance, late payment, payoff (or "pay off"),
- * appraisal, closing cost, origination, escrow, subordination, and "loan" only as "loan late",
- * "loan application", "loan processing", "loan modification", "loan extension" or "loan
- * documentation". A bare "loan" is left out on purpose: "Loan payment by phone", "Loan coupon
- * book" and "transfer to pay a loan" are on many deposit schedules. A bare "late fee" is left out:
- * a safe deposit box has one too.
+ * appraisal, closing cost, escrow, subordination, origination only as "loan", "mortgage" or
+ * "HELOC origination" ("ACH origination" and "wire origination" are deposit services), and "loan"
+ * only as "loan late", "loan application", "loan processing", "loan modification", "loan
+ * extension" or "loan documentation". A bare "loan" is left out on purpose: "Loan payment by
+ * phone", "Loan coupon book" and "transfer to pay a loan" are on many deposit schedules. A bare
+ * "late fee" is left out: a safe deposit box has one too.
  */
-export const LENDING_WORDING = " (?:mortgages?|helocs?|home equity|cash advances?|late payments?|pay ?offs?|appraisals?|closing costs?|originations?|escrows?|subordinations?|loan (?:late|applications?|processing|modifications?|extensions?|documentation|docs?)) ";
+export const LENDING_WORDING = " (?:mortgages?|helocs?|home equity|cash advances?|late payments?|pay ?offs?|appraisals?|closing costs?|(?:loan|mortgage|heloc) originations?|escrows?|subordinations?|loan (?:late|applications?|processing|modifications?|extensions?|documentation|docs?)) ";
 /**
- * Deposit-side wording that keeps a name with lending wording live: a safe deposit box, a deposit
- * account, an overdraft, a transfer or a payment by phone ("Mortgage payment by phone" can be the
- * teller's fee for paying from a deposit account). When unsure, the fee stays.
+ * Deposit-side wording that keeps a name with lending wording live (review of v2, #1518): a safe
+ * deposit box ("box rent late payment", "SDB late payment"), a deposit account or certificate
+ * ("share certificate early payoff", "early payoff of CD", "club account late payment"), a debit
+ * card ("debit card cash advance"), ACH, wire, coin ("coin appraisal"), an overdraft, a transfer,
+ * and a payment channel: "by phone", or a "mortgage/loan/HELOC/home equity payment" phrase
+ * ("Mortgage payment at teller", "Mortgage payment (ACH)"), which can be the deposit side's fee
+ * for making the payment. When unsure, the fee stays.
  */
-export const DEPOSIT_SIDE_WORDING = " (?:safe deposit|deposit box(?:es)?|checking|savings|share drafts?|overdrafts?|transfers?|phone|telephone) ";
+export const DEPOSIT_SIDE_WORDING = " (?:safe deposit|box(?:es)?|sdb|checking|savings|shares?|certificates?|cds?|club|coin|debit|ach|wires?|overdrafts?|transfers?|phone|telephone|(?:mortgages?|loans?|helocs?|home equity) payments?) ";
+/**
+ * Extra lending wording for a lending-category fee on a rate page only (prod dry run of v2,
+ * #1518): Independent Bank "Standard processing fee" $175, Bank of Greene "Application fee" $100
+ * and "Credit Report fee" $113.20 are loan fees on rate pages. Never used for a deposit-category fee.
+ */
+export const RATE_PAGE_LENDING_WORDING = " (?:applications?|credit reports?|processing) ";
 const LENDING_WORDING_RE = new RegExp(LENDING_WORDING);
 const DEPOSIT_SIDE_WORDING_RE = new RegExp(DEPOSIT_SIDE_WORDING);
+const RATE_PAGE_LENDING_WORDING_RE = new RegExp(RATE_PAGE_LENDING_WORDING);
 
 /** A fee name as lower-case words padded with one space: every run of non-letters and non-digits (ASCII) one space. */
 export function lendingWordingText(name: string | null | undefined): string {
@@ -127,6 +140,16 @@ export function hasLendingWording(name: string | null | undefined): boolean {
   return LENDING_WORDING_RE.test(text) && !DEPOSIT_SIDE_WORDING_RE.test(text);
 }
 
+/**
+ * Pure: a lending-category fee on a rate page comes down only when this holds: lending wording or
+ * the rate-page extras (`RATE_PAGE_LENDING_WORDING`: application, credit report, processing), and
+ * no deposit-side wording. Siouxland's safe deposit "Late Fee" $5 has neither and stays live.
+ */
+export function hasRatePageLendingWording(name: string | null | undefined): boolean {
+  const text = lendingWordingText(name);
+  return (LENDING_WORDING_RE.test(text) || RATE_PAGE_LENDING_WORDING_RE.test(text)) && !DEPOSIT_SIDE_WORDING_RE.test(text);
+}
+
 /** What the check does with one fee on a matched document: a rule it comes down under, or why it stays. */
 export type NonDepositVerdict = NonDepositRule | "kept_deposit_category" | "kept_generic_on_rate_page";
 
@@ -137,9 +160,8 @@ export type NonDepositVerdict = NonDepositRule | "kept_deposit_category" | "kept
 export function nonDepositVerdict(kind: NonDepositDocumentKind, ratePage: boolean, canonicalFeeKey: string | null | undefined, feeName: string | null | undefined): NonDepositVerdict {
   const lending = isLendingCategory(canonicalFeeKey);
   if (kind === "brokerage") return lending ? "lending_category" : "brokerage_document";
-  const wording = hasLendingWording(feeName);
-  if (lending) return ratePage && !wording ? "kept_generic_on_rate_page" : "lending_category";
-  return wording ? "lending_wording_on_loan_document" : "kept_deposit_category";
+  if (lending) return ratePage && !hasRatePageLendingWording(feeName) ? "kept_generic_on_rate_page" : "lending_category";
+  return hasLendingWording(feeName) ? "lending_wording_on_loan_document" : "kept_deposit_category";
 }
 
 export interface NonDepositRow {
@@ -578,6 +600,12 @@ function lendingWordingSql(column: string): string {
   return `(${text} ~ ${pgLiteral(LENDING_WORDING)} AND ${text} !~ ${pgLiteral(DEPOSIT_SIDE_WORDING)})`;
 }
 
+/** Postgres: `hasRatePageLendingWording(column)`. */
+function ratePageLendingWordingSql(column: string): string {
+  const text = lendingWordingTextSql(column);
+  return `((${text} ~ ${pgLiteral(LENDING_WORDING)} OR ${text} ~ ${pgLiteral(RATE_PAGE_LENDING_WORDING)}) AND ${text} !~ ${pgLiteral(DEPOSIT_SIDE_WORDING)})`;
+}
+
 /** Postgres: is `column` a lending category (`isLendingCategory`)? */
 function lendingSql(column: string): string {
   return `COALESCE(${column} IN (${[...LENDING_CATEGORIES].sort().map((key) => `'${key}'`).join(", ")}), false)`;
@@ -597,7 +625,7 @@ function liveNonDepositSql(): string {
     JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
     JOIN source_documents sd ON sd.id = fr.source_document_id
    WHERE fp.rolled_back_at IS NULL AND fp.quarantined_at IS NULL AND btrim(COALESCE(sd.document_url, '')) <> ''
-), documents AS (
+), documents AS MATERIALIZED (
   SELECT source_document_id, document_url,
          ${documentPathSegmentsSql("document_url")} AS path,
          ${documentHostLabelSql("document_url")} AS host
@@ -605,7 +633,7 @@ function liveNonDepositSql(): string {
 ), kinds AS (
   SELECT source_document_id, document_url, path, ${nonDepositKindSql("path", "host")} AS kind
     FROM documents
-), judged AS (
+), judged AS MATERIALIZED (
   SELECT source_document_id, document_url, path, kind, ${ratePageSql("path", "kind")} AS rate_page
     FROM kinds
    WHERE kind IS NOT NULL
@@ -615,7 +643,7 @@ function liveNonDepositSql(): string {
          CASE
            WHEN j.kind = 'brokerage' AND ${lendingSql("l.canonical_fee_key")} THEN 'lending_category'
            WHEN j.kind = 'brokerage' THEN 'brokerage_document'
-           WHEN ${lendingSql("l.canonical_fee_key")} AND j.rate_page AND NOT ${lendingWordingSql("l.fee_name")} THEN 'kept_generic_on_rate_page'
+           WHEN ${lendingSql("l.canonical_fee_key")} AND j.rate_page AND NOT ${ratePageLendingWordingSql("l.fee_name")} THEN 'kept_generic_on_rate_page'
            WHEN ${lendingSql("l.canonical_fee_key")} THEN 'lending_category'
            WHEN ${lendingWordingSql("l.fee_name")} THEN 'lending_wording_on_loan_document'
            ELSE 'kept_deposit_category'

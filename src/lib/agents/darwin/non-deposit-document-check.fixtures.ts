@@ -57,6 +57,31 @@ export const NON_DEPOSIT_FEE_FIXTURES: Array<{
   { name: "Late Fee", amount: 25, key: "late_payment", url: "https://www.greatmidwestbank.com/docs/Loan-Servicing-Fees.pdf", verdict: "lending_category", why: "a late fee on a loan servicing schedule" },
   { name: "Late Fee", amount: 15, key: "late_payment", url: "https://www.example-cu.org/rates/loan-rates", verdict: "lending_category", why: "a loan rates page is a loan product page" },
   { name: "Document Prep", amount: 50, key: "loan_origination", url: "https://www.example.com/heloc", verdict: "lending_category", why: "lending category on a HELOC page" },
+  // Prod dry run of v2 (#1518): loan fees on rate pages that the rate-page rule kept by mistake
+  // (Independent Bank's address is a stand-in; the categories are lending ones, as the verdict was).
+  { name: "Standard processing fee", amount: 175, key: "loan_origination", url: "https://www.independentbank.com/current-rates", verdict: "lending_category", why: "fee 86621, processing on a rate page" },
+  { name: "Application fee", amount: 100, key: "loan_origination", url: "https://www.bankofgreene.com/current-rates/", verdict: "lending_category", why: "fees 88671 and 88676, application on a rate page" },
+  { name: "Credit Report fee", amount: 113.2, key: "other_lending_fee", url: "https://www.bankofgreene.com/current-rates/", verdict: "lending_category", why: "fees 88674, 88677, 88682 and 88683, credit report on a rate page" },
+  { name: "Application fee", amount: 25, key: "other", url: "https://www.bankofgreene.com/current-rates/", verdict: "kept_deposit_category", why: "the rate-page extras never act on a deposit category" },
+  // Review of v2 (B1): deposit fees the allowlist must not take down from a loan page.
+  { name: "ACH Origination", amount: 25, key: "other", url: "https://www.greatmidwestbank.com/docs/Loan-Servicing-Fees.pdf", verdict: "kept_deposit_category", why: "ACH origination is a deposit service" },
+  { name: "Wire origination", amount: 30, key: "wire_domestic_outgoing", url: "https://www.greatmidwestbank.com/docs/Loan-Servicing-Fees.pdf", verdict: "kept_deposit_category", why: "wire origination" },
+  { name: "Share certificate early payoff", amount: 25, key: "early_closure", url: "https://www.example.com/heloc", verdict: "kept_deposit_category", why: "a certificate's early payoff" },
+  { name: "Early payoff of certificate", amount: 25, key: "early_closure", url: "https://www.example.com/heloc", verdict: "kept_deposit_category", why: "a certificate's early payoff" },
+  { name: "Early payoff of CD", amount: 25, key: "early_closure", url: "https://www.example.com/heloc", verdict: "kept_deposit_category", why: "a CD's early payoff" },
+  { name: "Box rent late payment", amount: 10, key: "safe_deposit_box", url: "https://www.siouxlandfederalcu.org/current-rates", verdict: "kept_deposit_category", why: "safe deposit box rent" },
+  { name: "SDB Late Payment", amount: 10, key: "safe_deposit_box", url: "https://www.siouxlandfederalcu.org/current-rates", verdict: "kept_deposit_category", why: "SDB" },
+  { name: "Late payment - box rent", amount: 10, key: "safe_deposit_box", url: "https://www.siouxlandfederalcu.org/current-rates", verdict: "kept_deposit_category", why: "box rent" },
+  { name: "Debit Card Cash Advance", amount: 5, key: "other", url: "https://www.towerfcu.org/docs/Visa-Credit-Card-Agreement.pdf", verdict: "kept_deposit_category", why: "a debit card cash advance" },
+  { name: "Visa debit cash advance", amount: 5, key: "other", url: "https://www.towerfcu.org/docs/Visa-Credit-Card-Agreement.pdf", verdict: "kept_deposit_category", why: "a debit card cash advance" },
+  { name: "Club account late payment", amount: 5, key: "other", url: "https://www.ibewfcu.org/loans/loan-fees", verdict: "kept_deposit_category", why: "a club account" },
+  { name: "Coin appraisal", amount: 10, key: "other", url: "https://www.ibewfcu.org/loans/loan-fees", verdict: "kept_deposit_category", why: "coin" },
+  { name: "Mortgage payment at teller", amount: 5, key: "other", url: "https://www.tiogabank.com/docs/Mortgage-Loan-Servicing-Fees.pdf", verdict: "kept_deposit_category", why: "a payment-channel fee" },
+  { name: "Mortgage payment (ACH)", amount: 5, key: "other", url: "https://www.tiogabank.com/docs/Mortgage-Loan-Servicing-Fees.pdf", verdict: "kept_deposit_category", why: "a payment-channel fee" },
+  // Review of v2: lending wording that still comes down.
+  { name: "Mortgage Processing and Research", amount: 75, key: "account_research", url: "https://www.yourgcu.com/docs/Fee-ScheduleLoans.pdf", verdict: "lending_wording_on_loan_document", why: "prod takedown kept" },
+  { name: "Escrow account maintenance", amount: 10, key: "other", url: "https://www.tiogabank.com/docs/Mortgage-Loan-Servicing-Fees.pdf", verdict: "lending_wording_on_loan_document", why: "escrow stays lending" },
+  { name: "Loan origination fee", amount: 100, key: "other", url: "https://www.greatmidwestbank.com/docs/Loan-Servicing-Fees.pdf", verdict: "lending_wording_on_loan_document", why: "loan origination" },
   // Deposit documents: never matched.
   { name: "Mortgage Payment", amount: 5, key: "other", url: "https://www.example.com/personal/Schedule-of-Fees-Personal-Checking.pdf", verdict: null, why: "a deposit schedule" },
   { name: "Late Payment", amount: 5, key: "late_payment", url: "https://www.example.com/fee-schedule", verdict: null, why: "a plain fee schedule" },

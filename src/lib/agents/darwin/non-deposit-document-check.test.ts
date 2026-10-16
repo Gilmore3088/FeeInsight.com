@@ -8,6 +8,7 @@ import {
   NON_DEPOSIT_CHECK_VERSION,
   findNonDepositFees,
   hasLendingWording,
+  hasRatePageLendingWording,
   isLendingCategory,
   nonDepositCountSql,
   nonDepositDetail,
@@ -154,7 +155,11 @@ const FEE_ROWS = NON_DEPOSIT_FEE_FIXTURES.map((fee, index) => ({
 
 describe("v2 rules: lending wording on loan documents, brokerage documents, generic fees on rate pages (#1518)", () => {
   const found = findNonDepositFees(FEE_ROWS);
-  const verdicts = new Map([...found.matches, ...found.brokerageMatches, ...found.keptSamples].map((fee) => [fee.feePublishedId, fee.verdict]));
+  // One row at a time, since kept samples are capped at NON_DEPOSIT_SAMPLES.
+  const verdicts = new Map(FEE_ROWS.flatMap((row) => {
+    const one = findNonDepositFees([row]);
+    return [...one.matches, ...one.brokerageMatches, ...one.keptSamples].map((fee) => [fee.feePublishedId, fee.verdict] as const);
+  }));
 
   it.each(NON_DEPOSIT_FEE_FIXTURES.map((fee, index) => ({ ...fee, id: 1_000 + index })))("$name [$key] on $url -> $verdict ($why)", ({ id, verdict }) => {
     expect(verdicts.get(id) ?? null).toBe(verdict);
@@ -169,11 +174,11 @@ describe("v2 rules: lending wording on loan documents, brokerage documents, gene
   });
 
   it("counts each rule on its own, and only the main rules in matched", () => {
-    expect(found.byRule).toEqual({ lending_category: 5, lending_wording_on_loan_document: 8, brokerage_document: 7 });
-    expect(found.matched).toBe(13);
+    expect(found.byRule).toEqual({ lending_category: 8, lending_wording_on_loan_document: 11, brokerage_document: 7 });
+    expect(found.matched).toBe(19);
     expect(found.brokerageDocument).toBe(7);
     expect(found.keptGenericOnRatePage).toBe(2);
-    expect(found.keptDepositCategory).toBe(9);
+    expect(found.keptDepositCategory).toBe(24);
     expect(found.lendingWordingSamples.map((fee) => fee.reason)).toContain("lending_wording_on_loan_document: loan #108");
     expect(found.brokerageMatches.every((fee) => fee.reason.startsWith("brokerage_document: brokerage #"))).toBe(true);
     // The brokerage_document fees are neither failing nor passing until the caller decides.
@@ -182,9 +187,13 @@ describe("v2 rules: lending wording on loan documents, brokerage documents, gene
 
   it("reads lending wording from a closed allowlist, and deposit-side wording keeps the fee", () => {
     expect(["Mortgage processing and research fee", "Late Payment — Return Check", "Cash Advance ATM", "Subordination Fee", "HELOC annual fee", "Home Equity Draw",
-      "Pay-off quote", "Closing Costs", "Origination", "Escrow analysis", "Appraisal", "Loan Late Charge", "Loan Application Fee"].every(hasLendingWording)).toBe(true);
+      "Pay-off quote", "Closing Costs", "Mortgage Origination", "Escrow analysis", "Appraisal", "Loan Late Charge", "Loan Application Fee"].every(hasLendingWording)).toBe(true);
     expect(["Loan Payment by Phone", "Transfer to pay a loan", "Late Fee", "Late Charge", "Safe Deposit Box Late Payment", "Mortgage Payment by Phone",
-      "Overdraft Transfer", "Loan Coupon Book", "Research", "Mortgagee", "Prepayment", "", null].some(hasLendingWording)).toBe(false);
+      "Overdraft Transfer", "Loan Coupon Book", "Research", "Mortgagee", "Prepayment", "Origination", "ACH Origination", "Wire origination",
+      "Share certificate early payoff", "SDB Late Payment", "Debit Card Cash Advance", "Coin appraisal", "Club account late payment",
+      "Mortgage payment at teller", "Mortgage payment (ACH)", "Application fee", "Credit Report fee", "Standard processing fee", "", null].some(hasLendingWording)).toBe(false);
+    expect(["Application fee", "Credit Report fee", "Standard processing fee", "Appraisal"].every(hasRatePageLendingWording)).toBe(true);
+    expect(["Late Fee", "Late Charge", "SDB application", "Box rent late payment"].some(hasRatePageLendingWording)).toBe(false);
   });
 
   const feeDb = (pending: number[]) => vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
@@ -252,8 +261,11 @@ describe("read-only non-deposit document SQL", () => {
     expect(text).toContain("AS lending_wording_on_loan_document");
     expect(text).toContain("AS brokerage_document");
     expect(text).toContain(" (?:mortgages?|helocs?|home equity|cash advances?|late payments?|");
-    expect(text).toContain(" (?:safe deposit|deposit box(?:es)?|checking|savings|");
+    expect(text).toContain(" (?:safe deposit|box(?:es)?|sdb|checking|savings|shares?|certificates?|cds?|club|coin|debit|ach|wires?|");
     expect(text).toContain("regexp_replace(COALESCE(l.fee_name, ''), '[^A-Za-z0-9]+', ' ', 'g')");
+    expect(text).toContain(" (?:applications?|credit reports?|processing) ");
+    expect(text).toContain("documents AS MATERIALIZED (");
+    expect(text).toContain("judged AS MATERIALIZED (");
     expect(text).not.toMatch(/\b(?:UPDATE|INSERT|DELETE)\b/);
   });
 
