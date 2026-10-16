@@ -226,16 +226,20 @@ function Answer({ lead }: { lead: WorkflowLead }) {
 
 /**
  * Hamilton's demonstration on the homepage (James's notes of Oct 16): a question a pricing team
- * asks, answered from the live sample report, with the schedule line behind it.
+ * asks, answered from the live sample report, with the schedule line behind it. The question sits
+ * in the frame as Hamilton's Ask bar shows it, not as a chat bubble (James, 14:09 and 14:43).
  */
 export function HamiltonAnswer({ lead }: { lead: WorkflowLead }) {
   const fee = lineName(lead.line.label).toLowerCase();
   return (
     <div className="min-w-0" data-hamilton-answer="">
-      <p className="ml-auto w-fit max-w-[90%] rounded-2xl rounded-br-sm bg-ink px-4 py-3 text-[15px] leading-snug text-on-ink" data-example-question>
-        How does our {fee} fee compare with local competitors?
-      </p>
-      <ProductFrame label={`Hamilton · Sample answer · ${lead.name}`} className="mt-4">
+      <ProductFrame label={`Hamilton · Sample answer · ${lead.name}`}>
+        <div className="border-b border-border bg-paper/60 px-5 py-4 sm:px-6" data-example-question>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-muted">Ask Hamilton</p>
+          <p className="mt-1.5 rounded-md border border-border bg-surface-0 px-3 py-2 text-[15px] leading-snug text-ink">
+            How does our {fee} fee compare with local competitors?
+          </p>
+        </div>
         <Answer lead={lead} />
       </ProductFrame>
     </div>
