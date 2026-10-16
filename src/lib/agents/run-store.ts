@@ -84,6 +84,7 @@ import { runDarwinAdjudicate } from "@/lib/agents/darwin/adjudicate";
 import { countLiveFragmentNames, liveFragmentDetail, liveFragmentFindingsDetail, recheckLiveFragmentNames } from "@/lib/agents/darwin/live-fragment-check";
 import { countHourlyFees, hourlyDetail, hourlyFindingsDetail, recheckHourlyFrequencies } from "@/lib/agents/darwin/hourly-frequency-check";
 import { countNonDepositFees, nonDepositDetail, nonDepositFindingsDetail, recheckNonDepositDocuments } from "@/lib/agents/darwin/non-deposit-document-check";
+import { lineConflictDetail, recheckLineConflicts } from "@/lib/agents/darwin/line-conflict-check";
 import { documentOwnerDetail } from "@/lib/agents/darwin/document-owner";
 import { findingsDetail as releaseRepairFindingsDetail, releaseRepairDetail, runReleaseRepairStep } from "@/lib/agents/darwin/release-repair";
 import { AUDIENCE_RELABEL_VERSION, dryRunFullTotals, runAudienceRelabel, type AudienceRelabelMode } from "@/lib/agents/darwin/audience-relabel";
@@ -909,6 +910,18 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId: numericRunParam(params, ["institution_id"]),
       });
+      // #1440: one printed line live under two categories or two frequencies; Darwin keeps one
+      // reading (line-conflict-check.ts). Every conflicting line each step; a report only while its
+      // switch is off.
+      const lineConflict = await recheckLineConflicts(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      const lineConflictNote = lineConflict.lines > 0
+        ? ` One line, two reads: ${lineConflict.lines.toLocaleString()} live line(s) (${lineConflict.byKind.category.toLocaleString()} under two categories, ${lineConflict.byKind.frequency.toLocaleString()} with two frequencies), ${lineConflict.wouldRetire.toLocaleString()} row(s) would be retired, ${lineConflict.byExempt.undecided.toLocaleString()} undecided (${lineConflict.live && !lineConflict.dryRun ? `${lineConflict.flagged.toLocaleString()} flagged, ${lineConflict.takenDown.length.toLocaleString()} archived` : "switch off: nothing written"}).`
+        : "";
       // The whole live table in one read, on request (`non_deposit_full_count: true`), for the dry-run count.
       const nonDepositFull = params.non_deposit_full_count === true || params.non_deposit_full_count === "true"
         ? await countNonDepositFees(tx)
@@ -955,7 +968,7 @@ async function executeAgenticStep(
         : "";
       return {
         status: "completed",
-        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${conditionalZero.selected > 0 ? ` Settled ${conditionalZero.selected.toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${nonDepositNote}${nonDepositFullNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}`,
+        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${conditionalZero.selected > 0 ? ` Settled ${conditionalZero.selected.toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${nonDepositNote}${nonDepositFullNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}`,
         detail: {
           selected_raw_fees: verification.selectedRawFees,
           processed_raw_fees: verification.processedRawFees,
@@ -982,6 +995,7 @@ async function executeAgenticStep(
           hourly_frequency_check: hourlyDetail(hourly),
           ...(hourlyFull ? { hourly_frequency_full_count: hourlyFindingsDetail(hourlyFull) } : {}),
           non_deposit_document_check: nonDepositDetail(nonDeposit),
+          line_conflict_check: lineConflictDetail(lineConflict),
           ...(nonDepositFull ? { non_deposit_document_full_count: nonDepositFindingsDetail(nonDepositFull) } : {}),
           release_repair: releaseRepair ? releaseRepairDetail(releaseRepair) : { error: releaseRepairError },
           ...(releaseRepairFull ? { release_repair_full_count: releaseRepairFindingsDetail(releaseRepairFull) } : {}),
@@ -1595,6 +1609,9 @@ async function executeAgenticStep(
           : "") +
         (frequencyFill.held.length > 0
           ? ` ${published.dryRun ? "Would hold" : "Held"} ${frequencyFill.held.length.toLocaleString()} live NSF or overdraft fee(s) whose own line prices them by the period.`
+          : "") +
+        (frequencyFill.planWouldHold.length > 0
+          ? ` Overdraft plan hold (switch off): ${frequencyFill.planWouldHold.length.toLocaleString()} live optional overdraft plan fee(s) priced by the period beside the bank's per-item fee would be held.`
           : "");
       return {
         status: "completed",
@@ -1888,6 +1905,14 @@ async function executeAgenticStep(
           })),
           frequency_fills: frequencyFill.filled.length,
           frequency_holds: frequencyFill.held.length,
+          // #1360: the overdraft plan hold's dry run while OVERDRAFT_PLAN_HOLD_LIVE is off.
+          frequency_plan_would_hold: frequencyFill.planWouldHold.map((row) => ({
+            fee_published_id: row.feePublishedId,
+            institution_id: row.institutionId,
+            amount: row.amount,
+            frequency: row.frequency,
+            source_line: row.sourceLine,
+          })),
           frequency_fill_scanned: frequencyFill.scanned,
           frequency_fill_error: frequencyFill.writeError,
           frequency_fill_samples: frequencyFill.filled.slice(0, 10).map((row) => ({
