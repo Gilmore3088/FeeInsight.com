@@ -24,6 +24,7 @@ import {
 } from "./directory-sort";
 import { getInstitutionStateDirectorySummariesCached, searchInstitutionsCached } from "@/lib/data-store/public-cached-reads";
 import { getInstitutionHeadlineCoverage } from "@/lib/data-store/market-readiness";
+import { PAGE_HEADER } from "@/components/public/page-header";
 
 export const metadata: Metadata = {
   title: `Find Your Bank — Search the ${PRODUCT_NAME}`,
@@ -223,12 +224,12 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
         {/* `relative z-20` keeps the search dropdown above the sections that follow; see .fi-reveal. */}
         <section className="fi-reveal relative z-20 border-b border-border pb-6">
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-end">
-            <div className="min-w-0">
+            <div className={`min-w-0 ${PAGE_HEADER}`}>
               <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-ink-muted">
                 Institution Directory
               </p>
               <h1
-                className="mt-2 max-w-3xl text-4xl font-extrabold leading-[1.02] tracking-tight text-ink sm:text-5xl"
+                className="mx-auto mt-2 max-w-3xl text-4xl font-extrabold leading-[1.02] tracking-tight text-ink sm:mx-0 sm:text-5xl"
                 style={{ fontFamily: "var(--fi-font-sans)" }}
               >
                 Find your bank or credit union.
@@ -236,7 +237,7 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
               {/* With a state picked, the intro and statistics give way so the list sits higher. */}
               {!hasState && (
                 <>
-                  <p className="mt-3 max-w-2xl text-base leading-relaxed text-ink-soft">
+                  <p className="mx-auto mt-3 max-w-[34rem] text-base leading-relaxed text-ink-soft sm:mx-0 sm:max-w-2xl">
                     Pick your state, then your bank or credit union, to see its published fees and
                     how they compare.
                   </p>
@@ -245,7 +246,8 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
                   </p>
                 </>
               )}
-              <div className="mt-5 max-w-2xl">
+              {/* The search box and its suggestions stay left-aligned under the centered phone header. */}
+              <div className="mx-auto mt-5 max-w-2xl text-left sm:mx-0">
                 <InstitutionSearchBar
                   autoFocus={!hasQuery}
                   initialQuery={query}

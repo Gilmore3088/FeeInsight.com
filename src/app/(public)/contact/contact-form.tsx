@@ -6,6 +6,7 @@ import { LEAD_HONEYPOT_FIELD } from "@/lib/lead-capture";
 import { readFirstTouch } from "@/lib/marketing-touch";
 import { REPORT_OFFER, REPORT_PRICE_INLINE } from "@/lib/constants";
 import { DEMO_REQUEST_NAV } from "@/components/nav-items";
+import { PAGE_HEADER } from "@/components/public/page-header";
 
 const INQUIRY_TYPES = [
   // Pro first, the one-off report second (site v3 brief 03 section 4: Pro is the goal).
@@ -85,15 +86,15 @@ export function ContactForm({ searchParamsPromise, headings }: ContactFormProps)
   const isDemo = inquiry === "demo";
   const heading = headings ? (isDemo ? headings.demo : headings.general) : null;
   const header = heading ? (
-    <>
+    <header className={PAGE_HEADER}>
       <h1
         className="font-extrabold text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-ink"
         style={{ fontFamily: "var(--fi-font-sans)" }}
       >
         {heading.title}
       </h1>
-      <p className="mt-2 text-[14px] text-ink-muted">{heading.intro}</p>
-    </>
+      <p className="mx-auto mt-2 max-w-[34rem] text-[14px] text-ink-muted sm:mx-0 sm:max-w-none">{heading.intro}</p>
+    </header>
   ) : null;
 
   if (status === "success") {

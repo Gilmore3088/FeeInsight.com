@@ -45,6 +45,7 @@ import {
 import { ExplorerChart, ExplorerMarkets, FeeExplorer } from "./fee-explorer";
 import { DotLegend, HeroRange, LockedRows, MarketDots, RelatedRanges } from "./exhibits";
 import { countedAs } from "../(index)/index-view";
+import { PAGE_CRUMBS, PAGE_HEADER } from "@/components/public/page-header";
 
 interface PageProps {
   params: Promise<{ category: string }>;
@@ -185,7 +186,7 @@ export default async function FeeCategoryPage({ params }: PageProps) {
         ]}
       />
 
-      <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12px] text-ink-muted">
+      <nav aria-label="Breadcrumb" className={PAGE_CRUMBS}>
         <Link href="/fees" className="hover:text-ink">
           {PRODUCT_NAME}
         </Link>
@@ -202,12 +203,12 @@ export default async function FeeCategoryPage({ params }: PageProps) {
       <div className="mt-8 space-y-10 sm:space-y-12">
         {/* 1. Hero: the median, then the whole national spread as one range. */}
         <section aria-labelledby="fee-heading" className="space-y-4">
-          <div>
+          <div className={PAGE_HEADER}>
             <h1 id="fee-heading" className="text-[30px] font-semibold leading-tight tracking-[-0.03em] text-ink sm:text-[40px]">
               {plainName} fee
             </h1>
             {median !== null ? (
-              <p className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <p className="mt-2 flex flex-wrap items-baseline justify-center gap-x-3 gap-y-1 sm:justify-start">
                 <span className="font-mono text-[44px] font-semibold leading-none tabular-nums tracking-[-0.02em] text-ink sm:text-[52px]">
                   {money(median)}
                   {unstatedAudience && (

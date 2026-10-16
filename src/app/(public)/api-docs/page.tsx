@@ -9,6 +9,7 @@ import { API_MONTHLY_CALLS_LABEL, API_PLANS_LABEL } from "@/lib/api-subscriber-a
 import { PAST_DUE_GRACE_DAYS } from "@/lib/access";
 import { PRO_PLANS_NAV } from "@/components/nav-items";
 import { NON_INSTITUTION_TIER, tierAmountLabel, tierPriceLabel } from "@/lib/pro-tiers";
+import { PAGE_HEADER } from "@/components/public/page-header";
 
 const PRO_LABEL = `${SITE_NAME} Pro`;
 
@@ -231,6 +232,7 @@ export default async function ApiDocsPage() {
       />
 
       {/* Hero */}
+      <header className={PAGE_HEADER}>
       <p className="text-[11px] font-semibold uppercase tracking-wider text-brick">
         Developer
       </p>
@@ -240,11 +242,12 @@ export default async function ApiDocsPage() {
       >
         Bank Fee Index API
       </h1>
-      <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-ink-soft">
+      <p className="mx-auto mt-3 max-w-[34rem] text-[15px] leading-relaxed text-ink-soft sm:mx-0 sm:max-w-2xl">
         Published fees for U.S. banks and credit unions, from national and district medians down to
         one institution, with call-report fee revenue and branch locations. Use it in your own code,
         in Excel, or by asking Claude. {categoriesLabel} fee categories.
       </p>
+      </header>
 
       {/* Access first: which plans include a key, and where to make it. */}
       <section aria-labelledby="getting-access" className="mt-6 rounded-xl border border-border bg-white px-6 py-5">

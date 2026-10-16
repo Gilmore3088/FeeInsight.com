@@ -18,15 +18,15 @@ export const METHODOLOGY_SECTIONS = [
 export function MethodologyHero({ freshnessLabel }: { freshnessLabel: string }) {
   return (
     <section className="fi-on-navy bg-ink text-paper">
-      <div className="mx-auto max-w-page px-4 pb-8 pt-10 sm:px-6 sm:pb-10 sm:pt-14">
-        <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e0716a]">
+      <div className="mx-auto max-w-page px-4 pb-8 pt-10 text-center sm:px-6 sm:pb-10 sm:pt-14 sm:text-left">
+        <p className="flex items-center justify-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e0716a] sm:justify-start">
           <span aria-hidden="true" className="h-px w-8 bg-[#e0716a]/60" />
           Methodology
         </p>
-        <h1 className="mt-3 max-w-3xl text-[2rem] font-extrabold leading-[1.08] tracking-[-0.015em] text-white sm:text-[3rem]" style={SANS}>
+        <h1 className="mx-auto mt-3 max-w-3xl sm:mx-0 text-[2rem] font-extrabold leading-[1.08] tracking-[-0.015em] text-white sm:text-[3rem]" style={SANS}>
           How a fee becomes a published number
         </h1>
-        <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-paper/80 sm:text-base">
+        <p className="mx-auto mt-3 max-w-2xl text-[15px] leading-relaxed text-paper/80 sm:mx-0 sm:text-base">
           Every figure in the {PRODUCT_NAME} starts as a line in a schedule the institution published itself.
         </p>
         <p className="mt-5 inline-flex items-center gap-2 text-[12px] text-paper/75">
@@ -34,7 +34,7 @@ export function MethodologyHero({ freshnessLabel }: { freshnessLabel: string }) 
           {freshnessLabel}
         </p>
         <nav aria-label="Methodology sections" className="mt-5">
-          <ul className="flex flex-wrap gap-2">
+          <ul className="flex flex-wrap justify-center gap-2 sm:justify-start">
             {METHODOLOGY_SECTIONS.map((s) => (
               <li key={s.id}>
                 <a
