@@ -27,31 +27,27 @@ import {
   nationalBandTakeaway,
 } from "@/lib/research-report/state-findings";
 import { LockedRows } from "../../../fees/[category]/exhibits";
-import {
-  BoardChart,
-  BoardHeading,
-  BoardLegend,
-  BoardRows,
-  CharterRows,
-  FindingButtons,
-  StateBoard,
-} from "../../state/[code]/state-board";
-import { boardFees, charterFees, charterHeadline, leadFindings, splitForAccess } from "../../state/[code]/state-view";
-import { DistrictHero, PickMap } from "./district-exhibits";
-import { HubStates, type HubTableRow } from "./district-hub-states";
+import { BoardChart, BoardLegend, BoardRows, FindingButtons, StateBoard } from "../../state/[code]/state-board";
+import { boardFees, charterFees, leadFindings, positionIn, splitForAccess } from "../../state/[code]/state-view";
+import { CharterField, type CharterFee } from "./district-charter";
+import { DistrictHero } from "./district-exhibits";
+import { stateShape } from "./district-geo";
+import { HubStates, type HubFeeOption, type HubTableRow } from "./district-hub-states";
 import {
   ComplaintChart,
   CpiChart,
+  DepositStrip,
   HubSection,
-  LeadersTable,
+  IncomeLine,
+  KICKER,
   PriceMoves,
-  RankBars,
-  RevenueChart,
+  STORY_H2,
+  SizeColumns,
   StatePanel,
-  TierChart,
-  Tiles,
   compact,
   count,
+  incomeTrend,
+  leadersShare,
   money,
   pct,
   signedPct,
@@ -69,6 +65,8 @@ import {
   tierMix,
 } from "./district-hub-view";
 
+const NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+
 interface PageProps {
   params: Promise<{ id: string }>;
 }
@@ -85,8 +83,6 @@ const EMPTY_INDEXES: StateFeeIndexes = {
   verified_cu_institutions: 0,
   verified_fees: 0,
 };
-
-const H2 = "text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-[24px]";
 
 /** The Beige Book's first sentence for free readers; Pro reads the whole summary. */
 function firstSentence(text: string): string {
@@ -161,7 +157,25 @@ export default async function DistrictReportPage({ params }: PageProps) {
   const takeaway = nationalBandTakeaway(place, `the ${place}`, visibleComparisons);
   const againstUs = shown.filter((f) => f.us);
   const aboveUs = againstUs.filter((f) => f.us && f.median > f.us.median * 1.01).length;
-  const cuLowerOn = paired.filter((f) => f.cu.median! < f.bank.median!).length;
+  // The hero's band figure counts the same fees as the list and the heading below it.
+  const insideBand = againstUs.filter((f) => positionIn(f.median, f.us!) === "within").length;
+  const charter: CharterFee[] = paired.map((f) => ({
+    key: f.key,
+    name: f.name,
+    bank: f.bank.median!,
+    cu: f.cu.median!,
+    banks: f.bank.institutions,
+    creditUnions: f.cu.institutions,
+  }));
+  const cuLowerOn = charter.filter((f) => f.cu < f.bank).length;
+  const bankLowerOn = charter.filter((f) => f.bank < f.cu).length;
+  const charterTitle =
+    cuLowerOn === 0 && bankLowerOn === 0
+      ? `Banks and credit unions have the same median on all ${charter.length} fees`
+      : cuLowerOn >= bankLowerOn
+        ? `Credit unions have lower medians on ${cuLowerOn} of ${charter.length} fees`
+        : `Banks have lower medians on ${bankLowerOn} of ${charter.length} fees`;
+
   // The hub: every state of the district, its institutions, income, branches, complaints and economy.
   const rows = hub ? stateHubRows(hub, states) : [];
   const feeKeys = hubFeeKeys(showAllCategories);
@@ -172,7 +186,8 @@ export default async function DistrictReportPage({ params }: PageProps) {
     }),
   );
   const revenue = hub ? revenueTrend(hub) : [];
-  const latestRevenue = revenue[revenue.length - 1] ?? null;
+  const bankTrend = incomeTrend(revenue, "banks");
+  const cuTrend = incomeTrend(revenue, "creditUnions");
   const institutionsTracked = hub ? hub.institutions.reduce((sum, g) => sum + g.institutions, 0) : 0;
   const tiers = hub ? tierMix(hub) : [];
   // Fed districts split some states (Dallas takes north Louisiana and south New Mexico); those
@@ -182,8 +197,6 @@ export default async function DistrictReportPage({ params }: PageProps) {
   const moves = hub ? feeChangeSummary(hub, showAllCategories) : null;
   const cpi = hub ? cpiBankServices(hub) : null;
   const usUnemployment = hub?.series.UNRATE ?? null;
-  const unemploymentRows = rows.filter((r) => r.unemployment);
-  const incomeRows = rows.filter((r) => r.medianIncome != null);
   const incomeYear = hub?.demographics.find((d) => d.median_household_income != null)?.year ?? null;
   const branches = hub?.branches ?? null;
   const branchTotals = branches
@@ -192,21 +205,56 @@ export default async function DistrictReportPage({ params }: PageProps) {
         cu: branches.cu_by_state.reduce((sum, b) => sum + b.branches, 0),
       }
     : null;
+  const leaders = branches ? leadersShare(branches) : null;
 
-  const figures = [
-    ...(institutionsTracked > 0 ? [{ value: formatCount(institutionsTracked), label: "Banks and credit unions" }] : []),
-    { value: formatCount(indexes.verified_institutions), label: "Institutions with verified fees" },
-    ...(againstUs.length > 0 ? [{ value: `${aboveUs} of ${againstUs.length}`, label: "Fees above the U.S. median" }] : []),
-    ...(paired.length > 0 ? [{ value: `${cuLowerOn} of ${paired.length}`, label: "Fees lower at credit unions" }] : []),
-    ...(latestRevenue && latestRevenue.banks > 0
-      ? [{ value: compact(latestRevenue.banks), label: `Bank deposit service charges, ${quarterLabel(latestRevenue.quarter)}` }]
+  const facts = [
+    ...(indexes.verified_institutions > 0
+      ? [
+          {
+            value: formatCount(indexes.verified_institutions),
+            label:
+              institutionsTracked > 0
+                ? `of ${formatCount(institutionsTracked)} banks and credit unions have verified fee schedules`
+                : "banks and credit unions have verified fee schedules",
+          },
+        ]
       : []),
-    ...(latestRevenue && latestRevenue.creditUnions > 0
-      ? [{ value: compact(latestRevenue.creditUnions), label: `Credit union fee income, ${quarterLabel(latestRevenue.quarter)}` }]
-      : []),
+    ...(againstUs.length >= 3 ? [{ value: `${insideBand} of ${againstUs.length}`, label: "fee medians sit inside the U.S. middle half" }] : []),
   ];
+  const differs = charter.some((f) => f.bank !== f.cu);
+  const statement =
+    againstUs.length >= 3 && insideBand === againstUs.length && differs ? "National-looking medians. Meaningful differences underneath." : takeaway;
 
-  // The state picker: one panel per state, drawn here; the table carries the same figures.
+  // The state cards: one fee at a time across every state, on one scale.
+  const stateFees: HubFeeOption[] = feeKeys
+    .map((k) => ({
+      key: k,
+      label: hubFeeName(k),
+      district: districtMedians[k] ?? null,
+      byState: Object.fromEntries(rows.map((r) => [r.code, r.fees[k]?.median ?? null])),
+    }))
+    .filter((f) => Object.values(f.byState).some((v) => v != null));
+  const shapes = Object.fromEntries(
+    rows.flatMap((r) => {
+      const s = stateShape(r.code);
+      return s ? [[r.code, { d: s.d, viewBox: `${s.box.x} ${s.box.y} ${s.box.w} ${s.box.h}` }]] : [];
+    }),
+  );
+  const leadFee = stateFees[0] ?? null;
+  const leadRange = leadFee
+    ? rows
+        .filter((r) => leadFee.byState[r.code] != null)
+        .map((r) => ({ name: r.name, v: leadFee.byState[r.code]! }))
+        .sort((x, y) => x.v - y.v)
+    : [];
+  const statesTitle =
+    leadFee && leadRange.length >= 2
+      ? leadRange[0].v === leadRange[leadRange.length - 1].v
+        ? `Every state's ${leadFee.label.toLowerCase()} median is ${money(leadRange[0].v)}`
+        : `${leadFee.label} medians run from ${money(leadRange[0].v)} in ${leadRange[0].name} to ${money(leadRange[leadRange.length - 1].v)} in ${leadRange[leadRange.length - 1].name}`
+      : "State by state";
+
+  // The full state table, behind its disclosure.
   const tableColumns = [
     { key: "institutions", label: "Institutions", phone: true },
     { key: "coverage", label: "Verified" },
@@ -234,6 +282,7 @@ export default async function DistrictReportPage({ params }: PageProps) {
     rows.map((r) => [r.code, <StatePanel key={r.code} row={r} feeKeys={feeKeys} districtMedians={districtMedians} districtName={`${districtName} district`} />]),
   );
   const firstState = [...rows].sort((a, b) => b.institutions - a.institutions)[0]?.code ?? null;
+  const economyRows = rows.filter((r) => r.unemployment || r.medianIncome != null);
   const beigeSummary = beigeSections.find((s) => s.section_name === "Summary of Economic Activity")?.content_text ?? null;
   const freeReportHref = `/reports?report=district&district=${districtId}&src=district-${districtId}#request`;
 
@@ -247,37 +296,39 @@ export default async function DistrictReportPage({ params }: PageProps) {
         ]}
       />
 
-      {/* 1. The district's states on the map, with up to six live figures. */}
-      <DistrictHero district={districtId} name={districtName} figures={figures} freshnessLabel={summary.freshnessLabel} reportHref={freeReportHref} />
+      {/* Opening: the district on its own map, two facts, and the page's thesis. */}
+      <DistrictHero
+        district={districtId}
+        name={districtName}
+        states={states}
+        facts={facts}
+        statement={statement}
+        freshnessLabel={summary.freshnessLabel}
+        reportHref={freeReportHref}
+      />
 
-      <div className="mx-auto max-w-page space-y-10 px-4 py-8 sm:space-y-12 sm:px-6 sm:py-12">
+      <div className="mx-auto max-w-page space-y-20 px-4 py-12 sm:space-y-28 sm:px-6 sm:py-16">
+        {/* Story 1: the district against the U.S., one fee at a time. */}
         {charted.length > 0 ? (
-          // 3-5 share one selection: a fee picked in a finding or a list redraws the chart.
           <StateBoard fees={charted} stateName={place}>
-            {findings.length > 0 && (
-              <section aria-labelledby="findings-heading" className="space-y-3">
-                <h2 id="findings-heading" className={H2}>
-                  What stands out
+            <section id="benchmarks" aria-labelledby="board-heading" className="scroll-mt-20 space-y-8">
+              <div className="max-w-3xl">
+                <p className={`${KICKER} mb-2`}>Against the U.S.</p>
+                <h2 id="board-heading" className={STORY_H2}>
+                  {againstUs.length > 0
+                    ? `${aboveUs} of ${againstUs.length} district medians sit above the U.S. median`
+                    : `Fee medians in the ${place}`}
                 </h2>
-                {takeaway && <p className="max-w-3xl text-[15px] leading-relaxed text-ink">{takeaway}</p>}
-                <FindingButtons findings={findings} />
-                <p className="text-[12px] text-ink-muted">
-                  Findings rank only fees with at least {STATE_FINDING_MIN_INSTITUTIONS} {place} institutions. Fees with fewer appear in
-                  the list below, unranked. The national middle half runs from the 25th to the 75th percentile of U.S.
-                  institutions.
-                </p>
-              </section>
-            )}
-
-            {/* 4. The board: the picked fee's spread, then every fee against the U.S. */}
-            <section id="benchmarks" aria-labelledby="board-heading" className="scroll-mt-20 space-y-3">
-              <BoardHeading id="board-heading" />
+              </div>
+              {findings.length > 0 && <FindingButtons findings={findings} />}
               <BoardChart />
-              <BoardLegend fees={charted} />
-              <div className="rounded-2xl border border-border bg-surface-0 px-4 py-2 shadow-fi-1 sm:px-6">
-                <BoardRows fees={charted} ariaLabel={`${place} median for each fee`} />
+              <div>
+                <BoardLegend fees={charted} />
+                <div className="mt-3">
+                  <BoardRows fees={charted} ariaLabel={`${place} median for each fee`} limit={5} />
+                </div>
                 {locked.length > 0 && (
-                  <div className="border-t border-border pt-1">
+                  <div className="mt-4 border-t border-border pt-1">
                     <LockedRows rows={locked.slice(0, LOCKED_SHOWN).map((f) => ({ key: f.key, label: f.name, institutions: f.institutions }))} />
                     {locked.length > LOCKED_SHOWN && (
                       <p className="border-t border-border py-2 text-[12px] text-ink-muted">
@@ -295,50 +346,46 @@ export default async function DistrictReportPage({ params }: PageProps) {
                   </div>
                 )}
               </div>
+              <p className="max-w-3xl text-[12px] text-ink-muted">
+                Findings rank only fees with at least {STATE_FINDING_MIN_INSTITUTIONS} {place} institutions. Fees with fewer appear in the
+                list, unranked. The U.S. middle half runs from the 25th to the 75th percentile of U.S. institutions.
+              </p>
             </section>
-
-            {/* 5. Banks against credit unions. */}
-            {paired.length > 0 && (
-              <section aria-labelledby="charter-heading" className="space-y-3">
-                <div>
-                  <h2 id="charter-heading" className={H2}>
-                    {charterHeadline(paired)}
-                  </h2>
-                  <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-muted" aria-hidden="true">
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="h-2.5 w-2.5 rounded-full bg-ink" /> Banks
-                    </span>
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="h-2.5 w-2.5 rounded-full bg-brick" /> Credit unions
-                    </span>
-                    <span>Median in the {place}.</span>
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-border bg-surface-0 px-4 py-2 shadow-fi-1 sm:px-6">
-                  <CharterRows fees={paired} />
-                </div>
-              </section>
-            )}
           </StateBoard>
         ) : (
-          <p className="rounded-2xl border border-dashed border-border px-5 py-8 text-center text-[14px] text-ink-muted">
+          <p className="border-y border-dashed border-border px-5 py-8 text-center text-[14px] text-ink-muted">
             Not enough {place} institutions have verified fees yet for a district median.
           </p>
         )}
 
-        {/* 6. State by state: pick a state on the map, the chips or the table. */}
+        {/* Story 2: banks against credit unions, as one field of fees. */}
+        {charter.length > 0 && (
+          <section id="charter" aria-labelledby="charter-heading" className="scroll-mt-20 space-y-8">
+            <div className="max-w-3xl">
+              <p className={`${KICKER} mb-2`}>Banks and credit unions</p>
+              <h2 id="charter-heading" className={STORY_H2}>
+                {charterTitle}
+              </h2>
+              <p className="mt-3 text-[15px] leading-relaxed text-ink-soft">Each tile is one fee. Pick one to see both medians.</p>
+            </div>
+            <CharterField fees={charter} place={place} />
+          </section>
+        )}
+
+        {/* Story 3: state by state, one fee across every state on one scale. */}
         {rows.length > 0 && firstState && (
           <HubSection
             id="states"
-            title="State by state"
-            line={`Each state against the ${districtName} district median.`}
+            kicker="State by state"
+            title={statesTitle}
+            line="Each card shows the same fee on one scale; the short upright line marks the district median. Pick a state for its detail."
             source={
               <>
                 Fee medians from verified published fee schedules, one value per institution; a median needs{" "}
                 {MIN_INSTITUTIONS_FOR_MEDIAN} institutions. Fee income from FDIC and NCUA call reports, branches from the FDIC
-                Summary of Deposits and NCUA, unemployment from BLS, income from the Census ACS.
-                {" "}Fee medians, institution counts and fee income in each state row count only institutions inside the{" "}
-                {districtName} district; unemployment, income and branches cover the whole state.
+                Summary of Deposits and NCUA, unemployment from BLS, income from the Census ACS. Fee medians, institution counts and
+                fee income in each state count only institutions inside the {districtName} district; unemployment, income and
+                branches cover the whole state.
                 {outsideStates > 0 &&
                   ` ${count(outsideStates)} ${districtName} district institutions are in parts of other states and count only in the district totals.`}
               </>
@@ -346,7 +393,9 @@ export default async function DistrictReportPage({ params }: PageProps) {
           >
             <HubStates
               states={rows.map((r) => ({ code: r.code, name: r.name }))}
-              map={<PickMap district={districtId} />}
+              shapes={shapes}
+              fees={stateFees}
+              districtName={`${districtName} district`}
               panels={panels}
               columns={tableColumns}
               rows={tableRows}
@@ -355,194 +404,219 @@ export default async function DistrictReportPage({ params }: PageProps) {
           </HubSection>
         )}
 
-        {/* 7. The free district report. */}
-        <section aria-labelledby="free-report-heading" className="flex flex-col gap-4 rounded-2xl bg-paper px-4 py-5 ring-1 ring-border sm:flex-row sm:items-center sm:justify-between sm:px-6 print:hidden">
+        {/* The free district report. */}
+        <section
+          aria-labelledby="free-report-heading"
+          className="flex flex-col items-center gap-5 border-y border-border py-10 text-center sm:flex-row sm:justify-between sm:text-left print:hidden"
+        >
           <div>
-            <h2 id="free-report-heading" className={H2}>
-              Get the free {place} report
+            <h2 id="free-report-heading" className="text-[22px] font-semibold tracking-[-0.02em] text-ink sm:text-[28px]">
+              Get the {place} report
             </h2>
-            <p className="mt-1 text-[14px] text-ink-muted">District {districtId}&apos;s headline fees against the U.S., in one PDF to share with your team.</p>
+            <p className="mt-1 text-[15px] text-ink-soft">District {districtId}&apos;s headline fees against the U.S. in one free PDF, ready to share with your team.</p>
           </div>
           <TrackLink
             event="request_report_click"
             eventProps={{ placement: "district_free_report", district: districtId }}
             href={freeReportHref}
-            className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-full bg-ink px-5 text-[14px] font-semibold text-on-ink hover:opacity-90"
+            className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-full bg-ink px-6 text-[14px] font-semibold text-on-ink hover:opacity-90"
           >
             Get the free report
           </TrackLink>
         </section>
 
-        {/* 8. Fee income from the call reports. */}
-        {latestRevenue && (
+        {/* Story 4: fee income, banks and credit unions apart. */}
+        {(bankTrend || cuTrend) && (
           <HubSection
             id="income"
             collapsible
-            title="Fee income"
-            line={`${quarterLabel(latestRevenue.quarter)}: banks reported ${compact(latestRevenue.banks)} in deposit service charges and credit unions ${compact(latestRevenue.creditUnions)} in fee income. Credit union fee income is a wider measure, so the two are shown apart.`}
-            source="Banks: service charges on deposit accounts, FDIC call reports. Credit unions: all fee income, NCUA call reports, a wider measure. Credit union year-to-date income is split into quarters; a quarter shows once most institutions have filed."
+            kicker="Fee income"
+            title={
+              bankTrend?.yoyPct != null
+                ? `Bank service charges ${bankTrend.yoyPct >= 0 ? "rose" : "fell"} ${Math.abs(bankTrend.yoyPct).toFixed(1)}% in a year`
+                : bankTrend
+                  ? `Banks reported ${compact(bankTrend.latest.value)} in deposit service charges in ${quarterLabel(bankTrend.latest.quarter)}`
+                  : "Credit union fee income"
+            }
+            line="Credit union fee income is a wider measure than bank service charges, so the two charts stay separate and are never added together."
+            source="Banks: service charges on deposit accounts, FDIC call reports. Credit unions: all fee income, NCUA call reports. Credit union year-to-date income is split into quarters; a quarter shows once most institutions have filed."
           >
-            <div className="grid gap-3 lg:grid-cols-2">
-              <RevenueChart quarters={revenue} series="banks" title="Banks: service charges on deposit accounts" />
-              <RevenueChart quarters={revenue} series="creditUnions" title="Credit unions: all fee income" />
+            <div className="grid gap-14 lg:grid-cols-2 lg:gap-16">
+              <IncomeLine quarters={revenue} series="banks" title="Banks: service charges on deposit accounts" />
+              <IncomeLine quarters={revenue} series="creditUnions" title="Credit unions: all fee income" />
             </div>
-            {rows.filter((r) => r.bankServiceCharges != null).length > 1 && (
-              <>
-                <h3 className="pt-2 text-[15px] font-semibold text-ink">Bank deposit service charges by state</h3>
-                <RankBars
-                  rows={rows
-                    .filter((r) => r.bankServiceCharges != null)
-                    .sort((x, y) => y.bankServiceCharges! - x.bankServiceCharges!)
-                    .map((r) => ({ key: r.code, label: r.name, value: r.bankServiceCharges! }))}
-                  format={(n) => compact(n)}
-                />
-              </>
-            )}
           </HubSection>
         )}
 
-        {/* 9. Market structure: who is here, by size, and who holds the deposits. */}
+        {/* Story 5: who serves the district, by deposits and by size. */}
         {(tiers.length > 0 || branches) && (
           <HubSection
             id="market"
             collapsible
-            title="Who serves the district"
-            line={institutionsTracked > 0 ? `${count(institutionsTracked)} banks and credit unions, by asset size.` : undefined}
+            kicker="Who serves the district"
+            title={
+              leaders
+                ? `The ${NUMBER_WORDS[leaders.banks] ?? leaders.banks} largest banks hold ${Math.round(leaders.pct)}% of bank deposits`
+                : `${count(institutionsTracked)} banks and credit unions`
+            }
+            line={
+              institutionsTracked > 0
+                ? `${count(institutionsTracked)} banks and credit unions${
+                    branchTotals ? `, with ${count(branchTotals.bank)} bank branches${branchTotals.cu > 0 ? ` and ${count(branchTotals.cu)} credit union branches` : ""}` : ""
+                  }.`
+                : undefined
+            }
             source={
               <>
                 Institutions tracked by {SITE_NAME}, sized by total assets.
-                {branches && ` Branches and deposits from the FDIC Summary of Deposits, ${branches.sod_year}; credit union branches from NCUA. The largest banks list counts banks with ${MIN_LEADER_BRANCHES} or more branches here.`}
+                {branches &&
+                  ` Bank deposits from the FDIC Summary of Deposits, ${branches.sod_year}, across the district's states; credit union branches from NCUA. Leading banks count banks with ${MIN_LEADER_BRANCHES} or more branches here.`}
               </>
             }
           >
-            {tiers.length > 0 && <TierChart tiers={tiers} />}
-            {branches && branchTotals && (
-              <Tiles
-                tone="card"
-                items={[
-                  { value: count(branchTotals.bank), label: "Bank branches" },
-                  ...(branchTotals.cu > 0 ? [{ value: count(branchTotals.cu), label: "Credit union branches" }] : []),
-                  { value: compact(branches.total_deposits), label: "Bank deposits" },
-                ]}
-              />
-            )}
-            {branches && branches.leaders.length > 0 && (
-              <>
-                <h3 className="pt-2 text-[15px] font-semibold text-ink">Largest banks by deposits</h3>
-                <LeadersTable branches={branches} />
-              </>
+            {branches && <DepositStrip branches={branches} />}
+            {tiers.length > 0 && (
+              <div className="space-y-4 pt-4">
+                <h3 className="text-[18px] font-semibold tracking-[-0.01em] text-ink">Banks and credit unions by asset size</h3>
+                <SizeColumns tiers={tiers} />
+              </div>
             )}
           </HubSection>
         )}
 
-        {/* 10. CFPB fee complaints, only from institutions matched to their CFPB record. */}
-        {complaints && (
-          <HubSection
-            id="complaints"
-            collapsible
-            title={`Fee complaints to the CFPB, ${complaints.year}`}
-            line="Per $1 billion of deposits."
-            source={`CFPB Consumer Complaint Database, fee-related issues. Only institutions matched to their CFPB company record count, and a rate needs ${MIN_COMPLAINT_PEERS} of them.`}
-          >
-            <ComplaintChart view={complaints} minPeers={MIN_COMPLAINT_PEERS} />
-          </HubSection>
-        )}
-
-        {/* 11. The economy: jobs, income and the price of bank services. */}
-        {(unemploymentRows.length > 0 || incomeRows.length > 0 || cpi) && (
+        {/* Story 6: the economy around the fees. */}
+        {(cpi || beigeHeadline || economyRows.length > 0) && (
           <HubSection
             id="economy"
             collapsible
-            title="Jobs, income and prices"
+            kicker="Economic context"
+            title={
+              cpi
+                ? `U.S. prices for bank services ${cpi.latestPct >= 0 ? "rose" : "fell"} ${Math.abs(cpi.latestPct).toFixed(1)}% in a year`
+                : `What the Fed sees in the ${place}`
+            }
             source={
               <>
-                BLS state unemployment and CPI for bank services via FRED
-                {incomeYear ? `; Census ACS ${incomeYear} median household income` : ""}.
+                CPI for checking accounts and other bank services and BLS unemployment via FRED
+                {incomeYear ? `; Census ACS ${incomeYear} median household income` : ""}; Federal Reserve Beige Book.
               </>
             }
           >
-            <Tiles
-              tone="card"
-              items={[
-                ...(usUnemployment ? [{ value: pct(usUnemployment.latest.value), label: `U.S. unemployment, ${monthYear(usUnemployment.latest.date)}` }] : []),
-                ...(cpi ? [{ value: signedPct(cpi.latestPct), label: `Bank services prices, 12 months to ${monthYear(cpi.date)}` }] : []),
-              ]}
-            />
-            {unemploymentRows.length > 0 && (
-              <>
-                <h3 className="pt-2 text-[15px] font-semibold text-ink">Unemployment rate</h3>
-                <RankBars
-                  rows={[...unemploymentRows]
-                    .sort((x, y) => y.unemployment!.rate - x.unemployment!.rate)
-                    .map((r) => ({ key: r.code, label: r.name, value: r.unemployment!.rate }))}
-                  format={(n) => pct(n)}
-                  tick={usUnemployment?.latest.value ?? null}
-                  tickLabel="U.S."
-                />
-              </>
-            )}
-            {incomeRows.length > 0 && (
-              <>
-                <h3 className="pt-2 text-[15px] font-semibold text-ink">Median household income</h3>
-                <RankBars
-                  rows={[...incomeRows].sort((x, y) => y.medianIncome! - x.medianIncome!).map((r) => ({ key: r.code, label: r.name, value: r.medianIncome! }))}
-                  format={(n) => compact(n)}
-                />
-              </>
-            )}
-            {cpi && cpi.history.length > 1 && (
-              <>
-                <h3 className="pt-2 text-[15px] font-semibold text-ink">Bank services prices, change over 12 months</h3>
-                <CpiChart history={cpi.history} label="CPI for checking accounts and other bank services, 12-month change" />
-              </>
-            )}
-          </HubSection>
-        )}
-
-        {/* 12. The Beige Book: its first line free, the whole summary in Pro. */}
-        {beigeHeadline && (
-          <section aria-labelledby="beige-heading" className="space-y-3">
-            <h2 id="beige-heading" className={H2}>
-              What the Fed sees in the {place}
-            </h2>
-            <figure className="rounded-2xl border border-border bg-surface-0 p-4 shadow-fi-1 sm:p-6">
-              <blockquote className="text-[16px] leading-relaxed text-ink">
-                {showFullDistrict && beigeSummary ? beigeSummary : firstSentence(beigeHeadline.text)}
-              </blockquote>
-              <figcaption className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-muted">
-                <a
-                  href="https://www.federalreserve.gov/monetarypolicy/beige-book-default.htm"
-                  className="underline decoration-border underline-offset-4 hover:text-ink"
-                  rel="noopener noreferrer"
-                  target="_blank"
-                >
-                  Federal Reserve Beige Book, {beigeHeadline.release_date}
-                </a>
-                {!showFullDistrict && (
-                  <TrackLink
-                    event="upgrade_click"
-                    eventProps={{ placement: "district_beige_book", district: districtId }}
-                    href={PRO_PLANS_NAV.href}
-                    className="font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
-                  >
-                    Read it beside your fees in Hamilton
-                  </TrackLink>
+            <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] lg:gap-16">
+              <div className="space-y-8">
+                {(usUnemployment || cpi) && (
+                  <dl className="grid grid-cols-2 gap-6">
+                    {cpi && (
+                      <div className="flex flex-col-reverse border-l-2 border-brick pl-4">
+                        <dt className="mt-2 text-[13px] leading-snug text-ink-soft">Bank services prices, 12 months to {monthYear(cpi.date)}</dt>
+                        <dd className="font-mono text-[34px] font-semibold leading-none tabular-nums text-ink">{signedPct(cpi.latestPct)}</dd>
+                      </div>
+                    )}
+                    {usUnemployment && (
+                      <div className="flex flex-col-reverse border-l-2 border-brick pl-4">
+                        <dt className="mt-2 text-[13px] leading-snug text-ink-soft">U.S. unemployment, {monthYear(usUnemployment.latest.date)}</dt>
+                        <dd className="font-mono text-[34px] font-semibold leading-none tabular-nums text-ink">{pct(usUnemployment.latest.value)}</dd>
+                      </div>
+                    )}
+                  </dl>
                 )}
-              </figcaption>
-            </figure>
-          </section>
+                {beigeHeadline && (
+                  <figure>
+                    <blockquote className="font-serif text-[20px] leading-snug text-ink sm:text-[24px]">
+                      &ldquo;{showFullDistrict && beigeSummary ? beigeSummary : firstSentence(beigeHeadline.text)}&rdquo;
+                    </blockquote>
+                    <figcaption className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-muted">
+                      <a
+                        href="https://www.federalreserve.gov/monetarypolicy/beige-book-default.htm"
+                        className="underline decoration-border underline-offset-4 hover:text-ink"
+                        rel="noopener noreferrer"
+                        target="_blank"
+                      >
+                        Federal Reserve Beige Book, {districtName} district, {beigeHeadline.release_date}
+                      </a>
+                      {!showFullDistrict && (
+                        <TrackLink
+                          event="upgrade_click"
+                          eventProps={{ placement: "district_beige_book", district: districtId }}
+                          href={PRO_PLANS_NAV.href}
+                          className="font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+                        >
+                          Read it beside your fees in Hamilton
+                        </TrackLink>
+                      )}
+                    </figcaption>
+                  </figure>
+                )}
+              </div>
+              {cpi && cpi.history.length > 1 && (
+                <div>
+                  <p className="mb-3 text-[14px] font-semibold text-ink">Bank services prices, change over 12 months</p>
+                  <CpiChart history={cpi.history} label="CPI for checking accounts and other bank services, 12-month change" />
+                </div>
+              )}
+            </div>
+            {economyRows.length > 0 && (
+              <details className="group/disc">
+                <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-2 text-[14px] font-semibold text-ink [&::-webkit-details-marker]:hidden">
+                  <span aria-hidden="true" className="transition-transform group-open/disc:rotate-90">
+                    &rsaquo;
+                  </span>
+                  Unemployment and income by state
+                </summary>
+                <table className="mt-3 w-full max-w-xl text-left text-[13px]">
+                  <thead>
+                    <tr className="border-b border-border text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
+                      <th scope="col" className="py-2 pr-3">State</th>
+                      <th scope="col" className="px-3 py-2 text-right">Unemployment</th>
+                      <th scope="col" className="py-2 pl-3 text-right">Median household income</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-surface-200">
+                    {economyRows.map((r) => (
+                      <tr key={r.code}>
+                        <th scope="row" className="py-2 pr-3 font-medium text-ink">{r.name}</th>
+                        <td className="px-3 py-2 text-right tabular-nums text-ink-soft">{pct(r.unemployment?.rate)}</td>
+                        <td className="py-2 pl-3 text-right tabular-nums text-ink-soft">{compact(r.medianIncome)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </details>
+            )}
+          </HubSection>
         )}
 
-        {/* 13. Fee changes seen in the last twelve months. */}
-        {moves && hub && (
-          <HubSection
-            id="changes"
-            collapsible
-            title="Fee changes in the last 12 months"
-            source={`Changes between two copies of the same institution's fee schedule, seen since ${monthYear(hub.fee_changes_since)}.`}
-          >
-            <PriceMoves summary={moves} showAll={showAllCategories} />
-          </HubSection>
+        {/* Complaints and fee changes: kept for readers who want them, behind one disclosure. */}
+        {(complaints || (moves && hub)) && (
+          <details className="group/disc border-t border-border pt-6">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 text-[16px] font-semibold text-ink [&::-webkit-details-marker]:hidden">
+              <span aria-hidden="true" className="transition-transform group-open/disc:rotate-90">
+                &rsaquo;
+              </span>
+              More district data: fee complaints and fee changes
+            </summary>
+            <div className="mt-8 space-y-16">
+              {complaints && (
+                <HubSection
+                  id="complaints"
+                  title={`Fee complaints to the CFPB, ${complaints.year}`}
+                  line="Per $1 billion of deposits."
+                  source={`CFPB Consumer Complaint Database, fee-related issues. Only institutions matched to their CFPB company record count, and a rate needs ${MIN_COMPLAINT_PEERS} of them.`}
+                >
+                  <ComplaintChart view={complaints} minPeers={MIN_COMPLAINT_PEERS} />
+                </HubSection>
+              )}
+              {moves && hub && (
+                <HubSection
+                  id="changes"
+                  title="Fee changes in the last 12 months"
+                  source={`Changes between two copies of the same institution's fee schedule, seen since ${monthYear(hub.fee_changes_since)}.`}
+                >
+                  <PriceMoves summary={moves} showAll={showAllCategories} />
+                </HubSection>
+              )}
+            </div>
+          </details>
         )}
 
         {/* The reader's own institution, and Hamilton once. */}

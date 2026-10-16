@@ -1,11 +1,14 @@
 "use client";
 
-import { useState, type MouseEvent, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { formatFeeAmount } from "@/lib/format";
 
 /**
- * The district's states, one picked at a time. The server draws the map, each state's panel
- * and every table cell; this component only keeps the pick (a state chip, a tap on the map or
- * a table row) and the table's sort.
+ * The district's states as small multiples: one card per state, each showing the same picked fee
+ * on one shared scale against the district median, so the states compare at a glance. A card is
+ * also the state picker: picking one opens its panel below. The full table sits behind a
+ * disclosure. The server draws each panel and every table cell; this component keeps the picks
+ * and the table's sort.
  */
 
 export interface HubTableColumn {
@@ -22,25 +25,38 @@ export interface HubTableRow {
   cells: Record<string, { v: number | null; t: string }>;
 }
 
+export interface HubFeeOption {
+  key: string;
+  label: string;
+  /** The district median for this fee; null when too few institutions report it. */
+  district: number | null;
+  /** Each state's median for this fee, null when the state has too few institutions. */
+  byState: Record<string, number | null>;
+}
+
 interface Props {
   states: { code: string; name: string }[];
-  map: ReactNode;
+  /** Each state's outline: a path and the viewBox cropped around it. */
+  shapes: Record<string, { d: string; viewBox: string }>;
+  fees: HubFeeOption[];
+  districtName: string;
   panels: Record<string, ReactNode>;
   columns: HubTableColumn[];
   rows: HubTableRow[];
   initial: string;
 }
 
-const CODE = /^[A-Z]{2}$/;
+const money = (n: number) => formatFeeAmount(n) ?? "-";
+const WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
 
-export function HubStates({ states, map, panels, columns, rows, initial }: Props) {
+export function HubStates({ states, shapes, fees, districtName, panels, columns, rows, initial }: Props) {
   const [picked, setPicked] = useState(initial);
+  const [feeKey, setFeeKey] = useState(fees[0]?.key ?? "");
   const [sort, setSort] = useState<{ key: string; desc: boolean } | null>(null);
+  const fee = fees.find((f) => f.key === feeKey) ?? fees[0] ?? null;
 
-  const onMap = (e: MouseEvent<HTMLDivElement>) => {
-    const code = (e.target as Element).closest?.("[data-state]")?.getAttribute("data-state");
-    if (code && panels[code]) setPicked(code);
-  };
+  const values = fee ? states.map((s) => fee.byState[s.code]).filter((v): v is number => v != null) : [];
+  const max = Math.max(...values, fee?.district ?? 0, 1) * 1.1;
 
   const sorted = sort
     ? [...rows].sort((a, b) => {
@@ -54,55 +70,89 @@ export function HubStates({ states, map, panels, columns, rows, initial }: Props
     : rows;
 
   const th = "px-3 py-2 text-[10px] font-bold uppercase tracking-[0.08em] text-ink-muted";
+  const all = states.length <= 10 ? WORDS[states.length] : String(states.length);
 
   return (
-    <div className="space-y-4">
-      {/* Phones pick from one menu instead of a row of chips that runs off the screen. */}
-      <label className="block sm:hidden">
-        <span className="sr-only">Pick a state</span>
-        <select
-          value={picked}
-          onChange={(e) => setPicked(e.target.value)}
-          className="min-h-11 w-full rounded-full border border-ink bg-surface-0 px-4 text-[14px] font-semibold text-ink"
-        >
-          {states.map((s) => (
-            <option key={s.code} value={s.code}>
-              {s.name}
-            </option>
+    <div className="space-y-6">
+      {fees.length > 1 && (
+        <div role="group" aria-label="Pick a fee" className="flex flex-wrap justify-center gap-2 sm:justify-start">
+          {fees.map((f) => (
+            <button
+              key={f.key}
+              type="button"
+              aria-pressed={f.key === feeKey}
+              onClick={() => setFeeKey(f.key)}
+              className={`min-h-10 shrink-0 rounded-full px-4 text-[13px] font-semibold transition-colors ${
+                f.key === feeKey ? "bg-ink text-on-ink" : "bg-surface-200 text-ink hover:bg-ink/15"
+              }`}
+            >
+              {f.label}
+            </button>
           ))}
-        </select>
-      </label>
-      <div role="group" aria-label="Pick a state" className="hidden flex-wrap gap-2 sm:flex">
-        {states.map((s) => (
-          <button
-            key={s.code}
-            type="button"
-            aria-pressed={picked === s.code}
-            onClick={() => setPicked(s.code)}
-            className={`min-h-11 shrink-0 rounded-full border px-4 text-[13px] font-semibold transition-colors ${
-              picked === s.code ? "border-ink bg-ink text-on-ink" : "border-border bg-surface-0 text-ink hover:border-ink/40"
-            }`}
-          >
-            {s.name}
-          </button>
-        ))}
+        </div>
+      )}
+
+      {fee && fee.district != null && (
+        <p className="flex items-center justify-center gap-2 text-[12px] text-ink-muted sm:justify-start">
+          <span aria-hidden="true" className="h-3.5 w-0.5 rounded bg-brick" />
+          {districtName} median, {money(fee.district)}
+        </p>
+      )}
+
+      <div role="group" aria-label="Pick a state" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        {states.map((s) => {
+          const value = fee ? fee.byState[s.code] : null;
+          const shape = shapes[s.code];
+          const pressed = picked === s.code;
+          return (
+            <button
+              key={s.code}
+              type="button"
+              aria-pressed={pressed}
+              aria-label={`${s.name}${fee ? `: ${fee.label} median ${value != null ? money(value) : "not available yet"}` : ""}`}
+              onClick={() => setPicked(s.code)}
+              className={`flex flex-col rounded-xl bg-surface-0 p-3 text-left transition-shadow focus-visible:outline-2 focus-visible:outline-ink ${
+                pressed ? "ring-2 ring-ink" : "ring-1 ring-border hover:ring-ink/40"
+              }`}
+            >
+              <span className="flex items-start justify-between gap-2">
+                <span className="text-[13px] font-semibold leading-tight text-ink">{s.name}</span>
+                {shape && (
+                  <svg viewBox={shape.viewBox} className="h-9 w-9 shrink-0" aria-hidden="true">
+                    <path d={shape.d} className={pressed ? "fill-brick" : "fill-[var(--fi-viz-3)]"} />
+                  </svg>
+                )}
+              </span>
+              <span className="mt-3 font-mono text-[28px] font-semibold leading-none tabular-nums text-ink">
+                {value != null ? money(value) : <span className="text-[13px] font-normal text-ink-muted">Too few yet</span>}
+              </span>
+              <span className="relative mt-3 block h-2 w-full rounded-full bg-surface-200" aria-hidden="true">
+                {value != null && <span className="absolute inset-y-0 left-0 rounded-full bg-ink" style={{ width: `${(value / max) * 100}%` }} />}
+                {fee?.district != null && (
+                  <span className="absolute -inset-y-1 w-0.5 rounded bg-brick" style={{ left: `${(fee.district / max) * 100}%` }} />
+                )}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
-      <div className="grid gap-4 rounded-2xl border border-border bg-surface-0 p-4 shadow-fi-1 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] lg:items-start">
-        {/* The map is a shortcut for pointer users; the chips above are the same choice for everyone. */}
-        <div data-hub-map="" onClick={onMap} className="cursor-pointer" aria-hidden="true">
-          {CODE.test(picked) && <style>{`[data-hub-map] [data-state="${picked}"] path { fill: #b23a32; }`}</style>}
-          {map}
-        </div>
-        <div aria-live="polite">{panels[picked]}</div>
+      <div aria-live="polite" className="border-t border-border pt-6">
+        {panels[picked]}
       </div>
 
       {rows.length > 1 && (
-        <div className="overflow-hidden rounded-2xl border border-border bg-surface-0 shadow-fi-1">
-          <div className="overflow-x-auto">
+        <details className="group/disc">
+          <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-2 text-[14px] font-semibold text-ink [&::-webkit-details-marker]:hidden">
+            <span aria-hidden="true" className="transition-transform group-open/disc:rotate-90">
+              &rsaquo;
+            </span>
+            {states.length === 2 ? "Compare both states" : `Compare all ${all} states`}
+          </summary>
+          <div className="mt-3 overflow-x-auto">
             <table className="w-full text-left text-[13px] sm:min-w-[560px]">
               <thead>
-                <tr className="border-b border-border bg-paper">
+                <tr className="border-b border-border">
                   <th scope="col" className={th}>
                     State
                   </th>
@@ -127,7 +177,7 @@ export function HubStates({ states, map, panels, columns, rows, initial }: Props
               </thead>
               <tbody className="divide-y divide-surface-200">
                 {sorted.map((r) => (
-                  <tr key={r.code} className={picked === r.code ? "bg-paper" : "hover:bg-paper/60"}>
+                  <tr key={r.code} className={picked === r.code ? "bg-surface-200/50" : ""}>
                     <th scope="row" className="px-3 py-2 font-medium">
                       <button
                         type="button"
@@ -147,7 +197,7 @@ export function HubStates({ states, map, panels, columns, rows, initial }: Props
               </tbody>
             </table>
           </div>
-        </div>
+        </details>
       )}
     </div>
   );

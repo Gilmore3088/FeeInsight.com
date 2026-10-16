@@ -13,7 +13,7 @@ export function PhoneCollapse({ summary, children }: { summary: ReactNode; child
     if (ref.current && window.matchMedia("(max-width: 639px)").matches) ref.current.open = false;
   }, []);
   return (
-    <details ref={ref} open className="group space-y-3">
+    <details ref={ref} open className="group space-y-8">
       <summary className="flex cursor-pointer list-none items-start justify-between gap-3 [&::-webkit-details-marker]:hidden">
         <div className="min-w-0">{summary}</div>
         <span aria-hidden="true" className="mt-1 text-[18px] leading-none text-ink-muted transition-transform group-open:rotate-90 sm:hidden">

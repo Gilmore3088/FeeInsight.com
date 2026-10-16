@@ -28,11 +28,13 @@ export const compact = (n: number | null | undefined) => (n == null ? "-" : form
 export const pct = (n: number | null | undefined, digits = 1) => (n == null ? "-" : `${n.toFixed(digits)}%`);
 export const signedPct = (n: number) => `${n > 0 ? "+" : n < 0 ? "−" : ""}${Math.abs(n).toFixed(1)}%`;
 
-const H2 = "text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-[24px]";
-const CARD = "rounded-2xl border border-border bg-surface-0 p-4 shadow-fi-1 sm:p-6";
+/** Story headings state the finding; the small kicker above names the subject. */
+export const STORY_H2 = "text-[26px] font-semibold leading-[1.1] tracking-[-0.03em] text-ink sm:text-[36px]";
+export const KICKER = "text-[12px] font-semibold uppercase tracking-[0.14em] text-brick";
 
 export function HubSection({
   id,
+  kicker,
   title,
   line,
   source,
@@ -40,6 +42,7 @@ export function HubSection({
   collapsible = false,
 }: {
   id: string;
+  kicker?: string;
   title: string;
   line?: ReactNode;
   source: ReactNode;
@@ -48,11 +51,12 @@ export function HubSection({
   collapsible?: boolean;
 }) {
   const head = (
-    <div>
-      <h2 id={`${id}-heading`} className={H2}>
+    <div className="max-w-3xl">
+      {kicker && <p className={`${KICKER} mb-2`}>{kicker}</p>}
+      <h2 id={`${id}-heading`} className={STORY_H2}>
         {title}
       </h2>
-      {line && <p className="mt-1 text-[14px] text-ink-muted">{line}</p>}
+      {line && <p className="mt-3 text-[15px] leading-relaxed text-ink-soft">{line}</p>}
     </div>
   );
   const body = (
@@ -64,7 +68,7 @@ export function HubSection({
     </>
   );
   return (
-    <section id={id} aria-labelledby={`${id}-heading`} className="scroll-mt-20 space-y-3">
+    <section id={id} aria-labelledby={`${id}-heading`} className="scroll-mt-20 space-y-8">
       {collapsible ? (
         <PhoneCollapse summary={head}>{body}</PhoneCollapse>
       ) : (
@@ -77,23 +81,15 @@ export function HubSection({
   );
 }
 
-/** Tile columns by count, so a row never ends in an empty cell. */
-const TILE_COLUMNS: Record<number, string> = {
-  1: "grid-cols-1",
-  2: "grid-cols-2",
-  3: "grid-cols-3",
-  4: "grid-cols-2 sm:grid-cols-4",
-};
-
-/** A row of figure tiles. */
-export function Tiles({ items, tone = "light" }: { items: { value: string; label: string }[]; tone?: "light" | "card" }) {
+/** A row of figures, each under a hairline: no box, and no empty filler cell when the count is odd. */
+export function Tiles({ items }: { items: { value: string; label: string }[] }) {
   if (items.length === 0) return null;
   return (
-    <dl className={`grid gap-px overflow-hidden rounded-xl bg-border ${TILE_COLUMNS[items.length] ?? "grid-cols-2 sm:grid-cols-3"}`}>
+    <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3 lg:grid-cols-4">
       {items.map((t) => (
-        <div key={t.label} className={`${tone === "card" ? "bg-surface-0" : "bg-paper"} px-3 py-2.5`}>
-          <dt className="text-[11px] leading-tight text-ink-muted">{t.label}</dt>
-          <dd className="mt-0.5 font-mono text-[20px] font-semibold leading-tight tabular-nums text-ink">{t.value}</dd>
+        <div key={t.label} className="flex flex-col-reverse border-t border-border pt-2">
+          <dt className="mt-0.5 text-[11px] leading-tight text-ink-muted">{t.label}</dt>
+          <dd className="font-mono text-[20px] font-semibold leading-tight tabular-nums text-ink">{t.value}</dd>
         </div>
       ))}
     </dl>
@@ -182,38 +178,111 @@ export function StatePanel({
   );
 }
 
-/** Stacked columns: each quarter's fee income, banks under credit unions. */
+export interface IncomeTrend {
+  latest: { quarter: string; value: number };
+  /** Change from the same quarter a year earlier, in percent; null without four earlier quarters. */
+  yoyPct: number | null;
+  yearAgoQuarter: string | null;
+  /** The quarter with the largest move from the one before it, when that move is worth a note. */
+  biggestMove: { quarter: string; pct: number } | null;
+}
+
+/** Smallest quarter-to-quarter move, in percent, worth an annotation. */
+const NOTABLE_MOVE_PCT = 3;
+
+/** One charter's quarterly trend: the latest value, the change on a year earlier and the biggest move. */
+export function incomeTrend(quarters: RevenueQuarter[], series: "banks" | "creditUnions"): IncomeTrend | null {
+  const points = quarters.filter((q) => q[series] > 0).map((q) => ({ quarter: q.quarter, value: q[series] }));
+  if (points.length === 0) return null;
+  const latest = points[points.length - 1];
+  const yearAgo = points.length >= 5 ? points[points.length - 5] : null;
+  let biggestMove: IncomeTrend["biggestMove"] = null;
+  for (let i = 1; i < points.length; i++) {
+    const pct = ((points[i].value - points[i - 1].value) / points[i - 1].value) * 100;
+    if (Math.abs(pct) >= NOTABLE_MOVE_PCT && (!biggestMove || Math.abs(pct) > Math.abs(biggestMove.pct))) {
+      biggestMove = { quarter: points[i].quarter, pct };
+    }
+  }
+  return {
+    latest,
+    yoyPct: yearAgo ? ((latest.value - yearAgo.value) / yearAgo.value) * 100 : null,
+    yearAgoQuarter: yearAgo?.quarter ?? null,
+    biggestMove,
+  };
+}
+
 /**
- * One charter's income by quarter. Banks report service charges on deposit accounts and credit
- * unions report all fee income, a wider measure, so the two are drawn apart and never summed.
+ * One charter's income by quarter as an open line chart: the latest value large, its change on a
+ * year earlier, and a note at the biggest quarter-to-quarter move. Banks report service charges on
+ * deposit accounts and credit unions report all fee income, a wider measure, so the two are drawn
+ * apart and never summed. The line spans the quarters' own range, marked at its high and low.
  */
-export function RevenueChart({ quarters, series, title }: { quarters: RevenueQuarter[]; series: "banks" | "creditUnions"; title: string }) {
-  const value = (q: RevenueQuarter) => q[series];
-  const max = Math.max(...quarters.map(value), 1);
-  const bar = series === "banks" ? "bg-ink" : "bg-brick";
+export function IncomeLine({ quarters, series, title }: { quarters: RevenueQuarter[]; series: "banks" | "creditUnions"; title: string }) {
+  const points = quarters.filter((q) => q[series] > 0).map((q) => ({ quarter: q.quarter, value: q[series] }));
+  const trend = incomeTrend(quarters, series);
+  if (!trend || points.length === 0) return null;
+  const values = points.map((p) => p.value);
+  const hi = Math.max(...values);
+  const lo = Math.min(...values);
+  const pad = Math.max((hi - lo) * 0.2, hi * 0.02);
+  const top = hi + pad;
+  const bottom = Math.max(lo - pad, 0);
+  const x = (i: number) => (points.length === 1 ? 50 : (i / (points.length - 1)) * 100);
+  const y = (v: number) => (top === bottom ? 50 : ((top - v) / (top - bottom)) * 100);
+  const line = points.map((p, i) => `${x(i)},${y(p.value)}`).join(" ");
+  const tone = series === "banks" ? "text-ink" : "text-ink-soft";
+  const moveAt = trend.biggestMove ? points.findIndex((p) => p.quarter === trend.biggestMove!.quarter) : -1;
   return (
-    <figure className={CARD}>
-      <figcaption className="mb-3 text-[13px] font-semibold text-ink">{title}</figcaption>
-      <div className="flex h-36 items-end gap-1.5 sm:gap-3" role="img" aria-label={`${title} by quarter, ${quarterLabel(quarters[0].quarter)} to ${quarterLabel(quarters[quarters.length - 1].quarter)}: ${quarters.map((q) => compact(value(q))).join(", ")}`}>
-        {quarters.map((q, i) => (
-          <div key={q.quarter} className="flex h-full min-w-0 flex-1 flex-col justify-end">
-            {/* Phones label only the newest bar; eight values don't fit side by side. */}
-            <span
-              className={`mb-1 whitespace-nowrap text-center text-[10px] font-semibold tabular-nums text-ink ${i === quarters.length - 1 ? "" : "hidden sm:block"}`}
-            >
-              {compact(value(q))}
-            </span>
-            <div className={`rounded-t-md ${bar}`} style={{ height: `${(value(q) / max) * 82}%` }} />
-          </div>
+    <figure>
+      <figcaption className="text-[14px] font-semibold text-ink">{title}</figcaption>
+      <p className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="font-mono text-[36px] font-semibold leading-none tabular-nums tracking-[-0.02em] text-ink sm:text-[44px]">
+          {compact(trend.latest.value)}
+        </span>
+        <span className="text-[13px] text-ink-muted">{quarterLabel(trend.latest.quarter)}</span>
+      </p>
+      {trend.yoyPct != null && trend.yearAgoQuarter && (
+        <p className="mt-1 text-[13px] text-ink-soft">
+          <span className="font-semibold tabular-nums text-ink">{signedPct(trend.yoyPct)}</span> from {quarterLabel(trend.yearAgoQuarter)}
+        </p>
+      )}
+      <div
+        className={`relative mt-6 h-40 sm:h-48 ${tone}`}
+        role="img"
+        aria-label={`${title} by quarter, ${quarterLabel(points[0].quarter)} to ${quarterLabel(trend.latest.quarter)}: ${points.map((p) => compact(p.value)).join(", ")}`}
+      >
+        <span className="absolute inset-x-0 border-t border-dashed border-border" style={{ top: `${y(hi)}%` }} aria-hidden="true" />
+        <span className="absolute inset-x-0 border-t border-dashed border-border" style={{ top: `${y(lo)}%` }} aria-hidden="true" />
+        <span className="absolute left-0 -translate-y-full pb-0.5 text-[10px] tabular-nums text-ink-muted" style={{ top: `${y(hi)}%` }} aria-hidden="true">
+          High {compact(hi)}
+        </span>
+        <span className="absolute left-0 pt-0.5 text-[10px] tabular-nums text-ink-muted" style={{ top: `${y(lo)}%` }} aria-hidden="true">
+          Low {compact(lo)}
+        </span>
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 h-full w-full overflow-visible" aria-hidden="true">
+          <polyline points={line} fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+        </svg>
+        {points.map((p, i) => (
+          <span
+            key={p.quarter}
+            aria-hidden="true"
+            className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full bg-current ring-2 ring-paper ${i === points.length - 1 || i === moveAt ? "h-3 w-3" : "h-1.5 w-1.5"}`}
+            style={{ left: `${x(i)}%`, top: `${y(p.value)}%` }}
+          />
         ))}
-      </div>
-      <div className="mt-1.5 flex gap-1.5 sm:gap-3" aria-hidden="true">
-        {quarters.map((q) => (
-          <span key={q.quarter} className="min-w-0 flex-1 text-center text-[10px] leading-tight tabular-nums text-ink-muted">
-            {quarterLabel(q.quarter).split(" ")[0]}
-            <span className="block sm:inline">{quarterLabel(q.quarter).replace(/^Q\d 20/, " ’")}</span>
+        {trend.biggestMove && moveAt > 0 && moveAt < points.length - 1 && (
+          <span
+            aria-hidden="true"
+            className="absolute -translate-x-1/2 whitespace-nowrap rounded bg-paper px-1.5 text-[11px] font-semibold tabular-nums text-ink"
+            style={{ left: `${x(moveAt)}%`, top: `calc(${y(points[moveAt].value)}% ${trend.biggestMove.pct >= 0 ? "- 1.75rem" : "+ 0.75rem"})` }}
+          >
+            {signedPct(trend.biggestMove.pct)} in {quarterLabel(trend.biggestMove.quarter)}
           </span>
-        ))}
+        )}
+      </div>
+      <div className="mt-2 flex justify-between text-[11px] tabular-nums text-ink-muted" aria-hidden="true">
+        <span>{quarterLabel(points[0].quarter)}</span>
+        <span>{quarterLabel(trend.latest.quarter)}</span>
       </div>
     </figure>
   );
@@ -223,7 +292,7 @@ export function RevenueChart({ quarters, series, title }: { quarters: RevenueQua
 export function RankBars({ rows, format, tick, tickLabel }: { rows: { key: string; label: string; value: number; note?: string }[]; format: (n: number) => string; tick?: number | null; tickLabel?: string }) {
   const max = Math.max(...rows.map((r) => r.value), tick ?? 0, 1) * 1.05;
   return (
-    <div className={CARD}>
+    <div>
       {tick != null && tickLabel && (
         <p className="mb-2 inline-flex items-center gap-1.5 text-[11px] text-ink-muted">
           <span className="h-3 w-0.5 rounded bg-brick" aria-hidden="true" /> {tickLabel}
@@ -245,73 +314,112 @@ export function RankBars({ rows, format, tick, tickLabel }: { rows: { key: strin
   );
 }
 
-/** Institutions by asset size: banks and credit unions side by side in one bar per size. */
-export function TierChart({ tiers }: { tiers: TierRow[] }) {
+/**
+ * Institutions by asset size as stacked columns, one per size: banks at the base, credit unions
+ * above, each part labeled with its count.
+ */
+export function SizeColumns({ tiers }: { tiers: TierRow[] }) {
   const max = Math.max(...tiers.map((t) => t.banks + t.creditUnions), 1);
   return (
-    <div className={CARD}>
-      <p className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-ink-muted" aria-hidden="true">
+    <figure>
+      <p className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-muted" aria-hidden="true">
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-sm bg-ink" /> Banks
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-sm bg-brick" /> Credit unions
+          <span className="h-2.5 w-2.5 rounded-sm bg-ink/30" /> Credit unions
         </span>
       </p>
-      <ul className="space-y-3">
-        {tiers.map((t) => (
-          <li key={t.tier}>
-            <div className="flex items-baseline justify-between gap-3 text-[12px]">
-              <span className="font-medium text-ink">{t.label}</span>
-              <span className="tabular-nums text-ink-muted">
-                {count(t.banks)} · {count(t.creditUnions)}
-              </span>
-            </div>
-            <div className="mt-1 flex h-3 overflow-hidden rounded-full bg-surface-200" aria-hidden="true">
-              <div className="bg-ink" style={{ width: `${(t.banks / max) * 100}%` }} />
-              <div className="bg-brick" style={{ width: `${(t.creditUnions / max) * 100}%` }} />
-            </div>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-/** The largest banks by deposits in the district's states, each with its share. */
-export function LeadersTable({ branches }: { branches: HubBranches }) {
-  if (branches.leaders.length === 0) return null;
-  const top = branches.leaders[0].deposits;
-  return (
-    <div className="overflow-hidden rounded-2xl border border-border bg-surface-0 shadow-fi-1">
-      <ol className="divide-y divide-surface-200">
-        {branches.leaders.map((l, i) => {
-          const share = branches.total_deposits > 0 ? (l.deposits / branches.total_deposits) * 100 : null;
+      <ol
+        className="flex h-52 items-end gap-2 sm:gap-4"
+        aria-label={`Institutions by asset size: ${tiers.map((t) => `${t.label}, ${count(t.banks)} banks and ${count(t.creditUnions)} credit unions`).join("; ")}`}
+      >
+        {tiers.map((t) => {
+          const total = t.banks + t.creditUnions;
           return (
-            <li key={l.institution_id}>
-              <details className="group">
-                <summary className="grid cursor-pointer list-none grid-cols-[1.5rem_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5 hover:bg-paper/60 [&::-webkit-details-marker]:hidden">
-                  <span className="text-[12px] tabular-nums text-ink-muted">{i + 1}</span>
-                  <span className="min-w-0">
-                    <span className="block truncate text-[13px] font-medium text-ink">{l.name}</span>
-                    <span className="mt-1 block h-1.5 rounded-full bg-surface-200" aria-hidden="true">
-                      <span className="block h-full rounded-full bg-ink" style={{ width: `${(l.deposits / top) * 100}%` }} />
-                    </span>
-                  </span>
-                  <span className="text-right text-[12px] font-semibold tabular-nums text-ink">{share != null ? pct(share) : compact(l.deposits)}</span>
-                </summary>
-                <p className="px-4 pb-3 pl-[3.25rem] text-[12px] text-ink-muted">
-                  {compact(l.deposits)} in deposits across {count(l.branches)} branches.{" "}
-                  <Link href={`/institution/${l.institution_id}`} className="font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
-                    Fees
-                  </Link>
-                </p>
-              </details>
+            <li key={t.tier} className="flex h-full min-w-0 flex-1 flex-col justify-end" aria-hidden="true">
+              <span className="mb-1 text-center font-mono text-[13px] font-semibold tabular-nums text-ink">{count(total)}</span>
+              <span className="flex flex-col overflow-hidden rounded-t-md" style={{ height: `${(total / max) * 82}%` }}>
+                <span className="bg-ink/30" style={{ flexGrow: t.creditUnions }} />
+                <span className="bg-ink" style={{ flexGrow: t.banks }} />
+              </span>
             </li>
           );
         })}
       </ol>
-    </div>
+      <div className="mt-2 flex gap-2 sm:gap-4" aria-hidden="true">
+        {tiers.map((t) => (
+          <span key={t.tier} className="min-w-0 flex-1 text-center text-[11px] leading-tight text-ink-muted">
+            {t.label}
+            <span className="mt-0.5 block tabular-nums">
+              {count(t.banks)} banks · {count(t.creditUnions)} credit unions
+            </span>
+          </span>
+        ))}
+      </div>
+    </figure>
+  );
+}
+
+/** The leading banks' combined share of the district's bank deposits, in percent; null with no deposits. */
+export function leadersShare(branches: HubBranches, top = 5): { banks: number; pct: number } | null {
+  if (branches.total_deposits <= 0 || branches.leaders.length === 0) return null;
+  const leaders = branches.leaders.slice(0, top);
+  return { banks: leaders.length, pct: (leaders.reduce((s, l) => s + l.deposits, 0) / branches.total_deposits) * 100 };
+}
+
+const STRIP_TONES = ["bg-ink", "bg-ink/80", "bg-ink/65", "bg-ink/50", "bg-ink/38"];
+
+/**
+ * Deposits as one strip: the leading banks' shares, then everyone else as "Other", named in a
+ * ranked list beneath with each bank's share and deposits.
+ */
+export function DepositStrip({ branches, top = 5 }: { branches: HubBranches; top?: number }) {
+  if (branches.total_deposits <= 0 || branches.leaders.length === 0) return null;
+  const leaders = branches.leaders.slice(0, top);
+  const share = (n: number) => (n / branches.total_deposits) * 100;
+  const other = Math.max(branches.total_deposits - leaders.reduce((s, l) => s + l.deposits, 0), 0);
+  return (
+    <figure>
+      <div className="flex h-12 overflow-hidden rounded-lg" aria-hidden="true">
+        {leaders.map((l, i) => (
+          <span
+            key={l.institution_id}
+            className={`flex items-center justify-center border-r-2 border-paper text-[12px] font-semibold tabular-nums text-on-ink ${STRIP_TONES[i] ?? "bg-ink/30"}`}
+            style={{ width: `${share(l.deposits)}%` }}
+          >
+            {share(l.deposits) >= 9 ? `${Math.round(share(l.deposits))}%` : ""}
+          </span>
+        ))}
+        <span className="flex min-w-0 flex-1 items-center justify-center overflow-hidden whitespace-nowrap bg-surface-200 px-2 text-[12px] font-semibold tabular-nums text-ink-soft">
+          Other {Math.round(share(other))}%
+        </span>
+      </div>
+      <ol className="mt-5 grid gap-x-8 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
+        {leaders.map((l, i) => (
+          <li key={l.institution_id} className="flex items-start gap-3">
+            <span className={`mt-1 h-3 w-3 shrink-0 rounded-sm ${STRIP_TONES[i] ?? "bg-ink/30"}`} aria-hidden="true" />
+            <span className="min-w-0">
+              <Link href={`/institution/${l.institution_id}`} className="block text-[14px] font-medium text-ink underline-offset-4 hover:underline">
+                {l.name}
+              </Link>
+              <span className="block text-[12px] tabular-nums text-ink-muted">
+                {pct(share(l.deposits))} · {compact(l.deposits)} across {count(l.branches)} branches
+              </span>
+            </span>
+          </li>
+        ))}
+        <li className="flex items-start gap-3">
+          <span className="mt-1 h-3 w-3 shrink-0 rounded-sm bg-surface-200 ring-1 ring-border" aria-hidden="true" />
+          <span className="min-w-0">
+            <span className="block text-[14px] font-medium text-ink">Every other bank</span>
+            <span className="block text-[12px] tabular-nums text-ink-muted">
+              {pct(share(other))} · {compact(other)}
+            </span>
+          </span>
+        </li>
+      </ol>
+    </figure>
   );
 }
 
@@ -343,7 +451,6 @@ export function PriceMoves({ summary, showAll }: { summary: FeeChangeSummary; sh
   return (
     <div className="space-y-3">
       <Tiles
-        tone="card"
         items={[
           { value: `${count(summary.up)}${plus}`, label: "Prices raised" },
           { value: `${count(summary.down)}${plus}`, label: "Prices cut" },
@@ -352,18 +459,18 @@ export function PriceMoves({ summary, showAll }: { summary: FeeChangeSummary; sh
         ]}
       />
       {summary.recent.length > 0 && (
-        <ul className="divide-y divide-surface-200 overflow-hidden rounded-2xl border border-border bg-surface-0 shadow-fi-1">
+        <ul className="divide-y divide-surface-200 border-y border-border">
           {summary.recent.map((c) => (
             <li key={c.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
               <span className="min-w-0">
-                <Link href={`/institution/${c.institution_id}`} className="block truncate text-[13px] font-medium text-ink hover:text-brick">
+                <Link href={`/institution/${c.institution_id}`} className="block truncate text-[13px] font-medium text-ink underline-offset-4 hover:underline">
                   {c.institution_name}
                 </Link>
                 <span className="block truncate text-[11px] text-ink-muted">
                   {showAll ? getDisplayName(c.fee_category) : hubFeeName(c.fee_category)} · {monthYear(c.changed_at)}
                 </span>
               </span>
-              <span className={`whitespace-nowrap text-[13px] font-semibold tabular-nums ${c.change_type === "increase" ? "text-brick" : "text-below-market"}`}>
+              <span className={`whitespace-nowrap text-[13px] font-semibold tabular-nums text-ink`}>
                 {money(c.old_amount)} &rarr; {money(c.new_amount)}
               </span>
             </li>
@@ -375,9 +482,10 @@ export function PriceMoves({ summary, showAll }: { summary: FeeChangeSummary; sh
 }
 
 export function CpiChart({ history, label }: { history: { date: string; value: number }[]; label: string }) {
+  // A national series: drawn in ink, since brick on this page marks the district.
   return (
-    <div className={CARD}>
-      <TrendChart lines={[{ label, points: history, tone: "primary" }]} format={(v) => `${v.toFixed(0)}%`} label={label} />
+    <div className="text-ink">
+      <TrendChart lines={[{ label, points: history, tone: "primary" }]} format={(v) => `${v.toFixed(0)}%`} label={label} color="currentColor" />
     </div>
   );
 }

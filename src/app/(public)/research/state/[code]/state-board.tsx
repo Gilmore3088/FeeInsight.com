@@ -333,49 +333,63 @@ export function BoardChart() {
  * The fee list: each fee's state median as a dot on its own U.S. (or district) middle half.
  * Tapping one draws it above.
  */
-export function BoardRows({ fees, ariaLabel }: { fees: BoardFee[]; ariaLabel: string }) {
+export function BoardRows({ fees, ariaLabel, limit }: { fees: BoardFee[]; ariaLabel: string; limit?: number }) {
   const { fee: current, pickFee, against } = useBoard();
+  const [expanded, setExpanded] = useState(false);
   const refShort = againstShort(against);
+  const cut = limit != null && !expanded && fees.length > limit;
+  const listed = cut ? fees.slice(0, limit) : fees;
   return (
-    <ol aria-label={ariaLabel} className="divide-y divide-border">
-      {fees.map((f) => {
-        const pressed = f.key === current.key;
-        const ref = bandFor(f, against);
-        const position = ref ? positionIn(f.median, ref) : null;
-        const dot = { key: f.key, label: f.name, median: f.median, institutions: f.institutions, position: position ?? "within" };
-        const band = ref ? { min: 0, max: 0, institutions: 0, p25: ref.p25, median: ref.median, p75: ref.p75 } : null;
-        return (
-          <li key={f.key}>
-            <button
-              type="button"
-              aria-pressed={pressed}
-              onClick={() => pickFee(f.key)}
-              aria-label={`${f.name}: ${money(f.median)} across ${COUNT.format(f.institutions)} institutions${
-                ref && position
-                  ? `, ${POSITION_WORD[position]} the ${refShort === "U.S." ? "U.S." : "district"} middle half; ${refShort === "U.S." ? "U.S." : "district"} median ${money(ref.median)}`
-                  : ""
-              }`}
-              className={`${MARKET_ROW_GRID} -mx-2 w-[calc(100%+1rem)] rounded-lg px-2 text-left transition-colors hover:bg-paper focus-visible:outline-2 focus-visible:outline-ink ${
-                pressed ? "bg-paper ring-1 ring-ink/30" : ""
-              }`}
-            >
-              {band ? (
-                <MarketRowBody dot={dot} band={band} pct={marketScale([dot], band)} figure={money(f.median)} />
-              ) : (
-                <>
-                  <span className="min-w-0 leading-tight text-ink">
-                    {f.name}
-                    <span className="block text-[11px] text-ink-muted">{COUNT.format(f.institutions)} institutions</span>
-                  </span>
-                  <span className="text-[12px] text-ink-muted">No {refShort === "U.S." ? "U.S." : "district"} median</span>
-                  <span className="text-right font-mono text-[14px] font-semibold tabular-nums text-ink">{money(f.median)}</span>
-                </>
-              )}
-            </button>
-          </li>
-        );
-      })}
-    </ol>
+    <>
+      <ol aria-label={ariaLabel} className="divide-y divide-border">
+        {listed.map((f) => {
+          const pressed = f.key === current.key;
+          const ref = bandFor(f, against);
+          const position = ref ? positionIn(f.median, ref) : null;
+          const dot = { key: f.key, label: f.name, median: f.median, institutions: f.institutions, position: position ?? "within" };
+          const band = ref ? { min: 0, max: 0, institutions: 0, p25: ref.p25, median: ref.median, p75: ref.p75 } : null;
+          return (
+            <li key={f.key}>
+              <button
+                type="button"
+                aria-pressed={pressed}
+                onClick={() => pickFee(f.key)}
+                aria-label={`${f.name}: ${money(f.median)} across ${COUNT.format(f.institutions)} institutions${
+                  ref && position
+                    ? `, ${POSITION_WORD[position]} the ${refShort === "U.S." ? "U.S." : "district"} middle half; ${refShort === "U.S." ? "U.S." : "district"} median ${money(ref.median)}`
+                    : ""
+                }`}
+                className={`${MARKET_ROW_GRID} -mx-2 w-[calc(100%+1rem)] rounded-lg px-2 text-left transition-colors hover:bg-paper focus-visible:outline-2 focus-visible:outline-ink ${
+                  pressed ? "bg-paper ring-1 ring-ink/30" : ""
+                }`}
+              >
+                {band ? (
+                  <MarketRowBody dot={dot} band={band} pct={marketScale([dot], band)} figure={money(f.median)} />
+                ) : (
+                  <>
+                    <span className="min-w-0 leading-tight text-ink">
+                      {f.name}
+                      <span className="block text-[11px] text-ink-muted">{COUNT.format(f.institutions)} institutions</span>
+                    </span>
+                    <span className="text-[12px] text-ink-muted">No {refShort === "U.S." ? "U.S." : "district"} median</span>
+                    <span className="text-right font-mono text-[14px] font-semibold tabular-nums text-ink">{money(f.median)}</span>
+                  </>
+                )}
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+      {cut && (
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="mt-2 inline-flex min-h-11 items-center text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+        >
+          Show all {COUNT.format(fees.length)} fees
+        </button>
+      )}
+    </>
   );
 }
 
