@@ -1156,6 +1156,7 @@ async function executeAgenticStep(
       // its account type and never published as consumer checking monthly maintenance.
       const accountTypeHold = await applyAccountTypeHold(tx, {
         runId: run.id,
+        stepId: step.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
       });
@@ -1662,6 +1663,7 @@ async function executeAgenticStep(
             typed_rejected: accountTypeHold.typedRejected.length,
             checked_untyped: accountTypeHold.checkedUntyped,
             recheck_no_product: accountTypeHold.recheckNoProduct,
+            error: accountTypeHold.error,
           },
           cut_name_duplicate: {
             taken_down: cutNameDuplicates.takenDown.map((item) => ({ fee_published_id: item.feePublishedId, kept_fee_published_id: item.keepFeePublishedId })),

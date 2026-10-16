@@ -5,6 +5,7 @@ import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback
 import { accountTypeFlag, accountTypeOf, ACCOUNT_TYPE_FLAG_PREFIX, type AccountType } from "@/lib/account-type";
 import { passesDarwinChecks } from "@/lib/agents/knox/layout";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
+import { recordStepWarning } from "@/lib/agents/hamilton/step-warning";
 
 type SqlTag = typeof sql;
 
@@ -56,6 +57,8 @@ export interface HoldRow {
   institution_id: number | string;
   fee_name: string | null;
   product_name: string | null;
+  /** The bank's own name, which never names an account ("Bangor Savings Bank"). */
+  institution_name?: string | null;
   amount: number | string | null;
   source_document_id?: number | string | null;
   normalized_text?: string | null;
@@ -85,6 +88,8 @@ export interface AccountTypeHoldResult {
   restoredHeld: PlannedHold[];
   /** Part 3: guard-refused rows typed but left rejected (a check other than the account words fails). */
   typedRejected: PlannedHold[];
+  /** A failed read or write (nothing written); also a `step.warning` run event. */
+  error: string | null;
 }
 
 const amountOf = (value: number | string | null) => (value == null || value === "" ? null : Number(value));
@@ -106,7 +111,7 @@ export function planHolds(rows: HoldRow[]): { typed: PlannedHold[]; untyped: Hol
   const typed: PlannedHold[] = [];
   const untyped: HoldRow[] = [];
   for (const row of rows) {
-    const type = accountTypeOf(row.product_name, row.fee_name);
+    const type = accountTypeOf(row.product_name, row.fee_name, row.institution_name);
     if (type) typed.push(planned(row, type));
     else untyped.push(row);
   }
@@ -134,18 +139,20 @@ export function passesWithoutAccountWords(row: HoldRow): boolean {
 
 export async function applyAccountTypeHold(
   db: SqlTag,
-  options: { runId: number; batchId: string; dryRun: boolean },
+  options: { runId: number; stepId?: number | null; batchId: string; dryRun: boolean },
 ): Promise<AccountTypeHoldResult> {
-  const result: AccountTypeHoldResult = { dryRun: options.dryRun, heldLive: [], heldWaiting: [], checkedUntyped: 0, recheckNoProduct: 0, restoredHeld: [], typedRejected: [] };
+  const result: AccountTypeHoldResult = { dryRun: options.dryRun, heldLive: [], heldWaiting: [], checkedUntyped: 0, recheckNoProduct: 0, restoredHeld: [], typedRejected: [], error: null };
   let live: HoldRow[];
   let waiting: HoldRow[];
   let refused: HoldRow[];
   try {
     live = await inSavepoint(db, (scope) => scope<HoldRow[]>`
-      SELECT fp.fee_published_id, fp.lineage_ref AS fee_verified_id, fp.institution_id, fp.fee_name, fr.product_name, fp.amount
+      SELECT fp.fee_published_id, fp.lineage_ref AS fee_verified_id, fp.institution_id, fp.fee_name, fr.product_name, fp.amount,
+             inst.institution_name
         FROM published_fee_records fp
         JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+        LEFT JOIN institution_sources inst ON inst.id = fp.institution_id
        WHERE fp.rolled_back_at IS NULL
          AND fp.canonical_fee_key = ${HOLD_CATEGORY}
          AND NOT (COALESCE(fv.outlier_flags, '[]'::jsonb) ? ${ACCOUNT_TYPE_CHECKED_FLAG})
@@ -153,9 +160,10 @@ export async function applyAccountTypeHold(
        LIMIT ${ACCOUNT_TYPE_HOLD_LIMIT}
     `);
     waiting = await inSavepoint(db, (scope) => scope<HoldRow[]>`
-      SELECT fv.fee_verified_id, fv.institution_id, fv.fee_name, fr.product_name, fv.amount
+      SELECT fv.fee_verified_id, fv.institution_id, fv.fee_name, fr.product_name, fv.amount, inst.institution_name
         FROM verified_fee_observations fv
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+        LEFT JOIN institution_sources inst ON inst.id = fv.institution_id
        WHERE fv.canonical_fee_key = ${HOLD_CATEGORY}
          AND fv.review_status IN ('verified', 'approved')
          AND NOT (COALESCE(fv.outlier_flags, '[]'::jsonb) ? ${ACCOUNT_TYPE_CHECKED_FLAG})
@@ -168,9 +176,11 @@ export async function applyAccountTypeHold(
        LIMIT ${ACCOUNT_TYPE_HOLD_LIMIT}
     `);
     refused = await inSavepoint(db, (scope) => scope<HoldRow[]>`
-      SELECT fv.fee_verified_id, fv.institution_id, fr.fee_name, fr.product_name, fr.amount, fr.source_document_id, txt.normalized_text
+      SELECT fv.fee_verified_id, fv.institution_id, fr.fee_name, fr.product_name, fr.amount, fr.source_document_id, txt.normalized_text,
+             inst.institution_name
         FROM verified_fee_observations fv
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+        LEFT JOIN institution_sources inst ON inst.id = fv.institution_id
         LEFT JOIN LATERAL (
           SELECT t.normalized_text FROM agent_source_texts t
            WHERE t.source_document_id = fr.source_document_id AND t.status = 'completed' AND t.normalized_text IS NOT NULL
@@ -188,7 +198,7 @@ export async function applyAccountTypeHold(
     `);
   } catch (error) {
     console.error("account type hold read failed:", error);
-    return result;
+    return { ...result, error: await recordStepWarning(db, { runId: options.runId, stepId: options.stepId, check: ACCOUNT_TYPE_HOLD_CHECK, what: "Account type hold read", error }) };
   }
   const livePlan = planHolds(live);
   const waitingPlan = planHolds(waiting);
@@ -200,6 +210,7 @@ export async function applyAccountTypeHold(
   const restoredIds = new Set(restored.map((hold) => hold.feeVerifiedId));
   const plan: AccountTypeHoldResult = {
     dryRun: options.dryRun,
+    error: null,
     heldLive: livePlan.typed,
     heldWaiting: waitingPlan.typed,
     checkedUntyped: liveUntyped.check.length + waitingUntyped.check.length,
@@ -228,7 +239,7 @@ export async function applyAccountTypeHold(
       // Part 1: live fees down, their verified rows flagged and kept verified.
       if (plan.heldLive.length > 0) {
         const ids = plan.heldLive.map((hold) => hold.feePublishedId!);
-        const reasons = plan.heldLive.map((hold) => `${ACCOUNT_TYPE_HOLD_REASON}: ${hold.accountType}`);
+        const reasons = plan.heldLive.map((hold) => `${ACCOUNT_TYPE_HOLD_REASON}: ${hold.accountType} (#1100)`);
         const down = await scope<{ fee_published_id: number | string }[]>`
           UPDATE published_fee_records fp
              SET rolled_back_at = NOW(), rolled_back_by_batch_id = ${options.batchId}, rolled_back_reason = v.reason
@@ -289,7 +300,10 @@ export async function applyAccountTypeHold(
     });
   } catch (error) {
     console.error("account type hold write failed:", error);
-    return { ...result, heldLive: [], heldWaiting: [], restoredHeld: [], typedRejected: [], checkedUntyped: 0, recheckNoProduct: 0 };
+    return {
+      ...result, heldLive: [], heldWaiting: [], restoredHeld: [], typedRejected: [], checkedUntyped: 0, recheckNoProduct: 0,
+      error: await recordStepWarning(db, { runId: options.runId, stepId: options.stepId, check: ACCOUNT_TYPE_HOLD_CHECK, what: "Account type hold write", error }),
+    };
   }
   if (result.heldLive.length > 0) invalidatePublicReadCache();
   return result;

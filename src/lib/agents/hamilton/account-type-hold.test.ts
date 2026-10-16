@@ -98,4 +98,31 @@ describe("account type hold (#1100 gap 1)", () => {
     expect(flags.get(5)).toEqual(["account_type:savings"]);
     expect(second.checkedUntyped).toBe(0);
   });
+
+  it("puts a failed read on the run ledger as an error and a step.warning", async () => {
+    const calls: string[] = [];
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const text = strings.join("?");
+      calls.push(text);
+      if (text.includes("FROM published_fee_records fp")) return Promise.reject(new Error("boom"));
+      return Promise.resolve([]);
+    }) as unknown as Parameters<typeof applyAccountTypeHold>[0];
+    const result = await applyAccountTypeHold(db, { runId: 1, stepId: 2, batchId: "agentic-run-1", dryRun: false });
+    expect(result.error).toBe("boom");
+    expect(result.heldLive).toEqual([]);
+    expect(calls.some((text) => text.includes("'step.warning'"))).toBe(true);
+  });
+
+  it("names #1100 in the rollback reason", async () => {
+    const calls: Array<{ text: string; values: unknown[] }> = [];
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = strings.join("?");
+      calls.push({ text, values });
+      if (text.includes("UPDATE published_fee_records")) return Promise.resolve((values[1] as number[]).map((id) => ({ fee_published_id: id })));
+      return Promise.resolve(text.includes("FROM published_fee_records fp") ? LIVE : []);
+    }) as unknown as Parameters<typeof applyAccountTypeHold>[0];
+    await applyAccountTypeHold(db, { runId: 1, batchId: "agentic-run-1", dryRun: false });
+    const update = calls.find((call) => call.text.includes("UPDATE published_fee_records"))!;
+    expect(update.values[2]).toEqual(["account_type_hold: money_market (#1100)", "account_type_hold: savings (#1100)", "account_type_hold: business (#1100)"]);
+  });
 });

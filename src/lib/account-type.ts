@@ -1,3 +1,5 @@
+import { withoutNonAccountWords } from "@/lib/account-name-exclusions";
+
 /**
  * #1100 gap 1 (James, Oct 16, option 1): `monthly_maintenance` is the consumer checking account's
  * monthly fee. A monthly fee of another kind of account (savings, money market, club, business,
@@ -33,8 +35,8 @@ const SAVINGS = /\b(?:savings?|savers?|share(?!\s*drafts?)\s*(?:account|savings)
 const CHECKING = /\b(?:checking|share\s*drafts?|draft\s+account)\b/i;
 
 /** The account type one text names, or null for checking or no type. */
-export function accountTypeOfText(text: string | null | undefined): AccountType | null {
-  const value = (text ?? "").replace(/\s+/g, " ").trim();
+export function accountTypeOfText(text: string | null | undefined, institutionName?: string | null): AccountType | null {
+  const value = withoutNonAccountWords(text ?? "", institutionName).replace(/\s+/g, " ").trim();
   if (!value) return null;
   if (BUSINESS.test(value)) return "business";
   if (MONEY_MARKET.test(value)) return "money_market";
@@ -51,14 +53,22 @@ export function accountTypeOfText(text: string | null | undefined): AccountType 
  * one; the fee's name decides only when the product names none ("Statement Savings Monthly Fee"
  * with no lineup product).
  */
-export function accountTypeOf(productName: string | null | undefined, feeName: string | null | undefined): AccountType | null {
-  const product = (productName ?? "").trim();
+export function accountTypeOf(
+  productName: string | null | undefined,
+  feeName: string | null | undefined,
+  institutionName?: string | null,
+): AccountType | null {
+  // A fee whose own name says checking ("Personal Checking Service charge") is that checking
+  // account's, whatever the product above it says (#1566 review).
+  const fee = withoutNonAccountWords(feeName ?? "", institutionName);
+  if (CHECKING.test(fee)) return accountTypeOfText(fee);
+  const product = withoutNonAccountWords(productName ?? "", institutionName).trim();
   if (product) {
     const fromProduct = accountTypeOfText(product);
     // A product that is a checking account ("Regular Checking") is checking, whatever the fee's words.
     if (fromProduct || CHECKING.test(product)) return fromProduct;
   }
-  return accountTypeOfText(feeName);
+  return accountTypeOfText(fee);
 }
 
 /** The account type a held verified row carries, from its flags, or null. */
