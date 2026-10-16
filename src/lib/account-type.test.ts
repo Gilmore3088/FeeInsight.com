@@ -81,4 +81,33 @@ describe("accountTypeOf (#1100 gap 1)", () => {
     expect(accountTypeOf("Statement Savings", "Personal Checking Service charge")).toBeNull();
     expect(accountTypeOf("Savings Accounts", "Business Checking Monthly Fee")).toBe("business");
   });
+
+  it("never holds a package perk, and reads glued checking names and IRAs (#1566 re-review)", () => {
+    // Fee 64103 (BANK360, Club Plus Checking, $7.50): "Hotel Savings Network" is a perk on the package's list.
+    expect(accountTypeOf("Hotel Savings Network", "Monthly fee", "BANK360")).toBeNull();
+    for (const perk of ["Savers Club", "Health Discount Savings", "Dental Savings Plan", "Shopping Savings Rewards", "BaZing Savings Network"]) {
+      expect(accountTypeOf(perk, "Monthly fee"), perk).toBeNull();
+    }
+    // A glued checking name is checking.
+    expect(accountTypeOf("Statement Savings", "eChecking Monthly Fee")).toBeNull();
+    expect(accountTypeOf("MyChecking", "Monthly fee")).toBeNull();
+    // 23638: "INDIVIDUAL RETIREMENT ACCOUNTS" is an IRA.
+    expect(accountTypeOf("INDIVIDUAL RETIREMENT ACCOUNTS", "Monthly fee")).toBe("ira_hsa_cd");
+  });
+
+  it("never reads a bare share as savings (#1566 re-review, prod rows)", () => {
+    // 16998 (Hotel and Travel Industry FCU): a share-draft account's fee, under "Share Draft Account".
+    expect(accountTypeOf(null, "Monthly Service Fee (Share Type 72)")).toBeNull();
+    // 138187: a checking table's footnote fee, given the product "Share-to-Share Overdraft Transfer Fee".
+    expect(accountTypeOf("Share-to-Share Overdraft Transfer Fee", "Account Maintenance Fee: If applicable")).toBeNull();
+    // A share with a savings word is still savings; a term share is a certificate (87405).
+    expect(accountTypeOf("Regular Share", "Monthly fee")).toBe("savings");
+    expect(accountTypeOf("FAT CAT Share", "Monthly fee")).toBe("savings");
+    expect(accountTypeOf("Share Savings", "Monthly fee")).toBe("savings");
+    expect(accountTypeOf("Term Share", "Monthly fee")).toBe("ira_hsa_cd");
+    // 118447: a share relationship's own fee, separate from the share draft's.
+    expect(accountTypeOf("Share Relationship", "Share Relationship Monthly Fee")).toBe("savings");
+    // The institution's name is stripped only as whole words.
+    expect(accountTypeOf("Super Bank Savings", "Monthly fee", "R Bank")).toBe("savings");
+  });
 });

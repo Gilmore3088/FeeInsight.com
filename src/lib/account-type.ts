@@ -25,14 +25,21 @@ export const CHECKING_ONLY_CATEGORIES: ReadonlySet<string> = new Set(["monthly_m
 
 const BUSINESS = /\b(?:business|commercial|small\s*biz|non-?profit|npo|church\w*|ministr\w*|organizations?|public\s+funds?|municipal\w*|government\w*|escrow|iolta|sole\s+prop\w*|corporate|analysis|treasury|(?:business|trust)\s+(?:account|checking))\b/i;
 const MONEY_MARKET = /\b(?:money\s*market|mmda|mma)\b/i;
-const IRA_HSA_CD = /\b(?:ira|roth|hsa|health\s+savings|certificates?(?:\s+of\s+deposit)?|cds?|time\s+deposits?)\b/i;
+const IRA_HSA_CD = /\b(?:ira|iras|roth|individual\s+retirement|hsa|health\s+savings|certificates?(?:\s+of\s+deposit)?|cds?|time\s+deposits?|term\s+shares?|share\s+certificates?)\b/i;
 /**
  * A club savings account (Christmas, holiday, vacation). A bare "Club" is no type: "Century Club",
  * "VIP Club Account" and "Prime Time Club" are checking packages.
  */
 const CLUB = /\b(?:christmas|holiday|vacation)\b|\bclub\s+(?:savings|account\s+savings)\b|\bsavings\s+club\b/i;
-const SAVINGS = /\b(?:savings?|savers?|share(?!\s*drafts?)\s*(?:account|savings)?|passbook|statement\s+savings)\b/i;
-const CHECKING = /\b(?:checking|share\s*drafts?|draft\s+account)\b/i;
+/**
+ * A savings account. A bare "share" is no type (#1566 re-review: "Monthly Service Fee (Share Type
+ * 72)" sits under "Share Draft Account", and "Share-to-Share Overdraft Transfer Fee" is a checking
+ * account's transfer). A share counts only with a savings word: "share savings", "share account",
+ * "regular/primary/membership share", "FAT CAT Share".
+ */
+const SAVINGS =
+  /\b(?:savings?|savers?|passbook|statement\s+savings|shares?\s+(?:savings|accounts?|relationship)|(?:regular|primary|prime|basic|base|membership|member|youth|kids?|junior|statement|holiday|fat\s+cat)\s+shares?)\b/i;
+const CHECKING = /checking\b|\b(?:share\s*drafts?|draft\s+account)\b/i;
 
 /** The account type one text names, or null for checking or no type. */
 export function accountTypeOfText(text: string | null | undefined, institutionName?: string | null): AccountType | null {
