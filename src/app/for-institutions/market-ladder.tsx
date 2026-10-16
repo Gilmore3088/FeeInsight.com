@@ -102,18 +102,37 @@ export function buildMarketLadder({
   };
 }
 
+/** The sample's ladder, and whether a benchmark read behind it failed (a failed read drops that row). */
+export interface SampleLadderRead {
+  ladder: MarketLadderData | null;
+  failed: boolean;
+}
+
 /**
  * The live sample's ladder: its state and charter benchmarks read beside the report. A failed
- * read drops that row; null when the sample has no comparable headline fee.
+ * read drops that row and sets `failed`, so a cached page (the homepage) can refuse to keep
+ * the render; `ladder` is null when the sample has no comparable headline fee.
  */
-export async function loadSampleLadder(sample: MarketReport, national: FeeCategorySummary[]): Promise<MarketLadderData | null> {
+export async function readSampleLadder(sample: MarketReport, national: FeeCategorySummary[]): Promise<SampleLadderRead> {
   const { state_code, charter_type } = sample.data.subject;
   const none: IndexEntry[] = [];
+  let failed = false;
+  const read = (filter: { state_code: string } | { charter_type: string }) =>
+    getPeerIndexCached(filter).catch((error: unknown) => {
+      console.error("[ladder] peer index read failed; ladder row hidden", filter, error);
+      failed = true;
+      return none;
+    });
   const [stateIndex, charterIndex] = await Promise.all([
-    state_code ? getPeerIndexCached({ state_code }).catch(() => none) : none,
-    charter_type ? getPeerIndexCached({ charter_type }).catch(() => none) : none,
+    state_code ? read({ state_code }) : none,
+    charter_type ? read({ charter_type }) : none,
   ]);
-  return buildMarketLadder({ sample, stateIndex, charterIndex, national });
+  return { ladder: buildMarketLadder({ sample, stateIndex, charterIndex, national }), failed };
+}
+
+/** The live sample's ladder for a page that renders per request: a failed read only drops that row. */
+export async function loadSampleLadder(sample: MarketReport, national: FeeCategorySummary[]): Promise<MarketLadderData | null> {
+  return (await readSampleLadder(sample, national)).ladder;
 }
 
 /**
