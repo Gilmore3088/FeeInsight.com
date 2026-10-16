@@ -11,7 +11,7 @@ import {
   type PaidPassResult,
   type PaidStepOptions,
 } from "@/lib/agents/paid-pass";
-import { feedbackSchemaReady } from "@/lib/agents/learning/feedback";
+import { BUSINESS_SCHEDULE_RESTORED_KIND, feedbackSchemaReady } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { checkFeeCategory, neighbourCategories, refileCategory } from "@/lib/fee-category-guard";
 import { PER_ITEM_WORDING, PERIODIC_WORDING, wordsAfterPrice } from "@/lib/fee-frequency";
@@ -484,7 +484,8 @@ const LESSON_FOUND: Readonly<Record<string, string>> = {
  * live fees Hamilton's category checks took down as filed in the wrong category (not undone
  * since), and fees a takedown got wrong that a later check restored. Every such takedown and
  * restore becomes an example the next review reads, so the review learns from the
- * pipeline's own outcomes, not only from rules written into this prompt.
+ * pipeline's own outcomes, not only from rules written into this prompt. A business-schedule
+ * restore (`business_schedule_restored`, weight 0) is a record, not a lesson, and is left out.
  *
  * Only judgements that hold up are lessons. The source check's amount judgements
  * (`wrong_amount`, `threshold`) are left out: of 20 random ones from the 24 hours to
@@ -518,12 +519,17 @@ export async function loadReviewLessons(db: SqlTag, keys: string[]): Promise<Rev
                AND NOT EXISTS (
                  SELECT 1 FROM pipeline_feedback back
                   WHERE back.signal = 'restored' AND back.fee_published_id = pf.fee_published_id
+                    -- A business-schedule restore says nothing about the category (#1671).
+                    AND back.kind <> ${BUSINESS_SCHEDULE_RESTORED_KIND}
                )
             UNION ALL
             SELECT fp.lineage_ref, 'restored', pf.created_at
               FROM pipeline_feedback pf
               JOIN published_fee_records fp ON fp.fee_published_id = pf.fee_published_id
              WHERE pf.signal = 'restored'
+               -- Brought back for want of a consumer fee, not because a check was wrong: no
+               -- lesson that the price is real in its category (#1671).
+               AND pf.kind <> ${BUSINESS_SCHEDULE_RESTORED_KIND}
                AND fp.rolled_back_at IS NULL
           ) lesson
           JOIN verified_fee_observations fv ON fv.fee_verified_id = lesson.fee_verified_id

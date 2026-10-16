@@ -1,6 +1,6 @@
 import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
-import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
+import { BUSINESS_SCHEDULE_RESTORED_KIND, recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL } from "@/lib/agents/magellan/link-coverage";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
 import { inSavepoint } from "@/lib/agents/savepoint";
@@ -450,8 +450,7 @@ export async function retireBusinessScheduleFees(
   return result;
 }
 
-/** The feedback kind for a business-schedule takedown that came back (weight 0, a record). */
-export const BUSINESS_SCHEDULE_RESTORED_KIND = "business_schedule_restored";
+export { BUSINESS_SCHEDULE_RESTORED_KIND };
 
 /**
  * Brings back business-schedule takedowns whose bank no longer has a live consumer fee in

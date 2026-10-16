@@ -147,6 +147,8 @@ describe("account type hold (#1100 gap 1)", () => {
     }) as unknown as Parameters<typeof applyAccountTypeHold>[0];
     await applyAccountTypeHold(db, { runId: 1, batchId: "agentic-run-1", dryRun: true });
     expect(reads.length).toBeGreaterThanOrEqual(3);
-    for (const text of reads) expect(text).toMatch(/fr\.source_document_id/);
+    // In each read's own select list (before its first FROM), not only somewhere in the query:
+    // the third read also names it in its LATERAL text lookup.
+    for (const text of reads) expect(text.split(/\bFROM\b/)[0]).toMatch(/\bfr\.source_document_id\b/);
   });
 });

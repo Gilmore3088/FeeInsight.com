@@ -59,6 +59,13 @@ export type FeedbackStage = (typeof FEEDBACK_STAGES)[number];
  *   Operator actions (human, `fee-hold.ts`, `fee-corrections.ts`, #978): admin_hold, admin_release,
  *     admin_correction, admin_correction_reversed
  */
+/**
+ * A business-schedule takedown brought back for want of a consumer fee (weight 0, a record,
+ * `hamilton/business-schedule.ts`, #1671). Not a verdict that the takedown was wrong: readers
+ * of `signal = 'restored'` as a lesson leave it out (`darwin/release-review.ts`).
+ */
+export const BUSINESS_SCHEDULE_RESTORED_KIND = "business_schedule_restored";
+
 export type FeedbackKind =
   | "wrong_category"
   | "wrong_amount"
