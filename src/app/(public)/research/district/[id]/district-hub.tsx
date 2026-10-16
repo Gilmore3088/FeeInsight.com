@@ -91,7 +91,7 @@ export function StatePanel({
   const tiles = [
     { value: count(row.institutions), label: `Banks ${count(row.banks)} · Credit unions ${count(row.creditUnions)}` },
     ...(row.coveragePct != null ? [{ value: pct(row.coveragePct, 0), label: "With verified fees" }] : []),
-    ...(row.serviceCharges != null ? [{ value: compact(row.serviceCharges), label: "Service charges, latest quarter" }] : []),
+    ...(row.serviceCharges != null ? [{ value: compact(row.serviceCharges), label: "Fee income, latest quarter" }] : []),
     ...(row.bankBranches != null ? [{ value: count(row.bankBranches + (row.cuBranches ?? 0)), label: "Branches" }] : []),
     ...(row.unemployment ? [{ value: pct(row.unemployment.rate), label: `Unemployment, ${monthYear(row.unemployment.date)}` }] : []),
     ...(row.medianIncome != null ? [{ value: compact(row.medianIncome), label: "Median household income" }] : []),
@@ -143,7 +143,7 @@ export function StatePanel({
   );
 }
 
-/** Stacked columns: each quarter's deposit service charges, banks under credit unions. */
+/** Stacked columns: each quarter's fee income, banks under credit unions. */
 export function RevenueChart({ quarters }: { quarters: RevenueQuarter[] }) {
   const max = Math.max(...quarters.map((q) => q.total), 1);
   return (
@@ -156,7 +156,7 @@ export function RevenueChart({ quarters }: { quarters: RevenueQuarter[] }) {
           <span className="h-2.5 w-2.5 rounded-sm bg-brick" /> Credit unions
         </span>
       </p>
-      <div className="flex h-44 items-end gap-1.5 sm:gap-3" role="img" aria-label="Deposit service charges by quarter">
+      <div className="flex h-44 items-end gap-1.5 sm:gap-3" role="img" aria-label="Fee income by quarter">
         {quarters.map((q) => (
           <div key={q.quarter} className="flex h-full min-w-0 flex-1 flex-col justify-end">
             <span className="mb-1 truncate text-center text-[10px] font-semibold tabular-nums text-ink">{compact(q.total)}</span>

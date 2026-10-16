@@ -40,12 +40,13 @@ describe("buildStateFeeMedians", () => {
 });
 
 describe("buildLeaders", () => {
-  it("sums each bank across states, ranks by deposits and never lists Frost Bank", () => {
+  it("sums each bank across states, ranks by deposits and never lists Frost Bank or a single-office bank", () => {
     const leaders = buildLeaders([
-      { institution_id: 1, institution_name: "Frost Bank", branches: 150, deposits: 50_000_000 },
+      { institution_id: 1, institution_name: "Frost  Bank", branches: 150, deposits: 50_000_000 },
       { institution_id: 2, institution_name: "First Bank", branches: 10, deposits: 1_000 },
       { institution_id: 2, institution_name: "First Bank", branches: 5, deposits: 500 },
-      { institution_id: 3, institution_name: "Second Bank", branches: 3, deposits: 2_000 },
+      { institution_id: 3, institution_name: "Second Bank", branches: 13, deposits: 2_000 },
+      { institution_id: 4, institution_name: "Online Bank", branches: 1, deposits: 900_000 },
       { institution_id: null, institution_name: null, branches: 1, deposits: 9_999_999 },
     ]);
     expect(leaders.map((l) => l.name)).toEqual(["Second Bank", "First Bank"]);
@@ -67,6 +68,10 @@ describe("getDistrictHub", () => {
     expect(texts.join("\n")).not.toMatch(/extracted_fees|crawl_/);
     // Complaints count only accepted CFPB matches.
     expect(texts.find((t) => t.includes("institution_complaint_records"))).toContain("l.status = 'accepted'");
+    // Fee income reads only recent filings (every filing since the 1990s took over 20s on prod).
+    const revenueRead = db.unsafe.mock.calls.find(([text]) => String(text).includes("service_charge_income"))!;
+    expect(revenueRead[0]).toContain("inf.report_date >= $2");
+    expect(revenueRead[1]).toEqual([8, "2023-01-01"]);
   });
 
   it("returns empty parts when tables fail, and is then empty for the cache", async () => {

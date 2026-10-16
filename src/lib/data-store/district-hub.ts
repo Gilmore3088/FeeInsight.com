@@ -29,6 +29,13 @@ export const MIN_COMPLAINT_PEERS = 10;
 /** Deposit leaders the hub lists. */
 export const HUB_LEADERS = 8;
 
+/**
+ * Branches a bank needs in the district's states to be listed as a leader. Single-office
+ * online, brokerage and industrial banks (Morgan Stanley, Schwab, USAA, Ally) book hundreds of
+ * billions at one address in Utah or Texas and would otherwise top the list.
+ */
+export const MIN_LEADER_BRANCHES = 10;
+
 const FEE_CHANGE_LIMIT = 500;
 
 export interface HubFeeMedian {
@@ -176,7 +183,7 @@ export function buildStateFeeMedians(rows: FeeRow[]): HubStateFees[] {
 
 const FROST_BANK = /frost bank/i;
 
-/** Banks by deposits across the district's states. Frost Bank is never listed. */
+/** Branch banks by deposits across the district's states. Frost Bank is never listed. */
 export function buildLeaders(
   rows: Record<string, unknown>[],
   limit = HUB_LEADERS,
@@ -192,7 +199,7 @@ export function buildLeaders(
     prior.deposits += num(row.deposits) * 1_000;
     byId.set(id, prior);
   }
-  return [...byId.values()].filter((l) => l.deposits > 0).sort((a, b) => b.deposits - a.deposits).slice(0, limit);
+  return [...byId.values()].filter((l) => l.deposits > 0 && l.branches >= MIN_LEADER_BRANCHES).sort((a, b) => b.deposits - a.deposits).slice(0, limit);
 }
 
 async function loadStateFees(district: number): Promise<HubStateFees[]> {
@@ -236,11 +243,14 @@ async function loadInstitutions(district: number): Promise<HubInstitutionGroup[]
 }
 
 /**
- * Quarterly deposit service charges for the district's institutions over the last eight
- * quarters, by state and charter. NCUA year-to-date income is split into quarters the same way
- * as getDistrictIncomeTrend; only positive quarterly income counts.
+ * Quarterly fee income for the district's institutions over the last eight quarters, by state
+ * and charter: banks' service charges on deposit accounts (FDIC) and credit unions' fee income
+ * (NCUA account 131, a wider measure). NCUA year-to-date income is split into quarters the same
+ * way as getDistrictIncomeTrend; only positive quarterly income counts. Filings before January of
+ * three years ago are skipped: reading every filing since the 1990s took over 20 seconds on prod.
  */
-async function loadRevenue(district: number): Promise<HubRevenueRow[]> {
+async function loadRevenue(district: number, now: Date): Promise<HubRevenueRow[]> {
+  const from = `${now.getUTCFullYear() - 3}-01-01`;
   const rows = (await sql.unsafe(
     `WITH filed AS (
        SELECT inf.institution_id,
@@ -253,6 +263,7 @@ async function loadRevenue(district: number): Promise<HubRevenueRow[]> {
          JOIN institution_sources ct ON ct.id = inf.institution_id
         WHERE ${financialSourceFilter("inf")}
           AND ct.fed_district = $1
+          AND inf.report_date >= $2
        WINDOW w AS (PARTITION BY inf.institution_id, inf.source, EXTRACT(YEAR FROM inf.report_date::date)
                     ORDER BY inf.report_date::date)
      ),
@@ -278,7 +289,7 @@ async function loadRevenue(district: number): Promise<HubRevenueRow[]> {
         AND DATE_TRUNC('quarter', q.rd) IN (SELECT q FROM recent)
       GROUP BY 1, 2, 3
       ORDER BY 1`,
-    [district],
+    [district, from],
   )) as unknown as Record<string, unknown>[];
   return rows
     .filter((r) => r.state_code)
@@ -357,6 +368,7 @@ async function loadComplaints(): Promise<HubComplaints | null> {
          JOIN matched m ON m.id = f.institution_id
         WHERE ${financialSourceFilter("f")}
           AND f.total_deposits > 0
+          AND f.report_date >= ((SELECT p FROM yr) || '-01-01')
           AND f.report_date <= ((SELECT p FROM yr) || '-12-31')
         ORDER BY f.institution_id, f.report_date DESC
      ),
@@ -459,7 +471,7 @@ export async function getDistrictHub(district: number, now: Date = new Date()): 
   const [state_fees, institutions, revenue, branches, complaints, demographics, series, fee_changes] = await Promise.all([
     part(() => loadStateFees(district), [] as HubStateFees[]),
     part(() => loadInstitutions(district), [] as HubInstitutionGroup[]),
-    part(() => loadRevenue(district), [] as HubRevenueRow[]),
+    part(() => loadRevenue(district, now), [] as HubRevenueRow[]),
     part(() => loadBranches(states), null),
     part(() => loadComplaints(), null),
     part(() => loadDemographics(states), [] as HubDemographics[]),

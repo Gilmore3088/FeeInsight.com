@@ -30,7 +30,7 @@ export interface StateHubRow {
   /** Share of the state's institutions with verified fees, 0-100; null with no institutions. */
   coveragePct: number | null;
   fees: Record<string, { median: number | null; institutions: number }>;
-  /** Deposit service charges in the hub's latest complete quarter, whole dollars. */
+  /** Fee income in the hub's latest complete quarter, whole dollars (banks: deposit service charges). */
   serviceCharges: number | null;
   bankBranches: number | null;
   cuBranches: number | null;
@@ -63,7 +63,7 @@ export interface RevenueQuarter {
   institutions: number;
 }
 
-/** The district's quarterly deposit service charges, banks and credit unions, oldest first. */
+/** The district's quarterly fee income, banks and credit unions, oldest first. */
 export function revenueTrend(hub: Pick<DistrictHubData, "revenue">): RevenueQuarter[] {
   const keep = new Set(completeQuarters(hub));
   const by = new Map<string, RevenueQuarter>();
@@ -196,6 +196,9 @@ export function complaintView(hub: Pick<DistrictHubData, "complaints">, district
   return view.district.matched > 0 ? view : null;
 }
 
+/** Price moves a district needs before the hub shows them; one or two read as noise. */
+export const MIN_FEE_CHANGES = 5;
+
 export interface FeeChangeSummary {
   up: number;
   down: number;
@@ -208,7 +211,7 @@ export interface FeeChangeSummary {
 /** Price moves in the last twelve months; the list names only fees the visitor may read. */
 export function feeChangeSummary(hub: Pick<DistrictHubData, "fee_changes" | "fee_changes_capped">, showAll: boolean, shown = 6): FeeChangeSummary | null {
   const changes = hub.fee_changes.filter((c) => !FROST_BANK.test(c.institution_name));
-  if (changes.length === 0) return null;
+  if (changes.length < MIN_FEE_CHANGES) return null;
   const count = (t: FeeChangeEvent["change_type"]) => changes.filter((c) => c.change_type === t).length;
   return {
     up: count("increase"),

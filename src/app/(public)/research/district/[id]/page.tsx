@@ -17,7 +17,7 @@ import { Button, SearchInput } from "@/brand/components";
 import { DEMO_REQUEST_NAV, PRIMARY_CTA_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
 import { SITE_NAME, SITE_URL } from "@/lib/constants";
 import { getDistrictFeeIndexesCached, getDistrictHubCached } from "@/lib/data-store/public-cached-reads";
-import { MIN_COMPLAINT_PEERS } from "@/lib/data-store/district-hub";
+import { MIN_COMPLAINT_PEERS, MIN_LEADER_BRANCHES } from "@/lib/data-store/district-hub";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { buildCharterPairs, buildComparisons, computeStateFindings } from "@/lib/research-report/state-findings";
 import { buildHistogram } from "@/components/public/distribution-chart";
@@ -191,7 +191,7 @@ export default async function DistrictReportPage({ params }: PageProps) {
     { value: formatCount(indexes.verified_fees), label: "Verified fees" },
     ...(againstUs.length > 0 ? [{ value: `${aboveUs} of ${againstUs.length}`, label: "Fees above the U.S. median" }] : []),
     ...(paired.length > 0 ? [{ value: `${cuLowerOn} of ${paired.length}`, label: "Fees lower at credit unions" }] : []),
-    ...(latestRevenue ? [{ value: compact(latestRevenue.total), label: `Service charges, ${quarterLabel(latestRevenue.quarter)}` }] : []),
+    ...(latestRevenue ? [{ value: compact(latestRevenue.total), label: `Fee income, ${quarterLabel(latestRevenue.quarter)}` }] : []),
   ];
 
   // The state picker: one panel per state, drawn here; the table carries the same figures.
@@ -199,7 +199,7 @@ export default async function DistrictReportPage({ params }: PageProps) {
     { key: "institutions", label: "Institutions" },
     { key: "coverage", label: "Verified" },
     ...feeKeys.slice(0, 3).map((k) => ({ key: k, label: hubFeeName(k) })),
-    { key: "charges", label: "Service charges" },
+    { key: "charges", label: "Fee income" },
     { key: "unemployment", label: "Jobless" },
   ];
   const tableRows: HubTableRow[] = rows.map((r) => ({
@@ -321,7 +321,7 @@ export default async function DistrictReportPage({ params }: PageProps) {
             source={
               <>
                 Fee medians from verified published fee schedules, one value per institution; a median needs{" "}
-                {MIN_INSTITUTIONS_FOR_MEDIAN} institutions. Service charges from FDIC and NCUA call reports, branches from the FDIC
+                {MIN_INSTITUTIONS_FOR_MEDIAN} institutions. Fee income from FDIC and NCUA call reports, branches from the FDIC
                 Summary of Deposits and NCUA, unemployment from BLS, income from the Census ACS.
               </>
             }
@@ -355,13 +355,13 @@ export default async function DistrictReportPage({ params }: PageProps) {
           </TrackLink>
         </section>
 
-        {/* 8. Fee income: deposit service charges from the call reports. */}
+        {/* 8. Fee income from the call reports. */}
         {latestRevenue && (
           <HubSection
             id="income"
-            title="Deposit service charges"
+            title="Fee income"
             line={`${compact(latestRevenue.total)} in ${quarterLabel(latestRevenue.quarter)}, from ${count(latestRevenue.institutions)} reporting banks and credit unions.`}
-            source="FDIC and NCUA call reports. Credit union year-to-date income is split into quarters; a quarter shows once most institutions have filed."
+            source="Banks: service charges on deposit accounts, FDIC call reports. Credit unions: all fee income, NCUA call reports, a wider measure. Credit union year-to-date income is split into quarters; a quarter shows once most institutions have filed."
           >
             <RevenueChart quarters={revenue} />
             {rows.filter((r) => r.serviceCharges != null).length > 1 && (
@@ -385,7 +385,7 @@ export default async function DistrictReportPage({ params }: PageProps) {
             source={
               <>
                 Institutions tracked by {SITE_NAME}, sized by total assets.
-                {branches && ` Branches and deposits from the FDIC Summary of Deposits, ${branches.sod_year}; credit union branches from NCUA.`}
+                {branches && ` Branches and deposits from the FDIC Summary of Deposits, ${branches.sod_year}; credit union branches from NCUA. The largest banks list counts banks with ${MIN_LEADER_BRANCHES} or more branches here.`}
               </>
             }
           >

@@ -163,16 +163,19 @@ describe("feeChangeSummary", () => {
           change(2, "decrease", "some_comprehensive_fee"),
           change(3, "new"),
           change(4, "increase", "overdraft", "Frost Bank"),
+          change(5, "removed"),
+          change(6, "new"),
         ],
       }),
       false,
     )!;
-    expect(summary).toMatchObject({ up: 1, down: 1, added: 1, removed: 0 });
+    expect(summary).toMatchObject({ up: 1, down: 1, added: 2, removed: 1 });
     expect(summary.recent.map((c) => c.id)).toEqual([1]);
   });
 
-  it("is null with no changes", () => {
+  it("is null with no changes, or too few to read as a trend", () => {
     expect(feeChangeSummary(hub(), true)).toBeNull();
+    expect(feeChangeSummary(hub({ fee_changes: [change(1, "increase"), change(2, "decrease"), change(3, "new"), change(4, "removed")] }), true)).toBeNull();
   });
 });
 
