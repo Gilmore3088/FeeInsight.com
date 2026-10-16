@@ -84,6 +84,7 @@ describe("storyline", () => {
     expect(local.actionTitle).toBe("9 of 16 competitors in your market charge less than your $3; their range is $1 to $4.");
     expect(local.exhibit.kind === "competitor_range" && local.exhibit.items.length).toBe(12);
     expect(local.exhibit.kind === "competitor_range" && local.exhibit.note).toBe("The 12 largest by local deposits of 16.");
+    expect(local.exhibit.kind === "competitor_range" && local.exhibit.allAmounts?.length).toBe(16);
     const lens = answer.storyline!.exhibits.flatMap((e) => [e.actionTitle, e.takeaway?.text ?? ""]).join(" ")
       + " " + JSON.stringify(answer);
     expect(lens).not.toMatch(/5 of 12/);

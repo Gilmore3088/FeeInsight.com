@@ -259,6 +259,7 @@ function competitorExhibit(research: FeeResearch, name: string): Exhibit | null 
     own: research.current,
     ownLabel: research.institutionName,
     items,
+    ...(list.length > MAX_COMPETITORS ? { allAmounts: list.map((p) => p.amount) } : {}),
     sources: [research.localMarket?.source ?? feeSource(research)],
     note: list.length > MAX_COMPETITORS ? `The ${MAX_COMPETITORS} largest by local deposits of ${list.length}.` : undefined,
   };

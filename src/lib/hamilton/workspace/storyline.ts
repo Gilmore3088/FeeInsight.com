@@ -236,6 +236,7 @@ function localPiece(research: FeeResearch, name: string): Piece | null {
       own: research.current,
       ownLabel: research.institutionName,
       items: items.map((p) => ({ name: p.institutionName, amount: p.amount, url: p.documentUrls[0] ?? null, deposits: p.marketDeposits ?? null })),
+      ...(list.length > MAX_MATRIX_ROWS ? { allAmounts: amounts } : {}),
       sources: [research.localMarket?.source ?? feeSource(research)],
       note: list.length > MAX_MATRIX_ROWS ? `The ${MAX_MATRIX_ROWS} largest by local deposits of ${list.length}.` : undefined,
     },
