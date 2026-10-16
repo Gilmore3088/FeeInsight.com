@@ -8,7 +8,7 @@ import { collapseNearNameDuplicates, collapsePublishedDuplicates } from "@/lib/a
 import { collapsePageCopies } from "@/lib/agents/hamilton/page-copy-collapse";
 import { retireClosedInstitutionFees } from "@/lib/agents/hamilton/closed-institution";
 import { fillBlankFrequencies, fillFrequenciesInPublish, FREQUENCY_FILL_VERSION } from "@/lib/agents/hamilton/frequency-fill";
-import { repairSourceLinks, SOURCE_LINK_VERSION } from "@/lib/agents/hamilton/source-link";
+import { repairSourceLinks, resourceSourceLinks, SOURCE_LINK_VERSION } from "@/lib/agents/hamilton/source-link";
 import { restoreFeesNowInTaxonomy, rollBackOffTaxonomyFees } from "@/lib/agents/hamilton/off-taxonomy-rollback";
 import { foldRetiredCategories } from "@/lib/agents/hamilton/taxonomy-fold";
 import { rollBackLimitsPublishedAsFees } from "@/lib/agents/hamilton/limit-guard";
@@ -19,7 +19,7 @@ import { retireEvalVerdictFees } from "@/lib/agents/hamilton/eval-verdicts";
 import { applyHandAmountCorrections } from "@/lib/agents/hamilton/hand-amount-corrections";
 import { applyCutNameDuplicates } from "@/lib/agents/hamilton/cut-name-duplicates";
 import { applyAccountTypeHold } from "@/lib/agents/hamilton/account-type-hold";
-import { applyHandTakedowns } from "@/lib/agents/hamilton/hand-takedowns";
+import { applyHandAudienceFixes, applyHandTakedowns } from "@/lib/agents/hamilton/hand-takedowns";
 import { requeueGuardRejectedFees } from "@/lib/agents/hamilton/guard-requeue";
 import { retireArticlePageFees } from "@/lib/agents/hamilton/article-page";
 import { retireProductPageFees } from "@/lib/agents/hamilton/product-page";
@@ -32,6 +32,7 @@ import { rollBackRetiredCompanionFees } from "@/lib/agents/hamilton/companion-re
 import { restoreOutliersNowInRange, rollBackPublishedOutliers } from "@/lib/agents/hamilton/outlier-rollback";
 import { rollBackUnreproducedFees } from "@/lib/agents/hamilton/rules-recheck";
 import { syncPipelineFeedback } from "@/lib/agents/learning/feedback-sync";
+import { repairAccountTypeHoldFeedback } from "@/lib/agents/learning/account-type-hold-feedback";
 import { linkImportedFeesToTwins, takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
 import { retidyLiveFeeNames } from "@/lib/agents/knox/name-retidy";
 import { moveExtractionNotes } from "@/lib/agents/knox/extraction-note";
@@ -109,6 +110,8 @@ import { knoxMissesDetail, runKnoxMisses, summarizeKnoxMisses } from "@/lib/agen
 import { runBayesLedger, summarizeBayesLedger, BAYES_LEDGER_VERSION } from "@/lib/agents/bayes/ledger";
 import { runScheduleCheck, summarizeScheduleCheck, SCHEDULE_CHECK_VERSION } from "@/lib/agents/atlas/schedule-check";
 import { cityRepairDetail, runCityRepair, summarizeCityRepair } from "@/lib/agents/atlas/city-repair";
+import { answerKeyRelabelDetail, runAnswerKeyRelabels, summarizeAnswerKeyRelabels } from "@/lib/agents/atlas/answer-key-relabels";
+import { inSavepoint } from "@/lib/agents/savepoint";
 import { MARKET_SPREAD_WORKFLOW, runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
 import { FEE_DEPTH_WORKFLOW, runFeeDepth, summarizeFeeDepth } from "@/lib/agents/content/fee-depth";
 import { runOdByState, summarizeOdByStateResult } from "@/lib/agents/content/od-by-state";
@@ -1191,6 +1194,8 @@ async function executeAgenticStep(
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
       });
+      // Listed live fees whose audience is wrong against their bank's own text (#1302 first).
+      const handAudience = await applyHandAudienceFixes(tx, { runId: run.id, stepId: step.id, dryRun: run.runKind === "dry_run" });
       // An institution that no longer operates keeps no live fee (#1200).
       const closedInstitution = await retireClosedInstitutionFees(tx, {
         runId: run.id,
@@ -1390,6 +1395,16 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // #1342: imported fees with no traceable document take a stored document of their own
+      // institution that prints them (shared source check); those the source-link repair took
+      // down for want of one come back. Off with SOURCE_LINK_RESOURCE_ON.
+      const sourceLinkResource = await resourceSourceLinks(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+        stateCode,
+      });
       const recheckRestores = rulesRecheck?.restores.length ?? 0;
       const published = await runHamiltonPublish({
         runId: run.id,
@@ -1445,6 +1460,8 @@ async function executeAgenticStep(
       // Every agent learns from what happened to its output: this step's takedowns and
       // restores (and a batch of older outcomes) go into the shared learning store.
       const feedbackSync = await syncPipelineFeedback(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
+      // #1100: the sync's old rows for account type holds go to weight 0, behind a switch (off).
+      const holdFeedback = await repairAccountTypeHoldFeedback(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
       const indexRefresh = published.dryRun
         ? null
         : await refreshFeeIndexCache(tx, {
@@ -1466,6 +1483,7 @@ async function executeAgenticStep(
               sameLineDuplicates.restored > 0 ||
               otherBank.rolledBack.length > 0 ||
               crossPageRestore.restored.length > 0 ||
+              sourceLinkResource.restored > 0 ||
               articlePage.rolledBack.length > 0 ||
               closedInstitution.rolledBack.length > 0 ||
               productPage.rolledBack.length > 0 ||
@@ -1539,6 +1557,13 @@ async function executeAgenticStep(
       const crossPageNote =
         crossPageRestore.restored.length > 0
           ? ` ${published.dryRun ? "Would restore" : "Restored"} ${crossPageRestore.restored.length.toLocaleString()} live fee(s) another page's price had superseded.`
+          : "";
+      const resourceCount = published.dryRun
+        ? { linked: sourceLinkResource.resources.filter((fee) => !fee.restore).length, restored: sourceLinkResource.resources.filter((fee) => fee.restore).length }
+        : { linked: sourceLinkResource.linked, restored: sourceLinkResource.restored };
+      const resourceNote =
+        resourceCount.linked + resourceCount.restored > 0
+          ? ` ${published.dryRun ? "Would re-source" : "Re-sourced"} ${(resourceCount.linked + resourceCount.restored).toLocaleString()} fee(s) with no traceable document from a stored document of their own institution (${resourceCount.restored.toLocaleString()} ${published.dryRun ? "would be restored" : "restored"}).`
           : "";
       const restoreRecheckNote =
         restoreRecheck.failing.length > 0 || restoreRecheck.passing > 0
@@ -1624,7 +1649,7 @@ async function executeAgenticStep(
           : "");
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${handRefileNote}${offTaxonomyNote}${limitNote}${businessNote}${sameLineNote}${otherBankNote}${evalVerdictNote}${closedNote}${articleNote}${productNote}${productConflictNote}${crossPageConflictNote}${categoryGuardNote}${guardRefileNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${lostRestoreNote}${crossPageNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${handRefileNote}${offTaxonomyNote}${limitNote}${businessNote}${sameLineNote}${otherBankNote}${evalVerdictNote}${closedNote}${articleNote}${productNote}${productConflictNote}${crossPageConflictNote}${categoryGuardNote}${guardRefileNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${lostRestoreNote}${crossPageNote}${resourceNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -1702,6 +1727,11 @@ async function executeAgenticStep(
             skipped: handTakedowns.skipped.length,
             error: handTakedowns.error,
           },
+          hand_audience_fix: {
+            fixed: handAudience.fixed.map((item) => ({ fee_published_id: item.feePublishedId, from: item.from, to: item.to })),
+            skipped: handAudience.skipped.length,
+            error: handAudience.error,
+          },
           eval_verdict: {
             eval_matched: evalVerdicts.evalMatched,
             eval_changed: evalVerdicts.evalChanged,
@@ -1729,6 +1759,20 @@ async function executeAgenticStep(
             restored: crossPageRestore.restored.length,
             failing: crossPageRestore.failing.length,
             business_left_down: crossPageRestore.businessLeftDown,
+          },
+          source_link_resource: {
+            on: sourceLinkResource.on,
+            candidates: sourceLinkResource.candidates,
+            linked: resourceCount.linked,
+            restored: resourceCount.restored,
+            misses: sourceLinkResource.misses.map((fee) => ({ fee_published_id: fee.feePublishedId, taken_down: fee.takenDown, why: fee.why })),
+            error: sourceLinkResource.error,
+            changes: sourceLinkResource.resources.map((fee) => ({
+              fee_published_id: fee.feePublishedId,
+              action: fee.restore ? "restored" : "resourced",
+              source_document_id: fee.sourceDocumentId,
+              url: fee.url,
+            })),
           },
           change_pairing: {
             unpaired: changePairing.unpaired,
@@ -1897,6 +1941,12 @@ async function executeAgenticStep(
             fee_name: rollback.feeName,
             amount: rollback.amount,
           })),
+          account_type_hold_feedback: {
+            on: holdFeedback.on,
+            due: holdFeedback.due,
+            zeroed: holdFeedback.zeroed,
+            error: holdFeedback.error,
+          },
           learning_feedback: feedbackSync.ready
             ? {
                 takedowns: feedbackSync.takedowns,
@@ -2197,10 +2247,18 @@ async function executeAgenticStep(
       });
       return {
         status: "completed",
-        summary: `${repair.dryRun ? "Would link" : "Linked"} ${repair.fills.length.toLocaleString()} of ${repair.scanned.toLocaleString()} live fees with no source link to their own document, and ${repair.dryRun ? "would take down" : "took down"} ${repair.takedowns.length.toLocaleString()} with no traceable document.`,
+        summary: `${repair.resourced.length > 0 ? `${repair.dryRun ? "Would re-source" : "Re-sourced"} ${repair.resourced.length.toLocaleString()} fee(s) from a stored document of their own institution that prints them (${repair.resourced.filter((fee) => fee.restore).length.toLocaleString()} ${repair.dryRun ? "would be restored" : "restored"}). ` : ""}${repair.dryRun ? "Would link" : "Linked"} ${repair.fills.length.toLocaleString()} of ${repair.scanned.toLocaleString()} live fees with no source link to their own document, and ${repair.dryRun ? "would take down" : "took down"} ${repair.takedowns.length.toLocaleString()} with no traceable document.`,
         detail: {
           source_link_version: SOURCE_LINK_VERSION,
           dry_run: repair.dryRun,
+          resourced: repair.resourced.map((fee) => ({
+            fee_published_id: fee.feePublishedId,
+            action: fee.restore ? "restored" : "resourced",
+            institution_id: fee.institutionId,
+            source_document_id: fee.sourceDocumentId,
+            url: fee.url,
+            source_line: fee.sourceLine,
+          })),
           scanned: repair.scanned,
           filled: repair.fills.length,
           taken_down: repair.takedowns.length,
@@ -2403,12 +2461,20 @@ async function executeAgenticStep(
       };
     }
     case "score-answer-key": {
+      // First James's answer-key decisions (atlas/answer-key-relabels.ts, #1099), so today's score
+      // reads the corrected key. It writes only answer_key_fees.canonical_key/conditions on the
+      // listed lines, in its own savepoint: a failed relabel is reported and never stops the score.
+      const relabel = await inSavepoint(tx, (scope) => runAnswerKeyRelabels({ db: scope, dryRun: run.runKind === "dry_run" }))
+        .then((value) => ({ value, error: null as string | null }))
+        .catch((error: unknown) => ({ value: null, error: error instanceof Error ? error.message : String(error) }));
       const result = await runAnswerKeyScore({ runId: run.id, dryRun: run.runKind === "dry_run", db: tx });
       const score = result.score;
+      const relabelLine = relabel.value ? summarizeAnswerKeyRelabels(relabel.value) : `Atlas's answer-key relabel failed: ${relabel.error}.`;
       return {
         status: "completed",
-        summary: summarizeAnswerKeyScore(result),
+        summary: `${relabelLine} ${summarizeAnswerKeyScore(result)}`,
         detail: {
+          answer_key_relabel: relabel.value ? answerKeyRelabelDetail(relabel.value) : { error: relabel.error },
           schema_ready: result.schemaReady,
           score_run_id: result.scoreRunId,
           scorer_version: score?.scorerVersion ?? null,

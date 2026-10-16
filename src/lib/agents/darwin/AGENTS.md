@@ -766,15 +766,17 @@ Darwin owns verification and classification.
   accepts under each guarded category ("Money order/Cashier check fee"), a name with an NSF word and
   an overdraft word on an NSF/overdraft line, or a name whose parts are each the model's pick for a
   different category of the line ("Charge-Back Fee Check Printing Fee") (`joint_line`), and anything
-  else (`undecided`). `LINE_CONFLICT_TAKEDOWN_LIVE` is false: the step only reports (detail
-  `line_conflict_check`: `by_kind`, `by_basis`, `by_exempt`, `would_retire`, samples with the
-  model's scores). Switched on by PR after James sees the count, a retired row goes through the
+  else (`undecided`). Each step reports (detail `line_conflict_check`: `by_kind`, `by_basis`,
+  `by_exempt`, `would_retire`, samples with the model's scores). `LINE_CONFLICT_TAKEDOWN_LIVE` is
+  true (switched on Oct 16, James 04:53 UTC: "Retire wrong copy"; `live: false` reports only): a
+  retired row goes through the
   shared second look (`darwin.line_conflict`) and is archived on its second failure with `one line,
   two reads: kept #<id> (<kind>, <basis>: <reading>)` while the kept row is still live, its
   verified row rejected with `one_line_two_reads`, never deleted, and a
   `darwin.line_conflict_takedown` event lists them. `lineConflictCountSql()` counts the lines for
   someone with prod access. Dry run on Oct 16 (117 lines, 236 live rows): 30 rows retired (22 by
-  the model, 8 by the line), 69 undecided, 18 joint lines.
+  the model, 8 by the line), 69 undecided, 18 joint lines; re-counted at switch-on (04:57 UTC,
+  run 7161): 29 (22 by the model, 7 by the line), 70 undecided, 18 joint lines.
 - Released-fee category re-check (`release-repair.ts`, the repair half of #1367; decision
   2026-10-15, "Darwin re-checks every live fee against today's rules"). Until PR #1468 the release
   check passed "." as the category pattern, so every fee the release published before then went live

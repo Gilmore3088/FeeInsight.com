@@ -3191,3 +3191,6 @@ ALTER TABLE public.fee_change_records
 
 -- #1075 step 1: the gutenberg agent row and reporter name.
 \ir ../../supabase/migrations/20270110000051_gutenberg_agent.sql
+
+-- #978 H03: versioned admin fee corrections and their newer-source review queue.
+\ir ../../supabase/migrations/20270110000053_published_fee_corrections.sql

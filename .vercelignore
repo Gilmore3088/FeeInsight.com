@@ -1,6 +1,5 @@
 node_modules
 .next
-.git
 .worktrees
 .pytest_cache
 __pycache__

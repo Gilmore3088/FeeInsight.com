@@ -222,6 +222,33 @@ export async function pickEvalInstitutions(db: SqlTag, perGroup: number, seed: s
   }));
 }
 
+/**
+ * Institutions an earlier eval run asked today. A run stops at its time budget, often before all
+ * eleven groups (6 of 11 in run 7166), so the next run asks the rest first and the day's runs
+ * together cover the whole sample (#1076).
+ */
+export async function institutionsAskedToday(db: SqlTag, day: string): Promise<Set<number>> {
+  const rows = await db`
+    SELECT e.detail->'institutionIds' AS ids
+      FROM agent_run_events e
+      JOIN agent_runs r ON r.id = e.agent_run_id
+     WHERE r.params_json->>'source' = 'hamilton.answer_eval'
+       AND e.event_type = 'step.finished'
+       AND e.created_at >= (${day}::date::timestamp AT TIME ZONE 'UTC')
+       AND e.created_at < ((${day}::date + 1)::timestamp AT TIME ZONE 'UTC')
+  `;
+  const asked = new Set<number>();
+  for (const r of rows as unknown as Array<{ ids: unknown }>) {
+    if (Array.isArray(r.ids)) for (const id of r.ids) if (Number.isFinite(Number(id))) asked.add(Number(id));
+  }
+  return asked;
+}
+
+/** The day's sample with the institutions no run has asked yet first, each part in its own order. */
+export function unaskedFirst<T extends { id: number }>(institutions: T[], asked: Set<number>): T[] {
+  return [...institutions.filter((i) => !asked.has(i.id)), ...institutions.filter((i) => asked.has(i.id))];
+}
+
 /** A question a Pro reader asked, for the institution they asked it about. */
 export interface ProQuestion {
   institutionId: number;
@@ -418,7 +445,9 @@ export async function runAnswerEval({
     for (const rows of await Promise.all(batch.map(([id, qs]) => evaluateProQuestions(id, qs, live)))) proResults.push(...rows);
   }
 
-  const institutions = await pickEvalInstitutions(db, perGroup, now.toISOString().slice(0, 10));
+  const day = now.toISOString().slice(0, 10);
+  const askedToday = await institutionsAskedToday(db, day).catch(() => new Set<number>());
+  const institutions = unaskedFirst(await pickEvalInstitutions(db, perGroup, day), askedToday);
   const results: EvalResult[] = [];
   let done = 0;
   let timedOut = false;

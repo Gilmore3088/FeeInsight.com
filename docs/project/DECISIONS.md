@@ -5,6 +5,13 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-16
 
+**Admin fee corrections are new versions, admin-only, with source evidence.** James, 2026-10-16,
+answering the four H03-T02 questions on #978: a correction is a new version (the old published
+value is kept and marked superseded, never overwritten; this takes a new table); only an admin may
+correct, while analysts and admins can still hold; a correction needs the source document, an
+excerpt and where it sits, plus a reason; and a hold or correction rebuilds Hamilton's national
+index (`fee_index_cache`) straight away. The lifecycle is `docs/plans/hamilton-h03-corrections.md`.
+
 **Agent trackers stay separate; the lanes keep them current.** James, 2026-10-16 04:03 UTC, when
 asked whether to fold the per-agent trackers into #1026: "I'd rather keep them separate ... the data
 quality thread can just update those agent trackers accordingly." #1026 stays the master tracker.
@@ -20,6 +27,14 @@ conversations but we should not market the product as advisory." No page, form o
 
 **Free visitors keep each fee's national range.** James, 2026-10-16 (#1449): free visitors see the
 range on the national index ("consumer facing high-level data").
+
+**Night deposit is the service only; bag and key purchases are not scored.** James, 2026-10-16,
+option A on #1099's night deposit misses: `night_deposit` stays the night depository service, and a
+bag or key bought for it stays out, as the v60 category guard has it. A lost or replaced bag or
+key, and an annual or service fee, stay night deposit. The answer key followed the old reading, so
+its 28 confirmed bag and key purchase lines at 11 banks, 6 prefilled ones and one receptacle-key deposit leave scoring (`canonical_key = 'unmapped'`, which the
+answer-key score and Deming's Knox replay leave out), through Atlas's answer-key relabels, run by the score step
+(`src/lib/agents/atlas/answer-key-relabels.ts`) in the scoreboard run, with every line in its ledger.
 
 **A few confirmed-wrong live fees come down without asking James.** James, 2026-10-16, approving
 #1496 (Barksdale FCU's two fax fees that took a price from the next column): fixes like this
@@ -39,7 +54,10 @@ asked about fewer than 20 incorrect fees. Each fee is still confirmed wrong agai
 stored text and goes through a tracked path with run-ledger visibility: the hand-takedown list, or
 a hand rename or re-file (`HAND_REFILES` in `src/lib/agents/hamilton/taxonomy-fold.ts`) when the
 price is right for another name or category. Larger batches, category or policy questions,
-migrations and switches still go to him.
+migrations and switches still go to him. The limit is per batch, not a total for the list: on the
+hand-takedown list a batch is the entries filed under one issue, and each holds fewer than 20
+(`HAND_TAKEDOWN_BATCH_LIMIT`, 19). This replaces the earlier "up to about 25" total for the list
+(#1613, 2026-10-16), since a running total would bring every later small batch back to him.
 
 ## 2026-10-15
 

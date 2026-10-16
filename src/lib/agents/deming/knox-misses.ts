@@ -211,6 +211,8 @@ export async function runKnoxMisses({
       FROM answer_key_fees f
       JOIN answer_key_institutions ak ON ak.id = f.answer_key_institution_id
      WHERE ak.status = 'confirmed' AND f.status = 'confirmed'
+       -- Out of scope for scoring (answer-key-relabels.ts); its case retires like a removed fee.
+       AND f.canonical_key <> 'unmapped'
      ORDER BY ak.institution_id, f.id
   `;
   // Retired cases too: a key fee confirmed again reopens its case rather than leaving it retired.
