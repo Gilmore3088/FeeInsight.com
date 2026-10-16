@@ -29,7 +29,7 @@ describe("feeDisplayName", () => {
   });
 
   it("keeps a name whose audience is its own label (#1180)", () => {
-    for (const name of ["Monthly Service Fee - Business", "Small Business", "Overdraft (Personal)", "Personal", "Consumer", "Wire Transfer Commercial"]) {
+    for (const name of ["Monthly Service Fee - Business", "Small Business", "Overdraft (Personal)", "Personal", "Consumer", "Wire Transfer Commercial", "Online Banking for Your Business", "Checks for the Business", "Tier 2 Business", "Plan A Commercial"]) {
       expect(isCutFeeName(name)).toBe(false);
     }
   });

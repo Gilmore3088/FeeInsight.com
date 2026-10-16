@@ -16,12 +16,14 @@ const DIMENSION = String.raw`\d+(?:\.\d+)?\s*(?:"|”|''|in\.?|inch(?:es)?)?`;
 const BOX_SIZE_ONLY = new RegExp(String.raw`^\s*(${DIMENSION}\s*[x×]\s*${DIMENSION}(?:\s*[x×]\s*${DIMENSION})?)(?:\s+box)?\s*$`, "i");
 
 /**
- * A name that stops on an audience adjective right after a count or a determiner has lost the noun
- * it described: "Counter Check: A blank page of 3 personal" (checks). Display only: the agents'
+ * A name that stops on an audience adjective right after a preposition and a count ("of 3",
+ * "after 5", "for each") has lost the noun it described: "Counter Check: A blank page of 3
+ * personal" (checks), "Daily fee after 5 business" (days). Display only: the agents'
  * shared fragment shapes are untouched, so this moves no live fee. A name whose audience is its
- * own label ("Monthly Service Fee - Business", "Small Business") does not match.
+ * own label ("Monthly Service Fee - Business", "Small Business", "Online Banking for Your
+ * Business", "Tier 2 Business") does not match.
  */
-const DANGLING_AUDIENCE = /\b(?:\d+|a|an|the|your|our|each|per|any|all)\s+(?:personal|business|consumer|commercial)\s*$/i;
+const DANGLING_AUDIENCE = /\b(?:of|after|within|for|per|up to|over)\s+(?:\d+|each)\s+(?:personal|business|consumer|commercial)\s*$/i;
 
 /** True when a stored fee name is a fragment of its schedule line rather than a name. */
 export function isCutFeeName(name: string | null | undefined): boolean {
