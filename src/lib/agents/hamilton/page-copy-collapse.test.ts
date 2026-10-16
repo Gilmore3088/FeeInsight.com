@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { pageCopyRepeats, sameScheduleText, type PageCopyRow } from "./page-copy-collapse";
+import { describe, expect, it, vi } from "vitest";
+import { collapsePageCopies, pageCopyRepeats, sameScheduleText, type PageCopyRow } from "./page-copy-collapse";
 
 const row = (over: Partial<PageCopyRow>): PageCopyRow => ({
   fee_published_id: 1,
@@ -178,5 +178,42 @@ describe("pageCopyRepeats (#1439)", () => {
       row({ fee_published_id: 2, source_document_id: 200, crawled_at: "2026-10-10", superseded: true }),
     ];
     expect(pageCopyRepeats(replaced, both).collapses).toEqual([expect.objectContaining({ feePublishedId: 2, keptFeePublishedId: 1 })]);
+  });
+
+  it("ranks a replaced copy below a current copy of the same address only, not of another address (#1439 review)", () => {
+    // A superseded read of the bank's newer address (Oct 10) and a current read of an old address
+    // (Sep 1): the old address may be an older edition, so the later read stays.
+    const otherAddress = [
+      row({ fee_published_id: 1, source_document_id: 100, document_url: "https://bank.com/fee-schedule.pdf?print=1", crawled_at: "2026-09-01" }),
+      row({ fee_published_id: 2, source_document_id: 200, crawled_at: "2026-10-10", superseded: true }),
+    ];
+    expect(pageCopyRepeats(otherAddress, both).collapses).toEqual([expect.objectContaining({ feePublishedId: 1, keptFeePublishedId: 2 })]);
+    // With a current read of that same address in the group, the replaced read is never kept.
+    const three = new Map([...both, ["300", TEXT]]);
+    const sameAddress = [...otherAddress, row({ fee_published_id: 3, source_document_id: 300, crawled_at: "2026-09-15" })];
+    const kept = pageCopyRepeats(sameAddress, three).collapses.map((pick) => [pick.feePublishedId, pick.keptFeePublishedId]);
+    expect(kept).toEqual(expect.arrayContaining([[2, 3]]));
+    expect(kept.some(([, keptId]) => keptId === 2)).toBe(false);
+  });
+});
+
+describe("collapsePageCopies (#1439)", () => {
+  it("reports a failed close as an error, not as nothing closed", async () => {
+    const rows = [
+      row({ fee_published_id: 1, source_document_id: 100, document_url: "https://bank.com/fee-schedule.pdf?print=1", crawled_at: "2026-09-01" }),
+      row({ fee_published_id: 2, source_document_id: 200, crawled_at: "2026-10-10" }),
+    ];
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const text = strings.join("");
+      if (text.includes("agent_source_texts")) return Promise.resolve([{ source_document_id: 100, normalized_text: TEXT }, { source_document_id: 200, normalized_text: TEXT }]);
+      if (text.includes("UPDATE")) return Promise.reject(new Error("deadlock detected"));
+      return Promise.resolve([]);
+    }) as unknown as ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
+    db.unsafe = vi.fn(() => Promise.resolve(rows));
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const result = await collapsePageCopies(db as unknown as Parameters<typeof collapsePageCopies>[0], { runId: 1, batchId: "agentic-run-1", dryRun: false, live: true });
+    quiet.mockRestore();
+    expect(result.collapses).toEqual([]);
+    expect(result.error).toBe("close failed: deadlock detected");
   });
 });

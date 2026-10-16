@@ -63,7 +63,7 @@ export interface PageCopyResult {
    */
   otherDocument: number;
   collapses: PageCopyCollapse[];
-  /** Set when the read failed, so a failed step does not read as "nothing found". */
+  /** Set when the read or the close failed, so a failed step does not read as "nothing found". */
   error?: string;
 }
 
@@ -191,8 +191,13 @@ export function pageCopyRepeats(rows: PageCopyRow[], texts: Map<string, string>)
     if (new Set(group.map((row) => String(row.source_document_id))).size < 2) continue;
     const byStated = group.every((row) => statedDate(row) != null);
     const time = (row: PageCopyRow) => (byStated ? statedDate(row)! : read(row));
-    // A copy a newer one replaced (`superseded_by_id`) is never the one kept over a current copy.
-    const ordered = [...group].sort((a, b) => Number(a.superseded ?? false) - Number(b.superseded ?? false) || time(b) - time(a) || read(b) - read(a) || Number(b.source_document_id) - Number(a.source_document_id) || Number(b.fee_published_id) - Number(a.fee_published_id));
+    // A copy a newer read of the same address replaced (`superseded_by_id`, with a current copy of
+    // that address in the group) is never the one kept. A superseded copy is not ranked below a
+    // current copy of another address: that copy may be an older edition.
+    const replacedHere = (row: PageCopyRow) =>
+      Boolean(row.superseded) &&
+      group.some((other) => !other.superseded && other.document_url === row.document_url && String(other.source_document_id) !== String(row.source_document_id));
+    const ordered = [...group].sort((a, b) => Number(replacedHere(a)) - Number(replacedHere(b)) || time(b) - time(a) || read(b) - read(a) || Number(b.source_document_id) - Number(a.source_document_id) || Number(b.fee_published_id) - Number(a.fee_published_id));
     const kept: PageCopyRow[] = [];
     for (const row of ordered) {
       const match = kept.find((keep) => {
@@ -327,7 +332,8 @@ export async function collapsePageCopies(
     result.collapses = found.collapses.filter((row) => ids.has(row.feePublishedId));
   } catch (error) {
     console.error("page-copy collapse failed:", error);
-    return { ...result, collapses: [] };
+    // Reported, so a failed close does not read as "nothing to close".
+    return { ...result, collapses: [], error: `close failed: ${error instanceof Error ? error.message : String(error)}` };
   }
   if (result.collapses.length > 0) {
     invalidatePublicReadCache();

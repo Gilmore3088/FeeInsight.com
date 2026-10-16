@@ -619,8 +619,10 @@ on page, not printed, no text, would close, samples) and closes the repeats. Rol
 **Page copies (#1439, shadow).** One schedule stored under several addresses ("?print=1", "www.",
 "%20", a mirror) is several documents, so a line of it went live once per copy.
 `page-copy-collapse.ts` groups live rows of one institution, category, variant and exact amount
-read from different documents of one page (`feePageKey`) under the same or a near name. It keeps a
-current copy (`superseded_by_id` unset) over a replaced one, then the latest edition: by the
+read from different documents of one page (`feePageKey`) under the same or a near name. It never
+keeps a replaced copy (`superseded_by_id` set) when a current copy of the same address is in the
+group; a replaced copy of one address is not ranked below a current copy of another, which may be
+an older edition. Then it keeps the latest edition: by the
 editions the texts state when every copy in the group states one (the latest "effective" date not
 after the read, so an announced change does not count), else by when each was last read or
 re-confirmed (`GREATEST(last_checked_at, crawled_at)`); equal editions fall to the later read. The
@@ -634,7 +636,7 @@ other, "business day" not counted, so a menu or footer link decides nothing). A 
 prints as two lines, or under both a personal and a business heading, stays two fees. Frequencies
 and audiences must agree or be unstated. Up to 25 institutions per step, picked by the run id; each
 step reports `page_copy_collapse` (live, institutions, pairs, apart on page, unproven, other
-document, would close, samples, and `error` when the read failed). `PAGE_COPY_COLLAPSE_LIVE` stays
+document, would close, samples, and `error` when the read or the close failed). `PAGE_COPY_COLLAPSE_LIVE` stays
 off until James approves the dry-run counts. Rollback: clear `rolled_back_at` on rows whose reason
 ends in `(copy of the page)`. A closed copy is not restored if its kept copy later comes down; like
 the other collapses, that is a gap to close before this goes live.
