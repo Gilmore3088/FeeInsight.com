@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { billStage, introducedDate, openStatesJurisdictionId, openStatesUrl, parseOpenStatesBill, STATE_BILL_JURISDICTIONS } from "./open-states";
+import { billStage, introducedDate, openStatesJurisdictionId, openStatesUrl, parseOpenStatesBill, STATE_BILL_JURISDICTIONS, stateBillQueries } from "./open-states";
 
 describe("Open States client", () => {
   it("covers the 50 states, DC and Puerto Rico", () => {
@@ -50,6 +50,21 @@ describe("Open States client", () => {
     });
     expect(introducedDate(actions)).toBe("2026-01-20");
     expect(introducedDate([{ date: "2026-01-16", classification: ["filing"] }])).toBeNull();
+  });
+
+  it("searches Puerto Rico in Spanish and everywhere else in English (#1427)", () => {
+    expect(stateBillQueries("pr")).toEqual(["sobregiro", "fondos insuficientes", "cargos bancarios"]);
+    expect(stateBillQueries("VA")).toEqual(["overdraft", "insufficient funds", "deposit account fee"]);
+    expect(stateBillQueries("DC")).toEqual(stateBillQueries("CT"));
+  });
+
+  it("reads Spanish bank fee bills and drops Spanish budget and tax wording (#1427)", () => {
+    const base = { id: "x", identifier: "PS 1", openstates_url: "https://openstates.org/x" };
+    expect(parseOpenStatesBill({ ...base, title: "Para limitar los cargos por fondos insuficientes que cobran los bancos" }, "pr")).toMatchObject({
+      topics: ["fees", "overdraft_nsf"],
+    });
+    expect(parseOpenStatesBill({ ...base, title: "Para autorizar un sobregiro en la cuenta del Departamento de Hacienda" }, "pr")).toBeNull();
+    expect(parseOpenStatesBill({ ...base, title: "Para enmendar la Ley de Municipios" }, "pr")).toBeNull();
   });
 
   it("keeps bank fee bills and drops other junk fee bills", () => {
