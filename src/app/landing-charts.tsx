@@ -433,35 +433,46 @@ export function gapWords(gap: number): string {
   return `${money(Math.abs(gap))} ${gap > 0 ? "above" : "below"} national`;
 }
 
-/** Dots closer than this share of the plot's width stack instead of overlapping. */
-const DOT_GAP_PCT = 7;
-const DOT_ROW_PX = 26;
-
 /**
- * Each dot's place on the plot: its true median along the axis (never spread out to fill
- * space), lifted one row whenever it would overlap a dot already placed, so ties stack.
+ * The line over the district ranges: how many district medians match the nation's, when that
+ * is most of them (James, Oct 16: nine dots stacked on one line read as a chart error), else
+ * the spread of the medians. Built from the live medians, never typed.
  */
-export function placeDots<T extends { district: number; median: number }>(medians: T[], national: number) {
-  const lo = Math.min(national, ...medians.map((d) => d.median));
-  const hi = Math.max(national, ...medians.map((d) => d.median));
-  const x = (v: number) => (hi > lo ? 4 + ((v - lo) / (hi - lo)) * 92 : 50);
-  const rows: number[][] = [];
-  const dots = [...medians]
-    .sort((a, b) => a.median - b.median || a.district - b.district)
-    .map((d) => {
-      const left = x(d.median);
-      let row = rows.findIndex((taken) => taken.every((t) => Math.abs(t - left) >= DOT_GAP_PCT));
-      if (row === -1) row = rows.push([]) - 1;
-      rows[row].push(left);
-      return { ...d, left, row };
-    });
-  return { dots, rows: Math.max(1, rows.length), lo, hi, nationLeft: x(national) };
+export function rangesHeadline(medians: number[], national: number): string {
+  const same = medians.filter((m) => Math.abs(m - national) < 0.005).length;
+  if (medians.length > 1 && same * 2 > medians.length) {
+    return `${same} of ${medians.length} district medians match the national ${money(national)}.`;
+  }
+  return `District medians run from ${money(Math.min(...medians))} to ${money(Math.max(...medians))}.`;
 }
 
 /**
- * All 12 districts on one full-width axis by their median: each district is its numbered map
- * dot, in its map color, at its true position; the national median is a marked line. A dot
- * picks its district.
+ * Where each district's range sits on a $0-based axis, as shares of the plot's width: the
+ * middle half of its institution prices as a bar, the median as a tick. A $0 start keeps a
+ * $2 gap looking like $2 (the old $25-$32 axis made it look extreme).
+ */
+export function districtRanges<T extends { district: number; median: number; p25: number | null; p75: number | null }>(
+  districts: T[],
+  national: number,
+) {
+  const top = top10(Math.max(national, ...districts.map((d) => d.p75 ?? d.median)));
+  const x = (v: number) => Math.max(0, Math.min(100, (v / top) * 100));
+  return {
+    top,
+    nationLeft: x(national),
+    rows: districts.map((d) => ({
+      ...d,
+      from: d.p25 !== null && d.p75 !== null ? x(d.p25) : null,
+      to: d.p25 !== null && d.p75 !== null ? x(d.p75) : null,
+      tick: x(d.median),
+    })),
+  };
+}
+
+/**
+ * All 12 districts as rows on one $0-based axis: each district's middle half of institution
+ * prices as a bar in its map color, its median as a tick, and the national median as one
+ * dashed line through every row. A row picks its district.
  */
 function DistrictGroups({
   districts,
@@ -476,46 +487,83 @@ function DistrictGroups({
   onPick: (n: number) => void;
   swatchOf: (n: number) => { fill: string; text: string };
 }) {
-  const { dots, rows, lo, hi, nationLeft } = placeDots(districts, national);
-  const plotHeight = rows * DOT_ROW_PX + 8;
+  const { top, nationLeft, rows } = districtRanges(districts, national);
+  const ticks = [0, top / 2, top];
   return (
     <div className="mt-6 border-t border-border pt-4" data-district-groups="">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-muted">Districts by median</p>
-      <div className="relative mt-8" style={{ height: plotHeight }}>
-        <div aria-hidden="true" className="absolute inset-y-0 w-px -translate-x-1/2 border-l border-dashed border-ink-muted" style={{ left: `${nationLeft}%` }}>
+      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-muted">Overdraft prices by district</p>
+      <p className="mt-1 text-[15px] font-semibold leading-snug text-ink" data-ranges-headline="">
+        {rangesHeadline(districts.map((d) => d.median), national)}
+      </p>
+      <div className="mt-4 grid grid-cols-[minmax(0,6.25rem)_minmax(0,1fr)_3.25rem] gap-x-2 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)_4rem] sm:gap-x-3">
+        <span />
+        <div className="relative h-5" aria-hidden="true">
           <span
-            className={`absolute -top-6 whitespace-nowrap font-mono text-[11px] font-semibold tabular-nums text-ink ${
-              nationLeft < 15 ? "left-0" : nationLeft > 85 ? "right-0" : "left-1/2 -translate-x-1/2"
+            className={`absolute bottom-0 whitespace-nowrap font-mono text-[11px] font-semibold tabular-nums text-ink ${
+              nationLeft > 80 ? "right-0" : "-translate-x-1/2"
             }`}
+            style={nationLeft > 80 ? undefined : { left: `${nationLeft}%` }}
           >
             Nation {money(national)}
           </span>
         </div>
-        {dots.map((d) => {
+        <span />
+        {rows.map((d) => {
           const sw = swatchOf(d.district);
+          const label = `${d.district} ${d.name}: median ${money(d.median)}${
+            d.p25 !== null && d.p75 !== null ? `, middle half ${money(d.p25)} to ${money(d.p75)}` : ""
+          }`;
           return (
             <button
               key={d.district}
               type="button"
               tabIndex={-1}
               aria-hidden="true"
-              title={`${d.district} ${d.name}: ${money(d.median)}`}
+              title={label}
               onClick={() => onPick(d.district)}
-              className={`absolute flex h-[1.375rem] w-[1.375rem] -translate-x-1/2 items-center justify-center rounded-full text-[11px] font-semibold tabular-nums ${
-                d.district === active ? "ring-2 ring-ink ring-offset-1 ring-offset-surface-0" : ""
+              data-range-row={d.district}
+              className={`col-span-3 grid grid-cols-subgrid items-center rounded-md py-1 text-left text-[13px] hover:bg-paper ${
+                d.district === active ? "bg-paper font-semibold text-ink" : "text-ink-soft"
               }`}
-              style={{ left: `${d.left}%`, bottom: d.row * DOT_ROW_PX + 4, background: sw.fill, color: sw.text }}
             >
-              {d.district}
+              <span className="truncate pl-1">
+                <span className="tabular-nums">{d.district}</span> {d.name}
+              </span>
+              <span className="relative block h-4">
+                <span className="absolute inset-y-[7px] left-0 right-0 rounded-full bg-border/60" />
+                {d.from !== null && d.to !== null ? (
+                  <span
+                    className="absolute inset-y-[3px] rounded-[4px] ring-1 ring-inset ring-ink/15"
+                    style={{ left: `${d.from}%`, width: `${Math.max(1, d.to - d.from)}%`, background: sw.fill }}
+                  />
+                ) : null}
+                <span className="absolute inset-y-0 w-[3px] -translate-x-1/2 rounded-full bg-ink" style={{ left: `${d.tick}%` }} />
+                <span
+                  className="absolute -inset-y-1 w-px -translate-x-1/2 border-l border-dashed border-ink-muted"
+                  style={{ left: `${nationLeft}%` }}
+                />
+              </span>
+              <span className="text-right font-mono text-[11px] font-semibold tabular-nums text-ink sm:text-[12px]">{money(d.median)}</span>
             </button>
           );
         })}
+        <span />
+        <div aria-hidden="true" className="relative mt-1 h-4 border-t border-border font-mono text-[11px] tabular-nums text-ink-muted">
+          {ticks.map((t, i) => (
+            <span
+              key={t}
+              className={`absolute top-1 ${i === 0 ? "left-0" : i === ticks.length - 1 ? "right-0" : "-translate-x-1/2"}`}
+              style={i === 1 ? { left: "50%" } : undefined}
+            >
+              ${t.toFixed(0)}
+            </span>
+          ))}
+        </div>
+        <span />
       </div>
-      <div aria-hidden="true" className="border-t border-border" />
-      <div aria-hidden="true" className="mt-2 flex justify-between font-mono text-[11px] tabular-nums text-ink-muted">
-        <span>{money(lo)}</span>
-        <span>{money(hi)}</span>
-      </div>
+      <p className="mt-3 text-[12px] leading-relaxed text-ink-muted">
+        Each bar is the middle half of institution prices in the district. The dark tick is the district median.
+      </p>
     </div>
   );
 }
