@@ -353,8 +353,11 @@ function otherColumnTail(tail: string, feeName: string | null | undefined, docum
     const cells = line.split(/\s\|\s/);
     return cells.length === 2 && cells.every((cell) => (cell.match(/[a-z]{3,}/gi) ?? []).length >= 2);
   }));
-  const firstWord = /^\(?\s*([a-z]+)/i.exec(text)?.[1] ?? "";
-  if (twoColumns && firstWord && !CONDITION_WORDS.test(firstWord)) {
+  // A tail that states a condition anywhere outside its own note ("Maintain $500 daily balance or
+  // $10.00", "Keep $1,000 in savings or $12.00") stays the fee's terms; a note in parentheses is the
+  // other column's own ("(closed within 90 days of opening) $20.00"). Review of #1621.
+  if (tailStatesCondition(flat)) return false;
+  if (twoColumns && !LABEL_AUDIENCE.test(flat.replace(/\([^)]*\)/g, " "))) {
     const own = new Set(labelWords(flat));
     const repeated = lines.some((line) => {
       const after = rowTail(line, feeName);
@@ -363,7 +366,11 @@ function otherColumnTail(tail: string, feeName: string | null | undefined, docum
     if (repeated) return true;
   }
   const label = text.slice(0, price.index);
-  if (!otherFeeLabel(label, feeName)) return false;
+  // A label of its own: a fee noun or two words ("Customer (incoming)"), never one bare word.
+  if (!otherFeeLabel(label, feeName, true, true) || (!FEE_NOUN.test(label) && labelWords(label).length < 2)) return false;
+  // A label that names an audience ("Customer $5.00") is the other column only under that
+  // column's own heading naming another fee ("POS transactions No Charge Wire Transfers").
+  if (LABEL_AUDIENCE.test(label) && !here.some((index) => rightColumnFee(lines[index - 1], feeName))) return false;
   const lead = labelWords(label)[0];
   if (!lead) return false;
   const opensColumn = (part: string) => part.toLowerCase().startsWith(lead) && PRICE_AT.test(part);
@@ -372,6 +379,28 @@ function otherColumnTail(tail: string, feeName: string | null | undefined, docum
     const right = first ? line.slice(first.index + first[0].length).replace(/^[\d,.]*\s*/, "") : "";
     return opensColumn(right) || opensColumn(line);
   }));
+}
+
+// Words that make a tail the fee's own terms wherever they sit: a fallback price ("or $10.00") or
+// a way to avoid it ("Maintain", "Keep", "Avoid", "otherwise").
+const TAIL_TERMS = /\bor\s+\$|\b(?:otherwise|avoid\w*|maintain\w*|keep\w*|direct)\b/i;
+
+/** The tail, its notes in parentheses left out, states a condition. Pure. */
+function tailStatesCondition(tail: string): boolean {
+  return CONDITION_WORDS.test(tail.replace(/\([^)]*\)/g, " ")) || TAIL_TERMS.test(tail);
+}
+
+/**
+ * The line ends, after its last price, with a heading of the right column that names another fee
+ * ("POS transactions No Charge Wire Transfers"). Pure.
+ */
+function rightColumnFee(line: string | undefined, feeName: string): boolean {
+  if (!line) return false;
+  const prices = [...line.matchAll(new RegExp(`${PRICE_AT.source}|${ZERO_PRICE.source}`, "gi"))];
+  const last = prices.at(-1);
+  if (!last) return false;
+  const heading = line.slice(last.index + last[0].length).replace(/^[\d,.]*\s*/, "");
+  return /^[A-Z]/.test(heading) && FEE_NOUN.test(heading) && otherFeeLabel(heading, feeName);
 }
 
 /** The text after the fee's whole name and its $0 on a line, or null when the line does not print that row. */
@@ -429,6 +458,8 @@ function priceOfLabelBefore(line: string, before: string, cell: string, feeName:
 // A fee name that is one audience's or age band's own price ("Check Printing (members over 62)"):
 // whether its $0 is the bank's price is a person's call, so the two-column reading never frees it.
 const AUDIENCE_NAME = /\b(?:members?|non-?members?|seniors?|students?|youth|ages?|over\s+\d+|under\s+\d+|\d+\s*\+)\b/i;
+// A label that names who pays rather than what is paid for ("Commercial Accounts", "Customer").
+const LABEL_AUDIENCE = /\b(?:customers?|non-?customers?|commercial|business(?:es)?|consumers?|personal|retail|members?|non-?members?|seniors?|students?|youth|clients?|accounts|account\s?holders?)\b/i;
 // Words left out when two labels are compared.
 const OTHER_LABEL_SKIP = new Set([...GENERIC_LABEL_WORDS, "per"]);
 
@@ -442,13 +473,16 @@ function labelWords(text: string): string[] {
  * price of its own and no specific word of this fee's name. `capitalised` asks for a label that
  * opens like a row's name ("Account History", "Night Depository Bags & Key"). Pure (#1593).
  */
-function otherFeeLabel(text: string | undefined, feeName: string | null | undefined, capitalised = true): boolean {
+function otherFeeLabel(text: string | undefined, feeName: string | null | undefined, capitalised = true, allowAudience = false): boolean {
   if (!text || !feeName) return false;
   const label = text.replace(/[\s.…:|*_–—-]+$/, "").trim();
   if (capitalised && !/^[A-Z]/.test(label)) return false;
   // "Safe Deposit Box", "Night Deposit" and "Personal Financial Management" name services; "deposit"
   // or "personal" alone is a condition ("with direct deposit", "personal accounts").
   const conditionText = label.replace(/\b(?:safe|night)\s+deposit\b|\bpersonal\s+financial\s+management\b/gi, " ");
+  // "Commercial Accounts $0.10 per roll", "Customer $5.00": another audience's price of this same
+  // fee, never another fee's row (review of #1621). Only a caller with more evidence lets it by.
+  if (!allowAudience && LABEL_AUDIENCE.test(conditionText)) return false;
   if (labelWords(label).length === 0 || CONDITION_WORDS.test(conditionText) || PRICE_AT.test(label) || ZERO_PRICE.test(label)) return false;
   const stem = (word: string) => word.replace(/ies$/, "y").replace(/s$/, "").replace(/e$/, "");
   const own = new Set(labelWords(feeName).map(stem));

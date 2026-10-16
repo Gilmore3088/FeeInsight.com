@@ -1184,4 +1184,19 @@ describe("conditional $0 on two-column pages and its own line (#1593, live rows 
     const twoColumnAccounts = ["Checking | Other Services", "Monthly Fee $0 with direct deposit $5", "Savings | Money Orders", "Monthly Fee $0 Paper Statements $3"].join("\n");
     expect(conditionalZero(0, "Monthly Fee $0 with direct deposit $5", "Monthly Fee", { documentText: twoColumnAccounts })).toBe(true);
   });
+
+  it("keeps a tail that states a way to avoid the fee, or another audience's price, conditional (review of #1621)", () => {
+    // Repeated row beside two-cell lines, with a tail whose first word is a verb, not a listed condition.
+    const premier = ["Basic Checking | Premier Checking", "Monthly Service Charge $0 Maintain $500 daily balance or $10.00", "Interest Checking | Money Market", "Monthly Service Charge $0 Paper statement fee $2.00"].join("\n");
+    expect(conditionalZero(0, "Monthly Service Charge $0 Maintain $500 daily balance or $10.00", "Monthly Service Charge", { documentText: premier })).toBe(true);
+    const savings = ["Basic Checking | Premier Checking", "Maintenance Fee $0.00 Keep $1,000 in savings or $12.00", "Interest Checking | Money Market", "Maintenance Fee $0.00 Paper statement fee $2.00"].join("\n");
+    expect(conditionalZero(0, "Maintenance Fee $0.00 Keep $1,000 in savings or $12.00", "Maintenance Fee", { documentText: savings })).toBe(true);
+    // A label that opens a neighbouring line is not the other column when it is a verb with the fee's terms.
+    const maintain = ["Monthly Service Charge $0 Maintain $500 daily balance or $10.00", "Maintain $1,500 to avoid the $12.00 fee"].join("\n");
+    expect(conditionalZero(0, "Monthly Service Charge $0 Maintain $500 daily balance or $10.00", "Monthly Service Charge", { documentText: maintain })).toBe(true);
+    // Another audience's price of the same fee, in the next cell or the run-on tail.
+    expect(conditionalZero(0, "Coin Counting FREE | Commercial Accounts $0.10 per roll", "Coin Counting")).toBe(true);
+    const cashier = ["Cashier's Check No Charge Customer $5.00", "Money Order $2.00 Customer $3.00 each"].join("\n");
+    expect(conditionalZero(0, "Cashier's Check No Charge Customer $5.00", "Cashier's Check", { documentText: cashier })).toBe(true);
+  });
 });
