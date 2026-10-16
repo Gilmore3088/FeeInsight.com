@@ -27,9 +27,13 @@ import { combineScores, scoreAnswerKeys, type AnswerKeyDocument, type GateScore 
 // column) took all to 552 / 14; held out stayed 54 / 4; the seven states unchanged.
 // v72 (#1099, Oct 16): a loan's payment by phone, card or ACH, and a returned loan or mortgage
 // payment, read as other lending, took all to 557 / 14; held out stayed 54 / 4; the seven states unchanged.
+// Guard v66 (#1605, James's night deposit option A, Oct 16): a deposit for the night depository key
+// is not the service, so Knox no longer files Prosperity's "Deposit for Receptacle Key" $6 (tid 2451,
+// held out) as night deposit. That one read leaves: all 556 / 14, held out 53 / 4. The key keeps it
+// as night deposit until #1550 marks it out of scope; either way the read is gone, so the floors hold.
 const FLOORS = {
-  all: { right: 557, wrong: 14 },
-  holdout: { right: 54, wrong: 4 },
+  all: { right: 556, wrong: 14 },
+  holdout: { right: 53, wrong: 4 },
 };
 
 const fixture = JSON.parse(
