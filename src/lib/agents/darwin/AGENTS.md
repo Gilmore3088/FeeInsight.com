@@ -731,6 +731,30 @@ Darwin owns verification and classification.
   the fee fixtures in `darwin/non-deposit-document-check.fixtures.ts` crossed with the URL fixtures
   on a local Postgres 16 (UTF8). The `documents` and `judged` CTEs are `MATERIALIZED` (the
   reviewer's prod-size run went from over 5 minutes to about 1 second with the same output).
+- One printed line, two reads (`line-conflict-check.ts`, #1440). James's catalog review (Oct 15)
+  found live fees sharing institution, name, amount and source address under two categories (1st
+  Summit's "Prepaid Card" $5 as document reproduction and gift card purchase) or one category with
+  two frequencies (Abound's safe deposit boxes, per item and annual). Hamilton's exact collapse and
+  publish-time refusal partition by category and keep conflicting frequency classes apart, so
+  neither reaches them. Every verify step reads every such line (one grouped read; an
+  institution-scoped run reads that bank's) and keeps one reading (`lineConflictVerdict`): for two
+  categories, the guard's re-file into another category of the line (`refile`), else the only
+  category the guard does not refuse (`guard`), else the category the model gives at least 0.95
+  while disputing the others (`model`; never between loan origination, other lending fee and late
+  payment alone, whose borders the taxonomy has not settled); for two frequencies, the frequency
+  the schedule line states for the price (`line`; not from a line with a rate on it, and a per-item
+  reading never beats a period category's period). Kept apart, never retired: rows stating
+  different audiences (`audiences`), a name joining two fees outside its notes that the guard
+  accepts under each guarded category ("Money order/Cashier check fee", `joint_line`), and anything
+  else (`undecided`). `LINE_CONFLICT_TAKEDOWN_LIVE` is false: the step only reports (detail
+  `line_conflict_check`: `by_kind`, `by_basis`, `by_exempt`, `would_retire`, samples with the
+  model's scores). Switched on by PR after James sees the count, a retired row goes through the
+  shared second look (`darwin.line_conflict`) and is archived on its second failure with `one line,
+  two reads: kept #<id> (<kind>, <basis>: <reading>)` while the kept row is still live, its
+  verified row rejected with `one_line_two_reads`, never deleted, and a
+  `darwin.line_conflict_takedown` event lists them. `lineConflictCountSql()` counts the lines for
+  someone with prod access. Dry run on Oct 16 (117 lines, 236 live rows): 40 rows retired (32 by
+  the model, 8 by the line), 65 undecided, 12 joint lines.
 - Released-fee category re-check (`release-repair.ts`, the repair half of #1367; decision
   2026-10-15, "Darwin re-checks every live fee against today's rules"). Until PR #1468 the release
   check passed "." as the category pattern, so every fee the release published before then went live
