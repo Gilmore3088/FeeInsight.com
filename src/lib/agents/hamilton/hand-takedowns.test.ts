@@ -13,6 +13,10 @@ const US_BANK_SMARTLY_LIVE: LiveTakedownRow = {
   fee_name: "Maintenance Fee waived on every U.S. Bank Smartly® Checking account", amount: "10.00",
 };
 const US_BANK_SMARTLY_CORRECTED: LiveTakedownRow = { ...US_BANK_SMARTLY_LIVE, fee_name: "Bank Smartly Checking Monthly Maintenance Fee", amount: "12.00" };
+// #1664: FNB Alaska's Direct Deposit Checking $7 from its checking page (doc 33839), live on prod, read-only, Oct 16.
+const FNB_ALASKA_DD_LIVE: LiveTakedownRow = {
+  fee_published_id: 125197, lineage_ref: 145367, institution_id: 281, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Service Fees", amount: "7.00",
+};
 
 // The two #1496 rows as they read live on prod, read-only, Oct 16.
 const LIVE: LiveTakedownRow[] = [
@@ -50,9 +54,12 @@ const LIVE: LiveTakedownRow[] = [
   { fee_published_id: 15727, lineage_ref: 9064, institution_id: 4956, canonical_fee_key: "atm_non_network", fee_name: "plus ATM owner fees", amount: "1.00" },
   // 102971 as it reads once its hand amount correction has run (102973 waits on it).
   US_BANK_SMARTLY_CORRECTED,
+  // #1664's waiver-line $0 as it reads live on prod, read-only, Oct 16, and the $7 copy it waits on.
+  { fee_published_id: 67859, lineage_ref: 79647, institution_id: 281, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Service Fee with 1 direct deposit per", amount: "0.00" },
+  FNB_ALASKA_DD_LIVE,
 ];
 const CONDITIONAL_ZERO = [43512, 54014, 61335, 68893, 70121, 73737, 77121, 77122, 77618, 84553, 87079, 87461, 88213, 91505, 120559];
-const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727];
+const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859];
 
 function fakeDb(live: LiveTakedownRow[], failOn?: string) {
   const writes: Array<{ text: string; values: unknown[] }> = [];
@@ -91,6 +98,7 @@ describe("hand takedowns (James, Oct 16)", () => {
       [104566, "source_mismatch: #1659"],
       [102973, "duplicate of #102971 (#1659)"],
       [15727, "source_mismatch: #1659"],
+      [67859, "duplicate of #125197 (#1664)"],
     ]);
     // A wrong read names its issue; a second read of one printed fee names the live copy it repeats too.
     expect(HAND_TAKEDOWNS.every((entry) => entry.evidence.length > 0 && (entry.kind === "duplicate"
@@ -126,6 +134,7 @@ describe("hand takedowns (James, Oct 16)", () => {
         { feePublishedId: 104566, feeVerifiedId: 173294, reason: "source_mismatch: #1659" },
         { feePublishedId: 102973, feeVerifiedId: 117579, reason: "duplicate of #102971 (#1659)" },
         { feePublishedId: 15727, feeVerifiedId: 9064, reason: "source_mismatch: #1659" },
+        { feePublishedId: 67859, feeVerifiedId: 79647, reason: "duplicate of #125197 (#1664)" },
       ],
       skipped: [],
     });
@@ -147,6 +156,15 @@ describe("hand takedowns (James, Oct 16)", () => {
     expect(planHandTakedowns([student], studentCopy).skipped).toEqual([{ feePublishedId: 102973, reason: "waiting on #102971" }]);
     expect(planHandTakedowns([student, US_BANK_SMARTLY_CORRECTED], studentCopy)).toEqual({
       takenDown: [{ feePublishedId: 102973, feeVerifiedId: 117579, reason: "duplicate of #102971 (#1659)" }], skipped: [],
+    });
+    // #1664: FNB Alaska's $0 comes down only while the $7 copy (125197) is live as listed.
+    const fnbCopy = HAND_TAKEDOWNS.filter((entry) => entry.feePublishedId === 67859);
+    const fnbZero = LIVE.find((row) => row.fee_published_id === 67859)!;
+    expect(fnbCopy[0].requiresLive).toEqual({ feePublishedId: 125197, amount: 7, feeName: "Monthly Service Fees" });
+    expect(planHandTakedowns([fnbZero], fnbCopy).skipped).toEqual([{ feePublishedId: 67859, reason: "waiting on #125197" }]);
+    expect(planHandTakedowns([fnbZero, { ...FNB_ALASKA_DD_LIVE, amount: "5.00" }], fnbCopy).skipped).toEqual([{ feePublishedId: 67859, reason: "waiting on #125197" }]);
+    expect(planHandTakedowns([fnbZero, FNB_ALASKA_DD_LIVE], fnbCopy)).toEqual({
+      takenDown: [{ feePublishedId: 67859, feeVerifiedId: 79647, reason: "duplicate of #125197 (#1664)" }], skipped: [],
     });
     // Another institution or category at the same id, name and price is not the listed row.
     const moved = [{ ...LIVE[4], institution_id: 1 }, { ...LIVE[5], canonical_fee_key: "legal_process" }];
@@ -223,6 +241,11 @@ const AUDIENCE_LIVE_1655: LiveAudienceRow[] = [
   { fee_published_id: 67110, lineage_ref: 77129, institution_id: 97, canonical_fee_key: "od_daily_cap", fee_name: "Maximum daily Overdraft or Returned Item fees (per day, business accounts)", amount: "350.00", fee_audience: "unknown", audience_evidence: null },
   { fee_published_id: 125484, lineage_ref: 93865, institution_id: 97, canonical_fee_key: "overdraft", fee_name: "Overdraft or Returned Item fee (business accounts)", amount: "35.00", fee_audience: "unknown", audience_evidence: null },
 ];
+// #1664's two Bank Iowa ag-account rows (doc 31875) as they read live on prod with their verified rows joined, read-only, Oct 16.
+const AUDIENCE_LIVE_1664: LiveAudienceRow[] = [
+  { fee_published_id: 141041, lineage_ref: 166941, institution_id: 511, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly service charge", amount: "20.00", fee_audience: "unknown", audience_evidence: null },
+  { fee_published_id: 141040, lineage_ref: 166940, institution_id: 511, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Service Charge", amount: "10.00", fee_audience: "unknown", audience_evidence: null },
+];
 const ONLY_55401 = HAND_AUDIENCE_FIXES.slice(0, 1);
 
 function fakeAudienceDb(live: LiveAudienceRow[], failOn?: string) {
@@ -242,6 +265,7 @@ describe("hand audience fixes (#1302)", () => {
   it("lists each business fee, with darwin: evidence the audience trigger keeps", () => {
     expect(HAND_AUDIENCE_FIXES.map((fix) => [fix.feePublishedId, fix.from, fix.to])).toEqual([
       [55401, "unknown", "business"], [67110, "unknown", "business"], [125484, "unknown", "business"],
+      [141041, "unknown", "business"], [141040, "unknown", "business"],
     ]);
     expect(HAND_AUDIENCE_FIXES.every((fix) => handAudienceEvidence(fix).startsWith(`darwin:hand_fix: #${fix.issue} `))).toBe(true);
     // A batch (one issue) of takedowns and audience fixes together stays under James's limit of 20.
@@ -253,18 +277,24 @@ describe("hand audience fixes (#1302)", () => {
     expect(batch1655).toBe(4);
     // #1659: four takedowns (102971 is an amount correction, 102970 a rename).
     expect(HAND_TAKEDOWNS.filter((entry) => entry.issue === 1659)).toHaveLength(4);
+    // #1664: two audience fixes and one takedown (60939 and 60940 are renames).
+    const batch1664 = HAND_AUDIENCE_FIXES.filter((fix) => fix.issue === 1664).length + HAND_TAKEDOWNS.filter((entry) => entry.issue === 1664).length;
+    expect(batch1664).toBe(3);
+    expect(batch1664).toBeLessThanOrEqual(HAND_TAKEDOWN_BATCH_LIMIT);
   });
 
   it("fixes a row only while it still reads as listed, and once", () => {
-    expect(planHandAudienceFixes([...AUDIENCE_LIVE, ...AUDIENCE_LIVE_1655])).toEqual({
+    expect(planHandAudienceFixes([...AUDIENCE_LIVE, ...AUDIENCE_LIVE_1655, ...AUDIENCE_LIVE_1664])).toEqual({
       fixed: [
         { feePublishedId: 55401, feeVerifiedId: 45477, from: "unknown", fromEvidence: null, to: "business" },
         { feePublishedId: 67110, feeVerifiedId: 77129, from: "unknown", fromEvidence: null, to: "business" },
         { feePublishedId: 125484, feeVerifiedId: 93865, from: "unknown", fromEvidence: null, to: "business" },
+        { feePublishedId: 141041, feeVerifiedId: 166941, from: "unknown", fromEvidence: null, to: "business" },
+        { feePublishedId: 141040, feeVerifiedId: 166940, from: "unknown", fromEvidence: null, to: "business" },
       ],
       skipped: [],
     });
-    expect(planHandAudienceFixes([]).skipped).toEqual([55401, 67110, 125484].map((feePublishedId) => ({ feePublishedId, reason: "not live" })));
+    expect(planHandAudienceFixes([]).skipped).toEqual([55401, 67110, 125484, 141041, 141040].map((feePublishedId) => ({ feePublishedId, reason: "not live" })));
     expect(planHandAudienceFixes([{ ...AUDIENCE_LIVE[0], fee_audience: "business" }], ONLY_55401).skipped).toEqual([{ feePublishedId: 55401, reason: "already fixed" }]);
     // Another audience, a newer verified row, or another name or price is not the listed row.
     for (const changed of [{ fee_audience: "consumer" }, { lineage_ref: 99 }, { amount: "4.00" }, { fee_name: "Gift Card" }]) {

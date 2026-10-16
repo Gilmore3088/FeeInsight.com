@@ -680,6 +680,16 @@ export const HAND_REFILES: readonly HandRefile[] = [
   { feePublishedId: 102970, from: "monthly_maintenance", amount: 4.95, to: "monthly_maintenance", name: "Safe Debit account Monthly Maintenance Fee",
     oldName: "Monthly Maintenance Fee with no minimum balance requirement",
     why: "#1659, inst 5, doc 23628: \"Safe Debit account2\" / \"$4.95 Monthly Maintenance Fee with no minimum balance requirement\"" },
+  // #1664 (read-only, Oct 16): 1NB Bank's two monthly service charges share one generic name; the
+  // page prints each under its own account heading. Renamed in place once (`oldName`); price and
+  // category are right. The shared check reads both as `tiered_fee` (a price tied to a balance
+  // band), which `traceLiveFee` counts as traced, before and after the rename.
+  { feePublishedId: 60939, from: "monthly_maintenance", amount: 5.95, to: "monthly_maintenance", name: "Carefree Checking Monthly Service Charge",
+    oldName: "Account Fees: The monthly service charge",
+    why: "#1664, inst 2454, doc 18090: \"Carefree Checking\" / \"Account Fees: The monthly service charge if the average daily balance drops below $300.00 during the statement cycle is $5.95.\"" },
+  { feePublishedId: 60940, from: "monthly_maintenance", amount: 10, to: "monthly_maintenance", name: "NOW Checking Monthly Service Charge",
+    oldName: "Account Fees: The monthly service charge",
+    why: "#1664, inst 2454, doc 18090: \"NOW Checking\" / \"Account Fees: The monthly service charge if the daily balance drops below $500.00 any day of the statement cycle is $10.00.\"" },
 ];
 
 interface HandRow {

@@ -183,6 +183,14 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
   { feePublishedId: 15727, institutionId: 4956, canonicalFeeKey: "atm_non_network", amount: 1, feeName: "plus ATM owner fees",
     reason: "source_mismatch: #1659", issue: 1659, kind: "wrong_category",
     evidence: "Navy Federal (doc 13439, text 890, the Oct 3 copy of fees-and-charges): \"Credit card cash advance§ / None / $0.50 / $1.00 plus ATM owner fees\": a credit card cash advance at a non-network ATM, named by the price's trailing words; not an ATM use fee." },
+  // #1664 (read-only, Oct 16): First National Bank Alaska's Direct Deposit Checking fee, read at $0
+  // from its waiver line. The account's price is $7.00, live once already as 125197 from the bank's
+  // checking page; correcting this row to $7 would leave a second copy under another name and page,
+  // which no duplicate collapse removes. It comes down only while 125197 is live at $7.
+  { feePublishedId: 67859, institutionId: 281, canonicalFeeKey: "monthly_maintenance", amount: 0, feeName: "Monthly Service Fee with 1 direct deposit per",
+    reason: "duplicate of #125197 (#1664)", issue: 1664, kind: "duplicate",
+    requiresLive: { feePublishedId: 125197, amount: 7, feeName: "Monthly Service Fees" },
+    evidence: "FNB Alaska personal fee schedule (doc 19925, text 15731): \"Direct Deposit Checking | per statement cycle\" / \"Monthly Service Fee | $7.00\" / \"Monthly Service Fee with 1 direct deposit per | Waived\"; the $0 is the waiver, not the price. The $7 is live as 125197 (checking page, doc 33839): \"Monthly Service Fees | $7, waived each statement cycle with a direct deposit.\"" },
 ];
 
 export interface LiveTakedownRow {
@@ -398,6 +406,15 @@ export const HAND_AUDIENCE_FIXES: readonly HandAudienceFix[] = [
   { feePublishedId: 125484, feeVerifiedId: 93865, institutionId: 97, canonicalFeeKey: "overdraft", amount: 35,
     feeName: "Overdraft or Returned Item fee (business accounts)", from: "unknown", to: "business", issue: 1655,
     evidence: "Mechanics Bank (doc 9078, text 2235): \"Overdraft or Returned Item fee (business accounts)…$35.00/presentment\"." },
+  // #1664 (read-only, Oct 16): Bank Iowa's ag checking page (doc 31875) prints one table of four
+  // business accounts for farms ("Bank Iowa Business Checking Accounts - For Ag"); both live rows
+  // from it are business fees.
+  { feePublishedId: 141041, feeVerifiedId: 166941, institutionId: 511, canonicalFeeKey: "monthly_maintenance", amount: 20,
+    feeName: "Monthly service charge", from: "unknown", to: "business", issue: 1664,
+    evidence: "Bank Iowa (doc 31875, text 29776): \"Bank Iowa Business Checking Accounts - For Ag\"; \"Monthly Service Charge | … | $20\" is the Commercial Checking for Ag column." },
+  { feePublishedId: 141040, feeVerifiedId: 166940, institutionId: 511, canonicalFeeKey: "monthly_maintenance", amount: 10,
+    feeName: "Monthly Service Charge", from: "unknown", to: "business", issue: 1664,
+    evidence: "Bank Iowa (doc 31875, text 29776): \"Bank Iowa Business Checking Accounts - For Ag\"; \"$10 monthly service charge\" is the Business Checking for Ag and Interest Checking for Ag columns." },
 ];
 
 export interface LiveAudienceRow {
