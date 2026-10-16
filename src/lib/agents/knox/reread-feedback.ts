@@ -7,7 +7,8 @@ import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback
 import { LIVE_FRAGMENT_CHECK, LIVE_FRAGMENT_REREAD_KIND } from "@/lib/agents/darwin/live-fragment-check";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "@/lib/agents/knox/specialists";
 import { insertCandidate, type KnoxTextRow } from "@/lib/agents/knox/extract";
-import { liveFragmentName, writeLiveRenames, type RetidyRename } from "@/lib/agents/knox/name-retidy";
+import { writeLiveRenames, type RetidyRename } from "@/lib/agents/knox/name-retidy";
+import { liveFragmentName } from "@/lib/fee-name-fragments";
 import { loadTakedownLessons, takedownLessonFor } from "@/lib/agents/knox/takedown-lessons";
 import type { ExtractedFeeCandidate } from "@/lib/agents/knox/rules";
 

@@ -10,7 +10,7 @@ import {
   type ScoreboardSnapshotRow,
 } from "@/lib/data-store/answer-key";
 import { runScoreboardNowAction } from "../answer-key/actions";
-import { GOAL_WINDOW_DAYS, type GoalScorecard } from "@/lib/agents/goal-scorecard";
+import { GOAL_WINDOW_DAYS, READER_MISS_KINDS, type GoalScorecard } from "@/lib/agents/goal-scorecard";
 import { ACCURACY_TARGET_LABEL } from "@/lib/accuracy-target";
 
 interface Metric {
@@ -379,6 +379,7 @@ function GoalSection({ rows }: { rows: ScoreboardSnapshotRow[] }) {
         })}
       </div>
       {latest.goal.spend ? <SpendTable goal={latest.goal} /> : null}
+      <ReaderMisses goal={latest.goal} />
     </section>
   );
 }
@@ -414,6 +415,75 @@ function SpendTable({ goal }: { goal: GoalScorecard }) {
         </tbody>
       </table>
       <p className="mt-2 font-mono text-[10px] text-gray-400">query: {goal.spend?.query}</p>
+    </div>
+  );
+}
+
+const MISS_KIND_LABELS: Record<(typeof READER_MISS_KINDS)[number], string> = {
+  no_fees_found: "No fees found",
+  short_text: "Short text",
+  missed_fee_page: "Fee page rejected",
+  unresolved_fee_page: "Fee page left unread",
+  unread: "Unread",
+};
+
+/** Rosetta's batch review (#1054): miss rate by kind, week over week, and whether its fixes gave Knox fees. */
+function ReaderMisses({ goal }: { goal: GoalScorecard }) {
+  if (goal.readerMisses === undefined) {
+    return <p className="admin-card p-4 text-xs text-gray-500">Text-reading misses appear with the next daily scoreboard, or press Score now.</p>;
+  }
+  const misses = goal.readerMisses;
+  const remedies = goal.readerRemedies;
+  return (
+    <div className="admin-card overflow-x-auto p-4">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Text-reading misses, week by week</p>
+      <p className="mt-1 text-xs text-gray-500">
+        Every 50 reads, Rosetta checks how each one turned out once Knox has had it. A miss is a read that gave no usable text or no fees. Weeks start Monday (UTC) and count batches by the day they were checked.
+      </p>
+      {!misses ? (
+        <p className="mt-2 text-xs text-gray-500">Could not be read.</p>
+      ) : (
+        <table className="mt-2 w-full text-left text-xs">
+          <thead>
+            <tr className="text-gray-400">
+              <th className="py-1 pr-4 font-semibold">Week of</th>
+              <th className="py-1 pr-4 text-right font-semibold">Reads</th>
+              <th className="py-1 pr-4 text-right font-semibold">Miss rate</th>
+              {READER_MISS_KINDS.map((kind) => (
+                <th key={kind} className="py-1 pr-4 text-right font-semibold">{MISS_KIND_LABELS[kind]}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {misses.weeks.map((week) => (
+              <tr key={week.weekStart} className="border-t border-gray-100 dark:border-white/[0.06]">
+                <td className="py-1 pr-4 tabular-nums">{week.weekStart}</td>
+                <td className="py-1 pr-4 text-right tabular-nums">{week.batches === 0 ? "—" : n(week.reads)}</td>
+                <td className="py-1 pr-4 text-right tabular-nums">{share(week.rate)}</td>
+                {READER_MISS_KINDS.map((kind) => (
+                  <td key={kind} className="py-1 pr-4 text-right tabular-nums">{week.batches === 0 ? "—" : n(week.byKind[kind])}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {misses ? <p className="mt-1 font-mono text-[10px] text-gray-400">query: {misses.query}</p> : null}
+      <p className="mt-3 text-xs text-gray-700 dark:text-gray-300">
+        {remedies === undefined || remedies === null ? (
+          "Fix outcomes could not be read."
+        ) : remedies.remedied === 0 ? (
+          "Sent to a fix, then Knox found fees: no misses were sent to a fix in these weeks."
+        ) : (
+          <>
+            Sent to a fix, then Knox found fees: <span className="font-semibold tabular-nums">{n(remedies.knoxFound)}</span> of {n(remedies.remedied)} ({share(remedies.share)}).
+            <span className="block text-gray-500">
+              {remedies.byRemedy.map((row) => `${row.remedy} ${n(row.knoxFound)} of ${n(row.remedied)}`).join(" · ")}. Fees count from the same document after the check, or from the same institution for a new link search. A recent miss may not have had its fix yet.
+            </span>
+          </>
+        )}
+      </p>
+      {remedies ? <p className="font-mono text-[10px] text-gray-400">query: {remedies.query}</p> : null}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { gluedSentenceHead, gluedSentenceSplit, isCutoffName, liveFragmentName, liveFragmentShape } from "@/lib/agents/knox/name-retidy";
+import { gluedSentenceHead, gluedSentenceSplit, isCutoffName } from "@/lib/agents/knox/name-retidy";
+import { liveFragmentName, liveFragmentShape } from "@/lib/fee-name-fragments";
 
 import {
   FRAGMENT_NAME_TAKEDOWN_LIVE,

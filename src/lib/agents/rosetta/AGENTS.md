@@ -210,6 +210,12 @@ the cursor. At most two batches per step; a partial batch waits. The step result
 `batchReviews`. Knox dedupes rereads, so the fee count is every Knox fee from the document,
 not only rows since the read.
 
+The admin scorecard (`/admin/scoreboard`, #1054) shows these rows with the daily goal numbers:
+the miss rate by kind for each of the last 8 UTC weeks (`goal.rosetta_miss_rate_weekly`, from the
+`batch_error_rate` rows) and how many misses sent to a fix later gave Knox fees
+(`goal.rosetta_remedy_outcomes`: a Knox fee from the same document after the review, or from the
+same institution for `magellan_paid_find`). Both live in `goal-scorecard.ts`.
+
 ## Boundaries
 
 - Do not write raw, verified, or published fee rows.
