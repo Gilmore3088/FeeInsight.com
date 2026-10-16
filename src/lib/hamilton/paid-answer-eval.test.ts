@@ -251,7 +251,7 @@ describe("Hamilton's paid answer eval (#1079)", () => {
     const result = await runPaidAnswerEval({ db: db(3, ["memo", "memo", "written_answer"]).db, now, client, live: moved, agentRunId: 77 });
     const read = result.results.find((r) => r.path === "simulate")!;
     expect(read.status).toBe("written");
-    expect(read.correctness).toEqual([`figures that tie to no live catalog value: $${p25.toFixed(2)}`]);
+    expect(read.correctness).toEqual([expect.stringMatching(new RegExp(`^figures that tie to no live catalog value: \\$${p25.toFixed(2).replace(".", "\\.")} \\(`))]);
   });
 
   it("gives the day's last sample to Simulate when one is still wanted (#1414)", async () => {
@@ -295,7 +295,7 @@ describe("Hamilton's paid answer eval (#1079)", () => {
     const tool = [{ toolName: "searchFees", output: { fee_category: "overdraft", amount: 47.13 } }];
     const stale = await runPaidAnswerEval({ db: db(0).db, now, client: memoClient("Your overdraft fee is $32."), live, agentRunId: 77, written: writtenWriter("A peer charges $47.13.", tool) });
     expect(stale.paths[2]).toMatchObject({ passed: 1, correctness: { checked: 1, correct: 0 } });
-    expect(stale.results.find((r) => r.path === "written_answer")!.correctness).toEqual(["figures that tie to no live catalog value: $47.13"]);
+    expect(stale.results.find((r) => r.path === "written_answer")!.correctness).toEqual([expect.stringMatching(/^figures that tie to no live catalog value: \$47\.13 \(/)]);
   });
 
   it("does not write a second written answer once today's is used", async () => {
