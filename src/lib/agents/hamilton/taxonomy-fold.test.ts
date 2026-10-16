@@ -108,7 +108,6 @@ const PAGE_LINES: Record<number, string> = {
   97924: "Fees and Charges:\n* We do not charge for any preauthorized EFTs.\n* We will charge $25.00 for each stop-payment order for\npreauthorized transfers.",
   98545: "etc.) while it is in dormant status, subject to applicable law. For New York State residents,\nthe monthly dormant fee of $3 for Savings and $10 for Money Market accounts will be\nwaived.",
   130805: "the account balance of your checking account(s) with an ATM card or Visa Check Card\n\nthere is a charge of $1.50 at ATMs we do not own or operate",
-  67412: "you have an Overdraft Protection Plan and we make a transfer that covers only a portion of your\noverdrawn amount, we will charge you a $12.00 Sweep Transfer Fee. If there are items remaining",
   // #1646: names v17 cannot find where the price is printed, renamed to the page's own words (docs 22481, 20748).
   96663: "Free notary services\n\n$50 minimum deposit to open\n\nAccounts with balances below $50 on the last day of the month are subject to a $2 fee.\n\n{{ savings-goal-calc }}",
   88058: "MONEY MARKET ACCOUNTS\nMoney Market Account\nLow Balance Fee\n(charged if the average daily balance is less than $2,500 for the calendar month) ...... $15.00\nDEBIT CARDS",

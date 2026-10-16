@@ -665,9 +665,8 @@ export const HAND_REFILES: readonly HandRefile[] = [
   { feePublishedId: 130805, from: "atm_non_network", amount: 1.5, to: "atm_non_network", name: "Charge at ATMs we do not own or operate",
     oldName: "transfer funds from checking to savings account(s) with an ATM or Visa Check card get information about: the account bal",
     why: "#1646, inst 2094, doc 27953: \"there is a charge of $1.50 at ATMs we do not own or operate\"" },
-  { feePublishedId: 67412, from: "od_protection_transfer", amount: 12, to: "od_protection_transfer", name: "Sweep Transfer Fee",
-    oldName: "you have an Overdraft Protection Plan and we make a transfer that covers only a portion of your overdrawn amount, we wil",
-    why: "#1646, inst 71, doc 16337: \"we will charge you a $12.00 Sweep Transfer Fee\"; the schedule also lists \"Sweep Transfer from Deposit Account Fee (maximum per day)* | $12.00\"" },
+  // 67412 (inst 71, doc 16337, $12) is not renamed: as "Sweep Transfer Fee" it would duplicate live
+  // 144309 (same institution, document, name and price), so v17 takes it down as the duplicate it is.
   // #1655 (read-only, Oct 16): two Navy Federal home equity line fees filed as deposit fees, so they
   // showed in the consumer overdraft guide. Each price is right; both are loan fees, so they move to
   // other lending (the 50 have no returned-loan-payment type). Both keep their printed names, so neither
