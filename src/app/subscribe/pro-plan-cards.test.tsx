@@ -15,7 +15,7 @@ vi.mock("@/components/track-link", () => ({
 }));
 
 import { apiIncludedInTier } from "@/lib/api-subscriber-access";
-import { API_LINE, CHECKOUT_ID, PLANS_ID, ProPlanBoard, RECOMMENDED_PLAN } from "./pro-plan-cards";
+import { API_LINE, CONSULTANT_API_NOTE, CHECKOUT_ID, PLANS_ID, ProPlanBoard, RECOMMENDED_PLAN } from "./pro-plan-cards";
 
 const registerHref = { annual: "/register?plan=annual", monthly: "/register?plan=monthly" };
 
@@ -90,6 +90,7 @@ describe("/subscribe plan board", () => {
     expect(mine?.getAttribute("data-tier")).toBe(NON_INSTITUTION_TIER);
     expect(mine?.textContent).toContain("Consultant price");
     expect(mine?.textContent).not.toContain("Your price");
+    expect(document.getElementById(CHECKOUT_ID)!.textContent).toContain(CONSULTANT_API_NOTE);
   });
 
   it("marks the chosen institution's tier and checks out at the toggle's billing", () => {
