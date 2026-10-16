@@ -365,8 +365,10 @@ the detail.
     otherwise it stays rejected with the flag. A checked row with no type and a lineup
     product gets `account_type_checked:v1` and is not read again; a row with no product is read
     again on every step, since a later Knox read can fill its product. One event per run names every row.
-    A fee a hand check found wrongly typed stays live through `ACCOUNT_TYPE_KEEP_LIVE` (one line per
-    fee with its reason; 28834 first).
+    A fee a hand check found wrongly typed stays live through `ACCOUNT_TYPE_KEEP_LIVE`: one line per
+    fee with its reason, keyed by institution, name and price so a new copy stays live too (28834,
+    inst 5800, first). The feedback sync skips these takedowns and the goal scorecard counts them as
+    housekeeping: the hold is publish policy, not a wrong read.
     A failed read or write writes nothing; the error is kept in `detail.account_type_hold.error`
     and as a `step.warning` run event.
 10a. Hand fixes James approved, fixed lists checked against the live row before each write:
