@@ -73,14 +73,15 @@ export interface AboutBlock {
   link?: { href: string; label: string };
 }
 
-/** The three short blocks under the proof: what we publish, who it is for, how we stay honest. */
+/** The three short blocks under the proof: what Fee Insight publishes, who it is for, how it stays neutral. */
 export const ABOUT_BLOCKS: readonly AboutBlock[] = [
   {
     id: "publish",
-    eyebrow: "What we publish",
+    eyebrow: `What ${SITE_NAME} publishes`,
     title: `The ${PRODUCT_NAME}`,
     lines: [
-      "Every fee is read from the institution's own schedule, and medians use only fees traced to a stored copy.",
+      "Every fee is read from the institution's own fee schedule.",
+      "Medians use only fees traced to a saved copy of that schedule.",
     ],
   },
   {
@@ -88,17 +89,18 @@ export const ABOUT_BLOCKS: readonly AboutBlock[] = [
     eyebrow: "Who it is for",
     title: "Two kinds of reader",
     lines: [
+      "Bank and credit union pricing, product and marketing teams who need to see their fees against their market. Hamilton, the Pro workspace, keeps that view current.",
       "People comparing what their bank charges with what others charge.",
-      "Bank and credit union pricing, product and marketing teams who need to see their fees against their market.",
     ],
+    link: { href: "/subscribe", label: "See Hamilton plans" },
   },
   {
     id: "honest",
-    eyebrow: "How we stay honest",
-    title: "A public method, no advice",
+    eyebrow: "How it stays neutral",
+    title: "A public method",
     lines: [
       `${SITE_NAME} is independent of the institutions it covers.`,
-      "We show where a fee sits against the market. We never advise what to charge.",
+      "It shows where a fee sits against the market and never advises what to charge.",
     ],
     link: { href: "/methodology", label: "Read the methodology" },
   },

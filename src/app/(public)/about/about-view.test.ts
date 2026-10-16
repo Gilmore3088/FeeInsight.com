@@ -64,12 +64,17 @@ describe("ABOUT_BLOCKS", () => {
     const text = ABOUT_BLOCKS.flatMap((b) => [b.eyebrow, b.title, ...b.lines]).join(" ");
     expect(text).not.toMatch(/—/);
     expect(text).not.toMatch(/\d/);
-    expect(text).not.toMatch(/James|Hamilton|Frost|Velocity|CSI/);
+    expect(text).not.toMatch(/James|Frost|Velocity|CSI|Atlas|Magellan|Rosetta|Knox|Darwin/);
+  });
+
+  it("names Hamilton as the Pro workspace and links the reader to its plans", () => {
+    expect(ABOUT_BLOCKS[1].lines[0]).toContain("Hamilton, the Pro workspace");
+    expect(ABOUT_BLOCKS[1].link).toEqual({ href: "/subscribe", label: "See Hamilton plans" });
   });
 
   it("does not claim every fee links to its source", () => {
     expect(ABOUT_BLOCKS[0].lines.join(" ")).toBe(
-      "Every fee is read from the institution's own schedule, and medians use only fees traced to a stored copy.",
+      "Every fee is read from the institution's own fee schedule. Medians use only fees traced to a saved copy of that schedule.",
     );
   });
 });

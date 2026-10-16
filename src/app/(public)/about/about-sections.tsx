@@ -12,19 +12,19 @@ export function AboutHero({ proof }: { proof: AboutProof }) {
   return (
     <section className="fi-on-navy bg-ink text-paper" aria-labelledby="about-heading">
       <div className="mx-auto grid max-w-page gap-8 px-4 pb-10 pt-10 sm:px-6 sm:pb-12 sm:pt-14 lg:grid-cols-[minmax(0,6fr)_minmax(0,5fr)] lg:items-end">
-        <div>
-          <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e0716a]">
+        <div className="text-center sm:text-left">
+          <p className="flex items-center justify-center gap-2 sm:justify-start text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e0716a]">
             <span aria-hidden="true" className="h-px w-8 bg-[#e0716a]/60" />
             About
           </p>
           <h1
             id="about-heading"
-            className="mt-3 max-w-2xl text-[2rem] font-extrabold leading-[1.08] tracking-[-0.015em] text-white sm:text-[3rem]"
+            className="mx-auto mt-3 max-w-2xl text-[2rem] sm:mx-0 font-extrabold leading-[1.08] tracking-[-0.015em] text-white sm:text-[3rem]"
             style={SANS}
           >
             {SITE_NAME} publishes the {PRODUCT_NAME}
           </h1>
-          <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-paper/80 sm:text-base">
+          <p className="mx-auto mt-3 max-w-xl text-[15px] leading-relaxed text-paper/80 sm:mx-0 sm:text-base">
             What U.S. banks and credit unions charge, read from each institution&apos;s own fee schedule.
           </p>
         </div>
@@ -56,13 +56,13 @@ export function ProofExhibit({ proof }: { proof: AboutProof }) {
         <div className="mt-4">
           <span
             role="img"
-            aria-label={`${proof.publishedShare}% of institutions monitored have published fees`}
+            aria-label={`${proof.publishedShare}% of monitored institutions have fees in the index`}
             className="block h-1.5 w-full overflow-hidden rounded-full bg-white/10"
           >
             <span className="block h-full rounded-full bg-[#e0716a]" style={{ width: `${proof.publishedShare}%` }} />
           </span>
           <p aria-hidden="true" className="mt-1.5 text-[12px] text-paper/70">
-            {proof.publishedShare}% of institutions monitored have published fees
+            {proof.publishedShare}% of monitored institutions have fees in the index
           </p>
         </div>
       )}
@@ -76,7 +76,7 @@ export function ProofExhibit({ proof }: { proof: AboutProof }) {
   );
 }
 
-/** What we publish, who it is for, how we stay honest: one short card each. */
+/** What Fee Insight publishes, who it is for, how it stays neutral: one short card each. */
 export function AboutBlocks({ blocks }: { blocks: readonly AboutBlock[] }) {
   return (
     <div className="grid gap-4 md:grid-cols-3">
@@ -121,10 +121,10 @@ export function AboutNextAction({ action }: { action: AboutAction }) {
       >
         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#e0716a]">For banks and credit unions</p>
         <h2 id="next-heading" className="mt-1.5 text-[1.4rem] font-bold leading-tight text-white sm:text-[1.75rem]" style={SANS}>
-          See the index on one institution
+          See where one institution&apos;s fees stand
         </h2>
         <p className="mt-2 max-w-xl text-[14px] leading-relaxed text-paper/80">
-          Its fees set against its market, line by line, each traced to the schedule.
+          Each fee is set against its local market and traced to the institution&apos;s own schedule.
         </p>
         <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-5">
           <TrackLink

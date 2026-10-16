@@ -24,7 +24,7 @@ describe("AboutHero", () => {
     expect(within(exhibit).getByText("Institutions monitored").tagName).toBe("DT");
     expect(within(exhibit).getByText("2,000")).toBeInTheDocument();
     expect(within(exhibit).getByText("40,000")).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "25% of institutions monitored have published fees" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "25% of monitored institutions have fees in the index" })).toBeInTheDocument();
     expect(screen.getByText("Data refreshed Oct 15, 2026")).toBeInTheDocument();
   });
 
