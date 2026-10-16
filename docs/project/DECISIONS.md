@@ -5,6 +5,13 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-16
 
+**Admin fee corrections are new versions, admin-only, with source evidence.** James, 2026-10-16,
+answering the four H03-T02 questions on #978: a correction is a new version (the old published
+value is kept and marked superseded, never overwritten; this takes a new table); only an admin may
+correct, while analysts and admins can still hold; a correction needs the source document, an
+excerpt and where it sits, plus a reason; and a hold or correction rebuilds Hamilton's national
+index (`fee_index_cache`) straight away. The lifecycle is `docs/plans/hamilton-h03-corrections.md`.
+
 **Fee Insight is not marketed as advisory.** James, 2026-10-16 (#1174): "Fee insight advisory was
 scrapped many times ago so we should not add it back. I'm happy to have demos and phone
 conversations but we should not market the product as advisory." No page, form or offer names a
