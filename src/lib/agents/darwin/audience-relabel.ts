@@ -34,7 +34,11 @@ type SqlTag = typeof sql;
  */
 export type AudienceRelabelMode = "off" | "dry_run_full" | "live" | "rollback";
 export const AUDIENCE_RELABEL_MODE: AudienceRelabelMode = "dry_run_full";
-export const AUDIENCE_RELABEL_VERSION = 1;
+/**
+ * v2 (#1626): the fee-name reading changed (product words, exceptions and two-sided lists), so the
+ * full dry run's key chain and totals start again from the first document under v2.
+ */
+export const AUDIENCE_RELABEL_VERSION = 2;
 export const AUDIENCE_RELABEL_SOURCE = "darwin.audience_relabel";
 export const AUDIENCE_RELABEL_KIND = "audience_relabeled";
 const SAMPLE_SIZE = 25;

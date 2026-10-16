@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { feeLineIndex, hasBusinessFees, sectionHeadingAudience, suggestAudience } from "./audience-context";
+import { feeLineIndex, hasBusinessFees, nameAudience, sectionHeadingAudience, suggestAudience } from "./audience-context";
 
 const suggest = (documentUrl: string | null, text: string, feeName: string, amount: number | null = 30) =>
   suggestAudience({ documentUrl, text, feeName, amount });
@@ -108,6 +108,62 @@ describe("Knox audience suggestion from context (#1059)", () => {
     // A business sentence still leaves the fee unknown.
     const business = ["These fees apply to business accounts.", "Statement Copy | $5.00", "Stop Payment | $30.00"].join("\n");
     expect(suggest(null, business, "Statement Copy", 5)).toBeNull();
+  });
+
+  // #1626: live fees whose names the name rule misread (fee_published_id in each comment).
+  it.each([
+    "Personal Money Order", // 142173, 54818: a product any customer buys
+    "Personal Money Orders (customers)",
+    "Stop Payment Fee - Personal Money Orders",
+    "Subpoena or litigation demand for production of documents or personal appearance: minimum", // 40566
+    "Stop payments: Personal Drafts", // 94850
+    "Stop Payment (personal draft only)",
+    "Convert Personal Draft Into Teller Check",
+    "Counter Check: A blank page of 3 personal", // 75914
+    "Paper Statement Fee on Checking Accounts (Not applicable when accessing eStatements through Consumer eBanking)", // 85812
+    "Check Copy – Personal or Corporate (personal are free on Netbranch)", // 77083
+    "Personal, Cashier’s or Bill Pay checks", // 90850
+    "Services Stop Payment for checks and Corporate ACH", // 101176
+    "» all loan and certificate account balances as of the last business: Inactivity Fee", // 96200
+    "Return Item Fee² (Max 6 [$222.00/day] for retail customers) (unlimited for commercial customers)", // 128993
+  ])("reads no audience in a product, an exception or a time in the name: %s", (name) => {
+    expect(nameAudience(name)).toBeNull();
+    // With the name silent, the schedule decides: a general schedule with no business fees is consumer.
+    expect(suggest(null, `Fee Schedule\nStop Payment $30`, name)?.source).not.toBe("fee_name");
+  });
+
+  it.each([
+    "Returned Deposited Item – Member or Business", // 138277
+    "Bill Pay: Regular Member Accounts and Business Accounts", // 127883
+    "ATM/VISA® Debit Card/VISA® Rewards Debit Card/ VISA® Business Debit Card replacement card fee", // 123246
+    "Excessive Withdrawal for Business Share/Savings, Share/Savings and Share Club only", // 129758
+    "Stop Payment Fee (Personal/Business)", // 90296
+    "Card Replacement (Personal or Business ATM/Debit Card)", // 86165
+    "Stop Payment of Personal or Business Check", // 137663
+  ])("reads a name that lists both sides as both: %s", (name) => {
+    expect(suggest(null, `Fee Schedule\nBusiness Accounts\nStop Payment $30`, name)).toMatchObject({ audience: "both", source: "fee_name" });
+  });
+
+  it.each([
+    "Commercial Account Continuous Overdraft Fee^", // 130558, Capital City Bank
+    "‐ Basic Business or Personal Business Share Draft (average balance below $1,000)", // 140082
+    "Business Checking, Savings and Money Market Accounts Monthly Fee",
+    "On commercial accounts, if your account balance remains overdrawn for longer than 3 days, the account will be charged a", // 133325
+    "Member/Corporate Account Fee",
+    "Business Debit/ATM Card replacement",
+    "Stop Payment (Business Checking)",
+    "5 Business Mobile Deposit is available",
+  ])("keeps a business name business: %s", (name) => {
+    expect(nameAudience(name)).toBe("business");
+  });
+
+  it.each([
+    "Individual Retirement Account Closing Fee", // 90972
+    "Consumer Loan Origination Fee",
+    "Personal Checking Monthly Service Charge",
+    "Personal Draft Account Monthly Fee",
+  ])("keeps a consumer name consumer: %s", (name) => {
+    expect(nameAudience(name)).toBe("consumer");
   });
 
   it("lets the fee's own name decide first", () => {
