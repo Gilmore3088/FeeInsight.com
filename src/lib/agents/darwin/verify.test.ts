@@ -1,7 +1,7 @@
 import { CATEGORY_AMOUNT_ENVELOPES } from "./envelopes";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { canonicalHintFrom, conditionalZero, DARWIN_BATCH_KEY_VERSION, DARWIN_CATEGORY_HOLDS, DARWIN_SOURCE_CHECK_VERSION, DARWIN_VERIFY_STRATEGY, FREQUENCY_SETTLED_FLAG, pendingCategoryLesson, postSourceCheck, runDarwinVerify, statedInOwnSource, verificationReasonCode, verificationReasonText, type RawFeeRow } from "./verify";
+import { canonicalHintFrom, conditionalZero, DARWIN_BATCH_KEY_VERSION, DARWIN_CATEGORY_HOLDS, DARWIN_SOURCE_CHECK_VERSION, DARWIN_VERIFY_STRATEGY, FREQUENCY_SETTLED_FLAG, pendingCategoryLesson, postSourceCheck, runDarwinVerify, sourceLineFor, statedInOwnSource, verificationReasonCode, verificationReasonText, type RawFeeRow } from "./verify";
 import { CATEGORY_GUARD_VERSION, refileCategory } from "@/lib/fee-category-guard";
 import { DARWIN_PEER_STRATEGY, DARWIN_SECOND_SOURCE_STRATEGY, resetWiderPeerLevelCache, SECOND_SOURCE_FLAG } from "./peer-checks";
 import { learnedEnvelope, resetLearnedEnvelopeCache } from "./learned-envelopes";
@@ -947,5 +947,308 @@ describe("category change re-judge (#1295)", () => {
       expect(savepoint).toHaveBeenCalled();
       expect(result.categoryChange).toBeNull();
     });
+  });
+});
+
+describe("conditionalZero on run-on lines (#1571, live rows read on prod Oct 16)", () => {
+  const notaryLeader = `DraŌ/Check Copy${" .".repeat(35)} $5.00 Notary${" .".repeat(45)}FREE`;
+  // [published id, fee name, stored line]: a neighbour's price is not this free fee's condition.
+  const free: Array<[number, string, string]> = [
+    [74, "Paper Statements or eStatements", "Replace Debit Card (first 2 cards free) $5.00 Paper Statements or eStatements Free"],
+    [11929, "Automatic Overdraft Fee - Line of Credit Transfer", "Automatic Overdraft Fee: Express Checking – $1 for each share savings transfer. Transfer from Automatic Overdraft Line of Credit Loans – $0."],
+    [12134, "Business Online Bill Pay - Business Essentials", "Wire Transfer Services Incoming - Domestic/Foreign $15.00/Transfer Outgoing - Domestic $25.00/Transfer Outgoing - Foreign $40.00/Transfer Business Online Banking Free Business Online Bill Pay Free BUSINESS ADVANTAGE CHECKING Monthly Account"],
+    [13040, "Check Free (bill pay)", "Check Free (bill pay) FREE Replacement key $50.00"],
+    [13124, "Notary Services", "Record Searches (per hour/minimum) $30/$25 Notary Services No Charge"],
+    [51445, "Checking Account monthly fee", "Checking Account monthly fee: FREE | Certified Letter Fee: $10"],
+    [38491, "Foreign Transaction Fees", "Foreign Transaction Fees No Charge | Night Depository Bags &amp; Key $ 30.00"],
+    [47440, "Zelle Transfer", "Zelle Transfer: No Charge | Subordination agreement: $175.00"],
+    [56935, "Notary", notaryLeader],
+    [85792, "Night Depository", "Night Depository FREE Copy of Transaction $15.00"],
+    [95011, "Coin Machine (Member)", "Account Reconcilement $15.00 per hour Coin Machine (Member) NONE"],
+  ];
+  // A $0 whose own row prices it under a condition still fails.
+  const conditional: Array<[number, string, string]> = [
+    [10808, "Service charge (NOW Account, minimum daily balance $1,000)", "balance of $1,000 (per statement cycle) . . . . ... No Charge"],
+    [11756, "Express Checking Monthly Fee", "Express Checking Monthly Fee: $0 with e-Statements and Direct Deposit. With e-Statements OR Direct Deposit – $5. Without e-Statements &amp; Direct Deposit – $10."],
+    [11772, "1st Checking Monthly Fee", "Star Checking Monthly Fee: $5 with either e-Statements or Direct Deposit. Without e-Statements or Direct Deposit – $10. 1st Checking Monthly Fee: $0 with e-Statements. Without e-Statements – $5."],
+    [13219, "Notary Fee", "Checking Non-Sufficient Funds (NSF) &amp; Overdraft (OD)* ................. $30.00 | Notary Fee ($5.00 charge for non-F&amp;M customers) ....................No Charge"],
+    [61335, "Standard Checking Monthly Fee - Balance over", "Standard Checking Monthly Fee - Balance over $250 | FREE"],
+    [68893, "Courtesy Pay fees are", "Courtesy pay that covers purchases when you have an oops moment and overdraw. No fee for transactions $15 and under!**"],
+    [49541, "Copy of Statement: Online", "Copy of Statement: Online-FREE; In Branch | $3.00 Each | Transcripts at Branch"],
+    [73737, "Coin Counting (Mbr up to /Mbr over /Non-Mbr)", "Coin Counting (Mbr up to $100/Mbr over $100/Non-Mbr) | FREE/5%/10%"],
+    [43512, "Dormant Account Fee Accounts with no activity for 12 months. Dormant accounts with", "Dormant Account Fee Accounts with no activity for 12 months. Dormant accounts with $0.00 balance will be closed. | $10.00 per quarter | Conduct a transaction (deposit or withdrawal) at least once per year"],
+    [39407, `Overdraft Transfer Fee${"…".repeat(29)}`, "If an individual overdraft payment is $20 or less any overdraft fees are waived or refunded."],
+    [44978, "Check Printing (members over 62)", "Check Printing (members over 62) ----------- No Charge | Money Orders ------------------------------------ $3.00 each"],
+    [54014, "CASHIER’S CHECKS: first three (3)", "CASHIER’S CHECKS: first three (3) FREE per month, $1.50 thereafter; members only"],
+    [84553, "Foreign Check Deposit (below )", "Return NSF Item*.................................................................. $27.50 | Foreign Check Deposit (below $10,000) .................................FREE"],
+    // Read as free by the advisor, still held here: the $15 and $5 sit in the fee's own row.
+    [90675, "Returned Deposit Item Fee", "| Returned Deposit Item Fee *$0.00 for consumer accounts* *$15.00 for business accounts* | $15 |"],
+    [22672, "Monthly Service Fee", "Monthly Service Charge 0.00 for 1st account 2nd account $5.00"],
+  ];
+
+  // Review of #1571: a condition after the $0, or a price before the name, keeps it conditional.
+  const reviewConditional: Array<[string, string]> = [
+    ["Paper Statement Fee", "$5.00 Paper Statement Fee (FREE with e-Statements)"],
+    ["Monthly Maintenance Fee", "$10.00 Monthly Maintenance Fee - $0 with direct deposit"],
+    ["Monthly Maintenance Fee", "Monthly Maintenance Fee: $0. Waived with direct deposit. Otherwise $12."],
+    ["Monthly Maintenance Fee", "Monthly Maintenance Fee: $0. A $12 fee applies if balance drops below $1,500."],
+    ["Monthly Service Fee", "Monthly Service Fee: Free. Customers without e-Statements pay $5."],
+    ["Monthly Service Fee", "Monthly Service Fee: Free. You will be charged $5 if your balance drops below $100."],
+    ["Monthly Service Fee", "Monthly Service Fee: Free. Paper statements: $5."],
+    ["Monthly Service Fee", "Monthly Service Fee FREE Balance under $500 $5"],
+    ["Monthly Service Fee", "Monthly Service Fee $0.00 Balance $1,000+ $5.00 Balance under $1,000"],
+    ["Stop Payment Fee", "Stop Payment Fee No Charge Online $30 In Branch"],
+    ["Stop Payment Fee", "Stop Payment Fee No Charge Via online banking $30.00 by phone"],
+    ["Cashier's Check", "Cashier's Check FREE Premium Checking $5.00 All Others"],
+    ["Monthly Fee", "Monthly Fee $0 Senior (62+) Monthly Fee $5 All Others"],
+    ["Paper Statement Fee", "Paper Statement Fee FREE e-Statements; $5 paper"],
+    ["Paper Statement Fee", "Paper Statement Fee FREE E-Statements Paper Statements $2"],
+    ["Monthly Service Fee", "Monthly Service Fee FREE Requires e-Statements otherwise $5"],
+    ["Overdraft Fee", "Overdraft Fee $0 Transactions $5 or less $30 per item"],
+    ["Dormant Account Fee", "Dormant Account Fee none the first 12 months $5 thereafter"],
+    // Second review: labelled condition cells, first-N-free, age, balance, channel, tier, frequency.
+    ["Monthly Service Fee", "Monthly Service Fee: FREE | Paper statements: $5"],
+    ["Monthly Service Fee", "Monthly Service Fee: FREE | Without Direct Deposit: $10"],
+    ["Monthly Fee", "Monthly Fee: $0, Without e-Statements: $5"],
+    ["Monthly Fee", "Monthly Fee: $0 | Balance Below Minimum: $8"],
+    ["Monthly Fee", "Monthly Fee: $0 | If Minimum Not Met: $8"],
+    ["Overdraft Fee", "Overdraft Fee: $0 | Each Additional Item: $30"],
+    ["Overdraft Fee", "Overdraft Fee FREE Each Additional Item $30.00"],
+    ["Overdraft Fee", "Overdraft Fee FREE Second And Subsequent Items $30"],
+    ["Counter Checks", "Counter Checks FREE Additional Sheets $1.00 each"],
+    ["Monthly Service Fee", "Monthly Service Fee FREE Ages 18-24 $5.00 ages 25 and up"],
+    ["Monthly Fee", "Monthly Fee FREE Seniors $5.00 Everyone Else"],
+    ["Monthly Fee", "Monthly Fee FREE Youth $5.00 Adult"],
+    ["Monthly Maintenance Fee", "Monthly Maintenance Fee FREE Avg Daily Bal $1,500+ $10.00 Avg Daily Bal under $1,500"],
+    ["ATM Withdrawal Fee", "ATM Withdrawal Fee FREE Non-network ATM $2.00"],
+    ["ATM Fee", "ATM Fee FREE Out-of-Network $2.50 per transaction"],
+    ["Stop Payment Fee", "Stop Payment Fee FREE Written Request $30.00"],
+    ["Stop Payment Fee", "Stop Payment Fee NO CHARGE Self-Service $30.00 Assisted"],
+    ["Monthly Service Charge", "Monthly Service Charge FREE Relationship Pricing $15.00 Standard Pricing"],
+    ["Monthly Service Fee", "Monthly Service Fee FREE Gold Checking $8.00 Basic Checking"],
+    ["Money Orders", "Money Orders FREE Club Accounts $2.00 Regular Accounts"],
+    ["Cashier's Check", "Cashier's Check FREE Platinum Clients $10.00"],
+    ["Paper Statement Fee", "Paper Statement Fee FREE Quarterly $3.00 Monthly"],
+    ["Monthly Fee", "Monthly Fee: Free. Not meeting requirements results in a $5 fee."],
+    // Third review: a condition in parentheses, the same fee at another tier, network synonyms.
+    ["Stop Payment", "Stop Payment FREE Stop Payment Fee (Teller Assisted) $30"],
+    ["Debit Card Replacement", "Debit Card Replacement FREE Replacement Card Fee (after 2) $5.00"],
+    ["Stop Payment", "Stop Payment FREE Stop Payment Charge (online) $30.00"],
+    ["Account Research", "Account Research FREE Research $25.00 per hour (1 hr min)"],
+    ["Safe Deposit Box", "Safe Deposit Box FREE Box Rental $25 5x5 size"],
+    ["Safe Deposit Box", "Safe Deposit Box FREE Larger Boxes $50"],
+    ["Card Replacement", "Card Replacement FREE Instant Issue Card $5"],
+    ["Debit Card Replacement", "Debit Card Replacement FREE Third Card $5.00"],
+    ["Statement Copy", "Statement Copy FREE Extra Copies $2"],
+    ["Check Printing", "Check Printing FREE Check Orders $15 for designer styles"],
+    ["ATM Fee", "ATM Fee FREE Foreign ATM Fee $2.00"],
+    ["ATM Fee", "ATM Fee FREE Non-Proprietary ATM Fee $2.00"],
+    ["Incoming Domestic Wire", "Incoming Domestic Wire FREE Outgoing Domestic Wire $25"],
+    ["Copies", "Copies FREE Copy Fee $5"],
+    ["Account Inquiry", "Account Inquiry FREE Inquiries Fee $2"],
+    // Final review: a plural of the fee's own word whose singular ends in "e".
+    ["Courtesy Notice", "Courtesy Notice FREE Notices Fee $2"],
+    ["Late Charge", "Late Charge FREE Charges Fee $10"],
+    ["Wire Service", "Wire Service FREE Services Fee $15"],
+    // Final review, held rows read on prod Oct 16: prose that prices the fee before its name, a
+    // sentence stating its own condition, and an account's feature list.
+    ["Monthly Service Charges", "Earn up to $10 in loyalty credits each monthly statement cycle ($2 each) by using services you already love. One credit = $2 off your monthly service charge. Earn all five? Your monthly service charge drops to $0!"],
+    ["Monthly Fee", "Access 40,000+ Fee-Free ATMs. Earn Up to 2.00% APY* on Balances Up to $15,000. Get Paid Early.*** No Monthly Fee When Qualifications Are Met.** No Minimum Balance Fee. Round-Up Savings."],
+    ["Free official checks", "| Monthly Maintenance Fee None | Key Features Free check order—wallet custom style, plain or duplicate $5.00 discount on all other check styles 50% discount on safe deposit boxes Free official checks Free notary service"],
+    // A tail with no fee noun of its own stays this fee's terms, without the document to show it is
+    // the other column (#1593 reads it with the document).
+    ["Foreign ATM usage", "Foreign ATM usage No Charge Customer (incoming) $15.00"],
+    ["Zelle Transfer", "Zelle Transfer: No Charge | Subordination: $175.00"],
+    // A known cautious miss: the next fee's own condition ("over three per month") reads as this one's.
+    ["Notary Service", "Notary Service FREE ATM Transaction fee (per transaction over three per month) $2.00"],
+  ];
+  it.each(reviewConditional)("%s stays conditional: %s", (name, line) => {
+    expect(conditionalZero(0, line, name)).toBe(true);
+  });
+  it("still reads a plainly separate next row as another fee's", () => {
+    expect(conditionalZero(0, "Overdraft Fee $0 Returned Item Fee $30", "Overdraft Fee")).toBe(false);
+    expect(conditionalZero(0, "Debit Card Replacement FREE Notary Fee $5.00", "Debit Card Replacement")).toBe(false);
+  });
+
+  it.each(free)("%i is a free line, not conditional", (_id, name, line) => {
+    expect(conditionalZero(0, line, name)).toBe(false);
+  });
+  it.each(conditional)("%i stays conditional", (_id, name, line) => {
+    expect(conditionalZero(0, line, name)).toBe(true);
+  });
+});
+
+describe("conditional $0 on two-column pages and its own line (#1593, live rows read on prod Oct 16)", () => {
+  const SD = 1;
+  const lineOf = (name: string, text: string, key: string) =>
+    sourceLineFor({ fee_name: name, amount: "0.00", source_document_id: SD, amount_kind: "flat", rate_percent: null }, new Map([[SD, text]]), key);
+  const verdict = (name: string, text: string, key: string) => postSourceCheck(key, name, 0, lineOf(name, text, key), text)?.code ?? null;
+
+  const terrabank = [
+    "Card Replacement $ 100.00 | Copies per item $ 1.00",
+    "Rush Order $ 125.00 | Mail Deposit Processing, per item $ 15.00",
+    "Foreign Transaction Fees No Charge | Night Depository Bags & Key $ 30.00",
+    "ATM Withdrawals2 | Non-Sufficient Funds (NSF) / Uncollected (UNC)",
+  ].join("\n");
+  const tcfcu = [
+    "Check Printing (members over 62) ----------- No Charge | Money Orders ------------------------------------ $3.00 each",
+    "Bill Pay | Other Fees",
+    "Bill Pay ------------------------------------------- No Charge | Account History ---------------------------------- $3.00 each",
+    "Bill Pay Research Fee ------------------------------- $30.00 | Checking Account Registers ------------------- No Charge",
+  ].join("\n");
+  const atlantic = [
+    "3x10x20 Safe Deposit Box Annually | $55.00 Online Banking and Video Banking | No Charge",
+    "5x10x20 Safe Deposit Box Annually | $75.00 Bill Pay | No Charge",
+    "10x10x20 Safe Deposit Box Annually | $125.00 Transaction Alerts (message/data rates may",
+  ].join("\n");
+  const prairie = [
+    "Blue Lion Accounts | Micellaneous Fees",
+    "Blue Lion Checking | Account Early Closure",
+    "Maintenance Fee (per statement cycle) $0.00 (closed within 90 days of opening) $20.00",
+    "Paper Statement Fee (per statement) $3.00",
+    "No minimum balance required. | Account Reconciliation",
+    "(per account, per hour) $25.00",
+    "Blue Lion Money Market Account Research",
+    "Maintenance Fee (per statement cycle) $0.00 (per account, per hour) $25.00",
+    "Blue Lion Savings",
+    "Maintenance Fee (per statement cycle) $0.00 Lost Debit Card (per card) $10.00",
+  ].join("\n");
+  const poca = [
+    "Monthly fee No Charge Safe Deposit Boxes Drilling Charges (Minimum Charge) $250.00",
+    "Poca Valley Bank/Sheetz ATM usage No Charge",
+    "POS transactions No Charge Wire Transfers",
+    "Foreign ATM usage No Charge Customer (incoming) $15.00",
+    "Replacement Card $10.00 Customer Domestic (outgoing) $30.00",
+    "Customer International $60.00",
+  ].join("\n");
+  const hyperion = [
+    "Wire Transfers: Outgoing | $25.00 (Domestic) $50.00 (International)",
+    "",
+    "Wire Transfers: Incoming | No Charge(Domestic) $25.00 (International)",
+  ].join("\n");
+  const newburyport = "PERSONAL ONLINE & MOBILE BANKING Bill Pay FREE Expedited Bill Pay $25.00 External Funds Transfer Fees External Funds Transfer Inbound FREE External Funds Transfer Outbound ($0.00 - $1,000.00) FREE External Funds Transfer Outbound (greater than $1,000.00) $10.00 Expedited Funds Transfer Outbound $15.00 Mobile Banking (text, web, app) FREE Mobile Deposit FREE MX Personal Financial Management FREE Online Banking FREE OTHER FEES Account Closing Fee (account closed within 90 days of opening) $25.00 Account Inactivity Fee (fee applies after 18 months of inactivity; monthly fee applicable to Checking, Savings, and Money Market accounts) $5.00";
+  const peoples = [
+    "Overdraft Payment Cushion | $20",
+    "If an individual overdraft payment is $20 or less any overdraft fees are waived or refunded.",
+    "",
+    "Overdraft Transfer Fee | $0",
+    "Fee per transfer for pre-established automatic transfer of funds from a checking, savings, or money market account or line of credit to cover an overdraft.",
+  ].join("\n");
+
+  // [published id, fee name, category, document]: 6 of the 8 real free fees the advisor found held.
+  // 56797 and 38491 stay held (below): the page gives no positive proof of the other column.
+  const free: Array<[number, string, string, string]> = [
+    [44979, "Bill Pay", "bill_pay", tcfcu],
+    [45011, "Bill Pay", "bill_pay", atlantic],
+    [89048, "Foreign ATM usage", "atm_non_network", poca],
+    [90406, "Wire Transfers: Incoming", "wire_domestic_incoming", hyperion],
+    [30683, "Mobile Deposit", "mobile_deposit", newburyport],
+    [39407, `Overdraft Transfer Fee${"…".repeat(29)}`, "od_protection_transfer", peoples],
+  ];
+  it.each(free)("%i is a real free fee, not conditional", (_id, name, key, text) => {
+    expect(verdict(name, text, key)).toBeNull();
+  });
+
+  it("reads a $0 on the line that prints its whole name when the traced line lacks a word of it", () => {
+    expect(lineOf(`Overdraft Transfer Fee${"…".repeat(29)}`, peoples, "od_protection_transfer")).toBe("Overdraft Transfer Fee | $0");
+    expect(lineOf("Mobile Deposit", newburyport, "mobile_deposit")).toMatch(/^Mobile Deposit FREE MX/);
+  });
+
+  it("keeps the debatable and the conditional ones held", () => {
+    // Debatable (#1593): a fee named for one audience is a person's call.
+    expect(verdict("Check Printing (members over 62)", tcfcu, "check_printing")).toBe("conditional_zero");
+    // A real free fee left held on purpose (re-review of #1621): the right column's note "(closed
+    // within 90 days of opening)" reads like a condition, and a freed conditional $0 is the worse miss.
+    expect(verdict("Maintenance Fee (per statement cycle)", prairie, "monthly_maintenance")).toBe("conditional_zero");
+    // Likewise 38491: "Night Depository Bags & Key" carries a fee noun, but a fee noun alone is no
+    // proof (third review of #1621) and the stored lines show no other-fees heading or own row for it.
+    expect(verdict("Foreign Transaction Fees", terrabank, "card_foreign_txn")).toBe("conditional_zero");    // A traced line that carries every word of the name keeps its own terms.
+    const twoAccounts = ["Monthly Service Charge 0.00 for 1st account 2nd account $5.00", "Applies to all Internet Banking/Bill Pay", "Monthly Service Fee $0.00"].join("\n");
+    expect(verdict("Monthly Service Fee", twoAccounts, "monthly_maintenance")).toBe("conditional_zero");
+    // A $0 that is one audience's price is never read in place of the traced line.
+    const student = [
+      "With People's Choice Checking, your monthly maintenance service charge is waived if you maintain an average available daily balance of $1,500.",
+      "Monthly Maintenance Service Charge | $0 for students ages 15-25 years of age eStatements required | $5 or $0 with Online Banking and eStatement",
+    ].join("\n");
+    expect(lineOf("Monthly Maintenance Service Charge", student, "monthly_maintenance") ?? "").not.toMatch(/students/);
+    // A comma list keeps the price before the name; only a table cell after another fee's label gives it away.
+    expect(conditionalZero(0, "Debit card only account, $10.95 monthly account fee, free mobile banking and eServices.", "Monthly Service Fee")).toBe(true);
+    expect(conditionalZero(0, "Without e-Statements | $5.00 Paper Statement Fee | FREE", "Paper Statement Fee")).toBe(true);
+    expect(conditionalZero(0, "Account research and reconciliation | $40 per hour Notary | FREE", "Notary")).toBe(false);
+    // A label priced $0 is the next row only when it states no condition.
+    expect(conditionalZero(0, "Monthly Fee FREE Personal Accounts FREE Business Accounts $10", "Monthly Fee")).toBe(true);
+    expect(conditionalZero(0, "Mobile Deposit FREE Online Banking FREE In Branch Deposits $5", "Mobile Deposit")).toBe(true);
+    // An international wire fee keeps a row's domestic price as a condition only for itself.
+    expect(postSourceCheck("wire_intl_incoming", "Wire Transfers: Incoming", 0, "Wire Transfers: Incoming | No Charge(Domestic) $25.00 (International)")?.code).toBe("conditional_zero");
+    // Without the document, a run-on tail stays the fee's terms.
+    expect(conditionalZero(0, "Maintenance Fee (per statement cycle) $0.00 (closed within 90 days of opening) $20.00", "Maintenance Fee (per statement cycle)")).toBe(true);
+    // The same row repeated is not enough without a two-cell line next to it, nor with a tail that opens with a condition.
+    const accounts = ["Monthly Fee $0 Direct Deposit Required $5 otherwise", "Savings", "Monthly Fee $0 Paper Statements $3"].join("\n");
+    expect(conditionalZero(0, "Monthly Fee $0 Direct Deposit Required $5 otherwise", "Monthly Fee", { documentText: accounts })).toBe(true);
+    const twoColumnAccounts = ["Checking | Other Services", "Monthly Fee $0 with direct deposit $5", "Savings | Money Orders", "Monthly Fee $0 Paper Statements $3"].join("\n");
+    expect(conditionalZero(0, "Monthly Fee $0 with direct deposit $5", "Monthly Fee", { documentText: twoColumnAccounts })).toBe(true);
+  });
+
+  it("keeps a tail that states a way to avoid the fee, or another audience's price, conditional (review of #1621)", () => {
+    // Repeated row beside two-cell lines, with a tail whose first word is a verb, not a listed condition.
+    const premier = ["Basic Checking | Premier Checking", "Monthly Service Charge $0 Maintain $500 daily balance or $10.00", "Interest Checking | Money Market", "Monthly Service Charge $0 Paper statement fee $2.00"].join("\n");
+    expect(conditionalZero(0, "Monthly Service Charge $0 Maintain $500 daily balance or $10.00", "Monthly Service Charge", { documentText: premier })).toBe(true);
+    const savings = ["Basic Checking | Premier Checking", "Maintenance Fee $0.00 Keep $1,000 in savings or $12.00", "Interest Checking | Money Market", "Maintenance Fee $0.00 Paper statement fee $2.00"].join("\n");
+    expect(conditionalZero(0, "Maintenance Fee $0.00 Keep $1,000 in savings or $12.00", "Maintenance Fee", { documentText: savings })).toBe(true);
+    // A label that opens a neighbouring line is not the other column when it is a verb with the fee's terms.
+    const maintain = ["Monthly Service Charge $0 Maintain $500 daily balance or $10.00", "Maintain $1,500 to avoid the $12.00 fee"].join("\n");
+    expect(conditionalZero(0, "Monthly Service Charge $0 Maintain $500 daily balance or $10.00", "Monthly Service Charge", { documentText: maintain })).toBe(true);
+    // Another audience's price of the same fee, in the next cell or the run-on tail.
+    expect(conditionalZero(0, "Coin Counting FREE | Commercial Accounts $0.10 per roll", "Coin Counting")).toBe(true);
+    const cashier = ["Cashier's Check No Charge Customer $5.00", "Money Order $2.00 Customer $3.00 each"].join("\n");
+    expect(conditionalZero(0, "Cashier's Check No Charge Customer $5.00", "Cashier's Check", { documentText: cashier })).toBe(true);
+  });
+
+  // Re-review of #1621: the two-column reading frees a $0 only when the other column is positively another fee.
+  const comparison = (row: string, name: string) =>
+    ["Basic Checking | Premier Checking", row, "Interest Checking | Money Market", `${name} $0.00 Lost Debit Card (per card) $10.00`].join("\n");
+  const stillConditional: Array<[string, string, string]> = [
+    // P1-P3: a condition inside parentheses is still the fee's condition.
+    ["P1", "Maintenance Fee", "Maintenance Fee $0.00 (if balance falls below $100) $5.00"],
+    ["P2", "Maintenance Fee", "Maintenance Fee $0.00 (unless enrolled in eStatements) $5.00"],
+    ["P3", "Monthly Service Charge", "Monthly Service Charge $0 (fewer than 10 debit purchases) $8.00"],
+    // D2: a requirement with no listed condition word and no fee noun.
+    ["D2", "Monthly Fee", "Monthly Fee $0 Recurring paycheck needed $8.00"],
+  ];
+  it.each(stillConditional)("%s stays conditional on a two-column comparison page", (_case, name, row) => {
+    expect(conditionalZero(0, row, name, { documentText: comparison(row, name) })).toBe(true);
+  });
+  it("keeps a delivery tier or channel conditional, as a run-on tail or the next cell (L1-L5)", () => {
+    const l1 = "Debit Card Replacement FREE Overnight Delivery $35.00";
+    // L1: a neighbouring line opens with the same label.
+    const neighbour = ["Wire Transfers | Other Services", l1, "Overnight Delivery $35.00", "Stop Payment $30.00"].join("\n");
+    expect(conditionalZero(0, l1, "Debit Card Replacement", { documentText: neighbour })).toBe(true);
+    // L2: the same row repeated beside two-cell lines.
+    const repeated = ["Debit Cards | Other Services", l1, "Business Debit Cards | Money Orders", "Debit Card Replacement FREE Lost Card Fee $10.00"].join("\n");
+    expect(conditionalZero(0, l1, "Debit Card Replacement", { documentText: repeated })).toBe(true);
+    // L3-L5: the next cell is the same fee by channel, status or delivery, not another fee's row.
+    for (const [name, line] of [
+      ["Stop Payment", "Stop Payment FREE | Verbal Request $30.00"],
+      ["Paper Statement", "Paper Statement FREE | Inactive Status $5.00"],
+      ["Card Replacement", "Card Replacement FREE | Overnight Shipping $35.00"],
+    ]) {
+      expect(conditionalZero(0, line, name)).toBe(true);
+      expect(conditionalZero(0, line, name, { documentText: ["Services | Other Fees", line, "Inactive Status $5.00", "Verbal Request $30.00"].join("\n") })).toBe(true);
+    }
+    // Third review: a fee noun alone is no proof, and an account's activity or a holder's choice is a condition.
+    expect(conditionalZero(0, "Monthly Service Fee FREE | No Debit Card Activity $5.00", "Monthly Service Fee")).toBe(true); // N2
+    expect(conditionalZero(0, "Stop Payment FREE | Range of Checks $30.00", "Stop Payment")).toBe(true); // N4
+    const otherFees = (line: string) => ["Checking Accounts | Other Fees", line, "Low Activity $5.00", "Opted Out Of Overdraft $4.00"].join("\n");
+    const n7 = "Monthly Service Fee FREE | Low Activity $5.00";
+    expect(conditionalZero(0, n7, "Monthly Service Fee", { documentText: otherFees(n7) })).toBe(true); // N7
+    const n8 = "Monthly Maintenance Fee FREE | Opted Out Of Overdraft $4.00";
+    expect(conditionalZero(0, n8, "Monthly Maintenance Fee", { documentText: otherFees(n8) })).toBe(true); // N8
+    const n9 = "Monthly Fee $0 Low Activity $5.00";
+    const n9Page = ["Personal Checking | Business Checking", n9, "Low Activity $5.00", "Savings Accounts | Other Services", "Monthly Fee $0 Wire Transfer Fee $25.00"].join("\n");
+    expect(conditionalZero(0, n9, "Monthly Fee", { documentText: n9Page })).toBe(true); // N9
+    // A fee-noun cell with no evidence on the page stays conditional.
+    expect(conditionalZero(0, "Foreign Transaction Fees No Charge | Night Depository Bags & Key $ 30.00", "Foreign Transaction Fees")).toBe(true);
+    // A Title Case cell with no fee noun and no evidence on the page stays conditional too.
+    expect(conditionalZero(0, "Bill Pay ---- No Charge | Account History ---- $3.00 each", "Bill Pay")).toBe(true);
   });
 });

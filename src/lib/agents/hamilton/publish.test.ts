@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { CATALOG_DEPTH_LIVE_SQL, decidePriorFee, HAMILTON_PUBLISH_MIN_INSTITUTION_FEES, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, qualifiedLines, namesShareReading, newerCopyPrintsLine, otherBalanceLine, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, sentenceFragmentName, separateLines } from "./publish";
 import { feePageKey } from "./page-key";
+import { PUBLISH_REFUSE_SWEEP_RULES_LIVE, publishSweepRefusals } from "./publish-sweep-rules";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -28,6 +29,8 @@ function createDbMock(
   priorPublishedRows: Array<Record<string, unknown>> = [],
   depthRows: Array<Record<string, unknown>> = deepInstitutionRows(rows),
   movementEvidence: Array<Record<string, unknown>> = [],
+  /** What the sweeps' own reads (#1069 step 2) return for the rows about to publish. */
+  sweepRows: { otherBank?: unknown[]; unconfirmedHost?: unknown[]; business?: unknown[] } = {},
 ): DbMock {
   let nextPublishedId = 1201;
   const db = vi.fn((strings: TemplateStringsArray) => {
@@ -48,6 +51,9 @@ function createDbMock(
   }) as DbMock;
   db.unsafe = vi.fn((query: string) => {
     if (query.includes("institution_fee_depth")) return Promise.resolve(depthRows);
+    if (query.includes("consumer_fee_id")) return Promise.resolve(sweepRows.business ?? []);
+    if (query.includes("own_label")) return Promise.resolve(sweepRows.unconfirmedHost ?? []);
+    if (query.includes("names_own_bank")) return Promise.resolve(sweepRows.otherBank ?? []);
     if (query.includes("FROM verified_fee_observations")) return Promise.resolve(rows);
     return Promise.resolve([]);
   });
@@ -387,8 +393,99 @@ describe("Hamilton agentic publish", () => {
 
     expect(result.publishedFees).toBe(1);
     expect(result.results[0]).toMatchObject({ status: "published", feePublishedId: null });
-    expect(db.unsafe).toHaveBeenCalledTimes(2);
+    // The selection, the depth read and the three sweep-rule reads (#1069 step 2), all SELECTs.
+    expect(db.unsafe).toHaveBeenCalledTimes(5);
     expect(writes(db)).toEqual([]);
+  });
+
+  // #1069 step 2: a row the other-bank, unconfirmed-host or business-schedule sweep would take
+  // down once live is counted, and refused only while the switch is on.
+  const sweepFixture = {
+    otherBank: [{ fee_verified_id: 801, document_host: "peoplesbank-wa.com", names_own_bank: false }],
+    unconfirmedHost: [],
+    business: [],
+  };
+
+  it("counts a row a sweep would take down but still publishes it while the switch is off", async () => {
+    const db = createDbMock([verifiedFee], [], undefined, [], sweepFixture);
+
+    const result = await runHamiltonPublish({ runId: 131, db: asPublishDb(db) });
+
+    expect(result.sweepCheck).toMatchObject({ live: false, wouldRefuse: 1, refused: 0, byRule: { other_bank_document: 1 }, error: null });
+    expect(result.results[0]).toMatchObject({
+      status: "published",
+      sweepRule: { rule: "other_bank_document", sweepReason: "other_bank_document: peoplesbank-wa.com" },
+    });
+    const sweepReads = db.unsafe.mock.calls.filter((call) => String(call[0]).includes("fv.fee_verified_id = ANY($1::bigint[])"));
+    expect(sweepReads).toHaveLength(3);
+    for (const call of sweepReads) expect(call[1][0]).toEqual([801]);
+  });
+
+  it("refuses a row a sweep would take down when the switch is on", async () => {
+    const db = createDbMock([verifiedFee], [], undefined, [], sweepFixture);
+
+    const result = await runHamiltonPublish({ runId: 132, refuseSweepRulesLive: true, db: asPublishDb(db) });
+
+    expect(result.publishedFees).toBe(0);
+    expect(result.results[0]).toMatchObject({
+      status: "skipped",
+      reason: "Refused at publish, a sweep would take it down: other_bank_document: peoplesbank-wa.com",
+    });
+    expect(result.sweepCheck).toMatchObject({ live: true, wouldRefuse: 1, refused: 1 });
+    expect(writes(db).join("\n")).not.toContain("INSERT INTO published_fee_records");
+  });
+
+  it("leaves a row the sweeps pass alone, and a row already skipped is not counted", async () => {
+    const passing = {
+      otherBank: [{ fee_verified_id: 801, document_host: "sister.example", names_own_bank: true }],
+      unconfirmedHost: [{ fee_verified_id: 801, document_host: "newdomain.example", names_own_bank: "t" }],
+      business: [{ fee_verified_id: 801, consumer_fee_id: null }],
+    };
+    const passed = await runHamiltonPublish({ runId: 133, refuseSweepRulesLive: true, db: asPublishDb(createDbMock([verifiedFee], [], undefined, [], passing)) });
+    expect(passed.results[0]).toMatchObject({ status: "published" });
+    expect(passed.sweepCheck.wouldRefuse).toBe(0);
+
+    const lowConfidence = { ...verifiedFee, extraction_confidence: "0.5000" };
+    const skipped = await runHamiltonPublish({ runId: 134, db: asPublishDb(createDbMock([lowConfidence], [], undefined, [], sweepFixture)) });
+    expect(skipped.results[0]).toMatchObject({ status: "skipped", reason: "Below publish confidence threshold" });
+    expect(skipped.sweepCheck.wouldRefuse).toBe(0);
+  });
+
+  it("publishes as before when a sweep read fails, and the run ledger gets the error", async () => {
+    const db = createDbMock([verifiedFee]);
+    const base = db.unsafe as (query: string, params: unknown[]) => Promise<unknown[]>;
+    db.unsafe = vi.fn((query: string, params: unknown[]) =>
+      query.includes("consumer_fee_id") ? Promise.reject(new Error("statement timeout")) : base(query, params),
+    );
+
+    const result = await runHamiltonPublish({ runId: 135, refuseSweepRulesLive: true, db: asPublishDb(db) });
+
+    expect(result.results[0]).toMatchObject({ status: "published" });
+    expect(result.sweepCheck.error).toContain("business_schedule: statement timeout");
+  });
+
+  it("files each row under one sweep: another bank's host first, then an unconfirmed host, then a business schedule", () => {
+    const refusals = publishSweepRefusals(
+      [
+        { fee_verified_id: 1, document_host: "otherbank.example", names_own_bank: false },
+        { fee_verified_id: 2, document_host: "sister.example", names_own_bank: "true" },
+      ],
+      [
+        { fee_verified_id: 1, document_host: "otherbank.example", names_own_bank: false },
+        { fee_verified_id: 3, document_host: "cdnless.example", names_own_bank: null },
+      ],
+      [
+        { fee_verified_id: 3, consumer_fee_id: 9001 },
+        { fee_verified_id: 4, consumer_fee_id: "9002" },
+        { fee_verified_id: 5, consumer_fee_id: null },
+      ],
+    );
+    expect(Object.fromEntries(refusals)).toEqual({
+      1: { rule: "other_bank_document", sweepReason: "other_bank_document: otherbank.example" },
+      3: { rule: "unconfirmed_document_host", sweepReason: "unconfirmed_document_host: cdnless.example" },
+      4: { rule: "business_schedule", sweepReason: "business_schedule: consumer fee #9002" },
+    });
+    expect(PUBLISH_REFUSE_SWEEP_RULES_LIVE).toBe(false);
   });
 
   it("skips rows below the publish confidence threshold", async () => {

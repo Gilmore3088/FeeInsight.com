@@ -659,6 +659,18 @@ reported in the step's `publish_duplicate_check`, with `closed_by_late_collapse`
 While `PUBLISH_REFUSE_DUPLICATES_LIVE` is false nothing is refused; turning it on (skip reason
 `Exact duplicate of live fee #<id>`) needs James's OK.
 
+**At publish (#1069 step 2, shadow).** The rows a publish step is about to decide are read, once
+per batch, with three sweeps' own SQL in their `"verified"` scope (`publish-sweep-rules.ts`):
+another bank's document (`otherBankFeesSql`), an unconfirmed host that does not name the bank
+(`unconfirmedHostFeesSql`), and a business schedule's fee beside the bank's live consumer fee in
+its category (`businessScheduleFeesSql`; a footnote-only business fee stays the sweep's, since it
+needs the page read). The sweeps and publish share one builder per rule, so they cannot disagree;
+the sweeps stay the live re-check and this check takes nothing down. A row a sweep would take down
+is counted in the step's `publish_sweep_check` (`would_refuse`, `by_rule`, samples, and `error`
+when a read failed; a failed read refuses nothing). While `PUBLISH_REFUSE_SWEEP_RULES_LIVE` is
+false nothing is refused; turning it on (skip reason `Refused at publish, a sweep would take it
+down: <the sweep's reason>`) needs James's OK.
+
 ## Rules Re-check
 
 In state-lane (or single-institution) publish steps, `rules-recheck.ts` re-runs Knox's

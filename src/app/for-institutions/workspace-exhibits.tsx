@@ -8,6 +8,7 @@ import { PRODUCT_NAME } from "@/lib/constants";
 import { SAMPLE_REPORT_HREF } from "@/app/landing-shared";
 import {
   POSITION_TEXT,
+  axisTicks,
   chargingLess,
   feeMoney,
   lineAxisMax,
@@ -86,7 +87,7 @@ export function DotStrip({
   const x = (v: number) => `${Math.min(100, Math.max(0, (v / top) * 100))}%`;
   const levels = stackDots(line.peers.map((p) => p.amount));
   const height = STRIP_BASE + (Math.max(0, ...levels) + 1) * (DOT + DOT_GAP) + 22;
-  const ticks = [0, top / 2, top];
+  const ticks = axisTicks(top);
   return (
     <div className="select-none">
       <div className="relative mx-1.5" style={{ height }}>
@@ -154,16 +155,37 @@ export function DotStrip({
  * Where every figure in an exhibit comes from, with the newest read date behind it (or no date
  * when none is known). The one wording for every workspace exhibit on the page, the ladder too.
  */
-export function SourceFooter({ readOn: iso, children }: { readOn: string | null; children?: ReactNode }) {
+export function SourceFooter({
+  readOn: iso,
+  readLabel = "latest read",
+  children,
+}: {
+  readOn: string | null;
+  /** The words before the date: "latest read", or what the date covers when it is not every figure. */
+  readLabel?: string;
+  children?: ReactNode;
+}) {
   const readOn = readOnLabel(iso);
   return (
     <p className="max-w-[none] flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-t border-border bg-paper/60 px-4 py-2.5 text-[11.5px] leading-5 text-ink-muted sm:px-5">
       <span>
-        {PRODUCT_NAME} · each fee from the bank&rsquo;s own published schedule{readOn ? ` · latest read ${readOn}` : ""}
+        {PRODUCT_NAME} · each fee from the bank&rsquo;s own published schedule{readOn ? ` · ${readLabel} ${readOn}` : ""}
       </span>
       {children}
     </p>
   );
+}
+
+/**
+ * The market an exhibit covers. From `sm` it sits in the window's title bar; a phone's title bar
+ * has no room for it, so there it opens the exhibit's body instead.
+ */
+function marketAside(label: string | null): ReactNode {
+  return label ? <span className="max-sm:hidden">{label}</span> : undefined;
+}
+
+function PhoneMarketLine({ label }: { label: string | null }) {
+  return label ? <p className="text-[12px] text-ink-muted sm:hidden">{label}</p> : null;
 }
 
 function Legend() {
@@ -199,8 +221,9 @@ export function CompetitorBoardExhibit({ board }: { board: CompetitorBoard }) {
   const rows = rankWindow(line, board.institutionName, 5);
   const readOn = readOnLabel(line.readOn);
   return (
-    <ProductFrame label="Hamilton · My fees" aside={board.marketLabel ? <span className="max-sm:hidden">{board.marketLabel}</span> : undefined} className="shadow-fi-2">
+    <ProductFrame label="Hamilton · My fees" aside={marketAside(board.marketLabel)} className="shadow-fi-2">
       <div className="space-y-4 p-4 sm:p-5">
+        <PhoneMarketLine label={board.marketLabel} />
         <FeeTabs
           lines={board.lines}
           active={line.key}
@@ -281,9 +304,17 @@ export function CompetitorBoardExhibit({ board }: { board: CompetitorBoard }) {
 
 /**
  * Arrow keys move the price by $1, Shift+arrow by $10 (dragging still lands on cents), kept
- * between $0 and the axis top; null for any other key, so the browser handles it.
+ * between $0 and the axis top; null for any other key, and for an arrow pressed with Ctrl, Alt
+ * or Meta, so the browser and assistive tech keep their own shortcuts.
  */
-export function keyboardPrice(price: number, key: string, shift: boolean, top: number): number | null {
+export function keyboardPrice(
+  price: number,
+  key: string,
+  shift: boolean,
+  top: number,
+  otherModifier = false,
+): number | null {
+  if (otherModifier) return null;
   const sign = key === "ArrowRight" || key === "ArrowUp" ? 1 : key === "ArrowLeft" || key === "ArrowDown" ? -1 : 0;
   if (sign === 0) return null;
   const next = price + sign * (shift ? 10 : 1);
@@ -305,8 +336,9 @@ export function PriceTesterExhibit({ board }: { board: CompetitorBoard }) {
   const position = positionFor(price, line);
   const focused = line.peers.find((p) => p.id === focus) ?? null;
   return (
-    <ProductFrame label="Hamilton · Try a price" aside={board.marketLabel ? <span className="max-sm:hidden">{board.marketLabel}</span> : undefined} className="shadow-fi-2">
+    <ProductFrame label="Hamilton · Try a price" aside={marketAside(board.marketLabel)} className="shadow-fi-2">
       <div className="space-y-4 p-4 sm:p-5">
+        <PhoneMarketLine label={board.marketLabel} />
         <FeeTabs
           lines={board.lines}
           active={line.key}
@@ -344,7 +376,7 @@ export function PriceTesterExhibit({ board }: { board: CompetitorBoard }) {
           value={price}
           onChange={(e) => setPrice(Math.round(Number(e.target.value) * 100) / 100)}
           onKeyDown={(e) => {
-            const next = keyboardPrice(price, e.key, e.shiftKey, top);
+            const next = keyboardPrice(price, e.key, e.shiftKey, top, e.ctrlKey || e.altKey || e.metaKey);
             if (next === null) return;
             e.preventDefault();
             setPrice(next);

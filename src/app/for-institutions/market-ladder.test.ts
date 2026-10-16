@@ -47,7 +47,7 @@ describe("buildMarketLadder", () => {
           ...sample.analysis.lines,
           {
             key: "wire_intl_outgoing",
-            label: "Wire",
+            label: "Outgoing international wire",
             comparable: true,
             own: { amount: 45, schedule_read_on: "2026-10-01" },
             peers: { n: 6, p25: 40, median: 45, p75: 50, min: 35, max: 55 },
@@ -59,6 +59,8 @@ describe("buildMarketLadder", () => {
     const base = { sample: withWire, stateIndex: [], charterIndex: [entry("overdraft"), entry("wire_intl_outgoing")], national: [] };
     const wire = buildMarketLadder({ ...base, preferKey: "wire_intl_outgoing" });
     expect(wire?.value).toBe(45);
+    // The sample report's own line name, as the other two exhibits show it.
+    expect(wire?.feeLabel).toBe("Outgoing international wire");
     expect(wire?.readOn).toBe("2026-10-09");
     expect(buildMarketLadder({ ...base, preferKey: "monthly_maintenance" })?.value).toBe(35);
     expect(buildMarketLadder(base)?.value).toBe(35);
@@ -83,6 +85,18 @@ describe("readSampleLadder", () => {
     const read = await readSampleLadder(sample, national);
     expect(read.failed).toBe(true);
     expect(read.ladder?.rows.map((r) => r.label)).toEqual(["Local competitors", "Texas", "The nation"]);
+    expect(homeReadsCacheable({ ...home, ladderFailed: read.failed })).toBe(false);
+  });
+
+  it("reports a failed state read the same way, and keeps the charter row (#1586)", async () => {
+    peerIndex.mockImplementation(async (filter) => {
+      if ("state_code" in filter) throw new Error("connection reset");
+      return [entry("overdraft")];
+    });
+    const read = await readSampleLadder(sample, national);
+    expect(read.failed).toBe(true);
+    expect(read.ladder?.rows.map((r) => r.label)).not.toContain("Texas");
+    expect(read.ladder?.rows).toHaveLength(3);
     expect(homeReadsCacheable({ ...home, ladderFailed: read.failed })).toBe(false);
   });
 

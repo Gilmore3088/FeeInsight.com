@@ -158,7 +158,8 @@ It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model c
 - Thresholds are the skills' own (PASS / WARN / FAIL): duplicates 1% / 3%, no category 3% / 8%,
   stale 15% / 30%; no source link takes the duplicate thresholds (the skills give none). A
   category share is out of line below 70% (`COLLAPSE_KEEPS_BELOW`) or above 150% of normal, for
-  categories with at least 10 institutions before. A catalog under 100 live fees is counted, not
+  categories with at least 10 institutions before; a fall fails, a rise only warns (coverage
+  growth or a fold rule landing, #1579). A catalog under 100 live fees is counted, not
   graded. **Alarm:** each check at FAIL is named in the step summary as an ALARM.
 - Each number names its query (`DATA_QUALITY_QUERIES`, `deming.dq_*`). The scorecard reads the
   latest check (`goal.deming_data_quality_latest`) into `detail.goal.dataQuality`: the "Data

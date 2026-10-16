@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { footnoteMarksBusiness, pageFootnotes, restoreBusinessScheduleTakedowns, retireBusinessScheduleFees } from "./business-schedule";
+import { businessScheduleFeesSql, footnoteMarksBusiness, pageFootnotes, restoreBusinessScheduleTakedowns, retireBusinessScheduleFees } from "./business-schedule";
 
 function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
@@ -72,6 +72,21 @@ describe("retireBusinessScheduleFees", () => {
     const query = mainQuery(db);
     expect(query).toContain("fp.fee_name ~* '^\\s*(business|commercial)\\M[^|:]*$'");
     expect(query).toContain("fp.fee_name !~* '^\\s*business\\s+days?\\M'");
+    expect(query).toBe(businessScheduleFeesSql(false));
+  });
+
+  it("reads verified rows about to publish against the bank's live consumer fees, with the sweep's own rule (#1069 step 2)", () => {
+    const verified = businessScheduleFeesSql("verified");
+    expect(verified).toContain("fv.fee_verified_id = ANY($1::bigint[])");
+    expect(verified).toContain("fv.fee_name ~* '^\\s*(business|commercial)\\M[^|:]*$'");
+    expect(verified).toContain("COALESCE(fv.fee_audience, 'unknown') = 'unknown'");
+    // The consumer side is the bank's live fees, footnoted ones passed as $2.
+    expect(verified).toContain("fp.fee_published_id = ANY($2::bigint[])");
+    expect(verified).toContain("fp.institution_id IN (SELECT institution_id FROM candidates)");
+    expect(verified).toContain("FROM candidates b");
+    expect(businessScheduleFeesSql(true)).toContain("fp.institution_id = $1");
+    expect(businessScheduleFeesSql(true)).toContain("ANY($2::bigint[])");
+    expect(businessScheduleFeesSql(false)).toContain("ANY($1::bigint[])");
   });
 
   it("changes nothing in a dry run", async () => {

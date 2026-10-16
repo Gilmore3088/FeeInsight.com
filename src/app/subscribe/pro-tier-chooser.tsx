@@ -3,6 +3,7 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { InstitutionPicker } from "@/components/hamilton/InstitutionPicker";
 import { trackEvent } from "@/lib/analytics";
+import { CHOOSER_INPUT_ID } from "./pro-plan-cards";
 
 interface ProTierChooserProps {
   /** What the price below is for, once chosen: "First Bank, Huntsville, AL · Under $500M in assets". */
@@ -92,7 +93,7 @@ export function ProTierChooser({ chosenLabel, chosenDetail = null, problem = nul
   return (
     <div>
       <InstitutionPicker
-        inputId="pro_tier_institution"
+        inputId={CHOOSER_INPUT_ID}
         name="pro_tier_institution_id"
         label="Your bank or credit union"
         help="Its total assets set the price."

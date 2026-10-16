@@ -1130,6 +1130,34 @@ describe("activity charges filed as monthly maintenance (v62, #1100)", () => {
     expect(refileFromLine("monthly_maintenance", name, context, false)).toBe("account_research");
   });
 
+  // #1100 / #1283: the 16 live fees v62 re-filed from monthly maintenance (live under account
+  // research on Oct 16, read-only). Their own lines name no savings, money market or share
+  // account (the account is in a heading), and five are check or item charges, so v65 keeps every
+  // one in account research when the research split is switched on: none needs a hand re-file.
+  it.each([
+    [60814, "Service charge", 2, "Service charge of $2 per debit in excess of 6 withdrawals per quarter"],
+    [61126, "Service charge", 1, "Service charge of $1 for each debit transaction in excess of 18 per quarterly statement cycle"],
+    [63225, "Monthly service charge", 3, "Transaction limitations of six debits per month apply¹ (A $3 service charge applies for each debit item exceeding six (6) per statement cycle)"],
+    [95205, "Additional service charge", 1, "An additional service charge of $1 will be charged for each withdrawal over six (6) per calendar quarter"],
+    [95276, "Service charge fee", 10, "A service charge fee of $10.00 will be charged for each debit transaction in excess of six during a month and no more than three of the six may be check/draft."],
+    [124670, "Maintenance fee", 5, "A maintenance fee of $5.00 per transaction will be charged if you make more than two withdrawals during a 12 month period."],
+    [125166, "per monthly fee if balance falls below", 9, "$3.00 per monthly fee if balance falls below $150, $9 per item charge after 3 withdrawals per month. ACH and ATM transactions are considered withdrawals."],
+    [134659, "Service charge fee", 2, "A service charge fee of $2.00 will be charged for each debit transaction (withdrawal, transfer, or payment out of this account) in excess of six per quarter."],
+    [135850, "Service charge", 3, "fee refund will be credited to your account on the last day of your statement cycle. | A service charge of $3.00 will be charged for each withdrawal in excess of six during"],
+    [135862, "Service charge", 7.5, "A service charge of $7.50 will be charged for each withdrawal in excess of six during | Non-sufficient funds (NSF) fee (per item)..................................................."],
+    [135971, "Service charge", 1, "A service charge of $1.00 will be charged for each debit transaction (withdrawal) after six each quarter."],
+    [135998, "Maintenance fee", 1, "A maintenance fee of $1 will be imposed for every debit transaction (withdrawal, check paid, automatic transfer or payment out of your account) over six per quarter"],
+    [139124, "Per Item Service Charge", 2, "If 6 Check Limit is Exceeded, Then A $2.00 Per Item Service Charge"],
+    [142425, "Service charge", 3, "The following additional terms apply to this account: $3.00 Service Charge (Per Check Charge) Assessed per item if over six (6) transactions per four (4) week period."],
+    [142436, "Per item service charge fee", 25, "A per item service charge fee of $25.00 will be charged for each transaction in excess of the above limitations."],
+    [142567, "Service charge", 1, "A service charge of $1 applies to each check that exceeds 5 per statement cycle"],
+  ])("keeps live fee %d (%s, $%d) in account research with the research split on or off", (_id, name, amount, line) => {
+    const context = { amount, conditions: knoxNote(line) };
+    expect(refileFromLine("monthly_maintenance", name, context, true)).toBe("account_research");
+    expect(refileFromLine("monthly_maintenance", name, context, false)).toBe("account_research");
+    expect(checkFeeCategory("account_research", name, context).ok).toBe(true);
+  });
+
   it.each([
     ["Service charge", 5, "1A $5.00 service charge will be applied to each share transfer. Funds must be available in order to be transferred."],
     ["Service charge", 10, "Should you need to withdraw the funds before October, you may leave your account open, but there is a $10.00 service charge each time you withdraw money"],

@@ -9,6 +9,7 @@
  * are never ranked or picked; nothing here says to raise, lower or drop a fee.
  */
 
+import { revenueLineName } from "./revenue";
 import { subjectPossessive, subjectName } from "./subject";
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
 import { formatRatePercent } from "@/lib/percent-fees";
@@ -579,7 +580,7 @@ function keyFigures(research: FeeResearch, name: string): KeyFigure[] {
   const line = research.revenueLine;
   const fin = research.institutionFinancials;
   if (line) {
-    out.push({ value: formatDollarsInWords(line.annualIncome), label: `${capitalize(name)} income a year, filed`, source: { ...line.source, asOf: line.quarterEnd } });
+    out.push({ value: formatDollarsInWords(line.annualIncome), label: `${capitalize(revenueLineName(line, name))} a year, filed`, source: { ...line.source, asOf: line.quarterEnd } });
   } else if (fin?.latestTtm != null) {
     out.push({ value: formatDollarsInWords(fin.latestTtm), label: "Service charges, last four quarters", source: { ...fin.sourceRef, asOf: fin.quarterEnd } });
   }

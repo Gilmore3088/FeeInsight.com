@@ -429,7 +429,7 @@ export async function retireCrossPageConflicts(
     aboutStage: "publish",
     signal: "wrong",
     kind: "stale_price",
-    reportedBy: "hamilton",
+    reportedBy: "gutenberg",
     checkName: CROSS_PAGE_CHECK,
     institutionId: fee.institutionId,
     sourceDocumentId: fee.sourceDocumentId,

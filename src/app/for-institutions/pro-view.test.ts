@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ReportLine } from "@/lib/custom-report/analysis";
 import type { MarketReport } from "@/lib/custom-report/report-data";
 import { buildCompetitorBoard } from "./pro-view";
-import { chargingLess, latestReadOn, leadLineKey, lineAxisMax, rankWindow, shortInstitutionName, stackDots } from "./board-math";
+import { chargingLess, latestReadOn, leadLineKey, lineAxisMax, lineName, rankWindow, shortInstitutionName, stackDots } from "./board-math";
 import { proPlanFacts } from "./plan-facts";
 
 const competitors = [
@@ -146,5 +146,15 @@ describe("lead line and read dates", () => {
 describe("proPlanFacts", () => {
   it("reads the lowest monthly price and the annual months free from the tiers", () => {
     expect(proPlanFacts()).toEqual({ fromMonthly: "$150/mo", freeMonths: 2 });
+  });
+});
+
+describe("lineName", () => {
+  it("drops a trailing abbreviation only, never a qualifier in words", () => {
+    expect(lineName("Overdraft (OD)")).toBe("Overdraft");
+    expect(lineName("Non-sufficient funds (NSF)")).toBe("Non-sufficient funds");
+    expect(lineName("Monthly maintenance (entry checking)")).toBe("Monthly maintenance (entry checking)");
+    expect(lineName("Overdraft (per item)")).toBe("Overdraft (per item)");
+    expect(lineName("Outgoing international wire")).toBe("Outgoing international wire");
   });
 });
