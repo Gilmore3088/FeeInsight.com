@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 
+import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
+
 import docs from "@/lib/agents/knox/__fixtures__/cut-cents-docs-2026-10-15.json";
 import {
   HAND_AMOUNT_CHECK,
@@ -14,8 +16,27 @@ import {
 type Doc = { text_id: number; text: string; text_sha256: string };
 const textOf = (doc: number) => (docs as unknown as Record<string, Doc>)[String(doc)].text;
 
-/** Each live row as it reads on prod (Oct 15), with its document's stored text. */
-const OLD_NAMES: Record<number, string> = { 49175: "00 Loan Skip A Pay Fee", 29166: "00 ATM Transactions (per item)" };
+/**
+ * #1655: Primis's pricing guide as stored (text 20768, doc 23695, read-only, Oct 16), the section
+ * that holds its overdraft line. The whole text is 262,691 characters; it has no "Overdraft Item"
+ * line, and this is its only line naming an overdraft item fee.
+ */
+const PRIMIS_PRICING =
+  "MANAGEMENT\nTelephone Transfer | No Fee | WIRES\nOverdraft Protection Transfer | No Fee | Incoming Domestic Wire | No Fee\n" +
+  "Account Closing | No Fee | Incoming International Wire | No Fee\nDeposit Correction | No Fee\n" +
+  "Stop Payment | $35 Per Request | Banking Center | Online\nReturned Deposited Item | $10 | Outgoing Domestic Wire | $30 Per Wire | $10 Per Wire\nPer Item\n" +
+  "Outgoing International Wire | $55 Per Wire | $40 Per Wire\nForeign Collection Item,\nCanadian or Other | $50 Per Item, Plus Third-Party Fees\n" +
+  "International Wire Research | $50 Per Request\nDormant Account | $10 Per Month\nReturned Wire | $10 Per Wire\n" +
+  "Overdraft or Returned-Item Fee | $35 Per Item\nWire Reversal | $10 Per Wire\n";
+/** The same text's overdraft disclosure (lines 1138-1148), which the shared check matches "Overdraft Item Fee" at $0 to. */
+const PRIMIS_DISCLOSURE =
+  "DISCRETIONARY OVERDRAFT SERVICES DISCLOSURE\nWhat You Need to Know About Overdrafts and Overdraft Fees\n" +
+  "Primis offers the following services to help manage overdrafts:\n1. Account Transfer Service: You may establish an automatic transfer from an eligible Primis deposit account\n" +
+  "to cover overdrafts. There is no fee for this service.\n";
+const TEXTS: Record<number, string> = { 23695: `${PRIMIS_DISCLOSURE}${PRIMIS_PRICING}` };
+
+/** Each live row as it reads on prod (Oct 15; 5600 Oct 16), with its document's stored text. */
+const OLD_NAMES: Record<number, string> = { 49175: "00 Loan Skip A Pay Fee", 29166: "00 ATM Transactions (per item)", 5600: "Overdraft Item Fee" };
 const liveRows = HAND_AMOUNT_CORRECTIONS.map((fix) => ({
   fee_published_id: fix.feePublishedId,
   lineage_ref: fix.feePublishedId + 1_000_000,
@@ -24,7 +45,7 @@ const liveRows = HAND_AMOUNT_CORRECTIONS.map((fix) => ({
   fee_name: OLD_NAMES[fix.feePublishedId] ?? fix.feeName,
   amount: fix.from.toFixed(2),
   source_document_id: fix.sourceDocumentId,
-  normalized_text: textOf(fix.sourceDocumentId),
+  normalized_text: TEXTS[fix.sourceDocumentId] ?? textOf(fix.sourceDocumentId),
 }));
 
 describe("hand amount corrections (#1334)", () => {
@@ -35,14 +56,32 @@ describe("hand amount corrections (#1334)", () => {
     }
   });
 
-  it("corrects all eight on their own stored text: the corrected price traces and the cut one no longer does", () => {
+  it("corrects all nine on their own stored text: the corrected price traces and the wrong one no longer does", () => {
     const plan = planHandAmountCorrections(liveRows);
     expect(plan.skipped).toEqual([]);
     expect(plan.corrected.map((fix) => [fix.feePublishedId, fix.from, fix.to])).toEqual([
       [49175, 29, 29.95], [29166, 1, 1.5], [141772, 1, 1.5], [97435, 1, 1.5],
-      [61650, 1, 1.5], [61934, 4, 4.5], [79234, 7, 7.5], [79237, 3, 3.5],
+      [61650, 1, 1.5], [61934, 4, 4.5], [79234, 7, 7.5], [79237, 3, 3.5], [5600, 0, 35],
     ]);
     expect(plan.corrected.find((fix) => fix.feePublishedId === 49175)).toMatchObject({ oldName: "00 Loan Skip A Pay Fee", newName: "Loan Skip A Pay Fee" });
+    expect(plan.corrected.find((fix) => fix.feePublishedId === 5600)).toMatchObject({
+      oldName: "Overdraft Item Fee", newName: "Overdraft or Returned-Item Fee", sourceLine: expect.stringContaining("$35 Per Item"),
+    });
+  });
+
+  it("#1655: Primis's $35 traces under its printed name, and the old name is printed nowhere", () => {
+    expect(checkFeeAgainstSource(TEXTS[23695], "Overdraft or Returned-Item Fee", 35, ".", "overdraft")).toEqual({ ok: true, sourceLine: "Overdraft or Returned-Item Fee | $35 Per Item" });
+    expect(checkFeeAgainstSource(TEXTS[23695], "Overdraft or Returned-Item Fee", 0, ".", "overdraft").ok).toBe(false);
+    // The shared check loosely matches the old name's $0 to other fees' lines (the stored text's
+    // "There is no fee for this service." and the free overdraft protection transfer), so the entry
+    // tests instead that the old name is printed nowhere: "Overdraft Item" occurs 0 times in text 20768.
+    expect(checkFeeAgainstSource(`${PRIMIS_DISCLOSURE}${PRIMIS_PRICING}`, "Overdraft Item Fee", 0, ".", "overdraft").ok).toBe(true);
+    expect(HAND_AMOUNT_CORRECTIONS.find((entry) => entry.feePublishedId === 5600)?.oldNameNotPrinted).toBe(true);
+    const primis = liveRows.find((row) => row.fee_published_id === 5600)!;
+    expect(planHandAmountCorrections([primis]).corrected.map((fix) => fix.feePublishedId)).toEqual([5600]);
+    // Were the old name printed, the row would be left alone.
+    const printed = { ...primis, normalized_text: `${PRIMIS_PRICING}Overdraft  item fee | $0.00\n` };
+    expect(planHandAmountCorrections([printed]).skipped).toContainEqual({ feePublishedId: 5600, reason: "old name still printed" });
   });
 
   it("is a fixed list that leaves a changed, corrected or untraceable row alone", () => {
@@ -81,15 +120,18 @@ describe("hand amount corrections (#1334)", () => {
       return Promise.resolve([]);
     });
     const result = await applyHandAmountCorrections(db as never, { runId: 7, dryRun: false });
-    expect(result.corrected).toHaveLength(8);
+    expect(result.corrected).toHaveLength(9);
     expect(result.rejectedTwins).toEqual([113133, 112658, 157467, 125738, 66392, 167844, 102462]);
     const verifiedUpdates = calls.filter((call) => call.text.includes("UPDATE verified_fee_observations") && call.text.includes("SET amount"));
-    expect(verifiedUpdates).toHaveLength(8);
+    expect(verifiedUpdates).toHaveLength(9);
     // Each update lands only while the row still holds the cut amount.
     expect(calls.filter((call) => call.text.includes("UPDATE published_fee_records")).every((call) => call.text.includes("AND amount ="))).toBe(true);
     const feedback = calls.find((call) => call.text.includes("INSERT INTO pipeline_feedback"));
     const written = JSON.parse(String(feedback?.values[0])) as Array<{ dedupe_key: string; evidence: Record<string, unknown> }>;
-    expect(written.find((row) => row.dedupe_key === `${HAND_AMOUNT_CHECK}:pub:49175`)?.evidence).toMatchObject({ old_amount: 29, new_amount: 29.95, old_name: "00 Loan Skip A Pay Fee" });
+    expect(written.find((row) => row.dedupe_key === `${HAND_AMOUNT_CHECK}:pub:49175`)?.evidence).toMatchObject({ old_amount: 29, new_amount: 29.95, old_name: "00 Loan Skip A Pay Fee", pattern: "cut_cents", issue: 1334 });
+    expect(written.find((row) => row.dedupe_key === `${HAND_AMOUNT_CHECK}:pub:5600`)?.evidence).toMatchObject({
+      old_amount: 0, new_amount: 35, old_name: "Overdraft Item Fee", new_name: "Overdraft or Returned-Item Fee", pattern: "wrong_read", issue: 1655,
+    });
     expect(written.filter((row) => row.dedupe_key.startsWith(`${HAND_AMOUNT_CHECK}:twin:`))).toHaveLength(7);
     // Each copy carries its own pattern: one UPDATE per flag.
     const flags = calls.filter((call) => call.text.includes("SET review_status = 'rejected'")).map((call) => call.values[0]);
@@ -105,7 +147,7 @@ describe("hand amount corrections (#1334)", () => {
       return Promise.resolve([]);
     });
     const result = await applyHandAmountCorrections(db as never, { runId: 7, dryRun: true });
-    expect(result.corrected).toHaveLength(8);
+    expect(result.corrected).toHaveLength(9);
     expect(db.mock.calls.some(([strings]) => /UPDATE|INSERT/.test((strings as TemplateStringsArray).join(" ")))).toBe(false);
   });
 });

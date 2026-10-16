@@ -149,6 +149,16 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
   { feePublishedId: 114270, institutionId: 6152, canonicalFeeKey: "late_payment", amount: 35, feeName: "Late payment fee",
     reason: "source_mismatch: #1302", issue: 1302, kind: "wrong_amount",
     evidence: "Patriot FCU (doc 34341, text 32389), the line of credit on the same rates page: \"Late payment fee of $35.00 or 5% of the minimum payment may apply\": the fee is $35 or 5% of the payment, not a flat $35." },
+  // #1655 (read-only, Oct 16): rows the consumer overdraft guide showed, each read against its own
+  // stored text. 5827 repeats the continuous overdraft charge as a daily OD/NSF cap; 84637 puts the
+  // personal small-item price on the business line. Primis's 5600 is corrected in place instead
+  // (hand-amount-corrections.ts): it is the bank's only live overdraft row.
+  { feePublishedId: 5827, institutionId: 1968, canonicalFeeKey: "od_daily_cap", amount: 3.29, feeName: "Continuous Overdraft Charge Daily Cap",
+    reason: "duplicate of #43265 (#1655)", issue: 1655, kind: "duplicate",
+    evidence: "Welch State Bank (doc 809, text 6350): \"Continuous Overdraft Charge* daily limit not to exceed..$3.29\" is the continuous overdraft charge, live as continuous_od 43265; the OD/NSF cap is \"NSF/OD Fees* daily limit not to exceed…$179.82\" (live as 5825)." },
+  { feePublishedId: 84637, institutionId: 97, canonicalFeeKey: "overdraft", amount: 10, feeName: "Overdraft or Returned Item fee (business accounts)",
+    reason: "source_mismatch: #1655", issue: 1655, kind: "wrong_amount",
+    evidence: "Mechanics Bank (doc 9078, text 2235): \"Overdraft or Returned Item fee (business accounts)…$35.00/presentment\" (live as 125484); the $10 is the personal line \"…for any item $10 or less… (personal accounts)1…$10.00/presentment\"." },
 ];
 
 export interface LiveTakedownRow {
@@ -348,6 +358,14 @@ export const HAND_AUDIENCE_FIXES: readonly HandAudienceFix[] = [
   { feePublishedId: 55401, feeVerifiedId: 45477, institutionId: 8652, canonicalFeeKey: "gift_card_purchase", amount: 5, feeName: "Gift Cards",
     from: "unknown", to: "business", issue: 1302,
     evidence: "Rave (doc 2183, text 9544): \"Gift Cards | $ 5.00\" is under \"2019 Business Fee Schedule\"; the consumer schedule's line is \"Gift Card | $5.00\" (55397)." },
+  // #1655 (read-only, Oct 16): Mechanics Bank prints personal and business lines side by side; these
+  // two business rows showed in the consumer overdraft guide.
+  { feePublishedId: 67110, feeVerifiedId: 77129, institutionId: 97, canonicalFeeKey: "od_daily_cap", amount: 350,
+    feeName: "Maximum daily Overdraft or Returned Item fees (per day, business accounts)", from: "unknown", to: "business", issue: 1655,
+    evidence: "Mechanics Bank (doc 9078, text 2235): \"Maximum daily Overdraft or Returned Item fees (per day, business accounts)…$350.00\"; the personal cap is $140.00 (67109)." },
+  { feePublishedId: 125484, feeVerifiedId: 93865, institutionId: 97, canonicalFeeKey: "overdraft", amount: 35,
+    feeName: "Overdraft or Returned Item fee (business accounts)", from: "unknown", to: "business", issue: 1655,
+    evidence: "Mechanics Bank (doc 9078, text 2235): \"Overdraft or Returned Item fee (business accounts)…$35.00/presentment\"." },
 ];
 
 export interface LiveAudienceRow {
