@@ -41,8 +41,6 @@ export interface StatePrices {
   institutions: PricedInstitution[];
   /** Institutions with a live figure that didn't trace to its schedule, left out of every count. */
   uncheckedCount: number;
-  /** Counted institutions with a row for the fee whose audience the schedule doesn't state (#1132). */
-  unstated_audience_institution_count: number;
 }
 
 export interface PriceCheck {
@@ -101,7 +99,7 @@ export async function loadStatePrices(stateCode: string, fee: PriceCheckFee, db:
   const text = (value: unknown) => (value === null || value === undefined || value === "" ? null : String(value));
   const names = new Map<number, string>(rows.map((row) => [Number(row.id), String(row.institution_name)]));
   const places = new Map(rows.map((row) => [Number(row.id), { charterType: text(row.charter_type), city: text(row.city), cbsaName: text(row.cbsa_name) }]));
-  if (names.size === 0) return { stateCode: state, fee, institutions: [], uncheckedCount: 0, unstated_audience_institution_count: 0 };
+  if (names.size === 0) return { stateCode: state, fee, institutions: [], uncheckedCount: 0 };
   const feeRows = await loadSnapshotRows(db, [...names.keys()], [fee]);
   // Subject 0 matches no institution, so every institution comes back as a peer.
   const snapshot = buildSnapshotFee(fee, 0, feeRows);
@@ -118,14 +116,7 @@ export async function loadStatePrices(stateCode: string, fee: PriceCheckFee, db:
       city: places.get(peer.institutionId)?.city ?? null,
       cbsaName: places.get(peer.institutionId)?.cbsaName ?? null,
     }));
-  const unstated = new Set(feeRows.filter((row) => row.fee_audience === "unknown").map((row) => Number(row.institution_id)));
-  return {
-    stateCode: state,
-    fee,
-    institutions,
-    uncheckedCount: snapshot.peers.length - institutions.length,
-    unstated_audience_institution_count: institutions.filter((institution) => unstated.has(institution.id)).length,
-  };
+  return { stateCode: state, fee, institutions, uncheckedCount: snapshot.peers.length - institutions.length };
 }
 
 /** Where the price sits among one group of institutions, when the group is big enough to say. */
@@ -179,6 +170,6 @@ export function marketChecks(price: number, prices: Pick<StatePrices, "instituti
 
 /** Cached for public pages: a state's figures only move when Hamilton publishes. */
 export const loadStatePricesCached = cachedPublicRead(
-  "price-check-state-v3",
+  "price-check-state-v2",
   (stateCode: string, fee: PriceCheckFee) => loadStatePrices(stateCode, fee),
 );

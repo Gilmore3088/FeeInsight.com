@@ -94,24 +94,10 @@ describe("loading a state's figures", () => {
       row(2, 25, "Monthly maintenance $10.00"),
     ]);
     const result = await loadStatePrices("tx", "overdraft", db);
-    expect(result).toMatchObject({ stateCode: "TX", fee: "overdraft", uncheckedCount: 1, unstated_audience_institution_count: 0 });
+    expect(result).toMatchObject({ stateCode: "TX", fee: "overdraft", uncheckedCount: 1 });
     expect(result?.institutions).toEqual([
       expect.objectContaining({ id: 1, name: "First Bank", value: 30, documentUrl: "https://bank1.example/fees.pdf", charterType: "bank", city: "Austin", cbsaName: null }),
     ]);
-  });
-
-  it("counts the counted institutions whose fee has no stated audience (#1132)", async () => {
-    const db = vi.fn(() =>
-      Promise.resolve([{ id: 1, institution_name: "First Bank" }, { id: 2, institution_name: "Second Bank" }, { id: 3, institution_name: "Third Bank" }]),
-    ) as unknown as Db & { unsafe: unknown };
-    (db as unknown as { unsafe: unknown }).unsafe = vi.fn(async () => [
-      { ...row(1, 30, "Overdraft Fee $30.00 per item"), fee_audience: "unknown" },
-      { ...row(2, 25, "Overdraft Fee $25.00 per item"), fee_audience: "consumer" },
-      { ...row(3, 20, "Monthly maintenance $10.00"), fee_audience: "unknown" },
-    ]);
-    const result = await loadStatePrices("TX", "overdraft", db);
-    expect(result?.institutions.map((institution) => institution.id)).toEqual([2, 1]);
-    expect(result?.unstated_audience_institution_count).toBe(1);
   });
 
   it("refuses a code that isn't a state", async () => {
