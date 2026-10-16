@@ -16,6 +16,10 @@ export const SUBSCRIBER_ORG_PREFIX = "pro-user-";
 /** Plans whose subscription includes the API. Consultants pay the "mid" price. */
 export const API_INCLUDED_TIERS: readonly ProTier[] = ["mid", "large"];
 
+/** Calls a month on a Pro key (the `pro` tier in api-rate-limit.ts). */
+export const API_MONTHLY_CALLS = 10_000;
+export const API_MONTHLY_CALLS_LABEL = API_MONTHLY_CALLS.toLocaleString("en-US");
+
 /** "$300 and $500 plans": the monthly prices of the plans that include the API. */
 export const API_PLANS_LABEL = `${API_INCLUDED_TIERS.map((tier) => tierAmountLabel(tier, "monthly")).join(" and ")} plans`;
 
