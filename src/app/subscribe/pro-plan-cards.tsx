@@ -12,7 +12,7 @@ import {
   tierAmountLabel,
   type ProPlan,
 } from "@/lib/pro-tiers";
-import { apiIncludedInTier } from "@/lib/api-subscriber-access";
+import { API_MONTHLY_CALLS_LABEL, apiIncludedInTier } from "@/lib/api-subscriber-access";
 import { PlanCheckout, type ProTierSelection } from "./plan-checkout";
 
 export type { ProTierSelection } from "./plan-checkout";
@@ -54,7 +54,7 @@ const DISPLAY = { fontFamily: "var(--fi-font-sans)" };
  * On the plans that include the API (api-subscriber-access.ts, PR #1685): the person who pays
  * makes one key on /account, with its Claude connector link. Seats get no key, so say whose.
  */
-export const API_LINE = "Adds an API key and a Claude connector for the person who pays, with 10,000 calls a month.";
+export const API_LINE = `Adds an API key and a Claude connector for the person who pays, with ${API_MONTHLY_CALLS_LABEL} calls a month.`;
 /** After the consultant price: their plan includes the API too. */
 export const CONSULTANT_API_NOTE = "Both include the API key and Claude connector.";
 
