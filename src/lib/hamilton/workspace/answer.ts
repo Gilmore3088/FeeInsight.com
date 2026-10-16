@@ -8,6 +8,7 @@
  */
 
 import { revenueLineName } from "./revenue";
+import { MAX_STORY_LINE_WORDS, words } from "./four-roles";
 import { subjectPossessive } from "./subject";
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
 import { proseFeeName } from "./names";
@@ -124,8 +125,11 @@ function revenueClaims(research: FeeResearch, name: string): Fact[] {
   const line = research.revenueLine;
   if (line) {
     // One bank filing line covers both fees, so it is named as combined for either (#1543).
+    // The line stays within a storyline line's 20 words; a long name gives way to "The filing" (#1076).
+    const said = (who: string) => `${who} filing reports ${formatDollarsInWords(line.annualIncome)} in ${revenueLineName(line, name)} in the year to ${longDate(line.quarterEnd)}.`;
+    const named = said(subjectPossessive(research));
     out.push({
-      text: `${subjectPossessive(research)} filing reports ${formatDollarsInWords(line.annualIncome)} in ${revenueLineName(line, name)} over the four quarters to ${longDate(line.quarterEnd)}.`,
+      text: words(named) <= MAX_STORY_LINE_WORDS ? named : said("The"),
       source: { ...line.source, asOf: line.quarterEnd },
     });
   }
