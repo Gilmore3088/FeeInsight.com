@@ -52,3 +52,13 @@ describe("feeDisplayName", () => {
     }
   });
 });
+
+describe("fee-name helpers stay pure (#1483)", () => {
+  it("import no agent, database or crypto code, so public pages can use them", async () => {
+    const { readFileSync } = await import("node:fs");
+    for (const file of ["src/lib/fee-display-name.ts", "src/lib/fee-name-fragments.ts", "src/lib/coverage-labels.ts"]) {
+      const source = readFileSync(file, "utf8");
+      expect(source, file).not.toMatch(/from\s+["'](?:@\/lib\/agents|@\/lib\/data-store|node:)/);
+    }
+  });
+});

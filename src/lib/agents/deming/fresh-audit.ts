@@ -10,7 +10,7 @@ import {
   otherBankFeesSql,
   unconfirmedHostFeesSql,
 } from "@/lib/agents/hamilton/other-bank-document";
-import { nameHasCutShape } from "@/lib/agents/darwin/release-review";
+import { nameHasCutShape } from "@/lib/fee-name-fragments";
 import { dropsCondition, isCutoffName, repairCutoffName } from "@/lib/agents/knox/name-retidy";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 
