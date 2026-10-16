@@ -1147,12 +1147,14 @@ async function executeAgenticStep(
       // #1196: five live cut-name rows that repeat a clean live row come down; the clean row stays.
       const cutNameDuplicates = await applyCutNameDuplicates(tx, {
         runId: run.id,
+        stepId: step.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
       });
       // Listed live fees confirmed wrong against their bank's own text (James, Oct 16; #1496 first).
       const handTakedowns = await applyHandTakedowns(tx, {
         runId: run.id,
+        stepId: step.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
       });
@@ -1648,10 +1650,12 @@ async function executeAgenticStep(
           cut_name_duplicate: {
             taken_down: cutNameDuplicates.takenDown.map((item) => ({ fee_published_id: item.feePublishedId, kept_fee_published_id: item.keepFeePublishedId })),
             skipped: cutNameDuplicates.skipped.length,
+            error: cutNameDuplicates.error,
           },
           hand_takedown: {
             taken_down: handTakedowns.takenDown.map((item) => ({ fee_published_id: item.feePublishedId, reason: item.reason })),
             skipped: handTakedowns.skipped.length,
+            error: handTakedowns.error,
           },
           eval_verdict: {
             eval_matched: evalVerdicts.evalMatched,
