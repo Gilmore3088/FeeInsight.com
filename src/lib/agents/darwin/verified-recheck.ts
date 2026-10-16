@@ -70,6 +70,17 @@ export const OLDER_LIVE_SHADOW_EVERY = 4;
  * nothing. It turns on by PR once James approves the count of due flags.
  */
 export const DARWIN_RECHECK_SECOND_LOOK_LIVE = false;
+/**
+ * The narrow switch-on (James, 2026-10-16 03:37 UTC, "2-4' yes"): with
+ * `DARWIN_RECHECK_SECOND_LOOK_LIVE` still off, only first looks flagged under these reason codes get
+ * their second look. A due row is confirmed (archived) only when the recheck fails it again under
+ * one of these codes, and cleared when it now passes; one that fails under another code is left
+ * flagged and only reported. Every other code (conditional_zero, name_rule and the rest) stays in
+ * the shadow report. Count when it went on: 15 live `tier_perk_zero` flags, all due (14 on one
+ * large bank's premium-account schedule, 1 credit union "Premier Checking" $0 that the v4 rule now
+ * passes). Roll back by emptying the list.
+ */
+export const DARWIN_RECHECK_SECOND_LOOK_LIVE_CODES: readonly string[] = ["tier_perk_zero"];
 export const SECOND_LOOK_DUE_LIMIT = 100;
 
 interface RecheckRow extends RawFeeRow {
@@ -96,8 +107,10 @@ export interface VerifiedRecheckResult {
   takenDown: number[];
   /** While `DARWIN_RECHECK_OLDER_LIVE` is off: what the recheck would do to older live rows (#1568). */
   olderLive?: OlderLiveShadow | null;
-  /** While `DARWIN_RECHECK_SECOND_LOOK_LIVE` is off: what the due second looks would do (#1397). */
+  /** While `DARWIN_RECHECK_SECOND_LOOK_LIVE` is off: what the due second looks would do (#1397), for codes not switched on. */
   dueSecondLooks?: DueSecondLookShadow | null;
+  /** Due rows read for a switched-on code that now fail under another code: left flagged, not confirmed. */
+  secondLookOtherCode?: number;
 }
 
 export interface DueSecondLookShadow {
@@ -164,9 +177,20 @@ function selectOlderLiveRows(db: SqlTag, limit: number, from: "random" | "start"
     `);
 }
 
+/**
+ * Which due first looks to read, by the code in their reason (`darwin_recheck:<code>[:<rule>]`):
+ * `only` those codes, every code `except` those, or every code when neither is given.
+ */
+export interface DueCodeFilter {
+  only?: readonly string[];
+  except?: readonly string[];
+}
+
 /** Live rows whose recheck first look (`takedown_pending`) is due its second look (#1397). */
-function selectDueSecondLookRows(db: SqlTag, limit: number): Promise<RecheckRow[]> {
+function selectDueSecondLookRows(db: SqlTag, limit: number, codes: DueCodeFilter = {}): Promise<RecheckRow[]> {
   const prefix = secondLookDedupeKey(DARWIN_RECHECK_CHECK, 0).replace(/0$/, "");
+  const only = codes.only ? [...codes.only] : null;
+  const except = codes.except && codes.except.length > 0 ? [...codes.except] : null;
   return inSavepoint(db, (scope) => scope<RecheckRow[]>`
       SELECT v.fee_verified_id, v.review_status, v.canonical_fee_key, v.amount AS verified_amount,
              r.fee_raw_id, r.institution_id, r.source_url, r.document_r2_key, r.extraction_confidence,
@@ -181,16 +205,18 @@ function selectDueSecondLookRows(db: SqlTag, limit: number): Promise<RecheckRow[
          AND (f.evidence->>'flagged_at')::timestamptz <= NOW() - make_interval(mins => ${SECOND_LOOK_MIN_MINUTES})
          AND p.rolled_back_at IS NULL AND p.quarantined_at IS NULL
          AND v.review_status IN ('verified', 'approved')
+         AND (${only}::text[] IS NULL OR split_part(f.evidence->>'reason', ':', 2) = ANY(${only}::text[]))
+         AND (${except}::text[] IS NULL OR split_part(COALESCE(f.evidence->>'reason', ''), ':', 2) <> ALL(${except}::text[]))
        ORDER BY (f.evidence->>'flagged_at')::timestamptz ASC, p.fee_published_id
        LIMIT ${limit}::int
     `);
 }
 
 /** Read-only: what the due second looks would do (#1397). Writes nothing. */
-export async function dueSecondLookShadow(db: SqlTag, options: { limit?: number } = {}): Promise<DueSecondLookShadow> {
+export async function dueSecondLookShadow(db: SqlTag, options: { limit?: number; codes?: DueCodeFilter } = {}): Promise<DueSecondLookShadow> {
   const shadow: DueSecondLookShadow = { due: 0, wouldConfirm: {}, wouldClear: 0, samples: [] };
   try {
-    const rows = await selectDueSecondLookRows(db, options.limit ?? SECOND_LOOK_DUE_LIMIT);
+    const rows = await selectDueSecondLookRows(db, options.limit ?? SECOND_LOOK_DUE_LIMIT, options.codes);
     if (rows.length === 0) return shadow;
     // In a savepoint, so a failed text read cannot abort the step's transaction.
     const texts = await inSavepoint(db, (scope) => textsFor(scope, rows));
@@ -308,18 +334,31 @@ export async function olderLiveShadow(db: SqlTag, options: { runId: number; limi
 
 export async function recheckVerifiedFees(
   db: SqlTag,
-  options: { runId: number; stepId?: number | null; limit?: number; now?: Date; sameStepTakedown?: boolean; olderLive?: boolean; secondLooks?: boolean },
+  options: {
+    runId: number;
+    stepId?: number | null;
+    limit?: number;
+    now?: Date;
+    sameStepTakedown?: boolean;
+    olderLive?: boolean;
+    secondLooks?: boolean;
+    /** Reason codes whose due first looks get their second look while `secondLooks` is off. */
+    secondLookCodes?: readonly string[];
+  },
 ): Promise<VerifiedRecheckResult> {
   const limit = Math.max(1, Math.min(options.limit ?? RECHECK_LIMIT, 1_000));
   const olderLive = options.olderLive ?? DARWIN_RECHECK_OLDER_LIVE;
   const secondLooks = options.secondLooks ?? DARWIN_RECHECK_SECOND_LOOK_LIVE;
+  // The narrow switch-on: only these codes' due first looks get their second read.
+  const secondLookCodes = secondLooks ? [] : [...(options.secondLookCodes ?? DARWIN_RECHECK_SECOND_LOOK_LIVE_CODES)];
   options = { ...options, sameStepTakedown: options.sameStepTakedown ?? DARWIN_RECHECK_SAME_STEP_TAKEDOWN };
   const result: VerifiedRecheckResult = { ...EMPTY, rejected: [], restored: [], takenDown: [] };
   // Off: every fourth run reports what reading older live rows would do, and changes nothing for
   // them (#1568). It is a per-step sample; the whole backlog's count is a separate read-only query.
   if (!olderLive && options.runId % OLDER_LIVE_SHADOW_EVERY === 0) result.olderLive = await olderLiveShadow(db, { runId: options.runId });
-  // Off: report what the due second looks would do, and change nothing (#1397).
-  if (!secondLooks) result.dueSecondLooks = await dueSecondLookShadow(db);
+  // Off: report what the due second looks would do for the codes not switched on, and change
+  // nothing for them (#1397).
+  if (!secondLooks) result.dueSecondLooks = await dueSecondLookShadow(db, { codes: { except: secondLookCodes } });
   let rows: RecheckRow[];
   try {
     // The rows the not_in_source re-select verified (#883, the cohort UAT checked) are read first;
@@ -334,10 +373,15 @@ export async function recheckVerifiedFees(
   }
   // On: first looks that are due get their second read; the shared second look confirms or clears
   // them. Read on its own, so a bad flag never stops the rest of the recheck.
-  if (secondLooks) {
+  // With only some codes switched on, a due row read for them is confirmed only under one of them.
+  const narrowDue = new Set<string>();
+  if (secondLooks || secondLookCodes.length > 0) {
     try {
       const seen = new Set(rows.map((row) => String(row.fee_verified_id)));
-      rows = [...rows, ...(await selectDueSecondLookRows(db, SECOND_LOOK_DUE_LIMIT)).filter((row) => !seen.has(String(row.fee_verified_id)))];
+      const due = (await selectDueSecondLookRows(db, SECOND_LOOK_DUE_LIMIT, secondLooks ? {} : { only: secondLookCodes }))
+        .filter((row) => !seen.has(String(row.fee_verified_id)));
+      if (!secondLooks) for (const row of due) narrowDue.add(String(row.fee_verified_id));
+      rows = [...rows, ...due];
     } catch (error) {
       console.warn("[darwin] due second-look read failed", error instanceof Error ? error.message : error);
     }
@@ -358,6 +402,12 @@ export async function recheckVerifiedFees(
   for (const row of rows) {
     const feeVerifiedId = Number(row.fee_verified_id);
     const { canonicalFeeKey, amount, line, check } = recheckOf(row, texts);
+    if (check && narrowDue.has(String(row.fee_verified_id)) && !secondLookCodes.includes(check.code)) {
+      // Read for a switched-on code but failing under another one now: that code is not switched
+      // on, so the row stays flagged and nothing is written for it.
+      result.secondLookOtherCode = (result.secondLookOtherCode ?? 0) + 1;
+      continue;
+    }
     const publishedId = row.fee_published_id == null ? null : Number(row.fee_published_id);
     const wasRejected = row.review_status === "rejected";
     result.checked += 1;
