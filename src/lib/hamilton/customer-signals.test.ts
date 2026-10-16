@@ -57,7 +57,7 @@ describe("customerSignalCopy", () => {
       body: "Capital City Bank changed 2 published fees since the last reading. Rerun a saved brief to use the new figures.",
     });
     expect(customerSignalCopy(stored[0]).body).toBe(
-      "Hamilton read a new copy of Capital City Bank's fee schedule. Its fees are checked against the document before any comparison changes.",
+      "Hamilton read Capital City Bank's fee schedule. Its fees are checked against the document before any comparison changes.",
     );
   });
 

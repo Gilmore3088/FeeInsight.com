@@ -1,6 +1,7 @@
 import type postgres from "postgres";
 import { sql } from "@/lib/data-store/connection";
 import type { HamiltonEvidencePolicy } from "@/lib/hamilton/request-contract";
+import { customerSignalCopy } from "@/lib/hamilton/customer-signals";
 
 type SqlClient = typeof sql;
 type JsonCapableSqlClient = SqlClient & {
@@ -191,6 +192,16 @@ export async function completeHamiltonRefreshJobsForInstitution(
   return rows.length;
 }
 
+/**
+ * A job's reason is its source signal's stored "Name - what happened" title, and Monitor shows it,
+ * so it gets the same plain wording as the signal. Any other stored reason is shown as written.
+ */
+export function refreshJobReason(signalType: unknown, reason: unknown): string {
+  const text = String(reason ?? "Refresh queued");
+  if (signalType == null || !text.includes(" - ")) return text;
+  return customerSignalCopy({ signalType: String(signalType), title: text, body: "" }).title;
+}
+
 export async function fetchQueuedHamiltonRefreshJobs(
   options: {
     institutionIds?: string[];
@@ -248,7 +259,7 @@ export async function fetchQueuedHamiltonRefreshJobs(
     jobType: String(row.job_type) as HamiltonRefreshJobType,
     status: String(row.status) as HamiltonRefreshJobStatus,
     priority: Number(row.priority ?? 1),
-    reason: String(row.reason ?? "Refresh queued"),
+    reason: refreshJobReason(row.source_signal_type, row.reason),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
     completedAt: row.completed_at == null ? null : String(row.completed_at),
