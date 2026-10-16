@@ -14,6 +14,7 @@ import {
   parseOrderTables,
   stateOrderKey,
   statedSubject,
+  parseLabelled,
 } from "./state-enforcement";
 
 describe("state enforcement readers", () => {
@@ -172,5 +173,15 @@ describe("stated subjects (#1428)", () => {
     ]);
     expect(statedSubject("  Liquidity. ", "Consent Order")).toBe("Liquidity");
     expect(statedSubject(null, "")).toBeNull();
+  });
+
+  it("reads a singular Violation label, a type header that carries a subject word, and UDAAP wording (#1584)", () => {
+    expect(parseLabelled("Institution: Capital City Bank Type of Action: Consent Order Effective Date: 03/02/2026 Violation: Overdraft practices")?.subject)
+      .toBe("Overdraft practices");
+    expect(mapColumns(["Bank Name", "Nature of Action", "Date Issued"])).toEqual({ party: 0, type: 1, date: 2 });
+    expect(mapColumns(["Respondent", "Action Type/Category", "Subject", "Date"])).toEqual({ party: 0, type: 1, subject: 2, date: 3 });
+    expect(mapColumns(["Date", "Type of Order", "Regulated Activity", "Case Name"])).toEqual({ date: 0, type: 1, subject: 2, party: 3 });
+    expect(statedSubject(null, "Consent Order - Unfair, Deceptive, or Abusive Acts or Practices")).toBe("Unfair or deceptive practices (UDAP)");
+    expect(statedSubject(null, "Consent Order - Unfair or Deceptive Practices")).toBe("Unfair or deceptive practices (UDAP)");
   });
 });

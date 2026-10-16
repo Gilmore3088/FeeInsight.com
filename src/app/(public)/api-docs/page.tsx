@@ -617,16 +617,28 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
             {
               name: "fees[].fee_name",
               type: "string",
-              note: "The fee's name as the bank's schedule words it. When that name was cut off mid-line, the fee category's name stands in.",
+              note: 'The fee\'s name as the bank\'s schedule words it, made complete where the row leaves its heading out ("3 X 10" shows as "Safe Deposit Box 3 X 10"). When that name was cut off mid-line, the fee category\'s name stands in.',
             },
             {
               name: "fees[].name_is_category_fallback",
               type: "boolean",
-              note: "true when fee_name is the category's name standing in for a cut-off name; false when it is the schedule's own wording",
+              note: "true when fee_name is the category's name standing in for a cut-off name; false when it is the schedule's own name, or that name made complete",
             },
             { name: "fees[].amount", type: "number", note: "Fee amount in USD" },
             { name: "fees[].frequency", type: "string", note: 'e.g., "per item", "monthly"' },
             { name: "fees[].conditions", type: "string", note: "Waiver conditions, if any" },
+            {
+              name: "rate_fees[]",
+              type: "array",
+              note: "Fees stated as a rate of the transaction or balance. Listed apart from fees[] and never included in dollar figures",
+            },
+            { name: "rate_fees[].fee_name", type: "string", note: "Named the same way as fees[].fee_name" },
+            { name: "rate_fees[].name_is_category_fallback", type: "boolean", note: "Same meaning as on fees[]" },
+            { name: "rate_fees[].rate_percent", type: "number", note: "The rate in percent, e.g. 3 for 3%" },
+            { name: "rate_fees[].rate_min_amount", type: "number", note: "Dollar floor, when the schedule states one" },
+            { name: "rate_fees[].rate_max_amount", type: "number", note: "Dollar cap, when the schedule states one" },
+            { name: "rate_fees[].rate_basis", type: "string", note: 'What the rate applies to, e.g. "transaction"' },
+            { name: "rate_fees[].rate_terms", type: "string", note: 'The rate in words, e.g. "3% of the transaction"' },
           ]}
           responseExample={`{
   "id": 2466,
