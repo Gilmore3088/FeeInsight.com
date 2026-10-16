@@ -17,8 +17,18 @@ describe("choosePeers", () => {
     expect(chosen.get("night_deposit")?.values).toHaveLength(6);
     expect(chosen.get("night_deposit")?.label).toContain("Fed district 11");
     expect(chosen.get("overdraft")?.values).toHaveLength(8);
-    expect(chosen.get("overdraft")?.label).not.toContain("Fed district");
-    expect(chosen.get("rare_fee")).toMatchObject({ label: "Verified national index" });
+    expect(chosen.get("overdraft")?.label).toBe("TX · bank · $300M to $1B peers; only 4 of TX · bank · $300M to $1B · Fed district 11 peers publish this fee");
+    expect(chosen.get("rare_fee")?.label).toBe("Verified national index; none of TX · bank · $300M to $1B · Fed district 11 peers publish this fee");
+  });
+
+  it("says why a fee's peer group differs from the institution's default (#1544)", () => {
+    // U.S. Bank's case: overdraft has enough size peers, NSF falls back to the state group.
+    const candidates = [{ charter_type: "bank", asset_tiers: ["super_regional"] }, { state_code: "OH", charter_type: "bank" }, {}];
+    const size = new Map([["overdraft", [1, 2, 3, 4, 5, 6, 7, 8, 9].map((i) => peer(35, i))], ["nsf", [1, 2, 3].map((i) => peer(30, i))]]);
+    const state = new Map([["nsf", Array.from({ length: 41 }, (_, i) => peer(25, i + 10))]]);
+    const chosen = choosePeers(candidates, [size, state, new Map()], ["overdraft", "nsf"]);
+    expect(chosen.get("overdraft")?.label).not.toContain(";");
+    expect(chosen.get("nsf")?.label).toMatch(/^OH · bank peers; only 3 of bank · .+ peers publish this fee$/);
   });
 
   it("leads with the bank's own peer group and says how many it had when a fee widens", () => {
