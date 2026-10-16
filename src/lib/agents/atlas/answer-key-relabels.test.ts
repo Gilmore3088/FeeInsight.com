@@ -53,6 +53,8 @@ describe("Atlas answer-key relabels (James, Oct 16: night deposit is the service
     const result = await runAnswerKeyRelabels({ db: db as never });
     expect(result.changed).toHaveLength(35);
     expect(writes).toHaveLength(35);
+    expect(writes[0].text).toContain("WHERE ak.institution_id = ?");
+    expect(writes[0].values).toContain(ANSWER_KEY_RELABELS[0].institutionId);
     expect(writes[0].text).toContain("AND canonical_key = ?");
     expect(writes[0].text).toContain("AND COALESCE(source_line, '') = ?");
     expect(writes.every((write) => !/DELETE|published_fee|raw_fee|verified_fee/i.test(write.text))).toBe(true);

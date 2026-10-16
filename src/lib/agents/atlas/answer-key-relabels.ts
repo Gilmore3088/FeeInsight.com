@@ -164,6 +164,8 @@ export async function runAnswerKeyRelabels({
                conditions = CASE WHEN COALESCE(conditions, '') = '' THEN ${entry.note} ELSE conditions || ' ' || ${entry.note} END,
                updated_at = NOW()
          WHERE id = ${entry.feeId}
+           AND answer_key_institution_id IN (
+                 SELECT ak.id FROM answer_key_institutions ak WHERE ak.institution_id = ${entry.institutionId})
            AND canonical_key = ${entry.fromKey}
            AND abs(amount - ${entry.amount}::numeric) < 0.005
            AND COALESCE(source_line, '') = ${entry.sourceLine}

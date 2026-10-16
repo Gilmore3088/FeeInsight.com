@@ -20,8 +20,10 @@ describe("parseCrewCommand", () => {
     ["Atlas, run Georgia", { kind: "run", agent: "atlas", scope: { kind: "state", stateCode: "GA" } }],
     ["Hey Magellan, run Texas", { kind: "run", agent: "magellan", scope: { kind: "state", stateCode: "TX" } }],
     ["run all due states", { kind: "run", agent: "atlas", scope: { kind: "due" } }],
-    ["Hamilton, publish institution 47", { kind: "run", agent: "hamilton", scope: { kind: "institution", institutionId: 47 } }],
-    ["Hamilton, run bank #47", { kind: "run", agent: "hamilton", scope: { kind: "institution", institutionId: 47 } }],
+    // Publishing is Gutenberg's (#1075 step 2); a publish addressed to Hamilton still runs, as Gutenberg.
+    ["Hamilton, publish institution 47", { kind: "run", agent: "gutenberg", scope: { kind: "institution", institutionId: 47 } }],
+    ["Hamilton, run bank #47", { kind: "run", agent: "gutenberg", scope: { kind: "institution", institutionId: 47 } }],
+    ["Gutenberg, publish institution 47", { kind: "run", agent: "gutenberg", scope: { kind: "institution", institutionId: 47 } }],
     ["Knox: run everything", { kind: "run", agent: "knox", scope: { kind: "all" } }],
     ["Darwin, retry failed", { kind: "retry", agent: "darwin" }],
     ["pause", { kind: "pause", agent: "atlas" }],

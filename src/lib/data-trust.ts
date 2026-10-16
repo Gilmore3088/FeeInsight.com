@@ -9,7 +9,7 @@ export const DATA_TRUST_QUEUE_STATES = [
 
 export type DataTrustQueueState = (typeof DATA_TRUST_QUEUE_STATES)[number];
 export type DataTrustSeverity = "critical" | "warning" | "work" | "ok";
-export type DataTrustOwner = "atlas" | "magellan" | "darwin" | "knox" | "hamilton";
+export type DataTrustOwner = "atlas" | "magellan" | "darwin" | "knox" | "gutenberg";
 
 export interface DataTrustQueueInput {
   feeScheduleUrl?: string | null;
@@ -108,7 +108,7 @@ export function classifyDataTrustQueue(
       state: "extracted_rows_pending_classification",
       label: "Verified, unpublished",
       severity: "warning",
-      owner: "hamilton",
+      owner: "gutenberg",
       nextAction: "Publish verified rows into the public fee catalog or document why they are withheld.",
       publicLabel: "Fee evidence is verified internally and awaiting publication.",
     };
@@ -119,7 +119,7 @@ export function classifyDataTrustQueue(
       state: "verified_public_ready",
       label: "Public ready",
       severity: "ok",
-      owner: "hamilton",
+      owner: "gutenberg",
       nextAction: "Monitor freshness and keep verified benchmark rows current.",
       publicLabel: "Verified fee evidence is available.",
     };

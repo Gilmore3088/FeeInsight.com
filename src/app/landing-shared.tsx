@@ -8,6 +8,7 @@ import type { PublicStatsSummary } from "@/lib/public-stats";
 import type { LinePosition } from "@/lib/custom-report/analysis";
 import type { MarketReport } from "@/lib/custom-report/report-data";
 import type { MarketLadderData } from "@/app/for-institutions/market-ladder";
+import { lineName } from "@/app/for-institutions/board-math";
 import { sourcedFees, type SourcedFee } from "@/app/for-institutions/sample-sources";
 import type { AnalyzeScenario } from "@/app/subscribe/scenario";
 
@@ -199,7 +200,7 @@ export function buildSampleView(report: MarketReport | null): SampleView | null 
     if (!line.comparable || !line.own || !line.peers || !line.position) continue;
     rows.push({
       key: line.key,
-      label: getDisplayName(line.key),
+      label: lineName(line.label),
       amount: line.own.amount,
       median: line.peers.median,
       p25: line.peers.p25,
@@ -211,8 +212,8 @@ export function buildSampleView(report: MarketReport | null): SampleView | null 
   return {
     institutionName: report.data.subject.institution_name,
     competitors: report.analysis.readiness.competitorsWithData,
-    // One name per fee on every exhibit: the fee taxonomy's display name, not the report line's.
-    fees: sourcedFees(report.analysis.lines).map((fee) => ({ ...fee, label: getDisplayName(fee.key) })),
+    // One name per fee on every sample exhibit: the report line's own, as the ladder shows it.
+    fees: sourcedFees(report.analysis.lines).map((fee) => ({ ...fee, label: lineName(fee.label) })),
     rows,
   };
 }

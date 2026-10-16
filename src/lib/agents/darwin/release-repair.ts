@@ -423,7 +423,7 @@ function restoreClearedFeedback(fee: { feePublishedId: number; institutionId: nu
   const row = {
     aboutStage: "publish" as const,
     aboutStrategy: RELEASE_REPAIR_CHECK,
-    reportedBy: "hamilton" as const,
+    reportedBy: "gutenberg" as const,
     checkName: RELEASE_REPAIR_CHECK,
     institutionId: fee.institutionId,
     sourceDocumentId: fee.sourceDocumentId,

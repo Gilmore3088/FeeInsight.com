@@ -74,11 +74,11 @@ describe("executeCrewWrite", () => {
     const reply = await executeCrewWrite(parseCrewCommand("Hamilton, publish institution 47"), "owner");
     expect(mocks.startAgentRun).toHaveBeenCalledTimes(1);
     expect(mocks.startAgentRun).toHaveBeenCalledWith(expect.objectContaining({
-      agent: "hamilton",
+      agent: "gutenberg",
       kind: "manual_repair",
       params: { source: "admin.crew_command", scope: "institution", institution_id: 47 },
-      idempotencyKey: "crew:hamilton:institution:47:publish",
-      steps: [{ key: "publish", agent: "hamilton", title: "Publish verified fees" }],
+      idempotencyKey: "crew:gutenberg:institution:47:publish",
+      steps: [{ key: "publish", agent: "gutenberg", title: "Publish verified fees" }],
     }));
     expect(reply.runId).toBe(847);
     expect(reply.links).toContainEqual({ label: "Track run #847", href: "/admin/atlas/runs/847" });
@@ -113,6 +113,45 @@ describe("executeCrewWrite", () => {
   it("pauses the pipeline control", async () => {
     await executeCrewWrite(parseCrewCommand("pause"), "owner");
     expect(mocks.setPipelineEnabled).toHaveBeenCalledWith("owner", false, expect.any(String));
+  });
+
+  describe("retry after #1075 step 2: each side retries only the steps it owns", () => {
+    // Newest first, as the query orders them: Hamilton's product failure is the newest of all.
+    const failedSteps = [
+      { id: 903, state_code: null, step_key: "hamilton-answer-eval", agent_name: "hamilton" },
+      { id: 902, state_code: "TX", step_key: "publish", agent_name: "hamilton" },
+      { id: 901, state_code: null, step_key: "briefing-refresh", agent_name: "hamilton" },
+    ];
+    // The mock applies the query's own filter to the values it binds.
+    const queryFailed = () =>
+      mocks.sql.mockImplementation(async (strings: TemplateStringsArray, names: string[], keys: string[], agent: string) => {
+        expect(strings.join("$")).toContain("THEN 'gutenberg' ELSE s.agent_name END) = $");
+        const owner = (row: (typeof failedSteps)[number]) =>
+          row.agent_name === "hamilton" && keys.includes(row.step_key) ? "gutenberg" : row.agent_name;
+        return failedSteps.filter((row) => names.includes(row.agent_name) && owner(row) === agent).slice(0, 1);
+      });
+
+    it("Gutenberg retries a pre-switch publish failure, never Hamilton's answer eval", async () => {
+      queryFailed();
+      mocks.startAgentRun.mockResolvedValue({ run: { id: 950 }, reused: false });
+      await executeCrewWrite(parseCrewCommand("Gutenberg, retry failed"), "owner");
+      expect(mocks.startAgentRun).toHaveBeenCalledWith(expect.objectContaining({
+        agent: "gutenberg",
+        steps: [{ key: "publish", agent: "gutenberg", title: "Retry publish" }],
+      }));
+    });
+
+    it("Hamilton retries its own product failure, never an old publish failure", async () => {
+      failedSteps.unshift({ id: 904, state_code: "GA", step_key: "publish", agent_name: "hamilton" });
+      queryFailed();
+      mocks.startAgentRun.mockResolvedValue({ run: { id: 951 }, reused: false });
+      await executeCrewWrite(parseCrewCommand("Hamilton, retry failed"), "owner");
+      expect(mocks.startAgentRun).toHaveBeenCalledWith(expect.objectContaining({
+        agent: "hamilton",
+        steps: [{ key: "hamilton-answer-eval", agent: "hamilton", title: "Retry hamilton-answer-eval" }],
+      }));
+      failedSteps.shift();
+    });
   });
 
   it("says so when there is nothing to retry", async () => {

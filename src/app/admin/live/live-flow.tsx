@@ -10,9 +10,9 @@ const POLL_MS = 10_000;
 
 type Data = FlowSnapshot & { waiting: FlowWaiting | null };
 /** The data agents institutions flow through; growth (marketing) handles no institutions. */
-type Worker = Exclude<AdminAgent, "atlas" | "growth" | "gutenberg">;
+type Worker = Exclude<AdminAgent, "atlas" | "growth" | "hamilton">;
 
-const WORKERS: Worker[] = ["magellan", "rosetta", "knox", "darwin", "hamilton"];
+const WORKERS: Worker[] = ["magellan", "rosetta", "knox", "darwin", "gutenberg"];
 
 /** One colour per agent, used for its badge, top bar, and dots in the log. */
 const AGENT_COLOR: Record<AdminAgent, { bar: string; badge: string; dot: string; flash: string }> = {
@@ -214,7 +214,7 @@ function OnTheSite({ waiting, live, fresh }: { waiting: FlowWaiting | null; live
         ) : (
           <ul className="space-y-1.5" aria-label="Banks that just went live">
             {live.map((move) => (
-              <BankCard key={move.key} move={move} agent="hamilton" isNew={fresh.has(move.key)} />
+              <BankCard key={move.key} move={move} agent="gutenberg" isNew={fresh.has(move.key)} />
             ))}
           </ul>
         )}
@@ -303,7 +303,7 @@ export function LiveFlow({ initial }: { initial: Data }) {
             />
             <Connector
               active={index + 1 < WORKERS.length ? nowOf(WORKERS[index + 1])?.state === "working" : false}
-              color={AGENT_COLOR[WORKERS[index + 1] ?? "hamilton"].dot}
+              color={AGENT_COLOR[WORKERS[index + 1] ?? "gutenberg"].dot}
             />
           </Fragment>
         ))}

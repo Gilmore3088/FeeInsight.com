@@ -31,8 +31,11 @@ type SqlTag = typeof sql;
  * v3 (2026-10-15, #1397): a $0 from one account tier's own schedule, or named for a tier's
  * account, is that tier's perk, not the bank's price (`tierPerkZero`). One large bank's live overdraft,
  * NSF, stop payment and wire fees all read $0 from its Premium Account schedule.
+ * v4 (2026-10-16, #1571, #1574): on a run-on line the $0 rule reads only the fee's own row, so a
+ * neighbouring row's price is no longer this free fee's condition; and an account's own monthly or
+ * minimum-balance $0 named for the account ("Premier Checking") is its price, not a tier's perk.
  */
-export const DARWIN_RECHECK_STRATEGY = { strategy: "verify.recheck", version: 3 } as const;
+export const DARWIN_RECHECK_STRATEGY = { strategy: "verify.recheck", version: 4 } as const;
 export const RECHECK_LIMIT = 200;
 /** The shared second look's check name while live failures are only flagged. */
 export const DARWIN_RECHECK_CHECK = "darwin.verified_recheck";
@@ -257,7 +260,7 @@ function recheckOf(row: RecheckRow, texts: Map<number, string>) {
   const line = sourceLineFor(row, texts, canonicalFeeKey) ?? excerptOf(row.conditions);
   const text = row.source_document_id == null ? null : texts.get(Number(row.source_document_id)) ?? null;
   const check: { code: string; rule?: string } | null = postSourceCheck(canonicalFeeKey, row.fee_name, amount, line)
-    ?? (tierPerkZero(amount, row.fee_name, row.source_url, text) ? { code: "tier_perk_zero" } : null);
+    ?? (tierPerkZero(amount, row.fee_name, row.source_url, text, canonicalFeeKey) ? { code: "tier_perk_zero" } : null);
   return { canonicalFeeKey, amount, line, check };
 }
 
