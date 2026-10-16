@@ -457,7 +457,7 @@ function ReaderMisses({ goal }: { goal: GoalScorecard }) {
           <tbody>
             {misses.weeks.map((week) => (
               <tr key={week.weekStart} className="border-t border-gray-100 dark:border-white/[0.06]">
-                <td className="py-1 pr-4 tabular-nums">{week.weekStart}</td>
+                <td className="py-1 pr-4 tabular-nums">{week.weekStart}{week.partial ? " (so far)" : ""}</td>
                 <td className="py-1 pr-4 text-right tabular-nums">{week.batches === 0 ? "—" : n(week.reads)}</td>
                 <td className="py-1 pr-4 text-right tabular-nums">{share(week.rate)}</td>
                 {READER_MISS_KINDS.map((kind) => (
