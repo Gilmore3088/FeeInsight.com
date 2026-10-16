@@ -461,14 +461,17 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
       const mode = r.shadow ? " (shadow mode: nothing stored)" : "";
       const failed = r.failedStates.length > 0 ? ` Failed: ${r.failedStates.join(", ")}.` : "";
       const limited = r.rateLimited ? " Open States rate limited the run; the rest stay due." : "";
+      const noData =
+        r.noSourceData.length > 0 ? ` No source data (Open States holds no searchable bill text): ${r.noSourceData.join(", ")}.` : "";
       return {
         summary: r.missingKey
           ? "Skipped state bills: OPEN_STATES_API_KEY is not set."
-          : `Magellan read ${r.states.length} states (${r.states.join(", ") || "none due"}) and found ${r.fetched} bank fee bills (${r.stages.passed_chamber + r.stages.passed_legislature} passed a chamber, ${r.stages.signed} signed); stored ${r.stored}${mode}; ${r.remaining} states still due${dry(r.dryRun)}.${failed}${limited}`,
+          : `Magellan read ${r.states.length} states (${r.states.join(", ") || "none due"}) and found ${r.fetched} bank fee bills (${r.stages.passed_chamber + r.stages.passed_legislature} passed a chamber, ${r.stages.signed} signed); stored ${r.stored}${mode}; ${r.remaining} states still due${dry(r.dryRun)}.${failed}${noData}${limited}`,
         detail: {
           missing_key: r.missingKey,
           states: r.states,
           failed_states: r.failedStates,
+          no_source_data: r.noSourceData,
           rate_limited: r.rateLimited,
           remaining: r.remaining,
           fetched: r.fetched,
