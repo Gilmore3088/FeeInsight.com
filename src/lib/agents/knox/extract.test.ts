@@ -491,7 +491,8 @@ describe("stored products that name no account (v73, #1100)", () => {
     for (const name of ["Truth in Savings", "TRUTH IN SAVINGS ACT", "CONSUMER TRUTH-IN-SAVINGS FEE SCHEDULE", "Health Savings Card",
       "Free Bangor Savings Bank Debit Mastercard®", "First Federal Savings and Loan", "Statement Savings", "Health Savings Account", "Premier Checking",
       "Hotel Savings Network", "Savers Club", "Health Discount Savings", "Dental Savings Plan", "Shopping Savings Rewards", "BaZing Savings Network",
-      "Kids' Super Savers Club Account", "Holiday Savings Club Account", "Savings Bankers Choice"]) {
+      "Kids' Super Savers Club Account", "Holiday Savings Club Account", "Savings Bankers Choice",
+      "Kids Savings Program", "Youth Savings Card", "Student Savings Program", "Dental Savings Program", "Savings Program"]) {
       expect(asJs.test(name), name).toBe(namesNoAccount(name));
     }
   });

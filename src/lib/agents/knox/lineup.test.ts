@@ -504,6 +504,11 @@ describe("the account a read records (v73, #1100)", () => {
     const kids = "Money Tree Kids Club\nFor children 0-12 years old.\nMinimum balance service charge of $2.00 will be applied if account falls below $10.00";
     expect(productOf(read("Minimum balance service charge", "Minimum balance service charge of $2.00 will be applied if account falls below $10.00", { amount: 2 }), kids)).toBe("Money Tree Kids Club");
     expect(productOf(read("Star Checking Monthly Fee", "Star Checking Monthly Fee: $5"), "Money Tree Kids Club\nStar Checking Monthly Fee: $5")).toBe("Star Checking");
+    // #1598 review probes: a savings table's header never names a checking-page fee's account.
+    const apart = ["Account | Statement Savings", "Minimum to open | $25", "Checking Accounts", "Monthly service charge | $10"].join("\n");
+    expect(productOf(read("Monthly service charge", "Monthly service charge | $10", { amount: 10 }), apart)).not.toBe("Statement Savings");
+    const unlabelled = ["Account | Statement Savings", "Ask about our | Premier Checking options", "Monthly service charge | $10"].join("\n");
+    expect(productOf(read("Monthly service charge", "Monthly service charge | $10", { amount: 10 }), unlabelled)).not.toBe("Statement Savings");
     // The institution's own name.
     const named = withLineupFromText(read("Monthly fee", "Monthly fee $5.00"), "Peoples Savings\nMonthly fee $5.00", { institutionName: "Peoples Savings" });
     expect(named.lineup?.productName ?? null).toBeNull();

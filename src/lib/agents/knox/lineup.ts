@@ -338,12 +338,14 @@ export function tableColumnProduct(text: string, excerpt: string, amount: number
     .filter((cell) => cell.index > 0 && cell.prices[0] === cents);
   if (columns.length !== 1) return null;
   for (let index = at - 1; index >= Math.max(0, at - 15); index -= 1) {
+    // A line that is no table row ends the table: a header above it is another table's.
+    if (!lines[index].includes("|")) break;
     const row = lines[index].split("|").map(squash);
     if (row.length !== cells.length) continue;
     if (row.some((cell) => cell.includes("$"))) continue;
-    // A header row opens on a label ("Account Type", "ACCOUNT FEATURES", "Product"); any other row
-    // above the fee is another feature's ("Maintaining One Or More Of The | LifeGreen Preferred Checking account").
-    if (!TABLE_HEADER_LABEL.test(row[0])) continue;
+    // A header row opens on a label ("Account Type", "ACCOUNT FEATURES", "Product"). An unlabelled row
+    // with no price ends the climb ("Maintaining One Or More Of The | LifeGreen Preferred Checking account").
+    if (!TABLE_HEADER_LABEL.test(row[0])) break;
     const name = row[columns[0].index].replace(/[*†‡¹²³⁴⁵⁶⁷⁸⁹]+$/, "").trim();
     if (namesNoAccount(name)) return null;
     if (ACCOUNT_KIND_HEADING.test(name) || ACCOUNT_TYPE_HEADING.test(name) || distinctAccountName(name)) return name;
