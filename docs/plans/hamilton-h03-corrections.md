@@ -99,6 +99,31 @@ price is caught too.
 Before the migration is applied, the publish step skips this check and the admin page shows no
 Correct action.
 
+## Refresh status, saved outputs and the audit page (H03-T08 to T10)
+
+The audit page, `/admin/corrections` (anyone who can view the admin), lists every hold, release,
+correction and reversal, newest first: who, what, why, the evidence, the run, where the change
+stands now, and each reader's refresh status. It writes nothing. A reversal is still made on the
+institution page, as a new version.
+
+Each reader's status is read from evidence, never assumed (`src/lib/fee-refresh-status.ts`):
+
+| Reader | Updated when |
+|---|---|
+| Live fee list (`published_fee_catalog`) | The row the action made live is listed and the one it took out is not |
+| National index (`fee_index_cache`) | The run's `index.refresh` event completed, or the index was rebuilt after the action, and a minute has passed for the servers' memo |
+| Public pages (read caches) | The run's `cache.invalidate` event completed (written after the action commits), or an hour has passed |
+| Hamilton Pro | Both the fee list and the national index are updated |
+
+When the index rebuild failed or the caches were not cleared, an admin (`edit`) can retry. A retry
+is its own completed Hamilton run (`admin.fee_refresh`, `retry_of` the original run), with a
+`refresh.retry` event on the original run; it changes no fee.
+
+Saved answers, reports and briefings are never rewritten (`src/lib/saved-output-corrections.ts`).
+The audit page counts the ones made before each change, about the same institution. A saved answer
+opened after a change says so above the unchanged answer, and offers to ask the question again
+(the reader sends it).
+
 ## Where it lives
 
 - Rules shared with the admin page: `src/lib/fee-correction-rules.ts`
@@ -107,14 +132,17 @@ Correct action.
 - Run ledger and index rebuild for every operator fee action: `src/lib/fee-admin-run.ts`
 - Hold and release: `src/lib/fee-hold.ts`
 - Admin page: `src/app/admin/institution/[id]/` (`fee-table.tsx`, `fee-correction-controls.tsx`, `actions.ts`)
+- Audit page and its reader: `src/app/admin/corrections/`, `src/lib/data-store/fee-correction-audit.ts`
 
 ## Not covered yet
 
 - Corrected conditions are kept in the version row, but `published_fee_catalog` still reads
   conditions from the fee's raw lineage, so the public pages show the source's conditions text.
 - Future-effective changes (a correction that takes effect on a later date) are not modelled.
-- Saved reports and answers made before a correction are not marked superseded (H03-T09).
-- The audit history on the admin page shows versions, evidence, who and why, and the run id. It
-  does not yet show refresh status per surface (H03-T08, T10).
+- Saved outputs keep no fee ids, so a saved output made before a change is found only by the
+  institution it is about. One that used the institution only as a peer is not found; that needs
+  saved answers, reports and briefings to record the published fee ids they read (a migration).
+- Only a saved answer (Ask Hamilton) shows the notice. Saved reports and briefings are counted on
+  the audit page but do not yet show it to the reader.
 - An agent check (category guard, source check, rules re-check) can still take down a corrected
   row, the same as any live row. It cannot bring the superseded value back.

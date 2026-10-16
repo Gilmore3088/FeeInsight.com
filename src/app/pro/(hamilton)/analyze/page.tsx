@@ -10,6 +10,7 @@ import { AnalyzeWorkspace } from "@/components/hamilton/analyze/AnalyzeWorkspace
 import { MarketBrief } from "@/components/hamilton/intelligence/MarketBrief";
 import { parseMarketQuestion } from "@/lib/hamilton/market-question";
 import { listSavedAnalyses, loadAnalysisRecord } from "./actions";
+import { SavedChangeNotice } from "./saved-change-notice";
 import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
 import {
   resolveArtifactContextInstitutionId,
@@ -115,6 +116,15 @@ export default async function AnalyzePage({
         readOnlyReason={readOnlyReason}
       />
   );
+  // H03-T09: a saved answer made before a fee change keeps its figures and says so.
+  const changeNotice = initialAnalysisRecord?.changeNotice ?? null;
+  const askAgainHref = changeNotice && initialAnalysisRecord?.prompt && institutionId
+    ? `/pro/analyze?${new URLSearchParams({ q: initialAnalysisRecord.prompt.slice(0, 500), instId: institutionId })}`
+    : null;
+  if (changeNotice) return <>
+    <SavedChangeNotice notice={changeNotice} askAgainHref={askAgainHref} />
+    {workspace}
+  </>;
   return landingResearch ? <>
     <div className="mb-6"><LandingResearchResults selection={landingResearch} /></div>
     {workspace}
