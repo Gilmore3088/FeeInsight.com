@@ -39,7 +39,10 @@ asked about fewer than 20 incorrect fees. Each fee is still confirmed wrong agai
 stored text and goes through a tracked path with run-ledger visibility: the hand-takedown list, or
 a hand rename or re-file (`HAND_REFILES` in `src/lib/agents/hamilton/taxonomy-fold.ts`) when the
 price is right for another name or category. Larger batches, category or policy questions,
-migrations and switches still go to him.
+migrations and switches still go to him. The limit is per batch, not a total for the list: on the
+hand-takedown list a batch is the entries filed under one issue, and each holds fewer than 20
+(`HAND_TAKEDOWN_BATCH_LIMIT`, 19). This replaces the earlier "up to about 25" total for the list
+(#1613, 2026-10-16), since a running total would bring every later small batch back to him.
 
 ## 2026-10-15
 
