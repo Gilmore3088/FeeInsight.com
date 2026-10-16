@@ -14,25 +14,25 @@ export function DemoVideoSection({ board }: { board: CompetitorBoard | null }) {
   const lines = board.lines;
   return (
     <section aria-labelledby="tour-heading" className="border-b border-border bg-paper">
-      <div className="mx-auto max-w-5xl px-4 pb-14 pt-10 sm:px-6 sm:pb-20 sm:pt-12">
-        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
-          <h2
-            id="tour-heading"
-            className="text-[1.75rem] !font-semibold leading-[1.08] !tracking-[-0.03em] text-ink sm:text-[2.25rem]"
-            style={SANS}
-          >
-            Watch Hamilton work
-          </h2>
-          <TrackLink
-            event="contact_sales"
-            eventProps={{ placement: "for_institutions_tour" }}
-            href="#demo"
-            className="fi-btn fi-btn-secondary justify-center"
-          >
-            {DEMO_REQUEST_NAV.standaloneLabel}
-          </TrackLink>
-        </div>
-        <figure className="mt-6">
+      {/* Phone: heading, poster, then the button, so the button never splits the heading from
+          its picture. From sm the button sits beside the heading. */}
+      <div className="mx-auto grid max-w-5xl gap-y-6 px-4 pb-14 pt-10 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end sm:gap-x-6 sm:px-6 sm:pb-20 sm:pt-12">
+        <h2
+          id="tour-heading"
+          className="text-[1.75rem] !font-semibold leading-[1.08] !tracking-[-0.03em] text-ink sm:text-[2.25rem]"
+          style={SANS}
+        >
+          Watch Hamilton work
+        </h2>
+        <TrackLink
+          event="contact_sales"
+          eventProps={{ placement: "for_institutions_tour" }}
+          href="#demo"
+          className="fi-btn fi-btn-secondary order-last justify-center sm:order-none"
+        >
+          {DEMO_REQUEST_NAV.standaloneLabel}
+        </TrackLink>
+        <figure className="sm:col-span-2">
           <div
             data-video-placeholder=""
             role="img"

@@ -5,6 +5,7 @@ import {
   MIN_MEDIAN_INSTITUTIONS,
   latestReadOn,
   leadLineKey,
+  lineName,
   shortInstitutionName,
   type BoardLine,
   type BoardPeer,
@@ -54,8 +55,7 @@ export function buildCompetitorBoard(report: MarketReport | null): CompetitorBoa
     readDates.push(line.own.schedule_read_on, ...line.peerFigures.map((figure) => figure.schedule_read_on));
     lines.push({
       key: line.key,
-      // The sample report's own line name, without its qualifier: "Overdraft (per item)" reads "Overdraft".
-      label: line.label.replace(/\s*\([^)]*\)$/, ""),
+      label: lineName(line.label),
       own: line.own.amount,
       quote: verifiedSourceQuote(line),
       readOn: line.own.schedule_read_on,

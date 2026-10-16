@@ -2,13 +2,12 @@ import { FeeRange, FeeRangeAxis } from "@/brand/components";
 import { HAMILTON_MODES } from "@/lib/constants";
 import type { IndexEntry } from "@/lib/data-store/fee-index";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
-import { getDisplayName } from "@/lib/fee-taxonomy";
 import { getPeerIndexCached } from "@/lib/data-store/public-cached-reads";
 import type { MarketReport } from "@/lib/custom-report/report-data";
 import type { ReportLine } from "@/lib/custom-report/analysis";
 import { STATE_NAMES } from "@/lib/us-states";
 import { money } from "@/app/landing-shared";
-import { latestReadOn } from "./board-math";
+import { latestReadOn, lineName } from "./board-math";
 import { SourceFooter } from "./workspace-exhibits";
 
 /** The fees the ladder can show, in order of preference: the first the sample publishes and can compare. */
@@ -28,7 +27,7 @@ export interface MarketLadderData {
   institutionName: string;
   /** The fee's taxonomy key, e.g. "overdraft". */
   feeKey: string;
-  /** Its display name from the fee taxonomy, the same name every exhibit uses. */
+  /** The sample report's own line name ("Outgoing international wire"), as the other exhibits show it. */
   feeLabel: string;
   value: number;
   rows: LadderRow[];
@@ -123,7 +122,7 @@ function ladderFor(
   return {
     institutionName: subject.institution_name,
     feeKey: line.key,
-    feeLabel: getDisplayName(line.key),
+    feeLabel: lineName(line.label),
     value: line.own.amount,
     rows,
     readOn: latestReadOn([line.own.schedule_read_on, ...(line.peerFigures ?? []).map((figure) => figure.schedule_read_on)]),
@@ -231,7 +230,8 @@ export function MarketLadder({ data, bare = false }: { data: MarketLadderData; b
       <p className="max-w-[none] border-t border-border px-4 py-2.5 text-[12px] text-ink-muted sm:px-6">
         Dot: its own published fee. Box: the middle half of each market. Right: each market&apos;s median.
       </p>
-      {bare ? null : <SourceFooter readOn={data.readOn ?? null} />}
+      {/* The date covers the local row only: the state, charter and nation rows come from the index. */}
+      {bare ? null : <SourceFooter readOn={data.readOn ?? null} readLabel="local figures read" />}
     </figure>
   );
 }

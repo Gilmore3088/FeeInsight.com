@@ -124,7 +124,7 @@ export function ProPlanBoard({
         id={CHECKOUT_ID}
         aria-labelledby="pro-checkout-title"
         className={`mx-auto mt-6 scroll-mt-24 rounded-2xl bg-surface-0 p-5 fi-window-lift sm:p-7 ${
-          selection ? "grid gap-6 border border-border md:grid-cols-2 md:gap-10" : "max-w-2xl border-2 border-ink"
+          selection ? "grid gap-6 border border-border md:grid-cols-2 md:items-center md:gap-10" : "max-w-2xl border-2 border-ink"
         }`}
       >
         <div className="min-w-0">
