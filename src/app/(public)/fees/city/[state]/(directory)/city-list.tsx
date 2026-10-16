@@ -6,46 +6,126 @@ import { useMemo, useState } from "react";
 export interface CityLink {
   name: string;
   href: string;
+  /** Banks and credit unions with a branch in the city. */
+  institutions: number;
+  /** Of those, the ones whose fees we publish. */
   withFees: number;
 }
 
-/** Every city with published fees, filterable by name: a phone reader types their town. */
-export function CityList({ cities, stateName }: { cities: CityLink[]; stateName: string }) {
+/** Cities listed before "Show all". */
+const FIRST_CITIES = 30;
+
+const LINK = "font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink";
+
+/**
+ * Search first: a reader types their town. A town we don't cover gets a plain answer and three
+ * ways on (institution search, the state report, every fee), never an empty list.
+ */
+export function CityList({
+  cities,
+  stateName,
+  stateCode,
+  shortcuts = [],
+}: {
+  cities: CityLink[];
+  stateName: string;
+  stateCode: string;
+  /** The largest markets, shown as one-tap links under the search until the reader types. */
+  shortcuts?: CityLink[];
+}) {
   const [query, setQuery] = useState("");
+  const [all, setAll] = useState(false);
+  const q = query.trim();
   const shown = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const list = q ? cities.filter((c) => c.name.toLowerCase().includes(q)) : cities;
+    const lower = q.toLowerCase();
+    const list = lower ? cities.filter((c) => c.name.toLowerCase().includes(lower)) : cities;
     return [...list].sort((a, b) => a.name.localeCompare(b.name));
-  }, [cities, query]);
+  }, [cities, q]);
+  // Until the reader types or asks for all, the list is the cities with the most institutions, A to Z.
+  const collapsed = !q && !all && cities.length > FIRST_CITIES;
+  const listed = collapsed
+    ? [...cities].sort((a, b) => b.institutions - a.institutions).slice(0, FIRST_CITIES).sort((a, b) => a.name.localeCompare(b.name))
+    : shown;
 
   return (
     <div>
-      <label className="block max-w-sm">
+      <label className="block max-w-md">
         <span className="text-[13px] font-medium text-ink">Find your city</span>
         <input
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={`A city in ${stateName}`}
-          className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2.5 text-[15px] text-ink placeholder:text-ink-muted focus:outline-2 focus:outline-ink"
+          className="mt-1 min-h-11 w-full rounded-full border border-ink bg-surface-0 px-4 text-[15px] text-ink placeholder:text-ink-muted focus:outline-2 focus:outline-ink"
         />
       </label>
       <p className="mt-2 text-[12px] text-ink-muted" aria-live="polite">
-        {shown.length === cities.length ? `${cities.length} cities` : `${shown.length} of ${cities.length} cities`}
+        {shown.length === cities.length
+          ? `Cities with fee coverage: ${cities.length}${collapsed ? `. Listed below: the ${FIRST_CITIES} with the most institutions.` : ""}`
+          : `${shown.length} of ${cities.length} cities with fee coverage`}
       </p>
+      {!q && shortcuts.length > 0 && (
+        <div className="mt-4">
+          <p className="text-[13px] font-medium text-ink">Largest markets</p>
+          <ul className="mt-2 flex flex-wrap gap-2">
+            {shortcuts.map((c) => (
+              <li key={c.href}>
+                <Link
+                  href={c.href}
+                  className="inline-flex min-h-11 items-center gap-2 rounded-full border border-border bg-surface-0 px-4 text-[14px] font-medium text-ink hover:border-ink"
+                >
+                  {c.name}
+                  <span className="text-[12px] font-normal text-ink-muted">{c.institutions} institutions</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {shown.length > 0 ? (
         <ul className="mt-3 grid grid-cols-1 gap-x-6 sm:grid-cols-2 lg:grid-cols-3">
-          {shown.map((c) => (
+          {listed.map((c) => (
             <li key={c.href} className="border-b border-border">
               <Link href={c.href} className="flex min-h-11 items-center justify-between gap-3 py-2 text-[14px] text-ink hover:text-brick">
                 <span className="min-w-0 truncate font-medium">{c.name}</span>
-                <span className="shrink-0 font-mono text-[12px] tabular-nums text-ink-muted">{c.withFees}</span>
+                <span className="shrink-0 text-[12px] tabular-nums text-ink-muted">
+                  {c.withFees} of {c.institutions} with fees
+                </span>
               </Link>
             </li>
           ))}
         </ul>
-      ) : (
-        <p className="mt-3 text-[14px] text-ink-muted">No city by that name has published fees yet.</p>
+      ) : null}
+      {shown.length > 0 && collapsed && (
+        <button
+          type="button"
+          onClick={() => setAll(true)}
+          className="mt-4 inline-flex min-h-11 items-center rounded-full border border-ink px-5 text-[14px] font-semibold text-ink hover:bg-surface-0"
+        >
+          Show all {cities.length} cities
+        </button>
+      )}
+      {shown.length === 0 && (
+        <div className="mt-3 rounded-2xl border border-border bg-surface-0 p-5">
+          <p className="text-[15px] font-semibold text-ink">We don&apos;t have a city comparison for {q} yet.</p>
+          <ul className="mt-3 space-y-2 text-[14px]">
+            <li>
+              <Link href={`/institutions?q=${encodeURIComponent(q)}`} className={LINK}>
+                Search institutions by name
+              </Link>
+            </li>
+            <li>
+              <Link href={`/research/state/${stateCode}`} className={LINK}>
+                {stateName} fee report
+              </Link>
+            </li>
+            <li>
+              <Link href="/fees" className={LINK}>
+                Fees across the U.S.
+              </Link>
+            </li>
+          </ul>
+        </div>
       )}
     </div>
   );

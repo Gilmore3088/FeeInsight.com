@@ -1,4 +1,5 @@
 import { cachedPublicRead } from "./public-read-cache";
+import { getCityMarket, getStateMarketCities } from "./city-market";
 import { getDataFreshness, getPublicStats, getStats } from "./core";
 import { getDistrictMetrics } from "./dashboard";
 import { getCheapestAndMostExpensive, getFeeCategoryDetail } from "./fees";
@@ -67,6 +68,8 @@ export const getStateStatsCached = cachedPublicRead("state-stats", getStateStats
 export const getDistrictStatsCached = cachedPublicRead("district-stats", getDistrictStats);
 export const getStatesWithFeeDataCached = cachedPublicRead("states-with-fee-data", getStatesWithFeeData);
 export const getCitiesInStateCached = cachedPublicRead("cities-in-state", getCitiesInState);
+export const getCityMarketCached = cachedPublicRead("city-market-v1", getCityMarket);
+export const getStateMarketCitiesCached = cachedPublicRead("state-market-cities-v1", getStateMarketCities);
 export const getCityFeeAveragesCached = cachedPublicRead("city-fee-averages", getCityFeeAverages);
 export const getDataCoverageSummaryCached = cachedPublicRead("data-coverage-summary", getDataCoverageSummary);
 export const getMarketConcentrationCached = cachedPublicRead("market-concentration", getMarketConcentration);
