@@ -32,6 +32,7 @@ import { rollBackRetiredCompanionFees } from "@/lib/agents/hamilton/companion-re
 import { restoreOutliersNowInRange, rollBackPublishedOutliers } from "@/lib/agents/hamilton/outlier-rollback";
 import { rollBackUnreproducedFees } from "@/lib/agents/hamilton/rules-recheck";
 import { syncPipelineFeedback } from "@/lib/agents/learning/feedback-sync";
+import { repairAccountTypeHoldFeedback } from "@/lib/agents/learning/account-type-hold-feedback";
 import { linkImportedFeesToTwins, takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
 import { retidyLiveFeeNames } from "@/lib/agents/knox/name-retidy";
 import { moveExtractionNotes } from "@/lib/agents/knox/extraction-note";
@@ -1457,6 +1458,8 @@ async function executeAgenticStep(
       // Every agent learns from what happened to its output: this step's takedowns and
       // restores (and a batch of older outcomes) go into the shared learning store.
       const feedbackSync = await syncPipelineFeedback(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
+      // #1100: the sync's old rows for account type holds go to weight 0, behind a switch (off).
+      const holdFeedback = await repairAccountTypeHoldFeedback(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
       const indexRefresh = published.dryRun
         ? null
         : await refreshFeeIndexCache(tx, {
@@ -1936,6 +1939,12 @@ async function executeAgenticStep(
             fee_name: rollback.feeName,
             amount: rollback.amount,
           })),
+          account_type_hold_feedback: {
+            on: holdFeedback.on,
+            due: holdFeedback.due,
+            zeroed: holdFeedback.zeroed,
+            error: holdFeedback.error,
+          },
           learning_feedback: feedbackSync.ready
             ? {
                 takedowns: feedbackSync.takedowns,

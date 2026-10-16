@@ -527,6 +527,8 @@ export const HOUSEKEEPING_REASON_KEYS: ReadonlySet<string> = new Set([
   "rules_recheck_restore",
   "taxonomy_fold",
   "closed_institution",
+  // A non-checking account's monthly fee held as verified (#1100): publish policy, not a wrong fee.
+  "account_type_hold",
 ]);
 
 /** The reason's key: "source_check_untraceable:no_amount" → "source_check_untraceable", "refreshed by #9" → "refreshed by". */
