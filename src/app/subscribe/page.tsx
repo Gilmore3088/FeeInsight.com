@@ -13,16 +13,10 @@ import { gatedPageLabel, hamiltonFullName, subscribeEntry, subscribeReasonLine }
 import type { Metadata } from "next";
 import { getPublicStatsSummary } from "@/lib/public-stats";
 import { CONTACT_EMAIL, PRODUCT_NAME, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
-import { CHECKOUT_ID, CHOOSER_INPUT_ID, PLANS_ID, ProPlanBoard, type ProTierSelection } from "./pro-plan-cards";
+import { CHECKOUT_ID, CHOOSER_INPUT_ID, PLANS_ID, PlanBenefits, ProPlanBoard, type ProTierSelection } from "./pro-plan-cards";
+import { ReportExcerpt } from "./report-excerpt";
+import { loadSampleReport } from "@/lib/custom-report/sample-report";
 import { ProTierChooser } from "./pro-tier-chooser";
-import type { WirePreviewItem, WirePreviewLead } from "./pro-overview";
-import { getArticles, TOPIC_LABELS } from "@/lib/data-store/news";
-import { getStateNews, STATE_BILL_STAGE_LABELS } from "@/lib/data-store/state-news";
-import { getWireFeeIndexes } from "@/lib/data-store/wire-fee-data";
-import { buildFeeDataStrips, categoriesForFeeTypes } from "@/lib/regulatory/wire-fee-links";
-import { feeTypesOf, type FeeType } from "@/lib/regulatory/wire-fee-types";
-import { STATE_NAMES } from "@/lib/us-states";
-import { formatAmount } from "@/lib/format";
 import { PricingJump } from "./pricing-jump";
 import { StickyCta } from "./sticky-cta";
 import { TrackView } from "@/components/track-view";
@@ -30,8 +24,6 @@ import { getProPricingInstitution } from "@/lib/data-store/pro-accounts";
 import { NON_INSTITUTION_TIER, PRO_TIERS, assetsDetail, isProTier, proTier, tierAmountLabel, tierForAssets } from "@/lib/pro-tiers";
 import { GatedOptions, OtherOptions, PricingFaq } from "./pricing-sections";
 import { chosenPriceLine, closingHeading, fromPriceLine, pricingCtaLabel, type ChosenInstitutionPrice } from "./plan-cta";
-import { loadPlansExhibitData } from "./exhibit-data";
-import { PlanIncludes, PlansExhibit } from "./plans-exhibit";
 
 import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import { isProPlan, type ProPlan } from "./pricing";
@@ -77,80 +69,11 @@ interface SubscribeSearchParams {
   canceled?: string;
 }
 
-const FEE_TYPE_NOUNS: Record<FeeType, string> = {
-  overdraft: "overdraft fees",
-  atm: "ATM fees",
-  maintenance: "account maintenance fees",
-  wire: "wire transfer fees",
-  card: "card fees",
-  other: "bank fees",
-};
+const SEAT_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
 
-/** "Illinois bill on overdraft fees": says only which fee the bill's own title names. */
-function billHeading(state: string, title: string): string {
-  const type = feeTypesOf(title)[0];
-  return type ? `${state} bill on ${FEE_TYPE_NOUNS[type]}` : title;
-}
-
-interface WirePreviewData {
-  lead: WirePreviewLead | null;
-}
-
-/**
- * The Wire preview's one item, read from the Wire's own tables: the newest state fee bill
- * with figures in the fee data (the Wire's "In the fee data" strip), else the newest federal
- * release, fee and rulemaking topics first. A read
- * that fails leaves its part out, and the page falls back to the benchmark preview.
- */
-async function wirePreviewData(): Promise<WirePreviewData> {
-  const [articles, bills] = await Promise.all([
-    getArticles({ limit: 12 }).catch(() => []),
-    getStateNews({ limit: 8 })
-      .then((news) => news.bills)
-      .catch(() => []),
-  ]);
-  const ranked = [...articles.filter((a) => a.topic !== "general"), ...articles.filter((a) => a.topic === "general")];
-  const releases: WirePreviewItem[] = ranked.map((article) => ({
-    source: article.source,
-    title: article.title,
-    detail: article.topic && article.topic !== "general" ? (TOPIC_LABELS[article.topic] ?? null) : null,
-    date: article.published_at,
-    url: article.link || null,
-  }));
-
-  const bill = bills.find((b) => categoriesForFeeTypes(feeTypesOf(b.title)).length > 0) ?? null;
-  if (bill) {
-    const key = `${bill.state_code}:${bill.identifier ?? bill.title}`;
-    const indexes = await getWireFeeIndexes({ states: [bill.state_code], national: false }).catch(() => null);
-    const strip = indexes
-      ? buildFeeDataStrips([{ key, title: bill.title, stateCode: bill.state_code }], indexes).get(key) ?? null
-      : null;
-    if (strip) {
-      const state = STATE_NAMES[bill.state_code] ?? bill.state_code;
-      const stage = bill.stage ? (STATE_BILL_STAGE_LABELS[bill.stage] ?? null) : null;
-      return {
-        lead: {
-          source: bill.identifier ? `${state} · ${bill.identifier}` : `${state} bill`,
-          // A plain heading from the fee the official title names; the title itself stays shown.
-          title: billHeading(state, bill.title),
-          officialTitle: bill.title,
-          detail: stage,
-          date: bill.stage_on,
-          url: bill.url,
-          place: strip.place,
-          figures: strip.figures.map((figure) => ({
-            label: figure.label,
-            text:
-              figure.status === "median" && figure.median !== null
-                ? `${formatAmount(figure.median)} median · ${figure.institutions.toLocaleString("en-US")} institutions`
-                : figure.text,
-          })),
-        },
-      };
-    }
-  }
-  if (releases.length === 0) return { lead: null };
-  return { lead: { ...releases[0], officialTitle: null, place: null, figures: [] } };
+/** "five": the seat count in words in the opening line, as James wrote it. */
+function seatWord(n: number): string {
+  return SEAT_WORDS[n] ?? String(n);
 }
 
 function buildSubscribeReturnPath(options: {
@@ -190,11 +113,10 @@ export default async function SubscribePage({
     redirect(returnTo && returnTo !== WELCOME_PATH ? returnTo : WELCOME_PATH);
   }
 
-  const [summary, wire, exhibit] = await Promise.all([
+  const [summary, sampleReport] = await Promise.all([
     getPublicStatsSummary(),
-    wirePreviewData(),
-    loadPlansExhibitData().catch((error: unknown) => {
-      console.error("[subscribe] exhibit reads failed; Hamilton window hidden", error);
+    loadSampleReport().catch((error: unknown) => {
+      console.error("[subscribe] sample report read failed; report excerpt hidden", error);
       return null;
     }),
   ]);
@@ -311,22 +233,26 @@ export default async function SubscribePage({
             </div>
           )}
 
-          <div className="mx-auto max-w-3xl text-center">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink-muted">{entry.page ? entry.context : "Pricing"}</p>
+          {/* A short offer, then the prices (James, Oct 16 evening: what they get and what it costs
+              before any work). */}
+          <div className="mx-auto max-w-2xl text-center">
+            {entry.page && (
+              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-ink-muted">{entry.context}</p>
+            )}
             <h1
               id="pro-title"
-              className="mt-3 text-[2.25rem] font-semibold leading-[1.04] tracking-[-0.04em] text-ink sm:text-[3rem]"
+              className="text-[2rem] font-semibold leading-[1.05] tracking-[-0.035em] text-ink sm:text-[2.5rem]"
               style={DISPLAY}
             >
-              Hamilton Pro, priced by your institution&apos;s size
+              Hamilton Pro
             </h1>
-            <p className="mx-auto mt-3 max-w-2xl text-[16px] leading-relaxed text-ink-soft sm:text-[18px]">
-              Your fees against your market, with a source for every figure. One plan covers up to{" "}
-              {WORKSPACE_SEAT_LIMIT} people.
+            <p className="mx-auto mt-3 max-w-xl text-[16px] leading-relaxed text-ink-soft sm:text-[17px]">
+              Fee intelligence for your institution. Full {PRODUCT_NAME} access, competitive analysis, and board reports for up to{" "}
+              {seatWord(WORKSPACE_SEAT_LIMIT)}{"\u00a0"}people.
             </p>
           </div>
 
-          <div className="mt-8">
+          <div className="mt-7">
             <ProPlanBoard
               isLoggedIn={isLoggedIn}
               chooser={
@@ -339,6 +265,7 @@ export default async function SubscribePage({
                   entry={entryPoint}
                 />
               }
+              lookupOpen={chosenLabel !== null}
               selection={selection}
               selectedName={selection?.institutionId ? chosenLabel : null}
               returnTo={returnTo ?? undefined}
@@ -358,25 +285,16 @@ export default async function SubscribePage({
             )}
           </div>
 
-          <PlanIncludes />
+          <PlanBenefits />
         </section>
 
-        {exhibit && <PlansExhibit data={exhibit} wire={wire.lead} />}
+        {sampleReport && <ReportExcerpt report={sampleReport} />}
 
-        <div className="mx-auto max-w-6xl px-4 pb-10 sm:px-6">
-          {gated ? (
-            <div className="mt-4">
-              <GatedOptions reportHref={REPORT_FORM_HREF} />
-            </div>
-          ) : (
-            <div className="mt-4">
-              <OtherOptions />
-            </div>
-          )}
+        <div className={`mx-auto max-w-6xl px-4 pb-10 sm:px-6 ${sampleReport ? "" : "pt-14"}`}>
+          <PricingFaq summary={summary} />
 
-          <div className="mt-16">
-            <PricingFaq summary={summary} />
-          </div>
+          {/* The demo and the one-off report stay as secondary paths, below the billing questions. */}
+          <div className="mt-16">{gated ? <GatedOptions reportHref={REPORT_FORM_HREF} /> : <OtherOptions />}</div>
 
           <section
             aria-labelledby="cta-heading"

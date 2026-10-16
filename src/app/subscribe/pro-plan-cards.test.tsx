@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NON_INSTITUTION_TIER, PRO_TIERS, annualMonthsFree, annualSavingsLabel, tierAmountLabel } from "@/lib/pro-tiers";
 
@@ -15,7 +15,22 @@ vi.mock("@/components/track-link", () => ({
 }));
 
 import { apiIncludedInTier } from "@/lib/api-subscriber-access";
-import { API_CARD_LINE, API_HOW_LINE, API_INCLUDES_LINE, CONSULTANT_API_NOTE, PLAN_TERMS_LINE, CHECKOUT_ID, PLANS_ID, ProPlanBoard, RECOMMENDED_PLAN } from "./pro-plan-cards";
+import {
+  API_CARD_LINE,
+  API_DETAILS,
+  API_DETAILS_SUMMARY,
+  API_INCLUDES_LINE,
+  CONSULTANT_API_NOTE,
+  CHECKOUT_ID,
+  PLAN_TERMS_LINE,
+  PLANS_ID,
+  PRICE_RULE_LINE,
+  PlanBenefits,
+  ProPlanBoard,
+  RECOMMENDED_PLAN,
+  SELECT_INSTITUTION_LABEL,
+} from "./pro-plan-cards";
+import { OPEN_LOOKUP_EVENT } from "./pricing-jump";
 
 const registerHref = { annual: "/register?plan=annual", monthly: "/register?plan=monthly" };
 
@@ -64,17 +79,34 @@ describe("/subscribe plan board", () => {
     expect(track).toHaveBeenCalledWith("billing_frequency_selected", { plan: "monthly", entry: "direct" });
   });
 
-  it("before an institution is chosen, the search is the one step: one column, no card buttons, no checkout", () => {
+  it("puts the prices first: each card has a Select institution button that opens the lookup below the cards", () => {
+    Element.prototype.scrollIntoView = vi.fn();
     board();
     const panel = document.getElementById(CHECKOUT_ID)!;
-    expect(within(panel).getByRole("heading", { name: "Find your price" })).toBeInTheDocument();
-    expect(within(panel).getByLabelText("Find your institution")).toBeInTheDocument();
-    expect(panel.className).not.toContain("md:grid-cols-2");
-    // The search sits under the toggle, above the cards.
-    expect(panel.compareDocumentPosition(document.getElementById(PLANS_ID)!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    for (const card of cards()) expect(within(card).queryByRole("link")).toBeNull();
+    expect(panel).not.toBeVisible();
+    // The cards come before the lookup.
+    expect(document.getElementById(PLANS_ID)!.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    for (const card of cards()) expect(within(card).getByRole("button", { name: SELECT_INSTITUTION_LABEL })).toBeInTheDocument();
+    fireEvent.click(within(cards()[2]).getByRole("button", { name: SELECT_INSTITUTION_LABEL }));
+    expect(panel).toBeVisible();
+    expect(within(panel).getByRole("heading", { name: "Find your institution" })).toBeInTheDocument();
+    expect(document.activeElement).toBe(document.getElementById("pro_tier_institution"));
+    expect(track).toHaveBeenCalledWith("pricing_lookup_opened", { tier: PRO_TIERS[2].key, entry: "direct" });
     expect(screen.queryByRole("link", { name: /Subscribe/ })).toBeNull();
-    expect(panel.textContent).not.toContain("Your price and checkout show here.");
+  });
+
+  it("opens the lookup when another pricing button asks for it", () => {
+    board();
+    expect(document.getElementById(CHECKOUT_ID)!).not.toBeVisible();
+    act(() => {
+      window.dispatchEvent(new Event(OPEN_LOOKUP_EVENT));
+    });
+    expect(document.getElementById(CHECKOUT_ID)!).toBeVisible();
+  });
+
+  it("starts with the lookup open when the URL already names an institution", () => {
+    board({ lookupOpen: true });
+    expect(document.getElementById(CHECKOUT_ID)!).toBeVisible();
   });
 
   it("the toggle buttons say which billing is on, and the recommended chip states the shared months free", () => {
@@ -116,25 +148,35 @@ describe("/subscribe plan board", () => {
     expect(track).toHaveBeenCalledWith("billing_frequency_selected", { plan: "annual", tier: mid.key, entry: "direct" });
   });
 
-  it("says the API and Claude connector come only on the plans that include them", () => {
+  it("shows the API as a secondary inclusion on the plans that include it", () => {
     board();
     expect(PRO_TIERS.filter((tier) => apiIncludedInTier(tier.key)).map((tier) => tier.key)).toEqual(["mid", "large"]);
     PRO_TIERS.forEach((tier, i) => {
       expect(cards()[i].textContent?.includes(API_CARD_LINE)).toBe(apiIncludedInTier(tier.key));
     });
-    expect(API_INCLUDES_LINE).toBe("API and Claude connector included for institutions with $500M+ in assets, and for consultants · 10,000 API calls a month.");
     // The consultant price is the mid tier, so consultants get it too.
     expect(apiIncludedInTier(NON_INSTITUTION_TIER)).toBe(true);
   });
 
-  it("before a choice, states the renewal and refund terms and how the API allowance works", () => {
+  it("before a choice, states how the price is set and the renewal and refund terms", () => {
     board();
     const text = document.body.textContent ?? "";
+    expect(text).toContain(PRICE_RULE_LINE);
     expect(text).toContain(PLAN_TERMS_LINE);
     expect(PLAN_TERMS_LINE).toContain("within 14 days of the first payment");
-    expect(text).toContain(API_INCLUDES_LINE);
-    expect(text).toContain(API_HOW_LINE);
-    expect(API_HOW_LINE).toMatch(/account holder makes one API key/);
-    expect(text).not.toContain("for the person who pays");
+  });
+});
+
+describe("/subscribe plan benefits", () => {
+  it("lists the shared benefits, then the API line with its limits in a closed API access details", () => {
+    render(<PlanBenefits />);
+    expect(screen.getByRole("heading", { name: "Every plan includes" })).toBeInTheDocument();
+    expect(document.body.textContent).toContain("Full Bank Fee Index access");
+    expect(API_INCLUDES_LINE).toBe("Included on $500M+ plans and for consultants");
+    const details = screen.getByText(API_DETAILS_SUMMARY).closest("details")!;
+    expect(details.open).toBe(false);
+    for (const line of API_DETAILS) expect(details.textContent).toContain(line);
+    expect(API_DETAILS.join(" ")).toMatch(/10,000 API calls a month, shared/);
+    expect(API_DETAILS.join(" ")).toMatch(/account holder makes it/);
   });
 });
