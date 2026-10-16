@@ -18,7 +18,6 @@ function noAccountInstitution(status: string): string {
 interface PeerAskBody { institutionId?: unknown; question?: unknown; answer?: unknown; previousPeerList?: unknown }
 interface PeerAsker { id: number; institution_name?: string | null }
 
-/** A recognized list is never sent to fee analysis or a paid narrative fallback. */
 /** Says which institutions a capped list kept and how to see the others (#1540). */
 export function cappedListNote(criteria: Pick<PeerListCriteria, "sort" | "limit">, shown: number, total: number): string {
   const kept = criteria.sort === "closest_assets" ? `the ${shown} closest in size` : criteria.sort === "largest_assets" ? `the ${shown} largest by assets` : `the first ${shown} by name`;
@@ -26,6 +25,7 @@ export function cappedListNote(criteria: Pick<PeerListCriteria, "sort" | "limit"
   return `Showing ${kept} of ${total} matching institutions; ${total - shown} more are not shown. ${rest}`;
 }
 
+/** A recognized list is never sent to fee analysis or a paid narrative fallback. */
 export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordActivity = true): Promise<PeerListResponse | null> {
   if (body.answer !== undefined || typeof body.question !== "string") return null;
   const question = body.question;
