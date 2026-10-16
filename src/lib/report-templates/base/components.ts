@@ -50,13 +50,13 @@ export function coverPage(props: CoverPageProps): string {
 // ─── Section Header ────────────────────────────────────────────────────────────
 
 export interface SectionHeaderProps {
-  label: string;        // e.g., "Findings" — terracotta small caps above heading
+  label: string;        // e.g., "Findings" — brick small caps above heading
   title: string;        // Conclusion-first heading per D-03
-  subheading?: string;  // Optional italic subheading for additional context
+  subheading?: string;  // Optional subheading for additional context
 }
 
 /**
- * Terracotta label + Newsreader heading + optional italic subheading.
+ * Brick label + Geist heading + optional subheading.
  * Use conclusion-first titles per D-03: "Montana overdraft fees run 23% above national median"
  * not "Overdraft Fee Analysis".
  */
@@ -99,7 +99,7 @@ function formatCell(val: string | number | null | undefined, fmt?: string): stri
 export const SHORT_TABLE_ROWS = 6;
 
 /**
- * Full-width data table with warm styling matching brief-generator.ts visual language.
+ * Full-width data table with the report styling matching brief-generator.ts visual language.
  * Null values render as "—" (em dash). Positive percent values get "+" prefix.
  */
 export function dataTable(props: DataTableProps): string {
@@ -163,13 +163,13 @@ export function chartContainer(props: ChartContainerProps): string {
 // ─── Pull Quote ────────────────────────────────────────────────────────────────
 
 /**
- * Large Newsreader italic text with terracotta left border.
+ * Large Geist text with a brick left border.
  * Use for the single most important finding in a section.
  * Optional attribution renders as a cite element below the quote.
  */
 export function pullQuote(text: string, attribution?: string): string {
   const attr = attribution
-    ? `<cite style="display: block; margin-top: 8px; font-size: 11px; font-style: normal; color: #6b7280;">\u2014 ${escapeHtml(attribution)}</cite>`
+    ? `<cite style="display: block; margin-top: 8px; font-size: 11px; font-style: normal; color: ${PALETTE.textMuted};">\u2014 ${escapeHtml(attribution)}</cite>`
     : "";
   return `<blockquote class="report-pull-quote">${escapeHtml(text)}${attr}</blockquote>`;
 }
@@ -187,7 +187,7 @@ export function footnote(text: string): string {
 // ─── Hamilton Narrative Block ──────────────────────────────────────────────────
 
 /**
- * Wraps Hamilton's AI-generated prose with a subtle terracotta left rule.
+ * Wraps Hamilton's AI-generated prose with a subtle brick left rule.
  * escapeHtml applied defensively — generated prose should be plain text
  * but this prevents XSS if the prose is ever served in a browser frame.
  */
@@ -238,7 +238,7 @@ export function statCardRow(cards: StatCard[]): string {
 // ─── Key Finding ───────────────────────────────────────────────────────────────
 
 /**
- * Terracotta-bordered callout box for a single critical finding.
+ * Brick-bordered callout box for a single critical finding.
  * Use sparingly — one per section maximum.
  */
 export function keyFinding(text: string, label?: string): string {
@@ -376,7 +376,7 @@ export function twoColumn(left: string, right: string, ratio = "1.2fr 1fr"): str
 // ─── Chapter Divider ───────────────────────────────────────────────────────────
 
 /**
- * Full-width chapter opener with terracotta accent number and large heading.
+ * Full-width chapter opener with brick accent number and large heading.
  * Use at the start of major report sections.
  */
 export function chapterDivider(number: string, title: string): string {
@@ -815,7 +815,7 @@ export function revenuePyramid(tiers: RevenuePyramidTier[]): string {
 
 /**
  * Styled callout block explaining the data methodology.
- * Cream background with terracotta left border.
+ * Surface-0 background with a brick left border.
  */
 export function dataFramework(title: string, body: string): string {
   return `
