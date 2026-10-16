@@ -387,16 +387,51 @@ function nameStems(feeName: string): string[] {
   return Array.from(new Set(words.map((word) => (/^\d+x\d+$/.test(word) ? ` ${word} ` : word.slice(0, STEM_LENGTH)))));
 }
 
+/** What may follow a short name word: the word's end, or a plural ending ("s", "es", "'s"). */
+const WHOLE_WORD_END = /^(?:'?s|es)?(?![a-z])/;
+
+/**
+ * A name stem matches only where a word begins, never inside another word (#1646). A stem cut from
+ * a longer name word ("overd" from "Overdraft") is its first letters, so it matches the words
+ * that begin with them ("Overdrafts"). A short name word kept whole ("Star", "Stop", "ATM") is a
+ * word itself: it matches that word or its plural ("Stops", "ATMs"), never a longer word that
+ * merely begins with it ("started", "stopped"). Only letters join a word, so a footnote number
+ * printed against it still leaves it whole ("Lost key13 | $18"). A size stem carries its own
+ * spaces (" 5x10 ") and is matched as written.
+ */
+function stemAt(haystack: string, stem: string): boolean {
+  if (stem.startsWith(" ")) return haystack.includes(stem);
+  for (let at = haystack.indexOf(stem); at >= 0; at = haystack.indexOf(stem, at + 1)) {
+    if (at > 0 && /[a-z]/.test(haystack[at - 1])) continue;
+    if (stem.length >= STEM_LENGTH || WHOLE_WORD_END.test(haystack.slice(at + stem.length))) return true;
+  }
+  return false;
+}
+
+/**
+ * The text as name words are looked for in it. A label run into its value by the text reader
+ * ("Product/ServiceTemporary Checks") also reads with a space where a capital follows a small
+ * letter, so the run-in word begins a word; the text as printed still reads too ("eStatement").
+ */
+function nameHaystacks(text: string): string[] {
+  const plain = ` ${comparable(text)} `;
+  if (!/[a-z][A-Z]/.test(text)) return [plain];
+  return [plain, ` ${comparable(text.replace(/([a-z])([A-Z])/g, "$1 $2"))} `];
+}
+
+function hasStem(text: string, stem: string): boolean {
+  return nameHaystacks(text).some((haystack) => stemAt(haystack, stem));
+}
+
 function namesFee(line: string, stems: string[], atLeast?: number): boolean {
   if (stems.length === 0) return false;
-  const haystack = ` ${comparable(line)} `;
-  const found = stems.filter((stem) => haystack.includes(stem)).length;
+  const found = stemCount(line, stems);
   return found >= (atLeast ?? Math.max(1, Math.ceil(stems.length * NAME_WORD_SHARE)));
 }
 
 function stemCount(text: string, stems: string[]): number {
-  const haystack = ` ${comparable(text)} `;
-  return stems.filter((stem) => haystack.includes(stem)).length;
+  const haystacks = nameHaystacks(text);
+  return stems.filter((stem) => haystacks.some((haystack) => stemAt(haystack, stem))).length;
 }
 
 function statesAmount(line: string, amount: number, stems: string[]): SourceCheckFailure | null {
@@ -910,7 +945,7 @@ function checkAgainstLines(
     }
     const underHeading =
       namesFee(line, stems, 1) &&
-      !headings.some((above) => namesFee(above, stems) && stems.every((stem) => !` ${comparable(line)} `.includes(stem) || ` ${comparable(above)} `.includes(stem))) &&
+      !headings.some((above) => namesFee(above, stems) && stems.every((stem) => !hasStem(line, stem) || hasStem(above, stem))) &&
       namesFee(`${headings.join(" ")} ${line}`, stems, stems.length);
     if (!namesFee(line, stems) && !underHeading) continue;
     let row = feeRow(lines, i);

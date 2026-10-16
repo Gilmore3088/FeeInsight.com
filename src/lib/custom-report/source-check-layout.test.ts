@@ -626,3 +626,42 @@ describe("checkFeeAgainstSource daily caps", () => {
     expect(checkFeeAgainstSource(bare, "Overdraft", 30, ".", "overdraft").ok).toBe(false);
   });
 });
+
+// #1646: a name stem matches where a word begins, never inside another word.
+describe("name words match whole words", () => {
+  // Bay Cities' checking comparison (source document 31579) has no Star Checking; "Star" was found in "started".
+  const bayCities = [
+    "Express Checking For members who want more financial control | 1st Checking Students just getting started, ages 16-24 | Dividend Checking For Members who maintain higher balances and want to earn interest",
+    "",
+    "Monthly Service Charge | $0 Monthly Service Charge with e-Statements & Direct Deposit $5 Monthly Service Charge with either e-Statements or Direct Deposit $10 Monthly Service Charge without e-Statements or Direct Deposit",
+  ].join("\n");
+
+  it("does not find \"Star\" inside \"started\"", () => {
+    expect(checkFeeAgainstSource(bayCities, "Star Checking Monthly Fee", 10, ".", "monthly_maintenance").ok).toBe(false);
+    expect(checkFeeAgainstSource("Upstart Checking Monthly Fee | $10.00", "Star Checking Monthly Fee", 10, ".").ok).toBe(false);
+  });
+
+  it("still finds the name where it is printed", () => {
+    expect(checkFeeAgainstSource("Star Checking Monthly Fee | $10.00", "Star Checking Monthly Fee", 10, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("STAR CHECKING - Monthly Fee | $10.00", "Star Checking Monthly Fee", 10, ".").ok).toBe(true);
+  });
+
+  it("keeps matching longer words that begin with the stem", () => {
+    // Plurals and suffixes: "Stop Payment" in "Stop Payments", "Overdraft" in "Overdrafts".
+    expect(checkFeeAgainstSource("Stop Payments | $30.00", "Stop Payment", 30, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Overdrafts (per item) | $35.00", "Overdraft Fee", 35, ".").ok).toBe(true);
+    // A word after punctuation still begins a word ("Non-Sufficient", "(Outgoing").
+    expect(checkFeeAgainstSource("Wire Transfer (Outgoing) | $25.00", "Outgoing Wire", 25, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("NSF/Non-Sufficient Funds | $32.00", "Non-Sufficient Funds Fee", 32, ".").ok).toBe(true);
+  });
+
+  it("reads a word against a footnote number or run into a label", () => {
+    expect(checkFeeAgainstSource("Safe deposit box fees\nFee type | Fee amount\nLost key13 | $18", "Lost key", 18, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Product/ServiceStop Payments | Fee $30.00\nProduct/ServiceTemporary Checks | Fee $5.00 per set", "Temporary Checks", 5, ".").ok).toBe(true);
+  });
+
+  it("does not find a word inside a longer compound", () => {
+    // "Draft" is not the "Overdraft" fee.
+    expect(checkFeeAgainstSource("Overdraft Fee | $35.00", "Draft Fee", 35, ".").ok).toBe(false);
+  });
+});
