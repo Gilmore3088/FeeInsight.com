@@ -30,6 +30,11 @@ export interface IndexEntry {
   cu_count: number;
   maturity_tier: "strong" | "provisional" | "insufficient";
   last_updated: string | null;
+  /**
+   * Institutions behind the figures with at least one fee whose audience the schedule does not
+   * state (#1132): the asterisk test (`medianHasUnstatedAudience`). Computed live, never cached.
+   */
+  unstated_audience_institution_count?: number;
 }
 
 /**
@@ -49,6 +54,7 @@ type IndexRow = {
   charter_type: string;
   schedule_keys?: string[] | null;
   schedule_group?: string | null;
+  fee_audience?: string | null;
 };
 
 async function loadNationalRows(db: typeof sql, approvedOnly = true): Promise<IndexRow[]> {
@@ -57,7 +63,7 @@ async function loadNationalRows(db: typeof sql, approvedOnly = true): Promise<In
     : "ef.review_status != 'rejected'";
 
   return await db.unsafe(
-    `SELECT ef.fee_category, ef.amount, ef.institution_id,
+    `SELECT ef.fee_category, ef.amount, ef.institution_id, ef.fee_audience,
             ef.review_status, ef.created_at, ct.charter_type, ${STATS_SCHEDULE_KEYS}
      FROM published_fee_catalog ef
      JOIN institution_sources ct ON ef.institution_id = ct.id
@@ -382,20 +388,13 @@ export async function getPeerIndex(
   const where = conditions.join(" AND ");
 
   const rows = await sql.unsafe(
-    `SELECT ef.fee_category, ef.amount, ef.institution_id,
+    `SELECT ef.fee_category, ef.amount, ef.institution_id, ef.fee_audience,
             ef.review_status, ef.created_at, ct.charter_type, ${STATS_SCHEDULE_KEYS}
      FROM published_fee_catalog ef
      JOIN institution_sources ct ON ef.institution_id = ct.id
      WHERE ${where}`,
     params as never[]
-  ) as {
-    fee_category: string;
-    amount: number | null;
-    institution_id: number;
-    review_status: string;
-    created_at: string;
-    charter_type: string;
-  }[];
+  ) as IndexRow[];
 
   return buildIndexEntries(rows);
 }
@@ -469,7 +468,7 @@ export async function getPeerIndexes(
     }
   }
   const rows = await sql.unsafe(
-    `SELECT ef.fee_category, ef.amount, ef.institution_id, ef.review_status, ef.created_at,
+    `SELECT ef.fee_category, ef.amount, ef.institution_id, ef.review_status, ef.created_at, ef.fee_audience,
             ct.charter_type, ct.asset_size_tier, ct.fed_district, ct.state_code, ${STATS_SCHEDULE_KEYS}
        FROM published_fee_catalog ef
        JOIN institution_sources ct ON ef.institution_id = ct.id
@@ -618,6 +617,7 @@ export function buildIndexEntries(rows: IndexRow[]): IndexEntry[] {
     }
   }
 
+  const unstated = unstatedAudienceInstitutions(rows);
   const results: IndexEntry[] = [];
   for (const [category, stats] of summarizeFeesBy(rows, (row) => row.fee_category)) {
     results.push({
@@ -635,11 +635,41 @@ export function buildIndexEntries(rows: IndexRow[]): IndexEntry[] {
       cu_count: stats.cu_count,
       maturity_tier: stats.maturity_tier,
       last_updated: latestByCategory.get(category) || null,
+      unstated_audience_institution_count: unstated.get(category)?.size ?? 0,
     });
   }
 
   results.sort((a, b) => b.institution_count - a.institution_count);
   return results;
+}
+
+/** Per category, the institutions with a counted amount whose audience is `unknown` (#1132). */
+function unstatedAudienceInstitutions(rows: IndexRow[]): Map<string, Set<number>> {
+  const byCategory = new Map<string, Set<number>>();
+  for (const row of rows) {
+    if (row.fee_audience !== "unknown" || row.amount === null || !(Number(row.amount) >= 0)) continue;
+    const set = byCategory.get(row.fee_category) ?? new Set<number>();
+    set.add(Number(row.institution_id));
+    byCategory.set(row.fee_category, set);
+  }
+  return byCategory;
+}
+
+/**
+ * The same count for the national index read from fee_index_cache, which has no column for it
+ * (adding one needs a migration), so it is read live alongside the cache.
+ */
+async function loadNationalUnstatedAudienceCounts(): Promise<Map<string, number>> {
+  const rows = await sql.unsafe(
+    `SELECT ef.fee_category, COUNT(DISTINCT ef.institution_id)::int AS n
+       FROM published_fee_catalog ef
+      WHERE ef.review_status = 'approved'
+        AND ${STATS_ROW_FILTER}
+        AND ef.fee_audience = 'unknown'
+        AND ef.amount IS NOT NULL AND ef.amount >= 0
+      GROUP BY 1`
+  ) as { fee_category: string; n: number | string }[];
+  return new Map(rows.map((row) => [row.fee_category, Number(row.n)]));
 }
 
 /**
@@ -711,6 +741,7 @@ async function readNationalIndexCached(): Promise<IndexEntry[]> {
       return getNationalIndex();
     }
 
+    const unstated = await loadNationalUnstatedAudienceCounts();
     return rows.map((row) => ({
       fee_category: row.fee_category,
       fee_family: row.fee_family,
@@ -726,6 +757,7 @@ async function readNationalIndexCached(): Promise<IndexEntry[]> {
       cu_count: row.cu_count,
       maturity_tier: row.maturity_tier as IndexEntry["maturity_tier"],
       last_updated: row.computed_at,
+      unstated_audience_institution_count: unstated.get(row.fee_category) ?? 0,
     }));
   } catch {
     return getNationalIndex();
@@ -876,7 +908,7 @@ export function buildStateFeeIndexes(rows: IndexRow[]): StateFeeIndexes {
  */
 export async function getStateFeeIndexes(stateCode: string): Promise<StateFeeIndexes> {
   const rows = await sql.unsafe(
-    `SELECT ef.fee_category, ef.amount, ef.institution_id,
+    `SELECT ef.fee_category, ef.amount, ef.institution_id, ef.fee_audience,
             ef.review_status, ef.created_at, ct.charter_type, ${STATS_SCHEDULE_KEYS}
        FROM published_fee_catalog ef
        JOIN institution_sources ct ON ef.institution_id = ct.id

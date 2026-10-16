@@ -518,6 +518,11 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
             { name: "data[].maturity", type: "string", note: "strong | provisional | insufficient" },
             { name: "data[].bank_count", type: "integer", note: "Number of banks in sample" },
             { name: "data[].cu_count", type: "integer", note: "Number of credit unions in sample" },
+            {
+              name: "data[].unstated_audience_institution_count",
+              type: "integer",
+              note: "Institutions in the sample with at least one fee whose schedule doesn't say whether it's personal or business; those fees count as personal.",
+            },
           ]}
           responseExample={`{
   "scope": "filtered",
@@ -541,7 +546,8 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
       "institution_count": 189,
       "bank_count": 0,
       "cu_count": 189,
-      "maturity": "strong"
+      "maturity": "strong",
+      "unstated_audience_institution_count": 184
     },
     ...
   ]
