@@ -1135,12 +1135,12 @@ describe("conditional $0 on two-column pages and its own line (#1593, live rows 
     "Fee per transfer for pre-established automatic transfer of funds from a checking, savings, or money market account or line of credit to cover an overdraft.",
   ].join("\n");
 
-  // [published id, fee name, category, document]: the 8 real free fees the advisor found held.
+  // [published id, fee name, category, document]: 7 of the 8 real free fees the advisor found held.
+  // 56797 stays held (below): its tail's note states a term ("closed within 90 days").
   const free: Array<[number, string, string, string]> = [
     [38491, "Foreign Transaction Fees", "card_foreign_txn", terrabank],
     [44979, "Bill Pay", "bill_pay", tcfcu],
     [45011, "Bill Pay", "bill_pay", atlantic],
-    [56797, "Maintenance Fee (per statement cycle)", "monthly_maintenance", prairie],
     [89048, "Foreign ATM usage", "atm_non_network", poca],
     [90406, "Wire Transfers: Incoming", "wire_domestic_incoming", hyperion],
     [30683, "Mobile Deposit", "mobile_deposit", newburyport],
@@ -1158,7 +1158,9 @@ describe("conditional $0 on two-column pages and its own line (#1593, live rows 
   it("keeps the debatable and the conditional ones held", () => {
     // Debatable (#1593): a fee named for one audience is a person's call.
     expect(verdict("Check Printing (members over 62)", tcfcu, "check_printing")).toBe("conditional_zero");
-    // A traced line that carries every word of the name keeps its own terms.
+    // A real free fee left held on purpose (re-review of #1621): the right column's note "(closed
+    // within 90 days of opening)" reads like a condition, and a freed conditional $0 is the worse miss.
+    expect(verdict("Maintenance Fee (per statement cycle)", prairie, "monthly_maintenance")).toBe("conditional_zero");    // A traced line that carries every word of the name keeps its own terms.
     const twoAccounts = ["Monthly Service Charge 0.00 for 1st account 2nd account $5.00", "Applies to all Internet Banking/Bill Pay", "Monthly Service Fee $0.00"].join("\n");
     expect(verdict("Monthly Service Fee", twoAccounts, "monthly_maintenance")).toBe("conditional_zero");
     // A $0 that is one audience's price is never read in place of the traced line.
@@ -1198,5 +1200,40 @@ describe("conditional $0 on two-column pages and its own line (#1593, live rows 
     expect(conditionalZero(0, "Coin Counting FREE | Commercial Accounts $0.10 per roll", "Coin Counting")).toBe(true);
     const cashier = ["Cashier's Check No Charge Customer $5.00", "Money Order $2.00 Customer $3.00 each"].join("\n");
     expect(conditionalZero(0, "Cashier's Check No Charge Customer $5.00", "Cashier's Check", { documentText: cashier })).toBe(true);
+  });
+
+  // Re-review of #1621: the two-column reading frees a $0 only when the other column is positively another fee.
+  const comparison = (row: string, name: string) =>
+    ["Basic Checking | Premier Checking", row, "Interest Checking | Money Market", `${name} $0.00 Lost Debit Card (per card) $10.00`].join("\n");
+  const stillConditional: Array<[string, string, string]> = [
+    // P1-P3: a condition inside parentheses is still the fee's condition.
+    ["P1", "Maintenance Fee", "Maintenance Fee $0.00 (if balance falls below $100) $5.00"],
+    ["P2", "Maintenance Fee", "Maintenance Fee $0.00 (unless enrolled in eStatements) $5.00"],
+    ["P3", "Monthly Service Charge", "Monthly Service Charge $0 (fewer than 10 debit purchases) $8.00"],
+    // D2: a requirement with no listed condition word and no fee noun.
+    ["D2", "Monthly Fee", "Monthly Fee $0 Recurring paycheck needed $8.00"],
+  ];
+  it.each(stillConditional)("%s stays conditional on a two-column comparison page", (_case, name, row) => {
+    expect(conditionalZero(0, row, name, { documentText: comparison(row, name) })).toBe(true);
+  });
+  it("keeps a delivery tier or channel conditional, as a run-on tail or the next cell (L1-L5)", () => {
+    const l1 = "Debit Card Replacement FREE Overnight Delivery $35.00";
+    // L1: a neighbouring line opens with the same label.
+    const neighbour = ["Wire Transfers | Other Services", l1, "Overnight Delivery $35.00", "Stop Payment $30.00"].join("\n");
+    expect(conditionalZero(0, l1, "Debit Card Replacement", { documentText: neighbour })).toBe(true);
+    // L2: the same row repeated beside two-cell lines.
+    const repeated = ["Debit Cards | Other Services", l1, "Business Debit Cards | Money Orders", "Debit Card Replacement FREE Lost Card Fee $10.00"].join("\n");
+    expect(conditionalZero(0, l1, "Debit Card Replacement", { documentText: repeated })).toBe(true);
+    // L3-L5: the next cell is the same fee by channel, status or delivery, not another fee's row.
+    for (const [name, line] of [
+      ["Stop Payment", "Stop Payment FREE | Verbal Request $30.00"],
+      ["Paper Statement", "Paper Statement FREE | Inactive Status $5.00"],
+      ["Card Replacement", "Card Replacement FREE | Overnight Shipping $35.00"],
+    ]) {
+      expect(conditionalZero(0, line, name)).toBe(true);
+      expect(conditionalZero(0, line, name, { documentText: ["Services | Other Fees", line, "Inactive Status $5.00", "Verbal Request $30.00"].join("\n") })).toBe(true);
+    }
+    // A Title Case cell with no fee noun and no evidence on the page stays conditional too.
+    expect(conditionalZero(0, "Bill Pay ---- No Charge | Account History ---- $3.00 each", "Bill Pay")).toBe(true);
   });
 });

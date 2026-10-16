@@ -326,38 +326,42 @@ function ownRow(cell: string, feeName: string | null | undefined, documentText: 
 
 /**
  * True when the text after a fee's $0 on a run-on line is the other column of a two-column page
- * (#1593), on the document's own evidence:
+ * (#1593). It fails safe: the tail must not state a condition anywhere, notes in parentheses
+ * included (`tailStatesCondition`), and the document must show positively that it is another fee's
+ * row:
  * - a line of two text cells sits next to it ("Blue Lion Checking | Account Early Closure"), the
- *   tail does not open with a condition word, and the same row, the fee's whole name and its $0,
- *   prints on another line followed by a priced text that shares no word with this tail
- *   ("Maintenance Fee (per statement cycle) $0.00" then "(closed within 90 days of opening) $20.00",
- *   "(per account, per hour) $25.00" and "Lost Debit Card (per card) $10.00" on three lines: each
- *   tail is the right column's row); or
- * - the tail opens with another fee's label whose first word opens the other column on a line next
- *   to it ("Foreign ATM usage No Charge Customer (incoming) $15.00" over "Replacement Card $10.00
- *   Customer Domestic (outgoing) $30.00" under the right column's "Wire Transfers").
- * Without the document, or with no such evidence, the tail stays the fee's terms. Pure.
+ *   tail is a priced row the page also prints on a line of its own or opens with a fee noun, and the
+ *   same row, the fee's whole name and its $0, prints on another line followed by a priced text that
+ *   shares no word with this tail ("Maintenance Fee (per statement cycle) $0.00 (per account, per
+ *   hour) $25.00" beside the line "(per account, per hour) $25.00"); or
+ * - the tail opens with a Title Case label under a right-column heading on the line above that
+ *   names another fee, and that label opens the right column on a line next to it ("Foreign ATM
+ *   usage No Charge Customer (incoming) $15.00" under "POS transactions No Charge Wire Transfers",
+ *   over "Replacement Card $10.00 Customer Domestic (outgoing) $30.00").
+ * Without the document, or with no such evidence, the tail stays the fee's terms: a held real $0 is
+ * the safe miss, a freed conditional one is not (re-review of #1621). Pure.
  */
 function otherColumnTail(tail: string, feeName: string | null | undefined, documentText: string | null): boolean {
   if (!documentText || !feeName || AUDIENCE_NAME.test(feeName)) return false;
   const text = tail.replace(/^[\s.;,:*–—-]+/, "");
   const price = PRICE_AT.exec(text);
   if (!price) return false;
-  const lines = documentText.split(/\r?\n/).map((line) => line.replace(/\s+/g, " ").trim()).filter((line) => line.length > 0);
   const flat = text.replace(/\s+/g, " ").trim();
+  // "(if balance falls below $100) $5.00", "Maintain $500 daily balance or $10.00", "Overnight
+  // Delivery $35.00": the fee's own terms (reviews of #1621).
+  if (tailStatesCondition(flat)) return false;
+  const lines = documentLines(documentText);
   const here = lines.flatMap((line, index) => (line.includes(flat) ? [index] : []));
   const near = (index: number) => [index - 2, index - 1, index + 1, index + 2].map((k) => lines[k]).filter((line): line is string => line != null);
+  const label = text.slice(0, price.index);
   // A line of two text cells next to it ("Blue Lion Checking | Account Early Closure"): the page
   // is laid out in two columns here.
   const twoColumns = here.some((index) => near(index).some((line) => {
     const cells = line.split(/\s\|\s/);
     return cells.length === 2 && cells.every((cell) => (cell.match(/[a-z]{3,}/gi) ?? []).length >= 2);
   }));
-  // A tail that states a condition anywhere outside its own note ("Maintain $500 daily balance or
-  // $10.00", "Keep $1,000 in savings or $12.00") stays the fee's terms; a note in parentheses is the
-  // other column's own ("(closed within 90 days of opening) $20.00"). Review of #1621.
-  if (tailStatesCondition(flat)) return false;
-  if (twoColumns && !LABEL_AUDIENCE.test(flat.replace(/\([^)]*\)/g, " "))) {
+  const rowOfItsOwn = FEE_NOUN.test(label) || lines.some((line) => line === flat);
+  if (twoColumns && rowOfItsOwn && !LABEL_AUDIENCE.test(flat)) {
     const own = new Set(labelWords(flat));
     const repeated = lines.some((line) => {
       const after = rowTail(line, feeName);
@@ -365,12 +369,9 @@ function otherColumnTail(tail: string, feeName: string | null | undefined, docum
     });
     if (repeated) return true;
   }
-  const label = text.slice(0, price.index);
-  // A label of its own: a fee noun or two words ("Customer (incoming)"), never one bare word.
-  if (!otherFeeLabel(label, feeName, true, true) || (!FEE_NOUN.test(label) && labelWords(label).length < 2)) return false;
-  // A label that names an audience ("Customer $5.00") is the other column only under that
-  // column's own heading naming another fee ("POS transactions No Charge Wire Transfers").
-  if (LABEL_AUDIENCE.test(label) && !here.some((index) => rightColumnFee(lines[index - 1], feeName))) return false;
+  if (!otherFeeLabel(label, feeName, true, true) || !titleCase(label)) return false;
+  // The right column's own heading, on the line above, names another fee ("Wire Transfers").
+  if (!here.some((index) => rightColumnFee(lines[index - 1], feeName))) return false;
   const lead = labelWords(label)[0];
   if (!lead) return false;
   const opensColumn = (part: string) => part.toLowerCase().startsWith(lead) && PRICE_AT.test(part);
@@ -383,11 +384,61 @@ function otherColumnTail(tail: string, feeName: string | null | undefined, docum
 
 // Words that make a tail the fee's own terms wherever they sit: a fallback price ("or $10.00") or
 // a way to avoid it ("Maintain", "Keep", "Avoid", "otherwise").
-const TAIL_TERMS = /\bor\s+\$|\b(?:otherwise|avoid\w*|maintain\w*|keep\w*|direct)\b/i;
+const TAIL_TERMS = /\bor\s+\$|\b(?:otherwise|avoid\w*|maintain\w*|keep\w*|direct|needed|needs?|recurring)\b/i;
+// A delivery tier or channel prices the same fee another way ("Overnight Delivery $35.00", "Verbal
+// Request $30.00", "Inactive Status $5.00"): on a two-column page it is never another fee's row.
+const DELIVERY_WORDS = /\b(?:overnight|expedited|rush|express|priority|same[\s-]?day|next[\s-]?day|shipping|shipped|delivery|delivered|mail(?:ed)?|courier|verbal|written|inactive|inactivity|dormant|paper|electronic|e-?mail)\b/i;
 
-/** The tail, its notes in parentheses left out, states a condition. Pure. */
+/** The tail states a condition: a condition word anywhere, notes in parentheses included. Pure. */
 function tailStatesCondition(tail: string): boolean {
-  return CONDITION_WORDS.test(tail.replace(/\([^)]*\)/g, " ")) || TAIL_TERMS.test(tail);
+  return CONDITION_WORDS.test(tail) || TAIL_TERMS.test(tail) || DELIVERY_WORDS.test(tail);
+}
+
+/** Every word of three letters or more outside parentheses opens with a capital ("Account History"). Pure. */
+function titleCase(label: string): boolean {
+  const found = label.replace(/\([^)]*\)/g, " ").match(/[A-Za-z][A-Za-z']{2,}/g) ?? [];
+  return found.length > 0 && found.every((word) => /^[A-Z]/.test(word));
+}
+
+function documentLines(documentText: string): string[] {
+  return documentText.split(/\r?\n/).map((line) => line.replace(/\s+/g, " ").trim()).filter((line) => line.length > 0);
+}
+
+/**
+ * The line just above opens a right column whose heading names fees: a two-cell line with no
+ * price whose right cell carries a fee noun and no word of this fee's name ("Bill Pay | Other
+ * Fees"), or a line that ends, after its last price, with another fee's heading (`rightColumnFee`).
+ * Pure.
+ */
+function headedByFees(line: string | undefined, feeName: string): boolean {
+  if (!line) return false;
+  if (rightColumnFee(line, feeName)) return true;
+  const cells = line.split(/\s\|\s/);
+  if (cells.length !== 2 || PRICE_AT.test(line) || ZERO_PRICE.test(line)) return false;
+  const heading = cells[1].trim();
+  const stem = (word: string) => word.replace(/ies$/, "y").replace(/s$/, "").replace(/e$/, "");
+  const own = new Set(labelWords(feeName).map(stem));
+  return /^[A-Z]/.test(heading) && FEE_NOUN.test(heading) && !labelWords(heading).some((word) => own.has(stem(word)));
+}
+
+/**
+ * The label is positively another fee's: a fee noun, or a Title Case name of two words or more that
+ * the page also prints as its own priced row on another line, or that sits under a right-column
+ * heading naming fees (`headedByFees`). A delivery tier or channel ("Overnight Shipping", "Verbal
+ * Request") never is. Pure (re-review of #1621).
+ */
+function positivelyOtherFee(label: string, feeName: string, line: string | null, documentText: string | null): boolean {
+  if (DELIVERY_WORDS.test(label)) return false;
+  if (FEE_NOUN.test(label)) return true;
+  if (!titleCase(label) || labelWords(label).length < 2 || !documentText || !line) return false;
+  const name = label.replace(/[\s.…:|*_–—-]+$/, "").trim().toLowerCase();
+  const lines = documentLines(documentText);
+  const flat = line.replace(/\s+/g, " ").trim();
+  const elsewhere = lines.some((other) => other !== flat && other.split(/\s\|\s/).some((cell) => {
+    const lower = cell.toLowerCase();
+    return lower.startsWith(name) && PRICE_AT.test(cell.slice(name.length));
+  }));
+  return elsewhere || lines.some((other, index) => other === flat && headedByFees(lines[index - 1], feeName));
 }
 
 /**
@@ -438,7 +489,7 @@ export function ownSegment(line: string, feeName: string | null | undefined, doc
   // the price stays this fee's ("$5.00 Paper Statement Fee (FREE with e-Statements)").
   const cell = best > 0 && priceOfLabelBefore(line, cells[best - 1], cells[best], feeName) ? cells[best].replace(LEADING_PRICE, "") : cells[best];
   const own = ownPart(cell, feeName, tokens, documentText);
-  return isPriceCell(next, feeName) && !comparisonRow && !otherColumnCell(own, next, feeName) ? `${own} | ${next}` : own;
+  return isPriceCell(next, feeName) && !comparisonRow && !otherColumnCell(own, next, feeName, line, documentText) ?`${own} | ${next}` : own;
 }
 
 const LEADING_PRICE = /^\s*\$\s*\d[\d,]*(?:\.\d{1,2})?\s*/;
@@ -494,15 +545,16 @@ function otherFeeLabel(text: string | undefined, feeName: string | null | undefi
  * already prints its $0 after its whole name, and the next cell opens with another fee's label
  * before its own price ("Bill Pay ---- No Charge | Account History ---- $3.00 each", "Foreign
  * Transaction Fees No Charge | Night Depository Bags & Key $ 30.00"). A label that states a
- * condition ("Paper statements: $5") or shares the fee's words stays this fee's terms (#1593). Pure.
+ * condition ("Paper statements: $5") or shares the fee's words stays this fee's terms (#1593), and
+ * one with no fee noun needs the page's own evidence (`positivelyOtherFee`): "Stop Payment FREE |
+ * Verbal Request $30.00" prices the same fee by channel (re-review of #1621). Pure.
  */
-function otherColumnCell(own: string, next: string | undefined, feeName: string | null | undefined): boolean {
+function otherColumnCell(own: string, next: string | undefined, feeName: string | null | undefined, line: string | null = null, documentText: string | null = null): boolean {
   if (!next || !feeName || AUDIENCE_NAME.test(feeName) || !printsOwnZero(own, feeName)) return false;
   const price = PRICE_AT.exec(next);
   if (!price) return false;
   const label = next.slice(0, price.index);
-  // One bare word ("Subordination: $175.00") is too little to call it a row of its own.
-  return otherFeeLabel(label, feeName) && (labelWords(label).length >= 2 || FEE_NOUN.test(label));
+  return otherFeeLabel(label, feeName) && positivelyOtherFee(label, feeName, line, documentText);
 }
 
 /**

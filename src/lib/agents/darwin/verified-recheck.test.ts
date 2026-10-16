@@ -125,6 +125,7 @@ describe("Darwin verified re-check", () => {
     ].join("\n");
     const tcfcu = [
       "Check Printing (members over 62) ----------- No Charge | Money Orders ------------------------------------ $3.00 each",
+      "Bill Pay | Other Fees",
       "Bill Pay ------------------------------------------- No Charge | Account History ---------------------------------- $3.00 each",
     ].join("\n");
     const rejected = { ...verifiedRow, review_status: "rejected", verified_amount: "0.00", amount: "0.00", outlier_flags: ["darwin_recheck:conditional_zero"], fee_published_id: null };
