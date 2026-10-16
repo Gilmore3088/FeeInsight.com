@@ -22,6 +22,15 @@ Atlas is the orchestration and operator-visibility agent. Atlas-specific code ma
 - Do not use free-text institution names as execution identity. Use canonical numeric institution IDs.
 - Do not collapse data trust states into generic success/failure labels; preserve source, extraction, verification, publication, and refresh states separately.
 
+## Answer-key relabels (`answer-key-relabels.ts`, #1099)
+
+`answer-key-relabel`, the first step of Atlas's daily scoreboard run, applies James's category
+decisions to a fixed list of answer-key lines before the day's score reads them. First list (Oct 16,
+night deposit option A): 28 bag and key purchase lines at 11 banks leave scoring
+(`canonical_key = 'unmapped'`, a note in `conditions`); the answer-key score and Deming's Knox replay
+skip `unmapped` lines. A line changes only while it reads as listed (id, institution, category, price,
+source line); every change goes in the step's ledger detail, and a second run changes nothing.
+
 ## City repair (`city-repair.ts`, #1213)
 
 NCUA's FOICU file cuts a credit union's city at 15 characters ("Colorado Spring", "North Little
@@ -191,3 +200,4 @@ fails a PR that changes one of these constants without updating its line here (#
 | Constant | Strategy | Version | File |
 |---|---|---|---|
 | `SCHEDULE_CHECK_VERSION` | — | v1 | `atlas/schedule-check.ts` |
+| `ANSWER_KEY_RELABEL_VERSION` | — | v1 | `atlas/answer-key-relabels.ts` |

@@ -245,6 +245,10 @@ function narrateFinished(
         .join("");
       return `Wrote ${memo ? n(memo, "passed") : 0} of ${count(memo ? n(memo, "answers") : 0, "paid memo")}${correctness ? `; ${n(correctness, "correct")} of ${n(correctness, "checked")} checked tie to the live catalog` : ""}.${simulateLine}`;
     }
+    case "answer-key-relabel": {
+      const changed = Array.isArray(detail.changed) ? detail.changed.length : 0;
+      return changed === 0 ? "Atlas found no answer-key line left to relabel." : `Atlas relabelled ${count(changed, "answer-key line")} by James's decisions.`;
+    }
     case "atlas-city-repair": {
       const found = n(detail, "candidates");
       if (found === 0) return "Atlas found no credit union city cut at 15 characters to restore.";
@@ -640,6 +644,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "bayes-replay-ledger": "atlas",
   "schedule-check": "atlas",
   "atlas-city-repair": "atlas",
+  "answer-key-relabel": "atlas",
   "deming-fresh-audit": "atlas",
   "deming-benchmark-health": "atlas",
   "deming-knox-misses": "atlas",

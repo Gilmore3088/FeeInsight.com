@@ -106,6 +106,7 @@ import { knoxMissesDetail, runKnoxMisses, summarizeKnoxMisses } from "@/lib/agen
 import { runBayesLedger, summarizeBayesLedger, BAYES_LEDGER_VERSION } from "@/lib/agents/bayes/ledger";
 import { runScheduleCheck, summarizeScheduleCheck, SCHEDULE_CHECK_VERSION } from "@/lib/agents/atlas/schedule-check";
 import { cityRepairDetail, runCityRepair, summarizeCityRepair } from "@/lib/agents/atlas/city-repair";
+import { answerKeyRelabelDetail, runAnswerKeyRelabels, summarizeAnswerKeyRelabels } from "@/lib/agents/atlas/answer-key-relabels";
 import { MARKET_SPREAD_WORKFLOW, runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
 import { FEE_DEPTH_WORKFLOW, runFeeDepth, summarizeFeeDepth } from "@/lib/agents/content/fee-depth";
 import { runOdByState, summarizeOdByStateResult } from "@/lib/agents/content/od-by-state";
@@ -2428,6 +2429,11 @@ async function executeAgenticStep(
       // Read-only (#1105): one SELECT over the playbooks; the step's ledger row is its only write.
       const result = await runPlaybookContradictions({ db: tx });
       return { status: "completed", summary: summarizePlaybookContradictions(result), detail: playbookContradictionsDetail(result) };
+    }
+    case "answer-key-relabel": {
+      // Writes only answer_key_fees.canonical_key/conditions on the listed lines, while each still reads as listed.
+      const result = await runAnswerKeyRelabels({ db: tx, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeAnswerKeyRelabels(result), detail: answerKeyRelabelDetail(result) };
     }
     case "atlas-city-repair": {
       const result = await runCityRepair({ db: tx, dryRun: run.runKind === "dry_run" });

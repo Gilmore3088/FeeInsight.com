@@ -35,6 +35,8 @@ async function handleGET(request: NextRequest) {
     triggerSource: "schedule",
     idempotencyKey: `atlas:scoreboard:${day}`,
     steps: [
+      // First: James's answer-key decisions reach the key before the day's score reads it.
+      { key: "answer-key-relabel", agent: "atlas", title: "Atlas: apply James's answer-key category decisions to the listed key lines" },
       { key: "score-answer-key", agent: "atlas", title: "Score the pipeline against the answer key" },
       { key: "deming-regression", agent: "atlas", title: "Deming: turn confirmed mistakes into test cases and replay them" },
       { key: "deming-fresh-audit", agent: "atlas", title: "Deming: check a fresh sample of live fees against the banks' own schedules" },
@@ -49,7 +51,7 @@ async function handleGET(request: NextRequest) {
   });
   const result = started.reused
     ? { runId: started.run.id, status: started.run.status, message: "Today's scoreboard already ran." }
-    : await executeAgentRun(started.run.id, { maxSteps: 9 });
+    : await executeAgentRun(started.run.id, { maxSteps: 10 });
   return NextResponse.json({ ok: true, runId: started.run.id, reused: started.reused, result });
 }
 
