@@ -15,7 +15,7 @@ vi.mock("@/components/track-link", () => ({
 }));
 
 import { apiIncludedInTier } from "@/lib/api-subscriber-access";
-import { API_LINE, CONSULTANT_API_NOTE, CHECKOUT_ID, PLANS_ID, ProPlanBoard, RECOMMENDED_PLAN } from "./pro-plan-cards";
+import { API_CARD_LINE, API_HOW_LINE, API_INCLUDES_LINE, CONSULTANT_API_NOTE, PLAN_TERMS_LINE, CHECKOUT_ID, PLANS_ID, ProPlanBoard, RECOMMENDED_PLAN } from "./pro-plan-cards";
 
 const registerHref = { annual: "/register?plan=annual", monthly: "/register?plan=monthly" };
 
@@ -120,9 +120,21 @@ describe("/subscribe plan board", () => {
     board();
     expect(PRO_TIERS.filter((tier) => apiIncludedInTier(tier.key)).map((tier) => tier.key)).toEqual(["mid", "large"]);
     PRO_TIERS.forEach((tier, i) => {
-      expect(cards()[i].textContent?.includes(API_LINE)).toBe(apiIncludedInTier(tier.key));
+      expect(cards()[i].textContent?.includes(API_CARD_LINE)).toBe(apiIncludedInTier(tier.key));
     });
+    expect(API_INCLUDES_LINE).toBe("API and Claude connector included for institutions with $500M+ in assets, and for consultants · 10,000 API calls a month.");
     // The consultant price is the mid tier, so consultants get it too.
     expect(apiIncludedInTier(NON_INSTITUTION_TIER)).toBe(true);
+  });
+
+  it("before a choice, states the renewal and refund terms and how the API allowance works", () => {
+    board();
+    const text = document.body.textContent ?? "";
+    expect(text).toContain(PLAN_TERMS_LINE);
+    expect(PLAN_TERMS_LINE).toContain("within 14 days of the first payment");
+    expect(text).toContain(API_INCLUDES_LINE);
+    expect(text).toContain(API_HOW_LINE);
+    expect(API_HOW_LINE).toMatch(/account holder makes one API key/);
+    expect(text).not.toContain("for the person who pays");
   });
 });

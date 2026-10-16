@@ -50,16 +50,40 @@ export interface ProPricingInstitution {
   city: string | null;
   stateCode: string | null;
   assetsThousands: number | null;
+  /**
+   * The call report those assets come from: the newest FDIC or NCUA filing whose total assets
+   * match the figure on file, so /subscribe can name the quarter behind the price (James, Oct 16).
+   * Null when no filing matches.
+   */
+  assetsReport?: { reportDate: string; source: string } | null;
 }
 
 export async function getProPricingInstitution(id: number): Promise<ProPricingInstitution | null> {
   if (!Number.isSafeInteger(id) || id <= 0) return null;
   const [row] = await sql<
-    Array<{ id: number | string; institution_name: string; city: string | null; state_code: string | null; asset_size: number | string | null }>
+    Array<{
+      id: number | string;
+      institution_name: string;
+      city: string | null;
+      state_code: string | null;
+      asset_size: number | string | null;
+      report_date: string | null;
+      report_source: string | null;
+    }>
   >`
-    SELECT id, institution_name, city, state_code, asset_size
-      FROM institution_sources
-     WHERE id = ${id}
+    SELECT s.id, s.institution_name, s.city, s.state_code, s.asset_size,
+           f.report_date, f.source AS report_source
+      FROM institution_sources s
+      LEFT JOIN LATERAL (
+        SELECT r.report_date, r.source
+          FROM institution_financial_records r
+         WHERE r.institution_id = s.id
+           AND r.source IN ('fdic', 'ncua')
+           AND r.total_assets = s.asset_size
+         ORDER BY r.report_date DESC
+         LIMIT 1
+      ) f ON true
+     WHERE s.id = ${id}
   `;
   if (!row) return null;
   const assets = row.asset_size === null ? null : Number(row.asset_size);
@@ -69,6 +93,7 @@ export async function getProPricingInstitution(id: number): Promise<ProPricingIn
     city: row.city,
     stateCode: row.state_code,
     assetsThousands: assets !== null && Number.isFinite(assets) ? assets : null,
+    assetsReport: row.report_date && row.report_source ? { reportDate: String(row.report_date), source: row.report_source } : null,
   };
 }
 
