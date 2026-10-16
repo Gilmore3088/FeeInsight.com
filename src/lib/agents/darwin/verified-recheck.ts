@@ -170,10 +170,10 @@ function selectDueSecondLookRows(db: SqlTag, limit: number): Promise<RecheckRow[
              r.fee_name, r.amount, r.frequency, r.outlier_flags, COALESCE(r.extraction_note, r.conditions) AS conditions, r.source_document_id,
              r.amount_kind, r.rate_percent, p.fee_published_id
         FROM pipeline_feedback f
-        JOIN published_fee_records p ON f.dedupe_key = ${prefix} || p.fee_published_id::text
+        JOIN published_fee_records p ON p.fee_published_id = f.fee_published_id AND f.dedupe_key = ${prefix} || p.fee_published_id::text
         JOIN verified_fee_observations v ON v.fee_verified_id = p.lineage_ref
         JOIN raw_fee_observations r ON r.fee_raw_id = v.fee_raw_id
-       WHERE f.dedupe_key LIKE ${`${prefix}%`}
+       WHERE f.check_name = ${DARWIN_RECHECK_CHECK}
          AND f.kind = ${PENDING_KIND}
          AND (f.evidence->>'flagged_at')::timestamptz <= NOW() - make_interval(mins => ${SECOND_LOOK_MIN_MINUTES})
          AND p.rolled_back_at IS NULL
@@ -323,14 +323,19 @@ export async function recheckVerifiedFees(
     if (rows.length === 0) rows = await selectRows(db, limit, false);
     // On: older live rows get their own share of each step, so new rows never starve them (#1568).
     if (olderLive) rows = [...rows, ...(await selectOlderLiveRows(db, Math.ceil(limit / 2), null))];
-    // On: first looks that are due get their second read; the shared second look confirms or clears them.
-    if (secondLooks) {
-      const seen = new Set(rows.map((row) => String(row.fee_verified_id)));
-      rows = [...rows, ...(await selectDueSecondLookRows(db, SECOND_LOOK_DUE_LIMIT)).filter((row) => !seen.has(String(row.fee_verified_id)))];
-    }
   } catch (error) {
     console.warn("[darwin] verified recheck read failed", error instanceof Error ? error.message : error);
     return result;
+  }
+  // On: first looks that are due get their second read; the shared second look confirms or clears
+  // them. Read on its own, so a bad flag never stops the rest of the recheck.
+  if (secondLooks) {
+    try {
+      const seen = new Set(rows.map((row) => String(row.fee_verified_id)));
+      rows = [...rows, ...(await selectDueSecondLookRows(db, SECOND_LOOK_DUE_LIMIT)).filter((row) => !seen.has(String(row.fee_verified_id)))];
+    } catch (error) {
+      console.warn("[darwin] due second-look read failed", error instanceof Error ? error.message : error);
+    }
   }
   if (rows.length === 0) return result;
 

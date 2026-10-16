@@ -131,7 +131,9 @@ Darwin owns verification and classification.
   `darwin.verified_recheck` flag is at least 12 hours old, oldest first, and the shared second look
   archives the ones still failing and clears the rest. Off, step detail `recheck.dueSecondLooks`
   gives `due`, `wouldConfirm` by reason code, `wouldClear` and 20 samples, and nothing is written.
-  It turns on by PR once James approves the count of due flags.
+  It turns on by PR once James approves the count of due flags. `DARWIN_RECHECK_OLDER_LIVE` only
+  flags; without this switch its first looks would never be confirmed, so it turns on with or after
+  this one.
 - `verify.document_owner` (`document-owner.ts`, version 1, 2026-10-15, #1455) ends every learning
   verify step after `verify.recheck`. It asks whose schedule a live fee's document is, by the
   document's own text, never by the stored website (the registry seed stored another bank's website

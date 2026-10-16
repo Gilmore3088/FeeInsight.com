@@ -35,7 +35,7 @@ function dbWith(
   const db = vi.fn((strings: TemplateStringsArray) => {
     const text = templateText(strings);
     // Live rows whose first look is due its second (#1397), and the second look's own read of the flags.
-    if (text.includes("JOIN published_fee_records p ON f.dedupe_key")) return Promise.resolve(due);
+    if (text.includes("FROM pipeline_feedback f")) return Promise.resolve(due);
     if (text.includes("SELECT fee_published_id, kind, evidence")) return Promise.resolve(firstLooks);
     // Live rows verified under an older verify version (#1568).
     if (text.includes("JOIN LATERAL")) return Promise.resolve(older);
@@ -205,6 +205,9 @@ describe("Darwin verified re-check", () => {
       // The confirmed row is archived with its reason (the mock's UPDATE answers for another id).
       const rollback = db.mock.calls.find((call) => templateText(call[0]).includes("UPDATE published_fee_records"));
       expect(rollback?.slice(1)).toEqual(expect.arrayContaining([[142869], ["darwin_recheck:tier_perk_zero"]]));
+      expect(JSON.stringify(rollback?.slice(1))).not.toContain("142870");
+      const feedback = db.mock.calls.filter((call) => templateText(call[0]).includes("INSERT INTO pipeline_feedback"));
+      expect(JSON.stringify(feedback.map((call) => call.slice(1)))).toContain("takedown_cleared");
     });
   });
 });
