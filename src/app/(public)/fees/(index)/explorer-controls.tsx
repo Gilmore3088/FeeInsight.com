@@ -53,7 +53,7 @@ export function ExplorerControls({
         </select>
       </label>
       <label className="block">
-        <span className="text-[13px] font-medium text-ink">Where</span>
+        <span className="text-[13px] font-medium text-ink">Headquartered in</span>
         <select name="state" defaultValue={state ?? ""} onChange={submit} className={SELECT}>
           <option value="">United States</option>
           {states.map((s) => (

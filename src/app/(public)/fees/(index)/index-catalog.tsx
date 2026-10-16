@@ -23,11 +23,12 @@ const STATUS: Record<CoverageStatus, { text: string; className: string }> = {
 };
 
 /**
- * Every category in the Index, grouped by family and searchable: its name, what it is, how many
- * institutions publish it, and whether it is free to explore, needs full access, or has too few
- * institutions for a median yet.
+ * Every category in the Index, grouped by family and searchable. Families start closed, except the
+ * one holding the fee being explored, so the catalog stays a list of names until the reader opens
+ * one; a category's description, coverage and link appear when it is opened. A search opens every
+ * family with a match.
  */
-export function IndexCatalog({ entries }: { entries: CatalogEntry[] }) {
+export function IndexCatalog({ entries, selected }: { entries: CatalogEntry[]; selected: string }) {
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
   const shown = useMemo(
@@ -35,6 +36,7 @@ export function IndexCatalog({ entries }: { entries: CatalogEntry[] }) {
     [entries, q],
   );
   const families = [...new Set(shown.map((e) => e.family))];
+  const selectedFamily = entries.find((e) => e.key === selected)?.family;
 
   return (
     <div>
@@ -49,37 +51,54 @@ export function IndexCatalog({ entries }: { entries: CatalogEntry[] }) {
         />
       </label>
       <p className="mt-2 text-[12px] text-ink-muted" aria-live="polite">
-        {shown.length === entries.length ? `${entries.length} fee categories` : `${shown.length} of ${entries.length} fee categories`}
+        {shown.length === entries.length ? `${entries.length} fee categories in ${families.length} groups` : `${shown.length} of ${entries.length} fee categories`}
       </p>
       {families.length === 0 ? (
         <p className="mt-4 text-[14px] text-ink-muted">No category matches that. Try a shorter word.</p>
       ) : (
-        <div className="mt-4 space-y-8">
-          {families.map((family) => (
-            <section key={family} aria-label={family}>
-              <h3 className="text-[15px] font-semibold text-ink">{family}</h3>
-              <ul className="mt-2 grid gap-x-6 sm:grid-cols-2">
-                {shown
-                  .filter((e) => e.family === family)
-                  .map((e) => (
-                    <li key={e.key} className="border-b border-border py-3">
-                      <div className="flex items-baseline justify-between gap-3">
-                        <Link href={e.href} className="font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
-                          {e.label}
-                        </Link>
-                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS[e.status].className}`}>
-                          {STATUS[e.status].text}
-                        </span>
-                      </div>
-                      {e.definition && <p className="mt-1 text-[13px] text-ink-soft">{e.definition}</p>}
-                      <p className="mt-1 text-[12px] text-ink-muted">
-                        {e.institutions.toLocaleString()} {e.institutions === 1 ? "institution publishes" : "institutions publish"} it
-                      </p>
+        // Remounted when a search starts or ends, so each family's starting state applies again.
+        <div key={q ? "search" : "browse"} className="mt-4 divide-y divide-border rounded-2xl border border-border bg-surface-0">
+          {families.map((family) => {
+            const members = shown.filter((e) => e.family === family);
+            return (
+              <details key={family} open={Boolean(q) || family === selectedFamily} className="group/family px-4 sm:px-5">
+                <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 py-3">
+                  <span className="text-[15px] font-semibold text-ink">{family}</span>
+                  <span className="text-[12px] text-ink-muted">
+                    {members.length} {members.length === 1 ? "category" : "categories"}
+                    <span aria-hidden="true" className="ml-2 inline-block transition-transform group-open/family:rotate-90">
+                      ›
+                    </span>
+                  </span>
+                </summary>
+                <ul className="grid gap-x-6 pb-3 sm:grid-cols-2">
+                  {members.map((e) => (
+                    <li key={e.key} className="border-t border-border">
+                      <details open={e.key === selected} className="group/entry">
+                        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 py-2">
+                          <span className={`text-[14px] ${e.key === selected ? "font-semibold text-ink" : "text-ink"}`}>{e.label}</span>
+                          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS[e.status].className}`}>
+                            {STATUS[e.status].text}
+                          </span>
+                        </summary>
+                        <div className="pb-3 text-[13px]">
+                          {e.definition && <p className="text-ink-soft">{e.definition}</p>}
+                          <p className="mt-1 text-[12px] text-ink-muted">
+                            {e.institutions.toLocaleString()} {e.institutions === 1 ? "institution publishes" : "institutions publish"} it
+                          </p>
+                          {e.key !== selected && (
+                            <Link href={e.href} className="mt-2 inline-block font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
+                              Explore {e.label}
+                            </Link>
+                          )}
+                        </div>
+                      </details>
                     </li>
                   ))}
-              </ul>
-            </section>
-          ))}
+                </ul>
+              </details>
+            );
+          })}
         </div>
       )}
     </div>

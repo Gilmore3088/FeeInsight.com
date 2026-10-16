@@ -1,6 +1,20 @@
 import { describe, expect, it } from "vitest";
 import type { IndexRow } from "@/lib/data-store";
-import { companion, findings, histogram, inBucket, institutionsFor, parseSelection, selectionHref, statsFor } from "./index-view";
+import {
+  accountName,
+  companion,
+  findings,
+  histogram,
+  inBucket,
+  institutionsFor,
+  LIST_ALL,
+  LIST_FIRST,
+  listPage,
+  parseListState,
+  parseSelection,
+  selectionHref,
+  statsFor,
+} from "./index-view";
 
 let nextId = 1;
 function row(institution_id: number, amount: number, state: string, charter: "bank" | "credit_union"): IndexRow {
@@ -68,20 +82,46 @@ describe("Bank Fee Index explorer", () => {
     ]);
   });
 
-  it("states the supported gap, the concentration and the thin coverage, with counts", () => {
+  it("states the gap as a result, the concentration and the thin coverage, with counts", () => {
     const sel = { fee: "wire_domestic_outgoing", state: null, charter: "all" as const };
     const out = findings(rows, sel, institutionsFor(rows, sel.fee, null, "all"));
-    expect(out[0]).toBe("The median for banks is $27, $12 above credit unions at $15 (6 and 6 institutions).");
+    expect(out[0]).toBe("The bank median is $27, $12 above the credit union median.");
     expect(out[1]).toBe("50% of the 12 institutions charge exactly $15.");
-    expect(out[2]).toBe("In 48 of the 50 states, fewer than 5 institutions publish this fee, so they get no state median yet.");
-    expect(out.join(" ")).not.toMatch(/cheapest|rais|increas|cut/i);
+    expect(out[2]).toBe("In 48 of the 50 states, fewer than 5 institutions headquartered there publish this fee, so they get no state median yet.");
+    expect(out.join(" ")).not.toMatch(/cheapest|rais|increas|cut|within|only/i);
+  });
+
+  it("states a state's median against the national median", () => {
+    const sel = { fee: "wire_domestic_outgoing", state: "FL", charter: "all" as const };
+    const fl = statsFor(rows, sel.fee, "FL", "all").median_amount;
+    const us = statsFor(rows, sel.fee, null, "all").median_amount;
+    const out = findings(rows, sel, institutionsFor(rows, sel.fee, "FL", "all"));
+    if (fl != null && us != null && fl !== us) {
+      expect(out[0]).toMatch(/^Florida's median is \$[\d.]+, \$[\d.]+ (above|below) the national median\.$/);
+    }
+  });
+
+  it("pages the list: 8 at first, a search, and 50 a page when the reader asks for all", () => {
+    const many = Array.from({ length: 60 }, (_, i) => ({ name: `Bank ${String(i).padStart(2, "0")}` }));
+    expect(listPage(many, parseListState({})).rows).toHaveLength(LIST_FIRST);
+    expect(listPage(many, parseListState({ page: "2" })).rows[0].name).toBe("Bank 08");
+    expect(listPage(many, parseListState({ view: "all" })).rows).toHaveLength(LIST_ALL);
+    expect(listPage(many, parseListState({ q: "bank 5" })).matching).toBe(10);
+    expect(listPage(many, parseListState({ page: "99" })).page).toBe(8);
+  });
+
+  it("prints an account only when the line names one", () => {
+    expect(accountName("Regular Checking")).toBe("Regular Checking");
+    expect(accountName("Account Fees: A")).toBeNull();
+    expect(accountName("Account Requirements")).toBeNull();
+    expect(accountName(null)).toBeNull();
   });
 
   it("says when a state has too few for a median", () => {
     const sel = { fee: "wire_domestic_outgoing", state: "GA", charter: "all" as const };
     const out = findings(rows, sel, institutionsFor(rows, sel.fee, "GA", "all"));
-    expect(out).toContain("No institution in Georgia publishes this fee in a schedule we hold yet.");
+    expect(out).toContain("No institution headquartered in Georgia publishes this fee in a schedule we hold yet.");
     const fl = findings(rows, { ...sel, state: "FL", charter: "credit_union" }, []);
-    expect(fl).toContain("No institution in Florida publishes this fee in a schedule we hold yet.");
+    expect(fl).toContain("No institution headquartered in Florida publishes this fee in a schedule we hold yet.");
   });
 });

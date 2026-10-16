@@ -47,6 +47,68 @@ export function parseSelection(
   };
 }
 
+/** Institutions shown under the chart at first, and per page once the reader asks for all of them. */
+export const LIST_FIRST = 8;
+export const LIST_ALL = 50;
+
+/** The list's own state: a name search, a page, and whether the reader asked for every match. */
+export interface ListState {
+  q: string;
+  page: number;
+  all: boolean;
+}
+
+export function parseListState(params: Record<string, string | string[] | undefined>): ListState {
+  const one = (k: string) => {
+    const v = params[k];
+    return Array.isArray(v) ? v[0] : v;
+  };
+  const page = Number(one("page"));
+  return {
+    q: (one("q") ?? "").trim().slice(0, 80),
+    page: Number.isInteger(page) && page > 1 ? page : 1,
+    all: one("view") === "all",
+  };
+}
+
+/** The institutions matching the search, A to Z, and the page of them to show. */
+export function listPage<T extends { name: string }>(
+  listed: T[],
+  list: ListState,
+): { matching: number; rows: T[]; page: number; pages: number; perPage: number } {
+  const q = list.q.toLowerCase();
+  const matches = [...listed].filter((i) => !q || i.name.toLowerCase().includes(q)).sort((a, b) => a.name.localeCompare(b.name));
+  const perPage = list.all ? LIST_ALL : LIST_FIRST;
+  const pages = Math.max(1, Math.ceil(matches.length / perPage));
+  const page = Math.min(list.page, pages);
+  return { matching: matches.length, rows: matches.slice((page - 1) * perPage, page * perPage), page, pages, perPage };
+}
+
+/** An account name worth printing: a product's name, not a heading the reader caught ("Account Fees: A"). */
+export function accountName(raw: string | null): string | null {
+  const name = raw?.replace(/\s+/g, " ").trim();
+  if (!name || name.length > 60) return null;
+  if (/^account\b/i.test(name) || /[:]/.test(name)) return null;
+  return /\b(checking|savings|account|money market|share|club|draft)\b/i.test(name) ? name : null;
+}
+
+const FREQUENCY: Record<string, string> = {
+  monthly: "a month",
+  annual: "a year",
+  quarterly: "a quarter",
+  daily: "a day",
+  hourly: "an hour",
+  per_item: "per item",
+  per_occurrence: "each time",
+  per_transaction: "per transaction",
+  one_time: "once",
+};
+
+/** How often the fee is charged, as words, or null when the schedule line does not say. */
+export function chargedWhen(frequency: string | null): string | null {
+  return frequency ? (FREQUENCY[frequency] ?? null) : null;
+}
+
 export function selectionHref(sel: Selection, extra: Record<string, string> = {}, hash = "explorer"): string {
   const q = new URLSearchParams({ fee: sel.fee });
   if (sel.state) q.set("state", sel.state);
@@ -111,6 +173,10 @@ export interface CompareGroup {
   label: string;
   /** How a sentence names the group: "Florida", "the U.S.", "credit unions". */
   phrase: string;
+  /** The group as a sentence's subject: "Florida's", "The bank". */
+  owner: string;
+  /** The other side as a comparison names it: "the national median", "the credit union median". */
+  against: string;
   stats: FeeStatistics;
 }
 
@@ -123,22 +189,18 @@ export function companion(rows: IndexRow[], sel: Selection): { title: string; gr
     return {
       title: `${STATE_NAMES[sel.state]} against the U.S.`,
       groups: [
-        { label: STATE_NAMES[sel.state], phrase: STATE_NAMES[sel.state], stats: statsFor(rows, sel.fee, sel.state, sel.charter) },
-        { label: "U.S.", phrase: "the U.S.", stats: statsFor(rows, sel.fee, null, sel.charter) },
+        { label: STATE_NAMES[sel.state], phrase: STATE_NAMES[sel.state], owner: `${STATE_NAMES[sel.state]}'s`, against: `the ${STATE_NAMES[sel.state]} median`, stats: statsFor(rows, sel.fee, sel.state, sel.charter) },
+        { label: "U.S.", phrase: "the U.S.", owner: "The national", against: "the national median", stats: statsFor(rows, sel.fee, null, sel.charter) },
       ],
     };
   }
   return {
     title: "Banks against credit unions",
     groups: [
-      { label: "Banks", phrase: "banks", stats: statsFor(rows, sel.fee, null, "bank") },
-      { label: "Credit unions", phrase: "credit unions", stats: statsFor(rows, sel.fee, null, "credit_union") },
+      { label: "Banks", phrase: "banks", owner: "The bank", against: "the bank median", stats: statsFor(rows, sel.fee, null, "bank") },
+      { label: "Credit unions", phrase: "credit unions", owner: "The credit union", against: "the credit union median", stats: statsFor(rows, sel.fee, null, "credit_union") },
     ],
   };
-}
-
-function cap(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 export function money(n: number): string {
@@ -148,8 +210,6 @@ export function money(n: number): string {
 /** Codes in STATE_NAMES that aren't states: the coverage finding counts the 50 states only. */
 const NOT_STATES = new Set(["DC", "PR", "VI", "GU", "AS"]);
 
-/** A gap this share of the larger median or more is worth a sentence. */
-const NOTABLE_GAP = 0.1;
 /** The most common price is called out when this share of institutions charge it. */
 const CONCENTRATED = 0.2;
 
@@ -163,19 +223,14 @@ export function findings(rows: IndexRow[], sel: Selection, institutions: IndexIn
   const { groups } = companion(rows, sel);
   const [a, b] = groups;
   if (a.stats.median_amount != null && b.stats.median_amount != null) {
+    // The result, stated without judging whether the gap matters (James, Oct 16: "Florida's
+    // median is $7.50, $0.55 above the national median").
     const am = a.stats.median_amount;
     const bm = b.stats.median_amount;
-    const gap = Math.abs(am - bm) / Math.max(am, bm, 0.01);
-    const counts = `(${a.stats.institution_count.toLocaleString()} and ${b.stats.institution_count.toLocaleString()} institutions)`;
     if (am === bm) {
-      out.push(`${cap(a.phrase)} and ${b.phrase} share a median of ${money(am)} ${counts}.`);
-    } else if (gap >= NOTABLE_GAP) {
-      const [hi, lo] = am > bm ? [a, b] : [b, a];
-      out.push(
-        `The median for ${hi.phrase} is ${money(hi.stats.median_amount!)}, ${money(hi.stats.median_amount! - lo.stats.median_amount!)} above ${lo.phrase} at ${money(lo.stats.median_amount!)} (${hi.stats.institution_count.toLocaleString()} and ${lo.stats.institution_count.toLocaleString()} institutions).`,
-      );
+      out.push(`${a.owner} median matches ${b.against} at ${money(am)}.`);
     } else {
-      out.push(`${cap(a.phrase)} and ${b.phrase} are within ${money(Math.abs(am - bm))} of each other at the median: ${money(am)} and ${money(bm)} ${counts}.`);
+      out.push(`${a.owner} median is ${money(am)}, ${money(Math.round(Math.abs(am - bm) * 100) / 100)} ${am > bm ? "above" : "below"} ${b.against}.`);
     }
   }
 
@@ -195,8 +250,8 @@ export function findings(rows: IndexRow[], sel: Selection, institutions: IndexIn
     if (institutions.length < MIN_INSTITUTIONS_FOR_MEDIAN) {
       out.push(
         institutions.length === 0
-          ? `No institution in ${STATE_NAMES[sel.state]} publishes this fee in a schedule we hold yet.`
-          : `Only ${institutions.length} ${institutions.length === 1 ? "institution" : "institutions"} in ${STATE_NAMES[sel.state]} ${institutions.length === 1 ? "publishes" : "publish"} this fee, too few for a median (${MIN_INSTITUTIONS_FOR_MEDIAN} needed).`,
+          ? `No institution headquartered in ${STATE_NAMES[sel.state]} publishes this fee in a schedule we hold yet.`
+          : `Only ${institutions.length} ${institutions.length === 1 ? "institution" : "institutions"} headquartered in ${STATE_NAMES[sel.state]} ${institutions.length === 1 ? "publishes" : "publish"} this fee, too few for a median (${MIN_INSTITUTIONS_FOR_MEDIAN} needed).`,
       );
     }
   } else {
@@ -210,7 +265,7 @@ export function findings(rows: IndexRow[], sel: Selection, institutions: IndexIn
     const thin = Object.keys(STATE_NAMES).filter((s) => !NOT_STATES.has(s)).filter((s) => (perState.get(s)?.size ?? 0) < MIN_INSTITUTIONS_FOR_MEDIAN);
     if (thin.length > 0) {
       out.push(
-        `In ${thin.length} of the 50 states, fewer than ${MIN_INSTITUTIONS_FOR_MEDIAN} institutions publish this fee, so ${thin.length === 1 ? "it gets" : "they get"} no state median yet.`,
+        `In ${thin.length} of the 50 states, fewer than ${MIN_INSTITUTIONS_FOR_MEDIAN} institutions headquartered there publish this fee, so ${thin.length === 1 ? "it gets" : "they get"} no state median yet.`,
       );
     }
   }

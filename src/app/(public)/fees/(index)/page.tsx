@@ -13,6 +13,7 @@ import { canAccessAllCategories } from "@/lib/access";
 import { getFeeRowDetails, type FeeRowDetail } from "@/lib/data-store";
 import { getIndexRowsCached } from "@/lib/data-store/public-cached-reads";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
+import { HIGHEST_TIER_CATEGORIES } from "@/lib/data-store/fee-stats";
 import { STATE_NAMES } from "@/lib/us-states";
 import { ExplorerControls, type FeeOption } from "./explorer-controls";
 import { IndexCatalog, type CatalogEntry } from "./index-catalog";
@@ -20,10 +21,14 @@ import {
   CHARTER_LABELS,
   companion,
   findings,
+  accountName,
+  chargedWhen,
   histogram,
   inBucket,
   institutionsFor,
+  listPage,
   money,
+  parseListState,
   parseSelection,
   placeName,
   selectionHref,
@@ -39,8 +44,6 @@ interface PageProps {
 const ALL_FEES = Object.values(FEE_FAMILIES).flat();
 const FAMILY_OF = new Map(Object.entries(FEE_FAMILIES).flatMap(([family, keys]) => keys.map((k) => [k, family] as const)));
 const DEFAULT_FEE = "overdraft";
-/** Institutions listed under the chart before the reader narrows the selection. */
-const LIST_MAX = 30;
 /** The 50 states and DC, for the geography control. */
 const STATES = Object.entries(STATE_NAMES)
   .filter(([code]) => !["PR", "VI", "GU", "AS"].includes(code))
@@ -80,14 +83,32 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
   const stats = statsFor(rows, sel.fee, sel.state, sel.charter);
   const buckets = histogram(institutions);
   const medianBin = stats.median_amount != null ? buckets.findIndex((b) => inBucket(b, stats.median_amount!)) : -1;
-  const activeBin = sel.bin != null && sel.bin < buckets.length ? sel.bin : medianBin >= 0 ? medianBin : null;
+  const list = parseListState(params);
+  // A name search with no bar picked looks through every institution, not only the median's bar.
+  const activeBin =
+    sel.bin != null && sel.bin < buckets.length ? sel.bin : list.q ? null : medianBin >= 0 ? medianBin : null;
   const listed = activeBin != null ? institutions.filter((i) => inBucket(buckets[activeBin], i.value)) : institutions;
-  const visible = [...listed].sort((a, b) => a.name.localeCompare(b.name)).slice(0, LIST_MAX);
-  const details = await getFeeRowDetails(visible.map((i) => i.row.id)).catch(() => new Map<number, FeeRowDetail>());
+  const shown = listPage(listed, list);
+  // Every price each shown institution lists for the fee, so a counted middle value is shown with the prices behind it.
+  const shownIds = new Set(shown.rows.map((i) => i.id));
+  const pricesOf = new Map<number, typeof rows>();
+  for (const r of rows) {
+    if (!shownIds.has(r.institution_id)) continue;
+    pricesOf.set(r.institution_id, [...(pricesOf.get(r.institution_id) ?? []), r]);
+  }
+  const details = await getFeeRowDetails([...pricesOf.values()].flat().map((r) => r.id)).catch(() => new Map<number, FeeRowDetail>());
   const compare = locked ? null : companion(rows, sel);
   const takeaways = locked ? [] : findings(rows, sel, institutions);
   const where = placeName(sel.state);
   const who = CHARTER_LABELS[sel.charter].toLowerCase();
+  /** The list's own links keep the selection, the picked bar and the search. */
+  const listHref = (extra: Record<string, string>) => {
+    const keep: Record<string, string> = {};
+    if (activeBin != null) keep.bin = String(activeBin);
+    if (list.q && !("q" in extra) && Object.keys(extra).length > 0) keep.q = list.q;
+    if (list.all && !("view" in extra)) keep.view = "all";
+    return selectionHref(sel, { ...keep, ...extra }, "institutions");
+  };
 
   const feeOptions: FeeOption[] = ALL_FEES.map((key) => ({
     key,
@@ -95,8 +116,9 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
     family: FAMILY_OF.get(key) ?? "Other",
     locked: !full && !spotlight.has(key),
   }));
-  // The explored fee's count comes from the explorer's own read, so the two never disagree on one screen.
-  if (!locked) coverage.set(sel.fee, statsFor(rows, sel.fee, null, "all").institution_count);
+  // The explored fee's count is the explorer's own national population (the institutions the chart and
+  // list count), so the explorer and the catalog never disagree on one screen.
+  if (!locked) coverage.set(sel.fee, institutionsFor(rows, sel.fee, null, "all").length);
   const catalog: CatalogEntry[] = ALL_FEES.map((key) => {
     const n = coverage.get(key) ?? 0;
     return {
@@ -148,18 +170,41 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
           state={sel.state}
           charter={sel.charter}
         />
+        <p className="mt-2 text-[12px] text-ink-muted">
+          A state counts the institutions headquartered there, wherever their branches are.
+        </p>
 
         {locked ? (
-          <div className="mt-6 rounded-2xl border border-border bg-surface-0 p-6">
-            <p className="text-[18px] font-semibold text-ink">{feeLabel} is part of full access</p>
+          <div className="mt-6 rounded-2xl border border-border bg-surface-0 p-5 sm:p-6">
+            <p className="text-[18px] font-semibold text-ink">{feeLabel} is part of full {PRODUCT_NAME} access</p>
             {getFeeDefinition(sel.fee) && <p className="mt-1 text-[14px] text-ink-soft">{getFeeDefinition(sel.fee)}</p>}
             <p className="mt-3 text-[14px] text-ink-soft">
-              {(coverage.get(sel.fee) ?? 0).toLocaleString()} institutions publish it. Its median, spread, state and charter
-              comparisons and the institutions behind them open with full access.
+              {(coverage.get(sel.fee) ?? 0).toLocaleString()} institutions publish it. Full access shows its median, spread and the
+              institutions behind it for {who} {sel.state ? `headquartered in ${where}` : "in the U.S."}, the same way as the free
+              categories. Your choices above stay as they are.
             </p>
-            <Link href="/subscribe#pro" className="mt-4 inline-flex min-h-11 items-center rounded-full bg-ink px-5 text-[14px] font-semibold text-on-ink">
-              Get full {PRODUCT_NAME} access
-            </Link>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <Link href="/subscribe#pro" className="inline-flex min-h-11 items-center rounded-full bg-ink px-5 text-[14px] font-semibold text-on-ink">
+                Get full access
+              </Link>
+              <Link href={selectionHref({ ...sel, fee: DEFAULT_FEE })} scroll={false} className={`text-[14px] ${LINK}`}>
+                Back to {getDisplayName(DEFAULT_FEE)} with the same choices
+              </Link>
+            </div>
+            <p className="mt-5 text-[13px] text-ink-muted">Free to explore with the same choices:</p>
+            <ul className="mt-2 flex flex-wrap gap-2">
+              {[...spotlight].filter((k) => k !== DEFAULT_FEE).slice(0, 6).map((k) => (
+                <li key={k}>
+                  <Link
+                    href={selectionHref({ ...sel, fee: k })}
+                    scroll={false}
+                    className="inline-flex min-h-9 items-center rounded-full border border-border bg-paper px-3 text-[13px] font-medium text-ink hover:border-ink"
+                  >
+                    {getDisplayName(k)}
+                  </Link>
+                </li>
+              ))}
+            </ul>
           </div>
         ) : (
           <>
@@ -167,7 +212,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
               <figure className="rounded-2xl border border-border bg-surface-0 p-4 sm:p-6">
                 <figcaption>
                   <p className="text-[13px] text-ink-muted">
-                    {feeLabel}, {who} in {where}
+                    {feeLabel}, {who} {sel.state ? `headquartered in ${where}` : "in the U.S."}
                   </p>
                   <div aria-live="polite" className="mt-1 flex flex-wrap items-baseline gap-x-6 gap-y-1">
                     <p className="font-mono text-[40px] font-semibold leading-none tabular-nums text-ink">
@@ -206,21 +251,81 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
 
             {institutions.length > 0 && (
               <div id="institutions" className="mt-8 scroll-mt-20">
-                <h3 className="text-[18px] font-semibold text-ink">
-                  {activeBin != null
-                    ? `${listed.length.toLocaleString()} ${listed.length === 1 ? "institution charges" : "institutions charge"} ${buckets[activeBin].label}`
-                    : `${listed.length.toLocaleString()} institutions`}
-                </h3>
-                <p className="mt-1 text-[13px] text-ink-muted">
-                  Pick a bar to see who charges that price. Open a row for the fee in its schedule&apos;s words, its conditions and
-                  its source.
-                  {listed.length > LIST_MAX ? ` Showing ${LIST_MAX} of ${listed.length.toLocaleString()}, A to Z; pick a state to narrow it.` : ""}
-                </p>
-                <ul className="mt-3 divide-y divide-border rounded-2xl border border-border bg-surface-0">
-                  {visible.map((i) => (
-                    <InstitutionRow key={i.id} inst={i} detail={details.get(i.row.id) ?? null} />
-                  ))}
-                </ul>
+                <div className="flex flex-wrap items-end justify-between gap-3">
+                  <div>
+                    <h3 className="text-[18px] font-semibold text-ink">
+                      {activeBin != null
+                        ? `${listed.length.toLocaleString()} ${listed.length === 1 ? "institution charges" : "institutions charge"} ${buckets[activeBin].label}`
+                        : `${listed.length.toLocaleString()} institutions`}
+                    </h3>
+                    <p className="mt-1 text-[13px] text-ink-muted">Pick a bar to see who charges that price. Open a row for the fee in its schedule&apos;s words.</p>
+                  </div>
+                  <form action="/fees#institutions" className="flex w-full gap-2 sm:w-auto" role="search">
+                    <input type="hidden" name="fee" value={sel.fee} />
+                    {sel.state && <input type="hidden" name="state" value={sel.state} />}
+                    {sel.charter !== "all" && <input type="hidden" name="charter" value={sel.charter} />}
+                    {activeBin != null && <input type="hidden" name="bin" value={activeBin} />}
+                    {list.all && <input type="hidden" name="view" value="all" />}
+                    <label className="min-w-0 flex-1 sm:w-64">
+                      <span className="sr-only">Find an institution</span>
+                      <input
+                        type="search"
+                        name="q"
+                        defaultValue={list.q}
+                        placeholder="Find an institution"
+                        className="min-h-11 w-full rounded-full border border-ink bg-surface-0 px-4 text-[14px] text-ink placeholder:text-ink-muted"
+                      />
+                    </label>
+                    <button type="submit" className="min-h-11 shrink-0 rounded-full bg-ink px-4 text-[14px] font-semibold text-on-ink">
+                      Find
+                    </button>
+                  </form>
+                </div>
+                {shown.matching === 0 ? (
+                  <p className="mt-3 rounded-2xl border border-border bg-surface-0 p-4 text-[14px] text-ink-soft">
+                    No institution here matches &ldquo;{list.q}&rdquo;.{" "}
+                    <Link href={listHref({})} scroll={false} className={LINK}>
+                      Clear the search
+                    </Link>
+                  </p>
+                ) : (
+                  <ul className="mt-3 divide-y divide-border rounded-2xl border border-border bg-surface-0">
+                    {shown.rows.map((i) => (
+                      <InstitutionRow
+                        key={i.id}
+                        inst={i}
+                        highest={HIGHEST_TIER_CATEGORIES.has(sel.fee)}
+                        prices={(pricesOf.get(i.id) ?? []).map((r) => ({ id: r.id, amount: r.amount, detail: details.get(r.id) ?? null }))}
+                      />
+                    ))}
+                  </ul>
+                )}
+                {shown.matching > 0 && (
+                  <nav aria-label="Institution pages" className="mt-3 flex flex-wrap items-center justify-between gap-3 text-[13px] text-ink-muted">
+                    <span>
+                      {shown.matching <= shown.perPage
+                        ? `${shown.matching.toLocaleString()} ${shown.matching === 1 ? "institution" : "institutions"}, A to Z`
+                        : `${((shown.page - 1) * shown.perPage + 1).toLocaleString()} to ${Math.min(shown.page * shown.perPage, shown.matching).toLocaleString()} of ${shown.matching.toLocaleString()}, A to Z`}
+                    </span>
+                    <span className="flex flex-wrap items-center gap-4">
+                      {shown.page > 1 && (
+                        <Link href={listHref({ page: String(shown.page - 1) })} scroll={false} className={LINK}>
+                          Previous
+                        </Link>
+                      )}
+                      {shown.page < shown.pages && (
+                        <Link href={listHref({ page: String(shown.page + 1) })} scroll={false} className={LINK}>
+                          Next
+                        </Link>
+                      )}
+                      {!list.all && shown.matching > shown.perPage && (
+                        <Link href={listHref({ view: "all" })} scroll={false} className={LINK}>
+                          View all {shown.matching.toLocaleString()} matching institutions
+                        </Link>
+                      )}
+                    </span>
+                  </nav>
+                )}
               </div>
             )}
           </>
@@ -233,10 +338,10 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
           Every category in the Index
         </h2>
         <p className="mt-2 max-w-2xl text-[15px] text-ink-soft">
-          What each fee is and how many institutions publish it. Pick one to explore it above.
+          Open a group to see its fees. Open a fee for what it is and how many institutions publish it.
         </p>
         <div className="mt-6">
-          <IndexCatalog entries={catalog} />
+          <IndexCatalog entries={catalog} selected={sel.fee} />
         </div>
       </section>
 
@@ -303,9 +408,9 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
   );
 }
 
-/** A bar's short axis label: its lower bound, or the open end. */
+/** A bar's short axis label: its lower bound, or the open end ("<$5", "$60+"). The full range is the bar's name. */
 function barLabel(b: ReturnType<typeof histogram>[number]): string {
-  if (b.min == null) return `Under ${money(Math.round((b.max! + 0.01) * 100) / 100)}`;
+  if (b.min == null) return `<${money(Math.round((b.max! + 0.01) * 100) / 100)}`;
   if (b.max == null) return `${money(b.min)}+`;
   return money(b.min);
 }
@@ -323,6 +428,8 @@ function Histogram({
   hrefFor: (i: number) => string;
 }) {
   const top = Math.max(...buckets.map((b) => b.total), 1);
+  // Every other label when the bars are many, so none truncates; each bar's full range stays its name.
+  const step = buckets.length > 8 ? 2 : 1;
   return (
     <div className="mt-5">
       <ul className="flex h-52 items-end gap-1 sm:h-64" aria-label="Institutions by price">
@@ -331,6 +438,7 @@ function Histogram({
             <Link
               href={hrefFor(i)}
               scroll={false}
+              title={`${b.label}: ${b.total} institutions`}
               aria-label={`${b.label}: ${b.total} institutions`}
               aria-current={i === activeBin ? "true" : undefined}
               className="group flex h-full w-full flex-col justify-end"
@@ -348,9 +456,9 @@ function Histogram({
         ))}
       </ul>
       <ul className="mt-6 hidden gap-1 text-[11px] tabular-nums text-ink-muted sm:flex" aria-hidden="true">
-        {buckets.map((b) => (
-          <li key={b.label} className="min-w-0 flex-1 truncate text-center">
-            {barLabel(b)}
+        {buckets.map((b, i) => (
+          <li key={b.label} className="min-w-0 flex-1 text-center">
+            {i % step === 0 ? barLabel(b) : ""}
           </li>
         ))}
       </ul>
@@ -358,51 +466,105 @@ function Histogram({
         <span>{barLabel(buckets[0])}</span>
         <span>{barLabel(buckets[buckets.length - 1])}</span>
       </p>
+      {activeBin != null && (
+        <p className="mt-3 text-[12px] text-ink-muted">
+          Selected: <span className="font-semibold text-ink">{buckets[activeBin].label}</span>
+        </p>
+      )}
     </div>
   );
 }
 
-/** The selection's companion view: two groups' medians and middle halves on one scale. */
+/** Round a scale end to a step a reader can read off ($1, $5, $10, $25...). */
+function niceStep(span: number): number {
+  for (const s of [0.5, 1, 2, 5, 10, 25, 50, 100, 250, 500, 1000]) if (span / s <= 5) return s;
+  return 2500;
+}
+
+/** The selection's companion view: two groups' medians and middle halves on one labeled scale. */
 function Companion({ title, groups }: { title: string; groups: CompareGroup[] }) {
-  const top = Math.max(...groups.map((g) => g.stats.p75_amount ?? g.stats.median_amount ?? 0), 1) * 1.1;
-  const pct = (v: number) => `${(v / top) * 100}%`;
+  const values = groups.flatMap((g) => [g.stats.p25_amount, g.stats.median_amount, g.stats.p75_amount]).filter((v): v is number => v != null);
+  const rawLo = values.length ? Math.min(...values) : 0;
+  const rawHi = values.length ? Math.max(...values) : 1;
+  const step = niceStep(Math.max(rawHi - rawLo, 1));
+  const lo = Math.max(0, Math.floor(rawLo / step) * step - (rawLo % step === 0 ? step : 0));
+  const hi = Math.ceil(rawHi / step) * step + (rawHi % step === 0 ? step : 0);
+  const pct = (v: number) => `${((v - lo) / (hi - lo)) * 100}%`;
+  const ticks: number[] = [];
+  for (let t = lo; t <= hi + 1e-9; t += step) ticks.push(Math.round(t * 100) / 100);
   return (
-    <div className="rounded-2xl border border-border bg-surface-0 p-4 sm:p-6">
+    <div className="self-start rounded-2xl border border-border bg-surface-0 p-4 sm:p-6">
       <p className="text-[15px] font-semibold text-ink">{title}</p>
-      <p className="text-[12px] text-ink-muted">Median, with the middle half shaded.</p>
+      <p className="text-[12px] text-ink-muted">The bar is the middle half of prices; the mark is the median.</p>
       <ul className="mt-4 space-y-5">
-        {groups.map((g) => (
-          <li key={g.label}>
-            <div className="flex items-baseline justify-between text-[13px]">
-              <span className="font-semibold text-ink">{g.label}</span>
-              <span className="font-mono tabular-nums text-ink">{g.stats.median_amount != null ? money(g.stats.median_amount) : "Too few"}</span>
-            </div>
-            <div className="relative mt-2 h-3 rounded-full bg-paper" aria-hidden="true">
-              {g.stats.p25_amount != null && g.stats.p75_amount != null && (
-                <span
-                  className="absolute inset-y-0 rounded-full bg-ink/20"
-                  style={{ left: pct(g.stats.p25_amount), width: pct(g.stats.p75_amount - g.stats.p25_amount) }}
-                />
+        {groups.map((g) => {
+          const { p25_amount: p25, p75_amount: p75, median_amount: med } = g.stats;
+          return (
+            <li key={g.label}>
+              <div className="flex items-baseline justify-between text-[13px]">
+                <span className="font-semibold text-ink">{g.label}</span>
+                <span className="font-mono tabular-nums text-ink">{med != null ? `${money(med)} median` : "Too few for a median"}</span>
+              </div>
+              <div className="relative mt-2 h-3 rounded-full bg-paper" aria-hidden="true">
+                {p25 != null && p75 != null && (
+                  <span className="absolute inset-y-0 rounded-full bg-ink/25" style={{ left: pct(p25), width: `calc(${pct(p75)} - ${pct(p25)})` }} />
+                )}
+                {med != null && <span className="absolute inset-y-[-3px] w-1 -translate-x-1/2 rounded-full bg-brick" style={{ left: pct(med) }} />}
+              </div>
+              {p25 != null && p75 != null && (
+                <div className="relative mt-1 h-4 font-mono text-[11px] tabular-nums text-ink-muted" aria-hidden="true">
+                  <span className="absolute -translate-x-full pr-1" style={{ left: pct(p25) }}>
+                    {money(p25)}
+                  </span>
+                  <span className="absolute pl-1" style={{ left: pct(p75) }}>
+                    {money(p75)}
+                  </span>
+                </div>
               )}
-              {g.stats.median_amount != null && (
-                <span className="absolute inset-y-[-3px] w-1 rounded-full bg-brick" style={{ left: pct(g.stats.median_amount) }} />
-              )}
-            </div>
-            <p className="mt-1 text-[12px] text-ink-muted">
-              {g.stats.institution_count.toLocaleString()} institutions
-              {g.stats.p25_amount != null && g.stats.p75_amount != null
-                ? `, middle half ${money(g.stats.p25_amount)} to ${money(g.stats.p75_amount)}`
-                : ""}
-            </p>
-          </li>
-        ))}
+              <p className="mt-1 text-[12px] text-ink-muted">
+                {g.stats.institution_count.toLocaleString()} institutions
+                {p25 != null && p75 != null ? `, middle half ${money(p25)} to ${money(p75)}` : ""}
+              </p>
+            </li>
+          );
+        })}
       </ul>
+      <div className="relative mt-4 h-5 border-t border-control-border font-mono text-[10px] tabular-nums text-ink-muted" aria-hidden="true">
+        {ticks.map((t, i) => (
+          <span
+            key={t}
+            className={`absolute top-1 ${i === 0 ? "" : i === ticks.length - 1 ? "-translate-x-full" : "-translate-x-1/2"}`}
+            style={{ left: pct(t) }}
+          >
+            {money(t)}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
 
-function InstitutionRow({ inst, detail }: { inst: IndexInstitution; detail: FeeRowDetail | null }) {
-  const readOn = detail?.read_on ?? null;
+interface ListedPrice {
+  id: number;
+  amount: number;
+  detail: FeeRowDetail | null;
+}
+
+function InstitutionRow({ inst, prices, highest }: { inst: IndexInstitution; prices: ListedPrice[]; highest: boolean }) {
+  // One entry per distinct price and wording; the same line read twice is one price.
+  const seen = new Set<string>();
+  const listed = [...prices]
+    .sort((a, b) => a.amount - b.amount || a.id - b.id)
+    .filter((p) => {
+      const k = `${p.amount}|${p.detail?.fee_name ?? ""}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  const amounts = new Set(listed.map((p) => p.amount));
+  const verified = listed.filter((p) => p.detail?.source_line).length;
+  const first = listed[0]?.detail ?? null;
+  const readOn = first?.read_on ?? null;
   return (
     <li>
       <details className="px-4 py-3 sm:px-5">
@@ -411,20 +573,55 @@ function InstitutionRow({ inst, detail }: { inst: IndexInstitution; detail: FeeR
             <span className="font-semibold text-ink">{inst.name}</span>
             <span className="block text-[12px] text-ink-muted">
               {inst.charter === "credit_union" ? "Credit union" : "Bank"}
-              {inst.state ? ` · ${STATE_NAMES[inst.state] ?? inst.state}` : ""}
+              {inst.state ? ` · headquartered in ${STATE_NAMES[inst.state] ?? inst.state}` : ""}
+              {verified === 0 ? " · not verified" : ""}
             </span>
           </span>
-          <span className="shrink-0 font-mono text-[15px] tabular-nums text-ink">{money(inst.value)}</span>
+          <span className="shrink-0 text-right">
+            <span className="block font-mono text-[15px] tabular-nums text-ink">{money(inst.value)}</span>
+            {amounts.size > 1 && (
+              <span className="block text-[11px] text-ink-muted">
+                {highest ? "highest" : "middle"} of {amounts.size} prices
+              </span>
+            )}
+          </span>
         </summary>
-        <div className="mt-2 space-y-1 text-[13px] text-ink-soft">
-          {detail?.fee_name && <p>&ldquo;{detail.fee_name}&rdquo;</p>}
-          {detail?.conditions && <p className="text-ink-muted">{detail.conditions}</p>}
+        <div className="mt-3 space-y-3 text-[13px] text-ink-soft">
+          {amounts.size > 1 && (
+            <p className="text-ink-muted">
+              It lists {amounts.size} prices for this fee. The Index counts it once, at {money(inst.value)}, the {highest ? "highest" : "middle"} of
+              them.
+            </p>
+          )}
+          {listed.map((p) => {
+            const d = p.detail;
+            const when = chargedWhen(d?.frequency ?? null);
+            const account = accountName(d?.account ?? null);
+            return (
+              <div key={p.id} className="rounded-xl border border-border bg-paper p-3">
+                <p className="text-ink">
+                  <span className="font-mono font-semibold tabular-nums">{money(p.amount)}</span>
+                  {when ? ` ${when}` : ""}
+                  <span className="text-ink-muted">{account ? ` · ${account}` : " · account not named"}</span>
+                </p>
+                {d?.source_line ? (
+                  <blockquote className="mt-2 border-l-2 border-brick pl-3 text-ink">&ldquo;{d.source_line.replace(/\s*\|\s*/g, " … ").replace(/\s+/g, " ").trim()}&rdquo;</blockquote>
+                ) : (
+                  <p className="mt-2 text-ink-muted">
+                    <span className="font-semibold text-ink">Not verified for comparison.</span> The stored schedule&apos;s line for this fee
+                    {d?.fee_name ? <> (&ldquo;{d.fee_name}&rdquo;)</> : null} doesn&apos;t state {money(p.amount)} as its price.
+                  </p>
+                )}
+                {d?.conditions && <p className="mt-2 text-ink-muted">Conditions: {d.conditions}</p>}
+              </div>
+            );
+          })}
           <p className="text-[12px] text-ink-muted">
             {readOn ? `Read ${READ.format(new Date(`${readOn}T00:00:00Z`))}` : "Read date not recorded"}
-            {detail?.document_url ? (
+            {first?.document_url ? (
               <>
                 {" from "}
-                <a href={detail.document_url} target="_blank" rel="noopener noreferrer" className="underline decoration-border underline-offset-2 hover:decoration-ink">
+                <a href={first.document_url} target="_blank" rel="noopener noreferrer" className="underline decoration-border underline-offset-2 hover:decoration-ink">
                   its fee schedule
                 </a>
               </>
