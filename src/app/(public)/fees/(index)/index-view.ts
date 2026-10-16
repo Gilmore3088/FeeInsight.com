@@ -243,7 +243,7 @@ export function money(n: number): string {
 /** Codes in STATE_NAMES that aren't states: the coverage finding counts the 50 states only. */
 const NOT_STATES = new Set(["DC", "PR", "VI", "GU", "AS"]);
 
-/** The most common price is called out when this share of institutions charge it. */
+/** The most common counted value is called out when this share of institutions share it. */
 const CONCENTRATED = 0.2;
 
 /**
@@ -285,7 +285,7 @@ export function findings(rows: IndexRow[], sel: Selection, institutions: IndexIn
     if (institutions.length < MIN_INSTITUTIONS_FOR_MEDIAN) {
       out.push(
         institutions.length === 0
-          ? `No institution headquartered in ${STATE_NAMES[sel.state]} publishes this fee in a schedule we hold yet.`
+          ? `No institution headquartered in ${STATE_NAMES[sel.state]} publishes this fee in a schedule the Index holds yet.`
           : `Only ${institutions.length} ${institutions.length === 1 ? "institution" : "institutions"} headquartered in ${STATE_NAMES[sel.state]} ${institutions.length === 1 ? "publishes" : "publish"} this fee, too few for a median (${MIN_INSTITUTIONS_FOR_MEDIAN} needed).`,
       );
     }
