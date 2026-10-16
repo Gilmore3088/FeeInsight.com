@@ -1,8 +1,9 @@
 import { sql } from "@/lib/data-store/connection";
+import { API_MONTHLY_CALLS } from "@/lib/api-subscriber-access";
 
 const TIER_LIMITS: Record<string, number> = {
   free: 100,
-  pro: 10_000,
+  pro: API_MONTHLY_CALLS,
   enterprise: Infinity,
 };
 
