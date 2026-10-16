@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { DARWIN_RECHECK_CHECK, DARWIN_RECHECK_SAME_STEP_TAKEDOWN, DARWIN_RECHECK_STRATEGY, recheckVerifiedFees } from "./verified-recheck";
+import { DARWIN_RECHECK_CHECK, DARWIN_RECHECK_OLDER_LIVE, DARWIN_RECHECK_SAME_STEP_TAKEDOWN, DARWIN_RECHECK_STRATEGY, recheckVerifiedFees } from "./verified-recheck";
 
 type DbMock = ReturnType<typeof vi.fn>;
 
@@ -26,9 +26,11 @@ const verifiedRow = {
   rate_percent: null,
 };
 
-function dbWith(rows: Array<Record<string, unknown>>): DbMock {
+function dbWith(rows: Array<Record<string, unknown>>, older: Array<Record<string, unknown>> = []): DbMock {
   const db = vi.fn((strings: TemplateStringsArray) => {
     const text = templateText(strings);
+    // Live rows verified under an older verify version (#1568).
+    if (text.includes("JOIN LATERAL")) return Promise.resolve(older);
     if (text.includes("FROM verified_fee_observations v")) return Promise.resolve(rows);
     if (text.includes("FROM agent_source_texts")) return Promise.resolve([{ source_document_id: 55, normalized_text: TEXT }]);
     if (text.includes("to_regclass")) return Promise.resolve([{ ready: true }]);
@@ -60,7 +62,7 @@ describe("Darwin verified re-check", () => {
     const sqlText = db.mock.calls.map((call) => templateText(call[0]));
     const rollback = db.mock.calls.find((call) => templateText(call[0]).includes("UPDATE published_fee_records"));
     expect(rollback?.slice(1)).toEqual(expect.arrayContaining(["darwin-recheck-500", [7001], ["darwin_recheck:conditional_zero"]]));
-    expect(sqlText.filter((text) => text.includes("rolled_back_at IS NULL"))).toHaveLength(2);
+    expect(sqlText.filter((text) => text.includes("rolled_back_at IS NULL") && !text.includes("JOIN LATERAL"))).toHaveLength(2);
     const rejects = db.mock.calls.filter((call) => templateText(call[0]).includes("UPDATE verified_fee_observations"));
     expect(rejects).toHaveLength(3);
     expect(rejects[0].slice(1)).toContain(JSON.stringify(["darwin_recheck:conditional_zero"]));
@@ -126,5 +128,38 @@ describe("Darwin verified re-check", () => {
     expect(rejects).toHaveLength(1);
     expect(rejects[0].slice(1)).toContain(JSON.stringify(["darwin_recheck:tier_perk_zero"]));
     expect(rejects[0].slice(1)).toContain(130002);
+  });
+
+  describe("live rows verified under an older verify version (#1568)", () => {
+    const premium = { ...verifiedRow, source_url: "https://www.examplebank.com/agreements-disclosures/truth-in-savings/premium-account-fees" };
+    const older = [
+      { ...premium, fee_verified_id: 140001, fee_raw_id: 400001, canonical_fee_key: "overdraft", verified_amount: "0.00", fee_name: "Overdraft", amount: "0.00", outlier_flags: [], conditions: null, fee_published_id: 142869 },
+      { ...premium, fee_verified_id: 140002, fee_raw_id: 400002, canonical_fee_key: "overdraft", verified_amount: "35.00", fee_name: "Overdraft fee", amount: "35.00", outlier_flags: [], conditions: null, fee_published_id: 142899 },
+    ];
+
+    it("off (the default): reports what the recheck would do and writes nothing for them", async () => {
+      const db = dbWith([], older);
+      const result = await recheckVerifiedFees(db as never, { runId: 601 });
+
+      expect(DARWIN_RECHECK_OLDER_LIVE).toBe(false);
+      expect(result).toMatchObject({ checked: 0, flagged: 0, takenDown: [] });
+      expect(result.olderLive).toMatchObject({ read: 2, wouldFail: { tier_perk_zero: 1 } });
+      expect(result.olderLive?.samples).toEqual([expect.objectContaining({ feePublishedId: 142869, code: "tier_perk_zero" })]);
+      const writes = db.mock.calls.map((call) => templateText(call[0])).filter((text) => /\b(?:UPDATE|INSERT)\b/.test(text));
+      expect(writes).toEqual([]);
+      // The sample changes with the run, so steps cover the backlog in turn.
+      const lateral = db.mock.calls.find((call) => templateText(call[0]).includes("JOIN LATERAL"));
+      expect(lateral?.slice(1)).toContain("601");
+    });
+
+    it("on: they join the recheck, and a failing live one goes to the second look", async () => {
+      const db = dbWith([], older);
+      const result = await recheckVerifiedFees(db as never, { runId: 602, olderLive: true });
+
+      expect(result.olderLive).toBeUndefined();
+      expect(result).toMatchObject({ checked: 2, passed: 1, flagged: 1 });
+      const attempts = db.mock.calls.filter((call) => templateText(call[0]).includes("INSERT INTO pipeline_attempts"));
+      expect(attempts).toHaveLength(2);
+    });
   });
 });
