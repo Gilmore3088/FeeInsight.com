@@ -1,5 +1,7 @@
 import Link from "next/link";
-import { SITE_NAME } from "@/lib/constants";
+import { PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
+import type { PublicStatsSummary } from "@/lib/public-stats";
+import { PrintButton } from "./print-button";
 import { HAMILTON_CANONICAL } from "@/app/for-institutions/hamilton-copy";
 import { SectionHeading } from "./research-hero";
 
@@ -26,82 +28,118 @@ const SOURCES = [
   "Federal Reserve Beige Book (economic context)",
 ];
 
-export function MethodFlow({ coverageLabel }: { coverageLabel: string }) {
+const MONO_FIGURE = { fontFamily: "var(--fi-font-mono)" } as const;
+
+/** A methodology note behind an explicit control, closed by default. */
+function Note({ title, id, children }: { title: string; id?: string; children: React.ReactNode }) {
   return (
-    <section id="methodology" className="scroll-mt-28">
-      <SectionHeading
-        eyebrow="How it's built"
-        title="From a bank's fee schedule to a benchmark"
-        action={
-          <Link href="/methodology" className="rounded-full border border-ink px-4 py-2 text-[12px] font-semibold text-ink transition-colors hover:bg-ink hover:text-white">
-            Full methodology &rarr;
-          </Link>
-        }
-      >
-        Each figure starts as a line in a document the institution published itself.
+    <details className="group border-t border-surface-200 first:border-t-0">
+      <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-5 py-3 text-[14px] font-semibold text-ink hover:bg-paper [&::-webkit-details-marker]:hidden">
+        {title}
+        <span aria-hidden="true" className="text-ink-muted transition-transform group-open:rotate-90">&rsaquo;</span>
+      </summary>
+      <div id={id} className="scroll-mt-28 px-5 pb-5 text-[13px] leading-relaxed text-ink-soft">
+        {children}
+      </div>
+    </details>
+  );
+}
+
+function Dots({ items }: { items: string[] }) {
+  return (
+    <ul className="space-y-2">
+      {items.map((c) => (
+        <li key={c} className="flex items-start gap-2">
+          <span aria-hidden="true" className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brick/70" />
+          {c}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Coverage counts, how the data is built and checked, and the PDF; after the findings, not before them. */
+export function MethodFlow({ summary, stateCount, coverageLabel }: { summary: PublicStatsSummary; stateCount: number; coverageLabel: string }) {
+  const stats = [
+    { value: summary.observationsLabel, label: "published fee entries" },
+    { value: summary.institutionsLabel, label: `institutions with published fees, of ${summary.monitoredLabel} monitored` },
+    { value: summary.categoriesLabel, label: "fee categories" },
+    { value: String(stateCount), label: "states with published fees" },
+  ];
+
+  return (
+    <section id="about-data" className="scroll-mt-28">
+      <SectionHeading eyebrow="About the data" title="Where the numbers come from">
+        Every figure starts as a line in a fee schedule the institution published itself, and is checked before it appears here.
       </SectionHeading>
 
-      <ol className="relative mt-8 grid gap-4 md:grid-cols-4">
-        {/* Connector line behind the steps on wide screens. */}
-        <span aria-hidden="true" className="absolute left-0 right-0 top-6 hidden h-px bg-gradient-to-r from-brick/10 via-brick/40 to-brick/10 md:block" />
-        {STEPS.map((s) => (
-          <li key={s.n} className="relative">
-            <span className="relative z-10 flex h-12 w-12 items-center justify-center rounded-full border border-brick/30 bg-paper text-[13px] font-bold tabular-nums text-brick">
-              {s.n}
-            </span>
-            <h3 className="mt-3 text-[16px] font-bold text-ink" style={SERIF}>{s.title}</h3>
-            <p className="mt-1 text-[13px] leading-relaxed text-ink-muted">{s.body}</p>
-          </li>
+      <dl className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border lg:grid-cols-4">
+        {stats.map((s) => (
+          <div key={s.label} className="bg-white px-4 py-4">
+            <dt className="sr-only">{s.label}</dt>
+            <dd>
+              <span className="block text-[1.5rem] font-semibold leading-none tabular-nums text-ink" style={MONO_FIGURE}>
+                {s.value}
+              </span>
+              <span className="mt-1.5 block text-[12px] leading-snug text-ink-muted">{s.label}</span>
+            </dd>
+          </div>
         ))}
-      </ol>
+      </dl>
 
-      <div id="verified" className="mt-8 scroll-mt-28 rounded-2xl border border-border bg-white px-6 py-5">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-muted">What &ldquo;verified&rdquo; means</p>
-        <ul className="mt-3 space-y-2 text-[13px] text-ink-soft">
-          {VERIFIED_CHECKS.map((c) => (
-            <li key={c} className="flex items-start gap-2">
-              <span aria-hidden="true" className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brick/70" />
-              {c}
-            </li>
-          ))}
-        </ul>
-        <p className="mt-3 text-[12px] text-ink-muted">
-          Not yet checked: which account each price belongs to. A schedule with several accounts can list several prices
-          for one fee, so each institution counts once, at the median of its prices (overdraft: its highest).
-        </p>
-      </div>
-
-      <div className="mt-8 grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <div className="rounded-2xl border border-border bg-white px-6 py-5">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-muted">Sources</p>
-          <ul className="mt-3 space-y-2 text-[13px] text-ink-soft">
-            {SOURCES.map((s) => (
-              <li key={s} className="flex items-start gap-2">
-                <span aria-hidden="true" className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brick/70" />
-                {s}
+      <div className="mt-4 overflow-hidden rounded-2xl border border-border bg-white">
+        <Note title={"What \u201cverified\u201d means"} id="verified">
+          <Dots items={VERIFIED_CHECKS} />
+          <p className="mt-3 text-[12px] text-ink-muted">
+            Not yet checked: which account each price belongs to. A schedule with several accounts can list several prices
+            for one fee, so each institution counts once, at the median of its prices (overdraft: its highest).
+          </p>
+        </Note>
+        <Note title="How a fee gets here">
+          <ol className="space-y-3">
+            {STEPS.map((s) => (
+              <li key={s.n} className="flex gap-3">
+                <span className="text-[12px] font-bold tabular-nums text-brick">{s.n}</span>
+                <span>
+                  <span className="block font-semibold text-ink">{s.title}</span>
+                  {s.body}
+                </span>
               </li>
             ))}
-          </ul>
-          <p className="mt-4 text-[12px] text-ink-muted">
+          </ol>
+        </Note>
+        <Note title="Sources and coverage">
+          <Dots items={SOURCES} />
+          <p className="mt-3 text-[12px] text-ink-muted">
             Coverage: banks and credit unions of every asset size, all 12 Federal Reserve districts, {coverageLabel}.
             Each state and district report shows how many of its institutions have published fees so far.
           </p>
-        </div>
+        </Note>
+      </div>
 
-        <div className="relative overflow-hidden rounded-2xl bg-ink px-6 py-5 text-paper">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#e0716a]">{SITE_NAME} Pro · Hamilton</p>
-          <p className="font-semibold mt-2 text-[18px] leading-snug text-white" style={SERIF}>
-            Benchmark your institution against the peers you choose.
-          </p>
-          <p className="mt-2 text-[13px] leading-relaxed text-paper/80">{HAMILTON_CANONICAL}</p>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Link href="/for-institutions#report" className="rounded-full bg-brick px-4 py-2 text-[12px] font-semibold text-white hover:bg-brick-ink">
-              Get a competitive fee report
-            </Link>
-            <Link href="/subscribe" className="rounded-full border border-white/25 px-4 py-2 text-[12px] font-semibold text-white hover:bg-white/10">
-              See pricing
-            </Link>
-          </div>
+      <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-3 text-[13px]">
+        <Link href="/methodology" className="font-semibold text-ink underline decoration-border underline-offset-2 hover:decoration-ink">
+          Full methodology
+        </Link>
+        <Link href="/research/national-fee-index" className="font-semibold text-ink underline decoration-border underline-offset-2 hover:decoration-ink">
+          The full {PRODUCT_NAME}
+        </Link>
+        <PrintButton className="min-h-10 rounded-full border border-ink px-4 font-semibold text-ink hover:bg-ink hover:text-white print:hidden" />
+      </div>
+
+      <div className="mt-8 rounded-2xl bg-ink px-6 py-5 text-paper">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#e0716a]">{SITE_NAME} Pro · Hamilton</p>
+        <p className="mt-2 text-[18px] font-semibold leading-snug text-white" style={SERIF}>
+          Benchmark your institution against the peers you choose.
+        </p>
+        <p className="mt-2 text-[13px] leading-relaxed text-paper/80">{HAMILTON_CANONICAL}</p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Link href="/for-institutions#report" className="rounded-full bg-brick px-4 py-2 text-[12px] font-semibold text-white hover:bg-brick-ink">
+            Get a competitive fee report
+          </Link>
+          <Link href="/subscribe" className="rounded-full border border-white/25 px-4 py-2 text-[12px] font-semibold text-white hover:bg-white/10">
+            See pricing
+          </Link>
         </div>
       </div>
     </section>

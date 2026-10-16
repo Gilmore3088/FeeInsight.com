@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { US_STATES } from "@/lib/us-map-paths";
 import { STATE_NAMES } from "@/lib/us-states";
 import { DISTRICT_NAMES, STATE_TO_DISTRICT } from "@/lib/fed-districts";
@@ -45,6 +46,9 @@ export function GeoReports({ states, districts }: { states: StateCoverage[]; dis
   const [view, setView] = useState<View>("states");
   const [query, setQuery] = useState("");
   const [hovered, setHovered] = useState<string | null>(null);
+  // On phones the picker leads and the map is opt-in.
+  const [showMap, setShowMap] = useState(false);
+  const router = useRouter();
 
   const stateByCode = useMemo(() => new Map(states.map((s) => [s.state_code, s])), [states]);
 
@@ -125,8 +129,41 @@ export function GeoReports({ states, districts }: { states: StateCoverage[]; dis
         ))}
       </div>
 
-      <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="relative rounded-2xl border border-border bg-white p-3 sm:p-5">
+      <div className="mt-4 sm:hidden">
+        <label className="sr-only" htmlFor="geo-pick">
+          {view === "districts" ? "Choose a district report" : "Choose a state report"}
+        </label>
+        <select
+          id="geo-pick"
+          defaultValue=""
+          key={view}
+          onChange={(e) => {
+            if (e.target.value) router.push(e.target.value);
+          }}
+          className="min-h-11 w-full rounded-full border border-border bg-white px-4 text-[14px] font-semibold text-ink"
+        >
+          <option value="" disabled>
+            {view === "districts" ? "Choose a district" : "Choose a state"}
+          </option>
+          {entries.map((e) => (
+            <option key={e.key} value={e.href}>
+              {e.badge !== undefined ? `${e.badge}. ` : ""}
+              {e.name} ({NUMBER.format(e.institutions)} institutions)
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          aria-expanded={showMap}
+          onClick={() => setShowMap((v) => !v)}
+          className="mt-2 min-h-10 text-[13px] font-semibold text-brick"
+        >
+          {showMap ? "Hide the map" : "Show the map"}
+        </button>
+      </div>
+
+      <div className="mt-3 grid gap-6 sm:mt-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div className={`relative rounded-2xl border border-border bg-white p-3 sm:block sm:p-5 ${showMap ? "" : "hidden"}`}>
           <svg
             viewBox="0 0 960 600"
             className="h-auto w-full"
@@ -180,7 +217,7 @@ export function GeoReports({ states, districts }: { states: StateCoverage[]; dis
           </p>
         </div>
 
-        <div className="flex min-h-0 flex-col rounded-2xl border border-border bg-white">
+        <div className="hidden min-h-0 flex-col rounded-2xl border border-border bg-white sm:flex">
           <div className="border-b border-surface-200 px-4 py-3">
             <label className="sr-only" htmlFor="geo-filter">
               {view === "districts" ? "Find a district" : "Find a state"}

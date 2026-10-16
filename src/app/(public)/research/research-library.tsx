@@ -22,7 +22,7 @@ const STUDIES: Study[] = [
   {
     href: "/research/fee-revenue-analysis",
     question: "Do institutions that publish higher fees earn more service-charge income?",
-    status: "Published so far: fee levels beside service-charge income, by asset size and by charter. No headline finding yet.",
+    status: "Published so far: fee levels beside service-charge income, by asset size and by charter.",
     data: (asOf) => `Fees as of ${asOf ?? "the latest refresh"}; income from each institution's latest call report.`,
     pro: true,
   },
@@ -35,40 +35,33 @@ const STUDIES: Study[] = [
   },
 ];
 
-/** Original studies, placed right after the key findings so the research is found before the coverage. */
+/** Studies without a published result yet, kept small and near the bottom so they don't interrupt the findings. */
 export function ResearchLibrary({ articles, asOf }: { articles: ArticleSummary[]; asOf: string | null }) {
   return (
-    <section id="studies" className="scroll-mt-28">
-      <SectionHeading eyebrow="Original research" title="Studies">
-        Each study asks one question of the published fees and public financial data. Where a result isn&apos;t ready,
-        the card says so.
+    <section id="in-progress" className="scroll-mt-28">
+      <SectionHeading eyebrow="Further research" title="Research in progress">
+        Studies that ask one question of the published fees and public financial data. Neither has a headline result yet.
       </SectionHeading>
 
-      <div className="mt-7 grid gap-4 md:grid-cols-2">
+      <ul className="mt-5 divide-y divide-border overflow-hidden rounded-2xl border border-border bg-white">
         {STUDIES.map((s) => (
-          <Link
-            key={s.href}
-            href={s.href}
-            className="group flex flex-col rounded-2xl border border-border bg-white px-5 py-5 transition-all hover:-translate-y-0.5 hover:border-brick/30 hover:shadow-lg hover:shadow-[#b23a32]/5"
-          >
-            <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-muted">
-              Study
-              {s.pro ? <ProLock /> : <span>Free</span>}
-            </p>
-            <h3 className="mt-1.5 text-[18px] font-bold leading-snug text-ink group-hover:text-brick" style={SERIF}>
-              {s.question}
-            </h3>
-            <p className="mt-2 flex-1 text-[13px] leading-relaxed text-ink-soft">{s.status}</p>
-            <p className="mt-3 text-[11px] text-ink-muted">{s.data(asOf)}</p>
-            <span className="mt-3 text-[12px] font-semibold text-brick">
-              Open the study <span className="inline-block transition-transform group-hover:translate-x-0.5">&rarr;</span>
-            </span>
-          </Link>
+          <li key={s.href}>
+            <Link href={s.href} className="group block px-5 py-4 hover:bg-paper">
+              <span className="flex items-start justify-between gap-3">
+                <span className="text-[15px] font-semibold leading-snug text-ink group-hover:text-brick" style={SERIF}>
+                  {s.question}
+                </span>
+                {s.pro && <ProLock className="mt-0.5 shrink-0" />}
+              </span>
+              <span className="mt-1 block text-[13px] leading-relaxed text-ink-soft">{s.status}</span>
+              <span className="mt-1 block text-[11px] text-ink-muted">{s.data(asOf)}</span>
+            </Link>
+          </li>
         ))}
-      </div>
+      </ul>
 
       {articles.length > 0 && (
-        <div className="mt-8">
+        <div className="mt-6">
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-muted">Latest analysis</p>
           <ul className="mt-3 divide-y divide-surface-200 rounded-2xl border border-border bg-white">
             {articles.map((a) => (
@@ -87,7 +80,7 @@ export function ResearchLibrary({ articles, asOf }: { articles: ArticleSummary[]
         </div>
       )}
 
-      <p className="mt-5 text-[13px] text-ink-muted">
+      <p className="mt-4 text-[13px] text-ink-muted">
         Also:{" "}
         <Link href="/guides" className="font-semibold text-ink underline decoration-border underline-offset-2 hover:decoration-ink">
           consumer fee guides

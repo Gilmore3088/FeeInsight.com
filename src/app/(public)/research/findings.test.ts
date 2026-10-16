@@ -18,15 +18,20 @@ describe("computeFindings", () => {
       fee("atm_non_network", { zero_count: 30 }),
     ]);
     const byKey = Object.fromEntries(findings.map((f) => [f.key, f]));
-    expect(byKey.overdraft.figure).toBe("$25.00");
-    expect(byKey["charter-gap"].figure).toBe("$10.00");
-    expect(byKey["charter-gap"].headline).toBe("Lower credit union median for overdraft");
-    expect(byKey["charter-gap"].detail).toContain("lower on 3 of 3");
+    expect(byKey.overdraft.headline).toBe("The median overdraft fee is $25.");
+    expect(byKey["charter-gap"].figure).toBe("$10");
+    expect(byKey["charter-gap"].headline).toBe("Credit union overdraft fees are $10 lower at the median.");
+    expect(byKey["charter-gap"].detail).toContain("lower on 3 of the 3 fees");
     expect(byKey.spread.figure).toBe("4.5×");
     expect(byKey.free.figure).toBe("30%");
-    expect(byKey.spread.headline).toContain("largest relative spread among these 3 fees");
-    expect(byKey.overdraft.detail).toContain("each counted at its highest published overdraft price");
-    for (const f of findings) expect(`${f.headline} ${f.detail}`).not.toMatch(/ pay | charge /);
+    expect(byKey.spread.headline).toBe("Outgoing international wire fees vary the most of these 3 fees.");
+    expect(byKey.spread.detail).toBe("A quarter of institutions list $10 or less, and a quarter list $45 or more.");
+    expect(byKey.free.headline).toBe("30% of institutions publish only $0 out-of-network ATM prices.");
+    expect(byKey.overdraft.about).toContain("at its highest published overdraft price");
+    for (const f of findings) {
+      expect(f.about).toBeTruthy();
+      expect(`${f.headline} ${f.detail}`).not.toMatch(/ pay | charge/);
+    }
   });
 
   it("skips charter findings when a charter median is missing", () => {

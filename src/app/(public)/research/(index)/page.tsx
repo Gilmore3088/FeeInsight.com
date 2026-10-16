@@ -14,13 +14,13 @@ import { BenchmarkBoard, pickBenchmarks } from "../benchmark-board";
 import { GeoReports } from "../geo-reports";
 import { ResearchLibrary } from "../research-library";
 import { MethodFlow } from "../method-flow";
-import { CharterExhibit, KeyFindings } from "../exhibits";
+import { HubFindings } from "../hub-findings";
 import { computeFindings } from "../findings";
 
 export const metadata: Metadata = {
   title: "Research - Bank & Credit Union Fee Analysis",
   description:
-    "Findings and original studies on bank and credit union fees, with national benchmarks and state and Federal Reserve district reports. Every figure traces to a published schedule.",
+    "Findings on bank and credit union fees, with national benchmarks and state and Federal Reserve district reports. Every figure traces to a published fee schedule.",
 };
 
 const ARTICLE_LIMIT = 5;
@@ -62,33 +62,31 @@ export default async function ResearchHubPage() {
         ]}
       />
 
-      <ResearchHero summary={summary} stateCount={stateCount} hasDc={hasDc} territoryCount={territoryCount} />
+      <ResearchHero summary={summary} />
       <ResearchSectionNav />
 
-      <div className="mx-auto max-w-page space-y-20 px-4 py-14 sm:px-6">
-        <KeyFindings findings={findings} asOf={asOf} />
-
-        <ResearchLibrary articles={articles} asOf={asOf} />
+      <div className="mx-auto max-w-page space-y-14 px-4 py-10 sm:space-y-16 sm:px-6 sm:py-12">
+        <HubFindings findings={findings} asOf={asOf} />
 
         <BenchmarkBoard benchmarks={benchmarks} asOf={asOf} />
 
-        <CharterExhibit benchmarks={benchmarks} asOf={asOf} />
-
         <section id="geography" className="scroll-mt-28">
-          <SectionHeading eyebrow="Geographic reports" title="Every state and Federal Reserve district">
-            Each report applies the same benchmarks to one state or district, with that area&apos;s coverage and economic context.
+          <SectionHeading eyebrow="Regional reports" title="States and Federal Reserve districts">
+            The same benchmarks for one state or district, with its coverage and economic context.
           </SectionHeading>
-          <div className="mt-7">
+          <div className="mt-5">
             <GeoReports states={coverage.states} districts={coverage.districts} />
           </div>
         </section>
 
-        <MethodFlow coverageLabel={coverageLabel} />
+        <ResearchLibrary articles={articles} asOf={asOf} />
+
+        <MethodFlow summary={summary} stateCount={stateCount} coverageLabel={coverageLabel} />
       </div>
 
       {/* Print / Save as PDF: drop site chrome and interactive controls, keep exhibits whole. */}
       <style>{`@media print {
-        header, footer, nextjs-portal, #geo-filter, [role="radiogroup"] { display: none !important; }
+        header, footer, nextjs-portal, #geo-filter, #geo-pick, [role="radiogroup"] { display: none !important; }
         body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         section { break-inside: avoid-page; }
         a { text-decoration: none !important; }
