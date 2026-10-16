@@ -36,7 +36,7 @@ export function computeFindings(benchmarks: FeeCategorySummary[]): Finding[] {
       key: "overdraft",
       figure: formatAmount(overdraft.median_amount),
       headline: "Median overdraft fee",
-      detail: `Across ${formatCount(overdraft.institution_count)} banks and credit unions, counting each at its highest published overdraft price. The middle half of ${institutionValues("overdraft")} run ${formatAmount(overdraft.p25_amount)} to ${formatAmount(overdraft.p75_amount)}.`,
+      detail: `Across ${formatCount(overdraft.institution_count)} banks and credit unions, each counted at its highest published overdraft price. The middle half of those prices run ${formatAmount(overdraft.p25_amount)} to ${formatAmount(overdraft.p75_amount)}.`,
       exhibit: "benchmarks",
     });
   }
@@ -70,7 +70,7 @@ export function computeFindings(benchmarks: FeeCategorySummary[]): Finding[] {
       key: "spread",
       figure: `${(spread.p75_amount! / spread.p25_amount!).toFixed(1)}×`,
       headline: `${getDisplayName(spread.fee_category)}: largest relative spread among these ${benchmarks.length} fees`,
-      detail: `The 75th percentile of ${institutionValues(spread.fee_category)} (${formatAmount(spread.p75_amount)}) is ${(spread.p75_amount! / spread.p25_amount!).toFixed(1)} times the 25th (${formatAmount(spread.p25_amount)}). A relative spread says nothing about how often the fee is paid.`,
+      detail: `The 75th percentile of ${institutionValues(spread.fee_category)} (${formatAmount(spread.p75_amount)}) is ${(spread.p75_amount! / spread.p25_amount!).toFixed(1)} times the 25th (${formatAmount(spread.p25_amount)}), a gap of ${formatAmount(spread.p75_amount! - spread.p25_amount!)}. How often the fee is paid isn't measured here.`,
       exhibit: "benchmarks",
     });
   }
@@ -85,7 +85,7 @@ export function computeFindings(benchmarks: FeeCategorySummary[]): Finding[] {
         key: "free",
         figure: shareLabel(free.zero_count, free.institution_count),
         headline: `of institutions publish only $0 ${lowerName(free.fee_category)} prices`,
-        detail: `For ${formatCount(free.zero_count)} of ${formatCount(free.institution_count)} institutions, every ${lowerName(free.fee_category)} price they publish is $0. One free account beside a paid one doesn't count. That is the highest share among these ${benchmarks.length} fees.`,
+        detail: `For ${formatCount(free.zero_count)} of ${formatCount(free.institution_count)} institutions, every ${lowerName(free.fee_category)} price they publish is $0. An institution with one free account and one paid account isn't counted. That is the highest share among these ${benchmarks.length} fees.`,
         exhibit: "benchmarks",
       });
     }

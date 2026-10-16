@@ -70,13 +70,13 @@ export default async function ResearchHubPage() {
 
         <ResearchLibrary articles={articles} asOf={asOf} />
 
-        <BenchmarkBoard benchmarks={benchmarks} institutionsLabel={summary.institutionsLabel} asOf={asOf} />
+        <BenchmarkBoard benchmarks={benchmarks} asOf={asOf} />
 
         <CharterExhibit benchmarks={benchmarks} asOf={asOf} />
 
         <section id="geography" className="scroll-mt-28">
           <SectionHeading eyebrow="Geographic reports" title="Every state and Federal Reserve district">
-            Each report applies the same benchmarks to one state or district, with its own coverage and local context.
+            Each report applies the same benchmarks to one state or district, with that area&apos;s coverage and economic context.
           </SectionHeading>
           <div className="mt-7">
             <GeoReports states={coverage.states} districts={coverage.districts} />

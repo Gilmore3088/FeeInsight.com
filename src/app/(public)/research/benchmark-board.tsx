@@ -101,7 +101,7 @@ function BenchmarkCard({ fee }: { fee: FeeCategorySummary }) {
   );
 }
 
-export function BenchmarkBoard({ benchmarks, institutionsLabel, asOf }: { benchmarks: FeeCategorySummary[]; institutionsLabel: string; asOf: string | null }) {
+export function BenchmarkBoard({ benchmarks, asOf }: { benchmarks: FeeCategorySummary[]; asOf: string | null }) {
   return (
     <section id="benchmarks" className="scroll-mt-28 print:break-inside-avoid">
       <SectionHeading
@@ -114,8 +114,8 @@ export function BenchmarkBoard({ benchmarks, institutionsLabel, asOf }: { benchm
         }
       >
         Each institution counts once, at the median of its published prices for the fee (overdraft: its highest).
-        The tick marks the median of those values across {institutionsLabel} institutions; the band is their
-        middle half.
+        The tick marks the median of those values and the band their middle half. Each card shows how many
+        institutions it covers.
       </SectionHeading>
 
       {benchmarks.length > 0 ? (

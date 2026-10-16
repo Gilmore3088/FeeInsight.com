@@ -25,7 +25,7 @@ describe("computeFindings", () => {
     expect(byKey.spread.figure).toBe("4.5×");
     expect(byKey.free.figure).toBe("30%");
     expect(byKey.spread.headline).toContain("largest relative spread among these 3 fees");
-    expect(byKey.overdraft.detail).toContain("middle half of institutions' highest published prices");
+    expect(byKey.overdraft.detail).toContain("each counted at its highest published overdraft price");
     for (const f of findings) expect(`${f.headline} ${f.detail}`).not.toMatch(/ pay | charge /);
   });
 

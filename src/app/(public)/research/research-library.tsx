@@ -88,13 +88,13 @@ export function ResearchLibrary({ articles, asOf }: { articles: ArticleSummary[]
       )}
 
       <p className="mt-5 text-[13px] text-ink-muted">
-        Also here:{" "}
+        Also:{" "}
         <Link href="/guides" className="font-semibold text-ink underline decoration-border underline-offset-2 hover:decoration-ink">
           consumer fee guides
         </Link>{" "}
         and{" "}
         <Link href="/research/data-sources" className="font-semibold text-ink underline decoration-border underline-offset-2 hover:decoration-ink">
-          where every input comes from
+          our data sources
         </Link>
         .
       </p>
