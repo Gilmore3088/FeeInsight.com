@@ -27,6 +27,8 @@ import { combineScores, scoreAnswerKeys, type AnswerKeyDocument, type GateScore 
 // column) took all to 552 / 14; held out stayed 54 / 4; the seven states unchanged.
 // v72 (#1099, Oct 16): a loan's payment by phone, card or ACH, and a returned loan or mortgage
 // payment, read as other lending, took all to 557 / 14; held out stayed 54 / 4; the seven states unchanged.
+// v73 (#1100, Oct 16): reads record their account; no read changes (all 557 / 14, held out 54 / 4, the
+// seven states unchanged; every answer-key text's reads are identical to v72's).
 // Key change, not a Knox change (#1550, James's night deposit option A, Oct 16): the deposit for a
 // night depository receptacle key (tid 2451, $6) is a key charge, not the service, so the key now
 // files it out of scope. Knox's v60 guard still reads it as night deposit, so that one read moves

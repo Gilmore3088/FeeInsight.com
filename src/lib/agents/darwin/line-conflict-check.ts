@@ -66,10 +66,11 @@ type SqlTag = typeof sql;
 export const LINE_CONFLICT_CHECK = "darwin.line_conflict";
 export const LINE_CONFLICT_CHECK_VERSION = 1;
 /**
- * Default-off switch. It turns on by PR after James has seen the dry-run count over every live
- * line (`lineConflictCountSql` for the conflicts, the verify step's detail for the verdicts).
+ * Switched on Oct 16 after James saw the dry-run count over every live line (04:53 UTC: "Retire
+ * wrong copy"; the verify step's detail counted 29 to 30 rows to retire). `live: false` keeps a
+ * step to the report.
  */
-export const LINE_CONFLICT_TAKEDOWN_LIVE = false;
+export const LINE_CONFLICT_TAKEDOWN_LIVE = true;
 export const LINE_CONFLICT_FLAG = "one_line_two_reads";
 export const LINE_CONFLICT_REASON_PREFIX = "one line, two reads: kept #";
 /** The model's floor for the category it keeps, and its ceiling for the next best on the line. */
