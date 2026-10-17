@@ -204,7 +204,7 @@ export type PageVerdict = "rates" | "member_login" | "images_only" | "no_rate_ta
 
 export function pageVerdict(html: string, tablesRead: number): PageVerdict {
   if (tablesRead > 0) return "rates";
-  if (/<input[^>]+type\s*=\s*["']?password/i.test(html) || /member\s*(log\s*-?in|sign\s*-?in|portal)|members?\s+only|log\s*in\s+to\s+view/i.test(htmlToText(html))) return "member_login";
+  if (/<input[^>]+type\s*=\s*["']?password/i.test(html) || /member\s*(log\s*-?in|sign\s*-?in|portal)|members?\s+only|log\s*in\s+to\s+view|enter\s+your\s+(work\s+|business\s+)?e-?mail/i.test(htmlToText(html))) return "member_login";
   if (/<img[^>]+(?:src|alt)\s*=\s*["'][^"']*rate/i.test(html)) return "images_only";
   return "no_rate_table";
 }
@@ -315,7 +315,7 @@ export function fhlbRateRows(bank: FhlbBank, read: { url: string; postedDate: st
 }
 
 export const FHLB_SKIP_REASONS: Record<Exclude<PageVerdict, "rates">, string> = {
-  member_login: "no public rate table; the page sends visitors to the member login (rates appear to be members-only)",
+  member_login: "no public rate table; the page sends visitors to a member login or an email sign-up (rates appear to be members-only)",
   images_only: "no rate table; the page shows rate images only, nothing machine-readable",
   no_rate_table: "no rate table found on the public page or its linked CSV/PDF rate sheets",
 };

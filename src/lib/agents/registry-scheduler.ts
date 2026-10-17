@@ -274,7 +274,9 @@ export function registryPartitionsBySource(
     [USCOURTS_BANKRUPTCY_SOURCE]: uscourtsBankruptcyPartitions(now),
     [USDA_FARM_SOURCE]: usdaFarmPartitions(now),
     [BLS_OEWS_SOURCE]: blsOewsPartitions(now),
-    [FINRA_NFCS_SOURCE]: finraNfcsPartitions(now),
+    // Held: the FINRA Foundation's terms allow only non-commercial academic use, so nothing is
+    // fetched until James confirms otherwise (Hoovie contract, licence "held").
+    [FINRA_NFCS_SOURCE]: env.FINRA_NFCS_LICENSE_CONFIRMED?.trim() === "true" ? finraNfcsPartitions(now) : [],
     [FHLB_ADVANCE_RATES_SOURCE]: fhlbAdvanceRatesPartitions(now),
     [BANK_MERGER_ORDERS_SOURCE]: bankMergerOrdersPartitions(now),
     [PAYDAY_REPORTS_SOURCE]: paydayReportsPartitions(now),
