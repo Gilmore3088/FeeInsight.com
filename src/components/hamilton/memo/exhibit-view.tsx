@@ -28,7 +28,8 @@ export const ANSWER_EVIDENCE_LABELS: Record<AnswerSpec["evidenceLevel"], string>
   institution: "Published fees and your own figures",
 };
 
-function shortDate(iso: string | null | undefined): string | null {
+/** A source's date as every Hamilton answer shows it ("Jun 2026"); a non-ISO label is kept as given. */
+export function sourceDate(iso: string | null | undefined): string | null {
   if (!iso) return null;
   if (!/^\d{4}-\d{2}-\d{2}/.test(iso)) return iso;
   return new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
@@ -36,7 +37,7 @@ function shortDate(iso: string | null | undefined): string | null {
 
 /** A source as the reader sees it: name, date and, for a market figure, how many institutions. */
 export function SourceChip({ source, n }: { source: SourceRef; n?: number }) {
-  const date = shortDate(source.asOf);
+  const date = sourceDate(source.asOf);
   const text = [source.label, date, n != null ? `n=${n.toLocaleString("en-US")}` : null].filter(Boolean).join(" · ");
   const cls = "inline-block rounded border border-warm-200 bg-white px-1.5 py-0.5 text-[11px] leading-tight text-warm-600";
   return source.url ? (
@@ -52,7 +53,7 @@ export function SourceChip({ source, n }: { source: SourceRef; n?: number }) {
 export function uniqueSources(sources: readonly SourceRef[]): SourceRef[] {
   const seen = new Set<string>();
   return sources.filter((s) => {
-    const key = `${s.label}|${shortDate(s.asOf) ?? ""}`;
+    const key = `${s.label}|${sourceDate(s.asOf) ?? ""}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -70,7 +71,7 @@ function sourceLine(sources: readonly SourceRef[]): ReactNode {
       ) : (
         s.label
       )}
-      {s.asOf ? `, ${shortDate(s.asOf)}` : ""}
+      {s.asOf ? `, ${sourceDate(s.asOf)}` : ""}
     </span>
   ));
 }
@@ -378,7 +379,7 @@ function Trend({ x }: { x: Extract<ExhibitSpec, { kind: "trend" }> }) {
   const px = (d: string) => pad.l + (dates.indexOf(d) / (dates.length - 1)) * (W - pad.l - pad.r);
   const py = (v: number) => pad.t + (1 - (v - lo) / (hi - lo)) * (H - pad.t - pad.b);
   const strokes = [RD.terra, RD.inkSoft, RD.muted];
-  const label = (d: string) => shortDate(d) ?? d;
+  const label = (d: string) => sourceDate(d) ?? d;
   const [own, peer] = x.series;
   const paired = own && peer && own.points.length > 1 && peer.points.length > 1;
   // The gap at each end, where both series have a point on the same date.

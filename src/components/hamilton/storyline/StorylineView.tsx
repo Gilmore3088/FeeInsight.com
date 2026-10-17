@@ -9,6 +9,7 @@ import { Loader2 } from "lucide-react";
 import type { Fact, SourceRef } from "@/lib/hamilton/workspace/types";
 import { withFiguresBold } from "@/components/hamilton/memo/answer-memo";
 import { SERIF } from "@/components/hamilton/memo/memo";
+import { sourceDate } from "@/components/hamilton/memo/exhibit-view";
 import { LensSwitch } from "./LensSwitch";
 import { StoryExhibitView } from "./story-exhibits";
 import { OptionLetter, OptionScaleChart, OptionStanding, optionPoints, optionScale } from "./option-compare";
@@ -112,12 +113,6 @@ function MemoNote({ text, size = "base" }: { text: string; size?: "base" | "lead
   );
 }
 
-function monthOf(iso: string | null): string | null {
-  if (!iso) return null;
-  const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
-  return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
-}
-
 function SourceList({ notes }: { notes: SourceNotes }) {
   if (notes.list.length === 0) return null;
   return (
@@ -126,7 +121,7 @@ function SourceList({ notes }: { notes: SourceNotes }) {
       <ol className="grid gap-x-6 gap-y-1 text-[13px] leading-snug text-warm-600 sm:grid-cols-2">
         {notes.list.map((s, i) => {
           // One sample size reads as n=; several different ones would only clutter the note.
-          const detail = [monthOf(s.asOf), s.n.length === 1 ? `n=${s.n[0].toLocaleString("en-US")}` : null]
+          const detail = [sourceDate(s.asOf), s.n.length === 1 ? `n=${s.n[0].toLocaleString("en-US")}` : null]
             .filter(Boolean)
             .join(" · ");
           return (
@@ -162,14 +157,7 @@ export function StorylineView({ story, nextSteps, memo, identityContext }: { sto
         <p className="mt-1 text-[1.375rem] leading-snug text-warm-900 sm:text-2xl" style={SERIF}>
           {story.governingThought}
         </p>
-        {written ? (
-          <div className="mt-4 flex flex-col gap-1.5">
-            <MemoNote text={written.summary} size="lead" />
-            <p className="text-xs text-warm-600">
-              Written by Hamilton from the exhibits below; {written.figureCheck.checked.toLocaleString("en-US")} figures checked against them.
-            </p>
-          </div>
-        ) : memo?.state === "writing" ? (
+        {memo?.state === "writing" ? (
           <p role="status" className="mt-3 flex items-center gap-2 text-sm text-warm-600">
             <Loader2 className="h-4 w-4 animate-spin" /> Hamilton is writing this up. It takes up to a minute; the exhibits below are ready now.
           </p>
@@ -214,6 +202,17 @@ export function StorylineView({ story, nextSteps, memo, identityContext }: { sto
       {story.exhibits.map((item, i) => (
         <StoryExhibitView key={item.id} item={item} number={item.number ?? i + 1} researchInstitutionName={identityContext?.researchInstitutionName} />
       ))}
+
+      {/* The figures and exhibits lead; Hamilton's written reading of them follows. */}
+      {written ? (
+        <section className="flex flex-col gap-1.5 border-t border-warm-300 pt-6">
+          <Kicker>Hamilton&apos;s commentary</Kicker>
+          <MemoNote text={written.summary} size="lead" />
+          <p className="text-xs text-warm-600">
+            Written by Hamilton from the exhibits above; {written.figureCheck.checked.toLocaleString("en-US")} figures checked against them.
+          </p>
+        </section>
+      ) : null}
 
       <section className="border-t border-warm-300 pt-6">
         <Kicker>What it means for you</Kicker>
