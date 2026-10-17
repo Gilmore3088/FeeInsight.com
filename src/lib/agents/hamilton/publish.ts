@@ -27,7 +27,7 @@ import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, typ
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 import { confirmFeeChange } from "@/lib/report-assemblers/monthly-pulse";
 import { mayBeSameSchedule } from "@/lib/agents/hamilton/schedule-edition";
-import { isArticlePage } from "@/lib/agents/hamilton/article-page";
+import { ARTICLE_PAGE_REASON, isArticlePage } from "@/lib/agents/hamilton/article-page";
 import { FREE_READ_PREFIX, isProductPage, productPageTakedownEnabled } from "@/lib/agents/hamilton/product-page";
 import { DARWIN_SCHEDULE_REFILED_FLAG } from "@/lib/agents/darwin/schedule-refile";
 import { priceInName, RULE_WHY, ruleFor } from "@/lib/agents/hamilton/eval-verdicts";
@@ -277,8 +277,10 @@ export function publishSkipReason(row: VerifiedFeeRow, minConfidence: number, pr
   const sourceReason = sourceLinkSkipReason(row);
   if (sourceReason) return sourceReason;
   if (!row.verified_by_agent_event_id?.trim()) return "Missing Darwin verification event";
-  // A blog post or story quotes national averages, not this bank's price (article-page.ts).
-  if (isArticlePage(row.source_url)) return "Read from an article page, not a fee schedule";
+  // A blog post, story, learning or advice page quotes national averages, not this bank's price
+  // (article-page.ts). The read's own link or its document's: TD's /learning/ article reached
+  // publish through its document's link (#1774).
+  if (isArticlePage(row.source_url) || isArticlePage(row.document_url)) return ARTICLE_PAGE_SKIP_REASON;
   // A lending fee on a loan, rate, card or brokerage page: Darwin's live re-check would take it
   // down (`non-deposit-document-check.ts`), so it is refused before it is live (takedowns at the
   // source, 2026-10-17). Same rule, reason and switches.
@@ -426,6 +428,7 @@ function undecidedAtThisVersionSql(params: Array<number | string | number[]>): s
             AND NOT (pa.outcome = 'unchanged' AND ${THRESHOLD_RESELECT_SQL})
             AND NOT (pa.outcome = 'unchanged' AND ${OLDER_DOCUMENT_RESELECT_SQL})
             AND NOT (pa.outcome = 'unchanged' AND ${QUALIFIER_RESELECT_SQL})
+            AND NOT (pa.outcome = 'unchanged' AND ${ARTICLE_PAGE_RESELECT_SQL})
        )`;
 }
 
@@ -1055,6 +1058,22 @@ const THRESHOLD_RESELECT_SQL = `(COALESCE((pa.detail->>'same_line_check')::int, 
                      AND th_prev.rolled_back_at IS NULL
                      AND th_prev.fee_name ~* ${BALANCE_THRESHOLD_SQL}
                 ))`;
+
+/** Skip reason of a row read from an article, learning or advice page (`isArticlePage`). */
+export const ARTICLE_PAGE_SKIP_REASON = "Read from an article page, not a fee schedule";
+
+/**
+ * Re-sourcing (#1774): a row skipped as identical to a live fee that the article-page check later
+ * took down (`article_page: #<doc>`) is decided again, so the bank's own copy of the same fee goes
+ * live in its place; one from another article is refused (`ARTICLE_PAGE_SKIP_REASON`). Prod,
+ * Oct 17: TD's two "$35 overdraft" rows from its overdraft-services page (172361, 171709) and
+ * SchoolsFirst's $2 ATM row from its fee schedule PDF (93092) sat behind the article rows.
+ */
+export const ARTICLE_PAGE_RESELECT_SQL = `EXISTS (
+                  SELECT 1 FROM published_fee_records art_prev
+                   WHERE art_prev.fee_published_id = NULLIF(pa.detail->>'previous_fee_published_id', '')::bigint
+                     AND art_prev.rolled_back_reason LIKE '${ARTICLE_PAGE_REASON}:%'
+                )`;
 
 /** A balance-named row skipped as an older document before check 3 is decided again (`newerCopyPrintsLine`). */
 const OLDER_DOCUMENT_RESELECT_SQL = `(COALESCE((pa.detail->>'same_line_check')::int, 0) < 3

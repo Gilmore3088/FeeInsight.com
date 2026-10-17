@@ -26,6 +26,7 @@ import { KNOX_RULES_STRATEGY } from "@/lib/agents/knox/specialists";
 import { groundLineup, LINEUP_CATEGORY, type AccountLineup } from "@/lib/agents/knox/lineup";
 import { CANONICAL_KEY_MAP, DISPLAY_NAMES, FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import { closedInstitutionSql } from "@/lib/agents/hamilton/closed-institution";
+import { articleLinkSql } from "@/lib/agents/magellan/link-coverage";
 import { DOCUMENT_OWNER_STRATEGY, documentOwnerFingerprintPrefix } from "@/lib/agents/darwin/document-owner";
 
 type SqlTag = typeof sql;
@@ -46,8 +47,9 @@ type SqlTag = typeof sql;
  *
  * No call is bought for a text whose fees could never go live (takedowns at the source,
  * 2026-10-17): a closed institution's (publish never selects it) or a document Darwin's latest
- * document-owner read judged another bank's (publish refuses its rows). Nor for a page whose
- * earlier paid read found no fee (`planPaidReads`); each skip is logged on the step
+ * document-owner read judged another bank's (publish refuses its rows), or an article, blog,
+ * learning or advice page (#1774; publish refuses its rows, `hamilton/article-page.ts`). Nor for
+ * a page whose earlier paid read found no fee (`planPaidReads`); each skip is logged on the step
  * (`knox.paid_read_skipped`).
  */
 
@@ -397,6 +399,9 @@ async function selectPaidTexts(db: SqlTag, limit: number, stateCode?: string): P
              ) latest
             WHERE latest.outcome = 'evidence_mismatch'
          )
+         -- No paid read of an article, blog, learning or advice page (#1774): publish refuses its
+         -- rows (hamilton/article-page.ts, Magellan's one article rule).
+         AND NOT ${articleLinkSql("adt.source_url")}
          AND (SELECT COUNT(*) FROM regexp_matches(adt.normalized_text, '\\$\\s*\\.?\\d|\\d\\s*(?:¢|cents?\\M)', 'gi')) >= ${minDollars}
        ORDER BY adt.updated_at DESC, adt.id DESC
        LIMIT ${scan}
