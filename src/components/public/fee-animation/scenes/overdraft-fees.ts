@@ -9,7 +9,7 @@ const bill = { label: "Payment", amount: 60 };
 
 export const OVERDRAFT_FEES_SCENE: FeeScene = {
   id: "overdraft",
-  title: "Paid, and charged for it.",
+  title: "Paid, and a fee may apply.",
   left: { icon: "bank", label: "Your bank" },
   right: { icon: "store", label: "The biller" },
   charges: [{ id: "overdraft", label: "Overdraft fee", amount: 35, under: "left" }],
@@ -56,7 +56,7 @@ export const OVERDRAFT_FEES_SCENE: FeeScene = {
       id: "consent",
       kind: "decision",
       durationMs: 7000,
-      caption: "Opting in on your debit card covers only some payments.",
+      caption: "The debit card opt-in rule covers only ATM and one-time card purchases.",
       frame: {
         item: { ...bill, status: "-$20 before fee", statusTone: "alert" },
         charges: ["overdraft"],
@@ -66,7 +66,7 @@ export const OVERDRAFT_FEES_SCENE: FeeScene = {
       },
     },
   ],
-  takeaway: "An overdraft pays the bill, and a fee may apply. Debit card opt-in does not cover checks, ACH payments or recurring card payments.",
+  takeaway: "An overdraft pays the bill, and a fee may apply. The debit card opt-in rule does not cover checks, ACH payments or recurring card payments.",
   describe:
     "With $40 in checking, a $60 payment is taken from your account. Your bank pays it, the balance goes to minus $20 before any fee, and a $35 overdraft fee may apply. Look for a daily limit, a charge for staying negative and a small-overdraft exemption. Debit card opt-in covers ATM withdrawals and one-time card purchases, not checks, ACH payments or recurring card payments.",
 };

@@ -44,7 +44,7 @@ describe("FeeAnimation: ATM pilot", () => {
     ]);
     expect(stepStarts(ATM_FEES_SCENE)).toEqual([0, 5000, 12000, 19000]);
     expect(sceneLengthMs(ATM_FEES_SCENE)).toBe(25000);
-    expect(ATM_FEES_SCENE.charges.map((c) => c.amount)).toEqual([3, 3]);
+    expect(ATM_FEES_SCENE.charges.map((c) => c.amount)).toEqual([3, 2]);
   });
 
   it("opens on the still end-state poster with a 25-second play button", () => {
@@ -52,9 +52,13 @@ describe("FeeAnimation: ATM pilot", () => {
     expect(screen.getByRole("button", { name: "Watch: 25 seconds" })).toBeInTheDocument();
     expect(caption()).toBe(ATM_FEES_SCENE.takeaway);
     expect(screen.getByText("Illustrative amounts")).toBeInTheDocument();
+    expect(
+      screen.getByText((_, el) => el?.tagName === "P" && el.className === "sr-only" && el.textContent!.startsWith("Illustrative amounts, not any institution's prices. A $40 withdrawal")),
+    ).toBeInTheDocument();
     // The poster is the finished diagram: both charges and the total are drawn.
-    expect(screen.getAllByText("+$3")).toHaveLength(2);
-    expect(screen.getByText("$6")).toBeInTheDocument();
+    expect(screen.getByText("+$3")).toBeInTheDocument();
+    expect(screen.getByText("+$2")).toBeInTheDocument();
+    expect(screen.getByText("$5")).toBeInTheDocument();
     expect(screen.queryByTestId("fee-animation-end")).toBeNull();
     // Nothing plays until the reader asks.
     advance(30000);
@@ -104,7 +108,7 @@ describe("FeeAnimation: ATM pilot", () => {
     expect(caption()).toBe("Check both before you withdraw.");
     expect(screen.queryByTestId("fee-animation-end")).toBeNull();
     advance(3000);
-    expect(screen.getByText("$6")).toBeInTheDocument();
+    expect(screen.getByText("$5")).toBeInTheDocument();
 
     advance(3000);
     const end = screen.getByTestId("fee-animation-end");
@@ -160,6 +164,7 @@ describe("FeeAnimation: ATM pilot", () => {
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(screen.getByText("Step 4 of 4")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Replay" })).toBeInTheDocument();
     expect(caption()).toBe("Check both before you withdraw.");
     expect(screen.getByTestId("fee-animation-end")).toBeInTheDocument();
 

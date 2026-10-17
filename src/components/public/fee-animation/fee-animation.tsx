@@ -110,7 +110,7 @@ export function FeeAnimation({ scene, actions }: { scene: FeeScene; actions: Fee
     playing: "Pause",
     paused: "Resume",
     ended: "Replay",
-    stepping: stepIdx >= last ? "Start again" : "Next",
+    stepping: stepIdx >= last ? "Replay" : "Next",
   };
   const primaryIcon: Record<Mode, ReactNode> = {
     poster: <Play className="h-4 w-4" aria-hidden="true" />,
@@ -186,7 +186,7 @@ export function FeeAnimation({ scene, actions }: { scene: FeeScene; actions: Fee
           />
         </div>
         <p className="sr-only">
-          {scene.describe} Illustrative amounts, not any institution&apos;s prices.
+          Illustrative amounts, not any institution&apos;s prices. {scene.describe}
         </p>
       </div>
 

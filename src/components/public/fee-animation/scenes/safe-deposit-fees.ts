@@ -53,5 +53,5 @@ export const SAFE_DEPOSIT_FEES_SCENE: FeeScene = {
   ],
   takeaway: "A box rents space in the vault. Its contents are insured only if you arrange that separately.",
   describe:
-    "A box in your bank's vault, rented by the year for an illustrative $60. Larger boxes cost more, and the contents are not FDIC insured. Look for a waiver on your account, insurance you arrange yourself and the charge if both keys are lost.",
+    "A box in your bank's vault, rented by the year for $60. Larger boxes cost more, and the contents are not FDIC insured. Look for a waiver on your account, insurance you arrange yourself and the charge if both keys are lost.",
 };

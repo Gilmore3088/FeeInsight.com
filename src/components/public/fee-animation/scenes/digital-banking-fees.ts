@@ -38,7 +38,7 @@ export const DIGITAL_BANKING_FEES_SCENE: FeeScene = {
       durationMs: 6000,
       caption: "The slower version often has no fee.",
       frame: {
-        item: { ...transfer, status: "1-3 business days" },
+        item: { ...transfer, status: "Takes a few days" },
         charges: [],
         fork: { ...speeds, chosen: "a" },
       },
@@ -49,7 +49,7 @@ export const DIGITAL_BANKING_FEES_SCENE: FeeScene = {
       durationMs: 7000,
       caption: "Plan a few days ahead, and keep a small buffer.",
       frame: {
-        item: { ...transfer, status: "1-3 business days" },
+        item: { ...transfer, status: "Takes a few days" },
         charges: [],
         lookFor: ["When the money must arrive", "A fee for a returned payment", "Limits on mobile deposit"],
         intro: "lookFor",
@@ -58,5 +58,5 @@ export const DIGITAL_BANKING_FEES_SCENE: FeeScene = {
   ],
   takeaway: "Most digital banking fees you meet are for speed. A slower option is often free.",
   describe:
-    "A $200 electronic transfer. The instant option carries a $3 fee; the standard one often has no fee and takes one to three business days. Look for when the money must arrive, a fee for a returned payment and limits on mobile deposit.",
+    "A $200 electronic transfer. The instant option carries a $3 fee; the standard one often has no fee and takes a few days. Look for when the money must arrive, a fee for a returned payment and limits on mobile deposit.",
 };

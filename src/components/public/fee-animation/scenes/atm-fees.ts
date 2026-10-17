@@ -11,7 +11,7 @@ export const ATM_FEES_SCENE: FeeScene = {
   right: { icon: "bank", label: "Your bank" },
   charges: [
     { id: "operator", label: "Operator surcharge", amount: 3, under: "left" },
-    { id: "bank", label: "Out-of-network fee", amount: 3, under: "right" },
+    { id: "bank", label: "Out-of-network fee", amount: 2, under: "right" },
   ],
   steps: [
     {
@@ -43,12 +43,12 @@ export const ATM_FEES_SCENE: FeeScene = {
       frame: {
         item: { label: "Cash", amount: 40 },
         charges: ["operator", "bank"],
-        total: { label: "Total fees", note: "$46 leaves your account in all" },
+        total: { label: "Total fees", note: "$45 leaves your account in all" },
         intro: "total",
       },
     },
   ],
   takeaway: "The surcharge displayed at the ATM may not be the only charge.",
   describe:
-    "A $40 withdrawal at another bank's ATM. The ATM operator adds a $3 surcharge and your bank adds a $3 out-of-network fee, so the withdrawal carries $6 in fees.",
+    "A $40 withdrawal at another bank's ATM. The ATM operator adds a $3 surcharge and your bank adds a $2 out-of-network fee, so the withdrawal carries $5 in fees.",
 };

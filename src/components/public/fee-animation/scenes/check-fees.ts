@@ -46,7 +46,7 @@ export const CHECK_FEES_SCENE: FeeScene = {
       id: "look",
       kind: "decision",
       durationMs: 7000,
-      caption: "Look first, then put the stop in writing.",
+      caption: "See if it has cleared, then put the stop in writing.",
       frame: {
         item: { ...check, status: "Already paid", statusTone: "alert" },
         charges: ["stop"],

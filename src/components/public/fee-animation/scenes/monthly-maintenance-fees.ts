@@ -57,12 +57,12 @@ export const MONTHLY_MAINTENANCE_FEES_SCENE: FeeScene = {
       frame: {
         item: account,
         charges: ["monthly"],
-        lookFor: ["Average or lowest balance rule", "A waiver you stopped meeting", "The fee on your last 3 statements"],
+        lookFor: ["Average or lowest balance rule", "A waiver you stopped meeting", "A new fee line on your statement"],
         intro: "lookFor",
       },
     },
   ],
   takeaway: "The waiver conditions decide whether you pay this fee.",
   describe:
-    "Your bank charges $10 every month for having the account, $120 over a year if the fee is not waived. Common waivers are a qualifying direct deposit, a minimum balance and linked balances. Look for the balance rule, a waiver you stopped meeting and the fee on your last three statements.",
+    "Your bank charges $10 every month for having the account, $120 over a year if the fee is not waived. Common waivers are a qualifying direct deposit, a minimum balance and linked balances. Look for the balance rule, a waiver you stopped meeting and a new fee line on your statement.",
 };

@@ -10,7 +10,7 @@ const fork = { a: "Paid (overdraft)", b: "Returned (NSF)", chosen: "b" as const 
 
 export const NSF_FEES_SCENE: FeeScene = {
   id: "nsf",
-  title: "Not paid, and still charged.",
+  title: "Not paid, and you can still be charged.",
   left: { icon: "bank", label: "Your bank" },
   right: { icon: "store", label: "The biller" },
   charges: [
