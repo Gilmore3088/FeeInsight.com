@@ -1,8 +1,8 @@
-# Edgar Agent Guide
+# Hoovie Agent Guide
 
-Edgar owns public data: the regulator, government and survey datasets that reach Hamilton and
+Hoovie owns public data: the regulator, government and survey datasets that reach Hamilton and
 the public pages as context beside the fee data. James created the agent and named it on
-2026-10-17 (`docs/project/DECISIONS.md`). Magellan keeps bank fee schedules.
+2026-10-17; the name is internal only and never shown to customers (`docs/project/DECISIONS.md`). Magellan keeps bank fee schedules.
 
 ## The contract
 
@@ -31,14 +31,14 @@ unconfirmed, never guessed.
 
 ## Order of work
 
-The order is set by the public data pipeline map (#1783):
+James's rule (2026-10-17): "Let's get the data first." The order follows the public data pipeline map (#1783):
 
-1. Contract (this guide)
-2. One read door for Hamilton and pages
-3. Shared peer, state, metro and size roll-ups (`src/lib/peer-set-dimensions.ts`)
-4. One health report with failure alerts
-5. Faster collection
-6. Blocked sources (#1805, #1806)
+1. Contract (this guide).
+2. Unblock the failing sources: CRA, NIC, Y-9C and UBPR (#1805, #1806).
+3. Faster collection, still within the pipeline pause.
+4. One health report, with alerts when a load fails or comes back empty.
+5. One read door for Hamilton and the site.
+6. Shared roll-ups by peer, state, metro and size (`src/lib/peer-set-dimensions.ts`).
 
-Until the `edgar` row exists in `agent_registry`, runs keep the ledger name `magellan`. Adding
+Until the `hoovie` row exists in `agent_registry`, runs keep the ledger name `magellan`. Adding
 that row is a migration and needs James's yes.

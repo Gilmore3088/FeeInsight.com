@@ -1,7 +1,7 @@
-import type { EdgarSourceContract } from "./contract";
+import type { HoovieSourceContract } from "./contract";
 
-/** Edgar source contracts, slice 03 (registry order). Facts read from each loader's code. */
-export const EDGAR_SOURCES_03: EdgarSourceContract[] = [
+/** Hoovie source contracts, slice 03 (registry order). Facts read from each loader's code. */
+export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
   {
     // magellan/registry/state-lists.ts (runRegistryUrbanDebt), regulatory/state-lists.ts (datacatalog.urban.org
     // debt-america page, county/state CSVs); writes area_statistics (economy.ts upsertAreaStats) only once confirmed

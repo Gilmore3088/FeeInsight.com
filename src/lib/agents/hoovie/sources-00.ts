@@ -1,7 +1,7 @@
-import type { EdgarSourceContract } from "./contract";
+import type { HoovieSourceContract } from "./contract";
 
-/** Edgar source contracts, slice 00 (registry order). Facts read from each loader's code. */
-export const EDGAR_SOURCES_00: EdgarSourceContract[] = [
+/** Hoovie source contracts, slice 00 (registry order). Facts read from each loader's code. */
+export const HOOVIE_SOURCES_00: HoovieSourceContract[] = [
   {
     // magellan/registry/fdic-universe.ts, regulatory/fdic.ts (api.fdic.gov/banks)
     source: "fdic-universe",

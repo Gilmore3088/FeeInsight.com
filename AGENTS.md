@@ -59,14 +59,14 @@ Magellan owns institution source discovery and source fetching.
 - Should rotate batches with claim/backoff behavior and avoid repeatedly selecting the same failed institutions.
 - Must not call provider extraction directly. If automation is stopped, mark accepted sources as queued/manual-validation-ready.
 
-### Edgar
+### Hoovie
 
-Edgar owns public data: the regulator, government and survey datasets the registry loads
-(`src/lib/agents/edgar/AGENTS.md`). James created the agent on 2026-10-17.
+Hoovie owns public data: the regulator, government and survey datasets the registry loads
+(`src/lib/agents/hoovie/AGENTS.md`). James created the agent on 2026-10-17.
 
-- Every registry source has one contract in `src/lib/agents/edgar/sources.ts`, covering publisher, licence,
+- Every registry source has one contract in `src/lib/agents/hoovie/sources.ts`, covering publisher, licence,
   connection, cadence, grain, link keys and tables. A source without a contract fails its test.
-- The loaders still run under the run-ledger name `magellan` until the `edgar` agent row exists
+- The loaders still run under the run-ledger name `magellan` until the `hoovie` agent row exists
   (a migration that needs James's yes). Magellan's own job is bank fee schedules.
 - Never fills a gap or guesses a value; a missing file or field is recorded as missing.
 

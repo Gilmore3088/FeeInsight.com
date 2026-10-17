@@ -1,7 +1,7 @@
-import type { EdgarSourceContract } from "./contract";
+import type { HoovieSourceContract } from "./contract";
 
-/** Edgar source contracts, slice 02 (registry order). Facts read from each loader's code. */
-export const EDGAR_SOURCES_02: EdgarSourceContract[] = [
+/** Hoovie source contracts, slice 02 (registry order). Facts read from each loader's code. */
+export const HOOVIE_SOURCES_02: HoovieSourceContract[] = [
   {
     // magellan/registry/market-growth.ts (popest), regulatory/market-growth.ts (www2.census.gov popest co-est{vintage}-alldata.csv)
     source: "census-popest",

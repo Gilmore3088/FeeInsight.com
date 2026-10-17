@@ -1,7 +1,7 @@
-import type { EdgarSourceContract } from "./contract";
+import type { HoovieSourceContract } from "./contract";
 
-/** Edgar source contracts, slice 01 (registry order). Facts read from each loader's code. */
-export const EDGAR_SOURCES_01: EdgarSourceContract[] = [
+/** Hoovie source contracts, slice 01 (registry order). Facts read from each loader's code. */
+export const HOOVIE_SOURCES_01: HoovieSourceContract[] = [
   {
     // magellan/registry/ncua-branches.ts (runRegistryNcuaBranches), regulatory/ncua-branches.ts (5300 zip)
     source: "ncua-branches",
