@@ -12,6 +12,7 @@ import { money, openingFee, type MarketPanel } from "./market-compare-view";
  */
 
 const COUNT = new Intl.NumberFormat("en-US");
+const SELECT = "mt-1 block min-h-11 w-full rounded-md border border-border bg-surface-0 px-3 text-[15px] text-ink";
 
 function MarketMap({
   map,
@@ -104,6 +105,7 @@ export function MarketCompare({
   const [city, setCity] = useState(panels[0]?.city ?? "");
   const panel = panels.find((p) => p.city === city) ?? panels[0];
   const [feeKey, setFeeKey] = useState<string | null>(panel ? openingFee(panel) : null);
+  const [showMap, setShowMap] = useState(false);
   if (!panel) return null;
   const fee = panel.fees.find((f) => f.key === feeKey) ?? panel.fees[0];
   const top = fee ? Math.max(1, ...fee.rungs.map((r) => r.median ?? 0)) : 1;
@@ -111,8 +113,47 @@ export function MarketCompare({
   return (
     <div className="grid gap-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-14">
       <div className="space-y-4">
-        {map && <MarketMap map={map} panels={panels} selected={panel.city} onSelect={setCity} stateName={stateName} />}
-        <div className="flex flex-wrap gap-2" role="group" aria-label={`Pick a ${stateName} market`}>
+        {/* Phones pick with two dropdowns; the map opens on request. */}
+        <div className="grid grid-cols-[2fr_3fr] gap-3 sm:hidden">
+          <label className="block min-w-0">
+            <span className="text-[12px] font-medium text-ink-muted">Market</span>
+            <select value={panel.city} onChange={(e) => setCity(e.target.value)} className={SELECT}>
+              {panels.map((p) => (
+                <option key={p.city} value={p.city}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          {fee && (
+            <label className="block min-w-0">
+              <span className="text-[12px] font-medium text-ink-muted">Fee</span>
+              <select value={fee.key} onChange={(e) => setFeeKey(e.target.value)} className={SELECT}>
+                {panel.fees.map((f) => (
+                  <option key={f.key} value={f.key}>
+                    {f.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
+        {map && (
+          <>
+            <button
+              type="button"
+              aria-expanded={showMap}
+              onClick={() => setShowMap((v) => !v)}
+              className="inline-flex min-h-10 items-center text-[13px] font-semibold text-ink underline decoration-border underline-offset-4 sm:hidden"
+            >
+              {showMap ? "Hide the map" : `Show the markets on a map of ${stateName}`}
+            </button>
+            <div className={showMap ? "sm:block" : "hidden sm:block"}>
+              <MarketMap map={map} panels={panels} selected={panel.city} onSelect={setCity} stateName={stateName} />
+            </div>
+          </>
+        )}
+        <div className="hidden flex-wrap gap-2 sm:flex" role="group" aria-label={`Pick a ${stateName} market`}>
           {panels.map((p) => (
             <button
               key={p.city}
@@ -135,14 +176,14 @@ export function MarketCompare({
         </p>
       </div>
 
-      <div className="min-w-0 space-y-7">
+      <div className="min-w-0 space-y-5 sm:space-y-7">
         <dl className="grid grid-cols-3 gap-4 border-b border-border pb-6">
           {[
             { value: panel.institutions, label: `institutions with a branch in ${panel.name}` },
             { value: panel.withFees, label: "of them publish fees" },
             { value: panel.branches, label: "branches" },
           ].map((f) => (
-            <div key={f.label} className="flex flex-col-reverse">
+            <div key={f.label} className="flex flex-col-reverse justify-end">
               <dt className="mt-1.5 text-[12px] leading-snug text-ink-soft sm:text-[13px]">{f.label}</dt>
               <dd className="font-mono text-[28px] font-semibold leading-none tabular-nums text-ink sm:text-[36px]">{COUNT.format(f.value)}</dd>
             </div>
@@ -151,7 +192,7 @@ export function MarketCompare({
 
         {fee ? (
           <>
-            <div className="flex flex-wrap gap-1.5" role="group" aria-label="Pick a fee">
+            <div className="hidden flex-wrap gap-1.5 sm:flex" role="group" aria-label="Pick a fee">
               {panel.fees.map((f) => (
                 <button
                   key={f.key}
@@ -167,30 +208,31 @@ export function MarketCompare({
               ))}
             </div>
 
-            <ol className="space-y-4" aria-label={`${fee.label} median by geography`}>
-              {fee.rungs.map((r) => (
-                <li key={r.level} className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-x-4 gap-y-1.5 sm:grid-cols-[11rem_minmax(0,1fr)_6.5rem]">
-                  <div className="min-w-0">
-                    <p className={`text-[15px] leading-tight text-ink ${r.level === "city" ? "font-semibold" : "font-medium"}`}>{r.place}</p>
-                    <p className="text-[12px] leading-snug text-ink-muted">{r.population}</p>
-                  </div>
-                  <div className="order-last col-span-2 h-3 rounded-sm bg-surface-200 sm:order-none sm:col-span-1" aria-hidden="true">
-                    {r.median != null && (
-                      <div
-                        className={`h-3 rounded-sm ${r.level === "city" ? "bg-brick" : "bg-ink/45"}`}
-                        style={{ width: `${Math.max(2, (r.median / top) * 100)}%` }}
-                      />
-                    )}
-                  </div>
-                  <div className="text-right">
-                    <p className="font-mono text-[20px] font-semibold leading-none tabular-nums text-ink">{r.median != null ? money(r.median) : "n/a"}</p>
-                    <p className="mt-1 text-[11px] text-ink-muted">
-                      {r.median != null ? `${COUNT.format(r.institutions)} institutions` : `${r.institutions} publish it`}
+            <div>
+              <ol className="divide-y divide-border border-y border-border" aria-label={`${fee.label} median by geography`}>
+                {fee.rungs.map((r) => (
+                  <li key={r.level} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 py-3 sm:grid-cols-[10rem_minmax(0,1fr)_5.5rem]">
+                    <div className="min-w-0">
+                      <p className={`text-[15px] leading-tight text-ink ${r.level === "city" ? "font-semibold" : "font-medium"}`}>{r.place}</p>
+                      <p className="text-[12px] text-ink-muted">
+                        {r.median != null ? `${COUNT.format(r.institutions)} institutions` : `${r.institutions} publish it`}
+                      </p>
+                    </div>
+                    <div className="order-last col-span-2 h-2.5 rounded-sm bg-surface-200 sm:order-none sm:col-span-1" aria-hidden="true">
+                      {r.median != null && (
+                        <div
+                          className={`h-2.5 rounded-sm ${r.level === "city" ? "bg-brick" : "bg-ink/45"}`}
+                          style={{ width: `${Math.max(2, (r.median / top) * 100)}%` }}
+                        />
+                      )}
+                    </div>
+                    <p className="text-right font-mono text-[20px] font-semibold leading-none tabular-nums text-ink">
+                      {r.median != null ? money(r.median) : "n/a"}
                     </p>
-                  </div>
-                </li>
-              ))}
-            </ol>
+                  </li>
+                ))}
+              </ol>
+            </div>
 
             <p className="max-w-2xl font-serif text-[19px] leading-snug text-ink sm:text-[22px]" aria-live="polite">
               {fee.takeaway}
@@ -201,6 +243,14 @@ export function MarketCompare({
                 {fee.rungs[0].institutions} institutions.
               </p>
             )}
+            <dl className="grid border-t border-border pt-3 gap-x-4 gap-y-0.5 text-[12px] leading-snug text-ink-muted sm:grid-cols-[auto_minmax(0,1fr)]">
+              {fee.rungs.map((r) => (
+                <div key={r.level} className="contents">
+                  <dt className="font-medium text-ink-soft">{r.place}</dt>
+                  <dd className="mb-1 sm:mb-0">{r.population}</dd>
+                </div>
+              ))}
+            </dl>
           </>
         ) : (
           <p className="text-[14px] text-ink-muted">No fee has a {stateName} median to compare yet.</p>

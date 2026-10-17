@@ -213,7 +213,6 @@ export default async function StateReportPage({ params }: PageProps) {
     ...(hasDistrict ? [{ id: "district", label: `${districtLabel} district` }] : []),
     { id: "national", label: "United States" },
   ];
-  const layerNumber = (id: string) => layers.findIndex((l) => l.id === id) + 1;
 
   // The state's own hub: every institution in the state, its income, branches and economy.
   const institutionsTracked = hub ? hub.institutions.reduce((sum, g) => sum + g.institutions, 0) : 0;
@@ -282,34 +281,27 @@ export default async function StateReportPage({ params }: PageProps) {
 
       <div className="mx-auto max-w-page px-4 pb-12 sm:px-6 sm:pb-16">
         <LayerNav layers={layers} />
-        <div className="mt-12 space-y-24 sm:mt-16 sm:space-y-32">
+        <div className="mt-10 space-y-16 sm:mt-12 sm:space-y-24">
         {/* Layer 1, local: one market against the state, its district and the U.S., inside the page. */}
         {hasLocal && (
-          <section id="local" aria-labelledby="markets-heading" className="scroll-mt-32 space-y-8">
+          <section id="local" aria-labelledby="markets-heading" className="scroll-mt-32 space-y-6 sm:space-y-8">
             <LayerHead
-              n={layerNumber("local")}
               id="markets-heading"
-              place="Local markets"
-              title="How your local market compares"
-              line="Pick a market and a fee. A market counts every institution with a branch there, wherever it is headquartered."
+              title="How local fees compare"
+              line={`Pick a market and a fee to set its median beside ${stateName}${districtLabel ? `, the ${districtLabel} district` : ""} and the U.S.`}
             />
             <MarketCompare panels={panels} map={marketMap} stateName={stateName} directoryHref={`/fees/city/${stateCode.toLowerCase()}`} />
-            <SourceNote label="Who each median counts">
-              A market counts every bank and credit union with a branch in the city, wherever it is headquartered: FDIC Summary of Deposits
-              bank branches and NCUA credit union branches. The {stateName}
-              {districtLabel ? `, ${districtLabel} district` : ""} and U.S. medians count institutions by headquarters. One value per
-              institution: its highest overdraft fee, the middle of its schedule for other fees. A median needs at least{" "}
-              {MIN_INSTITUTIONS_FOR_MEDIAN} institutions.
+            <SourceNote label="Sources">
+              Branches from the FDIC Summary of Deposits (banks) and NCUA (credit unions). One value per institution: its highest
+              overdraft fee, the middle of its schedule for other fees. A median needs at least {MIN_INSTITUTIONS_FOR_MEDIAN} institutions.
             </SourceNote>
           </section>
         )}
 
         {/* Layer 2, the state: its own institutions, by charter, market and fee income. */}
-        <section id="state" aria-labelledby="state-heading" className="scroll-mt-32 space-y-16 sm:space-y-20">
+        <section id="state" aria-labelledby="state-heading" className="scroll-mt-32 space-y-12 sm:space-y-16">
           <LayerHead
-            n={layerNumber("state")}
             id="state-heading"
-            place={stateName}
             title={`${stateName}'s banks and credit unions`}
             line={`${
               institutionsTracked > 0
@@ -410,13 +402,11 @@ export default async function StateReportPage({ params }: PageProps) {
         </section>
         {/* Layer 3, district: the state's medians against its Fed district's, then the Beige Book. */}
         {hasDistrict && district && districtLabel && (
-          <section id="district" aria-labelledby="district-heading" className="scroll-mt-32 space-y-10">
+          <section id="district" aria-labelledby="district-heading" className="scroll-mt-32 space-y-8">
             <LayerHead
-              n={layerNumber("district")}
               id="district-heading"
-              place={`${districtLabel} Fed district`}
               title={`${stateName} versus the ${districtLabel} district`}
-              line={`${vsDistrict ? `${districtFinding(vsDistrict, stateName)} ` : ""}Both medians count institutions by headquarters; the district takes in ${stateName} and the rest of the Federal Reserve's ${districtLabel} district.`}
+              line={vsDistrict ? districtFinding(vsDistrict, stateName) : undefined}
             />
             {vsDistrict && <DistrictCompare rows={vsDistrict.rows} stateName={stateName} districtName={districtLabel} />}
             {beigeHeadline && district && (
@@ -454,20 +444,20 @@ export default async function StateReportPage({ params }: PageProps) {
               Open the {districtLabel} district report
             </Link>
             <SourceNote label="Source">
-              Medians from each institution&apos;s own published schedule, one value per institution; a median needs at least {MIN_INSTITUTIONS_FOR_MEDIAN}. A gap under 1% reads as about the same. Federal Reserve Beige Book, {districtLabel} district.
+              Both medians count institutions by headquarters; the district takes in {stateName} and the rest of the Federal Reserve&apos;s{" "}
+              {districtLabel} district. Medians from each institution&apos;s own published schedule, one value per institution; a median needs at
+              least {MIN_INSTITUTIONS_FOR_MEDIAN}. A gap under 1% reads as about the same. Federal Reserve Beige Book, {districtLabel} district.
             </SourceNote>
           </section>
         )}
         {/* Layer 4, the U.S.: the state's medians against the country, then national context. */}
-        <section id="national" className="scroll-mt-32 space-y-16 sm:space-y-20">
+        <section id="national" className="scroll-mt-32 space-y-12 sm:space-y-16">
         {/* The state against the U.S., one fee at a time. */}
         {charted.length > 0 ? (
           <StateBoard fees={charted} stateName={stateName} districtName={null}>
             <section id="benchmarks" aria-labelledby="board-heading" className="space-y-8">
               <LayerHead
-                n={layerNumber("national")}
                 id="board-heading"
-                place="United States"
                 title={`${stateName} versus the U.S.`}
                 line={`${
                   againstUs.length > 0 ? `${aboveUs} of ${againstUs.length} ${stateName} medians sit above the U.S. median. ` : ""
