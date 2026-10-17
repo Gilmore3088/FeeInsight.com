@@ -175,15 +175,15 @@ const PENDING_BOTH = { fee_published_id: 144100, kind: "takedown_pending", evide
 describe("Darwin release repair step", () => {
   afterEach(() => resetCategoryModelCache());
 
-  it("ships in shadow, and is not a provider step", () => {
-    expect(DARWIN_RELEASE_REPAIR_LIVE).toBe(false);
+  it("is on, and is not a provider step", () => {
+    expect(DARWIN_RELEASE_REPAIR_LIVE).toBe(true);
     // The category model is Darwin's own naive Bayes, trained in-process: no paid call.
     expect([...PROVIDER_STEP_KEYS].some((key) => key.includes("release_repair"))).toBe(false);
   });
 
-  it("in shadow reports each bucket, records the cursor and writes no fee and no flag", async () => {
+  it("switched off, reports each bucket, records the cursor and writes no fee and no flag", async () => {
     const db = dbFor([BOTH, MODEL_ONLY, TEXT_ONLY, RIGHT_OD], { cursor: "100" });
-    const result = await recheckReleasedFees(asDb(db), { runId: 7, stepId: 70, dryRun: false });
+    const result = await recheckReleasedFees(asDb(db), { runId: 7, stepId: 70, dryRun: false, live: false });
     expect(result).toMatchObject({ live: false, checked: 4, passed: 1, wouldTakeDown: 1, textOnly: 1, modelOnly: 1, afterId: 100, nextAfterId: 0, takenDown: [], flagged: 0 });
     const text = sqlOf(db);
     expect(text).not.toContain("UPDATE");

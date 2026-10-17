@@ -803,8 +803,8 @@ Darwin owns verification and classification.
   `release_repair`: `checked`, `passed`, `would_take_down`, `deferred`, `report_only` (`text_only`,
   `model_only`, `other`), `by_reason`, `by_category`, `text_only_by_category`,
   `model_only_by_category`, up to 20 samples of each bucket (with the model's pick and its
-  probability), the cursor. `DARWIN_RELEASE_REPAIR_LIVE` is false: the pass only reports. When a PR
-  turns it on, a candidate goes through the shared 12-hour second look (`secondLook`, check
+  probability), the cursor. `DARWIN_RELEASE_REPAIR_LIVE` is on (James's OK, 2026-10-17; the last full
+  loops found 0 takedown candidates among 1,639 live released fees, so it guards future releases): a candidate goes through the shared 12-hour second look (`secondLook`, check
   `darwin.release_repair`): flagged `takedown_pending` first, archived only when a run at least 12
   hours on fails it again (`rolled_back_reason` `release_repair:<reason>`, batch
   `darwin-release-repair-<run>`, never deleted), its verified row rejected with
