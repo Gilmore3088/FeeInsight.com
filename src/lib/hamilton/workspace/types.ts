@@ -218,6 +218,12 @@ export interface PeerValue {
    * records. Absent on answers saved before them and where a reader does not load them.
    */
   feeRecords?: PeerFeeRecordRef[];
+  /**
+   * Statistics rule 7 (count once): the sister charter whose shared fee schedule this value
+   * counts under in the group's band (`countedAmounts`). Absent when it counts as itself. The
+   * peer is still listed by its own name and value.
+   */
+  countedAs?: number;
 }
 
 /** One published_fee_catalog row behind a peer's value. */

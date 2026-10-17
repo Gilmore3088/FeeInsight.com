@@ -3,13 +3,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDistrictIncomeTrend, getRevenueTrend } from "@/lib/data-store/call-reports";
 import { logApiUsage } from "@/lib/api-usage";
 import { API_ATTRIBUTION } from "@/lib/constants";
-import { authorizePaidV1 } from "@/lib/api-v1-auth";
-import { ApiParamError, apiError, apiOptions, intParam, withApiHeaders } from "@/lib/api-v1";
+import { authorizeV1 } from "@/lib/api-v1-auth";
+import { ApiParamError, apiError, apiOptions, intParam, withApiCaching, withApiHeaders } from "@/lib/api-v1";
 
 const UNITS = "Deposit service-charge income from FDIC and NCUA call reports, in thousands of US dollars per quarter.";
 
 async function handleGET(request: NextRequest) {
-  const caller = await authorizePaidV1(request, "Revenue trends");
+  const caller = await authorizeV1(request, { paidOnly: "Revenue trends", usageEvent: "api.v1.revenue" });
   if (caller instanceof Response) return caller;
   const { organizationId, anonymousId, rateLimit } = caller;
 
@@ -25,6 +25,7 @@ async function handleGET(request: NextRequest) {
     quarters = intParam(searchParams, "quarters", { fallback: 8, min: 1, max: 66 });
   } catch (error) {
     if (error instanceof ApiParamError) {
+      logApiUsage(organizationId, anonymousId, "api.v1.revenue", { status: 400 }).catch(() => {});
       return apiError(400, "invalid_parameter", error.message, { rateLimit });
     }
     throw error;
@@ -33,10 +34,11 @@ async function handleGET(request: NextRequest) {
   if (view === "districts") {
     const rows = await getDistrictIncomeTrend(quarters);
     if (rows.length === 0) {
+      logApiUsage(organizationId, anonymousId, "api.v1.revenue", { view, quarters, status: 503 }).catch(() => {});
       return apiError(503, "data_unavailable", "Revenue data is temporarily unavailable", { rateLimit });
     }
     logApiUsage(organizationId, anonymousId, "api.v1.revenue", { view, quarters, status: 200 }).catch(() => {});
-    return withApiHeaders(
+    return withApiCaching(request, withApiHeaders(
       NextResponse.json({
         view,
         units: UNITS,
@@ -49,15 +51,16 @@ async function handleGET(request: NextRequest) {
         attribution: API_ATTRIBUTION,
       }),
       rateLimit,
-    );
+    ));
   }
 
   const trend = await getRevenueTrend(quarters);
   if (trend.quarters.length === 0) {
+    logApiUsage(organizationId, anonymousId, "api.v1.revenue", { view, quarters, status: 503 }).catch(() => {});
     return apiError(503, "data_unavailable", "Revenue data is temporarily unavailable", { rateLimit });
   }
   logApiUsage(organizationId, anonymousId, "api.v1.revenue", { view, quarters, status: 200 }).catch(() => {});
-  return withApiHeaders(
+  return withApiCaching(request, withApiHeaders(
     NextResponse.json({
       view,
       units: UNITS,
@@ -72,7 +75,7 @@ async function handleGET(request: NextRequest) {
       attribution: API_ATTRIBUTION,
     }),
     rateLimit,
-  );
+  ));
 }
 
 export const GET = withApiRoutePolicy("api.v1.revenue", "GET", handleGET);

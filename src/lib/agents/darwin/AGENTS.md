@@ -890,7 +890,7 @@ Darwin owns verification and classification.
   - `off`: the tick queues one dry run a day over a sample of documents (md5 order by day) that
     counts decisions by audience and evidence source, and writes nothing.
   - `dry_run_full` (shipped, the gate before live): the same cursor chain as live over every
-    document, one batch per tick, key chain `darwin:audience-relabel:dry:v3:after:<cursor>`,
+    document, one batch per tick, key chain `darwin:audience-relabel:dry:v4:after:<cursor>`,
     writing nothing but each batch's counts. The last batch adds the chain's totals to its detail
     (`dry_run_totals`) and writes an `audience_relabel.dry_run_totals` event. Live waits until the
     totals show unknown at most 10%, and consumer, both and business each within about 5 points
@@ -905,6 +905,23 @@ Darwin owns verification and classification.
   without `darwin:` fails) until migration 20270110000047 is present. On a random 150 of the
   7,949 documents (1,509 of the 77,268 live unknown fees, 14 Oct 2026), it decided 1,064
   consumer, 351 both, 33 business and left 61 unknown.
+  Version 4 (#1687, Oct 17) also re-reads live fees Darwin called `both` only because the
+  schedule prices business items somewhere (evidence `darwin:mixed_schedule_unqualified:`). Such
+  a fee moves only to one audience read from a schedule's own title (`document_title`,
+  `schedule_section_title`), never back to `unknown` and never to a default read from a newer
+  copy of the text; anything else leaves it as it is. Its old value is recorded under its own key
+  (`darwin.audience_relabel:v4:both:verified:<id>`), and a rollback restores each fee's first
+  recorded value when it still carries the last relabel's evidence.
+- A schedule's own title decides the fees under it (`scheduleSectionTitle`, #1687): the nearest
+  heading-case title above the fee's line that is one audience's whole schedule ("PERSONAL
+  SCHEDULE OF FEES", "Commercial Account FEE SCHEDULE", "SCHEDULE OF FEES - BUSINESS", or one set
+  on two lines, "Consumer Deposit Account" over "Fee Schedule"), when the fee's line and every
+  line between name no other audience. A title naming no audience ends the search, and so do two
+  titles for different audiences one over the other (a menu or a contents list). A product's
+  schedule ("Business Remote Deposit Capture Fee Schedule"), a joined audience ("General and
+  Business Membership Fee Schedule"), a menu line and a line cut mid-sentence are no title. It is
+  read after the fee's price cell and before the section-heading rule; a title at the top of the
+  document keeps the source `document_title`.
 - Every decision is written to `pipeline_attempts` (stage `verify`, fingerprint
   `raw:<fee_raw_id>`) with `decision` and `reason_code`; a row decided under this rule
   version is never selected again, so skipped rows cannot starve the batch.
@@ -1285,7 +1302,7 @@ fails a PR that changes one of these constants without updating its line here (#
 
 | Constant | Strategy | Version | File |
 |---|---|---|---|
-| `AUDIENCE_RELABEL_VERSION` | `darwin.audience_relabel` | v3 | `darwin/audience-relabel.ts` |
+| `AUDIENCE_RELABEL_VERSION` | `darwin.audience_relabel` | v4 | `darwin/audience-relabel.ts` |
 | `DARWIN_ADJUDICATE_STRATEGY` | `verify.adjudicate` | v2 | `darwin/adjudicate.ts` |
 | `DARWIN_CATEGORY_MODEL_STRATEGY` | `verify.category_model` | v1 | `darwin/category-model.ts` |
 | `DARWIN_PEER_STRATEGY` | `verify.peer_range` | v5 | `darwin/peer-checks.ts` |
