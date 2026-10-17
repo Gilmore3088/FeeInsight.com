@@ -27,6 +27,7 @@ import { retireCrossPageConflicts } from "@/lib/agents/hamilton/cross-page-confl
 import { recheckUncheckedRestores } from "@/lib/agents/hamilton/restore-recheck";
 import { restoreLostRecheckTakedowns } from "@/lib/agents/hamilton/lost-recheck-restore";
 import { restoreCrossPageSupersedes } from "@/lib/agents/hamilton/cross-page-restore";
+import { restorePageCopiesOfDownedKeepers } from "@/lib/agents/hamilton/page-copy-restore";
 import { pairFeeChangeRecords } from "@/lib/agents/hamilton/change-pairing";
 import { rollBackRetiredCompanionFees } from "@/lib/agents/hamilton/companion-retire";
 import { restoreOutliersNowInRange, rollBackPublishedOutliers } from "@/lib/agents/hamilton/outlier-rollback";
@@ -1278,6 +1279,14 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // #1439 item 3: a copy the page-copy collapse closed comes back when the copy it was kept
+      // for came down for its own reasons (not the fee's), so the fee does not vanish. Runs
+      // before the collapse; it never makes a second live copy of a price.
+      const pageCopyRestore = await restorePageCopiesOfDownedKeepers(tx, {
+        runId: run.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       // #1439: a live row that repeats a line of a newer copy of its page stored under another
       // address ("?print=1", "www.", a mirror). Shadow until PAGE_COPY_COLLAPSE_LIVE is on.
       const pageCopyCollapse = await collapsePageCopies(tx, {
@@ -1483,6 +1492,7 @@ async function executeAgenticStep(
               sameLineDuplicates.restored > 0 ||
               otherBank.rolledBack.length > 0 ||
               crossPageRestore.restored.length > 0 ||
+              pageCopyRestore.restored.length > 0 ||
               sourceLinkResource.restored > 0 ||
               articlePage.rolledBack.length > 0 ||
               closedInstitution.rolledBack.length > 0 ||
@@ -1553,6 +1563,10 @@ async function executeAgenticStep(
       const lostRestoreNote =
         lostRestore.candidates > 0
           ? ` Judged ${lostRestore.candidates.toLocaleString()} lost re-check take-down(s) of Oct 5-11: ${lostRestore.passed.length.toLocaleString()} passed the restore bar (${published.dryRun ? "would restore" : `${lostRestore.restored.toLocaleString()} restored`}), ${lostRestore.failed.length.toLocaleString()} failed, ${lostRestore.skipped.length.toLocaleString()} skipped.`
+          : "";
+      const pageCopyRestoreNote =
+        pageCopyRestore.restored.length > 0
+          ? ` ${published.dryRun ? "Would restore" : "Restored"} ${pageCopyRestore.restored.length.toLocaleString()} page cop(ies) whose kept copy came down.`
           : "";
       const crossPageNote =
         crossPageRestore.restored.length > 0
@@ -1649,7 +1663,7 @@ async function executeAgenticStep(
           : "");
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${handRefileNote}${offTaxonomyNote}${limitNote}${businessNote}${sameLineNote}${otherBankNote}${evalVerdictNote}${closedNote}${articleNote}${productNote}${productConflictNote}${crossPageConflictNote}${categoryGuardNote}${guardRefileNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${lostRestoreNote}${crossPageNote}${resourceNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${handRefileNote}${offTaxonomyNote}${limitNote}${businessNote}${sameLineNote}${otherBankNote}${evalVerdictNote}${closedNote}${articleNote}${productNote}${productConflictNote}${crossPageConflictNote}${categoryGuardNote}${guardRefileNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${lostRestoreNote}${crossPageNote}${pageCopyRestoreNote}${resourceNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -2031,6 +2045,20 @@ async function executeAgenticStep(
               kept_fee_name: row.keptFeeName,
               source_document_id: row.sourceDocumentId,
               amount: row.amount,
+            })),
+          },
+          page_copy_restore: {
+            ...(pageCopyRestore.error ? { error: pageCopyRestore.error } : {}),
+            kept_down: pageCopyRestore.keptDown,
+            carried_on: pageCopyRestore.carriedOn,
+            kept_judged: pageCopyRestore.keptJudged,
+            failing: pageCopyRestore.failing.length,
+            [run.runKind === "dry_run" ? "would_restore" : "restored"]: pageCopyRestore.restored.length,
+            samples: pageCopyRestore.restored.slice(0, 10).map((fee) => ({
+              fee_published_id: fee.feePublishedId,
+              kept_fee_published_id: fee.keptFeePublishedId,
+              fee_name: fee.feeName,
+              amount: fee.amount,
             })),
           },
           page_copy_collapse: {
