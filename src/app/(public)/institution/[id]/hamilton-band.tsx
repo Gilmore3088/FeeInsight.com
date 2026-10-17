@@ -188,8 +188,8 @@ export function HamiltonBand({
             Hamilton puts {institutionName}&rsquo;s fees and filings beside its peers&rsquo;.
           </h2>
           <p className="text-[14px] leading-relaxed text-ink-muted">
-            Hamilton, Fee Insight&rsquo;s workspace for banks and credit unions, sets an institution&rsquo;s published fees beside its market and its call
-            reports beside its peers, with a sourced brief for each.
+            Hamilton, Fee Insight&rsquo;s workspace for banks and credit unions, sets an institution&rsquo;s published fees
+            beside its market and its call reports beside its peers. Each comparison comes with a sourced brief.
           </p>
           {sampleReportHref ? (
             <Link
