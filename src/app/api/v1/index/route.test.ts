@@ -57,7 +57,7 @@ function indexEntry(category: string) {
 }
 
 const enterpriseKey = { valid: true, organizationId: 7, tier: "enterprise" };
-const freeKey = { valid: true, organizationId: 3, tier: "free" };
+const freeKey = { valid: true, organizationId: 3, tier: "free", keyId: 41 };
 
 describe("/api/v1/index", () => {
   beforeEach(() => {
@@ -225,7 +225,7 @@ describe("/api/v1/index", () => {
     const response = await GET(new NextRequest("https://feeinsight.com/api/v1/index?state=Texas"));
 
     expect(response.headers.get("cache-control")).toBe("no-store");
-    expect(logApiUsage).toHaveBeenCalledWith(3, null, "api.v1.index", { status: 400 });
+    expect(logApiUsage).toHaveBeenCalledWith(3, null, "api.v1.index", { status: 400 }, 41);
   });
 
   it("answers 503, not 429, when usage tracking is down", async () => {

@@ -7,7 +7,7 @@
  * charges what; it never says what the bank should charge.
  */
 
-import { countedAmounts } from "@/lib/data-store/fee-stats";
+import { countedAmounts } from "@/lib/data-store/counted-amounts";
 import { subjectPossessive } from "./subject";
 import { formatFeeAmount } from "@/lib/format";
 import { STATE_NAMES } from "@/lib/us-states";

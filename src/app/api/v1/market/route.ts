@@ -12,7 +12,7 @@ const NOTE =
 async function handleGET(request: NextRequest) {
   const caller = await authorizeV1(request, { paidOnly: "Local market competitors", usageEvent: "api.v1.market" });
   if (caller instanceof Response) return caller;
-  const { organizationId, anonymousId, rateLimit } = caller;
+  const { organizationId, keyId, anonymousId, rateLimit } = caller;
 
   let institutionId: number;
   try {
@@ -20,7 +20,7 @@ async function handleGET(request: NextRequest) {
     institutionId = intParam(request.nextUrl.searchParams, "institution_id", { fallback: 0, min: 1, max: 1_000_000_000 });
   } catch (error) {
     if (error instanceof ApiParamError) {
-      logApiUsage(organizationId, anonymousId, "api.v1.market", { status: 400 }).catch(() => {});
+      logApiUsage(organizationId, anonymousId, "api.v1.market", { status: 400 }, keyId).catch(() => {});
       return apiError(400, "invalid_parameter", error.message, { rateLimit });
     }
     throw error;
@@ -28,12 +28,12 @@ async function handleGET(request: NextRequest) {
 
   const market = await getLocalMarketMembers(institutionId);
   if (!market) {
-    logApiUsage(organizationId, anonymousId, "api.v1.market", { institution_id: institutionId, status: 404 }).catch(() => {});
+    logApiUsage(organizationId, anonymousId, "api.v1.market", { institution_id: institutionId, status: 404 }, keyId).catch(() => {});
     return apiError(404, "not_found", "No local market on file for that institution", { rateLimit });
   }
 
   const totalDeposits = market.members.reduce((sum, m) => sum + (m.market_deposits ?? 0), 0);
-  logApiUsage(organizationId, anonymousId, "api.v1.market", { institution_id: institutionId, status: 200 }).catch(() => {});
+  logApiUsage(organizationId, anonymousId, "api.v1.market", { institution_id: institutionId, status: 200 }, keyId).catch(() => {});
 
   return withApiCaching(request, withApiHeaders(
     NextResponse.json({
