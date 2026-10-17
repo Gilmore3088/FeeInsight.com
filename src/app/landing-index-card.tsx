@@ -70,7 +70,7 @@ function Picker({
   );
 }
 
-/** Axis labels under the bars: the first bar's lower bound, every few bars, and the last bar. */
+/** Axis labels under the bars: the first bar's lower bound and the last bar's. */
 function barLabel(bar: { min: number | null; max: number | null }): string {
   if (bar.min === null) return `<${cardMoney(Math.round((bar.max ?? 0) + 0.01))}`;
   if (bar.max === null) return `${cardMoney(bar.min)}+`;
@@ -81,7 +81,6 @@ function Histogram({ cell, label }: { cell: IndexCell; label: string }) {
   const bars = cellBars(cell);
   const median = cell.median / 100;
   const top = Math.max(...bars.map((b) => b.total), 1);
-  const every = bars.length > 9 ? 3 : 2;
   return (
     <figure className="mt-3" aria-label={`${label}: how many institutions fall in each price range`}>
       <div className="flex h-[9.5rem] items-end gap-[3px] border-b border-border sm:h-[10.5rem]" data-index-bars="">
@@ -94,7 +93,6 @@ function Histogram({ cell, label }: { cell: IndexCell; label: string }) {
                   Median {cardMoney(median)}
                 </span>
               ) : null}
-              <span className="mb-0.5 text-center font-mono text-[9px] leading-none tabular-nums text-ink-muted">{bar.total > 0 ? bar.total : ""}</span>
               <span
                 className={`block w-full rounded-t-[2px] motion-safe:transition-[height] motion-safe:duration-500 motion-safe:ease-out ${isMedian ? "bg-ink" : "bg-ink/15"}`}
                 style={{ height: `${Math.max(bar.total > 0 ? 2 : 0, (bar.total / top) * 72)}%` }}
@@ -104,12 +102,9 @@ function Histogram({ cell, label }: { cell: IndexCell; label: string }) {
           );
         })}
       </div>
-      <div className="mt-1 flex gap-[3px]" aria-hidden="true">
-        {bars.map((bar, i) => (
-          <span key={i} className="min-w-0 flex-1 overflow-visible whitespace-nowrap text-center font-mono text-[9px] text-ink-muted">
-            {i % every === 0 || i === bars.length - 1 ? barLabel(bar) : ""}
-          </span>
-        ))}
+      <div className="mt-1 flex justify-between font-mono text-[11px] text-ink-muted" aria-hidden="true">
+        <span>{bars.length ? barLabel(bars[0]) : ""}</span>
+        <span>{bars.length > 1 ? barLabel(bars[bars.length - 1]) : ""}</span>
       </div>
       <figcaption className="sr-only">
         {bars.map((b) => `${barLabel(b)}: ${b.total}`).join("; ")}
@@ -124,7 +119,7 @@ function RangeRow({ label, cell, scale }: { label: string; cell: IndexCell | { n
       <div className="mb-5">
         <p className="text-[12px] font-semibold text-ink">{label}</p>
         <p className="mt-1 text-[11px] leading-snug text-ink-muted">
-          {cell && cell.n > 0 ? `${institutions(cell.n)}, too few for a median` : "No published fees yet"}
+          {cell && cell.n > 0 ? "Too few for a median yet" : "No published fees yet"}
         </p>
       </div>
     );
@@ -143,9 +138,6 @@ function RangeRow({ label, cell, scale }: { label: string; cell: IndexCell | { n
         />
         <span className="absolute -top-[3px] h-3.5 w-0.5 bg-brick motion-safe:transition-all motion-safe:duration-500" style={{ left: at(cell.median) }} />
       </div>
-      <p className="mt-1.5 text-[11px] leading-snug text-ink-muted">
-        {institutions(cell.n)} · middle half {money(cell.p25)} to {money(cell.p75)}
-      </p>
     </div>
   );
 }
@@ -192,11 +184,10 @@ export function IndexCard({ data, freshness, children }: { data: IndexCardData; 
       className="relative z-[1] rounded-[11px] bg-surface-0 p-4 text-ink shadow-[0_14px_28px_rgb(21_37_55/0.15),0_3px_8px_rgb(21_37_55/0.05)] sm:p-6"
       data-index-card=""
     >
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center">
         <h2 className="m-0 leading-none">
           <Logo mark="bank-fee-index-wordmark" height={22} title={PRODUCT_NAME} />
         </h2>
-        <span className="text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-muted max-[379px]:hidden">Published fee snapshot</span>
       </div>
       {data.fees.length === 0 ? (
         <p className="mt-6 text-[14px] text-ink-soft">The live figures are being refreshed. The full index is open on its own page.</p>
@@ -210,7 +201,7 @@ export function IndexCard({ data, freshness, children }: { data: IndexCardData; 
               options={data.fees.map((f) => ({ value: f.key, label: f.label }))}
             />
             <Picker
-              label="Headquartered in"
+              label="State"
               value={place}
               onChange={setPlace}
               options={[{ value: US, label: "United States" }, ...data.states.map((s) => ({ value: s.code, label: s.name }))]}
@@ -222,7 +213,6 @@ export function IndexCard({ data, freshness, children }: { data: IndexCardData; 
               options={CHARTERS.map((c) => ({ value: c, label: CHARTER_LABELS[c] }))}
             />
           </div>
-          <p className="mt-2 text-[11px] leading-snug text-ink-muted">A state counts the institutions headquartered there, wherever their branches are.</p>
           {/* One short line is announced when a picker changes, not the whole result area. */}
           <p className="sr-only" aria-live="polite" aria-atomic="true" data-index-summary="">
             {hasMedian(pick)
@@ -232,32 +222,25 @@ export function IndexCard({ data, freshness, children }: { data: IndexCardData; 
           <div className="mt-4 grid gap-5 sm:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] sm:gap-5">
             <div className="min-w-0">
               <h3 className="text-[13px] font-semibold text-ink">{benchmarkTitle}</h3>
-              <p className="mt-0.5 text-[11px] leading-snug text-ink-muted">
-                {feeDef?.headline} · {feeDef?.label}, {CHARTER_WORDS[charter]} in {placeName}
-              </p>
               {hasMedian(pick) ? (
                 <>
                   <div className="mt-3 flex items-center gap-3">
                     <strong key={`${fee}-${place}-${charter}`} className="fi-home-fade text-[2.25rem] font-semibold leading-none tracking-[-0.035em] text-ink">
                       {money(pick.median)}
                     </strong>
-                    <p className="max-w-[15rem] text-[11px] leading-snug text-ink-muted">
-                      The middle half of {feeDef?.plural} run {money(pick.p25)} to {money(pick.p75)}. {institutions(pick.n)}.
-                    </p>
+                    <p className="text-[12px] text-ink-muted">{institutions(pick.n)}</p>
                   </div>
                   <Histogram cell={pick} label={`${feeDef?.label}, ${placeName}`} />
                 </>
               ) : (
                 <p className="mt-4 rounded-md bg-paper px-3 py-6 text-center text-[13px] text-ink-soft">
-                  {pick && pick.n > 0
-                    ? `${institutions(pick.n)} here ${pick.n === 1 ? "publishes" : "publish"} this fee: too few for a median yet.`
-                    : "No institution headquartered here publishes this fee yet."}
+                  {pick && pick.n > 0 ? "Too few for a median yet" : "No published fees yet"}
                 </p>
               )}
             </div>
-            <div className="min-w-0 border-border sm:border-l sm:pl-5">
-              <h3 className="text-[13px] font-semibold text-ink">{compare.title}</h3>
-              <p className="mb-4 mt-0.5 text-[11px] leading-snug text-ink-muted">The bar is the middle half of {feeDef?.plural}; the mark is the median.</p>
+            {/* On a phone the card keeps the pick and its bars; the comparison shows from sm up. */}
+            <div className="hidden min-w-0 border-border sm:block sm:border-l sm:pl-5">
+              <h3 className="mb-4 text-[13px] font-semibold text-ink">{compare.title}</h3>
               {compare.rows.map((row) => (
                 <RangeRow key={row.label} label={row.label} cell={row.cell} scale={scaleCents} />
               ))}
@@ -266,9 +249,9 @@ export function IndexCard({ data, freshness, children }: { data: IndexCardData; 
         </>
       )}
       <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-border pt-3 text-[11px] text-ink-muted">
-        <span>{freshness} · Published schedules</span>
+        <span>Published fee schedules · {freshness}</span>
         <a href={data.fees.length ? cardHref(fee, place, charter) : "/fees"} className="inline-flex items-center gap-1 font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
-          Open the {PRODUCT_NAME}
+          See this fee in the index
           <ArrowUpRight aria-hidden="true" className="size-3.5" />
         </a>
       </div>

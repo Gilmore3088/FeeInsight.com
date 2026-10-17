@@ -9,6 +9,8 @@ import { REPORT_SHOWCASE } from "@/lib/report-showcase";
 export const SAMPLE_REPORT_HREF = REPORT_SHOWCASE.sampleHref;
 
 export const SANS = { fontFamily: "var(--fi-font-sans)" } as const;
+/** The h1 and section h2s: the homepage serif (landing-serif.ts); a size-matched Times New Roman shows until it loads. */
+export const SERIF = { fontFamily: "var(--fi-home-serif, Georgia), Georgia, serif" } as const;
 /** The homepage's content width (James's example: 1280px, with a 16px gutter on a phone). */
 export const HOME_WRAP = "mx-auto w-full max-w-[1312px] px-4 sm:px-6 lg:px-8";
 
