@@ -107,6 +107,17 @@ export type GuideBlock =
       items: { label: string; amount: number; sign?: "plus" | "minus" }[];
       totalLabel: string;
       note: string;
+      /**
+       * Render a live example in its place when one is available: two institutions' own
+       * published fees, named and sourced. The authored items stay as the fallback.
+       */
+      live?: "atm_two_fee";
+    }
+  | {
+      /** The few things a reader can do next, each with its own links, and minor tips after them. */
+      type: "actions";
+      actions: GuideAction[];
+      tips?: { title: string; items: string[] };
     }
   | {
       /** The live distribution of one category, placed where the guide discusses prices. */
@@ -137,6 +148,13 @@ export type GuideBlock =
       type: "updates";
       items: RegulatoryUpdate[];
     };
+
+export type GuideAction = {
+  title: string;
+  text: string;
+  /** External locators open in a new tab; an anchor or site path stays in the page. */
+  links: { label: string; href: string }[];
+};
 
 export type GuideOutcome = {
   /** Drives the outcome's mark, not its wording. */

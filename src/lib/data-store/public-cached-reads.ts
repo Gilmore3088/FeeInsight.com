@@ -1,7 +1,8 @@
 import { cachedPublicRead } from "./public-read-cache";
 import { getCityMarket, getStateMarketCities } from "./city-market";
 import { getStateMarketFees } from "./state-markets";
-import { getDataFreshness, getPublicStats, getStats } from "./core";
+import { getDataFreshness, getFeesByInstitution, getPublicStats, getStats } from "./core";
+import { ATM_EXAMPLE, buildAtmTwoFeeExample } from "@/lib/guides/atm-example";
 import { getDistrictMetrics } from "./dashboard";
 import { getCheapestAndMostExpensive, getFeeCategoryDetail, getIndexRows } from "./fees";
 import { getFeeEvidence } from "./fee-evidence";
@@ -67,6 +68,15 @@ export const getOverdraftComplaintThemesCached = cachedPublicRead(
   getOverdraftComplaintThemes,
   (c) => c.themes.length === 0,
 );
+/** The ATM guide's and the consumer page's two-fee receipt, from two institutions' live published fees. */
+export const getAtmTwoFeeExampleCached = cachedPublicRead("atm-two-fee-example-v1", async () => {
+  const [holderFees, ownerFees] = await Promise.all([
+    getFeesByInstitution(ATM_EXAMPLE.holderId),
+    getFeesByInstitution(ATM_EXAMPLE.ownerId),
+  ]);
+  return buildAtmTwoFeeExample(holderFees, ownerFees);
+});
+
 export const getStatsCached = cachedPublicRead("collection-stats", getStats);
 // A failed read returns zeros; never cache those.
 export const getPublicStatsCached = cachedPublicRead("public-stats", getPublicStats, (s) => s.total_observations === 0);

@@ -499,15 +499,6 @@ export const CONSUMER_GUIDES: Guide[] = [
     family: "ATM & Card",
     featured: true,
     relatedSlugs: ["foreign-transaction-fees", "monthly-maintenance-fees", "overdraft-fees"],
-    helpLinks: {
-      title: "Find a fee-free ATM",
-      links: [
-        { label: "Your bank or credit union's ATM locator", href: "#find-cash", note: "In its app or on its website. It shows the machines that cost you nothing." },
-        { label: "Allpoint network", href: "https://www.allpointnetwork.com", note: "Surcharge-free for customers of member institutions." },
-        { label: "MoneyPass network", href: "https://www.moneypass.com", note: "Surcharge-free for customers of member institutions." },
-        { label: "CO-OP network", href: "https://co-opcreditunions.org", note: "Used by many credit unions for ATMs and shared branches." },
-      ],
-    },
     sections: [
       {
         id: "start-here",
@@ -517,7 +508,7 @@ export const CONSUMER_GUIDES: Guide[] = [
             type: "paths",
             paths: [
               { question: "I was charged twice", answer: "Why one withdrawal can carry two fees, and when to dispute one.", href: "#charged-twice" },
-              { question: "Find cheaper cash access", answer: "Fee-free machines, cash back and rebates, with their conditions.", href: "#find-cash" },
+              { question: "Find cheaper cash access", answer: "Your bank's ATM locator, a surcharge-free network, and cash back or rebates.", href: "#find-cash" },
               { question: "Compare account ATM policies", answer: "Published ATM fees side by side, and what to ask about rebates and networks.", href: "#compare-your-bank" },
             ],
           },
@@ -541,6 +532,7 @@ export const CONSUMER_GUIDES: Guide[] = [
             ],
             totalLabel: "Taken from your account",
             note: "Illustrative amounts, not any institution's prices. Your receipt shows the first fee and your statement shows the second.",
+            live: "atm_two_fee",
           },
           {
             type: "list",
@@ -560,28 +552,6 @@ export const CONSUMER_GUIDES: Guide[] = [
         ],
       },
       {
-        id: "find-cash",
-        heading: "Find cheaper cash access",
-        blocks: [
-          {
-            type: "list",
-            ordered: true,
-            items: [
-              "Open your institution's ATM locator in its app or on its website before you go. Its own machines and its partners' cost you nothing.",
-              "Ask which surcharge-free network your institution belongs to, such as Allpoint, MoneyPass or the CO-OP network, and search that network's locator.",
-              "Ask for cash back at a store checkout. Some stores require a purchase, set a limit or charge a fee, so check the screen before you confirm.",
-              "Check your balance in the app, not at another bank's machine.",
-              "If you must pay, withdraw more at once. Each fee is flat, so one withdrawal costs less than three.",
-              "Abroad, choose to be charged in the local currency when the machine offers dollars.",
-            ],
-          },
-          {
-            type: "paragraph",
-            text: "If your account reimburses ATM fees, keep your receipts and check your statement. A reimbursement can have a monthly limit and may be credited later.",
-          },
-        ],
-      },
-      {
         id: "what-it-costs",
         heading: "What it costs over a month",
         blocks: [
@@ -590,15 +560,56 @@ export const CONSUMER_GUIDES: Guide[] = [
             text: "Across {{atm_non_network.institutions}} institutions, the median fee a bank charges its own customer for using another bank's machine is {{atm_non_network.median}}; most fall between {{atm_non_network.p25}} and {{atm_non_network.p75}}. The machine owner's fee comes on top.",
           },
           {
+            type: "calculator",
+            kind: "atm",
+            intro: "Enter your own numbers from your receipts and your account terms to see a month and a year:",
+            defaults: { withdrawals: 4, operatorFee: 3, bankFee: 2, rebate: 0 },
+          },
+          {
             type: "distribution",
             category: "atm_non_network",
             caption: "Your bank's out-of-network ATM fee, one value per institution",
           },
+        ],
+      },
+      {
+        id: "find-cash",
+        heading: "Find cheaper cash access",
+        blocks: [
           {
-            type: "calculator",
-            kind: "atm",
-            intro: "Enter your own numbers from your receipts and your account terms:",
-            defaults: { withdrawals: 4, operatorFee: 3, bankFee: 2, rebate: 0 },
+            type: "actions",
+            actions: [
+              {
+                title: "Find your bank's ATM locator",
+                text: "Your bank or credit union lists the machines its customers can use without its fee, in its app or on its website. Search its locator before you go. Fee Insight does not track where ATMs are or which ones are free for you.",
+                links: [{ label: "Look up your bank's website", href: "/institutions" }],
+              },
+              {
+                title: "Check a participating ATM network",
+                text: "Ask your bank which surcharge-free network it belongs to, then search that network's own locator. Only your bank can confirm that it takes part and that the machine owner's fee is waived for you.",
+                links: [
+                  { label: "Allpoint locator", href: "https://www.allpointnetwork.com" },
+                  { label: "MoneyPass locator", href: "https://www.moneypass.com" },
+                  { label: "CO-OP network locator", href: "https://co-opcreditunions.org" },
+                ],
+              },
+              {
+                title: "Understand cash-back and rebate conditions",
+                text: "Cash back at a store checkout skips the machine. Some stores require a purchase, set a limit or charge a fee, so read the screen before you confirm. If your account reimburses ATM fees, find its monthly limit, keep your receipts and look for the credit on your statement.",
+                links: [
+                  { label: "Questions to ask about rebates", href: "#questions-to-ask" },
+                  { label: "Compare account ATM policies", href: "#compare-your-bank" },
+                ],
+              },
+            ],
+            tips: {
+              title: "Smaller ways to pay less",
+              items: [
+                "Check your balance in the app, not at another bank's machine.",
+                "If you must pay, withdraw more at once. Each fee is flat, so one withdrawal costs less than three.",
+                "Abroad, choose to be charged in the local currency when the machine offers dollars.",
+              ],
+            },
           },
         ],
       },

@@ -20,6 +20,7 @@ export type {
   GuideAccessTier,
   GuideStat,
   GuideStatus,
+  GuideAction,
   GuideOutcome,
   CostScenario,
   IllustrativePolicy,
@@ -114,6 +115,11 @@ export function blockText(block: GuideBlock): string[] {
       return block.intro ? [block.intro] : [];
     case "breakdown":
       return [block.title, ...block.items.map((i) => i.label), block.totalLabel, block.note];
+    case "actions":
+      return [
+        ...block.actions.flatMap((a) => [a.title, a.text]),
+        ...(block.tips ? [block.tips.title, ...block.tips.items] : []),
+      ];
     case "cap_scope":
       return [];
     case "policy_table":

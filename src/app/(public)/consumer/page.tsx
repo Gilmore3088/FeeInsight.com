@@ -6,7 +6,8 @@ import type { ReactNode } from "react";
 import { loadConsumerGuides } from "@/lib/guides/source";
 import type { Guide } from "@/lib/guides/types";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
-import { getStatesWithFeeDataCached } from "@/lib/data-store/public-cached-reads";
+import { getAtmTwoFeeExampleCached, getStatesWithFeeDataCached } from "@/lib/data-store/public-cached-reads";
+import { AtmReceipt } from "@/components/public/atm-receipt";
 import { formatFeeAmount } from "@/lib/format";
 import { getPublicSnapshot } from "@/lib/public-stats";
 import { STATE_NAMES } from "@/lib/us-states";
@@ -17,6 +18,7 @@ import { InstitutionSearchBar } from "../institutions/search-bar";
 import { SourceNote } from "../research/district/[id]/district-hub";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { StatePicker, type StateOption } from "./state-picker";
+import { CheckExample } from "./check-example";
 
 const TITLE = "Bank Fees Explained: Check and Avoid Them";
 const DESCRIPTION =
@@ -38,9 +40,8 @@ const GUIDE_LINKS = [
   { slug: "monthly-maintenance-fees", line: "Check account fees and waiver requirements." },
 ] as const;
 
-/** The demo cast: well-covered institutions a first-time visitor can open in one tap. */
+/** The rest of the demo cast, one tap each; Capital City Bank is the example shown. */
 const EXAMPLES = [
-  { id: 323, name: "Capital City Bank" },
   { id: 5, name: "U.S. Bank" },
   { id: 4956, name: "Navy Federal Credit Union" },
 ] as const;
@@ -48,11 +49,16 @@ const EXAMPLES = [
 const money = (n: number) => formatFeeAmount(n) ?? `$${n.toFixed(2)}`;
 const count = (n: number) => n.toLocaleString("en-US");
 
-const BAND = "flex min-w-0 flex-col border-t border-border pt-5";
+const BAND = "min-w-0 border-t border-border pt-5";
+/** Each task: its words and controls on the left, a live example of the tool on the right. */
+const TASK_GRID = "grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-10";
+
+/** The fee-check example: Capital City Bank, a well-covered demo institution. */
+const CHECK_EXAMPLE_ID = 323;
 const BAND_H2 = "text-center text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-left sm:text-[22px]";
 const BAND_LINE = "mt-2 text-[15px] leading-relaxed text-ink-soft sm:mx-0 sm:text-left";
 const LINK = "font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink";
-const MORE = `mt-auto inline-flex min-h-11 items-center pt-3 text-[14px] font-semibold ${LINK}`;
+const MORE = `mt-2 inline-flex min-h-11 items-center text-[14px] font-semibold ${LINK}`;
 
 /** "/guides/atm-fees#find-cash" when that guide and section exist; the guide alone without the section. */
 function guideHref(guides: Guide[], slug: string, section: string): string | null {
@@ -73,7 +79,7 @@ interface Route {
 }
 
 export default async function ConsumerPage() {
-  const [{ summary, categories }, guides, states] = await Promise.all([
+  const [{ summary, categories }, guides, states, atmExample] = await Promise.all([
     getPublicSnapshot(),
     loadConsumerGuides().catch((error: unknown) => {
       console.error("Consumer page guides failed:", error);
@@ -83,7 +89,12 @@ export default async function ConsumerPage() {
       console.error("Consumer page states failed:", error);
       return [];
     }),
+    getAtmTwoFeeExampleCached().catch((error: unknown) => {
+      console.error("Consumer page ATM example failed:", error);
+      return null;
+    }),
   ]);
+  const atmGuideHref = guideHref(guides, "atm-fees", "charged-twice");
   const summaryFor = new Map<string, FeeCategorySummary>(categories.map((c) => [c.fee_category, c]));
   const median = (category: string) => {
     const s = summaryFor.get(category);
@@ -146,7 +157,7 @@ export default async function ConsumerPage() {
       return {
         key: "atm",
         title: "Reduce ATM charges",
-        line: "An institution's own ATMs and its surcharge-free network cost nothing. Cash back at a store checkout is another route.",
+        line: "An institution's own ATMs, and any surcharge-free network it belongs to, can avoid both fees. Its own locator says which machines those are.",
         figure: atm ? (
           <>
             An out-of-network withdrawal has a U.S. median fee of {money(atm.median_amount)}
@@ -188,79 +199,90 @@ export default async function ConsumerPage() {
           </div>
         </section>
 
-        <div className="mt-8 grid gap-10 sm:mt-10 lg:grid-cols-3 lg:gap-8">
-          {/* `relative z-20` keeps the search suggestions above the next band. */}
-          <section id="check" aria-labelledby="check-heading" className={`relative z-20 scroll-mt-24 ${BAND}`}>
-            <h2 id="check-heading" className={BAND_H2}>
-              Check your bank
-            </h2>
-            <div className="mt-4 text-left">
-              <InstitutionSearchBar resultPath="/check" ariaLabel="Your bank or credit union" placeholder="Your bank or credit union" />
-            </div>
-            <ul className="mt-3 divide-y divide-border">
-              {EXAMPLES.map((example) => (
-                <li key={example.id}>
-                  <Link
-                    href={`/check?id=${example.id}`}
-                    className="flex min-h-11 items-center justify-between gap-3 py-2 text-[15px] text-ink hover:text-brick"
-                  >
-                    <span className="min-w-0">{example.name}</span>
-                    <span aria-hidden="true" className="text-ink-muted">
-                      ›
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-            <Link href="/check" className={MORE}>
-              Open the fee check
-            </Link>
-          </section>
-
-          <section aria-labelledby="understand-heading" className={BAND}>
-            <h2 id="understand-heading" className={BAND_H2}>
-              Understand a charge
-            </h2>
-            {guides.length === 0 && <p className={BAND_LINE}>The guides are not available right now.</p>}
-            {guideRows.length > 0 && (
-              <ul className="mt-3 divide-y divide-border">
-                {guideRows.map((guide) => (
-                  <li key={guide.slug}>
-                    <Link href={`/guides/${guide.slug}`} className="block min-h-11 py-2.5 text-ink hover:text-brick">
-                      <span className="block text-[15px] font-medium">{guide.title}</span>
-                      <span className="mt-0.5 line-clamp-2 block text-[13px] leading-snug text-ink-muted">{guide.line}</span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <Link href="/guides" className={MORE}>
-              {guides.length > 0 ? `All ${guides.length} guides` : "Fee guides"}
-            </Link>
-          </section>
-
-          <section aria-labelledby="compare-heading" className={BAND}>
-            <h2 id="compare-heading" className={BAND_H2}>
-              Compare local options
-            </h2>
-            {stateOptions.length > 0 ? (
-              <div className="mt-4">
-                <StatePicker states={stateOptions} />
+        <div className="mt-8 space-y-10 sm:mt-10 sm:space-y-12">
+          {/* `relative z-20` keeps the search suggestions above the example below. */}
+          <section id="check" aria-labelledby="check-heading" className={`relative z-20 scroll-mt-24 ${BAND} ${TASK_GRID}`}>
+            <div className="min-w-0">
+              <h2 id="check-heading" className={BAND_H2}>
+                Check your bank
+              </h2>
+              <p className={BAND_LINE}>A bank&apos;s published fees beside the state and U.S. medians, each linked to its own schedule.</p>
+              <div className="mt-4 text-left">
+                <InstitutionSearchBar resultPath="/check" ariaLabel="Your bank or credit union" placeholder="Your bank or credit union" />
               </div>
+              <p className="mt-2 flex flex-wrap items-center justify-center gap-x-4 text-[14px] text-ink-muted sm:justify-start">
+                <span>Or open</span>
+                {EXAMPLES.map((example) => (
+                  <Link key={example.id} href={`/check?id=${example.id}`} className={`inline-flex min-h-11 items-center ${LINK}`}>
+                    {example.name}
+                  </Link>
+                ))}
+              </p>
+            </div>
+            <CheckExample id={CHECK_EXAMPLE_ID} guides={guides} />
+          </section>
+
+          <section aria-labelledby="understand-heading" className={`${BAND} ${TASK_GRID}`}>
+            <div className="min-w-0">
+              <h2 id="understand-heading" className={BAND_H2}>
+                Understand a charge
+              </h2>
+              <p className={BAND_LINE}>
+                One withdrawal at another bank&apos;s ATM can bring two fees from two companies. Each guide explains a charge
+                and the ways around it.
+              </p>
+              {guides.length === 0 && <p className={BAND_LINE}>The guides are not available right now.</p>}
+              {guideRows.length > 0 && (
+                <ul className="mt-3 divide-y divide-border">
+                  {guideRows.map((guide) => (
+                    <li key={guide.slug}>
+                      <Link href={`/guides/${guide.slug}`} className="block min-h-11 py-2.5 text-ink hover:text-brick">
+                        <span className="block text-[15px] font-medium">{guide.title}</span>
+                        <span className="mt-0.5 line-clamp-2 block text-[13px] leading-snug text-ink-muted">{guide.line}</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <Link href="/guides" className={MORE}>
+                {guides.length > 0 ? `All ${guides.length} guides` : "Fee guides"}
+              </Link>
+            </div>
+            {atmExample && (
+              <div className="flex min-w-0 flex-col items-center gap-2 sm:items-start">
+                <AtmReceipt example={atmExample} />
+                {atmGuideHref && (
+                  <Link href={atmGuideHref} className={`inline-flex min-h-11 items-center text-[14px] font-semibold ${LINK}`}>
+                    Why one withdrawal brings two fees
+                  </Link>
+                )}
+              </div>
+            )}
+          </section>
+
+          <section aria-labelledby="compare-heading" className={`${BAND} ${TASK_GRID}`}>
+            <div className="min-w-0">
+              <h2 id="compare-heading" className={BAND_H2}>
+                Compare local options
+              </h2>
+              <p className={BAND_LINE}>See which banks and credit unions publish their fees in each city of a state.</p>
+              {stateOptions.length > 0 && (
+                <div className="mt-3">
+                  <SourceNote>
+                    Banks and credit unions headquartered in each state with published fees, {PRODUCT_NAME}
+                    {asOf}.
+                  </SourceNote>
+                </div>
+              )}
+              <Link href="/institutions" className={MORE}>
+                Browse the directory
+              </Link>
+            </div>
+            {stateOptions.length > 0 ? (
+              <StatePicker states={stateOptions} initial="FL" />
             ) : (
               <p className={BAND_LINE}>The state list is not available right now.</p>
             )}
-            {stateOptions.length > 0 && (
-              <div className="mt-3">
-                <SourceNote>
-                  Banks and credit unions headquartered in each state with published fees, {PRODUCT_NAME}
-                  {asOf}.
-                </SourceNote>
-              </div>
-            )}
-            <Link href="/institutions" className={MORE}>
-              Browse the directory
-            </Link>
           </section>
         </div>
 
