@@ -77,7 +77,7 @@ describe("peer comparison math", () => {
   it("builds the default peers from charter, asset tier and Fed district, and names them", () => {
     const filters = defaultPeerFilters({ charter_type: "bank", asset_size_tier: "community_mid", fed_district: 11 });
     expect(filters).toEqual({ charter_type: "bank", asset_tiers: ["community_mid"], fed_districts: [11] });
-    expect(describePeerGroup(filters)).toBe("Banks with $300M to $1B in assets in Fed district 11 (Dallas)");
+    expect(describePeerGroup(filters)).toBe("Banks with $300M to $1B in assets in the Dallas Fed district");
     expect(defaultPeerFilters({ charter_type: "credit_union", asset_size_tier: null, fed_district: null })).toEqual({ charter_type: "credit_union" });
     expect(describePeerGroup({ institutionIds: [4, 5] })).toBe("2 chosen institutions");
   });

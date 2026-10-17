@@ -18,7 +18,7 @@
  * The one exception is a dollar amount in a category that is usually a rate (below).
  */
 
-import { COLLECTION_ITEM, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, IRA_CLOSING, ITEM_COPY, RESEARCH_SPLIT_LIVE } from "@/lib/fee-fold";
+import { COLLECTION_ITEM, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, IRA_CLOSING, ITEM_COPY, RESEARCH_SPLIT_LIVE, SKIP_A_PAY } from "@/lib/fee-fold";
 
 export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts" | "amount_implausible";
 
@@ -112,6 +112,13 @@ const OUTSIDER_ATM = String.raw`\bnon[- ]?(?:customers?|clients?|account ?holder
  */
 const ATM_PLAN = String.raw`\bunlimited\s+(?:[\w.]+\s+){0,2}atms?\b|\batms?\s+(?:unlimited|freedom)\b|\badd\s+atm\b|\+\s*atm\b|\batm\s+add[- ]?ons?\b`;
 /**
+ * v70: an ATM-named line whose fee has another home: a bill payer service priced for members
+ * without checking and a card ("e-Pay (Bill Payer Service) without Checking and Debit/ATM Card"
+ * $6.95 a month, 147703: bill pay), and a card charge on closing the account early ("Account Closure
+ * ATM/Debit Card - if account closed within 12 months" $10, 117628: early closure).
+ */
+const CARD_SERVICE_ELSEWHERE = String.raw`\bbill payer\b|\baccount clos\w*`;
+/**
  * v69: a line that names an ATM but prices something other than using another network's ATM: a
  * dispute or a copy of a card sale (account research), a lost, stolen, blocked or replaced card, a
  * negative balance, a cashier's, treasurer's or official check, temporary checks, or a
@@ -120,6 +127,60 @@ const ATM_PLAN = String.raw`\bunlimited\s+(?:[\w.]+\s+){0,2}atms?\b|\batms?\s+(?
  * Denials", 12 live rows) is left for James: it may be the network ATM fee for a failed attempt.
  */
 const NOT_ATM_USE = String.raw`\bdisput\w*|\b(?:photo ?)?cop(?:y|ies)\b|\bnegative\s+balance\b|\btreasurer|\bcashier|\bofficial\s+checks?\b|\btemporary\s+checks?\b|\bcut[- ]?off\s+times?\b|\blost\b|\bstolen\b|\b(?:un)?block(?:ed)?\s+cards?\b|\breplac`;
+
+/**
+ * v70 (#1765, card-product misfiles; #1690): a fee for the card itself is not a fee for using another
+ * network's ATM, and a card's inactivity is not the account's dormancy. None of the 50 types holds
+ * a card's monthly, annual or maintenance fee, its issue, activation or origination, a limit
+ * increase, a reinstatement, a card's inactivity, or a point-of-sale purchase fee (`gift_card_purchase`
+ * refuses inactivity; `card_replacement` is only a replacement), so a live fee failing this rule is
+ * a takedown. Darwin and publish refuse new reads at once. The live sweep holds the takedowns until
+ * James says yes: while `CARD_PRODUCT_TAKEDOWN_LIVE` is off it counts and samples the live fees that
+ * fail only this rule (`cardProductPending` in the guard's result and the publish step's detail) and
+ * takes none down. Turning it on takes them down through the second look like any guard failure.
+ */
+export const CARD_PRODUCT_TAKEDOWN_LIVE = false;
+
+/** v70: a word that makes an ATM-named line a charge for using an ATM or another network. */
+const ATM_USE_WORD = String.raw`withdraw|\bw\/d\b|\binquir|\btransfers?\b|\bnon\b|\bnon-|foreign|\bother\b|network|surcharg|usage|\bused?\b|\bowned\b|terminal|\bmachines?\b|\bdenied\b|\bdenials?\b|declin|\bcash\b|international|deposit`;
+
+/**
+ * v70: a card-product fee filed as the non-network ATM fee (Oct 17, each read on its bank's stored
+ * line): the card's monthly, annual, holder or maintenance fee ("ATM/Debit Card - Monthly Fee" $1,
+ * "ATM Only Cardholder Fee (monthly)", "Visa Debit/ATM Card Maintenance" $5, "Monthly ATM Access
+ * Charge" $1 "per account (only if you have a debit or ATM card)", "ATM savings account access
+ * only" $5 a year), its issue, activation or origination ("ATM/Debit Card Issue Fee" $3, "ATM Debit
+ * Card Activation Fee" $1), a reinstatement or limit increase, the card's inactivity ("Debit / ATM
+ * Card Inactivity" $2 a month), and a point-of-sale purchase fee ("ATM POS Purchase" $1 per
+ * transaction). A line that also names a withdrawal, an inquiry, a transfer, another network or
+ * institution, a surcharge or a denial prices ATM use and is not matched; "ATM/POS Activity Charge"
+ * names neither and stays.
+ */
+export const CARD_PRODUCT_FEE = new RegExp(
+  String.raw`^(?![\s\S]*(?:${ATM_USE_WORD}|\btransactions?\b))[\s\S]*(?:\bcard\s*holders?\b|\bcardholders?\b|\bcards?\b[^|]{0,25}\b(?:monthly|annual(?:ly)?|yearly|per month|maint\w*)|\b(?:monthly|annual)\s+atm\s+(?:access|debit|cards?)\b|\batm\s+monthly\s+service\b|\batm\s+access\s+fee\s+with\b|\baccess\s+of\s+membership\b|\baccount\s+access\b|\baccess\s+only\b|\bissu(?:e|ance)\b(?!\s+by)|\bactivation\b|\borigination\b|\breinstat|\blimit\s+increase\b|\binactiv|\bdormant\b)` +
+    String.raw`|^(?![\s\S]*(?:${ATM_USE_WORD}))[\s\S]*(?:\bpoint[- ]of[- ]sale\b|\bpos\s+(?:purchases?|fees?|w\/))`,
+  "i",
+);
+
+/**
+ * v70: a card's inactivity filed as a dormant account (Oct 17: "Inactive Debit Card" $5 a month,
+ * "Debit Card Inactivity Fee", "Inactive Credit Card Per month", a gift card's "Card Inactivity Fee
+ * (No activity within 12 months)"). A name that also says account ("Inactive Account (no debit card
+ * activity)") is the account's own dormancy and stays.
+ */
+export const CARD_INACTIVITY =
+  /^(?![\s\S]*\baccounts?\b)(?:[\s\S]*\bcards?\b[^|]{0,30}(?:\binactiv|\bdormant|\bnon-?\s?use)|[\s\S]*\b(?:inactiv\w*|dormant)\s+(?:visa®?\s+)?(?:debit\s+|credit\s+|atm\s+|check\s+|gift\s+|prepaid\s+)?cards?\b)/i;
+
+/** v70: the start of a card-product failure's reason. */
+export const CARD_PRODUCT_REASON = "card product";
+
+/** v70: the card-product text a fee's name matches under its category, or null. Pure. */
+export function cardProductMisfile(canonicalFeeKey: string | null | undefined, feeName: string | null | undefined): string | null {
+  const name = plainQuotes(feeName ?? "").trim();
+  if (canonicalFeeKey === "atm_non_network") return name.match(CARD_PRODUCT_FEE)?.[0] ?? null;
+  if (canonicalFeeKey === "dormant_account") return name.match(CARD_INACTIVITY)?.[0] ?? null;
+  return null;
+}
 
 export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   monthly_maintenance: {
@@ -236,7 +297,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // enrollment and reactivation; an adjustment, or a rebate the bank pays back, is not a fee.
     // v69: what a non-customer pays at the institution's own ATMs (`OUTSIDER_ATM`) is out too.
     // A monthly ATM add-on or plan (`ATM_PLAN`) is not a per-use fee either.
-    exclude: new RegExp(String.raw`${OUTSIDER_ATM}|${ATM_PLAN}|${NOT_ATM_USE}|` +
+    exclude: new RegExp(String.raw`${OUTSIDER_ATM}|${ATM_PLAN}|${NOT_ATM_USE}|${CARD_SERVICE_ELSEWHERE}|` +
       /(replace|statement|card fee|annual|\bpin\b|denied|declin|re-?order|initial order|instant issue|enrollment|reactivat|\badjustments?\b|rebates?|^(?!.*(withdraw|w\/d|transaction|surcharg|\bnon\b|non-|foreign|other|network|usage|\bused?\b|inquir|transfer|\bat\b|\bpos\b|purchase))\s*atm\s*cards?\b|between accounts|(savings|share) withdrawal|\breg[- ]?d\b|\blobby\b|^\s*(?:atm|visa|debit|check|mastercard)\s*(?:card)?\s*(?:or|\/|&|and)\s*(?:visa\s*|mastercard\s*)?(?:debit|check|atm)?\s*cards?\s*\*?\s*$|tele?phone|\bphone\b|representative|(?<!automated )\bteller\b|call center|non[- ]?members?|\bnon[- ]?(?!owned\b)[\w.]+ (debit |atm )?cards?|non[- ]proprietary card|foreign cards? used|(?<!free )\bat our atm|(?<!of )\bour network|\bin[- ]network|(?<!\bnon[- ]?)\b(?!(non|other|foreign)\b)\w+[- ]owned atm)/.source, "i"),
   },
   wire_domestic_outgoing: {
@@ -382,8 +443,12 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   // A credit report pulled to open a deposit account or membership is not a loan fee.
   loan_origination: {
     include: /\S/,
-    exclude: /\bopen(ing)? (an |a |new |your )?(account|membership)\b/i,
+    // v70: skipping a loan payment is other lending (`SKIP_A_PAY`, James, Oct 17).
+    exclude: new RegExp(String.raw`${SKIP_A_PAY.source}|` + /\bopen(ing)? (an |a |new |your )?(account|membership)\b/.source, "i"),
   },
+  // v70: skipping a loan payment ("Skip-A-Pay Fee" $25) is other lending, not a late payment
+  // (James, Oct 17). The price ceiling below still applies.
+  late_payment: { include: /\S/, exclude: SKIP_A_PAY },
   // A dormant fee names inactivity. Other lines filed here ("Money Market Savings Account
   // (below )" $15 beside Space Coast's real $5 dormant fee, "Telephone transfers") are
   // neighbouring fees or fragments (v18).
@@ -553,7 +618,15 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // dispute or a copy of a card sale moves to account research and a lost or stolen card to card
 // replacement (4, re-filed after the second look), and 12 with no home or a live twin come down.
 // An ATM balance inquiry stays (balance_inquiry is retired and folds here).
-export const CATEGORY_GUARD_VERSION = 69;
+// v70 (Oct 17, #1765): a card-product fee filed as the non-network ATM fee (`CARD_PRODUCT_FEE`: the
+// card's monthly, annual or maintenance fee, issue, activation, inactivity, a limit increase or a
+// point-of-sale purchase fee) and a card's inactivity filed as a dormant account (`CARD_INACTIVITY`)
+// fail the guard. None of the 50 types holds them, so their live takedowns wait on
+// `CARD_PRODUCT_TAKEDOWN_LIVE` (off: counted, none taken down). An ATM-named bill payer service
+// re-files to bill pay and a card charge on early account closure to early closure. Skipping a loan
+// payment (`SKIP_A_PAY`, James, Oct 17) leaves late payment and loan origination for other lending,
+// by guard, re-file rule and fold split, and the taxonomy's skip-a-pay aliases point there too.
+export const CATEGORY_GUARD_VERSION = 70;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -626,6 +699,13 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   { from: "atm_non_network", to: "card_replacement", when: /(replac|reissue|re-?issu|lost|stolen)/i, unless: /\bpins?\b|\bblock/i },
   // v69: an ATM dispute or a copy of a card sale is research.
   { from: "atm_non_network", to: "account_research", when: /\bdisput|\b(?:photo ?)?cop(?:y|ies) of\b/i },
+  // v70: an ATM-named bill payer service is bill pay, and a card charge on closing the account early
+  // is an early closure (`CARD_SERVICE_ELSEWHERE`).
+  { from: "atm_non_network", to: "bill_pay", when: /\bbill payer\b/i },
+  { from: "atm_non_network", to: "early_closure", when: new RegExp(EARLY_CLOSE, "i") },
+  // v70: skipping a loan payment is other lending, not a late payment or a loan origination.
+  { from: "late_payment", to: "other_lending_fee", when: SKIP_A_PAY },
+  { from: "loan_origination", to: "other_lending_fee", when: SKIP_A_PAY },
   { from: "check_printing", to: "counter_check", when: /\btemporar/i },
   { from: "check_cashing", to: "collection_item", when: COLLECTION_ITEM },
   // v68: a returned foreign check or item filed as check cashing is a returned deposited item.
@@ -766,6 +846,8 @@ export function checkFeeCategory(
   canonicalFeeKey: string | null | undefined,
   feeName: string | null | undefined,
   context?: CategoryGuardContext,
+  /** `cardProducts: false` reads the fee without the v70 card-product rule (`cardProductMisfile`). */
+  options?: { cardProducts?: boolean },
 ): CategoryGuardVerdict {
   const rule = canonicalFeeKey ? CATEGORY_GUARD_RULES[canonicalFeeKey] : undefined;
   if (!canonicalFeeKey) return { ok: true };
@@ -795,6 +877,14 @@ export function checkFeeCategory(
       ok: false,
       code: "name_contradicts",
       reason: `"${name}" describes a different fee than ${canonicalFeeKey} ("${excluded[0]}")`,
+    };
+  }
+  const cardProduct = options?.cardProducts === false ? null : cardProductMisfile(canonicalFeeKey, name);
+  if (cardProduct) {
+    return {
+      ok: false,
+      code: "name_contradicts",
+      reason: `${CARD_PRODUCT_REASON}: "${name}" prices the card itself, not ${canonicalFeeKey} ("${cardProduct}")`,
     };
   }
   if (!rule.include.test(name) && !(canonicalFeeKey === "excess_withdrawal" && GENERIC_SERVICE_CHARGE.test(name) && savingsOverLimitLine(name, context))) {

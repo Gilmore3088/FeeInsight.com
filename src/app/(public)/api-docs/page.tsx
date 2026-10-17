@@ -11,6 +11,7 @@ import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import { PRO_PLANS_NAV } from "@/components/nav-items";
 import { NON_INSTITUTION_TIER, tierAmountLabel, tierPriceLabel } from "@/lib/pro-tiers";
 import { PAGE_HEADER } from "@/components/public/page-header";
+import { MAX_CHOSEN_PEERS, PEER_GROUP_PARAMS } from "@/lib/peer-set-dimensions";
 
 const PRO_LABEL = "Hamilton";
 
@@ -638,7 +639,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
             {
               name: "updated_since",
               type: "string",
-              description: "An ISO 8601 date or time, such as 2026-10-01. Only fees published on or after it are returned.",
+              description: "An ISO 8601 date or time, such as 2026-10-01 or 2026-10-01T00:00:00Z. Only fees published on or after it are returned.",
             },
           ]}
           curlExample={`curl -H "Authorization: Bearer YOUR_API_KEY" \\
@@ -708,12 +709,12 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
         <Endpoint
           method="GET"
           path="/institutions?view=fees"
-          summary="Fee rows, with changes since a date"
-          description="Every published dollar fee as its own row, oldest first by the date it was published. To keep your own copy current, save the newest published_at you hold and ask again with updated_since set to it. Rows published at exactly that time come back again, so match them on fee_id. A fee that is taken down drops out of the list."
+          summary="Published fee rows, filtered by publish date"
+          description="Every published dollar fee as its own row, oldest first by publish date, then by fee_id. To keep your own copy current, save the newest published_at you hold and ask again with updated_since set to it. Rows published at exactly that time come back again, so match them on fee_id. A fee that is taken down drops out of the list and is not reported as a change, so pull the full list without updated_since from time to time to catch removals."
           tierNote="Pro"
           params={[
             { name: "view", type: "string", required: true, description: '"fees"' },
-            { name: "updated_since", type: "string", description: "An ISO 8601 date or time, such as 2026-10-01T00:00:00Z. Only fees published on or after it are returned." },
+            { name: "updated_since", type: "string", description: "An ISO 8601 date or time, such as 2026-10-01 or 2026-10-01T00:00:00Z. Only fees published on or after it are returned." },
             { name: "id", type: "integer", description: "One institution's fees" },
             { name: "state", type: "string", description: "Two-letter state code" },
             { name: "charter", type: "string", description: '"bank" or "credit_union"' },
@@ -765,14 +766,19 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
           method="GET"
           path="/peers?institution_id={id}"
           summary="Compare one institution's fees with its peers"
-          description={`For each fee the institution publishes in dollars, shows its amount next to the peer median and the 25th and 75th percentiles. The percentile field is the share of peers with a lower amount, counting half of those with the same amount. Peers are banks or credit unions of the same charter type, asset size and Fed district, unless you name up to 25 yourself. When fewer than ${MIN_INSTITUTIONS_FOR_MEDIAN} peers publish a fee, the median and percentiles are left out. Fees stated as a percentage are listed separately and not compared.`}
+          description={`For each fee the institution publishes in dollars, shows its amount next to the peer median and the 25th and 75th percentiles. The percentile field is the share of peers with a lower amount, counting half of those with the same amount. By default, peers are banks or credit unions of the same charter type, asset size and Fed district. To choose them yourself, either set the peer-group parameters below or list institutions in peer_ids, not both. When you set any peer-group parameter, only the ones you set apply, and "same" means the institution's own value. When fewer than ${MIN_INSTITUTIONS_FOR_MEDIAN} peers publish a fee, the median and percentiles are left out. Fees stated as a percentage are listed separately and not compared.`}
           tierNote="Pro"
           params={[
             { name: "institution_id", type: "integer", required: true, description: "Institution ID" },
-            { name: "peer_ids", type: "string", description: "Up to 25 institution IDs, comma-separated, to use as the peer group" },
+            { name: "peer_ids", type: "string", description: `Up to ${MAX_CHOSEN_PEERS} institution IDs, comma-separated, to use as the peer group. Not combined with the parameters below` },
+            ...PEER_GROUP_PARAMS.map((p) => ({ name: p.name, type: "string", description: `${p.description}, e.g. ${p.example}` })),
           ]}
           curlExample={`curl -H "Authorization: Bearer YOUR_API_KEY" \\
-  "${BASE}/peers?institution_id=2466"`}
+  "${BASE}/peers?institution_id=2466"
+
+# Banks with branches in the same metro, $500M to $2B in assets
+curl -H "Authorization: Bearer YOUR_API_KEY" \\
+  "${BASE}/peers?institution_id=2466&charter=bank&market=same&asset_min=500000000&asset_max=2000000000"`}
           responseFields={[
             { name: "peer_group.label", type: "string", note: "Which institutions were compared" },
             { name: "categories[].amount", type: "number", note: "The institution's amount in USD" },
@@ -785,7 +791,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
   "institution": { "id": 2466, "name": "Gateway Bank", "state": "MN", "charter_type": "bank", "asset_tier": "community_mid", "fed_district": 9 },
   "peer_group": {
     "basis": "default",
-    "label": "Banks with $300M to $1B in assets in Fed district 9 (Minneapolis)",
+    "label": "Banks with $300M to $1B in assets in the Minneapolis Fed district",
     "peers_with_fees": 41
   },
   "min_peers": ${MIN_INSTITUTIONS_FOR_MEDIAN},
@@ -819,14 +825,14 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
           method="GET"
           path="/rate-fees"
           summary="Fees stated as a percentage"
-          description="Some fees are a percentage rather than a flat amount, such as 3% of a foreign card purchase. This endpoint lists them with the rate, any dollar minimum or maximum the schedule states, and the link to the schedule. They are kept apart from dollar fees and never included in dollar medians."
+          description="Some fees are a percentage rather than a flat amount, such as a foreign transaction fee charged as a share of the purchase. This endpoint lists them with the rate, any dollar minimum or maximum the schedule states, and the link to the schedule. They are kept apart from dollar fees and never included in dollar medians."
           tierNote="Pro"
           params={[
             { name: "institution_id", type: "integer", description: "One institution's rate fees" },
             { name: "state", type: "string", description: "Two-letter state code" },
             { name: "category", type: "string", description: "Fee category key, such as card_foreign_txn" },
             { name: "charter", type: "string", description: '"bank" or "credit_union"' },
-            { name: "updated_since", type: "string", description: "An ISO 8601 date or time. Only fees published on or after it are returned." },
+            { name: "updated_since", type: "string", description: "An ISO 8601 date or time, such as 2026-10-01 or 2026-10-01T00:00:00Z. Only fees published on or after it are returned." },
             { name: "page", type: "integer", description: "Page number (default: 1)" },
             { name: "limit", type: "integer", description: "Results per page (default: 100, max: 500)" },
           ]}

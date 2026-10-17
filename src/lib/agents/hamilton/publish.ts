@@ -33,6 +33,7 @@ import { DARWIN_SCHEDULE_REFILED_FLAG } from "@/lib/agents/darwin/schedule-refil
 import { priceInName, RULE_WHY, ruleFor } from "@/lib/agents/hamilton/eval-verdicts";
 import { feeKey, reproducibleFees, RULES_RECHECK_REASON } from "@/lib/agents/hamilton/rules-recheck";
 import { closedInstitutionSql } from "@/lib/agents/hamilton/closed-institution";
+import { nonDepositTakedownReason } from "@/lib/agents/darwin/non-deposit-document-check";
 import {
   exactDuplicateDecision,
   PUBLISH_DUPLICATE_REFUSE_REASON_PREFIX,
@@ -73,6 +74,9 @@ export const HAMILTON_PUBLISH_MIN_INSTITUTION_FEES = 3;
  */
 export const CATALOG_DEPTH_LIVE_SQL = (alias: string) =>
   `${alias}.rolled_back_at IS NULL AND ${alias}.quarantined_at IS NULL`;
+
+/** Skip reason of a row Darwin's non-deposit re-check would take down (`nonDepositTakedownReason`). */
+export const NON_DEPOSIT_PUBLISH_REASON_PREFIX = "Refused at publish, Darwin's re-check would take it down: ";
 
 const VALID_CANONICAL_KEYS = new Set(Object.values(CANONICAL_KEY_MAP));
 const BLOCKING_FLAGS = new Set([
@@ -275,6 +279,16 @@ export function publishSkipReason(row: VerifiedFeeRow, minConfidence: number, pr
   if (!row.verified_by_agent_event_id?.trim()) return "Missing Darwin verification event";
   // A blog post or story quotes national averages, not this bank's price (article-page.ts).
   if (isArticlePage(row.source_url)) return "Read from an article page, not a fee schedule";
+  // A lending fee on a loan, rate, card or brokerage page: Darwin's live re-check would take it
+  // down (`non-deposit-document-check.ts`), so it is refused before it is live (takedowns at the
+  // source, 2026-10-17). Same rule, reason and switches.
+  const nonDeposit = nonDepositTakedownReason({
+    documentUrl: row.document_url,
+    sourceDocumentId: row.source_document_id,
+    canonicalFeeKey: row.canonical_fee_key,
+    feeName: publishedFeeName(row.fee_name, row.canonical_fee_key),
+  });
+  if (nonDeposit) return `${NON_DEPOSIT_PUBLISH_REASON_PREFIX}${nonDeposit}`;
   // A $0 benefit bullet on a product page, once James turns the check on (product-page.ts).
   if (row.free_read && normalizedAmount(row.amount) === 0 && isProductPage(row.document_url) && productPageOn) {
     return "Read from a product page's benefits, not a fee schedule";

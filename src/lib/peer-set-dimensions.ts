@@ -1,20 +1,41 @@
 /**
- * The peer-group dimensions a saved peer group keeps beyond charter, asset tier, Fed district,
- * states and hand-picked institutions. Client-safe: no database import, so the Settings form can
- * use it. The lists mirror PEER_REGULATORS and MAX_NEAREST_PEERS in src/lib/data-store/peer-sets.ts
- * (that module reads the database); peer-set-dimensions.test.ts keeps them equal.
- *
- * Saved peer groups store these in saved_peer_sets.filters (jsonb). The basic dimensions stay in
- * their own columns, so older rows and readers are unchanged.
+ * The peer-group dimensions and their query parameters, with no database access, so docs,
+ * the OpenAPI spec and the connector describe them from one list. Resolution lives in
+ * src/lib/data-store/peer-sets.ts.
  */
+export const PEER_REGULATORS = { occ: "OCC", fdic: "FDIC", fed: "Federal Reserve", ncua: "NCUA" } as const;
+export type PeerRegulator = keyof typeof PEER_REGULATORS;
+export const MAX_NEAREST_PEERS = 100;
+export const MAX_CHOSEN_PEERS = 25;
 
-export const PEER_REGULATOR_LABELS = { occ: "OCC", fdic: "FDIC", fed: "Federal Reserve", ncua: "NCUA" } as const;
+/** Query parameters that define a peer group. "same" takes the institution's own value. */
+export const PEER_GROUP_PARAMS = [
+  { name: "charter", example: "bank", description: "bank, credit_union or same" },
+  { name: "asset_tier", example: "community_mid,community_large", description: "Asset-size tiers, comma-separated, or same" },
+  { name: "asset_min", example: "500000000", description: "Minimum total assets, in whole dollars" },
+  { name: "asset_max", example: "2000000000", description: "Maximum total assets, in whole dollars" },
+  { name: "state", example: "TX,OK", description: "Two-letter state codes, comma-separated, or same" },
+  { name: "district", example: "11", description: "Fed districts 1-12, comma-separated, or same" },
+  { name: "regulator", example: "occ,fed", description: "occ, fdic, fed or ncua, comma-separated, or same" },
+  { name: "cu_charter", example: "federal", description: "Credit unions only: federal, state or same" },
+  { name: "holding_company", example: "same", description: "Holding company RSSD id, or same for the institution's own" },
+  { name: "market", example: "same", description: "Metro (MSA) code, or same for the metro holding most of the institution's branches. Peers are institutions with a branch there." },
+  { name: "nearest", example: "20", description: `The N institutions closest in total assets (1-${MAX_NEAREST_PEERS}) among those meeting the other parameters and publishing fees` },
+] as const;
+
+/*
+ * Saved Hamilton peer groups keep these dimensions beyond charter, asset tier, Fed district,
+ * states and hand-picked institutions, in saved_peer_sets.filters (jsonb). The basic dimensions
+ * stay in their own columns, so older rows and readers are unchanged. Client-safe, so the
+ * Settings form can use it.
+ */
+export const PEER_REGULATOR_LABELS = PEER_REGULATORS;
 export type SavedPeerRegulator = keyof typeof PEER_REGULATOR_LABELS;
 export const SAVED_PEER_REGULATORS = Object.keys(PEER_REGULATOR_LABELS) as SavedPeerRegulator[];
 export const CU_CHARTERS = ["federal", "state"] as const;
 export type CuCharter = (typeof CU_CHARTERS)[number];
 /** The most institutions "closest in total assets" may keep. */
-export const MAX_NEAREST_PEER_COUNT = 100;
+export const MAX_NEAREST_PEER_COUNT = MAX_NEAREST_PEERS;
 
 export interface SavedPeerDimensions {
   /** Total assets in whole dollars, inclusive. */

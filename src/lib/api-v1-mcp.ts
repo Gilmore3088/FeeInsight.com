@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { validateApiKey } from "@/lib/api-auth";
 import { PRODUCT_NAME, SITE_URL } from "@/lib/constants";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
+import { PEER_GROUP_PARAMS } from "@/lib/peer-set-dimensions";
 
 /**
  * A Model Context Protocol server over the /api/v1 endpoints, so an AI
@@ -336,7 +337,7 @@ const TOOLS: ToolDefinition[] = [
     name: "get_peer_comparison",
     title: "Fees against peers",
     description:
-      "One institution's published dollar fees, category by category, next to its peers: the peer median, 25th and 75th percentiles, how many peers publish the fee, and the institution's percentile among them (the share of peers with a lower amount, counting half of ties). Peers default to the same charter type, asset size and Fed district; or name up to 25 with peer_ids. " +
+      "One institution's published dollar fees, category by category, next to its peers: the peer median, 25th and 75th percentiles, how many peers publish the fee, and the institution's percentile among them (the share of peers with a lower amount, counting half of ties). Peers default to the same charter type, asset size and Fed district. Or define them with any of charter, asset_tier, asset_min, asset_max, state, district, regulator, cu_charter, holding_company, market and nearest (only those given apply; \"same\" means the institution's own value), or name up to 25 with peer_ids. " +
       `Figures are left out when fewer than ${MIN_INSTITUTIONS_FOR_MEDIAN} peers publish a fee. Fees stated as a rate are listed apart, not compared.`,
     inputSchema: {
       type: "object",
@@ -346,6 +347,7 @@ const TOOLS: ToolDefinition[] = [
           type: "string",
           description: "Optional institution ids to compare against instead of the default peers, comma-separated, at most 25, e.g. 12,48,301",
         },
+        ...Object.fromEntries(PEER_GROUP_PARAMS.map((p) => [p.name, { type: "string", description: `${p.description}, e.g. ${p.example}` }])),
       },
       required: ["institution_id"],
       additionalProperties: false,
@@ -364,7 +366,11 @@ const TOOLS: ToolDefinition[] = [
       } else {
         peers = optionalString(args, "peer_ids");
       }
-      return compact({ institution_id: id, peer_ids: peers });
+      const group = Object.fromEntries(PEER_GROUP_PARAMS.map((p) => {
+        const value = args[p.name];
+        return [p.name, typeof value === "number" ? String(value) : optionalString(args, p.name)];
+      }));
+      return compact({ institution_id: id, peer_ids: peers, ...group });
     },
   },
   {

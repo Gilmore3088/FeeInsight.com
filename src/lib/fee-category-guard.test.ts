@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { amountEnvelopeFor } from "@/lib/agents/darwin/envelopes";
 
-import { checkFeeCategory, GUARDED_CATEGORIES, refileCategory, refileFromLine } from "./fee-category-guard";
+import { cardProductMisfile, checkFeeCategory, GUARDED_CATEGORIES, refileCategory, refileFromLine } from "./fee-category-guard";
 
 describe("checkFeeCategory", () => {
   it("passes keys it does not guard", () => {
@@ -1649,5 +1649,116 @@ describe("guard v69 (Oct 17)", () => {
     ]) {
       expect(checkFeeCategory("atm_non_network", name), name).toEqual({ ok: true });
     }
+  });
+});
+
+describe("guard v70: card-product fees, card inactivity and skipped loan payments", () => {
+  it("refuses card-product fees filed as the non-network ATM fee (each on its bank's stored line, Oct 17)", () => {
+    for (const name of [
+      "ATM/Debit Card - Monthly Fee",
+      "ATM Only Cardholder Fee (monthly)",
+      "ATM/VISA™ Debit Card Holder Fee",
+      "Visa Debit/ATM Card Maintenance",
+      "ATM or Debit Card Maint.. Fee",
+      "ATM/Check Card Maintenance Fee - Monthly",
+      "ATM/Debit Card Service Fee (per month)",
+      "ATM /Debit Card Monthly Fee for Share Account Access (if no checking account)",
+      "Savings with only an ATM Card (per month) Fee",
+      "Monthly ATM Access Charge",
+      "Monthly ATM DEBIT fee",
+      "ATM Monthly Service Charge",
+      "ATM - Access of Membership Share",
+      "ATM savings account access only",
+      "ATM Access Fee with Select or PLUS Checking",
+      "ATM/Debit Card Issue Fee",
+      "ATM/Visa Check Card First Issue Fee",
+      "Card Services ATM Card Issuance Service Charge",
+      "ATM Debit Card Activation Fee",
+      "ATM or Debit Card Origination",
+      "per card ATM Card or Debit Card Re-Activation ........",
+      "Reinstate Suspended Checking/Debit/ATM/Credit Card Privileges",
+      "Temporary Limit Increase Debit/ATM Card",
+      "DEBIT ATM/POS Limit Increase",
+      "Debit / ATM Card Inactivity",
+      "Dormant ATM/Debit Fee",
+      "Inactive Debit/ATM/Visa (after 90 days) (per billing period)",
+      "ATM point of sale",
+      "ATM Point of Sale (POS) Fee",
+      "ATM POS Purchase",
+      "POS w/ATM card transactions",
+      "ATM Activity Fee (Point-of-Sale Transactions only)",
+    ]) {
+      const verdict = checkFeeCategory("atm_non_network", name);
+      expect(verdict.ok, name).toBe(false);
+      expect(cardProductMisfile("atm_non_network", name), name).not.toBeNull();
+      // Without the card-product rule the guard passes it, so the switch holds exactly these.
+      expect(checkFeeCategory("atm_non_network", name, undefined, { cardProducts: false }), name).toEqual({ ok: true });
+      // No home among the 50: nothing re-files it.
+      expect(refileCategory("atm_non_network", name), name).toBe("atm_non_network");
+    }
+  });
+
+  it("keeps ATM use, including card and POS words beside a withdrawal, inquiry, network or denial", () => {
+    for (const name of [
+      "ATM Card Usage Over 8 per month",
+      "ATM withdrawals in excess of 8 a month(Visa Debit Card)",
+      "ATM Monthly Fee (7 or more transactions)",
+      "ATM Access Fee (8 free per month) after 8 per Month",
+      "ATM/POS User Fee at a Terminal not owned by us (Withdrawal or Inquiry)",
+      "ATM card withdrawal, purchase (POS)",
+      "Foreign ATM Inquiry Fee (Point of Sale Terminal)",
+      "ATM/POS Activity Charge",
+      "ATM Withdrawal/POS transactions in excess of 1 per month",
+      "Nuvision ATM or Visa Debit Card",
+      "ATM /Debit Card Services",
+      "ATM Service Charge",
+    ]) {
+      expect(cardProductMisfile("atm_non_network", name), name).toBeNull();
+    }
+  });
+
+  it("re-files an ATM-named bill payer service and an early-closure card charge", () => {
+    expect(refileCategory("atm_non_network", "e-Pay (Bill Payer Service) without Checking and Debit/ATM Card")).toBe("bill_pay");
+    expect(refileCategory("atm_non_network", "Account Closure ATM/Debit Card - if account closed within 12 months")).toBe("early_closure");
+  });
+
+  it("refuses a card's inactivity filed as a dormant account, and keeps the account's own dormancy", () => {
+    for (const name of [
+      "Inactive Debit Card Per month",
+      "Inactive Credit Card Per month",
+      "Dormant debit card",
+      "Inactive Card for 90 Days or More (Business)",
+      "Inactive card fee",
+      "Debit/Check Card Inactivity Fee (Inactivity for 180 days or more)",
+      "Debit Card Inactivity Annual Fee (after 12 months)",
+      "Inactive Visa® Debit Card (no activity for 6+ months)",
+      "DEBIT CARD INACTIVE FEE",
+      "Debit Card, Inactive: 6 mo",
+      "Card Inactivity Fee (No activity within 12 months)",
+      "Debit Card Inactivity Fee After 12 months of non- use",
+    ]) {
+      expect(checkFeeCategory("dormant_account", name).ok, name).toBe(false);
+      expect(checkFeeCategory("dormant_account", name, undefined, { cardProducts: false }), name).toEqual({ ok: true });
+    }
+    for (const name of [
+      "Dormant Checking fee",
+      "Inactivity Fee",
+      "Inactive Account Fee (no deposits, withdrawals or debit card transactions for 12 months)",
+      "Dormant/Inactive Accounts",
+    ]) {
+      expect(checkFeeCategory("dormant_account", name), name).toEqual({ ok: true });
+    }
+  });
+
+  it("moves a skipped loan payment out of late payment and loan origination to other lending", () => {
+    for (const name of ["Skip-A-Pay Fee", "Skip A Payment (each)", "One Time Skip Payment", "Holiday skip payment program", "Extension Agreement or Skip Pay"]) {
+      expect(checkFeeCategory("late_payment", name).ok, name).toBe(false);
+      expect(refileCategory("late_payment", name), name).toBe("other_lending_fee");
+    }
+    expect(refileCategory("loan_origination", "Loan Extension (Skip-A-Pay)")).toBe("other_lending_fee");
+    expect(refileCategory("loan_origination", "Consumer Loan Extension/Skip Payment")).toBe("other_lending_fee");
+    expect(refileCategory("late_payment", "Auto overdraft from shares Loan Skip Payment fee")).toBe("late_payment");
+    expect(checkFeeCategory("late_payment", "Late Payment Fee")).toEqual({ ok: true });
+    expect(checkFeeCategory("loan_origination", "Loan Extension Fee")).toEqual({ ok: true });
   });
 });

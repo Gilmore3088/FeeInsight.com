@@ -1,0 +1,18 @@
+Check the source behind any figure
+==================================
+
+Before a number goes in front of your committee, you should be able to show where it came from. Each institution's public profile names the published fee schedule we read and the date we read it.
+
+[ TRY IT ONCE ]
+1. Open Hamilton and pick a fee where you and your peers differ.
+2. Find the competitor whose fee is furthest from yours, open its public profile on feeinsight.com, and follow the fee schedule link.
+3. If the schedule disagrees with what we show, reply with the institution and fee. We re-check it.
+
+Open Hamilton: https://feeinsight.com/pro/hamilton
+
+James Gilmore, Fee Insight
+
+--
+Fee Insight LLC, 522 W Riverside Ave, Ste N, Spokane, WA 99201
+You're getting this because your team subscribes to Hamilton.
+Unsubscribe: {$unsubscribe}
