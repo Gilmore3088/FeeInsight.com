@@ -1,4 +1,5 @@
 import { hamiltonIdentityLines, readHamiltonIdentitySnapshot } from "@/lib/hamilton/identity-display";
+import { INTERPRETATION_LABEL } from "@/lib/hamilton/narrative-bound";
 /**
  * PdfDocument — @react-pdf/renderer document component.
  * Server-side ONLY. Never import this in client components.
@@ -449,6 +450,14 @@ function ConsultantPdfBody({ report }: { report: ReportSummaryResponse }) {
       <View style={styles.section}>
         <Text style={styles.sectionHeading}>What Is Behind It</Text>
         <PdfParagraphs text={report.strategicRationale} />
+        {report.boardBrief?.reading?.length ? (
+          <View style={styles.metadataStrip} wrap={false}>
+            <Text style={styles.answerLabel}>{INTERPRETATION_LABEL}</Text>
+            {report.boardBrief.reading.map((sentence, i) => (
+              <Text key={i} style={styles.noteItem}>— {sentence}</Text>
+            ))}
+          </View>
+        ) : null}
       </View>
 
       <View style={styles.section}>

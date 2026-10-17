@@ -18,6 +18,7 @@ import {
   type SavedEvidenceFactRow,
 } from "./evidence-export";
 import type { SourceRef } from "./workspace/types";
+import { exportedAnswer } from "./written-answer-binding";
 
 /** A source date as a board reads it: "2026-10-12T00:00:00.000Z" -> "Oct 12, 2026"; anything else as saved. */
 export function readerAsOf(asOf: string): string {
@@ -144,17 +145,20 @@ export function boardBriefFromAnalysis(analysis: AnalyzeResponse & { factEvidenc
   const title = edits.title.trim().slice(0,200) || fallback;
   const limits = savedAnswerLimits(analysis);
   const records = edits.includeEvidence ? evidenceRecordsExhibit(analysis) : null;
+  // The answer as the screen shows it (#981 H06-T08): left-out sentences stay out and Hamilton's
+  // reading is printed apart, under its label, never inline with the findings.
+  const shown = exportedAnswer(analysis);
   return {
     title,
     ...(analysis.identityContext ? { identityContext: analysis.identityContext } : {}),
-    boardBrief: { sourceAnalysisId: analysisId, teamNote: edits.teamNote.slice(0,5000), includeEvidence: edits.includeEvidence, ...(analysis.factEvidence ? { factEvidence: analysis.factEvidence } : {}) },
+    boardBrief: { sourceAnalysisId: analysisId, teamNote: edits.teamNote.slice(0,5000), includeEvidence: edits.includeEvidence, ...(analysis.factEvidence ? { factEvidence: analysis.factEvidence } : {}), ...(shown.reading.length ? { reading: shown.reading } : {}) },
     // A board brief reports findings; it never lists actions for the institution. Ask's follow-up
     // suggestions become questions the committee may want answered.
-    answer: { headline: analysis.hamiltonView, decisions: [] },
+    answer: { headline: shown.hamiltonView, decisions: [] },
     watchlist: analysis.exploreFurther,
-    executiveSummary: [analysis.hamiltonView],
+    executiveSummary: [shown.hamiltonView],
     snapshot: [],
-    strategicRationale: [analysis.whatThisMeans, ...analysis.whyItMatters].filter(Boolean).join("\n\n"),
+    strategicRationale: [shown.whatThisMeans, ...shown.whyItMatters].filter(Boolean).join("\n\n"),
     tradeoffs: limits.map(value => ({ label: "Evidence limitation", value })),
     recommendation: limits.length ? limits.join("\n\n") : "Hamilton recorded no limits for this answer.",
     implementationNotes: ["Built from a saved Hamilton answer. Figures are as first saved and were not refreshed.", ...(edits.teamNote.trim() ? [`Team note (user-authored): ${edits.teamNote.trim().slice(0,5000)}`] : [])],

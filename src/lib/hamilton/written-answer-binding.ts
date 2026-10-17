@@ -258,3 +258,37 @@ export function boundFallbackLead(bound: BoundWrittenAnswer<WrittenAnswerSection
   if (bound.reading.length > 0) return READING_ONLY_LEAD;
   return writtenAnswerProse(bound.sections).trim() ? PART_LEFT_OUT_LEAD : ALL_LEFT_OUT_LEAD;
 }
+
+/** The sentence binding a saved answer carries: a written answer's own, else its memo's. */
+export function savedAnswerBinding(analysis: { narrativeBinding?: unknown; memo?: { narrativeBinding?: unknown } | null }): NarrativeBinding | null {
+  return readNarrativeBinding(analysis.narrativeBinding) ?? readNarrativeBinding(analysis.memo?.narrativeBinding);
+}
+
+/** A saved answer as an export prints it (#981 H06-T08, #980 H05-T07). */
+export interface ExportedAnswer {
+  /** The opening line: the first supported sentence of the view, or the plain lead when none is left. */
+  hamiltonView: string;
+  whatThisMeans: string;
+  whyItMatters: string[];
+  /** Sentences printed only under `INTERPRETATION_LABEL`, as the screen shows them. */
+  reading: string[];
+}
+
+/**
+ * The saved answer the way the screen shows it, for the PDF and the board brief: sentences the
+ * records contradict are left out, Hamilton's reading moves under its label, and a view with no
+ * supported sentence opens on the same plain lead the screen uses. An answer with no binding
+ * (saved before it, or written with no fee record) is printed as saved.
+ */
+export function exportedAnswer(analysis: WrittenAnswerSections & { narrativeBinding?: unknown; memo?: { narrativeBinding?: unknown } | null }): ExportedAnswer {
+  const binding = savedAnswerBinding(analysis);
+  const sections = { hamiltonView: analysis.hamiltonView ?? "", whatThisMeans: analysis.whatThisMeans ?? "", whyItMatters: analysis.whyItMatters ?? [] };
+  const bound = applyNarrativeBinding(sections, binding);
+  const lead = binding ? boundFallbackLead(bound) : null;
+  return {
+    hamiltonView: lead ?? bound.sections.hamiltonView,
+    whatThisMeans: bound.sections.whatThisMeans,
+    whyItMatters: bound.sections.whyItMatters,
+    reading: bound.reading,
+  };
+}
