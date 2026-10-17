@@ -1101,6 +1101,8 @@ async function executeAgenticStep(
       // state's live rows. One publish step at a time keeps two sweeps from locking the
       // same rows in opposite orders; the lock ends with this step's transaction.
       await tx`SELECT pg_advisory_xact_lock(hashtext('agents.hamilton.publish'))`;
+      // Phase times go on the step's detail (`phase_ms`), so a slow publish names its slow part.
+      const publishStartedAt = Date.now();
       const institutionId = numericRunParam(params, ["institution_id"]);
       // A takedown is never final: fees an earlier sweep took down come back once a range
       // widens or the taxonomy gains their category.
@@ -1416,6 +1418,7 @@ async function executeAgenticStep(
         stateCode,
       });
       const recheckRestores = rulesRecheck?.restores.length ?? 0;
+      const publishRowsStartedAt = Date.now();
       const published = await runHamiltonPublish({
         runId: run.id,
         stepId: step.id,
@@ -1429,8 +1432,12 @@ async function executeAgenticStep(
           "confidence_threshold",
         ]),
         minInstitutionFees: numericRunParam(params, ["publish_min_institution_fees"]),
+        // The row loop stops here (after PUBLISH_MIN_ROWS_PER_STEP rows) so the whole step ends
+        // inside the tick; the rows it leaves publish on the next step (2026-10-17 finding).
+        deadlineAt: publishStartedAt + PUBLISH_ROW_DEADLINE_MS,
         db: tx,
       });
+      const publishRowsEndedAt = Date.now();
       // #1069: a fee this step just published that repeats a live row (a new read that only
       // fills its frequency or names its audience) is collapsed now, not on the state's next
       // step: until then the catalog listed the fee twice (88 a day, about 40 hours, Oct 13).
@@ -2161,6 +2168,17 @@ async function executeAgenticStep(
           outcomes: published.outcomes,
           learning_log: published.learning,
           publish_limit: published.limit,
+          publish_time_box: {
+            deadline_ms: PUBLISH_ROW_DEADLINE_MS,
+            stopped: published.timeBox.stopped,
+            rows_left: published.timeBox.rowsLeft,
+            top_up_skipped: published.timeBox.topUpSkipped,
+          },
+          phase_ms: {
+            sweeps_before: publishRowsStartedAt - publishStartedAt,
+            publish_rows: publishRowsEndedAt - publishRowsStartedAt,
+            sweeps_after: Date.now() - publishRowsEndedAt,
+          },
           publish_min_confidence: published.minConfidence,
           publish_min_institution_fees: published.minInstitutionFees,
           held_thin_fees: published.heldFees,
@@ -3542,9 +3560,15 @@ async function providerStepGate(
  * discover-paid 2 / 5 / 5, read-paid 60 / 127 / 153, extract 52 / 76 / 153 (23 / 62 before #1291's
  * scans), extract-paid 14 / 50 / 66, classify 15 / 28 / 46, verify-paid 0.4 / 3.5 / 13,
  * publish 78 / 131 / 164. Steps not re-measured keep their 2026-10-07 p99.
+ *
+ * Re-measured 2026-10-17 over 24 hours (`docs/project/findings/2026-10-17-steps-overrun-tick-budget.md`):
+ * eleven steps ran past their setting at p99, and publish, extract, classify and discover-paid
+ * were killed at the tick's 300 s limit (21 reaped steps started inside a tick). Each is now about
+ * its p99, so a step starts only when it can finish inside the 270 s budget.
  */
 const STEP_EXPECTED_MS: Record<string, number> = {
-  "discover-paid": 10_000,
+  // Re-measured 2026-10-17: p50 65 s, p90 143 s, p99 160 s.
+  "discover-paid": 165_000,
   "registry-cfpb": 180_000,
   // Paced to about ten Open States requests a minute; a run ends within about two minutes.
   "registry-state-bills": 120_000,
@@ -3554,16 +3578,19 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   // No new item starts after 100 s; up to three page reads and model calls in flight.
   "registry-wire-research": 150_000,
   "read-paid": 110_000,
-  read: 15_000,
-  discover: 115_000,
+  read: 30_000,
+  discover: 135_000,
   "report-render": 110_000,
   rescue: 110_000,
-  "extract-paid": 40_000,
+  "extract-paid": 80_000,
   "verify-paid": 10_000,
-  fetch: 30_000,
-  extract: 40_000,
-  publish: 105_000,
-  classify: 25_000,
+  fetch: 45_000,
+  // 2026-10-17: Knox lessons' restored-fee read alone averages 53 s (pg_stat_statements).
+  extract: 165_000,
+  // 2026-10-17: p50 38 s, p90 133 s, p99 221 s, max 278 s (TX). The row loop now stops at
+  // PUBLISH_ROW_DEADLINE_MS; re-measure from `phase_ms` before lowering this.
+  publish: 225_000,
+  classify: 160_000,
   // p50 238 s, p90 367 s, max 1,101 s: it never fits a tick, so the tick does not start it
   // (`TICK_EXCLUDED_STEP_KEYS`); its own route runs it.
   "hamilton-answer-eval": 400_000,
@@ -3571,6 +3598,10 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   "hamilton-paid-answer-eval": 280_000,
   // A few dozen draft rows and one catalog check each (growth/withdraw.ts).
   "growth-withdraw": 30_000,
+  // Quick-prefixed steps measured over the 30 s quick default (2026-10-17 p99: 57 s, 89-110 s, 48 s).
+  "public-discovery": 60_000,
+  "registry-ncua-extras": 110_000,
+  "registry-cfpb-card-agreements": 50_000,
 };
 /**
  * Steps the tick never starts, because they do not fit its 270 s budget even alone: the tick
@@ -3581,6 +3612,12 @@ const STEP_EXPECTED_MS: Record<string, number> = {
 export const TICK_EXCLUDED_STEP_KEYS = ["hamilton-answer-eval", "hamilton-paid-answer-eval"] as const;
 /** Steps not listed above: most run in seconds, so this keeps an unknown long one safe. */
 const DEFAULT_STEP_EXPECTED_MS = 120_000;
+/**
+ * A publish step's row loop stops this long after the step began (once it has decided
+ * PUBLISH_MIN_ROWS_PER_STEP rows); the rows left publish on the next step. TX's 278 s publish
+ * (run 8004, Oct 17) ran past the tick's 300 s limit when it started 163 s in.
+ */
+export const PUBLISH_ROW_DEADLINE_MS = 120_000;
 /** Steps measured at a few seconds at most (state-expert, enhance, public-*, registry-*). */
 const QUICK_STEP_EXPECTED_MS = 30_000;
 const QUICK_STEP_PREFIXES = ["registry-", "public-", "state-expert", "enhance", "lead-watch", "indexnow-ping", "category-guard"];
@@ -3643,11 +3680,13 @@ export function isLaneRoomRun(source: string | null | undefined): boolean {
 }
 
 /**
- * A state re-search run (`atlas.priority_state_research`) idle this long, with no step finished
- * since it was queued or since its last step, takes one step without leaving lane room: about three
- * 5-minute ticks. Its `discover` (115 s) never fits the ~95 s a fresh lane's first work (~175 s)
- * leaves of the 270 s tick, so while fresh lanes kept arriving behind it, it never started (#1421).
- * Read-now runs keep lane room: their steps are short.
+ * A direct run (`LANE_ROOM_SOURCES`: a state re-search or a Read-now / hand-found institution run)
+ * idle this long, with no step finished since it was queued or since its last step, takes one step
+ * without leaving lane room. A state re-search's `discover` never fit the room a fresh lane's
+ * first work leaves of the 270 s tick, so while fresh lanes kept arriving behind it, it never
+ * started (#1421). Since the 2026-10-17 re-measure a fresh lane's first work is ~185 s, so a
+ * Read-now run's publish (225 s) or extract (165 s) no longer fits the ~85 s left either; it now
+ * waits out lane room the same way.
  *
  * The bound is firm only when the re-search run is the tick's first row. Several waiting re-search
  * runs in one tick can each take a step ahead of the lane, so together they can still eat into
@@ -3656,7 +3695,7 @@ export function isLaneRoomRun(source: string | null | undefined): boolean {
 export const LANE_ROOM_MAX_IDLE_MS = 15 * 60_000;
 
 export function waitedOutLaneRoom(source: string | null | undefined, idleMs: number | null | undefined): boolean {
-  return source === "atlas.priority_state_research" && Number(idleMs ?? 0) >= LANE_ROOM_MAX_IDLE_MS;
+  return isLaneRoomRun(source) && Number(idleMs ?? 0) >= LANE_ROOM_MAX_IDLE_MS;
 }
 
 /** Expected time to a lane run's first real work, from its queued steps (`expectedMsToFirstWork`). */
@@ -3671,6 +3710,26 @@ async function laneFirstWorkMs(runId: number): Promise<number> {
   } catch (error) {
     console.error("laneFirstWorkMs failed:", error);
     return 0;
+  }
+}
+
+/**
+ * A step left queued because it could not finish by the tick's deadline: one `step.deferred`
+ * event on the run ledger, naming the step, its expected time and the time the tick had left.
+ * The step runs in a later tick. A failed write never stops the tick.
+ */
+export async function recordStepDeferral(runId: number, stepKey: string | null, expectedMs: number, msLeft: number): Promise<void> {
+  try {
+    await sql`
+      INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+      VALUES (
+        ${runId}, 'step.deferred', 'queued',
+        ${`${stepKey ?? "Next step"} left queued: it needs about ${Math.round(expectedMs / 1000)} s and the tick has ${Math.max(0, Math.round(msLeft / 1000))} s left.`},
+        ${JSON.stringify({ step_key: stepKey, expected_ms: expectedMs, ms_left: Math.max(0, Math.round(msLeft)) })}::jsonb
+      )
+    `;
+  } catch (error) {
+    console.error("recordStepDeferral failed:", error);
   }
 }
 
@@ -3788,6 +3847,7 @@ export async function executeAgentRun(
   if (options.alwaysRunFirstStep === false && options.deadlineAt != null) {
     const keys = await peekQueuedStepKeys(runId, maxSteps);
     if (Date.now() + expectedMsToFirstWork(keys) > options.deadlineAt) {
+      await recordStepDeferral(runId, keys[0] ?? null, expectedMsToFirstWork(keys), options.deadlineAt - Date.now());
       return {
         runId,
         status: existing.status,
@@ -3807,7 +3867,10 @@ export async function executeAgentRun(
     if (index > 0 && nextStepKey && heldByPause(nextStepKey, pipeline, marketing)) break;
     const firstOfTick = index === 0 && (options.alwaysRunFirstStep ?? true);
     if (!firstOfTick && options.deadlineAt != null
-      && Date.now() + expectedStepMs(nextStepKey) > options.deadlineAt) break;
+      && Date.now() + expectedStepMs(nextStepKey) > options.deadlineAt) {
+      await recordStepDeferral(runId, nextStepKey, expectedStepMs(nextStepKey), options.deadlineAt - Date.now());
+      break;
+    }
     // Provider steps (paid model calls) additionally require the global automation
     // stop to be clear and the caller to have provider budget for this tick.
     if (nextStepKey && isProviderStep(nextStepKey)) {
@@ -3853,6 +3916,7 @@ export async function executeAgentRun(
       // The wait used tick time: start the step only if it still fits.
       if (options.deadlineAt != null && Date.now() + expectedStepMs(nextStepKey) > options.deadlineAt) {
         releaseTurn();
+        await recordStepDeferral(runId, nextStepKey, expectedStepMs(nextStepKey), options.deadlineAt - Date.now());
         break;
       }
     }
