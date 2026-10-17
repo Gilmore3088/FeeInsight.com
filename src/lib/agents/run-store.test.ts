@@ -1357,17 +1357,22 @@ describe("agentic run store", () => {
     expect(started.heldForDeadline).toBeUndefined();
     expect(withTransactionMock).toHaveBeenCalled();
 
-    // A Read-now run keeps leaving the lane its room however long it waits.
+    // A Read-now run's publish (225 s since the 2026-10-17 re-measure) never fits the room a fresh
+    // lane leaves either, so it waits out lane room the same way and starts by the fourth tick.
     const readNow = { source: "atlas.priority_institution", step: "publish" };
-    for (const n of [0, 3, 12]) {
+    for (const n of [0, 1, 2]) {
       expect(await tick(n, readNow)).toMatchObject({ runId: 101, executedSteps: 0, heldForDeadline: true });
     }
+    withTransactionMock.mockClear();
+    const readNowStarted = await tick(3, readNow);
+    expect(readNowStarted.heldForDeadline).toBeUndefined();
+    expect(withTransactionMock).toHaveBeenCalled();
   });
 
   it("counts a lane run's quick first steps together with the first real step", () => {
     // enhance + state-expert are quick; a later run must also fit discover, or it would
     // count as under way after only the quick steps and jump ahead of retries.
-    expect(expectedMsToFirstWork(["enhance", "state-expert", "discover", "discover-paid"])).toBe(185_000);
+    expect(expectedMsToFirstWork(["enhance", "state-expert", "discover", "discover-paid"])).toBe(195_000);
     expect(expectedMsToFirstWork(["fetch", "read"])).toBe(45_000);
     // public-discovery has its own measured entry now, so it is real work, not a quick step.
     expect(expectedMsToFirstWork(["public-discovery"])).toBe(60_000);

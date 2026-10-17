@@ -23,7 +23,7 @@ Across the 24 hours to 20:45 UTC (prod `agent_run_steps` and `agent_run_events`,
 
 A step measured at 105 s that really takes 278 s passes the check late in a tick, and is then killed.
 
-**Fix:** PR (Foundation, step timing). Not merged at the time of writing.
+**Fix:** #1844 (Foundation, step timing). Not merged at the time of writing.
 - `STEP_EXPECTED_MS` is set at about the 24-hour p99 for eleven steps.
 - The publish row loop stops 120 s into the step (`PUBLISH_ROW_DEADLINE_MS`), once it has decided 50 rows. The rows left get no attempt and publish on the next step. A step past that point also skips the cross-state top-up.
 - The publish step records `phase_ms` (`sweeps_before`, `publish_rows`, `sweeps_after`) and `publish_time_box`.

@@ -3579,7 +3579,7 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   "registry-wire-research": 150_000,
   "read-paid": 110_000,
   read: 30_000,
-  discover: 125_000,
+  discover: 135_000,
   "report-render": 110_000,
   rescue: 110_000,
   "extract-paid": 80_000,
@@ -3598,9 +3598,9 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   "hamilton-paid-answer-eval": 280_000,
   // A few dozen draft rows and one catalog check each (growth/withdraw.ts).
   "growth-withdraw": 30_000,
-  // Quick-prefixed steps measured over the 30 s quick default (2026-10-17 p99: 57 s, 89 s, 48 s).
+  // Quick-prefixed steps measured over the 30 s quick default (2026-10-17 p99: 57 s, 89-110 s, 48 s).
   "public-discovery": 60_000,
-  "registry-ncua-extras": 90_000,
+  "registry-ncua-extras": 110_000,
   "registry-cfpb-card-agreements": 50_000,
 };
 /**
@@ -3680,11 +3680,13 @@ export function isLaneRoomRun(source: string | null | undefined): boolean {
 }
 
 /**
- * A state re-search run (`atlas.priority_state_research`) idle this long, with no step finished
- * since it was queued or since its last step, takes one step without leaving lane room: about three
- * 5-minute ticks. Its `discover` (115 s) never fits the ~95 s a fresh lane's first work (~175 s)
- * leaves of the 270 s tick, so while fresh lanes kept arriving behind it, it never started (#1421).
- * Read-now runs keep lane room: their steps are short.
+ * A direct run (`LANE_ROOM_SOURCES`: a state re-search or a Read-now / hand-found institution run)
+ * idle this long, with no step finished since it was queued or since its last step, takes one step
+ * without leaving lane room. A state re-search's `discover` never fit the room a fresh lane's
+ * first work leaves of the 270 s tick, so while fresh lanes kept arriving behind it, it never
+ * started (#1421). Since the 2026-10-17 re-measure a fresh lane's first work is ~185 s, so a
+ * Read-now run's publish (225 s) or extract (165 s) no longer fits the ~85 s left either; it now
+ * waits out lane room the same way.
  *
  * The bound is firm only when the re-search run is the tick's first row. Several waiting re-search
  * runs in one tick can each take a step ahead of the lane, so together they can still eat into
@@ -3693,7 +3695,7 @@ export function isLaneRoomRun(source: string | null | undefined): boolean {
 export const LANE_ROOM_MAX_IDLE_MS = 15 * 60_000;
 
 export function waitedOutLaneRoom(source: string | null | undefined, idleMs: number | null | undefined): boolean {
-  return source === "atlas.priority_state_research" && Number(idleMs ?? 0) >= LANE_ROOM_MAX_IDLE_MS;
+  return isLaneRoomRun(source) && Number(idleMs ?? 0) >= LANE_ROOM_MAX_IDLE_MS;
 }
 
 /** Expected time to a lane run's first real work, from its queued steps (`expectedMsToFirstWork`). */
