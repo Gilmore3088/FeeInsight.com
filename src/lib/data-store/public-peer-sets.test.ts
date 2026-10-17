@@ -27,18 +27,18 @@ describe("public peer sets", () => {
     vi.mocked(getHomeMarket).mockResolvedValue(null);
     const choices = await getInstitutionPeerChoices(323);
     expect(choices.map((c) => [c.key, c.label])).toEqual([
-      ["state", "Banks in FL"],
-      ["district", "Banks in Fed district 6 (Atlanta)"],
+      ["state", "Banks in Florida"],
+      ["district", "Banks in the Atlanta Fed district"],
       ["size", "Banks with $1B to $10B in assets"],
-      ["regulator", "Banks regulated by Federal Reserve"],
+      ["regulator", "Banks regulated by the Federal Reserve"],
       ["nearest", "The 25 banks closest in assets"],
     ]);
   });
 
   it("names the state groups in plain words", () => {
     const labels = statePeerDefinitions("TX").map(({ def }) => describePeerSet(def));
-    expect(labels).toContain("Institutions with under $300M in assets in TX");
-    expect(labels).toContain("Banks regulated by OCC in TX");
-    expect(labels).toContain("Federal credit unions in TX");
+    expect(labels).toContain("Institutions under $300M in assets in Texas");
+    expect(labels).toContain("Banks regulated by the OCC in Texas");
+    expect(labels).toContain("Federal credit unions in Texas");
   });
 });
