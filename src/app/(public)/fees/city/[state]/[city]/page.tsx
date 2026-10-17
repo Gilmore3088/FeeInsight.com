@@ -313,8 +313,8 @@ export default async function CityFeePage({ params, searchParams }: PageProps) {
           </div>
           {unplotted > 0 && (
             <p className="mt-2 text-[12px] text-ink-muted">
-              The map shows {market.points.length} of {cov.branches} branch locations. {unplotted} {unplotted === 1 ? "has" : "have"} no
-              map coordinates in the FDIC or NCUA branch records, so {unplotted === 1 ? "it is" : "they are"} counted but not plotted.
+              {market.points.length} of {cov.branches} branch locations are shown. {unplotted} {unplotted === 1 ? "has" : "have"} no
+              coordinates in the FDIC or NCUA branch records, so {unplotted === 1 ? "it is" : "they are"} counted but not shown.
             </p>
           )}
         </section>

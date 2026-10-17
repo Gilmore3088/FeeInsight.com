@@ -264,6 +264,12 @@ export default function BranchMapGL({
         map.getCanvas().style.cursor = "";
       });
       map.once("idle", () => {
+        // Dots on a blank background orient no one: with no street data loaded, hand over to the list.
+        const drawn = vector ? map.querySourceFeatures(vector, { sourceLayer: "transportation" }).length > 0 : false;
+        if (!drawn) {
+          onFail();
+          return;
+        }
         const shown = vector ? map.querySourceFeatures(vector, { sourceLayer: "boundary", filter: boundaryFilter }).length > 0 : false;
         onBoundary?.(shown);
       });

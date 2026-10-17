@@ -3,13 +3,14 @@
 import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 import type { BranchPoint } from "@/lib/data-store";
-import { BranchMap, trimmedBounds } from "./market-exhibits";
+import { BranchList } from "./branch-list";
+import { trimmedBounds } from "./market-exhibits";
 
 /** MapLibre is loaded in the browser only, after the page; the server never renders it. */
 const BranchMapGL = dynamic(() => import("./branch-map-gl"), { ssr: false });
 
 /**
- * The live branch map, with the plain dot map in its place when WebGL or the tiles are
+ * The live branch map, with a compact branch list in its place when WebGL or the street tiles are
  * unavailable. Shows a quiet placeholder while the map loads.
  */
 export function BranchMapLive({ points, label, branchesById }: { points: BranchPoint[]; label: string; branchesById: Record<number, number> }) {
@@ -23,7 +24,7 @@ export function BranchMapLive({ points, label, branchesById }: { points: BranchP
     ] as [[number, number], [number, number]];
   }, [points]);
   if (points.length < 2) return null;
-  if (state === "failed") return <BranchMap points={points} label={label} />;
+  if (state === "failed") return <BranchList points={points} label={label} />;
   const banks = points.filter((p) => p.charter === "bank").length;
 
   return (
