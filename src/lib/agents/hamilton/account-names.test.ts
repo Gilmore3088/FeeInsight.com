@@ -95,6 +95,12 @@ describe("Hamilton account names", () => {
       expect(plan.renames).toHaveLength(0);
     });
 
+    it("counts a heading this run finds above another fee", () => {
+      const underHeading = pageFee(9, "5.00", null, "Monthly Fee: $5");
+      const plan = planAccountNames([underHeading, pageFee(10, "9.95", "Basic Checking", "$9.95 monthly fee")], [page]);
+      expect(plan.renames.map((rename) => [rename.feePublishedId, rename.newName])).toEqual([[9, "Basic Checking Monthly fee"]]);
+    });
+
     it("rejects accounts not printed in the schedule, page furniture and group names", () => {
       expect(productHeading("Premier Checking", page.normalized_text)).toBeNull();
       expect(productHeading("Gold Checking", "Rose Gold Checking\n$5 monthly fee")).toBeNull();

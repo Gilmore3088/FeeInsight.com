@@ -126,9 +126,20 @@ export function planAccountNames(fees: AccountNameFee[], texts: InstitutionText[
     const keys = new Set([fee.product_name, named].filter((account): account is string => !!account).map((account) => productKey(fee, account)));
     for (const key of keys) productCounts.set(key, (productCounts.get(key) ?? 0) + 1);
   }
+  const ownText = (fee: AccountNameFee) =>
+    texts.find((text) => fee.source_document_id != null && Number(text.source_document_id) === Number(fee.source_document_id));
+  // A heading this run finds above a fee names that account too, before any recorded account is used.
+  const headingsAbove = new Map<AccountNameFee, string | null>();
   for (const fee of generic) {
-    const own = texts.find((text) => fee.source_document_id != null && Number(text.source_document_id) === Number(fee.source_document_id));
-    const above = accountHeadingForExcerpt(own?.normalized_text, excerptOf(fee.conditions));
+    const above = accountHeadingForExcerpt(ownText(fee)?.normalized_text, excerptOf(fee.conditions));
+    headingsAbove.set(fee, above);
+    if (!above || fee.source_document_id == null) continue;
+    const key = productKey(fee, above);
+    if (!fee.product_name || key !== productKey(fee, fee.product_name)) productCounts.set(key, (productCounts.get(key) ?? 0) + 1);
+  }
+  for (const fee of generic) {
+    const own = ownText(fee);
+    const above = headingsAbove.get(fee) ?? null;
     const product = above || !fee.product_name || productCounts.get(productKey(fee, fee.product_name)) !== 1 ? null : productHeading(fee.product_name, own?.normalized_text);
     const heading = above ?? product;
     if (!heading) {
