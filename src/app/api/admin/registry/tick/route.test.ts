@@ -56,6 +56,69 @@ describe("/api/admin/registry/tick", () => {
     expect(body).toMatchObject({ ok: true, executed: { runId: 9, status: "completed" } });
   });
 
+  it("runs further partitions one after another while the tick is young", async () => {
+    scheduleDueRegistryRunsMock
+      .mockResolvedValueOnce({ scheduled: true, reason: "scheduled", runId: 9 })
+      .mockResolvedValueOnce({ scheduled: true, reason: "scheduled", runId: 10 })
+      .mockResolvedValueOnce({ scheduled: false, reason: "nothing_due" });
+    findQueuedRegistryRunIdMock.mockResolvedValue(null);
+    const { GET } = await import("./route");
+
+    const body = await (await GET(request())).json();
+
+    expect(executeAgentRunMock).toHaveBeenCalledTimes(2);
+    expect(executeAgentRunMock).toHaveBeenNthCalledWith(1, 9, { maxSteps: 1 });
+    expect(executeAgentRunMock).toHaveBeenNthCalledWith(2, 10, expect.objectContaining({ maxSteps: 1, alwaysRunFirstStep: false, deadlineAt: expect.any(Number) }));
+    expect(body.runs).toHaveLength(3);
+    expect(body.scheduled).toMatchObject({ runId: 9 });
+  });
+
+  it("runs at most six partitions in one tick", async () => {
+    scheduleDueRegistryRunsMock.mockResolvedValue({ scheduled: true, reason: "scheduled", runId: 9 });
+    const { GET } = await import("./route");
+
+    await GET(request());
+
+    expect(executeAgentRunMock).toHaveBeenCalledTimes(6);
+  });
+
+  it("stops when a run does not finish in its step", async () => {
+    scheduleDueRegistryRunsMock.mockResolvedValue({ scheduled: true, reason: "scheduled", runId: 9 });
+    executeAgentRunMock.mockResolvedValue({ runId: 9, status: "running", terminal: false, executedSteps: 0, message: "deferred" });
+    const { GET } = await import("./route");
+
+    await GET(request());
+
+    expect(executeAgentRunMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts no further partition once the pipeline is paused mid-tick", async () => {
+    scheduleDueRegistryRunsMock.mockResolvedValue({ scheduled: true, reason: "scheduled", runId: 9 });
+    getPipelineControlMock
+      .mockResolvedValueOnce({ enabled: true, reason: null })
+      .mockResolvedValue({ enabled: false, reason: "maintenance" });
+    const { GET } = await import("./route");
+
+    await GET(request());
+
+    expect(executeAgentRunMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts no further partition after the start window", async () => {
+    scheduleDueRegistryRunsMock.mockResolvedValue({ scheduled: true, reason: "scheduled", runId: 9 });
+    vi.useFakeTimers({ toFake: ["Date"] });
+    executeAgentRunMock.mockImplementation(async () => {
+      vi.setSystemTime(Date.now() + 121_000);
+      return { runId: 9, status: "completed", terminal: true, executedSteps: 1, message: "done" };
+    });
+    const { GET } = await import("./route");
+
+    await GET(request());
+
+    expect(executeAgentRunMock).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
   it("advances an already-queued registry run when nothing new is due", async () => {
     scheduleDueRegistryRunsMock.mockResolvedValue({ scheduled: false, reason: "active_run" });
     findQueuedRegistryRunIdMock.mockResolvedValue(338);
