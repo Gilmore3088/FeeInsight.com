@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, type ComponentProps } from "react";
 import {
-  isPeerListQuestion, isPeerListContinuationQuestion, makePeerListContinuation, peerListFeeFollowUp,
+  isPeerListQuestion, isPeerListContinuationQuestion, makePeerListContinuation, peerListFeeFollowUp, peerListRefinementState,
   type PeerListContinuation, type PeerListResponse,
 } from "@/lib/hamilton/peer-list";
 import type { ActivePeerSet } from "@/lib/hamilton/conversation-state";
@@ -32,7 +32,8 @@ export function PeerAwareStructuredAsk({ peerSet, onPeerSet, ...props }: Props) 
   const remember = useCallback((data: PeerListResponse, previous: PeerListContinuation | null) => {
     if (data.peerList.status !== "ready") return;
     if (previous) {
-      setContinuation({ snapshot: { ...previous, selectedIds: data.peerList.rows.map(row => row.institutionId) }, answeredNonce: props.nonce ?? 0, answeredQuestion: props.question ?? "" });
+      const refinedState = (props.question ? peerListRefinementState(props.question) : null) ?? previous.refinedState;
+      setContinuation({ snapshot: { ...previous, selectedIds: data.peerList.rows.map(row => row.institutionId), ...(refinedState ? { refinedState } : {}) }, answeredNonce: props.nonce ?? 0, answeredQuestion: props.question ?? "" });
     } else if (props.question) {
       const snapshot = makePeerListContinuation(data, props.question, props.institutionId);
       if (snapshot) setContinuation({ snapshot, answeredNonce: props.nonce ?? 0, answeredQuestion: props.question });

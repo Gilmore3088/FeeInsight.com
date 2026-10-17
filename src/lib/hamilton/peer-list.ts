@@ -138,6 +138,8 @@ export interface PeerListContinuation {
   selectedIds: number[];
   /** The displayed page's offset, so a follow-up re-runs that page and not the first; absent means 0. */
   originOffset?: number;
+  /** The state an earlier "Only Florida" narrowed the list to, so later follow-ups keep saying so. */
+  refinedState?: string;
 }
 
 /** A requested page offset, or null when it is not a whole number from 0 to MAX_PEER_LIST_OFFSET. */
@@ -193,6 +195,7 @@ export function validatePeerListContinuation(value: unknown): PeerListContinuati
   if (p.originInstitutionId !== null &&
       (typeof p.originInstitutionId !== "string" || !/^[1-9][0-9]{0,14}$/.test(p.originInstitutionId))) return null;
   if (p.originOffset !== undefined && (readPeerListOffset(p.originOffset) === null || p.originOffset === null)) return null;
+  if (p.refinedState !== undefined && (typeof p.refinedState !== "string" || !/^[A-Z]{2}$/.test(p.refinedState))) return null;
   if (!idOK(p.originSubjectId) || !Array.isArray(p.originRows) || p.originRows.length > MAX_PEER_LIST_ROWS ||
       !Array.isArray(p.selectedIds) || p.selectedIds.length > MAX_PEER_LIST_ROWS) return null;
   const seen = new Set<number>();

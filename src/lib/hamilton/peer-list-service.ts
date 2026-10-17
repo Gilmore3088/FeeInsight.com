@@ -97,6 +97,8 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
           return message("unavailable", "The original peer selection or its dated records have changed. Run the original list again; no substitute peer group was used.");
         }
         const selected = new Set(prior.selectedIds);
+        // A fee follow-up after "Only Florida" still describes the Florida list, not the original nationwide one.
+        const shownState = state ?? prior.refinedState ?? null;
         const rows = original.peerList.rows.filter(row =>
           selected.has(row.institutionId) && (!state || row.stateCode === state));
         const count = prior.selectedIds.length;
@@ -137,7 +139,7 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
             totalMatches: rows.length,
             criteria: originalList.criteria ? {
               ...originalList.criteria,
-              states: state ? [state] : originalList.criteria.states,
+              states: shownState ? [shownState] : originalList.criteria.states,
               institutionIds: [...prior.selectedIds],
               descriptions: [...originalList.criteria.descriptions,
                 "This refinement used only the " + count + " institutions displayed in the previous list."],

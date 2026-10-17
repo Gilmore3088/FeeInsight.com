@@ -7,7 +7,7 @@ vi.mock("./account-context-store", () => ({ loadHamiltonAccountContext: mocks.ac
 vi.mock("./active-peer-set", () => ({ getActivePeerSet: mocks.active }));
 vi.mock("@/lib/agents/run-store", () => ({ recordProRequest: mocks.record }));
 import { answerPeerList, cappedListNote } from "./peer-list-service";
-import { makePeerListContinuation } from "./peer-list";
+import { makePeerListContinuation, validatePeerListContinuation } from "./peer-list";
 const subject = { institutionId: 202, name: "Synthetic Research CU", charterType: "credit_union", city: "Tampa", stateCode: "FL", totalAssetsUsd: 10_000_000_000, reportDate: "2026-06-30", source: "ncua", sourceUrl: null, recordId: 1 };
 const peer = { ...subject, institutionId: 303, name: "Synthetic Peer CU", feeCoverage: "not_found", inclusionReason: "Matches criteria." };
 const user = { id: 7, institution_name: "Unverified name" };
@@ -70,6 +70,17 @@ describe("exact displayed peer-list continuation", () => {
     expect(second.peerList.status).toBe("ready");
     expect(second.peerList.rows).toHaveLength(0);
     expect(second.peerList.totalMatches).toBe(0);
+  });
+  it("keeps an earlier state refinement in the criteria of a later fee follow-up", async () => {
+    mocks.rows.mockResolvedValue({ rows: [peer, gaPeer], totalMatches: 2 });
+    const original = (await answerPeerList(user, { institutionId: 202, question: "List peers" }))!;
+    const prior = makePeerListContinuation(original, "List peers", "202")!;
+    const florida = (await answerPeerList(user, { institutionId: 202, question: "Only Florida", previousPeerList: prior }))!;
+    const narrowed = { ...prior, selectedIds: florida.peerList.rows.map(r => r.institutionId), refinedState: "FL" };
+    const nsf = (await answerPeerList(user, { institutionId: 202, question: "Compare their NSF fees", previousPeerList: narrowed }))!;
+    expect(nsf.peerList.status).toBe("ready");
+    expect(nsf.peerList.criteria?.states).toEqual(["FL"]);
+    expect(validatePeerListContinuation({ ...narrowed, refinedState: "Florida" })).toBeNull();
   });
   it("rejects forged peer IDs and never broadens a client-supplied list", async () => {
     const original = (await answerPeerList(user, { institutionId: 202, question: "List peers" }))!;

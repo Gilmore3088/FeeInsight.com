@@ -9,6 +9,18 @@ import { defaultPeerSetName } from "@/lib/hamilton/peer-set-name";
 import { fmtMoney } from "@/components/hamilton/memo/memo";
 import { sourceDateWithAge } from "@/components/hamilton/memo/exhibit-view";
 
+const FREQUENCY_LABELS: Record<string, string> = {
+  per_item: "Per item", per_transaction: "Per transaction", per_occurrence: "Per occurrence", one_time: "One time",
+  monthly: "Monthly", annual: "Annual", quarterly: "Quarterly", weekly: "Weekly", daily: "Daily", hourly: "Hourly",
+};
+
+/** Stored frequency codes ("per_item") read as words in the table; the CSV keeps the code. */
+export function frequencyLabel(frequency: string | null | undefined): string {
+  if (!frequency) return "Not stated";
+  const words = FREQUENCY_LABELS[frequency] ?? frequency.replace(/_/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 type Sort = "selection" | "name" | "assets_desc" | "assets_asc";
 export interface PeerSaveContext {
   question: string;
@@ -173,7 +185,7 @@ function SelectablePeerList({ response, saveContext, onPage, paging = false, sav
                       <th scope="row" className="p-2 font-medium">{item.name}{item.isAccount ? " (your institution)" : ""}</th>
                       <td className="p-2">{charge.name}</td>
                       <td className="p-2 tabular-nums">{charge.shown}</td>
-                      <td className="p-2">{charge.frequency ?? "Not stated"}</td>
+                      <td className="p-2">{frequencyLabel(charge.frequency)}</td>
                       <td className="p-2">{sourceDateWithAge(charge.publishedAt) ?? "Date unavailable"}
                         {charge.documentUrl || charge.sourceUrl ? <a href={charge.documentUrl ?? charge.sourceUrl ?? "#"} target="_blank" rel="noopener noreferrer" className="ml-2 underline">Fee schedule</a> : <span className="ml-2">Source link unavailable</span>}
                       </td>
