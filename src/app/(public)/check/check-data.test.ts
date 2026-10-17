@@ -115,7 +115,7 @@ describe("several prices for one fee (the shared rule)", () => {
 
   it("leads the finding with the range and the compared value", () => {
     expect(checkFinding([row], "Capital City Bank", "Florida")).toBe(
-      "Capital City Bank's monthly maintenance fee runs $7.95 to $8.95, depending on account. Compared at $8.45, the middle of its prices, it sits $1.45 above the $7 Florida median.",
+      "Capital City Bank's monthly maintenance fee runs $7.95 to $8.95, depending on account. Compared at $8.45, the middle of its prices, it sits $1.45 above the $7 Florida median (40 institutions).",
     );
   });
 
@@ -166,7 +166,7 @@ describe("avoidGuideHref", () => {
 });
 
 describe("buildAlternatives", () => {
-  const inst = (id: number, name: string, amount: number | null): CityMarketInstitution =>
+  const inst = (id: number, name: string, amount: number | null, account = "Basic Checking"): CityMarketInstitution =>
     ({
       id,
       name,
@@ -179,26 +179,36 @@ describe("buildAlternatives", () => {
       fees:
         amount === null
           ? {}
-          : { monthly_maintenance: { amount, fee_name: "Monthly fee", account: "Basic Checking", conditions: [], source_line: null, source_url: null, read_on: null } },
+          : { monthly_maintenance: { amount, fee_name: "Monthly fee", account, conditions: [], source_line: null, source_url: null, read_on: null } },
     }) as CityMarketInstitution;
-  const market = { institutions: [inst(323, "Capital City Bank", 7.95), inst(1, "Cheaper Bank", 0), inst(2, "Same Bank", 7.95), inst(3, "No Fee Listed", null)] } as unknown as CityMarket;
-  const rows = buildCheckRows({
-    verifiedFees: [fee({ id: 10, fee_category: "monthly_maintenance", fee_name: "Monthly service charge", amount: 7.95, frequency: "monthly" })],
-    nationalIndex: [entry("monthly_maintenance", 7)],
-    stateIndex: [],
-    fallbackSourceUrl: null,
-  });
+  const market = {
+    institutions: [
+      inst(323, "Capital City Bank", 7.95),
+      inst(1, "Cheaper Bank", 0),
+      inst(2, "Same Bank", 7.95),
+      inst(3, "No Fee Listed", null),
+      inst(4, "Savings Only Bank", 2, "Statement Savings"),
+    ],
+  } as unknown as CityMarket;
+  const ownFees = [
+    fee({ id: 10, fee_category: "monthly_maintenance", fee_name: "Carefree Checking Monthly service charge", amount: 7.95, frequency: "monthly" }),
+    fee({ id: 11, fee_category: "monthly_maintenance", fee_name: "Monthly service charge (Everyday Checking)", amount: 8.95, frequency: "monthly" }),
+    fee({ id: 12, fee_category: "monthly_maintenance", fee_name: "Statement Savings monthly fee", amount: 3, frequency: "monthly" }),
+  ];
+  const rows = buildCheckRows({ verifiedFees: ownFees, nationalIndex: [entry("monthly_maintenance", 7)], stateIndex: [], fallbackSourceUrl: null });
 
-  it("lists only institutions below every price it lists, itself left out", () => {
-    const [list] = buildAlternatives(market, 323, rows);
+  it("compares checking with checking, below its lowest checking price, itself left out", () => {
+    const [list] = buildAlternatives(market, 323, rows, ownFees);
     expect(list.category).toBe("monthly_maintenance");
+    expect(list.floor).toBe(7.95);
+    expect(list.floorAccount).toBe("Carefree Checking");
     expect(list.publishing).toBe(2);
     expect(list.lower.map((alt) => alt.name)).toEqual(["Cheaper Bank"]);
     expect(list.lower[0].account).toBe("Basic Checking");
   });
 
   it("returns nothing without a market", () => {
-    expect(buildAlternatives(null, 323, rows)).toEqual([]);
+    expect(buildAlternatives(null, 323, rows, ownFees)).toEqual([]);
   });
 });
 

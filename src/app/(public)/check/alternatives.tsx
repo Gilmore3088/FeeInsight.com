@@ -21,9 +21,13 @@ function AlternativeFee({
     <figure className="min-w-0 rounded-xl border border-border bg-surface-0 p-4 shadow-fi-1 sm:p-5">
       <figcaption className="text-[15px] font-semibold text-ink">{list.label}</figcaption>
       <p className="mt-1 text-[13px] leading-snug text-ink-soft sm:mx-0 sm:text-left">
-        {list.lower.length > 0
-          ? `${list.lower.length} of ${list.publishing} list one below ${name}'s lowest, ${money(list.floor)}.`
-          : `None of ${list.publishing} lists one below ${name}'s lowest, ${money(list.floor)}.`}
+        {(() => {
+          const kind = list.category === "monthly_maintenance" ? " for a checking account" : "";
+          const floor = `${money(list.floor)}${list.floorAccount ? ` (${list.floorAccount})` : ""}`;
+          return list.lower.length > 0
+            ? `${list.lower.length} of ${list.publishing} list a lower price${kind} than ${name}'s lowest, ${floor}.`
+            : `None of ${list.publishing} list a lower price${kind} than ${name}'s lowest, ${floor}.`;
+        })()}
       </p>
       {shown.length > 0 && (
         <ul className="mt-2 divide-y divide-border">
@@ -78,7 +82,7 @@ export function Alternatives({
   return (
     <section aria-labelledby="alternatives-heading" className="border-t border-border pt-6">
       <h2 id="alternatives-heading" className="text-center text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-left sm:text-[24px]">
-        Alternatives in {city}
+        Alternatives near its headquarters in {city}
       </h2>
       <p className="mt-2 text-[15px] leading-relaxed text-ink-soft sm:mx-0 sm:text-left">{finding}</p>
       <div className="mt-4 grid gap-4 md:grid-cols-2">

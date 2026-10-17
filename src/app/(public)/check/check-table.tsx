@@ -98,7 +98,7 @@ function Row({
   return (
     <li className="border-t border-border first:border-t-0">
       <details className="group">
-        <summary className="grid min-h-11 cursor-pointer list-none grid-cols-[minmax(0,1fr)_8.5rem] items-baseline gap-x-3 gap-y-0.5 px-4 py-3 hover:bg-paper sm:grid-cols-[minmax(0,1fr)_9rem_6rem_7rem] sm:px-5 [&::-webkit-details-marker]:hidden">
+        <summary className="grid min-h-11 cursor-pointer list-none grid-cols-[minmax(0,1fr)_8.5rem] items-baseline gap-x-3 gap-y-0.5 px-4 py-3 hover:bg-paper sm:grid-cols-[minmax(0,1fr)_9rem_6rem_8.5rem] sm:px-5 [&::-webkit-details-marker]:hidden">
           <span className="flex min-w-0 items-baseline gap-2 text-[14px] text-ink">
             <span aria-hidden="true" className="text-ink-muted transition-transform group-open:rotate-90">
               ›
@@ -106,12 +106,19 @@ function Row({
             <span className="min-w-0 leading-snug">{row.label}</span>
           </span>
           <span className="text-right font-mono text-[15px] font-semibold tabular-nums text-ink">
-            {several ? `${money(row.low)} to ${money(row.high)}` : money(row.value)}
+            {several ? (
+              <>
+                {`${money(row.low)} to ${money(row.high)}`}
+                <span className="block font-sans text-[11px] font-normal text-ink-muted">depending on account</span>
+              </>
+            ) : (
+              money(row.value)
+            )}
           </span>
           <span className="col-start-2 text-right text-[12px] text-ink-muted sm:col-start-auto sm:text-[13px]">
             {ref ? (
               <>
-                <span className="sm:hidden">{ref.level === "state" ? (stateCode ?? "State") : "U.S."} median </span>
+                <span className="sm:sr-only">{ref.level === "state" ? (stateCode ?? "State") : "U.S."} median </span>
                 <span className="font-mono tabular-nums text-ink">{money(ref.band.median)}</span>
                 <span className="block text-[11px]">
                   {ref.band.institutions.toLocaleString("en-US")} in {ref.level === "state" ? (stateCode ?? "state") : "U.S."}
@@ -120,16 +127,16 @@ function Row({
             ) : null}
           </span>
           <span className="col-start-2 text-right text-[13px] sm:col-start-auto">
-            {gapLabel && <span className="text-[12px] text-ink-muted sm:hidden">{gapLabel}</span>}
+            {gapLabel && <span className="text-[12px] text-ink-muted sm:sr-only">{gapLabel}</span>}
             <Gap row={row} band={ref?.band ?? null} />
+            {row.comparedAt && (
+              <span className="block text-[11px] text-ink-muted">Compared at {money(row.value)}</span>
+            )}
           </span>
         </summary>
         <div className="space-y-2 px-4 pb-4 sm:px-5">
-          {several && (
-            <p className="text-[13px] leading-snug text-ink sm:mx-0 sm:text-left">
-              {rowPriceText(row)}
-              {accountPricesText(row.prices, row.amounts) ? `: ${accountPricesText(row.prices, row.amounts)}` : ""}.
-            </p>
+          {several && accountPricesText(row.prices, row.amounts) && (
+            <p className="text-[13px] leading-snug text-ink sm:mx-0 sm:text-left">{accountPricesText(row.prices, row.amounts)}</p>
           )}
           {row.comparedAt && <p className="text-[12px] text-ink-muted sm:mx-0 sm:text-left">{row.comparedAt}.</p>}
           <div className="space-y-1">
@@ -176,12 +183,12 @@ export function CheckTable({
     <div className="overflow-hidden rounded-xl border border-border bg-surface-0 shadow-fi-1">
       <div
         aria-hidden="true"
-        className="grid grid-cols-[minmax(0,1fr)_8.5rem] gap-x-3 border-b border-border bg-paper px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted sm:grid-cols-[minmax(0,1fr)_9rem_6rem_7rem] sm:px-5"
+        className="grid grid-cols-[minmax(0,1fr)_8.5rem] gap-x-3 border-b border-border bg-paper px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted sm:grid-cols-[minmax(0,1fr)_9rem_6rem_8.5rem] sm:px-5"
       >
         <span>Fee</span>
         <span className="text-right">Its prices</span>
         <span className="hidden text-right sm:block">{medianHead}</span>
-        <span className="hidden text-right sm:block">Gap</span>
+        <span className="hidden text-right sm:block">Compared vs median</span>
       </div>
       <ul>
         {rows.map((row) => (

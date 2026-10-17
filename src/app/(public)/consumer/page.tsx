@@ -122,7 +122,7 @@ export default async function ConsumerPage() {
               A linked savings transfer has a U.S. median of {money(transfer.median_amount)}
               <UnstatedAudienceMark show={medianHasUnstatedAudience(transfer)} /> ({count(transfer.institution_count)} institutions),
               against {money(overdraft.median_amount)}
-              <UnstatedAudienceMark show={medianHasUnstatedAudience(overdraft)} /> for an overdraft ({count(overdraft.institution_count)}).
+              <UnstatedAudienceMark show={medianHasUnstatedAudience(overdraft)} /> for an overdraft ({count(overdraft.institution_count)} institutions).
             </>
           ) : null,
         href,
@@ -156,7 +156,6 @@ export default async function ConsumerPage() {
     .sort((a, b) => a.name.localeCompare(b.name));
 
   const unstatedShown =
-    guideRows.some((guide) => medianHasUnstatedAudience(summaryFor.get(guide.primaryCategory))) ||
     [overdraft, transfer, atm].some((s) => medianHasUnstatedAudience(s));
 
   return (
@@ -191,35 +190,15 @@ export default async function ConsumerPage() {
             </p>
             {guideRows.length > 0 && (
               <ul className="mt-3 divide-y divide-border">
-                {guideRows.map((guide) => {
-                  const m = median(guide.primaryCategory);
-                  return (
-                    <li key={guide.slug}>
-                      <Link
-                        href={`/guides/${guide.slug}`}
-                        className="flex min-h-11 items-baseline justify-between gap-3 py-2.5 text-[15px] text-ink hover:text-brick"
-                      >
-                        <span className="min-w-0">{guide.title}</span>
-                        {m && (
-                          <span className="shrink-0 text-right text-[12px] text-ink-muted">
-                            U.S. median <span className="font-mono tabular-nums text-ink">{money(m.median_amount)}</span>
-                            <UnstatedAudienceMark show={medianHasUnstatedAudience(m)} />
-                            <span className="block">{count(m.institution_count)} institutions</span>
-                          </span>
-                        )}
-                      </Link>
-                    </li>
-                  );
-                })}
+                {guideRows.map((guide) => (
+                  <li key={guide.slug}>
+                    <Link href={`/guides/${guide.slug}`} className="block min-h-11 py-2.5 text-ink hover:text-brick">
+                      <span className="block text-[15px] font-medium">{guide.title}</span>
+                      <span className="mt-0.5 line-clamp-2 block text-[13px] leading-snug text-ink-muted">{guide.description}</span>
+                    </Link>
+                  </li>
+                ))}
               </ul>
-            )}
-            {guideRows.some((g) => median(g.primaryCategory)) && (
-              <div className="mt-3">
-                <SourceNote>
-                  Medians from the published fee schedules of the U.S. banks and credit unions counted on each row, {PRODUCT_NAME}
-                  {asOf}.
-                </SourceNote>
-              </div>
             )}
             <Link href="/guides" className={MORE}>
               {guides.length > 0 ? `All ${guides.length} guides` : "Fee guides"}

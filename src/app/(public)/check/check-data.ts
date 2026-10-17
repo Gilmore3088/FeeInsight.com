@@ -184,7 +184,7 @@ export function checkFinding(rows: CheckRow[], name: string, stateName: string |
   if (lead) {
     const ref = referenceOf(lead)!;
     const diff = lead.value - ref.band.median;
-    const gap = `${money(Math.abs(diff))} above the ${money(ref.band.median)} ${placeOf(ref.level)} median`;
+    const gap = `${money(Math.abs(diff))} above the ${money(ref.band.median)} ${placeOf(ref.level)} median (${ref.band.institutions.toLocaleString("en-US")} institutions)`;
     return lead.comparedAt
       ? `${name}'s ${lowerLabel(lead.label)} fee runs ${rowPriceText(lead)}. ${lead.comparedAt}, it sits ${gap}.`
       : `${name}'s ${lowerLabel(lead.label)} fee is ${money(lead.value)}, ${gap}.`;
@@ -236,33 +236,71 @@ export interface Alternative {
 export interface AlternativeList {
   category: CityFeeKey;
   label: string;
-  /** This institution's lowest published price for the fee: the list holds prices below it. */
+  /** This institution's lowest published price for the fee, of the kind compared: the list holds prices below it. */
   floor: number;
-  /** Other institutions with a branch in the city that publish the fee. */
+  /** The account that lowest price belongs to, when the schedule names it. */
+  floorAccount: string | null;
+  /** Other institutions with a branch in the city that publish a price of the kind compared. */
   publishing: number;
   lower: Alternative[];
 }
 
+/** A checking account's price: the account or fee line says checking. */
+const CHECKING = /\bchecking\b/i;
+
+/**
+ * Which published prices are compared with which. A monthly maintenance fee belongs to one
+ * account, so only checking accounts are compared with checking accounts; a savings or
+ * certificate fee in the same category is a different product. Overdraft is per item and
+ * compares as published.
+ */
+function comparable(category: CityFeeKey, account: string | null, feeName: string): boolean {
+  return category !== "monthly_maintenance" || CHECKING.test(`${account ?? ""} ${feeName}`);
+}
+
 /**
  * Institutions with a branch in the same city whose published price for the fee is lower than
- * every price this institution lists. Prices and account names are the city page's
- * (getCityMarket), so the two pages agree.
+ * every comparable price this institution lists. Prices and account names are the city page's
+ * (getCityMarket), so the two pages agree; the read itself is unchanged.
  */
-export function buildAlternatives(market: CityMarket | null, institutionId: number, rows: CheckRow[]): AlternativeList[] {
+export function buildAlternatives(
+  market: CityMarket | null,
+  institutionId: number,
+  rows: CheckRow[],
+  verifiedFees: ExtractedFee[],
+): AlternativeList[] {
   if (!market) return [];
   const lists: AlternativeList[] = [];
   for (const category of ALTERNATIVE_FEES) {
-    const own = rows.find((row) => row.category === category);
-    if (!own) continue;
-    const others = market.institutions.filter((inst) => inst.id !== institutionId && inst.fees[category]);
+    if (!rows.some((row) => row.category === category)) continue;
+    const own = personalRows(verifiedFees, category)
+      .map((fee) => ({ amount: fee.amount as number, account: productNameFromFeeName(fee.fee_name), feeName: fee.fee_name }))
+      .filter((fee) => comparable(category, fee.account, fee.feeName))
+      .sort((a, b) => a.amount - b.amount);
+    if (own.length === 0) continue;
+    const floor = own[0];
+    const others = market.institutions.filter((inst) => {
+      const fee = inst.fees[category];
+      return inst.id !== institutionId && fee && comparable(category, fee.account, fee.fee_name);
+    });
     const lower = others
       .map((inst) => ({ id: inst.id, name: inst.name, account: inst.fees[category]!.account, amount: inst.fees[category]!.amount }))
-      .filter((alt) => alt.amount < own.low)
+      .filter((alt) => alt.amount < floor.amount)
       .sort((a, b) => a.amount - b.amount || a.name.localeCompare(b.name));
-    lists.push({ category, label: getDisplayName(category), floor: own.low, publishing: others.length, lower });
+    lists.push({
+      category,
+      label: getDisplayName(category),
+      floor: floor.amount,
+      floorAccount: floor.account,
+      publishing: others.length,
+      lower,
+    });
   }
   return lists;
 }
+
+/** Above this many branch cities, the headquarters city does not stand for the institution's market. */
+export const MAX_BRANCH_CITIES_FOR_ALTERNATIVES = 50;
 
 /** The id from `?id=`: a positive integer, or null. */
 export function parseCheckId(value: string | undefined): number | null {

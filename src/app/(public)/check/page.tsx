@@ -20,6 +20,7 @@ import { FeeAlertControl } from "../institution/[id]/fee-alert-control";
 import { getCharterLabel, toTitleCase } from "../institution/[id]/enum-labels";
 import { MIN_VERIFIED_FEES_FOR_OFFER } from "../institution/[id]/profile-copy";
 import { getPublicInstitutionForPage, getVisibleFeesForPage, isVerifiedFee } from "../institution/[id]/profile-data";
+import { getInstitutionBranchCityCount } from "@/lib/data-store/branch-cities";
 import { loadConsumerGuides } from "@/lib/guides/source";
 import { SourceNote } from "../research/district/[id]/district-hub";
 import { cityPath, titleCase } from "../fees/city/[state]/[city]/city-lookup";
@@ -30,6 +31,7 @@ import {
   checkFinding,
   leadRow,
   lowerLabel,
+  MAX_BRANCH_CITIES_FOR_ALTERNATIVES,
   parseCheckId,
   stateGroupLabel,
 } from "./check-data";
@@ -199,13 +201,14 @@ async function CheckAnswer({ id, refreshedOn }: { id: number; refreshedOn: strin
   const cityName = inst.city ? titleCase(inst.city) : null;
   // The state page's index (every bank and credit union headquartered in the state), the same
   // population the institution profile compares against, so the two pages quote one median.
-  const [nationalIndex, stateIndexes, guides, market, user] = await Promise.all([
+  const [nationalIndex, stateIndexes, guides, market, branchCities, user] = await Promise.all([
     hasFees ? getPublicNationalIndex().catch(fallbackTo("national index", [])) : Promise.resolve([]),
     hasFees && stateCode ? getStateFeeIndexesCached(stateCode).catch(fallbackTo("state index", null)) : Promise.resolve(null),
     hasFees ? loadConsumerGuides().catch(fallbackTo("guides", [])) : Promise.resolve([]),
     hasFees && stateCode && cityName
       ? getCityMarketCached(cityName, stateCode, "city").catch(fallbackTo("city market", null))
       : Promise.resolve(null),
+    hasFees ? getInstitutionBranchCityCount(id).catch(fallbackTo("branch cities", 0)) : Promise.resolve(0),
     getCurrentUser().catch(() => null),
   ]);
   const alertSubscription = user
@@ -224,7 +227,9 @@ async function CheckAnswer({ id, refreshedOn }: { id: number; refreshedOn: strin
   const place = [cityName, inst.state_code].filter(Boolean).join(", ");
   const collectedOn = formatAbsoluteDate(inst.latest_source_collected_at ?? null);
   const guideHrefs = Object.fromEntries(rows.map((row) => [row.category, avoidGuideHref(row.category, guides)]));
-  const alternatives = buildAlternatives(market, id, rows);
+  // Its headquarters city stands for its market only when it banks in a limited number of cities.
+  const local = branchCities <= MAX_BRANCH_CITIES_FOR_ALTERNATIVES;
+  const alternatives = local ? buildAlternatives(market, id, rows, verifiedFees) : [];
 
   const sparseLine = !hasFees
     ? `Fee Insight has not published fees for ${inst.institution_name} yet.`
@@ -317,7 +322,9 @@ async function CheckAnswer({ id, refreshedOn }: { id: number; refreshedOn: strin
         />
       ) : hasFees && stateCode ? (
         <p className="border-t border-border pt-6 text-center text-[14px] text-ink-soft sm:text-left">
-          No city comparison is available for {inst.institution_name} yet.{" "}
+          {local
+            ? `No city comparison is available for ${inst.institution_name} yet.`
+            : `${inst.institution_name} has branches in ${branchCities.toLocaleString("en-US")} cities, so no one city stands for its market.`}{" "}
           <Link href={`/institutions?state=${stateCode}`} className={`inline-flex min-h-11 items-center ${LINK}`}>
             Other {stateName} banks and credit unions
           </Link>
