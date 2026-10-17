@@ -74,8 +74,12 @@ const LARGE_BANK_REREAD_ORDER = `CASE WHEN COALESCE(inst.asset_size, 0) >= ${KNO
  * once more. 41 of the 62 answer-key pages were last read at v65 or earlier, and today's rules read
  * 109 key fees there that their stored rows miss. A re-read only adds rows (the raw dedupe index
  * keeps existing ones; a same-text read retires nothing), at the extract step's own batch size.
+ *
+ * v76 (Knox recall round 2, 17 Oct 2026): raised with the rules so the running v75 re-read reads the
+ * rest of its queue at v76 instead of reading every page twice. On prod at 06:10 UTC, 733 of 14,306
+ * current copies had a v75 read and 13,573 still waited; this adds those 733 back to the queue.
  */
-export const KNOX_STALE_READ_BELOW_VERSION = 75;
+export const KNOX_STALE_READ_BELOW_VERSION = 76;
 /**
  * A current copy with a monthly fee row missing its account name, or both the balance that
  * avoids it and its waiver, last read below this version, is read again once so v49-v51 can
