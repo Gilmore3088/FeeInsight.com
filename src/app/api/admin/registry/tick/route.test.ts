@@ -92,6 +92,28 @@ describe("/api/admin/registry/tick", () => {
     expect(executeAgentRunMock).toHaveBeenCalledTimes(1);
   });
 
+  it("stops after a failed run so an outage costs one partition per tick", async () => {
+    scheduleDueRegistryRunsMock.mockResolvedValue({ scheduled: true, reason: "scheduled", runId: 9 });
+    executeAgentRunMock.mockResolvedValue({ runId: 9, status: "failed", terminal: true, executedSteps: 1, message: "HTTP 503" });
+    const { GET } = await import("./route");
+
+    await GET(request());
+
+    expect(executeAgentRunMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops when a later run is held for the deadline", async () => {
+    scheduleDueRegistryRunsMock.mockResolvedValue({ scheduled: true, reason: "scheduled", runId: 9 });
+    executeAgentRunMock
+      .mockResolvedValueOnce({ runId: 9, status: "completed", terminal: true, executedSteps: 1, message: "done" })
+      .mockResolvedValueOnce({ runId: 10, status: "queued", terminal: false, executedSteps: 0, message: "held", heldForDeadline: true });
+    const { GET } = await import("./route");
+
+    await GET(request());
+
+    expect(executeAgentRunMock).toHaveBeenCalledTimes(2);
+  });
+
   it("starts no further partition once the pipeline is paused mid-tick", async () => {
     scheduleDueRegistryRunsMock.mockResolvedValue({ scheduled: true, reason: "scheduled", runId: 9 });
     getPipelineControlMock
@@ -108,7 +130,7 @@ describe("/api/admin/registry/tick", () => {
     scheduleDueRegistryRunsMock.mockResolvedValue({ scheduled: true, reason: "scheduled", runId: 9 });
     vi.useFakeTimers({ toFake: ["Date"] });
     executeAgentRunMock.mockImplementation(async () => {
-      vi.setSystemTime(Date.now() + 121_000);
+      vi.setSystemTime(Date.now() + 61_000);
       return { runId: 9, status: "completed", terminal: true, executedSteps: 1, message: "done" };
     });
     const { GET } = await import("./route");
