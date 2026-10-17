@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { getAlertSubscriptionForInstitution } from "@/lib/data-store/alerts";
 import { getPeerIndexCached, searchInstitutionsCached } from "@/lib/data-store/public-cached-reads";
@@ -22,6 +23,7 @@ import { MIN_VERIFIED_FEES_FOR_OFFER } from "../institution/[id]/profile-copy";
 import { getPublicInstitutionForPage, getVisibleFeesForPage, isVerifiedFee } from "../institution/[id]/profile-data";
 import { SourceNote } from "../research/district/[id]/district-hub";
 import { buildCheckRows, parseCheckId, stateGroupLabel } from "./check-data";
+import { CheckAnswerFocus } from "./answer-focus";
 
 const TITLE = "Check a Bank's Fees Against the Market";
 const DESCRIPTION =
@@ -85,7 +87,6 @@ export default async function CheckPage({ searchParams }: PageProps) {
             </p>
             <div className="mx-auto mt-5 max-w-xl text-left sm:mx-0">
               <InstitutionSearchBar
-                autoFocus={!id && !query}
                 initialQuery={query}
                 resultPath="/check"
                 ariaLabel="Your bank or credit union"
@@ -124,6 +125,8 @@ async function CheckMatches({ query }: { query: string }) {
     fallbackTo("search", { rows: [] as InstitutionSearchResult[], total: 0 }),
   );
   const directoryHref = `/institutions?${new URLSearchParams({ q: query }).toString()}`;
+  // One match is that institution: answer it rather than listing it.
+  if (results.total === 1 && results.rows.length === 1) redirect(`/check?id=${results.rows[0].id}`);
   if (results.rows.length === 0) {
     return (
       <div className="mt-6 text-center sm:text-left">
@@ -139,7 +142,7 @@ async function CheckMatches({ query }: { query: string }) {
   }
   return (
     <section aria-labelledby="matches-heading" className="mt-6 max-w-3xl">
-      <h2 id="matches-heading" className="text-[13px] font-semibold uppercase tracking-[0.12em] text-ink-muted">
+      <h2 id="matches-heading" className="text-center text-[13px] font-semibold uppercase tracking-[0.12em] text-ink-muted sm:text-left">
         {results.total.toLocaleString("en-US")} {results.total === 1 ? "match" : "matches"} for &ldquo;{query}&rdquo;
       </h2>
       <ul className="mt-3 divide-y divide-border rounded-xl border border-border bg-surface-0">
@@ -171,7 +174,7 @@ async function CheckAnswer({ id, refreshedOn }: { id: number; refreshedOn: strin
   if (!inst) {
     return (
       <p className="mt-6 text-center text-[15px] text-ink-soft sm:text-left">
-        That institution is not in the directory. Search by name above.
+        That institution is not in the directory.
       </p>
     );
   }
@@ -221,40 +224,57 @@ async function CheckAnswer({ id, refreshedOn }: { id: number; refreshedOn: strin
         : thin
           ? `Only ${verifiedFees.length} of its fees are published so far; the comparison covers those.`
           : null;
+  const comparedWith = stateGroup ?? "U.S. institutions";
+  // Always one finding sentence: the profile's lead finding, else the sparse line, else what is compared.
+  const findingLine =
+    lead?.text ??
+    sparseLine ??
+    `Its ${rows.length} main ${rows.length === 1 ? "fee" : "fees"}, each against the median of ${comparedWith}.`;
+  const tableCaption = `Its main fees against ${stateGroup ?? "the U.S."}`;
 
   return (
     <div className="mt-8 space-y-8 sm:mt-10 sm:space-y-10">
-      <section aria-labelledby="answer-heading" className="space-y-6">
-        <div className={`max-w-3xl ${PAGE_HEADER}`}>
+      <CheckAnswerFocus targetId="answer-heading" />
+      <section
+        aria-labelledby="answer-heading"
+        className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,860px)] lg:gap-10"
+      >
+        <div className={`min-w-0 ${PAGE_HEADER}`}>
           <p className="text-[13px] text-ink-muted">{[getCharterLabel(inst.charter_type), place].filter(Boolean).join(" · ")}</p>
-          <h2 id="answer-heading" className="mt-1 text-[26px] font-semibold leading-[1.1] tracking-[-0.03em] text-ink sm:text-[36px]">
+          <h2
+            id="answer-heading"
+            tabIndex={-1}
+            className="mt-1 scroll-mt-24 text-[26px] font-semibold leading-[1.1] tracking-[-0.03em] text-ink focus:outline-none sm:text-[36px]"
+          >
             {inst.institution_name}
           </h2>
-          {(lead || sparseLine) && (
-            <p className="mt-3 text-[15px] leading-relaxed text-ink-soft sm:mx-0 sm:text-left">{lead?.text ?? sparseLine}</p>
-          )}
+          <p className="mt-3 text-[15px] leading-relaxed text-ink-soft sm:mx-0 sm:text-left">{findingLine}</p>
+          <div className="mt-5 flex justify-center sm:justify-start">
+            <Link href={`/institution/${id}`} className="fi-btn fi-btn-primary inline-flex min-h-11 max-w-full items-center justify-center px-5 text-center">
+              {publishedCount > 0
+                ? `See all ${publishedCount.toLocaleString("en-US")} fees at ${inst.institution_name}`
+                : `Open ${inst.institution_name}'s profile`}
+            </Link>
+          </div>
         </div>
-
-        <HeadlineTable rows={rows} stateCode={stateGroup ? inst.state_code : null} stateLabel={stateGroup} />
 
         {rows.length > 0 && (
-          <SourceNote>
-            {inst.institution_name}&apos;s own published fee schedule{collectedOn ? `, collected ${collectedOn}` : ""}. Medians
-            come from the published schedules of the institutions counted on each row; a median needs at least{" "}
-            {MIN_INSTITUTIONS_FOR_MEDIAN}.{refreshedOn ? ` Medians as of ${refreshedOn}.` : ""}{" "}
-            <Link href="/methodology" className={LINK}>
-              Methodology
-            </Link>
-          </SourceNote>
+          <div className="min-w-0 space-y-3">
+            <h3 className="text-center text-[16px] font-semibold text-ink sm:text-left">{tableCaption}</h3>
+            {/* The shared table carries its own h2; the h3 above is this page's caption for it. */}
+            <div className="[&_#headline-table-heading]:hidden">
+              <HeadlineTable rows={rows} stateCode={stateGroup ? inst.state_code : null} stateLabel={stateGroup} />
+            </div>
+            <SourceNote>
+              {inst.institution_name}&apos;s own published fee schedule{collectedOn ? `, collected ${collectedOn}` : ""}. Medians
+              come from the published schedules of the institutions counted on each row; a median needs at least{" "}
+              {MIN_INSTITUTIONS_FOR_MEDIAN}.{refreshedOn ? ` Medians as of ${refreshedOn}.` : ""}{" "}
+              <Link href="/methodology" className={LINK}>
+                Methodology
+              </Link>
+            </SourceNote>
+          </div>
         )}
-
-        <div className="flex justify-center sm:justify-start">
-          <Link href={`/institution/${id}`} className="fi-btn fi-btn-primary inline-flex min-h-11 max-w-full items-center justify-center px-5 text-center">
-            {publishedCount > 0
-              ? `See all ${publishedCount.toLocaleString("en-US")} fees at ${inst.institution_name}`
-              : `Open ${inst.institution_name}'s profile`}
-          </Link>
-        </div>
       </section>
 
       <FeeAlertControl
@@ -271,8 +291,7 @@ async function CheckAnswer({ id, refreshedOn }: { id: number; refreshedOn: strin
       />
 
       <p className="text-center text-[13px] text-ink-muted sm:text-left">
-        Work at {inst.institution_name}?{" "}
-        <Link href={REPORT_SHOWCASE.sampleHref} className={LINK}>
+        <Link href={REPORT_SHOWCASE.sampleHref} className={`inline-flex min-h-11 items-center ${LINK}`}>
           See a sample Competitive Fee Position report
         </Link>
       </p>

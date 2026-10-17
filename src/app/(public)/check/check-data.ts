@@ -5,8 +5,8 @@ import { getDisplayName } from "@/lib/fee-taxonomy";
 import { pickHeadlineValues } from "../institution/[id]/profile-data";
 import type { HeadlineRow, MarketBand } from "../institution/[id]/market-position";
 
-/** The same count the institution page draws in full, so /check and the profile show the same rows. */
-export const CHECK_ROWS_SHOWN = 6;
+/** The first headline rows, in the institution page's order; the full schedule is one click away. */
+export const CHECK_ROWS_SHOWN = 5;
 
 /** A market's band for one fee, only where enough institutions publish it for a median. */
 export function marketBand(entry: IndexEntry | undefined): MarketBand | null {

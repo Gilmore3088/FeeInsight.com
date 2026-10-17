@@ -4,7 +4,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { loadConsumerGuides } from "@/lib/guides/source";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
-import { getDisplayName } from "@/lib/fee-taxonomy";
+import { TAXONOMY_COUNT, getDisplayName } from "@/lib/fee-taxonomy";
 import { formatFeeAmount } from "@/lib/format";
 import { getPublicNationalIndex, getPublicSnapshot } from "@/lib/public-stats";
 import { PRODUCT_NAME, SITE_URL } from "@/lib/constants";
@@ -32,9 +32,16 @@ const ROWS_SHOWN = 5;
 const money = (n: number) => formatFeeAmount(n) ?? `$${n.toFixed(2)}`;
 /** "Overdraft (OD)" reads as "overdraft" in a sentence. */
 const plain = (category: string) => getDisplayName(category).replace(/\s*\([^)]*\)/g, "");
+/** Inside a sentence: lower case, except acronyms such as ATM or NSF. */
+const inSentence = (category: string) =>
+  plain(category)
+    .split(" ")
+    .map((word) => (/^[A-Z]{2,}$/.test(word.replace(/[^A-Za-z]/g, "")) ? word : word.toLowerCase()))
+    .join(" ");
 
 const BAND = "flex min-w-0 flex-col border-t border-border pt-5";
-const BAND_H2 = "text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-[22px]";
+const BAND_H2 = "text-center text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-left sm:text-[22px]";
+const BAND_LINE = "mt-2 text-[15px] leading-relaxed text-ink-soft sm:mx-0 sm:text-left";
 const MORE = "mt-auto inline-flex min-h-11 items-center pt-3 text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink";
 
 export default async function ConsumerPage() {
@@ -56,6 +63,12 @@ export default async function ConsumerPage() {
     .filter((entry) => entry.maturity_tier !== "insufficient" && entry.median_amount != null)
     .sort((a, b) => b.institution_count - a.institution_count);
   const guideRows = [...guides].sort((a, b) => Number(b.featured) - Number(a.featured)).slice(0, ROWS_SHOWN);
+  const guideMedians = guideRows
+    .map((guide) => ({ guide, median: summaryFor.get(guide.primaryCategory)?.median_amount ?? null }))
+    .filter((g): g is { guide: (typeof guideRows)[number]; median: number } => g.median !== null);
+  const topGuide = guideMedians.length > 1 ? guideMedians.reduce((a, b) => (b.median > a.median ? b : a)) : null;
+  const widest = indexRows[0] ?? null;
+  const asOf = summary.refreshedOn ? `, data as of ${summary.refreshedOn}` : "";
   const unstatedShown =
     medianHasUnstatedAudience(leadReady) ||
     indexRows.slice(0, ROWS_SHOWN).some((entry) => medianHasUnstatedAudience(summaryFor.get(entry.fee_category))) ||
@@ -88,12 +101,12 @@ export default async function ConsumerPage() {
               </p>
               <figcaption className="mt-3 text-[15px] leading-snug text-ink">
                 Across {leadReady.institution_count.toLocaleString("en-US")} banks and credit unions that publish an{" "}
-                {plain(LEAD_CATEGORY).toLowerCase()} fee, the middle 50% fall between {money(leadReady.p25_amount as number)} and{" "}
+                {inSentence(LEAD_CATEGORY)} fee, the middle 50% fall between {money(leadReady.p25_amount as number)} and{" "}
                 {money(leadReady.p75_amount as number)}.
               </figcaption>
               <p className="mt-3 text-[12px] text-ink-muted">
                 Source: banks&apos; and credit unions&apos; published fee schedules, {PRODUCT_NAME}
-                {summary.refreshedOn ? `, data as of ${summary.refreshedOn}` : ""}.
+                {asOf}.
               </p>
             </figure>
           )}
@@ -104,6 +117,12 @@ export default async function ConsumerPage() {
             <h2 id="guides-heading" className={BAND_H2}>
               Fee guides
             </h2>
+            {topGuide && (
+              <p className={BAND_LINE}>
+                Of the fees these guides cover, {inSentence(topGuide.guide.primaryCategory)} has the highest U.S. median,{" "}
+                {money(topGuide.median)}.
+              </p>
+            )}
             {guideRows.length > 0 ? (
               <ul className="mt-3 divide-y divide-border">
                 {guideRows.map((guide) => {
@@ -116,8 +135,8 @@ export default async function ConsumerPage() {
                       >
                         <span className="min-w-0">{guide.title}</span>
                         {median?.median_amount != null && (
-                          <span className="shrink-0 font-mono text-[13px] tabular-nums text-ink-muted">
-                            {money(median.median_amount)}
+                          <span className="shrink-0 text-[13px] text-ink-muted">
+                            U.S. median <span className="font-mono tabular-nums">{money(median.median_amount)}</span>
                             <UnstatedAudienceMark show={medianHasUnstatedAudience(median)} />
                           </span>
                         )}
@@ -127,7 +146,15 @@ export default async function ConsumerPage() {
                 })}
               </ul>
             ) : (
-              <p className="mt-2 text-[15px] text-ink-soft">The guides are not available right now.</p>
+              <p className={BAND_LINE}>The guides are not available right now.</p>
+            )}
+            {guideMedians.length > 0 && (
+              <div className="mt-3">
+                <SourceNote>
+                  Medians from banks&apos; and credit unions&apos; published fee schedules, {PRODUCT_NAME}
+                  {asOf}.
+                </SourceNote>
+              </div>
             )}
             <Link href="/guides" className={MORE}>
               {guides.length > 0 ? `All ${guides.length} guides` : "Fee guides"}
@@ -138,6 +165,12 @@ export default async function ConsumerPage() {
             <h2 id="index-heading" className={BAND_H2}>
               U.S. medians by fee
             </h2>
+            {widest && (
+              <p className={BAND_LINE}>
+                {plain(widest.fee_category)} is the most widely published fee: {widest.institution_count.toLocaleString("en-US")}{" "}
+                banks and credit unions list one, with a U.S. median of {money(widest.median_amount as number)}.
+              </p>
+            )}
             {indexRows.length > 0 ? (
               <ul className="mt-3 divide-y divide-border">
                 {indexRows.slice(0, ROWS_SHOWN).map((entry) => (
@@ -156,22 +189,28 @@ export default async function ConsumerPage() {
                 ))}
               </ul>
             ) : (
-              <p className="mt-2 text-[15px] text-ink-soft">National medians are not available right now.</p>
+              <p className={BAND_LINE}>National medians are not available right now.</p>
+            )}
+            {indexRows.length > 0 && (
+              <div className="mt-3">
+                <SourceNote>
+                  {PRODUCT_NAME}, one value per institution from its own published fee schedule{asOf}.
+                </SourceNote>
+              </div>
             )}
             <Link href="/fees" className={MORE}>
-              {indexRows.length > 0 ? `All ${indexRows.length} fee types in the ${PRODUCT_NAME}` : `The ${PRODUCT_NAME}`}
+              {`All ${TAXONOMY_COUNT} fee categories in the ${PRODUCT_NAME}`}
             </Link>
           </section>
         </div>
 
         <div className="mt-10">
-          <SourceNote>
-            Medians come from banks&apos; and credit unions&apos; own published fee schedules, one value per institution.{" "}
-            {summary.freshnessLabel}.{" "}
-            <Link href="/methodology" className="font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
-              Methodology
-            </Link>
-          </SourceNote>
+          <Link
+            href="/methodology"
+            className="inline-flex min-h-11 items-center text-[13px] font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+          >
+            How the medians are counted
+          </Link>
           <UnstatedAudienceFootnote show={unstatedShown} className="mt-3" />
         </div>
       </div>
