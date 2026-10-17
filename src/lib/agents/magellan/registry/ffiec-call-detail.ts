@@ -19,7 +19,7 @@ import { recordRegistryPartition, type RegistryDb } from "./partitions";
  */
 
 export const FFIEC_CALL_DETAIL_SOURCE = "ffiec-call-detail";
-export const FFIEC_CALL_DETAIL_PARSER_VERSION = 1;
+export const FFIEC_CALL_DETAIL_PARSER_VERSION = 3;
 const EMPTY_RETRY_HOURS = 24;
 const WRITE_CHUNK = 5_000;
 

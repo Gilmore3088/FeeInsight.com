@@ -13,6 +13,12 @@ import type { RateLimitResult } from "@/lib/api-rate-limit";
 export const API_V1_RATE_LIMIT_ROUTE = "api.v1";
 
 /** Every stable machine code a v1 error carries; openapi.json lists the same set. */
+/**
+ * The API's version, shown in /api/v1/openapi.json and the connector's serverInfo. Bump it in any PR
+ * that changes the API; scripts/ci-guards.sh api-docs-kill enforces that (James, 2026-10-17).
+ */
+export const API_VERSION = "1.10.0";
+
 export const API_ERROR_CODES = [
   "api_key_required",
   "burst_limited",

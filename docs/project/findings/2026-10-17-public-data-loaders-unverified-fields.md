@@ -99,3 +99,9 @@
    and PDF links. Lines are kept by keyword under the nearest heading, so this is low precision
    (early warning, not a confirmed event list). `institution_name` is filled only when the text
    before the first comma reads like an institution.
+
+## First prod runs (2026-10-17, 11:57-12:07 UTC)
+
+- `fdic-history` 2026: 5,035 events written, 4,770 linked to an institution, no missing fields.
+- `ffiec-call-detail` 2026Q1: 4,336 banks, 39,806 rows. Loaded: H034 ATM fees (512 banks), the RI-E lines (ATM, check printing, safe deposit, interchange, wire), RC-N past due and nonaccrual, RI-B totals, card and auto. Refused by the description check: H033 ("SEV CHAR DEP DOM OFF MAIN IND"), H035 ("...ALL IND"), RC-E ("NONINTR TRN ACCTS INDIV HSHLD FMLY" and siblings), K205/K206 ("CHARGE-OFFS ALL OTHER"). RC-O was missing because its file is split with the part marker after the date ("Schedule RCO 03312026(1 of 2).txt"). Parser v2 matches those descriptions and file names; RC-E now loads each line on its own (P753, P754, P756, P758) and P757 (MMDA of partnerships and corporations) is left out.
+- `ncua-extras` 2026Q2: empty, because the loader read `Acct-DescTradeNames.txt` instead of `AcctDesc.txt`. Parser v2 skips the trade-names file.

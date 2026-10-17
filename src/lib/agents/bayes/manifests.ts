@@ -403,6 +403,8 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // payments leave late payment and loan origination for other lending.
     // v71 (Oct 17): the non-network ATM fee refuses another institution's card named in several words
     // after "non-", and an ATM transaction verification re-files to account research.
+    // v72 (Oct 17, #1788): an international ATM fee re-files to card_foreign_txn, a sustained overdraft
+    // to continuous_od and an incoming wire to its incoming key; an optional add-on fails monthly maintenance.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

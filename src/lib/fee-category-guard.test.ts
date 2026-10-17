@@ -1806,3 +1806,79 @@ describe("guard v71: non-customer cards named in several words, and ATM transact
     expect(checkFeeCategory("account_research", name)).toEqual({ ok: true });
   });
 });
+
+describe("guard v72 (#1788): international ATM fees, add-ons, sustained overdrafts, incoming wires", () => {
+  it("re-files an ATM used outside the U.S. to International ATM & Card", () => {
+    for (const name of [
+      "Non-PNC Bank ATM Fee (All Other Countries)",
+      "Foreign Country ATM Cash Activity Fees",
+      "‐ATM Inquiry – International",
+      "Visa assessed surcharge/access fee for ATM or manual cash disbursement transactions initiated outside of the U.S. region",
+      "Over 8 withdrawals per month per account outside the US8: Excessive non-UNFCU/Co-op/Allpoint network ATM transactions",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name).ok).toBe(false);
+      expect(refileCategory("atm_non_network", name)).toBe("card_foreign_txn");
+      expect(checkFeeCategory("card_foreign_txn", name)).toEqual({ ok: true });
+    }
+  });
+
+  it("keeps another bank's ATM at home, and one price for domestic and international ATMs", () => {
+    for (const name of [
+      "Foreign ATM Transaction Fee",
+      "Non-PNC Bank ATM Fee (US, Canada, Puerto Rico, US Virgin Islands)",
+      "Non-U.S. Bank ATM Transaction (International or Domestic)",
+      "ATM Usage at Non-PlainsCapital Bank ATM (domestic or international): Per Transaction",
+      "Withdrawals at ATM not owned by BankSouth (includes international)",
+      "ATMs inside United States & internationally",
+      "Non-IBC ATM locations (in the U.S.) — Withdrawal",
+      "ATM Inquiry (any non-international ATM)",
+      "Over 3 balance inquiries per month per account within the US: Excessive non-UNFCU/Co-op/Allpoint network ATM transactions",
+      "ATM W/D fee (outside Iowa)",
+    ]) {
+      expect(refileCategory("atm_non_network", name)).not.toBe("card_foreign_txn");
+    }
+  });
+
+  it("refuses an optional add-on as monthly maintenance, by name or by its own line", () => {
+    expect(checkFeeCategory("monthly_maintenance", "Account \"Protect\" Add-On Monthly fee").ok).toBe(false);
+    expect(checkFeeCategory("monthly_maintenance", "Service charge includes one Elite membership; each additional Elite membership is").ok).toBe(false);
+    const line = (excerpt: string, amount: number) => ({ amount, conditions: `Knox deterministic extraction. excerpt="${excerpt}"` });
+    expect(checkFeeCategory("monthly_maintenance", "For a monthly fee",
+      line("First Commerce offers the ATM Freedom add-on for the Power Checking account. For a monthly fee of $2.99", 2.99))).toMatchObject({ ok: false, code: "schedule_contradicts" });
+    expect(checkFeeCategory("monthly_maintenance", "Monthly service charge",
+      line("Add ID Protect® to your account for a $5.00 monthly service charge.", 5)).ok).toBe(false);
+    // The account's own fee stays, packaged benefits and all.
+    expect(checkFeeCategory("monthly_maintenance", "Power Checking + CoverMe Monthly service charge", line("Power Checking + CoverMe - $3.99/month", 3.99))).toEqual({ ok: true });
+    expect(checkFeeCategory("monthly_maintenance", "Monthly maintenance fee",
+      line("Avoid the $3 monthly maintenance fee by maintaining at least a $300 average daily balance or add a direct deposit.", 3))).toEqual({ ok: true });
+    expect(checkFeeCategory("monthly_maintenance", "Benefits Checking Monthly Service Charge", line("Benefits Checking Monthly Service Charge $6.95", 6.95))).toEqual({ ok: true });
+  });
+
+  it("re-files staying overdrawn for days to the continuous overdraft fee, never to NSF", () => {
+    for (const name of ["7 Day Overdraft Processing Fee (one-time per occurrence) -", "Overdraft Charge (First assessed on the 6th business day overdrawn)", "Cont OD Charge", "Recurring Overdraft (every 7 days overdrawn)"]) {
+      expect(checkFeeCategory("overdraft", name).ok).toBe(false);
+      expect(refileCategory("overdraft", name)).toBe("continuous_od");
+    }
+    const context = { amount: 30, conditions: "excerpt=\"Courtesy Pay Negative Balance Fee . . . $30 (if negative balance is not paid within 20 days, fee may be assessed and privilege may be revoked)\"" };
+    expect(checkFeeCategory("overdraft", "Courtesy Pay Negative Balance Fee", context)).toMatchObject({ ok: false, code: "schedule_contradicts" });
+    expect(refileFromLine("overdraft", "Courtesy Pay Negative Balance Fee", context)).toBe("continuous_od");
+    // The per-item fee stays: a per-day item limit, a later charge after the next price, a per-item price beside the continuous one.
+    expect(checkFeeCategory("overdraft", "Courtesy Pay Fee (Limit 5 per day)")).toEqual({ ok: true });
+    const perItem = { amount: 30, conditions: "excerpt=\"*Courtesy Pay fee: | $30 per item, additional $30 per item after 10 days unpaid\"" };
+    expect(checkFeeCategory("overdraft", "Courtesy Pay fee", perItem)).toEqual({ ok: true });
+    expect(refileFromLine("overdraft", "Courtesy Pay fee", perItem)).toBeNull();
+    expect(refileCategory("overdraft", "fee assessed for each item paid1 Continuous Overdraft Fee....")).not.toBe("continuous_od");
+  });
+
+  it("re-files a wire the member receives to the matching incoming wire fee", () => {
+    for (const name of ["Domestic Wire Transfer Fee – In Coming", "Wire Transfer (in-bound) Domestic", "Domestic Wire-In fee", "Domestic Wire: In", "Wire Transfers: Domestic-In", "Domestic Wire Deposit Fee"]) {
+      expect(checkFeeCategory("wire_domestic_outgoing", name).ok).toBe(false);
+      expect(refileCategory("wire_domestic_outgoing", name)).toBe("wire_domestic_incoming");
+    }
+    expect(refileCategory("wire_intl_outgoing", "Income Wire Transfer (foreign)")).toBe("wire_intl_incoming");
+    // One price for both directions, an outgoing slot and a way of sending stay outgoing.
+    for (const name of ["All Wires - In/Out", "Wire Out/Wire In", "Wire Transfer - Domestic outbound/inbound", "Outgoing Wire (In Person)", "Domestic Wire Transfer Fee - Out Going", "Domestic outgoing wire charge in branch"]) {
+      expect(refileCategory("wire_domestic_outgoing", name)).toBe("wire_domestic_outgoing");
+    }
+  });
+});

@@ -481,7 +481,8 @@ interface LiveRefile extends Restore {
 /** Pure: whether a refile moves an excess activity fee. */
 export function movesExcessActivityFee(restore: Restore): boolean {
   return EXCESS_ACTIVITY_NAME.test(restore.row.fee_name) ||
-    refileFromLine(restore.row.canonical_fee_key, restore.row.fee_name, restore.row) === restore.to;
+    (restore.row.canonical_fee_key === "monthly_maintenance" &&
+      refileFromLine(restore.row.canonical_fee_key, restore.row.fee_name, restore.row) === restore.to);
 }
 
 /**

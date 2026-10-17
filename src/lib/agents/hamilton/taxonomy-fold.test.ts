@@ -128,6 +128,7 @@ const PAGE_LINES: Record<number, string> = {
   87357: "5A $10 monthly fee will be assessed if the minimum balance falls below $2,500. 6A $8 monthly fee will be assessed if the minimum balance falls below $100. 7ATM – automated teller machine.",
   132373: "2The categories of transactions for which an overdraft fee may be imposed are those by any of the following means: check, in-person withdrawal, ATM withdrawal, or other electronic means. After one day in overdraft, customer will be charged a $1.00 fee per day.",
   66351: "2You will receive a refund of 3 foreign ATM transaction fees per statement cycle ($6.00 maximum per statement cycle.)\n\n3If you opt-in to the bill pay feature, then bill pay must be utilized monthly to avoid $5.95 monthly fee.",
+  66594: "Stop Payment Fee | $20.00\n\nDomestic Wire Transfer Fees | Incoming - $10.00 Outgoing - $20.00\n\nInternational Wire Transfer Fees | Incoming - $20.00 Outgoing - $20.00",
 };
 
 /** Renames whose price the page ties to a balance band (`tiered_fee`), before and after (#1664). */

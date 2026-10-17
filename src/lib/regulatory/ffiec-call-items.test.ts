@@ -15,10 +15,34 @@ describe("schedulePattern", () => {
     expect(re.test("FFIEC CDR Call Schedule RCN(1 of 2) 06302026.txt")).toBe(true);
     expect(re.test("FFIEC CDR Call Schedule RIA 06302026.txt")).toBe(false);
     expect(re.test("FFIEC CDR Call Schedule RCO 06302026.txt")).toBe(false);
+    // The bulk zip puts the part marker after the date; 2026Q1 missed RC-O this way.
+    expect(schedulePattern(["RCO"]).test("FFIEC CDR Call Schedule RCO 03312026(1 of 2).txt")).toBe(true);
   });
 });
 
 describe("description checks", () => {
+  it("matches the abbreviated descriptions in the 2026Q1 bulk file", () => {
+    expect(describes(item("consumer_maintenance_charges_ytd"), "SEV CHAR DEP DOM OFF MAIN IND")).toBe(true);
+    expect(describes(item("other_deposit_service_charges_ytd"), "SEV CHAR DEP DOM OFF ALL IND")).toBe(true);
+    expect(describes(item("consumer_noninterest_transaction_deposits"), "NONINTR TRN ACCTS INDIV HSHLD FMLY")).toBe(true);
+    expect(describes(item("consumer_interest_transaction_deposits"), "INTR TRN ACCTS INDIV HSHLD FMLY")).toBe(true);
+    expect(describes(item("consumer_interest_transaction_deposits"), "NONINTR TRN ACCTS INDIV HSHLD FMLY")).toBe(false);
+    expect(describes(item("consumer_money_market_deposits"), "MMDA DEPS PRIMRLY INDIV HSHLD FAMLY")).toBe(true);
+    expect(describes(item("consumer_money_market_deposits"), "OTHR MMDA INDIV PRTNRS CORPS")).toBe(false);
+    expect(describes(item("consumer_other_savings_deposits"), "OTHR SVGS DEPS IND HSHLD FAMILY USE")).toBe(true);
+    expect(describes(item("charge_offs_other_consumer_ytd"), "CHARGE-OFFS ALL OTHER")).toBe(true);
+    expect(describes(item("charge_offs_other_consumer_ytd"), "RECOVERIES ALL OTHER")).toBe(false);
+    expect(describes(item("recoveries_other_consumer_ytd"), "RECOVERIES ALL OTHER")).toBe(true);
+    // RC-O Memo 1 as filed in the 2026Q1 bulk file (v2 run refused these).
+    expect(describes(item("deposits_250k_or_less_amount"), "AMT OF DEP ACCNT $250K OR LESS")).toBe(true);
+    expect(describes(item("deposits_250k_or_less_amount"), "NBR OF DEP ACCNTS OF $250K OR LESS")).toBe(false);
+    expect(describes(item("deposits_250k_or_less_count"), "NBR OF DEP ACCNTS OF $250K OR LESS")).toBe(true);
+    expect(describes(item("deposits_over_250k_amount"), "AMT OF DEP ACCNT MORE THAN $250K")).toBe(true);
+    expect(describes(item("deposits_over_250k_amount"), "NBR OF DEP ACCNT GT $250K")).toBe(false);
+    expect(describes(item("deposits_over_250k_count"), "NBR OF DEP ACCNT GT $250K")).toBe(true);
+    expect(describes(item("deposits_over_250k_count"), "NBR OF DEP ACCNTS OF $250K OR LESS")).toBe(false);
+  });
+
   it("keeps charge-off and recovery columns apart", () => {
     expect(describes(item("charge_offs_credit_card_ytd"), "CREDIT CARD CHARGE-OFFS")).toBe(true);
     expect(describes(item("charge_offs_credit_card_ytd"), "CREDIT CARD RECOVERIES")).toBe(false);
