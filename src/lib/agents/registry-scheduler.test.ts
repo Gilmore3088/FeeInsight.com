@@ -13,6 +13,7 @@ import {
   isKeylessSkipNowKeyed,
   isParserStale,
   pickDueCandidate,
+  PRIORITY_REGISTRY_SOURCES,
   registryCandidates,
   registryPartitionsBySource,
   scheduleDueRegistryRuns,
@@ -25,22 +26,24 @@ function templateText(strings: unknown): string {
 describe("registry scheduler", () => {
   const now = new Date("2026-10-03T00:00:00Z");
 
-  it("round-robins sources, identity syncs first, newest partition of each source first", () => {
+  it("runs the roster sources first, then round-robins the rest, newest partition of each source first", () => {
     const candidates = registryCandidates(now, { year: 2025, quarter: 4 }).map((c) => `${c.source}:${c.partitionKey}`);
-    // Round one takes each source's newest partition in REGISTRY_SOURCES order; round two
-    // continues the history of every source that has one. Sources with one partition drop out.
     const lists = registryPartitionsBySource(now, { year: 2025, quarter: 4 });
-    const roundOne = lists.filter((l) => l.partitions.length > 0).map((l) => `${l.source}:${l.partitions[0]}`);
-    const roundTwo = lists.filter((l) => l.partitions.length > 1).map((l) => `${l.source}:${l.partitions[1]}`);
-    expect(candidates.slice(0, roundOne.length)).toEqual(roundOne);
-    expect(candidates.slice(roundOne.length, roundOne.length + roundTwo.length)).toEqual(roundTwo);
-    expect(roundOne.slice(0, 5)).toEqual([
-      "fdic-universe:current",
-      "fdic-financials:2026Q2",
-      "ncua-financials:2026Q2",
-      "ffiec-overdraft:2026Q1",
-      "ffiec-call-detail:2026Q1",
-    ]);
+    const priority = new Set(PRIORITY_REGISTRY_SOURCES);
+    // Every roster partition comes before any other source's partition.
+    const rosterCount = lists.filter((l) => priority.has(l.source)).reduce((sum, l) => sum + l.partitions.length, 0);
+    expect(candidates.slice(0, rosterCount).every((c) => priority.has(c.split(":")[0]))).toBe(true);
+    expect(candidates.slice(rosterCount).some((c) => priority.has(c.split(":")[0]))).toBe(false);
+    expect(candidates.slice(0, 3)).toEqual(["fdic-universe:current", "ncua-financials:2026Q2", "ffiec-overdraft:2026Q1"]);
+    // The rest: round one takes each source's newest partition in REGISTRY_SOURCES order; round
+    // two continues the history of every source that has one. Sources with one partition drop out.
+    const rest = lists.filter((l) => !priority.has(l.source));
+    const roundOne = rest.filter((l) => l.partitions.length > 0).map((l) => `${l.source}:${l.partitions[0]}`);
+    const roundTwo = rest.filter((l) => l.partitions.length > 1).map((l) => `${l.source}:${l.partitions[1]}`);
+    const after = candidates.slice(rosterCount);
+    expect(after.slice(0, roundOne.length)).toEqual(roundOne);
+    expect(after.slice(roundOne.length, roundOne.length + roundTwo.length)).toEqual(roundTwo);
+    expect(roundOne.slice(0, 2)).toEqual(["fdic-financials:2026Q2", "ffiec-call-detail:2026Q1"]);
     expect(roundOne).toEqual(expect.arrayContaining(["fdic-history:2026", "ncua-extras:2026Q2", "ncua-branch-geocode:pending", "wire-research:current"]));
     expect(candidates.filter((c) => c.startsWith("fdic-financials:"))).toHaveLength(3);
   });
@@ -152,14 +155,14 @@ describe("registry scheduler", () => {
 
       const result = await scheduleDueRegistryRuns({ now, triggeredBy: "test" });
 
-      expect(result).toMatchObject({ scheduled: true, source: "fdic-financials", partitionKey: "2026Q2", runId: 501 });
+      expect(result).toMatchObject({ scheduled: true, source: "ncua-financials", partitionKey: "2026Q2", runId: 501 });
       expect(startAgentRunMock).toHaveBeenCalledWith(
         expect.objectContaining({
           agent: "magellan",
           kind: "workflow",
-          idempotencyKey: "magellan:registry:fdic-financials:2026Q2",
+          idempotencyKey: "magellan:registry:ncua-financials:2026Q2",
           params: expect.objectContaining({ source: "magellan.registry", partition_key: "2026Q2" }),
-          steps: [expect.objectContaining({ key: "registry-fdic-financials", input: { partition_key: "2026Q2" } })],
+          steps: [expect.objectContaining({ key: "registry-ncua-financials", input: { partition_key: "2026Q2" } })],
         }),
       );
     });

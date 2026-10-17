@@ -94,8 +94,9 @@ import {
  * multi-year backfill into a visible sequence of small runs that resumes on its
  * own after any failure.
  *
- * Order: round-robin across sources, newest partitions first, then history
- * back to REGISTRY_BACKFILL_FROM (default 2010Q1).
+ * Order: the roster sources in PRIORITY_REGISTRY_SOURCES first, then round-robin across
+ * the rest, newest partitions first, then history back to REGISTRY_BACKFILL_FROM
+ * (default 2010Q1).
  */
 
 export const REGISTRY_RUN_SOURCE = "magellan.registry";
@@ -233,14 +234,19 @@ export function registryPartitionsBySource(
 }
 
 /**
- * Every partition the registry should hold, in priority order: round-robin
- * across sources (each source's newest partition first), so one source's long
- * backfill never starves the others. Within a round, REGISTRY_SOURCES order
- * applies, which puts identity syncs (FDIC universe, SEC links) ahead of the
- * data that depends on them.
+ * Institution-roster sources that run ahead of every other source whenever one of their
+ * partitions is due, so the closed-institution and merger checks (Atlas marks closed or merged
+ * charters inactive from these) keep their cadence however many data sources are added. The
+ * FDIC universe and NCUA 5300 syncs set `institution_sources.status`; ffiec-overdraft feeds the
+ * overdraft income series. Every other source shares the remaining runs round-robin.
  */
-export function registryCandidates(now: Date, from: Quarter = backfillStart()): RegistryPartitionCandidate[] {
-  const lists = registryPartitionsBySource(now, from);
+export const PRIORITY_REGISTRY_SOURCES: readonly string[] = [
+  FDIC_UNIVERSE_SOURCE,
+  NCUA_FINANCIALS_SOURCE,
+  FFIEC_OVERDRAFT_SOURCE,
+];
+
+function roundRobin(lists: Array<{ source: string; partitions: string[] }>): RegistryPartitionCandidate[] {
   const longest = Math.max(0, ...lists.map((list) => list.partitions.length));
   const out: RegistryPartitionCandidate[] = [];
   for (let round = 0; round < longest; round += 1) {
@@ -250,6 +256,22 @@ export function registryCandidates(now: Date, from: Quarter = backfillStart()): 
     }
   }
   return out;
+}
+
+/**
+ * Every partition the registry should hold, in priority order: the roster sources in
+ * PRIORITY_REGISTRY_SOURCES first, then round-robin across the rest (each source's newest
+ * partition first), so one source's long backfill never starves the others. Within a round,
+ * REGISTRY_SOURCES order applies, which puts identity syncs (FDIC universe, SEC links) ahead
+ * of the data that depends on them.
+ */
+export function registryCandidates(now: Date, from: Quarter = backfillStart()): RegistryPartitionCandidate[] {
+  const lists = registryPartitionsBySource(now, from);
+  const priority = new Set(PRIORITY_REGISTRY_SOURCES);
+  return [
+    ...roundRobin(lists.filter((list) => priority.has(list.source))),
+    ...roundRobin(lists.filter((list) => !priority.has(list.source))),
+  ];
 }
 
 interface PartitionStateRow {
