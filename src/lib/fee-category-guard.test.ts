@@ -1889,8 +1889,8 @@ describe("borrowed direction (#1837): a direction row read under the other colum
     ["check_printing", "Check Printing: Outgoing"],
     ["safe_deposit_box", "SAFE DEPOSIT BOXES15: Outgoing (domestic)"],
     ["stop_payment", "Stop Payment: Incoming"],
-    ["notary", "Notary Service: Foreign Incoming"],
-    ["coin", "Coin Counting: International Outgoing"],
+    ["notary_fee", "Notary Service: Foreign Incoming"],
+    ["coin_counting", "Coin Counting: International Outgoing"],
   ])("flags %s %s when switched on", (key, name) => {
     expect(borrowedDirection(key, name, true)).not.toBeNull();
     const result = checkFeeCategory(key, name, undefined, { borrowedDirection: true });
@@ -1904,6 +1904,11 @@ describe("borrowed direction (#1837): a direction row read under the other colum
     ["document_reproduction", "Fax: Incoming"],
     ["collection_item", "Collections: Foreign"],
     ["card_foreign_txn", "Debit Card: International"],
+    ["atm_non_network", "ATM Withdrawal: Foreign"],
+    ["card_replacement", "Card Replacement: International"],
+    ["returned_mail", "Returned Mail: Domestic/Foreign"],
+    ["stop_payment", "Stop Payment: Outgoing Wire"],
+    ["account_research", "Research: International Wire"],
   ])("leaves a category priced by direction alone: %s %s", (key, name) => {
     expect(borrowedDirection(key, name, true)).toBeNull();
   });
