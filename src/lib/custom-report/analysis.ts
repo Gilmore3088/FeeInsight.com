@@ -218,7 +218,7 @@ export function buildFindings(lines: ReportLine[]): string[] {
     const median = money(l.peers.median);
     if (l.position === "free") return `You charge nothing for ${label}; the local median is ${median} across ${l.peers.n} competitors.`;
     const direction = l.position === "above_market" ? "above" : "below";
-    return `Your ${label} fee (${yours}) is ${direction} the local range: the median is ${median} across ${l.peers.n} competitors, and the middle half charge ${money(l.peers.p25)} to ${money(l.peers.p75)}.`;
+    return `Your ${label} fee (${yours}) is ${direction} the local middle half: the median is ${median} across ${l.peers.n} competitors, and the middle half charge ${money(l.peers.p25)} to ${money(l.peers.p75)}.`;
   });
   const inMarket = comparable.filter((l) => l.position === "in_market").length;
   findings.push(`${inMarket} of your ${comparable.length} comparable fee lines sit inside the middle half of your local market.`);

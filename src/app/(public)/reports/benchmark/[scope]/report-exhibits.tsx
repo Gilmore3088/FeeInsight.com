@@ -1,20 +1,21 @@
 import Link from "next/link";
-import { Lock } from "lucide-react";
-import { ProNextStep } from "@/components/public/pro-next-step";
+import { TrackLink } from "@/components/track-link";
+import { DEMO_REQUEST_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
-import { PRODUCT_NAME } from "@/lib/constants";
+import { PRODUCT_NAME, REPORT_OFFER, REPORT_PRICE_INLINE } from "@/lib/constants";
+import { PAGE_HEADER } from "@/components/public/page-header";
 import { PrintButton } from "../../../research/print-button";
 import { SectionHeading } from "../../../research/research-hero";
 import { ExhibitSource } from "../../../research/exhibits";
 import { formatDelta, type StateComparison } from "@/lib/research-report/state-findings";
 import { MIN_BENCHMARK_INSTITUTIONS, MIN_CHARTER_INSTITUTIONS } from "./report-data";
+import { teaserScale, type InstitutionTeaser } from "./institution-view";
 
-const SERIF = { fontFamily: "var(--fi-font-sans)" };
 const MONO_FIGURE = { fontFamily: "var(--fi-font-mono)" } as const;
 
-/** Where the locked institution report's button goes: the paid request on For Institutions. */
-export const INSTITUTION_REPORT_HREF = "/for-institutions?report=institution#report";
+/** Where the paid institution report line goes: the request form on /reports. */
+export const INSTITUTION_REPORT_HREF = "/reports?report=institution&src=benchmark#request";
 
 export interface HeroStat {
   value: string;
@@ -37,17 +38,17 @@ export function ReportHero({
 }) {
   return (
     <section className="relative overflow-hidden bg-ink text-paper">
-      <div className="relative mx-auto max-w-page px-4 pb-10 pt-10 sm:px-6 sm:pb-12 sm:pt-12">
-        <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e0716a]">
+      <div className={`relative mx-auto max-w-page px-4 pb-10 pt-10 sm:px-6 sm:pb-12 sm:pt-12 ${PAGE_HEADER}`}>
+        <p className="flex items-center justify-center gap-2 sm:justify-start text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e0716a]">
           <span aria-hidden="true" className="h-px w-8 bg-[#e0716a]/60" />
           {eyebrow}
         </p>
-        <h1 className="mt-3 max-w-3xl text-[2.25rem] font-extrabold leading-[1.05] tracking-[-0.015em] text-white sm:text-[3.25rem]" style={SERIF}>
+        <h1 className="mx-auto mt-3 max-w-3xl sm:mx-0 text-[2.25rem] font-semibold leading-[1.05] tracking-[-0.03em] text-white sm:text-[3.25rem]">
           {title}
         </h1>
-        <p className="mt-4 max-w-2xl text-[15px] leading-relaxed text-paper/80 sm:text-base">{lede}</p>
+        <p className="mx-auto mt-4 max-w-2xl text-[15px] leading-relaxed text-paper/80 sm:mx-0 sm:text-base">{lede}</p>
 
-        <dl className="mt-9 grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-white/10 lg:grid-cols-4">
+        <dl className="mt-9 grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-white/10 text-left lg:grid-cols-4">
           {stats.map((s) => (
             <div key={s.label} className="bg-ink px-5 py-5">
               <dt className="sr-only">{s.label}</dt>
@@ -62,7 +63,7 @@ export function ReportHero({
           ))}
         </dl>
 
-        <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3 text-[12px]">
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-3 text-[12px] sm:justify-start">
           <span className="inline-flex items-center gap-2 text-paper/75">
             <span aria-hidden="true" className="h-2 w-2 rounded-full bg-[#7fb59b]" />
             {freshnessLabel}
@@ -76,6 +77,24 @@ export function ReportHero({
     </section>
   );
 }
+
+/** The axis end: the next round amount above the largest figure, so the scale reads as dollars. */
+export function niceMax(value: number): number {
+  if (!(value > 0)) return 1;
+  const step = 10 ** Math.floor(Math.log10(value));
+  for (const m of [1, 2, 2.5, 5, 10]) if (m * step >= value) return m * step;
+  return 10 * step;
+}
+
+/**
+ * Plain words for a headline fee whose name alone reads two ways, shown under its name.
+ * The international line is flat dollar fees only: a fee stated as a rate is never pooled
+ * with dollar amounts (src/lib/percent-fees.ts).
+ */
+export const FEE_NOTES: Record<string, string> = {
+  minimum_balance: "The fee charged when an account falls below its required balance, not the balance itself.",
+  card_foreign_txn: "Flat dollar fees for card or ATM use abroad. Percentage fees, like 1% of a purchase, are counted apart.",
+};
 
 function pct(value: number, scaleMax: number): number {
   return Math.max(0, Math.min(100, (value / scaleMax) * 100));
@@ -99,7 +118,7 @@ function RangeTrack({
   const band = tone === "area" ? "bg-brick/25" : "bg-ink/12";
   const tick = tone === "area" ? "bg-brick" : "bg-ink/70";
   return (
-    <div className="grid grid-cols-[34px_minmax(0,1fr)_56px] items-center gap-2">
+    <div className="grid grid-cols-[34px_minmax(0,1fr)_56px] items-center gap-x-2 gap-y-1">
       <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-muted">{label}</span>
       <div className="relative h-2.5 rounded-full bg-surface-200" aria-hidden="true">
         {p25 != null && p75 != null && (
@@ -111,17 +130,23 @@ function RangeTrack({
         <div className={`absolute -top-1 h-[18px] w-1 -translate-x-1/2 rounded-full ${tick}`} style={{ left: `${pct(median, scaleMax)}%` }} />
       </div>
       <span className="text-right text-[12px] font-semibold tabular-nums text-ink">{formatAmount(median)}</span>
+      {p25 != null && p75 != null && (
+        <span className="col-start-2 text-[11px] tabular-nums text-ink-muted">
+          Middle half {formatAmount(p25)} to {formatAmount(p75)}
+        </span>
+      )}
     </div>
   );
 }
 
 function BenchmarkCard({ row, areaLabel }: { row: StateComparison; areaLabel: string }) {
   const values = [row.median_amount, row.p75_amount ?? 0, row.national_median ?? 0, row.national_p75 ?? 0];
-  const scaleMax = Math.max(...values) * 1.35 || 1;
+  const scaleMax = niceMax(Math.max(...values) * 1.1);
   const delta = row.delta_pct;
   return (
     <div className="flex flex-col rounded-2xl border border-border bg-white p-5 print:break-inside-avoid">
       <p className="text-[12px] font-semibold text-ink-soft">{getDisplayName(row.fee_category)}</p>
+      {FEE_NOTES[row.fee_category] && <p className="mt-0.5 text-[11px] leading-snug text-ink-muted">{FEE_NOTES[row.fee_category]}</p>}
       <p className="mt-2 flex items-baseline gap-2">
         <span className="text-[2.25rem] font-semibold leading-none tabular-nums text-ink" style={MONO_FIGURE}>
           {formatAmount(row.median_amount)}
@@ -141,6 +166,15 @@ function BenchmarkCard({ row, areaLabel }: { row: StateComparison; areaLabel: st
         {row.national_median != null && (
           <RangeTrack label="US" median={row.national_median} p25={row.national_p25} p75={row.national_p75} scaleMax={scaleMax} tone="national" />
         )}
+        {/* The scale, so the band's ends can be read against it. */}
+        <div className="grid grid-cols-[34px_minmax(0,1fr)_56px] gap-2 text-[10px] tabular-nums text-ink-muted" aria-hidden="true">
+          <span />
+          <span className="flex justify-between border-t border-border pt-1">
+            <span>$0</span>
+            <span>{formatAmount(scaleMax / 2)}</span>
+            <span>{formatAmount(scaleMax)}</span>
+          </span>
+        </div>
       </div>
       <p className="mt-auto pt-4 text-[11px] text-ink-muted">
         <span className="font-semibold tabular-nums text-ink">{row.institution_count.toLocaleString()}</span> institutions
@@ -172,7 +206,9 @@ export function BenchmarkBoard({
   return (
     <section id="benchmarks" className="scroll-mt-28">
       <SectionHeading eyebrow="Exhibit 1 · Headline fees" title={`What institutions in ${place} charge`}>
-        The tick is the median; the shaded band is where the middle half of institutions land.
+        The tick is the median; the shaded band runs from the 25th to the 75th percentile, where the middle half of
+        institutions land, on the dollar scale under each card. Each fee counts only the institutions whose published
+        schedule we hold for it, so every card rests on its own set.
         {comparing && " The top bar is the district, the bottom bar is the whole country."}
       </SectionHeading>
       <div className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -188,76 +224,137 @@ export function BenchmarkBoard({
   );
 }
 
-const LOCKED_ROWS = ["Overdraft", "NSF / returned item", "Monthly maintenance", "Outgoing domestic wire", "Stop payment"];
+const POSITION_DOT = {
+  above_market: "bg-brick",
+  in_market: "bg-ink",
+  below_market: "bg-below-market",
+  free: "bg-below-market",
+} as const;
 
-const INSTITUTION_REPORT_ADDS = [
-  "Your own published fees on every line, next to named competitors in your market",
-  "Where you sit above or below your peer band, fee by fee",
-  "Peer sets by charter, asset size, state and district",
-  "A source citation for every figure",
-];
+const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
 
-/** The paid next step, shown grayed out: one institution against named competitors. */
-export function LockedInstitutionReport() {
+const POSITION_WORDS = { above_market: "above", in_market: "inside", below_market: "below", free: "free, below" } as const;
+
+/**
+ * The paid next step, shown for real: one live institution's report lines against its own
+ * local market.
+ */
+export function InstitutionView({ teaser, asOf }: { teaser: InstitutionTeaser | null; asOf: string | null }) {
   return (
-    <section id="institution" className="scroll-mt-28 print:hidden">
-      <div className="grid gap-8 rounded-2xl border border-border bg-surface-200 p-6 sm:p-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:items-center">
-        <div>
-          <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-brick">
-            <Lock className="h-3.5 w-3.5" aria-hidden="true" />
-            Institution report
-          </p>
-          <h2 className="mt-2 text-[1.6rem] font-bold leading-tight text-ink sm:text-[2rem]" style={SERIF}>
-            Where does your institution stand?
-          </h2>
-          <p className="mt-3 text-[14px] leading-relaxed text-ink-soft">
-            This report shows the market. The institution report shows you in it.
-          </p>
-          <ul className="mt-4 space-y-2">
-            {INSTITUTION_REPORT_ADDS.map((item) => (
-              <li key={item} className="flex items-start gap-2 text-[14px] text-[#3D372F]">
-                <span aria-hidden="true" className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-brick" />
-                {item}
-              </li>
-            ))}
-          </ul>
-          <Link
-            href={INSTITUTION_REPORT_HREF}
-            className="mt-6 inline-flex items-center rounded-full bg-brick px-5 py-2.5 text-sm font-semibold text-white hover:bg-brick-ink"
-          >
-            Request your institution report
-          </Link>
-          <p className="mt-2 text-[12px] text-ink-muted">We reply within one business day with scope and price.</p>
-        </div>
-
-        <div aria-hidden="true" className="select-none overflow-hidden rounded-xl border border-border bg-white/70">
-          <div className="flex items-center justify-between border-b border-border px-4 py-3">
-            <span className="text-[12px] font-semibold text-ink-muted">Your institution vs named local competitors</span>
-            <Lock className="h-3.5 w-3.5 text-[#B5AA9B]" />
+    <>
+      {teaser && (
+        <section id="institution" aria-labelledby="institution-heading" className="scroll-mt-28 print:hidden">
+          <SectionHeading eyebrow="Your institution" title="One institution against its local market">
+            {`${teaser.who}, against the ${teaser.competitors} local competitors that publish fees. Each row counts the ones that publish that fee.`}
+          </SectionHeading>
+          <div className="mt-7 max-w-3xl rounded-2xl border border-border bg-surface-0 p-4 shadow-fi-1 sm:p-6">
+            <p className="text-[13px] text-ink-muted">
+              Above the local middle half on{" "}
+              <span className="font-semibold text-ink">
+                {teaser.above} of {teaser.lines.length}
+              </span>{" "}
+              fees shown
+            </p>
+            <ol className="mt-3 divide-y divide-border">
+              {teaser.lines.map((l) => {
+                const x = teaserScale(l);
+                return (
+                  <li key={l.key} className="grid grid-cols-[7rem_minmax(0,1fr)_4.75rem] items-center gap-3 py-2.5 text-[13px] sm:grid-cols-[10rem_minmax(0,1fr)_6.5rem]">
+                    <span className="leading-tight text-ink">
+                      {l.label}
+                      <span className="sr-only">, {POSITION_WORDS[l.position]} the local middle half</span>
+                    </span>
+                    <span className="relative h-5" aria-hidden="true">
+                      <span className="absolute inset-x-0 top-1/2 border-t border-border" />
+                      <span
+                        className="absolute top-1/2 h-2.5 -translate-y-1/2 rounded-full bg-brick-tint"
+                        style={{ left: `${x(l.p25)}%`, width: `${Math.max(x(l.p75) - x(l.p25), 1)}%` }}
+                      />
+                      <span className="absolute top-0 h-5 w-[2px] bg-ink/60" style={{ left: `${x(l.median)}%` }} />
+                      <span
+                        className={`absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-surface-0 ${POSITION_DOT[l.position]}`}
+                        style={{ left: `${x(l.own)}%` }}
+                      />
+                    </span>
+                    <span className="text-right">
+                      <span className="block font-mono font-semibold tabular-nums text-ink">{formatAmount(l.own)}</span>
+                      <span className="block text-[11px] leading-tight text-ink-muted">
+                        {l.chargingLess} of {l.peers} charge less
+                      </span>
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
+            <p className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-ink-muted" aria-hidden="true">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2.5 w-5 rounded-full bg-brick-tint" /> Local middle half
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-3.5 w-[2px] bg-ink/60" /> Local median
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full bg-brick" /> Above
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full bg-ink" /> Inside
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full bg-below-market" /> Below
+              </span>
+            </p>
+            <Link
+              href={SAMPLE_REPORT_HREF}
+              className="mt-4 inline-flex text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+            >
+              Read the full sample report
+            </Link>
           </div>
-          <table className="w-full text-[13px] text-[#9A9083]">
-            <thead>
-              <tr className="border-b border-surface-200 text-left text-[10px] uppercase tracking-wider">
-                <th className="px-4 py-2 font-semibold">Fee</th>
-                <th className="px-3 py-2 text-right font-semibold">You</th>
-                <th className="px-3 py-2 text-right font-semibold">Competitors</th>
-                <th className="px-4 py-2 font-semibold">Position</th>
-              </tr>
-            </thead>
-            <tbody>
-              {LOCKED_ROWS.map((fee) => (
-                <tr key={fee} className="border-b border-surface-200 last:border-b-0">
-                  <td className="px-4 py-2.5">{fee}</td>
-                  <td className="px-3 py-2.5 text-right"><span className="inline-block h-2.5 w-10 rounded bg-border" /></td>
-                  <td className="px-3 py-2.5 text-right"><span className="inline-block h-2.5 w-16 rounded bg-border" /></td>
-                  <td className="px-4 py-2.5"><span className="inline-block h-2.5 w-20 rounded bg-border" /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+          <ExhibitSource asOf={asOf}>
+            One institution&apos;s own published fee schedule against the published schedules of the competitors in its local market.
+          </ExhibitSource>
+        </section>
+      )}
+
+    </>
+  );
+}
+
+/** The one closing band: Hamilton for your own institution, a demo, and the paid report as one line. */
+export function ClosingBand() {
+  return (
+    <section aria-labelledby="closing-heading" className="rounded-2xl border border-border bg-surface-0 px-5 py-7 print:hidden sm:px-8">
+      <h2 id="closing-heading" className="text-[22px] font-semibold tracking-[-0.02em] text-ink">
+        See your own institution in this report
+      </h2>
+      <p className="mt-2 max-w-[38rem] text-[14px] text-ink-muted">
+        Hamilton places your fees on every line of this report and updates them when a competitor&apos;s published schedule changes.
+      </p>
+      <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3">
+        <TrackLink
+          event="upgrade_click"
+          eventProps={{ placement: "benchmark_closing" }}
+          href={PRO_PLANS_NAV.href}
+          className="inline-flex min-h-11 items-center rounded-full bg-ink px-5 text-[14px] font-semibold text-on-ink hover:opacity-90"
+        >
+          {PRO_PLANS_NAV.label}
+        </TrackLink>
+        <Link href={DEMO_REQUEST_NAV.href} className="text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
+          {DEMO_REQUEST_NAV.label}
+        </Link>
       </div>
-      <ProNextStep className="mt-4" />
+      <p className="mt-4 text-[13px] text-ink-muted">
+        Or one report for one institution:{" "}
+        <TrackLink
+          event="request_report_click"
+          eventProps={{ placement: "benchmark_closing" }}
+          href={INSTITUTION_REPORT_HREF}
+          className="font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+        >
+          the {REPORT_OFFER.name}, {REPORT_PRICE_INLINE}
+        </TrackLink>
+        .
+      </p>
     </section>
   );
 }
@@ -270,7 +367,9 @@ export function ReportMethodology({ area, district = false }: { area: string; di
         <p>
           <span className="block font-semibold text-ink">Sources.</span>
           Published fee schedules from FDIC-insured banks and NCUA-insured credit unions in {area}. Every fee is read from
-          the institution&apos;s own document and verified before it is published.
+          the institution&apos;s own document. A fee is published only after a line of that document is found that names
+          the fee, states the amount as the fee itself (not a limit or a balance), and matches the fee type it is filed
+          under.
           {district && " Institutions are placed in a Fed district by their headquarters state."}
         </p>
         <p>

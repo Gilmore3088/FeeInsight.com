@@ -49,7 +49,7 @@ export function BoardBriefEditor({ analysis, analysisId, initialReport, reportId
   }
   if (!report) return <p role="alert">Choose a saved answer to build a board brief.</p>;
   return <div className="mx-auto flex max-w-6xl flex-col gap-6">
-    <header className="flex flex-wrap justify-between gap-4"><div><p className="fi-text-label text-[var(--fi-muted)]">Reports</p><h1 className="mt-1 text-3xl font-semibold">Board brief</h1><p className="mt-2 text-sm text-[var(--fi-muted)]">Hamilton&apos;s findings and their sources, ready for your board. Add a title and a note, save, then download the PDF.</p></div><div className="flex flex-wrap items-start gap-3">
+    <header className="flex flex-col items-center gap-4 text-center sm:flex-row sm:flex-wrap sm:justify-between sm:text-left"><div><p className="fi-text-label text-[var(--fi-muted)]">Reports</p><h1 className="mt-1 text-3xl font-semibold">Board brief</h1><p className="mt-2 text-sm text-[var(--fi-muted)]">Hamilton&apos;s findings and their sources, ready for your board. Add a title and a note, save, then download the PDF.</p></div><div className="flex flex-wrap items-start gap-3">
       <button className="fi-btn fi-btn-primary disabled:opacity-50" disabled={busy || !dirty} onClick={() => void save()}><Save size={17} aria-hidden />{busy ? "Saving…" : "Save brief"}</button>
       <button className="fi-btn fi-btn-secondary disabled:opacity-50" disabled={!savedId || dirty || downloadBusy} onClick={() => void download()}><Download size={17} aria-hidden />{downloadBusy ? "Preparing…" : "Download PDF"}</button>
     </div></header>

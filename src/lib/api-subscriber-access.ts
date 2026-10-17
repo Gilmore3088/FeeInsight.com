@@ -5,8 +5,9 @@ import { tierAmountLabel, type ProTier } from "@/lib/pro-tiers";
 /**
  * Self-serve API keys for Pro subscribers (James, 16 Oct 2026): the $300 and $500 plans
  * (and consultants, who pay the $300 price) include the API and the Claude connector; the
- * $150 plan does not. Each subscriber holds one key on an organization of their own, so the
- * existing per-organization allowance (pro, 10,000 calls a month) applies unchanged.
+ * $150 plan does not. The payer's keys live on an organization of their own, so the existing
+ * per-organization allowance (pro, 10,000 calls a month) applies unchanged. The payer and each
+ * team seat on their workspace hold one key each there, and the team shares that allowance.
  *
  * Partner keys made by hand in /admin/api-keys live on `api-` organizations
  * (organizationSlug) and are untouched by anything here.
@@ -35,6 +36,25 @@ export function subscriberOrgSlug(userId: number): string {
 export function subscriberUserIdFromSlug(slug: string | null | undefined): number | null {
   if (!slug?.startsWith(SUBSCRIBER_ORG_PREFIX)) return null;
   const rest = slug.slice(SUBSCRIBER_ORG_PREFIX.length);
+  if (!/^\d+$/.test(rest)) return null;
+  const id = Number(rest);
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
+/**
+ * Each person on a plan that includes the API (the payer and every team seat) holds one key,
+ * named for them, on the payer's organization, so the whole team shares one allowance.
+ */
+const KEY_NAME_PREFIX = "Pro user ";
+
+export function subscriberKeyName(userId: number): string {
+  return `${KEY_NAME_PREFIX}${userId}`;
+}
+
+/** The person a subscriber key belongs to; null for a key with another name (the payer's own). */
+export function subscriberKeyUserId(name: string | null | undefined): number | null {
+  if (!name?.startsWith(KEY_NAME_PREFIX)) return null;
+  const rest = name.slice(KEY_NAME_PREFIX.length);
   if (!/^\d+$/.test(rest)) return null;
   const id = Number(rest);
   return Number.isSafeInteger(id) && id > 0 ? id : null;

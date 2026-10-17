@@ -9,6 +9,9 @@ import { accountIdentitySnapshot } from "@/lib/hamilton/account-context";
 import { readHamiltonIdentitySnapshot } from "@/lib/hamilton/identity-display";
 import { normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
 import { normalizeLegacyAnalyzeConfidence } from "@/lib/hamilton/evidence-contract";
+import { savedOutputChangeNotice } from "@/lib/hamilton/saved-output-notice";
+import { collectFeeRefs, type SavedOutputNotice } from "@/lib/saved-output-corrections";
+import { recordSavedOutputFeeRefs } from "@/lib/data-store/saved-output-fee-refs";
 import type { AnalyzeResponse } from "@/lib/hamilton/types";
 import { recentQuestions, type RecentQuestion, type SavedAnalysisRow } from "@/lib/hamilton/recent-analyses";
 
@@ -19,6 +22,10 @@ export interface LoadedAnalysisRecord {
   analysisFocus: string | null;
   /** The question the answer was asked with. */
   prompt: string | null;
+  /** When the answer was first saved; a fee change after it gets a notice (H03-T09). */
+  savedAt?: string | null;
+  /** This institution's fee data changed after the answer was saved; the answer itself is unchanged. */
+  changeNotice?: SavedOutputNotice | null;
 }
 
 /**
@@ -98,9 +105,12 @@ export async function saveAnalysis(params: {
 
     const id = rows[0]?.id;
     if (!id) return { error: "Failed to save analysis" };
+    // H03-T09: the fee rows the saved answer names, so a later correction finds it.
+    await recordSavedOutputFeeRefs(sql, "analysis", id, collectFeeRefs(responseJson));
     return { id };
   } catch (err) {
-    // Do not return raw SQL/driver messages to an authenticated browser action.
+    // Do not return raw SQL/driver messages to an authenticated browser action; log them here.
+    console.error("[hamilton-analyze] saving the analysis failed", err);
     return { error: "Could not save this analysis. Please try again." };
   }
 }
@@ -131,13 +141,19 @@ export async function listSavedAnalyses(limit = 10): Promise<RecentQuestion[]> {
   }
 }
 
+function savedAtIso(value: Date | string | null | undefined): string | null {
+  if (value == null) return null;
+  const at = value instanceof Date ? value : new Date(value);
+  return Number.isFinite(at.getTime()) ? at.toISOString() : null;
+}
+
 export async function loadAnalysisRecord(id: string): Promise<LoadedAnalysisRecord | null> {
   const user = await getCurrentUser();
   if (!user) return null;
 
   try {
-    const rows = await sql<Array<{ id: string; response_json: string; institution_id: string | null; analysis_focus: string | null; prompt: string | null }>>`
-      SELECT id::text, response_json::text, institution_id, analysis_focus, prompt
+    const rows = await sql<Array<{ id: string; response_json: string; institution_id: string | null; analysis_focus: string | null; prompt: string | null; created_at?: Date | string | null }>>`
+      SELECT id::text, response_json::text, institution_id, analysis_focus, prompt, created_at
       FROM hamilton_saved_analyses
       WHERE id = ${id}::uuid
         AND user_id = ${user.id}
@@ -152,12 +168,18 @@ export async function loadAnalysisRecord(id: string): Promise<LoadedAnalysisReco
     // Older server-written answers stored the same version-1 snapshot under this alias.
     const snapshot = readHamiltonIdentitySnapshot(responseJson.identityContext ?? responseJson.hamiltonIdentity);
     if (snapshot) responseJson.identityContext = snapshot;
+    const institutionId = normalizeCanonicalInstitutionId(rows[0].institution_id);
+    const savedAt = savedAtIso(rows[0].created_at);
     return {
       id: rows[0].id,
       responseJson,
-      institutionId: normalizeCanonicalInstitutionId(rows[0].institution_id),
+      institutionId,
       analysisFocus: rows[0].analysis_focus,
       prompt: rows[0].prompt,
+      savedAt,
+      // H03-T09: a fee row this answer used (or, for an older answer, a fee at its institution)
+      // changed after it was saved; the answer itself is unchanged.
+      changeNotice: await savedOutputChangeNotice({ kind: "analysis", id: rows[0].id, institutionId, savedAt, noun: "answer" }),
     };
   } catch {
     return null;

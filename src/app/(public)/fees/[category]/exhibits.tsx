@@ -131,33 +131,27 @@ export function MarketDots({ dots, band, ariaLabel }: { dots: MarketDot[]; band:
   );
 }
 
-const POSITION_WORD: Record<Position, string> = { below: "below", within: "inside", above: "above" };
+const POSITION_WORD: Record<Position, string> = { below: "Below", within: "Within", above: "Above" };
 
 /** What the dots and bands mean, said once per section that draws them, naming only the colours drawn. */
 export function DotLegend({ positions, against = "U.S." }: { positions: Position[]; against?: string }) {
-  const only = positions.length === 1 ? positions[0] : null;
+  const range = against === "U.S." ? "national" : against.toLowerCase();
   return (
     <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-muted" aria-hidden="true">
       <span className="inline-flex items-center gap-1.5">
         <span className="h-2.5 w-5 rounded-full bg-brick-tint" />
-        {against} middle half
+        {range === "national" ? "National" : against} middle range
       </span>
       <span className="inline-flex items-center gap-1.5">
         <span className="h-3.5 w-[2px] bg-ink/60" />
-        {against} median
+        {range === "national" ? "National" : against} median
       </span>
-      {positions.length > 0 && (
-        <span className="inline-flex items-center gap-1.5">
-          <span className="inline-flex gap-0.5">
-            {positions.map((p) => (
-              <span key={p} className={`h-2.5 w-2.5 rounded-full ${DOT[p]}`} />
-            ))}
-          </span>
-          {only
-            ? `Every median here is ${POSITION_WORD[only]} the ${against === "U.S." ? "U.S." : against.toLowerCase()} middle half`
-            : `Median: ${positions.map((p) => POSITION_WORD[p]).join(", ")} the ${against === "U.S." ? "U.S." : against.toLowerCase()} middle half`}
+      {positions.map((p) => (
+        <span key={p} className="inline-flex items-center gap-1.5">
+          <span className={`h-2.5 w-2.5 rounded-full ${DOT[p]}`} />
+          {POSITION_WORD[p]} the {range} middle range
         </span>
-      )}
+      ))}
     </p>
   );
 }
@@ -218,25 +212,5 @@ export function RelatedRanges({ items }: { items: { category: string; label: str
         );
       })}
     </ul>
-  );
-}
-
-/**
- * Where a recorded clip will play: a small marked slot under the exhibit it will replace. It is a
- * picture, not a control, so nothing on the page pretends to play.
- */
-export function VideoSlot({ title }: { title: string }) {
-  return (
-    <figure className="flex items-center gap-3 rounded-lg border border-border bg-paper p-2 pr-4">
-      <span aria-hidden="true" className="flex h-12 w-20 shrink-0 items-center justify-center rounded-md bg-warm-ink-900">
-        <svg viewBox="0 0 12 12" className="ml-0.5 h-4 w-4 text-warm-ink-50">
-          <path d="M3 1.5v9l7.5-4.5z" fill="currentColor" />
-        </svg>
-      </span>
-      <figcaption className="min-w-0 text-[13px]">
-        <span className="block font-medium text-ink">{title}</span>
-        <span className="text-ink-muted">Video coming</span>
-      </figcaption>
-    </figure>
   );
 }

@@ -13,7 +13,7 @@ type PlottedLine = ReportLine & { own: NonNullable<ReportLine["own"]>; peers: No
 const TONE: Record<"above" | "inside" | "below", { dot: string; text: string }> = {
   above: { dot: "bg-brick", text: "text-brick" },
   inside: { dot: "bg-ink-soft", text: "text-ink" },
-  below: { dot: "bg-[#2F5585]", text: "text-[#2F5585]" },
+  below: { dot: "bg-below-market", text: "text-below-market" },
 };
 
 function toneFor(line: ReportLine): keyof typeof TONE {
@@ -36,6 +36,13 @@ function rankOf(line: PlottedLine): number {
   if (line.position === "in_market") return Math.min(75, Math.max(25, rank));
   if (line.position === "above_market") return Math.max(rank, 75);
   return Math.min(rank, 25);
+}
+
+/** "1st", "2nd", "3rd", "11th", "100th": the rank is a percentile, not a count of competitors. */
+export function ordinal(n: number): string {
+  const tens = n % 100;
+  if (tens >= 11 && tens <= 13) return `${n}th`;
+  return `${n}${["th", "st", "nd", "rd"][n % 10] ?? "th"}`;
 }
 
 function gap(line: PlottedLine): string {
@@ -73,7 +80,7 @@ export function AtAGlance({
     : plotted;
   const total = counts.above + counts.inside + counts.below;
   const summary = [
-    { n: counts.above, text: "above the local middle range", tone: TONE.above },
+    { n: counts.above, text: "above the local middle half", tone: TONE.above },
     { n: counts.inside, text: "inside it", tone: TONE.inside },
     { n: counts.below, text: "below it", tone: TONE.below },
   ];
@@ -127,7 +134,7 @@ export function AtAGlance({
               <span
                 className={`absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-surface-0 ${TONE[tone].dot}`}
                 style={{ left: `${Math.min(98, Math.max(2, rank))}%` }}
-                aria-label={`ranks ${Math.round(rank)} of 100 locally`}
+                aria-label={`${ordinal(Math.round(rank))} percentile among local competitors`}
               />
             </span>
             <span role="cell" className="text-right text-[14px] font-semibold tabular-nums text-ink">

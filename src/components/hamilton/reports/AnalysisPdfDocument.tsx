@@ -21,6 +21,11 @@ import { BriefPages, hasBriefContent } from "./BriefPages";
 import { headFigure, humanizeAnswerText, shapeHamiltonView, splitSentences, tidyEvidence } from "@/components/hamilton/analyze/parse-response";
 import { RD_PDF } from "@/lib/report-design/tokens";
 import { hamiltonIdentityLines, readHamiltonIdentitySnapshot } from "@/lib/hamilton/identity-display";
+import { savedEvidenceAppendix, type SavedEvidenceAppendix } from "@/lib/hamilton/evidence-export";
+import type { EvidenceBoundAnalyzeResponse } from "@/lib/hamilton/evidence-contract";
+import { getDisplayName } from "@/lib/fee-taxonomy";
+import { exportedAnswer } from "@/lib/hamilton/written-answer-binding";
+import { INTERPRETATION_LABEL } from "@/lib/hamilton/narrative-bound";
 
 // Words wrap whole; react-pdf's default hyphenation broke figures and words mid-way ("medi-an").
 Font.registerHyphenationCallback((word) => [word]);
@@ -196,6 +201,50 @@ const styles = StyleSheet.create({
   },
 });
 
+// ─── Evidence record (H06-T08) ───────────────────────────────────────────────
+
+/** A recorded figure in its unit; an unknown value says so rather than printing zero. */
+function recordedValue(value: number | string | null, unit: string): string {
+  if (value === null || value === "") return "Not recorded";
+  if (typeof value === "string") return value;
+  if (unit === "usd") return `$${value.toLocaleString("en-US", { minimumFractionDigits: Number.isInteger(value) ? 0 : 2, maximumFractionDigits: 2 })}`;
+  if (unit === "percent") return `${value.toLocaleString("en-US", { maximumFractionDigits: 2 })}%`;
+  return value.toLocaleString("en-US", { maximumFractionDigits: 2 });
+}
+
+function recordLabel(scope: { feeCategory: string | null; product: string | null }, fallback: string | null): string {
+  const category = scope.feeCategory ? getDisplayName(scope.feeCategory) : null;
+  return [category, scope.product].filter(Boolean).join(" · ") || fallback || "Recorded figure";
+}
+
+/**
+ * The saved answer's evidence as it was saved (savedEvidenceAppendix), so the PDF and a reopened
+ * answer print the same records. Only answers saved with structured evidence get this section.
+ */
+function savedEvidence(analysis: AnalyzeResponse): SavedEvidenceAppendix | null {
+  const bound = analysis as EvidenceBoundAnalyzeResponse;
+  const evidence = bound.factEvidence;
+  if (!evidence || ((evidence.facts?.length ?? 0) === 0 && (evidence.derivations?.length ?? 0) === 0)) return null;
+  return savedEvidenceAppendix(bound);
+}
+
+/** The two calculations Hamilton records, in words; any other formula prints as recorded. */
+const FORMULA_WORDS: Record<string, string> = {
+  "median of published peer amounts": "The median of the peers' published fees, one per peer",
+  "left - right": "The first figure minus the second",
+  "(current - prior) / prior * 100": "The change from the earlier figure, as a percent of it",
+};
+
+/** Plain notes under the record; the appendix's own limitation codes are written for auditors. */
+function evidenceRecordNotes(record: SavedEvidenceAppendix): string[] {
+  const incomplete = record.facts.some((f) => f.problems.length > 0) || record.derivations.some((f) => f.problems.length > 0);
+  return [
+    "These records were saved with this answer and show where each figure came from.",
+    "Each figure matches the bank document Hamilton had stored at the time. It was not re-checked against the bank's current schedule, and the sentences around the figures were not checked one by one.",
+    ...(incomplete ? ["Records marked \"Source not fully traceable\" or \"Inputs incomplete\" could not be traced in full."] : []),
+  ];
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 interface AnalysisPdfDocumentProps {
@@ -221,7 +270,10 @@ export function AnalysisPdfDocument({
 
   // The title is the answer's whole first sentence (older answers saved an 80-character cut);
   // the view below carries the rest, so the lead is not printed twice.
-  const view = shapeHamiltonView(humanizeAnswerText(analysis.hamiltonView));
+  // The answer as the screen shows it (#981 H06-T08): left-out sentences stay out, and Hamilton's
+  // reading prints only under its own label.
+  const shown = exportedAnswer(analysis);
+  const view = shapeHamiltonView(humanizeAnswerText(shown.hamiltonView));
   const title = view.lead || analysis.title;
   const hamiltonViewParagraphs = view.paragraphs;
   const evidence = tidyEvidence(analysis.evidence.metrics);
@@ -233,9 +285,10 @@ export function AnalysisPdfDocument({
     .slice(0, 3);
   const tableRows = evidence.filter((m) => !tiles.some((t) => t.metric === m));
   // Implications longer than three sentences read as a list of points, not a block.
-  const meaningSentences = splitSentences(humanizeAnswerText(analysis.whatThisMeans ?? ""));
+  const meaningSentences = splitSentences(humanizeAnswerText(shown.whatThisMeans));
   const meaningAsList = meaningSentences.length > 3;
 
+  const record = savedEvidence(analysis);
   const identity = readHamiltonIdentitySnapshot(analysis.identityContext);
   const identityLines = identity ? hamiltonIdentityLines(identity) : ["Historical institution, account and peer context: Not recorded"];
   const readOnlyLine = identity?.researchInstitutionName
@@ -296,13 +349,26 @@ export function AnalysisPdfDocument({
         ) : null}
 
         {/* Why It Matters */}
-        {analysis.whyItMatters.length > 0 ? (
+        {shown.whyItMatters.length > 0 ? (
           <View style={styles.section} wrap={false}>
             <Text style={styles.sectionHeading}>Why It Matters</Text>
-            {analysis.whyItMatters.map((item, i) => (
+            {shown.whyItMatters.map((item, i) => (
               <View key={i} style={styles.bulletRow}>
                 <Text style={styles.bulletMark}>{"\u2022"}</Text>
                 <Text style={styles.bulletText}>{humanizeAnswerText(item)}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        {/* Hamilton's reading: sentences whose figures are not tied to a fee record */}
+        {shown.reading.length > 0 ? (
+          <View style={styles.section} wrap={false}>
+            <Text style={styles.sectionHeading}>{INTERPRETATION_LABEL}</Text>
+            {shown.reading.map((sentence, i) => (
+              <View key={i} style={styles.bulletRow}>
+                <Text style={styles.bulletMark}>{"\u2022"}</Text>
+                <Text style={styles.bulletText}>{humanizeAnswerText(sentence)}</Text>
               </View>
             ))}
           </View>
@@ -324,6 +390,44 @@ export function AnalysisPdfDocument({
                 </View>
               </View>
             ))}
+          </View>
+        ) : null}
+
+        {/* The saved evidence record: each figure with its source, as saved with the answer */}
+        {record ? (
+          <View style={styles.section}>
+            {[...record.facts.map((fact) => ({
+              id: fact.id,
+              label: recordLabel(fact.scope, fact.source.label),
+              value: recordedValue(fact.value, fact.unit),
+              note: [
+                fact.source.label ?? fact.source.table,
+                fact.source.asOf ? `as of ${fact.source.asOf}` : "date not recorded",
+                fact.source.urls[0] ?? null,
+                fact.conditions,
+                fact.problems.length > 0 ? "Source not fully traceable" : null,
+              ].filter(Boolean).join(" · "),
+            })), ...record.derivations.map((fact) => ({
+              id: fact.id,
+              label: recordLabel(fact.scope, null),
+              value: recordedValue(fact.value, fact.unit),
+              note: [
+                `${FORMULA_WORDS[fact.formula] ?? fact.formula}, from ${fact.inputFactIds.length} recorded figure${fact.inputFactIds.length === 1 ? "" : "s"}`,
+                fact.problems.length > 0 ? "Inputs incomplete" : null,
+              ].filter(Boolean).join(" · "),
+            }))].map((row, i) => (
+              <View key={row.id} wrap={false}>
+                {i === 0 ? <Text style={styles.sectionHeading}>Evidence Record</Text> : null}
+                <View style={styles.evidenceRow}>
+                  <Text style={styles.evidenceLabel}>{row.label}</Text>
+                  <View style={styles.evidenceBody}>
+                    <Text style={styles.evidenceValue}>{row.value}</Text>
+                    {row.note ? <Text style={styles.evidenceNote}>{row.note}</Text> : null}
+                  </View>
+                </View>
+              </View>
+            ))}
+            {evidenceRecordNotes(record).map((line) => <Text key={line} style={styles.evidenceNote}>{line}</Text>)}
           </View>
         ) : null}
 

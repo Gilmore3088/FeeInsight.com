@@ -9,7 +9,7 @@ vi.mock("next/link", () => ({
   ),
 }));
 
-import { ComplaintChart, LeadersTable, PriceMoves, RevenueChart, StatePanel } from "./district-hub";
+import { ComplaintChart, DepositStrip, IncomeLine, PriceMoves, StatePanel, incomeTrend, leadersShare } from "./district-hub";
 import type { StateHubRow } from "./district-hub-view";
 
 const row: StateHubRow = {
@@ -21,7 +21,8 @@ const row: StateHubRow = {
   withFees: 20,
   coveragePct: 50,
   fees: { overdraft: { median: 32, institutions: 12 }, nsf: { median: null, institutions: 3 } },
-  serviceCharges: 1_500_000,
+  bankServiceCharges: 1_500_000,
+  cuFeeIncome: null,
   bankBranches: null,
   cuBranches: null,
   deposits: null,
@@ -45,40 +46,62 @@ describe("StatePanel", () => {
   });
 });
 
-describe("RevenueChart", () => {
-  it("labels each quarter with its total", () => {
-    render(
-      <RevenueChart
-        quarters={[
-          { quarter: "2026-Q1", banks: 90_000_000, creditUnions: 10_000_000, total: 100_000_000, institutions: 40 },
-          { quarter: "2026-Q2", banks: 80_000_000, creditUnions: 20_000_000, total: 100_000_000, institutions: 40 },
-        ]}
-      />,
-    );
-    expect(screen.getAllByText("$100.0M")).toHaveLength(2);
-    // The year sits on its own line on phones, so the label spans two elements.
-    expect(screen.getByText((_, el) => el?.tagName === "SPAN" && el.textContent === "Q2 ’26")).toBeTruthy();
-    // Phones show only the newest total; the chart's label carries every figure.
-    expect(screen.getAllByText("$100.0M")[0].className).toContain("hidden sm:block");
-    expect(screen.getByRole("img").getAttribute("aria-label")).toBe("Fee income by quarter, Q1 2026 to Q2 2026: $100.0M, $100.0M");
+const quarters = ["2025-Q1", "2025-Q2", "2025-Q3", "2025-Q4", "2026-Q1", "2026-Q2"].map((quarter, i) => ({
+  quarter,
+  banks: [100, 101, 102, 112, 110, 108][i] * 1_000_000,
+  creditUnions: [50, 51, 52, 53, 54, 55][i] * 1_000_000,
+  total: 0,
+  institutions: 40,
+}));
+
+describe("incomeTrend", () => {
+  it("compares the latest quarter with the same quarter a year earlier and finds the biggest move", () => {
+    const t = incomeTrend(quarters, "banks")!;
+    expect(t.latest).toEqual({ quarter: "2026-Q2", value: 108_000_000 });
+    expect(t.yearAgoQuarter).toBe("2025-Q2");
+    expect(t.yoyPct).toBeCloseTo((108 / 101 - 1) * 100);
+    expect(t.biggestMove?.quarter).toBe("2025-Q4");
+  });
+
+  it("has no year-on-year change without four earlier quarters, and no note for small moves", () => {
+    const t = incomeTrend(quarters.slice(0, 3), "creditUnions")!;
+    expect(t.yoyPct).toBeNull();
+    expect(t.biggestMove).toBeNull();
   });
 });
 
-describe("LeadersTable", () => {
-  it("shows each bank's share of the district's deposits", () => {
-    render(
-      <LeadersTable
-        branches={{
-          sod_year: 2025,
-          by_state: [],
-          cu_by_state: [],
-          leaders: [{ institution_id: 7, name: "First Bank", branches: 12, deposits: 250_000_000 }],
-          total_deposits: 1_000_000_000,
-        }}
-      />,
+describe("IncomeLine", () => {
+  it("draws one charter on its own, never the banks and credit unions summed", () => {
+    render(<IncomeLine series="banks" title="Banks: service charges on deposit accounts" quarters={quarters} />);
+    expect(screen.getByText("$108.0M")).toBeTruthy();
+    expect(screen.getByText("+6.9%")).toBeTruthy();
+    expect(screen.getByText("+9.8% in Q4 2025")).toBeTruthy();
+    expect(screen.getByRole("img").getAttribute("aria-label")).toBe(
+      "Banks: service charges on deposit accounts by quarter, Q1 2025 to Q2 2026: $100.0M, $101.0M, $102.0M, $112.0M, $110.0M, $108.0M",
     );
+    expect(screen.queryByText("$163.0M")).toBeNull();
+  });
+});
+
+const branches = {
+  sod_year: 2025,
+  by_state: [],
+  cu_by_state: [],
+  leaders: [
+    { institution_id: 7, name: "First Bank", branches: 12, deposits: 250_000_000 },
+    { institution_id: 8, name: "Second Bank", branches: 9, deposits: 150_000_000 },
+  ],
+  total_deposits: 1_000_000_000,
+};
+
+describe("DepositStrip", () => {
+  it("names each leading bank's share and everyone else as one share", () => {
+    render(<DepositStrip branches={branches} />);
     expect(screen.getByText("First Bank")).toBeTruthy();
-    expect(screen.getByText("25.0%")).toBeTruthy();
+    expect(screen.getByText(/^25\.0% · \$250\.0M across 12 branches$/)).toBeTruthy();
+    expect(screen.getByText("Every other bank")).toBeTruthy();
+    expect(screen.getByText("Other 60%")).toBeTruthy();
+    expect(leadersShare(branches)).toEqual({ banks: 2, pct: 40 });
   });
 });
 

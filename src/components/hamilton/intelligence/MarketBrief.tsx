@@ -11,13 +11,17 @@ const CHARTER_LABEL = { all: "Banks and credit unions", bank: "Banks", credit_un
  * Ask Hamilton's answer to a market question: the facts first, then the exhibits for each topic
  * asked, every one from a governed reader with its source. Deterministic; no provider call.
  */
-export async function MarketBrief({ question, market, instId }: { question: string; market: MarketQuestion; instId?: string | null }) {
+export async function MarketBrief({ question, market, instId, conversationId }: { question: string; market: MarketQuestion; instId?: string | null; conversationId?: string | null }) {
   const data = await loadIntelligence(market.selection, market.lenses, { compact: false, segment: market.segment });
-  return <MarketBriefView question={question} market={market} data={data} instId={instId} />;
+  return <MarketBriefView question={question} market={market} data={data} instId={instId} conversationId={conversationId} />;
 }
 
-/** The brief for already-loaded data. */
-export function MarketBriefView({ question, market, data, instId }: { question: string; market: MarketQuestion; data: Loaded; instId?: string | null }) {
+/**
+ * The brief for already-loaded data. Its follow-up box is the page's one composer (#979, H04-T03):
+ * it hands the question to Ask with the conversation it came from (or, outside one, this brief's
+ * question as the earlier turn), so the follow-up keeps its context and is never retyped.
+ */
+export function MarketBriefView({ question, market, data, instId, conversationId = null }: { question: string; market: MarketQuestion; data: Loaded; instId?: string | null; conversationId?: string | null }) {
   const { selection, lenses, segment, place } = market;
   const state = selection.scope.kind === "state" ? selection.scope.stateCode : null;
   const findings = readFindings(data, state ? place : "the United States", state, selection.categories[0]).filter(f => lenses.includes(f.lens));
@@ -36,7 +40,7 @@ export function MarketBriefView({ question, market, data, instId }: { question: 
   ].filter((line): line is string => line !== null);
 
   return <div className="mx-auto flex max-w-7xl flex-col gap-7">
-    <header className="flex flex-wrap items-start justify-between gap-4">
+    <header className="flex flex-col items-center gap-4 text-center sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:text-left">
       <div className="max-w-3xl">
         <p className="fi-text-label text-[var(--fi-muted)]">Ask Hamilton · Market brief</p>
         <h1 className="mt-1 text-3xl font-semibold sm:text-4xl">{state ? place : "United States"}: {topics.length === 5 ? "fees, finances and market" : listWords(topics)}</h1>
@@ -69,6 +73,7 @@ export function MarketBriefView({ question, market, data, instId }: { question: 
       </label>
       <input type="hidden" name="send" value="1" />
       {instId ? <input type="hidden" name="instId" value={instId} /> : null}
+      {conversationId ? <input type="hidden" name="conversation" value={conversationId} /> : <input type="hidden" name="from_brief" value={question} />}
       <button type="submit" className="fi-btn fi-btn-primary min-h-11">Ask</button>
     </form>
   </div>;

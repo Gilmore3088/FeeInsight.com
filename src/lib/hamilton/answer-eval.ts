@@ -27,6 +27,8 @@ import { regulatorSentence } from "./workspace/regulators";
 import { isWireFact } from "./workspace/wire";
 import { getFeeResearch } from "./workspace/research";
 import { withDepth } from "./workspace/story-extras";
+import { getPeerListRows, getPeerListSubject } from "@/lib/data-store/hamilton-peer-list";
+import { parsePeerListQuestion, planPeerList, type PeerListRow } from "./peer-list";
 import type { AskResponse, FeeResearch } from "./workspace/types";
 
 /** The questions asked of every institution: one per kind of ask, across six fees. */
@@ -301,12 +303,60 @@ export interface ProQuestionResult {
   correctness?: string[] | null;
 }
 
+export interface PeerListReplayDeps {
+  subject: typeof getPeerListSubject;
+  rows: typeof getPeerListRows;
+}
+
+/**
+ * A list question ("List institutions in Florida over $5B") as the Ask bar answers it: through the
+ * peer list, never the fee engine, which would ask which fee (#977). Null when the question is not
+ * a list, or needs the reader's saved group or account institution, which a replay does not have.
+ */
+export async function replayPeerList(
+  institutionId: number,
+  question: string,
+  deps: PeerListReplayDeps = { subject: getPeerListSubject, rows: getPeerListRows },
+): Promise<{ kind: "peer_list"; shortAnswer: string; failures: string[] } | null> {
+  const intent = parsePeerListQuestion(question);
+  if (!intent || intent.saved || intent.accountSubject || (intent.peerBased && !hasExplicitFilters(intent))) return null;
+  if (intent.problems.length) return { kind: "peer_list", shortAnswer: intent.problems.join(" "), failures: ["peer list asks for criteria instead of listing"] };
+  const asOf = new Date().toISOString().slice(0, 10);
+  const subject = await deps.subject(institutionId, asOf);
+  if (!subject) return { kind: "peer_list", shortAnswer: "", failures: ["peer list subject could not be loaded"] };
+  const planned = planPeerList(intent, subject, null);
+  if (!planned.criteria) return { kind: "peer_list", shortAnswer: planned.problem ?? "", failures: ["peer list asks for criteria instead of listing"] };
+  const found = await deps.rows(subject.institutionId, planned.criteria, asOf);
+  return {
+    kind: "peer_list",
+    shortAnswer: `${found.rows.length} of ${found.totalMatches} matching institutions for ${subject.name}.`,
+    failures: peerListRowFailures(found.rows, planned.criteria.requiresAssets),
+  };
+}
+
+function hasExplicitFilters(i: NonNullable<ReturnType<typeof parsePeerListQuestion>>): boolean {
+  return Boolean(i.charterType || i.bothTypes || i.states.length || i.sameState || i.minAssets || i.maxAssets || i.similarSize || i.largest);
+}
+
+/** Every listed institution shows its assets with a filing date and source, and why it is listed. */
+export function peerListRowFailures(rows: PeerListRow[], requiresAssets: boolean): string[] {
+  const out: string[] = [];
+  if (requiresAssets && rows.some((r) => r.totalAssetsUsd === null || !r.reportDate || !r.source)) out.push("listed institution without dated, sourced assets");
+  if (rows.some((r) => !r.inclusionReason)) out.push("listed institution without a reason it is listed");
+  return out;
+}
+
 /** One institution's real questions through today's engine, scored by the same quality bar. */
 export async function evaluateProQuestions(institutionId: number, questions: ProQuestion[], live: LiveReader = liveCatalogReader()): Promise<ProQuestionResult[]> {
   const research = new Map<string, Promise<FeeResearch | null>>();
   const out: ProQuestionResult[] = [];
   for (const q of questions) {
     try {
+      const listed = await replayPeerList(institutionId, q.question);
+      if (listed) {
+        out.push({ institutionId, question: q.question, askedAt: q.askedAt, ...listed });
+        continue;
+      }
       const answered = await answer(institutionId, q.question, research);
       const { response } = answered;
       const correctness = await correctnessOf(institutionId, q.question, answered, live);

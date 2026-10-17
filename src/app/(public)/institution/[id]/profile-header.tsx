@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { FileText } from "lucide-react";
 import { InfoTip } from "@/components/public/info-tip";
+import { PAGE_HEADER } from "@/components/public/page-header";
 import type { FeePublicationStatus } from "@/lib/institution-quality";
 import { getPublicStatusLabel } from "./enum-labels";
 import { STATUS_COPY } from "./profile-copy";
@@ -69,51 +70,55 @@ export function ProfileHeader({
   collectedOn,
   publishedCount,
   assetsLabel,
-}: ProfileHeaderProps & { publishedCount: number; assetsLabel: string | null }) {
-  const facts: React.ReactNode[] = [];
+  regulatorFacts = [],
+}: ProfileHeaderProps & {
+  publishedCount: number;
+  /** Total assets, e.g. "$4.4B". */
+  assetsLabel: string | null;
+  /** Regulator, charter agency, holding company and status, from the registry. */
+  regulatorFacts?: Array<{ label: string; value: string }>;
+}) {
+  const facts: Array<{ label: string; value: React.ReactNode }> = [];
   if (location && location.length > 0) {
-    facts.push(
-      <span key="loc">
-        {location.map((part, i) => (
-          <span key={part.label}>
-            {i > 0 && ", "}
-            <TagText {...part} />
-          </span>
-        ))}
-      </span>,
-    );
+    facts.push({
+      label: "Location",
+      value: location.map((part, i) => (
+        <span key={part.label}>
+          {i > 0 && ", "}
+          <TagText {...part} />
+        </span>
+      )),
+    });
   } else if (locationLabel) {
-    facts.push(<span key="loc">{locationLabel}</span>);
+    facts.push({ label: "Location", value: locationLabel });
   }
-  facts.push(<span key="charter">{assetsLabel ? charterLabel : segmentLabel ?? charterLabel}</span>);
-  if (assetsLabel) facts.push(<span key="assets">{assetsLabel}</span>);
+  facts.push({ label: "Type", value: charterLabel });
+  if (assetsLabel) facts.push({ label: "Total assets", value: assetsLabel });
+  else if (segmentLabel) facts.push({ label: "Size", value: segmentLabel });
   if (districtName) {
-    facts.push(
-      <span key="district">
-        <TagText label={`${districtName} Fed district`} href={districtHref ?? null} />
-      </span>,
-    );
+    facts.push({ label: "Fed district", value: <TagText label={districtName} href={districtHref ?? null} /> });
   }
+  for (const fact of regulatorFacts) facts.push(fact);
 
   return (
-    <header className="fi-reveal pb-6 pt-2 sm:pb-8">
-      <div className="flex items-center gap-1.5">
+    <header className={`fi-reveal pb-6 pt-2 sm:pb-8 ${PAGE_HEADER}`}>
+      <div className="flex items-center justify-center gap-1.5 sm:justify-start">
         <StatusBadge status={status} />
         <InfoTip label="What this status means">{STATUS_COPY[status]}</InfoTip>
       </div>
-      <h1 className="mt-3 max-w-4xl break-words text-[34px] font-semibold leading-[1.02] tracking-[-0.035em] text-ink sm:text-[52px]">
+      <h1 className="mx-auto mt-3 max-w-4xl break-words text-[34px] font-semibold leading-[1.02] tracking-[-0.035em] text-ink sm:mx-0 sm:text-[52px]">
         {name}
       </h1>
-      <p className="mt-3 text-[14px] leading-6 text-ink-soft">
-        {facts.map((fact, i) => (
-          <span key={i}>
-            {i > 0 && <span aria-hidden="true" className="px-1.5 text-control-border">·</span>}
-            {fact}
-          </span>
+      <dl className="mt-5 grid text-left grid-cols-2 gap-x-5 gap-y-4 rounded-xl border border-border bg-surface-0 p-4 sm:grid-cols-4 sm:p-5">
+        {facts.map((fact) => (
+          <div key={fact.label} className="min-w-0">
+            <dt className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">{fact.label}</dt>
+            <dd className="mt-1 break-words text-[14px] font-medium leading-5 text-ink">{fact.value}</dd>
+          </div>
         ))}
-      </p>
+      </dl>
       {(feeScheduleUrl || websiteUrl || collectedOn) && (
-        <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="mt-5 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 sm:justify-start">
           {feeScheduleUrl && (
             <a href={feeScheduleUrl} target="_blank" rel="noopener noreferrer" className={LINK_CLASS}>
               <FileText className="h-4 w-4" aria-hidden="true" />

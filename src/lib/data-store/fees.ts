@@ -70,6 +70,9 @@ export interface DimensionBreakdown {
   max_amount: number | null;
   avg_amount: number | null;
   median_amount: number | null;
+  /** The middle half of institution values (25th to 75th percentile); absent on older callers. */
+  p25_amount?: number | null;
+  p75_amount?: number | null;
 }
 
 export interface FeeChangeEvent {
@@ -341,6 +344,8 @@ export async function getFeeCategoryDetail(category: string): Promise<{
         max_amount: stats.max_amount,
         avg_amount: stats.avg_amount,
         median_amount: stats.median_amount,
+        p25_amount: stats.p25_amount,
+        p75_amount: stats.p75_amount,
       });
     }
     return result.sort((a, b) => b.count - a.count);

@@ -55,7 +55,7 @@ export const SAMPLE_REPORT_LIVE = false;
 /** What the institution report contains; the bank landing offer and the pay page list it. */
 export const REPORT_INCLUDES = [
   "Your published fees next to your competitors', line by line",
-  "Each fee marked above, inside or below the market range",
+  "Each fee marked above, inside or below the middle half of local fees",
   "Named peers, not anonymous averages",
   "A source for every figure: the document, the page, the date",
 ] as const;

@@ -214,7 +214,7 @@ describe("AccountView", () => {
     mocks.createKey.mockResolvedValue({ key: "bfi_testkey123" });
     render(<AccountView data={{ ...base, plan: proPlan, apiAccess: { kind: "included", key: null } }} />);
     const card = section("API and Claude connector");
-    expect(card).toHaveTextContent("10,000 calls a month");
+    expect(card).toHaveTextContent("shares 10,000 calls a month");
     fireEvent.click(within(card).getByRole("button", { name: "Make a key" }));
     await waitFor(() => expect(card).toHaveTextContent("bfi_testkey123"));
     expect(card).toHaveTextContent("/api/v1/mcp?api_key=bfi_testkey123");

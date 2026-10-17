@@ -143,8 +143,8 @@ export function feeMoney(value: number): string {
 
 /** The sample report's position words (`POSITION_LABEL` in market-report/report-body), client-safe. */
 export const POSITION_TEXT: Record<LinePosition, string> = {
-  above_market: "Above local range",
-  in_market: "Inside local range",
-  below_market: "Below local range",
+  above_market: "Above the local middle half",
+  in_market: "Inside the local middle half",
+  below_market: "Below the local middle half",
   free: "Free",
 };

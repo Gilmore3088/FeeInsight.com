@@ -31,7 +31,7 @@ export default async function ContactPage({
 }) {
   return (
     <div className="mx-auto max-w-2xl px-6 py-14">
-      <div className="flex items-center gap-2 mb-4">
+      <div className="flex items-center justify-center gap-2 mb-4 sm:justify-start">
         <span className="h-px w-8 bg-brick/40" />
         <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
           Contact

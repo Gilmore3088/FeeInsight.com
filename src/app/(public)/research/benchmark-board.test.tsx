@@ -29,7 +29,6 @@ describe("research hub benchmark board, unstated audience (#1132)", () => {
     render(
       <BenchmarkBoard
         benchmarks={[summary({ unstated_audience_institution_count: 3 }), summary({ fee_category: "nsf" })]}
-        institutionsLabel="100"
         asOf={null}
       />,
     );
@@ -39,7 +38,7 @@ describe("research hub benchmark board, unstated audience (#1132)", () => {
   });
 
   it("shows no asterisk or footnote when every row states its audience", () => {
-    render(<BenchmarkBoard benchmarks={[summary({ unstated_audience_institution_count: 0 })]} institutionsLabel="100" asOf={null} />);
+    render(<BenchmarkBoard benchmarks={[summary({ unstated_audience_institution_count: 0 })]} asOf={null} />);
     expect(screen.queryAllByTitle(UNSTATED_AUDIENCE_FOOTNOTE)).toHaveLength(0);
     expect(screen.queryByText(UNSTATED_AUDIENCE_FOOTNOTE, { exact: false })).toBeNull();
   });

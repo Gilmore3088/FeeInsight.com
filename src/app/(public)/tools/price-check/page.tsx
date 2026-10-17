@@ -22,6 +22,7 @@ import {
   type PriceCheckFee,
 } from "@/lib/price-check";
 import { PriceStats } from "./price-stats";
+import { PAGE_HEADER } from "@/components/public/page-header";
 
 const EYEBROW = "text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted";
 const SERIF = { fontFamily: "var(--fi-font-sans)" };
@@ -103,16 +104,16 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
   return (
     <div className="mx-auto max-w-page px-4 py-14 sm:px-6">
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)] lg:items-end">
-        <div className="max-w-2xl">
+        <header className={`mx-auto max-w-2xl sm:mx-0 ${PAGE_HEADER}`}>
       <p className={EYEBROW}>Free tool</p>
       <h1 className="font-extrabold mt-3 text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-ink" style={SERIF}>
         Where does a fee price sit in its state?
       </h1>
-      <p className="mt-3 text-[15px] leading-relaxed text-ink-soft">
+      <p className="mx-auto mt-3 max-w-[34rem] text-[15px] leading-relaxed text-ink-soft sm:mx-0 sm:max-w-none">
         Enter a price, including $0, and a state. Every fee counted was checked against the institution&apos;s own
         schedule.
       </p>
-        </div>
+        </header>
 
       <form method="get" className="grid gap-4 rounded-xl border border-border bg-white/70 p-5 sm:grid-cols-[1fr_1fr_auto] sm:items-end xl:grid-cols-[1.3fr_1fr_0.7fr_auto]">
         <label className="block">

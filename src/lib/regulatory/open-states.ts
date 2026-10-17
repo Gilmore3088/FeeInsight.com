@@ -128,6 +128,8 @@ export interface StateBillItem {
   topics: string[];
   /** The words that made it a bank fee bill (diagnostics only, not stored on the row). */
   match: string | null;
+  /** The latest actions as Open States sent them (diagnostics only, not stored on the row). */
+  recent_actions: string[];
 }
 
 interface RawAction {
@@ -188,10 +190,7 @@ export function billStage(actions: RawAction[]): { stage: BillStage; date: strin
       passedBy.add(action.organization?.classification ?? "unknown");
       stage = passedBy.size >= 2 ? "passed_legislature" : "passed_chamber";
       date = at;
-    } else if (
-      (stage === "introduced" || stage === "in_committee") &&
-      kinds.some((kind) => kind.startsWith("referral-committee") || kind.startsWith("committee-"))
-    ) {
+    } else if ((stage === "introduced" || stage === "in_committee") && isCommitteeStep(action)) {
       // A later referral or committee action moves the date on: IL HB 4474 was referred to Rules
       // on 2026-03-18 and to Financial Institutions on 2026-03-27, and the tracker kept 03-18.
       stage = "in_committee";
@@ -199,6 +198,25 @@ export function billStage(actions: RawAction[]): { stage: BillStage; date: strin
     }
   }
   return { stage, date };
+}
+
+/**
+ * A referral or committee step. Open States classifies some of these and leaves others unclassified
+ * (an Illinois "Assigned to ... Committee" line): the IL HB 4474 re-read on 2026-10-16 still stopped
+ * at 03-18, so a committee named in the wording counts once the bill is already in committee.
+ */
+function isCommitteeStep(action: RawAction): boolean {
+  const kinds = action.classification ?? [];
+  if (kinds.some((kind) => kind.startsWith("referral") || kind.startsWith("committee-"))) return true;
+  return kinds.length === 0 && /\bcommittee\b/i.test(action.description ?? "");
+}
+
+/** The latest few actions, kept in the run detail so a stage date can be checked against what Open States sent. */
+export function recentActions(actions: RawAction[], count = 4): string[] {
+  return [...actions]
+    .sort((a, b) => String(a.date ?? "").localeCompare(String(b.date ?? "")))
+    .slice(-count)
+    .map((action) => `${day(action.date) ?? "?"} [${(action.classification ?? []).join(",")}] ${(action.description ?? "").slice(0, 80)}`);
 }
 
 /** The earliest action classified as an introduction; a filing date that comes before it is not the introduction. */
@@ -244,6 +262,7 @@ export function parseOpenStatesBill(raw: RawBill, stateCode: string): StateBillI
     stage_date: date,
     topics: topicsFor(text),
     match: bankFeeMatch(text),
+    recent_actions: recentActions(raw.actions ?? []),
   };
 }
 

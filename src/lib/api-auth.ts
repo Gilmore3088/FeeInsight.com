@@ -1,6 +1,7 @@
 import { sql } from "@/lib/data-store/connection";
 import { hashApiKey } from "@/lib/api-keys";
-import { subscriberKeyAllowed, subscriberUserIdFromSlug } from "@/lib/api-subscriber-access";
+import { subscriberKeyAllowed, subscriberKeyUserId, subscriberUserIdFromSlug } from "@/lib/api-subscriber-access";
+import { seatStillCovered } from "@/lib/api-subscriber-keys";
 
 export interface ApiKeyValidation {
   valid: boolean;
@@ -36,7 +37,7 @@ export async function validateApiKey(
   const keyHash = hashApiKey(key);
 
   const rows = await sql`
-    SELECT k.id, k.organization_id, k.tier, k.revoked_at, o.slug
+    SELECT k.id, k.organization_id, k.tier, k.revoked_at, k.name, o.slug
     FROM api_keys k
     LEFT JOIN organizations o ON o.id = k.organization_id
     WHERE k.key_hash = ${keyHash}
@@ -63,7 +64,8 @@ export async function validateApiKey(
     };
   }
 
-  // A Pro subscriber's key works only while their subscription does (cancel stops it).
+  // A Pro subscriber's key works only while their subscription does (cancel stops it), and
+  // a team seat's key only while that person still holds a seat on the payer's workspace.
   const subscriberId = subscriberUserIdFromSlug(row.slug);
   if (subscriberId !== null) {
     const users = await sql<{ subscription_status: string | null; past_due_since: string | null }[]>`
@@ -75,6 +77,15 @@ export async function validateApiKey(
         organizationId: null,
         tier: "free",
         error: "This key's Fee Insight Pro subscription is not active. Restart Pro from your account to use it again.",
+      };
+    }
+    const holderId = subscriberKeyUserId(row.name);
+    if (holderId !== null && holderId !== subscriberId && !(await seatStillCovered(holderId, subscriberId))) {
+      return {
+        valid: false,
+        organizationId: null,
+        tier: "free",
+        error: "This key's holder no longer has a seat on the Fee Insight Pro plan that covered it.",
       };
     }
   }

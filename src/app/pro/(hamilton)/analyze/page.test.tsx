@@ -105,3 +105,22 @@ describe("AnalyzePage saved subject", () => {
     expect(page.props.institutionId).toBeNull();
   });
 });
+
+describe("AnalyzePage saved answer after a fee change (H03-T09)", () => {
+  beforeEach(() => {
+    mocks.user.mockReset().mockResolvedValue({ id: 7 });
+    mocks.recent.mockReset().mockResolvedValue([]);
+    mocks.resolve.mockReset().mockResolvedValue({ institution: subject, error: null, workspaceInstitutionId: 8109 });
+  });
+
+  it("shows the notice above the unchanged saved answer and its link asks again in one click", async () => {
+    const notice = { text: "This institution's fee data changed after this answer was saved.", latestAt: "2026-10-16T12:00:00.000Z", count: 1 };
+    mocks.load.mockReset().mockResolvedValue({ ...stored, changeNotice: notice });
+    const page = await AnalyzePage({ searchParams: Promise.resolve({ analysis: "saved-a" }) });
+    const [shown, workspace] = page.props.children;
+    expect(shown.props.notice).toBe(notice);
+    // The workspace drops send=1 from the address once it asks, so a reload never asks twice.
+    expect(shown.props.askAgainHref).toBe("/pro/analyze?q=Original+question&instId=2945&send=1");
+    expect(workspace.props.initialAnalysis).toEqual(stored.responseJson);
+  });
+});

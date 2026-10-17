@@ -57,7 +57,7 @@ describe("analyzeMarket", () => {
     expect(overdraft.peers?.median).toBe(19.5);
     expect(overdraft.position).toBe("above_market");
     expect(overdraft.percentile).toBe(100);
-    expect(result.findings[0]).toContain("($40) is above the local range");
+    expect(result.findings[0]).toContain("($40) is above the local middle half");
     expect(result.findings.at(-1)).toBe("0 of your 6 comparable fee lines sit inside the middle half of your local market.");
   });
 

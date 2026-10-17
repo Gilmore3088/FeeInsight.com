@@ -47,6 +47,23 @@ Magellan owns institution source discovery and source fetching.
   checked-in list of consumer fee schedules James gave for banks Magellan had not found (Chase,
   Citi). Just before companion fetch, each listed schedule the bank does not hold yet is added
   as a `consumer_supplement` companion, once, with an attempt row. Add a bank by adding a line.
+- Hand-supplied schedules (`hand-supplied.ts`, strategy `supply.hand_supplied`, page
+  `/admin/magellan/hand-supplied`, admins only): a fee schedule PDF a person downloaded from the
+  bank's own site as a normal visitor, for a bank whose site refuses our fetcher (HTTP 403) or
+  where we hold the wrong page. The file is named `<institution_id>__<short-name>__consumer.pdf`;
+  `__business.pdf` files are not loaded. It needs a source address (the browser hunt CSV's
+  `found_url`) on the bank's own site, as a hand-found link does. The PDF is stored as a
+  `consumer_supplement` companion document with who supplied it and when, its bytes go to the
+  document vault, and Rosetta reads them at once (`readHandSuppliedDocument`, the read step's
+  reader and records); the bank's site is never asked for the file, and companion fetch and the
+  paid fetch skip these pages. When the address is already a companion (a hand-found link we
+  could not open) the copy joins that page as its current copy; a page that was ruled out stays
+  ruled out. Like a hand-found link it never sets the fee link, and nothing on file is replaced
+  or deleted. The same bytes twice for one institution (any stored document) is a no-op. Each
+  file is its own run (`openInlineAgentRun`, step `hand-supply`) with an attempt row. The page
+  also takes the browser hunt CSV: each `FOUND_PDF`/`FOUND_PAGE` row with a `found_url` and no
+  loaded file (and not a business file) goes through `addHandFoundLink`, reported per row as
+  added, already on file, another institution's site or invalid, in one run.
 - Companion fetch (`companion-fetch.ts`, strategy `fetch.companion`): at the end of every
   fetch step (60 s budget, 10 pages), companion pages from `institution_additional_sources`
   (not `business`) are downloaded when new and again after 30 days, each as its own source
@@ -218,7 +235,9 @@ and `detail.method_version`).
   and the NCUA sync stores none.
 - A homepage that blocks bots (HTTP 401/403, or a challenge page served with 200) does not end
   the search: the known link and the site map still run (nothing else needs the homepage).
-  Nothing tries to get past the wall: same crawler name, no proxies, no browser. A find is
+  Nothing in Magellan tries to get past the wall: same crawler name, no proxies, no browser. A
+  person may hand-supply a copy they downloaded from the bank's site as a normal visitor
+  (hand-supplied schedules, below). A find is
   code `found_blocked_homepage` (`detail.rescue = 'blocked_homepage'` on the finding attempt),
   every attempt for that bank carries `detail.homepage_blocked = true`, and the step detail
   counts `blocked_homepage_rescues` and `websites_repaired`. A 429 asks us to slow down, so
@@ -278,7 +297,24 @@ and `detail.method_version`).
   the automation stop ends the step cleanly (`budgetStopped`); the unspent bank stays due.
   $10B+ banks and requesters are picked from any state's paid step, not only their own.
   Order: the state experts' work lists (#1029, below).
-- Schedule search (`schedule-search.ts`, `discover.paid_schedule_search`, version 2, #1030), in
+- State top-10 slot holders with nothing live go first (`top-ten-first.ts`, 2026-10-17; paid
+  web search version 2, schedule search version 3). The ten largest institutions by in-state
+  deposits in each state and DC with nothing in `published_fee_catalog` (`loadTopTenMissingIds`,
+  from `getTopTenCoverage` in `src/lib/data-store/top-ten-coverage.ts`; none if the ranking
+  fails) are picked from any state's paid step, after report requesters and Pro accounts'
+  institutions and ahead of the work lists' state rotation (`pickTopTenFirst`), in both paid
+  searches and each schedule-search lane. A narrow exception to the miss cooldown, at most one
+  paid try per institution per `TOP_TEN_RETRY_DAYS` (7) from its last real try, only when the
+  ask moves up: the paid web search only when the ladder's next rung is `disclosure` (an odd
+  miss count, after a schedule miss), skipping a pick that already ran in its cooldown; the
+  schedule search only in the uncovered lane (no live record at all) and only while no try in
+  the miss cooldown used its three-document ask (`detail.lane = 'uncovered'`; the version 1
+  tries of Oct 6-11 asked for the schedule only). A find keeps its 90 days, "not published
+  online" (2 misses, 120 days) and `MAX_TRANSIENT_TRIES` are unchanged, so each institution gets
+  one early try per ladder cycle. Each try and result entry records `detail.top_ten` and
+  `detail.top_ten_retry`. The state lane scheduler's due counts do not count the early tries:
+  any state's paid step takes them.
+- Schedule search (`schedule-search.ts`, `discover.paid_schedule_search`, version 3, #1030), in
   the same paid step, from any state, off the paid cooldown, in two lanes, the uncovered lane first:
   - **Uncovered first:** up to `SCHEDULE_SEARCH_PER_RUN` (10) institutions that hold a fee link but
     have no live fee at all, whose oldest stored copy is at least `UNCOVERED_SETTLE_DAYS` (3) old,
@@ -543,9 +579,10 @@ fails a PR that changes one of these constants without updating its line here (#
 | `BUSINESS_SEARCH_VERSION` | — | v1 | `magellan/discovery.ts` |
 | `FRESHNESS_SEARCH_VERSION` | — | v2 | `magellan/discovery.ts` |
 | `MAGELLAN_FETCH_STRATEGY` | `fetch.http` | v2 | `magellan/fetch.ts` |
+| `HAND_SUPPLIED_STRATEGY` | `supply.hand_supplied` | v1 | `magellan/hand-supplied.ts` |
 | `OPERATOR_SCHEDULE_STRATEGY` | `discover.operator_schedule` | v1 | `magellan/operator-schedules.ts` |
 | `PAGE_CLASSIFIER_VERSION` | — | v2 | `magellan/page-classifier.ts` |
-| `PAID_FIND_STRATEGY` | `discover.paid_web_search` | v1 | `magellan/paid-find.ts` |
+| `PAID_FIND_STRATEGY` | `discover.paid_web_search` | v2 (top-10 first) | `magellan/paid-find.ts` |
 | `PAID_PICK_STRATEGY` | `discover.paid_pick` | v1 | `magellan/paid-find.ts` |
 | `KEEP_REFUSED_ANSWER_STRATEGY` | `discover.keep_refused_answer` | v1 | `magellan/refused-answers.ts` |
 | `CENSUS_ACS_PARSER_VERSION` | — | v3 | `magellan/registry/census-acs.ts` |
@@ -555,10 +592,10 @@ fails a PR that changes one of these constants without updating its line here (#
 | `FFIEC_OVERDRAFT_PARSER_VERSION` | — | v2 | `magellan/registry/ffiec-overdraft.ts` |
 | `NCUA_PARSER_VERSION` | — | v3 | `magellan/registry/ncua-financials.ts` |
 | `SEC_LINKS_PARSER_VERSION` | — | v2 | `magellan/registry/sec.ts` |
-| `STATE_BILLS_TAGGING_VERSION` | — | v5 | `magellan/registry/state-bills.ts` |
+| `STATE_BILLS_TAGGING_VERSION` | — | v6 | `magellan/registry/state-bills.ts` |
 | `STATE_ENFORCEMENT_PARSER_VERSION` | — | v6 (stated subjects, #1428) | `magellan/registry/state-enforcement.ts` |
 | `STATE_NEWS_PARSER_VERSION` | — | v2 | `magellan/registry/state-reg-news.ts` |
 | `RESTORE_FEE_PAGE_VERSION` | — | v1 | `magellan/restore-fee-page.ts` |
-| `SCHEDULE_SEARCH_STRATEGY` | `discover.paid_schedule_search` | v2 | `magellan/schedule-search.ts` |
+| `SCHEDULE_SEARCH_STRATEGY` | `discover.paid_schedule_search` | v3 (top-10 first) | `magellan/schedule-search.ts` |
 | `SITE_SEARCH_STRATEGY` | `discover.site_search` | v1 | `magellan/second-document.ts` |
 | `WEBSITE_FIND_STRATEGY` | `discover.website_search` | v1 | `magellan/website-find.ts` |

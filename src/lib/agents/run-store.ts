@@ -4290,3 +4290,76 @@ export async function recordProRequest(input: RecordProRequestInput): Promise<nu
   }
 }
 
+
+export interface InlineAgentRun {
+  runId: number;
+  stepId: number;
+}
+
+/**
+ * Opens a run whose one step a person's request does in place (a hand-supplied document's
+ * load, `magellan/hand-supplied.ts`): the run and its step start `running`, so the tick never
+ * executes them, and `closeInlineAgentRun` settles both. Like `recordProRequest`, but opened
+ * before the work so every row the work writes carries the run id.
+ */
+export async function openInlineAgentRun(input: {
+  db?: SqlTag;
+  agent: AdminAgent;
+  title: string;
+  stepKey: string;
+  stepTitle: string;
+  params: Record<string, unknown>;
+  triggeredBy: string;
+}): Promise<InlineAgentRun> {
+  const db = input.db ?? sql;
+  const [run] = await db`
+    INSERT INTO agent_runs
+      (agent_name, run_kind, title, status, params_json, trigger_source, triggered_by, backend,
+       progress_current, progress_total, current_stage, started_at, updated_at)
+    VALUES
+      (${input.agent}, 'manual_repair', ${input.title}, 'running', ${JSON.stringify(input.params)}::jsonb, 'admin',
+       ${input.triggeredBy}, 'agentic_v1', 0, 1, ${input.stepKey}, NOW(), NOW())
+    RETURNING id
+  `;
+  const runId = Number(run.id);
+  const [step] = await db`
+    INSERT INTO agent_run_steps
+      (agent_run_id, step_key, agent_name, title, status, sequence, input_payload, started_at, updated_at)
+    VALUES
+      (${runId}, ${input.stepKey}, ${input.agent}, ${input.stepTitle}, 'running', 1,
+       ${JSON.stringify(input.params)}::jsonb, NOW(), NOW())
+    RETURNING id
+  `;
+  const stepId = Number(step.id);
+  await db`
+    INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
+    VALUES (${runId}, ${stepId}, 'step.started', 'running', ${input.stepTitle}, ${JSON.stringify(input.params)}::jsonb)
+  `;
+  return { runId, stepId };
+}
+
+/** Settles a run opened by `openInlineAgentRun`: its step, the run and one closing event. */
+export async function closeInlineAgentRun(
+  handle: InlineAgentRun,
+  input: { db?: SqlTag; status: "completed" | "failed"; summary: string; detail?: Record<string, unknown> },
+): Promise<void> {
+  const db = input.db ?? sql;
+  const error = input.status === "failed" ? input.summary : null;
+  await db`
+    UPDATE agent_run_steps
+       SET status = ${input.status}, summary = ${input.summary}, error_summary = ${error},
+           completed_at = NOW(), updated_at = NOW()
+     WHERE id = ${handle.stepId}
+  `;
+  await db`
+    UPDATE agent_runs
+       SET status = ${input.status}, summary = ${input.summary}, error_summary = ${error},
+           progress_current = 1, completed_at = NOW(), updated_at = NOW()
+     WHERE id = ${handle.runId}
+  `;
+  await db`
+    INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
+    VALUES (${handle.runId}, ${handle.stepId}, ${`run.${input.status}`}, ${input.status}, ${input.summary},
+            ${JSON.stringify(input.detail ?? {})}::jsonb)
+  `;
+}

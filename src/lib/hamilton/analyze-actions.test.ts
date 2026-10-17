@@ -107,6 +107,8 @@ describe("Analyze saveAnalysis", () => {
     expect(result).toEqual({
       responseJson,
       institutionId: "2945",
+      savedAt: null,
+      changeNotice: null,
     });
   });
 
@@ -123,6 +125,8 @@ describe("Analyze saveAnalysis", () => {
     expect(result).toEqual({
       responseJson,
       institutionId: null,
+      savedAt: null,
+      changeNotice: null,
     });
   });
 });

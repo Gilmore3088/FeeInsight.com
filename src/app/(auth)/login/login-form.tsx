@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { resetSessionChrome } from "@/components/use-session-chrome";
 import { loginAction } from "./actions";
+import { useHydrated } from "@/lib/use-hydrated";
 
 interface LoginFormProps {
   redirectTo: string;
@@ -14,6 +15,7 @@ export function LoginForm({ redirectTo, forgotPasswordHref }: LoginFormProps) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const hydrated = useHydrated();
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -38,7 +40,7 @@ export function LoginForm({ redirectTo, forgotPasswordHref }: LoginFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="bg-surface-0 rounded-lg border border-border shadow-sm p-6 space-y-4">
+    <form method="post" onSubmit={handleSubmit} className="bg-surface-0 rounded-lg border border-border shadow-sm p-6 space-y-4">
       {error && (
         <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
           {error}
@@ -84,7 +86,7 @@ export function LoginForm({ redirectTo, forgotPasswordHref }: LoginFormProps) {
 
       <button
         type="submit"
-        disabled={pending}
+        disabled={pending || !hydrated}
         className="w-full rounded-md bg-brick px-4 py-2.5 text-sm font-medium text-white hover:bg-brick-ink disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
         {pending ? "Signing in..." : "Sign in"}

@@ -271,7 +271,10 @@ export default async function InstitutionDetailPage({
               Fee Corrections ({corrections.history.length})
             </h2>
             <p className="mt-0.5 text-[11px] text-gray-500">
-              Every version is kept. A reversal publishes the earlier value again as a new version.
+              Every version is kept. A reversal publishes the earlier value again as a new version.{" "}
+              <Link href={`/admin/corrections?institution=${institutionId}`} className="underline hover:text-gray-900 dark:hover:text-gray-200">
+                Audit history and refresh status
+              </Link>
             </p>
           </div>
           <CorrectionsPanel history={corrections.history} conflicts={corrections.conflicts} canCorrect={canCorrect} />

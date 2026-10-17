@@ -1,11 +1,35 @@
 import { readerFeeConditions } from "@/lib/fee-conditions";
 import type { AnalyzeResponse } from "./types";
-import type { FeeResearch, OwnFeeRow } from "./workspace/types";
+import type { FeeResearch, OwnFeeRow, PeerFeeRecordRef, PeerValue } from "./workspace/types";
 
 export const HAMILTON_EVIDENCE_CONTRACT_VERSION = 1 as const;
 
 export const CLAIM_BINDING_LIMITATION =
   "Structured evidence preserves record identity and derivations, but it does not by itself verify every sentence in a narrative.";
+
+/** Saved evidence matches the stored source at answer time; nothing here re-checks the live source. */
+export const STORED_SNAPSHOT_LIMITATION =
+  "Evidence snapshot reflects stored records at answer time; it is not a live-source recheck.";
+export const OWN_AGGREGATE_LIMITATION =
+  "Own category aggregate has incompatible, incomplete or untraceable product/frequency/source rows; it is not a claim-bound individual fee.";
+export const PEER_AGGREGATE_LIMITATION =
+  "Peer category aggregates lack contributing published fee-row IDs; figures are directional and omitted from claim-bound evidence.";
+/** The peer median names its records (#981, H06-T04); the quartiles and wider markets still do not. */
+export const PEER_MEDIAN_RECORDS_LIMITATION =
+  "Peer median is recomputed from each peer's contributing published fee-row ID; peer quartiles and wider-market medians lack contributing row IDs and stay directional.";
+
+/** The most peer records a saved answer carries for its median; a larger group stays directional. */
+export const MAX_PEER_MEDIAN_RECORDS = 50;
+export const PEER_MEDIAN_FORMULA = "median of published peer amounts";
+
+/** The median of values, interpolated between the middle two when the count is even. */
+export function medianOf(values: readonly number[]): number | null {
+  if (values.length === 0 || values.some((v) => !Number.isFinite(v))) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = (sorted.length - 1) / 2;
+  const lower = Math.floor(middle);
+  return sorted[lower] + (sorted[Math.ceil(middle)] - sorted[lower]) * (middle - lower);
+}
 
 export type HamiltonFactUnit = "usd" | "percent" | "count" | "ratio" | "text";
 export type HamiltonEvidenceStatus =
@@ -92,6 +116,10 @@ export interface HamiltonClaimBinding {
   feeCategory?: string | null;
   unit?: HamiltonFactUnit;
   reportingDate?: string | null;
+  /** The figure the claim states; the record must hold that value, not merely share its scope. */
+  value?: number;
+  /** A consumer claim binds a consumer or both-audience record; unknown audience binds nothing. */
+  accountApplicability?: Exclude<HamiltonAccountApplicability, "unknown" | "both">;
 }
 
 function unique<T>(values: readonly T[]): T[] {
@@ -206,14 +234,24 @@ function derivedFact(input: {
   };
 }
 
+/**
+ * Does this record support the claim (#981, H06-T04)? Subject, category, unit, period, audience and
+ * the stated value must all be the record's own, so Bank B's $35 or a $25 gap never supports
+ * "Bank A charges $35" or "Bank A charges $25", and an undated record never supports a dated claim.
+ */
 export function claimBindingMatches(
-  fact: Pick<HamiltonEvidenceFact | HamiltonDerivedFact, "scope" | "unit">,
+  fact: Pick<HamiltonEvidenceFact | HamiltonDerivedFact, "scope" | "unit" | "value">,
   claim: HamiltonClaimBinding,
 ): boolean {
   if (claim.institutionId !== undefined && fact.scope.institutionId !== claim.institutionId) return false;
   if (claim.feeCategory !== undefined && fact.scope.feeCategory !== claim.feeCategory) return false;
   if (claim.unit !== undefined && fact.unit !== claim.unit) return false;
   if (claim.reportingDate !== undefined && fact.scope.reportingDate !== claim.reportingDate) return false;
+  if (claim.accountApplicability !== undefined && fact.scope.accountApplicability !== claim.accountApplicability
+    && fact.scope.accountApplicability !== "both") return false;
+  // Unknown is never a match for a stated figure; a genuine $0 is.
+  if (claim.value !== undefined && (typeof fact.value !== "number" || !Number.isFinite(fact.value)
+    || Math.abs(fact.value - claim.value) > 0.005)) return false;
   return true;
 }
 
@@ -359,12 +397,84 @@ export function structuredEvidenceConfidence(bundle: HamiltonEvidenceBundle | nu
   };
 }
 
+/** The catalog row whose amount is the peer's value (its highest tier, or its middle row), lowest ID first. */
+function peerValueRecord(peer: PeerValue): PeerFeeRecordRef | null {
+  return (peer.feeRecords ?? []).find((record) =>
+    Math.abs(record.amount - peer.amount) <= 0.0000001
+    && Number.isSafeInteger(record.id) && record.id > 0
+    && record.sourceDocumentId !== null && Number.isSafeInteger(record.sourceDocumentId) && record.sourceDocumentId > 0) ?? null;
+}
+
+/**
+ * The peer median with its records (#981, H06-T04): one published row per peer, the row whose amount
+ * is that peer's value, and a `peer_median` derivation over them that recomputes to the band's median.
+ * Null when any peer has no such row, the rows' frequencies differ, the group is larger than
+ * MAX_PEER_MEDIAN_RECORDS, or the rows do not reproduce the median: the median then stays directional.
+ */
+export function peerMedianEvidence(research: Pick<FeeResearch, "institutionId" | "feeCategory" | "peers" | "band">): { facts: HamiltonEvidenceFact[]; derivation: HamiltonDerivedFact } | null {
+  const band = research.band;
+  const peers = research.peers;
+  if (!band || peers.length === 0 || peers.length !== band.n || peers.length > MAX_PEER_MEDIAN_RECORDS) return null;
+  if (new Set(peers.map((peer) => peer.institutionId)).size !== peers.length) return null;
+  const records = peers.map(peerValueRecord);
+  if (records.some((record) => record === null)) return null;
+  const frequencies = new Set(records.map((record) => record!.frequency?.trim().toLowerCase() ?? null));
+  if (frequencies.size !== 1) return null;
+  const facts: HamiltonEvidenceFact[] = peers.map((peer, i) => {
+    const record = records[i]!;
+    return {
+      id: `fee:published:${record.id}`,
+      kind: "observed",
+      scope: {
+        institutionId: peer.institutionId,
+        feeCategory: research.feeCategory,
+        product: record.feeName,
+        reportingDate: null,
+        effectiveDate: null,
+        accountApplicability: record.feeAudience,
+      },
+      value: record.amount,
+      unit: "usd",
+      currency: "USD",
+      frequency: record.frequency,
+      conditions: null,
+      status: "published",
+      source: {
+        label: "Published fee catalog",
+        table: "published_fee_catalog",
+        recordId: record.id,
+        sourceDocumentIds: [record.sourceDocumentId!],
+        urls: urls(record.documentUrl, ...(record.documentUrl ? [] : peer.documentUrls.slice(0, 1))),
+        asOf: peer.publishedAt,
+        verificationEventId: null,
+      },
+    };
+  });
+  const median = medianOf(facts.map((fact) => fact.value as number));
+  // The band is rounded to the cent; the records must give that median.
+  if (median === null || Math.abs(median - band.median) > 0.005) return null;
+  return {
+    facts,
+    derivation: derivedFact({
+      id: `derived:peer_median:${research.institutionId}:${research.feeCategory}`,
+      scope: { institutionId: null, feeCategory: research.feeCategory, product: null, reportingDate: null, effectiveDate: null, accountApplicability: "consumer" },
+      value: median,
+      unit: "usd",
+      currency: "USD",
+      kind: "peer_median",
+      inputFactIds: facts.map((fact) => fact.id),
+      formula: PEER_MEDIAN_FORMULA,
+      rounding: "the nearest cent",
+    }),
+  };
+}
+
 export function buildFeeResearchEvidence(research: FeeResearch): HamiltonEvidenceBundle {
   const ownFacts = research.ownRows
     .map((row) => ownFeeFact(research.institutionId, research.feeCategory, row))
     .filter((fact): fact is HamiltonEvidenceFact => fact !== null);
-  // Source-document IDs are insufficient to identify the fee rows behind
-  // each peer's collapsed category statistic; never save them as observations.
+  // Source-document IDs alone do not identify the fee rows behind each peer's value; only the
+  // rows the read names (peerMedianEvidence) are saved as observations.
   const currentEvidenceSupported = supportedOwnAggregate(ownFacts, research.current, research.feeCategory);
   const derivations: HamiltonDerivedFact[] = [];
 
@@ -392,19 +502,18 @@ export function buildFeeResearchEvidence(research: FeeResearch): HamiltonEvidenc
   }
 
 
+  const peerMedian = peerMedianEvidence(research);
+  if (peerMedian) derivations.push(peerMedian.derivation);
+
   return {
     version: HAMILTON_EVIDENCE_CONTRACT_VERSION,
     generatedAt: research.provenance.generatedAt,
-    facts: ownFacts,
+    facts: [...ownFacts, ...(peerMedian?.facts ?? [])],
     derivations,
     limitations: [
-      "Evidence snapshot reflects stored records at answer time; it is not a live-source recheck.",
-      ...(research.current !== null && !currentEvidenceSupported
-        ? ["Own category aggregate has incompatible, incomplete or untraceable product/frequency/source rows; it is not a claim-bound individual fee."]
-        : []),
-      ...(research.peers.length > 0
-        ? ["Peer category aggregates lack contributing published fee-row IDs; figures are directional and omitted from claim-bound evidence."]
-        : []),
+      STORED_SNAPSHOT_LIMITATION,
+      ...(research.current !== null && !currentEvidenceSupported ? [OWN_AGGREGATE_LIMITATION] : []),
+      ...(research.peers.length > 0 ? [peerMedian ? PEER_MEDIAN_RECORDS_LIMITATION : PEER_AGGREGATE_LIMITATION] : []),
       CLAIM_BINDING_LIMITATION,
     ],
   };

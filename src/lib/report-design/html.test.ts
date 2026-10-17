@@ -3,6 +3,7 @@ import { REPORT_DESIGN_CSS } from "./css";
 import { rdDocument, rdExhibit, rdLegend, rdResponsive } from "./html";
 import { RD } from "./tokens";
 import { CHART } from "@/lib/charts/style";
+import { colors } from "@/brand/tokens/tokens";
 
 describe("report design", () => {
   it("renders an exhibit as label, headline, sub-line, legend, panels, notice and source, escaped", () => {
@@ -39,7 +40,20 @@ describe("report design", () => {
 
   it("balances headings and uses the app's loaded fonts before the named ones", () => {
     expect(REPORT_DESIGN_CSS).toContain(".rd h1,.rd h2,.rd h3,.rd h4{text-wrap:balance}");
-    expect(REPORT_DESIGN_CSS).toContain("--rd-serif:var(--font-newsreader,\"Newsreader\")");
+    expect(REPORT_DESIGN_CSS).toContain("--rd-display:var(--font-geist-sans,\"Geist\")");
+    expect(REPORT_DESIGN_CSS).toContain("--rd-mono:var(--font-geist-mono,\"Geist Mono\")");
+    expect(REPORT_DESIGN_CSS).not.toMatch(/Newsreader|JetBrains|IBM Plex/);
+  });
+
+  it("reads its colours from the Fee Insight brand tokens", () => {
+    expect(RD.ink).toBe(colors.light.ink);
+    expect(RD.terra).toBe(colors.light.brick);
+    expect(RD.terraDeep).toBe(colors.light["brick-ink"]);
+    expect(RD.terraSoft).toBe(colors.light["brick-tint"]);
+    expect(RD.good).toBe(colors.light["below-market"]);
+    for (const hex of ["#C44B2E", "#1A1815", "#FDFBF8", "#F5EFE6", "#4F6B3A"]) {
+      expect(REPORT_DESIGN_CSS.toUpperCase()).not.toContain(hex);
+    }
   });
 
   it("keeps the old chart imports on the same palette", () => {

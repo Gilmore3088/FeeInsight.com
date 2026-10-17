@@ -99,6 +99,48 @@ price is caught too.
 Before the migration is applied, the publish step skips this check and the admin page shows no
 Correct action.
 
+## Refresh status, saved outputs and the audit page (H03-T08 to T10)
+
+The audit page, `/admin/corrections` (anyone who can view the admin), lists every hold, release,
+correction and reversal, newest first: who, what, why, the evidence, the run, where the change
+stands now, and each reader's refresh status. It writes nothing. A reversal is still made on the
+institution page, as a new version.
+
+Each reader's status is read from evidence, never assumed (`src/lib/fee-refresh-status.ts`):
+
+| Reader | Updated when |
+|---|---|
+| Live fee list (`published_fee_catalog`) | The row the action made live is listed and the one it took out is not |
+| National index (`fee_index_cache`) | The run's `index.refresh` event completed, or the index was rebuilt after the action, and a minute has passed for the servers' memo |
+| Public pages (read caches) | The run's `cache.invalidate` event completed (written after the action commits), or an hour has passed |
+| Hamilton Pro | Both the fee list and the national index are updated |
+
+When the index rebuild failed or the caches were not cleared, an admin (`edit`) can retry. A retry
+is its own completed Hamilton run (`admin.fee_refresh`, `retry_of` the original run), with a
+`refresh.retry` event on the original run; it changes no fee.
+
+Saved answers, reports and briefings are never rewritten (`src/lib/saved-output-corrections.ts`).
+Since H03-T09 (migration 20270110000054), a saved answer or report records the published fee rows
+it used and the source document behind each (`hamilton_saved_output_fee_refs`, written by
+`src/lib/data-store/saved-output-fee-refs.ts`): the bank's own rows, evidence facts, and named peers
+and local competitors (each `PeerValue` carries `feePublishedIds`). A storyline records the rows of
+the research it was built from; a written answer, the rows its tools read; a report, the bank's own
+rows it read (its peer figures are index medians, which name no rows); a board brief, the rows of
+the saved answer it reuses. Market layers (state, district, national) are aggregates and are not
+recorded. The record is best effort: a missing table or failed write leaves the output saved with
+no record.
+
+A change matches a saved output that recorded the changed row (every version in its correction
+chain, and holds and releases of it), so an answer that used the bank only as a peer is found and
+one about the same bank that used other rows is not. A release also matches outputs about the
+bank, since a fee that was held could not be named. An output with no record (saved before the
+migration, a briefing, or one that read no identifiable row) is still matched by the institution
+it is about. The audit page counts outputs made before each change on the same rules. A saved
+answer or report opened after a change says so above the unchanged output ("Fee data this answer
+used changed after this answer was saved: ...", or "This institution's fee data ..." for an output
+with no record) and offers a fresh one: ask again, or write a new report. Old rows are not
+backfilled.
+
 ## Where it lives
 
 - Rules shared with the admin page: `src/lib/fee-correction-rules.ts`
@@ -107,14 +149,16 @@ Correct action.
 - Run ledger and index rebuild for every operator fee action: `src/lib/fee-admin-run.ts`
 - Hold and release: `src/lib/fee-hold.ts`
 - Admin page: `src/app/admin/institution/[id]/` (`fee-table.tsx`, `fee-correction-controls.tsx`, `actions.ts`)
+- Audit page and its reader: `src/app/admin/corrections/`, `src/lib/data-store/fee-correction-audit.ts`
 
 ## Not covered yet
 
 - Corrected conditions are kept in the version row, but `published_fee_catalog` still reads
   conditions from the fee's raw lineage, so the public pages show the source's conditions text.
 - Future-effective changes (a correction that takes effect on a later date) are not modelled.
-- Saved reports and answers made before a correction are not marked superseded (H03-T09).
-- The audit history on the admin page shows versions, evidence, who and why, and the run id. It
-  does not yet show refresh status per surface (H03-T08, T10).
+- Outputs saved before migration 20270110000054, and every briefing (its positions carry no row
+  ids), are found only by the institution they are about. A report's peer medians, and market
+  layers in any output, name no rows, so a change to one peer's fee inside a median is not matched.
+- Briefings are counted on the audit page but do not show the notice to the reader.
 - An agent check (category guard, source check, rules re-check) can still take down a corrected
   row, the same as any live row. It cannot bring the superseded value back.

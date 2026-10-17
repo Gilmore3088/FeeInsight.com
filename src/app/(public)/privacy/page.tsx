@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { LEGAL_ENTITY_LINE } from "@/lib/constants";
+import { PAGE_HEADER } from "@/components/public/page-header";
 
 export const metadata: Metadata = {
   title: "Privacy Policy",
@@ -9,22 +10,24 @@ export const metadata: Metadata = {
 export default function PrivacyPage() {
   return (
     <div className="mx-auto max-w-3xl px-6 py-14">
-      <div className="flex items-center gap-2 mb-4">
-        <span className="h-px w-8 bg-brick/40" />
-        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
-          Legal
-        </span>
-      </div>
+      <header className={PAGE_HEADER}>
+        <div className="flex items-center justify-center gap-2 mb-4 sm:justify-start">
+          <span className="h-px w-8 bg-brick/40" />
+          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
+            Legal
+          </span>
+        </div>
 
-      <h1
-        className="font-extrabold text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-ink"
-        style={{ fontFamily: "var(--fi-font-sans)" }}
-      >
-        Privacy Policy
-      </h1>
-      <p className="mt-2 text-[13px] text-ink-muted">
-        Last updated: October 8, 2026
-      </p>
+        <h1
+          className="font-extrabold text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-ink"
+          style={{ fontFamily: "var(--fi-font-sans)" }}
+        >
+          Privacy Policy
+        </h1>
+        <p className="mt-2 text-[13px] text-ink-muted">
+          Last updated: October 8, 2026
+        </p>
+      </header>
 
       <div className="mt-8 space-y-6 text-[14px] leading-relaxed text-ink-soft">
         <p>

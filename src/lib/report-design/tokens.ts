@@ -1,43 +1,91 @@
 /**
  * The one report look: every report, study, briefing, answer exhibit and alert reads its
  * colours, type and chart marks from here (README.md in this folder has the rules).
- * The palette is the site's warm/terra palette (src/app/globals.css @theme).
+ * The palette is the Fee Insight brand tokens (src/brand/tokens/tokens.json, light theme):
+ * Oxford Navy ink on warm paper, with brick as the one accent. Hex values come from
+ * src/brand/tokens/tokens.ts; never retype them here.
  */
 
+import { colors } from "@/brand/tokens/tokens";
+
+const T = colors.light;
+
+/** Blend `hex` over `base` at `amount` (0 to 1) and return a solid hex. Used for tints the tokens don't name. */
+function mix(hex: string, base: string, amount: number): string {
+  const rgb = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const a = rgb(hex);
+  const b = rgb(base);
+  return `#${a
+    .map((v, i) => Math.round(v * amount + b[i] * (1 - amount)).toString(16).padStart(2, "0"))
+    .join("")}`;
+}
+
+function alpha(hex: string, amount: number): string {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  return `rgba(${r},${g},${b},${amount})`;
+}
+
+/**
+ * Key names are kept from the earlier palette so older imports compile; `terra*` is now brick.
+ * ink -> ink, inkSoft -> muted, paper/cream -> surface-0, sand -> paper, rule -> surface-200,
+ * rule2 -> border, terra -> brick, terraDeep -> brick-ink, terraSoft -> brick-tint,
+ * good -> below-market.
+ */
 export const RD = {
-  ink: "#1A1815",
-  ink2: "#3D3830",
-  inkSoft: "#5A5347",
-  muted: "#A09788",
-  rule: "#EDE5D8",
-  rule2: "#E0D7C9",
-  paper: "#FFFFFF",
-  cream: "#FDFBF8",
-  sand: "#F5EFE6",
-  terra: "#C44B2E",
-  terraText: "#A93D25",
-  terraDeep: "#7A2817",
-  terraSoft: "#FDF0ED",
-  /** Middle-half band: terra at about 16%. */
-  band: "rgba(196,75,46,0.16)",
-  /** Bars and dots that are context, not the subject. */
-  context: "#C4B89F",
-  noData: "#E0D7C9",
+  ink: T.ink,
+  ink2: T.ink,
+  inkSoft: T.muted,
+  /** Tertiary text: source lines, captions. */
+  muted: T["control-border"],
+  rule: T["surface-200"],
+  rule2: T.border,
+  paper: T["surface-0"],
+  cream: T["surface-0"],
+  sand: T.paper,
+  terra: T.brick,
+  terraText: T.brick,
+  terraDeep: T["brick-ink"],
+  terraSoft: T["brick-tint"],
+  /** Middle-half band: brick at about 16%. */
+  band: alpha(T.brick, 0.16),
+  /** Bars and dots that are context, not the subject: the in-range grey, lightened. */
+  context: mix(T["in-range"], T["surface-0"], 0.4),
+  noData: T.border,
   /** A change for the better for the reader (used sparingly, never for a price direction). */
-  good: "#4F6B3A",
-  /** Six steps, light to dark, for choropleths. */
-  ramp: ["#F6DDD3", "#EDB8A5", "#E09276", "#CF6A4C", "#A93D25", "#7A2817"],
+  good: T["below-market"],
+  /** Six steps, light to dark, for choropleths: brick-tint through brick to brick-ink. */
+  ramp: [
+    T["brick-tint"],
+    mix(T.brick, T["brick-tint"], 0.35),
+    mix(T.brick, T["brick-tint"], 0.7),
+    T.brick,
+    mix(T["brick-ink"], T.brick, 0.5),
+    T["brick-ink"],
+  ],
+  /** Five steps, far lower to far higher than a price: below-market green, context grey, brick. */
+  diverging: [
+    T["below-market"],
+    mix(T["below-market"], T["surface-0"], 0.45),
+    mix(T["in-range"], T["surface-0"], 0.4),
+    mix(T.brick, T["surface-0"], 0.45),
+    T.brick,
+  ],
   /**
-   * Named institutions after the subject (terra): ink first, then three muted hues. Anything
-   * past the fourth is context grey and goes in a legend, never a fifth colour.
+   * Named institutions after the subject (brick): ink first, then three muted hues. Anything
+   * past the fourth is context grey and goes in a legend, never a fifth colour. Blue and
+   * purple are categorical only; the brand tokens name no third and fourth series hue.
    */
-  series: ["#1A1815", "#4F7CAC", "#6B8F5E", "#8A6FA8"],
+  series: [T.ink, "#4F7CAC", T["below-market"], "#8A6FA8"],
 } as const;
 
+/** Geist for everything, Geist Mono for figures (the site's fonts, src/app/layout.tsx). */
 export const RD_FONTS = {
-  serif: '"Newsreader", Georgia, "Times New Roman", serif',
+  /** Titles and headlines. Geist, heavier weight; the brand has no serif. */
+  display: '"Geist", "Inter", "Helvetica Neue", system-ui, sans-serif',
+  /** Deprecated alias of `display`, kept for chart code that still asks for `font: "serif"`. Geist, not a serif. */
+  serif: '"Geist", "Inter", "Helvetica Neue", system-ui, sans-serif',
   sans: '"Geist", "Inter", "Helvetica Neue", system-ui, sans-serif',
-  mono: '"Geist Mono", "JetBrains Mono", ui-monospace, monospace',
+  mono: '"Geist Mono", ui-monospace, "SFMono-Regular", Menlo, monospace',
 } as const;
 
 /** Type sizes in CSS px. Charts use `chart` (desktop) and `chartPhone` (the narrow drawing). */
@@ -71,22 +119,26 @@ export const RD_PDF = {
   borderDark: RD.rule2,
 } as const;
 
-/** React-PDF chart marks: the bank in terra, peers' middle half as a light terra band, context bars grey. */
+/** React-PDF chart marks: the bank in brick, peers' middle half as a light brick band, context bars grey. */
 export const RD_PDF_CHART = {
   ink: RD.ink,
   muted: RD.inkSoft,
   faint: RD.muted,
   accent: RD.terra,
-  band: "#F6DDD3",
+  band: mix(T.brick, T["surface-0"], 0.16),
   bar: RD.context,
   rule: RD.rule2,
 } as const;
 
-/** React-PDF has only its built-in fonts unless one is registered: serif headings use Times. */
+/**
+ * React-PDF has only its built-in fonts unless one is registered. The brand is sans throughout,
+ * so headings use Helvetica too (Geist is not registered with React-PDF yet). The `serif*` keys
+ * are kept so the briefing's imports compile.
+ */
 export const RD_PDF_FONTS = {
-  serif: "Times-Roman",
-  serifBold: "Times-Bold",
-  serifItalic: "Times-Italic",
+  serif: "Helvetica-Bold",
+  serifBold: "Helvetica-Bold",
+  serifItalic: "Helvetica-Oblique",
   sans: "Helvetica",
   sansBold: "Helvetica-Bold",
   sansItalic: "Helvetica-Oblique",

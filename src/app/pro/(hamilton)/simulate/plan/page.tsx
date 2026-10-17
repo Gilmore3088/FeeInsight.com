@@ -174,7 +174,7 @@ export default async function PlanPage({ searchParams }: PageProps) {
           <PrintButton />
         </div>
         <article className="flex flex-col gap-6 rounded-lg border border-warm-300 bg-white p-8 shadow-sm print:border-0 print:p-0 print:shadow-none">
-          <header className="border-b border-warm-300 pb-4">
+          <header className="border-b border-warm-300 pb-4 text-center sm:text-left">
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-terra-text">
               {title} · {inst?.name ?? "Your institution"}
             </p>

@@ -157,12 +157,12 @@ export function charterFinding(dots: MarketDot[], feeName: string): string | nul
   const fee = feeName.replace(/\s*\([^)]*\)/g, "").toLowerCase();
   const money = (n: number) => `$${Number.isInteger(n) ? n : n.toFixed(2)}`;
   const diff = Math.abs(banks.median - unions.median);
-  if (diff === 0) return `Banks and credit unions charge the same median ${fee} fee, ${money(banks.median)}.`;
+  // A median is a calculation, so the sentence never says either group "charges" it.
+  if (diff === 0) return `Banks and credit unions share a median ${fee} fee of ${money(banks.median)}.`;
   const [more, less] = banks.median > unions.median ? [banks, unions] : [unions, banks];
-  return `${more.label} charge a median ${money(more.median)} for ${article(fee)} fee, ${money(diff)} more than ${less.label.toLowerCase()} (${money(less.median)}).`;
+  const name = (d: MarketDot) => (d.key === "Bank" ? "bank" : "credit union");
+  return `The ${name(more)} median ${fee} fee is ${money(more.median)}, ${money(diff)} above the ${name(less)} median of ${money(less.median)}.`;
 }
-
-const article = (word: string) => `${/^[aeiou]/i.test(word) ? "an" : "a"} ${word}`;
 
 /** The family's other fees with a complete national spread, for the related-fees row. */
 export function relatedBands(

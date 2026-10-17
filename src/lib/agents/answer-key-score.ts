@@ -40,6 +40,11 @@ import { getFeeFamily } from "@/lib/fee-taxonomy";
  *       src/lib/percent-fees.ts). A rate is never compared with a dollar amount: it can
  *       match only a key fee keyed as "varies" in the same category, and counts as its own
  *       prediction (category + rate).
+ *   v4  v3, plus the bank's other stored documents whose newest text is the same text
+ *       (`agent_source_texts.text_hash`) as the key's document. Magellan stores one page under
+ *       several URLs ("/fee-schedule" and "/learn/fee-schedule"), and Knox reads a text once per
+ *       bank, so its rows can sit on the twin's id (Knox recall diagnosis, Oct 17 2026: 41 key
+ *       fees at inst 7217 and 8466). This changes the measure, not the data: v1-v3 are unchanged.
  */
 
 type SqlTag = typeof sql;
@@ -81,6 +86,8 @@ export interface PipelineText {
   sourceDocumentId: number;
   status: string;
   charCount: number;
+  /** The text's hash (v4 counts a document with the same text as the key's document). */
+  textHash?: string | null;
 }
 
 export interface PipelineFee {
@@ -263,19 +270,33 @@ function formatFee(fee: { canonicalKey: string; amount: number | null; ratePerce
   return fee.amount == null ? fee.canonicalKey : `${fee.canonicalKey} $${fee.amount.toFixed(2)}`;
 }
 
-/** Which stored documents are the right one: URL match, or the same bytes as the right one. */
-function rightDocumentIds(entry: ConfirmedAnswerKeyEntry, evidence: BankEvidence): Set<number> {
+/**
+ * Which stored documents are the right one: URL match, or the same bytes as the right one. From v4,
+ * also a stored document of the bank whose newest text is the same text as a right document's.
+ */
+function rightDocumentIds(entry: ConfirmedAnswerKeyEntry, evidence: BankEvidence, version: AnswerKeyScorerVersion = ANSWER_KEY_SCORER_VERSION): Set<number> {
   const target = normalizeDocumentUrl(entry.documentUrl);
   const hashes = new Set<string>();
   if (entry.contentHash) hashes.add(entry.contentHash);
   for (const doc of evidence.documents) {
     if (doc.contentHash && normalizeDocumentUrl(doc.url) === target) hashes.add(doc.contentHash);
   }
-  return new Set(
+  const ids = new Set(
     evidence.documents
       .filter((doc) => normalizeDocumentUrl(doc.url) === target || (doc.contentHash != null && hashes.has(doc.contentHash)))
       .map((doc) => doc.id),
   );
+  if (version < 4) return ids;
+  const texts = evidence.texts ?? [];
+  const textHashes = new Set(
+    texts.filter((text) => ids.has(text.sourceDocumentId) && text.textHash).map((text) => text.textHash as string),
+  );
+  if (textHashes.size === 0) return ids;
+  const stored = new Set(evidence.documents.map((doc) => doc.id));
+  for (const text of texts) {
+    if (text.textHash && textHashes.has(text.textHash) && stored.has(text.sourceDocumentId)) ids.add(text.sourceDocumentId);
+  }
+  return ids;
 }
 
 function textCompleted(text: PipelineText | null | undefined): text is PipelineText {
@@ -369,7 +390,7 @@ export function scoreAnswerKey(
     });
     docType.banks += 1;
 
-    const rightIds = rightDocumentIds(entry, evidence);
+    const rightIds = rightDocumentIds(entry, evidence, version);
     const { magellan, rosetta } = documentStages(version, entry, evidence, rightIds);
     const magellanRight = magellan.matched === 1;
     const rosettaRight = rosetta.matched === 1;
@@ -547,7 +568,7 @@ export async function gatherBankEvidence(institutionIds: number[], db: SqlTag = 
        ORDER BY institution_id, crawled_at DESC, id DESC
     `,
     db`
-      SELECT DISTINCT ON (institution_id, source_document_id) id, institution_id, source_document_id, status, char_count, updated_at
+      SELECT DISTINCT ON (institution_id, source_document_id) id, institution_id, source_document_id, status, char_count, text_hash, updated_at
         FROM agent_source_texts
        WHERE institution_id = ANY(${ids}::bigint[])
        ORDER BY institution_id, source_document_id, updated_at DESC, id DESC
@@ -597,6 +618,7 @@ export async function gatherBankEvidence(institutionIds: number[], db: SqlTag = 
       sourceDocumentId: Number(row.source_document_id),
       status: String(row.status),
       charCount: Number(row.char_count ?? 0),
+      textHash: (row.text_hash as string | null) ?? null,
     };
     bank.texts?.push(text);
     const at = new Date(row.updated_at as string | Date).getTime() || 0;

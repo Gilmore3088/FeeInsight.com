@@ -7,6 +7,8 @@ export interface Finding {
   figure: string;
   headline: string;
   detail: string;
+  /** How the finding is calculated, shown behind a details control where the page has one. */
+  about?: string;
   /** Section anchor holding the exhibit behind the finding. */
   exhibit: string;
   /** The fee the finding is about, when it is about one fee. */

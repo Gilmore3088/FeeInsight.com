@@ -5,9 +5,9 @@
  */
 import { RD } from "@/lib/report-design/tokens";
 import type { CSSProperties, ReactNode } from "react";
-import { Callout, More, QuestionCard, SERIF, fmtMoney } from "./memo";
-import { REPORT_DESIGN_CSS } from "@/lib/report-design/css";
+import { ANSWER_TYPE, Callout, ExhibitShell, More, QuestionCard, SectionHeading, SERIF, fmtMoney } from "./memo";
 import type { Exhibit, ExhibitMarker, Fact, HamiltonAnswer, SourceRef } from "@/lib/hamilton/workspace/types";
+import { staleSourceLabel } from "@/lib/hamilton/source-age";
 
 export type ExhibitSpec = Exhibit;
 export type AnswerSpec = Pick<HamiltonAnswer, "feeCategory" | "headline" | "claims" | "drivers" | "exhibit" | "question" | "evidenceLevel">;
@@ -28,15 +28,28 @@ export const ANSWER_EVIDENCE_LABELS: Record<AnswerSpec["evidenceLevel"], string>
   institution: "Published fees and your own figures",
 };
 
-function shortDate(iso: string | null | undefined): string | null {
+/** A source's date as every Hamilton answer shows it ("Jun 2026"); a non-ISO label is kept as given. */
+export function sourceDate(iso: string | null | undefined): string | null {
   if (!iso) return null;
   if (!/^\d{4}-\d{2}-\d{2}/.test(iso)) return iso;
   return new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
 }
 
+/**
+ * A source's date with its age label when it is old ("Jun 2024 · Source over a year old").
+ * Every answer branch shows source dates through this, so the old-source rule reads the same
+ * everywhere. A missing date stays missing (null); a recent one shows the date alone.
+ */
+export function sourceDateWithAge(iso: string | null | undefined, now: Date = new Date()): string | null {
+  const date = sourceDate(iso);
+  if (!date) return null;
+  const age = staleSourceLabel(iso, now);
+  return age ? `${date} · ${age}` : date;
+}
+
 /** A source as the reader sees it: name, date and, for a market figure, how many institutions. */
 export function SourceChip({ source, n }: { source: SourceRef; n?: number }) {
-  const date = shortDate(source.asOf);
+  const date = sourceDateWithAge(source.asOf);
   const text = [source.label, date, n != null ? `n=${n.toLocaleString("en-US")}` : null].filter(Boolean).join(" · ");
   const cls = "inline-block rounded border border-warm-200 bg-white px-1.5 py-0.5 text-[11px] leading-tight text-warm-600";
   return source.url ? (
@@ -52,7 +65,7 @@ export function SourceChip({ source, n }: { source: SourceRef; n?: number }) {
 export function uniqueSources(sources: readonly SourceRef[]): SourceRef[] {
   const seen = new Set<string>();
   return sources.filter((s) => {
-    const key = `${s.label}|${shortDate(s.asOf) ?? ""}`;
+    const key = `${s.label}|${sourceDate(s.asOf) ?? ""}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -70,7 +83,7 @@ function sourceLine(sources: readonly SourceRef[]): ReactNode {
       ) : (
         s.label
       )}
-      {s.asOf ? `, ${shortDate(s.asOf)}` : ""}
+      {s.asOf ? `, ${sourceDateWithAge(s.asOf)}` : ""}
     </span>
   ));
 }
@@ -101,19 +114,9 @@ export function ExhibitFrame({
 }) {
   const label = [number != null ? `Exhibit ${number}` : "Exhibit", topic].filter(Boolean).join(" · ");
   return (
-    <div className="rd w-full">
-      <style href="report-design" precedence="medium">
-        {REPORT_DESIGN_CSS}
-      </style>
-      <section className="rd-exhibit">
-        <div className="rd-label">{label}</div>
-        <h2>{title}</h2>
-        {sub ? <p className="rd-sub">{sub}</p> : null}
-        {children}
-        {note ? <p className="rd-source not-italic">{note}</p> : null}
-        {sources.length > 0 ? <div className="rd-source">Source: {sourceLine(sources)}</div> : null}
-      </section>
-    </div>
+    <ExhibitShell label={label} title={title} sub={sub} note={note} source={sources.length > 0 ? sourceLine(sources) : null}>
+      {children}
+    </ExhibitShell>
   );
 }
 
@@ -148,7 +151,9 @@ export function middleHalfText(p25: number, p75: number, fmt: (v: number) => str
 }
 
 /** About how wide an 11px label is on a ~900px track, in %. */
-const labelWidth = (text: string) => text.length * 0.58 + 1;
+// Percent of the track one 11px label takes: the names only sit on the track when it is at least
+// 56rem wide (the @4xl container below), so this is sized for that width, not the page.
+const labelWidth = (text: string) => text.length * 0.68 + 1;
 
 function ownLabelStyle(at: number, left: number): CSSProperties {
   if (at >= 70) return { right: `${Math.max(0, 100 - at - 1)}%` };
@@ -183,9 +188,10 @@ function FeePosition({ x }: { x: Extract<ExhibitSpec, { kind: "fee_position" }> 
   const ownText = x.own != null ? `${x.ownLabel} ${fmtMoney(x.own)}` : "";
   const ownPlaced = x.own != null ? placeLabels([{ x: axis.at(x.own), width: labelWidth(ownText) + 1 }])[0] : null;
   return (
-    <div>
-      {/* On a phone the market names do not fit on the track: it carries ticks, and the names sit in a list below. */}
-      <div className="relative h-[3.6rem] md:h-[var(--track-h)]" style={{ "--track-h": `${3.6 + rowCount * 1.5}rem` } as CSSProperties}>
+    <div className="@container">
+      {/* In a narrow exhibit (a phone, or a column beside another) the market names do not fit on the
+          track: it carries ticks, and the names sit in a list below. */}
+      <div className="relative h-[3.6rem] @4xl:h-[var(--track-h)]" style={{ "--track-h": `${3.6 + rowCount * 1.5}rem` } as CSSProperties}>
         {ownPlaced ? (
           <span
             className="absolute top-0 whitespace-nowrap text-xs font-semibold text-terra-text [font-variant-numeric:tabular-nums]"
@@ -204,13 +210,13 @@ function FeePosition({ x }: { x: Extract<ExhibitSpec, { kind: "fee_position" }> 
         <span className="absolute top-6 h-6 w-0.5 -translate-x-1/2 bg-warm-800" style={{ left: `${axis.at(x.band.median)}%` }} title={`${x.band.label} median ${fmtMoney(x.band.median)}`} />
         {markers.map((m, i) => (
           <span key={m.label}>
-            <span className="absolute top-7 h-4 w-px -translate-x-1/2 bg-warm-500 md:hidden" style={{ left: `${axis.at(m.value)}%` }} />
+            <span className="absolute top-7 h-4 w-px -translate-x-1/2 bg-warm-500 @4xl:hidden" style={{ left: `${axis.at(m.value)}%` }} />
             <span
-              className="absolute top-[2.4rem] hidden w-px -translate-x-1/2 bg-warm-400 md:block"
+              className="absolute top-[2.4rem] hidden w-px -translate-x-1/2 bg-warm-400 @4xl:block"
               style={{ left: `${axis.at(m.value)}%`, height: `${0.85 + placed[i].row * 1.5}rem` }}
             />
             <span
-              className="absolute z-10 hidden whitespace-nowrap bg-warm-50 px-1 text-[11px] text-warm-700 [font-variant-numeric:tabular-nums] md:block"
+              className="absolute z-10 hidden whitespace-nowrap bg-warm-50 px-1 text-[11px] text-warm-700 [font-variant-numeric:tabular-nums] @4xl:block"
               style={{ left: `${placed[i].left}%`, top: `${3.3 + placed[i].row * 1.5}rem` }}
             >
               {markerText(m)}
@@ -230,7 +236,7 @@ function FeePosition({ x }: { x: Extract<ExhibitSpec, { kind: "fee_position" }> 
         <span>{fmtMoney(axis.hi)}</span>
       </div>
       {markers.length > 0 ? (
-        <ul className="mt-3 flex flex-wrap gap-1.5 md:hidden" aria-label="Market medians">
+        <ul className="mt-3 flex flex-wrap gap-1.5 @4xl:hidden" aria-label="Market medians">
           {markers.map((m) => (
             <li key={m.label} className="inline-flex items-center gap-1.5 rounded-full border border-warm-300 bg-white px-2.5 py-1 text-xs text-warm-800 [font-variant-numeric:tabular-nums]">
               <span className="inline-block h-3 w-px bg-warm-500" />
@@ -378,7 +384,7 @@ function Trend({ x }: { x: Extract<ExhibitSpec, { kind: "trend" }> }) {
   const px = (d: string) => pad.l + (dates.indexOf(d) / (dates.length - 1)) * (W - pad.l - pad.r);
   const py = (v: number) => pad.t + (1 - (v - lo) / (hi - lo)) * (H - pad.t - pad.b);
   const strokes = [RD.terra, RD.inkSoft, RD.muted];
-  const label = (d: string) => shortDate(d) ?? d;
+  const label = (d: string) => sourceDate(d) ?? d;
   const [own, peer] = x.series;
   const paired = own && peer && own.points.length > 1 && peer.points.length > 1;
   // The gap at each end, where both series have a point on the same date.
@@ -519,11 +525,31 @@ export function ExhibitView({ exhibit, number, title }: { exhibit: ExhibitSpec; 
   );
 }
 
-export function FactList({ facts }: { facts: readonly Fact[] }) {
+/**
+ * Sourced findings, each with its source badge. The one list every answer branch uses:
+ * "inline" puts the badge at the end of the sentence (a short answer's reasoning), "boxed"
+ * sets each finding on its own row with the badge under it (findings with nothing to draw).
+ */
+export function FactList({ facts, layout = "inline" }: { facts: readonly Fact[]; layout?: "inline" | "boxed" }) {
+  if (facts.length === 0) return null;
+  if (layout === "boxed") {
+    return (
+      <ul className="flex flex-col divide-y divide-warm-200 rounded-lg border border-warm-300 bg-white">
+        {facts.map((f, i) => (
+          <li key={i} className="flex flex-col gap-1 px-4 py-3">
+            <span className={`${ANSWER_TYPE.body} text-warm-900 ${ANSWER_TYPE.num}`}>{f.text}</span>
+            <span>
+              <SourceChip source={f.source} n={f.sampleSize} />
+            </span>
+          </li>
+        ))}
+      </ul>
+    );
+  }
   return (
     <ul className="flex flex-col gap-2.5">
       {facts.map((f, i) => (
-        <li key={i} className="text-[15px] leading-relaxed text-warm-800">
+        <li key={i} className={`${ANSWER_TYPE.body} text-warm-800`}>
           {f.text} <SourceChip source={f.source} n={f.sampleSize} />
         </li>
       ))}
@@ -558,7 +584,7 @@ export function AnswerView({
   const rest = answer.claims.slice(LEAD_CLAIMS);
   return (
     <article className="flex flex-col gap-5">
-      <p className="text-xl leading-snug text-warm-900 sm:text-2xl" style={SERIF}>
+      <p className={ANSWER_TYPE.lead} style={SERIF}>
         {answer.headline}
       </p>
       {answer.exhibit ? <ExhibitView exhibit={answer.exhibit} /> : null}
@@ -568,7 +594,7 @@ export function AnswerView({
           {rest.length > 0 ? <FactList facts={rest} /> : null}
           {answer.drivers.length > 0 ? (
             <section>
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.1em] text-warm-600">What moves this</h3>
+              <SectionHeading>What moves this</SectionHeading>
               <FactList facts={answer.drivers} />
             </section>
           ) : null}
@@ -591,7 +617,7 @@ export function AnswerView({
           </Callout>
         )
       ) : null}
-      <p className="text-xs text-warm-600">
+      <p className={ANSWER_TYPE.caption}>
         Evidence: <span className="font-medium text-warm-800">{ANSWER_EVIDENCE_LABELS[answer.evidenceLevel]}</span>
       </p>
     </article>

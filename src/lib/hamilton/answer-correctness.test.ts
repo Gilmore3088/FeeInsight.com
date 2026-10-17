@@ -81,7 +81,7 @@ describe("answer correctness", () => {
     const built = buildAskResponse({ question: "How does our overdraft fee compare?", intent: parseAsk("How does our overdraft fee compare?"), research: r, memory: [] });
     const response = { ...built, facts: [...(built.facts ?? []), { text: "Peers' median is $47.", source: { label: "Fees", table: "published_fee_catalog" } }] };
     const result = reconcileAnswer({ question: "How does our overdraft fee compare?", response, research: r, live: liveFor(r) });
-    expect(result.failures).toEqual(["figures that tie to no live catalog value: $47"]);
+    expect(result.failures).toEqual([expect.stringMatching(/^figures that tie to no live catalog value: \$47 \(/)]);
   });
 
   it("fails a peer value that is no longer live, and a median that no longer recomputes", () => {
@@ -130,7 +130,7 @@ describe("answer correctness", () => {
     it("fails a memo figure that ties to no live value", () => {
       const { r, response } = setup();
       const result = reconcileMemoText({ question: q, response, research: r, live: liveFor(r), text: "Your overdraft fee is $32 and peers charge $91.37." });
-      expect(result.failures).toEqual(["figures that tie to no live catalog value: $91.37"]);
+      expect(result.failures).toEqual([expect.stringMatching(/^figures that tie to no live catalog value: \$91\.37 \(/)]);
     });
 
     it("accepts a figure the storyline states from another source, as the free check does", () => {
@@ -169,9 +169,9 @@ describe("answer correctness", () => {
       const ok = reconcileSimulateText({ question: q, response, research: r, live: liveFor(r), text, readerAnchors: [tested, r.current!] });
       expect(ok).toMatchObject({ checked: true, figures: 3, failures: [] });
       // As a single (the old memo path), the tested price could not anchor the gap.
-      expect(reconcileMemoText({ question: q, response, research: r, live: liveFor(r), text, extra: [tested] }).failures).toEqual([`figures that tie to no live catalog value: $${gap}`]);
+      expect(reconcileMemoText({ question: q, response, research: r, live: liveFor(r), text, extra: [tested] }).failures).toEqual([expect.stringMatching(new RegExp(`^figures that tie to no live catalog value: \\$${String(gap).replace(".", "\\.")} \\(`))]);
       const bad = reconcileSimulateText({ question: q, response, research: r, live: liveFor(r), text: "At $43.17 peers would charge $91.37.", readerAnchors: [tested] });
-      expect(bad.failures).toEqual(["figures that tie to no live catalog value: $91.37"]);
+      expect(bad.failures).toEqual([expect.stringMatching(/^figures that tie to no live catalog value: \$91\.37 \(/)]);
     });
 
     it("scores only the read's figures, not the free answer's stale values", () => {

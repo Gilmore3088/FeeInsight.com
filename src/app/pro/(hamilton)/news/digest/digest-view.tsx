@@ -126,7 +126,7 @@ export function DigestView({
   const noStates = digest.states.length === 0;
   return (
     <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
-      <header>
+      <header className="text-center sm:text-left">
         <p className={LABEL} style={SANS}>
           <Link href="/pro/news" className="text-warm-600 no-underline hover:text-brick">
             Regulatory Wire

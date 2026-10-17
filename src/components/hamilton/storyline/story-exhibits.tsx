@@ -6,20 +6,16 @@
 import { ExhibitFrame, ExhibitView, EVIDENCE_LABELS } from "@/components/hamilton/memo/exhibit-view";
 import { SegmentTable } from "@/components/hamilton/memo/segment-table";
 import { withFiguresBold } from "@/components/hamilton/memo/answer-memo";
-import { fmtMoney, fmtSignedMoney, SERIF } from "@/components/hamilton/memo/memo";
+import { ANSWER_TYPE, dayDate, figureSize, fmtMoney, fmtSignedMoney, SERIF } from "@/components/hamilton/memo/memo";
 import type { StoryExhibit } from "./types";
 import { IncomeSplitChart, incomeSplitOf } from "./income-split";
 
-function shortDate(iso: string): string {
-  return new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
-}
-
-const th = "px-3 py-2 text-left text-xs font-medium uppercase tracking-[0.08em] text-warm-600";
+const th = ANSWER_TYPE.th;
 
 export function StoryExhibitView({ item, number, researchInstitutionName }: { item: StoryExhibit; number: number; researchInstitutionName?: string | null }) {
   const x = item.exhibit;
   const takeaway = item.takeaway ? (
-    <p className="mt-3 border-l-2 border-terra pl-3 text-base text-warm-900">
+    <p className={`mt-3 border-l-2 border-terra pl-3 ${ANSWER_TYPE.body} text-warm-900`}>
       {withFiguresBold(item.takeaway.text)}
     </p>
   ) : null;
@@ -68,7 +64,7 @@ export function StoryExhibitView({ item, number, researchInstitutionName }: { it
               return (
                 <li key={i} className="relative pb-4 pl-5 last:pb-0">
                   <span className={`absolute -left-[5px] top-1.5 h-2.5 w-2.5 rounded-full ${up ? "bg-warm-700" : "bg-terra"}`} aria-hidden />
-                  <p className="text-xs text-warm-600 [font-variant-numeric:tabular-nums]">{shortDate(e.date)}</p>
+                  <p className={`text-xs text-warm-600 ${ANSWER_TYPE.num}`}>{dayDate(e.date)}</p>
                   <p className="text-sm text-warm-900">
                     {e.url ? (
                       <a href={e.url} target="_blank" rel="noreferrer" className="underline decoration-warm-300 hover:text-terra-text">
@@ -77,7 +73,7 @@ export function StoryExhibitView({ item, number, researchInstitutionName }: { it
                     ) : (
                       e.institutionName
                     )}
-                    <span className="ml-2 [font-variant-numeric:tabular-nums] text-warm-700">
+                    <span className={`ml-2 ${ANSWER_TYPE.num} text-warm-700`}>
                       {fmtMoney(e.from)} → <strong className="font-semibold text-warm-900">{fmtMoney(e.to)}</strong>
                     </span>
                   </p>
@@ -105,9 +101,24 @@ export function StoryExhibitView({ item, number, researchInstitutionName }: { it
     }
     return (
       <ExhibitFrame title={item.actionTitle} sources={x.sources} note={x.note} number={number}>
-        <div className="overflow-x-auto rounded-md border border-warm-200 bg-white">
-          {/* Only a wide matrix scrolls; a two-column table fits a phone as it is. */}
-          <table className={`w-full text-sm ${x.columns.length > 2 ? "min-w-[36rem]" : ""}`}>
+        {/* On a phone each institution is a card of label and value, so nothing scrolls sideways. */}
+        <ul className="flex flex-col gap-2 sm:hidden">
+          {x.rows.map((r) => (
+            <li key={r.name} className={`rounded-md border px-3 py-2 ${r.own ? "border-terra/40 bg-terra-soft/40" : "border-warm-200 bg-white"}`}>
+              <p className={`text-sm ${r.own ? "font-medium text-terra-text" : "font-medium text-warm-900"}`}>{r.name}</p>
+              <dl className="mt-1 grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-0.5 text-sm">
+                {x.columns.map((c, i) => (
+                  <div key={c} className="contents">
+                    <dt className="text-warm-600">{c}</dt>
+                    <dd className={`text-right text-warm-800 ${ANSWER_TYPE.num}`}>{r.cells[i] ?? <span className="text-warm-600">Not published</span>}</dd>
+                  </div>
+                ))}
+              </dl>
+            </li>
+          ))}
+        </ul>
+        <div className="hidden overflow-x-auto rounded-md border border-warm-200 bg-white sm:block">
+          <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-warm-200">
                 <th className={th} scope="col">Institution</th>
@@ -125,8 +136,8 @@ export function StoryExhibitView({ item, number, researchInstitutionName }: { it
                     {r.name}
                   </th>
                   {r.cells.map((c, i) => (
-                    <td key={i} className="whitespace-nowrap px-3 py-2 text-center text-warm-800 [font-variant-numeric:tabular-nums]">
-                      {c ?? <span className="text-warm-400">Not published</span>}
+                    <td key={i} className={`px-3 py-2 text-center text-warm-800 ${ANSWER_TYPE.num}`}>
+                      {c ?? <span className="text-warm-600">Not published</span>}
                     </td>
                   ))}
                 </tr>
@@ -148,20 +159,31 @@ export function StoryExhibitView({ item, number, researchInstitutionName }: { it
       if (level === "working_estimate") return researchInstitutionName ? `Working estimate from ${researchInstitutionName}'s filings` : "Working estimate from institution filings";
       return researchInstitutionName ? `Published figures: ${researchInstitutionName}` : "Published institution figures";
     };
-    // A lone figure is an amount, not a change, so it carries no plus sign.
+    // A lone figure, or a filed figure read straight from the call report, is an amount, not a
+    // change, so it carries no plus sign.
+    const isAmount = (r: (typeof x.rows)[number]) =>
+      r.low === r.high && r.low >= 0 && (x.rows.length === 1 || (publicFilings && r.evidenceLevel === "institution"));
     const amount = (r: (typeof x.rows)[number]) =>
-      r.low === r.high ? (x.rows.length === 1 && r.low >= 0 ? fmtMoney(r.low) : fmtSignedMoney(r.low)) : `${fmtSignedMoney(r.low)} to ${fmtSignedMoney(r.high)}`;
+      isAmount(r) ? fmtMoney(r.low) : r.low === r.high ? fmtSignedMoney(r.low) : `${fmtSignedMoney(r.low)} to ${fmtSignedMoney(r.high)}`;
     return (
       <ExhibitFrame title={item.actionTitle} sources={x.sources} note={x.note} number={number}>
-        <ul className={`grid gap-3 ${x.rows.length > 1 ? "sm:grid-cols-2" : ""}`}>
+        <ul className={`grid gap-3 ${x.rows.length === 3 ? "sm:grid-cols-2 lg:grid-cols-3" : x.rows.length > 1 ? "sm:grid-cols-2" : ""}`}>
           {x.rows.map((r) => {
             const left = 50 + (Math.min(r.low, r.high) / max) * 50;
             const right = 50 + (Math.max(r.low, r.high) / max) * 50;
             return (
               <li key={r.label} className="flex flex-col gap-2 rounded-lg border border-warm-200 bg-warm-100/60 px-4 py-4">
                 <span className="text-sm text-warm-700">{r.label}</span>
-                <span className="text-3xl leading-none text-warm-900 [font-variant-numeric:tabular-nums]" style={SERIF}>
-                  {amount(r)}
+                <span className={`${figureSize(amount(r))} leading-tight text-warm-900 ${ANSWER_TYPE.num}`} style={SERIF}>
+                  {/* "−$900,000 to −$700,000" breaks only between the figures, never inside one. */}
+                  {amount(r)
+                    .split(" to ")
+                    .map((part, i) => (
+                      <span key={i} className="whitespace-nowrap">
+                        {i > 0 ? " to " : ""}
+                        {part}
+                      </span>
+                    ))}
                 </span>
                 {r.low !== r.high || x.rows.length > 1 ? (
                   <span className="relative h-2.5 rounded-full bg-warm-200" aria-hidden>
@@ -193,11 +215,12 @@ export function StoryExhibitView({ item, number, researchInstitutionName }: { it
             >
               {a.count / total > 0.12 ? (
                 <>
-                  <span className="truncate text-xs font-semibold">
+                  {/* On a phone a band's name would be cut short; the cards below name every band. */}
+                  <span className="hidden truncate text-xs font-semibold sm:block">
                     {a.label}
                     {a.key === x.ownKey ? ` · ${researchInstitutionName ?? "Research institution"}` : ""}
                   </span>
-                  <span className="text-lg leading-none [font-variant-numeric:tabular-nums]" style={SERIF}>
+                  <span className={`text-lg leading-none ${ANSWER_TYPE.num}`} style={SERIF}>
                     {Math.round((a.count / total) * 100)}%
                   </span>
                 </>
@@ -210,7 +233,7 @@ export function StoryExhibitView({ item, number, researchInstitutionName }: { it
           <li key={a.key} className={`rounded-md border p-3 text-sm ${a.key === x.ownKey ? "border-terra bg-terra-soft/40" : "border-warm-200 bg-white"}`}>
             <p className="font-medium text-warm-900">
               {a.label}
-              <span className="ml-2 text-warm-600 [font-variant-numeric:tabular-nums]">{a.count.toLocaleString("en-US")}</span>
+              <span className={`ml-2 text-warm-600 ${ANSWER_TYPE.num}`}>{a.count.toLocaleString("en-US")}</span>
               {a.key === x.ownKey ? <span className="ml-2 text-xs font-semibold uppercase tracking-[0.08em] text-terra-text">{researchInstitutionName ?? "Research institution"}</span> : null}
             </p>
             <p className="mt-0.5 text-xs text-warm-600">{a.rule}</p>
