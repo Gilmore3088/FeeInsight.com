@@ -217,12 +217,14 @@ export function heroFinding(input: {
   headline?: readonly string[];
   stateName: string | null;
   sparse: boolean;
-  /** Published fee rows on its schedule (the count the fee list shows); defaults to the rows compared. */
+  /** Published personal fee rows (the count the Personal list shows); defaults to the rows compared. */
   publishedCount?: number;
+  /** Published business-only fee rows, shown apart under Business and named once in the sentence. */
+  businessCount?: number;
   schedule: ScheduleState;
   underReview: number;
 }): string {
-  const { rows, stateName, sparse, schedule, underReview, headline = [], publishedCount, name } = input;
+  const { rows, stateName, sparse, schedule, underReview, headline = [], publishedCount, businessCount = 0, name } = input;
   const owner = name ? `${name}\u2019s` : "Its";
   const published = rows.filter((r) => r.amount != null);
   if (published.length === 0) {
@@ -235,7 +237,11 @@ export function heroFinding(input: {
     const shown = published.slice(0, 4).map((r) => `${lowerLabel(r.label)} ${amountText(r).replace("No fee", "$0")}`);
     const rest = total - shown.length;
     const list = rest > 0 ? `${shown.join(", ")} and ${rest} more` : listAnd(shown);
-    return `${n} ${total === 1 ? "fee" : "fees"} from its schedule ${total === 1 ? "is" : "are"} published so far: ${list}.`;
+    const business =
+      businessCount > 0
+        ? ` Its schedule also lists ${businessCount} business ${businessCount === 1 ? "fee" : "fees"}, shown under Business.`
+        : "";
+    return `${n} ${total === 1 ? "fee" : "fees"} from its schedule ${total === 1 ? "is" : "are"} published so far: ${list}.${business}`;
   }
   const lead = leadRow(rows, headline);
   if (lead && lead.amount != null) {

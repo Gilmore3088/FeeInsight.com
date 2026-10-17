@@ -134,6 +134,15 @@ describe("sparse and empty profiles", () => {
     );
   });
 
+  it("counts only the personal fees the list shows and names business fees once", () => {
+    const rows = compareRows([value("monthly_maintenance", 6), value("overdraft", 36)], markets, "reviewed", null);
+    expect(
+      heroFinding({ rows, stateName: "Mississippi", sparse: true, publishedCount: 2, businessCount: 1, schedule: "reviewed", underReview: 0 }),
+    ).toBe(
+      "Two fees from its schedule are published so far: monthly maintenance $6 and overdraft $36. Its schedule also lists 1 business fee, shown under Business.",
+    );
+  });
+
   it("explains an empty profile with the city page's wording", () => {
     const none = compareRows([], markets, "none", null);
     expect(heroFinding({ rows: none, stateName: "Florida", sparse: true, schedule: "none", underReview: 0 })).toBe(`${NO_SCHEDULE}.`);

@@ -33,7 +33,14 @@ import { formatAbsoluteDate, getPublicNationalIndex } from "@/lib/public-stats";
 import { formatCompactDollars } from "@/lib/format";
 import { getCharterLabel, getSegmentLabel, toTitleCase } from "./enum-labels";
 import { FeeFocusScroll } from "./fee-focus-scroll";
-import { FeeScheduleTable, countPositions, groupFeesByFamily, type FeeBenchmarks } from "./fee-schedule-table";
+import {
+  FeeScheduleTable,
+  countPositions,
+  groupFeesByFamily,
+  splitFeesByAudience,
+  type DisplayFee,
+  type FeeBenchmarks,
+} from "./fee-schedule-table";
 import { ShowAll } from "./show-all";
 import type { IndexEntry } from "@/lib/data-store/fee-index";
 import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
@@ -254,9 +261,16 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
   const rows = orderRows(rawRows, HEADLINE_FEE_KEYS, lead?.key ?? null);
   const published = rows.filter((row) => row.amount != null);
   const counts = compareCounts(rows);
-  const publishedRows = displayFees.filter((fee) => fee.status === "verified").length;
-  const reviewRows = displayFees.length - publishedRows;
-  const scheduleRowCount = groupFeesByFamily(displayFees).reduce((n, group) => n + group.rows.length, 0);
+  // Counted as the fee list shows them: one row per name and amount, personal apart from
+  // business-only, so the hero's count is the count a reader sees in the list.
+  const rowCount = (fees: DisplayFee[]) => groupFeesByFamily(fees).reduce((n, group) => n + group.rows.length, 0);
+  const publishedDisplay = displayFees.filter((fee) => fee.status === "verified");
+  const audience = splitFeesByAudience(publishedDisplay);
+  const personalRows = rowCount(audience ? audience.personal : publishedDisplay);
+  const businessOnlyRows = audience ? rowCount(audience.business.filter((fee) => fee.feeAudience === "business")) : 0;
+  const publishedRows = rowCount(publishedDisplay);
+  const reviewRows = rowCount(displayFees) - publishedRows;
+  const scheduleRowCount = rowCount(displayFees);
   const positionLine = positionFinding(countPositions(displayFees, feeBenchmarks));
   const finding = heroFinding({
     rows,
@@ -264,7 +278,8 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
     headline: HEADLINE_FEE_KEYS,
     stateName,
     sparse,
-    publishedCount: publishedRows,
+    publishedCount: personalRows,
+    businessCount: businessOnlyRows,
     schedule,
     underReview: underReviewCount,
   });
