@@ -186,7 +186,7 @@ export function ProPlanBoard({
         <p className="mt-1 text-[13px] leading-relaxed text-ink-muted">{SAME_WORKSPACE_LINE}</p>
       </div>
 
-      <ul id={PLANS_ID} aria-label="Hamilton Pro price by institution size" className="mt-5 grid gap-3 sm:grid-cols-3 sm:gap-4">
+      <ul id={PLANS_ID} aria-label="Hamilton price by institution size" className="mt-5 grid gap-3 sm:grid-cols-3 sm:gap-4">
         {PRO_TIERS.map((tier) => {
           const mine = selection?.tier === tier.key;
           const stepBack = selection !== null && !mine;
@@ -254,7 +254,7 @@ export function ProPlanBoard({
       >
         <div className="min-w-0">
           <h2 id="pro-checkout-title" className="text-lg font-semibold tracking-tight text-ink" style={DISPLAY}>
-            {selection ? "Subscribe to Hamilton Pro" : "Find your institution"}
+            {selection ? "Subscribe to Hamilton" : "Find your institution"}
           </h2>
           <div className="mt-3">{chooser}</div>
         </div>

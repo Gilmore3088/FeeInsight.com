@@ -636,13 +636,23 @@ pass. The rest go through the 12-hour second look and then come down the same wa
 
 ## Article Page
 
-`article-page.ts`: a page whose address has an article segment (articles, blog, stories,
-news) and does not name a schedule is an article (`isArticlePage`). Its prices are national
-averages or examples, not the bank's price: Space Coast CU's $4.73 ATM fee came from a blog
-post (its schedule says $2.50). Publish never puts such a row live; a live one comes down only
+`article-page.ts`: a page whose address has an article segment and does not name a fee
+document is an article (`isArticlePage`). Its prices are national averages or examples, not the
+bank's price: Space Coast CU's $4.73 ATM fee came from a blog post (its schedule says $2.50).
+Publish never puts such a row live (its own link or its document's); a live one comes down only
 on its second look (check `hamilton.article_page`), archived as `article_page: #<document id>`,
 with the lesson going to Magellan. MTC Federal CU's real schedule, /articles/schedule-of-fees/,
-is not an article.
+is not an article, nor is any PDF.
+
+Since Oct 17 (#1774) the rule is Magellan's `isArticleLink` (`magellan/link-coverage.ts`), the
+one article rule for Magellan's link check, publish, this live re-check and Knox's paid read
+(`articleLinkSql`). It adds learning, insights, advice, post and news-room folders and dated blog
+paths ("/2022/01/<slug>/"); "/learn/" and "/resources/" stay out, since banks keep real fee pages
+there. Dry run on prod, Oct 17: 7 live fees at 6 institutions (TD Bank's /learning/ "$35 ... is
+common" overdraft on both TD records, Axos's /insights/ NSF, two SchoolsFirst /advice/ rows,
+Keesler's /advice/ app fee, Security First's 2022 blog post). A verified row skipped as identical
+to a fee this check took down is decided again (`ARTICLE_PAGE_RESELECT_SQL`), so the bank's own
+copy of the fee goes live in its place: TD's $35 overdraft from its overdraft-services page.
 
 **Qualifier pairs, check 4 (#1314, Oct 15).** `linesApartOnPage` keeps two names apart only when the
 shorter one is printed at the price clear of every place of the longer: a shorter name found only
@@ -709,9 +719,19 @@ pairs; a box size counts as a word ("Safe Deposit Box - 3x5" / "3 x 5"), and two
 give a size must share one ("Safe Deposit Box - 3x10" / "Safe Deposit Box 3 x 5" never pair). A partner of the same name is taken first, then a near name, then a renamed one. `renamed`
 in the step detail counts these pairs, closed or kept, and `renamed_samples` lists those that close. Up to 25 institutions per step, picked by the run id; each
 step reports `page_copy_collapse` (live, institutions, pairs, apart on page, unproven, other
-document, renamed, would close, samples, and `error` when the read or the close failed). `PAGE_COPY_COLLAPSE_LIVE` stays
-off until James approves the dry-run counts. Rollback: clear `rolled_back_at` on rows whose reason
+document, renamed, would close, samples, and `error` when the read or the close failed). `PAGE_COPY_COLLAPSE_LIVE` is
+on since James approved the dry-run counts (Oct 17, 10:47 UTC; 499 closes). Rollback: clear `rolled_back_at` on rows whose reason
 ends in `(copy of the page)`.
+
+**The kept row keeps the fuller name.** The kept copy is chosen by edition, not name, so it can hold
+only the tail of a line ("Farmers ATM", "10X10") while the closed copy has it whole ("Non-customer
+use of Farmers ATM", "Safe Deposit Box: 10X10"). `carriedName` moves the closed name onto the kept
+row when the closed name is the kept name with a heading of one to five words in front, reads as a
+line's name (no `|`, not `unclearName`), and the kept copy's own text prints that heading shortly
+before the kept name. It runs only with the close (live), renames a live row still under its old
+name, and the `hamilton.page_copy_duplicates_collapsed` event lists each old and new name
+(`kept_names_carried`); the step reports `would_carry_kept_name` and `carried_name_samples`.
+Full-table dry count, 17 Oct: 27 of the 499 closes carry a name.
 
 **A closed page copy comes back (#1439 item 3).** `page-copy-restore.ts` runs just before the
 collapse on every publish step and reads closed page copies whose kept row is no longer live (up to
@@ -739,6 +759,16 @@ reported in the step's `publish_duplicate_check`, with `closed_by_late_collapse`
 `PUBLISH_REFUSE_DUPLICATES_LIVE` is on (James's OK, 2026-10-17): a `would_refuse` row is skipped
 before insert (skip reason `Exact duplicate of live fee #<id>`), so it is never published only for
 the late collapse to close it. Set it back to false to count only.
+Two gaps let 14 of the first 16 such rows through on Oct 17 (#1069). Twins read in one step: the
+step now takes each collapse line's rows best first (`collapseKeepOrder`: stated audience, then
+frequency, then the row it would insert last, which the collapse keeps). A later twin is refused
+against the copy already published in the step (`in_step`), so one copy goes live. A dry run
+tracks the copies it would have published. Before this, 13 rows of step 42289 went live and were
+closed at the same instant. A category the fold's live split moves: copies are looked up under the
+row's category and its `splitLiveCategory` target (`collapseCategories`). 152013 published as
+account research and was re-filed beside live 86530 under excess withdrawal. A twin in a later
+step of equal rank is still published, and the collapse closes the older copy, as its keep-newest
+rule says (152164/152246, 152245/152256).
 
 **At publish (#1069 step 2, live).** The rows a publish step is about to decide are read, once
 per batch, with three sweeps' own SQL in their `"verified"` scope (`publish-sweep-rules.ts`):

@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import { CATALOG_DEPTH_LIVE_SQL, decidePriorFee, HAMILTON_PUBLISH_MIN_INSTITUTION_FEES, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, qualifiedLines, namesShareReading, newerCopyPrintsLine, otherBalanceLine, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, sentenceFragmentName, separateLines } from "./publish";
+import { ARTICLE_PAGE_RESELECT_SQL, ARTICLE_PAGE_SKIP_REASON, CATALOG_DEPTH_LIVE_SQL, decidePriorFee, HAMILTON_PUBLISH_MIN_INSTITUTION_FEES, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, qualifiedLines, namesShareReading, newerCopyPrintsLine, otherBalanceLine, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, sentenceFragmentName, separateLines } from "./publish";
 import { feePageKey } from "./page-key";
 import { PUBLISH_REFUSE_SWEEP_RULES_LIVE, publishSweepRefusals } from "./publish-sweep-rules";
 
@@ -30,7 +30,7 @@ function createDbMock(
   depthRows: Array<Record<string, unknown>> = deepInstitutionRows(rows),
   movementEvidence: Array<Record<string, unknown>> = [],
   /** What the sweeps' own reads (#1069 step 2) return for the rows about to publish. */
-  sweepRows: { otherBank?: unknown[]; unconfirmedHost?: unknown[]; business?: unknown[] } = {},
+  sweepRows: { otherBank?: unknown[]; unconfirmedHost?: unknown[]; business?: unknown[]; owner?: unknown[] } = {},
 ): DbMock {
   let nextPublishedId = 1201;
   const db = vi.fn((strings: TemplateStringsArray) => {
@@ -54,6 +54,7 @@ function createDbMock(
     if (query.includes("consumer_fee_id")) return Promise.resolve(sweepRows.business ?? []);
     if (query.includes("own_label")) return Promise.resolve(sweepRows.unconfirmedHost ?? []);
     if (query.includes("names_own_bank")) return Promise.resolve(sweepRows.otherBank ?? []);
+    if (query.includes("named_other_id")) return Promise.resolve(sweepRows.owner ?? []);
     if (query.includes("FROM verified_fee_observations")) return Promise.resolve(rows);
     return Promise.resolve([]);
   });
@@ -233,6 +234,19 @@ describe("Hamilton agentic publish", () => {
     expect(result.results[0]).toMatchObject({ status: "skipped", reason: "Read from an article page, not a fee schedule" });
   });
 
+  it("never publishes a row whose document is a learning article, whatever its own link (#1774)", async () => {
+    const db = createDbMock([{
+      ...verifiedFee,
+      source_url: null,
+      document_url: "https://www.td.com/us/en/personal-banking/learning/money-management/types-of-checking-accounts",
+    }]);
+
+    const result = await runHamiltonPublish({ runId: 118, db: asPublishDb(db) });
+
+    expect(result.publishedFees).toBe(0);
+    expect(result.results[0]).toMatchObject({ status: "skipped", reason: ARTICLE_PAGE_SKIP_REASON });
+  });
+
   it("only reports category rejections on a dry run", async () => {
     const db = createDbMock([{ ...verifiedFee, fee_name: "Stop Payment Fee" }]);
 
@@ -393,8 +407,9 @@ describe("Hamilton agentic publish", () => {
 
     expect(result.publishedFees).toBe(1);
     expect(result.results[0]).toMatchObject({ status: "published", feePublishedId: null });
-    // The selection, the depth read and the three sweep-rule reads (#1069 step 2), all SELECTs.
-    expect(db.unsafe).toHaveBeenCalledTimes(5);
+    // The selection, the depth read, the three sweep-rule reads (#1069 step 2) and the
+    // document-owner verdict read, all SELECTs.
+    expect(db.unsafe).toHaveBeenCalledTimes(6);
     expect(writes(db)).toEqual([]);
   });
 
@@ -417,7 +432,7 @@ describe("Hamilton agentic publish", () => {
       sweepRule: { rule: "other_bank_document", sweepReason: "other_bank_document: peoplesbank-wa.com" },
     });
     const sweepReads = db.unsafe.mock.calls.filter((call) => String(call[0]).includes("fv.fee_verified_id = ANY($1::bigint[])"));
-    expect(sweepReads).toHaveLength(3);
+    expect(sweepReads).toHaveLength(4);
     for (const call of sweepReads) expect(call[1][0]).toEqual([801]);
   });
 
@@ -486,6 +501,46 @@ describe("Hamilton agentic publish", () => {
       4: { rule: "business_schedule", sweepReason: "business_schedule: consumer fee #9002" },
     });
     expect(PUBLISH_REFUSE_SWEEP_RULES_LIVE).toBe(true);
+  });
+
+  it("refuses a row whose pair Darwin judged another bank's document, after the three sweeps", async () => {
+    const refusals = publishSweepRefusals(
+      [{ fee_verified_id: 1, document_host: "otherbank.example", names_own_bank: false }],
+      [],
+      [],
+      [
+        { fee_verified_id: 1, named_other_id: 77 },
+        { fee_verified_id: 2, named_other_id: "4521" },
+        { fee_verified_id: 3, named_other_id: null },
+      ],
+    );
+    expect(Object.fromEntries(refusals)).toEqual({
+      1: { rule: "other_bank_document", sweepReason: "other_bank_document: otherbank.example" },
+      2: { rule: "document_owner", sweepReason: "document_owner: names institution 4521" },
+    });
+
+    const db = createDbMock([verifiedFee], [], undefined, [], { owner: [{ fee_verified_id: 801, named_other_id: 4521 }] });
+    const result = await runHamiltonPublish({ runId: 136, refuseSweepRulesLive: true, db: asPublishDb(db) });
+    expect(result.publishedFees).toBe(0);
+    expect(result.results[0]).toMatchObject({
+      status: "skipped",
+      reason: "Refused at publish, a sweep would take it down: document_owner: names institution 4521",
+    });
+    expect(result.sweepCheck).toMatchObject({ byRule: { document_owner: 1 }, refused: 1 });
+  });
+
+  it("refuses a fee read from a loan or brokerage document that Darwin's non-deposit re-check would take down", () => {
+    const loanFee = {
+      ...verifiedFee,
+      canonical_fee_key: "late_payment",
+      fee_name: "Late Payment Fee",
+      document_url: "https://www.example-bank.com/docs/home-equity-line-of-credit-disclosure.pdf",
+    };
+    const reason = publishSkipReason(loanFee, 0.85, true);
+    expect(reason).toMatch(/^Refused at publish, Darwin's re-check would take it down: /);
+    expect(publishSkipReason({ ...verifiedFee, document_url: "https://www.example-bank.com/docs/fee-schedule.pdf" }, 0.85, true) ?? "").not.toMatch(
+      /Darwin's re-check/,
+    );
   });
 
   it("skips rows below the publish confidence threshold", async () => {
@@ -800,9 +855,12 @@ describe("Hamilton agentic publish", () => {
       const result = await runHamiltonPublish({ runId: 501, stepId: 7, db: asPublishDb(db) });
 
       expect(result).toMatchObject({ learning: true, outcomes: { ok: 1, rejected: 1 } });
+      // The two rows share a collapse line, so the step may decide them in either order (#1069).
       const attempts = attemptValues(db);
-      expect(attempts[0]).toEqual(expect.arrayContaining([42, "publish", HAMILTON_PUBLISH_STRATEGY.strategy, "verified:801", "ok", 501, 7]));
-      expect(attempts[1]).toEqual(expect.arrayContaining(["publish", "verified:803", "rejected"]));
+      const attemptFor = (fingerprint: string) => attempts.find((values) => values.includes(fingerprint));
+      expect(attempts).toHaveLength(2);
+      expect(attemptFor("verified:801")).toEqual(expect.arrayContaining([42, "publish", HAMILTON_PUBLISH_STRATEGY.strategy, "verified:801", "ok", 501, 7]));
+      expect(attemptFor("verified:803")).toEqual(expect.arrayContaining(["publish", "verified:803", "rejected"]));
 
       const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
       expect(query).toContain("FROM pipeline_attempts pa");
@@ -853,6 +911,16 @@ describe("Hamilton agentic publish", () => {
       expect(query).toContain("pa.outcome = 'unchanged'");
       expect(query).toContain("NULLIF(pa.detail->>'previous_fee_published_id', '')::bigint");
       expect(query).toContain("prev.rolled_back_reason = 'rules_recheck_unreproduced'");
+    });
+
+    it("selects again a row skipped as identical to a live fee the article-page check took down (#1774)", async () => {
+      const db = learningDb([verifiedFee]);
+
+      await runHamiltonPublish({ runId: 506, db: asPublishDb(db) });
+
+      const [query] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      expect(query).toContain(ARTICLE_PAGE_RESELECT_SQL);
+      expect(query).toContain("art_prev.rolled_back_reason LIKE 'article_page:%'");
     });
 
     it("does not log held rows, so they publish once the institution has enough fees", async () => {

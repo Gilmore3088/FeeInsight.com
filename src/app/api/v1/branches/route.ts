@@ -12,7 +12,7 @@ const NOTE =
 async function handleGET(request: NextRequest) {
   const caller = await authorizeV1(request, { paidOnly: "Branch locations", usageEvent: "api.v1.branches" });
   if (caller instanceof Response) return caller;
-  const { organizationId, anonymousId, rateLimit } = caller;
+  const { organizationId, keyId, anonymousId, rateLimit } = caller;
 
   const { searchParams } = request.nextUrl;
   let institutionId: number | null;
@@ -39,7 +39,7 @@ async function handleGET(request: NextRequest) {
     limit = intParam(searchParams, "limit", { fallback: 100, min: 1, max: 500 });
   } catch (error) {
     if (error instanceof ApiParamError) {
-      logApiUsage(organizationId, anonymousId, "api.v1.branches", { status: 400 }).catch(() => {});
+      logApiUsage(organizationId, anonymousId, "api.v1.branches", { status: 400 }, keyId).catch(() => {});
       return apiError(400, "invalid_parameter", error.message, { rateLimit });
     }
     throw error;
@@ -58,7 +58,7 @@ async function handleGET(request: NextRequest) {
     city,
     zip,
     status: 200,
-  }).catch(() => {});
+  }, keyId).catch(() => {});
 
   return withApiCaching(request, withApiHeaders(
     NextResponse.json({

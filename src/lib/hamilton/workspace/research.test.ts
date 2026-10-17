@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { briefingLocalMarket, choosePeers, localMarketView, marketLayerSets } from "./research";
+import { briefingLocalMarket, choosePeers, localMarketView, marketLayerSets, peerAmounts } from "./research";
 
 const peer = (amount: number, id: number) => ({ institution_id: id, institution_name: `Bank ${id}`, state_code: "TX", amount, source_document_ids: [id], document_urls: [], published_at: null });
 
@@ -19,6 +19,18 @@ describe("choosePeers", () => {
     expect(chosen.get("overdraft")?.values).toHaveLength(8);
     expect(chosen.get("overdraft")?.label).toBe("TX · bank · $300M to $1B peers; only 4 of TX · bank · $300M to $1B · Fed district 11 peers publish this fee");
     expect(chosen.get("rare_fee")?.label).toBe("Verified national index; none of TX · bank · $300M to $1B · Fed district 11 peers publish this fee");
+  });
+
+  it("counts sister charters on one shared schedule once when it picks the group (rule 7, #1441)", () => {
+    const candidates = [{ state_code: "TX", charter_type: "bank" }, {}];
+    // Six TX values, but IBC's three charters read one schedule: four institutions count.
+    const ibc = [160, 318, 1769].map((id) => ({ ...peer(30, id), ...(id === 160 ? {} : { counted_as: 160 }) }));
+    const narrow = new Map([["overdraft", [...ibc, peer(25, 1), peer(35, 2), peer(36, 3)]]]);
+    const national = new Map([["overdraft", Array.from({ length: 9 }, (_, i) => peer(30 + i, i + 10))]]);
+    expect(peerAmounts(narrow.get("overdraft")!)).toEqual([25, 30, 35, 36]);
+    const chosen = choosePeers(candidates, [narrow, national], ["overdraft"]);
+    expect(chosen.get("overdraft")?.values).toHaveLength(9);
+    expect(chosen.get("overdraft")?.label).toContain("only 4 of TX · bank peers");
   });
 
   it("says why a fee's peer group differs from the institution's default (#1544)", () => {

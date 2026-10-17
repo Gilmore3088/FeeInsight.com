@@ -10,8 +10,9 @@ and the decisions James has made. When it disagrees with a skill, this file wins
 - **Dataset:** the Bank Fee Index, the public index of U.S. bank and credit union fees, read from
   each institution's own published fee schedule. Every figure links to its source document,
   page and date.
-- **Pro workspace:** Hamilton. "Hamilton is the Fee Insight Pro workspace: research, model and
-  report your fee position against a verified market, from your own counties to the nation."
+- **Paid product:** Hamilton. "Hamilton is the Fee Insight workspace: research, model and
+  report your fee position against your market, from your own counties to the nation." Never
+  "Hamilton Pro" or "Fee Insight Pro"; "Pro" only marks who has paid (James, 2026-10-17).
   Its four tabs: This month, My fees, Try a price, Reports. Never call it "our AI analyst".
 - **Category (how buyers search):** bank fee benchmarking, competitive fee analysis, fee
   schedule comparison, overdraft fee benchmarks, peer fee study.
@@ -41,16 +42,16 @@ and the decisions James has made. When it disagrees with a skill, this file wins
 | National and Fed district reports | Instant, open right away, 15 headline fees | Free |
 | Competitive Fee Position Report | One institution against named local competitors, every fee marked above, inside or below the market range, a source for every figure | "From $300" (`REPORT_OFFER.priceLabel`); each report is still quoted, and we reply within one business day with scope and price |
 | Basic fee alerts | Watch a few institutions | Free |
-| Hamilton Pro | The workspace and the feed ("the report is a snapshot; Pro is the feed") | Pro price stays as is |
+| Hamilton | The workspace and the feed ("the report is a snapshot; Pro is the feed") | Pro price stays as is |
 | Institution plan | Hamilton for an institution, team seats | $5,000 a year |
 
 - The report's price reads "From $300" (James, 8 Oct UAT, `docs/project/DECISIONS.md`), rendered from
   `REPORT_OFFER.priceLabel` in `src/lib/constants.ts`, never typed by hand. Never write a fixed
   report price ("$300", "only $300"): each report is quoted.
 - **Never** promise a turnaround time for a free report.
-- **Goal:** a Hamilton Pro subscription, monthly or annual (James, 2026-10-15). The report is a
+- **Goal:** a Hamilton subscription, monthly or annual (James, 2026-10-15). The report is a
   high-value lead into Pro, not the goal.
-- **Funnel:** free sample report, then the Competitive Fee Position Report (from $300) as a high-value lead, then Hamilton Pro, either because the buyer wants it on a regular basis or because the report sparks a Pro demo request. Every page, email and post moves a visitor one step along it.
+- **Funnel:** free sample report, then the Competitive Fee Position Report (from $300) as a high-value lead, then Hamilton, either because the buyer wants it on a regular basis or because the report sparks a Pro demo request. Every page, email and post moves a visitor one step along it.
 - **CTA:** the site's main button is "See where your fees stand", the institution search (site v3
   brief, `docs/design/site-v3/03-draper-positioning.md` section 4). The Pro button reads "See
   Hamilton plans" (/subscribe): Hamilton is the workspace, Pro is the plan. For buyers not ready to

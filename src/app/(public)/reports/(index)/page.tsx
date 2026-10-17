@@ -17,6 +17,7 @@ import { TrackLink } from "@/components/track-link";
 import { CONTACT_EMAIL, REPORT_INCLUDES, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
 import { REPORT_SHOWCASE } from "@/lib/report-showcase";
 import { loadSampleReport } from "@/lib/custom-report/sample-report";
+import { COVERAGE_LABELS, getPublicStatsSummary } from "@/lib/public-stats";
 import { ReportFaq } from "./report-faq";
 import { HamiltonLine } from "../hamilton-line";
 import { RequestReportForm } from "@/app/for-institutions/request-report-form";
@@ -155,11 +156,14 @@ export default async function ReportsPage({ searchParams }: PageProps) {
   const fromIso = rawRange ? dateRangeToIso(rawRange) : null;
   const filtersActive = Boolean(typeFilter || rawRange);
 
-  const [{ reports, unavailable }, stateCoverage, readiness, sample] = await Promise.all([
+  const [{ reports, unavailable }, stateCoverage, readiness, sample, coverage] = await Promise.all([
     loadReports(typeFilter, fromIso),
     loadStateCoverage(),
     loadMarketReadiness(),
     loadSample(),
+    // The headline count is the shared snapshot's, the same figure /fees and /about show (#1591);
+    // the per-state reader below only shades the map.
+    getPublicStatsSummary(),
   ]);
   const hasReports = reports.length > 0;
   // Only show filter controls once there is a catalog to filter (or a filter is already applied).
@@ -167,7 +171,6 @@ export default async function ReportsPage({ searchParams }: PageProps) {
 
   const readyStates = new Set((readiness ?? []).filter((m) => m.ready).map((m) => m.state_code));
   const states = stateCoverage ? mapStates(stateCoverage.filter((s) => s.institution_count > 0), STATE_NAMES, readyStates) : [];
-  const coveredInstitutions = states.reduce((sum, s) => sum + s.institutions, 0);
 
   return (
     <div className="pb-20">
@@ -300,7 +303,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
           </h2>
           {states.length > 0 && (
             <p className="mt-2 text-[14px] text-ink-muted">
-              {coveredInstitutions.toLocaleString("en-US")} institutions with verified fees. Tap a state.{" "}
+              {coverage.complete ? `${coverage.institutionsLabel} ${COVERAGE_LABELS.institutions.toLowerCase()}. ` : null}Tap a state.{" "}
               <Link href="/methodology" className="inline-flex min-h-11 items-center font-medium text-ink underline decoration-border underline-offset-2 hover:decoration-ink">
                 How we verify
               </Link>

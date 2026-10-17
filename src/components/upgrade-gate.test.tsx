@@ -25,8 +25,8 @@ describe("UpgradeGate", () => {
     render(await UpgradeGate({ audience: "consumer", message: "Overdraft by charter, asset size and state" }));
     const text = document.body.textContent ?? "";
     expect(text).toContain("Everything above stays free");
-    expect(text).toContain("Hamilton, the Fee Insight Pro workspace");
-    expect(text).not.toMatch(/Fee Insight Pro(?! workspace)/);
+    expect(text).toContain("Hamilton, the Fee Insight workspace");
+    expect(text).not.toMatch(/Fee Insight Pro|Hamilton Pro/);
     expect(text).not.toMatch(/CSV|district|API/i);
     expect(screen.getByRole("link", { name: /See Hamilton plans/ })).toHaveAttribute("href", "/subscribe#pro");
   });
@@ -72,7 +72,7 @@ describe("UpgradeGate links", () => {
 
   it("compact: names Hamilton in full and shows the plans link underlined at rest", async () => {
     render(await UpgradeGate({ compact: true, message: "Overdraft by state", from: "/fees/overdraft" }));
-    expect(document.body.textContent).toContain("Overdraft by state with Hamilton, the Fee Insight Pro workspace");
+    expect(document.body.textContent).toContain("Overdraft by state with Hamilton, the Fee Insight workspace");
     const link = screen.getByRole("link", { name: /See Hamilton plans/ });
     expect(link).toHaveAttribute("href", "/subscribe?from=%2Ffees%2Foverdraft#pro");
     expect(link.className.split(" ")).toContain("underline");

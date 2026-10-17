@@ -1288,7 +1288,7 @@ async function executeAgenticStep(
         institutionId,
       });
       // #1439: a live row that repeats a line of a newer copy of its page stored under another
-      // address ("?print=1", "www.", a mirror). Shadow until PAGE_COPY_COLLAPSE_LIVE is on.
+      // address ("?print=1", "www.", a mirror). Closes them while PAGE_COPY_COLLAPSE_LIVE is on (James, Oct 17).
       const pageCopyCollapse = await collapsePageCopies(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
@@ -1898,6 +1898,9 @@ async function executeAgenticStep(
           category_guard_failing: categoryGuard.failingFees,
           category_guard_live_refiled: categoryGuard.liveRefiledFees,
           category_guard_version: categoryGuard.guardVersion,
+          // v70: live card-product misfiles held live while CARD_PRODUCT_TAKEDOWN_LIVE is off (0 while on).
+          category_guard_card_product_pending: categoryGuard.cardProductPending,
+          category_guard_card_product_samples: categoryGuard.cardProductPendingSamples.slice(0, 10),
           category_guard_samples: categoryGuard.failures.slice(0, 10).map((failure) => ({
             fee_published_id: failure.feePublishedId,
             institution_id: failure.institutionId,
@@ -2137,6 +2140,13 @@ async function executeAgenticStep(
               kept_fee_name: row.keptFeeName,
               amount: row.amount,
             })),
+            [pageCopyCollapse.live && run.runKind !== "dry_run" ? "kept_names_carried" : "would_carry_kept_name"]: pageCopyCollapse.collapses.filter((row) => row.keptNewName).length,
+            carried_name_samples: pageCopyCollapse.collapses.filter((row) => row.keptNewName).slice(0, 10).map((row) => ({
+              kept_fee_published_id: row.keptFeePublishedId,
+              kept_fee_name: row.keptFeeName,
+              kept_new_name: row.keptNewName,
+              amount: row.amount,
+            })),
           },
           duplicate_collapse_samples: duplicateCollapses.slice(0, 10).map((row) => ({
             fee_published_id: row.feePublishedId,
@@ -2207,6 +2217,8 @@ async function executeAgenticStep(
           restored_fees: guard.restoredFees,
           refiled_fees: guard.refiledFees,
           live_refiled_fees: guard.liveRefiledFees,
+          card_product_pending: guard.cardProductPending,
+          card_product_pending_samples: guard.cardProductPendingSamples,
           category_guard_limit: guard.limit,
           rollback_batch_id: guard.rollbackBatchId,
           guard_version: guard.guardVersion,

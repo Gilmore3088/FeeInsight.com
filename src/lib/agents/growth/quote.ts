@@ -80,7 +80,7 @@ export function buildQuoteDraft(lead: QuoteLead): QuoteDraft {
     `- ${REPORT_OFFER.refreshLabel}`,
   ];
   const proLines = [
-    "Fee Insight Pro (subscription to the Hamilton workspace, for up to 5 people)",
+    "Hamilton (subscription to the Fee Insight workspace, for up to 5 people)",
     ...(tier ? [`- ${proLine(tier)}`] : PRO_TIERS.map((def) => `- ${proLine(def.key)}`)),
     "- Every tier has the same features; the price follows the institution's total assets.",
   ];

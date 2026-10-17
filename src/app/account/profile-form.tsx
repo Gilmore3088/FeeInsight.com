@@ -116,7 +116,7 @@ export function ProfileForm({ user }: ProfileFormProps) {
           </p>
         )}
         {saved && (
-          <p role="status" className="mt-2 text-[13px] text-emerald-700">Saved.</p>
+          <p role="status" className="mt-2 text-[13px] text-below-market">Saved.</p>
         )}
       </AccountCard>
     );
@@ -177,7 +177,7 @@ export function ProfileForm({ user }: ProfileFormProps) {
         )}
       </div>
       {error && (
-        <p role="alert" className="mt-3 text-[13px] text-red-700">
+        <p role="alert" className="mt-3 text-[13px] text-brick">
           {error}
         </p>
       )}

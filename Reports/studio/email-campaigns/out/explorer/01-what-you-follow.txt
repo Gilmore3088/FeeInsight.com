@@ -1,0 +1,28 @@
+Your page, and the monthly snapshot you'll get.
+
+FOLLOWING
+
+The page you're following
+=========================
+
+You asked to follow {$follow_name|default('a state or an institution')}. Fee benchmarks come from published schedules and update as new schedules are read.
+
+Open the page: {$follow_url|default('https://feeinsight.com/research')}
+Free, no login.
+
+
+[ WHAT YOU'LL GET ]
+- Once a month: your state's fee snapshot (the national one if you follow an institution), with how many institutions stand behind each number.
+
+Reply any time with a question about a number.
+
+James Gilmore
+Founder, Fee Insight · publisher of the Bank Fee Index
+
+----
+Fee Insight publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules.
+Methodology: https://feeinsight.com/methodology
+Questions? Just reply.
+3522 Southwest Barton Street, Seattle, United States of America
+You're getting this because you signed up at feeinsight.com.
+Unsubscribe: {$unsubscribe}
