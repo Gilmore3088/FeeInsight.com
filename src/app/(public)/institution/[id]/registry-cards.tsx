@@ -15,7 +15,8 @@ import type {
 } from "@/lib/data-store/registry-profile";
 
 /*
- * Registry cards for the gated Financial profile. Colors reuse the validated
+ * Registry cards for the profile's public record section (branches, complaints, enforcement and
+ * the holding company, all public filings). Colors reuse the validated
  * categorical slots from financial-profile.tsx; the map uses one blue hue,
  * light to dark (sequential), and every chart has a text/table equivalent.
  */
@@ -75,6 +76,32 @@ function formatQuarterEnd(date: string): string {
   return Number.isNaN(d.getTime())
     ? date
     : d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
+}
+
+/** The public record section's cards: the footprint full width, then the smaller records in pairs. */
+export function RegistryCards({
+  footprint,
+  complaints,
+  enforcement,
+  holdingCompany,
+}: {
+  footprint: BranchFootprint | null;
+  complaints: ComplaintTrend | null;
+  enforcement: EnforcementRecord | null;
+  holdingCompany: HoldingCompanyProfile | null;
+}) {
+  return (
+    <div className="grid gap-4">
+      {footprint && <BranchFootprintCard footprint={footprint} />}
+      {(complaints || enforcement || holdingCompany) && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {complaints && <ComplaintsCard trend={complaints} />}
+          {enforcement && <EnforcementCard record={enforcement} />}
+          {holdingCompany && <HoldingCompanyCard profile={holdingCompany} />}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint }) {
@@ -233,6 +260,14 @@ export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint 
           {nearby.length > 0 && (
             <>
               <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.1em] text-ink-muted">Largest competitors nearby</p>
+              {footprint.marketName && (
+                <p className="mt-1 text-[11px] text-ink-soft">
+                  Local market: {footprint.marketName}
+                  {footprint.marketBasis === "hq_city"
+                    ? ", around its headquarters."
+                    : `, where it holds the most deposits${footprint.byState.length > 1 ? " in its main state" : ""}.`}
+                </p>
+              )}
               <table className="mt-1 w-full text-left text-[11px] tabular-nums">
                 <thead className="text-[10px] text-ink-muted">
                   <tr>
@@ -251,7 +286,7 @@ export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint 
               </table>
               {footprint.ownDepositSharePct != null && (
                 <p className="mt-1 text-[11px] text-ink-soft">
-                  This bank holds {footprint.ownDepositSharePct}% of the deposits in its local market.
+                  This bank holds {footprint.ownDepositSharePct}% of the deposits {footprint.marketName ? "there" : "in its local market"}.
                 </p>
               )}
             </>

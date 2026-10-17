@@ -241,7 +241,8 @@ function GroupBadge({ group }: { group: FeeGroup }) {
 }
 
 const HEADER_CELL = "px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-muted";
-const MONO_FIGURE = { fontFamily: "var(--fi-font-mono)" } as const;
+/** Figures in the site sans with even digits, as James's design file sets them. */
+const FIGURE = { fontFamily: "var(--fi-font-sans)", fontVariantNumeric: "tabular-nums" } as const;
 
 const FOCUSED_ROW = "border-l-2 border-l-brick bg-brick/[0.035]";
 
@@ -462,7 +463,7 @@ function FeeRow({
         <AudienceLabel fee={fee} />
         {showUnderReview && <UnderReviewChip />}
       </td>
-      <td className="font-semibold whitespace-nowrap px-4 py-2.5 text-right align-top text-base tabular-nums text-ink" style={MONO_FIGURE}>
+      <td className="font-semibold whitespace-nowrap px-4 py-2.5 text-right align-top text-base text-ink" style={FIGURE}>
         <AmountLink href={sourceUrl} fallback={!fee.sourceUrl}>
           {fee.rate ? <RateValue rate={fee.rate} /> : amount ?? "Not stated"}
         </AmountLink>
@@ -473,7 +474,7 @@ function FeeRow({
         )}
         {!benchmark && fee.amount !== null && notComparable(fee) && <NotCompared reason={notComparable(fee) as string} />}
       </td>
-      <td className="whitespace-nowrap px-4 py-2.5 align-top text-ink-soft">{basis || <span className="sr-only">Not stated</span>}</td>
+      <td className="whitespace-nowrap px-4 py-2.5 align-top text-ink-soft">{basis || <span className="text-ink-muted">Not stated</span>}</td>
       <td className="max-w-[280px] px-4 py-2.5 align-top text-xs leading-relaxed text-ink-muted">
         {fee.conditions ? <span className="break-words">{fee.conditions}</span> : <span className="sr-only">None</span>}
       </td>
@@ -526,7 +527,7 @@ function FeeScheduleStack({
                       <AudienceLabel fee={fee} />
                       {showUnderReview && <UnderReviewChip />}
                     </span>
-                    <span className="shrink-0 font-semibold text-base tabular-nums text-ink" style={MONO_FIGURE}>
+                    <span className="shrink-0 font-semibold text-base text-ink" style={FIGURE}>
                       <AmountLink href={sourceUrl} fallback={!fee.sourceUrl}>
                         {fee.rate ? <RateValue rate={fee.rate} /> : formatFeeAmount(fee.amount) ?? "Not stated"}
                       </AmountLink>
