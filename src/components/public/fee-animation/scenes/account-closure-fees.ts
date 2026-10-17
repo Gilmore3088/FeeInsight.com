@@ -54,14 +54,14 @@ export const ACCOUNT_CLOSURE_FEES_SCENE: FeeScene = {
       durationMs: 7000,
       caption: "Ask what counts as activity, and get closure in writing.",
       frame: {
-        item: account,
+        item: { ...account, status: "Inactive" },
         charges: ["dormancy"],
-        lookFor: ["What counts as activity", "The early closure window", "Written proof it is closed"],
+        lookFor: ["What counts as activity", "A fee for closing too soon", "Written proof it is closed"],
         intro: "lookFor",
       },
     },
   ],
   takeaway: "A forgotten account with a small balance can be emptied by a recurring fee.",
   describe:
-    "An unused account holds $50. After a period with no activity, a $5 dormancy fee starts, and ten months of it empties the balance. Close it properly or keep it active. Look for what counts as activity, the early closure window and written proof it is closed.",
+    "An unused account holds $50. After a period with no activity, a $5 dormancy fee starts, and ten months of it empties the balance. Close it properly or keep it active. Look for what counts as activity, a fee for closing too soon and written proof it is closed.",
 };

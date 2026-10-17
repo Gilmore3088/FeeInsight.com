@@ -61,10 +61,27 @@ describe("FeeAnimation: ATM pilot", () => {
     expect(caption()).toBe(ATM_FEES_SCENE.takeaway);
   });
 
-  it("keeps captions in a live region", () => {
+  it("keeps captions in a live region, in a box sized by every caption", () => {
     render(<FeeAnimation scene={ATM_FEES_SCENE} actions={ACTIONS} />);
     const region = screen.getByTestId("fee-animation-caption");
     expect(region).toHaveAttribute("aria-live", "polite");
+    const sizers = Array.from(region.parentElement!.querySelectorAll('p[aria-hidden="true"]')).map((p) => p.textContent);
+    expect(sizers).toEqual([ATM_FEES_SCENE.takeaway, ...ATM_FEES_SCENE.steps.map((s) => s.caption)]);
+  });
+
+  it("ties the poster's play button to the scene title", () => {
+    render(<FeeAnimation scene={ATM_FEES_SCENE} actions={ACTIONS} />);
+    const button = screen.getByRole("button", { name: "Watch: 25 seconds" });
+    expect(button).toHaveAccessibleDescription("One withdrawal. Two possible fees.");
+  });
+
+  it("moves focus from Replay to the remaining button when the scene ends", () => {
+    render(<FeeAnimation scene={ATM_FEES_SCENE} actions={ACTIONS} />);
+    fireEvent.click(screen.getByRole("button", { name: "Watch: 25 seconds" }));
+    screen.getByRole("button", { name: "Replay" }).focus();
+    advance(25000);
+    const replay = screen.getByRole("button", { name: "Replay" });
+    expect(document.activeElement).toBe(replay);
   });
 
   it("advances the steps over time and ends on the two actions", () => {
@@ -103,7 +120,7 @@ describe("FeeAnimation: ATM pilot", () => {
     fireEvent.click(screen.getByRole("button", { name: "Pause" }));
     advance(20000);
     expect(caption()).toBe("The ATM operator may charge you.");
-    fireEvent.click(screen.getByRole("button", { name: "Play" }));
+    fireEvent.click(screen.getByRole("button", { name: "Resume" }));
     advance(6000);
     expect(caption()).toBe("Your bank may charge you, too.");
     fireEvent.click(screen.getByRole("button", { name: "Replay" }));
@@ -128,7 +145,10 @@ describe("FeeAnimation: ATM pilot", () => {
     fireEvent.click(screen.getByRole("button", { name: "See it step by step" }));
     expect(screen.getByText("Step 1 of 4")).toBeInTheDocument();
     expect(caption()).toBe("One withdrawal...");
-    expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled();
+    const previous = screen.getByRole("button", { name: "Previous" });
+    expect(previous).toHaveAttribute("aria-disabled", "true");
+    fireEvent.click(previous);
+    expect(screen.getByText("Step 1 of 4")).toBeInTheDocument();
 
     // No clock runs: time passing changes nothing.
     advance(30000);

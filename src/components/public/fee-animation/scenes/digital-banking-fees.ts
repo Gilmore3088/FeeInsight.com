@@ -38,7 +38,7 @@ export const DIGITAL_BANKING_FEES_SCENE: FeeScene = {
       durationMs: 6000,
       caption: "The slower version often has no fee.",
       frame: {
-        item: { ...transfer, status: "1 to 3 business days" },
+        item: { ...transfer, status: "1-3 business days" },
         charges: [],
         fork: { ...speeds, chosen: "a" },
       },
@@ -49,8 +49,8 @@ export const DIGITAL_BANKING_FEES_SCENE: FeeScene = {
       durationMs: 7000,
       caption: "Plan a few days ahead, and keep a small buffer.",
       frame: {
-        item: transfer,
-        charges: ["expedite"],
+        item: { ...transfer, status: "1-3 business days" },
+        charges: [],
         lookFor: ["When the money must arrive", "A fee for a returned payment", "Limits on mobile deposit"],
         intro: "lookFor",
       },

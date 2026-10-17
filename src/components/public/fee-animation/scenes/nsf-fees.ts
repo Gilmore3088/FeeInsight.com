@@ -15,14 +15,14 @@ export const NSF_FEES_SCENE: FeeScene = {
   right: { icon: "store", label: "The biller" },
   charges: [
     { id: "nsf", label: "NSF fee", amount: 35, under: "left" },
-    { id: "biller", label: "Biller's own fee", amount: 25, under: "right" },
+    { id: "biller", label: "Biller's own fee", amount: 20, under: "right" },
   ],
   steps: [
     {
       id: "payment",
       kind: "transaction",
       durationMs: 6000,
-      caption: "You have $40 in checking, and a $60 payment arrives.",
+      caption: "You have $40 in checking, and a $60 payment is taken from your account.",
       frame: { item: payment, charges: [], intro: "item" },
     },
     {
@@ -66,12 +66,12 @@ export const NSF_FEES_SCENE: FeeScene = {
       frame: {
         item: returned,
         charges: ["nsf", "biller"],
-        lookFor: ["An NSF fee on your account", "A daily limit on these fees", "A fee each time it is re-presented"],
+        lookFor: ["An NSF fee on your account", "A daily limit on these fees", "A fee each time it's retried"],
         intro: "lookFor",
       },
     },
   ],
   takeaway: "With an NSF fee, the payment fails and you can still be charged.",
   describe:
-    "With $40 in checking, a $60 payment arrives and your bank returns it unpaid. A $35 NSF fee may apply, and the biller may add $25 of its own: $60 in fees, with the bill still unpaid. Look for an NSF fee on your account, a daily limit and a fee for each re-presentment.",
+    "With $40 in checking, a $60 payment is taken from your account and your bank returns it unpaid. A $35 NSF fee may apply, and the biller may add $20 of its own: $55 in fees, with the bill still unpaid. Look for an NSF fee on your account, a daily limit and a fee each time the payment is retried.",
 };

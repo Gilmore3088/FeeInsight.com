@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { GUIDES } from "@/lib/guides";
-import { TEXT_LIMITS } from "../scene-diagram";
+import { MIN_TEXT, TEXT_BOXES, textWidth } from "../scene-diagram";
 import { sceneLengthMs, sceneSeconds } from "../timeline";
 import { FEE_SCENES } from ".";
 
@@ -22,26 +22,39 @@ describe("fee animation scenes", () => {
     expect(sceneLengthMs(scene)).toBe(sceneSeconds(scene) * 1000);
   });
 
-  it.each(scenes)("%s keeps every label inside its shape", (_id, scene) => {
-    expect(scene.left.label.length).toBeLessThanOrEqual(TEXT_LIMITS.actor);
-    expect(scene.right.label.length).toBeLessThanOrEqual(TEXT_LIMITS.actor);
-    for (const c of scene.charges) expect(c.label.length, c.label).toBeLessThanOrEqual(TEXT_LIMITS.charge);
+  it.each(scenes)("%s keeps every label inside its shape, measured", (_id, scene) => {
+    const fits = (kind: keyof typeof TEXT_BOXES, text: string | undefined, spacing = 0) => {
+      if (!text) return;
+      const box = TEXT_BOXES[kind];
+      expect(textWidth(text, box.size, box.bold, spacing), `${kind}: "${text}"`).toBeLessThanOrEqual(box.width);
+    };
+    fits("actor", scene.left.label);
+    fits("actor", scene.right.label);
+    for (const c of scene.charges) fits("charge", c.label);
     for (const { frame } of scene.steps) {
-      if (frame.item) {
-        expect(frame.item.label.length, frame.item.label).toBeLessThanOrEqual(TEXT_LIMITS.item);
-        expect((frame.item.status ?? "").length).toBeLessThanOrEqual(TEXT_LIMITS.status);
-      }
-      if (frame.total) {
-        expect(frame.total.label.length).toBeLessThanOrEqual(TEXT_LIMITS.total);
-        expect((frame.total.note ?? "").length).toBeLessThanOrEqual(TEXT_LIMITS.totalNote);
-      }
-      if (frame.fork) {
-        expect(frame.fork.a.length, frame.fork.a).toBeLessThanOrEqual(TEXT_LIMITS.fork);
-        expect(frame.fork.b.length, frame.fork.b).toBeLessThanOrEqual(TEXT_LIMITS.fork);
-      }
-      for (const line of frame.lookFor ?? []) expect(line.length, line).toBeLessThanOrEqual(TEXT_LIMITS.lookFor);
+      fits("item", frame.item?.label);
+      fits("status", frame.item?.status);
+      fits("total", frame.total?.label);
+      fits("totalNote", frame.total?.note);
+      fits("fork", frame.fork?.a);
+      fits("fork", frame.fork?.b);
+      fits("lookForTitle", frame.lookForTitle?.toUpperCase(), 1);
+      for (const line of frame.lookFor ?? []) fits("lookFor", line);
       expect((frame.lookFor ?? []).length).toBeLessThanOrEqual(3);
     }
+  });
+
+  it.each(scenes)("%s keeps a status on screen once it appears", (_id, scene) => {
+    let status: string | undefined;
+    for (const { id, frame } of scene.steps) {
+      if (status && frame.item) expect(frame.item.status, `${scene.id} ${id}`).toBeTruthy();
+      status = frame.item?.status ?? status;
+    }
+  });
+
+  it("never draws diagram text below the floor", () => {
+    expect(MIN_TEXT).toBeGreaterThanOrEqual(16);
+    for (const box of Object.values(TEXT_BOXES)) expect(box.size).toBeGreaterThanOrEqual(MIN_TEXT);
   });
 
   it.each(scenes)("%s draws only charges it defines, at most one per side, one bottom panel at a time", (_id, scene) => {

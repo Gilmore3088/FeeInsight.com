@@ -29,7 +29,7 @@ export const CHECK_FEES_SCENE: FeeScene = {
       kind: "decision",
       durationMs: 7000,
       caption: "The fee is charged whether or not the stop succeeds.",
-      frame: { item: check, charges: ["stop"], fork: { a: "Not yet cleared", b: "Already cleared" }, intro: "fork" },
+      frame: { item: check, charges: ["stop"], fork: { a: "Stopped in time", b: "Already cleared" }, intro: "fork" },
     },
     {
       id: "cleared",
@@ -39,16 +39,16 @@ export const CHECK_FEES_SCENE: FeeScene = {
       frame: {
         item: { ...check, status: "Already paid", statusTone: "alert" },
         charges: ["stop"],
-        fork: { a: "Not yet cleared", b: "Already cleared", chosen: "b" },
+        fork: { a: "Stopped in time", b: "Already cleared", chosen: "b" },
       },
     },
     {
       id: "look",
       kind: "decision",
       durationMs: 7000,
-      caption: "Check first, then put the stop in writing.",
+      caption: "Look first, then put the stop in writing.",
       frame: {
-        item: check,
+        item: { ...check, status: "Already paid", statusTone: "alert" },
         charges: ["stop"],
         lookFor: ["Whether the check has cleared", "A stop order in writing", "The date the stop expires"],
         intro: "lookFor",

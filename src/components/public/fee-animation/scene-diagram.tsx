@@ -7,18 +7,41 @@ import type { FeeScene, FeeSceneFrame } from "./types";
 export const VIEW_W = 400;
 export const VIEW_H = 380;
 
-/** Text limits that keep every label inside its shape at the sizes below. */
-export const TEXT_LIMITS = {
-  actor: 16,
-  item: 11,
-  status: 22,
-  charge: 18,
-  total: 18,
-  totalNote: 40,
-  fork: 18,
-  lookFor: 36,
-  lookForTitle: 24,
+/** The smallest text in the drawing, in drawing units (about 13px at a 328px phone column). */
+export const MIN_TEXT = 16;
+
+/**
+ * Room for each kind of label, in drawing units, with its size and weight. Tests measure every
+ * scene's labels against these with `textWidth`, so a label that would spill out of its shape fails.
+ */
+export const TEXT_BOXES = {
+  actor: { width: 150, size: 17, bold: true },
+  item: { width: 112, size: MIN_TEXT, bold: true },
+  status: { width: 148, size: MIN_TEXT, bold: true },
+  charge: { width: 164, size: MIN_TEXT, bold: true },
+  total: { width: 188, size: MIN_TEXT, bold: true },
+  totalNote: { width: 380, size: MIN_TEXT, bold: false },
+  fork: { width: 168, size: MIN_TEXT, bold: true },
+  lookFor: { width: 330, size: MIN_TEXT, bold: false },
+  lookForTitle: { width: 340, size: MIN_TEXT, bold: true },
 } as const;
+
+/**
+ * A deliberately generous estimate of a label's rendered width in drawing units, from per-glyph
+ * widths of a geometric sans. It errs wide so a label that passes fits in the real face.
+ */
+export function textWidth(text: string, size: number, bold = false, letterSpacing = 0): number {
+  let em = 0;
+  for (const ch of text) {
+    if (" il.,'!|:;".includes(ch)) em += 0.28;
+    else if ("ftrjI()-".includes(ch)) em += 0.37;
+    else if ("mwMW%".includes(ch)) em += 0.86;
+    else if (/[A-Z]/.test(ch)) em += 0.68;
+    else if (/[0-9$]/.test(ch)) em += 0.6;
+    else em += 0.56;
+  }
+  return em * size * (bold ? 1.07 : 1) + letterSpacing * text.length;
+}
 
 const LEFT_X = 80;
 const RIGHT_X = 320;
@@ -82,14 +105,14 @@ export function SceneDiagram({
       {/* The transaction. */}
       {frame.item && (
         <Moving className={move} x={shown("item", itemDelay) ? 0 : -60} opacity={shown("item", itemDelay) ? 1 : 0}>
-          <rect x={145} y={40} width={110} height={64} rx={10} strokeWidth={2.5} className="fill-surface-0 stroke-ink" />
+          <rect x={140} y={40} width={120} height={64} rx={10} strokeWidth={2.5} className="fill-surface-0 stroke-ink" />
           {frame.item.amount === undefined ? (
-            <text x={200} y={78} textAnchor="middle" fontSize={15} fontWeight={600} className="fill-ink">
+            <text x={200} y={78} textAnchor="middle" fontSize={MIN_TEXT} fontWeight={600} className="fill-ink">
               {frame.item.label}
             </text>
           ) : (
             <>
-              <text x={200} y={62} textAnchor="middle" fontSize={15} className="fill-ink-muted">
+              <text x={200} y={62} textAnchor="middle" fontSize={MIN_TEXT} fontWeight={600} className="fill-ink-muted">
                 {frame.item.label}
               </text>
               <text x={200} y={94} textAnchor="middle" fontSize={26} fontWeight={700} className="fill-ink tabular-nums">
@@ -100,9 +123,9 @@ export function SceneDiagram({
           {frame.item.status && (
             <text
               x={200}
-              y={124}
+              y={126}
               textAnchor="middle"
-              fontSize={15}
+              fontSize={MIN_TEXT}
               fontWeight={frame.item.statusTone === "alert" ? 700 : 600}
               className={frame.item.statusTone === "alert" ? "fill-brick" : "fill-ink-soft"}
             >
@@ -116,15 +139,15 @@ export function SceneDiagram({
       {charges.map((c) => {
         const visible = shown(c.id);
         const value = intro === c.id ? countUp(c.amount, elapsedMs) : c.amount;
-        const x0 = c.under === "left" ? 14 : 230;
-        const inward = joined ? (c.under === "left" ? 14 : -14) : 0;
+        const x0 = c.under === "left" ? 8 : 216;
+        const inward = joined ? (c.under === "left" ? 10 : -10) : 0;
         return (
           <Moving key={c.id} className={move} x={inward} y={visible ? 0 : -18} opacity={visible ? 1 : 0}>
-            <rect x={x0} y={172} width={156} height={76} rx={12} strokeWidth={2.5} className="fill-brick-tint stroke-brick" />
-            <text x={x0 + 78} y={197} textAnchor="middle" fontSize={15} fontWeight={600} className="fill-ink">
+            <rect x={x0} y={172} width={176} height={76} rx={12} strokeWidth={2.5} className="fill-brick-tint stroke-brick" />
+            <text x={x0 + 88} y={197} textAnchor="middle" fontSize={MIN_TEXT} fontWeight={600} className="fill-ink">
               {c.label}
             </text>
-            <text x={x0 + 78} y={236} textAnchor="middle" fontSize={34} fontWeight={700} className="fill-brick tabular-nums">
+            <text x={x0 + 88} y={236} textAnchor="middle" fontSize={34} fontWeight={700} className="fill-brick tabular-nums">
               +{dollars(value)}
             </text>
           </Moving>
@@ -137,22 +160,22 @@ export function SceneDiagram({
           {charges.map((c) => (
             <path
               key={c.id}
-              d={c.under === "left" ? "M 106 250 L 150 266" : "M 294 250 L 250 266"}
+              d={c.under === "left" ? "M 96 250 L 140 266" : "M 304 250 L 260 266"}
               strokeWidth={2.5}
               strokeLinecap="round"
               className="stroke-ink-muted"
               fill="none"
             />
           ))}
-          <rect x={110} y={266} width={180} height={84} rx={12} strokeWidth={3} className="fill-surface-0 stroke-ink" />
-          <text x={200} y={290} textAnchor="middle" fontSize={15} fontWeight={600} className="fill-ink-soft">
+          <rect x={100} y={266} width={200} height={84} rx={12} strokeWidth={3} className="fill-surface-0 stroke-ink" />
+          <text x={200} y={291} textAnchor="middle" fontSize={MIN_TEXT} fontWeight={600} className="fill-ink-soft">
             {frame.total.label}
           </text>
           <text x={200} y={336} textAnchor="middle" fontSize={40} fontWeight={700} className="fill-ink tabular-nums">
             {dollars(intro === "total" ? countUp(totalAmount, elapsedMs, TOTAL_DELAY_MS + 200) : totalAmount)}
           </text>
           {frame.total.note && (
-            <text x={200} y={373} textAnchor="middle" fontSize={15} className="fill-ink-muted">
+            <text x={200} y={374} textAnchor="middle" fontSize={MIN_TEXT} className="fill-ink-muted">
               {frame.total.note}
             </text>
           )}
@@ -162,9 +185,9 @@ export function SceneDiagram({
       {/* Two ways it can go. */}
       {frame.fork && !frame.lookFor && (
         <Moving className={move} opacity={shown("fork") ? 1 : 0} y={shown("fork") ? 0 : 12}>
-          <ForkOption x={14} label={frame.fork.a} state={forkState(frame.fork.chosen, "a")} />
-          <ForkOption x={206} label={frame.fork.b} state={forkState(frame.fork.chosen, "b")} />
-          <text x={200} y={312} textAnchor="middle" fontSize={14} className="fill-ink-muted">
+          <ForkOption x={10} label={frame.fork.a} state={forkState(frame.fork.chosen, "a")} />
+          <ForkOption x={212} label={frame.fork.b} state={forkState(frame.fork.chosen, "b")} />
+          <text x={200} y={313} textAnchor="middle" fontSize={MIN_TEXT} className="fill-ink-muted">
             or
           </text>
         </Moving>
@@ -173,21 +196,21 @@ export function SceneDiagram({
       {/* What to look for. */}
       {frame.lookFor && (
         <Moving className={move} opacity={shown("lookFor") ? 1 : 0} y={shown("lookFor") ? 0 : 12}>
-          <rect x={14} y={262} width={372} height={112} rx={12} strokeWidth={2} className="fill-surface-0 stroke-border" />
-          <text x={30} y={286} fontSize={14} fontWeight={700} className="fill-brick" letterSpacing={1}>
+          <rect x={10} y={262} width={380} height={116} rx={12} strokeWidth={2} className="fill-surface-0 stroke-border" />
+          <text x={26} y={287} fontSize={MIN_TEXT} fontWeight={700} className="fill-brick" letterSpacing={1}>
             {(frame.lookForTitle ?? "Look for").toUpperCase()}
           </text>
           {frame.lookFor.map((line, i) => (
             <g key={line}>
               <path
-                d={`M 30 ${306 + i * 26} l 5 5 l 9 -10`}
+                d={`M 26 ${307 + i * 26} l 5 5 l 9 -10`}
                 fill="none"
                 strokeWidth={2.5}
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 className="stroke-brick"
               />
-              <text x={52} y={312 + i * 26} fontSize={16} className="fill-ink">
+              <text x={48} y={313 + i * 26} fontSize={MIN_TEXT} className="fill-ink">
                 {line}
               </text>
             </g>
@@ -205,17 +228,17 @@ function forkState(chosen: "a" | "b" | undefined, side: "a" | "b"): "open" | "ch
 
 function ForkOption({ x, label, state }: { x: number; label: string; state: "open" | "chosen" | "faded" }) {
   return (
-    <g opacity={state === "faded" ? 0.4 : 1}>
+    <g opacity={state === "faded" ? 0.6 : 1}>
       <rect
         x={x}
         y={272}
-        width={180}
+        width={178}
         height={70}
         rx={12}
         strokeWidth={state === "chosen" ? 3 : 2}
         className={state === "chosen" ? "fill-brick-tint stroke-brick" : "fill-surface-0 stroke-ink"}
       />
-      <text x={x + 90} y={313} textAnchor="middle" fontSize={16} fontWeight={600} className="fill-ink">
+      <text x={x + 89} y={313} textAnchor="middle" fontSize={MIN_TEXT} fontWeight={600} className="fill-ink">
         {label}
       </text>
     </g>

@@ -38,12 +38,10 @@ export const WIRE_TRANSFER_FEES_SCENE: FeeScene = {
       id: "final",
       kind: "outcome",
       durationMs: 6000,
-      caption: "Once it lands, the money cannot be pulled back.",
+      caption: "Once it lands, the money usually cannot be pulled back.",
       frame: {
-        item: { ...wire, status: "Final once it lands", statusTone: "alert" },
+        item: { ...wire, status: "Hard to reverse", statusTone: "alert" },
         charges: ["outgoing", "incoming"],
-        total: { label: "Fees, one wire" },
-        intro: "total",
       },
     },
     {
@@ -52,7 +50,7 @@ export const WIRE_TRANSFER_FEES_SCENE: FeeScene = {
       durationMs: 7000,
       caption: "Check both directions, and the cutoff, before you send.",
       frame: {
-        item: { ...wire, status: "Final once it lands", statusTone: "alert" },
+        item: { ...wire, status: "Hard to reverse", statusTone: "alert" },
         charges: ["outgoing", "incoming"],
         lookFor: ["Sending and receiving prices", "Domestic and international prices", "The daily cutoff time"],
         intro: "lookFor",
@@ -61,5 +59,5 @@ export const WIRE_TRANSFER_FEES_SCENE: FeeScene = {
   ],
   takeaway: "You can be charged to send a wire and to receive one.",
   describe:
-    "A $1,000 wire leaves your bank for theirs. Your bank charges $30 to send it and theirs $15 to receive it, $45 in fees, and the money cannot be pulled back once it lands. Look for sending and receiving prices, domestic and international prices, and the daily cutoff time.",
+    "A $1,000 wire leaves your bank for theirs. Your bank may charge you $30 to send it, and their bank may charge the recipient $15 to receive it. Once it lands, the money usually cannot be pulled back. Look for sending and receiving prices, domestic and international prices, and the daily cutoff time.",
 };

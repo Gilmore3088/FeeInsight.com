@@ -9,7 +9,7 @@ export function SceneIcon({ icon, cx, cy }: { icon: FeeSceneIcon; cx: number; cy
         <g strokeWidth={3}>
           <rect x={cx - 40} y={cy - 50} width={80} height={100} rx={8} className={line} />
           <rect x={cx - 30} y={cy - 40} width={60} height={30} rx={3} className="fill-ink" />
-          <text x={cx} y={cy - 19} textAnchor="middle" fontSize={15} fontWeight={700} className="fill-paper">
+          <text x={cx} y={cy - 19} textAnchor="middle" fontSize={16} fontWeight={700} className="fill-paper">
             ATM
           </text>
           <rect x={cx - 18} y={cy - 2} width={36} height={5} rx={2} className="fill-ink" />

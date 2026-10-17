@@ -30,7 +30,7 @@ type Mode = "poster" | "playing" | "paused" | "ended" | "stepping";
 const PRIMARY =
   "inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-ink px-5 text-[15px] font-semibold text-paper hover:bg-ink-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
 const SECONDARY =
-  "inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-ink bg-surface-0 px-5 text-[15px] font-semibold text-ink hover:bg-paper focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:cursor-not-allowed disabled:opacity-40";
+  "inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-ink bg-surface-0 px-5 text-[15px] font-semibold text-ink hover:bg-paper focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink aria-disabled:cursor-not-allowed aria-disabled:opacity-40";
 
 /**
  * A fee scene the reader plays. It opens on the finished diagram, still, with a play button
@@ -49,6 +49,10 @@ export function FeeAnimation({ scene, actions }: { scene: FeeScene; actions: Fee
   const [run, setRun] = useState(0);
   const [stepIdx, setStepIdx] = useState(0);
   const msRef = useRef(0);
+  const primaryRef = useRef<HTMLButtonElement>(null);
+  const replayRef = useRef<HTMLButtonElement>(null);
+  /** Set when Replay had focus as the scene ended, so focus moves to the button that remains. */
+  const refocus = useRef(false);
   const titleId = useId();
 
   useEffect(() => {
@@ -57,10 +61,20 @@ export function FeeAnimation({ scene, actions }: { scene: FeeScene; actions: Fee
       const next = Math.min(msRef.current + TICK_MS, length);
       msRef.current = next;
       setMs(next);
-      if (next >= length) setMode("ended");
+      if (next >= length) {
+        refocus.current = replayRef.current !== null && document.activeElement === replayRef.current;
+        setMode("ended");
+      }
     }, TICK_MS);
     return () => window.clearInterval(id);
   }, [mode, length]);
+
+  useEffect(() => {
+    if (mode === "ended" && refocus.current) {
+      refocus.current = false;
+      primaryRef.current?.focus({ preventScroll: true });
+    }
+  }, [mode]);
 
   function start() {
     msRef.current = 0;
@@ -94,7 +108,7 @@ export function FeeAnimation({ scene, actions }: { scene: FeeScene; actions: Fee
   const primaryLabel: Record<Mode, string> = {
     poster: reduced ? "See it step by step" : `Watch: ${seconds} seconds`,
     playing: "Pause",
-    paused: "Play",
+    paused: "Resume",
     ended: "Replay",
     stepping: stepIdx >= last ? "Start again" : "Next",
   };
@@ -114,8 +128,10 @@ export function FeeAnimation({ scene, actions }: { scene: FeeScene; actions: Fee
         key="prev"
         type="button"
         className={SECONDARY}
-        disabled={stepIdx === 0}
-        onClick={() => setStepIdx((i) => Math.max(0, i - 1))}
+        aria-disabled={stepIdx === 0}
+        onClick={() => {
+          if (stepIdx > 0) setStepIdx(stepIdx - 1);
+        }}
       >
         <ChevronLeft className="h-4 w-4" aria-hidden="true" />
         Previous
@@ -123,14 +139,21 @@ export function FeeAnimation({ scene, actions }: { scene: FeeScene; actions: Fee
     );
   }
   controls.push(
-    <button key="primary" type="button" className={mode === "poster" ? PRIMARY : SECONDARY} onClick={primary}>
+    <button
+      key="primary"
+      ref={primaryRef}
+      type="button"
+      className={mode === "poster" ? PRIMARY : SECONDARY}
+      aria-describedby={mode === "poster" ? titleId : undefined}
+      onClick={primary}
+    >
       {primaryIcon[mode]}
       {primaryLabel[mode]}
     </button>,
   );
   if (mode === "playing" || mode === "paused") {
     controls.push(
-      <button key="replay" type="button" className={SECONDARY} onClick={start}>
+      <button key="replay" ref={replayRef} type="button" className={SECONDARY} onClick={start}>
         <RotateCcw className="h-4 w-4" aria-hidden="true" />
         Replay
       </button>,
@@ -167,14 +190,22 @@ export function FeeAnimation({ scene, actions }: { scene: FeeScene; actions: Fee
         </p>
       </div>
 
-      <p
-        aria-live="polite"
-        aria-atomic="true"
-        data-testid="fee-animation-caption"
-        className="flex min-h-[5rem] items-center justify-center px-4 pt-3 sm:min-h-[3.75rem] text-center text-[19px] font-semibold leading-snug text-ink sm:px-5"
-      >
-        {caption}
-      </p>
+      {/* Every caption shares one grid cell, so the box keeps the tallest one's height. */}
+      <div className="grid px-4 pt-3 text-center text-[19px] font-semibold leading-snug text-ink sm:px-5">
+        {[scene.takeaway, ...scene.steps.map((st) => st.caption)].map((text, i) => (
+          <p key={i} aria-hidden="true" className="invisible col-start-1 row-start-1 mx-auto">
+            {text}
+          </p>
+        ))}
+        <p
+          aria-live="polite"
+          aria-atomic="true"
+          data-testid="fee-animation-caption"
+          className="col-start-1 row-start-1 mx-auto self-center"
+        >
+          {caption}
+        </p>
+      </div>
 
       {mode === "stepping" ? (
         <p className="mt-1 text-center text-[13px] text-ink-muted">
