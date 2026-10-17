@@ -1,5 +1,5 @@
 import { getDisplayName } from "@/lib/fee-taxonomy";
-import { CONTACT_EMAIL, SITE_NAME, PRODUCT_NAME } from "@/lib/constants";
+import { CONTACT_EMAIL, EMAIL_LOGO_URL, SITE_NAME, PRODUCT_NAME } from "@/lib/constants";
 import { RD, RD_FONTS } from "@/lib/report-design/tokens";
 import type { FactBundle, FeeStat } from "./facts";
 import type { MarketingFormatKey } from "./formats";
@@ -113,7 +113,7 @@ export function renderEmail(
 <body style="margin:0;padding:0;background:${RD.sand};font-family:${FONT};color:${RD.ink};">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${RD.sand};"><tr><td align="center" style="padding:24px 12px;">
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:${RD.paper};border:1px solid ${RD.rule2};">
-<tr><td style="padding:28px 32px 8px 32px;font-family:${FONT};font-size:20px;font-weight:bold;">${esc(SITE_NAME)}</td></tr>
+<tr><td style="padding:28px 32px 8px 32px;"><img src="${esc(EMAIL_LOGO_URL)}" width="124" height="22" alt="${esc(SITE_NAME)}" style="display:block;border:0;width:124px;height:22px;font-family:${FONT};font-size:18px;color:${RD.ink};"></td></tr>
 <tr><td style="padding:16px 32px 0 32px;">
 <div style="font-size:12px;letter-spacing:1px;text-transform:uppercase;color:${RD.terra};font-weight:bold;">${esc(copy.label)}</div>
 <h1 style="font-family:${FONT};font-size:28px;line-height:1.25;margin:8px 0 12px 0;font-weight:normal;text-wrap:balance;">${esc(copy.headline)}</h1>
