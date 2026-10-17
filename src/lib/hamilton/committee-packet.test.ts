@@ -216,7 +216,7 @@ describe("buildCommitteePacket: financial context", () => {
     expect(n.definition).toContain("divided by total assets in the same filing, times 10,000. Denominator: total assets as filed, not deposits.");
     expect(packet.financial.context).toMatch(/^This is context, not a measure of pricing effectiveness, customer burden or revenue opportunity/);
     expect(packet.financial.normalizedTable?.rows[0]).toEqual(["Capital City Bank", expect.stringMatching(/^\$4\.50 \[\d+\]$/)]);
-    expect(packet.brief.findings.at(-1)).toMatch(/^Service charge income per \$10,000 of total assets: Capital City Bank filed \$4\.50 .* median of \$3 across 5 peers/);
+    expect(packet.brief.findings.at(-1)).toMatch(/^Service charge income per \$10,000 of total assets: Capital City Bank filed \$4\.50 .* median of \$3\.00 across 5 peers .*\. This is context, not a measure of pricing\.$/);
   });
 
   it("turns missing filings into availability lines, not empty exhibits", () => {
@@ -243,6 +243,15 @@ describe("buildCommitteePacket: appendix and sources", () => {
     const nearest = packet.appendix.find((t) => t.id === "nearest_peers")!;
     expect(nearest.rows[0][2]).toMatch(/^\$30: Example Savings Bank \[\d+\]$/);
     expect(nearest.rows[0][3]).toMatch(/^\$36: U\.S\. Bank \[\d+\]$/);
+    expect(nearest.columns).toEqual(["Fee", "This institution", "Nearest below", "Nearest above", "Peers' amounts"]);
+    expect(nearest.rows[0][4]).toBe("3 lower, 0 the same, 2 higher");
+    // No schedule wording on these rows: the index's display names, never raw keys.
+    const products = packet.appendix.find((t) => t.id === "product_details")!;
+    expect(products.columns[1]).toBe("Listed in the index as");
+    expect(products.rows[0][1]).toBe("Overdraft");
+    // Per-$10,000 figures to the cent, each row sourced.
+    const normalized = packet.financial.normalizedTable!;
+    expect(normalized.rows.find((r) => r[0] === "Peers' middle 50%")?.[1]).toMatch(/^\$2\.10 to \$5\.20 \[\d+\]$/);
     const matrix = packet.appendix.find((t) => t.id === "peer_fee_matrix")!;
     expect(matrix.rows[0][0]).toBe("Capital City Bank");
     expect(matrix.rows.find((r) => r[0] === "M&T Bank")?.[2]).toBe("Not found");
@@ -251,7 +260,7 @@ describe("buildCommitteePacket: appendix and sources", () => {
   it("numbers every source once and every mark resolves to a listed source", () => {
     const packet = buildCommitteePacket(input());
     const ccb = packet.footnotes.find((f) => f.label === "Capital City Bank, published fee schedule")!;
-    expect(ccb.detail).toBe("document 32301 · published Oct 1, 2026");
+    expect(ccb.detail).toBe("published Oct 1, 2026");
     expect(ccb.url).toBe("https://example.test/ccb.pdf");
     expect(packet.footnotes.filter((f) => f.label === "U.S. Bank, published fee schedule")).toHaveLength(1);
     expect(packet.footnotes.map((f) => f.n)).toEqual(packet.footnotes.map((_, i) => i + 1));

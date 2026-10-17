@@ -30,9 +30,22 @@ const FEES: { category: string; current: number | null; amounts: number[]; base:
   { category: "stop_payment", current: 30, amounts: [30], base: 25, step: 1, publishers: 8 },
   { category: "paper_statement", current: 2, amounts: [2], base: 1, step: 0.5, publishers: 7 },
   { category: "cashiers_check", current: 10, amounts: [10], base: 6, step: 0.5, publishers: 10 },
-  { category: "wire_international_outgoing", current: null, amounts: [], base: 40, step: 2, publishers: 6 },
+  { category: "wire_intl_outgoing", current: null, amounts: [], base: 40, step: 2, publishers: 6 },
   { category: "card_replacement", current: 5, amounts: [5], base: 5, step: 0, publishers: 3 },
 ];
+
+/** How a schedule might word each fee. */
+const WORDING: Record<string, string> = {
+  overdraft: "Overdraft Item Fee",
+  nsf: "Returned Item (NSF) Fee",
+  monthly_maintenance: "Monthly Service Charge",
+  atm_non_network: "Foreign ATM Withdrawal",
+  wire_domestic_outgoing: "Outgoing Wire Transfer - Domestic",
+  stop_payment: "Stop Payment Order",
+  paper_statement: "Paper Statement Fee",
+  cashiers_check: "Official Check",
+  card_replacement: "Debit Card Replacement",
+};
 
 const OWN = 323;
 const OWN_NAME = "Capital City Bank and Trust Company of North Florida";
@@ -92,7 +105,7 @@ export function fullPacketInput(over: Partial<CommitteePacketInput> = {}, peerCo
         sourceDocumentId: 32301 + j,
         documentUrl: `https://www.capitalcitybank.test/documents/consumer-fee-schedule-${j + 1}.pdf`,
         publishedAt: "2026-10-01T00:00:00.000Z",
-        feeName: j === 0 ? `${f.category.replace(/_/g, " ")} fee, personal checking` : `${f.category.replace(/_/g, " ")} fee, premier checking tier ${j}`,
+        feeName: j === 0 ? `${WORDING[f.category] ?? "Service fee"} - Personal Checking` : `${WORDING[f.category] ?? "Service fee"} - Premier Checking, tier ${j}`,
         frequency: f.category === "monthly_maintenance" ? "monthly" : "per_item",
         conditions: f.category === "monthly_maintenance" ? "Waived with a $1,500 minimum daily balance or $500 in monthly direct deposits" : null,
       })),

@@ -74,7 +74,7 @@ const WIDTHS: Partial<Record<PacketTableId, number[]>> = {
   peer_changes: [2.2, 1.4, 2.6, 1.2, 0.8],
   income_trend: [1.2, 1.6, 2.6],
   normalized_income: [2.6, 2],
-  nearest_peers: [1.3, 1.2, 2.4, 2.4, 1.5],
+  nearest_peers: [1.2, 1.1, 2.3, 2.3, 1.9],
   product_details: [1.3, 2, 0.9, 1, 2.6, 0.7],
   regulatory: [5, 1.2, 0.8],
   price_and_yield: [2.2, 1, 1.5, 1.4, 2],
@@ -148,9 +148,10 @@ function TableFoot({ t, readOn }: { t: PacketTable; readOn: string }) {
 }
 
 /** A table that fits on one page, kept whole with its heading. */
-function ShortTable({ l, readOn, before }: { l: LabelledTable; readOn: string; before?: ReactNode }) {
+function ShortTable({ l, readOn, before, heading }: { l: LabelledTable; readOn: string; before?: ReactNode; heading?: string }) {
   return (
     <View style={s.block} wrap={false}>
+      {heading ? <Text style={[s.part, { marginTop: 8 }]}>{heading}</Text> : null}
       <Text style={s.label}>{l.label}</Text>
       <Text style={s.tableTitle}>{keepTogether(l.table.title)}</Text>
       {l.table.subtitle ? <Text style={s.tableSub}>{l.table.subtitle}</Text> : null}
@@ -174,11 +175,13 @@ function Footer({ packet }: { packet: CommitteePacket }) {
 }
 
 /** A long table on pages of its own: part, label, title and column headings repeat on each page. */
-function LongTablePages({ part, l, readOn, size, packet }: { part: string; l: LabelledTable; readOn: string; size: PacketPageSize; packet: CommitteePacket }) {
+function LongTablePages({ part, l, readOn, size, packet, heading }: { part: string; l: LabelledTable; readOn: string; size: PacketPageSize; packet: CommitteePacket; heading?: string }) {
   return (
     <Page size={size} style={s.page}>
+      {/* The part's heading, once, above the first page's repeating header. */}
+      {heading ? <Text style={s.part}>{heading}</Text> : null}
       <View style={s.fixedHead} fixed>
-        <Text style={s.label}>{l.label.startsWith(part) ? l.label : `${part} · ${l.label}`}</Text>
+        <Text style={s.label}>{l.label.startsWith(part) || heading ? l.label : `${part} · ${l.label}`}</Text>
         {/* A static title: a render-prop title inside a repeating header printed blank. */}
         <Text style={s.tableTitle}>{keepTogether(l.table.title)}</Text>
         {l.table.subtitle ? <Text style={s.tableSub}>{l.table.subtitle}</Text> : <View style={{ height: 5 }} />}
@@ -209,7 +212,7 @@ function matrixParts(l: LabelledTable): LabelledTable[] {
         title: `${t.title}, part ${p + 1} of ${count}`,
         columns: pick(t.columns),
         rows: t.rows.map(pick),
-        note: p === count - 1 ? t.note : null,
+        note: t.note,
       },
     });
   }
@@ -218,6 +221,23 @@ function matrixParts(l: LabelledTable): LabelledTable[] {
 
 function isLong(t: PacketTable): boolean {
   return t.rows.length > SHORT_TABLE_ROWS || t.id === "peer_fee_matrix" || t.id === "product_details";
+}
+
+type AppendixStep = { kind: "short"; tables: LabelledTable[] } | { kind: "long"; table: LabelledTable };
+
+/** Appendix pages in order: consecutive short tables share a page; a long one (or a matrix part) has its own. */
+function appendixPlan(appendix: LabelledTable[]): AppendixStep[] {
+  const steps: AppendixStep[] = [];
+  for (const l of appendix) {
+    if (isLong(l.table)) {
+      for (const part of l.table.id === "peer_fee_matrix" ? matrixParts(l) : [l]) steps.push({ kind: "long", table: part });
+      continue;
+    }
+    const last = steps[steps.length - 1];
+    if (last?.kind === "short") last.tables.push(l);
+    else steps.push({ kind: "short", tables: [l] });
+  }
+  return steps;
 }
 
 function Bullets({ items, small = false }: { items: string[]; small?: boolean }) {
@@ -245,35 +265,22 @@ export function CommitteePacketPdf({ packet, pageSize = "LETTER" }: { packet: Co
   const shortOf = (ls: LabelledTable[]) => ls.filter((l) => !isLong(l.table));
   const longOf = (ls: LabelledTable[]) => ls.filter((l) => isLong(l.table));
   // The appendix in its own order: a long table on pages of its own, short ones together.
-  const appendixPages: ReactNode[] = [];
-  let shorts: LabelledTable[] = [];
-  const flush = () => {
-    if (!shorts.length) return;
-    const group = shorts;
-    shorts = [];
-    appendixPages.push(
-      page(
-        `appendix-${group[0].anchor}`,
-        <>
-          <Text style={s.part}>Appendix</Text>
-          {group.map((l) => (
-            <ShortTable key={l.anchor} l={l} readOn={readOn} />
-          ))}
-        </>,
-      ),
+  // "Appendix" is printed once, on the first appendix page.
+  const appendixPages = appendixPlan(sections.appendix).map((step, i) => {
+    const heading = i === 0 ? "Appendix" : undefined;
+    if (step.kind === "long") {
+      return <LongTablePages key={`${step.table.anchor}-${step.table.table.title}`} part="Appendix" l={step.table} readOn={readOn} size={pageSize} packet={packet} heading={heading} />;
+    }
+    return page(
+      `appendix-${step.tables[0].anchor}`,
+      <>
+        {heading ? <Text style={s.part}>{heading}</Text> : null}
+        {step.tables.map((l) => (
+          <ShortTable key={l.anchor} l={l} readOn={readOn} />
+        ))}
+      </>,
     );
-  };
-  for (const l of sections.appendix) {
-    if (!isLong(l.table)) {
-      shorts.push(l);
-      continue;
-    }
-    flush();
-    for (const part of l.table.id === "peer_fee_matrix" ? matrixParts(l) : [l]) {
-      appendixPages.push(<LongTablePages key={`${l.anchor}-${part.table.title}`} part="Appendix" l={part} readOn={readOn} size={pageSize} packet={packet} />);
-    }
-  }
-  flush();
+  });
   return (
     <Document title={packet.title} author="Fee Insight" subject="Pricing committee packet">
       {page(
@@ -329,15 +336,9 @@ export function CommitteePacketPdf({ packet, pageSize = "LETTER" }: { packet: Co
               <Bullets items={packet.unavailable} small />
             </>
           ) : null}
-        </>,
-      )}
-
-      {page(
-        "position",
-        <>
-          <Text style={s.part}>Competitive position</Text>
-          {shortOf(sections.position).map((l) => (
-            <ShortTable key={l.anchor} l={l} readOn={readOn} />
+          {/* Competitive position follows on the same page when Exhibit 1 fits; its heading moves with it. */}
+          {shortOf(sections.position).map((l, i) => (
+            <ShortTable key={l.anchor} l={l} readOn={readOn} heading={i === 0 ? "Competitive position" : undefined} />
           ))}
           {packet.position.comparedNote ? <Text style={s.body}>{packet.position.comparedNote}</Text> : null}
         </>,

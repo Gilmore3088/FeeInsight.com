@@ -265,6 +265,11 @@ const SCHEDULES = "published fee schedules";
 const FILINGS = "FDIC call reports and NCUA 5300 reports";
 const SAME = 0.005;
 
+/** A per-$10,000 figure, always to the cent: "$6.10", "$4.00". */
+export function per10k(value: number): string {
+  return `$${value.toFixed(2)}`;
+}
+
 function span(lo: number, hi: number): string {
   return Math.abs(lo - hi) < SAME ? packetMoney(lo) : `${packetMoney(lo)} to ${packetMoney(hi)}`;
 }
@@ -369,15 +374,12 @@ class Footnotes {
     return this.order.map((key, i) => {
       const schedule = this.schedules.get(key);
       if (schedule) {
-        const docs = [...schedule.documentIds].sort((a, b) => a - b);
+        // Internal document ids stay out of the reader's text; the link is the reference.
         const published = dateSpan(schedule.dates);
         return {
           n: i + 1,
           label: `${schedule.name}, published fee schedule`,
-          detail: [
-            docs.length ? `${docs.length === 1 ? "document" : "documents"} ${docs.join(", ")}` : "document not recorded",
-            published ? `published ${published}` : "publish date not recorded",
-          ].join(" · "),
+          detail: published ? `published ${published}` : "publish date not recorded",
           url: schedule.urls[0] ?? null,
         };
       }
@@ -534,7 +536,7 @@ function feeFinding(r: FeeRead): string {
 }
 
 /** "NSF / returned item": lower case for running text, acronyms kept. */
-function inText(name: string): string {
+export function inText(name: string): string {
   return name.split(" ").map((w) => (/^[A-Z]{2,}$/.test(w) ? w : w.toLowerCase())).join(" ");
 }
 
@@ -553,7 +555,7 @@ function coverageFinding(reads: FeeRead[], input: CommitteePacketInput): string 
 
 function normalizedFinding(n: NormalizedIncome, input: CommitteePacketInput, mark: number | null): string | null {
   if (n.own === null || n.median === null || n.q1 === null || n.q3 === null) return null;
-  return `Service charge income per $10,000 of total assets: ${input.institutionName} filed ${packetMoney(n.own)} for the quarter ending ${readerAsOf(n.quarter)}, against a median of ${packetMoney(n.median)} across ${n.peersCompared} peers in this packet filing for that quarter (middle 50% ${span(n.q1, n.q3)}), context rather than a measure of pricing ${refs([mark])}.`;
+  return `Service charge income per $10,000 of total assets: ${input.institutionName} filed ${per10k(n.own)} for the quarter ending ${readerAsOf(n.quarter)}, against a median of ${per10k(n.median)} across ${n.peersCompared} peers in this packet filing for that quarter (middle 50% ${per10k(n.q1)} to ${per10k(n.q3)}) ${refs([mark])}. This is context, not a measure of pricing.`;
 }
 
 function priority(r: FeeRead): PacketPriority {
@@ -649,7 +651,7 @@ function trendTable(input: CommitteePacketInput, notes: Footnotes): { table: Pac
   });
   const peer = f.peerMedian
     ? notes.source(`filing-peers:${f.peerMedian.label}`, {
-        label: f.peerMedian.sourceRef.label,
+        label: f.peerMedian.sourceRef.label.replace(f.peerMedian.label, `${f.peerMedian.label.charAt(0).toLowerCase()}${f.peerMedian.label.slice(1)}`),
         detail: `quarters ending ${dateSpan(f.peerMedian.quarters.map((q) => q.quarterEnd)) ?? "dates not recorded"}`,
         url: null,
       })
@@ -723,11 +725,11 @@ function normalizedIncome(input: CommitteePacketInput, notes: Footnotes): { valu
     url: null,
   });
   const rows = [
-    [input.institutionName, `${packetMoney(ownValue)} [${mark}]`],
+    [input.institutionName, `${per10k(ownValue)} [${mark}]`],
     ...(value.ownIncomeThousands !== null ? [["Its service charge income, quarter", `${filedDollars(value.ownIncomeThousands * 1000)} [${mark}]`]] : []),
     ...(value.ownAssetsThousands ? [["Its total assets (the denominator)", `${filedDollars(value.ownAssetsThousands * 1000)} [${mark}]`]] : []),
-    [`Peer median (${peers.length} peers)`, `${packetMoney(value.median as number)} [${mark}]`],
-    ["Peers' middle 50%", span(value.q1 as number, value.q3 as number)],
+    [`Peer median (${peers.length} peers)`, `${per10k(value.median as number)} [${mark}]`],
+    ["Peers' middle 50%", `${per10k(value.q1 as number)} to ${per10k(value.q3 as number)} [${mark}]`],
     ["Position", capitalize(value.placement ?? "Not placed")],
   ];
   return {
@@ -810,14 +812,14 @@ function nearestTable(input: CommitteePacketInput, reads: FeeRead[], notes: Foot
       `${packetMoney(r.fee.current as number)} ${refs([r.ownMark])}`,
       neighbourCell(check.below, notes, byId, "No peer publishes less"),
       neighbourCell(check.above, notes, byId, "No peer publishes more"),
-      `${check.less} less, ${check.same} about the same, ${check.more} more`,
+      `${check.less} lower, ${check.same} the same, ${check.more} higher`,
     ];
   });
   return {
     id: "nearest_peers",
     title: "Nearest peers on each side",
-    subtitle: `The peers whose published value sits just below and just above ${input.institutionName}'s, by name.`,
-    columns: ["Fee", input.institutionName, "Nearest below", "Nearest above", "Peers charging"],
+    subtitle: `"This institution" is ${input.institutionName}. The peers whose published value sits just below and just above it, by name.`,
+    columns: ["Fee", "This institution", "Nearest below", "Nearest above", "Peers' amounts"],
     rows,
     note: "Named peers are those at the nearest published amount on each side; further peers at that amount are counted.",
     source: SCHEDULES,
@@ -827,12 +829,15 @@ function nearestTable(input: CommitteePacketInput, reads: FeeRead[], notes: Foot
 
 function productTable(input: CommitteePacketInput, reads: FeeRead[]): PacketTable | null {
   const rows: string[][] = [];
+  // The schedule's own wording when every row carries it; otherwise the index's display names.
+  const listed = reads.flatMap((r) => r.fee.ownRows.filter((row) => row.amount !== null));
+  const ownWording = listed.length > 0 && listed.every((row) => row.feeName?.trim());
   for (const r of reads) {
     for (const row of r.fee.ownRows) {
       if (row.amount === null || rows.length >= MAX_PACKET_PRODUCT_ROWS) continue;
       rows.push([
         r.name,
-        row.feeName?.trim() || "Name not recorded",
+        ownWording ? (row.feeName as string).trim() : capitalize(inText(r.name)),
         packetMoney(row.amount),
         chargedAs(row.frequency),
         row.conditions?.trim() || "None stated",
@@ -844,8 +849,8 @@ function productTable(input: CommitteePacketInput, reads: FeeRead[]): PacketTabl
   return {
     id: "product_details",
     title: "Published amounts behind each fee",
-    subtitle: `Every live row on ${input.institutionName}'s published schedule behind the comparison value, as the schedule states it.`,
-    columns: ["Fee", "Published as", "Amount", "Charged", "Conditions", "Source"],
+    subtitle: `Every live row on ${input.institutionName}'s published schedule behind the comparison value.`,
+    columns: ["Fee", ownWording ? "Name on the schedule" : "Listed in the index as", "Amount", "Charged", "Conditions", "Source"],
     rows,
     note: "Where a fee has several amounts, the comparison value is their median, or the highest tier for overdraft.",
     source: SCHEDULES,
@@ -947,12 +952,12 @@ function priceYieldTable(input: CommitteePacketInput, py: PriceYield | null, not
       p.name,
       `${packetMoney(p.fee)}${feeNote ? ` [${feeNote}]` : ""}`,
       row?.serviceChargeIncomeThousands != null ? `${filedDollars(row.serviceChargeIncomeThousands * 1000)} [${filing}]` : NOT_FILED,
-      `${packetMoney(p.incomePer10kAssets)} [${filing}]`,
+      `${per10k(p.incomePer10kAssets)} [${filing}]`,
       p.reading ? READING_TEXT[p.reading] : "",
     ];
   });
   const medians = py.medianFee !== null && py.medianIncome !== null
-    ? `Peer medians: fee ${packetMoney(py.medianFee)} and income ${packetMoney(py.medianIncome)} per $10,000 of total assets, each the median of ${py.peersCompared} peers (${py.peerLabel}).`
+    ? `Peer medians: fee ${packetMoney(py.medianFee)} and income ${per10k(py.medianIncome)} per $10,000 of total assets, each the median of ${py.peersCompared} peers (${py.peerLabel}).`
     : `Fewer than ${MIN_PEERS_FOR_POSITION} peers have both figures (${py.peersCompared}), so no medians are given.`;
   return {
     id: "price_and_yield",

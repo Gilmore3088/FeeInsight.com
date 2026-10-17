@@ -44,16 +44,15 @@ export function CommitteePacketDownload({ institutionId, yieldFee }: { instituti
           className="inline-flex min-h-11 items-center gap-2 rounded-md bg-terra px-3.5 py-2 text-sm font-medium text-white hover:bg-terra-dark disabled:opacity-60"
         >
           <Download size={16} aria-hidden />
-          {busy === "LETTER" ? "Preparing PDF…" : "Download PDF"}
+          {busy === "LETTER" ? "Preparing PDF…" : "Download PDF (Letter)"}
         </button>
         <button
           type="button"
           onClick={() => void download("A4")}
           disabled={busy !== null}
-          className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md border border-warm-300 bg-white px-3 py-2 text-sm font-medium text-warm-800 hover:border-warm-500 disabled:opacity-60"
-          aria-label="Download PDF on A4 paper"
+          className="inline-flex min-h-11 items-center justify-center rounded-md border border-warm-300 bg-white px-3.5 py-2 text-sm font-medium text-warm-800 hover:border-warm-500 disabled:opacity-60"
         >
-          {busy === "A4" ? "Preparing A4…" : "A4"}
+          {busy === "A4" ? "Preparing PDF…" : "Download PDF (A4)"}
         </button>
       </div>
       {error ? (

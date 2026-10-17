@@ -7,7 +7,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { readerAsOf } from "@/lib/hamilton/board-brief";
-import { PRICE_YIELD_LIMIT, READING_TEXT, footnoteMarks, packetMoney, packetSections, type CommitteePacket, type LabelledTable, type PacketTable as PacketTableData, type PriceYield } from "@/lib/hamilton/committee-packet";
+import { PRICE_YIELD_LIMIT, READING_TEXT, footnoteMarks, inText, packetMoney, per10k, packetSections, type CommitteePacket, type LabelledTable, type PacketTable as PacketTableData, type PriceYield } from "@/lib/hamilton/committee-packet";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 import { ANSWER_TYPE, Callout, ExhibitShell, LinkButton, MemoHeader, MemoPage, More, SectionHeading, Tabs } from "@/components/hamilton/memo/memo";
 import { CommitteePacketDownload } from "./CommitteePacketDownload";
@@ -28,7 +28,7 @@ function withMarks(text: string): ReactNode {
           <span key={n}>
             {i > 0 ? "," : ""}
             {/* A tap target taller than the mark itself, without moving the line. */}
-            <a href={`#fn-${n}`} className="-my-2 inline-block min-w-6 px-1 py-2 text-center text-terra-text no-underline hover:underline" aria-label={`Source ${n}`}>
+            <a href={`#fn-${n}`} className="-my-3 inline-flex min-h-11 min-w-6 items-center justify-center px-1 py-3 text-center text-terra-text no-underline hover:underline" aria-label={`Source ${n}`}>
               {n}
             </a>
           </span>
@@ -119,7 +119,7 @@ function PacketTable({ exhibit }: { exhibit: PacketTableData }) {
 }
 
 /**
- * Each peer's published fee (across) against its fee income per $10,000 of assets (up). The axis
+ * Each peer's published fee (across) against its fee income per $10,000 of total assets (up). The axis
  * labels are HTML outside the drawing, so they stay at least 12px on a phone.
  */
 function PriceYieldChart({ py, institutionName }: { py: PriceYield; institutionName: string }) {
@@ -137,23 +137,23 @@ function PriceYieldChart({ py, institutionName }: { py: PriceYield; institutionN
   const tick = "text-xs text-warm-600 [font-variant-numeric:tabular-nums]";
   return (
     <figure className="flex flex-col gap-2">
-      <p className={tick}>Up: income per $10,000 of assets, {packetMoney(iy[0])} to {packetMoney(Math.round(iy[1] * 100) / 100)}</p>
-      <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full rounded-md border border-warm-200 bg-white" role="img" aria-label={`${py.feeName} against fee income per $10,000 of assets, ${py.points.length} institutions`}>
+      <p className={tick}>Up: income per $10,000 of total assets, {per10k(iy[0])} to {per10k(iy[1])}</p>
+      <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full rounded-md border border-warm-200 bg-white" role="img" aria-label={`${py.feeName} against fee income per $10,000 of total assets, ${py.points.length} institutions`}>
         {py.medianFee !== null ? <line x1={x(py.medianFee)} x2={x(py.medianFee)} y1={pad} y2={H - pad} className="stroke-warm-500" strokeDasharray="4 4" /> : null}
         {py.medianIncome !== null ? <line x1={pad} x2={W - pad} y1={y(py.medianIncome)} y2={y(py.medianIncome)} className="stroke-warm-500" strokeDasharray="4 4" /> : null}
         {py.points.map((p) => (
           <circle key={p.institutionId} cx={x(p.fee)} cy={y(p.incomePer10kAssets)} r={p.own ? 9 : 6} className={p.own ? "fill-terra" : p.reading ? "fill-warm-700" : "fill-warm-400"}>
-            <title>{`${p.name}: ${packetMoney(p.fee)}; ${packetMoney(p.incomePer10kAssets)} per $10,000 of assets${p.reading ? `; ${READING_TEXT[p.reading]}` : ""}`}</title>
+            <title>{`${p.name}: ${packetMoney(p.fee)}; ${per10k(p.incomePer10kAssets)} per $10,000 of total assets${p.reading ? `; ${READING_TEXT[p.reading]}` : ""}`}</title>
           </circle>
         ))}
       </svg>
       <div className={`flex justify-between gap-2 ${tick}`}>
         <span>{packetMoney(fx[0])}</span>
-        <span className="text-center">Across: published {py.feeName.toLowerCase()} fee</span>
+        <span className="text-center">Across: published {inText(py.feeName)} fee</span>
         <span>{packetMoney(fx[1])}</span>
       </div>
       <figcaption className={ANSWER_TYPE.caption}>
-        Across: published {py.feeName.toLowerCase()} fee. Up: quarterly service charge income per $10,000 of assets. Dashed lines: medians of {py.peersCompared} peers. The larger terracotta point is {institutionName}.
+        Across: published {inText(py.feeName)} fee. Up: quarterly service charge income per $10,000 of total assets. Dashed lines: medians of {py.peersCompared} peers. The larger terracotta point is {institutionName}.
       </figcaption>
     </figure>
   );
@@ -373,7 +373,7 @@ export function CommitteePacketView({
                 {firstUse.has(f.n) ? (
                   <>
                     {" · "}
-                    <a href={`#${firstUse.get(f.n)!.anchor}`} className="-my-2 inline-block px-1 py-2 text-terra-text underline">
+                    <a href={`#${firstUse.get(f.n)!.anchor}`} className="-my-3 inline-flex min-h-11 items-center px-1 py-3 text-terra-text underline">
                       Back to {firstUse.get(f.n)!.label}
                     </a>
                   </>
