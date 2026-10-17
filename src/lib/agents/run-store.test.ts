@@ -159,6 +159,7 @@ import {
   TICK_EXCLUDED_STEP_KEYS,
   isLaneRoomRun,
   LANE_ROOM_MAX_IDLE_MS,
+  waitedOutMaxSteps,
   createStepTurns,
   executeQueuedAgentRuns,
   PARALLEL_STATE_LANES,
@@ -1367,6 +1368,59 @@ describe("agentic run store", () => {
     const readNowStarted = await tick(3, readNow);
     expect(readNowStarted.heldForDeadline).toBeUndefined();
     expect(withTransactionMock).toHaveBeenCalled();
+  });
+
+  it("prices a Read-now run's steps at its own p99s, not a lane's (Oct 17, runs 8086 and 8104)", () => {
+    const readNow = "atlas.priority_institution";
+    expect(expectedStepMs("publish", readNow)).toBe(55_000);
+    expect(expectedStepMs("extract", readNow)).toBe(110_000);
+    expect(expectedStepMs("classify", readNow)).toBe(60_000);
+    // Unlisted steps and other runs keep the lane's prices.
+    expect(expectedStepMs("discover", readNow)).toBe(expectedStepMs("discover"));
+    expect(expectedStepMs("publish", "atlas.priority_state_research")).toBe(expectedStepMs("publish"));
+    expect(expectedStepMs("publish", null)).toBe(225_000);
+    expect(expectedMsToFirstWork(["classify", "publish"], readNow)).toBe(60_000);
+  });
+
+  it("starts a Read-now run's next step in the next tick behind a fresh lane, without waiting out lane room", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    // A fresh lane's first work (enhance + state-expert + discover, 195 s) leaves the Read-now run
+    // 75 s of the 270 s tick. Its classify (60 s here, 160 s at lane prices) fits, so it does not
+    // wait LANE_ROOM_MAX_IDLE_MS: each tick takes its next step.
+    const tick = async (step: string) => {
+      sqlMock.mockReset();
+      withTransactionMock.mockClear();
+      txMock.mockResolvedValue([]);
+      sqlMock.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+        const text = templateText(strings);
+        if (text.includes("SELECT r.id")) {
+          return Promise.resolve([
+            { id: 101, run_kind: "manual_repair", source: "atlas.priority_institution", idle_ms: "600000" },
+            { id: 202, run_kind: "workflow_lane", source: null, idle_ms: "0" },
+          ]);
+        }
+        if (text.includes("SELECT step_key")) {
+          return Promise.resolve(values[0] === 101 ? [{ step_key: step }] : [{ step_key: "enhance" }, { step_key: "state-expert" }, { step_key: "discover" }]);
+        }
+        if (text.includes("FROM agent_runs")) {
+          return Promise.resolve([{ ...runRow, id: values[0], status: values[0] === 101 ? "queued" : "completed", params_json: values[0] === 101 ? { source: "atlas.priority_institution" } : {} }]);
+        }
+        return Promise.resolve([]);
+      });
+      const result = await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10, deadlineAt: Date.now() + 270_000 });
+      return { result: result.results[0], claimed: withTransactionMock.mock.calls.length > 0 };
+    };
+    for (const step of ["classify", "publish"]) {
+      const { result, claimed } = await tick(step);
+      expect(result.heldForDeadline, step).toBeUndefined();
+      expect(claimed, step).toBe(true);
+    }
+    // Waited out (idle past LANE_ROOM_MAX_IDLE_MS), a Read-now run takes every step that fits;
+    // a state re-search run still takes one (#1586).
+    expect(waitedOutMaxSteps("atlas.priority_institution", 10)).toBe(10);
+    expect(waitedOutMaxSteps("atlas.priority_state_research", 10)).toBe(1);
+    // At lane prices the same classify would not fit the room the lane leaves.
+    expect(expectedMsToFirstWork(["classify"])).toBeGreaterThan(270_000 - expectedMsToFirstWork(["enhance", "state-expert", "discover"]));
   });
 
   it("counts a lane run's quick first steps together with the first real step", () => {

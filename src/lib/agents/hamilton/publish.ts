@@ -184,10 +184,12 @@ export interface RunHamiltonPublishOptions {
   /** Refuse rows a sweep would take down (`publish-sweep-rules.ts`); defaults to `PUBLISH_REFUSE_SWEEP_RULES_LIVE`. */
   refuseSweepRulesLive?: boolean;
   /**
-   * Epoch ms after which the row loop stops (after `PUBLISH_MIN_ROWS_PER_STEP` rows), and the
-   * cross-state top-up is not read, so the step ends inside the tick (2026-10-17 finding).
+   * Epoch ms after which the row loop stops (after `PUBLISH_MIN_ROWS_PER_STEP` rows), so the step
+   * ends inside the tick (2026-10-17 finding).
    */
   deadlineAt?: number;
+  /** Epoch ms after which the cross-state top-up is not read; defaults to `deadlineAt`. */
+  topUpDeadlineAt?: number;
 }
 
 export interface HeldThinInstitution {
@@ -2011,9 +2013,10 @@ export async function runHamiltonPublish(
   // for its own state's lane to come round (the 100 re-filed returned-check fees sat across 37
   // states while lanes published 0-44 rows each). A lane whose own queue is short now fills the
   // rest with the oldest eligible rows from any state, as the release review does.
-  // The top-up is a second whole-catalog read (16-24 s on prod, Oct 17); a step already near its
-  // deadline leaves it to the next step.
-  const topUpSkipped = options.deadlineAt != null && Date.now() > options.deadlineAt;
+  // The top-up is a second catalog read; a step already past `topUpDeadlineAt` leaves it to the
+  // next step. On Oct 17 the whole rows phase, top-up included, took under 8 s (AK, 242 rows).
+  const topUpDeadlineAt = options.topUpDeadlineAt ?? options.deadlineAt;
+  const topUpSkipped = topUpDeadlineAt != null && Date.now() > topUpDeadlineAt;
   if (options.stateCode && !options.institutionId && selected.length < limit && !topUpSkipped) {
     const taken = new Set(selected.map((row) => Number(row.fee_verified_id)));
     const others = await selectVerifiedFees(db, limit - selected.length, learning, minConfidence, minInstitutionFees);

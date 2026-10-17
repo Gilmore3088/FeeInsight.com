@@ -111,6 +111,9 @@ describe("Hamilton agentic publish", () => {
     const boxed = await runHamiltonPublish({ runId: 1700, db: asPublishDb(createDbMock(rows)), deadlineAt: Date.now() - 1, stateCode: "TX" });
     expect(boxed.processedVerifiedFees).toBe(PUBLISH_MIN_ROWS_PER_STEP);
     expect(boxed.timeBox).toEqual({ stopped: true, rowsLeft: 70 - PUBLISH_MIN_ROWS_PER_STEP, topUpSkipped: true });
+    // The top-up has its own, later deadline: a step past the row deadline still tops up.
+    const toppedUp = await runHamiltonPublish({ runId: 1702, db: asPublishDb(createDbMock(rows)), deadlineAt: Date.now() - 1, topUpDeadlineAt: Date.now() + 60_000, stateCode: "TX" });
+    expect(toppedUp.timeBox.topUpSkipped).toBe(false);
     // The rows it did not reach get no attempt: the next step selects them again.
     const free = await runHamiltonPublish({ runId: 1701, db: asPublishDb(createDbMock(rows)) });
     expect(free.processedVerifiedFees).toBe(70);

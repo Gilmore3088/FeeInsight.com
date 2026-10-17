@@ -340,8 +340,10 @@ the detail.
 The step must end inside the tick's 300 s function limit (2026-10-17 finding, steps overrun
 the tick budget). Its row loop (`runHamiltonPublish`) stops `PUBLISH_ROW_DEADLINE_MS` (120 s)
 after the step began, once it has decided `PUBLISH_MIN_ROWS_PER_STEP` (50) rows. Rows it did
-not reach get no attempt and publish on the next step. A step already past that point skips
-the cross-state top-up read. The step detail records `publish_time_box` and `phase_ms`
+not reach get no attempt and publish on the next step. The cross-state top-up read is
+skipped only when the step is already `PUBLISH_TOP_UP_DEADLINE_MS` (160 s) in; the sweeps before
+the rows take 96-129 s, so a skip tied to the row deadline cut NC's and WI's publishes to their
+own few rows (Oct 17). The step detail records `publish_time_box` and `phase_ms`
 (`sweeps_before`, `publish_rows`, `sweeps_after`).
 
 1. Outlier restore (`restoreOutliersNowInRange`, `outlier-rollback.ts`): brings back an
