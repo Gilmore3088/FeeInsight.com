@@ -1189,6 +1189,23 @@ describe("agentic run store", () => {
     ).resolves.toMatchObject({ executedSteps: 0 });
   });
 
+  it("writes one step.deferred event naming the step, its expected time and the time left (2026-10-17)", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    getPipelineControlMock.mockResolvedValue({ enabled: false, reason: "Operator maintenance" });
+    const briefStep = [{ ...queuedStepRows[0], step_key: "daily-brief", agent_name: "atlas", title: "Daily brief" }];
+    const briefRun = { ...runRow, progress_total: 1 };
+    installSqlMocks({ finalRun: briefRun, finalSteps: briefStep });
+    installTxMocks(briefStep, briefRun);
+
+    await executeAgentRun(101, { maxSteps: 5, deadlineAt: Date.now() + 60_000, alwaysRunFirstStep: false });
+    const deferred = sqlMock.mock.calls.filter(([strings]) => templateText(strings as TemplateStringsArray).includes("'step.deferred'"));
+    expect(deferred).toHaveLength(1);
+    const values = deferred[0].slice(1) as unknown[];
+    expect(values[0]).toBe(101);
+    expect(String(values[1])).toMatch(/left queued: it needs about \d+ s and the tick has \d+ s left/);
+    expect(JSON.parse(String(values[2]))).toMatchObject({ step_key: "daily-brief", expected_ms: expect.any(Number) });
+  });
+
   it("starts no lower lane in a tick once a higher lane is held for the deadline", async () => {
     getExecutionBackendMock.mockReturnValue("agentic_v1");
     sqlMock.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
@@ -1350,19 +1367,27 @@ describe("agentic run store", () => {
   it("counts a lane run's quick first steps together with the first real step", () => {
     // enhance + state-expert are quick; a later run must also fit discover, or it would
     // count as under way after only the quick steps and jump ahead of retries.
-    expect(expectedMsToFirstWork(["enhance", "state-expert", "discover", "discover-paid"])).toBe(175_000);
-    expect(expectedMsToFirstWork(["fetch", "read"])).toBe(30_000);
-    expect(expectedMsToFirstWork(["public-discovery"])).toBe(30_000);
+    expect(expectedMsToFirstWork(["enhance", "state-expert", "discover", "discover-paid"])).toBe(185_000);
+    expect(expectedMsToFirstWork(["fetch", "read"])).toBe(45_000);
+    // public-discovery has its own measured entry now, so it is real work, not a quick step.
+    expect(expectedMsToFirstWork(["public-discovery"])).toBe(60_000);
     expect(expectedMsToFirstWork([])).toBe(0);
   });
 
   it("expects long steps to need most of a tick and quick ones only seconds", () => {
-    // Re-measured 2026-10-15 (about p90 with a margin): discover-paid runs in seconds, publish about 80 s.
-    expect(expectedStepMs("discover-paid")).toBe(10_000);
+    // Re-measured 2026-10-17 at about p99 over 24 hours: publish, extract, classify and
+    // discover-paid ran past their old settings and were killed at the tick's 300 s limit.
+    expect(expectedStepMs("discover-paid")).toBe(165_000);
     expect(expectedStepMs("hamilton-answer-eval")).toBe(400_000);
     expect(TICK_EXCLUDED_STEP_KEYS).toContain("hamilton-answer-eval");
-    expect(expectedStepMs("publish")).toBe(105_000);
-    expect(expectedStepMs("public-discovery")).toBe(30_000);
+    expect(expectedStepMs("publish")).toBe(225_000);
+    expect(expectedStepMs("extract")).toBe(165_000);
+    expect(expectedStepMs("classify")).toBe(160_000);
+    expect(expectedStepMs("public-discovery")).toBe(60_000);
+    // Every measured step still fits inside the tick's 270 s budget from the start of a tick.
+    for (const key of ["publish", "extract", "classify", "discover-paid", "discover", "extract-paid", "fetch", "read"]) {
+      expect(expectedStepMs(key), key).toBeLessThan(270_000);
+    }
     expect(expectedStepMs("registry-fdic-sod")).toBe(30_000);
     // registry-cfpb ran 172 s, so its own entry wins over the quick registry- prefix.
     expect(expectedStepMs("registry-cfpb")).toBe(180_000);

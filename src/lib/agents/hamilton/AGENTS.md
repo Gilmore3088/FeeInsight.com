@@ -337,6 +337,13 @@ transaction. A takedown is a soft rollback (`rolled_back_at`, batch `agentic-run
 unless named, the reason below); a dry run reports and writes nothing. Sections below give
 the detail.
 
+The step must end inside the tick's 300 s function limit (2026-10-17 finding, steps overrun
+the tick budget). Its row loop (`runHamiltonPublish`) stops `PUBLISH_ROW_DEADLINE_MS` (120 s)
+after the step began, once it has decided `PUBLISH_MIN_ROWS_PER_STEP` (50) rows. Rows it did
+not reach get no attempt and publish on the next step. A step already past that point skips
+the cross-state top-up read. The step detail records `publish_time_box` and `phase_ms`
+(`sweeps_before`, `publish_rows`, `sweeps_after`).
+
 1. Outlier restore (`restoreOutliersNowInRange`, `outlier-rollback.ts`): brings back an
    outlier takedown whose amount is inside today's range, unless the bank already shows that
    fee at that amount. No reason written; it clears one.
