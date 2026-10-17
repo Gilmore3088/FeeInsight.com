@@ -11,6 +11,7 @@ import {
   quarterLabel,
   revenueTrend,
   sizeGroups,
+  stateComplaintView,
   stateHubRows,
 } from "./district-hub-view";
 
@@ -147,6 +148,25 @@ describe("complaintView", () => {
   it("is null when the district has no matched institutions", () => {
     expect(complaintView(hub({ complaints: { year: "2025", groups: [group(11, "TX", 40, 4, 1)] } }), 8, ["MO"])).toBeNull();
   });
+
+  it("reads a whole state across districts beside its home district and the U.S.", () => {
+    const view = stateComplaintView(
+      hub({
+        complaints: {
+          year: "2025",
+          groups: [group(8, "MO", 6, 12, 2_000_000), group(10, "MO", 6, 6, 1_000_000), group(8, "AR", 3, 9, 1_000_000), group(11, "TX", 40, 40, 20_000_000)],
+        },
+      }),
+      "MO",
+      8,
+    )!;
+    expect(view.state.matched).toBe(12);
+    expect(view.state.rate).toBeCloseTo(18 / 3);
+    expect(view.district!.matched).toBe(9);
+    expect(view.district!.rate).toBeNull();
+    expect(view.us.rate).toBeCloseTo(67 / 24);
+    expect(stateComplaintView(hub({ complaints: { year: "2025", groups: [group(11, "TX", 40, 4, 1)] } }), "MO", 8)).toBeNull();
+  });
 });
 
 describe("feeChangeSummary", () => {
@@ -213,25 +233,25 @@ describe("openingFinding", () => {
 
   it("leads with overdraft and NSF when both sit the same amount off the benchmark", () => {
     expect(openingFinding([fee("overdraft", 25, 30), fee("nsf", 25, 30)], 10)).toBe(
-      "Overdraft and NSF medians are $5 below the national benchmark.",
+      "Overdraft and NSF medians are $5 below the national median.",
     );
   });
 
   it("names each amount when the two gaps differ", () => {
     expect(openingFinding([fee("overdraft", 33, 30), fee("nsf", 32, 30)], 10)).toBe(
-      "Overdraft and NSF medians are $3 and $2 above the national benchmark.",
+      "Overdraft and NSF medians are $3 and $2 above the national median.",
     );
   });
 
   it("says which one matches when only one is off", () => {
     expect(openingFinding([fee("overdraft", 30, 30), fee("nsf", 28, 30)], 10)).toBe(
-      "The NSF median is $2 below the national benchmark; overdraft matches it.",
+      "The NSF median is $2 below the national median; overdraft is about the same.",
     );
   });
 
   it("falls back to the widest gap when both match", () => {
     expect(openingFinding([fee("overdraft", 30, 30), fee("nsf", 30, 30), fee("stop_payment", 30, 27.5), fee("wire_domestic_outgoing", 20, 25)], 10)).toBe(
-      "Overdraft and NSF medians match the national benchmark at $30. The outgoing wire median is $5 below it.",
+      "Overdraft and NSF medians are about the same as the national median. The outgoing wire median is $5 below the national median.",
     );
   });
 

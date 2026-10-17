@@ -1,5 +1,6 @@
 import { cachedPublicRead } from "./public-read-cache";
 import { getCityMarket, getStateMarketCities } from "./city-market";
+import { getStateMarketFees } from "./state-markets";
 import { getDataFreshness, getPublicStats, getStats } from "./core";
 import { getDistrictMetrics } from "./dashboard";
 import { getCheapestAndMostExpensive, getFeeCategoryDetail, getIndexRows } from "./fees";
@@ -35,7 +36,7 @@ import {
 import { getMarketBranchFootprint } from "./branches";
 import { getNationalRateStats } from "./rate-fees";
 import { getCountyFeeMap } from "./state-visuals";
-import { getDistrictHub, isEmptyDistrictHub } from "./district-hub";
+import { getDistrictHub, getStateHub, isEmptyDistrictHub } from "./district-hub";
 
 /**
  * Cached variants of the catalog-wide reads that public pages run on every request.
@@ -98,6 +99,7 @@ export const getStatesWithFeeDataCached = cachedPublicRead("states-with-fee-data
 export const getCitiesInStateCached = cachedPublicRead("cities-in-state", getCitiesInState);
 export const getCityMarketCached = cachedPublicRead("city-market-v1", getCityMarket);
 export const getStateMarketCitiesCached = cachedPublicRead("state-market-cities-v1", getStateMarketCities);
+export const getStateMarketFeesCached = cachedPublicRead("state-market-fees-v1", getStateMarketFees, (r) => r.length === 0);
 export const getCityFeeAveragesCached = cachedPublicRead("city-fee-averages", getCityFeeAverages);
 export const getDataCoverageSummaryCached = cachedPublicRead("data-coverage-summary", getDataCoverageSummary);
 export const getMarketConcentrationCached = cachedPublicRead("market-concentration", getMarketConcentration);
@@ -176,3 +178,5 @@ export const getMarketBranchFootprintCached = cachedPublicRead("market-branch-fo
 /** The district hub's exhibits beyond the fee board (district-hub.ts), one entry per district. */
 // v3: institution groups carry the regulator size_group.
 export const getDistrictHubCached = cachedPublicRead("district-hub-v3", getDistrictHub, isEmptyDistrictHub);
+/** The same exhibits for one whole state's page (getStateHub), one entry per state. */
+export const getStateHubCached = cachedPublicRead("state-hub-v1", getStateHub, isEmptyDistrictHub);

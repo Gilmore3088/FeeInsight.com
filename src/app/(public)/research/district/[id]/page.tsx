@@ -229,7 +229,7 @@ export default async function DistrictReportPage({ params }: PageProps) {
           },
         ]
       : []),
-    ...(againstUs.length >= 3 ? [{ value: `${insideBand} of ${againstUs.length}`, label: "fee medians sit inside the U.S. middle half" }] : []),
+    ...(againstUs.length >= 3 ? [{ value: `${insideBand} of ${againstUs.length}`, label: "fee medians sit within the national middle range" }] : []),
   ];
   // The opening takeaway is the district's sharpest specific gap; the band count sits beside it as context.
   const statement = openingFinding(againstUs, STATE_FINDING_MIN_INSTITUTIONS) ?? takeaway;
@@ -357,7 +357,7 @@ export default async function DistrictReportPage({ params }: PageProps) {
               </div>
               <SourceNote label="Method">
                 Findings rank only fees with at least {STATE_FINDING_MIN_INSTITUTIONS} {place} institutions. Fees with fewer appear in the
-                list, unranked. The U.S. middle half runs from the 25th to the 75th percentile of U.S. institutions.
+                list, unranked. The national middle range runs from the 25th to the 75th percentile of U.S. institutions.
               </SourceNote>
             </section>
           </StateBoard>
@@ -377,7 +377,7 @@ export default async function DistrictReportPage({ params }: PageProps) {
               </h2>
               <p className="mt-3 text-[15px] leading-relaxed text-ink-soft">Each tile is one fee. Pick one to see both medians.</p>
             </div>
-            <CharterField fees={charter} place={place} />
+            <CharterField fees={charter} place={`the ${place}`} />
           </section>
         )}
 

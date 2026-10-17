@@ -204,17 +204,25 @@ export function buildLeaders(
   return [...byId.values()].filter((l) => l.deposits > 0 && l.branches >= MIN_LEADER_BRANCHES).sort((a, b) => b.deposits - a.deposits).slice(0, limit);
 }
 
-async function loadStateFees(district: number): Promise<HubStateFees[]> {
+/**
+ * The institutions a hub reads: one Fed district's, or one whole state's. A state page reads
+ * every institution in the state, including those a district line puts in a neighboring district.
+ */
+export type HubScope = { column: "fed_district"; value: number } | { column: "state_code"; value: string };
+
+const scopeSql = (scope: HubScope) => `ct.${scope.column === "state_code" ? "state_code" : "fed_district"} = $1`;
+
+async function loadStateFees(scope: HubScope): Promise<HubStateFees[]> {
   const rows = (await sql.unsafe(
     `SELECT ct.state_code, ef.fee_category, ef.amount, ef.institution_id,
             ef.review_status, ef.created_at, ct.charter_type
        FROM published_fee_catalog ef
        JOIN institution_sources ct ON ef.institution_id = ct.id
-      WHERE ct.fed_district = $1
+      WHERE ${scopeSql(scope)}
         AND ef.fee_category = ANY($2::text[])
         AND ef.review_status = 'approved'
         AND ${STATS_ROW_FILTER}`,
-    [district, [...HUB_FEES]],
+    [scope.value, [...HUB_FEES]],
   )) as unknown as FeeRow[];
   return buildStateFeeMedians(rows);
 }
@@ -246,7 +254,7 @@ function sizeGroupSql(charter: keyof typeof REGULATOR_SIZE_GROUPS): string {
   return groups.map((g) => (g.below == null ? `ELSE '${g.key}'` : `WHEN ct.asset_size < ${g.below} THEN '${g.key}'`)).join(" ");
 }
 
-async function loadInstitutions(district: number): Promise<HubInstitutionGroup[]> {
+async function loadInstitutions(scope: HubScope): Promise<HubInstitutionGroup[]> {
   const rows = (await sql.unsafe(
     `SELECT ct.state_code, ct.charter_type, ct.asset_size_tier AS tier,
             CASE WHEN ct.asset_size IS NULL OR ct.asset_size <= 0 THEN NULL
@@ -259,10 +267,10 @@ async function loadInstitutions(district: number): Promise<HubInstitutionGroup[]
                WHERE ef.institution_id = ct.id AND ef.review_status = 'approved' AND ${STATS_ROW_FILTER}
             ))::int AS with_fees
        FROM institution_sources ct
-      WHERE ct.fed_district = $1
+      WHERE ${scopeSql(scope)}
         AND ct.regulatory_status IS DISTINCT FROM 'inactive'
       GROUP BY 1, 2, 3, 4`,
-    [district],
+    [scope.value],
   )) as unknown as Record<string, unknown>[];
   return rows
     .filter((r) => r.state_code)
@@ -283,7 +291,7 @@ async function loadInstitutions(district: number): Promise<HubInstitutionGroup[]
  * way as getDistrictIncomeTrend; only positive quarterly income counts. Filings before January of
  * three years ago are skipped: reading every filing since the 1990s took over 20 seconds on prod.
  */
-async function loadRevenue(district: number, now: Date): Promise<HubRevenueRow[]> {
+async function loadRevenue(scope: HubScope, now: Date): Promise<HubRevenueRow[]> {
   const from = `${now.getUTCFullYear() - 3}-01-01`;
   const rows = (await sql.unsafe(
     `WITH filed AS (
@@ -296,7 +304,7 @@ async function loadRevenue(district: number, now: Date): Promise<HubRevenueRow[]
          FROM institution_financial_records inf
          JOIN institution_sources ct ON ct.id = inf.institution_id
         WHERE ${financialSourceFilter("inf")}
-          AND ct.fed_district = $1
+          AND ${scopeSql(scope)}
           AND inf.report_date >= $2
        WINDOW w AS (PARTITION BY inf.institution_id, inf.source, EXTRACT(YEAR FROM inf.report_date::date)
                     ORDER BY inf.report_date::date)
@@ -323,7 +331,7 @@ async function loadRevenue(district: number, now: Date): Promise<HubRevenueRow[]
         AND DATE_TRUNC('quarter', q.rd) IN (SELECT q FROM recent)
       GROUP BY 1, 2, 3
       ORDER BY 1`,
-    [district, from],
+    [scope.value, from],
   )) as unknown as Record<string, unknown>[];
   return rows
     .filter((r) => r.state_code)
@@ -498,19 +506,40 @@ async function loadSeries(states: string[]): Promise<Record<string, IndicatorSer
 }
 
 export async function getDistrictHub(district: number, now: Date = new Date()): Promise<DistrictHubData> {
-  const states = districtStates(district);
+  return loadHub({ column: "fed_district", value: district }, district, districtStates(district), now);
+}
+
+/**
+ * The same hub for one state's page: every institution in the state, whichever district holds
+ * it, with the state's own branches, deposit leaders, economy and fee changes. `district` is the
+ * state's home district (STATE_TO_DISTRICT), for the Beige Book and the district comparison.
+ */
+export async function getStateHub(state: string, now: Date = new Date()): Promise<DistrictHubData> {
+  const code = state.toUpperCase();
+  return loadHub({ column: "state_code", value: code }, STATE_TO_DISTRICT[code] ?? 0, [code], now);
+}
+
+async function loadHub(scope: HubScope, district: number, states: string[], now: Date): Promise<DistrictHubData> {
   const since = new Date(now);
   since.setUTCFullYear(since.getUTCFullYear() - 1);
   const sinceIso = since.toISOString().slice(0, 10);
   const [state_fees, institutions, revenue, branches, complaints, demographics, series, fee_changes] = await Promise.all([
-    part(() => loadStateFees(district), [] as HubStateFees[]),
-    part(() => loadInstitutions(district), [] as HubInstitutionGroup[]),
-    part(() => loadRevenue(district, now), [] as HubRevenueRow[]),
+    part(() => loadStateFees(scope), [] as HubStateFees[]),
+    part(() => loadInstitutions(scope), [] as HubInstitutionGroup[]),
+    part(() => loadRevenue(scope, now), [] as HubRevenueRow[]),
     part(() => loadBranches(states), null),
     part(() => loadComplaints(), null),
     part(() => loadDemographics(states), [] as HubDemographics[]),
     part(() => loadSeries(states), {} as Record<string, IndicatorSeries>),
-    part(() => getFeeChangeEvents({ fed_districts: [district], since: sinceIso, limit: FEE_CHANGE_LIMIT }), [] as FeeChangeEvent[]),
+    part(
+      () =>
+        getFeeChangeEvents({
+          ...(scope.column === "state_code" ? { state_code: scope.value } : { fed_districts: [scope.value] }),
+          since: sinceIso,
+          limit: FEE_CHANGE_LIMIT,
+        }),
+      [] as FeeChangeEvent[],
+    ),
   ]);
   return {
     district,
