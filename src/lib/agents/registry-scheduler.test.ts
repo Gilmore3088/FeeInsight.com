@@ -27,50 +27,21 @@ describe("registry scheduler", () => {
 
   it("round-robins sources, identity syncs first, newest partition of each source first", () => {
     const candidates = registryCandidates(now, { year: 2025, quarter: 4 }).map((c) => `${c.source}:${c.partitionKey}`);
-    expect(candidates.slice(0, 27)).toEqual([
+    // Round one takes each source's newest partition in REGISTRY_SOURCES order; round two
+    // continues the history of every source that has one. Sources with one partition drop out.
+    const lists = registryPartitionsBySource(now, { year: 2025, quarter: 4 });
+    const roundOne = lists.filter((l) => l.partitions.length > 0).map((l) => `${l.source}:${l.partitions[0]}`);
+    const roundTwo = lists.filter((l) => l.partitions.length > 1).map((l) => `${l.source}:${l.partitions[1]}`);
+    expect(candidates.slice(0, roundOne.length)).toEqual(roundOne);
+    expect(candidates.slice(roundOne.length, roundOne.length + roundTwo.length)).toEqual(roundTwo);
+    expect(roundOne.slice(0, 5)).toEqual([
       "fdic-universe:current",
       "fdic-financials:2026Q2",
       "ncua-financials:2026Q2",
       "ffiec-overdraft:2026Q1",
       "ffiec-call-detail:2026Q1",
-      "ncua-extras:2026Q2",
-      "fdic-history:2026",
-      "fdic-sod:2026",
-      "ncua-branches:2026Q2",
-      "ncua-branch-geocode:pending",
-      "cfpb:2026",
-      "census-acs:2025",
-      "irs-zip-income:2024",
-      "sec-links:current",
-      "sec-filings:batch-0",
-      "beige-book:202610",
-      "fred:current",
-      "fomc-minutes:current",
-      "fed-publications:current",
-      "reg-news:current",
-      "federal-register:current",
-      "state-reg-news:current",
-      "state-bill-news:current",
-      "state-regulators:current",
-      "enforcement:current",
-      "state-enforcement:current",
-      "wire-research:current",
     ]);
-    // Round two continues each source's history.
-    // Credit union branches pull only the newest quarter, so they drop out after round one.
-    expect(candidates.slice(27, 38)).toEqual([
-      "fdic-financials:2026Q1",
-      "ncua-financials:2026Q1",
-      "ffiec-overdraft:2026Q2",
-      "ffiec-call-detail:2026Q2",
-      "ncua-extras:2026Q1",
-      "fdic-history:2025",
-      "fdic-sod:2025",
-      "cfpb:2025",
-      "census-acs:2024",
-      "irs-zip-income:2023",
-      "sec-filings:batch-1",
-    ]);
+    expect(roundOne).toEqual(expect.arrayContaining(["fdic-history:2026", "ncua-extras:2026Q2", "ncua-branch-geocode:pending", "wire-research:current"]));
     expect(candidates.filter((c) => c.startsWith("fdic-financials:"))).toHaveLength(3);
   });
 

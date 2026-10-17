@@ -66,6 +66,7 @@ import {
   INDUSTRY_EVENTS_SOURCE,
   industryEventsPartitions,
 } from "@/lib/agents/magellan/registry/industry-events";
+import { ECONOMY_DEFINITIONS, ECONOMY_PARSER_VERSION } from "@/lib/agents/magellan/registry/economy";
 import { REGISTRY_SOURCES } from "@/lib/agents/magellan/registry";
 import { isProviderStep } from "@/lib/agents/types";
 import { STATE_BILLS_PARTITION, STATE_BILLS_SOURCE } from "@/lib/agents/magellan/registry/state-bills";
@@ -121,6 +122,7 @@ export const REGISTRY_PARSER_VERSIONS: Record<string, number> = {
   [FFIEC_CALL_DETAIL_SOURCE]: FFIEC_CALL_DETAIL_PARSER_VERSION,
   [NCUA_EXTRAS_SOURCE]: NCUA_EXTRAS_PARSER_VERSION,
   [FDIC_HISTORY_SOURCE]: FDIC_HISTORY_PARSER_VERSION,
+  ...Object.fromEntries(ECONOMY_DEFINITIONS.map((d) => [d.source, ECONOMY_PARSER_VERSION])),
   [INDUSTRY_EVENTS_SOURCE]: INDUSTRY_EVENTS_PARSER_VERSION,
   [PAYMENT_NETWORKS_SOURCE]: PAYMENT_NETWORKS_PARSER_VERSION,
   [HMDA_SOURCE]: HMDA_PARSER_VERSION,
@@ -202,6 +204,7 @@ export function registryPartitionsBySource(
     [FFIEC_CALL_DETAIL_SOURCE]: ffiecCallDetailPartitions(now),
     [NCUA_EXTRAS_SOURCE]: ncuaExtrasPartitions(now, compareQuarters(from, NCUA_EXTRAS_FIRST) > 0 ? from : NCUA_EXTRAS_FIRST),
     [FDIC_HISTORY_SOURCE]: fdicHistoryPartitions(now, Math.max(FDIC_HISTORY_FIRST_YEAR, from.year)),
+    ...Object.fromEntries(ECONOMY_DEFINITIONS.filter((d) => !d.fixedPartition).map((d) => [d.source, d.partitions(now)])),
     [INDUSTRY_EVENTS_SOURCE]: industryEventsPartitions(now),
     [PAYMENT_NETWORKS_SOURCE]: paymentNetworksPartitions(now),
     [HMDA_SOURCE]: hmdaPartitions(now, from.year),

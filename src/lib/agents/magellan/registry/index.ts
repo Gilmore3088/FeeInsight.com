@@ -2,6 +2,7 @@ import type { RegistryDb } from "./partitions";
 import { CENSUS_ACS_SOURCE, runRegistryCensusAcs } from "./census-acs";
 import { CFPB_SOURCE, runRegistryCfpb } from "./cfpb";
 import { IRS_ZIP_INCOME_SOURCE, runRegistryIrsZipIncome } from "./irs-zip-income";
+import { ECONOMY_DEFINITIONS, runRegistryEconomy } from "./economy";
 import { FDIC_FINANCIALS_SOURCE, runRegistryFdicFinancials } from "./fdic-financials";
 import { FFIEC_OVERDRAFT_SOURCE, runRegistryFfiecOverdraft } from "./ffiec-overdraft";
 import { FDIC_SOD_SOURCE, runRegistryFdicSod } from "./fdic-sod";
@@ -681,6 +682,27 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
       };
     },
   },
+
+  ...ECONOMY_DEFINITIONS.map((definition): RegistrySourceDefinition => ({
+    source: definition.source,
+    stepKey: `registry-${definition.source}`,
+    title: definition.title,
+    fixedPartition: definition.fixedPartition,
+    run: async (input) => {
+      const r = await runRegistryEconomy({
+        source: definition.source,
+        partitionKey: input.partitionKey,
+        runId: input.runId,
+        dryRun: input.dryRun,
+        db: input.db,
+      });
+      return {
+        summary: r.summary,
+        detail: { ...r.detail, source_url: r.sourceUrl, rows: r.rows, written_rows: r.writtenRows, empty: r.empty, empty_reason: r.emptyReason },
+        skipped: r.skipped,
+      };
+    },
+  })),
   {
     source: SEC_LINKS_SOURCE,
     stepKey: "registry-sec-links",

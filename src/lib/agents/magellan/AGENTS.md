@@ -590,6 +590,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `FDIC_HISTORY_PARSER_VERSION` | — | v1 | `magellan/registry/fdic-history.ts` |
 | `FFIEC_CALL_DETAIL_PARSER_VERSION` | — | v1 | `magellan/registry/ffiec-call-detail.ts` |
 | `NCUA_EXTRAS_PARSER_VERSION` | — | v1 | `magellan/registry/ncua-extras.ts` |
+| `ECONOMY_PARSER_VERSION` | — | v1 | `magellan/registry/economy.ts` (16 economy sources) |
 | `INDUSTRY_EVENTS_PARSER_VERSION` | — | v1 | `magellan/registry/industry-events.ts` |
 | `PAYMENT_NETWORKS_PARSER_VERSION` | — | v1 | `magellan/registry/payment-networks.ts` |
 | `HMDA_PARSER_VERSION` | — | v1 | `magellan/registry/hmda.ts` |
