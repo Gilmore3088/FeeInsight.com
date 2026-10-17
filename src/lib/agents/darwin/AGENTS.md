@@ -1218,7 +1218,11 @@ Darwin owns verification and classification.
   international ATM fees, 3 sustained overdrafts, 7 incoming wires) and fails 7 more, flagged for the
   second look and then taken down: 5 add-ons, and 2 re-files a live twin at the same bank, type and
   amount blocks (14348, 98702). 5 rows no name rule can place are hand takedowns (#1788: 2 repeat
-  international ATM reads, 3 add-ons). No batch reaches 20, so no switch holds them. v71 (Oct 17,
+  international ATM reads, 3 add-ons), and ServisFirst's "Domestic Wire Transfer Fees" $10 (66594, the
+  incoming price on its line) is a hand re-file (`HAND_REFILES` in `taxonomy-fold.ts`). Hancock
+  Whitney's "Overdraft Charge/Overdraft Fee (each item)" $36 (66419) stays: it is the per-item fee, and
+  the $36 Sustained Overdraft Fee is live as continuous_od 66411. No batch reaches 20, so no switch
+  holds them. v71 (Oct 17,
   #1772, #1773): the non-network ATM fee also refuses another institution's card named in more than
   one word after "non-" (`OUTSIDER_CARD_WORDS` in `OUTSIDER_ATM`: "ATM Non-STAR Financial Credit Union
   card Surcharge", "Non Co-Op Card ATM Withdrawals at TLC"); words that reach "ATM" or "machine" first

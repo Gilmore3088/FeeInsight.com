@@ -27,7 +27,8 @@ under the wrong type (#1788):
 - 14 fees re-filed in place: 4 international ATM, 3 sustained overdraft and 7 incoming wire.
 - 7 taken down after the second look: 5 add-ons, and 2 rows whose re-file a live twin at the same
   bank, type and amount blocks (14348, 98702).
-- 5 hand takedowns.
+- 5 hand takedowns, and 1 hand re-file: ServisFirst 66594, whose name gives no direction but whose
+  $10 is the incoming price on its line.
 - No batch reaches 20, so no switch holds them.
 
 **Lesson:** A section heading is not the fee type. When a line names a place (another country), a
