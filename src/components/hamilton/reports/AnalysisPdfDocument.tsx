@@ -24,6 +24,8 @@ import { hamiltonIdentityLines, readHamiltonIdentitySnapshot } from "@/lib/hamil
 import { savedEvidenceAppendix, type SavedEvidenceAppendix } from "@/lib/hamilton/evidence-export";
 import type { EvidenceBoundAnalyzeResponse } from "@/lib/hamilton/evidence-contract";
 import { getDisplayName } from "@/lib/fee-taxonomy";
+import { exportedAnswer } from "@/lib/hamilton/written-answer-binding";
+import { INTERPRETATION_LABEL } from "@/lib/hamilton/narrative-bound";
 
 // Words wrap whole; react-pdf's default hyphenation broke figures and words mid-way ("medi-an").
 Font.registerHyphenationCallback((word) => [word]);
@@ -228,6 +230,7 @@ function savedEvidence(analysis: AnalyzeResponse): SavedEvidenceAppendix | null 
 
 /** The two calculations Hamilton records, in words; any other formula prints as recorded. */
 const FORMULA_WORDS: Record<string, string> = {
+  "median of published peer amounts": "The median of the peers' published fees, one per peer",
   "left - right": "The first figure minus the second",
   "(current - prior) / prior * 100": "The change from the earlier figure, as a percent of it",
 };
@@ -267,7 +270,10 @@ export function AnalysisPdfDocument({
 
   // The title is the answer's whole first sentence (older answers saved an 80-character cut);
   // the view below carries the rest, so the lead is not printed twice.
-  const view = shapeHamiltonView(humanizeAnswerText(analysis.hamiltonView));
+  // The answer as the screen shows it (#981 H06-T08): left-out sentences stay out, and Hamilton's
+  // reading prints only under its own label.
+  const shown = exportedAnswer(analysis);
+  const view = shapeHamiltonView(humanizeAnswerText(shown.hamiltonView));
   const title = view.lead || analysis.title;
   const hamiltonViewParagraphs = view.paragraphs;
   const evidence = tidyEvidence(analysis.evidence.metrics);
@@ -279,7 +285,7 @@ export function AnalysisPdfDocument({
     .slice(0, 3);
   const tableRows = evidence.filter((m) => !tiles.some((t) => t.metric === m));
   // Implications longer than three sentences read as a list of points, not a block.
-  const meaningSentences = splitSentences(humanizeAnswerText(analysis.whatThisMeans ?? ""));
+  const meaningSentences = splitSentences(humanizeAnswerText(shown.whatThisMeans));
   const meaningAsList = meaningSentences.length > 3;
 
   const record = savedEvidence(analysis);
@@ -343,13 +349,26 @@ export function AnalysisPdfDocument({
         ) : null}
 
         {/* Why It Matters */}
-        {analysis.whyItMatters.length > 0 ? (
+        {shown.whyItMatters.length > 0 ? (
           <View style={styles.section} wrap={false}>
             <Text style={styles.sectionHeading}>Why It Matters</Text>
-            {analysis.whyItMatters.map((item, i) => (
+            {shown.whyItMatters.map((item, i) => (
               <View key={i} style={styles.bulletRow}>
                 <Text style={styles.bulletMark}>{"\u2022"}</Text>
                 <Text style={styles.bulletText}>{humanizeAnswerText(item)}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        {/* Hamilton's reading: sentences whose figures are not tied to a saved record */}
+        {shown.reading.length > 0 ? (
+          <View style={styles.section} wrap={false}>
+            <Text style={styles.sectionHeading}>{INTERPRETATION_LABEL}</Text>
+            {shown.reading.map((sentence, i) => (
+              <View key={i} style={styles.bulletRow}>
+                <Text style={styles.bulletMark}>{"\u2022"}</Text>
+                <Text style={styles.bulletText}>{humanizeAnswerText(sentence)}</Text>
               </View>
             ))}
           </View>

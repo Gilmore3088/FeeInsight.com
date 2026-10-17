@@ -80,10 +80,48 @@ describe("peer-first Ask rendering", () => {
     await act(async () => release(ok({ ...fixture, shortAnswer: "Stale answer must not appear." })));
     expect(screen.queryByText("Stale answer must not appear.")).toBeNull(); expect(lead).toHaveBeenCalledTimes(1);
   });
-  it("offers no unsupported export/report action for the new list type", async () => {
+  it("offers the list as a CSV file and no report action (#977, H02-T08)", async () => {
+    const created = vi.fn(() => "blob:peer-list");
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: created, revokeObjectURL: vi.fn() }));
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
     render(<PeerAwareStructuredAsk {...props} />); await screen.findByRole("table");
-    expect(screen.queryByRole("button", { name: /Download|report/i })).toBeNull();
-    expect(screen.getByText(/PDF and export are not available yet/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /report/i })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Download this list (CSV)" }));
+    expect(created).toHaveBeenCalledTimes(1);
+    const blob = (created.mock.calls[0] as unknown as [Blob])[0];
+    const text = await new Promise<string>((resolve) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.readAsText(blob); });
+    expect(text).toContain("Peer list for,Test CU");
+    expect(text).toContain("1,202,Alpha CU,Credit union,Orlando,FL,1000000000,2026-06-30,NCUA,,202,No published fees on file");
+    expect(text).toContain("3,204,Missing CU,Credit union,Orlando,FL,,,,,,No published fees on file");
+    expect(click).toHaveBeenCalledTimes(1);
+    click.mockRestore();
+  });
+  it("pages past 50 rows and keeps the shown page for follow-ups and saves (#977, H02-T08)", async () => {
+    const page = (offset: number, count: number): PeerListResponse => ({
+      kind: "peer_list", shortAnswer: `Page from ${offset + 1}`,
+      peerList: {
+        ...fixture.peerList,
+        criteria: { basis: "explicit_filters", charterType: "credit_union", states: ["FL"], minAssets: null, maxAssets: null, institutionIds: null, assetTiers: [], fedDistricts: [], peerSetId: null, peerSetLabel: null, sort: "largest_assets", referenceAssetsUsd: null, requiresAssets: false, limit: 50, requestedCount: null, descriptions: ["Credit unions; Florida."] },
+        rows: Array.from({ length: count }, (_, i) => peer(1000 + offset + i, `Peer ${offset + i + 1}`, 1_000_000)),
+        totalMatches: 60, ...(offset ? { offset } : {}),
+      },
+    });
+    fetcher.mockReset().mockResolvedValueOnce(ok(page(0, 50))).mockResolvedValueOnce(ok(page(50, 10)));
+    render(<PeerAwareStructuredAsk {...props} question="List all credit unions in Florida" />);
+    await screen.findByText("Page from 1");
+    expect(screen.queryByRole("button", { name: /Previous/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Next 10" }));
+    await screen.findByText("Page from 51");
+    expect(JSON.parse(fetcher.mock.calls[1][1].body)).toEqual({ question: "List all credit unions in Florida", institutionId: "101", peerListOffset: 50 });
+    expect(screen.getByRole("link", { name: "Peer 51" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Next/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "Previous 50" })).toBeTruthy();
+    fetcher.mockResolvedValueOnce({ ok: true, json: async () => ({ savedAnalysisId: "s1" }) });
+    fireEvent.click(screen.getByRole("button", { name: "Save this peer research" }));
+    await screen.findByText(/Research snapshot saved/);
+    expect(JSON.parse(fetcher.mock.calls[2][1].body)).toMatchObject({ question: "List all credit unions in Florida", peerListOffset: 50, savePeerResearchSnapshot: true });
+    // A first-turn list saves as a new list: a previousPeerList key, even null, reads as a follow-up and 409s.
+    expect(JSON.parse(fetcher.mock.calls[2][1].body)).not.toHaveProperty("previousPeerList");
   });
   it("provides a keyboard-focusable horizontal table region", () => {
     render(<PeerListView response={fixture} />);
@@ -211,6 +249,8 @@ describe("exact-list follow-ups within one Ask conversation", () => {
     await screen.findByText("Published NSF fees for 3 selected peers.");
     expect(within(screen.getByRole("table", { name: "Published NSF charges" })).getByText("$0")).toBeTruthy();
     expect(screen.getByText("Second separate fee")).toBeTruthy();
+    expect(within(screen.getByRole("table", { name: "Published NSF charges" })).getAllByText("Per item")).toHaveLength(2);
+    expect(screen.queryByText("per_item")).toBeNull();
     expect(screen.getAllByText("No published consumer NSF fee on file")).toHaveLength(2);
     expect(fetcher).toHaveBeenCalledTimes(2);
     expect(fallback).not.toHaveBeenCalled();

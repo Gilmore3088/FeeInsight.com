@@ -1363,6 +1363,13 @@ details[open] summary .expand-icon { transform: rotate(180deg); }
   border-radius: 2px;
 }
 
+/* ── Hamilton: one numeral face (H05 presentation contract) ──
+   Figures in Hamilton answers, tables and exhibits are Geist Sans with tabular digits. The
+   site-wide .tabular-nums rule and the report stylesheet's mono figures switch to Geist Mono;
+   inside the workspace both keep the sans face. Public reports and admin are unchanged. */
+.hamilton-shell .tabular-nums { font-family: inherit; }
+.hamilton-shell .rd { --rd-mono: var(--rd-sans); }
+
 /* ── Reduce motion for Hamilton shell ── */
 @media (prefers-reduced-motion: reduce) {
   .hamilton-shell > *,

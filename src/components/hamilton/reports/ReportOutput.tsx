@@ -1,4 +1,5 @@
 import { hamiltonIdentityLines, readHamiltonIdentitySnapshot } from "@/lib/hamilton/identity-display";
+import { INTERPRETATION_LABEL } from "@/lib/hamilton/narrative-bound";
 import type {
   ReportArtifactMetadata,
   ReportSummaryResponse,
@@ -157,6 +158,14 @@ function ConsultantReportBody({ report }: { report: ReportSummaryResponse }) {
 
       <ReportSection heading="What is behind it">
         <Paragraphs text={report.strategicRationale} />
+        {report.boardBrief?.reading?.length ? (
+          <section aria-label={INTERPRETATION_LABEL} className="mt-6 rounded-md border border-warm-300 bg-warm-50 px-4 py-3">
+            <p className="text-xs font-semibold text-warm-700">{INTERPRETATION_LABEL}</p>
+            <ul className="mt-1.5 flex list-disc flex-col gap-1 pl-5 text-sm leading-relaxed text-warm-800">
+              {report.boardBrief.reading.map((sentence) => <li key={sentence}>{sentence}</li>)}
+            </ul>
+          </section>
+        ) : null}
       </ReportSection>
 
       <ReportSection heading={report.boardBrief ? "Limits of this evidence" : "Trade-offs"}>

@@ -37,27 +37,32 @@ afterEach(() => {
 });
 
 describe("StructuredAsk clarification double-submit guard (#979 H04-T07)", () => {
-  it("sends a typed answer once for two submits before the page re-renders", async () => {
+  // The typed answer comes from the page's one composer (#979 H04-T03/T04): StructuredAsk has no
+  // text field of its own and sends each reply seq at most once while one is in flight.
+  it("sends a typed answer once for two replies before the page re-renders", async () => {
     const answers = stubEngine(asking("scenario.tested_price", "number", "What price are you testing?"));
-    render(<StructuredAsk question="what if we charged less?" institutionId="8109" modelHrefFor={() => "/"} />);
-    const box = await screen.findByRole("textbox", { name: "What price are you testing?" });
-    fireEvent.change(box, { target: { value: "25" } });
-    const answer = screen.getByRole("button", { name: "Answer" });
+    const onClarification = vi.fn();
+    const props = { question: "what if we charged less?", institutionId: "8109", modelHrefFor: () => "/", onClarification };
+    const view = render(<StructuredAsk {...props} />);
+    await screen.findByText("What price are you testing?");
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(onClarification).toHaveBeenLastCalledWith(expect.objectContaining({ fieldKey: "scenario.tested_price" }), null);
     act(() => {
-      fireEvent.click(answer);
-      fireEvent.click(answer);
+      view.rerender(<StructuredAsk {...props} clarificationReply={{ value: "25", seq: 1 }} />);
+      view.rerender(<StructuredAsk {...props} clarificationReply={{ value: "25", seq: 2 }} />);
     });
     await act(async () => {});
     expect(answers).toEqual([{ fieldKey: "scenario.tested_price", value: "25" }]);
   });
 
-  it("sends a typed answer once when the second submit lands after a re-render", async () => {
+  it("never resends the same reply on a re-render", async () => {
     const answers = stubEngine(asking("scenario.tested_price", "number", "What price are you testing?"));
-    render(<StructuredAsk question="what if we charged less?" institutionId="8109" modelHrefFor={() => "/"} />);
-    const box = await screen.findByRole("textbox", { name: "What price are you testing?" });
-    fireEvent.change(box, { target: { value: "25" } });
-    fireEvent.submit(box.closest("form")!);
-    fireEvent.submit(box.closest("form")!);
+    const props = { question: "what if we charged less?", institutionId: "8109", modelHrefFor: () => "/", onClarification: vi.fn() };
+    const view = render(<StructuredAsk {...props} />);
+    await screen.findByText("What price are you testing?");
+    view.rerender(<StructuredAsk {...props} clarificationReply={{ value: "25", seq: 1 }} />);
+    await act(async () => {});
+    view.rerender(<StructuredAsk {...props} clarificationReply={{ value: "25", seq: 1 }} />);
     await act(async () => {});
     expect(answers).toHaveLength(1);
   });

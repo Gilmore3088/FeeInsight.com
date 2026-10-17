@@ -156,6 +156,7 @@ export function parseMemo(raw: string): MemoDraft | null {
 const OMIT_FEEDBACK: Record<string, string> = {
   wrong_institution: "states another institution's figure as this one's",
   gap_as_fee: "states a gap between two fees as a fee",
+  median_as_fee: "states the peer median as an institution's own fee; call it the peer median",
   wrong_direction: "states a gap or change in the wrong direction",
   wrong_period: "states a figure for the wrong year",
   wrong_unit: "states a rate fee as a dollar amount",
