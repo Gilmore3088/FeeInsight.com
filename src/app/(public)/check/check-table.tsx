@@ -95,7 +95,7 @@ function Row({
   const domain = domainOf(row);
   const several = row.low !== row.high;
   const gapLabel = ref ? `vs ${ref.level === "state" ? (stateCode ?? "state") : "U.S."} median ` : "";
-  // The named account prices lead the row; the compared value stays benchmark detail.
+  // The named account prices lead the row; the compared value is named once, under the gap.
   const accounts = several ? accountPricesText(row.prices, row.amounts) : null;
   return (
     <li className="border-t border-border first:border-t-0">
@@ -140,7 +140,6 @@ function Row({
           </span>
         </summary>
         <div className="space-y-2 px-4 pb-4 sm:px-5">
-          {row.comparedAt && <p className="text-[12px] text-ink-muted sm:mx-0 sm:text-left">{row.comparedAt}.</p>}
           <div className="space-y-1">
             {row.state && <RangeBar label={stateCode ?? "State"} band={row.state} row={row} domain={domain} />}
             {row.nation && <RangeBar label="U.S." band={row.nation} row={row} domain={domain} />}
