@@ -141,6 +141,12 @@ describe("hand re-files of misread live fees (retidy v15 review, Oct 9)", () => 
   it("files every one under one of the 50, where the guard and price range accept its new name", () => {
     for (const refile of HAND_REFILES) {
       expect(RETIRED_CATEGORY_KEYS.has(refile.to), `${refile.feePublishedId}`).toBe(false);
+      // Guard v70 (#1765) answers 70319's open question: a gift card's inactivity is not a dormant
+      // account, so its rename no longer applies (the row has been down since Oct 16, #1196).
+      if (refile.feePublishedId === 70319) {
+        expect(passesDarwinChecks(refile.to, refile.name, refile.amount)).toBe(false);
+        continue;
+      }
       expect(passesDarwinChecks(refile.to, refile.name, refile.amount), `${refile.feePublishedId}`).toBe(true);
     }
   });

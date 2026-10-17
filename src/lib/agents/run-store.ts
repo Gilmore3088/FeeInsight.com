@@ -1884,6 +1884,9 @@ async function executeAgenticStep(
           category_guard_failing: categoryGuard.failingFees,
           category_guard_live_refiled: categoryGuard.liveRefiledFees,
           category_guard_version: categoryGuard.guardVersion,
+          // v70: live card-product misfiles held live while CARD_PRODUCT_TAKEDOWN_LIVE is off.
+          category_guard_card_product_pending: categoryGuard.cardProductPending,
+          category_guard_card_product_samples: categoryGuard.cardProductPendingSamples.slice(0, 10),
           category_guard_samples: categoryGuard.failures.slice(0, 10).map((failure) => ({
             fee_published_id: failure.feePublishedId,
             institution_id: failure.institutionId,
@@ -2180,6 +2183,8 @@ async function executeAgenticStep(
           restored_fees: guard.restoredFees,
           refiled_fees: guard.refiledFees,
           live_refiled_fees: guard.liveRefiledFees,
+          card_product_pending: guard.cardProductPending,
+          card_product_pending_samples: guard.cardProductPendingSamples,
           category_guard_limit: guard.limit,
           rollback_batch_id: guard.rollbackBatchId,
           guard_version: guard.guardVersion,

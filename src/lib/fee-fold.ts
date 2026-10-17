@@ -258,6 +258,16 @@ export const FOREIGN_DEPOSIT_RETURN = new RegExp(
 export const IRA_CLOSING =
   /^(?![\s\S]*\b(?:includ\w*|except\w*|exclud\w*|not applicable|other than|dda|checking|savings|money market|cds?|certificates?|clubs?|loans?)\b)(?=[\s\S]*\b(?:iras?|roth|individual retirement|retirement)\b)[\s\S]*\b(?:clos\w*|close-?outs?|terminat\w*)\b/i;
 
+/**
+ * Guard v70 (James, Oct 17): skipping a loan payment ("Skip-a-Pay", "Skip A Payment Fee", "Loan
+ * Extension (Skip-A-Pay)", "Holiday skip payment program") is a lending fee, not a late payment or a
+ * loan origination: 409 of 441 live skip-a-pay fees were already other lending. A line that also
+ * names an overdraft ("Auto overdraft from shares Loan Skip Payment fee") or says there is no fee
+ * stays where it is.
+ */
+export const SKIP_A_PAY =
+  /^(?![\s\S]*\b(?:overdraft|no[- ]fee|free)\b)[\s\S]*\bskip[- ]?(?:a[- ]?)?(?:loan[- ]?)?pay(?:ments?)?\b/i;
+
 /** A mortgage, lien or loan subordination; a wire line under a "Subordination Request" heading is not one. */
 export const SUBORDINATION = /^(?![\s\S]*subordination request:\s*(?:incoming|outgoing))[\s\S]*\bsubordinat/i;
 
@@ -471,12 +481,15 @@ export function splitCategoriesFor(options: {
     safe_deposit_box: { to: "night_deposit", name: NIGHT_DEPOSIT, sqlPattern: "night (deposit|drop)" },
     // A late charge on box rent is a safe deposit box fee, not a loan's late payment.
     // A statement or item copy is document reproduction, not a late payment.
+    // Guard v70: skipping a loan payment is a lending fee, not a late payment (James, Oct 17).
     late_payment: {
       to: "safe_deposit_box",
       name: BOX_RENT,
-      also: [{ to: "document_reproduction", name: FAX_OR_COPY }],
-      sqlPattern: "\\mbox|\\msdb\\M|\\msafe|\\mrent|fax|cop(y|ies)",
+      also: [{ to: "document_reproduction", name: FAX_OR_COPY }, { to: "other_lending_fee", name: SKIP_A_PAY }],
+      sqlPattern: "\\mbox|\\msdb\\M|\\msafe|\\mrent|fax|cop(y|ies)|skip",
     },
+    // Guard v70: nor a loan origination ("Loan Extension (Skip-A-Pay)").
+    loan_origination: { to: "other_lending_fee", name: SKIP_A_PAY, sqlPattern: "skip" },
     // Moving an IRA to another institution closes it here; it is not account research. An IRA's
     // excess withdrawal charge is a charge on the IRA itself, filed as IRA administration.
     // A fax or a document copy is document reproduction, not research, and so is a copy charged
