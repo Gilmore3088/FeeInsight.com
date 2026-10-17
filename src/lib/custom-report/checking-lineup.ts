@@ -5,6 +5,7 @@ import {
   type LineupSummary,
 } from "@/lib/data-store/account-lineup";
 import { BUSINESS_PRICE, maintenanceLineIsNotChecking } from "@/lib/data-store/custom-report-market";
+import { MIN_LOCAL_PEERS_PER_LINE } from "./analysis";
 
 /**
  * The checking account lineup for one institution against its market: each consumer checking
@@ -125,7 +126,12 @@ export function lineupCoverageLine(view: CheckingLineupView): string {
  * the same floor the report's fee lines use, so a figure from two schedules never reads as a
  * market benchmark.
  */
-export const MIN_LINEUP_PEERS_FOR_MEDIAN = 8;
+export const MIN_LINEUP_PEERS_FOR_MEDIAN = MIN_LOCAL_PEERS_PER_LINE;
+
+/** True for a cell that carries no figure: unstated, or withheld below the floor. */
+export function isNoFigure(text: string): boolean {
+  return text === NOT_STATED || text.startsWith(TOO_FEW);
+}
 
 /** "Yes", or "None found": a missing no-fee account may only be missing from the schedules reviewed. */
 export function noFeeAccountText(summary: Pick<LineupSummary, "accounts" | "shareWithFreeAccount">): string {
@@ -133,12 +139,14 @@ export function noFeeAccountText(summary: Pick<LineupSummary, "accounts" | "shar
   return summary.shareWithFreeAccount !== null && summary.shareWithFreeAccount > 0 ? "Yes" : "None found";
 }
 
+export const TOO_FEW = "Too few to compare";
+
 const reporting = (n: number) => `${plural(n, "competitor", "competitors")} reporting`;
 
 /** A competitor median beside how many competitors it rests on; withheld below the floor. */
 function marketMedian(value: number | null, peersStating: number): string {
   if (peersStating === 0 || value === null) return NOT_STATED;
-  if (peersStating < MIN_LINEUP_PEERS_FOR_MEDIAN) return `Too few to compare · ${reporting(peersStating)}`;
+  if (peersStating < MIN_LINEUP_PEERS_FOR_MEDIAN) return `${TOO_FEW} · ${reporting(peersStating)}`;
   return `${lineupMoney(value)} · ${reporting(peersStating)}`;
 }
 
@@ -151,7 +159,7 @@ export function lineupMeasures(view: CheckingLineupView): { label: string; yours
     {
       label: "Checking accounts with a monthly fee line",
       yours: subject.accounts.toLocaleString("en-US"),
-      market: market(`${peers.accounts.toLocaleString("en-US")} at ${plural(peersWithLineup, "competitor", "competitors")}`),
+      market: market(`${peers.accounts.toLocaleString("en-US")} across ${plural(peersWithLineup, "competitor", "competitors")}`),
     },
     { label: "Lowest monthly fee", yours: lineupMoney(subject.lowestMonthlyFee), market: market(`${lineupMoney(peers.lowestMonthlyFee)} · ${reporting(peersWithLineup)}`) },
     { label: "Median monthly fee", yours: lineupMoney(subject.medianMonthlyFee), market: market(marketMedian(peers.medianMonthlyFee, peersWithLineup)) },

@@ -5,10 +5,13 @@
  */
 import { PRODUCT_NAME } from "@/lib/constants";
 import {
+  MIN_LINEUP_PEERS_FOR_MEDIAN,
   NOT_STATED,
+  isNoFigure,
   lineupCoverageLine,
   lineupMeasures,
   lineupMoney,
+  noFeeAccountText,
   type CheckingLineupView,
 } from "@/lib/custom-report/checking-lineup";
 
@@ -18,7 +21,7 @@ const TH = "px-4 py-2 font-medium";
 const NUM = "px-4 py-2 text-right [font-variant-numeric:tabular-nums]";
 
 function Muted({ children }: { children: string }) {
-  return children === NOT_STATED ? <span className="text-warm-600">{children}</span> : <>{children}</>;
+  return isNoFigure(children) ? <span className="text-warm-600">{children}</span> : <>{children}</>;
 }
 
 export function CheckingLineupPanel({ name, lineup }: { name: string; lineup: CheckingLineupView }) {
@@ -94,7 +97,7 @@ export function CheckingLineupPanel({ name, lineup }: { name: string; lineup: Ch
                 <th className={`${TH} text-right`}>Accounts</th>
                 <th className={`${TH} text-right`}>Lowest fee</th>
                 <th className={`${TH} text-right`}>Median fee</th>
-                <th className={`${TH} text-right`}>No-fee account</th>
+                <th className={`${TH} text-right`}>No-fee account found</th>
                 <th className={`${TH} text-right`}>Median balance to avoid</th>
               </tr>
             </thead>
@@ -105,7 +108,7 @@ export function CheckingLineupPanel({ name, lineup }: { name: string; lineup: Ch
                   <td className={`${NUM} text-warm-800`}>{peer.summary.accounts}</td>
                   <td className={`${NUM} text-warm-800`}>{lineupMoney(peer.summary.lowestMonthlyFee)}</td>
                   <td className={`${NUM} text-warm-800`}>{lineupMoney(peer.summary.medianMonthlyFee)}</td>
-                  <td className="px-4 py-2 text-right text-warm-800">{peer.summary.shareWithFreeAccount === 1 ? "Yes" : "No"}</td>
+                  <td className="px-4 py-2 text-right text-warm-800"><Muted>{noFeeAccountText(peer.summary)}</Muted></td>
                   <td className={`${NUM} text-warm-800`}><Muted>{lineupMoney(peer.summary.medianMinBalanceToAvoid)}</Muted></td>
                 </tr>
               ))}
@@ -118,7 +121,7 @@ export function CheckingLineupPanel({ name, lineup }: { name: string; lineup: Ch
         {PRODUCT_NAME}: verified monthly maintenance fees on each institution&apos;s own published schedule, consumer checking
         only.
         {lineup.peerRows.length > shownPeers.length ? ` Showing ${shownPeers.length} of ${lineup.peerRows.length} competitors, largest deposits in ${name}'s market first.` : ""}
-        {` "${NOT_STATED[0].toUpperCase() + NOT_STATED.slice(1)}" means the schedule does not state it; it is not a zero.`}
+        {` "${NOT_STATED[0].toUpperCase() + NOT_STATED.slice(1)}" means the schedule does not state it; it is not a zero. "None found" means no no-fee checking account appears in the schedules reviewed. A competitor median needs at least ${MIN_LINEUP_PEERS_FOR_MEDIAN} competitors stating the figure.`}
         {lineup.leftOut > 0
           ? ` ${lineup.leftOut.toLocaleString("en-US")} savings, money market, certificate, IRA or business ${lineup.leftOut === 1 ? "line is" : "lines are"} left out.`
           : ""}

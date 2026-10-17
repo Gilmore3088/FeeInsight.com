@@ -11,6 +11,7 @@ import {
   lineupMeasures,
   lineupMoney,
   MIN_LINEUP_PEERS_FOR_MEDIAN,
+  isNoFigure,
   noFeeAccountText,
   type CheckingLineupView,
 } from "@/lib/custom-report/checking-lineup";
@@ -22,7 +23,19 @@ import { ShowAll } from "./show-all";
 const DERIVED_MARK = "†";
 
 function Muted({ children }: { children: string }) {
-  return children === NOT_STATED ? <span className="text-ink-muted">{children}</span> : <>{children}</>;
+  return isNoFigure(children) ? <span className="text-ink-muted">{children}</span> : <>{children}</>;
+}
+
+/** A market cell: the figure, then how many competitors it rests on, on its own line. */
+function MarketCell({ children }: { children: string }) {
+  const [figure, count] = children.split(" · ");
+  if (!count) return <Muted>{children}</Muted>;
+  return (
+    <>
+      <Muted>{figure}</Muted>
+      <span className="block text-[12px] text-ink-muted">{count}</span>
+    </>
+  );
 }
 
 /**
@@ -37,7 +50,7 @@ export function lineupFinding(name: string, lineup: CheckingLineupView): string 
       : `${name} lists ${subject.accounts.toLocaleString("en-US")} checking ${subject.accounts === 1 ? "account" : "accounts"} with a monthly fee line`;
   if (peersWithLineup === 0) return `${own}, and no local competitor has a checking lineup on file yet.`;
   const free = lineup.peersWithFreeAccount;
-  return `${own}; in the schedules reviewed, ${free.toLocaleString("en-US")} of the ${peersWithLineup.toLocaleString("en-US")} local competitors with a checking lineup on file ${free === 1 ? "lists" : "list"} a no-fee checking account.`;
+  return `${own}; ${free.toLocaleString("en-US")} of the ${peersWithLineup.toLocaleString("en-US")} local competitors with a checking lineup on file ${free === 1 ? "lists" : "list"} a no-fee checking account in the schedules reviewed.`;
 }
 
 export function CheckingLineupSection({ name, lineup, live }: { name: string; lineup: CheckingLineupView; live?: boolean }) {
@@ -81,7 +94,7 @@ export function CheckingLineupSection({ name, lineup, live }: { name: string; li
             <tr key={m.label} className="border-b border-surface-200 last:border-0">
               <td className="py-2 pr-3 text-ink">{m.label}</td>
               <td className="py-2 pr-3 text-right tabular-nums"><Muted>{m.yours}</Muted></td>
-              <td className="py-2 text-right tabular-nums"><Muted>{m.market}</Muted></td>
+              <td className="py-2 text-right tabular-nums"><MarketCell>{m.market}</MarketCell></td>
             </tr>
           ))}
         </tbody>
