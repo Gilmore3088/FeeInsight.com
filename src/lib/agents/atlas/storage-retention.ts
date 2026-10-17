@@ -38,11 +38,11 @@ type SqlTag = typeof sql;
 
 export const STORAGE_STEP_KEY = "atlas-storage-retention";
 
-/** Each switch turns on by PR, only after James's typed yes naming that trim. */
+/** Each switch turns on by PR, only after James's yes naming that trim (all three: Oct 17, 2026). */
 export const RETENTION_LIVE = {
-  legacy_event_log: false,
-  run_events: false,
-  attempt_repeats: false,
+  legacy_event_log: true,
+  run_events: true,
+  attempt_repeats: true,
 } as const;
 
 export type RetentionPolicy = keyof typeof RETENTION_LIVE;

@@ -11,6 +11,8 @@ import {
 
 type Row = Record<string, unknown>;
 
+const OFF = { legacy_event_log: false, run_events: false, attempt_repeats: false };
+
 /** A tagged-template db mock that answers by the SQL it sees and records every statement. */
 function mockDb(answers: { previous?: Row[]; attemptRead?: Row; legacy?: number; runEvents?: number; deleted?: number }) {
   const calls: string[] = [];
@@ -31,8 +33,8 @@ function mockDb(answers: { previous?: Row[]; attemptRead?: Row; legacy?: number;
 }
 
 describe("RETENTION_LIVE", () => {
-  it("ships with every trim switched off until James says yes", () => {
-    expect(Object.values(RETENTION_LIVE).every((on) => on === false)).toBe(true);
+  it("has all three trims on, after James chose all three on Oct 17, 2026", () => {
+    expect(RETENTION_LIVE).toEqual({ legacy_event_log: true, run_events: true, attempt_repeats: true });
   });
   it("never trims the stages whose readers count misses and retries", () => {
     expect([...ATTEMPT_REPEAT_STAGES]).toEqual(["extract", "verify", "publish"]);
@@ -47,7 +49,7 @@ describe("runStorageRetention", () => {
       runEvents: 0,
       attemptRead: { read: "120", through_id: "999", repeats: "40" },
     });
-    const result = await runStorageRetention({ db });
+    const result = await runStorageRetention({ db, live: OFF });
     expect(result.databaseMb).toBe(6340);
     expect(result.growthMb).toBe(340);
     expect(result.alerts).toEqual(["grew 340 MB since the last run, above 300 MB"]);
@@ -67,7 +69,7 @@ describe("runStorageRetention", () => {
       attemptRead: { read: String(ATTEMPT_WINDOW), through_id: "205000", repeats: "3" },
       deleted: 3,
     });
-    const result = await runStorageRetention({ db, live: { attempt_repeats: true } });
+    const result = await runStorageRetention({ db, live: { ...OFF, attempt_repeats: true } });
     const deletes = calls.filter((c) => c.includes("DELETE FROM"));
     expect(deletes).toHaveLength(1);
     expect(deletes[0]).toContain("DELETE FROM pipeline_attempts");
@@ -118,7 +120,7 @@ describe("storageAlerts and summary", () => {
   });
   it("says what each trim would remove while it is off", async () => {
     const { db } = mockDb({ legacy: 1200, runEvents: 0, attemptRead: { read: "10", through_id: "10", repeats: "4" } });
-    const result = await runStorageRetention({ db });
+    const result = await runStorageRetention({ db, live: OFF });
     expect(summarizeStorageRetention(result)).toBe(
       "Database 6,340 MB. Trims: old rows of the retired event log: 1,200 (off); run events over 90 days old: 0 (off); exact repeats in the attempt log: 4 (off).",
     );
