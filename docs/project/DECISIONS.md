@@ -1176,3 +1176,12 @@ done"): keep named leaders printed without an address, widen the contact finder 
 comparison-ready institution, and add rural institutions with a statewide comparison. On Oct 17
 only 11 of 256 comparison-ready $500M-$2B metro institutions had a decision-maker contact
 (`/mnt/project-files/sales/contact-gap-2026-10-17.md`); the three waves need 45.
+
+**Public data gets its own agent, Edgar.** James, 2026-10-17 17:40 UTC (Public data loaders thread):
+"I think they should have their own agent ... Edgar since he will be spying on all data", and "we
+need a play for all data, and easy future connections". Edgar owns the registry loaders: collect,
+validate, link, store, roll up, serve and monitor. Magellan keeps bank fee schedules. The play is
+one contract per source (`src/lib/agents/edgar/`), so that a new connection needs only a contract
+and a parser. Serving the data already loaded to Hamilton comes before adding new sources. SEC's
+EDGAR is also one of the sources; Edgar's screens call it "SEC filings".
+
