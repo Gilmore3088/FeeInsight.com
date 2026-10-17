@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MarketFeeLine } from "@/lib/data-store/custom-report-market";
-import { amountBasis, buildAmountEvidence, educationalPage, evidenceProblem, quoteNamesOtherFee, quoteStatesFigure } from "./evidence";
+import { amountBasis, buildAmountEvidence, educationalPage, evidenceProblem, problemReason, quoteNamesOtherFee, quoteStatesFigure, scopeProblem } from "./evidence";
 
 const READ = "2026-10-15";
 
@@ -113,5 +113,74 @@ describe("quoteNamesOtherFee (sample market, 17 Oct 2026)", () => {
     expect(quoteNamesOtherFee("monthly_maintenance", "A service charge of $5 will be imposed every statement cycle the daily balance falls below $500", 5)).toBe(false);
     expect(quoteNamesOtherFee("paper_statement", "Paper statements are available for an additional $2 per month", 2)).toBe(false);
     expect(quoteNamesOtherFee("stop_payment", "$33.00 each", 33)).toBe(false);
+  });
+});
+
+describe("comparison rules (James, 17 Oct): add-ons and ATMs abroad stay out of the lines", () => {
+  const rec = (product: string, amount: number, quote: string) => ({ product, amount, quote, source_url: "https://bank.example/fees.pdf" });
+
+  it("leaves First Commerce's ATM surcharge-refund add-on out of monthly maintenance and keeps its checking option", () => {
+    const addOn = rec("For a monthly fee", 2.99, "First Commerce offers the ATM Freedom add-on for the Power Checking account. For a monthly fee of $2.99, you’ll get unlimited surcharge refunds on withdrawals");
+    expect(evidenceProblem("monthly_maintenance", addOn)).toBe("add_on_feature");
+    expect(problemReason("monthly_maintenance", "add_on_feature", addOn)).toBe("ATM surcharge-refund add-on, not account maintenance");
+    const option = rec("Power Checking + CoverMe Monthly service charge", 3.99, "Power Checking + CoverMe - $3.99/month");
+    expect(evidenceProblem("monthly_maintenance", option)).toBeNull();
+  });
+
+  it("reads identity protection and perks packages in the fee's name, but keeps an account whose line lists them", () => {
+    expect(scopeProblem("monthly_maintenance", rec("ID TheftSmart Fee", 2, "ID TheftSmart | $2.00"))).toBe("add_on_feature");
+    expect(problemReason("monthly_maintenance", "add_on_feature", rec("Identity Protection monthly fee", 6, "$6"))).toBe("identity-protection add-on, not account maintenance");
+    expect(scopeProblem("monthly_maintenance", rec("Rewards package monthly fee", 5, "$5"))).toBe("add_on_feature");
+    // A premium account that includes ATM refunds is the account's own fee.
+    expect(scopeProblem("monthly_maintenance", rec("Premier Checking Monthly service fee", 25, "Monthly service fee $25. Includes refunds of non-bank ATM surcharges"))).toBeNull();
+  });
+
+  it("keeps PNC's and Fifth Third's withdrawals abroad out of the domestic ATM line", () => {
+    const abroad = rec("Non-PNC Bank ATM Fee (All Other Countries)", 5, "At non-PNC Bank ATMs in all other countries ........ $5.00 each");
+    expect(scopeProblem("atm_non_network", abroad)).toBe("international_atm");
+    expect(problemReason("atm_non_network", "international_atm", abroad)).toBe("international ATM withdrawal, not domestic");
+    expect(scopeProblem("atm_non_network", rec("Non-PNC Bank ATM Fee (US, Canada, Puerto Rico, US Virgin Islands)", 3, "Puerto Rico and the U.S. Virgin Islands ........ $3.00 each"))).toBeNull();
+    const fifth = rec("Non-Fifth Third ATM Fee", 5, "Transaction Amount; International ATM Withdrawal: $5.00; Non-Fifth Third");
+    expect(scopeProblem("atm_non_network", fifth)).toBe("international_atm");
+    expect(scopeProblem("atm_non_network", rec("Non-Fifth Third ATM Transaction", 3.5, "do not complete a fund transfer). Non-Fifth Third ATM Transaction: $3.50 per"))).toBeNull();
+    // One price for domestic and international ATMs together is the network fee (fee-fold.ts).
+    expect(scopeProblem("atm_non_network", rec("ATMs inside United States & internationally", 3, "ATMs inside United States & internationally | $3"))).toBeNull();
+    expect(scopeProblem("atm_non_network", rec("Foreign ATM Withdrawal", 2.49, "ATM Transactions - Foreign ATM Withdrawal | $2.49 Per Transaction"))).toBeNull();
+  });
+
+  it("averages PNC's ATM line from its domestic price alone", () => {
+    const pnc: MarketFeeLine = {
+      institution_id: 8, line: "atm_non_network", id: 1, amount: 4, fee_name: "Non-PNC Bank ATM Fee", source_url: "https://pnc.example/fees.pdf", updated_at: null, schedule_read_on: READ, source_line: "",
+      tiers: [
+        { id: 13164, amount: 5, fee_name: "Non-PNC Bank ATM Fee (All Other Countries)", source_line: "At non-PNC Bank ATMs in all other countries ........ $5.00 each" },
+        { id: 13165, amount: 3, fee_name: "Non-PNC Bank ATM Fee (US, Canada, Puerto Rico, US Virgin Islands)", source_line: "Puerto Rico and the U.S. Virgin Islands ........ $3.00 each" },
+      ],
+    };
+    const evidence = buildAmountEvidence(pnc);
+    expect(evidence).toMatchObject({ amount: 3, basis: "published price" });
+    expect(evidence.excluded).toEqual([expect.objectContaining({ record_id: 13164, problem: "international_atm", reason: "international ATM withdrawal, not domestic" })]);
+  });
+});
+
+describe("problemReason names what the quote describes and the fee it is not", () => {
+  const rec = (product: string, amount: number, quote: string, source_url = "https://bank.example/fees.pdf") => ({ product, amount, quote, source_url });
+
+  it("for a quote that gives the amount to a different fee", () => {
+    expect(problemReason("overdraft", "quote_names_other_fee", rec("Overdraft Fee", 36, "not qualify as a direct deposit. | Sustained Overdraft Fee of $36.00. This"))).toBe("sustained overdraft, not per-item overdraft");
+    expect(problemReason("wire_domestic_outgoing", "quote_names_other_fee", rec("Domestic Wire", 10, "Domestic Wire Transfer Fees | Incoming - $10.00 Outgoing - $20.00"))).toBe("incoming wire, not outgoing domestic wire");
+    expect(problemReason("monthly_maintenance", "quote_names_other_fee", rec("Monthly fee", 3, "Paper statements | $3 monthly fee | Free for customers aged 60+, otherwise $3 monthly fee"))).toBe("paper statements, not account maintenance");
+  });
+
+  it("for an article, and only for a truly absent amount says the quote does not show it", () => {
+    expect(problemReason("overdraft", "not_a_fee_schedule", rec("Overdraft", 35, "The amount for overdraft fees varies, but $35 each occurrence is common.", "https://www.td.com/us/en/personal-banking/learning/money-management/types-of-checking-accounts"))).toBe("educational article, not the bank's fee schedule");
+    expect(problemReason("stop_payment", "quote_without_amount", rec("Stop payment", 30, "Stop payment | $5"))).toBe("the quote does not show the amount");
+  });
+
+  it("is carried on every left-out record the builder returns", () => {
+    const td: MarketFeeLine = {
+      institution_id: 12, line: "monthly_maintenance", id: 64716, amount: 3, fee_name: "Monthly fee", source_url: "https://td.example/fees", updated_at: null, schedule_read_on: READ,
+      source_line: "Paper statements | $3 monthly fee | Free for customers aged 60+, otherwise $3 monthly fee",
+    };
+    expect(buildAmountEvidence(td).excluded[0]).toMatchObject({ problem: "quote_names_other_fee", reason: "paper statements, not account maintenance" });
   });
 });

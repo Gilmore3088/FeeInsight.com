@@ -27,7 +27,9 @@ export const CONDITIONAL_VARIANT = "^(?!.*(no (fee|charge)|waive|exempt|not char
 export const FEE_LINE_RULES: FeeLineRule[] = [
   {
     key: "monthly_maintenance",
-    label: "Monthly maintenance (entry checking)",
+    // One basis for the institution and every competitor alike: each one's median eligible
+    // checking-account price (`institutionValue`), since few schedules name an entry account.
+    label: "Monthly maintenance (median checking price)",
     sourceKeys: ["monthly_maintenance", "minimum_balance"],
     include: "(maintenance|monthly service|service charge|monthly fee)",
     exclude:
@@ -60,7 +62,8 @@ export const FEE_LINE_RULES: FeeLineRule[] = [
   },
   {
     key: "atm_non_network",
-    label: "Out-of-network ATM",
+    // Domestic withdrawals only: a withdrawal abroad is left out by the evidence builder.
+    label: "Out-of-network ATM (domestic)",
     sourceKeys: ["atm_non_network"],
     include: "atm",
     // A balance-inquiry-only fee is a different charge; one that also covers withdrawals or

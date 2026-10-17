@@ -16,7 +16,7 @@ import {
 } from "@/lib/custom-report/analysis";
 import type { MarketReport } from "@/lib/custom-report/report-data";
 import type { MarketBranchFootprint } from "@/lib/data-store/branches";
-import { incomeLabel, quarterLabel, type RevenueContext } from "@/lib/custom-report/revenue-context";
+import { incomeLabel, quarterLabel, shareLabel, type RevenueContext } from "@/lib/custom-report/revenue-context";
 import { SinceBought, sinceBoughtFinding } from "./[token]/at-a-glance";
 import { HamiltonClose } from "./[token]/hamilton-close";
 import type { CheckingLineupView } from "@/lib/custom-report/checking-lineup";
@@ -24,7 +24,7 @@ import { CheckingLineupSection } from "./checking-lineup-section";
 import { HubSection, KICKER } from "@/app/(public)/research/district/[id]/district-hub";
 import { Disclosure } from "./disclosure";
 import { ShowAll } from "./show-all";
-import { EXTRA_ROW, ROWS_SHOWN, countiesText, headlineFinding, identifiedText, leftOutNote, marketFinding, widestGapFinding } from "./report-view";
+import { EXTRA_ROW, ROWS_SHOWN, countiesText, headlineFinding, identifiedText, leftOutNote, marketFinding, reviewPriorities, widestGapFinding } from "./report-view";
 import { FeeComparison } from "./fee-comparison";
 import { PrintOpen } from "./print-open";
 
@@ -165,9 +165,18 @@ function RevenueSection({ name, charterType, revenue }: { name: string; charterT
           {revenue.trailingThousands !== null && <Tile label={`${name}, last four quarters`} value={incomeLabel(revenue.trailingThousands)} />}
           {peer && <Tile label={`Median of ${peer.count.toLocaleString("en-US")} ${peer.population ?? "institutions"} its size, ${quarterLabel(latest.quarter)}`} value={incomeLabel(peer.medianThousands)} />}
         </dl>
+        {peer && peer.feeShare != null && peer.peerMedianFeeShare != null && (
+          <>
+            <p className={`${FIGURE_CAPTION} mt-8`}>{creditUnion ? "Fee income" : "Service charges"} as a share of revenue, {quarterLabel(latest.quarter)}</p>
+            <dl className="mt-4 grid grid-cols-1 gap-6 sm:grid-cols-3">
+              <Tile label={`${name}, share of revenue (net interest plus noninterest income)`} value={shareLabel(peer.feeShare)} />
+              <Tile label={`Median of the same ${peer.count.toLocaleString("en-US")} ${peer.population ?? "institutions"}`} value={shareLabel(peer.peerMedianFeeShare)} />
+            </dl>
+          </>
+        )}
         {population && (
           <p className="mt-4 text-[13px] text-ink-soft sm:mx-0 sm:text-left">
-            Compared with {population}. {peer?.population === "banks" ? "Credit unions are left out: their NCUA fee income is a wider measure than bank service charges." : peer?.population === "credit unions" ? "Banks are left out: their service charges are a narrower measure than NCUA fee income." : ""}
+            Compared with {population}; the {peer?.tierLabel.replace(/\s*-\s*/, " to ")} asset band is broad, so the rank in dollars partly reflects size. {peer?.population === "banks" ? "Credit unions are left out: their NCUA fee income is a wider measure than bank service charges." : peer?.population === "credit unions" ? "Banks are left out: their service charges are a narrower measure than NCUA fee income." : ""}
           </p>
         )}
       </figure>
@@ -191,6 +200,8 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
     (a, b) => (b.market_deposits ?? -1) - (a.market_deposits ?? -1) || a.institution_name.localeCompare(b.institution_name),
   );
   const ownDeposits = branches?.byInstitution[data.subject.institution_id]?.deposits ?? null;
+  const PriorityHeading = Title === "h1" ? "h2" : "h3";
+  const priorities = reviewPriorities(name, analysis.lines, { lineup, revenue });
   const ownShare = branches && ownDeposits !== null && branches.totalDeposits > 0 ? (ownDeposits / branches.totalDeposits) * 100 : null;
 
   return (
@@ -204,6 +215,18 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
           </Title>
           {analysis.readiness.ready && (
             <p className="mx-auto mt-3 text-[18px] font-semibold leading-snug text-ink sm:mx-0 sm:text-[21px]">{headlineFinding(analysis.lines)}</p>
+          )}
+          {analysis.readiness.ready && priorities.length > 0 && (
+            <section aria-labelledby="priorities-heading" className="mx-auto mt-5 max-w-3xl border-l-2 border-brick pl-4 text-left sm:mx-0">
+              <PriorityHeading id="priorities-heading" className="text-[13px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
+                Priorities for review
+              </PriorityHeading>
+              <ul className="mt-2 space-y-1.5 text-[15px] leading-snug text-ink">
+                {priorities.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </section>
           )}
           <p className="mx-auto mt-3 text-[14px] text-ink-soft sm:mx-0">
             {counties} · prepared {DATE.format(preparedOn)} by {SITE_NAME}
@@ -360,6 +383,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                 <li>
                   When an institution publishes several prices for one fee, the range is shown and the comparison uses the value the
                   Bank Fee Index counts for it: the middle of its prices, or for overdraft its standard fee, the highest of its prices.
+                  Monthly maintenance uses the same basis for {name} and every competitor: each one&apos;s median eligible checking price.
                   Opening a fee lists each of those prices with its account, the line that states it and its source.
                 </li>
                 <li>
@@ -387,8 +411,10 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                   {droppedCount > 0 ? ` (${droppedCount} published figures in this market)` : ""}.
                 </li>
                 <li>
-                  Also left out: a price whose quoted line does not state it, and a price read from a general article about fees
-                  {evidenceLeftOut > 0 ? ` (${evidenceLeftOut} in this market)` : ""}. The medians are worked out without them.
+                  Also left out: a price whose quoted line does not state it or gives it for a different fee, a price read from a
+                  general article about fees, an optional add-on&apos;s charge on the checking line, and an ATM withdrawal outside
+                  the U.S.{evidenceLeftOut > 0 ? ` (${evidenceLeftOut} in this market)` : ""}. Each is listed under its fee with its reason.
+                  The medians are worked out without them.
                 </li>
               </ul>
             </Disclosure>

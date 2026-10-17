@@ -6,6 +6,7 @@ import {
 } from "@/lib/data-store/account-lineup";
 import { BUSINESS_PRICE, maintenanceLineIsNotChecking } from "@/lib/data-store/custom-report-market";
 import { MIN_LOCAL_PEERS_PER_LINE } from "./analysis";
+import { ADD_ON_FEATURE, ADD_ON_IN_QUOTE } from "./evidence";
 
 /**
  * The checking account lineup for one institution against its market: each consumer checking
@@ -21,14 +22,16 @@ export const NOT_STATED = "not stated";
 const CHECKING_NAME = /\b(checking|share drafts?)\b/i;
 
 /**
- * A consumer checking account: not a business price, and not a savings, money market,
- * certificate or IRA fee. An account that names itself as checking stays in even when its
+ * A consumer checking account: not a business price, not an optional add-on's charge (ATM
+ * refunds, identity protection), and not a savings, money market, certificate or IRA fee. An account that names itself as checking stays in even when its
  * schedule line mentions savings (a waiver with a linked savings account); an unnamed monthly
  * fee is judged by its schedule line, the same test the report's monthly maintenance line uses.
  */
 export function isConsumerCheckingAccount(account: Pick<LineupAccount, "productName" | "feeName" | "sourceLine">): boolean {
   const names = [account.productName ?? "", account.feeName].join(" ");
   if (BUSINESS_PRICE.test(names)) return false;
+  // An optional add-on's monthly charge is not an account, by the fee comparison's own rule (evidence.ts).
+  if (ADD_ON_FEATURE.test(names) || ADD_ON_IN_QUOTE.test(account.sourceLine ?? "")) return false;
   if (CHECKING_NAME.test(names)) return true;
   return ![names, account.sourceLine ?? ""].some((text) => maintenanceLineIsNotChecking("monthly_maintenance", text));
 }
@@ -56,7 +59,7 @@ export interface CheckingLineupView {
   peerChargingAccounts: number;
   /** One row per competitor with a lineup, in the order the caller gave (largest first). */
   peerRows: (LineupPeer & { summary: LineupSummary })[];
-  /** Monthly fee rows left out as savings, money market, certificate, IRA or business. */
+  /** Monthly fee rows left out as savings, money market, certificate, IRA, business or an add-on. */
   leftOut: number;
   /** True when any figure shown was read from the schedule line rather than stored. */
   anyDerived: boolean;
@@ -162,7 +165,18 @@ export function lineupMeasures(view: CheckingLineupView): { label: string; yours
       market: market(`${peers.accounts.toLocaleString("en-US")} across ${plural(peersWithLineup, "competitor", "competitors")}`),
     },
     { label: "Lowest monthly fee", yours: lineupMoney(subject.lowestMonthlyFee), market: market(`${lineupMoney(peers.lowestMonthlyFee)} · ${reporting(peersWithLineup)}`) },
-    { label: "Median monthly fee", yours: lineupMoney(subject.medianMonthlyFee), market: market(marketMedian(peers.medianMonthlyFee, peersWithLineup)) },
+    {
+      // Every account pooled, not one value per institution: the fee comparison's local median of
+      // monthly maintenance is the median of each competitor's own median checking price, so the
+      // two figures differ by method and population, and each says which beside it.
+      label: "Median monthly fee, every account pooled",
+      yours: lineupMoney(subject.medianMonthlyFee),
+      market: market(
+        peersWithLineup < MIN_LINEUP_PEERS_FOR_MEDIAN
+          ? marketMedian(peers.medianMonthlyFee, peersWithLineup)
+          : `${lineupMoney(peers.medianMonthlyFee)} · median of ${plural(peers.accounts, "account", "accounts")} pooled across ${plural(peersWithLineup, "competitor", "competitors")}`,
+      ),
+    },
     {
       label: "No-fee checking account found in the schedules reviewed",
       yours: noFeeAccountText(subject),

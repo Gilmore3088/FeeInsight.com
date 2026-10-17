@@ -128,3 +128,17 @@ describe("lineupMoney and lineupShare", () => {
     expect(lineupShare(null)).toBe(NOT_STATED);
   });
 });
+
+describe("the lineup's comparison rules", () => {
+  it("leaves out an optional add-on's monthly charge, as the fee comparison does", () => {
+    expect(isConsumerCheckingAccount(account({ feeName: "For a monthly fee", sourceLine: "First Commerce offers the ATM Freedom add-on for the Power Checking account. For a monthly fee of $2.99" }))).toBe(false);
+    expect(isConsumerCheckingAccount(account({ productName: "Power Checking + CoverMe", feeName: "Power Checking + CoverMe Monthly service charge" }))).toBe(true);
+  });
+
+  it("labels its median as every account pooled, with the accounts and competitors it rests on", () => {
+    const peers = Array.from({ length: MIN_LINEUP_PEERS_FOR_MEDIAN }, (_, i) => ({ institutionId: 10 + i, name: `Peer ${i}` }));
+    const accounts = peers.flatMap((p) => [account({ institutionId: p.institutionId, monthlyFee: 5 }), account({ institutionId: p.institutionId, monthlyFee: 12 })]);
+    const median = lineupMeasures(buildCheckingLineup(1, peers, accounts)).find((m) => m.label === "Median monthly fee, every account pooled");
+    expect(median?.market).toBe(`$8.50 · median of ${MIN_LINEUP_PEERS_FOR_MEDIAN * 2} accounts pooled across ${MIN_LINEUP_PEERS_FOR_MEDIAN} competitors`);
+  });
+});

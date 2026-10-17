@@ -1,7 +1,7 @@
 import type { CustomReportMarketData, MarketFeeLine, MarketInstitution } from "@/lib/data-store/custom-report-market";
 import { countyLabel } from "@/lib/geo/counties";
 import { FEE_LINE_BASIS, FEE_LINE_LABELS, FEE_LINE_RULES } from "./rules";
-import { buildAmountEvidence, evidenceOf, withEvidence, type AmountEvidence, type ReportFigure } from "./evidence";
+import { buildAmountEvidence, evidenceOf, isScopeProblem, reasonOf, withEvidence, type AmountEvidence, type EvidenceRecord, type ReportFigure } from "./evidence";
 
 export type { AmountEvidence, EvidenceRecord, ReportFigure } from "./evidence";
 
@@ -78,6 +78,11 @@ export interface EvidenceExclusions {
   ownAmounts: number;
   /** The institution's own records dropped. */
   ownRecords: number;
+  /**
+   * Of all the records above, those left out because they price a different charge (an add-on
+   * on monthly maintenance, a withdrawal abroad on the ATM line); optional on older copies.
+   */
+  scopeRecords?: number;
 }
 
 export interface CustomReportAnalysis {
@@ -113,14 +118,16 @@ export function analyzeMarket(data: CustomReportMarketData): CustomReportAnalysi
   const subjectId = data.subject.institution_id;
   // Every amount is rebuilt from the records whose evidence shows it (evidence.ts); an amount
   // with no such record is left out, so the medians below are worked out without it.
-  const exclusions: EvidenceExclusions = { competitorAmounts: 0, competitorRecords: 0, ownAmounts: 0, ownRecords: 0 };
+  const exclusions: EvidenceExclusions = { competitorAmounts: 0, competitorRecords: 0, ownAmounts: 0, ownRecords: 0, scopeRecords: 0 };
   const figures: (ReportFigure & { evidence: AmountEvidence })[] = [];
   const excludedByLine = new Map<string, { institution_id: number; evidence: AmountEvidence }[]>();
   const ownExcluded = new Map<string, AmountEvidence>();
   for (const line of data.lines) {
     const figure = withEvidence(line);
     const isOwn = line.institution_id === subjectId;
-    const dropped = (figure?.evidence ?? buildAmountEvidence(line)).excluded.length;
+    const droppedRecords = (figure?.evidence ?? buildAmountEvidence(line)).excluded;
+    const dropped = droppedRecords.length;
+    exclusions.scopeRecords = (exclusions.scopeRecords ?? 0) + droppedRecords.filter((r) => isScopeProblem(r.problem)).length;
     if (isOwn) exclusions.ownRecords += dropped;
     else exclusions.competitorRecords += dropped;
     if (figure) {
@@ -288,7 +295,21 @@ function csvCell(value: string | number | null | undefined): string {
 /** The CSV's reasons in place of a blank cell, so "not found" never reads as "too few competitors". */
 export const MISSING_NOT_FOUND = "not found on schedule";
 export const MISSING_TOO_FEW = `too few competitors (n<${MIN_LOCAL_PEERS_PER_LINE})`;
-export const MISSING_EXCLUDED = "excluded: evidence does not show amount";
+/** An amount left out because no record's quote shows it. */
+export const MISSING_EXCLUDED = "excluded: the quote does not show the amount";
+
+/**
+ * The CSV's reason for a record left out, naming what its quote describes and the fee the line
+ * compares ("excluded: sustained overdraft, not per-item overdraft"), the same words as the page.
+ */
+export function excludedReason(record: Pick<EvidenceRecord, "problem" | "reason"> | null | undefined): string {
+  return record ? `excluded: ${reasonOf(record)}` : MISSING_EXCLUDED;
+}
+
+/** The reason for an amount with no usable record: its first left-out record's. */
+function excludedAmountReason(evidence: AmountEvidence | null | undefined): string {
+  return excludedReason(evidence?.excluded[0]);
+}
 
 const CSV_HEADER = [
   "report_institution_id", "report_institution", "report_date", "market_counties", "currency",
@@ -357,7 +378,7 @@ export function buildReportCsv(data: CustomReportMarketData, analysis: CustomRep
         index + 1, all.length,
         record.record_id, record.product, record.amount, usedHere ? "yes" : "no", record.quote, record.source_url, record.read_on,
         ...stats,
-        usedHere ? missing : MISSING_EXCLUDED,
+        usedHere ? missing : excludedReason(record),
       ]);
     });
   };
@@ -374,7 +395,7 @@ export function buildReportCsv(data: CustomReportMarketData, analysis: CustomRep
       : (line.ownExcluded ?? null);
     const missing = line.own
       ? tooFew ? MISSING_TOO_FEW : null
-      : line.ownExcluded ? MISSING_EXCLUDED : MISSING_NOT_FOUND;
+      : line.ownExcluded ? excludedAmountReason(line.ownExcluded) : MISSING_NOT_FOUND;
     push("yours", line, data.subject.institution_id, data.subject.institution_name, ownEvidence, stats, missing);
   }
   const blank: Stats = [null, null, null, null, null, null];
@@ -384,7 +405,7 @@ export function buildReportCsv(data: CustomReportMarketData, analysis: CustomRep
       ...(line.excludedFigures ?? []).map((figure) => ({ id: figure.institution_id, evidence: figure.evidence })),
     ];
     for (const entry of entries) {
-      push("competitor", line, entry.id, names.get(entry.id) ?? `Institution ${entry.id}`, entry.evidence, blank, entry.evidence.amount === null ? MISSING_EXCLUDED : null);
+      push("competitor", line, entry.id, names.get(entry.id) ?? `Institution ${entry.id}`, entry.evidence, blank, entry.evidence.amount === null ? excludedAmountReason(entry.evidence) : null);
     }
   }
   return rows.map((row) => row.map(csvCell).join(",")).join("\r\n") + "\r\n";

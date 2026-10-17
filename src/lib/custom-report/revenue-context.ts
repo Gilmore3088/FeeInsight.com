@@ -22,12 +22,27 @@ export interface RevenueContext {
     count: number;
     /** Who the peers are: the institution's own filing, never banks and credit unions pooled. */
     population?: "banks" | "credit unions";
+    /**
+     * Service charges as a share of the quarter's revenue (net interest income plus noninterest
+     * income; the filing's fee_income_ratio), the institution's own and the peers' median, as
+     * fractions. A measure that scales with size, beside the raw-dollar rank. Null when not filed.
+     */
+    feeShare?: number | null;
+    peerMedianFeeShare?: number | null;
   } | null;
 }
 
 export function buildRevenueContext(
   trend: { quarter: string; service_charge_income: number }[],
-  ranking: { tier: string; sc_rank: number; peer_count: number; peer_median_sc: number | null; source?: string } | null,
+  ranking: {
+    tier: string;
+    sc_rank: number;
+    peer_count: number;
+    peer_median_sc: number | null;
+    source?: string;
+    fee_income_ratio?: number | null;
+    peer_median_fee_ratio?: number | null;
+  } | null,
 ): RevenueContext | null {
   const quarters = trend.slice(0, 4).map((q) => ({ quarter: q.quarter, thousands: q.service_charge_income }));
   if (quarters.length === 0 || !(quarters[0].thousands > 0)) return null;
@@ -40,9 +55,22 @@ export function buildRevenueContext(
           rank: ranking.sc_rank,
           count: ranking.peer_count,
           ...(ranking.source ? { population: ranking.source === "ncua" ? ("credit unions" as const) : ("banks" as const) } : {}),
+          ...(ranking.fee_income_ratio !== undefined || ranking.peer_median_fee_ratio !== undefined
+            ? { feeShare: share(ranking.fee_income_ratio), peerMedianFeeShare: share(ranking.peer_median_fee_ratio) }
+            : {}),
         }
       : null;
   return { quarters, trailingThousands, peer };
+}
+
+/** A filed fraction (0.087 = 8.7%) kept only when it reads as a share: positive and under 1. */
+function share(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 && value < 1 ? value : null;
+}
+
+/** 0.0871 -> "8.7%". */
+export function shareLabel(fraction: number): string {
+  return `${(fraction * 100).toFixed(1)}%`;
 }
 
 /** "community" -> "$100M-$1B", the range inside the tier label. */
@@ -59,7 +87,7 @@ async function getRevenueContext(institutionId: number): Promise<RevenueContext 
   return buildRevenueContext(trend, ranking);
 }
 
-export const getRevenueContextCached = cachedPublicRead("report-revenue-context-v2", getRevenueContext);
+export const getRevenueContextCached = cachedPublicRead("report-revenue-context-v3", getRevenueContext);
 
 /** "2026-Q2" -> "Q2 2026". */
 export function quarterLabel(quarter: string): string {

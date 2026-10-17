@@ -6,11 +6,11 @@
  * with the schedule it was read from.
  */
 import type { ReportLine } from "@/lib/custom-report/analysis";
-import { evidenceOf, type AmountEvidence, type EvidenceRecord } from "@/lib/custom-report/evidence";
+import { evidenceOf, reasonOf, type AmountEvidence, type EvidenceRecord } from "@/lib/custom-report/evidence";
 import type { MarketBranchFootprint } from "@/lib/data-store/branches";
 import { rankOf, ordinal, type PlottedLine } from "./[token]/at-a-glance";
 import { ShowAll } from "./show-all";
-import { EXTRA_BLOCK_ROW, ROWS_SHOWN, comparedAt, comparedLines, money, priceText } from "./report-view";
+import { EXTRA_BLOCK_ROW, ROWS_SHOWN, comparedAt, comparedLines, medianMethod, money, priceText } from "./report-view";
 
 type Tone = "above" | "inside" | "below";
 
@@ -53,13 +53,6 @@ function RecordLine({ record, showAmount }: { record: EvidenceRecord; showAmount
   );
 }
 
-/** Why a record was left out, read after its amount: "(read from a general article about fees)". */
-const PROBLEM_TEXT: Record<NonNullable<EvidenceRecord["problem"]>, string> = {
-  quote_without_amount: "its quoted line does not state that amount",
-  quote_names_other_fee: "its quoted line gives that amount for a different fee",
-  not_a_fee_schedule: "read from a general article about fees",
-};
-
 /** Records the evidence check left out, each with its reason, so a row shows what was dropped. */
 function LeftOutRecords({ records }: { records: EvidenceRecord[] }) {
   if (records.length === 0) return null;
@@ -67,7 +60,7 @@ function LeftOutRecords({ records }: { records: EvidenceRecord[] }) {
     <ul className="mt-0.5 space-y-0.5">
       {records.map((record, index) => (
         <li key={record.record_id ?? index}>
-          Left out: <RecordLine record={record} showAmount /> ({PROBLEM_TEXT[record.problem ?? "quote_without_amount"]})
+          Left out: <RecordLine record={record} showAmount /> ({reasonOf(record)})
         </li>
       ))}
     </ul>
@@ -178,7 +171,10 @@ export function FeeComparison({ name, lines, names, branches, footprint }: FeeCo
                   <dt className="text-ink-muted">{name}</dt>
                   <dd className="text-right font-semibold tabular-nums text-ink">{priceText(line.own)}</dd>
                   <dt className="text-ink-muted">Local median</dt>
-                  <dd className="text-right tabular-nums text-ink">{money(line.peers.median)}</dd>
+                  <dd className="text-right tabular-nums text-ink">
+                    {money(line.peers.median)}
+                    <span className="block text-[11px] text-ink-muted">{medianMethod(line.key, line.peers.n)}</span>
+                  </dd>
                   <dt className="text-ink-muted">Middle 50%</dt>
                   <dd className="text-right tabular-nums text-ink">
                     {money(line.peers.p25)} to {money(line.peers.p75)}
@@ -240,7 +236,7 @@ export function FeeComparison({ name, lines, names, branches, footprint }: FeeCo
                           evidence.excluded.map((record, index) => (
                             <li key={`${institution_id}:${record.record_id ?? index}`} className="[overflow-wrap:anywhere]">
                               {shortName(names.get(institution_id) ?? `Institution ${institution_id}`)}&apos;s {money(record.amount)} (
-                              {PROBLEM_TEXT[record.problem ?? "quote_without_amount"]}): <RecordLine record={record} showAmount={false} />
+                              {reasonOf(record)}): <RecordLine record={record} showAmount={false} />
                             </li>
                           )),
                         )}

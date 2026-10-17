@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CustomReportMarketData, MarketFeeLine } from "@/lib/data-store/custom-report-market";
-import { analyzeMarket, buildReportCsv, diffReports, MISSING_EXCLUDED, MISSING_NOT_FOUND, MISSING_TOO_FEW, positionCounts, MIN_COMPARABLE_LINES, NAMED_COMPETITORS, NAMED_WITHOUT_DEPOSITS, pickNamedCompetitors, quantile, type NamedCompetitor } from "./analysis";
+import { analyzeMarket, buildReportCsv, diffReports, excludedReason, MISSING_EXCLUDED, MISSING_NOT_FOUND, MISSING_TOO_FEW, positionCounts, MIN_COMPARABLE_LINES, NAMED_COMPETITORS, NAMED_WITHOUT_DEPOSITS, pickNamedCompetitors, quantile, type NamedCompetitor } from "./analysis";
 
 const KEYS = ["overdraft", "nsf", "stop_payment", "cashiers_check", "wire_domestic_outgoing", "card_replacement"];
 
@@ -190,8 +190,8 @@ describe("buildReportCsv", () => {
     const rows = parseCsv(buildReportCsv(data, analysis)).filter((r) => r.row === "competitor" && r.institution_id === "100" && r.fee_line === "Overdraft (per item)");
     expect(rows.map((r) => [r.record_id, r.record_amount, r.record_used])).toEqual([["11", "10", "yes"], ["12", "30", "yes"], ["13", "35", "no"]]);
     expect(rows[0]).toMatchObject({ amount: "30", amount_basis: "highest of 2 published prices", published_range: "$10 to $30", records: "3" });
-    expect(rows[2].missing_reason).toBe(MISSING_EXCLUDED);
-    expect(analysis.exclusions).toEqual({ competitorAmounts: 0, competitorRecords: 1, ownAmounts: 0, ownRecords: 0 });
+    expect(rows[2].missing_reason).toBe("excluded: educational article, not the bank's fee schedule");
+    expect(analysis.exclusions).toEqual({ competitorAmounts: 0, competitorRecords: 1, ownAmounts: 0, ownRecords: 0, scopeRecords: 0 });
   });
 
   it("quotes commas and neutralizes spreadsheet formulas", () => {
@@ -220,7 +220,7 @@ describe("evidence check", () => {
     expect(analysis.exclusions?.competitorAmounts).toBe(1);
     const csv = parseCsv(buildReportCsv(data, analysis)).filter((r) => r.institution_id === "119" && r.fee_line === "Overdraft (per item)");
     expect(csv).toHaveLength(1);
-    expect(csv[0]).toMatchObject({ amount: "", record_used: "no", missing_reason: MISSING_EXCLUDED });
+    expect(csv[0]).toMatchObject({ amount: "", record_used: "no", missing_reason: "excluded: educational article, not the bank's fee schedule" });
   });
 
   it("leaves out a record whose quote does not state its amount", () => {
@@ -229,6 +229,38 @@ describe("evidence check", () => {
     rival.source_line = "Stop payment | $5";
     const line = analyzeMarket(data).lines.find((l) => l.key === "stop_payment")!;
     expect(line.excludedFigures?.[0].evidence.excluded[0].problem).toBe("quote_without_amount");
+    const csv = parseCsv(buildReportCsv(data, analyzeMarket(data))).filter((r) => r.institution_id === "105" && r.fee_line === "Stop payment");
+    expect(csv[0].missing_reason).toBe(MISSING_EXCLUDED);
+    expect(MISSING_EXCLUDED).toBe("excluded: the quote does not show the amount");
+  });
+
+  it("names what the quote describes and the fee it is not, on the page's records and in the CSV", () => {
+    const data = market({ competitors: 20 });
+    const blank = { source_url: null, updated_at: null, schedule_read_on: null };
+    const atm: MarketFeeLine = { institution_id: 103, line: "atm_non_network", amount: 4, fee_name: "ATM", source_line: "", ...blank };
+    const maintenance: MarketFeeLine = { institution_id: 104, line: "monthly_maintenance", amount: 3.49, fee_name: "Monthly", source_line: "", ...blank };
+    data.lines.push(atm, maintenance);
+    // PNC's two ATM prices (rows 13164 and the $3 domestic one): $5 abroad must not average in.
+    atm.tiers = [
+      { id: 21, amount: 3, fee_name: "Non-PNC Bank ATM Fee (US, Canada, Puerto Rico, US Virgin Islands)", source_line: "Puerto Rico and the U.S. Virgin Islands ..... $3.00 each", source_url: "https://r/fees.pdf", schedule_read_on: "2026-10-01" },
+      { id: 22, amount: 5, fee_name: "Non-PNC Bank ATM Fee (All Other Countries)", source_line: "At non-PNC Bank ATMs in all other countries ..... $5.00 each", source_url: "https://r/fees.pdf", schedule_read_on: "2026-10-01" },
+    ];
+    maintenance.tiers = [
+      { id: 31, amount: 2.99, fee_name: "For a monthly fee", source_line: "First Commerce offers the ATM Freedom add-on for the Power Checking account. For a monthly fee of $2.99, you'll get unlimited surcharge refunds", source_url: "https://r/checking", schedule_read_on: "2026-10-01" },
+      { id: 32, amount: 3.99, fee_name: "Power Checking + CoverMe Monthly service charge", source_line: "Power Checking + CoverMe - $3.99/month", source_url: "https://r/checking", schedule_read_on: "2026-10-01" },
+    ];
+    const analysis = analyzeMarket(data);
+    const atmLine = analysis.lines.find((l) => l.key === "atm_non_network")!;
+    const pnc = atmLine.peerFigures.find((f) => f.institution_id === 103)!;
+    expect(pnc.amount).toBe(3);
+    expect(pnc.evidence?.excluded[0]).toMatchObject({ record_id: 22, problem: "international_atm", reason: "international ATM withdrawal, not domestic" });
+    const commerce = analysis.lines.find((l) => l.key === "monthly_maintenance")!.peerFigures.find((f) => f.institution_id === 104)!;
+    expect(commerce.amount).toBe(3.99);
+    expect(commerce.evidence?.excluded[0]).toMatchObject({ record_id: 31, reason: "ATM surcharge-refund add-on, not account maintenance" });
+    expect(analysis.exclusions?.scopeRecords).toBe(2);
+    // The CSV's missing_reason for a left-out record (one line, so only compared lines get rows).
+    expect(excludedReason(pnc.evidence?.excluded[0])).toBe("excluded: international ATM withdrawal, not domestic");
+    expect(excludedReason(commerce.evidence?.excluded[0])).toBe("excluded: ATM surcharge-refund add-on, not account maintenance");
   });
 });
 

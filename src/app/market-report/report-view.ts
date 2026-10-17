@@ -7,7 +7,10 @@
  * the value compared is labelled.
  */
 import { MIN_LOCAL_PEERS_PER_LINE, positionCounts, type ReportLine } from "@/lib/custom-report/analysis";
-import { HIGHEST_TIER_CATEGORIES } from "@/lib/data-store/fee-stats";
+import { isScopeProblem } from "@/lib/custom-report/evidence";
+import type { CheckingLineupView } from "@/lib/custom-report/checking-lineup";
+import { shareLabel, type RevenueContext } from "@/lib/custom-report/revenue-context";
+import { HIGHEST_TIER_CATEGORIES } from "@/lib/fee-institution-value";
 import { comparedAtText, priceRangeText } from "@/lib/fee-representative";
 import { countyLabel } from "@/lib/geo/counties";
 
@@ -72,12 +75,21 @@ export function widestGapFinding(name: string, lines: ReportLine[]): string {
 
 /** The fees left out of the comparison, said once under the exhibit rather than on every row. */
 export function leftOutNote(name: string, lines: ReportLine[]): string | null {
-  const unsupported = lines.filter((l) => !l.own && l.ownExcluded).map((l) => l.label);
+  // Left out because every record prices a different charge (an add-on, a withdrawal abroad).
+  const otherCharge = lines
+    .filter((l) => !l.own && l.ownExcluded && l.ownExcluded.excluded.length > 0 && l.ownExcluded.excluded.every((r) => isScopeProblem(r.problem)))
+    .map((l) => l.label);
+  const unsupported = lines.filter((l) => !l.own && l.ownExcluded && !otherCharge.includes(l.label)).map((l) => l.label);
   const notFound = lines
     .filter((l) => !l.own && !l.ownExcluded && (l.peers?.n ?? 0) >= MIN_LOCAL_PEERS_PER_LINE)
     .map((l) => l.label);
-  const thin = lines.filter((l) => !l.comparable && !notFound.includes(l.label) && !unsupported.includes(l.label)).map((l) => l.label);
+  const thin = lines
+    .filter((l) => !l.comparable && !notFound.includes(l.label) && !unsupported.includes(l.label) && !otherCharge.includes(l.label))
+    .map((l) => l.label);
   const parts: string[] = [];
+  if (otherCharge.length > 0) {
+    parts.push(`Not compared, because ${name}'s only prices on file are for a different charge (an add-on, or a withdrawal abroad): ${otherCharge.join(", ")}.`);
+  }
   if (unsupported.length > 0) {
     parts.push(`Not compared, because the line quoted from ${name}'s schedule does not show the amount: ${unsupported.join(", ")}.`);
   }
@@ -117,4 +129,73 @@ export function identifiedText(counties: string): string {
 /** "36 institutions identified in Leon, Gadsden and Wakulla counties, FL; 30 publish fees this report can use." */
 export function marketFinding(counties: string, identified: number, usable: number): string {
   return `${identified.toLocaleString("en-US")} institutions identified in ${counties}; ${usable.toLocaleString("en-US")} publish fees this report can use.`;
+}
+
+/**
+ * How a line's local median is built, said beside the figure: one value per competitor, and
+ * which value. "Median of 18 competitors' median checking prices", so it never reads as the
+ * checking lineup's median of every account pooled.
+ */
+export function medianMethod(key: string, competitors: number): string {
+  const who = `${competitors.toLocaleString("en-US")} ${competitors === 1 ? "competitor's" : "competitors'"}`;
+  if (key === "monthly_maintenance") return `Median of ${who} median checking prices`;
+  if (HIGHEST_TIER_CATEGORIES.has(key)) return `Median of ${who} standard fees, one each`;
+  if (key === "atm_non_network") return `Median of ${who} domestic fees, one each`;
+  return `Median of ${who} fees, one each`;
+}
+
+const WIRE_LINE = /^wire_/;
+const join = (list: string[]) => (list.length < 2 ? list.join("") : `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`);
+
+/** "$1B-$10B" -> "$1B to $10B". */
+const bandText = (tier: string) => tier.replace(/\s*-\s*/, " to ");
+
+/**
+ * The short "Priorities for review" list after the opening finding: up to three things to look
+ * into, each computed from this report's own figures and left out when its data is missing.
+ * They name where to look, never a price to change.
+ *   - the fees above the local middle 50% ("Wires: review the two fees above the local middle 50%");
+ *   - checking, where account types and waiver conditions differ more than one fee shows;
+ *   - fee income, whose raw-dollar rank needs a measure that scales with size beside it.
+ */
+export function reviewPriorities(
+  name: string,
+  lines: ReportLine[],
+  context: { lineup?: CheckingLineupView | null; revenue?: RevenueContext | null } = {},
+): string[] {
+  const items: string[] = [];
+  const compared = comparedLines(lines);
+
+  const above = compared.filter((l) => l.position === "above_market");
+  if (above.length > 0) {
+    const count = above.length === 1 ? "the fee" : `the ${word(above.length)} fees`;
+    if (above.every((l) => WIRE_LINE.test(l.key))) {
+      const which = above.map((l) => inSentence(l.label).replace(/\s*wire$/, ""));
+      items.push(`Wires: review ${count} above the local middle 50% (${join(which)}).`);
+    } else if (above.length === 1) {
+      items.push(`${capital(inSentence(above[0].label))}: review the fee above the local middle 50%.`);
+    } else {
+      items.push(`Fees above the local middle 50%: review ${join(above.map((l) => inSentence(l.label)))}.`);
+    }
+  }
+
+  const checking = compared.find((l) => l.key === "monthly_maintenance");
+  const lineupPeers = context.lineup?.peersWithLineup ?? 0;
+  if (checking || lineupPeers > 0) {
+    const base = "Checking: compare equivalent account types and waiver conditions, not the monthly fee alone.";
+    const count = (n: number) => `${n.toLocaleString("en-US")} local ${n === 1 ? "competitor" : "competitors"}`;
+    items.push(lineupPeers > 0 ? `${base} Lineups are on file for ${count(lineupPeers)}.` : base);
+  }
+
+  const peer = context.revenue?.peer;
+  if (peer) {
+    const population = `${peer.count.toLocaleString("en-US")} ${peer.population ?? "institutions"} with ${bandText(peer.tierLabel)} in assets`;
+    const lead = `Fee income: the rank of ${peer.rank.toLocaleString("en-US")} of ${population} is in raw dollars, and that asset band is broad.`;
+    const normalized =
+      peer.feeShare != null && peer.peerMedianFeeShare != null
+        ? ` As a share of revenue, ${name}'s ${peer.population === "credit unions" ? "fee income is" : "service charges are"} ${shareLabel(peer.feeShare)} against a median of ${shareLabel(peer.peerMedianFeeShare)}.`
+        : "";
+    items.push(lead + normalized);
+  }
+  return items;
 }

@@ -33,7 +33,7 @@ export type ReportDropReason =
   | "not_checking";
 
 /**
- * The monthly maintenance line compares entry checking. Its rule keeps savings out by fee name,
+ * The monthly maintenance line compares consumer checking. Its rule keeps savings out by fee name,
  * but a savings or money market fee is often named just "Monthly fee", so the schedule line
  * that states the fee decides as well.
  */
