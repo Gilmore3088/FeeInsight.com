@@ -1,7 +1,8 @@
 import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 import { NextRequest, NextResponse } from "next/server";
 import { getNationalIndex, getPeerIndex } from "@/lib/data-store";
-import { getDisplayName, getFeeFamily, getFeeTier, getSpotlightCategories } from "@/lib/fee-taxonomy";
+import { FEE_FAMILIES, getDisplayName, getFeeFamily, getFeeTier, getSpotlightCategories } from "@/lib/fee-taxonomy";
+import { getPublicFeeTypes } from "@/lib/public-stats";
 import { validateApiKey } from "@/lib/api-auth";
 import { checkRateLimitWithTier } from "@/lib/api-rate-limit";
 import { logApiUsage } from "@/lib/api-usage";
@@ -26,6 +27,8 @@ import {
   toCsv,
   withApiHeaders,
 } from "@/lib/api-v1";
+
+const TAXONOMY_TYPES = new Set(Object.values(FEE_FAMILIES).flat());
 
 async function handleGET(request: NextRequest) {
   // API auth + rate limiting
@@ -87,7 +90,11 @@ async function handleGET(request: NextRequest) {
   const paid = paidKey || canAccessPremium(user);
   const spotlight = new Set(getSpotlightCategories());
 
+  // The listing holds at most the top 50 fee types by institution count on the shared public
+  // snapshot (James, Oct 17 2026), the same 50 for a peer filter as for the national index.
+  const publicTypes = await getPublicFeeTypes();
   const data = entries
+    .filter((e) => !TAXONOMY_TYPES.has(e.fee_category) || publicTypes.has(e.fee_category))
     .filter((e) => paid || spotlight.has(e.fee_category))
     .map((e) => ({
       category: e.fee_category,

@@ -517,7 +517,9 @@ the detail.
 31. Source check (`takeDownUntraceableFees`, `source-check.ts`): up to 120 institutions,
     `source_check_untraceable:<reason>`; restores earlier takedowns that now trace, except those on `SOURCE_CHECK_KEPT_DOWN` (each with its issue, logged as `kept_down`; 36542, #1369).
 32. Imported twins (`linkImportedFeesToTwins`, `source-check.ts`): an imported live fee with no
-    document is pointed at its twin row that has one, up to 100 a step. No rollback.
+    document is pointed at its twin row that has one, up to 100 a step. No rollback. Then the
+    source link fill (`fillSourceLinks`, #1342): a live fee with no link takes its own document's
+    URL; never a takedown (see Source Link Repair).
 33. Feedback sync (`syncPipelineFeedback`, `learning/feedback-sync.ts`): this step's takedowns
     and restores go into the shared learning store.
 34. Index refresh (`refreshFeeIndexCache`): not on a dry run; forced when the step published,
@@ -706,8 +708,24 @@ in the step detail counts these pairs, closed or kept, and `renamed_samples` lis
 step reports `page_copy_collapse` (live, institutions, pairs, apart on page, unproven, other
 document, renamed, would close, samples, and `error` when the read or the close failed). `PAGE_COPY_COLLAPSE_LIVE` stays
 off until James approves the dry-run counts. Rollback: clear `rolled_back_at` on rows whose reason
-ends in `(copy of the page)`. A closed copy is not restored if its kept copy later comes down; like
-the other collapses, that is a gap to close before this goes live.
+ends in `(copy of the page)`.
+
+**A closed page copy comes back (#1439 item 3).** `page-copy-restore.ts` runs just before the
+collapse on every publish step and reads closed page copies whose kept row is no longer live (up to
+500 a step, rotated by the run id). It follows the kept row's takedown through the rows it names
+(`refreshed by #`, `superseded by #`, `duplicate of #`, `same_line_duplicate: live fee #`, at most 8
+hops); if the fee lives on in one of them (live, or held by the account type hold), the closed copy
+stays down. It comes back only when the chain ends on a takedown about the kept copy itself
+(`source_check_untraceable:*`, `rules_recheck_unreproduced`); a takedown that judges the fee
+(category guard, amount range, hand takedown, closed institution, another bank's document,
+quarantine) holds for the closed copy too. The closed copy must then be verified, clear the restore
+bar (`disputedRestoreVerdict`) on the current copy of its page (its own newest text, or the kept
+document's when that document replaced its own; a copy replaced by some other document stays down),
+and find no live row of the institution at that price nor a live row of the same page at another
+price. A restored fee is queued for the source check. It runs whatever `PAGE_COPY_COLLAPSE_LIVE`
+says, since it only reopens rows the collapse closed; a dry run writes nothing. Each step reports
+`page_copy_restore` (kept down, carried on, kept judged, failing, restored, samples, `error`). The
+exact and near-name collapses still have this gap.
 
 **At publish (#1069 step 1, shadow).** Each row the publish step is about to publish is checked
 against its live copies with the exact collapse's own test (`exact-duplicate.ts`: institution,
@@ -810,7 +828,9 @@ keep hinting the retired keys. Publish skips a fee still under a retired key.
 The same step applies the live splits (`SPLIT_CATEGORIES`): fees in a live category whose name
 belongs to another type move there, under the same guard and range test. Fold v17 (`FOLD_RULES_VERSION`, 16 until the switch is on; James, Oct 15,
 #1398: "Add both") gives excess withdrawals (`excess_withdrawal`) and returned mail
-(`returned_mail`) their own types, dark until `RESEARCH_SPLIT_LIVE` is on. While it is off,
+(`returned_mail`) their own types. `RESEARCH_SPLIT_LIVE` is on (James, Oct 17 2026), so fold v17
+and the 52-type taxonomy are in force; public pages and API listings show only the top 50 types
+by institution count (`publicFeeTypes`). While it is off,
 returned statements leaving paper statements, excess activity leaving other lending and the hand
 re-files (21141 and 77918 renamed in place, 44516) all still go to account research, the paper
 statement and e-statement rules match exactly as before (a "return to paper statements" charge
@@ -873,6 +893,17 @@ gets a `hamilton.source_link_resource` event. Reverse one by setting the raw row
 `source_document_id` back to `from_source_document_id`, the URLs back to NULL, and for a restore
 `rolled_back_reason` back to `previous_reason` with `rolled_back_at` set. Roll the pass back by
 setting `SOURCE_LINK_RESOURCE_ON` to false.
+
+**Fill in every publish step (`fillSourceLinks`, `SOURCE_LINK_FILL_ON`).** The repair ran once by
+hand (run 6508, Oct 15). Fees that were down then and that the source check restored later came
+back live with no link (14 on Oct 17, all imported). After the source check and the imported-twin
+link, each publish step gives every live fee with no link its own document's URL, exactly as the
+repair's fill would (`planSourceLinkRepair`). It never takes a fee down: a fee with no traceable
+document stays live for the re-source pass or the hand-started repair. Each fill writes one
+`pipeline_feedback` row (check `hamilton.source_link`, evidence `action` `filled`) and a
+`hamilton.source_link_fill` event; the step detail carries `source_link_fill`. A failed read or
+write changes nothing, is kept in `source_link_fill.error`, and publishing carries on. Reverse a
+fill as above; roll the pass back by setting `SOURCE_LINK_FILL_ON` to false.
 
 ## Source Check
 
