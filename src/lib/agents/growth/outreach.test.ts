@@ -167,7 +167,7 @@ describe("buildOutreachDraft", () => {
     expect(built.draft.campaign).toBe("personalized_research");
     expect(built.draft.link).toBeNull();
     const [email] = built.draft.caption.split("--- For your audit");
-    expect(email).toContain("along with those of 5 other institutions in Texas, including Peer 10 and Peer 11.");
+    expect(email).toContain("along with those of 5 Texas institutions closest to it in size, including Peer 10 and Peer 11.");
     expect(email).toContain("a few Texas institutions you choose");
     expect(email).not.toMatch(/\$\d|https?:|\barea\b|\blocal\b/);
     expect(outreachMarket(rural)).toBe("Texas");

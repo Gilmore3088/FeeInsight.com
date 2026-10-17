@@ -95,7 +95,7 @@ nationally from one office (FDIC Summary of Deposits: $3B+ through at most 4 off
 Figures are quoted for local comparisons only. An institution in no metro is compared with the
 `SNAPSHOT_STATE_PEERS` (40) open institutions in its state closest to it in assets (`loadMarket`,
 scope `state`; James, Oct 17: rural prospects with a statewide comparison) and gets campaign A or B,
-never C; B names the state ("5 other institutions in Kansas"). All emails sign off "Founder, Fee Insight" with one ask. Each run reads every candidate, scores it with the plan's
+never C; B names the state ("5 Kansas institutions closest to it in size"). All emails sign off "Founder, Fee Insight" with one ask. Each run reads every candidate, scores it with the plan's
 weights (`prospect-score.ts`: fit 25, buyer 20, research 20, data confidence 20, commercial 15) and
 drafts the highest scores first. Every fee type gets a comparison tier (A: prospect and 5+ local
 verify; B: fewer verified peers; C: the source check fails; D: a row waits on a takedown second

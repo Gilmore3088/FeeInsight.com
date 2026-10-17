@@ -264,8 +264,10 @@ export function buildOutreachDraft(
   const backup = backupContact ? { ...backupContact, confidence: contactConfidence(backupContact) } : null;
   const institution = snapshot.subject.name;
   const market = outreachMarket(snapshot);
-  // "in the Waco, TX area" for a metro; "in Kansas" for a statewide comparison.
-  const where = snapshot.scope === "state" ? `in ${market}` : `in the ${market} area`;
+  // "5 other institutions in the Waco, TX area" for a metro; "5 Kansas institutions closest to it in
+  // size" statewide, since the state peers are the nearest in assets, not every institution there.
+  const peerGroup = (count: number, kinds: string) =>
+    snapshot.scope === "state" ? `${count} ${market} ${kinds} closest to it in size` : `${count} other ${kinds} in the ${market} area`;
   const nearby = snapshot.scope === "state" ? `${market} ` : "local ";
   const names = new Map(snapshot.peers.map((peer) => [peer.id, peer.name]));
   const peerName = (id: number) => names.get(id) ?? `Institution ${id}`;
@@ -338,14 +340,14 @@ export function buildOutreachDraft(
       ? [
           "I'm James, founder of Fee Insight. We compile published credit union and bank fee schedules so competitive research is faster and every figure can be traced to its source.",
           "",
-          `${institution}'s schedule is in our research, along with those of ${sharedCount.size} other ${kindsOf([...sharedCount.keys()])} ${where}, including ${named.map((peer) => peer.name).join(" and ")}. Between them, ${supported.length} fee types can be compared line by line.`,
+          `${institution}'s schedule is in our research, along with those of ${peerGroup(sharedCount.size, kindsOf([...sharedCount.keys()]))}, including ${named.map((peer) => peer.name).join(" and ")}. Between them, ${supported.length} fee types can be compared line by line.`,
           "",
           `Would a short, source-linked comparison of ${institution}'s member fees and those of a few ${nearby}credit unions and banks you choose be useful for ${problem.useFor}?`,
         ]
       : [
           "I'm James, founder of Fee Insight. We compile published fee schedules so competitive research is faster and every figure can be traced to its source.",
           "",
-          `${institution}'s schedule is in our research, along with those of ${sharedCount.size} other institutions ${where}, including ${named.map((peer) => peer.name).join(" and ")}. Between them, ${supported.length} fee types can be compared line by line.`,
+          `${institution}'s schedule is in our research, along with those of ${peerGroup(sharedCount.size, "institutions")}, including ${named.map((peer) => peer.name).join(" and ")}. Between them, ${supported.length} fee types can be compared line by line.`,
           "",
           `Would a short, source-linked comparison of ${institution} and a few ${nearby}institutions you choose be useful for ${problem.useFor}?`,
         ];
