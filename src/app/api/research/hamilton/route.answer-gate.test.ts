@@ -190,3 +190,68 @@ describe("written answer evidence gate", () => {
     expect(first.replaceRecentDuplicate.request.startsWith("written\n")).toBe(true);
   });
 });
+
+describe("written answer sentence binding (#981, H06-T06)", () => {
+  // Invented banks: the profile lookup returns Synthetic Bank A's $10 overdraft fee as a catalog row.
+  const PROFILE = {
+    identity: { id: 9001, name: "Synthetic Bank A" },
+    fees: { verified: [{ fee_name: "Overdraft", fee_category: "overdraft", amount: 10, frequency: "per item", status: "verified", record_id: 1, source_document_id: 101 }], provisional: [] },
+  };
+  const OTHER = { identity: { id: 9002, name: "Synthetic Bank B" }, fees: { verified: [{ fee_name: "Overdraft", fee_category: "overdraft", amount: 35, frequency: "per item", status: "verified", record_id: 2, source_document_id: 102 }], provisional: [] } };
+  const BOUND = "## Hamilton's View\nSynthetic Bank A charges $10 for an overdraft. Synthetic Bank A charges $35 for an overdraft.\n\nSynthetic Bank B charges $35, near the $29 peer median.";
+  let streamOptions: Array<{ messageMetadata?: (input: { part: { type: string } }) => unknown }> = [];
+
+  function answersFrom(text: string, outputs: unknown[]) {
+    streamOptions = [];
+    mocks.stream.mockImplementation((options) => ({
+      consumeStream: async () => options.onFinish({
+        totalUsage: { inputTokens: 1, outputTokens: 1 },
+        text,
+        steps: [{ toolResults: outputs.map((output) => ({ output })) }],
+      }),
+      toUIMessageStream: (streamOptionsIn: (typeof streamOptions)[number]) => {
+        streamOptions.push(streamOptionsIn);
+        return { synthetic: "answer stream" };
+      },
+    }));
+  }
+
+  it("saves the binding with the answer, leaves the contradicted sentence out of the saved text, and sends the binding", async () => {
+    answersFrom(BOUND, [PROFILE, OTHER, TOOL_OUTPUT]);
+    await POST(request());
+    const saved = mocks.save.mock.calls[0][0].response;
+    expect(saved.hamiltonView).not.toContain("Synthetic Bank A charges $35");
+    expect(saved.hamiltonView).toContain("Synthetic Bank A charges $10 for an overdraft.");
+    expect(saved.narrativeBinding.omitted).toEqual([{ text: "Synthetic Bank A charges $35 for an overdraft.", reason: "wrong_institution" }]);
+    expect(saved.narrativeBinding.supported[0]).toEqual({ text: "Synthetic Bank A charges $10 for an overdraft.", factIds: ["fee:published:1"] });
+    expect(saved.narrativeBinding.interpretation).toEqual(["Synthetic Bank B charges $35, near the $29 peer median."]);
+    expect(metadata()).toMatchObject({ narrativeBinding: saved.narrativeBinding, answerEvidence: { passed: true, held: false } });
+  });
+
+  it("makes no binding when the tools returned no fee record, so the answer saves as before", async () => {
+    answersFrom(PASSING, [TOOL_OUTPUT]);
+    await POST(request());
+    expect(mocks.save.mock.calls[0][0].response).not.toHaveProperty("narrativeBinding");
+    expect(metadata()).not.toHaveProperty("narrativeBinding");
+  });
+
+  it("with the held line on, sends the binding on the first chunk so a left-out sentence never shows", async () => {
+    mocks.held.message = "Synthetic held line.";
+    answersFrom(BOUND, [PROFILE, OTHER, TOOL_OUTPUT]);
+    await POST(request());
+    expect(mocks.merge).toHaveBeenCalledTimes(1);
+    const start = streamOptions[0].messageMetadata?.({ part: { type: "start" } }) as { narrativeBinding: { omitted: unknown[] } };
+    expect(start.narrativeBinding.omitted).toHaveLength(1);
+    expect(streamOptions[0].messageMetadata?.({ part: { type: "finish" } })).toBeUndefined();
+  });
+
+  it("holds an answer that has nothing left once the contradicted sentences go", async () => {
+    mocks.held.message = "Synthetic held line.";
+    answersFrom("## Hamilton's View\nSynthetic Bank A charges $35 for an overdraft.", [PROFILE, OTHER]);
+    await POST(request());
+    expect(mocks.merge).not.toHaveBeenCalled();
+    expect(mocks.save).not.toHaveBeenCalled();
+    expect(metadata()).toEqual(expect.objectContaining({ answerEvidence: { passed: true, held: true } }));
+    expect(metadata()).not.toHaveProperty("narrativeBinding");
+  });
+});

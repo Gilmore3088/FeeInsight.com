@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { EmailGate } from "./email-gate";
 
@@ -30,7 +30,8 @@ describe("EmailGate success", () => {
       fireEvent.submit(input.closest("form")!);
       const link = await screen.findByRole("link", { name: "Download the PDF" });
       expect(link.getAttribute("href")).toBe("https://files.example/q3.pdf");
-      expect(document.activeElement).toBe(link);
+      // Focus moves in an effect after the success render; on a loaded CI runner it can land a tick later.
+      await waitFor(() => expect(document.activeElement).toBe(link));
       expect(screen.getByText("The link works for one hour.")).toBeTruthy();
       expect(container.textContent ?? "").not.toMatch(/email|send/i);
     } finally {

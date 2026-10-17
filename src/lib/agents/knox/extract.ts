@@ -69,8 +69,13 @@ const LARGE_BANK_REREAD_ORDER = `CASE WHEN COALESCE(inst.asset_size, 0) >= ${KNO
  * 5,474 current copies at 4,265 banks were last read before v26, when Knox missed plural
  * wires, low-balance rows and two-column pages; Space Coast CU had 7 live fees of 22 prices).
  * Raise it only when a rules change is worth reading every page again.
+ *
+ * v75 (Knox recall, 17 Oct 2026): raised from 26 so every current copy read before v75 is read
+ * once more. 41 of the 62 answer-key pages were last read at v65 or earlier, and today's rules read
+ * 109 key fees there that their stored rows miss. A re-read only adds rows (the raw dedupe index
+ * keeps existing ones; a same-text read retires nothing), at the extract step's own batch size.
  */
-export const KNOX_STALE_READ_BELOW_VERSION = 26;
+export const KNOX_STALE_READ_BELOW_VERSION = 75;
 /**
  * A current copy with a monthly fee row missing its account name, or both the balance that
  * avoids it and its waiver, last read below this version, is read again once so v49-v51 can
@@ -1109,7 +1114,7 @@ export async function runKnoxExtract(
     });
 
     const startedAt = Date.now();
-    const free = runFreeSpecialists(row.normalized_text);
+    const free = runFreeSpecialists(row.normalized_text, { institutionName: row.institution_name ?? null });
     const { held, rates, runs } = free;
     for (const [reason, count] of Object.entries(free.dropped)) {
       droppedLines[reason as DroppedLineReason] = (droppedLines[reason as DroppedLineReason] ?? 0) + count;

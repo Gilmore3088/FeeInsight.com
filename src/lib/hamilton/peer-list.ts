@@ -4,6 +4,8 @@ import type { ActivePeerSet } from "./active-peer-set";
 
 export const PEER_LIST_VERSION = 1;
 export const MAX_PEER_LIST_ROWS = 50;
+/** The furthest a list pages into its ordered matches (#977, H02-T08). Past it, narrow the criteria. */
+export const MAX_PEER_LIST_OFFSET = 10_000;
 export type PeerCharter = "bank" | "credit_union";
 export interface AssetBound { value: number; inclusive: boolean }
 export interface PeerListIntent {
@@ -70,12 +72,34 @@ export interface PeerListData {
   queriedAt: string;
   notes: string[];
   feeComparison?: PeerFeeComparison;
+  /**
+   * How many matches in the list's order come before these rows: 0 is the first page, 50 the
+   * second. Absent on lists saved before paging, which all start at the first match.
+   */
+  offset?: number;
 }
 export interface PeerFeeEntry {
   institutionId: number;
   id: number;
   name: string;
   amount: number | null;
+  frequency: string | null;
+  publishedAt: string | null;
+  sourceDocumentId: number | null;
+  documentUrl: string | null;
+  sourceUrl: string | null;
+}
+/**
+ * A peer's fee stated as a rate ("1.1% of the transaction"), read from
+ * published_fee_rate_catalog. It has no dollar amount and is never pooled, averaged,
+ * compared with or converted into the dollar entries beside it.
+ */
+export interface PeerRateFeeEntry {
+  institutionId: number;
+  id: number;
+  name: string;
+  /** "1.1% of the transaction", "3% of the advance ($10 minimum)". */
+  rateLabel: string;
   frequency: string | null;
   publishedAt: string | null;
   sourceDocumentId: number | null;
@@ -89,6 +113,8 @@ export interface PeerFeeComparison {
   label?: string;
   comparedPeerIds: number[];
   fees: PeerFeeEntry[];
+  /** Fees stated as a rate, each on its own line; absent on snapshots saved before rates were listed. */
+  rateFees?: PeerRateFeeEntry[];
   account: { institutionId: number; name: string } | null;
   includesAccount: boolean;
   note: string;
@@ -110,6 +136,30 @@ export interface PeerListContinuation {
   originSubjectId: number;
   originRows: Array<Pick<PeerListRow, "institutionId" | "recordId" | "reportDate" | "source">>;
   selectedIds: number[];
+  /** The displayed page's offset, so a follow-up re-runs that page and not the first; absent means 0. */
+  originOffset?: number;
+  /** The state an earlier "Only Florida" narrowed the list to, so later follow-ups keep saying so. */
+  refinedState?: string;
+}
+
+/** A requested page offset, or null when it is not a whole number from 0 to MAX_PEER_LIST_OFFSET. */
+export function readPeerListOffset(value: unknown): number | null {
+  if (value === undefined || value === null) return 0;
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= MAX_PEER_LIST_OFFSET ? value : null;
+}
+
+/**
+ * Where the next or previous page of a list starts, or null when there is none. Only a list asked
+ * for "all" (or for more than one page holds) pages; "List ten peers" shows its ten and stops.
+ */
+export function peerListPageOffsets(data: Pick<PeerListData, "status" | "criteria" | "rows" | "totalMatches" | "offset" | "feeComparison">): { previous: number | null; next: number | null } {
+  const c = data.criteria;
+  if (data.status !== "ready" || !c || data.feeComparison || data.totalMatches === null || c.limit < MAX_PEER_LIST_ROWS) return { previous: null, next: null };
+  const offset = data.offset ?? 0;
+  const end = offset + data.rows.length;
+  const wanted = c.requestedCount ?? Number.POSITIVE_INFINITY;
+  const next = data.rows.length > 0 && end < data.totalMatches && end < wanted && end <= MAX_PEER_LIST_OFFSET ? end : null;
+  return { previous: offset > 0 ? Math.max(0, offset - c.limit) : null, next };
 }
 
 export function peerListRowReferences(rows: PeerListRow[]): PeerListContinuation["originRows"] {
@@ -132,6 +182,7 @@ export function makePeerListContinuation(
     originSubjectId: data.subject.institutionId,
     originRows: peerListRowReferences(data.rows),
     selectedIds: data.rows.map(row => row.institutionId),
+    ...(data.offset ? { originOffset: data.offset } : {}),
   };
 }
 
@@ -143,6 +194,8 @@ export function validatePeerListContinuation(value: unknown): PeerListContinuati
   if (typeof p.originQuestion !== "string" || p.originQuestion.length > 1000 || !isPeerListQuestion(p.originQuestion)) return null;
   if (p.originInstitutionId !== null &&
       (typeof p.originInstitutionId !== "string" || !/^[1-9][0-9]{0,14}$/.test(p.originInstitutionId))) return null;
+  if (p.originOffset !== undefined && (readPeerListOffset(p.originOffset) === null || p.originOffset === null)) return null;
+  if (p.refinedState !== undefined && (typeof p.refinedState !== "string" || !/^[A-Z]{2}$/.test(p.refinedState))) return null;
   if (!idOK(p.originSubjectId) || !Array.isArray(p.originRows) || p.originRows.length > MAX_PEER_LIST_ROWS ||
       !Array.isArray(p.selectedIds) || p.selectedIds.length > MAX_PEER_LIST_ROWS) return null;
   const seen = new Set<number>();

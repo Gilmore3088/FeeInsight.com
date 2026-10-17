@@ -137,3 +137,40 @@ describe("saved Hamilton analysis compatibility read", () => {
     expect(stored.confidence.level).toBe("high");
   });
 });
+
+describe("recording the fee rows a saved answer used (#978 H03-T09)", () => {
+  const input = {
+    userId: 7,
+    institutionId: "42",
+    title: "Overdraft",
+    analysisFocus: "Pricing",
+    prompt: "What is the overdraft fee?",
+    response: legacy as never,
+  };
+
+  it("records the given fee rows beside the new row, after the save", async () => {
+    const { resetFeeRefsReadyCache } = await import("./saved-output-fee-refs");
+    resetFeeRefsReadyCache();
+    db.query.mockResolvedValueOnce([{ id: "new" }]).mockResolvedValueOnce([{ ready: true }]).mockResolvedValueOnce([]);
+    const feeRefs = [{ feePublishedId: 501, institutionId: 42, sourceDocumentId: 900, sourceContentHash: "h" }];
+    expect(await insertSavedAnalysis({ ...input, feeRefs })).toBe("new");
+    const sqls = db.query.mock.calls.map(text);
+    expect(sqls[0]).toContain("INSERT INTO hamilton_saved_analyses");
+    expect(sqls[2]).toContain("INSERT INTO hamilton_saved_output_fee_refs");
+    expect(db.query.mock.calls[2]).toContain("new");
+    expect(db.query.mock.calls[2]).toContainEqual([501]);
+  });
+
+  it("writes no record when the answer names no fee row, and a failed record never fails the save", async () => {
+    db.query.mockResolvedValueOnce([{ id: "plain" }]);
+    expect(await insertSavedAnalysis(input)).toBe("plain");
+    expect(db.query).toHaveBeenCalledTimes(1);
+
+    const { resetFeeRefsReadyCache } = await import("./saved-output-fee-refs");
+    resetFeeRefsReadyCache();
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    db.query.mockResolvedValueOnce([{ id: "kept" }]).mockRejectedValueOnce(new Error("relation does not exist"));
+    expect(await insertSavedAnalysis({ ...input, feeRefs: [{ feePublishedId: 1, institutionId: null, sourceDocumentId: null, sourceContentHash: null }] })).toBe("kept");
+    error.mockRestore();
+  });
+});

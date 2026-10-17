@@ -53,11 +53,18 @@ export function storylineAnalysis(
   };
 }
 
+/** The memo's figure-check rating, with its sentence binding's limits (#981, H06-T06) so a board brief and export carry them. */
+function memoConfidence(memo: StorylineMemo): EvidenceBoundAnalyzeResponse["confidence"] {
+  const confidence = confidenceFromFigureCheck(memo.figureCheck);
+  const limits = memo.narrativeBinding?.limitations ?? [];
+  return limits.length ? { ...confidence, basis: [...new Set([...confidence.basis, ...limits])] } : confidence;
+}
+
 /** The saved analysis once Hamilton's memo is written: the memo leads, the storyline stays. */
 export function withMemo(saved: EvidenceBoundAnalyzeResponse, memo: StorylineMemo): EvidenceBoundAnalyzeResponse {
   return {
     ...saved,
-    confidence: confidenceFromFigureCheck(memo.figureCheck),
+    confidence: memoConfidence(memo),
     hamiltonView: memo.summary,
     whatThisMeans: `${memo.board}\n\n${memo.market}`,
     exploreFurther: memo.questions.length > 0 ? memo.questions : saved.exploreFurther,

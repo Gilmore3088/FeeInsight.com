@@ -30,21 +30,28 @@ export const HEADER_OFFSET = 80;
 
 /* ───────────────────────── District map ───────────────────────── */
 
-/** Where each district's number sits on the 960x600 map (the middle of its states' boxes). */
-const ANCHORS: Record<number, [number, number]> = {
-  1: [884, 112],
-  2: [808, 160],
-  3: [764, 204],
-  4: [676, 268],
-  5: [768, 300],
-  6: [664, 404],
-  7: [604, 196],
-  8: [548, 322],
-  9: [394, 112],
-  10: [360, 284],
-  11: [404, 448],
-  12: [156, 236],
+/**
+ * Each district's Federal Reserve Bank city on the 960x600 map (James, Oct 17: a small bank at
+ * each Fed city instead of numbers). Projected with d3's Albers USA and fitted to this map's
+ * state outlines (within about 3px).
+ */
+export const FED_CITIES: Record<number, { city: string; x: number; y: number }> = {
+  1: { city: "Boston", x: 880, y: 154 },
+  2: { city: "New York", x: 842, y: 201 },
+  3: { city: "Philadelphia", x: 827, y: 222 },
+  4: { city: "Cleveland", x: 714, y: 208 },
+  5: { city: "Richmond", x: 800, y: 283 },
+  6: { city: "Atlanta", x: 692, y: 385 },
+  7: { city: "Chicago", x: 617, y: 212 },
+  8: { city: "St. Louis", x: 580, y: 287 },
+  9: { city: "Minneapolis", x: 523, y: 148 },
+  10: { city: "Kansas City", x: 505, y: 279 },
+  11: { city: "Dallas", x: 466, y: 419 },
+  12: { city: "San Francisco", x: 30, y: 246 },
 };
+
+/** A small bank building (pediment, three columns, base), centered on 0,0 and 16 wide. */
+const BANK_ICON = "M0 -8 L8 -3.5 L-8 -3.5 Z M-6.5 -2 h3 v6.5 h-3 Z M-1.5 -2 h3 v6.5 h-3 Z M3.5 -2 h3 v6.5 h-3 Z M-8 5.5 h16 v2.5 h-16 Z";
 
 const STATES_BY_DISTRICT = new Map<number, typeof US_STATES>();
 for (const state of US_STATES) {
@@ -53,7 +60,7 @@ for (const state of US_STATES) {
   STATES_BY_DISTRICT.set(district, [...(STATES_BY_DISTRICT.get(district) ?? []), state]);
 }
 /** West to east, the order the districts fill in. */
-const SWEEP = [...STATES_BY_DISTRICT.keys()].sort((a, b) => ANCHORS[a][0] - ANCHORS[b][0]);
+const SWEEP = [...STATES_BY_DISTRICT.keys()].sort((a, b) => FED_CITIES[a].x - FED_CITIES[b].x);
 
 const STEPS = 5;
 const STEP_FILL = (step: number) => `var(--fi-viz-${step})`;
@@ -246,14 +253,29 @@ export function DistrictMap({ data, compact = false }: { data: HomeData; compact
           ) : null}
           <g aria-hidden="true" pointerEvents="none">
             {SWEEP.map((n) => {
-              const [x, y] = ANCHORS[n];
+              const { city, x, y } = FED_CITIES[n];
               const on = n === activeNumber;
+              // The city's name shows beside the shown district's bank, on the side with room.
+              const labelLeft = x > 760;
               return (
-                <g key={n} transform={`translate(${x} ${y})`}>
-                  <circle r={13} fill={on ? "var(--fi-ink)" : "var(--fi-surface-0)"} stroke="var(--fi-ink)" strokeOpacity={on ? 1 : 0.25} />
-                  <text textAnchor="middle" dy="0.35em" fontSize={13} fontWeight={600} fill={on ? "var(--fi-on-ink)" : "var(--fi-ink)"}>
-                    {n}
-                  </text>
+                <g key={n} transform={`translate(${x} ${y})`} data-fed-city={city}>
+                  <circle r={13} fill={on ? "var(--fi-ink)" : "var(--fi-surface-0)"} stroke="var(--fi-ink)" strokeOpacity={on ? 1 : 0.35} />
+                  <path d={BANK_ICON} transform="scale(0.85)" fill={on ? "var(--fi-on-ink)" : "var(--fi-ink)"} />
+                  {on ? (
+                    <text
+                      x={labelLeft ? -19 : 19}
+                      textAnchor={labelLeft ? "end" : "start"}
+                      dy="0.35em"
+                      fontSize={15}
+                      fontWeight={600}
+                      fill="var(--fi-ink)"
+                      stroke="var(--fi-surface-0)"
+                      strokeWidth={4}
+                      paintOrder="stroke"
+                    >
+                      {city}
+                    </text>
+                  ) : null}
                 </g>
               );
             })}

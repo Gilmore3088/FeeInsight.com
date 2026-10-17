@@ -75,8 +75,9 @@ text Knox has read before is picked again when any one of these holds:
 3. Large bank: the bank has $10B or more in assets (`KNOX_REREAD_ASSET_FLOOR`, `asset_size` in
    thousands) and the document is a page's current copy.
 4. Older copy still live: an older copy of this page still carries a live fee.
-5. Stale read: the current copy has no `extract.rules` attempt at v26 or later
-   (`KNOX_STALE_READ_BELOW_VERSION`).
+5. Stale read: the current copy has no `extract.rules` attempt at v75 or later
+   (`KNOX_STALE_READ_BELOW_VERSION`; v26 until Oct 17, raised with v75 so every current copy read
+   by an older version is read once more).
 6. Lineup gap: the current copy has a `monthly_maintenance` row with no account name, or with
    neither the balance that avoids it nor its waiver, or (v73) a `minimum_balance` row with no
    account name, or a monthly maintenance or minimum balance row whose stored account names no
@@ -507,6 +508,59 @@ hand check found wrong, from their real lines.
   Transfer for\nOverdrafts - $2.00 per transfer", raw 112570). A bare "Overdrafts" priced per
   item is still the overdraft fee.
 
+v75 (Oct 17, Knox recall on the 62-bank answer key): names for the recurring line families the key
+showed held as unclassified or not read (`RECALL_FAMILY_PATTERNS` in `rules.ts`, after every other
+name rule). Each files under one of the 50 types; where the key uses a retired key, the read takes
+that key's fold home.
+- Rush shipping of a card or PIN: "Expedited PIN Only (by mail)", "Express Shipping (domestic U.S.
+  only)", "Expedited shipping fee", "Rush Fee" (`rush_card`). A rushed check order, check payment,
+  wire, statement or loan line is not one.
+- A mortgage's payoff demand, satisfaction and reconveyance ("Demand for Payoff (Mortgage Loan)",
+  "Duplicate Satisfaction of Mortgage", "Lien Satisfied", "Mortgage Reconveyance Fee") are other
+  lending, the fold's home for mortgage payoff, lien release and reconveyance; "First mortgage
+  processing", "underwriting" and "Mortgage Funding" are loan origination.
+- A club's withdrawal or early close ("Holiday Club Withdrawal", "Christmas club early close fee"), an
+  account, savings or membership closed inside a year ("Cancel Membership < 180 days", "Closed
+  account during first 90 days", "Account closing (90 days from open date)") and a savings account's
+  own closure fee ("Share Savings Closure") are early closure. A loan's, a certificate's or an IRA's
+  is not, and reopening an account still is not.
+- "Wire Transfer Fee - Within U.S.A." is a domestic outgoing wire.
+- An IRA's withdrawal, distribution, transfer out or closing is IRA termination (the fold's home for
+  IRA distributions).
+- An assisted loan payment ("Agent-Supported Loan Payment Fee") and a skip payment ("Skip Payment
+  Fee", "Loan Skip Payment Fee") are other lending. "Skip-a-Loan payment" stays out: one key files it
+  as a late fee.
+- "Mobile Check Deposit" is mobile deposit.
+- One price for a "Debit Card or Credit Card Replacement" is the debit card's (a credit card alone
+  is still a lending fee).
+- Left held on purpose: returned statements (James's call since v26); a bare "Wire Transfer Fee"
+  (about 1 in 5 say incoming or international after the price); and printouts, instant-issue cards,
+  travel and reloadable cards, loan coupon books, remote deposit capture and a bare "Expedited
+  Delivery", which the Texas or seven-state gate keys leave unfiled or file elsewhere.
+- Gates: Texas 556 to 567 right (14 wrong), held out 53 / 4, seven states 797 to 833 right (41
+  wrong); no document gained a wrong read.
+- Every current copy read before v75 is read once more (`KNOX_STALE_READ_BELOW_VERSION`, raised from
+  26): 41 of the 62 answer-key pages were last read at v65 or earlier.
+
+v74 (Oct 16): a footnote number glued to the front of a name comes off (`withoutLeadingFootnoteMark`
+in `rules.ts`, applied to every specialist's read and held line in `runFreeSpecialists`).
+- "1Monthly fee of $5.95 applies when ..." is "Monthly fee"; "10NON-MEMBER Loan Application Fee",
+  "3Automated Overdraft item fee" and "1A dormant fee" ("A dormant fee") lose theirs too. A mark on a
+  lower-case word leaves a capital ("1monthly minimum balance fee" is "Monthly minimum balance fee").
+- The page decides: the glued token must open a line or a "|" cell wherever the text prints it, and
+  never sit inside a line. "3Hill CU Cashier's Checks" keeps its name: the same page says "Call 3Hill
+  CU for Details". With no text nothing is cut.
+- Never cut: box sizes ("3x10", "5X 6"), ordinals ("1st", "2nd", "3rd party", "3rdParty", "1ST"; a
+  capital S is no ordinal, so "1Statement copy fee" is cut), times and periods ("24hr"), one capital
+  standing alone ("3D Secure"), a single digit on exactly two capitals ("2FA"), a count per period
+  ("2Checks per month"), or a token that opens the bank's own name ("5Star Bank", "3Hill FCU").
+- The cut runs before the name tidy and again after it: the tidy can leave a mark at the front once a
+  cell before it goes ("each | 8Legal Process Service" is "8Legal ..." before the second cut; doc 20097).
+- Oct 16: 35 live fees at 25 banks and 51 raw reads from the two days before carried one; the live
+  names are fixed by the name tidy's v20 (below), which uses the same function.
+- Older held lines keep their printed name until read again; the name-filed store path files them
+  as printed, and the name tidy renames the live fee.
+
 v73 (#1100, Oct 16): every monthly maintenance and minimum balance read records the account it belongs
 to (`product_name`, the catalog's `account_product_type`; `accountProductFor` in `lineup.ts`).
 - Sources, in order: the account lineup's product (the read's own row label, or a model read); the
@@ -917,6 +971,11 @@ Live name tidy (`name-retidy.ts`, Oct 7): names Knox stored before it tidied rea
 Item", "/mo. | Dormant Fee", "An overdraft fee of") are re-tidied on live rows, a batch of banks per
 publish step. A rename must keep the fee tracing in its own schedule and passing the category guard;
 the old name goes to `pipeline_feedback` (`name_retidied`, weight 0, so it never counts as a lesson).
+v20 (Oct 16): a footnote number glued to the front of a live name ("1Monthly fee") comes off by the
+rules v74 test, read against the fee's own document; a name whose page also prints the token inside a
+line ("3Hill CU") stays, and so does a token that opens the bank's own name. The cut runs again on the
+tidied name, and a lower-case brand the stored name holds keeps its case ("myChance", 96352). The due
+query finds names opening on a number glued to a letter (box sizes left out).
 
 `isCutoffName` (publish's `cutoff_name` hold) has a narrow live twin beside it, `liveFragmentName`
 (#1443), built from the same regex pieces: a dangling joining word (lower-case "a/an/the" only;
@@ -1137,9 +1196,9 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_LAYOUT_SIGNATURE_VERSION` | — | v1 | `knox/layout-signature.ts` |
 | `KNOX_LESSONS_VERSION` | — | v3 | `knox/lessons.ts` |
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
-| `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v19 | `knox/name-retidy.ts` |
+| `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v20 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v73 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v75 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v6 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v1 | `knox/takedown-lessons.ts` |

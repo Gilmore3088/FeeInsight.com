@@ -14,6 +14,8 @@ export interface ProTierDef {
   key: ProTier;
   /** "Under $500M in assets" */
   assetsLabel: string;
+  /** Where the tier starts: "$500M" (null for the first tier). */
+  fromLabel: string | null;
   monthlyUsd: number;
   annualUsd: number;
 }
@@ -23,9 +25,9 @@ const MID_FROM_THOUSANDS = 500_000;
 const LARGE_FROM_THOUSANDS = 2_000_000;
 
 export const PRO_TIERS: readonly ProTierDef[] = [
-  { key: "small", assetsLabel: "Under $500M in assets", monthlyUsd: 150, annualUsd: 1_500 },
-  { key: "mid", assetsLabel: "$500M to $2B in assets", monthlyUsd: 300, annualUsd: 3_000 },
-  { key: "large", assetsLabel: "Over $2B in assets", monthlyUsd: 500, annualUsd: 5_000 },
+  { key: "small", assetsLabel: "Under $500M in assets", fromLabel: null, monthlyUsd: 150, annualUsd: 1_500 },
+  { key: "mid", assetsLabel: "$500M to $2B in assets", fromLabel: "$500M", monthlyUsd: 300, annualUsd: 3_000 },
+  { key: "large", assetsLabel: "Over $2B in assets", fromLabel: "$2B", monthlyUsd: 500, annualUsd: 5_000 },
 ];
 
 /** The tier for consultants and other organizations that are not a bank or credit union. */
@@ -43,6 +45,7 @@ const WHOLE_DOLLARS = new Intl.NumberFormat("en-US", {
   currency: "USD",
   maximumFractionDigits: 0,
 });
+const CENTS = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export function isProPlan(value: string | undefined | null): value is ProPlan {
   return value === "monthly" || value === "annual";
@@ -89,12 +92,42 @@ export function annualMonthsFree(tier: ProTier): number {
 }
 
 /**
- * The annual plan as a monthly figure, rounded down to whole dollars for display: "$125",
- * "$416" ($5,000 / 12 is $416.67), so the price is never overstated. A label only: checkout
- * charges the annual price itself.
+ * The annual plan as a monthly figure, to the cent when it isn't whole: "$125", "$416.67"
+ * ($5,000 / 12; James, Oct 16: not "$416"). A label only: checkout charges the annual price itself.
  */
 export function annualPerMonthLabel(tier: ProTier): string {
-  return WHOLE_DOLLARS.format(Math.floor(proTier(tier).annualUsd / 12));
+  const cents = Math.round((proTier(tier).annualUsd * 100) / 12);
+  return cents % 100 === 0 ? WHOLE_DOLLARS.format(cents / 100) : CENTS.format(cents / 100);
+}
+
+/**
+ * Total assets as call reports file them (thousands of dollars), for the line that explains a
+ * price: "$4.44B", "$705.55B", "$499M". Cut, never rounded up, so a figure just under a tier's
+ * start never reads as the start itself.
+ */
+export function reportedAssetsLabel(assetsThousands: number): string {
+  const millions = assetsThousands / 1_000;
+  if (millions >= 1_000) return `$${(Math.floor(millions / 10) / 100).toFixed(2)}B`;
+  return `$${Math.floor(millions).toLocaleString("en-US")}M`;
+}
+
+/** "Q2 2026 FDIC call report" from a filing's date ("2026-06-30") and source ("fdic"). */
+export function callReportLabel(reportDate: string, source: string): string | null {
+  const match = /^(\d{4})-(\d{2})-\d{2}/.exec(reportDate);
+  if (!match) return null;
+  const quarter = Math.ceil(Number(match[2]) / 3);
+  const regulator = source.toLowerCase() === "ncua" ? "NCUA" : source.toLowerCase() === "fdic" ? "FDIC" : null;
+  return `Q${quarter} ${match[1]}${regulator ? ` ${regulator}` : ""} call report`;
+}
+
+/**
+ * The figure behind the price, beside its tier (James, Oct 16: "Latest call report" is too vague
+ * for the number that sets the bill): "Over $2B in assets: $4.44B reported in its Q2 2026 FDIC call report".
+ */
+export function assetsDetail(tierLabel: string, assetsThousands: number, report: { reportDate: string; source: string } | null): string {
+  const filing = report ? callReportLabel(report.reportDate, report.source) : null;
+  const assets = reportedAssetsLabel(assetsThousands);
+  return filing ? `${tierLabel}: ${assets} reported in its ${filing}` : `${tierLabel}: ${assets} in total assets on file`;
 }
 
 /** What the annual plan saves against twelve monthly payments: "$300". */

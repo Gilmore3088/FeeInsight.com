@@ -17,7 +17,7 @@ import {
 } from "@/lib/hamilton/institution-membership";
 import { PRO_TIERS } from "@/lib/pro-tiers";
 import { apiIncludedInTier } from "@/lib/api-subscriber-access";
-import { getSubscriberKey } from "@/lib/api-subscriber-keys";
+import { findApiPayer, getSubscriberKey } from "@/lib/api-subscriber-keys";
 import type { ApiAccess } from "./api-access-card";
 import { getAccountEmails } from "./account-emails";
 import { getAccountReports, getOwnInstitution, getPaidReports } from "./account-data";
@@ -28,6 +28,14 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Account",
 };
+
+/** The plan of the workspace owner who covers a team seat, or null when it can't be read. */
+async function seatPlanTier(userId: number) {
+  const payer = await findApiPayer(userId).catch(() => null);
+  if (!payer?.stripeCustomerId) return null;
+  const summary = await getBillingSummary(payer.stripeCustomerId).catch(() => null);
+  return summary?.tier ?? null;
+}
 
 export default async function AccountPage({
   searchParams,
@@ -81,14 +89,15 @@ export default async function AccountPage({
     emailConfirmed && user.email ? getPaidReports(user.email) : Promise.resolve([]),
   ]);
 
-  // The API comes with the $300 and $500 plans, for the person who pays (not seats or staff).
+  // The API comes with the $300 and $500 plans: the payer and each team seat on their
+  // workspace make their own key, sharing the plan's allowance (staff get no card).
   let apiAccess: ApiAccess | null = null;
-  if (isPro && !isStaff && paysForPro && billing?.tier) {
-    if (apiIncludedInTier(billing.tier)) {
-      const key = await getSubscriberKey(user.id).catch(() => null);
-      apiAccess = { kind: "included", key };
-    } else {
-      apiAccess = { kind: "upgrade" };
+  if (isPro && !isStaff) {
+    const apiTier = paysForPro ? billing?.tier ?? null : await seatPlanTier(user.id);
+    if (apiTier) {
+      apiAccess = apiIncludedInTier(apiTier)
+        ? { kind: "included", key: await getSubscriberKey(user.id).catch(() => null) }
+        : { kind: "upgrade" };
     }
   }
 

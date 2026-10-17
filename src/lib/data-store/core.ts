@@ -90,7 +90,7 @@ export async function getFeesByInstitution(targetId: number): Promise<ExtractedF
            ef.extraction_confidence, ef.review_status,
            ef.validation_flags, ef.fee_category, ef.fee_family,
            ef.source_url, ef.created_at, ef.fee_audience, ef.audience_evidence, ef.fee_treatment,
-           ct.institution_name, ef.institution_id
+           ct.institution_name, ef.institution_id, ef.source_document_id
     FROM published_fee_catalog ef
     JOIN institution_sources ct ON ef.institution_id = ct.id
     WHERE ef.institution_id = ${targetId}
@@ -104,6 +104,7 @@ export async function getFeesByInstitution(targetId: number): Promise<ExtractedF
     amount: r.amount !== null ? Number(r.amount) : null,
     extraction_confidence: Number(r.extraction_confidence),
     conditions: readerFeeConditions(r.conditions),
+    source_document_id: r.source_document_id == null ? null : Number(r.source_document_id),
   }));
 }
 

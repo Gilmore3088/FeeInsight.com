@@ -2,10 +2,18 @@ import Link from "next/link";
 import type { SavedOutputNotice } from "@/lib/saved-output-corrections";
 
 /**
- * H03-T09: shown above a saved answer when this institution's fee data changed after it was
- * saved. The saved answer is left exactly as it was; the reader chooses whether to ask again.
+ * H03-T09: shown above a saved answer or report when fee data it used changed after it was
+ * saved. The saved output is left exactly as it was; the reader chooses whether to make a new one.
  */
-export function SavedChangeNotice({ notice, askAgainHref }: { notice: SavedOutputNotice; askAgainHref: string | null }) {
+export function SavedChangeNotice({
+  notice,
+  askAgainHref,
+  actionLabel = "Ask again with current data",
+}: {
+  notice: SavedOutputNotice;
+  askAgainHref: string | null;
+  actionLabel?: string;
+}) {
   return (
     <div
       role="note"
@@ -15,7 +23,7 @@ export function SavedChangeNotice({ notice, askAgainHref }: { notice: SavedOutpu
       {askAgainHref && (
         <p className="mt-1">
           <Link className="font-medium text-[var(--fi-brick-ink)] underline" href={askAgainHref}>
-            Ask again with current data
+            {actionLabel}
           </Link>
         </p>
       )}

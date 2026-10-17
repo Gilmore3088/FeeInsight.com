@@ -41,10 +41,17 @@ export async function markInstitutionOffline(institutionId: number) {
  * see. A failure to record is logged and never fails the action, which has already committed.
  */
 async function refreshPublicReads(institutionId: number, runId: number | null | undefined): Promise<void> {
-  const cleared = invalidatePublicReadCache();
-  revalidatePath(`/admin/institution/${institutionId}`);
-  revalidatePath(`/institution/${institutionId}`);
-  revalidatePath("/admin/corrections");
+  // The action has already committed. A failed page revalidation is recorded as a failed refresh,
+  // which the operator can retry, and never thrown: the action must not read "Nothing changed".
+  let cleared = invalidatePublicReadCache();
+  for (const path of [`/admin/institution/${institutionId}`, `/institution/${institutionId}`, "/admin/corrections"]) {
+    try {
+      revalidatePath(path);
+    } catch (error) {
+      cleared = false;
+      console.error("[admin] page revalidation failed after a committed fee action", { path, runId, error });
+    }
+  }
   if (runId == null) return;
   try {
     await recordPublicCacheRefresh(sql, runId, cleared);
@@ -128,7 +135,13 @@ export async function dismissConflict(conflictId: number, reason: string): Promi
   if (!id) return { ok: false, error: "Choose a conflict." };
   try {
     const result = await dismissCorrectionConflict(sql, id, String(reason ?? ""), actorOf(user));
-    if (result.ok) revalidatePath(`/admin/institution/${result.institutionId}`);
+    if (result.ok) {
+      try {
+        revalidatePath(`/admin/institution/${result.institutionId}`);
+      } catch (error) {
+        console.error("[admin] page revalidation failed after a committed dismissal", { conflictId: id, error });
+      }
+    }
     return result.ok ? { ok: true } : { ok: false, error: result.error };
   } catch (error) {
     console.error("[admin] conflict dismissal failed", { conflictId: id, error });
