@@ -14,15 +14,12 @@ against 55, so 50 were due and 28 more than 6 hours late at 12:00 UTC. The tick 
 (9-12 successful ticks an hour, none blocked). It is not the Magellan October cap: Magellan has
 spent $161.78 of $225 this month, and its "blocked" rows are a per-run call cap.
 
-**Likely cause (inferred from `pg_stat_statements`, not yet proven with EXPLAIN ANALYZE).**
-`pipeline_attempts` holds 2.32M rows (1.3 GB), about 300k of them `verify.rules` v3, growing by up
-to 100k verify rows a day since Oct 15. Two classify reads scan it without a fitting index:
-- `selectHeldFees` in `src/lib/agents/darwin/release-held.ts`: 408 calls, mean 37 s, max 119 s
-  (the 120 s timeout). The state filter applies only after joining every held verify attempt.
-- Knox's lessons read in `src/lib/agents/knox/lessons.ts` (the `restored AS MATERIALIZED` query
-  over `pipeline_feedback`): 542 calls, mean 53 s.
-Ad-hoc analysis reads of 60-118 s on the same day add load.
+**Cause (proven with EXPLAIN ANALYZE on prod).** `selectHeldFees` in
+`src/lib/agents/darwin/release-held.ts`, run in every lane's classify step. Postgres estimates one
+held attempt where there are 13,233 (the `detail` jsonb filters), so it put `institution_sources`
+on the inside of a nested loop and filtered the state there: every held attempt scanned all 8,775
+institutions, about 116M row checks. That took over 60 s for ID alone and grew with the held
+backlog, until it crossed the 120 s statement timeout. No index is needed.
 
-**Fix needed (not in this PR).** A partial index on `pipeline_attempts` for held verify attempts
-(stage `verify`, decision `needs_review`) and a look at the lessons read. An index is a migration,
-so it needs James's yes; Darwin and Knox belong to the Data quality lane.
+**Fix (this PR).** A state lane reads its state's institutions once, in a materialized CTE, and
+joins the held attempts to that. ID: 1.6 s; TX (741 institutions, the largest): 4.8 s.
