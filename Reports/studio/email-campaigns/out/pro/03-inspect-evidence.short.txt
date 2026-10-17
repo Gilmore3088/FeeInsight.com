@@ -1,0 +1,14 @@
+Every competitor fee traces to its published schedule.
+
+Check the source behind any figure
+[ TRY IT ONCE ]
+1. Open Hamilton and pick a fee where you sit above your peers.
+2. Open the competitor with the highest price and follow its source link.
+3. If the schedule disagrees with what we show, reply with the institution and fee. We re-check it.
+Open Hamilton: https://feeinsight.com/pro/hamilton?utm_source=mailerlite&utm_medium=email&utm_campaign=pro&utm_content=inspect-evidence
+
+Full email with tables and charts: {$url}
+
+--
+Fee Insight · feeinsight.com · reply with questions
+Unsubscribe: {$unsubscribe}

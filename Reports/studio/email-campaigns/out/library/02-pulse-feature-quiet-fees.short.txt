@@ -1,0 +1,11 @@
+Source for a future Fee Pulse feature. October's Pulse already uses the returned-deposit fee.
+
+The fees nobody benchmarks (customers notice them anyway)
+1. Debit card replacement. Check whether a standard reissue is priced like a rush order. See the market (https://feeinsight.com/fees/card_replacement?utm_source=mailerlite&utm_medium=email&utm_campaign=library&utm_content=pulse-feature-quiet-fees).
+2. Deposited item returned. The customer who deposited a bad check didn't write it. See the market (https://feeinsight.com/fees/deposited_item_return?utm_source=mailerlite&utm_medium=email&utm_campaign=library&utm_content=pulse-feature-quiet-fees).
+
+Full email with tables and charts: {$url}
+
+--
+Fee Insight · feeinsight.com · reply with questions
+Unsubscribe: {$unsubscribe}

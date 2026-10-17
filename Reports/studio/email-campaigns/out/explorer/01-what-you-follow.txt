@@ -1,0 +1,27 @@
+Your page, and the monthly snapshot you'll get.
+
+FOLLOWING
+
+You're following {$follow_name|default('the market you follow')}
+============================================================
+
+Here is the page you asked to follow. It reads every figure from the published fee schedules behind it and updates in place.
+
+Open {$follow_name|default('the market you follow')}: {$follow_url|default('https://feeinsight.com/research')}
+Free, no login.
+
+
+[ WHAT YOU'LL GET ]
+- Once a month: a snapshot of the fees you follow, with how many institutions stand behind each number.
+- Alerts when a saved institution's schedule changes: create a free account and save it. Find an institution (https://feeinsight.com/institutions?utm_source=mailerlite&utm_medium=email&utm_campaign=explorer&utm_content=what-you-follow).
+
+Reply any time with a question about a number.
+
+James Gilmore
+Founder, Fee Insight · publisher of the Bank Fee Index
+
+----
+Fee Insight publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules.
+Methodology: https://feeinsight.com/methodology
+Questions? Just reply.
+Unsubscribe: {$unsubscribe}

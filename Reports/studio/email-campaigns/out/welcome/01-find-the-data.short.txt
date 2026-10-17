@@ -1,0 +1,13 @@
+National, district, state and single-institution views, all free.
+
+Where to find the fee data for your market
+- Your state: each headline fee in your state next to the national median, banks and credit unions side by side. Find your state (https://feeinsight.com/research?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=find-the-data).
+- Your Fed district: the same view across a district. Open the district reports (https://feeinsight.com/reports?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=find-the-data).
+- One institution: its fee table, the schedule it came from, and the date we read it. Search institutions (https://feeinsight.com/institutions?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=find-the-data).
+Free, no login.
+
+Full email with tables and charts: {$url}
+
+--
+Fee Insight · feeinsight.com · reply with questions
+Unsubscribe: {$unsubscribe}

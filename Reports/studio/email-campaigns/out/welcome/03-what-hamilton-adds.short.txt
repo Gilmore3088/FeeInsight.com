@@ -1,0 +1,15 @@
+What Hamilton Pro adds to the free reports.
+
+Your fees against the institutions you name
+- Your schedule, fee by fee, below, inside or above your peers' range.
+- Peers you pick by charter, asset size, district or county, instead of an anonymous average.
+- The source behind every figure: the competitor's published schedule and the date we read it.
+- Reports for your committee you can export and share.
+See Hamilton plans: https://feeinsight.com/subscribe?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=what-hamilton-adds
+Prefer a walkthrough first? Ask for a demo (https://feeinsight.com/contact?source=demo&utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=what-hamilton-adds).
+
+Full email with tables and charts: {$url}
+
+--
+Fee Insight · feeinsight.com · reply with questions
+Unsubscribe: {$unsubscribe}

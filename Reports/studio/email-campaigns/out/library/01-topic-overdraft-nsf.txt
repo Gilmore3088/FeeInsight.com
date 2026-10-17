@@ -1,0 +1,34 @@
+Four rules that shape these fees, and the questions to ask about your own.
+
+TOPIC · OVERDRAFT AND NSF
+
+Overdraft and NSF: the rules, and where pricing sits
+====================================================
+
+In 2021 and 2022 several of the largest U.S. banks cut or dropped overdraft and NSF fees. The rest of the market didn't follow in a straight line, and banks and credit unions moved differently.
+
+See today's overdraft numbers: https://feeinsight.com/fees/overdraft?utm_source=mailerlite&utm_medium=email&utm_campaign=library&utm_content=topic-overdraft-nsf
+Median, middle half and bank vs credit union. NSF is here (https://feeinsight.com/fees/nsf?utm_source=mailerlite&utm_medium=email&utm_campaign=library&utm_content=topic-overdraft-nsf).
+
+
+[ THE RULES THAT SHAPE THESE FEES ]
+- Reg E opt-in (2010): an overdraft fee on ATM and one-time debit card transactions requires the consumer's affirmative opt-in.
+- CFPB Circular 2022-06: overdraft fees on transactions authorized against a positive balance ("authorize positive, settle negative") can be an unfair practice.
+- FDIC FIL-40-2022: charging an NSF fee each time the same item is re-presented carries consumer-compliance risk.
+- Truth in Savings (Reg DD): fee schedules must be disclosed. That's why this data is public.
+
+
+[ QUESTIONS TO ASK ABOUT YOUR OWN SCHEDULE ]
+[ ] Do we charge NSF on re-presented items? How many times?
+[ ] Is our overdraft fee above the market's middle half?
+[ ] Do we cap daily overdraft fees, and is the cap on the published schedule?
+[ ] Is there a threshold below which no overdraft fee applies?
+
+James Gilmore
+Founder, Fee Insight · publisher of the Bank Fee Index
+
+----
+Fee Insight publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules.
+Methodology: https://feeinsight.com/methodology
+Questions? Just reply.
+Unsubscribe: {$unsubscribe}

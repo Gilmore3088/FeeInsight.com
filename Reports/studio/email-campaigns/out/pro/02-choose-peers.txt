@@ -1,0 +1,20 @@
+The peer set decides every comparison you'll show your committee.
+
+SETUP · 2 OF 5
+
+Choose the peers you're measured against
+========================================
+
+The national median is the wrong yardstick for one institution. Build a peer set from the institutions your customers actually compare you with, by charter, asset size, district or county.
+
+Build your peer set: https://feeinsight.com/pro/settings?utm_source=mailerlite&utm_medium=email&utm_campaign=pro&utm_content=choose-peers#peer-sets
+How to pick one that holds up in a board meeting: Building a Peer Set (https://feeinsight.com/guides/pro/building-a-peer-set?utm_source=mailerlite&utm_medium=email&utm_campaign=pro&utm_content=choose-peers).
+
+James Gilmore
+Founder, Fee Insight · publisher of the Bank Fee Index
+
+----
+Fee Insight publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules.
+Methodology: https://feeinsight.com/methodology
+Questions? Just reply.
+Unsubscribe: {$unsubscribe}

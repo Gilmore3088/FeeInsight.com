@@ -1,0 +1,27 @@
+National, district, state and single-institution views, all free.
+
+WELCOME · 1 OF 3
+
+Where to find the fee data for your market
+==========================================
+
+Thanks for subscribing. Every figure on the site comes from a bank's or credit union's own published fee schedule, and every view below is free with no login. Start with the one closest to the institutions you compete with.
+
+- Your state: each headline fee in your state next to the national median, banks and credit unions side by side. Find your state (https://feeinsight.com/research?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=find-the-data).
+- Your Fed district: the same view across a district. Open the district reports (https://feeinsight.com/reports?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=find-the-data).
+- One institution: its fee table, the schedule it came from, and the date we read it. Search institutions (https://feeinsight.com/institutions?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=find-the-data).
+- One fee across the country: the median and middle half for any fee. Browse fees (https://feeinsight.com/fees?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=find-the-data).
+
+Find your state: https://feeinsight.com/research?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=find-the-data
+Free, no login.
+
+Next email: one comparison worth making before your next pricing meeting.
+
+James Gilmore
+Founder, Fee Insight · publisher of the Bank Fee Index
+
+----
+Fee Insight publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules.
+Methodology: https://feeinsight.com/methodology
+Questions? Just reply.
+Unsubscribe: {$unsubscribe}

@@ -1,0 +1,10 @@
+Your position against your peers, ready for the committee.
+
+Produce your first report
+Open Reports: https://feeinsight.com/pro/reports?utm_source=mailerlite&utm_medium=email&utm_campaign=pro&utm_content=produce-report
+
+Full email with tables and charts: {$url}
+
+--
+Fee Insight · feeinsight.com · reply with questions
+Unsubscribe: {$unsubscribe}

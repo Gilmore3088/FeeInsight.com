@@ -1,0 +1,11 @@
+The number at the top of your report, and the question it raises.
+
+One finding from your report
+See it in your report: {$report_url|default('https://feeinsight.com/reports')}
+The finding links to the table behind it.
+
+Full email with tables and charts: {$url}
+
+--
+Fee Insight · feeinsight.com · reply with questions
+Unsubscribe: {$unsubscribe}

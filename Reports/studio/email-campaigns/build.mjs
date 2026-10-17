@@ -109,6 +109,20 @@ const R = {
     const text = b.items.map((i) => `${i.label}: ${i.display ?? money(i.value)}`).join("\n") + (b.note ? `\n${plain(b.note)}` : "");
     return [html, text];
   },
+  // Middle-half ranges on one $0..max axis, median marked; table cells, so it renders with images off.
+  range: (b) => {
+    const pct = (v) => Math.round((v / b.max) * 1000) / 10;
+    const html = `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:6px 0 4px;">${b.items
+      .map((i) => {
+        const col = i.accent ? C.terra : C.ink2;
+        const a = pct(i.p25), w1 = Math.max(0.5, pct(i.med) - a), w2 = Math.max(0.5, pct(i.p75) - pct(i.med)), rest = Math.max(0, 100 - a - w1 - w2);
+        const seg = (w, bg, extra = "") => `<td width="${w}%" style="background:${bg};height:14px;line-height:14px;font-size:0;${extra}">&nbsp;</td>`;
+        return `<tr><td style="padding:8px 0 3px;font-family:${SANS};font-size:13px;color:${i.accent ? C.ink : C.text2};${i.accent ? "font-weight:bold;" : ""}">${esc(i.label)}</td><td align="right" style="padding:8px 0 3px;font-family:${MONO};font-size:12px;color:${C.ink};white-space:nowrap;">${money(i.p25)}&ndash;${money(i.p75)} &middot; median ${money(i.med)}</td></tr><tr><td colspan="2" style="padding:0 0 4px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:${C.sand};"><tr>${a > 0 ? seg(a, C.sand) : ""}${seg(w1, col, `border-right:2px solid ${C.paper};`)}${seg(w2, col)}${rest > 0 ? seg(rest, C.sand) : ""}</tr></table></td></tr>`;
+      })
+      .join("")}<tr><td style="padding:2px 0 0;font-family:${MONO};font-size:10px;color:${C.muted};">$0</td><td align="right" style="padding:2px 0 0;font-family:${MONO};font-size:10px;color:${C.muted};">${money(b.max)}</td></tr></table>${b.note ? `<p style="margin:6px 0 20px;font-family:${SANS};font-size:11px;line-height:1.5;color:${C.muted};">${inline(b.note)}</p>` : ""}`;
+    const text = b.items.map((i) => `${i.label}: ${money(i.p25)} to ${money(i.p75)}, median ${money(i.med)}`).join("\n") + (b.note ? `\n${plain(b.note)}` : "");
+    return [html, text];
+  },
   // Boxed callouts: action (do this), rule (regulation), term (glossary), quote.
   box: (b) => {
     const tone = { action: [C.goodSoft, C.good], rule: [C.sand, C.ink], term: [C.cream, C.terra], warn: [C.terraSoft, C.terra] }[b.tone || "action"];
@@ -148,7 +162,7 @@ function renderEmail(automation, email) {
   });
   const bodyHtml = parts.map((p) => p[0]).join("\n");
   const bodyText = parts.map((p) => p[1]).join("\n\n");
-  const footerHtml = `<p style="margin:0 0 8px;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.muted};"><strong style="color:${C.ink2};">Fee Insight</strong> publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules. <a href="${utm(BRAND.siteUrl + "/methodology", automation.key, email.key)}" style="color:${C.text2};">Methodology</a></p><p style="margin:0 0 8px;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.muted};">Questions or a fee you think we got wrong? Just reply. A person reads every one.</p><p style="margin:0;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.muted};">${BRAND.mailingAddress ? `${esc(BRAND.mailingAddress)}<br>` : ""}You're getting this because you signed up at feeinsight.com. <a href="{$unsubscribe}" style="color:${C.text2};">Unsubscribe</a></p>`;
+  const footerHtml = `<p style="margin:0 0 8px;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.muted};"><strong style="color:${C.ink2};">Fee Insight</strong> publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules. <a href="${utm(BRAND.siteUrl + "/methodology", automation.key, email.key)}" style="color:${C.text2};">Methodology</a></p><p style="margin:0 0 8px;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.muted};">Questions or a fee you think we got wrong? Just reply. A person reads every one.</p><p style="margin:0;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.muted};">${BRAND.mailingAddress ? `${esc(BRAND.mailingAddress)}<br>` : ""}${esc(automation.footerReason || "You're getting this because you signed up at feeinsight.com.")} <a href="{$unsubscribe}" style="color:${C.text2};">Unsubscribe</a></p>`;
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"><title>${esc(email.subject)}</title></head>
 <body style="margin:0;padding:0;background:${C.sand};">
@@ -177,7 +191,7 @@ function condense(email, parts) {
   email.blocks.forEach((b, i) => {
     if (b.type === "h1") chunks.push(plain(b.text));
     else if (b.type === "box") chunks.push(parts[i][1].trim());
-    else if (["stats", "list", "cta"].includes(b.type)) chunks.push(...parts[i][1].trim().split("\n"));
+    else if (["stats", "list", "cta", "range"].includes(b.type)) chunks.push(...parts[i][1].trim().split("\n"));
   });
   let body = "";
   for (const chunk of chunks) {

@@ -1,0 +1,16 @@
+Four rules that shape these fees, and the questions to ask about your own.
+
+Overdraft and NSF: the rules, and where pricing sits
+See today's overdraft numbers: https://feeinsight.com/fees/overdraft?utm_source=mailerlite&utm_medium=email&utm_campaign=library&utm_content=topic-overdraft-nsf
+Median, middle half and bank vs credit union. NSF is here (https://feeinsight.com/fees/nsf?utm_source=mailerlite&utm_medium=email&utm_campaign=library&utm_content=topic-overdraft-nsf).
+[ QUESTIONS TO ASK ABOUT YOUR OWN SCHEDULE ]
+[ ] Do we charge NSF on re-presented items? How many times?
+[ ] Is our overdraft fee above the market's middle half?
+[ ] Do we cap daily overdraft fees, and is the cap on the published schedule?
+[ ] Is there a threshold below which no overdraft fee applies?
+
+Full email with tables and charts: {$url}
+
+--
+Fee Insight · feeinsight.com · reply with questions
+Unsubscribe: {$unsubscribe}
