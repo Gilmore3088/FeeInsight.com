@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { FeeScheduleTable, describeMedianDelta, splitFeesByAudience, type DisplayFee } from "./fee-schedule-table";
+import { FeeScheduleTable, splitFeesByAudience, type DisplayFee } from "./fee-schedule-table";
 import { feeHashCategory, tabForHash } from "./fee-audience-tabs";
 
 function fee(overrides: Partial<DisplayFee>): DisplayFee {
@@ -14,49 +14,70 @@ function fee(overrides: Partial<DisplayFee>): DisplayFee {
     conditions: null,
     status: "verified",
     sourceUrl: null,
+    sourced: true,
     ...overrides,
   };
 }
 
-describe("describeMedianDelta", () => {
-  it("states the distance from the median in words", () => {
-    expect(describeMedianDelta(35, 32.5)).toEqual({ text: "$2.50 above the national median", tone: "above" });
-    expect(describeMedianDelta(30, 32.5)).toEqual({ text: "$2.50 below the national median", tone: "below" });
-    expect(describeMedianDelta(32.5, 32.5)).toEqual({ text: "At the national median", tone: "at" });
-  });
-
-  it("names the state for the home-state comparison", () => {
-    expect(describeMedianDelta(30, 32.5, "Texas")).toEqual({ text: "$2.50 below the Texas median", tone: "below" });
-    expect(describeMedianDelta(32.5, 32.5, "Texas")).toEqual({ text: "At the Texas median", tone: "at" });
-  });
-
-  it("says nothing when either side is missing", () => {
-    expect(describeMedianDelta(null, 30)).toBeNull();
-    expect(describeMedianDelta(30, null)).toBeNull();
-    expect(describeMedianDelta(30, undefined)).toBeNull();
-  });
-});
+const BENCH = { overdraft: { p25: 25, median: 30, p75: 32 }, nsf: { p25: 25, median: 30, p75: 32 } };
 
 describe("FeeScheduleTable", () => {
-  const medians = new Map<string, number | null>([["overdraft", 32.5], ["nsf", 30]]);
-
-  it("links verified rows to the national page for that fee", () => {
-    render(<FeeScheduleTable fees={[fee({})]} disclosureUrl={null} medians={medians} />);
-    const links = screen.getAllByRole("link", { name: "$2.50 above the national median" });
-    expect(links.length).toBeGreaterThan(0);
-    for (const link of links) expect(link).toHaveAttribute("href", "/fees/overdraft");
+  it("shows a CD or IRA fee filed under early closure as not compared", () => {
+    const fees = [
+      fee({ id: "a", feeName: "Account Closed Within 180 Days of Opening Fee", feeCategory: "early_closure", amount: 30, feeAudience: "consumer" }),
+      fee({ id: "b", feeName: "Early closure of CD (fee to close prior to maturity)", feeCategory: "early_closure", amount: 50 }),
+      fee({ id: "c", feeName: "Individual Retirement Account Closing Fee", feeCategory: "early_closure", amount: 50, feeAudience: "consumer" }),
+    ];
+    render(<FeeScheduleTable fees={fees} disclosureUrl={null} benchmarks={{ early_closure: { p25: 20, median: 25, p75: 25 } }} />);
+    expect(screen.getAllByText("Not compared: CD/IRA fee").length).toBe(4); // two rows, phone and wide
+    expect(screen.getAllByText(/Above the U\.S\. middle 50%/).length).toBe(2); // only the account-closure row
   });
 
-  it("never compares a fee that is still under review", () => {
+  it("never places box drilling or a key deposit against the safe deposit box rent range (Capital City Bank rows)", () => {
+    const fees = [
+      fee({ id: "a", feeName: "Box Drilling Fee (both keys lost)", feeCategory: "safe_deposit_box", amount: 250 }),
+      fee({ id: "b", feeName: "Key Deposit Fee", feeCategory: "safe_deposit_box", amount: 25 }),
+      fee({ id: "c", feeName: "Safe Deposit Box 3x5", feeCategory: "safe_deposit_box", amount: 40 }),
+    ];
+    render(<FeeScheduleTable fees={fees} disclosureUrl={null} benchmarks={{ safe_deposit_box: { p25: 30, median: 45, p75: 65 } }} />);
+    expect(screen.getAllByText("Not compared: Box drilling or key fee").length).toBe(4); // two rows, phone and wide
+    expect(screen.getAllByText(/Inside the U\.S\. middle 50%/).length).toBe(2); // only the box rent
+    expect(screen.queryByText(/Above the U\.S\. middle 50%|Below the U\.S\. middle 50%/)).toBeNull();
+  });
+
+  it("never places an unsourced fee, as the medians never count one", () => {
+    render(<FeeScheduleTable fees={[fee({ sourced: false })]} disclosureUrl={null} benchmarks={BENCH} />);
+    expect(screen.queryByText(/U\.S\. middle 50%/)).toBeNull();
+  });
+
+  it("names no audience on each row; the asterisk and one footnote carry it", () => {
+    render(<FeeScheduleTable fees={[fee({ feeAudience: "consumer" }), fee({ id: "2", feeName: "NSF", feeCategory: "nsf", feeAudience: "unknown" })]} disclosureUrl={null} />);
+    expect(screen.queryByText("Consumer accounts")).toBeNull();
+    expect(screen.getAllByText(/Audience not stated on the bank/).length).toBe(1);
+  });
+
+  it("links each amount to the schedule it was read from", () => {
+    render(<FeeScheduleTable fees={[fee({ sourceUrl: "https://bank.example/fees.pdf" })]} disclosureUrl={null} />);
+    const amounts = screen.getAllByRole("link", { name: "$35" });
+    expect(amounts.length).toBeGreaterThan(0);
+    for (const link of amounts) expect(link).toHaveAttribute("href", "https://bank.example/fees.pdf");
+  });
+
+  it("places a verified fee against the U.S. middle 50%", () => {
+    render(<FeeScheduleTable fees={[fee({})]} disclosureUrl={null} benchmarks={BENCH} />);
+    expect(screen.getAllByText(/Above the U\.S\. middle 50%/).length).toBeGreaterThan(0);
+  });
+
+  it("never places a fee that is still under review", () => {
     render(
-      <FeeScheduleTable fees={[fee({ id: "2", feeCategory: "nsf", status: "provisional" })]} disclosureUrl={null} medians={medians} />,
+      <FeeScheduleTable fees={[fee({ id: "2", feeCategory: "nsf", status: "provisional" })]} disclosureUrl={null} benchmarks={BENCH} />,
     );
-    expect(screen.queryByRole("link", { name: /national median/ })).toBeNull();
+    expect(screen.queryByText(/U\.S\. middle 50%/)).toBeNull();
   });
 
   it("highlights and anchors the focused fee", () => {
     const { container } = render(
-      <FeeScheduleTable fees={[fee({})]} disclosureUrl={null} medians={medians} focusCategory="overdraft" />,
+      <FeeScheduleTable fees={[fee({})]} disclosureUrl={null} benchmarks={BENCH} focusCategory="overdraft" />,
     );
     const row = container.querySelector("#fee-overdraft");
     expect(row).not.toBeNull();
@@ -73,51 +94,48 @@ describe("FeeScheduleTable", () => {
       rate: { rate: "1.1%", detail: "of the transaction" },
     });
     render(
-      <FeeScheduleTable
-        fees={[rate]}
-        disclosureUrl={null}
-        medians={new Map([["card_foreign_txn", 3]])}
-        benchmarks={{ card_foreign_txn: { p25: 1, median: 3, p75: 5 } }}
-      />,
+      <FeeScheduleTable fees={[rate]} disclosureUrl={null} benchmarks={{ card_foreign_txn: { p25: 1, median: 3, p75: 5 } }} />,
     );
     expect(screen.getAllByText("1.1%").length).toBeGreaterThan(0);
     expect(screen.getAllByText("of the transaction").length).toBeGreaterThan(0);
-    expect(screen.queryByText(/(above|below|At) the national median/)).toBeNull();
+    expect(screen.queryByText(/U\.S\. middle 50%/)).toBeNull();
+  });
+
+  it("marks rows past the limit as extra, hidden until Show all", () => {
+    const fees = Array.from({ length: 7 }, (_, i) => fee({ id: String(i), feeName: `Fee ${i}`, amount: 10 + i }));
+    const { container } = render(<FeeScheduleTable fees={fees} disclosureUrl={null} limit={5} />);
+    expect(container.querySelectorAll("tbody tr.hidden").length).toBe(2);
   });
 });
 
-
-it("shows business scope without personal median comparisons", () => {
+it("shows business scope without a personal position", () => {
   render(<FeeScheduleTable fees={[fee({ feeAudience: "business" })]} disclosureUrl={null}
-    medians={new Map([["overdraft", 30]])}
     benchmarks={{ overdraft: { p25: 25, median: 30, p75: 35 } }} />);
-  expect(screen.queryByRole("link", { name: /national median/ })).toBeNull();
-  expect(screen.queryByText(/Within the typical range/)).toBeNull();
-  expect(screen.getAllByText("Business accounts").length).toBeGreaterThan(0);
+  expect(screen.queryByText(/U\.S\. middle 50%/)).toBeNull();
+  // Scope is carried by the tabs, not a line repeated on every row.
+  expect(screen.queryByText("Business accounts")).toBeNull();
   expect(screen.queryByText(/treated as personal/)).toBeNull();
 });
 
-it("compares an unstated-audience fee as personal, with the asterisk and footnote", () => {
+it("places an unstated-audience fee as personal, with the asterisk and footnote", () => {
   render(<FeeScheduleTable fees={[fee({ feeAudience: "unknown" })]} disclosureUrl={null}
-    medians={new Map([["overdraft", 30]])}
     benchmarks={{ overdraft: { p25: 25, median: 30, p75: 35 } }} />);
-  expect(screen.getAllByRole("link", { name: /national median/ }).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/Inside the U\.S\. middle 50%/).length).toBeGreaterThan(0);
   expect(screen.getAllByText(/Audience not stated/).length).toBeGreaterThan(0);
   expect(screen.getByText(/Audience not stated on the bank\u2019s schedule; treated as personal\. Fees may differ for business or commercial accounts\./)).toBeTruthy();
 });
 
 it("keeps a fee from a business-only schedule out of personal comparisons", () => {
   render(<FeeScheduleTable fees={[fee({ feeAudience: "unknown", sourceUrl: "https://bank.example/business/fee-schedule.pdf" })]}
-    disclosureUrl={null} medians={new Map([["overdraft", 30]])}
-    benchmarks={{ overdraft: { p25: 25, median: 30, p75: 35 } }} />);
-  expect(screen.queryByRole("link", { name: /national median/ })).toBeNull();
+    disclosureUrl={null} benchmarks={{ overdraft: { p25: 25, median: 30, p75: 35 } }} />);
+  expect(screen.queryByText(/U\.S\. middle 50%/)).toBeNull();
 });
 
 it("labels an explicitly eliminated consumer fee instead of treating it as missing", () => {
   render(<FeeScheduleTable fees={[fee({ feeCategory: "nsf", feeAudience: "consumer", feeTreatment: "eliminated", amount: 0 })]}
-    disclosureUrl={null} medians={new Map([["nsf", 30]])} />);
+    disclosureUrl={null} benchmarks={{ nsf: { p25: 25, median: 30, p75: 32 } }} />);
   expect(screen.getAllByText(/Fee eliminated/).length).toBeGreaterThan(0);
-  expect(screen.getAllByRole("link", { name: "$30 below the national median" }).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/Below the U\.S\. middle 50%/).length).toBeGreaterThan(0);
 });
 
 describe("splitFeesByAudience", () => {
@@ -162,7 +180,7 @@ describe("Personal / Business tabs", () => {
     expect(business).toHaveAttribute("tabindex", "-1");
     const businessPanel = document.getElementById(business.getAttribute("aria-controls") ?? "") as HTMLElement;
     expect(businessPanel).not.toBeVisible();
-    expect(within(businessPanel).getAllByRole("link", { hidden: true, name: /Source/ })[0]).toHaveAttribute("href", "https://bank.example/business.pdf");
+    expect(within(businessPanel).getAllByRole("link", { hidden: true, name: "$35" })[0]).toHaveAttribute("href", "https://bank.example/business.pdf");
 
     fireEvent.keyDown(personal, { key: "ArrowRight" });
     expect(business).toHaveAttribute("aria-selected", "true");
