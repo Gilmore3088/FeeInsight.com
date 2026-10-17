@@ -239,9 +239,10 @@ export interface InstitutionPeerSets {
 }
 
 /**
- * The peer sets worth offering for one institution and the one to show: the visitor's choice
- * when it clears the floor, else the report rule's group (state, or Fed district when the
- * state is thin), else the first that clears it. Null when none does.
+ * The peer sets worth offering for one institution beyond the report rule's group (state, or
+ * Fed district when the state is thin), which the page's findings and headline table already
+ * show, and the one to show: the visitor's choice when it clears the floor, else the first
+ * that does. Null when none does.
  */
 export function pickPeerSet(
   institutionId: number,
@@ -250,10 +251,12 @@ export function pickPeerSet(
   all: PeerRankValue[],
   requested: string | null | undefined,
 ): InstitutionPeerSets | null {
-  const comparable = choices.map((choice) => comparePeerSet(institutionId, choice, all)).filter(isComparable);
-  if (comparable.length === 0) return null;
   const ruleKey = peerFiltersForRule(rule) ? (rule?.peerScope === "district" ? "district" : "state") : null;
-  const selected =
-    comparable.find((c) => c.key === requested) ?? comparable.find((c) => c.key === ruleKey) ?? comparable[0];
+  const comparable = choices
+    .filter((choice) => choice.key !== ruleKey)
+    .map((choice) => comparePeerSet(institutionId, choice, all))
+    .filter(isComparable);
+  if (comparable.length === 0) return null;
+  const selected = comparable.find((c) => c.key === requested) ?? comparable[0];
   return { options: comparable.map(({ key, label }) => ({ key, label })), selected };
 }

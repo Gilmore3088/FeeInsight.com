@@ -127,14 +127,16 @@ describe("peer sets on the institution page", () => {
     ]);
   });
 
-  it("offers only sets that clear the floor and defaults to the report rule's group", () => {
+  it("offers only sets that clear the floor, leaving out the report rule's group the findings already show", () => {
     const rule = { passes: true, charter_type: "bank", state_code: "TX", fed_district: 11, peerScope: "state" } as ReportRuleCheck;
-    const picked = pickPeerSet(1, rule, [size, metro, state], all, null)!;
-    expect(picked.options.map((o) => o.key)).toEqual(["size", "state"]);
-    expect(picked.selected.key).toBe("state");
-    expect(pickPeerSet(1, rule, [size, metro, state], all, "size")!.selected.key).toBe("size");
-    // A set below the floor is never shown, even when asked for.
-    expect(pickPeerSet(1, rule, [size, metro, state], all, "metro")!.selected.key).toBe("state");
+    const picked = pickPeerSet(1, rule, [state, metro, size], all, null)!;
+    expect(picked.options.map((o) => o.key)).toEqual(["size"]);
+    expect(picked.selected.key).toBe("size");
+    // A set below the floor, or the rule's own group, is never shown, even when asked for.
+    expect(pickPeerSet(1, rule, [state, metro, size], all, "metro")!.selected.key).toBe("size");
+    expect(pickPeerSet(1, rule, [state, metro, size], all, "state")!.selected.key).toBe("size");
+    // Without a report rule group, every set that clears the floor is offered.
+    expect(pickPeerSet(1, null, [state, metro, size], all, null)!.options.map((o) => o.key)).toEqual(["state", "size"]);
     expect(pickPeerSet(1, null, [metro], all, null)).toBeNull();
   });
 });

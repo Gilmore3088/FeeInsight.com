@@ -41,7 +41,7 @@ describe("PeerRankTeaser", () => {
     render(<PeerRankTeaser sets={SETS} hrefFor={(key) => `/institution/1?peers=${key}#peers`} />);
     const size = screen.getByRole("link", { name: "Banks with $300M to $1B in assets" });
     expect(size).toHaveAttribute("href", "/institution/1?peers=size#peers");
-    expect(screen.getByRole("link", { name: "Banks in TX" })).toHaveAttribute("aria-current", "true");
+    expect(screen.getByRole("link", { name: "Banks in TX" })).toHaveAttribute("aria-current", "page");
   });
 
   it("says about the same within 1% and never forces a finding", () => {

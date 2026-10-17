@@ -72,7 +72,7 @@ interface PageProps {
   /**
    * `fee`: the category a consumer guide sent the reader to compare; highlights that row.
    * `peers`: the peer set the "Against peers" section compares with (state, district, size,
-   * regulator, metro, nearest); absent, the report rule's group.
+   * regulator, metro, nearest) beyond the report rule's group; absent, the first that clears the floor.
    */
   searchParams?: Promise<{ fee?: string; peers?: string }>;
 }
