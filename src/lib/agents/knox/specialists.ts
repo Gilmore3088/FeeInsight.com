@@ -93,7 +93,13 @@ import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 // payments, skip payments, mobile check deposit), and
 // one price for a "debit or credit card" is the debit card's. Every current copy read before v75 is
 // read once more (`KNOX_STALE_READ_BELOW_VERSION`).
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 75 } as const;
+// v76: the next three recall families on the 62-bank answer key (`rules.ts`): a row pricing each slash
+// variant of its fee ("(Online/Manual) | $35/$60") or a box size in two price columns reads every price,
+// and a "$ | 5.00" split cell is one price; a free schedule row the line rules never read (dot leader,
+// markdown row, "No Cost to Members", "Notary Services: no fee", "No charge for notarization") is held
+// at $0 unless it is an allowance; a price that varies ("Check printing prices vary") is held as
+// `varies` with no amount. Every current copy read before v76 is read once more.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 76 } as const;
 
 export interface SpecialistRun {
   strategy: string;
