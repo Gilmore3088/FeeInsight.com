@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { LiveFeeRow } from "@/lib/agents/hamilton/source-check";
-import { brandCased, capitalisedName, junkStrippedName, pageCompletedName, publishCutName, thresholdFromPage, cellName, dropsCondition, restoredName, restoreOnPage, fontDecodedName, fontMapVerified, headName, isMessyName, spacedControlName, planRetidy, sharedNameFeeIds, accountHeading, neighbourCellName, conditionOnlyName, unligatedName, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice } from "@/lib/agents/knox/name-retidy";
+import { brandCased, capitalisedName, junkStrippedName, pageCompletedName, publishCutName, thresholdFromPage, cellName, dropsCondition, restoredName, restoreOnPage, fontDecodedName, fontMapVerified, headName, isMessyName, spacedControlName, planRetidy, sharedNameFeeIds, accountHeading, neighbourCellName, conditionOnlyName, unligatedName, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice, footnoteMarkFreeName, NAME_RETIDY_STRATEGY } from "@/lib/agents/knox/name-retidy";
 
 const fee = (overrides: Partial<LiveFeeRow>): LiveFeeRow => ({
   fee_published_id: 1,
@@ -942,6 +942,85 @@ describe("planRetidy v20: a footnote number glued to the front of a live name", 
     ];
     const page = own("3x10 | $30.00\n2nd ATM/Debit Card or Replacement | $10.00\n2FA Token Fee | $15.00");
     expect(planRetidy(rows, page).renames).toEqual([]);
+  });
+});
+
+describe("v21 (#1450): footnote marks, product codes and quotes in live maintenance names", () => {
+  // The 30 live names the #1450 query found on prod (read-only, Oct 17), each checked by hand
+  // against its stored text: [fee_published_id, live name, new name or null to leave it].
+  const LIVE: Array<[number, string, string | null]> = [
+    [71106, "Monthly2 Maintenance Fee", "Monthly Maintenance Fee"],
+    [102187, "Monthly2 account service charge", "Monthly account service charge"],
+    [102189, "Monthly1 account service charge", "Monthly account service charge"],
+    [145360, "Monthly service charge†", "Monthly service charge"],
+    [145361, "Monthly service charge†", "Monthly service charge"],
+    [145362, "Monthly service charge†", "Monthly service charge"],
+    [102871, "Monthly Service Charge¹", "Monthly Service Charge"],
+    [102872, "Monthly Service Charge¹", "Monthly Service Charge"],
+    [102874, "Monthly Service Charge¹", "Monthly Service Charge"],
+    [102875, "Monthly Service Charge¹", "Monthly Service Charge"],
+    [134351, "Rewards Checking† Monthly service charge", "Rewards Checking Monthly service charge"],
+    [127654, "Monthly Maintenance Fee⁷", "Monthly Maintenance Fee"],
+    [21791, "Maintenance Fee†: Hometown Deposit Products", "Maintenance Fee: Hometown Deposit Products"],
+    [103138, "A “maintenance service charge”", "Maintenance service charge"],
+    [103139, "A “Maintenance service charge” fee", "Maintenance service charge fee"],
+    [90812, "Growth Checking² Monthly service charge", "Growth Checking Monthly service charge"],
+    [147030, "Minimum Balance Fee – Savings (6 mo. grace period for new accounts) †", "Minimum Balance Fee – Savings (6 mo. grace period for new accounts)"],
+    [147031, "Minimum Balance Fee – Interest Checking†", "Minimum Balance Fee – Interest Checking"],
+    [57895, "Regular Checking09 Monthly Maintenance Fee (balance below $500)", "Regular Checking Monthly Maintenance Fee (balance below $500)"],
+    [84551, "Checking I Account5 Monthly service charge", "Checking I Account Monthly service charge"],
+    [95332, "Regular Checking Accounts (CK03) Monthly service charge", "Regular Checking Accounts Monthly service charge"],
+    [95333, "Check Plus Checking Accounts (CK01) Monthly service charge", "Check Plus Checking Accounts Monthly service charge"],
+    [95335, "Choice Checking (CB02) Monthly service charge", "Choice Checking Monthly service charge"],
+    [121844, "Rewards Checking (CK06) Monthly service charge", "Rewards Checking Monthly service charge"],
+    // A footnote's own sentence, not a name: #1443's fragments.
+    [102873, "¹A service charge", null],
+    [102876, "¹A service charge", null],
+    [103669, "²There is a monthly fee", null],
+    // A condition with its figure cut out, and a heading read twice: each waits for a re-read.
+    [143157, "monthly service charge2 if average daily balance falls below during the statement cycle", null],
+    [102762, "No Monthly Account Maintenance Fee²: No Monthly Account Maintenance Fee²", null],
+    // The quotes name the account ("Your Five Star Checking Account"): the bank's own words.
+    [81446, "Service Charge for checking account named “Your Five Star Checking Account”", null],
+  ];
+
+  it("is version 21", () => {
+    expect(NAME_RETIDY_STRATEGY.version).toBe(21);
+  });
+
+  it("renames 24 of the 30 and leaves the fragments, the cut condition and the account's quoted name", () => {
+    expect(LIVE.map(([id, name]) => [id, footnoteMarkFreeName(name)])).toEqual(LIVE.map(([id, , next]) => [id, next]));
+    expect(LIVE.filter(([, , next]) => next != null)).toHaveLength(24);
+  });
+
+  it("keeps names with no mark, and digits that belong to the name", () => {
+    for (const name of ["Monthly Service Charge", "Club 55 Checking Monthly Fee", "Savings4Kids Monthly Fee", "Checking (Business) Monthly Fee", "e-Statement Checking Monthly Fee"]) {
+      expect(footnoteMarkFreeName(name)).toBeNull();
+    }
+  });
+
+  const own = (id: number, normalized_text: string) => [{ source_document_id: id, normalized_text }];
+  const maintenance = (overrides: Partial<LiveFeeRow>) => fee({ canonical_fee_key: "monthly_maintenance", ...overrides });
+
+  it("renames a live fee whose page prints the mark (Abacus 2341, doc 25743; Gilmer 8448, doc 7634)", () => {
+    const abacus = own(25743, "| Everyday Checking | Senior Checking¹ | Gold Checking²\nMonthly Maintenance Fee⁷ | $10 | $10 | $20\nMonthly Maintenance Fee⁷ | 0 | $5 | N/A");
+    const row = maintenance({ fee_published_id: 127654, institution_id: 2341, source_document_id: 25743, fee_name: "Monthly Maintenance Fee⁷", amount: 5 });
+    expect(planRetidy([row], abacus).renames.map((rename) => [rename.oldName, rename.newName])).toEqual([["Monthly Maintenance Fee⁷", "Monthly Maintenance Fee"]]);
+    const code = own(7634, "Free Checking (CK02) ....................... FREE\nRewards Checking (CK06) .................................. $6.00 per month | Collection Item Fee (domestic) ........ $10.00 each");
+    const coded = maintenance({ fee_published_id: 121844, institution_id: 8448, source_document_id: 7634, fee_name: "Rewards Checking (CK06) Monthly service charge", amount: 6 });
+    expect(planRetidy([coded], code).renames.map((rename) => rename.newName)).toEqual(["Rewards Checking Monthly service charge"]);
+  });
+
+  it("leaves other categories' marks for their own review, and never takes another live fee's name", () => {
+    const page = own(70, "Overdraft Fee‡ | $30.00\nMonthly Service Charge¹ | $10\nMonthly Service Charge | $10");
+    const overdraft = fee({ fee_published_id: 1, canonical_fee_key: "overdraft", fee_name: "Overdraft Fee‡", amount: 30 });
+    expect(footnoteMarkFreeName(overdraft.fee_name)).toBe("Overdraft Fee");
+    expect(planRetidy([overdraft], page).renames).toEqual([]);
+    const marked = maintenance({ fee_published_id: 2, fee_name: "Monthly Service Charge¹", amount: 10 });
+    const twin = maintenance({ fee_published_id: 3, fee_name: "Monthly Service Charge", amount: 10 });
+    const plan = planRetidy([marked], page, [marked, twin]);
+    expect(plan.renames).toEqual([]);
+    expect(plan.skipped.same_name_live).toBe(1);
   });
 });
 

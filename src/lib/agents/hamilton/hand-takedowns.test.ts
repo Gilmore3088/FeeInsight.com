@@ -365,7 +365,7 @@ describe("hand takedowns (James, Oct 16)", () => {
     expect(planHandTakedowns(moved, HAND_TAKEDOWNS.slice(4, 6)).skipped.map((row) => row.reason)).toEqual(["changed since listed", "changed since listed"]);
   });
 
-  it("#1735: Gate City's BankOn $0 comes down and its $0 NSF stays; the $32 does not trace under its printed name", () => {
+  it("#1735: Gate City's BankOn $0 comes down and its $0 NSF stays; the $32 traces under its printed name", () => {
     const batch = HAND_TAKEDOWNS.filter((entry) => entry.issue === 1735);
     expect(batch).toHaveLength(9);
     expect(batch.map((entry) => entry.feePublishedId)).not.toContain(33701);
@@ -378,10 +378,10 @@ describe("hand takedowns (James, Oct 16)", () => {
     expect(checkFeeAgainstSource(gateCity, "BankOn Checking Account Overdraft Fee for items", 0, ".", "overdraft"))
       .toEqual({ ok: true, sourceLine: "BankOn Checking Account Overdraft Fee for items | $0 per item" });
     expect(checkFeeAgainstSource(gateCity, "Non-Sufficient Funds (NSF) Fee for items returned", 0, ".", "nsf").ok).toBe(true);
-    // The standard $32 sits below a note line, so the shared check does not trace it under the
-    // printed name yet: it has to come from a re-read once the reader can (#1735), not from here.
+    // The standard $32 sits below a count-limit note; the shared check reads past that note (#1744),
+    // so it traces under the printed name and comes in on the next Darwin read, not a hand fix.
     expect(checkFeeAgainstSource(gateCity, "Overdraft fee for items paid resulting in a negative balance", 32, ".", "overdraft"))
-      .toEqual({ ok: false, reason: "amount_not_the_fee" });
+      .toEqual({ ok: true, sourceLine: "Overdraft fee for items paid resulting in a negative | $32 per item" });
   });
 
   it("archives the row, rejects its verified row, records feedback and one run event", async () => {

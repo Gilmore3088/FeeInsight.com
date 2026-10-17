@@ -1041,6 +1041,13 @@ rules v74 test, read against the fee's own document; a name whose page also prin
 line ("3Hill CU") stays, and so does a token that opens the bank's own name. The cut runs again on the
 tidied name, and a lower-case brand the stored name holds keeps its case ("myChance", 96352). The due
 query finds names opening on a number glued to a letter (box sizes left out).
+v21 (Oct 17, #1450): a monthly maintenance or minimum balance name loses the footnote marks
+("Charge¹", "Checking†"), product codes ("(CK06)"), a footnote number glued to a plain word
+("Monthly2", "Account5") and the quotes around its opening words ("A “maintenance service charge”"),
+and nothing else (`footnoteMarkFreeName`). A name that opens on a mark is a footnote's sentence
+(#1443), and one in lower case, with "No", a condition or a verb is left for a re-read. Other
+categories' marked names (about 120 live on Oct 17) are not in v21. New Knox reads still keep the
+marks (that is a Knox rules change); the retidy tidies them once they are live.
 
 `isCutoffName` (publish's `cutoff_name` hold) has a narrow live twin beside it, `liveFragmentName`
 (#1443), built from the same regex pieces: a dangling joining word (lower-case "a/an/the" only;
@@ -1261,7 +1268,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_LAYOUT_SIGNATURE_VERSION` | — | v1 | `knox/layout-signature.ts` |
 | `KNOX_LESSONS_VERSION` | — | v3 | `knox/lessons.ts` |
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
-| `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v20 | `knox/name-retidy.ts` |
+| `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v21 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
 | `KNOX_RULES_STRATEGY` | `extract.rules` | v77 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |

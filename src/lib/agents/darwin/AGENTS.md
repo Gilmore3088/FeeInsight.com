@@ -94,6 +94,11 @@ Darwin owns verification and classification.
   fix to the shared source check reaches the rows it was made for. Before that a `not_in_source`
   rejection was final; 1,126 rows at 499 banks were waiting on fixes already live (Northern Trust's
   wrapped-name $25 overdraft, raw 457013, among them).
+  The count-cap note fix (Oct 17, Gate City Bank 349: a price under "Maximum of 4 fees per calendar
+  day.") did not raise it: of the 1,816 Knox rows rejected `not_in_source` with no verified row, none
+  is stated on a price line right under such a note (read-only count), so a bump would re-read 1,259
+  rows for nothing this fix changes. Gate City's own row (raw 767395) is undecided and gets the new
+  check on its first read.
 - `retired_category`, `conditional_zero` and `name_rule` (2026-10-09, `postSourceCheck` in
   `verify.ts`) run after the source check on the line it matched. UAT's hand check of the first
   36 rows the `not_in_source` re-select verified found 16 of a random 20 right: three were $0
