@@ -5,9 +5,9 @@
  */
 import { RD } from "@/lib/report-design/tokens";
 import type { CSSProperties, ReactNode } from "react";
-import { Callout, More, QuestionCard, SERIF, fmtMoney } from "./memo";
-import { REPORT_DESIGN_CSS } from "@/lib/report-design/css";
+import { ANSWER_TYPE, Callout, ExhibitShell, More, QuestionCard, SectionHeading, SERIF, fmtMoney } from "./memo";
 import type { Exhibit, ExhibitMarker, Fact, HamiltonAnswer, SourceRef } from "@/lib/hamilton/workspace/types";
+import { staleSourceLabel } from "@/lib/hamilton/source-age";
 
 export type ExhibitSpec = Exhibit;
 export type AnswerSpec = Pick<HamiltonAnswer, "feeCategory" | "headline" | "claims" | "drivers" | "exhibit" | "question" | "evidenceLevel">;
@@ -28,15 +28,28 @@ export const ANSWER_EVIDENCE_LABELS: Record<AnswerSpec["evidenceLevel"], string>
   institution: "Published fees and your own figures",
 };
 
-function shortDate(iso: string | null | undefined): string | null {
+/** A source's date as every Hamilton answer shows it ("Jun 2026"); a non-ISO label is kept as given. */
+export function sourceDate(iso: string | null | undefined): string | null {
   if (!iso) return null;
   if (!/^\d{4}-\d{2}-\d{2}/.test(iso)) return iso;
   return new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
 }
 
+/**
+ * A source's date with its age label when it is old ("Jun 2024 · Source over a year old").
+ * Every answer branch shows source dates through this, so the old-source rule reads the same
+ * everywhere. A missing date stays missing (null); a recent one shows the date alone.
+ */
+export function sourceDateWithAge(iso: string | null | undefined, now: Date = new Date()): string | null {
+  const date = sourceDate(iso);
+  if (!date) return null;
+  const age = staleSourceLabel(iso, now);
+  return age ? `${date} · ${age}` : date;
+}
+
 /** A source as the reader sees it: name, date and, for a market figure, how many institutions. */
 export function SourceChip({ source, n }: { source: SourceRef; n?: number }) {
-  const date = shortDate(source.asOf);
+  const date = sourceDateWithAge(source.asOf);
   const text = [source.label, date, n != null ? `n=${n.toLocaleString("en-US")}` : null].filter(Boolean).join(" · ");
   const cls = "inline-block rounded border border-warm-200 bg-white px-1.5 py-0.5 text-[11px] leading-tight text-warm-600";
   return source.url ? (
@@ -52,7 +65,7 @@ export function SourceChip({ source, n }: { source: SourceRef; n?: number }) {
 export function uniqueSources(sources: readonly SourceRef[]): SourceRef[] {
   const seen = new Set<string>();
   return sources.filter((s) => {
-    const key = `${s.label}|${shortDate(s.asOf) ?? ""}`;
+    const key = `${s.label}|${sourceDate(s.asOf) ?? ""}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -70,7 +83,7 @@ function sourceLine(sources: readonly SourceRef[]): ReactNode {
       ) : (
         s.label
       )}
-      {s.asOf ? `, ${shortDate(s.asOf)}` : ""}
+      {s.asOf ? `, ${sourceDateWithAge(s.asOf)}` : ""}
     </span>
   ));
 }
@@ -101,19 +114,9 @@ export function ExhibitFrame({
 }) {
   const label = [number != null ? `Exhibit ${number}` : "Exhibit", topic].filter(Boolean).join(" · ");
   return (
-    <div className="rd w-full">
-      <style href="report-design" precedence="medium">
-        {REPORT_DESIGN_CSS}
-      </style>
-      <section className="rd-exhibit">
-        <div className="rd-label">{label}</div>
-        <h2>{title}</h2>
-        {sub ? <p className="rd-sub">{sub}</p> : null}
-        {children}
-        {note ? <p className="rd-source not-italic">{note}</p> : null}
-        {sources.length > 0 ? <div className="rd-source">Source: {sourceLine(sources)}</div> : null}
-      </section>
-    </div>
+    <ExhibitShell label={label} title={title} sub={sub} note={note} source={sources.length > 0 ? sourceLine(sources) : null}>
+      {children}
+    </ExhibitShell>
   );
 }
 
@@ -378,7 +381,7 @@ function Trend({ x }: { x: Extract<ExhibitSpec, { kind: "trend" }> }) {
   const px = (d: string) => pad.l + (dates.indexOf(d) / (dates.length - 1)) * (W - pad.l - pad.r);
   const py = (v: number) => pad.t + (1 - (v - lo) / (hi - lo)) * (H - pad.t - pad.b);
   const strokes = [RD.terra, RD.inkSoft, RD.muted];
-  const label = (d: string) => shortDate(d) ?? d;
+  const label = (d: string) => sourceDate(d) ?? d;
   const [own, peer] = x.series;
   const paired = own && peer && own.points.length > 1 && peer.points.length > 1;
   // The gap at each end, where both series have a point on the same date.
@@ -519,11 +522,31 @@ export function ExhibitView({ exhibit, number, title }: { exhibit: ExhibitSpec; 
   );
 }
 
-export function FactList({ facts }: { facts: readonly Fact[] }) {
+/**
+ * Sourced findings, each with its source badge. The one list every answer branch uses:
+ * "inline" puts the badge at the end of the sentence (a short answer's reasoning), "boxed"
+ * sets each finding on its own row with the badge under it (findings with nothing to draw).
+ */
+export function FactList({ facts, layout = "inline" }: { facts: readonly Fact[]; layout?: "inline" | "boxed" }) {
+  if (facts.length === 0) return null;
+  if (layout === "boxed") {
+    return (
+      <ul className="flex flex-col divide-y divide-warm-200 rounded-lg border border-warm-300 bg-white">
+        {facts.map((f, i) => (
+          <li key={i} className="flex flex-col gap-1 px-4 py-3">
+            <span className={`${ANSWER_TYPE.body} text-warm-900 ${ANSWER_TYPE.num}`}>{f.text}</span>
+            <span>
+              <SourceChip source={f.source} n={f.sampleSize} />
+            </span>
+          </li>
+        ))}
+      </ul>
+    );
+  }
   return (
     <ul className="flex flex-col gap-2.5">
       {facts.map((f, i) => (
-        <li key={i} className="text-[15px] leading-relaxed text-warm-800">
+        <li key={i} className={`${ANSWER_TYPE.body} text-warm-800`}>
           {f.text} <SourceChip source={f.source} n={f.sampleSize} />
         </li>
       ))}
@@ -558,7 +581,7 @@ export function AnswerView({
   const rest = answer.claims.slice(LEAD_CLAIMS);
   return (
     <article className="flex flex-col gap-5">
-      <p className="text-xl leading-snug text-warm-900 sm:text-2xl" style={SERIF}>
+      <p className={ANSWER_TYPE.lead} style={SERIF}>
         {answer.headline}
       </p>
       {answer.exhibit ? <ExhibitView exhibit={answer.exhibit} /> : null}
@@ -568,7 +591,7 @@ export function AnswerView({
           {rest.length > 0 ? <FactList facts={rest} /> : null}
           {answer.drivers.length > 0 ? (
             <section>
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.1em] text-warm-600">What moves this</h3>
+              <SectionHeading>What moves this</SectionHeading>
               <FactList facts={answer.drivers} />
             </section>
           ) : null}
@@ -591,7 +614,7 @@ export function AnswerView({
           </Callout>
         )
       ) : null}
-      <p className="text-xs text-warm-600">
+      <p className={ANSWER_TYPE.caption}>
         Evidence: <span className="font-medium text-warm-800">{ANSWER_EVIDENCE_LABELS[answer.evidenceLevel]}</span>
       </p>
     </article>

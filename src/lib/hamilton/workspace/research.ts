@@ -260,6 +260,22 @@ export function toPeerValue(v: PeerFeeValue): PeerValue {
   };
 }
 
+/**
+ * A peer of the chosen group with the catalog rows behind its value (#981, H06-T04), so the peer
+ * median can name them. Only the chosen group carries them; the wider layers stay light.
+ */
+export function toPeerValueWithRecords(v: PeerFeeValue): PeerValue {
+  return {
+    ...toPeerValue(v),
+    ...(v.fee_records ? {
+      feeRecords: v.fee_records.map((r) => ({
+        id: r.id, amount: r.amount, feeName: r.fee_name, frequency: r.frequency, feeAudience: r.fee_audience,
+        sourceDocumentId: r.source_document_id, documentUrl: r.document_url,
+      })),
+    } : {}),
+  };
+}
+
 function feeLayers(base: WorkspaceBase, feeCategory: string): MarketLayer[] {
   const current = base.ownValues.get(feeCategory) ?? null;
   return base.layers.map((layer) => {
@@ -921,7 +937,7 @@ export async function getFeeResearch(
   const local = localMarketView(base, market, feeCategory);
   const layers = [...feeLayers(base, feeCategory), ...(local.layer ? [local.layer] : [])];
   const chosen = base.peers.get(feeCategory);
-  const peers: PeerValue[] = (chosen?.values ?? []).map(toPeerValue);
+  const peers: PeerValue[] = (chosen?.values ?? []).map(toPeerValueWithRecords);
   const sorted = peers.map((p) => p.amount).sort((a, b) => a - b);
   const current = base.ownValues.get(feeCategory) ?? null;
   const structureGroup =

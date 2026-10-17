@@ -92,7 +92,7 @@ describe("state board", () => {
     expect(screen.getByRole("heading", { name: "Ohio against the Cleveland Fed district" })).toBeTruthy();
     expect(screen.getByText("Median of 7 Ohio institutions. Cleveland Fed district $25.")).toBeTruthy();
     // $30 sits above the district's middle half ($20 to $28), though inside the U.S. one.
-    expect(screen.getByRole("button", { name: /^Overdraft \(OD\): \$30.*above the district middle half; district median \$25/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Overdraft \(OD\): \$30.*above the district middle range; district median \$25/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /^NSF: \$15 across 5 institutions$/ })).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /NSF is lowest/ }));

@@ -1,6 +1,6 @@
 /**
  * The "living memo" building blocks for Hamilton's Briefing, Research, Model and Plan screens,
- * in the Fee Insight brand: warm parchment, Newsreader display type, terracotta accent,
+ * in the Fee Insight brand: warm parchment, Geist Sans display type, terracotta accent,
  * numbered exhibits with their source under each. Server components only.
  */
 import Link from "next/link";
@@ -9,8 +9,165 @@ import { TabSelect } from "./TabSelect";
 import type { ReactNode } from "react";
 import { priceBands } from "@/lib/hamilton/fee-scenario";
 import type { AuditTrail } from "@/lib/hamilton/audit-trail";
+import { staleSourceLabel } from "@/lib/hamilton/source-age";
+import { REPORT_DESIGN_CSS } from "@/lib/report-design/css";
+import { INTERPRETATION_LABEL } from "@/lib/hamilton/narrative-bound";
 
+/** The display face. Kept under its old name: Hamilton's display type is Geist Sans, not a serif. */
 export const SERIF = { fontFamily: "var(--fi-font-sans)" } as const;
+
+/**
+ * The answer type scale (H05 presentation contract, docs/project/findings/2026-10-17-hamilton-
+ * presentation-contract.md). Every answer branch reads its text sizes from here, so a lookup, a
+ * comparison, a storyline and a reopened answer set the same fact the same way.
+ */
+export const ANSWER_TYPE = {
+  /** Small capitals over a block: "The answer", "Exhibit 1". */
+  kicker: "text-xs font-semibold uppercase tracking-[0.12em] text-terra-text",
+  /** The governing thought: the one sentence that answers the question. */
+  lead: "text-[1.375rem] leading-snug text-warm-900 sm:text-2xl",
+  /** A section inside an answer ("Where things stand", "What the data says"). */
+  section: "text-lg leading-snug text-warm-900 sm:text-xl",
+  /** Answer sentences, takeaways and findings. */
+  body: "text-base leading-relaxed",
+  /** Captions, source lines, evidence lines. */
+  caption: "text-xs text-warm-600",
+  /** A table's column heading. */
+  th: "px-3 py-2 text-left text-xs font-medium uppercase tracking-[0.08em] text-warm-600",
+  /** Every figure in a table, tile or sentence: Geist Sans with lining, tabular digits. */
+  num: "[font-variant-numeric:tabular-nums]",
+} as const;
+
+/** A key figure's size: short figures ("$32") large, long ones ("$27 to $34") one step down so they never wrap. */
+export function figureSize(value: string): string {
+  return value.length > 8 ? "text-xl" : "text-2xl";
+}
+
+/** "The answer" over its governing thought, the same on every answer branch. */
+export function AnswerLead({ children, after }: { children: ReactNode; after?: ReactNode }) {
+  return (
+    <div className="border-l-2 border-terra pl-5">
+      <p className={ANSWER_TYPE.kicker}>The answer</p>
+      <p className={`mt-1 ${ANSWER_TYPE.lead}`} style={SERIF}>
+        {children}
+      </p>
+      {after}
+    </div>
+  );
+}
+
+export interface KeyFigureTile {
+  value: string;
+  label: ReactNode;
+  /** The label as plain text, for the tile's key and tooltip. */
+  title: string;
+}
+
+/** The two to four figures that carry an answer, as one strip of tiles. */
+export function KeyFigures({ figures }: { figures: readonly KeyFigureTile[] }) {
+  if (figures.length === 0) return null;
+  const cols =
+    figures.length >= 4 ? "grid-cols-2 sm:grid-cols-4" : figures.length === 3 ? "sm:grid-cols-3" : figures.length === 2 ? "grid-cols-2" : "grid-cols-1";
+  return (
+    <dl className={`grid gap-px overflow-hidden rounded-lg border border-warm-300 bg-warm-300 ${cols}`}>
+      {figures.map((f) => (
+        <div key={f.title} className="flex min-w-0 flex-col bg-white px-5 py-4">
+          {/* The label comes first for screen readers; the figure still shows on top. */}
+          <dt className="order-2 mt-1 text-[13px] leading-snug text-warm-600">
+            {f.label}
+          </dt>
+          <dd className={`order-1 ${figureSize(f.value)} text-warm-900 ${ANSWER_TYPE.num}`} style={SERIF}>
+            {f.value}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/**
+ * A section heading inside an answer. On a phone it steps below the page title and the exhibit
+ * headline (h1 > h2 > h3). `as="h2"` for a section that sits directly under the page title.
+ */
+export function SectionHeading({ children, as: Tag = "h3" }: { children: ReactNode; as?: "h2" | "h3" }) {
+  return (
+    <Tag className={`mb-3 ${ANSWER_TYPE.section}`} style={SERIF}>
+      {children}
+    </Tag>
+  );
+}
+
+/**
+ * Hamilton's reading: sentences whose figures are not tied to a fee record, set apart under one
+ * label on every screen (the PDFs print the same label).
+ */
+export function InterpretationBox({
+  sentences,
+  renderSentence = (sentence) => sentence,
+  children,
+}: {
+  sentences: readonly string[];
+  renderSentence?: (sentence: string) => ReactNode;
+  children?: ReactNode;
+}) {
+  return (
+    <section aria-label={INTERPRETATION_LABEL} className="rounded-md border border-warm-300 bg-warm-50 px-4 py-3">
+      <p className="text-xs font-semibold text-warm-700">{INTERPRETATION_LABEL}</p>
+      <ul className="mt-1.5 flex list-disc flex-col gap-1 pl-5 text-sm leading-relaxed text-warm-800">
+        {sentences.map((sentence) => (
+          <li key={sentence}>{renderSentence(sentence)}</li>
+        ))}
+      </ul>
+      {children}
+    </section>
+  );
+}
+
+/**
+ * The one exhibit treatment, in the shared report look (src/lib/report-design): label, a
+ * headline that says what the data shows, the content, then the source line. The stylesheet is
+ * hoisted once per page however many exhibits render. `ExhibitFrame` and `Exhibit` both draw it.
+ */
+export function ExhibitShell({
+  label,
+  title,
+  sub,
+  note,
+  source,
+  children,
+}: {
+  label: string;
+  title: ReactNode;
+  sub?: ReactNode;
+  note?: ReactNode;
+  /** Without "Source:"; omitted when there is none. */
+  source?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    // The shared report sheet centres itself at 960px; inside an answer it runs the column's full width.
+    <div className="rd w-full [&.rd]:mx-0 [&.rd]:max-w-none">
+      <style href="report-design" precedence="medium">
+        {REPORT_DESIGN_CSS}
+      </style>
+      <section className="rd-exhibit">
+        <div className="rd-label">{label}</div>
+        <h2>{title}</h2>
+        {sub ? <p className="rd-sub">{sub}</p> : null}
+        {children}
+        {note ? <p className="rd-source not-italic">{note}</p> : null}
+        {source ? <div className="rd-source">Source: {source}</div> : null}
+      </section>
+    </div>
+  );
+}
+
+/** A date as a day: "Mar 1, 2025". A label that is not an ISO date ("2025 Q2") is kept as given. */
+export function dayDate(iso: string): string {
+  return /^\d{4}-\d{2}-\d{2}/.test(iso)
+    ? new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })
+    : iso;
+}
 
 /** "reading" keeps a page to one column at a comfortable reading width; most pages use the wide grid. */
 export function MemoPage({ children, width = "wide" }: { children: ReactNode; width?: "wide" | "reading" }) {
@@ -40,7 +197,7 @@ export function MemoHeader({
     <header className="flex flex-col items-center gap-4 border-b border-warm-300 pb-5 text-center sm:flex-row sm:flex-wrap sm:items-end sm:justify-between sm:text-left">
       <div className="min-w-0 max-w-3xl">
         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-terra-text">{kicker}</p>
-        <h1 className={`mt-1.5 leading-tight text-warm-900 ${compact ? "text-xl sm:text-2xl" : "text-3xl sm:text-4xl"}`} style={SERIF}>
+        <h1 className={`mt-1.5 leading-tight text-warm-900 ${compact ? "text-[1.375rem] sm:text-2xl" : "text-3xl sm:text-4xl"}`} style={SERIF}>
           {title}
         </h1>
         {dek ? <p className="mt-2 text-pretty text-base leading-relaxed text-warm-700">{dek}</p> : null}
@@ -86,16 +243,9 @@ export function Exhibit({
   children: ReactNode;
 }) {
   return (
-    <figure className="rounded-lg border border-warm-300 bg-warm-50 p-5">
-      <figcaption className="mb-4 flex flex-wrap items-baseline gap-x-3">
-        <span className="text-xs font-semibold uppercase tracking-[0.12em] text-terra-text">Exhibit {number}</span>
-        <span className="font-semibold text-base text-warm-900" style={SERIF}>
-          {title}
-        </span>
-      </figcaption>
+    <ExhibitShell label={`Exhibit ${number}`} title={title} source={source}>
       {children}
-      <p className="mt-4 border-t border-warm-200 pt-2 text-xs text-warm-600">Source: {source}</p>
-    </figure>
+    </ExhibitShell>
   );
 }
 
@@ -626,10 +776,10 @@ export function QuestionCard({
   );
 }
 
-function longDateOrRange(asOf: string): string {
-  return /^\d{4}-\d{2}-\d{2}$/.test(asOf)
-    ? new Date(`${asOf}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })
-    : asOf;
+/** " · Source over a year old" after an old source date; nothing after a recent or unreadable one. */
+function withAge(iso: string): string {
+  const age = staleSourceLabel(iso);
+  return age ? ` · ${age}` : "";
 }
 
 /**
@@ -653,7 +803,7 @@ export function AuditPanel({
         </span>
         <span className="flex items-center gap-3 text-xs text-warm-600">
           <span className="rounded-full border border-warm-300 px-2 py-0.5 text-warm-700">{trail.evidence}</span>
-          <span>{trail.sources.length} sources</span>
+          <span>{trail.sources.length} {trail.sources.length === 1 ? "source" : "sources"}</span>
           <span aria-hidden className="print:hidden group-open:rotate-180">▾</span>
         </span>
       </summary>
@@ -679,7 +829,7 @@ export function AuditPanel({
                   )}
                 </span>
                 <span className="text-warm-700">{s.detail}</span>
-                <span className="text-warm-600 sm:text-right">{s.asOf ? `As of ${longDateOrRange(s.asOf)}` : "Date not recorded"}</span>
+                <span className="text-warm-600 sm:text-right">{s.asOf ? `As of ${dayDate(s.asOf)}${withAge(s.asOf)}` : "Date not recorded"}</span>
               </li>
             ))}
           </ul>
@@ -699,7 +849,7 @@ export function AuditPanel({
                     {r.feeName}: {fmtMoney(r.amount)}
                   </span>
                   <span className="text-warm-600">
-                    {r.publishedAt ? `Published ${longDateOrRange(r.publishedAt.slice(0, 10))}` : "Publish date not recorded"}
+                    {r.publishedAt ? `Published ${dayDate(r.publishedAt.slice(0, 10))}${withAge(r.publishedAt)}` : "Publish date not recorded"}
                     {r.verifiedByEventId ? <span title={`Verification record ${r.verifiedByEventId}`}> · Verified against the schedule</span> : null}
                     {r.documentUrl || r.sourceUrl ? (
                       <>

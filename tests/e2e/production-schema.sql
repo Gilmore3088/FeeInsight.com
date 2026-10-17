@@ -3195,5 +3195,7 @@ ALTER TABLE public.fee_change_records
 -- #978 H03: versioned admin fee corrections and their newer-source review queue.
 \ir ../../supabase/migrations/20270110000053_published_fee_corrections.sql
 
+-- #982 H07-T02: the credit-union NSF income column Hamilton's fee answers read.
+\ir ../../supabase/migrations/20270108000002_financial_nsf_revenue.sql
 -- #978 H03-T09: the published fee rows each saved Hamilton output used.
 \ir ../../supabase/migrations/20270110000055_hamilton_saved_output_fee_refs.sql

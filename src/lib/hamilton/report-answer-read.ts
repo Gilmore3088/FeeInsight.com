@@ -10,8 +10,9 @@
  *
  * Correctness re-reads the comparison the page was written from (the same reads and reduction as the
  * screen) and checks each fee the page names still has the bank's amount and peer median it was
- * given. It catches a page built on values the catalog no longer holds; a figure put on the wrong
- * fee inside the page is not checked here (the figure check only ties figures to the page's data).
+ * given. It catches a page built on values the catalog no longer holds. It also ties each figure to
+ * the fee its sentence names (#1414 item 8): a sentence about one fee that states another fee's
+ * figure, or states the peer median as the bank's own fee, fails.
  */
 
 import { getFeesByInstitution } from "@/lib/data-store";
@@ -21,7 +22,8 @@ import { isProviderLimitError } from "@/lib/ai-provider";
 import { generateVerifiedSection, type SectionTracking } from "./generate";
 import { reviewAnswerPage } from "./partner-review";
 import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
-import { extractFigures } from "./figure-check";
+import { extractFigures, type NarrativeFigure } from "./figure-check";
+import { splitIntoSentences } from "./citation-gate";
 import { assembleReportInputs } from "./report-inputs";
 import { compareSelectedInstitutionFees, type SelectedInstitutionFeeDelta } from "./report-evidence";
 import { resolveHamiltonPeerIndex } from "./peer-index";
@@ -140,8 +142,68 @@ const near = (a: number, b: number) => Math.abs(a - b) < 0.005;
 /** The fee's name as a page writes it: "Overdraft (OD)" is matched as "overdraft" (#1414). */
 const plainName = (category: string) => getDisplayName(category).replace(/\s*\([A-Z]{2,6}\)$/, "").toLowerCase();
 
+const money = (value: number) => `$${value.toFixed(2)}`;
+const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 /**
- * Correctness of an answer page: each verified fee the page names (by name or by the bank's amount)
+ * Whether a sentence names the fee, by any part of its label: "NSF / Returned Item" is named by
+ * "NSF" or "returned item", "Overdraft (OD)" by "overdraft" or "OD". Broad on purpose: a sentence
+ * that may name two fees is not read for placement.
+ */
+function namesFee(sentence: string, category: string): boolean {
+  const label = getDisplayName(category);
+  const parts = [plainName(category), ...label.split(/\s*\/\s*/), ...[...label.matchAll(/\(([^)]+)\)/g)].map((m) => m[1])]
+    .map((part) => part.replace(/\s*\([^)]*\)/g, "").trim().toLowerCase())
+    .filter((part) => part.length >= 2);
+  return [...new Set(parts)].some((part) => new RegExp(`\\b${escape(part)}\\b`, "i").test(sentence));
+}
+const MEDIAN_LABEL_BEFORE = /\b(?:median|midpoint|middle|typical|peers?|peer group)\b[^$]{0,25}$/i;
+const MEDIAN_LABEL_AFTER = /^[^$.;]{0,20}\b(?:median|peers?)\b/i;
+
+/** True when the sentence labels this figure as the peers' figure ("peer median of $30", "$30 at peers"). */
+function labeledAsPeers(sentence: string, figure: NarrativeFigure): boolean {
+  const before = sentence.slice(Math.max(0, figure.index - 40), figure.index);
+  const after = sentence.slice(figure.index + figure.raw.length, figure.index + figure.raw.length + 25);
+  return MEDIAN_LABEL_BEFORE.test(before) || MEDIAN_LABEL_AFTER.test(after);
+}
+
+/**
+ * Each dollar figure tied to the fee its sentence names (#1414 item 8). Only a sentence that names
+ * exactly one of the page's fees is read. A figure that is none of that fee's own amount, peer median,
+ * quartiles or gap, but is another fee's amount or median, is on the wrong fee. The fee's peer median
+ * stated without a median or peer word beside it is the median stated as the bank's own fee. A
+ * figure that matches nothing is left to the figure check.
+ */
+export function misplacedReportFigures(narrative: string, deltas: readonly SelectedInstitutionFeeDelta[]): string[] {
+  const failures: string[] = [];
+  for (const { text } of splitIntoSentences(narrative)) {
+    const named = deltas.filter((d) => namesFee(text, d.fee_category));
+    if (named.length !== 1) continue;
+    const fee = named[0];
+    const own = [fee.institution_amount, fee.peer_median, fee.peer_p25, fee.peer_p75, Math.abs(fee.institution_amount - fee.peer_median)]
+      .filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+    for (const figure of extractFigures(text).filter((f) => f.kind === "usd")) {
+      const name = getDisplayName(fee.fee_category);
+      if (!own.some((v) => near(v, figure.value))) {
+        const other = deltas.find((d) => d !== fee && (near(d.institution_amount, figure.value) || near(d.peer_median, figure.value)));
+        if (other) {
+          const what = near(other.institution_amount, figure.value) ? "the bank's amount" : "the peer median";
+          failures.push(`${name}: the page states ${money(figure.value)}, which is ${what} for ${getDisplayName(other.fee_category)}`);
+        }
+        continue;
+      }
+      if (near(figure.value, fee.peer_median) && !near(figure.value, fee.institution_amount) && !labeledAsPeers(text, figure)) {
+        failures.push(`${name}: the page states the peer median ${money(fee.peer_median)} as the bank's own fee ${money(fee.institution_amount)}`);
+      } else if (near(figure.value, fee.institution_amount) && !near(figure.value, fee.peer_median) && /\bmedian\b[^$]{0,20}$/i.test(text.slice(Math.max(0, figure.index - 30), figure.index))) {
+        failures.push(`${name}: the page states the bank's ${money(fee.institution_amount)} as the peer median ${money(fee.peer_median)}`);
+      }
+    }
+  }
+  return [...new Set(failures)];
+}
+
+/**
+ * Correctness of an answer page: each figure sits on the fee its sentence names
+ * (misplacedReportFigures), and each verified fee the page names (by name or by the bank's amount)
  * still has, on a fresh read, the bank's amount and peer median the page was written from.
  * Provisional fees have no published row to hold them to.
  */
@@ -155,11 +217,13 @@ export async function reconcileReportAnswer(
   const named = prepared.deltas.filter((d) =>
     d.evidence_tier === "verified"
     && (lower.includes(plainName(d.fee_category)) || stated.some((v) => near(v, d.institution_amount))));
-  if (named.length === 0) return { checked: false, figures: 0, failures: [] };
+  // A figure on the wrong fee is wrong whatever the catalog holds now, so it needs no fresh read.
+  const misplaced = misplacedReportFigures(narrative, prepared.deltas);
+  if (named.length === 0) return misplaced.length ? { checked: true, figures: 0, failures: misplaced } : { checked: false, figures: 0, failures: [] };
   const fresh = await read(prepared);
-  if (!fresh) return { checked: false, figures: 0, failures: [] };
+  if (!fresh) return misplaced.length ? { checked: true, figures: 0, failures: misplaced } : { checked: false, figures: 0, failures: [] };
   const now = new Map(fresh.map((d) => [d.fee_category, d]));
-  const failures: string[] = [];
+  const failures: string[] = [...misplaced];
   for (const d of named) {
     const name = getDisplayName(d.fee_category);
     const current = now.get(d.fee_category);

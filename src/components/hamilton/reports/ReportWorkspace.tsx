@@ -14,6 +14,7 @@ import { ReportLibrary } from "./ReportLibrary";
 import { PRODUCT_NAME, RESEARCH_IMPRINT } from "@/lib/constants";
 import { Callout, MemoHeader, MemoPage, MemoSection, SERIF } from "@/components/hamilton/memo/memo";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
+import { readHamiltonIdentitySnapshot } from "@/lib/hamilton/identity-display";
 import {
   generateReport,
   loadActiveScenarios,
@@ -98,6 +99,10 @@ interface ReportWorkspaceProps {
   selectedSource?: HamiltonContextSource;
   selectedSourceLabel?: string | null;
   legacyPeerFilterLabel?: string | null;
+}
+
+function isReportTemplateType(value: string): value is ReportTemplateType {
+  return TEMPLATES.some((template) => template.type === value);
 }
 
 function getInitialTemplateFromIntent(
@@ -376,6 +381,13 @@ export function ReportWorkspace({
       : defaultPeerSetLabel;
 
   const setupVisible = !reportGenerated;
+  // A shown report can be run again with today's checks when it is a template report about the
+  // institution now selected, so a rerun never quietly switches institution.
+  const shownResearchId = readHamiltonIdentitySnapshot(generatedReport?.identityContext)?.researchInstitutionId ?? null;
+  const rerunTemplate = isReportTemplateType(generatedReportType)
+    && (shownResearchId === null || String(shownResearchId) === String(selectedInstitution?.id ?? ""))
+    ? generatedReportType
+    : null;
 
   return (
     <MemoPage>
@@ -559,6 +571,7 @@ export function ReportWorkspace({
               report={generatedReport}
               reportType={generatedReportType}
               artifactMetadata={generatedReportMetadata}
+              onRunAgain={rerunTemplate ? () => void handleGenerate({ template: rerunTemplate }) : undefined}
             />
             <div className="flex flex-wrap items-center gap-2">
               <button

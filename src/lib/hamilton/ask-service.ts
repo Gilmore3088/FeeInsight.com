@@ -368,6 +368,9 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
   if (!question) return { status: 400, body: { error: "Ask a question." } };
   const resolvedAsk = await resolveAskIntent(institutionId, question, peers, institution.name, fallbackFee);
   const { intent, why } = resolvedAsk;
+  // A carried decision is about one fee (#979, H04-T05): a follow-up naming another fee opens its
+  // own, so its questions and tested prices never land on the earlier fee's record.
+  if (decision && intent.feeCategory && decision.feeCategory && decision.feeCategory !== intent.feeCategory) decision = null;
   const schedule =
     resolvedAsk.schedule && !resolvedAsk.schedule.top && (await ownScheduleQueued(account, institutionId))
       ? withOwnScheduleNote(resolvedAsk.schedule)

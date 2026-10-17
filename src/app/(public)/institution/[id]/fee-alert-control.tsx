@@ -199,7 +199,7 @@ export function FeeAlertControl({
               Follow its fees
             </button>
           ) : (
-            <form onSubmit={signUpAndSave} className="mt-3 space-y-2">
+            <form method="post" onSubmit={signUpAndSave} className="mt-3 space-y-2">
               <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
                 <div>
                   <label htmlFor={`${ids}-email`} className="sr-only">

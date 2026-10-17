@@ -40,7 +40,7 @@ function useBoard(): BoardState {
 
 const COUNT = new Intl.NumberFormat("en-US");
 
-const POSITION_WORD = { below: "below", within: "inside", above: "above" } as const;
+const POSITION_WORD = { below: "below", within: "within", above: "above" } as const;
 
 export function StateBoard({
   fees,
@@ -137,7 +137,7 @@ export function BoardHeading({ id }: { id: string }) {
         {stateName} against {againstName(against, districtName)}
       </h2>
       {districtName && (
-        <div role="group" aria-label="Compare with" className="inline-flex rounded-full bg-paper p-0.5 ring-1 ring-border print:hidden">
+        <div role="group" aria-label="Compare with" className="inline-flex rounded-full bg-paper p-1 ring-1 ring-border print:hidden">
           {(
             [
               ["us", "U.S."],
@@ -149,7 +149,7 @@ export function BoardHeading({ id }: { id: string }) {
               type="button"
               aria-pressed={against === a}
               onClick={() => setAgainst(a)}
-              className={`rounded-full px-3 py-1.5 text-[13px] font-semibold transition-colors ${
+              className={`inline-flex min-h-11 items-center rounded-full px-4 text-[13px] font-semibold transition-colors ${
                 against === a ? "bg-ink text-on-ink" : "text-ink-muted hover:text-ink"
               }`}
             >
@@ -207,7 +207,7 @@ export function BoardChart() {
     <div ref={chartRef} className="scroll-mt-20 rounded-2xl border border-border bg-surface-0 p-4 shadow-fi-1 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-[16px] font-semibold text-ink">{fee.name}</h3>
-        <div role="group" aria-label="Institutions shown" className="inline-flex rounded-full bg-paper p-0.5 ring-1 ring-border">
+        <div role="group" aria-label="Institutions shown" className="inline-flex rounded-full bg-paper p-1 ring-1 ring-border">
           {CHARTERS.map(({ c, label }) => {
             const n = c === 0 ? fee.institutions : c === 1 ? fee.bank.institutions : fee.cu.institutions;
             return (
@@ -217,7 +217,7 @@ export function BoardChart() {
                 aria-pressed={charter === c}
                 disabled={n === 0}
                 onClick={() => setCharter(c)}
-                className={`rounded-full px-2.5 py-1 text-[12px] font-semibold transition-colors disabled:opacity-40 ${
+                className={`inline-flex min-h-11 items-center rounded-full px-3 text-[13px] font-semibold transition-colors disabled:opacity-40 ${
                   charter === c ? "bg-ink text-on-ink" : "text-ink-muted hover:text-ink"
                 }`}
               >
@@ -320,10 +320,9 @@ export function BoardChart() {
         {ref && (
           <span className="inline-flex items-center gap-1.5">
             <span aria-hidden="true" className="h-2.5 w-5 rounded-full bg-brick-tint" />
-            {refShort} middle half
+            {refShort === "U.S." ? "National" : "District"} middle range
           </span>
         )}
-        <span>Tap a bar to count it.</span>
       </p>
     </div>
   );
@@ -333,49 +332,63 @@ export function BoardChart() {
  * The fee list: each fee's state median as a dot on its own U.S. (or district) middle half.
  * Tapping one draws it above.
  */
-export function BoardRows({ fees, ariaLabel }: { fees: BoardFee[]; ariaLabel: string }) {
+export function BoardRows({ fees, ariaLabel, limit }: { fees: BoardFee[]; ariaLabel: string; limit?: number }) {
   const { fee: current, pickFee, against } = useBoard();
+  const [expanded, setExpanded] = useState(false);
   const refShort = againstShort(against);
+  const cut = limit != null && !expanded && fees.length > limit;
+  const listed = cut ? fees.slice(0, limit) : fees;
   return (
-    <ol aria-label={ariaLabel} className="divide-y divide-border">
-      {fees.map((f) => {
-        const pressed = f.key === current.key;
-        const ref = bandFor(f, against);
-        const position = ref ? positionIn(f.median, ref) : null;
-        const dot = { key: f.key, label: f.name, median: f.median, institutions: f.institutions, position: position ?? "within" };
-        const band = ref ? { min: 0, max: 0, institutions: 0, p25: ref.p25, median: ref.median, p75: ref.p75 } : null;
-        return (
-          <li key={f.key}>
-            <button
-              type="button"
-              aria-pressed={pressed}
-              onClick={() => pickFee(f.key)}
-              aria-label={`${f.name}: ${money(f.median)} across ${COUNT.format(f.institutions)} institutions${
-                ref && position
-                  ? `, ${POSITION_WORD[position]} the ${refShort === "U.S." ? "U.S." : "district"} middle half; ${refShort === "U.S." ? "U.S." : "district"} median ${money(ref.median)}`
-                  : ""
-              }`}
-              className={`${MARKET_ROW_GRID} -mx-2 w-[calc(100%+1rem)] rounded-lg px-2 text-left transition-colors hover:bg-paper focus-visible:outline-2 focus-visible:outline-ink ${
-                pressed ? "bg-paper ring-1 ring-ink/30" : ""
-              }`}
-            >
-              {band ? (
-                <MarketRowBody dot={dot} band={band} pct={marketScale([dot], band)} figure={money(f.median)} />
-              ) : (
-                <>
-                  <span className="min-w-0 leading-tight text-ink">
-                    {f.name}
-                    <span className="block text-[11px] text-ink-muted">{COUNT.format(f.institutions)} institutions</span>
-                  </span>
-                  <span className="text-[12px] text-ink-muted">No {refShort === "U.S." ? "U.S." : "district"} median</span>
-                  <span className="text-right font-mono text-[14px] font-semibold tabular-nums text-ink">{money(f.median)}</span>
-                </>
-              )}
-            </button>
-          </li>
-        );
-      })}
-    </ol>
+    <>
+      <ol aria-label={ariaLabel} className="divide-y divide-border">
+        {listed.map((f) => {
+          const pressed = f.key === current.key;
+          const ref = bandFor(f, against);
+          const position = ref ? positionIn(f.median, ref) : null;
+          const dot = { key: f.key, label: f.name, median: f.median, institutions: f.institutions, position: position ?? "within" };
+          const band = ref ? { min: 0, max: 0, institutions: 0, p25: ref.p25, median: ref.median, p75: ref.p75 } : null;
+          return (
+            <li key={f.key}>
+              <button
+                type="button"
+                aria-pressed={pressed}
+                onClick={() => pickFee(f.key)}
+                aria-label={`${f.name}: ${money(f.median)} across ${COUNT.format(f.institutions)} institutions${
+                  ref && position
+                    ? `, ${POSITION_WORD[position]} the ${refShort === "U.S." ? "national" : "district"} middle range; ${refShort === "U.S." ? "national" : "district"} median ${money(ref.median)}`
+                    : ""
+                }`}
+                className={`${MARKET_ROW_GRID} -mx-2 w-[calc(100%+1rem)] rounded-lg px-2 text-left transition-colors hover:bg-paper focus-visible:outline-2 focus-visible:outline-ink ${
+                  pressed ? "bg-paper ring-1 ring-ink/30" : ""
+                }`}
+              >
+                {band ? (
+                  <MarketRowBody dot={dot} band={band} pct={marketScale([dot], band)} figure={money(f.median)} />
+                ) : (
+                  <>
+                    <span className="min-w-0 leading-tight text-ink">
+                      {f.name}
+                      <span className="block text-[11px] text-ink-muted">{COUNT.format(f.institutions)} institutions</span>
+                    </span>
+                    <span className="text-[12px] text-ink-muted">No {refShort === "U.S." ? "U.S." : "district"} median</span>
+                    <span className="text-right font-mono text-[14px] font-semibold tabular-nums text-ink">{money(f.median)}</span>
+                  </>
+                )}
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+      {cut && (
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="mt-2 inline-flex min-h-11 items-center text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+        >
+          Show all {COUNT.format(fees.length)} fees
+        </button>
+      )}
+    </>
   );
 }
 
@@ -411,7 +424,7 @@ export function CharterRows({ fees }: { fees: BoardFee[] }) {
               <span className="min-w-0 leading-tight text-ink">
                 {f.name}
                 <span className="block text-[11px] text-ink-muted">
-                  {rounded === 0 ? (cu === bank ? "Same" : "Under 1% apart") : `Credit unions ${rounded > 0 ? "+" : "−"}${Math.abs(rounded)}%`}
+                  {rounded === 0 ? (cu === bank ? "Same" : "About the same") : `Credit unions ${rounded > 0 ? "+" : "−"}${Math.abs(rounded)}%`}
                 </span>
               </span>
               <span className="relative h-5" aria-hidden="true">

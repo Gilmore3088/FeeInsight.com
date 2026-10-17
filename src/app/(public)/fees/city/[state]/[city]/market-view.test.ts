@@ -18,7 +18,7 @@ function inst(id: number, over: Partial<CityMarketInstitution> = {}): CityMarket
 }
 
 function overdraft(amount: number) {
-  return { overdraft: { amount, fee_name: "Overdraft", conditions: null, source_url: null, read_on: null } };
+  return { overdraft: { amount, fee_name: "Overdraft", account: null, conditions: [], source_line: null, source_url: null, read_on: null } };
 }
 
 function market(institutions: CityMarketInstitution[], areaDeposits = 0): CityMarket {
@@ -32,6 +32,7 @@ function market(institutions: CityMarketInstitution[], areaDeposits = 0): CityMa
     bank_branches: institutions.filter((i) => i.charter === "bank").reduce((s, i) => s + i.branches, 0),
     cu_branches: institutions.filter((i) => i.charter === "credit_union").reduce((s, i) => s + i.branches, 0),
     points: [],
+    unplaced: [],
     deposit_years: [
       { year: 2021, area_deposits: 100, area_branches: 20, state_deposits: 1000, state_branches: 200, us_deposits: 10000, us_branches: 2000 },
       { year: 2026, area_deposits: areaDeposits, area_branches: 10, state_deposits: 1100, state_branches: 180, us_deposits: 12000, us_branches: 1900 },

@@ -40,6 +40,33 @@ function parseConfidence(raw: string | undefined): { confidence: ReportConfidenc
   return { confidence: level, reason };
 }
 
+/**
+ * Shown once above a saved report's decisions when any was saved as High, before the High rating
+ * was retired (#981, H06-T07). The screen pairs it with a button that runs the report again.
+ */
+export const LEGACY_REPORT_CONFIDENCE_NOTE =
+  "Some ratings in this report were set before Hamilton tied each figure to its fee record, so ratings saved as High now show as Medium.";
+
+/** The same fact as one neutral footnote in the exported PDF, which has no button. */
+export const LEGACY_REPORT_CONFIDENCE_FOOTNOTE =
+  "Ratings saved as High before Hamilton tied each figure to its fee record are shown as Medium.";
+
+/** True when a saved report holds a decision rated High, which now shows as Medium. */
+export function hasLegacyHighRating(decisions: readonly ReportDecision[]): boolean {
+  return decisions.some((decision) => decision.confidence === "High");
+}
+
+/**
+ * Read-time display policy for a saved report decision (#981, H06-T07). New decisions are never
+ * High (parseConfidence). A stored High predates record-bound evidence, so it is shown as Medium;
+ * the report carries one note about it (`LEGACY_REPORT_CONFIDENCE_NOTE`), not one per decision.
+ * The stored report is never rewritten; a new report is the only way to re-check it.
+ */
+export function displayReportDecision(decision: ReportDecision): ReportDecision {
+  if (decision.confidence !== "High") return decision;
+  return { ...decision, confidence: "Medium" };
+}
+
 function stripLabel(line: string, label: string): string {
   return line.replace(new RegExp(`^\\s*[*_#\\d.\\s]*${label}\\s*:?\\s*`, "i"), "").trim();
 }

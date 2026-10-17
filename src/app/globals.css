@@ -1363,6 +1363,13 @@ details[open] summary .expand-icon { transform: rotate(180deg); }
   border-radius: 2px;
 }
 
+/* ── Hamilton: one numeral face (H05 presentation contract) ──
+   Figures in Hamilton answers, tables and exhibits are Geist Sans with tabular digits. The
+   site-wide .tabular-nums rule and the report stylesheet's mono figures switch to Geist Mono;
+   inside the workspace both keep the sans face. Public reports and admin are unchanged. */
+.hamilton-shell .tabular-nums { font-family: inherit; }
+.hamilton-shell .rd { --rd-mono: var(--rd-sans); }
+
 /* ── Reduce motion for Hamilton shell ── */
 @media (prefers-reduced-motion: reduce) {
   .hamilton-shell > *,
@@ -1454,6 +1461,11 @@ details[open] summary .expand-icon { transform: rotate(180deg); }
   --fi-viz-below: #b23a32;
   --fi-viz-inside: #9aa1a9;
   --fi-viz-bar: #55606f;
+  /* District bank/credit union tiles: which charter has the lower median. Three restrained
+     fills, always named in words beside them. */
+  --fi-charter-cu: #e7c79d;
+  --fi-charter-bank: #c4b6a4;
+  --fi-charter-same: #e4ded3;
 }
 [data-theme="dark"], .dark {
   --fi-viz-none: #22354f;
@@ -1466,6 +1478,9 @@ details[open] summary .expand-icon { transform: rotate(180deg); }
   --fi-viz-below: #d65f57;
   --fi-viz-inside: #6b7a8c;
   --fi-viz-bar: #a9b3c1;
+  --fi-charter-cu: #6b5240;
+  --fi-charter-bank: #4b4640;
+  --fi-charter-same: #2e2c2a;
 }
 
 /* The map: a district outlines in ink when it is hovered, focused or chosen. */
@@ -1504,4 +1519,39 @@ details[open] summary .expand-icon { transform: rotate(180deg); }
     animation: fi-a-grow-y 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) both;
     animation-delay: var(--fi-d, 0ms);
   }
+}
+
+/* City branch map (MapLibre): the popup and attribution in the page's own surfaces. */
+.fi-branch-map .maplibregl-popup-content {
+  background: var(--fi-surface-0);
+  color: var(--fi-ink);
+  border: 1px solid var(--fi-border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  box-shadow: 0 8px 24px -12px rgb(19 35 56 / 0.35);
+}
+.fi-branch-map .maplibregl-popup-anchor-bottom .maplibregl-popup-tip {
+  border-top-color: var(--fi-surface-0);
+}
+.fi-branch-map .maplibregl-popup-anchor-top .maplibregl-popup-tip {
+  border-bottom-color: var(--fi-surface-0);
+}
+.fi-branch-map .maplibregl-popup-anchor-left .maplibregl-popup-tip {
+  border-right-color: var(--fi-surface-0);
+}
+.fi-branch-map .maplibregl-popup-anchor-right .maplibregl-popup-tip {
+  border-left-color: var(--fi-surface-0);
+}
+.fi-branch-map .maplibregl-popup-close-button {
+  color: var(--fi-muted);
+  font-size: 18px;
+  padding: 0 6px;
+}
+.fi-branch-map .maplibregl-ctrl-attrib {
+  background: color-mix(in srgb, var(--fi-paper) 85%, transparent);
+  color: var(--fi-muted);
+  font-size: 11px;
+}
+.fi-branch-map .maplibregl-ctrl-attrib a {
+  color: var(--fi-ink);
 }
