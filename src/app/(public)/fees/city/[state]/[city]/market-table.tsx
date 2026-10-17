@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useId, useMemo, useState } from "react";
 import type { CityFeeKey, CityMarketInstitution } from "@/lib/data-store";
 import type { LocalFee } from "./market-view";
-import { ACCOUNT_NOT_STATED, meaningfulConditions } from "./account-details";
+import { ACCOUNT_NOT_IDENTIFIED, meaningfulConditions } from "./account-details";
 import { ComparisonBars, feeBars } from "./comparison-bars";
 import { CITY_SORTS, FEE_SELECT_EVENT, lowerLabel, money, type CitySort, type FeeSelectDetail } from "./format";
 import { orderInstitutions, type CharterFilter } from "./table-order";
@@ -231,13 +231,13 @@ export function MarketTable({
                         <span className="font-mono text-[15px] tabular-nums text-ink">{money(v.amount)}</span>
                       )
                     ) : (
-                      <span className="text-[12px] text-ink-muted">{missingNote(inst)}</span>
+                      <span className="inline-block max-w-[8.5rem] text-[12px] leading-snug text-ink-muted md:max-w-none">{missingNote(inst)}</span>
                     )}
                   </span>
                   <div className="col-span-2 min-w-0 text-[13px] md:col-span-1">
                     {v ? (
                       <>
-                        <p className={v.account ? "text-ink" : "text-ink-muted"}>{v.account ?? ACCOUNT_NOT_STATED}</p>
+                        <p className={v.account ? "text-ink" : "text-ink-muted"}>{v.account ?? ACCOUNT_NOT_IDENTIFIED}</p>
                         {conditions.length > 0 && <p className="text-[12px] text-ink-soft">{conditions.join(" · ")}</p>}
                         {v.source_line && (
                           <details className="mt-1 text-[12px]">

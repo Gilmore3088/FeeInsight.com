@@ -46,10 +46,10 @@ export function BranchMapLive({ points, label, branchesById }: { points: BranchP
       </div>
       <figcaption className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-[12px] text-ink-muted">
         <span className="inline-flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-full bg-ink" aria-hidden="true" /> {banks} bank branches
+          <span className="h-2.5 w-2.5 rounded-full bg-ink" aria-hidden="true" /> {banks} bank branches mapped
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-full bg-brick" aria-hidden="true" /> {points.length - banks} credit union branches
+          <span className="h-2.5 w-2.5 rounded-full bg-brick" aria-hidden="true" /> {points.length - banks} credit union branches mapped
         </span>
         {boundary && (
           <span className="inline-flex items-center gap-1.5">

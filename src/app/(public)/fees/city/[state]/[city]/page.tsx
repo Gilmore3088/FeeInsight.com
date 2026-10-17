@@ -5,7 +5,8 @@ import { notFound } from "next/navigation";
 import { getPublicNationalIndex } from "@/lib/public-stats";
 import { STATE_NAMES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
-import { PAGE_CRUMBS, PAGE_H1, PAGE_HEADER, PAGE_HEADER_BLOCK, PAGE_LEDE } from "@/components/public/page-header";
+import { PAGE_CRUMBS, PAGE_H1, PAGE_HEADER, PAGE_LEDE } from "@/components/public/page-header";
+import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { TrackLink } from "@/components/track-link";
 import { DEMO_REQUEST_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
 import { SITE_URL } from "@/lib/constants";
@@ -79,6 +80,13 @@ export default async function CityFeePage({ params, searchParams }: PageProps) {
   const cov = coverage(market);
   const fees = localFees(market, stateIndexes?.all ?? [], nationalIndex);
   const lead = leadFinding(fees);
+  const hasLead = lead != null && lead.median != null && lead.state_median != null;
+  const leadGap = hasLead ? lead!.median! - lead!.state_median! : 0;
+  const leadHeadline = hasLead
+    ? `${isMetro ? `The ${placeName} metro's` : `${cityName}'s`} ${lowerLabel(lead!.label)} fee median is ${money(Math.abs(leadGap))} ${
+        leadGap > 0 ? "above" : "below"
+      } the ${stateName} benchmark.`
+    : null;
   const leaders = depositLeaders(market);
   const cityHref = `/fees/city/${stateCode.toLowerCase()}/${encodeURIComponent(cityName.toLowerCase())}`;
   const initialFee = CITY_FEES.some((f) => f.key === query.fee) ? (query.fee as CityFeeKey) : "overdraft";
@@ -154,56 +162,65 @@ export default async function CityFeePage({ params, searchParams }: PageProps) {
 
       {/* 1. The place, its boundary and what this page covers. */}
       <section className="border-b border-border bg-paper">
-        <div className={`mx-auto max-w-page px-4 pb-10 pt-6 sm:px-6 sm:pb-12 sm:pt-10 ${PAGE_HEADER}`}>
-          <nav aria-label="Breadcrumb" className={PAGE_CRUMBS}>
-            <Link href="/fees" className="hover:text-ink">Fees</Link>
-            <span aria-hidden="true">/</span>
-            <Link href={`/fees/city/${stateCode.toLowerCase()}`} className="hover:text-ink">{stateName}</Link>
-            <span aria-hidden="true">/</span>
-            <span className="text-ink-soft">{cityName}</span>
-          </nav>
-          <h1 className={`mt-4 ${PAGE_H1}`}>
-            Banking and fees in {placeName}
-          </h1>
-          {market.metro && (
-            <div className="mt-4 inline-flex rounded-full border border-border bg-surface-0 p-1 text-[13px] font-semibold" role="group" aria-label="Area">
-              <Link
-                href={cityHref}
-                aria-current={!isMetro ? "page" : undefined}
-                className={`rounded-full px-4 py-1.5 ${!isMetro ? "bg-ink text-on-ink" : "text-ink-soft hover:text-ink"}`}
-              >
-                City of {cityName}
-              </Link>
-              <Link
-                href={`${cityHref}?area=metro`}
-                aria-current={isMetro ? "page" : undefined}
-                className={`rounded-full px-4 py-1.5 ${isMetro ? "bg-ink text-on-ink" : "text-ink-soft hover:text-ink"}`}
-              >
-                Metro area
-              </Link>
-            </div>
-          )}
-          <p className={`mt-4 ${PAGE_LEDE}`}>
-            <strong className="font-semibold text-ink">{cov.institutions}</strong> banks and credit unions have branches in {isMetro ? `the ${placeName} metro area` : cityName}.
-            The Bank Fee Index holds published fees for <strong className="font-semibold text-ink">{cov.with_fees}</strong> of them.
-          </p>
-          <p className="mt-2 text-[12px] text-ink-muted">The count includes institutions based elsewhere that have a branch here.</p>
-          {lead && lead.median != null && lead.state_median != null && (
-            <div className={`mt-8 rounded-2xl border border-border bg-surface-0 p-5 text-left sm:p-6 ${PAGE_HEADER_BLOCK}`}>
-              <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-brick">Furthest from the {stateName} median</p>
-              <p className="mt-2 text-[20px] font-semibold leading-snug tracking-[-0.01em] text-ink sm:text-[24px]">
-                {isMetro ? `The ${placeName} metro's` : `${cityName}'s`} median published {lowerLabel(lead.label)} fee is {money(lead.median)}.{" "}
-                {stateName}&apos;s is {money(lead.state_median)}.
+        <div
+          className={`mx-auto max-w-page px-4 pb-10 pt-6 sm:px-6 sm:pb-12 sm:pt-10 ${
+            hasLead ? "lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:items-start lg:gap-16" : ""
+          }`}
+        >
+          <div className={PAGE_HEADER}>
+            <nav aria-label="Breadcrumb" className={PAGE_CRUMBS}>
+              <Link href="/fees" className="hover:text-ink">Fees</Link>
+              <span aria-hidden="true">/</span>
+              <Link href={`/fees/city/${stateCode.toLowerCase()}`} className="hover:text-ink">{stateName}</Link>
+              <span aria-hidden="true">/</span>
+              <span className="text-ink-soft">{cityName}</span>
+            </nav>
+            <h1 className={`mt-4 ${PAGE_H1}`}>
+              Banking and fees in {placeName}
+            </h1>
+            {market.metro && (
+              <div className="mt-4 inline-flex rounded-full border border-border bg-surface-0 p-1 text-[13px] font-semibold" role="group" aria-label="Area">
+                <Link
+                  href={cityHref}
+                  aria-current={!isMetro ? "page" : undefined}
+                  className={`rounded-full px-4 py-1.5 ${!isMetro ? "bg-ink text-on-ink" : "text-ink-soft hover:text-ink"}`}
+                >
+                  City of {cityName}
+                </Link>
+                <Link
+                  href={`${cityHref}?area=metro`}
+                  aria-current={isMetro ? "page" : undefined}
+                  className={`rounded-full px-4 py-1.5 ${isMetro ? "bg-ink text-on-ink" : "text-ink-soft hover:text-ink"}`}
+                >
+                  Metro area
+                </Link>
+              </div>
+            )}
+            <p className={`mt-4 ${PAGE_LEDE}`}>
+              <strong className="font-semibold text-ink">{cov.institutions}</strong> banks and credit unions have branches in {isMetro ? `the ${placeName} metro area` : cityName}.
+              The Bank Fee Index holds published fees for <strong className="font-semibold text-ink">{cov.with_fees}</strong> of them.
+            </p>
+            <p className="mx-auto mt-2 text-[12px] text-ink-muted sm:mx-0">The count includes institutions based elsewhere that have a branch here.</p>
+          </div>
+          {hasLead && lead && (
+            <div className="mt-10 border-t border-border pt-8 text-left lg:mt-2 lg:border-l lg:border-t-0 lg:pl-12 lg:pt-0">
+              <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-brick">Largest gap from {stateName}</p>
+              <h2 className="mt-2 text-[22px] font-semibold leading-snug tracking-[-0.015em] text-ink sm:text-[28px]">
+                {leadHeadline}
+              </h2>
+              <p className="mt-2 text-[13px] text-ink-muted">
+                {barName} counts institutions with a branch here, wherever headquartered. {stateName} counts institutions headquartered in the state.
               </p>
-              <div className="mt-5">
+              <div className="mt-6">
                 <ComparisonBars bars={feeBars(lead, barName, stateName)} size="lg" />
               </div>
-              <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3">
+              <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-3">
                 <LeadLink fee={lead.key} sort="low" href={leadHref} target="compare">
                   See the {lead.n} institutions
                 </LeadLink>
-                <p className="text-[12px] text-ink-muted">
-                  {stateName}: institutions headquartered there. {barName}: institutions with a branch here.
+                <p className="max-w-md text-[12px] text-ink-muted">
+                  Chosen as the fee whose {barName} median sits furthest from {stateName}&apos;s in percentage terms, among fees at least{" "}
+                  {MIN_INSTITUTIONS_FOR_MEDIAN} local institutions publish.
                 </p>
               </div>
             </div>

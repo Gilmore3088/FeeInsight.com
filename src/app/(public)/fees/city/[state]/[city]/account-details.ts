@@ -5,8 +5,11 @@
  * Pure, with no server imports: the client table uses it.
  */
 
-/** Shown when the schedule does not tie the fee to a named account. */
-export const ACCOUNT_NOT_STATED = "Account not stated";
+/**
+ * Shown when no account has been identified for the fee yet. Not "not stated": the schedule may
+ * name the account where our reading has not picked it up.
+ */
+export const ACCOUNT_NOT_IDENTIFIED = "Account not identified";
 
 /** Words a sentence cannot end on: the line was cut before its point. */
 const DANGLING_END =

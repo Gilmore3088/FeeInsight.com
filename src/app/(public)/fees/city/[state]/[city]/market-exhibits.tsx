@@ -50,10 +50,10 @@ export function BranchMap({ points, label }: { points: BranchPoint[]; label: str
       </svg>
       <figcaption className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-muted">
         <span className="inline-flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-full bg-ink/70" aria-hidden="true" /> {banks} bank branches
+          <span className="h-2.5 w-2.5 rounded-full bg-ink/70" aria-hidden="true" /> {banks} bank branches mapped
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-full bg-brick/80" aria-hidden="true" /> {cus} credit union branches
+          <span className="h-2.5 w-2.5 rounded-full bg-brick/80" aria-hidden="true" /> {cus} credit union branches mapped
         </span>
         {miles > 0 && <span>About {miles} miles across</span>}
       </figcaption>

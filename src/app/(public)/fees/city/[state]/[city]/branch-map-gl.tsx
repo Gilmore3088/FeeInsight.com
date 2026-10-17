@@ -9,8 +9,8 @@ import type { BranchPoint } from "@/lib/data-store";
 export const MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/positron";
 const ATTRIBUTION =
   '<a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">&copy; OpenMapTiles</a> Data from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">&copy; OpenStreetMap contributors</a>';
-/** Give up on the live map and show the plain dot map when it has not loaded by then. */
-const LOAD_TIMEOUT_MS = 12_000;
+/** Give up on the live map and show the plain dot map when its style has not arrived by then. */
+const LOAD_TIMEOUT_MS = 15_000;
 
 function webglSupported(): boolean {
   try {
@@ -74,9 +74,12 @@ function restyle(map: maplibregl.Map, c: ReturnType<typeof palette>) {
       if (/water|river|stream|canal/.test(name)) setPaint(map, id, "line-color", water);
       else if (/boundary|admin/.test(name)) setPaint(map, id, "line-color", blend(c.paper, c.muted, 0.55));
       else if (/rail/.test(name)) setPaint(map, id, "line-color", blend(c.paper, c.muted, 0.45));
-      else if (/casing|outline/.test(name)) setPaint(map, id, "line-color", blend(c.border, c.muted, 0.35));
-      else if (/motorway|trunk|major|primary/.test(name)) setPaint(map, id, "line-color", blend(c.surface, c.border, 0.35));
-      else setPaint(map, id, "line-color", c.surface);
+      // Roads read as streets: a light ink tint on parchment, heavier for highways and main roads.
+      else if (/casing|outline/.test(name)) setPaint(map, id, "line-color", blend(c.paper, c.ink, 0.22));
+      else if (/motorway|trunk/.test(name)) setPaint(map, id, "line-color", blend(c.paper, c.ink, 0.42));
+      else if (/major|primary|secondary|tertiary/.test(name)) setPaint(map, id, "line-color", blend(c.paper, c.ink, 0.3));
+      else if (/highway|road|street|minor|service|path|track/.test(name)) setPaint(map, id, "line-color", blend(c.paper, c.ink, 0.16));
+      else setPaint(map, id, "line-color", blend(c.paper, c.ink, 0.2));
     } else if (layer.type === "symbol") {
       setPaint(map, id, "text-color", /city|town|state|country/.test(name) ? c.ink : c.muted);
       setPaint(map, id, "text-halo-color", c.paper);
@@ -137,6 +140,8 @@ export default function BranchMapGL({
       return;
     }
     let loaded = false;
+    // Once the style has arrived the map can draw; a missing tile or sprite after that is not a failure.
+    let styled = false;
     let map: maplibregl.Map;
     try {
       map = new maplibregl.Map({
@@ -158,10 +163,14 @@ export default function BranchMapGL({
     map.touchZoomRotate.disableRotation();
 
     const timer = window.setTimeout(() => {
-      if (!loaded) onFail();
+      if (!styled) onFail();
     }, LOAD_TIMEOUT_MS);
-    map.on("error", () => {
-      if (!loaded) onFail();
+    map.on("styledata", () => {
+      styled = true;
+    });
+    map.on("error", (e) => {
+      if (!styled && !loaded) onFail();
+      else console.warn("Branch map resource failed", e.error?.message ?? e);
     });
 
     map.on("load", () => {
@@ -192,7 +201,7 @@ export default function BranchMapGL({
             type: "symbol",
             source: vector,
             "source-layer": "place",
-            minzoom: 11,
+            minzoom: 9.5,
             filter: ["match", ["get", "class"], ["neighbourhood", "quarter", "suburb"], true, false],
             layout: {
               "text-field": ["coalesce", ["get", "name:en"], ["get", "name"]],
