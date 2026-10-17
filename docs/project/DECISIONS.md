@@ -1160,3 +1160,9 @@ API automatically triggers documentation update." Every route, query parameter a
 must be in the OpenAPI spec and on /api-docs (`src/lib/api-docs-sync.test.ts`), and a PR that
 changes API code must bump `API_VERSION` in `src/lib/api-v1.ts`, which the spec and the connector
 both report (`scripts/ci-guards.sh api-docs-kill`).
+
+**Three state lanes side by side.** James, 2026-10-17 13:08 UTC (speed audit thread): "Run 3 at a
+time." The tick advances up to `PARALLEL_STATE_LANES` (3) lane runs at once
+(`executeQueuedAgentRuns`, `src/lib/agents/run-store.ts`); other runs still go one after another.
+Lanes take turns at publish steps, which share one database lock. The earlier stop (lanes held the
+database, Oct 2026) predates the read fixes in #1793 and #1798. Set the constant to 1 to go back.

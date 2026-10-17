@@ -3580,6 +3580,37 @@ const DEFAULT_STEP_EXPECTED_MS = 120_000;
 const QUICK_STEP_EXPECTED_MS = 30_000;
 const QUICK_STEP_PREFIXES = ["registry-", "public-", "state-expert", "enhance", "lead-watch", "indexnow-ping", "category-guard"];
 
+/**
+ * State lanes a tick advances side by side (James, 17 Oct 2026). One at a time, 55 lanes at about
+ * 4 minutes a pass came round every 3-4 hours. Set to 1 to go back to one at a time. The scheduler
+ * keeps at most MAX_ACTIVE_STATE_LANE_RUNS lane runs queued (state-lane-scheduler.ts).
+ */
+export const PARALLEL_STATE_LANES = 3;
+/** The most lanes a tick may run side by side: each holds a database connection (pool of 5). */
+const MAX_PARALLEL_LANES = 3;
+/** Steps that take the publish lock; lanes run side by side take turns at them. */
+const SERIAL_STEP_KEYS = new Set(["publish", "publish-index", "publish-context"]);
+
+export interface StepTurns {
+  /** Waits for this lane's turn; call the returned function when the step is done. */
+  take(): Promise<() => void>;
+}
+
+export function createStepTurns(): StepTurns {
+  let tail: Promise<void> = Promise.resolve();
+  return {
+    async take() {
+      let release!: () => void;
+      const previous = tail;
+      tail = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await previous;
+      return release;
+    },
+  };
+}
+
 function isQuickStep(stepKey: string): boolean {
   return !(stepKey in STEP_EXPECTED_MS) && QUICK_STEP_PREFIXES.some((prefix) => stepKey.startsWith(prefix));
 }
@@ -3691,6 +3722,8 @@ export async function executeAgentRun(
     alwaysRunFirstStep?: boolean;
     /** Leave a paid step queued for a later tick instead of running or skipping it. */
     deferProviderSteps?: boolean;
+    /** Shared by the lanes a tick runs side by side; see SERIAL_STEP_KEYS. */
+    stepTurns?: StepTurns;
   } = {},
 ): Promise<AgentRunExecutionResult> {
   if (!Number.isInteger(runId) || runId < 1) {
@@ -3807,48 +3840,63 @@ export async function executeAgentRun(
       }
     }
 
-    const prepared = await prepareNextAgenticStep(runId);
-    if (prepared.kind === "missing") {
-      return {
-        runId,
-        status: "missing",
-        terminal: true,
-        executedSteps,
-        message: "Agent run not found.",
-      };
+    // Lanes run side by side take turns at a publish step: they share one database lock
+    // (agents.hamilton.publish), and a step waiting on it would hold a connection and tick time.
+    let releaseTurn: (() => void) | null = null;
+    if (options.stepTurns && nextStepKey && SERIAL_STEP_KEYS.has(nextStepKey)) {
+      releaseTurn = await options.stepTurns.take();
+      // The wait used tick time: start the step only if it still fits.
+      if (options.deadlineAt != null && Date.now() + expectedStepMs(nextStepKey) > options.deadlineAt) {
+        releaseTurn();
+        break;
+      }
     }
-    if (prepared.kind === "terminal" || prepared.kind === "busy") {
-      return {
-        runId,
-        status: prepared.status,
-        terminal: prepared.kind === "terminal",
-        executedSteps,
-        message: prepared.message,
-      };
-    }
-
-    const { run, step } = prepared.prepared;
     try {
-      const outcome =
-        step.stepKey === "discover" ||
-        step.stepKey === "rescue" ||
-        step.stepKey === "fetch" ||
-        step.stepKey === "read" ||
-        isProviderStep(step.stepKey) ||
-        step.stepKey === "public-discovery" ||
-        step.stepKey === "public-audit" ||
-        // A blocked report is marked failed and then the step throws; outside a
-        // transaction, so the job keeps its failed status and recorded findings.
-        step.stepKey === "report-reconcile" ||
-        isRegistryStepKey(step.stepKey)
-          ? await executeAgenticStep(sql, run, step)
-          : await withTransaction((tx) => executeAgenticStep(tx, run, step));
-      lastResult = await finishAgenticStep(runId, step, outcome);
-      executedSteps += 1;
-      if (lastResult.terminal) return { ...lastResult, executedSteps };
-    } catch (error) {
-      const failed = await failAgenticStep(runId, step, error);
-      return { ...failed, executedSteps };
+      const prepared = await prepareNextAgenticStep(runId);
+      if (prepared.kind === "missing") {
+        return {
+          runId,
+          status: "missing",
+          terminal: true,
+          executedSteps,
+          message: "Agent run not found.",
+        };
+      }
+      if (prepared.kind === "terminal" || prepared.kind === "busy") {
+        return {
+          runId,
+          status: prepared.status,
+          terminal: prepared.kind === "terminal",
+          executedSteps,
+          message: prepared.message,
+        };
+      }
+
+      const { run, step } = prepared.prepared;
+      try {
+        const outcome =
+          step.stepKey === "discover" ||
+          step.stepKey === "rescue" ||
+          step.stepKey === "fetch" ||
+          step.stepKey === "read" ||
+          isProviderStep(step.stepKey) ||
+          step.stepKey === "public-discovery" ||
+          step.stepKey === "public-audit" ||
+          // A blocked report is marked failed and then the step throws; outside a
+          // transaction, so the job keeps its failed status and recorded findings.
+          step.stepKey === "report-reconcile" ||
+          isRegistryStepKey(step.stepKey)
+            ? await executeAgenticStep(sql, run, step)
+            : await withTransaction((tx) => executeAgenticStep(tx, run, step));
+        lastResult = await finishAgenticStep(runId, step, outcome);
+        executedSteps += 1;
+        if (lastResult.terminal) return { ...lastResult, executedSteps };
+      } catch (error) {
+        const failed = await failAgenticStep(runId, step, error);
+        return { ...failed, executedSteps };
+      }
+    } finally {
+      releaseTurn?.();
     }
   }
 
@@ -3871,7 +3919,10 @@ export async function executeQueuedAgentRuns({
   providerRunLimit = null,
   deadlineAt,
   paused = { pipeline: false, marketing: false },
+  parallelLanes = PARALLEL_STATE_LANES,
 }: {
+  /** State lanes advanced side by side this tick; 1 runs them one after another. */
+  parallelLanes?: number;
   runLimit?: number;
   maxStepsPerRun?: number;
   allowProviderSteps?: boolean;
@@ -3991,10 +4042,11 @@ export async function executeQueuedAgentRuns({
               r.started_at ASC, r.id ASC
      LIMIT ${safeRunLimit}
   `;
-  // Runs advance one after another. Running state lanes side by side held several
-  // step transactions open at once (publish steps queue on one advisory lock while
-  // holding theirs), which starved the shared database and slowed the public site and
-  // admin to a crawl. The tick deadline still bounds how much work one tick does.
+  // Other runs advance one after another; up to `parallelLanes` state lanes advance side by side.
+  // Side by side first held several step transactions open at once, publish steps queued on
+  // one advisory lock, and the shared database crawled (Oct 2026). Lanes now take turns at
+  // publish (`createStepTurns`), and the reads that held the database are fast (#1793, #1798).
+  // The tick deadline still bounds how much work one tick does.
   const results: AgentRunExecutionResult[] = [];
   let providerRuns = 0;
   // A direct run (Read now, a state's re-search) ranks ahead of state lanes, and one that ran its
@@ -4012,11 +4064,10 @@ export async function executeQueuedAgentRuns({
   // count as under way and take the next tick ahead of it (Tennessee waited behind WY
   // this way, 2026-10-07). Other runs can still use the rest of the tick.
   let laneHeld = false;
-  for (const [index, row] of rows.entries()) {
-    if (laneHeld && row.run_kind === "workflow_lane") continue;
-    // The first run always gets a step; a later run starts a step only when that step can
-    // finish by the deadline, so a larger run limit fills the tick without running past it.
-    if (results.length > 0 && deadlineAt != null && Date.now() + QUICK_STEP_EXPECTED_MS > deadlineAt) break;
+  const lanesSideBySide = Math.min(Math.max(Math.floor(parallelLanes), 1), MAX_PARALLEL_LANES);
+  const stepTurns = createStepTurns();
+  const done = new Set<number>();
+  const runOne = async (index: number, row: (typeof rows)[number], alwaysRunFirstStep: boolean) => {
     const runId = Number(row.id);
     if (budgetPolicyId !== null || maxProviderCallsPerRun !== null || maxEstimatedCostMicrousd !== null) {
       await sql`
@@ -4040,12 +4091,40 @@ export async function executeQueuedAgentRuns({
       allowProviderSteps,
       deadlineAt: leavesLaneRoom && deadlineAt != null ? deadlineAt - laneRoomMs : deadlineAt,
       // The tick's first step always runs, unless it is a direct run that would take the lane's room.
-      alwaysRunFirstStep: firstRunPending && !leavesLaneRoom,
+      alwaysRunFirstStep: alwaysRunFirstStep && !leavesLaneRoom,
       deferProviderSteps: allowProviderSteps && !providerSlot,
+      stepTurns: row.run_kind === "workflow_lane" ? stepTurns : undefined,
     });
-    if (!(leavesLaneRoom && result.executedSteps === 0)) firstRunPending = false;
-    results.push(result);
-    if (result.heldForDeadline && row.run_kind === "workflow_lane") laneHeld = true;
+    return { result, passesFirstStep: leavesLaneRoom && result.executedSteps === 0 };
+  };
+  for (const [index, row] of rows.entries()) {
+    if (done.has(index)) continue;
+    if (laneHeld && row.run_kind === "workflow_lane") continue;
+    // The first run always gets a step; a later run starts a step only when that step can
+    // finish by the deadline, so a larger run limit fills the tick without running past it.
+    if (results.length > 0 && deadlineAt != null && Date.now() + QUICK_STEP_EXPECTED_MS > deadlineAt) break;
+    if (row.run_kind !== "workflow_lane" || lanesSideBySide === 1) {
+      const { result, passesFirstStep } = await runOne(index, row, firstRunPending);
+      if (!passesFirstStep) firstRunPending = false;
+      results.push(result);
+      if (result.heldForDeadline && row.run_kind === "workflow_lane") laneHeld = true;
+      continue;
+    }
+    // This lane and the next lanes in the order, side by side; only the first may take the
+    // tick's always-run step.
+    const group = rows
+      .map((candidate, at) => ({ candidate, at }))
+      .filter(({ candidate, at }) => at >= index && candidate.run_kind === "workflow_lane" && !done.has(at))
+      .slice(0, lanesSideBySide);
+    for (const { at } of group) done.add(at);
+    const outcomes = await Promise.all(
+      group.map(({ candidate, at }, position) => runOne(at, candidate, firstRunPending && position === 0)),
+    );
+    firstRunPending = false;
+    for (const { result } of outcomes) {
+      results.push(result);
+      if (result.heldForDeadline) laneHeld = true;
+    }
   }
   return { selected: rows.length, results };
 }
