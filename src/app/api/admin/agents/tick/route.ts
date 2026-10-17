@@ -28,13 +28,13 @@ export const maxDuration = 300;
  */
 const DEFAULT_MAX_STEPS_PER_RUN = 10;
 /**
- * Runs advanced per tick, strictly one after another (see executeQueuedAgentRuns),
+ * Runs advanced per tick, one after another except up to PARALLEL_STATE_LANES state lanes side by side (see executeQueuedAgentRuns),
  * until the step-start deadline. No run starts past the deadline except the first.
  */
 const DEFAULT_RUN_LIMIT = 10;
 /**
  * Started steps should finish this long after the tick began: a step starts only when its
- * expected runtime (run-store STEP_EXPECTED_MS) fits. Ticks fire every 5 minutes and a
+ * expected runtime (run-store STEP_EXPECTED_MS) fits. Ticks fire every 10 minutes and a
  * killed tick leaves its query running on the database, so a tick must end inside its
  * interval and maxDuration. Until 2026-10-07 no step started after 150 s, which left
  * ticks idle for 10 to 150 s and lane passes spread over three ticks.

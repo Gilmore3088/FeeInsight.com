@@ -59,10 +59,11 @@ export interface HandTakedown {
  * name, each confirmed against its bank's stored text: 13 surcharges non-customers pay at the bank's
  * own ATMs whose name says only "ATM Surcharge" (the heading or line names the payer), and 15 lines
  * that are not the fee (an in-network or own-ATM $0, a refund cap, a waived price, a figure from the
- * next column). 28 in all, so they wait on James (fewer than 20 ride; DECISIONS.md, Oct 16): off,
- * none of them is listed and none comes down. Turning it on takes all 28 down on the next publish.
+ * next column). 28 in all, so they waited on James (fewer than 20 ride; DECISIONS.md, Oct 16). He said
+ * yes on Oct 17 (11:28 UTC), so the switch is on and all 28 come down on the next publish. Set false
+ * and none of them is listed.
  */
-export const ATM_SURCHARGE_TAKEDOWN_LIVE = false;
+export const ATM_SURCHARGE_TAKEDOWN_LIVE = true;
 
 type AtmRow = [feePublishedId: number, institutionId: number, amount: number, feeName: string, evidence: string];
 
@@ -519,6 +520,16 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
     reason: "duplicate of #81957 (#1753)", issue: 1753, kind: "duplicate",
     requiresLive: { feePublishedId: 81957, amount: 5, feeName: "International ATM Transaction" },
     evidence: "Regions (doc 23188, text 20258): the $5.00 \"Withdrawal\" sits under \"International ATM:\" (\"International ATM: | ... Withdrawal ... $5.00 (Applies to all withdrawal requests, approved or declined)\"), not under \"Regions ATM:\"; the same $5 international ATM fee is live as card_foreign_txn 81957. Regions' non-network withdrawal is $3 (81982)." },
+  // #1774 (read-only, Oct 17): TD Bank's paper statement fee read as a monthly maintenance fee, on
+  // both TD records. Each comes down only while TD's paper statement fee stays live.
+  { feePublishedId: 64716, institutionId: 12, canonicalFeeKey: "monthly_maintenance", amount: 3, feeName: "Monthly fee",
+    reason: "source_mismatch: #1774", issue: 1774, kind: "wrong_category",
+    requiresLive: { feePublishedId: 64717, amount: 3, feeName: "Paper statements" },
+    evidence: "TD Bank checking page (doc 19132): \"Paper statements | $3 monthly fee | Free for customers aged 60+, otherwise $3 monthly fee | $1 monthly fee\"; the paper statement fee, live as 64717. TD's monthly maintenance fees are $4.95, $15 and $25." },
+  { feePublishedId: 65870, institutionId: 65, canonicalFeeKey: "monthly_maintenance", amount: 3, feeName: "Monthly fee",
+    reason: "source_mismatch: #1774", issue: 1774, kind: "wrong_category",
+    requiresLive: { feePublishedId: 65871, amount: 3, feeName: "Paper statements" },
+    evidence: "TD Bank checking page (doc 19485, the same page as doc 19132): \"Paper statements | $3 monthly fee\"; the paper statement fee, live as 65871." },
   // #1765 (read-only, Oct 17): Navy Federal's Visa gift card inactivity fee, filed as a dormant
   // account. Its name says only "Inactivity Fee", so the card-product rule cannot read it; it comes
   // down with the other 61 under `CARD_PRODUCT_TAKEDOWN_LIVE` (on since James's yes, Oct 17).
@@ -527,8 +538,46 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
         reason: "source_mismatch: #1765", issue: 1765, kind: "wrong_category" as const,
         evidence: "Navy Federal: under \"Prepaid and Gift Cards | Visa® Gift Cards\", \"Inactivity Fee (After 12 consecutive months of no activity, the card will be charged $5.00 per month ...)\": a gift card's inactivity, not account dormancy; none of the 50 types holds it." }]
     : []),
-  // #1772, #1773: 28 non-network ATM rows, held by `ATM_SURCHARGE_TAKEDOWN_LIVE` (off).
+  // #1772, #1773: 28 non-network ATM rows, listed while `ATM_SURCHARGE_TAKEDOWN_LIVE` is on (James, Oct 17).
   ...atmSurchargeTakedowns(),
+  // #1788 (read-only, Oct 17; James's sample-report review): rows guard v72 cannot read by name, each
+  // confirmed against its bank's stored text. Two international ATM fees filed as the non-network ATM
+  // fee that repeat a live International ATM & Card fee, and three optional add-ons filed as monthly
+  // maintenance; none of the 50 types holds an add-on. 5 entries, under James's fewer-than-20 rule.
+  { feePublishedId: 81615, institutionId: 19, canonicalFeeKey: "atm_non_network", amount: 5, feeName: "Non-Fifth Third ATM Fee",
+    reason: "duplicate of #81610 (#1788)", issue: 1788, kind: "duplicate",
+    requiresLive: { feePublishedId: 81610, amount: 5, feeName: "International ATM Withdrawal" },
+    evidence: "Fifth Third (doc 21042, text of Oct 7): \"Non-Fifth Third ATM Fee | $3.50 for U.S. transactions | $5 for international transactions\"; the $5 is the international withdrawal, live as card_foreign_txn 81610 (\"International ATM Withdrawal: $5.00\"). Its U.S. fee is live as 81609 ($3.50)." },
+  { feePublishedId: 16733, institutionId: 4967, canonicalFeeKey: "atm_non_network", amount: 3, feeName: "Excessive non-UNFCU/Co-op/Allpoint network ATM transactions",
+    reason: "duplicate of #144937 (#1788)", issue: 1788, kind: "duplicate",
+    requiresLive: { feePublishedId: 144937, amount: 3, feeName: "Over 8 withdrawals per month per account outside the US8: Excessive non-UNFCU/Co-op/Allpoint network ATM transactions" },
+    evidence: "United Nations FCU (unfcu.org fee page): \"Over 8 withdrawals per month per account outside the US | Excessive non-UNFCU/Co-op/Allpoint network ATM transactions $3.00/withdrawal\"; the same $3 line is 144937, which guard v72 re-files to card_foreign_txn. Within the U.S. the charge is $1.00." },
+  { feePublishedId: 142748, institutionId: 7327, canonicalFeeKey: "monthly_maintenance", amount: 3, feeName: "Monthly fee",
+    reason: "source_mismatch: #1788", issue: 1788, kind: "wrong_category",
+    evidence: "Frankenmuth CU (frankenmuthcu.org/mi-open-checking): identity monitoring, credit monitoring and recovery coverage, \"All this coverage is provided to you for a monthly $3.00 fee, charged to the head of household consumer checking account. Take advantage of this exciting security coverage today.\": an optional identity protection service, not a checking account's fee." },
+  { feePublishedId: 152166, institutionId: 502, canonicalFeeKey: "monthly_maintenance", amount: 28, feeName: "Monthly fee",
+    reason: "source_mismatch: #1788", issue: 1788, kind: "wrong_category",
+    evidence: "United Bank (unitedbk.bank/ag-checking), under \"Data Trac\": \"Ag customers can add this package of benefits to any ag checking account! This record keeping service ... Monthly fee of $28.00 plus tax or a discounted annual fee of $285.00 plus tax\": a record keeping add-on, not the account's fee." },
+  { feePublishedId: 107315, institutionId: 8448, canonicalFeeKey: "monthly_maintenance", amount: 20, feeName: "Service charge",
+    reason: "source_mismatch: #1788", issue: 1788, kind: "wrong_category",
+    evidence: "Velocity CU (velocitycu.com fee schedule): the $20.00 is the next cell's \"CU Rewards Program for Debit Mastercard* .......$20.00 annually\", a rewards add-on; the row's own \"Service Charge\" line is \"$10.00 per month\" (live as 32923). Choice Checking's $20 is its own live row (95335)." },
+  // #1691 cleanup (read-only, Oct 17): live misreads that peer check v5 released, found by its fresh
+  // held-out grade and re-read against the bank's stored text. One entry per cause issue; the two
+  // fax fees are re-filed in place instead (taxonomy-fold HAND_REFILES, #1829). 4 entries. Central
+  // Bank's key deposit (152139) stays: whether a key deposit is a fee is James's call on #1831.
+  { feePublishedId: 152973, institutionId: 8637, canonicalFeeKey: "safe_deposit_box", amount: 11, feeName: "Key Deposit",
+    reason: "source_mismatch: #1827", issue: 1827, kind: "wrong_amount",
+    evidence: "Valley Strong CU (doc 36716, text 34862), a price-first table: \"| **$20** | Key Deposit |\" then \"| **$11** | Key Replacement |\"; the $11 is the next row's key replacement price, read one row late (#1827). Whether a key deposit is a fee at all is #1831." },
+  { feePublishedId: 152366, institutionId: 4624, canonicalFeeKey: "other_lending_fee", amount: 1000, feeName: "Mortgage satisfaction fee (varies)",
+    reason: "source_mismatch: #1827", issue: 1827, kind: "wrong_amount",
+    evidence: "Citadel FCU (doc 32251, text 30203): \"Mortgage satisfaction fee (varies)\" then \"$1,000.00 Mortgage modification\"; the satisfaction fee has no price, and the $1,000 is the modification fee." },
+  { feePublishedId: 152591, institutionId: 7859, canonicalFeeKey: "other_lending_fee", amount: 4.95, feeName: "Reconveyance",
+    reason: "source_mismatch: #1828", issue: 1828, kind: "wrong_amount",
+    evidence: "Oregon Community FCU (doc 19849, text 15643): \"Reconveyance………… Actual Cost | Returned payment………… | $4.95\"; reconveyance is at actual cost, and the $4.95 is the next line's returned loan payment." },
+  { feePublishedId: 152306, institutionId: 8579, canonicalFeeKey: "bill_pay", amount: 35, feeName: "Bill Payment, ACH, or Check",
+    reason: "duplicate of #53765 (#1830)", issue: 1830, kind: "duplicate",
+    requiresLive: { feePublishedId: 53765, amount: 35, feeName: "Stop Payment Order for Bill Payment, ACH, or Check (one free per calendar year)" },
+    evidence: "The Southern FCU (doc 36961, text 35049): \"Stop payment order (one free per calendar year) Bill Payment, ACH, or Check | $35.00\": the stop payment fee, cut to its tail and filed as bill pay. It is already live as stop_payment 53765 at $35, so a re-file would list it twice." },
 ];
 
 export interface LiveTakedownRow {

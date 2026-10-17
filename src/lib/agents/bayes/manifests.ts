@@ -376,6 +376,9 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v17 (#1646): name words match where a word begins. The version is in each institution's check
   // fingerprint, so every publish step's batch re-checks institutions not yet checked at v17.
   SOURCE_CHECK_STRATEGY: "Its fingerprint carries the version, so each publish step's batch re-checks every institution not yet checked at the new version; nothing to replay.",
+  // v2 (#1810): a fee with no heading above it takes the account Knox recorded on its raw row.
+  ACCOUNT_NAME_STRATEGY: "Its fingerprint carries the version, so each publish step's batch (40 institutions) re-reads every institution with a generic monthly name not yet read at v2; nothing to replay.",
+  STATE_LISTS_PARSER_VERSION: "New sources (depositories, non-bank lenders, Urban debt held until its license is confirmed); no older rows to replay.",
 };
 
 export async function loadManifests(): Promise<ReplayManifest[]> {
@@ -403,6 +406,8 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // payments leave late payment and loan origination for other lending.
     // v71 (Oct 17): the non-network ATM fee refuses another institution's card named in several words
     // after "non-", and an ATM transaction verification re-files to account research.
+    // v72 (Oct 17, #1788): an international ATM fee re-files to card_foreign_txn, a sustained overdraft
+    // to continuous_od and an incoming wire to its incoming key; an optional add-on fails monthly maintenance.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

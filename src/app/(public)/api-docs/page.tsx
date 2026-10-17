@@ -12,13 +12,15 @@ import { PRO_PLANS_NAV } from "@/components/nav-items";
 import { NON_INSTITUTION_TIER, tierAmountLabel, tierPriceLabel } from "@/lib/pro-tiers";
 import { PAGE_HEADER } from "@/components/public/page-header";
 import { MAX_CHOSEN_PEERS, PEER_GROUP_PARAMS } from "@/lib/peer-set-dimensions";
+import { API_ERROR_CODES } from "@/lib/api-v1";
+import { MCP_TOOLS } from "@/lib/api-v1-mcp";
 
 const PRO_LABEL = "Hamilton";
 
 export const metadata: Metadata = {
   title: "API Documentation",
   description:
-    `REST API and Claude connector for bank and credit union fee data. Included with the ${API_PLANS_LABEL} of Hamilton: make your key on your account page.`,
+    `REST API and Claude connector for bank and credit union fees, call report fee revenue, fee changes and branch markets. Included with the ${API_PLANS_LABEL} of Hamilton: make your key on your account page.`,
 };
 
 /* ---------- small reusable pieces ---------- */
@@ -94,7 +96,7 @@ function CodeBlock({ children, title }: { children: string; title?: string }) {
 
 function ResponseField({ name, type, note }: { name: string; type: string; note?: string }) {
   return (
-    <div className="flex items-baseline gap-2 text-[13px]">
+    <div className="flex flex-wrap items-baseline gap-x-2 text-[13px]">
       <code className="text-[12px] text-ink-soft">{name}</code>
       <span className="text-[11px] text-ink-muted">{type}</span>
       {note && <span className="text-ink-muted">-- {note}</span>}
@@ -305,6 +307,15 @@ export default async function ApiDocsPage() {
         <a href="#institutions" className="rounded-md border border-border px-3 py-1.5 text-ink-soft hover:bg-paper transition-colors">
           Institutions
         </a>
+        <a href="#revenue" className="rounded-md border border-border px-3 py-1.5 text-ink-soft hover:bg-paper transition-colors">
+          Revenue
+        </a>
+        <a href="#fee-changes" className="rounded-md border border-border px-3 py-1.5 text-ink-soft hover:bg-paper transition-colors">
+          Fee changes
+        </a>
+        <a href="#branches" className="rounded-md border border-border px-3 py-1.5 text-ink-soft hover:bg-paper transition-colors">
+          Branches
+        </a>
         <a href="#peers" className="rounded-md border border-border px-3 py-1.5 text-ink-soft hover:bg-paper transition-colors">
           Peers
         </a>
@@ -370,18 +381,28 @@ export default async function ApiDocsPage() {
         <p className="mt-3 text-[13px] text-ink-muted">
           Each question Claude answers uses a few calls from your team&apos;s {API_MONTHLY_CALLS_LABEL}-a-month allowance.
         </p>
+        <p className="mt-4 text-[13px] font-semibold text-ink">What Claude can look up</p>
+        <ul className="mt-2 space-y-1.5 text-[13px] text-ink-muted">
+          {MCP_TOOLS.map((tool) => (
+            <li key={tool.name}>
+              <code className="rounded bg-border/40 px-1 text-[12px] text-ink">{tool.name}</code>{" "}
+              <span className="text-ink-soft">{tool.title}</span>
+            </li>
+          ))}
+        </ul>
       </div>
 
       {/* Rate Limits */}
       <SectionHeading id="rate-limits">Rate Limits</SectionHeading>
       <div className="rounded-xl border border-border/80 bg-white px-6 py-5">
         <p className="text-[13px] text-ink-muted">
-          Each plan gets one monthly allowance, shared by every key on it and across all endpoints. When it runs out, calls return 429 rate_limited until the allowance resets on the 1st of the next month (UTC). Each plan can also make up to {BURST_CALLS_PER_MINUTE} calls a minute, and calls past that return 429 burst_limited with a Retry-After header giving the seconds to wait. Unlimited keys get no X-RateLimit-Limit or X-RateLimit-Remaining headers. Errors return JSON with an error message and a stable code such as invalid_parameter, plan_required or rate_limited.
+          Each plan gets one monthly allowance, shared by every key on it and across all endpoints. When it runs out, calls return 429 rate_limited until the allowance resets on the 1st of the next month (UTC). Each plan can also make up to {BURST_CALLS_PER_MINUTE} calls a minute, and calls past that return 429 burst_limited with a Retry-After header giving the seconds to wait. Unlimited keys get no X-RateLimit-Limit or X-RateLimit-Remaining headers. Errors return JSON with an error message and a stable code: {API_ERROR_CODES.join(", ")}. Successful responses carry an ETag; send it back in If-None-Match to get 304 Not Modified when nothing changed (a 304 still counts as a call).
         </p>
         <div className="mt-3 space-y-1.5 text-[13px]">
           <ResponseField name="X-RateLimit-Limit" type="header" note="Maximum requests in the current window" />
           <ResponseField name="X-RateLimit-Remaining" type="header" note="Requests remaining" />
           <ResponseField name="X-RateLimit-Reset" type="header" note="ISO 8601 UTC time when the monthly window resets" />
+          <ResponseField name="Retry-After" type="header" note="On 429 burst_limited, seconds to wait" />
         </div>
         <div className="mt-4 overflow-hidden rounded-lg border border-border/60">
           <table className="w-full text-left text-[13px]">
@@ -397,11 +418,6 @@ export default async function ApiDocsPage() {
                 <td className="px-4 py-2 font-medium">{PRO_LABEL} key</td>
                 <td className="px-4 py-2">{API_MONTHLY_CALLS_LABEL} requests</td>
                 <td className="px-4 py-2">Account page, {API_PLANS_LABEL}</td>
-              </tr>
-              <tr className="border-t border-border/60">
-                <td className="px-4 py-2">Data licensing</td>
-                <td className="px-4 py-2">Custom</td>
-                <td className="px-4 py-2">Talk to us</td>
               </tr>
             </tbody>
           </table>
@@ -421,7 +437,7 @@ export default async function ApiDocsPage() {
             {
               name: "format",
               type: "string",
-              description: `"csv" for CSV download from a signed-in ${PRO_LABEL} session`,
+              description: `"csv" for a CSV download, with a ${PRO_LABEL} key or a signed-in ${PRO_LABEL} session`,
             },
           ]}
           curlExample={`curl -H "Authorization: Bearer YOUR_API_KEY" \\
@@ -440,7 +456,7 @@ export default async function ApiDocsPage() {
   "data": [
     {
       "category": "overdraft",
-      "display_name": "Overdraft Fee",
+      "display_name": "Overdraft (OD)",
       "family": "Overdraft & NSF",
       "tier": "spotlight",
       "median": 35.00,
@@ -479,7 +495,7 @@ export default async function ApiDocsPage() {
           ]}
           responseExample={`{
   "category": "overdraft",
-  "display_name": "Overdraft Fee",
+  "display_name": "Overdraft (OD)",
   "family": "Overdraft & NSF",
   "tier": "spotlight",
   "summary": {
@@ -505,7 +521,7 @@ export default async function ApiDocsPage() {
           method="GET"
           path="/index"
           summary="National and peer fee index"
-          description="Returns the fee index for all categories. Apply filters for peer group benchmarking by state, charter type, or Federal Reserve district. Includes maturity indicators and bank/credit union counts."
+          description="Returns the fee index for every category. Filter by state, charter type, Federal Reserve district or asset size to benchmark a peer group. Includes maturity indicators and bank and credit union counts."
           params={[
             {
               name: "state",
@@ -523,9 +539,14 @@ export default async function ApiDocsPage() {
               description: "Fed district number(s), comma-separated (e.g., 7 or 2,7,12)",
             },
             {
+              name: "asset_tier",
+              type: "string",
+              description: "Asset-size tier(s), comma-separated: community_small, community_mid, community_large, regional, large_regional, super_regional",
+            },
+            {
               name: "format",
               type: "string",
-              description: `"csv" for CSV download from a signed-in ${PRO_LABEL} session`,
+              description: `"csv" for a CSV download, with a ${PRO_LABEL} key or a signed-in ${PRO_LABEL} session`,
             },
           ]}
           curlExample={`# National index
@@ -562,7 +583,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
   "data": [
     {
       "category": "monthly_maintenance",
-      "display_name": "Monthly Maintenance Fee",
+      "display_name": "Monthly Maintenance",
       "family": "Account Maintenance",
       "tier": "spotlight",
       "median": 10.00,
@@ -590,11 +611,16 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
           method="GET"
           path="/institutions"
           summary="List institutions"
-          description="Paginated list of financial institutions with fee data. Filter by state and charter type. Returns summary data including fee count, asset size, and Fed district."
+          description="Paginated list of banks and credit unions. Filter by state, charter, size or city, search by name, or rank by one fee. Each row has fee count, total assets (in thousands of dollars) and Fed district."
           params={[
             { name: "state", type: "string", description: "Two-letter state code" },
             { name: "charter", type: "string", description: '"bank" or "credit_union"' },
             { name: "has_fees", type: "boolean", description: '"true" to return only institutions with published fees' },
+            { name: "q", type: "string", description: "Search by name, e.g. JPMorgan Chase" },
+            { name: "asset_tier", type: "string", description: "Asset-size tier(s), comma-separated, e.g. community_small, community_mid" },
+            { name: "city", type: "string", description: "Exact city name, e.g. Austin (not with q or fee_category)" },
+            { name: "fee_category", type: "string", description: `Rank by one fee, e.g. overdraft (${PRO_LABEL} keys). Each row gains fee_amount, the institution's lowest published amount for that fee.` },
+            { name: "sort", type: "string", description: '"highest" (default) or "lowest", with fee_category' },
             { name: "page", type: "integer", description: "Page number (default: 1)" },
             { name: "limit", type: "integer", description: "Results per page (default: 50, max: 200)" },
           ]}
@@ -632,10 +658,13 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
           method="GET"
           path="/institutions?id={id}"
           summary="Get institution detail"
-          description="Returns a single institution profile with all extracted fees, including amounts, frequency, conditions, and review status."
+          description="One institution's profile with its published fees and source links, call report figures and complaint counts. Add view=benchmark for its fees beside peer medians (format=csv for a spreadsheet) or view=regulatory_watch for enforcement actions and complaints."
           tierNote="Pro"
           params={[
             { name: "id", type: "integer", required: true, description: "Institution ID" },
+            { name: "view", type: "string", description: '"detail" (default), "benchmark" or "regulatory_watch"' },
+            { name: "quarters", type: "integer", description: "Call report quarters, newest first (default: 8, max: 66)" },
+            { name: "format", type: "string", description: '"csv" with view=benchmark' },
             {
               name: "updated_since",
               type: "string",
@@ -645,7 +674,11 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
           curlExample={`curl -H "Authorization: Bearer YOUR_API_KEY" \\
   "${BASE}/institutions?id=2466"`}
           responseFields={[
-            { name: "fees[]", type: "array", note: "All non-rejected fees for this institution" },
+            { name: "fees[]", type: "array", note: "Every published fee for this institution" },
+            { name: "fees[].source_url", type: "string", note: "The fee schedule the fee was read from" },
+            { name: "call_reports[]", type: "array", note: "FDIC or NCUA call report figures by quarter, in whole dollars" },
+            { name: "rate_fees[]", type: "array", note: "Fees stated as a percentage, listed apart from dollar fees" },
+            { name: "complaints[]", type: "array", note: "CFPB complaint counts by product, when any are on file" },
             {
               name: "fees[].fee_name",
               type: "string",
@@ -867,6 +900,174 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
       "source_url": "https://example.com/fee-schedule.pdf",
       "published_at": "2026-10-02T14:05:00.000Z"
     }
+  ]
+}`}
+        />
+      </div>
+
+      {/* ---- REVENUE ---- */}
+      <SectionHeading id="revenue">Fee Revenue</SectionHeading>
+
+      <div className="space-y-6">
+        <Endpoint
+          method="GET"
+          path="/revenue"
+          summary="Market-wide fee revenue by quarter"
+          description="Deposit service-charge income summed from FDIC and NCUA call reports, in thousands of dollars per quarter, newest first. The national view splits banks and credit unions and adds the change from a year earlier; the districts view gives one row per Fed district."
+          tierNote="Pro"
+          params={[
+            { name: "view", type: "string", description: '"national" (default) or "districts"' },
+            { name: "quarters", type: "integer", description: "Quarters to return, back to 2010 (default: 8, max: 66)" },
+          ]}
+          curlExample={`curl -H "Authorization: Bearer YOUR_API_KEY" \\
+  "${BASE}/revenue?quarters=4"`}
+          responseFields={[
+            { name: "data[].quarter", type: "string", note: 'e.g. "2026-Q1"' },
+            { name: "data[].service_charges", type: "number", note: "Thousands of dollars" },
+            { name: "data[].yoy_change_pct", type: "number", note: "Change from the same quarter a year earlier (national view)" },
+          ]}
+          responseExample={`{
+  "view": "national",
+  "units": "Deposit service-charge income from FDIC and NCUA call reports, in thousands of US dollars per quarter.",
+  "data": [
+    {
+      "quarter": "2026-Q1",
+      "service_charges": 1250000,
+      "bank_service_charges": 1000000,
+      "credit_union_service_charges": 250000,
+      "institutions": 8700,
+      "yoy_change_pct": -1.2
+    },
+    ...
+  ]
+}`}
+        />
+      </div>
+
+      {/* ---- FEE CHANGES ---- */}
+      <SectionHeading id="fee-changes">Fee Changes</SectionHeading>
+
+      <div className="space-y-6">
+        <Endpoint
+          method="GET"
+          path="/fee-changes"
+          summary="Detected fee changes"
+          description="Fee changes found when an institution's published schedule changed between reads, newest first, at most 200. Coverage is still small and growing."
+          tierNote="Pro"
+          params={[
+            { name: "days", type: "integer", description: "How far back to look (default: 90, max: 365)" },
+            { name: "category", type: "string", description: "Fee category key, e.g. overdraft" },
+          ]}
+          curlExample={`curl -H "Authorization: Bearer YOUR_API_KEY" \\
+  "${BASE}/fee-changes?days=30&category=overdraft"`}
+          responseFields={[
+            { name: "data[].previous_amount", type: "number", note: "Amount before the change, in USD" },
+            { name: "data[].new_amount", type: "number", note: "Amount after the change, in USD" },
+            { name: "data[].detected_at", type: "string", note: "When the change was found" },
+          ]}
+          responseExample={`{
+  "days": 30,
+  "category": "overdraft",
+  "count": 1,
+  "data": [
+    {
+      "institution_id": 1001,
+      "institution_name": "Example Bank",
+      "category": "overdraft",
+      "display_name": "Overdraft (OD)",
+      "previous_amount": 32.00,
+      "new_amount": 30.00,
+      "change": "decrease",
+      "detected_at": "2026-10-05T09:00:00.000Z"
+    }
+  ]
+}`}
+        />
+      </div>
+
+      {/* ---- BRANCHES ---- */}
+      <SectionHeading id="branches">Branches and Local Markets</SectionHeading>
+
+      <div className="space-y-6">
+        <Endpoint
+          method="GET"
+          path="/branches"
+          summary="Branch locations"
+          description="Bank branches come from the FDIC Summary of Deposits, with deposits. Credit union branches come from NCUA, without deposits. Each has an address and, where known, latitude and longitude. Pass institution_id for one institution, or state (optionally with city or zip) for an area."
+          tierNote="Pro"
+          params={[
+            { name: "institution_id", type: "integer", description: "One institution's branches" },
+            { name: "state", type: "string", description: "Two-letter state code" },
+            { name: "city", type: "string", description: "Exact city name, with state" },
+            { name: "zip", type: "string", description: "Five-digit ZIP code, with state" },
+            { name: "page", type: "integer", description: "Page number (default: 1)" },
+            { name: "limit", type: "integer", description: "Results per page (default: 100, max: 500)" },
+          ]}
+          curlExample={`curl -H "Authorization: Bearer YOUR_API_KEY" \\
+  "${BASE}/branches?state=MN&city=Springfield"`}
+          responseFields={[
+            { name: "data[].source", type: "string", note: '"fdic_sod" or "ncua"' },
+            { name: "data[].latitude", type: "number", note: "Null when not yet located" },
+            { name: "data[].deposits", type: "number", note: "Whole dollars; null for credit unions" },
+          ]}
+          responseExample={`{
+  "sod_year": 2026,
+  "total": 1,
+  "page": 1,
+  "page_size": 100,
+  "pages": 1,
+  "has_more": false,
+  "data": [
+    {
+      "source": "fdic_sod",
+      "institution_id": 1001,
+      "institution_name": "Example Bank",
+      "branch_name": "Main Office",
+      "is_main_office": true,
+      "address": "1 Example Ave",
+      "city": "Springfield",
+      "state": "MN",
+      "zip": "55000",
+      "latitude": 44.9,
+      "longitude": -93.2,
+      "deposits": 250000000
+    }
+  ]
+}`}
+        />
+
+        <Endpoint
+          method="GET"
+          path="/market?institution_id={id}"
+          summary="Local market competitors"
+          description="Who competes in an institution's local market: the counties holding most of its deposits (for credit unions, its headquarters city's counties), with each competitor's deposits there and its deposit share. Credit unions have no deposit figure, so their share is null."
+          tierNote="Pro"
+          params={[
+            { name: "institution_id", type: "integer", required: true, description: "Institution ID" },
+          ]}
+          curlExample={`curl -H "Authorization: Bearer YOUR_API_KEY" \\
+  "${BASE}/market?institution_id=1001"`}
+          responseFields={[
+            { name: "places[]", type: "array", note: "Counties or city that define the market" },
+            { name: "data[].deposit_share_pct", type: "number", note: "Share of the market's deposits, in percent" },
+            { name: "data[].is_subject", type: "boolean", note: "True for the requested institution" },
+          ]}
+          responseExample={`{
+  "institution_id": 1001,
+  "basis": "branch_counties",
+  "places": ["Example County, MN"],
+  "sod_year": 2026,
+  "competitor_count": 2,
+  "data": [
+    {
+      "institution_id": 1001,
+      "name": "Example Bank",
+      "charter_type": "bank",
+      "is_subject": true,
+      "market_deposits": 250000000,
+      "deposit_share_pct": 1.4
+    },
+    ...
   ]
 }`}
         />

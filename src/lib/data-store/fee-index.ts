@@ -3,6 +3,8 @@ import { readerFeeConditions } from "../fee-conditions";
 import { dailyFeeLimitFor, type DailyFeeLimit } from "@/lib/fee-daily-limit";
 import { getFeeFamily, FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import { frequencyFamily } from "@/lib/fee-frequency";
+import { COMPARABILITY_SCREEN } from "@/lib/fee-comparability";
+import { BUSINESS_URL_SCREEN, MARKET_AUDIENCES, countsInMarketComparison } from "@/lib/market-eligibility";
 import {
   MIN_INSTITUTIONS_FOR_MEDIAN,
   STATS_METHOD_VERSION,
@@ -956,6 +958,76 @@ export async function getDistrictFeeIndexes(district: number): Promise<StateFeeI
     [district],
   ) as IndexRow[];
   return buildStateFeeIndexes(rows);
+}
+
+/** Which market a comparable index covers: the U.S., one state, or one Fed district. */
+export type MarketScope = { kind: "us" } | { kind: "state"; code: string } | { kind: "district"; district: number };
+
+/** A catalog row read for a comparable index: the index row plus what the eligibility test reads. */
+export interface ComparableMarketRow extends IndexRow {
+  source_document_id: number | string | null;
+  /** Null unless the address could name a business-only schedule (BUSINESS_URL_SCREEN). */
+  source_url: string | null;
+  /** Null unless the row's text could trip the comparability rule (COMPARABILITY_SCREEN). */
+  fee_name: string | null;
+  account_product_type: string | null;
+  source_line: string | null;
+}
+
+/** The rows of a market that the institution profile's own fees would be compared by (market-eligibility). */
+export function comparableMarketRows(rows: ComparableMarketRow[]): ComparableMarketRow[] {
+  return rows.filter((row) =>
+    countsInMarketComparison({
+      category: row.fee_category,
+      amount: row.amount == null ? null : Number(row.amount),
+      audience: row.fee_audience ?? null,
+      sourced: row.source_document_id != null,
+      sourceUrl: row.source_url,
+      feeName: row.fee_name,
+      accountProduct: row.account_product_type,
+      sourceLine: row.source_line,
+    }),
+  );
+}
+
+const sqlList = (values: readonly string[]) => values.map((v) => `'${v.replace(/'/g, "''")}'`).join(",");
+
+/**
+ * A market's index (U.S., state or Fed district) under exactly the eligibility the institution
+ * profile applies to its own fees (James's review, 2026-10-17): `countsInMarketComparison` runs on
+ * every row, so business-only fees and a CD/IRA, card inactivity or safe deposit service fee filed
+ * under another category drop out of the median as they drop out of the subject's value. The SQL
+ * only narrows the read: each WHERE clause is a check the predicate repeats, and the text columns
+ * are fetched only for rows the predicate's own screens could flag, so it reads what it needs
+ * without loading every fee's schedule line. Read-only.
+ */
+export async function getComparableMarketIndex(scope: MarketScope): Promise<IndexEntry[]> {
+  const where =
+    scope.kind === "us"
+      ? `ef.fee_category = ANY(ARRAY[${sqlList(CANONICAL_CATEGORIES)}])`
+      : scope.kind === "state"
+        ? "ct.state_code = $1 AND ef.fee_category IS NOT NULL"
+        : "ct.fed_district = $1 AND ef.fee_category IS NOT NULL";
+  const params = scope.kind === "us" ? [] : [scope.kind === "state" ? scope.code : scope.district];
+  const text = `concat_ws(' ', ef.fee_name, ef.account_product_type, ef.extraction_note) ~* '${COMPARABILITY_SCREEN}'`;
+  const rows = (await sql.unsafe(
+    `SELECT ef.fee_category, ef.amount, ef.institution_id, ef.fee_audience,
+            ef.review_status, ef.created_at, ct.charter_type, ${STATS_SCHEDULE_KEYS},
+            ef.source_document_id,
+            CASE WHEN ef.source_url ~* '${BUSINESS_URL_SCREEN}' THEN ef.source_url END AS source_url,
+            CASE WHEN ${text} THEN ef.fee_name END AS fee_name,
+            CASE WHEN ${text} THEN ef.account_product_type END AS account_product_type,
+            CASE WHEN ${text} THEN substring(ef.extraction_note from 'excerpt="(.*)"$') END AS source_line
+       FROM published_fee_catalog ef
+       JOIN institution_sources ct ON ef.institution_id = ct.id
+      WHERE ${where}
+        AND ef.review_status = 'approved'
+        AND ef.amount IS NOT NULL AND ef.amount >= 0
+        AND ef.source_document_id IS NOT NULL
+        AND COALESCE(ef.fee_audience, 'unknown') IN (${sqlList(MARKET_AUDIENCES)})`,
+    params,
+  )) as ComparableMarketRow[];
+  return buildIndexEntries(comparableMarketRows(rows));
 }
 
 export interface PeerFeeValue {

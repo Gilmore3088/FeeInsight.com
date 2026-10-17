@@ -128,6 +128,10 @@ const PAGE_LINES: Record<number, string> = {
   87357: "5A $10 monthly fee will be assessed if the minimum balance falls below $2,500. 6A $8 monthly fee will be assessed if the minimum balance falls below $100. 7ATM – automated teller machine.",
   132373: "2The categories of transactions for which an overdraft fee may be imposed are those by any of the following means: check, in-person withdrawal, ATM withdrawal, or other electronic means. After one day in overdraft, customer will be charged a $1.00 fee per day.",
   66351: "2You will receive a refund of 3 foreign ATM transaction fees per statement cycle ($6.00 maximum per statement cycle.)\n\n3If you opt-in to the bill pay feature, then bill pay must be utilized monthly to avoid $5.95 monthly fee.",
+  66594: "Stop Payment Fee | $20.00\n\nDomestic Wire Transfer Fees | Incoming - $10.00 Outgoing - $20.00\n\nInternational Wire Transfer Fees | Incoming - $20.00 Outgoing - $20.00",
+  // #1829 (#1691 cleanup): the two fax fees' stored lines, read-only Oct 17 (texts 34913 and 35062).
+  152977: "Escheatment Notice\n\n$29\n\nFax (Domestic & International)\n\n$1\n\nLegal Process\n\n$100",
+  152288: "Early Account Closure (within 180days) | $25.00\nFaxes (Domestic only) | $2.00\nHold Statement for pickup | $2.00",
 };
 
 /** Renames whose price the page ties to a balance band (`tiered_fee`), before and after (#1664). */
@@ -138,6 +142,20 @@ function liveRow(id: number, key: string, amount: string, name = "(misread cell)
 }
 
 describe("hand re-files of misread live fees (retidy v15 review, Oct 9)", () => {
+  it("#1829: re-files the two fax fees v5 released as account research under document reproduction", () => {
+    const rows = [
+      { ...liveRow(152977, "account_research", "1.00", "Fax (Domestic & International)"), fee_verified_id: 189563, institution_id: 480, source_document_id: 36784 },
+      { ...liveRow(152288, "account_research", "2.00", "Faxes (Domestic only)"), fee_verified_id: 187871, institution_id: 1229, source_document_id: 36945 },
+    ];
+    expect(planHandRefiles(rows).map((move) => [move.refile.feePublishedId, move.currentKey, move.refile.to, move.refile.name])).toEqual([
+      [152977, "account_research", "document_reproduction", "Fax (Domestic & International)"],
+      [152288, "account_research", "document_reproduction", "Faxes (Domestic only)"],
+    ]);
+    // Once filed, or at another price, nothing moves again.
+    expect(planHandRefiles(rows.map((row) => ({ ...row, canonical_fee_key: "document_reproduction" })))).toEqual([]);
+    expect(planHandRefiles([{ ...rows[1], amount: "3.00" }])).toEqual([]);
+  });
+
   it("files every one under one of the 50, where the guard and price range accept its new name", () => {
     for (const refile of HAND_REFILES) {
       expect(RETIRED_CATEGORY_KEYS.has(refile.to), `${refile.feePublishedId}`).toBe(false);

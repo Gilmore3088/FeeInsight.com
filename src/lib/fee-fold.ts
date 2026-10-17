@@ -268,6 +268,45 @@ export const IRA_CLOSING =
 export const SKIP_A_PAY =
   /^(?![\s\S]*\b(?:overdraft|no[- ]fee|free)\b)[\s\S]*\bskip[- ]?(?:a[- ]?)?(?:loan[- ]?)?pay(?:ments?)?\b/i;
 
+/**
+ * Guard v72 (#1788, James's sample-report review, Oct 17): an ATM used outside the U.S. is
+ * International ATM & Card (`card_foreign_txn`), not the non-network ATM fee: PNC's "Non-PNC Bank ATM
+ * Fee (All Other Countries)" $5 sat beside its $3 U.S. fee. The name must name an ATM (or a cash
+ * disbursement) and a place outside the U.S.: international, another or a foreign country, outside
+ * the U.S., abroad or overseas. "Foreign ATM" alone is another bank's ATM at home and is not matched.
+ * One price for domestic and international ATMs ("(International or Domestic)", "includes
+ * international", "inside United States & internationally"), a line priced inside or within the U.S.
+ * ("Non-IBC ATM locations (in the U.S.)"), "non-international" and a bank named International are
+ * not matched either.
+ */
+export const INTERNATIONAL_ATM = new RegExp(
+  String.raw`^(?![\s\S]*(?:\bdomestic\b|\bnon[- ]?international\b|\b(?:inside|within|in)\s+(?:the\s+)?(?:u\.?s\.?a?(?![a-z])|united states|us(?![a-z]))|\bincludes?\s+international\b|\bus,\s*canada\b|\binternationally\b))` +
+    String.raw`(?=[\s\S]*\b(?:atms?|automated teller|cash disbursements?|machines?)\b)` +
+    String.raw`[\s\S]*(?:\binternational\b(?!\s+bank\b)|\bintl\b|\bint['’]l\b|\b(?:other|foreign)\s+countr(?:y|ies)\b|\boutside\s+(?:of\s+)?(?:the\s+)?(?:u\.?s\.?a?(?![a-z])|united states|us(?![a-z]))|\babroad\b|\boverseas\b)`,
+  "i",
+);
+
+/**
+ * Guard v72 (#1788): an overdraft charged for staying overdrawn for days ("7 Day Overdraft Processing
+ * Fee", "Overdraft Charge (First assessed on the 6th business day overdrawn)", "Cont OD Charge") is
+ * the continuous overdraft fee, not the per-item overdraft fee. A daily cap or a per-day item limit
+ * ("Max 5 per day") is not matched, nor a name that also prices each item paid ("fee assessed for each
+ * item paid1 Continuous Overdraft Fee...", taken-down 14969: its $30 is the per-item fee).
+ */
+export const SUSTAINED_OVERDRAFT =
+  /^(?![\s\S]*\b(?:(?:each|per)\s+(?:item|presentment)|items?\s+paid)\b)[\s\S]*(?:\bcont(?:inuous)?\.?\s+(?:od|overdraft|o\/d)\b|\b\d+(?:st|nd|rd|th)?[- ](?:business\s+|calendar\s+|banking\s+)?days?[- ](?:overdraft|overdrawn|negative|od)\b|\b\d+(?:st|nd|rd|th)\s+(?:business\s+|calendar\s+|banking\s+)?day\s+(?:overdrawn|negative|in overdraft)\b|\b(?:overdrawn|negative|in overdraft)\s+(?:for\s+)?(?:more than|over|after|beyond)\s+\d+\s+(?:\w+\s+)?days\b)/i;
+
+/**
+ * Guard v72 (#1788): a wire the member receives ("Domestic Wire Transfer Fee – In Coming", "Wire
+ * Transfer (in-bound) Domestic", "Domestic Wire-In fee", "Domestic Wire: In", "Domestic Wire Deposit
+ * Fee", "Income Wire Transfer (foreign)") filed under an outgoing wire type is the incoming wire fee.
+ * A name that also names sending ("In/Out", "Wire Out / Wire In", "outbound/inbound") prices both or
+ * another slot and is not matched; "in person", "in branch" and "in U.S. dollars" say how or where it
+ * is sent.
+ */
+export const INCOMING_WIRE =
+  /^(?![\s\S]*\b(?:out|outgoing|out[- ]going|outbound|out[- ]bound|send|sent|sending|withdrawals?)\b)(?=[\s\S]*\b(?:wires?|transfers?)\b)[\s\S]*(?:\bin[- ]?coming\b|\bin[- ]bound\b|\binbound\b|\breceiv\w*|\bwires?[- ]in\b|\b(?:domestic|international|foreign)[- ]in\b|:\s*in\s*$|\bincome wire\b|\bwire deposits?\b)/i;
+
 /** A mortgage, lien or loan subordination; a wire line under a "Subordination Request" heading is not one. */
 export const SUBORDINATION = /^(?![\s\S]*subordination request:\s*(?:incoming|outgoing))[\s\S]*\bsubordinat/i;
 
@@ -472,6 +511,11 @@ export function splitCategoriesFor(options: {
     nsf: { to: "deposited_item_return", name: FOREIGN_DEPOSIT_RETURN, sqlPattern: "foreign|canadian|international|non[- ]?u\\.?s" },
     // Guard v69: an IRA's own closing charge is the IRA termination fee, not an early closure.
     early_closure: { to: "ira_termination", name: IRA_CLOSING, sqlPattern: "\\mira|roth|retirement" },
+    // Guard v72 (#1788): staying overdrawn for days is the continuous overdraft fee.
+    overdraft: { to: "continuous_od", name: SUSTAINED_OVERDRAFT, sqlPattern: "cont|day" },
+    // Guard v72 (#1788): a wire the member receives is the incoming wire fee.
+    wire_domestic_outgoing: { to: "wire_domestic_incoming", name: INCOMING_WIRE, sqlPattern: "in|receiv|deposit" },
+    wire_intl_outgoing: { to: "wire_intl_incoming", name: INCOMING_WIRE, sqlPattern: "in|receiv|deposit" },
     // A lien release is other lending (James, Oct 8: Lien Release gave up its spot). A subordination
     // stays legal process (James, Oct 15).
     legal_process: { to: "other_lending_fee", name: LENDING_LEGAL, sqlPattern: "lien" },
@@ -514,11 +558,12 @@ export function splitCategoriesFor(options: {
     card_foreign_txn: { to: "monthly_maintenance", name: CROSS_BORDER_BUNDLE, sqlPattern: "cross.?border" },
     // Buying or reloading a prepaid card is the prepaid card's fee; its ATM use stays here.
     // Adjusting an ATM deposit or dispute is research work, not a network ATM fee.
+    // Guard v72: an ATM used outside the U.S. is International ATM & Card (#1788).
     atm_non_network: {
       to: "gift_card_purchase",
       name: PREPAID_BUY_OR_RELOAD,
-      also: [{ to: "account_research", name: ATM_ADJUSTMENT }],
-      sqlPattern: "prepaid|reload|adjust",
+      also: [{ to: "account_research", name: ATM_ADJUSTMENT }, { to: "card_foreign_txn", name: INTERNATIONAL_ATM }],
+      sqlPattern: "prepaid|reload|adjust|internat|\\mintl\\M|int.l\\M|countr|outside|abroad|overseas",
     },
     // A statement mailed back undelivered is returned mail (its own type once the research split is
     // on; account research before).

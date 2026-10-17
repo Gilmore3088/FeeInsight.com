@@ -2,7 +2,8 @@ import { NextRequest } from "next/server";
 import { validateApiKey } from "@/lib/api-auth";
 import { PRODUCT_NAME, SITE_URL } from "@/lib/constants";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
-import { PEER_GROUP_PARAMS } from "@/lib/peer-set-dimensions";
+import { MAX_CHOSEN_PEERS, PEER_GROUP_PARAMS } from "@/lib/peer-set-dimensions";
+import { API_VERSION } from "@/lib/api-v1";
 
 /**
  * A Model Context Protocol server over the /api/v1 endpoints, so an AI
@@ -159,7 +160,7 @@ const TOOLS: ToolDefinition[] = [
     name: "find_institutions",
     title: "Find banks",
     description:
-      "Find banks and credit unions by name, state, city or asset size. Returns ids, city, assets and how many published fees each has. Use the id with get_institution. City and asset_tier can't be combined with name.",
+      "Find banks and credit unions by name, state, city or asset size. Returns ids, city, total assets (in thousands of dollars) and how many published fees each has. Use the id with get_institution. City and asset_tier can't be combined with name.",
     inputSchema: {
       type: "object",
       properties: {
@@ -196,7 +197,7 @@ const TOOLS: ToolDefinition[] = [
     name: "get_institution",
     title: "One bank in full",
     description:
-      "One institution's published fees (amount, conditions, the source link it was read from and the date), its FDIC/NCUA call report figures by quarter (8 by default, up to 66, back to 2010), and its CFPB complaint counts.",
+      "One institution's published fees (amount, conditions, the source link it was read from and the date), fees stated as a percentage listed apart in rate_fees, its FDIC/NCUA call report figures by quarter (8 by default, up to 66, back to 2010), and its CFPB complaint counts.",
     inputSchema: {
       type: "object",
       properties: {
@@ -337,7 +338,7 @@ const TOOLS: ToolDefinition[] = [
     name: "get_peer_comparison",
     title: "Fees against peers",
     description:
-      "One institution's published dollar fees, category by category, next to its peers: the peer median, 25th and 75th percentiles, how many peers publish the fee, and the institution's percentile among them (the share of peers with a lower amount, counting half of ties). Peers default to the same charter type, asset size and Fed district. Or define them with any of charter, asset_tier, asset_min, asset_max, state, district, regulator, cu_charter, holding_company, market and nearest (only those given apply; \"same\" means the institution's own value), or name up to 25 with peer_ids. " +
+      `One institution's published dollar fees, category by category, next to its peers: the peer median, 25th and 75th percentiles, how many peers publish the fee, and the institution's percentile among them (the share of peers with a lower amount, counting half of ties). Peers default to the same charter type, asset size and Fed district. Or define them with any of charter, asset_tier, asset_min, asset_max, state, district, regulator, cu_charter, holding_company, market and nearest (only those given apply; \"same\" means the institution's own value), or name up to ${MAX_CHOSEN_PEERS} with peer_ids. ` +
       `Figures are left out when fewer than ${MIN_INSTITUTIONS_FOR_MEDIAN} peers publish a fee. Fees stated as a rate are listed apart, not compared.`,
     inputSchema: {
       type: "object",
@@ -490,7 +491,7 @@ async function handleMessage(
       return rpcResult(id, {
         protocolVersion,
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "bank-fee-index", title: PRODUCT_NAME, version: "1.0.0" },
+        serverInfo: { name: "bank-fee-index", title: PRODUCT_NAME, version: API_VERSION },
         instructions: SERVER_INSTRUCTIONS,
       });
     }
@@ -548,3 +549,14 @@ export async function handleMcpPost(request: NextRequest, handlers: McpV1Handler
 }
 
 export const MCP_TOOL_NAMES = TOOLS.map((t) => t.name);
+
+/** The connector's tools as /api-docs lists them, and as api-docs-sync.test.ts checks them against the spec. */
+export const MCP_TOOLS = TOOLS.map((t) => ({
+  name: t.name,
+  title: t.title,
+  description: t.description,
+  path: ENDPOINT_PATHS[t.endpoint].replace("/api/v1", ""),
+  inputProperties: Object.keys((t.inputSchema.properties ?? {}) as Record<string, unknown>),
+  required: ((t.inputSchema.required ?? []) as string[]),
+  toParams: t.toParams,
+}));

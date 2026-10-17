@@ -98,7 +98,7 @@ const welcome = {
         { type: "list", items: [
           "**Your schedule, fee by fee,** next to your peers' median and middle 50%.",
           "**Peers you pick** by charter, asset size, district or county, instead of an anonymous average.",
-          "**The source behind every figure:** the competitor's published schedule and the date we read it.",
+          "**A source for each compared fee:** the competitor's published schedule and the date we read it.",
           "**Committee reports** built from your peer set.",
         ] },
         { type: "cta", text: "See Hamilton plans", href: `${S}/subscribe`, sub: `Prefer a walkthrough first? [Ask for a demo](${S}/contact?source=demo).` },
@@ -166,7 +166,7 @@ const report = {
         { type: "box", tone: "rule", title: "What's in it", items: [
           "Each fee marked below, inside or above your competitors' middle 50%.",
           "The competitors you name, side by side with you.",
-          "The competitor's published schedule and its date behind every figure.",
+          "The competitor's published schedule and its read date behind each compared fee.",
         ] },
         { type: "cta", text: "Request your institution report", href: INSTITUTION_REPORT, sub: `Quoted ${REPORT_PRICE}. We check your market has enough published schedules and reply within one business day. [See a sample report](${SAMPLE_REPORT}).` },
         { type: "p", text: "Or reply with your institution and the competitors you watch." },
@@ -253,12 +253,12 @@ const pro = {
     {
       key: "inspect-evidence",
       day: 4,
-      subject: "Check the source behind any figure",
+      subject: "Check the source behind a figure",
       preheader: "Trace a competitor's fee to the schedule it came from.",
       blocks: [
         { type: "kicker", text: "Setup · 3 of 5" },
-        { type: "h1", text: "Check the source behind any figure" },
-        { type: "p", text: "Before a number goes in front of your committee, you should be able to show where it came from. Each institution's public profile names the published fee schedule we read and the date we read it." },
+        { type: "h1", text: "Check the source behind a figure" },
+        { type: "p", text: "Before a number goes in front of your committee, you should be able to show where it came from. Each fee on an institution's public profile links to the schedule page it was read from, and the profile shows the date we last read that institution." },
         { type: "box", tone: "action", title: "Try it once", ordered: true, items: [
           "Open Hamilton and pick a fee where you and your peers differ.",
           "Find the competitor whose fee is furthest from yours, open its public profile on feeinsight.com, and follow the fee schedule link.",

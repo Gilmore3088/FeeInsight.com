@@ -795,4 +795,75 @@ describe("checkFeeAgainstSource joined prices (Knox v76)", () => {
   it("reads No Cost and No fees as free words", () => {
     expect(ok("Notary Public Services | No Cost to Members", "Notary Public Services", 0)).toBe(true);
   });
+
+  it("reads a waiver sentence's otherwise price as the fee, not a balance tier", () => {
+    // Capital City Bank (institution 323), live fee 140267: agent_source_texts for source_document_id 31376.
+    const page = [
+      "Everyday Checking Content",
+      "",
+      "Everyday Checking",
+      "",
+      "Access and convenience with a straightforward account.",
+      "",
+      "Features and benefits:",
+      "",
+      "No monthly service charge with either 20 debit card transactions* OR a minimum daily balance of $1,500; otherwise, $8.95 per month",
+      "",
+      "Free e-statements**",
+      "",
+      "No per-check charge+",
+      "",
+      "Only $50 minimum opening deposit",
+    ].join("\n");
+    const read = (amount: number) =>
+      checkFeeAgainstSource(page, "Monthly service charge (Everyday Checking)", amount, ".", "monthly_maintenance");
+    expect(read(8.95).ok).toBe(true);
+    // The waiving balance is still not the fee.
+    expect(read(1500).ok).toBe(false);
+    const waived = "Monthly Maintenance Fee | waived with a $500 minimum daily balance, if not $6.00";
+    expect(checkFeeAgainstSource(waived, "Monthly Maintenance Fee", 6, ".").ok).toBe(true);
+  });
+
+  it("quotes the fee's own row, not an earlier line at the same price for another fee", () => {
+    // Hancock Whitney, live fee 66419: agent_source_texts for source_document_id 19615.
+    const page = [
+      "made at a financial center or ATM do | calendar days, you agree to pay one",
+      "not qualify as a direct deposit. | Sustained Overdraft Fee of $36.00. This",
+      "fee is separate from and may be charged",
+      "in addition to the Overdraft Fee or NSF Fee",
+      "which may be charged on each individual",
+      "NSF item.",
+      "",
+      "Other Fees for Commonly Used Services",
+      "The following fees may be assessed against your account:",
+      "Levies/Garnishments | $75.00",
+      "On Us Check Cashing Fee** | $9.00",
+      "Overdraft Charge/Overdraft Fee (each item) | $36.00",
+      "Nonsufficient Funds Charge (NSF Charge or NSF Fee) each item | $36.00",
+      "Returned Deposit Item Fee (Chargeback) | $9.00",
+      "Stop Payment Fee | $36.00",
+      "Sustained Overdraft Fee | $36.00",
+    ].join("\n");
+    // Read with no category key (report rules, account-type hold) and with one.
+    for (const key of [undefined, "overdraft"]) {
+      expect(checkFeeAgainstSource(page, "Overdraft Charge/Overdraft Fee (each item)", 36, ".", key)).toEqual({
+        ok: true,
+        sourceLine: "Overdraft Charge/Overdraft Fee (each item) | $36.00",
+      });
+    }
+    // The sustained fee itself still quotes a sustained line.
+    const sustained = checkFeeAgainstSource(page, "Sustained Overdraft Fee", 36, ".", "continuous_od");
+    expect(sustained.ok && /Sustained Overdraft Fee/.test(sustained.sourceLine)).toBe(true);
+  });
+
+  it("still reads a price per balance band as tiered", () => {
+    const banded = "Monthly Service Charge | Balance under $500 | $15.00";
+    expect(checkFeeAgainstSource(banded, "Monthly Service Charge", 15, ".")).toEqual({ ok: false, reason: "tiered_fee" });
+    // A band's price followed by "otherwise no charge" is still that band's price.
+    const bandThenFree = "Monthly Service Charge balance below $1,500 $8.95; otherwise no charge";
+    expect(checkFeeAgainstSource(bandThenFree, "Monthly Service Charge", 8.95, ".")).toEqual({ ok: false, reason: "tiered_fee" });
+    // "otherwise" with no waiver before it is a band schedule's last band.
+    const lastBand = "Monthly Service Charge | balance of $1,000 or more, otherwise $10.00";
+    expect(checkFeeAgainstSource(lastBand, "Monthly Service Charge", 10, ".")).toEqual({ ok: false, reason: "tiered_fee" });
+  });
 });

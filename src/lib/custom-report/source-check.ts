@@ -644,7 +644,33 @@ function statesAmount(line: string, amount: number, stems: NameStems): SourceChe
     !/^\s*min/i.test(line.slice(t.end)) &&
     !inNote(line, t) &&
     !/\b(?:maintain(?:s|ed)?|keep)\s*$/i.test(line.slice(Math.max(0, t.start - 16), t.start));
-  return tokens.some((t) => t.start >= from && t.start < prices[index].start && band(t)) ? "tiered_fee" : null;
+  // Nor is the balance that waives the fee when "otherwise" sets the price ("No monthly service
+  // charge with ... a minimum daily balance of $1,500; otherwise, $8.95 per month"): one price,
+  // not a price per band.
+  const waivedUntil = waiverConditionEnd(line, tokens, from, prices[index].start);
+  return tokens.some((t) => t.start >= from && t.start < prices[index].start && t.start >= waivedUntil && band(t)) ? "tiered_fee" : null;
+}
+
+/**
+ * A waiver sentence states one price: "$0 when a condition holds, otherwise $X" is $X.
+ * "No monthly service charge with ... a minimum daily balance of $1,500; otherwise, $8.95" names a
+ * balance that waives the fee, not a balance band with its own price. Returns where the waiver's
+ * conditions end (its "otherwise"), so the figures before it are not read as bands; `from` when the
+ * words before the price are not a waiver. A true band schedule ("Balance under $500 | $15;
+ * $500 to $1,499 | $8.95; otherwise none") is unchanged: its band sits right before its price with
+ * no "otherwise" between them. Pure.
+ */
+const WAIVER_OTHERWISE = /\b(?:otherwise|if\s+not)\b[^$\d]*$/i;
+const WAIVER_WORDS = /\b(?:no|none|waived?|avoid(?:ed)?|free)\b/i;
+
+function waiverConditionEnd(line: string, tokens: MoneyToken[], from: number, priceStart: number): number {
+  const lead = line.slice(from, priceStart);
+  const otherwise = WAIVER_OTHERWISE.exec(lead);
+  if (!otherwise) return from;
+  const at = from + otherwise.index;
+  if (!WAIVER_WORDS.test(line.slice(from, at))) return from;
+  if (tokens.some((t) => t.start >= at && t.start < priceStart)) return from;
+  return at;
 }
 
 /**
@@ -1120,6 +1146,7 @@ function checkAgainstLines(
   const rounded = Math.round(amount * 100) / 100;
 
   let best: SourceCheckFailure = "name_not_in_text";
+  let stated: { row: string; score: number } | null = null;
   const rank: Record<SourceCheckFailure, number> = {
     no_source_text: 0,
     name_not_in_text: 1,
@@ -1197,9 +1224,27 @@ function checkAgainstLines(
       best = "category_not_in_text";
       continue;
     }
-    return { ok: true, sourceLine: row.slice(0, 240) };
+    const score = statedLineScore(row, rounded, feeName, stems);
+    if (!stated || score > stated.score) stated = { row, score };
   }
-  return { ok: false, reason: best };
+  return stated ? { ok: true, sourceLine: stated.row.slice(0, 240) } : { ok: false, reason: best };
+}
+
+/**
+ * Which of several lines that state the amount is the fee's own (#1110): the one whose label
+ * (its words before the amount) carries most of the fee's name words, and never, while another
+ * line states it, a label that names a different fee type. "Overdraft Charge/Overdraft Fee (each
+ * item) | $36.00" is that fee's row; "Sustained Overdraft Fee of $36.00" earlier on the page is
+ * another fee at the same price. Ties keep the first line, as before. Pure.
+ */
+const OTHER_FEE_TYPE_WORDS = /\b(?:sustained|continuous|continuing|extended|prolonged)\b/gi;
+
+function statedLineScore(row: string, amount: number, feeName: string, stems: NameStems): number {
+  const at = moneyTokens(row).find((t) => Math.abs(t.value - amount) < 0.005);
+  const label = at ? row.slice(0, at.start) : row;
+  const name = feeName.toLowerCase();
+  const otherType = (label.match(OTHER_FEE_TYPE_WORDS) ?? []).some((word) => !name.includes(word.toLowerCase()));
+  return stemCount(label, stems) - (otherType ? 1000 : 0);
 }
 
 /**
