@@ -34,6 +34,11 @@ interface InstitutionSearchBarProps {
   placeholder?: string;
   /** The search already run (?q= on /institutions), so the box shows what was searched. */
   initialQuery?: string;
+  /**
+   * Where a pick and an Enter search land. Unset: the institution page and /institutions.
+   * "/check": `/check?id=<id>` and `/check?q=<query>`, so the answer opens on the same page.
+   */
+  resultPath?: "/check";
 }
 
 function InstitutionSearchBarInner({
@@ -42,6 +47,7 @@ function InstitutionSearchBarInner({
   variant = "light",
   placeholder = "Search your bank or credit union...",
   initialQuery = "",
+  resultPath,
 }: InstitutionSearchBarProps) {
   const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<Result[]>([]);
@@ -99,6 +105,10 @@ function InstitutionSearchBarInner({
 
   function handleSelect(id: number) {
     setShowResults(false);
+    if (resultPath) {
+      router.push(`${resultPath}?id=${id}`);
+      return;
+    }
     router.push(fee ? `/institution/${id}?fee=${encodeURIComponent(fee)}#fee-${fee}` : `/institution/${id}`);
   }
 
@@ -143,8 +153,8 @@ function InstitutionSearchBarInner({
     e.preventDefault();
     setShowResults(false);
     const params = new URLSearchParams({ q });
-    if (fee) params.set("fee", fee);
-    router.push(`/institutions?${params.toString()}`);
+    if (fee && !resultPath) params.set("fee", fee);
+    router.push(`${resultPath ?? "/institutions"}?${params.toString()}`);
   }
 
   return (

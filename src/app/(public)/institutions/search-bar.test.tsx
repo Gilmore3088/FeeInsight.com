@@ -67,6 +67,18 @@ describe("InstitutionSearchBar", () => {
     expect(push).toHaveBeenCalledWith("/institutions?q=Aspen");
   });
 
+  it("on /check, a pick and an Enter search both answer on /check", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ json: async () => BANKS })));
+    render(<InstitutionSearchBar resultPath="/check" />);
+    const input = screen.getByRole("combobox");
+    await typeAndWait(input, "Aspen");
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(push).toHaveBeenCalledWith("/check?q=Aspen");
+    await typeAndWait(input, "Aspe");
+    fireEvent.click(screen.getAllByRole("option")[0]);
+    expect(push).toHaveBeenCalledWith("/check?id=11");
+  });
+
   it("offers to send a fee schedule, with the searched name, when nothing matches", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => ({ json: async () => [] })));
     render(<InstitutionSearchBar />);
