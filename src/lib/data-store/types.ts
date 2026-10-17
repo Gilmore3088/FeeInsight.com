@@ -37,6 +37,8 @@ export interface ExtractedFee {
   fee_family?: string | null;
   source_url?: string | null;
   created_at?: string | Date;
+  /** The stored fee schedule the row was read from; set by readers that select it. */
+  source_document_id?: number | null;
 }
 
 export interface ReviewableFee extends ExtractedFee {

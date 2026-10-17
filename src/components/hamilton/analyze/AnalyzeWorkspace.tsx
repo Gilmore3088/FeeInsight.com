@@ -30,6 +30,8 @@ import { PeerAwareStructuredAsk as StructuredAsk } from "./PeerAwareStructuredAs
 import { StorylineView } from "@/components/hamilton/storyline/StorylineView";
 import { ExhibitFrame } from "@/components/hamilton/memo/exhibit-view";
 import { AuditPanel, Callout, LinkButton, MemoHeader, MemoPage, MemoSection, More, SERIF } from "@/components/hamilton/memo/memo";
+import { INTERPRETATION_LABEL, type NarrativeBinding } from "@/lib/hamilton/narrative-bound";
+import { applyNarrativeBinding, boundFallbackLead, readNarrativeBinding, withoutOmitted } from "@/lib/hamilton/written-answer-binding";
 
 type MessagePart = { type: string; text?: string; output?: unknown };
 
@@ -339,6 +341,9 @@ function AnalyzeConversationWorkspace({
   const [savedAnalysisId, setSavedAnalysisId] = useState<string | null>(initialAnalysisId);
   const [answerIdentity, setAnswerIdentity] = useState(() => readHamiltonIdentitySnapshot(initialAnalysis?.identityContext));
   const [figureCheck, setFigureCheck] = useState<FigureCheckResult | null>(null);
+  // Which sentences of the written answer rest on fee records (#981, H06-T06). A reopened answer
+  // shows the binding saved with it; one saved before bindings shows as it always did.
+  const [binding, setBinding] = useState<NarrativeBinding | null>(() => readNarrativeBinding(initialAnalysis?.narrativeBinding));
   const [lookups, setLookups] = useState<string[]>([]);
   const [answeredAt, setAnsweredAt] = useState<string>(() => new Date().toISOString());
   const [exportError, setExportError] = useState<string | null>(null);
@@ -395,6 +400,7 @@ function AnalyzeConversationWorkspace({
         setHeldLine(content.trim());
         setParsedResponse(null);
         setFigureCheck(null);
+        setBinding(null);
         setSavedAnalysisId(null);
         setInput((current) => current || lastPromptRef.current);
         return;
@@ -403,7 +409,9 @@ function AnalyzeConversationWorkspace({
       const parsed = parseAnalyzeResponse(content);
       const parts = message.parts as ReadonlyArray<MessagePart>;
       const check = checkMessageFigures(parts);
+      const sentBinding = readNarrativeBinding((message.metadata as { narrativeBinding?: unknown } | undefined)?.narrativeBinding);
       setFigureCheck(check);
+      setBinding(sentBinding);
       setLookups(lookupsUsed(parts));
       setAnsweredAt(new Date().toISOString());
       setParsedResponse(parsed);
@@ -419,18 +427,20 @@ function AnalyzeConversationWorkspace({
         return;
       }
       if (userId) {
+        const kept = withoutOmitted(parsed, sentBinding);
         const result = await saveAnalysis({
           institutionId: normalizeCanonicalInstitutionId(selectedInstitution?.id ?? institutionId) ?? "",
           analysisFocus: focus.current,
           prompt: lastPromptRef.current,
           responseJson: {
-            title: answerTitle(parsed.hamiltonView),
+            title: answerTitle(kept.hamiltonView),
             confidence: confidenceFromFigureCheck(check),
-            hamiltonView: parsed.hamiltonView,
-            whatThisMeans: parsed.whatThisMeans,
-            whyItMatters: parsed.whyItMatters,
-            evidence: { metrics: parsed.evidence },
-            exploreFurther: parsed.exploreFurther,
+            hamiltonView: kept.hamiltonView,
+            whatThisMeans: kept.whatThisMeans,
+            whyItMatters: kept.whyItMatters,
+            evidence: { metrics: kept.evidence },
+            exploreFurther: kept.exploreFurther,
+            ...(sentBinding ? { narrativeBinding: sentBinding } : {}),
           } satisfies AnalyzeResponse,
         });
         if (!active.current || generation !== answerGeneration.current) return;
@@ -508,6 +518,7 @@ function AnalyzeConversationWorkspace({
       setParsedResponse(null);
       setAnswerIdentity(null);
       setFigureCheck(null);
+      setBinding(null);
       setAskedQuestion(trimmed);
       setAskSeq((n) => n + 1);
       setMessages([]);
@@ -536,6 +547,7 @@ function AnalyzeConversationWorkspace({
     setAskedQuestion(null);
     setHeldLine(null);
     setParsedResponse(null);
+    setBinding(null);
     setAnswerIdentity(null);
     setStoryLead(null);
     setMessages([]);
@@ -550,6 +562,7 @@ function AnalyzeConversationWorkspace({
     if (isLoading) stop();
     setHeldLine(null);
     setParsedResponse(null);
+    setBinding(null);
     setMessages([]);
   }, [isLoading, setMessages, stop]);
 
@@ -624,8 +637,26 @@ function AnalyzeConversationWorkspace({
   // A stream that so far holds only a section heading has nothing to read yet; the progress note stays.
   const streamingHasText = streamingContent.replace(/^#+[^\n]*$/gm, "").trim().length > 0;
   const liveParsed = isLoading && streamingHasText ? parseAnalyzeResponse(streamingContent) : null;
-  const shown = (chatError || heldLine) && !isLoading ? null : (parsedResponse ?? liveParsed);
-  const view = shown ? shapeHamiltonView(shown.hamiltonView) : { lead: "", paragraphs: [] };
+  const rawShown = (chatError || heldLine) && !isLoading ? null : (parsedResponse ?? liveParsed);
+  // A finished answer carries its binding in state; a held answer's arrives with its first chunk.
+  const activeBinding = parsedResponse
+    ? binding
+    : readNarrativeBinding((lastMessage?.metadata as { narrativeBinding?: unknown } | undefined)?.narrativeBinding);
+  // Left-out sentences never show; Hamilton's reading shows only under its own label.
+  const bound = rawShown ? applyNarrativeBinding(rawShown, activeBinding) : null;
+  const shown = bound ? bound.sections : null;
+  const reading = bound?.reading ?? [];
+  const fallbackLead = bound && activeBinding ? boundFallbackLead(bound) : null;
+  const view = shown
+    ? fallbackLead
+      ? { lead: fallbackLead, paragraphs: [] }
+      : shapeHamiltonView(shown.hamiltonView)
+    : { lead: "", paragraphs: [] };
+  // An untraced figure sits in a sentence the binding already labels or leaves out, so a bound
+  // answer names it once, under the label, instead of in a second warning.
+  const untracedInReading = activeBinding && figureCheck
+    ? figureCheck.unmatched.filter((figure) => reading.some((sentence) => sentence.includes(figure)))
+    : [];
   const feeCategory = view.lead ? inferFeeCategory(view.lead) : null;
   const feeName = feeCategory ? getDisplayName(feeCategory).replace(/\s*\([^)]*\)\s*$/, "").toLowerCase() : null;
   const instId = normalizeCanonicalInstitutionId(selectedInstitution?.id ?? institutionId);
@@ -891,10 +922,17 @@ function AnalyzeConversationWorkspace({
           {/* The figures lead and the prose follows, so a written answer opens on an exhibit. */}
           {shown.evidence.length > 0 ? <EvidenceExhibit rows={shown.evidence} /> : null}
           {/* A limitation comes before the commentary it qualifies. */}
-          {complete && figureCheck && figureCheck.unmatched.length > 0 ? (
+          {complete && !activeBinding && figureCheck && figureCheck.unmatched.length > 0 ? (
             <Callout>
               <strong>Check these figures:</strong> {figureCheck.unmatched.join(", ")} could not be traced to the data
               Hamilton looked up for this answer. Treat them as unverified.
+            </Callout>
+          ) : null}
+          {complete && bound && bound.notes.length > 0 ? (
+            <Callout>
+              {bound.notes.map((line) => (
+                <p key={line}>{line}</p>
+              ))}
             </Callout>
           ) : null}
           <article className="flex max-w-[68ch] flex-col gap-4">
@@ -930,6 +968,21 @@ function AnalyzeConversationWorkspace({
                   </section>
                 ) : null}
               </More>
+            ) : null}
+            {reading.length > 0 ? (
+              <section aria-label={INTERPRETATION_LABEL} className="rounded-md border border-warm-300 bg-warm-50 px-4 py-3">
+                <p className="text-xs font-semibold text-warm-700">{INTERPRETATION_LABEL}</p>
+                <ul className="mt-1.5 flex list-disc flex-col gap-1 pl-5 text-sm leading-relaxed text-warm-800">
+                  {reading.map((sentence) => (
+                    <li key={sentence}>{renderInline(sentence)}</li>
+                  ))}
+                </ul>
+                {untracedInReading.length > 0 ? (
+                  <p className="mt-2 text-xs text-warm-700">
+                    These figures were not in the data Hamilton looked up: {untracedInReading.join(", ")}.
+                  </p>
+                ) : null}
+              </section>
             ) : null}
           </article>
 
