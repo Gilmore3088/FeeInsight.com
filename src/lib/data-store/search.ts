@@ -236,8 +236,8 @@ export async function searchInstitutions(params: {
   if (params.query && params.query.trim().length >= 2) {
     // The same name match as the typeahead, so "M&T" or "US Bank" finds the same banks on Enter.
     const { pattern, squashed, aliases } = institutionSearchPatterns(params.query);
-    conditions.push(`(ct.institution_name ILIKE $${paramIdx + 1}
-      OR regexp_replace(lower(ct.institution_name), '[^a-z0-9& ]+', '', 'g') LIKE $${paramIdx + 2}
+    conditions.push(`(ct.institution_name ~* $${paramIdx + 1}
+      OR (' ' || regexp_replace(lower(ct.institution_name), '[^a-z0-9& ]+', '', 'g')) LIKE $${paramIdx + 2}
       OR ct.institution_name ILIKE ANY($${paramIdx + 3}::text[]))`);
     queryParams.push(pattern, squashed, aliases);
     paramIdx += 3;
@@ -362,25 +362,42 @@ function squashName(text: string): string {
   return text.toLowerCase().replace(/[^a-z0-9& ]+/g, "").replace(/\s+/g, " ").trim();
 }
 
-/** The name patterns a typed query searches: as typed, with punctuation dropped, and a short-name prefix. */
+/**
+ * The name patterns a typed query searches: as typed, with punctuation dropped, and a short-name
+ * prefix. The first two match only from the start of a word, so "US Bank" finds U.S. Bank and
+ * First US Bank but not Pegasus Bank or Focus Bank.
+ */
 export function institutionSearchPatterns(query: string): { pattern: string; squashed: string; aliases: string[] } {
   const term = query.trim();
   const squashedTerm = squashName(term);
   const short = squashedTerm.replace(/\s+bank$/, "");
   const alias = SHORT_NAMES[squashedTerm] ?? SHORT_NAMES[short] ?? SHORT_NAMES[short.replace(/&/g, "")];
-  // A typed % or _ is a literal character, never a wildcard. A query with under two letters or
-  // digits once punctuation is dropped ("&", "..") matches no squashed name rather than every name.
-  const literal = term.replace(/[\\%_]/g, (c) => `\\${c}`);
+  // The typed text is a literal (every regex character escaped), anchored at a word start (\m)
+  // when it begins with a letter or digit.
+  const literal = term.replace(/[\\^$.|?*+()[\]{}]/g, (c) => `\\${c}`);
   return {
-    pattern: `%${literal}%`,
-    squashed: squashedTerm.replace(/[ &]/g, "").length >= 2 ? `%${squashedTerm}%` : "",
+    pattern: /^[a-z0-9]/i.test(term) ? `\\m${literal}` : literal,
+    // Matched against " " + the squashed name, so the leading space anchors it at a word start. A
+    // query with under two letters or digits once punctuation is dropped ("&", "..") matches no
+    // squashed name rather than every name.
+    squashed: squashedTerm.replace(/[ &]/g, "").length >= 2 ? `% ${squashedTerm}%` : "",
     aliases: alias ? [`${alias}%`] : [],
   };
 }
 
+/** 0 when a row's name is the institution the query names (its short name, or the name itself); else 1. */
+export function institutionNameRank(name: string, query: string): number {
+  const { aliases } = institutionSearchPatterns(query);
+  const lower = name.toLowerCase();
+  if (aliases.some((alias) => lower.startsWith(alias.slice(0, -1).toLowerCase()))) return 0;
+  const typed = squashName(query);
+  const squashed = squashName(name);
+  return typed.length > 0 && (squashed === typed || squashed.startsWith(`${typed} `)) ? 0 : 1;
+}
+
 // Matches the typed name, the name with punctuation dropped, or a short name's registry prefix.
-const NAME_MATCH = `(ct.institution_name ILIKE $1
-  OR regexp_replace(lower(ct.institution_name), '[^a-z0-9& ]+', '', 'g') LIKE $4
+const NAME_MATCH = `(ct.institution_name ~* $1
+  OR (' ' || regexp_replace(lower(ct.institution_name), '[^a-z0-9& ]+', '', 'g')) LIKE $4
   OR ct.institution_name ILIKE ANY($5::text[]))`;
 
 export async function autocompleteInstitutions(query: string, limit = 8): Promise<InstitutionSearchResult[]> {

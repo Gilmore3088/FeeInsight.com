@@ -61,7 +61,7 @@ describe("institution directory SQL category placeholders (#1012)", () => {
       },
       // The name match binds three values: the typed name, its squashed form and short-name aliases.
       feeParamIndex: 6,
-      values: ["%Pinnacle%", "%pinnacle%", [], "TN", "bank", "overdraft", 25, 0],
+      values: ["\\mPinnacle", "% pinnacle%", [], "TN", "bank", "overdraft", 25, 0],
     },
   ])("binds the fee category as text with $name", async ({ input, feeParamIndex, values }) => {
     const result = await searchInstitutions({ ...input, page: 1, pageSize: 25 });

@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import Link from "next/link";
-import type { InstitutionSearchResult } from "@/lib/data-store/search";
+import { institutionNameRank, type InstitutionSearchResult } from "@/lib/data-store/search";
 import { getPublicCategorySummaries, getPublicStatsSummary } from "@/lib/public-stats";
 import { STATE_NAMES } from "@/lib/us-states";
 import { FEE_FAMILIES, getDisplayName } from "@/lib/fee-taxonomy";
@@ -103,15 +103,18 @@ async function loadResults(params: {
   page: number;
 }): Promise<DirectoryResults> {
   const firstPass = await searchInstitutionsCached({ ...params, page: 1, pageSize: DIRECTORY_SORT_WINDOW });
+  // A name search puts the institution it names first among equals ("US Bank": U.S. Bank, then First US Bank).
+  const query = params.query;
+  const nameRank = query ? (name: string) => institutionNameRank(name, query) : undefined;
   if (firstPass.total <= DIRECTORY_SORT_WINDOW) {
     return {
-      rows: paginate(sortVerifiedFirst(firstPass.rows), params.page, DIRECTORY_PAGE_SIZE),
+      rows: paginate(sortVerifiedFirst(firstPass.rows, nameRank), params.page, DIRECTORY_PAGE_SIZE),
       total: firstPass.total,
       published: firstPass.rows.filter(hasVerifiedFees).length,
     };
   }
   const paged = await searchInstitutionsCached({ ...params, pageSize: DIRECTORY_PAGE_SIZE });
-  return { rows: sortVerifiedFirst(paged.rows), total: paged.total, published: null };
+  return { rows: sortVerifiedFirst(paged.rows, nameRank), total: paged.total, published: null };
 }
 
 const COUNT = new Intl.NumberFormat("en-US");

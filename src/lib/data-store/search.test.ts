@@ -6,7 +6,7 @@ vi.mock("./connection", () => ({
   },
 }));
 
-import { autocompleteInstitutions, institutionSearchPatterns, searchInstitutions } from "./search";
+import { autocompleteInstitutions, institutionNameRank, institutionSearchPatterns, searchInstitutions } from "./search";
 import { sql } from "./connection";
 
 const unsafeMock = sql.unsafe as unknown as ReturnType<typeof vi.fn>;
@@ -108,11 +108,11 @@ describe("institution search short names (#1545)", () => {
     await autocompleteInstitutions("M&T Bank");
     const [text, params] = unsafeMock.mock.calls[0];
     expect(text).toContain("ct.institution_name ILIKE ANY($5::text[])");
-    expect(params).toEqual(["%M&T Bank%", "M&T Bank", 8, "%m&t bank%", ["Manufacturers and Traders Trust%"]]);
+    expect(params).toEqual(["\\mM&T Bank", "M&T Bank", 8, "% m&t bank%", ["Manufacturers and Traders Trust%"]]);
   });
   it("reads U.S. Bank and US Bank alike, and keeps the ampersand", () => {
     expect(institutionSearchPatterns("US Bank").aliases).toEqual(["U.S. Bank%"]);
-    expect(institutionSearchPatterns("U.S. Bank").squashed).toBe("%us bank%");
+    expect(institutionSearchPatterns("U.S. Bank").squashed).toBe("% us bank%");
     expect(institutionSearchPatterns("BofA").aliases).toEqual(["Bank of America%"]);
     expect(institutionSearchPatterns("Navy Federal").aliases).toEqual([]);
   });
@@ -126,17 +126,73 @@ describe("searchInstitutions name match", () => {
     const [countText, countParams] = unsafeMock.mock.calls[0];
     expect(countText).toContain("ct.institution_name ILIKE ANY($3::text[])");
     expect(countText).toContain("ct.state_code = $4");
-    expect(countParams).toEqual(["%M&T Bank%", "%m&t bank%", ["Manufacturers and Traders Trust%"], "NY"]);
+    expect(countParams).toEqual(["\\mM&T Bank", "% m&t bank%", ["Manufacturers and Traders Trust%"], "NY"]);
     const [, rowParams] = unsafeMock.mock.calls[1];
-    expect(rowParams).toEqual(["%M&T Bank%", "%m&t bank%", ["Manufacturers and Traders Trust%"], "NY", 25, 0]);
+    expect(rowParams).toEqual(["\\mM&T Bank", "% m&t bank%", ["Manufacturers and Traders Trust%"], "NY", 25, 0]);
   });
 });
 
-describe("institution search patterns treat typed wildcards literally", () => {
-  it("escapes % and _ and needs two letters or digits for the squashed match", () => {
-    expect(institutionSearchPatterns("50%_off").pattern).toBe("%50\\%\\_off%");
+describe("institution search patterns treat typed text literally", () => {
+  it("escapes regex characters, keeps % and _ as plain text, and needs two letters or digits for the squashed match", () => {
+    expect(institutionSearchPatterns("50%_off").pattern).toBe("\\m50%_off");
     expect(institutionSearchPatterns("&.").squashed).toBe("");
-    expect(institutionSearchPatterns("%%").pattern).toBe("%\\%\\%%");
-    expect(institutionSearchPatterns("Navy").squashed).toBe("%navy%");
+    expect(institutionSearchPatterns("U.S. (Bank)").pattern).toBe("\\mU\\.S\\. \\(Bank\\)");
+    expect(institutionSearchPatterns("(M&T)").pattern).toBe("\\(M&T\\)");
+    expect(institutionSearchPatterns("Navy").squashed).toBe("% navy%");
+  });
+});
+
+/**
+ * The name match as Postgres runs it: `name ~* pattern` (\m is a word start), the squashed name
+ * after a leading space LIKE squashed, or a short-name prefix. JS \b stands in for \m here: every
+ * pattern starts with a word character when it carries \m.
+ */
+function nameMatches(name: string, query: string): boolean {
+  const { pattern, squashed, aliases } = institutionSearchPatterns(query);
+  const like = (text: string, p: string) =>
+    p !== "" && new RegExp(`^${p.split("%").map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(".*")}$`, "i").test(text);
+  const squashedName = ` ${name.toLowerCase().replace(/[^a-z0-9& ]+/g, "")}`;
+  return (
+    new RegExp(pattern.replace(/^\\m/, "\\b"), "i").test(name) ||
+    like(squashedName, squashed) ||
+    aliases.some((alias) => like(name, alias))
+  );
+}
+
+describe("a name search matches from the start of a word", () => {
+  const NAMES = [
+    "U.S. Bank National Association",
+    "First US Bank",
+    "Pegasus Bank",
+    "Focus Bank",
+    "OPTUS Bank",
+    "Locus Bank, Inc.",
+    "Columbus Bank and Trust Company",
+    "Solutions Plus Bank",
+    "Verus Bank of Commerce",
+    "American Plus Bank, N.A.",
+    "Manufacturers and Traders Trust Company",
+    "First-Citizens Bank & Trust Company",
+  ];
+  const found = (query: string) => NAMES.filter((name) => nameMatches(name, query));
+
+  it("finds U.S. Bank and First US Bank for US Bank, not names that only contain the letters", () => {
+    expect(found("US Bank")).toEqual(["U.S. Bank National Association", "First US Bank"]);
+    expect(found("U.S. Bank")).toEqual(["U.S. Bank National Association", "First US Bank"]);
+  });
+  it("still finds M&T, a word after a hyphen, and a name typed in part", () => {
+    expect(found("M&T")).toEqual(["Manufacturers and Traders Trust Company"]);
+    expect(found("Citizens")).toEqual(["First-Citizens Bank & Trust Company"]);
+    expect(found("Manufac")).toEqual(["Manufacturers and Traders Trust Company"]);
+    expect(found("pegasus")).toEqual(["Pegasus Bank"]);
+  });
+});
+
+describe("institutionNameRank", () => {
+  it("ranks the institution the query names ahead of other matches", () => {
+    expect(institutionNameRank("U.S. Bank National Association", "US Bank")).toBe(0);
+    expect(institutionNameRank("First US Bank", "US Bank")).toBe(1);
+    expect(institutionNameRank("Manufacturers and Traders Trust Company", "M&T")).toBe(0);
+    expect(institutionNameRank("Pegasus Bank", "pegasus bank")).toBe(0);
   });
 });
