@@ -544,6 +544,7 @@ describe("getInstitutionPeerRanking", () => {
           peer_count: "180",
           median_sc: "600000",
           median_fee_ratio: "12.0",
+          ratio_count: 178,
         },
       ])
       .mockResolvedValueOnce([
@@ -561,6 +562,22 @@ describe("getInstitutionPeerRanking", () => {
     expect(result!.peer_median_sc).toBe(600_000);
     expect(result!.fee_income_ratio).toBe(14.5);
     expect(result!.peer_median_fee_ratio).toBe(12.0);
+    expect(result!.peer_ratio_count).toBe(178);
+  });
+
+  it("gives no ratio median when too few peers filed a ratio, however many filed income", async () => {
+    const unsafe = vi.fn()
+      .mockResolvedValueOnce([
+        { institution_name: "Community Bank", total_assets: "500000", service_charge_income: "800000", fee_income_ratio: "0.05", report_date: "2024-09-30", source: "fdic" },
+      ])
+      .mockResolvedValueOnce([{ peer_count: "180", median_sc: "600000", median_fee_ratio: "0.02", ratio_count: 2 }])
+      .mockResolvedValueOnce([{ better_count: "39" }]);
+    getMock().unsafe = unsafe;
+    const result = await getInstitutionPeerRanking(42);
+    expect(result!.peer_median_sc).toBe(600_000);
+    expect(result!.peer_median_fee_ratio).toBeNull();
+    expect(result!.peer_ratio_count).toBe(2);
+    expect(String(unsafe.mock.calls[1][0])).toContain("COUNT(inf.fee_income_ratio)::int AS ratio_count");
   });
 
   it("keeps the peers to the institution's own filing when asked", async () => {

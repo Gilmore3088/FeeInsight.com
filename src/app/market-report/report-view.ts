@@ -132,51 +132,58 @@ export function marketFinding(counties: string, identified: number, usable: numb
 }
 
 /**
- * How a line's local median is built, said beside the figure: one value per competitor, and
- * which value. "Median across 18 competitors, each at the middle of its checking fees", so it
- * never reads as the checking lineup's median of every account pooled, and never calls a median a price.
+ * How a line's local median is built, said beside the figure: one value per local competitor,
+ * and which value. "Median of local competitors, each at the middle of its checking fees", so it
+ * never reads as the checking lineup's median of every account pooled, and never calls a median
+ * a price. The count sits on its own row beside it.
  */
-export function medianMethod(key: string, competitors: number): string {
-  const who = `${competitors.toLocaleString("en-US")} ${competitors === 1 ? "competitor's" : "competitors'"}`;
-  if (key === "monthly_maintenance") return `Median across ${competitors.toLocaleString("en-US")} ${competitors === 1 ? "competitor" : "competitors"}, each at the middle of its checking fees`;
-  if (HIGHEST_TIER_CATEGORIES.has(key)) return `Median of ${who} standard fees, one each`;
-  if (key === "atm_non_network") return `Median of ${who} domestic fees, one each`;
-  return `Median of ${who} fees, one each`;
+export function medianMethod(key: string): string {
+  if (key === "monthly_maintenance") return "Median of local competitors, each at the middle of its checking fees";
+  if (HIGHEST_TIER_CATEGORIES.has(key)) return "Median of local competitors, each at its standard fee";
+  if (key === "atm_non_network") return "Median of local competitors, each at its domestic fee";
+  return "Median of local competitors, one fee each";
 }
 
 const WIRE_LINE = /^wire_/;
 const join = (list: string[]) => (list.length < 2 ? list.join("") : `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`);
 
 /** "$1B-$10B" -> "$1B to $10B". */
-const bandText = (tier: string) => tier.replace(/\s*-\s*/, " to ");
+export const bandText = (tier: string) => tier.replace(/\s*-\s*/, " to ");
+
+/** One "Priorities for review" item and the report section it points to. */
+export interface ReviewPriority {
+  text: string;
+  href: "#position" | "#lineup" | "#revenue";
+}
 
 /**
  * The short "Priorities for review" list after the opening finding: up to three things to look
- * into, each computed from this report's own figures and left out when its data is missing.
- * They name where to look, never a price to change.
+ * into, each computed from this report's own figures and left out when its data is missing, each
+ * linked to its section. They name where to look, never a price to change.
  *   - the fees above the local middle 50% ("Wires: investigate the two fees above the local middle 50%", James's verb);
  *   - checking, where account types and waiver conditions differ more than one fee shows;
- *   - fee income, whose raw-dollar rank needs a measure that scales with size beside it.
+ *   - fee income as a share of revenue, a measure that scales with size, beside the dollar rank.
  */
 export function reviewPriorities(
-  name: string,
   lines: ReportLine[],
   context: { lineup?: CheckingLineupView | null; revenue?: RevenueContext | null } = {},
-): string[] {
-  const items: string[] = [];
+): ReviewPriority[] {
+  const items: ReviewPriority[] = [];
   const compared = comparedLines(lines);
 
   const above = compared.filter((l) => l.position === "above_market");
   if (above.length > 0) {
     const count = above.length === 1 ? "the fee" : `the ${word(above.length)} fees`;
+    let text: string;
     if (above.every((l) => WIRE_LINE.test(l.key))) {
       const which = above.map((l) => inSentence(l.label).replace(/\s*wire$/, ""));
-      items.push(`Wires: investigate ${count} above the local middle 50% (${join(which)}).`);
+      text = `Wires: investigate ${count} above the local middle 50% (${join(which)}).`;
     } else if (above.length === 1) {
-      items.push(`${capital(inSentence(above[0].label))}: investigate the fee above the local middle 50%.`);
+      text = `${capital(inSentence(above[0].label))}: investigate the fee above the local middle 50%.`;
     } else {
-      items.push(`Fees above the local middle 50%: investigate ${join(above.map((l) => inSentence(l.label)))}.`);
+      text = `Fees above the local middle 50%: investigate ${join(above.map((l) => inSentence(l.label)))}.`;
     }
+    items.push({ text, href: "#position" });
   }
 
   const checking = compared.find((l) => l.key === "monthly_maintenance");
@@ -184,19 +191,19 @@ export function reviewPriorities(
   if (checking || lineupPeers > 0) {
     const base = "Checking: compare equivalent account types and waiver conditions.";
     const count = (n: number) => `${n.toLocaleString("en-US")} local ${n === 1 ? "competitor" : "competitors"}`;
-    items.push(lineupPeers > 0 ? `${base} Lineups are on file for ${count(lineupPeers)}.` : base);
+    items.push({ text: lineupPeers > 0 ? `${base} Lineups are on file for ${count(lineupPeers)}.` : base, href: lineupPeers > 0 ? "#lineup" : "#position" });
   }
 
   const peer = context.revenue?.peer;
   if (peer) {
-    const population = `${peer.count.toLocaleString("en-US")} ${peer.population ?? "institutions"} with ${bandText(peer.tierLabel)} in assets`;
-    const lead = `Fee income: rank ${peer.rank.toLocaleString("en-US")} of ${population} in dollars. That asset band is broad, so size shapes the rank.`;
-    const same = `the same ${peer.count.toLocaleString("en-US")} ${peer.population ?? "institutions"}`;
-    const normalized =
+    const who = (n: number) => `${n.toLocaleString("en-US")} ${peer.population ?? "institutions"} with ${bandText(peer.tierLabel)} in assets`;
+    // A credit union's NCUA share is of total income (interest plus noninterest), year to date.
+    const base = peer.population === "credit unions" ? "total income" : "revenue";
+    const text =
       peer.feeShare != null && peer.peerMedianFeeShare != null
-        ? ` As a share of revenue, ${name}'s ${peer.population === "credit unions" ? "fee income is" : "service charges are"} ${shareLabel(peer.feeShare)}, against a median of ${shareLabel(peer.peerMedianFeeShare)} for ${same}.`
-        : "";
-    items.push(lead + normalized);
+        ? `Fee income: ${shareLabel(peer.feeShare)} of ${base} against a ${shareLabel(peer.peerMedianFeeShare)} median for ${who(peer.peerShareCount ?? peer.count)}.`
+        : `Fee income: rank ${peer.rank.toLocaleString("en-US")} of ${who(peer.count)} in dollars.`;
+    items.push({ text, href: "#revenue" });
   }
   return items;
 }

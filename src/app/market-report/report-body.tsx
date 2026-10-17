@@ -24,7 +24,7 @@ import { CheckingLineupSection } from "./checking-lineup-section";
 import { HubSection, KICKER } from "@/app/(public)/research/district/[id]/district-hub";
 import { Disclosure } from "./disclosure";
 import { ShowAll } from "./show-all";
-import { EXTRA_ROW, ROWS_SHOWN, countiesText, headlineFinding, identifiedText, leftOutNote, marketFinding, reviewPriorities, widestGapFinding } from "./report-view";
+import { EXTRA_ROW, ROWS_SHOWN, bandText, countiesText, headlineFinding, identifiedText, leftOutNote, marketFinding, reviewPriorities, widestGapFinding } from "./report-view";
 import { FeeComparison } from "./fee-comparison";
 import { PrintOpen } from "./print-open";
 
@@ -146,7 +146,7 @@ function RevenueSection({ name, charterType, revenue }: { name: string; charterT
   const creditUnion = charterType === "credit_union";
   const reported = creditUnion ? "fee income to NCUA" : "deposit service charges";
   const population = peer
-    ? `${peer.count.toLocaleString("en-US")} ${peer.population ?? "banks and credit unions"} with ${peer.tierLabel} in assets that reported ${reported} for ${quarterLabel(latest.quarter)}`
+    ? `${peer.count.toLocaleString("en-US")} ${peer.population ?? "banks and credit unions"} with ${bandText(peer.tierLabel)} in assets that reported ${reported} for ${quarterLabel(latest.quarter)}`
     : null;
   const finding = peer
     ? `${name} reported ${incomeLabel(latest.thousands)} in ${reported} for ${quarterLabel(latest.quarter)}, ranking ${peer.rank.toLocaleString("en-US")} of ${peer.count.toLocaleString("en-US")} ${peer.population ?? "institutions"} its size, where 1 is the highest.`
@@ -167,10 +167,22 @@ function RevenueSection({ name, charterType, revenue }: { name: string; charterT
         </dl>
         {peer && peer.feeShare != null && peer.peerMedianFeeShare != null && (
           <>
-            <p className={`${FIGURE_CAPTION} mt-8`}>{creditUnion ? "Fee income" : "Service charges"} as a share of revenue (net interest plus noninterest income), {quarterLabel(latest.quarter)}</p>
+            <p className={`${FIGURE_CAPTION} mt-8`}>
+              {creditUnion
+                ? `Fee income as a share of total income (interest plus noninterest income), year to date through ${quarterLabel(latest.quarter)}`
+                : `Service charges as a share of revenue (net interest plus noninterest income), ${quarterLabel(latest.quarter)}`}
+            </p>
             <dl className="mt-4 grid grid-cols-1 gap-6 sm:grid-cols-3">
-              <Tile label={`${name}, ${quarterLabel(latest.quarter)}`} value={shareLabel(peer.feeShare)} />
-              <Tile label={`Median of the same ${peer.count.toLocaleString("en-US")} ${peer.population ?? "institutions"}`} value={shareLabel(peer.peerMedianFeeShare)} />
+              <Tile
+                label={creditUnion ? `${name}'s fee income as a share of total income, year to date through ${quarterLabel(latest.quarter)}` : `${name}'s service charges as a share of revenue`}
+                value={shareLabel(peer.feeShare)}
+              />
+              {/* Keeps the share median under the dollar median, in the third column. */}
+              {revenue.trailingThousands !== null && <div className="hidden sm:block" aria-hidden="true" />}
+              <Tile
+                label={`Median of ${(peer.peerShareCount ?? peer.count).toLocaleString("en-US")} ${peer.population ?? "institutions"} with a share filed${creditUnion ? `, year to date through ${quarterLabel(latest.quarter)}` : ""}`}
+                value={shareLabel(peer.peerMedianFeeShare)}
+              />
             </dl>
           </>
         )}
@@ -201,7 +213,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
   );
   const ownDeposits = branches?.byInstitution[data.subject.institution_id]?.deposits ?? null;
   const PriorityHeading = Title === "h1" ? "h2" : "h3";
-  const priorities = reviewPriorities(name, analysis.lines, { lineup, revenue });
+  const priorities = reviewPriorities(analysis.lines, { lineup, revenue });
   const ownShare = branches && ownDeposits !== null && branches.totalDeposits > 0 ? (ownDeposits / branches.totalDeposits) * 100 : null;
 
   return (
@@ -219,19 +231,23 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
           <p className="mx-auto mt-3 text-[14px] text-ink-soft sm:mx-0">
             {counties} · prepared {DATE.format(preparedOn)} by {SITE_NAME}
           </p>
+          <div className="mt-5 flex flex-wrap justify-center gap-3 sm:justify-start print:hidden">{actions}</div>
           {analysis.readiness.ready && priorities.length > 0 && (
-            <section aria-labelledby="priorities-heading" className="mx-auto mt-5 max-w-3xl border-l-2 border-brick pl-4 text-left sm:mx-0">
-              <PriorityHeading id="priorities-heading" className="text-[13px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
+            <section aria-labelledby="priorities-heading" className="mx-auto mt-6 max-w-3xl border-l-2 border-border pl-4 text-left sm:mx-0">
+              <PriorityHeading id="priorities-heading" className={KICKER}>
                 Priorities for review
               </PriorityHeading>
-              <ul className="mt-2 space-y-1.5 text-[15px] leading-snug text-ink">
+              <ul className="mt-1 text-[15px] leading-snug text-ink">
                 {priorities.map((item) => (
-                  <li key={item}>{item}</li>
+                  <li key={item.href + item.text}>
+                    <a href={item.href} className="flex min-h-11 items-center underline decoration-border underline-offset-4 hover:decoration-ink">
+                      {item.text}
+                    </a>
+                  </li>
                 ))}
               </ul>
             </section>
           )}
-          <div className="mt-5 flex flex-wrap justify-center gap-3 sm:justify-start print:hidden">{actions}</div>
         </div>
       </header>
 

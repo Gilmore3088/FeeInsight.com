@@ -23,12 +23,14 @@ export interface RevenueContext {
     /** Who the peers are: the institution's own filing, never banks and credit unions pooled. */
     population?: "banks" | "credit unions";
     /**
-     * Service charges as a share of the quarter's revenue (net interest income plus noninterest
-     * income; the filing's fee_income_ratio), the institution's own and the peers' median, as
-     * fractions. A measure that scales with size, beside the raw-dollar rank. Null when not filed.
+     * Service charges as a share of the quarter's revenue (FDIC: net interest income plus
+     * noninterest income; NCUA: year-to-date fee income over interest plus noninterest income; the
+     * filing's fee_income_ratio), the institution's own and the peers' median, as fractions. A measure that scales with size, beside the raw-dollar rank. Null when not filed.
      */
     feeShare?: number | null;
     peerMedianFeeShare?: number | null;
+    /** Peers with a share filed, the population of peerMedianFeeShare. */
+    peerShareCount?: number | null;
   } | null;
 }
 
@@ -42,6 +44,7 @@ export function buildRevenueContext(
     source?: string;
     fee_income_ratio?: number | null;
     peer_median_fee_ratio?: number | null;
+    peer_ratio_count?: number | null;
   } | null,
 ): RevenueContext | null {
   const quarters = trend.slice(0, 4).map((q) => ({ quarter: q.quarter, thousands: q.service_charge_income }));
@@ -56,7 +59,11 @@ export function buildRevenueContext(
           count: ranking.peer_count,
           ...(ranking.source ? { population: ranking.source === "ncua" ? ("credit unions" as const) : ("banks" as const) } : {}),
           ...(ranking.fee_income_ratio !== undefined || ranking.peer_median_fee_ratio !== undefined
-            ? { feeShare: share(ranking.fee_income_ratio), peerMedianFeeShare: share(ranking.peer_median_fee_ratio) }
+            ? {
+                feeShare: share(ranking.fee_income_ratio),
+                peerMedianFeeShare: share(ranking.peer_median_fee_ratio),
+                peerShareCount: ranking.peer_ratio_count ?? null,
+              }
             : {}),
         }
       : null;
@@ -87,7 +94,7 @@ async function getRevenueContext(institutionId: number): Promise<RevenueContext 
   return buildRevenueContext(trend, ranking);
 }
 
-export const getRevenueContextCached = cachedPublicRead("report-revenue-context-v3", getRevenueContext);
+export const getRevenueContextCached = cachedPublicRead("report-revenue-context-v4", getRevenueContext);
 
 /** "2026-Q2" -> "Q2 2026". */
 export function quarterLabel(quarter: string): string {

@@ -60,7 +60,7 @@ function LeftOutRecords({ records }: { records: EvidenceRecord[] }) {
     <ul className="mt-0.5 space-y-0.5">
       {records.map((record, index) => (
         <li key={record.record_id ?? index}>
-          Left out: <RecordLine record={record} showAmount /> ({reasonOf(record)})
+          <span className="text-ink-soft">Left out ({reasonOf(record)}):</span> <RecordLine record={record} showAmount />
         </li>
       ))}
     </ul>
@@ -171,10 +171,8 @@ export function FeeComparison({ name, lines, names, branches, footprint }: FeeCo
                   <dt className="text-ink-muted">{name}</dt>
                   <dd className="text-right font-semibold tabular-nums text-ink">{priceText(line.own)}</dd>
                   <dt className="text-ink-muted">Local median</dt>
-                  <dd className="text-right tabular-nums text-ink">
-                    {money(line.peers.median)}
-                    <span className="block text-[12px] leading-snug text-ink-muted">{medianMethod(line.key, line.peers.n)}</span>
-                  </dd>
+                  <dd className="text-right tabular-nums text-ink">{money(line.peers.median)}</dd>
+                  <dd className="col-span-2 -mt-1 text-right text-[12px] leading-snug text-ink-muted">{medianMethod(line.key)}</dd>
                   <dt className="text-ink-muted">Middle 50%</dt>
                   <dd className="text-right tabular-nums text-ink">
                     {money(line.peers.p25)} to {money(line.peers.p75)}
@@ -229,14 +227,15 @@ export function FeeComparison({ name, lines, names, branches, footprint }: FeeCo
                     })}
                   </ul>
                   {leftOut.length > 0 && (
-                    <div className="mt-2 text-[12px] text-ink-muted">
-                      <p className="sm:mx-0 sm:text-left">Left out of these figures:</p>
+                    <div className="mt-4 border-t border-border pt-2 text-[12px] text-ink-muted">
+                      <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-ink-muted sm:mx-0 sm:text-left">Left out of these figures</p>
                       <ul className="mt-0.5 space-y-0.5">
                         {leftOut.flatMap(({ institution_id, evidence }) =>
                           evidence.excluded.map((record, index) => (
                             <li key={`${institution_id}:${record.record_id ?? index}`} className="[overflow-wrap:anywhere]">
-                              {shortName(names.get(institution_id) ?? `Institution ${institution_id}`)}&apos;s {money(record.amount)} (
-                              {reasonOf(record)}): <RecordLine record={record} showAmount={false} />
+                              <span className="text-ink-soft">Left out ({reasonOf(record)}):</span>{" "}
+                              {shortName(names.get(institution_id) ?? `Institution ${institution_id}`)}&apos;s {money(record.amount)}{" "}
+                              <RecordLine record={record} showAmount={false} />
                             </li>
                           )),
                         )}

@@ -45,9 +45,9 @@ describe("labels", () => {
 describe("the normalized fee income measure", () => {
   it("keeps service charges as a share of revenue, the institution's and the peers' median, when filed", () => {
     const context = buildRevenueContext([quarter("2026-Q2", 5656)], {
-      tier: "midsize", sc_rank: 13, peer_count: 872, peer_median_sc: 449, source: "fdic", fee_income_ratio: 0.087089, peer_median_fee_ratio: 0.021662,
+      tier: "midsize", sc_rank: 13, peer_count: 872, peer_median_sc: 449, source: "fdic", fee_income_ratio: 0.087089, peer_median_fee_ratio: 0.021662, peer_ratio_count: 870,
     });
-    expect(context?.peer).toMatchObject({ tierLabel: "$1B-$10B", population: "banks", feeShare: 0.087089, peerMedianFeeShare: 0.021662 });
+    expect(context?.peer).toMatchObject({ tierLabel: "$1B-$10B", population: "banks", feeShare: 0.087089, peerMedianFeeShare: 0.021662, peerShareCount: 870 });
     expect(shareLabel(0.087089)).toBe("8.7%");
   });
 

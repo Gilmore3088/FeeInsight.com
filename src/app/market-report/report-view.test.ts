@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ReportLine } from "@/lib/custom-report/analysis";
 import type { CheckingLineupView } from "@/lib/custom-report/checking-lineup";
 import type { RevenueContext } from "@/lib/custom-report/revenue-context";
-import { comparedAt, countiesText, headlineFinding, leftOutNote, marketFinding, medianMethod, priceText, reviewPriorities, widestGapFinding } from "./report-view";
+import { bandText, comparedAt, countiesText, headlineFinding, leftOutNote, marketFinding, medianMethod, priceText, reviewPriorities, widestGapFinding } from "./report-view";
 
 function line(key: string, label: string, own: number | null, peers: [number, number, number, number] | null, position: ReportLine["position"]): ReportLine {
   return {
@@ -77,31 +77,38 @@ describe("priorities for review", () => {
   const revenue: RevenueContext = {
     quarters: [{ quarter: "2026-Q2", thousands: 5656 }],
     trailingThousands: null,
-    peer: { tierLabel: "$1B-$10B", medianThousands: 449, rank: 13, count: 872, population: "banks", feeShare: 0.087089, peerMedianFeeShare: 0.021662 },
+    peer: { tierLabel: "$1B-$10B", medianThousands: 449, rank: 13, count: 872, population: "banks", feeShare: 0.087089, peerMedianFeeShare: 0.021662, peerShareCount: 870 },
   };
 
-  it("names where to look from the report's own figures, never a price to change", () => {
-    const items = reviewPriorities("Capital City Bank", wires, { revenue, lineup: { peersWithLineup: 20 } as CheckingLineupView });
+  it("names where to look from the report's own figures, never a price to change, each linked to its section", () => {
+    const items = reviewPriorities(wires, { revenue, lineup: { peersWithLineup: 20 } as CheckingLineupView });
     expect(items).toEqual([
-      "Wires: investigate the two fees above the local middle 50% (outgoing domestic and outgoing international).",
-      "Checking: compare equivalent account types and waiver conditions. Lineups are on file for 20 local competitors.",
-      "Fee income: rank 13 of 872 banks with $1B to $10B in assets in dollars. That asset band is broad, so size shapes the rank. As a share of revenue, Capital City Bank's service charges are 8.7%, against a median of 2.2% for the same 872 banks.",
+      { text: "Wires: investigate the two fees above the local middle 50% (outgoing domestic and outgoing international).", href: "#position" },
+      { text: "Checking: compare equivalent account types and waiver conditions. Lineups are on file for 20 local competitors.", href: "#lineup" },
+      { text: "Fee income: 8.7% of revenue against a 2.2% median for 870 banks with $1B to $10B in assets.", href: "#revenue" },
     ]);
-    expect(items.join(" ")).not.toMatch(/\b(raise|lower|cut|increase|reduce|should)\b/i);
+    expect(items.map((i) => i.text).join(" ")).not.toMatch(/\b(raise|lower|cut|increase|reduce|should)\b/i);
   });
 
-  it("leaves out an item whose data is missing", () => {
-    expect(reviewPriorities("Capital City Bank", [lines[1]])).toEqual([]);
+  it("falls back to the dollar rank, and leaves out an item whose data is missing", () => {
+    expect(reviewPriorities([lines[1]])).toEqual([]);
     const noShare = { ...revenue, peer: { ...revenue.peer!, feeShare: null } };
-    expect(reviewPriorities("Capital City Bank", [lines[0]], { revenue: noShare })).toEqual([
-      "Overdraft: investigate the fee above the local middle 50%.",
-      "Fee income: rank 13 of 872 banks with $1B to $10B in assets in dollars. That asset band is broad, so size shapes the rank.",
+    expect(reviewPriorities([lines[0]], { revenue: noShare })).toEqual([
+      { text: "Overdraft: investigate the fee above the local middle 50%.", href: "#position" },
+      { text: "Fee income: rank 13 of 872 banks with $1B to $10B in assets in dollars.", href: "#revenue" },
     ]);
+  });
+
+  it("says a credit union's share is of total income", () => {
+    const cu = { ...revenue, peer: { ...revenue.peer!, population: "credit unions" as const, peerShareCount: 300 } };
+    expect(reviewPriorities([], { revenue: cu })[0].text).toBe("Fee income: 8.7% of total income against a 2.2% median for 300 credit unions with $1B to $10B in assets.");
   });
 
   it("says beside each local median how it is built", () => {
-    expect(medianMethod("monthly_maintenance", 18)).toBe("Median across 18 competitors, each at the middle of its checking fees");
-    expect(medianMethod("atm_non_network", 15)).toBe("Median of 15 competitors' domestic fees, one each");
-    expect(medianMethod("overdraft", 17)).toBe("Median of 17 competitors' standard fees, one each");
+    expect(medianMethod("monthly_maintenance")).toBe("Median of local competitors, each at the middle of its checking fees");
+    expect(medianMethod("atm_non_network")).toBe("Median of local competitors, each at its domestic fee");
+    expect(medianMethod("overdraft")).toBe("Median of local competitors, each at its standard fee");
+    expect(medianMethod("stop_payment")).toBe("Median of local competitors, one fee each");
+    expect(bandText("$1B-$10B")).toBe("$1B to $10B");
   });
 });
