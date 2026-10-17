@@ -19,7 +19,7 @@
  * The amount is then rebuilt from the records that remain; when none remains, the institution
  * is left out of that line's comparison and the line's medians are worked out without it.
  */
-import { HIGHEST_TIER_CATEGORIES, institutionValue } from "@/lib/data-store/fee-stats";
+import { HIGHEST_TIER_CATEGORIES, institutionValue } from "@/lib/fee-institution-value";
 import type { MarketFeeLine, MarketFeeRecord } from "@/lib/data-store/custom-report-market";
 import { isArticleLink } from "@/lib/agents/magellan/link-coverage";
 import { checkFeeAgainstSource } from "./source-check";

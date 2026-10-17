@@ -140,15 +140,9 @@ export interface StatsInputRow {
   schedule_group?: string | number | null;
 }
 
-/** Categories whose tiers are compared at the highest (standard) tier, not the median. */
-export const HIGHEST_TIER_CATEGORIES: ReadonlySet<string> = new Set(["overdraft"]);
+import { HIGHEST_TIER_CATEGORIES, institutionValue } from "@/lib/fee-institution-value";
 
-/** One institution's value for a category from its own amounts (sorted or not). */
-export function institutionValue(category: string | null | undefined, amounts: number[]): number {
-  const sorted = [...amounts].sort((a, b) => a - b);
-  if (category && HIGHEST_TIER_CATEGORIES.has(category)) return sorted[sorted.length - 1];
-  return computePercentile(sorted, 50);
-}
+export { HIGHEST_TIER_CATEGORIES, institutionValue };
 
 export interface FeeStatistics {
   institution_count: number;
