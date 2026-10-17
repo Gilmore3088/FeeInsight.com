@@ -86,16 +86,17 @@ function FeatureCards({ showcase }: { showcase: HamiltonShowcase }) {
       <ul className="grid gap-5 md:grid-cols-2">
         {FEATURES.map((f, i) => (
           <li key={f.kind} className="flex min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-surface-0">
-            {/* Hamilton's own exhibit without its headline and source line, cropped like a product image; the card's words describe it. */}
-            <div aria-hidden="true" inert className="relative h-64 overflow-hidden border-b border-border bg-surface-0 px-5 pt-5 lg:h-72 sm:px-6">
-              <div className="pointer-events-none [&_.rd-exhibit]:mt-0 [&_.rd-exhibit]:border-0 [&_.rd-exhibit]:pt-0 [&_.rd-label]:hidden [&_.rd-sub]:hidden [&_.rd-exhibit>h2]:hidden [&_.rd-source]:hidden">
+            {/* Words first (centred on a phone, James 09:16), then Hamilton's own exhibit cropped like a product image:
+                no frame headline, legend or source line, since the card's words describe it. */}
+            <div className="px-5 pt-5 pb-4 text-center sm:px-6 sm:text-left">
+              <h3 className="text-[18px] font-semibold text-ink">{f.title}</h3>
+              <p className="mx-auto mt-1.5 max-w-md text-[15px] leading-relaxed text-ink-soft sm:mx-0 sm:max-w-none">{f.line}</p>
+            </div>
+            <div aria-hidden="true" inert className="relative h-52 overflow-hidden bg-paper px-5 pt-4 sm:h-60 sm:px-6 lg:h-72">
+              <div className="fi-exhibit-crop pointer-events-none origin-top-left scale-[.92] [width:108.7%]">
                 <StoryExhibitView item={showcase.exhibits[i]} number={i + 1} researchInstitutionName={showcase.institutionName} />
               </div>
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-surface-0 to-transparent" />
-            </div>
-            <div className="px-5 py-5 sm:px-6">
-              <h3 className="text-[18px] font-semibold text-ink">{f.title}</h3>
-              <p className="mt-1.5 text-[15px] leading-relaxed text-ink-soft">{f.line}</p>
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-paper to-transparent" />
             </div>
           </li>
         ))}
