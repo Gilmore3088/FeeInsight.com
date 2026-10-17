@@ -10,6 +10,11 @@ describe("account identity is not research selection", () => {
   it("uses one active membership for the authenticated user", () => {
     expect(accountContextFromMemberships(7, [member()])).toEqual({ status: "identified", institution: { id: 101, name: "Synthetic Home CU" }, profileLabel: null });
   });
+  it("identifies a signed-in user whose bigint id arrives from the database as a string", () => {
+    // postgres.js returns users.id (bigint) as text; getCurrentUser passes it through.
+    expect(accountContextFromMemberships("7" as unknown as number, [member()]).status).toBe("identified");
+    expect(accountContextFromMemberships("8" as unknown as number, [member()]).status).toBe("unlinked");
+  });
   it("does not accept another user's membership", () => {
     expect(accountContextFromMemberships(7, [member(101, { userId: 8 })]).status).toBe("unlinked");
   });

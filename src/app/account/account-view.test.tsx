@@ -60,7 +60,7 @@ describe("AccountView", () => {
     const headings = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
     expect(headings).toEqual(["Banks you follow", "Your reports", "Your plan", "Your organization", "Sign-in"]);
     expect(section("Your plan")).toHaveTextContent("From $150 a month");
-    expect(within(section("Your plan")).getByRole("link", { name: "See Pro plans" })).toHaveAttribute(
+    expect(within(section("Your plan")).getByRole("link", { name: "See Hamilton plans" })).toHaveAttribute(
       "href",
       "/subscribe?from=%2Faccount",
     );
@@ -69,7 +69,7 @@ describe("AccountView", () => {
 
   it("pro: plan details, team seats, Hamilton and billing", () => {
     render(<AccountView data={{ ...base, plan: proPlan, emails: { watchlist_alerts: true, pro_digest: false } }} />);
-    const plan = section("Fee Insight Pro");
+    const plan = section("Your plan");
     expect(plan).toHaveTextContent("$3,000 per year");
     expect(plan).toHaveTextContent("RenewsOctober 8, 2027");
     expect(plan).toHaveTextContent("Team: 3 of 5 seats used");
@@ -83,7 +83,7 @@ describe("AccountView", () => {
     expect(screen.getByRole("switch", { name: "Monday digest" })).toHaveAttribute("aria-checked", "false");
   });
 
-  it("ended Pro: the plan says so and offers Restart Pro once", () => {
+  it("ended Pro: the plan says so and offers Restart Hamilton once", () => {
     render(
       <AccountView
         data={{
@@ -92,9 +92,9 @@ describe("AccountView", () => {
         }}
       />,
     );
-    expect(section("Your plan")).toHaveTextContent("Your Pro subscription has ended.");
-    expect(screen.getAllByRole("link", { name: "Restart Pro" })).toHaveLength(1);
-    expect(screen.queryByRole("link", { name: "See Pro plans" })).toBeNull();
+    expect(section("Your plan")).toHaveTextContent("Your Hamilton subscription has ended.");
+    expect(screen.getAllByRole("link", { name: "Restart Hamilton" })).toHaveLength(1);
+    expect(screen.queryByRole("link", { name: "See Hamilton plans" })).toBeNull();
   });
 
   it("every account shows Sign out at the top", () => {
@@ -112,7 +112,7 @@ describe("AccountView", () => {
         }}
       />,
     );
-    const plan = section("Fee Insight Pro");
+    const plan = section("Your plan");
     expect(plan).toHaveTextContent("You’re on First Bank's team plan");
     expect(within(plan).queryByRole("button", { name: "Billing and invoices" })).toBeNull();
   });
@@ -195,7 +195,7 @@ describe("AccountView", () => {
 
   it("a pending team invite shows first", () => {
     render(<AccountView data={{ ...base, invitations: [{ id: 1, institutionName: "Lone Star CU", role: "analyst" }] }} />);
-    expect(screen.getByRole("status")).toHaveTextContent("You're invited to Lone Star CU's Pro team.");
+    expect(screen.getByRole("status")).toHaveTextContent("You're invited to Lone Star CU's Hamilton team.");
   });
 
   it("api: no card unless the page passes access", () => {
@@ -214,7 +214,7 @@ describe("AccountView", () => {
     mocks.createKey.mockResolvedValue({ key: "bfi_testkey123" });
     render(<AccountView data={{ ...base, plan: proPlan, apiAccess: { kind: "included", key: null } }} />);
     const card = section("API and Claude connector");
-    expect(card).toHaveTextContent("10,000 calls a month");
+    expect(card).toHaveTextContent("shares 10,000 calls a month");
     fireEvent.click(within(card).getByRole("button", { name: "Make a key" }));
     await waitFor(() => expect(card).toHaveTextContent("bfi_testkey123"));
     expect(card).toHaveTextContent("/api/v1/mcp?api_key=bfi_testkey123");

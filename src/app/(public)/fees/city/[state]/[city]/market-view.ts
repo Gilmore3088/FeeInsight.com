@@ -2,6 +2,9 @@ import type { CityFeeKey, CityMarket, CityMarketInstitution, DepositYear, IndexE
 import { CITY_FEES } from "@/lib/data-store/city-market";
 import { cityMedian } from "@/lib/city-median";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
+import { lowerLabel, money } from "./format";
+
+export { lowerLabel, money };
 
 /** One fee across the institutions serving the area. */
 export interface LocalFee {
@@ -13,13 +16,12 @@ export interface LocalFee {
   max: number | null;
   /** Only once MIN_INSTITUTIONS_FOR_MEDIAN institutions publish it. */
   median: number | null;
+  /** Institutions headquartered in the state behind its median. */
   state_median: number | null;
+  state_n: number | null;
+  /** Every institution in the index behind the U.S. median. */
   us_median: number | null;
-}
-
-/** "an overdraft", "a monthly maintenance", "an NSF / returned item": acronyms keep their case. */
-function lowerLabel(label: string): string {
-  return label.replace(/\b[A-Z][a-z]+/g, (w) => w.toLowerCase());
+  us_n: number | null;
 }
 
 function withArticle(label: string): string {
@@ -27,13 +29,9 @@ function withArticle(label: string): string {
   return `${/^([aeiou]|NSF|ATM)/i.test(l) ? "an" : "a"} ${l}`;
 }
 
-export function money(n: number): string {
-  return Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`;
-}
-
 export function localFees(market: CityMarket, stateIndex: IndexEntry[], nationalIndex: IndexEntry[]): LocalFee[] {
-  const stateBy = new Map(stateIndex.map((e) => [e.fee_category, e.median_amount]));
-  const usBy = new Map(nationalIndex.map((e) => [e.fee_category, e.median_amount]));
+  const stateBy = new Map(stateIndex.map((e) => [e.fee_category, e]));
+  const usBy = new Map(nationalIndex.map((e) => [e.fee_category, e]));
   return CITY_FEES.map(({ key, label }) => {
     const amounts = market.institutions.flatMap((i) => (i.fees[key] ? [i.fees[key]!.amount] : []));
     return {
@@ -43,8 +41,10 @@ export function localFees(market: CityMarket, stateIndex: IndexEntry[], national
       min: amounts.length ? Math.min(...amounts) : null,
       max: amounts.length ? Math.max(...amounts) : null,
       median: cityMedian(amounts),
-      state_median: stateBy.get(key) ?? null,
-      us_median: usBy.get(key) ?? null,
+      state_median: stateBy.get(key)?.median_amount ?? null,
+      state_n: stateBy.get(key)?.institution_count ?? null,
+      us_median: usBy.get(key)?.median_amount ?? null,
+      us_n: usBy.get(key)?.institution_count ?? null,
     };
   });
 }
@@ -72,18 +72,28 @@ export function coverage(market: CityMarket): Coverage {
 const NOTABLE_GAP = 0.1;
 
 /**
+ * The page's opening finding: the fee whose local median (once enough institutions here publish
+ * it) sits furthest from the state median, by share of the state median. Null when no fee is at
+ * least NOTABLE_GAP away.
+ */
+export function leadFinding(fees: LocalFee[]): LocalFee | null {
+  const gaps = fees
+    .filter((f) => f.median != null && f.state_median != null && f.state_median > 0)
+    .map((f) => ({ f, gap: (f.median! - f.state_median!) / f.state_median! }))
+    .filter((g) => Math.abs(g.gap) >= NOTABLE_GAP)
+    .sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap));
+  return gaps[0]?.f ?? null;
+}
+
+/**
  * Up to three things this market's published fees show, each with its own count: the fee
  * whose local median sits furthest from the state's, the fee with the widest local range,
  * and where coverage is too thin for a local median. No "cheapest in town" claims.
  */
 export function marketFindings(fees: LocalFee[], placeName: string, stateName: string): string[] {
   const findings: string[] = [];
-  const gaps = fees
-    .filter((f) => f.median != null && f.state_median != null && f.state_median > 0)
-    .map((f) => ({ f, gap: (f.median! - f.state_median!) / f.state_median! }))
-    .filter((g) => Math.abs(g.gap) >= NOTABLE_GAP)
-    .sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap));
-  const lead = gaps[0];
+  const leadFee = leadFinding(fees);
+  const lead = leadFee ? { f: leadFee } : null;
   if (lead) {
     const d = lead.f.median! - lead.f.state_median!;
     findings.push(

@@ -43,6 +43,26 @@ describe("MarketBriefView", () => {
   });
 });
 
+describe("MarketBriefView follow-up (#979 H04-T03, AC1)", () => {
+  const question = "talk to me about $5B and up in florida. fee pricing, revenue, complaints";
+  it("is the page's one question field and hands the conversation back to Ask", async () => {
+    const { MarketBriefView } = await import("./MarketBrief");
+    const { parseMarketQuestion } = await import("@/lib/hamilton/market-question");
+    const html = renderToStaticMarkup(<MarketBriefView question={question} market={parseMarketQuestion(question)!} data={empty} instId="101" conversationId="8f14e45f-ceea-467f-a0f6-37f8b3a3e2f1" />);
+    expect(html.match(/<input(?![^>]*type="hidden")/g)).toHaveLength(1);
+    expect(html).toContain('name="conversation" value="8f14e45f-ceea-467f-a0f6-37f8b3a3e2f1"');
+    expect(html).toContain('name="send" value="1"');
+    expect(html).not.toContain('name="from_brief"');
+  });
+  it("outside a conversation, carries the brief's question as the follow-up's earlier turn", async () => {
+    const { MarketBriefView } = await import("./MarketBrief");
+    const { parseMarketQuestion } = await import("@/lib/hamilton/market-question");
+    const html = renderToStaticMarkup(<MarketBriefView question={question} market={parseMarketQuestion(question)!} data={empty} />);
+    expect(html).toContain('name="from_brief" value="talk to me about $5B and up in florida. fee pricing, revenue, complaints"');
+    expect(html).not.toContain('name="conversation"');
+  });
+});
+
 describe("market board brief", () => {
   it("lists findings and limits, never actions, and says when data is missing", async () => {
     const { marketBoardBriefInput } = await import("./market-board-brief");

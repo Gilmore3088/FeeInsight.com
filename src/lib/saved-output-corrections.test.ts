@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { affectedSavedOutputsLabel, savedOutputNotice } from "./saved-output-corrections";
+import { affectedSavedOutputsLabel, collectFeeRefs, MAX_SAVED_FEE_REFS, savedOutputNotice } from "./saved-output-corrections";
 
 // H03-T09 (#978): a saved output made before a fee change keeps its figures and says so.
 
@@ -48,5 +48,55 @@ describe("saved output notice", () => {
     expect(affectedSavedOutputsLabel({ analyses: 0, reports: null, briefings: 0 })).toBe("unknown");
     expect(affectedSavedOutputsLabel({ analyses: 2, reports: null, briefings: 0 })).toBe("2 saved answers (some unreadable)");
     expect(affectedSavedOutputsLabel(null)).toBe("unknown");
+  });
+});
+
+describe("saved output notice from the fee rows it used", () => {
+  it("should_name_the_fee_data_the_output_used_rather_than_the_institution", () => {
+    const notice = savedOutputNotice([{ kind: "hold", at: "2026-10-16T12:00:00.000Z" }], saved, "report", "fees");
+    expect(notice?.text).toBe(
+      "Fee data this report used changed after this report was saved: 1 fee taken out for review on Oct 16, 2026. " +
+        "This report still shows the figures from when it was saved.",
+    );
+    expect(notice?.text).not.toMatch(/—|Knox|Darwin|Free/);
+  });
+});
+
+describe("collectFeeRefs", () => {
+  it("should_collect_own_rows_evidence_facts_and_named_peers_but_skip_market_layers", () => {
+    const research = {
+      institutionId: 7,
+      ownRows: [{ id: 101, sourceDocumentId: 900, sourceContentHash: "h1" }, { id: "102", sourceDocumentId: null }],
+      peers: [{ institutionId: 8, amount: 30, sourceDocumentIds: [901], feePublishedIds: [201, 202] }],
+      localCompetitors: [{ institutionId: 9, sourceDocumentIds: [902, 903], feePublishedIds: [301] }],
+      layers: [{ scope: "national", members: [{ institutionId: 10, feePublishedIds: [999] }] }],
+    };
+    const evidence = {
+      facts: [
+        { scope: { institutionId: 7 }, source: { table: "published_fee_catalog", recordId: 102, sourceDocumentIds: [904], documentContentHash: "h2" } },
+        { scope: { institutionId: 7 }, source: { table: "institution_financial_records", recordId: 555, sourceDocumentIds: [] } },
+      ],
+    };
+    expect(collectFeeRefs(research, evidence)).toEqual([
+      { feePublishedId: 101, institutionId: 7, sourceDocumentId: 900, sourceContentHash: "h1" },
+      // First seen without a document; the evidence fact fills it in.
+      { feePublishedId: 102, institutionId: 7, sourceDocumentId: 904, sourceContentHash: "h2" },
+      { feePublishedId: 201, institutionId: 8, sourceDocumentId: 901, sourceContentHash: null },
+      { feePublishedId: 202, institutionId: 8, sourceDocumentId: 901, sourceContentHash: null },
+      // Two documents behind one value: no single source version to record.
+      { feePublishedId: 301, institutionId: 9, sourceDocumentId: null, sourceContentHash: null },
+    ]);
+  });
+
+  it("should_ignore_ids_that_are_not_positive_integers_and_stop_at_the_cap", () => {
+    expect(collectFeeRefs(null, "x", { ownRows: [{ id: 0 }, { id: -1 }, { id: 1.5 }, { id: "abc" }] })).toEqual([]);
+    const many = { feePublishedIds: Array.from({ length: MAX_SAVED_FEE_REFS + 50 }, (_, i) => i + 1), institutionId: 1 };
+    expect(collectFeeRefs(many)).toHaveLength(MAX_SAVED_FEE_REFS);
+  });
+
+  it("should_not_loop_on_a_value_that_refers_to_itself", () => {
+    const loop: Record<string, unknown> = { ownRows: [{ id: 5 }], institutionId: 3 };
+    loop.self = loop;
+    expect(collectFeeRefs(loop).map((ref) => ref.feePublishedId)).toEqual([5]);
   });
 });

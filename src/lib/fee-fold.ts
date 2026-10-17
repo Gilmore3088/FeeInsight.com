@@ -23,10 +23,11 @@
  * (`pendingResearchSplit` in its detail). On, new reads file there,
  * and live and verified fees under account research move by name (`EXCESS_WITHDRAWAL`,
  * `RETURNED_MAIL`; logged as `category_fold`, old category kept), each only when the new type's
- * guard and price range accept it. Off until James says go; turning it on is this one line (Knox's
- * own rules re-point in the same PR).
+ * guard and price range accept it. On (James, Oct 17 2026): Knox's own rules re-point with it
+ * (Knox rules v77), and public pages list only the top 50 of the 52 types (`publicFeeTypes`).
+ * Setting it back to false restores the 50-type taxonomy and account research filing.
  */
-export const RESEARCH_SPLIT_LIVE = false;
+export const RESEARCH_SPLIT_LIVE = true;
 
 /** The key a rule files under: the new type while `RESEARCH_SPLIT_LIVE` is on, account research while it is off. Pure. */
 export function researchSplitTarget(key: "excess_withdrawal" | "returned_mail", live: boolean = RESEARCH_SPLIT_LIVE): string {
@@ -222,6 +223,41 @@ export const RETIRED_CATEGORY_KEYS: ReadonlySet<string> = new Set(Object.keys(RE
 export const COLLECTION_ITEM =
   /^(?![\s\S]*(?:charged[- ]?off|past[- ]due|delinquen|\bcalls?\b|negative balance|overdrawn|\bdebts?\b|agenc))(?:[\s\S]*\bcollections?\b|(?![\s\S]*\b(?:cash\w*|returns?|returned)\b)[\s\S]*\b(?:foreign|canadian|international|non[- ]?u\.?s\.?)\s+(?:checks?|items?|drafts?)\b)/i;
 
+/**
+ * Guard v68: a foreign, Canadian, international or non-U.S. check or item that came back unpaid
+ * ("Foreign Check Return Fee", "Returned Canadian Check", "Foreign Item Return Fee", "Foreign Check
+ * per Item Processing: Returned"). It is a deposited or cashed item returned, the returned deposited
+ * item fee, as the 14 live "Foreign Returned Deposited Item" fees already are; not check cashing. One
+ * that names a collection stays a collection item (`COLLECTION_ITEM` is tried first), and a wire,
+ * mail or statement return is another fee.
+ */
+export const FOREIGN_ITEM_RETURN =
+  /^(?![\s\S]*\b(?:collections?|wires?|mail(?:ed|ing)?|statements?)\b)(?=[\s\S]*\b(?:foreign|canadian|international|non[- ]?u\.?s\b))(?=[\s\S]*\b(?:checks?|cheques?|items?|drafts?)\b)[\s\S]*\b(?:return(?:s|ed)?|unpaid|dishonou?red|charge[- ]?backs?)\b/i;
+
+/**
+ * Guard v69: `FOREIGN_ITEM_RETURN` for a fee filed as NSF. A row that also names domestic items or
+ * insufficient or uncollected funds ("Domestic/Foreign – Incoming and Outgoing Returned Item for
+ * Insufficient or Uncollected Funds") prices the member's own returned items too, so it stays NSF.
+ * A price on top of a cost ("Foreign returned check fee (at cost plus)" $10, 22823) is not the fee's
+ * whole price, so it never moves either.
+ */
+export const FOREIGN_DEPOSIT_RETURN = new RegExp(
+  String.raw`^(?![\s\S]*\b(?:domestic|insufficient|nsf|non[- ]?sufficient|uncollected|cost)\b)` + FOREIGN_ITEM_RETURN.source.slice(1),
+  "i",
+);
+
+/**
+ * Guard v69: an IRA's own closing or termination charge ("Individual Retirement Account Closing Fee",
+ * "IRA Closed within 18 Months of Opening", "Retirement/HSA Account Closing Fee") is the IRA
+ * termination fee, where the live windowed IRA closures already are ("IRA Early Closure (Within 12
+ * Months)", "IRA Account Closure (Within 90 Days)"); not a deposit account's early closure. A row
+ * that prices other accounts too, or only mentions the IRA ("Account Closed within 90 days of opening
+ * (including IRA's)", "Early Account Closing - DDA and Savings less than 3 months - IRA prior to 3
+ * years", "... (except IRA accounts)"), stays early closure, as does a certificate's or a club's.
+ */
+export const IRA_CLOSING =
+  /^(?![\s\S]*\b(?:includ\w*|except\w*|exclud\w*|not applicable|other than|dda|checking|savings|money market|cds?|certificates?|clubs?|loans?)\b)(?=[\s\S]*\b(?:iras?|roth|individual retirement|retirement)\b)[\s\S]*\b(?:clos\w*|close-?outs?|terminat\w*)\b/i;
+
 /** A mortgage, lien or loan subordination; a wire line under a "Subordination Request" heading is not one. */
 export const SUBORDINATION = /^(?![\s\S]*subordination request:\s*(?:incoming|outgoing))[\s\S]*\bsubordinat/i;
 
@@ -414,7 +450,18 @@ export function splitCategoriesFor(options: {
 }): Readonly<Record<string, SplitCategory>> {
   const research = options.researchSplitLive ?? false;
   return {
-    check_cashing: { to: "collection_item", name: COLLECTION_ITEM, sqlPattern: "collection|foreign|canadian|international|non[- ]?u\\.?s" },
+    // Guard v68: a returned foreign check or item is a returned deposited item, not check cashing.
+    check_cashing: {
+      to: "collection_item",
+      name: COLLECTION_ITEM,
+      also: [{ to: "deposited_item_return", name: FOREIGN_ITEM_RETURN }],
+      sqlPattern: "collection|foreign|canadian|international|non[- ]?u\\.?s",
+    },
+    // Guard v69: a returned foreign, Canadian or international check or item is a returned
+    // deposited item, not the member's own NSF item.
+    nsf: { to: "deposited_item_return", name: FOREIGN_DEPOSIT_RETURN, sqlPattern: "foreign|canadian|international|non[- ]?u\\.?s" },
+    // Guard v69: an IRA's own closing charge is the IRA termination fee, not an early closure.
+    early_closure: { to: "ira_termination", name: IRA_CLOSING, sqlPattern: "\\mira|roth|retirement" },
     // A lien release is other lending (James, Oct 8: Lien Release gave up its spot). A subordination
     // stays legal process (James, Oct 15).
     legal_process: { to: "other_lending_fee", name: LENDING_LEGAL, sqlPattern: "lien" },

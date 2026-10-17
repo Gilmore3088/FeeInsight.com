@@ -19,6 +19,7 @@ import {
 import { getInstitutionFeeScheduleEvidence } from "@/lib/data-store/institution";
 import { getDisplayName, getFeeFamily, getFeeTier } from "@/lib/fee-taxonomy";
 import { getFeePublicationStatusLabel } from "@/lib/institution-quality";
+import { countedInstitutionCount } from "@/lib/data-store/fee-stats";
 
 /**
  * Public tools — wrap the same logic as /api/v1/ routes but call DB directly
@@ -48,9 +49,7 @@ export const searchFees = tool({
         family: getFeeFamily(category),
         tier: getFeeTier(category),
         summary: {
-          institution_count: new Set(
-            detail.fees.map((f) => f.institution_id)
-          ).size,
+          institution_count: countedInstitutionCount(detail.fees),
           observation_count: detail.fees.length,
         },
         by_charter_type: detail.by_charter_type,
@@ -213,6 +212,9 @@ export const getInstitution = tool({
         status: f.review_status === "approved" ? "verified" : "provisional",
         extraction_confidence: f.extraction_confidence,
         source_url: f.source_url ?? null,
+        // The catalog row and its stored schedule, so a sentence of the answer can be tied to them (#981).
+        record_id: f.id,
+        source_document_id: f.source_document_id ?? null,
     });
     const verifiedFees = fees.filter((f) => f.review_status === "approved").map(mapFee);
     const catalogProvisionalFees = fees.filter((f) => f.review_status !== "approved").map(mapFee);

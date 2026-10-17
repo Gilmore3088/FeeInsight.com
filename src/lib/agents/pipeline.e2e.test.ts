@@ -11,6 +11,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { scannedFeePdf } from "@/lib/agents/rosetta/test-fixtures/scanned-pdf";
+import { researchSplitTarget } from "@/lib/fee-fold";
 
 const E2E_DATABASE_URL = process.env.E2E_DATABASE_URL;
 const STATE = "VT";
@@ -378,8 +379,13 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
     // Found from a homepage link, read from HTML.
     expect(published("Green Mountain Test Bank")).toEqual(tableFees);
     // Known fee URL, read from HTML. The held "Returned Statement Fee" went to Darwin by its settled
-    // name and was published; "Lost Passbook Fee" has no decision and stays held.
-    expect(published("Champlain Test Credit Union")).toEqual({ ...tableFees, overdraft: 29, account_research: 5 });
+    // name and was published (returned mail while the research split is on, account research while
+    // it is off); "Lost Passbook Fee" has no decision and stays held.
+    expect(published("Champlain Test Credit Union")).toEqual({
+      ...tableFees,
+      overdraft: 29,
+      [researchSplitTarget("returned_mail")]: 5,
+    });
     const champlainHeld = await sql`
       SELECT fr.fee_name, fr.outlier_flags ? 'knox_name_filed:store' AS filed, fr.outlier_flags ? 'knox_review:unclassified' AS held
         FROM raw_fee_observations fr
@@ -590,7 +596,7 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
        WHERE agent_run_id = ${started.run.id} AND scorer_version = 3
     `;
     const versions = await sql`SELECT scorer_version FROM answer_key_score_runs WHERE agent_run_id = ${started.run.id} ORDER BY scorer_version`;
-    expect(versions.map((row) => Number(row.scorer_version))).toEqual([1, 2, 3]);
+    expect(versions.map((row) => Number(row.scorer_version))).toEqual([1, 2, 3, 4]);
     expect(Number(scoreRun.precision)).toBe(1);
     expect(Number(scoreRun.recall)).toBe(1);
     const bankScore = (scoreRun.by_bank as Array<Record<string, unknown>>).find((row) => Number(row.institution_id) === institutionId);

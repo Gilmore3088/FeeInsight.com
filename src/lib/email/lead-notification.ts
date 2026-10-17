@@ -4,7 +4,7 @@
  * Never throws; every branch resolves to a delivery result so the lead is stored
  * regardless of email health.
  */
-import { CONTACT_EMAIL, MAILING_ADDRESS, PRODUCT_NAME, SITE_DOMAIN, SITE_NAME, SITE_URL } from "@/lib/constants";
+import { CONTACT_EMAIL, EMAIL_LOGO_URL, MAILING_ADDRESS, PRODUCT_NAME, SITE_DOMAIN, SITE_NAME, SITE_URL } from "@/lib/constants";
 import {
   escapeHtml,
   getResendApiKey,
@@ -12,7 +12,7 @@ import {
   type EmailDeliveryResult,
 } from "./resend";
 import { getSubscriptionTokenSecret, subscriptionPageUrl } from "./subscription-token";
-import { RD } from "@/lib/report-design/tokens";
+import { RD, RD_FONTS } from "@/lib/report-design/tokens";
 
 export interface LeadNotificationOutcome {
   /** Internal heads-up delivered to CONTACT_EMAIL. */
@@ -105,10 +105,10 @@ const C = {
   goodSoft: "#EEF2E8",
   line: RD.rule2,
 };
-const SERIF = "Georgia,'Times New Roman',serif";
-const SANS = "'Helvetica Neue',Helvetica,Arial,sans-serif";
-const MONO = "'SFMono-Regular',Menlo,Consolas,monospace";
-const PARAGRAPH = `margin:0 0 16px;font-family:${SERIF};font-size:17px;line-height:1.6;color:${C.ink2};`;
+// The brand's Geist stacks; single quotes, since these go inside style="..." attributes.
+const SANS = RD_FONTS.sans.replace(/"/g, "'");
+const MONO = RD_FONTS.mono.replace(/"/g, "'");
+const PARAGRAPH = `margin:0 0 16px;font-family:${SANS};font-size:17px;line-height:1.6;color:${C.ink2};`;
 const LINK = `color:${C.terra};text-decoration:underline;`;
 
 const URL_PATTERN = /https?:\/\/[^\s<>"]+/g;
@@ -186,7 +186,7 @@ function renderSteps(steps: NonNullable<LeadEmailContent["steps"]>): string {
   const rows = steps.items
     .map(
       (item, index) =>
-        `<tr><td valign="top" style="width:28px;padding:0 0 10px;font-family:${MONO};font-size:13px;line-height:1.55;color:${C.terra};">${index + 1}.</td><td style="padding:0 0 10px;font-family:${SERIF};font-size:16px;line-height:1.55;color:${C.ink2};">${linkify(item)}</td></tr>`,
+        `<tr><td valign="top" style="width:28px;padding:0 0 10px;font-family:${MONO};font-size:13px;line-height:1.55;color:${C.terra};">${index + 1}.</td><td style="padding:0 0 10px;font-family:${SANS};font-size:16px;line-height:1.55;color:${C.ink2};">${linkify(item)}</td></tr>`,
     )
     .join("");
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:4px 0 18px;"><tr><td style="background:${C.cream};border-left:4px solid ${C.terra};padding:16px 18px 6px;">${title}<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">${rows}</table></td></tr></table>`;
@@ -232,10 +232,10 @@ export function renderLeadEmailHtml(content: LeadEmailContent) {
 <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:${C.sand};">${escapeHtml(preheader)}</div>
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:${C.sand};"><tr><td align="center" style="padding:24px 12px;">
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:100%;max-width:600px;background:${C.paper};">
-<tr><td style="padding:22px 32px 16px;border-bottom:2px solid ${C.ink};"><a href="${escapeHtml(site)}" style="font-family:${SERIF};font-size:20px;color:${C.ink};text-decoration:none;">${escapeHtml(SITE_NAME)}</a></td></tr>
+<tr><td style="padding:22px 32px 16px;border-bottom:2px solid ${C.ink};"><a href="${escapeHtml(site)}" style="text-decoration:none;"><img src="${escapeHtml(EMAIL_LOGO_URL)}" width="128" height="25" alt="${escapeHtml(SITE_NAME)}" style="display:block;border:0;width:128px;height:25px;font-family:${SANS};font-size:18px;color:${C.ink};" /></a></td></tr>
 <tr><td style="padding:30px 32px 10px;">
 ${eyebrow}
-<h1 style="margin:0 0 18px;font-family:${SERIF};font-size:28px;line-height:1.2;font-weight:normal;color:${C.ink};text-wrap:balance;">${keepLastWordsTogether(escapeHtml(content.heading ?? content.subject))}</h1>
+<h1 style="margin:0 0 18px;font-family:${SANS};font-size:28px;line-height:1.2;font-weight:normal;color:${C.ink};text-wrap:balance;">${keepLastWordsTogether(escapeHtml(content.heading ?? content.subject))}</h1>
 ${content.status ? renderStatus(content.status) : ""}
 ${blocks.map(renderBlock).join("\n")}
 ${content.steps ? renderSteps(content.steps) : ""}

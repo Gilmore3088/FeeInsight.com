@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { cityRepairDetail, displayCity, runCityRepair, summarizeCityRepair } from "./city-repair";
+import { cityRepairDetail, displayCity, HAND_CITY_REPAIRS, runCityRepair, summarizeCityRepair } from "./city-repair";
 
 type Row = Record<string, unknown>;
 
@@ -32,6 +32,25 @@ describe("displayCity", () => {
 });
 
 describe("runCityRepair", () => {
+  it("#1213: restores the three cuts the branch file cannot, only while they still read as cut", async () => {
+    expect(HAND_CITY_REPAIRS.map((h) => [h.institutionId, h.newCity])).toEqual([
+      [7011, "North Little Rock"],
+      [5738, "Palm Beach Gardens"],
+      [6714, "Saratoga Springs"],
+    ]);
+    for (const h of HAND_CITY_REPAIRS) {
+      expect(h.oldCity.length).toBe(15);
+      expect(h.newCity.toUpperCase().startsWith(h.oldCity.toUpperCase())).toBe(true);
+    }
+    const handRow = { id: 6714, state_code: "NY", old_city: "Saratoga Spring", new_city: "Saratoga Springs", choices: 1 };
+    const { db, calls } = mockDb([handRow], [{ id: 6714 }]);
+    const result = await runCityRepair({ db, live: true });
+    expect(result.repaired.map((c) => [c.institutionId, c.newCity])).toEqual([[6714, "Saratoga Springs"]]);
+    // The hand list is read only where the stored city is still the cut, and the branch file skips its ids.
+    expect(calls[0]).toContain("WHERE btrim(i.city) = h.old_city");
+    expect(calls[0]).toContain("i.id <> ALL(");
+  });
+
   it("restores each cut with one longer office city and leaves two-name credit unions alone", async () => {
     const { db, calls } = mockDb([COLORADO, LITTLE_ROCK, TWO_NAMES], [{ id: 101 }, { id: 102 }]);
     const result = await runCityRepair({ db, live: true });

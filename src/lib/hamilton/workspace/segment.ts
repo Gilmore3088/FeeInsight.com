@@ -7,6 +7,7 @@
  * charges what; it never says what the bank should charge.
  */
 
+import { countedAmounts } from "@/lib/data-store/fee-stats";
 import { subjectPossessive } from "./subject";
 import { formatFeeAmount } from "@/lib/format";
 import { STATE_NAMES } from "@/lib/us-states";
@@ -196,7 +197,8 @@ export function buildSegmentResearch(input: {
   const members = [...input.members].sort(
     (a, b) => (b.totalAssets ?? -1) - (a.totalAssets ?? -1) || a.institutionName.localeCompare(b.institutionName),
   );
-  const amounts = members.map((m) => m.amount).sort((a, b) => a - b);
+  // Sister charters of one shared fee schedule count once in the band (statistics rule 7).
+  const amounts = countedAmounts(members);
   const band =
     amounts.length >= MIN_PEERS_FOR_POSITION
       ? { p25: quantile(amounts, 0.25), median: quantile(amounts, 0.5), p75: quantile(amounts, 0.75), n: amounts.length }

@@ -5,6 +5,9 @@ import {
   CANONICAL_KEY_COUNT,
   TAXONOMY_COUNT,
   DISPLAY_NAMES,
+  PUBLIC_FEE_TYPE_LIMIT,
+  onlyPublicFeeTypes,
+  publicFeeTypes,
 } from "./fee-taxonomy";
 import { RESEARCH_SPLIT_KEYS, RESEARCH_SPLIT_LIVE } from "./fee-fold";
 import { inferFeeCategory } from "./hamilton/infer-category";
@@ -108,5 +111,40 @@ describe("account research aliases while the research split is off", () => {
       "returned mail", "returned mail fee", "return mail", "bad address",
       "bad address fee", "incorrect address", "incorrect address fee", "invalid address fee",
     ]);
+  });
+});
+
+// James, Oct 17 2026: the taxonomy may hold 52 types; the public site publishes only the top 50.
+describe("public fee types (top 50 by institution count)", () => {
+  const ALL = Object.values(FEE_FAMILIES).flat();
+
+  test("never lists more than 50, and lists every type while the taxonomy holds 50 or fewer", () => {
+    expect(PUBLIC_FEE_TYPE_LIMIT).toBe(50);
+    const types = publicFeeTypes([]);
+    expect(types.size).toBe(Math.min(50, TAXONOMY_COUNT));
+    // With no counts (a failed read) the two types added after the top 50 are the ones left out.
+    for (const key of RESEARCH_SPLIT_KEYS) expect(types.has(key)).toBe(!RESEARCH_SPLIT_LIVE);
+  });
+
+  test("ranks by institution count, so a new type with more institutions is listed and the two smallest are not", () => {
+    const counts = ALL.map((key, index) => ({ fee_category: key, institution_count: 1000 - index }));
+    const smallest = ["night_deposit", "coin_counting"].filter((key) => ALL.includes(key));
+    for (const row of counts) {
+      if (RESEARCH_SPLIT_KEYS.has(row.fee_category)) row.institution_count = 5000;
+      if (smallest.includes(row.fee_category)) row.institution_count = 1;
+    }
+    const types = publicFeeTypes(counts);
+    expect(types.size).toBe(Math.min(50, ALL.length));
+    if (RESEARCH_SPLIT_LIVE) {
+      for (const key of RESEARCH_SPLIT_KEYS) expect(types.has(key)).toBe(true);
+      for (const key of smallest) expect(types.has(key)).toBe(false);
+    }
+  });
+
+  test("drops only the taxonomy rows outside the top 50 and keeps rows outside the taxonomy", () => {
+    const rows = [...ALL.map((key) => ({ fee_category: key, institution_count: 100 })), { fee_category: "not_a_type", institution_count: 1 }];
+    const kept = onlyPublicFeeTypes(rows);
+    expect(kept.filter((row) => ALL.includes(row.fee_category))).toHaveLength(Math.min(50, ALL.length));
+    expect(kept.some((row) => row.fee_category === "not_a_type")).toBe(true);
   });
 });

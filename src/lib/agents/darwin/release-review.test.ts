@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { researchSplitTarget } from "@/lib/fee-fold";
 
 const trackAnthropicRequest = vi.fn(async (_context: unknown, request: () => PromiseLike<unknown>) => request());
 vi.mock("@/lib/ai-provider-usage", async (importOriginal) => ({
@@ -223,10 +224,10 @@ describe("Darwin held-fee release review", () => {
 
   it("puts the schedule line and the category's own names in the prompt", () => {
     const prompt = releaseReviewPrompt([
-      { row: row({ fee_name: "Bad Address Fee", held_canonical_fee_key: "account_research" }) as unknown as HeldFeeRow, sourceLine: "Bad Address Fee | $5.00/month" },
+      { row: row({ fee_name: "Bad Address Fee", held_canonical_fee_key: researchSplitTarget("returned_mail") }) as unknown as HeldFeeRow, sourceLine: "Bad Address Fee | $5.00/month" },
     ]);
     expect(prompt).toContain("Bad Address Fee | $5.00/month");
-    expect(prompt).toContain("account_research");
+    expect(prompt).toContain(researchSplitTarget("returned_mail"));
     expect(prompt).toContain("bad address");
     expect(prompt).toContain("removing or releasing a stop payment");
     expect(prompt).toContain("expedited, rush, emergency or overnight");

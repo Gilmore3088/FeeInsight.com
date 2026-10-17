@@ -5,7 +5,7 @@ import { ContactForm, type ContactHeadings } from "./contact-form";
 
 export const metadata: Metadata = {
   title: "Contact",
-  description: `Get in touch with ${SITE_NAME} about a Hamilton demo, Pro seats, the ${REPORT_OFFER.name}, data licensing, or anything else.`,
+  description: `Get in touch with ${SITE_NAME} about a Hamilton demo, Hamilton seats, the ${REPORT_OFFER.name}, data licensing, or anything else.`,
 };
 
 /**
@@ -20,7 +20,7 @@ const HEADINGS: ContactHeadings = {
   },
   general: {
     title: "Get in touch",
-    intro: "Reports, Pro seats, data licensing or anything else. We typically respond within one business day.",
+    intro: "Reports, Hamilton seats, data licensing or anything else. We typically respond within one business day.",
   },
 };
 

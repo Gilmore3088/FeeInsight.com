@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 import { describe, expect, it, vi } from "vitest";
 
-import { MAGELLAN_FETCH_STRATEGY, MAGELLAN_STALE_LINK_REFETCH_DAYS, redirectedToHomepage, runMagellanFetch } from "./fetch";
+import { MAGELLAN_FETCH_STRATEGY, MAGELLAN_STALE_LINK_REFETCH_DAYS, redirectedToHomepage, runMagellanFetch, sendsValidators } from "./fetch";
 
 type DbMock = ReturnType<typeof vi.fn>;
 
@@ -342,8 +342,36 @@ describe("Magellan agentic fetch", () => {
       expect(attempt).toEqual(expect.arrayContaining([45, 900, "fetch", MAGELLAN_FETCH_STRATEGY.strategy, bodyHash, "unchanged", 201, 7]));
     });
 
+    it("sends another page's validators to no address, and a 304 without ours is not unchanged (Dupaco)", async () => {
+      const db = learningDb({
+        id: 21715,
+        document_url: "https://learning.example/personal/checking-accounts",
+        content_hash: "checking-page-hash",
+        etag: 'W/"deed"',
+        last_modified: "Mon, 04 May 2026 14:03:41 GMT",
+      });
+      const fetchImpl = vi.fn().mockResolvedValueOnce(response(body, "application/pdf"));
+
+      const result = await runMagellanFetch({ runId: 203, db: asFetchDb(db), fetchImpl });
+
+      const headers = fetchImpl.mock.calls[0][1].headers as Record<string, string>;
+      expect(headers["If-None-Match"]).toBeUndefined();
+      expect(headers["If-Modified-Since"]).toBeUndefined();
+      expect(result.results[0]).toMatchObject({ outcome: "success", contentHash: bodyHash, previousDocumentId: null });
+    });
+
+    it("sends validators only for the same address, give or take scheme, www. and a trailing slash", () => {
+      const copy = { url: "http://www.bank.example/fees/", contentHash: "h", etag: '"v1"', lastModified: null };
+      expect(sendsValidators(copy, "https://bank.example/fees")).toBe(true);
+      expect(sendsValidators(copy, "https://bank.example/hubfs/fee-schedule.pdf")).toBe(false);
+      expect(sendsValidators({ ...copy, url: null }, "https://bank.example/fees")).toBe(false);
+      expect(sendsValidators({ ...copy, etag: null }, "https://bank.example/fees")).toBe(false);
+      expect(sendsValidators({ ...copy, contentHash: null }, "https://bank.example/fees")).toBe(false);
+      expect(sendsValidators(null, "https://bank.example/fees")).toBe(false);
+    });
+
     it("sends validators and treats a 304 as unchanged", async () => {
-      const db = learningDb({ id: 900, content_hash: bodyHash, etag: '"v1"', last_modified: "Tue, 01 Sep 2026 00:00:00 GMT" });
+      const db = learningDb({ id: 900, document_url: "https://learning.example/fees", content_hash: bodyHash, etag: '"v1"', last_modified: "Tue, 01 Sep 2026 00:00:00 GMT" });
       const fetchImpl = vi.fn().mockResolvedValueOnce(new Response(null, { status: 304 }));
 
       const result = await runMagellanFetch({ runId: 202, db: asFetchDb(db), fetchImpl });

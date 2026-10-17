@@ -16,6 +16,7 @@ import {
   type ProPlan,
 } from "@/lib/pro-tiers";
 import { API_INCLUDED_TIERS, API_MONTHLY_CALLS_LABEL, apiIncludedInTier } from "@/lib/api-subscriber-access";
+import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import { PlanCheckout, type ProTierSelection } from "./plan-checkout";
 import { PLAN_INCLUDES } from "./plans-exhibit";
 import { OPEN_LOOKUP_EVENT } from "./pricing-jump";
@@ -67,17 +68,17 @@ const API_FROM_LABEL = PRO_TIERS.find((tier) => API_INCLUDED_TIERS.includes(tier
 /**
  * The API is a secondary inclusion (James, Oct 16 evening: it read as the main difference between
  * plans). One line says who gets it; the limits, key sharing and reset sit in a closed
- * "API access details" (facts from PR #1685: one key per subscription, made by the account holder).
+ * "API access details" (facts from #1685 and #1702: every seat makes its own key, and the plan's keys share one monthly allowance).
  */
 export const API_INCLUDES_LINE = `Included on ${API_FROM_LABEL ?? proTier(API_INCLUDED_TIERS[0]).assetsLabel}+ plans and for consultants`;
 export const API_DETAILS_SUMMARY = "API access details";
 export const API_DETAILS = [
-  "One API key per subscription. The account holder makes it on their account page and can share it with the team.",
-  `${API_MONTHLY_CALLS_LABEL} API calls a month, shared by everyone using the key, including calls through the Claude connector.`,
-  "At the limit, API calls pause until the 1st of the next month. Hamilton keeps working.",
+  `Everyone on the plan, up to ${WORKSPACE_SEAT_LIMIT} people, makes their own key on their account page.`,
+  `The team shares ${API_MONTHLY_CALLS_LABEL} API calls a month, including calls through the Claude connector.`,
+  "At the limit, API calls pause until the 1st of the next month, with no overage charge. Hamilton keeps working.",
 ] as const;
 /** After the consultant price: their plan includes the API too. */
-export const CONSULTANT_API_NOTE = "Both include the API key and Claude connector.";
+export const CONSULTANT_API_NOTE = "Both include API keys and the Claude connector.";
 /**
  * Above the cards (James, Oct 17): the three cards are one product at three prices, not three
  * packages, with API access the one stated difference.
@@ -185,7 +186,7 @@ export function ProPlanBoard({
         <p className="mt-1 text-[13px] leading-relaxed text-ink-muted">{SAME_WORKSPACE_LINE}</p>
       </div>
 
-      <ul id={PLANS_ID} aria-label="Hamilton Pro price by institution size" className="mt-5 grid gap-3 sm:grid-cols-3 sm:gap-4">
+      <ul id={PLANS_ID} aria-label="Hamilton price by institution size" className="mt-5 grid gap-3 sm:grid-cols-3 sm:gap-4">
         {PRO_TIERS.map((tier) => {
           const mine = selection?.tier === tier.key;
           const stepBack = selection !== null && !mine;
@@ -253,7 +254,7 @@ export function ProPlanBoard({
       >
         <div className="min-w-0">
           <h2 id="pro-checkout-title" className="text-lg font-semibold tracking-tight text-ink" style={DISPLAY}>
-            {selection ? "Subscribe to Hamilton Pro" : "Find your institution"}
+            {selection ? "Subscribe to Hamilton" : "Find your institution"}
           </h2>
           <div className="mt-3">{chooser}</div>
         </div>

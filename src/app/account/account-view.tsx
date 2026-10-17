@@ -71,9 +71,9 @@ function longDate(date: Date): string {
 
 function Pill({ tone, children }: { tone: "green" | "amber" | "plain"; children: React.ReactNode }) {
   const tones = {
-    green: "bg-emerald-50 text-emerald-700",
-    amber: "bg-amber-50 text-amber-800",
-    plain: "bg-[#F3EDE4] text-ink-soft",
+    green: "bg-below-market/10 text-below-market",
+    amber: "bg-brick-tint/50 text-brick-ink",
+    plain: "bg-surface-200 text-ink-soft",
   };
   return (
     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[12px] font-semibold ${tones[tone]}`}>
@@ -89,22 +89,22 @@ function PlanCard({ plan, ended }: { plan: AccountPlan; ended: boolean }) {
         id="plan"
         title="Your plan"
         compact
-        action={ended ? <Pill tone="amber">Pro ended</Pill> : <Pill tone="plain">Free</Pill>}
+        action={ended ? <Pill tone="amber">Ended</Pill> : <Pill tone="plain">Free</Pill>}
       >
         <p className="text-[14px] leading-relaxed text-ink">
           {ended
-            ? "Your Pro subscription has ended. The banks you follow and your fee alerts are kept."
+            ? "Your Hamilton subscription has ended. The banks you follow and your fee alerts are kept."
             : "Following banks, fee alerts and the monthly brief are free."}
         </p>
         <p className="mt-2 text-[14px] leading-relaxed text-ink">
-          Pro adds Hamilton: peer benchmarks, competitor tracking, reports and data downloads for up to 5 people
+          Hamilton adds peer benchmarks, competitor tracking, reports and data downloads for up to 5 people
           at your organization. From ${plan.fromMonthlyUsd} a month.
         </p>
         <Link
           href="/subscribe?from=%2Faccount"
           className="mt-4 inline-flex min-h-11 items-center rounded-md border border-border bg-surface-0 px-4 text-[14px] font-semibold text-ink no-underline hover:border-ink"
         >
-          {ended ? "Restart Pro" : "See Pro plans"}
+          {ended ? "Restart Hamilton" : "See Hamilton plans"}
         </Link>
       </AccountCard>
     );
@@ -118,7 +118,7 @@ function PlanCard({ plan, ended }: { plan: AccountPlan; ended: boolean }) {
   );
 
   return (
-    <AccountCard id="plan" title="Fee Insight Pro" compact action={status}>
+    <AccountCard id="plan" title="Your plan" compact action={status}>
       {plan.access === "staff" && (
         <p className="text-[14px] text-ink">Staff access. Nothing to bill.</p>
       )}
@@ -320,7 +320,7 @@ function HamiltonCard({ href }: { href: string }) {
       <h2 id="hamilton-heading" className="text-[22px] font-bold leading-tight" style={SERIF}>
         Hamilton
       </h2>
-      <p className="mt-2 max-w-md text-[14px] leading-relaxed text-[#D9D1C4]">
+      <p className="mt-2 max-w-md text-[14px] leading-relaxed text-paper/80">
         Your bank against its peers, competitor fee changes, and reports you can hand to your team.
       </p>
       <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3">
@@ -344,7 +344,7 @@ function FeeScheduleReminder({ institution }: { institution: OwnInstitution }) {
   return (
     <section
       aria-labelledby="fee-schedule-heading"
-      className="rounded-xl border border-[#E8C9B8] bg-[#FBF1EA] p-5"
+      className="rounded-xl border border-brick-tint bg-brick-tint/40 p-5"
     >
       <h2 id="fee-schedule-heading" className="text-[15px] font-semibold text-ink">
         We don&rsquo;t have {institution.name}&rsquo;s fee schedule yet
@@ -430,19 +430,19 @@ export function AccountView({ data }: { data: AccountViewData }) {
 
       <div className="space-y-4">
         {data.justSubscribed && (
-          <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-[14px] text-emerald-800">
-            Pro is active. Welcome to Fee Insight Pro.
+          <div role="status" className="rounded-xl border border-below-market/30 bg-below-market/10 px-5 py-4 text-[14px] text-below-market">
+            Your Hamilton subscription is active. Welcome to Hamilton.
           </div>
         )}
 
         {!ended && <SubscriptionStatusNotice user={data.statusUser} />}
 
         {data.invitations.length > 0 && (
-          <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-amber-900">
+          <div role="status" className="rounded-xl border border-brick/30 bg-brick-tint/40 p-5 text-ink">
             <p className="text-[15px] font-semibold">
               {data.invitations.length === 1
-                ? `You're invited to ${data.invitations[0].institutionName}'s Pro team.`
-                : "You're invited to a Pro team."}
+                ? `You're invited to ${data.invitations[0].institutionName}'s Hamilton team.`
+                : "You're invited to a Hamilton team."}
             </p>
             <p className="mt-1 text-[14px]">
               Joining is free for you. Open the link in the invite email to accept.

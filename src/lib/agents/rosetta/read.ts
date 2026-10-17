@@ -1980,6 +1980,236 @@ async function reopenUnreadablePdfTexts(
 /** Five control codes (not tab or line breaks) in a stretch of text. */
 export const CONTROL_CODES_PATTERN = "([\\x01-\\x08\\x0e-\\x1f][^\\x01-\\x08\\x0e-\\x1f]*){5}";
 
+interface SettleReadEnv {
+  runId: number;
+  stepId: number | null;
+  learning: boolean;
+  vaultSchema: boolean;
+  textColumns: boolean;
+}
+
+/**
+ * Stores one read and its attempts, and sends a page that is not a fee schedule (or is gone)
+ * back to Magellan: what every Rosetta read does after the reader returns. Shared by the read
+ * step and a hand-supplied document's read (`readHandSuppliedDocument`).
+ */
+async function settleRead(
+  db: SqlTag,
+  row: ReadCandidateRow,
+  result: ReadResult,
+  normalizedText: string | null,
+  env: SettleReadEnv,
+): Promise<"sent_back" | "handed_to_magellan" | null> {
+  const { learning, vaultSchema, textColumns } = env;
+  // A companion page's reads stay out of the bank's playbook (its main fee link's).
+  const foldIntoPlaybook = row.companion_source_id == null;
+  let settled: "sent_back" | "handed_to_magellan" | null = null;
+  // A re-read replaces the earlier text only with a better answer; otherwise the old
+  // text stays and only the attempt is logged. A text whose fees did not hold up still
+  // has live fees: a re-read keeps it unless the new text lists at least as many fees,
+  // and never sends the bank back to Magellan.
+  const keepLostText =
+    row.last_lost_text != null &&
+    !(result.status === "completed" && normalizedText != null && rungTextNotWorse(normalizedText, row.last_lost_text));
+  const keepEarlierText =
+    keepLostText || (result.reread && result.status !== "completed" && result.status !== "wrong_document");
+  if (!keepEarlierText) await recordReadResult(db, env.runId, result, normalizedText, textColumns);
+  if (keepLostText) {
+    // Only the attempt below is logged.
+  } else if (result.status === "wrong_document" || (result.handoff && !keepEarlierText)) {
+    if (
+      await sendBackToMagellan(db, {
+        institutionId: result.institutionId,
+        sourceDocumentId: result.sourceDocumentId,
+        url: result.sourceUrl,
+        reason: result.error ?? "Not a fee schedule",
+        failureReason: result.handoff ? "rosetta_js_required" : "rosetta_wrong_document",
+      })
+    ) {
+      settled = result.handoff ? "handed_to_magellan" : "sent_back";
+    }
+  } else if (await isUnreachableLink(db, result)) {
+    if (
+      await sendBackToMagellan(db, {
+        institutionId: result.institutionId,
+        sourceDocumentId: result.sourceDocumentId,
+        url: result.sourceUrl,
+        reason: result.error ?? `Link unreachable (${result.attemptOutcome})`,
+        failureReason: "rosetta_dead_link",
+        onlyIfCurrentUrl: true,
+      })
+    ) {
+      settled = "sent_back";
+    }
+  }
+  if (learning && result.attemptOutcome) {
+    await recordAttempt(db, {
+      institutionId: result.institutionId,
+      sourceDocumentId: result.sourceDocumentId,
+      stage: "read",
+      strategy: result.strategy ?? `read.${result.documentType ?? "unknown"}`,
+      version: ROSETTA_READ_VERSION,
+      fingerprint: result.sourceHash,
+      outcome: result.attemptOutcome,
+      yieldCount: result.charCount,
+      costMicrousd: 0,
+      durationMs: result.durationMs,
+      runId: env.runId,
+      stepId: env.stepId,
+      foldIntoPlaybook,
+      format: result.format,
+      detail: {
+        url: result.sourceUrl,
+        document_type: result.documentType,
+        content_type: result.contentType,
+        router: result.routerReason,
+        from_vault: result.fromVault,
+        table_rows: result.tableRows,
+        reader: result.reader,
+        pdf_layout: result.reader === PRIMARY_READERS.pdf ? PDF_LAYOUT_VERSION : undefined,
+        reread: result.reread,
+        escalation: result.escalation ?? null,
+        page_check: result.pageCheck,
+        error: result.error,
+      },
+    });
+    // Each pass-2 specialist that ran on this document, in order.
+    for (const followUp of result.followUps) {
+      await recordAttempt(db, {
+        institutionId: result.institutionId,
+        sourceDocumentId: result.sourceDocumentId,
+        stage: "read",
+        strategy: followUp.strategy,
+        version: followUp.version,
+        fingerprint: result.sourceHash,
+        outcome: followUp.outcome,
+        yieldCount: followUp.yieldCount,
+        costMicrousd: followUp.costMicrousd,
+        durationMs: followUp.durationMs,
+        runId: env.runId,
+        stepId: env.stepId,
+        foldIntoPlaybook,
+        detail: { url: result.sourceUrl, ...followUp.detail },
+      });
+    }
+    if (textColumns && result.textHash && result.rows.length > 0 && !keepEarlierText) {
+      await recordAttempt(db, {
+        institutionId: result.institutionId,
+        sourceDocumentId: result.sourceDocumentId,
+        stage: "read",
+        strategy: TABLE_ROWS_STRATEGY,
+        version: ROSETTA_TABLE_ROWS_VERSION,
+        fingerprint: result.textHash,
+        outcome: "ok",
+        yieldCount: result.rows.length,
+        costMicrousd: 0,
+        runId: env.runId,
+        stepId: env.stepId,
+        foldIntoPlaybook,
+        detail: {
+          tables: new Set(result.rows.map((tableRow) => tableRow.table)).size,
+          origins: [...new Set(result.rows.map((tableRow) => tableRow.origin))],
+        },
+      });
+    }
+    if (vaultSchema && result.textHash) {
+      // Mark this text as page-checked so the triage pass never re-checks it.
+      await recordAttempt(db, {
+        institutionId: result.institutionId,
+        sourceDocumentId: result.sourceDocumentId,
+        stage: "read",
+        strategy: PAGE_CHECK_STRATEGY,
+        version: FEE_PAGE_CHECK_VERSION,
+        fingerprint: result.textHash,
+        outcome: result.status === "wrong_document" ? "wrong_document" : "ok",
+        yieldCount: result.pageCheck?.feeLines ?? 0,
+        costMicrousd: 0,
+        runId: env.runId,
+        stepId: env.stepId,
+        foldIntoPlaybook,
+        detail: { url: result.sourceUrl, ...(result.pageCheck ?? {}) },
+      });
+    }
+  }
+  return settled;
+}
+
+/**
+ * Reads one document a person supplied by hand (`magellan/hand-supplied.ts`) from the bytes
+ * they uploaded, with the same reader, fee-page check, text record and attempts as the read
+ * step. Nothing is downloaded: the bank's site is the one that refused us, so any request the
+ * reader would make (a linked page) is answered with a refusal instead of going out.
+ */
+export async function readHandSuppliedDocument(options: {
+  db?: SqlTag;
+  runId: number;
+  stepId?: number | null;
+  sourceDocumentId: number;
+  bytes: Uint8Array;
+  contentType: string | null;
+  pdfTextExtractor?: PdfTextExtractor;
+  /** Free OCR for a scan; defaults to tesseract.js, closed here when created here. */
+  scannedPdfReader?: ScannedPdfReader | null;
+}): Promise<ReadResult | null> {
+  const db = options.db ?? sql;
+  const learning = await learningSchemaReady(db);
+  const vaultSchema = learning && (await documentVaultSchemaReady(db));
+  const textColumns = await rosettaTextColumnsReady(db);
+  const companionStreams = await companionStreamsReady(db);
+  const [row] = companionStreams
+    ? await db<ReadCandidateRow[]>`
+        SELECT doc.id AS source_document_id, doc.institution_id, inst.institution_name, doc.document_url,
+               doc.content_hash, doc.companion_source_id
+          FROM source_documents doc
+          JOIN institution_sources inst ON inst.id = doc.institution_id
+         WHERE doc.id = ${options.sourceDocumentId}
+      `
+    : await db<ReadCandidateRow[]>`
+        SELECT doc.id AS source_document_id, doc.institution_id, inst.institution_name, doc.document_url,
+               doc.content_hash
+          FROM source_documents doc
+          JOIN institution_sources inst ON inst.id = doc.institution_id
+         WHERE doc.id = ${options.sourceDocumentId}
+      `;
+  if (!row) return null;
+  const documentUrl = normalizeHttpUrl(row.document_url);
+  const supplied = (async (input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    if (documentUrl != null && url === documentUrl) {
+      return new Response(new Uint8Array(options.bytes), {
+        status: 200,
+        headers: options.contentType ? { "content-type": options.contentType } : {},
+      });
+    }
+    return new Response("Not requested: this document was supplied by hand", { status: 403, statusText: "hand-supplied, no download" });
+  }) as Fetcher;
+  const ownsOcr = options.scannedPdfReader === undefined;
+  const ocr = ownsOcr ? createScannedPdfReader() : options.scannedPdfReader ?? null;
+  const ctx: ReadContext = {
+    fetchImpl: supplied,
+    pdfTextExtractor: options.pdfTextExtractor ?? extractPdfText,
+    vault: null,
+    checkPage: vaultSchema,
+    ocr,
+    ocrBudget: { left: 1 },
+    knownDocuments: knownDocumentsLoader(db),
+  };
+  try {
+    const { result, normalizedText } = await readCandidate(row, ctx);
+    if (result.status === "known_failure" || result.status === "deferred") return result;
+    await settleRead(db, row, result, normalizedText, {
+      runId: options.runId,
+      stepId: options.stepId ?? null,
+      learning,
+      vaultSchema,
+      textColumns,
+    });
+    return result;
+  } finally {
+    if (ownsOcr) await ocr?.close().catch((error) => console.error("Rosetta OCR worker did not stop cleanly:", error));
+  }
+}
+
 export async function runRosettaRead(
   options: RunRosettaReadOptions,
 ): Promise<RunRosettaReadResult> {
@@ -2064,138 +2294,17 @@ export async function runRosettaRead(
   try {
     for (const row of rows) {
       const { result, normalizedText } = await readCandidate(row, ctx);
-      // A companion page's reads stay out of the bank's playbook (its main fee link's).
-      const foldIntoPlaybook = row.companion_source_id == null;
       results.push(result);
       if (dryRun || result.status === "known_failure" || result.status === "deferred") continue;
-      // A re-read replaces the earlier text only with a better answer; otherwise the old
-      // text stays and only the attempt is logged. A text whose fees did not hold up still
-      // has live fees: a re-read keeps it unless the new text lists at least as many fees,
-      // and never sends the bank back to Magellan.
-      const keepLostText =
-        row.last_lost_text != null &&
-        !(result.status === "completed" && normalizedText != null && rungTextNotWorse(normalizedText, row.last_lost_text));
-      const keepEarlierText =
-        keepLostText || (result.reread && result.status !== "completed" && result.status !== "wrong_document");
-      if (!keepEarlierText) await recordReadResult(db, options.runId, result, normalizedText, textColumns);
-      if (keepLostText) {
-        // Only the attempt below is logged.
-      } else if (result.status === "wrong_document" || (result.handoff && !keepEarlierText)) {
-        if (
-          await sendBackToMagellan(db, {
-            institutionId: result.institutionId,
-            sourceDocumentId: result.sourceDocumentId,
-            url: result.sourceUrl,
-            reason: result.error ?? "Not a fee schedule",
-            failureReason: result.handoff ? "rosetta_js_required" : "rosetta_wrong_document",
-          })
-        ) {
-          if (result.handoff) handedToMagellan += 1;
-          else sentBack += 1;
-        }
-      } else if (await isUnreachableLink(db, result)) {
-        if (
-          await sendBackToMagellan(db, {
-            institutionId: result.institutionId,
-            sourceDocumentId: result.sourceDocumentId,
-            url: result.sourceUrl,
-            reason: result.error ?? `Link unreachable (${result.attemptOutcome})`,
-            failureReason: "rosetta_dead_link",
-            onlyIfCurrentUrl: true,
-          })
-        ) {
-          sentBack += 1;
-        }
-      }
-      if (learning && result.attemptOutcome) {
-        await recordAttempt(db, {
-          institutionId: result.institutionId,
-          sourceDocumentId: result.sourceDocumentId,
-          stage: "read",
-          strategy: result.strategy ?? `read.${result.documentType ?? "unknown"}`,
-          version: ROSETTA_READ_VERSION,
-          fingerprint: result.sourceHash,
-          outcome: result.attemptOutcome,
-          yieldCount: result.charCount,
-          costMicrousd: 0,
-          durationMs: result.durationMs,
-          runId: options.runId,
-          stepId: options.stepId ?? null,
-          foldIntoPlaybook,
-          format: result.format,
-          detail: {
-            url: result.sourceUrl,
-            document_type: result.documentType,
-            content_type: result.contentType,
-            router: result.routerReason,
-            from_vault: result.fromVault,
-            table_rows: result.tableRows,
-            reader: result.reader,
-            pdf_layout: result.reader === PRIMARY_READERS.pdf ? PDF_LAYOUT_VERSION : undefined,
-            reread: result.reread,
-            escalation: result.escalation ?? null,
-            page_check: result.pageCheck,
-            error: result.error,
-          },
-        });
-        // Each pass-2 specialist that ran on this document, in order.
-        for (const followUp of result.followUps) {
-          await recordAttempt(db, {
-            institutionId: result.institutionId,
-            sourceDocumentId: result.sourceDocumentId,
-            stage: "read",
-            strategy: followUp.strategy,
-            version: followUp.version,
-            fingerprint: result.sourceHash,
-            outcome: followUp.outcome,
-            yieldCount: followUp.yieldCount,
-            costMicrousd: followUp.costMicrousd,
-            durationMs: followUp.durationMs,
-            runId: options.runId,
-            stepId: options.stepId ?? null,
-            foldIntoPlaybook,
-            detail: { url: result.sourceUrl, ...followUp.detail },
-          });
-        }
-        if (textColumns && result.textHash && result.rows.length > 0 && !keepEarlierText) {
-          await recordAttempt(db, {
-            institutionId: result.institutionId,
-            sourceDocumentId: result.sourceDocumentId,
-            stage: "read",
-            strategy: TABLE_ROWS_STRATEGY,
-            version: ROSETTA_TABLE_ROWS_VERSION,
-            fingerprint: result.textHash,
-            outcome: "ok",
-            yieldCount: result.rows.length,
-            costMicrousd: 0,
-            runId: options.runId,
-            stepId: options.stepId ?? null,
-            foldIntoPlaybook,
-            detail: {
-              tables: new Set(result.rows.map((tableRow) => tableRow.table)).size,
-              origins: [...new Set(result.rows.map((tableRow) => tableRow.origin))],
-            },
-          });
-        }
-        if (vaultSchema && result.textHash) {
-          // Mark this text as page-checked so the triage pass never re-checks it.
-          await recordAttempt(db, {
-            institutionId: result.institutionId,
-            sourceDocumentId: result.sourceDocumentId,
-            stage: "read",
-            strategy: PAGE_CHECK_STRATEGY,
-            version: FEE_PAGE_CHECK_VERSION,
-            fingerprint: result.textHash,
-            outcome: result.status === "wrong_document" ? "wrong_document" : "ok",
-            yieldCount: result.pageCheck?.feeLines ?? 0,
-            costMicrousd: 0,
-            runId: options.runId,
-            stepId: options.stepId ?? null,
-            foldIntoPlaybook,
-            detail: { url: result.sourceUrl, ...(result.pageCheck ?? {}) },
-          });
-        }
-      }
+      const settled = await settleRead(db, row, result, normalizedText, {
+        runId: options.runId,
+        stepId: options.stepId ?? null,
+        learning,
+        vaultSchema,
+        textColumns,
+      });
+      if (settled === "handed_to_magellan") handedToMagellan += 1;
+      else if (settled === "sent_back") sentBack += 1;
     }
   } finally {
     if (ownsOcr) await ocr?.close().catch((error) => console.error("Rosetta OCR worker did not stop cleanly:", error));

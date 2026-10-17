@@ -4,6 +4,7 @@
  * published_fee_catalog, fee_change_records or institution_financial_records.
  */
 
+import { countedAmounts } from "@/lib/data-store/fee-stats";
 import { sql } from "@/lib/data-store/connection";
 import { getInstitutionById } from "@/lib/data-store/core";
 import { loadConfirmedFeeChanges } from "@/lib/report-assemblers/monthly-pulse";
@@ -149,8 +150,9 @@ export function choosePeers(
   for (const category of categories) {
     for (const [index, filters] of candidates.entries()) {
       const values = valuesBySet[index]?.get(category) ?? [];
-      if (values.length >= MIN_PEERS_FOR_POSITION || index === candidates.length - 1) {
-        const ownCount = valuesBySet[0]?.get(category)?.length ?? 0;
+      // Counted as the band counts them: sister charters of one shared schedule once (rule 7).
+      if (peerAmounts(values).length >= MIN_PEERS_FOR_POSITION || index === candidates.length - 1) {
+        const ownCount = peerAmounts(valuesBySet[0]?.get(category) ?? []).length;
         // A wider group than the default always says why (#1544): "OH · bank peers; only 3 of
         // bank · over $250B peers publish this fee".
         const label = index === 0
@@ -256,6 +258,33 @@ export function toPeerValue(v: PeerFeeValue): PeerValue {
     sourceDocumentIds: v.source_document_ids,
     documentUrls: v.document_urls,
     publishedAt: v.published_at,
+    ...(v.fee_published_ids?.length ? { feePublishedIds: v.fee_published_ids } : {}),
+    ...(v.counted_as !== undefined ? { countedAs: v.counted_as } : {}),
+  };
+}
+
+/**
+ * The amounts a group's band and position are built from: one per institution, and sister
+ * charters of one shared fee schedule once (statistics rule 7, `counted_as`), as the index's
+ * medians count them. Sorted ascending.
+ */
+export function peerAmounts(values: readonly PeerFeeValue[]): number[] {
+  return countedAmounts(values.map((v) => ({ institutionId: v.institution_id, amount: v.amount, countedAs: v.counted_as })));
+}
+
+/**
+ * A peer of the chosen group with the catalog rows behind its value (#981, H06-T04), so the peer
+ * median can name them. Only the chosen group carries them; the wider layers stay light.
+ */
+export function toPeerValueWithRecords(v: PeerFeeValue): PeerValue {
+  return {
+    ...toPeerValue(v),
+    ...(v.fee_records ? {
+      feeRecords: v.fee_records.map((r) => ({
+        id: r.id, amount: r.amount, feeName: r.fee_name, frequency: r.frequency, feeAudience: r.fee_audience,
+        sourceDocumentId: r.source_document_id, documentUrl: r.document_url,
+      })),
+    } : {}),
   };
 }
 
@@ -266,7 +295,7 @@ function feeLayers(base: WorkspaceBase, feeCategory: string): MarketLayer[] {
     return marketLayer(
       layer.scope,
       layer.label,
-      values.map((v) => v.amount),
+      peerAmounts(values),
       current,
       values.map((v) => v.published_at),
       values.map(toPeerValue),
@@ -669,7 +698,7 @@ export async function getWorkspaceBriefing(
     return {
       feeCategory,
       current,
-      peers: (peers?.values ?? []).map((p) => p.amount),
+      peers: peerAmounts(peers?.values ?? []),
       peerLabel: peers?.label ?? base.peerLabel,
     };
   });
@@ -707,7 +736,7 @@ export async function getWorkspaceBriefing(
     provenance: {
       engineVersion: WORKSPACE_ENGINE_VERSION,
       generatedAt: now.toISOString(),
-      peerGroup: { label: base.peerLabel, n: new Set([...base.peers.values()].flatMap((p) => p.values.map((v) => v.institution_id))).size },
+      peerGroup: { label: base.peerLabel, n: new Set([...base.peers.values()].flatMap((p) => p.values.map((v) => v.counted_as ?? v.institution_id))).size },
       dataAsOf: {
         fees: newest([...base.peers.values()].flatMap((p) => p.values.map((v) => v.published_at))),
         financials: financials?.quarterEnd ?? null,
@@ -920,8 +949,8 @@ export async function getFeeResearch(
   const local = localMarketView(base, market, feeCategory);
   const layers = [...feeLayers(base, feeCategory), ...(local.layer ? [local.layer] : [])];
   const chosen = base.peers.get(feeCategory);
-  const peers: PeerValue[] = (chosen?.values ?? []).map(toPeerValue);
-  const sorted = peers.map((p) => p.amount).sort((a, b) => a - b);
+  const peers: PeerValue[] = (chosen?.values ?? []).map(toPeerValueWithRecords);
+  const sorted = countedAmounts(peers);
   const current = base.ownValues.get(feeCategory) ?? null;
   const structureGroup =
     segment && !segment.problem

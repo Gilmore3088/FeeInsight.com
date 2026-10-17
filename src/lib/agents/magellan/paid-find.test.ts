@@ -11,6 +11,7 @@ import { ProviderBudgetBlockedError } from "@/lib/api-hardening/budget";
 import { FOUND_COOLDOWN_DAYS, MISS_COOLDOWN_DAYS } from "./cooldowns";
 import { DISCOVERY_METHOD_VERSION } from "./discovery";
 import { NOT_ONLINE_AFTER_MISSES, NOT_ONLINE_RETRY_DAYS } from "./escalation";
+import { TOP_TEN_RETRY_DAYS } from "./top-ten-first";
 import { onBankDomain, PAID_FIND_STRATEGY, PAID_PICK_STRATEGY, runMagellanPaidFind } from "./paid-find";
 
 type DbMock = ReturnType<typeof vi.fn>;
@@ -238,6 +239,54 @@ describe("escalation ladder (#1032)", () => {
     expect(logged[1].detail.website_url).toBe("https://beta.example");
     expect(logged[1].outcome).toBe("no_candidates");
   });
+
+  it("gives a state top-10 slot holder with nothing live one early try a week, only on the disclosure rung", async () => {
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+      if (text.includes("market leaders by state")) {
+        return Promise.resolve([{ state_code: "VT", institution_id: 2, deposits: 10, service_charge_income: null, total_income: null, deposit_rank: 4, service_charge_rank: 4, total_income_rank: 4 }]);
+      }
+      if (text.includes("inst.charter_type")) return Promise.resolve([]);
+      if (text.includes("incomplete-link schedule search")) return Promise.resolve([]);
+      if (text.includes("inst.city")) {
+        return Promise.resolve([
+          { ...banks[0], paid_misses: 0 },
+          { ...banks[1], paid_misses: 1, top_ten: true, top_ten_retry: true, picked: true, web_searched: false },
+        ]);
+      }
+      return Promise.resolve([]);
+    });
+    const create = vi.fn().mockResolvedValue(answer({ url: null, confidence: 0 }));
+    const fetchImpl = vi.fn(async () => new Response("<a href='/about'>About</a>", { headers: { "content-type": "text/html" } }));
+    await runMagellanPaidFind({ runId: 3, stateCode: "NY", db: asDb(db), create, fetchImpl });
+
+    const select = db.mock.calls.find((call) => templateText(call[0]).includes("inst.city"))!;
+    const text = templateText(select[0]);
+    // Early only on an odd miss count (the disclosure rung), weekly from the last real try; a
+    // find keeps its 90 days, and "not published online" still holds it.
+    expect(text).toContain("ladder.misses % 2 = 1");
+    expect(text).toContain("AND (NOT cooled.pick OR NOT cooled.web OR retry.early)");
+    expect(text).toMatch(/AND NOT \(\s*ladder\.misses >=/);
+    expect(select).toContain(TOP_TEN_RETRY_DAYS);
+    expect(select).toContainEqual([2]);
+    // Searched from any state's step, and first after requesters and Pro accounts.
+    expect(text).toContain("OR inst.id = ANY(");
+    expect(text).toMatch(/ORDER BY requested DESC, paying DESC, top_ten DESC,/);
+
+    // The top-10 bank goes first; its early try skips the pick that already ran this month.
+    const prompts = create.mock.calls.map((call) => String(call[0].messages[0].content));
+    expect(prompts[0]).toContain("Beta Bank");
+    expect(prompts[0]).toContain("Truth in Savings disclosure");
+    const logged = attempts(db);
+    expect(logged.map((attempt) => [attempt.institutionId, attempt.strategy])).toEqual([
+      [2, PAID_FIND_STRATEGY.strategy],
+      [1, PAID_PICK_STRATEGY.strategy],
+      [1, PAID_FIND_STRATEGY.strategy],
+    ]);
+    expect(logged[0].detail).toMatchObject({ rung: "disclosure", top_ten: true, top_ten_retry: true });
+    expect(logged[2].detail).not.toHaveProperty("top_ten");
+  });
 });
 
 describe("state experts' work lists (#1029)", () => {
@@ -281,7 +330,7 @@ describe("state experts' work lists (#1029)", () => {
     const select = db.mock.calls.find((call) => templateText(call[0]).includes("inst.city"))!;
     expect(templateText(select[0])).toContain("institution_workspace_memberships");
     // The pool cut keeps requesters and paying customers, then each cell's first rows (#1269).
-    expect(templateText(select[0])).toMatch(/ORDER BY requested DESC, paying DESC,\s+,/);
+    expect(templateText(select[0])).toMatch(/ORDER BY requested DESC, paying DESC, top_ten DESC,\s+,/);
     expect(db.mock.calls.some((call) => templateText(call[0]).includes("PARTITION BY"))).toBe(true);
   });
 });

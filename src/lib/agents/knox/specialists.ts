@@ -1,6 +1,7 @@
 import { feeApplicability } from "@/lib/fee-audience";
 import {
   extractCandidatesFromText,
+  isUnpricedHeldShape,
   MAX_FEES_PER_DOCUMENT,
   withBoxSizeCellsSplit,
   withSidewaysBoxTable,
@@ -87,7 +88,21 @@ import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 // v74: a footnote number glued to the front of a name comes off when the page prints the footnote
 // as its own line or cell ("1Monthly fee of $5.95 applies ..." is "Monthly fee";
 // `withoutLeadingFootnoteMark`). 35 live fees and 51 raw reads in two days carried one on Oct 16.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 74 } as const;
+// v75: the recurring name families the 62-bank answer key showed held or unread (`RECALL_FAMILY_PATTERNS`:
+// rush shipping, mortgage payoff/satisfaction/reconveyance, mortgage processing, club withdrawals and
+// short-window closures, wires "within the U.S.", IRA withdrawals and transfers, assisted loan
+// payments, skip payments, mobile check deposit), and
+// one price for a "debit or credit card" is the debit card's. Every current copy read before v75 is
+// read once more (`KNOX_STALE_READ_BELOW_VERSION`).
+// v76: the next three recall families on the 62-bank answer key (`rules.ts`): a row pricing each slash
+// variant of its fee ("(Online/Manual) | $35/$60") or a box size in two price columns reads every price,
+// and a "$ | 5.00" split cell is one price; a free schedule row the line rules never read (dot leader,
+// markdown row, "No Cost to Members", "Notary Services: no fee", "No charge for notarization") is held
+// at $0 unless it is an allowance; a price that varies ("Check printing prices vary") is held as
+// `varies` with no amount. Every current copy read before v76 is read once more.
+// v77 (#1398, with `RESEARCH_SPLIT_LIVE` on): returned mail and excess withdrawal lines file under
+// their own types (`researchSplitTarget` in rules.ts), not account research.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 77 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -112,6 +127,8 @@ export interface FreeExtractionResult extends ExtractionRulesResult {
 }
 
 const MAX_HELD_PER_DOCUMENT = 40;
+/** v76: a $0 or "prices vary" hold, untraced $0 rows included, counts in the unpriced half of the held cap. */
+const unpricedHalf = (row: HeldFeeCandidate): boolean => isUnpricedHeldShape(row.shape) || (row.shape === "untraced" && row.amount === 0);
 /** NSF and overdraft joined as one item's name: "NSFs/Overdrafts", "Overdraft or NSF Item". */
 const NSF_TERM = String.raw`(?:nsfs?|non[-\s]?sufficient funds?|insufficient funds?)`;
 const NSF_AND_OVERDRAFT = new RegExp(
@@ -288,7 +305,10 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
       added += 1;
     }
     for (const heldRow of found.held) {
-      if (held.length >= MAX_HELD_PER_DOCUMENT) {
+      // v76: $0 and "prices vary" holds take their own half of the cap, so a schedule's free rows
+      // never push out a priced hold (or the other way round).
+      const unpricedHold = unpricedHalf(heldRow);
+      if (held.filter((row) => unpricedHalf(row) === unpricedHold).length >= MAX_HELD_PER_DOCUMENT) {
         if (heldRow.shape === "unclassified") countDropped("unclassified_cap");
         continue;
       }
@@ -332,7 +352,7 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
 
   // An untraced read is held once, and only when no specialist read the same fee traceably.
   for (const row of untraced) {
-    if (held.length >= MAX_HELD_PER_DOCUMENT) break;
+    if (held.filter((prior) => !unpricedHalf(prior)).length >= MAX_HELD_PER_DOCUMENT) break;
     const key = heldKey(row);
     if (seenHeld.has(key)) continue;
     seenHeld.add(key);

@@ -707,4 +707,92 @@ describe("name words match whole words", () => {
     // "Draft" is not the "Overdraft" fee.
     expect(checkFeeAgainstSource("Overdraft Fee | $35.00", "Draft Fee", 35, ".").ok).toBe(false);
   });
+
+  describe("a price under a count-cap note (Gate City Bank 349, doc 13087)", () => {
+    // Gate City's schedule as stored (text 503, prod, read-only, Oct 17).
+    const GATE_CITY = [
+      "Statement Print Service Fee | $5 per statement",
+      "Duplicate statement or specific cycle date requests.",
+      "Overdraft Fees",
+      "Overdraft fee for items paid resulting in a negative",
+      "balance.",
+      "Maximum of 4 fees per calendar day.",
+      "$32 per item",
+      "If your account is charged more than four overdraft",
+      "Overdraft /Non-Sufficient Funds (NSF) | fees per day, the additional fees will be refunded",
+      "within 48 hours. The date the fee is charged is used",
+      "to calculate the number of fees charged per day.",
+      "BankOn Checking Account Overdraft Fee for items",
+      "$0 per item",
+      "paid resulting in a negative balance.",
+    ].join("\n");
+
+    it("must pass: the price under the name's wrapped last word and the cap note", () => {
+      for (const name of ["Overdraft fee for items paid resulting in a negative balance", "Overdraft Fees", "Overdraft Fee"]) {
+        expect(checkFeeAgainstSource(GATE_CITY, name, 32, ".", "overdraft")).toMatchObject({
+          ok: true,
+          sourceLine: "Overdraft fee for items paid resulting in a negative | $32 per item",
+        });
+      }
+    });
+
+    it("must pass: a price one cap-note line under its name", () => {
+      const text = "Overdraft Fee\nMaximum of 4 fees per calendar day.\n$32 per item\nStop Payment | $30";
+      expect(checkFeeAgainstSource(text, "Overdraft Fee", 32, ".", "overdraft").ok).toBe(true);
+      expect(checkFeeAgainstSource("Paid Item Fee\n(Limit 5 items per day)\n$30.00", "Paid Item Fee", 30, ".", "overdraft").ok).toBe(true);
+    });
+
+    it("must fail: the note's own figure", () => {
+      expect(checkFeeAgainstSource(GATE_CITY, "Overdraft Fees", 4, ".", "overdraft").ok).toBe(false);
+      // A note with a dollar figure is a cap, not a count: the price under it is not read through it.
+      const dollarCap = "Overdraft Fee\nMaximum of $128 in fees per day.\n$32 per item";
+      expect(checkFeeAgainstSource(dollarCap, "Overdraft Fee", 128, ".", "overdraft").ok).toBe(false);
+    });
+
+    it("must fail: a balance band under the note", () => {
+      const band = "Overdraft Fee\nMaximum of 4 fees per calendar day.\n$50.01 or more";
+      expect(checkFeeAgainstSource(band, "Overdraft Fee", 50.01, ".", "overdraft").ok).toBe(false);
+    });
+
+    it("must fail: another fee's row under the note", () => {
+      const nextRow = "Overdraft Fee\nMaximum of 4 fees per calendar day.\nReturned Item Fee | $30.00";
+      expect(checkFeeAgainstSource(nextRow, "Overdraft Fee", 30, ".", "overdraft").ok).toBe(false);
+      const nextName = "Overdraft Fee\nMaximum of 4 fees per calendar day.\nNSF Fee\n$30.00";
+      expect(checkFeeAgainstSource(nextName, "Overdraft Fee", 30, ".", "overdraft").ok).toBe(false);
+      // A sentence that is not a count cap ("Fees are charged per item.") still ends the row.
+      expect(checkFeeAgainstSource("Overdraft Fee\nFees are charged per item paid.\n$32", "Overdraft Fee", 32, ".", "overdraft").ok).toBe(false);
+    });
+  });
+});
+
+describe("checkFeeAgainstSource joined prices (Knox v76)", () => {
+  const ok = (text: string, name: string, amount: number) => checkFeeAgainstSource(text, name, amount, ".").ok;
+
+  it("traces each slash variant to its own price, and only that one", () => {
+    const row = "Domestic Outbound Wires (Online/Manual) | $35/$60 | $35/$60";
+    expect(ok(row, "Domestic Outbound Wires (Online)", 35)).toBe(true);
+    expect(ok(row, "Domestic Outbound Wires (Manual)", 60)).toBe(true);
+    expect(ok(row, "Domestic Outbound Wires (Manual)", 35)).toBe(false);
+    expect(ok(row, "Domestic Outbound Wires (Online)", 60)).toBe(false);
+    // A name keeping both variants reads the first price, as before.
+    expect(ok(row, "Domestic Outbound Wires (Online/Manual)", 35)).toBe(true);
+    expect(ok(row, "Domestic Outbound Wires (Online/Manual)", 60)).toBe(false);
+  });
+
+  it("traces the second price of a slash pair to the words after it", () => {
+    const row = "Debit Card Replacement Fee | $10.00 / $50 expedited delivery";
+    expect(ok(row, "Debit Card Replacement Fee expedited delivery", 50)).toBe(true);
+    expect(ok(row, "Debit Card Replacement Fee", 10)).toBe(true);
+    expect(ok(row, "Debit Card Replacement Fee", 50)).toBe(false);
+  });
+
+  it("traces both column prices of a box size", () => {
+    expect(ok("2” x 5” $45.00 $65.00", "2” x 5”", 45)).toBe(true);
+    expect(ok("2” x 5” $45.00 $65.00", "2” x 5”", 65)).toBe(true);
+    expect(ok("Monthly Fee $5.00 $10.00", "Monthly Fee", 10)).toBe(false);
+  });
+
+  it("reads No Cost and No fees as free words", () => {
+    expect(ok("Notary Public Services | No Cost to Members", "Notary Public Services", 0)).toBe(true);
+  });
 });

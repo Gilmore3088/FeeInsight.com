@@ -1,5 +1,7 @@
 # Hamilton release acceptance matrix
 
+> **Superseded on 2026-10-17.** This is version 1, kept as history. The current matrix is `docs/plans/hamilton-h07-acceptance-matrix.md`. Its code copy is `src/lib/hamilton/release-acceptance.ts` version 2, which no longer carries the PRs or statuses listed below.
+
 Version 1 · snapshot 2026-10-10 · related to #975 and #982 (H07).
 
 This matrix is a routing/control artifact, not a completion scoreboard. The child

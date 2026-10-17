@@ -1,6 +1,9 @@
 export const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL || "https://feeinsight.com";
 
+/** The site header logo as a 2x PNG for email headers (mail clients block SVG); 124x22 on screen. */
+export const EMAIL_LOGO_URL = `${SITE_URL.replace(/\/$/, "")}/brand/png/fee-insight-oneline-email@2x.png`; // opaque parchment behind the wordmark, so Gmail dark mode keeps it readable
+
 // Brand contract: Fee Insight is the company/site; Bank Fee Index is its product.
 export const SITE_NAME = "Fee Insight";
 export const PRODUCT_NAME = "Bank Fee Index";
@@ -71,7 +74,7 @@ export const REPORT_OFFER_LINE = "National and Fed district fee reports — free
 
 // Hamilton, described the same way everywhere. Never "our AI analyst".
 export const HAMILTON_CANONICAL =
-  `Hamilton is the ${SITE_NAME} Pro workspace: research, model and report your fee position ` +
-  "against a verified market, from your own counties to the nation.";
+  `Hamilton is the ${SITE_NAME} workspace: research, model and report your fee position ` +
+  "against your market, from your own counties to the nation.";
 export const HAMILTON_MODES = ["This month", "My fees", "Try a price", "Reports"] as const;
 export type HamiltonMode = (typeof HAMILTON_MODES)[number];

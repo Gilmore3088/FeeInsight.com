@@ -76,6 +76,14 @@ describe("segment answer", () => {
     expect(seg.ownPosition).not.toBeNull();
   });
 
+  it("counts sister charters on one shared schedule once in the band, and still lists each (rule 7)", () => {
+    // Delta and Epsilon are sister charters reading one schedule: five values count, six are listed.
+    const sisters = members.map((m) => (m.institutionName === "Epsilon Bank" ? { ...m, countedAs: 80_000_000 } : m));
+    const seg = buildSegmentResearch({ segment, feeCategory: "overdraft", institutionsInSegment: 184, members: sisters, current: 32, ownInSegment: false });
+    expect(seg.members).toHaveLength(6);
+    expect(seg.band).toEqual({ p25: 10, median: 35, p75: 36, n: 5 });
+  });
+
   it("hands the segment and its members to the page with the Ask response", () => {
     const question = "talk to me about all 10B and up institutions for od fees";
     const seg = buildSegmentResearch({ segment, feeCategory: "overdraft", institutionsInSegment: 184, members, current: 32, ownInSegment: false });

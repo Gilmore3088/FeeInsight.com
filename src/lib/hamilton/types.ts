@@ -217,6 +217,12 @@ export interface AnalyzeResponse {
   engineVersion?: string;
   /** The shared evidence gate's verdict on a written answer (#981); absent on answers saved before it. */
   answerEvidence?: SavedAnswerEvidence;
+  /**
+   * A written answer's sentence binding (#981, H06-T06): which sentences rest on fee records, which
+   * are Hamilton's reading and which were left out. Absent on answers saved before it, and on one
+   * written with no fee record to bind to.
+   */
+  narrativeBinding?: import("./narrative-bound").NarrativeBinding;
   // NOTE: No recommendedPosition — screen boundary rule (ARCH-05)
 }
 
@@ -279,7 +285,11 @@ export interface ReportSource {
 export interface ReportSummaryResponse {
   /** A board brief made from one saved answer: its findings stay frozen; only the title and team note change. */
   /** A board brief's origin: a saved Ask answer (`sourceAnalysisId`) or a market view (`sourceResearchHref`). */
-  boardBrief?: { sourceAnalysisId?: string; sourceResearchHref?: string; teamNote: string; includeEvidence: boolean; factEvidence?: import("./evidence-contract").HamiltonEvidenceBundle };
+  boardBrief?: {
+    sourceAnalysisId?: string; sourceResearchHref?: string; teamNote: string; includeEvidence: boolean; factEvidence?: import("./evidence-contract").HamiltonEvidenceBundle;
+    /** Sentences printed only under "Hamilton's reading, not tied to a fee record" (#981 H06-T08); absent on briefs made before it. */
+    reading?: string[];
+  };
   title: string;
   /** Historical reference identity captured on the authenticated generation request. */
   identityContext?: HamiltonIdentitySnapshot;

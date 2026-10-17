@@ -578,13 +578,13 @@ function createDb(pairs?: unknown[], lastEvent: Record<string, unknown> | null =
 }
 
 describe("recheckDocumentOwners (shadow)", () => {
-  it("is off by default", () => {
-    expect(DARWIN_DOCUMENT_OWNER_TAKEDOWN).toBe(false);
+  it("is on (James's yes, 2026-10-17); these tests pass takedown: false for the shadow path", () => {
+    expect(DARWIN_DOCUMENT_OWNER_TAKEDOWN).toBe(true);
   });
 
   it("reports the live fees it would take down, records each pair, and changes no fee", async () => {
     const db = createDb();
-    const result = await recheckDocumentOwners(db, { runId: 77, stepId: 3 });
+    const result = await recheckDocumentOwners(db, { runId: 77, stepId: 3, takedown: false });
     expect(result.live).toBe(false);
     expect(result.verdicts).toEqual({ other_bank: 1, own_named: 1, sibling_shared: 1 });
     expect(result.siblingSharedDocuments).toBe(1);
@@ -639,7 +639,7 @@ describe("recheckDocumentOwners: the skip keys on pairs selected (O3)", () => {
     const db = createDb([
       { institution_id: 99999, source_document_id: 17191, document_url: "https://ukcreditunion.org/x.pdf", live_fees: 2, other_ids: [6729], text_hash: "h1", reread: false },
     ]);
-    const result = await recheckDocumentOwners(db, { runId: 81 });
+    const result = await recheckDocumentOwners(db, { runId: 81, takedown: false });
     expect(result).toMatchObject({ selected: 1, pairs: 0, verdicts: { unproven: 1 } });
     const calls = JSON.stringify(db.mock.calls);
     expect(calls).toContain("owner-shadow:99999:17191:h1");
@@ -652,7 +652,7 @@ describe("recheckDocumentOwners: the skip keys on pairs selected (O3)", () => {
     const query = db.getMockImplementation() as unknown as (strings: TemplateStringsArray, ...values: unknown[]) => unknown;
     db.mockImplementation(((strings: TemplateStringsArray, ...values: unknown[]) =>
       templateText(strings).includes("document-owner name scan") ? Promise.reject(new Error("boom")) : query(strings, ...values)) as never);
-    const result = await recheckDocumentOwners(db, { runId: 82 });
+    const result = await recheckDocumentOwners(db, { runId: 82, takedown: false });
     expect(result).toMatchObject({ selected: 3, pairs: 0 });
     expect(JSON.stringify(db.mock.calls)).toContain('\\"selected\\":3');
   });

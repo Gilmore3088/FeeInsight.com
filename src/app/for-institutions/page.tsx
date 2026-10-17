@@ -47,7 +47,7 @@ const PAGE_TITLE = "Bank Fee Benchmarking and Competitive Fee Reports";
 // Kept under 160 characters so search results show it whole.
 const PAGE_DESCRIPTION =
   `Know where your fees stand against named local competitors, with a source for every figure. ` +
-  `Hamilton, the Pro workspace, is built on the ${PRODUCT_NAME}.`;
+  `Hamilton, the Fee Insight workspace, is built on the ${PRODUCT_NAME}.`;
 
 export const metadata: Metadata = {
   title: PAGE_TITLE,
@@ -154,7 +154,7 @@ function Hero({ exhibit }: { exhibit: ReactNode }) {
             Benchmark every fee against your competitors&rsquo; own schedules
           </h1>
           <p className="mt-5 max-w-xl text-[17px] leading-relaxed text-ink-soft">
-            Hamilton, the Pro workspace, names each competitor and its fee, from your counties to the nation.
+            Hamilton, the Fee Insight workspace, names each competitor and its fee, from your counties to the nation.
           </p>
           <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
             <Link href={PRIMARY_CTA_NAV.href} className="fi-btn fi-btn-primary justify-center whitespace-nowrap">
@@ -170,7 +170,7 @@ function Hero({ exhibit }: { exhibit: ReactNode }) {
             </TrackLink>
           </div>
           <p className="mt-4 text-[13px] text-ink-muted">
-            Pro from {fromMonthly}, monthly or annual.{" "}
+            Hamilton from {fromMonthly}, monthly or annual.{" "}
             <TrackLink
               event="contact_sales"
               eventProps={{ placement: "for_institutions_hero_demo" }}
@@ -276,7 +276,7 @@ function PlansSection() {
     <section id="plans" aria-labelledby="plans-heading" className="scroll-mt-16 border-b border-border bg-surface-0">
       <div className={SECTION_INNER}>
         <div className="max-w-2xl">
-          <p className={EYEBROW}>Hamilton Pro</p>
+          <p className={EYEBROW}>Hamilton</p>
           <h2 id="plans-heading" className={`mt-3 ${H2}`} style={SANS}>
             One plan for your whole team
           </h2>

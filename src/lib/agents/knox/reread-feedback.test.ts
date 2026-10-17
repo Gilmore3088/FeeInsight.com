@@ -149,14 +149,14 @@ const asDb = (db: DbMock) => db as unknown as Parameters<typeof consumeRereadReq
 const sqlTexts = (db: DbMock) => db.mock.calls.map(([strings]) => (strings as TemplateStringsArray).join("?"));
 
 describe("consumeRereadRequests", () => {
-  it("is off by default and is a deterministic sub-pass of the extract step, never a provider step", () => {
-    expect(KNOX_REREAD_FEEDBACK_LIVE).toBe(false);
+  it("is on (James's yes, 2026-10-17) and is a deterministic sub-pass of the extract step, never a provider step", () => {
+    expect(KNOX_REREAD_FEEDBACK_LIVE).toBe(true);
     expect(isProviderStep("extract")).toBe(false);
   });
 
   it("switch off: counts the pending requests, reads a sample read-only and writes only its one event", async () => {
     const { db, resolved } = dbFor([PAPER, WIRE, TELLER]);
-    const result = await consumeRereadRequests(asDb(db), { runId: 7, stepId: 70, dryRun: false });
+    const result = await consumeRereadRequests(asDb(db), { runId: 7, stepId: 70, dryRun: false, live: false });
     expect(result).toMatchObject({ live: false, pending: 3, pendingByKind: { reread: 2, fragment_reread: 1 }, pendingDocuments: 3, pendingInstitutions: 1, read: 3, resolved: 0, renamed: [], sentToDarwin: [] });
     expect(result.outcomes).toEqual({ renamed: 1, same_name: 1, sent_to_darwin: 1 });
     const texts = sqlTexts(db);
@@ -178,7 +178,7 @@ describe("consumeRereadRequests", () => {
 
   it("switch off: a state or all-bank lane skips the pass (skipSample) and reads nothing", async () => {
     const { db } = dbFor([PAPER, WIRE, TELLER]);
-    const result = await consumeRereadRequests(asDb(db), { runId: 7, dryRun: false, skipSample: true, stateCode: "TX" });
+    const result = await consumeRereadRequests(asDb(db), { runId: 7, dryRun: false, live: false, skipSample: true, stateCode: "TX" });
     expect(result).toMatchObject({ skipped: true, pending: 0, read: 0 });
     expect(db).not.toHaveBeenCalled();
     // The switch on, skipSample does not apply: the claim path runs in every lane.
@@ -189,7 +189,7 @@ describe("consumeRereadRequests", () => {
   it("switch off: a one-bank run reads at most the sample", async () => {
     const many = Array.from({ length: 6 }, (_, index) => row({ request_id: 10 + index, fragment: "Paper statement fee for the" }));
     const { db } = dbFor(many);
-    const result = await consumeRereadRequests(asDb(db), { runId: 7, dryRun: false, institutionId: 77 });
+    const result = await consumeRereadRequests(asDb(db), { runId: 7, dryRun: false, live: false, institutionId: 77 });
     expect(KNOX_REREAD_FEEDBACK_SAMPLE).toBe(3);
     expect(result).toMatchObject({ pending: 6, read: 3 });
     expect(result.samples).toHaveLength(3);

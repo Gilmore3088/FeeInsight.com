@@ -138,7 +138,7 @@ describe("AnalyzeWorkspace identity boundaries", () => {
     expect(screen.getByLabelText("Your question").getAttribute("placeholder")).toContain("this institution's overdraft");
   });
 
-  it("starts a fresh ask after New question abandons an unresolved engine request", async () => {
+  it("starts a fresh ask after New conversation abandons an unresolved engine request", async () => {
     const pending: Array<{ question: string; finish: (response: Response) => void }> = [];
     vi.stubGlobal("scrollTo", vi.fn());
     vi.stubGlobal("fetch", vi.fn((_url: string, init: RequestInit) => new Promise<Response>((finish) => {
@@ -150,7 +150,7 @@ describe("AnalyzeWorkspace identity boundaries", () => {
     await waitFor(() => expect(pending).toHaveLength(1));
     await waitFor(() => expect((screen.getByRole("button", { name: /^Ask( Hamilton)?$/ }) as HTMLButtonElement).disabled).toBe(true));
 
-    fireEvent.click(screen.getByRole("button", { name: "New question" }));
+    fireEvent.click(screen.getByRole("button", { name: "New conversation" }));
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "Compare NSF" } });
     expect((screen.getByRole("button", { name: /^Ask( Hamilton)?$/ }) as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: /^Ask( Hamilton)?$/ }));
@@ -163,8 +163,8 @@ describe("AnalyzeWorkspace identity boundaries", () => {
     await act(async () => { pending[0].finish(response("Discarded old evidence")); });
     expect(document.body.textContent).not.toContain("Discarded old evidence");
     expect(chat.send).not.toHaveBeenCalled();
-    await act(async () => { pending[1].finish(response("New question evidence")); });
-    await screen.findByText("New question evidence");
+    await act(async () => { pending[1].finish(response("New conversation evidence")); });
+    await screen.findByText("New conversation evidence");
     expect(document.body.textContent).not.toContain("Discarded old evidence");
     expect(chat.save).not.toHaveBeenCalled();
   });
@@ -199,7 +199,7 @@ describe("AnalyzeWorkspace saved-answer reset", () => {
     expect(initialContext.textContent).toContain("Research institution: Original Research A");
     expect(initialContext.textContent).toContain("Account institution: Original Account CU");
     expect(initialContext.textContent).toContain("Peer baseline: Original A cohort");
-    fireEvent.click(screen.getByRole("button", { name: "New question" }));
+    fireEvent.click(screen.getByRole("button", { name: "New conversation" }));
     expect(screen.queryByTestId("reopened-story")).toBeNull();
     expect(screen.queryByTestId("saved-memo")).toBeNull();
     expect(screen.queryByRole("button", { name: "Download PDF" })).toBeNull();
@@ -210,7 +210,7 @@ describe("AnalyzeWorkspace saved-answer reset", () => {
     vi.stubGlobal("scrollTo", vi.fn());
     render(<AnalyzeWorkspace userId={7} institutionId="2945" selectedInstitution={bankA} initialAnalysisId="saved-legacy" initialAnalysis={answer("Historical saved answer.")} />);
     expect(screen.getByText("Historical account and peer context was not recorded with this answer.")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "New question" }));
+    fireEvent.click(screen.getByRole("button", { name: "New conversation" }));
     expect(screen.queryByText("Historical account and peer context was not recorded with this answer.")).toBeNull();
     expect(document.body.textContent).not.toContain("Historical saved answer.");
   });
@@ -231,7 +231,7 @@ describe("AnalyzeWorkspace delayed fallback save", () => {
     await act(async () => { oldCompletion = chat.options.at(-1)!.onFinish!(finished); });
     expect(chat.save).toHaveBeenCalledTimes(1);
     expect(document.body.textContent).toContain("Late old answer.");
-    fireEvent.click(screen.getByRole("button", { name: "New question" }));
+    fireEvent.click(screen.getByRole("button", { name: "New conversation" }));
     const current = {
       message: { parts: [{ type: "text", text: "## Hamilton's View\nCurrent new answer." }], metadata: { savedAnalysisId: "current-answer-id" } },
       isError: false, isAbort: false,

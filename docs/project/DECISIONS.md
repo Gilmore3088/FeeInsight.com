@@ -1118,3 +1118,22 @@ on the account page; it works while Pro is active or inside the past-due grace w
 the subscription ends, and is revoked if the plan moves to $150. No free keys unless James makes one
 himself in `/admin/api-keys`; researchers pay like everyone else. No data license (bulk downloads,
 republishing) until someone asks. Planning notes: `/mnt/project-files/api-mcp/planning-notes.md`.
+
+**Every team seat on a $300 or $500 plan makes its own API key.** James, 2026-10-17 00:36 UTC
+(decision card in the API and MCP planning thread, after his /subscribe review said the payer may be
+finance and the user an analyst). The payer and each active seat on their workspace (up to 5
+people) make one key each on the account page. All keys draw on the plan's one allowance of 10,000
+calls a month. A seat's key stops when the seat is removed, and every key stops when the plan ends.
+
+**The taxonomy may hold 52 types; the public site publishes only the top 50.** James, 2026-10-17
+(approving the account research split, #1398). Public pages and API listings that list fee types
+show at most 50: the top 50 by institution count, the national index's own order
+(`publicFeeTypes` in `src/lib/fee-taxonomy.ts`, applied to the shared public snapshot in
+`src/lib/public-stats.ts`). Internal, admin and Pro views keep all 52.
+
+**Hamilton is the paid product; there is no "Hamilton Pro".** James, 2026-10-17 08:27 UTC (Website
+thread): "there is no Hamilton and Hamilton pro. Hamilton is 'pro'. Pro is just a term to
+distinguish who has paid or not." Visitor copy names the subscription Hamilton ("See Hamilton
+plans", "Your Hamilton subscription"), never "Hamilton Pro", "Fee Insight Pro" or "the Pro
+workspace". "Pro" may still mark paid status (a Pro badge, `isPro`). The 2026-10-15 rule still
+holds: the header and footer name the workspace generically ("Workspace", "Plans").

@@ -64,7 +64,8 @@ type SqlTag = typeof sql;
  * never rewritten: Darwin upserts it again on each pass of the live table, which would wipe a mark
  * kept on it, so the resolution lives on its own row and a request is read once per rules version.
  *
- * `KNOX_REREAD_FEEDBACK_LIVE` false (the default): a one-bank run counts that bank's pending
+ * `KNOX_REREAD_FEEDBACK_LIVE` is on (James's yes, 2026-10-17; `pipeline_feedback_kind_idx` serves
+ * the claim). Switched off (false): a one-bank run counts that bank's pending
  * requests (`pipeline_feedback_institution_idx`) and reads up to `KNOX_REREAD_FEEDBACK_SAMPLE` of
  * them read-only, reporting what it would do in one `knox.reread_feedback` event; nothing else is
  * written. A state or all-bank lane skips the pass (`skipSample`): `pipeline_feedback` has no index
@@ -75,8 +76,8 @@ type SqlTag = typeof sql;
  * carries the counts. A dry run writes nothing at all.
  */
 export const KNOX_REREAD_FEEDBACK_STRATEGY = { strategy: "knox.reread_feedback", version: 1 } as const;
-/** Default-off switch: off, the pass counts and reports only. Turned on by PR after the shadow reports. */
-export const KNOX_REREAD_FEEDBACK_LIVE = false;
+/** On (James's yes, 2026-10-17). Set to false and the pass counts and reports only. */
+export const KNOX_REREAD_FEEDBACK_LIVE = true;
 /** Requests claimed and settled per extract step, switch on. */
 export const KNOX_REREAD_FEEDBACK_BATCH = 25;
 /** Requests read read-only per one-bank extract step, switch off; also the samples kept in the event. */

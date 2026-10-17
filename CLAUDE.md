@@ -2,12 +2,12 @@
 
 ## Brand
 Fee Insight is the company and site (feeinsight.com). Bank Fee Index is its product
-(the dataset/index); Hamilton is the Pro workspace. Never name the site as the product.
+(the dataset/index); Hamilton is the paid workspace; never "Hamilton Pro" ("Pro" only marks who has paid). Never name the site as the product.
 Brand strings live in `src/lib/constants.ts`; `scripts/ci-guards.sh brand-kill` enforces it.
 Contact stays hello@bankfeeindex.com until feeinsight.com mail exists.
 
 ## Money thesis
-A bank/CU marketing, product or pricing manager subscribes to Hamilton Pro, paid monthly or
+A bank/CU marketing, product or pricing manager subscribes to Hamilton, paid monthly or
 annually. That subscription is the site's goal. The Competitive Fee Position Report ("from $300")
 is a high-value lead into Pro, not the goal; free reports and alerts are lead capture. The funnel:
 free sample report, then the paid report, then Pro or a Pro demo request. Why us:

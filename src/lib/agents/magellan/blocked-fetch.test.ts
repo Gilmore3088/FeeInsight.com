@@ -155,6 +155,8 @@ describe("selectBlockedCompanions", () => {
     expect(rows.map((row) => row.id)).toEqual([2104, 2048]);
     expect(texts[0]).toContain("ILIKE 'text/html%'");
     expect(texts[0]).toContain("'blocked_bot'");
+    // A hand-supplied copy is already stored; the paid fetch never asks the bank for it.
+    expect(texts[0]).toContain("AND ias.found_by_strategy <> 'supply.hand_supplied'");
     // A dormant bank's hand-found schedule is fetched too (Stock Yards); a closed charter's is not.
     expect(texts[0]).toContain("OR (inst.status = 'dormant' AND ias.found_by_strategy = 'discover.operator_schedule')");
     // A hand-found page goes to the paid fetch after one timeout; others after two.

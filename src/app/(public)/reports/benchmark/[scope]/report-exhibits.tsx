@@ -3,6 +3,7 @@ import { TrackLink } from "@/components/track-link";
 import { DEMO_REQUEST_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
+import { hasUnstatedAudience, UnstatedAudienceFootnote, UnstatedAudienceMark } from "@/components/unstated-audience";
 import { PRODUCT_NAME, REPORT_OFFER, REPORT_PRICE_INLINE } from "@/lib/constants";
 import { PAGE_HEADER } from "@/components/public/page-header";
 import { PrintButton } from "../../../research/print-button";
@@ -150,6 +151,7 @@ function BenchmarkCard({ row, areaLabel }: { row: StateComparison; areaLabel: st
       <p className="mt-2 flex items-baseline gap-2">
         <span className="text-[2.25rem] font-semibold leading-none tabular-nums text-ink" style={MONO_FIGURE}>
           {formatAmount(row.median_amount)}
+          <UnstatedAudienceMark show={hasUnstatedAudience(row)} />
         </span>
         {delta != null && (
           <span
@@ -216,6 +218,7 @@ export function BenchmarkBoard({
           <BenchmarkCard key={row.fee_category} row={row} areaLabel={areaLabel} />
         ))}
       </div>
+      <UnstatedAudienceFootnote show={rows.some((row) => hasUnstatedAudience(row))} className="mt-4" />
       <ExhibitSource asOf={asOf}>
         One value per institution. A fee is shown only when at least {MIN_BENCHMARK_INSTITUTIONS} institutions publish it
         {omitted > 0 ? `, so ${omitted} of the 15 headline fees are left out until more schedules are collected.` : "."}

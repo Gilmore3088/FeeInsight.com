@@ -40,10 +40,14 @@ import {
 import { getRequestSubjectKey } from "@/lib/api-hardening/audit";
 import { trackFirstHamiltonUse } from "@/lib/analytics-server";
 import { cacheLatestMessage, cachedSystem, ledgerUsage, trackerUsage } from "@/lib/research/tool-output";
-import { SAVED_ANALYSIS_ID_KEY, questionOnly, writtenAnswerCheck, writtenAnswerResponse } from "@/lib/hamilton/answer-save";
+import { SAVED_ANALYSIS_ID_KEY, questionOnly, writtenAnswerBinding, writtenAnswerCheck, writtenAnswerResponse } from "@/lib/hamilton/answer-save";
+import { bindingLeavesNothing } from "@/lib/hamilton/written-answer-binding";
+import type { NarrativeBinding } from "@/lib/hamilton/narrative-bound";
+import { parseAnalyzeResponse } from "@/components/hamilton/analyze/parse-response";
 import { messageBoundsError } from "@/lib/hamilton/conversation-context";
 import { HELD_ANSWER_MESSAGE } from "@/lib/hamilton/answer-gate";
 import { insertSavedAnalysis } from "@/lib/data-store/hamilton-analyses";
+import { collectFeeRefs } from "@/lib/saved-output-corrections";
 import { normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
 import { withHamiltonAccountContext } from "@/lib/hamilton/account-context-store";
 import { accountIdentitySnapshot } from "@/lib/hamilton/account-context";
@@ -63,6 +67,8 @@ const PRO_SCREEN_MODES = new Set(["analyze", "monitor"]);
 interface AnswerVerdict {
   passed: boolean;
   held: boolean;
+  /** The sentence binding (#981, H06-T06); sent on its own metadata key, not with the verdict. */
+  binding?: NarrativeBinding | null;
 }
 
 async function handlePOST(request: Request) {
@@ -81,7 +87,7 @@ async function handlePOST(request: Request) {
       {
         error: "Authentication required",
         code: "public_ai_disabled",
-        message: "Public Hamilton AI is disabled. Sign in with Fee Insight Pro to run provider-backed analysis.",
+        message: "Public Hamilton AI is disabled. Sign in with a Hamilton subscription to run provider-backed analysis.",
       },
       { status: 401 },
     );
@@ -116,7 +122,7 @@ async function handlePOST(request: Request) {
       {
         error: "Active subscription required",
         code: "public_ai_disabled",
-        message: "Public Hamilton AI is disabled. Use deterministic institution evidence publicly or sign in with Fee Insight Pro.",
+        message: "Public Hamilton AI is disabled. Use deterministic institution evidence publicly or sign in with a Hamilton subscription.",
       },
       { status: 403 },
     );
@@ -287,12 +293,30 @@ async function handlePOST(request: Request) {
           { status: 200 },
         );
       }
+      // A report is never printed with a sentence its fee records contradict (#981, H06-T06).
+      const binding = writtenAnswerBinding(
+        result.text ?? "",
+        (result.steps ?? []).flatMap((step) => step.toolResults.map((toolResult) => toolResult.output)),
+        questionOnly(lastUserText),
+      );
+      if (binding && binding.omitted.length > 0) {
+        return Response.json(
+          {
+            status: "refused",
+            reason: "evidence_check_failed",
+            problems: binding.omitted.map((omitted) => `Left out (${omitted.reason}): "${omitted.text}"`),
+            metrics: gate.metrics,
+          },
+          { status: 200 },
+        );
+      }
 
       return Response.json({
         status: "ok",
         text: result.text,
         metrics: gate.metrics,
         identityContext: identityFor(result.steps),
+        ...(binding ? { narrativeBinding: binding } : {}),
       });
     }
 
@@ -327,10 +351,13 @@ async function handlePOST(request: Request) {
           // the usage below is still recorded.
           try {
             const check = writtenAnswerCheck(text, toolOutputs, questionOnly(lastUserText));
-            const held = holdsAnswers && !check.passed;
-            resolveVerdict({ passed: check.passed, held });
+            // Each sentence bound to the fee records the tools returned (#981, H06-T06). An answer
+            // with nothing left once the contradicted sentences go is held like a failing one.
+            const binding = writtenAnswerBinding(text, toolOutputs, questionOnly(lastUserText));
+            const held = holdsAnswers && (!check.passed || bindingLeavesNothing(parseAnalyzeResponse(text), binding));
+            resolveVerdict({ passed: check.passed, held, binding });
             const response = {
-              ...writtenAnswerResponse(text, toolOutputs, check),
+              ...writtenAnswerResponse(text, toolOutputs, check, binding),
               // Historical reference metadata only; never a future access grant.
               identityContext,
             };
@@ -352,6 +379,8 @@ async function handlePOST(request: Request) {
                   // the full text answered, earlier turns included, so the same follow-up words in
                   // another conversation are saved as their own row.
                   replaceRecentDuplicate: { request: `written\n${focus}\n${lastUserText}` },
+                  // H03-T09: the fee rows the answer's tools read, so a later correction finds it.
+                  feeRefs: collectFeeRefs(toolOutputs, response),
                 }));
               } catch (error) {
                 console.error("[hamilton] saving the written answer failed", error);
@@ -427,18 +456,27 @@ async function handlePOST(request: Request) {
           } else {
             // A provider refusal happens inside the stream, past the catch below: send the
             // reader the paused line for a usage/billing limit, never the provider's text.
+            // A held answer's binding is known before its text replays, so it rides on the start
+            // and a left-out sentence never shows while the text arrives.
+            const startBinding = heldVerdict?.binding ?? null;
             writer.merge(result.toUIMessageStream({
               onError: (error) => (isProviderLimitError(error) ? HAMILTON_PAUSED_MESSAGE : "Hamilton couldn't finish this answer."),
+              ...(startBinding
+                ? { messageMetadata: ({ part }: { part: { type: string } }) => (part.type === "start" ? { narrativeBinding: startBinding } : undefined) }
+                : {}),
             }));
           }
           const id = await savedId;
-          const answerEvidence = heldVerdict ?? (await verdict);
+          const verdictNow = heldVerdict ?? (await verdict);
+          const answerEvidence = verdictNow ? { passed: verdictNow.passed, held: verdictNow.held } : null;
+          const narrativeBinding = verdictNow && !verdictNow.held ? verdictNow.binding ?? null : null;
           writer.write({
             type: "message-metadata",
             messageMetadata: {
               ...(id ? { [SAVED_ANALYSIS_ID_KEY]: id } : {}),
               hamiltonIdentity: identityContext,
               ...(answerEvidence ? { answerEvidence } : {}),
+              ...(narrativeBinding ? { narrativeBinding } : {}),
             },
           });
         },

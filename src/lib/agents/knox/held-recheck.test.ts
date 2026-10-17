@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { runFreeSpecialists } from "./specialists";
 import { classifyFeeText, KNOX_HELD_NAME_RULES_LIVE } from "./rules";
+import { researchSplitTarget } from "@/lib/fee-fold";
 
 import {
   fileHeldByName,
@@ -93,8 +94,8 @@ describe("Knox held-line re-check", () => {
   it("categorizes held lines today's rules know, at the same amount", () => {
     expect(recategorizeHeld(courtesyPay)?.canonicalHint).toBe("overdraft");
     expect(recategorizeHeld(inactivity)?.canonicalHint).toBe("dormant_account");
-    // v26 folds returned mail into account research (James, Oct 7 2026).
-    expect(recategorizeHeld(returnedMail)?.canonicalHint).toBe("account_research");
+    // v26 folds returned mail into account research (James, Oct 7 2026); v77: its own type once the research split is on.
+    expect(recategorizeHeld(returnedMail)?.canonicalHint).toBe(researchSplitTarget("returned_mail"));
     expect(recategorizeHeld(membership)).toBeNull();
     expect(recategorizeHeld({ ...courtesyPay, amount: "35.00" })).toBeNull();
   });
@@ -451,7 +452,7 @@ describe("retired lines today's rules file under another category (#1093, Oregon
   it("finds today's category for a real fee read under the same name and amount", () => {
     expect(refiledRead(cardReplacement, reads())?.canonicalHint).toBe("card_replacement");
     expect(refiledRead(incomingWires, reads())?.canonicalHint).toBe("wire_domestic_incoming");
-    expect(refiledRead(badAddress, reads())?.canonicalHint).toBe("account_research");
+    expect(refiledRead(badAddress, reads())?.canonicalHint).toBe(researchSplitTarget("returned_mail"));
   });
 
   it("does not bring back a threshold today's rules no longer read as a fee", () => {
@@ -534,7 +535,7 @@ describe("retired lines today's rules file under another category (#1093, Oregon
     expect(result.sample.map((row) => `${row.fee_name}:${row.from}->${row.to}`)).toEqual([
       "Card Replacement:atm_non_network->card_replacement",
       "Incoming Wires:nsf->wire_domestic_incoming",
-      "Bad Address/Returned Mail:monthly_maintenance->account_research",
+      `Bad Address/Returned Mail:monthly_maintenance->${researchSplitTarget("returned_mail")}`,
     ]);
     expect(calls.some((call) => call.text.includes("UPDATE"))).toBe(false);
   });
@@ -567,15 +568,11 @@ describe("held-name rules for unclassified held lines (#1102)", () => {
 
   it.each([
     [stopPay, "stop_payment"],
-    [held(653776, "95.00", "Deed of Trust Reconveyance Fee", "Deed of Trust Reconveyance Fee | $95.00"), "reconveyance"],
     [held(295678, "5.00", "Early closure fee (90 days)", "Early closure fee (90 days) | $5.00"), "early_closure"],
-    [held(643931, "10.00", "Christmas Club Withdrawal Fee", "Christmas Club Withdrawal Fee | $10.00"), "early_closure"],
-    // Returned mail is account research (fee-fold.ts), tracing the new address too.
-    [held(163946, "3.00", "Returned Statement Fee", "Returned Statement Fee | $3 | per statement"), "account_research"],
-    [held(219557, "25.00", "Returned statements after 3, tracer fee", "Returned statements after 3, tracer fee | $25.00"), "account_research"],
+    // Returned mail is account research (fee-fold.ts), tracing the new address too; v77: its own type once the research split is on.
+    [held(163946, "3.00", "Returned Statement Fee", "Returned Statement Fee | $3 | per statement"), researchSplitTarget("returned_mail")],
+    [held(219557, "25.00", "Returned statements after 3, tracer fee", "Returned statements after 3, tracer fee | $25.00"), researchSplitTarget("returned_mail")],
     [held(678207, "5.00", "Printed / Mailed Monthly Statement Fee", "Printed / Mailed Monthly Statement Fee | $5.00"), "paper_statement"],
-    [held(341058, "25.00", "IRA Early Closeout Fee", "IRA Early Closeout Fee . . . . . . . . $25"), "ira_termination"],
-    [held(227987, "100.00", "IRA Account Early Withdrawal Fee", "IRA Account Early Withdrawal Fee | $100.00 per withdrawal"), "ira_distribution"],
     [held(472697, "95.00", "7″x10″ Rental", "7″x10″ Rental | $95.00 annual charge (Eldersburg Location Only)"), "safe_deposit_box"],
     // A HELOC's early closure fee (Great Southern Bank) and a mortgage's 36-month one stay held.
     [heloc, null],
@@ -590,6 +587,19 @@ describe("held-name rules for unclassified held lines (#1102)", () => {
     const release = heldNameRelease(row);
     expect(release?.candidate.canonicalHint ?? null).toBe(category);
     if (category) expect(release?.passChecks).toBe(true);
+  });
+
+  // v75 (Knox recall, 17 Oct): today's rules name these four lines, so the held re-check files
+  // them itself and the held-name rules have nothing left to release. Reconveyance and IRA
+  // withdrawals land on their top-50 fold homes (fee-fold.ts RETIRED_CATEGORIES).
+  it.each([
+    [held(653776, "95.00", "Deed of Trust Reconveyance Fee", "Deed of Trust Reconveyance Fee | $95.00"), "other_lending_fee"],
+    [held(643931, "10.00", "Christmas Club Withdrawal Fee", "Christmas Club Withdrawal Fee | $10.00"), "early_closure"],
+    [held(341058, "25.00", "IRA Early Closeout Fee", "IRA Early Closeout Fee . . . . . . . . $25"), "ira_termination"],
+    [held(227987, "100.00", "IRA Account Early Withdrawal Fee", "IRA Account Early Withdrawal Fee | $100.00 per withdrawal"), "ira_termination"],
+  ] as const)("files held line %# under v75's own rules, leaving nothing for the held-name rules", (row, category) => {
+    expect(recategorizeHeld(row)?.canonicalHint).toBe(category);
+    expect(heldNameRelease(row)).toBeNull();
   });
 
   it("is switched off: today's rules and the held re-check read these names as before", () => {

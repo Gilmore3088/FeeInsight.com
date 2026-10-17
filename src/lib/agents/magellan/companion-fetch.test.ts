@@ -65,12 +65,52 @@ describe("Magellan companion fetch", () => {
     );
   });
 
+  it("never fetches a copy a person supplied by hand: the bank's site refused us and the bytes are stored", async () => {
+    const db = createDb([]);
+    await runCompanionFetch({ db: asDb(db), fetchImpl: vi.fn(), vault: null, runId: 7 });
+    const select = db.mock.calls.find((call) => templateText(call[0]).includes("latest.content_hash AS last_hash"));
+    expect(templateText(select?.[0])).toContain("AND ias.found_by_strategy <> 'supply.hand_supplied'");
+  });
+
+  it("never retires a hand-supplied copy for its link words", async () => {
+    const supplied = {
+      id: 2302, institution_id: 44, account_name: null, found_by_strategy: "supply.hand_supplied",
+      url: "https://www.valley.com/pdfs/Schedule%20of%20Fees-Privacy%20Policy.pdf",
+    };
+    const db = createDb([supplied]);
+    const review = await reviewStoredCompanions(asDb(db), { stateCode: "NJ", institutionId: null });
+    expect(review.retired).toEqual([]);
+  });
+
   it("reuses a stored document with the same bytes instead of inserting a duplicate", async () => {
     const db = createDb([freedom], { existing: 512 });
     const result = await runCompanionFetch({ db: asDb(db), fetchImpl: vi.fn(async () => page("same bytes")), vault: null, runId: 7 });
 
     expect(result.results[0]).toMatchObject({ outcome: "unchanged", sourceDocumentId: 512 });
     expect(db.mock.calls.some((call) => templateText(call[0]).includes("INSERT INTO source_documents"))).toBe(false);
+  });
+
+  it("keeps the bytes in the vault when the reused copy predates the vault (Alliant, doc 1933)", async () => {
+    const vaultKeys = new Map<number, string | null>([[512, null], [513, "ab/already"]]);
+    for (const [docId, key] of vaultKeys) {
+      const base = createDb([freedom], { existing: docId }) as unknown as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown[]>;
+      const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+        if (templateText(strings).includes("SELECT document_r2_key FROM source_documents")) return Promise.resolve([{ document_r2_key: key }]);
+        return base(strings, ...values);
+      });
+      const vault = { configured: true, store: vi.fn(async () => ({ status: "stored" as const, key: "f7/stored" })), read: vi.fn(), presign: vi.fn() };
+      const result = await runCompanionFetch({ db: asDb(db), fetchImpl: vi.fn(async () => page("same bytes")), vault: vault as never, runId: 7 });
+
+      expect(result.results[0]).toMatchObject({ outcome: "unchanged", sourceDocumentId: docId });
+      const keyed = db.mock.calls.find((call) => templateText(call[0]).includes("SET document_r2_key"));
+      if (key == null) {
+        expect(vault.store).toHaveBeenCalledTimes(1);
+        expect(keyed).toEqual(expect.arrayContaining(["f7/stored", docId]));
+      } else {
+        expect(vault.store).not.toHaveBeenCalled();
+        expect(keyed).toBeUndefined();
+      }
+    }
   });
 
   it("retires a page that is gone twice in a row", async () => {

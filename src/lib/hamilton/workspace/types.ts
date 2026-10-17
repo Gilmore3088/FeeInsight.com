@@ -209,8 +209,32 @@ export interface PeerValue {
   marketDeposits?: number | null;
   stateCode: string | null;
   sourceDocumentIds: number[];
+  /** The published fee rows behind `amount`, so a saved answer records them (H03-T09); absent on older payloads. */
+  feePublishedIds?: number[];
   documentUrls: string[];
   publishedAt: string | null;
+  /**
+   * The published_fee_catalog rows behind `amount` (#981, H06-T04), so the peer median can name its
+   * records. Absent on answers saved before them and where a reader does not load them.
+   */
+  feeRecords?: PeerFeeRecordRef[];
+  /**
+   * Statistics rule 7 (count once): the sister charter whose shared fee schedule this value
+   * counts under in the group's band (`countedAmounts`). Absent when it counts as itself. The
+   * peer is still listed by its own name and value.
+   */
+  countedAs?: number;
+}
+
+/** One published_fee_catalog row behind a peer's value. */
+export interface PeerFeeRecordRef {
+  id: number;
+  amount: number;
+  feeName: string | null;
+  frequency: string | null;
+  feeAudience: "consumer" | "business" | "both" | "unknown";
+  sourceDocumentId: number | null;
+  documentUrl: string | null;
 }
 
 /** One of the bank's own published rows for a fee. */

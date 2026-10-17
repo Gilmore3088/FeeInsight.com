@@ -49,7 +49,9 @@ branch file (`credit_union_branches`, latest report) when exactly one longer off
 with the cut (case ignored), title-cased where the file writes it in capitals. It writes only rows still holding the cut,
 so a second run changes nothing, and lists every change (id, old city, new city) in the step
 detail; a dry run lists them and writes nothing. Two possible names, or none (College Station, San
-Luis Obispo, and the 5 cuts with no longer office city), stay for a person. On by James's decision
+Luis Obispo, and the cuts with no longer office city), stay for a person; a person's checks go on
+`HAND_CITY_REPAIRS` (3 on Oct 17: North Little Rock, Palm Beach Gardens, Saratoga Springs), written
+by the same guarded update only while the stored city is still the cut. On by James's decision
 (Oct 15). The cut city's public page redirects permanently to the full one once no institution
 keeps the cut (`fullCityForCut`). It is a data step, so the pipeline pause holds it.
 

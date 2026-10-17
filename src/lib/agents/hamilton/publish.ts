@@ -839,6 +839,11 @@ export function nameBeforeLeaders(name: string): string {
  */
 const ADDON_PRICE_NAME = /(?:\bplus|\band|\+)\s*[(\s]*$/i;
 export function publishNameHold(name: string, canonicalKey: string, amount: number | null): { code: string; reason: string } | null {
+  // No stored line here, on purpose: Darwin's verify already ran `ruleFor` with the traced line
+  // (`postSourceCheck`) on every row it verified, and the live eval-verdict pass reads the line
+  // on every live fee its prefilter selects, so a row verified under an older rule version comes
+  // down after its second look. Passing the line here would also switch on
+  // `two_fees_one_line` at publish, a separate change that needs its own dry run.
   const rule = ruleFor(canonicalKey, name, amount);
   // The price-in-name rule keeps its own hold code (PR 797); the eval check is its live-row twin.
   if (rule === "price_in_name") return { code: rule, reason: `Price in name ($${priceInName(name)?.toFixed(2)}) is not the amount ($${amount?.toFixed(2)})` };

@@ -8,6 +8,7 @@ import { resetSessionChrome } from "@/components/use-session-chrome";
 import { trackEvent } from "@/lib/analytics";
 import type { RegisterVariant } from "./register-destination";
 import { HoneypotField } from "@/components/public/honeypot-field";
+import { useHydrated } from "@/lib/use-hydrated";
 
 const INSTITUTION_TYPES = [
   { value: "", label: "Select..." },
@@ -61,6 +62,7 @@ export function RegisterForm({
   const [error, setError] = useState<string | null>(null);
   const [loginHref, setLoginHref] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const hydrated = useHydrated();
   const [showBankFields, setShowBankFields] = useState(false);
 
   function handleTypeChange(e: React.ChangeEvent<HTMLSelectElement>) {
@@ -94,10 +96,10 @@ export function RegisterForm({
   const selectClass = `${inputClass} appearance-none`;
 
   return (
-    <form onSubmit={handleSubmit} className="relative bg-surface-0 rounded-lg border border-border shadow-sm p-6 space-y-4">
+    <form method="post" onSubmit={handleSubmit} className="relative bg-surface-0 rounded-lg border border-border shadow-sm p-6 space-y-4">
       <HoneypotField />
       {error && (
-        <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+        <div className="text-sm text-brick bg-brick-tint/40 border border-brick/30 rounded-md px-3 py-2">
           {error}
           {loginHref && (
             <>
@@ -187,7 +189,7 @@ export function RegisterForm({
 
       <button
         type="submit"
-        disabled={pending}
+        disabled={pending || !hydrated}
         className="w-full rounded-md bg-brick px-4 py-2.5 text-sm font-medium text-white hover:bg-brick-ink disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
         {pending ? "Creating account..." : isConsumer ? "Create free account" : checkout ? "Continue to checkout" : "Create account"}
