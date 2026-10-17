@@ -25,6 +25,18 @@ describe("describeMedianDelta", () => {
     expect(describeMedianDelta(32.5, 32.5)).toEqual({ text: "At the national median", tone: "at" });
   });
 
+  it("reads a gap within 1% of the median as about the same", () => {
+    expect(describeMedianDelta(30.2, 30, "Florida")).toEqual({ text: "About the same as the Florida median", tone: "at" });
+    expect(describeMedianDelta(30.5, 30, "Florida")).toEqual({ text: "$0.50 above the Florida median", tone: "above" });
+  });
+
+  it("links each amount to the schedule it was read from", () => {
+    render(<FeeScheduleTable fees={[fee({ sourceUrl: "https://bank.example/fees.pdf" })]} disclosureUrl={null} />);
+    const amounts = screen.getAllByRole("link", { name: "$35" });
+    expect(amounts.length).toBeGreaterThan(0);
+    for (const link of amounts) expect(link).toHaveAttribute("href", "https://bank.example/fees.pdf");
+  });
+
   it("names the state for the home-state comparison", () => {
     expect(describeMedianDelta(30, 32.5, "Texas")).toEqual({ text: "$2.50 below the Texas median", tone: "below" });
     expect(describeMedianDelta(32.5, 32.5, "Texas")).toEqual({ text: "At the Texas median", tone: "at" });
@@ -162,7 +174,7 @@ describe("Personal / Business tabs", () => {
     expect(business).toHaveAttribute("tabindex", "-1");
     const businessPanel = document.getElementById(business.getAttribute("aria-controls") ?? "") as HTMLElement;
     expect(businessPanel).not.toBeVisible();
-    expect(within(businessPanel).getAllByRole("link", { hidden: true, name: /Source/ })[0]).toHaveAttribute("href", "https://bank.example/business.pdf");
+    expect(within(businessPanel).getAllByRole("link", { hidden: true, name: "$35" })[0]).toHaveAttribute("href", "https://bank.example/business.pdf");
 
     fireEvent.keyDown(personal, { key: "ArrowRight" });
     expect(business).toHaveAttribute("aria-selected", "true");

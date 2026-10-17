@@ -11,6 +11,7 @@ import { getRateFeesByInstitution, type RateFee } from "@/lib/data-store/rate-fe
 import { rateDisplayParts } from "@/lib/percent-fees";
 import { feeDisplayName } from "@/lib/fee-display-name";
 import { institutionValue } from "@/lib/data-store/fee-stats";
+import { productNameFromFeeName, readableProductName } from "@/lib/agents/knox/lineup";
 
 export const getPublicInstitutionForPage = cache(getPublicInstitutionById);
 
@@ -213,6 +214,8 @@ export interface HeadlineValue {
   low: number;
   high: number;
   sourceUrl: string | null;
+  /** The account the quoted fee belongs to, when the schedule names one (the city page's rule). */
+  account: string | null;
 }
 
 /**
@@ -247,6 +250,9 @@ export function pickHeadlineValues(verifiedFees: ExtractedFee[], categories: rea
       low: Math.min(...amounts),
       high: Math.max(...amounts),
       sourceUrl: quoted?.source_url ?? null,
+      account: quoted
+        ? (readableProductName(quoted.account_product_type ?? null) ?? productNameFromFeeName(quoted.fee_name))
+        : null,
     });
   }
   return values;

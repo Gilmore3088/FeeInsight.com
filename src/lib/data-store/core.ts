@@ -90,6 +90,7 @@ export async function getFeesByInstitution(targetId: number): Promise<ExtractedF
            ef.extraction_confidence, ef.review_status,
            ef.validation_flags, ef.fee_category, ef.fee_family,
            ef.source_url, ef.created_at, ef.fee_audience, ef.audience_evidence, ef.fee_treatment,
+           ef.account_product_type,
            ct.institution_name, ef.institution_id, ef.source_document_id
     FROM published_fee_catalog ef
     JOIN institution_sources ct ON ef.institution_id = ct.id

@@ -141,11 +141,14 @@ export function HamiltonBand({
   insight,
   plansHref,
   reportOfferHref,
+  sampleReportHref = null,
 }: {
   institutionName: string;
   insight: HamiltonInsight | null;
   plansHref: string;
   reportOfferHref: string;
+  /** The live sample report, when one is published: the free first step before the paid report. */
+  sampleReportHref?: string | null;
 }) {
   const hasInsight = Boolean(insight && quarterlyServiceCharges(insight.quarters).length > 0);
   return (
@@ -192,11 +195,24 @@ export function HamiltonBand({
               <TourVideoSlot />
             </FrameMedia>
           )}
-          <p className="text-[12px] text-ink-muted">
+          <p className="text-[12px] text-ink-muted sm:mx-0 sm:text-left">
             Prefer one document?{" "}
-            <Link href={reportOfferHref} className="underline underline-offset-2 hover:text-ink">
-              {REPORT_OFFER.name}, {REPORT_PRICE_INLINE}
-            </Link>
+            {sampleReportHref ? (
+              <>
+                <Link href={sampleReportHref} className="inline-flex min-h-11 items-center underline underline-offset-2 hover:text-ink">
+                  See a free sample {REPORT_OFFER.name}
+                </Link>
+                , then{" "}
+                <Link href={reportOfferHref} className="underline underline-offset-2 hover:text-ink">
+                  order one {REPORT_PRICE_INLINE}
+                </Link>
+                .
+              </>
+            ) : (
+              <Link href={reportOfferHref} className="inline-flex min-h-11 items-center underline underline-offset-2 hover:text-ink">
+                {REPORT_OFFER.name}, {REPORT_PRICE_INLINE}
+              </Link>
+            )}
           </p>
         </div>
       </div>

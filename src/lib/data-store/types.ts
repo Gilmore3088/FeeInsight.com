@@ -39,6 +39,8 @@ export interface ExtractedFee {
   created_at?: string | Date;
   /** The stored fee schedule the row was read from; set by readers that select it. */
   source_document_id?: number | null;
+  /** The account the schedule lists the fee under, when the reader selects it. */
+  account_product_type?: string | null;
 }
 
 export interface ReviewableFee extends ExtractedFee {

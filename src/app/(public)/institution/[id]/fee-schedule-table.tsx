@@ -2,7 +2,6 @@ import { countsAsPersonal, isAudienceUnstated, type FeeAudience, type FeeTreatme
 import { isBusinessOnlyLink } from "@/lib/agents/magellan/link-coverage";
 import Link from "next/link";
 import { UnstatedAudienceFootnote, UnstatedAudienceMark } from "@/components/unstated-audience";
-import { ExternalLink } from "lucide-react";
 import { FEE_FAMILIES, getFeeFamily } from "@/lib/fee-taxonomy";
 import { formatFeeAmount } from "@/lib/format";
 import { getFrequencyLabel } from "./enum-labels";
@@ -65,9 +64,9 @@ const POSITION_DOT: Record<Position, string> = {
 };
 
 const POSITION_TEXT: Record<Position, string> = {
-  below: "Below the U.S. middle half",
-  within: "Inside the U.S. middle half",
-  above: "Above the U.S. middle half",
+  below: "Below the U.S. middle 50%",
+  within: "Inside the U.S. middle 50%",
+  above: "Above the U.S. middle 50%",
 };
 
 function benchmarkFor(fee: DisplayFee, benchmarks: FeeBenchmarks | undefined): FeeBenchmark | null {
@@ -75,7 +74,7 @@ function benchmarkFor(fee: DisplayFee, benchmarks: FeeBenchmarks | undefined): F
   return benchmarks[fee.feeCategory] ?? null;
 }
 
-/** How many benchmarked fees sit below, inside and above the national middle half. */
+/** How many benchmarked fees sit below, inside and above the national middle 50%. */
 export function countPositions(fees: DisplayFee[], benchmarks: FeeBenchmarks): Record<Position, number> {
   const counts: Record<Position, number> = { below: 0, within: 0, above: 0 };
   const seen = new Set<string>();
@@ -99,7 +98,7 @@ function FeePosition({ amount, benchmark, wide = false }: { amount: number; benc
     amount < benchmark.p25 ? "below" : amount > benchmark.p75 ? "above" : "within";
   const scaleMax = Math.max(benchmark.p75 * 1.5, amount * 1.1, 1);
   const pct = (n: number) => `${Math.min(100, Math.max(0, (n / scaleMax) * 100))}%`;
-  const description = `${POSITION_TEXT[position]} (${formatFeeAmount(benchmark.p25)}–${formatFeeAmount(benchmark.p75)} nationally)`;
+  const description = `${POSITION_TEXT[position]} (${formatFeeAmount(benchmark.p25)} to ${formatFeeAmount(benchmark.p75)} nationally)`;
 
   return (
     <span className={`mt-1.5 flex flex-col ${wide ? "w-full" : "w-36"}`} title={description}>
@@ -126,7 +125,7 @@ function FeePosition({ amount, benchmark, wide = false }: { amount: number; benc
 function PositionLegend() {
   return (
     <p className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-surface-200 px-4 py-2 text-[11px] text-ink-muted">
-      <span>vs. the U.S. middle half:</span>
+      <span>vs. the U.S. middle 50%:</span>
       {(["below", "within", "above"] as const).map((position) => (
         <span key={position} className="inline-flex items-center gap-1">
           <span aria-hidden="true" className={`h-2 w-2 rounded-full ${POSITION_DOT[position]}`} />
@@ -164,6 +163,8 @@ export function describeMedianDelta(
   if (!Number.isFinite(amount) || !Number.isFinite(median)) return null;
   const diff = Math.round((amount - median) * 100) / 100;
   if (Math.abs(diff) < 0.01) return { text: `At the ${place} median`, tone: "at" };
+  // Within 1% of the median reads as about the same, as on the state and district pages.
+  if (Math.abs(diff) <= Math.abs(median) * 0.01) return { text: `About the same as the ${place} median`, tone: "at" };
   const money = formatFeeAmount(Math.abs(diff)) ?? `$${Math.abs(diff).toFixed(2)}`;
   return diff > 0
     ? { text: `${money} above the ${place} median`, tone: "above" }
@@ -192,12 +193,12 @@ function MedianCell({
   medians: Map<string, number | null>;
   stateMedians?: StateMedians;
 }) {
-  if (!comparesToPersonal(fee) || fee.status !== "verified" || !fee.feeCategory) return <span className="text-xs text-ink-muted">&mdash;</span>;
+  if (!comparesToPersonal(fee) || fee.status !== "verified" || !fee.feeCategory) return <span className="text-xs text-ink-muted">No median</span>;
   const delta = describeMedianDelta(fee.amount, medians.get(fee.feeCategory));
   const stateDelta = stateMedians
     ? describeMedianDelta(fee.amount, stateMedians.medians.get(fee.feeCategory), stateMedians.place)
     : null;
-  if (!delta && !stateDelta) return <span className="text-xs text-ink-muted">&mdash;</span>;
+  if (!delta && !stateDelta) return <span className="text-xs text-ink-muted">No median</span>;
   return (
     <>
       {delta && (
@@ -274,9 +275,7 @@ export function groupFeesByFamily(fees: DisplayFee[]): FeeGroup[] {
 
 function GroupBadge({ group }: { group: FeeGroup }) {
   const verified = group.verifiedCount > 0;
-  const className = verified
-    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-    : "border-amber-200 bg-amber-50 text-amber-900";
+  const className = verified ? "border-border bg-surface-0 text-ink-soft" : "border-brick/30 bg-brick-tint text-ink";
   return (
     <span className="inline-flex items-center gap-2">
       <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-semibold ${className}`}>
@@ -404,7 +403,7 @@ function FeeList({
       />
       <div className="hidden sm:block">
         <p className="border-b border-surface-200 px-4 py-1.5 text-xs text-ink-muted lg:hidden">
-          Swipe for source and notes &rarr;
+          Swipe for notes &rarr;
         </p>
         <div className="table-scroll">
           <table className="w-full min-w-[720px] border-collapse text-left text-sm">
@@ -415,13 +414,12 @@ function FeeList({
                 <th scope="col" className={HEADER_CELL}>{stateMedians ? "vs medians" : "vs national median"}</th>
                 <th scope="col" className={HEADER_CELL}>Basis</th>
                 <th scope="col" className={HEADER_CELL}>Note</th>
-                <th scope="col" className={`${HEADER_CELL} text-right`}>Source</th>
               </tr>
             </thead>
             {groups.map((group) => (
               <tbody key={group.family} className="border-t border-border">
                 <tr className="bg-paper">
-                  <th scope="rowgroup" colSpan={6} className="px-4 py-2.5 text-left">
+                  <th scope="rowgroup" colSpan={5} className="px-4 py-2.5 text-left">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="text-sm font-semibold text-ink">{group.family}</span>
                       <GroupBadge group={group} />
@@ -453,27 +451,27 @@ function FeeList({
 
 function UnderReviewChip() {
   return (
-    <span className="ml-2 inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-900">
+    <span className="ml-2 inline-flex items-center rounded-md border border-brick/30 bg-brick-tint px-1.5 py-0.5 text-[10px] font-semibold text-ink">
       Under review
     </span>
   );
 }
 
 /**
- * A fee's own source document, or, when the fee has none of its own, the institution's
- * general schedule, labelled as such so it never reads as the fee's exact source.
+ * The amount, linked to the fee's own source document, or, when the fee has none of its own,
+ * to the institution's general schedule, titled as such so it never reads as the exact source.
  */
-function SourceLink({ href, fallback = false }: { href: string | null; fallback?: boolean }) {
-  if (!href) return <span className="text-xs text-ink-muted">&mdash;</span>;
+function AmountLink({ href, fallback = false, children }: { href: string | null; fallback?: boolean; children: React.ReactNode }) {
+  if (!href) return <>{children}</>;
   return (
     <a
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex items-center gap-1 text-xs font-semibold text-ink underline decoration-border underline-offset-2 hover:decoration-ink"
+      title={fallback ? "Open the institution\u2019s fee schedule" : "Open the fee schedule it was read from"}
+      className="underline decoration-border underline-offset-2 hover:decoration-brick"
     >
-      {fallback ? "Institution\u2019s schedule" : "Source"}
-      <ExternalLink className="h-3 w-3" />
+      {children}
     </a>
   );
 }
@@ -514,7 +512,9 @@ function FeeRow({
         {showUnderReview && <UnderReviewChip />}
       </td>
       <td className="font-semibold whitespace-nowrap px-4 py-2.5 text-right align-top text-base tabular-nums text-ink" style={MONO_FIGURE}>
-        {fee.rate ? <RateValue rate={fee.rate} /> : amount ?? "\u2014"}
+        <AmountLink href={sourceUrl} fallback={!fee.sourceUrl}>
+          {fee.rate ? <RateValue rate={fee.rate} /> : amount ?? "Not stated"}
+        </AmountLink>
         {benchmark && fee.amount !== null && (
           <span className="flex justify-end">
             <FeePosition amount={fee.amount} benchmark={benchmark} />
@@ -524,12 +524,9 @@ function FeeRow({
       <td className="px-4 py-2.5 align-top">
         <MedianCell fee={fee} medians={medians} stateMedians={stateMedians} />
       </td>
-      <td className="whitespace-nowrap px-4 py-2.5 align-top text-ink-soft">{basis || "\u2014"}</td>
+      <td className="whitespace-nowrap px-4 py-2.5 align-top text-ink-soft">{basis || <span className="sr-only">Not stated</span>}</td>
       <td className="max-w-[280px] px-4 py-2.5 align-top text-xs leading-relaxed text-ink-muted">
-        {fee.conditions ? <span className="break-words">{fee.conditions}</span> : "\u2014"}
-      </td>
-      <td className="whitespace-nowrap px-4 py-2.5 text-right align-top">
-        <SourceLink href={sourceUrl} fallback={!fee.sourceUrl} />
+        {fee.conditions ? <span className="break-words">{fee.conditions}</span> : <span className="sr-only">None</span>}
       </td>
     </tr>
   );
@@ -588,14 +585,14 @@ function FeeScheduleStack({
                     {showUnderReview && <UnderReviewChip />}
                   </span>
                   <span className="shrink-0 font-semibold text-base tabular-nums text-ink" style={MONO_FIGURE}>
-                    {fee.rate ? <RateValue rate={fee.rate} /> : formatFeeAmount(fee.amount) ?? "\u2014"}
+                    <AmountLink href={sourceUrl} fallback={!fee.sourceUrl}>
+                      {fee.rate ? <RateValue rate={fee.rate} /> : formatFeeAmount(fee.amount) ?? "Not stated"}
+                    </AmountLink>
                   </span>
                 </div>
                 {benchmark && fee.amount !== null && <FeePosition amount={fee.amount} benchmark={benchmark} wide />}
                 <p className="mt-1.5 text-xs leading-relaxed text-ink-muted">
                   {[basis || null, fee.conditions].filter(Boolean).join(" \u00b7 ")}
-                  {(basis || fee.conditions) && sourceUrl ? " \u00b7 " : null}
-                  {sourceUrl && <SourceLink href={sourceUrl} fallback={!fee.sourceUrl} />}
                 </p>
               </li>
             );
