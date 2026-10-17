@@ -180,6 +180,17 @@ describe("top-50 fold", () => {
     expect(TAXONOMY.has("collection_item")).toBe(true);
   });
 
+  test("guard v70: a skipped loan payment leaves late payment and loan origination for other lending", () => {
+    for (const name of ["Skip-A-Pay Fee", "Skip A Payment (each)", "Loan Skip-a-Pay (per loan, two per year)", "Holiday skip payment program", "Extension Agreement or Skip Pay"]) {
+      expect(splitLiveCategory("late_payment", name)?.to, name).toBe("other_lending_fee");
+    }
+    expect(splitLiveCategory("loan_origination", "Loan Extension (Skip-A-Pay)")?.to).toBe("other_lending_fee");
+    expect(splitLiveCategory("loan_origination", "Loan Extension Fee")).toBeNull();
+    expect(splitLiveCategory("late_payment", "Late Payment Fee")).toBeNull();
+    expect(CANONICAL_KEY_MAP.skip_a_pay).toBe("other_lending_fee");
+    expect(CANONICAL_KEY_MAP.skipapay_fee).toBe("other_lending_fee");
+  });
+
   test("a returned foreign check or item leaves check cashing for the returned deposited item fee (guard v68)", () => {
     const split = (name: string) => splitLiveCategory("check_cashing", name)?.to ?? null;
     // The 10 live check cashing rows, each read on its bank's own schedule (Oct 17).
