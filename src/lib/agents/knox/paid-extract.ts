@@ -25,6 +25,8 @@ import { namesALimit } from "@/lib/agents/knox/layout";
 import { KNOX_RULES_STRATEGY } from "@/lib/agents/knox/specialists";
 import { groundLineup, LINEUP_CATEGORY, type AccountLineup } from "@/lib/agents/knox/lineup";
 import { CANONICAL_KEY_MAP, DISPLAY_NAMES, FEE_FAMILIES } from "@/lib/fee-taxonomy";
+import { closedInstitutionSql } from "@/lib/agents/hamilton/closed-institution";
+import { DOCUMENT_OWNER_STRATEGY, documentOwnerFingerprintPrefix } from "@/lib/agents/darwin/document-owner";
 
 type SqlTag = typeof sql;
 
@@ -41,6 +43,10 @@ type SqlTag = typeof sql;
  * `canonical_hint:`), plus `knox_paid_extraction`, so Darwin verifies them like any
  * other raw row. Every call is budget-checked and cost-logged by paidModelCall; a
  * budget cap or the automation stop ends the step cleanly before any money is spent.
+ *
+ * No call is bought for a text whose fees could never go live (takedowns at the source,
+ * 2026-10-17): a closed institution's (publish never selects it) or a document Darwin's latest
+ * document-owner read judged another bank's (publish refuses its rows).
  */
 
 /** Version 2: monthly maintenance rows carry the account's lineup fields (`lineup.ts`). */
@@ -232,6 +238,9 @@ async function selectPaidTexts(db: SqlTag, limit: number, stateCode?: string): P
   const scan = `$${params.push(limit * 4)}`;
   const normalizedState = normalizeStateCode(stateCode);
   const stateFilter = normalizedState ? `AND upper(btrim(inst.state_code)) = $${params.push(normalizedState)}` : "";
+  const ownerFingerprints = [true, false]
+    .map((live) => `'${documentOwnerFingerprintPrefix(live)}' || adt.institution_id::text || ':' || adt.source_document_id::text || ':' || adt.text_hash`)
+    .join(", ");
   return db.unsafe<PaidTextRow[]>(
     `
       SELECT adt.id AS document_text_id,
@@ -279,6 +288,24 @@ async function selectPaidTexts(db: SqlTag, limit: number, stateCode?: string): P
               AND current_text.char_count > 0
             WHERE old_copy.id = adt.source_document_id
               AND old_copy.superseded_by_id IS NOT NULL
+         )
+         -- No paid read for a bank that no longer operates: publish never selects its rows
+         -- (closed-institution.ts), so the call could only buy fees that are never shown.
+         AND NOT ${closedInstitutionSql("inst")}
+         -- No paid read of another bank's schedule: Darwin's latest document-owner read of this
+         -- text judged the pair other_bank, and publish refuses its rows (publish-sweep-rules.ts).
+         AND NOT EXISTS (
+           SELECT 1
+             FROM (
+               SELECT owner.outcome
+                 FROM pipeline_attempts owner
+                WHERE owner.input_fingerprint IN (${ownerFingerprints})
+                  AND owner.strategy = '${DOCUMENT_OWNER_STRATEGY.strategy}'
+                  AND owner.strategy_version = ${DOCUMENT_OWNER_STRATEGY.version}
+                ORDER BY owner.created_at DESC, owner.id DESC
+                LIMIT 1
+             ) latest
+            WHERE latest.outcome = 'evidence_mismatch'
          )
          AND (SELECT COUNT(*) FROM regexp_matches(adt.normalized_text, '\\$\\s*\\.?\\d|\\d\\s*(?:¢|cents?\\M)', 'gi')) >= ${minDollars}
        ORDER BY adt.updated_at DESC, adt.id DESC
