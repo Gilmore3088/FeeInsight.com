@@ -34,6 +34,7 @@ import { LandingResearch } from "./landing-research-section";
 import { LandingPricing } from "./landing-pricing";
 import { buildIndexCard } from "./landing-index";
 import { homeReadsCacheable } from "./landing-shared";
+import { homeSerif } from "./landing-serif";
 import "./landing-motion.css";
 
 // James's headline (Oct 17); no counts, so nothing goes stale.
@@ -123,7 +124,7 @@ export default async function LandingPage() {
   const index = buildIndexCard(new Map(indexReads.map((r) => [r.fee, r.rows])));
 
   return (
-    <div className="min-h-screen overflow-x-clip bg-paper consumer-brand">
+    <div className={`${homeSerif.variable} min-h-screen overflow-x-clip bg-paper consumer-brand`}>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(ORGANIZATION_JSON_LD) }}
@@ -136,7 +137,7 @@ export default async function LandingPage() {
       <main id="main-content">
         {/* James's example (Oct 17): the hero with the working Index, the proof strip, Hamilton's
             examples, the connected research, then the plans. */}
-        <LandingHero index={index} freshness={summary.refreshedOn ? `${summary.refreshedOn} snapshot` : summary.freshnessLabel} />
+        <LandingHero index={index} freshness={summary.refreshedOn || summary.freshnessLabel} />
         <LandingProof summary={summary} feeTypes={publicKeys.size} />
         <LandingHamilton report={sampleRead.report} />
         <LandingResearch />

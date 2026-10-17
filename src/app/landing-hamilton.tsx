@@ -1,16 +1,12 @@
-import { ArrowLeftRight, ArrowUpRight, Check, Files, Landmark, ReceiptText } from "lucide-react";
+import { ArrowLeftRight, ArrowUpRight, Check, Landmark, ReceiptText } from "lucide-react";
 import type { ReactNode } from "react";
-import { HAMILTON_PAGE_NAV } from "@/components/nav-items";
+import { HAMILTON_PAGE_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
 import { TrackLink } from "@/components/track-link";
-import { REPORT_OFFER } from "@/lib/constants";
 import type { MarketReport } from "@/lib/custom-report/report-data";
 import { placeLabel } from "./market-report/report-body";
 import { HamiltonCarousel, type HamiltonSlide } from "./landing-hamilton-carousel";
 import { cardMoney } from "./landing-index-view";
-import { HOME_WRAP, SAMPLE_REPORT_HREF, SANS, buildSampleView, type SampleRow, type SampleView } from "./landing-shared";
-
-/** The report request form, marked as reached from the homepage. */
-const REPORT_HREF = "/reports?report=institution&src=home#request";
+import { HOME_WRAP, SAMPLE_REPORT_HREF, SERIF, buildSampleView, type SampleRow, type SampleView } from "./landing-shared";
 
 /** Benchmark rows shown, in report order. */
 const BENCHMARK_ROWS = 3;
@@ -18,8 +14,6 @@ const BENCHMARK_ROWS = 3;
 const ANALYZE_ROWS = 2;
 
 const QUESTION = "border-b border-border pb-3 text-[22px] font-semibold leading-[1.12] tracking-[-0.025em] text-ink sm:text-[25px]";
-const NOTE = "mt-4 text-[13px] leading-relaxed text-ink-soft";
-const LABEL = "mb-2 text-[12px] text-ink-muted";
 
 function SourceLink({ href, children }: { href: string; children: ReactNode }) {
   return (
@@ -76,13 +70,10 @@ function sampleSlides(sample: SampleView, market: string | null): HamiltonSlide[
     {
       key: "benchmark",
       name: "Benchmark",
-      line: "Compare local, state and national fees.",
-      heading: "Benchmark your market",
       body: (
         <>
-          <p className={LABEL}>Published sample · {name}</p>
           <p className={QUESTION}>How do our fees compare locally?</p>
-          <p className="mt-3 text-[12px] text-ink-muted">{market ? `${market} · ` : ""}Published fee schedules</p>
+          <p className="mt-3 text-[12px] text-ink-muted">Sample: {name}{market ? ` · ${market}` : ""}</p>
           <table className="mt-2 w-full border-collapse text-[13px]">
             <thead>
               <tr className="border-b border-border text-[11px] text-ink-muted">
@@ -101,45 +92,33 @@ function sampleSlides(sample: SampleView, market: string | null): HamiltonSlide[
               ))}
             </tbody>
           </table>
-          <p className={NOTE}>See the market around you, with the schedule behind each number.</p>
-          <SourceLink href={SAMPLE_REPORT_HREF}>View the published sample</SourceLink>
+          <SourceLink href={SAMPLE_REPORT_HREF}>View the sample report</SourceLink>
         </>
       ),
     },
     {
       key: "analyze",
       name: "Analyze",
-      line: "Decide what deserves a closer look.",
-      heading: "Analyze your options",
       body: (
         <>
-          <p className={LABEL}>Illustrative analysis · {name}</p>
           <p className={QUESTION}>Which fees should we review next?</p>
-          <p className="mb-1 mt-3 text-[12px] text-ink-muted">Answer:</p>
-          <p className="mb-3 text-[24px] font-semibold leading-[1.1] tracking-[-0.03em] text-ink sm:text-[28px]">{analyzeAnswer(picks)}</p>
+          <p className="mb-3 mt-3 text-[24px] font-semibold leading-[1.1] tracking-[-0.03em] text-ink sm:text-[28px]">{analyzeAnswer(picks)}</p>
           {picks.map((row) => (
             <FeeRow key={row.key} row={row} />
           ))}
-          <p className={NOTE}>Weigh service costs and waiver policies alongside the market.</p>
-          <SourceLink href={SAMPLE_REPORT_HREF}>View supporting evidence</SourceLink>
-          <p className="mt-2 text-[11px] text-ink-muted">Based on the published sample report.</p>
+          <SourceLink href={SAMPLE_REPORT_HREF}>View the sample report</SourceLink>
         </>
       ),
     },
     {
       key: "monitor",
       name: "Monitor",
-      line: "Keep competitors' published fees in view.",
-      heading: "Monitor what matters",
       body: (
         <>
-          <p className={LABEL}>Illustrative monitoring workspace</p>
           <p className={QUESTION}>Keep your market in view.</p>
-          <p className={NOTE}>Follow the institutions and fees that matter to your next decision.</p>
           <ul className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
             {[
               { icon: Landmark, title: "Local competitors", line: `${sample.competitors} with published fees` },
-              { icon: Files, title: "Fee schedules", line: "Published source documents" },
               ...picks.map((p) => ({ icon: p.key.startsWith("wire") ? ArrowLeftRight : ReceiptText, title: p.label, line: `Published by ${p.competitors} local ${p.competitors === 1 ? "competitor" : "competitors"}` })),
             ].map((item) => (
               <li key={item.title} className="flex items-center gap-2.5 rounded-[5px] bg-paper px-3 py-3">
@@ -151,7 +130,6 @@ function sampleSlides(sample: SampleView, market: string | null): HamiltonSlide[
               </li>
             ))}
           </ul>
-          <p className={NOTE}>When a competitor&apos;s schedule is re-read, check its source and bring it into your analysis.</p>
           <SourceLink href={HAMILTON_PAGE_NAV.href}>Explore Hamilton</SourceLink>
         </>
       ),
@@ -159,21 +137,15 @@ function sampleSlides(sample: SampleView, market: string | null): HamiltonSlide[
     {
       key: "report",
       name: "Report",
-      line: "Bring clear evidence to your board.",
-      heading: "Report with confidence",
       body: (
         <>
-          <p className="mb-2 flex justify-between text-[11px] uppercase tracking-[0.08em] text-ink-muted">
-            <span>Competitive fee position</span>
-            <span>Published sample</span>
-          </p>
           <p className="text-[24px] font-semibold leading-[1.1] tracking-[-0.025em] text-ink sm:text-[27px]">{name} against its local market</p>
           {market ? <p className="mt-1 text-[12px] text-ink-muted">{market}</p> : null}
           <div className="mt-4 grid grid-cols-3 gap-2">
             {[
-              { n: counts.above, line: "above the local middle half" },
-              { n: counts.inside, line: "inside the local middle half" },
-              { n: counts.below, line: "below the local middle half" },
+              { n: counts.above, line: "above local range" },
+              { n: counts.inside, line: "within local range" },
+              { n: counts.below, line: "below local range" },
             ].map((s) => (
               <div key={s.line} className="rounded-[4px] bg-paper px-2 py-3 text-center">
                 <strong className="block text-[24px] font-semibold leading-none text-ink">{s.n}</strong>
@@ -184,51 +156,33 @@ function sampleSlides(sample: SampleView, market: string | null): HamiltonSlide[
           <ul className="mt-3 text-[13px] text-ink">
             <li className="flex items-center gap-2 border-b border-border py-2">
               <Check aria-hidden="true" className="size-3.5 text-brick" />
-              {rows.length} {rows.length === 1 ? "fee" : "fees"} compared with {sample.competitors} local {sample.competitors === 1 ? "competitor" : "competitors"}
-            </li>
-            <li className="flex items-center gap-2 border-b border-border py-2">
-              <Check aria-hidden="true" className="size-3.5 text-brick" />
-              The source schedule behind every figure
+              {rows.length} {rows.length === 1 ? "fee" : "fees"} vs {sample.competitors} local {sample.competitors === 1 ? "competitor" : "competitors"}
             </li>
           </ul>
           <SourceLink href={SAMPLE_REPORT_HREF}>Read the sample report</SourceLink>
-          <p className="mt-1">
-            {/* Funnel step 2: the paid report, next to the sample it sells (growthOS review). */}
-            <TrackLink
-              event="request_report_click"
-              eventProps={{ placement: "home_report" }}
-              href={REPORT_HREF}
-              className="text-[13px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
-            >
-              {REPORT_OFFER.institutionCtaLabel} · {REPORT_OFFER.priceLabel}
-            </TrackLink>
-          </p>
         </>
       ),
     },
   ];
 }
 
-/** Without a ready sample, each example says what it does and links on; no stand-in figures. */
+/** Without a ready sample, each example asks its question and links on; no stand-in figures. */
 function plainSlides(): HamiltonSlide[] {
-  const plain = (key: HamiltonSlide["key"], name: string, line: string, heading: string, question: string, note: string): HamiltonSlide => ({
+  const plain = (key: HamiltonSlide["key"], name: string, question: string): HamiltonSlide => ({
     key,
     name,
-    line,
-    heading,
     body: (
       <>
         <p className={QUESTION}>{question}</p>
-        <p className={NOTE}>{note}</p>
         <SourceLink href={HAMILTON_PAGE_NAV.href}>Explore Hamilton</SourceLink>
       </>
     ),
   });
   return [
-    plain("benchmark", "Benchmark", "Compare local, state and national fees.", "Benchmark your market", "How do our fees compare locally?", "See the market around you, with the schedule behind each number."),
-    plain("analyze", "Analyze", "Decide what deserves a closer look.", "Analyze your options", "Which fees should we review next?", "Find where your fees sit furthest from your market, with the evidence."),
-    plain("monitor", "Monitor", "Keep competitors' published fees in view.", "Monitor what matters", "Keep your market in view.", "Follow the institutions and fees that matter to your next decision."),
-    plain("report", "Report", "Bring clear evidence to your board.", "Report with confidence", "Bring the evidence to your board.", "Every figure in the report traces to a published schedule."),
+    plain("benchmark", "Benchmark", "How do our fees compare locally?"),
+    plain("analyze", "Analyze", "Which fees should we review next?"),
+    plain("monitor", "Monitor", "Keep your market in view."),
+    plain("report", "Report", "Bring the evidence to your board."),
   ];
 }
 
@@ -250,19 +204,22 @@ export function LandingHamilton({ report }: { report: MarketReport | null }) {
           slides={slides}
           intro={
             <>
-              <p className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-brick">
-                <span aria-hidden="true" className="h-0.5 w-9 bg-brick" />
-                Hamilton
-              </p>
-              <h2 id="hamilton-title" className="fi-home-h2 mt-5 !font-semibold text-ink" style={SANS}>
+              <h2 id="hamilton-title" className="fi-home-h2 !font-medium text-ink" style={SERIF}>
                 <span className="block whitespace-nowrap">From market data</span>
                 <span className="block whitespace-nowrap">to your next move.</span>
               </h2>
               <p className="mt-5 text-[18px] leading-[1.45] text-ink-soft sm:text-[21px]">
-                Your on-demand fee consultant.
-                <br />
-                Built around your institution.
+                Hamilton is your on-demand fee consultant, built around your institution.
               </p>
+              {/* The subscription, beside the demo (James, Oct 17). */}
+              <TrackLink
+                event="upgrade_click"
+                eventProps={{ placement: "home_hamilton" }}
+                href={PRO_PLANS_NAV.href}
+                className="fi-btn fi-btn-brick mt-7 min-h-12 px-6 text-[15px]"
+              >
+                Get Hamilton for your institution
+              </TrackLink>
             </>
           }
         />

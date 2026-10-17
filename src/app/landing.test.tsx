@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { IndexRow } from "@/lib/data-store";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
+import { REPORT_OFFER } from "@/lib/constants";
 import { PRO_TIERS, tierAmountLabel } from "@/lib/pro-tiers";
 import type { PublicStatsSummary } from "@/lib/public-stats";
 import { histogram, institutionsFor, statsFor } from "./(public)/fees/(index)/index-view";
@@ -101,29 +102,36 @@ describe("hero Bank Fee Index card", () => {
   });
 
   it("changes the figures and the comparison with the pickers, and links to the same pick on /fees", () => {
-    render(<IndexCard data={card} freshness="Oct 14, 2026 snapshot" />);
+    render(<IndexCard data={card} freshness="Oct 14, 2026" />);
     const us = card.cells.monthly_maintenance[US][0];
     if (!hasMedian(us)) throw new Error("expected a median");
     const median = `$${Number.isInteger(us.median / 100) ? us.median / 100 : (us.median / 100).toFixed(2)}`;
     expect(screen.getByText(median, { selector: "strong" })).toBeTruthy();
     expect(screen.getByText("Banks against credit unions")).toBeTruthy();
-    fireEvent.change(screen.getByLabelText("Headquartered in"), { target: { value: "FL" } });
+    // One source line closes the card; the explainer lines are gone (James, Oct 17).
+    expect(screen.getByText("Published fee schedules · Oct 14, 2026")).toBeTruthy();
+    expect(screen.queryByText(/middle half/)).toBeNull();
+    expect(screen.queryByText(/Published fee snapshot/i)).toBeNull();
+    fireEvent.change(screen.getByLabelText("State"), { target: { value: "FL" } });
     expect(screen.getByText("Florida against the U.S.")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Institutions"), { target: { value: "bank" } });
     expect(screen.getByRole("link", { name: /Open the Bank Fee Index/ }).getAttribute("href")).toBe(cardHref("monthly_maintenance", "FL", "bank"));
     expect(cardHref("monthly_maintenance", "FL", "bank")).toBe("/fees?fee=monthly_maintenance&state=FL&charter=bank#explorer");
-    fireEvent.change(screen.getByLabelText("Headquartered in"), { target: { value: "WY" } });
-    expect(screen.getAllByText(/too few for a median/).length).toBeGreaterThan(0);
+    fireEvent.change(screen.getByLabelText("State"), { target: { value: "WY" } });
+    expect(screen.getAllByText("Too few for a median yet").length).toBeGreaterThan(0);
   });
 });
 
 describe("hero and proof strip", () => {
-  it("carries James's promise, the two actions and the institution search", () => {
-    const html = renderToStaticMarkup(<LandingHero index={card} freshness="Oct 14, 2026 snapshot" />);
+  it("names the buyer, carries James's promise, one action and the institution search", () => {
+    const html = renderToStaticMarkup(<LandingHero index={card} freshness="Oct 14, 2026" />);
+    // The audience line is back, in sentence case, before the h1 (James, Oct 17).
+    expect(html).toMatch(/<p[^>]*>For banks and credit unions<\/p><h1/);
+    expect(html).not.toMatch(/uppercase|tracking-\[0\.1/);
     expect(html).toContain("Know your market.");
     expect(html).toContain("Price with confidence.");
     expect(html).toMatch(/<a href="#hamilton"[^>]*fi-btn-brick[^>]*>See Hamilton in action</);
-    expect(html).toMatch(/<a [^>]*href="\/fees"[^>]*>Explore the Index/);
+    expect(html).not.toContain("Explore the Index");
     expect(html).toMatch(/<form[^>]*action="\/institutions"[^>]*method="get"/);
     // Both h1 lines stay whole: a word is never left on its own line.
     expect(html.match(/class="block whitespace-nowrap"/g)).toHaveLength(2);
@@ -156,10 +164,13 @@ describe("Hamilton band", () => {
     expect(html).toContain("02 / 04");
     // No timer or progress bar anywhere (James, Oct 17).
     expect(html).not.toMatch(/progress/i);
-    // Funnel step 2: the paid report, from constants, next to the sample.
-    expect(html).toMatch(/<a href="\/reports\?report=institution&amp;src=home#request"[^>]*data-event="request_report_click" data-placement="home_report">Request your institution report · From \$300</);
-    expect(html).toContain("Weigh service costs and waiver policies alongside the market.");
-    expect(html).not.toContain("before you settle on a price");
+    // The subscription sits beside the demo; the homepage promotes no standalone report (James, Oct 17).
+    expect(html).toMatch(/<a href="\/subscribe"[^>]*data-event="upgrade_click" data-placement="home_hamilton">Get Hamilton for your institution</);
+    expect(html).not.toContain("request_report_click");
+    expect(html).not.toContain(REPORT_OFFER.priceLabel);
+    // No eyebrows, frame headings, card sub-lines or "illustrative" labels.
+    expect(html).not.toMatch(/uppercase|Illustrative|Published sample|Answer:|Analyze your options|Compare local, state and national fees/);
+    expect(html).toContain("Sample: Capital City Bank");
     // Every figure in the examples is a sample figure.
     for (const row of analyzePicks(sample.rows)) expect(html).toContain(row.label);
   });
@@ -209,8 +220,6 @@ function stubBrowser({ reduced = false }: { reduced?: boolean } = {}) {
 const slides: HamiltonSlide[] = (["benchmark", "analyze", "monitor", "report"] as const).map((key) => ({
   key,
   name: key[0].toUpperCase() + key.slice(1),
-  line: `${key} line`,
-  heading: `${key} heading`,
   body: <p>{key} body</p>,
 }));
 
@@ -265,7 +274,8 @@ describe("research, already connected", () => {
     expect(html).toContain(RESEARCH_EXAMPLES[0].question);
     expect(html).toContain(RESEARCH_EXAMPLES[0].title);
     expect(html).toContain('data-answered="true"');
-    expect(html).toContain("Illustrative research workflow");
+    // Tile names and the question only: no source lines, eyebrows, phase text or label (James, Oct 17).
+    expect(html).not.toMatch(/Illustrative|Hey Hamilton|uppercase|FDIC · NCUA|Connecting|Ten source families\./);
     expect(html.match(/data-source=/g)).toHaveLength(SOURCES.length);
     // The first question's sources are lit from the start.
     for (const key of RESEARCH_EXAMPLES[0].sources) expect(html).toContain(`data-source="${key}" data-lit="true"`);
@@ -309,6 +319,10 @@ describe("pricing", () => {
     }
     expect(html).toMatch(/<a href="\/subscribe"[^>]*data-event="upgrade_click" data-placement="home_pricing">Choose your plan</);
     expect(html).toMatch(/<a href="\/contact\?source=demo"[^>]*data-event="contact_sales" data-placement="home_pricing_demo">Talk to us</);
+    // No eyebrow; the seat line follows the tiers; no report offer.
+    expect(html).not.toMatch(/uppercase/);
+    expect(html.indexOf("Up to")).toBeGreaterThan(html.indexOf("</ul>"));
+    expect(html).not.toContain(REPORT_OFFER.priceLabel);
   });
 });
 
@@ -316,7 +330,7 @@ describe("page copy", () => {
   it("keeps the editorial words out", () => {
     const html = renderToStaticMarkup(
       <>
-        <LandingHero index={card} freshness="Oct 14, 2026 snapshot" />
+        <LandingHero index={card} freshness="Oct 14, 2026" />
         <LandingProof summary={summary} feeTypes={47} />
         <LandingHamilton report={sampleWorkflowReport()} />
         <LandingResearch />
