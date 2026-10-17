@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import type { Metadata } from "next";
 import Link from "next/link";
+import { ArrowRight, ArrowUpRight } from "lucide-react";
 import { notFound } from "next/navigation";
 import { getFinancialsByInstitution } from "@/lib/data-store";
 import { getFinancialHistory, getPeerFinancialMedians, getPeerPercentiles } from "@/lib/data-store/financial";
@@ -10,7 +11,6 @@ import {
   getEnforcementRecord,
   getComplaintTrend,
   getHoldingCompanyProfile,
-  getRegulatorInfo,
 } from "@/lib/data-store/registry-profile";
 import { getRegulatoryWatch } from "@/lib/data-store/regulatory-watch";
 import { canAccessPremium } from "@/lib/access";
@@ -19,7 +19,6 @@ import { getCurrentUser } from "@/lib/auth";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
-import { PAGE_CRUMBS, PAGE_H1, PAGE_HEADER } from "@/components/public/page-header";
 import { getAlertSubscriptionForInstitution } from "@/lib/data-store/alerts";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
@@ -35,7 +34,6 @@ import { getCharterLabel, getSegmentLabel, toTitleCase } from "./enum-labels";
 import { FeeFocusScroll } from "./fee-focus-scroll";
 import {
   FeeScheduleTable,
-  countPositions,
   groupFeesByFamily,
   splitFeesByAudience,
   type DisplayFee,
@@ -66,20 +64,19 @@ import {
   toRateDisplayFees,
 } from "./profile-data";
 import { InstitutionJsonLd } from "./profile-jsonld";
+import { ProfileHero } from "./profile-hero";
+import "./profile.css";
 import { ProfileFootnote } from "./profile-footnote";
 import { HamiltonBand, type HamiltonInsight } from "./hamilton-band";
 import { CompareTable } from "./compare-table";
 import {
   compareCounts,
-  compareFinding,
   compareRows,
   heroFinding,
   leadRow,
   orderRows,
-  positionFinding,
   scheduleState,
 } from "./profile-view";
-import { ComparisonBars, type ComparisonBar } from "../../fees/city/[state]/[city]/comparison-bars";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -93,9 +90,9 @@ const FINANCIAL_HISTORY_QUARTERS = 4;
 /** fdic and ncua can both carry the same quarter; fetch enough rows to dedupe. */
 const FINANCIAL_SOURCES_PER_QUARTER = 2;
 
-const H2 = "text-center text-[22px] font-semibold tracking-[-0.02em] text-ink sm:text-left sm:text-[28px]";
-const FINDING = "mx-auto mt-2 max-w-3xl text-center text-[15px] leading-relaxed text-ink-soft sm:mx-0 sm:text-left";
-const SOURCE = "mt-3 text-center text-[12px] leading-relaxed text-ink-muted sm:mx-0 sm:max-w-none sm:text-left";
+const H2 = "text-[34px] font-semibold leading-[1.04] tracking-[-0.035em] text-ink sm:text-[52px]";
+const FINDING = "mt-3 max-w-3xl text-[16px] leading-relaxed text-ink-soft sm:text-[18px]";
+const SOURCE = "mt-3 text-[12px] leading-relaxed text-ink-muted";
 const LINK = "font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink";
 
 function fallbackTo<T>(label: string, fallback: T) {
@@ -104,8 +101,6 @@ function fallbackTo<T>(label: string, fallback: T) {
     return fallback;
   };
 }
-
-const count = (n: number) => n.toLocaleString("en-US");
 
 /** Schedule rows shown before "Show all". */
 const SCHEDULE_ROWS = 5;
@@ -203,7 +198,6 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
         getRegulatoryWatch(instId).catch(fallbackTo("regulatory watch", null)),
       ])
     : [[], null, null, null, null, null, null, null];
-  const regulator = await getRegulatorInfo(instId).catch(fallbackTo("regulator info", null));
   const financialSeries = buildFinancialSeries(financialHistory);
   const peerMedianPoints = toPeerMedianPoints(peerMedians);
   const financialGrowth = computeGrowth(financialSeries);
@@ -277,10 +271,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
   const audience = splitFeesByAudience(publishedDisplay);
   const personalRows = rowCount(audience ? audience.personal : publishedDisplay);
   const businessOnlyRows = audience ? rowCount(audience.business.filter((fee) => fee.feeAudience === "business")) : 0;
-  const publishedRows = rowCount(publishedDisplay);
-  const reviewRows = rowCount(displayFees) - publishedRows;
   const scheduleRowCount = rowCount(displayFees);
-  const positionLine = positionFinding(countPositions(displayFees, feeBenchmarks));
   const finding = heroFinding({
     rows,
     name: inst.institution_name,
@@ -311,90 +302,12 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
     isAuthenticated: Boolean(user),
   });
 
-  const facts: Array<{ label: string; value: React.ReactNode }> = [{ label: "Charter", value: charterLabel }];
-  if (city || stateName) {
-    facts.push({
-      label: "Headquarters",
-      value: (
-        <>
-          {city}
-          {city && stateName ? ", " : ""}
-          {stateName && stateCode && (
-            <Link href={`/research/state/${stateCode}`} className={LINK}>
-              {stateName}
-            </Link>
-          )}
-        </>
-      ),
-    });
-  }
-  if (districtName && district) {
-    facts.push({
-      label: "Fed district",
-      value: (
-        <Link href={`/research/district/${district}`} className={LINK}>
-          {districtName}
-        </Link>
-      ),
-    });
-  }
-  if (assetsDollars) facts.push({ label: "Total assets", value: formatCompactDollars(assetsDollars) });
-  else if (segmentLabel) facts.push({ label: "Size", value: segmentLabel });
-  if (regulator?.primary_regulator) facts.push({ label: "Regulator", value: regulator.primary_regulator });
-  if (regulator?.holding_company_name) {
-    facts.push({ label: "Holding company", value: toTitleCase(regulator.holding_company_name) ?? regulator.holding_company_name });
-  }
-  if (regulator?.regulatory_status === "inactive") {
-    facts.push({ label: "Status", value: regulator.closed_date ? `Closed or merged ${regulator.closed_date}` : "Closed or merged" });
-  }
-
-  // The hero's exhibit: the lead fee beside the medians it is read against.
-  // The bar's name carries the place; the line under it says whose median it is (one wording site-wide).
-  const publishSample = (n: number) => `Median of ${count(n)} banks and credit unions that publish this fee`;
-  const tooFew = `Too few for a median (${MIN_INSTITUTIONS_FOR_MEDIAN} needed)`;
-  const leadBars: ComparisonBar[] | null =
-    lead && lead.amount != null
-      ? [
-          {
-            name: inst.institution_name,
-            // Several prices: the bar is the compared value, labeled in the shared rule's words.
-            sample: lead.comparedAt ?? "Its published fee",
-            value: lead.amount,
-          },
-          ...(stateName
-            ? [
-                {
-                  name: stateName,
-                  sample: lead.state
-                    ? publishSample(lead.state.institutions)
-                    : "Banks and credit unions that publish this fee",
-                  value: lead.state?.median ?? null,
-                  missing: tooFew,
-                },
-              ]
-            : []),
-          ...(districtName
-            ? [
-                {
-                  name: `${districtName} district`,
-                  sample: lead.district
-                    ? publishSample(lead.district.institutions)
-                    : "Banks and credit unions that publish this fee",
-                  value: lead.district?.median ?? null,
-                  missing: tooFew,
-                },
-              ]
-            : []),
-          {
-            name: "U.S.",
-            sample: lead.us ? publishSample(lead.us.institutions) : "Banks and credit unions that publish this fee",
-            value: lead.us?.median ?? null,
-          },
-        ]
-      : null;
-  // Phones show three bars (it, its state, the U.S.); the district bar waits for wider screens.
-  const phoneBars = leadBars?.filter((bar) => !bar.name.endsWith(" district")) ?? null;
-  const shortFacts = [charterLabel, [city, stateCode].filter(Boolean).join(", "), assetsDollars ? `${formatCompactDollars(assetsDollars)} in assets` : segmentLabel]
+  // "Tallahassee, Florida · Bank · $4.4B assets", the hero's one line of facts.
+  const heroFacts = [
+    [city, stateName].filter(Boolean).join(", "),
+    charterLabel,
+    assetsDollars ? `${formatCompactDollars(assetsDollars)} assets` : segmentLabel,
+  ]
     .filter((part): part is string => Boolean(part))
     .join(" \u00b7 ");
 
@@ -443,69 +356,31 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
       />
 
       <div className="bg-paper text-ink">
-        {/* 1. Who it is, and the one finding the page leads with. */}
-        <section className="border-b border-border">
-          <div
-            className={`mx-auto max-w-page px-4 pb-10 pt-6 sm:px-6 sm:pb-12 sm:pt-10 ${
-              leadBars ? "lg:grid lg:grid-cols-[minmax(0,6fr)_minmax(0,5fr)] lg:items-start lg:gap-16" : ""
-            }`}
-          >
-            <div className={PAGE_HEADER}>
-              <nav aria-label="Breadcrumb" className={PAGE_CRUMBS}>
-                <Link href="/institutions" className="inline-flex min-h-11 items-center hover:text-ink">
-                  Institutions
-                </Link>
-                {stateName && stateCode && (
-                  <>
-                    <span aria-hidden="true">/</span>
-                    <Link href={`/research/state/${stateCode}`} className="inline-flex min-h-11 items-center hover:text-ink">
-                      {stateName}
-                    </Link>
-                  </>
-                )}
-              </nav>
-              <h1 className={`mt-2 break-words ${PAGE_H1}`}>{inst.institution_name}</h1>
-              {shortFacts && <p className="mt-3 text-center text-[14px] text-ink-soft sm:hidden">{shortFacts}</p>}
-              <dl className="mt-5 hidden grid-cols-2 gap-x-6 gap-y-3 text-left sm:grid sm:grid-cols-3 xl:flex xl:flex-wrap xl:gap-x-10">
-                {facts.map((fact) => (
-                  <div key={fact.label} className="min-w-0">
-                    <dt className="text-[12px] text-ink-muted">{fact.label}</dt>
-                    <dd className="mt-0.5 break-words text-[14px] font-medium leading-5 text-ink">{fact.value}</dd>
-                  </div>
-                ))}
-              </dl>
-              <p className="mx-auto mt-6 max-w-2xl text-[19px] font-semibold leading-snug tracking-[-0.01em] text-ink sm:mx-0 sm:text-left sm:text-[22px]">
-                {finding}
-              </p>
-              <p className={SOURCE}>
-                {published.length > 0 ? (
-                  <>
-                    Source: {scheduleLink}
-                    {collectedOn ? `, read ${collectedOn}` : ""}.
-                  </>
-                ) : (
-                  <>
-                    Know where its fee schedule is?{" "}
-                    <Link href={links.correctSourceHref} className={LINK}>
-                      Send the link
-                    </Link>
-                  </>
-                )}
-              </p>
-            </div>
-            {leadBars && lead && (
-              <figure className="mt-10 border-t border-border pt-8 text-left lg:mt-2 lg:border-l lg:border-t-0 lg:pl-12 lg:pt-0">
-                <figcaption className="text-[14px] font-semibold text-ink">{lead.label}</figcaption>
-                <div className="mt-4 sm:hidden">
-                  <ComparisonBars bars={phoneBars ?? leadBars} />
-                </div>
-                <div className="mt-4 hidden sm:block">
-                  <ComparisonBars bars={leadBars} />
-                </div>
-              </figure>
-            )}
-          </div>
-        </section>
+        {/* 1. Who it is, and the count the page leads with (James's design file, Oct 17). */}
+        <ProfileHero
+          name={inst.institution_name}
+          stateName={stateName}
+          stateCode={stateCode}
+          facts={heroFacts}
+          districtName={districtName}
+          district={district}
+          counts={sparse ? null : counts}
+          finding={finding}
+          source={
+            published.length > 0 ? (
+              <>
+                Source: {scheduleLink}
+                {collectedOn ? `, read ${collectedOn}` : ""}.
+              </>
+            ) : (
+              <>
+                Know where its fee schedule is? <Link href={links.correctSourceHref}>Send the link</Link>
+              </>
+            )
+          }
+          primary={{ href: links.analyzeHref, label: isPro ? "Open in Hamilton" : "Explore Hamilton" }}
+          schedulesHref={displayFees.length > 0 ? "#schedule-heading" : null}
+        />
 
         <div className="mx-auto max-w-page space-y-14 px-4 pb-16 pt-12 sm:space-y-16 sm:px-6 sm:pt-16">
           {/* 2. Every published fee beside the state, district and U.S. medians. */}
@@ -514,21 +389,34 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
               <h2 id="compare-heading" className={H2}>
                 Fees against the market
               </h2>
-              {!sparse && counts && <p className={FINDING}>{compareFinding(counts, stateName)}</p>}
-              <div className="mt-5">
-                <CompareTable rows={rows} stateName={stateName} stateCode={stateCode} districtName={districtName} />
-              </div>
-              <p className={SOURCE}>
-                Source: each amount links to the fee schedule it was read from. Medians for {medianPlaces}: {PRODUCT_NAME} published
-                fees, shown where at least {MIN_INSTITUTIONS_FOR_MEDIAN} institutions publish the fee.
+              <p className={FINDING}>
+                Comparison with {counts?.level === "state" && stateName ? stateName : "U.S."} medians for fees published by banks and
+                credit unions.
               </p>
-              <details className="group/how mt-1">
-                <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-2 text-[13px] font-semibold text-ink [&::-webkit-details-marker]:hidden">
-                  <span aria-hidden="true" className="transition-transform group-open/how:rotate-90">
-                    &rsaquo;
+              <div className="mt-6">
+                <CompareTable rows={rows} institutionName={inst.institution_name} stateName={stateName} districtName={districtName} />
+              </div>
+              <details className="group/how mt-3">
+                <summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-ink-muted [&::-webkit-details-marker]:hidden">
+                  <span>Published schedules</span>
+                  <span aria-hidden="true">&middot;</span>
+                  <span>Banks and credit unions</span>
+                  {collectedOn && (
+                    <>
+                      <span aria-hidden="true">&middot;</span>
+                      <span>Read {collectedOn}</span>
+                    </>
+                  )}
+                  <span aria-hidden="true">&middot;</span>
+                  <span className="inline-flex items-center gap-1.5 font-medium text-ink underline decoration-border underline-offset-4">
+                    View sources
+                    <ArrowRight aria-hidden="true" className="size-3.5 transition-transform group-open/how:rotate-90" />
                   </span>
-                  How the comparison is made
                 </summary>
+                <p className={SOURCE}>
+                  Each amount links to the fee schedule it was read from. Medians for {medianPlaces}: {PRODUCT_NAME} published fees,
+                  shown where at least {MIN_INSTITUTIONS_FOR_MEDIAN} institutions publish the fee.
+                </p>
                 <dl className="mt-2 grid max-w-3xl gap-x-4 gap-y-1 text-[12px] leading-snug text-ink-muted sm:grid-cols-[auto_minmax(0,1fr)]">
                   <dt className="font-medium text-ink-soft">Compared at</dt>
                   <dd>
@@ -581,17 +469,26 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
           {/* 3. The whole schedule, grouped by type. */}
           {displayFees.length > 0 && (
             <section aria-labelledby="schedule-heading">
-              <h2 id="schedule-heading" className={H2}>
-                {published.length > 0 ? "Every published fee" : "Fees under review"}
+              <h2 id="schedule-heading" className={`${H2} scroll-mt-24`}>
+                {published.length > 0 ? "Published fee schedule" : "Fees under review"}
               </h2>
               <p className={FINDING}>
                 {published.length > 0
-                  ? (positionLine ??
-                    `${count(publishedRows)} published ${publishedRows === 1 ? "fee" : "fees"}${reviewRows > 0 ? ` and ${count(reviewRows)} under review` : ""} from its schedule, grouped by type.`)
+                  ? `Amounts from ${inst.institution_name}\u2019s own schedules, with a source for each figure.`
                   : "They stay out of every comparison until review is done."}
               </p>
-              <div className="mt-5">
-                <ShowAll total={scheduleRowCount} shown={SCHEDULE_ROWS} initialAll={scheduleAll}>
+              <div className="mt-6">
+                <ShowAll
+                  total={scheduleRowCount}
+                  shown={SCHEDULE_ROWS}
+                  initialAll={scheduleAll}
+                  aside={
+                    <Link href={links.correctSourceHref} className={`inline-flex min-h-11 items-center gap-1.5 text-[14px] ${LINK}`}>
+                      Correct a fee source
+                      <ArrowUpRight aria-hidden="true" className="size-4" />
+                    </Link>
+                  }
+                >
                   <div className="overflow-hidden rounded-2xl border border-border bg-surface-0">
                     {focusFeeCategory && <FeeFocusScroll category={focusFeeCategory} />}
                     <FeeScheduleTable
@@ -605,8 +502,9 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                 </ShowAll>
               </div>
               <p className={SOURCE}>
-                Source: each amount links to {scheduleLink}
-                {collectedOn ? `, read ${collectedOn}` : ""}. Position: the U.S. middle 50% of {PRODUCT_NAME} published fees.
+                {collectedOn ? `${collectedOn} data snapshot. ` : ""}Each amount links to {scheduleLink}. The U.S. comparison is the
+                middle 50% of {PRODUCT_NAME} published fees, shown where at least {MIN_INSTITUTIONS_FOR_MEDIAN} institutions publish the
+                fee.
               </p>
             </section>
           )}
