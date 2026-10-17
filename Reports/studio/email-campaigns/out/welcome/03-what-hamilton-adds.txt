@@ -10,12 +10,12 @@ The free reports show the market. Hamilton, the Fee Insight workspace, shows whe
 - Your schedule, fee by fee, next to your peers' median and middle 50%.
 - Peers you pick by charter, asset size, district or county, instead of an anonymous average.
 - The source behind every figure: the competitor's published schedule and the date we read it.
-- Reports for your committee built from your peer set.
+- Committee reports built from your peer set.
 
 See Hamilton plans: https://feeinsight.com/subscribe?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=what-hamilton-adds
 Prefer a walkthrough first? Ask for a demo (https://feeinsight.com/contact?source=demo&utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=what-hamilton-adds).
 
-From here you'll get the monthly Fee Pulse: one finding from the index and one thing to check. Reply any time with a question.
+From here you'll get the monthly Fee Pulse: one finding and one thing to check. Reply any time.
 
 James Gilmore
 Founder, Fee Insight · publisher of the Bank Fee Index

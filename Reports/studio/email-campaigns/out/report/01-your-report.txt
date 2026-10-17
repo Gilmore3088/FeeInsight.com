@@ -11,7 +11,7 @@ Open your report: {$report_url|default('https://feeinsight.com/reports')}
 Free, no login. Bookmark it.
 
 1. Key findings sit at the top, each with how many institutions stand behind it.
-2. Headline fees show the median and middle 50% where enough institutions publish the fee. The report states its minimum.
+2. Headline fees show the median and middle 50% where enough institutions publish the fee. The report states the minimum count it uses.
 3. Banks and credit unions are compared where each side has enough institutions.
 
 James Gilmore

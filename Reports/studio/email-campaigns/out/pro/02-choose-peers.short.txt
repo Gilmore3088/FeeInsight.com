@@ -1,11 +1,13 @@
 Choose the peers you're measured against
 ========================================
 
-Start with relevant peers; use the national median for broader context. Build a peer set from the institutions your customers compare you with, by charter, asset size, district or county.
+Build a peer set from the institutions your customers compare you with, by charter, asset size, district or county. Use the national median for broader context.
 
 Build your peer set: https://feeinsight.com/pro/settings#peer-sets
 
-Settings, Peer groups. How to pick one that holds up in a board meeting: Building a Peer Set (https://feeinsight.com/guides/pro/building-a-peer-set).
+In Settings, open Peer groups.
+
+Not sure which peers? Building a Peer Set (https://feeinsight.com/guides/pro/building-a-peer-set) shows how to pick a set that holds up in a board meeting.
 
 James Gilmore, Fee Insight
 

@@ -9,13 +9,15 @@ The free reports show the market. Hamilton, the Fee Insight workspace, shows whe
 
 - The source behind every figure: the competitor's published schedule and the date we read it.
 
-- Reports for your committee built from your peer set.
+- Committee reports built from your peer set.
 
 See Hamilton plans: https://feeinsight.com/subscribe
 
 Prefer a walkthrough first? Ask for a demo (https://feeinsight.com/contact?source=demo).
 
-From here you'll get the monthly Fee Pulse: one finding from the index and one thing to check. Reply any time with a question.
+From here you'll get the monthly Fee Pulse: one finding and one thing to check. Reply any time.
+
+James Gilmore, Fee Insight
 
 --
 Fee Insight LLC, 522 W Riverside Ave, Ste N, Spokane, WA 99201

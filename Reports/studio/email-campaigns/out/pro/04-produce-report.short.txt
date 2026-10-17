@@ -1,7 +1,7 @@
 Produce your first report
 =========================
 
-With your institution and peers set, Hamilton builds a report of your fee position: each fee next to your peers' median and middle 50%, with the sources listed, for your pricing or ALCO committee.
+With your institution and peers set, Hamilton builds a report of your fee position for your pricing or ALCO committee: each fee next to your peers' median and middle 50%, with the sources listed.
 
 Open Reports: https://feeinsight.com/pro/reports
 

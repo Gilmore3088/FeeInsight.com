@@ -1,11 +1,11 @@
 Invite the colleagues who work on pricing
 =========================================
 
-Pricing decisions involve product, marketing, finance and compliance. Add the people who need to see the same numbers, so everyone works from one peer set and one set of sources.
+Pricing decisions involve product, marketing, finance and compliance. Add the people who need to see the same numbers, so everyone works from one peer set and one set of sources. Seats are included in your plan, up to five people.
 
 Invite colleagues: https://feeinsight.com/pro/settings#workspace-access
 
-Settings, Team access.
+In Settings, open Team access.
 
 James Gilmore, Fee Insight
 

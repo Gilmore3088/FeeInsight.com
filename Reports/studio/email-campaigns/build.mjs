@@ -3,7 +3,8 @@
 //   out/<automation>/<nn>-<slug>.txt   — paste into the plain-text version
 //   out/index.html                     — one-page preview of every email
 // Usage: node Reports/studio/email-campaigns/build.mjs
-// Email-safe HTML only: tables, inline styles, no web fonts or images required.
+// Email-safe HTML only: tables, inline styles, no web fonts. The one image is the header logo
+// (LOGO_URL); its alt text renders as the wordmark when images are off.
 import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -55,7 +56,7 @@ const R = {
     b.text.toUpperCase(),
   ],
   h1: (b) => [
-    `<h1 style="margin:0 0 14px;font-family:${SERIF};font-size:30px;line-height:1.18;font-weight:normal;color:${C.ink};text-wrap:balance;">${inline(b.text)}</h1>`,
+    `<h1 style="margin:0 0 14px;font-family:${SERIF};font-size:30px;line-height:1.18;font-weight:normal;color:${C.ink};text-wrap:balance;overflow-wrap:anywhere;">${inline(b.text)}</h1>`,
     `${plain(b.text)}\n${"=".repeat(Math.min(plain(b.text).length, 60))}`,
   ],
   h2: (b) => [
@@ -67,7 +68,7 @@ const R = {
     `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 16px;">${b.items
       .map(
         (it, i) =>
-          `<tr><td valign="top" style="width:28px;padding:0 0 10px;font-family:${MONO};font-size:13px;color:${C.terra};">${b.ordered ? `${i + 1}.` : "&mdash;"}</td><td style="padding:0 0 10px;font-family:${SERIF};font-size:16px;line-height:1.55;color:${C.ink2};">${inline(it)}</td></tr>`,
+          `<tr><td valign="top" style="width:28px;padding:0 0 10px;font-family:${MONO};font-size:${b.ordered ? 13 : 16}px;line-height:1.55;color:${C.terra};">${b.ordered ? `${i + 1}.` : "&bull;"}</td><td style="padding:0 0 10px;font-family:${SERIF};font-size:16px;line-height:1.55;color:${C.ink2};">${inline(it)}</td></tr>`,
       )
       .join("")}</table>`,
     b.items.map((it, i) => `${b.ordered ? `${i + 1}.` : "-"} ${plain(it)}`).join("\n"),
@@ -137,12 +138,12 @@ const R = {
     return [html, text];
   },
   cta: (b) => [
-    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:10px 0 24px;"><tr><td style="background:${C.terra};border-radius:3px;"><a href="${b.href}" style="display:inline-block;padding:13px 22px;font-family:${SANS};font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;">${esc(b.text)} &rarr;</a></td></tr></table>${b.sub ? `<p style="margin:-14px 0 22px;font-family:${SANS};font-size:12px;color:${C.muted};">${inline(b.sub)}</p>` : ""}`,
+    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:10px 0 24px;"><tr><td style="background:${C.terra};border-radius:3px;"><a href="${b.href}" style="display:inline-block;padding:13px 22px;font-family:${SANS};font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;"><span style="color:#FFFFFF;">${esc(b.text)} &rarr;</span></a></td></tr></table>${b.sub ? `<p style="margin:-14px 0 22px;font-family:${SANS};font-size:12px;color:${C.muted};">${inline(b.sub)}</p>` : ""}`,
     `${b.text}: ${b.href}${b.sub ? `\n${plain(b.sub)}` : ""}`,
   ],
   rule: () => [`<hr style="border:none;border-top:1px solid ${C.line};margin:26px 0;">`, "\n----"],
   sign: (b) => [
-    `<p style="${P}margin-top:22px;">${inline(b.text || "James Gilmore")}<br><span style="font-family:${SANS};font-size:13px;color:${C.text2};">Founder, Fee Insight &middot; publisher of the Bank Fee Index</span></p>`,
+    `<p style="${P}margin-top:22px;">${inline(b.text || "James Gilmore")}<br><span style="display:block;font-family:${SANS};font-size:13px;line-height:1.4;color:${C.text2};">Founder, Fee Insight &middot; publisher of the Bank Fee Index</span></p>`,
     `${plain(b.text || "James Gilmore")}\nFounder, Fee Insight · publisher of the Bank Fee Index`,
   ],
 };
@@ -164,7 +165,7 @@ function renderEmail(automation, email) {
   });
   const bodyHtml = parts.map((p) => p[0]).join("\n");
   const bodyText = parts.map((p) => p[1]).join("\n\n");
-  const footerHtml = `<p style="margin:0 0 8px;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.muted};"><strong style="color:${C.ink2};">Fee Insight</strong> publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules. <a href="${utm(BRAND.siteUrl + "/methodology", automation.key, email.key)}" style="color:${C.text2};">Methodology</a></p><p style="margin:0 0 8px;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.muted};">Questions or a fee you think we got wrong? Just reply. A person reads every one.</p><p style="margin:0;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.muted};">${BRAND.mailingAddress ? `${esc(BRAND.mailingAddress)}<br>` : ""}${esc(automation.footerReason || "You're getting this because you signed up at feeinsight.com.")} <a href="{$unsubscribe}" style="color:${C.text2};">Unsubscribe</a></p>`;
+  const footerHtml = `<p style="margin:0 0 8px;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.muted};"><strong style="color:${C.ink2};">Fee Insight</strong> publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules. <a href="${utm(BRAND.siteUrl + "/methodology", automation.key, email.key)}" style="color:${C.text2};">Methodology</a></p><p style="margin:0 0 8px;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.muted};">Questions or a fee you think we got wrong? Just reply. A person reads every one.</p><p style="margin:0;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.muted};">${BRAND.mailingAddress ? `${esc(BRAND.mailingAddress)}<br>` : ""}${esc(automation.footerReason || "You're getting this because you signed up at feeinsight.com.")}<br><a href="{$unsubscribe}" style="display:inline-block;padding:6px 0;color:${C.text2};">Unsubscribe</a></p>`;
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"><title>${esc(email.subject)}</title><style>table.mlMainContent{width:100%!important;min-width:0!important;max-width:680px!important;}</style></head>
 <body style="margin:0;padding:0;background:${C.sand};">
