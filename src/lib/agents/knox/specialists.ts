@@ -100,7 +100,9 @@ import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 // markdown row, "No Cost to Members", "Notary Services: no fee", "No charge for notarization") is held
 // at $0 unless it is an allowance; a price that varies ("Check printing prices vary") is held as
 // `varies` with no amount. Every current copy read before v76 is read once more.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 76 } as const;
+// v77 (#1398, with `RESEARCH_SPLIT_LIVE` on): returned mail and excess withdrawal lines file under
+// their own types (`researchSplitTarget` in rules.ts), not account research.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 77 } as const;
 
 export interface SpecialistRun {
   strategy: string;

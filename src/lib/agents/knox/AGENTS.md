@@ -512,6 +512,18 @@ hand check found wrong, from their real lines.
   Transfer for\nOverdrafts - $2.00 per transfer", raw 112570). A bare "Overdrafts" priced per
   item is still the overdraft fee.
 
+v77 (Oct 17, #1398, with `RESEARCH_SPLIT_LIVE` on): the three rules that
+filed returned mail and excess withdrawals under account research file them under their own types
+through `researchSplitTarget` (`rules.ts`): the returned/bad/incorrect mail or address, address
+correction or locator rule (`returned_mail`), the excess withdrawals/transactions/transfers rule
+(`excess_withdrawal`), and a returned or undeliverable statement (`returned_mail`). A fax charge
+outside a transfer, which shared the returned-mail rule, stays account research as its own rule.
+With the switch off all three file under account research, as before.
+- The Texas and seven-state gates pass at their current floors, with no floor lowered. One MI key was corrected: tid 2001's bare "$2.00" under "Return Mail Fee"
+  is keyed `returned_mail`; the gate counts a key under either split type as account research while
+  the switch is off (`answer-key-gate.ts`), so the gates also pass switched off.
+- No re-read of older copies: Hamilton's fold moves live and verified fees by name.
+
 v76 (Oct 17, Knox recall round 2 on the 62-bank answer key): the three largest miss families left
 after v75 that do not depend on its re-read (`knox-recall-misses-2026-10-17.md`: multi-price rows
 112, free lines 90, no-price lines 55 of 833 misses).
@@ -1251,7 +1263,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v20 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v76 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v77 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v6 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v1 | `knox/takedown-lessons.ts` |

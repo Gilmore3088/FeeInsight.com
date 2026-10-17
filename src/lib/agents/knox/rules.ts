@@ -3,7 +3,7 @@ import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
 import { composableTail, passesDarwinChecks, titleTail } from "@/lib/agents/knox/layout";
 import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
-import { ATM_ADJUSTMENT, CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, FAX_SERVICE, PER_PAGE_COPY } from "@/lib/fee-fold";
+import { ATM_ADJUSTMENT, CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, FAX_SERVICE, PER_PAGE_COPY, researchSplitTarget } from "@/lib/fee-fold";
 import { joinWrappedLeaderNames, parenBalance, stripPriceFootnoteMarks, withDroppedDecimalPoints } from "@/lib/custom-report/source-check";
 
 // Shared with the source check since #1334; Knox's tests and callers keep importing it from here.
@@ -140,13 +140,20 @@ export const FOLDED_PATTERNS: FeePattern[] = [
   // A fax service is document reproduction since Oct 9 (one home for fax and copies, as the
   // fold has it); fax as the way a wire, payoff or closing is sent stays below.
   { key: "document_reproduction", pattern: FAX_SERVICE },
+  // v77 (#1398): returned mail and excess withdrawals file under their own types while
+  // `RESEARCH_SPLIT_LIVE` is on (`researchSplitTarget`), account research while it is off.
   {
-    key: "account_research",
+    key: researchSplitTarget("returned_mail"),
     pattern:
-      /\b(?:return(?:ed)?|undeliverable|bad|invalid|incorrect|wrong) (?:mail|address)\b|\baddress (?:correction|search|locat\w*)\b|\b(?:member |account holder )?locator fee\b|^(?![\s\S]*\btransfers?\b)[\s\S]*\bfax(?:es|ing)?\b/i,
+      /\b(?:return(?:ed)?|undeliverable|bad|invalid|incorrect|wrong) (?:mail|address)\b|\baddress (?:correction|search|locat\w*)\b|\b(?:member |account holder )?locator fee\b/i,
   },
   {
+    // A fax charge outside a transfer stays account research (it was in the returned-mail rule above until v77).
     key: "account_research",
+    pattern: /^(?![\s\S]*\btransfers?\b)[\s\S]*\bfax(?:es|ing)?\b/i,
+  },
+  {
+    key: researchSplitTarget("excess_withdrawal"),
     pattern:
       /\bexcess(?:ive)? (?:withdrawals?|transactions?|activity|debits?|transfers?)\b|\bwithdrawal limit fee\b|\b(?:withdrawals?|transactions?) in excess of\b/i,
   },
@@ -575,10 +582,10 @@ export const HELD_NAME_PATTERNS: FeePattern[] = [
       "i",
     ),
   },
-  // A statement mailed back undelivered is returned mail, which account research holds
-  // (`SPLIT_CATEGORIES.paper_statement` in fee-fold.ts). Returned mail on its own stays
-  // unclassified (v14).
-  { key: "account_research", pattern: /\b(?:return(?:ed)?|undeliverable|undelivered)\s+(?:mail(?:ed)?\s+)?statements?\b/i },
+  // A statement mailed back undelivered is returned mail: its own type while `RESEARCH_SPLIT_LIVE`
+  // is on (v77), account research while it is off (`SPLIT_CATEGORIES.paper_statement` in
+  // fee-fold.ts). Returned mail on its own stays unclassified (v14).
+  { key: researchSplitTarget("returned_mail"), pattern: /\b(?:return(?:ed)?|undeliverable|undelivered)\s+(?:mail(?:ed)?\s+)?statements?\b/i },
   { key: "paper_statement", pattern: /\b(?:paper|mailed|printed)\s+(?:member|account|monthly|quarterly|periodic)\s+statements?\b/i },
   { key: "ira_termination", pattern: /\bIRA\b.{0,30}\bclose[- ]?outs?\b/i },
   { key: "ira_distribution", pattern: /\bIRA\b.{0,30}\b(?:withdrawals?|distributions?)\b/i },

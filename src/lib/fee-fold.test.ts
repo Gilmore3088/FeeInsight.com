@@ -183,8 +183,8 @@ describe("top-50 fold", () => {
   // Written for either setting of SUBORDINATION_REFILE_LIVE, so turning it on is a one-line change.
   test("a subordination stays legal process (James, Oct 15) and moves from other lending only once switched on; a money order copy is a check copy", () => {
     const split = (key: string, name: string) => splitLiveCategory(key, name)?.to ?? null;
-    const off = splitCategoriesFor({ subordinationRefileLive: false });
-    const on = splitCategoriesFor({ subordinationRefileLive: true });
+    const off = splitCategoriesFor({ subordinationRefileLive: false, researchSplitLive: RESEARCH_SPLIT_LIVE });
+    const on = splitCategoriesFor({ subordinationRefileLive: true, researchSplitLive: RESEARCH_SPLIT_LIVE });
     expect(SPLIT_CATEGORIES).toEqual(SUBORDINATION_REFILE_LIVE ? on : off);
     for (const name of ["Mortgage Subordination", "Subordination Agreement", "Lien Subordination Fee", "HELOC / 2nd Trust Deed Subordination"]) {
       expect(split("legal_process", name)).toBeNull();
@@ -418,7 +418,8 @@ describe("top-50 fold", () => {
       if (key === "estatement_fee") {
         const ruleTo = (live: boolean) => estatementReturnRules(live).find((rule) => rule.name.test(name))?.to ?? null;
         // Off, main's rule; a name main's rule misses falls through to the same later rules as on main.
-        expect([name, ruleTo(false) ?? to(key, name) ?? null]).toEqual([name, main]);
+        // The fall-through reads today's later rules, which match main's only while the switch is off.
+        if (!RESEARCH_SPLIT_LIVE || ruleTo(false) != null) expect([name, ruleTo(false) ?? to(key, name) ?? null]).toEqual([name, main]);
         expect([name, ruleTo(true)]).toEqual([name, onTo]);
         if (!RESEARCH_SPLIT_LIVE) expect([name, to(key, name) ?? null]).toEqual([name, main]);
       } else {

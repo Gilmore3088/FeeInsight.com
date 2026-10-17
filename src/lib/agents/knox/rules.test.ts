@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { amountsIn, classifyFeeText, isConditionAmount, nameFrom, joinWrappedProse, foldedCategory, classifyPatternKey, extractCandidatesFromText, extractFromSegment, notAZeroPrice, stripFootnoteMarks } from "./rules";
 import { runFreeSpecialists } from "./specialists";
 import { joinWrappedLeaderNames } from "@/lib/custom-report/source-check";
+import { researchSplitTarget } from "@/lib/fee-fold";
 import { withBoxSizeCellsSplit, withDroppedDecimalPoints, withSidewaysBoxTable, withoutBusinessOnlyFees, withoutLeadingFootnoteMark } from "./rules";
 import { tidyFeeName } from "./layout";
 
@@ -542,18 +543,18 @@ describe("Knox extract.rules", () => {
   });
 
   it.each([
-    ["Returned Mail Fee", "account_research"],
-    ["Bad Address Fee", "account_research"],
+    ["Returned Mail Fee", researchSplitTarget("returned_mail")],
+    ["Bad Address Fee", researchSplitTarget("returned_mail")],
     ["Fax Outgoing", "document_reproduction"],
     ["Loan Payoff Fax/Mail Fee", "account_research"],
-    ["Excessive Withdrawal Fee", "account_research"],
-    ["Withdrawal Limit Fee", "account_research"],
+    ["Excessive Withdrawal Fee", researchSplitTarget("excess_withdrawal")],
+    ["Withdrawal Limit Fee", researchSplitTarget("excess_withdrawal")],
     ["Foreign Item Collection", "collection_item"],
     ["Canadian Check Processing Fee", "collection_item"],
     ["Collection Item", "collection_item"],
     ["Loan Cancellation Fee", "loan_origination"],
     ["Loan Refinance Fee", "other_lending_fee"],
-  ])("v26 folds %s into %s (James, Oct 7 2026)", (name, key) => {
+  ])("v26 folds %s into %s (James, Oct 7 2026; v77: its own type once the research split is on)", (name, key) => {
     expect(classifyFeeText(name)).toBe(key);
     expect(foldedCategory(name)).toBe(key);
   });
@@ -1583,7 +1584,7 @@ describe("v76: Knox recall on the 62-bank answer key (multi-price rows, free row
 
   it("keeps a free row under a fee heading a row of that heading's table (live doc 8862)", () => {
     const found = extractCandidatesFromText("Excessive withdrawals, each:\nATM or counter | None\n3rd party/Telephonic | $5.00");
-    expect(found.candidates.map((c) => [c.canonicalHint, c.amount])).toEqual([["account_research", 5]]);
+    expect(found.candidates.map((c) => [c.canonicalHint, c.amount])).toEqual([[researchSplitTarget("excess_withdrawal"), 5]]);
     expect(found.held).toEqual([]);
   });
 
@@ -1621,11 +1622,11 @@ describe("v76: Knox recall on the 62-bank answer key (multi-price rows, free row
     expect(reads("2” x 5” $45.00 $65.00").map(([key, amount]) => [key, amount])).toEqual([["safe_deposit_box", 45], ["safe_deposit_box", 65]]);
     const text = "Return Mail (per month) | $ | 5.00 | 3 x 5 | $ 55.00\nResearch per photocopy | $ | 1.00\nInterim statement (ATM/Branch) | $ | 2.00";
     const found = extractCandidatesFromText(text).candidates.map((c) => [c.canonicalHint, c.amount]);
-    expect(found).toContainEqual(["account_research", 5]);
+    expect(found).toContainEqual([researchSplitTarget("returned_mail"), 5]);
     expect(found).toContainEqual(["document_reproduction", 1]);
     // An interim statement printed at an ATM is a statement copy, not an ATM fee.
     expect(found).toContainEqual(["document_reproduction", 2]);
-    expect(found).not.toContainEqual(["account_research", 55]);
+    expect(found).not.toContainEqual([researchSplitTarget("returned_mail"), 55]);
   });
 
   it("holds a free schedule row at $0 in the shapes the line rules never read", () => {

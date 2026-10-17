@@ -22,7 +22,7 @@ import { TrackLink } from "@/components/track-link";
 import { UnstatedAudienceFootnote, UnstatedAudienceMark, hasUnstatedAudience } from "@/components/unstated-audience";
 import { getFeeCategoryDetailCached, getNationalRateStatsCached } from "@/lib/data-store/public-cached-reads";
 import { formatRatePercent, percentFeeAllowed } from "@/lib/percent-fees";
-import { benchmarkBasis, getPublicSnapshot } from "@/lib/public-stats";
+import { benchmarkBasis, getPublicFeeTypes, getPublicSnapshot } from "@/lib/public-stats";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { summarizeFees, summarizeFeesBy } from "@/lib/data-store/fee-stats";
 import type { FeeCategorySummary, FeeInstance } from "@/lib/data-store/fees";
@@ -120,7 +120,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 export default async function FeeCategoryPage({ params }: PageProps) {
   const { category } = await params;
 
-  if (!DISPLAY_NAMES[category]) {
+  // The public site lists the top 50 fee types by institution count (James, Oct 17 2026).
+  if (!DISPLAY_NAMES[category] || !(await getPublicFeeTypes()).has(category)) {
     notFound();
   }
 
