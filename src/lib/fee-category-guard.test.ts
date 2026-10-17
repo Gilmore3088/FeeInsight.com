@@ -1923,8 +1923,10 @@ describe("borrowed direction (#1837): a direction row read under the other colum
     expect(borrowedDirection(key, name, true)).toBeNull();
   });
 
-  it("reads nothing while switched off", () => {
-    expect(borrowedDirection("check_printing", "Check Printing: Incoming")).toBeNull();
-    expect(checkFeeCategory("check_printing", "Check Printing: Incoming").ok).toBe(true);
+  it("is on since guard v73, and reads nothing when switched off", () => {
+    expect(borrowedDirection("check_printing", "Check Printing: Incoming")).toBe("Incoming");
+    expect(checkFeeCategory("check_printing", "Check Printing: Incoming").ok).toBe(false);
+    expect(borrowedDirection("check_printing", "Check Printing: Incoming", false)).toBeNull();
+    expect(checkFeeCategory("check_printing", "Check Printing: Incoming", undefined, { borrowedDirection: false }).ok).toBe(true);
   });
 });
