@@ -22,9 +22,12 @@ import {
   API_INCLUDES_LINE,
   CONSULTANT_API_NOTE,
   CHECKOUT_ID,
-  PLAN_TERMS_LINE,
+  BILLING_TERMS_LINE,
+  CANCEL_TERMS_LINE,
+  CONSULTANT_PRICING_LABEL,
+  ONE_SUBSCRIPTION_LINE,
+  SAME_WORKSPACE_LINE,
   PLANS_ID,
-  PRICE_RULE_LINE,
   PlanBenefits,
   ProPlanBoard,
   RECOMMENDED_PLAN,
@@ -158,12 +161,27 @@ describe("/subscribe plan board", () => {
     expect(apiIncludedInTier(NON_INSTITUTION_TIER)).toBe(true);
   });
 
-  it("before a choice, states how the price is set and the renewal and refund terms", () => {
+  it("says the cards are one subscription with one workspace, API access the only difference", () => {
     board();
     const text = document.body.textContent ?? "";
-    expect(text).toContain(PRICE_RULE_LINE);
-    expect(text).toContain(PLAN_TERMS_LINE);
-    expect(PLAN_TERMS_LINE).toContain("within 14 days of the first payment");
+    expect(text).toContain(ONE_SUBSCRIPTION_LINE);
+    expect(ONE_SUBSCRIPTION_LINE).toBe("One subscription, priced by institution size.");
+    expect(SAME_WORKSPACE_LINE).toContain("same Hamilton workspace");
+    expect(SAME_WORKSPACE_LINE).toContain("API access, included from $500M");
+  });
+
+  it("before a choice, states the billing and cancellation terms as two lines", () => {
+    board();
+    const terms = document.querySelector("[data-plan-terms]")!;
+    expect(terms.querySelectorAll("p")).toHaveLength(2);
+    expect(terms.textContent).toContain(BILLING_TERMS_LINE);
+    expect(terms.textContent).toContain(CANCEL_TERMS_LINE);
+    expect(BILLING_TERMS_LINE).toContain("within 14 days of the first payment");
+  });
+
+  it("shows a Consultant pricing link under the cards before any lookup is opened", () => {
+    board({ consultantHref: "/subscribe?org=other#pro-heading" });
+    expect(screen.getByRole("link", { name: CONSULTANT_PRICING_LABEL })).toHaveAttribute("href", "/subscribe?org=other#pro-heading");
   });
 });
 

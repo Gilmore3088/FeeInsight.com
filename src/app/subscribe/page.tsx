@@ -13,7 +13,8 @@ import { gatedPageLabel, hamiltonFullName, subscribeEntry, subscribeReasonLine }
 import type { Metadata } from "next";
 import { getPublicStatsSummary } from "@/lib/public-stats";
 import { CONTACT_EMAIL, PRODUCT_NAME, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
-import { CHECKOUT_ID, CHOOSER_INPUT_ID, PLANS_ID, PlanBenefits, ProPlanBoard, type ProTierSelection } from "./pro-plan-cards";
+import { PlanBenefits, ProPlanBoard, type ProTierSelection } from "./pro-plan-cards";
+import { CHECKOUT_ID, CHOOSER_INPUT_ID, PLANS_ID } from "./plan-ids";
 import { ReportExcerpt } from "./report-excerpt";
 import { loadSampleReport } from "@/lib/custom-report/sample-report";
 import { ProTierChooser } from "./pro-tier-chooser";
@@ -266,6 +267,11 @@ export default async function SubscribePage({
                 />
               }
               lookupOpen={chosenLabel !== null}
+              consultantHref={
+                selection?.otherOrganization
+                  ? null
+                  : `${buildSubscribeReturnPath({ inviteMode, returnTo, plan: requestedPlan, selection: { tier: NON_INSTITUTION_TIER, institutionId: null, otherOrganization: true } })}#${CHECKOUT_ID}`
+              }
               selection={selection}
               selectedName={selection?.institutionId ? chosenLabel : null}
               returnTo={returnTo ?? undefined}

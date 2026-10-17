@@ -22,12 +22,9 @@ import { OPEN_LOOKUP_EVENT } from "./pricing-jump";
 
 export type { ProTierSelection } from "./plan-checkout";
 
-/** The institution search box the page's pricing buttons land on (pro-tier-chooser.tsx). */
-export const CHOOSER_INPUT_ID = "pro_tier_institution";
-/** The search and checkout panel, where the sticky phone button and closing card go. */
-export const CHECKOUT_ID = "pro-heading";
-/** The plan cards; the sticky phone button shows once they scroll away. */
-export const PLANS_ID = "pro-plans";
+import { CHECKOUT_ID, CHOOSER_INPUT_ID, PLANS_ID } from "./plan-ids";
+
+export { CHECKOUT_ID, CHOOSER_INPUT_ID, PLANS_ID } from "./plan-ids";
 
 /** Annual is the plan we point to: same features, two months free on every tier. */
 export const RECOMMENDED_PLAN: ProPlan = "annual";
@@ -36,6 +33,8 @@ interface ProPlanBoardProps {
   isLoggedIn: boolean;
   /** The institution search, or what was picked. */
   chooser: ReactNode;
+  /** Where "Consultant pricing" goes: this page priced for a consultant (?org=other). */
+  consultantHref?: string | null;
   /** The lookup starts open (an institution was named in the URL, or needs its size picked). */
   lookupOpen?: boolean;
   /** Null until a bank, credit union or "other organization" is chosen and priced. */
@@ -79,11 +78,16 @@ export const API_DETAILS = [
 ] as const;
 /** After the consultant price: their plan includes the API too. */
 export const CONSULTANT_API_NOTE = "Both include the API key and Claude connector.";
-/** How the price is set, under the cards. */
-export const PRICE_RULE_LINE = "Your institution's total assets in its latest FDIC or NCUA call report set the price.";
-/** Renewal and refund terms, shown before a choice as well as at checkout (James, Oct 16). */
-export const PLAN_TERMS_LINE =
-  "Annual plans renew yearly and are refunded in full if cancelled within 14 days of the first payment. Monthly plans renew monthly. Cancel renewal anytime from your billing page.";
+/**
+ * Above the cards (James, Oct 17): the three cards are one product at three prices, not three
+ * packages, with API access the one stated difference.
+ */
+export const ONE_SUBSCRIPTION_LINE = "One subscription, priced by institution size.";
+export const SAME_WORKSPACE_LINE = `Every plan gets the same Hamilton workspace. The only difference is API access, included from ${API_FROM_LABEL ?? proTier(API_INCLUDED_TIERS[0]).assetsLabel} in assets. Size is total assets in the latest FDIC or NCUA call report.`;
+/** Billing terms under the cards, two short lines, shown before a choice as well as at checkout. */
+export const BILLING_TERMS_LINE = "Annual plans are billed yearly and refunded in full if cancelled within 14 days of the first payment.";
+export const CANCEL_TERMS_LINE = "Monthly plans renew monthly. Cancel renewal anytime from your billing page.";
+export const CONSULTANT_PRICING_LABEL = "Consultant pricing";
 
 /**
  * The "N months free" on the toggle. Every tier gives the same months free today
@@ -106,6 +110,7 @@ export function ProPlanBoard({
   isLoggedIn,
   chooser,
   lookupOpen = false,
+  consultantHref = null,
   selection,
   selectedName,
   returnTo,
@@ -175,7 +180,12 @@ export function ProPlanBoard({
         </div>
       </div>
 
-      <ul id={PLANS_ID} aria-label="Hamilton Pro price by institution size" className="mt-6 grid gap-3 sm:grid-cols-3 sm:gap-4">
+      <div className="mx-auto mt-6 max-w-2xl text-center" data-one-subscription="">
+        <p className="text-[15px] font-semibold text-ink">{ONE_SUBSCRIPTION_LINE}</p>
+        <p className="mt-1 text-[13px] leading-relaxed text-ink-muted">{SAME_WORKSPACE_LINE}</p>
+      </div>
+
+      <ul id={PLANS_ID} aria-label="Hamilton Pro price by institution size" className="mt-5 grid gap-3 sm:grid-cols-3 sm:gap-4">
         {PRO_TIERS.map((tier) => {
           const mine = selection?.tier === tier.key;
           const stepBack = selection !== null && !mine;
@@ -269,9 +279,17 @@ export function ProPlanBoard({
         )}
       </section>
 
-      <div className="mx-auto mt-4 max-w-3xl space-y-1 text-center text-xs leading-relaxed text-ink-muted">
-        <p data-price-rule="">{PRICE_RULE_LINE}</p>
-        <p data-plan-terms="">{PLAN_TERMS_LINE}</p>
+      <div className="mt-4 flex flex-col gap-3 text-[13px] leading-relaxed text-ink-muted sm:flex-row sm:items-start sm:justify-between sm:gap-8">
+        <div className="min-w-0 sm:flex-1" data-plan-terms="">
+          {/* Wide on purpose (James, Oct 17): the site's paragraph measure made a narrow block under wide cards. */}
+          <p className="max-w-none">{BILLING_TERMS_LINE}</p>
+          <p className="max-w-none">{CANCEL_TERMS_LINE}</p>
+        </div>
+        {consultantHref && (
+          <a href={consultantHref} className="inline-flex min-h-11 shrink-0 items-center font-medium text-ink underline underline-offset-2 sm:min-h-0">
+            {CONSULTANT_PRICING_LABEL}
+          </a>
+        )}
       </div>
     </div>
   );

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { PricingJump } from "./pricing-jump";
-import { CHOOSER_INPUT_ID } from "./pro-plan-cards";
+import { CHOOSER_INPUT_ID } from "./plan-ids";
 
 /**
  * The sticky pricing button for phones and tablets. It shows once the element `heroId` names (the plan cards)

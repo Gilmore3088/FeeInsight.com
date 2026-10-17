@@ -38,6 +38,13 @@ function rankOf(line: PlottedLine): number {
   return Math.min(rank, 25);
 }
 
+/** "1st", "2nd", "3rd", "11th", "100th": the rank is a percentile, not a count of competitors. */
+export function ordinal(n: number): string {
+  const tens = n % 100;
+  if (tens >= 11 && tens <= 13) return `${n}th`;
+  return `${n}${["th", "st", "nd", "rd"][n % 10] ?? "th"}`;
+}
+
 function gap(line: PlottedLine): string {
   const diff = line.own.amount - line.peers.median;
   if (Math.abs(diff) < 0.005) return "at median";
@@ -127,7 +134,7 @@ export function AtAGlance({
               <span
                 className={`absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-surface-0 ${TONE[tone].dot}`}
                 style={{ left: `${Math.min(98, Math.max(2, rank))}%` }}
-                aria-label={`ranks ${Math.round(rank)} of 100 locally`}
+                aria-label={`${ordinal(Math.round(rank))} percentile among local competitors`}
               />
             </span>
             <span role="cell" className="text-right text-[14px] font-semibold tabular-nums text-ink">
