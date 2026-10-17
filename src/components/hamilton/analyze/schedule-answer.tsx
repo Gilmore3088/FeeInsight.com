@@ -7,7 +7,7 @@
 import Link from "next/link";
 import type { Fact, SchedulePosition } from "@/lib/hamilton/workspace/types";
 import { fmtMoney, SERIF } from "@/components/hamilton/memo/memo";
-import { middleHalfText } from "@/components/hamilton/memo/exhibit-view";
+import { SourceChip, middleHalfText } from "@/components/hamilton/memo/exhibit-view";
 
 const capitalizeFirst = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -211,7 +211,7 @@ export function SchedulePositionsChart({
   );
 }
 
-/** Sourced findings, one per line, with where each figure comes from. */
+/** Sourced findings, one per line, each with its source badge. */
 export function FactList({ facts }: { facts: Fact[] }) {
   if (facts.length === 0) return null;
   return (
@@ -219,10 +219,9 @@ export function FactList({ facts }: { facts: Fact[] }) {
       {facts.map((f, i) => (
         <li key={i} className="flex flex-col gap-1 px-4 py-3">
           <span className="text-[15px] leading-relaxed text-warm-900 [font-variant-numeric:tabular-nums]">{f.text}</span>
-          <span className="text-xs text-warm-600">
-            {f.source.label}
-            {f.source.asOf ? `, ${f.source.asOf}` : ""}
-            {f.sampleSize != null ? ` · ${f.sampleSize} institutions` : ""}
+          {/* The same source badge as every other answer: label, "Jun 2026", n=. */}
+          <span>
+            <SourceChip source={f.source} n={f.sampleSize} />
           </span>
         </li>
       ))}

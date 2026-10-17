@@ -5,6 +5,9 @@ import { useMemo, useRef, useState } from "react";
 import { createPeerSet } from "@/app/pro/(hamilton)/settings/actions";
 import { formatPeerAssets, type PeerListResponse, type PeerListContinuation } from "@/lib/hamilton/peer-list";
 import { defaultPeerSetName } from "@/lib/hamilton/peer-set-name";
+import { fmtMoney } from "@/components/hamilton/memo/memo";
+import { sourceDate } from "@/components/hamilton/memo/exhibit-view";
+import { percentFeeAllowed } from "@/lib/percent-fees";
 
 type Sort = "selection" | "name" | "assets_desc" | "assets_asc";
 export interface PeerSaveContext {
@@ -98,6 +101,10 @@ function SelectablePeerList({ response, saveContext }: { response: PeerListRespo
   const criteria = data.criteria;
   // Snapshots saved before #1538 carry no label; every one of them compared NSF fees.
   const feeLabel = data.feeComparison?.label ?? "NSF";
+  // Missing is not $0, and a fee charged as a rate is not missing: this table lists dollar fees only.
+  const noFeeLine = data.feeComparison && percentFeeAllowed(data.feeComparison.category)
+    ? `No published consumer ${feeLabel} fee in dollars on file. A fee charged as a rate is not listed here.`
+    : `No published consumer ${feeLabel} fee on file`;
   return (
     <section aria-label="Peer list" className="flex min-w-0 flex-col gap-4 font-sans">
       <div>
@@ -113,15 +120,6 @@ function SelectablePeerList({ response, saveContext }: { response: PeerListRespo
         </details>
       ) : null}
       {data.notes.map((note, i) => <p key={i} className="text-sm text-warm-700">{note}</p>)}
-      {saveContext ? <div className="flex flex-wrap items-center gap-3">
-        <button type="button" onClick={saveResearch} disabled={savingResearch || savedResearchId !== null}
-          className="rounded-md border border-warm-300 px-3 py-2 text-sm font-medium text-warm-900 disabled:opacity-50">
-          {savingResearch ? "Saving research..." : "Save this peer research"}
-        </button>
-        {!savedResearchId && !savingResearch ? <p className="text-sm text-warm-700">Fee answers save on their own. A peer list is saved only when you save it.</p> : null}
-        {researchError ? <p role="alert" className="text-sm text-terra-text">{researchError}</p> : null}
-        {savedResearchId ? <p role="status" className="text-sm text-warm-700">Research snapshot saved. <a className="font-medium text-terra-text underline" href={`/pro/peer-research/${encodeURIComponent(savedResearchId)}`}>Reopen saved research</a></p> : null}
-      </div> : null}
       {data.feeComparison ? (
         <div className="rounded-lg border border-warm-300 p-4">
           <h3 className="text-lg font-semibold text-warm-900">Published {feeLabel} fees for the selected peers</h3>
@@ -136,15 +134,15 @@ function SelectablePeerList({ response, saveContext }: { response: PeerListRespo
                   const charges = data.feeComparison!.fees.filter(fee => fee.institutionId === item.id);
                   return charges.length ? charges.map(charge => (
                     <tr key={`${item.id}:${charge.id}`} className="border-t border-warm-200">
-                      <th scope="row" className="p-2 font-medium">{item.name}{item.isAccount ? " (verified account)" : ""}</th>
+                      <th scope="row" className="p-2 font-medium">{item.name}{item.isAccount ? " (your institution)" : ""}</th>
                       <td className="p-2">{charge.name}</td>
-                      <td className="p-2 tabular-nums">{charge.amount === null ? "Not stated" : formatPeerAssets(charge.amount)}</td>
+                      <td className="p-2 tabular-nums">{charge.amount === null ? "Amount not stated" : fmtMoney(charge.amount)}</td>
                       <td className="p-2">{charge.frequency ?? "Not stated"}</td>
-                      <td className="p-2">{charge.publishedAt ? charge.publishedAt.slice(0, 10) : "Date unavailable"}
+                      <td className="p-2">{sourceDate(charge.publishedAt) ?? "Date unavailable"}
                         {charge.documentUrl || charge.sourceUrl ? <a href={charge.documentUrl ?? charge.sourceUrl ?? "#"} target="_blank" rel="noopener noreferrer" className="ml-2 underline">Fee schedule</a> : <span className="ml-2">Source link unavailable</span>}
                       </td>
                     </tr>
-                  )) : <tr key={item.id} className="border-t border-warm-200"><th scope="row" className="p-2 font-medium">{item.name}{item.isAccount ? " (verified account)" : ""}</th><td colSpan={4} className="p-2">No published consumer {feeLabel} fee on file</td></tr>;
+                  )) : <tr key={item.id} className="border-t border-warm-200"><th scope="row" className="p-2 font-medium">{item.name}{item.isAccount ? " (your institution)" : ""}</th><td colSpan={4} className="p-2">{noFeeLine}</td></tr>;
                 })}
               </tbody>
             </table>
@@ -200,7 +198,7 @@ function SelectablePeerList({ response, saveContext }: { response: PeerListRespo
                   </th>
                   <td className="p-3">{[row.city, row.stateCode].filter(Boolean).join(", ") || "Not available"}</td>
                   <td className="whitespace-nowrap p-3 text-right tabular-nums">{formatPeerAssets(row.totalAssetsUsd)}</td>
-                  <td className="p-3"><p className="tabular-nums">{row.reportDate ?? "Not available"}</p>
+                  <td className="p-3"><p className="tabular-nums">{sourceDate(row.reportDate) ?? "Not available"}</p>
                     {row.source ? <p className="mt-1 text-xs text-warm-600">{row.sourceUrl ? <a href={row.sourceUrl} target="_blank" rel="noopener noreferrer" className="underline">{row.source.toUpperCase()} filing source</a> : `${row.source.toUpperCase()} filing; link unavailable`}</p> : null}
                   </td>
                   <td className="p-3 text-xs text-warm-700">{row.feeCoverage === "available" ? "Published fees available" : "No published fees on file"}</td>
@@ -210,6 +208,16 @@ function SelectablePeerList({ response, saveContext }: { response: PeerListRespo
           </div>
         </>
       ) : <p className="text-sm text-warm-800">No institutions matched. Change the criteria in the question field; no replacement peer group was selected.</p>}
+      {/* Criteria and rows lead; saving the research follows them. */}
+      {saveContext ? <div className="flex flex-wrap items-center gap-3">
+        <button type="button" onClick={saveResearch} disabled={savingResearch || savedResearchId !== null}
+          className="rounded-md border border-warm-300 px-3 py-2 text-sm font-medium text-warm-900 disabled:opacity-50">
+          {savingResearch ? "Saving research..." : "Save this peer research"}
+        </button>
+        {!savedResearchId && !savingResearch ? <p className="text-sm text-warm-700">Fee answers save on their own. A peer list is saved only when you save it.</p> : null}
+        {researchError ? <p role="alert" className="text-sm text-terra-text">{researchError}</p> : null}
+        {savedResearchId ? <p role="status" className="text-sm text-warm-700">Research snapshot saved. <a className="font-medium text-terra-text underline" href={`/pro/peer-research/${encodeURIComponent(savedResearchId)}`}>Reopen saved research</a></p> : null}
+      </div> : null}
       <p className="text-xs text-warm-600">You can refine this exact displayed list by state (for example, “Only Florida”) or save selected institutions as a peer group. Fee comparisons use only this displayed selection. Use Save this peer research to reopen this exact list later. PDF and export are not available yet.</p>
     </section>
   );

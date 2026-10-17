@@ -321,6 +321,8 @@ function StructuredAskConversation({
   onStoryline,
   onBusyChange,
   onLead,
+  onEngineRows,
+  proseShown = false,
 }: {
   /** The question just asked; a new value asks again. */
   question: string | null;
@@ -338,6 +340,13 @@ function StructuredAskConversation({
   onBusyChange?: (busy: boolean) => void;
   /** The answer's one-line lead once known, for the conversation above the next question. */
   onLead?: (lead: string) => void;
+  /**
+   * Called before a question is handed to a written answer, with whether this answer still shows
+   * rows of its own (a tested price, a market slice). Rows lead; the written answer follows them.
+   */
+  onEngineRows?: (hasRows: boolean) => void;
+  /** True while the page shows a written answer with its own lead, so this one adds no second intro. */
+  proseShown?: boolean;
 }) {
   const [response, setResponse] = useState<AskResponse | null>(null);
   // A competitors-and-locations question is answered with the market itself (no fee to chart).
@@ -412,9 +421,10 @@ function StructuredAskConversation({
       }
       // The written answer takes over, so a failed engine call is not shown above it as an error.
       setError(null);
+      onEngineRows?.(Boolean(res?.scenario || res?.segment));
       onNoStoryline?.(asked);
     },
-    [institutionId, onNoStoryline, onStoryline, onLead],
+    [institutionId, onNoStoryline, onStoryline, onLead, onEngineRows],
   );
 
   useEffect(() => {
@@ -512,26 +522,24 @@ function StructuredAskConversation({
   const answerExhibit = response.answer?.exhibit ?? null;
   const exhibitOwn =
     answerExhibit && (answerExhibit.kind === "fee_position" || answerExhibit.kind === "competitor_range") ? answerExhibit : null;
+  // One lead sentence per answer, before anything else. The memo or storyline carries its own
+  // headline; a written answer on the page carries its own lead; a clarifying question shows as
+  // the question; an opinion shows once, in its callout.
+  const lead = response.shortAnswer.trim();
+  const showLead =
+    Boolean(lead) &&
+    !proseShown &&
+    !(q && lead === q.prompt.trim()) &&
+    !(response.kind === "opinion" && response.opinion) &&
+    (Boolean(response.positions?.length) || !response.answer);
   return (
     <div className="flex flex-col gap-5">
-      {response.identityContext ? (
-        <details className="text-sm text-warm-700">
-          <summary className="cursor-pointer text-xs text-warm-600">Institution and peer group behind this answer</summary>
-          {hamiltonIdentityLines(readHamiltonIdentitySnapshot(response.identityContext)).map(line => <p key={line}>{line}</p>)}
-        </details>
+      {showLead ? (
+        <p className="max-w-[68ch] text-xl leading-snug text-warm-900 sm:text-2xl [font-variant-numeric:tabular-nums]" style={SERIF}>
+          {response.shortAnswer}
+        </p>
       ) : null}
-      {response.positions && response.positions.length > 0 ? (
-        <>
-          {/* The takeaways lead; the table and the top fee's storyline follow. Without a storyline
-              or answer the same sentence already shows below, so it is not repeated. */}
-          {response.answer && response.shortAnswer.trim() ? (
-            <p className="max-w-[68ch] text-xl leading-snug text-warm-900 sm:text-2xl [font-variant-numeric:tabular-nums]" style={SERIF}>
-              {response.shortAnswer}
-            </p>
-          ) : null}
-          <SchedulePositionsChart rows={response.positions} hrefFor={researchHrefFor} />
-        </>
-      ) : null}
+      {response.positions && response.positions.length > 0 ? <SchedulePositionsChart rows={response.positions} hrefFor={researchHrefFor} /> : null}
       {response.answer && storyline ? (
         <StorylineView
           story={storyline}
@@ -564,11 +572,7 @@ function StructuredAskConversation({
             ) : null
           }
         />
-      ) : q && response.shortAnswer.trim() === q.prompt.trim() ? null : (
-        <p className="text-xl leading-snug text-warm-900 sm:text-2xl" style={SERIF}>
-          {response.shortAnswer}
-        </p>
-      )}
+      ) : null}
       {!response.answer && !response.positions?.length && response.facts && response.facts.length > 0 ? <FactList facts={response.facts} /> : null}
       {segment && !storyline ? <SegmentTable data={segment} own={exhibitOwn?.own ?? null} ownLabel={exhibitOwn?.ownLabel ?? "Research subject"} /> : null}
       {response.kind === "opinion" && response.opinion ? (
@@ -588,6 +592,13 @@ function StructuredAskConversation({
           notFound={notFound}
           onAnswer={(v) => void answerQuestion(q, v)}
         />
+      ) : null}
+      {/* Who the answer is about stays one click away, after the answer itself. */}
+      {response.identityContext ? (
+        <details className="text-sm text-warm-700">
+          <summary className="cursor-pointer text-xs text-warm-600">Institution and peer group behind this answer</summary>
+          {hamiltonIdentityLines(readHamiltonIdentitySnapshot(response.identityContext)).map(line => <p key={line}>{line}</p>)}
+        </details>
       ) : null}
       {error ? <p className="text-sm text-terra-text">{error}</p> : null}
     </div>

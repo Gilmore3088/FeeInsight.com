@@ -355,6 +355,9 @@ function AnalyzeConversationWorkspace({
   const [engineBusy, setEngineBusy] = useState(false);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [storyLead, setStoryLead] = useState<string | null>(null);
+  // The engine answer still shows rows of its own (a tested price, a market slice), so they lead
+  // and the written answer follows them.
+  const [engineRows, setEngineRows] = useState(false);
   const currentLeadRef = useRef<string | null>(null);
   const answerHeadingRef = useRef<HTMLDivElement>(null);
   const lastPromptRef = useRef<string>("");
@@ -499,6 +502,7 @@ function AnalyzeConversationWorkspace({
       lastPromptRef.current = trimmed;
       setStartedAt(Date.now());
       setStoryLead(null);
+      setEngineRows(false);
       clearError();
       setHeldLine(null);
       setParsedResponse(null);
@@ -528,6 +532,7 @@ function AnalyzeConversationWorkspace({
     historyRef.current = [];
     lastPromptRef.current = "";
     setEngineBusy(false);
+    setEngineRows(false);
     setAskedQuestion(null);
     setHeldLine(null);
     setParsedResponse(null);
@@ -852,18 +857,6 @@ function AnalyzeConversationWorkspace({
         {complete ? "Answer ready." : ""}
       </p>
 
-      {answerIdentity && (shown || reopenedStory) ? (
-        <aside aria-label="Saved answer institution context" className="text-sm text-warm-700">
-          {/* The record of whose answer this is stays one click away, below the header that already names the institution. */}
-          <details>
-            <summary className="cursor-pointer text-xs text-warm-600">Institution and peer group behind this answer</summary>
-            {hamiltonIdentityLines(answerIdentity).map(line => <p key={line}>{line}</p>)}
-          </details>
-        </aside>
-      ) : initialAnalysis && conversation === 0 && !askedQuestion ? (
-        <p className="text-sm text-warm-600">Historical account and peer context was not recorded with this answer.</p>
-      ) : null}
-
       {reopenedStory ? (
         <StorylineView
           story={reopenedStory}
@@ -875,7 +868,7 @@ function AnalyzeConversationWorkspace({
 
       <div className="flex flex-col gap-8">
       {askedQuestion ? (
-        <div className={proseActive ? "order-last" : undefined}>
+        <div className={proseActive && !engineRows ? "order-last" : undefined}>
         <StructuredAsk
           key={conversation}
           question={askedQuestion}
@@ -883,6 +876,8 @@ function AnalyzeConversationWorkspace({
           onStoryline={dropWrittenAnswer}
           onBusyChange={setEngineBusy}
           onLead={setStoryLead}
+          onEngineRows={setEngineRows}
+          proseShown={Boolean(shown && view.lead)}
           institutionId={instId}
           modelHrefFor={(fee, tested) => hrefWithInstitutionContext(`/pro/simulate?fee=${encodeURIComponent(fee)}&prices=${tested}`, instId)}
           researchHrefFor={(fee) => hrefWithInstitutionContext(`/pro/research?fee=${encodeURIComponent(fee)}`, instId)}
@@ -895,6 +890,13 @@ function AnalyzeConversationWorkspace({
         <div className="flex flex-col gap-8">
           {/* The figures lead and the prose follows, so a written answer opens on an exhibit. */}
           {shown.evidence.length > 0 ? <EvidenceExhibit rows={shown.evidence} /> : null}
+          {/* A limitation comes before the commentary it qualifies. */}
+          {complete && figureCheck && figureCheck.unmatched.length > 0 ? (
+            <Callout>
+              <strong>Check these figures:</strong> {figureCheck.unmatched.join(", ")} could not be traced to the data
+              Hamilton looked up for this answer. Treat them as unverified.
+            </Callout>
+          ) : null}
           <article className="flex max-w-[68ch] flex-col gap-4">
             {askedQuestion ? (
               <h2 className="text-xs font-semibold uppercase tracking-[0.12em] text-warm-600">Hamilton&apos;s commentary</h2>
@@ -930,13 +932,6 @@ function AnalyzeConversationWorkspace({
               </More>
             ) : null}
           </article>
-
-          {complete && figureCheck && figureCheck.unmatched.length > 0 ? (
-            <Callout>
-              <strong>Check these figures:</strong> {figureCheck.unmatched.join(", ")} could not be traced to the data
-              Hamilton looked up for this answer. Treat them as unverified.
-            </Callout>
-          ) : null}
 
 
           {complete ? (
@@ -1002,6 +997,18 @@ function AnalyzeConversationWorkspace({
         </div>
       ) : null}
       </div>
+
+      {answerIdentity && (shown || reopenedStory) ? (
+        <aside aria-label="Saved answer institution context" className="text-sm text-warm-700">
+          {/* The record of whose answer this is stays one click away, after the answer itself. */}
+          <details>
+            <summary className="cursor-pointer text-xs text-warm-600">Institution and peer group behind this answer</summary>
+            {hamiltonIdentityLines(answerIdentity).map(line => <p key={line}>{line}</p>)}
+          </details>
+        </aside>
+      ) : initialAnalysis && conversation === 0 && !askedQuestion ? (
+        <p className="text-sm text-warm-600">Historical account and peer context was not recorded with this answer.</p>
+      ) : null}
 
       {askedQuestion || shown ? askBox : null}
     </MemoPage>
