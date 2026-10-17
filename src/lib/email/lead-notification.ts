@@ -232,7 +232,7 @@ export function renderLeadEmailHtml(content: LeadEmailContent) {
 <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:${C.sand};">${escapeHtml(preheader)}</div>
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:${C.sand};"><tr><td align="center" style="padding:24px 12px;">
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:100%;max-width:600px;background:${C.paper};">
-<tr><td style="padding:22px 32px 16px;border-bottom:2px solid ${C.ink};"><a href="${escapeHtml(site)}" style="text-decoration:none;"><img src="${escapeHtml(EMAIL_LOGO_URL)}" width="128" height="25" alt="${escapeHtml(SITE_NAME)}" style="display:block;border:0;width:128px;height:25px;font-family:${SANS};font-size:18px;color:${C.ink};" /></a></td></tr>
+<tr><td style="padding:22px 32px 16px;border-bottom:2px solid ${C.ink};"><a href="${escapeHtml(site)}" style="text-decoration:none;"><img src="${escapeHtml(EMAIL_LOGO_URL)}" width="124" height="22" alt="${escapeHtml(SITE_NAME)}" style="display:block;border:0;width:124px;height:22px;font-family:${SANS};font-size:18px;color:${C.ink};" /></a></td></tr>
 <tr><td style="padding:30px 32px 10px;">
 ${eyebrow}
 <h1 style="margin:0 0 18px;font-family:${SANS};font-size:28px;line-height:1.2;font-weight:normal;color:${C.ink};text-wrap:balance;">${keepLastWordsTogether(escapeHtml(content.heading ?? content.subject))}</h1>

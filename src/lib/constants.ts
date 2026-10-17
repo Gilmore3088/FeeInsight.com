@@ -2,7 +2,7 @@ export const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL || "https://feeinsight.com";
 
 /** The site header logo as a 2x PNG for email headers (mail clients block SVG); 124x22 on screen. */
-export const EMAIL_LOGO_URL = `${SITE_URL.replace(/\/$/, "")}/brand/png/fee-insight-oneline-email@2x.png`; // opaque parchment behind the wordmark, so Gmail dark mode keeps it readable
+export const EMAIL_LOGO_URL = `${SITE_URL.replace(/\/$/, "")}/brand/png/fee-insight-oneline-email@2x.png`; // brick wordmark on transparent, readable in Gmail dark mode too
 
 // Brand contract: Fee Insight is the company/site; Bank Fee Index is its product.
 export const SITE_NAME = "Fee Insight";
