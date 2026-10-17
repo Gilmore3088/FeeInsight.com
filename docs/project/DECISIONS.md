@@ -1137,3 +1137,13 @@ distinguish who has paid or not." Visitor copy names the subscription Hamilton (
 plans", "Your Hamilton subscription"), never "Hamilton Pro", "Fee Insight Pro" or "the Pro
 workspace". "Pro" may still mark paid status (a Pro badge, `isPro`). The 2026-10-15 rule still
 holds: the header and footer name the workspace generically ("Workspace", "Plans").
+
+**Four data fixes switched on.** James, 2026-10-17 10:47 UTC (decision card "Switch on these four
+data fixes as recommended?", option "All four"). `CARD_PRODUCT_TAKEDOWN_LIVE` (#1766, guard v70):
+62 card-product fees come down after the second look (39 non-network ATM, 22 dormant account, and
+Navy Federal 122350 by hand). `COUNT_SHARED_SCHEDULE_ONCE` (#1764, #1441): sister charters that
+publish one schedule count once in statistics (126 institution values, 285 rows; no fee moves).
+`PAGE_COPY_COLLAPSE_LIVE` (#1764, #1439): 499 live page copies close as "duplicate of #… (copy of
+the page)" and 27 kept rows take the fuller name. Knox rules v78 (#1770) ships in its own PR. Each
+switch can be turned back off; the page-copy closes undo by clearing `rolled_back_at` on rows whose
+reason ends "(copy of the page)".
