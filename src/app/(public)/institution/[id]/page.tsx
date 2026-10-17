@@ -65,6 +65,7 @@ import {
 } from "./profile-data";
 import { InstitutionJsonLd } from "./profile-jsonld";
 import { ProfileHero } from "./profile-hero";
+import { SERIF, profileSerif } from "./profile-serif";
 import "./profile.css";
 import { ProfileFootnote } from "./profile-footnote";
 import { HamiltonBand, type HamiltonInsight } from "./hamilton-band";
@@ -90,7 +91,7 @@ const FINANCIAL_HISTORY_QUARTERS = 4;
 /** fdic and ncua can both carry the same quarter; fetch enough rows to dedupe. */
 const FINANCIAL_SOURCES_PER_QUARTER = 2;
 
-const H2 = "text-[34px] font-semibold leading-[1.04] tracking-[-0.035em] text-ink sm:text-[52px]";
+const H2 = "text-[36px] font-medium leading-[1.04] tracking-[-0.02em] text-ink sm:text-[54px]";
 const FINDING = "mt-3 max-w-3xl text-[16px] leading-relaxed text-ink-soft sm:text-[18px]";
 const SOURCE = "mt-3 text-[12px] leading-relaxed text-ink-muted";
 const LINK = "font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink";
@@ -355,7 +356,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
         ]}
       />
 
-      <div className="bg-paper text-ink">
+      <div className={`${profileSerif.variable} bg-paper text-ink`}>
         {/* 1. Who it is, and the count the page leads with (James's design file, Oct 17). */}
         <ProfileHero
           name={inst.institution_name}
@@ -386,7 +387,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
           {/* 2. Every published fee beside the state, district and U.S. medians. */}
           {published.length > 0 && (
             <section aria-labelledby="compare-heading" className="scroll-mt-20">
-              <h2 id="compare-heading" className={H2}>
+              <h2 id="compare-heading" className={H2} style={SERIF}>
                 Fees against the market
               </h2>
               <p className={FINDING}>
@@ -469,7 +470,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
           {/* 3. The whole schedule, grouped by type. */}
           {displayFees.length > 0 && (
             <section aria-labelledby="schedule-heading">
-              <h2 id="schedule-heading" className={`${H2} scroll-mt-24`}>
+              <h2 id="schedule-heading" className={`${H2} scroll-mt-24`} style={SERIF}>
                 {published.length > 0 ? "Published fee schedule" : "Fees under review"}
               </h2>
               <p className={FINDING}>

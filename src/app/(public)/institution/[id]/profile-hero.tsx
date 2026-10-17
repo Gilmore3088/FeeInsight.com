@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import type { CompareCounts } from "./profile-view";
+import { SERIF } from "./profile-serif";
 
 /**
  * The profile's hero (James's design file, Oct 17): a navy band with the institution, where it
@@ -60,7 +61,8 @@ export function ProfileHero({
           </nav>
           <h1
             id="profile-title"
-            className="mt-2 break-words text-[40px] font-semibold leading-[1.02] tracking-[-0.035em] text-white sm:text-[56px] lg:text-[72px]"
+            className="mt-2 break-words text-[42px] font-medium leading-[1.02] tracking-[-0.025em] text-white sm:text-[60px] lg:text-[78px]"
+            style={SERIF}
           >
             {name}
           </h1>
@@ -96,7 +98,7 @@ export function ProfileHero({
         {counts && (
           <div className="mt-10 border-t border-white/20 pt-6 lg:mt-6 lg:border-l lg:border-t-0 lg:pl-14 lg:pt-4">
             <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-[#d9e2e9]">Compared with {place}</p>
-            <p className="mt-3 text-[64px] font-semibold leading-none tracking-[-0.04em] [font-variant-numeric:tabular-nums] sm:text-[88px]">
+            <p className="mt-3 text-[68px] font-medium leading-none tracking-[-0.02em] [font-variant-numeric:tabular-nums] sm:text-[92px]" style={SERIF}>
               {counts.above}
               <span className="mx-3 font-normal text-white/70" aria-hidden="true">
                 /

@@ -6,6 +6,7 @@ import { TrackLink } from "@/components/track-link";
 import { REPORT_OFFER, REPORT_PRICE_INLINE } from "@/lib/constants";
 import { formatCompactDollars } from "@/lib/format";
 import { feeIncomeTerms, formatReportQuarter, type NormalizedFinancial } from "./financial-units";
+import { SERIF } from "./profile-serif";
 
 /** The recorded clip of the Hamilton tour; until it exists a marked slot holds its place. */
 export const INSTITUTION_TOUR_VIDEO: FrameVideo | null = null;
@@ -106,8 +107,8 @@ function InsightView({ insight, institutionName }: { insight: HamiltonInsight; i
       {comparePeers ? (
         <>
           <p className="flex items-baseline gap-4 [font-variant-numeric:tabular-nums]">
-            <span className="text-[56px] font-semibold leading-none tracking-[-0.04em] text-ink sm:text-[64px]">{pct(insight.ownSharePct as number)}</span>
-            <span className="border-l border-border pl-4 text-[28px] font-semibold leading-none tracking-[-0.02em] text-ink-muted sm:text-[32px]">
+            <span className="text-[58px] font-medium leading-none tracking-[-0.02em] text-ink sm:text-[68px]" style={SERIF}>{pct(insight.ownSharePct as number)}</span>
+            <span className="border-l border-border pl-4 text-[30px] font-medium leading-none text-ink-muted sm:text-[34px]" style={SERIF}>
               vs {pct(insight.peerSharePct as number)}
             </span>
           </p>
@@ -198,7 +199,7 @@ export function HamiltonBand({
           </div>
         )}
         <div className={`min-w-0 ${hasInsight ? "border-t border-border pt-10 lg:border-l lg:border-t-0 lg:pl-12 lg:pt-0" : ""}`}>
-          <h2 id="hamilton-heading" className="text-[34px] font-semibold leading-[1.05] tracking-[-0.03em] text-ink sm:text-[44px]">
+          <h2 id="hamilton-heading" className="text-[36px] font-medium leading-[1.05] tracking-[-0.02em] text-ink sm:text-[46px]" style={SERIF}>
             <span className="block text-brick">Hey Hamilton,</span>
             <span className="block">What deserves a closer look?</span>
           </h2>
