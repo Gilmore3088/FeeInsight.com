@@ -283,7 +283,11 @@ describe("readGoalScorecard", () => {
     // The window opens at midnight UTC, whatever the session's timezone.
     expect(values[remedyAt]).toContain(`${readerMissSince(new Date("2026-10-12T07:00:00Z"))}T00:00:00Z`);
     // "Added" means no live fee a week ago, and refresh copies leave the publish count.
-    expect(queries.find((q) => /AS added/.test(q))).toContain("rolled_back_at IS NULL OR fp.rolled_back_at >=");
+    expect(queries.find((q) => /AS added/.test(q))).toContain("AS dropped");
+    // Live a week ago uses the catalog's three-category rule, so a one-fee bank never reads as dropped.
+    const weekAgo = queries.find((q) => /HAVING COUNT\(DISTINCT fp\.canonical_fee_key\)/.test(q));
+    expect(weekAgo).toContain("rolled_back_at IS NULL OR fp.rolled_back_at >=");
+    expect(weekAgo).toContain("quarantined_at IS NULL OR fp.quarantined_at >=");
     expect(queries.find((q) => /refresh_copy/.test(q))).toContain("NOT EXISTS (SELECT 1 FROM refresh_copy");
     expect(goalHeadline(goal)).toBe("1 of 1 groups covered, accuracy 95.0% (7 days), wrong after publish 1.0%");
   });

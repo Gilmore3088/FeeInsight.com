@@ -22,6 +22,8 @@ import { BATCH_REVIEW_CHECK, type BatchMissKind } from "@/lib/agents/rosetta/bat
 type SqlTag = typeof sql;
 
 export const GOAL_WINDOW_DAYS = 7;
+/** `published_fee_catalog` shows an institution only once it has live fees in this many categories. */
+export const CATALOG_MIN_CATEGORIES = 3;
 
 /** James, 2026-10-12 (#1028): a state × size group under $10B is covered at 30 live institutions, or 75% below 40. */
 export const COVERAGE_TARGET_INSTITUTIONS = 30;
@@ -420,6 +422,23 @@ export function coverageShort(total: number, covered: number): number {
 }
 
 /**
+ * Institutions live seven days ago, by the catalog's own rule: a fee neither taken down nor
+ * quarantined by then, at an institution with three or more such categories. Without the
+ * three-category rule an institution with one or two fees counted as live a week ago though the
+ * catalog never showed it, so it read as dropped this week (283 "dropped" on 2026-10-17, 98 real).
+ */
+export function liveWeekAgoSql(db: SqlTag) {
+  return db`
+    SELECT fp.institution_id FROM public.published_fee_records fp
+     WHERE fp.published_at < NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int)
+       AND (fp.rolled_back_at IS NULL OR fp.rolled_back_at >= NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int))
+       AND (fp.quarantined_at IS NULL OR fp.quarantined_at >= NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int))
+     GROUP BY fp.institution_id
+    HAVING COUNT(DISTINCT fp.canonical_fee_key) >= ${CATALOG_MIN_CATEGORIES}::int
+  `;
+}
+
+/**
  * The state × size groups under $10B, one row each: state_code, size_group, total, covered,
  * covered_week_ago, newly_covered, target and short. The one definition the scorecard and Atlas's lane
  * priority (#1117) both read, so the gap a lane works on is the gap the page shows. Institutions
@@ -434,17 +453,15 @@ export function coverageShort(total: number, covered: number): number {
  */
 export function coverageGroupsSql(db: SqlTag, options: { weekAgo?: boolean } = {}) {
   const liveWeekAgo = options.weekAgo
-    ? db`EXISTS (
-        SELECT 1 FROM public.published_fee_records fp
-         WHERE fp.institution_id = i.id
-           AND fp.published_at < NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int)
-           AND (fp.rolled_back_at IS NULL OR fp.rolled_back_at >= NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int))
-      )`
+    ? db`(i.id IN (SELECT institution_id FROM week_ago))`
     : db`FALSE`;
+  const weekAgoCte = options.weekAgo
+    ? db`, week_ago AS MATERIALIZED (${liveWeekAgoSql(db)})`
+    : db``;
   return db`
     WITH live AS MATERIALIZED (
       SELECT DISTINCT institution_id FROM public.published_fee_catalog
-    )
+    )${weekAgoCte}
     SELECT state_code, size_group, total, covered, covered_week_ago, newly_covered, target,
            GREATEST(0, target - covered)::int AS short
       FROM (
@@ -647,11 +664,7 @@ async function readLiveInstitutions(db: SqlTag): Promise<LiveInstitutions> {
   const [row] = await db`
     WITH live AS MATERIALIZED (
       SELECT DISTINCT institution_id FROM published_fee_catalog
-    ), week_ago AS MATERIALIZED (
-      SELECT DISTINCT fp.institution_id FROM published_fee_records fp
-       WHERE fp.published_at < NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int)
-         AND (fp.rolled_back_at IS NULL OR fp.rolled_back_at >= NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int))
-    )
+    ), week_ago AS MATERIALIZED (${liveWeekAgoSql(db)})
     SELECT (SELECT COUNT(*) FROM live)::int AS live,
            (SELECT COUNT(*) FROM live
              WHERE NOT EXISTS (SELECT 1 FROM week_ago w WHERE w.institution_id = live.institution_id))::int AS added,
