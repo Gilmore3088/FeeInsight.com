@@ -65,7 +65,8 @@ import {
 } from "./profile-data";
 import { InstitutionJsonLd } from "./profile-jsonld";
 import { ProfileHero } from "./profile-hero";
-import { SERIF, profileSerif } from "./profile-serif";
+import { SERIF } from "./profile-serif";
+import { profileSerif } from "./profile-serif-font";
 import "./profile.css";
 import { ProfileFootnote } from "./profile-footnote";
 import { HamiltonBand, type HamiltonInsight } from "./hamilton-band";
