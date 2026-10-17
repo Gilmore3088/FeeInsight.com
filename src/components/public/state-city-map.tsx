@@ -133,6 +133,7 @@ export function StateCityMap({
             <a
               key={pt.key}
               href={m.selectHref}
+              rel="nofollow"
               aria-label={title}
               aria-current={on ? "true" : undefined}
               {...hidden}
@@ -197,7 +198,7 @@ export function CityCoverage({
       <div className="mt-3 h-2.5 rounded-sm bg-surface-200" aria-hidden="true">
         <div className="h-2.5 rounded-sm bg-ink/60" style={{ width: `${Math.max(2, share * 100)}%` }} />
       </div>
-      {!onMap && <p className="mt-2 text-[12px] text-ink-muted sm:mx-0">Not on the map: its branch records carry no coordinates.</p>}
+      {!onMap && <p className="mt-2 text-[12px] text-ink-muted sm:mx-0">Its branch records carry no map coordinates, so it has no marker.</p>}
       <Link
         href={href}
         className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-full bg-ink px-5 text-[15px] font-semibold text-on-ink hover:bg-ink/90"

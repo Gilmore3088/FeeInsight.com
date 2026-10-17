@@ -85,7 +85,7 @@ export default async function StateCityDirectory({ params, searchParams }: PageP
             </h1>
             <p className={`mt-2 ${PAGE_LEDE}`}>
               {links.length > 0
-                ? `In ${COUNT.format(links.length)} ${stateName} ${links.length === 1 ? "city" : "cities"}, at least one bank or credit union with a branch publishes its fees. Each city page compares them.`
+                ? `${COUNT.format(links.length)} ${stateName} ${links.length === 1 ? "city has" : "cities have"} at least one bank or credit union with published fees. Each city page compares them.`
                 : `No ${stateName} city has an institution with published fees yet.`}
             </p>
           </div>
@@ -101,10 +101,18 @@ export default async function StateCityDirectory({ params, searchParams }: PageP
             />
           )}
           <p className="mt-6 text-[12px] text-ink-muted sm:mx-0 sm:text-left">
-            Sources: branch records from the FDIC Summary of Deposits (banks) and NCUA (credit unions). Counts are institutions
-            with a branch in the city; a city is listed once at least one of them has published fees. Each marker sits at the
-            middle of the city&apos;s branch locations; state outlines from the U.S. Census Bureau.
+            Sources: FDIC Summary of Deposits, NCUA branch records, U.S. Census Bureau outlines. Counts are institutions with a
+            branch in the city.
           </p>
+          <details className="mt-2 text-[12px] text-ink-muted">
+            <summary className="inline-flex min-h-11 cursor-pointer items-center font-medium text-ink underline decoration-border underline-offset-4">
+              How the map is drawn
+            </summary>
+            <p className="mt-1 sm:mx-0 sm:text-left">
+              A city is listed once at least one institution with a branch there has published fees. Each marker sits at the
+              middle of the city&apos;s branch locations and is sized by institutions with a branch there.
+            </p>
+          </details>
         </div>
       </section>
 

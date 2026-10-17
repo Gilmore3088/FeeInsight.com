@@ -22,6 +22,7 @@ function MarketRows({
   feeKey,
   feeLabel,
   stateMedian,
+  stateInstitutions,
   stateName,
   selected,
   onSelect,
@@ -31,22 +32,25 @@ function MarketRows({
   feeKey: string;
   feeLabel: string;
   stateMedian: number | null;
+  /** Institutions behind the state median. */
+  stateInstitutions: number;
   stateName: string;
   selected: string;
   onSelect: (city: string) => void;
   /** The no-script link that picks a market, keeping the picked fee. */
   hrefFor: (city: string) => string;
 }) {
-  const medians = panels.map((p) => p.fees.find((f) => f.key === feeKey)?.rungs.find((r) => r.level === "city")?.median ?? null);
+  const rungs = panels.map((p) => p.fees.find((f) => f.key === feeKey)?.rungs.find((r) => r.level === "city") ?? null);
+  const medians = rungs.map((r) => r?.median ?? null);
   const top = Math.max(1, stateMedian ?? 0, ...medians.map((m) => m ?? 0));
   return (
     <div>
       <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-[12px] text-ink-muted">
-        <span className="min-w-0 font-medium text-ink-soft">{feeLabel} median by market</span>
+        <span className="min-w-0 font-medium text-ink-soft">{feeLabel} median by market, institutions with a branch there</span>
         {stateMedian != null && (
           <span className="inline-flex min-w-0 items-center gap-1.5">
             <span aria-hidden="true" className="inline-block h-3 w-px bg-ink" />
-            {stateName} {money(stateMedian)}
+            {stateName} {money(stateMedian)}, {COUNT.format(stateInstitutions)} institutions
           </span>
         )}
       </div>
@@ -67,7 +71,14 @@ function MarketRows({
                   on ? "font-semibold text-ink" : "text-ink-soft hover:text-ink"
                 }`}
               >
-                <span className="truncate">{p.name}</span>
+                <span className="min-w-0">
+                  <span className="block truncate">{p.name}</span>
+                  {rungs[i] && (
+                    <span className="block text-[12px] font-normal text-ink-muted">
+                      {COUNT.format(rungs[i].institutions)} {rungs[i].institutions === 1 ? "institution" : "institutions"}
+                    </span>
+                  )}
+                </span>
                 <span className="relative h-2.5 rounded-sm bg-surface-200" aria-hidden="true">
                   {m != null && (
                     <span className={`absolute inset-y-0 left-0 rounded-sm ${on ? "bg-ink" : "bg-ink/35"}`} style={{ width: `${Math.max(2, (m / top) * 100)}%` }} />
@@ -76,7 +87,7 @@ function MarketRows({
                     <span className="absolute -inset-y-1 w-px bg-ink" style={{ left: `${(stateMedian / top) * 100}%` }} />
                   )}
                 </span>
-                <span className="text-right font-mono tabular-nums text-ink">{m != null ? money(m) : <span className="font-sans text-[12px] text-ink-muted">Too few</span>}</span>
+                <span className="text-right font-mono tabular-nums text-ink">{m != null ? money(m) : <span className="font-sans text-[12px] text-ink-muted">Too few to compare</span>}</span>
               </a>
             </li>
           );
@@ -188,6 +199,7 @@ export function MarketCompare({
             feeKey={fee.key}
             feeLabel={fee.label}
             stateMedian={fee.rungs.find((r) => r.level === "state")?.median ?? null}
+            stateInstitutions={fee.rungs.find((r) => r.level === "state")?.institutions ?? 0}
             stateName={stateName}
             selected={panel.city}
             onSelect={pickMarket}
@@ -244,7 +256,7 @@ export function MarketCompare({
                       )}
                     </div>
                     <p className="text-right font-mono text-[20px] font-semibold leading-none tabular-nums text-ink">
-                      {r.median != null ? money(r.median) : "n/a"}
+                      {r.median != null ? money(r.median) : "Too few to compare"}
                     </p>
                   </li>
                 ))}

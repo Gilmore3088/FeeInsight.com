@@ -122,7 +122,7 @@ export function StateExplorer({
             <input type="hidden" name="city" value={city.key} />
             {initialAll && <input type="hidden" name="all" value="1" />}
             <label className="block">
-              <span className="text-[13px] font-medium text-ink">Find your city</span>
+              <span className="text-[13px] font-medium text-ink">Find a city</span>
               <span className="flex gap-2">
                 <input
                   type="search"

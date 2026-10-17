@@ -47,12 +47,12 @@ describe("StateExplorer", () => {
 
   it("opens on the city a ?city= link asked for, and says when a city is not on the map", () => {
     renderExplorer("nowhere");
-    expect(panelText().textContent).toContain("Not on the map");
+    expect(panelText().textContent).toContain("no map coordinates");
   });
 
   it("selects the one city a search matches and filters the list below", () => {
     renderExplorer();
-    fireEvent.change(screen.getByLabelText("Find your city"), { target: { value: "orl" } });
+    fireEvent.change(screen.getByLabelText("Find a city"), { target: { value: "orl" } });
     expect(within(panelText()).getByRole("link", { name: /Compare Orlando fees/ })).toBeTruthy();
     const list = screen.getByRole("region", { name: "Every Florida city" });
     expect(within(list).getAllByRole("link").map((a) => a.textContent)).toEqual(["Orlando41 of 50 with fees"]);
@@ -65,7 +65,7 @@ describe("StateExplorer", () => {
     expect(container.querySelector('svg a[aria-label^="Orlando"]')!.getAttribute("href")).toBe("?q=or&all=1&city=orlando#explorer");
     const menuForm = (screen.getByLabelText("City on the map") as HTMLSelectElement).form!;
     expect(Object.fromEntries(new FormData(menuForm))).toEqual({ q: "or", all: "1", city: "tampa" });
-    const searchForm = (screen.getByLabelText("Find your city") as HTMLInputElement).form!;
+    const searchForm = (screen.getByLabelText("Find a city") as HTMLInputElement).form!;
     expect(Object.fromEntries(new FormData(searchForm))).toEqual({ city: "tampa", all: "1", q: "or" });
   });
 

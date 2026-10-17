@@ -62,7 +62,7 @@ export function CityList({
     <div>
       {!controlled && (
       <label className="block max-w-md">
-        <span className="text-[13px] font-medium text-ink">Find your city</span>
+        <span className="text-[13px] font-medium text-ink">Find a city</span>
         <input
           type="search"
           value={query}
@@ -118,6 +118,7 @@ export function CityList({
       {shown.length > 0 && collapsed && allHref && (
         <a
           href={allHref}
+          rel="nofollow"
           onClick={(e) => {
             e.preventDefault();
             setAll(true);
