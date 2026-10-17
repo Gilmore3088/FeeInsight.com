@@ -18,7 +18,7 @@
  * The one exception is a dollar amount in a category that is usually a rate (below).
  */
 
-import { COLLECTION_ITEM, foldRetiredCategory, FOREIGN_ITEM_RETURN, ITEM_COPY, RESEARCH_SPLIT_LIVE } from "@/lib/fee-fold";
+import { COLLECTION_ITEM, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, IRA_CLOSING, ITEM_COPY, RESEARCH_SPLIT_LIVE } from "@/lib/fee-fold";
 
 export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts" | "amount_implausible";
 
@@ -93,6 +93,17 @@ const ES_INCOMING = "entrante|recibid";
 const ES_OUTGOING = "saliente|enviad";
 /** "Transferencia bancaria" and "Giro bancario" are a wire in a Spanish schedule. */
 const WIRE = /(wire|transferencias? (bancarias?|cablegr[aá]ficas?)|giros? bancarios?)/i;
+/**
+ * v69: the surcharge an institution charges people who are not its customers for using its own
+ * ATMs: a non-customer, non-client or non-account holder ("ATM Surcharge (non-customer)" $4,
+ * 16809), another institution's card or cardholder ("Foreign Cards using our ATM" $5, 60777;
+ * "ATM Surcharge Fee on WWFCU machines (non-credit union cards only)" $3.50, 125584; "Non First
+ * Federal Cardholder at First Federal ATM" $3, 71466), or a card issued elsewhere ("... surcharge on
+ * debit & credit cards issued by financial institutions other than MVFCU"). Its own customers never
+ * pay it, and none of the 50 types holds it (#1196, 131129; Knox does not read it, rules.ts).
+ * A bare "ATM Surcharge" names no payer and is not matched.
+ */
+const OUTSIDER_ATM = String.raw`\bnon[- ]?(?:customers?|clients?|account ?holders?|accountholders?|depositors?)\b|\bforeign\s+customers?\b|\bforeign\s+(?:bank\s+|debit\s*\/?\s*(?:atm\s+)?|atm\s*\/\s*debit\s+|atm\s+)?card(?:s|holders?)?\b|\bnon[- ][^|()]{0,30}?\bcard ?holders?\b|\bnon[- ]?(?:credit union|cu|bank)\s+(?:debit\s+|atm\s+)?cards?\b|\bcards?\s+(?:from|issued by)\s+(?:an?\s+)?(?:other|another|financial institutions? other)\b|\bissued by (?:other )?(?:financial institutions?|banks?|institutions?) other than\b|\bother (?:financial )?institution(?:'?s)? (?:debit\s+|atm\s+)?cards?\b|\bdebit cards? from (?:an?\s+)?(?:other|another)\b|\bout[- ]of[- ]network\s+(?:atm\s+)?card(?:s|holders?)\b|\b(?:using|use of)\s+our\s+(?:own\s+)?(?:\w+\s+)?atm`;
 
 export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   monthly_maintenance: {
@@ -173,8 +184,11 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // a transfer or a return for another reason ("motivo distinto a fondos insuficientes") is not it.
     // v47: a business-only ACH return and a payment the payee sent back ("Payee-returned Check
     // Payment Due to Member Error") are not the member's NSF fee (Darwin eval, Oct 8).
-    exclude:
-      /(deposit|dep[oó]sit|tarjeta de cr[eé]dito|pr[eé]stamo|\bpagos?\b|saliente|transferencia|distint[oa]|otr[oa]s? (motivo|raz[oó]n)|máxim|\bcap\b|daily max|maximum|\bpaid\b|\(\s*honou?red\s*\)|de minimis|after \d+ consecutive|\bsustained\b|\bcontinuous\b|others|re-?present|credit card|loan|transfer|cover|3rd party|third[- ]party|foreign|drawn on (an ?)?other|other inst|self[- ]to[- ]self|returned payment|payment returned|nsf payment|visa payment|re-?activation|card capture|converted|cancell?ation|returned ach origination|return ach origination|ach origination nsf|nsf ach origination|debit origination|reg d limit|\(reg d\)|sent for collection|presented multiple times|in the amount of|\bbox\b|check printing|statement cop(y|ies)|photo ?cop(y|ies)|\bcopy fee|\bcop(y|ies) of\b|written to you|re-?route|business only|payee[- ]returned|\b\d+ ?x ?\d+\b|\bmerchants?\b|\bbonds?\b|\bcoupons?\b)/i, // v33: "03 x 10" is a worked sum; v39: a merchant presenting a member's NSF check is not the member's NSF fee
+    // v69: a returned Canadian or international check or item ("International Returned Item" $50,
+    // 92115; "Canadian Returned Checks (per check)" $45, 117427; `FOREIGN_DEPOSIT_RETURN`) is a deposited
+    // item coming back, not the member's own NSF item ("foreign" was already out).
+    exclude: new RegExp(String.raw`${FOREIGN_DEPOSIT_RETURN.source}|` +
+      /(deposit|dep[oó]sit|tarjeta de cr[eé]dito|pr[eé]stamo|\bpagos?\b|saliente|transferencia|distint[oa]|otr[oa]s? (motivo|raz[oó]n)|máxim|\bcap\b|daily max|maximum|\bpaid\b|\(\s*honou?red\s*\)|de minimis|after \d+ consecutive|\bsustained\b|\bcontinuous\b|others|re-?present|credit card|loan|transfer|cover|3rd party|third[- ]party|foreign|drawn on (an ?)?other|other inst|self[- ]to[- ]self|returned payment|payment returned|nsf payment|visa payment|re-?activation|card capture|converted|cancell?ation|returned ach origination|return ach origination|ach origination nsf|nsf ach origination|debit origination|reg d limit|\(reg d\)|sent for collection|presented multiple times|in the amount of|\bbox\b|check printing|statement cop(y|ies)|photo ?cop(y|ies)|\bcopy fee|\bcop(y|ies) of\b|written to you|re-?route|business only|payee[- ]returned|\b\d+ ?x ?\d+\b|\bmerchants?\b|\bbonds?\b|\bcoupons?\b)/.source, "i"), // v33: "03 x 10" is a worked sum; v39: a merchant presenting a member's NSF check is not the member's NSF fee
     // v35: "NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25 (First State Bank
     // of Rosemount) is the per-item fee; its note states the daily cap.
     capInNotes: {
@@ -204,8 +218,9 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // v31: a lone "ATM Card" ($10 "New and Replacement", $3 "per month", $10 "per card per
     // year"; 9 of 9 live rows checked) prices the card itself, as do its order, issue,
     // enrollment and reactivation; an adjustment, or a rebate the bank pays back, is not a fee.
-    exclude:
-      /(replace|statement|card fee|annual|\bpin\b|denied|declin|re-?order|initial order|instant issue|enrollment|reactivat|\badjustments?\b|rebates?|^(?!.*(withdraw|w\/d|transaction|surcharg|\bnon\b|non-|foreign|other|network|usage|\bused?\b|inquir|transfer|\bat\b|\bpos\b|purchase))\s*atm\s*cards?\b|between accounts|(savings|share) withdrawal|\breg[- ]?d\b|\blobby\b|^\s*(?:atm|visa|debit|check|mastercard)\s*(?:card)?\s*(?:or|\/|&|and)\s*(?:visa\s*|mastercard\s*)?(?:debit|check|atm)?\s*cards?\s*\*?\s*$|tele?phone|\bphone\b|representative|(?<!automated )\bteller\b|call center|non[- ]?members?|\bnon[- ]?(?!owned\b)[\w.]+ (debit |atm )?cards?|non[- ]proprietary card|foreign cards? used|(?<!free )\bat our atm|(?<!of )\bour network|\bin[- ]network|(?<!\bnon[- ]?)\b(?!(non|other|foreign)\b)\w+[- ]owned atm)/i,
+    // v69: what a non-customer pays at the institution's own ATMs (`OUTSIDER_ATM`) is out too.
+    exclude: new RegExp(String.raw`${OUTSIDER_ATM}|` +
+      /(replace|statement|card fee|annual|\bpin\b|denied|declin|re-?order|initial order|instant issue|enrollment|reactivat|\badjustments?\b|rebates?|^(?!.*(withdraw|w\/d|transaction|surcharg|\bnon\b|non-|foreign|other|network|usage|\bused?\b|inquir|transfer|\bat\b|\bpos\b|purchase))\s*atm\s*cards?\b|between accounts|(savings|share) withdrawal|\breg[- ]?d\b|\blobby\b|^\s*(?:atm|visa|debit|check|mastercard)\s*(?:card)?\s*(?:or|\/|&|and)\s*(?:visa\s*|mastercard\s*)?(?:debit|check|atm)?\s*cards?\s*\*?\s*$|tele?phone|\bphone\b|representative|(?<!automated )\bteller\b|call center|non[- ]?members?|\bnon[- ]?(?!owned\b)[\w.]+ (debit |atm )?cards?|non[- ]proprietary card|foreign cards? used|(?<!free )\bat our atm|(?<!of )\bour network|\bin[- ]network|(?<!\bnon[- ]?)\b(?!(non|other|foreign)\b)\w+[- ]owned atm)/.source, "i"),
   },
   wire_domestic_outgoing: {
     include: WIRE,
@@ -390,7 +405,9 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     include: /\S/,
     // v51: a certificate penalty paid in dividends ("A penalty of seven days dividends will be
     // imposed", Y-12 FCU 59002) has no dollar price; the figure beside it is a forfeited reward.
-    exclude: /(:\s*(domestic |international |foreign |incoming |outgoing )?wire\b|\brush request|express shipping|\breinstat|\bpenalty of [a-z0-9 ]{0,24}\bdays?'?\s+(of\s+)?(dividends|interest)\b|\b(dividends|interest) will be (imposed|forfeited)\b|\bforfeit(ure|ed)? of\b)/i,
+    // v69: an IRA's own closing charge ("Individual Retirement Account Closing Fee" $50, 90972;
+    // `IRA_CLOSING`) is the IRA termination fee.
+    exclude: new RegExp(String.raw`${IRA_CLOSING.source}|` + /(:\s*(domestic |international |foreign |incoming |outgoing )?wire\b|\brush request|express shipping|\breinstat|\bpenalty of [a-z0-9 ]{0,24}\bdays?'?\s+(of\s+)?(dividends|interest)\b|\b(dividends|interest) will be (imposed|forfeited)\b|\bforfeit(ure|ed)? of\b)/.source, "i"),
   },
   night_deposit: {
     // v60: a lost or replaced night deposit bag or its key ("Replacement Key for Bag", "Bag
@@ -508,7 +525,13 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // 93859 and 93400 among them). And bill pay refuses a row that is the overdraft (courtesy pay) or NSF
 // fee by its own name or by the heading just before it on its source line (#1304; 8 live fees). The
 // v68 rules do not depend on the switch; turning the research split off again needs its own version.
-export const CATEGORY_GUARD_VERSION = 68;
+// v69 (Oct 17): a returned Canadian or international item filed as NSF (`FOREIGN_DEPOSIT_RETURN`)
+// is a returned deposited item (6 live fees; 92115 "International Returned Item" among them), and an
+// IRA's own closing charge filed as an early closure (`IRA_CLOSING`) is the IRA termination fee (12
+// live fees; 90972 among them), each by guard, re-file rule and fold split. And the non-network ATM
+// fee refuses what non-customers pay at the institution's own ATMs (`OUTSIDER_ATM`; 58 live fees,
+// flagged for the second look, then taken down; 125584 is the hand-taken-down example).
+export const CATEGORY_GUARD_VERSION = 69;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -582,6 +605,10 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   { from: "check_cashing", to: "collection_item", when: COLLECTION_ITEM },
   // v68: a returned foreign check or item filed as check cashing is a returned deposited item.
   { from: "check_cashing", to: "deposited_item_return", when: FOREIGN_ITEM_RETURN },
+  // v69: a returned foreign check or item filed as NSF is a returned deposited item too, and an
+  // IRA's own closing charge filed as an early closure is the IRA termination fee.
+  { from: "nsf", to: "deposited_item_return", when: FOREIGN_DEPOSIT_RETURN },
+  { from: "early_closure", to: "ira_termination", when: IRA_CLOSING },
   { from: "money_order", to: "check_image", when: ITEM_COPY },
   { from: "card_replacement", to: "rush_card", when: new RegExp(EXPRESS_CARD, "i") },
   { from: "minimum_balance", to: "early_closure", when: new RegExp(EARLY_CLOSE, "i") },

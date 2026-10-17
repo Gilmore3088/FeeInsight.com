@@ -334,6 +334,8 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     },
     // Counts every CATEGORY_GUARD_VERSION bump. v68 (Oct 17): returned foreign checks leave check
     // cashing for returned deposited items, and bill pay refuses overdraft and NSF rows (#1304).
+    // v69 (Oct 17): returned foreign items leave NSF, IRA closing charges leave early closure, and
+    // the non-network ATM fee refuses non-customers' surcharges at the institution's own ATMs.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",
