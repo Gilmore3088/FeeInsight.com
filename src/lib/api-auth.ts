@@ -11,6 +11,8 @@ export interface ApiKeyValidation {
   valid: boolean;
   organizationId: number | null;
   tier: string;
+  /** The api_keys row that was accepted; set only when `valid`. */
+  keyId?: number | null;
   error?: string;
   /** Set together with `error`. */
   code?: ApiKeyErrorCode;
@@ -112,5 +114,6 @@ export async function validateApiKey(
     valid: true,
     organizationId: row.organization_id,
     tier: row.tier ?? "pro",
+    keyId: row.id == null ? null : Number(row.id),
   };
 }

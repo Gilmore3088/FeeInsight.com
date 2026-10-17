@@ -11,7 +11,7 @@ const UNITS = "Deposit service-charge income from FDIC and NCUA call reports, in
 async function handleGET(request: NextRequest) {
   const caller = await authorizeV1(request, { paidOnly: "Revenue trends", usageEvent: "api.v1.revenue" });
   if (caller instanceof Response) return caller;
-  const { organizationId, anonymousId, rateLimit } = caller;
+  const { organizationId, keyId, anonymousId, rateLimit } = caller;
 
   const { searchParams } = request.nextUrl;
   let view: "national" | "districts";
@@ -25,7 +25,7 @@ async function handleGET(request: NextRequest) {
     quarters = intParam(searchParams, "quarters", { fallback: 8, min: 1, max: 66 });
   } catch (error) {
     if (error instanceof ApiParamError) {
-      logApiUsage(organizationId, anonymousId, "api.v1.revenue", { status: 400 }).catch(() => {});
+      logApiUsage(organizationId, anonymousId, "api.v1.revenue", { status: 400 }, keyId).catch(() => {});
       return apiError(400, "invalid_parameter", error.message, { rateLimit });
     }
     throw error;
@@ -34,10 +34,10 @@ async function handleGET(request: NextRequest) {
   if (view === "districts") {
     const rows = await getDistrictIncomeTrend(quarters);
     if (rows.length === 0) {
-      logApiUsage(organizationId, anonymousId, "api.v1.revenue", { view, quarters, status: 503 }).catch(() => {});
+      logApiUsage(organizationId, anonymousId, "api.v1.revenue", { view, quarters, status: 503 }, keyId).catch(() => {});
       return apiError(503, "data_unavailable", "Revenue data is temporarily unavailable", { rateLimit });
     }
-    logApiUsage(organizationId, anonymousId, "api.v1.revenue", { view, quarters, status: 200 }).catch(() => {});
+    logApiUsage(organizationId, anonymousId, "api.v1.revenue", { view, quarters, status: 200 }, keyId).catch(() => {});
     return withApiCaching(request, withApiHeaders(
       NextResponse.json({
         view,
@@ -56,10 +56,10 @@ async function handleGET(request: NextRequest) {
 
   const trend = await getRevenueTrend(quarters);
   if (trend.quarters.length === 0) {
-    logApiUsage(organizationId, anonymousId, "api.v1.revenue", { view, quarters, status: 503 }).catch(() => {});
+    logApiUsage(organizationId, anonymousId, "api.v1.revenue", { view, quarters, status: 503 }, keyId).catch(() => {});
     return apiError(503, "data_unavailable", "Revenue data is temporarily unavailable", { rateLimit });
   }
-  logApiUsage(organizationId, anonymousId, "api.v1.revenue", { view, quarters, status: 200 }).catch(() => {});
+  logApiUsage(organizationId, anonymousId, "api.v1.revenue", { view, quarters, status: 200 }, keyId).catch(() => {});
   return withApiCaching(request, withApiHeaders(
     NextResponse.json({
       view,
