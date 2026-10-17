@@ -29,6 +29,10 @@ export interface FfiecItemDefinition {
 }
 
 const RECOVERY = /RECOVER/i;
+/** RI-E item 1 codes as remembered from the instructions; the description check picks the line. */
+const RIE_CANDIDATES = ["RIADC013", "RIADC014", "RIADC015", "RIADC016", "RIADF555", "RIADT047", "RIADF556", "RIADF557"] as const;
+/** RC-E Memoranda consumer-deposit codes as remembered; the description check picks the line. */
+const RCE_CANDIDATES = ["RCONP753", "RCONP754", "RCONP755", "RCONP756", "RCONP757", "RCONP758"] as const;
 const CHARGE_OFF_ONLY = /^(?!.*RECOVER).*CHARGE-?\s?OFF/i;
 
 export const FFIEC_CALL_ITEMS: readonly FfiecItemDefinition[] = [
@@ -36,6 +40,35 @@ export const FFIEC_CALL_ITEMS: readonly FfiecItemDefinition[] = [
   { key: "consumer_maintenance_charges_ytd", codes: ["RIADH033"], schedule: "RI", unit: "thousands", basis: "ytd", describedBy: [/MAINTENANCE/i] },
   { key: "consumer_atm_fees_ytd", codes: ["RIADH034"], schedule: "RI", unit: "thousands", basis: "ytd", describedBy: [/ATM|AUTOMATED TELLER/i] },
   { key: "other_deposit_service_charges_ytd", codes: ["RIADH035"], schedule: "RI", unit: "thousands", basis: "ytd", describedBy: [/OTHER/i, /SERVICE CHARGE/i] },
+  // Schedule RI-E item 1: other noninterest income lines, filed by banks of every size but only
+  // when a line passes the disclosure threshold (051 filers: December only). Absent means not
+  // disclosed, never zero. Several codes are candidates; only one whose file description
+  // matches loads.
+  { key: "atm_income_ytd", codes: RIE_CANDIDATES, schedule: "RIE", unit: "thousands", basis: "ytd", describedBy: [/AUTOMATED TELLER|\bATM/i] },
+  { key: "check_printing_income_ytd", codes: RIE_CANDIDATES, schedule: "RIE", unit: "thousands", basis: "ytd", describedBy: [/CHECK/i, /PRINT|SALE/i] },
+  { key: "safe_deposit_rent_ytd", codes: RIE_CANDIDATES, schedule: "RIE", unit: "thousands", basis: "ytd", describedBy: [/SAFE DEPOSIT/i] },
+  { key: "interchange_fees_ytd", codes: RIE_CANDIDATES, schedule: "RIE", unit: "thousands", basis: "ytd", describedBy: [/INTERCHANGE/i] },
+  { key: "wire_transfer_income_ytd", codes: RIE_CANDIDATES, schedule: "RIE", unit: "thousands", basis: "ytd", describedBy: [/WIRE/i] },
+  // Schedule RC-E Memoranda: deposits intended primarily for individuals ($1B+ banks), the base
+  // for service-charge income per dollar of consumer deposits.
+  {
+    key: "consumer_transaction_deposits",
+    codes: RCE_CANDIDATES,
+    schedule: "RCE",
+    unit: "thousands",
+    basis: "point_in_time",
+    describedBy: [/TRANSACTION/i, /INDIVIDUAL|CONSUMER|PERSONAL/i],
+    notDescribedBy: [/NONTRANSACTION|NUMBER/i],
+  },
+  {
+    key: "consumer_savings_deposits",
+    codes: RCE_CANDIDATES,
+    schedule: "RCE",
+    unit: "thousands",
+    basis: "point_in_time",
+    describedBy: [/NONTRANSACTION SAVINGS|SAVINGS/i, /INDIVIDUAL|CONSUMER|PERSONAL/i],
+    notDescribedBy: [/NUMBER|TIME DEPOSIT/i],
+  },
   // Schedule RC-O Memoranda item 1: deposit accounts (excluding retirement) by size.
   {
     key: "deposits_250k_or_less_amount",
@@ -74,7 +107,7 @@ export const FFIEC_CALL_ITEMS: readonly FfiecItemDefinition[] = [
 
 export const FFIEC_CALL_ITEM_SCHEDULES = [...new Set(FFIEC_CALL_ITEMS.map((item) => item.schedule))];
 
-export type FfiecColumnStatus = "loaded" | "not_in_file" | "description_mismatch" | "no_description";
+export type FfiecColumnStatus = "loaded" | "not_in_file" | "description_mismatch" | "no_description" | "ambiguous";
 
 export interface FfiecColumnCheck {
   key: string;
@@ -127,8 +160,11 @@ export function readFfiecCallItems(
   });
 
   const columns: FfiecColumnCheck[] = [];
+  // Accepted columns per line ("key:code"); a code shared by candidate lists loads only for
+  // the line its description matches.
   const accepted = new Map<string, Column>();
   for (const item of items) {
+    const matched: FfiecColumnCheck[] = [];
     for (const code of item.codes) {
       const file = parsed.find((f) => f.rssdAt >= 0 && f.header.includes(code));
       if (!file) {
@@ -138,8 +174,20 @@ export function readFfiecCallItems(
       const at = file.header.indexOf(code);
       const description = (file.descriptions[at] ?? "").trim();
       const status: FfiecColumnStatus = description === "" ? "no_description" : describes(item, description) ? "loaded" : "description_mismatch";
-      columns.push({ key: item.key, code, status, file: file.name, description: description || null });
-      if (status === "loaded") accepted.set(code, { file: file.name, at, description });
+      const check: FfiecColumnCheck = { key: item.key, code, status, file: file.name, description: description || null };
+      columns.push(check);
+      if (status === "loaded") {
+        matched.push(check);
+        accepted.set(`${item.key}:${code}`, { file: file.name, at, description });
+      }
+    }
+    // Two different lines both fitting one description (not an RCFD/RCON pair) is ambiguous: load neither.
+    const bases = new Set(matched.map((c) => c.code.slice(4)));
+    if (matched.length > 1 && bases.size > 1) {
+      for (const check of matched) {
+        check.status = "ambiguous";
+        accepted.delete(`${item.key}:${check.code}`);
+      }
     }
   }
 
@@ -173,7 +221,7 @@ export function readFfiecCallItems(
     const mine = new Map<string, number>();
     for (const item of items) {
       for (const code of item.codes) {
-        const column = accepted.get(code);
+        const column = accepted.get(`${item.key}:${code}`);
         if (!column) continue;
         const value = cellValue(column, rssd, rows);
         if (value === null) continue;

@@ -78,4 +78,19 @@ describe("readFfiecCallItems", () => {
     });
     expect(read.chargeOffPartsOverTotal).toBe(1);
   });
+
+  it("loads a shared candidate code only for the line its description fits, and refuses ambiguous ones", () => {
+    const read = readFfiecCallItems({
+      "FFIEC CDR Call Schedule RIE 12312025.txt": tsv([
+        ["IDRSSD", "RIADC013", "RIADC016", "RIADF555", "RIADF556"],
+        ["", "INCOME AND FEES FROM THE PRINTING AND SALE OF CHECKS", "INCOME AND FEES FROM AUTOMATED TELLER MACHINES (ATMS)", "BANK CARD AND CREDIT CARD INTERCHANGE FEES", "OTHER INTERCHANGE INCOME"],
+        ["1", "5", "70", "300", "9"],
+      ]),
+    });
+    const value = (key: string) => read.values.find((v) => v.key === key);
+    expect(value("check_printing_income_ytd")).toMatchObject({ code: "RIADC013", value: 5 });
+    expect(value("atm_income_ytd")).toMatchObject({ code: "RIADC016", value: 70 });
+    expect(value("interchange_fees_ytd")).toBeUndefined();
+    expect(read.columns.filter((c) => c.key === "interchange_fees_ytd" && c.status === "ambiguous")).toHaveLength(2);
+  });
 });
