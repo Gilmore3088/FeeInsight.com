@@ -855,6 +855,7 @@ describe("registry dispatch", () => {
       "hmda",
       "hmda-apor",
       "payment-networks",
+      "industry-events",
       "fdic-sod",
       "ncua-branches",
       "ncua-branch-geocode",

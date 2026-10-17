@@ -159,7 +159,8 @@ export async function getStructureEventCounts(groupBy: Exclude<CallItemGroup, "m
            COUNT(*)::int AS events
       FROM institution_structure_events e
       LEFT JOIN institution_sources s ON s.id = e.institution_id
-     WHERE e.effective_date >= make_date(${sinceYear}, 1, 1)
+     WHERE e.source = 'fdic-history'
+       AND e.effective_date >= make_date(${sinceYear}, 1, 1)
      GROUP BY 1, 2, 3
      ORDER BY 2 DESC, 1 NULLS LAST, 5 DESC
   `;

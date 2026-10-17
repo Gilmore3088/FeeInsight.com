@@ -8,6 +8,7 @@ import { FDIC_SOD_SOURCE, runRegistryFdicSod } from "./fdic-sod";
 import { FFIEC_CALL_DETAIL_SOURCE, runRegistryFfiecCallDetail } from "./ffiec-call-detail";
 import { NCUA_EXTRAS_SOURCE, runRegistryNcuaExtras } from "./ncua-extras";
 import { FDIC_HISTORY_SOURCE, runRegistryFdicHistory } from "./fdic-history";
+import { INDUSTRY_EVENTS_SOURCE, runRegistryIndustryEvents } from "./industry-events";
 import { PAYMENT_NETWORKS_SOURCE, runRegistryPaymentNetworks } from "./payment-networks";
 import { HMDA_APOR_PARTITION, HMDA_APOR_SOURCE, HMDA_SOURCE, runRegistryHmda, runRegistryHmdaApor } from "./hmda";
 import { DESIGNATION_LISTS_SOURCE, runRegistryDesignationLists } from "./designation-lists";
@@ -534,6 +535,37 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
           missing_columns: r.missingColumns,
           empty: r.empty,
           empty_reason: r.emptyReason,
+        },
+      };
+    },
+  },
+  {
+    source: INDUSTRY_EVENTS_SOURCE,
+    stepKey: "registry-industry-events",
+    title: "Pull industry events (failures, mergers, applications, fee lawsuits, rule comments, SBA lending, CDFI awards, FHLBank members, SEC fee lines)",
+    run: async (input) => {
+      const r = await runRegistryIndustryEvents({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      const gaps = r.missingFields.length > 0 ? `; fields not found: ${r.missingFields.join(", ")}` : "";
+      return {
+        skipped: r.skipped,
+        summary: r.empty
+          ? `No ${r.family} rows for ${r.partitionKey}: ${r.emptyReason}.`
+          : `Magellan read ${n(r.rows)} ${r.family} rows for ${r.partitionKey}: ${n(r.matchedRows)} matched to an institution, ${n(r.writtenRows)} written${r.truncated ? "; more remain for the next run" : ""}${gaps}${dry(r.dryRun)}.`,
+        detail: {
+          family: r.family,
+          source_url: r.sourceUrl,
+          rows: r.rows,
+          written_rows: r.writtenRows,
+          matched_rows: r.matchedRows,
+          unmatched_rows: r.unmatchedRows,
+          missing_fields: r.missingFields,
+          unexpected_fields: r.unexpectedFields,
+          truncated: r.truncated,
+          cleaning: r.cleaning,
+          empty: r.empty,
+          empty_reason: r.emptyReason,
+          skipped: r.skipped,
+          ...r.extra,
         },
       };
     },
