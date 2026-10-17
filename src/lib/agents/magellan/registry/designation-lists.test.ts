@@ -36,26 +36,12 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 
 describe("registry designation-lists", () => {
   it("lists one partition per list", () => {
-    expect(designationListsPartitions(new Date())).toEqual(["fdic-institution-flags", "ncua-foicu-flags", "ncua-mdi", "cdfi-fund", "bank-on"]);
-  });
-
-  it("reads Bank On's own table when the page links no file, one designation per institution", async () => {
-    const { db, statements } = createDb();
-    const html = `<table><tr><th>Financial Institution</th><th>Account Name</th><th>States</th></tr>
-      <tr><td><a href="#">First Bank of Testing</a></td><td>Basic</td><td>TX</td></tr>
-      <tr><td>First Bank of Testing</td><td>Second Chance</td><td>TX</td></tr>
-      <tr><td>Hope Federal Credit Union</td><td>Hope Account</td><td>MS, AL</td></tr>
-      <tr><td>Big National Bank</td><td>Starter</td><td>Nationwide</td></tr></table>`;
-    const fetchImpl = vi.fn(async () => new Response(html, { status: 200 })) as unknown as typeof fetch;
-    const r = await runRegistryDesignationLists({ partitionKey: "bank-on", db, fetchOptions: { fetchImpl, backoffMs: 0 } });
-    expect(r).toMatchObject({ records: 3, matched: 2, unmatched: 1 });
-    const cleaning = partitionDetail(statements).cleaning;
-    expect(cleaning.duplicateKeys).toHaveLength(1);
-    expect(cleaning.unmatchedRows).toEqual([expect.objectContaining({ name: "Big National Bank", reason: "no_state" })]);
+    expect(designationListsPartitions(new Date())).toEqual(["fdic-institution-flags", "ncua-foicu-flags", "ncua-mdi", "cdfi-fund"]);
   });
 
   it("rejects an unknown partition", async () => {
     await expect(runRegistryDesignationLists({ partitionKey: "nope", db: createDb().db })).rejects.toThrow(/Invalid designation list/);
+    await expect(runRegistryDesignationLists({ partitionKey: "bank-on", db: createDb().db })).rejects.toThrow(/Invalid designation list/);
   });
 
   it("retries BankFind without the fields list when it refuses one, and writes matched flags", async () => {

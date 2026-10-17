@@ -58,52 +58,13 @@ export const HOOVIE_SOURCES_02: HoovieSourceContract[] = [
     tables: ["area_statistics"],
   },
   {
-    // magellan/registry/smallbiz-payments.ts (kcfed), regulatory/smallbiz-payments.ts (kansascityfed.org survey page workbook or KCFED_SBLS_DATA_URL)
-    source: "kcfed-sb-lending",
-    publisher: "Federal Reserve Bank of Kansas City",
-    licence: {
-      status: "terms-unconfirmed",
-      note: "A Reserve Bank is not a federal agency under 17 U.S.C. 105; the code states no terms.",
-    },
-    connection: "bulk-file",
-    cadence: "quarterly",
-    grain: ["national"],
-    linkKeys: [],
-    tables: ["area_statistics"],
-  },
-  {
-    // magellan/registry/smallbiz-payments.ts (sbcs), regulatory/smallbiz-payments.ts (fedsmallbusiness.org report pages, FED_SBCS_DATA_URL / FED_SBCS_STATE_DATA_URL)
-    source: "fed-sbcs",
-    publisher: "Federal Reserve Small Business Credit Survey (fedsmallbusiness.org)",
-    licence: {
-      status: "terms-unconfirmed",
-      note: "Published on fedsmallbusiness.org, not by a named federal agency in code; the code states no terms.",
-    },
-    connection: "bulk-file",
-    cadence: "annual",
-    grain: ["national", "state"],
-    linkKeys: ["state"],
-    tables: ["area_statistics"],
-  },
-  {
-    // magellan/registry/smallbiz-payments.ts (payments), regulatory/smallbiz-payments.ts (FED_PAYMENTS_PAGES: frbservices.org volume pages, federalreserve.gov FR Payments Study)
+    // magellan/registry/smallbiz-payments.ts (payments), regulatory/smallbiz-payments.ts (FED_PAYMENTS_PAGES: federalreserve.gov FedACH quarterly commercial volume, FR Payments Study)
     source: "fed-payments",
-    publisher: "Federal Reserve Financial Services (FedACH, FedNow, Fed check) and Federal Reserve Board (Payments Study)",
+    publisher: "Federal Reserve Board (FedACH commercial volume and the Payments Study)",
     licence: {
-      status: "terms-unconfirmed",
-      note: "The Payments Study is a Federal Reserve Board work; frbservices.org volume pages are run by the Reserve Banks, which are not federal agencies under 17 U.S.C. 105, and the code states no terms.",
+      status: "public-domain",
+      note: "Both pages are Federal Reserve Board works. The frbservices.org FedACH, FedNow and Fed check pages were removed on 2026-10-17: Federal Reserve Financial Services terms need written permission for commercial use.",
     },
-    connection: "web-pages",
-    cadence: "quarterly",
-    grain: ["national"],
-    linkKeys: [],
-    tables: ["area_statistics"],
-  },
-  {
-    // magellan/registry/smallbiz-payments.ts (nacha), regulatory/smallbiz-payments.ts (NACHA_PAGES: nacha.org volume and value pages)
-    source: "nacha-volume",
-    publisher: "Nacha",
-    licence: { status: "terms-unconfirmed", note: "Nacha is a private association; the code states no terms." },
     connection: "web-pages",
     cadence: "quarterly",
     grain: ["national"],
@@ -196,31 +157,6 @@ export const HOOVIE_SOURCES_02: HoovieSourceContract[] = [
     cadence: "annual",
     grain: ["national", "state", "metro"],
     linkKeys: ["state"],
-    tables: ["area_statistics"],
-  },
-  {
-    // magellan/registry/finra-nfcs.ts, regulatory/finra-nfcs.ts (finrafoundation.org NFCS downloads, waves every three years), magellan/registry/risk-costs.ts
-    source: "finra-nfcs",
-    publisher: "FINRA Investor Education Foundation (National Financial Capability Study)",
-    licence: {
-      status: "held",
-      note: "The FINRA Foundation's data terms allow use \"ONLY for your academic research and publication for non-commercial purposes\"; no partitions are scheduled until FINRA_NFCS_LICENSE_CONFIRMED=true.",
-    },
-    connection: "bulk-file",
-    cadence: "irregular",
-    grain: ["national", "state"],
-    linkKeys: ["state"],
-    tables: ["area_statistics"],
-  },
-  {
-    // magellan/registry/fhlb-advance-rates.ts, regulatory/fhlb-advance-rates.ts (each FHLBank's public rate page)
-    source: "fhlb-advance-rates",
-    publisher: "Federal Home Loan Banks (each bank's posted advance rates)",
-    licence: { status: "terms-unconfirmed", note: "FHLBanks are not federal agencies under 17 U.S.C. 105; the code states no terms." },
-    connection: "web-pages",
-    cadence: "daily",
-    grain: ["national"],
-    linkKeys: [],
     tables: ["area_statistics"],
   },
   {

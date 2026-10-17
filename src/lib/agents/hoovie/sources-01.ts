@@ -206,26 +206,12 @@ export const HOOVIE_SOURCES_01: HoovieSourceContract[] = [
     tables: ["area_statistics"],
   },
   {
-    // magellan/registry/economy.ts (paymentChoice), regulatory/economy.ts (ATLANTA_FED_PAYMENT_CHOICE_CSV_URL)
-    source: "atlanta-fed-payment-choice",
-    publisher: "Federal Reserve Bank of Atlanta",
-    licence: {
-      status: "terms-unconfirmed",
-      note: "A Reserve Bank is not a federal agency under 17 U.S.C. 105; the code states no terms.",
-    },
-    connection: "bulk-file",
-    cadence: "irregular",
-    grain: ["national"],
-    linkKeys: [],
-    tables: ["area_statistics"],
-  },
-  {
     // magellan/registry/economy.ts (runRemittances), regulatory/economy.ts (WORLD_BANK_RPW_CSV_URL)
     source: "world-bank-remittance-prices",
     publisher: "World Bank (Remittance Prices Worldwide)",
     licence: {
-      status: "terms-unconfirmed",
-      note: "The code names no licence for the RPW dataset; confirm its terms before showing it to customers.",
+      status: "held",
+      note: "Held 2026-10-17 (DECISIONS.md \"No non-commercial data\"): World Bank site material is non-commercial by default and the RPW dataset's own licence is unconfirmed. The code is kept; no partitions are scheduled and no reader returns its rows until James confirms the terms.",
     },
     connection: "bulk-file",
     cadence: "irregular",

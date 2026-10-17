@@ -28,9 +28,10 @@ export const DESIGNATION_LISTS = {
   ncuaMdi: "ncua-mdi",
   /** CDFI Fund list of certified CDFIs (depository types only are matched). */
   cdfi: "cdfi-fund",
-  /** Bank On certified accounts (joinbankon.org): one flag per institution offering one. */
-  bankOn: "bank-on",
 } as const;
+// The Bank On certified-accounts list (joinbankon.org) was removed on 2026-10-17: its terms allow
+// only "your own noncommercial use" and forbid building a database (DECISIONS.md "No
+// non-commercial data"). Rows already loaded (designation bank_on_certified) are never read.
 export type DesignationList = (typeof DESIGNATION_LISTS)[keyof typeof DESIGNATION_LISTS];
 export const DESIGNATION_LIST_KEYS: DesignationList[] = Object.values(DESIGNATION_LISTS);
 
@@ -39,7 +40,6 @@ export const DESIGNATIONS = {
   mdi: "minority_depository",
   lowIncome: "low_income",
   cdfi: "cdfi",
-  bankOn: "bank_on_certified",
   specialtyGroup: "fdic_specialty_group",
   ownership: "ownership_form",
   subchapterS: "subchapter_s",
@@ -49,7 +49,7 @@ export const DESIGNATIONS = {
 export type Designation = (typeof DESIGNATIONS)[keyof typeof DESIGNATIONS];
 
 /** Flag designations (an institution has it or not) versus categorical ones (every institution has a value). */
-export const FLAG_DESIGNATIONS: readonly Designation[] = [DESIGNATIONS.mdi, DESIGNATIONS.lowIncome, DESIGNATIONS.cdfi, DESIGNATIONS.bankOn, DESIGNATIONS.subchapterS];
+export const FLAG_DESIGNATIONS: readonly Designation[] = [DESIGNATIONS.mdi, DESIGNATIONS.lowIncome, DESIGNATIONS.cdfi, DESIGNATIONS.subchapterS];
 
 export const FDIC_INSTITUTIONS_URL = "https://api.fdic.gov/banks/institutions";
 /** Page that links NCUA's MDI list file (xlsx or csv); the file's own name changes each release. */
@@ -58,9 +58,6 @@ export const NCUA_MDI_LINK = /href="([^"]*(?:mdi|minority)[^"]*\.(?:xlsx|csv))"/
 /** Page that links the CDFI Fund's certified list file (xlsx). */
 export const CDFI_PAGE_URL = "https://www.cdfifund.gov/programs-training/certification/cdfi";
 export const CDFI_LINK = /href="([^"]*certified[^"]*cdfi[^"]*\.(?:xlsx|csv))"/gi;
-/** Bank On's certified-accounts page: a linked file when there is one, else the page's own table. */
-export const BANK_ON_PAGE_URL = "https://joinbankon.org/accounts/";
-export const BANK_ON_LINK = /href="([^"]*(?:certified|accounts|bank-?on)[^"]*\.(?:xlsx|csv))"/gi;
 
 /** FDIC BankFind institution fields read here (from memory; verified per run). */
 export const FDIC_FLAG_FIELDS = {
@@ -104,7 +101,7 @@ export interface DesignationRecord {
   ncuaCharter: string | null;
   /** Organization type as the list states it (CDFI list); null when the list has none. */
   orgType: string | null;
-  /** Every state code the row lists when it lists more than one (Bank On availability); state is then null. */
+  /** Every state code the row lists when it lists more than one (an availability list); state is then null. */
   states?: string[];
   raw: Record<string, unknown>;
 }
@@ -476,8 +473,8 @@ function readPublishedList(
       list,
       designation,
       value: col(row, "group") ?? "yes",
-      // Without a cert or charter the key is name plus state(s): an institution listed twice
-      // (Bank On, one row per certified account) is one designation, reported as a duplicate key.
+      // Without a cert or charter the key is name plus state(s): an institution listed twice is
+      // one designation, reported as a duplicate key.
       recordKey: charter ?? cert ?? `${normalizeName(name)}|${state ?? listedStates.join(",")}`,
       name,
       state,
@@ -508,20 +505,6 @@ export function readNcuaMdiList(bytes: Uint8Array) {
 
 export function readCdfiList(bytes: Uint8Array) {
   return readPublishedList(bytes, DESIGNATION_LISTS.cdfi, DESIGNATIONS.cdfi, ["name", "state", "city", "orgType"]);
-}
-
-/** Bank On certified accounts from a linked csv/xlsx file. */
-export function readBankOnList(bytes: Uint8Array) {
-  return readPublishedList(bytes, DESIGNATION_LISTS.bankOn, DESIGNATIONS.bankOn, ["name", "state"]);
-}
-
-/** Bank On certified accounts from the page's own HTML table, when it links no file. */
-export function readBankOnPage(html: string) {
-  return readPublishedList(new Uint8Array(), DESIGNATION_LISTS.bankOn, DESIGNATIONS.bankOn, ["name", "state"], {
-    format: "html",
-    sheet: null,
-    rows: readHtmlTableRows(html),
-  });
 }
 
 /** Absolute links on a page matching a pattern, first match first. */

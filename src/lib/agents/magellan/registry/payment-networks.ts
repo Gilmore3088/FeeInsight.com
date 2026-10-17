@@ -37,7 +37,7 @@ import { chunk, recordRegistryPartition, type RegistryDb } from "./partitions";
 
 /**
  * Magellan registry step for payment networks, one published list per partition:
- * - zelle, fednow, rtp, reg-ii-not-exempt, reg-ii-exempt: institution_network_memberships, one
+ * - reg-ii-not-exempt, reg-ii-exempt: institution_network_memberships, one
  *   row per listed institution per snapshot (the publisher's stated as-of date, else the fetch
  *   date), matched to institution_sources by RSSD, cert / charter, or exact normalized name and
  *   state; unmatched rows are kept with institution_id NULL.
@@ -147,9 +147,6 @@ async function readList(config: PaymentNetworkSourceConfig, options: RegistryFet
   if (page.status === "robots_disallowed") return empty("The site's robots.txt asks crawlers like ours not to read this page");
   if (page.status === "not_found") return empty("The page is gone (404); its address needs checking");
   const statedDate = statedListDate(page.text);
-  if (config.kind === "html-list") {
-    return { read: readMembershipHtml(network, page.text), readUrl: page.url, statedDate, emptyReason: null, linkNotes: [] };
-  }
   // fed-list: the page links its "Exempt" and "Not Exempt" lists; this partition follows one.
   // CSV or HTML is read; a PDF or spreadsheet is named in the run, not read.
   const which = config.fedList ?? "not-exempt";

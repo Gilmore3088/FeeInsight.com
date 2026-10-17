@@ -62,7 +62,8 @@ export const STATE_DEPOSITORIES_SOURCE = "state-public-depositories";
 export const STATE_NONBANK_LENDERS_SOURCE = "state-nonbank-lenders";
 export const URBAN_DEBT_SOURCE = "urban-debt-in-america";
 export const STATE_LISTS_SOURCES = [STATE_DEPOSITORIES_SOURCE, STATE_NONBANK_LENDERS_SOURCE, URBAN_DEBT_SOURCE] as const;
-export const STATE_DEPOSITORIES_PARSER_VERSION = STATE_LISTS_PARSER_VERSION;
+/** v2: Florida's list removed (2026-10-17, DECISIONS.md "No non-commercial data"). */
+export const STATE_DEPOSITORIES_PARSER_VERSION = 2;
 export const STATE_NONBANK_LENDERS_PARSER_VERSION = STATE_LISTS_PARSER_VERSION;
 export const URBAN_DEBT_PARSER_VERSION = STATE_LISTS_PARSER_VERSION;
 export const URBAN_DEBT_PARTITION = "current";
