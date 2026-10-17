@@ -71,8 +71,10 @@ Seen, not in this lane (reported to their owners, not changed here):
 - **Written answer, engine call failed:** after the written answer finished, the "Reading the
   data" progress panel stayed on screen, counting seconds, above the answer and on the error
   state (`before-ask-written-390.png`, `before-ask-error-390.png`). Seen on the dev server, which
-  runs React Strict Mode; not confirmed on a production build. Owner: batch A
-  (`AnalyzeWorkspace.tsx`, `StructuredAsk.tsx`).
+  runs React Strict Mode. Cause (batch A): under Strict Mode's double effects the cleanup aborted
+  the engine request and the remount skipped the re-ask, so the busy flag stayed set. A production
+  build was not affected. Fixed in commit b55886fc8 on `acct2/hamilton-h04-composer` (batch A),
+  with a Strict Mode test.
 - **Asset formats differ:** the peer list prints full dollars ("$2,410,000,000"); the segment
   table prints "$2.4B". Owner: batch B (`formatPeerAssets` in `src/lib/hamilton/peer-list.ts`).
 - **Market brief and board brief:** the Oct 15 baseline (#980 comment) found Geist Mono figures and
