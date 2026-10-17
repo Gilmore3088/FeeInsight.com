@@ -38,6 +38,36 @@ export const FFIEC_CALL_ITEMS: readonly FfiecItemDefinition[] = [
   { key: "consumer_maintenance_charges_ytd", codes: ["RIADH033"], schedule: "RI", unit: "thousands", basis: "ytd", describedBy: [/MAINTENANCE|\bMAIN\b/i] },
   { key: "consumer_atm_fees_ytd", codes: ["RIADH034"], schedule: "RI", unit: "thousands", basis: "ytd", describedBy: [/ATM|AUTOMATED TELLER/i] },
   { key: "other_deposit_service_charges_ytd", codes: ["RIADH035"], schedule: "RI", unit: "thousands", basis: "ytd", describedBy: [/\bOTHER\b|\bALL\b/i, /SERVICE CHARGE|\bSE?RV CHAR\b|\bSEV CHAR\b/i] },
+  // Schedule RI: cost of deposits and the cost structure, every bank, year to date. The bulk file
+  // abbreviates labels ("SEV CHAR DEP DOM OFF MAIN IND"), so each check is loose but the code fixed.
+  { key: "service_charges_deposits_ytd", codes: ["RIAD4080"], schedule: "RI", unit: "thousands", basis: "ytd", describedBy: [/SERVICE CHARGE|SE?R?V CHA?R|SVC CHG/i] },
+  { key: "interest_expense_transaction_ytd", codes: ["RIAD4508"], schedule: "RI", unit: "thousands", basis: "ytd", describedBy: [/TRANSACTION|\bTRANS\b|\bTRN\b/i] },
+  { key: "interest_expense_savings_ytd", codes: ["RIAD0093"], schedule: "RI", unit: "thousands", basis: "ytd", describedBy: [/SAVING|\bSVGS?\b|MMDA|MONEY MARKET/i] },
+  {
+    key: "interest_expense_time_250k_or_less_ytd",
+    codes: ["RIADHK03"],
+    schedule: "RI",
+    unit: "thousands",
+    basis: "ytd",
+    describedBy: [/TIME|\bTM\b/i],
+    notDescribedBy: [/MORE THAN|GREATER|OVER|>|\bGT\b/i],
+  },
+  { key: "interest_expense_time_over_250k_ytd", codes: ["RIADHK04"], schedule: "RI", unit: "thousands", basis: "ytd", describedBy: [/TIME|\bTM\b/i, /MORE THAN|GREATER|OVER|>|\bGT\b/i] },
+  { key: "interest_expense_total_ytd", codes: ["RIAD4073"], schedule: "RI", unit: "thousands", basis: "ytd", describedBy: [/INT(EREST)?\.? EXP|INTEREST EXPENSE/i, /TOTAL|\bTOT\b/i] },
+  { key: "net_interest_income_ytd", codes: ["RIAD4074"], schedule: "RI", unit: "thousands", basis: "ytd", describedBy: [/NET INT(EREST)?/i] },
+  { key: "noninterest_income_total_ytd", codes: ["RIAD4079"], schedule: "RI", unit: "thousands", basis: "ytd", describedBy: [/NONINT(EREST)?|NON-INT(EREST)?/i, /INC(OME)?/i] },
+  { key: "salaries_benefits_ytd", codes: ["RIAD4135"], schedule: "RI", unit: "thousands", basis: "ytd", describedBy: [/SALAR|\bSAL\b|EMPLOYEE BENEFIT/i] },
+  { key: "premises_expense_ytd", codes: ["RIAD4217"], schedule: "RI", unit: "thousands", basis: "ytd", describedBy: [/PREMISES|\bPREM\b|FIXED ASSET/i] },
+  { key: "noninterest_expense_total_ytd", codes: ["RIAD4093"], schedule: "RI", unit: "thousands", basis: "ytd", describedBy: [/NONINT(EREST)?|NON-INT(EREST)?/i, /EXP/i] },
+  // Schedule RI-E item 2: other noninterest expense lines (reported above the disclosure threshold).
+  { key: "data_processing_expense_ytd", codes: ["RIADC017"], schedule: "RIE", unit: "thousands", basis: "ytd", describedBy: [/DATA PROC/i] },
+  { key: "advertising_expense_ytd", codes: ["RIAD0497"], schedule: "RIE", unit: "thousands", basis: "ytd", describedBy: [/ADVERTIS|MARKETING/i] },
+  // Schedule RC: size and funding base.
+  { key: "total_deposits", codes: ["RCON2200"], schedule: "RC", unit: "thousands", basis: "point_in_time", describedBy: [/DEPOSIT|\bDEP\b/i] },
+  { key: "total_assets", codes: ["RCFD2170", "RCON2170"], schedule: "RC", unit: "thousands", basis: "point_in_time", describedBy: [/TOTAL ASSETS|\bTOT\b.*ASSET/i] },
+  // Schedule RC-E: deposit mix, every bank.
+  { key: "transaction_deposits_total", codes: ["RCON2215"], schedule: "RCE", unit: "thousands", basis: "point_in_time", describedBy: [/TRANSACTION|\bTRN\b/i], notDescribedBy: [/NONTRANS|NON-TRANS|NONTRN/i] },
+  { key: "nontransaction_deposits_total", codes: ["RCON2385"], schedule: "RCE", unit: "thousands", basis: "point_in_time", describedBy: [/NONTRANS|NON-TRANS|NONTRN/i] },
   // Schedule RI-E item 1: other noninterest income lines, filed by banks of every size but only
   // when a line passes the disclosure threshold (051 filers: December only). Absent means not
   // disclosed, never zero. Several codes are candidates; only one whose file description
