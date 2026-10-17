@@ -86,7 +86,6 @@ function makeMockPayload(
       fed_funds_rate: 5.25,
       unemployment_rate: 3.9,
       cpi_yoy_pct: 3.1,
-      consumer_sentiment: 72.5,
       gdp_growth_yoy_pct: 2.8,
       personal_savings_rate: 4.6,
       bank_lending_standards: 14.5,
@@ -198,7 +197,6 @@ describe("buildThesisSummary", () => {
       fed_funds_rate: 5.25,
       unemployment_rate: 3.9,
       cpi_yoy_pct: 3.1,
-      consumer_sentiment: 72.5,
       as_of: "2024-12-01",
     });
   });
@@ -310,7 +308,7 @@ describe("NationalQuarterlyPayload shape", () => {
     expect(payload.fred).toHaveProperty("fed_funds_rate", 5.25);
     expect(payload.fred).toHaveProperty("unemployment_rate", 3.9);
     expect(payload.fred).toHaveProperty("cpi_yoy_pct", 3.1);
-    expect(payload.fred).toHaveProperty("consumer_sentiment", 72.5);
+    expect(payload.fred).not.toHaveProperty("consumer_sentiment");
     expect(payload.fred).toHaveProperty("gdp_growth_yoy_pct", 2.8);
     expect(payload.fred).toHaveProperty("personal_savings_rate", 4.6);
     expect(payload.fred).toHaveProperty("bank_lending_standards", 14.5);

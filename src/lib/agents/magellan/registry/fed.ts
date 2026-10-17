@@ -1,4 +1,5 @@
 import { sql } from "@/lib/data-store/connection";
+import { STRUCK_FRED_SERIES } from "@/lib/data-store/struck-sources";
 import type { RegistryFetchOptions } from "@/lib/regulatory/http";
 import {
   BEIGE_BOOK_DISTRICTS,
@@ -149,7 +150,11 @@ export async function runRegistryFred(options: FedOptions = {}): Promise<Registr
   `;
   const known = new Set(tracked.map((row) => row.series_id));
   const required = REQUIRED_FRED_SERIES.filter((meta) => !known.has(meta.series_id));
-  const series = [...tracked, ...required].filter((row) => isFredNativeSeries(row.series_id) || isBlsSeries(row.series_id));
+  // Struck series (UMCSENT; DECISIONS.md "No non-commercial data") are never refreshed, even though
+  // rows loaded before 2026-10-17 keep them "tracked".
+  const series = [...tracked, ...required].filter(
+    (row) => !STRUCK_FRED_SERIES.includes(row.series_id) && (isFredNativeSeries(row.series_id) || isBlsSeries(row.series_id)),
+  );
   const result: RegistryFredResult = {
     source: FRED_SOURCE,
     partitionKey: FRED_PARTITION,

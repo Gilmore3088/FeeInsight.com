@@ -61,10 +61,13 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
   },
   {
     // magellan/registry/state-lists.ts (runRegistryStateDepositories), regulatory/state-lists.ts
-    // (STATE_DEPOSITORY_LISTS: Florida CFO qualified public depositories only, published quarterly)
+    // (STATE_DEPOSITORY_LISTS: empty; Florida's CFO list was removed on 2026-10-17)
     source: "state-public-depositories",
-    publisher: "Florida Chief Financial Officer, Bureau of Collateral Management",
-    licence: { status: "terms-unconfirmed", note: "State government list; terms not stated in code." },
+    publisher: "State public-funds programs (none wired)",
+    licence: {
+      status: "terms-unconfirmed",
+      note: "No state list is wired. Florida's CFO list was removed on 2026-10-17: its site allows only educational, personal or training use. A state's terms are read before its list is added.",
+    },
     connection: "bulk-file",
     cadence: "quarterly",
     grain: ["institution"],

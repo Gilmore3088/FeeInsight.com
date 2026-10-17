@@ -43,13 +43,18 @@ const now = new Date("2026-10-17T12:00:00Z");
 const fedRows = Array.from({ length: 120 }, (_, i) => `<tr><td>Test Bank ${i}</td><td>Austin</td><td>TX</td></tr>`).join("");
 const fedPage = `<p>Updated October 1, 2026</p><table><tr><th>Institution</th><th>City</th><th>State</th></tr>
   <tr><td>Elm Bank</td><td>Austin</td><td>TX</td></tr>${fedRows}</table>`;
+const regIiPage = '<a href="/paymentsystems/notexempt.htm">Not Exempt institutions</a>';
+const regIiSite = (listHtml: string) => site({ "/paymentsystems/regii-about.htm": regIiPage, "/paymentsystems/notexempt.htm": listHtml });
 const universe = [{ id: 7, institution_name: "Elm Bank", state_code: "TX", rssd_id: null, cert_number: "1", ncua_charter_id: null, source: "fdic" }];
 
 describe("registry payment-networks", () => {
   it("lists the published lists, the survey, then one OpenStreetMap partition per state", () => {
     const parts = paymentNetworksPartitions(now);
-    expect(parts.slice(0, 6)).toEqual(["zelle", "fednow", "rtp", "reg-ii-not-exempt", "reg-ii-exempt", "reg-ii-survey"]);
+    expect(parts.slice(0, 3)).toEqual(["reg-ii-not-exempt", "reg-ii-exempt", "reg-ii-survey"]);
     expect(parts).toContain("osm-TX");
+    expect(parts).not.toContain("zelle");
+    expect(parts).not.toContain("fednow");
+    expect(parts).not.toContain("rtp");
     expect(parts).not.toContain("allpoint");
   });
 
@@ -59,16 +64,16 @@ describe("registry payment-networks", () => {
 
   it("dry run reads and matches the list and writes nothing", async () => {
     const { db, statements } = createDb(universe);
-    const fetchImpl = site({ "/financial-services/fednow/organizations": fedPage });
-    const r = await runRegistryPaymentNetworks({ partitionKey: "fednow", dryRun: true, db, now, fetchOptions: { fetchImpl, backoffMs: 0 } });
-    expect(r).toMatchObject({ network: "fednow", listedRows: 121, matchedRows: 1, unmatchedRows: 120, statedDate: "October 1, 2026", empty: false });
+    const fetchImpl = regIiSite(fedPage);
+    const r = await runRegistryPaymentNetworks({ partitionKey: "reg-ii-not-exempt", dryRun: true, db, now, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    expect(r).toMatchObject({ network: "reg-ii-not-exempt", listedRows: 121, matchedRows: 1, unmatchedRows: 120, statedDate: "October 1, 2026", empty: false });
     expect(statements.some((s) => s.text.includes("INSERT"))).toBe(false);
   });
 
   it("writes memberships with unmatched rows kept and records the checks", async () => {
     const { db, statements } = createDb(universe, 50);
-    const fetchImpl = site({ "/financial-services/fednow/organizations": fedPage });
-    const r = await runRegistryPaymentNetworks({ partitionKey: "fednow", db, now, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    const fetchImpl = regIiSite(fedPage);
+    const r = await runRegistryPaymentNetworks({ partitionKey: "reg-ii-not-exempt", db, now, fetchOptions: { fetchImpl, backoffMs: 0 } });
     expect(r.writtenRows).toBe(121);
     const insert = statements.find((s) => s.text.includes("INSERT INTO institution_network_memberships"))!;
     const payload = JSON.parse(insert.values.find((v) => typeof v === "string" && v.startsWith("[")) as string);
@@ -82,7 +87,7 @@ describe("registry payment-networks", () => {
   it("records an empty partition when robots.txt disallows the page", async () => {
     const { db, statements } = createDb();
     const fetchImpl = vi.fn(async () => new Response("User-agent: FeeInsightBot\nDisallow: /\n", { status: 200 })) as unknown as typeof fetch;
-    const r = await runRegistryPaymentNetworks({ partitionKey: "zelle", db, now, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    const r = await runRegistryPaymentNetworks({ partitionKey: "reg-ii-exempt", db, now, fetchOptions: { fetchImpl, backoffMs: 0 } });
     expect(r.empty).toBe(true);
     expect(partitionDetail(statements).reason).toMatch(/robots\.txt/);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
@@ -90,8 +95,8 @@ describe("registry payment-networks", () => {
 
   it("records an empty partition when the page builds its list with script", async () => {
     const { db, statements } = createDb();
-    const fetchImpl = site({ "/participating-banks-and-credit-unions": '<div id="app"></div><script src="/app.js"></script>' });
-    const r = await runRegistryPaymentNetworks({ partitionKey: "zelle", db, now, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    const fetchImpl = regIiSite('<div id="app"></div><script src="/app.js"></script>');
+    const r = await runRegistryPaymentNetworks({ partitionKey: "reg-ii-not-exempt", db, now, fetchOptions: { fetchImpl, backoffMs: 0 } });
     expect(r).toMatchObject({ empty: true, listedRows: 0 });
     expect(partitionDetail(statements).reason).toMatch(/JavaScript/);
     expect(statements.some((s) => s.text.includes("INSERT INTO institution_network_memberships"))).toBe(false);

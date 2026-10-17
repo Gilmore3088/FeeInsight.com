@@ -4,8 +4,9 @@ import { groupExpression, MIN_GROUP, type CallItemGroup } from "./call-report-it
 /**
  * Reads over the industry-events tables: failures, mergers and liquidations
  * (institution_structure_events, by source), early-warning applications (Fed H.2, OCC bulletin),
- * fee lawsuits, fee-rule comments, SBA lending per lender, CDFI awards, FHLBank membership and
- * holding-company fee-income lines from XBRL. Server only.
+ * fee-rule comments, SBA lending per lender, CDFI awards, FHLBank membership and
+ * holding-company fee-income lines from XBRL. Server only. Fee lawsuits (fee_lawsuits, from
+ * CourtListener) were struck on 2026-10-17 (DECISIONS.md "No non-commercial data") and are not read.
  *
  * Groupings reuse call-report-items' groupExpression (state, Fed district, asset tier, charter,
  * metro) over institution_sources aliased `s`. Every median carries its institution count, and a
@@ -93,47 +94,6 @@ export async function getEarlyWarningEvents(sinceDate: string, limit = 200) {
        AND (e.effective_date IS NULL OR e.effective_date >= ${sinceDate}::date)
      ORDER BY e.effective_date DESC NULLS LAST
      LIMIT ${limit}
-  `;
-}
-
-export interface LawsuitsPerInstitutionRow {
-  institution_id: number;
-  institution_name: string;
-  state_code: string | null;
-  lawsuits: number;
-  latest_filed: string | null;
-}
-
-/** Fee lawsuits per matched institution (defendant name matched exactly). Unmatched suits are counted separately. */
-export async function getLawsuitsPerInstitution(sinceYear: number, limit = 100): Promise<{ rows: LawsuitsPerInstitutionRow[]; unmatched: number }> {
-  const rows = await sql<LawsuitsPerInstitutionRow[]>`
-    SELECT s.id::int AS institution_id, s.institution_name, s.state_code,
-           COUNT(*)::int AS lawsuits, MAX(l.filed_date)::text AS latest_filed
-      FROM fee_lawsuits l
-      JOIN institution_sources s ON s.id = l.institution_id
-     WHERE l.filed_date >= make_date(${sinceYear}, 1, 1)
-     GROUP BY s.id, s.institution_name, s.state_code
-     ORDER BY lawsuits DESC, latest_filed DESC
-     LIMIT ${limit}
-  `;
-  const [u] = await sql<{ unmatched: number }[]>`
-    SELECT COUNT(*)::int AS unmatched FROM fee_lawsuits
-     WHERE institution_id IS NULL AND filed_date >= make_date(${sinceYear}, 1, 1)
-  `;
-  return { rows: [...rows], unmatched: u?.unmatched ?? 0 };
-}
-
-/** Lawsuits per year and institution group (null group = defendant not matched). */
-export async function getLawsuitCounts(groupBy: EventGroup, sinceYear: number) {
-  const group = sql.unsafe(groupExpression(groupBy));
-  return sql<Array<{ group_value: string | null; year: number | null; lawsuits: number; institutions: number }>>`
-    SELECT ${group} AS group_value, EXTRACT(YEAR FROM l.filed_date)::int AS year,
-           COUNT(*)::int AS lawsuits, COUNT(DISTINCT l.institution_id)::int AS institutions
-      FROM fee_lawsuits l
-      LEFT JOIN institution_sources s ON s.id = l.institution_id
-     WHERE l.filed_date >= make_date(${sinceYear}, 1, 1)
-     GROUP BY 1, 2
-     ORDER BY 2 DESC NULLS LAST, 3 DESC
   `;
 }
 

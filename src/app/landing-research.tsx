@@ -30,7 +30,7 @@ export const SOURCES: { key: SourceKey; icon: LucideIcon; name: string; line: st
   { key: "income", icon: UsersRound, name: "Local income", line: "Census ACS · IRS ZIP data", detail: "Household income from the Census ACS and IRS ZIP-level data." },
   { key: "geography", icon: MapPin, name: "Market geography", line: "USDA · Urban & rural", detail: "USDA urban and rural county classifications." },
   { key: "cfpb", icon: MessagesSquare, name: "Complaints", line: "CFPB · Consumer issues", detail: "CFPB consumer complaints, where an institution can be matched." },
-  { key: "payments", icon: CreditCard, name: "Payment services", line: "Zelle · Participants", detail: "Zelle participant data for payment-service availability." },
+  { key: "payments", icon: CreditCard, name: "Payment services", line: "Federal Reserve · Reg II", detail: "Federal Reserve Board Regulation II debit issuer lists and interchange figures." },
   { key: "rules", icon: ScrollText, name: "Rules & actions", line: "Federal & state · Regulators", detail: "Federal and state rules, fee bills, regulator announcements and actions." },
   { key: "fred", icon: Percent, name: "Rates & credit", line: "FRED · Economic series", detail: "National FRED series for interest-rate and credit context." },
   { key: "regional", icon: Building2, name: "Regional Fed", line: "Beige Book · FOMC · Research", detail: "Beige Book, FOMC and regional Federal Reserve publications." },

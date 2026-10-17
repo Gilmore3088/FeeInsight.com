@@ -1,6 +1,7 @@
 import { flagOn } from "@/lib/agents/magellan/registry/live-flag";
 import { COUNTED_LENDER_CATEGORIES, lenderSeriesKey, URBAN_DEBT_LICENSE_CONFIRMED_ENV, urbanSeriesKey } from "@/lib/regulatory/state-lists";
 import { sql } from "./connection";
+import { STRUCK_DEPOSITORY_STATES } from "./struck-sources";
 
 /**
  * Reads over Magellan's state-lists loaders. Server only; nothing here fetches from outside.
@@ -51,7 +52,10 @@ export interface DepositoryStateSummary {
 export async function getPublicDepositoryStates(): Promise<DepositoryStateSummary[]> {
   const rows = await sql<DepositoryStateSummary[]>`
     WITH latest AS (
-      SELECT program_state, MAX(list_date) AS list_date FROM state_public_depositories GROUP BY program_state
+      SELECT program_state, MAX(list_date) AS list_date FROM state_public_depositories
+       -- Struck lists (DECISIONS.md "No non-commercial data"): rows already loaded are never returned.
+       WHERE program_state <> ALL(${[...STRUCK_DEPOSITORY_STATES]}::text[])
+       GROUP BY program_state
     )
     SELECT d.program_state, d.list_date::text AS list_date, MIN(d.list_date_basis) AS list_date_basis,
            COUNT(*)::int AS depositories,
@@ -83,7 +87,7 @@ export interface PublicDepositoryRow {
 /** Every depository on one state's newest list, with the matched institution when there is one. */
 export async function getPublicDepositoriesForState(programState: string): Promise<PublicDepositoryRow[]> {
   const state = programState.trim().toUpperCase();
-  if (!/^[A-Z]{2}$/.test(state)) return [];
+  if (!/^[A-Z]{2}$/.test(state) || STRUCK_DEPOSITORY_STATES.includes(state)) return [];
   const rows = await sql<PublicDepositoryRow[]>`
     SELECT d.listed_name, d.listed_city, d.listed_home_state, d.status, d.status_date::text AS status_date,
            d.institution_id::int AS institution_id, s.institution_name, d.matched_by, d.unmatched_reason,
@@ -111,6 +115,7 @@ export async function getInstitutionPublicDepositoryLists(institutionId: number)
     SELECT d.program_state, d.list_date::text AS list_date, d.status, d.status_date::text AS status_date, d.matched_by
       FROM state_public_depositories d
      WHERE d.institution_id = ${institutionId}
+       AND d.program_state <> ALL(${[...STRUCK_DEPOSITORY_STATES]}::text[])
        AND d.list_date = (SELECT MAX(list_date) FROM state_public_depositories x WHERE x.program_state = d.program_state)
      ORDER BY d.program_state
   `;

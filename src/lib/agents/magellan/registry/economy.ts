@@ -2,7 +2,6 @@ import { sql } from "@/lib/data-store/connection";
 import { CensusKeyError } from "@/lib/regulatory/census-acs";
 import type { GeocodeInput } from "@/lib/regulatory/census-geocoder";
 import {
-  ATLANTA_FED_PAYMENTS_URL_ENV,
   BeaKeyError,
   checkAreaStats,
   dedupeAreaStats,
@@ -71,7 +70,6 @@ export const ECONOMY_SOURCES = {
   shed: "fed-shed",
   fdicIndustry: "fdic-industry-totals",
   fdicRates: "fdic-national-rates",
-  paymentChoice: "atlanta-fed-payment-choice",
   remittances: "world-bank-remittance-prices",
   hudCrosswalk: "hud-zip-county",
 } as const;
@@ -147,12 +145,6 @@ export const ECONOMY_DEFINITIONS: EconomyDefinition[] = [
   {
     source: ECONOMY_SOURCES.fdicRates,
     title: "Pull FDIC national deposit rates and rate caps",
-    fixedPartition: ECONOMY_CURRENT_PARTITION,
-    partitions: () => [ECONOMY_CURRENT_PARTITION],
-  },
-  {
-    source: ECONOMY_SOURCES.paymentChoice,
-    title: "Pull Atlanta Fed consumer payment choice summary tables",
     fixedPartition: ECONOMY_CURRENT_PARTITION,
     partitions: () => [ECONOMY_CURRENT_PARTITION],
   },
@@ -1004,15 +996,13 @@ export async function runRegistryEconomy(options: RegistryEconomyOptions): Promi
     }
     case ECONOMY_SOURCES.fdicIndustry:
       return runFdicIndustry(db, options);
-    case ECONOMY_SOURCES.fdicRates:
-    case ECONOMY_SOURCES.paymentChoice: {
-      const rates = options.source === ECONOMY_SOURCES.fdicRates;
-      const envName = rates ? FDIC_NATIONAL_RATES_URL_ENV : ATLANTA_FED_PAYMENTS_URL_ENV;
-      const label = rates ? "FDIC national rates and rate caps" : "Atlanta Fed payment choice tables";
+    case ECONOMY_SOURCES.fdicRates: {
+      const envName = FDIC_NATIONAL_RATES_URL_ENV;
+      const label = "FDIC national rates and rate caps";
       const url = env[envName];
       if (!url?.trim()) return skipFor(db, options, label, `No ${envName} set; no confirmed plain-file download for this source`, HOURS.week);
-      const fetched = await fetchConfiguredCsv(envName, url, (csv) => parseNationalWideCsv(csv, rates ? { prefix: "fdic_national_rate", unit: "percent (APY)" } : { prefix: "atlanta_fed_payment_choice", unit: "as published" }), fo);
-      return runAreaSource(db, options, fetched, { label, refreshHours: rates ? HOURS.week : HOURS.quarter, emptyRetryHours: HOURS.week });
+      const fetched = await fetchConfiguredCsv(envName, url, (csv) => parseNationalWideCsv(csv, { prefix: "fdic_national_rate", unit: "percent (APY)" }), fo);
+      return runAreaSource(db, options, fetched, { label, refreshHours: HOURS.week, emptyRetryHours: HOURS.week });
     }
     case ECONOMY_SOURCES.remittances:
       return runRemittances(db, options);

@@ -590,29 +590,28 @@ fails a PR that changes one of these constants without updating its line here (#
 | `FDIC_HISTORY_PARSER_VERSION` | — | v1 | `magellan/registry/fdic-history.ts` |
 | `FFIEC_CALL_DETAIL_PARSER_VERSION` | — | v4 (adds deposit interest expense, cost lines, total deposits and assets; v3 reads RC-O account-size labels as filed; v2 matches the bulk file's abbreviated descriptions; reads split "(1 of 2)" schedules) | `magellan/registry/ffiec-call-detail.ts` |
 | `NCUA_EXTRAS_PARSER_VERSION` | — | v3 (adds dividend expense and share mix; v2 reads AcctDesc.txt, not the trade-names file) | `magellan/registry/ncua-extras.ts` |
-| `ECONOMY_PARSER_VERSION` | — | v1 | `magellan/registry/economy.ts` (16 economy sources) |
+| `ECONOMY_PARSER_VERSION` | — | v1 | `magellan/registry/economy.ts` (15 economy sources) |
 | `ALLTHEPLACES_PARSER_VERSION` | — | v1 | `magellan/registry/alltheplaces.ts` |
 | `GLEIF_PARSER_VERSION` | — | v1 | `magellan/registry/gleif.ts` |
 | `MAKING_ENDS_MEET_PARSER_VERSION` | — | v1 (questions found by codebook wording; weight named in the codebook) | `magellan/registry/making-ends-meet.ts` |
 | `PAYDAY_REPORTS_PARSER_VERSION` | — | v1 | `magellan/registry/payday-reports.ts` |
 | `STATE_LISTS_PARSER_VERSION` | — | v1 | `magellan/registry/state-lists.ts` (state-public-depositories, state-nonbank-lenders, urban-debt-in-america) |
-| `STATE_DEPOSITORIES_PARSER_VERSION` | — | v1 | `magellan/registry/state-lists.ts` |
+| `STATE_DEPOSITORIES_PARSER_VERSION` | — | v2 (Florida list removed; no state wired) | `magellan/registry/state-lists.ts` |
 | `STATE_NONBANK_LENDERS_PARSER_VERSION` | — | v1 | `magellan/registry/state-lists.ts` |
 | `URBAN_DEBT_PARSER_VERSION` | — | v1 | `magellan/registry/state-lists.ts` |
-| `FHLB_ADVANCE_RATES_PARSER_VERSION` | — | v1 | `magellan/registry/fhlb-advance-rates.ts` |
 | `BANK_MERGER_ORDERS_PARSER_VERSION` | — | v1 | `magellan/registry/bank-merger-orders.ts` |
 | `SEC_MARKET_VALUE_PARSER_VERSION` | — | v1 | `magellan/registry/sec-market-value.ts` |
 | `USCOURTS_BANKRUPTCY_PARSER_VERSION` | — | v1 | `magellan/registry/uscourts-bankruptcy.ts` |
 | `USDA_FARM_PARSER_VERSION` | — | v2 (newest dated "release" zip, not the U.S.-only archive) | `magellan/registry/usda-farm.ts` |
 | `BLS_OEWS_PARSER_VERSION` | — | v1 | `magellan/registry/bls-oews.ts` |
 | `MARKET_GROWTH_PARSER_VERSION` | — | v1 | `magellan/registry/market-growth.ts` (census-permits, census-popest, irs-migration, census-bfs, bls-laus, census-lehd) |
-| `SMALLBIZ_PAYMENTS_PARSER_VERSION` | — | v1 | `magellan/registry/smallbiz-payments.ts` (kcfed-sb-lending, fed-sbcs, fed-payments, nacha-volume) |
+| `SMALLBIZ_PAYMENTS_PARSER_VERSION` | — | v2 (FedACH read from the Fed Board's page; struck sources removed) | `magellan/registry/smallbiz-payments.ts` (fed-payments) |
 | `NATIONAL_CREDIT_PARSER_VERSION` | — | v2 | `magellan/registry/national-credit.ts` (national-series, nyfed-household-debt, nyfed-sce-credit, cfpb-credit-trends) |
-| `INDUSTRY_EVENTS_PARSER_VERSION` | — | v2 (H.2 release links read when relative) | `magellan/registry/industry-events.ts` |
+| `INDUSTRY_EVENTS_PARSER_VERSION` | — | v3 (CourtListener fee lawsuits removed; v2 reads H.2 release links when relative) | `magellan/registry/industry-events.ts` |
 | `PAYMENT_NETWORKS_PARSER_VERSION` | — | v1 | `magellan/registry/payment-networks.ts` |
 | `HMDA_PARSER_VERSION` | — | v2 (reads the public LAR's "derived_msa-md" header) | `magellan/registry/hmda.ts` |
 | `HMDA_APOR_PARSER_VERSION` | — | v2 | `magellan/registry/hmda.ts` |
-| `DESIGNATION_LISTS_PARSER_VERSION` | — | v1 | `magellan/registry/designation-lists.ts` |
+| `DESIGNATION_LISTS_PARSER_VERSION` | — | v2 (Bank On list removed) | `magellan/registry/designation-lists.ts` |
 | `CRA_PARSER_VERSION` | — | v2 (FFIEC ratings and flat-file URLs; headerless ratings file, ID by regulator; revised 2022-23 files) | `magellan/registry/cra.ts` |
 | `FR_Y9C_PARSER_VERSION` | — | v1 | `magellan/registry/fr-y9c.ts` |
 | `NIC_STRUCTURE_PARSER_VERSION` | — | v1 | `magellan/registry/nic-structure.ts` |

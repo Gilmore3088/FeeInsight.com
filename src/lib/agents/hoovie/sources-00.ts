@@ -138,12 +138,12 @@ export const HOOVIE_SOURCES_00: HoovieSourceContract[] = [
     tables: ["cra_ratings", "cra_lending_respondents", "cra_small_business_lending"],
   },
   {
-    // magellan/registry/designation-lists.ts, regulatory/designation-lists.ts (FDIC API, NCUA, CDFI Fund, joinbankon.org)
+    // magellan/registry/designation-lists.ts, regulatory/designation-lists.ts (FDIC API, NCUA, CDFI Fund)
     source: "designation-lists",
-    publisher: "FDIC, NCUA, CDFI Fund (US Treasury) and Bank On (joinbankon.org)",
+    publisher: "FDIC, NCUA and CDFI Fund (US Treasury)",
     licence: {
-      status: "terms-unconfirmed",
-      note: "FDIC, NCUA and CDFI Fund lists are federal works; the Bank On certified-accounts list (joinbankon.org) is not, and its terms are not stated in code.",
+      status: "public-domain",
+      note: "FDIC, NCUA and CDFI Fund lists are federal works. The Bank On certified-accounts list was removed on 2026-10-17: its terms allow only noncommercial use and forbid building a database.",
     },
     connection: "web-pages",
     cadence: "irregular",
@@ -174,12 +174,13 @@ export const HOOVIE_SOURCES_00: HoovieSourceContract[] = [
     tables: ["hmda_apor_rates"],
   },
   {
-    // magellan/registry/payment-networks.ts, regulatory/payment-networks.ts (zellepay.com, frbservices.org, theclearinghouse.org, federalreserve.gov, overpass-api.de)
+    // magellan/registry/payment-networks.ts, regulatory/payment-networks.ts (federalreserve.gov, overpass-api.de)
     source: "payment-networks",
-    publisher: "Zelle, Federal Reserve Financial Services (FedNow), The Clearing House (RTP), Federal Reserve Board (Reg II) and OpenStreetMap",
+    publisher: "Federal Reserve Board (Reg II) and OpenStreetMap",
     licence: {
-      status: "terms-unconfirmed",
-      note: "Reg II lists and tables are Federal Reserve Board works; OpenStreetMap rows are ODbL 1.0 with attribution on every row; Zelle, FedNow (Reserve Banks) and RTP participant lists have no terms stated in code.",
+      status: "open-licence",
+      licenceName: "ODbL 1.0 (OpenStreetMap); Reg II lists are Federal Reserve Board works",
+      note: "OpenStreetMap rows carry attribution on every row. The Zelle, FedNow and RTP participant lists were removed on 2026-10-17: their terms allow only personal or non-commercial use.",
     },
     connection: "web-pages",
     cadence: "irregular",
@@ -188,15 +189,15 @@ export const HOOVIE_SOURCES_00: HoovieSourceContract[] = [
     tables: ["institution_network_memberships", "reg_ii_interchange_figures", "osm_financial_locations"],
   },
   {
-    // magellan/registry/industry-events.ts, regulatory/industry-events.ts (Fed H.2, OCC, FDIC, NCUA, FHFA, CDFI Fund, SBA, SEC, regulations.gov, CourtListener)
+    // magellan/registry/industry-events.ts, regulatory/industry-events.ts (Fed H.2, OCC, FDIC, NCUA, FHFA, CDFI Fund, SBA, SEC, regulations.gov)
     source: "industry-events",
-    publisher: "Federal Reserve Board, OCC, FDIC, NCUA, FHFA, CDFI Fund, SBA, SEC, regulations.gov and CourtListener",
+    publisher: "Federal Reserve Board, OCC, FDIC, NCUA, FHFA, CDFI Fund, SBA, SEC and regulations.gov",
     licence: {
-      status: "terms-unconfirmed",
-      note: "Most lists are federal works; CourtListener (fee lawsuits) is not a federal publisher and its terms are not stated in code.",
+      status: "public-domain",
+      note: "All lists are federal works. CourtListener fee lawsuits were removed on 2026-10-17: its terms allow only personal, educational or research use.",
     },
     connection: "web-pages",
-    optionalEnvKeys: ["DATA_GOV_API_KEY", "COURTLISTENER_API_TOKEN"],
+    optionalEnvKeys: ["DATA_GOV_API_KEY"],
     cadence: "irregular",
     grain: ["institution", "document"],
     linkKeys: ["fdic-cert", "ncua-charter", "rssd", "cik", "institution-name"],
@@ -205,7 +206,6 @@ export const HOOVIE_SOURCES_00: HoovieSourceContract[] = [
       "fhlb_members",
       "cdfi_awards",
       "sba_lender_lending",
-      "fee_lawsuits",
       "rule_comments",
       "sec_fee_income_facts",
       "sec_event_filings",
