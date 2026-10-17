@@ -273,11 +273,10 @@ describe("Knox paid extraction (pass 3)", () => {
     expect(attemptCalls(db)).toHaveLength(0);
   });
 
-  it("plans no paid call for a bank's same text twice or a page whose paid read found no fee", () => {
+  it("plans no paid call for a page whose paid read found no fee", () => {
     const rows = [
       { document_text_id: 1, source_document_id: 11, institution_id: 52, text_hash: "a", no_fee_read_id: null },
       { document_text_id: 2, source_document_id: 12, institution_id: 52, text_hash: "a", no_fee_read_id: null },
-      { document_text_id: 3, source_document_id: 13, institution_id: 53, text_hash: "a", no_fee_read_id: null },
       { document_text_id: 4, source_document_id: 14, institution_id: 52, text_hash: "b", no_fee_read_id: 7001 },
       { document_text_id: 5, source_document_id: 15, institution_id: 52, text_hash: "c" },
       { document_text_id: 6, source_document_id: 16, institution_id: 52, text_hash: "d", no_fee_read_id: null },
@@ -285,10 +284,9 @@ describe("Knox paid extraction (pass 3)", () => {
 
     const plan = planPaidReads(rows, 3);
 
-    // Another bank's same text is its own read; the limit counts reads, not skips.
-    expect(plan.reads.map((row) => row.document_text_id)).toEqual([1, 3, 5]);
+    // The same text under a second document is still read; the limit counts reads, not skips.
+    expect(plan.reads.map((row) => row.document_text_id)).toEqual([1, 2, 5]);
     expect(plan.skips).toEqual([
-      { documentTextId: 2, sourceDocumentId: 12, institutionId: 52, textHash: "a", reason: "same_text_this_run", priorAttemptId: null },
       { documentTextId: 4, sourceDocumentId: 14, institutionId: 52, textHash: "b", reason: "page_read_before_no_fees", priorAttemptId: 7001 },
     ]);
   });
@@ -296,7 +294,6 @@ describe("Knox paid extraction (pass 3)", () => {
   it("logs each skipped read on the step and buys no call for it", async () => {
     const db = createDbMock([
       textRow,
-      { ...textRow, document_text_id: 802, source_document_id: 602 },
       { ...textRow, document_text_id: 803, source_document_id: 603, text_hash: "refetched-hash", no_fee_read_id: 7001 },
     ]);
     const create = vi.fn(async () => reply({ fees: [] }));
@@ -306,12 +303,9 @@ describe("Knox paid extraction (pass 3)", () => {
     expect(create).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({ selected: 1, processed: 1 });
     expect(result.results).toEqual(
-      expect.arrayContaining([
-        { document_text_id: 802, skip_reason: "same_text_this_run" },
-        { document_text_id: 803, skip_reason: "page_read_before_no_fees", prior_attempt_id: 7001 },
-      ]),
+      expect.arrayContaining([{ document_text_id: 803, skip_reason: "page_read_before_no_fees", prior_attempt_id: 7001 }]),
     );
-    // The no-fee page gets a $0 rejected attempt so it is not selected again; the same-text copy does not.
+    // The no-fee page gets a $0 rejected attempt so it is not selected again.
     const attempts = attemptCalls(db);
     expect(attempts).toHaveLength(2);
     expect(attempts[0]).toEqual(expect.arrayContaining([52, 603, "extract", KNOX_PAID_STRATEGY.strategy, KNOX_PAID_STRATEGY.version, "refetched-hash", "rejected", 0, 0, 307, 37]));
@@ -324,7 +318,7 @@ describe("Knox paid extraction (pass 3)", () => {
     expect(event?.slice(1, 4)).toEqual([
       307,
       37,
-      "Knox skipped 2 paid reads that would yield nothing, $0 spent: 1 because the same bank's same text is already read in this run; 1 because a paid read of this page found no fee before.",
+      "Knox skipped 1 paid read that would yield nothing, $0 spent: 1 because a paid read of this page found no fee before.",
     ]);
 
     const [query] = db.unsafe.mock.calls[0] as [string, unknown[]];

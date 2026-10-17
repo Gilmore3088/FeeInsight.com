@@ -29,27 +29,27 @@ content type has live fees found only there. URL words with no live fee (hsa, yo
 news, lend, home-equity, insurance, treasury) cover at most 54 calls, $1.39: too few to trust.
 Rosetta's `document_kind` is unset on 3,440 of the 3,653 texts, so it can't predict yet.
 
-**Cause:** two gaps in the paid selection.
-- It reads a text once per bank across runs, but within one run it picked the same bank's same
-  text under two or more documents (a page stored twice) and bought each: 149 extra calls.
-- A re-fetched page with a slightly changed text (a new hash) was bought again after the model
-  had already found no fee on that page: 107 calls, 105 kept nothing and none has a live fee.
+**Cause:** a re-fetched page with a slightly changed text (a new hash) was bought again after the
+model had already found no fee on that page: 107 calls, 105 kept nothing and none has a live fee.
 
-**Fix:** `planPaidReads` skips both before the call. Each skip is logged on the step
-(`knox.paid_read_skipped` event, `skip_reason` in the results); the no-fee page also gets a $0
-`rejected` attempt so it is not selected again. A page whose earlier read returned rows the text
-didn't ground is still read: one such page later grounded 3 fees, one of them live.
+**Fix:** `planPaidReads` skips the no-fee page before the call. Each skip is logged on the step
+(`knox.paid_read_skipped` event, `skip_reason` in the results) and gets a $0 `rejected` attempt,
+so the page is not selected again. A page whose earlier read returned rows the text didn't ground
+is still read: one such page later grounded 3 fees, one of them live.
 
-**Backtest (14 days):** 256 calls and $7.14 skipped. Live fees lost:
-- Page read before with no fee: 0.
-- Same text twice: 13 live fees came only from the second copy. For 7 of them the first copy's
-  read wrote the same category and amount, and that row came down as a page-copy duplicate of the
-  second; with the skip it would have stayed live. The other 6 (4 lending fees at one bank, a $10
-  minimum-balance fee, a $3 excess-withdrawal fee) came from asking the model again about
-  identical text, the read the attempt log already refuses across runs.
+**Backtest (14 days):** 107 calls and $3.06 skipped, 0 live fees lost.
 
-The rest of the empty calls (972 less the 157 skipped) are first reads where the model found
-nothing on a text the free team also read poorly. Today's text measures can't predict them.
+**Not skipped: the same text twice.** Skipping the second copy would save 149 calls and $4.08,
+but 13 live fees came only from that copy:
+- 7 had the same category and amount on the first copy's read, and that row came down as a
+  page-copy duplicate of the second. With the skip, it would have stayed live.
+- 6 came only from asking the model again about identical text: 4 lending fees at one bank, a
+  $10 minimum-balance fee and a $3 excess-withdrawal fee.
 
-**Lesson:** a once-per-input rule checked against the attempt log must also hold inside the batch
-that writes the log.
+A skip may lose no live fee, so this one was dropped (decision, Oct 17).
+
+The rest of the empty calls are first reads where the model found nothing on a text the free
+team also read poorly. Today's text measures can't predict them.
+
+**Lesson:** test a skip against live fees before adding it. A read that looks wasteful, such as
+reading the same text a second time, can still find fees the first read missed.

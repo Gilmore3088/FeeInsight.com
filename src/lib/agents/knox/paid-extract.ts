@@ -78,14 +78,15 @@ interface PaidTextRow {
 /**
  * Why a selected text gets no paid call (zero-yield reads, 2026-10-17). Deterministic, decided
  * before the call from the attempt log alone:
- * - `same_text_this_run`: the run already holds this bank's same text under another document
- *   (a page stored twice). The attempt log reads a text once per bank, but two copies picked in
- *   one run were both bought: 149 calls ($4.08) in 14 days.
  * - `page_read_before_no_fees`: the paid reader read this page's address before, the model
  *   returned no fee at all, and no paid read of the address ever found one. A re-fetched copy
  *   with a changed text was bought again: 107 calls ($3.06) in 14 days, none with a live fee.
+ *
+ * A bank's same text under two documents in one run is still read twice: skipping the second
+ * copy would have lost 6 live fees in the same 14 days (149 calls, $4.08), and the rule is that a
+ * skip loses none.
  */
-export type PaidReadSkipReason = "same_text_this_run" | "page_read_before_no_fees";
+export type PaidReadSkipReason = "page_read_before_no_fees";
 
 export interface PaidReadSkip {
   documentTextId: number;
@@ -98,7 +99,6 @@ export interface PaidReadSkip {
 }
 
 export const PAID_READ_SKIP_LABEL: Record<PaidReadSkipReason, string> = {
-  same_text_this_run: "the same bank's same text is already read in this run",
   page_read_before_no_fees: "a paid read of this page found no fee before",
 };
 
@@ -111,26 +111,17 @@ type PlannedRow = Pick<PaidTextRow, "document_text_id" | "source_document_id" | 
 export function planPaidReads<T extends PlannedRow>(rows: T[], limit: number): { reads: T[]; skips: PaidReadSkip[] } {
   const reads: T[] = [];
   const skips: PaidReadSkip[] = [];
-  const seen = new Set<string>();
   for (const row of rows) {
     if (reads.length >= limit) break;
-    const skip = (reason: PaidReadSkipReason, priorAttemptId: number | null = null) =>
+    if (row.no_fee_read_id != null) {
       skips.push({
         documentTextId: Number(row.document_text_id),
         sourceDocumentId: Number(row.source_document_id),
         institutionId: Number(row.institution_id),
         textHash: row.text_hash,
-        reason,
-        priorAttemptId,
+        reason: "page_read_before_no_fees",
+        priorAttemptId: Number(row.no_fee_read_id),
       });
-    const key = `${row.institution_id}:${row.text_hash}`;
-    if (seen.has(key)) {
-      skip("same_text_this_run");
-      continue;
-    }
-    seen.add(key);
-    if (row.no_fee_read_id != null) {
-      skip("page_read_before_no_fees", Number(row.no_fee_read_id));
       continue;
     }
     reads.push(row);
@@ -428,15 +419,12 @@ function isStopError(error: unknown): boolean {
 
 /**
  * Every skip is visible: one `knox.paid_read_skipped` event on the step lists each text and its
- * reason. A page whose earlier paid read found no fee also gets a `rejected` attempt for this
- * text (cost 0), so later runs do not select it again. A same-text skip writes no attempt: the
- * copy that is read records one for the bank and text, and if that call fails for a temporary
- * reason both copies stay eligible.
+ * reason. Each skipped text also gets a `rejected` attempt (cost 0), so later runs do not select
+ * it again.
  */
 async function logPaidReadSkips(db: SqlTag, options: PaidStepOptions, skips: PaidReadSkip[]): Promise<void> {
   if (skips.length === 0) return;
   for (const skip of skips) {
-    if (skip.reason !== "page_read_before_no_fees") continue;
     await recordAttempt(db, {
       institutionId: skip.institutionId,
       sourceDocumentId: skip.sourceDocumentId,
