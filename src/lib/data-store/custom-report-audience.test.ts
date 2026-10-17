@@ -104,3 +104,59 @@ describe("the subject's records the source check could not match", () => {
     expect(evidence.amount).toBeCloseTo(8.45, 10);
   });
 });
+
+describe("Capital City's ATM and incoming wire fees on its other-services page (#1835)", () => {
+  // agent_source_texts 1418 (source_document_id 13900, read Oct 3): each price printed under its
+  // fee's name, so "Wire Transfers" sits six lines above "Incoming Domestic Fee".
+  const OLDER_READ = [
+    "Wire Transfers", "Outgoing Domestic Fee", "$35", "Outgoing International Fee", "$75",
+    "Incoming Domestic Fee", "$25", "Incoming International Fee", "$25", "Returned Wire Fee", "$25",
+    "Wire Transfer Confirmation Fee", "$5",
+    "Wire Transfer Investigation Fee (plus fee from intermediary and receiving banks)", "$25",
+    "Collection Services", "Incoming Domestic Item Fee", "$20", "Incoming International Item Fee", "$20",
+  ].join("\n\n");
+  // agent_source_texts 35159 (source_document_id 37072, read Oct 17): the same page as table rows.
+  const NEWER_READ = [
+    "Debit Cards", "Debit Card Replacement Fee | $10", "Expedited Card Delivery Fee | $35",
+    "ATM Network Usage Fee, for each inquiry, transfer or withdrawal at non-Capital City Bank ATM | $3",
+    "International Transaction Fee+ | 3% of U.S. dollar amount of transaction",
+    "Overdraft & Insufficient Funds", "Insufficient Item Fee* | $35",
+  ].join("\n\n");
+  const URL = "https://www.ccbg.com/personal/other-services-and-fees";
+  const row = (line: string, fee_id: number, fee_name: string, amount: string, source_document_id: string, excerpt: string) => ({
+    institution_id: 323, institution_name: "Capital City Bank", city: "Tallahassee", state_code: "FL", charter_type: "bank",
+    market_deposits: "100", line, fee_id, amount, fee_name, source_url: URL, updated_at: "2026-10-17",
+    source_document_id, takedown_pending: false, conditions: `Knox deterministic extraction. excerpt="${excerpt}"`,
+  });
+
+  it("brings the $3 out-of-network ATM fee and the $25 incoming domestic wire into the report", async () => {
+    state.replies.push(
+      [{ id: 323, institution_name: "Capital City Bank", city: "Tallahassee", state_code: "FL", charter_type: "bank", cert_number: "9622", asset_size: null }],
+      [{ county_fips: "12073", city: "Tallahassee", state: "FL", year: 2026, basis: "branch_counties" }],
+      [
+        row("atm_non_network", 97777, "ATM Network Usage Fee, for each inquiry, transfer or withdrawal at non-Capital City Bank ATM", "3.00", "37072",
+          "ATM Network Usage Fee, for each inquiry, transfer or withdrawal at non-Capital City Bank ATM | $3"),
+        row("wire_domestic_outgoing", 69698, "Wire Transfers: Outgoing Domestic Fee", "35.00", "13900", "Outgoing Domestic Fee / $35"),
+        row("wire_domestic_incoming", 69700, "Wire Transfers: Incoming Domestic Fee", "25.00", "13900", "Incoming Domestic Fee / $25"),
+      ],
+      [
+        { source_document_id: "13900", institution_id: 323, source_url: URL, normalized_text: OLDER_READ, read_on: "2026-10-03" },
+        { source_document_id: "37072", institution_id: 323, source_url: URL, normalized_text: NEWER_READ, read_on: "2026-10-17" },
+      ],
+    );
+    const result = await getCustomReportMarketData(323);
+    expect(result?.unmatchedOwn).toEqual([]);
+    expect(result?.dropped).toEqual({});
+    expect(result?.lines.map((l) => [l.line, l.id, l.amount, l.source_line])).toEqual([
+      ["atm_non_network", 97777, 3, "ATM Network Usage Fee, for each inquiry, transfer or withdrawal at non-Capital City Bank ATM | $3"],
+      ["wire_domestic_outgoing", 69698, 35, "Outgoing Domestic Fee | $35"],
+      ["wire_domestic_incoming", 69700, 25, "Incoming Domestic Fee | $25"],
+    ]);
+    // The report's evidence step keeps each record, so neither line reads "not found in your schedule".
+    for (const line of result!.lines) {
+      const evidence = buildAmountEvidence(line);
+      expect(evidence.excluded).toEqual([]);
+      expect(evidence.amount).toBe(line.amount);
+    }
+  });
+});

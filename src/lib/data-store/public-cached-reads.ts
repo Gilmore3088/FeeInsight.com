@@ -154,7 +154,9 @@ export const getStateEconomicContextCached = cachedPublicRead(
 export const getMarketReadinessCached = cachedPublicRead("market-readiness", getMarketReadiness);
 // v6: the shared source check now passes a waiver's "otherwise" price (#1797), so a copy saved
 // before it can still be missing a record the institution profile shows.
-export const getCustomReportMarketDataCached = cachedPublicRead("custom-report-market-v6", getCustomReportMarketData);
+// v7: a row read under its section heading takes the category word from that heading (#1835),
+// so Capital City Bank's incoming domestic wire ($25) enters its report.
+export const getCustomReportMarketDataCached = cachedPublicRead("custom-report-market-v7", getCustomReportMarketData);
 /**
  * Every institution's headline coverage, shared by all institution pages. Each page used to
  * recount the whole catalog for its own report rule check: about a second, 830 times an hour

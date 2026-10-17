@@ -824,6 +824,32 @@ describe("checkFeeAgainstSource joined prices (Knox v76)", () => {
     expect(checkFeeAgainstSource(waived, "Monthly Maintenance Fee", 6, ".").ok).toBe(true);
   });
 
+  it("takes a row's category word from its own section heading, not from an earlier section (#1835)", () => {
+    // Capital City Bank (institution 323), live fee 69700: agent_source_texts 1418 for source_document_id 13900,
+    // each price printed under its fee's name, so "Wire Transfers" sits six lines above the incoming fee.
+    const page = [
+      "Online Banking Bank-to-Bank (External) Transfers", "Outbound: External Bank-to-Bank Transfer Fee", "$2",
+      "Returned Bank-to-Bank Transfer Fee", "$6",
+      "Wire Transfers", "Outgoing Domestic Fee", "$35", "Outgoing International Fee", "$75",
+      "Incoming Domestic Fee", "$25", "Incoming International Fee", "$25", "Returned Wire Fee", "$25",
+      "Wire Transfer Confirmation Fee", "$5",
+      "Collection Services", "Incoming Domestic Item Fee", "$20", "Incoming International Item Fee", "$20",
+    ].join("\n\n");
+    for (const key of [undefined, "wire_domestic_incoming"]) {
+      expect(checkFeeAgainstSource(page, "Wire Transfers: Incoming Domestic Fee", 25, "wire", key)).toEqual({
+        ok: true,
+        sourceLine: "Incoming Domestic Fee | $25",
+      });
+    }
+    // A heading further up belongs to an earlier section: a fax fee filed as an ATM fee stays out.
+    const fees = [
+      "ATM Service Charge", "First Bank ATMs | No charge", "All other ATMs | $1.50 per withdrawal and/or per inquiry",
+      "Check Cashing Fee (Customers) | No charge", "(We do not cash checks for non-customers)",
+      "Check Printing | Prices vary", "Faxes – | Outgoing | $4.00 for first page",
+    ].join("\n\n");
+    expect(checkFeeAgainstSource(fees, "ATM Service Charge: Outgoing", 4, "atm")).toEqual({ ok: false, reason: "category_not_in_text" });
+  });
+
   it("quotes the fee's own row, not an earlier line at the same price for another fee", () => {
     // Hancock Whitney, live fee 66419: agent_source_texts for source_document_id 19615.
     const page = [
