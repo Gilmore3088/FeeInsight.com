@@ -33,13 +33,16 @@ in the test browser only (dev mode needs `eval`).
 Everything is in `/mnt/project-files/acct2/hamilton-presentation-2026-10-17/`:
 
 - `before-<state>-<width>.png`: the baseline (H05-T01), 12 states by 5 widths.
-- `after-<state>-<width>.png`: the same states with the T03/T06 changes.
+- `after-<state>-<width>.png`: the same states on the current branch head, captured again after
+  the batch review: `MemoPage` at its production default width, widths 320, 390, 768, 1024, 1440
+  and 200% zoom, plus `peer-list-pages` (a 160-row list with its pager and CSV range) and
+  `clarify-composer` (Analyze's one-composer clarification with a stubbed engine question).
 - `compare-<state>-<width>.png`: before and after side by side (peer-list 390, storyline 390,
   segment 390, schedule 390, lookup 390 and 1440).
 - `before-checks.json`, `after-checks.json`: per shot, page-level sideways overflow, every
   sideways scroll region (label, role, keyboard focus, hidden pixels), elements wider than the
   viewport, a computed type inventory (family, size, weight) and a 30-step keyboard focus walk at
-  390 and 1440.
+  390 and 1440 (and 1024 in `after-checks.json`).
 - `harness/`: the fixture page and capture script, to re-run the capture.
 
 States: `lookup` (fee position memo), `comparison` (named competitors, a 76-character name),
@@ -155,7 +158,12 @@ Headings balance (global `text-wrap: balance`); no component overrides it.
   stale-data caveat never does.
 
 ### Width
-One reading column (`MemoPage width="reading"`, 768px). An exhibit fills the column.
+Analyze, Research and Reports use `MemoPage` at its default width (`max-w-5xl`, 1024px; the
+`reading` width, 768px, is used by no answer screen). Exhibits, callouts, boxed findings and the
+composer run the column's full width (`ExhibitShell` overrides the report sheet's own 960px
+centring). Running text keeps the site measure of about 75 characters (34em, `globals.css`,
+James 2026-10-09); on a written answer the next-step buttons sit beside the commentary from `lg`
+up, so the measure leaves no empty column. The lead sentence keeps `max-w-[68ch]`.
 
 ## What changed (H05-T03, H05-T06)
 
@@ -167,12 +175,13 @@ One reading column (`MemoPage width="reading"`, 768px). An exhibit fills the col
 | One `FactList` (inline or boxed); the schedule answer's copy now wraps it | `memo/exhibit-view.tsx`, `analyze/schedule-answer.tsx` |
 | Segment table in the shared exhibit frame, `Sep 2026` source date, phone line with assets, limit and schedule link, "Not available" / "Not published" for missing values, caption without "terra" | `memo/segment-table.tsx` |
 | Structure matrix as cards on phones; event dates through `dayDate`; ranges never break inside a figure | `storyline/story-exhibits.tsx` |
-| Peer fee table and peer table as cards below md (layout classes and `data-label` only) | `analyze/PeerListView.tsx` |
+| Peer fee table and peer table as cards below md, with explicit table roles so a phone screen reader still hears a table, and real (screen-reader-hidden) labels in place of CSS `data-label` text; no scroll regions or extra tab stops | `analyze/PeerListView.tsx` |
 | One numeral face inside the workspace | `src/app/globals.css` |
 | Removed a storyline override of the exhibit headline that never applied (the report stylesheet is unlayered and wins) | `storyline/StorylineView.tsx` |
 
 Result on the same fixtures: 11 of 60 state-width shots had a sideways scroll region before, 0
-after. Page-level overflow was 0 before and after.
+after; the re-capture after the batch review has 0 of 84 (14 states by 6 widths). Page-level
+overflow was 0 before and after.
 
 ## Overlaps
 - #939 (closed, UX audit and site-wide pass) and #1284 (open, Fee Insight design system rebrand):

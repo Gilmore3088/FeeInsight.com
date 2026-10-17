@@ -867,7 +867,7 @@ function AnalyzeConversationWorkspace({
       id="hamilton-ask"
       onSubmit={handleSubmit}
       aria-label="Ask Hamilton"
-      className="flex scroll-mb-8 flex-col gap-3 rounded-lg border border-[var(--fi-control-border)] bg-[var(--fi-surface-0)] p-4 shadow-[var(--fi-shadow-1)] focus-within:border-[var(--fi-ink)] focus-within:ring-2 focus-within:ring-terra/40 print:hidden"
+      className="flex scroll-mb-8 flex-col gap-3 rounded-lg border border-[var(--fi-control-border)] bg-[var(--fi-surface-0)] p-4 shadow-[var(--fi-shadow-1)] focus-within:border-[var(--fi-ink)] print:hidden"
     >
       <label htmlFor="hamilton-ask-page" className="sr-only">Your question</label>
       <textarea
@@ -902,7 +902,7 @@ function AnalyzeConversationWorkspace({
       <label htmlFor="hamilton-ask-page" className="text-sm font-semibold text-[var(--fi-ink)]">
         {composerLabel}
       </label>
-      <div className="flex items-end gap-2 rounded-md border border-[var(--fi-control-border)] bg-white p-2 pl-3 focus-within:border-[var(--fi-ink)] focus-within:ring-2 focus-within:ring-terra/40">
+      <div className="flex items-end gap-2 rounded-md border border-[var(--fi-control-border)] bg-white p-2 pl-3 focus-within:border-[var(--fi-ink)]">
         <textarea
           id="hamilton-ask-page"
           ref={textareaRef}
@@ -1207,7 +1207,9 @@ function AnalyzeConversationWorkspace({
               ))}
             </Callout>
           ) : null}
-          {/* The lead keeps a reading measure; the rest runs the column's full width. */}
+          {/* Text keeps its reading measure; on a wide screen the next steps sit beside it, so the
+              column is used rather than left empty. */}
+          <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_16rem] lg:items-start">
           <article className="flex flex-col gap-4">
             {askedQuestion ? <SectionHeading as="h2">Hamilton&apos;s commentary</SectionHeading> : null}
             <p className={`max-w-[68ch] ${askedQuestion ? "text-xl leading-snug text-warm-900" : "text-2xl leading-snug text-warm-900 sm:text-[1.7rem]"}`} style={SERIF}>
@@ -1252,11 +1254,8 @@ function AnalyzeConversationWorkspace({
               </InterpretationBox>
             ) : null}
           </article>
-
-
-          {complete ? (
-            <>
-              {!readOnlyReason ? <div className="flex flex-wrap items-center gap-3">
+            {complete && !readOnlyReason ? (
+              <aside aria-label="Next steps" className="flex flex-wrap items-center gap-3 lg:sticky lg:top-6 lg:flex-col lg:items-stretch">
                 <LinkButton
                   href={hrefWithInstitutionContext(feeCategory ? `/pro/research?fee=${encodeURIComponent(feeCategory)}` : "/pro/research", instId)}
                   primary
@@ -1287,7 +1286,13 @@ function AnalyzeConversationWorkspace({
                     ...(answerIdentity ? { identityContext: answerIdentity } : {}),
                   }}
                 />
-              </div> : null}
+              </aside>
+            ) : null}
+          </div>
+
+
+          {complete ? (
+            <>
               {exportError ? (
                 <p role="alert" className="text-sm text-terra-text">
                   {exportError}

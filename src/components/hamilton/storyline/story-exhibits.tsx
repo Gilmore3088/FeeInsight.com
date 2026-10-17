@@ -164,7 +164,7 @@ export function StoryExhibitView({ item, number, researchInstitutionName }: { it
       r.low === r.high ? (x.rows.length === 1 && r.low >= 0 ? fmtMoney(r.low) : fmtSignedMoney(r.low)) : `${fmtSignedMoney(r.low)} to ${fmtSignedMoney(r.high)}`;
     return (
       <ExhibitFrame title={item.actionTitle} sources={x.sources} note={x.note} number={number}>
-        <ul className={`grid gap-3 ${x.rows.length === 3 ? "sm:grid-cols-3" : x.rows.length > 1 ? "sm:grid-cols-2" : ""}`}>
+        <ul className={`grid gap-3 ${x.rows.length === 3 ? "sm:grid-cols-2 lg:grid-cols-3" : x.rows.length > 1 ? "sm:grid-cols-2" : ""}`}>
           {x.rows.map((r) => {
             const left = 50 + (Math.min(r.low, r.high) / max) * 50;
             const right = 50 + (Math.max(r.low, r.high) / max) * 50;
