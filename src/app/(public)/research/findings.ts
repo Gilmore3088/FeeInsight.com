@@ -48,6 +48,22 @@ export function money(value: number | null | undefined): string {
 }
 
 /**
+ * The findings section's one line: on how many of the compared fees credit unions have the lower
+ * median. Null when no fee has both a bank and a credit union median.
+ */
+export function charterCountLine(benchmarks: FeeCategorySummary[]): string | null {
+  const paired = benchmarks.filter((b) => b.bank_median_amount != null && b.cu_median_amount != null && b.bank_median_amount > 0);
+  if (paired.length === 0) return null;
+  const cuLower = paired.filter((b) => b.cu_median_amount! < b.bank_median_amount!).length;
+  const bankLower = paired.filter((b) => b.bank_median_amount! < b.cu_median_amount!).length;
+  const of = `${paired.length} everyday ${paired.length === 1 ? "fee" : "fees"} compared`;
+  if (cuLower === 0 && bankLower === 0) return `Banks and credit unions have the same median on all ${of}.`;
+  return cuLower >= bankLower
+    ? `Credit unions have the lower median on ${cuLower} of the ${of}.`
+    : `Banks have the lower median on ${bankLower} of the ${of}.`;
+}
+
+/**
  * Findings computed from the benchmark summaries. Each one leads with a plain statement, adds one
  * supporting sentence, and keeps the calculation in `about`. A finding appears only when the data
  * behind it clears the statistics contract (medians are null below the minimum sample).
@@ -60,7 +76,6 @@ export function computeFindings(benchmarks: FeeCategorySummary[]): Finding[] {
     (b) => b.bank_median_amount != null && b.cu_median_amount != null && b.bank_median_amount > 0,
   );
   if (paired.length > 0) {
-    const cuCheaper = paired.filter((b) => b.cu_median_amount! < b.bank_median_amount!);
     const widest = [...paired].sort(
       (a, b) => Math.abs(b.bank_median_amount! - b.cu_median_amount!) - Math.abs(a.bank_median_amount! - a.cu_median_amount!),
     )[0];
@@ -71,7 +86,7 @@ export function computeFindings(benchmarks: FeeCategorySummary[]): Finding[] {
         key: "charter-gap",
         figure: money(Math.abs(gap)),
         headline: `${lower} ${sentenceName(widest.fee_category)} fees are ${money(Math.abs(gap))} lower at the median.`,
-        detail: `The median is ${money(widest.cu_median_amount)} at credit unions and ${money(widest.bank_median_amount)} at banks. Credit union medians are lower on ${cuCheaper.length} of the ${paired.length} fees compared.`,
+        detail: `The median is ${money(widest.cu_median_amount)} at credit unions and ${money(widest.bank_median_amount)} at banks.`,
         about: `Each institution counts once, at the median of its published prices for the fee (overdraft: its highest). The figure is the median of those values among ${formatCount(widest.cu_count)} credit unions, set against the same among ${formatCount(widest.bank_count)} banks. It compares published prices, not what customers end up paying.`,
         exhibit: "benchmarks",
         fee_category: widest.fee_category,
@@ -85,7 +100,7 @@ export function computeFindings(benchmarks: FeeCategorySummary[]): Finding[] {
       key: "overdraft",
       figure: money(overdraft.median_amount),
       headline: `The median overdraft fee is ${money(overdraft.median_amount)}.`,
-      detail: `The middle half of the ${formatCount(overdraft.institution_count)} banks and credit unions with a published overdraft fee fall between ${money(overdraft.p25_amount)} and ${money(overdraft.p75_amount)}.`,
+      detail: `The middle 50% of the ${formatCount(overdraft.institution_count)} banks and credit unions with a published overdraft fee fall between ${money(overdraft.p25_amount)} and ${money(overdraft.p75_amount)}.`,
       about: "Many schedules list more than one overdraft price, so each institution counts once, at its highest published overdraft price. The range is the 25th to 75th percentile of those prices.",
       exhibit: "benchmarks",
       fee_category: "overdraft",
@@ -100,9 +115,9 @@ export function computeFindings(benchmarks: FeeCategorySummary[]): Finding[] {
     findings.push({
       key: "spread",
       figure: `${ratio}×`,
-      headline: `${capitalize(sentenceName(spread.fee_category))} fees vary the most of these ${n} fees.`,
-      detail: `A quarter of institutions list ${money(spread.p25_amount)} or less, and a quarter list ${money(spread.p75_amount)} or more.`,
-      about: `The 75th percentile of ${institutionValues(spread.fee_category)} is ${ratio} times the 25th, the largest ratio among the ${n} benchmark fees. How often customers pay the fee isn't measured here.`,
+      headline: `${capitalize(sentenceName(spread.fee_category))} fees have the widest spread relative to price of these ${n} fees.`,
+      detail: `The middle 50% runs from ${money(spread.p25_amount)} to ${money(spread.p75_amount)}. The 75th percentile is ${ratio} times the 25th.`,
+      about: `Spread is measured as the 75th percentile of ${institutionValues(spread.fee_category)} divided by the 25th, so fees with different price levels compare fairly. A fee with a wider dollar range can rank lower if its prices are higher overall. How often customers pay the fee isn't measured here.`,
       exhibit: "benchmarks",
       fee_category: spread.fee_category,
     });

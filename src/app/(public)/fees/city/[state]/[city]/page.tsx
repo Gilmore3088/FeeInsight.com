@@ -398,7 +398,7 @@ export default async function CityFeePage({ params, searchParams }: PageProps) {
           <div className="rounded-2xl border border-border bg-surface-0 p-5">
             <p className="text-[16px] font-semibold text-ink">Work at a bank or credit union here?</p>
             <p className="mt-1 text-[14px] text-ink-muted">
-              Hamilton, the Fee Insight Pro workspace, sets an institution&apos;s own fees beside every institution in this market, with the source for
+              Hamilton, the {SITE_NAME} workspace, sets an institution&apos;s own fees beside every institution in this market, with the source for
               each figure.
             </p>
             <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-3">

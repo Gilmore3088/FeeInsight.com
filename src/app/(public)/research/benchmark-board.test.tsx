@@ -25,21 +25,26 @@ function summary(overrides: Partial<FeeCategorySummary>): FeeCategorySummary {
 }
 
 describe("research hub benchmark board, unstated audience (#1132)", () => {
-  it("marks a median that rests on an unstated-audience row and shows the footnote", () => {
-    render(
+  const NOTE = /Some schedules do not say whether a fee is for personal or business accounts/;
+
+  it("states the audience assumption once, in the methodology disclosure, not beside each median", () => {
+    const { container } = render(
       <BenchmarkBoard
-        benchmarks={[summary({ unstated_audience_institution_count: 3 }), summary({ fee_category: "nsf" })]}
+        benchmarks={[
+          summary({ unstated_audience_institution_count: 3 }),
+          summary({ fee_category: "nsf", unstated_audience_institution_count: 2 }),
+        ]}
         asOf={null}
       />,
     );
-    expect(screen.getAllByText("*", { exact: false }).length).toBeGreaterThan(0);
-    expect(screen.getAllByTitle(UNSTATED_AUDIENCE_FOOTNOTE)).toHaveLength(1);
-    expect(screen.getByText(UNSTATED_AUDIENCE_FOOTNOTE, { exact: false })).toBeTruthy();
+    expect(screen.getAllByText(NOTE)).toHaveLength(1);
+    expect(screen.getByText(NOTE).closest("details")?.querySelector("summary")?.textContent).toMatch(/How these are calculated/);
+    expect(screen.queryAllByTitle(UNSTATED_AUDIENCE_FOOTNOTE)).toHaveLength(0);
+    expect(container.textContent).not.toContain("*");
   });
 
-  it("shows no asterisk or footnote when every row states its audience", () => {
+  it("leaves the note out when every row states its audience", () => {
     render(<BenchmarkBoard benchmarks={[summary({ unstated_audience_institution_count: 0 })]} asOf={null} />);
-    expect(screen.queryAllByTitle(UNSTATED_AUDIENCE_FOOTNOTE)).toHaveLength(0);
-    expect(screen.queryByText(UNSTATED_AUDIENCE_FOOTNOTE, { exact: false })).toBeNull();
+    expect(screen.queryByText(NOTE)).toBeNull();
   });
 });

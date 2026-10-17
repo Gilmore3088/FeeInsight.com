@@ -3,11 +3,12 @@ import type { FeeCategorySummary } from "@/lib/data-store";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
 import { formatCount } from "@/lib/public-stats";
-import { SectionHeading } from "./research-hero";
-import { ExhibitSource } from "./exhibits";
-import { institutionValues, shareLabel } from "./findings";
+import { PRODUCT_NAME } from "@/lib/constants";
+import { HubSection } from "./district/[id]/district-hub";
+import { ShowMore } from "./show-more";
+import { institutionValues, money, sentenceName, shareLabel } from "./findings";
 import { BENCHMARK_KEYS } from "@/lib/research-report/benchmark-keys";
-import { UnstatedAudienceFootnote, UnstatedAudienceMark, medianHasUnstatedAudience } from "@/components/unstated-audience";
+import { medianHasUnstatedAudience } from "@/components/unstated-audience";
 
 export { BENCHMARK_KEYS };
 
@@ -20,6 +21,10 @@ export function pickBenchmarks(summaries: FeeCategorySummary[]): FeeCategorySumm
       !!s && s.median_amount != null && s.p25_amount != null && s.p75_amount != null && s.institution_count >= MIN_INSTITUTIONS,
   );
 }
+
+/** One grid for the header and every row; on wide screens the name column stops growing so figures sit near their names. */
+const ROW_GRID =
+  "sm:grid-cols-[minmax(0,1fr)_7rem_9rem_8rem_1rem] lg:grid-cols-[minmax(0,22rem)_8rem_10rem_8rem_minmax(1rem,1fr)]";
 
 function pct(value: number, scaleMax: number): number {
   return Math.max(0, Math.min(100, (value / scaleMax) * 100));
@@ -35,21 +40,23 @@ function BenchmarkRow({ fee }: { fee: FeeCategorySummary }) {
   const name = getDisplayName(fee.fee_category);
 
   return (
-    <li>
-      <details className="group">
-        <summary className="grid cursor-pointer list-none grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-4 gap-y-0.5 px-4 py-3.5 hover:bg-paper sm:grid-cols-[minmax(0,1fr)_7rem_9rem_8rem_1rem] sm:px-5 [&::-webkit-details-marker]:hidden">
+    <details className="group">
+        <summary className={`grid min-h-11 cursor-pointer list-none grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-4 gap-y-0.5 px-4 py-3.5 hover:bg-paper ${ROW_GRID} sm:px-5 [&::-webkit-details-marker]:hidden`}>
           <span className="text-[14px] font-semibold text-ink">{name}</span>
           <span className="text-right text-[15px] font-semibold tabular-nums text-ink">
             {formatAmount(median)}
-            <UnstatedAudienceMark show={medianHasUnstatedAudience(fee)} />
             <span className="sr-only"> median</span>
           </span>
           <span className="col-span-2 text-[12px] text-ink-muted sm:col-span-1 sm:tabular-nums sm:text-right sm:text-[13px] sm:text-ink-soft">
-            <span className="sm:hidden">Middle half </span>
+            <span className="sm:hidden">Middle 50% </span>
+            <span className="sr-only max-sm:hidden">Middle 50%: </span>
             {formatAmount(p25)} to {formatAmount(p75)}
             <span className="sm:hidden"> · {formatCount(fee.institution_count)} institutions</span>
           </span>
-          <span className="hidden text-right text-[13px] tabular-nums text-ink-soft sm:block">{formatCount(fee.institution_count)}</span>
+          <span className="hidden text-right text-[13px] tabular-nums text-ink-soft sm:block">
+            {formatCount(fee.institution_count)}
+            <span className="sr-only"> institutions</span>
+          </span>
           <span aria-hidden="true" className="hidden text-right text-ink-muted transition-transform group-open:rotate-90 sm:block">&rsaquo;</span>
         </summary>
 
@@ -69,7 +76,7 @@ function BenchmarkRow({ fee }: { fee: FeeCategorySummary }) {
             </div>
           </div>
           <p className="text-[13px] text-ink-soft">
-            Median {formatAmount(median)}. Middle half of {institutionValues(fee.fee_category)}: {formatAmount(p25)} to {formatAmount(p75)}.
+            Median {formatAmount(median)}. Middle 50% of {institutionValues(fee.fee_category)}: {formatAmount(p25)} to {formatAmount(p75)}.
           </p>
 
           <dl className="grid grid-cols-2 gap-3 text-[12px] sm:grid-cols-3">
@@ -100,67 +107,93 @@ function BenchmarkRow({ fee }: { fee: FeeCategorySummary }) {
             <span>
               {formatCount(fee.institution_count)} institutions, {formatCount(fee.total_observations)} published fee entries.
             </span>
-            <Link href={`/fees/${fee.fee_category}`} className="text-[12px] font-semibold text-brick hover:underline">
+            <Link href={`/fees/${fee.fee_category}`} className="inline-flex min-h-11 items-center text-[12px] font-semibold text-brick hover:underline">
               See every published price &rarr;
             </Link>
           </p>
         </div>
       </details>
-    </li>
   );
+}
+
+/**
+ * The section's one finding: which of these fees has the highest median and which the lowest.
+ * Null with fewer than two fees, so a thin board never forces a headline.
+ */
+export function benchmarkFinding(benchmarks: FeeCategorySummary[]): string | null {
+  if (benchmarks.length < 2) return null;
+  const sorted = [...benchmarks].sort((a, b) => b.median_amount! - a.median_amount!);
+  const high = sorted[0];
+  const low = sorted[sorted.length - 1];
+  if (high.median_amount === low.median_amount) return null;
+  return `Of these ${benchmarks.length} fees, ${sentenceName(high.fee_category)} has the highest median (${money(high.median_amount)}) and ${sentenceName(low.fee_category)} the lowest (${money(low.median_amount)}).`;
 }
 
 export function BenchmarkBoard({ benchmarks, asOf }: { benchmarks: FeeCategorySummary[]; asOf: string | null }) {
   return (
-    <section id="benchmarks" className="scroll-mt-28 print:break-inside-avoid">
-      <SectionHeading
-        eyebrow="National benchmarks"
-        title="Everyday fees at a glance"
-        action={
-          <Link href="/fees" className="rounded-full border border-ink px-4 py-2 text-[12px] font-semibold text-ink transition-colors hover:bg-ink hover:text-white">
-            All fee categories &rarr;
-          </Link>
-        }
-      >
-        Open a fee to see its range, banks and credit unions side by side, and how many institutions publish only $0.
-      </SectionHeading>
-
+    <HubSection
+      id="benchmarks"
+      title="National benchmarks"
+      line={benchmarkFinding(benchmarks) ?? undefined}
+      source={
+        <>
+          {PRODUCT_NAME}, verified published fee schedules, one value per institution; a fee is shown only when at least {MIN_INSTITUTIONS}{" "}
+          institutions publish it.{asOf ? ` Data as of ${asOf}.` : ""}
+        </>
+      }
+    >
       {benchmarks.length > 0 ? (
-        <div className="mt-5 overflow-hidden rounded-2xl border border-border bg-white">
-          <div
-            aria-hidden="true"
-            className="hidden grid-cols-[minmax(0,1fr)_7rem_9rem_8rem_1rem] gap-x-4 border-b border-border px-5 py-2 text-[10px] font-semibold uppercase tracking-wider text-ink-muted sm:grid"
-          >
-            <span>Fee</span>
-            <span className="text-right">Median</span>
-            <span className="text-right">Middle half</span>
-            <span className="text-right">Institutions</span>
-            <span />
+        <div>
+          <p className="text-[13px] font-semibold text-ink">Median published price, U.S. banks and credit unions</p>
+          <div className="mt-3 overflow-hidden rounded-2xl border border-border bg-white">
+            <div
+              aria-hidden="true"
+              className={`hidden ${ROW_GRID} gap-x-4 border-b border-border px-5 py-2 text-[10px] font-semibold uppercase tracking-wider text-ink-muted sm:grid`}
+            >
+              <span>Fee</span>
+              <span className="text-right">Median</span>
+              <span className="text-right">Middle 50%</span>
+              <span className="text-right">Institutions</span>
+              <span />
+            </div>
+            <ShowMore
+              noun="fees"
+              ariaLabel="National benchmark fees"
+              className="divide-y divide-surface-200"
+              items={benchmarks.map((fee) => ({ key: fee.fee_category, node: <BenchmarkRow fee={fee} /> }))}
+            />
           </div>
-          <ul className="divide-y divide-surface-200">
-            {benchmarks.map((fee) => (
-              <BenchmarkRow key={fee.fee_category} fee={fee} />
-            ))}
-          </ul>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-x-6 gap-y-1">
+            <details className="group">
+              <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1 text-[13px] font-semibold text-brick [&::-webkit-details-marker]:hidden">
+                How these are calculated
+                <span aria-hidden="true" className="transition-transform group-open:rotate-90">&rsaquo;</span>
+              </summary>
+              <p className="max-w-3xl text-[13px] leading-relaxed text-ink-muted sm:mx-0 sm:text-left">
+                Each institution counts once, at the median of its published prices for the fee (overdraft: its highest). The
+                median and the middle 50% (25th to 75th percentile) are taken across those values. Each fee&apos;s row holds its
+                range, banks and credit unions side by side, and the share of institutions that publish only $0.
+              </p>
+              {benchmarks.some(medianHasUnstatedAudience) && (
+                <p id="benchmarks-audience" className="mt-3 max-w-3xl text-[13px] leading-relaxed text-ink-muted sm:mx-0 sm:text-left">
+                  Some schedules do not say whether a fee is for personal or business accounts. Those fees are counted as
+                  personal; fees for business or commercial accounts may differ.{" "}
+                  <Link href="/methodology#audience" className="font-medium text-ink underline underline-offset-2 hover:text-ink-soft">
+                    How audience is decided
+                  </Link>
+                </p>
+              )}
+            </details>
+            <Link href="/fees" className="inline-flex min-h-11 items-center text-[13px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
+              All fee categories &rarr;
+            </Link>
+          </div>
         </div>
       ) : (
-        <p className="mt-5 rounded-2xl border border-dashed border-border px-5 py-8 text-center text-[13px] text-ink-muted">
-          Benchmarks are refreshing. Check back shortly.
+        <p className="rounded-2xl border border-dashed border-border px-5 py-8 text-center text-[13px] text-ink-muted">
+          Benchmarks are refreshing.
         </p>
       )}
-      <details className="group mt-3">
-        <summary className="inline-flex min-h-8 cursor-pointer list-none items-center gap-1 text-[12px] font-semibold text-brick [&::-webkit-details-marker]:hidden">
-          How these are calculated
-          <span aria-hidden="true" className="transition-transform group-open:rotate-90">&rsaquo;</span>
-        </summary>
-        <p className="mt-1 max-w-3xl text-[13px] leading-relaxed text-ink-muted">
-          Each institution counts once, at the median of its published prices for the fee (overdraft: its highest). The
-          median and the middle half (25th to 75th percentile) are taken across those values. A fee is shown only when at
-          least {MIN_INSTITUTIONS} institutions publish it.
-        </p>
-      </details>
-      <ExhibitSource asOf={asOf}>One value per institution.</ExhibitSource>
-      <UnstatedAudienceFootnote show={benchmarks.some(medianHasUnstatedAudience)} className="mt-2" />
-    </section>
+    </HubSection>
   );
 }
