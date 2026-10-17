@@ -1712,8 +1712,12 @@ describe("v78: Knox recall round 3 and #1304's Knox half (Oct 17)", () => {
       ["safe_deposit_box", 125],
       ["safe_deposit_box", 10],
     ]);
-    // A loan's late fee stays a late payment.
+    // A loan's late fee stays a late payment, also when a box section came before its heading.
     expect(team("Fee Schedule\nLoan Fees\nLate Payment Fee | $25.00")).toEqual([["late_payment", 25]]);
+    expect(team("Fee Schedule\nSafe Deposit Box 3x5 | $25.00\nLoan Fees\nLate Fee | $25.00")).toEqual([
+      ["safe_deposit_box", 25],
+      ["late_payment", 25],
+    ]);
   });
 
   it("names a box size before its dot leader in a second column", () => {
@@ -1726,13 +1730,21 @@ describe("v78: Knox recall round 3 and #1304's Knox half (Oct 17)", () => {
       ["monthly_maintenance", "Student Checking (CK07)"],
     ]);
     expect(zero("Fee Schedule\nOfficial Check Fee | $5.00\nPower Protected Checking Account | Free")).toEqual([]);
+    // Under another fee's heading it is a column of that fee's table, and the rows below keep the heading.
+    const pnc =
+      "Cash Alternatives\nCashier’s Checks\nPerformance Select Checking ......................No charge\nPerformance Checking ...................... $5.00 each\nAll other accounts ...................... $10.00 each";
+    expect(zero(pnc)).toEqual([]);
+    expect(team(pnc)).toEqual([
+      ["cashiers_check", 5],
+      ["cashiers_check", 10],
+    ]);
   });
 
   it("names the next held families", () => {
     const hint = (name: string) => classifyFeeText(name);
-    expect(hint("Statement Printout:")).toBe("document_reproduction");
-    expect(hint("Account activity/statement printout (per statement)")).toBe("document_reproduction");
-    expect(hint("Special Statement Fee")).toBe("document_reproduction");
+    // Statement printouts fold for the gate only: Knox still holds them for review.
+    expect(foldedCategory("Statement Printout: | $3.00")).toBe("document_reproduction");
+    expect(foldedCategory("Special Statement Fee | $5.00")).toBe("document_reproduction");
     expect(foldedCategory("Account activity/statement printout (per statement) | $3.00")).toBe("document_reproduction");
     expect(hint("Bank Draft")).toBe("cashiers_check");
     expect(hint("Return Bankdraft/DBO Transfer")).not.toBe("cashiers_check");
@@ -1744,7 +1756,7 @@ describe("v78: Knox recall round 3 and #1304's Knox half (Oct 17)", () => {
     expect(hint("Image Copy (staff assistance)")).toBe("check_image");
     expect(hint("ELECTRONIC STATEMENTS")).toBe("estatement_fee");
     expect(hint("Service Fee for Business Checking Accounts")).toBe("monthly_maintenance");
-    expect(hint("Business Checking Fee")).toBe("monthly_maintenance");
+    expect(hint("Business Checking Fee")).not.toBe("monthly_maintenance");
     expect(hint("Reopen Checking Account Fee")).not.toBe("monthly_maintenance");
     expect(hint("UPS Shipping Fee")).toBe("courier_delivery");
     expect(hint("Redraw document fee")).toBe("other_lending_fee");

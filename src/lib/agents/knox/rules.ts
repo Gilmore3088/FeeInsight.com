@@ -276,12 +276,11 @@ export const V78_RECALL_PATTERNS: FeePattern[] = [
   { key: "deposited_item_return", pattern: /\bdeposited items? returns\b/i },
   { key: "check_image", pattern: /\bimage cop(?:y|ies)\b/i },
   { key: "estatement_fee", pattern: /^\W*electronic statements?\W*$/i },
-  {
-    key: "monthly_maintenance",
-    pattern:
-      /^(?![\s\S]*\b(?:re-?open\w*|clos\w*|balanc\w*|research|order\w*|return\w*|inactiv\w*|dormant)\b)\W*(?:(?:(?:monthly|account|maintenance)\s+)?service (?:fee|charge)s?(?:\s+for\s+[\w\s]{0,30}\b(?:checking|savings)\b(?:\s+accounts?)?)?|(?:[A-Z][\w'’&+-]*\s+){0,3}checking (?:account )?(?:fee|charge))\W*$/i,
-  },
-  { key: "courier_delivery", pattern: /\b(?:UPS|DHL)\b|\bshipping fee\b/i },
+  // A service fee named for its checking or savings accounts ("Service Fee for Business Checking
+  // Accounts"). A bare "Service Fee" or "Checking Fee" stays unnamed: as a row label under a heading
+  // ("Cashier's Checks:" / "Performance Checking") it would take the row from the heading.
+  { key: "monthly_maintenance", pattern: /^\W*(?:(?:monthly|account|maintenance)\s+)?service (?:fee|charge)s?\s+for\s+[\w\s]{0,30}\b(?:checking|savings)\s+accounts?\W*$/i },
+  { key: "courier_delivery", pattern: /\b(?:UPS|DHL)\b/i },
   { key: "other_lending_fee", pattern: /\bredraw (?:of )?documents?\b/i },
   { key: "ach_origination", pattern: /\bsame[- ]day ACH\b|\bACH same[- ]day\b/i },
 ];
@@ -889,6 +888,11 @@ interface HeadedSegment {
   headingAt: number | null;
   /** v76: the line is the first under a heading that ends in a colon ("Excessive withdrawals, each:"), a row that qualifies it. */
   headingOpensRows: boolean;
+  /**
+   * v78: how many heading-like lines (short, no figure, named fee or not: "Loan Fees") came
+   * before the segment, so a row can tell whether a new section began since the row above it.
+   */
+  section: number;
 }
 
 function candidateSegments(text: string): HeadedSegment[] {
@@ -896,12 +900,14 @@ function candidateSegments(text: string): HeadedSegment[] {
   const segments: HeadedSegment[] = [];
   const lines = joinWrappedProse(joinWrappedLeaderNames(text.split(/\n+/).map((line) => line.replace(/\s+/g, " ").trim())));
   let heading: { name: string; at: number } | null = null;
+  let section = 0;
   let priced = 0;
   let unpriced = 0;
   for (const [index, rawLine] of lines.entries()) {
     const line = rawLine.replace(/\s+/g, " ").replace(SPLIT_DOLLAR_CELL, "$").trim();
     const asHeading = headingName(line);
     if (asHeading !== undefined) heading = asHeading ? { name: asHeading, at: index } : null;
+    if (asHeading !== undefined) section += 1;
     const isPriced = line.includes("$") || PERCENT_PATTERN.test(line) || hasZeroCell(line);
     if (!isPriced && !hasUnpricedFeeRow(line)) continue;
     const inReach = heading && index - heading.at <= HEADING_REACH_LINES ? heading : null;
@@ -915,7 +921,7 @@ function candidateSegments(text: string): HeadedSegment[] {
       const segment = part.trim();
       if (segment.length < MIN_SEGMENT_CHARS || segment.length > MAX_SEGMENT_CHARS || seen.has(segment)) continue;
       seen.add(segment);
-      segments.push({ segment, heading: inReach?.name ?? null, headingAt: inReach?.at ?? null, headingOpensRows: inReach ? index === inReach.at + 1 && /:\s*$/.test(lines[inReach.at]) : false });
+      segments.push({ segment, heading: inReach?.name ?? null, headingAt: inReach?.at ?? null, headingOpensRows: inReach ? index === inReach.at + 1 && /:\s*$/.test(lines[inReach.at]) : false, section });
       if (isPriced) priced += 1;
       else unpriced += 1;
       if (priced >= MAX_SEGMENTS_PER_DOCUMENT) return segments;
@@ -2444,8 +2450,13 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
   // v69: a heading whose rows read as another kind of fee is a column beside a second table
   // ("Non-Ameris Bank ATM Usage:" over "ACH File Fee | $15.00"), so it names none of the rows under it.
   const crossedHeadings = new Set<number>();
+  // v78: the kind of the last read above, in the same section: a bare late fee takes the box's
+  // kind only while no heading line (a "Loan Fees" title) has come between them.
   let previousKind: string | null = null;
-  for (const { segment, heading, headingAt, headingOpensRows } of candidateSegments(text)) {
+  let previousSection = -1;
+  for (const { segment, heading, headingAt, headingOpensRows, section } of candidateSegments(text)) {
+    if (section !== previousSection) previousKind = null;
+    previousSection = section;
     let found = extractFromSegment(segment);
     const crossedBefore = headingAt != null && crossedHeadings.has(headingAt);
     const headingKey = heading ? classifyPatternKey(heading) : null;
@@ -2459,6 +2470,12 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
     const headingKind = heading ? classifyFeeText(heading) : null;
     if (heading && headingKey && headingAt != null && headingOpensRows && !/[$%]/.test(segment)) {
       found = { ...found, held: found.held.filter((read) => read.shape !== "zero" || read.canonicalHint === headingKind) };
+    }
+    // v78: under another fee's heading, a checking product's free row is a column of that fee's
+    // table ("Cashier's Checks" over "Performance Select Checking ... No charge"), not the account's
+    // own monthly fee, and it never crosses the heading.
+    if (headingKind && headingKind !== "monthly_maintenance") {
+      found = { ...found, held: found.held.filter((read) => !(read.canonicalHint === "monthly_maintenance" && FREE_CHECKING_ROW.test(read.feeName))) };
     }
     // A row that names its own fee and no category ("ACH File Fee (per file) | $15.00") crosses it too.
     const readKinds = [...found.candidates, ...found.held].map((read) => read.canonicalHint).filter(Boolean);
