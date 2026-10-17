@@ -101,6 +101,6 @@ describe("saved report decisions: legacy against current", () => {
     const html = renderToStaticMarkup(<ReportAnswer headline="Overdraft sits high." decisions={[legacyDecision]} />);
     expect(html).toContain("Medium confidence");
     expect(html).not.toContain("High confidence");
-    expect(html).toContain("A new report runs the current checks.");
+    expect(html).toContain("Run the report again to apply the current checks.");
   });
 });

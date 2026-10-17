@@ -42,7 +42,7 @@ function parseConfidence(raw: string | undefined): { confidence: ReportConfidenc
 
 /** Shown beside a report decision saved as High before the High rating was retired (#981, H06-T07). */
 export const LEGACY_REPORT_CONFIDENCE_NOTE =
-  "This report was saved before Hamilton tied each figure to its record, so its high rating shows as medium. A new report runs the current checks.";
+  "This report was saved before Hamilton tied each figure to its record, so its high rating shows as medium. Run the report again to apply the current checks.";
 
 /**
  * Read-time display policy for a saved report decision (#981, H06-T07). New decisions are never

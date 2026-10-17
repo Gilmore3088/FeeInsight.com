@@ -15,6 +15,8 @@ import { StoryExhibitView } from "./story-exhibits";
 import { OptionLetter, OptionScaleChart, OptionStanding, optionPoints, optionScale } from "./option-compare";
 import type { StorylineMemo } from "@/lib/hamilton/workspace/storyline-types";
 import type { HamiltonIdentitySnapshot } from "@/lib/hamilton/account-context";
+import { splitIntoSentences } from "@/lib/hamilton/citation-gate";
+import { INTERPRETATION_LABEL } from "@/lib/hamilton/narrative-bound";
 import type { Storyline } from "./types";
 
 /** Hamilton's written memo over the storyline: still being written, written, or not written and why. */
@@ -145,8 +147,24 @@ function SourceList({ notes }: { notes: SourceNotes }) {
   );
 }
 
+/** Drops the memo sentences that are Hamilton's reading only; they are shown under their own label. */
+function withoutInterpretation(text: string, reading: ReadonlySet<string>): string {
+  if (reading.size === 0) return text;
+  return splitIntoSentences(text).map((s) => s.text).filter((t) => !reading.has(t.trim())).join(" ");
+}
+
 export function StorylineView({ story, nextSteps, memo, identityContext }: { story: Storyline; nextSteps?: ReactNode; memo?: MemoState; identityContext?: HamiltonIdentitySnapshot | null }) {
-  const written = memo?.state === "written" ? memo.memo : null;
+  const memoWritten = memo?.state === "written" ? memo.memo : null;
+  const reading = memoWritten?.narrativeBinding?.interpretation ?? [];
+  const readingSet = new Set(reading.map((t) => t.trim()));
+  const written = memoWritten
+    ? {
+        ...memoWritten,
+        summary: withoutInterpretation(memoWritten.summary, readingSet),
+        board: withoutInterpretation(memoWritten.board, readingSet),
+        market: withoutInterpretation(memoWritten.market, readingSet),
+      }
+    : null;
   const notes = buildSourceNotes(story);
   const figures = story.keyFigures.slice(0, 4);
   const cols = figures.length >= 4 ? "grid-cols-2 sm:grid-cols-4" : figures.length === 3 ? "sm:grid-cols-3" : figures.length === 2 ? "grid-cols-2" : "grid-cols-1";
@@ -207,7 +225,17 @@ export function StorylineView({ story, nextSteps, memo, identityContext }: { sto
       {written ? (
         <section className="flex flex-col gap-1.5 border-t border-warm-300 pt-6">
           <Kicker>Hamilton&apos;s commentary</Kicker>
-          <MemoNote text={written.summary} size="lead" />
+          {written.summary ? <MemoNote text={written.summary} size="lead" /> : null}
+          {reading.length > 0 ? (
+            <div className="mt-3 rounded-md border border-warm-300 bg-warm-50 px-4 py-3">
+              <p className="text-xs font-semibold text-warm-700">{INTERPRETATION_LABEL}</p>
+              <ul className="mt-1.5 flex list-disc flex-col gap-1 pl-5 text-sm leading-relaxed text-warm-800">
+                {reading.map((t) => (
+                  <li key={t}>{t}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           <p className="text-xs text-warm-600">
             Written by Hamilton from the exhibits above; {written.figureCheck.checked.toLocaleString("en-US")} figures checked against them.
           </p>

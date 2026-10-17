@@ -45,7 +45,7 @@ export const UNSOURCED_FIGURE_LIMITATION =
 export const INTERPRETATION_LIMITATION =
   "Some sentences state figures that are not tied to a saved fee record. They are marked as Hamilton's reading.";
 export const CONTRADICTED_LIMITATION =
-  "Some sentences stated a figure that does not match its fee record, so they were left out.";
+  "Some sentences were left out because a figure in them did not match its fee record.";
 
 export type OmitReason =
   | "advice"

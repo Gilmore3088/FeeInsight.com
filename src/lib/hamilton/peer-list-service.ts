@@ -114,7 +114,7 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
         return {
           kind: "peer_list",
           shortAnswer: feeIntent
-            ? feeIntent === "with_account" ? `${label[0].toUpperCase()}${label.slice(1)} fees for ${rows.length} selected peer${rows.length === 1 ? "" : "s"} versus your verified account institution.` : `Published ${label} fees for ${rows.length} selected peer${rows.length === 1 ? "" : "s"}.`
+            ? feeIntent === "with_account" ? `${label[0].toUpperCase()}${label.slice(1)} fees for ${rows.length} selected peer${rows.length === 1 ? "" : "s"} compared with your institution.` : `Published ${label} fees for ${rows.length} selected peer${rows.length === 1 ? "" : "s"}.`
             : rows.length + " of " + count + " previously displayed peers are in " + state + ".",
           peerList: {
             ...original.peerList,

@@ -219,7 +219,7 @@ describe("peer list: criteria and table before anything optional", () => {
 
   it("does not call a peer with a rate-stated fee missing", () => {
     render(<PeerListView response={peerList("card_foreign_txn", "foreign transaction", [])} />);
-    expect(screen.getAllByText("No published consumer foreign transaction fee in dollars on file. A fee charged as a rate is not listed here.")).toHaveLength(4);
+    expect(screen.getAllByText("No published consumer foreign transaction fee in dollars is on file. Fees charged as a rate are not listed here.")).toHaveLength(4);
   });
 
   it("names the reader's own institution plainly, not as verified", () => {

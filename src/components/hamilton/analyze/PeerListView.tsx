@@ -103,7 +103,7 @@ function SelectablePeerList({ response, saveContext }: { response: PeerListRespo
   const feeLabel = data.feeComparison?.label ?? "NSF";
   // Missing is not $0, and a fee charged as a rate is not missing: this table lists dollar fees only.
   const noFeeLine = data.feeComparison && percentFeeAllowed(data.feeComparison.category)
-    ? `No published consumer ${feeLabel} fee in dollars on file. A fee charged as a rate is not listed here.`
+    ? `No published consumer ${feeLabel} fee in dollars is on file. Fees charged as a rate are not listed here.`
     : `No published consumer ${feeLabel} fee on file`;
   return (
     <section aria-label="Peer list" className="flex min-w-0 flex-col gap-4 font-sans">
