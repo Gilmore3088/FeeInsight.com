@@ -70,7 +70,8 @@ function sameAmount(a: number, b: number): boolean {
 }
 
 function gap(value: number, against: number, place: string): string {
-  if (sameAmount(value, against)) return `the same as the ${place} median`;
+  if (value === against) return `the same as the ${place} median`;
+  if (sameAmount(value, against)) return `about the same as the ${place} median`;
   return `${money(Math.abs(value - against))} ${value > against ? "above" : "below"} the ${place} median`;
 }
 
@@ -211,10 +212,37 @@ export function sameMedian(r: DistrictRow): boolean {
   return sameAmount(r.state, r.district);
 }
 
-/** The district layer's heading, from its counts. */
-export function districtTitle(c: DistrictComparison, stateName: string, districtName: string): string {
+/** "Same" when the medians match, "About the same" when they sit within the 1% tolerance. */
+export function sameLabel(r: DistrictRow): string {
+  return r.state === r.district ? "Same" : "About the same";
+}
+
+// "Overdraft (OD)" reads as "overdraft" inside a sentence; the table keeps the full name.
+const lowerName = (name: string) => name.replace(/\s*\([^)]*\)/g, "").replace(/\b[A-Z][a-z]+/g, (w) => w.toLowerCase());
+
+function listFees(rows: DistrictRow[]): string {
+  // A no-break space and word joiner keep each fee's sign and amount on one line.
+  const shown = rows.slice(0, 3).map((r) => `${lowerName(r.name)}\u00a0${r.diff > 0 ? "+" : "−"}\u2060${money(Math.abs(r.diff))}`);
+  const rest = rows.length - shown.length;
+  return rest > 0 ? `${shown.join(", ")} and ${rest} more` : shown.join(", ");
+}
+
+/** The fees where the state and district medians differ, largest gap first. */
+export function districtDifferences(rows: DistrictRow[]): DistrictRow[] {
+  return rows.filter((r) => !sameMedian(r)).sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+}
+
+/** The line under the district layer's plain title: the specific differences, then the rest. */
+export function districtFinding(c: DistrictComparison, stateName: string): string {
   const n = c.rows.length;
-  if (c.same === n) return `${stateName} matches the ${districtName} district on all ${n} fees`;
-  if (c.above >= c.below) return `${stateName} sits above the ${districtName} district median on ${c.above} of ${n} fees`;
-  return `${stateName} sits below the ${districtName} district median on ${c.below} of ${n} fees`;
+  if (c.same === n) return `The ${stateName} and district medians are about the same on all ${n} fees.`;
+  const diffs = districtDifferences(c.rows);
+  const higher = diffs.filter((r) => r.diff > 0);
+  const lower = diffs.filter((r) => r.diff < 0);
+  const parts = [
+    ...(higher.length ? [`Higher in ${stateName}: ${listFees(higher)}.`] : []),
+    ...(lower.length ? [`Lower in ${stateName}: ${listFees(lower)}.`] : []),
+    ...(c.same ? [c.same === 1 ? "The other fee is about the same." : `The other ${c.same} fees are about the same.`] : []),
+  ];
+  return parts.join(" ");
 }

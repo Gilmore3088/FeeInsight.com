@@ -1,4 +1,7 @@
-import { money, sameMedian, type DistrictRow } from "./market-compare-view";
+"use client";
+
+import { useState } from "react";
+import { districtDifferences, money, sameLabel, sameMedian, type DistrictRow } from "./market-compare-view";
 
 /**
  * The state page's four geographic layers: local, state, district and U.S. A sticky row of
@@ -44,8 +47,15 @@ export function LayerHead({ n, place, title, line, id }: { n: number; place: str
   );
 }
 
-/** Each fee's state median beside its district median, with the gap drawn from a center line. */
+/**
+ * Each fee's state median beside its district median, with the gap drawn from a center line. The
+ * fees that differ show first, largest gap first; the rest open behind one control.
+ */
 export function DistrictCompare({ rows, stateName, districtName }: { rows: DistrictRow[]; stateName: string; districtName: string }) {
+  const [all, setAll] = useState(false);
+  const differ = districtDifferences(rows);
+  const hidden = differ.length > 0 ? rows.length - differ.length : 0;
+  const shown = all || hidden === 0 ? [...differ, ...rows.filter((r) => sameMedian(r))] : differ;
   const widest = Math.max(0.01, ...rows.map((r) => Math.abs(r.diff)));
   return (
     <div className="overflow-hidden">
@@ -61,11 +71,11 @@ export function DistrictCompare({ rows, stateName, districtName }: { rows: Distr
             <th scope="col" className="hidden w-[34%] py-2 text-center font-semibold md:table-cell">
               Lower in {stateName} <span aria-hidden="true">|</span> Higher in {stateName}
             </th>
-            <th scope="col" className="py-2 pl-3 text-right font-semibold">Gap</th>
+            <th scope="col" className="w-[7.5rem] py-2 pl-3 text-right font-semibold sm:w-[9rem]">Gap</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => {
+          {shown.map((r) => {
             const same = sameMedian(r);
             const share = (Math.abs(r.diff) / widest) * 50;
             return (
@@ -92,14 +102,29 @@ export function DistrictCompare({ rows, stateName, districtName }: { rows: Distr
                     )}
                   </div>
                 </td>
-                <td className={`py-3 pl-3 text-right font-mono text-[14px] tabular-nums ${same ? "text-ink-muted" : r.diff > 0 ? "text-brick" : "text-ink"}`}>
-                  {same ? "Same" : `${r.diff > 0 ? "+" : "−"}${money(Math.abs(r.diff))}`}
+                <td
+                  className={`py-3 pl-3 text-right tabular-nums ${
+                    same ? "font-sans text-[13px] text-ink-muted" : `font-mono text-[14px] ${r.diff > 0 ? "text-brick" : "text-ink"}`
+                  }`}
+                >
+                  {same ? sameLabel(r) : `${r.diff > 0 ? "+" : "−"}${money(Math.abs(r.diff))}`}
                 </td>
               </tr>
             );
           })}
         </tbody>
       </table>
+      {hidden > 0 && (
+        <button
+          type="button"
+          aria-expanded={all}
+          onClick={() => setAll((v) => !v)}
+          className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-md px-1 text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+        >
+          {all ? `Show only the ${differ.length} that differ` : `Compare all ${rows.length} fees`}
+          <span aria-hidden="true" className={`transition-transform ${all ? "rotate-180" : ""}`}>▾</span>
+        </button>
+      )}
     </div>
   );
 }

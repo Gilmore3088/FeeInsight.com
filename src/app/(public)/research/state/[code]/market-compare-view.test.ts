@@ -76,11 +76,12 @@ describe("market comparison", () => {
 
 describe("district comparison", () => {
   it("counts fees above, below and level with the district", async () => {
-    const { districtComparison, districtTitle } = await import("./market-compare-view");
+    const { districtComparison, districtFinding, sameLabel } = await import("./market-compare-view");
     const c = districtComparison([fee("a", 30, 32, null), fee("b", 10, 10.05, null), fee("c", 5, 4, null), fee("d", 6, null, null)])!;
     expect([c.rows.length, c.above, c.below, c.same]).toEqual([3, 1, 1, 1]);
     expect(c.rows[0]).toMatchObject({ state: 30, stateInstitutions: 20, district: 32, districtInstitutions: 40, diff: -2 });
-    expect(districtTitle(c, "Georgia", "Atlanta")).toBe("Georgia sits above the Atlanta district median on 1 of 3 fees");
+    expect(districtFinding(c, "Georgia")).toBe("Higher in Georgia: c\u00a0+\u2060$1. Lower in Georgia: a\u00a0−\u2060$2. The other fee is about the same.");
+    expect(sameLabel(c.rows[1])).toBe("About the same");
     expect(districtComparison([fee("d", 6, null, null)])).toBeNull();
   });
 });

@@ -44,6 +44,15 @@ export function charterGroups(fees: CharterFee[]): { side: Side; fees: CharterFe
   return groups.sort((a, b) => (a.side === "same" ? 1 : b.side === "same" ? -1 : b.fees.length - a.fees.length));
 }
 
+const NUMBER_WORD = ["", "One", "Two", "Three", "Four", "Five"];
+
+/** Names the smaller group by what it shows, e.g. "Two fees with lower bank medians". */
+export function exceptionsHeading(count: number, side: Side): string {
+  const who = side === "bank" ? "bank" : "credit union";
+  const n = NUMBER_WORD[count] ?? COUNT.format(count);
+  return `${n} ${count === 1 ? "fee" : "fees"} with ${count === 1 ? "a lower" : "lower"} ${who} ${count === 1 ? "median" : "medians"}`;
+}
+
 function Pair({ f, size }: { f: CharterFee; size: "lg" | "md" }) {
   const figure = size === "lg" ? "text-[44px] sm:text-[56px]" : "text-[28px]";
   const lower = sideOf(f);
@@ -159,7 +168,7 @@ export function CharterField({ fees, place }: { fees: CharterFee[]; place: strin
       {exceptions.length > 0 && (
         <div>
           <h3 className="text-[18px] font-semibold tracking-[-0.01em] text-ink sm:text-[22px]">
-            {exceptions.length === 1 ? "The exception" : `The ${exceptions.length === 2 ? "two" : COUNT.format(exceptions.length)} exceptions`}
+            {exceptionsHeading(exceptions.length, groups[1].side)}
           </h3>
           <div className="mt-5 grid gap-10 sm:grid-cols-2 sm:gap-12">
             {exceptions.map((f) => (

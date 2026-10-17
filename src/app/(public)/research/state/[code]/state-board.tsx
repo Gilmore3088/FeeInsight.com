@@ -40,7 +40,7 @@ function useBoard(): BoardState {
 
 const COUNT = new Intl.NumberFormat("en-US");
 
-const POSITION_WORD = { below: "below", within: "inside", above: "above" } as const;
+const POSITION_WORD = { below: "below", within: "within", above: "above" } as const;
 
 export function StateBoard({
   fees,
@@ -320,7 +320,7 @@ export function BoardChart() {
         {ref && (
           <span className="inline-flex items-center gap-1.5">
             <span aria-hidden="true" className="h-2.5 w-5 rounded-full bg-brick-tint" />
-            {refShort} middle half
+            {refShort} middle range
           </span>
         )}
         <span>Tap a bar to count it.</span>
@@ -356,7 +356,7 @@ export function BoardRows({ fees, ariaLabel, limit }: { fees: BoardFee[]; ariaLa
                 onClick={() => pickFee(f.key)}
                 aria-label={`${f.name}: ${money(f.median)} across ${COUNT.format(f.institutions)} institutions${
                   ref && position
-                    ? `, ${POSITION_WORD[position]} the ${refShort === "U.S." ? "U.S." : "district"} middle half; ${refShort === "U.S." ? "U.S." : "district"} median ${money(ref.median)}`
+                    ? `, ${POSITION_WORD[position]} the ${refShort === "U.S." ? "U.S." : "district"} middle range; ${refShort === "U.S." ? "U.S." : "district"} median ${money(ref.median)}`
                     : ""
                 }`}
                 className={`${MARKET_ROW_GRID} -mx-2 w-[calc(100%+1rem)] rounded-lg px-2 text-left transition-colors hover:bg-paper focus-visible:outline-2 focus-visible:outline-ink ${
