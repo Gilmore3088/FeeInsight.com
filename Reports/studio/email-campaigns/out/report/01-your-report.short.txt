@@ -7,10 +7,11 @@ Open your report: {$report_url|default('https://feeinsight.com/reports')}
 
 Free, no login. Bookmark it.
 
-Start at the top. The findings come first, and every table names the institutions and the published schedules behind it.
+Start at the top. The findings come first. The report shows coverage counts and explains its sources.
 
 James Gilmore, Fee Insight
 
 --
+3522 Southwest Barton Street, Seattle, United States of America
 You're getting this because you signed up at feeinsight.com.
 Unsubscribe: {$unsubscribe}
