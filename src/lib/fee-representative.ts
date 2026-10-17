@@ -42,16 +42,20 @@ export function comparedAtText(input: { value: number; amounts: number[]; highes
     : `Compared at ${money(input.value)}, the middle of its prices`;
 }
 
-/** "Carefree Checking $7.95 · Everyday Checking $8.95": named account prices, lowest first, one per account. */
-export function accountPricesText(prices: AccountPrice[]): string | null {
-  const seen = new Set<string>();
-  const unique = [...prices]
-    .sort((a, b) => a.amount - b.amount || a.account.localeCompare(b.account))
-    .filter((p) => {
-      if (seen.has(p.account)) return false;
-      seen.add(p.account);
-      return true;
-    });
-  if (unique.length === 0) return null;
-  return unique.map((p) => `${p.account} ${money(p.amount)}`).join(" · ");
+/**
+ * "Carefree Checking $7.95 · Everyday Checking $8.95": the named account prices, lowest first,
+ * one entry per account with its own full range ("Premier Checking $10 to $25") when it lists
+ * several. Pass every amount the range is built from: when any distinct amount has no named
+ * account the list would contradict the range, so it returns null and the range stands alone.
+ */
+export function accountPricesText(prices: AccountPrice[], amounts?: number[]): string | null {
+  if (prices.length === 0) return null;
+  if (amounts && amounts.some((amount) => !prices.some((p) => p.amount === amount))) return null;
+  const byAccount = new Map<string, number[]>();
+  for (const p of prices) byAccount.set(p.account, [...(byAccount.get(p.account) ?? []), p.amount]);
+  return [...byAccount.entries()]
+    .map(([account, list]) => ({ account, low: Math.min(...list), high: Math.max(...list) }))
+    .sort((a, b) => a.low - b.low || a.high - b.high || a.account.localeCompare(b.account))
+    .map(({ account, low, high }) => `${account} ${low === high ? money(low) : `${money(low)} to ${money(high)}`}`)
+    .join(" \u00b7 ");
 }

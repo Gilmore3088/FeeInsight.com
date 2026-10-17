@@ -223,6 +223,10 @@ export interface HeadlineValue {
   accountPrices?: string | null;
   /** "Compared at $8.45, the middle of its prices" when it lists several prices (fee-representative). */
   comparedAt?: string | null;
+  /** Compared at its highest price (overdraft's standard fee), not the middle. */
+  highestTier?: boolean;
+  /** CD or IRA fees filed under this category that this page leaves out of the compared value. */
+  excludedCdIra?: number;
 }
 
 /**
@@ -245,6 +249,13 @@ export function pickHeadlineValues(verifiedFees: ExtractedFee[], categories: rea
         notComparableReason(fee.fee_category, fee.fee_name, fee.account_product_type ?? null) === null,
     );
     const amounts = rows.map((fee) => fee.amount as number);
+    const excludedCdIra = verifiedFees.filter(
+      (fee) =>
+        fee.fee_category === category &&
+        fee.amount !== null &&
+        countsAsPersonal(fee.fee_audience) &&
+        notComparableReason(fee.fee_category, fee.fee_name, fee.account_product_type ?? null) !== null,
+    ).length;
     if (amounts.length === 0) continue;
     const quoted =
       category === "overdraft"
@@ -268,7 +279,9 @@ export function pickHeadlineValues(verifiedFees: ExtractedFee[], categories: rea
       account: quoted
         ? (readableProductName(quoted.account_product_type ?? null) ?? productNameFromFeeName(quoted.fee_name))
         : null,
-      accountPrices: several ? accountPricesText(named) : null,
+      accountPrices: several ? accountPricesText(named, amounts) : null,
+      highestTier: HIGHEST_TIER_CATEGORIES.has(category),
+      excludedCdIra,
       comparedAt: comparedAtText({ value, amounts, highestTier: HIGHEST_TIER_CATEGORIES.has(category) }),
     });
   }

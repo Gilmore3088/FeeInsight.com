@@ -14,6 +14,20 @@ describe("shared representative-value rule", () => {
     ).toBe("Carefree Checking $7.95 · Everyday Checking $8.95");
   });
 
+  it("keeps each account's full range and stays silent when an amount has no named account", () => {
+    expect(
+      accountPricesText([
+        { account: "Premier Checking", amount: 25 },
+        { account: "Basic Checking", amount: 5 },
+        { account: "Premier Checking", amount: 10 },
+      ]),
+    ).toBe("Basic Checking $5 \u00b7 Premier Checking $10 to $25");
+    expect(accountPricesText([{ account: "Basic Checking", amount: 5 }], [5, 12])).toBeNull();
+    expect(accountPricesText([{ account: "Basic Checking", amount: 5 }, { account: "Gold", amount: 12 }], [5, 12, 12])).toBe(
+      "Basic Checking $5 \u00b7 Gold $12",
+    );
+  });
+
   it("labels the compared value in one set of words", () => {
     expect(comparedAtText({ value: 8.45, amounts: [7.95, 8.95], highestTier: false })).toBe("Compared at $8.45, the middle of its prices");
     expect(comparedAtText({ value: 35, amounts: [20, 35], highestTier: true })).toBe(

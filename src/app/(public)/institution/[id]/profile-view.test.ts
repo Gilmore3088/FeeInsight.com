@@ -11,8 +11,10 @@ import {
   compareRows,
   heroFinding,
   leadRow,
+  excludedNote,
   orderRows,
   positionFinding,
+  referenceShort,
   scheduleState,
 } from "./profile-view";
 
@@ -115,6 +117,27 @@ describe("ranges and $0", () => {
     expect(heroFinding({ rows, stateName: "Florida", sparse: false, schedule: "reviewed", underReview: 0 })).toBe(
       "Its monthly maintenance fee runs $7.95 to $8.95, depending on account. Compared at $8.45, the middle of its prices, it sits $1.55 below the $10 Florida median.",
     );
+  });
+
+  it("words a tiered overdraft as its standard fee, the highest of its prices", () => {
+    const rows = compareRows(
+      [value("overdraft", 35, { count: 2, low: 20, high: 35, highestTier: true, comparedAt: "Compared at $35, its standard fee, the highest of its prices" })],
+      markets,
+      "reviewed",
+      null,
+    );
+    expect(heroFinding({ rows, stateName: "Florida", sparse: false, schedule: "reviewed", underReview: 0 })).toBe(
+      "Its standard overdraft fee, $35 (the highest of its prices), sits $3 above the $32 Florida median.",
+    );
+  });
+
+  it("labels the gap with the median it is read against, and notes CD/IRA fees left out", () => {
+    const rows = compareRows([value("overdraft", 36), value("atm_non_network", 2.5, { excludedCdIra: 2 })], markets, "reviewed", null);
+    expect(referenceShort(rows.find((r) => r.key === "overdraft")!, "FL")).toBe("vs FL");
+    // Four Florida institutions are too few, so the ATM row is read against the U.S. median.
+    expect(referenceShort(rows.find((r) => r.key === "atm_non_network")!, "FL")).toBe("vs U.S.");
+    expect(excludedNote(rows.find((r) => r.key === "atm_non_network")!)).toBe("Leaves out 2 CD/IRA fees filed under this fee");
+    expect(excludedNote(rows.find((r) => r.key === "overdraft")!)).toBeNull();
   });
 
   it("shows a published $0 as No fee", () => {

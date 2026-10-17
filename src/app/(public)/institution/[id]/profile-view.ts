@@ -82,6 +82,10 @@ export interface CompareRow {
   accountPrices: string | null;
   /** "Compared at $8.45, the middle of its prices" when it lists several prices. */
   comparedAt: string | null;
+  /** Compared at its highest price (overdraft's standard fee). */
+  highestTier: boolean;
+  /** CD or IRA fees filed under this fee that the compared value leaves out. */
+  excludedCdIra: number;
   state: Median | null;
   district: Median | null;
   us: Median | null;
@@ -140,6 +144,8 @@ export function compareRows(
     account: v.account,
     accountPrices: v.accountPrices ?? null,
     comparedAt: v.comparedAt ?? null,
+    highestTier: v.highestTier ?? false,
+    excludedCdIra: v.excludedCdIra ?? 0,
     ...medians(v.category),
     missing: null,
   }));
@@ -155,6 +161,8 @@ export function compareRows(
     account: null,
     accountPrices: null,
     comparedAt: null,
+    highestTier: false,
+    excludedCdIra: 0,
     ...medians(key),
     missing: missingNote(schedule),
   }));
@@ -166,6 +174,19 @@ export function reference(row: CompareRow): { median: Median; level: "state" | "
   if (row.state) return { median: row.state, level: "state" };
   if (row.us) return { median: row.us, level: "us" };
   return null;
+}
+
+/** "vs FL" or "vs U.S.": the place of the median the row's gap is read against. */
+export function referenceShort(row: CompareRow, stateShort: string): string | null {
+  const ref = reference(row);
+  if (!ref) return null;
+  return ref.level === "state" ? `vs ${stateShort}` : "vs U.S.";
+}
+
+/** "Leaves out 2 CD/IRA fees filed under this fee", or null. */
+export function excludedNote(row: CompareRow): string | null {
+  if (row.excludedCdIra <= 0) return null;
+  return `Leaves out ${row.excludedCdIra} CD/IRA ${row.excludedCdIra === 1 ? "fee" : "fees"} filed under this fee`;
 }
 
 /** Share gap from the reference median; null when nothing to compare. */
@@ -268,6 +289,9 @@ export function heroFinding(input: {
     const diff = lead.amount - ref.median.median;
     const gap = `${money(Math.abs(diff))} ${diff > 0 ? "above" : "below"} the ${money(ref.median.median)} ${place} median`;
     // Several prices: the range, then the compared value in the shared rule's own words.
+    if (isRange(lead) && lead.highestTier) {
+      return `${owner} standard ${lowerLabel(lead.label)} fee, ${money(lead.amount)} (the highest of its prices), sits ${gap}.`;
+    }
     return isRange(lead) && lead.comparedAt
       ? `${owner} ${lowerLabel(lead.label)} fee runs ${money(lead.low as number)} to ${money(lead.high as number)}, depending on account. ${lead.comparedAt}, it sits ${gap}.`
       : `${owner} ${lowerLabel(lead.label)} fee is ${money(lead.amount)}, ${gap}.`;

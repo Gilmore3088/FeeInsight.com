@@ -82,7 +82,7 @@ function InsightView({ insight, institutionName }: { insight: HamiltonInsight; i
     first && last && first !== last && first.value > 0 ? ((last.value - first.value) / first.value) * 100 : null;
   const comparePeers = plausibleShare(insight.ownSharePct) && plausibleShare(insight.peerSharePct) && (insight.peerCount ?? 0) >= 3;
   const top = Math.max(1, ...series.map((q) => q.value));
-  const sourceName = latest?.source === "ncua" ? "NCUA call reports" : "FDIC call reports";
+  const sourceName = latest?.source === "ncua" ? "NCUA 5300 call reports" : "FDIC call reports";
   const span = first && last ? `${formatReportQuarter(first.reportDate)} to ${formatReportQuarter(last.reportDate)}` : null;
 
   return (
@@ -112,7 +112,7 @@ function InsightView({ insight, institutionName }: { insight: HamiltonInsight; i
         <dl className="mt-4 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 border-t border-border pt-3 text-[12px] leading-snug text-ink-muted">
           <dt className="font-medium text-ink-soft">Peers</dt>
           <dd>
-            {insight.kind === "bank" ? "Banks filing FDIC call reports" : "Credit unions filing NCUA 5300 reports"}
+            {insight.kind === "bank" ? "Banks filing FDIC call reports" : "Credit unions filing NCUA 5300 call reports"}
             {insight.sizeRange ? `, ${insight.sizeRange} in assets` : ", the same asset size"}
           </dd>
           <dt className="font-medium text-ink-soft">Counted</dt>

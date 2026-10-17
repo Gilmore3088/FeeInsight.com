@@ -345,6 +345,8 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
   }
 
   // The hero's exhibit: the lead fee beside the medians it is read against.
+  // The bar's name carries the place; the line under it says whose median it is (one wording site-wide).
+  const publishSample = (n: number) => `Median of ${count(n)} banks and credit unions that publish this fee`;
   const tooFew = `Too few for a median (${MIN_INSTITUTIONS_FOR_MEDIAN} needed)`;
   const leadBars: ComparisonBar[] | null =
     lead && lead.amount != null
@@ -360,8 +362,8 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                 {
                   name: stateName,
                   sample: lead.state
-                    ? `${stateName}, all banks and credit unions, ${count(lead.state.institutions)} institutions`
-                    : `${stateName}, all banks and credit unions`,
+                    ? publishSample(lead.state.institutions)
+                    : "Banks and credit unions that publish this fee",
                   value: lead.state?.median ?? null,
                   missing: tooFew,
                 },
@@ -372,8 +374,8 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                 {
                   name: `${districtName} district`,
                   sample: lead.district
-                    ? `${districtName} Fed district, all banks and credit unions, ${count(lead.district.institutions)} institutions`
-                    : `${districtName} Fed district, all banks and credit unions`,
+                    ? publishSample(lead.district.institutions)
+                    : "Banks and credit unions that publish this fee",
                   value: lead.district?.median ?? null,
                   missing: tooFew,
                 },
@@ -381,9 +383,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
             : []),
           {
             name: "U.S.",
-            sample: lead.us
-              ? `U.S., all banks and credit unions, ${count(lead.us.institutions)} institutions`
-              : "U.S., all banks and credit unions",
+            sample: lead.us ? publishSample(lead.us.institutions) : "Banks and credit unions that publish this fee",
             value: lead.us?.median ?? null,
           },
         ]
@@ -528,24 +528,29 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                 <dl className="mt-2 grid max-w-3xl gap-x-4 gap-y-1 text-[12px] leading-snug text-ink-muted sm:grid-cols-[auto_minmax(0,1fr)]">
                   <dt className="font-medium text-ink-soft">Compared at</dt>
                   <dd>
-                    The value the index counts for it: its one price, or the middle of its prices when it lists several (the
-                    highest, its standard fee, for overdraft). Business-only fees and CD or IRA fees filed under another fee are
-                    left out.
+                    The value this page compares: its one price, or the middle of its prices when it lists several (the highest,
+                    its standard fee, for overdraft). Business-only fees are left out. So are CD or IRA fees filed under another
+                    fee. The medians still include fees that other institutions filed that way.
                   </dd>
                   {stateName && (
                     <>
                       <dt className="font-medium text-ink-soft">{stateName}</dt>
-                      <dd>Banks and credit unions headquartered in {stateName}, the figure on the {stateName} report.</dd>
+                      <dd>
+                        Banks and credit unions headquartered in {stateName} that publish the fee, the figure on the {stateName} report.
+                      </dd>
                     </>
                   )}
                   {districtName && (
                     <>
                       <dt className="font-medium text-ink-soft">{districtName} district</dt>
-                      <dd>Institutions headquartered in the {districtName} Fed district, the figure on the district report.</dd>
+                      <dd>
+                        Banks and credit unions headquartered in the {districtName} Fed district that publish the fee, the figure on
+                        the district report.
+                      </dd>
                     </>
                   )}
                   <dt className="font-medium text-ink-soft">U.S.</dt>
-                  <dd>Every institution in the {PRODUCT_NAME}.</dd>
+                  <dd>Banks and credit unions across the {PRODUCT_NAME} that publish the fee.</dd>
                   <dt className="font-medium text-ink-soft">About the same</dt>
                   <dd>Within 1% of the median.</dd>
                   <dt className="font-medium text-ink-soft">Account</dt>

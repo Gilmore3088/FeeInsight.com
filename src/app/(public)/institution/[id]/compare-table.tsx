@@ -2,7 +2,18 @@
 
 import { useState } from "react";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
-import { aboutSame, amountText, missingShort, money, reference, type CompareRow, type Median } from "./profile-view";
+import {
+  aboutSame,
+  amountText,
+  excludedNote,
+  isRange,
+  missingShort,
+  money,
+  reference,
+  referenceShort,
+  type CompareRow,
+  type Median,
+} from "./profile-view";
 
 /** Rows shown before "Show all". */
 const ROWS_SHOWN = 5;
@@ -13,33 +24,38 @@ function Amount({ row }: { row: CompareRow }) {
   if (row.amount == null) {
     return <span className="text-[12px] text-ink-muted">{missingShort(row.missing)}</span>;
   }
-  const text = amountText(row);
+  // A range may wrap after "to" on a phone; each amount stays whole.
+  const text = isRange(row) ? (
+    <>
+      <span className="whitespace-nowrap">{money(row.low as number)}</span> to{" "}
+      <span className="whitespace-nowrap">{money(row.high as number)}</span>
+    </>
+  ) : (
+    <span className="whitespace-nowrap">{amountText(row)}</span>
+  );
   return row.sourceUrl ? (
     <a
       href={row.sourceUrl}
       target="_blank"
       rel="noopener noreferrer"
       title="Open the fee schedule it was read from"
-      className="-my-3 inline-block whitespace-nowrap py-3 font-mono text-[15px] font-semibold tabular-nums text-ink underline decoration-border underline-offset-2 hover:decoration-brick"
+      className="-my-3 inline-block py-3 font-mono text-[15px] font-semibold tabular-nums text-ink underline decoration-border underline-offset-2 hover:decoration-brick"
     >
       {text}
     </a>
   ) : (
-    <span className="whitespace-nowrap font-mono text-[15px] font-semibold tabular-nums text-ink">{text}</span>
+    <span className="font-mono text-[15px] font-semibold tabular-nums text-ink">{text}</span>
   );
 }
 
-/** The median and, beneath it, how many institutions stand behind it; blank under the floor. */
+/** The median and, beneath it, how many institutions publish the fee; blank under the floor. */
 function MedianCell({ m, label }: { m: Median | null; label: string }) {
   if (!m) return <span className="sr-only">{label}: no median</span>;
   return (
     <>
       <span className="sr-only">{label}: </span>
       <span className="block font-mono text-[14px] tabular-nums text-ink-soft">{money(m.median)}</span>
-      <span className="block text-[11px] text-ink-muted">
-        {m.institutions.toLocaleString("en-US")}
-        <span className="sr-only"> institutions</span>
-      </span>
+      <span className="block text-[11px] text-ink-muted">{m.institutions.toLocaleString("en-US")} publish</span>
     </>
   );
 }
@@ -73,11 +89,20 @@ function Detail({ row }: { row: CompareRow }) {
     return (
       <>
         {row.accountPrices && <p className="text-[12px] text-ink-soft">{row.accountPrices}</p>}
-        <p className="text-[12px] text-ink-muted">{row.comparedAt}</p>
+        <p className="text-[12px] text-ink-muted">
+          {row.comparedAt}
+          {excludedNote(row) ? `. ${excludedNote(row)}.` : ""}
+        </p>
       </>
     );
   }
-  return row.account ? <p className="text-[12px] text-ink-soft">{row.account}</p> : null;
+  const note = excludedNote(row);
+  return (
+    <>
+      {row.account && <p className="text-[12px] text-ink-soft">{row.account}</p>}
+      {note && <p className="text-[12px] text-ink-muted">{note}.</p>}
+    </>
+  );
 }
 
 /**
@@ -100,19 +125,19 @@ export function CompareTable({
   const hasState = rows.some((r) => r.state);
   const hasDistrict = Boolean(districtName) && rows.some((r) => r.district);
   const shown = all ? rows : rows.slice(0, ROWS_SHOWN);
-  const vs = hasState && stateName ? `vs ${stateName}` : "vs U.S.";
   const cols = 1 + (hasState ? 1 : 0) + (hasDistrict ? 1 : 0);
   const shortState = stateCode ?? stateName ?? "State";
 
-  const places = [stateName, hasDistrict ? `the ${districtName} district` : null, "the U.S."].filter(Boolean).join(", ");
-  const notes = [...new Set(rows.filter((r) => r.amount == null && r.missing).map((r) => r.missing as string))];
-  const blank = rows.some((r) => !r.state || (hasDistrict && !r.district) || !r.us);
+  // Notes explain only the rows on screen.
+  const notes = [...new Set(shown.filter((r) => r.amount == null && r.missing).map((r) => r.missing as string))];
+  const blank = shown.some((r) => (hasState && !r.state) || (hasDistrict && !r.district) || !r.us);
+  const priceHeader = rows.some(isRange) ? "Its prices" : "Its fee";
 
   return (
     <div>
       <p className="mb-3 text-center text-[12px] leading-relaxed text-ink-muted sm:max-w-none sm:text-left">
-        Each median covers all banks and credit unions in its place ({places}). The number with each median is how many of
-        them publish the fee{blank ? `; a blank means fewer than ${MIN_INSTITUTIONS_FOR_MEDIAN} do` : ""}.
+        Medians cover the banks and credit unions in each place that publish the fee. The number with each median is how
+        many publish it{blank ? `; a blank means fewer than ${MIN_INSTITUTIONS_FOR_MEDIAN} do` : ""}.
       </p>
       <div className="overflow-hidden rounded-2xl border border-border bg-surface-0" style={{ ["--cols" as string]: cols }}>
         <div
@@ -120,11 +145,11 @@ export function CompareTable({
           className={`hidden border-b border-border bg-paper px-5 py-2 text-[12px] font-medium text-ink-muted md:grid md:gap-4 ${GRID}`}
         >
           <span>Fee</span>
-          <span className="text-right">Its fee</span>
+          <span className="text-right">{priceHeader}</span>
           {hasState && <span className="text-right">{stateName} median</span>}
           {hasDistrict && <span className="text-right">{districtName} district</span>}
           <span className="text-right">U.S. median</span>
-          <span className="text-right">{vs}</span>
+          <span className="text-right">Gap</span>
         </div>
         <ul className="divide-y divide-border">
           {shown.map((row) => (
@@ -137,7 +162,7 @@ export function CompareTable({
                 <Detail row={row} />
               </div>
               <span className="text-right">
-                <span className="sr-only">Its fee: </span>
+                <span className="sr-only">{priceHeader}: </span>
                 <Amount row={row} />
               </span>
               {hasState && (
@@ -154,7 +179,9 @@ export function CompareTable({
                 <MedianCell m={row.us} label="U.S. median" />
               </span>
               <span className="hidden text-right md:block">
-                {row.amount != null && reference(row) && <span className="sr-only">{vs}: </span>}
+                {row.amount != null && row.amount !== 0 && reference(row) && (
+                  <span className="mr-1 text-[11px] text-ink-muted">{referenceShort(row, shortState)}</span>
+                )}
                 <Gap row={row} />
               </span>
               {/* Phones: the medians and the gap on one line under the fee. */}
@@ -179,7 +206,7 @@ export function CompareTable({
                 )}
                 {row.amount != null && reference(row) && (
                   <span className="ml-auto">
-                    {row.amount !== 0 && <span className="mr-1">vs {hasState ? shortState : "U.S."}</span>}
+                    {row.amount !== 0 && <span className="mr-1">{referenceShort(row, shortState)}</span>}
                     <Gap row={row} />
                   </span>
                 )}
