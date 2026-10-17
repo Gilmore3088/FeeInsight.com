@@ -10,10 +10,12 @@ import {
   lineupCoverageLine,
   lineupMeasures,
   lineupMoney,
+  lineupShare,
   type CheckingLineupView,
 } from "@/lib/custom-report/checking-lineup";
+import { HubSection } from "@/app/(public)/research/district/[id]/district-hub";
+import { Disclosure } from "./disclosure";
 
-const SERIF = { fontFamily: "var(--fi-font-sans)" };
 const MAX_PEER_ROWS = 10;
 const DERIVED_MARK = "†";
 
@@ -21,22 +23,50 @@ function Muted({ children }: { children: string }) {
   return children === NOT_STATED ? <span className="text-ink-muted">{children}</span> : <>{children}</>;
 }
 
+/**
+ * The line under the section title: how many checking accounts the institution lists, and how
+ * many local competitors offer a no-fee one. When the market has no lineups on file it says so.
+ */
+export function lineupFinding(name: string, lineup: CheckingLineupView): string {
+  const { subject, peers, peersWithLineup } = lineup;
+  const own =
+    subject.accounts === 0
+      ? `${name}'s published schedule shows no verified checking account monthly fee yet`
+      : `${name} lists ${subject.accounts.toLocaleString("en-US")} checking ${subject.accounts === 1 ? "account" : "accounts"} with a monthly fee line`;
+  if (peersWithLineup === 0) return `${own}, and no local competitor has a checking lineup on file yet.`;
+  const free = lineupShare(peers.shareWithFreeAccount);
+  return free === NOT_STATED
+    ? `${own}; ${peersWithLineup.toLocaleString("en-US")} local competitors have a lineup on file.`
+    : `${own}; ${free} of the ${peersWithLineup.toLocaleString("en-US")} local competitors with a lineup on file offer a no-fee checking account.`;
+}
+
 export function CheckingLineupSection({ name, lineup, live }: { name: string; lineup: CheckingLineupView; live?: boolean }) {
   const measures = lineupMeasures(lineup);
   const shownPeers = lineup.peerRows.slice(0, MAX_PEER_ROWS);
   const own = lineup.subject.accountsList;
   return (
-    <section className="mt-8 rounded-xl border border-border bg-surface-0 p-4 sm:overflow-x-auto sm:p-6" aria-labelledby="lineup-heading">
-      <h2 id="lineup-heading" className="font-bold text-xl text-ink" style={SERIF}>
-        Checking account lineup
-      </h2>
-      <p className="mt-1 text-[13px] leading-relaxed text-ink-muted">
-        Every consumer checking account with a monthly fee line on each institution&apos;s published schedule.{" "}
-        {lineupCoverageLine(lineup)}
-        {live ? " These figures are live as of today." : ""}
-      </p>
-
-      <table className="mt-4 w-full text-left text-sm sm:min-w-[560px]">
+    <HubSection
+      id="lineup"
+      title="Checking account lineup"
+      line={lineupFinding(name, lineup)}
+      source={
+        <>
+          {PRODUCT_NAME} by {SITE_NAME}: every consumer checking account with a monthly fee line on each institution&apos;s
+          own published schedule. {lineupCoverageLine(lineup)}
+          {live ? " These figures are live as of today." : ""} &ldquo;{NOT_STATED[0].toUpperCase() + NOT_STATED.slice(1)}&rdquo;
+          means the schedule on file does not state the figure; it is not a zero. Many schedules do not name each account or
+          say how its fee is avoided, so medians rest only on the accounts that do.
+          {lineup.leftOut > 0
+            ? ` ${lineup.leftOut.toLocaleString("en-US")} monthly fee ${lineup.leftOut === 1 ? "line" : "lines"} in this market for savings, money market, certificate, IRA or business accounts ${lineup.leftOut === 1 ? "is" : "are"} left out.`
+            : ""}
+          {lineup.anyDerived ? ` ${DERIVED_MARK} Read from the schedule line that states the fee rather than a stored field.` : ""}
+        </>
+      }
+    >
+      <figure className="min-w-0">
+      <figcaption className="text-[14px] font-semibold text-ink">Checking accounts, {name} against local competitors</figcaption>
+      <div className="mt-3 overflow-x-auto">
+      <table className="w-full min-w-[20rem] text-left text-sm">
         <thead className="border-b border-border text-[11px] uppercase tracking-[0.08em] text-ink-muted">
           <tr>
             <th className="py-2 pr-3 font-semibold">Measure</th>
@@ -54,14 +84,16 @@ export function CheckingLineupSection({ name, lineup, live }: { name: string; li
           ))}
         </tbody>
       </table>
+      </div>
+      </figure>
 
-      <h3 className="mt-6 text-[15px] font-semibold text-ink">{name}&apos;s accounts</h3>
-      {own.length === 0 ? (
-        <p className="mt-1 text-[13px] text-ink-soft">
-          We have no verified checking account monthly fee on {name}&apos;s published schedule yet.
-        </p>
-      ) : (
-        <table className="mt-2 w-full text-left text-sm sm:min-w-[560px]">
+      {(own.length > 0 || shownPeers.length > 0) && (
+      <Disclosure summary="Account by account">
+      {own.length > 0 && (
+        <>
+      <h3 className="text-[15px] font-semibold text-ink">{name}&apos;s accounts</h3>
+        <div className="mt-2 overflow-x-auto">
+        <table className="w-full min-w-[20rem] text-left text-sm">
           <thead className="border-b border-border text-[11px] uppercase tracking-[0.08em] text-ink-muted">
             <tr>
               <th className="py-2 pr-3 font-semibold">Account</th>
@@ -94,12 +126,15 @@ export function CheckingLineupSection({ name, lineup, live }: { name: string; li
             ))}
           </tbody>
         </table>
+        </div>
+        </>
       )}
 
       {shownPeers.length > 0 && (
         <>
           <h3 className="mt-6 text-[15px] font-semibold text-ink">Competitors with a checking lineup on file</h3>
-          <table className="mt-2 w-full text-left text-sm sm:min-w-[640px]">
+          <div className="mt-2 overflow-x-auto">
+          <table className="w-full min-w-[20rem] text-left text-sm">
             <thead className="border-b border-border text-[11px] uppercase tracking-[0.08em] text-ink-muted">
               <tr>
                 <th className="py-2 pr-3 font-semibold">Institution</th>
@@ -127,24 +162,17 @@ export function CheckingLineupSection({ name, lineup, live }: { name: string; li
               ))}
             </tbody>
           </table>
+          </div>
           {lineup.peerRows.length > shownPeers.length && (
             <p className="mt-1 text-[12px] text-ink-muted">
-              Showing {shownPeers.length} of {lineup.peerRows.length}, largest deposits in your market first.
+              Showing {shownPeers.length} of {lineup.peerRows.length}, largest deposits in the market first.
             </p>
           )}
         </>
       )}
 
-      <p className="mt-4 text-[12px] leading-relaxed text-ink-muted">
-        Source: {PRODUCT_NAME} by {SITE_NAME}, from verified monthly maintenance fees on each institution&apos;s own
-        published schedule. &ldquo;{NOT_STATED[0].toUpperCase() + NOT_STATED.slice(1)}&rdquo; means the schedule we hold
-        does not state the figure; it is not a zero. Many schedules do not name each account or say how its fee is
-        avoided, so medians rest only on the accounts that do.
-        {lineup.leftOut > 0
-          ? ` ${lineup.leftOut.toLocaleString("en-US")} monthly fee ${lineup.leftOut === 1 ? "line" : "lines"} in this market for savings, money market, certificate, IRA or business accounts ${lineup.leftOut === 1 ? "is" : "are"} left out.`
-          : ""}
-        {lineup.anyDerived ? ` ${DERIVED_MARK} Read from the schedule line that states the fee rather than a stored field.` : ""}
-      </p>
-    </section>
+      </Disclosure>
+      )}
+    </HubSection>
   );
 }

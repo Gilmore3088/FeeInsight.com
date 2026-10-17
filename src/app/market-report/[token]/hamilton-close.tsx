@@ -19,7 +19,7 @@ export function HamiltonClose({ competitors, institutionId }: { competitors: num
       <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-3">
         <a
           href={`/subscribe?${params.toString()}#pro`}
-          className="inline-flex items-center rounded-md bg-ink px-4 py-2.5 text-sm font-semibold text-on-ink transition-opacity hover:opacity-90"
+          className="inline-flex min-h-11 items-center rounded-md bg-ink px-4 text-sm font-semibold text-on-ink transition-opacity hover:opacity-90"
         >
           See Hamilton plans
         </a>
