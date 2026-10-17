@@ -1,5 +1,5 @@
 import type { ReportConfidence, ReportDecision, ReportExhibit, ReportSource } from "@/lib/hamilton/types";
-import { displayReportDecision } from "@/lib/hamilton/report-answer";
+import { LEGACY_REPORT_CONFIDENCE_NOTE, displayReportDecision, hasLegacyHighRating } from "@/lib/hamilton/report-answer";
 
 const CONFIDENCE_STYLE: Record<ReportConfidence, { background: string; color: string }> = {
   High: { background: "var(--hamilton-accent-subtle)", color: "var(--hamilton-text-accent)" },
@@ -8,7 +8,18 @@ const CONFIDENCE_STYLE: Record<ReportConfidence, { background: string; color: st
 };
 
 /** The answer page: one headline and the numbered decisions, each with its confidence. */
-export function ReportAnswer({ headline, decisions, goal = null }: { headline: string; decisions: ReportDecision[]; goal?: string | null }) {
+export function ReportAnswer({
+  headline,
+  decisions,
+  goal = null,
+  onRunAgain,
+}: {
+  headline: string;
+  decisions: ReportDecision[];
+  goal?: string | null;
+  /** Runs this report again with the current checks; offered beside the note on older ratings. */
+  onRunAgain?: () => void;
+}) {
   return (
     <section aria-label="The answer" className="py-8 border-b" style={{ borderColor: "var(--hamilton-border)" }}>
       <div
@@ -23,6 +34,20 @@ export function ReportAnswer({ headline, decisions, goal = null }: { headline: s
       >
         {headline}
       </p>
+      {hasLegacyHighRating(decisions) ? (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-warm-300 bg-warm-50 px-4 py-3 text-sm text-warm-800">
+          <p className="min-w-0 flex-1">{LEGACY_REPORT_CONFIDENCE_NOTE}</p>
+          {onRunAgain ? (
+            <button
+              type="button"
+              onClick={onRunAgain}
+              className="min-h-11 rounded-md border border-warm-300 bg-white px-3.5 text-sm font-medium text-warm-800 hover:border-warm-500 sm:min-h-9"
+            >
+              Run this report again
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       <ol className="space-y-3">
         {decisions.map(displayReportDecision).map((decision, i) => (
           <li

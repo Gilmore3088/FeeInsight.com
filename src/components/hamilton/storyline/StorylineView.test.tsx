@@ -49,7 +49,7 @@ describe("StorylineView with Hamilton's memo", () => {
     expect(html).toContain("recurring payroll");
   });
 
-  it("moves sentences no saved record backs into their own labelled list", () => {
+  it("moves sentences no fee record backs into their own labelled list", () => {
     const reading = "The peer median is $29.50.";
     const bound = {
       ...memo,
@@ -57,7 +57,7 @@ describe("StorylineView with Hamilton's memo", () => {
       narrativeBinding: { version: 1 as const, supported: [], interpretation: [reading], omitted: [], limitations: [] },
     };
     const html = renderToStaticMarkup(<StorylineView story={sampleStoryline()} memo={{ state: "written", memo: bound }} />);
-    expect(html).toContain("Hamilton&#x27;s reading, not tied to a saved record");
+    expect(html).toContain("Hamilton&#x27;s reading, not tied to a fee record");
     expect(html.split(reading).length - 1).toBe(1);
     expect(html).toContain("Your fee is");
   });

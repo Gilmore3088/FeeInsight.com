@@ -41,7 +41,7 @@ export function peerListCsv(data: PeerListData): string | null {
   out.push(line(["Rows in this file", data.rows.length === 0 ? "0" : `${offset + 1} to ${offset + data.rows.length} of ${data.totalMatches ?? "an unknown number of"} matching institutions`]));
   for (const description of data.criteria?.descriptions ?? []) out.push(line(["Criteria", description]));
   for (const note of data.notes) out.push(line(["Note", note]));
-  out.push(line(["Note", "Amounts are in US dollars. A blank amount is not available on file; it is not zero."]));
+  out.push(line(["Note", "Amounts are in US dollars. A blank amount means none is on file, or the fee is charged as a rate (see the rate column); it is never zero."]));
   out.push("");
   out.push(line(["row", "institution_id", "institution", "type", "city", "state", "total_assets_usd", "asset_report_date", "asset_source", "asset_source_url", "asset_record_id", "fee_data", "why_included"]));
   data.rows.slice(0, MAX_PEER_LIST_ROWS).forEach((row, i) => {
@@ -56,7 +56,7 @@ export function peerListCsv(data: PeerListData): string | null {
     const label = comparison.label ?? "NSF";
     out.push("");
     out.push(line(["Note", comparison.note]));
-    out.push(line(["institution_id", "institution", "fee", `${label}_amount_usd`, "rate", "frequency", "published_at", "fee_record_id", "source_document_id", "source_url"]));
+    out.push(line(["institution_id", "institution", "fee", "amount_usd", "rate", "frequency", "published_at", "fee_record_id", "source_document_id", "source_url"]));
     const institutions = [
       ...data.rows.map((row) => ({ id: row.institutionId, name: row.name })),
       ...(comparison.account ? [{ id: comparison.account.institutionId, name: `${comparison.account.name} (your institution)` }] : []),

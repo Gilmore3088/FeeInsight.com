@@ -23,8 +23,8 @@
  * conditions, document text) is data: it is never read as an instruction and never copied into a
  * limitation line. Deterministic and pure: no model call, no read, no write.
  */
-import { getDisplayName } from "@/lib/fee-taxonomy";
 import { splitIntoSentences } from "./citation-gate";
+import { proseFeeName } from "./workspace/names";
 import {
   claimBindingMatches,
   medianOf,
@@ -38,14 +38,14 @@ import { RECOMMENDATION } from "./workspace/four-roles";
 export const NARRATIVE_BINDING_VERSION = 1 as const;
 
 /** The label any shown interpretation sentence sits under. */
-export const INTERPRETATION_LABEL = "Hamilton's reading, not tied to a saved record";
+export const INTERPRETATION_LABEL = "Hamilton's reading, not tied to a fee record";
 
 export const NO_EVIDENCE_LIMITATION =
   "Hamilton had no fee records for this answer, so its figures are left out.";
 export const UNSOURCED_FIGURE_LIMITATION =
   "Some figures have no source document on record, so they are shown as Hamilton's reading only.";
 export const INTERPRETATION_LIMITATION =
-  "Some sentences state figures that are not tied to a saved fee record. They are marked as Hamilton's reading.";
+  "Some sentences state figures that are not tied to a fee record. They are listed separately as Hamilton's reading.";
 export const MEDIAN_AS_FEE_LIMITATION =
   "Some sentences were left out because they stated the peer median as an institution's own fee.";
 export const CONTRADICTED_LIMITATION =
@@ -332,7 +332,7 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
           if (conflictLines.has(key) || !members.some((fact) => figures.some((f) => Math.abs((fact.value as number) - f.value) <= Math.max(f.tolerance, 0.005)))) continue;
           const id = members[0].scope.institutionId;
           const who = id === null ? "one institution" : names.get(id) ?? `Institution ${id}`;
-          const fee = members[0].scope.feeCategory ? getDisplayName(members[0].scope.feeCategory).replace(/\s*\([^)]*\)/g, "").toLowerCase() : "this";
+          const fee = members[0].scope.feeCategory ? proseFeeName(members[0].scope.feeCategory) : "this";
           const values = [...new Set(members.map((fact) => fact.value as number))].sort((a, b) => a - b).map(money);
           conflictLines.set(key, `Sources disagree on the ${fee} fee for ${who}: ${values.join(" and ")}. Hamilton does not pick one.`);
         }

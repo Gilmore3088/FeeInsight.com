@@ -1,7 +1,7 @@
 import { recordProRequest } from "@/lib/agents/run-store";
 import { getPeerListRows, getPeerListSubject } from "@/lib/data-store/hamilton-peer-list";
 import { getPublishedPeerFees, getPublishedPeerRateFees } from "@/lib/data-store/hamilton-peer-fees";
-import { isStaleSource, SOURCE_STALE_AFTER_DAYS } from "./source-age";
+import { isStaleSource } from "./source-age";
 import { getActivePeerSet } from "./active-peer-set";
 import { loadHamiltonAccountContext } from "./account-context-store";
 import { normalizeCanonicalInstitutionId } from "./context-link";
@@ -25,15 +25,18 @@ interface PeerAsker { id: number; institution_name?: string | null }
  * Says which institutions a capped list kept and how to see the others (#1540). A list asked for
  * "all" pages through the rest (#977, H02-T08), so its note names the rows shown and the way on.
  */
+/** Counts read with thousands separators ("4,218"), as every other Hamilton count does. */
+const n = (value: number) => value.toLocaleString("en-US");
+
 export function cappedListNote(criteria: Pick<PeerListCriteria, "sort" | "limit">, shown: number, total: number, offset = 0): string {
   const order = criteria.sort === "closest_assets" ? "closest in size first" : criteria.sort === "largest_assets" ? "largest by assets first" : "by name";
   if (criteria.limit >= MAX_PEER_LIST_ROWS) {
     const end = offset + shown;
     const more = total - end;
-    return `Showing institutions ${offset + 1} to ${end} of ${total} matching institutions, ${order}.${more > 0 ? ` ${more} more ${more === 1 ? "is" : "are"} on the next pages.` : ""}`;
+    return `Showing institutions ${n(offset + 1)} to ${n(end)} of ${n(total)} matching institutions, ${order}.${more > 0 ? ` ${n(more)} more ${more === 1 ? "is" : "are"} on the next page${more > MAX_PEER_LIST_ROWS ? "s" : ""}.` : ""}`;
   }
-  const kept = criteria.sort === "closest_assets" ? `the ${shown} closest in size` : criteria.sort === "largest_assets" ? `the ${shown} largest by assets` : `the first ${shown} by name`;
-  return `Showing ${kept} of ${total} matching institutions; ${total - shown} more are not shown. Ask for "all" to see them ${MAX_PEER_LIST_ROWS} at a time.`;
+  const kept = criteria.sort === "closest_assets" ? `the ${n(shown)} closest in size` : criteria.sort === "largest_assets" ? `the ${n(shown)} largest by assets` : `the first ${n(shown)} by name`;
+  return `Showing ${kept} of ${n(total)} matching institutions; ${n(total - shown)} more are not shown. Ask for "all" to see them ${MAX_PEER_LIST_ROWS} at a time.`;
 }
 
 /** A recognized list is never sent to fee analysis or a paid narrative fallback. */
@@ -195,7 +198,7 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
           return message("needs_criteria", "That page of the list is not available. Run the list again from its first page.");
         const found = await getPeerListRows(subject.institutionId, criteria, asOf, undefined, { offset, limit: pageLimit });
         if (offset > 0 && found.rows.length === 0)
-          return message("needs_criteria", `The list now has ${found.totalMatches} matching institution${found.totalMatches === 1 ? "" : "s"}, so that page is empty. Run the list again from its first page.`);
+          return message("needs_criteria", `The list now has ${n(found.totalMatches)} matching institution${found.totalMatches === 1 ? "" : "s"}, so that page is empty. Run the list again from its first page.`);
         const notes = ["Assets are from each institution's latest stored FDIC or NCUA filing, not a live check. Reporting dates may differ.", "Stored financial amounts are in USD thousands and are converted once to dollars here; dollar formatting does not imply more source precision."];
         if (found.totalMatches > found.rows.length) notes.push(cappedListNote(criteria, found.rows.length, found.totalMatches, offset));
         else if ((criteria.requestedCount ?? 0) > criteria.limit) notes.push(`This view shows at most ${criteria.limit} institutions.`);
@@ -203,12 +206,12 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
           ? `No institution meets these criteria. The filters above were not widened to find ${criteria.requestedCount}.`
           : `Only ${found.totalMatches} institution${found.totalMatches === 1 ? " meets" : "s meet"} these criteria. The filters above were not widened to reach ${criteria.requestedCount}.`);
         const older = found.rows.filter(row => isStaleSource(row.reportDate, now)).length;
-        if (older) notes.push(`${older} displayed asset filing${older === 1 ? " is" : "s are"} more than ${SOURCE_STALE_AFTER_DAYS} days old. Review the reporting dates before comparing.`);
+        if (older) notes.push(`${n(older)} displayed asset filing${older === 1 ? " is" : "s are"} over a year old. Review the reporting dates before comparing.`);
         result = {
           kind: "peer_list",
           shortAnswer: offset > 0
-            ? `Institutions ${offset + 1} to ${offset + found.rows.length} of ${found.totalMatches} matching institutions for ${subject.name}.`
-            : `${found.rows.length} of ${found.totalMatches} matching institutions for ${subject.name}.`,
+            ? `Institutions ${n(offset + 1)} to ${n(offset + found.rows.length)} of ${n(found.totalMatches)} matching institutions for ${subject.name}.`
+            : `${n(found.rows.length)} of ${n(found.totalMatches)} matching institutions for ${subject.name}.`,
           peerList: { version: 1, status: "ready", subject, criteria, rows: found.rows, totalMatches: found.totalMatches, queriedAt, notes, ...(offset > 0 ? { offset } : {}) },
         };
       }

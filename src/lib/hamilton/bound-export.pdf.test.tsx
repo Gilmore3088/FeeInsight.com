@@ -13,7 +13,7 @@ import { AnalysisPdfDocument } from "@/components/hamilton/reports/AnalysisPdfDo
 import { PdfDocument } from "@/components/hamilton/reports/PdfDocument";
 import { ReportOutput } from "@/components/hamilton/reports/ReportOutput";
 import { boardBriefFromAnalysis, editBoardBrief } from "./board-brief";
-import { INTERPRETATION_LABEL, NARRATIVE_BINDING_VERSION, type NarrativeBinding } from "./narrative-bound";
+import { INTERPRETATION_LABEL, INTERPRETATION_LIMITATION, NARRATIVE_BINDING_VERSION, type NarrativeBinding } from "./narrative-bound";
 import { applyNarrativeBinding, exportedAnswer, READING_ONLY_LEAD } from "./written-answer-binding";
 import type { AnalyzeResponse } from "./types";
 
@@ -26,7 +26,7 @@ const binding: NarrativeBinding = {
   supported: [{ text: supported, factIds: ["fee:published:9"] }, { text: "That is the highest in its group.", factIds: [] }],
   interpretation: [reading],
   omitted: [{ text: left, reason: "wrong_institution" }],
-  limitations: ["Some sentences state figures that are not tied to a saved fee record. They are marked as Hamilton's reading."],
+  limitations: [INTERPRETATION_LIMITATION],
 };
 const analysis: AnalyzeResponse = {
   title: "Overdraft at Research CU", confidence: { level: "medium", basis: ["Historical published schedules"] },

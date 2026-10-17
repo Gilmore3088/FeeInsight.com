@@ -33,7 +33,7 @@ describe("peer list CSV export (#977, H02-T08)", () => {
   it("keeps zero distinct from missing and never runs a cell as a formula", () => {
     expect(lines.find(l => l.startsWith("52,203,"))).toContain(`"'=HYPERLINK(""x"")",Bank,Tampa,FL,0,`);
     expect(lines.find(l => l.startsWith("53,204,"))).toBe('53,204,Missing Bank,Bank,Tampa,FL,,,,,,Published fees available,"Matches the stated institution, state and asset filters."');
-    expect(lines).toContain("Note,Amounts are in US dollars. A blank amount is not available on file; it is not zero.");
+    expect(lines).toContain('Note,"Amounts are in US dollars. A blank amount means none is on file, or the fee is charged as a rate (see the rate column); it is never zero."');
     expect(peerCsvCell(-5)).toBe("-5");
     expect(peerCsvCell("-5")).toBe("'-5");
   });
@@ -41,6 +41,8 @@ describe("peer list CSV export (#977, H02-T08)", () => {
     expect(lines).toContain("202,\"Alpha Bank, N.A.\",Overdraft,0,,per_item,2026-09-01T00:00:00.000Z,9001,77,https://alpha.example/fees.pdf");
     expect(lines.find(l => l.includes("9002"))).toBe(`203,"'=HYPERLINK(""x"")",Overdraft advance,,3% of the advance ($10 minimum),,,9002,78,https://hyper.example/`);
     expect(lines).toContain("204,Missing Bank,No published consumer overdraft fee on file,,,,,,,");
+    // A plain header a spreadsheet can reference; the fee's name is in the fee column.
+    expect(lines).toContain("institution_id,institution,fee,amount_usd,rate,frequency,published_at,fee_record_id,source_document_id,source_url");
     expect(lines).toContain("101,Home Bank (your institution),No published consumer overdraft fee on file,,,,,,,");
     expect(csv).not.toMatch(/\bFree\b/);
   });

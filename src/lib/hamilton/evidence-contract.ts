@@ -464,7 +464,7 @@ export function peerMedianEvidence(research: Pick<FeeResearch, "institutionId" |
       kind: "peer_median",
       inputFactIds: facts.map((fact) => fact.id),
       formula: PEER_MEDIAN_FORMULA,
-      rounding: "none; shown to the cent",
+      rounding: "the nearest cent",
     }),
   };
 }

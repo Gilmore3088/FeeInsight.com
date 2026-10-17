@@ -24,6 +24,8 @@ interface ReportOutputProps {
   report: ReportSummaryResponse;
   reportType: string;
   artifactMetadata?: ReportArtifactMetadata | null;
+  /** Runs this report again with the current checks (shown beside the note on older ratings). */
+  onRunAgain?: () => void;
 }
 
 const body = "text-base leading-relaxed text-pretty text-warm-800";
@@ -33,6 +35,7 @@ export function ReportOutput({
   editable = false,
   reportType,
   artifactMetadata,
+  onRunAgain,
 }: ReportOutputProps) {
   const typeLabel = reportTypeLabel(reportType);
   const identity = readHamiltonIdentitySnapshot(report.identityContext);
@@ -80,7 +83,7 @@ export function ReportOutput({
 
       <div className="max-w-3xl">
         {report.answer ? (
-          <ConsultantReportBody report={report} />
+          <ConsultantReportBody report={report} onRunAgain={onRunAgain} />
         ) : (
           <LegacyReportBody report={report} />
         )}
@@ -129,7 +132,7 @@ function AddedFindings({ report }: { report: ReportSummaryResponse }) {
 }
 
 /** Answer first, then the evidence, the reasoning, the trade-offs, and the sources. */
-function ConsultantReportBody({ report }: { report: ReportSummaryResponse }) {
+function ConsultantReportBody({ report, onRunAgain }: { report: ReportSummaryResponse; onRunAgain?: () => void }) {
   const exhibits = report.exhibits ?? [];
   const watchlist = report.watchlist ?? [];
   return (
@@ -139,6 +142,7 @@ function ConsultantReportBody({ report }: { report: ReportSummaryResponse }) {
           headline={report.answer.headline}
           decisions={report.answer.decisions}
           goal={report.answer.goal}
+          onRunAgain={onRunAgain}
         />
       )}
 

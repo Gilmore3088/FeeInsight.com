@@ -24,6 +24,7 @@ import {
   type HamiltonEvidenceBundle,
   type HamiltonEvidenceFact,
 } from "./evidence-contract";
+import { HELD_ANSWER_MESSAGE } from "./answer-gate";
 import { bindNarrative, INTERPRETATION_LIMITATION, NARRATIVE_BINDING_VERSION, type NarrativeBinding, type OmitReason } from "./narrative-bound";
 
 /** The prose sections of a written answer, as `parseAnalyzeResponse` returns them. */
@@ -35,13 +36,13 @@ export interface WrittenAnswerSections {
 
 /** The lead when every figure sentence of the view is Hamilton's reading. */
 export const READING_ONLY_LEAD =
-  "None of the figures in this answer is tied to a saved fee record. They are shown below as Hamilton's reading.";
+  "Hamilton's reading is below. Its figures are not tied to a fee record, so check them before you use them.";
 /** The lead when the view was left out but other sentences of the answer remain. */
 export const PART_LEFT_OUT_LEAD =
   "Part of this answer was left out because a figure in it did not match its fee record.";
 /** The lead when every sentence of the view was left out. */
 export const ALL_LEFT_OUT_LEAD =
-  "Hamilton held back this answer because its figures did not match the fee records. Ask again, or name one fee to compare.";
+  HELD_ANSWER_MESSAGE ?? "This answer didn't pass Hamilton's source check, so it isn't shown. Ask again, or name one fee to compare.";
 
 /** The text the binding reads: each section on its own line, as the screen shows them. */
 export function writtenAnswerProse(sections: WrittenAnswerSections): string {

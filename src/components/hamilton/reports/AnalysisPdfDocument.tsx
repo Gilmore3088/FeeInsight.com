@@ -361,7 +361,7 @@ export function AnalysisPdfDocument({
           </View>
         ) : null}
 
-        {/* Hamilton's reading: sentences whose figures are not tied to a saved record */}
+        {/* Hamilton's reading: sentences whose figures are not tied to a fee record */}
         {shown.reading.length > 0 ? (
           <View style={styles.section} wrap={false}>
             <Text style={styles.sectionHeading}>{INTERPRETATION_LABEL}</Text>

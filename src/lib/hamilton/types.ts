@@ -287,7 +287,7 @@ export interface ReportSummaryResponse {
   /** A board brief's origin: a saved Ask answer (`sourceAnalysisId`) or a market view (`sourceResearchHref`). */
   boardBrief?: {
     sourceAnalysisId?: string; sourceResearchHref?: string; teamNote: string; includeEvidence: boolean; factEvidence?: import("./evidence-contract").HamiltonEvidenceBundle;
-    /** Sentences printed only under "Hamilton's reading, not tied to a saved record" (#981 H06-T08); absent on briefs made before it. */
+    /** Sentences printed only under "Hamilton's reading, not tied to a fee record" (#981 H06-T08); absent on briefs made before it. */
     reading?: string[];
   };
   title: string;

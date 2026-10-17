@@ -86,8 +86,8 @@ describe("saved answers: legacy against current", () => {
 describe("saved report decisions: legacy against current", () => {
   const legacyDecision: ReportDecision = deepFreeze({ action: "Overdraft at $32 against a $29.50 median.", why: "16 peers.", confidence: "High", confidenceReason: "16 verified peers" });
 
-  it("a stored High displays as Medium with a plain note; the stored decision is untouched", () => {
-    expect(displayReportDecision(legacyDecision)).toEqual({ ...legacyDecision, confidence: "Medium", confidenceReason: `16 verified peers · ${LEGACY_REPORT_CONFIDENCE_NOTE}` });
+  it("a stored High displays as Medium with its own reason; the stored decision is untouched", () => {
+    expect(displayReportDecision(legacyDecision)).toEqual({ ...legacyDecision, confidence: "Medium" });
     expect(legacyDecision.confidence).toBe("High");
   });
 
@@ -101,6 +101,16 @@ describe("saved report decisions: legacy against current", () => {
     const html = renderToStaticMarkup(<ReportAnswer headline="Overdraft sits high." decisions={[legacyDecision]} />);
     expect(html).toContain("Medium confidence");
     expect(html).not.toContain("High confidence");
-    expect(html).toContain("Run the report again to apply the current checks.");
+    // One note for the whole report, not one per decision, and a button only where a rerun is offered.
+    expect(html.split(LEGACY_REPORT_CONFIDENCE_NOTE)).toHaveLength(2);
+    expect(html).not.toContain("Run this report again");
+    const twice = renderToStaticMarkup(<ReportAnswer headline="Overdraft sits high." decisions={[legacyDecision, legacyDecision]} onRunAgain={() => {}} />);
+    expect(twice.split(LEGACY_REPORT_CONFIDENCE_NOTE)).toHaveLength(2);
+    expect(twice).toContain("Run this report again");
+  });
+
+  it("prints no note when no decision was saved as High", () => {
+    const current: ReportDecision = { ...legacyDecision, confidence: "Medium" };
+    expect(renderToStaticMarkup(<ReportAnswer headline="Overdraft sits high." decisions={[current]} />)).not.toContain(LEGACY_REPORT_CONFIDENCE_NOTE);
   });
 });

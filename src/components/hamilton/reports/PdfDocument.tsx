@@ -20,7 +20,7 @@ import type { ReportArtifactMetadata, ReportExhibit, ReportSummaryResponse } fro
 import { HAMILTON_ATTRIBUTION } from "@/lib/constants";
 import { REPORT_SECTION_HEADINGS, evidencePolicyLabel, reportTypeLabel } from "./report-labels";
 import { RD_PDF } from "@/lib/report-design/tokens";
-import { displayReportDecision } from "@/lib/hamilton/report-answer";
+import { LEGACY_REPORT_CONFIDENCE_FOOTNOTE, displayReportDecision, hasLegacyHighRating } from "@/lib/hamilton/report-answer";
 
 // Words wrap whole, as in AnalysisPdfDocument (the same route loads both): default hyphenation split
 // evidence record IDs mid-way ("fee:pub-lished:502"), so a printed ID no longer matched its record.
@@ -433,6 +433,9 @@ function ConsultantPdfBody({ report }: { report: ReportSummaryResponse }) {
               </View>
             </View>
           ))}
+          {hasLegacyHighRating(answer.decisions) ? (
+            <Text style={styles.decisionConfidence}>{LEGACY_REPORT_CONFIDENCE_FOOTNOTE}</Text>
+          ) : null}
         </View>
       )}
 
@@ -454,7 +457,7 @@ function ConsultantPdfBody({ report }: { report: ReportSummaryResponse }) {
           <View style={styles.metadataStrip} wrap={false}>
             <Text style={styles.answerLabel}>{INTERPRETATION_LABEL}</Text>
             {report.boardBrief.reading.map((sentence, i) => (
-              <Text key={i} style={styles.noteItem}>— {sentence}</Text>
+              <Text key={i} style={styles.noteItem}>{"•"} {sentence}</Text>
             ))}
           </View>
         ) : null}
@@ -467,7 +470,7 @@ function ConsultantPdfBody({ report }: { report: ReportSummaryResponse }) {
           <View style={styles.metadataStrip}>
             <Text style={styles.answerLabel}>{report.boardBrief ? "Further research Hamilton suggested" : "What to watch"}</Text>
             {(report.watchlist ?? []).map((item, i) => (
-              <Text key={i} style={styles.noteItem}>— {item}</Text>
+              <Text key={i} style={styles.noteItem}>{"•"} {item}</Text>
             ))}
           </View>
         )}
@@ -481,7 +484,7 @@ function ConsultantPdfBody({ report }: { report: ReportSummaryResponse }) {
           </Text>
         ))}
         {report.implementationNotes.map((note, i) => (
-          <Text key={`note-${i}`} style={styles.noteItem}>— {note}</Text>
+          <Text key={`note-${i}`} style={styles.noteItem}>{"•"} {note}</Text>
         ))}
       </View>
     </>
@@ -556,7 +559,7 @@ function LegacyPdfBody({ report }: { report: ReportSummaryResponse }) {
             <Text style={styles.sectionHeading}>{REPORT_SECTION_HEADINGS.implementation}</Text>
             {report.implementationNotes.map((note, i) => (
               <Text key={i} style={styles.noteItem}>
-                — {note}
+                {"•"} {note}
               </Text>
             ))}
           </View>
