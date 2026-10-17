@@ -1,29 +1,46 @@
 export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
-import { US_TERRITORIES } from "@/lib/us-states";
+import { US_TERRITORIES, STATE_NAMES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
-import { SITE_URL } from "@/lib/constants";
-import { getPublicSnapshot } from "@/lib/public-stats";
+import { PRODUCT_NAME, SITE_URL } from "@/lib/constants";
+import { getPublicNationalIndex, getPublicSnapshot, formatCount } from "@/lib/public-stats";
 import {
+  getDistrictFeeIndexesCached,
   getPublishedArticleSummariesCached,
   getResearchCoverageCached,
 } from "@/lib/data-store/public-cached-reads";
 import type { ArticleSummary } from "@/lib/data-store/articles";
-import { ResearchHero, ResearchSectionNav, SectionHeading } from "../research-hero";
+import type { StateFeeIndexes } from "@/lib/data-store";
+import { DISTRICT_NAMES } from "@/lib/fed-districts";
+import { getStatesForDistrict } from "@/lib/us-map-paths";
+import { getCurrentUser } from "@/lib/auth";
+import { canAccessAllCategories } from "@/lib/access";
+import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
+import { STATE_FINDING_MIN_INSTITUTIONS } from "@/lib/research-report/state-findings";
+import { ResearchHero, ResearchSectionNav } from "../research-hero";
 import { BenchmarkBoard, pickBenchmarks } from "../benchmark-board";
 import { GeoReports } from "../geo-reports";
 import { ResearchLibrary } from "../research-library";
-import { MethodFlow } from "../method-flow";
+import { MethodFlow, ProBand } from "../method-flow";
 import { HubFindings } from "../hub-findings";
 import { computeFindings } from "../findings";
+import { DistrictsExhibit, type DistrictCard } from "../districts-exhibit";
+import { HubSection } from "../district/[id]/district-hub";
+import { DISTRICT_REGIONS } from "../district/[id]/district-exhibits";
+import { stateShape } from "../district/[id]/district-geo";
+import { districtOpening, districtsFinding, overdraftSide } from "../district/[id]/district-opening";
 
 export const metadata: Metadata = {
-  title: "Research - Bank & Credit Union Fee Analysis",
+  title: "Bank Fee Research: National, State and Fed District Benchmarks",
   description:
-    "Findings on bank and credit union fees, with national benchmarks and state and Federal Reserve district reports. Every figure traces to a published fee schedule.",
+    "Bank and credit union fee research: national medians for everyday fees, all 12 Federal Reserve districts against the U.S., and a report for every state. Every figure traces to a published fee schedule.",
+  alternates: { canonical: "/research" },
 };
 
 const ARTICLE_LIMIT = 5;
+const DISTRICT_IDS = Array.from({ length: 12 }, (_, i) => i + 1);
+/** Alaska, Hawaii and the territories sit in insets or off the map, so they don't place a district's label. */
+const OFF_MAINLAND = new Set(["AK", "HI", "PR", "VI", "GU", "AS", "MP"]);
 
 async function loadArticles(): Promise<ArticleSummary[]> {
   try {
@@ -34,13 +51,34 @@ async function loadArticles(): Promise<ArticleSummary[]> {
   }
 }
 
+/** Where a district's number sits: its mainland states' label points, weighted by each state's size. */
+function districtLabel(district: number): { x: number; y: number } | null {
+  const shapes = getStatesForDistrict(district)
+    .filter((c) => !OFF_MAINLAND.has(c))
+    .map((c) => stateShape(c))
+    .filter((s) => s !== null);
+  const weight = shapes.reduce((sum, s) => sum + s.box.w * s.box.h, 0);
+  if (weight <= 0) return null;
+  return {
+    x: shapes.reduce((sum, s) => sum + s.label.x * s.box.w * s.box.h, 0) / weight,
+    y: shapes.reduce((sum, s) => sum + s.label.y * s.box.w * s.box.h, 0) / weight,
+  };
+}
+
 export default async function ResearchHubPage() {
+  const user = await getCurrentUser();
+  // The districts exhibit prints each district page's opening line for the same reader.
+  const showAllCategories = canAccessAllCategories(user);
+
   // All reads are served from the public cache between publishes. Counts and benchmarks
   // come from one shared snapshot, so they match the homepage and fee index.
-  const [{ summary, categories: summaries }, coverage, articles] = await Promise.all([
+  const [{ summary, categories: summaries }, coverage, articles, nationalIndex, districtIndexes, sampleLive] = await Promise.all([
     getPublicSnapshot(),
     getResearchCoverageCached(),
     loadArticles(),
+    getPublicNationalIndex(),
+    Promise.all(DISTRICT_IDS.map((id) => getDistrictFeeIndexesCached(id).catch((): StateFeeIndexes | null => null))),
+    sampleReportAvailable().catch(() => false),
   ]);
 
   const statesWithFees = coverage.states.filter((s) => s.verified_institutions > 0);
@@ -53,6 +91,32 @@ export default async function ResearchHubPage() {
   const asOf = summary.refreshedOn;
   const coverageLabel = `${stateCount} states${hasDc ? ", DC" : ""}${territoryCount > 0 ? ` and ${territoryCount} territories` : ""}`;
 
+  // Each district's line is the one its own page opens with, from the same index and helper.
+  const openings = DISTRICT_IDS.map((id, i) => {
+    const indexes = districtIndexes[i];
+    const name = DISTRICT_NAMES[id] ?? `District ${id}`;
+    const opening = indexes ? districtOpening(indexes, nationalIndex, showAllCategories, `${name} district`) : null;
+    return { id, name, indexes, opening };
+  });
+  const districts: DistrictCard[] = openings.map(({ id, name, indexes, opening }) => ({
+    id,
+    name,
+    region: DISTRICT_REGIONS[id] ?? `the ${name} district`,
+    statement: opening?.statement ?? null,
+    institutions: indexes?.verified_institutions ?? 0,
+    label: districtLabel(id),
+  }));
+  const districtLine = districtsFinding(
+    openings.map((o) => (o.opening ? overdraftSide(o.opening) : null)),
+    DISTRICT_IDS.length,
+  );
+  const withoutLine = districts.filter((d) => !d.statement).length;
+
+  const topState = [...statesWithFees].sort((a, b) => b.verified_institutions - a.verified_institutions)[0];
+  const statesLine = topState
+    ? `${STATE_NAMES[topState.state_code] ?? topState.state_code} has the most institutions with published fees, ${formatCount(topState.verified_institutions)}.`
+    : undefined;
+
   return (
     <>
       <BreadcrumbJsonLd
@@ -62,31 +126,55 @@ export default async function ResearchHubPage() {
         ]}
       />
 
-      <ResearchHero summary={summary} />
+      <ResearchHero summary={summary} sampleHref={sampleLive ? "/reports/sample-competitive-fee-position" : null} />
       <ResearchSectionNav />
 
-      <div className="mx-auto max-w-page space-y-14 px-4 py-10 sm:space-y-16 sm:px-6 sm:py-12">
+      <div className="mx-auto max-w-page space-y-16 px-4 py-10 sm:space-y-24 sm:px-6 sm:py-14">
         <HubFindings findings={findings} asOf={asOf} />
 
         <BenchmarkBoard benchmarks={benchmarks} asOf={asOf} />
 
-        <section id="geography" className="scroll-mt-28">
-          <SectionHeading eyebrow="Regional reports" title="States and Federal Reserve districts">
-            The same benchmarks for one state or district, with its coverage and economic context.
-          </SectionHeading>
-          <div className="mt-5">
-            <GeoReports states={coverage.states} districts={coverage.districts} />
+        <HubSection
+          id="districts"
+          title="Federal Reserve districts"
+          line={districtLine ?? "Too few districts have enough published overdraft fees yet for a comparison."}
+          source={
+            <>
+              {PRODUCT_NAME}, verified published fee schedules, one value per institution, against the national median. A district line
+              counts only fees with at least {STATE_FINDING_MIN_INSTITUTIONS} district institutions; within 1% of the national median
+              reads as about the same. Each state is shaded by the district that covers most of it.{asOf ? ` Data as of ${asOf}.` : ""}
+            </>
+          }
+        >
+          <div>
+            <DistrictsExhibit districts={districts} />
+            {withoutLine > 0 && (
+              <p className="mt-3 text-[13px] text-ink-muted">
+                {withoutLine === 1 ? "One district has" : `${withoutLine} districts have`} too few published fees yet for a headline.
+              </p>
+            )}
           </div>
-        </section>
+        </HubSection>
+
+        <HubSection
+          id="states"
+          title="State reports"
+          line={statesLine}
+          source={`${PRODUCT_NAME}, verified published fee schedules. Reports cover ${coverageLabel}; a state is listed once any of its institutions has published fees.`}
+        >
+          <GeoReports states={coverage.states} />
+        </HubSection>
 
         <ResearchLibrary articles={articles} asOf={asOf} />
 
         <MethodFlow summary={summary} stateCount={stateCount} coverageLabel={coverageLabel} />
+
+        <ProBand sampleLive={sampleLive} />
       </div>
 
       {/* Print / Save as PDF: drop site chrome and interactive controls, keep exhibits whole. */}
       <style>{`@media print {
-        header, footer, nextjs-portal, #geo-filter, #geo-pick, [role="radiogroup"] { display: none !important; }
+        header, footer, nextjs-portal, #geo-filter, #geo-pick { display: none !important; }
         body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         section { break-inside: avoid-page; }
         a { text-decoration: none !important; }
@@ -98,10 +186,15 @@ export default async function ResearchHubPage() {
           __html: JSON.stringify({
             "@context": "https://schema.org",
             "@type": "CollectionPage",
-            name: "Bank Fee Research Reports",
+            name: "Bank Fee Research",
             description:
-              "National benchmarks and geographic analysis of bank and credit union fees by state and Federal Reserve district.",
+              "National benchmarks and geographic analysis of bank and credit union fees by Federal Reserve district and state.",
             url: `${SITE_URL}/research`,
+            hasPart: DISTRICT_IDS.map((id) => ({
+              "@type": "WebPage",
+              name: `${DISTRICT_NAMES[id]} Fed District ${id} Fee Analysis`,
+              url: `${SITE_URL}/research/district/${id}`,
+            })),
           }).replace(/</g, "\\u003c"),
         }}
       />

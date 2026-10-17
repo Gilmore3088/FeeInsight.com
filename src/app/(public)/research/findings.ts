@@ -85,7 +85,7 @@ export function computeFindings(benchmarks: FeeCategorySummary[]): Finding[] {
       key: "overdraft",
       figure: money(overdraft.median_amount),
       headline: `The median overdraft fee is ${money(overdraft.median_amount)}.`,
-      detail: `The middle half of the ${formatCount(overdraft.institution_count)} banks and credit unions with a published overdraft fee fall between ${money(overdraft.p25_amount)} and ${money(overdraft.p75_amount)}.`,
+      detail: `The middle 50% of the ${formatCount(overdraft.institution_count)} banks and credit unions with a published overdraft fee fall between ${money(overdraft.p25_amount)} and ${money(overdraft.p75_amount)}.`,
       about: "Many schedules list more than one overdraft price, so each institution counts once, at its highest published overdraft price. The range is the 25th to 75th percentile of those prices.",
       exhibit: "benchmarks",
       fee_category: "overdraft",

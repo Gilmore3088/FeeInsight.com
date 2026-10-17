@@ -300,10 +300,13 @@ export interface OpeningFee {
 /** Gaps under this share of the U.S. median read as about the same (the heading's "above" rule). */
 const MATCH_SHARE = 0.01;
 
-function gapOf(f: OpeningFee): number {
+/** A fee's gap to the U.S. median in dollars; 0 when it is within 1% (about the same). */
+export function nationalGap(f: OpeningFee): number {
   const gap = f.median - f.us!.median;
   return Math.abs(gap) < f.us!.median * MATCH_SHARE ? 0 : gap;
 }
+
+const gapOf = nationalGap;
 
 function gapWords(gap: number): string {
   return `${formatFeeAmount(Math.abs(gap))} ${gap > 0 ? "above" : "below"}`;

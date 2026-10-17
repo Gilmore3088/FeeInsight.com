@@ -3,7 +3,7 @@ import { ProLock } from "@/components/public/pro-lock";
 import { formatAbsoluteDate } from "@/lib/public-stats";
 import type { ArticleSummary } from "@/lib/data-store/articles";
 import { MARKET_CONCENTRATION_YEAR } from "@/lib/data-store/financial";
-import { SectionHeading } from "./research-hero";
+import { HubSection } from "./district/[id]/district-hub";
 
 const SERIF = { fontFamily: "var(--fi-font-sans)" };
 
@@ -38,12 +38,13 @@ const STUDIES: Study[] = [
 /** Studies without a published result yet, kept small and near the bottom so they don't interrupt the findings. */
 export function ResearchLibrary({ articles, asOf }: { articles: ArticleSummary[]; asOf: string | null }) {
   return (
-    <section id="in-progress" className="scroll-mt-28">
-      <SectionHeading eyebrow="Further research" title="Research in progress">
-        Each study sets the published fees beside public financial data to answer one question. Each page shows what is published so far.
-      </SectionHeading>
-
-      <ul className="mt-5 divide-y divide-border overflow-hidden rounded-2xl border border-border bg-white">
+    <HubSection
+      id="in-progress"
+      title="Research in progress"
+      source="Published fee schedules beside FDIC and NCUA call reports and the FDIC Summary of Deposits. Each study page says what is published so far."
+    >
+      <div>
+      <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-white">
         {STUDIES.map((s) => (
           <li key={s.href}>
             <Link href={s.href} className="group block px-5 py-4 hover:bg-paper">
@@ -62,7 +63,7 @@ export function ResearchLibrary({ articles, asOf }: { articles: ArticleSummary[]
 
       {articles.length > 0 && (
         <div className="mt-6">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-muted">Latest analysis</p>
+          <h3 className="text-[15px] font-semibold text-ink">Latest analysis</h3>
           <ul className="mt-3 divide-y divide-surface-200 rounded-2xl border border-border bg-white">
             {articles.map((a) => (
               <li key={a.slug}>
@@ -91,6 +92,7 @@ export function ResearchLibrary({ articles, asOf }: { articles: ArticleSummary[]
         </Link>
         .
       </p>
-    </section>
+      </div>
+    </HubSection>
   );
 }

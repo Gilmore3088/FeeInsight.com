@@ -22,16 +22,15 @@ import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import {
   STATE_FINDING_MIN_INSTITUTIONS,
   buildCharterPairs,
-  buildComparisons,
   computeStateFindings,
-  nationalBandTakeaway,
 } from "@/lib/research-report/state-findings";
 import { LockedRows } from "../../../fees/[category]/exhibits";
 import { BoardChart, BoardLegend, BoardRows, FindingButtons, StateBoard } from "../../state/[code]/state-board";
-import { boardFees, charterFees, leadFindings, positionIn, splitForAccess } from "../../state/[code]/state-view";
+import { charterFees, leadFindings, positionIn } from "../../state/[code]/state-view";
 import { CharterField, type CharterFee } from "./district-charter";
 import { DistrictHero } from "./district-exhibits";
 import { stateShape } from "./district-geo";
+import { districtOpening } from "./district-opening";
 import { HubStates, type HubFeeOption, type HubTableRow } from "./district-hub-states";
 import {
   ComplaintChart,
@@ -60,7 +59,6 @@ import {
   hubFeeKeys,
   hubFeeName,
   monthYear,
-  openingFinding,
   quarterLabel,
   revenueTrend,
   stateHubRows,
@@ -142,12 +140,10 @@ export default async function DistrictReportPage({ params }: PageProps) {
 
   // The board, the chart, the findings and the banks/credit unions split all read the
   // district's one index, so every figure on the page counts the same institutions.
-  const comparisons = buildComparisons(indexes.all, nationalIndex);
-  const fees = boardFees(comparisons, indexes.bank, indexes.credit_union, indexes.institution_values);
-  const { shown, locked } = splitForAccess(fees, showAllCategories);
+  // The opening sentence comes from the same helper the research hub's districts exhibit uses.
+  const { shown, locked, visibleComparisons, againstUs, statement } = districtOpening(indexes, nationalIndex, showAllCategories, place);
   const charted = shown.filter((f) => f.values.length > 0);
   const paired = charterFees(shown);
-  const visibleComparisons = comparisons.filter((c) => shown.some((f) => f.key === c.fee_category));
   // "In St. Louis district," reads as "In the St. Louis district," (the benchmark report words it the same way).
   const findings = leadFindings(
     computeStateFindings(place, visibleComparisons, buildCharterPairs(indexes.bank, indexes.credit_union, shown.map((f) => f.key))).map(
@@ -156,8 +152,6 @@ export default async function DistrictReportPage({ params }: PageProps) {
     charted,
   );
 
-  const takeaway = nationalBandTakeaway(place, `the ${place}`, visibleComparisons);
-  const againstUs = shown.filter((f) => f.us);
   const aboveUs = againstUs.filter((f) => f.us && f.median > f.us.median * 1.01).length;
   // The hero's band figure counts the same fees as the list and the heading below it.
   const insideBand = againstUs.filter((f) => positionIn(f.median, f.us!) === "within").length;
@@ -231,8 +225,6 @@ export default async function DistrictReportPage({ params }: PageProps) {
       : []),
     ...(againstUs.length >= 3 ? [{ value: `${insideBand} of ${againstUs.length}`, label: "fee medians sit within the national middle range" }] : []),
   ];
-  // The opening takeaway is the district's sharpest specific gap; the band count sits beside it as context.
-  const statement = openingFinding(againstUs, STATE_FINDING_MIN_INSTITUTIONS) ?? takeaway;
 
   // The state cards: one fee at a time across every state, on one scale.
   const stateFees: HubFeeOption[] = feeKeys
