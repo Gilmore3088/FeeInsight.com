@@ -1,4 +1,3 @@
-import { Check } from "lucide-react";
 import { DEMO_REQUEST_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
 import { TrackLink } from "@/components/track-link";
 import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
@@ -27,7 +26,7 @@ export function pricingLine(
 
 /**
  * Pricing (James's example, Oct 17; heading by growth): "One plan for your whole pricing team." Three tiers by assets,
- * every price from PRO_TIERS, the seat line under them, then the plan button and the demo link.
+ * every price from PRO_TIERS (the subhead carries the seat count), then the plan button and the demo link.
  * No standalone report offer here or anywhere on the homepage (James, Oct 17).
  */
 export function LandingPricing() {
@@ -50,12 +49,6 @@ export function LandingPricing() {
             </li>
           ))}
         </ul>
-        <div className="mt-3 flex justify-center">
-          <p className="flex items-center gap-2 text-[13px] text-ink-muted">
-            <Check aria-hidden="true" className="size-3.5 text-brick" />
-            One institution. Up to {WORKSPACE_SEAT_LIMIT} users.
-          </p>
-        </div>
         <div className="mt-6 flex flex-col items-center gap-3.5">
           <TrackLink
             event="upgrade_click"

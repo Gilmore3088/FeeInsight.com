@@ -368,9 +368,10 @@ describe("pricing", () => {
     }
     expect(html).toMatch(/<a href="\/subscribe"[^>]*data-event="upgrade_click" data-placement="home_pricing">Choose your plan</);
     expect(html).toMatch(/<a href="\/contact\?source=demo"[^>]*data-event="contact_sales" data-placement="home_pricing_demo">Ask for a demo</);
-    // No eyebrow; the seat line follows the tiers; no report offer.
+    // No eyebrow; the seat count is said once, in the subhead; no report offer.
     expect(html).not.toMatch(/uppercase/);
-    expect(html.indexOf("Up to")).toBeGreaterThan(html.indexOf("</ul>"));
+    expect(html).not.toContain("users.");
+    expect(html.match(new RegExp(`up to ${WORKSPACE_SEAT_LIMIT}`, "gi"))).toHaveLength(1);
     expect(html).not.toContain(REPORT_OFFER.priceLabel);
   });
 });
