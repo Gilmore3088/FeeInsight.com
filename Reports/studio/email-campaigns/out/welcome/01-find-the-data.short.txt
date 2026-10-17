@@ -12,5 +12,6 @@ Also free: a Fed district (https://feeinsight.com/reports), one institution's fe
 James Gilmore, Fee Insight
 
 --
+3522 Southwest Barton Street, Seattle, United States of America
 You're getting this because you signed up at feeinsight.com.
 Unsubscribe: {$unsubscribe}

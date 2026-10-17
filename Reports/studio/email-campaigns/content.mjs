@@ -136,7 +136,7 @@ const report = {
         { type: "cta", text: "Open your report", href: FIELD.reportUrl, sub: "Free, no login. Bookmark it." },
         // One line that holds for the benchmark reports and the sample Competitive Fee Position
         // Report alike (report_name covers both); section names differ between them.
-        { type: "p", text: "Start at the top. The findings come first, and every table names the institutions and the published schedules behind it." },
+        { type: "p", text: "Start at the top. The findings come first. The report shows coverage counts and explains its sources." },
         { type: "sign" },
       ],
     },
@@ -197,7 +197,7 @@ const explorer = {
       blocks: [
         { type: "kicker", text: "Following" },
         { type: "h1", text: "The page you're following" },
-        { type: "p", text: `You asked to follow ${FIELD.followName}. The figures on that page come from published schedules and update as new schedules are read.` },
+        { type: "p", text: `You asked to follow ${FIELD.followName}. Fee benchmarks come from published schedules and update as new schedules are read.` },
         { type: "cta", text: "Open the page", href: FIELD.followUrl, sub: "Free, no login." },
         { type: "box", tone: "term", title: "What you'll get", items: [
           "**Once a month:** your state's fee snapshot (the national one if you follow an institution), with how many institutions stand behind each number.",

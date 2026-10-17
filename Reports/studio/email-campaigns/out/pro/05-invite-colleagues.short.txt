@@ -10,5 +10,6 @@ In Settings, open Team access.
 James Gilmore, Fee Insight
 
 --
+3522 Southwest Barton Street, Seattle, United States of America
 You're getting this because your team subscribes to Hamilton.
 Unsubscribe: {$unsubscribe}
