@@ -159,7 +159,9 @@ import {
   TICK_EXCLUDED_STEP_KEYS,
   isLaneRoomRun,
   LANE_ROOM_MAX_IDLE_MS,
+  createStepTurns,
   executeQueuedAgentRuns,
+  PARALLEL_STATE_LANES,
   heldByPause,
   startAgentRun,
   reapStaleAgentSteps,
@@ -1212,10 +1214,57 @@ describe("agentic run store", () => {
       return Promise.resolve([]);
     });
 
-    const result = await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10, deadlineAt: Date.now() + 100_000 });
+    const result = await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10, deadlineAt: Date.now() + 100_000, parallelLanes: 1 });
 
     expect(result.results.map((run) => run.runId)).toEqual([101, 102, 104]);
     expect(result.results[1]).toMatchObject({ executedSteps: 0, heldForDeadline: true });
+
+    // Side by side, the next lanes run in the same group as the held one, never after it.
+    const sideBySide = await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10, deadlineAt: Date.now() + 100_000, parallelLanes: 3 });
+    expect(sideBySide.results.map((run) => run.runId)).toEqual([101, 102, 103, 104]);
+    expect(sideBySide.results[1]).toMatchObject({ executedSteps: 0, heldForDeadline: true });
+  });
+
+  it("starts up to PARALLEL_STATE_LANES lanes before any of them finishes", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    let inFlight = 0;
+    let most = 0;
+    sqlMock.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("SELECT r.id")) {
+        return Promise.resolve([101, 102, 103, 104].map((id) => ({ id, run_kind: "workflow_lane" })));
+      }
+      if (text.includes("FROM agent_runs") && text.includes("WHERE id =")) {
+        inFlight += 1;
+        most = Math.max(most, inFlight);
+        // Finished runs do nothing, so each lane's whole visit is this read.
+        return new Promise((resolve) => setTimeout(() => {
+          inFlight -= 1;
+          resolve([{ ...runRow, id: values[0], status: "completed" }]);
+        }, 5));
+      }
+      return Promise.resolve([]);
+    });
+
+    const result = await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10 });
+
+    expect(PARALLEL_STATE_LANES).toBe(3);
+    expect(most).toBe(3);
+    expect(result.results.map((run) => run.runId)).toEqual([101, 102, 103, 104]);
+  });
+
+  it("gives lanes side by side one publish step at a time", async () => {
+    const turns = createStepTurns();
+    const order: string[] = [];
+    const lane = async (name: string) => {
+      const release = await turns.take();
+      order.push(`${name} start`);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      order.push(`${name} end`);
+      release();
+    };
+    await Promise.all([lane("a"), lane("b"), lane("c")]);
+    expect(order).toEqual(["a start", "a end", "b start", "b end", "c start", "c end"]);
   });
 
   it("holds a Read-now run that would leave the lane behind it no room for its first work", async () => {
