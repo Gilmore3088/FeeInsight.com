@@ -1,5 +1,11 @@
-// Renders live DB-backed stats at request time; must not be statically prerendered.
-export const dynamic = "force-dynamic";
+/**
+ * Regenerated in the background (ISR) at most every 15 minutes, like the homepage (#1168).
+ * The page reads no session, cookies or search params: the header's signed-in parts and the
+ * report link's query pass-through are client islands. A render with a failed read is cached
+ * for one minute instead (`shortenPageLife`, #1572), so a database blip never pins a page
+ * with hidden exhibits for the full 15.
+ */
+export const revalidate = 900;
 
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -11,7 +17,8 @@ import { getDisplayName } from "@/lib/fee-taxonomy";
 import { PRODUCT_NAME } from "@/lib/constants";
 import { PRO_TIERS, tierPriceLabel } from "@/lib/pro-tiers";
 import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
-import { loadSampleReport, sampleReportAvailable } from "@/lib/custom-report/sample-report";
+import { loadSampleReport } from "@/lib/custom-report/sample-report";
+import { shortenPageLife } from "@/lib/data-store/public-read-cache";
 import { FeeRange, FeeRangeAxis } from "@/brand/components";
 
 import { ConsumerNav } from "@/components/consumer-nav";
@@ -24,7 +31,7 @@ import { TryAPricePanel } from "@/app/subscribe/try-a-price-panel";
 import { buildScenario } from "@/app/subscribe/scenario";
 import { SANS } from "@/app/landing-shared";
 import { ReportOfferSection } from "./report-offer";
-import { loadSampleLadder, MarketLadder } from "./market-ladder";
+import { MarketLadder, readSampleLadder } from "./market-ladder";
 import { buildCompetitorBoard } from "./pro-view";
 import { CompetitorBoardExhibit, PriceTesterExhibit } from "./workspace-exhibits";
 import { DemoVideoSection } from "./demo-video";
@@ -54,22 +61,31 @@ export const metadata: Metadata = {
  * action, and the paid report a lead (James, 2026-10-15). Every exhibit is drawn from the live
  * sample report (Capital City Bank when its market passes) and the cached index reads.
  */
-export default async function ForInstitutionsPage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
-  const query = await searchParams;
-  const [snapshot, sampleLive, sample] = await Promise.all([
+export default async function ForInstitutionsPage() {
+  // The sample is read once: it is null both when none passes the bar today and on error.
+  const [snapshot, sampleRead] = await Promise.all([
     getPublicSnapshot(),
-    sampleReportAvailable(),
-    loadSampleReport().catch(() => null),
+    loadSampleReport().then(
+      (report) => ({ report, failed: false }),
+      (error: unknown) => {
+        console.error("[for-institutions] sample report read failed; sample exhibits hidden", error);
+        return { report: null, failed: true };
+      },
+    ),
   ]);
   const heroCategory = snapshot.categories.find((c) => c.fee_category === HERO_CATEGORY) ?? null;
-  const liveSample = sampleLive ? sample : null;
+  const liveSample = sampleRead.report;
+  const sampleLive = liveSample !== null;
   const board = buildCompetitorBoard(liveSample);
   // The ladder opens on the same lead line as the board, when the index can place it.
-  const ladder = liveSample ? await loadSampleLadder(liveSample, snapshot.categories, board?.leadKey ?? null) : null;
+  const ladderRead = liveSample
+    ? await readSampleLadder(liveSample, snapshot.categories, board?.leadKey ?? null)
+    : { ladder: null, failed: false };
+  const ladder = ladderRead.ladder;
+  const failedRead =
+    !snapshot.summary.complete || snapshot.categories.length === 0 || sampleRead.failed || ladderRead.failed;
+  // A render with a failed read is cached for a minute, not fifteen (see the note at the top).
+  if (failedRead) await shortenPageLife();
   const scenario = board ? null : buildScenario("Overdraft", heroCategory);
 
   return (
@@ -106,7 +122,7 @@ export default async function ForInstitutionsPage({
           />
         ) : null}
         <PlansSection />
-        <ReportOfferSection sampleLive={sampleLive} query={query} />
+        <ReportOfferSection sampleLive={sampleLive} />
         <DemoClose />
       </main>
       <CustomerFooter />
