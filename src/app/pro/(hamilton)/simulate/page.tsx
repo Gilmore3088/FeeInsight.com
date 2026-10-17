@@ -16,6 +16,8 @@ import { buildFeeAnswer } from "@/lib/hamilton/workspace/answer";
 import { institutionFactsFrom } from "@/lib/hamilton/workspace/ask";
 import { getMemoryFacts } from "@/lib/data-store/hamilton-workspace";
 import { ExhibitView } from "@/components/hamilton/memo/exhibit-view";
+import { PositionCheckPanel } from "@/components/hamilton/PositionCheckPanel";
+import { checkPosition, parseProposedFee } from "@/lib/hamilton/position-check";
 import {
   AuditPanel,
   DistributionBars,
@@ -47,6 +49,8 @@ interface PageProps {
     instId?: string;
     scenario?: string;
     scenario_id?: string;
+    /** A proposed fee for the position check. */
+    check?: string;
   }>;
 }
 
@@ -109,6 +113,7 @@ export default async function ModelPage({ searchParams }: PageProps) {
     if (params.paid) q.set("paid", params.paid);
     if (params.waiver) q.set("waiver", params.waiver);
     if (fromFiling) q.set("est", "filing");
+    if (params.check) q.set("check", params.check);
     for (const [k, v] of Object.entries(over)) q.set(k, v);
     return hrefWithInstitutionContext(`/pro/simulate?${q.toString()}`, instId);
   };
@@ -143,6 +148,12 @@ export default async function ModelPage({ searchParams }: PageProps) {
   const evidenceLabel = (e: "market" | "institution") =>
     e === "institution" ? (fromFiling ? "Estimate from your filing" : "Your figures") : "Market data only";
   const csvHref = hrefWithInstitutionContext(`/pro/research/peers?fee=${encodeURIComponent(ws.fee)}&layer=${layer.key}`, instId);
+
+  // Position check: the proposed fee among the same layer's named institutions.
+  const proposed = parseProposedFee(params.check);
+  const positionCheck = proposed === null
+    ? null
+    : checkPosition(proposed, (layer.members ?? []).map((m) => ({ institutionId: m.institutionId, name: m.institutionName, amount: m.amount, publishedAt: m.publishedAt, documentUrl: m.documentUrls[0] ?? null })));
 
   const row = "border-b border-warm-200";
   const head = "px-4 py-2.5 text-left text-xs font-medium uppercase tracking-[0.08em] text-warm-600";
@@ -326,6 +337,16 @@ export default async function ModelPage({ searchParams }: PageProps) {
         </div>
         <p className="text-xs text-warm-600">Volume is held steady at every price; Hamilton doesn&apos;t estimate how customers respond.</p>
       </MemoSection>
+
+      <PositionCheckPanel
+        action="/pro/simulate"
+        hidden={{ fee: ws.fee, layer: layer.key, prices: params.prices, paid: params.paid, waiver: params.waiver, est: fromFiling ? "filing" : null, instId }}
+        defaultValue={params.check}
+        check={positionCheck}
+        feeName={ws.feeName}
+        peerLabel={`${layer.label}: ${layer.scope} (${layer.n})`}
+        invalid={Boolean(params.check) && proposed === null}
+      />
 
       {positionExhibit ? (
         <ExhibitView exhibit={positionExhibit} />

@@ -665,6 +665,57 @@ export function localMarketView(
   return { layer, competitors, info };
 }
 
+/** One fee as the engine compares it: the bank's value and the chosen peers with their records. */
+export interface EngineFeePeers {
+  feeCategory: string;
+  current: number | null;
+  peerLabel: string;
+  peers: PeerValue[];
+}
+
+export interface EngineFeePeerRead {
+  institutionName: string;
+  stateCode: string | null;
+  charterType: string;
+  peerLabel: string;
+  fees: EngineFeePeers[];
+  financials: InstitutionFinancials | null;
+}
+
+/**
+ * The pricing committee packet's engine read: for each fee asked about, the same peers the Research
+ * screen picks (the bank's own group from Settings first, widening per fee), each with the catalog
+ * rows behind its value, plus the bank's filed service charge trend. No wire, economy or local
+ * market reads; deterministic, no provider calls.
+ */
+export async function getEngineFeePeers(
+  institutionId: number,
+  categories: string[],
+  options: EnginePeerOptions = {},
+): Promise<EngineFeePeerRead | null> {
+  if (categories.length === 0) return null;
+  const base = await loadBase(institutionId, categories, options);
+  if (!base) return null;
+  const financialRows = await loadServiceChargeRows(institutionId).catch(() => [] as ServiceChargeRow[]);
+  const financials = await withPeerMedian(base, institutionFinancials(financialRows)).catch(() => null);
+  return {
+    institutionName: base.institutionName,
+    stateCode: base.stateCode,
+    charterType: base.charterType,
+    peerLabel: base.peerLabel,
+    fees: categories.map((feeCategory) => {
+      const chosen = base.peers.get(feeCategory);
+      return {
+        feeCategory,
+        current: base.ownValues.get(feeCategory) ?? null,
+        peerLabel: chosen?.label ?? base.peerLabel,
+        peers: (chosen?.values ?? []).map(toPeerValueWithRecords),
+      };
+    }),
+    financials,
+  };
+}
+
 export async function getWorkspaceBriefing(
   institutionId: number,
   now = new Date(),
