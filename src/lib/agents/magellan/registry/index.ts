@@ -3,6 +3,21 @@ import { CENSUS_ACS_SOURCE, runRegistryCensusAcs } from "./census-acs";
 import { CFPB_SOURCE, runRegistryCfpb } from "./cfpb";
 import { IRS_ZIP_INCOME_SOURCE, runRegistryIrsZipIncome } from "./irs-zip-income";
 import { ECONOMY_DEFINITIONS, runRegistryEconomy } from "./economy";
+import { MAKING_ENDS_MEET_PARTITION, MAKING_ENDS_MEET_SOURCE, MAKING_ENDS_MEET_TITLE, runRegistryMakingEndsMeet } from "./making-ends-meet";
+import { PAYDAY_REPORTS_SOURCE, runRegistryPaydayReports } from "./payday-reports";
+import { runRegistryStateLists, STATE_DEPOSITORIES_SOURCE, STATE_NONBANK_LENDERS_SOURCE, URBAN_DEBT_PARTITION, URBAN_DEBT_SOURCE } from "./state-lists";
+import { ALLTHEPLACES_SOURCE, runRegistryAlltheplaces } from "./alltheplaces";
+import { GLEIF_SOURCE, runRegistryGleif } from "./gleif";
+import { SEC_MARKET_VALUE_SOURCE, runRegistrySecMarketValue } from "./sec-market-value";
+import { FHLB_ADVANCE_RATES_SOURCE, runRegistryFhlbAdvanceRates } from "./fhlb-advance-rates";
+import { BANK_MERGER_ORDERS_SOURCE, runRegistryBankMergerOrders } from "./bank-merger-orders";
+import { BLS_OEWS_SOURCE, runRegistryBlsOews } from "./bls-oews";
+import { FINRA_NFCS_SOURCE, runRegistryFinraNfcs } from "./finra-nfcs";
+import { runRegistryUsdaFarm, USDA_FARM_SOURCE } from "./usda-farm";
+import { runRegistryUscourtsBankruptcy, USCOURTS_BANKRUPTCY_SOURCE } from "./uscourts-bankruptcy";
+import { MARKET_GROWTH_DEFINITIONS, runRegistryMarketGrowth } from "./market-growth";
+import { SMALLBIZ_PAYMENTS_DEFINITIONS, runRegistrySmallbizPayments } from "./smallbiz-payments";
+import { NATIONAL_CREDIT_DEFINITIONS, runRegistryNationalCredit } from "./national-credit";
 import { FDIC_FINANCIALS_SOURCE, runRegistryFdicFinancials } from "./fdic-financials";
 import { FFIEC_OVERDRAFT_SOURCE, runRegistryFfiecOverdraft } from "./ffiec-overdraft";
 import { FDIC_SOD_SOURCE, runRegistryFdicSod } from "./fdic-sod";
@@ -703,6 +718,273 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
       };
     },
   })),
+  ...MARKET_GROWTH_DEFINITIONS.map((definition): RegistrySourceDefinition => ({
+    source: definition.source,
+    stepKey: `registry-${definition.source}`,
+    title: definition.title,
+    run: async (input) => {
+      const r = await runRegistryMarketGrowth({
+        source: definition.source,
+        partitionKey: input.partitionKey,
+        runId: input.runId,
+        dryRun: input.dryRun,
+        db: input.db,
+      });
+      return {
+        summary: r.summary,
+        detail: { ...r.detail, source_url: r.sourceUrl, rows: r.rows, written_rows: r.writtenRows, empty: r.empty, empty_reason: r.emptyReason },
+      };
+    },
+  })),
+  ...SMALLBIZ_PAYMENTS_DEFINITIONS.map((definition): RegistrySourceDefinition => ({
+    source: definition.source,
+    stepKey: `registry-${definition.source}`,
+    title: definition.title,
+    fixedPartition: definition.fixedPartition,
+    run: async (input) => {
+      const r = await runRegistrySmallbizPayments({
+        source: definition.source,
+        partitionKey: input.partitionKey,
+        runId: input.runId,
+        dryRun: input.dryRun,
+        db: input.db,
+      });
+      return {
+        summary: r.summary,
+        detail: { ...r.detail, source_url: r.sourceUrl, rows: r.rows, written_rows: r.writtenRows, empty: r.empty, empty_reason: r.emptyReason },
+      };
+    },
+  })),
+  ...NATIONAL_CREDIT_DEFINITIONS.map((definition): RegistrySourceDefinition => ({
+    source: definition.source,
+    stepKey: `registry-${definition.source}`,
+    title: definition.title,
+    fixedPartition: definition.fixedPartition,
+    run: async (input) => {
+      const r = await runRegistryNationalCredit({
+        source: definition.source,
+        partitionKey: input.partitionKey,
+        runId: input.runId,
+        dryRun: input.dryRun,
+        db: input.db,
+      });
+      return {
+        summary: r.summary,
+        detail: { ...r.detail, source_url: r.sourceUrl, rows: r.rows, written_rows: r.writtenRows, empty: r.empty, empty_reason: r.emptyReason },
+      };
+    },
+  })),
+  {
+    source: USCOURTS_BANKRUPTCY_SOURCE,
+    stepKey: "registry-uscourts-bankruptcy",
+    title: "Pull US Courts bankruptcy filings by district (F-2)",
+    run: async (input) => {
+      const r = await runRegistryUscourtsBankruptcy({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return { summary: r.summary, detail: r.detail };
+    },
+  },
+  {
+    source: USDA_FARM_SOURCE,
+    stepKey: "registry-usda-farm",
+    title: "Pull USDA farm income by state and NASS cash rents",
+    run: async (input) => {
+      const r = await runRegistryUsdaFarm({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return { summary: r.summary, detail: { ...r.detail, nass_skipped_no_key: r.nassSkippedNoKey } };
+    },
+  },
+  {
+    source: BLS_OEWS_SOURCE,
+    stepKey: "registry-bls-oews",
+    title: "Pull BLS OEWS wages for bank occupations",
+    run: async (input) => {
+      const r = await runRegistryBlsOews({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return { summary: r.summary, detail: r.detail };
+    },
+  },
+  {
+    source: FINRA_NFCS_SOURCE,
+    stepKey: "registry-finra-nfcs",
+    title: "Pull FINRA NFCS state survey shares",
+    run: async (input) => {
+      const r = await runRegistryFinraNfcs({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return { summary: r.summary, detail: r.detail };
+    },
+  },
+  {
+    source: FHLB_ADVANCE_RATES_SOURCE,
+    stepKey: "registry-fhlb-advance-rates",
+    title: "Pull FHLBank posted advance rates",
+    run: async (input) => {
+      const r = await runRegistryFhlbAdvanceRates({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return { skipped: r.skipped, summary: r.summary, detail: { ...r.detail, source_url: r.sourceUrl, rows: r.rows, written_rows: r.writtenRows, empty: r.empty, empty_reason: r.emptyReason } };
+    },
+  },
+  {
+    source: BANK_MERGER_ORDERS_SOURCE,
+    stepKey: "registry-bank-merger-orders",
+    title: "Pull Fed and OCC merger decisions with their stated competitive figures",
+    run: async (input) => {
+      const r = await runRegistryBankMergerOrders({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return { skipped: r.skipped, summary: r.summary, detail: { ...r.detail, source_url: r.sourceUrl, rows: r.rows, written_rows: r.writtenRows, matched_rows: r.matchedRows, empty: r.empty, empty_reason: r.emptyReason } };
+    },
+  },
+  {
+    source: MAKING_ENDS_MEET_SOURCE,
+    stepKey: "registry-cfpb-making-ends-meet",
+    title: MAKING_ENDS_MEET_TITLE,
+    fixedPartition: MAKING_ENDS_MEET_PARTITION,
+    run: async (input) => {
+      const r = await runRegistryMakingEndsMeet({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return {
+        summary: r.summary,
+        detail: {
+          ...r.detail,
+          source_url: r.sourceUrl,
+          rows: r.rows,
+          written_rows: r.writtenRows,
+          missing_fields: r.missingFields,
+          unexpected_fields: r.unexpectedFields,
+          empty: r.empty,
+          empty_reason: r.emptyReason,
+        },
+      };
+    },
+  },
+  {
+    source: PAYDAY_REPORTS_SOURCE,
+    stepKey: "registry-state-payday-reports",
+    title: "Read state payday and small-dollar lending annual reports",
+    run: async (input) => {
+      const r = await runRegistryPaydayReports({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return {
+        summary: r.summary,
+        detail: { source_url: r.sourceUrl, rows: r.rows, written_rows: r.writtenRows, missing_fields: r.missingFields, dry_run: r.dryRun, empty: r.empty, empty_reason: r.emptyReason },
+      };
+    },
+  },
+  {
+    source: URBAN_DEBT_SOURCE,
+    stepKey: "registry-urban-debt",
+    title: "Read Urban Institute debt in collections by county and state (held until license confirmed)",
+    fixedPartition: URBAN_DEBT_PARTITION,
+    run: async (input) => {
+      const r = await runRegistryStateLists({ source: URBAN_DEBT_SOURCE, runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return {
+        summary: r.summary,
+        detail: {
+          source_url: r.sourceUrl,
+          rows_read: r.rowsRead,
+          area_rows: r.areaRows,
+          written_rows: r.writtenRows,
+          missing_fields: r.missingFields,
+          held: r.held,
+          dry_run: r.dryRun,
+          empty: r.empty,
+          empty_reason: r.emptyReason,
+        },
+      };
+    },
+  },
+  {
+    source: ALLTHEPLACES_SOURCE,
+    stepKey: "registry-alltheplaces",
+    title: "Pull AllThePlaces bank branch and ATM locations (CC0) and their area counts",
+    run: async (input) => {
+      const r = await runRegistryAlltheplaces({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      const gaps = r.missingFields.length > 0 ? `; fields not found: ${r.missingFields.join(", ")}` : "";
+      return {
+        summary: r.empty
+          ? `No AllThePlaces rows for ${r.partitionKey}: ${r.emptyReason}.`
+          : r.partitionKey === "area-stats"
+            ? `Magellan wrote ${n(r.writtenRows)} AllThePlaces area counts (run ${r.atpRunId})${dry(r.dryRun)}.`
+            : `Magellan read ${n(r.locations)} AllThePlaces branches and ATMs from ${n(r.spiders.length)} spiders (run ${r.atpRunId}): ${n(r.matched)} linked, ${n(r.unmatched)} unlinked kept, ${n(r.writtenRows)} written${gaps}${dry(r.dryRun)}.`,
+        detail: { atp_run_id: r.atpRunId, source_url: r.sourceUrl, spiders: r.spiders, locations: r.locations, matched: r.matched, unmatched: r.unmatched, area_rows: r.areaRows, written_rows: r.writtenRows, missing_fields: r.missingFields, checks: r.checks, empty: r.empty, empty_reason: r.emptyReason },
+      };
+    },
+  },
+  {
+    source: GLEIF_SOURCE,
+    stepKey: "registry-gleif",
+    title: "Pull GLEIF legal entities (level 1) and parent relationships (level 2) for tracked institutions",
+    run: async (input) => {
+      const r = await runRegistryGleif({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return {
+        summary: r.empty
+          ? `No GLEIF rows for ${r.partitionKey}: ${r.emptyReason}.`
+          : r.partitionKey === "level2"
+            ? `Magellan read ${n(r.relationships)} GLEIF parent relationships for ${n(r.seeds)} tracked LEIs (publish ${r.publishDate}), ${n(r.writtenRows)} written${dry(r.dryRun)}.`
+            : `Magellan read ${n(r.entities)} GLEIF entities for ${r.partitionKey}: ${n(r.linked)} linked, ${n(r.unlinked)} unlinked, ${n(r.writtenRows)} written${dry(r.dryRun)}.`,
+        detail: { source_url: r.sourceUrl, publish_date: r.publishDate, seeds: r.seeds, entities: r.entities, relationships: r.relationships, linked: r.linked, unlinked: r.unlinked, written_rows: r.writtenRows, missing_fields: r.missingFields, checks: r.checks, empty: r.empty, empty_reason: r.emptyReason },
+      };
+    },
+  },
+  {
+    source: STATE_NONBANK_LENDERS_SOURCE,
+    stepKey: "registry-state-nonbank-lenders",
+    title: "Pull state open-data lists of non-bank lenders, check cashers and money transmitters",
+    run: async (input) => {
+      const r = await runRegistryStateLists({ source: STATE_NONBANK_LENDERS_SOURCE, runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return {
+        summary: r.summary,
+        detail: {
+          source_url: r.sourceUrl,
+          rows_read: r.rowsRead,
+          records: r.records,
+          matched: r.matched,
+          unmatched: r.unmatched,
+          written_rows: r.writtenRows,
+          removed_rows: r.removedRows,
+          area_rows: r.areaRows,
+          missing_fields: r.missingFields,
+          held: r.held,
+          dry_run: r.dryRun,
+          empty: r.empty,
+          empty_reason: r.emptyReason,
+        },
+      };
+    },
+  },
+  {
+    source: STATE_DEPOSITORIES_SOURCE,
+    stepKey: "registry-state-public-depositories",
+    title: "Pull state qualified public depository lists",
+    run: async (input) => {
+      const r = await runRegistryStateLists({ source: STATE_DEPOSITORIES_SOURCE, runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return {
+        summary: r.summary,
+        detail: {
+          source_url: r.sourceUrl,
+          rows_read: r.rowsRead,
+          records: r.records,
+          matched: r.matched,
+          unmatched: r.unmatched,
+          written_rows: r.writtenRows,
+          removed_rows: r.removedRows,
+          area_rows: r.areaRows,
+          missing_fields: r.missingFields,
+          held: r.held,
+          dry_run: r.dryRun,
+          empty: r.empty,
+          empty_reason: r.emptyReason,
+        },
+      };
+    },
+  },
+  {
+    source: SEC_MARKET_VALUE_SOURCE,
+    stepKey: "registry-sec-market-value",
+    title: "Pull SEC public float and shares outstanding for linked bank holding companies",
+    run: async (input) => {
+      const r = await runRegistrySecMarketValue({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return {
+        skipped: r.skipped,
+        summary: r.empty
+          ? `No SEC market-value facts for ${r.partitionKey}: ${r.emptyReason}${dry(r.dryRun)}.`
+          : `Magellan read ${n(r.rows)} public-float and shares-outstanding facts for ${n(r.ciks)} filers in ${r.partitionKey}, ${n(r.writtenRows)} written${dry(r.dryRun)}.`,
+        detail: { ...r.detail, rows: r.rows, written_rows: r.writtenRows, empty: r.empty, empty_reason: r.emptyReason },
+      };
+    },
+  },
   {
     source: SEC_LINKS_SOURCE,
     stepKey: "registry-sec-links",

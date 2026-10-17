@@ -30,7 +30,7 @@ import { recordRegistryPartition, type RegistryDb } from "./partitions";
  */
 
 export const CRA_SOURCE = "cra";
-export const CRA_PARSER_VERSION = 1;
+export const CRA_PARSER_VERSION = 2;
 export const CRA_RATINGS_PARTITION = "ratings-current";
 const RATINGS_REFRESH_HOURS = 24 * 7;
 const LATEST_YEAR_REFRESH_HOURS = 24 * 30;

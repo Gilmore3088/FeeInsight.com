@@ -1089,6 +1089,12 @@ and nothing else (`footnoteMarkFreeName`). A name that opens on a mark is a foot
 (#1443), and one in lower case, with "No", a condition or a verb is left for a re-read. Other
 categories' marked names (about 120 live on Oct 17) are not in v21. New Knox reads still keep the
 marks (that is a Knox rules change); the retidy tidies them once they are live.
+v22 (Oct 17, #1810): an all-caps live name reads in title case ("OVERDRAFT FEE" -> "Overdraft Fee",
+`capsCasedName`): 770 of 81,775 live names at 113 institutions on Oct 17. Short letter groups that
+are not plain words keep their capitals ("ATM", "NSF", "IRA", "NCB"), and so do credit union
+initials ("HLEFCU"); joining words go lower case; an ordinal after its number too ("2nd"). A name
+with another flaw (a ":" cell, a glued footnote) is left for the rest of the tidy. A case-only
+rename is checked against the institution's other live rows, not its own.
 
 `isCutoffName` (publish's `cutoff_name` hold) has a narrow live twin beside it, `liveFragmentName`
 (#1443), built from the same regex pieces: a dangling joining word (lower-case "a/an/the" only;
@@ -1323,7 +1329,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_LAYOUT_SIGNATURE_VERSION` | — | v1 | `knox/layout-signature.ts` |
 | `KNOX_LESSONS_VERSION` | — | v3 | `knox/lessons.ts` |
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
-| `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v21 | `knox/name-retidy.ts` |
+| `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v22 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
 | `KNOX_RULES_STRATEGY` | `extract.rules` | v78 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |

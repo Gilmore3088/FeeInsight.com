@@ -111,6 +111,7 @@ import { knoxMissesDetail, runKnoxMisses, summarizeKnoxMisses } from "@/lib/agen
 import { runBayesLedger, summarizeBayesLedger, BAYES_LEDGER_VERSION } from "@/lib/agents/bayes/ledger";
 import { runScheduleCheck, summarizeScheduleCheck, SCHEDULE_CHECK_VERSION } from "@/lib/agents/atlas/schedule-check";
 import { cityRepairDetail, runCityRepair, summarizeCityRepair } from "@/lib/agents/atlas/city-repair";
+import { runStorageRetention, storageRetentionDetail, summarizeStorageRetention } from "@/lib/agents/atlas/storage-retention";
 import { answerKeyRelabelDetail, runAnswerKeyRelabels, summarizeAnswerKeyRelabels } from "@/lib/agents/atlas/answer-key-relabels";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { MARKET_SPREAD_WORKFLOW, runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
@@ -2670,6 +2671,10 @@ async function executeAgenticStep(
     case "atlas-city-repair": {
       const result = await runCityRepair({ db: tx, dryRun: run.runKind === "dry_run" });
       return { status: "completed", summary: summarizeCityRepair(result), detail: cityRepairDetail(result) };
+    }
+    case "atlas-storage-retention": {
+      const result = await runStorageRetention({ db: tx, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeStorageRetention(result), detail: storageRetentionDetail(result) };
     }
     case "schedule-check": {
       const result = await runScheduleCheck({ db: tx });

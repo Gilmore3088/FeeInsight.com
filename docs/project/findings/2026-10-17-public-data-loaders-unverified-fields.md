@@ -105,3 +105,14 @@
 - `fdic-history` 2026: 5,035 events written, 4,770 linked to an institution, no missing fields.
 - `ffiec-call-detail` 2026Q1: 4,336 banks, 39,806 rows. Loaded: H034 ATM fees (512 banks), the RI-E lines (ATM, check printing, safe deposit, interchange, wire), RC-N past due and nonaccrual, RI-B totals, card and auto. Refused by the description check: H033 ("SEV CHAR DEP DOM OFF MAIN IND"), H035 ("...ALL IND"), RC-E ("NONINTR TRN ACCTS INDIV HSHLD FMLY" and siblings), K205/K206 ("CHARGE-OFFS ALL OTHER"). RC-O was missing because its file is split with the part marker after the date ("Schedule RCO 03312026(1 of 2).txt"). Parser v2 matches those descriptions and file names; RC-E now loads each line on its own (P753, P754, P756, P758) and P757 (MMDA of partnerships and corporations) is left out.
 - `ncua-extras` 2026Q2: empty, because the loader read `Acct-DescTradeNames.txt` instead of `AcctDesc.txt`. Parser v2 skips the trade-names file.
+
+## CRA source check (2026-10-17, data-source research)
+
+- The CRA loader's URLs were wrong. Ratings are `apps.ffiec.gov/craratings/craratng.zip`, tab-delimited
+  in the spec's order (ID, Regulator, Exam Date, Name, City, State, Assets $000, Exam Method, Rating),
+  possibly with no header row. The ID depends on the regulator (OCC charter, FRB RSSD, FDIC cert, OTS
+  docket); there is no RSSD column. Flat files live under `www.ffiec.gov/sites/default/files/data/cra/flat-files/`,
+  and FFIEC's revised 2022 and 2023 files win over the originals. Parser v2 reads all of this; the
+  `cra` partitions retry on the bump. The fixed-width flat-file column positions are still unverified.
+- Round-2 first run, 13:40-13:55 UTC: only `ffiec-call-detail` v4 had run (123,955 rows written) and
+  `bls-qcew` (16,828). The other round-2 sources had not reached the scheduler yet.

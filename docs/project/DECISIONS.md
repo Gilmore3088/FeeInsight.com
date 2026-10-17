@@ -3,6 +3,16 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-17
+
+**The homepage carries no standalone report promotion.** James, 2026-10-17 18:16, reviewing the
+homepage cuts (#1826): the Report example "promotes a standalone report 'from $300,' which
+competes with your primary goal." The homepage (`/`) has no Competitive Fee Position Report link
+or price, so Hamilton Pro (`/subscribe`) is its only paid path, next to the demo request. The
+paid report is still offered on `/reports` (its request form, `REPORT_OFFER`) and
+`/for-institutions` (`ReportOfferSection`). Don't restore the `request_report_click` link on the
+homepage from the money thesis; the report stays a lead into Pro from those pages.
+
 ## 2026-10-16
 
 **Admin fee corrections are new versions, admin-only, with source evidence.** James, 2026-10-16,
@@ -1166,3 +1176,26 @@ time." The tick advances up to `PARALLEL_STATE_LANES` (3) lane runs at once
 (`executeQueuedAgentRuns`, `src/lib/agents/run-store.ts`); other runs still go one after another.
 Lanes take turns at publish steps, which share one database lock. The earlier stop (lanes held the
 database, Oct 2026) predates the read fixes in #1793 and #1798. Set the constant to 1 to go back.
+
+**Outreach in three waves of 15 from November 1.** James, 2026-10-17 15:04-15:05 UTC (Sales
+thread): "we should Target 15 to over 2 weeks. Let's just say starting maybe November 1st. And then
+middle of November we roll out the next and then December 1st we roll out another. And hopefully we
+can get four paying clients by the end of the year." Until then "we aren't ready to send": outreach
+stays parked. He approved all three ways to reach more buyers (same thread, "All three should be
+done"): keep named leaders printed without an address, widen the contact finder to every
+comparison-ready institution, and add rural institutions with a statewide comparison. On Oct 17
+only 11 of 256 comparison-ready $500M-$2B metro institutions had a decision-maker contact
+(`/mnt/project-files/sales/contact-gap-2026-10-17.md`); the three waves need 45.
+
+**Public data gets its own agent, Hoovie, and the data comes first.** James, 2026-10-17 (Public
+data loaders thread). At 17:40 UTC: "I think they should have their own agent", and "we need a play
+for all data, and easy future connections". At 17:51 UTC: "It's an internal name, so call him
+Hoovie", "we need to map it so it's used in the site and in Hamilton", and "Let's get the data first".
+
+Hoovie owns the registry loaders: collect, validate, link, store, roll up, serve and monitor.
+Magellan keeps bank fee schedules. The play is one contract per source (`src/lib/agents/hoovie/`),
+so that a new connection needs only a contract and a parser.
+
+Work order: first get the data (unblock the failing sources, collect faster, and add a health check
+so failures show), then map it into the site and Hamilton. Hoovie is internal only and never appears
+to customers.

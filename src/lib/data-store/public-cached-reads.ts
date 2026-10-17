@@ -6,7 +6,7 @@ import { getDistrictMetrics } from "./dashboard";
 import { getCheapestAndMostExpensive, getFeeCategoryDetail, getIndexRows } from "./fees";
 import { getFeeEvidence } from "./fee-evidence";
 import { getDailyCapScope, getOverdraftComplaintThemes } from "./overdraft-policies";
-import { getDistrictFeeIndexes, getPeerIndex, getStateFeeIndexes } from "./fee-index";
+import { getComparableMarketIndex, getDistrictFeeIndexes, getPeerIndex, getStateFeeIndexes } from "./fee-index";
 import {
   getCitiesInState,
   getCityFeeAverages,
@@ -146,6 +146,11 @@ export const getDistrictFeeIndexesCached = cachedPublicRead(
   getDistrictFeeIndexes,
   (indexes) => indexes.all.length === 0,
 );
+/**
+ * The institution profile's medians: a market's index under the profile's own eligibility rules
+ * (market-eligibility.ts). One entry per market (the U.S., each state, each district).
+ */
+export const getComparableMarketIndexCached = cachedPublicRead("comparable-market-index-v1", getComparableMarketIndex);
 export const getStateEconomicContextCached = cachedPublicRead(
   "state-economic-context",
   getStateEconomicContext,

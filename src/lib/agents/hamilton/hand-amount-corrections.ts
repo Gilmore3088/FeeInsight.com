@@ -119,6 +119,46 @@ export const HAND_AMOUNT_CORRECTIONS: readonly HandAmountCorrection[] = [
     why: "\"Bank Smartly Checking\" / \"$12 Monthly Maintenance Fee can be waived in multiple ways1\"; the $10 is the next line's \"$10 Monthly Maintenance Fee waived on all Elite Money Market account with a U.S. Bank Smartly® Checking account\"",
     pattern: "wrong_read", issue: 1659,
     wrongReadTracesTo: "$10 Monthly Maintenance Fee waived on all Elite Money Market account with a U.S. Bank Smartly® Checking account",
+  },  // #1827 (read-only, Oct 17): Valley Strong CU's safe deposit box table (doc 36716, text 34862)
+  // prints the price before the name ("| **$45** | Rental of 3 × 5 Box Annual Fee |"), and Knox gave
+  // each rent the next row's price. Each is corrected in place to its own row's price. The shared
+  // check matches a box size loosely, so the wrong read still traces, to the next row's line; the
+  // correction applies only while that exact line is the one it traces to. The five new prices are
+  // distinct and no other box rent is live there, so no correction makes a duplicate.
+  {
+    feePublishedId: 151737, institution: "Valley Strong Credit Union", institutionId: 8637, sourceDocumentId: 36716,
+    canonicalFeeKey: "safe_deposit_box", from: 55, to: 45, feeName: "Rental of 3 × 5 Box Annual Fee",
+    why: "\"| **$45** | Rental of 3 × 5 Box Annual Fee |\"; the $55 is the next row's \"| **$55** | Rental of 5 × 5 Box Annual Fee |\"",
+    pattern: "next_row_price", issue: 1827,
+    wrongReadTracesTo: "| **$55** | Rental of 5 × 5 Box Annual Fee |",
+  },
+  {
+    feePublishedId: 151738, institution: "Valley Strong Credit Union", institutionId: 8637, sourceDocumentId: 36716,
+    canonicalFeeKey: "safe_deposit_box", from: 80, to: 55, feeName: "Rental of 5 × 5 Box Annual Fee",
+    why: "\"| **$55** | Rental of 5 × 5 Box Annual Fee |\"; the $80 is the next row's \"| **$80** | Rental of 3 × 10 Box Annual Fee |\"",
+    pattern: "next_row_price", issue: 1827,
+    wrongReadTracesTo: "| **$80** | Rental of 3 × 10 Box Annual Fee |",
+  },
+  {
+    feePublishedId: 151739, institution: "Valley Strong Credit Union", institutionId: 8637, sourceDocumentId: 36716,
+    canonicalFeeKey: "safe_deposit_box", from: 100, to: 80, feeName: "Rental of 3 × 10 Box Annual Fee",
+    why: "\"| **$80** | Rental of 3 × 10 Box Annual Fee |\"; the $100 is the next row's \"| **$100** | Rental of 5 × 10 Box Annual Fee |\"",
+    pattern: "next_row_price", issue: 1827,
+    wrongReadTracesTo: "| **$100** | Rental of 5 × 10 Box Annual Fee |",
+  },
+  {
+    feePublishedId: 151740, institution: "Valley Strong Credit Union", institutionId: 8637, sourceDocumentId: 36716,
+    canonicalFeeKey: "safe_deposit_box", from: 120, to: 100, feeName: "Rental of 5 × 10 Box Annual Fee",
+    why: "\"| **$100** | Rental of 5 × 10 Box Annual Fee |\"; the $120 is the next row's \"| **$120** | Rental of 6 × 10 Box Annual Fee |\"",
+    pattern: "next_row_price", issue: 1827,
+    wrongReadTracesTo: "| **$120** | Rental of 6 × 10 Box Annual Fee |",
+  },
+  {
+    feePublishedId: 151741, institution: "Valley Strong Credit Union", institutionId: 8637, sourceDocumentId: 36716,
+    canonicalFeeKey: "safe_deposit_box", from: 175, to: 120, feeName: "Rental of 6 × 10 Box Annual Fee",
+    why: "\"| **$120** | Rental of 6 × 10 Box Annual Fee |\"; the $175 is the next row's \"| **$175** | Rental of 10 × 10 Box Annual Fee |\"",
+    pattern: "next_row_price", issue: 1827,
+    wrongReadTracesTo: "| **$175** | Rental of 10 × 10 Box Annual Fee |",
   },
 ];
 
