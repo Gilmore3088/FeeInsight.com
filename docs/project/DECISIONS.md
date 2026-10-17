@@ -1147,3 +1147,9 @@ publish one schedule count once in statistics (126 institution values, 285 rows;
 the page)" and 27 kept rows take the fuller name. Knox rules v78 (#1770) ships in its own PR. Each
 switch can be turned back off; the page-copy closes undo by clearing `rolled_back_at` on rows whose
 reason ends "(copy of the page)".
+
+**API docs move with the API.** James, 2026-10-17 11:37 UTC (API & MCP thread): "any update to the
+API automatically triggers documentation update." Every route, query parameter and connector tool
+must be in the OpenAPI spec and on /api-docs (`src/lib/api-docs-sync.test.ts`), and a PR that
+changes API code must bump `API_VERSION` in `src/lib/api-v1.ts`, which the spec and the connector
+both report (`scripts/ci-guards.sh api-docs-kill`).

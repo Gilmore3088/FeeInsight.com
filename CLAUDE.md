@@ -126,6 +126,8 @@ Most are enforced by `scripts/ci-guards.sh` (`npm run guard:legacy` runs them al
   growth (marketing) steps (`MARKETING_STEP_KEYS`), and neither pause holds the other's work. The tick checks the provider budget
   only when a provider step is queued. Don't gate deterministic work on provider budget.
 - Don't query historical `crawl_*` source tables from app code (`source-read-model-kill`).
+- Any change to `/api/v1` or the Claude connector updates the OpenAPI spec and `/api-docs` in the same
+  PR and bumps `API_VERSION` in `src/lib/api-v1.ts` (`api-docs-kill`, `src/lib/api-docs-sync.test.ts`).
 - Document agents use `institution_id`, `source_document_id`, and `agent_source_texts`
   (`agent-source-contract-kill`).
 - Fee-tier agents use the semantic tier tables, never `fees_raw`, `fees_verified`,
