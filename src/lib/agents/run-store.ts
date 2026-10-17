@@ -1435,6 +1435,7 @@ async function executeAgenticStep(
         // The row loop stops here (after PUBLISH_MIN_ROWS_PER_STEP rows) so the whole step ends
         // inside the tick; the rows it leaves publish on the next step (2026-10-17 finding).
         deadlineAt: publishStartedAt + PUBLISH_ROW_DEADLINE_MS,
+        topUpDeadlineAt: publishStartedAt + PUBLISH_TOP_UP_DEADLINE_MS,
         db: tx,
       });
       const publishRowsEndedAt = Date.now();
@@ -2170,6 +2171,7 @@ async function executeAgenticStep(
           publish_limit: published.limit,
           publish_time_box: {
             deadline_ms: PUBLISH_ROW_DEADLINE_MS,
+            top_up_deadline_ms: PUBLISH_TOP_UP_DEADLINE_MS,
             stopped: published.timeBox.stopped,
             rows_left: published.timeBox.rowsLeft,
             top_up_skipped: published.timeBox.topUpSkipped,
@@ -3613,11 +3615,31 @@ export const TICK_EXCLUDED_STEP_KEYS = ["hamilton-answer-eval", "hamilton-paid-a
 /** Steps not listed above: most run in seconds, so this keeps an unknown long one safe. */
 const DEFAULT_STEP_EXPECTED_MS = 120_000;
 /**
+ * Expected runtimes for a direct run, where they differ from a lane's. A Read-now / hand-found run
+ * (`atlas.priority_institution`) reads one institution, so its steps are far shorter than a
+ * state lane's; priced at lane p99s it waited 17-20 minutes per step (runs 8086 and 8104, Oct 17).
+ * Re-measured over the 24 hours to 22:20 UTC 2026-10-17 (about p99, `agent_run_steps`): publish
+ * 50 s, extract 106 s, classify 58 s, fetch 15 s, read 2 s. A state re-search run
+ * (`atlas.priority_state_research`) ran no step in that window, so it keeps the lane's prices.
+ * A step not listed here uses `STEP_EXPECTED_MS`.
+ */
+const RUN_SOURCE_STEP_EXPECTED_MS: Record<string, Record<string, number>> = {
+  "atlas.priority_institution": { publish: 55_000, extract: 110_000, classify: 60_000, fetch: 20_000, read: 5_000 },
+};
+/**
  * A publish step's row loop stops this long after the step began (once it has decided
  * PUBLISH_MIN_ROWS_PER_STEP rows); the rows left publish on the next step. TX's 278 s publish
  * (run 8004, Oct 17) ran past the tick's 300 s limit when it started 163 s in.
  */
 export const PUBLISH_ROW_DEADLINE_MS = 120_000;
+/**
+ * The cross-state top-up read is skipped only when the publish step is already this far in. On
+ * Oct 17 the sweeps before the rows took 96-129 s, so tying the skip to the row deadline (120 s)
+ * skipped it on NC and WI. The rows phase with a top-up took under 8 s (AK, 242 rows) and the
+ * sweeps after up to 31 s, so a step that starts the top-up by 160 s ends well under publish's
+ * 225 s setting.
+ */
+export const PUBLISH_TOP_UP_DEADLINE_MS = 160_000;
 /** Steps measured at a few seconds at most (state-expert, enhance, public-*, registry-*). */
 const QUICK_STEP_EXPECTED_MS = 30_000;
 const QUICK_STEP_PREFIXES = ["registry-", "public-", "state-expert", "enhance", "lead-watch", "indexnow-ping", "category-guard"];
@@ -3663,10 +3685,10 @@ function isQuickStep(stepKey: string): boolean {
  * that ran its quick first steps counts as under way and goes ahead of failed-lane
  * retries in the next tick's order.
  */
-export function expectedMsToFirstWork(stepKeys: string[]): number {
+export function expectedMsToFirstWork(stepKeys: string[], runSource: string | null = null): number {
   let total = 0;
   for (const key of stepKeys) {
-    total += expectedStepMs(key);
+    total += expectedStepMs(key, runSource);
     if (!isQuickStep(key)) break;
   }
   return total;
@@ -3693,6 +3715,16 @@ export function isLaneRoomRun(source: string | null | undefined): boolean {
  * its room (#1586).
  */
 export const LANE_ROOM_MAX_IDLE_MS = 15 * 60_000;
+
+/**
+ * Steps a direct run takes once it has waited out lane room. A state re-search run takes one: its
+ * steps are lane-sized, and several waiting ones could eat a lane's room (#1586). A Read-now run
+ * takes every step that fits the tick: its steps are seconds long, and one per wait-out left run
+ * 8086 queued at publish 47+ minutes after its fetch (Oct 17).
+ */
+export function waitedOutMaxSteps(source: string | null | undefined, maxStepsPerRun: number): number {
+  return source === "atlas.priority_institution" ? maxStepsPerRun : 1;
+}
 
 export function waitedOutLaneRoom(source: string | null | undefined, idleMs: number | null | undefined): boolean {
   return isLaneRoomRun(source) && Number(idleMs ?? 0) >= LANE_ROOM_MAX_IDLE_MS;
@@ -3733,8 +3765,10 @@ export async function recordStepDeferral(runId: number, stepKey: string | null, 
   }
 }
 
-export function expectedStepMs(stepKey: string | null): number {
+export function expectedStepMs(stepKey: string | null, runSource: string | null = null): number {
   if (!stepKey) return DEFAULT_STEP_EXPECTED_MS;
+  const bySource = runSource ? RUN_SOURCE_STEP_EXPECTED_MS[runSource]?.[stepKey] : undefined;
+  if (bySource != null) return bySource;
   if (stepKey in STEP_EXPECTED_MS) return STEP_EXPECTED_MS[stepKey];
   if (QUICK_STEP_PREFIXES.some((prefix) => stepKey.startsWith(prefix))) return QUICK_STEP_EXPECTED_MS;
   return DEFAULT_STEP_EXPECTED_MS;
@@ -3823,6 +3857,8 @@ export async function executeAgentRun(
   if (getExecutionBackend() !== "agentic_v1") {
     return blockRunForBackend(runId);
   }
+  // Steps are priced by the run that holds them (`RUN_SOURCE_STEP_EXPECTED_MS`).
+  const runSource = typeof existing.params?.source === "string" ? existing.params.source : null;
 
   // Deterministic work is paused by the pipeline control, growth's marketing steps by the
   // marketing control; each leaves the other's runs going. A paused run stays queued
@@ -3846,8 +3882,8 @@ export async function executeAgentRun(
 
   if (options.alwaysRunFirstStep === false && options.deadlineAt != null) {
     const keys = await peekQueuedStepKeys(runId, maxSteps);
-    if (Date.now() + expectedMsToFirstWork(keys) > options.deadlineAt) {
-      await recordStepDeferral(runId, keys[0] ?? null, expectedMsToFirstWork(keys), options.deadlineAt - Date.now());
+    if (Date.now() + expectedMsToFirstWork(keys, runSource) > options.deadlineAt) {
+      await recordStepDeferral(runId, keys[0] ?? null, expectedMsToFirstWork(keys, runSource), options.deadlineAt - Date.now());
       return {
         runId,
         status: existing.status,
@@ -3867,8 +3903,8 @@ export async function executeAgentRun(
     if (index > 0 && nextStepKey && heldByPause(nextStepKey, pipeline, marketing)) break;
     const firstOfTick = index === 0 && (options.alwaysRunFirstStep ?? true);
     if (!firstOfTick && options.deadlineAt != null
-      && Date.now() + expectedStepMs(nextStepKey) > options.deadlineAt) {
-      await recordStepDeferral(runId, nextStepKey, expectedStepMs(nextStepKey), options.deadlineAt - Date.now());
+      && Date.now() + expectedStepMs(nextStepKey, runSource) > options.deadlineAt) {
+      await recordStepDeferral(runId, nextStepKey, expectedStepMs(nextStepKey, runSource), options.deadlineAt - Date.now());
       break;
     }
     // Provider steps (paid model calls) additionally require the global automation
@@ -3914,9 +3950,9 @@ export async function executeAgentRun(
     if (options.stepTurns && nextStepKey && SERIAL_STEP_KEYS.has(nextStepKey)) {
       releaseTurn = await options.stepTurns.take();
       // The wait used tick time: start the step only if it still fits.
-      if (options.deadlineAt != null && Date.now() + expectedStepMs(nextStepKey) > options.deadlineAt) {
+      if (options.deadlineAt != null && Date.now() + expectedStepMs(nextStepKey, runSource) > options.deadlineAt) {
         releaseTurn();
-        await recordStepDeferral(runId, nextStepKey, expectedStepMs(nextStepKey), options.deadlineAt - Date.now());
+        await recordStepDeferral(runId, nextStepKey, expectedStepMs(nextStepKey, runSource), options.deadlineAt - Date.now());
         break;
       }
     }
@@ -4156,7 +4192,7 @@ export async function executeQueuedAgentRuns({
     const waitedOut = laneRoomRun && waitedOutLaneRoom(row.source, row.idle_ms);
     const leavesLaneRoom = laneRoomRun && !waitedOut;
     const result = await executeAgentRun(runId, {
-      maxSteps: waitedOut ? 1 : maxStepsPerRun,
+      maxSteps: waitedOut ? waitedOutMaxSteps(row.source, maxStepsPerRun) : maxStepsPerRun,
       allowProviderSteps,
       deadlineAt: leavesLaneRoom && deadlineAt != null ? deadlineAt - laneRoomMs : deadlineAt,
       // The tick's first step always runs, unless it is a direct run that would take the lane's room.
