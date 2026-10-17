@@ -101,13 +101,19 @@ describe("ordering and findings", () => {
 });
 
 describe("ranges and $0", () => {
-  it("shows a range, takes the gap from the high end and never quotes a computed median", () => {
-    const rows = compareRows([value("monthly_maintenance", 2.5, { count: 2, low: 0, high: 5 })], markets, "reviewed", null);
+  it("shows the range and compares at the index's own value, labeled in the shared words", () => {
+    const rows = compareRows(
+      [value("monthly_maintenance", 8.45, { count: 2, low: 7.95, high: 8.95, comparedAt: "Compared at $8.45, the middle of its prices", accountPrices: "Carefree Checking $7.95 \u00b7 Everyday Checking $8.95" })],
+      markets,
+      "reviewed",
+      null,
+    );
     const mm = rows.find((r) => r.key === "monthly_maintenance")!;
-    expect(amountText(mm)).toBe("$0 to $5");
-    expect(mm.amount).toBe(5);
+    expect(amountText(mm)).toBe("$7.95 to $8.95");
+    expect(mm.amount).toBe(8.45);
+    expect(mm.accountPrices).toBe("Carefree Checking $7.95 \u00b7 Everyday Checking $8.95");
     expect(heroFinding({ rows, stateName: "Florida", sparse: false, schedule: "reviewed", underReview: 0 })).toBe(
-      "Its highest published monthly maintenance fee is $5, $5 below the $10 Florida median.",
+      "Its monthly maintenance fee runs $7.95 to $8.95, depending on account. Compared at $8.45, the middle of its prices, it sits $1.55 below the $10 Florida median.",
     );
   });
 

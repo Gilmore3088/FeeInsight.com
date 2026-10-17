@@ -21,6 +21,23 @@ function fee(overrides: Partial<DisplayFee>): DisplayFee {
 const BENCH = { overdraft: { p25: 25, median: 30, p75: 32 }, nsf: { p25: 25, median: 30, p75: 32 } };
 
 describe("FeeScheduleTable", () => {
+  it("shows a CD or IRA fee filed under early closure as not compared", () => {
+    const fees = [
+      fee({ id: "a", feeName: "Account Closed Within 180 Days of Opening Fee", feeCategory: "early_closure", amount: 30, feeAudience: "consumer" }),
+      fee({ id: "b", feeName: "Early closure of CD (fee to close prior to maturity)", feeCategory: "early_closure", amount: 50 }),
+      fee({ id: "c", feeName: "Individual Retirement Account Closing Fee", feeCategory: "early_closure", amount: 50, feeAudience: "consumer" }),
+    ];
+    render(<FeeScheduleTable fees={fees} disclosureUrl={null} benchmarks={{ early_closure: { p25: 20, median: 25, p75: 25 } }} />);
+    expect(screen.getAllByText("Not compared: CD/IRA fee").length).toBe(4); // two rows, phone and wide
+    expect(screen.getAllByText(/Above the U\.S\. middle 50%/).length).toBe(2); // only the account-closure row
+  });
+
+  it("names no audience on each row; the asterisk and one footnote carry it", () => {
+    render(<FeeScheduleTable fees={[fee({ feeAudience: "consumer" }), fee({ id: "2", feeName: "NSF", feeCategory: "nsf", feeAudience: "unknown" })]} disclosureUrl={null} />);
+    expect(screen.queryByText("Consumer accounts")).toBeNull();
+    expect(screen.getAllByText(/Audience not stated on the bank/).length).toBe(1);
+  });
+
   it("links each amount to the schedule it was read from", () => {
     render(<FeeScheduleTable fees={[fee({ sourceUrl: "https://bank.example/fees.pdf" })]} disclosureUrl={null} />);
     const amounts = screen.getAllByRole("link", { name: "$35" });
@@ -77,7 +94,8 @@ it("shows business scope without a personal position", () => {
   render(<FeeScheduleTable fees={[fee({ feeAudience: "business" })]} disclosureUrl={null}
     benchmarks={{ overdraft: { p25: 25, median: 30, p75: 35 } }} />);
   expect(screen.queryByText(/U\.S\. middle 50%/)).toBeNull();
-  expect(screen.getAllByText("Business accounts").length).toBeGreaterThan(0);
+  // Scope is carried by the tabs, not a line repeated on every row.
+  expect(screen.queryByText("Business accounts")).toBeNull();
   expect(screen.queryByText(/treated as personal/)).toBeNull();
 });
 

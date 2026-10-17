@@ -197,6 +197,24 @@ describe("headline fees", () => {
       { category: "overdraft", amount: 35, count: 2, low: 25, high: 35 },
       { category: "monthly_maintenance", amount: 8, count: 3, low: 3.5, high: 30 },
     ]);
+    expect(values[0].comparedAt).toBe("Compared at $35, its standard fee, the highest of its prices");
+    expect(values[1].comparedAt).toBe("Compared at $8, the middle of its prices");
+  });
+
+  it("leaves a CD or IRA fee out of the early-closure value and names account prices", () => {
+    const values = pickHeadlineValues(
+      [
+        fee({ id: 1, fee_category: "early_closure", fee_name: "Account Closed Within 180 Days of Opening Fee", amount: 30 }),
+        fee({ id: 2, fee_category: "early_closure", fee_name: "Early closure of CD (fee to close prior to maturity)", amount: 50 }),
+        fee({ id: 3, fee_category: "early_closure", fee_name: "Individual Retirement Account Closing Fee", amount: 50 }),
+        fee({ id: 4, fee_category: "monthly_maintenance", fee_name: "Carefree Checking Monthly service charge", amount: 7.95, account_product_type: "Carefree Checking" }),
+        fee({ id: 5, fee_category: "monthly_maintenance", fee_name: "Monthly service charge (Everyday Checking)", amount: 8.95, account_product_type: "Everyday Checking" }),
+      ],
+      ["early_closure", "monthly_maintenance"],
+    );
+    expect(values[0]).toMatchObject({ category: "early_closure", amount: 30, count: 1, comparedAt: null });
+    expect(values[1]).toMatchObject({ amount: 8.45, low: 7.95, high: 8.95, comparedAt: "Compared at $8.45, the middle of its prices" });
+    expect(values[1].accountPrices).toMatch(/Carefree Checking \$7\.95 \u00b7 Everyday Checking \$8\.95/);
   });
 });
 

@@ -2,6 +2,7 @@ import { countsAsPersonal, isAudienceUnstated, type FeeAudience, type FeeTreatme
 import { isBusinessOnlyLink } from "@/lib/agents/magellan/link-coverage";
 import { UnstatedAudienceFootnote, UnstatedAudienceMark } from "@/components/unstated-audience";
 import { FEE_FAMILIES, getFeeFamily } from "@/lib/fee-taxonomy";
+import { notComparableReason } from "@/lib/fee-comparability";
 import { formatFeeAmount } from "@/lib/format";
 import { getFrequencyLabel } from "./enum-labels";
 import { FeeAudienceTabs, type FeeAudienceTab } from "./fee-audience-tabs";
@@ -19,24 +20,31 @@ export interface DisplayFee {
   sourceUrl: string | null;
   /** A fee stated as a rate: "1.1%" and "of the transaction". Its amount is null. */
   rate?: { rate: string; detail: string | null } | null;
+  /** The account product the schedule ties the fee to, when it names one. */
+  accountProduct?: string | null;
 }
 
 /**
- * Scope stays visible on every row. A fee with no stated audience is treated as personal
- * and carries the asterisk (#1058); business fees are labeled and never meet a personal median.
+ * Uncertainty in one quiet form: a fee with no stated audience carries the asterisk the list's
+ * one footnote explains (#1058), and the tabs carry personal versus business. No per-row scope
+ * line repeats it. An eliminated fee says so.
  */
 function AudienceLabel({ fee }: { fee: DisplayFee }) {
-  const unstated = isAudienceUnstated(fee.feeAudience);
-  const label = fee.feeAudience === "consumer" ? "Consumer accounts"
-    : fee.feeAudience === "business" ? "Business accounts"
-    : fee.feeAudience === "both" ? "Consumer and business accounts" : "Audience not stated";
-  return (
-    <span className="block text-xs font-normal text-ink-muted">
-      {label}
-      <UnstatedAudienceMark show={unstated} />
-      {fee.feeTreatment === "eliminated" ? " · Fee eliminated" : ""}
-    </span>
-  );
+  if (fee.feeTreatment !== "eliminated") return null;
+  return <span className="block text-xs font-normal text-ink-muted">Fee eliminated</span>;
+}
+
+function AudienceMark({ fee }: { fee: DisplayFee }) {
+  return <UnstatedAudienceMark show={isAudienceUnstated(fee.feeAudience)} />;
+}
+
+/** "CD/IRA fee" when the row is a different product's price than its category's median measures. */
+function notComparable(fee: DisplayFee): string | null {
+  return notComparableReason(fee.feeCategory, fee.feeName, fee.accountProduct ?? null);
+}
+
+function NotCompared({ reason }: { reason: string }) {
+  return <span className="mt-1 block font-sans text-[12px] font-normal text-ink-muted">Not compared: {reason}</span>;
 }
 
 /** Same boundary as the statistics (statsRowFilter): not business, not from a business-only schedule. */
@@ -69,7 +77,7 @@ const POSITION_TEXT: Record<Position, string> = {
 };
 
 function benchmarkFor(fee: DisplayFee, benchmarks: FeeBenchmarks | undefined): FeeBenchmark | null {
-  if (!comparesToPersonal(fee) || !benchmarks || fee.status !== "verified" || fee.amount === null || !fee.feeCategory) return null;
+  if (!comparesToPersonal(fee) || notComparable(fee) !== null || !benchmarks || fee.status !== "verified" || fee.amount === null || !fee.feeCategory) return null;
   return benchmarks[fee.feeCategory] ?? null;
 }
 
@@ -432,7 +440,10 @@ function FeeRow({
       className={`fi-row-interaction scroll-mt-24 border-b border-surface-200 last:border-0 ${focused ? FOCUSED_ROW : ""} ${extra ? EXTRA_ROW : ""}`}
     >
       <td className="max-w-[320px] px-4 py-2.5 align-top">
-        <span className="break-words font-medium text-ink">{fee.feeName}</span>
+        <span className="break-words font-medium text-ink">
+          {fee.feeName}
+          <AudienceMark fee={fee} />
+        </span>
         <AudienceLabel fee={fee} />
         {showUnderReview && <UnderReviewChip />}
       </td>
@@ -445,6 +456,7 @@ function FeeRow({
             <FeePosition amount={fee.amount} benchmark={benchmark} />
           </span>
         )}
+        {!benchmark && fee.amount !== null && notComparable(fee) && <NotCompared reason={notComparable(fee) as string} />}
       </td>
       <td className="whitespace-nowrap px-4 py-2.5 align-top text-ink-soft">{basis || <span className="sr-only">Not stated</span>}</td>
       <td className="max-w-[280px] px-4 py-2.5 align-top text-xs leading-relaxed text-ink-muted">
@@ -495,6 +507,7 @@ function FeeScheduleStack({
                   <div className="flex items-start justify-between gap-3">
                     <span className="min-w-0 break-words text-sm font-medium text-ink">
                       {fee.feeName}
+                      <AudienceMark fee={fee} />
                       <AudienceLabel fee={fee} />
                       {showUnderReview && <UnderReviewChip />}
                     </span>
@@ -505,6 +518,7 @@ function FeeScheduleStack({
                     </span>
                   </div>
                   {benchmark && fee.amount !== null && <FeePosition amount={fee.amount} benchmark={benchmark} wide />}
+                  {!benchmark && fee.amount !== null && notComparable(fee) && <NotCompared reason={notComparable(fee) as string} />}
                   {(basis || fee.conditions) && (
                     <p className="mt-1.5 text-xs leading-relaxed text-ink-muted">
                       {[basis || null, fee.conditions].filter(Boolean).join(" \u00b7 ")}

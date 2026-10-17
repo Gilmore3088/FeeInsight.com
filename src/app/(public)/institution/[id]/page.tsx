@@ -123,8 +123,13 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const verifiedFees = fees.filter(isVerifiedFee);
   // The title quotes the same values as the comparison table (the index's own rule), so a tab or
   // search result never shows a different amount from the page.
-  const valueOf = (category: string) =>
-    pickHeadlineValues(verifiedFees, [category])[0]?.amount ?? null;
+  // A fee with several prices has no single price to put in a title (the shared rule), except
+  // overdraft, whose compared value is its standard fee, a real price on its schedule.
+  const valueOf = (category: string) => {
+    const v = pickHeadlineValues(verifiedFees, [category])[0];
+    if (!v) return null;
+    return v.low === v.high ? v.amount : category === "overdraft" ? v.high : null;
+  };
   const headline = { overdraft: valueOf("overdraft"), nsf: valueOf("nsf"), monthly: valueOf("monthly_maintenance") };
   const city = toTitleCase(inst.city);
   const place = [city, inst.state_code].filter(Boolean).join(", ");
@@ -346,10 +351,8 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
       ? [
           {
             name: inst.institution_name,
-            sample:
-              lead.count > 1
-                ? `Highest of its ${lead.count} published amounts`
-                : "Its published fee",
+            // Several prices: the bar is the compared value, labeled in the shared rule's words.
+            sample: lead.comparedAt ?? "Its published fee",
             value: lead.amount,
           },
           ...(stateName
@@ -357,8 +360,8 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                 {
                   name: stateName,
                   sample: lead.state
-                    ? `${count(lead.state.institutions)} institutions headquartered in ${stateName}`
-                    : `Institutions headquartered in ${stateName}`,
+                    ? `${stateName}, all banks and credit unions, ${count(lead.state.institutions)} institutions`
+                    : `${stateName}, all banks and credit unions`,
                   value: lead.state?.median ?? null,
                   missing: tooFew,
                 },
@@ -369,8 +372,8 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                 {
                   name: `${districtName} district`,
                   sample: lead.district
-                    ? `${count(lead.district.institutions)} institutions in the Fed district`
-                    : "Institutions in the Fed district",
+                    ? `${districtName} Fed district, all banks and credit unions, ${count(lead.district.institutions)} institutions`
+                    : `${districtName} Fed district, all banks and credit unions`,
                   value: lead.district?.median ?? null,
                   missing: tooFew,
                 },
@@ -378,7 +381,9 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
             : []),
           {
             name: "U.S.",
-            sample: lead.us ? `${count(lead.us.institutions)} institutions in the index` : "All institutions in the index",
+            sample: lead.us
+              ? `U.S., all banks and credit unions, ${count(lead.us.institutions)} institutions`
+              : "U.S., all banks and credit unions",
             value: lead.us?.median ?? null,
           },
         ]
@@ -406,6 +411,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
           ownSharePct: latestFinancial?.feeIncomeRatioPct ?? null,
           peerSharePct: freePeerMedians?.fee_income_ratio != null ? freePeerMedians.fee_income_ratio * 100 : null,
           peerCount: freePeerMedians?.fee_income_peer_count ?? null,
+          filerCount: freePeerMedians?.peer_count ?? null,
           sizeRange: segmentLabel?.split(", ")[1] ?? null,
           kind,
         }
@@ -520,10 +526,11 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                   How the comparison is made
                 </summary>
                 <dl className="mt-2 grid max-w-3xl gap-x-4 gap-y-1 text-[12px] leading-snug text-ink-muted sm:grid-cols-[auto_minmax(0,1fr)]">
-                  <dt className="font-medium text-ink-soft">Its fee</dt>
+                  <dt className="font-medium text-ink-soft">Compared at</dt>
                   <dd>
-                    One value per fee, worked out as the index does: the median of its published personal amounts, the highest
-                    for overdraft. Business-only fees are left out.
+                    The value the index counts for it: its one price, or the middle of its prices when it lists several (the
+                    highest, its standard fee, for overdraft). Business-only fees and CD or IRA fees filed under another fee are
+                    left out.
                   </dd>
                   {stateName && (
                     <>
@@ -546,6 +553,17 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                 </dl>
               </details>
             </section>
+          )}
+
+          {/* The fee position beside its call-report context: the band a visitor sees right after the comparison. */}
+          {showHamiltonBand && (
+            <HamiltonBand
+              institutionName={inst.institution_name}
+              insight={hamiltonInsight}
+              plansHref={links.plansHref}
+              reportOfferHref={links.reportOfferHref}
+              sampleReportHref={sampleHref}
+            />
           )}
 
           {/* 3. The whole schedule, grouped by type. */}
@@ -579,16 +597,6 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                 {collectedOn ? `, read ${collectedOn}` : ""}. Position: the U.S. middle 50% of {PRODUCT_NAME} published fees.
               </p>
             </section>
-          )}
-
-          {showHamiltonBand && (
-            <HamiltonBand
-              institutionName={inst.institution_name}
-              insight={hamiltonInsight}
-              plansHref={links.plansHref}
-              reportOfferHref={links.reportOfferHref}
-              sampleReportHref={sampleHref}
-            />
           )}
 
           {isPro && !sparse && (

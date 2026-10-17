@@ -32,6 +32,14 @@ export const EXTRACTION_PENDING = "Schedule found; extraction pending.";
 export const NOT_IDENTIFIED = "Fee not identified in the reviewed schedule.";
 export const ACCOUNT_NOT_IDENTIFIED = "Account not identified";
 
+/** The cell's short form of each note; the section states the full note once. */
+export function missingShort(note: string | null): string {
+  if (note === NO_SCHEDULE) return "No schedule yet";
+  if (note === EXTRACTION_PENDING) return "Extraction pending";
+  if (note === NOT_IDENTIFIED) return "Not identified";
+  return note ?? "";
+}
+
 export type ScheduleState = "none" | "found" | "reviewed";
 
 export function scheduleState(input: { publishedFees: number; hasSchedule: boolean }): ScheduleState {
@@ -58,8 +66,10 @@ export interface CompareRow {
   key: string;
   label: string;
   /**
-   * The published amount the row is compared on: its one amount, or the highest of several
-   * (a real amount on its schedule, never a computed one). Null when the fee was not found.
+   * The value the row is compared on: the value the index counts for this institution
+   * (fee-stats institutionValue: its one price, the middle of several, the highest for
+   * overdraft). Null when the fee was not found. With several prices the page shows the range
+   * and labels this value with `comparedAt`; it is never shown as "its fee".
    */
   amount: number | null;
   /** How many published amounts it lists in the category, and their spread. */
@@ -68,6 +78,10 @@ export interface CompareRow {
   high: number | null;
   sourceUrl: string | null;
   account: string | null;
+  /** "Carefree Checking $7.95 · Everyday Checking $8.95" when it lists several named prices. */
+  accountPrices: string | null;
+  /** "Compared at $8.45, the middle of its prices" when it lists several prices. */
+  comparedAt: string | null;
   state: Median | null;
   district: Median | null;
   us: Median | null;
@@ -117,13 +131,15 @@ export function compareRows(
   const present: CompareRow[] = values.map((v) => ({
     key: v.category,
     label: getDisplayName(v.category),
-    // Several amounts compare on the highest, a real amount; one amount compares on itself.
-    amount: v.count > 1 ? v.high : v.amount,
+    // The index's own per-institution value (the shared rule in fee-representative).
+    amount: v.amount,
     count: v.count,
     low: v.low,
     high: v.high,
     sourceUrl: v.sourceUrl ?? fallbackSource,
     account: v.account,
+    accountPrices: v.accountPrices ?? null,
+    comparedAt: v.comparedAt ?? null,
     ...medians(v.category),
     missing: null,
   }));
@@ -137,6 +153,8 @@ export function compareRows(
     high: null,
     sourceUrl: null,
     account: null,
+    accountPrices: null,
+    comparedAt: null,
     ...medians(key),
     missing: missingNote(schedule),
   }));
@@ -249,8 +267,9 @@ export function heroFinding(input: {
     const place = ref.level === "state" && stateName ? stateName : "U.S.";
     const diff = lead.amount - ref.median.median;
     const gap = `${money(Math.abs(diff))} ${diff > 0 ? "above" : "below"} the ${money(ref.median.median)} ${place} median`;
-    return isRange(lead)
-      ? `${owner} highest published ${lowerLabel(lead.label)} fee is ${money(lead.amount)}, ${gap}.`
+    // Several prices: the range, then the compared value in the shared rule's own words.
+    return isRange(lead) && lead.comparedAt
+      ? `${owner} ${lowerLabel(lead.label)} fee runs ${money(lead.low as number)} to ${money(lead.high as number)}, depending on account. ${lead.comparedAt}, it sits ${gap}.`
       : `${owner} ${lowerLabel(lead.label)} fee is ${money(lead.amount)}, ${gap}.`;
   }
   const compared = published.filter((r) => reference(r));

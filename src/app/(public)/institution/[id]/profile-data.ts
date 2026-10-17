@@ -10,7 +10,9 @@ import type { DisplayFee } from "./fee-schedule-table";
 import { getRateFeesByInstitution, type RateFee } from "@/lib/data-store/rate-fees";
 import { rateDisplayParts } from "@/lib/percent-fees";
 import { feeDisplayName } from "@/lib/fee-display-name";
-import { institutionValue } from "@/lib/data-store/fee-stats";
+import { HIGHEST_TIER_CATEGORIES, institutionValue } from "@/lib/data-store/fee-stats";
+import { accountPricesText, comparedAtText, type AccountPrice } from "@/lib/fee-representative";
+import { notComparableReason } from "@/lib/fee-comparability";
 import { productNameFromFeeName, readableProductName } from "@/lib/agents/knox/lineup";
 
 export const getPublicInstitutionForPage = cache(getPublicInstitutionById);
@@ -69,6 +71,7 @@ export function toDisplayFees(fees: ExtractedFee[]): DisplayFee[] {
     conditions: fee.conditions,
     status: isVerifiedFee(fee) ? "verified" : "provisional",
     sourceUrl: fee.source_url ?? null,
+    accountProduct: fee.account_product_type ?? null,
   }));
 }
 
@@ -216,6 +219,10 @@ export interface HeadlineValue {
   sourceUrl: string | null;
   /** The account the quoted fee belongs to, when the schedule names one (the city page's rule). */
   account: string | null;
+  /** "Carefree Checking $7.95 · Everyday Checking $8.95" when it lists several named prices. */
+  accountPrices?: string | null;
+  /** "Compared at $8.45, the middle of its prices" when it lists several prices (fee-representative). */
+  comparedAt?: string | null;
 }
 
 /**
@@ -226,26 +233,34 @@ export interface HeadlineValue {
 export function pickHeadlineValues(verifiedFees: ExtractedFee[], categories: readonly string[]): HeadlineValue[] {
   const values: HeadlineValue[] = [];
   for (const category of categories) {
-    const amounts = verifiedFees
-      .filter(
-        (fee) =>
-          fee.fee_category === category &&
-          fee.amount !== null &&
-          fee.amount >= 0 &&
-          countsAsPersonal(fee.fee_audience) &&
-          !(fee.source_url && isBusinessOnlyLink(fee.source_url)),
-      )
-      .map((fee) => fee.amount as number);
+    // The same personal rows the statistics count, minus a CD or IRA fee filed under a category
+    // that measures something else: it is a different product's price (fee-comparability).
+    const rows = verifiedFees.filter(
+      (fee) =>
+        fee.fee_category === category &&
+        fee.amount !== null &&
+        fee.amount >= 0 &&
+        countsAsPersonal(fee.fee_audience) &&
+        !(fee.source_url && isBusinessOnlyLink(fee.source_url)) &&
+        notComparableReason(fee.fee_category, fee.fee_name, fee.account_product_type ?? null) === null,
+    );
+    const amounts = rows.map((fee) => fee.amount as number);
     if (amounts.length === 0) continue;
     const quoted =
       category === "overdraft"
-        ? pickFee(verifiedFees, category, NON_PAID_ITEM_OVERDRAFT_PATTERN)
+        ? pickFee(rows, category, NON_PAID_ITEM_OVERDRAFT_PATTERN)
         : category === "monthly_maintenance"
-          ? pickFee(verifiedFees, category, undefined, isMonthlyMaintenanceFee)
-          : pickFee(verifiedFees, category);
+          ? pickFee(rows, category, undefined, isMonthlyMaintenanceFee)
+          : pickFee(rows, category);
+    const value = institutionValue(category, amounts);
+    const named: AccountPrice[] = rows.flatMap((fee) => {
+      const name = readableProductName(fee.account_product_type ?? null) ?? productNameFromFeeName(fee.fee_name);
+      return name ? [{ account: name, amount: fee.amount as number }] : [];
+    });
+    const several = new Set(amounts).size > 1;
     values.push({
       category,
-      amount: institutionValue(category, amounts),
+      amount: value,
       count: amounts.length,
       low: Math.min(...amounts),
       high: Math.max(...amounts),
@@ -253,6 +268,8 @@ export function pickHeadlineValues(verifiedFees: ExtractedFee[], categories: rea
       account: quoted
         ? (readableProductName(quoted.account_product_type ?? null) ?? productNameFromFeeName(quoted.fee_name))
         : null,
+      accountPrices: several ? accountPricesText(named) : null,
+      comparedAt: comparedAtText({ value, amounts, highestTier: HIGHEST_TIER_CATEGORIES.has(category) }),
     });
   }
   return values;

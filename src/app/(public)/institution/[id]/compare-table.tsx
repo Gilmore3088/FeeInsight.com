@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { aboutSame, amountText, money, reference, type CompareRow, type Median } from "./profile-view";
+import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
+import { aboutSame, amountText, missingShort, money, reference, type CompareRow, type Median } from "./profile-view";
 
 /** Rows shown before "Show all". */
 const ROWS_SHOWN = 5;
@@ -10,7 +11,7 @@ const GRID = "md:grid-cols-[minmax(0,1.6fr)_minmax(6.5rem,auto)_repeat(var(--col
 
 function Amount({ row }: { row: CompareRow }) {
   if (row.amount == null) {
-    return <span className="inline-block max-w-[9rem] text-[12px] leading-snug text-ink-muted md:max-w-none">{row.missing}</span>;
+    return <span className="text-[12px] text-ink-muted">{missingShort(row.missing)}</span>;
   }
   const text = amountText(row);
   return row.sourceUrl ? (
@@ -28,22 +29,24 @@ function Amount({ row }: { row: CompareRow }) {
   );
 }
 
+/** The median and, beneath it, how many institutions stand behind it; blank under the floor. */
 function MedianCell({ m, label }: { m: Median | null; label: string }) {
+  if (!m) return <span className="sr-only">{label}: no median</span>;
   return (
     <>
       <span className="sr-only">{label}: </span>
-      {m ? (
-        <span className="font-mono text-[14px] tabular-nums text-ink-soft">{money(m.median)}</span>
-      ) : (
-        <span className="text-[12px] text-ink-muted">No median</span>
-      )}
+      <span className="block font-mono text-[14px] tabular-nums text-ink-soft">{money(m.median)}</span>
+      <span className="block text-[11px] text-ink-muted">
+        {m.institutions.toLocaleString("en-US")}
+        <span className="sr-only"> institutions</span>
+      </span>
     </>
   );
 }
 
 /**
- * Its amount (the highest, when it lists several) against the first reference median: "+$4",
- * "−$2", "About the same" within 1%, or "None charged" for a published $0.
+ * Its compared value (its one price, or the value named in "Compared at") against the first
+ * reference median: "+$4", "−$2", "About the same" within 1%, or "None charged" for a published $0.
  */
 function Gap({ row }: { row: CompareRow }) {
   const ref = reference(row);
@@ -60,10 +63,21 @@ function Gap({ row }: { row: CompareRow }) {
   );
 }
 
-/** The account the schedule names for the fee; nothing when it names none. */
+/**
+ * Under the fee: its named account prices and the value it is compared at when it lists several
+ * prices (the shared rule), else the one account the schedule names. Nothing when none is known.
+ */
 function Detail({ row }: { row: CompareRow }) {
-  if (row.amount == null || !row.account) return null;
-  return <p className="text-[12px] text-ink-soft">{row.account}</p>;
+  if (row.amount == null) return null;
+  if (row.comparedAt) {
+    return (
+      <>
+        {row.accountPrices && <p className="text-[12px] text-ink-soft">{row.accountPrices}</p>}
+        <p className="text-[12px] text-ink-muted">{row.comparedAt}</p>
+      </>
+    );
+  }
+  return row.account ? <p className="text-[12px] text-ink-soft">{row.account}</p> : null;
 }
 
 /**
@@ -90,8 +104,16 @@ export function CompareTable({
   const cols = 1 + (hasState ? 1 : 0) + (hasDistrict ? 1 : 0);
   const shortState = stateCode ?? stateName ?? "State";
 
+  const places = [stateName, hasDistrict ? `the ${districtName} district` : null, "the U.S."].filter(Boolean).join(", ");
+  const notes = [...new Set(rows.filter((r) => r.amount == null && r.missing).map((r) => r.missing as string))];
+  const blank = rows.some((r) => !r.state || (hasDistrict && !r.district) || !r.us);
+
   return (
     <div>
+      <p className="mb-3 text-center text-[12px] leading-relaxed text-ink-muted sm:max-w-none sm:text-left">
+        Each median covers all banks and credit unions in its place ({places}). The number with each median is how many of
+        them publish the fee{blank ? `; a blank means fewer than ${MIN_INSTITUTIONS_FOR_MEDIAN} do` : ""}.
+      </p>
       <div className="overflow-hidden rounded-2xl border border-border bg-surface-0" style={{ ["--cols" as string]: cols }}>
         <div
           aria-hidden="true"
@@ -137,19 +159,24 @@ export function CompareTable({
               </span>
               {/* Phones: the medians and the gap on one line under the fee. */}
               <p className="col-span-2 flex flex-wrap items-baseline gap-x-3 text-[12px] text-ink-muted md:hidden">
-                {hasState && (
+                {hasState && row.state && (
                   <span>
-                    {shortState} <span className="font-mono tabular-nums text-ink-soft">{row.state ? money(row.state.median) : "n/a"}</span>
+                    {shortState} <span className="font-mono tabular-nums text-ink-soft">{money(row.state.median)}</span>{" "}
+                    <span className="tabular-nums">({row.state.institutions.toLocaleString("en-US")})</span>
                   </span>
                 )}
-                {hasDistrict && (
+                {hasDistrict && row.district && (
                   <span>
-                    District <span className="font-mono tabular-nums text-ink-soft">{row.district ? money(row.district.median) : "n/a"}</span>
+                    District <span className="font-mono tabular-nums text-ink-soft">{money(row.district.median)}</span>{" "}
+                    <span className="tabular-nums">({row.district.institutions.toLocaleString("en-US")})</span>
                   </span>
                 )}
-                <span>
-                  U.S. <span className="font-mono tabular-nums text-ink-soft">{row.us ? money(row.us.median) : "n/a"}</span>
-                </span>
+                {row.us && (
+                  <span>
+                    U.S. <span className="font-mono tabular-nums text-ink-soft">{money(row.us.median)}</span>{" "}
+                    <span className="tabular-nums">({row.us.institutions.toLocaleString("en-US")})</span>
+                  </span>
+                )}
                 {row.amount != null && reference(row) && (
                   <span className="ml-auto">
                     {row.amount !== 0 && <span className="mr-1">vs {hasState ? shortState : "U.S."}</span>}
@@ -161,6 +188,11 @@ export function CompareTable({
           ))}
         </ul>
       </div>
+      {notes.length > 0 && (
+        <p className="mt-2 text-center text-[12px] text-ink-muted sm:max-w-none sm:text-left">
+          {notes.map((note) => (note.endsWith(".") ? note : `${note}.`)).join(" ")}
+        </p>
+      )}
       {shown.length < rows.length && (
         <button
           type="button"

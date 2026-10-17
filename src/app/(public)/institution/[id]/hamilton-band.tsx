@@ -19,6 +19,8 @@ export interface HamiltonInsight {
   peerSharePct: number | null;
   /** The peers behind peerSharePct. */
   peerCount: number | null;
+  /** Every same-charter, same-size institution that filed for the quarter, itself included. */
+  filerCount?: number | null;
   /** "$1B to $10B": the asset tier the peers share. */
   sizeRange: string | null;
   /** "credit union" or "bank". */
@@ -106,6 +108,28 @@ function InsightView({ insight, institutionName }: { insight: HamiltonInsight; i
           </p>
         )
       )}
+      {comparePeers && latest && (
+        <dl className="mt-4 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 border-t border-border pt-3 text-[12px] leading-snug text-ink-muted">
+          <dt className="font-medium text-ink-soft">Peers</dt>
+          <dd>
+            {insight.kind === "bank" ? "Banks filing FDIC call reports" : "Credit unions filing NCUA 5300 reports"}
+            {insight.sizeRange ? `, ${insight.sizeRange} in assets` : ", the same asset size"}
+          </dd>
+          <dt className="font-medium text-ink-soft">Counted</dt>
+          <dd>
+            {(insight.peerCount as number).toLocaleString("en-US")}
+            {insight.filerCount && insight.filerCount - 1 >= (insight.peerCount as number)
+              ? ` of the ${(insight.filerCount - 1).toLocaleString("en-US")} peers that filed for ${formatReportQuarter(latest.reportDate)}`
+              : ` peers that filed for ${formatReportQuarter(latest.reportDate)}`}{" "}
+            reported service-charge income above $0. {institutionName} itself is left out.
+          </dd>
+          <dt className="font-medium text-ink-soft">Share</dt>
+          <dd>
+            Service charges on deposit accounts divided by revenue ({latest.source === "ncua" ? "interest income" : "net interest income"} plus
+            noninterest income).
+          </dd>
+        </dl>
+      )}
       {series.length > 1 && (
         <div className="mt-4" role="img" aria-label={`Service-charge income by quarter, ${span}`}>
           <p className="text-[12px] font-medium text-ink-muted">Service-charge income by quarter</p>
@@ -125,17 +149,14 @@ function InsightView({ insight, institutionName }: { insight: HamiltonInsight; i
       )}
       {span && (
         <figcaption className="mt-3 text-[12px] text-ink-muted">
-          From {sourceName}, {span}
-          {comparePeers
-            ? `. Revenue is ${latest?.source === "ncua" ? "interest income" : "net interest income"} plus noninterest income.`
-            : "."}
+          From {sourceName}, {span}.
         </figcaption>
       )}
     </figure>
   );
 }
 
-/** The page's one next step: one complete Hamilton insight, then the free sample report (when live), the paid report and Pro plans. */
+/** The page's one next step: one complete Hamilton insight, then the free sample report (when live), the paid report and Hamilton plans. */
 export function HamiltonBand({
   institutionName,
   insight,
@@ -167,7 +188,7 @@ export function HamiltonBand({
             Hamilton puts {institutionName}&rsquo;s fees and filings beside its peers&rsquo;.
           </h2>
           <p className="text-[14px] leading-relaxed text-ink-muted">
-            Hamilton, the Fee Insight Pro workspace, sets an institution&rsquo;s published fees beside its market and its call
+            Hamilton, Fee Insight&rsquo;s workspace for banks and credit unions, sets an institution&rsquo;s published fees beside its market and its call
             reports beside its peers, with a sourced brief for each.
           </p>
           {sampleReportHref ? (
