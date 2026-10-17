@@ -161,9 +161,12 @@ export async function fetchFfiecCallBulk(
 /** Schedule RI files only ("Schedule RI 06302026.txt", or "Schedule RI(1 of 2) ..."), not RIA, RIB... */
 const SCHEDULE_RI = /Schedule RI\s*(\(\d of \d\))?\s*\d{8}\.txt$/i;
 
-/** Bulk-zip file names for the given schedule codes, e.g. ["RI", "RIBI", "RCN"], with "(1 of 2)" parts. */
+/**
+ * Bulk-zip file names for the given schedule codes, e.g. ["RI", "RIBI", "RCN"]. Wide schedules
+ * come in parts, and the part marker follows the date ("Schedule RCO 03312026(1 of 2).txt").
+ */
 export function schedulePattern(codes: readonly string[]): RegExp {
-  return new RegExp(`Schedule (${codes.join("|")})\\s*(\\(\\d of \\d\\))?\\s*\\d{8}\\.txt$`, "i");
+  return new RegExp(`Schedule (${codes.join("|")})\\s*(\\(\\d of \\d\\))?\\s*\\d{8}\\s*(\\(\\d of \\d\\))?\\.txt$`, "i");
 }
 
 export function cells(line: string): string[] {

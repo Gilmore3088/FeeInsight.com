@@ -41,4 +41,15 @@ describe("readNcuaExtras", () => {
     expect(read.linesNotInData).toEqual(["ACCT_999"]);
     expect(read.topicsWithoutLines).toEqual(["account_counts", "uninsured_shares", "fee_income"]);
   });
+
+  it("reads AcctDesc.txt, not the trade-names file beside it (2026Q2 run)", () => {
+    const zip = zipSync({
+      "Acct-DescTradeNames.txt": strToU8("Account,AcctName,AcctDesc,TableName\n"),
+      "AcctDesc.txt": strToU8('Account,AcctName,AcctDesc,TableName\n"ACCT_564A","Employees","Number of full-time employees","FS220"\n'),
+      "FS220.txt": strToU8("CU_NUMBER,ACCT_564A\n100,25\n"),
+    });
+    const read = readNcuaExtras(zip);
+    expect(read.descriptionFile).toBe("AcctDesc.txt");
+    expect(read.values).toHaveLength(1);
+  });
 });

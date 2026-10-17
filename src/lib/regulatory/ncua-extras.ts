@@ -117,7 +117,12 @@ export function chooseNcuaExtraLines(accounts: NcuaAccountDescription[]): { line
 
 export function readNcuaExtras(zip: Uint8Array): NcuaExtrasRead {
   const files = unzipSync(zip, { filter: (file) => DESCRIPTION_FILE.test(file.name) || DATA_FILE.test(file.name) });
-  const descriptionFile = Object.keys(files).find((name) => DESCRIPTION_FILE.test(name)) ?? null;
+  // The zip also carries Acct-DescTradeNames.txt (trade names, no account lines); 2026Q2 picked it
+  // first and matched nothing.
+  const descriptionFile =
+    Object.keys(files)
+      .filter((name) => DESCRIPTION_FILE.test(name) && !/trade\s*names?/i.test(name))
+      .sort((a, b) => a.length - b.length)[0] ?? null;
   if (!descriptionFile) {
     return { hasDescriptionFile: false, descriptionFile: null, lines: [], linesNotInData: [], topicsWithoutLines: NCUA_EXTRA_TOPICS.map((t) => t.topic), truncatedLines: 0, values: [] };
   }

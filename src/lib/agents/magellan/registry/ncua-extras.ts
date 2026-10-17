@@ -24,7 +24,7 @@ import { recordRegistryPartition, type RegistryDb } from "./partitions";
  */
 
 export const NCUA_EXTRAS_SOURCE = "ncua-extras";
-export const NCUA_EXTRAS_PARSER_VERSION = 1;
+export const NCUA_EXTRAS_PARSER_VERSION = 2;
 /** Newest quarters first, back to here; older zips can be added by lowering it. */
 export const NCUA_EXTRAS_FIRST: Quarter = { year: 2020, quarter: 1 };
 const RECENT_REFRESH_HOURS = 24 * 7;
