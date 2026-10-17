@@ -12,10 +12,19 @@ const BRANCH_LIST_SHOWN = 8;
  * its branch count, and its addresses one tap away. Banks are marked ink, credit unions brick, as
  * on the map.
  */
-export function BranchList({ points, label }: { points: BranchPoint[]; label: string }) {
+export function BranchList({
+  points,
+  unplaced = [],
+  label,
+}: {
+  points: Omit<BranchPoint, "lat" | "lon">[];
+  /** Branches with no coordinates: a list needs only the address, so they are listed too. */
+  unplaced?: Omit<BranchPoint, "lat" | "lon">[];
+  label: string;
+}) {
   const [all, setAll] = useState(false);
   const byInstitution = new Map<number, { name: string; charter: BranchPoint["charter"]; addresses: string[]; count: number }>();
-  for (const p of points) {
+  for (const p of [...points, ...unplaced]) {
     const row = byInstitution.get(p.institution_id) ?? { name: p.name, charter: p.charter, addresses: [], count: 0 };
     row.count += 1;
     if (p.address) row.addresses.push(p.address);

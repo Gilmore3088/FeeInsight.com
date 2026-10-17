@@ -13,7 +13,17 @@ const BranchMapGL = dynamic(() => import("./branch-map-gl"), { ssr: false });
  * The live branch map, with a compact branch list in its place when WebGL or the street tiles are
  * unavailable. Shows a quiet placeholder while the map loads.
  */
-export function BranchMapLive({ points, label, branchesById }: { points: BranchPoint[]; label: string; branchesById: Record<number, number> }) {
+export function BranchMapLive({
+  points,
+  unplaced,
+  label,
+  branchesById,
+}: {
+  points: BranchPoint[];
+  unplaced: Omit<BranchPoint, "lat" | "lon">[];
+  label: string;
+  branchesById: Record<number, number>;
+}) {
   const [state, setState] = useState<"loading" | "ready" | "failed">("loading");
   const [boundary, setBoundary] = useState(false);
   const bounds = useMemo(() => {
@@ -24,7 +34,7 @@ export function BranchMapLive({ points, label, branchesById }: { points: BranchP
     ] as [[number, number], [number, number]];
   }, [points]);
   if (points.length < 2) return null;
-  if (state === "failed") return <BranchList points={points} label={label} />;
+  if (state === "failed") return <BranchList points={points} unplaced={unplaced} label={label} />;
   const banks = points.filter((p) => p.charter === "bank").length;
 
   return (
@@ -58,6 +68,12 @@ export function BranchMapLive({ points, label, branchesById }: { points: BranchP
           </span>
         )}
         <span>Select a branch to see its institution.</span>
+        {unplaced.length > 0 && (
+          <span>
+            {unplaced.length} {unplaced.length === 1 ? "branch has" : "branches have"} no coordinates in the FDIC or NCUA records, so{" "}
+            {unplaced.length === 1 ? "it is" : "they are"} counted but not on the map.
+          </span>
+        )}
       </figcaption>
     </figure>
   );

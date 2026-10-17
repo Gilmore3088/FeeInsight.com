@@ -112,7 +112,6 @@ export default async function CityFeePage({ params, searchParams }: PageProps) {
   const initialSort = sortOf(query.sort);
   const leadHref = lead ? `${cityHref}?${isMetro ? "area=metro&" : ""}fee=${lead.key}&sort=low#compare` : "";
   const branchesById = Object.fromEntries(market.institutions.map((i) => [i.id, i.branches]));
-  const unplotted = cov.branches - market.points.length;
 
   const deposits5 = trend(market.deposit_years, 5, (y) => [y.area_deposits, y.state_deposits, y.us_deposits]);
   const branches10 = trend(market.deposit_years, 10, (y) => [y.area_branches, y.state_branches, y.us_branches]);
@@ -309,14 +308,8 @@ export default async function CityFeePage({ params, searchParams }: PageProps) {
             Where they have branches
           </h2>
           <div className="mt-5">
-            <BranchMapLive points={market.points} label={placeName} branchesById={branchesById} />
+            <BranchMapLive points={market.points} unplaced={market.unplaced} label={placeName} branchesById={branchesById} />
           </div>
-          {unplotted > 0 && (
-            <p className="mt-2 text-[12px] text-ink-muted">
-              {market.points.length} of {cov.branches} branch locations are shown. {unplotted} {unplotted === 1 ? "has" : "have"} no
-              coordinates in the FDIC or NCUA branch records, so {unplotted === 1 ? "it is" : "they are"} counted but not shown.
-            </p>
-          )}
         </section>
       )}
 

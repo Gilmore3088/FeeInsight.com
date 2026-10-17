@@ -113,6 +113,8 @@ export interface CityMarket {
   bank_branches: number;
   cu_branches: number;
   points: BranchPoint[];
+  /** Branches with no map coordinates: listed, never plotted. Address when the record has one. */
+  unplaced: Omit<BranchPoint, "lat" | "lon">[];
   deposit_years: DepositYear[];
   /** County (city view) or metro counties summed, the state and the U.S. */
   community: { area: CommunityFigures | null; state: CommunityFigures | null; us: CommunityFigures | null };
@@ -258,12 +260,17 @@ export async function getCityMarket(city: string, stateCode: string, area: CityA
 
   const names = new Map(institutions.map((i) => [i.id, i.name]));
   const points: BranchPoint[] = [];
+  const unplaced: Omit<BranchPoint, "lat" | "lon">[] = [];
   const addPoint = (row: Record<string, unknown>, charter: BranchPoint["charter"]) => {
     const lat = numOrNull(row.latitude);
     const lon = numOrNull(row.longitude);
     const id = row.institution_id == null ? null : num(row.institution_id);
-    if (lat == null || lon == null || lat === 0 || id == null || !names.has(id)) return;
+    if (id == null || !names.has(id)) return;
     const address = row.address ? String(row.address).trim() : "";
+    if (lat == null || lon == null || lat === 0) {
+      unplaced.push({ charter, institution_id: id, name: names.get(id)!, address: address || null });
+      return;
+    }
     points.push({ lat, lon, charter, institution_id: id, name: names.get(id)!, address: address || null });
   };
   for (const b of bankBranches) addPoint(b, "bank");
@@ -279,6 +286,7 @@ export async function getCityMarket(city: string, stateCode: string, area: CityA
     bank_branches: bankBranches.length,
     cu_branches: cuBranches.length,
     points,
+    unplaced,
     deposit_years: depositRows,
     community,
   };
