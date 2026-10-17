@@ -175,7 +175,7 @@ export function buildProfileTitle(institutionName: string, headline: HeadlineFee
   const parts = [
     headline.overdraft !== null ? `Overdraft ${formatFeeAmount(headline.overdraft)}` : null,
     headline.nsf !== null ? `NSF ${formatFeeAmount(headline.nsf)}` : null,
-    headline.monthly !== null ? `Monthly ${formatFeeAmount(headline.monthly)}` : null,
+    // No monthly fee in the title: it belongs to one named account, so it is not the institution's price.
   ].filter((part): part is string => Boolean(part));
   if (parts.length === 0) return `${institutionName} Fees and Fee Schedule`;
   // #1166 T9: fees come off the end, then the year, until the title fits; one fee always stays.
