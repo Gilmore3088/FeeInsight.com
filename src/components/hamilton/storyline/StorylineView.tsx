@@ -8,7 +8,7 @@ import type { ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import type { Fact, SourceRef } from "@/lib/hamilton/workspace/types";
 import { withFiguresBold } from "@/components/hamilton/memo/answer-memo";
-import { SERIF } from "@/components/hamilton/memo/memo";
+import { ANSWER_TYPE, AnswerLead, KeyFigures, SERIF, SectionHeading } from "@/components/hamilton/memo/memo";
 import { sourceDateWithAge } from "@/components/hamilton/memo/exhibit-view";
 import { LensSwitch } from "./LensSwitch";
 import { StoryExhibitView } from "./story-exhibits";
@@ -79,20 +79,15 @@ function Line({ fact, notes }: { fact: Fact; notes: SourceNotes }) {
   );
 }
 
-function Kicker({ children }: { children: ReactNode }) {
-  return (
-    <h3 className="mb-3 text-xl leading-snug text-warm-900" style={SERIF}>
-      {children}
-    </h3>
-  );
-}
+/** The storyline's section headings are the shared answer heading. */
+const Kicker = SectionHeading;
 
 function FactList({ facts, notes, empty }: { facts: Fact[]; notes: SourceNotes; empty?: string }) {
   if (facts.length === 0) return empty ? <p className="text-sm text-warm-600">{empty}</p> : null;
   return (
     <ul className="flex max-w-[65ch] flex-col gap-2">
       {facts.map((f, i) => (
-        <li key={i} className="grid grid-cols-[0.875rem_minmax(0,1fr)] gap-2 text-base leading-relaxed text-warm-800">
+        <li key={i} className={`grid grid-cols-[0.875rem_minmax(0,1fr)] gap-2 ${ANSWER_TYPE.body} text-warm-800`}>
           <span aria-hidden className="mt-[0.65rem] h-1.5 w-1.5 rounded-full bg-terra" />
           <span>
             <Line fact={f} notes={notes} />
@@ -167,42 +162,34 @@ export function StorylineView({ story, nextSteps, memo, identityContext }: { sto
     : null;
   const notes = buildSourceNotes(story);
   const figures = story.keyFigures.slice(0, 4);
-  const cols = figures.length >= 4 ? "grid-cols-2 sm:grid-cols-4" : figures.length === 3 ? "sm:grid-cols-3" : figures.length === 2 ? "grid-cols-2" : "grid-cols-1";
   return (
-    <article className="flex flex-col gap-10 [&_.rd]:mx-0 [&_.rd]:max-w-none [&_.rd-exhibit]:mt-0 [&_.rd-exhibit_h2]:text-xl [&_.rd-exhibit_h2]:leading-snug">
-      <div className="border-l-2 border-terra pl-5">
-        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-terra-text">The answer</p>
-        <p className="mt-1 text-[1.375rem] leading-snug text-warm-900 sm:text-2xl" style={SERIF}>
-          {story.governingThought}
-        </p>
-        {memo?.state === "writing" ? (
-          <p role="status" className="mt-3 flex items-center gap-2 text-sm text-warm-600">
-            <Loader2 className="h-4 w-4 animate-spin" /> Hamilton is writing this up. It takes up to a minute; the exhibits below are ready now.
-          </p>
-        ) : memo?.state === "none" ? (
-          <p className="mt-3 text-xs text-warm-600">{memo.reason}</p>
-        ) : null}
-      </div>
+    <article className="flex flex-col gap-10 [&_.rd]:mx-0 [&_.rd]:max-w-none [&_.rd-exhibit]:mt-0">
+      <AnswerLead
+        after={
+          memo?.state === "writing" ? (
+            <p role="status" className="mt-3 flex items-center gap-2 text-sm text-warm-600">
+              <Loader2 aria-hidden className="h-4 w-4 animate-spin" /> Hamilton is writing this up. It takes up to a minute; the exhibits below are ready now.
+            </p>
+          ) : memo?.state === "none" ? (
+            <p className="mt-3 text-xs text-warm-600">{memo.reason}</p>
+          ) : null
+        }
+      >
+        {story.governingThought}
+      </AnswerLead>
 
-      {figures.length > 0 ? (
-        <dl className={`grid gap-px overflow-hidden rounded-lg border border-warm-300 bg-warm-300 ${cols}`}>
-          {figures.map((f) => (
-            <div key={f.label} className="flex flex-col bg-white px-5 py-4">
-              {/* The label comes first for screen readers; the figure still shows on top. */}
-              <dt className="order-2 mt-1 line-clamp-3 text-[13px] leading-snug text-warm-600" title={f.label}>
-                {f.label}
-                <Note n={notes.noteFor(f.source)} />
-              </dt>
-              <dd
-                className={`order-1 ${f.value.length > 8 ? "text-xl" : "text-2xl"} text-warm-900 [font-variant-numeric:tabular-nums]`}
-                style={SERIF}
-              >
-                {f.value}
-              </dd>
-            </div>
-          ))}
-        </dl>
-      ) : null}
+      <KeyFigures
+        figures={figures.map((f) => ({
+          value: f.value,
+          title: f.label,
+          label: (
+            <>
+              {f.label}
+              <Note n={notes.noteFor(f.source)} />
+            </>
+          ),
+        }))}
+      />
 
       {story.situation.length > 0 || story.complication.length > 0 ? (
         <div className="grid gap-x-8 gap-y-6 border-t border-warm-300 pt-6 md:grid-cols-2">
