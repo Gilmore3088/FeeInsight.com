@@ -15,7 +15,7 @@ import {
 } from "@/lib/custom-report/checking-lineup";
 import { HubSection } from "@/app/(public)/research/district/[id]/district-hub";
 import { Disclosure } from "./disclosure";
-import { EXTRA_ROW, ROWS_SHOWN } from "./report-view";
+import { EXTRA_ROW, ROWS_SHOWN } from "./rows";
 import { ShowAll } from "./show-all";
 
 const DERIVED_MARK = "†";

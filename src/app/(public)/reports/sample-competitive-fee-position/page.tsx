@@ -14,6 +14,7 @@ import { PAGE_CRUMBS, PAGE_HEADER } from "@/components/public/page-header";
 import { CONTACT_EMAIL, SITE_NAME, SITE_URL, REPORT_OFFER } from "@/lib/constants";
 import { loadSampleReport } from "@/lib/custom-report/sample-report";
 import { getRevenueContextCached } from "@/lib/custom-report/revenue-context";
+import { loadMarketCheckingLineup } from "@/lib/custom-report/checking-lineup-data";
 import { getMarketBranchFootprintCached } from "@/lib/data-store/public-cached-reads";
 import { MarketReportBody } from "@/app/market-report/report-body";
 import { PrintButton } from "@/app/market-report/[token]/print-button";
@@ -127,6 +128,8 @@ export default async function SampleReportPage() {
     ? await getMarketBranchFootprintCached(market.county_fips, market.sod_year).catch(() => null)
     : null;
   const revenue = await getRevenueContextCached(report.data.subject.institution_id).catch(() => null);
+  // The same checking-account lineup a buyer's report shows, from live published fees.
+  const lineup = await loadMarketCheckingLineup(report.data.subject.institution_id).catch(() => null);
 
   return (
     <div className="mx-auto max-w-page px-4 pb-24 pt-14 sm:px-6">
@@ -143,6 +146,7 @@ export default async function SampleReportPage() {
         <MarketReportBody
           report={report}
           revenue={revenue}
+          lineup={lineup}
           branches={branches}
           eyebrow={`Sample ${REPORT_OFFER.name}`}
           close={false}
@@ -167,7 +171,7 @@ export default async function SampleReportPage() {
           correctionNote={
             <>
               If a figure does not match an institution&apos;s current schedule,{" "}
-              <a href="/contact?source=sample_report" className="underline">
+              <a href="/contact?source=sample_report" className="inline-flex min-h-11 items-center underline sm:min-h-0">
                 tell us through the contact form
               </a>{" "}
               and we will correct it.

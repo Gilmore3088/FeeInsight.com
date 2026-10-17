@@ -1,8 +1,10 @@
+import { SITE_NAME } from "@/lib/constants";
+
 const SERIF = { fontFamily: "var(--fi-font-sans)" };
 
 // The report's last section: the same market, kept current in Hamilton (James, 6 Oct 2026).
 // institutionId is the report's own bank, so /subscribe opens on its tier instead of a search.
-// A reader not ready to subscribe can ask for a Pro demo (James, 15 Oct 2026).
+// A reader not ready to subscribe can ask for a Hamilton demo (James, 15 Oct 2026).
 export function HamiltonClose({
   competitors,
   institutionId,
@@ -24,7 +26,7 @@ export function HamiltonClose({
         Track this market in Hamilton
       </h2>
       <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-ink-soft">
-        This report is a snapshot. Hamilton keeps these {competitors} competitors on a watchlist
+        This report is a snapshot. Hamilton, the {SITE_NAME} workspace, keeps these {competitors} competitors on a watchlist
         and shows a competitor&apos;s change once its schedule is re-read.
       </p>
       <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-3">

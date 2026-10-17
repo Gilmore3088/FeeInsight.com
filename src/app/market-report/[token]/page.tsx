@@ -97,7 +97,7 @@ export default async function MarketReportPage({ params }: PageProps) {
           correctionNote={
             <>
               If a figure does not match {name}&apos;s current schedule,{" "}
-              <a href={contactHref(name)} className="underline">
+              <a href={contactHref(name)} className="inline-flex min-h-11 items-center underline sm:min-h-0">
                 tell us through the contact form
               </a>{" "}
               and we will correct it. This link resolves until {DATE.format(verified.expiresOn)}.

@@ -24,7 +24,7 @@ import { CheckingLineupSection } from "./checking-lineup-section";
 import { HubSection, KICKER } from "@/app/(public)/research/district/[id]/district-hub";
 import { Disclosure } from "./disclosure";
 import { ShowAll } from "./show-all";
-import { EXTRA_ROW, ROWS_SHOWN, countiesText, headlineFinding, leftOutNote, marketFinding, widestGapFinding } from "./report-view";
+import { EXTRA_ROW, ROWS_SHOWN, countiesText, headlineFinding, identifiedText, leftOutNote, marketFinding, widestGapFinding } from "./report-view";
 import { FeeComparison } from "./fee-comparison";
 import { PrintOpen } from "./print-open";
 
@@ -115,20 +115,8 @@ function depositsLabel(dollars: number): string {
   return `$${Math.round(dollars / 1e6).toLocaleString("en-US")} million`;
 }
 
-/** "READING" -> "Reading", "KING OF PRUSSIA" -> "King of Prussia"; mixed-case names such as "McAllen" are kept. */
-export function cityLabel(city: string): string {
-  if (city !== city.toUpperCase()) return city;
-  return city
-    .toLowerCase()
-    .replace(/(^|[\s\-'.])([a-z])/g, (_m, sep: string, ch: string) => sep + ch.toUpperCase())
-    .replace(/ (Of|The|And|On|In) /g, (word) => word.toLowerCase());
-}
-
-/** "READING, PA" -> "Reading, PA": the city part only, so the state code stays upper case. */
-export function placeLabel(place: string): string {
-  const cut = place.lastIndexOf(", ");
-  return cut < 0 ? cityLabel(place) : `${cityLabel(place.slice(0, cut))}${place.slice(cut)}`;
-}
+export { cityLabel, placeLabel } from "./place-label";
+import { cityLabel } from "./place-label";
 
 /** "12 branches · 8.4% of local deposits", or null when the institution has no SOD branches here. */
 export function footprintLine(branches: MarketBranchFootprint | null | undefined, institutionId: number): string | null {
@@ -154,12 +142,15 @@ function RevenueSection({ name, charterType, revenue }: { name: string; charterT
   const latest = revenue.quarters[0];
   const filing = charterType === "credit_union" ? "NCUA 5300 Call Report" : "FDIC Call Report";
   const peer = revenue.peer;
+  // A credit union files fee income with NCUA, a wider measure than a bank's deposit service charges.
+  const creditUnion = charterType === "credit_union";
+  const reported = creditUnion ? "fee income to NCUA" : "deposit service charges";
   const population = peer
-    ? `${peer.count.toLocaleString("en-US")} ${peer.population ?? "banks and credit unions"} with ${peer.tierLabel} in assets that reported deposit service charges for ${quarterLabel(latest.quarter)}`
+    ? `${peer.count.toLocaleString("en-US")} ${peer.population ?? "banks and credit unions"} with ${peer.tierLabel} in assets that reported ${reported} for ${quarterLabel(latest.quarter)}`
     : null;
   const finding = peer
-    ? `${name} reported ${incomeLabel(latest.thousands)} in deposit service charges in ${quarterLabel(latest.quarter)}, ranking ${peer.rank.toLocaleString("en-US")} of ${peer.count.toLocaleString("en-US")} ${peer.population ?? "institutions"} its size, where 1 is the highest.`
-    : `${name} reported ${incomeLabel(latest.thousands)} in deposit service charges in ${quarterLabel(latest.quarter)}.`;
+    ? `${name} reported ${incomeLabel(latest.thousands)} in ${reported} for ${quarterLabel(latest.quarter)}, ranking ${peer.rank.toLocaleString("en-US")} of ${peer.count.toLocaleString("en-US")} ${peer.population ?? "institutions"} its size, where 1 is the highest.`
+    : `${name} reported ${incomeLabel(latest.thousands)} in ${reported} for ${quarterLabel(latest.quarter)}.`;
   return (
     <HubSection
       id="revenue"
@@ -168,7 +159,7 @@ function RevenueSection({ name, charterType, revenue }: { name: string; charterT
       source={`${name}'s ${filing}, ${quarterLabel(latest.quarter)}${peer ? `; the peer median and rank come from the same quarter's filings` : ""}.`}
     >
       <figure className="min-w-0 max-w-5xl">
-        <figcaption className={FIGURE_CAPTION}>Deposit service charges reported by {name}{peer ? `, against ${peer.population ?? "institutions"} its size` : ""}</figcaption>
+        <figcaption className={FIGURE_CAPTION}>{creditUnion ? `Fee income ${name} reported to NCUA` : `Deposit service charges reported by ${name}`}{peer ? `, against ${peer.population ?? "institutions"} its size` : ""}</figcaption>
         <dl className="mt-4 grid grid-cols-1 gap-6 sm:grid-cols-3">
           <Tile label={`${name}, ${quarterLabel(latest.quarter)}`} value={incomeLabel(latest.thousands)} />
           {revenue.trailingThousands !== null && <Tile label={`${name}, last four quarters`} value={incomeLabel(revenue.trailingThousands)} />}
@@ -295,8 +286,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                 </p>
               </div>
               <p className="mt-4 text-[13px] text-ink-soft sm:mx-0 sm:text-left">
-                Identified: every bank with a branch in {counties}, from the Summary of Deposits, and every institution headquartered in
-                their cities. Usable: at least one of this report&apos;s fees, with the amount confirmed on the institution&apos;s own schedule.
+                Identified: {identifiedText(counties)} Usable: at least one of this report&apos;s fees, with the amount confirmed on the institution&apos;s own schedule.
               </p>
               {branches && (
                 <dl className="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-3">
@@ -326,7 +316,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                               </a>
                             </td>
                             <td className="hidden py-1.5 pr-3 text-ink-soft sm:table-cell print:table-cell">
-                              {[c.city ? cityLabel(c.city) : null, footprintLine(branches, c.institution_id)].filter(Boolean).join(" · ") || "-"}
+                              {[c.city ? `HQ ${cityLabel(c.city)}` : null, footprintLine(branches, c.institution_id)].filter(Boolean).join(" · ") || "-"}
                             </td>
                             <td className="py-1.5 text-right text-ink">{withFees.has(c.institution_id) ? "Yes" : "No"}</td>
                           </tr>
@@ -356,7 +346,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
               </p>
               <h3 className="text-[13px] font-semibold text-ink">Competitors</h3>
               <p className="sm:mx-0">
-                Every bank with a branch there and every institution headquartered there. Credit unions show branches only, because
+                Identified: {identifiedText(counties)} Credit unions show branches only, because
                 NCUA reports no deposits by branch.
               </p>
               <h3 className="text-[13px] font-semibold text-ink">Definitions</h3>

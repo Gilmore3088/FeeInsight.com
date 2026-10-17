@@ -8,7 +8,7 @@ import { FEE_LINE_RULES } from "@/lib/custom-report/rules";
 import type { MarketFeeLine } from "@/lib/data-store/custom-report-market";
 import { REPORT_OFFER } from "@/lib/constants";
 import { AtAGlance } from "./market-report/[token]/at-a-glance";
-import { placeLabel } from "./market-report/report-body";
+import { placeLabel } from "./market-report/place-label";
 import { feeMoney, lineName, readOnLabel, shortInstitutionName } from "./for-institutions/board-math";
 import { verifiedSourceQuote } from "./for-institutions/sample-sources";
 import { SAMPLE_REPORT_HREF, TEXT_LINK } from "./landing-shared";

@@ -11,12 +11,7 @@ import { HIGHEST_TIER_CATEGORIES } from "@/lib/data-store/fee-stats";
 import { comparedAtText, priceRangeText } from "@/lib/fee-representative";
 import { countyLabel } from "@/lib/geo/counties";
 
-/** Rows each long exhibit shows before "Show all". */
-export const ROWS_SHOWN = 5;
-
-/** Classes for a row past the first ROWS_SHOWN inside <ShowAll>: hidden until opened, always printed. */
-export const EXTRA_ROW = "hidden group-data-[open=true]/all:table-row print:table-row";
-export const EXTRA_BLOCK_ROW = "hidden group-data-[open=true]/all:block print:block";
+export { EXTRA_BLOCK_ROW, EXTRA_ROW, ROWS_SHOWN } from "./rows";
 
 export function money(value: number | null | undefined): string {
   if (value === null || value === undefined || Number.isNaN(value)) return "-";
@@ -102,6 +97,15 @@ export function countiesText(countyFips: string[]): string {
     return `${join(names)} ${names.length === 1 ? "County" : "counties"}, ${parts[0]![2]}`;
   }
   return join(labels);
+}
+
+/**
+ * Who counts as identified, matching the market query (custom-report-market.ts): every bank with
+ * a branch in the counties, and every institution headquartered in a city where one of those
+ * branches sits.
+ */
+export function identifiedText(counties: string): string {
+  return `every bank with a branch in ${counties} (FDIC Summary of Deposits), and every institution headquartered in a city where one of those branches sits.`;
 }
 
 /** "36 institutions identified in Leon, Gadsden and Wakulla counties, FL; 30 publish fees this report can use." */

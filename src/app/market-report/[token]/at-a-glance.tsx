@@ -1,5 +1,5 @@
 import { positionCounts, type ReportChange, type ReportLine } from "@/lib/custom-report/analysis";
-import { EXTRA_ROW, ROWS_SHOWN } from "../report-view";
+import { EXTRA_ROW, ROWS_SHOWN } from "../rows";
 import { ShowAll } from "../show-all";
 
 const SERIF = { fontFamily: "var(--fi-font-sans)" };

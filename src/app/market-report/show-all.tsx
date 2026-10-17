@@ -3,8 +3,8 @@
 import { useState, type ReactNode } from "react";
 
 /**
- * Wraps a long exhibit whose rows past the first few carry `EXTRA_ROW` or `EXTRA_GRID_ROW`
- * (report-view.ts, a plain module so server components get the strings): they stay hidden on
+ * Wraps a long exhibit whose rows past the first few carry `EXTRA_ROW` or `EXTRA_BLOCK_ROW`
+ * (rows.ts, a plain module so server components get the strings): they stay hidden on
  * screen until "Show all N" is pressed, and always print, so a saved PDF holds every row. The
  * rows are drawn on the server; this only flips one attribute.
  */

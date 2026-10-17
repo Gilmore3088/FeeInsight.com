@@ -26,7 +26,7 @@ function toneOf(line: ReportLine): Tone {
 function gapText(line: PlottedLine): string {
   const diff = line.own.amount - line.peers.median;
   if (Math.abs(diff) < 0.005) return "at median";
-  return `${diff > 0 ? "+" : "-"}${money(Math.abs(diff))}`;
+  return `${diff > 0 ? "+" : "\u2212"}${money(Math.abs(diff))}`;
 }
 
 const GRID = "grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-4 sm:grid-cols-[minmax(0,15rem)_minmax(8rem,1fr)_8.5rem_6rem_5.5rem]";
@@ -46,7 +46,7 @@ export function FeeComparison({ name, lines, names, branches, footprint }: FeeCo
     .sort((a, b) => Math.abs(b.line.own.amount - b.line.peers.median) - Math.abs(a.line.own.amount - a.line.peers.median));
   return (
     <ShowAll total={rows.length} shown={ROWS_SHOWN} noun="fees">
-      <div role="list" aria-label={`${name}'s fees against local competitors`} className="border-y border-border">
+      <div className="border-y border-border">
         <div aria-hidden="true" className={`${GRID} border-b border-border py-2 text-[11px] uppercase tracking-[0.08em] text-ink-muted`}>
           <span>Fee</span>
           <span className="hidden justify-between sm:flex print:flex">
@@ -54,19 +54,17 @@ export function FeeComparison({ name, lines, names, branches, footprint }: FeeCo
             <span>Local median</span>
             <span>Higher</span>
           </span>
-          <span className="text-right">{name.length > 16 ? "Its price" : name}</span>
+          <span className="text-right">Price</span>
           <span className="text-right">vs median</span>
           <span className="hidden text-right sm:block print:block">Position</span>
         </div>
+        <ul aria-label={`${name}'s fees against local competitors`}>
         {rows.map(({ line, rank, tone }, index) => {
           const compared = comparedAt(line.key, line.own);
           const figures = [...line.peerFigures].sort((a, b) => a.amount - b.amount);
           return (
-            <details
-              key={line.key}
-              role="listitem"
-              className={`group/fee border-b border-border last:border-0 ${index >= ROWS_SHOWN ? EXTRA_BLOCK_ROW : ""}`}
-            >
+            <li key={line.key} className={`border-b border-border last:border-0 ${index >= ROWS_SHOWN ? EXTRA_BLOCK_ROW : ""}`}>
+            <details className="group/fee">
               <summary className={`${GRID} min-h-11 cursor-pointer list-none py-2.5 hover:bg-paper [&::-webkit-details-marker]:hidden`}>
                 <span className="flex min-w-0 items-center gap-2 text-[14px] font-medium text-ink">
                   <span aria-hidden="true" className="inline-block text-ink-muted transition-transform group-open/fee:rotate-90 print:hidden">
@@ -113,9 +111,9 @@ export function FeeComparison({ name, lines, names, branches, footprint }: FeeCo
                   <dd className="text-right text-ink">{line.peers.n} local competitors that publish it</dd>
                   <dt className="text-ink-muted">Charging less</dt>
                   <dd className="text-right tabular-nums text-ink">
-                    {line.chargingLess ?? "-"} of {line.peers.n}
+                    {line.chargingLess === null ? "not stated" : `${line.chargingLess} of ${line.peers.n}`}
                   </dd>
-                  <dt className="col-span-2 mt-2 text-ink-muted">
+                  <dt className="col-span-2 mt-2 min-w-0 text-ink-muted [overflow-wrap:anywhere]">
                     {name}&apos;s schedule: &ldquo;{line.own.source_line}&rdquo;
                     {line.own.source_url && (
                       <>
@@ -141,7 +139,7 @@ export function FeeComparison({ name, lines, names, branches, footprint }: FeeCo
                           key={figure.institution_id}
                           className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 border-b border-border py-1.5 last:border-0 sm:grid-cols-[minmax(0,15rem)_7rem_minmax(0,1fr)]"
                         >
-                          <span className="min-w-0 text-ink">
+                          <span className="min-w-0 text-ink [overflow-wrap:anywhere]">
                             <a href={`/institution/${figure.institution_id}`} className="inline-flex min-h-11 items-center underline-offset-2 hover:underline sm:min-h-0">
                               {names.get(figure.institution_id) ?? `Institution ${figure.institution_id}`}
                             </a>
@@ -158,7 +156,7 @@ export function FeeComparison({ name, lines, names, branches, footprint }: FeeCo
                               money(figure.amount)
                             )}
                           </span>
-                          <span className="col-span-2 text-ink-muted sm:col-span-1">
+                          <span className="col-span-2 min-w-0 text-ink-muted [overflow-wrap:anywhere] sm:col-span-1">
                             &ldquo;{figure.source_line}&rdquo;{figure.schedule_read_on ? `, read ${figure.schedule_read_on}` : ""}
                             {several ? `; compared at ${money(figure.amount)}` : ""}
                           </span>
@@ -169,8 +167,10 @@ export function FeeComparison({ name, lines, names, branches, footprint }: FeeCo
                 </div>
               </div>
             </details>
+            </li>
           );
         })}
+        </ul>
       </div>
     </ShowAll>
   );
