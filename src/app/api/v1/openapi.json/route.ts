@@ -1030,7 +1030,7 @@ const spec = {
                       type: "object",
                       properties: {
                         basis: { type: "string", enum: ["default", "chosen", "defined"] },
-                        label: { type: "string", example: "Banks with $300M to $1B in assets in Fed district 11 (Dallas)" },
+                        label: { type: "string", example: "Banks with $300M to $1B in assets in the Dallas Fed district" },
                         definition: {
                           type: "object",
                           nullable: true,

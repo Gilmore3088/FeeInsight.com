@@ -22,7 +22,7 @@ const COMPARISON = {
   institution: { id: 12, name: "Example Bank", state: "TX", charter_type: "bank", asset_tier: "community_mid", fed_district: 11 },
   peer_group: {
     basis: "default" as const,
-    label: "Banks with $300M to $1B in assets in Fed district 11 (Dallas)",
+    label: "Banks with $300M to $1B in assets in the Dallas Fed district",
     definition: { charter_type: "bank", asset_tiers: ["community_mid"], fed_districts: [11] },
     market: null,
     peer_ids: null,

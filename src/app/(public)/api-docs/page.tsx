@@ -791,7 +791,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
   "institution": { "id": 2466, "name": "Gateway Bank", "state": "MN", "charter_type": "bank", "asset_tier": "community_mid", "fed_district": 9 },
   "peer_group": {
     "basis": "default",
-    "label": "Banks with $300M to $1B in assets in Fed district 9 (Minneapolis)",
+    "label": "Banks with $300M to $1B in assets in the Minneapolis Fed district",
     "peers_with_fees": 41
   },
   "min_peers": ${MIN_INSTITUTIONS_FOR_MEDIAN},
