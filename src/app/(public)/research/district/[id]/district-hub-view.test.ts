@@ -7,10 +7,11 @@ import {
   cpiBankServices,
   feeChangeSummary,
   hubFeeKeys,
+  openingFinding,
   quarterLabel,
   revenueTrend,
+  sizeGroups,
   stateHubRows,
-  tierMix,
 } from "./district-hub-view";
 
 function hub(over: Partial<DistrictHubData> = {}): DistrictHubData {
@@ -65,8 +66,8 @@ describe("stateHubRows", () => {
   it("builds each state's figures and leaves unknowns null", () => {
     const h = hub({
       institutions: [
-        { state_code: "MO", charter_type: "bank", tier: "community", institutions: 30, with_fees: 15 },
-        { state_code: "MO", charter_type: "credit_union", tier: "micro", institutions: 10, with_fees: 5 },
+        { state_code: "MO", charter_type: "bank", tier: "community", size_group: null, institutions: 30, with_fees: 15 },
+        { state_code: "MO", charter_type: "credit_union", tier: "micro", size_group: null, institutions: 10, with_fees: 5 },
       ],
       state_fees: [{ state_code: "MO", fees: { overdraft: { median: 30, institutions: 12 } } }],
       revenue: [rev("2026-Q2", "MO", "bank", 500, 30)],
@@ -87,21 +88,26 @@ describe("stateHubRows", () => {
   });
 });
 
-describe("tierMix", () => {
-  it("orders sizes smallest first and maps the old tier names", () => {
+describe("sizeGroups", () => {
+  it("counts banks by FDIC groups and credit unions by NCUA groups, keeping empty groups", () => {
     const h = hub({
       institutions: [
-        { state_code: "MO", charter_type: "bank", tier: "regional", institutions: 2, with_fees: 0 },
-        { state_code: "MO", charter_type: "bank", tier: "community_small", institutions: 5, with_fees: 0 },
-        { state_code: "AR", charter_type: "credit_union", tier: "micro", institutions: 7, with_fees: 0 },
-        { state_code: "AR", charter_type: "bank", tier: null, institutions: 9, with_fees: 0 },
+        { state_code: "MO", charter_type: "bank", tier: "micro", size_group: "lt100m", institutions: 5, with_fees: 0 },
+        { state_code: "MO", charter_type: "bank", tier: "regional", size_group: "10b-250b", institutions: 2, with_fees: 0 },
+        { state_code: "AR", charter_type: "credit_union", tier: "micro", size_group: "lt10m", institutions: 7, with_fees: 0 },
+        { state_code: "AR", charter_type: "bank", tier: null, size_group: null, institutions: 9, with_fees: 0 },
       ],
     });
-    expect(tierMix(h).map((t) => [t.tier, t.banks, t.creditUnions])).toEqual([
-      ["micro", 5, 7],
-      ["regional", 2, 0],
+    const groups = sizeGroups(h);
+    expect(groups.banks.map((g) => [g.label, g.institutions])).toEqual([
+      ["Under $100M", 5],
+      ["$100M to $1B", 0],
+      ["$1B to $10B", 0],
+      ["$10B to $250B", 2],
+      ["Over $250B", 0],
     ]);
-    expect(tierMix(h, "AR").map((t) => t.tier)).toEqual(["micro"]);
+    expect(groups.creditUnions[0]).toEqual({ key: "lt10m", label: "Under $10M", institutions: 7 });
+    expect(sizeGroups(h, "MO").creditUnions.every((g) => g.institutions === 0)).toBe(true);
   });
 });
 
@@ -199,5 +205,37 @@ describe("hubFeeKeys", () => {
   it("shows Pro every hub fee and free visitors the featured ones", () => {
     expect(hubFeeKeys(true)).toHaveLength(5);
     expect(hubFeeKeys(false)).toContain("overdraft");
+  });
+});
+
+describe("openingFinding", () => {
+  const fee = (key: string, median: number, us: number, institutions = 300) => ({ key, median, institutions, us: { median: us } });
+
+  it("leads with overdraft and NSF when both sit the same amount off the benchmark", () => {
+    expect(openingFinding([fee("overdraft", 25, 30), fee("nsf", 25, 30)], 10)).toBe(
+      "Overdraft and NSF medians are $5 below the national benchmark.",
+    );
+  });
+
+  it("names each amount when the two gaps differ", () => {
+    expect(openingFinding([fee("overdraft", 33, 30), fee("nsf", 32, 30)], 10)).toBe(
+      "Overdraft and NSF medians are $3 and $2 above the national benchmark.",
+    );
+  });
+
+  it("says which one matches when only one is off", () => {
+    expect(openingFinding([fee("overdraft", 30, 30), fee("nsf", 28, 30)], 10)).toBe(
+      "The NSF median is $2 below the national benchmark; overdraft matches it.",
+    );
+  });
+
+  it("falls back to the widest gap when both match", () => {
+    expect(openingFinding([fee("overdraft", 30, 30), fee("nsf", 30, 30), fee("stop_payment", 30, 27.5), fee("wire_domestic_outgoing", 20, 25)], 10)).toBe(
+      "Overdraft and NSF medians match the national benchmark at $30. The outgoing wire median is $5 below it.",
+    );
+  });
+
+  it("leaves out fees with too few institutions", () => {
+    expect(openingFinding([fee("overdraft", 25, 30, 4), fee("nsf", 25, 30, 4)], 10)).toBeNull();
   });
 });
