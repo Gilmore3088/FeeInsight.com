@@ -33,7 +33,7 @@ const SERIF = SANS;
 // The site header logo (public/brand), served from the live site; mail clients block SVG, so PNG at 2x.
 // The email logo is the wordmark in brick on a transparent background: Gmail dark mode inverts
 // the parchment header but leaves images alone, and brick stays readable on both.
-const LOGO_URL = "https://feeinsight.com/brand/png/fee-insight-oneline-email@2x.png";
+const LOGO_URL = "https://feeinsight.com/brand/png/fee-insight-oneline@2x.png";
 const MONO = "'Geist Mono','SFMono-Regular',Menlo,Consolas,monospace";
 
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
