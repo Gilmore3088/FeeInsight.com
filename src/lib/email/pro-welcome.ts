@@ -3,7 +3,7 @@
  * webhook's transaction commits, once per checkout (Stripe events are deduplicated),
  * and never throws: a failed send is logged, James is alerted, and the subscription stands.
  */
-import { CONTACT_EMAIL, HAMILTON_CANONICAL, SITE_NAME, SITE_URL } from "@/lib/constants";
+import { CONTACT_EMAIL, HAMILTON_CANONICAL, SITE_URL } from "@/lib/constants";
 import {
   getLeadNotificationFromAddress,
   renderLeadEmailHtml,
@@ -19,11 +19,11 @@ function absolute(path: string) {
 
 export function buildProWelcomeEmail(name: string | null): LeadEmailContent {
   return {
-    subject: `Welcome to ${SITE_NAME} Pro`,
+    subject: "Welcome to Hamilton",
     lines: [
       name ? `Hi ${name},` : "Hello,",
       "",
-      `Your ${SITE_NAME} Pro access is active.`,
+      "Your Hamilton access is active.",
       "",
       HAMILTON_CANONICAL,
       "",

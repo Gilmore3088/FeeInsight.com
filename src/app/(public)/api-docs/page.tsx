@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
-import { CONTACT_EMAIL, SITE_NAME, SITE_URL } from "@/lib/constants";
+import { CONTACT_EMAIL, SITE_URL } from "@/lib/constants";
 import { getPublicStatsSummary } from "@/lib/public-stats";
 import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT } from "@/lib/data-store/maturity";
 import { API_MONTHLY_CALLS_LABEL, API_PLANS_LABEL, BURST_CALLS_PER_MINUTE } from "@/lib/api-subscriber-access";
@@ -12,12 +12,12 @@ import { PRO_PLANS_NAV } from "@/components/nav-items";
 import { NON_INSTITUTION_TIER, tierAmountLabel, tierPriceLabel } from "@/lib/pro-tiers";
 import { PAGE_HEADER } from "@/components/public/page-header";
 
-const PRO_LABEL = `${SITE_NAME} Pro`;
+const PRO_LABEL = "Hamilton";
 
 export const metadata: Metadata = {
   title: "API Documentation",
   description:
-    `REST API and Claude connector for bank and credit union fee data. Included with the ${API_PLANS_LABEL} of ${SITE_NAME} Pro: make your key on your account page.`,
+    `REST API and Claude connector for bank and credit union fee data. Included with the ${API_PLANS_LABEL} of Hamilton: make your key on your account page.`,
 };
 
 /* ---------- small reusable pieces ---------- */

@@ -17,7 +17,7 @@ export function ProNextStep({ className = "" }: { className?: string }) {
         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-muted">Hamilton</p>
         <p className="mt-1 text-[15px] font-semibold text-ink">Need this every month, for your whole team?</p>
         <p className="mt-1 text-[13px] leading-relaxed text-ink-soft">
-          Hamilton, the Fee Insight Pro workspace, gives up to {WORKSPACE_SEAT_LIMIT} people your fees against your
+          Hamilton, the Fee Insight workspace, gives up to {WORKSPACE_SEAT_LIMIT} people your fees against your
           market, a watchlist of the competitors you pick, and cited reports for the board.
         </p>
       </div>

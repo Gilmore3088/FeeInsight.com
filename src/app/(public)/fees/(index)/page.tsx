@@ -213,7 +213,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
             <p className="text-[18px] font-semibold text-ink">{feeLabel} is part of full {PRODUCT_NAME} access</p>
             {getFeeDefinition(sel.fee) && <p className="mt-1 text-[14px] text-ink-soft">{getFeeDefinition(sel.fee)}</p>}
             <p className="mt-3 text-[14px] text-ink-soft">
-              {(coverage.get(sel.fee) ?? 0).toLocaleString()} institutions publish it. Full access, part of Hamilton Pro, shows its
+              {(coverage.get(sel.fee) ?? 0).toLocaleString()} institutions publish it. Full access, part of Hamilton, shows its
               median, spread and the institutions behind it for {who} {sel.state ? `headquartered in ${where}` : "in the U.S."}, the same way as the free
               categories. Your choices above stay as they are.
             </p>
@@ -447,7 +447,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
               {PRO_PLANS_NAV.label}
             </Link>
             <p className="mt-3 text-[13px] text-on-ink/70">
-              Full {PRODUCT_NAME} access comes with a Hamilton Pro subscription, the workspace for bank and credit union teams.
+              Full {PRODUCT_NAME} access comes with a Hamilton subscription, the workspace for bank and credit union teams.
             </p>
           </div>
         </section>

@@ -84,7 +84,7 @@ export async function validateApiKey(
         valid: false,
         organizationId: null,
         tier: "free",
-        error: "This key's Fee Insight Pro subscription is not active. Restart Pro from your account to use it again.",
+        error: "This key's Hamilton subscription is not active. Restart Hamilton from your account to use it again.",
         code: "subscription_inactive",
       };
     }
@@ -95,7 +95,7 @@ export async function validateApiKey(
         organizationId: null,
         tier: "free",
         error:
-          "This key's holder no longer has a seat on the Fee Insight Pro plan that covered it. Ask the plan's owner to add you back to their workspace.",
+          "This key's holder no longer has a seat on the Hamilton plan that covered it. Ask the plan's owner to add you back to their workspace.",
         code: "seat_removed",
       };
     }
