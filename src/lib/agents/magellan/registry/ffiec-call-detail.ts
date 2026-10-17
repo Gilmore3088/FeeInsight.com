@@ -4,6 +4,7 @@ import { FFIEC_CALL_ITEM_SCHEDULES, readFfiecCallItems, type FfiecColumnCheck, t
 import type { RegistryFetchOptions } from "@/lib/regulatory/http";
 import { parseQuarterKey, quarterEndDate, type Quarter } from "@/lib/regulatory/quarters";
 import { ffiecOverdraftPartitions, ffiecRefreshHours } from "./ffiec-overdraft";
+import { checkValues, flaggedOnly } from "@/lib/regulatory/data-checks";
 import { recordRegistryPartition, type RegistryDb } from "./partitions";
 
 /**
@@ -152,7 +153,9 @@ export async function runRegistryFfiecCallDetail(options: RegistryFfiecCallDetai
   };
   if (dryRun) return base;
 
+  const valueChecks = flaggedOnly(checkValues(values.map((v) => ({ key: v.key, id: v.rssd, value: v.value }))));
   const detail = {
+    value_checks: valueChecks,
     parser_version: FFIEC_CALL_DETAIL_PARSER_VERSION,
     report_date: reportDate,
     file: download.fileName,

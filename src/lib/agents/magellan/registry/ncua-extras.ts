@@ -11,6 +11,7 @@ import {
   type Quarter,
 } from "@/lib/regulatory/quarters";
 import { NCUA_FILING_LAG_DAYS } from "./ncua-financials";
+import { checkValues, flaggedOnly } from "@/lib/regulatory/data-checks";
 import { recordRegistryPartition, type RegistryDb } from "./partitions";
 
 /**
@@ -155,7 +156,9 @@ export async function runRegistryNcuaExtras(options: RegistryNcuaExtrasOptions):
 
   const latest = latestPublishableQuarter(now, NCUA_FILING_LAG_DAYS);
   const refreshHours = latest.year === quarter.year ? RECENT_REFRESH_HOURS : HISTORICAL_REFRESH_HOURS;
+  const valueChecks = flaggedOnly(checkValues(values.map((v) => ({ key: v.key, id: v.charter, value: v.value }))));
   const detail = {
+    value_checks: valueChecks,
     parser_version: NCUA_EXTRAS_PARSER_VERSION,
     report_date: reportDate,
     description_file: read?.descriptionFile ?? null,
