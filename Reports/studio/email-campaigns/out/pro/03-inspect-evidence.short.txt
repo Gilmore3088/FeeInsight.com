@@ -1,7 +1,7 @@
-Check the source behind any figure
-==================================
+Check the source behind a figure
+================================
 
-Before a number goes in front of your committee, you should be able to show where it came from. Each institution's public profile names the published fee schedule we read and the date we read it.
+Before a number goes in front of your committee, you should be able to show where it came from. Each fee on an institution's public profile links to the schedule page it was read from, and the profile shows the date we last read that institution.
 
 [ TRY IT ONCE ]
 1. Open Hamilton and pick a fee where you and your peers differ.
