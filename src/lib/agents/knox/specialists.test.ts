@@ -477,6 +477,7 @@ describe("a price-first row keeps its own price (#1827)", () => {
 
   it("pairs each markdown row's price with the name after it (Valley Strong CU)", () => {
     const rows = fees(valleyStrong);
+    expect(amountsOf(rows, "Drilling of Box by Locksmith/New Lock")).toEqual([195]);
     expect(amountsOf(rows, "Key Deposit")).toEqual([20]);
     expect(amountsOf(rows, "Key Replacement")).toEqual([11]);
     expect(amountsOf(rows, "Rental of 3 × 5 Box Annual Fee")).toEqual([45]);
@@ -523,6 +524,20 @@ describe("a price-first row keeps its own price (#1827)", () => {
     // fee beside the price is priced on the next line.
     const text = ["Inactivity Fee - Savings Account per", "$5 | Cross-border transaction fee", "Month After 24 Months | 0.90%"].join("\n");
     expect(amountsOf(fees(text, "extract.table"), "Inactivity Fee - Savings Account per")).toEqual([5]);
+  });
+
+  it("keeps a name line's price over a lone price-first row (two columns or a description cell)", () => {
+    const twoColumns = ["Overdraft Fee", "$35.00 | Stop Payment Fee", "Per item | $30.00"].join("\n");
+    expect(amountsOf(fees(twoColumns, "extract.table"), "Overdraft Fee")).toEqual([35]);
+    const inactivity = ["Inactivity Fee", "$5 | Cross-border transaction fee", "Month After 24 Months | 0.90%"].join("\n");
+    expect(amountsOf(fees(inactivity, "extract.table"), "Inactivity Fee")).toEqual([5]);
+    expect(amountsOf(fees(["Overdraft Fee", "$35 | Charged when an item is paid"].join("\n")), "Overdraft Fee")).toEqual([35]);
+    expect(amountsOf(fees(["Stop Payment", "$30 | Online Banking request"].join("\n")), "Stop Payment")).toEqual([30]);
+  });
+
+  it("reads a period word followed by a capitalized name as the row's name", () => {
+    const text = ["| **$10** | Monthly Service Charge |", "| **$45** | Annual Rental 3 x 5 Box |"].join("\n");
+    expect(priceWindows(text).map((window) => window.rawName)).toEqual(["Monthly Service Charge", "Annual Rental 3 x 5 Box"]);
   });
 
   it("never reads a period or a waiver after the price as the row's name", () => {

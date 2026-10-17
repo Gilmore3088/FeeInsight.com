@@ -13,6 +13,7 @@ import {
 import {
   cleanFeeName,
   composableTail,
+  inPriceFirstRun,
   STOP_PAYMENT_ITEM_WORDS,
   LEADING_VALUE,
   looksLikeHeading,
@@ -86,8 +87,10 @@ export function tableRowsFromText(text: string): KnoxTableRow[] {
     // (Varies with payment)" / "$25.00").
     // A name that runs on keeps its price ("Inactivity Fee - Savings Account per" / "$5 |
     // Cross-border transaction fee": a two-column page), and so does a line with a second price.
+    // A lone price-first cell row under a name line keeps the old reading: a two-column page's right
+    // column or a description cell ("Overdraft Fee" / "$35.00 | Stop Payment Fee" / "Per item | $30.00").
     if (lead && pendingName && !runsOn(pendingName) && amountsIn(line).length === 1 &&
-      (line.includes(CELL_SEPARATOR) || statesItsPriceVaries(pendingName))) {
+      ((line.includes(CELL_SEPARATOR) && inPriceFirstRun(lines, index)) || statesItsPriceVaries(pendingName))) {
       const rest = line.slice(lead[0].length);
       const qualifier = rest.match(QUALIFIER)?.[0] ?? "";
       const own = nameAfterPrice(rest.slice(qualifier.length));

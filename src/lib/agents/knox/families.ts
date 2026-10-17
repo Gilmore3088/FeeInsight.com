@@ -16,6 +16,7 @@ import {
 import {
   cleanFeeName,
   composableTail,
+  inPriceFirstRun,
   looksLikeHeading,
   nameAfterPrice,
   qualifiesName,
@@ -214,9 +215,11 @@ export function priceWindows(text: string): PriceWindow[] {
       // Citadel FCU). Read as stacked, every row took the next row's price. A bare price under a
       // "varies" name is still that name's ("Skip-A-Payment Fee (Varies with payment)" / "$25.00").
       // A name above that runs on keeps the price ("Inactivity Fee - Savings Account per" / "$5 |
-      // Cross-border transaction fee": a two-column page).
+      // Cross-border transaction fee": a two-column page), and so does one over a lone price-first
+      // row (`inPriceFirstRun`: "Overdraft Fee" / "$35.00 | Stop Payment Fee").
       const priceFirst = opensLine && values.length === 1 && !value.zero && !(pending != null && runsOn(pending)) &&
-        (line.includes(CELL_SEPARATOR) || (pending != null && statesItsPriceVaries(pending)))
+        ((line.includes(CELL_SEPARATOR) && (pending == null || inPriceFirstRun(lines, lineIndex))) ||
+          (pending != null && statesItsPriceVaries(pending)))
         ? nameAfterPrice(line.slice(value.end + qualifier.length))
         : null;
       // A price at the start of a line belongs to the name on the line above.
