@@ -699,8 +699,24 @@ in the step detail counts these pairs, closed or kept, and `renamed_samples` lis
 step reports `page_copy_collapse` (live, institutions, pairs, apart on page, unproven, other
 document, renamed, would close, samples, and `error` when the read or the close failed). `PAGE_COPY_COLLAPSE_LIVE` stays
 off until James approves the dry-run counts. Rollback: clear `rolled_back_at` on rows whose reason
-ends in `(copy of the page)`. A closed copy is not restored if its kept copy later comes down; like
-the other collapses, that is a gap to close before this goes live.
+ends in `(copy of the page)`.
+
+**A closed page copy comes back (#1439 item 3).** `page-copy-restore.ts` runs just before the
+collapse on every publish step and reads closed page copies whose kept row is no longer live (up to
+500 a step, rotated by the run id). It follows the kept row's takedown through the rows it names
+(`refreshed by #`, `superseded by #`, `duplicate of #`, `same_line_duplicate: live fee #`, at most 8
+hops); if the fee lives on in one of them (live, or held by the account type hold), the closed copy
+stays down. It comes back only when the chain ends on a takedown about the kept copy itself
+(`source_check_untraceable:*`, `rules_recheck_unreproduced`); a takedown that judges the fee
+(category guard, amount range, hand takedown, closed institution, another bank's document,
+quarantine) holds for the closed copy too. The closed copy must then be verified, clear the restore
+bar (`disputedRestoreVerdict`) on the current copy of its page (its own newest text, or the kept
+document's when that document replaced its own; a copy replaced by some other document stays down),
+and find no live row of the institution at that price nor a live row of the same page at another
+price. A restored fee is queued for the source check. It runs whatever `PAGE_COPY_COLLAPSE_LIVE`
+says, since it only reopens rows the collapse closed; a dry run writes nothing. Each step reports
+`page_copy_restore` (kept down, carried on, kept judged, failing, restored, samples, `error`). The
+exact and near-name collapses still have this gap.
 
 **At publish (#1069 step 1, shadow).** Each row the publish step is about to publish is checked
 against its live copies with the exact collapse's own test (`exact-duplicate.ts`: institution,
