@@ -496,7 +496,10 @@ the detail.
     tidy name, up to 100 banks a step; the old name is a `name_retidied` feedback row. No
     rollback.
 25. Account names (`account-names.ts`): a live "Monthly Service Fee" takes the account heading
-    above it, up to 40 banks a step (`name_account_added` feedback row). No rollback.
+    above it, up to 40 banks a step (`name_account_added` feedback row). No rollback. v2 (#1810):
+    with no heading above it, the account Knox's lineup recorded on the raw row names it, when that
+    account reads as an account name, is printed in the fee's own schedule and is on no other
+    generic fee of that schedule (`evidence.heading_from` says which).
 26. Lineup correct (`correctStoredLineups`, `knox/lineup-correct.ts`): lineup values stored
     before Knox v55 that came from a neighbouring account are corrected from the stored text,
     up to 200 documents a step (`lineup_corrected` feedback row). No rollback.
@@ -1050,7 +1053,7 @@ fails a PR that changes one of these constants without updating its line here (#
 
 | Constant | Strategy | Version | File |
 |---|---|---|---|
-| `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v1 | `hamilton/account-names.ts` |
+| `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v2 | `hamilton/account-names.ts` |
 | `CURRENT_COPY_STRATEGY` | `hamilton.current_copy_check` | v2 | `hamilton/current-copy.ts` |
 | `EVAL_VERDICT_VERSION` | — | v8 | `hamilton/eval-verdicts.ts` |
 | `FREQUENCY_FILL_VERSION` | — | v14 | `hamilton/frequency-fill.ts` |

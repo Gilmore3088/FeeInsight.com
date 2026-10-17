@@ -6,7 +6,8 @@ import { feedbackSchemaReady, recordFeedback } from "@/lib/agents/learning/feedb
 import { traceLiveFee, type InstitutionText, type LiveFeeRow } from "@/lib/agents/hamilton/source-check";
 import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
-import { accountHeadingForExcerpt, GENERIC_ACCOUNT_FEE_NAME, withAccountName } from "@/lib/fee-account-heading";
+import { capsCasedName } from "@/lib/agents/knox/name-retidy";
+import { accountHeading, accountHeadingForExcerpt, GENERIC_ACCOUNT_FEE_NAME, withAccountName } from "@/lib/fee-account-heading";
 
 type SqlTag = typeof sql;
 
@@ -21,8 +22,14 @@ type SqlTag = typeof sql;
  * schedule when the old name did. Each rename is a `name_account_added` row in
  * `pipeline_feedback` holding the old name, the new name and the heading, so it is reversed by
  * setting `fee_name` back; the raw and verified rows keep the name Knox read.
+ *
+ * v2 (#1810): when no heading sits above the fee, the account Knox's lineup read recorded on the
+ * raw row (`product_name`) names it instead, if it reads as a heading, is printed in the fee's
+ * own schedule, and no other generic fee of that schedule carries the same account. Over 1,137
+ * v1 runs, 5,883 of 7,332 generic names found no heading; on Oct 17, 518 of 1,763 live generic
+ * names had such an account, 229 of them among the 859 that shared their bank's name.
  */
-export const ACCOUNT_NAME_STRATEGY = { strategy: "hamilton.account_names", version: 1 } as const;
+export const ACCOUNT_NAME_STRATEGY = { strategy: "hamilton.account_names", version: 2 } as const;
 export const ACCOUNT_NAME_KIND = "name_account_added";
 export const ACCOUNT_NAME_INSTITUTION_LIMIT = 40;
 
@@ -41,6 +48,8 @@ export interface AccountRename {
   oldName: string;
   newName: string;
   heading: string;
+  /** Where the account came from: the heading above the fee, or Knox's recorded account (v2). */
+  headingFrom: "above" | "product";
 }
 
 export interface AccountNamePlan {
@@ -48,7 +57,28 @@ export interface AccountNamePlan {
   skipped: Record<AccountNameSkip, number>;
 }
 
-export type AccountNameFee = LiveFeeRow & { conditions: string | null };
+export type AccountNameFee = LiveFeeRow & { conditions: string | null; product_name?: string | null };
+
+/** Page furniture a lineup can mistake for an account ("Account Login", "Restart Checking Account Today"). */
+const PRODUCT_FURNITURE = /\b(login|log in|sign in|today|steps?|view|next|my|add|open|online|includes)\b|\baccountopen\b/i;
+/** An account's name ends in the kind of account ("Fresh Start Checking", "Refresh Checking (Second Chance)"). */
+const ENDS_IN_ACCOUNT = /\b(checking|savings|account|club|certificate|market|draft|cd|ira)(?:\s*\([^)]*\))?$/i;
+
+const plain = (value: string) => value.replace(/[®™℠*]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+
+/** Knox's recorded account for a fee, when it reads as a heading and is printed in `text`. */
+export function productHeading(productName: string | null | undefined, text: string | null | undefined): string | null {
+  if (!productName || !text || PRODUCT_FURNITURE.test(productName)) return null;
+  // "CNB GOLD CHECKING" reads "CNB Gold Checking", as Knox's tidy cases a live name (v22).
+  const heading = accountHeading(capsCasedName(productName) ?? productName);
+  // "Account Online", "Foundation Checking includes", "External Account Transfers": a lineup's
+  // stray line, not an account.
+  if (!heading || /^account\b/i.test(heading) || !ENDS_IN_ACCOUNT.test(heading) || /(^|\s)[a-z]/.test(heading)) return null;
+  // A word printed twice is two lines run together ("Free Checking Free Checking", "Current Account New Account").
+  const words = heading.toLowerCase().split(/\s+/);
+  if (new Set(words).size !== words.length) return null;
+  return plain(text).includes(plain(heading)) ? heading : null;
+}
 
 /** Pure: which generic live names take their account heading. */
 export function planAccountNames(fees: AccountNameFee[], texts: InstitutionText[], liveFees: LiveFeeRow[] = fees): AccountNamePlan {
@@ -57,10 +87,17 @@ export function planAccountNames(fees: AccountNameFee[], texts: InstitutionText[
   const lineKey = (fee: Pick<LiveFeeRow, "institution_id" | "canonical_fee_key" | "amount">, name: string) =>
     `${Number(fee.institution_id)}|${fee.canonical_fee_key}|${fee.amount == null ? "" : Number(fee.amount).toFixed(2)}|${name.trim().toLowerCase()}`;
   const taken = new Set(liveFees.map((fee) => lineKey(fee, fee.fee_name)));
-  for (const fee of fees) {
-    if (!ACCOUNT_FEE_KEYS.includes(fee.canonical_fee_key) || !GENERIC_ACCOUNT_FEE_NAME.test(fee.fee_name)) continue;
+  const generic = fees.filter((fee) => ACCOUNT_FEE_KEYS.includes(fee.canonical_fee_key) && GENERIC_ACCOUNT_FEE_NAME.test(fee.fee_name));
+  // One recorded account on two generic fees of one schedule is a lineup that spread one account
+  // across a comparison table's columns: it names neither.
+  const productKey = (fee: AccountNameFee) => `${fee.source_document_id ?? ""}|${(fee.product_name ?? "").trim().toLowerCase()}`;
+  const productCounts = new Map<string, number>();
+  for (const fee of generic) if (fee.product_name) productCounts.set(productKey(fee), (productCounts.get(productKey(fee)) ?? 0) + 1);
+  for (const fee of generic) {
     const own = texts.find((text) => fee.source_document_id != null && Number(text.source_document_id) === Number(fee.source_document_id));
-    const heading = accountHeadingForExcerpt(own?.normalized_text, excerptOf(fee.conditions));
+    const above = accountHeadingForExcerpt(own?.normalized_text, excerptOf(fee.conditions));
+    const product = above || productCounts.get(productKey(fee)) !== 1 ? null : productHeading(fee.product_name, own?.normalized_text);
+    const heading = above ?? product;
     if (!heading) {
       skipped.no_heading += 1;
       continue;
@@ -90,6 +127,7 @@ export function planAccountNames(fees: AccountNameFee[], texts: InstitutionText[
       oldName: fee.fee_name,
       newName,
       heading,
+      headingFrom: above ? "above" : "product",
     });
   }
   return { renames, skipped };
@@ -151,7 +189,8 @@ export async function nameLiveFeesByAccount(
     const ids = [...fingerprints.keys()];
     liveFees = await inSavepoint(db, (scope) => scope<AccountNameFee[]>`
       SELECT fp.fee_published_id, fp.lineage_ref, fv.fee_raw_id, fp.institution_id, fr.source, fr.source_document_id,
-             fp.canonical_fee_key, fp.fee_name, fp.amount, fp.amount_kind, fp.rate_percent, COALESCE(fr.extraction_note, fr.conditions) AS conditions
+             fp.canonical_fee_key, fp.fee_name, fp.amount, fp.amount_kind, fp.rate_percent, COALESCE(fr.extraction_note, fr.conditions) AS conditions,
+             fr.product_name
         FROM published_fee_records fp
         JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -205,7 +244,7 @@ export async function nameLiveFeesByAccount(
             amount: rename.amount,
             // A rename is housekeeping, not a judgement on the read: it carries no weight in lessons.
             weight: 0,
-            evidence: { old_name: rename.oldName, new_name: rename.newName, heading: rename.heading },
+            evidence: { old_name: rename.oldName, new_name: rename.newName, heading: rename.heading, heading_from: rename.headingFrom },
             runId: options.runId,
             dedupeKey: `${ACCOUNT_NAME_STRATEGY.strategy}:pub:${rename.feePublishedId}`,
           })),
