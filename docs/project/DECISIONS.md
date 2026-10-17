@@ -1147,3 +1147,10 @@ publish one schedule count once in statistics (126 institution values, 285 rows;
 the page)" and 27 kept rows take the fuller name. Knox rules v78 (#1770) ships in its own PR. Each
 switch can be turned back off; the page-copy closes undo by clearing `rolled_back_at` on rows whose
 reason ends "(copy of the page)".
+
+**ATM surcharge takedowns switched on.** James, 2026-10-17 11:28 UTC (decision card "Take down 28
+ATM surcharges that banks charge only non-customers?", option "Take down").
+`ATM_SURCHARGE_TAKEDOWN_LIVE` (#1775, guard v71): 28 live non-network ATM rows come down as hand
+takedowns: 13 surcharges non-customers pay at the bank's own ATMs (#1772) and 15 lines that are not
+the fee (#1773). All 28 were live on the dry read (SELECT-only, 11:35 UTC). Archived, never deleted;
+set the switch false to stop, and restore by clearing `rolled_back_at`.

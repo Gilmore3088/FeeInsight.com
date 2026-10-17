@@ -1212,7 +1212,7 @@ Darwin owns verification and classification.
   flagged for the second look and then taken down, and 1 re-filed in place. The bare "ATM Surcharge"
   lines a name cannot place (13 non-customer surcharges by their heading or line) and 15 lines that
   are not the fee (in-network $0s, a refund cap, a waived price) are hand takedowns held by
-  `ATM_SURCHARGE_TAKEDOWN_LIVE` (off). v70 (Oct 17,
+  `ATM_SURCHARGE_TAKEDOWN_LIVE` (on since James's yes, Oct 17 11:28 UTC). v70 (Oct 17,
   #1765): a card-product fee filed as the non-network ATM fee (`CARD_PRODUCT_FEE`: the card's monthly,
   annual, holder or maintenance fee, its issue, activation or origination, a reinstatement or limit
   increase, the card's inactivity, a point-of-sale purchase fee) and a card's inactivity filed as a

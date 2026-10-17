@@ -187,6 +187,9 @@ const LIVE: LiveTakedownRow[] = [
 const CONDITIONAL_ZERO = [43512, 54014, 61335, 68893, 70121, 73737, 77121, 77122, 77618, 84553, 87079, 87461, 88213, 91505, 120559];
 const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689, 138828, 138832, 138833, 138839, 138827, 138834, 138841, 148352, 138831, 138830, 138848, 138849, 138850, 138851, 42961, 86536, 66721, 66722, 83125, 97335, 97904, 58414, 106021, 33705, 149143, 149806, 137241, 68335, 79402, 74149, 49817, 125584, 109893, 130622, 147193, 133860, 119352, 143826, 97434, 49606, 148620, 107546, 81215, 20420, 102296, 147811, 125359, 146800, 74560, 125809, 102758, 13031, 11722, 11427, 141821, 232, 101170, 64716, 65870, 122350];
 
+// The standing list without the #1772/#1773 ATM rows, which have their own tests below.
+const STANDING = HAND_TAKEDOWNS.filter((entry) => entry.issue !== 1772 && entry.issue !== 1773);
+
 function fakeDb(live: LiveTakedownRow[], failOn?: string) {
   const writes: Array<{ text: string; values: unknown[] }> = [];
   const db = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
@@ -202,7 +205,7 @@ function fakeDb(live: LiveTakedownRow[], failOn?: string) {
 
 describe("hand takedowns (James, Oct 16)", () => {
   it("lists each confirmed-wrong fee with its reason and evidence", () => {
-    expect(HAND_TAKEDOWNS.map((entry) => [entry.feePublishedId, entry.reason])).toEqual([
+    expect(STANDING.map((entry) => [entry.feePublishedId, entry.reason])).toEqual([
       [80423, "source_mismatch: #1496"],
       [102440, "source_mismatch: #1496"],
       [83118, "source_mismatch: #1549"],
@@ -303,7 +306,7 @@ describe("hand takedowns (James, Oct 16)", () => {
   });
 
   it("takes a row down only while it still reads as listed", () => {
-    expect(planHandTakedowns(LIVE)).toEqual({
+    expect(planHandTakedowns(LIVE, STANDING)).toEqual({
       takenDown: [
         { feePublishedId: 80423, feeVerifiedId: 90425, reason: "source_mismatch: #1496" },
         { feePublishedId: 102440, feeVerifiedId: 116687, reason: "source_mismatch: #1496" },
@@ -402,7 +405,7 @@ describe("hand takedowns (James, Oct 16)", () => {
         { feePublishedId: 102440, reason: "changed since listed" },
       ],
     });
-    expect(planHandTakedowns([]).skipped.map((row) => row.reason)).toEqual(IDS.map(() => "not live"));
+    expect(planHandTakedowns([], STANDING).skipped.map((row) => row.reason)).toEqual(IDS.map(() => "not live"));
     // #1659: the student page's copy waits until 102971 reads as corrected ($12, the account's name).
     const studentCopy = HAND_TAKEDOWNS.filter((entry) => entry.feePublishedId === 102973);
     const student = LIVE.find((row) => row.fee_published_id === 102973)!;
@@ -668,11 +671,11 @@ describe("#1755: one printed line live under two frequencies or categories (Oct 
   });
 });
 
-describe("#1772, #1773: non-network ATM takedowns wait on ATM_SURCHARGE_TAKEDOWN_LIVE", () => {
-  it("lists none while the switch is off", () => {
-    expect(ATM_SURCHARGE_TAKEDOWN_LIVE).toBe(false);
-    expect(atmSurchargeTakedowns()).toEqual([]);
-    expect(HAND_TAKEDOWNS.some((entry) => entry.issue === 1772 || entry.issue === 1773)).toBe(false);
+describe("#1772, #1773: non-network ATM takedowns listed by ATM_SURCHARGE_TAKEDOWN_LIVE", () => {
+  it("lists all 28 while the switch is on (James, Oct 17), and none when off", () => {
+    expect(ATM_SURCHARGE_TAKEDOWN_LIVE).toBe(true);
+    expect(HAND_TAKEDOWNS.filter((entry) => entry.issue === 1772 || entry.issue === 1773)).toHaveLength(28);
+    expect(atmSurchargeTakedowns(false)).toEqual([]);
   });
 
   it("lists 28 rows when on, 13 non-customer surcharges and 15 that are not the fee, each batch under the limit", () => {
@@ -685,7 +688,7 @@ describe("#1772, #1773: non-network ATM takedowns wait on ATM_SURCHARGE_TAKEDOWN
       entry.reason === `source_mismatch: #${entry.issue}`)).toBe(true);
     expect(handTakedownBatchSizes(entries).every((batch) => batch.entries <= HAND_TAKEDOWN_BATCH_LIMIT)).toBe(true);
     // None is on the standing list too.
-    const listed = new Set(HAND_TAKEDOWNS.map((entry) => entry.feePublishedId));
+    const listed = new Set(STANDING.map((entry) => entry.feePublishedId));
     expect(entries.some((entry) => listed.has(entry.feePublishedId))).toBe(false);
   });
 
