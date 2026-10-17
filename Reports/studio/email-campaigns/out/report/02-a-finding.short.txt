@@ -1,6 +1,7 @@
 The number at the top of your report, and the question it raises.
 
 One finding from your report
+{$report_finding|default('Start with the key findings at the top of your report. Each one names the fee, the market and how many institutions stand behind it.')}
 See it in your report: {$report_url|default('https://feeinsight.com/reports')}
 The finding links to the table behind it.
 

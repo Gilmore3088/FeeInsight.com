@@ -190,6 +190,8 @@ function condense(email, parts) {
   const chunks = [];
   email.blocks.forEach((b, i) => {
     if (b.type === "h1") chunks.push(plain(b.text));
+    // A paragraph built from a merge field (the report finding) is the point of its email.
+    else if (b.type === "p" && b.text.includes("{$")) chunks.push(plain(b.text));
     else if (b.type === "box") chunks.push(parts[i][1].trim());
     else if (["stats", "list", "cta", "range"].includes(b.type)) chunks.push(...parts[i][1].trim().split("\n"));
   });
