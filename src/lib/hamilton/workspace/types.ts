@@ -209,6 +209,8 @@ export interface PeerValue {
   marketDeposits?: number | null;
   stateCode: string | null;
   sourceDocumentIds: number[];
+  /** The published fee rows behind `amount`, so a saved answer records them (H03-T09); absent on older payloads. */
+  feePublishedIds?: number[];
   documentUrls: string[];
   publishedAt: string | null;
 }

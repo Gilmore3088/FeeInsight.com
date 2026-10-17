@@ -470,6 +470,14 @@ export async function generateReport(
       institutionId,
       reportType: params.templateType,
       reportJson: report,
+      // H03-T09: the institution's own published rows the report read. Peer figures come from
+      // the peer index (medians), which names no rows.
+      feeRefs: [...selectedVerifiedFees, ...selectedProvisionalFees].map((fee) => ({
+        feePublishedId: fee.id,
+        institutionId: fee.institution_id ?? null,
+        sourceDocumentId: null,
+        sourceContentHash: null,
+      })),
       scenarioId: params.scenarioId ?? null,
       evidencePolicy: artifactMetadata.evidencePolicy,
       peerSetId: artifactMetadata.peerSetId,

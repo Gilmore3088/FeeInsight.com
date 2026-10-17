@@ -17,6 +17,7 @@ import {
   workspaceSchemaReady,
 } from "@/lib/data-store/hamilton-workspace";
 import { getSavedAnalysisResponse, insertSavedAnalysis, updateSavedAnalysisResponse } from "@/lib/data-store/hamilton-analyses";
+import { collectFeeRefs } from "@/lib/saved-output-corrections";
 import { normalizeCanonicalInstitutionId } from "./context-link";
 import { buildFeeResearchEvidence, type EvidenceBoundAnalyzeResponse, type HamiltonEvidenceBundle } from "./evidence-contract";
 import { writeStorylineMemo, type MemoUsage } from "./memo";
@@ -173,6 +174,8 @@ async function fileAnalysis(
       // never replaces a written answer, or a storyline read against another decision,
       // objective or fee (storylineRequestKey).
       replaceRecentDuplicate: { request: storylineRequestKey(question, request) },
+      // H03-T09: the bank's own rows and the named peers' rows the storyline was read from.
+      ...(research ? { feeRefs: collectFeeRefs(research) } : {}),
     });
   } catch (error) {
     console.error("[hamilton-ask] saving the analysis failed", { institutionId: canonical, error });
