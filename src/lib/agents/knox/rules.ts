@@ -26,7 +26,15 @@ import { newestColumnText } from "@/lib/fee-change-columns";
 const MAX_SEGMENTS_PER_DOCUMENT = 150;
 export const MAX_FEES_PER_DOCUMENT = 75;
 const MAX_HELD_PER_DOCUMENT = 40;
+// v76: unpriced rows ("Bill Payment ..... No Charge", "Check printing | Varies") have caps of their
+// own, so they never push a priced line past the segment cap or a priced hold past the held cap.
+const MAX_UNPRICED_SEGMENTS_PER_DOCUMENT = 40;
 const MAX_UNCLASSIFIED_PER_DOCUMENT = 10;
+
+/** v76: a $0 or "prices vary" hold, which takes the unpriced half of the held cap. */
+export function isUnpricedHeldShape(shape: HeldShape): boolean {
+  return shape === "zero" || shape === "varies";
+}
 const MAX_SEGMENT_CHARS = 280;
 const MAX_NAME_CHARS = 120;
 const MIN_SEGMENT_CHARS = 8;
@@ -48,7 +56,7 @@ export interface ExtractedFeeCandidate extends Partial<FeeApplicability> {
 }
 
 /** `untraced`: a read whose name and price don't trace to one row of the text (Knox's self-check). */
-export type HeldShape = "zero" | "range" | "percentage" | "unclassified" | "untraced";
+export type HeldShape = "zero" | "range" | "percentage" | "unclassified" | "untraced" | "varies";
 
 export interface HeldFeeCandidate extends Partial<FeeApplicability> {
   shape: HeldShape;
@@ -647,9 +655,106 @@ export function normalizeSegment(value: string): string {
     .trim();
 }
 
+/** A table row with a zero cell after its first ("Wire Transfer | $0.00 | Free"), read before v76. */
 function hasZeroCell(line: string): boolean {
   if (!line.includes(CELL_SEPARATOR)) return false;
   return line.split(CELL_SEPARATOR).slice(1).some((cell) => ZERO_CELL.test(cell.trim()));
+}
+
+/** v76: a free or "prices vary" row that only the v76 rules read (`hasZeroCell` rows were read before). */
+function hasUnpricedFeeRow(line: string): boolean {
+  if (freeRowName(line) || variesRowName(line)) return true;
+  return line.includes(CELL_SEPARATOR) && line.split(CELL_SEPARATOR).some((cell) => freeCellName(cell.trim()));
+}
+
+/**
+ * v76 (Knox recall, 62-bank answer key: 90 of 833 misses were free lines): a schedule row whose
+ * price is a free word, in the shapes the line rules never read.
+ *
+ *   "Inquiry ........................ FREE"            a dot leader to the free word
+ *   "| Notary Service | Free |"                         a markdown row with its outer bars
+ *   "Digital deposits | No Cost", "NOTARY PUBLIC | Free to Members"
+ *   "Notary Services (customers only): no fee"          a label, a colon and the free word
+ *   "No charge for notarization of Bank documents."     a sentence that says what is free
+ *
+ * The name is the row's label (or what the sentence says is free). A row of several account
+ * columns ("Stop Payment | FREE | $25") is not one of these: the line rules read it already.
+ * Null when the line is not such a row. Whether the label names a fee, and whether the free word is
+ * an allowance or a condition rather than a $0 price (`notAZeroPrice`), is decided by the caller.
+ */
+const FREE_PRICE = String.raw`(?:free|no charge|no fees?|no cost|none|n\/c|\$\s*0(?:\.00)?)(?:\s+(?:to|for)\s+(?:all\s+)?(?:[\w'’&-]+\s+){0,4}(?:members?|customers?|clients?))?`;
+const FREE_CELL = new RegExp(`^${FREE_PRICE}\\.?$`, "i");
+const FREE_LEADER_ROW = new RegExp(`^(.{3,80}?)\\s*(?:\\.{2,}|…)[.…\\s]*${FREE_PRICE}\\.?$`, "i");
+const FREE_COLON_ROW = new RegExp(`^([^:|$]{3,60}?)\\s*:\\s*${FREE_PRICE}\\.?$`, "i");
+const NO_CHARGE_FOR = /^(?:there (?:is|are) )?no (?:charge|fees?|cost)s? (?:for|per|on|to receive) (?:the |a |an |your |each |any )?([a-z][\w'’ -]{2,50}?)\.?$/i;
+
+/**
+ * v76 (Knox recall: 55 of 833 misses): a fee the schedule prices by what the customer picks, with
+ * no figure ("Check printing prices vary depending on style selected", "Check Orders | Varies by
+ * style", "Safe deposit box – call for quotes", "Standard HPCU Share Draft ... | Inquire for
+ * pricing"). Knox never writes an amount for it: it is held for review as `varies` (amount null,
+ * `knox_review:varies`, no `needs_darwin_verification`), as AGENTS.md holds every price no rule can
+ * read as one exact amount. The name is the row's label, or the words before the varying price.
+ */
+const VARIES_PRICE =
+  /\b(?:(?:prices?|pricing|fees?|charges?|costs?)\s+)?(?:may\s+|will\s+)?var(?:y|ies)\b|\b(?:fee|charge|price|cost)s?\s+(?:is\s+|are\s+)?(?:depends?|dependent|depending|based)\s+(?:up)?on\b|\b(?:call|ask|inquire)\s+for\s+(?:current\s+)?(?:pricing|quotes?|prices?)\b|\bprinter[’']?s\s+current\s+price\b/i;
+
+/**
+ * An order of checks priced by style is check printing: "Check Orders | Varies by style",
+ * "PERSONALIZED CHECKS | Prices Vary", "Supply of Checks | Printer's Current Price". Read only on a
+ * varies row, where nothing else on the line can be the check order's price.
+ */
+const CHECK_ORDER_NAME = /^(?:(?:check|share draft)s?\s+(?:orders?|ordering|printing)|(?:personali[sz]ed|custom|order(?:ing)?|supply of|re-?order(?:ing)?)\s+(?:of\s+)?(?:\w+\s+)?(?:checks|share drafts)|checks|(?:check|share draft)(?:\s*\/\s*(?:check|share draft))?\s+printing)\b/i;
+
+export function variesCategory(name: string): string | null {
+  return unpricedRowCategory(name) ?? (CHECK_ORDER_NAME.test(name.trim()) ? "check_printing" : null);
+}
+
+/**
+ * The category of a row with no figure (free or varying), read with a plural name as its singular
+ * ("eStatements | FREE", "Account Balance inquiries | FREE"). Only these rows: on a priced line a
+ * plural "eStatements" is usually a condition ("Bill Pay (free with eStatements) | $5.95").
+ */
+export function unpricedRowCategory(name: string): string | null {
+  return classifyFeeText(name) ?? classifyFeeText(name.replace(/\b(e[-\s]?statement)s\b/gi, "$1").replace(/\binquiries\b/gi, "inquiry"));
+}
+
+export function variesRowName(line: string): string | null {
+  const row = line.replace(/^\s*\|\s*/, "").replace(/(?:\s*\|)+\s*$/, "").trim();
+  if (!row || row.length > 160 || /\$\s*\d|\d\s*%/.test(row)) return null;
+  const varies = row.match(VARIES_PRICE);
+  if (!varies || varies.index == null) return null;
+  // The varying cell's own words name it ("Safe Deposit Drill & Lock Replacement......Fee varies by
+  // service"), else the cell before it ("Check Orders | Varies by style").
+  const cells = row.split(/\s*\|\s*/);
+  const at = cells.findIndex((cell) => VARIES_PRICE.test(cell));
+  const own = cells[at].slice(0, cells[at].search(VARIES_PRICE)).replace(/[(\-–—:.,…\s]+$/, "");
+  // Only the last sentence before the varying price ("... order checks from us. Check Printing").
+  const ownLabel = own.split(/[.;:!?]\s+/).at(-1) ?? "";
+  const label = ownLabel.replace(/[^a-z]/gi, "").length >= 3 ? ownLabel : at > 0 ? cells[at - 1] : "";
+  const name = label.replace(/\s*(?:\.{2,}|…)[.…]*\s*/g, " ").trim();
+  return name.length >= 3 && !RATE_LINE.test(name) ? name : null;
+}
+
+export function freeRowName(line: string): string | null {
+  const row = line.replace(/^\s*\|\s*/, "").replace(/\s*\|\s*$/, "").trim();
+  if (!row || /\$\s*[1-9]|\$\s*0*\.\d*[1-9]|\d\s*%/.test(row)) return null;
+  const cells = row.split(/\s*\|\s*/);
+  if (cells.length === 2 && FREE_CELL.test(cells[1])) return cells[0].trim() || null;
+  if (cells.length !== 1) return null;
+  return freeCellName(row);
+}
+
+/** One cell that is a whole free row on its own: a dot leader or a colon to the free word, or a sentence. */
+function freeCellName(row: string): string | null {
+  const leader = row.match(FREE_LEADER_ROW)?.[1]?.trim() ?? row.match(FREE_COLON_ROW)?.[1]?.trim();
+  if (leader) return leader;
+  // A sentence of a paragraph ("... There are no fees for pre-authorized recurring bill pays.").
+  for (const sentence of row.split(/(?<=[.;])\s+(?=[A-Z])/)) {
+    const free = sentence.trim().match(NO_CHARGE_FOR)?.[1]?.trim();
+    if (free) return free;
+  }
+  return null;
 }
 
 /**
@@ -696,7 +801,9 @@ export function joinWrappedProse(lines: string[]): string[] {
       !line.includes(CELL_SEPARATOR) &&
       previous.length >= MIN_WRAPPED_LINE_CHARS &&
       !ENDS_SENTENCE.test(previous) &&
-      STARTS_LOWER.test(line)
+      STARTS_LOWER.test(line) &&
+      // v76: a free schedule row ("Download account information ...... FREE") ends its line.
+      !freeRowName(previous)
     ) {
       joined[joined.length - 1] = `${previous} ${line}`;
     } else {
@@ -731,11 +838,20 @@ export function headingName(line: string): string | null | undefined {
 
 const GLUED_HEADING_AFTER_PRICE = /\$\s?\d[\d,]*(?:\.\d{2})?[^$|]*?\b((?:[A-Z][a-z']+\s+){1,4}[A-Z][a-z']+)\s*$/;
 
+/**
+ * v76: a dollar sign in a cell of its own before its figure ("Return Mail (per month) | $ | 5.00 |
+ * 3 x 5 | $ 55.00", a two-column PDF table) is one price: read apart, the row's only priced
+ * figure was the neighbouring box's $55.
+ */
+const SPLIT_DOLLAR_CELL = /\$\s*\|\s*(?=\d[\d,]*\.\d{2}(?!\d))/g;
+
 interface HeadedSegment {
   segment: string;
   /** v69: the fee heading above the segment's line, when one is in reach, and the heading's line. */
   heading: string | null;
   headingAt: number | null;
+  /** v76: the line is the first under a heading that ends in a colon ("Excessive withdrawals, each:"), a row that qualifies it. */
+  headingOpensRows: boolean;
 }
 
 function candidateSegments(text: string): HeadedSegment[] {
@@ -743,12 +859,16 @@ function candidateSegments(text: string): HeadedSegment[] {
   const segments: HeadedSegment[] = [];
   const lines = joinWrappedProse(joinWrappedLeaderNames(text.split(/\n+/).map((line) => line.replace(/\s+/g, " ").trim())));
   let heading: { name: string; at: number } | null = null;
+  let priced = 0;
+  let unpriced = 0;
   for (const [index, rawLine] of lines.entries()) {
-    const line = rawLine.replace(/\s+/g, " ").trim();
+    const line = rawLine.replace(/\s+/g, " ").replace(SPLIT_DOLLAR_CELL, "$").trim();
     const asHeading = headingName(line);
     if (asHeading !== undefined) heading = asHeading ? { name: asHeading, at: index } : null;
-    if (!line.includes("$") && !PERCENT_PATTERN.test(line) && !hasZeroCell(line)) continue;
+    const isPriced = line.includes("$") || PERCENT_PATTERN.test(line) || hasZeroCell(line);
+    if (!isPriced && !hasUnpricedFeeRow(line)) continue;
     const inReach = heading && index - heading.at <= HEADING_REACH_LINES ? heading : null;
+    if (!isPriced && unpriced >= MAX_UNPRICED_SEGMENTS_PER_DOCUMENT) continue;
     // A next section's heading glued after a row's price ("$0.50 ea. in excess of 10 Night Deposit
     // Bag", Commerce Bank) heads the lines after it.
     const glued = line.match(GLUED_HEADING_AFTER_PRICE)?.[1];
@@ -758,8 +878,10 @@ function candidateSegments(text: string): HeadedSegment[] {
       const segment = part.trim();
       if (segment.length < MIN_SEGMENT_CHARS || segment.length > MAX_SEGMENT_CHARS || seen.has(segment)) continue;
       seen.add(segment);
-      segments.push({ segment, heading: inReach?.name ?? null, headingAt: inReach?.at ?? null });
-      if (segments.length >= MAX_SEGMENTS_PER_DOCUMENT) return segments;
+      segments.push({ segment, heading: inReach?.name ?? null, headingAt: inReach?.at ?? null, headingOpensRows: inReach ? index === inReach.at + 1 && /:\s*$/.test(lines[inReach.at]) : false });
+      if (isPriced) priced += 1;
+      else unpriced += 1;
+      if (priced >= MAX_SEGMENTS_PER_DOCUMENT) return segments;
     }
   }
   return segments;
@@ -838,6 +960,9 @@ export function classifyPatternKey(value: string): string | null {
   // Credit card fees are lending fees, not deposit-account card fees.
   // v75: one price for a debit or credit card ("Debit Card or Credit Card Replacement") is the debit card's too.
   if ((key === "card_replacement" || key === "rush_card") && /\bcredit cards?\b/i.test(text) && !/\bdebit\b/i.test(text)) return null;
+  // v76: an interim statement printed at an ATM or branch ("Interim statement (ATM/Branch)") is a
+  // statement copy, not an ATM fee.
+  if (key === "atm_non_network" && /\binterim statements?\b/i.test(text)) key = "document_reproduction";
   // A book transfer inside the bank is not a wire.
   if (key?.startsWith("wire_") && /\bbook transfer\b/i.test(text)) return null;
   // Reopening a closed account is not an early-closure fee.
@@ -1517,6 +1642,17 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
     hint = "od_protection_transfer";
   }
 
+  // v76: a free schedule row the shapes below never read (`freeRowName`), held at $0 like them.
+  const freeLabel = firstAmount ? null : freeRowName(segment);
+  if (freeLabel) {
+    const zeroName = nameFrom(freeLabel);
+    const zeroHint = usableName(zeroName) ? unpricedRowCategory(zeroName) : null;
+    if (zeroHint && !notAZeroPrice(zeroHint, `${zeroName} ${segment}`)) {
+      result.held.push({ shape: "zero", feeName: zeroName, amount: 0, amountMax: null, percent: null, frequency, canonicalHint: zeroHint, excerpt: segment });
+      return result;
+    }
+  }
+
   // A free fee, written as a "Free"/"No charge" cell or as $0.
   if (hint && cells && cells.length >= 2 && !firstAmount && cells.slice(1).some((cell) => ZERO_CELL.test(cell)) && !notAZeroPrice(hint, cells[0])) {
     const zeroName = nameFrom(cells[0]);
@@ -1528,6 +1664,17 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
   if (hint && firstAmount?.value === 0 && usableName(name) && !notAZeroPrice(hint, name)) {
     result.held.push({ shape: "zero", feeName: name, amount: 0, amountMax: null, percent: null, frequency, canonicalHint: hint, excerpt: segment });
     return result;
+  }
+
+  // v76: a price that varies with what the customer picks is held with no amount (`variesRowName`).
+  const variesLabel = firstAmount ? null : variesRowName(segment);
+  if (variesLabel) {
+    const variesName = nameFrom(variesLabel);
+    const variesHint = usableName(variesName) ? variesCategory(variesName) : null;
+    if (variesHint) {
+      result.held.push({ shape: "varies", feeName: variesName, amount: null, amountMax: null, percent: null, frequency, canonicalHint: variesHint, excerpt: segment });
+      return result;
+    }
   }
 
   // A percentage fee ("3% of the transaction"), with or without a dollar minimum after it.
@@ -1551,6 +1698,17 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
     return result;
   }
   if (!firstAmount) {
+    // v76: free rows side by side in a two-column page ("• Maintenance Fee: No Maintenance Fee |
+    // • Maintenance Fee: No Maintenance Fee"), each cell a free row of its own.
+    for (const cell of cells ?? []) {
+      const free = freeCellName(cell);
+      const zeroName = free ? nameFrom(free) : "";
+      const zeroHint = usableName(zeroName) ? unpricedRowCategory(zeroName) : null;
+      if (zeroHint && !notAZeroPrice(zeroHint, `${zeroName} ${cell}`) && !result.held.some((held) => held.feeName === zeroName)) {
+        result.held.push({ shape: "zero", feeName: zeroName, amount: 0, amountMax: null, percent: null, frequency, canonicalHint: zeroHint, excerpt: segment });
+      }
+    }
+    if (result.held.length > 0) return result;
     // v68: "Inquiry | FREE": a label no rule names beside a free cell is held at $0 in a fee
     // schedule, as a priced label row is.
     const label = cells ? nameFrom(cells[0]) : "";
@@ -1612,7 +1770,27 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
   // the row's priced columns are read, and its free column is held at $0 below.
   const freeColumns = Boolean(hint && cells && cells.length >= 3 && cells.slice(1).every((cell) => ZERO_CELL.test(cell) || PRICE_ONLY_CELL.test(cell)) &&
     cells.slice(1).some((cell) => ZERO_CELL.test(cell)) && !NEGATIVE_FEE_LANGUAGE.test(cells[0]));
-  const conditionText = freeColumns ? cells!.filter((cell) => !ZERO_CELL.test(cell)).join(CELL_SEPARATOR) : segment;
+  // v76: a second fee's own "name | Free" pair after this row's price ("External Transfer | $20.00 |
+  // Overdraft Protection Transfer from Shares | Free", a two-column table) is held at $0, and its
+  // free word is no condition on the row's priced fee.
+  // A cell that is a free row of its own ("E-Statements ......FREE | Money Order ...... $1.50") is
+  // held at $0 the same way.
+  const trailingFree = cells && cells.length >= 4 && !freeColumns && amountsIn(cells.at(-2) ?? "").length === 0 &&
+    amountsIn(cells.at(-3) ?? "").length > 0 ? freeRowName(cells.slice(-2).join(CELL_SEPARATOR)) : null;
+  const freeCells = cells && !freeColumns ? cells.map((cell) => (amountsIn(cell).length === 0 ? freeCellName(cell) : null)) : [];
+  for (const free of [trailingFree, ...freeCells]) {
+    if (!free) continue;
+    const zeroName = nameFrom(free);
+    const zeroHint = usableName(zeroName) ? unpricedRowCategory(zeroName) : null;
+    if (zeroHint && !notAZeroPrice(zeroHint, zeroName) && !result.held.some((held) => held.feeName === zeroName)) {
+      result.held.push({ shape: "zero", feeName: zeroName, amount: 0, amountMax: null, percent: null, frequency: null, canonicalHint: zeroHint, excerpt: segment });
+    }
+  }
+  const conditionText = freeColumns
+    ? cells!.filter((cell) => !ZERO_CELL.test(cell)).join(CELL_SEPARATOR)
+    : trailingFree || freeCells.some(Boolean)
+      ? cells!.filter((cell, index) => !freeCells[index] && !(trailingFree && index >= cells!.length - 2)).join(CELL_SEPARATOR)
+      : segment;
   if (NEGATIVE_FEE_LANGUAGE.test(freeColumns ? cells![0] : prefix) || (NEGATIVE_FEE_LANGUAGE.test(conditionText) && !WAIVER_LANGUAGE.test(conditionText))) {
     return result;
   }
@@ -1753,10 +1931,18 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
     return result;
   }
 
+  // v76: one row naming a price for each variant of its fee ("Domestic Outbound Wires
+  // (Online/Manual) | $35/$60", "-Notary FL/GA $10.00/$2.00"), or a box size priced in two
+  // columns, reads every price.
+  // The rest of the row (another fee's cell after them) is read as before.
+  const paired = pairedPriceCandidates(segment, feeAmounts, feeName, hint, frequency, waivable);
+  if (paired) result.candidates.push(...paired.reads);
+
   // The first amount belongs to the line's fee. A later amount is another fee only when
   // the words just before it name one ("Stop payment $30; Wire, outgoing $25"); otherwise
   // it is a cap, a second account column, or a condition, and is ignored.
   feeAmounts.forEach((amount, index) => {
+    if (paired?.consumed.includes(amount)) return;
     // #1196: the unit right after the earlier price is that price's ("Dormant accounts |
     // $15.00 per month Nonsufficient funds | $35.00"), not the next fee's name or period.
     const unitAfterPrevious = index === 0 ? null : segment.slice(feeAmounts[index - 1].end, amount.start).match(PRICE_UNIT_AFTER);
@@ -1790,6 +1976,86 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
     });
   });
   return result;
+}
+
+/**
+ * v76 (Knox recall, 62-bank answer key): a row that prices each variant of its fee, or its first
+ * unit and each unit after it. Read line by line, only the first price was the fee and the rest
+ * were dropped as "a cap, a second account column, or a condition" (112 of the key's 833 misses).
+ *
+ *   "Domestic Outbound Wires (Online/Manual) | $35/$60"  Online $35, Manual $60
+ *   "Wire Transfers – Foreign Incoming / Outgoing | $15 / $40"  incoming $15, outgoing $40
+ *   "-Notary FL/GA $10.00/$2.00"  FL $10, GA $2
+ *   "Debit Card Replacement Fee | $10.00 / $50 expedited delivery"  $10, and $50 expedited
+ *   "2” x 5” $45.00 $65.00"  a box size priced in two columns: both are the box's prices
+ *
+ * A first-unit price and an add-on ("$3 first page, $1 each additional page") stay one read: the
+ * shared source check reads an add-on as no fee's own price while the row prints another.
+ *
+ * Each variant takes the category its own name reads as (incoming and outgoing wires part), or
+ * the row's when it names none, and must pass Darwin's checks. The variant count must equal the
+ * price count; a slash pair with no variants in the name and no words after the second price
+ * ("Courtesy Pay | $35/$35") keeps today's read of the first price. Null when the row is not one
+ * of these shapes, so the line rules read it as before.
+ */
+const SLASH_JOINER = /^\s*\/\s*$/;
+const NAME_VARIANTS = /([A-Za-z][\w'’-]*)\s*\/\s*([A-Za-z][\w'’-]*)(?:\s*\/\s*([A-Za-z][\w'’-]*))?/g;
+/** Words after the last price of a slash pair that name the second variant ("expedited delivery"). */
+const VARIANT_QUALIFIER = /^\s*((?:[A-Za-z][\w'’-]*\s*){1,3})(?=$|\|)/;
+const BOX_PRICE_JOINER = /^\s*(?:\|\s*)?$/;
+const BOX_PRICE_AFTER = /^\s*(?:\/?\s*(?:year|yr|annually|annual|per year|a year))?\s*$/i;
+
+function slashVariantNames(feeName: string, count: number, qualifierText: string): string[] | null {
+  const variants = [...feeName.matchAll(NAME_VARIANTS)].filter((match) => match.slice(1).filter(Boolean).length === count);
+  // The variants nearest the prices: "Wire Transfers – Foreign Incoming / Outgoing" splits its last pair.
+  const match = variants.at(-1);
+  if (match && match.index != null) {
+    const parts = match.slice(1).filter(Boolean);
+    // Not a fee named by a joined word ("24/7", "w/o", "and/or", "N/A").
+    if (parts.some((part) => /^(?:or|o|a|and|7)$/i.test(part))) return null;
+    return parts.map((part) => `${feeName.slice(0, match.index)}${part}${feeName.slice(match.index! + match[0].length)}`.replace(/\(\s*([^()]*?)\s*\)/g, "($1)"));
+  }
+  if (count !== 2) return null;
+  const qualifier = qualifierText.match(VARIANT_QUALIFIER)?.[1]?.trim();
+  if (!qualifier || LABEL_SENTENCE.test(qualifier) || /^(?:each|ea|per|item|month|mo|year|yr|hour|hr|copy|page|check|request|fee|charge)s?\b/i.test(qualifier)) return null;
+  return [feeName, `${feeName} ${qualifier}`];
+}
+
+function pairedPriceCandidates(
+  segment: string,
+  feeAmounts: AmountMatch[],
+  feeName: string,
+  hint: string,
+  frequency: string | null,
+  waivable: boolean,
+): { reads: ExtractedFeeCandidate[]; consumed: AmountMatch[] } | null {
+  const [first, second] = feeAmounts;
+  if (!first || !second || !usableName(feeName)) return null;
+  const between = segment.slice(first.end, second.start);
+  const read = (name: string, amount: number, canonicalHint: string): ExtractedFeeCandidate | null =>
+    usableName(name) && amount > 0 && amount <= MAX_REASONABLE_FEE_AMOUNT && passesDarwinChecks(canonicalHint, name, amount)
+      ? { feeName: name, amount, frequency, canonicalHint, confidence: confidenceFor(segment), excerpt: segment, waivable }
+      : null;
+
+  if (SLASH_JOINER.test(between)) {
+    const run = [first, second];
+    for (const next of feeAmounts.slice(2)) {
+      if (!SLASH_JOINER.test(segment.slice(run.at(-1)!.end, next.start))) break;
+      run.push(next);
+    }
+    if (run.length > 3 || segment.slice(run.at(-1)!.end, run.at(-1)!.end + 3).includes("%")) return null;
+    const names = slashVariantNames(feeName, run.length, segment.slice(run.at(-1)!.end));
+    if (!names) return null;
+    const reads = names.map((name, index) => read(name, run[index].value, classifyFeeText(name) ?? hint));
+    return reads.every(Boolean) ? { reads: reads as ExtractedFeeCandidate[], consumed: run } : null;
+  }
+
+  if (hint === "safe_deposit_box" && feeAmounts.length === 2 && BOX_SIZE_NAME.test(feeName.replace(/["”″]/g, "").trim()) &&
+    BOX_PRICE_JOINER.test(between) && BOX_PRICE_AFTER.test(segment.slice(second.end))) {
+    const reads = [read(feeName, first.value, hint), read(feeName, second.value, hint)];
+    return reads.every(Boolean) ? { reads: reads as ExtractedFeeCandidate[], consumed: [first, second] } : null;
+  }
+  return null;
 }
 
 /** A fee whose price depends on the item's amount, introduced as such. */
@@ -2068,7 +2334,9 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
   const keep = (held: HeldFeeCandidate): void => {
     const key = `held:${held.shape}:${held.feeName.toLowerCase()}:${held.amount}:${held.percent}`;
     if (seen.has(key)) return;
-    if (result.held.length >= MAX_HELD_PER_DOCUMENT || (held.shape === "unclassified" && unclassified >= MAX_UNCLASSIFIED_PER_DOCUMENT)) {
+    const unpricedHold = isUnpricedHeldShape(held.shape);
+    const sameHalf = result.held.filter((row) => isUnpricedHeldShape(row.shape) === unpricedHold).length;
+    if (sameHalf >= MAX_HELD_PER_DOCUMENT || (held.shape === "unclassified" && unclassified >= MAX_UNCLASSIFIED_PER_DOCUMENT)) {
       if (held.shape === "unclassified") countDrop(result, "unclassified_cap");
       return;
     }
@@ -2079,9 +2347,20 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
   // v69: a heading whose rows read as another kind of fee is a column beside a second table
   // ("Non-Ameris Bank ATM Usage:" over "ACH File Fee | $15.00"), so it names none of the rows under it.
   const crossedHeadings = new Set<number>();
-  for (const { segment, heading, headingAt } of candidateSegments(text)) {
+  for (const { segment, heading, headingAt, headingOpensRows } of candidateSegments(text)) {
     let found = extractFromSegment(segment);
     const headingKey = heading ? classifyPatternKey(heading) : null;
+    // v76: a free line under a fee heading whose own read is another kind of fee is a row of the
+    // heading's table ("Excessive withdrawals, each:" over "ATM or counter | None" and
+    // "3rd party/Telephonic | $5.00"): no $0 fee of its own, and it never crosses the heading.
+    // Only the first row under a heading that opens its rows with a colon: under a plain section
+    // title ("Official Checks/Money Orders" over "Official Check Payable to Account Holder | No
+    // charge"), or further down ("Check copy, up to 5 checks per month | No charge"), a free row is
+    // its own fee, as before v76.
+    const headingKind = heading ? classifyFeeText(heading) : null;
+    if (heading && headingKey && headingAt != null && headingOpensRows && !/[$%]/.test(segment)) {
+      found = { ...found, held: found.held.filter((read) => read.shape !== "zero" || read.canonicalHint === headingKind) };
+    }
     // A row that names its own fee and no category ("ACH File Fee (per file) | $15.00") crosses it too.
     const readKinds = [...found.candidates, ...found.held].map((read) => read.canonicalHint).filter(Boolean);
     const ownFeeRow = found.held.some((read) => read.canonicalHint == null && /\b(?:fee|charge)s?\b/i.test(read.feeName));
