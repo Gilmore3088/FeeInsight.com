@@ -14,6 +14,7 @@ function fee(overrides: Partial<DisplayFee>): DisplayFee {
     conditions: null,
     status: "verified",
     sourceUrl: null,
+    sourced: true,
     ...overrides,
   };
 }
@@ -30,6 +31,23 @@ describe("FeeScheduleTable", () => {
     render(<FeeScheduleTable fees={fees} disclosureUrl={null} benchmarks={{ early_closure: { p25: 20, median: 25, p75: 25 } }} />);
     expect(screen.getAllByText("Not compared: CD/IRA fee").length).toBe(4); // two rows, phone and wide
     expect(screen.getAllByText(/Above the U\.S\. middle 50%/).length).toBe(2); // only the account-closure row
+  });
+
+  it("never places box drilling or a key deposit against the safe deposit box rent range (Capital City Bank rows)", () => {
+    const fees = [
+      fee({ id: "a", feeName: "Box Drilling Fee (both keys lost)", feeCategory: "safe_deposit_box", amount: 250 }),
+      fee({ id: "b", feeName: "Key Deposit Fee", feeCategory: "safe_deposit_box", amount: 25 }),
+      fee({ id: "c", feeName: "Safe Deposit Box 3x5", feeCategory: "safe_deposit_box", amount: 40 }),
+    ];
+    render(<FeeScheduleTable fees={fees} disclosureUrl={null} benchmarks={{ safe_deposit_box: { p25: 30, median: 45, p75: 65 } }} />);
+    expect(screen.getAllByText("Not compared: Box drilling or key fee").length).toBe(4); // two rows, phone and wide
+    expect(screen.getAllByText(/Inside the U\.S\. middle 50%/).length).toBe(2); // only the box rent
+    expect(screen.queryByText(/Above the U\.S\. middle 50%|Below the U\.S\. middle 50%/)).toBeNull();
+  });
+
+  it("never places an unsourced fee, as the medians never count one", () => {
+    render(<FeeScheduleTable fees={[fee({ sourced: false })]} disclosureUrl={null} benchmarks={BENCH} />);
+    expect(screen.queryByText(/U\.S\. middle 50%/)).toBeNull();
   });
 
   it("names no audience on each row; the asterisk and one footnote carry it", () => {

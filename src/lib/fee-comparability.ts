@@ -22,13 +22,34 @@ const CARD_NAME = /\bcards?\b/i;
 /** The schedule line says the charge falls on the card itself: "the card will be charged $5.00". */
 const CARD_LINE = /\bthe card (?:will be|is) charged\b|\bcard balance\b/i;
 
+/**
+ * Categories that price a safe deposit box's rent. Drilling a box open, replacing a key, a refundable key
+ * deposit and paying the rent late are filed under them too, but they are service charges with their
+ * own prices ($250 to drill against a $30 to $65 rent), so they are never placed against the rent's
+ * median or range. The taxonomy keeps them in the category; only the comparison leaves them out.
+ */
+const SAFE_DEPOSIT_RENT_CATEGORIES: ReadonlySet<string> = new Set(["safe_deposit_box"]);
+const SAFE_DEPOSIT_SERVICE = /\bdrill|\bkeys?\b|\block(?:s|ed|out)?\b|\blate\b|\bpast due\b|\bforced?\b/i;
+
 export const CD_IRA_REASON = "CD/IRA fee";
 export const CARD_INACTIVITY_REASON = "Card inactivity fee";
+export const SAFE_DEPOSIT_SERVICE_REASON = "Box drilling or key fee";
+
+/**
+ * Words every rule below needs to see in the fee's name, account or schedule line, case ignored.
+ * A fee whose text holds none of them is always comparable, so a market read can fetch the text
+ * only for rows that match (fee-index.ts getComparableMarketIndex) and still apply this rule to
+ * exactly the rows the institution's own side does. Plain alternation, valid in JavaScript and as
+ * a Postgres `~*` pattern. Every word a rule tests must appear here as a substring.
+ */
+export const COMPARABILITY_SCREEN = "cd|ira|certificate|retirement|time deposit|card|drill|key|lock|late|past due|force";
+const SCREEN = new RegExp(COMPARABILITY_SCREEN, "i");
 
 /**
  * "CD/IRA fee" when the fee belongs to a CD or IRA and its category does not measure one;
  * "Card inactivity fee" when an account-dormancy row is a card's inactivity charge, by its name or
- * by the schedule line it was read from; else null.
+ * by the schedule line it was read from; "Box drilling or key fee" when a safe deposit row is a
+ * service charge rather than the box's rent; else null.
  */
 export function notComparableReason(
   category: string | null | undefined,
@@ -37,6 +58,10 @@ export function notComparableReason(
   sourceLine?: string | null,
 ): string | null {
   if (!category) return null;
+  if (!SCREEN.test([feeName ?? "", accountProduct ?? "", sourceLine ?? ""].join(" "))) return null;
+  if (SAFE_DEPOSIT_RENT_CATEGORIES.has(category) && SAFE_DEPOSIT_SERVICE.test(feeName ?? "")) {
+    return SAFE_DEPOSIT_SERVICE_REASON;
+  }
   if (ACCOUNT_DORMANCY_CATEGORIES.has(category)) {
     // The account's product name is left out: a "card" there names the account, not the fee.
     if (CARD_NAME.test(feeName ?? "") || CARD_LINE.test(sourceLine ?? "")) return CARD_INACTIVITY_REASON;

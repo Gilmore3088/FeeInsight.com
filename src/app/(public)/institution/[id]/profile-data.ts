@@ -12,7 +12,8 @@ import { rateDisplayParts } from "@/lib/percent-fees";
 import { feeDisplayName } from "@/lib/fee-display-name";
 import { HIGHEST_TIER_CATEGORIES, institutionValue } from "@/lib/data-store/fee-stats";
 import { accountPricesText, comparedAtText, type AccountPrice } from "@/lib/fee-representative";
-import { CARD_INACTIVITY_REASON, CD_IRA_REASON, notComparableReason } from "@/lib/fee-comparability";
+import { CARD_INACTIVITY_REASON, CD_IRA_REASON, SAFE_DEPOSIT_SERVICE_REASON, notComparableReason } from "@/lib/fee-comparability";
+import { countsInMarketComparison, marketIneligibleReason, type MarketEligibilityInput } from "@/lib/market-eligibility";
 import { productNameFromFeeName, readableProductName } from "@/lib/agents/knox/lineup";
 import { waiverPhrase } from "./account-waiver";
 
@@ -74,6 +75,8 @@ export function toDisplayFees(fees: ExtractedFee[]): DisplayFee[] {
     sourceUrl: fee.source_url ?? null,
     accountProduct: fee.account_product_type ?? null,
     sourceLine: fee.source_line ?? null,
+    sourced: fee.source_document_id != null,
+    rawFeeName: fee.fee_name,
   }));
 }
 
@@ -212,6 +215,20 @@ export function buildLocationParts(input: {
   return parts;
 }
 
+/** A published fee as the market eligibility test reads it (the same fields a median row carries). */
+export function marketEligibilityOf(fee: ExtractedFee): MarketEligibilityInput {
+  return {
+    category: fee.fee_category ?? null,
+    amount: fee.amount,
+    audience: fee.fee_audience ?? null,
+    sourced: fee.source_document_id != null,
+    sourceUrl: fee.source_url ?? null,
+    feeName: fee.fee_name,
+    accountProduct: fee.account_product_type ?? null,
+    sourceLine: fee.source_line ?? null,
+  };
+}
+
 export interface HeadlineValue {
   category: string;
   /** The value the index uses for this institution: the median of its amounts, the highest for overdraft. */
@@ -233,6 +250,8 @@ export interface HeadlineValue {
   excludedCdIra?: number;
   /** Card inactivity fees filed under an account-dormancy category, left out the same way. */
   excludedCard?: number;
+  /** Safe deposit drilling, key and late fees filed under the box's rent, left out the same way. */
+  excludedSafeDeposit?: number;
   /** "waived with an average daily balance of $1,500 or more" when its one price states a waiver balance. */
   waiver?: string | null;
 }
@@ -245,23 +264,18 @@ export interface HeadlineValue {
 export function pickHeadlineValues(verifiedFees: ExtractedFee[], categories: readonly string[]): HeadlineValue[] {
   const values: HeadlineValue[] = [];
   for (const category of categories) {
-    // The same personal rows the statistics count, minus a CD or IRA fee filed under a category
-    // that measures something else: it is a different product's price (fee-comparability).
-    const rows = verifiedFees.filter(
-      (fee) =>
-        fee.fee_category === category &&
-        fee.amount !== null &&
-        fee.amount >= 0 &&
-        countsAsPersonal(fee.fee_audience) &&
-        !(fee.source_url && isBusinessOnlyLink(fee.source_url)) &&
-        notComparableReason(fee.fee_category, fee.fee_name, fee.account_product_type ?? null, fee.source_line ?? null) === null,
-    );
+    // Exactly the rows the medians beside it count (market-eligibility, the one test for both
+    // sides): sourced, personal, not from a business-only schedule, and not a CD/IRA, card
+    // inactivity or safe deposit service fee filed under a category that measures something else.
+    const inCategory = verifiedFees.filter((fee) => fee.fee_category === category);
+    const rows = inCategory.filter((fee) => countsInMarketComparison(marketEligibilityOf(fee)));
     const amounts = rows.map((fee) => fee.amount as number);
-    const excludedReasons = verifiedFees
-      .filter((fee) => fee.fee_category === category && fee.amount !== null && countsAsPersonal(fee.fee_audience))
+    const excludedReasons = inCategory
+      .filter((fee) => marketIneligibleReason(marketEligibilityOf(fee)) === "not_comparable")
       .map((fee) => notComparableReason(fee.fee_category, fee.fee_name, fee.account_product_type ?? null, fee.source_line ?? null));
     const excludedCdIra = excludedReasons.filter((reason) => reason === CD_IRA_REASON).length;
     const excludedCard = excludedReasons.filter((reason) => reason === CARD_INACTIVITY_REASON).length;
+    const excludedSafeDeposit = excludedReasons.filter((reason) => reason === SAFE_DEPOSIT_SERVICE_REASON).length;
     if (amounts.length === 0) continue;
     const quoted =
       category === "overdraft"
@@ -289,6 +303,7 @@ export function pickHeadlineValues(verifiedFees: ExtractedFee[], categories: rea
       highestTier: HIGHEST_TIER_CATEGORIES.has(category),
       excludedCdIra,
       excludedCard,
+      excludedSafeDeposit,
       comparedAt: comparedAtText({ value, amounts, highestTier: HIGHEST_TIER_CATEGORIES.has(category) }),
       // One price only: with several, a waiver belongs to one account, not the compared value.
       waiver:

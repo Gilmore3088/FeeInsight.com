@@ -88,6 +88,8 @@ export interface CompareRow {
   excludedCdIra: number;
   /** Card inactivity fees filed under an account-dormancy fee that the compared value leaves out. */
   excludedCard: number;
+  /** Safe deposit drilling, key and late fees filed under the box's rent that the compared value leaves out. */
+  excludedSafeDeposit?: number;
   /** "waived with an average daily balance of $1,500 or more" when its one price states a waiver balance. */
   waiver: string | null;
   state: Median | null;
@@ -151,6 +153,7 @@ export function compareRows(
     highestTier: v.highestTier ?? false,
     excludedCdIra: v.excludedCdIra ?? 0,
     excludedCard: v.excludedCard ?? 0,
+    excludedSafeDeposit: v.excludedSafeDeposit ?? 0,
     waiver: v.waiver ?? null,
     ...medians(v.category),
     missing: null,
@@ -191,14 +194,17 @@ export function referenceShort(row: CompareRow, stateShort: string): string | nu
   return ref.level === "state" ? `vs ${stateShort}` : "vs U.S.";
 }
 
-/** "Leaves out 2 CD/IRA fees filed under this fee", "Leaves out 1 card inactivity fee filed under this fee", or null. */
+/** "Leaves out 2 CD/IRA fees filed under this fee", "... 1 card inactivity fee ...", "... 1 box drilling or key fee ...", or null. */
 export function excludedNote(row: CompareRow): string | null {
   const parts = [
     row.excludedCdIra > 0 ? `${row.excludedCdIra} CD/IRA ${row.excludedCdIra === 1 ? "fee" : "fees"}` : null,
     (row.excludedCard ?? 0) > 0 ? `${row.excludedCard} card inactivity ${row.excludedCard === 1 ? "fee" : "fees"}` : null,
+    (row.excludedSafeDeposit ?? 0) > 0
+      ? `${row.excludedSafeDeposit} box drilling or key ${row.excludedSafeDeposit === 1 ? "fee" : "fees"}`
+      : null,
   ].filter((part): part is string => part !== null);
   if (parts.length === 0) return null;
-  return `Leaves out ${parts.join(" and ")} filed under this fee`;
+  return `Leaves out ${listAnd(parts)} filed under this fee`;
 }
 
 /**

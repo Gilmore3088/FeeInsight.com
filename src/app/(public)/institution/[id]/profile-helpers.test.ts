@@ -159,6 +159,7 @@ describe("headline fees", () => {
       conditions: null,
       review_status: "approved",
       source_url: null,
+      source_document_id: 1,
       ...overrides,
     }) as ExtractedFee;
 

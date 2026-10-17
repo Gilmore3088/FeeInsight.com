@@ -25,11 +25,11 @@ import { getDisplayName } from "@/lib/fee-taxonomy";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { HEADLINE_FEE_KEYS } from "@/lib/data-store/market-readiness";
 import { FeeAlertControl } from "./fee-alert-control";
-import { getDistrictFeeIndexesCached, getStateFeeIndexesCached } from "@/lib/data-store/public-cached-reads";
+import { getComparableMarketIndexCached } from "@/lib/data-store/public-cached-reads";
 import { PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import { buildPublicInstitutionProfileLinks } from "@/lib/institution-profile-links";
-import { formatAbsoluteDate, getPublicNationalIndex } from "@/lib/public-stats";
+import { formatAbsoluteDate } from "@/lib/public-stats";
 import { formatCompactDollars } from "@/lib/format";
 import { getCharterLabel, getSegmentLabel, toTitleCase } from "./enum-labels";
 import { FeeFocusScroll } from "./fee-focus-scroll";
@@ -228,21 +228,25 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
     pipelineUnderReview,
   );
 
-  // The same three reads the state, district and national pages quote, so a median here matches
-  // the median there: the state's index (banks and credit unions headquartered in it), the
-  // institution's Fed district's index, and the national index.
+  // Three medians, each built under exactly the eligibility rules this page applies to the
+  // institution's own fees (market-eligibility.ts): the state's (banks and credit unions
+  // headquartered in it), the institution's Fed district's, and the U.S. A business-only fee, or a
+  // CD/IRA, card inactivity or safe deposit service fee filed under another category, is left out
+  // of both sides alike.
   const stateCode = inst.state_code && STATE_NAMES[inst.state_code] ? inst.state_code : null;
   const district = inst.fed_district && DISTRICT_NAMES[inst.fed_district] ? inst.fed_district : null;
   const hasFees = verifiedFees.length > 0;
-  const [nationalIndex, stateIndexes, districtIndexes] = hasFees
+  const [nationalIndex, stateIndex, districtIndex] = hasFees
     ? await Promise.all([
-        getPublicNationalIndex().catch(fallbackTo("national index", [] as IndexEntry[])),
-        stateCode ? getStateFeeIndexesCached(stateCode).catch(fallbackTo("state index", null)) : Promise.resolve(null),
-        district ? getDistrictFeeIndexesCached(district).catch(fallbackTo("district index", null)) : Promise.resolve(null),
+        getComparableMarketIndexCached({ kind: "us" }).catch(fallbackTo("national index", [] as IndexEntry[])),
+        stateCode
+          ? getComparableMarketIndexCached({ kind: "state", code: stateCode }).catch(fallbackTo("state index", [] as IndexEntry[]))
+          : Promise.resolve([] as IndexEntry[]),
+        district
+          ? getComparableMarketIndexCached({ kind: "district", district }).catch(fallbackTo("district index", [] as IndexEntry[]))
+          : Promise.resolve([] as IndexEntry[]),
       ])
-    : [[] as IndexEntry[], null, null];
-  const stateIndex = stateIndexes?.all ?? [];
-  const districtIndex = districtIndexes?.all ?? [];
+    : [[] as IndexEntry[], [] as IndexEntry[], [] as IndexEntry[]];
 
   const usable = (entry: IndexEntry) => entry.median_amount != null && entry.institution_count >= MIN_INSTITUTIONS_FOR_MEDIAN;
   const feeBenchmarks: FeeBenchmarks = {};
@@ -529,14 +533,18 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                   <dt className="font-medium text-ink-soft">Compared at</dt>
                   <dd>
                     The value this page compares: its one price, or the middle of its prices when it lists several (the highest,
-                    its standard fee, for overdraft). Business-only fees are left out. So are CD or IRA fees filed under another
-                    fee. The medians still include fees that other institutions filed that way.
+                    its standard fee, for overdraft).
+                  </dd>
+                  <dt className="font-medium text-ink-soft">Same rules</dt>
+                  <dd>
+                    Its fees and every median use the same rules. Business-only fees are left out. So are CD, IRA, card
+                    inactivity, box drilling and key fees filed under a fee they don&rsquo;t match.
                   </dd>
                   {stateName && (
                     <>
                       <dt className="font-medium text-ink-soft">{stateName}</dt>
                       <dd>
-                        Banks and credit unions headquartered in {stateName} that publish the fee, the figure on the {stateName} report.
+                        Banks and credit unions headquartered in {stateName} that publish the fee.
                       </dd>
                     </>
                   )}
@@ -544,8 +552,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                     <>
                       <dt className="font-medium text-ink-soft">{districtName} district</dt>
                       <dd>
-                        Banks and credit unions headquartered in the {districtName} Fed district that publish the fee, the figure on
-                        the district report.
+                        Banks and credit unions headquartered in the {districtName} Fed district that publish the fee.
                       </dd>
                     </>
                   )}

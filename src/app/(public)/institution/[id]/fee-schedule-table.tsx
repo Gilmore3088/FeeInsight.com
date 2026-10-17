@@ -1,8 +1,8 @@
 import { countsAsPersonal, isAudienceUnstated, type FeeAudience, type FeeTreatment } from "@/lib/fee-audience";
-import { isBusinessOnlyLink } from "@/lib/agents/magellan/link-coverage";
 import { UnstatedAudienceFootnote, UnstatedAudienceMark } from "@/components/unstated-audience";
 import { FEE_FAMILIES, getFeeFamily } from "@/lib/fee-taxonomy";
 import { notComparableReason } from "@/lib/fee-comparability";
+import { countsInMarketComparison } from "@/lib/market-eligibility";
 import { formatFeeAmount } from "@/lib/format";
 import { getFrequencyLabel } from "./enum-labels";
 import { FeeAudienceTabs, type FeeAudienceTab } from "./fee-audience-tabs";
@@ -24,6 +24,10 @@ export interface DisplayFee {
   accountProduct?: string | null;
   /** The schedule line the fee was read from; never shown, read only by the comparability rule. */
   sourceLine?: string | null;
+  /** The name as the schedule states it, before display cleanup; the comparability rule reads this, as the medians do. */
+  rawFeeName?: string | null;
+  /** The fee traces to a fetched source document (statistics rule 1); unsourced fees are not benchmarked. */
+  sourced?: boolean;
 }
 
 /**
@@ -42,16 +46,25 @@ function AudienceMark({ fee }: { fee: DisplayFee }) {
 
 /** "CD/IRA fee" or "Card inactivity fee" when the row prices a different product than its category's median measures. */
 function notComparable(fee: DisplayFee): string | null {
-  return notComparableReason(fee.feeCategory, fee.feeName, fee.accountProduct ?? null, fee.sourceLine ?? null);
+  return notComparableReason(fee.feeCategory, fee.rawFeeName ?? fee.feeName, fee.accountProduct ?? null, fee.sourceLine ?? null);
 }
 
 function NotCompared({ reason }: { reason: string }) {
   return <span className="mt-1 block font-sans text-[12px] font-normal text-ink-muted">Not compared: {reason}</span>;
 }
 
-/** Same boundary as the statistics (statsRowFilter): not business, not from a business-only schedule. */
-function comparesToPersonal(fee: DisplayFee): boolean {
-  return countsAsPersonal(fee.feeAudience) && !(fee.sourceUrl && isBusinessOnlyLink(fee.sourceUrl));
+/** The one eligibility test the benchmark's own rows passed (market-eligibility), run on this fee. */
+function countsAgainstMarket(fee: DisplayFee): boolean {
+  return countsInMarketComparison({
+    category: fee.feeCategory,
+    amount: fee.amount,
+    audience: fee.feeAudience ?? null,
+    sourced: fee.sourced ?? false,
+    sourceUrl: fee.sourceUrl,
+    feeName: fee.rawFeeName ?? fee.feeName,
+    accountProduct: fee.accountProduct ?? null,
+    sourceLine: fee.sourceLine ?? null,
+  });
 }
 
 /** National 25th / 50th / 75th percentile for one fee category. */
@@ -79,7 +92,7 @@ const POSITION_TEXT: Record<Position, string> = {
 };
 
 function benchmarkFor(fee: DisplayFee, benchmarks: FeeBenchmarks | undefined): FeeBenchmark | null {
-  if (!comparesToPersonal(fee) || notComparable(fee) !== null || !benchmarks || fee.status !== "verified" || fee.amount === null || !fee.feeCategory) return null;
+  if (!countsAgainstMarket(fee) || !benchmarks || fee.status !== "verified" || fee.amount === null || !fee.feeCategory) return null;
   return benchmarks[fee.feeCategory] ?? null;
 }
 
