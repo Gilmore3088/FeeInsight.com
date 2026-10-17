@@ -156,7 +156,7 @@ Owner: Unassigned (#982 body); a ChatGPT lane claimed it on 2026-10-10. James is
 | H07-T10 | Readiness decision | Unassigned | Not started | none | none | Waits on T09 and James |
 
 ### Local journey run, Oct 17
-Local production build of `acct2/hamilton-trust-batch` plus `acct2/hamilton-h07-release`, fixture database from `tests/e2e/production-schema.sql`, pre-installed Chromium, every provider key blank. `research-journey.pw.ts`: 8 passed, 1 known defect marked expected-to-fail (criteria line shows "nationwide" after a fee follow-up). `admin-correction.pw.ts`: 4 passed. The run found two defects, both fixed on `acct2/hamilton-trust-batch` (06054bd56): a linked Pro account shown "Not linked", and a 409 when saving a first-turn peer list. A local synthetic run is evidence, not a case pass.
+Local production build of `acct2/hamilton-trust-batch` plus `acct2/hamilton-h07-release`, fixture database from `tests/e2e/production-schema.sql`, pre-installed Chromium, every provider key blank. `research-journey.pw.ts`: 10 passed. `admin-correction.pw.ts`: 4 passed. The first runs found three defects, all fixed on `acct2/hamilton-trust-batch` and now checked as passing tests: a linked Pro account shown "Not linked" (bigint user id compared with a number), a 409 when saving a first-turn peer list, and the criteria line showing "nationwide" after a fee follow-up to "Only Florida". A local synthetic run is evidence, not a case pass.
 
 ## Acceptance cases
 

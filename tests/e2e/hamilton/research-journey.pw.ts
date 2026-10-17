@@ -218,37 +218,39 @@ test("no paid model call was recorded for any journey", async () => {
   }
 });
 
-/**
- * Known defects the journey found on 2026-10-17. Each is expected to fail today; when it is fixed
- * Playwright reports it as "passed unexpectedly", and the test.fail line comes out.
- */
-test.describe("known defects", () => {
-  test("H01-AC1: a linked home is used for \"with us\" (fails today: account user id is compared as a string)", async ({ page }) => {
-    test.fail(true, "accountContextFromMemberships compares a number with the bigint user id postgres.js returns as a string");
-    await signIn(page, FIXTURE_USERS.pro.email, `/pro/analyze?instId=${HOME.id}`);
-    await page.goto(`/pro/analyze?instId=${HOME.id}`);
-    await expect(page.getByText(`Your institution: ${HOME.name}`)).toBeVisible({ timeout: 10_000 });
-  });
+test("H01-AC1: a linked home is the account institution, and \"with us\" adds it to the peer fees", async ({ page }) => {
+  // Found by this journey on 2026-10-17: the bigint user id arrived as a string and never matched.
+  await signIn(page, FIXTURE_USERS.pro.email, `/pro/analyze?instId=${HOME.id}`);
+  await page.goto(`/pro/analyze?instId=${HOME.id}`);
+  await expect(page.getByText(`Your institution: ${HOME.name}`)).toBeVisible();
+  await ask(page, "List ten similarly sized credit unions");
+  await expect(peerRows(page)).toHaveCount(10);
+  await ask(page, "Compare their NSF fees with us");
+  await expect(feeTable(page).getByRole("row", { name: /\(your institution\)/ })).toContainText("$27");
+  await snap(page, "08-with-us");
+});
 
-  test("H02-AC1: a first-turn peer list can be saved (fails today: 409 on save)", async ({ page }) => {
-    test.fail(true, "PeerListView sends previousPeerList: null, which answerPeerList reads as a continuation");
-    await signIn(page, FIXTURE_USERS.pro.email, `/pro/analyze?instId=${HOME.id}`);
-    await page.goto(`/pro/analyze?instId=${HOME.id}`);
-    await ask(page, "List ten similarly sized credit unions");
-    await page.getByRole("button", { name: "Save this peer research" }).click();
-    await expect(page.getByRole("link", { name: "Reopen saved research" })).toBeVisible({ timeout: 10_000 });
-  });
+test("H02-AC1: a first-turn peer list can be saved and reopened", async ({ page }) => {
+  // Found by this journey on 2026-10-17: the save sent previousPeerList: null and got a 409.
+  await signIn(page, FIXTURE_USERS.pro.email, `/pro/analyze?instId=${HOME.id}`);
+  await page.goto(`/pro/analyze?instId=${HOME.id}`);
+  await ask(page, "List ten similarly sized credit unions");
+  await page.getByRole("button", { name: "Save this peer research" }).click();
+  const reopen = page.getByRole("link", { name: "Reopen saved research" });
+  await expect(reopen).toBeVisible();
+  await page.goto((await reopen.getAttribute("href"))!);
+  await expect(page.getByText("Peachtree Test CU").first()).toBeVisible();
+});
 
-  test("H02-AC3: the criteria line keeps \"FL\" after a fee follow-up (fails today: shows nationwide)", async ({ page }) => {
-    test.fail(true, "the fee follow-up rebuilds criteria from the original question, not the refined list");
-    await signIn(page, FIXTURE_USERS.pro.email, `/pro/analyze?instId=${HOME.id}`);
-    await page.goto(`/pro/analyze?instId=${HOME.id}`);
-    await ask(page, "List ten similarly sized credit unions");
-    await expect(peerRows(page)).toHaveCount(10);
-    await ask(page, "Only Florida");
-    await expect(peerRows(page)).toHaveCount(7);
-    await ask(page, "Compare their NSF fees");
-    await expect(feeTable(page)).toBeVisible();
-    await expect(page.getByText(/Selection criteria: credit unions · FL/).last()).toBeVisible({ timeout: 10_000 });
-  });
+test("H02-AC3: the criteria line keeps \"FL\" after a fee follow-up", async ({ page }) => {
+  await signIn(page, FIXTURE_USERS.pro.email, `/pro/analyze?instId=${HOME.id}`);
+  await page.goto(`/pro/analyze?instId=${HOME.id}`);
+  await ask(page, "List ten similarly sized credit unions");
+  await expect(peerRows(page)).toHaveCount(10);
+  await ask(page, "Only Florida");
+  await expect(peerRows(page)).toHaveCount(7);
+  await ask(page, "Compare their NSF fees");
+  await expect(feeTable(page)).toBeVisible();
+  await expect(page.getByText(/Selection criteria: credit unions · FL/).last()).toBeVisible();
+  await expect(page.getByText(/Selection criteria: credit unions · nationwide/)).toHaveCount(0);
 });

@@ -34,8 +34,8 @@ Nothing here touches production. The fixtures refuse any database that is not on
    - Set `HAMILTON_E2E_KEEP=1` to keep the fixtures afterwards. You can then sign in by hand as `pro.e2e@fixture.test`, `pro2.e2e@fixture.test`, `admin.e2e@fixture.test` or `viewer.e2e@fixture.test` (password in `fixtures.ts`) on `http://localhost:3197`.
 4. Fixture checks without a browser: `E2E_DATABASE_URL=... npx vitest run tests/e2e/hamilton/fixtures.db.test.ts`.
 
-On 2026-10-17 (local production build, Turbopack, fixture database `e2e_d`), the run gave these results:
-- `research-journey.pw.ts`: 8 passed, plus 1 known defect marked `test.fail`. The criteria line shows "nationwide" again after a fee follow-up; the coordinator is fixing it in the combined pass.
+On 2026-10-17 (local production build, Turbopack, fixture database `e2e_d`), the run gave these results (14 passed in total):
+- `research-journey.pw.ts`: 10 passed, including the two defects above (now fixed) and a third: after "Only Florida", a fee follow-up's criteria line said "nationwide". That was also fixed on `acct2/hamilton-trust-batch`. The run was on that branch, merged into `acct2/hamilton-h07-release`.
 - `admin-correction.pw.ts`: 4 passed.
 - `fixtures.db.test.ts`: 7 passed.
 
