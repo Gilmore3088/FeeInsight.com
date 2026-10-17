@@ -96,7 +96,7 @@ export function ApiAccessCard({ access }: { access: ApiAccess }) {
       id="api"
       title="API and Claude connector"
       compact
-      note={`Your plan includes the ${PRODUCT_NAME} API, with ${API_MONTHLY_CALLS_LABEL} calls a month.`}
+      note={`Your plan includes the ${PRODUCT_NAME} API. Everyone on it shares ${API_MONTHLY_CALLS_LABEL} calls a month.`}
     >
       {newKey ? (
         <div>
