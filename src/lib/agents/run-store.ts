@@ -2137,6 +2137,13 @@ async function executeAgenticStep(
               kept_fee_name: row.keptFeeName,
               amount: row.amount,
             })),
+            [pageCopyCollapse.live && run.runKind !== "dry_run" ? "kept_names_carried" : "would_carry_kept_name"]: pageCopyCollapse.collapses.filter((row) => row.keptNewName).length,
+            carried_name_samples: pageCopyCollapse.collapses.filter((row) => row.keptNewName).slice(0, 10).map((row) => ({
+              kept_fee_published_id: row.keptFeePublishedId,
+              kept_fee_name: row.keptFeeName,
+              kept_new_name: row.keptNewName,
+              amount: row.amount,
+            })),
           },
           duplicate_collapse_samples: duplicateCollapses.slice(0, 10).map((row) => ({
             fee_published_id: row.feePublishedId,

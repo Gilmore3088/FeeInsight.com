@@ -713,6 +713,16 @@ document, renamed, would close, samples, and `error` when the read or the close 
 off until James approves the dry-run counts. Rollback: clear `rolled_back_at` on rows whose reason
 ends in `(copy of the page)`.
 
+**The kept row keeps the fuller name.** The kept copy is chosen by edition, not name, so it can hold
+only the tail of a line ("Farmers ATM", "10X10") while the closed copy has it whole ("Non-customer
+use of Farmers ATM", "Safe Deposit Box: 10X10"). `carriedName` moves the closed name onto the kept
+row when the closed name is the kept name with a heading of one to five words in front, reads as a
+line's name (no `|`, not `unclearName`), and the kept copy's own text prints that heading shortly
+before the kept name. It runs only with the close (live), renames a live row still under its old
+name, and the `hamilton.page_copy_duplicates_collapsed` event lists each old and new name
+(`kept_names_carried`); the step reports `would_carry_kept_name` and `carried_name_samples`.
+Full-table dry count, 17 Oct: 27 of the 499 closes carry a name.
+
 **A closed page copy comes back (#1439 item 3).** `page-copy-restore.ts` runs just before the
 collapse on every publish step and reads closed page copies whose kept row is no longer live (up to
 500 a step, rotated by the run id). It follows the kept row's takedown through the rows it names
