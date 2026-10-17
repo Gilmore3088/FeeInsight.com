@@ -131,7 +131,8 @@ describe("hero and proof strip", () => {
     expect(html).not.toMatch(/uppercase|tracking-\[0\.1/);
     expect(html).toContain("See where your fees sit");
     expect(html).toContain("before your board asks.");
-    expect(html).toContain("Every figure links to the");
+    expect(html).toContain("Every fee links to the");
+    expect(html).toContain("schedule it came from.");
     expect(html).toMatch(/<a href="#hamilton"[^>]*fi-btn-brick[^>]*>See a live fee comparison</);
     expect(html).not.toContain("Explore the Index");
     // The h1 is set in the homepage serif (James, Oct 17).
@@ -281,7 +282,7 @@ describe("research behind each answer", () => {
   it("renders the first question and its answer on the server, so the panel is never empty", () => {
     const html = renderToStaticMarkup(<LandingResearch />);
     expect(html).toMatch(/Ask Hamilton\.<\/span> <span class="block">Every answer shows its sources\./);
-    expect(html).toContain("Filings and market data join as each source is connected.");
+    expect(html).toContain("Answers start from published fee schedules. Filings and market data join as each source is connected.");
     expect(html).toContain(RESEARCH_EXAMPLES[0].question);
     expect(html).toContain(RESEARCH_EXAMPLES[0].title);
     expect(html).toContain('data-answered="true"');
@@ -346,6 +347,8 @@ describe("licence rule", () => {
     // Every example still lights only tiles that exist.
     const keys = new Set(SOURCES.map((s) => s.key));
     for (const e of RESEARCH_EXAMPLES) for (const key of e.sources) expect(keys.has(key)).toBe(true);
+    // Every answer starts from published fees, so every example lights the fees tile.
+    for (const e of RESEARCH_EXAMPLES) expect(e.sources).toContain("fees");
   });
 });
 

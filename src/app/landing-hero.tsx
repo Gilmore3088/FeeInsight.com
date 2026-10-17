@@ -23,8 +23,8 @@ export function LandingHero({ index, freshness }: { index: IndexCardData; freshn
             <span className="block whitespace-nowrap">before your board asks.</span>
           </h1>
           <p className="mt-6 text-[17px] leading-[1.45] text-[#e0e9ee] sm:text-[19px] lg:mt-7 lg:text-[clamp(18px,1.6vw,23px)]">
-            Hamilton compares each of your fees with the schedules your competitors publish. Every figure links to the
-            page it came from.
+            Hamilton compares each of your fees with the schedules your competitors publish. Every fee links to the
+            schedule it came from.
           </p>
           <div className="mt-7 lg:mt-9">
             <a href="#hamilton" className="fi-btn fi-btn-brick min-h-12 px-6 text-[15px]">

@@ -42,7 +42,7 @@ export const SOURCES: { key: SourceKey; icon: LucideIcon; name: string; detail: 
 export const RESEARCH_EXAMPLES: { question: string; sources: SourceKey[]; title: string }[] = [
   { question: "Make me a board report.", sources: ["fees", "financials", "branches", "cfpb", "rules"], title: "Board report" },
   { question: "What’s happening in our local market?", sources: ["fees", "branches", "income", "geography"], title: "Local market brief" },
-  { question: "What’s happening across our region?", sources: ["financials", "income", "geography", "fred", "regional"], title: "Regional outlook" },
+  { question: "What’s happening across our region?", sources: ["fees", "financials", "income", "geography", "fred", "regional"], title: "Regional outlook" },
   { question: "Which fees should we review next?", sources: ["fees", "financials", "cfpb", "rules", "fred"], title: "Pricing study" },
   { question: "How do we compare with credit union peers?", sources: ["fees", "financials", "branches", "income"], title: "Peer comparison" },
 ];
