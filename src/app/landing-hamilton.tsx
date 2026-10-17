@@ -13,6 +13,8 @@ const BENCHMARK_ROWS = 3;
 /** Fees the Analyze answer names. */
 const ANALYZE_ROWS = 2;
 
+/** The one source line under a slide's question: the sample bank and its market. */
+const SAMPLE = "mt-3 text-[12px] text-ink-muted";
 const QUESTION = "border-b border-border pb-3 text-[22px] font-semibold leading-[1.12] tracking-[-0.025em] text-ink sm:text-[25px]";
 
 function SourceLink({ href, children }: { href: string; children: ReactNode }) {
@@ -73,7 +75,7 @@ function sampleSlides(sample: SampleView, market: string | null): HamiltonSlide[
       body: (
         <>
           <p className={QUESTION}>How do our fees compare locally?</p>
-          <p className="mt-3 text-[12px] text-ink-muted">Sample: {name}{market ? ` · ${market}` : ""}</p>
+          <p className={SAMPLE}>Sample: {name}{market ? ` · ${market}` : ""}</p>
           <table className="mt-2 w-full border-collapse text-[13px]">
             <thead>
               <tr className="border-b border-border text-[11px] text-ink-muted">
@@ -102,7 +104,8 @@ function sampleSlides(sample: SampleView, market: string | null): HamiltonSlide[
       body: (
         <>
           <p className={QUESTION}>Which fees should we review next?</p>
-          <p className="mb-3 mt-3 text-[24px] font-semibold leading-[1.1] tracking-[-0.03em] text-ink sm:text-[28px]">{analyzeAnswer(picks)}</p>
+          <p className={SAMPLE}>Sample: {name}{market ? ` · ${market}` : ""}</p>
+          <p className="mb-3 mt-2 text-[24px] font-semibold leading-[1.1] tracking-[-0.03em] text-ink sm:text-[28px]">{analyzeAnswer(picks)}</p>
           {picks.map((row) => (
             <FeeRow key={row.key} row={row} />
           ))}
@@ -209,7 +212,7 @@ export function LandingHamilton({ report }: { report: MarketReport | null }) {
                 <span className="block whitespace-nowrap">to your next move.</span>
               </h2>
               <p className="mt-5 text-[18px] leading-[1.45] text-ink-soft sm:text-[21px]">
-                Hamilton is your on-demand fee consultant, built around your institution.
+                Hamilton is your on-demand fee consultant.
               </p>
               {/* The subscription, beside the demo (James, Oct 17). */}
               <TrackLink

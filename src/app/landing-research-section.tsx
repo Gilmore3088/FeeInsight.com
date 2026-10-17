@@ -11,7 +11,7 @@ export function LandingResearch() {
             The research, already connected.
           </h2>
           <p className="mt-3 text-[15px] leading-relaxed text-ink-soft sm:text-[16px]">
-            Fee schedules, financial filings and market data, already in one place.
+            Fee schedules, financial filings and market data in one place.
           </p>
         </header>
         <ResearchStage />

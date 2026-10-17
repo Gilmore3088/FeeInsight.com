@@ -132,6 +132,8 @@ describe("hero and proof strip", () => {
     expect(html).toContain("Price with confidence.");
     expect(html).toMatch(/<a href="#hamilton"[^>]*fi-btn-brick[^>]*>See Hamilton in action</);
     expect(html).not.toContain("Explore the Index");
+    // The h1 is set in the homepage serif (James, Oct 17).
+    expect(html).toMatch(/<h1 id="hero-title"[^>]*style="font-family:var\(--fi-home-serif/);
     expect(html).toMatch(/<form[^>]*action="\/institutions"[^>]*method="get"/);
     // Both h1 lines stay whole: a word is never left on its own line.
     expect(html.match(/class="block whitespace-nowrap"/g)).toHaveLength(2);
@@ -170,7 +172,8 @@ describe("Hamilton band", () => {
     expect(html).not.toContain(REPORT_OFFER.priceLabel);
     // No eyebrows, frame headings, card sub-lines or "illustrative" labels.
     expect(html).not.toMatch(/uppercase|Illustrative|Published sample|Answer:|Analyze your options|Compare local, state and national fees/);
-    expect(html).toContain("Sample: Capital City Bank");
+    // Benchmark and Analyze each name the sample bank under their question.
+    expect(html.match(/Sample: Capital City Bank/g)).toHaveLength(2);
     // Every figure in the examples is a sample figure.
     for (const row of analyzePicks(sample.rows)) expect(html).toContain(row.label);
   });
@@ -293,6 +296,13 @@ describe("research, already connected", () => {
     expect(container.querySelector("[data-research-output]")?.getAttribute("data-answered")).toBe("true");
     const lit = [...container.querySelectorAll('[data-lit="true"]')].map((el) => el.getAttribute("data-source"));
     expect(lit.sort()).toEqual([...RESEARCH_EXAMPLES[1].sources].sort());
+    // An unlit tile fades its icon only: the tile and its name keep full opacity.
+    const unlit = container.querySelector('[data-lit="false"]')!;
+    expect(unlit.className).not.toMatch(/opacity/);
+    const label = [...unlit.querySelectorAll("span")].find((el) => !el.classList.contains("sr-only"))!;
+    expect(label.className).not.toMatch(/opacity/);
+    expect(label.className).toContain("text-ink-soft");
+    expect(unlit.querySelector("svg")!.getAttribute("class")).toContain("opacity-30");
     // The visitor's move is announced.
     expect(screen.getByText(RESEARCH_EXAMPLES[1].question).getAttribute("aria-live")).toBe("polite");
     vi.useRealTimers();

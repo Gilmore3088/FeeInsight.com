@@ -3,6 +3,16 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-17
+
+**The homepage carries no standalone report promotion.** James, 2026-10-17 18:16, reviewing the
+homepage cuts (#1826): the Report example "promotes a standalone report 'from $300,' which
+competes with your primary goal." The homepage (`/`) has no Competitive Fee Position Report link
+or price, so Hamilton Pro (`/subscribe`) is its only paid path, next to the demo request. The
+paid report is still offered on `/reports` (its request form, `REPORT_OFFER`) and
+`/for-institutions` (`ReportOfferSection`). Don't restore the `request_report_click` link on the
+homepage from the money thesis; the report stays a lead into Pro from those pages.
+
 ## 2026-10-16
 
 **Admin fee corrections are new versions, admin-only, with source evidence.** James, 2026-10-16,

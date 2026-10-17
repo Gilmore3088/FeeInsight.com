@@ -58,8 +58,8 @@ interface Line {
 
 /**
  * "The research, already connected." Ten source tiles; Hamilton's panel cycles five questions,
- * and for each one the tiles it draws on light up and connector lines run from them to the
- * answer. The first question renders complete on the server, so the panel is never empty.
+ * and for each one the tiles it draws on light up and, from lg up, connector lines run from them
+ * to the answer. The first question renders complete on the server, so the panel is never empty.
  * Lines and dots stop off screen, in a hidden tab, when paused, and with reduced motion
  * (where the lines are drawn still and nothing advances).
  */
@@ -91,28 +91,17 @@ export function ResearchStage() {
     const base = stage.current?.getBoundingClientRect();
     const dest = output.current?.getBoundingClientRect();
     if (!base || !dest) return;
-    const grid = [...tiles.current.values()].map((el) => el.getBoundingClientRect());
-    const gridBottom = Math.max(...grid.map((r) => r.bottom));
-    // Stacked (phone): the answer sits under the tiles, so lines run down from each tile.
-    const stacked = dest.top >= gridBottom - 1;
+    // Lines run across from each tile to the answer beside the grid. Below lg the answer is
+    // stacked under the question, where lines would cross the text, so none are drawn there.
     const next: Line[] = [];
     for (const [key, el] of tiles.current) {
       const r = el.getBoundingClientRect();
-      if (stacked) {
-        const x = r.left - base.left + r.width / 2;
-        const y = r.bottom - base.top - 3;
-        const tx = dest.left - base.left + dest.width / 2;
-        const ty = dest.top - base.top;
-        const mid = (y + ty) / 2;
-        next.push({ key, d: `M${x.toFixed(1)},${y.toFixed(1)} C${x.toFixed(1)},${mid.toFixed(1)} ${tx.toFixed(1)},${mid.toFixed(1)} ${tx.toFixed(1)},${ty.toFixed(1)}` });
-      } else {
-        const x = r.right - base.left - 4;
-        const y = r.top - base.top + r.height / 2;
-        const tx = dest.left - base.left - 2;
-        const ty = dest.top - base.top + dest.height / 2;
-        const mid = x + (tx - x) * 0.62;
-        next.push({ key, d: `M${x.toFixed(1)},${y.toFixed(1)} C${mid.toFixed(1)},${y.toFixed(1)} ${mid.toFixed(1)},${ty.toFixed(1)} ${tx.toFixed(1)},${ty.toFixed(1)}` });
-      }
+      const x = r.right - base.left - 4;
+      const y = r.top - base.top + r.height / 2;
+      const tx = dest.left - base.left - 2;
+      const ty = dest.top - base.top + dest.height / 2;
+      const mid = x + (tx - x) * 0.62;
+      next.push({ key, d: `M${x.toFixed(1)},${y.toFixed(1)} C${mid.toFixed(1)},${y.toFixed(1)} ${mid.toFixed(1)},${ty.toFixed(1)} ${tx.toFixed(1)},${ty.toFixed(1)}` });
     }
     setLines(next);
     setBox({ w: base.width, h: base.height });
@@ -137,7 +126,7 @@ export function ResearchStage() {
     <div ref={root}>
       <div ref={stage} className="relative isolate grid gap-6 lg:grid-cols-[minmax(0,1.32fr)_minmax(0,1fr)] lg:gap-[76px]" data-research-stage="">
         <svg
-          className="fi-home-flow pointer-events-none absolute inset-0 -z-10 h-full w-full overflow-visible"
+          className="fi-home-flow pointer-events-none absolute inset-0 -z-10 h-full w-full overflow-visible max-lg:hidden"
           viewBox={`0 0 ${box.w || 1} ${box.h || 1}`}
           aria-hidden="true"
           data-playing={clock.playing}
