@@ -27,17 +27,18 @@ const panelText = () => screen.getByRole("heading", { level: 2, name: /^(Tampa|O
 
 describe("StateExplorer", () => {
   it("draws a marker per located city, each a no-script link to ?city=", () => {
-    renderExplorer();
+    const { container } = renderExplorer();
     expect(map?.points.map((p) => p.key)).toEqual(["tampa", "orlando", "fort lauderdale"]);
-    const svg = screen.getByRole("group", { name: /Florida cities with published fees/ });
-    const hrefs = within(svg).getAllByRole("link", { hidden: true }).map((a) => a.getAttribute("href"));
-    expect(hrefs).toContain("?city=orlando#explorer");
-    expect(hrefs).toContain("?city=fort%20lauderdale#explorer");
+    const links = [...container.querySelectorAll("svg a")];
+    expect(links.map((a) => a.getAttribute("href"))).toContain("?city=orlando#explorer");
+    expect(links.map((a) => a.getAttribute("href"))).toContain("?city=fort+lauderdale#explorer");
+    // The city menu does the same job, so the ~400 dots stay out of the tab order and the accessibility tree.
+    links.forEach((a) => expect(a.getAttribute("aria-hidden")).toBe("true"));
   });
 
   it("selecting a marker shows the city, its coverage and its comparison link", () => {
-    renderExplorer();
-    fireEvent.click(screen.getByRole("link", { name: "Orlando: 41 of 50 institutions have published fees", hidden: true }));
+    const { container } = renderExplorer();
+    fireEvent.click(container.querySelector('svg a[aria-label="Orlando: 41 of 50 institutions have published fees"]')!);
     const panel = panelText();
     expect(panel.textContent).toContain("41 of 50 institutions have published fees");
     expect(within(panel).getByRole("link", { name: /Compare Orlando fees/ }).getAttribute("href")).toBe("/fees/city/fl/orlando");
@@ -55,6 +56,17 @@ describe("StateExplorer", () => {
     expect(within(panelText()).getByRole("link", { name: /Compare Orlando fees/ })).toBeTruthy();
     const list = screen.getByRole("region", { name: "Every Florida city" });
     expect(within(list).getAllByRole("link").map((a) => a.textContent)).toEqual(["Orlando41 of 50 with fees"]);
+  });
+
+  it("carries the search and the full list through no-script links and forms", () => {
+    const { container } = render(
+      <StateExplorer map={map} cities={cities} initialCity="tampa" initialQuery="or" initialAll stateName="Florida" stateCode="FL" />,
+    );
+    expect(container.querySelector('svg a[aria-label^="Orlando"]')!.getAttribute("href")).toBe("?q=or&all=1&city=orlando#explorer");
+    const menuForm = (screen.getByLabelText("City on the map") as HTMLSelectElement).form!;
+    expect(Object.fromEntries(new FormData(menuForm))).toEqual({ q: "or", all: "1", city: "tampa" });
+    const searchForm = (screen.getByLabelText("Find your city") as HTMLInputElement).form!;
+    expect(Object.fromEntries(new FormData(searchForm))).toEqual({ city: "tampa", all: "1", q: "or" });
   });
 
   it("selects from the city menu, which also works as a plain GET form", () => {

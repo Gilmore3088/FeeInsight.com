@@ -25,6 +25,7 @@ function MarketRows({
   stateName,
   selected,
   onSelect,
+  hrefFor,
 }: {
   panels: MarketPanel[];
   feeKey: string;
@@ -33,15 +34,17 @@ function MarketRows({
   stateName: string;
   selected: string;
   onSelect: (city: string) => void;
+  /** The no-script link that picks a market, keeping the picked fee. */
+  hrefFor: (city: string) => string;
 }) {
   const medians = panels.map((p) => p.fees.find((f) => f.key === feeKey)?.rungs.find((r) => r.level === "city")?.median ?? null);
   const top = Math.max(1, stateMedian ?? 0, ...medians.map((m) => m ?? 0));
   return (
     <div>
-      <div className="flex items-baseline justify-between gap-3 text-[12px] text-ink-muted">
-        <span className="font-medium text-ink-soft">{feeLabel} median by market</span>
+      <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-[12px] text-ink-muted">
+        <span className="min-w-0 font-medium text-ink-soft">{feeLabel} median by market</span>
         {stateMedian != null && (
-          <span className="inline-flex items-center gap-1.5">
+          <span className="inline-flex min-w-0 items-center gap-1.5">
             <span aria-hidden="true" className="inline-block h-3 w-px bg-ink" />
             {stateName} {money(stateMedian)}
           </span>
@@ -53,10 +56,13 @@ function MarketRows({
           const on = p.city === selected;
           return (
             <li key={p.city}>
-              <button
-                type="button"
-                aria-pressed={on}
-                onClick={() => onSelect(p.city)}
+              <a
+                href={hrefFor(p.city)}
+                aria-current={on ? "true" : undefined}
+                onClick={(e) => {
+                  e.preventDefault();
+                  onSelect(p.city);
+                }}
                 className={`grid min-h-11 w-full grid-cols-[minmax(0,8rem)_minmax(0,1fr)_4.5rem] items-center gap-3 px-1 text-left text-[14px] ${
                   on ? "font-semibold text-ink" : "text-ink-soft hover:text-ink"
                 }`}
@@ -64,14 +70,14 @@ function MarketRows({
                 <span className="truncate">{p.name}</span>
                 <span className="relative h-2.5 rounded-sm bg-surface-200" aria-hidden="true">
                   {m != null && (
-                    <span className={`absolute inset-y-0 left-0 rounded-sm ${on ? "bg-brick" : "bg-ink/45"}`} style={{ width: `${Math.max(2, (m / top) * 100)}%` }} />
+                    <span className={`absolute inset-y-0 left-0 rounded-sm ${on ? "bg-ink" : "bg-ink/35"}`} style={{ width: `${Math.max(2, (m / top) * 100)}%` }} />
                   )}
                   {stateMedian != null && (
                     <span className="absolute -inset-y-1 w-px bg-ink" style={{ left: `${(stateMedian / top) * 100}%` }} />
                   )}
                 </span>
                 <span className="text-right font-mono tabular-nums text-ink">{m != null ? money(m) : <span className="font-sans text-[12px] text-ink-muted">Too few</span>}</span>
-              </button>
+              </a>
             </li>
           );
         })}
@@ -87,6 +93,8 @@ export function MarketCompare({
   directoryHref,
   title,
   headingId,
+  initialMarket = "",
+  initialFee = "",
 }: {
   panels: MarketPanel[];
   map: StateMarketMap | null;
@@ -94,12 +102,42 @@ export function MarketCompare({
   directoryHref: string;
   title: string;
   headingId: string;
+  /** `?market=` (the city in lower case) and `?fee=`, so every pick also works without scripts. */
+  initialMarket?: string;
+  initialFee?: string;
 }) {
-  const [city, setCity] = useState(panels[0]?.city ?? "");
+  const opening = panels.find((p) => p.city.toLowerCase() === initialMarket.toLowerCase()) ?? panels[0];
+  const [city, setCity] = useState(opening?.city ?? "");
   const panel = panels.find((p) => p.city === city) ?? panels[0];
-  const [feeKey, setFeeKey] = useState<string | null>(panel ? openingFee(panel) : null);
+  const [feeKey, setFeeKey] = useState<string | null>(
+    opening ? (opening.fees.some((f) => f.key === initialFee) ? initialFee : openingFee(opening)) : null,
+  );
   if (!panel) return null;
   const fee = panel.fees.find((f) => f.key === feeKey) ?? panel.fees[0];
+  const params = (market: string, feeChoice: string | undefined) => {
+    const p = new URLSearchParams({ market: market.toLowerCase() });
+    if (feeChoice) p.set("fee", feeChoice);
+    return p;
+  };
+  const hrefFor = (market: string, feeChoice = fee?.key) => `?${params(market, feeChoice).toString()}#local`;
+  // Keep the address shareable as the reader picks; the links above already carry the same params.
+  const remember = (market: string, feeChoice: string | undefined) => {
+    try {
+      const url = new URL(window.location.href);
+      for (const [k, v] of params(market, feeChoice)) url.searchParams.set(k, v);
+      window.history.replaceState(window.history.state, "", url);
+    } catch {
+      // The pick still shows; only the shareable address is skipped.
+    }
+  };
+  const pickMarket = (market: string) => {
+    setCity(market);
+    remember(market, fee?.key);
+  };
+  const pickFee = (key: string) => {
+    setFeeKey(key);
+    remember(panel.city, key);
+  };
   const top = fee ? Math.max(1, ...fee.rungs.map((r) => r.median ?? 0)) : 1;
 
   // Report order: title, the one finding for what is picked, then the exhibit.
@@ -110,24 +148,36 @@ export function MarketCompare({
       <div className="space-y-5">
         {/* Phones pick the fee from a menu; wider screens use the row of fee buttons beside the ladder. */}
         {fee && (
-          <label className="block min-w-0 sm:hidden">
-            <span className="text-[12px] font-medium text-ink-muted">Fee</span>
-            <select value={fee.key} onChange={(e) => setFeeKey(e.target.value)} className={SELECT}>
-              {panel.fees.map((f) => (
-                <option key={f.key} value={f.key}>
-                  {f.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          <form method="get" action="#local" onSubmit={(e) => e.preventDefault()} className="sm:hidden">
+            <input type="hidden" name="market" value={panel.city.toLowerCase()} />
+            <label className="block min-w-0">
+              <span className="text-[12px] font-medium text-ink-muted">Fee</span>
+              <span className="flex gap-2">
+                <select name="fee" value={fee.key} onChange={(e) => pickFee(e.target.value)} className={SELECT}>
+                  {panel.fees.map((f) => (
+                    <option key={f.key} value={f.key}>
+                      {f.label}
+                    </option>
+                  ))}
+                </select>
+                {/* Without scripts the button submits; with them the menu acts on change. */}
+                <noscript>
+                  <button type="submit" className="mt-1 min-h-11 shrink-0 rounded-md border border-ink px-4 text-[14px] font-semibold text-ink">
+                    Show
+                  </button>
+                </noscript>
+              </span>
+            </label>
+          </form>
         )}
         {map && (
           <div className="mx-auto w-full max-w-[20rem] sm:max-w-none">
             <StateCityMap
               map={map}
-              markers={panels.map((p) => ({ key: p.city, name: p.name, institutions: p.institutions, withFees: p.withFees }))}
+              markers={panels.map((p) => ({ key: p.city, name: p.name, institutions: p.institutions, withFees: p.withFees, selectHref: hrefFor(p.city) }))}
               selected={panel.city}
-              onSelect={setCity}
+              onSelect={pickMarket}
+              focusable={false}
               label={`${stateName}'s largest markets on a map, sized by institutions with a branch`}
             />
           </div>
@@ -140,7 +190,8 @@ export function MarketCompare({
             stateMedian={fee.rungs.find((r) => r.level === "state")?.median ?? null}
             stateName={stateName}
             selected={panel.city}
-            onSelect={setCity}
+            onSelect={pickMarket}
+            hrefFor={(market) => hrefFor(market)}
           />
         )}
         <p className="text-[12px] text-ink-muted sm:mx-0">
@@ -157,17 +208,20 @@ export function MarketCompare({
           <>
             <div className="hidden flex-wrap gap-1.5 sm:flex" role="group" aria-label="Pick a fee">
               {panel.fees.map((f) => (
-                <button
+                <a
                   key={f.key}
-                  type="button"
-                  aria-pressed={f.key === fee.key}
-                  onClick={() => setFeeKey(f.key)}
-                  className={`min-h-11 rounded-md px-2.5 text-[13px] ring-1 transition-colors ${
+                  href={hrefFor(panel.city, f.key)}
+                  aria-current={f.key === fee.key ? "true" : undefined}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    pickFee(f.key);
+                  }}
+                  className={`inline-flex min-h-11 items-center rounded-md px-2.5 text-[13px] ring-1 transition-colors ${
                     f.key === fee.key ? "bg-brick font-semibold text-on-ink ring-brick" : "text-ink-soft ring-border hover:text-ink hover:ring-ink"
                   }`}
                 >
                   {f.label}
-                </button>
+                </a>
               ))}
             </div>
 
@@ -184,7 +238,7 @@ export function MarketCompare({
                     <div className="order-last col-span-2 h-2.5 rounded-sm bg-surface-200 sm:order-none sm:col-span-1" aria-hidden="true">
                       {r.median != null && (
                         <div
-                          className={`h-2.5 rounded-sm ${r.level === "city" ? "bg-brick" : "bg-ink/45"}`}
+                          className={`h-2.5 rounded-sm ${r.level === "city" ? "bg-ink" : "bg-ink/35"}`}
                           style={{ width: `${Math.max(2, (r.median / top) * 100)}%` }}
                         />
                       )}

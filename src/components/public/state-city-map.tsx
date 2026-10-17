@@ -4,7 +4,8 @@ import type { StateMarketMap } from "@/lib/geo/state-market-map";
 /**
  * One state outline with a marker per city, from US Census outlines (us-atlas) and the middle of
  * each city's branch coordinates (FDIC Summary of Deposits, NCUA). Marker size shows how many
- * banks and credit unions have a branch there; color only marks the selected city, never a price.
+ * banks and credit unions have a branch there; the selected city shows by weight and an outline, and
+ * no color stands for a price.
  * The state page's local markets and the city directory's explorer both draw this map.
  */
 
@@ -63,12 +64,16 @@ export function StateCityMap({
       return byKey.get(b.key)!.institutions - byKey.get(a.key)!.institutions;
     });
 
+  // Few markers (a state page's largest markets) get generous hit areas; hundreds stay tight.
+  const hit = (r: number) => Math.max(r, unit * (markers.length > 40 ? 1.4 : 3.2));
+
+  // Neutral surfaces only: the outline carries no price meaning, and selection shows by weight and outline.
   return (
     <svg viewBox={map.viewBox} className="h-auto w-full" role="group" aria-label={label}>
       {map.neighbors.map((d, i) => (
-        <path key={i} d={d} className="fill-[var(--fi-viz-none)] stroke-paper" strokeWidth={1} vectorEffect="non-scaling-stroke" />
+        <path key={i} d={d} className="fill-surface-200 stroke-paper" strokeWidth={1} vectorEffect="non-scaling-stroke" />
       ))}
-      <path d={map.state} className="fill-[var(--fi-viz-1)] stroke-paper" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+      <path d={map.state} className="fill-surface-0 stroke-border" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
       {order.map((pt) => {
         const m = byKey.get(pt.key)!;
         const on = pt.key === selected;
@@ -77,22 +82,35 @@ export function StateCityMap({
         // Only the selected city is named; the label sits on the side away from the nearer edge.
         const leftSide = pt.x > box[0] + box[2] * 0.6;
         const title = markerTitle(m);
+        const labelGap = on ? unit * 1.6 : unit * 0.8;
         const dot = (
           <>
             {/* A wider invisible ring so a small town is still easy to hit with a pointer. */}
-            <circle cx={pt.x} cy={pt.y} r={Math.max(r, unit * 1.4)} className="fill-transparent" />
+            <circle cx={pt.x} cy={pt.y} r={hit(r)} className="fill-transparent" />
             <circle
               cx={pt.x}
               cy={pt.y}
               r={r}
-              className={on ? "fill-brick stroke-ink" : faint ? "fill-surface-200 stroke-paper" : "fill-ink-muted stroke-paper group-hover:fill-ink"}
-              strokeWidth={on ? 2 : 1}
+              className={on ? "fill-ink stroke-paper" : faint ? "fill-surface-200 stroke-paper" : "fill-ink-muted stroke-paper group-hover:fill-ink-soft"}
+              strokeWidth={1}
+              vectorEffect="non-scaling-stroke"
+            />
+            {on && (
+              <circle cx={pt.x} cy={pt.y} r={r + unit * 0.7} className="fill-none stroke-ink" strokeWidth={2} vectorEffect="non-scaling-stroke" />
+            )}
+            {/* Keyboard focus: a 3px ring outside the dot and any selection ring, in every state. */}
+            <circle
+              cx={pt.x}
+              cy={pt.y}
+              r={r + unit * 1.5}
+              className="pointer-events-none fill-none stroke-ink opacity-0 group-focus-visible:opacity-100"
+              strokeWidth={3}
               vectorEffect="non-scaling-stroke"
             />
             <title>{title}</title>
             {on && (
               <text
-                x={leftSide ? pt.x - r - unit * 0.8 : pt.x + r + unit * 0.8}
+                x={leftSide ? pt.x - r - labelGap : pt.x + r + labelGap}
                 textAnchor={leftSide ? "end" : "start"}
                 y={pt.y + unit * 1.1}
                 fontSize={unit * 4}
@@ -106,7 +124,9 @@ export function StateCityMap({
             )}
           </>
         );
-        const common = "group cursor-pointer focus:outline-none [&:focus-visible>circle:nth-of-type(2)]:stroke-ink";
+        const common = "group cursor-pointer focus:outline-none";
+        // Markers another control duplicates stay out of the tab order and the accessibility tree.
+        const hidden = focusable ? {} : { "aria-hidden": true as const, tabIndex: -1 };
         if (m.selectHref) {
           return (
             // A plain anchor: a next/link here would prefetch a URL per marker.
@@ -115,7 +135,7 @@ export function StateCityMap({
               href={m.selectHref}
               aria-label={title}
               aria-current={on ? "true" : undefined}
-              tabIndex={focusable ? undefined : -1}
+              {...hidden}
               onClick={(e) => {
                 if (!onSelect) return;
                 e.preventDefault();
@@ -131,9 +151,10 @@ export function StateCityMap({
           <g
             key={pt.key}
             role="button"
-            tabIndex={focusable ? 0 : -1}
+            tabIndex={0}
             aria-pressed={on}
             aria-label={title}
+            {...hidden}
             onClick={() => onSelect?.(pt.key)}
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ") {

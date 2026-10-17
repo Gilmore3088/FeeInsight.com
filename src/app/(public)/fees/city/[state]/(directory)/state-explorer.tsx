@@ -40,10 +40,20 @@ export function StateExplorer({
 
   const byKey = useMemo(() => new Map(cities.map((c) => [c.key, c])), [cities]);
   const onMap = useMemo(() => new Set(map?.points.map((p) => p.key) ?? []), [map]);
-  const markers: CityMarker[] = useMemo(
-    () => cities.map((c) => ({ key: c.key, name: c.name, institutions: c.institutions, withFees: c.withFees, selectHref: `?city=${encodeURIComponent(c.key)}#explorer` })),
-    [cities],
-  );
+  // Without scripts every link and form carries the other choices along, so none is dropped.
+  const keep = { q: initialQuery.trim(), all: initialAll ? "1" : "" };
+  const params = (city: string, extra: Partial<typeof keep> = {}) => {
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries({ ...keep, ...extra, city })) if (v) p.set(k, v);
+    return `?${p.toString()}`;
+  };
+  const markers: CityMarker[] = cities.map((c) => ({
+    key: c.key,
+    name: c.name,
+    institutions: c.institutions,
+    withFees: c.withFees,
+    selectHref: `${params(c.key)}#explorer`,
+  }));
   const alphabetical = useMemo(() => [...cities].sort((a, b) => a.name.localeCompare(b.name)), [cities]);
   const q = query.trim().toLowerCase();
   const dimmed = useMemo(() => (q ? new Set(cities.filter((c) => !c.name.toLowerCase().includes(q)).map((c) => c.key)) : undefined), [cities, q]);
@@ -98,7 +108,8 @@ export function StateExplorer({
               </span>
               <span className="inline-flex items-center gap-1.5">
                 <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-                  <circle cx="6" cy="6" r="5" className="fill-brick stroke-ink" strokeWidth={1} />
+                  <circle cx="6" cy="6" r="3.5" className="fill-ink" />
+                  <circle cx="6" cy="6" r="5.25" className="fill-none stroke-ink" strokeWidth={1.25} />
                 </svg>
                 Selected
               </span>
@@ -108,6 +119,8 @@ export function StateExplorer({
 
         <div className="space-y-5 text-left">
           <form method="get" action="#cities" onSubmit={(e) => e.preventDefault()} role="search">
+            <input type="hidden" name="city" value={city.key} />
+            {initialAll && <input type="hidden" name="all" value="1" />}
             <label className="block">
               <span className="text-[13px] font-medium text-ink">Find your city</span>
               <span className="flex gap-2">
@@ -129,6 +142,8 @@ export function StateExplorer({
             </label>
           </form>
           <form method="get" action="#explorer" onSubmit={(e) => e.preventDefault()}>
+            {keep.q && <input type="hidden" name="q" value={keep.q} />}
+            {initialAll && <input type="hidden" name="all" value="1" />}
             <label className="block">
               <span className="text-[13px] font-medium text-ink">City on the map</span>
               <span className="flex gap-2">
@@ -165,7 +180,7 @@ export function StateExplorer({
             stateCode={stateCode}
             query={query}
             initialAll={initialAll}
-            allHref={`?${new URLSearchParams({ ...(selected ? { city: selected } : {}), all: "1" }).toString()}#cities`}
+            allHref={`${params(city.key, { all: "1" })}#cities`}
           />
         </div>
       </section>
