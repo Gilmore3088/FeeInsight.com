@@ -43,7 +43,7 @@ export function faqItems(summary: FaqSummary): { q: string; a: ReactNode }[] {
       a: <>No. Hamilton shows where each fee stands and what a price would mean; the decision is yours.</>,
     },
     {
-      q: "What does Pro cost?",
+      q: "What does Hamilton cost?",
       a: <>{PRO_ANNUAL_RANGE_LABEL}, set by your institution&apos;s assets. Monthly billing is also available.</>,
     },
   ];

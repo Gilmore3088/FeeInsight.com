@@ -1555,3 +1555,18 @@ details[open] summary .expand-icon { transform: rotate(180deg); }
 .fi-branch-map .maplibregl-ctrl-attrib a {
   color: var(--fi-ink);
 }
+
+/* Homepage feature cards crop a Hamilton exhibit like a product image: the report sheet's own
+   frame (rule, headline, legend, source) is hidden. Unlayered, since the sheet's CSS is too. */
+.fi-exhibit-crop .rd .rd-exhibit {
+  border: 0;
+  padding-top: 0;
+  margin-top: 0;
+}
+.fi-exhibit-crop .rd-label,
+.fi-exhibit-crop .rd-sub,
+.fi-exhibit-crop .rd-source,
+.fi-exhibit-crop .rd-exhibit > h2,
+.fi-exhibit-crop [data-exhibit-legend] {
+  display: none;
+}

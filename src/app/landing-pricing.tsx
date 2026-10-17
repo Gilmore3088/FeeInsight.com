@@ -17,9 +17,9 @@ export function LandingPricing() {
       <div className={`${SECTION_INNER} py-16 sm:py-24`}>
         <SectionHeading
           center
-          eyebrow="Hamilton Pro"
+          eyebrow="Hamilton"
           title="Priced by your institution's size"
-          line={`Hamilton Pro gives up to ${WORKSPACE_SEAT_LIMIT} people Hamilton and the full ${PRODUCT_NAME}.`}
+          line={`One Hamilton subscription covers up to ${WORKSPACE_SEAT_LIMIT} people and the full ${PRODUCT_NAME}.`}
         />
         <PlanIncludes />
         <ul className="mx-auto mt-10 grid max-w-4xl gap-3 sm:grid-cols-3 sm:gap-4">

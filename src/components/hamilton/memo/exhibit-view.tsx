@@ -245,7 +245,7 @@ function FeePosition({ x }: { x: Extract<ExhibitSpec, { kind: "fee_position" }> 
           ))}
         </ul>
       ) : null}
-      <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-warm-700">
+      <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-warm-700" data-exhibit-legend="">
         <span className="inline-flex items-center gap-1.5">
           <span className="inline-block h-3 w-5 shrink-0 rounded-sm bg-terra/25 ring-1 ring-terra/40" />
           {x.band.label}, {middleHalfText(x.band.p25, x.band.p75)} ({x.band.n} institutions)
@@ -333,7 +333,7 @@ function CompetitorRange({ x }: { x: Extract<ExhibitSpec, { kind: "competitor_ra
         <span />
       </div>
       {x.own != null ? (
-        <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-warm-700">
+        <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-warm-700" data-exhibit-legend="">
           <span className="inline-flex items-center gap-1.5">
             <span className="inline-block h-3.5 w-[3px] rounded bg-terra" />
             {x.ownLabel}: {fmtMoney(x.own)}

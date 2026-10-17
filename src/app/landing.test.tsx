@@ -6,7 +6,7 @@ import { REPORT_PRICE_INLINE } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
 import { LandingHero } from "./landing-hero";
 import { LandingProducts } from "./landing-products";
-import { sampleWorkflowReport } from "./landing-workflow.test-fixture";
+import { LandingHamilton, parseShowcase } from "./landing-hamilton";
 import { LandingPricing } from "./landing-pricing";
 import { LandingFaq, faqItems } from "./landing-faq";
 import { buildHomeData, buildSampleView, homeReadsCacheable } from "./landing-shared";
@@ -112,7 +112,8 @@ const wholePage = () =>
   renderToStaticMarkup(
     <>
       <LandingHero />
-      <LandingProducts data={data} summary={summary} report={sampleWorkflowReport()} />
+      <LandingProducts data={data} summary={summary} />
+      <LandingHamilton />
       <LandingPricing />
       <LandingFaq summary={summary} />
     </>,
@@ -145,30 +146,27 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     expect(t).not.toContain(REPORT_PRICE_INLINE);
   });
 
-  it("introduces the Index with the search and the map, and Hamilton with one answer, then the report", () => {
-    const html = renderToStaticMarkup(<LandingProducts data={data} summary={summary} report={sampleWorkflowReport()} />);
+  it("introduces the Index with the search and the map, then Hamilton in its own section", () => {
+    const html = renderToStaticMarkup(<LandingProducts data={data} summary={summary} />);
     const t = text(html);
     const at = (marker: string) => html.indexOf(marker);
-    expect(html).toContain('role="img" aria-label="Bank Fee Index"');
-    expect(html).toContain('role="img" aria-label="Hamilton"');
+    expect(html).toMatch(/<h2 id="products-heading"[\s\S]*?<span class="sr-only">Bank Fee Index<\/span><\/h2>/);
+    expect(html).not.toContain(">Hamilton</span>");
     // Index: search, live count, map with its ranking folded away.
     expect(html).toMatch(/<form[^>]*action="\/institutions"[^>]*method="get"/);
     expect(t).toContain("1,234 institutions · Data refreshed Oct 14, 2026");
     expect(at("<form")).toBeLessThan(at("data-district-map"));
-    expect(at('aria-label="Hamilton"')).toBeGreaterThan(at("data-district-map"));
     expect(html).toMatch(/data-district-takeaway=""/);
-    // Hamilton: the question and answer, no separate fee list.
-    expect(html).not.toContain("data-hamilton-snapshot");
-    expect(at("data-example-question")).toBeGreaterThan(at('aria-label="Hamilton"'));
-    // One compact report preview after both, linked to the full report.
-    expect(at("data-workflow-report")).toBeGreaterThan(at("data-workflow-compare"));
-    expect(html.match(/data-workflow-report/g)).toHaveLength(1);
     expect(html).toContain('href="/methodology"');
-    // Without a sample: the Index stays; the answer and the report preview are left out.
-    const bare = renderToStaticMarkup(<LandingProducts data={buildHomeData(summary, [], null)} summary={summary} report={null} />);
+    // The $9 sample answer and the separate report preview are gone.
+    expect(html).not.toContain("data-example-question");
+    expect(html).not.toContain("data-workflow-report");
+    // Without a map: the Index stays, with no empty frame.
+    const bare = renderToStaticMarkup(<LandingProducts data={buildHomeData(summary, [], null)} summary={summary} />);
     expect(bare).not.toContain("fi-window");
     expect(bare).toContain("<form");
-    expect(bare).not.toContain("data-workflow-report");
+    const page = wholePage();
+    expect(page.indexOf('id="hamilton-heading"')).toBeGreaterThan(page.indexOf("data-district-map"));
   });
 
   it("renders Pro prices from PRO_TIERS with the report as one line", () => {
@@ -181,14 +179,54 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     expect(renderToStaticMarkup(<LandingPricing />)).toContain("/reports?report=institution#request");
   });
 
-  it("runs promise, products with the answer and report, then plans and the FAQ", () => {
+  it("runs promise, the Index, Meet Hamilton with its video, then plans and the FAQ", () => {
     const page = wholePage();
     const at = (marker: string) => page.indexOf(marker);
     expect(at("<h1")).toBeLessThan(at('id="products-heading"'));
-    expect(at('id="products-heading"')).toBeLessThan(at("data-workflow-report"));
-    expect(at("data-workflow-report")).toBeLessThan(at('id="plans"'));
+    expect(at('id="products-heading"')).toBeLessThan(at('id="hamilton-heading"'));
+    expect(page).toMatch(/<h2 id="hamilton-heading"[^>]*>Meet Hamilton<\/h2>/);
+    expect(at('id="hamilton-heading"')).toBeLessThan(at("data-hamilton-video-placeholder"));
+    expect(at("data-hamilton-video-placeholder")).toBeLessThan(at('id="plans"'));
+    // No demonstration or report preview until the video replaces the placeholder.
+    expect(page).not.toContain('role="tabpanel"');
+    expect(page).not.toContain("data-workflow-report");
     expect(page).not.toContain("weeks of gathering");
     expect(page).toContain("Full Bank Fee Index access");
+  });
+
+  it("draws the four Hamilton feature cards from the saved answer's own exhibits, or hides them", () => {
+    const exhibit = (kind: string, extra: object) => ({ id: kind, actionTitle: `${kind} headline`, exhibit: { kind, title: kind, sources: [], ...extra } });
+    const row = {
+      saved_on: "2026-10-16",
+      response_json: {
+        identityContext: { researchInstitutionName: "Capital City Bank" },
+        storyline: {
+          exhibits: [
+            exhibit("fee_position", { unit: "dollars", own: 35, ownLabel: "Capital City Bank", band: { label: "Peers", p25: 33, median: 35, p75: 36, n: 9 }, markers: [] }),
+            exhibit("competitor_range", { unit: "dollars", own: 35, ownLabel: "Capital City Bank", items: [{ name: "Truist Bank", amount: 36, url: null }] }),
+            exhibit("structure_matrix", { columns: ["Overdraft fee"], rows: [{ name: "Capital City Bank", own: true, cells: ["$35"] }] }),
+            exhibit("money_at_stake", { rows: [{ label: "Overdraft income", low: 10_147_000, high: 10_147_000, evidenceLevel: "institution" }] }),
+          ],
+        },
+      },
+    };
+    const showcase = parseShowcase(row);
+    expect(showcase?.exhibits.map((e) => e.exhibit.kind)).toEqual(["fee_position", "competitor_range", "structure_matrix", "money_at_stake"]);
+    const html = renderToStaticMarkup(<LandingHamilton showcase={showcase} />);
+    expect(html.match(/<h3[^>]*>/g)).toHaveLength(4);
+    expect(text(html)).toContain("From Hamilton’s answer on Capital City Bank’s overdraft fee, Oct 16, 2026. Sources:");
+    // The exhibits are pictures of the product: hidden from screen readers and out of the tab order.
+    expect(html.match(/aria-hidden="true" inert=""/g)).toHaveLength(4);
+    expect(html.indexOf("data-hamilton-video-placeholder")).toBeLessThan(html.indexOf("data-hamilton-features"));
+    expect(html.indexOf("data-hamilton-features")).toBeLessThan(html.indexOf("data-hamilton-actions"));
+    // A missing exhibit hides all four cards rather than showing three.
+    const three = { response_json: { ...row.response_json, storyline: { exhibits: row.response_json.storyline.exhibits.slice(0, 3) } } };
+    expect(parseShowcase(three)).toBeNull();
+    expect(renderToStaticMarkup(<LandingHamilton showcase={parseShowcase(three)} />)).not.toContain("data-hamilton-features");
+  });
+
+  it("names the paid product Hamilton, never Hamilton Pro", () => {
+    expect(text(wholePage())).not.toMatch(/Hamilton Pro|Pro workspace|What does Pro/);
   });
 
   it("keeps at most five short FAQ answers", () => {
@@ -202,9 +240,7 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
 
   it("keeps the copy rules and the word budget", () => {
     // The report page is the report's own section, in its words; tables are names and figures, not copy.
-    const html = wholePage()
-      .replace(/<div class="\[&amp;&gt;section\][\s\S]*?<\/section><\/div>/, "")
-      .replace(/<table[\s\S]*?<\/table>/g, "");
+    const html = wholePage().replace(/<table[\s\S]*?<\/table>/g, "");
     expect(text(html)).not.toMatch(/—|!|real-time|recommend|\bAI\b|verified|99%/i);
     // Under the old page's 889 words, with every reveal's contents counted.
     expect(words(html)).toBeLessThan(800);
@@ -220,8 +256,8 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     );
     expect(tracked).toEqual([
       "upgrade_click home_hero /subscribe See plans",
-      "upgrade_click home_products /subscribe See Hamilton plans",
-      "contact_sales home_workspace_demo /contact?source=demo Ask for a demo",
+      "upgrade_click home_hamilton /subscribe See Hamilton plans",
+      "sample_report_click home_hamilton /reports/sample-competitive-fee-position Open the sample report",
       "upgrade_click home_pricing /subscribe See plans",
       "contact_sales home_pricing_demo /contact?source=demo Or ask for a demo",
     ]);
