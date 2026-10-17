@@ -1243,7 +1243,18 @@ function AnalyzeConversationWorkspace({
               </More>
             ) : null}
             {reading.length > 0 ? (
-              <InterpretationBox sentences={reading} renderSentence={renderInline}>
+              <InterpretationBox
+                sentences={reading}
+                renderSentence={(sentence) => {
+                  const basis = bound?.basis[sentence.trim()];
+                  return basis ? (
+                    <>
+                      {renderInline(sentence)}
+                      <span className="mt-0.5 block text-xs text-warm-600">{basis}</span>
+                    </>
+                  ) : renderInline(sentence);
+                }}
+              >
                 {untracedInReading.length > 0 ? (
                   <p className="mt-2 text-xs text-warm-700">
                     These figures were not in the data Hamilton looked up: {untracedInReading.join(", ")}.

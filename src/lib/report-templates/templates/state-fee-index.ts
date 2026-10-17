@@ -269,7 +269,7 @@ function fullTableSection(data: StateReportData): string {
   if (data.comparisons.length === 0) return "";
   const hidden =
     data.hiddenCategoryCount > 0
-      ? ` This report lists featured fees; ${plural(data.hiddenCategoryCount, "more category has", "more categories have")} a ${data.stateName} median in Hamilton Pro.`
+      ? ` This report lists featured fees; ${plural(data.hiddenCategoryCount, "more category has", "more categories have")} a ${data.stateName} median in Hamilton.`
       : "";
   return reportSection(
     { label: "Appendix · Full benchmark table", title: `Every fee with a ${data.stateName} median` },

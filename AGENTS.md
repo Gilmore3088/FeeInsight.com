@@ -142,7 +142,7 @@ Use these current semantic tables and read models:
 - Agent ledger: `agent_runs`, `agent_run_steps`, `agent_run_events`.
 - Provider safety: `automation_control`, `ai_api_usage_events`.
 - Marketing (Growth): `content_drafts`, `pipeline_feedback`.
-- Hamilton Pro persistence: `hamilton_saved_analyses`, `hamilton_scenarios`, `hamilton_reports`, `hamilton_watchlists`, `hamilton_workspace_contexts`, `hamilton_signals`, `hamilton_priority_alerts`, `hamilton_refresh_jobs`, `hamilton_conversations`, `hamilton_messages`.
+- Hamilton persistence: `hamilton_saved_analyses`, `hamilton_scenarios`, `hamilton_reports`, `hamilton_watchlists`, `hamilton_workspace_contexts`, `hamilton_signals`, `hamilton_priority_alerts`, `hamilton_refresh_jobs`, `hamilton_conversations`, `hamilton_messages`.
 
 Do not use retired runtime contracts such as `fee_crawler`, `ops_jobs`, Modal worker IDs, old crawler table aliases, or request-time DDL.
 
@@ -168,6 +168,6 @@ Before calling agentic work done, run the narrow tests for the touched code and 
 - `npx tsc --noEmit`
 - `npm run lint`
 - `npx vitest run` (full suite; CI runs all of these)
-- Focused route/browser checks for public institution, submit-source, admin quality, and Hamilton Pro flows.
+- Focused route/browser checks for public institution, submit-source, admin quality, and Hamilton flows.
 
 For database-affecting work, verify against the actual current schema and add a migration only through the project migration workflow. Do not edit production-applied migrations in place.

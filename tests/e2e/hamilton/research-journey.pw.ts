@@ -16,7 +16,7 @@ import { ask, signIn } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
-const peerTable = (page: Page) => page.getByRole("region", { name: "Peer table; scroll horizontally" }).last();
+const peerTable = (page: Page) => page.getByRole("table", { name: "Peer table" }).last();
 const peerRows = (page: Page) => peerTable(page).locator("tbody tr");
 const feeTable = (page: Page) => page.locator("table[aria-label^='Published']").last();
 

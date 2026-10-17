@@ -361,7 +361,7 @@ export default async function SettingsPage({
               <>
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="text-lg text-warm-900" style={SERIF}>
-                    Hamilton Pro
+                    Hamilton
                   </p>
                   <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${statusClass}`}>{statusLabel}</span>
                 </div>
