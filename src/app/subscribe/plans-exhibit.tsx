@@ -1,15 +1,6 @@
 import { Calculator, Database, FileText, Landmark, MessageCircle, Newspaper, Users } from "lucide-react";
-import { AppIcon } from "@/brand/components";
-import { DEMO_REQUEST_NAV } from "@/components/nav-items";
-import { ProductDemo, type DemoView } from "@/components/marketing/product-demo";
-import { TrackLink } from "@/components/track-link";
 import { PRODUCT_NAME } from "@/lib/constants";
 import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
-import { demoViews } from "@/app/landing-demo";
-import type { HomeData } from "@/app/landing-shared";
-import { WirePreview, type WirePreviewLead } from "./pro-overview";
-
-const DISPLAY = { fontFamily: "var(--fi-font-sans)" };
 
 /**
  * What every plan includes: full access to the index first (James, Oct 16: the relationship is
@@ -43,78 +34,6 @@ export function PlanIncludes() {
           </li>
         ))}
       </ul>
-    </section>
-  );
-}
-
-/**
- * What paying unlocks comes first (James, Oct 16: the district map is the public research a
- * visitor has already seen): My fees, then Reports and Try a price, then the map as another tab.
- */
-export const PLANS_VIEW_ORDER = ["fees", "reports", "price", "map"] as const;
-
-/** The homepage's views in PLANS_VIEW_ORDER, then the Regulatory Wire item when one was read; empty without live figures. */
-export function plansExhibitViews(data: HomeData, wire: WirePreviewLead | null): DemoView[] {
-  if (!data.overdraft || data.lines.length === 0) return [];
-  const rank = (key: string) => {
-    const i = (PLANS_VIEW_ORDER as readonly string[]).indexOf(key);
-    return i === -1 ? PLANS_VIEW_ORDER.length : i;
-  };
-  const views = demoViews(data).sort((a, b) => rank(a.key) - rank(b.key));
-  if (wire) {
-    views.push({
-      key: "wire",
-      label: "Regulatory Wire",
-      short: "Wire",
-      view: (
-        <div className="p-4 sm:p-6">
-          <WirePreview lead={wire} />
-        </div>
-      ),
-    });
-  }
-  return views;
-}
-
-/**
- * The product beside the price: the homepage's Hamilton window (the sample bank's fees first, then
- * Reports, Try a price and the district map) plus the Wire, every figure read live. The Pro demo request is the
- * section's one action, the page's second action after subscribing.
- */
-export function PlansExhibit({ data, wire }: { data: HomeData; wire: WirePreviewLead | null }) {
-  const views = plansExhibitViews(data, wire);
-  if (views.length === 0) return null;
-  return (
-    <section aria-labelledby="plans-exhibit-heading" className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-20">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div className="max-w-xl">
-          <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-ink-muted">Inside Hamilton</p>
-          <h2 id="plans-exhibit-heading" className="mt-3 text-[2rem] font-semibold leading-[1.05] tracking-[-0.035em] text-ink sm:text-[2.5rem]" style={DISPLAY}>
-            The workspace your plan opens
-          </h2>
-          <p className="mt-3 text-[16px] leading-relaxed text-ink-soft">Live figures from published fee schedules. Open each view.</p>
-        </div>
-        <TrackLink
-          event="contact_sales"
-          eventProps={{ placement: "pricing_exhibit_demo" }}
-          href={DEMO_REQUEST_NAV.href}
-          className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg border border-ink px-5 text-sm font-semibold text-ink hover:bg-ink hover:text-on-ink"
-        >
-          {DEMO_REQUEST_NAV.standaloneLabel}
-        </TrackLink>
-      </div>
-      <div className="mt-8">
-        <ProductDemo
-          label="Hamilton views"
-          mark={
-            <>
-              <AppIcon brand="hamilton" size={22} title="" />
-              <span className="hidden sm:inline">Hamilton</span>
-            </>
-          }
-          views={views}
-        />
-      </div>
     </section>
   );
 }
