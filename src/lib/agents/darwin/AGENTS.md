@@ -1187,10 +1187,11 @@ Darwin owns verification and classification.
   and an IRA's own closing charge filed as an early closure (`IRA_CLOSING`; a closure that only
   mentions the IRA, or a certificate's or club's, stays) is the IRA termination fee, each by guard,
   re-file rule and fold split. The non-network ATM fee refuses what non-customers pay at the
-  institution's own ATMs (`OUTSIDER_ATM`; none of the 50 types holds it, #1196). Its live re-check is
-  the publish step's fold split and the guard catch-up: the dry run moves 6 live NSF fees and 12 live
-  early closure fees (and 17 verified rows not live), and fails 58 live non-network ATM fees (flagged
-  for the second look, then taken down). Two earlier NSF takedowns (41726, 22674) that trace on their
+  institution's own ATMs (`OUTSIDER_ATM`; none of the 50 types holds it, #1196) and a monthly ATM
+  add-on or plan (`ATM_PLAN`, "Power Checking +ATM Freedom"). Its live re-check is the publish step's
+  fold split and the guard catch-up: the dry run moves 6 live NSF fees and 12 live early closure fees
+  (and 17 verified rows not live), and fails 63 live non-network ATM fees, 58 non-customer surcharges
+  and 5 ATM plans (flagged for the second look, then taken down). Two earlier NSF takedowns (41726, 22674) that trace on their
   own stored text come back as returned deposited items.
   v68 (Oct 17):
   a returned foreign, Canadian or international check or item (`FOREIGN_ITEM_RETURN` in

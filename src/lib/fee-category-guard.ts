@@ -104,6 +104,13 @@ const WIRE = /(wire|transferencias? (bancarias?|cablegr[aá]ficas?)|giros? banca
  * A bare "ATM Surcharge" names no payer and is not matched.
  */
 const OUTSIDER_ATM = String.raw`\bnon[- ]?(?:customers?|clients?|account ?holders?|accountholders?|depositors?)\b|\bforeign\s+customers?\b|\bforeign\s+(?:bank\s+|debit\s*\/?\s*(?:atm\s+)?|atm\s*\/\s*debit\s+|atm\s+)?card(?:s|holders?)?\b|\bnon[- ][^|()]{0,30}?\bcard ?holders?\b|\bnon[- ]?(?:credit union|cu|bank)\s+(?:debit\s+|atm\s+)?cards?\b|\bcards?\s+(?:from|issued by)\s+(?:an?\s+)?(?:other|another|financial institutions? other)\b|\bissued by (?:other )?(?:financial institutions?|banks?|institutions?) other than\b|\bother (?:financial )?institution(?:'?s)? (?:debit\s+|atm\s+)?cards?\b|\bdebit cards? from (?:an?\s+)?(?:other|another)\b|\bout[- ]of[- ]network\s+(?:atm\s+)?card(?:s|holders?)\b|\b(?:using|use of)\s+our\s+(?:own\s+)?(?:\w+\s+)?atm`;
+/**
+ * v69: a monthly ATM add-on or plan ("Power Checking +ATM Freedom" $2.99 a month, 114331; "Add ATM
+ * Unlimited" $10 a month, 93629; "Unlimited ATM Usage" $3.25 a month) is a subscription that refunds
+ * or waives ATM fees, not a charge for using another network's ATM. None of the 50 types holds an
+ * optional ATM plan (#1753).
+ */
+const ATM_PLAN = String.raw`\bunlimited\s+(?:[\w.]+\s+){0,2}atms?\b|\batms?\s+(?:unlimited|freedom)\b|\badd\s+atm\b|\+\s*atm\b|\batm\s+add[- ]?ons?\b`;
 
 export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   monthly_maintenance: {
@@ -219,7 +226,8 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // year"; 9 of 9 live rows checked) prices the card itself, as do its order, issue,
     // enrollment and reactivation; an adjustment, or a rebate the bank pays back, is not a fee.
     // v69: what a non-customer pays at the institution's own ATMs (`OUTSIDER_ATM`) is out too.
-    exclude: new RegExp(String.raw`${OUTSIDER_ATM}|` +
+    // A monthly ATM add-on or plan (`ATM_PLAN`) is not a per-use fee either.
+    exclude: new RegExp(String.raw`${OUTSIDER_ATM}|${ATM_PLAN}|` +
       /(replace|statement|card fee|annual|\bpin\b|denied|declin|re-?order|initial order|instant issue|enrollment|reactivat|\badjustments?\b|rebates?|^(?!.*(withdraw|w\/d|transaction|surcharg|\bnon\b|non-|foreign|other|network|usage|\bused?\b|inquir|transfer|\bat\b|\bpos\b|purchase))\s*atm\s*cards?\b|between accounts|(savings|share) withdrawal|\breg[- ]?d\b|\blobby\b|^\s*(?:atm|visa|debit|check|mastercard)\s*(?:card)?\s*(?:or|\/|&|and)\s*(?:visa\s*|mastercard\s*)?(?:debit|check|atm)?\s*cards?\s*\*?\s*$|tele?phone|\bphone\b|representative|(?<!automated )\bteller\b|call center|non[- ]?members?|\bnon[- ]?(?!owned\b)[\w.]+ (debit |atm )?cards?|non[- ]proprietary card|foreign cards? used|(?<!free )\bat our atm|(?<!of )\bour network|\bin[- ]network|(?<!\bnon[- ]?)\b(?!(non|other|foreign)\b)\w+[- ]owned atm)/.source, "i"),
   },
   wire_domestic_outgoing: {
@@ -530,7 +538,8 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // IRA's own closing charge filed as an early closure (`IRA_CLOSING`) is the IRA termination fee (12
 // live fees; 90972 among them), each by guard, re-file rule and fold split. And the non-network ATM
 // fee refuses what non-customers pay at the institution's own ATMs (`OUTSIDER_ATM`; 58 live fees,
-// flagged for the second look, then taken down; 125584 is the hand-taken-down example).
+// flagged for the second look, then taken down; 125584 is the hand-taken-down example), and a monthly
+// ATM add-on or plan (`ATM_PLAN`; 5 live fees, 114331 "Power Checking +ATM Freedom" among them).
 export const CATEGORY_GUARD_VERSION = 69;
 
 /**

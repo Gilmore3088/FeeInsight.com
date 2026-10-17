@@ -1583,4 +1583,32 @@ describe("guard v69 (Oct 17)", () => {
       expect(checkFeeCategory("atm_non_network", name), name).toEqual({ ok: true });
     }
   });
+
+  it("refuses a monthly ATM add-on or plan as a non-network ATM fee", () => {
+    // The 5 live rows that fail on Oct 17, each a monthly plan on its bank's own page.
+    for (const name of [
+      "Power Checking +ATM Freedom",
+      "Add ATM Unlimited",
+      "Unlimited ATM Usage",
+      "Unlimited ATM Usage (This gives immediate access to cash from any Plus Network throughout the continental United States",
+      "unlimited 1st National ATM access",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name).ok, name).toBe(false);
+      expect(refileCategory("atm_non_network", name), name).toBe("atm_non_network");
+    }
+    for (const name of [
+      "ATM fee – 5 free per month, LPCCU ATM FREE unlimited, POS no fee",
+      "ATM Withdrawals (10 FREE per month)",
+      "Non-Network Fee ATM Withdrawal",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name), name).toEqual({ ok: true });
+    }
+  });
+
+  it("keeps an incoming wire line out of the outgoing wire types (Bank of America, #1753)", () => {
+    // Knox's raw reads 137328 and 144213 hinted these international outgoing; they never went live.
+    expect(checkFeeCategory("wire_intl_outgoing", "Outgoing (U.S. or International) | Domestic incoming wire").ok).toBe(false);
+    expect(checkFeeCategory("wire_domestic_outgoing", "Outgoing (U.S. or International) | Domestic incoming wire").ok).toBe(false);
+    expect(checkFeeCategory("wire_intl_outgoing", "International outgoing wire in U.S. dollars")).toEqual({ ok: true });
+  });
 });
