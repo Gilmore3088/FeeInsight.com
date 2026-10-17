@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { exactDuplicateDecision, frequencyClass, PUBLISH_REFUSE_DUPLICATES_LIVE } from "./exact-duplicate";
+import {
+  collapseCategories,
+  collapseKeepOrder,
+  exactDuplicateDecision,
+  frequencyClass,
+  PUBLISH_REFUSE_DUPLICATES_LIVE,
+} from "./exact-duplicate";
 import { runHamiltonPublish } from "./publish";
 
 const copy = (id: number, frequency: string | null, fee_audience: string | null, published_at = "2026-10-01T00:00:00.000Z") => ({
@@ -49,6 +55,45 @@ describe("exact duplicate check at publish (#1069 step 1)", () => {
     ).toEqual({ kind: "refuse", keptFeePublishedId: 18 });
     expect(frequencyClass("one_time")).toBe("each");
     expect(frequencyClass("other")).toBeNull();
+  });
+
+  it("keeps a copy published earlier in the same step when it ranks as well (Oct 17, step 42289)", () => {
+    const inStep = (id: number, frequency: string | null, fee_audience: string | null) => ({ ...copy(id, frequency, fee_audience), in_step: true });
+    // 152052 (business) and 152056 (consumer): both state an audience, so the later one would have
+    // closed the earlier one; the step keeps the first and refuses the twin.
+    expect(exactDuplicateDecision({ frequency: "monthly", fee_audience: "business" }, [inStep(152056, "monthly", "consumer")])).toEqual({
+      kind: "refuse",
+      keptFeePublishedId: 152056,
+    });
+    // A step copy that ranks worse is still the collapse's to close (the order prevents it).
+    expect(exactDuplicateDecision({ frequency: "monthly", fee_audience: "consumer" }, [inStep(152032, "monthly", "unknown")])).toEqual({
+      kind: "replace",
+      closedFeePublishedIds: [152032],
+    });
+    // An earlier step's copy of equal rank: the collapse keeps the newer, as before (152164 / 152246).
+    expect(exactDuplicateDecision({ frequency: "per_item", fee_audience: "business" }, [copy(152164, "per_item", "both")])).toEqual({
+      kind: "replace",
+      closedFeePublishedIds: [152164],
+    });
+  });
+
+  it("orders each collapse line so the copy the collapse keeps is decided first", () => {
+    const rows = [
+      { id: 1, line: "a", frequency: "monthly", fee_audience: "unknown" },
+      { id: 2, line: "b", frequency: null, fee_audience: "consumer" },
+      { id: 3, line: "a", frequency: "monthly", fee_audience: "business" },
+      { id: 4, line: "a", frequency: "monthly", fee_audience: "consumer" },
+    ];
+    // Line a: 3 and 4 tie, and 4 would be inserted last, so the collapse keeps 4; then 3; then 1.
+    expect(collapseKeepOrder(rows, (row) => row.line).map((row) => row.id)).toEqual([4, 2, 3, 1]);
+  });
+
+  it("checks live copies under the category the live split moves a row to (152013 beside 86530)", () => {
+    expect(collapseCategories("account_research", "(per occurrence) fee for withdrawals in excess of six per statement cycle")).toEqual([
+      "account_research",
+      "excess_withdrawal",
+    ]);
+    expect(collapseCategories("stop_payment", "Stop Payment Fee")).toEqual(["stop_payment"]);
   });
 
   describe("in the publish step", () => {
@@ -110,6 +155,46 @@ describe("exact duplicate check at publish (#1069 step 1)", () => {
       expect(inserts(db)).toBe(0);
       expect(result.results[0]).toMatchObject({ status: "skipped", reason: "Exact duplicate of live fee #555" });
       expect(result.duplicateCheck).toMatchObject({ live: true, wouldRefuse: 1, refused: 1 });
+    });
+
+    function dbWithTwinsInStep() {
+      let nextId = 2000;
+      const twins = [
+        { ...verified, fee_verified_id: 911, fee_raw_id: 711, fee_audience: "unknown" as const },
+        { ...verified, fee_verified_id: 912, fee_raw_id: 712, fee_audience: "consumer" as const },
+      ];
+      const db = vi.fn((strings: TemplateStringsArray) => {
+        const text = strings.join(" ");
+        if (text.includes("INSERT INTO published_fee_records")) return Promise.resolve([{ fee_published_id: nextId++ }]);
+        return Promise.resolve([]);
+      }) as ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
+      db.unsafe = vi.fn((query: string) => {
+        if (query.includes("institution_fee_depth")) {
+          return Promise.resolve(["monthly_maintenance", "nsf", "wire_domestic_outgoing"].map((key) => ({ depth_source: "published", institution_id: 42, canonical_fee_key: key })));
+        }
+        if (query.includes("FROM verified_fee_observations")) return Promise.resolve(twins);
+        return Promise.resolve([]);
+      });
+      return db;
+    }
+
+    it("publishes one copy of a fee read twice in one step: the one the collapse would keep", async () => {
+      const db = dbWithTwinsInStep();
+      const result = await runHamiltonPublish({ runId: 1069, db: asDb(db), refuseSweepRulesLive: false });
+      expect(result.publishedFees).toBe(1);
+      expect(inserts(db)).toBe(1);
+      const byId = new Map(result.results.map((row) => [row.feeVerifiedId, row]));
+      // The consumer copy states its audience, so it goes first even though it was selected second.
+      expect(byId.get(912)).toMatchObject({ status: "published", feePublishedId: 2000 });
+      expect(byId.get(911)).toMatchObject({ status: "skipped", reason: "Exact duplicate of live fee #2000" });
+    });
+
+    it("a dry run reports the same twin refusal without inserting", async () => {
+      const db = dbWithTwinsInStep();
+      const result = await runHamiltonPublish({ runId: 1069, db: asDb(db), dryRun: true, refuseSweepRulesLive: false });
+      expect(inserts(db)).toBe(0);
+      expect(result.publishedFees).toBe(1);
+      expect(result.results.find((row) => row.feeVerifiedId === 911)).toMatchObject({ status: "skipped" });
     });
   });
 });

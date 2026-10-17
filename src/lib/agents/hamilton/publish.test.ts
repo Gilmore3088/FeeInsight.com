@@ -855,9 +855,12 @@ describe("Hamilton agentic publish", () => {
       const result = await runHamiltonPublish({ runId: 501, stepId: 7, db: asPublishDb(db) });
 
       expect(result).toMatchObject({ learning: true, outcomes: { ok: 1, rejected: 1 } });
+      // The two rows share a collapse line, so the step may decide them in either order (#1069).
       const attempts = attemptValues(db);
-      expect(attempts[0]).toEqual(expect.arrayContaining([42, "publish", HAMILTON_PUBLISH_STRATEGY.strategy, "verified:801", "ok", 501, 7]));
-      expect(attempts[1]).toEqual(expect.arrayContaining(["publish", "verified:803", "rejected"]));
+      const attemptFor = (fingerprint: string) => attempts.find((values) => values.includes(fingerprint));
+      expect(attempts).toHaveLength(2);
+      expect(attemptFor("verified:801")).toEqual(expect.arrayContaining([42, "publish", HAMILTON_PUBLISH_STRATEGY.strategy, "verified:801", "ok", 501, 7]));
+      expect(attemptFor("verified:803")).toEqual(expect.arrayContaining(["publish", "verified:803", "rejected"]));
 
       const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
       expect(query).toContain("FROM pipeline_attempts pa");
