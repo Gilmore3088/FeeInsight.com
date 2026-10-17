@@ -603,7 +603,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NATIONAL_CREDIT_PARSER_VERSION` | — | v1 | `magellan/registry/national-credit.ts` (national-series, nyfed-household-debt, nyfed-sce-credit, cfpb-credit-trends) |
 | `INDUSTRY_EVENTS_PARSER_VERSION` | — | v1 | `magellan/registry/industry-events.ts` |
 | `PAYMENT_NETWORKS_PARSER_VERSION` | — | v1 | `magellan/registry/payment-networks.ts` |
-| `HMDA_PARSER_VERSION` | — | v1 | `magellan/registry/hmda.ts` |
+| `HMDA_PARSER_VERSION` | — | v2 (reads the public LAR's "derived_msa-md" header) | `magellan/registry/hmda.ts` |
 | `HMDA_APOR_PARSER_VERSION` | — | v1 | `magellan/registry/hmda.ts` |
 | `DESIGNATION_LISTS_PARSER_VERSION` | — | v1 | `magellan/registry/designation-lists.ts` |
 | `CRA_PARSER_VERSION` | — | v1 | `magellan/registry/cra.ts` |

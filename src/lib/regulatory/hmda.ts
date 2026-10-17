@@ -264,7 +264,8 @@ export class HmdaAccumulator {
     readonly year: number,
     readonly state: string,
   ) {
-    this.header = headerCells.map((h) => h.trim().toLowerCase());
+    // The public LAR spells one column "derived_msa-md" (2025 Data Browser CSV); read "-" as "_".
+    this.header = headerCells.map((h) => h.trim().toLowerCase().replace(/-/g, "_"));
     this.at = {};
     const seen = new Set<string>();
     const dupes = new Set<string>();
