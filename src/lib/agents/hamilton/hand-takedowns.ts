@@ -563,13 +563,11 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
     evidence: "Velocity CU (velocitycu.com fee schedule): the $20.00 is the next cell's \"CU Rewards Program for Debit Mastercard* .......$20.00 annually\", a rewards add-on; the row's own \"Service Charge\" line is \"$10.00 per month\" (live as 32923). Choice Checking's $20 is its own live row (95335)." },
   // #1691 cleanup (read-only, Oct 17): live misreads that peer check v5 released, found by its fresh
   // held-out grade and re-read against the bank's stored text. One entry per cause issue; the two
-  // fax fees are re-filed in place instead (taxonomy-fold HAND_REFILES, #1829). 5 entries.
-  { feePublishedId: 152139, institutionId: 1192, canonicalFeeKey: "safe_deposit_box", amount: 5, feeName: "Safety Deposit Box Key Deposit at Account Opening (per key)",
-    reason: "source_mismatch: #1831", issue: 1831, kind: "not_a_fee",
-    evidence: "Central Bank (doc 4422, text 1756): \"Safety Deposit Box Key Deposit at Account Opening (per key) | $5.00\": a refundable deposit, not a charge. Its box fees are their own lines (\"Lost Key (per key) | $10.00\", live as 139400)." },
+  // fax fees are re-filed in place instead (taxonomy-fold HAND_REFILES, #1829). 4 entries. Central
+  // Bank's key deposit (152139) stays: whether a key deposit is a fee is James's call on #1831.
   { feePublishedId: 152973, institutionId: 8637, canonicalFeeKey: "safe_deposit_box", amount: 11, feeName: "Key Deposit",
-    reason: "source_mismatch: #1831", issue: 1831, kind: "not_a_fee",
-    evidence: "Valley Strong CU (doc 36716, text 34862), a price-first table: \"| **$20** | Key Deposit |\" then \"| **$11** | Key Replacement |\". The key deposit is a $20 refundable deposit, not a charge, and the $11 is the next row's key replacement (the table shift is #1827)." },
+    reason: "source_mismatch: #1827", issue: 1827, kind: "wrong_amount",
+    evidence: "Valley Strong CU (doc 36716, text 34862), a price-first table: \"| **$20** | Key Deposit |\" then \"| **$11** | Key Replacement |\"; the $11 is the next row's key replacement price, read one row late (#1827). Whether a key deposit is a fee at all is #1831." },
   { feePublishedId: 152366, institutionId: 4624, canonicalFeeKey: "other_lending_fee", amount: 1000, feeName: "Mortgage satisfaction fee (varies)",
     reason: "source_mismatch: #1827", issue: 1827, kind: "wrong_amount",
     evidence: "Citadel FCU (doc 32251, text 30203): \"Mortgage satisfaction fee (varies)\" then \"$1,000.00 Mortgage modification\"; the satisfaction fee has no price, and the $1,000 is the modification fee." },
