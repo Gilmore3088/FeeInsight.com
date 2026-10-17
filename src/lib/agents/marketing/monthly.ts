@@ -1,3 +1,4 @@
+import { MAILING_ADDRESS } from "@/lib/constants";
 import type { sql } from "@/lib/data-store/connection";
 import { recordFeedback, feedbackSchemaReady, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { paidModelCall, paidResponseJson, type PaidMessageCreator } from "@/lib/agents/paid-pass";
@@ -41,8 +42,9 @@ type SqlTag = typeof sql;
 
 export const writerModel = () => process.env.MARKETING_WRITER_MODEL?.trim() || "claude-sonnet-5-5";
 
+/** The footer's postal address: the company address unless MARKETING_MAILING_ADDRESS overrides it. */
 export function mailingAddress(): string | null {
-  return process.env.MARKETING_MAILING_ADDRESS?.trim() || null;
+  return process.env.MARKETING_MAILING_ADDRESS?.trim() || MAILING_ADDRESS;
 }
 
 /** The month a run works on, as YYYY-MM (UTC). */
