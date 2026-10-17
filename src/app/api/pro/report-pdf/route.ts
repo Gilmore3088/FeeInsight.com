@@ -105,7 +105,7 @@ async function handlePOST(req: NextRequest): Promise<NextResponse> {
       const { CommitteePacketPdf } = await import("@/components/hamilton/reports/CommitteePacketPdf");
       const element = createElement(CommitteePacketPdf, { packet, pageSize }) as unknown as ReactElement<DocumentProps, string | JSXElementConstructor<unknown>>;
       const buffer = await renderToBuffer(element);
-      return pdfResponse(buffer, `pricing-committee-packet-${packet.generatedAt.slice(0, 10)}${pageSize === "A4" ? "-a4" : ""}.pdf`);
+      return pdfResponse(buffer, `pricing-committee-brief-${packet.generatedAt.slice(0, 10)}${pageSize === "A4" ? "-a4" : ""}.pdf`);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return NextResponse.json({ error: `PDF generation failed: ${message}` }, { status: 500 });

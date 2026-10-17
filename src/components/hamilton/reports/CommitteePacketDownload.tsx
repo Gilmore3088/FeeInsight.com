@@ -25,7 +25,7 @@ export function CommitteePacketDownload({ institutionId, yieldFee }: { instituti
       const url = URL.createObjectURL(await response.blob());
       const link = document.createElement("a");
       link.href = url;
-      link.download = `pricing-committee-packet${pageSize === "A4" ? "-a4" : ""}.pdf`;
+      link.download = `pricing-committee-brief${pageSize === "A4" ? "-a4" : ""}.pdf`;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (e) {

@@ -1226,7 +1226,7 @@ export function buildCommitteePacket(input: CommitteePacketInput): CommitteePack
 
   const appendix = [matrix, nearest, products, rules, pyTable].filter((t): t is PacketTable => t !== null);
   return {
-    title: `Pricing committee packet: ${input.institutionName}, ${quarterLabel(quarter)}`,
+    title: `Pricing committee brief: ${input.institutionName}, ${quarterLabel(quarter)}`,
     institutionId: input.institutionId,
     institutionName: input.institutionName,
     generatedAt: input.generatedAt,

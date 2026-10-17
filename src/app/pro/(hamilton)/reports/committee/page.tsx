@@ -12,7 +12,7 @@ import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 import { CommitteePacketView } from "@/components/hamilton/reports/CommitteePacket";
 import { Callout, LinkButton, MemoHeader, MemoPage } from "@/components/hamilton/memo/memo";
 
-export const metadata: Metadata = { title: "Pricing committee packet" };
+export const metadata: Metadata = { title: "Pricing committee brief" };
 
 const FEE_KEY = /^[a-z0-9_]+$/;
 
@@ -33,7 +33,7 @@ export default async function CommitteePacketPage({
   if (!institution) {
     return (
       <MemoPage>
-        <MemoHeader kicker="Reports" title="Pricing committee packet" />
+        <MemoHeader kicker="Reports" title="Pricing committee brief" />
         <Callout>
           Choose a research institution first.{" "}
           <Link href="/pro/settings" className="font-medium text-terra-text underline">
@@ -53,7 +53,7 @@ export default async function CommitteePacketPage({
   if (!packet) {
     return (
       <MemoPage>
-        <MemoHeader kicker="Reports" title="Pricing committee packet" actions={<LinkButton href={hrefWithInstitutionContext("/pro/reports", String(institution.id))}>Back to Reports</LinkButton>} />
+        <MemoHeader kicker="Reports" title="Pricing committee brief" actions={<LinkButton href={hrefWithInstitutionContext("/pro/reports", String(institution.id))}>Back to Reports</LinkButton>} />
         <p role="alert" className="rounded-md border border-terra p-4 text-sm text-terra-text">
           The packet could not be read just now. Reload the page to try again.
         </p>
