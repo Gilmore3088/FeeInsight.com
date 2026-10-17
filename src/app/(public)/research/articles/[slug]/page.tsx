@@ -19,6 +19,7 @@ import { SourceNote } from "../../district/[id]/district-hub";
 import { ArticleExhibit } from "./article-exhibits";
 import { articleTags, bylineDate, parseArticle, plainSummary, plainText, type ArticleSection, type ExhibitGroup } from "./article-view";
 import { loadPublishedArticle } from "./load-article";
+import { PREVIEW_FIXTURE_SLUG } from "./preview-fixture";
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -120,6 +121,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     description,
     alternates: { canonical: path },
     ...linkPreview({ title: article.title, description, path }),
+    // The preview fixture is never indexed.
+    ...(article.slug === PREVIEW_FIXTURE_SLUG ? { robots: { index: false, follow: false } } : {}),
   };
 }
 
@@ -127,9 +130,10 @@ export default async function ArticlePage({ params }: PageProps) {
   const { slug } = await params;
   const article = await loadPublishedArticle(slug);
   if (!article) notFound();
+  const fixture = article.slug === PREVIEW_FIXTURE_SLUG;
 
   // The view is counted after the response is sent: no database write holds the page.
-  after(() => incrementViewCount(slug).catch(() => undefined));
+  if (!fixture) after(() => incrementViewCount(slug).catch(() => undefined));
 
   const tags = articleTags(article.tags);
   const [related, user, sampleLive, guides] = await Promise.all([
@@ -164,6 +168,11 @@ export default async function ArticlePage({ params }: PageProps) {
       {/* Opening: the headline, a dated byline and the article's own opening finding. */}
       <header className="border-b border-border bg-paper">
         <div className={`mx-auto max-w-page px-4 pb-8 pt-4 sm:px-6 sm:pb-10 sm:pt-8 ${PAGE_HEADER}`}>
+          {fixture && (
+            <p role="note" className="mb-3 inline-block rounded-sm bg-ink px-2 py-1 text-[12px] font-semibold text-on-ink">
+              Preview fixture, not published. Figures are placeholders.
+            </p>
+          )}
           <nav aria-label="Breadcrumb" className={PAGE_CRUMBS}>
             <Link href="/research" className={`inline-flex min-h-11 items-center rounded-sm hover:text-ink ${FOCUS}`}>
               Research
@@ -316,22 +325,24 @@ export default async function ArticlePage({ params }: PageProps) {
         </div>
       </div>
 
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify({
-            "@context": "https://schema.org",
-            "@type": "Article",
-            headline: article.title,
-            description: article.subtitle || plainSummary(brief),
-            author: { "@type": "Organization", name: byline(article.author), url: SITE_URL },
-            datePublished: published?.iso,
-            dateModified: bylineDate(article.updated_at)?.iso,
-            mainEntityOfPage: `${SITE_URL}${path}`,
-            publisher: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
-          }).replace(/</g, "\\u003c"),
-        }}
-      />
+      {!fixture && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "Article",
+              headline: article.title,
+              description: article.subtitle || plainSummary(brief),
+              author: { "@type": "Organization", name: byline(article.author), url: SITE_URL },
+              datePublished: published?.iso,
+              dateModified: bylineDate(article.updated_at)?.iso,
+              mainEntityOfPage: `${SITE_URL}${path}`,
+              publisher: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
+            }).replace(/</g, "\\u003c"),
+          }}
+        />
+      )}
     </>
   );
 }
