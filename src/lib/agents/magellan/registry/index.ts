@@ -3,6 +3,8 @@ import { CENSUS_ACS_SOURCE, runRegistryCensusAcs } from "./census-acs";
 import { CFPB_SOURCE, runRegistryCfpb } from "./cfpb";
 import { IRS_ZIP_INCOME_SOURCE, runRegistryIrsZipIncome } from "./irs-zip-income";
 import { ECONOMY_DEFINITIONS, runRegistryEconomy } from "./economy";
+import { FHLB_ADVANCE_RATES_SOURCE, runRegistryFhlbAdvanceRates } from "./fhlb-advance-rates";
+import { BANK_MERGER_ORDERS_SOURCE, runRegistryBankMergerOrders } from "./bank-merger-orders";
 import { BLS_OEWS_SOURCE, runRegistryBlsOews } from "./bls-oews";
 import { FINRA_NFCS_SOURCE, runRegistryFinraNfcs } from "./finra-nfcs";
 import { runRegistryUsdaFarm, USDA_FARM_SOURCE } from "./usda-farm";
@@ -800,6 +802,24 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
     run: async (input) => {
       const r = await runRegistryFinraNfcs({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
       return { summary: r.summary, detail: r.detail };
+    },
+  },
+  {
+    source: FHLB_ADVANCE_RATES_SOURCE,
+    stepKey: "registry-fhlb-advance-rates",
+    title: "Pull FHLBank posted advance rates",
+    run: async (input) => {
+      const r = await runRegistryFhlbAdvanceRates({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return { skipped: r.skipped, summary: r.summary, detail: { ...r.detail, source_url: r.sourceUrl, rows: r.rows, written_rows: r.writtenRows, empty: r.empty, empty_reason: r.emptyReason } };
+    },
+  },
+  {
+    source: BANK_MERGER_ORDERS_SOURCE,
+    stepKey: "registry-bank-merger-orders",
+    title: "Pull Fed and OCC merger decisions with their stated competitive figures",
+    run: async (input) => {
+      const r = await runRegistryBankMergerOrders({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return { skipped: r.skipped, summary: r.summary, detail: { ...r.detail, source_url: r.sourceUrl, rows: r.rows, written_rows: r.writtenRows, matched_rows: r.matchedRows, empty: r.empty, empty_reason: r.emptyReason } };
     },
   },
   {

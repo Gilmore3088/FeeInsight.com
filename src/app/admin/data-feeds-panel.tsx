@@ -3,6 +3,8 @@ import { formatAdminDateTime } from "@/lib/admin-time";
 import type { FeedFreshness } from "@/lib/data-store/feed-freshness";
 
 const FEED_LABELS: Record<string, string> = {
+  "fhlb-advance-rates": "FHLBank posted advance rates",
+  "bank-merger-orders": "Fed and OCC merger decisions",
   "uscourts-bankruptcy": "US Courts bankruptcy filings",
   "usda-farm": "USDA farm income and cash rents",
   "bls-oews": "BLS wages for bank occupations",
@@ -88,6 +90,8 @@ export const FEED_GROUPS = [
 ] as const;
 
 const FEED_GROUP_OF: Record<string, (typeof FEED_GROUPS)[number]["key"]> = {
+  "fhlb-advance-rates": "national",
+  "bank-merger-orders": "national",
   "uscourts-bankruptcy": "economy",
   "usda-farm": "economy",
   "bls-oews": "economy",

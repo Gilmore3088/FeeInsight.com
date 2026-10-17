@@ -67,6 +67,8 @@ import {
   industryEventsPartitions,
 } from "@/lib/agents/magellan/registry/industry-events";
 import { ECONOMY_DEFINITIONS, ECONOMY_PARSER_VERSION } from "@/lib/agents/magellan/registry/economy";
+import { FHLB_ADVANCE_RATES_PARSER_VERSION, FHLB_ADVANCE_RATES_SOURCE, fhlbAdvanceRatesPartitions } from "@/lib/agents/magellan/registry/fhlb-advance-rates";
+import { BANK_MERGER_ORDERS_PARSER_VERSION, BANK_MERGER_ORDERS_SOURCE, bankMergerOrdersPartitions } from "@/lib/agents/magellan/registry/bank-merger-orders";
 import { BLS_OEWS_PARSER_VERSION, BLS_OEWS_SOURCE, blsOewsPartitions } from "@/lib/agents/magellan/registry/bls-oews";
 import { FINRA_NFCS_PARSER_VERSION, FINRA_NFCS_SOURCE, finraNfcsPartitions } from "@/lib/agents/magellan/registry/finra-nfcs";
 import { USDA_FARM_PARSER_VERSION, USDA_FARM_SOURCE, usdaFarmPartitions } from "@/lib/agents/magellan/registry/usda-farm";
@@ -142,6 +144,8 @@ export const REGISTRY_PARSER_VERSIONS: Record<string, number> = {
   [USDA_FARM_SOURCE]: USDA_FARM_PARSER_VERSION,
   [BLS_OEWS_SOURCE]: BLS_OEWS_PARSER_VERSION,
   [FINRA_NFCS_SOURCE]: FINRA_NFCS_PARSER_VERSION,
+  [FHLB_ADVANCE_RATES_SOURCE]: FHLB_ADVANCE_RATES_PARSER_VERSION,
+  [BANK_MERGER_ORDERS_SOURCE]: BANK_MERGER_ORDERS_PARSER_VERSION,
   [INDUSTRY_EVENTS_SOURCE]: INDUSTRY_EVENTS_PARSER_VERSION,
   [PAYMENT_NETWORKS_SOURCE]: PAYMENT_NETWORKS_PARSER_VERSION,
   [HMDA_SOURCE]: HMDA_PARSER_VERSION,
@@ -244,6 +248,8 @@ export function registryPartitionsBySource(
     [USDA_FARM_SOURCE]: usdaFarmPartitions(now),
     [BLS_OEWS_SOURCE]: blsOewsPartitions(now),
     [FINRA_NFCS_SOURCE]: finraNfcsPartitions(now),
+    [FHLB_ADVANCE_RATES_SOURCE]: fhlbAdvanceRatesPartitions(now),
+    [BANK_MERGER_ORDERS_SOURCE]: bankMergerOrdersPartitions(now),
     [CFPB_SOURCE]: years(Math.max(CFPB_FIRST_YEAR, from.year), now.getUTCFullYear()),
     [SEC_FILINGS_SOURCE]: secBatchPartitions(),
     [BEIGE_BOOK_SOURCE]: beigeBookCandidates(now),

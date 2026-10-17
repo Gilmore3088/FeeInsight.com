@@ -896,6 +896,8 @@ describe("registry dispatch", () => {
       "usda-farm",
       "bls-oews",
       "finra-nfcs",
+      "fhlb-advance-rates",
+      "bank-merger-orders",
       "sec-links",
       "sec-filings",
       "beige-book",
