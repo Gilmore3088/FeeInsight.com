@@ -1130,3 +1130,10 @@ calls a month. A seat's key stops when the seat is removed, and every key stops 
 show at most 50: the top 50 by institution count, the national index's own order
 (`publicFeeTypes` in `src/lib/fee-taxonomy.ts`, applied to the shared public snapshot in
 `src/lib/public-stats.ts`). Internal, admin and Pro views keep all 52.
+
+**Hamilton is Pro; there is no "Hamilton Pro" and no Hamilton tiers.** James, 2026-10-17 (Website
+thread). "Pro" only marks who has paid. Customer text, admin labels and docs say "Hamilton" or
+"Hamilton, the Fee Insight Pro workspace" (`hamiltonFullName` in `src/lib/subscribe-reason.ts`,
+`HAMILTON_CANONICAL` in `src/lib/constants.ts`). `PRO_PRODUCT_NAME` stays as the Stripe product
+lookup until the Stripe setup changes. Past records (CHANGELOG, checkpoints, findings) keep their
+wording.

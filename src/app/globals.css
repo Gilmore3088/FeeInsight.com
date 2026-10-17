@@ -1094,7 +1094,7 @@ details[open] summary .expand-icon { transform: rotate(180deg); }
 
 /* ═══════════════════════════════════════════════════════════════════════
    Hamilton shell: editorial design system isolation boundary
-   Applied via .hamilton-shell wrapper on Hamilton Pro layout.
+   Applied via .hamilton-shell wrapper on Hamilton layout.
    All --hamilton-* tokens are SCOPED HERE — never in @theme inline.
    Phases 40-46 wrap content in .hamilton-shell to get the editorial aesthetic
    without contaminating admin or consumer styles.
