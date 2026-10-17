@@ -39,7 +39,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
     <form onSubmit={handleSubmit} className={AUTH_FORM_CLASS}>
       <input type="hidden" name="token" value={token} />
       {error && (
-        <div role="alert" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+        <div role="alert" className="text-sm text-brick bg-brick-tint/40 border border-brick/30 rounded-md px-3 py-2">
           {error}{" "}
           {error.includes("expired") && (
             <Link href="/forgot-password" className="font-medium underline">
