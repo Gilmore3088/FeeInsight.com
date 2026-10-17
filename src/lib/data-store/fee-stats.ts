@@ -35,6 +35,11 @@
  *    still shows its fees.
  */
 import { computePercentile, computeStats } from "./fees";
+import { countedAmounts } from "./counted-amounts";
+
+// Re-exported so existing callers keep one import; the function itself lives in a module with no
+// database imports, because client components reach it through hamilton/workspace/segment.ts.
+export { countedAmounts };
 import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL } from "@/lib/agents/magellan/link-coverage";
 
 import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT, maturityTier, type MaturityTier } from "./maturity";
@@ -285,23 +290,6 @@ export function countedValuePerInstitution(rows: StatsInputRow[], options: { cou
   return (options.countSharedScheduleOnce ?? COUNT_SHARED_SCHEDULE_ONCE) ? collapseSharedSchedules(values, validRows) : values;
 }
 
-/**
- * Rule 7 for values that are already one per institution (Hamilton's peers): institutions with the
- * same `countedAs` (their representative from countedRepresentatives) count once, at the lower
- * middle of their values, as summarizeFees counts them. Sorted ascending.
- */
-export function countedAmounts(values: readonly { institutionId: number; amount: number; countedAs?: number | null }[]): number[] {
-  const members = new Map<number, number[]>();
-  for (const value of values) {
-    const key = value.countedAs ?? value.institutionId;
-    const list = members.get(key);
-    if (list) list.push(value.amount);
-    else members.set(key, [value.amount]);
-  }
-  return [...members.values()]
-    .map((list) => [...list].sort((a, b) => a - b)[Math.floor((list.length - 1) / 2)])
-    .sort((a, b) => a - b);
-}
 
 /** Statistics for one group of rows (one category, or one category within a segment). */
 export function summarizeFees(
