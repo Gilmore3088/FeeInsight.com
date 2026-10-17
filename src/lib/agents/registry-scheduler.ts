@@ -67,6 +67,14 @@ import {
   industryEventsPartitions,
 } from "@/lib/agents/magellan/registry/industry-events";
 import { ECONOMY_DEFINITIONS, ECONOMY_PARSER_VERSION } from "@/lib/agents/magellan/registry/economy";
+import { BLS_OEWS_PARSER_VERSION, BLS_OEWS_SOURCE, blsOewsPartitions } from "@/lib/agents/magellan/registry/bls-oews";
+import { FINRA_NFCS_PARSER_VERSION, FINRA_NFCS_SOURCE, finraNfcsPartitions } from "@/lib/agents/magellan/registry/finra-nfcs";
+import { USDA_FARM_PARSER_VERSION, USDA_FARM_SOURCE, usdaFarmPartitions } from "@/lib/agents/magellan/registry/usda-farm";
+import {
+  USCOURTS_BANKRUPTCY_PARSER_VERSION,
+  USCOURTS_BANKRUPTCY_SOURCE,
+  uscourtsBankruptcyPartitions,
+} from "@/lib/agents/magellan/registry/uscourts-bankruptcy";
 import { MARKET_GROWTH_DEFINITIONS, MARKET_GROWTH_PARSER_VERSION } from "@/lib/agents/magellan/registry/market-growth";
 import { SMALLBIZ_PAYMENTS_DEFINITIONS, SMALLBIZ_PAYMENTS_PARSER_VERSION } from "@/lib/agents/magellan/registry/smallbiz-payments";
 import { NATIONAL_CREDIT_DEFINITIONS, NATIONAL_CREDIT_PARSER_VERSION } from "@/lib/agents/magellan/registry/national-credit";
@@ -130,6 +138,10 @@ export const REGISTRY_PARSER_VERSIONS: Record<string, number> = {
   ...Object.fromEntries(MARKET_GROWTH_DEFINITIONS.map((d) => [d.source, MARKET_GROWTH_PARSER_VERSION])),
   ...Object.fromEntries(SMALLBIZ_PAYMENTS_DEFINITIONS.map((d) => [d.source, SMALLBIZ_PAYMENTS_PARSER_VERSION])),
   ...Object.fromEntries(NATIONAL_CREDIT_DEFINITIONS.map((d) => [d.source, NATIONAL_CREDIT_PARSER_VERSION])),
+  [USCOURTS_BANKRUPTCY_SOURCE]: USCOURTS_BANKRUPTCY_PARSER_VERSION,
+  [USDA_FARM_SOURCE]: USDA_FARM_PARSER_VERSION,
+  [BLS_OEWS_SOURCE]: BLS_OEWS_PARSER_VERSION,
+  [FINRA_NFCS_SOURCE]: FINRA_NFCS_PARSER_VERSION,
   [INDUSTRY_EVENTS_SOURCE]: INDUSTRY_EVENTS_PARSER_VERSION,
   [PAYMENT_NETWORKS_SOURCE]: PAYMENT_NETWORKS_PARSER_VERSION,
   [HMDA_SOURCE]: HMDA_PARSER_VERSION,
@@ -228,6 +240,10 @@ export function registryPartitionsBySource(
     [FDIC_SOD_SOURCE]: years(Math.max(SOD_FIRST_YEAR, from.year), latestSodYear(now)),
     [CENSUS_ACS_SOURCE]: censusAcsPartitions(now),
     [IRS_ZIP_INCOME_SOURCE]: irsZipIncomePartitions(now),
+    [USCOURTS_BANKRUPTCY_SOURCE]: uscourtsBankruptcyPartitions(now),
+    [USDA_FARM_SOURCE]: usdaFarmPartitions(now),
+    [BLS_OEWS_SOURCE]: blsOewsPartitions(now),
+    [FINRA_NFCS_SOURCE]: finraNfcsPartitions(now),
     [CFPB_SOURCE]: years(Math.max(CFPB_FIRST_YEAR, from.year), now.getUTCFullYear()),
     [SEC_FILINGS_SOURCE]: secBatchPartitions(),
     [BEIGE_BOOK_SOURCE]: beigeBookCandidates(now),

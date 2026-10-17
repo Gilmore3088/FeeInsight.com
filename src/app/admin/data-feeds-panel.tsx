@@ -3,6 +3,10 @@ import { formatAdminDateTime } from "@/lib/admin-time";
 import type { FeedFreshness } from "@/lib/data-store/feed-freshness";
 
 const FEED_LABELS: Record<string, string> = {
+  "uscourts-bankruptcy": "US Courts bankruptcy filings",
+  "usda-farm": "USDA farm income and cash rents",
+  "bls-oews": "BLS wages for bank occupations",
+  "finra-nfcs": "FINRA financial capability survey",
   "census-permits": "Census building permits by county",
   "census-popest": "Census county population and migration estimates",
   "irs-migration": "IRS county-to-county migration with income",
@@ -84,6 +88,10 @@ export const FEED_GROUPS = [
 ] as const;
 
 const FEED_GROUP_OF: Record<string, (typeof FEED_GROUPS)[number]["key"]> = {
+  "uscourts-bankruptcy": "economy",
+  "usda-farm": "economy",
+  "bls-oews": "economy",
+  "finra-nfcs": "economy",
   "census-permits": "economy",
   "census-popest": "economy",
   "irs-migration": "economy",

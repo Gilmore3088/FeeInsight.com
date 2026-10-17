@@ -591,6 +591,10 @@ fails a PR that changes one of these constants without updating its line here (#
 | `FFIEC_CALL_DETAIL_PARSER_VERSION` | — | v4 (adds deposit interest expense, cost lines, total deposits and assets; v3 reads RC-O account-size labels as filed; v2 matches the bulk file's abbreviated descriptions; reads split "(1 of 2)" schedules) | `magellan/registry/ffiec-call-detail.ts` |
 | `NCUA_EXTRAS_PARSER_VERSION` | — | v3 (adds dividend expense and share mix; v2 reads AcctDesc.txt, not the trade-names file) | `magellan/registry/ncua-extras.ts` |
 | `ECONOMY_PARSER_VERSION` | — | v1 | `magellan/registry/economy.ts` (16 economy sources) |
+| `USCOURTS_BANKRUPTCY_PARSER_VERSION` | — | v1 | `magellan/registry/uscourts-bankruptcy.ts` |
+| `USDA_FARM_PARSER_VERSION` | — | v1 | `magellan/registry/usda-farm.ts` |
+| `BLS_OEWS_PARSER_VERSION` | — | v1 | `magellan/registry/bls-oews.ts` |
+| `FINRA_NFCS_PARSER_VERSION` | — | v1 | `magellan/registry/finra-nfcs.ts` |
 | `MARKET_GROWTH_PARSER_VERSION` | — | v1 | `magellan/registry/market-growth.ts` (census-permits, census-popest, irs-migration, census-bfs, bls-laus, census-lehd) |
 | `SMALLBIZ_PAYMENTS_PARSER_VERSION` | — | v1 | `magellan/registry/smallbiz-payments.ts` (kcfed-sb-lending, fed-sbcs, fed-payments, nacha-volume) |
 | `NATIONAL_CREDIT_PARSER_VERSION` | — | v1 | `magellan/registry/national-credit.ts` (national-series, nyfed-household-debt, nyfed-sce-credit, cfpb-credit-trends) |
