@@ -21,8 +21,8 @@ export function StatePicker({ states, initial }: { states: StateOption[]; initia
   const [code, setCode] = useState(initial && byCode.has(initial) ? initial : (states[0]?.code ?? ""));
   const chosen = byCode.get(code) ?? null;
   return (
-    <div className="min-w-0">
-      <svg viewBox="0 0 960 600" aria-hidden="true" className="hidden h-auto w-full sm:block">
+    <div className="min-w-0 lg:grid lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:items-center lg:gap-8">
+      <svg viewBox="0 0 960 600" aria-hidden="true" className="hidden h-auto w-full max-w-xl sm:block">
         {US_STATES.map((state) => {
           const hasData = byCode.has(state.id);
           const selected = state.id === code;
@@ -42,38 +42,40 @@ export function StatePicker({ states, initial }: { states: StateOption[]; initia
           );
         })}
       </svg>
-      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-        <label htmlFor="alternatives-state" className="sr-only">
-          State
-        </label>
-        <select
-          id="alternatives-state"
-          value={code}
-          onChange={(event) => setCode(event.target.value)}
-          className="min-h-11 w-full min-w-0 rounded-full border border-border bg-surface-0 px-4 text-[14px] font-semibold text-ink sm:w-auto sm:flex-1"
-        >
-          {states.map((state) => (
-            <option key={state.code} value={state.code}>
-              {state.name}
-            </option>
-          ))}
-        </select>
-        {chosen && (
-          <Link
-            href={`/fees/city/${chosen.code.toLowerCase()}`}
-            className="fi-btn fi-btn-secondary inline-flex min-h-11 shrink-0 items-center justify-center px-5"
+      <div className="min-w-0">
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center lg:mt-0 lg:flex-col lg:items-stretch">
+          <label htmlFor="alternatives-state" className="sr-only">
+            State
+          </label>
+          <select
+            id="alternatives-state"
+            value={code}
+            onChange={(event) => setCode(event.target.value)}
+            className="min-h-11 w-full min-w-0 rounded-full border border-border bg-surface-0 px-4 text-[14px] font-semibold text-ink sm:w-auto sm:flex-1 lg:w-full lg:flex-none"
           >
-            Compare {chosen.name} cities
-          </Link>
+            {states.map((state) => (
+              <option key={state.code} value={state.code}>
+                {state.name}
+              </option>
+            ))}
+          </select>
+          {chosen && (
+            <Link
+              href={`/fees/city/${chosen.code.toLowerCase()}`}
+              className="fi-btn fi-btn-secondary inline-flex min-h-11 shrink-0 items-center justify-center px-5"
+            >
+              Compare {chosen.name} cities
+            </Link>
+          )}
+        </div>
+        {chosen && (
+          <p className="mt-2 text-[13px] text-ink-muted sm:mx-0 sm:text-left" aria-live="polite">
+            {chosen.institutions === 1
+              ? `1 bank or credit union headquartered in ${chosen.name} has published fees.`
+              : `${chosen.institutions.toLocaleString("en-US")} banks and credit unions headquartered in ${chosen.name} have published fees.`}
+          </p>
         )}
       </div>
-      {chosen && (
-        <p className="mt-2 text-[13px] text-ink-muted sm:mx-0 sm:text-left" aria-live="polite">
-          {chosen.institutions === 1
-            ? `1 bank or credit union headquartered in ${chosen.name} has published fees.`
-            : `${chosen.institutions.toLocaleString("en-US")} banks and credit unions headquartered in ${chosen.name} have published fees.`}
-        </p>
-      )}
     </div>
   );
 }

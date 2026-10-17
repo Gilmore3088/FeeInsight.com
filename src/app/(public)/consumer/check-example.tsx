@@ -42,7 +42,7 @@ export async function CheckExample({ id, guides }: { id: number; guides: Guide[]
 
   return (
     <figure className="min-w-0 space-y-3">
-      <figcaption className="text-center sm:text-left">
+      <figcaption className="text-left">
         <span className="text-[13px] text-ink-muted">
           <span className="font-semibold text-ink">Example:</span> {inst.institution_name}
           {place ? `, ${place}` : ""}
@@ -54,19 +54,30 @@ export async function CheckExample({ id, guides }: { id: number; guides: Guide[]
           <span className="mt-0.5 block text-[13px] leading-snug text-ink-muted">{finding.benchmark}</span>
         )}
       </figcaption>
-      <CheckTable rows={rows} stateCode={stateLabel ? stateCode : null} stateLabel={stateLabel} guideHrefs={guideHrefs} />
+      <CheckTable
+        rows={rows}
+        stateCode={stateLabel ? stateCode : null}
+        stateLabel={stateLabel}
+        guideHrefs={guideHrefs}
+      />
       <SourceNote>
-        {inst.institution_name}&apos;s own published fee schedule{collectedOn ? `, collected ${collectedOn}` : ""}.
-        {stateLabel
-          ? ` State medians count every bank and credit union headquartered in ${stateName} that publishes the fee.`
-          : " Medians count every U.S. bank and credit union that publishes the fee."}
+        From {inst.institution_name}&apos;s own published fee schedule
+        {collectedOn ? `, collected ${collectedOn}` : ""}.
       </SourceNote>
-      <Link
-        href={`/check?id=${id}`}
-        className="inline-flex min-h-11 items-center text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
-      >
-        See {inst.institution_name}&apos;s full fee check
-      </Link>
+      <p className="mx-0 flex flex-wrap gap-x-6 text-left">
+        <Link
+          href={`/check?id=${id}`}
+          className="inline-flex min-h-11 items-center text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+        >
+          See {inst.institution_name}&apos;s full fee check
+        </Link>
+        <a
+          href="#find-bank"
+          className="inline-flex min-h-11 items-center text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+        >
+          Check your own bank
+        </a>
+      </p>
     </figure>
   );
 }

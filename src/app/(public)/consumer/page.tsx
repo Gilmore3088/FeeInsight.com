@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import type { Metadata } from "next";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { Banknote, CalendarDays, MapPin, Receipt, Search, Send, Wallet, Undo2 } from "lucide-react";
 import { loadConsumerGuides } from "@/lib/guides/source";
 import type { Guide } from "@/lib/guides/types";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
@@ -31,13 +31,20 @@ export const metadata: Metadata = {
   openGraph: { type: "website", title: TITLE, description: DESCRIPTION, url: `${SITE_URL}/consumer`, siteName: "Fee Insight" },
 };
 
-/** The guides the consumer page links first, with James's lines (review, 2026-10-17). */
-const GUIDE_LINKS = [
-  { slug: "overdraft-fees", line: "Understand the charge and your coverage choices." },
-  { slug: "nsf-fees", line: "Why a payment was returned, and what to ask your bank." },
-  { slug: "atm-fees", line: "Avoid bank fees and ATM-owner surcharges." },
-  { slug: "wire-transfer-fees", line: "Compare transfer fees and alternatives." },
-  { slug: "monthly-maintenance-fees", line: "Check account fees and waiver requirements." },
+/** The five most-searched charges: an icon, the guide, and the national median it explains. */
+const CHARGES = [
+  { slug: "overdraft-fees", category: "overdraft", label: "Overdraft", Icon: Wallet },
+  { slug: "nsf-fees", category: "nsf", label: "Returned payment (NSF)", Icon: Undo2 },
+  { slug: "atm-fees", category: "atm_non_network", label: "Out-of-network ATM", note: "Your bank's fee. The ATM owner may add a surcharge.", Icon: Banknote },
+  { slug: "wire-transfer-fees", category: "wire_domestic_outgoing", label: "Outgoing wire", Icon: Send },
+  { slug: "monthly-maintenance-fees", category: "monthly_maintenance", label: "Monthly maintenance", Icon: CalendarDays },
+] as const;
+
+/** The three tasks, as icon entrances under the header. */
+const TASKS = [
+  { href: "#find-bank", title: "Check your bank", line: "Its fees beside the medians", Icon: Search },
+  { href: "#charges", title: "Understand a charge", line: "What it is, how to avoid it", Icon: Receipt },
+  { href: "#compare", title: "Compare local options", line: "Banks and credit unions near you", Icon: MapPin },
 ] as const;
 
 /** The rest of the demo cast, one tap each; Capital City Bank is the example shown. */
@@ -49,33 +56,19 @@ const EXAMPLES = [
 const money = (n: number) => formatFeeAmount(n) ?? `$${n.toFixed(2)}`;
 const count = (n: number) => n.toLocaleString("en-US");
 
-const BAND = "min-w-0 border-t border-border pt-5";
-/** Each task: its words and controls on the left, a live example of the tool on the right. */
-const TASK_GRID = "grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:grid-rows-[auto_1fr] lg:gap-x-10 lg:gap-y-3";
-
+const BAND = "min-w-0 scroll-mt-24 border-t border-border pt-6";
 /** The fee-check example: Capital City Bank, a well-covered demo institution. */
 const CHECK_EXAMPLE_ID = 323;
-const BAND_H2 = "text-center text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-left sm:text-[22px]";
-const BAND_LINE = "mt-2 text-[15px] leading-relaxed text-ink-soft sm:mx-0 sm:text-left";
+const BAND_H2 = "text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-left sm:text-[22px]";
+const BAND_LINE = "mx-0 mt-1.5 text-left text-[15px] leading-relaxed text-ink-soft";
 const LINK = "font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink";
-const MORE = `mt-2 inline-flex min-h-11 items-center text-[14px] font-semibold ${LINK}`;
+const ICON_BADGE = "flex size-10 shrink-0 items-center justify-center rounded-full bg-brick-tint text-brick";
 
 /** "/guides/atm-fees#find-cash" when that guide and section exist; the guide alone without the section. */
 function guideHref(guides: Guide[], slug: string, section: string): string | null {
   const guide = guides.find((g) => g.slug === slug);
   if (!guide) return null;
   return `/guides/${slug}${guide.sections.some((s) => s.id === section) ? `#${section}` : ""}`;
-}
-
-interface Route {
-  key: string;
-  title: string;
-  /** What to do, from the guide's own advice; no number. */
-  line: string;
-  /** One live figure from the index, with its population. */
-  figure: ReactNode | null;
-  href: string;
-  action: string;
 }
 
 export default async function ConsumerPage() {
@@ -102,222 +95,162 @@ export default async function ConsumerPage() {
   };
   const asOf = summary.refreshedOn ? `, data as of ${summary.refreshedOn}` : "";
 
-  // The five most-searched charges, each with one short line on what its guide helps with.
-  const guideRows = GUIDE_LINKS.flatMap(({ slug, line }) => {
-    const guide = guides.find((g) => g.slug === slug);
-    return guide ? [{ slug, title: guide.title, line }] : [];
+  // The five most-searched charges whose guides exist, each with its U.S. median.
+  const charges = CHARGES.flatMap((charge) => {
+    const guide = guides.find((g) => g.slug === charge.slug);
+    if (!guide) return [];
+    return [{ ...charge, stat: median(charge.category) }];
   });
-
-  const monthly = summaryFor.get("monthly_maintenance");
-  const overdraft = median("overdraft");
-  const transfer = median("od_protection_transfer");
-  const atm = median("atm_non_network");
-  const candidates: Array<Route | null> = [
-    (() => {
-      const href = guideHref(guides, "monthly-maintenance-fees", "how-to-avoid");
-      if (!href) return null;
-      return {
-        key: "monthly",
-        title: "Avoid a monthly maintenance fee",
-        line: "A waiver can turn on direct deposit, a minimum balance or electronic statements. Student, senior and military accounts may carry fewer fees.",
-        figure:
-          monthly && monthly.zero_count > 0 ? (
-            <>
-              {count(monthly.zero_count)} of the {count(monthly.institution_count)} banks and credit unions that list this fee list it
-              only at $0.
-            </>
-          ) : null,
-        href,
-        action: "Read the waiver steps",
-      };
-    })(),
-    (() => {
-      const href = guideHref(guides, "overdraft-fees", "consent");
-      if (!href) return null;
-      return {
-        key: "overdraft",
-        title: "Understand overdraft choices",
-        line: "Without overdraft coverage on a debit card, ATM withdrawals and one-time card purchases are typically declined, not charged. Checks, ACH and recurring card payments can still bring a fee.",
-        figure:
-          overdraft && transfer ? (
-            <>
-              A linked savings transfer has a U.S. median of {money(transfer.median_amount)}
-              <UnstatedAudienceMark show={medianHasUnstatedAudience(transfer)} /> ({count(transfer.institution_count)} institutions),
-              against {money(overdraft.median_amount)}
-              <UnstatedAudienceMark show={medianHasUnstatedAudience(overdraft)} /> for an overdraft ({count(overdraft.institution_count)} institutions).
-            </>
-          ) : null,
-        href,
-        action: "Read the overdraft choices",
-      };
-    })(),
-    (() => {
-      const href = guideHref(guides, "atm-fees", "find-cash");
-      if (!href) return null;
-      return {
-        key: "atm",
-        title: "Reduce ATM charges",
-        line: "An institution's own ATMs, and any surcharge-free network it belongs to, can avoid both fees. Its own locator says which machines those are.",
-        figure: atm ? (
-          <>
-            An out-of-network withdrawal has a U.S. median fee of {money(atm.median_amount)}
-            <UnstatedAudienceMark show={medianHasUnstatedAudience(atm)} />, across {count(atm.institution_count)} banks and credit
-            unions, before the ATM owner&apos;s own surcharge.
-          </>
-        ) : null,
-        href,
-        action: "Find cheaper cash access",
-      };
-    })(),
-  ];
-  const routes = candidates.filter((r): r is Route => r !== null);
 
   const stateOptions: StateOption[] = states
     .filter((s) => STATE_NAMES[s.state_code])
     .map((s) => ({ code: s.state_code, name: STATE_NAMES[s.state_code], institutions: s.institution_count }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  const unstatedShown =
-    [overdraft, transfer, atm].some((s) => medianHasUnstatedAudience(s));
+  const unstatedShown = charges.some((c) => medianHasUnstatedAudience(c.stat));
 
   return (
     <div className="min-h-screen bg-paper text-ink">
       <BreadcrumbJsonLd items={[{ name: "Home", href: "/" }, { name: "For consumers", href: "/consumer" }]} />
       <div className="mx-auto max-w-page px-4 py-7 sm:px-6 sm:py-10">
-        <section className={`max-w-3xl ${PAGE_HEADER}`}>
+        {/* `relative z-20` keeps the search suggestions above the tiles below. */}
+        <section className={`relative z-20 max-w-3xl ${PAGE_HEADER}`}>
           <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-brick">For consumers</p>
           <h1 className="mt-2 text-[32px] font-semibold leading-[1.05] tracking-[-0.03em] text-ink sm:text-[44px]">
             Understand your bank fees. Find ways to pay less.
           </h1>
-          <p className="mt-3 text-[15px] leading-relaxed text-ink-soft sm:mx-0 sm:text-left">
-            Check your bank, understand a charge, or compare local options.
-          </p>
-          <div className="mt-4 flex justify-center sm:justify-start">
-            <Link href="#check" className="fi-btn fi-btn-primary inline-flex min-h-11 items-center justify-center px-5">
-              Check a bank&apos;s fees
-            </Link>
+          <div id="find-bank" className="mt-5 max-w-xl scroll-mt-24 text-left">
+            <InstitutionSearchBar resultPath="/check" ariaLabel="Your bank or credit union" placeholder="Your bank or credit union" />
           </div>
+          <p className="mt-1 flex flex-wrap items-center justify-center gap-x-4 text-[14px] text-ink-muted sm:justify-start">
+            <span>Or try</span>
+            {EXAMPLES.map((example) => (
+              <Link key={example.id} href={`/check?id=${example.id}`} className={`inline-flex min-h-11 items-center ${LINK}`}>
+                {example.name}
+              </Link>
+            ))}
+          </p>
         </section>
 
-        <div className="mt-8 space-y-10 sm:mt-10 sm:space-y-12">
-          {/* `relative z-20` keeps the search suggestions above the example below. */}
-          <section id="check" aria-labelledby="check-heading" className={`relative z-20 scroll-mt-24 ${BAND} ${TASK_GRID}`}>
-            <div className="min-w-0">
-              <h2 id="check-heading" className={BAND_H2}>
-                Check your bank
-              </h2>
-              <p className={BAND_LINE}>A bank&apos;s published fees beside the state and U.S. medians, each linked to its own schedule.</p>
-              <div className="mt-4 text-left">
-                <InstitutionSearchBar resultPath="/check" ariaLabel="Your bank or credit union" placeholder="Your bank or credit union" />
-              </div>
-              <p className="mt-2 flex flex-wrap items-center justify-center gap-x-4 text-[14px] text-ink-muted sm:justify-start">
-                <span>Or open</span>
-                {EXAMPLES.map((example) => (
-                  <Link key={example.id} href={`/check?id=${example.id}`} className={`inline-flex min-h-11 items-center ${LINK}`}>
-                    {example.name}
-                  </Link>
-                ))}
-              </p>
+        <nav aria-label="What you can do here" className="mt-6">
+          <ul className="grid gap-3 sm:grid-cols-3">
+            {TASKS.map(({ href, title, line, Icon }) => (
+              <li key={href} className="min-w-0">
+                <a
+                  href={href}
+                  className="flex min-h-11 items-center gap-3 rounded-xl border border-border bg-surface-0 p-3 hover:border-ink hover:bg-paper focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink sm:p-4"
+                >
+                  <span className={ICON_BADGE} aria-hidden="true">
+                    <Icon className="size-5" strokeWidth={1.75} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-[15px] font-semibold text-ink">{title}</span>
+                    <span className="block text-[13px] text-ink-muted">{line}</span>
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </nav>
+
+        <div className="mt-10 space-y-10 sm:space-y-12">
+          <section id="check" aria-labelledby="check-heading" className={BAND}>
+            <h2 id="check-heading" className={BAND_H2}>
+              What a fee check shows
+            </h2>
+            <div className="mt-4 max-w-4xl">
+              <CheckExample id={CHECK_EXAMPLE_ID} guides={guides} />
             </div>
-            <CheckExample id={CHECK_EXAMPLE_ID} guides={guides} />
           </section>
 
-          <section aria-labelledby="understand-heading" className={`${BAND} ${TASK_GRID}`}>
-            <div className="min-w-0">
-              <h2 id="understand-heading" className={BAND_H2}>
-                Understand a charge
-              </h2>
-              <p className={BAND_LINE}>
-                One withdrawal at another bank&apos;s ATM can bring two fees from two companies. Each guide explains a charge
-                and the ways around it.
-              </p>
-            </div>
-            {atmExample && (
-              <div className="flex min-w-0 flex-col items-center gap-2 sm:items-start lg:col-start-2 lg:row-span-2 lg:row-start-1">
-                <AtmReceipt example={atmExample} />
-                {atmGuideHref && (
-                  <Link href={atmGuideHref} className={`inline-flex min-h-11 items-center text-[14px] font-semibold ${LINK}`}>
-                    Why one withdrawal brings two fees
-                  </Link>
-                )}
-              </div>
-            )}
-            <div className="min-w-0 lg:col-start-1">
-              {guides.length === 0 && <p className={BAND_LINE}>The guides are not available right now.</p>}
-              {guideRows.length > 0 && (
-                <ul className="mt-3 divide-y divide-border">
-                  {guideRows.map((guide) => (
-                    <li key={guide.slug}>
-                      <Link href={`/guides/${guide.slug}`} className="block min-h-11 py-2.5 text-ink hover:text-brick">
-                        <span className="block text-[15px] font-medium">{guide.title}</span>
-                        <span className="mt-0.5 line-clamp-2 block text-[13px] leading-snug text-ink-muted">{guide.line}</span>
+          <section id="charges" aria-labelledby="charges-heading" className={BAND}>
+            <h2 id="charges-heading" className={BAND_H2}>
+              Understand a charge
+            </h2>
+            <p className={BAND_LINE}>What each charge is, and how to avoid it.</p>
+            {charges.length > 0 ? (
+              <ul className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-3 sm:gap-3 lg:grid-cols-5">
+                {charges.map((charge) => {
+                  const { slug, label, stat, Icon } = charge;
+                  const note = "note" in charge ? charge.note : null;
+                  return (
+                    <li key={slug} className="min-w-0">
+                      <Link
+                        href={`/guides/${slug}`}
+                        className="flex h-full min-h-11 items-center gap-3 rounded-xl border border-border bg-surface-0 p-3 hover:border-ink hover:bg-paper focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink sm:flex-col sm:items-start sm:gap-0 sm:p-4"
+                      >
+                        <span className={ICON_BADGE} aria-hidden="true">
+                          <Icon className="size-5" strokeWidth={1.75} />
+                        </span>
+                        <span className="min-w-0 flex-1 sm:flex sm:w-full sm:flex-1 sm:flex-col">
+                          <span className="block text-[15px] font-semibold leading-snug text-ink sm:mt-3">{label}</span>
+                          {stat && (
+                            <span className="mt-0.5 block sm:mt-2">
+                              <span className="font-mono text-[18px] font-semibold tabular-nums text-ink sm:block sm:text-[24px]">
+                                {money(stat.median_amount)}
+                                <UnstatedAudienceMark show={medianHasUnstatedAudience(stat)} />
+                              </span>
+                              <span className="ml-2 text-[12px] leading-snug text-ink-muted sm:ml-0 sm:block">
+                                U.S. median, {count(stat.institution_count)} institutions
+                              </span>
+                            </span>
+                          )}
+                          {note && <span className="mt-1 block text-[12px] leading-snug text-ink-muted">{note}</span>}
+                          <span className="mt-auto hidden pt-3 text-[13px] font-semibold text-ink underline decoration-border underline-offset-4 sm:block">
+                            How to avoid it
+                          </span>
+                        </span>
                       </Link>
                     </li>
-                  ))}
-                </ul>
-              )}
-              <Link href="/guides" className={MORE}>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className={BAND_LINE}>The guides are not available right now.</p>
+            )}
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-x-6">
+              <SourceNote>
+                Published fee schedules of U.S. banks and credit unions, {PRODUCT_NAME}
+                {asOf}; counts are institutions that list each fee.
+              </SourceNote>
+              <Link href="/guides" className={`inline-flex min-h-11 items-center text-[14px] font-semibold ${LINK}`}>
                 {guides.length > 0 ? `All ${guides.length} guides` : "Fee guides"}
               </Link>
             </div>
+            {atmExample && (
+              <div className="mt-8 grid items-center gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-10">
+                <div className="min-w-0">
+                  <h3 className="text-[17px] font-semibold text-ink">One ATM withdrawal, two fees</h3>
+                  <p className={BAND_LINE}>Your bank charges one. The ATM&apos;s owner can add another.</p>
+                  {atmGuideHref && (
+                    <div className="flex justify-center sm:justify-start">
+                      <Link href={atmGuideHref} className={`mt-1 inline-flex min-h-11 items-center text-[14px] font-semibold ${LINK}`}>
+                        How to avoid both
+                      </Link>
+                    </div>
+                  )}
+                </div>
+                <div className="flex min-w-0 justify-center sm:justify-start">
+                  <AtmReceipt example={atmExample} />
+                </div>
+              </div>
+            )}
           </section>
 
-          <section aria-labelledby="compare-heading" className={`${BAND} ${TASK_GRID}`}>
-            <div className="min-w-0">
-              <h2 id="compare-heading" className={BAND_H2}>
-                Compare local options
-              </h2>
-              <p className={BAND_LINE}>See which banks and credit unions publish their fees in each city of a state.</p>
-            </div>
-            <div className="min-w-0 lg:col-start-2 lg:row-span-2 lg:row-start-1">
+          <section id="compare" aria-labelledby="compare-heading" className={BAND}>
+            <h2 id="compare-heading" className={BAND_H2}>
+              Compare local options
+            </h2>
+            <p className={BAND_LINE}>Pick a state to see who publishes fees in each city.</p>
+            <div className="mt-4 max-w-4xl">
               {stateOptions.length > 0 ? (
                 <StatePicker states={stateOptions} initial="FL" />
               ) : (
                 <p className={BAND_LINE}>The state list is not available right now.</p>
               )}
             </div>
-            <div className="min-w-0 lg:col-start-1">
-              {stateOptions.length > 0 && (
-                <SourceNote>
-                  Banks and credit unions headquartered in each state with published fees, {PRODUCT_NAME}
-                  {asOf}.
-                </SourceNote>
-              )}
-              <Link href="/institutions" className={MORE}>
-                Browse the directory
-              </Link>
-            </div>
           </section>
         </div>
-
-        {routes.length > 0 && (
-          <section aria-labelledby="routes-heading" className="mt-12 border-t border-border pt-6">
-            <h2 id="routes-heading" className={BAND_H2}>
-              Ways around three common charges
-            </h2>
-            <p className={BAND_LINE}>The first step for each, from its guide, with the national figure behind it.</p>
-            <ul className="mt-4 grid gap-4 md:grid-cols-3">
-              {routes.map((route) => (
-                <li key={route.key} className="flex min-w-0 flex-col rounded-xl border border-border bg-surface-0 p-4 shadow-fi-1 sm:p-5">
-                  <h3 className="text-[16px] font-semibold text-ink">{route.title}</h3>
-                  <p className="mt-1.5 text-[14px] leading-relaxed text-ink-soft sm:mx-0 sm:text-left">{route.line}</p>
-                  {route.figure && (
-                    <p className="mt-2 text-[13px] leading-snug text-ink sm:mx-0 sm:text-left">{route.figure}</p>
-                  )}
-                  <Link href={route.href} className={`mt-auto inline-flex min-h-11 items-center pt-2 text-[14px] ${LINK}`}>
-                    {route.action}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-            <div className="mt-4">
-              <SourceNote>
-                Published fee schedules of U.S. banks and credit unions, {PRODUCT_NAME}
-                {asOf}; counts are institutions that list each fee.
-              </SourceNote>
-            </div>
-          </section>
-        )}
 
         <div className="mt-10">
           <Link
