@@ -132,6 +132,8 @@ const PAGE_LINES: Record<number, string> = {
   // #1829 (#1691 cleanup): the two fax fees' stored lines, read-only Oct 17 (texts 34913 and 35062).
   152977: "Escheatment Notice\n\n$29\n\nFax (Domestic & International)\n\n$1\n\nLegal Process\n\n$100",
   152288: "Early Account Closure (within 180days) | $25.00\nFaxes (Domestic only) | $2.00\nHold Statement for pickup | $2.00",
+  // #1828: Oregon Community FCU's card and safe deposit box columns (doc 13272, read-only Oct 17).
+  83792: "Card fees\nATM transaction service (withdrawals at non-CO-OP ATMs) 2 …….… $1 | Safe deposit box fees\nExpedited card delivery | 2 X 5 annual rent (Downtown Branch only)….…………….…....……. $30\nDomestic…………………………………………………………………… $30 | 3 X 5 annual rent………………………………………….......……….... $35\nInternational (Int'l)…………………………………………….…………… $45 | 5 X 5 annual rent………………………………………………...………. $45",
   // #1828: Oregon Community FCU's loan fee table (doc 13272, read-only Oct 17), its two columns.
   83794: "Loan fees | Personal Credit Line fees\nLate payment 4 ……………………………………………….……….…… $25 | Late Payment…………………………………………………………….. $25\nCredit Union Direct Lending (CUDL) late payment……………….…… 5% | Returned payment…………………………………………………….. | $4.95\n(5% of outstanding monthly payment due; no minimum)\nCredit Union Direct Lending (CUDL) & direct loan non-qualification… $250 | Credit card fees",
 };
@@ -144,6 +146,17 @@ function liveRow(id: number, key: string, amount: string, name = "(misread cell)
 }
 
 describe("hand re-files of misread live fees (retidy v15 review, Oct 9)", () => {
+  it("#1828: renames Oregon Community's joined expedited card name in place, once, keeping rush_card $30", () => {
+    const oldName = "Safe deposit box fees Expedited card delivery 2 X 5 annual rent (Downtown Branch only)";
+    const row = { ...liveRow(83792, "rush_card", "30.00", oldName), fee_verified_id: 93010, institution_id: 7859, source_document_id: 13272 };
+    expect(planHandRefiles([row]).map((move) => [move.refile.feePublishedId, move.currentKey, move.refile.to, move.oldName, move.refile.name])).toEqual([
+      [83792, "rush_card", "rush_card", oldName, "Expedited card delivery (domestic)"],
+    ]);
+    // Once renamed, or if a later read gave it another name, it is left alone.
+    expect(planHandRefiles([{ ...row, fee_name: "Expedited card delivery (domestic)" }])).toEqual([]);
+    expect(planHandRefiles([{ ...row, fee_name: "Expedited card delivery" }])).toEqual([]);
+  });
+
   it("#1828: re-files Oregon Community's $4.95 from the CUDL late fee to its own returned payment line", () => {
     const row = { ...liveRow(83794, "late_payment", "4.95", "Credit Union Direct Lending (CUDL) late payment . 5% Returned payment"), fee_verified_id: 93017, institution_id: 7859, source_document_id: 13272 };
     expect(planHandRefiles([row]).map((move) => [move.refile.feePublishedId, move.currentKey, move.refile.to, move.refile.name])).toEqual([
