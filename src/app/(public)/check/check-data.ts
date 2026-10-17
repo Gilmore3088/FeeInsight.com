@@ -8,7 +8,8 @@ import { getDisplayName } from "@/lib/fee-taxonomy";
 import type { Guide } from "@/lib/guides/types";
 import { productNameFromFeeName } from "@/lib/agents/knox/lineup";
 import { isBusinessOnlyLink } from "@/lib/agents/magellan/link-coverage";
-import { comparedAtText, priceRangeText, type AccountPrice } from "@/lib/fee-representative";
+import { accountPricesText, comparedAtText, priceRangeText, type AccountPrice } from "@/lib/fee-representative";
+import { STATE_NAMES } from "@/lib/us-states";
 import { pickHeadlineValues } from "../institution/[id]/profile-data";
 
 /** The first headline rows, in the institution page's order; the full schedule is one click away. */
@@ -175,19 +176,33 @@ export function leadRow(rows: CheckRow[]): CheckRow | null {
 }
 
 /**
- * The one finding: the fee furthest above its median, in the profile's words; otherwise how the
- * main fees sit against the median.
+ * The one finding, prices first: the fee furthest above its median as its range and named
+ * account prices, then, as benchmark detail, the value compared and its gap to the median.
+ * Without a fee above the median, `price` is null and `benchmark` says how the main fees sit.
  */
-export function checkFinding(rows: CheckRow[], name: string, stateName: string | null): string | null {
+export interface CheckFinding {
+  /** "Capital City Bank's monthly maintenance fee runs $7.95 to $8.95, depending on account." */
+  price: string | null;
+  /** "Carefree Checking $7.95 · Everyday Checking $8.95", when the schedule names every price. */
+  accounts: string | null;
+  benchmark: string;
+}
+
+export function checkFinding(rows: CheckRow[], name: string, stateName: string | null): CheckFinding | null {
   const placeOf = (level: "state" | "us") => (level === "state" && stateName ? stateName : "U.S.");
   const lead = leadRow(rows);
   if (lead) {
     const ref = referenceOf(lead)!;
     const diff = lead.value - ref.band.median;
     const gap = `${money(Math.abs(diff))} above the ${money(ref.band.median)} ${placeOf(ref.level)} median (${ref.band.institutions.toLocaleString("en-US")} institutions)`;
+    const fee = lowerLabel(lead.label);
     return lead.comparedAt
-      ? `${name}'s ${lowerLabel(lead.label)} fee runs ${rowPriceText(lead)}. ${lead.comparedAt}, it sits ${gap}.`
-      : `${name}'s ${lowerLabel(lead.label)} fee is ${money(lead.value)}, ${gap}.`;
+      ? {
+          price: `${name}'s ${fee} fee runs ${rowPriceText(lead)}.`,
+          accounts: accountPricesText(lead.prices, lead.amounts),
+          benchmark: `${lead.comparedAt}, it sits ${gap}.`,
+        }
+      : { price: `${name}'s ${fee} fee is ${money(lead.value)}.`, accounts: null, benchmark: `It sits ${gap}.` };
   }
   const pairs = rows.flatMap((row) => {
     const ref = referenceOf(row);
@@ -197,11 +212,14 @@ export function checkFinding(rows: CheckRow[], name: string, stateName: string |
   const place = placeOf(pairs.some((p) => p.level === "state") ? "state" : "us");
   const same = pairs.filter((p) => p.position === "same").length;
   const of = `${pairs.length} compared ${pairs.length === 1 ? "fee" : "fees"}`;
-  if (same === pairs.length) return `About the same as the ${place} median on all ${of}.`;
   const below = pairs.length - same;
-  return same > 0
-    ? `Below the ${place} median on ${below} of ${of} and about the same on ${same}.`
-    : `Below the ${place} median on all ${of}.`;
+  const benchmark =
+    same === pairs.length
+      ? `About the same as the ${place} median on all ${of}.`
+      : same > 0
+        ? `Below the ${place} median on ${below} of ${of} and about the same on ${same}.`
+        : `Below the ${place} median on all ${of}.`;
+  return { price: null, accounts: null, benchmark };
 }
 
 /** "Florida banks and credit unions" when any row has a state band; null means every comparison is national. */
@@ -299,8 +317,43 @@ export function buildAlternatives(
   return lists;
 }
 
-/** Above this many branch cities, the headquarters city does not stand for the institution's market. */
-export const MAX_BRANCH_CITIES_FOR_ALTERNATIVES = 50;
+/**
+ * Where the visitor is, from `?near=`: a five-digit ZIP, or a city with its state ("Tallahassee,
+ * FL", "Tallahassee FL", "Tallahassee, Florida"). A city without a recognizable state is
+ * `needs-state`, so the page asks for one rather than guessing. Null for an empty value.
+ */
+export type CheckLocation =
+  | { kind: "zip"; zip: string }
+  | { kind: "city"; city: string; state: string }
+  | { kind: "needs-state"; text: string };
+
+const STATE_BY_NAME = new Map(Object.entries(STATE_NAMES).map(([code, name]) => [name.toLowerCase(), code]));
+
+function stateCodeOf(text: string): string | null {
+  const t = text.trim().replace(/\./g, "");
+  if (/^[a-z]{2}$/i.test(t) && STATE_NAMES[t.toUpperCase()]) return t.toUpperCase();
+  return STATE_BY_NAME.get(t.toLowerCase().replace(/\s+/g, " ")) ?? null;
+}
+
+export function parseLocation(value: string | undefined): CheckLocation | null {
+  const text = (value ?? "").replace(/\s+/g, " ").trim().slice(0, 80);
+  if (!text) return null;
+  const zip = /^(\d{5})(?:-\d{4})?$/.exec(text);
+  if (zip) return { kind: "zip", zip: zip[1] };
+  const comma = text.lastIndexOf(",");
+  if (comma > 0) {
+    const city = text.slice(0, comma).trim();
+    const state = stateCodeOf(text.slice(comma + 1));
+    return city && state ? { kind: "city", city, state } : { kind: "needs-state", text };
+  }
+  // No comma: the state is the last one to three words ("New Mexico", "Washington DC").
+  const words = text.split(" ");
+  for (let n = Math.min(3, words.length - 1); n >= 1; n--) {
+    const state = stateCodeOf(words.slice(-n).join(" "));
+    if (state) return { kind: "city", city: words.slice(0, -n).join(" "), state };
+  }
+  return { kind: "needs-state", text };
+}
 
 /** The id from `?id=`: a positive integer, or null. */
 export function parseCheckId(value: string | undefined): number | null {

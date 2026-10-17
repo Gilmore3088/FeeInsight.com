@@ -95,6 +95,8 @@ function Row({
   const domain = domainOf(row);
   const several = row.low !== row.high;
   const gapLabel = ref ? `vs ${ref.level === "state" ? (stateCode ?? "state") : "U.S."} median ` : "";
+  // The named account prices lead the row; the compared value stays benchmark detail.
+  const accounts = several ? accountPricesText(row.prices, row.amounts) : null;
   return (
     <li className="border-t border-border first:border-t-0">
       <details className="group">
@@ -103,7 +105,10 @@ function Row({
             <span aria-hidden="true" className="text-ink-muted transition-transform group-open:rotate-90">
               ›
             </span>
-            <span className="min-w-0 leading-snug">{row.label}</span>
+            <span className="min-w-0 leading-snug">
+              {row.label}
+              {accounts && <span className="mt-0.5 block text-[12px] leading-snug text-ink-soft">{accounts}</span>}
+            </span>
           </span>
           <span className="text-right font-mono text-[15px] font-semibold tabular-nums text-ink">
             {several ? (
@@ -135,9 +140,6 @@ function Row({
           </span>
         </summary>
         <div className="space-y-2 px-4 pb-4 sm:px-5">
-          {several && accountPricesText(row.prices, row.amounts) && (
-            <p className="text-[13px] leading-snug text-ink sm:mx-0 sm:text-left">{accountPricesText(row.prices, row.amounts)}</p>
-          )}
           {row.comparedAt && <p className="text-[12px] text-ink-muted sm:mx-0 sm:text-left">{row.comparedAt}.</p>}
           <div className="space-y-1">
             {row.state && <RangeBar label={stateCode ?? "State"} band={row.state} row={row} domain={domain} />}

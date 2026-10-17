@@ -29,7 +29,14 @@ export const metadata: Metadata = {
   openGraph: { type: "website", title: TITLE, description: DESCRIPTION, url: `${SITE_URL}/consumer`, siteName: "Fee Insight" },
 };
 
-const ROWS_SHOWN = 5;
+/** The guides the consumer page links first, with James's lines (review, 2026-10-17). */
+const GUIDE_LINKS = [
+  { slug: "overdraft-fees", line: "Understand the charge and your coverage choices." },
+  { slug: "nsf-fees", line: "Why a payment was returned, and what to ask your bank." },
+  { slug: "atm-fees", line: "Avoid bank fees and ATM-owner surcharges." },
+  { slug: "wire-transfer-fees", line: "Compare transfer fees and alternatives." },
+  { slug: "monthly-maintenance-fees", line: "Check account fees and waiver requirements." },
+] as const;
 
 /** The demo cast: well-covered institutions a first-time visitor can open in one tap. */
 const EXAMPLES = [
@@ -84,7 +91,11 @@ export default async function ConsumerPage() {
   };
   const asOf = summary.refreshedOn ? `, data as of ${summary.refreshedOn}` : "";
 
-  const guideRows = [...guides].sort((a, b) => Number(b.featured) - Number(a.featured)).slice(0, ROWS_SHOWN);
+  // The five most-searched charges, each with one short line on what its guide helps with.
+  const guideRows = GUIDE_LINKS.flatMap(({ slug, line }) => {
+    const guide = guides.find((g) => g.slug === slug);
+    return guide ? [{ slug, title: guide.title, line }] : [];
+  });
 
   const monthly = summaryFor.get("monthly_maintenance");
   const overdraft = median("overdraft");
@@ -115,7 +126,7 @@ export default async function ConsumerPage() {
       return {
         key: "overdraft",
         title: "Understand overdraft choices",
-        line: "Opting out of debit card overdraft coverage stops overdraft fees on card purchases and ATM withdrawals; the payment is declined instead.",
+        line: "Opting out of debit card overdraft coverage stops overdraft fees on ATM withdrawals and one-time debit card purchases, which are typically declined instead. Recurring debit card payments, checks and ACH payments are not covered and can still be paid with an overdraft fee or returned with an NSF fee, depending on the bank.",
         figure:
           overdraft && transfer ? (
             <>
@@ -165,11 +176,10 @@ export default async function ConsumerPage() {
         <section className={`max-w-3xl ${PAGE_HEADER}`}>
           <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-brick">For consumers</p>
           <h1 className="mt-2 text-[32px] font-semibold leading-[1.05] tracking-[-0.03em] text-ink sm:text-[44px]">
-            Understand a bank fee, and avoid the next one
+            Understand your bank fees. Find ways to pay less.
           </h1>
           <p className="mt-3 text-[15px] leading-relaxed text-ink-soft sm:mx-0 sm:text-left">
-            Plain-language guides, a fee check for {summary.institutionsLabel} banks and credit unions, and named local
-            alternatives. Fees link to each institution&apos;s own published schedule.
+            Check your bank, understand a charge, or compare local options.
           </p>
           <div className="mt-4 flex justify-center sm:justify-start">
             <Link href="#check" className="fi-btn fi-btn-primary inline-flex min-h-11 items-center justify-center px-5">
@@ -179,41 +189,11 @@ export default async function ConsumerPage() {
         </section>
 
         <div className="mt-8 grid gap-10 sm:mt-10 lg:grid-cols-3 lg:gap-8">
-          <section aria-labelledby="understand-heading" className={BAND}>
-            <h2 id="understand-heading" className={BAND_H2}>
-              Understand a charge
-            </h2>
-            <p className={BAND_LINE}>
-              {guides.length > 0
-                ? `${guides.length} guides explain what a charge is, what it usually costs and how to avoid the next one.`
-                : "The guides are not available right now."}
-            </p>
-            {guideRows.length > 0 && (
-              <ul className="mt-3 divide-y divide-border">
-                {guideRows.map((guide) => (
-                  <li key={guide.slug}>
-                    <Link href={`/guides/${guide.slug}`} className="block min-h-11 py-2.5 text-ink hover:text-brick">
-                      <span className="block text-[15px] font-medium">{guide.title}</span>
-                      <span className="mt-0.5 line-clamp-2 block text-[13px] leading-snug text-ink-muted">{guide.description}</span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <Link href="/guides" className={MORE}>
-              {guides.length > 0 ? `All ${guides.length} guides` : "Fee guides"}
-            </Link>
-          </section>
-
           {/* `relative z-20` keeps the search suggestions above the next band. */}
           <section id="check" aria-labelledby="check-heading" className={`relative z-20 scroll-mt-24 ${BAND}`}>
             <h2 id="check-heading" className={BAND_H2}>
               Check your bank
             </h2>
-            <p className={BAND_LINE}>
-              The fee check sets a bank&apos;s or credit union&apos;s main fees beside its state and U.S. medians, with the account
-              terms behind each one.
-            </p>
             <div className="mt-4 text-left">
               <InstitutionSearchBar resultPath="/check" ariaLabel="Your bank or credit union" placeholder="Your bank or credit union" />
             </div>
@@ -237,14 +217,32 @@ export default async function ConsumerPage() {
             </Link>
           </section>
 
+          <section aria-labelledby="understand-heading" className={BAND}>
+            <h2 id="understand-heading" className={BAND_H2}>
+              Understand a charge
+            </h2>
+            {guides.length === 0 && <p className={BAND_LINE}>The guides are not available right now.</p>}
+            {guideRows.length > 0 && (
+              <ul className="mt-3 divide-y divide-border">
+                {guideRows.map((guide) => (
+                  <li key={guide.slug}>
+                    <Link href={`/guides/${guide.slug}`} className="block min-h-11 py-2.5 text-ink hover:text-brick">
+                      <span className="block text-[15px] font-medium">{guide.title}</span>
+                      <span className="mt-0.5 line-clamp-2 block text-[13px] leading-snug text-ink-muted">{guide.line}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <Link href="/guides" className={MORE}>
+              {guides.length > 0 ? `All ${guides.length} guides` : "Fee guides"}
+            </Link>
+          </section>
+
           <section aria-labelledby="compare-heading" className={BAND}>
             <h2 id="compare-heading" className={BAND_H2}>
-              Compare alternatives
+              Compare local options
             </h2>
-            <p className={BAND_LINE}>
-              City fee pages name each bank and credit union with a branch in a city, with its published price and the account it
-              applies to.
-            </p>
             {stateOptions.length > 0 ? (
               <div className="mt-4">
                 <StatePicker states={stateOptions} />

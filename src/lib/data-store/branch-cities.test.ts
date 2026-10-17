@@ -5,27 +5,32 @@ vi.mock("./connection", () => ({ getSql: vi.fn(), sql: (...args: unknown[]) => s
 const cacheMock = vi.fn((fn: unknown) => fn);
 vi.mock("next/cache", () => ({ unstable_cache: (fn: unknown) => cacheMock(fn) }));
 
-import { getInstitutionBranchCityCount } from "./branch-cities";
+import { getBranchCityForZip } from "./branch-cities";
 
-describe("getInstitutionBranchCityCount", () => {
+describe("getBranchCityForZip", () => {
   beforeEach(() => sqlMock.mockReset());
 
-  it("returns the bank and credit union branch cities as a number", async () => {
-    sqlMock.mockResolvedValue([{ cities: "45" }]);
-    await expect(getInstitutionBranchCityCount(323)).resolves.toBe(45);
-    expect(sqlMock.mock.calls[0].slice(1)).toEqual([323, 323]);
+  it("returns the city with the most branches in the ZIP", async () => {
+    sqlMock.mockResolvedValue([{ state: "fl", city: "TALLAHASSEE", branches: "21" }]);
+    await expect(getBranchCityForZip("32301")).resolves.toEqual({ city: "TALLAHASSEE", state: "FL" });
+    expect(sqlMock.mock.calls[0].slice(1)).toEqual(["32301", "32301"]);
   });
 
-  it("reads no rows as zero cities", async () => {
+  it("reads no rows as no city", async () => {
     sqlMock.mockResolvedValue([]);
-    await expect(getInstitutionBranchCityCount(1)).resolves.toBe(0);
+    await expect(getBranchCityForZip("00000")).resolves.toBeNull();
+  });
+
+  it("never queries for a malformed ZIP", async () => {
+    await expect(getBranchCityForZip("3230")).resolves.toBeNull();
+    expect(sqlMock).not.toHaveBeenCalled();
   });
 });
 
-describe("getInstitutionBranchCityCountCached", () => {
+describe("getBranchCityForZipCached", () => {
   it("is wrapped in the shared public read cache", async () => {
-    const { getInstitutionBranchCityCountCached } = await import("./public-cached-reads");
-    expect(typeof getInstitutionBranchCityCountCached).toBe("function");
+    const { getBranchCityForZipCached } = await import("./public-cached-reads");
+    expect(typeof getBranchCityForZipCached).toBe("function");
     expect(cacheMock).toHaveBeenCalled();
   });
 });

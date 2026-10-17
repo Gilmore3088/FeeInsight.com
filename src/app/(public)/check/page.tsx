@@ -7,8 +7,8 @@ import { getCurrentUser } from "@/lib/auth";
 import { getAlertSubscriptionForInstitution } from "@/lib/data-store/alerts";
 import { ExternalLink } from "lucide-react";
 import {
+  getBranchCityForZipCached,
   getCityMarketCached,
-  getInstitutionBranchCityCountCached,
   getStateFeeIndexesCached,
   searchInstitutionsCached,
 } from "@/lib/data-store/public-cached-reads";
@@ -27,20 +27,21 @@ import { MIN_VERIFIED_FEES_FOR_OFFER } from "../institution/[id]/profile-copy";
 import { getPublicInstitutionForPage, getVisibleFeesForPage, isVerifiedFee } from "../institution/[id]/profile-data";
 import { loadConsumerGuides } from "@/lib/guides/source";
 import { SourceNote } from "../research/district/[id]/district-hub";
-import { cityPath, titleCase } from "../fees/city/[state]/[city]/city-lookup";
+import { cityPath, dottedCityName, titleCase } from "../fees/city/[state]/[city]/city-lookup";
 import {
+  ALTERNATIVE_FEES,
   avoidGuideHref,
   buildAlternatives,
   buildCheckRows,
   checkFinding,
   leadRow,
   lowerLabel,
-  MAX_BRANCH_CITIES_FOR_ALTERNATIVES,
   parseCheckId,
+  parseLocation,
   stateGroupLabel,
 } from "./check-data";
 import { CheckTable } from "./check-table";
-import { Alternatives } from "./alternatives";
+import { LocalOptions, type LocalStatus } from "./alternatives";
 import { CheckAnswerFocus } from "./answer-focus";
 
 const TITLE = "Check a Bank's Fees Against the Market";
@@ -48,7 +49,7 @@ const DESCRIPTION =
   "Name a bank or credit union to see its published fees beside the U.S. and state medians, each linked to its own fee schedule.";
 
 interface PageProps {
-  searchParams: Promise<{ id?: string; q?: string }>;
+  searchParams: Promise<{ id?: string; q?: string; near?: string }>;
 }
 
 export async function generateMetadata({ searchParams }: PageProps): Promise<Metadata> {
@@ -114,7 +115,7 @@ export default async function CheckPage({ searchParams }: PageProps) {
           </div>
         </section>
 
-        {id !== null ? <CheckAnswer id={id} refreshedOn={stats.refreshedOn} /> : query.length >= 2 ? <CheckMatches query={query} /> : <Examples />}
+        {id !== null ? <CheckAnswer id={id} near={params.near ?? ""} refreshedOn={stats.refreshedOn} /> : query.length >= 2 ? <CheckMatches query={query} /> : <Examples />}
       </div>
     </div>
   );
@@ -187,7 +188,43 @@ async function CheckMatches({ query }: { query: string }) {
   );
 }
 
-async function CheckAnswer({ id, refreshedOn }: { id: number; refreshedOn: string | null }) {
+/** "TALLAHASSEE" or "st. louis" as "Tallahassee" and "St. Louis", hyphens kept. */
+function displayCity(city: string): string {
+  return city.toLowerCase().replace(/(^|[\s\-'.])([a-z])/g, (_, sep: string, ch: string) => sep + ch.toUpperCase());
+}
+
+/**
+ * The visitor's own city, from `?near=` (a ZIP or a city and state), and its market as the city
+ * page reads it. The institution's headquarters is never assumed: nothing local is shown until
+ * the visitor names a place.
+ */
+async function resolveLocal(near: string): Promise<LocalStatus> {
+  const location = parseLocation(near);
+  if (!location) return { kind: "none" };
+  if (location.kind === "needs-state") return { kind: "needs-state", text: location.text };
+  let city: string;
+  let state: string;
+  if (location.kind === "zip") {
+    const found = await getBranchCityForZipCached(location.zip).catch(fallbackTo("ZIP lookup", null));
+    if (!found) return { kind: "not-found", text: location.zip };
+    city = displayCity(found.city);
+    state = found.state;
+  } else {
+    city = displayCity(location.city);
+    state = location.state;
+  }
+  const readMarket = (name: string) => getCityMarketCached(name, state, "city").catch(fallbackTo("city market", null));
+  let market = await readMarket(city);
+  const dotted = market ? null : dottedCityName(city);
+  if (dotted) {
+    market = await readMarket(dotted);
+    if (market) city = dotted;
+  }
+  if (!market) return { kind: "not-found", text: location.kind === "zip" ? location.zip : `${city}, ${state}` };
+  return { kind: "found", market, city, state, viaZip: location.kind === "zip" ? location.zip : null };
+}
+
+async function CheckAnswer({ id, near, refreshedOn }: { id: number; near: string; refreshedOn: string | null }) {
   const inst = await getPublicInstitutionForPage(id).catch(fallbackTo("institution", null));
   if (!inst) {
     return (
@@ -205,14 +242,11 @@ async function CheckAnswer({ id, refreshedOn }: { id: number; refreshedOn: strin
   const cityName = inst.city ? titleCase(inst.city) : null;
   // The state page's index (every bank and credit union headquartered in the state), the same
   // population the institution profile compares against, so the two pages quote one median.
-  const [nationalIndex, stateIndexes, guides, market, branchCities, user] = await Promise.all([
+  const [nationalIndex, stateIndexes, guides, local, user] = await Promise.all([
     hasFees ? getPublicNationalIndex().catch(fallbackTo("national index", [])) : Promise.resolve([]),
     hasFees && stateCode ? getStateFeeIndexesCached(stateCode).catch(fallbackTo("state index", null)) : Promise.resolve(null),
     hasFees ? loadConsumerGuides().catch(fallbackTo("guides", [])) : Promise.resolve([]),
-    hasFees && stateCode && cityName
-      ? getCityMarketCached(cityName, stateCode, "city").catch(fallbackTo("city market", null))
-      : Promise.resolve(null),
-    hasFees ? getInstitutionBranchCityCountCached(id).catch(fallbackTo("branch cities", 0)) : Promise.resolve(0),
+    hasFees ? resolveLocal(near) : Promise.resolve<LocalStatus>({ kind: "none" }),
     getCurrentUser().catch(() => null),
   ]);
   const alertSubscription = user
@@ -231,9 +265,9 @@ async function CheckAnswer({ id, refreshedOn }: { id: number; refreshedOn: strin
   const place = [cityName, inst.state_code].filter(Boolean).join(", ");
   const collectedOn = formatAbsoluteDate(inst.latest_source_collected_at ?? null);
   const guideHrefs = Object.fromEntries(rows.map((row) => [row.category, avoidGuideHref(row.category, guides)]));
-  // Its headquarters city stands for its market only when it banks in a limited number of cities.
-  const local = branchCities <= MAX_BRANCH_CITIES_FOR_ALTERNATIVES;
-  const alternatives = local ? buildAlternatives(market, id, rows, verifiedFees) : [];
+  // Local options are offered only for a fee the city comparison covers.
+  const comparesLocally = rows.some((row) => (ALTERNATIVE_FEES as string[]).includes(row.category));
+  const alternatives = local.kind === "found" ? buildAlternatives(local.market, id, rows, verifiedFees) : [];
 
   const sparseLine = !hasFees
     ? `Fee Insight has not published fees for ${inst.institution_name} yet.`
@@ -242,15 +276,14 @@ async function CheckAnswer({ id, refreshedOn }: { id: number; refreshedOn: strin
       : thin
         ? `Only ${verifiedFees.length} of its fees are published so far; the comparison covers those.`
         : null;
-  const findingLine =
-    sparseLine ?? checkFinding(rows, inst.institution_name, stateName) ?? `Its main fees against the ${stateLabel ?? "U.S."} median.`;
+  const finding = sparseLine ? null : checkFinding(rows, inst.institution_name, stateName);
 
   // The next step is the consumer's: the account terms behind the lead fee, then how to avoid it.
   const lead = leadRow(rows) ?? rows[0] ?? null;
   const termsHref = lead?.sourceUrl ?? inst.fee_schedule_url ?? null;
   const avoidHref = lead ? guideHrefs[lead.category] : null;
-  const cityHref = stateCode && cityName ? cityPath(stateCode, cityName) : null;
-  const stateHref = stateCode ? `/research/state/${stateCode}` : null;
+  // One tap for a visitor who banks where it is headquartered; still the visitor's choice.
+  const headquarters = stateCode && cityName ? `${cityName}, ${stateCode}` : null;
 
   return (
     <div className="mt-8 space-y-8 sm:mt-10 sm:space-y-10">
@@ -268,7 +301,23 @@ async function CheckAnswer({ id, refreshedOn }: { id: number; refreshedOn: strin
           >
             {inst.institution_name}
           </h2>
-          <p className="mt-3 text-[15px] leading-relaxed text-ink-soft sm:mx-0 sm:text-left">{findingLine}</p>
+          {sparseLine ? (
+            <p className="mt-3 text-[15px] leading-relaxed text-ink-soft sm:mx-0 sm:text-left">{sparseLine}</p>
+          ) : (
+            <div className="mt-3 space-y-1.5">
+              {finding?.price && (
+                <p className="text-[16px] font-medium leading-snug text-ink sm:mx-0 sm:text-left">{finding.price}</p>
+              )}
+              {finding?.accounts && (
+                <p className="text-[14px] leading-snug text-ink sm:mx-0 sm:text-left">{finding.accounts}</p>
+              )}
+              <p
+                className={`leading-relaxed sm:mx-0 sm:text-left ${finding?.price ? "text-[13px] text-ink-muted" : "text-[15px] text-ink-soft"}`}
+              >
+                {finding?.benchmark ?? `Its main fees against the ${stateLabel ?? "U.S."} median.`}
+              </p>
+            </div>
+          )}
           <div className="mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 sm:justify-start">
             {termsHref ? (
               <a
@@ -314,21 +363,19 @@ async function CheckAnswer({ id, refreshedOn }: { id: number; refreshedOn: strin
         )}
       </section>
 
-      {alternatives.length > 0 && cityName && cityHref ? (
-        <Alternatives
+      {hasFees && comparesLocally ? (
+        <LocalOptions
+          id={id}
+          near={near}
+          status={local}
           lists={alternatives}
           name={inst.institution_name}
-          city={cityName}
-          cityHref={cityHref}
-          stateHref={stateHref}
-          stateName={stateName}
-          source={`Published fee schedules of banks and credit unions with a branch in ${cityName} (FDIC Summary of Deposits and NCUA branch records), the same list as the ${cityName} fee page.`}
+          cityHref={local.kind === "found" ? cityPath(local.state, local.city) : null}
+          headquarters={headquarters}
         />
       ) : hasFees && stateCode ? (
         <p className="border-t border-border pt-6 text-center text-[14px] text-ink-soft sm:text-left">
-          {local
-            ? `No city comparison is available for ${inst.institution_name} yet.`
-            : `${inst.institution_name} has branches in ${branchCities.toLocaleString("en-US")} cities, so no one city stands for its market.`}{" "}
+          No local comparison is available for {inst.institution_name}&apos;s fees yet.{" "}
           <Link href={`/institutions?state=${stateCode}`} className={`inline-flex min-h-11 items-center ${LINK}`}>
             Other {stateName} banks and credit unions
           </Link>

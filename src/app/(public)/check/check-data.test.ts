@@ -11,6 +11,7 @@ import {
   checkFinding,
   marketBand,
   parseCheckId,
+  parseLocation,
   rowPriceText,
   stateGroupLabel,
 } from "./check-data";
@@ -113,10 +114,12 @@ describe("several prices for one fee (the shared rule)", () => {
     expect(accountPricesText(row.prices, row.amounts)).toBe("Carefree Checking $7.95 \u00b7 Everyday Checking $8.95");
   });
 
-  it("leads the finding with the range and the compared value", () => {
-    expect(checkFinding([row], "Capital City Bank", "Florida")).toBe(
-      "Capital City Bank's monthly maintenance fee runs $7.95 to $8.95, depending on account. Compared at $8.45, the middle of its prices, it sits $1.45 above the $7 Florida median (40 institutions).",
-    );
+  it("leads the finding with the range and named accounts, then the compared value", () => {
+    expect(checkFinding([row], "Capital City Bank", "Florida")).toEqual({
+      price: "Capital City Bank's monthly maintenance fee runs $7.95 to $8.95, depending on account.",
+      accounts: "Carefree Checking $7.95 \u00b7 Everyday Checking $8.95",
+      benchmark: "Compared at $8.45, the middle of its prices, it sits $1.45 above the $7 Florida median (40 institutions).",
+    });
   });
 
   it("labels overdraft at its highest price", () => {
@@ -150,7 +153,11 @@ describe("checkFinding without a fee above the median", () => {
       stateIndex: [],
       fallbackSourceUrl: null,
     });
-    expect(checkFinding(rows, "Test Bank", "Florida")).toBe("Below the U.S. median on 1 of 2 compared fees and about the same on 1.");
+    expect(checkFinding(rows, "Test Bank", "Florida")).toEqual({
+      price: null,
+      accounts: null,
+      benchmark: "Below the U.S. median on 1 of 2 compared fees and about the same on 1.",
+    });
   });
 });
 
@@ -218,5 +225,30 @@ describe("parseCheckId", () => {
     expect(parseCheckId("0")).toBeNull();
     expect(parseCheckId("12abc")).toBeNull();
     expect(parseCheckId(undefined)).toBeNull();
+  });
+});
+
+describe("parseLocation", () => {
+  it("reads a ZIP, with or without the four-digit suffix", () => {
+    expect(parseLocation("32301")).toEqual({ kind: "zip", zip: "32301" });
+    expect(parseLocation(" 32301-1234 ")).toEqual({ kind: "zip", zip: "32301" });
+  });
+
+  it("reads a city with a state code or name", () => {
+    expect(parseLocation("Tallahassee, FL")).toEqual({ kind: "city", city: "Tallahassee", state: "FL" });
+    expect(parseLocation("tallahassee fl")).toEqual({ kind: "city", city: "tallahassee", state: "FL" });
+    expect(parseLocation("Santa Fe, New Mexico")).toEqual({ kind: "city", city: "Santa Fe", state: "NM" });
+    expect(parseLocation("Las Cruces New Mexico")).toEqual({ kind: "city", city: "Las Cruces", state: "NM" });
+  });
+
+  it("asks for the state rather than guessing it", () => {
+    expect(parseLocation("Springfield")).toEqual({ kind: "needs-state", text: "Springfield" });
+    expect(parseLocation("Springfield, Narnia")).toEqual({ kind: "needs-state", text: "Springfield, Narnia" });
+    expect(parseLocation("3230")).toEqual({ kind: "needs-state", text: "3230" });
+  });
+
+  it("is null when empty", () => {
+    expect(parseLocation(undefined)).toBeNull();
+    expect(parseLocation("   ")).toBeNull();
   });
 });

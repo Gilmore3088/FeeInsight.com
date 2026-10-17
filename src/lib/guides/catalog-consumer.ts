@@ -105,7 +105,7 @@ export const CONSUMER_GUIDES: Guide[] = [
             ordered: true,
             items: [
               "Find the fee on your statement. It will say overdraft, paid item, NSF or returned item. The statement also totals these fees for the period and the year to date.",
-              "Note what kind of payment caused it. Debit card purchases and ATM withdrawals follow a consent rule; checks, ACH payments and recurring card payments do not.",
+              "Note what kind of payment caused it. ATM withdrawals and one-time debit card purchases follow a consent rule; checks, ACH payments and recurring debit card payments do not.",
               "Find the policy. The fee schedule or account agreement names the fee, any daily limit and any exemption for small amounts.",
               "Ask which payment caused the fee, how that day's payments were ordered, and whether the fee can be refunded. Refunds are case by case.",
             ],
@@ -137,7 +137,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           {
             type: "list",
             items: [
-              "Opt out of debit card overdraft coverage. Your institution then cannot charge an overdraft fee on card purchases and ATM withdrawals; it may decline them instead. The tradeoff is a declined card at the register.",
+              "Opt out of debit card overdraft coverage. Your institution then cannot charge an overdraft fee on ATM withdrawals or one-time debit card purchases, which are typically declined instead. Recurring debit card payments, checks and ACH payments can still bring an overdraft or NSF fee.",
               "Set a low-balance alert above your largest regular payment. It helps only if you can move money before the payment posts.",
               "Link a savings account or credit line. The median transfer fee is {{od_protection_transfer.median}} against an overdraft median of {{overdraft.median}}, but a transfer covers you only when the linked account holds enough.",
               "Time payments after your deposit posts. This helps when income arrives on a predictable day. It does not help when a deposit is held or the amount varies.",
