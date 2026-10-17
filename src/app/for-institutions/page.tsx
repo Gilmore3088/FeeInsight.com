@@ -170,7 +170,7 @@ function Hero({ exhibit }: { exhibit: ReactNode }) {
             </TrackLink>
           </div>
           <p className="mt-4 text-[13px] text-ink-muted">
-            Pro from {fromMonthly}, monthly or annual.{" "}
+            Hamilton from {fromMonthly}, monthly or annual.{" "}
             <TrackLink
               event="contact_sales"
               eventProps={{ placement: "for_institutions_hero_demo" }}

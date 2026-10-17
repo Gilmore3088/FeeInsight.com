@@ -79,7 +79,7 @@ export default async function RegisterPage({
             style={{ fontFamily: "var(--fi-font-sans)", fontStyle: "italic" }}
           >
             {plan
-              ? `Finish setting up Hamilton — ${PLAN_DISPLAY_NAME[plan]}, ${PLAN_TEAM_LABEL}`
+              ? `Finish setting up Hamilton: ${PLAN_DISPLAY_NAME[plan]}, ${PLAN_TEAM_LABEL}`
               : "Create your free account"}
           </p>
 
@@ -136,7 +136,7 @@ export default async function RegisterPage({
               </h1>
               <p className="mt-2 text-sm text-ink-muted">
                 {plan
-                  ? `Create your account, then continue to checkout for Hamilton — ${PLAN_DISPLAY_NAME[plan]}.`
+                  ? `Create your account, then continue to checkout for Hamilton: ${PLAN_DISPLAY_NAME[plan]}.`
                   : variant === "consumer"
                     ? feeLabel
                       ? `Then pick your bank or credit union and we'll tell you when its ${feeLabel} changes.`

@@ -89,7 +89,7 @@ function PlanCard({ plan, ended }: { plan: AccountPlan; ended: boolean }) {
         id="plan"
         title="Your plan"
         compact
-        action={ended ? <Pill tone="amber">Pro ended</Pill> : <Pill tone="plain">Free</Pill>}
+        action={ended ? <Pill tone="amber">Ended</Pill> : <Pill tone="plain">Free</Pill>}
       >
         <p className="text-[14px] leading-relaxed text-ink">
           {ended

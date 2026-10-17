@@ -95,7 +95,7 @@ export default function TermsPage() {
               are non-refundable except where required by law.
             </li>
             <li>
-              Hamilton pricing tier: Hamilton is priced by the total assets of
+              Pricing tier: Hamilton is priced by the total assets of
               the bank or credit union the plan covers, or at the consultant rate
               for organizations that are not a bank or credit union. If the plan
               is used for a different or larger organization than the one chosen
