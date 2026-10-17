@@ -1,3 +1,6 @@
+-- Public data loaders, round 3: tables for entity and location rows that do not fit area_statistics.
+-- Additive only: new empty tables, indexes and RLS. Changes no existing data.
+
 -- migration-fragments/locations-gleif.sql
 -- AllThePlaces bank/ATM locations and GLEIF legal entities + parent relationships.
 --
@@ -149,3 +152,148 @@ CREATE INDEX IF NOT EXISTS gleif_relationships_publish_idx
   ON public.gleif_relationships (last_seen_publish);
 
 ALTER TABLE public.gleif_relationships ENABLE ROW LEVEL SECURITY;
+
+-- state-lists: two entity tables for Magellan's state list loaders
+-- (src/lib/agents/magellan/registry/state-lists.ts).
+--
+-- Why new tables and not area_statistics: both sources are lists of named entities (one row per
+-- depository or licensee, with an address, a license number and a status), not one number per
+-- area and period. area_statistics still gets the counts: non-bank licensees by state and county
+-- per license type, and the Urban Institute debt shares. Additive only; nothing existing changes.
+-- RLS on with no policies: service-role reads only, like the other registry tables.
+
+-- One row per depository per published list. The list is a quarterly snapshot, so each list date
+-- keeps its own rows (history of who joined, capped or withdrew) and a re-run of the same list
+-- updates in place.
+CREATE TABLE IF NOT EXISTS public.state_public_depositories (
+  id BIGSERIAL PRIMARY KEY,
+  -- State whose public-funds program publishes the list (FL).
+  program_state TEXT NOT NULL,
+  -- Date the list speaks for; list_date_basis says how it was found.
+  list_date DATE NOT NULL,
+  -- file_name | file_title | fetched
+  list_date_basis TEXT NOT NULL,
+  -- cert:<n>, charter:<n>, or normalized name|state|city.
+  record_key TEXT NOT NULL,
+  listed_name TEXT NOT NULL,
+  listed_city TEXT,
+  listed_home_state TEXT,
+  listed_cert TEXT,
+  listed_charter TEXT,
+  -- listed | limited | withdrawing | qualified | other (status_text keeps what was printed).
+  status TEXT NOT NULL,
+  status_text TEXT,
+  status_date DATE,
+  institution_id BIGINT REFERENCES public.institution_sources(id) ON DELETE SET NULL,
+  -- fdic_cert | ncua_charter | name_state; null when unmatched.
+  matched_by TEXT,
+  -- key_not_found | name_state_not_found | ambiguous_name_state; null when matched.
+  unmatched_reason TEXT,
+  source_url TEXT,
+  raw JSONB NOT NULL DEFAULT '{}'::jsonb,
+  agent_run_id BIGINT,
+  fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT state_public_depositories_status_check
+    CHECK (status IN ('listed', 'limited', 'withdrawing', 'qualified', 'other')),
+  CONSTRAINT state_public_depositories_matched_by_check
+    CHECK (matched_by IS NULL OR matched_by IN ('fdic_cert', 'ncua_charter', 'name_state')),
+  UNIQUE (program_state, list_date, record_key)
+);
+
+CREATE INDEX IF NOT EXISTS state_public_depositories_institution_idx
+  ON public.state_public_depositories (institution_id, program_state, list_date DESC)
+  WHERE institution_id IS NOT NULL;
+
+ALTER TABLE public.state_public_depositories ENABLE ROW LEVEL SECURITY;
+
+-- One row per licensee (or licensed location) per state open-data dataset. The dataset is a
+-- current list, so a re-run updates in place and rows the dataset no longer carries are removed
+-- (unless the new read is under half the stored rows; see the registry step).
+CREATE TABLE IF NOT EXISTS public.state_nonbank_licensees (
+  id BIGSERIAL PRIMARY KEY,
+  state TEXT NOT NULL,
+  -- Socrata domain and four-by-four id the row came from.
+  dataset_domain TEXT NOT NULL,
+  dataset_id TEXT NOT NULL,
+  -- lic:<number>|type|address, or normalized name|type|address|zip.
+  record_key TEXT NOT NULL,
+  licensee_name TEXT NOT NULL,
+  dba TEXT,
+  -- License type as published.
+  license_type TEXT NOT NULL,
+  -- payday_deferred_deposit | check_casher | money_transmitter | licensed_lender | other
+  license_category TEXT NOT NULL,
+  license_number TEXT,
+  address TEXT,
+  city TEXT,
+  zip TEXT,
+  county TEXT,
+  county_fips TEXT,
+  -- file_fips | county_name; null when no county could be placed.
+  county_basis TEXT,
+  license_status TEXT,
+  -- true/false from the status text; null when the dataset has no status.
+  active BOOLEAN,
+  license_date DATE,
+  source_url TEXT,
+  raw JSONB NOT NULL DEFAULT '{}'::jsonb,
+  agent_run_id BIGINT,
+  fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT state_nonbank_licensees_category_check
+    CHECK (license_category IN ('payday_deferred_deposit', 'check_casher', 'money_transmitter', 'licensed_lender', 'other')),
+  UNIQUE (state, dataset_id, record_key)
+);
+
+CREATE INDEX IF NOT EXISTS state_nonbank_licensees_area_idx
+  ON public.state_nonbank_licensees (state, license_category, county_fips);
+
+ALTER TABLE public.state_nonbank_licensees ENABLE ROW LEVEL SECURITY;
+
+-- sec-market-value (Magellan registry source 'sec-market-value',
+-- src/lib/agents/magellan/registry/sec-market-value.ts; read by
+-- src/lib/data-store/sec-market-value-aggregates.ts).
+--
+-- One row per SEC filer (CIK), dei concept and as-of date: dei:EntityPublicFloat (USD, as of the
+-- last business day of the filer's second fiscal quarter) and dei:EntityCommonStockSharesOutstanding
+-- (shares, as of each 10-K / 10-Q cover date), from data.sec.gov company facts, for bank holding
+-- companies already linked by the sec-links step. When several filings repeat a date, the most
+-- recently filed value is kept. Values are as filed; nothing is filled, defaulted or derived.
+--
+-- Why a new table: sec_fee_income_facts is keyed (cik, concept, frame) with frame NOT NULL, and
+-- its reader getFeeIncomeFactMedians groups every concept in it as a fee-income line; cover-page
+-- dei facts often carry no SEC frame, so storing them there would need an invented frame and would
+-- surface market values as fee lines. area_statistics is for geographic areas, not filers.
+--
+-- Additive and idempotent: one new empty table and an index. Changes no existing data.
+
+CREATE TABLE IF NOT EXISTS public.sec_market_value_facts (
+  id BIGSERIAL PRIMARY KEY,
+  cik TEXT NOT NULL,
+  institution_id BIGINT REFERENCES public.institution_sources(id) ON DELETE SET NULL,
+  -- 'dei:EntityPublicFloat' | 'dei:EntityCommonStockSharesOutstanding'
+  concept TEXT NOT NULL,
+  -- SEC's own label and description for the concept, from the same response.
+  label TEXT,
+  description TEXT,
+  -- 'USD' | 'shares'
+  unit TEXT NOT NULL,
+  period_end DATE NOT NULL,
+  value NUMERIC NOT NULL,
+  fiscal_year INT,
+  fiscal_period TEXT,
+  -- SEC's calendar frame when the fact has one (e.g. CY2025Q2I); NULL otherwise, never invented.
+  frame TEXT,
+  accession_no TEXT,
+  form TEXT,
+  filed DATE,
+  source_url TEXT,
+  agent_run_id BIGINT,
+  fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (cik, concept, period_end)
+);
+
+CREATE INDEX IF NOT EXISTS sec_market_value_facts_institution_idx
+  ON public.sec_market_value_facts (institution_id, concept, period_end DESC);
+
+ALTER TABLE public.sec_market_value_facts ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.sec_market_value_facts FROM PUBLIC, anon, authenticated;

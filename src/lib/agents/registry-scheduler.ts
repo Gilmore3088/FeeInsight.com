@@ -69,7 +69,23 @@ import {
 import { ECONOMY_DEFINITIONS, ECONOMY_PARSER_VERSION } from "@/lib/agents/magellan/registry/economy";
 import { MAKING_ENDS_MEET_PARSER_VERSION, MAKING_ENDS_MEET_SOURCE } from "@/lib/agents/magellan/registry/making-ends-meet";
 import { PAYDAY_REPORTS_PARSER_VERSION, PAYDAY_REPORTS_SOURCE, paydayReportsPartitions } from "@/lib/agents/magellan/registry/payday-reports";
-import { URBAN_DEBT_PARSER_VERSION, URBAN_DEBT_SOURCE } from "@/lib/agents/magellan/registry/state-lists";
+import {
+  STATE_DEPOSITORIES_PARSER_VERSION,
+  STATE_DEPOSITORIES_SOURCE,
+  STATE_NONBANK_LENDERS_PARSER_VERSION,
+  STATE_NONBANK_LENDERS_SOURCE,
+  stateDepositoriesPartitions,
+  stateNonbankLendersPartitions,
+  URBAN_DEBT_PARSER_VERSION,
+  URBAN_DEBT_SOURCE,
+} from "@/lib/agents/magellan/registry/state-lists";
+import {
+  ALLTHEPLACES_PARSER_VERSION,
+  ALLTHEPLACES_SOURCE,
+  alltheplacesPartitions,
+} from "@/lib/agents/magellan/registry/alltheplaces";
+import { GLEIF_PARSER_VERSION, GLEIF_SOURCE, gleifRegistryPartitions } from "@/lib/agents/magellan/registry/gleif";
+import { SEC_MARKET_VALUE_PARSER_VERSION, SEC_MARKET_VALUE_SOURCE, secMarketValuePartitions } from "@/lib/agents/magellan/registry/sec-market-value";
 import { FHLB_ADVANCE_RATES_PARSER_VERSION, FHLB_ADVANCE_RATES_SOURCE, fhlbAdvanceRatesPartitions } from "@/lib/agents/magellan/registry/fhlb-advance-rates";
 import { BANK_MERGER_ORDERS_PARSER_VERSION, BANK_MERGER_ORDERS_SOURCE, bankMergerOrdersPartitions } from "@/lib/agents/magellan/registry/bank-merger-orders";
 import { BLS_OEWS_PARSER_VERSION, BLS_OEWS_SOURCE, blsOewsPartitions } from "@/lib/agents/magellan/registry/bls-oews";
@@ -152,6 +168,11 @@ export const REGISTRY_PARSER_VERSIONS: Record<string, number> = {
   [MAKING_ENDS_MEET_SOURCE]: MAKING_ENDS_MEET_PARSER_VERSION,
   [PAYDAY_REPORTS_SOURCE]: PAYDAY_REPORTS_PARSER_VERSION,
   [URBAN_DEBT_SOURCE]: URBAN_DEBT_PARSER_VERSION,
+  [ALLTHEPLACES_SOURCE]: ALLTHEPLACES_PARSER_VERSION,
+  [GLEIF_SOURCE]: GLEIF_PARSER_VERSION,
+  [STATE_NONBANK_LENDERS_SOURCE]: STATE_NONBANK_LENDERS_PARSER_VERSION,
+  [STATE_DEPOSITORIES_SOURCE]: STATE_DEPOSITORIES_PARSER_VERSION,
+  [SEC_MARKET_VALUE_SOURCE]: SEC_MARKET_VALUE_PARSER_VERSION,
   [INDUSTRY_EVENTS_SOURCE]: INDUSTRY_EVENTS_PARSER_VERSION,
   [PAYMENT_NETWORKS_SOURCE]: PAYMENT_NETWORKS_PARSER_VERSION,
   [HMDA_SOURCE]: HMDA_PARSER_VERSION,
@@ -257,6 +278,11 @@ export function registryPartitionsBySource(
     [FHLB_ADVANCE_RATES_SOURCE]: fhlbAdvanceRatesPartitions(now),
     [BANK_MERGER_ORDERS_SOURCE]: bankMergerOrdersPartitions(now),
     [PAYDAY_REPORTS_SOURCE]: paydayReportsPartitions(now),
+    [ALLTHEPLACES_SOURCE]: alltheplacesPartitions(now),
+    [GLEIF_SOURCE]: gleifRegistryPartitions(now),
+    [STATE_NONBANK_LENDERS_SOURCE]: stateNonbankLendersPartitions(now),
+    [STATE_DEPOSITORIES_SOURCE]: stateDepositoriesPartitions(now),
+    [SEC_MARKET_VALUE_SOURCE]: secMarketValuePartitions(now),
     [CFPB_SOURCE]: years(Math.max(CFPB_FIRST_YEAR, from.year), now.getUTCFullYear()),
     [SEC_FILINGS_SOURCE]: secBatchPartitions(),
     [BEIGE_BOOK_SOURCE]: beigeBookCandidates(now),
