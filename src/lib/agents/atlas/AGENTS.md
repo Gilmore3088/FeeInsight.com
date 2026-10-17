@@ -55,6 +55,20 @@ by the same guarded update only while the stored city is still the cut. On by Ja
 (Oct 15). The cut city's public page redirects permanently to the full one once no institution
 keeps the cut (`fullCityForCut`). It is a data step, so the pipeline pause holds it.
 
+## Storage watch and retention (`storage-retention.ts`)
+
+`atlas-storage-retention`, after the city repair in the daily scoreboard run, records the database
+size, the 12 largest tables and the growth since its last run, and warns in its summary above
+9,000 MB or 300 MB a day. Supabase grew the disk from 8 to 12 GB on Oct 17, 2026; that day 2.5 of
+the 6.3 GB was log history nothing trimmed. Three trims count what they would delete every day and
+delete (at most 20,000 rows each a run) only while their `RETENTION_LIVE` switch is true; each
+switch turns on by PR after James's typed yes naming it: `legacy_event_log` (retired `agent_events`
+rows over 60 days old), `run_events` (run events over 90 days old, keeping the newest of each kind
+per step and any with a cost) and `attempt_repeats` (attempt-log rows over 30 days old in the
+extract, verify and publish stages that have an identical twin both before and after them; first
+and last copies stay; rows with no institution stay). Fees and audit records are never in scope. It deletes rows, so the pipeline
+pause holds it.
+
 ## Direct state re-search (`priority-state-research.ts`)
 
 A state on `PRIORITY_STATE_RESEARCH_REQUESTS` gets a `manual_repair` run (source
