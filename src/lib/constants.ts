@@ -2,7 +2,7 @@ export const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL || "https://feeinsight.com";
 
 /** The site header logo as a 2x PNG for email headers (mail clients block SVG); 124x22 on screen. */
-export const EMAIL_LOGO_URL = `${SITE_URL.replace(/\/$/, "")}/brand/png/fee-insight-oneline@2x.png`;
+export const EMAIL_LOGO_URL = `${SITE_URL.replace(/\/$/, "")}/brand/png/fee-insight-oneline-email@2x.png`; // brick wordmark on transparent, readable in Gmail dark mode too
 
 // Brand contract: Fee Insight is the company/site; Bank Fee Index is its product.
 export const SITE_NAME = "Fee Insight";
@@ -15,6 +15,14 @@ export const LEGAL_ENTITY_LINE = `${LEGAL_ENTITY_NAME}, a ${LEGAL_ENTITY_STATE} 
 // Unregistered marks take ™; switch to ® only for a mark the USPTO has registered.
 export const TRADEMARK_NOTICE = `${SITE_NAME}™ and The ${PRODUCT_NAME}™ are trademarks of ${LEGAL_ENTITY_NAME}.`;
 export const CONTACT_EMAIL = "hello@bankfeeindex.com";
+/**
+ * The postal address subscription and marketing email carry in the footer (CAN-SPAM). Blank
+ * until the state registration comes through (DECISIONS 2026-10-06): MARKETING_MAILING_ADDRESS
+ * sets it, and until then marketing sends stay refused and site email omits the line.
+ */
+export const MAILING_ADDRESS = "";
+/** Every email we send goes out under this display name. */
+export const EMAIL_SENDER_NAME = SITE_NAME;
 export const RESEARCH_IMPRINT = "Fee Insight Research";
 export const HAMILTON_ATTRIBUTION = "Hamilton — Fee Insight";
 /** Credit line returned with every public API response, for partners to display with the data. */

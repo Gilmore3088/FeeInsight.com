@@ -1,0 +1,24 @@
+Your fees against the institutions you name
+===========================================
+
+The free reports show the market. Hamilton, the Fee Insight workspace, shows where your institution sits in it, against the peers you choose.
+
+- Your schedule, fee by fee, next to your peers' median and middle 50%.
+
+- Peers you pick by charter, asset size, district or county, instead of an anonymous average.
+
+- The source behind every figure: the competitor's published schedule and the date we read it.
+
+- Committee reports built from your peer set.
+
+See Hamilton plans: https://feeinsight.com/subscribe
+
+Prefer a walkthrough first? Ask for a demo (https://feeinsight.com/contact?source=demo).
+
+From here you'll get the monthly Fee Pulse: one finding and one thing to check. Reply any time.
+
+James Gilmore, Fee Insight
+
+--
+You're getting this because you signed up at feeinsight.com.
+Unsubscribe: {$unsubscribe}

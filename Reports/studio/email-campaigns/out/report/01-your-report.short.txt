@@ -1,0 +1,16 @@
+Here is {$report_name|default('your fee report')}
+=================================================
+
+Thanks for confirming. The report is live, so the link always shows the current numbers as new fee schedules are read.
+
+Open your report: {$report_url|default('https://feeinsight.com/reports')}
+
+Free, no login. Bookmark it.
+
+Start at the top. The findings come first, and every table names the institutions and the published schedules behind it.
+
+James Gilmore, Fee Insight
+
+--
+You're getting this because you signed up at feeinsight.com.
+Unsubscribe: {$unsubscribe}

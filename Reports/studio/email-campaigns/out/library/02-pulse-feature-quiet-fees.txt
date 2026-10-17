@@ -1,0 +1,23 @@
+Source for a future Fee Pulse feature. October's Pulse already uses the returned-deposit fee.
+
+PULSE FEATURE · DRAFT
+
+The fees nobody benchmarks (customers notice them anyway)
+=========================================================
+
+Everyone benchmarks overdraft. Few institutions benchmark the fees a customer pays once a year, and those come up in a branch argument or a one-star review.
+
+1. Debit card replacement. Check whether a standard reissue is priced like a rush order. See the market (https://feeinsight.com/fees/card_replacement?utm_source=mailerlite&utm_medium=email&utm_campaign=library&utm_content=pulse-feature-quiet-fees).
+2. Deposited item returned. The customer who deposited a bad check didn't write it. See the market (https://feeinsight.com/fees/deposited_item_return?utm_source=mailerlite&utm_medium=email&utm_campaign=library&utm_content=pulse-feature-quiet-fees).
+3. Stop payment. A lower online price is an easy way to stand out. See the market (https://feeinsight.com/fees/stop_payment?utm_source=mailerlite&utm_medium=email&utm_campaign=library&utm_content=pulse-feature-quiet-fees).
+4. Cashier's check. Often priced once years ago and never revisited. See the market (https://feeinsight.com/fees/cashiers_check?utm_source=mailerlite&utm_medium=email&utm_campaign=library&utm_content=pulse-feature-quiet-fees).
+
+James Gilmore
+Founder, Fee Insight · publisher of the Bank Fee Index
+
+----
+Fee Insight publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules.
+Methodology: https://feeinsight.com/methodology
+Questions? Just reply.
+You're getting this because you signed up at feeinsight.com.
+Unsubscribe: {$unsubscribe}

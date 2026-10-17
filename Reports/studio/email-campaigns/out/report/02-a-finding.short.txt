@@ -1,0 +1,16 @@
+{$report_finding_title|default('How to read your fee report')}
+============================================================
+
+{$report_finding|default('Start with the key findings at the top of your report. Each one names the fee, the market and how many institutions stand behind it.')}
+
+A market finding shows where the typical institution sits. Seeing where yours sits, and which competitors set the top and bottom of the range, takes a fee-by-fee comparison against named competitors.
+
+{$report_finding_cta|default('Open your report')}: {$report_url|default('https://feeinsight.com/reports')}
+
+Each finding links to the table behind it.
+
+James Gilmore, Fee Insight
+
+--
+You're getting this because you signed up at feeinsight.com.
+Unsubscribe: {$unsubscribe}

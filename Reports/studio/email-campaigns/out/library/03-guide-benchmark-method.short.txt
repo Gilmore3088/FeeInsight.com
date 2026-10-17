@@ -1,0 +1,18 @@
+How to benchmark a fee schedule
+===============================
+
+The method behind our reports, in four steps you can run yourself.
+
+[ THE METHOD ]
+1. Pick a real peer group. Same charter type and the institutions your customers actually compare you with.
+2. Compare like with like. Same fee, same channel, same conditions.
+3. Place yourself by percentile. Below the 25th percentile is low; above the 75th is high.
+4. Flag outliers with one rule. More than 2× the peer median, or more than 1.5× the interquartile range above the 75th percentile. Outliers get a written reason or a review.
+
+Read the full methodology (https://feeinsight.com/methodology).
+
+James Gilmore, Fee Insight
+
+--
+You're getting this because you signed up at feeinsight.com.
+Unsubscribe: {$unsubscribe}

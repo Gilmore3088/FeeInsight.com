@@ -1,0 +1,16 @@
+Where to find the fee data for your market
+==========================================
+
+Thanks for subscribing. Start with your state: each headline fee next to the national median, banks and credit unions side by side. The benchmarks come from institutions' published schedules.
+
+Find your state's fee benchmarks: https://feeinsight.com/research
+
+Free, no login.
+
+Also free: a Fed district (https://feeinsight.com/reports), one institution's fees (https://feeinsight.com/institutions) with the schedule they came from, or one fee across the country (https://feeinsight.com/fees). Breakdowns by asset size come with a Hamilton plan.
+
+James Gilmore, Fee Insight
+
+--
+You're getting this because you signed up at feeinsight.com.
+Unsubscribe: {$unsubscribe}

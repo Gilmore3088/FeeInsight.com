@@ -168,6 +168,34 @@ export function nonDepositVerdict(kind: NonDepositDocumentKind, ratePage: boolea
   return hasLendingWording(feeName) ? "lending_wording_on_loan_document" : "kept_deposit_category";
 }
 
+/**
+ * Pure: the takedown reason the live re-check would give one fee, or null when it would stay
+ * live. The same classifier, verdict, reason text and switches as `findNonDepositFees` and
+ * `recheckNonDepositDocuments`; `brokerage_document` counts only with its sub-switch on.
+ *
+ * Hamilton's publish step asks this before a row goes live (takedowns at the source,
+ * 2026-10-17): until then a lending fee read from a loan, rate, card or brokerage page went live
+ * and came down on this check's second look (14 days to Oct 17, prod: 81 `non_deposit_document`,
+ * 5 `lending_wording_on_loan_document`, 5 `brokerage_document` takedowns).
+ */
+export function nonDepositTakedownReason(
+  fee: { documentUrl: string | null | undefined; sourceDocumentId: number | string | null | undefined; canonicalFeeKey: string | null | undefined; feeName: string | null | undefined },
+  switches: { live?: boolean; brokerageLive?: boolean } = {},
+): string | null {
+  const live = switches.live ?? NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE;
+  const brokerageLive = switches.brokerageLive ?? BROKERAGE_DOCUMENT_TAKEDOWN_LIVE;
+  const url = (fee.documentUrl ?? "").trim();
+  const documentId = num(fee.sourceDocumentId ?? null);
+  if (!live || !url || documentId == null) return null;
+  const kind = nonDepositDocumentKind(url);
+  if (!kind) return null;
+  const verdict = nonDepositVerdict(kind, kind === "loan" && ratePageDocument(url), fee.canonicalFeeKey, fee.feeName);
+  if (verdict === "kept_deposit_category" || verdict === "kept_generic_on_rate_page") return null;
+  if (verdict === "brokerage_document" && !brokerageLive) return null;
+  const prefix = verdict === "lending_category" ? NON_DEPOSIT_REASON : verdict;
+  return `${prefix}: ${kind} #${documentId}`;
+}
+
 export interface NonDepositRow {
   fee_published_id: number | string;
   fee_verified_id: number | string | null;

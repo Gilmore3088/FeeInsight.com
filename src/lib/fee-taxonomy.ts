@@ -325,10 +325,10 @@ export const CANONICAL_KEY_MAP: Record<string, string> = {
   escheatment: "dormant_account",
   escheat_processing_fee: "dormant_account",
   abandoned_property_fee: "dormant_account",
-  // --- Skip-a-pay / late payment variants ---
-  skip_a_pay: "late_payment",
-  skipapay: "late_payment",
-  skipapayment: "late_payment",
+  // --- Skip-a-pay: a lending fee, not a late payment (James, Oct 17; guard v70) ---
+  skip_a_pay: "other_lending_fee",
+  skipapay: "other_lending_fee",
+  skipapayment: "other_lending_fee",
   reinstatement: "late_payment",
   // --- Fax / research / admin variants ---
   // A fax or a document copy is document reproduction (Oct 9: one home for fax and copies).
@@ -410,8 +410,8 @@ export const CANONICAL_KEY_MAP: Record<string, string> = {
   fax_services: "document_reproduction",
   christmas_club_early_withdrawal: "early_closure",
   christmas_club_withdrawal_fee: "early_closure",
-  skipapayment_fee: "late_payment",
-  skipapay_fee: "late_payment",
+  skipapayment_fee: "other_lending_fee",
+  skipapay_fee: "other_lending_fee",
   zipper_bags: "night_deposit",
   membership_share: "monthly_maintenance",
   western_union: "wire_domestic_outgoing",

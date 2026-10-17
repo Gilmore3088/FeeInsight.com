@@ -30,7 +30,7 @@ function createDbMock(
   depthRows: Array<Record<string, unknown>> = deepInstitutionRows(rows),
   movementEvidence: Array<Record<string, unknown>> = [],
   /** What the sweeps' own reads (#1069 step 2) return for the rows about to publish. */
-  sweepRows: { otherBank?: unknown[]; unconfirmedHost?: unknown[]; business?: unknown[] } = {},
+  sweepRows: { otherBank?: unknown[]; unconfirmedHost?: unknown[]; business?: unknown[]; owner?: unknown[] } = {},
 ): DbMock {
   let nextPublishedId = 1201;
   const db = vi.fn((strings: TemplateStringsArray) => {
@@ -54,6 +54,7 @@ function createDbMock(
     if (query.includes("consumer_fee_id")) return Promise.resolve(sweepRows.business ?? []);
     if (query.includes("own_label")) return Promise.resolve(sweepRows.unconfirmedHost ?? []);
     if (query.includes("names_own_bank")) return Promise.resolve(sweepRows.otherBank ?? []);
+    if (query.includes("named_other_id")) return Promise.resolve(sweepRows.owner ?? []);
     if (query.includes("FROM verified_fee_observations")) return Promise.resolve(rows);
     return Promise.resolve([]);
   });
@@ -393,8 +394,9 @@ describe("Hamilton agentic publish", () => {
 
     expect(result.publishedFees).toBe(1);
     expect(result.results[0]).toMatchObject({ status: "published", feePublishedId: null });
-    // The selection, the depth read and the three sweep-rule reads (#1069 step 2), all SELECTs.
-    expect(db.unsafe).toHaveBeenCalledTimes(5);
+    // The selection, the depth read, the three sweep-rule reads (#1069 step 2) and the
+    // document-owner verdict read, all SELECTs.
+    expect(db.unsafe).toHaveBeenCalledTimes(6);
     expect(writes(db)).toEqual([]);
   });
 
@@ -417,7 +419,7 @@ describe("Hamilton agentic publish", () => {
       sweepRule: { rule: "other_bank_document", sweepReason: "other_bank_document: peoplesbank-wa.com" },
     });
     const sweepReads = db.unsafe.mock.calls.filter((call) => String(call[0]).includes("fv.fee_verified_id = ANY($1::bigint[])"));
-    expect(sweepReads).toHaveLength(3);
+    expect(sweepReads).toHaveLength(4);
     for (const call of sweepReads) expect(call[1][0]).toEqual([801]);
   });
 
@@ -486,6 +488,46 @@ describe("Hamilton agentic publish", () => {
       4: { rule: "business_schedule", sweepReason: "business_schedule: consumer fee #9002" },
     });
     expect(PUBLISH_REFUSE_SWEEP_RULES_LIVE).toBe(true);
+  });
+
+  it("refuses a row whose pair Darwin judged another bank's document, after the three sweeps", async () => {
+    const refusals = publishSweepRefusals(
+      [{ fee_verified_id: 1, document_host: "otherbank.example", names_own_bank: false }],
+      [],
+      [],
+      [
+        { fee_verified_id: 1, named_other_id: 77 },
+        { fee_verified_id: 2, named_other_id: "4521" },
+        { fee_verified_id: 3, named_other_id: null },
+      ],
+    );
+    expect(Object.fromEntries(refusals)).toEqual({
+      1: { rule: "other_bank_document", sweepReason: "other_bank_document: otherbank.example" },
+      2: { rule: "document_owner", sweepReason: "document_owner: names institution 4521" },
+    });
+
+    const db = createDbMock([verifiedFee], [], undefined, [], { owner: [{ fee_verified_id: 801, named_other_id: 4521 }] });
+    const result = await runHamiltonPublish({ runId: 136, refuseSweepRulesLive: true, db: asPublishDb(db) });
+    expect(result.publishedFees).toBe(0);
+    expect(result.results[0]).toMatchObject({
+      status: "skipped",
+      reason: "Refused at publish, a sweep would take it down: document_owner: names institution 4521",
+    });
+    expect(result.sweepCheck).toMatchObject({ byRule: { document_owner: 1 }, refused: 1 });
+  });
+
+  it("refuses a fee read from a loan or brokerage document that Darwin's non-deposit re-check would take down", () => {
+    const loanFee = {
+      ...verifiedFee,
+      canonical_fee_key: "late_payment",
+      fee_name: "Late Payment Fee",
+      document_url: "https://www.example-bank.com/docs/home-equity-line-of-credit-disclosure.pdf",
+    };
+    const reason = publishSkipReason(loanFee, 0.85, true);
+    expect(reason).toMatch(/^Refused at publish, Darwin's re-check would take it down: /);
+    expect(publishSkipReason({ ...verifiedFee, document_url: "https://www.example-bank.com/docs/fee-schedule.pdf" }, 0.85, true) ?? "").not.toMatch(
+      /Darwin's re-check/,
+    );
   });
 
   it("skips rows below the publish confidence threshold", async () => {

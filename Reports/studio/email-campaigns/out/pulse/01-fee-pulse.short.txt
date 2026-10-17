@@ -1,14 +1,20 @@
-Where the Bank Fee Index stands this month, and one idea to use it.
+Returned-deposit fees: the middle half spans $16
+================================================
 
-This month in the Bank Fee Index
-* $30 — median overdraft (1,324 institutions)
-* $30 — median NSF (1,630 institutions)
-* $5.50 — median monthly maintenance (530 institutions)
-[ ONE IDEA TO USE THIS MONTH ]
-Check whether your schedule charges NSF on re-presented items, and how many times. If the answer takes more than one sentence, so will the conversation with your examiner.
+When a customer deposits a check that bounces, the middle half of the banks and credit unions in the index list a fee between $9 and $25. That spans $16, compared with $8 for overdraft ($25 to $33). The figures come from 1,821 institutions that publish a returned-deposit fee.
 
-Full email with tables and charts: {$url}
+Overdraft (paid item): $25 to $33, median $30
+
+NSF (returned item): $25 to $32, median $30
+
+Stop payment: $22 to $30, median $27.50
+
+Deposited item returned: $9 to $25, median $15
+
+Middle half (25th to 75th percentile) with the median marked. Bank Fee Index, national, October 17, 2026. One value per institution, from its own published fee schedule. Institutions behind each fee: Overdraft (paid item) 2,500, NSF (returned item) 2,668, Stop payment 3,193, Deposited item returned 1,821.
+
+The chart is in the full email: {$url}
 
 --
-Fee Insight · feeinsight.com · reply with questions
+You're getting this because you signed up at feeinsight.com.
 Unsubscribe: {$unsubscribe}

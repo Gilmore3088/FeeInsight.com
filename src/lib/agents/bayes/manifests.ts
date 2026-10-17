@@ -398,6 +398,9 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v69 (Oct 17): returned foreign items leave NSF, IRA closing charges leave early closure, and
     // the non-network ATM fee refuses non-customers' surcharges at the institution's own ATMs, ATM
     // plans and ATM-named lines that price something else.
+    // v70 (Oct 17): card-product fees under the non-network ATM fee and card inactivity under the
+    // dormant account fee fail (takedowns held by CARD_PRODUCT_TAKEDOWN_LIVE), and skipped loan
+    // payments leave late payment and loan origination for other lending.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",
