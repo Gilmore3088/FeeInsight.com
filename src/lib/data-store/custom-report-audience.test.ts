@@ -8,6 +8,8 @@ vi.mock("./connection", () => {
   return { sql, getSql: () => sql };
 });
 import { getCustomReportMarketData } from "./custom-report-market";
+import { institutionValue } from "@/lib/fee-institution-value";
+import { buildAmountEvidence } from "@/lib/custom-report/evidence";
 
 beforeEach(() => { state.queries.length = 0; state.replies.length = 0; });
 
@@ -64,5 +66,41 @@ describe("the subject's records the source check could not match", () => {
     expect(result?.unmatchedOwn).toEqual([
       expect.objectContaining({ line: "monthly_maintenance", id: 140267, amount: 8.95, fee_name: "Monthly service charge (Everyday Checking)" }),
     ]);
+  });
+
+  it("reads both of Capital City's checking prices from its stored page, as its profile shows them", async () => {
+    // Capital City Bank's checking page as stored (agent_source_texts 29133, read Oct 12). The
+    // profile (/institution/323) shows $7.95 and $8.95 and compares at their median, $8.45; the
+    // report reads the same two records through the shared source check and the same
+    // institutionValue rule, so neither page drops the Everyday Checking price.
+    const STORED = [
+      "Carefree Checking", "Features and benefits:", "No minimum balance", "$7.95 monthly service charge", "Only $50 minimum opening deposit",
+      "Everyday Checking", "Features and benefits:",
+      "No monthly service charge with either 20 debit card transactions* OR a minimum daily balance of $1,500; otherwise, $8.95 per month",
+      "Free e-statements**",
+      "Performance Checking", "Features and benefits:", "No monthly service charge with a minimum daily balance of $4,000; otherwise, $8.95 per month",
+    ].join("\n\n");
+    state.replies.push(
+      [{ id: 323, institution_name: "Capital City Bank", city: "Tallahassee", state_code: "FL", charter_type: "bank", cert_number: "9622", asset_size: null }],
+      [{ county_fips: "12073", city: "Tallahassee", state: "FL", year: 2026, basis: "branch_counties" }],
+      [
+        fee(323, 140263, "Carefree Checking Monthly service charge", "7.95", "$7.95 monthly service charge"),
+        fee(323, 140267, "Monthly service charge (Everyday Checking)", "8.95", "No monthly service charge with either 20 debit card transactions* OR a minimum daily balance of $1,500; otherwise, $8.95 per month"),
+      ],
+      [{ source_document_id: "31376", institution_id: 323, source_url: "https://www.ccbg.com/checking", normalized_text: STORED, read_on: "2026-10-12" }],
+    );
+    const result = await getCustomReportMarketData(323);
+    expect(result?.unmatchedOwn).toEqual([]);
+    expect(result?.lines).toHaveLength(1);
+    const line = result!.lines[0];
+    expect(line.institution_id).toBe(323);
+    expect(line.amount).toBe(institutionValue("monthly_maintenance", [7.95, 8.95]));
+    expect(line.amount).toBeCloseTo(8.45, 10);
+    expect(line.tiers?.map((t) => [t.id, t.amount])).toEqual([[140263, 7.95], [140267, 8.95]]);
+    // The report's evidence step keeps both records, so the page compares at $8.45, not $7.95.
+    const evidence = buildAmountEvidence(line);
+    expect(evidence.excluded).toEqual([]);
+    expect(evidence.records.map((r) => r.amount)).toEqual([7.95, 8.95]);
+    expect(evidence.amount).toBeCloseTo(8.45, 10);
   });
 });
