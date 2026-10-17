@@ -1,7 +1,7 @@
 import { strToU8, zipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
 
-import { hmdaPartitions, latestHmdaYear, runRegistryHmda, runRegistryHmdaApor } from "./hmda";
+import { HMDA_PARSER_VERSION, hmdaPartitions, latestHmdaYear, runRegistryHmda, runRegistryHmdaApor } from "./hmda";
 import type { RegistryDb } from "./partitions";
 
 function createDb() {
@@ -99,7 +99,7 @@ describe("registry hmda run", () => {
     const r = await runRegistryHmda({ partitionKey: "2024-CA", db, fetchOptions: { fetchImpl: hmdaFetch(), backoffMs: 0 } });
     expect(r).toMatchObject({ writtenLenders: 2, matchedLenders: 1, unmatchedLenders: 1, writtenOriginationRows: 3, writtenCostRows: 2, removedStaleRows: 2 });
     const detail = partitionDetail(statements);
-    expect(detail.parser_version).toBe(1);
+    expect(detail.parser_version).toBe(HMDA_PARSER_VERSION);
     expect(detail.cleaning.unmatched_lenders).toBe(1);
     expect(detail.cleaning.lenders_not_in_panel).toBe(1);
     expect(detail.cleaning.panel_rssd_field).toBe("ID_RSSD");
