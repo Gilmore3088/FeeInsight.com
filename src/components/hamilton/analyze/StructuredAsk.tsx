@@ -384,6 +384,7 @@ function StructuredAskConversation({
   const inFlight = useRef<AbortController | null>(null);
   const lastQuestion = useRef<string | null>(null);
   const lastNonce = useRef<number | null>(null);
+  const askRun = useRef(0);
   const [memo, setMemo] = useState<MemoState | undefined>(undefined);
   // An answer Hamilton could not use: it asks again, and the card says why.
   const [notFound, setNotFound] = useState<string | null>(null);
@@ -398,6 +399,10 @@ function StructuredAskConversation({
   const answering = useRef(false);
   useEffect(() => {
     active.current = true;
+    // A remount (React Strict Mode runs effects twice in development) aborts the first request,
+    // so the question is asked again rather than left waiting with the engine marked busy.
+    lastQuestion.current = null;
+    lastNonce.current = null;
     return () => {
       active.current = false;
       requestGeneration.current += 1;
@@ -493,11 +498,13 @@ function StructuredAskConversation({
     setMarket(null);
     setNotFound(null);
     const asked = question;
+    // Only the newest ask may show its answer or hand it to a written answer.
+    const token = ++askRun.current;
     void (async () => {
       if (isLocalMarketQuestion(asked) && !matchFeeCategory(asked)) {
         setBusy(true);
         const found = await postMarket(institutionId);
-        if (!active.current) return;
+        if (!active.current || token !== askRun.current) return;
         setBusy(false);
         if (lastQuestion.current !== asked) return;
         if (found) {
@@ -507,7 +514,7 @@ function StructuredAskConversation({
         }
       }
       const res = await run({ question: asked });
-      if (!active.current || lastQuestion.current !== asked) return;
+      if (!active.current || token !== askRun.current || lastQuestion.current !== asked) return;
       if (res) setResponse(res);
       follow(asked, res);
     })();

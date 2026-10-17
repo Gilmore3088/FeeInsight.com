@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HamiltonSelectedInstitutionContext } from "@/lib/hamilton/institution-context";
 import type { PeerListResponse, PeerListRow } from "@/lib/hamilton/peer-list";
@@ -362,5 +363,17 @@ describe("no stale requests (H04-T07, AC4)", () => {
     await act(async () => { release(json(clarifying("fee.overdraft.annual_items", "number", "How many overdraft items a year?"))); });
     expect(screen.queryByText("How many overdraft items a year?")).toBeNull();
     expectOneComposer(/Your question/);
+  });
+});
+
+describe("progress after an engine failure under Strict Mode (H04-T07/T08)", () => {
+  it("clears the reading strip once the engine fails and hands one question to the written answer", async () => {
+    engine = () => json({ error: "down" }, 500);
+    render(<StrictMode><AnalyzeWorkspace userId={7} institutionId="101" selectedInstitution={cu} /></StrictMode>);
+    await type("what is a call report?");
+    await waitFor(() => expect(chat.send).toHaveBeenCalledTimes(1));
+    await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+    expect(screen.queryByText("Hamilton is reading the selected institution and market data.")).toBeNull();
+    expect(chat.send).toHaveBeenCalledTimes(1);
   });
 });
