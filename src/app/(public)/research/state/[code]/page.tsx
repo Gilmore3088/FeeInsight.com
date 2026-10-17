@@ -14,9 +14,11 @@ import { LeadCapture } from "@/components/public/lead-capture";
 import { TrackLink } from "@/components/track-link";
 import { Button, SearchInput } from "@/brand/components";
 import { DEMO_REQUEST_NAV, PRIMARY_CTA_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
-import { REPORT_OFFER, SITE_NAME, SITE_URL } from "@/lib/constants";
+import { PRODUCT_NAME, REPORT_OFFER, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
-import { getPeerIndexCached, getStateFeeIndexesCached, getStateHubCached, getStateMarketFeesCached, getStateStatsCached } from "@/lib/data-store/public-cached-reads";
+import { getPeerIndexCached, getStateFeeIndexesCached, getStateHubCached, getStateMarketFeesCached, getStatePeerSetIndexesCached, getStateStatsCached } from "@/lib/data-store/public-cached-reads";
+import { MIN_PEERS_FOR_PEER_SET_MEDIAN } from "@/lib/data-store/peer-fee-rank";
+import { StatePeerSets, statePeerSetView } from "./state-peer-sets";
 import { MIN_COMPLAINT_PEERS, MIN_LEADER_BRANCHES } from "@/lib/data-store/district-hub";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import type { StateFeeIndexes } from "@/lib/data-store";
@@ -79,6 +81,8 @@ function firstSentence(text: string): string {
 
 interface PageProps {
   params: Promise<{ code: string }>;
+  /** `peers`: the peer group the "Fee medians by peer group" exhibit shows (a size band, regulator or credit union charter). */
+  searchParams?: Promise<{ peers?: string }>;
 }
 
 /** "2026-Q2" -> "2025-Q2", the quarter a year-over-year change starts from. */
@@ -126,8 +130,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   };
 }
 
-export default async function StateReportPage({ params }: PageProps) {
+export default async function StateReportPage({ params, searchParams }: PageProps) {
   const { code } = await params;
+  const requestedPeers = (await searchParams)?.peers ?? null;
   const stateCode = code.toUpperCase();
   const stateName = STATE_NAMES[stateCode];
   if (!stateName) notFound();
@@ -139,7 +144,7 @@ export default async function StateReportPage({ params }: PageProps) {
 
   // Every read is served from the public cache between publishes.
   const district = STATE_TO_DISTRICT[stateCode];
-  const [summary, indexes, nationalIndex, districtIndex, sampleLive, marketFees, hub, beigeHeadline, beigeSections] = await Promise.all([
+  const [summary, indexes, nationalIndex, districtIndex, sampleLive, marketFees, hub, beigeHeadline, beigeSections, peerSets] = await Promise.all([
     getPublicStatsSummary(),
     getStateFeeIndexesCached(stateCode).catch(() => EMPTY_INDEXES),
     getPublicNationalIndex(),
@@ -150,6 +155,7 @@ export default async function StateReportPage({ params }: PageProps) {
     getStateHubCached(stateCode).catch(() => null),
     district ? getBeigeBookHeadline(district, 400) : Promise.resolve(null),
     district && showFullDistrict ? getLatestBeigeBook(district) : Promise.resolve([]),
+    getStatePeerSetIndexesCached(stateCode).catch(() => []),
   ]);
   const asOf = summary.refreshedOn;
 
@@ -194,6 +200,13 @@ export default async function StateReportPage({ params }: PageProps) {
       : cuLowerOn >= bankLowerOn
         ? `Credit unions have lower medians on ${cuLowerOn} of ${charter.length} fees`
         : `Banks have lower medians on ${bankLowerOn} of ${charter.length} fees`;
+  // Peer groups within the state, on the same fees the board shows, against the state's own medians.
+  const peerView = statePeerSetView(
+    peerSets,
+    shown.map((f) => ({ key: f.key, name: f.name, median: f.median })),
+    stateName,
+    requestedPeers,
+  );
   // The local layer: the state's largest markets, each read against the state, district and U.S.
   const districtLabel = district ? DISTRICT_NAMES[district] : null;
   // The ladder names each fee as the rest of the page does.
@@ -328,6 +341,29 @@ export default async function StateReportPage({ params }: PageProps) {
             </div>
             <CharterField fees={charter} place={stateName} />
           </section>
+        )}
+
+        {/* The state's institutions by peer group: size band, bank regulator, credit union charter. */}
+        {peerView && (
+          <HubSection
+            id="peers"
+            title="Fee medians by peer group"
+            line={peerView.finding}
+            source={
+              <>
+                Institutions headquartered in {stateName} that publish verified fees, {PRODUCT_NAME}. Size bands from FDIC and NCUA total
+                assets; bank regulator from the FDIC registry; credit union charter from NCUA. Each institution counts once: its highest
+                overdraft fee, the middle of its schedule for other fees. A group median needs at least {MIN_PEERS_FOR_PEER_SET_MEDIAN}{" "}
+                institutions. The {stateName} median counts every institution headquartered in the state.
+              </>
+            }
+          >
+            <StatePeerSets
+              view={peerView}
+              stateName={stateName}
+              hrefFor={(key) => `/research/state/${stateCode}?peers=${encodeURIComponent(key)}#peers`}
+            />
+          </HubSection>
         )}
 
         {/* Who serves the state: deposits at branches in the state, and headquartered institutions by size. */}

@@ -22,8 +22,8 @@ import { getAlertSubscriptionForInstitution } from "@/lib/data-store/alerts";
 import { HEADLINE_FEE_KEYS } from "@/lib/data-store/market-readiness";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { FeeAlertControl } from "./fee-alert-control";
-import { peerGroupLabel } from "./peer-rank-teaser";
-import { getInstitutionPeerRankCached, getPeerIndexCached } from "@/lib/data-store/public-cached-reads";
+import { PeerRankTeaser, peerGroupLabel } from "./peer-rank-teaser";
+import { getInstitutionPeerRankCached, getInstitutionPeerSetsCached, getPeerIndexCached } from "@/lib/data-store/public-cached-reads";
 import { SITE_NAME } from "@/lib/constants";
 import type { FeePublicationStatus } from "@/lib/institution-quality";
 import { buildPublicInstitutionProfileLinks } from "@/lib/institution-profile-links";
@@ -69,8 +69,12 @@ import { ThinProfilePanel } from "./thin-profile-panel";
 
 interface PageProps {
   params: Promise<{ id: string }>;
-  /** `fee`: the category a consumer guide sent the reader to compare; highlights that row. */
-  searchParams?: Promise<{ fee?: string }>;
+  /**
+   * `fee`: the category a consumer guide sent the reader to compare; highlights that row.
+   * `peers`: the peer set the "Against peers" section compares with (state, district, size,
+   * regulator, metro, nearest); absent, the report rule's group.
+   */
+  searchParams?: Promise<{ fee?: string; peers?: string }>;
 }
 
 const TAXONOMY = new Set(Object.values(FEE_FAMILIES).flat());
@@ -127,7 +131,9 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
   const { id } = await params;
   const instId = parseInt(id, 10);
   if (Number.isNaN(instId)) notFound();
-  const requestedFee = (await searchParams)?.fee ?? "";
+  const query = (await searchParams) ?? {};
+  const requestedFee = query.fee ?? "";
+  const requestedPeers = typeof query.peers === "string" ? query.peers : null;
   const focusFeeCategory = TAXONOMY.has(requestedFee) ? requestedFee : null;
 
   const inst = await getPublicInstitutionForPage(instId);
@@ -139,7 +145,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
     catalogVisibleFeeCount === 0 &&
     Boolean(inst.fee_schedule_url || inst.latest_source_status || (inst.latest_extracted_fee_count ?? 0) > 0);
 
-  const [visibleFees, rateFees, evidence, financials, user, peerRank] = await Promise.all([
+  const [visibleFees, rateFees, evidence, financials, user, peerRank, peerSets] = await Promise.all([
     catalogVisibleFeeCount > 0 ? getVisibleFeesForPage(instId) : Promise.resolve([]),
     getRateFeesForPage(instId),
     shouldLoadPipelineEvidence
@@ -150,7 +156,12 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
     ),
     getCurrentUser().catch(() => null),
     getInstitutionPeerRankCached(instId).catch(fallbackTo("peer rank", null)),
+    getInstitutionPeerSetsCached(instId, requestedPeers).catch(fallbackTo("peer sets", null)),
   ]);
+  const peerSetHref = (key: string) => {
+    const params = new URLSearchParams({ ...(focusFeeCategory ? { fee: focusFeeCategory } : {}), peers: key });
+    return `/institution/${instId}?${params.toString()}#peers`;
+  };
 
   const alertSubscription = user
     ? await getAlertSubscriptionForInstitution(user.id, instId).catch(fallbackTo("alert subscription", null))
@@ -379,6 +390,8 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
               stateCode={stateHasBands ? inst.state_code : null}
               stateLabel={stateHasBands ? marketLabel : null}
             />
+
+            {!thinProfile && peerSets && <PeerRankTeaser sets={peerSets} hrefFor={peerSetHref} />}
 
             {thinProfile && (
               <ThinProfilePanel

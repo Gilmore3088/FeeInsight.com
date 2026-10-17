@@ -31,8 +31,11 @@ import {
   peerFiltersForRule,
   peerGroupValuesFrom,
   peerRankFromGroupValues,
+  pickPeerSet,
   type InstitutionPeerRank,
+  type InstitutionPeerSets,
 } from "./peer-fee-rank";
+import { getInstitutionPeerChoices, getStatePeerSetIndexes } from "./public-peer-sets";
 import { getMarketBranchFootprint } from "./branches";
 import { getNationalRateStats } from "./rate-fees";
 import { getCountyFeeMap } from "./state-visuals";
@@ -167,7 +170,8 @@ const getHeadlineCoverageRowsCached = cachedPublicRead("headline-coverage-rows",
  * refresh of the public cache: about 300 catalog reads an hour at ~460 ms on Oct 9. Like the
  * coverage rows, it is read beside the other cache, never inside it.
  */
-const getAllPeerRankValuesCached = cachedPublicRead("peer-rank-values", getAllPeerRankValues);
+// v2: each value carries its asset-size tier, so a size peer set filters the same list.
+const getAllPeerRankValuesCached = cachedPublicRead("peer-rank-values-v2", getAllPeerRankValues);
 export async function getInstitutionPeerRankCached(institutionId: number): Promise<InstitutionPeerRank | null> {
   const rule = reportRuleCheckFromRows(institutionId, await getHeadlineCoverageRowsCached());
   const filters = peerFiltersForRule(rule);
@@ -175,6 +179,22 @@ export async function getInstitutionPeerRankCached(institutionId: number): Promi
   const values = peerGroupValuesFrom(await getAllPeerRankValuesCached(), filters);
   return peerRankFromGroupValues(institutionId, rule, filters, values);
 }
+/** The institution page's peer-set choices, resolved once per institution between publishes. */
+const getInstitutionPeerChoicesCached = cachedPublicRead("institution-peer-sets-v1", getInstitutionPeerChoices);
+/**
+ * The peer sets an institution page offers and the one it shows (pickPeerSet): the choices
+ * resolve per institution, the values filter the shared national list in code.
+ */
+export async function getInstitutionPeerSetsCached(institutionId: number, requested?: string | null): Promise<InstitutionPeerSets | null> {
+  const [rows, choices, all] = await Promise.all([
+    getHeadlineCoverageRowsCached(),
+    getInstitutionPeerChoicesCached(institutionId),
+    getAllPeerRankValuesCached(),
+  ]);
+  return pickPeerSet(institutionId, reportRuleCheckFromRows(institutionId, rows), choices, all, requested);
+}
+/** The state page's peer sets (size, regulator, credit union charter) with their fee medians. */
+export const getStatePeerSetIndexesCached = cachedPublicRead("state-peer-sets-v1", getStatePeerSetIndexes);
 export const getMarketBranchFootprintCached = cachedPublicRead("market-branch-footprint", getMarketBranchFootprint);
 /** The district hub's exhibits beyond the fee board (district-hub.ts), one entry per district. */
 // v3: institution groups carry the regulator size_group.
