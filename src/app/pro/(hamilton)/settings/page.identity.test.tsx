@@ -37,10 +37,11 @@ vi.mock("@/lib/data-store/saved-peers", () => ({
 }));
 vi.mock("@/lib/data-store/fee-index", () => ({ getPeerGroupCounts: mocks.peerCounts }));
 vi.mock("@/lib/hamilton/peer-index", () => ({
-  buildInstitutionPeerFilterCandidates: () => [],
-  describePeerFilters: () => "the national index",
-  parseSavedPeerSetFilters: () => ({}),
+  resolveSavedPeerGroupMembership: async () => ({ status: "ready", institutionIds: [7], filters: { institutionIds: [7] }, label: "Peers", problem: null }),
 }));
+vi.mock("@/lib/data-store/peer-sets", () => ({ getPeerSubject: async () => null }));
+vi.mock("@/lib/data-store/peer-markets", () => ({ getHomeMarket: async () => null }));
+vi.mock("@/lib/data-store/financial", () => ({ getMarketConcentration: async () => [] }));
 vi.mock("@/lib/hamilton/workspace-invite-link", () => ({
   inviteLinksConfigured: () => false,
   buildWorkspaceInvitePath: () => null,
@@ -112,7 +113,7 @@ describe("Settings research identity", () => {
     expect(screen.queryByText("Account A shared cohort")).not.toBeInTheDocument();
     expect(screen.queryByText("Authored A shared cohort")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add a peer group" })).toBeEnabled();
-    expect(mocks.peerCounts).toHaveBeenCalledWith([{}], 8629);
+    expect(mocks.peerCounts).toHaveBeenCalledWith([{ institutionIds: [7] }], 8629);
     expect(mocks.peerWorkspace).not.toHaveBeenCalled();
     expect(mocks.update).not.toHaveBeenCalled();
     expect(mocks.claim).not.toHaveBeenCalled();

@@ -166,16 +166,36 @@ describe("H01 Structured Ask identity acceptance", () => {
     expect(identityStore.memberships.mock.calls).toEqual([[7], [7]]);
   });
 
+  it("says a chosen peer group that matches no institutions is empty and computes no peers", async () => {
+    identityStore.memberships.mockResolvedValue([home]);
+    const group = { status: "empty", id: 51, name: "Lake banks", label: "Lake banks", institutionId: 2, institutionName: "Research Bank", reason: "None found: no institution meets all of its filters." };
+    identityStore.peers.mockResolvedValue(group);
+    identityStore.research.mockClear();
+    const result = await answerAsk(user, { institutionId: "2", question: "overdraft?" });
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({
+      kind: "peer_group_empty",
+      shortAnswer: 'Your peer group "Lake banks" matches no institutions for Research Bank. None found: no institution meets all of its filters.',
+      peerGroupEmpty: group,
+      identityContext: { peerSetId: 51, peerBaselineLabel: "Lake banks", peerBaselineSource: "saved-peer-set" },
+    });
+    expect(identityStore.research).not.toHaveBeenCalled();
+    // The written memo cannot show the empty state, so it says so instead of writing.
+    const memo = await answerAskMemo(user, { institutionId: "2", question: "overdraft?" });
+    expect(memo.body).toEqual({ status: "unavailable", reason: result.body && "shortAnswer" in result.body ? result.body.shortAnswer : "" });
+    expect(identityStore.research).not.toHaveBeenCalled();
+  });
+
   it("AC2: memo preserves frozen research/account/peer identities after peer settings and memberships change", async () => {
     identityStore.memberships.mockResolvedValue([home]);
-    identityStore.peers.mockResolvedValue({ id: 51, name: "Original peers", label: "Original peers", filters: {} });
+    identityStore.peers.mockResolvedValue({ status: "ready", id: 51, name: "Original peers", label: "Original peers", filters: { institutionIds: [3, 4] }, institutionCount: 2, institutionId: 2 });
     identityStore.research.mockImplementation(async (institutionId: number) => overdraftResearch({ institutionId, institutionName: "Research Bank", peerLabel: "Original peers" }));
     await answerAsk(user, { institutionId: "2", question: "overdraft?" });
     const saved = store.analyses[0].response;
     const frozenStory = saved.storyline;
     expect(saved.identityContext).toMatchObject({ researchInstitutionId: 2, accountInstitutionId: 1, peerSetId: 51, peerBaselineLabel: "Original peers", peerBaselineSource: "saved-peer-set" });
     identityStore.memberships.mockResolvedValue([{ ...home, institutionId: 8, institutionName: "New account institution" }]);
-    identityStore.peers.mockClear().mockResolvedValue({ id: 52, label: "New peers", filters: {} });
+    identityStore.peers.mockClear().mockResolvedValue({ status: "ready", id: 52, name: "New peers", label: "New peers", filters: { institutionIds: [5] }, institutionCount: 1, institutionId: 2 });
     identityStore.research.mockClear();
     const result = await answerAskMemo(user, { institutionId: "2", question: "overdraft?", savedAnalysisId: "a1" });
     expect(result.status).toBe(200);

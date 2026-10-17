@@ -9,6 +9,11 @@ vi.mock("@/lib/data-store/fee-index", () => ({
   getNationalIndex: vi.fn(),
   getNationalIndexCached: vi.fn(),
 }));
+const peerSets = vi.hoisted(() => {
+  class PeerSetError extends Error {}
+  return { PeerSetError, resolvePeerSet: vi.fn(), getPeerSubject: vi.fn(), resolvePeerInstitutionIds: vi.fn() };
+});
+vi.mock("@/lib/data-store/peer-sets", () => peerSets);
 
 import { getActivePeerSet, peerSetCandidate, pickActivePeerSet } from "./active-peer-set";
 import { describePeerFilters } from "./peer-index";
@@ -73,9 +78,10 @@ describe("getActivePeerSet", () => {
 
   it("reads the defaults for the user and workspace and applies the precedence", async () => {
     mocks.getDefaultPeerSets.mockResolvedValue([personal, team]);
+    peerSets.resolvePeerInstitutionIds.mockResolvedValue([11, 12, 13]);
     const active = await getActivePeerSet({ userId: 7, institutionId: 2945 });
     expect(mocks.getDefaultPeerSets).toHaveBeenCalledWith({ userId: "7", institutionId: 2945 });
-    expect(active?.id).toBe(10);
+    expect(active).toMatchObject({ status: "ready", id: 10, filters: { institutionIds: [11, 12, 13] }, institutionCount: 3 });
   });
 
   it("returns null without a user, so a workspace's choice never shows outside it", async () => {
@@ -85,6 +91,7 @@ describe("getActivePeerSet", () => {
 
   it("falls back to the personal default when no institution is given", async () => {
     mocks.getDefaultPeerSets.mockResolvedValue([personal]);
+    peerSets.resolvePeerInstitutionIds.mockResolvedValue([4, 5]);
     const active = await getActivePeerSet({ userId: "7", institutionId: null });
     expect(mocks.getDefaultPeerSets).toHaveBeenCalledWith({ userId: "7", institutionId: null });
     expect(active?.label).toBe("My peers");

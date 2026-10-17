@@ -9,6 +9,7 @@ import { getInstitutionById } from "@/lib/data-store";
 import { getInstitutionFeeValues, type IndexEntry } from "@/lib/data-store/fee-index";
 import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 import { resolveHamiltonPeerIndex, type HamiltonPeerIndexSource } from "./peer-index";
+import { peerGroupCoverageLine, publishingRange, type EmptyPeerGroup } from "./peer-group-copy";
 
 export type GapPriority = "high" | "medium" | "low";
 
@@ -46,6 +47,10 @@ export interface InstitutionPositioning {
   ownFeeCount: number;
   topGap: InstitutionPositionEntry | null;
   priority: GapPriority | null;
+  /** The chosen saved group matched no institutions: nothing was compared against another group. */
+  peerGroupEmpty?: EmptyPeerGroup;
+  /** A saved group's name, research institution and coverage in one line. */
+  peerGroupLine?: string | null;
 }
 
 function displayNameFor(category: string): string {
@@ -133,7 +138,24 @@ export async function fetchInstitutionPositioning(
     resolveHamiltonPeerIndex({ selectedInstitution: institution, institutionId, userId: userId ?? null }),
     getInstitutionFeeValues(institutionId),
   ]);
-  return buildInstitutionPositioning({
+  if (peerIndex.status === "empty") {
+    const { entries: _entries, source: _source, peerSetId: _id, ...group } = peerIndex;
+    void _entries; void _source; void _id;
+    return {
+      ...buildInstitutionPositioning({
+        institutionId,
+        institutionName: institution.institution_name,
+        benchmarkLabel: group.label,
+        benchmarkSource: "saved-peer-set",
+        stateCode: institution.state_code ?? null,
+        fedDistrict: institution.fed_district ?? null,
+        benchmark: [],
+        ownValues,
+      }),
+      peerGroupEmpty: group,
+    };
+  }
+  const positioning = buildInstitutionPositioning({
     institutionId,
     institutionName: institution.institution_name,
     benchmarkLabel: peerIndex.label,
@@ -143,4 +165,13 @@ export async function fetchInstitutionPositioning(
     benchmark: peerIndex.entries,
     ownValues,
   });
+  return peerIndex.group
+    ? {
+        ...positioning,
+        peerGroupLine: peerGroupCoverageLine(
+          peerIndex.group,
+          publishingRange(positioning.entries.map((entry) => entry.benchmarkCount)),
+        ),
+      }
+    : positioning;
 }

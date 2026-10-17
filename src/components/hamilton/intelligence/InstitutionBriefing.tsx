@@ -20,6 +20,8 @@ import { COMPETITOR_MOVE_WINDOW_DAYS, getWorkspaceBriefing, type EnginePeerOptio
 import { getCategoryChargeBases } from "@/lib/data-store/fee-index";
 import { mixedBasisCategories } from "@/lib/hamilton/report-evidence";
 import { getActivePeerSet } from "@/lib/hamilton/active-peer-set";
+import type { EmptyPeerGroup } from "@/lib/hamilton/peer-group-copy";
+import { PeerGroupEmpty, PeerGroupLine } from "@/components/hamilton/PeerGroupEmpty";
 import { POSITION_EXTREME_PCT, REVENUE_SHIFT_PCT } from "@/lib/hamilton/workspace/observations";
 import type { Briefing } from "@/lib/hamilton/workspace/types";
 import { AuditPanel, Callout, LinkButton, MemoHeader, MemoPage } from "@/components/hamilton/memo/memo";
@@ -37,19 +39,22 @@ const getCachedBriefing = unstable_cache(
     ]);
     return { briefing, mixedBasis: [...mixedBasisCategories(bases)] };
   },
-  ["hamilton-this-month-briefing-v4"],
+  ["hamilton-this-month-briefing-v5"],
   { revalidate: 3600 },
 );
 
 async function loadBriefing(
   user: User | null,
   selectedInstitutionId: string | null,
-): Promise<{ briefing: Briefing | null; mixedBasis: string[]; unavailable: boolean }> {
+  institutionName: string | null = null,
+): Promise<{ briefing: Briefing | null; mixedBasis: string[]; unavailable: boolean; emptyGroup?: EmptyPeerGroup }> {
   const institutionId = parseInstitutionId(selectedInstitutionId);
   if (!institutionId) return { briefing: null, mixedBasis: [], unavailable: false };
   try {
-    const active = user ? await getActivePeerSet({ userId: user.id, institutionId }).catch(() => null) : null;
-    const peerSet = active ? { filters: active.filters, label: active.label } : null;
+    const active = user ? await getActivePeerSet({ userId: user.id, institutionId, institutionName }).catch(() => null) : null;
+    // The bank's chosen group matches no institutions: say so, and build no briefing against another group.
+    if (active?.status === "empty") return { briefing: null, mixedBasis: [], unavailable: false, emptyGroup: active };
+    const peerSet = active ? { filters: active.filters, label: active.label, institutionCount: active.institutionCount } : null;
     const result = await getCachedBriefing(institutionId, peerSet);
     if (result.briefing && result.briefing.institutionId !== institutionId) {
       return { briefing: null, mixedBasis: [], unavailable: true };
@@ -147,7 +152,7 @@ export async function InstitutionBriefing({
   const user = await getCurrentUser().catch(() => null);
   const { institution, error: contextError } = await resolveResearchInstitution(user, params);
   const selectedInstitutionId = institution ? String(institution.id) : null;
-  const { briefing, mixedBasis, unavailable } = await loadBriefing(user, selectedInstitutionId);
+  const { briefing, mixedBasis, unavailable, emptyGroup } = await loadBriefing(user, selectedInstitutionId, institution?.name ?? null);
   const mixed = new Set(mixedBasis);
   const items = buildAttentionItems(briefing, { mixedBasis: mixed });
   const overview = briefing ? buildBriefingOverview(briefing, briefing.stateCode ?? null, mixed) : null;
@@ -170,6 +175,8 @@ export async function InstitutionBriefing({
         }
       />
 
+      {briefing?.peerGroupCoverage ? <PeerGroupLine line={briefing.peerGroupCoverage} /> : null}
+
       {briefing && overview ? (
         <ThisMonthOverview
           institutionName={briefing.institutionName}
@@ -181,7 +188,9 @@ export async function InstitutionBriefing({
         />
       ) : null}
 
-      {briefing && trail && items.length > 0 ? (
+      {emptyGroup ? (
+        <PeerGroupEmpty group={emptyGroup} />
+      ) : briefing && trail && items.length > 0 ? (
         <WorthYourAttention observations={items} institutionId={selectedInstitutionId} trail={trail} />
       ) : unavailable ? (
         <p role="status" className="text-sm text-terra-text">

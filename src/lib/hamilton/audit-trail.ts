@@ -25,7 +25,7 @@ export interface AuditTrail {
   /** Figures the bank gave Hamilton, with who gave each one and when. */
   clientFacts: AuditClientFact[];
   /** The peer group the comparison rests on and how many institutions are in it. */
-  peerGroup: { label: string; n: number } | null;
+  peerGroup: { label: string; n: number; coverage?: string } | null;
   /** The Hamilton engine version that built this output, so a saved copy names its maker. */
   engineVersion: string;
   preparedAt: string;

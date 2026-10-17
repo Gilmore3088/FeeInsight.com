@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   },
   getPeerGroupCounts: vi.fn(),
   membership: vi.fn(),
+  resolveIds: vi.fn(),
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -31,6 +32,10 @@ vi.mock("@/lib/hamilton/institution-membership", () => ({
 }));
 vi.mock("@/lib/data-store/saved-peers", () => mocks.savedPeers);
 vi.mock("@/lib/data-store/fee-index", () => ({ getPeerGroupCounts: mocks.getPeerGroupCounts }));
+vi.mock("@/lib/data-store/peer-sets", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/data-store/peer-sets")>()),
+  resolvePeerInstitutionIds: mocks.resolveIds,
+}));
 
 import { createPeerSet, editPeerSet, setPeerSetForAllCharts } from "./actions";
 
@@ -52,6 +57,7 @@ describe("peer group actions", () => {
     mocks.savedPeers.savePeerSet.mockResolvedValue(3);
     mocks.savedPeers.getPeerInstitutionNames.mockResolvedValue(new Map());
     mocks.getPeerGroupCounts.mockResolvedValue([{ institutions: 12, publishing: 9 }]);
+    mocks.resolveIds.mockResolvedValue(Array.from({ length: 12 }, (_, i) => 100 + i));
   });
 
   it("saves chosen institutions without the filters, in the user's workspace", async () => {
@@ -112,7 +118,9 @@ describe("peer group actions", () => {
     const saved = { id: 3, name: "Southeast", institution_ids: null, states: ["GA"], tiers: null, districts: null, charter_type: null };
     mocks.savedPeers.getSavedPeerSets.mockResolvedValueOnce([]).mockResolvedValueOnce([saved]);
     const result = await createPeerSet(form([["name", "Southeast"], ["states", "GA"]]));
-    expect(mocks.getPeerGroupCounts).toHaveBeenCalledWith([{ states: ["GA"] }], null);
+    // The count is the group's membership: the same ids every chart, list and report reads.
+    expect(mocks.resolveIds).toHaveBeenCalledWith({ states: ["GA"] }, null);
+    expect(mocks.getPeerGroupCounts).toHaveBeenCalledWith([{ institutionIds: Array.from({ length: 12 }, (_, i) => 100 + i) }], null);
     expect(result).toMatchObject({ success: true, id: 3, count: { institutions: 12, publishing: 9 } });
   });
 

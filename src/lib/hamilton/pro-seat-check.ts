@@ -102,6 +102,10 @@ async function savedBank(userId: number): Promise<number | null> {
 
 async function hamiltonFor(userId: number, institutionId: number, setId: number | null): Promise<ProSeatCheckPerson> {
   const context = await resolveHamiltonPeerIndex({ userId, institutionId });
+  // An empty group is reported as such: the check never passes on a group with no institutions.
+  if (context.status === "empty") {
+    return { userId, label: context.label, source: context.source, peerSetId: context.peerSetId, categories: 0, follows: false };
+  }
   return {
     userId,
     label: context.label,

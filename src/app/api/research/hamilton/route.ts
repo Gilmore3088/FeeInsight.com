@@ -26,6 +26,7 @@ import { HAMILTON_PAUSED_MESSAGE } from "@/lib/hamilton/provider-paused";
 import { viewAsCustomerFromCookieHeader } from "@/lib/hamilton/view-as";
 import { getHamilton, savedPeerSetUsed, type AnswerStep, type HamiltonRole } from "@/lib/research/agents";
 import { getActivePeerSet } from "@/lib/hamilton/active-peer-set";
+import { emptyPeerGroupMessage, peerGroupCoverage } from "@/lib/hamilton/peer-group-copy";
 import { evaluateCitationDensity } from "@/lib/hamilton/citation-gate";
 import { getCurrentUser, type User } from "@/lib/auth";
 import { checkProAiQuota, quotaExceededMessage } from "@/lib/hamilton/quota";
@@ -185,14 +186,22 @@ async function handlePOST(request: Request) {
   // The reader's saved default peer set (the account workspace's, else their own), so "peers"
   // in the written answer means the group they chose (#1084). A failed read is no peer set.
   const homeId = enrichedContract.serverAccountContext.institution?.id;
-  const peerSet = await getActivePeerSet({ userId: user.id, institutionId: homeId ?? institutionId }).catch(() => null);
+  const peerGroup = await getActivePeerSet({
+    userId: user.id,
+    institutionId: homeId ?? institutionId,
+    institutionName: homeId && homeId !== institutionId ? enrichedContract.serverAccountContext.institution?.name ?? null : subject?.institution_name ?? null,
+  }).catch(() => null);
+  const peerSet = peerGroup?.status === "ready" ? peerGroup : null;
   // The saved set is the answer's peer baseline only when a tool call in this answer used it
   // (the peers view with the set's filters); otherwise no current peer selection is substituted.
+  // A set that matches no institutions is named as empty; the prompt computes no peers for it.
   const identityFor = (steps: readonly AnswerStep[] | undefined) => accountIdentitySnapshot(institutionId, enrichedContract.serverAccountContext, {
     researchInstitutionName: subject?.institution_name ?? null,
     researchSelectionSource: requestedInstitutionId !== null ? "authenticated request" : institutionId !== null ? "linked account default" : "unscoped",
-    ...(peerSet && savedPeerSetUsed(peerSet, steps)
-      ? { peerSetId: peerSet.id, peerBaselineLabel: peerSet.label, peerBaselineSource: "saved-peer-set", peerBaselineFallbackReason: null }
+    ...(peerGroup?.status === "empty"
+      ? { peerSetId: peerGroup.id, peerBaselineLabel: peerGroup.label, peerBaselineSource: "saved-peer-set", peerBaselineFallbackReason: emptyPeerGroupMessage(peerGroup) }
+      : peerSet && savedPeerSetUsed(peerSet, steps)
+      ? { peerSetId: peerSet.id, peerBaselineLabel: peerSet.label, peerBaselineSource: "saved-peer-set", peerBaselineFallbackReason: null, peerGroupCoverage: peerGroupCoverage(peerSet.institutionCount) }
       : {
         peerBaselineLabel: null,
         peerBaselineSource: null,
@@ -207,7 +216,7 @@ async function handlePOST(request: Request) {
   const lastUserText = lastUserTextOf(messages);
 
   // The same prompt the paid answer eval writes from (written-answer-read.ts, #1079).
-  const prompt = await buildWrittenAnswerSystemPrompt({ agent, contract, peerSet, homeId });
+  const prompt = await buildWrittenAnswerSystemPrompt({ agent, contract, peerSet: peerGroup, homeId });
   if (prompt.status === "institution_not_found") {
     return Response.json({ error: "Institution not found" }, { status: 404 });
   }

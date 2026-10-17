@@ -1,4 +1,5 @@
 import { sql, withTransaction } from "./connection";
+import { parseSavedPeerDimensions, type SavedPeerDimensions } from "@/lib/hamilton/saved-peer-dimensions";
 
 export interface SavedPeerSet {
   id: number;
@@ -15,6 +16,12 @@ export interface SavedPeerSet {
   institution_id: number | null;
   /** "Use for all charts": the default peer group for its workspace, or for its owner when personal. */
   is_default: boolean;
+  /**
+   * The wider dimensions (asset range in dollars, regulator, credit union charter, holding
+   * company, metro market, closest in assets), from the `filters` jsonb column. Null or absent
+   * for a group defined only by the columns above.
+   */
+  advanced?: SavedPeerDimensions | null;
 }
 
 export interface PeerSetFilterInput {
@@ -23,11 +30,14 @@ export interface PeerSetFilterInput {
   fed_districts?: number[];
   states?: string[];
   institution_ids?: number[];
+  /** Stored in the `filters` jsonb column; the dimensions above keep their own columns. */
+  advanced?: SavedPeerDimensions | null;
 }
 
 const columns = () => sql`
   s.id, s.name, s.tiers, s.districts, s.charter_type, s.created_by, s.created_at,
-  s.institution_ids, s.states, s.institution_id, COALESCE(s.is_default, false) AS is_default
+  s.institution_ids, s.states, s.institution_id, COALESCE(s.is_default, false) AS is_default,
+  s.filters
 `;
 
 /** True when the user is an active member of the set's workspace. */
@@ -55,7 +65,37 @@ function mapRow(row: Record<string, unknown>): SavedPeerSet {
     states: states && states.length > 0 ? states : null,
     institution_id: row.institution_id == null ? null : Number(row.institution_id),
     is_default: row.is_default === true,
+    advanced: parseSavedPeerDimensions(row.filters),
   };
+}
+
+/**
+ * Display names for the wider dimensions: the metro's name and the holding company's name.
+ * One query each, only when a set uses them. A failed lookup leaves the names out.
+ */
+async function withDisplayNames(sets: SavedPeerSet[]): Promise<SavedPeerSet[]> {
+  const codes = [...new Set(sets.flatMap((set) => (set.advanced?.market_code !== undefined ? [set.advanced.market_code] : [])))];
+  const rssds = [...new Set(sets.flatMap((set) => (set.advanced?.holding_company_rssd ? [set.advanced.holding_company_rssd] : [])))];
+  if (codes.length === 0 && rssds.length === 0) return sets;
+  const [metros, companies] = await Promise.all([
+    codes.length
+      ? (sql`SELECT msa_code, MAX(msa_name) AS name FROM institution_branch_deposits WHERE msa_code = ANY(${codes}::int[]) GROUP BY msa_code` as Promise<{ msa_code: unknown; name: string | null }[]>).catch(() => [])
+      : [],
+    rssds.length
+      ? (sql`SELECT holding_company_rssd, MAX(holding_company_name) AS name FROM institution_sources WHERE holding_company_rssd = ANY(${rssds}::text[]) GROUP BY holding_company_rssd` as Promise<{ holding_company_rssd: unknown; name: string | null }[]>).catch(() => [])
+      : [],
+  ]);
+  const metroNames = new Map(metros.filter((row) => row.name).map((row) => [Number(row.msa_code), String(row.name)]));
+  const companyNames = new Map(companies.filter((row) => row.name).map((row) => [String(row.holding_company_rssd), String(row.name)]));
+  return sets.map((set) => {
+    const a = set.advanced;
+    if (!a) return set;
+    const market = a.market_code !== undefined ? metroNames.get(a.market_code) : undefined;
+    const company = a.holding_company_rssd ? companyNames.get(a.holding_company_rssd) : undefined;
+    return market || company
+      ? { ...set, advanced: { ...a, ...(market ? { market_name: market } : {}), ...(company ? { holding_company_name: company } : {}) } }
+      : set;
+  });
 }
 
 /**
@@ -74,7 +114,7 @@ export async function getSavedPeerSets(
        OR (${workspace}::int IS NOT NULL AND s.institution_id = ${workspace}::int AND ${memberOf(userId)})
     ORDER BY (s.institution_id IS NULL), s.created_at DESC
   ` as Record<string, unknown>[];
-  return rows.map(mapRow);
+  return withDisplayNames(rows.map(mapRow));
 }
 
 /** One set the user can use: their own, or one of a workspace they are an active member of. */
@@ -89,7 +129,7 @@ export async function getSavedPeerSetById(
       AND (s.created_by = ${userId} OR (s.institution_id IS NOT NULL AND ${memberOf(userId)}))
     LIMIT 1
   ` as Record<string, unknown>[];
-  return rows[0] ? mapRow(rows[0]) : null;
+  return rows[0] ? (await withDisplayNames([mapRow(rows[0])]))[0] : null;
 }
 
 /**
@@ -136,12 +176,15 @@ export async function getPeerSetWorkspace(
 }
 
 function filterValues(filters: PeerSetFilterInput) {
+  const advanced = filters.institution_ids?.length ? null : parseSavedPeerDimensions(filters.advanced ?? null);
   return {
     tiers: filters.asset_tiers?.length ? filters.asset_tiers.join(",") : null,
     districts: filters.fed_districts?.length ? filters.fed_districts.join(",") : null,
     charter_type: filters.charter_type ?? null,
     states: filters.states?.length ? filters.states : null,
     institution_ids: filters.institution_ids?.length ? filters.institution_ids : null,
+    // Hand-picked peers are exactly those institutions, so no wider dimension is kept with them.
+    filters: advanced ? JSON.stringify(advanced) : null,
   };
 }
 
@@ -153,7 +196,7 @@ export async function savePeerSet(
 ): Promise<number> {
   const v = filterValues(filters);
   const [row] = await sql`
-    INSERT INTO saved_peer_sets (name, tiers, districts, charter_type, states, institution_ids, institution_id, created_by)
+    INSERT INTO saved_peer_sets (name, tiers, districts, charter_type, states, institution_ids, filters, institution_id, created_by)
     VALUES (
       ${name},
       ${v.tiers},
@@ -161,6 +204,7 @@ export async function savePeerSet(
       ${v.charter_type},
       ${v.states}::text[],
       ${v.institution_ids}::int[],
+      ${v.filters}::jsonb,
       ${institutionId},
       ${userId}
     )
@@ -194,7 +238,8 @@ export async function updatePeerSet(
       districts = ${v.districts},
       charter_type = ${v.charter_type},
       states = ${v.states}::text[],
-      institution_ids = ${v.institution_ids}::int[]
+      institution_ids = ${v.institution_ids}::int[],
+      filters = ${v.filters}::jsonb
     WHERE s.id = ${id} AND ${editableBy(userId)}
   `;
   return result.count > 0;

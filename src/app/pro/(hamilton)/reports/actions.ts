@@ -27,6 +27,7 @@ import { parseAnswerSection, parseTradeoffSection } from "@/lib/hamilton/report-
 import { validateHamiltonReportArtifact } from "@/lib/hamilton/report-quality";
 import { basketItemsFor, sanitizeBasketItems } from "@/lib/hamilton/report-basket";
 import { resolveHamiltonPeerIndex } from "@/lib/hamilton/peer-index";
+import { emptyPeerGroupMessage, peerGroupCoverage, publishingRange, type EmptyPeerGroup } from "@/lib/hamilton/peer-group-copy";
 import { completeHamiltonRefreshJobsForInstitution } from "@/lib/hamilton/refresh-jobs";
 import {
   saveHamiltonReport,
@@ -53,6 +54,8 @@ export type GenerateReportResult =
   | {
       success: false;
       error: string;
+      /** The chosen saved group matched no institutions; nothing was written against another group. */
+      peerGroupEmpty?: EmptyPeerGroup;
     };
 
 export interface PreviewReportPeerCoverageParams {
@@ -71,9 +74,16 @@ export type PreviewReportPeerCoverageResult =
   | {
       success: false;
       error: string;
+      /** The chosen saved group matched no institutions; no coverage was computed. */
+      peerGroupEmpty?: EmptyPeerGroup;
     };
 
-
+/** The empty group without the index fields, for the page. */
+function emptyGroupOf(peerIndex: EmptyPeerGroup & { entries: unknown; source: unknown; peerSetId: unknown }): EmptyPeerGroup {
+  const { entries: _entries, source: _source, peerSetId: _id, ...group } = peerIndex;
+  void _entries; void _source; void _id;
+  return group;
+}
 
 function formatSignedAmount(amount: number): string {
   const sign = amount >= 0 ? "+" : "-";
@@ -113,6 +123,10 @@ export async function previewReportPeerCoverage(
       approvedOnly: true,
       minUsableCategories: 3,
     });
+    if (peerIndex.status === "empty") {
+      const group = emptyGroupOf(peerIndex);
+      return { success: false, error: emptyPeerGroupMessage(group), peerGroupEmpty: group };
+    }
     const pipelineCounts = selectedEvidence?.pipeline_counts ?? null;
     const pipelineFeeCount =
       Number(pipelineCounts?.raw_fee_count ?? 0) +
@@ -129,6 +143,12 @@ export async function previewReportPeerCoverage(
         peerBaselineSource: peerIndex.source,
         peerBaselineLabel: peerIndex.label,
         peerFallbackReason: peerIndex.fallbackReason,
+        peerGroupCoverage: peerIndex.group
+          ? peerGroupCoverage(
+              peerIndex.group.institutionCount,
+              publishingRange(peerIndex.entries.filter((e) => selectedFees.some((fee) => fee.fee_category === e.fee_category)).map((e) => e.institution_count)),
+            )
+          : null,
         pipelineFeeCount,
         focusCategory:
           params.templateType === "category_deep_dive"
@@ -194,6 +214,9 @@ export async function generateReport(
     });
     if (assembled.kind === "not_found") {
       return { success: false, error: "Selected institution not found" };
+    }
+    if (assembled.kind === "peer_group_empty") {
+      return { success: false, error: emptyPeerGroupMessage(assembled.group), peerGroupEmpty: assembled.group };
     }
     if (assembled.kind === "insufficient") {
       const { report, artifactMetadata, selectedInstitution } = assembled;
@@ -422,7 +445,7 @@ export async function generateReport(
       implementationNotes: [
         `Report generated ${new Date().toLocaleDateString()}`,
         `Analysis period: ${period}`,
-        `Peer group: ${peerIndex.label}`,
+        `Peer group: ${peerIndex.label}${identityContext.peerGroupCoverage ? `. ${identityContext.peerGroupCoverage}` : ""}`,
         ...(peerIndex.fallbackReason ? [`Peer group note: ${peerIndex.fallbackReason}`] : []),
         `Covers ${indexData.length} fee categories in the peer group`,
         selectedInstitution

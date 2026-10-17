@@ -37,6 +37,7 @@ import {
   type ActivePeerSet,
   type HamiltonPeerFilters,
 } from "../peer-index";
+import { peerGroupCoverageLine, publishingRange } from "../peer-group-copy";
 import { economicBackdrop } from "./economy";
 import { feeRegulatoryNews, feeRules, marketLayer, ruleChangeObservations, type RegArticleRow } from "./context";
 import {
@@ -124,6 +125,8 @@ interface WorkspaceBase {
   layers: LayerSet[];
   /** The narrowest default peer group, named on the Briefing. */
   peerLabel: string;
+  /** Institutions in the bank's saved group (research institution left out); null for automatic peers. */
+  peerGroupSize?: number | null;
   ownValues: Map<string, number>;
   /** Per fee, the narrowest peer group with enough institutions publishing it. */
   peers: Map<string, CategoryPeers>;
@@ -206,9 +209,13 @@ export function marketLayerSets(institution: {
   return sets;
 }
 
-/** Options every engine entry point takes: the bank's own peer group from Settings, when it set one. */
+/**
+ * Options every engine entry point takes: the bank's own peer group from Settings, when it set
+ * one and it holds at least one institution (a caller with an empty group computes nothing).
+ * Its institutions are read as they are, fee by fee: never widened to another group.
+ */
 export interface EnginePeerOptions {
-  peerSet?: Pick<ActivePeerSet, "filters" | "label"> | null;
+  peerSet?: (Pick<ActivePeerSet, "filters" | "label"> & Partial<Pick<ActivePeerSet, "institutionCount">>) | null;
 }
 
 async function loadBase(
@@ -220,17 +227,22 @@ async function loadBase(
   if (!institution) return null;
   const ownValues = await getInstitutionFeeValues(institutionId, categories);
   const wanted = categories ?? [...ownValues.keys()];
-  const activeFirst = Boolean(options.peerSet);
-  const candidates: HamiltonPeerFilters[] = [
-    ...(options.peerSet ? [peerSetCandidate(options.peerSet)] : []),
-    ...buildInstitutionPeerFilterCandidates(institution),
-    {},
-  ];
+  const saved = options.peerSet ?? null;
+  // A saved group is the only peer candidate; automatic peers widen until enough publish.
+  const candidates: HamiltonPeerFilters[] = saved
+    ? [peerSetCandidate(saved)]
+    : [...buildInstitutionPeerFilterCandidates(institution), {}];
   const layerSets = marketLayerSets(institution);
-  // One read for the peer candidates and the layers; national is already the last candidate.
+  // One read for the peer candidates, national and the layers.
   const extra = layerSets.filter((l) => l.scope !== "national");
-  const valuesBySet = await getPeerFeeValues([...candidates, ...extra.map((l) => l.filters)], wanted, institutionId);
-  const national = valuesBySet[candidates.length - 1] ?? new Map();
+  const nationalAt = saved ? candidates.length : candidates.length - 1;
+  const extraAt = nationalAt + 1;
+  const valuesBySet = await getPeerFeeValues(
+    [...candidates, ...(saved ? [{}] : []), ...extra.map((l) => l.filters)],
+    wanted,
+    institutionId,
+  );
+  const national = valuesBySet[nationalAt] ?? new Map();
   return {
     institutionId,
     institutionName: institution.institution_name,
@@ -241,12 +253,22 @@ async function loadBase(
     totalAssets: institution.asset_size === null || institution.asset_size === undefined ? null : Number(institution.asset_size),
     layers: [
       { scope: "national", label: "National", values: national },
-      ...extra.map((l, i) => ({ scope: l.scope, label: l.label, values: valuesBySet[candidates.length + i] ?? new Map() })),
+      ...extra.map((l, i) => ({ scope: l.scope, label: l.label, values: valuesBySet[extraAt + i] ?? new Map() })),
     ],
     peerLabel: peerLabel(candidates[0]),
+    peerGroupSize: saved ? saved.institutionCount ?? null : null,
     ownValues,
-    peers: choosePeers(candidates, valuesBySet.slice(0, candidates.length), wanted, { activeFirst }),
+    peers: choosePeers(candidates, valuesBySet.slice(0, candidates.length), wanted),
   };
+}
+
+/** A saved group's line: its name, the research institution and coverage; null for automatic peers. */
+function savedGroupCoverage(base: WorkspaceBase, publishing: number | readonly [number, number] | null): string | null {
+  if (base.peerGroupSize === null || base.peerGroupSize === undefined) return null;
+  return peerGroupCoverageLine(
+    { label: base.peerLabel, institutionName: base.institutionName, institutionCount: base.peerGroupSize },
+    publishing,
+  );
 }
 
 export function toPeerValue(v: PeerFeeValue): PeerValue {
@@ -705,6 +727,7 @@ export async function getWorkspaceBriefing(
   const trend = serviceChargeTrend(financialRows);
   const financials = await withPeerMedian(base, institutionFinancials(financialRows));
   const shift = revenueShiftObservation(trend, base.institutionName);
+  const briefingCoverage = savedGroupCoverage(base, publishingRange(positions.map((p) => p.peers.length)));
   const bankCategories = new Set(base.ownValues.keys());
   const rules = ruleChangeObservations(articles, bankCategories);
   const studies = studyObservations(studyRows, base.institutionName);
@@ -732,11 +755,16 @@ export async function getWorkspaceBriefing(
     feesReviewed: base.ownValues.size,
     positions: feePositionRows(positions),
     peerLabel: base.peerLabel,
+    peerGroupCoverage: briefingCoverage,
     generatedAt: now.toISOString(),
     provenance: {
       engineVersion: WORKSPACE_ENGINE_VERSION,
       generatedAt: now.toISOString(),
-      peerGroup: { label: base.peerLabel, n: new Set([...base.peers.values()].flatMap((p) => p.values.map((v) => v.counted_as ?? v.institution_id))).size },
+      peerGroup: {
+        label: base.peerLabel,
+        n: new Set([...base.peers.values()].flatMap((p) => p.values.map((v) => v.counted_as ?? v.institution_id))).size,
+        ...(briefingCoverage ? { coverage: briefingCoverage } : {}),
+      },
       dataAsOf: {
         fees: newest([...base.peers.values()].flatMap((p) => p.values.map((v) => v.published_at))),
         financials: financials?.quarterEnd ?? null,
@@ -952,6 +980,7 @@ export async function getFeeResearch(
   const peers: PeerValue[] = (chosen?.values ?? []).map(toPeerValueWithRecords);
   const sorted = countedAmounts(peers);
   const current = base.ownValues.get(feeCategory) ?? null;
+  const researchCoverage = savedGroupCoverage(base, peers.length);
   const structureGroup =
     segment && !segment.problem
       ? { label: shortSegmentLabel(segment.segment), members: segment.members }
@@ -980,6 +1009,7 @@ export async function getFeeResearch(
     displayName: getDisplayName(feeCategory),
     current,
     peerLabel: chosen?.label ?? base.peerLabel,
+    peerGroupCoverage: researchCoverage,
     peers,
     band: sorted.length > 0
       ? { p25: quantile(sorted, 0.25), median: quantile(sorted, 0.5), p75: quantile(sorted, 0.75), n: sorted.length }
@@ -1021,7 +1051,7 @@ export async function getFeeResearch(
     provenance: {
       engineVersion: WORKSPACE_ENGINE_VERSION,
       generatedAt: now.toISOString(),
-      peerGroup: { label: chosen?.label ?? base.peerLabel, n: peers.length },
+      peerGroup: { label: chosen?.label ?? base.peerLabel, n: peers.length, ...(researchCoverage ? { coverage: researchCoverage } : {}) },
       dataAsOf: {
         fees: newest([...peers.map((p) => p.publishedAt), ...layers.map((l) => l.asOf)]),
         financials: revenueLine?.quarterEnd ?? financials?.quarterEnd ?? null,

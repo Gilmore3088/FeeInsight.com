@@ -1,11 +1,16 @@
 "use client";
 
+import { describeSavedPeerDimensions, type SavedPeerDimensions } from "@/lib/hamilton/saved-peer-dimensions";
+import { AUTOMATIC_PEERS_ID } from "@/lib/hamilton/peer-group-copy";
+
 export interface HamiltonPeerSetOption {
   id: number;
   name: string;
   tiers: string | null;
   districts: string | null;
   charter_type: string | null;
+  /** Asset range, regulator, credit union charter, holding company, metro, closest in assets. */
+  advanced?: SavedPeerDimensions | null;
 }
 
 interface PeerBaselineSelectorProps {
@@ -15,6 +20,8 @@ interface PeerBaselineSelectorProps {
   peerSets: HamiltonPeerSetOption[];
   disabled?: boolean;
   onChange: (peerSetId: string | null) => void;
+  /** Offer "Automatic peers" as its own choice, so a reader can leave a saved group on purpose. */
+  automaticOption?: boolean;
 }
 
 function formatCharter(value: string | null): string | null {
@@ -27,8 +34,9 @@ function formatPeerSetSummary(peerSet: HamiltonPeerSetOption): string {
     formatCharter(peerSet.charter_type),
     peerSet.tiers ? `tiers ${peerSet.tiers}` : null,
     peerSet.districts ? `districts ${peerSet.districts}` : null,
+    ...(peerSet.advanced ? describeSavedPeerDimensions(peerSet.advanced) : []),
   ].filter(Boolean);
-  return parts.length > 0 ? parts.join(" · ") : "custom peer set";
+  return parts.length > 0 ? parts.join(" · ") : "custom peer group";
 }
 
 export function PeerBaselineSelector({
@@ -38,10 +46,13 @@ export function PeerBaselineSelector({
   peerSets,
   disabled = false,
   onChange,
+  automaticOption = false,
 }: PeerBaselineSelectorProps) {
   const selectedValue = value ?? "";
   const hasSelectedPeerSet =
-    selectedValue === "" || peerSets.some((peerSet) => String(peerSet.id) === selectedValue);
+    selectedValue === "" ||
+    (automaticOption && selectedValue === AUTOMATIC_PEERS_ID) ||
+    peerSets.some((peerSet) => String(peerSet.id) === selectedValue);
 
   return (
     <div>
@@ -57,7 +68,7 @@ export function PeerBaselineSelector({
         value={selectedValue}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value || null)}
-        className="w-full rounded-md border bg-white px-3 py-2 text-sm outline-none transition-colors disabled:opacity-50"
+        className="min-h-11 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none transition-colors disabled:opacity-50"
         style={{
           borderColor: "var(--hamilton-outline-variant, rgba(216,194,184,0.55))",
           color: "var(--hamilton-on-surface)",
@@ -65,8 +76,9 @@ export function PeerBaselineSelector({
         }}
       >
         <option value="">{defaultLabel}</option>
+        {automaticOption && <option value={AUTOMATIC_PEERS_ID}>Automatic peers</option>}
         {!hasSelectedPeerSet && (
-          <option value={selectedValue}>Saved peer set #{selectedValue}</option>
+          <option value={selectedValue}>Saved peer group (no longer available)</option>
         )}
         {peerSets.map((peerSet) => (
           <option key={peerSet.id} value={String(peerSet.id)}>
@@ -78,7 +90,7 @@ export function PeerBaselineSelector({
         className="mt-2 text-[11px] leading-relaxed"
         style={{ color: "var(--hamilton-secondary)" }}
       >
-        Verified benchmark calculations use this peer baseline, with national fallback labeled when coverage is thin.
+        A saved group keeps its own institutions, even when few of them publish a fee. Automatic peers widen when too few publish.
       </p>
     </div>
   );

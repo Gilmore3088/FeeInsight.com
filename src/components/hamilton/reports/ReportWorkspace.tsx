@@ -26,6 +26,7 @@ import type { ReportArtifactMetadata, ReportSummaryResponse } from "@/lib/hamilt
 import type { HamiltonSelectedInstitutionContext } from "@/lib/hamilton/institution-context";
 import type { HamiltonContextSource } from "@/lib/hamilton/context-source";
 import type { ReportPeerCoveragePreview } from "@/lib/hamilton/report-evidence";
+import { AUTOMATIC_PEERS_ID, type EmptyPeerGroup } from "@/lib/hamilton/peer-group-copy";
 import type { HamiltonReportLibraryItem } from "@/lib/hamilton/pro-tables";
 import { getSpotlightCategories, getDisplayName } from "@/lib/fee-taxonomy";
 import type { HamiltonPeerSetOption } from "@/components/hamilton/PeerBaselineSelector";
@@ -163,6 +164,10 @@ export function ReportWorkspace({
     useState<ReportPeerCoveragePreview | null>(null);
   const [isPeerCoverageLoading, setIsPeerCoverageLoading] = useState(false);
   const [peerCoverageError, setPeerCoverageError] = useState<string | null>(null);
+  // The chosen saved group when it matches no institutions: shown in place of coverage.
+  const [peerGroupEmpty, setPeerGroupEmpty] = useState<EmptyPeerGroup | null>(null);
+  // No group in the picker means automatic peers, chosen by the reader: never the saved default.
+  const requestedPeerSetId = peerSetId ?? AUTOMATIC_PEERS_ID;
 
   // Load scenarios on mount (kept for future scenario linking)
   useEffect(() => {
@@ -190,6 +195,7 @@ export function ReportWorkspace({
     if (!selectedTemplate || !selectedInstitution?.id) {
       setPeerCoveragePreview(null);
       setPeerCoverageError(null);
+      setPeerGroupEmpty(null);
       setIsPeerCoverageLoading(false);
       return;
     }
@@ -202,7 +208,7 @@ export function ReportWorkspace({
       templateType: selectedTemplate,
       focusCategory: selectedTemplate === "category_deep_dive" ? focusArea : undefined,
       institutionId: selectedInstitution?.id,
-      peerSetId: peerSetId ?? undefined,
+      peerSetId: requestedPeerSetId,
       evidencePolicy: "provisional-first",
     })
       .then((result) => {
@@ -210,9 +216,11 @@ export function ReportWorkspace({
         if (result.success) {
           setPeerCoveragePreview(result.preview);
           setPeerCoverageError(null);
+          setPeerGroupEmpty(null);
         } else {
           setPeerCoveragePreview(null);
-          setPeerCoverageError(result.error);
+          setPeerGroupEmpty(result.peerGroupEmpty ?? null);
+          setPeerCoverageError(result.peerGroupEmpty ? null : result.error);
         }
       })
       .catch((err) => {
@@ -229,7 +237,7 @@ export function ReportWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [selectedTemplate, focusArea, selectedInstitution?.id, peerSetId]);
+  }, [selectedTemplate, focusArea, selectedInstitution?.id, requestedPeerSetId]);
 
   function handleTemplateClick(type: ReportTemplateType) {
     // Selecting only: a second click on the chosen card used to clear it, which
@@ -313,7 +321,7 @@ export function ReportWorkspace({
       scenarioId: initialScenarioId ?? undefined,
       institutionId: selectedInstitution?.id,
       selectedInstitutionName: selectedInstitution?.name,
-      peerSetId: peerSetId ?? undefined,
+      peerSetId: requestedPeerSetId,
       evidencePolicy: "provisional-first",
       selectedSource,
       selectedSourceLabel,
@@ -377,7 +385,7 @@ export function ReportWorkspace({
   const peerSetLabel = selectedPeerSet
     ? selectedPeerSet.name
     : peerSetId
-      ? `Saved peer set #${peerSetId}`
+      ? "Saved peer group (no longer available)"
       : defaultPeerSetLabel;
 
   const setupVisible = !reportGenerated;
@@ -539,6 +547,7 @@ export function ReportWorkspace({
             peerCoveragePreview={peerCoveragePreview}
             isPeerCoverageLoading={isPeerCoverageLoading}
             peerCoverageError={peerCoverageError}
+            peerGroupEmpty={peerGroupEmpty}
           />
         </MemoSection>
       )}

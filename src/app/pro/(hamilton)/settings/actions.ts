@@ -31,8 +31,17 @@ import {
   type SavedPeerSet,
 } from "@/lib/data-store/saved-peers";
 import { getPeerGroupCounts, type PeerGroupCount } from "@/lib/data-store/fee-index";
-import { parseSavedPeerSetFilters } from "@/lib/hamilton/peer-index";
+import { resolveSavedPeerGroupMembership, savedPeerSetDefinition } from "@/lib/hamilton/peer-index";
 import { defaultPeerSetName } from "@/lib/hamilton/peer-set-name";
+import { describePeerSet } from "@/lib/data-store/peer-sets";
+import { getMarketInstitutionIds, type PeerMarket } from "@/lib/data-store/peer-markets";
+import {
+  CU_CHARTERS,
+  MAX_NEAREST_PEER_COUNT,
+  SAVED_PEER_REGULATORS,
+  hasSavedPeerDimensions,
+  type SavedPeerDimensions,
+} from "@/lib/hamilton/saved-peer-dimensions";
 import { STATE_NAMES } from "@/lib/us-states";
 
 export type WorkspaceInstitutionState = {
@@ -339,6 +348,12 @@ const PEER_SET_ASSET_TIERS = [
 const MAX_SAVED_PEER_SETS = 10;
 const MAX_CHOSEN_PEERS = 50;
 
+/** Blank stays blank; anything else must be a number. */
+const optionalNumber = z.preprocess(
+  (value) => (value === null || value === undefined || String(value).trim() === "" ? undefined : Number(String(value).replace(/[$,\s]/g, ""))),
+  z.number({ message: "Enter total assets as a number, in $ millions (for example 500)." }).optional(),
+);
+
 const PeerSetSchema = z
   .object({
     name: z.string().trim().max(100),
@@ -347,16 +362,55 @@ const PeerSetSchema = z
     asset_tiers: z.array(z.enum(PEER_SET_ASSET_TIERS)).optional(),
     fed_districts: z.array(z.coerce.number().int().min(1).max(12)).optional(),
     states: z
-      .array(z.string().trim().toUpperCase().refine((code) => code in STATE_NAMES, "Pick states from the list."))
+      .array(z.string().trim().toUpperCase().refine((code) => code in STATE_NAMES, "Choose states from the list."))
       .optional(),
     institution_ids: z
       .array(z.coerce.number().int().positive())
       .max(MAX_CHOSEN_PEERS, `Choose up to ${MAX_CHOSEN_PEERS} institutions.`)
       .optional(),
+    /** Total assets in millions of dollars, as typed in the form. */
+    asset_min_m: optionalNumber.refine((v) => v === undefined || v >= 0, "Total assets can't be negative."),
+    asset_max_m: optionalNumber.refine((v) => v === undefined || v >= 0, "Total assets can't be negative."),
+    regulators: z.array(z.enum(SAVED_PEER_REGULATORS as [string, ...string[]], { message: "Choose regulators from the list." })).optional(),
+    cu_charter: z.enum(CU_CHARTERS, { message: "Choose federal or state charter." }).nullable(),
+    holding_company_rssd: z.string().trim().regex(/^\d{1,12}$/, "That holding company isn't on record. Clear the holding company box and save again.").nullable(),
+    market_code: optionalNumber.refine((v) => v === undefined || (Number.isInteger(v) && v > 0), "Choose a metro market from the list."),
+    nearest: z.preprocess(
+      (value) => (value === null || value === undefined || String(value).trim() === "" ? undefined : Number(String(value).trim())),
+      z.number({ message: `Closest in total assets takes a whole number from 1 to ${MAX_NEAREST_PEER_COUNT}.` }).optional(),
+    ).refine(
+      (v) => v === undefined || (Number.isInteger(v) && v >= 1 && v <= MAX_NEAREST_PEER_COUNT),
+      `Closest in total assets takes a whole number from 1 to ${MAX_NEAREST_PEER_COUNT}.`,
+    ),
   })
   .refine((v) => v.mode !== "institutions" || (v.institution_ids?.length ?? 0) > 0, {
     message: "Choose at least one institution.",
+    path: ["institution_ids"],
+  })
+  .refine((v) => v.asset_min_m === undefined || v.asset_max_m === undefined || v.asset_min_m <= v.asset_max_m, {
+    message: "The lowest total assets can't be more than the highest.",
+    path: ["asset_min_m"],
+  })
+  .refine((v) => v.mode === "institutions" || !v.cu_charter || v.charter_type !== "bank", {
+    message: 'Credit union charter works only for credit union groups. Choose "Credit unions only", or set charter to "Banks and credit unions".',
+    path: ["cu_charter"],
+  })
+  .refine((v) => v.mode === "institutions" || !v.regulators?.includes("ncua") || v.charter_type !== "bank", {
+    message: "NCUA regulates credit unions, not banks. Change the charter or the regulator.",
+    path: ["regulators"],
   });
+
+/** The form field an error belongs to, so the form can show it under that field. */
+export type PeerSetField =
+  | "name" | "states" | "asset_tiers" | "fed_districts" | "institution_ids" | "assets"
+  | "regulators" | "cu_charter" | "holding_company_rssd" | "market_code" | "nearest";
+
+function issueField(path: readonly PropertyKey[]): PeerSetField | undefined {
+  const key = String(path[0] ?? "");
+  if (key === "asset_min_m" || key === "asset_max_m") return "assets";
+  const fields: PeerSetField[] = ["name", "states", "asset_tiers", "fed_districts", "institution_ids", "regulators", "cu_charter", "holding_company_rssd", "market_code", "nearest"];
+  return (fields as string[]).includes(key) ? (key as PeerSetField) : undefined;
+}
 
 export type PeerSetActionResult = {
   success: boolean;
@@ -365,9 +419,31 @@ export type PeerSetActionResult = {
   peerSet?: SavedPeerSet;
   count?: PeerGroupCount | null;
   institutionNames?: Record<number, string>;
+  /** The form field the error belongs to; absent for errors about the whole group. */
+  field?: PeerSetField;
+  /** Why the saved group has no peers right now, in plain words. */
+  note?: string | null;
 };
 
-function parsePeerSetForm(formData: FormData) {
+/** A name that fits the 100-character limit, cut between words. */
+function shortName(text: string): string {
+  if (text.length <= 100) return text;
+  const cut = text.slice(0, 97);
+  return `${cut.slice(0, cut.lastIndexOf(" ") > 60 ? cut.lastIndexOf(" ") : 97)}...`;
+}
+
+/** The research subject the form was filled in for, when it names one. */
+function formSubjectId(formData: FormData): number | null {
+  const raw = formData.get("research_institution_id");
+  return typeof raw === "string" && /^[1-9]\d*$/.test(raw) && Number.isSafeInteger(Number(raw)) ? Number(raw) : null;
+}
+
+const formText = (formData: FormData, key: string): string | null => {
+  const value = formData.get(key);
+  return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
+};
+
+async function parsePeerSetForm(formData: FormData) {
   const mode = formData.get("mode") === "institutions" ? "institutions" : "filters";
   const ids = [...new Set(formData.getAll("institution_ids").filter(Boolean).map(Number))];
   const parsed = PeerSetSchema.safeParse({
@@ -378,22 +454,58 @@ function parsePeerSetForm(formData: FormData) {
     fed_districts: formData.getAll("fed_districts").filter(Boolean).map(Number),
     states: formData.getAll("states").filter(Boolean) as string[],
     institution_ids: ids,
+    asset_min_m: formText(formData, "asset_min_m"),
+    asset_max_m: formText(formData, "asset_max_m"),
+    regulators: formData.getAll("regulators").filter(Boolean) as string[],
+    cu_charter: formText(formData, "cu_charter"),
+    holding_company_rssd: formText(formData, "holding_company_rssd"),
+    market_code: formText(formData, "market_code"),
+    nearest: formText(formData, "nearest"),
   });
   if (!parsed.success) {
-    return { ok: false as const, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+    const issue = parsed.error.issues[0];
+    return { ok: false as const, error: issue?.message ?? "Invalid input", field: issue ? issueField(issue.path) : undefined };
   }
   const v = parsed.data;
-  // Hand-picked peers are exactly those institutions, so the filters are not saved with them.
-  const filters =
-    v.mode === "institutions"
-      ? { institution_ids: v.institution_ids }
-      : {
-          charter_type: v.charter_type ?? undefined,
-          asset_tiers: v.asset_tiers,
-          fed_districts: v.fed_districts,
-          states: [...new Set(v.states ?? [])],
-        };
-  return { ok: true as const, name: v.name || defaultPeerSetName(filters), filters };
+  if (v.mode === "institutions") {
+    // Hand-picked peers are exactly those institutions, so the filters are not saved with them.
+    const filters = { institution_ids: v.institution_ids };
+    return { ok: true as const, name: v.name || defaultPeerSetName(filters), filters };
+  }
+  const advanced: SavedPeerDimensions = {};
+  if (v.asset_min_m !== undefined) advanced.asset_min = Math.round(v.asset_min_m * 1_000_000);
+  if (v.asset_max_m !== undefined) advanced.asset_max = Math.round(v.asset_max_m * 1_000_000);
+  if (v.regulators?.length) advanced.regulators = [...new Set(v.regulators)] as SavedPeerDimensions["regulators"];
+  if (v.cu_charter) advanced.cu_charter = v.cu_charter;
+  if (v.holding_company_rssd) advanced.holding_company_rssd = v.holding_company_rssd;
+  if (v.market_code !== undefined) advanced.market_code = v.market_code;
+  if (v.nearest !== undefined) advanced.nearest = v.nearest;
+  const filters = {
+    charter_type: v.charter_type ?? undefined,
+    asset_tiers: v.asset_tiers,
+    fed_districts: v.fed_districts,
+    states: [...new Set(v.states ?? [])],
+    ...(hasSavedPeerDimensions(advanced) ? { advanced } : {}),
+  };
+  if (!filters.advanced) return { ok: true as const, name: v.name || defaultPeerSetName(filters), filters };
+
+  // A metro must exist in the branch records, and names the group when it has no name.
+  let market: PeerMarket | null = null;
+  if (advanced.market_code !== undefined) {
+    const loaded = await getMarketInstitutionIds(advanced.market_code).catch(() => undefined);
+    if (loaded === undefined) return { ok: false as const, error: "Could not check that metro market. Try saving again.", field: "market_code" as const };
+    if (!loaded) return { ok: false as const, error: "Choose a metro market from the list.", field: "market_code" as const };
+    market = loaded.market;
+  }
+  const definition = savedPeerSetDefinition({
+    tiers: filters.asset_tiers?.join(",") || null,
+    districts: filters.fed_districts?.join(",") || null,
+    charter_type: filters.charter_type ?? null,
+    states: filters.states.length ? filters.states : null,
+    institution_ids: null,
+    advanced,
+  });
+  return { ok: true as const, name: v.name || shortName(describePeerSet(definition, market)), filters };
 }
 
 /** The workspace the user is working in, or null (personal sets). A lookup failure means personal. */
@@ -405,17 +517,26 @@ async function peerSetWorkspace(userId: number): Promise<{ institutionId: number
   }
 }
 
-/** The set as saved, with a real count of the institutions it resolves to. */
-async function savedPeerSetResult(id: number, userId: number, workspaceId: number | null): Promise<PeerSetActionResult> {
+/** The set as saved, with a real count of the institutions it resolves to (the same path charts use). */
+async function savedPeerSetResult(
+  id: number,
+  userId: number,
+  workspaceId: number | null,
+  subjectId: number | null = workspaceId,
+): Promise<PeerSetActionResult> {
   try {
     const sets = await getSavedPeerSets(String(userId), workspaceId);
     const peerSet = sets.find((set) => set.id === id);
     if (!peerSet) return { success: true, id };
-    const [count, names] = await Promise.all([
-      getPeerGroupCounts([parseSavedPeerSetFilters(peerSet)], workspaceId).then((c) => c[0] ?? null),
+    const [resolved, names] = await Promise.all([
+      resolveSavedPeerGroupMembership(peerSet, subjectId),
       getPeerInstitutionNames(peerSet.institution_ids ?? []),
     ]);
-    return { success: true, id, peerSet, count, institutionNames: Object.fromEntries(names) };
+    // The group's size is its membership (the same institutions charts, lists and reports read).
+    const count = resolved.filters
+      ? await getPeerGroupCounts([resolved.filters], subjectId).then((c) => (c[0] ? { ...c[0], institutions: resolved.institutionIds.length } : null))
+      : { institutions: 0, publishing: 0 };
+    return { success: true, id, peerSet, count, institutionNames: Object.fromEntries(names), note: resolved.problem };
   } catch {
     return { success: true, id };
   }
@@ -458,13 +579,13 @@ export async function createPeerSet(formData: FormData): Promise<PeerSetActionRe
     return { success: false, error: `You can save up to ${MAX_SAVED_PEER_SETS} peer groups. Remove one to add another.` };
   }
 
-  const parsed = parsePeerSetForm(formData);
-  if (!parsed.ok) return { success: false, error: parsed.error };
+  const parsed = await parsePeerSetForm(formData);
+  if (!parsed.ok) return { success: false, error: parsed.error, field: parsed.field };
 
   const id = await savePeerSet(parsed.name, parsed.filters, String(user.id), workspaceId);
 
   revalidatePath("/pro/settings");
-  return savedPeerSetResult(id, user.id, workspaceId);
+  return savedPeerSetResult(id, user.id, workspaceId, workspaceId ?? formSubjectId(formData));
 }
 
 export async function editPeerSet(id: number, formData: FormData): Promise<PeerSetActionResult> {
@@ -473,15 +594,16 @@ export async function editPeerSet(id: number, formData: FormData): Promise<PeerS
   if (!canAccessPremium(user)) return { success: false, error: "An active Hamilton subscription is required." };
   if (!Number.isInteger(id) || id <= 0) return { success: false, error: "Peer group not found." };
 
-  const parsed = parsePeerSetForm(formData);
-  if (!parsed.ok) return { success: false, error: parsed.error };
+  const parsed = await parsePeerSetForm(formData);
+  if (!parsed.ok) return { success: false, error: parsed.error, field: parsed.field };
 
   const updated = await updatePeerSet(id, parsed.name, parsed.filters, String(user.id));
   if (!updated) return { success: false, error: "Peer group not found, or you can't change it." };
 
   revalidatePath("/pro/settings");
   const workspace = await peerSetWorkspace(user.id);
-  return savedPeerSetResult(id, user.id, workspace?.institutionId ?? null);
+  const workspaceId = workspace?.institutionId ?? null;
+  return savedPeerSetResult(id, user.id, workspaceId, formSubjectId(formData) ?? workspaceId);
 }
 
 /**

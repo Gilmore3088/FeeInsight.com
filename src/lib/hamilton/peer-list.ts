@@ -1,6 +1,7 @@
 /** Institution lists, not fee analysis. All amounts in this contract are whole USD. */
 import { STATE_NAMES } from "@/lib/us-states";
 import type { ActivePeerSet } from "./active-peer-set";
+import { peerGroupCoverageLine } from "./peer-group-copy";
 
 export const PEER_LIST_VERSION = 1;
 export const MAX_PEER_LIST_ROWS = 50;
@@ -22,6 +23,11 @@ export interface PeerListIntent {
   largest: boolean;
   saved: boolean;
   accountSubject: boolean;
+  /**
+   * "In my metro", "our home market": peers with a branch in the research institution's own
+   * metro (MSA), resolved through the shared peer-set module. Absent on intents saved before.
+   */
+  market?: boolean;
   /** "Similarly sized … to SchoolsFirst": the institution the size is measured against, as typed. */
   similarTo?: string | null;
   problems: string[];
@@ -77,6 +83,8 @@ export interface PeerListData {
    * second. Absent on lists saved before paging, which all start at the first match.
    */
   offset?: number;
+  /** The chosen saved group matched no institutions; no list was run in its place. */
+  peerGroupEmpty?: import("./peer-group-copy").EmptyPeerGroup;
 }
 export interface PeerFeeEntry {
   institutionId: number;
@@ -337,6 +345,11 @@ export function parsePeerListQuestion(question: string): PeerListIntent | null {
   const requestedCount = /\ball\b/i.test(remaining) ? null : countMatch ? (COUNT_WORDS[countMatch[1].toLowerCase()] ?? Number(countMatch[1])) : 10;
   if (countMatch) remaining = remaining.replace(new RegExp(`\\b${countMatch[1]}\\b`, "i"), " ");
   if (requestedCount !== null && (!Number.isSafeInteger(requestedCount) || requestedCount < 1)) problems.push("Request at least one peer.");
+  // "in my metro", "with branches in our home market": the subject's own metro by branch records.
+  const marketPattern = /\b(?:with\s+branches\s+)?(?:(?:in|across|within)\s+)?(?:(?:my|our|the|its|this|same|home)\s+)*(?:metro(?:politan)?(?:\s+(?:area|market))?|msa|home\s+market)\b/gi;
+  const market = new RegExp(marketPattern.source, "i").test(remaining);
+  remaining = remaining.replace(marketPattern, " ");
+  const questionWithoutMarket = question.replace(marketPattern, " ");
   const limit = requestedCount === null ? MAX_PEER_LIST_ROWS : Math.min(Math.max(requestedCount, 1), MAX_PEER_LIST_ROWS);
 
   const similarSize = /\bsimilar(?:ly)?(?:[- ]sized?)?\b|\bcomparable\b|\bclosest\b|\bsame size\b|\babout (?:our|its|the same) size\b/i.test(question);
@@ -384,7 +397,7 @@ export function parsePeerListQuestion(question: string): PeerListIntent | null {
   const accountSubject = /\b(my|our|us)\b/i.test(question);
   if (/\bpeers?\s+(?:for|of)\s+(?!(?:the selected institution|this institution|both types|us|me)\b)/i.test(question)) problems.push("Select the intended research institution in the workspace; named-institution resolution is not supported in this list yet.");
   if (accountSubject && /\bthis institution\b/i.test(question)) problems.push("Specify whether the list should be for the selected institution or the account institution.");
-  if (/\b(local|nearby|county|counties|miles?|radius|metro|branches|competitors?)\b/i.test(question)) problems.push("Branch-market selection is not supported in this list yet. Specify a US state or an asset-size group instead; local competitors and asset-size peers are different groups.");
+  if (/\b(local|nearby|county|counties|miles?|radius|branches|competitors?)\b/i.test(questionWithoutMarket)) problems.push("County, distance and local-competitor searches are not supported in this list yet. Ask for peers in your metro, or specify a US state or an asset-size group instead; local competitors and asset-size peers are different groups.");
   // A finite grammar is safer than silently ignoring 'not', a named bank, a foreign
   // geography, a reporting year or a metric this list cannot yet apply.
   const allowed = /\b(please|can|could|would|you|give|me|a|an|the|list|show|find|return|identify|name|who|which|what|are|is|of|for|with|in|across|from|and|or|to|by|total|assets?|size|sized|similarly|similar|comparable|closest|same|type|types|peer|peers|competitors?|banks?|credit|unions?|institutions?|financial|cu|cus|us|my|our|this|selected|saved|custom|group|set|default|national|nationally|nationwide|largest|biggest|top|first|all|only|state|states|both|that|have|about|as|like|ones)\b/gi;
@@ -392,7 +405,7 @@ export function parsePeerListQuestion(question: string): PeerListIntent | null {
   if (residue && !problems.length) problems.push(LIST_HELP);
   if (largest && similarSize) problems.push("Choose largest institutions or closest asset-size peers; those are different sort orders.");
   if (sameState && states.length) problems.push("Choose the subject's state or explicitly named states, not both.");
-  return { requestedCount, limit, charterType, bothTypes, states: [...new Set(states)].sort(), sameState, minAssets, maxAssets, similarSize, peerBased, largest, saved, accountSubject, similarTo, problems };
+  return { requestedCount, limit, charterType, bothTypes, states: [...new Set(states)].sort(), sameState, minAssets, maxAssets, similarSize, peerBased, largest, saved, accountSubject, ...(market ? { market: true } : {}), similarTo, problems };
 }
 
 // Whole legal endings only: "national" and "federal" alone stay part of a name ("Citizens National").
@@ -424,11 +437,18 @@ export function formatPeerAssets(value: number | null): string {
 }
 
 /** Uses explicit filters ahead of defaults. A requested saved group is never replaced. */
-export function planPeerList(intent: PeerListIntent, subject: PeerListSubject, active: ActivePeerSet | null): { criteria: PeerListCriteria | null; problem: string | null } {
+export function planPeerList(
+  intent: PeerListIntent,
+  subject: PeerListSubject,
+  active: ActivePeerSet | null,
+  /** The subject's metro and every institution with a branch in it, from resolvePeerSet. */
+  market: { name: string; institutionIds: number[] } | null = null,
+): { criteria: PeerListCriteria | null; problem: string | null } {
   if (intent.problems.length) return { criteria: null, problem: intent.problems.join(" ") };
+  if (intent.market && !market) return { criteria: null, problem: `None found: no branch market is on record for ${subject.name.replace(/\.$/, "")}. Ask by US state or asset size instead.` };
   if (intent.similarTo && !sameInstitutionName(intent.similarTo, subject.name))
     return { criteria: null, problem: `This list measures size against the institution you are researching, ${subject.name.replace(/\.$/, "")}. To list peers sized like ${intent.similarTo}, open ${intent.similarTo} in the workspace first.` };
-  const explicit = Boolean(intent.charterType || intent.bothTypes || intent.states.length || intent.sameState || intent.minAssets || intent.maxAssets || intent.similarSize || intent.largest);
+  const explicit = Boolean(intent.charterType || intent.bothTypes || intent.states.length || intent.sameState || intent.minAssets || intent.maxAssets || intent.similarSize || intent.largest || intent.market);
   const useSaved = intent.saved || (!explicit && active !== null);
   if (intent.saved && !active) return { criteria: null, problem: "No authorized active saved peer group is available for this institution. Choose one in Settings or specify state, type and asset criteria." };
   const filters = useSaved ? active?.filters : undefined;
@@ -445,12 +465,12 @@ export function planPeerList(intent: PeerListIntent, subject: PeerListSubject, a
   if (intent.sameState && !subject.stateCode) return { criteria: null, problem: "The subject's state is not available. Specify a state for this list." };
   if (savedStates.length) states = states.length ? states.filter(s => savedStates.includes(s)) : savedStates;
   if (savedStates.length && (intent.states.length || intent.sameState) && !states.length) return { criteria: null, problem: "The requested states do not overlap the saved group's states. No broader substitute list was run." };
-  const charterType = intent.bothTypes ? (savedType as PeerCharter | undefined) ?? null : intent.charterType ?? (savedType as PeerCharter | undefined) ?? (!useSaved && (intent.peerBased || intent.similarSize) ? subject.charterType : null);
+  const charterType = intent.bothTypes ? (savedType as PeerCharter | undefined) ?? null : intent.charterType ?? (savedType as PeerCharter | undefined) ?? (!useSaved && !intent.market && (intent.peerBased || intent.similarSize) ? subject.charterType : null);
   if (intent.bothTypes && savedType) return { criteria: null, problem: "The saved group is restricted to one institution type. Remove the saved-group constraint to request both types." };
   if (useSaved && savedType && intent.charterType && savedType !== intent.charterType) return { criteria: null, problem: "The requested institution type conflicts with the saved group's type." };
   let minAssets = intent.minAssets;
   let maxAssets = intent.maxAssets;
-  const defaultSimilar = intent.peerBased && !useSaved && !minAssets && !maxAssets && !intent.largest;
+  const defaultSimilar = intent.peerBased && !useSaved && !intent.market && !minAssets && !maxAssets && !intent.largest;
   const needsSimilarity = intent.similarSize || defaultSimilar;
   if (needsSimilarity) {
     if (subject.totalAssetsUsd === null || subject.totalAssetsUsd <= 0 || !subject.reportDate) return { criteria: null, problem: "Dated total assets for the research subject are unavailable. Specify an asset range or request the largest institutions in a state instead." };
@@ -461,9 +481,11 @@ export function planPeerList(intent: PeerListIntent, subject: PeerListSubject, a
     descriptions.push(`Asset-size peers: between half and twice ${subject.name}'s ${formatPeerAssets(subject.totalAssetsUsd)} in assets (${subject.reportDate}).`);
   }
   if (minAssets && maxAssets && (minAssets.value > maxAssets.value || (minAssets.value === maxAssets.value && (!minAssets.inclusive || !maxAssets.inclusive)))) return { criteria: null, problem: "The requested asset range does not overlap the similar-size band. No wider band was used." };
-  if (!useSaved && (intent.peerBased || intent.similarSize) && !charterType && !intent.bothTypes) return { criteria: null, problem: "Choose banks, credit unions, or both; the subject's institution type is unavailable." };
-  if (useSaved) descriptions.push(`Saved peer group: ${active!.label}. Its filters remain in force.`);
-  descriptions.push(`${charterType === "bank" ? "Banks" : charterType === "credit_union" ? "Credit unions" : "Banks and credit unions"}; ${states.length ? states.map(s => STATE_NAMES[s] ?? s).join(" or ") + " (headquarters state)" : "nationwide"}.`);
+  if (!useSaved && !intent.market && (intent.peerBased || intent.similarSize) && !charterType && !intent.bothTypes) return { criteria: null, problem: `Choose banks, credit unions, or both. None found: no institution type is on record for ${subject.name.replace(/\.$/, "")}.` };
+  if (useSaved) descriptions.push(`Saved peer group ${peerGroupCoverageLine({ label: active!.label, institutionName: subject.name, institutionCount: active!.institutionCount })} Only its institutions are listed.`);
+  if (market) descriptions.push(`Institutions with a branch in the ${market.name} metro, from FDIC and NCUA branch records.`);
+  // A saved group's own institutions need no "nationwide": only a narrowing the question added is named.
+  if (!useSaved || charterType || states.length) descriptions.push(`${charterType === "bank" ? "Banks" : charterType === "credit_union" ? "Credit unions" : "Banks and credit unions"}; ${states.length ? states.map(s => STATE_NAMES[s] ?? s).join(" or ") + " (headquarters state)" : useSaved ? "in the saved group" : "nationwide"}.`);
   if (minAssets) descriptions.push(`Assets ${minAssets.inclusive ? "at least" : "greater than"} ${formatPeerAssets(minAssets.value)}.`);
   if (maxAssets) descriptions.push(`Assets ${maxAssets.inclusive ? "at most" : "less than"} ${formatPeerAssets(maxAssets.value)}.`);
   if (filters?.asset_tiers?.length) descriptions.push(`Saved registry asset tiers: ${filters.asset_tiers.join(", ")}; displayed dollar assets come from dated filings.`);
@@ -476,7 +498,9 @@ export function planPeerList(intent: PeerListIntent, subject: PeerListSubject, a
   return { problem: null, criteria: {
     basis: useSaved ? "saved_peer_set" : needsSimilarity ? "similar_assets" : "explicit_filters",
     charterType, states, minAssets, maxAssets,
-    institutionIds: filters?.institutionIds?.length ? [...new Set(filters.institutionIds)] : null,
+    institutionIds: market
+      ? [...new Set(market.institutionIds)].filter((id) => !filters?.institutionIds?.length || filters.institutionIds.includes(id))
+      : filters?.institutionIds?.length ? [...new Set(filters.institutionIds)] : null,
     assetTiers: filters?.asset_tiers ?? [], fedDistricts: filters?.fed_districts ?? [],
     peerSetId: useSaved ? active!.id : null, peerSetLabel: useSaved ? active!.label : null,
     sort, referenceAssetsUsd: needsSimilarity ? subject.totalAssetsUsd : null,

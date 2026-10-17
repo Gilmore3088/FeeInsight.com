@@ -6,6 +6,7 @@
  * question answered in place. Deterministic and free. When the answer carries a storyline,
  * Hamilton's written memo over it (POST /api/hamilton/ask/memo) follows; that call is paid.
  */
+import { PeerGroupEmpty } from "@/components/hamilton/PeerGroupEmpty";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import type { AskObjective, AskResponse, ClarifyingQuestion, Scenario } from "@/lib/hamilton/workspace/types";
@@ -612,6 +613,7 @@ function StructuredAskConversation({
           {response.shortAnswer}
         </p>
       ) : null}
+      {response.peerGroupEmpty ? <PeerGroupEmpty group={response.peerGroupEmpty} /> : null}
       {response.positions && response.positions.length > 0 ? <SchedulePositionsChart rows={response.positions} hrefFor={researchHrefFor} /> : null}
       {response.answer && storyline ? (
         <StorylineView

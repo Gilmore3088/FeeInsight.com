@@ -15,7 +15,6 @@ import { detectSkill, buildSkillInjection, buildSkillExecution, isSkillOptIn, fi
 import { cacheLatestMessage, cachedSystem, trackerUsage } from "@/lib/research/tool-output";
 import type { AnswerEvidenceCheck } from "./answer-gate";
 import { questionOnly, writtenAnswerCheck } from "./answer-save";
-import type { ActivePeerSet } from "./active-peer-set";
 import { buildHamiltonInstitutionBriefing } from "./institution-briefing";
 import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
 import { buildHamiltonRequestContractPrompt, type HamiltonRequestContract } from "./request-contract";
@@ -44,7 +43,8 @@ export function lastUserTextOf(messages: readonly UIMessage[]): string {
 export async function buildWrittenAnswerSystemPrompt(input: {
   agent: Pick<AgentConfig, "systemPrompt">;
   contract: HamiltonRequestContract;
-  peerSet: Pick<ActivePeerSet, "id" | "label" | "filters"> | null;
+  /** The reader's saved group: ready, or empty (the prompt then says so and computes no peers). */
+  peerSet: Parameters<typeof buildSavedPeerSetPrompt>[0];
   /** The account (home) institution, when the reader has one. */
   homeId?: number | null;
 }): Promise<WrittenAnswerPrompt> {

@@ -8,6 +8,8 @@ import { HAMILTON_SYSTEM_PROMPT } from "../hamilton/voice";
 import { withCompactResults } from "./tool-output";
 import { getLocalCompetitors } from "./tool-local-competitors";
 import type { ActivePeerSet } from "../hamilton/active-peer-set";
+import type { HamiltonPeerFilters } from "../hamilton/peer-index";
+import type { EmptyPeerGroup } from "../hamilton/peer-group-copy";
 
 export interface AgentConfig {
   id: string;
@@ -151,25 +153,54 @@ const REGULATION_INSTRUCTION =
 const LOCAL_AND_PEER_INSTRUCTION =
   "For who competes with an institution in its county or market, or what local competitors charge, call getLocalCompetitors(institution_id) and name the competitors and their prices before any state, peer or national figure. For how an institution's fee income compares with peers, call queryFeeRevenueCorrelation(view='peers', institution_id, and the peer group's filters); use the reader's saved peer set when one is given below, and state the quarter and the peer count it returns. Use queryDistrictData and queryStateData for district and state context.";
 
+/** The most peer ids queryFeeRevenueCorrelation takes (tools-internal.ts). */
+const MAX_PROMPT_PEER_IDS = 200;
+
+/**
+ * The filters the written answer passes for the saved set: its exact institutions, or for a
+ * basic set larger than the tool's id limit, its stored filters. Null when neither fits.
+ */
+export function promptPeerFilters(
+  set: Pick<ActivePeerSet, "filters"> & Partial<Pick<ActivePeerSet, "definition">>,
+): HamiltonPeerFilters | null {
+  const ids = set.filters.institutionIds ?? [];
+  if (!ids.length) return set.filters;
+  if (ids.length <= MAX_PROMPT_PEER_IDS) return { institutionIds: ids };
+  return set.definition ?? null;
+}
+
+const promptText = (value: string, max: number) => value.replace(/[\r\n"]+/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
+
 /**
  * The reader's saved default peer set, as the written answer sees it (#1084). Its filters are
  * passed to the peer tools so "peers" means the group the reader chose. The name is the
- * reader's own text: kept to one short line.
+ * reader's own text: kept to one short line. A set that matches no institutions is said to be
+ * empty, and no peer figure is computed for it.
  */
-export function buildSavedPeerSetPrompt(set: Pick<ActivePeerSet, "id" | "label" | "filters"> | null): string {
+export function buildSavedPeerSetPrompt(
+  set: (Pick<ActivePeerSet, "id" | "label" | "filters"> & Partial<Pick<ActivePeerSet, "definition" | "institutionCount">>) | EmptyPeerGroup | null,
+): string {
   if (!set) {
     return "\n\nSAVED PEER SET: none. The reader has not saved a default peer set; name the peer group each figure uses.";
   }
-  const f = set.filters;
-  const name = set.label.replace(/[\r\n"]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
+  const name = promptText(set.label, 80);
+  if ("status" in set && set.status === "empty") {
+    return `\n\nSAVED PEER SET (the reader's default${set.id ? `, id ${set.id}` : ""}): "${name}" matches no institutions${set.institutionName ? ` for ${promptText(set.institutionName, 120)}` : ""}. ${promptText(set.reason, 300)} When the reader asks about peers, say this group matches no institutions and that they can edit it or choose another group in Settings. Compute no peer figure and use no other peer group in its place.`;
+  }
+  const ready = set as Pick<ActivePeerSet, "id" | "label" | "filters"> & Partial<Pick<ActivePeerSet, "definition" | "institutionCount">>;
+  const f = promptPeerFilters(ready);
+  const size = ready.institutionCount !== undefined ? ` It holds ${ready.institutionCount.toLocaleString("en-US")} institutions.` : "";
+  if (!f) {
+    return `\n\nSAVED PEER SET (the reader's default, id ${ready.id}): "${name}".${size} It is larger than the peer tool takes by id, so name it but compute no peer figure for it; say so.`;
+  }
   const parts: string[] = [];
-  if (f.institutionIds?.length) parts.push(`peer_institution_ids: [${f.institutionIds.slice(0, 200).join(", ")}]`);
+  if (f.institutionIds?.length) parts.push(`peer_institution_ids: [${f.institutionIds.join(", ")}]`);
   const states = [...(f.states ?? []), ...(f.state_code ? [f.state_code] : [])];
   if (states.length) parts.push(`states: [${states.map((code) => `"${code}"`).join(", ")}]`);
   if (f.charter_type) parts.push(`charter_type: "${f.charter_type}"`);
   if (f.asset_tiers?.length) parts.push(`asset_tiers: [${f.asset_tiers.map((tier) => `"${tier}"`).join(", ")}]`);
   if (f.fed_districts?.length) parts.push(`fed_districts: [${f.fed_districts.join(", ")}]`);
-  return `\n\nSAVED PEER SET (the reader's default, id ${set.id}): "${name}". Filters: ${parts.length ? parts.join("; ") : "none (every institution)"}. When the reader says peers, use this group: pass these filters to queryFeeRevenueCorrelation(view='peers') and call the group by its name.`;
+  return `\n\nSAVED PEER SET (the reader's default, id ${ready.id}): "${name}".${size} Filters: ${parts.length ? parts.join("; ") : "none (every institution)"}. When the reader says peers, use this group: pass these filters to queryFeeRevenueCorrelation(view='peers') and call the group by its name. Use no other peer group in its place.`;
 }
 
 /** One step of a finished answer, as the AI SDK reports it: only its tool calls are read. */
@@ -185,8 +216,12 @@ const sortedText = (values: readonly unknown[] | undefined) => [...(values ?? []
  * exactly the set's filters. Only then is the set the answer's peer baseline (#1084); a figure
  * from state, district, national or local-competitor tools never used it.
  */
-export function savedPeerSetUsed(set: Pick<ActivePeerSet, "filters">, steps: readonly AnswerStep[] | undefined): boolean {
-  const f = set.filters;
+export function savedPeerSetUsed(
+  set: Pick<ActivePeerSet, "filters"> & Partial<Pick<ActivePeerSet, "definition">>,
+  steps: readonly AnswerStep[] | undefined,
+): boolean {
+  const f = promptPeerFilters(set);
+  if (!f) return false;
   const want = {
     ids: sortedNumbers(f.institutionIds),
     states: sortedText([...(f.states ?? []), ...(f.state_code ? [f.state_code] : [])]),

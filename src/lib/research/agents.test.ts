@@ -133,17 +133,46 @@ describe("getHamilton", () => {
     const prompt = buildSavedPeerSetPrompt({
       id: 9,
       label: "Our \"lake\"\nbanks",
-      filters: { institutionIds: [11, 12], charter_type: "bank", states: ["MN"], asset_tiers: ["community_small"], fed_districts: [9] },
+      filters: { institutionIds: [11, 12] },
+      institutionCount: 2,
     });
     expect(prompt).toContain("id 9");
     expect(prompt).toContain("Our lake banks");
     expect(prompt).not.toContain("\nbanks");
+    expect(prompt).toContain("It holds 2 institutions.");
     expect(prompt).toContain("peer_institution_ids: [11, 12]");
+    expect(prompt).toContain("Use no other peer group in its place.");
+    expect(buildSavedPeerSetPrompt(null)).toContain("SAVED PEER SET: none");
+  });
+
+  it("passes a large basic group's stored filters, since the peer tool takes at most 200 ids", () => {
+    const ids = Array.from({ length: 250 }, (_, i) => i + 1);
+    const set = {
+      id: 9,
+      label: "Minnesota banks",
+      filters: { institutionIds: ids },
+      institutionCount: 250,
+      definition: { charter_type: "bank", states: ["MN"], asset_tiers: ["community_small"], fed_districts: [9] },
+    };
+    const prompt = buildSavedPeerSetPrompt(set);
+    expect(prompt).not.toContain("peer_institution_ids");
     expect(prompt).toContain('states: ["MN"]');
     expect(prompt).toContain('charter_type: "bank"');
     expect(prompt).toContain('asset_tiers: ["community_small"]');
     expect(prompt).toContain("fed_districts: [9]");
-    expect(buildSavedPeerSetPrompt(null)).toContain("SAVED PEER SET: none");
+    expect(savedPeerSetUsed(set, [{ toolCalls: [{ toolName: "queryFeeRevenueCorrelation", input: { view: "peers", charter_type: "bank", states: ["MN"], asset_tiers: ["community_small"], fed_districts: [9] } }] }])).toBe(true);
+    // A wider set over the limit has no filters to pass: named, no peer figure computed.
+    expect(buildSavedPeerSetPrompt({ ...set, definition: null })).toContain("compute no peer figure");
+  });
+
+  it("says an empty saved group is empty and computes no peers for it", () => {
+    const prompt = buildSavedPeerSetPrompt({
+      status: "empty", id: 9, name: "Lake banks", label: "Lake banks", institutionId: 5, institutionName: "Bank of Duluth",
+      reason: "None found: no institution meets all of its filters.",
+    });
+    expect(prompt).toContain('"Lake banks" matches no institutions for Bank of Duluth.');
+    expect(prompt).toContain("Compute no peer figure and use no other peer group in its place.");
+    expect(prompt).not.toContain("peer_institution_ids");
   });
 
   it("savedPeerSetUsed: only a peers-view call with exactly the saved set's filters uses it", () => {
