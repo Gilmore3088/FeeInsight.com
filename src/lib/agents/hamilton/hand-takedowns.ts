@@ -529,6 +529,27 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
     : []),
   // #1772, #1773: 28 non-network ATM rows, held by `ATM_SURCHARGE_TAKEDOWN_LIVE` (off).
   ...atmSurchargeTakedowns(),
+  // #1788 (read-only, Oct 17; James's sample-report review): rows guard v72 cannot read by name, each
+  // confirmed against its bank's stored text. Two international ATM fees filed as the non-network ATM
+  // fee that repeat a live International ATM & Card fee, and three optional add-ons filed as monthly
+  // maintenance; none of the 50 types holds an add-on. 5 entries, under James's fewer-than-20 rule.
+  { feePublishedId: 81615, institutionId: 19, canonicalFeeKey: "atm_non_network", amount: 5, feeName: "Non-Fifth Third ATM Fee",
+    reason: "duplicate of #81610 (#1788)", issue: 1788, kind: "duplicate",
+    requiresLive: { feePublishedId: 81610, amount: 5, feeName: "International ATM Withdrawal" },
+    evidence: "Fifth Third (doc 21042, text of Oct 7): \"Non-Fifth Third ATM Fee | $3.50 for U.S. transactions | $5 for international transactions\"; the $5 is the international withdrawal, live as card_foreign_txn 81610 (\"International ATM Withdrawal: $5.00\"). Its U.S. fee is live as 81609 ($3.50)." },
+  { feePublishedId: 16733, institutionId: 4967, canonicalFeeKey: "atm_non_network", amount: 3, feeName: "Excessive non-UNFCU/Co-op/Allpoint network ATM transactions",
+    reason: "duplicate of #144937 (#1788)", issue: 1788, kind: "duplicate",
+    requiresLive: { feePublishedId: 144937, amount: 3, feeName: "Over 8 withdrawals per month per account outside the US8: Excessive non-UNFCU/Co-op/Allpoint network ATM transactions" },
+    evidence: "United Nations FCU (unfcu.org fee page): \"Over 8 withdrawals per month per account outside the US | Excessive non-UNFCU/Co-op/Allpoint network ATM transactions $3.00/withdrawal\"; the same $3 line is 144937, which guard v72 re-files to card_foreign_txn. Within the U.S. the charge is $1.00." },
+  { feePublishedId: 142748, institutionId: 7327, canonicalFeeKey: "monthly_maintenance", amount: 3, feeName: "Monthly fee",
+    reason: "source_mismatch: #1788", issue: 1788, kind: "wrong_category",
+    evidence: "Frankenmuth CU (frankenmuthcu.org/mi-open-checking): identity monitoring, credit monitoring and recovery coverage, \"All this coverage is provided to you for a monthly $3.00 fee, charged to the head of household consumer checking account. Take advantage of this exciting security coverage today.\": an optional identity protection service, not a checking account's fee." },
+  { feePublishedId: 152166, institutionId: 502, canonicalFeeKey: "monthly_maintenance", amount: 28, feeName: "Monthly fee",
+    reason: "source_mismatch: #1788", issue: 1788, kind: "wrong_category",
+    evidence: "United Bank (unitedbk.bank/ag-checking), under \"Data Trac\": \"Ag customers can add this package of benefits to any ag checking account! This record keeping service ... Monthly fee of $28.00 plus tax or a discounted annual fee of $285.00 plus tax\": a record keeping add-on, not the account's fee." },
+  { feePublishedId: 107315, institutionId: 8448, canonicalFeeKey: "monthly_maintenance", amount: 20, feeName: "Service charge",
+    reason: "source_mismatch: #1788", issue: 1788, kind: "wrong_category",
+    evidence: "Velocity CU (velocitycu.com fee schedule): the $20.00 is the next cell's \"CU Rewards Program for Debit Mastercard* .......$20.00 annually\", a rewards add-on; the row's own \"Service Charge\" line is \"$10.00 per month\" (live as 32923). Choice Checking's $20 is its own live row (95335)." },
 ];
 
 export interface LiveTakedownRow {

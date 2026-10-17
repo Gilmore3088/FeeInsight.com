@@ -526,3 +526,15 @@ describe("own-ATM balance inquiry (Regions, Oct 9)", () => {
     expect(ownAtmSection("Non-Regions ATM: Withdrawal $3.00")).toBe(false);
   });
 });
+
+describe("guard v72 fold splits (#1788)", () => {
+  it("moves international ATM, sustained overdraft and incoming wire fees to their types", () => {
+    expect(splitLiveCategory("atm_non_network", "Non-PNC Bank ATM Fee (All Other Countries)")?.to).toBe("card_foreign_txn");
+    expect(splitLiveCategory("atm_non_network", "Foreign ATM Transaction Fee")).toBeNull();
+    expect(splitLiveCategory("overdraft", "Cont OD Charge")?.to).toBe("continuous_od");
+    expect(splitLiveCategory("overdraft", "Overdraft Fee (Max 5 items per day)")).toBeNull();
+    expect(splitLiveCategory("wire_domestic_outgoing", "Domestic Wire Transfer Fee – In Coming")?.to).toBe("wire_domestic_incoming");
+    expect(splitLiveCategory("wire_intl_outgoing", "Income Wire Transfer (foreign)")?.to).toBe("wire_intl_incoming");
+    expect(splitLiveCategory("wire_domestic_outgoing", "Wire Transfer (In or Out)")).toBeNull();
+  });
+});
