@@ -8,6 +8,7 @@ import {
   STATS_METHOD_VERSION,
   STATS_ROW_FILTER,
   STATS_SCHEDULE_KEYS,
+  countedRepresentatives,
   summarizeFeesBy,
   valuePerInstitution,
 } from "./fee-stats";
@@ -974,6 +975,12 @@ export interface PeerFeeValue {
    * name the records behind it. Absent where a reader does not load them.
    */
   fee_records?: PeerFeeRecord[];
+  /**
+   * Statistics rule 7 (count once): the sister charter this value counts as, when this charter
+   * shares its fee schedule with a lower-id charter of the same holding company among the rows
+   * read. Absent when the institution counts as itself (always, while the rule is off).
+   */
+  counted_as?: number;
 }
 
 /** One published_fee_catalog row behind a peer's value. */
@@ -1027,7 +1034,7 @@ export async function getPeerFeeValues(
     `SELECT ef.id, ef.fee_category, ef.amount, ef.institution_id, ct.institution_name,
             ct.charter_type, ct.asset_size_tier, ct.fed_district, ct.state_code,
             ef.source_document_id, ef.document_url, ef.created_at, ef.fee_published_id,
-            ef.fee_name, ef.frequency, ef.fee_audience
+            ef.fee_name, ef.frequency, ef.fee_audience, ${STATS_SCHEDULE_KEYS}
        FROM published_fee_catalog ef
        JOIN institution_sources ct ON ef.institution_id = ct.id
       WHERE ef.fee_category = ANY($1::text[])
@@ -1058,7 +1065,9 @@ export async function getPeerFeeValues(
     const result = new Map<string, PeerFeeValue[]>();
     for (const [category, list] of byCategory) {
       const values: PeerFeeValue[] = [];
+      const representatives = countedRepresentatives(list);
       for (const [id, amount] of valuePerInstitution(list)) {
+        const countedAs = representatives?.get(id);
         const row = meta.get(id);
         const own = list.filter((r) => Number(r.institution_id) === id);
         const docIds = [...new Set(own.map((r) => Number(r.source_document_id)).filter((v) => Number.isFinite(v) && v > 0))];
@@ -1078,6 +1087,7 @@ export async function getPeerFeeValues(
           document_urls: urls,
           published_at: published,
           fee_records: peerFeeRecords(own),
+          ...(countedAs !== undefined && countedAs !== id ? { counted_as: countedAs } : {}),
         });
       }
       result.set(category, values.sort((a, b) => a.amount - b.amount));
@@ -1139,7 +1149,8 @@ export async function getSegmentFeeValues(
   const rows = (await sql.unsafe(
     `WITH seg AS (${segmentSql})
      SELECT ef.fee_category, ef.amount, ef.institution_id, ct.institution_name, ct.charter_type,
-            ct.state_code, ct.asset_size, ef.source_document_id, ef.document_url, ef.created_at, ef.fee_published_id
+            ct.state_code, ct.asset_size, ef.source_document_id, ef.document_url, ef.created_at, ef.fee_published_id,
+            ${STATS_SCHEDULE_KEYS}
        FROM published_fee_catalog ef
        JOIN institution_sources ct ON ef.institution_id = ct.id
        JOIN seg ON seg.id = ct.id
@@ -1159,14 +1170,18 @@ export async function getSegmentFeeValues(
     document_url: string | null;
     created_at: Date | string | null;
     fee_published_id?: number | string | null;
+    schedule_keys?: string[] | null;
+    schedule_group?: string | null;
   }[];
   const kept = rows.filter((r) => Number(r.institution_id) !== excludeInstitutionId);
   const iso = (v: Date | string | null) => (v instanceof Date ? v.toISOString() : v ? String(v) : null);
   const feeRows = kept.filter((r) => r.fee_category === feeCategory);
   const values: SegmentFeeValue[] = [];
+  const representatives = countedRepresentatives(feeRows);
   for (const [id, amount] of valuePerInstitution(feeRows.map((r) => ({ ...r, institution_id: Number(r.institution_id) })))) {
     const own = feeRows.filter((r) => Number(r.institution_id) === id);
     const first = own[0];
+    const countedAs = representatives?.get(id);
     values.push({
       institution_id: id,
       institution_name: first?.institution_name ?? `Institution ${id}`,
@@ -1178,6 +1193,7 @@ export async function getSegmentFeeValues(
       published_at: own.map((r) => iso(r.created_at)).filter((v): v is string => !!v).sort().pop() ?? null,
       total_assets: first?.asset_size === null || first?.asset_size === undefined ? null : Number(first.asset_size),
       charter_type: first?.charter_type ?? null,
+      ...(countedAs !== undefined && countedAs !== id ? { counted_as: countedAs } : {}),
     });
   }
   const capRows = capCategory ? kept.filter((r) => r.fee_category === capCategory) : [];

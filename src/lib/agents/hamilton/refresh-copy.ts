@@ -5,6 +5,7 @@ import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { FREE_READ_PREFIX } from "@/lib/agents/hamilton/product-page";
 import { publishSourceLink } from "@/lib/agents/hamilton/source-link";
+import { pointFeeLinksAtDocument } from "@/lib/agents/hamilton/document-link";
 import {
   HAMILTON_PUBLISH_DEFAULT_MIN_CONFIDENCE,
   coverageTier,
@@ -385,6 +386,8 @@ export async function moveRowsToIdenticalCopy(
         RETURNING fr.fee_raw_id
       `;
       result.rowsMoved = moved.length;
+      // #1347: the moved rows link the current copy, never the superseded copy they left.
+      await pointFeeLinksAtDocument(scope as SqlTag, moved.map((row) => Number(row.fee_raw_id)));
       await scope`
         INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
         VALUES (

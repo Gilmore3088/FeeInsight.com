@@ -125,7 +125,7 @@ export function WelcomeSteps({
   return (
     <div className="max-w-2xl mx-auto">
       {activationPending && (
-        <div role="status" className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        <div role="status" className="mb-6 rounded-xl border border-brick/30 bg-brick-tint/40 p-4 text-sm text-ink">
           <p className="font-semibold">Payment received. Activating your Pro access.</p>
           <p className="mt-1">
             Stripe usually confirms within a minute. <Link href={refreshHref} className="font-semibold underline">Refresh this page</Link>{" "}
@@ -135,7 +135,7 @@ export function WelcomeSteps({
       )}
 
       {pendingWorkspaceInvitations.length > 0 && !isPro && (
-        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        <div className="mb-6 rounded-xl border border-brick/30 bg-brick-tint/40 p-4 text-sm text-ink">
           <p className="font-semibold">Workspace invitation waiting</p>
           <p className="mt-1">
             Your email has been invited to an institution account. It includes up to five teammates, so you don&apos;t need to pay. Open the invite link the account owner sent you to join:
@@ -144,7 +144,7 @@ export function WelcomeSteps({
             {pendingWorkspaceInvitations.map((invitation) => (
               <span
                 key={invitation.id}
-                className="rounded-full border border-amber-200 bg-white/70 px-2.5 py-1 text-xs font-semibold"
+                className="rounded-full border border-brick/30 bg-white/70 px-2.5 py-1 text-xs font-semibold"
               >
                 {invitation.institutionName} · {invitation.role}
               </span>
@@ -160,11 +160,11 @@ export function WelcomeSteps({
       )}
 
       {workspaceMemberships.length > 0 && (
-        <div className="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+        <div className="mb-6 rounded-xl border border-below-market/30 bg-below-market/10 p-4 text-sm text-ink">
           <p className="font-semibold">Hamilton workspace access is active</p>
           <div className="mt-3 grid gap-2">
             {workspaceMemberships.slice(0, 3).map((membership) => (
-              <div key={membership.id} className="rounded-lg border border-emerald-100 bg-white/70 px-3 py-2">
+              <div key={membership.id} className="rounded-lg border border-below-market/20 bg-white/70 px-3 py-2">
                 <p className="font-semibold text-ink">{membership.institutionName}</p>
                 <p className="text-xs text-ink-muted">
                   {membership.role} access · institution ID {membership.institutionId}
@@ -248,7 +248,7 @@ export function WelcomeSteps({
               </select>
             </div>
             {saveError && (
-              <p role="alert" className="text-sm text-[#B42318]">{saveError}</p>
+              <p role="alert" className="text-sm text-brick">{saveError}</p>
             )}
             <button
               type="submit"
@@ -372,8 +372,8 @@ export function WelcomeSteps({
       {/* Step 4: Done */}
       {step === 4 && (
         <div className="text-center">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-emerald-50 mb-4">
-            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="w-8 h-8 text-emerald-600" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-below-market/10 mb-4">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="w-8 h-8 text-below-market" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M20 6L9 17l-5-5" />
             </svg>
           </div>

@@ -44,15 +44,16 @@ export { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT, maturityTier, ty
  * Rule 7 switch. Off until the read's cost and the affected counts are checked on prod (#1441).
  * Readers select STATS_SCHEDULE_KEYS; while this is false it selects NULL and nothing changes.
  *
- * Must fix before switching on: these count institutions from raw rows, not summarizeFees,
- * so they would still count every charter and disagree with the medians beside them:
- * - src/lib/report-assemblers/national-trends.ts (institution counts at :115 and :258)
- * - src/app/api/v1/fees/route.ts (:85)
- * - src/lib/research/tools.ts (:52)
- * - src/lib/hamilton/workspace/research.ts peer band and layers (raw quantiles, :258-270,
- *   :920, :952); answer-correctness.ts leaves rule 7 out of its recompute until they move.
- * Also check, once on: the fee-category-detail cache entry carries the schedule fields
- * (fees.ts getFeeCategoryDetail) against Next's 2 MB per-entry limit.
+ * Readers that count institutions or rank values outside summarizeFees use the same rule
+ * (#1441, 17 Oct): countedInstitutionCount (national-trends counts and provenance, the API's
+ * and research tool's category institution_count), countedValuePerInstitution (national-trends
+ * outliers, the category page's distribution values and points) and countedAmounts over each
+ * peer's `counted_as` (Hamilton's peer band, layers, segment band, peer choice and
+ * answer-correctness recompute). Peers and charters are still listed by their own names.
+ * The fee-category-detail cache entry (fees.ts getFeeCategoryDetail) carries the schedule fields
+ * when on. Measured 17 Oct as JSON of the rows: the five largest categories' rows are already
+ * 2.0 to 3.6 MB without them (safe_deposit_box 6,687 rows), and the fields add about 30%, so
+ * those entries miss Next's 2 MB per-entry cache with or without this switch.
  */
 export const COUNT_SHARED_SCHEDULE_ONCE: boolean = false;
 
@@ -239,6 +240,67 @@ export function sharedScheduleRepresentatives(
   const representatives = new Map<number, number>();
   for (const id of parent.keys()) representatives.set(id, find(id));
   return representatives;
+}
+
+/**
+ * Rule 7's representatives for these rows when it is on (`sharedScheduleRepresentatives`), else
+ * null: with the switch off every institution counts as itself.
+ */
+export function countedRepresentatives(
+  rows: readonly Pick<StatsInputRow, "institution_id" | "schedule_keys" | "schedule_group">[],
+  options: { countSharedScheduleOnce?: boolean } = {},
+): Map<number, number> | null {
+  return (options.countSharedScheduleOnce ?? COUNT_SHARED_SCHEDULE_ONCE) ? sharedScheduleRepresentatives(rows) : null;
+}
+
+/**
+ * How many institutions these rows count as: every valid institution id once, and under rule 7
+ * the sibling charters of one shared schedule once. For a reader that counts institutions from
+ * raw rows (a provenance line, a segment's size), so its count agrees with summarizeFees.
+ */
+export function countedInstitutionCount(
+  rows: readonly Pick<StatsInputRow, "institution_id" | "schedule_keys" | "schedule_group">[],
+  options: { countSharedScheduleOnce?: boolean } = {},
+): number {
+  const ids = new Set<number>();
+  for (const row of rows) {
+    const id = Number(row.institution_id);
+    if (Number.isSafeInteger(id) && id > 0) ids.add(id);
+  }
+  const representatives = countedRepresentatives(rows, options);
+  return representatives ? new Set([...ids].map((id) => representatives.get(id) ?? id)).size : ids.size;
+}
+
+/**
+ * The values summarizeFees builds its statistics from: one per institution, and under rule 7 one
+ * per shared schedule, keyed by the lowest charter id. For a reader that ranks or plots
+ * institutions beside a median (outliers, a distribution chart), so its population is the median's.
+ */
+export function countedValuePerInstitution(rows: StatsInputRow[], options: { countSharedScheduleOnce?: boolean } = {}): Map<number, number> {
+  const validRows = rows.filter((row) => {
+    const id = Number(row.institution_id);
+    return Number.isSafeInteger(id) && id > 0 && toAmount(row.amount) !== null;
+  });
+  const values = valuePerInstitution(validRows);
+  return (options.countSharedScheduleOnce ?? COUNT_SHARED_SCHEDULE_ONCE) ? collapseSharedSchedules(values, validRows) : values;
+}
+
+/**
+ * Rule 7 for values that are already one per institution (Hamilton's peers): institutions with the
+ * same `countedAs` (their representative from countedRepresentatives) count once, at the lower
+ * middle of their values, as summarizeFees counts them. Sorted ascending.
+ */
+export function countedAmounts(values: readonly { institutionId: number; amount: number; countedAs?: number | null }[]): number[] {
+  const members = new Map<number, number[]>();
+  for (const value of values) {
+    const key = value.countedAs ?? value.institutionId;
+    const list = members.get(key);
+    if (list) list.push(value.amount);
+    else members.set(key, [value.amount]);
+  }
+  return [...members.values()]
+    .map((list) => [...list].sort((a, b) => a - b)[Math.floor((list.length - 1) / 2)])
+    .sort((a, b) => a - b);
 }
 
 /** Statistics for one group of rows (one category, or one category within a segment). */

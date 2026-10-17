@@ -99,7 +99,7 @@ export function RegisterForm({
     <form method="post" onSubmit={handleSubmit} className="relative bg-surface-0 rounded-lg border border-border shadow-sm p-6 space-y-4">
       <HoneypotField />
       {error && (
-        <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+        <div className="text-sm text-brick bg-brick-tint/40 border border-brick/30 rounded-md px-3 py-2">
           {error}
           {loginHref && (
             <>

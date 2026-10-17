@@ -331,6 +331,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   FRESHNESS_SEARCH_VERSION: "Its selector re-searches every stale link not yet searched at v2; there is nothing to replay.",
   // v1 (#1342): a new hand-started step that reads every live fee with no source link on each run.
   SOURCE_LINK_VERSION: "Its own step reads every live fee with no source link on each run; nothing to replay.",
+  SOURCE_LINK_DRIFT_VERSION: "Every publish step reads every live fee whose link opens another page than its own document; nothing to replay.",
   // v3 (#1397): the recheck reads every verified row once per version, so each verify step works
   // through the whole verified set under v3 itself (200 a step).
   // v4 (#1571, #1574): the same selector re-reads every verified row once under v4.
@@ -392,6 +393,8 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
       affects: "Fees Knox reads from each current fee schedule. A rules fix reaches a text only when Knox reads it again.",
       count: countKnoxRules,
     },
+    // Counts every CATEGORY_GUARD_VERSION bump. v68 (Oct 17): returned foreign checks leave check
+    // cashing for returned deposited items, and bill pay refuses overdraft and NSF rows (#1304).
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

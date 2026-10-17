@@ -890,7 +890,7 @@ Darwin owns verification and classification.
   - `off`: the tick queues one dry run a day over a sample of documents (md5 order by day) that
     counts decisions by audience and evidence source, and writes nothing.
   - `dry_run_full` (shipped, the gate before live): the same cursor chain as live over every
-    document, one batch per tick, key chain `darwin:audience-relabel:dry:v3:after:<cursor>`,
+    document, one batch per tick, key chain `darwin:audience-relabel:dry:v4:after:<cursor>`,
     writing nothing but each batch's counts. The last batch adds the chain's totals to its detail
     (`dry_run_totals`) and writes an `audience_relabel.dry_run_totals` event. Live waits until the
     totals show unknown at most 10%, and consumer, both and business each within about 5 points
@@ -905,6 +905,23 @@ Darwin owns verification and classification.
   without `darwin:` fails) until migration 20270110000047 is present. On a random 150 of the
   7,949 documents (1,509 of the 77,268 live unknown fees, 14 Oct 2026), it decided 1,064
   consumer, 351 both, 33 business and left 61 unknown.
+  Version 4 (#1687, Oct 17) also re-reads live fees Darwin called `both` only because the
+  schedule prices business items somewhere (evidence `darwin:mixed_schedule_unqualified:`). Such
+  a fee moves only to one audience read from a schedule's own title (`document_title`,
+  `schedule_section_title`), never back to `unknown` and never to a default read from a newer
+  copy of the text; anything else leaves it as it is. Its old value is recorded under its own key
+  (`darwin.audience_relabel:v4:both:verified:<id>`), and a rollback restores each fee's first
+  recorded value when it still carries the last relabel's evidence.
+- A schedule's own title decides the fees under it (`scheduleSectionTitle`, #1687): the nearest
+  heading-case title above the fee's line that is one audience's whole schedule ("PERSONAL
+  SCHEDULE OF FEES", "Commercial Account FEE SCHEDULE", "SCHEDULE OF FEES - BUSINESS", or one set
+  on two lines, "Consumer Deposit Account" over "Fee Schedule"), when the fee's line and every
+  line between name no other audience. A title naming no audience ends the search, and so do two
+  titles for different audiences one over the other (a menu or a contents list). A product's
+  schedule ("Business Remote Deposit Capture Fee Schedule"), a joined audience ("General and
+  Business Membership Fee Schedule"), a menu line and a line cut mid-sentence are no title. It is
+  read after the fee's price cell and before the section-heading rule; a title at the top of the
+  document keeps the source `document_title`.
 - Every decision is written to `pipeline_attempts` (stage `verify`, fingerprint
   `raw:<fee_raw_id>`) with `decision` and `reason_code`; a row decided under this rule
   version is never selected again, so skipped rows cannot starve the batch.
@@ -1181,13 +1198,22 @@ Darwin owns verification and classification.
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v67: `RESEARCH_SPLIT_LIVE` is on (James, Oct 17), and it is v66 when off (`CATEGORY_GUARD_VERSION` in
-  `src/lib/fee-category-guard.ts`; off, v65's rules read every live fee as v64 did, so v66 is v64
-  plus v66's rule and v67 is v65 plus it). v66 (James, Oct 16, #1099 option A; #1605): a deposit for
+- The guard is at v68 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v68 (Oct 17):
+  a returned foreign, Canadian or international check or item (`FOREIGN_ITEM_RETURN` in
+  `fee-fold.ts`) leaves `check_cashing` for `deposited_item_return` by guard, re-file rule and fold
+  split, and `bill_pay` refuses a row that is the overdraft (courtesy pay) or NSF fee by its own name
+  or by the heading just before it on its source line (#1304). Its live re-check is the publish
+  step's fold split (it runs before the guard) and the guard catch-up: the dry run moves 10 live check
+  cashing fees and fails 8 live bill pay fees (flagged for the second look, then taken down; 6 of the 8
+  repeat an NSF fee already live at that bank and price). Darwin re-reads its older category
+  rejections once, as for every guard version.
+  Before v68, v67 was the guard with `RESEARCH_SPLIT_LIVE` on (James, Oct 17), and v66 with it off
+  (off, v65's rules read every live fee as v64 did, so v66 is v64 plus v66's rule and v67 is v65 plus
+  it); v68's rules do not depend on the switch, so turning it off again needs its own version. v66 (James, Oct 16, #1099 option A; #1605): a deposit for
   the night depository key is a key charge, not the service, so `night_deposit` refuses it; a lost or
   replaced key stays. Its live re-check is the category guard's live sweep (Hamilton's guard
   catch-up on the first tick after the deploy, then every publish step): 10 live key deposits fail
-  it, each flagged for the second look and then taken down. The notes for v43 to v67 are the version
+  it, each flagged for the second look and then taken down. The notes for v43 to v68 are the version
   comments above that constant, not this guide; v58 is the bond-return lesson above. v65 (James, Oct 15, #1398) adds guard rules for `excess_withdrawal` and
   `returned_mail` (amount envelopes $1 to $50 in `envelopes.ts`), re-files research filed under
   either back to account research. Once `RESEARCH_SPLIT_LIVE` is on, an over-limit activity charge
@@ -1259,7 +1285,7 @@ fails a PR that changes one of these constants without updating its line here (#
 
 | Constant | Strategy | Version | File |
 |---|---|---|---|
-| `AUDIENCE_RELABEL_VERSION` | `darwin.audience_relabel` | v3 | `darwin/audience-relabel.ts` |
+| `AUDIENCE_RELABEL_VERSION` | `darwin.audience_relabel` | v4 | `darwin/audience-relabel.ts` |
 | `DARWIN_ADJUDICATE_STRATEGY` | `verify.adjudicate` | v2 | `darwin/adjudicate.ts` |
 | `DARWIN_CATEGORY_MODEL_STRATEGY` | `verify.category_model` | v1 | `darwin/category-model.ts` |
 | `DARWIN_PEER_STRATEGY` | `verify.peer_range` | v5 | `darwin/peer-checks.ts` |

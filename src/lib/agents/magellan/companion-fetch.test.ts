@@ -90,6 +90,29 @@ describe("Magellan companion fetch", () => {
     expect(db.mock.calls.some((call) => templateText(call[0]).includes("INSERT INTO source_documents"))).toBe(false);
   });
 
+  it("keeps the bytes in the vault when the reused copy predates the vault (Alliant, doc 1933)", async () => {
+    const vaultKeys = new Map<number, string | null>([[512, null], [513, "ab/already"]]);
+    for (const [docId, key] of vaultKeys) {
+      const base = createDb([freedom], { existing: docId }) as unknown as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown[]>;
+      const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+        if (templateText(strings).includes("SELECT document_r2_key FROM source_documents")) return Promise.resolve([{ document_r2_key: key }]);
+        return base(strings, ...values);
+      });
+      const vault = { configured: true, store: vi.fn(async () => ({ status: "stored" as const, key: "f7/stored" })), read: vi.fn(), presign: vi.fn() };
+      const result = await runCompanionFetch({ db: asDb(db), fetchImpl: vi.fn(async () => page("same bytes")), vault: vault as never, runId: 7 });
+
+      expect(result.results[0]).toMatchObject({ outcome: "unchanged", sourceDocumentId: docId });
+      const keyed = db.mock.calls.find((call) => templateText(call[0]).includes("SET document_r2_key"));
+      if (key == null) {
+        expect(vault.store).toHaveBeenCalledTimes(1);
+        expect(keyed).toEqual(expect.arrayContaining(["f7/stored", docId]));
+      } else {
+        expect(vault.store).not.toHaveBeenCalled();
+        expect(keyed).toBeUndefined();
+      }
+    }
+  });
+
   it("retires a page that is gone twice in a row", async () => {
     const db = createDb([{ ...freedom, fetch_failures: 1 }]);
     const result = await runCompanionFetch({ db: asDb(db), fetchImpl: vi.fn(async () => page("gone", 404)), vault: null, runId: 7 });

@@ -5,7 +5,7 @@ import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { CONTACT_EMAIL, SITE_URL } from "@/lib/constants";
 import { getPublicStatsSummary } from "@/lib/public-stats";
 import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT } from "@/lib/data-store/maturity";
-import { API_MONTHLY_CALLS_LABEL, API_PLANS_LABEL } from "@/lib/api-subscriber-access";
+import { API_MONTHLY_CALLS_LABEL, API_PLANS_LABEL, BURST_CALLS_PER_MINUTE } from "@/lib/api-subscriber-access";
 import { PAST_DUE_GRACE_DAYS } from "@/lib/access";
 import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import { PRO_PLANS_NAV } from "@/components/nav-items";
@@ -369,7 +369,7 @@ export default async function ApiDocsPage() {
       <SectionHeading id="rate-limits">Rate Limits</SectionHeading>
       <div className="rounded-xl border border-border/80 bg-white px-6 py-5">
         <p className="text-[13px] text-ink-muted">
-          Each plan gets one monthly allowance, shared by every key on it and across all endpoints. When it runs out, calls return 429 rate_limited until the allowance resets on the 1st of the next month (UTC). Unlimited keys get no X-RateLimit-Limit or X-RateLimit-Remaining headers. Errors return JSON with an error message and a stable code such as invalid_parameter, plan_required or rate_limited.
+          Each plan gets one monthly allowance, shared by every key on it and across all endpoints. When it runs out, calls return 429 rate_limited until the allowance resets on the 1st of the next month (UTC). Each plan can also make up to {BURST_CALLS_PER_MINUTE} calls a minute, and calls past that return 429 burst_limited with a Retry-After header giving the seconds to wait. Unlimited keys get no X-RateLimit-Limit or X-RateLimit-Remaining headers. Errors return JSON with an error message and a stable code such as invalid_parameter, plan_required or rate_limited.
         </p>
         <div className="mt-3 space-y-1.5 text-[13px]">
           <ResponseField name="X-RateLimit-Limit" type="header" note="Maximum requests in the current window" />

@@ -274,6 +274,27 @@ export function isPdfLink(url: string): boolean {
   return PDF_LINK.test(url);
 }
 
+async function storeCompanionCopy(
+  db: SqlTag,
+  vault: DocumentVault,
+  sourceDocumentId: number,
+  companionId: number,
+  bytes: Uint8Array,
+  contentHash: string,
+  contentType: string | null,
+): Promise<void> {
+  const stored = await vault.store(bytes, contentHash, contentType);
+  if (stored.key) {
+    await db`
+      UPDATE source_documents
+         SET document_r2_key = ${stored.key}, content_type = ${contentType}, byte_size = ${bytes.byteLength}
+       WHERE id = ${sourceDocumentId}
+    `;
+  } else if (stored.error) {
+    console.error(`Document vault store failed for companion page ${companionId}: ${stored.error}`);
+  }
+}
+
 async function fetchOne(
   db: SqlTag,
   row: CompanionRow,
@@ -350,21 +371,21 @@ async function fetchOne(
       sourceDocumentId = inserted?.id == null ? null : Number(inserted.id);
       outcome = "success";
       if (vault?.configured && sourceDocumentId != null) {
-        const stored = await vault.store(bytes, contentHash, contentType);
-        if (stored.key) {
-          await db`
-            UPDATE source_documents
-               SET document_r2_key = ${stored.key}, content_type = ${contentType}, byte_size = ${bytes.byteLength}
-             WHERE id = ${sourceDocumentId}
-          `;
-        } else if (stored.error) {
-          console.error(`Document vault store failed for companion page ${companionId}: ${stored.error}`);
-        }
+        await storeCompanionCopy(db, vault, sourceDocumentId, companionId, bytes, contentHash, contentType);
       }
     }
   }
   if (outcome === "unchanged" && sourceDocumentId != null) {
     await db`UPDATE source_documents SET last_checked_at = NOW() WHERE id = ${sourceDocumentId}`;
+    // The same bytes as a copy stored before the vault: keep these so Rosetta reads them instead
+    // of asking the bank again. Alliant's fee PDF (doc 1933, Feb 2026) has no stored copy; its
+    // read got HTTP 403, and the paid fetch's 215,719 bytes of the same file (Oct 17) were dropped.
+    if (vault?.configured) {
+      const [existing] = await db`SELECT document_r2_key FROM source_documents WHERE id = ${sourceDocumentId}`;
+      if (existing && existing.document_r2_key == null) {
+        await storeCompanionCopy(db, vault, sourceDocumentId, companionId, bytes, contentHash, contentType);
+      }
+    }
   }
   // The copy this fetch stored or confirmed is the page's current one.
   await markCurrentCopy(db, sourceDocumentId);

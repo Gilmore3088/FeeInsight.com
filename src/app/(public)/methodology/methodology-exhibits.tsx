@@ -19,8 +19,8 @@ export function MethodologyHero({ freshnessLabel }: { freshnessLabel: string }) 
   return (
     <section className="fi-on-navy bg-ink text-paper">
       <div className="mx-auto max-w-page px-4 pb-8 pt-10 text-center sm:px-6 sm:pb-10 sm:pt-14 sm:text-left">
-        <p className="flex items-center justify-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e0716a] sm:justify-start">
-          <span aria-hidden="true" className="h-px w-8 bg-[#e0716a]/60" />
+        <p className="flex items-center justify-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-brick-on-navy sm:justify-start">
+          <span aria-hidden="true" className="h-px w-8 bg-brick-on-navy/60" />
           Methodology
         </p>
         <h1 className="mx-auto mt-3 max-w-3xl sm:mx-0 text-[2rem] font-extrabold leading-[1.08] tracking-[-0.015em] text-white sm:text-[3rem]" style={SANS}>
@@ -30,7 +30,7 @@ export function MethodologyHero({ freshnessLabel }: { freshnessLabel: string }) 
           Every figure in the {PRODUCT_NAME} starts as a line in a schedule the institution published itself.
         </p>
         <p className="mt-5 inline-flex items-center gap-2 text-[12px] text-paper/75">
-          <span aria-hidden="true" className="h-2 w-2 rounded-full bg-[#7fb59b]" />
+          <span aria-hidden="true" className="h-2 w-2 rounded-full bg-good-on-navy" />
           {freshnessLabel}
         </p>
         <nav aria-label="Methodology sections" className="mt-5">
@@ -73,7 +73,7 @@ function DocumentGlyph() {
       {[18, 24, 30, 36].map((y) => (
         <g key={y}>
           <rect x="7" y={y} width="16" height="2.5" rx="1" fill="currentColor" opacity="0.25" />
-          <rect x="27" y={y} width="6" height="2.5" rx="1" fill="#b23a32" opacity="0.55" />
+          <rect x="27" y={y} width="6" height="2.5" rx="1" fill="var(--fi-brick)" opacity="0.55" />
         </g>
       ))}
     </svg>

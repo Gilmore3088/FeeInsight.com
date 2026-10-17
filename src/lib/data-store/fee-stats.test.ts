@@ -9,6 +9,9 @@ import {
   businessSourceSql,
   statsRowFilter,
   sharedScheduleRepresentatives,
+  countedAmounts,
+  countedInstitutionCount,
+  countedValuePerInstitution,
   scheduleKeysSql,
   scheduleGroupSql,
   summarizeRates,
@@ -208,6 +211,35 @@ describe("count once: sibling charters sharing one schedule (#1441, rule 7)", ()
     expect(after.bank_count).toBe(5);
     expect(after.median_amount).toBe(14);
     expect(after.maturity_tier).toBe("provisional");
+  });
+
+  it("gives raw-row readers the median's own count and population (17 Oct readers fix)", () => {
+    // The provenance line, the API's institution_count and the outlier list count from raw rows.
+    expect(countedInstitutionCount(rows, { countSharedScheduleOnce: false })).toBe(9);
+    expect(countedInstitutionCount(rows, { countSharedScheduleOnce: true })).toBe(summarizeFees(rows, { countSharedScheduleOnce: true }).institution_count);
+    // A row with no amount still names an institution, as the provenance count reads it.
+    const unpriced = [...rows, { institution_id: 77, amount: null, charter_type: "bank", fee_category: "nsf", schedule_keys: [] as string[], schedule_group: "" }];
+    expect(countedInstitutionCount(unpriced, { countSharedScheduleOnce: true })).toBe(6);
+    const values = countedValuePerInstitution(rows, { countSharedScheduleOnce: true });
+    expect([...values.keys()].sort((a, b) => a - b)).toEqual([160, 9000, 9001, 9002, 9003]);
+    expect(values.get(160)).toBe(30);
+    expect(countedValuePerInstitution(rows, { countSharedScheduleOnce: false }).size).toBe(9);
+  });
+
+  it("counts Hamilton's peers once per shared schedule, at the lower middle (countedAmounts)", () => {
+    const peers = [
+      { institutionId: 160, amount: 30 },
+      { institutionId: 318, amount: 28, countedAs: 160 },
+      { institutionId: 1769, amount: 35, countedAs: 160 },
+      { institutionId: 688, amount: 32, countedAs: 160 },
+      { institutionId: 9000, amount: 10 },
+      { institutionId: 9001, amount: 40 },
+    ];
+    // IBC's four values 28, 30, 32, 35 count once at 30, as collapseSharedSchedules counts them.
+    expect(countedAmounts(peers)).toEqual([10, 30, 40]);
+    expect(countedAmounts(peers.map(({ institutionId, amount }) => ({ institutionId, amount })))).toEqual([10, 28, 30, 32, 35, 40]);
+    const asRows = peers.map((p) => ({ institution_id: p.institutionId, amount: p.amount, schedule_keys: p.institutionId < 9000 ? shared : null, schedule_group: p.institutionId < 9000 ? IBC : null }));
+    expect([...countedValuePerInstitution(asRows, { countSharedScheduleOnce: true }).values()].sort((a, b) => a - b)).toEqual(countedAmounts(peers));
   });
 
   it("keeps every charter's own value for its own page", () => {

@@ -101,11 +101,11 @@ export function ContactForm({ searchParamsPromise, headings }: ContactFormProps)
     return (
       <>
       {header}
-      <div className={`${header ? "mt-8 " : ""}rounded-xl border border-emerald-200 bg-emerald-50/50 px-6 py-8 text-center`}>
-        <p className="text-[16px] font-medium text-emerald-800">
+      <div className={`${header ? "mt-8 " : ""}rounded-xl border border-below-market/30 bg-below-market/5 px-6 py-8 text-center`}>
+        <p className="text-[16px] font-medium text-below-market">
           {isDemo ? "Request received" : "Message received"}
         </p>
-        <p className="mt-2 text-[13px] text-emerald-700">
+        <p className="mt-2 text-[13px] text-below-market">
           {isDemo
             ? "We'll reply within one business day to set a time."
             : "We'll get back to you within one business day."}
@@ -214,7 +214,7 @@ export function ContactForm({ searchParamsPromise, headings }: ContactFormProps)
       </div>
 
       {status === "error" && (
-        <p className="text-[12px] text-red-600">
+        <p className="text-[12px] text-brick">
           Something went wrong. Please try again or email us directly.
         </p>
       )}

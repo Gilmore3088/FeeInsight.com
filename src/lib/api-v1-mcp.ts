@@ -441,7 +441,7 @@ export async function handleMcpPost(request: NextRequest, handlers: McpV1Handler
     return Response.json(
       {
         error: auth.error ?? "An API key is required. Ask hello@bankfeeindex.com for access.",
-        code: auth.error ? "invalid_api_key" : "api_key_required",
+        code: auth.error ? (auth.code ?? "invalid_api_key") : "api_key_required",
       },
       { status: 401, headers: { "WWW-Authenticate": "Bearer" } },
     );

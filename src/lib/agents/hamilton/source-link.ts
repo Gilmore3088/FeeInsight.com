@@ -2,7 +2,16 @@ import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
-import { markRestoredForSourceCheck } from "@/lib/agents/hamilton/source-check";
+import {
+  markRestoredForSourceCheck,
+  readerLostLine,
+  traceLiveFee,
+  type InstitutionText,
+  type LiveFeeRow,
+} from "@/lib/agents/hamilton/source-check";
+import { secondLook, type SecondLookCandidate } from "@/lib/agents/hamilton/second-look";
+import { documentLinkSql } from "@/lib/agents/hamilton/document-link";
+import { documentLinkKey, documentLinkKeySql } from "@/lib/document-link-key";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 
 type SqlTag = typeof sql;
@@ -564,6 +573,51 @@ export function findResourceDocument(
   return { why };
 }
 
+/**
+ * Imported fees the shared check cannot tie to their price, each linked by hand to a stored copy
+ * of its own schedule that prints the line (#1342, roadmap 6.14). 11764: Bay Cities CU prints
+ * "Express Checking Monthly Fee: $0 with e-Statements and Direct Deposit. With e-Statements OR
+ * Direct Deposit – $5." The check gives the $5 to the $0 tier's words; the import's other two
+ * tiers (11756, 11766) hold the two plain schedule copies, so only the print copy is free.
+ * A hand link applies only while the fee is still that fee (institution, name, amount) and the
+ * document is the institution's, current, completed, free, and still prints the line.
+ */
+export const HAND_SOURCE_LINKS: ReadonlyArray<{
+  feePublishedId: number;
+  institutionId: number;
+  feeName: string;
+  amount: number;
+  sourceDocumentId: number;
+  line: string;
+}> = [
+  {
+    feePublishedId: 11764,
+    institutionId: 8434,
+    feeName: "Express Checking Monthly Fee",
+    amount: 5,
+    sourceDocumentId: 27381,
+    line: "Express Checking Monthly Fee: $0 with e-Statements and Direct Deposit. With e-Statements OR Direct Deposit – $5.",
+  },
+];
+
+/** Pure: the hand link for a candidate the check could not place, or null. */
+export function findHandSourceLink(
+  fee: ResourceCandidateRow,
+  texts: InstitutionDocumentText[],
+): { sourceDocumentId: number; url: string; sourceLine: string } | null {
+  const hand = HAND_SOURCE_LINKS.find((entry) => entry.feePublishedId === Number(fee.fee_published_id));
+  if (!hand || hand.institutionId !== Number(fee.institution_id) || hand.feeName !== fee.fee_name) return null;
+  if (fee.amount == null || fee.amount === "" || Math.abs(Number(fee.amount) - hand.amount) >= 0.005) return null;
+  if ((fee.taken_document_ids ?? []).map(Number).includes(hand.sourceDocumentId)) return null;
+  const text = texts.find((candidate) => Number(candidate.source_document_id) === hand.sourceDocumentId);
+  if (!text || Number(text.institution_id) !== hand.institutionId || text.superseded || text.status !== "completed") return null;
+  const feeKey = fee.fee_r2_key?.trim() || null;
+  if (feeKey && feeKey !== text.document_r2_key?.trim()) return null;
+  const url = httpUrl(text.document_url);
+  if (!url || !text.normalized_text?.includes(hand.line)) return null;
+  return { sourceDocumentId: hand.sourceDocumentId, url, sourceLine: hand.line };
+}
+
 /** Pure: the re-source for each candidate, or why it has none. */
 export function planSourceLinkResource(
   rows: ResourceCandidateRow[],
@@ -595,10 +649,10 @@ export function planSourceLinkResource(
       continue;
     }
     const nameKey = `${row.source ?? ""}:${row.fee_name}`;
-    const found = findResourceDocument(
-      { ...row, taken_document_ids: [...(row.taken_document_ids ?? []), ...(claimed.get(nameKey) ?? [])] },
-      byInstitution.get(institutionId) ?? [],
-    );
+    const fee = { ...row, taken_document_ids: [...(row.taken_document_ids ?? []), ...(claimed.get(nameKey) ?? [])] };
+    const institutionTexts = byInstitution.get(institutionId) ?? [];
+    const checked = findResourceDocument(fee, institutionTexts);
+    const found = "why" in checked ? findHandSourceLink(fee, institutionTexts) ?? checked : checked;
     if ("why" in found) {
       miss(found.why);
       continue;
@@ -897,5 +951,372 @@ export async function resourceSourceLinks(
     return { ...result, resources: [], linked: 0, restored: 0 };
   }
   if (result.linked > 0 || result.restored > 0) invalidatePublicReadCache();
+  return result;
+}
+
+/**
+ * #1347 link drift. A live fee's link should open the page its own document's text was read
+ * from: the text's address (a schedule PDF a landing page links to, or a redirect's target), or
+ * the document's own URL (`documentLinkSql`). On Oct 17 (read-only) 2,089 live dollar fees linked
+ * a page written differently from their document's URL: 587 were the same page (":443", "%20" for
+ * a space; Deming's `documentLinkKey` now sets those aside), 1,453 were the page the document's
+ * text was read from (the fee's real source, left as they are), and 49 at 12 institutions had
+ * drifted: the raw row was moved to another document (the identical-copy move, the source check's
+ * relink) and kept the old document's link. Those moves now re-link (`pointFeeLinksAtDocument`).
+ *
+ * This pass, in every publish step: a live fee whose link opens neither its document's URL nor
+ * the page its text was read from is traced in its own document's newest completed text with the
+ * shared check (`traceLiveFee`, which is `checkFeeAgainstSource` for a dollar fee). Traced: its
+ * link becomes its document's at every tier (published, verified, raw). Not traced: it goes
+ * through the shared 12-hour second look (check `hamilton.source_link_drift`) and is archived on
+ * its second failure (`rolled_back_reason = 'source_link_drift: <why>'`, verified row rejected
+ * with the same flag), never deleted. A fee whose document is another institution's is left to
+ * the other-bank check. Every re-point is one `pipeline_feedback` row (action `repointed`) naming
+ * each tier's earlier link, so it is undone row by row; an archive is undone by clearing the
+ * rollback fields and the verified row's flag.
+ *
+ * Rollback: set SOURCE_LINK_DRIFT_LIVE to false; the pass then reports what it would do (step
+ * detail `source_link_drift`) and writes nothing. James's standing yes (Oct 17) to re-source or
+ * archive fees with a bad source link.
+ */
+export const SOURCE_LINK_DRIFT_LIVE = true;
+export const SOURCE_LINK_DRIFT_CHECK = "hamilton.source_link_drift";
+export const SOURCE_LINK_DRIFT_VERSION = 1;
+export const SOURCE_LINK_DRIFT_REASON = "source_link_drift";
+export const SOURCE_LINK_DRIFT_LIMIT = 500;
+
+export interface DriftedLinkRow extends LiveFeeRow {
+  fee_verified_id: number | string;
+  /** The link the catalog shows: published, else verified, else raw. */
+  link: string;
+  fp_url: string | null;
+  fv_url: string | null;
+  raw_url: string | null;
+  document_institution_id: number | string | null;
+  /** The link the fee should carry (`documentLinkSql`). */
+  target_url: string;
+}
+
+export interface LinkDriftRepoint {
+  feePublishedId: number;
+  feeVerifiedId: number;
+  feeRawId: number;
+  institutionId: number;
+  sourceDocumentId: number;
+  canonicalFeeKey: string;
+  amount: number | null;
+  from: { published: string | null; verified: string | null; raw: string | null };
+  to: string;
+  /** True when the shared check traced it; false when only the line Knox stored traces (a re-read lost it). */
+  traced: boolean;
+}
+
+export interface LinkDriftFailure extends SecondLookCandidate {
+  feeVerifiedId: number;
+  link: string;
+  why: string;
+}
+
+export interface LinkDriftPlan {
+  repoints: LinkDriftRepoint[];
+  failing: LinkDriftFailure[];
+  /** Left as they are: the document is another institution's (the other-bank check's job). */
+  skipped: Array<{ feePublishedId: number; why: string }>;
+}
+
+/** Pure: does this link open its document's URL or the page the document's text was read from? */
+export function linkOpensOwnDocument(
+  link: string | null | undefined,
+  documentUrl: string | null | undefined,
+  readUrl: string | null | undefined,
+): boolean {
+  const key = documentLinkKey(link);
+  if (key == null) return true;
+  return key === documentLinkKey(documentUrl) || key === documentLinkKey(readUrl);
+}
+
+/** Pure: each drifted fee's re-point, second look or skip. `texts` are the documents' newest completed texts. */
+export function planLinkDrift(rows: DriftedLinkRow[], texts: InstitutionText[]): LinkDriftPlan {
+  const plan: LinkDriftPlan = { repoints: [], failing: [], skipped: [] };
+  const byDocument = new Map(texts.map((text) => [Number(text.source_document_id), text]));
+  for (const row of rows) {
+    const feePublishedId = Number(row.fee_published_id);
+    const documentId = Number(row.source_document_id);
+    if (Number(row.document_institution_id) !== Number(row.institution_id)) {
+      plan.skipped.push({ feePublishedId, why: "document_of_another_institution" });
+      continue;
+    }
+    const own = byDocument.get(documentId);
+    const ownTexts = own ? [own] : [];
+    // Only the fee's own document: its link is what is wrong, not which document it came from.
+    const verdict = traceLiveFee(row, ownTexts);
+    const lost = verdict.kind === "untraceable" && readerLostLine(row, ownTexts, verdict.reason);
+    const amount = row.amount == null || row.amount === "" ? null : Number(row.amount);
+    if (verdict.kind !== "untraceable" || lost) {
+      plan.repoints.push({
+        feePublishedId,
+        feeVerifiedId: Number(row.fee_verified_id),
+        feeRawId: Number(row.fee_raw_id),
+        institutionId: Number(row.institution_id),
+        sourceDocumentId: documentId,
+        canonicalFeeKey: row.canonical_fee_key,
+        amount,
+        from: { published: row.fp_url, verified: row.fv_url, raw: row.raw_url },
+        to: row.target_url,
+        traced: verdict.kind !== "untraceable",
+      });
+      continue;
+    }
+    plan.failing.push({
+      feePublishedId,
+      feeVerifiedId: Number(row.fee_verified_id),
+      institutionId: Number(row.institution_id),
+      canonicalFeeKey: row.canonical_fee_key,
+      amount,
+      sourceDocumentId: documentId,
+      link: row.link,
+      why: verdict.reason,
+      reason: `${SOURCE_LINK_DRIFT_REASON}: not in own document #${documentId} (${verdict.reason})`,
+    });
+  }
+  return plan;
+}
+
+/** Pure: one rollback record per re-pointed fee (`pipeline_feedback`, check `hamilton.source_link_drift`). */
+export function linkDriftRecords(repoints: LinkDriftRepoint[], runId: number, batchId: string): FeedbackRow[] {
+  return repoints.map((fee): FeedbackRow => ({
+    aboutStage: "publish",
+    signal: "wrong",
+    kind: "missing_lineage",
+    reportedBy: "gutenberg",
+    checkName: SOURCE_LINK_DRIFT_CHECK,
+    aboutVersion: SOURCE_LINK_DRIFT_VERSION,
+    institutionId: fee.institutionId,
+    sourceDocumentId: fee.sourceDocumentId,
+    sourceUrl: fee.to,
+    feeRawId: fee.feeRawId,
+    feeVerifiedId: fee.feeVerifiedId,
+    feePublishedId: fee.feePublishedId,
+    canonicalFeeKey: fee.canonicalFeeKey,
+    amount: fee.amount,
+    evidence: {
+      action: "repointed",
+      from_published: fee.from.published,
+      from_verified: fee.from.verified,
+      from_raw: fee.from.raw,
+      to: fee.to,
+      traced: fee.traced,
+      batch_id: batchId,
+    },
+    runId,
+    dedupeKey: `${SOURCE_LINK_DRIFT_CHECK}:repoint:${fee.feePublishedId}:${runId}`,
+  }));
+}
+
+/** Live fees whose link opens neither their document's URL nor the page its text was read from. $1 limit, $2 institution or null. */
+export const DRIFTED_LINK_FEES_SQL = `
+  WITH live AS (
+    SELECT fp.fee_published_id, fp.lineage_ref, fv.fee_verified_id, fv.fee_raw_id, fp.institution_id, fr.source,
+           fr.source_document_id, fp.canonical_fee_key, fp.fee_name, fp.amount, fp.amount_kind, fp.rate_percent,
+           COALESCE(fr.extraction_note, fr.conditions) AS conditions, fr.created_at AS raw_created_at,
+           NULLIF(btrim(COALESCE(fp.source_url, fv.source_url, fr.source_url)), '') AS link,
+           fp.source_url AS fp_url, fv.source_url AS fv_url, fr.source_url AS raw_url,
+           sd.institution_id AS document_institution_id,
+           NULLIF(btrim(sd.document_url), '') AS document_url,
+           NULLIF(btrim(ast.source_url), '') AS read_url,
+           ${documentLinkSql("sd", "ast")} AS target_url
+      FROM published_fee_records fp
+      JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+      JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+      JOIN source_documents sd ON sd.id = fr.source_document_id
+      LEFT JOIN agent_source_texts ast ON ast.source_document_id = sd.id
+     WHERE fp.rolled_back_at IS NULL
+       AND fp.quarantined_at IS NULL
+       AND NULLIF(btrim(COALESCE(fp.source_url, fv.source_url, fr.source_url)), '') IS NOT NULL
+       AND ($2::bigint IS NULL OR fp.institution_id = $2::bigint)
+  )
+  SELECT * FROM live
+   WHERE target_url IS NOT NULL
+     -- The same string is the same page: only the few thousand links written differently pay for the key.
+     AND link IS DISTINCT FROM document_url
+     AND link IS DISTINCT FROM read_url
+     AND ${documentLinkKeySql("link")} IS DISTINCT FROM ${documentLinkKeySql("document_url")}
+     AND ${documentLinkKeySql("link")} IS DISTINCT FROM ${documentLinkKeySql("read_url")}
+   ORDER BY fee_published_id
+   LIMIT $1`;
+
+/** The newest completed text of each of these documents. $1 document ids. */
+export const DRIFT_DOCUMENT_TEXTS_SQL = `
+  SELECT DISTINCT ON (source_document_id) source_document_id, normalized_text, updated_at
+    FROM agent_source_texts
+   WHERE source_document_id = ANY($1::bigint[])
+     AND status = 'completed'
+     AND normalized_text IS NOT NULL
+   ORDER BY source_document_id, id DESC`;
+
+export interface LinkDriftResult {
+  live: boolean;
+  dryRun: boolean;
+  scanned: number;
+  /** Re-pointed to their own document's link (live), or that would be (dry run or switched off). */
+  repoints: LinkDriftRepoint[];
+  /** Did not trace in their own document: first looks logged this run. */
+  flagged: number;
+  /** Did not trace, first look too recent to confirm. */
+  waiting: number;
+  /** Archived on their second failure (live), or that would be. */
+  archived: LinkDriftFailure[];
+  failing: LinkDriftFailure[];
+  skipped: Array<{ feePublishedId: number; why: string }>;
+  error: string | null;
+}
+
+/**
+ * Runs the link drift pass. A dry run (or the switch off) reads, plans and reports, and writes
+ * nothing. A failed read changes nothing; a failed write is rolled back with its savepoint and
+ * returned as `error`, so the publish step carries on without the pass.
+ */
+export async function repairLinkDrift(
+  db: SqlTag,
+  options: { runId: number; batchId: string; dryRun: boolean; institutionId?: number; limit?: number; now?: Date },
+): Promise<LinkDriftResult> {
+  const write = SOURCE_LINK_DRIFT_LIVE && !options.dryRun;
+  const result: LinkDriftResult = {
+    live: SOURCE_LINK_DRIFT_LIVE,
+    dryRun: !write,
+    scanned: 0,
+    repoints: [],
+    flagged: 0,
+    waiting: 0,
+    archived: [],
+    failing: [],
+    skipped: [],
+    error: null,
+  };
+  const limit = Math.max(1, Math.min(options.limit ?? SOURCE_LINK_DRIFT_LIMIT, 5_000));
+  let rows: DriftedLinkRow[];
+  let texts: InstitutionText[];
+  try {
+    rows = await inSavepoint(db, (scope) => scope.unsafe<DriftedLinkRow[]>(DRIFTED_LINK_FEES_SQL, [limit, options.institutionId ?? null]));
+    const documents = [...new Set(rows.map((row) => Number(row.source_document_id)))];
+    texts = documents.length === 0
+      ? []
+      : await inSavepoint(db, (scope) => scope.unsafe<InstitutionText[]>(DRIFT_DOCUMENT_TEXTS_SQL, [documents]));
+  } catch (error) {
+    console.error("repairLinkDrift read failed:", error);
+    result.error = error instanceof Error ? error.message : String(error);
+    return result;
+  }
+  result.scanned = rows.length;
+  if (rows.length === 0) return result;
+  const plan = planLinkDrift(rows, texts);
+  result.failing = plan.failing;
+  result.skipped = plan.skipped;
+  // A takedown is a last resort: a fee that does not trace comes down only on its second look.
+  const look = await secondLook(db, {
+    check: SOURCE_LINK_DRIFT_CHECK,
+    runId: options.runId,
+    failing: plan.failing,
+    passing: plan.repoints.map((fee) => fee.feePublishedId),
+    dryRun: !write,
+    now: options.now,
+  });
+  result.flagged = look.flagged;
+  result.waiting = look.waiting;
+  if (!write) return { ...result, repoints: plan.repoints, archived: look.confirmed };
+
+  try {
+    const written = await inSavepoint(db, async (scope) => {
+      let repoints: LinkDriftRepoint[] = [];
+      if (plan.repoints.length > 0) {
+        const updated = await scope<{ fee_published_id: number | string }[]>`
+          UPDATE published_fee_records fp
+             SET source_url = v.url
+            FROM unnest(${plan.repoints.map((fee) => fee.feePublishedId)}::bigint[], ${plan.repoints.map((fee) => fee.to)}::text[])
+                 AS v(fee_published_id, url)
+           WHERE fp.fee_published_id = v.fee_published_id
+             AND fp.rolled_back_at IS NULL
+          RETURNING fp.fee_published_id
+        `;
+        const ids = new Set(updated.map((row) => Number(row.fee_published_id)));
+        repoints = plan.repoints.filter((fee) => ids.has(fee.feePublishedId));
+        if (repoints.length > 0) {
+          // The verified and raw rows take the same link, so a republish or refresh keeps it.
+          await scope`
+            UPDATE verified_fee_observations fv
+               SET source_url = v.url
+              FROM unnest(${repoints.map((fee) => fee.feeVerifiedId)}::bigint[], ${repoints.map((fee) => fee.to)}::text[])
+                   AS v(fee_verified_id, url)
+             WHERE fv.fee_verified_id = v.fee_verified_id
+          `;
+          await scope`
+            UPDATE raw_fee_observations fr
+               SET source_url = v.url
+              FROM unnest(${repoints.map((fee) => fee.feeRawId)}::bigint[], ${repoints.map((fee) => fee.to)}::text[])
+                   AS v(fee_raw_id, url)
+             WHERE fr.fee_raw_id = v.fee_raw_id
+          `;
+        }
+      }
+      let archived: LinkDriftFailure[] = [];
+      if (look.confirmed.length > 0) {
+        const closed = await scope<{ fee_published_id: number | string }[]>`
+          UPDATE published_fee_records fp
+             SET rolled_back_at = NOW(),
+                 rolled_back_by_batch_id = ${options.batchId},
+                 rolled_back_reason = v.reason
+            FROM unnest(${look.confirmed.map((fee) => fee.feePublishedId)}::bigint[], ${look.confirmed.map((fee) => fee.reason)}::text[])
+                 AS v(fee_published_id, reason)
+           WHERE fp.fee_published_id = v.fee_published_id
+             AND fp.rolled_back_at IS NULL
+             AND fp.quarantined_at IS NULL
+          RETURNING fp.fee_published_id
+        `;
+        const ids = new Set(closed.map((row) => Number(row.fee_published_id)));
+        archived = look.confirmed.filter((fee) => ids.has(fee.feePublishedId));
+        if (archived.length > 0) {
+          await scope`
+            UPDATE verified_fee_observations
+               SET review_status = 'rejected',
+                   outlier_flags = CASE
+                     WHEN outlier_flags ? ${SOURCE_LINK_DRIFT_REASON} THEN outlier_flags
+                     ELSE COALESCE(outlier_flags, '[]'::jsonb) || ${JSON.stringify([SOURCE_LINK_DRIFT_REASON])}::jsonb
+                   END
+             WHERE fee_verified_id = ANY(${archived.map((fee) => fee.feeVerifiedId)}::bigint[])
+               AND review_status IN ('verified', 'approved')
+          `;
+        }
+      }
+      // The rollback records are written with the change, or neither is.
+      await recordFeedback(scope as SqlTag, linkDriftRecords(repoints, options.runId, options.batchId));
+      await scope`
+        INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+        VALUES (
+          ${options.runId}, 'hamilton.source_link_drift', 'completed',
+          ${`Re-pointed ${repoints.length} live fee link(s) to their own document; ${look.flagged} flagged for a second look; ${archived.length} archived after a second look`},
+          ${JSON.stringify({
+            batch_id: options.batchId,
+            version: SOURCE_LINK_DRIFT_VERSION,
+            scanned: rows.length,
+            repointed: repoints.length,
+            flagged_for_second_look: look.flagged,
+            awaiting_second_look: look.waiting,
+            archived: archived.length,
+            skipped: plan.skipped,
+            repoints: repoints.map((fee) => ({ fee_published_id: fee.feePublishedId, from: fee.from, to: fee.to, traced: fee.traced })),
+            archives: archived.map((fee) => ({ fee_published_id: fee.feePublishedId, link: fee.link, reason: fee.reason })),
+          })}::jsonb
+        )
+      `;
+      return { repoints, archived };
+    });
+    result.repoints = written.repoints;
+    result.archived = written.archived;
+  } catch (error) {
+    console.error("repairLinkDrift write failed:", error);
+    result.error = `source link drift write failed: ${error instanceof Error ? error.message : String(error)}`;
+    return result;
+  }
+  if (result.repoints.length > 0 || result.archived.length > 0) invalidatePublicReadCache();
   return result;
 }
