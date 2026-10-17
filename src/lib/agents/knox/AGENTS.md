@@ -956,7 +956,7 @@ After the extract itself, each extract step runs these passes in order (`run-sto
   none ever verified. Earlier versions took 5,210 and 5,047, with real fees in them that two
   reviews found; those fees are test fixtures that stay held. A hand-read random 60 of the 3,601
   and four adversarial queries (see PR #1622) found no fee, which is a sample rather than proof.
-- `consumeRereadRequests` (#1511, `KNOX_REREAD_FEEDBACK_LIVE`, off): Darwin's re-read requests for
+- `consumeRereadRequests` (#1511, `KNOX_REREAD_FEEDBACK_LIVE`, on): Darwin's re-read requests for
   live fees named by a sentence fragment (below).
 - Batch review (`batch-review.ts`, below).
 
@@ -1041,6 +1041,13 @@ rules v74 test, read against the fee's own document; a name whose page also prin
 line ("3Hill CU") stays, and so does a token that opens the bank's own name. The cut runs again on the
 tidied name, and a lower-case brand the stored name holds keeps its case ("myChance", 96352). The due
 query finds names opening on a number glued to a letter (box sizes left out).
+v21 (Oct 17, #1450): a monthly maintenance or minimum balance name loses the footnote marks
+("Charge¹", "Checking†"), product codes ("(CK06)"), a footnote number glued to a plain word
+("Monthly2", "Account5") and the quotes around its opening words ("A “maintenance service charge”"),
+and nothing else (`footnoteMarkFreeName`). A name that opens on a mark is a footnote's sentence
+(#1443), and one in lower case, with "No", a condition or a verb is left for a re-read. Other
+categories' marked names (about 120 live on Oct 17) are not in v21. New Knox reads still keep the
+marks (that is a Knox rules change); the retidy tidies them once they are live.
 
 `isCutoffName` (publish's `cutoff_name` hold) has a narrow live twin beside it, `liveFragmentName`
 (#1443), built from the same regex pieces: a dangling joining word (lower-case "a/an/the" only;
@@ -1089,19 +1096,20 @@ after the held-line passes, reads these requests (`consumeRereadRequests`, `knox
   `knox.reread_feedback:req:<request id>:v<pass>:rules<N>`, evidence with the outcome. The request
   row is not marked: Darwin upserts it again on each pass of the live table, which would wipe a
   mark. A rules bump makes every request pending again once; nothing loops within a version.
-- `KNOX_REREAD_FEEDBACK_LIVE` false (default): only a one-bank extract run reads the requests: it
+- `KNOX_REREAD_FEEDBACK_LIVE` is on (James's yes, 2026-10-17). Switched off (false), only a
+  one-bank extract run reads the requests: it
   counts that bank's pending ones (by kind and documents; `pipeline_feedback_institution_idx`) and
   reads up to 3 read-only (`KNOX_REREAD_FEEDBACK_SAMPLE`), reporting what it would do in one
   `knox.reread_feedback` event (only while requests are pending) and in the step detail
   `reread_feedback`. A state or all-bank lane skips it (`skipSample`, detail `skipped: true`):
-  `pipeline_feedback` has no index on `kind`, so the count was a full scan every step, and the same
-  sample was read again each time. Nothing else is written. On: 25 a step
+  before the `kind` index the count was a full scan every step, and the same sample was read again
+  each time. Nothing else is written. On: 25 a step
   (`KNOX_REREAD_FEEDBACK_BATCH`), claimed first with `FOR UPDATE ... SKIP LOCKED` so two lanes
   never take the same request; the pending count is read only when the claim found work. A dry
   run writes nothing.
-- The switch-on PR should come with a partial index,
-  `pipeline_feedback (id) WHERE kind = 'knox_reread_requested'`, so every lane's claim and count
-  read only the requests (a migration, so it needs James's approval).
+- The switch-on PR adds `pipeline_feedback_kind_idx` on `pipeline_feedback (kind, id)`
+  (`20270110000056_pipeline_feedback_kind_idx.sql`), so every lane's claim (`kind`, then `ORDER BY
+  id`) and count read only the requests, and the settled rows by kind.
 - `rereadFeedbackCountSql()` is the read-only count of pending requests by kind, documents and
   banks, and of settled requests by outcome.
 
@@ -1261,7 +1269,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_LAYOUT_SIGNATURE_VERSION` | — | v1 | `knox/layout-signature.ts` |
 | `KNOX_LESSONS_VERSION` | — | v3 | `knox/lessons.ts` |
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
-| `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v20 | `knox/name-retidy.ts` |
+| `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v21 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
 | `KNOX_RULES_STRATEGY` | `extract.rules` | v77 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |

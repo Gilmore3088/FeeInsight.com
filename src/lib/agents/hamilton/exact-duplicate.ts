@@ -6,10 +6,10 @@ type SqlTag = typeof sql;
 /**
  * #1069 step 1: the publish step checks each row it is about to publish against the exact
  * duplicate collapse (`collapsePublishedDuplicates`), the sweep that closes it hours later
- * (6,519 such takedowns in the 7 days to Oct 15). While this is false the step only counts what
- * it would refuse; turning it on (refusing those rows) needs James's OK.
+ * (6,519 such takedowns in the 7 days to Oct 15). On (James's OK, 2026-10-17): the step refuses
+ * those rows. Set it to false to only count what it would refuse.
  */
-export const PUBLISH_REFUSE_DUPLICATES_LIVE = false;
+export const PUBLISH_REFUSE_DUPLICATES_LIVE = true;
 export const PUBLISH_DUPLICATE_REFUSE_REASON_PREFIX = "Exact duplicate of live fee #";
 
 /**

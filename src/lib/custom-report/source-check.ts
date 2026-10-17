@@ -109,8 +109,33 @@ const THRESHOLD_AFTER = /^\+|^\s+\+\s*\|\s*\$|^\s*[-–]\s*(?:over|up|above)\b|^
 /** A cap stated after a row's per-item price, and the name words that ask for it. */
 const CAP_BEFORE = /\b(?:max(?:imum)?|cap(?:ped)?|limit(?:ed)?)\b(?:\s+(?:of|at|to))?\s*$/i;
 const CAP_STEMS = new Set(["maxim", "max", "cap", "limit"]);
+/**
+ * A note that only caps how many times the fee named above it is charged ("Maximum of 4 fees per
+ * calendar day.", Gate City Bank 349). It carries a count, never a dollar figure, so the price
+ * printed under it is still the named fee's.
+ */
+const COUNT_CAP_NOTE_LINE =
+  /^\s*\(?\s*(?:a\s+)?(?:max(?:imum)?\.?|limit(?:ed)?(?:\s+to)?|up\s+to|no\s+more\s+than|not\s+to\s+exceed)(?:\s+of)?\s+(?:\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten)(?:\s*\(\d{1,2}\))?\s+(?:[a-z/]+\s+){0,2}?(?:fees?|charges?|items?|overdrafts?|times?)\s+(?:(?:may\s+be\s+|will\s+be\s+)?(?:charged|assessed|imposed)\s+)?(?:per|each|a|in\s+(?:a|one|any))\s+(?:calendar\s+|business\s+)?(?:day|month|statement(?:\s+cycle)?|cycle)\s*\.?\s*\)?\s*$/i;
+/** The last words of a name's sentence wrapped onto their own line ("balance."): lower case, at most four words. */
+const WRAPPED_NAME_TAIL = /^\s*[a-z][a-z'’-]*(?:\s+[a-z][a-z'’-]*){0,3}\s*[.;]?\s*$/;
+function isCountCapNote(line: string): boolean {
+  return COUNT_CAP_NOTE_LINE.test(line) && moneyTokens(line).length === 0 && !ZERO_WORDS.test(line);
+}
+/**
+ * The price under a name, its sentence's wrapped last words and a count-cap note ("Overdraft fee
+ * for items paid resulting in a negative" / "balance." / "Maximum of 4 fees per calendar day." /
+ * "$32 per item"). Only a short price line counts, so another fee's row never gives its price.
+ */
+function priceUnderCapNote(lines: string[], index: number): string | null {
+  let k = index + 1;
+  if (WRAPPED_NAME_TAIL.test(lines[k] ?? "") && !/[.;:,|)]\s*$/.test(lines[index])) k += 1;
+  if (!isCountCapNote(lines[k] ?? "")) return null;
+  const price = lines[k + 1];
+  if (!price || price.length > PRICE_BELOW_MAX_LENGTH || !PRICE_LINE.test(price) || moneyTokens(price).length === 0) return null;
+  return price;
+}
 /** A line that only qualifies the fee named above it. */
-const QUALIFIER_LINE = /^(?:\([^()]*(?:\([^()]*\)[^()]*)*\)|(?:if|when|for each)\b.{0,80})$/i;
+const QUALIFIER_LINE =/^(?:\([^()]*(?:\([^()]*\)[^()]*)*\)|(?:if|when|for each)\b.{0,80})$/i;
 /** Dot leaders (or an ellipsis run) at the end of a line. */
 const TRAILING_LEADER = /(?:\.\s?){3,}\s*$|…\s*$/;
 /** A price that opens a line, with its unit ("$20.00", "$5 each", "FREE"). */
@@ -755,7 +780,11 @@ function feeRow(lines: string[], index: number): string {
           PRICE_LINE.test(next) &&
           (moneyTokens(next).length > 0 || ZERO_WORDS.test(next))),
     );
-  if (!price) return line;
+  if (!price) {
+    // A count-cap note after the name's wrapped last words pushes the price one line further down.
+    const capped = priceUnderCapNote(lines, index);
+    return capped ? `${line} | ${capped}` : line;
+  }
   const between = lines.slice(index + 1, lines.indexOf(price, index + 1));
   // Units ("/Item") and notes that only qualify the name ("If checks are not on order
   // (10 maximum)", "(up to $1,000)") may sit between a name and its price.
@@ -777,6 +806,7 @@ function feeRow(lines: string[], index: number): string {
       QUALIFIER_LINE.test(next) ||
       (FEE_SHOWN_AS_LINE.test(next) && moneyTokens(next).length === 0) ||
       COLUMN_LABEL_LINE.test(next.trim()) ||
+      isCountCapNote(next) ||
       (perColumn && next.length <= 20 && moneyTokens(next).length === 0 && !ZERO_WORDS.test(next)),
   )
     ? `${line} | ${price}`

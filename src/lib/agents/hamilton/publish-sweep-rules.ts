@@ -25,10 +25,10 @@ type SqlTag = typeof sql;
  * rule is one function with two callers: the sweep cleans up live history, publish refuses. The
  * live re-check is the sweeps themselves, unchanged; this check takes no live fee down.
  *
- * While this is false the step only counts what it would refuse (`publish_sweep_check` in the
- * publish step's detail); turning it on (refusing those rows) needs James's OK.
+ * On (James's OK, 2026-10-17): the step refuses those rows. Set it to false to only count what it
+ * would refuse (`publish_sweep_check` in the publish step's detail).
  */
-export const PUBLISH_REFUSE_SWEEP_RULES_LIVE = false;
+export const PUBLISH_REFUSE_SWEEP_RULES_LIVE = true;
 export const PUBLISH_SWEEP_REFUSE_REASON_PREFIX = "Refused at publish, a sweep would take it down: ";
 
 export type PublishSweepRule = "other_bank_document" | "unconfirmed_document_host" | "business_schedule";

@@ -18,6 +18,11 @@ import { inSavepoint } from "@/lib/agents/savepoint";
  *   no category    live fees with no category; a category outside the 50-type taxonomy is
  *                  counted beside it, not graded
  *   no source      live fees with no source link; no stored document is counted beside it
+ *   link mismatch  live fees whose link opens a different page from their stored document's URL
+ *                  (#1347), counted, not graded. Two links to one page are not a mismatch: the
+ *                  scheme, "www.", case, a trailing slash, a fragment and print or tracking
+ *                  parameters ("?print=1", "utm_*") are set aside (`documentLinkKey`); those are
+ *                  counted apart as URL variants
  *   category share each category's share of live institutions against its median over the
  *                  previous checks: an alarm when it falls below 70% of that or rises above 150%
  *
@@ -74,6 +79,11 @@ export interface CatalogCounts {
   noSource: number;
   /** No stored source document (counted, not graded). */
   noDocument: number;
+  /** #1347: the link opens another page than the fee's own document (counted, not graded). */
+  linkMismatch: number;
+  /** #1347: the link differs from the document's URL only in how the same page is written. */
+  linkUrlVariant: number;
+  linkMismatchSample: number[];
   samples: Record<GradedCheck, number[]>;
   /** Institutions with a live fee per category. */
   categories: Array<{ category: string; institutions: number }>;
@@ -110,6 +120,9 @@ export interface CatalogQuality {
   checks: Record<GradedCheck, GradedResult>;
   offTaxonomy: number;
   noDocument: number;
+  linkMismatch: number;
+  linkUrlVariant: number;
+  linkMismatchSample: number[];
   samples: Record<GradedCheck, number[]>;
   categoryShare: CategoryShareResult;
 }
@@ -205,6 +218,9 @@ export function catalogQuality(catalog: Catalog, counts: CatalogCounts, history:
     },
     offTaxonomy: counts.offTaxonomy,
     noDocument: counts.noDocument,
+    linkMismatch: counts.linkMismatch,
+    linkUrlVariant: counts.linkUrlVariant,
+    linkMismatchSample: counts.linkMismatchSample,
     samples: counts.samples,
     categoryShare: categoryShares(counts, history),
   };
@@ -229,6 +245,38 @@ export function alarms(catalogs: CatalogQuality[]): { failing: string[]; warning
 }
 
 /**
+ * Query parameters that change how a page is shown or tracked, never which page it is
+ * ("?print=1", "&output=amp", "utm_source"). On Oct 17 (read-only) every one of the 1,233 live
+ * links that differed from their document's URL only in the query differed in these.
+ */
+const PRESENTATION_PARAM = String.raw`print|output|utm_[a-z_]+|gclid|fbclid|mc_[a-z_]+`;
+
+/**
+ * #1347: a link's key for "the same page": lower case, no scheme, no "www.", no fragment, no
+ * presentation parameters and no trailing slash. Two links with one key open the same page.
+ * `documentLinkKeySql` is its Postgres twin, the one the check runs.
+ */
+export function documentLinkKey(url: string | null | undefined): string | null {
+  const raw = url?.trim();
+  if (!raw) return null;
+  return raw
+    .toLowerCase()
+    .replace(/#.*$/, "")
+    .replace(/^https?:\/\/(?:www\.)?/, "")
+    .replace(new RegExp(String.raw`([?&])(?:${PRESENTATION_PARAM})=[^&]*`, "g"), "$1")
+    .replace(/\?&+/g, "?")
+    .replace(/&{2,}/g, "&")
+    .replace(/[?&]+$|\/+(?=\?|$)/g, "");
+}
+
+/** Postgres twin of `documentLinkKey` for the SQL expression `column`. */
+export function documentLinkKeySql(column: string): string {
+  return `regexp_replace(regexp_replace(regexp_replace(regexp_replace(regexp_replace(regexp_replace(
+            lower(${column}), '#.*$', ''), '^https?://(www\\.)?', ''), '([?&])(${PRESENTATION_PARAM})=[^&]*', '\\1', 'g'),
+            '\\?&+', '?', 'g'), '&{2,}', '&', 'g'), '[?&]+$|/+(?=[?]|$)', '', 'g')`;
+}
+
+/**
  * The check's one read per catalog. `catalog` is one of the two view names, never user input;
  * `amountColumn` is `amount` for dollar fees and `rate_percent` for rate fees.
  * $1 the stale age in days, $2 the taxonomy keys, $3 the sample size. Exported for the SQL test.
@@ -239,6 +287,7 @@ export function dataQualitySql(catalog: "published_fee_catalog" | "published_fee
       WITH live AS (
         SELECT c.fee_published_id, c.institution_id, NULLIF(btrim(c.fee_category), '') AS category, c.${amountColumn} AS value,
                NULLIF(btrim(c.source_url), '') AS source_url, c.source_document_id,
+               NULLIF(btrim(sd.document_url), '') AS document_url,
                COALESCE(sd.last_checked_at, sd.crawled_at, c.created_at) AS evidence_at,
                row_number() OVER (
                  PARTITION BY c.institution_id, NULLIF(btrim(c.fee_category), ''), c.${amountColumn}
@@ -252,7 +301,12 @@ export function dataQualitySql(catalog: "published_fee_catalog" | "published_fee
                (evidence_at < NOW() - make_interval(days => $1::int)) AS stale,
                (category IS NULL) AS no_category,
                (category IS NOT NULL AND NOT (category = ANY($2::text[]))) AS off_taxonomy,
-               (source_url IS NULL) AS no_source
+               (source_url IS NULL) AS no_source,
+               -- #1347: the link and the document's URL, each as the page they open.
+               (source_url IS NOT NULL AND document_url IS NOT NULL
+                 AND ${documentLinkKeySql("source_url")} <> ${documentLinkKeySql("document_url")}) AS link_mismatch,
+               (source_url IS NOT NULL AND document_url IS NOT NULL AND source_url <> document_url
+                 AND ${documentLinkKeySql("source_url")} = ${documentLinkKeySql("document_url")}) AS link_url_variant
           FROM live
       )
       SELECT COUNT(*)::int AS live_fees,
@@ -263,6 +317,9 @@ export function dataQualitySql(catalog: "published_fee_catalog" | "published_fee
              (COUNT(*) FILTER (WHERE off_taxonomy))::int AS off_taxonomy,
              (COUNT(*) FILTER (WHERE no_source))::int AS no_source,
              (COUNT(*) FILTER (WHERE source_document_id IS NULL))::int AS no_document,
+             (COUNT(*) FILTER (WHERE link_mismatch))::int AS link_mismatch,
+             (COUNT(*) FILTER (WHERE link_url_variant))::int AS link_url_variant,
+             (array_agg(fee_published_id ORDER BY fee_published_id) FILTER (WHERE link_mismatch))[1:$3] AS link_mismatch_sample,
              (array_agg(fee_published_id ORDER BY fee_published_id) FILTER (WHERE duplicate))[1:$3] AS duplicates_sample,
              (array_agg(fee_published_id ORDER BY fee_published_id) FILTER (WHERE stale))[1:$3] AS stale_sample,
              (array_agg(fee_published_id ORDER BY fee_published_id) FILTER (WHERE no_category))[1:$3] AS no_category_sample,
@@ -290,6 +347,9 @@ function countsFrom(row: CountsRow | undefined): CatalogCounts {
     offTaxonomy: num("off_taxonomy"),
     noSource: num("no_source"),
     noDocument: num("no_document"),
+    linkMismatch: num("link_mismatch"),
+    linkUrlVariant: num("link_url_variant"),
+    linkMismatchSample: sample("link_mismatch_sample"),
     samples: {
       duplicates: sample("duplicates_sample"),
       stale: sample("stale_sample"),
@@ -389,6 +449,7 @@ function catalogDetail(quality: CatalogQuality) {
     checks: quality.checks,
     off_taxonomy: quality.offTaxonomy,
     no_document: quality.noDocument,
+    link_mismatch: { count: quality.linkMismatch, url_variants: quality.linkUrlVariant, sample: quality.linkMismatchSample },
     samples: quality.samples,
     category_share: {
       query: quality.categoryShare.query,
