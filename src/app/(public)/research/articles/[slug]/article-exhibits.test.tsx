@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { ArticleExhibit } from "./article-exhibits";
 
@@ -33,6 +33,16 @@ describe("ArticleExhibit", () => {
     expect(list.querySelector("strong")?.textContent).toBe("Large");
     expect(screen.getByRole("table")).toBeTruthy();
     expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("folds a long chart at five bars and right-aligns a figure column with dashes", () => {
+    const bars = Array.from({ length: 9 }, (_, i) => ({ label: `Group ${i + 1}`, value: i + 1, shown: `$${i + 1}` }));
+    render(<ArticleExhibit exhibit={{ kind: "bars", label: "Long chart", rows: bars, table: { head: ["Group", "Median"], rows: [["A", "-"], ["B", "$30"]] } }} />);
+    expect(within(screen.getByRole("list", { name: "Long chart" })).getAllByRole("listitem")).toHaveLength(5);
+    fireEvent.click(screen.getByRole("button", { name: "Show all 9 bars" }));
+    expect(within(screen.getByRole("list", { name: "Long chart" })).getAllByRole("listitem")).toHaveLength(9);
+    expect(screen.getByRole("columnheader", { name: "Median" }).className).toContain("text-right");
+    expect(screen.getByRole("region", { name: "Long chart, figures" }).getAttribute("tabindex")).toBe("0");
   });
 
   it("escapes raw HTML in cells", () => {

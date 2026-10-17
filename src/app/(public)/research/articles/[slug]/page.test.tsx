@@ -16,6 +16,9 @@ vi.mock("@/lib/data-store/articles", () => ({
   getPublishedArticles: vi.fn(async () => mocks.related),
   incrementViewCount: mocks.incrementViewCount,
 }));
+vi.mock("@/lib/data-store/guides", () => ({
+  getGuidesForCategory: vi.fn(async (category: string) => (category === "overdraft" ? [{ slug: "overdraft-fees", title: "How overdraft fees work" }] : [])),
+}));
 vi.mock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => mocks.user) }));
 vi.mock("@/lib/custom-report/sample-report", () => ({ sampleReportAvailable: vi.fn(async () => mocks.sample) }));
 vi.mock("@/components/track-link", () => ({
@@ -55,7 +58,7 @@ function published(overrides: Record<string, unknown> = {}) {
     subtitle: "What published fee schedules say about the overdraft fee, by institution size and by state.",
     content: CONTENT,
     category: "analysis",
-    tags: null,
+    tags: '["overdraft","states"]',
     author: "Fee Insight Research",
     status: "published",
     generated_by: "growth:ernest",
@@ -106,20 +109,20 @@ describe("research article page", () => {
       "Banks: the larger the bank, the higher the fee",
       "The state matters less than the institution",
       "Every state with enough data",
-      "Set one institution's fees against these figures",
+      "One institution's fees against these figures",
     ]);
-    const banks = document.getElementById("banks-the-larger-the-bank-the-higher-the-fee")!;
+    const banks = document.getElementById("s-banks-the-larger-the-bank-the-higher-the-fee")!;
     const text = banks.textContent!;
     // Finding before the exhibit, the exhibit's label, then the source.
     expect(text.indexOf("sit at a $30 median")).toBeLessThan(text.indexOf("Median overdraft fee at banks, by size"));
     expect(text).toContain("Source: Bank Fee Index, from banks' and credit unions' own published fee schedules. Data as of October 2026.");
     // A prose section with no exhibit carries no source line of its own.
-    expect(document.getElementById("the-state-matters-less-than-the-institution")!.textContent).not.toContain("Source:");
+    expect(document.getElementById("s-the-state-matters-less-than-the-institution")!.textContent).not.toContain("Source:");
   });
 
   it("shows five rows of a long table, then a Show all control", async () => {
     await renderPage();
-    const states = document.getElementById("every-state-with-enough-data")!;
+    const states = document.getElementById("s-every-state-with-enough-data")!;
     expect(within(states).getAllByRole("row")).toHaveLength(1 + 5);
     expect(within(states).getByRole("button", { name: "Show all 12 rows" })).toBeTruthy();
   });
@@ -140,6 +143,18 @@ describe("research article page", () => {
     mocks.user = { id: 1, role: "premium", subscription_status: "active" };
     await renderPage();
     expect(screen.queryByRole("link", { name: "See Hamilton plans" })).toBeNull();
+  });
+
+  it("puts further paragraphs after the source, and a quiet consumer next step before More research", async () => {
+    mocks.related = [published({ slug: "nsf-2026-10", title: "NSF fees by size" })];
+    await renderPage();
+    const state = document.getElementById("s-the-state-matters-less-than-the-institution")!.textContent!;
+    expect(state.indexOf("State medians run")).toBeLessThan(state.indexOf("California"));
+    const lookup = screen.getByRole("link", { name: "Look up a bank or credit union's fees" });
+    expect(lookup.getAttribute("href")).toBe("/institutions");
+    expect(screen.getByRole("link", { name: "How overdraft fees work" }).getAttribute("href")).toBe("/guides/overdraft-fees");
+    const more = screen.getByRole("heading", { name: "More research" });
+    expect(lookup.compareDocumentPosition(more) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("signs the product name as the research imprint", async () => {

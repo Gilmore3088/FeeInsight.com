@@ -3,8 +3,8 @@
  * opening finding, then sections of title -> one finding -> labeled exhibit -> source, with the
  * method section held apart for a disclosure. The article body is never rewritten; this only
  * decides where each of its blocks sits. Blocks are the Markdown subset of
- * `src/lib/article-markdown.ts`: paragraphs, "## " headings, "- " lists, "|" tables and
- * "```bars" charts, separated by blank lines.
+ * `src/lib/article-markdown.ts`: paragraphs, "## " headings, "### " subheads, "- " lists, "|"
+ * tables and "```bars" charts, separated by blank lines.
  */
 
 export interface BarsRow {
@@ -22,32 +22,46 @@ export type Exhibit =
   | { kind: "bars"; label: string; rows: BarsRow[]; table: TableData | null }
   | { kind: "table"; label: string; table: TableData };
 
-export interface ArticleSection {
+/** Exhibits and their source, as a section, the lead or the method section holds them. */
+export interface ExhibitGroup {
+  exhibits: Exhibit[];
+  /**
+   * The article's own "Source:" line, or the Bank Fee Index line when the exhibits are fee
+   * figures and the article wrote none. Null when neither holds: nothing is invented.
+   */
+  source: string | null;
+}
+
+export interface ArticleSection extends ExhibitGroup {
   id: string;
   title: string;
   /** The section's first paragraph, shown straight under its title. */
   finding: string | null;
-  /** Any further paragraphs and lists, as Markdown blocks in their written order. */
+  /** Further paragraphs, lists and "### " subheads, in written order, shown after the exhibit and source. */
   notes: string[];
-  exhibits: Exhibit[];
-  /** The article's own "Source:" line for the section, when it wrote one. */
-  source: string | null;
 }
 
 export interface ArticleBrief {
   /** Paragraphs before the first heading: the article's opening finding. */
   lead: string[];
-  /** A chart or table before the first heading. */
-  leadExhibits: Exhibit[];
+  /** A chart or table before the first heading, with its source. */
+  leadExhibits: ExhibitGroup;
   sections: ArticleSection[];
-  method: { title: string; blocks: string[] } | null;
+  method: ({ title: string; blocks: string[] } & ExhibitGroup) | null;
   /** "October 2026" from a closing "As of October 2026." line, which the byline then carries. */
   asOf: string | null;
 }
 
-const METHOD_TITLE = /^(how (these|the|we|this)\b|method|methodology|about (the|this) data|data and method)/i;
+/** A whole heading that names the method; a content heading that only starts "How the..." is not one. */
+export const METHOD_TITLE =
+  /^(how (these|the|we|this) (numbers|figures|data|estimates) (are|were) (built|made|counted|calculated)|methodology|methods?|about (the|this) data|data and methods?|sources and methods?)\.?$/i;
 const SOURCE_LINE = /^sources?:\s*/i;
 const AS_OF_LINE = /^as of ([^.]+)\.?$/i;
+/**
+ * Exhibits about these are not fee-schedule figures (call reports, CFPB, BLS, FDIC deposits), so
+ * they never get the Bank Fee Index source by default.
+ */
+const NOT_FEE_DATA = /\b(revenue|income|service charges?|call reports?|deposits?|complaints?|unemployment|cpi|branch(es)?|population|earnings)\b/i;
 
 function blocksOf(content: string): string[] {
   return content
@@ -63,6 +77,14 @@ function isBars(lines: string[]): boolean {
 
 function isTable(lines: string[]): boolean {
   return lines.every((line) => line.startsWith("|"));
+}
+
+/** Text without its Markdown marks, for labels read aloud and for descriptions. */
+export function plainText(text: string): string {
+  return text
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/[*_`]/g, "")
+    .trim();
 }
 
 export function parseBars(block: string): { label: string; rows: BarsRow[] } {
@@ -89,8 +111,7 @@ export function parseTable(block: string): TableData {
  * by state". Plain text, so the Markdown marks are dropped.
  */
 export function tableLabel(table: TableData): string {
-  const plain = (cell: string) => cell.replace(/[*_`]/g, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").trim();
-  const [first, ...rest] = table.head.map(plain).filter(Boolean);
+  const [first, ...rest] = table.head.map(plainText).filter(Boolean);
   if (!first) return "Table";
   if (rest.length === 0) return first;
   const names = rest.map((name, i) => (i === 0 ? name : name.charAt(0).toLowerCase() + name.slice(1)));
@@ -98,15 +119,14 @@ export function tableLabel(table: TableData): string {
   return `${list}, by ${first.charAt(0).toLowerCase()}${first.slice(1)}`;
 }
 
-/** A stable anchor for a section title. */
+/** A stable anchor for a section title, prefixed "s-" so it never clashes with the page's own ids. */
 export function sectionId(title: string, taken: Set<string>): string {
-  const base =
-    title
-      .toLowerCase()
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 60) || "section";
+  const slug = plainText(title)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+  const base = `s-${slug || "section"}`;
   let id = base;
   for (let n = 2; taken.has(id); n += 1) id = `${base}-${n}`;
   taken.add(id);
@@ -114,106 +134,127 @@ export function sectionId(title: string, taken: Set<string>): string {
 }
 
 interface Bucket {
+  title: string | null;
   prose: string[];
   exhibits: Exhibit[];
   source: string | null;
 }
 
-function fill(bucket: Bucket, block: string): void {
+function bucket(title: string | null): Bucket {
+  return { title, prose: [], exhibits: [], source: null };
+}
+
+function fill(b: Bucket, block: string): void {
   const lines = block.split("\n");
   if (isBars(lines)) {
     const { label, rows } = parseBars(block);
-    if (rows.length > 0) bucket.exhibits.push({ kind: "bars", label, rows, table: null });
+    // An untitled chart takes its section's title, so its caption and label are never empty.
+    if (rows.length > 0) b.exhibits.push({ kind: "bars", label: label || plainText(b.title ?? "") || "Chart", rows, table: null });
     return;
   }
   if (isTable(lines)) {
     const table = parseTable(block);
     // A table straight after a chart holds the chart's figures: one exhibit, under the chart's label.
-    const last = bucket.exhibits[bucket.exhibits.length - 1];
+    const last = b.exhibits[b.exhibits.length - 1];
     if (last && last.kind === "bars" && last.table === null) last.table = table;
-    else bucket.exhibits.push({ kind: "table", label: tableLabel(table), table });
+    else b.exhibits.push({ kind: "table", label: tableLabel(table), table });
     return;
   }
   if (SOURCE_LINE.test(block) && lines.length === 1) {
-    bucket.source = block.replace(SOURCE_LINE, "");
+    b.source = block.replace(SOURCE_LINE, "");
     return;
   }
-  bucket.prose.push(block);
+  b.prose.push(block);
 }
 
-export function parseArticle(content: string): ArticleBrief {
+/** True when an exhibit group reads as fee-schedule figures, so the Bank Fee Index source fits it. */
+function isFeeData(b: Bucket): boolean {
+  const text = [
+    b.title ?? "",
+    ...b.prose,
+    ...b.exhibits.flatMap((e) => [e.label, ...(e.kind === "bars" ? (e.table?.head ?? []) : e.table.head)]),
+  ].join(" ");
+  return !NOT_FEE_DATA.test(text);
+}
+
+function group(b: Bucket, defaultSource: string | null): ExhibitGroup {
+  if (b.source) return { exhibits: b.exhibits, source: b.source };
+  return { exhibits: b.exhibits, source: b.exhibits.length > 0 && defaultSource && isFeeData(b) ? defaultSource : null };
+}
+
+/**
+ * @param defaultSource the Bank Fee Index source line, for fee exhibits the article left unsourced.
+ */
+export function parseArticle(content: string, defaultSource: string | null = null): ArticleBrief {
   const blocks = blocksOf(content);
   let asOf: string | null = null;
   // A closing "As of October 2026." belongs to the byline, not the last section.
   const lastBlock = blocks[blocks.length - 1];
-  const asOfMatch = lastBlock ? AS_OF_LINE.exec(lastBlock) : null;
-  if (asOfMatch && !lastBlock.includes("\n")) {
+  const asOfMatch = lastBlock && !lastBlock.includes("\n") ? AS_OF_LINE.exec(lastBlock) : null;
+  if (asOfMatch) {
     asOf = asOfMatch[1].trim();
     blocks.pop();
   }
 
-  const lead: Bucket = { prose: [], exhibits: [], source: null };
-  const sections: (Bucket & { title: string })[] = [];
-  let method: { title: string; blocks: string[] } | null = null;
-  let current: Bucket | null = lead;
-  let inMethod = false;
+  const lead = bucket(null);
+  const sections: Bucket[] = [];
+  let method: Bucket | null = null;
+  let current = lead;
 
   for (const block of blocks) {
-    const heading = /^#{1,3} (.+)$/.exec(block);
+    // "# " and "## " start a section; a "### " subhead stays inside the section it is in.
+    const heading = /^#{1,2} (.+)$/.exec(block);
     if (heading && !block.includes("\n")) {
-      const title = heading[1].trim();
-      if (!method && METHOD_TITLE.test(title)) {
-        method = { title, blocks: [] };
-        inMethod = true;
-        current = null;
-      } else {
-        inMethod = false;
-        const section = { title, prose: [], exhibits: [], source: null };
-        sections.push(section);
-        current = section;
-      }
+      const next = bucket(heading[1].trim());
+      if (!method && METHOD_TITLE.test(plainText(next.title!))) method = next;
+      else sections.push(next);
+      current = next;
       continue;
     }
-    if (inMethod && method) method.blocks.push(block);
-    else if (current) fill(current, block);
+    fill(current, block);
   }
 
   const taken = new Set<string>();
   return {
     lead: lead.prose,
-    leadExhibits: lead.exhibits,
+    leadExhibits: group(lead, defaultSource),
     sections: sections.map((s) => {
-      // The finding is the first paragraph, wherever it was written; a list never stands as one.
-      const findingIndex = s.prose.findIndex((block) => !block.split("\n").every((line) => line.startsWith("- ")));
+      // The finding is the first paragraph, wherever it was written; a list or subhead never stands as one.
+      const findingIndex = s.prose.findIndex((block) => !/^### /.test(block) && !block.split("\n").every((line) => line.startsWith("- ")));
       return {
-        id: sectionId(s.title, taken),
-        title: s.title,
+        id: sectionId(s.title ?? "", taken),
+        title: s.title ?? "",
         finding: findingIndex === -1 ? null : s.prose[findingIndex],
         notes: s.prose.filter((_, i) => i !== findingIndex),
-        exhibits: s.exhibits,
-        source: s.source,
+        ...group(s, defaultSource),
       };
     }),
-    method,
+    method: method ? { title: method.title ?? "", blocks: method.prose, ...group(method, defaultSource) } : null,
     asOf,
   };
 }
 
-/** Rows shown before "Show all": a table of up to this many plus two shows whole. */
+/** Titles of sections that show an exhibit with no source line, so a review can flag them. */
+export function unsourcedSections(brief: ArticleBrief): string[] {
+  return brief.sections.filter((s) => s.exhibits.length > 0 && !s.source).map((s) => s.title);
+}
+
+/** Rows shown before "Show all": a table or chart of up to this many plus two shows whole. */
 export const TABLE_ROWS_SHOWN = 5;
 
 export function tableFolds(rows: number): boolean {
   return rows > TABLE_ROWS_SHOWN + 2;
 }
 
+/** A dash, "n/a" or "none" stands for no figure and does not decide a column's alignment. */
+export function isEmptyCell(cell: string): boolean {
+  return /^(|-|–|—|n\/?a|none)$/i.test(cell.trim());
+}
+
 /** Plain text for a description: the opening finding without Markdown marks, cut at a word. */
 export function plainSummary(brief: ArticleBrief, max = 160): string {
   const source = brief.lead.length > 0 ? brief.lead.join(" ") : (brief.sections.find((s) => s.finding)?.finding ?? "");
-  const text = source
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-    .replace(/[#*_`]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  const text = plainText(source.replace(/#/g, "")).replace(/\s+/g, " ");
   if (text.length <= max) return text;
   const cut = text.slice(0, max);
   return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), 1)).trim()}...`;
@@ -228,4 +269,15 @@ export function bylineDate(value: string | Date | null | undefined): { label: st
     label: date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" }),
     iso: date.toISOString(),
   };
+}
+
+/** Fee-category tags ("overdraft") from the stored JSON tag list, for the related guide. */
+export function articleTags(tags: string | null | undefined): string[] {
+  if (!tags) return [];
+  try {
+    const parsed: unknown = JSON.parse(tags);
+    return Array.isArray(parsed) ? parsed.filter((t): t is string => typeof t === "string" && /^[a-z_]+$/.test(t)) : [];
+  } catch {
+    return [];
+  }
 }
