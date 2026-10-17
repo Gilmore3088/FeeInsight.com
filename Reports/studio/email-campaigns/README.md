@@ -14,15 +14,17 @@ template with any other brand.
 One lifecycle sequence per person. Highest intent wins: Pro customers, then report requests,
 then followers, then free research subscribers. The app enforces it (`planLifecycleGroups` in
 `src/lib/email/mailerlite.ts`): nobody joins a group while in one of equal or higher intent, and
-joining a higher one removes the lower ones. Each automation also checks group membership before
-every email, so someone who moves up leaves the lower sequence mid-way.
+joining a higher one removes the lower ones. In MailerLite each trigger skips people already in a
+higher group (Welcome: Report requests, Watchers, Pro customers; Report requests: Pro customers;
+Explorers: Report requests, Pro customers), and "exit when no longer matches" is on, so leaving the
+trigger group should end the sequence (set Oct 17, not yet tested).
 
 | Automation | Trigger group | Emails (day) | Sources |
 |---|---|---|---|
 | Welcome: free research subscribers | Fee Insight · Newsletter | where to find the data (0), one comparison (3), what Hamilton adds (7) | newsletter, capture_national_index |
 | Report requests | Fee Insight · Report requests | your report `{$report_url}` (0), a finding from it `{$report_finding}` (4), your institution, from $300 (9) | report_national, report_district, capture_report_sample, capture_homepage |
 | Explorers | Fee Insight · Watchers | what you follow `{$follow_url}` (0); then the monthly state or national edition | capture_state, capture_institution |
-| Pro onboarding | Fee Insight · Pro customers | confirm institution (1), choose peers (2), check a source (4), first report (7), invite colleagues (11) | Stripe webhook on a new active Pro subscription |
+| Pro onboarding (automation 201539890376082752) | Fee Insight · Pro customers | confirm institution (1), choose peers (2), check a source (4), first report (7), invite colleagues (11) | Stripe webhook on a new active Pro subscription |
 | Monthly Fee Pulse (broadcast) | national + state marketing groups | `out/pulse/01-fee-pulse.html` | n/a |
 
 `library/` holds earlier material kept for later: the overdraft/NSF topic email (on request),
@@ -42,7 +44,7 @@ fallback for a subscriber without them.
 3. Exclusion: the app keeps one lifecycle group per person (above); each automation's membership check ends a lower sequence.
 4. **Wire the app (Vercel env):** `MAILERLITE_SYNC_ENABLED=true`, `MAILERLITE_API_KEY` from the Fee Insight account,
    `MAILERLITE_GROUP_ID=200322864366224433` (Newsletter), `MAILERLITE_REPORT_GROUP_ID=200322865521755984`
-   (Report requests), `MAILERLITE_WATCHER_GROUP_ID=200322866720277972` (Watchers), `MAILERLITE_PRO_GROUP_ID` (Pro customers). Only people who click the
+   (Report requests), `MAILERLITE_WATCHER_GROUP_ID=200322866720277972` (Watchers), `MAILERLITE_PRO_GROUP_ID=201539756945835754` (Pro customers). Only people who click the
    confirm link reach MailerLite (`src/app/api/leads/subscription/route.ts`).
 5. Send a test of each automation to yourself, then enable.
 
