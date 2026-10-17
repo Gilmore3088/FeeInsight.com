@@ -1,6 +1,6 @@
 import { ArrowLeftRight, ArrowUpRight, Check, Landmark, ReceiptText } from "lucide-react";
 import type { ReactNode } from "react";
-import { HAMILTON_PAGE_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
+import { DEMO_REQUEST_NAV, HAMILTON_PAGE_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
 import { TrackLink } from "@/components/track-link";
 import type { MarketReport } from "@/lib/custom-report/report-data";
 import { placeLabel } from "./market-report/report-body";
@@ -100,7 +100,7 @@ function sampleSlides(sample: SampleView, market: string | null): HamiltonSlide[
     },
     {
       key: "analyze",
-      name: "Analyze",
+      name: "Prioritize",
       body: (
         <>
           <p className={QUESTION}>Which fees should we review next?</p>
@@ -118,7 +118,7 @@ function sampleSlides(sample: SampleView, market: string | null): HamiltonSlide[
       name: "Monitor",
       body: (
         <>
-          <p className={QUESTION}>Keep your market in view.</p>
+          <p className={QUESTION}>Which local competitors can we watch?</p>
           <ul className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
             {[
               { icon: Landmark, title: "Local competitors", line: `${sample.competitors} with published fees` },
@@ -183,9 +183,9 @@ function plainSlides(): HamiltonSlide[] {
   });
   return [
     plain("benchmark", "Benchmark", "How do our fees compare locally?"),
-    plain("analyze", "Analyze", "Which fees should we review next?"),
-    plain("monitor", "Monitor", "Keep your market in view."),
-    plain("report", "Report", "Bring the evidence to your board."),
+    plain("analyze", "Prioritize", "Which fees should we review next?"),
+    plain("monitor", "Monitor", "Which local competitors can we watch?"),
+    plain("report", "Report", "What do we take to the board?"),
   ];
 }
 
@@ -193,7 +193,7 @@ function plainSlides(): HamiltonSlide[] {
 const MIN_SAMPLE_ROWS = 3;
 
 /**
- * The Hamilton band (James's example, Oct 17): "From market data to your next move." with four
+ * The Hamilton band (James's example, Oct 17; headings by growth): "Answers for your pricing committee." with four
  * examples from the live sample report for Capital City Bank, the demo bank (loadSampleReport).
  */
 export function LandingHamilton({ report }: { report: MarketReport | null }) {
@@ -208,21 +208,31 @@ export function LandingHamilton({ report }: { report: MarketReport | null }) {
           intro={
             <>
               <h2 id="hamilton-title" className="fi-home-h2 !font-medium text-ink" style={SERIF}>
-                <span className="block whitespace-nowrap">From market data</span>
-                <span className="block whitespace-nowrap">to your next move.</span>
+                <span className="block whitespace-nowrap">Answers for your</span>
+                <span className="block whitespace-nowrap">pricing committee.</span>
               </h2>
               <p className="mt-5 text-[18px] leading-[1.45] text-ink-soft sm:text-[21px]">
                 Hamilton is your on-demand fee consultant.
               </p>
-              {/* The subscription, beside the demo (James, Oct 17). */}
-              <TrackLink
-                event="upgrade_click"
-                eventProps={{ placement: "home_hamilton" }}
-                href={PRO_PLANS_NAV.href}
-                className="fi-btn fi-btn-brick mt-7 min-h-12 px-6 text-[15px]"
-              >
-                Get Hamilton for your institution
-              </TrackLink>
+              {/* The subscription, with the demo as the alternative (James, Oct 17). */}
+              <div className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-3">
+                <TrackLink
+                  event="upgrade_click"
+                  eventProps={{ placement: "home_hamilton" }}
+                  href={PRO_PLANS_NAV.href}
+                  className="fi-btn fi-btn-brick min-h-12 px-6 text-[15px]"
+                >
+                  Get Hamilton for your institution
+                </TrackLink>
+                <TrackLink
+                  event="contact_sales"
+                  eventProps={{ placement: "home_hamilton_demo" }}
+                  href={DEMO_REQUEST_NAV.href}
+                  className="inline-flex min-h-11 items-center text-[15px] font-medium text-brick underline decoration-brick/40 underline-offset-4 hover:decoration-brick"
+                >
+                  {DEMO_REQUEST_NAV.label}
+                </TrackLink>
+              </div>
             </>
           }
         />

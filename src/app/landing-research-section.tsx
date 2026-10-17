@@ -1,17 +1,17 @@
 import { ResearchStage } from "./landing-research";
 import { HOME_WRAP, SERIF } from "./landing-shared";
 
-/** "The research, already connected." (James's example, Oct 17): the heading, then the moving stage. */
+/** "The research behind each answer." (James's example, Oct 17; heading by growth): the heading, then the moving stage. */
 export function LandingResearch() {
   return (
     <section id="research" aria-labelledby="research-title" className="border-y border-border bg-surface-0 py-10 sm:py-14">
       <div className={HOME_WRAP}>
         <header className="mb-7 max-w-3xl">
           <h2 id="research-title" className="text-[34px] !font-medium leading-[1.06] tracking-[-0.025em] text-ink sm:text-[48px]" style={SERIF}>
-            The research, already connected.
+            The research behind each answer.
           </h2>
           <p className="mt-3 text-[15px] leading-relaxed text-ink-soft sm:text-[16px]">
-            Fee schedules, financial filings and market data in one place.
+            Every answer starts from published fee schedules. Filings and market data join as each source is connected.
           </p>
         </header>
         <ResearchStage />

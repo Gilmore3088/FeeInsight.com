@@ -3,7 +3,6 @@
 import {
   Building2,
   CircleCheck,
-  CreditCard,
   FileChartColumn,
   Files,
   Landmark,
@@ -19,9 +18,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { SlideControls } from "./landing-controls";
 import { useAutoAdvance } from "./landing-motion";
 
-type SourceKey = "fees" | "financials" | "branches" | "income" | "geography" | "cfpb" | "payments" | "rules" | "fred" | "regional";
+type SourceKey = "fees" | "financials" | "branches" | "income" | "geography" | "cfpb" | "rules" | "fred" | "regional";
 
-/** The ten source families (James accepted the list, Oct 17: "we are building towards it"). */
+/**
+ * The source families (James accepted the list, Oct 17: "we are building towards it"). Only
+ * sources whose terms allow commercial use appear (James's licence rule, Oct 17): anything struck
+ * or still unconfirmed in the data-sources outline stays off the page, and landing.test.tsx
+ * checks the names.
+ */
 export const SOURCES: { key: SourceKey; icon: LucideIcon; name: string; detail: string }[] = [
   { key: "fees", icon: Files, name: "Published fees", detail: "Published bank and credit union fee schedules, each with its source document." },
   { key: "financials", icon: Landmark, name: "Financial filings", detail: "Bank and credit union financials, fee income detail and SEC filings." },
@@ -29,7 +33,6 @@ export const SOURCES: { key: SourceKey; icon: LucideIcon; name: string; detail: 
   { key: "income", icon: UsersRound, name: "Local income", detail: "Household income from the Census ACS and IRS ZIP-level data." },
   { key: "geography", icon: MapPin, name: "Market geography", detail: "USDA urban and rural county classifications." },
   { key: "cfpb", icon: MessagesSquare, name: "Complaints", detail: "CFPB consumer complaints, where an institution can be matched." },
-  { key: "payments", icon: CreditCard, name: "Payment services", detail: "Zelle participant data for payment-service availability." },
   { key: "rules", icon: ScrollText, name: "Rules & actions", detail: "Federal and state rules, fee bills, regulator announcements and actions." },
   { key: "fred", icon: Percent, name: "Rates & credit", detail: "National FRED series for interest-rate and credit context." },
   { key: "regional", icon: Building2, name: "Regional Fed", detail: "Beige Book, FOMC and regional Federal Reserve publications." },
@@ -38,7 +41,7 @@ export const SOURCES: { key: SourceKey; icon: LucideIcon; name: string; detail: 
 /** Five questions, each lighting the source families its answer draws on. */
 export const RESEARCH_EXAMPLES: { question: string; sources: SourceKey[]; title: string }[] = [
   { question: "Make me a board report.", sources: ["fees", "financials", "branches", "cfpb", "rules"], title: "Board report" },
-  { question: "What’s happening in our local market?", sources: ["fees", "branches", "income", "payments", "geography"], title: "Local market brief" },
+  { question: "What’s happening in our local market?", sources: ["fees", "branches", "income", "geography"], title: "Local market brief" },
   { question: "What’s happening across our region?", sources: ["financials", "income", "geography", "fred", "regional"], title: "Regional outlook" },
   { question: "Which fees should we review next?", sources: ["fees", "financials", "cfpb", "rules", "fred"], title: "Pricing study" },
   { question: "How do we compare with credit union peers?", sources: ["fees", "financials", "branches", "income"], title: "Peer comparison" },
@@ -57,7 +60,7 @@ interface Line {
 }
 
 /**
- * "The research, already connected." Ten source tiles; Hamilton's panel cycles five questions,
+ * "The research behind each answer." The source tiles; Hamilton's panel cycles five questions,
  * and for each one the tiles it draws on light up and, from lg up, connector lines run from them
  * to the answer. The first question renders complete on the server, so the panel is never empty.
  * Lines and dots stop off screen, in a hidden tab, when paused, and with reduced motion
@@ -144,7 +147,7 @@ export function ResearchStage() {
             );
           })}
         </svg>
-        <ul className="relative grid grid-cols-5 gap-1.5 sm:gap-2.5" aria-label="Ten source families Hamilton draws on">
+        <ul className="relative grid grid-cols-3 gap-1.5 sm:grid-cols-5 sm:gap-2.5" aria-label="Source families Hamilton draws on">
           {SOURCES.map((s) => {
             const on = lit.has(s.key);
             return (

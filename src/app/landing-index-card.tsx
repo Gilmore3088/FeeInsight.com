@@ -251,7 +251,7 @@ export function IndexCard({ data, freshness, children }: { data: IndexCardData; 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-border pt-3 text-[11px] text-ink-muted">
         <span>Published fee schedules · {freshness}</span>
         <a href={data.fees.length ? cardHref(fee, place, charter) : "/fees"} className="inline-flex items-center gap-1 font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
-          Open the {PRODUCT_NAME}
+          See this fee in the index
           <ArrowUpRight aria-hidden="true" className="size-3.5" />
         </a>
       </div>

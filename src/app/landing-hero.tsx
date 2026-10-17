@@ -17,15 +17,15 @@ export function LandingHero({ index, freshness }: { index: IndexCardData; freshn
     <section className="fi-home-hero relative isolate overflow-visible bg-surface-0 pt-9 lg:pt-14" aria-labelledby="hero-title">
       <div className={`${HOME_WRAP} grid items-center gap-8 lg:grid-cols-[minmax(0,0.96fr)_minmax(0,1.04fr)] lg:gap-[34px]`}>
         <div className="fi-home-hero-copy min-w-0 pb-1 lg:pb-12 lg:pt-2">
-          <p className="text-[15px] text-[#e0e9ee] sm:text-[16px]">For banks and credit unions</p>
+          <p className="text-[15px] text-[#e0e9ee] sm:text-[16px]">For bank and credit union pricing teams</p>
           <h1 id="hero-title" className="fi-home-h1 mt-5 !font-medium text-white lg:mt-6" style={SERIF}>
-            <span className="block whitespace-nowrap">Know your market.</span>
-            <span className="block whitespace-nowrap">Price with confidence.</span>
+            <span className="block whitespace-nowrap">Know where your fees</span>
+            <span className="block whitespace-nowrap">stand in your market.</span>
           </h1>
           <p className="mt-6 text-[17px] leading-[1.45] text-[#e0e9ee] sm:text-[19px] lg:mt-7 lg:text-[clamp(18px,1.6vw,23px)]">
-            Benchmark with the {PRODUCT_NAME}.
+            Every figure comes from an institution&apos;s own fee schedule.
             <br />
-            Put Hamilton to work for your institution.
+            Hamilton turns it into answers for your next pricing review.
           </p>
           <div className="mt-7 lg:mt-9">
             <a href="#hamilton" className="fi-btn fi-btn-brick min-h-12 px-6 text-[15px]">
@@ -50,7 +50,7 @@ export function LandingHero({ index, freshness }: { index: IndexCardData; freshn
 /** The proof strip: two live counts and the promise behind every figure. A failed count is left out. */
 export function LandingProof({ summary, feeTypes }: { summary: Pick<PublicStatsSummary, "institutionsLabel">; feeTypes: number }) {
   const items = [
-    hasFigure(summary.institutionsLabel) ? { figure: summary.institutionsLabel, label: "institutions" } : null,
+    hasFigure(summary.institutionsLabel) ? { figure: summary.institutionsLabel, label: "institutions with published fees" } : null,
     feeTypes > 0 ? { figure: feeTypes.toLocaleString("en-US"), label: "fee categories" } : null,
   ].filter((x): x is { figure: string; label: string } => x !== null);
   return (
