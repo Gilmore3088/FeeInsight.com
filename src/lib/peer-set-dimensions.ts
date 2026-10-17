@@ -27,6 +27,10 @@ export interface SavedPeerDimensions {
   market_code?: number;
   /** The N institutions closest in total assets to the subject institution. */
   nearest?: number;
+  /** Display only, looked up when a saved group is loaded; never stored or parsed from storage. */
+  market_name?: string;
+  /** Display only, looked up when a saved group is loaded; never stored or parsed from storage. */
+  holding_company_name?: string;
 }
 
 const DIMENSION_KEYS = ["asset_min", "asset_max", "regulators", "cu_charter", "holding_company_rssd", "market_code", "nearest"] as const;
@@ -83,7 +87,7 @@ function formatDollars(value: number): string {
   return `$${value.toLocaleString("en-US")}`;
 }
 
-/** Short plain-words parts for a saved group's summary line in Settings. */
+/** Short plain-words parts for a saved group's summary line. Never shows a raw metro code. */
 export function describeSavedPeerDimensions(dims: SavedPeerDimensions, marketName?: string | null): string[] {
   const parts: string[] = [];
   if (dims.asset_min !== undefined && dims.asset_max !== undefined) parts.push(`Total assets ${formatDollars(dims.asset_min)} to ${formatDollars(dims.asset_max)}`);
@@ -91,8 +95,13 @@ export function describeSavedPeerDimensions(dims: SavedPeerDimensions, marketNam
   else if (dims.asset_max !== undefined) parts.push(`Total assets at most ${formatDollars(dims.asset_max)}`);
   if (dims.regulators?.length) parts.push(`Regulator: ${dims.regulators.map((r) => PEER_REGULATOR_LABELS[r]).join(", ")}`);
   if (dims.cu_charter) parts.push(dims.cu_charter === "federal" ? "Federally chartered credit unions" : "State-chartered credit unions");
-  if (dims.holding_company_rssd) parts.push("Same holding company");
-  if (dims.market_code !== undefined) parts.push(marketName ? `Branches in the ${marketName} metro` : `Branches in metro ${dims.market_code}`);
+  if (dims.holding_company_rssd) {
+    parts.push(dims.holding_company_name ? `Same holding company: ${dims.holding_company_name}` : "Same holding company (name not on record)");
+  }
+  if (dims.market_code !== undefined) {
+    const name = marketName || dims.market_name;
+    parts.push(name ? `Branches in the ${name} metro` : "Branches in one metro (name not on record)");
+  }
   if (dims.nearest !== undefined) parts.push(`The ${dims.nearest} closest in total assets`);
   return parts;
 }

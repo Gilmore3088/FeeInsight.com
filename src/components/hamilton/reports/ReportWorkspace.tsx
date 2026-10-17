@@ -377,7 +377,7 @@ export function ReportWorkspace({
   const peerSetLabel = selectedPeerSet
     ? selectedPeerSet.name
     : peerSetId
-      ? `Saved peer set #${peerSetId}`
+      ? "Saved peer group (no longer available)"
       : defaultPeerSetLabel;
 
   const setupVisible = !reportGenerated;

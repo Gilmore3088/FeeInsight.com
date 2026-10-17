@@ -70,6 +70,35 @@ function mapRow(row: Record<string, unknown>): SavedPeerSet {
 }
 
 /**
+ * Display names for the wider dimensions: the metro's name and the holding company's name.
+ * One query each, only when a set uses them. A failed lookup leaves the names out.
+ */
+async function withDisplayNames(sets: SavedPeerSet[]): Promise<SavedPeerSet[]> {
+  const codes = [...new Set(sets.flatMap((set) => (set.advanced?.market_code !== undefined ? [set.advanced.market_code] : [])))];
+  const rssds = [...new Set(sets.flatMap((set) => (set.advanced?.holding_company_rssd ? [set.advanced.holding_company_rssd] : [])))];
+  if (codes.length === 0 && rssds.length === 0) return sets;
+  const [metros, companies] = await Promise.all([
+    codes.length
+      ? (sql`SELECT msa_code, MAX(msa_name) AS name FROM institution_branch_deposits WHERE msa_code = ANY(${codes}::int[]) GROUP BY msa_code` as Promise<{ msa_code: unknown; name: string | null }[]>).catch(() => [])
+      : [],
+    rssds.length
+      ? (sql`SELECT holding_company_rssd, MAX(holding_company_name) AS name FROM institution_sources WHERE holding_company_rssd = ANY(${rssds}::text[]) GROUP BY holding_company_rssd` as Promise<{ holding_company_rssd: unknown; name: string | null }[]>).catch(() => [])
+      : [],
+  ]);
+  const metroNames = new Map(metros.filter((row) => row.name).map((row) => [Number(row.msa_code), String(row.name)]));
+  const companyNames = new Map(companies.filter((row) => row.name).map((row) => [String(row.holding_company_rssd), String(row.name)]));
+  return sets.map((set) => {
+    const a = set.advanced;
+    if (!a) return set;
+    const market = a.market_code !== undefined ? metroNames.get(a.market_code) : undefined;
+    const company = a.holding_company_rssd ? companyNames.get(a.holding_company_rssd) : undefined;
+    return market || company
+      ? { ...set, advanced: { ...a, ...(market ? { market_name: market } : {}), ...(company ? { holding_company_name: company } : {}) } }
+      : set;
+  });
+}
+
+/**
  * The peer sets a user can see: their own, plus every set of the workspace they are working
  * in (when they are an active member of it). Workspace sets come first.
  */
@@ -85,7 +114,7 @@ export async function getSavedPeerSets(
        OR (${workspace}::int IS NOT NULL AND s.institution_id = ${workspace}::int AND ${memberOf(userId)})
     ORDER BY (s.institution_id IS NULL), s.created_at DESC
   ` as Record<string, unknown>[];
-  return rows.map(mapRow);
+  return withDisplayNames(rows.map(mapRow));
 }
 
 /** One set the user can use: their own, or one of a workspace they are an active member of. */
@@ -100,7 +129,7 @@ export async function getSavedPeerSetById(
       AND (s.created_by = ${userId} OR (s.institution_id IS NOT NULL AND ${memberOf(userId)}))
     LIMIT 1
   ` as Record<string, unknown>[];
-  return rows[0] ? mapRow(rows[0]) : null;
+  return rows[0] ? (await withDisplayNames([mapRow(rows[0])]))[0] : null;
 }
 
 /**

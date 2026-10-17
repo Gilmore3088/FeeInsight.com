@@ -19,6 +19,10 @@ describe.skipIf(!connection)("saved peer groups in isolated PostgreSQL", () => {
       id bigserial PRIMARY KEY, name text NOT NULL, tiers text, districts text, charter_type text, created_by text,
       created_at timestamptz DEFAULT now(), filters jsonb, institution_ids integer[], states text[], institution_id integer,
       is_default boolean NOT NULL DEFAULT false)`;
+    await db`CREATE TEMP TABLE institution_branch_deposits (year int, msa_code int, msa_name text)`;
+    await db`CREATE TEMP TABLE institution_sources (id bigint, holding_company_rssd text, holding_company_name text)`;
+    await db`INSERT INTO institution_branch_deposits VALUES (2024, 45220, 'Tallahassee, FL')`;
+    await db`INSERT INTO institution_sources VALUES (323, '1234', 'Capital City Bank Group')`;
     await db`CREATE TEMP TABLE institution_workspace_memberships (institution_id bigint, user_id bigint, membership_status text, membership_role text)`;
   });
   afterAll(async () => {
@@ -36,7 +40,13 @@ describe.skipIf(!connection)("saved peer groups in isolated PostgreSQL", () => {
     expect(stored.kind).toBe("object");
     expect(stored.states).toEqual(["FL"]);
     const read = await store.getSavedPeerSetById(id, "7");
-    expect(read).toMatchObject({ name: "Tallahassee banks", charter_type: "bank", states: ["FL"], institution_ids: null, advanced });
+    expect(read).toMatchObject({
+      name: "Tallahassee banks", charter_type: "bank", states: ["FL"], institution_ids: null,
+      advanced: { ...advanced, market_name: "Tallahassee, FL", holding_company_name: "Capital City Bank Group" },
+    });
+    // The looked-up names are for display and are never written back.
+    expect(stored.filters).toEqual(advanced);
+    expect((await store.getSavedPeerSets("7")).find((set) => set.id === id)?.advanced?.market_name).toBe("Tallahassee, FL");
   });
 
   it("keeps a basic group's columns as before, with no filters", async () => {

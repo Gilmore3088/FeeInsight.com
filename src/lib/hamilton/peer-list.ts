@@ -442,7 +442,7 @@ export function planPeerList(
   market: { name: string; institutionIds: number[] } | null = null,
 ): { criteria: PeerListCriteria | null; problem: string | null } {
   if (intent.problems.length) return { criteria: null, problem: intent.problems.join(" ") };
-  if (intent.market && !market) return { criteria: null, problem: `None found: no branch market is on record for ${subject.name.replace(/\.$/, "")}. Specify a US state or an asset-size group instead.` };
+  if (intent.market && !market) return { criteria: null, problem: `None found: no branch market is on record for ${subject.name.replace(/\.$/, "")}. Ask by US state or asset size instead.` };
   if (intent.similarTo && !sameInstitutionName(intent.similarTo, subject.name))
     return { criteria: null, problem: `This list measures size against the institution you are researching, ${subject.name.replace(/\.$/, "")}. To list peers sized like ${intent.similarTo}, open ${intent.similarTo} in the workspace first.` };
   const explicit = Boolean(intent.charterType || intent.bothTypes || intent.states.length || intent.sameState || intent.minAssets || intent.maxAssets || intent.similarSize || intent.largest || intent.market);
@@ -478,7 +478,7 @@ export function planPeerList(
     descriptions.push(`Asset-size peers: between half and twice ${subject.name}'s ${formatPeerAssets(subject.totalAssetsUsd)} in assets (${subject.reportDate}).`);
   }
   if (minAssets && maxAssets && (minAssets.value > maxAssets.value || (minAssets.value === maxAssets.value && (!minAssets.inclusive || !maxAssets.inclusive)))) return { criteria: null, problem: "The requested asset range does not overlap the similar-size band. No wider band was used." };
-  if (!useSaved && !intent.market && (intent.peerBased || intent.similarSize) && !charterType && !intent.bothTypes) return { criteria: null, problem: "Choose banks, credit unions, or both; the subject's institution type is unavailable." };
+  if (!useSaved && !intent.market && (intent.peerBased || intent.similarSize) && !charterType && !intent.bothTypes) return { criteria: null, problem: `Choose banks, credit unions, or both. None found: no institution type is on record for ${subject.name.replace(/\.$/, "")}.` };
   if (useSaved) descriptions.push(`Saved peer group: ${active!.label}. Its filters remain in force.`);
   if (market) descriptions.push(`Institutions with a branch in the ${market.name} metro, from FDIC and NCUA branch records.`);
   descriptions.push(`${charterType === "bank" ? "Banks" : charterType === "credit_union" ? "Credit unions" : "Banks and credit unions"}; ${states.length ? states.map(s => STATE_NAMES[s] ?? s).join(" or ") + " (headquarters state)" : "nationwide"}.`);

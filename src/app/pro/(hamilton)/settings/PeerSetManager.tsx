@@ -17,12 +17,68 @@ import {
   removePeerSet,
   setPeerSetForAllCharts,
   type PeerSetActionResult,
+  type PeerSetField,
 } from "./actions";
 
 const inputClass =
   "w-full rounded-md border border-warm-300 bg-white px-3 py-2 text-sm text-warm-900 focus:border-terra focus:outline-none focus:ring-1 focus:ring-terra";
 
 const MAX_CHOSEN_PEERS = 50;
+/** Inputs in "More ways to define peers": a ring that shows for keyboard focus. */
+const newInputClass = `${inputClass} min-h-11 focus-visible:ring-2`;
+const newChoiceClass = "accent-terra focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-terra";
+
+export interface PeerSetFieldError {
+  field: PeerSetField;
+  message: string;
+}
+
+/** Where a field's error shows, as the form names it. */
+const FIELD_LABELS: Record<PeerSetField, string> = {
+  name: "Name",
+  states: "States",
+  asset_tiers: "Asset size",
+  fed_districts: "Federal Reserve districts",
+  institution_ids: "Choose institutions by name",
+  assets: "Total assets range",
+  regulators: "Primary regulator",
+  cu_charter: "Credit union charter",
+  holding_company_rssd: "Holding company",
+  market_code: "Metro market",
+  nearest: "Keep only the institutions closest in total assets",
+};
+
+/** Points to the Research institution section of Settings, where the subject is chosen. */
+function ChooseResearchInstitution() {
+  return (
+    <>
+      Choose a research institution in{" "}
+      <a href="#research-institution" className="font-medium text-terra-text underline decoration-terra/40 underline-offset-2 hover:decoration-terra">
+        Research institution
+      </a>{" "}
+      above to use this.
+    </>
+  );
+}
+
+/** The id of a field's error message, for aria-describedby. */
+const errorId = (field: PeerSetField) => `peer_set_error_${field}`;
+
+/** aria-invalid and aria-describedby for a field, keeping any help text it already points to. */
+function fieldA11y(fieldError: PeerSetFieldError | null, field: PeerSetField, help?: string) {
+  const invalid = fieldError?.field === field;
+  const describedBy = [help, invalid ? errorId(field) : null].filter(Boolean).join(" ");
+  return { "aria-invalid": invalid || undefined, "aria-describedby": describedBy || undefined };
+}
+
+function FieldError({ fieldError, field }: { fieldError: PeerSetFieldError | null; field: PeerSetField }) {
+  if (fieldError?.field !== field) return null;
+  return (
+    <p id={errorId(field)} className="mt-1 text-sm font-medium text-terra-text">
+      {fieldError.message}
+    </p>
+  );
+}
 
 export interface PeerSetRow {
   id: number;
@@ -135,6 +191,7 @@ export function PeerSetManager({
   const [notes, setNotes] = useState<Record<number, string>>(initialNotes);
   const [editing, setEditing] = useState<PeerSetRow | "new" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [fieldError, setFieldError] = useState<PeerSetFieldError | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const defaultId = effectiveDefaultId(peerSets);
@@ -198,10 +255,13 @@ export function PeerSetManager({
 
   function handleSubmit(formData: FormData, target: PeerSetRow | "new") {
     setError(null);
+    setFieldError(null);
     startTransition(async () => {
       const result = target === "new" ? await createPeerSet(formData) : await editPeerSet(target.id, formData);
       if (!result.success) {
-        setError(result.error ?? "Could not save the peer group.");
+        // A field's error shows under that field; anything else in the alert at the top.
+        if (result.field && result.error) setFieldError({ field: result.field, message: result.error });
+        else setError(result.error ?? "Could not save the peer group.");
         return;
       }
       applySaved(result);
@@ -212,7 +272,7 @@ export function PeerSetManager({
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-warm-700">
-        Pick the institutions you compare yourself with. The group set to <b>Use for all charts</b> is the one
+        Choose the institutions you compare yourself with. The group set to <b>Use for all charts</b> is the one
         every Pro chart, benchmark, Try a price and report compares against.
         {workspaceName ? ` Groups you add are shared with everyone on ${workspaceName}'s team.` : ""}
       </p>
@@ -356,8 +416,12 @@ export function PeerSetManager({
           homeMarket={homeMarket}
           subject={subject}
           isPending={isPending}
+          fieldError={fieldError}
           researchInstitutionId={researchInstitutionId}
-          onCancel={() => setEditing(null)}
+          onCancel={() => {
+            setFieldError(null);
+            setEditing(null);
+          }}
           onSubmit={(formData) => handleSubmit(formData, editing)}
         />
       )}
@@ -385,6 +449,7 @@ function PeerSetForm({
   homeMarket,
   subject,
   isPending,
+  fieldError,
   researchInstitutionId,
   onCancel,
   onSubmit,
@@ -396,6 +461,7 @@ function PeerSetForm({
   homeMarket: PeerMarketOption | null;
   subject: PeerSetSubject | null;
   isPending: boolean;
+  fieldError: PeerSetFieldError | null;
   researchInstitutionId?: number | null;
   onCancel: () => void;
   onSubmit: (formData: FormData) => void;
@@ -408,6 +474,8 @@ function PeerSetForm({
     (initial?.institution_ids ?? []).map((id) => ({ id, name: names[id] ?? `Institution ${id}` })),
   );
   const [states, setStates] = useState<string[]>(initial?.states ?? []);
+  const [charter, setCharter] = useState<string>(initial?.charter_type ?? "");
+  const banksOnly = charter === "bank";
   const [pickerKey, setPickerKey] = useState(0);
   const tiers = new Set((initial?.tiers ?? "").split(",").filter(Boolean));
   const districts = new Set((initial?.districts ?? "").split(",").filter(Boolean).map(Number));
@@ -417,7 +485,8 @@ function PeerSetForm({
   const savedMarket = advanced?.market_code;
   const otherMarkets = marketOptions.filter((m) => m.code !== homeMarket?.code);
   const savedMarketListed = savedMarket === undefined || savedMarket === homeMarket?.code || marketOptions.some((m) => m.code === savedMarket);
-  const subjectName = subject?.name ?? "your institution";
+  const subjectName = subject?.name ?? "your research institution";
+  const advancedError = fieldError !== null && ["assets", "regulators", "cu_charter", "holding_company_rssd", "market_code", "nearest"].includes(fieldError.field);
   const tapLabel = "flex min-h-11 cursor-pointer items-center gap-1.5 text-sm text-warm-800";
 
   function addInstitution(result: InstitutionSearchResult | null) {
@@ -455,13 +524,15 @@ function PeerSetForm({
           maxLength={100}
           defaultValue={initial?.name ?? ""}
           className={inputClass}
+          {...fieldA11y(fieldError, "name")}
           placeholder="Leave blank to name this group from your selection"
         />
         <span className="text-xs text-warm-600">We will use your selected institutions or filters as the name. You can rename it later.</span>
+        <FieldError fieldError={fieldError} field="name" />
       </label>
 
       <fieldset>
-        <legend className={fieldLabel}>How to pick peers</legend>
+        <legend className={fieldLabel}>How to choose peers</legend>
         <div className="mt-2 flex flex-wrap gap-4">
           {[
             { value: "filters" as const, label: "By charter, state, size and more" },
@@ -524,6 +595,7 @@ function PeerSetForm({
           <p className="text-xs text-warm-600 [font-variant-numeric:tabular-nums]">
             {chosen.length} of {MAX_CHOSEN_PEERS} chosen.
           </p>
+          <FieldError fieldError={fieldError} field="institution_ids" />
         </div>
       ) : (
         <>
@@ -540,7 +612,8 @@ function PeerSetForm({
                     type="radio"
                     name="charter_type"
                     value={opt.value}
-                    defaultChecked={(initial?.charter_type ?? "") === opt.value}
+                    checked={charter === opt.value}
+                    onChange={() => setCharter(opt.value)}
                     className="accent-terra"
                   />
                   {opt.label}
@@ -553,6 +626,7 @@ function PeerSetForm({
             <legend className={fieldLabel}>States</legend>
             <select
               aria-label="Add a state"
+              {...fieldA11y(fieldError, "states")}
               value=""
               onChange={(e) => {
                 const code = e.target.value;
@@ -588,9 +662,10 @@ function PeerSetForm({
                 ))}
               </ul>
             )}
+            <FieldError fieldError={fieldError} field="states" />
           </fieldset>
 
-          <fieldset>
+          <fieldset {...fieldA11y(fieldError, "asset_tiers")}>
             <legend className={fieldLabel}>Asset size</legend>
             <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
               {TIERS.map((t) => (
@@ -606,9 +681,10 @@ function PeerSetForm({
                 </label>
               ))}
             </div>
+            <FieldError fieldError={fieldError} field="asset_tiers" />
           </fieldset>
 
-          <details open={districts.size > 0}>
+          <details open={districts.size > 0 || fieldError?.field === "fed_districts"}>
             <summary className="cursor-pointer text-sm font-medium text-warm-800">Advanced filters: Federal Reserve districts (optional)</summary>
             <fieldset className="mt-2">
             <legend className="sr-only">Federal Reserve districts (optional)</legend>
@@ -627,10 +703,14 @@ function PeerSetForm({
               ))}
             </div>
             <p className="mt-1 text-xs text-warm-600">Leave districts blank to include every district.</p>
+            <FieldError fieldError={fieldError} field="fed_districts" />
             </fieldset>
           </details>
-          <details open={Boolean(advanced)}>
-            <summary className="flex min-h-11 cursor-pointer items-center text-sm font-medium text-warm-800">
+          <details open={Boolean(advanced) || advancedError}>
+            <summary className="flex min-h-11 cursor-pointer list-none items-center gap-1.5 text-sm font-medium text-warm-800 [&::-webkit-details-marker]:hidden">
+              <svg aria-hidden="true" viewBox="0 0 20 20" fill="currentColor" className="expand-icon h-4 w-4 shrink-0 text-warm-600 transition-transform">
+                <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.17l3.71-3.94a.75.75 0 1 1 1.08 1.04l-4.25 4.5a.75.75 0 0 1-1.08 0l-4.25-4.5a.75.75 0 0 1 .02-1.06Z" clipRule="evenodd" />
+              </svg>
               More ways to define peers (optional)
             </summary>
             <div className="mt-2 flex flex-col gap-4">
@@ -644,7 +724,8 @@ function PeerSetForm({
                       inputMode="decimal"
                       defaultValue={millions(advanced?.asset_min)}
                       placeholder="For example 500"
-                      className={`${inputClass} min-h-11`}
+                      className={newInputClass}
+                      {...fieldA11y(fieldError, "assets", "peer_set_assets_help")}
                     />
                   </label>
                   <label className="flex flex-col gap-1 text-sm text-warm-800">
@@ -654,69 +735,88 @@ function PeerSetForm({
                       inputMode="decimal"
                       defaultValue={millions(advanced?.asset_max)}
                       placeholder="For example 2000"
-                      className={`${inputClass} min-h-11`}
+                      className={newInputClass}
+                      {...fieldA11y(fieldError, "assets", "peer_set_assets_help")}
                     />
                   </label>
                 </div>
-                <p className="mt-1 text-xs text-warm-600">
+                <p id="peer_set_assets_help" className="mt-1 text-xs text-warm-600">
                   Uses each institution&apos;s latest reported total assets. Fill in one side for an open-ended range.
+                  Combined with Asset size above: an institution must meet both.
                 </p>
+                <FieldError fieldError={fieldError} field="assets" />
               </fieldset>
 
-              <fieldset>
+              <fieldset {...fieldA11y(fieldError, "regulators")}>
                 <legend className={fieldLabel}>Primary regulator</legend>
-                <div className="mt-1 grid grid-cols-2 gap-x-3 sm:grid-cols-4">
-                  {SAVED_PEER_REGULATORS.map((key) => (
-                    <label key={key} className={tapLabel}>
-                      <input
-                        type="checkbox"
-                        name="regulators"
-                        value={key}
-                        defaultChecked={regulators.has(key)}
-                        className="accent-terra"
-                      />
-                      {PEER_REGULATOR_LABELS[key]}
-                    </label>
-                  ))}
+                <div className="mt-2 grid grid-cols-2 gap-x-3 sm:grid-cols-4">
+                  {SAVED_PEER_REGULATORS.map((key) => {
+                    const off = key === "ncua" && banksOnly;
+                    return (
+                      <label key={key} className={`${tapLabel} ${off ? "cursor-not-allowed opacity-60" : ""}`}>
+                        <input
+                          type="checkbox"
+                          name="regulators"
+                          value={key}
+                          defaultChecked={regulators.has(key)}
+                          disabled={off}
+                          aria-describedby={key === "ncua" ? "peer_set_cu_note" : undefined}
+                          className={newChoiceClass}
+                        />
+                        {PEER_REGULATOR_LABELS[key]}
+                      </label>
+                    );
+                  })}
                 </div>
+                <FieldError fieldError={fieldError} field="regulators" />
               </fieldset>
 
-              <fieldset>
+              <fieldset
+                {...fieldA11y(fieldError, "cu_charter", "peer_set_cu_note")}
+                className={banksOnly ? "opacity-60" : undefined}
+              >
                 <legend className={fieldLabel}>Credit union charter</legend>
-                <div className="mt-1 flex flex-wrap gap-x-4">
+                <div className="mt-2 flex flex-wrap gap-x-4">
                   {[
                     { value: "", label: "Any" },
                     { value: "federal", label: "Federal charter" },
                     { value: "state", label: "State charter" },
                   ].map((opt) => (
-                    <label key={opt.value} className={tapLabel}>
+                    <label key={opt.value} className={`${tapLabel} ${banksOnly ? "cursor-not-allowed" : ""}`}>
                       <input
                         type="radio"
                         name="cu_charter"
                         value={opt.value}
                         defaultChecked={(advanced?.cu_charter ?? "") === opt.value}
-                        className="accent-terra"
+                        disabled={banksOnly}
+                        aria-describedby="peer_set_cu_note"
+                        className={newChoiceClass}
                       />
                       {opt.label}
                     </label>
                   ))}
                 </div>
-                <p className="text-xs text-warm-600">Applies to credit unions only.</p>
+                <FieldError fieldError={fieldError} field="cu_charter" />
               </fieldset>
+              <p id="peer_set_cu_note" className="-mt-3 text-xs text-warm-600">
+                Credit union charter and NCUA apply to credit unions only{banksOnly ? `, so they are off while Charter is "Banks only".` : "."}
+              </p>
 
               <div className="flex flex-col gap-1 text-sm text-warm-800">
                 <label htmlFor="peer_set_market" className="font-medium">Metro market</label>
                 <select
                   id="peer_set_market"
-                  aria-describedby="peer_set_market_help"
                   name="market_code"
                   defaultValue={savedMarket === undefined ? "" : String(savedMarket)}
-                  className={`${inputClass} min-h-11 sm:w-96`}
+                  className={`${newInputClass} sm:w-96`}
+                  {...fieldA11y(fieldError, "market_code", "peer_set_market_help")}
                 >
                   <option value="">Any metro</option>
                   {homeMarket && <option value={homeMarket.code}>My home market: {homeMarket.name}</option>}
                   {!savedMarketListed && savedMarket !== undefined && (
-                    <option value={savedMarket}>{marketNames[savedMarket] ?? `Metro ${savedMarket}`}</option>
+                    <option value={savedMarket}>
+                      {marketNames[savedMarket] ?? advanced?.market_name ?? "The metro this group was saved with (name not on record)"}
+                    </option>
                   )}
                   {otherMarkets.length > 0 && (
                     <optgroup label="All metros">
@@ -730,11 +830,12 @@ function PeerSetForm({
                 </select>
                 <p id="peer_set_market_help" className="text-xs text-warm-600">
                   Institutions with a branch in the metro, from FDIC and NCUA branch records.
-                  {!homeMarket && otherMarkets.length === 0 ? " None found: the metro list is not available right now." : ""}
+                  {!homeMarket && otherMarkets.length === 0 ? " The metro list didn't load. Reload the page to try again." : ""}
                 </p>
+                <FieldError fieldError={fieldError} field="market_code" />
               </div>
 
-              <fieldset>
+              <fieldset {...fieldA11y(fieldError, "holding_company_rssd")}>
                 <legend className={fieldLabel}>Holding company</legend>
                 {holdingRssd ? (
                   <label className={tapLabel}>
@@ -743,24 +844,26 @@ function PeerSetForm({
                       name="holding_company_rssd"
                       value={holdingRssd}
                       defaultChecked={Boolean(advanced?.holding_company_rssd)}
-                      className="accent-terra"
+                      className={newChoiceClass}
                     />
                     {advanced?.holding_company_rssd && advanced.holding_company_rssd !== subject?.holdingCompanyRssd
-                      ? "Only institutions in the holding company this group was saved with"
+                      ? advanced.holding_company_name
+                        ? `Only institutions in ${advanced.holding_company_name}, the holding company this group was saved with`
+                        : "Only institutions in the holding company this group was saved with"
                       : `Only institutions in the same holding company as ${subjectName}`}
                   </label>
                 ) : (
                   <p className="mt-1 text-sm text-warm-600">
-                    {subject ? `None found: no holding company is on record for ${subjectName}.` : "Choose a research institution above to use this."}
+                    {subject ? `None found: no holding company is on record for ${subjectName}.` : <ChooseResearchInstitution />}
                   </p>
                 )}
+                <FieldError fieldError={fieldError} field="holding_company_rssd" />
               </fieldset>
 
               <div className="flex flex-col gap-1 text-sm text-warm-800">
-                <label htmlFor="peer_set_nearest" className="font-medium">Keep only the closest in total assets</label>
+                <label htmlFor="peer_set_nearest" className="font-medium">Keep only the institutions closest in total assets</label>
                 <input
                   id="peer_set_nearest"
-                  aria-describedby="peer_set_nearest_help"
                   name="nearest"
                   type="number"
                   inputMode="numeric"
@@ -770,19 +873,23 @@ function PeerSetForm({
                   defaultValue={advanced?.nearest ?? ""}
                   disabled={!subject?.hasAssets && advanced?.nearest === undefined}
                   placeholder={`1 to ${MAX_NEAREST_PEER_COUNT}`}
-                  className={`${inputClass} min-h-11 sm:w-40`}
+                  className={`${newInputClass} sm:w-40`}
+                  {...fieldA11y(fieldError, "nearest", "peer_set_nearest_help")}
                 />
                 <p id="peer_set_nearest_help" className="text-xs text-warm-600">
                   {subject?.hasAssets
-                    ? `How many to keep, closest to ${subjectName}'s total assets, among institutions that publish fees and meet everything else. Leave blank to keep them all.`
+                    ? `Keeps this many institutions nearest ${subjectName}'s total assets, from those that publish fees and match your other choices. Leave blank to keep all.`
                     : subject
                       ? `None found: no total assets are on record for ${subjectName}, so this can't be measured.`
-                      : "Choose a research institution above to use this."}
+                      : <ChooseResearchInstitution />}
                 </p>
+                <FieldError fieldError={fieldError} field="nearest" />
               </div>
             </div>
           </details>
-          <p className="text-xs text-warm-600">Leave states or asset size blank to include all.</p>
+          <p className="text-xs text-warm-600">
+            Leave any choice blank, including the ones under More ways to define peers, to include all institutions for it.
+          </p>
         </>
       )}
 
@@ -801,6 +908,11 @@ function PeerSetForm({
         >
           Cancel
         </button>
+        {fieldError && (
+          <p role="alert" className="flex min-h-11 items-center text-sm text-terra-text">
+            Not saved. See the note under {FIELD_LABELS[fieldError.field]}.
+          </p>
+        )}
       </div>
     </form>
   );

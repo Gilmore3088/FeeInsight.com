@@ -125,7 +125,7 @@ describe("sets with wider dimensions", () => {
     });
     expect(fee.getPeerIndex).not.toHaveBeenCalled();
     expect(result.source).toBe("selected-institution-default");
-    expect(result.fallbackReason).toContain('Your peer group "Tallahassee banks" has no peers right now');
+    expect(result.fallbackReason).toBe(`Your peer group "Tallahassee banks" matches no institutions, so this chart uses "${result.label}" instead. None found: no institution meets every part of this peer group.`);
     expect(result.fallbackReason).toContain("None found");
   });
 
@@ -133,7 +133,7 @@ describe("sets with wider dimensions", () => {
     peerSets.resolvePeerSet.mockRejectedValue(new peerSets.PeerSetError("no assets"));
     const resolved = await resolveSavedPeerSetFilters(metro, null);
     expect(resolved.filters).toBeNull();
-    expect(resolved.problem).toContain("closest in total assets");
+    expect(resolved.problem).toBe('Choose a research institution in Settings first. "Closest in total assets" is measured against it.');
   });
 
   it("falls back to the national index for an explicit set with no peers", async () => {
@@ -144,6 +144,6 @@ describe("sets with wider dimensions", () => {
     const result = await resolveHamiltonPeerIndex({ userId: 7, peerSetId: "9", institutionId: 323 });
     expect(fee.getPeerIndex).not.toHaveBeenCalled();
     expect(result.source).toBe("national");
-    expect(result.fallbackReason).toContain("None found");
+    expect(result.fallbackReason).toBe('Your peer group "Tallahassee banks" matches no institutions, so this chart uses the national index. None found: no institution meets every part of this peer group.');
   });
 });

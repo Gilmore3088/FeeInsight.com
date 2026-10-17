@@ -49,6 +49,13 @@ describe("client-safe peer dimensions", () => {
       "Branches in the Dallas-Fort Worth-Arlington, TX metro",
       "The 20 closest in total assets",
     ]);
-    expect(describeSavedPeerDimensions({ market_code: 19100 })).toEqual(["Branches in metro 19100"]);
+    expect(describeSavedPeerDimensions({ market_code: 19100 })).toEqual(["Branches in one metro (name not on record)"]);
+    expect(describeSavedPeerDimensions({ market_code: 19100, market_name: "Tallahassee, FL" })).toEqual(["Branches in the Tallahassee, FL metro"]);
+    expect(describeSavedPeerDimensions({ holding_company_rssd: "1" })).toEqual(["Same holding company (name not on record)"]);
+    expect(describeSavedPeerDimensions({ holding_company_rssd: "1", holding_company_name: "Capital City Bank Group" })).toEqual(["Same holding company: Capital City Bank Group"]);
+  });
+
+  it("never reads display names from storage", () => {
+    expect(parseSavedPeerDimensions({ market_code: 45220, market_name: "Fake", holding_company_name: "Fake" })).toEqual({ market_code: 45220 });
   });
 });

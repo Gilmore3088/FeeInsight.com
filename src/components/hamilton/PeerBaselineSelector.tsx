@@ -33,7 +33,7 @@ function formatPeerSetSummary(peerSet: HamiltonPeerSetOption): string {
     peerSet.districts ? `districts ${peerSet.districts}` : null,
     ...(peerSet.advanced ? describeSavedPeerDimensions(peerSet.advanced) : []),
   ].filter(Boolean);
-  return parts.length > 0 ? parts.join(" · ") : "custom peer set";
+  return parts.length > 0 ? parts.join(" · ") : "custom peer group";
 }
 
 export function PeerBaselineSelector({
@@ -71,7 +71,7 @@ export function PeerBaselineSelector({
       >
         <option value="">{defaultLabel}</option>
         {!hasSelectedPeerSet && (
-          <option value={selectedValue}>Saved peer set #{selectedValue}</option>
+          <option value={selectedValue}>Saved peer group (no longer available)</option>
         )}
         {peerSets.map((peerSet) => (
           <option key={peerSet.id} value={String(peerSet.id)}>

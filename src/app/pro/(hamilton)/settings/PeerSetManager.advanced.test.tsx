@@ -21,6 +21,60 @@ function openForm(props: Partial<Parameters<typeof PeerSetManager>[0]> = {}) {
 }
 
 describe("more ways to define peers", () => {
+  it("shows a chevron the page turns when the group opens", () => {
+    openForm();
+    const summary = screen.getByText("More ways to define peers (optional)").closest("summary")!;
+    const icon = summary.querySelector("svg.expand-icon");
+    expect(icon?.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("ties the asset help to both asset inputs", () => {
+    openForm();
+    for (const name of ["Lowest, in $ millions", "Highest, in $ millions"]) {
+      expect(screen.getByRole("textbox", { name }).getAttribute("aria-describedby")).toBe("peer_set_assets_help");
+    }
+    expect(document.getElementById("peer_set_assets_help")?.textContent).toContain("Combined with Asset size above: an institution must meet both.");
+  });
+
+  it("turns off credit union charter and NCUA for a banks-only group", () => {
+    openForm();
+    fireEvent.click(screen.getByRole("radio", { name: "Banks only" }));
+    expect((screen.getByRole("radio", { name: "Federal charter" }) as HTMLInputElement).disabled).toBe(true);
+    const ncua = screen.getByRole("checkbox", { name: "NCUA" }) as HTMLInputElement;
+    expect(ncua.disabled).toBe(true);
+    expect(ncua.getAttribute("aria-describedby")).toBe("peer_set_cu_note");
+    expect((screen.getByRole("checkbox", { name: "OCC" }) as HTMLInputElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole("radio", { name: "Credit unions only" }));
+    expect(ncua.disabled).toBe(false);
+  });
+
+  it("shows a field's error under that field, not in the top alert", async () => {
+    actions.create.mockResolvedValue({ success: false, field: "assets", error: "The lowest total assets can't be more than the highest." });
+    openForm();
+    fireEvent.click(screen.getByRole("button", { name: "Save peer group" }));
+    const message = await screen.findByText("The lowest total assets can't be more than the highest.");
+    expect(message.id).toBe("peer_set_error_assets");
+    const lowest = screen.getByRole("textbox", { name: "Lowest, in $ millions" });
+    expect(lowest.getAttribute("aria-invalid")).toBe("true");
+    expect(lowest.getAttribute("aria-describedby")).toBe("peer_set_assets_help peer_set_error_assets");
+    expect(screen.getByText("More ways to define peers (optional)").closest("details")?.open).toBe(true);
+    expect(screen.getByRole("alert").textContent).toBe("Not saved. See the note under Total assets range.");
+  });
+
+  it("keeps errors about the whole group in the top alert", async () => {
+    actions.create.mockResolvedValue({ success: false, error: "You can save up to 10 peer groups. Remove one to add another." });
+    openForm();
+    fireEvent.click(screen.getByRole("button", { name: "Save peer group" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("up to 10 peer groups");
+  });
+
+  it("points to the research institution picker when none is chosen", () => {
+    openForm({ subject: null });
+    const links = screen.getAllByRole("link", { name: "Research institution" });
+    expect(links.length).toBe(2);
+    expect(links[0].getAttribute("href")).toBe("#research-institution");
+  });
+
   it("offers every wider dimension with a label, behind a closed group", () => {
     openForm();
     expect(screen.getByText("More ways to define peers (optional)").closest("details")?.open).toBe(false);
@@ -29,7 +83,7 @@ describe("more ways to define peers", () => {
     for (const name of ["OCC", "FDIC", "Federal Reserve", "NCUA"]) expect(screen.getByRole("checkbox", { name })).toBeTruthy();
     expect(screen.getByRole("radio", { name: "Federal charter" })).toBeTruthy();
     expect(screen.getByRole("checkbox", { name: "Only institutions in the same holding company as Capital City Bank" })).toBeTruthy();
-    expect(screen.getByRole("spinbutton", { name: "Keep only the closest in total assets" })).toBeTruthy();
+    expect(screen.getByRole("spinbutton", { name: "Keep only the institutions closest in total assets" })).toBeTruthy();
     const metro = screen.getByRole("combobox", { name: "Metro market" }) as HTMLSelectElement;
     expect([...metro.options].map((o) => o.textContent)).toEqual([
       "Any metro", "My home market: Tallahassee, FL", "Miami-Fort Lauderdale-West Palm Beach, FL",
@@ -41,7 +95,7 @@ describe("more ways to define peers", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Lowest, in $ millions" }), { target: { value: "500" } });
     fireEvent.click(screen.getByRole("checkbox", { name: "OCC" }));
     fireEvent.change(screen.getByRole("combobox", { name: "Metro market" }), { target: { value: "45220" } });
-    fireEvent.change(screen.getByRole("spinbutton", { name: "Keep only the closest in total assets" }), { target: { value: "10" } });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Keep only the institutions closest in total assets" }), { target: { value: "10" } });
     expect(form.checkValidity()).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Save peer group" }));
     await waitFor(() => expect(actions.create).toHaveBeenCalledTimes(1));
@@ -57,8 +111,8 @@ describe("more ways to define peers", () => {
   it("says None found where the research institution lacks a holding company or assets", () => {
     openForm({ subject: { name: "Navy Federal Credit Union", holdingCompanyRssd: null, hasAssets: false }, homeMarket: null, marketOptions: [] });
     expect(screen.getByText("None found: no holding company is on record for Navy Federal Credit Union.")).toBeTruthy();
-    expect((screen.getByRole("spinbutton", { name: "Keep only the closest in total assets" }) as HTMLInputElement).disabled).toBe(true);
-    expect(screen.getByText(/None found: the metro list is not available right now/)).toBeTruthy();
+    expect((screen.getByRole("spinbutton", { name: "Keep only the institutions closest in total assets" }) as HTMLInputElement).disabled).toBe(true);
+    expect(screen.getByText(/The metro list didn't load. Reload the page to try again./)).toBeTruthy();
   });
 
   it("shows a saved group's wider dimensions and why it has no peers", () => {
@@ -72,6 +126,7 @@ describe("more ways to define peers", () => {
     expect(screen.getByText("Total assets at least $500M")).toBeTruthy();
     expect(screen.getByText("Regulator: OCC")).toBeTruthy();
     expect(screen.getByText("Branches in the Tallahassee, FL metro")).toBeTruthy();
+    expect(screen.queryByText(/45220/)).toBeNull();
     expect(screen.getByText("None found: no institution meets every part of this peer group.")).toBeTruthy();
   });
 
@@ -86,6 +141,6 @@ describe("more ways to define peers", () => {
     expect(screen.getByText("More ways to define peers (optional)").closest("details")?.open).toBe(true);
     expect((screen.getByRole("radio", { name: "Federal charter" }) as HTMLInputElement).checked).toBe(true);
     expect((screen.getByRole("textbox", { name: "Highest, in $ millions" }) as HTMLInputElement).value).toBe("2000");
-    expect((screen.getByRole("spinbutton", { name: "Keep only the closest in total assets" }) as HTMLInputElement).value).toBe("15");
+    expect((screen.getByRole("spinbutton", { name: "Keep only the institutions closest in total assets" }) as HTMLInputElement).value).toBe("15");
   });
 });

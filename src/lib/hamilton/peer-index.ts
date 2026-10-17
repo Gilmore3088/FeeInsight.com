@@ -198,7 +198,7 @@ export async function resolveSavedPeerSetFilters(
   } catch (error) {
     if (!(error instanceof PeerSetError)) throw error;
     const problem = def.nearest !== undefined && subjectId === null
-      ? "Choose an institution in Settings first: \"closest in total assets\" is measured against it."
+      ? "Choose a research institution in Settings first. \"Closest in total assets\" is measured against it."
       : error.message;
     return { filters: null, label: name || "Saved peer group", problem };
   }
@@ -388,6 +388,8 @@ export async function resolveHamiltonPeerIndex(
   const peerSetId = params.peerSetId?.trim() || null;
   const institutionId = params.institutionId ?? params.selectedInstitution?.id ?? null;
   let activeFallbackReason: string | null = null;
+  /** A default group with no peers: its reason names the group charts use instead, once known. */
+  let emptyActiveReason: ((fallbackLabel: string) => string) | null = null;
 
   if (!peerSetId && userId) {
     // No explicit choice: the workspace's (or the user's) default peer group applies.
@@ -395,7 +397,9 @@ export async function resolveHamiltonPeerIndex(
     const active = loaded?.active ?? null;
     if (!active && loaded?.chosen && loaded.problem) {
       const name = loaded.chosen.name.trim();
-      activeFallbackReason = `${name ? `Your peer group "${name}"` : "Your peer group"} has no peers right now, so Hamilton used the next group. ${loaded.problem}`;
+      const problem = loaded.problem;
+      emptyActiveReason = (fallbackLabel) =>
+        `${name ? `Your peer group "${name}"` : "Your peer group"} matches no institutions, so this chart uses ${fallbackLabel} instead. ${problem}`;
     }
     if (active) {
       const entries = await getPeerIndex(queryFilters(active.filters), approvedOnly);
@@ -422,7 +426,7 @@ export async function resolveHamiltonPeerIndex(
       const resolved = await resolveSavedPeerSetFilters(savedPeerSet, institutionId);
       const filters = resolved.filters;
       if (!filters) {
-        return resolveNationalIndex(`Saved peer set "${resolved.label}" has no peers right now: ${resolved.problem ?? "None found."}`, approvedOnly);
+        return resolveNationalIndex(`Your peer group "${resolved.label}" matches no institutions, so this chart uses the national index. ${resolved.problem ?? "None found."}`, approvedOnly);
       }
       const entries = await getPeerIndex(filters, approvedOnly);
       if (hasUsablePeerIndex(entries, minUsableCategories)) {
@@ -450,12 +454,13 @@ export async function resolveHamiltonPeerIndex(
         source: "selected-institution-default",
         filters,
         peerSetId: null,
-        fallbackReason: activeFallbackReason,
+        fallbackReason: emptyActiveReason ? emptyActiveReason(`"${describePeerFilters(filters)}"`) : activeFallbackReason,
       };
     }
   }
 
   return resolveNationalIndex(
+    (emptyActiveReason ? emptyActiveReason("the national index") : null) ??
     activeFallbackReason ??
       (params.selectedInstitution
         ? "Selected-institution peer filters were too sparse, so Hamilton used the verified national index."

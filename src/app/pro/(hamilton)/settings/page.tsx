@@ -276,6 +276,7 @@ export default async function SettingsPage({
       </MemoSection>
 
       <MemoSection
+        id="research-institution"
         title="Research institution"
         note="Choose the institution Hamilton researches. Account membership and workspace access are separate."
       >

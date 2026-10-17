@@ -103,23 +103,25 @@ describe("peer groups on the wider dimensions", () => {
     expect(mocks.markets.getMarketInstitutionIds).not.toHaveBeenCalled();
   });
 
-  for (const [why, entries, message] of [
-    ["min above max", [["asset_min_m", "900"], ["asset_max_m", "100"]], "at or below"],
-    ["negative assets", [["asset_min_m", "-1"]], "negative"],
-    ["letters for assets", [["asset_max_m", "lots"]], "numbers"],
-    ["nearest of 0", [["nearest", "0"]], "1 to 100"],
-    ["nearest over the cap", [["nearest", "101"]], "1 to 100"],
-    ["nearest not whole", [["nearest", "2.5"]], "1 to 100"],
-    ["unknown regulator", [["regulators", "cfpb"]], "regulators"],
-    ["unknown CU charter", [["cu_charter", "national"]], "federal or state"],
-    ["CU charter on banks", [["charter_type", "bank"], ["cu_charter", "state"]], "credit unions"],
-    ["NCUA on banks", [["charter_type", "bank"], ["regulators", "ncua"]], "NCUA"],
-    ["bad holding company", [["holding_company_rssd", "abc"]], "holding company"],
-  ] as [string, [string, string][], string][]) {
+  for (const [why, entries, message, field] of [
+    ["min above max", [["asset_min_m", "900"], ["asset_max_m", "100"]], "The lowest total assets can't be more than the highest.", "assets"],
+    ["negative assets", [["asset_min_m", "-1"]], "negative", "assets"],
+    ["letters for assets", [["asset_max_m", "lots"]], "Enter total assets as a number, in $ millions (for example 500).", "assets"],
+    ["nearest of 0", [["nearest", "0"]], "1 to 100", "nearest"],
+    ["nearest over the cap", [["nearest", "101"]], "1 to 100", "nearest"],
+    ["nearest not whole", [["nearest", "2.5"]], "1 to 100", "nearest"],
+    ["nearest as letters", [["nearest", "ten"]], "1 to 100", "nearest"],
+    ["unknown regulator", [["regulators", "cfpb"]], "Choose regulators", "regulators"],
+    ["unknown CU charter", [["cu_charter", "national"]], "Choose federal or state", "cu_charter"],
+    ["CU charter on banks", [["charter_type", "bank"], ["cu_charter", "state"]], 'Credit union charter works only for credit union groups. Choose "Credit unions only", or set charter to "Banks and credit unions".', "cu_charter"],
+    ["NCUA on banks", [["charter_type", "bank"], ["regulators", "ncua"]], "NCUA", "regulators"],
+    ["bad holding company", [["holding_company_rssd", "abc"]], "Clear the holding company box and save again.", "holding_company_rssd"],
+  ] as [string, [string, string][], string, string][]) {
     it(`refuses ${why}`, async () => {
       const result = await createPeerSet(form([["name", "X"], ...entries]));
       expect(result.success).toBe(false);
       expect(result.error).toContain(message);
+      expect(result.field).toBe(field);
       expect(mocks.savedPeers.savePeerSet).not.toHaveBeenCalled();
     });
   }
@@ -127,7 +129,7 @@ describe("peer groups on the wider dimensions", () => {
   it("refuses a metro the branch records don't have", async () => {
     mocks.markets.getMarketInstitutionIds.mockResolvedValue(null);
     const result = await createPeerSet(form([["name", "X"], ["market_code", "99999"]]));
-    expect(result).toMatchObject({ success: false, error: "Pick a metro market from the list." });
+    expect(result).toMatchObject({ success: false, error: "Choose a metro market from the list.", field: "market_code" });
   });
 
   it("does not keep wider dimensions with hand-picked institutions", async () => {

@@ -201,7 +201,7 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
             market = { name: resolved.market?.name || "home", institutionIds: resolved.filters?.institutionIds ?? [] };
           } catch (error) {
             if (!(error instanceof PeerSetError)) throw error;
-            return message("needs_criteria", `None found: no branch market is on record for ${subject.name.replace(/\.$/, "")}. Specify a US state or an asset-size group instead.`);
+            return message("needs_criteria", `None found: no branch market is on record for ${subject.name.replace(/\.$/, "")}. Ask by US state or asset size instead.`);
           }
         }
         const planned = planPeerList(intent, subject, active, market);

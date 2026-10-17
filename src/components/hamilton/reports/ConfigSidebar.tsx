@@ -261,7 +261,7 @@ export function ConfigSidebar({
             <option value="">{defaultPeerSetLabel}</option>
             {!peerSetKnown && (
               <option value={selectedPeerValue}>
-                Saved peer group #{selectedPeerValue}
+                Saved peer group (no longer available)
               </option>
             )}
             {savedPeerSets.map((peerSet) => (
