@@ -449,6 +449,12 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
     reason: "source_mismatch: #1755", issue: 1755, kind: "wrong_category",
     requiresLive: { feePublishedId: 98982, amount: 30, feeName: "Overdraft per item (Consumer limit of 5 per day)" },
     evidence: "Community Savings Bank (doc 4502, text 3058; doc 13841, text 1357, same page): \"Overdraft per item (Consumer limit of 5 per day) ** | $30.00\", the per-item overdraft fee; the daily cap is five items, not $30. Live as overdraft 98982." },
+  // #1753 (read-only, Oct 17; #1736's market report quoted it as Regions' ATM fee): a second read of
+  // Regions' international ATM withdrawal, filed as a non-network ATM fee under the wrong heading.
+  { feePublishedId: 101170, institutionId: 27, canonicalFeeKey: "atm_non_network", amount: 5, feeName: "Regions ATM: Withdrawal",
+    reason: "duplicate of #81957 (#1753)", issue: 1753, kind: "duplicate",
+    requiresLive: { feePublishedId: 81957, amount: 5, feeName: "International ATM Transaction" },
+    evidence: "Regions (doc 23188, text 20258): the $5.00 \"Withdrawal\" sits under \"International ATM:\" (\"International ATM: | ... Withdrawal ... $5.00 (Applies to all withdrawal requests, approved or declined)\"), not under \"Regions ATM:\"; the same $5 international ATM fee is live as card_foreign_txn 81957. Regions' non-network withdrawal is $3 (81982)." },
 ];
 
 export interface LiveTakedownRow {

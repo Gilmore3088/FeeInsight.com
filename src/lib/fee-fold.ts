@@ -234,6 +234,30 @@ export const COLLECTION_ITEM =
 export const FOREIGN_ITEM_RETURN =
   /^(?![\s\S]*\b(?:collections?|wires?|mail(?:ed|ing)?|statements?)\b)(?=[\s\S]*\b(?:foreign|canadian|international|non[- ]?u\.?s\b))(?=[\s\S]*\b(?:checks?|cheques?|items?|drafts?)\b)[\s\S]*\b(?:return(?:s|ed)?|unpaid|dishonou?red|charge[- ]?backs?)\b/i;
 
+/**
+ * Guard v69: `FOREIGN_ITEM_RETURN` for a fee filed as NSF. A row that also names domestic items or
+ * insufficient or uncollected funds ("Domestic/Foreign – Incoming and Outgoing Returned Item for
+ * Insufficient or Uncollected Funds") prices the member's own returned items too, so it stays NSF.
+ * A price on top of a cost ("Foreign returned check fee (at cost plus)" $10, 22823) is not the fee's
+ * whole price, so it never moves either.
+ */
+export const FOREIGN_DEPOSIT_RETURN = new RegExp(
+  String.raw`^(?![\s\S]*\b(?:domestic|insufficient|nsf|non[- ]?sufficient|uncollected|cost)\b)` + FOREIGN_ITEM_RETURN.source.slice(1),
+  "i",
+);
+
+/**
+ * Guard v69: an IRA's own closing or termination charge ("Individual Retirement Account Closing Fee",
+ * "IRA Closed within 18 Months of Opening", "Retirement/HSA Account Closing Fee") is the IRA
+ * termination fee, where the live windowed IRA closures already are ("IRA Early Closure (Within 12
+ * Months)", "IRA Account Closure (Within 90 Days)"); not a deposit account's early closure. A row
+ * that prices other accounts too, or only mentions the IRA ("Account Closed within 90 days of opening
+ * (including IRA's)", "Early Account Closing - DDA and Savings less than 3 months - IRA prior to 3
+ * years", "... (except IRA accounts)"), stays early closure, as does a certificate's or a club's.
+ */
+export const IRA_CLOSING =
+  /^(?![\s\S]*\b(?:includ\w*|except\w*|exclud\w*|not applicable|other than|dda|checking|savings|money market|cds?|certificates?|clubs?|loans?)\b)(?=[\s\S]*\b(?:iras?|roth|individual retirement|retirement)\b)[\s\S]*\b(?:clos\w*|close-?outs?|terminat\w*)\b/i;
+
 /** A mortgage, lien or loan subordination; a wire line under a "Subordination Request" heading is not one. */
 export const SUBORDINATION = /^(?![\s\S]*subordination request:\s*(?:incoming|outgoing))[\s\S]*\bsubordinat/i;
 
@@ -433,6 +457,11 @@ export function splitCategoriesFor(options: {
       also: [{ to: "deposited_item_return", name: FOREIGN_ITEM_RETURN }],
       sqlPattern: "collection|foreign|canadian|international|non[- ]?u\\.?s",
     },
+    // Guard v69: a returned foreign, Canadian or international check or item is a returned
+    // deposited item, not the member's own NSF item.
+    nsf: { to: "deposited_item_return", name: FOREIGN_DEPOSIT_RETURN, sqlPattern: "foreign|canadian|international|non[- ]?u\\.?s" },
+    // Guard v69: an IRA's own closing charge is the IRA termination fee, not an early closure.
+    early_closure: { to: "ira_termination", name: IRA_CLOSING, sqlPattern: "\\mira|roth|retirement" },
     // A lien release is other lending (James, Oct 8: Lien Release gave up its spot). A subordination
     // stays legal process (James, Oct 15).
     legal_process: { to: "other_lending_fee", name: LENDING_LEGAL, sqlPattern: "lien" },

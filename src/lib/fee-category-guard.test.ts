@@ -1473,3 +1473,181 @@ describe("guard v68 (Oct 17)", () => {
     expect(checkFeeCategory("bill_pay", "Same Day Bill Payment")).toEqual({ ok: true });
   });
 });
+
+describe("guard v69 (Oct 17)", () => {
+  it("files a returned Canadian or international item as a returned deposited item, not NSF", () => {
+    // The 6 live NSF rows that move (92115, 85209, 93491, 16421, 79024, 117427), each read on its
+    // bank's own schedule beside that bank's foreign deposit or collection lines.
+    for (const name of [
+      "International Returned Item",
+      "International returned item",
+      "International Return Item (each)",
+      "Canadian Returned Item",
+      "Returned item fee for Canadian checks",
+      "Canadian Returned Checks (per check)",
+    ]) {
+      expect(checkFeeCategory("nsf", name).ok, name).toBe(false);
+      expect(checkFeeCategory("deposited_item_return", name), name).toEqual({ ok: true });
+      expect(refileCategory("nsf", name), name).toBe("deposited_item_return");
+    }
+    // One price for domestic and foreign items, an NSF charge on a Canadian check, and a price on top
+    // of a cost never move.
+    for (const name of [
+      "Returned Items, each - Within U.S./Outside U.S.",
+      "Non-Sufficient Funds Fee - Canadian Check",
+      "Domestic/Foreign – Incoming and Outgoing Returned Item for Insufficient or Uncollected Funds",
+      "Foreign returned check fee (at cost plus)8",
+    ]) {
+      expect(refileCategory("nsf", name), name).not.toBe("deposited_item_return");
+    }
+    expect(checkFeeCategory("nsf", "Returned Items, each - Within U.S./Outside U.S.")).toEqual({ ok: true });
+    expect(checkFeeCategory("nsf", "Non-Sufficient Funds Fee - Canadian Check")).toEqual({ ok: true });
+  });
+
+  it("files an IRA's own closing charge as IRA termination, not early closure", () => {
+    // The 12 live early closure rows that move (two share a name), each on its bank's own schedule.
+    for (const name of [
+      "A penalty will be charged, if the IRA is closed within the first year of opening",
+      "Early Closing of IRA (within 1st year of opening)",
+      "Individual Retirement Account (IRA) Close Fee",
+      "Individual Retirement Account Closing Fee",
+      "IRA /HSA Account Closed, if closed within 6 months of opening",
+      "IRA Account Closed (within 1 yr. of opening)",
+      "IRA accounts closed within 90 days of open",
+      "IRA Close Fee, if closed within 180 days of opening",
+      "IRA Closed Account Fee",
+      "IRA Closed within 18 Months of Opening",
+      "Retirement/HSA Account Closing Fee",
+    ]) {
+      expect(checkFeeCategory("early_closure", name).ok, name).toBe(false);
+      expect(refileCategory("early_closure", name), name).toBe("ira_termination");
+    }
+    // An account closure that only mentions the IRA, a certificate's or a club's, and an HSA alone stay.
+    for (const name of [
+      "Account Closed within 90 days of opening (including IRA's)",
+      "Early Account Closing - DDA and Savings less than 3 months - IRA prior to 3 years",
+      "Early Account Closure within 90 days (except IRA accounts)",
+      "Early closing (account closed within 6 months of opening) Not applicable to CD accounts",
+      "Early closure of CD (fee to close prior to maturity)",
+      "CD Early Withdrawal Penalty",
+      "Christmas Club & CD Early Withdrawal Fee",
+      "Christmas/Vacation Club early withdrawal (1 per year allowed)",
+      "HSA Account Closure Fee",
+      "IRA Early Withdrawal Processing Fee",
+    ]) {
+      expect(checkFeeCategory("early_closure", name), name).toEqual({ ok: true });
+      expect(refileCategory("early_closure", name), name).toBe("early_closure");
+    }
+  });
+
+  it("refuses the surcharge non-customers pay at the institution's own ATMs", () => {
+    // A sample of the 58 live rows that fail on Oct 17, each read on its bank's own schedule.
+    for (const name of [
+      "ATM Surcharge Fee on WWFCU machines (non-credit union cards only)",
+      "ATM Surcharge (non-customer)",
+      "Non-Customer transactions on ATM's we own or operate",
+      "Non-customer & Out-Of-Network ATM cardholders",
+      "Foreign Card ATM/ITM Transaction Fee",
+      "Foreign Cards using our ATM",
+      "Cards using our ATM",
+      "ATM transaction fee for a non-First National Bank cardholder at a First National Bank ATM",
+      "Foreign Debit/ATM card transaction fee at all 1CFCU ATMs on Goodfellow AFB",
+      "Centier ATM fee to non-Clients",
+      "In-house ATM Withdrawal Fee (If using Debit Card from other Financial Institution)",
+      "ATM fees (non-account holders)",
+      "ATM withdrawal (non credit union card)",
+      "ATM Cash Withdrawal surcharge on debit & credit cards issued by financial institutions other than MVFCU",
+      "Use of Out-of-Network Cards at MIT FCU ATMs",
+      "Transaction fee to use an ACCU ATM for a Non CO-OP Network Cardholder",
+      "Foreign ATM card used at the State Bank of Whittington’s ATM",
+      "ATM Foreign Customer Surcharge",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name).ok, name).toBe(false);
+      expect(refileCategory("atm_non_network", name), name).toBe("atm_non_network");
+    }
+    // What the institution's own customers pay at another network's ATM stays.
+    for (const name of [
+      "Withdrawal at Foreign ATM Machine",
+      "Foreign ATM Surcharge",
+      "ATM Surcharge",
+      "Non-Co-Op Member ATM Surcharge",
+      "Foreign ATM/Card Activity Charge",
+      "ATM Withdrawal at an ATM we do not operate",
+      "Non-Bank of America ATM Fee",
+      "ATM Usage Fee (Non-Credit Union Owned/MoneyPass)",
+      "ATM services at non-Credit Union",
+      "Non-owned ATM Cash Withdrawals",
+      "Debit Card Withdrawal or Inquire at a Non First American Bank ATM",
+      "ATM Surcharge (Bank Customer At Foreign ATM)",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name), name).toEqual({ ok: true });
+    }
+  });
+
+  it("refuses a monthly ATM add-on or plan as a non-network ATM fee", () => {
+    // The 5 live rows that fail on Oct 17, each a monthly plan on its bank's own page.
+    for (const name of [
+      "Power Checking +ATM Freedom",
+      "Add ATM Unlimited",
+      "Unlimited ATM Usage",
+      "Unlimited ATM Usage (This gives immediate access to cash from any Plus Network throughout the continental United States",
+      "unlimited 1st National ATM access",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name).ok, name).toBe(false);
+      expect(refileCategory("atm_non_network", name), name).toBe("atm_non_network");
+    }
+    for (const name of [
+      "ATM fee – 5 free per month, LPCCU ATM FREE unlimited, POS no fee",
+      "ATM Withdrawals (10 FREE per month)",
+      "Non-Network Fee ATM Withdrawal",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name), name).toEqual({ ok: true });
+    }
+  });
+
+  it("keeps an incoming wire line out of the outgoing wire types (Bank of America, #1753)", () => {
+    // Knox's raw reads 137328 and 144213 hinted these international outgoing; they never went live.
+    expect(checkFeeCategory("wire_intl_outgoing", "Outgoing (U.S. or International) | Domestic incoming wire").ok).toBe(false);
+    expect(checkFeeCategory("wire_domestic_outgoing", "Outgoing (U.S. or International) | Domestic incoming wire").ok).toBe(false);
+    expect(checkFeeCategory("wire_intl_outgoing", "International outgoing wire in U.S. dollars")).toEqual({ ok: true });
+  });
+
+  it("refuses ATM-named lines that price something other than ATM use (#1736's report, #1753)", () => {
+    // The 12 live rows that fail with no home on Oct 17, each read on its bank's own line.
+    for (const name of [
+      "ACH-ATM-SD Negative Balance fee",
+      "see ATM fees below additional copies",
+      "ATM Bank CheCks Treasurer’s Check",
+      "Telco ATM | Free | Temporary Checks",
+      "ATM/Debit Card Re-activation resulting from negative balance",
+      "ATM/DEBIT CARD: Replacing Card",
+      "ATM/Debit unblock card",
+      "Cashier’s Checks person withdrawals, ATM withdrawals, Debit Card",
+      "ATM/Debit blocked card (overdrawn, lost, etc.)",
+      "Official Checks: Debit/ATM Card",
+      "ATM withdrawal fee and balance inquiry charges: Cashier’s check",
+      "Branch Banking, a PNC ATM, or Mobile Banking, subject to cut off times",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name).ok, name).toBe(false);
+    }
+    // The 4 that move to their own type.
+    expect(refileCategory("atm_non_network", "Copy of ATM/Debit Card Sales")).toBe("account_research");
+    expect(refileCategory("atm_non_network", "ATM Dispute Fee – Three FREE per year (unless a data base breach)")).toBe("account_research");
+    expect(refileCategory("atm_non_network", "Lost/Stolen ATM/MasterCard®")).toBe("card_replacement");
+    expect(refileCategory("atm_non_network", "Service ATM Card Order (Lost or Stolen)")).toBe("card_replacement");
+    expect(refileCategory("atm_non_network", "ATM/Debit blocked card (overdrawn, lost, etc.)")).toBe("atm_non_network");
+    // An ATM balance inquiry stays: balance_inquiry is retired and folds here. So do Centennial's
+    // inquiry-or-transaction line, denials (left for James) and Regions' own non-network withdrawal.
+    for (const name of [
+      "ATM Balance Inquiry Fee or Transaction Fee at a Non-Centennial Bank or Non-Publix ATM",
+      "ATM Balance Inquiry",
+      "ATM Inquiry Fee",
+      "Account Balances At a Foreign ATM",
+      "ATM Transfer at Non-UNCLE/Non-CO-OP ATM",
+      "ATM denial fee",
+      "Non-Regions ATM: Withdrawal",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name), name).toEqual({ ok: true });
+    }
+  });
+});
