@@ -128,9 +128,23 @@ const LIVE: LiveTakedownRow[] = [
   { fee_published_id: 74149, lineage_ref: 86595, institution_id: 576, canonical_fee_key: "safe_deposit_box", fee_name: "Safe Deposit Box Drilling Fee: Cost of Drilling +", amount: "25.00" },
   { fee_published_id: 49817, lineage_ref: 50458, institution_id: 6110, canonical_fee_key: "cashiers_check", fee_name: "UT bank check (after 90 days)", amount: "5.00" },
   { fee_published_id: 125584, lineage_ref: 177190, institution_id: 5008, canonical_fee_key: "atm_non_network", fee_name: "ATM Surcharge Fee on WWFCU machines (non-credit union cards only)", amount: "3.50" },
+  // #1746's six second reads and the live twins they wait on, as they read live on prod, read-only, Oct 17.
+  { fee_published_id: 109893, lineage_ref: 128166, institution_id: 7239, canonical_fee_key: "other_lending_fee", fee_name: "NON-MEMBER LOAN APPLICATION FEE: IF YOU ARE NOT A MEMBER OF WCDU, THERE IS A", amount: "10.00" },
+  { fee_published_id: 81340, lineage_ref: 75155, institution_id: 7239, canonical_fee_key: "other_lending_fee", fee_name: "NON-MEMBER Loan Application Fee", amount: "10.00" },
+  { fee_published_id: 130622, lineage_ref: 178358, institution_id: 4907, canonical_fee_key: "atm_non_network",
+    fee_name: "4To avoid paying a fee, choose any INOVA FCU ATM, Alliance One or CO-OP Network ATM across the nation. Foreign ATM trans", amount: "2.00" },
+  { fee_published_id: 130624, lineage_ref: 178373, institution_id: 4907, canonical_fee_key: "atm_non_network", fee_name: "Foreign ATM transactions", amount: "2.00" },
+  { fee_published_id: 147193, lineage_ref: 178165, institution_id: 3766, canonical_fee_key: "dormant_account", fee_name: "1A dormant fee", amount: "5.00" },
+  { fee_published_id: 101934, lineage_ref: 104175, institution_id: 3766, canonical_fee_key: "dormant_account", fee_name: "Dormant fee", amount: "5.00" },
+  { fee_published_id: 133860, lineage_ref: 154540, institution_id: 8016, canonical_fee_key: "paper_statement", fee_name: "1 Paper statement charge", amount: "5.00" },
+  { fee_published_id: 148614, lineage_ref: 180127, institution_id: 8016, canonical_fee_key: "paper_statement", fee_name: "Paper statement charge", amount: "5.00" },
+  { fee_published_id: 119352, lineage_ref: 25799, institution_id: 7239, canonical_fee_key: "garnishment_levy", fee_name: "each | 8Legal Process Service (Garnishment/Levy)", amount: "25.00" },
+  { fee_published_id: 81339, lineage_ref: 75154, institution_id: 7239, canonical_fee_key: "garnishment_levy", fee_name: "Legal Process Service (Garnishment/Levy)", amount: "25.00" },
+  { fee_published_id: 143826, lineage_ref: 173602, institution_id: 110, canonical_fee_key: "monthly_maintenance", fee_name: "3To receive Priority Checking benefits and waive the Monthly service charge", amount: "25.00" },
+  { fee_published_id: 147464, lineage_ref: 62399, institution_id: 110, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly service charge", amount: "25.00" },
 ];
 const CONDITIONAL_ZERO = [43512, 54014, 61335, 68893, 70121, 73737, 77121, 77122, 77618, 84553, 87079, 87461, 88213, 91505, 120559];
-const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689, 138828, 138832, 138833, 138839, 138827, 138834, 138841, 148352, 138831, 138830, 138848, 138849, 138850, 138851, 42961, 86536, 66721, 66722, 83125, 97335, 97904, 58414, 106021, 33705, 149143, 149806, 137241, 68335, 79402, 74149, 49817, 125584];
+const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689, 138828, 138832, 138833, 138839, 138827, 138834, 138841, 148352, 138831, 138830, 138848, 138849, 138850, 138851, 42961, 86536, 66721, 66722, 83125, 97335, 97904, 58414, 106021, 33705, 149143, 149806, 137241, 68335, 79402, 74149, 49817, 125584, 109893, 130622, 147193, 133860, 119352, 143826];
 
 function fakeDb(live: LiveTakedownRow[], failOn?: string) {
   const writes: Array<{ text: string; values: unknown[] }> = [];
@@ -206,6 +220,12 @@ describe("hand takedowns (James, Oct 16)", () => {
       [74149, "source_mismatch: #1735"],
       [49817, "source_mismatch: #1735"],
       [125584, "source_mismatch: #1735"],
+      [109893, "duplicate of #81340 (#1746)"],
+      [130622, "duplicate of #130624 (#1746)"],
+      [147193, "duplicate of #101934 (#1746)"],
+      [133860, "duplicate of #148614 (#1746)"],
+      [119352, "duplicate of #81339 (#1746)"],
+      [143826, "duplicate of #147464 (#1746)"],
     ]);
     // A wrong read names its issue; a second read of one printed fee names the live copy it repeats too.
     expect(HAND_TAKEDOWNS.every((entry) => entry.evidence.length > 0 && (entry.kind === "duplicate"
@@ -278,6 +298,12 @@ describe("hand takedowns (James, Oct 16)", () => {
         { feePublishedId: 74149, feeVerifiedId: 86595, reason: "source_mismatch: #1735" },
         { feePublishedId: 49817, feeVerifiedId: 50458, reason: "source_mismatch: #1735" },
         { feePublishedId: 125584, feeVerifiedId: 177190, reason: "source_mismatch: #1735" },
+        { feePublishedId: 109893, feeVerifiedId: 128166, reason: "duplicate of #81340 (#1746)" },
+        { feePublishedId: 130622, feeVerifiedId: 178358, reason: "duplicate of #130624 (#1746)" },
+        { feePublishedId: 147193, feeVerifiedId: 178165, reason: "duplicate of #101934 (#1746)" },
+        { feePublishedId: 133860, feeVerifiedId: 154540, reason: "duplicate of #148614 (#1746)" },
+        { feePublishedId: 119352, feeVerifiedId: 25799, reason: "duplicate of #81339 (#1746)" },
+        { feePublishedId: 143826, feeVerifiedId: 173602, reason: "duplicate of #147464 (#1746)" },
       ],
       skipped: [],
     });
@@ -520,3 +546,17 @@ describe("hand audience fixes (#1302)", () => {
     expect(String(failed.writes.find((entry) => entry.text.includes("'step.warning'"))?.values.at(-1))).toContain("hamilton.hand_audience_fix");
   });
 });
+
+describe("#1746: the footnote cut's second reads (Oct 17)", () => {
+  it("each waits on its kept twin, live at the listed name and price", () => {
+    const batch = HAND_TAKEDOWNS.filter((entry) => entry.issue === 1746);
+    expect(batch.map((entry) => [entry.feePublishedId, entry.requiresLive?.feePublishedId])).toEqual([
+      [109893, 81340], [130622, 130624], [147193, 101934], [133860, 148614], [119352, 81339], [143826, 147464],
+    ]);
+    const twins = new Set(batch.map((entry) => entry.requiresLive!.feePublishedId));
+    const withoutTwins = LIVE.filter((row) => !twins.has(Number(row.fee_published_id)));
+    expect(planHandTakedowns(withoutTwins, batch).takenDown).toEqual([]);
+    expect(planHandTakedowns(LIVE, batch).takenDown.map((item) => item.feePublishedId)).toEqual([109893, 130622, 147193, 133860, 119352, 143826]);
+  });
+});
+

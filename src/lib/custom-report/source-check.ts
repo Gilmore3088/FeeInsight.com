@@ -91,7 +91,9 @@ const PRICE_FIRST_CELL = /^\s*(?:\$|\d|¢|free\b|no\s+(?:charge|fee|cost)\b|none
 const NAME_WORD_SHARE = 0.75;
 const STEM_LENGTH = 5;
 const STOP_WORDS = new Set(["the", "and", "for", "per", "each", "fee", "fees", "charge", "with", "from", "your", "our", "any", "item", "items", "occurrence", "occurance", "transfer"]);
-const ZERO_WORDS = /\b(free|none|no charge|no fee|n\/c|waived)\b|\$\s*0(?:\.00)?(?![\d.])/i;
+// v76: "No Cost" and "No fees" are free words too where they end the price ("Digital deposits | No
+// Cost", "No Cost to Members", Knox recall), never inside a name ("Low to no cost checking Monthly fee").
+const ZERO_WORDS = /\b(free|none|no charge|no fee|n\/c|waived)\b|\bno (?:cost|fees)(?=\s*(?:$|[|.;,)]|\s(?:to|for)\s))|\$\s*0(?:\.00)?(?![\d.])/i;
 const THRESHOLD_BEFORE = /(from|over|under|below|above|exceed(?:s|ing)?|negative|balance(?: of)?|minimum|min\.?|maintain(?:s|ed)?|keep|[<>≤≥]|&[lg]t;?|up to|less than|more than|greater than|or equal to|at least|between|\$\s*[\d,.]+\s*[-–])\s*$/i;
 // "$200+" (attached) is a threshold; "$100.00 + Locksmith Fee" (spaced) adds a cost to a price.
 // A spaced "+" whose next cell is a price ("$1,000.01 + | $10.00") is a band's open top, as
@@ -602,7 +604,12 @@ function statesAmount(line: string, amount: number, stems: NameStems): SourceChe
   // not the fee's price when the row prints another; alone ("5 free, $2.00 each additional") it is.
   const base = noted.filter((t) => !ADD_ON_RATE.test(line.slice(t.end)));
   const prices = base.length > 0 ? base : noted;
-  const before = prices.map((price, i) => nearNameCount(line.slice(i === 0 ? 0 : prices[i - 1].end, price.start), stems));
+  const before = withJoinedPrices(
+    line,
+    prices,
+    prices.map((price, i) => nearNameCount(line.slice(i === 0 ? 0 : prices[i - 1].end, price.start), stems)),
+    stems,
+  );
   const after = prices.map((price, i) => nearNameCount(line.slice(price.end, prices[i + 1]?.start ?? line.length), stems));
   // A line that opens with a price and ends with a name ("$25 (3 X 5), $35 (3 X 10)")
   // names each fee after its price.
@@ -638,6 +645,54 @@ function statesAmount(line: string, amount: number, stems: NameStems): SourceChe
     !inNote(line, t) &&
     !/\b(?:maintain(?:s|ed)?|keep)\s*$/i.test(line.slice(Math.max(0, t.start - 16), t.start));
   return tokens.some((t) => t.start >= from && t.start < prices[index].start && band(t)) ? "tiered_fee" : null;
+}
+
+/**
+ * Knox v76 (answer-key recall): prices joined on one row share the words before them.
+ *
+ *   "Domestic Outbound Wires (Online/Manual) | $35/$60"  the slash variant the fee's name keeps
+ *     ("Domestic Outbound Wires (Manual)") picks its price: Online $35, Manual $60. A name that
+ *     keeps both variants, or neither, reads the first price as before.
+ *   "Debit Card Replacement Fee | $10.00 / $50 expedited delivery"  the words after the second
+ *     price name it ("... Fee expedited delivery" is $50); the bare name stays $10.
+ *   "2” x 5” $45.00 $65.00"  a box size priced in two columns: both prices are the size's.
+ *
+ * Each joined price is scored with the words of the first; otherwise a price after "/" had no
+ * words of its own and could never be a fee's price. Pure.
+ */
+const SLASH_PRICE_JOIN = /^\s*\/\s*$/;
+const COLUMN_PRICE_JOIN = /^\s*\|?\s*$/;
+const LINE_VARIANTS = /([A-Za-z][\w'’-]*)\s*\/\s*([A-Za-z][\w'’-]*)(?:\s*\/\s*([A-Za-z][\w'’-]*))?/g;
+
+function withJoinedPrices(line: string, prices: MoneyToken[], before: number[], stems: NameStems): number[] {
+  const scores = [...before];
+  const words = new Set(stems.words);
+  for (let start = 0; start < prices.length; start += 1) {
+    let end = start;
+    while (end + 1 < prices.length && SLASH_PRICE_JOIN.test(line.slice(prices[end].end, prices[end + 1].start))) end += 1;
+    const opening = line.slice(start === 0 ? 0 : prices[start - 1].end, prices[start].start);
+    if (end > start) {
+      const count = end - start + 1;
+      const variants = [...opening.matchAll(LINE_VARIANTS)].filter((match) => match.slice(1).filter(Boolean).length === count).at(-1);
+      if (variants) {
+        const named = variants.slice(1).filter(Boolean).map((part) => words.has(comparable(part).replace(/[^a-z0-9' ]/g, "")));
+        if (named.filter(Boolean).length === 1) named.forEach((own, i) => (scores[start + i] = own ? before[start] : 0));
+      } else if (count === 2) {
+        const tail = line.slice(prices[end].end, prices[end + 1]?.start ?? line.length).split("|")[0];
+        const tailWords = comparable(tail).replace(/[^a-z0-9' ]/g, " ").split(" ").filter((word) => word.length >= 3 && !STOP_WORDS.has(word));
+        if (tailWords.length > 0 && tailWords.every((word) => words.has(word))) scores[end] = before[start] + tailWords.length;
+      }
+      start = end;
+      continue;
+    }
+    // A box size's row of bare column prices: each price is the size's.
+    const size = stems.find((stem) => /^ \d+x\d+ $/.test(stem));
+    if (size && start + 1 < prices.length && COLUMN_PRICE_JOIN.test(line.slice(prices[start].end, prices[start + 1].start)) &&
+      ` ${comparable(opening)} `.includes(size)) {
+      scores[start + 1] = Math.max(scores[start + 1], before[start]);
+    }
+  }
+  return scores;
 }
 
 /**

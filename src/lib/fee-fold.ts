@@ -23,10 +23,11 @@
  * (`pendingResearchSplit` in its detail). On, new reads file there,
  * and live and verified fees under account research move by name (`EXCESS_WITHDRAWAL`,
  * `RETURNED_MAIL`; logged as `category_fold`, old category kept), each only when the new type's
- * guard and price range accept it. Off until James says go; turning it on is this one line (Knox's
- * own rules re-point in the same PR).
+ * guard and price range accept it. On (James, Oct 17 2026): Knox's own rules re-point with it
+ * (Knox rules v77), and public pages list only the top 50 of the 52 types (`publicFeeTypes`).
+ * Setting it back to false restores the 50-type taxonomy and account research filing.
  */
-export const RESEARCH_SPLIT_LIVE = false;
+export const RESEARCH_SPLIT_LIVE = true;
 
 /** The key a rule files under: the new type while `RESEARCH_SPLIT_LIVE` is on, account research while it is off. Pure. */
 export function researchSplitTarget(key: "excess_withdrawal" | "returned_mail", live: boolean = RESEARCH_SPLIT_LIVE): string {

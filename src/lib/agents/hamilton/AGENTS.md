@@ -819,7 +819,9 @@ keep hinting the retired keys. Publish skips a fee still under a retired key.
 The same step applies the live splits (`SPLIT_CATEGORIES`): fees in a live category whose name
 belongs to another type move there, under the same guard and range test. Fold v17 (`FOLD_RULES_VERSION`, 16 until the switch is on; James, Oct 15,
 #1398: "Add both") gives excess withdrawals (`excess_withdrawal`) and returned mail
-(`returned_mail`) their own types, dark until `RESEARCH_SPLIT_LIVE` is on. While it is off,
+(`returned_mail`) their own types. `RESEARCH_SPLIT_LIVE` is on (James, Oct 17 2026), so fold v17
+and the 52-type taxonomy are in force; public pages and API listings show only the top 50 types
+by institution count (`publicFeeTypes`). While it is off,
 returned statements leaving paper statements, excess activity leaving other lending and the hand
 re-files (21141 and 77918 renamed in place, 44516) all still go to account research, the paper
 statement and e-statement rules match exactly as before (a "return to paper statements" charge

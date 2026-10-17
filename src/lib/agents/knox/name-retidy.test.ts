@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { LiveFeeRow } from "@/lib/agents/hamilton/source-check";
-import { capitalisedName, junkStrippedName, pageCompletedName, publishCutName, thresholdFromPage, cellName, dropsCondition, restoredName, restoreOnPage, fontDecodedName, fontMapVerified, headName, isMessyName, spacedControlName, planRetidy, sharedNameFeeIds, accountHeading, neighbourCellName, conditionOnlyName, unligatedName, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice, footnoteMarkFreeName, NAME_RETIDY_STRATEGY } from "@/lib/agents/knox/name-retidy";
+import { brandCased, capitalisedName, junkStrippedName, pageCompletedName, publishCutName, thresholdFromPage, cellName, dropsCondition, restoredName, restoreOnPage, fontDecodedName, fontMapVerified, headName, isMessyName, spacedControlName, planRetidy, sharedNameFeeIds, accountHeading, neighbourCellName, conditionOnlyName, unligatedName, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice, footnoteMarkFreeName, NAME_RETIDY_STRATEGY } from "@/lib/agents/knox/name-retidy";
 
 const fee = (overrides: Partial<LiveFeeRow>): LiveFeeRow => ({
   fee_published_id: 1,
@@ -1021,5 +1021,19 @@ describe("v21 (#1450): footnote marks, product codes and quotes in live maintena
     const plan = planRetidy([marked], page, [marked, twin]);
     expect(plan.renames).toEqual([]);
     expect(plan.skipped.same_name_live).toBe(1);
+  });
+});
+
+describe("brandCased (v20)", () => {
+  it("keeps a real lower-case brand prefix the stored name holds", () => {
+    expect(brandCased("MyChance Checking fee", "2A myChance Checking fee")).toBe("myChance Checking fee");
+    expect(brandCased("EStatement fee", "An eStatement fee")).toBe("eStatement fee");
+    expect(brandCased("I-Bank fee", "The i-Bank fee")).toBe("i-Bank fee");
+  });
+
+  it("never keeps a run-together word or a font's mangled text", () => {
+    expect(brandCased("OfOperation fee", "Hours ofOperation fee")).toBeNull();
+    expect(brandCased("LAte fee", "A lAte fee")).toBeNull();
+    expect(brandCased("MyChance Checking fee", "2A MyChance Checking fee")).toBeNull();
   });
 });

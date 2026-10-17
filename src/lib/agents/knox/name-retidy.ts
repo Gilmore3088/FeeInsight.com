@@ -728,15 +728,19 @@ const LOWER_NOT_A_START =
 const LOWER_CONDITION =
   /\b(?:waived?|reduced|regardless|requirements?|without|such as|plus|charged|created|received|section|and no)\b|\s[-–—]\s*get$|,\s*or\b|\b([a-z]{3,})\s+(?:[a-z]+\s+)?\1\b/i;
 const LOWER_NAME_MAX_WORDS = 8;
+/** v20: the prefixes a bank's lower-case brand opens with ("eStatement", "iBank", "myChance", "e-Checking"). */
+const BRAND_PREFIX = /^(?:e|i|my)-?[A-Z][A-Za-z]{2,}/;
 /**
  * v20: the name with its first word in the case the stored name writes it, when that word is a
  * lower-case brand ("myChance", "eCorp") the stored name holds; null when there is nothing to keep.
+ * Only a real brand prefix counts: "ofOperation" is a run-together word, "lAte" a font's mangled
+ * text, and neither keeps its case.
  */
 export function brandCased(name: string, storedName: string): string | null {
   const first = name.match(/^\S+/)?.[0];
   if (!first || !/^[A-Z]/.test(first)) return null;
   const lower = first.charAt(0).toLowerCase() + first.slice(1);
-  if (!LOWER_BRAND.test(lower)) return null;
+  if (!BRAND_PREFIX.test(lower)) return null;
   const words = storedName.split(/\s+/);
   return words.includes(lower) ? lower + name.slice(first.length) : null;
 }

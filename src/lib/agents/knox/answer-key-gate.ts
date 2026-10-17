@@ -1,6 +1,6 @@
 import { reproducibleFees } from "@/lib/agents/hamilton/rules-recheck";
 import { foldedCategory } from "@/lib/agents/knox/rules";
-import { foldContext, foldRetiredCategory, isRetiredCategory, researchSplitCategory, splitLiveCategory } from "@/lib/fee-fold";
+import { foldContext, foldRetiredCategory, isRetiredCategory, researchSplitCategory, researchSplitTarget, splitLiveCategory } from "@/lib/fee-fold";
 
 /**
  * Knox's rule-change gate: scores today's free extractor team (plus Darwin's rule checks,
@@ -51,6 +51,9 @@ const cents = (amount: number) => Math.round(amount * 100);
  * off, `researchSplitCategory` returns null and the key stays account research.
  */
 function keyCategory(fee: AnswerKeyDocument["fees"][number], text: string): string {
+  // A key filed under one of the split types (MI 2001's bare "$2.00" under "Return Mail Fee",
+  // corrected to returned mail with v77) counts as account research while the switch is off.
+  if (fee.key === "returned_mail" || fee.key === "excess_withdrawal") return researchSplitTarget(fee.key);
   const research = researchSplitCategory(fee.key, fee.source_line);
   if (research) return research;
   const split = splitLiveCategory(fee.key, fee.source_line);

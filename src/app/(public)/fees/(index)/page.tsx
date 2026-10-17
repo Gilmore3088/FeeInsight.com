@@ -2,13 +2,13 @@ export const dynamic = "force-dynamic";
 import { PAGE_HEADER, PAGE_LEDE } from "@/components/public/page-header";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { FEE_FAMILIES, getDisplayName, getSpotlightCategories, TAXONOMY_COUNT } from "@/lib/fee-taxonomy";
+import { FEE_FAMILIES, getDisplayName, getSpotlightCategories } from "@/lib/fee-taxonomy";
 import { getFeeDefinition } from "@/lib/fee-definitions";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { PRODUCT_NAME, SITE_URL } from "@/lib/constants";
 import { PRO_PLANS_NAV } from "@/components/nav-items";
 import { Logo } from "@/brand/components";
-import { getPublicSnapshot } from "@/lib/public-stats";
+import { getPublicFeeTypes, getPublicSnapshot } from "@/lib/public-stats";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessAllCategories } from "@/lib/access";
 import { getFeeRowDetails, type FeeRowDetail } from "@/lib/data-store";
@@ -59,7 +59,7 @@ const READ = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", 
 
 export async function generateMetadata({ searchParams }: PageProps): Promise<Metadata> {
   const params = await searchParams;
-  const sel = parseSelection(params, new Set(ALL_FEES), DEFAULT_FEE);
+  const sel = parseSelection(params, await getPublicFeeTypes(), DEFAULT_FEE);
   const picked = typeof params.fee === "string";
   return {
     title: picked
@@ -73,11 +73,14 @@ export async function generateMetadata({ searchParams }: PageProps): Promise<Met
 
 export default async function BankFeeIndexPage({ searchParams }: PageProps) {
   const params = await searchParams;
-  const [user, { summary, categories }] = await Promise.all([getCurrentUser(), getPublicSnapshot()]);
+  const [user, { summary, categories }, publicTypes] = await Promise.all([getCurrentUser(), getPublicSnapshot(), getPublicFeeTypes()]);
+  // The public site lists the top 50 fee types by institution count (James, Oct 17 2026).
+  const publicFees = ALL_FEES.filter((key) => publicTypes.has(key));
+  const typeCount = publicFees.length;
   const full = canAccessAllCategories(user);
   const spotlight = new Set(getSpotlightCategories());
   const coverage = new Map(categories.map((c) => [c.fee_category, c.institution_count]));
-  const sel = parseSelection(params, new Set(ALL_FEES), DEFAULT_FEE);
+  const sel = parseSelection(params, new Set(publicFees), DEFAULT_FEE);
   const locked = !full && !spotlight.has(sel.fee);
   const feeLabel = getDisplayName(sel.fee);
 
@@ -136,7 +139,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
     return selectionHref(sel, { ...keep, ...extra }, "institutions");
   };
 
-  const feeOptions: FeeOption[] = ALL_FEES.map((key) => ({
+  const feeOptions: FeeOption[] = publicFees.map((key) => ({
     key,
     label: getDisplayName(key),
     family: FAMILY_OF.get(key) ?? "Other",
@@ -145,7 +148,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
   // The explored fee's count is the explorer's own national population (the institutions the chart and
   // list count), so the explorer and the catalog never disagree on one screen.
   if (!locked) coverage.set(sel.fee, institutionsFor(rows, sel.fee, null, "all").length);
-  const catalog: CatalogEntry[] = ALL_FEES.map((key) => {
+  const catalog: CatalogEntry[] = publicFees.map((key) => {
     const n = coverage.get(key) ?? 0;
     return {
       key,
@@ -174,7 +177,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
             What U.S. banks and credit unions charge, fee by fee
           </h1>
           <p className={`mt-3 ${PAGE_LEDE}`}>
-            Read from {summary.institutionsLabel} institutions&apos; own published schedules across {TAXONOMY_COUNT} fee
+            Read from {summary.institutionsLabel} institutions&apos; own published schedules across {typeCount} fee
             categories, with a source behind every figure. {summary.freshnessLabel}.
           </p>
         </div>
@@ -200,7 +203,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
           <p>A state counts the institutions headquartered there, wherever their branches are.</p>
           {!full && (
             <Link href="/subscribe#pro" className={LINK}>
-              Full access: all {TAXONOMY_COUNT} categories, peer filters and exports
+              Full access: all {typeCount} categories, peer filters and exports
             </Link>
           )}
         </div>
@@ -433,10 +436,10 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
           <div className="rounded-2xl bg-ink p-6 text-on-ink sm:p-10">
             <Logo mark="bank-fee-index-wordmark" tone="reverse" height={22} className="h-5 w-auto sm:h-6" />
             <h2 id="access-heading" className="mt-5 text-[24px] font-semibold tracking-[-0.02em] sm:text-[32px]">
-              All {TAXONOMY_COUNT} fee categories, explored the same way
+              All {typeCount} fee categories, explored the same way
             </h2>
             <ul className="mt-4 grid gap-3 text-[15px] text-on-ink/85 sm:grid-cols-3">
-              <li>The spread, state and charter comparisons and the institution list for all {TAXONOMY_COUNT} categories.</li>
+              <li>The spread, state and charter comparisons and the institution list for all {typeCount} categories.</li>
               <li>Peer comparisons by asset size and Fed district.</li>
               <li>Spreadsheet downloads of each comparison, with every fee&apos;s source.</li>
             </ul>
