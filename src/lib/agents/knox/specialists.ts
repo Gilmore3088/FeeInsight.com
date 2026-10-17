@@ -1,6 +1,7 @@
 import { feeApplicability } from "@/lib/fee-audience";
 import {
   extractCandidatesFromText,
+  isUnpricedHeldShape,
   MAX_FEES_PER_DOCUMENT,
   withBoxSizeCellsSplit,
   withSidewaysBoxTable,
@@ -124,6 +125,8 @@ export interface FreeExtractionResult extends ExtractionRulesResult {
 }
 
 const MAX_HELD_PER_DOCUMENT = 40;
+/** v76: a $0 or "prices vary" hold, untraced $0 rows included, counts in the unpriced half of the held cap. */
+const unpricedHalf = (row: HeldFeeCandidate): boolean => isUnpricedHeldShape(row.shape) || (row.shape === "untraced" && row.amount === 0);
 /** NSF and overdraft joined as one item's name: "NSFs/Overdrafts", "Overdraft or NSF Item". */
 const NSF_TERM = String.raw`(?:nsfs?|non[-\s]?sufficient funds?|insufficient funds?)`;
 const NSF_AND_OVERDRAFT = new RegExp(
@@ -300,7 +303,10 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
       added += 1;
     }
     for (const heldRow of found.held) {
-      if (held.length >= MAX_HELD_PER_DOCUMENT) {
+      // v76: $0 and "prices vary" holds take their own half of the cap, so a schedule's free rows
+      // never push out a priced hold (or the other way round).
+      const unpricedHold = unpricedHalf(heldRow);
+      if (held.filter((row) => unpricedHalf(row) === unpricedHold).length >= MAX_HELD_PER_DOCUMENT) {
         if (heldRow.shape === "unclassified") countDropped("unclassified_cap");
         continue;
       }
@@ -344,7 +350,7 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
 
   // An untraced read is held once, and only when no specialist read the same fee traceably.
   for (const row of untraced) {
-    if (held.length >= MAX_HELD_PER_DOCUMENT) break;
+    if (held.filter((prior) => !unpricedHalf(prior)).length >= MAX_HELD_PER_DOCUMENT) break;
     const key = heldKey(row);
     if (seenHeld.has(key)) continue;
     seenHeld.add(key);

@@ -26,7 +26,15 @@ import { newestColumnText } from "@/lib/fee-change-columns";
 const MAX_SEGMENTS_PER_DOCUMENT = 150;
 export const MAX_FEES_PER_DOCUMENT = 75;
 const MAX_HELD_PER_DOCUMENT = 40;
+// v76: unpriced rows ("Bill Payment ..... No Charge", "Check printing | Varies") have caps of their
+// own, so they never push a priced line past the segment cap or a priced hold past the held cap.
+const MAX_UNPRICED_SEGMENTS_PER_DOCUMENT = 40;
 const MAX_UNCLASSIFIED_PER_DOCUMENT = 10;
+
+/** v76: a $0 or "prices vary" hold, which takes the unpriced half of the held cap. */
+export function isUnpricedHeldShape(shape: HeldShape): boolean {
+  return shape === "zero" || shape === "varies";
+}
 const MAX_SEGMENT_CHARS = 280;
 const MAX_NAME_CHARS = 120;
 const MIN_SEGMENT_CHARS = 8;
@@ -640,11 +648,16 @@ export function normalizeSegment(value: string): string {
     .trim();
 }
 
-function hasUnpricedFeeRow(line: string): boolean {
-  if (freeRowName(line) || variesRowName(line)) return true;
-  if (line.includes(CELL_SEPARATOR) && line.split(CELL_SEPARATOR).some((cell) => freeCellName(cell.trim()))) return true;
+/** A table row with a zero cell after its first ("Wire Transfer | $0.00 | Free"), read before v76. */
+function hasZeroCell(line: string): boolean {
   if (!line.includes(CELL_SEPARATOR)) return false;
   return line.split(CELL_SEPARATOR).slice(1).some((cell) => ZERO_CELL.test(cell.trim()));
+}
+
+/** v76: a free or "prices vary" row that only the v76 rules read (`hasZeroCell` rows were read before). */
+function hasUnpricedFeeRow(line: string): boolean {
+  if (freeRowName(line) || variesRowName(line)) return true;
+  return line.includes(CELL_SEPARATOR) && line.split(CELL_SEPARATOR).some((cell) => freeCellName(cell.trim()));
 }
 
 /**
@@ -830,6 +843,8 @@ interface HeadedSegment {
   /** v69: the fee heading above the segment's line, when one is in reach, and the heading's line. */
   heading: string | null;
   headingAt: number | null;
+  /** v76: the line is the first under a heading that ends in a colon ("Excessive withdrawals, each:"), a row that qualifies it. */
+  headingOpensRows: boolean;
 }
 
 function candidateSegments(text: string): HeadedSegment[] {
@@ -837,12 +852,16 @@ function candidateSegments(text: string): HeadedSegment[] {
   const segments: HeadedSegment[] = [];
   const lines = joinWrappedProse(joinWrappedLeaderNames(text.split(/\n+/).map((line) => line.replace(/\s+/g, " ").trim())));
   let heading: { name: string; at: number } | null = null;
+  let priced = 0;
+  let unpriced = 0;
   for (const [index, rawLine] of lines.entries()) {
     const line = rawLine.replace(/\s+/g, " ").replace(SPLIT_DOLLAR_CELL, "$").trim();
     const asHeading = headingName(line);
     if (asHeading !== undefined) heading = asHeading ? { name: asHeading, at: index } : null;
-    if (!line.includes("$") && !PERCENT_PATTERN.test(line) && !hasUnpricedFeeRow(line)) continue;
+    const isPriced = line.includes("$") || PERCENT_PATTERN.test(line) || hasZeroCell(line);
+    if (!isPriced && !hasUnpricedFeeRow(line)) continue;
     const inReach = heading && index - heading.at <= HEADING_REACH_LINES ? heading : null;
+    if (!isPriced && unpriced >= MAX_UNPRICED_SEGMENTS_PER_DOCUMENT) continue;
     // A next section's heading glued after a row's price ("$0.50 ea. in excess of 10 Night Deposit
     // Bag", Commerce Bank) heads the lines after it.
     const glued = line.match(GLUED_HEADING_AFTER_PRICE)?.[1];
@@ -852,8 +871,10 @@ function candidateSegments(text: string): HeadedSegment[] {
       const segment = part.trim();
       if (segment.length < MIN_SEGMENT_CHARS || segment.length > MAX_SEGMENT_CHARS || seen.has(segment)) continue;
       seen.add(segment);
-      segments.push({ segment, heading: inReach?.name ?? null, headingAt: inReach?.at ?? null });
-      if (segments.length >= MAX_SEGMENTS_PER_DOCUMENT) return segments;
+      segments.push({ segment, heading: inReach?.name ?? null, headingAt: inReach?.at ?? null, headingOpensRows: inReach ? index === inReach.at + 1 && /:\s*$/.test(lines[inReach.at]) : false });
+      if (isPriced) priced += 1;
+      else unpriced += 1;
+      if (priced >= MAX_SEGMENTS_PER_DOCUMENT) return segments;
     }
   }
   return segments;
@@ -2306,7 +2327,9 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
   const keep = (held: HeldFeeCandidate): void => {
     const key = `held:${held.shape}:${held.feeName.toLowerCase()}:${held.amount}:${held.percent}`;
     if (seen.has(key)) return;
-    if (result.held.length >= MAX_HELD_PER_DOCUMENT || (held.shape === "unclassified" && unclassified >= MAX_UNCLASSIFIED_PER_DOCUMENT)) {
+    const unpricedHold = isUnpricedHeldShape(held.shape);
+    const sameHalf = result.held.filter((row) => isUnpricedHeldShape(row.shape) === unpricedHold).length;
+    if (sameHalf >= MAX_HELD_PER_DOCUMENT || (held.shape === "unclassified" && unclassified >= MAX_UNCLASSIFIED_PER_DOCUMENT)) {
       if (held.shape === "unclassified") countDrop(result, "unclassified_cap");
       return;
     }
@@ -2317,9 +2340,20 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
   // v69: a heading whose rows read as another kind of fee is a column beside a second table
   // ("Non-Ameris Bank ATM Usage:" over "ACH File Fee | $15.00"), so it names none of the rows under it.
   const crossedHeadings = new Set<number>();
-  for (const { segment, heading, headingAt } of candidateSegments(text)) {
+  for (const { segment, heading, headingAt, headingOpensRows } of candidateSegments(text)) {
     let found = extractFromSegment(segment);
     const headingKey = heading ? classifyPatternKey(heading) : null;
+    // v76: a free line under a fee heading whose own read is another kind of fee is a row of the
+    // heading's table ("Excessive withdrawals, each:" over "ATM or counter | None" and
+    // "3rd party/Telephonic | $5.00"): no $0 fee of its own, and it never crosses the heading.
+    // Only the first row under a heading that opens its rows with a colon: under a plain section
+    // title ("Official Checks/Money Orders" over "Official Check Payable to Account Holder | No
+    // charge"), or further down ("Check copy, up to 5 checks per month | No charge"), a free row is
+    // its own fee, as before v76.
+    const headingKind = heading ? classifyFeeText(heading) : null;
+    if (heading && headingKey && headingAt != null && headingOpensRows && !/[$%]/.test(segment)) {
+      found = { ...found, held: found.held.filter((read) => read.shape !== "zero" || read.canonicalHint === headingKind) };
+    }
     // A row that names its own fee and no category ("ACH File Fee (per file) | $15.00") crosses it too.
     const readKinds = [...found.candidates, ...found.held].map((read) => read.canonicalHint).filter(Boolean);
     const ownFeeRow = found.held.some((read) => read.canonicalHint == null && /\b(?:fee|charge)s?\b/i.test(read.feeName));

@@ -1581,6 +1581,19 @@ describe("v76: Knox recall on the 62-bank answer key (multi-price rows, free row
   const reads = (line: string) => extractFromSegment(line).candidates.map((c) => [c.canonicalHint, c.amount, c.feeName]);
   const held = (line: string) => extractFromSegment(line).held.map((h) => [h.shape, h.canonicalHint, h.amount, h.feeName]);
 
+  it("keeps a free row under a fee heading a row of that heading's table (live doc 8862)", () => {
+    const found = extractCandidatesFromText("Excessive withdrawals, each:\nATM or counter | None\n3rd party/Telephonic | $5.00");
+    expect(found.candidates.map((c) => [c.canonicalHint, c.amount])).toEqual([["account_research", 5]]);
+    expect(found.held).toEqual([]);
+  });
+
+  it("never lets free rows push a priced line past the document's segment cap (live doc 20905)", () => {
+    const free = Array.from({ length: 60 }, (_, i) => `Service ${i} statement copy ........ No Charge`);
+    const priced = Array.from({ length: 140 }, (_, i) => `Account ${i} balance of $${i + 1}00 or more`);
+    const text = [...free, ...priced, "$30.00 one-time ACH origination setup fee"].join("\n");
+    expect(extractCandidatesFromText(text).candidates.some((c) => c.canonicalHint === "ach_origination")).toBe(true);
+  });
+
   it("prices each slash variant of a fee (inst 69, 1897, 8594)", () => {
     expect(reads("Domestic Outbound Wires (Online/Manual) | $35/$60 | $35/$60")).toEqual([
       ["wire_domestic_outgoing", 35, "Domestic Outbound Wires (Online)"],

@@ -547,6 +547,14 @@ after v75 that do not depend on its re-read (`knox-recall-misses-2026-10-17.md`:
   check printing. A varying rate ("Loan rates vary") and a line with a printed price are not.
   Darwin never verifies these rows, so the gain is at the Knox stage only.
 - An interim statement printed at an ATM ("Interim statement (ATM/Branch)") is a statement copy.
+- Free and varying rows never cost a priced read its place: they have caps of their own (40 rows
+  a document, and $0 / varies holds take their own 40 of the held cap), so a long schedule's
+  priced lines past its free rows are still read (the live dry run lost "$15.00 monthly fee with
+  ACH origination" to the 150-line cap, and a "Wire Transfer (Int'l) – Incoming ... No Charge"
+  hold to the held cap, before this). The first free row under a fee heading that ends in a colon,
+  when its own read is another kind of fee ("Excessive withdrawals, each:" over "ATM or counter |
+  None"), is a row of the heading's table: no $0 fee, and the priced row after it still reads
+  under the heading. Under a plain section title, or further down, a free row stays its own fee.
 - 62-bank key, free-team replay of the 62 key texts (scorer v2/v3 fee rule): recall 67.9% to 70.7%
   (1,557 to 1,620 of 2,292), precision 85.9% to 86.4%; no key fee lost, one new read the key lacks
   (a "Share Draft Printing Fee | Price may vary" the key leaves out). Gates: Texas 567 to 572 right
