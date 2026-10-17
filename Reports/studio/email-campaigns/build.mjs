@@ -15,7 +15,7 @@ const outDir = join(here, "out");
 // The Fee Insight design system (src/brand/tokens): Oxford Navy ink and brick on parchment.
 // Old key names stay (terra = brick) so the renderers below read the same.
 const C = {
-  ink: "#132338", ink2: "#132338", text2: "#55606f", muted: "#767c87",
+  ink: "#132338", ink2: "#132338", text2: "#55606f", muted: "#55606f",
   paper: "#fbf9f4", cream: "#fbf9f4", sand: "#f3efe6",
   terra: "#b23a32", terraSoft: "#f1d5d0", good: "#3b6350", goodSoft: "#e3ebe6",
   line: "#ddd5c6",
@@ -53,7 +53,7 @@ const R = {
     b.text.toUpperCase(),
   ],
   h1: (b) => [
-    `<h1 style="margin:0 0 14px;font-family:${SERIF};font-size:30px;line-height:1.18;font-weight:normal;color:${C.ink};">${inline(b.text)}</h1>`,
+    `<h1 style="margin:0 0 14px;font-family:${SERIF};font-size:30px;line-height:1.18;font-weight:normal;color:${C.ink};text-wrap:balance;">${inline(b.text)}</h1>`,
     `${plain(b.text)}\n${"=".repeat(Math.min(plain(b.text).length, 60))}`,
   ],
   h2: (b) => [
@@ -88,7 +88,7 @@ const R = {
     const rows = b.rows
       .map(([, f]) => `<tr>${cell(esc(f.label), "left")}${cell(money(f.all.p25))}${cell(money(f.all.med), "right", true)}${cell(money(f.all.p75))}${cell(f.all.n.toLocaleString("en-US"))}</tr>`)
       .join("");
-    const html = `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:4px 0 8px;border-collapse:collapse;"><tr>${head("Fee")}${head("Low&nbsp;25%", "right")}${head("Median", "right")}${head("High&nbsp;25%", "right")}${head("n", "right")}</tr>${rows}</table><p style="margin:0 0 20px;font-family:${SANS};font-size:11px;line-height:1.5;color:${C.muted};">${inline(b.note)}</p>`;
+    const html = `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:4px 0 8px;border-collapse:collapse;"><tr>${head("Fee")}${head("Low&nbsp;25%", "right")}${head("Median", "right")}${head("High&nbsp;25%", "right")}${head("n", "right")}</tr>${rows}</table><p style="margin:0 0 20px;font-family:${SANS};font-size:12px;line-height:1.5;color:${C.muted};">${inline(b.note)}</p>`;
     const text = [
       "Fee | low 25% | median | high 25% | n",
       ...b.rows.map(([, f]) => `${f.label} | ${money(f.all.p25)} | ${money(f.all.med)} | ${money(f.all.p75)} | ${f.all.n.toLocaleString("en-US")}`),
@@ -105,7 +105,7 @@ const R = {
         const col = i.accent ? C.terra : C.ink2;
         return `<tr><td style="padding:6px 0 2px;font-family:${SANS};font-size:12px;color:${C.text2};" colspan="2">${esc(i.label)}</td></tr><tr><td style="padding:0 0 6px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td width="${w}%" style="background:${col};height:14px;line-height:14px;font-size:0;">&nbsp;</td><td width="${100 - w}%" style="background:${C.sand};height:14px;line-height:14px;font-size:0;">&nbsp;</td></tr></table></td><td width="64" align="right" style="padding:0 0 6px 10px;font-family:${MONO};font-size:13px;color:${C.ink};">${esc(i.display ?? money(i.value))}</td></tr>`;
       })
-      .join("")}</table>${b.note ? `<p style="margin:0 0 20px;font-family:${SANS};font-size:11px;line-height:1.5;color:${C.muted};">${inline(b.note)}</p>` : ""}`;
+      .join("")}</table>${b.note ? `<p style="margin:0 0 20px;font-family:${SANS};font-size:12px;line-height:1.5;color:${C.muted};">${inline(b.note)}</p>` : ""}`;
     const text = b.items.map((i) => `${i.label}: ${i.display ?? money(i.value)}`).join("\n") + (b.note ? `\n${plain(b.note)}` : "");
     return [html, text];
   },
@@ -116,10 +116,10 @@ const R = {
       .map((i) => {
         const col = i.accent ? C.terra : C.ink2;
         const a = pct(i.p25), w1 = Math.max(0.5, pct(i.med) - a), w2 = Math.max(0.5, pct(i.p75) - pct(i.med)), rest = Math.max(0, 100 - a - w1 - w2);
-        const seg = (w, bg, extra = "") => `<td width="${w}%" style="background:${bg};height:14px;line-height:14px;font-size:0;${extra}">&nbsp;</td>`;
+        const seg = (w, bg, extra = "") => `<td width="${Math.round(w * 10) / 10}%" style="background:${bg};height:14px;line-height:14px;font-size:0;${extra}">&nbsp;</td>`;
         return `<tr><td style="padding:8px 0 3px;font-family:${SANS};font-size:13px;color:${i.accent ? C.ink : C.text2};${i.accent ? "font-weight:bold;" : ""}">${esc(i.label)}</td><td align="right" style="padding:8px 0 3px;font-family:${MONO};font-size:12px;color:${C.ink};white-space:nowrap;">${money(i.p25)}&ndash;${money(i.p75)} &middot; median ${money(i.med)}</td></tr><tr><td colspan="2" style="padding:0 0 4px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:${C.sand};"><tr>${a > 0 ? seg(a, C.sand) : ""}${seg(w1, col, `border-right:2px solid ${C.paper};`)}${seg(w2, col)}${rest > 0 ? seg(rest, C.sand) : ""}</tr></table></td></tr>`;
       })
-      .join("")}<tr><td style="padding:2px 0 0;font-family:${MONO};font-size:10px;color:${C.muted};">$0</td><td align="right" style="padding:2px 0 0;font-family:${MONO};font-size:10px;color:${C.muted};">${money(b.max)}</td></tr></table>${b.note ? `<p style="margin:6px 0 20px;font-family:${SANS};font-size:11px;line-height:1.5;color:${C.muted};">${inline(b.note)}</p>` : ""}`;
+      .join("")}<tr><td style="padding:2px 0 0;font-family:${MONO};font-size:12px;color:${C.muted};">$0</td><td align="right" style="padding:2px 0 0;font-family:${MONO};font-size:12px;color:${C.muted};">${money(b.max)}</td></tr></table>${b.note ? `<p style="margin:6px 0 20px;font-family:${SANS};font-size:12px;line-height:1.5;color:${C.muted};">${inline(b.note)}</p>` : ""}`;
     const text = b.items.map((i) => `${i.label}: ${money(i.p25)} to ${money(i.p75)}, median ${money(i.med)}`).join("\n") + (b.note ? `\n${plain(b.note)}` : "");
     return [html, text];
   },

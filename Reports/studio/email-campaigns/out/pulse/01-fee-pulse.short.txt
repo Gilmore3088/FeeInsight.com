@@ -5,7 +5,7 @@ Overdraft (paid item): $25 to $33, median $30
 NSF (returned item): $25 to $32, median $30
 Stop payment: $22 to $30, median $27.50
 Deposited item returned: $9 to $25, median $15
-Middle half (25th to 75th percentile) with the median marked. Bank Fee Index, national, October 17, 2026. One value per institution, from its own published fee schedule. Institutions behind each fee: overdraft (paid item) 2,500, nsf (returned item) 2,668, stop payment 3,193, deposited item returned 1,821.
+Middle half (25th to 75th percentile) with the median marked. Bank Fee Index, national, October 17, 2026. One value per institution, from its own published fee schedule. Institutions behind each fee: Overdraft (paid item) 2,500, NSF (returned item) 2,668, Stop payment 3,193, Deposited item returned 1,821.
 Place your fee on the range: https://feeinsight.com/fees/deposited_item_return?utm_source=mailerlite&utm_medium=email&utm_campaign=pulse&utm_content=fee-pulse
 National median, middle half, and banks against credit unions. Free, no login.
 

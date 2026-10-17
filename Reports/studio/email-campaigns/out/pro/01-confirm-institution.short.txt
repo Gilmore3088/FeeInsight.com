@@ -2,7 +2,7 @@ Every view in Hamilton starts from it.
 
 Welcome to Hamilton. Start by confirming your institution.
 Confirm your institution: https://feeinsight.com/pro/settings?utm_source=mailerlite&utm_medium=email&utm_campaign=pro&utm_content=confirm-institution
-Settings, Workspace institution.
+Settings, Research institution.
 
 Full email with tables and charts: {$url}
 

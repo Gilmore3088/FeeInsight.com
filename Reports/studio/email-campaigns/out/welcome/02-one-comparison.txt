@@ -1,4 +1,4 @@
-Your fee, your state's middle half, and the institutions behind it.
+Your fee, your state's middle 50%, and the institutions behind it.
 
 WELCOME · 2 OF 3
 
@@ -10,11 +10,13 @@ Pick one fee your customers notice, such as overdraft or NSF, and place it again
 
 [ MAKE THE COMPARISON ]
 1. Open your state's page and find the fee. Find your state (https://feeinsight.com/research?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=one-comparison).
-2. Note the median and the middle half (the 25th to 75th percentile: the middle 50% of institution benchmark values).
-3. Check how many institutions stand behind the number. A small count is a hint, not a verdict.
-4. Write your own price next to it: below, inside or above the middle half.
+2. Note the median and the middle 50% (the 25th to 75th percentile: the middle 50% of institutions list a fee in this range).
+3. Check how many institutions stand behind the number. If only a few do, treat it as a lead to check against their schedules.
+4. Write your own price next to it: below, inside or above the middle 50%.
 
-This gives your committee a starting point. The state view doesn't show which institutions sit next to you; Hamilton Pro does.
+This gives your committee a starting point. Hamilton Pro takes the next step: the named institutions that sit next to you, fee by fee.
+
+Find your state's numbers: https://feeinsight.com/research?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=one-comparison
 
 James Gilmore
 Founder, Fee Insight · publisher of the Bank Fee Index

@@ -1,11 +1,12 @@
-Your fee, your state's middle half, and the institutions behind it.
+Your fee, your state's middle 50%, and the institutions behind it.
 
 One comparison to make before your next pricing meeting
 [ MAKE THE COMPARISON ]
 1. Open your state's page and find the fee. Find your state (https://feeinsight.com/research?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=one-comparison).
-2. Note the median and the middle half (the 25th to 75th percentile: the middle 50% of institution benchmark values).
-3. Check how many institutions stand behind the number. A small count is a hint, not a verdict.
-4. Write your own price next to it: below, inside or above the middle half.
+2. Note the median and the middle 50% (the 25th to 75th percentile: the middle 50% of institutions list a fee in this range).
+3. Check how many institutions stand behind the number. If only a few do, treat it as a lead to check against their schedules.
+4. Write your own price next to it: below, inside or above the middle 50%.
+Find your state's numbers: https://feeinsight.com/research?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=one-comparison
 
 Full email with tables and charts: {$url}
 

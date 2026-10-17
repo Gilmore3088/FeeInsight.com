@@ -13,8 +13,8 @@ The Competitive Fee Position Report puts one institution's fee schedule next to 
 - The competitors you name, side by side with you.
 - A source for every figure: the competitor's published schedule and the date we read it.
 
-Request your institution report: https://feeinsight.com/for-institutions?report=institution&utm_source=mailerlite&utm_medium=email&utm_campaign=report&utm_content=your-institution#report
-Quoted from $300. We check your market has enough published schedules, then reply with scope and price. See a sample report (https://feeinsight.com/reports/sample-competitive-fee-position?utm_source=mailerlite&utm_medium=email&utm_campaign=report&utm_content=your-institution).
+Request your institution report: https://feeinsight.com/reports?report=institution&src=email_report&utm_source=mailerlite&utm_medium=email&utm_campaign=report&utm_content=your-institution#request
+Quoted from $300. We check your market has enough published schedules, then reply within one business day with scope and price. See a sample report (https://feeinsight.com/reports/sample-competitive-fee-position?utm_source=mailerlite&utm_medium=email&utm_campaign=report&utm_content=your-institution).
 
 Or reply with your institution's name and the competitors you watch.
 

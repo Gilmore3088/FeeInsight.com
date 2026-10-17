@@ -1,8 +1,8 @@
 Your plan includes seats for your team.
 
 Invite the colleagues who work on pricing
-Invite colleagues: https://feeinsight.com/pro/settings?utm_source=mailerlite&utm_medium=email&utm_campaign=pro&utm_content=invite-colleagues
-Settings, Workspace access. Each invite is a link you send them.
+Invite colleagues: https://feeinsight.com/pro/settings?utm_source=mailerlite&utm_medium=email&utm_campaign=pro&utm_content=invite-colleagues#workspace-access
+Settings, Team access.
 
 Full email with tables and charts: {$url}
 

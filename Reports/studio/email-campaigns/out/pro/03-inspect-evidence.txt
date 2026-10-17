@@ -10,7 +10,7 @@ Before a number goes in front of your committee, you should be able to show wher
 
 [ TRY IT ONCE ]
 1. Open Hamilton and pick a fee where you sit above your peers.
-2. Find the competitor with the highest price and open its profile from Institutions (https://feeinsight.com/institutions?utm_source=mailerlite&utm_medium=email&utm_campaign=pro&utm_content=inspect-evidence). Follow the fee schedule link.
+2. Find the competitor with the highest price, open its public profile on feeinsight.com, and follow the fee schedule link.
 3. If the schedule disagrees with what we show, reply with the institution and fee. We re-check it.
 
 Open Hamilton: https://feeinsight.com/pro/hamilton?utm_source=mailerlite&utm_medium=email&utm_campaign=pro&utm_content=inspect-evidence

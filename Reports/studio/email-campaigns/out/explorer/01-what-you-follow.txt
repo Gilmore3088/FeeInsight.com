@@ -5,14 +5,14 @@ FOLLOWING
 You're following {$follow_name|default('the market you follow')}
 ============================================================
 
-Here is the page you asked to follow. It reads every figure from the published fee schedules behind it and updates in place.
+Here is the page you asked to follow. Every figure on it comes from the institutions' published fee schedules, and it updates as new schedules are read.
 
 Open {$follow_name|default('the market you follow')}: {$follow_url|default('https://feeinsight.com/research')}
 Free, no login.
 
 
 [ WHAT YOU'LL GET ]
-- Once a month: a snapshot of the fees you follow, with how many institutions stand behind each number.
+- Once a month: your state's fee snapshot (the national one if you follow an institution), with how many institutions stand behind each number.
 
 Reply any time with a question about a number.
 

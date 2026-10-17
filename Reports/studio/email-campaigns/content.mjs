@@ -25,7 +25,7 @@ const F = FEES;
 const m = (v) => (Number.isInteger(v) ? `$${v}` : `$${v.toFixed(2)}`);
 const n = (v) => v.toLocaleString("en-US");
 const REPORT_PRICE = "from $300"; // REPORT_OFFER.priceLabel in src/lib/constants.ts
-const INSTITUTION_REPORT = `${S}/for-institutions?report=institution#report`;
+const INSTITUTION_REPORT = `${S}/reports?report=institution&src=email_report#request`;
 const SAMPLE_REPORT = `${S}/reports/sample-competitive-fee-position`;
 
 // MailerLite merge fields the app sets on confirm (src/lib/email/mailerlite.ts). Each has a
@@ -61,9 +61,9 @@ const welcome = {
           `**Your state:** each headline fee in your state next to the national median, banks and credit unions side by side. [Find your state](${S}/research).`,
           `**Your Fed district:** the same view across a district. [Open the district reports](${S}/reports).`,
           `**One institution:** its fee table, the schedule it came from, and the date we read it. [Search institutions](${S}/institutions).`,
-          `**One fee across the country:** the national median and middle half, with banks and credit unions compared. [Browse fees](${S}/fees).`,
+          `**One fee across the country:** the national median and middle 50%, with banks and credit unions compared. [Browse fees](${S}/fees).`,
         ] },
-        { type: "p", text: "What's free: every fee's own page, with its national median and middle half, and the fee index table for six headline fees, including overdraft, NSF and out-of-network ATM. The rest of the index table and breakdowns by asset size come with a Hamilton Pro plan." },
+        { type: "p", text: "What's free: every fee's own page, with its national median and middle 50%, and the national index table for the headline fees, including overdraft, NSF and out-of-network ATM. The rest of the index table and breakdowns by asset size come with a Hamilton Pro plan." },
         { type: "cta", text: "Explore the free fee benchmarks", href: `${S}/research`, sub: "No login needed." },
         { type: "sign" },
       ],
@@ -72,18 +72,19 @@ const welcome = {
       key: "one-comparison",
       day: 3,
       subject: "One comparison to make before your next pricing meeting",
-      preheader: "Your fee, your state's middle half, and the institutions behind it.",
+      preheader: "Your fee, your state's middle 50%, and the institutions behind it.",
       blocks: [
         { type: "kicker", text: "Welcome · 2 of 3" },
         { type: "h1", text: "One comparison to make before your next pricing meeting" },
         { type: "p", text: "Pick one fee your customers notice, such as overdraft or NSF, and place it against your own state rather than the country." },
         { type: "box", tone: "action", title: "Make the comparison", ordered: true, items: [
           `Open your state's page and find the fee. [Find your state](${S}/research).`,
-          "Note the median and the middle half (the 25th to 75th percentile: the middle 50% of institution benchmark values).",
-          "Check how many institutions stand behind the number. A small count is a hint, not a verdict.",
-          "Write your own price next to it: below, inside or above the middle half.",
+          "Note the median and the middle 50% (the 25th to 75th percentile: the middle 50% of institutions list a fee in this range).",
+          "Check how many institutions stand behind the number. If only a few do, treat it as a lead to check against their schedules.",
+          "Write your own price next to it: below, inside or above the middle 50%.",
         ] },
-        { type: "p", text: "This gives your committee a starting point. The state view doesn't show which institutions sit next to you; Hamilton Pro does." },
+        { type: "p", text: "This gives your committee a starting point. Hamilton Pro takes the next step: the named institutions that sit next to you, fee by fee." },
+        { type: "cta", text: "Find your state's numbers", href: `${S}/research` },
         { type: "sign" },
       ],
     },
@@ -133,10 +134,10 @@ const report = {
         { type: "kicker", text: "Your report · 1 of 3" },
         { type: "h1", text: `Here is ${FIELD.reportName}` },
         { type: "p", text: "Thanks for confirming. The report is live, so the link always shows the current numbers as new fee schedules are verified." },
-        { type: "cta", text: "Open your report", href: FIELD.reportUrl, sub: "Free, no login. Bookmark it; the numbers update in place." },
+        { type: "cta", text: "Open your report", href: FIELD.reportUrl, sub: "Free, no login. Bookmark it." },
         { type: "list", ordered: true, items: [
           "**Key findings** sit at the top, each with how many institutions stand behind it.",
-          "**Headline fees** show the median and middle half where enough institutions publish the fee. The report states its minimum.",
+          "**Headline fees** show the median and middle 50% where enough institutions publish the fee. The report states its minimum.",
           "**Banks and credit unions** are compared where each side has enough institutions.",
         ] },
         { type: "sign" },
@@ -151,7 +152,7 @@ const report = {
         { type: "kicker", text: "Your report · 2 of 3" },
         { type: "h1", text: "One finding from your report" },
         { type: "p", text: FIELD.reportFinding },
-        { type: "p", text: "A market finding tells you where the typical institution sits. It can't tell you where yours sits, or which competitors pull the range up or down." },
+        { type: "p", text: "A market finding shows where the typical institution sits. Seeing where yours sits, and which competitors set the top and bottom of the range, takes a fee-by-fee comparison against named competitors." },
         { type: "cta", text: "See it in your report", href: FIELD.reportUrl, sub: "The finding links to the table behind it." },
         { type: "sign" },
       ],
@@ -170,7 +171,7 @@ const report = {
           "The competitors you name, side by side with you.",
           "A source for every figure: the competitor's published schedule and the date we read it.",
         ] },
-        { type: "cta", text: "Request your institution report", href: INSTITUTION_REPORT, sub: `Quoted ${REPORT_PRICE}. We check your market has enough published schedules, then reply with scope and price. [See a sample report](${SAMPLE_REPORT}).` },
+        { type: "cta", text: "Request your institution report", href: INSTITUTION_REPORT, sub: `Quoted ${REPORT_PRICE}. We check your market has enough published schedules, then reply within one business day with scope and price. [See a sample report](${SAMPLE_REPORT}).` },
         { type: "p", text: "Or reply with your institution's name and the competitors you watch." },
         { type: "sign" },
       ],
@@ -199,10 +200,10 @@ const explorer = {
       blocks: [
         { type: "kicker", text: "Following" },
         { type: "h1", text: `You're following ${FIELD.followName}` },
-        { type: "p", text: "Here is the page you asked to follow. It reads every figure from the published fee schedules behind it and updates in place." },
+        { type: "p", text: "Here is the page you asked to follow. Every figure on it comes from the institutions' published fee schedules, and it updates as new schedules are read." },
         { type: "cta", text: `Open ${FIELD.followName}`, href: FIELD.followUrl, sub: "Free, no login." },
         { type: "box", tone: "term", title: "What you'll get", items: [
-          "**Once a month:** a snapshot of the fees you follow, with how many institutions stand behind each number.",
+          "**Once a month:** your state's fee snapshot (the national one if you follow an institution), with how many institutions stand behind each number.",
         ] },
         { type: "p", text: "Reply any time with a question about a number." },
         { type: "sign" },
@@ -231,9 +232,9 @@ const pro = {
       blocks: [
         { type: "kicker", text: "Setup · 1 of 5" },
         { type: "h1", text: "Welcome to Hamilton. Start by confirming your institution." },
-        { type: "p", text: "Thanks for subscribing. Hamilton measures everything against one institution: yours. Check that it's the right one, with the right charter and location, before you build anything on it." },
-        { type: "cta", text: "Confirm your institution", href: `${S}/pro/settings`, sub: "Settings, Workspace institution." },
-        { type: "p", text: "If your institution isn't listed, or its fee schedule looks out of date, reply to this email and we'll fix it." },
+        { type: "p", text: "Thanks for subscribing. Hamilton measures every comparison against your institution, so check that it's the right one, with the right charter and location, before you build on it." },
+        { type: "cta", text: "Confirm your institution", href: `${S}/pro/settings`, sub: "Settings, Research institution." },
+        { type: "p", text: "If your institution isn't listed, or its fee schedule looks out of date, reply to this email and we'll check it." },
         { type: "sign" },
       ],
     },
@@ -246,7 +247,7 @@ const pro = {
         { type: "kicker", text: "Setup · 2 of 5" },
         { type: "h1", text: "Choose the peers you're measured against" },
         { type: "p", text: "Start with relevant peers; use the national median for broader context. Build a peer set from the institutions your customers compare you with, by charter, asset size, district or county." },
-        { type: "cta", text: "Build your peer set", href: `${S}/pro/settings#peer-sets`, sub: `How to pick one that holds up in a board meeting: [Building a Peer Set](${S}/guides/pro/building-a-peer-set).` },
+        { type: "cta", text: "Build your peer set", href: `${S}/pro/settings#peer-sets`, sub: `Settings, Peer groups. How to pick one that holds up in a board meeting: [Building a Peer Set](${S}/guides/pro/building-a-peer-set).` },
         { type: "sign" },
       ],
     },
@@ -261,7 +262,7 @@ const pro = {
         { type: "p", text: "Before a number goes in front of your committee, you should be able to show where it came from. Each institution's public profile names the published fee schedule we read and the date we read it." },
         { type: "box", tone: "action", title: "Try it once", ordered: true, items: [
           "Open Hamilton and pick a fee where you sit above your peers.",
-          `Find the competitor with the highest price and open its profile from [Institutions](${S}/institutions). Follow the fee schedule link.`,
+          "Find the competitor with the highest price, open its public profile on feeinsight.com, and follow the fee schedule link.",
           "If the schedule disagrees with what we show, reply with the institution and fee. We re-check it.",
         ] },
         { type: "cta", text: "Open Hamilton", href: `${S}/pro/hamilton` },
@@ -291,8 +292,7 @@ const pro = {
         { type: "kicker", text: "Setup · 5 of 5" },
         { type: "h1", text: "Invite the colleagues who work on pricing" },
         { type: "p", text: "Pricing decisions involve product, marketing, finance and compliance. Add the people who need to see the same numbers, so everyone works from one peer set and one set of sources." },
-        { type: "cta", text: "Invite colleagues", href: `${S}/pro/settings`, sub: "Settings, Workspace access. Each invite is a link you send them." },
-        { type: "p", text: "You can return to these steps whenever you need them. Reply any time; a person reads every one." },
+        { type: "cta", text: "Invite colleagues", href: `${S}/pro/settings#workspace-access`, sub: "Settings, Team access." },
         { type: "sign" },
       ],
     },
@@ -312,19 +312,19 @@ const odWidth = od.p75 - od.p25;
 const pulse = {
   key: "pulse",
   name: "Monthly Fee Pulse (broadcast)",
-  masthead: `Fee Pulse · ${SNAPSHOT.month}`,
+  masthead: "Bank Fee Index",
   trigger: "Regular monthly campaign to the national and state marketing groups. Refresh data.mjs from fee_index_cache and rebuild before each send.",
   emails: [
     {
       key: "fee-pulse",
       day: 0,
-      subject: `Fee Pulse: returned-deposit fees run from ${m(dir.p25)} to ${m(dir.p75)}`,
+      subject: `Fee Pulse: the middle half of returned-deposit fees runs ${m(dir.p25)} to ${m(dir.p75)}`,
       preheader: `The middle half spans ${m(dirWidth)}, compared with ${m(odWidth)} for overdraft.`,
       blocks: [
         { type: "kicker", text: `Fee Pulse · ${SNAPSHOT.month}` },
         { type: "h1", text: `Returned-deposit fees: the middle half spans ${m(dirWidth)}` },
-        { type: "p", text: `When a customer deposits a check that bounces, the middle half of U.S. banks and credit unions list a fee between ${m(dir.p25)} and ${m(dir.p75)}. That spans ${m(dirWidth)}, compared with ${m(odWidth)} for overdraft (${m(od.p25)} to ${m(od.p75)}). ${n(dir.n)} institutions publish a returned-deposit fee.` },
-        { type: "range", items: RANGE_FEES.map((k) => ({ label: F[k].label, p25: F[k].all.p25, med: F[k].all.med, p75: F[k].all.p75, accent: k === "deposited_item_return" })), max: 35, note: `Middle half (25th to 75th percentile) with the median marked. Bank Fee Index, national, ${SNAPSHOT.asOf}. One value per institution, from its own published fee schedule. Institutions behind each fee: ${RANGE_FEES.map((k) => `${F[k].label.toLowerCase()} ${n(F[k].all.n)}`).join(", ")}.` },
+        { type: "p", text: `When a customer deposits a check that bounces, the middle half of the banks and credit unions in the index list a fee between ${m(dir.p25)} and ${m(dir.p75)}. That spans ${m(dirWidth)}, compared with ${m(odWidth)} for overdraft (${m(od.p25)} to ${m(od.p75)}). The figures come from ${n(dir.n)} institutions that publish a returned-deposit fee.` },
+        { type: "range", items: RANGE_FEES.map((k) => ({ label: F[k].label, p25: F[k].all.p25, med: F[k].all.med, p75: F[k].all.p75, accent: k === "deposited_item_return" })), max: 35, note: `Middle half (25th to 75th percentile) with the median marked. Bank Fee Index, national, ${SNAPSHOT.asOf}. One value per institution, from its own published fee schedule. Institutions behind each fee: ${RANGE_FEES.map((k) => `${F[k].label} ${n(F[k].all.n)}`).join(", ")}.` },
         { type: "cta", text: "Place your fee on the range", href: `${S}/fees/deposited_item_return`, sub: "National median, middle half, and banks against credit unions. Free, no login." },
         { type: "sign" },
       ],

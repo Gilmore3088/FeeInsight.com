@@ -7,10 +7,8 @@ Invite the colleagues who work on pricing
 
 Pricing decisions involve product, marketing, finance and compliance. Add the people who need to see the same numbers, so everyone works from one peer set and one set of sources.
 
-Invite colleagues: https://feeinsight.com/pro/settings?utm_source=mailerlite&utm_medium=email&utm_campaign=pro&utm_content=invite-colleagues
-Settings, Workspace access. Each invite is a link you send them.
-
-You can return to these steps whenever you need them. Reply any time; a person reads every one.
+Invite colleagues: https://feeinsight.com/pro/settings?utm_source=mailerlite&utm_medium=email&utm_campaign=pro&utm_content=invite-colleagues#workspace-access
+Settings, Team access.
 
 James Gilmore
 Founder, Fee Insight · publisher of the Bank Fee Index

@@ -4,7 +4,7 @@ You're following {$follow_name|default('the market you follow')}
 Open {$follow_name|default('the market you follow')}: {$follow_url|default('https://feeinsight.com/research')}
 Free, no login.
 [ WHAT YOU'LL GET ]
-- Once a month: a snapshot of the fees you follow, with how many institutions stand behind each number.
+- Once a month: your state's fee snapshot (the national one if you follow an institution), with how many institutions stand behind each number.
 
 Full email with tables and charts: {$url}
 
