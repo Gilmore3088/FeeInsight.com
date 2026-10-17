@@ -11,23 +11,22 @@ import type { ReactNode } from "react";
 import { SITE_NAME } from "@/lib/constants";
 import {
   MIN_LOCAL_PEERS_PER_LINE,
-  NAMED_WITHOUT_DEPOSITS,
   type LinePosition,
   type ReportLine,
 } from "@/lib/custom-report/analysis";
-import { FEE_LINE_LABELS } from "@/lib/custom-report/rules";
 import type { MarketReport } from "@/lib/custom-report/report-data";
 import type { MarketBranchFootprint } from "@/lib/data-store/branches";
 import { incomeLabel, quarterLabel, type RevenueContext } from "@/lib/custom-report/revenue-context";
-import { AtAGlance, SinceBought, sinceBoughtFinding } from "./[token]/at-a-glance";
+import { SinceBought, sinceBoughtFinding } from "./[token]/at-a-glance";
 import { HamiltonClose } from "./[token]/hamilton-close";
 import type { CheckingLineupView } from "@/lib/custom-report/checking-lineup";
 import { CheckingLineupSection } from "./checking-lineup-section";
-import { NamedCompetitorsPhone } from "./named-competitors-phone";
 import { HubSection, KICKER } from "@/app/(public)/research/district/[id]/district-hub";
 import { Disclosure } from "./disclosure";
 import { ShowAll } from "./show-all";
-import { EXTRA_ROW, ROWS_SHOWN, comparedLines, leftOutNote, namedFinding, positionFinding, widestGapFinding } from "./report-view";
+import { EXTRA_ROW, ROWS_SHOWN, countiesText, headlineFinding, leftOutNote, marketFinding, widestGapFinding } from "./report-view";
+import { FeeComparison } from "./fee-comparison";
+import { PrintOpen } from "./print-open";
 
 const DATE = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
 
@@ -42,31 +41,6 @@ export const POSITION_LABEL: Record<LinePosition, string> = {
   below_market: "Below the local middle 50%",
   free: "Free",
 };
-
-const POSITION_SHORT: Record<LinePosition, string> = {
-  above_market: "Above",
-  in_market: "Inside",
-  below_market: "Below",
-  free: "Free",
-};
-
-const POSITION_CLASS: Record<LinePosition, string> = {
-  above_market: "bg-brick-tint/60 text-brick",
-  in_market: "bg-surface-200 text-ink",
-  below_market: "bg-below-market/10 text-below-market",
-  free: "bg-below-market/10 text-below-market",
-};
-
-function PositionChip({ line }: { line: ReportLine }) {
-  if (!line.position) return <span className="text-[12px] text-ink-muted">-</span>;
-  return (
-    <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${POSITION_CLASS[line.position]}`}>
-      {/* Phones show the short word; the column heading says what it is the middle 50% of. */}
-      <span className="sm:hidden print:hidden">{POSITION_SHORT[line.position]}</span>
-      <span className="hidden sm:inline print:inline">{POSITION_LABEL[line.position]}</span>
-    </span>
-  );
-}
 
 /**
  * Why a line has no position: the institution's own fee is missing from its schedule, or too few
@@ -165,44 +139,46 @@ export function footprintLine(branches: MarketBranchFootprint | null | undefined
   return `${own.branches} ${own.branches === 1 ? "branch" : "branches"}${shareText}`;
 }
 
-const TH = "py-2 pr-3 font-semibold";
 const FIGURE_CAPTION = "text-[14px] font-semibold text-ink";
+
+function Tile({ value, label }: { value: string; label: string }) {
+  return (
+    <div className="flex min-w-0 flex-col-reverse border-l-2 border-brick pl-4">
+      <dt className="mt-2 text-[13px] leading-snug text-ink-soft">{label}</dt>
+      <dd className="font-mono text-[24px] font-semibold leading-tight tabular-nums tracking-[-0.02em] text-ink sm:text-[22px] lg:text-[30px]">{value}</dd>
+    </div>
+  );
+}
 
 function RevenueSection({ name, charterType, revenue }: { name: string; charterType: string | null; revenue: RevenueContext }) {
   const latest = revenue.quarters[0];
   const filing = charterType === "credit_union" ? "NCUA 5300 Call Report" : "FDIC Call Report";
-  const tiles = [
-    { label: `Deposit service charges, ${quarterLabel(latest.quarter)}`, value: incomeLabel(latest.thousands) },
-    ...(revenue.trailingThousands !== null ? [{ label: "Last four quarters", value: incomeLabel(revenue.trailingThousands) }] : []),
-    ...(revenue.peer ? [{ label: `Median for its size, ${quarterLabel(latest.quarter)}`, value: incomeLabel(revenue.peer.medianThousands) }] : []),
-  ];
-  const finding = revenue.peer
-    ? `${name} reported ${incomeLabel(latest.thousands)} in deposit service charges in ${quarterLabel(latest.quarter)}, ranking ${revenue.peer.rank.toLocaleString("en-US")} of ${revenue.peer.count.toLocaleString("en-US")} institutions its size, where 1 is the highest.`
+  const peer = revenue.peer;
+  const population = peer
+    ? `${peer.count.toLocaleString("en-US")} ${peer.population ?? "banks and credit unions"} with ${peer.tierLabel} in assets that reported deposit service charges for ${quarterLabel(latest.quarter)}`
+    : null;
+  const finding = peer
+    ? `${name} reported ${incomeLabel(latest.thousands)} in deposit service charges in ${quarterLabel(latest.quarter)}, ranking ${peer.rank.toLocaleString("en-US")} of ${peer.count.toLocaleString("en-US")} ${peer.population ?? "institutions"} its size, where 1 is the highest.`
     : `${name} reported ${incomeLabel(latest.thousands)} in deposit service charges in ${quarterLabel(latest.quarter)}.`;
   return (
     <HubSection
       id="revenue"
       title="Fee income"
       line={finding}
-      source={
-        <>
-          {name}&apos;s {filing}, {quarterLabel(latest.quarter)}
-          {revenue.peer && `; median of institutions with ${revenue.peer.tierLabel} in assets that reported for the quarter`}.
-        </>
-      }
+      source={`${name}'s ${filing}, ${quarterLabel(latest.quarter)}${peer ? `; the peer median and rank come from the same quarter's filings` : ""}.`}
     >
       <figure className="min-w-0 max-w-5xl">
-      <figcaption className={FIGURE_CAPTION}>{name}&apos;s reported fee income, from its {filing}</figcaption>
-      <dl className="mt-4 grid grid-cols-1 gap-6 sm:grid-cols-3">
-        {tiles.map((t) => (
-          <div key={t.label} className="flex min-w-0 flex-col-reverse border-l-2 border-brick pl-4">
-            <dt className="mt-2 text-[13px] leading-snug text-ink-soft">{t.label}</dt>
-            <dd className="font-mono text-[24px] font-semibold leading-tight tabular-nums tracking-[-0.02em] text-ink sm:text-[22px] lg:text-[30px]">
-              {t.value}
-            </dd>
-          </div>
-        ))}
-      </dl>
+        <figcaption className={FIGURE_CAPTION}>Deposit service charges reported by {name}{peer ? `, against ${peer.population ?? "institutions"} its size` : ""}</figcaption>
+        <dl className="mt-4 grid grid-cols-1 gap-6 sm:grid-cols-3">
+          <Tile label={`${name}, ${quarterLabel(latest.quarter)}`} value={incomeLabel(latest.thousands)} />
+          {revenue.trailingThousands !== null && <Tile label={`${name}, last four quarters`} value={incomeLabel(revenue.trailingThousands)} />}
+          {peer && <Tile label={`Median of ${peer.count.toLocaleString("en-US")} ${peer.population ?? "institutions"} its size, ${quarterLabel(latest.quarter)}`} value={incomeLabel(peer.medianThousands)} />}
+        </dl>
+        {population && (
+          <p className="mt-4 text-[13px] text-ink-soft sm:mx-0 sm:text-left">
+            Compared with {population}. {peer?.population === "banks" ? "Credit unions are left out: their NCUA fee income is a wider measure than bank service charges." : peer?.population === "credit unions" ? "Banks are left out: their service charges are a narrower measure than NCUA fee income." : ""}
+          </p>
+        )}
       </figure>
     </HubSection>
   );
@@ -213,47 +189,35 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
   const market = data.market!;
   const droppedCount = Object.values(data.dropped ?? {}).reduce((sum, n) => sum + (n ?? 0), 0);
   const name = data.subject.institution_name;
-  const marketLabel = `${placeLabel(market.places[0])} area${market.county_fips.length > 1 ? ` (${market.county_fips.length} counties)` : ""}`;
-  const comparable = analysis.lines.filter((l) => l.comparable);
-  const compared = comparedLines(analysis.lines);
-  // Fee by fee: the furthest from the local median first, so the differences lead.
-  const byGap = [...compared].sort((a, b) => Math.abs(b.own.amount - b.peers.median) - Math.abs(a.own.amount - a.peers.median));
+  const counties = countiesText(market.county_fips);
   const leftOut = leftOutNote(name, analysis.lines);
-  const tableKeys = comparable.slice(0, 6).map((l) => l.key);
-  const ownFees = Object.fromEntries(analysis.lines.filter((l) => l.own).map((l) => [l.key, l.own!.amount]));
   const competitorName = new Map(data.competitors.map((c) => [c.institution_id, c.institution_name]));
   const { competitorsWithData, competitorsInMarket } = analysis.readiness;
-  const firstLine = tableKeys[0] ? { key: tableKeys[0], label: FEE_LINE_LABELS[tableKeys[0]] ?? tableKeys[0] } : undefined;
-  const named = namedFinding(name, firstLine, firstLine ? ownFees[firstLine.key] : undefined, analysis.named);
-  const marketSource = `${market.county_fips.length === 1 ? "The county" : `The ${market.county_fips.length} counties`} ${
-    market.basis === "branch_counties" ? `holding most of ${name}'s deposits` : `around ${name}'s headquarters`
-  } (FDIC Summary of Deposits, ${market.sod_year}).`;
+  const withFees = new Set(data.lines.filter((l) => l.institution_id !== data.subject.institution_id).map((l) => l.institution_id));
+  // Local competitors by deposits held in the market; credit unions (no SOD deposits) after the banks.
+  const byDeposits = [...data.competitors].sort(
+    (a, b) => (b.market_deposits ?? -1) - (a.market_deposits ?? -1) || a.institution_name.localeCompare(b.institution_name),
+  );
+  const ownDeposits = branches?.byInstitution[data.subject.institution_id]?.deposits ?? null;
+  const ownShare = branches && ownDeposits !== null && branches.totalDeposits > 0 ? (ownDeposits / branches.totalDeposits) * 100 : null;
 
   return (
     <div className="space-y-14 sm:space-y-20">
+      <PrintOpen />
       <header className="grid gap-6 border-b border-border pb-8 text-center sm:text-left lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end lg:gap-12">
         <div className="min-w-0">
           <p className={KICKER}>{eyebrow}</p>
           <Title className="mt-2 text-[30px] font-semibold leading-[1.08] tracking-[-0.03em] text-ink sm:text-[44px]">
-            {name} against its local market
+            {name}: competitive fee position
           </Title>
-          <p className="mx-auto mt-3 text-[15px] text-ink-soft sm:mx-0">
-            {marketLabel} · prepared {DATE.format(preparedOn)} by {SITE_NAME}
+          {analysis.readiness.ready && (
+            <p className="mx-auto mt-3 text-[18px] font-semibold leading-snug text-ink sm:mx-0 sm:text-[21px]">{headlineFinding(analysis.lines)}</p>
+          )}
+          <p className="mx-auto mt-3 text-[14px] text-ink-soft sm:mx-0">
+            {counties} · prepared {DATE.format(preparedOn)} by {SITE_NAME}
           </p>
           <div className="mt-5 flex flex-wrap justify-center gap-3 sm:justify-start print:hidden">{actions}</div>
         </div>
-        {analysis.readiness.ready && (
-          <dl className="mx-auto grid grid-cols-2 gap-6 text-left sm:mx-0 sm:max-w-md">
-            <div className="flex flex-col-reverse border-l-2 border-brick pl-4">
-              <dt className="mt-2 text-[13px] leading-snug text-ink-soft">fees compared with local competitors</dt>
-              <dd className="font-mono text-[28px] font-semibold leading-none tabular-nums tracking-[-0.02em] text-ink sm:text-[40px]">{compared.length}</dd>
-            </div>
-            <div className="flex flex-col-reverse border-l-2 border-brick pl-4">
-              <dt className="mt-2 text-[13px] leading-snug text-ink-soft">of {competitorsInMarket} local competitors with verified fees</dt>
-              <dd className="font-mono text-[28px] font-semibold leading-none tabular-nums tracking-[-0.02em] text-ink sm:text-[40px]">{competitorsWithData}</dd>
-            </div>
-          </dl>
-        )}
       </header>
 
       {!analysis.readiness.ready ? (
@@ -279,15 +243,26 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
 
           <HubSection
             id="position"
-            title="Position in the local market"
-            line={positionFinding(name, analysis.lines)}
-            source={`Each institution's own published fee schedule; market from the FDIC Summary of Deposits, ${market.sod_year}. Definitions under Sources and method.`}
+            title="Fees against the local market"
+            line={widestGapFinding(name, analysis.lines)}
+            source={`Each institution's own published fee schedule, ${counties}. Every competitor figure, its schedule line and read date are under each fee.`}
           >
-            <figure className="min-w-0 max-w-5xl">
-              <figcaption className={FIGURE_CAPTION}>{name}&apos;s fees ranked against local competitors, highest first</figcaption>
+            <figure className="min-w-0 max-w-6xl">
+              <figcaption className={FIGURE_CAPTION}>
+                {name}&apos;s fees ranked among the local competitors that publish each one, largest gap to the local median first. Open a
+                fee for its competitors and evidence.
+              </figcaption>
               <div className="mt-4">
-                <AtAGlance lines={analysis.lines} bare fold={ROWS_SHOWN} ownLabel={name.length > 18 ? "Amount" : name} />
+                <FeeComparison name={name} lines={analysis.lines} names={competitorName} branches={branches} footprint={footprintLine} />
               </div>
+              <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-muted sm:mx-0" aria-hidden="true">
+                <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-5 bg-surface-200" /> Middle 50% of local competitors</span>
+                <span className="inline-flex items-center gap-1.5"><span className="h-3 w-px bg-ink-muted" /> Local median</span>
+                <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-brick" /> Above</span>
+                <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-ink-soft" /> Inside</span>
+                <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-below-market" /> Below</span>
+              </p>
+              {leftOut && <p className="mt-3 text-[13px] text-ink-muted sm:mx-0 sm:text-left">{leftOut}</p>}
             </figure>
           </HubSection>
 
@@ -296,68 +271,71 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
               id="since"
               title="Since this report was bought"
               line={sinceBoughtFinding(sinceBought.savedAt, sinceBought.changes)}
-              source={`${name}'s fees, the local medians and the named competitors' published fees, today against the copy saved at purchase.`}
+              source={`${name}'s fees, the local medians and named competitors' published fees, today against the copy saved at purchase.`}
             >
               <SinceBought name={name} changes={sinceBought.changes} />
             </HubSection>
           )}
 
           <HubSection
-            id="lines"
-            title="Fee by fee"
-            line={widestGapFinding(name, analysis.lines)}
-            source={`${competitorsWithData} local competitors' published fee schedules, ${marketLabel}; each figure and the date its schedule was read are listed under Sources and method.`}
+            id="market"
+            title="The local market"
+            line={marketFinding(counties, competitorsInMarket, competitorsWithData)}
+            source={`FDIC Summary of Deposits, ${market.sod_year} (bank branches and deposits); NCUA (credit union branches); each institution's published fee schedule.`}
           >
             <figure className="min-w-0 max-w-5xl">
-              <figcaption className={FIGURE_CAPTION}>{name} against the local median, largest gap first</figcaption>
-              <ShowAll total={byGap.length} shown={ROWS_SHOWN} noun="fees">
-                {/* Phones get the four columns that fit; the method lists every figure behind them. */}
-                <div className="mt-3 overflow-x-auto">
-                  <table className="w-full text-left text-sm sm:min-w-[640px] print:min-w-0">
-                    <thead className="border-b border-border text-[11px] uppercase tracking-[0.08em] text-ink-muted">
-                      <tr>
-                        <th className={TH}>Fee</th>
-                        <th className={`${TH} text-right`}>{name.length > 18 ? "Amount" : name}</th>
-                        <th className={`${TH} text-right`}>Local median</th>
-                        <th className={`${TH} hidden text-right sm:table-cell print:table-cell`}>Middle 50%</th>
-                        <th className={`${TH} hidden text-right sm:table-cell print:table-cell`}>Competitors</th>
-                        <th className={`${TH} hidden text-right sm:table-cell print:table-cell`}>Charging less</th>
-                        <th className="py-2 font-semibold">
-                          <span className="sm:hidden print:hidden">vs middle 50%</span>
-                          <span className="hidden sm:inline print:inline">Position</span>
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {byGap.map((line, index) => (
-                        <tr key={line.key} className={`border-b border-border last:border-0 ${index >= ROWS_SHOWN ? EXTRA_ROW : ""}`}>
-                          <td className="py-2.5 pr-3 text-ink">{line.label}</td>
-                          <td className="py-2.5 pr-3 text-right font-semibold tabular-nums text-ink">
-                            {money(line.own.amount)}
-                            {line.own.tiers && line.own.tiers.length > 1 && (
-                              <span className="block text-[11px] font-normal text-ink-muted">
-                                tiered: {line.own.tiers.map((tier) => money(tier.amount)).join(" / ")}
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-2.5 pr-3 text-right tabular-nums">{money(line.peers.median)}</td>
-                          <td className="hidden whitespace-nowrap py-2.5 pr-3 text-right tabular-nums sm:table-cell print:table-cell">
-                            {money(line.peers.p25)} to {money(line.peers.p75)}
-                          </td>
-                          <td className="hidden py-2.5 pr-3 text-right tabular-nums sm:table-cell print:table-cell">{line.peers.n}</td>
-                          <td className="hidden py-2.5 pr-3 text-right tabular-nums sm:table-cell print:table-cell">
-                            {line.chargingLess !== null ? `${line.chargingLess} of ${line.peers.n}` : "-"}
-                          </td>
-                          <td className="py-2.5">
-                            <PositionChip line={line} />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+              <figcaption className={FIGURE_CAPTION}>Institutions in the market, and which publish usable fees</figcaption>
+              <div className="mt-4" role="img" aria-label={`${competitorsWithData} of ${competitorsInMarket} institutions publish usable fees`}>
+                <div className="flex h-3 overflow-hidden rounded-full bg-surface-200 [print-color-adjust:exact]">
+                  <span className="bg-ink" style={{ width: `${competitorsInMarket ? (competitorsWithData / competitorsInMarket) * 100 : 0}%` }} />
                 </div>
-              </ShowAll>
-              {leftOut && <p className="mt-3 text-[13px] text-ink-muted sm:mx-0 sm:text-left">{leftOut}</p>}
+                <p className="mt-2 flex flex-wrap justify-between gap-2 text-[12.5px] text-ink-soft sm:mx-0">
+                  <span><span className="font-semibold text-ink">{competitorsWithData}</span> with at least one fee confirmed on its own schedule</span>
+                  <span><span className="font-semibold text-ink">{competitorsInMarket - competitorsWithData}</span> without one</span>
+                </p>
+              </div>
+              <p className="mt-4 text-[13px] text-ink-soft sm:mx-0 sm:text-left">
+                Identified: every bank with a branch in {counties}, from the Summary of Deposits, and every institution headquartered in
+                their cities. Usable: at least one of this report&apos;s fees, with the amount confirmed on the institution&apos;s own schedule.
+              </p>
+              {branches && (
+                <dl className="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-3">
+                  <Tile value={branches.totalBranches.toLocaleString("en-US")} label="bank branches in the market" />
+                  <Tile value={depositsLabel(branches.totalDeposits)} label={`deposits held at those branches, ${market.sod_year}`} />
+                  {ownShare !== null && <Tile value={`${ownShare.toFixed(1)}%`} label={`${name}'s share of those deposits`} />}
+                </dl>
+              )}
+              <div className="mt-6">
+                <p className={FIGURE_CAPTION}>Local competitors, largest deposits in the market first</p>
+                <ShowAll total={byDeposits.length} shown={ROWS_SHOWN} noun="institutions">
+                  <div className="mt-3 overflow-x-auto">
+                    <table className="w-full min-w-[20rem] text-left text-sm">
+                      <thead className="border-b border-border text-[11px] uppercase tracking-[0.08em] text-ink-muted">
+                        <tr>
+                          <th className="py-2 pr-3 font-semibold">Institution</th>
+                          <th className="hidden py-2 pr-3 font-semibold sm:table-cell print:table-cell">Branches and deposit share</th>
+                          <th className="py-2 text-right font-semibold">Usable fees</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {byDeposits.map((c, index) => (
+                          <tr key={c.institution_id} className={`border-b border-border last:border-0 ${index >= ROWS_SHOWN ? EXTRA_ROW : ""}`}>
+                            <td className="py-1 pr-3">
+                              <a href={`/institution/${c.institution_id}`} className="flex min-h-11 items-center text-ink underline-offset-2 hover:underline sm:min-h-0 sm:py-1.5">
+                                {c.institution_name}
+                              </a>
+                            </td>
+                            <td className="hidden py-1.5 pr-3 text-ink-soft sm:table-cell print:table-cell">
+                              {[c.city ? cityLabel(c.city) : null, footprintLine(branches, c.institution_id)].filter(Boolean).join(" · ") || "-"}
+                            </td>
+                            <td className="py-1.5 text-right text-ink">{withFees.has(c.institution_id) ? "Yes" : "No"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </ShowAll>
+              </div>
             </figure>
           </HubSection>
 
@@ -365,141 +343,36 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
 
           {revenue && <RevenueSection name={name} charterType={data.subject.charter_type} revenue={revenue} />}
 
-          {analysis.named.length > 0 && (
-            <HubSection
-              id="named"
-              title="Named competitors"
-              line={named ?? `${analysis.named.length} local competitors side by side with ${name} on the same fees.`}
-              source={
-                <>
-                  Each institution&apos;s published fee schedule (every amount links to it); branches and deposits from the FDIC Summary of
-                  Deposits, {market.sod_year}, and NCUA.
-                  {branches &&
-                    ` The market's ${branches.totalBranches.toLocaleString("en-US")} bank branches hold ${depositsLabel(branches.totalDeposits)} in deposits.`}
-                </>
-              }
-            >
-              <figure className="min-w-0">
-                <figcaption className={FIGURE_CAPTION}>Published fees, {name} and {analysis.named.length} local competitors</figcaption>
-                <NamedCompetitorsPhone
-                  shown={ROWS_SHOWN}
-                  lines={tableKeys.map((key) => ({ key, label: FEE_LINE_LABELS[key] ?? key }))}
-                  subject={{
-                    id: data.subject.institution_id,
-                    name,
-                    detail: footprintLine(branches, data.subject.institution_id),
-                    href: null,
-                    fees: Object.fromEntries(tableKeys.map((key) => [key, key in ownFees ? { amount: ownFees[key], url: null, line: null } : undefined])),
-                  }}
-                  competitors={analysis.named.map((competitor) => ({
-                    id: competitor.institution_id,
-                    name: competitor.institution_name,
-                    detail: [competitor.city ? cityLabel(competitor.city) : null, footprintLine(branches, competitor.institution_id)].filter(Boolean).join(" · ") || null,
-                    href: `/institution/${competitor.institution_id}`,
-                    fees: Object.fromEntries(
-                      tableKeys.map((key) => [
-                        key,
-                        competitor.fees[key] === undefined
-                          ? undefined
-                          : { amount: competitor.fees[key], url: competitor.sources[key]?.source_url ?? null, line: competitor.sources[key]?.source_line ?? null },
-                      ]),
-                    ),
-                  }))}
-                />
-                <div className="hidden sm:block print:block">
-                <ShowAll total={analysis.named.length} shown={ROWS_SHOWN} noun="competitors">
-                <div className="mt-3 overflow-x-auto">
-                  <table className="w-full min-w-[760px] text-left text-sm print:min-w-0">
-                    <thead className="border-b border-border text-[11px] uppercase tracking-[0.08em] text-ink-muted">
-                      <tr>
-                        <th className={`${TH} min-w-[240px]`}>Institution</th>
-                        {tableKeys.map((key) => (
-                          <th key={key} className={`${TH} text-right`}>
-                            {FEE_LINE_LABELS[key]}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr className="border-b border-border bg-brick-tint/40 font-semibold">
-                        <td className="py-2.5 pr-3">
-                          {name}
-                          {footprintLine(branches, data.subject.institution_id) && (
-                            <span className="block whitespace-nowrap text-[12px] font-normal text-ink-muted">{footprintLine(branches, data.subject.institution_id)}</span>
-                          )}
-                        </td>
-                        {tableKeys.map((key) => (
-                          <td key={key} className="py-2.5 pr-3 text-right tabular-nums">
-                            {money(ownFees[key])}
-                          </td>
-                        ))}
-                      </tr>
-                      {analysis.named.map((competitor, index) => (
-                        <tr key={competitor.institution_id} className={`border-b border-border last:border-0 ${index >= ROWS_SHOWN ? EXTRA_ROW : ""}`}>
-                          <td className="py-2.5 pr-3">
-                            <a href={`/institution/${competitor.institution_id}`} className="text-ink underline-offset-2 hover:underline">
-                              {competitor.institution_name}
-                            </a>
-                            {competitor.city && <span className="whitespace-nowrap text-[12px] text-ink-muted"> · {cityLabel(competitor.city)}</span>}
-                            {footprintLine(branches, competitor.institution_id) && (
-                              <span className="block whitespace-nowrap text-[12px] text-ink-muted">{footprintLine(branches, competitor.institution_id)}</span>
-                            )}
-                          </td>
-                          {tableKeys.map((key) => {
-                            const source = competitor.sources[key];
-                            return (
-                              <td key={key} className="py-2.5 pr-3 text-right tabular-nums">
-                                {source?.source_url ? (
-                                  <a
-                                    href={source.source_url}
-                                    title={`“${source.source_line}”`}
-                                    className="underline decoration-border underline-offset-2 hover:decoration-brick"
-                                    rel="noopener noreferrer"
-                                    target="_blank"
-                                  >
-                                    {money(competitor.fees[key])}
-                                  </a>
-                                ) : (
-                                  money(competitor.fees[key])
-                                )}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                </ShowAll>
-                </div>
-              </figure>
-            </HubSection>
-          )}
-
           <section id="method" aria-labelledby="method-heading" className="space-y-3">
             <h2 id="method-heading" className="text-[20px] font-semibold tracking-[-0.02em] text-ink">
               Sources and method
             </h2>
             <Disclosure summary="How the market, competitors and figures are chosen">
               <h3 className="text-[13px] font-semibold text-ink">Market</h3>
-              <p className="sm:mx-0">{marketSource}</p>
+              <p className="sm:mx-0">
+                {counties}: the {market.county_fips.length === 1 ? "county" : "counties"}{" "}
+                {market.basis === "branch_counties" ? `holding most of ${name}'s deposits` : `around ${name}'s headquarters`}, from the
+                FDIC Summary of Deposits, {market.sod_year}.
+              </p>
               <h3 className="text-[13px] font-semibold text-ink">Competitors</h3>
               <p className="sm:mx-0">
-                Every bank with a branch there and every institution headquartered there. Named competitors are banks by deposits held in
-                the market, then up to {NAMED_WITHOUT_DEPOSITS} credit unions, which the Summary of Deposits does not cover, chosen by how
-                many of {name}&apos;s fees they publish. Under each bank are its branches and share of local deposits; credit unions show
-                branches only, because NCUA reports no deposits by branch.
+                Every bank with a branch there and every institution headquartered there. Credit unions show branches only, because
+                NCUA reports no deposits by branch.
               </p>
               <h3 className="text-[13px] font-semibold text-ink">Definitions</h3>
               <ul className="list-disc space-y-1.5 pl-5">
                 <li>A fee is compared when at least {MIN_LOCAL_PEERS_PER_LINE} local competitors publish it.</li>
                 <li>
-                  Local median and middle 50% (25th to 75th percentile) count one published figure per local competitor. They are
-                  calculated from competitors&apos; fees, not a price any one institution sets.
+                  Local median and middle 50% (25th to 75th percentile) count one value per local competitor. They are calculated from
+                  competitors&apos; fees, not a price any one institution sets.
                 </li>
                 <li>
-                  In the ranked rows, each dot is {name}&apos;s fee ranked among those competitors; the shaded band is their middle 50% and
-                  the line their median. &ldquo;vs median&rdquo; is {name}&apos;s fee less the local median.
+                  When an institution publishes several prices for one fee, the range is shown and the comparison uses the value the
+                  Bank Fee Index counts for it: the middle of its prices, or for overdraft its standard fee, the highest of its prices.
+                </li>
+                <li>
+                  Each dot is {name}&apos;s fee ranked among the competitors that publish it; the shaded band is their middle 50% and the
+                  line their median. &ldquo;vs median&rdquo; is {name}&apos;s compared value less the local median.
                 </li>
                 <li>&ldquo;Charging less&rdquo; counts competitors whose published fee is lower than {name}&apos;s.</li>
                 {revenue && (
@@ -512,82 +385,16 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
               <h3 className="text-[13px] font-semibold text-ink">Figures</h3>
               <ul className="list-disc space-y-1.5 pl-5">
                 <li>
-                  One published fee per institution and fee, each a line of its own schedule. &ldquo;Read&rdquo; is the day that schedule was
-                  saved.
+                  A figure is used only when a line of the institution&apos;s stored schedule states that amount as the fee. &ldquo;Read&rdquo;
+                  is the day that schedule was saved.
                 </li>
-                <li>A figure is used only when a line of the institution&apos;s stored schedule states that amount as the fee.</li>
                 <li>
                   Left out: balance thresholds, amounts that depend on a balance band, amounts not found in the schedule, fee caps, fees
                   under review for a correction, business prices, savings fees on the checking line, and records whose fee name was not
                   read cleanly
                   {droppedCount > 0 ? ` (${droppedCount} published figures in this market)` : ""}.
                 </li>
-                <li>
-                  When a schedule lists several versions of a fee, the standard consumer version is used, not an online, business or
-                  other special one. If several remain, the lowest monthly maintenance fee and the highest amount for every other fee.
-                </li>
               </ul>
-            </Disclosure>
-            <Disclosure summary={`${name}'s fees, in its schedule's words`}>
-              <ul className="space-y-1.5">
-                {analysis.lines
-                  .filter((line) => line.own)
-                  .map((line) => (
-                    <li key={line.key}>
-                      {line.label}: {money(line.own!.amount)}, as the schedule states it: “{line.own!.source_line}”
-                      {line.own!.tiers && line.own!.tiers.length > 1 && (
-                        <>
-                          {" "}
-                          The schedule states {line.own!.tiers.length} amounts for this fee (
-                          {line.own!.tiers.map((tier) => `${money(tier.amount)}: “${tier.source_line}”`).join("; ")}); the comparison uses{" "}
-                          {money(line.own!.amount)}.
-                        </>
-                      )}
-                      {line.own!.source_url && (
-                        <>
-                          {" "}
-                          (
-                          <a href={line.own!.source_url} className="inline-flex min-h-11 items-center underline sm:min-h-0" rel="noopener noreferrer" target="_blank">
-                            source
-                          </a>
-                          {line.own!.schedule_read_on ? `, read ${line.own!.schedule_read_on}` : ""})
-                        </>
-                      )}
-                    </li>
-                  ))}
-              </ul>
-            </Disclosure>
-            <Disclosure summary="Every competitor figure behind the local numbers">
-              {comparable.map((line) => (
-                <div key={line.key}>
-                  <h3 className="text-[13px] font-semibold text-ink">
-                    {line.label} ({line.peerFigures.length} competitors)
-                  </h3>
-                  {/* One stacked row per figure, so the schedule's words wrap instead of scrolling sideways. */}
-                  <ul className="mt-1 text-[12px]">
-                    {line.peerFigures.map((figure) => (
-                      <li
-                        key={figure.institution_id}
-                        className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 border-b border-border py-1 last:border-0 sm:grid-cols-[minmax(0,14rem)_4rem_minmax(0,1fr)_auto]"
-                      >
-                        <span className="text-ink">{competitorName.get(figure.institution_id) ?? `Institution ${figure.institution_id}`}</span>
-                        <span className="text-right tabular-nums text-ink">{money(figure.amount)}</span>
-                        <span className="col-span-2 sm:col-span-1">“{figure.source_line}”</span>
-                        <span className="col-span-2 sm:col-span-1 sm:whitespace-nowrap">
-                          {figure.source_url ? (
-                            <a href={figure.source_url} className="inline-flex min-h-11 items-center underline sm:min-h-0" rel="noopener noreferrer" target="_blank">
-                              source
-                            </a>
-                          ) : (
-                            "stored copy"
-                          )}
-                          {figure.schedule_read_on ? `, read ${figure.schedule_read_on}` : ""}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
             </Disclosure>
             <p className="max-w-[860px] border-t border-border pt-3 text-[12.5px] leading-[1.65] text-ink-muted sm:mx-0 sm:text-left">{correctionNote}</p>
           </section>

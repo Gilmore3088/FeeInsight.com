@@ -1,16 +1,16 @@
 import { positionCounts, type ReportChange, type ReportLine } from "@/lib/custom-report/analysis";
-import { EXTRA_GRID_ROW, EXTRA_ROW, ROWS_SHOWN } from "../report-view";
+import { EXTRA_ROW, ROWS_SHOWN } from "../report-view";
 import { ShowAll } from "../show-all";
 
 const SERIF = { fontFamily: "var(--fi-font-sans)" };
 const DATE = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
 
 function money(value: number | null | undefined): string {
-  if (value === null || value === undefined || Number.isNaN(value)) return "-";
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
   return Number.isInteger(value) ? `$${value}` : `$${value.toFixed(2)}`;
 }
 
-type PlottedLine = ReportLine & { own: NonNullable<ReportLine["own"]>; peers: NonNullable<ReportLine["peers"]> };
+export type PlottedLine = ReportLine & { own: NonNullable<ReportLine["own"]>; peers: NonNullable<ReportLine["peers"]> };
 
 const TONE: Record<"above" | "inside" | "below", { dot: string; text: string }> = {
   above: { dot: "bg-brick", text: "text-brick" },
@@ -30,7 +30,7 @@ function toneFor(line: ReportLine): keyof typeof TONE {
  * middle-half band. A fee the report calls "inside the middle half" (by amount) is kept on
  * the band's edge when ties would nudge its rank just past it.
  */
-function rankOf(line: PlottedLine): number {
+export function rankOf(line: PlottedLine): number {
   const n = line.peerFigures.length || line.peers.n;
   const less = line.peerFigures.filter((f) => f.amount < line.own.amount).length;
   const equal = line.peerFigures.filter((f) => f.amount === line.own.amount).length;
@@ -64,24 +64,12 @@ export function AtAGlance({
   narrow = false,
   highlight,
   limit,
-  bare = false,
-  fold,
-  ownLabel = "Yours",
 }: {
   lines: ReportLine[];
   narrow?: boolean;
   highlight?: string;
   /** Rows shown (the highlighted one always among them); the rest are counted under the list. */
   limit?: number;
-  /**
-   * The ranked rows alone, without the card, heading and caption: the report page sets its
-   * own section title, finding and source around them.
-   */
-  bare?: boolean;
-  /** With `bare`: rows shown before "Show all N fees"; the rest stay on the page and print. */
-  fold?: number;
-  /** The amount column's heading. */
-  ownLabel?: string;
 }) {
   const wide = (classes: string) => (narrow ? "" : classes);
   const counts = positionCounts(lines);
@@ -93,15 +81,26 @@ export function AtAGlance({
     ? plotted.filter((p, i) => i < limit - 1 || p.line.key === highlight || (i === limit - 1 && !plotted.slice(limit).some((q) => q.line.key === highlight)))
     : plotted;
   const total = counts.above + counts.inside + counts.below;
-  const folded = bare && fold !== undefined && shown.length > fold ? fold : null;
   const summary = [
     { n: counts.above, text: "above the local middle half", tone: TONE.above },
     { n: counts.inside, text: "inside it", tone: TONE.inside },
     { n: counts.below, text: "below it", tone: TONE.below },
   ];
 
-  const table = (
-      <div className={bare ? "" : "mt-6"} role="table" aria-label="Each comparable fee ranked against local competitors">
+  return (
+    <section className="mt-8 rounded-xl border border-border bg-surface-0 p-6 sm:p-8" aria-labelledby="glance-heading">
+      <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-brick">At a glance</p>
+      <h2 id="glance-heading" className="font-bold mt-2 text-[1.35rem] leading-snug text-ink sm:text-[1.6rem]" style={SERIF}>
+        Of your {total} comparable fees,{" "}
+        {summary.map((part, i) => (
+          <span key={part.text}>
+            <span className={`tabular-nums ${part.tone.text}`}>{part.n}</span> {part.text}
+            {i === 0 ? ", " : i === 1 ? " and " : "."}
+          </span>
+        ))}
+      </h2>
+
+      <div className="mt-6" role="table" aria-label="Each comparable fee ranked against local competitors">
         <div
           role="row"
           className={`hidden border-b border-border pb-2 text-[11px] uppercase tracking-[0.08em] text-ink-muted ${wide("sm:grid sm:grid-cols-[13rem_1fr_5.5rem_6rem] sm:gap-x-5")}`}
@@ -112,24 +111,16 @@ export function AtAGlance({
             <span>Local median</span>
             <span>Higher</span>
           </span>
-          <span role="columnheader" className="text-right">{ownLabel}</span>
+          <span role="columnheader" className="text-right">Yours</span>
           <span role="columnheader" className="text-right">vs median</span>
         </div>
-        {bare && (
-          // Phones: the two figures in each row get their own headings.
-          <div role="row" className="grid grid-cols-[1fr_auto_auto] gap-x-4 border-b border-border pb-2 text-[11px] uppercase tracking-[0.08em] text-ink-muted sm:hidden print:hidden">
-            <span role="columnheader">Fee</span>
-            <span role="columnheader" className="text-right">{ownLabel}</span>
-            <span role="columnheader" className="text-right">vs median</span>
-          </div>
-        )}
 
-        {shown.map(({ line, rank, tone }, index) => (
+        {shown.map(({ line, rank, tone }) => (
           <div
             key={line.key}
             role="row"
             data-highlight={line.key === highlight ? "" : undefined}
-            className={`${folded !== null && index >= folded ? `${EXTRA_GRID_ROW}` : "grid"} grid-cols-[1fr_auto_auto] items-center gap-x-4 border-b ${bare ? "border-border" : "border-[#F1ECE4]"} py-2.5 last:border-0 ${wide("sm:grid-cols-[13rem_1fr_5.5rem_6rem] sm:gap-x-5 sm:border-0 sm:py-0")} ${
+            className={`grid grid-cols-[1fr_auto_auto] items-center gap-x-4 border-b border-[#F1ECE4] py-2.5 last:border-0 ${wide("sm:grid-cols-[13rem_1fr_5.5rem_6rem] sm:gap-x-5 sm:border-0 sm:py-0")} ${
               line.key === highlight ? "-mx-3 rounded-lg bg-ink/[0.04] px-3 ring-1 ring-inset ring-border" : ""
             }`}
           >
@@ -137,18 +128,8 @@ export function AtAGlance({
             <span
               role="cell"
               className={`relative order-last col-span-3 mt-2 block h-6 ${wide("sm:order-none sm:col-span-1 sm:mt-0 sm:h-10")}`}
-              title={
-                bare
-                  ? `${line.label}: ${money(line.own.amount)}; local median ${money(line.peers.median)}; middle 50% ${money(line.peers.p25)} to ${money(line.peers.p75)} across ${line.peers.n} competitors`
-                  : `${line.label}: yours ${money(line.own.amount)}; local median ${money(line.peers.median)}; middle half ${money(line.peers.p25)}–${money(line.peers.p75)} across ${line.peers.n} competitors`
-              }
+              title={`${line.label}: yours ${money(line.own.amount)}; local median ${money(line.peers.median)}; middle half ${money(line.peers.p25)}–${money(line.peers.p75)} across ${line.peers.n} competitors`}
             >
-              {bare && (
-                <span className="sr-only">
-                  {ordinal(Math.round(rank))} percentile among {line.peers.n} local competitors; middle 50% {money(line.peers.p25)} to{" "}
-                  {money(line.peers.p75)}, median {money(line.peers.median)}.
-                </span>
-              )}
               <span className="absolute inset-y-0 left-1/4 right-1/4 bg-surface-200" aria-hidden="true" />
               <span className="absolute inset-y-0 left-1/2 w-px bg-ink-muted" aria-hidden="true" />
               <span className="absolute inset-x-0 top-1/2 h-px bg-border" aria-hidden="true" />
@@ -178,31 +159,7 @@ export function AtAGlance({
           </p>
         ) : null}
       </div>
-  );
-  if (bare) {
-    return folded !== null ? (
-      <ShowAll total={shown.length} shown={folded} noun="fees">
-        {table}
-      </ShowAll>
-    ) : (
-      table
-    );
-  }
 
-  return (
-    <section className="mt-8 rounded-xl border border-border bg-surface-0 p-6 sm:p-8" aria-labelledby="glance-heading">
-      <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-brick">At a glance</p>
-      <h2 id="glance-heading" className="font-bold mt-2 text-[1.35rem] leading-snug text-ink sm:text-[1.6rem]" style={SERIF}>
-        Of your {total} comparable fees,{" "}
-        {summary.map((part, i) => (
-          <span key={part.text}>
-            <span className={`tabular-nums ${part.tone.text}`}>{part.n}</span> {part.text}
-            {i === 0 ? ", " : i === 1 ? " and " : "."}
-          </span>
-        ))}
-      </h2>
-
-      {table}
       <p className="mt-5 text-[12px] leading-relaxed text-ink-muted">
         Each dot is your fee, ranked against the local competitors that publish the same fee. The shaded band is the
         middle half of those competitors and the line is the median. The last column is your fee less the local median.

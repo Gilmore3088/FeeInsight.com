@@ -1,5 +1,5 @@
 import { sql } from "./connection";
-import { statsRowFilter } from "./fee-stats";
+import { institutionValue, statsRowFilter } from "./fee-stats";
 import { FEE_LINE_RULES } from "@/lib/custom-report/rules";
 import { checkFeeAgainstSource, type SourceCheckFailure } from "@/lib/custom-report/source-check";
 import { nameIsFragment } from "@/lib/agents/darwin/release-review";
@@ -82,7 +82,9 @@ export interface MarketFeeLine {
   source_line: string;
   /**
    * Every checked amount the institution states for this fee line, representative first,
-   * when there is more than one (balance tiers, or two separate charges).
+   * when there is more than one (balance tiers, or two separate charges). With tiers, `amount`
+   * is the value the index counts for the institution (`institutionValue`: the middle of its
+   * prices, the highest for overdraft), so the report compares the way the medians are built.
    */
   tiers?: { amount: number; fee_name: string; source_line: string }[];
 }
@@ -445,6 +447,11 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
       filled.set(slot, entry);
       lines.push(entry);
     }
+  }
+
+  // One value per institution, the statistics contract's own (fee-stats.ts rule 2).
+  for (const entry of lines) {
+    if (entry.tiers && entry.tiers.length > 1) entry.amount = institutionValue(entry.line, entry.tiers.map((t) => t.amount));
   }
 
   return {

@@ -1,17 +1,22 @@
 /**
- * The one-line findings under each section of a Competitive Fee Position Report. Pure: every
- * figure comes from the report's own analysis (src/lib/custom-report/analysis.ts), so the
- * findings, the exhibits and the CSV always agree. A median or the middle 50% is a figure
- * computed from competitors' fees, never a price anyone charges, and the wording keeps it so.
+ * The one-line findings and labels of a Competitive Fee Position Report. Pure: every figure
+ * comes from the report's own analysis (src/lib/custom-report/analysis.ts), so the findings,
+ * the exhibits and the CSV always agree. A median or the middle 50% is a figure computed from
+ * competitors' fees, never a price anyone charges, and the wording keeps it so. Several prices
+ * for one fee follow the shared rule (src/lib/fee-representative.ts): the range is shown, and
+ * the value compared is labelled.
  */
 import { MIN_LOCAL_PEERS_PER_LINE, positionCounts, type ReportLine } from "@/lib/custom-report/analysis";
+import { HIGHEST_TIER_CATEGORIES } from "@/lib/data-store/fee-stats";
+import { comparedAtText, priceRangeText } from "@/lib/fee-representative";
+import { countyLabel } from "@/lib/geo/counties";
 
 /** Rows each long exhibit shows before "Show all". */
 export const ROWS_SHOWN = 5;
 
 /** Classes for a row past the first ROWS_SHOWN inside <ShowAll>: hidden until opened, always printed. */
 export const EXTRA_ROW = "hidden group-data-[open=true]/all:table-row print:table-row";
-export const EXTRA_GRID_ROW = "hidden group-data-[open=true]/all:grid print:grid";
+export const EXTRA_BLOCK_ROW = "hidden group-data-[open=true]/all:block print:block";
 
 export function money(value: number | null | undefined): string {
   if (value === null || value === undefined || Number.isNaN(value)) return "-";
@@ -24,31 +29,53 @@ export function comparedLines(lines: ReportLine[]): Compared[] {
   return lines.filter((l): l is Compared => l.comparable && !!l.own && !!l.peers);
 }
 
+const WORDS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
+const word = (n: number) => WORDS[n] ?? String(n);
+const capital = (text: string) => text[0].toUpperCase() + text.slice(1);
+
 // "Overdraft (OD)" reads as "overdraft" inside a sentence; acronyms keep their case.
 const inSentence = (label: string) => label.replace(/\s*\([^)]*\)/g, "").replace(/\b[A-Z][a-z]+/g, (w) => w.toLowerCase());
 
-/** "Of Capital City Bank's 9 compared fees, 2 sit above the local middle 50%, 6 inside it and 1 below it." */
-export function positionFinding(name: string, lines: ReportLine[]): string {
+/** The report's opening finding: "Two of nine compared fees sit above the local middle 50%; six sit inside it and one below." */
+export function headlineFinding(lines: ReportLine[]): string {
   const { above, inside, below } = positionCounts(lines);
   const total = above + inside + below;
-  if (total === 0) return `None of ${name}'s fees can be compared with local competitors yet.`;
-  if (inside === total) return `All ${total} of ${name}'s compared fees sit inside the local middle 50%.`;
-  return `Of ${name}'s ${total} compared fees, ${above} ${above === 1 ? "sits" : "sit"} above the local middle 50%, ${inside} inside it and ${below} below it.`;
+  if (total === 0) return "Too few local competitors publish these fees for a comparison yet.";
+  if (inside === total) return total === 1 ? "The one compared fee sits inside the local middle 50%." : `All ${word(total)} compared fees sit inside the local middle 50%.`;
+  const lead = `${capital(word(above))} of ${word(total)} compared fees ${above === 1 ? "sits" : "sit"} above the local middle 50%`;
+  return `${lead}; ${word(inside)} ${inside === 1 ? "sits" : "sit"} inside it and ${word(below)} below.`;
+}
+
+/** Every amount the institution states for the fee, the compared one included. */
+export function amountsOf(own: { amount: number; tiers?: { amount: number }[] }): number[] {
+  return own.tiers && own.tiers.length > 1 ? own.tiers.map((t) => t.amount) : [own.amount];
+}
+
+/** "$7.95 to $8.95, depending on account", or the one price. */
+export function priceText(own: { amount: number; tiers?: { amount: number }[] }): string {
+  return priceRangeText(amountsOf(own)) ?? money(own.amount);
+}
+
+/** "Compared at $8.45, the middle of its prices"; null for a single price. */
+export function comparedAt(key: string, own: { amount: number; tiers?: { amount: number }[] }): string | null {
+  return comparedAtText({ value: own.amount, amounts: amountsOf(own), highestTier: HIGHEST_TIER_CATEGORIES.has(key) });
 }
 
 /**
- * The fee furthest from its local median, in dollars, the order the fee-by-fee table uses. When
- * every fee sits inside the middle 50% it says that instead. Never a forced headline.
+ * The fee furthest from its local median, in dollars, the order the comparison uses. When every
+ * fee sits inside the middle 50% it says that instead. Never a forced headline.
  */
 export function widestGapFinding(name: string, lines: ReportLine[]): string {
   const compared = comparedLines(lines);
   if (compared.length === 0) return `Too few local competitors publish ${name}'s fees for a comparison.`;
   if (compared.every((l) => l.position === "in_market")) return `Every compared fee sits inside the local middle 50%.`;
   const lead = [...compared].sort((a, b) => Math.abs(b.own.amount - b.peers.median) - Math.abs(a.own.amount - a.peers.median))[0];
-  return `The widest gap is ${inSentence(lead.label)}: ${money(lead.own.amount)} at ${name} against a local median of ${money(lead.peers.median)} across ${lead.peers.n} competitors.`;
+  const several = new Set(amountsOf(lead.own)).size > 1;
+  const what = several ? `${name} is compared at ${money(lead.own.amount)}` : `${name}'s fee is ${money(lead.own.amount)}`;
+  return `The widest gap is ${inSentence(lead.label)}: ${what}, against a local median of ${money(lead.peers.median)} across ${lead.peers.n} competitors.`;
 }
 
-/** The fees left out of the comparison, said once under the table rather than on every row. */
+/** The fees left out of the comparison, said once under the exhibit rather than on every row. */
 export function leftOutNote(name: string, lines: ReportLine[]): string | null {
   const notFound = lines.filter((l) => !l.own && (l.peers?.n ?? 0) >= MIN_LOCAL_PEERS_PER_LINE).map((l) => l.label);
   const thin = lines.filter((l) => !l.comparable && !notFound.includes(l.label)).map((l) => l.label);
@@ -61,21 +88,23 @@ export function leftOutNote(name: string, lines: ReportLine[]): string | null {
 }
 
 /**
- * The spread of named competitors' published fees on the first fee in the table, beside the
- * institution's own; null when fewer than two of them publish it.
+ * The market's counties by name: "Leon, Gadsden and Wakulla counties, FL" when they share a
+ * state, otherwise each county with its state. FIPS codes stored as numbers get their leading zero.
  */
-export function namedFinding(
-  name: string,
-  line: { key: string; label: string } | undefined,
-  own: number | undefined,
-  competitors: { fees: Record<string, number> }[],
-): string | null {
-  if (!line) return null;
-  const amounts = competitors.map((c) => c.fees[line.key]).filter((v): v is number => typeof v === "number");
-  if (amounts.length < 2) return null;
-  const lo = Math.min(...amounts);
-  const hi = Math.max(...amounts);
-  const range = lo === hi ? `all ${money(lo)}` : `${money(lo)} to ${money(hi)}`;
-  const mine = own === undefined ? "" : `; ${name}'s is ${money(own)}`;
-  return `On ${inSentence(line.label)}, the ${amounts.length} named competitors that publish it list ${range}${mine}.`;
+export function countiesText(countyFips: string[]): string {
+  const labels = countyFips.map((f) => countyLabel(String(f).padStart(5, "0"))).filter((l): l is string => Boolean(l));
+  if (labels.length === 0) return countyFips.length === 1 ? "one county" : `${countyFips.length} counties`;
+  const parts = labels.map((l) => /^(.*) County, ([A-Z]{2})$/.exec(l));
+  const states = new Set(parts.map((p) => p?.[2] ?? null));
+  const join = (list: string[]) => (list.length < 2 ? list.join("") : `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`);
+  if (states.size === 1 && parts.every(Boolean)) {
+    const names = parts.map((p) => p![1]);
+    return `${join(names)} ${names.length === 1 ? "County" : "counties"}, ${parts[0]![2]}`;
+  }
+  return join(labels);
+}
+
+/** "36 institutions identified in Leon, Gadsden and Wakulla counties, FL; 30 publish fees this report can use." */
+export function marketFinding(counties: string, identified: number, usable: number): string {
+  return `${identified.toLocaleString("en-US")} institutions identified in ${counties}; ${usable.toLocaleString("en-US")} publish fees this report can use.`;
 }

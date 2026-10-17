@@ -24,7 +24,7 @@ export function HamiltonClose({
         Track this market in Hamilton
       </h2>
       <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-ink-soft">
-        This report is a snapshot. Hamilton, the Pro workspace, keeps these {competitors} competitors on a watchlist
+        This report is a snapshot. Hamilton keeps these {competitors} competitors on a watchlist
         and shows a competitor&apos;s change once its schedule is re-read.
       </p>
       <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-3">

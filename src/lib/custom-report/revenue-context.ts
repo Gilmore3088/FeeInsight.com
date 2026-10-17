@@ -15,12 +15,19 @@ export interface RevenueContext {
   quarters: { quarter: string; thousands: number }[];
   /** Sum of the last four quarters, only when all four are reported. */
   trailingThousands: number | null;
-  peer: { tierLabel: string; medianThousands: number; rank: number; count: number } | null;
+  peer: {
+    tierLabel: string;
+    medianThousands: number;
+    rank: number;
+    count: number;
+    /** Who the peers are: the institution's own filing, never banks and credit unions pooled. */
+    population?: "banks" | "credit unions";
+  } | null;
 }
 
 export function buildRevenueContext(
   trend: { quarter: string; service_charge_income: number }[],
-  ranking: { tier: string; sc_rank: number; peer_count: number; peer_median_sc: number | null } | null,
+  ranking: { tier: string; sc_rank: number; peer_count: number; peer_median_sc: number | null; source?: string } | null,
 ): RevenueContext | null {
   const quarters = trend.slice(0, 4).map((q) => ({ quarter: q.quarter, thousands: q.service_charge_income }));
   if (quarters.length === 0 || !(quarters[0].thousands > 0)) return null;
@@ -32,6 +39,7 @@ export function buildRevenueContext(
           medianThousands: ranking.peer_median_sc,
           rank: ranking.sc_rank,
           count: ranking.peer_count,
+          ...(ranking.source ? { population: ranking.source === "ncua" ? ("credit unions" as const) : ("banks" as const) } : {}),
         }
       : null;
   return { quarters, trailingThousands, peer };
@@ -46,7 +54,7 @@ function tierRange(tier: string): string {
 async function getRevenueContext(institutionId: number): Promise<RevenueContext | null> {
   const [trend, ranking] = await Promise.all([
     getInstitutionRevenueTrend(institutionId, 4).catch(() => []),
-    getInstitutionPeerRanking(institutionId).catch(() => null),
+    getInstitutionPeerRanking(institutionId, { sameCharter: true }).catch(() => null),
   ]);
   return buildRevenueContext(trend, ranking);
 }

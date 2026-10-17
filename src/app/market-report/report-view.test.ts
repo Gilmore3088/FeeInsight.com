@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ReportLine } from "@/lib/custom-report/analysis";
-import { leftOutNote, namedFinding, positionFinding, widestGapFinding } from "./report-view";
+import { comparedAt, countiesText, headlineFinding, leftOutNote, marketFinding, priceText, widestGapFinding } from "./report-view";
 
 function line(key: string, label: string, own: number | null, peers: [number, number, number, number] | null, position: ReportLine["position"]): ReportLine {
   return {
@@ -25,16 +25,15 @@ const lines = [
 ];
 
 describe("the report's section findings", () => {
-  it("counts fees above, inside and below the local middle 50%", () => {
-    expect(positionFinding("Capital City Bank", lines)).toBe(
-      "Of Capital City Bank's 3 compared fees, 1 sits above the local middle 50%, 1 inside it and 1 below it.",
-    );
+  it("opens on the counts, in words", () => {
+    expect(headlineFinding(lines)).toBe("One of three compared fees sits above the local middle 50%; one sits inside it and one below.");
+    expect(headlineFinding([lines[1]])).toBe("The one compared fee sits inside the local middle 50%.");
   });
 
   it("names the widest gap and never calls a median a price", () => {
     const text = widestGapFinding("Capital City Bank", lines);
     expect(text).toBe(
-      "The widest gap is wire, outgoing domestic: $15 at Capital City Bank against a local median of $25 across 12 competitors.",
+      "The widest gap is wire, outgoing domestic: Capital City Bank's fee is $15, against a local median of $25 across 12 competitors.",
     );
     expect(text).not.toMatch(/charge/);
   });
@@ -50,11 +49,19 @@ describe("the report's section findings", () => {
     expect(leftOutNote("Capital City Bank", [lines[0]])).toBeNull();
   });
 
-  it("gives the named competitors' published range on the first fee", () => {
-    const competitors: { fees: Record<string, number> }[] = [{ fees: { overdraft: 35 } }, { fees: { overdraft: 29 } }, { fees: {} }];
-    expect(namedFinding("Capital City Bank", { key: "overdraft", label: "Overdraft (OD)" }, 36, competitors)).toBe(
-      "On overdraft, the 2 named competitors that publish it list $29 to $35; Capital City Bank's is $36.",
+  it("shows a range for several prices and labels the compared value", () => {
+    const own = { amount: 8.45, tiers: [{ amount: 7.95 }, { amount: 8.95 }] };
+    expect(priceText(own)).toBe("$7.95 to $8.95, depending on account");
+    expect(comparedAt("monthly_maintenance", own)).toBe("Compared at $8.45, the middle of its prices");
+    expect(comparedAt("overdraft", { amount: 35, tiers: [{ amount: 20 }, { amount: 35 }] })).toBe(
+      "Compared at $35, its standard fee, the highest of its prices",
     );
-    expect(namedFinding("Capital City Bank", { key: "overdraft", label: "Overdraft (OD)" }, 36, [competitors[0]])).toBeNull();
+    expect(comparedAt("nsf", { amount: 30 })).toBeNull();
+  });
+
+  it("names the market's counties and counts", () => {
+    expect(countiesText(["12073", "12039", "12129"])).toBe("Leon, Gadsden and Wakulla counties, FL");
+    expect(countiesText(["12073"])).toBe("Leon County, FL");
+    expect(marketFinding("Leon County, FL", 36, 30)).toBe("36 institutions identified in Leon County, FL; 30 publish fees this report can use.");
   });
 });

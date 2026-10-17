@@ -63,7 +63,9 @@ export const FEE_LINE_RULES: FeeLineRule[] = [
     label: "Out-of-network ATM",
     sourceKeys: ["atm_non_network"],
     include: "atm",
-    exclude: "(replace|deposit|statement|card fee|annual|\\mpin\\M|inquir|denied|declin)",
+    // A balance-inquiry-only fee is a different charge; one that also covers withdrawals or
+    // transfers ("for each inquiry, transfer or withdrawal") is the out-of-network fee itself.
+    exclude: "(replace|deposit|statement|card fee|annual|\\mpin\\M|^(?!.*(withdraw|transaction|transfer)).*inquir|denied|declin)",
     lo: 0.5,
     hi: 10,
     allowZero: false,
