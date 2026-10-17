@@ -1166,3 +1166,13 @@ time." The tick advances up to `PARALLEL_STATE_LANES` (3) lane runs at once
 (`executeQueuedAgentRuns`, `src/lib/agents/run-store.ts`); other runs still go one after another.
 Lanes take turns at publish steps, which share one database lock. The earlier stop (lanes held the
 database, Oct 2026) predates the read fixes in #1793 and #1798. Set the constant to 1 to go back.
+
+**Outreach in three waves of 15 from November 1.** James, 2026-10-17 15:04-15:05 UTC (Sales
+thread): "we should Target 15 to over 2 weeks. Let's just say starting maybe November 1st. And then
+middle of November we roll out the next and then December 1st we roll out another. And hopefully we
+can get four paying clients by the end of the year." Until then "we aren't ready to send": outreach
+stays parked. He approved all three ways to reach more buyers (same thread, "All three should be
+done"): keep named leaders printed without an address, widen the contact finder to every
+comparison-ready institution, and add rural institutions with a statewide comparison. On Oct 17
+only 11 of 256 comparison-ready $500M-$2B metro institutions had a decision-maker contact
+(`/mnt/project-files/sales/contact-gap-2026-10-17.md`); the three waves need 45.

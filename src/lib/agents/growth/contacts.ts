@@ -2,6 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import { crawlerUserAgent } from "@/lib/agents/crawler-identity";
 import { robotsAllows, robotsDisallows } from "@/lib/agents/magellan/site-signals";
 import { institutionDisplayName } from "@/lib/institution-display-name";
+import { SNAPSHOT_FEE_KEYS, SNAPSHOT_MIN_PEERS } from "@/lib/agents/growth/market-snapshot";
 
 /**
  * NIELSEN's contact finder: the same walk Magellan makes for fee schedules, aimed at the
@@ -10,7 +11,9 @@ import { institutionDisplayName } from "@/lib/institution-display-name";
  * with the name and title printed beside each one when the page shows them.
  *
  * Only published addresses are kept. Nothing is guessed from a name pattern, and nothing is
- * sent: the contacts feed outreach drafts that James reads and sends himself.
+ * sent: the contacts feed outreach drafts that James reads and sends himself. Most sites print
+ * their leadership team with no address, so a decision-maker's printed name and title is kept
+ * too, as a leader (`extractLeaders`), for James to reach himself.
  */
 
 type SqlTag = typeof sql;
@@ -27,6 +30,12 @@ export const CONTACT_PAGES_PER_SITE = 3;
 export const PROSPECT_MIN_ASSETS_K = 100_000;
 export const PROSPECT_MAX_ASSETS_K = 5_000_000;
 export const PROSPECT_MIN_FEES = 10;
+/**
+ * Comparison-ready institutions join the pool whatever their fee count: a live row on this many
+ * market-snapshot fees, each held by at least SNAPSHOT_MIN_PEERS other open institutions in the
+ * same metro (the bar the Oct 16 prospect count used).
+ */
+export const PROSPECT_READY_FEE_TYPES = 3;
 
 const REQUEST_TIMEOUT_MS = 8_000;
 const MAX_PAGE_BYTES = 2 * 1024 * 1024;
@@ -36,6 +45,15 @@ const CONCURRENCY = 5;
 
 export type ContactRole = "marketing" | "retail" | "finance" | "executive" | "operations" | "compliance" | "other";
 export type ContactKind = "person" | "general";
+
+/** A decision-maker's name and title as a leadership page prints them, with no address beside them. */
+export interface FoundLeader {
+  name: string;
+  title: string;
+  role: ContactRole;
+  sourceUrl: string;
+  context: string;
+}
 
 export interface FoundContact {
   email: string;
@@ -295,6 +313,39 @@ export function extractContacts(html: string, pageUrl: string, websiteHost: stri
   return [...found.values()].map((contact) => (contact.name && (nameUses.get(contact.name) ?? 0) > 1 ? { ...contact, name: null } : contact));
 }
 
+/** "Jane Smith, SVP Marketing", "Jane Smith | President & CEO", "Jane Smith - Chief Retail Officer". */
+const NAME_AND_TITLE = /^(.{5,60}?)\s*(?:,|\||\s[-–—]\s)\s*(.{3,120})$/;
+/** A title senior enough to own retail fee pricing: a chief, the president, or a VP, director or head. */
+const LEADER_RANK = /\b(?:ceo|cfo|cmo|coo|chief|president|svp|evp|vp|vice[\s-]+president|director|head)\b/i;
+
+/**
+ * The decision-makers a page prints by name, with or without an address: a name line followed
+ * by its title line, or one "Name, Title" line. Only buying roles at a decision-maker's rank are
+ * kept (marketing, retail and deposits, the executive team, finance, operations, compliance), so
+ * lenders, branch staff and board members drop. The name and title are the page's own words;
+ * nothing is guessed.
+ */
+export function extractLeaders(html: string, pageUrl: string): FoundLeader[] {
+  const lines = pageLines(html);
+  const found = new Map<string, FoundLeader>();
+  const consider = (rawName: string, rawTitle: string, context: string) => {
+    if (!looksLikeName(rawName)) return;
+    const name = cleanContactName(rawName);
+    const title = cleanContactTitle(rawTitle);
+    if (!name || !title || title.length > 120 || !LEADER_RANK.test(title) || /\b(?:board|director emeritus)\b/i.test(title) && !/\b(?:ceo|chief|president)\b/i.test(title)) return;
+    const role = roleFor(title);
+    if (role === "other" || found.has(name)) return;
+    found.set(name, { name, title, role, sourceUrl: pageUrl, context: context.slice(0, 240) });
+  };
+  lines.forEach((line, index) => {
+    const next = lines[index + 1];
+    if (next && looksLikeTitle(next)) consider(line, next, `${line} | ${next}`);
+    const pair = NAME_AND_TITLE.exec(line);
+    if (pair && looksLikeTitle(pair[2])) consider(pair[1].trim(), pair[2].trim(), line);
+  });
+  return [...found.values()];
+}
+
 /** Same-site links that look like leadership, about or contact pages, best first. */
 export function contactPageLinks(html: string, pageUrl: string, limit: number = CONTACT_PAGES_PER_SITE): string[] {
   const host = siteHost(pageUrl);
@@ -354,6 +405,8 @@ export interface SiteCheck {
   outcome: "found" | "none" | "blocked" | "unreachable";
   pagesFetched: number;
   contacts: FoundContact[];
+  /** Named decision-makers printed without an address (people already among `contacts` are left out). */
+  leaders: FoundLeader[];
 }
 
 /** Reads one institution's site: robots.txt, the homepage, then its leadership and contact pages. */
@@ -361,7 +414,7 @@ export async function checkSite(site: ProspectSite, fetcher: Fetcher = fetch): P
   const base = { institutionId: site.institutionId, name: site.name };
   const start = /^https?:\/\//i.test(site.websiteUrl) ? site.websiteUrl : `https://${site.websiteUrl}`;
   const host = siteHost(start);
-  if (!host) return { ...base, outcome: "unreachable", pagesFetched: 0, contacts: [] };
+  if (!host) return { ...base, outcome: "unreachable", pagesFetched: 0, contacts: [], leaders: [] };
 
   const robots = await fetchText(new URL("/robots.txt", start).href, fetcher);
   const disallows = robots.ok ? robotsDisallows(robots.text) : [];
@@ -369,15 +422,18 @@ export async function checkSite(site: ProspectSite, fetcher: Fetcher = fetch): P
     const parsed = new URL(url);
     return robotsAllows(`${parsed.pathname}${parsed.search}`, disallows);
   };
-  if (!allowed(start)) return { ...base, outcome: "blocked", pagesFetched: 0, contacts: [] };
+  if (!allowed(start)) return { ...base, outcome: "blocked", pagesFetched: 0, contacts: [], leaders: [] };
 
   const home = await fetchText(start, fetcher);
-  if (!home.ok) return { ...base, outcome: "unreachable", pagesFetched: 0, contacts: [] };
+  if (!home.ok) return { ...base, outcome: "unreachable", pagesFetched: 0, contacts: [], leaders: [] };
   const finalHost = siteHost(home.url) ?? host;
 
   const contacts = new Map<string, FoundContact>();
   const keep = (list: FoundContact[]) => list.forEach((contact) => contacts.has(contact.email) || contacts.set(contact.email, contact));
+  const leaders = new Map<string, FoundLeader>();
+  const keepLeaders = (list: FoundLeader[]) => list.forEach((leader) => leaders.has(leader.name) || leaders.set(leader.name, leader));
   keep(extractContacts(home.text, home.url, finalHost));
+  keepLeaders(extractLeaders(home.text, home.url));
 
   let pagesFetched = 1;
   const pages = contactPageLinks(home.text, home.url).filter(allowed);
@@ -386,9 +442,12 @@ export async function checkSite(site: ProspectSite, fetcher: Fetcher = fetch): P
     if (!result.ok) continue;
     pagesFetched += 1;
     keep(extractContacts(result.text, result.url, finalHost));
+    keepLeaders(extractLeaders(result.text, result.url));
   }
   const list = [...contacts.values()];
-  return { ...base, outcome: list.length ? "found" : "none", pagesFetched, contacts: list };
+  const withAddress = new Set(list.map((contact) => contact.name).filter(Boolean));
+  const named = [...leaders.values()].filter((leader) => !withAddress.has(leader.name));
+  return { ...base, outcome: list.length ? "found" : "none", pagesFetched, contacts: list, leaders: named };
 }
 
 export async function contactsSchemaReady(db: SqlTag = sql): Promise<boolean> {
@@ -400,18 +459,37 @@ export async function contactsSchemaReady(db: SqlTag = sql): Promise<boolean> {
 }
 
 /**
- * Prospects due a check: the GTM plan's pool (by size and live fees) with a website, never
- * checked or last checked more than CONTACTS_RECHECK_DAYS ago, biggest local markets first.
+ * Prospects due a check: the GTM plan's pool (by size and live fees) plus every comparison-ready
+ * institution (PROSPECT_READY_FEE_TYPES), with a website. Due means never checked, last checked
+ * more than CONTACTS_RECHECK_DAYS ago, or (once leaders are kept) a comparison-ready site last
+ * read before leaders were kept. Comparison-ready sites first (they can be pitched now), never-checked
+ * before re-reads, then the oldest checks, biggest local markets first.
  */
-export async function loadProspectSites(db: SqlTag, limit: number): Promise<ProspectSite[]> {
+export async function loadProspectSites(db: SqlTag, limit: number, leadersReady: boolean = false): Promise<ProspectSite[]> {
   const rows = await db`
     WITH fees AS (
       SELECT institution_id, COUNT(*) AS n FROM published_fee_catalog GROUP BY institution_id
+    ), held AS (
+      SELECT DISTINCT f.institution_id, f.fee_category, s.cbsa_code
+        FROM published_fee_catalog f
+        JOIN institution_sources s ON s.id = f.institution_id
+       WHERE s.closed_date IS NULL AND s.cbsa_code IS NOT NULL AND f.amount IS NOT NULL
+         AND f.fee_category = ANY(${[...SNAPSHOT_FEE_KEYS]}::text[])
+    ), holders AS (
+      SELECT cbsa_code, fee_category, COUNT(*) AS n FROM held GROUP BY cbsa_code, fee_category
+    ), ready AS (
+      SELECT h.institution_id
+        FROM held h
+        JOIN holders p ON p.cbsa_code = h.cbsa_code AND p.fee_category = h.fee_category
+       WHERE p.n - 1 >= ${SNAPSHOT_MIN_PEERS}
+       GROUP BY h.institution_id
+      HAVING COUNT(*) >= ${PROSPECT_READY_FEE_TYPES}
     ), live AS (
-      SELECT s.id, s.institution_name, s.website_url, s.cbsa_code
+      SELECT s.id, s.institution_name, s.website_url, s.cbsa_code, (r.institution_id IS NOT NULL) AS ready
         FROM institution_sources s
         JOIN fees f ON f.institution_id = s.id
-       WHERE f.n >= ${PROSPECT_MIN_FEES}
+        LEFT JOIN ready r ON r.institution_id = s.id
+       WHERE (f.n >= ${PROSPECT_MIN_FEES} OR r.institution_id IS NOT NULL)
          AND s.asset_size BETWEEN ${PROSPECT_MIN_ASSETS_K} AND ${PROSPECT_MAX_ASSETS_K}
          AND s.website_url IS NOT NULL AND s.website_url <> ''
     ), market AS (
@@ -421,14 +499,16 @@ export async function loadProspectSites(db: SqlTag, limit: number): Promise<Pros
       FROM live l
       LEFT JOIN market m ON m.cbsa_code = l.cbsa_code
       LEFT JOIN prospect_contact_checks c ON c.institution_id = l.id
-     WHERE c.institution_id IS NULL OR c.checked_at < now() - make_interval(days => ${CONTACTS_RECHECK_DAYS})
-     ORDER BY c.checked_at NULLS FIRST, COALESCE(m.peers, 0) DESC, l.id
+     WHERE c.institution_id IS NULL
+        OR c.checked_at < now() - make_interval(days => ${CONTACTS_RECHECK_DAYS})
+        OR (${leadersReady} AND l.ready AND c.leaders_found IS NULL AND c.outcome IN ('found', 'none'))
+     ORDER BY l.ready DESC, (c.institution_id IS NULL) DESC, c.checked_at, COALESCE(m.peers, 0) DESC, l.id
      LIMIT ${limit}
   `;
   return rows.map((row) => ({ institutionId: Number(row.id), name: String(row.institution_name), websiteUrl: String(row.website_url) }));
 }
 
-async function saveCheck(db: SqlTag, check: SiteCheck, runId: number | null): Promise<void> {
+async function saveCheck(db: SqlTag, check: SiteCheck, runId: number | null, leadersReady: boolean): Promise<void> {
   for (const contact of check.contacts) {
     await db`
       INSERT INTO prospect_contacts (institution_id, email, kind, name, title, role, source_url, context, agent_run_id)
@@ -443,13 +523,45 @@ async function saveCheck(db: SqlTag, check: SiteCheck, runId: number | null): Pr
              last_seen_at = now()
     `;
   }
+  if (!leadersReady) {
+    await db`
+      INSERT INTO prospect_contact_checks (institution_id, checked_at, pages_fetched, emails_found, outcome, agent_run_id)
+      VALUES (${check.institutionId}, now(), ${check.pagesFetched}, ${check.contacts.length}, ${check.outcome}, ${runId})
+      ON CONFLICT (institution_id) DO UPDATE
+         SET checked_at = now(), pages_fetched = EXCLUDED.pages_fetched, emails_found = EXCLUDED.emails_found,
+             outcome = EXCLUDED.outcome, agent_run_id = EXCLUDED.agent_run_id
+    `;
+    return;
+  }
+  for (const leader of check.leaders) {
+    await db`
+      INSERT INTO prospect_leaders (institution_id, name, title, role, source_url, context, agent_run_id)
+      VALUES (${check.institutionId}, ${leader.name}, ${leader.title}, ${leader.role}, ${leader.sourceUrl}, ${leader.context}, ${runId})
+      ON CONFLICT (institution_id, name) DO UPDATE
+         SET title = EXCLUDED.title, role = EXCLUDED.role, source_url = EXCLUDED.source_url,
+             context = EXCLUDED.context, last_seen_at = now()
+    `;
+  }
+  // A blocked or unreachable read kept nothing, so leaders_found stays null and the site is tried again.
+  const leadersFound = check.outcome === "found" || check.outcome === "none" ? check.leaders.length : null;
   await db`
-    INSERT INTO prospect_contact_checks (institution_id, checked_at, pages_fetched, emails_found, outcome, agent_run_id)
-    VALUES (${check.institutionId}, now(), ${check.pagesFetched}, ${check.contacts.length}, ${check.outcome}, ${runId})
+    INSERT INTO prospect_contact_checks (institution_id, checked_at, pages_fetched, emails_found, outcome, agent_run_id, leaders_found)
+    VALUES (${check.institutionId}, now(), ${check.pagesFetched}, ${check.contacts.length}, ${check.outcome}, ${runId}, ${leadersFound})
     ON CONFLICT (institution_id) DO UPDATE
        SET checked_at = now(), pages_fetched = EXCLUDED.pages_fetched, emails_found = EXCLUDED.emails_found,
-           outcome = EXCLUDED.outcome, agent_run_id = EXCLUDED.agent_run_id
+           outcome = EXCLUDED.outcome, agent_run_id = EXCLUDED.agent_run_id, leaders_found = EXCLUDED.leaders_found
   `;
+}
+
+/** True once `prospect_leaders` and `prospect_contact_checks.leaders_found` exist (migration 20270110000060). */
+export async function leadersSchemaReady(db: SqlTag = sql): Promise<boolean> {
+  const [row] = await db`
+    SELECT to_regclass('public.prospect_leaders') IS NOT NULL
+       AND EXISTS (SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = 'public' AND table_name = 'prospect_contact_checks'
+                      AND column_name = 'leaders_found') AS ready
+  `;
+  return row?.ready === true;
 }
 
 export interface ContactsRunResult {
@@ -461,6 +573,8 @@ export interface ContactsRunResult {
   general: number;
   byOutcome: Record<SiteCheck["outcome"], number>;
   byRole: Partial<Record<ContactRole, number>>;
+  /** Named decision-makers kept without an address (null before migration 20270110000060). */
+  leaders: number | null;
   /** Institutions left for the next run because this one ran out of time. */
   deferred: number;
   /** The stored confidence, role and primary/backup pick, re-ranked for the institutions read (null before the migration or on a dry run). */
@@ -483,10 +597,11 @@ export async function runContactFinder({
   now?: () => number;
 }): Promise<ContactsRunResult> {
   const byOutcome: ContactsRunResult["byOutcome"] = { found: 0, none: 0, blocked: 0, unreachable: 0 };
-  const empty: ContactsRunResult = { schemaReady: false, dryRun, checked: 0, found: 0, people: 0, general: 0, byOutcome, byRole: {}, deferred: 0 };
+  const empty: ContactsRunResult = { schemaReady: false, dryRun, checked: 0, found: 0, people: 0, general: 0, byOutcome, byRole: {}, leaders: null, deferred: 0 };
   if (!(await contactsSchemaReady(db))) return empty;
+  const leadersReady = await leadersSchemaReady(db);
 
-  const sites = await loadProspectSites(db, Math.min(Math.max(Math.floor(limit), 1), CONTACTS_MAX_LIMIT));
+  const sites = await loadProspectSites(db, Math.min(Math.max(Math.floor(limit), 1), CONTACTS_MAX_LIMIT), leadersReady);
   const started = now();
   const checks: SiteCheck[] = [];
   let next = 0;
@@ -506,7 +621,7 @@ export async function runContactFinder({
 
   let picks: ContactPicksResult | null = null;
   if (!dryRun) {
-    for (const check of checks) await saveCheck(db, check, runId);
+    for (const check of checks) await saveCheck(db, check, runId, leadersReady);
     // Store each contact's confidence, role and primary/backup pick for the institutions just read,
     // so /admin/growth reads them instead of ranking again.
     const touched = checks.filter((check) => check.contacts.length > 0).map((check) => check.institutionId);
@@ -527,7 +642,8 @@ export async function runContactFinder({
       }
     }
   }
-  return { schemaReady: true, dryRun, checked: checks.length, found: byOutcome.found, people, general, byOutcome, byRole, deferred, picks };
+  const leaders = leadersReady ? checks.reduce((total, check) => total + check.leaders.length, 0) : null;
+  return { schemaReady: true, dryRun, checked: checks.length, found: byOutcome.found, people, general, byOutcome, byRole, leaders, deferred, picks };
 }
 
 export function summarizeContactFinder(result: ContactsRunResult): string {
@@ -537,6 +653,7 @@ export function summarizeContactFinder(result: ContactsRunResult): string {
     `Read ${result.checked} prospect websites: ${result.found} published at least one address`,
     `${result.people} named or personal addresses and ${result.general} shared mailboxes`,
   ];
+  if (result.leaders) parts.push(`${result.leaders} named leaders printed without an address`);
   const skipped = result.byOutcome.blocked + result.byOutcome.unreachable;
   if (skipped) parts.push(`${skipped} skipped (robots.txt or unreachable)`);
   if (result.deferred) parts.push(`${result.deferred} left for the next run`);
@@ -852,6 +969,8 @@ export function summarizeContactPicks(result: ContactPicksResult): string {
   return `${parts.join("; ")}.${result.dryRun ? " Dry run: nothing saved." : ""}`;
 }
 
+const CSV_HEADER = ["institution_id", "institution_name", "charter_type", "state_code", "city", "assets_musd", "pick", "confidence", "name", "title", "role", "email", "kind", "source_url", "found_at", "market_coverage_pct", "market_coverage_overdraft_pct"] as const;
+
 /**
  * The contacts as a CSV. An institution whose rows are all ranked uses the stored confidence and
  * pick; one with any unranked row (before the backfill) is ranked here the same way.
@@ -860,7 +979,7 @@ export function summarizeContactPicks(result: ContactPicksResult): string {
  * blank for credit unions and banks with no branch data.
  */
 export function contactsCsv(rows: ProspectContactRow[], coverage: ReadonlyMap<number, { share: number; shareOverdraft: number }> = new Map()): string {
-  const header = ["institution_id", "institution_name", "charter_type", "state_code", "city", "assets_musd", "pick", "confidence", "name", "title", "role", "email", "kind", "source_url", "found_at", "market_coverage_pct", "market_coverage_overdraft_pct"] as const;
+  const header = CSV_HEADER;
   const byInstitution = new Map<number, ProspectContactRow[]>();
   for (const row of rows) {
     const list = byInstitution.get(row.institution_id);
@@ -888,4 +1007,74 @@ export function contactsCsv(rows: ProspectContactRow[], coverage: ReadonlyMap<nu
       });
   }
   return [header.join(","), ...lines].join("\n") + "\n";
+}
+
+export interface ProspectLeaderRow {
+  institution_id: number;
+  institution_name: string;
+  charter_type: string | null;
+  state_code: string | null;
+  city: string | null;
+  assets_musd: number | null;
+  name: string;
+  title: string;
+  role: ContactRole;
+  source_url: string;
+  found_at: string;
+}
+
+/**
+ * Every named leader kept without an address, best buyer first within each institution
+ * (marketing, retail, executive, ...; market presidents last), read with today's role rules so
+ * a title no longer counted as a buying role drops. Empty before migration 20270110000060.
+ */
+export async function listProspectLeaders(db: SqlTag = sql): Promise<ProspectLeaderRow[]> {
+  if (!(await leadersSchemaReady(db))) return [];
+  const rows = await db`
+    SELECT l.institution_id, s.institution_name, s.charter_type, s.state_code, s.city,
+           ROUND(s.asset_size / 1000.0) AS assets_musd,
+           l.name, l.title, l.source_url, l.found_at
+      FROM prospect_leaders l
+      JOIN institution_sources s ON s.id = l.institution_id
+     ORDER BY s.state_code, s.institution_name, l.name
+  `;
+  const leaders = rows
+    .map((row) => {
+      const title = String(row.title);
+      return {
+        institution_id: Number(row.institution_id),
+        institution_name: institutionDisplayName(String(row.institution_name)),
+        charter_type: row.charter_type === null ? null : String(row.charter_type),
+        state_code: row.state_code === null ? null : String(row.state_code),
+        city: row.city === null ? null : String(row.city),
+        assets_musd: row.assets_musd === null ? null : Number(row.assets_musd),
+        name: String(row.name),
+        title,
+        role: roleFor(title),
+        source_url: String(row.source_url),
+        found_at: new Date(row.found_at as string).toISOString(),
+      };
+    })
+    .filter((leader) => leader.role !== "other");
+  const order = new Map<number, number>();
+  leaders.forEach((leader) => order.has(leader.institution_id) || order.set(leader.institution_id, order.size));
+  return leaders.sort(
+    (a, b) =>
+      order.get(a.institution_id)! - order.get(b.institution_id)! ||
+      Number(isLocalPresident(a)) - Number(isLocalPresident(b)) ||
+      ROLE_PRIORITY[a.role] - ROLE_PRIORITY[b.role] ||
+      a.name.localeCompare(b.name),
+  );
+}
+
+/**
+ * Named leaders as CSV lines under `contactsCsv`'s header: kind "leader", no email, pick or
+ * confidence, since there is no address to send to.
+ */
+export function leadersCsvLines(rows: ProspectLeaderRow[]): string[] {
+  const header = CSV_HEADER;
+  return rows.map((row) => {
+    const cells: Record<(typeof header)[number], unknown> = { ...row, pick: "", confidence: "", email: "", kind: "leader", market_coverage_pct: null, market_coverage_overdraft_pct: null };
+    return header.map((key) => csvCell(cells[key])).join(",");
+  });
 }
