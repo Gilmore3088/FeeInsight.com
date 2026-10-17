@@ -112,9 +112,13 @@ const LIVE: LiveTakedownRow[] = [
   { fee_published_id: 83125, lineage_ref: 92572, institution_id: 33, canonical_fee_key: "overdraft", fee_name: "Overdraft Charge (each)", amount: "10.00" },
   { fee_published_id: 97335, lineage_ref: 110368, institution_id: 184, canonical_fee_key: "od_protection_transfer", fee_name: "OVERDRAFT TRANSFER", amount: "10.00" },
   { fee_published_id: 97904, lineage_ref: 111117, institution_id: 850, canonical_fee_key: "od_protection_transfer", fee_name: "overdrawn. Features of Overdraft Transfer include", amount: "32.00" },
+  // #1436's waiver-sentence $0 and the $7.95 ePLUS fee it waits on, and #1389's balance requirement, live on prod, read-only, Oct 17.
+  { fee_published_id: 58414, lineage_ref: 55074, institution_id: 5314, canonical_fee_key: "monthly_maintenance", fee_name: "or take advantage of both options to reduce your monthly fee to", amount: "0.00" },
+  { fee_published_id: 95264, lineage_ref: 107365, institution_id: 5314, canonical_fee_key: "monthly_maintenance", fee_name: "ePLUS Checking Monthly service charge", amount: "7.95" },
+  { fee_published_id: 106021, lineage_ref: 121345, institution_id: 4589, canonical_fee_key: "minimum_balance", fee_name: "Minimum Balance", amount: "25.00" },
 ];
 const CONDITIONAL_ZERO = [43512, 54014, 61335, 68893, 70121, 73737, 77121, 77122, 77618, 84553, 87079, 87461, 88213, 91505, 120559];
-const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689, 138828, 138832, 138833, 138839, 138827, 138834, 138841, 148352, 138831, 138830, 138848, 138849, 138850, 138851, 42961, 86536, 66721, 66722, 83125, 97335, 97904];
+const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689, 138828, 138832, 138833, 138839, 138827, 138834, 138841, 148352, 138831, 138830, 138848, 138849, 138850, 138851, 42961, 86536, 66721, 66722, 83125, 97335, 97904, 58414, 106021];
 
 function fakeDb(live: LiveTakedownRow[], failOn?: string) {
   const writes: Array<{ text: string; values: unknown[] }> = [];
@@ -179,6 +183,8 @@ describe("hand takedowns (James, Oct 16)", () => {
       [83125, "source_mismatch: #1549"],
       [97335, "source_mismatch: #1549"],
       [97904, "source_mismatch: #1549"],
+      [58414, "source_mismatch: #1436"],
+      [106021, "source_mismatch: #1389"],
     ]);
     // A wrong read names its issue; a second read of one printed fee names the live copy it repeats too.
     expect(HAND_TAKEDOWNS.every((entry) => entry.evidence.length > 0 && (entry.kind === "duplicate"
@@ -240,6 +246,8 @@ describe("hand takedowns (James, Oct 16)", () => {
         { feePublishedId: 83125, feeVerifiedId: 92572, reason: "source_mismatch: #1549" },
         { feePublishedId: 97335, feeVerifiedId: 110368, reason: "source_mismatch: #1549" },
         { feePublishedId: 97904, feeVerifiedId: 111117, reason: "source_mismatch: #1549" },
+        { feePublishedId: 58414, feeVerifiedId: 55074, reason: "source_mismatch: #1436" },
+        { feePublishedId: 106021, feeVerifiedId: 121345, reason: "source_mismatch: #1389" },
       ],
       skipped: [],
     });

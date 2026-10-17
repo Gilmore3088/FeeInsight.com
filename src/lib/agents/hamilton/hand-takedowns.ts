@@ -303,6 +303,20 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
   { feePublishedId: 97904, institutionId: 850, canonicalFeeKey: "od_protection_transfer", amount: 32, feeName: "overdrawn. Features of Overdraft Transfer include",
     reason: "source_mismatch: #1549", issue: 1549, kind: "wrong_category",
     evidence: "Pinnacle Bank Wyoming (doc 22705): the $32 is the next column's \"$32 per item NSF Paid Item Fee/Returned Item Fee for items paid over $10\" (live as 98267); the transfer is \"$2 fee for each Overdraft Transfer\" (live as 97975)." },
+  // #1436 (read-only, Oct 17; James's Oct 16 rule for fewer than 20 wrong fees): 1st Community FCU's
+  // waiver sentence, published as a $0 monthly fee. It is the waived price of the ePLUS Checking
+  // fee, which is live and right as 95264, so it comes down only while 95264 is.
+  { feePublishedId: 58414, institutionId: 5314, canonicalFeeKey: "monthly_maintenance", amount: 0,
+    feeName: "or take advantage of both options to reduce your monthly fee to",
+    reason: "source_mismatch: #1436", issue: 1436, kind: "not_a_fee",
+    requiresLive: { feePublishedId: 95264, amount: 7.95, feeName: "ePLUS Checking Monthly service charge" },
+    evidence: "1st Community FCU fee schedule (doc 16561, text 11680): \"ePLUS Checking …….. $7.95 per month or reduce your fee by $4.00 by receiving eStatements and/or reduce your fee $3.95 for having a minimum 15 1CFCU debit card transactions clear your account per month or take advantage of both options to reduce your monthly fee to $0.00\": the $0.00 is the fee with both waivers, not a fee; the price is 95264 ($7.95)." },
+  // #1389 (read-only, Oct 17): HawaiiUSA FCU's "Minimum Balance" $25 is the Savings Safari Club and
+  // Jump Start Student accounts' balance requirement, printed in the same column as the other
+  // accounts' requirements; the $25 beside it is the next column's early closure fee.
+  { feePublishedId: 106021, institutionId: 4589, canonicalFeeKey: "minimum_balance", amount: 25, feeName: "Minimum Balance",
+    reason: "source_mismatch: #1389", issue: 1389, kind: "not_a_fee",
+    evidence: "HawaiiUSA FCU schedule of fees (doc 2049, text 3445): \"Savings Safari Club & Jump Start Student Accounts | Early Closure Fee\" / \"Minimum Balance ........ $25.00 | Within 90 days ........ $25.00\", the same layout as \"Basic Savings Minimum Balance ........ $ 5.00\" and \"Secondary Savings Minimum Balance ........ $25.00\": a balance the account must keep, not a charge for falling below it." },
 ];
 
 export interface LiveTakedownRow {

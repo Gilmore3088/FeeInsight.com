@@ -695,6 +695,11 @@ export const HAND_REFILES: readonly HandRefile[] = [
   // Undo: re-file back under `from`; the run event and `pipeline_feedback` row keep both.
   { feePublishedId: 112882, from: "nsf", amount: 17, to: "stop_payment", name: "Stop Payment, if item would not cause NSF",
     why: "#1668, inst 7204, doc 35662: \"Stop Payment, if item would not cause NSF | $17.00 per item\"; a stop payment fee (the NSF line is \"NSF Draft, NSF ACH item or NSF Bill Pay item | $36.00 per item\", live as 112881)" },
+  // #1025 (read-only, Oct 17; James's Oct 16 rule for fewer than 20 wrong fees): Kitsap CU's
+  // incoming wire, filed as outgoing. The price and name are right; the page prints the outgoing
+  // wire as its own line, live as 15709 ($25), which stays. Undo: re-file back under `from`.
+  { feePublishedId: 63888, from: "wire_domestic_outgoing", amount: 15, to: "wire_domestic_incoming", name: "Wire Transfer Fee - Inbound Domestic",
+    why: "#1025, inst 8543, doc 15663: \"Wire Transfer Fee - Inbound Domestic | $15.00 per wire\" beside \"Wire Transfer Fee - Outgoing Domestic | $25.00 per wire\" (live as 15709)" },
 ];
 
 interface HandRow {
