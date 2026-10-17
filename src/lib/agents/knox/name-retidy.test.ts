@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { LiveFeeRow } from "@/lib/agents/hamilton/source-check";
-import { brandCased, capitalisedName, junkStrippedName, pageCompletedName, publishCutName, thresholdFromPage, cellName, dropsCondition, restoredName, restoreOnPage, fontDecodedName, fontMapVerified, headName, isMessyName, spacedControlName, planRetidy, sharedNameFeeIds, accountHeading, neighbourCellName, conditionOnlyName, unligatedName, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice, footnoteMarkFreeName, NAME_RETIDY_STRATEGY } from "@/lib/agents/knox/name-retidy";
+import { brandCased, capitalisedName, junkStrippedName, pageCompletedName, publishCutName, thresholdFromPage, cellName, dropsCondition, restoredName, restoreOnPage, fontDecodedName, fontMapVerified, headName, isMessyName, spacedControlName, planRetidy, sharedNameFeeIds, accountHeading, neighbourCellName, conditionOnlyName, unligatedName, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice, footnoteMarkFreeName, capsCasedName, NAME_RETIDY_STRATEGY } from "@/lib/agents/knox/name-retidy";
 
 const fee = (overrides: Partial<LiveFeeRow>): LiveFeeRow => ({
   fee_published_id: 1,
@@ -984,8 +984,8 @@ describe("v21 (#1450): footnote marks, product codes and quotes in live maintena
     [81446, "Service Charge for checking account named “Your Five Star Checking Account”", null],
   ];
 
-  it("is version 21", () => {
-    expect(NAME_RETIDY_STRATEGY.version).toBe(21);
+  it("is version 21 or later", () => {
+    expect(NAME_RETIDY_STRATEGY.version).toBeGreaterThanOrEqual(21);
   });
 
   it("renames 24 of the 30 and leaves the fragments, the cut condition and the account's quoted name", () => {
@@ -1019,6 +1019,54 @@ describe("v21 (#1450): footnote marks, product codes and quotes in live maintena
     const marked = maintenance({ fee_published_id: 2, fee_name: "Monthly Service Charge¹", amount: 10 });
     const twin = maintenance({ fee_published_id: 3, fee_name: "Monthly Service Charge", amount: 10 });
     const plan = planRetidy([marked], page, [marked, twin]);
+    expect(plan.renames).toEqual([]);
+    expect(plan.skipped.same_name_live).toBe(1);
+  });
+});
+
+describe("capsCasedName (v22, #1810)", () => {
+  // Live all-caps names on 2026-10-17 (770 rows at 113 institutions; JPMorgan Chase's "OVERDRAFT FEE").
+  const LIVE: Array<[string, string | null]> = [
+    ["OVERDRAFT FEE", "Overdraft Fee"],
+    ["CASHIER’S CHECK", "Cashier’s Check"],
+    ["CASHIER'S CHECKS", "Cashier's Checks"],
+    ["NON-SUFFICIENT FUNDS (NSF) FEE – EACH RETURNED ITEM/PAYMENT", "Non-Sufficient Funds (NSF) Fee – Each Returned Item/Payment"],
+    ["ATM/DEBIT CARD (REPLACEMENT)", "ATM/Debit Card (Replacement)"],
+    ["ACH RETURN FEE (ELECTRONIC ITEMS)", "ACH Return Fee (Electronic Items)"],
+    ["COPY OF CHECK OR STATEMENT", "Copy of Check or Statement"],
+    ["DEBIT CARD REPLACEMENT 2ND AND AFTER", "Debit Card Replacement 2nd and After"],
+    ["SAFE DEPOSIT BOX (3X10) ANNUAL RENT", "Safe Deposit Box (3x10) Annual Rent"],
+    ["ATM CASH WITHDRAWAL AT NON-NCB ATM", "ATM Cash Withdrawal at Non-NCB ATM"],
+    ["HLEFCU BILL PAY", "HLEFCU Bill Pay"],
+    ["IRA MAINTENANCE FEE", "IRA Maintenance Fee"],
+    ["VISA LATE PAYMENT FEE", "Visa Late Payment Fee"],
+    ["MEMBER LOAN “RE-APPLICATION” FEE", "Member Loan “Re-Application” Fee"],
+    ["ACCT RESEARCH (MIN. 1 HR.)", "Acct Research (Min. 1 Hr.)"],
+    // Nothing to change, or another flaw the rest of the tidy handles first.
+    ["CBCU ATM", null],
+    ["WIRE TRANSFER: DOMESTIC", null],
+    ["OUTGOING WIRE FEE5", null],
+    ["MONTHLY SERVICE FEE IF MINIMUM BALANCE IS NOT MET", null],
+  ];
+
+  it("is version 22", () => {
+    expect(NAME_RETIDY_STRATEGY.version).toBe(22);
+  });
+
+  it("title-cases live all-caps names and keeps their acronyms", () => {
+    expect(LIVE.map(([name]) => [name, capsCasedName(name)])).toEqual(LIVE);
+  });
+
+  it("leaves names that are not all caps", () => {
+    for (const name of ["ATM Fee", "NSF", "Overdraft Fee", "Stop Payment - ACH", "ACH NSF", "OD Fee"]) expect(capsCasedName(name)).toBeNull();
+  });
+
+  it("renames a live all-caps fee whose page prints it, never onto another live fee's name", () => {
+    const page = [{ source_document_id: 1, normalized_text: "OVERDRAFT FEE $34.00 per item\nSTOP PAYMENT $30.00" }];
+    const overdraft = fee({ fee_published_id: 11, source_document_id: 1, canonical_fee_key: "overdraft", fee_name: "OVERDRAFT FEE", amount: 34 });
+    expect(planRetidy([overdraft], page).renames.map((rename) => [rename.oldName, rename.newName])).toEqual([["OVERDRAFT FEE", "Overdraft Fee"]]);
+    const twin = fee({ fee_published_id: 12, source_document_id: 1, canonical_fee_key: "overdraft", fee_name: "Overdraft Fee", amount: 34 });
+    const plan = planRetidy([overdraft], page, [overdraft, twin]);
     expect(plan.renames).toEqual([]);
     expect(plan.skipped.same_name_live).toBe(1);
   });

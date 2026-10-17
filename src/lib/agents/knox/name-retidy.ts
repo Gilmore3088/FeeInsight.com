@@ -652,8 +652,10 @@ function fullyTidiedName(name: string, canonicalKey: string): string | null {
  * Monthly service charge", "Monthly2 Maintenance Fee", "A “maintenance service charge”"), and
  * nothing else (`footnoteMarkFreeName`). A mark opening a sentence ("¹A service charge") is a
  * fragment and waits for #1443. 30 live fees carried a mark on 2026-10-17; 24 take the rename.
+ * v22 (#1810): an all-caps name reads in title case, acronyms kept ("OVERDRAFT FEE" -> "Overdraft
+ * Fee", `capsCasedName`). 770 of 81,775 live names at 113 institutions were all caps on 2026-10-17.
  */
-export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 21 } as const;
+export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 22 } as const;
 export const NAME_RETIDY_KIND = "name_retidied";
 /**
  * Institutions the scan visits first after a version change, then the rest in id order. v9:
@@ -703,6 +705,58 @@ export function footnoteMarkFreeName(name: string): string | null {
   if (!next || next === current) return null;
   if (/^[a-z]/.test(next) || NOT_A_NAME.test(next) || CONDITION_TAIL.test(next) || SENTENCE_VERB.test(next) || next.includes("|") || /[“”"]/.test(next)) return null;
   return next;
+}
+
+/**
+ * Words of three letters or fewer an all-caps name spells out; any other short group is an
+ * acronym and keeps its capitals ("ATM", "NSF", "IRA", "NCB", "W/D").
+ */
+const SHORT_WORDS = new Set([
+  "A", "ADD", "ALL", "AN", "AND", "ANY", "APP", "AS", "AT", "BAD", "BAG", "BOX", "BY", "CAR", "DAY", "DUE", "END", "ETC", "EX", "FAX", "FED", "FEE",
+  "FOR", "FROM", "GET", "HR", "IF", "IN", "KEY", "LOW", "MAX", "MAY", "MIN", "MO", "NEW", "NO", "NON", "NOT", "OF", "OFF", "ON", "ONE", "OR",
+  "OUR", "OUT", "OWN", "PAY", "PER", "RE", "SET", "SR", "TAX", "THE", "TO", "TWO", "UP", "USE", "VIA", "WEB", "YR",
+]);
+/** Longer groups that are acronyms ("MMDA", "UTMA"); a credit union's initials end in "CU" or "FCU". */
+const LONG_ACRONYMS = new Set(["MMDA", "UGMA", "UTMA"]);
+/** Acronyms a name pluralises ("ATMS" -> "ATMs"). */
+const PLURAL_ACRONYMS = new Set(["ATM", "CD", "HSA", "IRA"]);
+/** Joining words that stay lower case inside a name ("Cost of Collection", "Check Cashing for Non-Members"). */
+const SMALL_WORDS = new Set(["a", "an", "and", "as", "at", "by", "for", "from", "in", "of", "on", "or", "per", "the", "to", "via", "with"]);
+
+function acronym(letters: string): boolean {
+  return LONG_ACRONYMS.has(letters) || /^[A-Z]{2,}F?CU$/.test(letters) || (letters.length <= 3 && !SHORT_WORDS.has(letters));
+}
+
+/**
+ * v22 (#1810): an all-caps name in title case ("OVERDRAFT FEE" -> "Overdraft Fee", "CASHIER’S
+ * CHECK" -> "Cashier’s Check", "NON-MEMBER ATM/DEBIT CARD FEE" -> "Non-Member ATM/Debit Card Fee",
+ * "DEBIT CARD REPLACEMENT 2ND AND AFTER" -> "... 2nd and After"), or null. Only a name with no
+ * lower-case letter and a run of four capitals counts, so "ATM Fee" and "NSF" stay as printed.
+ * Acronyms keep their capitals and take a small plural "s" ("ATMs"). A name with any other flaw
+ * is left for the rest of the tidy.
+ */
+export function capsCasedName(name: string): string | null {
+  const current = name.replace(/\s+/g, " ").trim();
+  if (/[a-z]/.test(current) || !/[A-Z]{4}/.test(current)) return null;
+  const cased = current
+    .split(" ")
+    .map((word, index) => {
+      const bare = word.replace(/[^A-Z'’]/g, "");
+      return word.replace(/[A-Z][A-Z'’]*/g, (letters: string, offset: number) => {
+        // An ordinal or a size after its number ("2ND", "3X10").
+        if (offset > 0 && /\d/.test(word.charAt(offset - 1))) return letters.toLowerCase();
+        const plain = letters.replace(/['’]S$|['’]$/, "");
+        if (acronym(plain)) return letters === plain ? letters : `${plain}${letters.slice(plain.length).toLowerCase()}`;
+        const plural = plain.match(/^(.+)S$/);
+        if (plural && PLURAL_ACRONYMS.has(plural[1])) return `${plural[1]}s`;
+        const lower = letters.toLowerCase();
+        if (index > 0 && letters === bare && SMALL_WORDS.has(lower)) return lower;
+        return lower.charAt(0).toUpperCase() + lower.slice(1);
+      });
+    })
+    .join(" ");
+  if (cased === current || isMessyName(cased)) return null;
+  return cased;
 }
 /**
  * v16: a live name that opens in lower case (758 of 67,670 live names on 2026-10-09, Agentic OS's
@@ -1421,13 +1475,20 @@ export function planRetidy(
     // v16: or a condition publish cut off Knox's name.
     const last = logged.get(Number(stored.fee_published_id)) ?? publishCutName(stored);
     // v21 (#1450): a maintenance name whose only flaw is its footnote marks loses them, and nothing else.
-    const markFree = FOOTNOTE_MARK_KEYS.has(stored.canonical_fee_key) ? footnoteMarkFreeName(stored.fee_name) : null;
+    const marksOff = FOOTNOTE_MARK_KEYS.has(stored.canonical_fee_key) ? footnoteMarkFreeName(stored.fee_name) : null;
+    // v22 (#1810): an all-caps name reads in title case, and nothing else changes.
+    const markFree = capsCasedName(marksOff ?? stored.fee_name) ?? marksOff;
     if (markFree) {
       if (checkFeeCategory(stored.canonical_fee_key, stored.fee_name).ok && !checkFeeCategory(stored.canonical_fee_key, markFree).ok) {
         skipped.category_guard += 1;
         continue;
       }
-      if (taken.has(lineKey(stored, markFree))) {
+      // A change of case alone keys the same as the fee's own row, so only another live row counts.
+      const caseOnly = lineKey(stored, markFree) === lineKey(stored, stored.fee_name);
+      const twin = caseOnly
+        ? liveFees.some((other) => Number(other.fee_published_id) !== Number(stored.fee_published_id) && lineKey(other, other.fee_name) === lineKey(stored, markFree))
+        : taken.has(lineKey(stored, markFree));
+      if (twin) {
         skipped.same_name_live += 1;
         continue;
       }
@@ -1740,6 +1801,8 @@ export function retidyDueInstitutions(
                             OR fp.fee_name ~ '\\([A-Z]{1,4}-?[0-9]{1,4}\\)'
                             OR fp.fee_name ~* '(monthly|account|checking|savings|maintenance|service|charge)[0-9]{1,2}([[:space:],:;)]|$)'
                             OR fp.fee_name ~ '^((A|An|The)[[:space:]]+)?[“"]'))
+                   -- v22 (#1810): an all-caps name (capsCasedName decides).
+                   OR (fp.fee_name ~ '[A-Z]{4}' AND fp.fee_name !~ '[a-z]')
                  )
                  -- v14: the same test as sharedNameFeeIds, a monthly-fee name shared at different prices.
                  OR count(DISTINCT lower(regexp_replace(btrim(fp.fee_name), '[[:space:]]+', ' ', 'g')))
@@ -1897,6 +1960,8 @@ export async function retidyLiveFeeNames(
         isMessyName(fee.fee_name) ||
         // v21 (#1450): a maintenance name with footnote marks.
         (FOOTNOTE_MARK_KEYS.has(fee.canonical_fee_key) && footnoteMarkFreeName(fee.fee_name) != null) ||
+        // v22 (#1810): an all-caps name.
+        capsCasedName(fee.fee_name) != null ||
         shared.has(Number(fee.fee_published_id)) ||
         logged.get(Number(fee.fee_published_id))?.newName === fee.fee_name ||
         publishCutName(fee) != null,
