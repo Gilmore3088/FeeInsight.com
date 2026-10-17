@@ -3,6 +3,11 @@ import { formatAdminDateTime } from "@/lib/admin-time";
 import type { FeedFreshness } from "@/lib/data-store/feed-freshness";
 
 const FEED_LABELS: Record<string, string> = {
+  alltheplaces: "AllThePlaces bank branches and ATMs",
+  gleif: "GLEIF legal entities and parents",
+  "state-nonbank-lenders": "State non-bank lender licenses (payday, check cashers, money transmitters)",
+  "state-public-depositories": "State qualified public depository lists",
+  "sec-market-value": "SEC public float and shares outstanding",
   "cfpb-making-ends-meet": "CFPB Making Ends Meet survey (overdraft, bills, savings, alternative credit)",
   "state-payday-reports": "State payday and small-dollar lending reports (WA, TX)",
   "urban-debt-in-america": "Urban Institute debt in collections (held until license confirmed)",
@@ -93,6 +98,11 @@ export const FEED_GROUPS = [
 ] as const;
 
 const FEED_GROUP_OF: Record<string, (typeof FEED_GROUPS)[number]["key"]> = {
+  alltheplaces: "economy",
+  gleif: "national",
+  "state-nonbank-lenders": "economy",
+  "state-public-depositories": "national",
+  "sec-market-value": "national",
   "cfpb-making-ends-meet": "economy",
   "state-payday-reports": "economy",
   "urban-debt-in-america": "economy",
