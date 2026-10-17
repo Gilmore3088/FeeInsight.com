@@ -5,6 +5,23 @@ import { FDIC_FINANCIALS_SOURCE, FDIC_FILING_LAG_DAYS } from "@/lib/agents/magel
 import { FDIC_UNIVERSE_PARSER_VERSION, FDIC_UNIVERSE_SOURCE } from "@/lib/agents/magellan/registry/fdic-universe";
 import { FFIEC_OVERDRAFT_PARSER_VERSION, FFIEC_OVERDRAFT_SOURCE, ffiecOverdraftPartitions } from "@/lib/agents/magellan/registry/ffiec-overdraft";
 import { FDIC_SOD_SOURCE, SOD_FIRST_YEAR, latestSodYear } from "@/lib/agents/magellan/registry/fdic-sod";
+import {
+  FFIEC_CALL_DETAIL_PARSER_VERSION,
+  FFIEC_CALL_DETAIL_SOURCE,
+  ffiecCallDetailPartitions,
+} from "@/lib/agents/magellan/registry/ffiec-call-detail";
+import {
+  NCUA_EXTRAS_FIRST,
+  NCUA_EXTRAS_PARSER_VERSION,
+  NCUA_EXTRAS_SOURCE,
+  ncuaExtrasPartitions,
+} from "@/lib/agents/magellan/registry/ncua-extras";
+import {
+  FDIC_HISTORY_FIRST_YEAR,
+  FDIC_HISTORY_PARSER_VERSION,
+  FDIC_HISTORY_SOURCE,
+  fdicHistoryPartitions,
+} from "@/lib/agents/magellan/registry/fdic-history";
 import { BEIGE_BOOK_SOURCE, beigeBookCandidates } from "@/lib/agents/magellan/registry/fed";
 import { NCUA_FILING_LAG_DAYS, NCUA_FINANCIALS_SOURCE, NCUA_PARSER_VERSION } from "@/lib/agents/magellan/registry/ncua-financials";
 import { CFPB_PARSER_VERSION, CFPB_SOURCE } from "@/lib/agents/magellan/registry/cfpb";
@@ -12,6 +29,44 @@ import { CENSUS_ACS_PARSER_VERSION, CENSUS_ACS_SOURCE, censusAcsPartitions } fro
 import { IRS_ZIP_INCOME_SOURCE, irsZipIncomePartitions } from "@/lib/agents/magellan/registry/irs-zip-income";
 import { NCUA_BRANCHES_SOURCE, ncuaBranchPartitions } from "@/lib/agents/magellan/registry/ncua-branches";
 import { SEC_FILINGS_SOURCE, SEC_LINKS_PARSER_VERSION, SEC_LINKS_SOURCE, secBatchPartitions } from "@/lib/agents/magellan/registry/sec";
+import {
+  CFPB_CARD_AGREEMENTS_PARSER_VERSION,
+  CFPB_CARD_AGREEMENTS_SOURCE,
+  cfpbCardAgreementsPartitions,
+} from "@/lib/agents/magellan/registry/cfpb-card-agreements";
+import {
+  UBPR_FIRST,
+  UBPR_PEER_GROUPS_PARSER_VERSION,
+  UBPR_PEER_GROUPS_SOURCE,
+  ubprPeerGroupsPartitions,
+} from "@/lib/agents/magellan/registry/ubpr-peer-groups";
+import { FR_Y9C_FIRST, FR_Y9C_PARSER_VERSION, FR_Y9C_SOURCE, frY9cPartitions } from "@/lib/agents/magellan/registry/fr-y9c";
+import { NIC_STRUCTURE_PARSER_VERSION, NIC_STRUCTURE_SOURCE, nicStructurePartitions } from "@/lib/agents/magellan/registry/nic-structure";
+import { craPartitions, CRA_PARSER_VERSION, CRA_SOURCE } from "@/lib/agents/magellan/registry/cra";
+import { CRA_LENDING_FIRST_YEAR } from "@/lib/regulatory/cra";
+import {
+  DESIGNATION_LISTS_PARSER_VERSION,
+  DESIGNATION_LISTS_SOURCE,
+  designationListsPartitions,
+} from "@/lib/agents/magellan/registry/designation-lists";
+import {
+  HMDA_APOR_PARSER_VERSION,
+  HMDA_APOR_SOURCE,
+  HMDA_PARSER_VERSION,
+  HMDA_SOURCE,
+  hmdaPartitions,
+} from "@/lib/agents/magellan/registry/hmda";
+import {
+  PAYMENT_NETWORKS_PARSER_VERSION,
+  PAYMENT_NETWORKS_SOURCE,
+  paymentNetworksPartitions,
+} from "@/lib/agents/magellan/registry/payment-networks";
+import {
+  INDUSTRY_EVENTS_PARSER_VERSION,
+  INDUSTRY_EVENTS_SOURCE,
+  industryEventsPartitions,
+} from "@/lib/agents/magellan/registry/industry-events";
+import { ECONOMY_DEFINITIONS, ECONOMY_PARSER_VERSION } from "@/lib/agents/magellan/registry/economy";
 import { REGISTRY_SOURCES } from "@/lib/agents/magellan/registry";
 import { isProviderStep } from "@/lib/agents/types";
 import { STATE_BILLS_PARTITION, STATE_BILLS_SOURCE } from "@/lib/agents/magellan/registry/state-bills";
@@ -22,6 +77,7 @@ import { STATE_NEWS_PARSER_VERSION, STATE_REG_NEWS_SOURCE } from "@/lib/agents/m
 import { STATE_BILL_NEWS_SOURCE } from "@/lib/agents/magellan/registry/state-bill-news";
 import { CFPB_FIRST_YEAR } from "@/lib/regulatory/cfpb";
 import {
+  compareQuarters,
   latestPublishableQuarter,
   parseQuarterKey,
   quarterKey,
@@ -38,8 +94,9 @@ import {
  * multi-year backfill into a visible sequence of small runs that resumes on its
  * own after any failure.
  *
- * Order: round-robin across sources, newest partitions first, then history
- * back to REGISTRY_BACKFILL_FROM (default 2010Q1).
+ * Order: the roster sources in PRIORITY_REGISTRY_SOURCES first, then round-robin across
+ * the rest, newest partitions first, then history back to REGISTRY_BACKFILL_FROM
+ * (default 2010Q1).
  */
 
 export const REGISTRY_RUN_SOURCE = "magellan.registry";
@@ -63,6 +120,20 @@ export const REGISTRY_PARSER_VERSIONS: Record<string, number> = {
   [CFPB_SOURCE]: CFPB_PARSER_VERSION,
   [SEC_LINKS_SOURCE]: SEC_LINKS_PARSER_VERSION,
   [FFIEC_OVERDRAFT_SOURCE]: FFIEC_OVERDRAFT_PARSER_VERSION,
+  [FFIEC_CALL_DETAIL_SOURCE]: FFIEC_CALL_DETAIL_PARSER_VERSION,
+  [NCUA_EXTRAS_SOURCE]: NCUA_EXTRAS_PARSER_VERSION,
+  [FDIC_HISTORY_SOURCE]: FDIC_HISTORY_PARSER_VERSION,
+  ...Object.fromEntries(ECONOMY_DEFINITIONS.map((d) => [d.source, ECONOMY_PARSER_VERSION])),
+  [INDUSTRY_EVENTS_SOURCE]: INDUSTRY_EVENTS_PARSER_VERSION,
+  [PAYMENT_NETWORKS_SOURCE]: PAYMENT_NETWORKS_PARSER_VERSION,
+  [HMDA_SOURCE]: HMDA_PARSER_VERSION,
+  [HMDA_APOR_SOURCE]: HMDA_APOR_PARSER_VERSION,
+  [DESIGNATION_LISTS_SOURCE]: DESIGNATION_LISTS_PARSER_VERSION,
+  [CRA_SOURCE]: CRA_PARSER_VERSION,
+  [FR_Y9C_SOURCE]: FR_Y9C_PARSER_VERSION,
+  [NIC_STRUCTURE_SOURCE]: NIC_STRUCTURE_PARSER_VERSION,
+  [UBPR_PEER_GROUPS_SOURCE]: UBPR_PEER_GROUPS_PARSER_VERSION,
+  [CFPB_CARD_AGREEMENTS_SOURCE]: CFPB_CARD_AGREEMENTS_PARSER_VERSION,
 };
 
 /**
@@ -131,6 +202,19 @@ export function registryPartitionsBySource(
     [FDIC_FINANCIALS_SOURCE]: quarters(FDIC_FILING_LAG_DAYS),
     [NCUA_FINANCIALS_SOURCE]: quarters(NCUA_FILING_LAG_DAYS),
     [FFIEC_OVERDRAFT_SOURCE]: ffiecOverdraftPartitions(now),
+    [FFIEC_CALL_DETAIL_SOURCE]: ffiecCallDetailPartitions(now),
+    [NCUA_EXTRAS_SOURCE]: ncuaExtrasPartitions(now, compareQuarters(from, NCUA_EXTRAS_FIRST) > 0 ? from : NCUA_EXTRAS_FIRST),
+    [FDIC_HISTORY_SOURCE]: fdicHistoryPartitions(now, Math.max(FDIC_HISTORY_FIRST_YEAR, from.year)),
+    ...Object.fromEntries(ECONOMY_DEFINITIONS.filter((d) => !d.fixedPartition).map((d) => [d.source, d.partitions(now)])),
+    [INDUSTRY_EVENTS_SOURCE]: industryEventsPartitions(now),
+    [PAYMENT_NETWORKS_SOURCE]: paymentNetworksPartitions(now),
+    [HMDA_SOURCE]: hmdaPartitions(now, from.year),
+    [DESIGNATION_LISTS_SOURCE]: designationListsPartitions(now),
+    [CRA_SOURCE]: craPartitions(now, Math.max(CRA_LENDING_FIRST_YEAR, from.year)),
+    [FR_Y9C_SOURCE]: frY9cPartitions(now, compareQuarters(from, FR_Y9C_FIRST) > 0 ? from : FR_Y9C_FIRST),
+    [NIC_STRUCTURE_SOURCE]: nicStructurePartitions(),
+    [UBPR_PEER_GROUPS_SOURCE]: ubprPeerGroupsPartitions(now, compareQuarters(from, UBPR_FIRST) > 0 ? from : UBPR_FIRST),
+    [CFPB_CARD_AGREEMENTS_SOURCE]: cfpbCardAgreementsPartitions(now, from),
     [NCUA_BRANCHES_SOURCE]: ncuaBranchPartitions(now),
     [FDIC_SOD_SOURCE]: years(Math.max(SOD_FIRST_YEAR, from.year), latestSodYear(now)),
     [CENSUS_ACS_SOURCE]: censusAcsPartitions(now),
@@ -150,14 +234,19 @@ export function registryPartitionsBySource(
 }
 
 /**
- * Every partition the registry should hold, in priority order: round-robin
- * across sources (each source's newest partition first), so one source's long
- * backfill never starves the others. Within a round, REGISTRY_SOURCES order
- * applies, which puts identity syncs (FDIC universe, SEC links) ahead of the
- * data that depends on them.
+ * Institution-roster sources that run ahead of every other source whenever one of their
+ * partitions is due, so the closed-institution and merger checks (Atlas marks closed or merged
+ * charters inactive from these) keep their cadence however many data sources are added. The
+ * FDIC universe and NCUA 5300 syncs set `institution_sources.status`; ffiec-overdraft feeds the
+ * overdraft income series. Every other source shares the remaining runs round-robin.
  */
-export function registryCandidates(now: Date, from: Quarter = backfillStart()): RegistryPartitionCandidate[] {
-  const lists = registryPartitionsBySource(now, from);
+export const PRIORITY_REGISTRY_SOURCES: readonly string[] = [
+  FDIC_UNIVERSE_SOURCE,
+  NCUA_FINANCIALS_SOURCE,
+  FFIEC_OVERDRAFT_SOURCE,
+];
+
+function roundRobin(lists: Array<{ source: string; partitions: string[] }>): RegistryPartitionCandidate[] {
   const longest = Math.max(0, ...lists.map((list) => list.partitions.length));
   const out: RegistryPartitionCandidate[] = [];
   for (let round = 0; round < longest; round += 1) {
@@ -167,6 +256,22 @@ export function registryCandidates(now: Date, from: Quarter = backfillStart()): 
     }
   }
   return out;
+}
+
+/**
+ * Every partition the registry should hold, in priority order: the roster sources in
+ * PRIORITY_REGISTRY_SOURCES first, then round-robin across the rest (each source's newest
+ * partition first), so one source's long backfill never starves the others. Within a round,
+ * REGISTRY_SOURCES order applies, which puts identity syncs (FDIC universe, SEC links) ahead
+ * of the data that depends on them.
+ */
+export function registryCandidates(now: Date, from: Quarter = backfillStart()): RegistryPartitionCandidate[] {
+  const lists = registryPartitionsBySource(now, from);
+  const priority = new Set(PRIORITY_REGISTRY_SOURCES);
+  return [
+    ...roundRobin(lists.filter((list) => priority.has(list.source))),
+    ...roundRobin(lists.filter((list) => !priority.has(list.source))),
+  ];
 }
 
 interface PartitionStateRow {
