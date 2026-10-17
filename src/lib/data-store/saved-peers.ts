@@ -1,4 +1,5 @@
 import { sql, withTransaction } from "./connection";
+import { parseSavedPeerDimensions, type SavedPeerDimensions } from "@/lib/peer-set-dimensions";
 
 export interface SavedPeerSet {
   id: number;
@@ -15,6 +16,12 @@ export interface SavedPeerSet {
   institution_id: number | null;
   /** "Use for all charts": the default peer group for its workspace, or for its owner when personal. */
   is_default: boolean;
+  /**
+   * The wider dimensions (asset range in dollars, regulator, credit union charter, holding
+   * company, metro market, closest in assets), from the `filters` jsonb column. Null or absent
+   * for a group defined only by the columns above.
+   */
+  advanced?: SavedPeerDimensions | null;
 }
 
 export interface PeerSetFilterInput {
@@ -23,11 +30,14 @@ export interface PeerSetFilterInput {
   fed_districts?: number[];
   states?: string[];
   institution_ids?: number[];
+  /** Stored in the `filters` jsonb column; the dimensions above keep their own columns. */
+  advanced?: SavedPeerDimensions | null;
 }
 
 const columns = () => sql`
   s.id, s.name, s.tiers, s.districts, s.charter_type, s.created_by, s.created_at,
-  s.institution_ids, s.states, s.institution_id, COALESCE(s.is_default, false) AS is_default
+  s.institution_ids, s.states, s.institution_id, COALESCE(s.is_default, false) AS is_default,
+  s.filters
 `;
 
 /** True when the user is an active member of the set's workspace. */
@@ -55,6 +65,7 @@ function mapRow(row: Record<string, unknown>): SavedPeerSet {
     states: states && states.length > 0 ? states : null,
     institution_id: row.institution_id == null ? null : Number(row.institution_id),
     is_default: row.is_default === true,
+    advanced: parseSavedPeerDimensions(row.filters),
   };
 }
 
@@ -136,12 +147,15 @@ export async function getPeerSetWorkspace(
 }
 
 function filterValues(filters: PeerSetFilterInput) {
+  const advanced = filters.institution_ids?.length ? null : parseSavedPeerDimensions(filters.advanced ?? null);
   return {
     tiers: filters.asset_tiers?.length ? filters.asset_tiers.join(",") : null,
     districts: filters.fed_districts?.length ? filters.fed_districts.join(",") : null,
     charter_type: filters.charter_type ?? null,
     states: filters.states?.length ? filters.states : null,
     institution_ids: filters.institution_ids?.length ? filters.institution_ids : null,
+    // Hand-picked peers are exactly those institutions, so no wider dimension is kept with them.
+    filters: advanced ? JSON.stringify(advanced) : null,
   };
 }
 
@@ -153,7 +167,7 @@ export async function savePeerSet(
 ): Promise<number> {
   const v = filterValues(filters);
   const [row] = await sql`
-    INSERT INTO saved_peer_sets (name, tiers, districts, charter_type, states, institution_ids, institution_id, created_by)
+    INSERT INTO saved_peer_sets (name, tiers, districts, charter_type, states, institution_ids, filters, institution_id, created_by)
     VALUES (
       ${name},
       ${v.tiers},
@@ -161,6 +175,7 @@ export async function savePeerSet(
       ${v.charter_type},
       ${v.states}::text[],
       ${v.institution_ids}::int[],
+      ${v.filters}::jsonb,
       ${institutionId},
       ${userId}
     )
@@ -194,7 +209,8 @@ export async function updatePeerSet(
       districts = ${v.districts},
       charter_type = ${v.charter_type},
       states = ${v.states}::text[],
-      institution_ids = ${v.institution_ids}::int[]
+      institution_ids = ${v.institution_ids}::int[],
+      filters = ${v.filters}::jsonb
     WHERE s.id = ${id} AND ${editableBy(userId)}
   `;
   return result.count > 0;

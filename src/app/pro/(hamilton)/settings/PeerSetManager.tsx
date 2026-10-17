@@ -5,6 +5,13 @@ import { InstitutionPicker, type InstitutionSearchResult } from "@/components/ha
 import { STATE_NAMES } from "@/lib/us-states";
 import { defaultPeerSetName } from "@/lib/hamilton/peer-set-name";
 import {
+  MAX_NEAREST_PEER_COUNT,
+  PEER_REGULATOR_LABELS,
+  SAVED_PEER_REGULATORS,
+  describeSavedPeerDimensions,
+  type SavedPeerDimensions,
+} from "@/lib/peer-set-dimensions";
+import {
   createPeerSet,
   editPeerSet,
   removePeerSet,
@@ -29,6 +36,20 @@ export interface PeerSetRow {
   states: string[] | null;
   institution_id: number | null;
   is_default: boolean;
+  /** Asset range in dollars, regulator, credit union charter, holding company, metro, closest in assets. */
+  advanced?: SavedPeerDimensions | null;
+}
+
+export interface PeerMarketOption {
+  code: number;
+  name: string;
+}
+
+/** The research subject the wider dimensions are measured against. */
+export interface PeerSetSubject {
+  name: string | null;
+  holdingCompanyRssd: string | null;
+  hasAssets: boolean;
 }
 
 export interface PeerSetCount {
@@ -73,6 +94,11 @@ export function PeerSetManager({
   initialPeerSets,
   initialCounts = {},
   initialInstitutionNames = {},
+  initialNotes = {},
+  marketOptions = [],
+  marketNames = {},
+  homeMarket = null,
+  subject = null,
   workspaceName = null,
   canEditWorkspaceSets = true,
   currentUserId = "",
@@ -83,6 +109,15 @@ export function PeerSetManager({
   initialPeerSets: PeerSetRow[];
   initialCounts?: Record<number, PeerSetCount>;
   initialInstitutionNames?: Record<number, string>;
+  /** Why a saved group has no peers right now, by set id. */
+  initialNotes?: Record<number, string>;
+  /** Metro markets for the metro dropdown, by name. */
+  marketOptions?: PeerMarketOption[];
+  /** Metro names by code, for saved groups' summaries. */
+  marketNames?: Record<number, string>;
+  /** The metro holding most of the research institution's branches. */
+  homeMarket?: PeerMarketOption | null;
+  subject?: PeerSetSubject | null;
   /** The team workspace new sets are shared with; null when sets are personal. */
   workspaceName?: string | null;
   canEditWorkspaceSets?: boolean;
@@ -97,6 +132,7 @@ export function PeerSetManager({
   const [peerSets, setPeerSets] = useState(initialPeerSets);
   const [counts, setCounts] = useState<Record<number, PeerSetCount>>(initialCounts);
   const [names, setNames] = useState<Record<number, string>>(initialInstitutionNames);
+  const [notes, setNotes] = useState<Record<number, string>>(initialNotes);
   const [editing, setEditing] = useState<PeerSetRow | "new" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -118,6 +154,12 @@ export function PeerSetManager({
     });
     if (result.count) setCounts((prev) => ({ ...prev, [saved.id]: result.count as PeerSetCount }));
     if (result.institutionNames) setNames((prev) => ({ ...prev, ...result.institutionNames }));
+    setNotes((prev) => {
+      const next = { ...prev };
+      if (result.note) next[saved.id] = result.note;
+      else delete next[saved.id];
+      return next;
+    });
   }
 
   function handleDelete(id: number) {
@@ -246,11 +288,18 @@ export function PeerSetManager({
                           )}
                           {ps.tiers && <span>Assets: {ps.tiers.split(",").map(tierLabel).join(", ")}</span>}
                           {ps.districts && <span>Fed districts: {ps.districts.split(",").join(", ")}</span>}
+                          {ps.advanced &&
+                            describeSavedPeerDimensions(
+                              ps.advanced,
+                              ps.advanced.market_code !== undefined ? marketNames[ps.advanced.market_code] : null,
+                            ).map((part) => <span key={part}>{part}</span>)}
                         </>
                       )}
                     </p>
                     <p className="mt-1 text-sm text-warm-700 [font-variant-numeric:tabular-nums]">
-                      {count === undefined
+                      {notes[ps.id]
+                        ? notes[ps.id]
+                        : count === undefined
                         ? "Peer count not available right now."
                         : `${plural(count.institutions, "institution", "institutions")} in this group; ${count.publishing.toLocaleString("en-US")} publish live fees.`}
                     </p>
@@ -302,6 +351,10 @@ export function PeerSetManager({
           key={editing === "new" ? "new" : editing.id}
           initial={editing === "new" ? null : editing}
           names={names}
+          marketOptions={marketOptions}
+          marketNames={marketNames}
+          homeMarket={homeMarket}
+          subject={subject}
           isPending={isPending}
           researchInstitutionId={researchInstitutionId}
           onCancel={() => setEditing(null)}
@@ -312,9 +365,25 @@ export function PeerSetManager({
   );
 }
 
+/** Total assets in dollars as the form shows them, in millions. */
+function millions(value: number | undefined): string {
+  return value === undefined ? "" : String(+(value / 1_000_000).toFixed(3));
+}
+
+/** True when any wider dimension is filled in; the server then names the group. */
+function hasWiderChoice(form: FormData): boolean {
+  return ["asset_min_m", "asset_max_m", "cu_charter", "holding_company_rssd", "market_code", "nearest"].some(
+    (key) => String(form.get(key) ?? "").trim() !== "",
+  ) || form.getAll("regulators").length > 0;
+}
+
 function PeerSetForm({
   initial,
   names,
+  marketOptions,
+  marketNames,
+  homeMarket,
+  subject,
   isPending,
   researchInstitutionId,
   onCancel,
@@ -322,6 +391,10 @@ function PeerSetForm({
 }: {
   initial: PeerSetRow | null;
   names: Record<number, string>;
+  marketOptions: PeerMarketOption[];
+  marketNames: Record<number, string>;
+  homeMarket: PeerMarketOption | null;
+  subject: PeerSetSubject | null;
   isPending: boolean;
   researchInstitutionId?: number | null;
   onCancel: () => void;
@@ -338,6 +411,14 @@ function PeerSetForm({
   const [pickerKey, setPickerKey] = useState(0);
   const tiers = new Set((initial?.tiers ?? "").split(",").filter(Boolean));
   const districts = new Set((initial?.districts ?? "").split(",").filter(Boolean).map(Number));
+  const advanced = initial?.advanced ?? null;
+  const regulators = new Set(advanced?.regulators ?? []);
+  const holdingRssd = advanced?.holding_company_rssd ?? subject?.holdingCompanyRssd ?? null;
+  const savedMarket = advanced?.market_code;
+  const otherMarkets = marketOptions.filter((m) => m.code !== homeMarket?.code);
+  const savedMarketListed = savedMarket === undefined || savedMarket === homeMarket?.code || marketOptions.some((m) => m.code === savedMarket);
+  const subjectName = subject?.name ?? "your institution";
+  const tapLabel = "flex min-h-11 cursor-pointer items-center gap-1.5 text-sm text-warm-800";
 
   function addInstitution(result: InstitutionSearchResult | null) {
     if (!result) return;
@@ -354,7 +435,7 @@ function PeerSetForm({
       onSubmit={(e) => {
         e.preventDefault();
         const form = new FormData(e.currentTarget);
-        if (!String(form.get("name") ?? "").trim()) {
+        if (!String(form.get("name") ?? "").trim() && !(mode === "filters" && hasWiderChoice(form))) {
           form.set("name", defaultPeerSetName(mode === "institutions" ? { institution_ids: chosen.map(peer => peer.id) } : {
             charter_type: String(form.get("charter_type") ?? ""),
             states,
@@ -383,7 +464,7 @@ function PeerSetForm({
         <legend className={fieldLabel}>How to pick peers</legend>
         <div className="mt-2 flex flex-wrap gap-4">
           {[
-            { value: "filters" as const, label: "By charter, state and size" },
+            { value: "filters" as const, label: "By charter, state, size and more" },
             { value: "institutions" as const, label: "Choose institutions by name" },
           ].map((opt) => (
             <label key={opt.value} className="flex cursor-pointer items-center gap-1.5 text-sm text-warm-800">
@@ -547,6 +628,159 @@ function PeerSetForm({
             </div>
             <p className="mt-1 text-xs text-warm-600">Leave districts blank to include every district.</p>
             </fieldset>
+          </details>
+          <details open={Boolean(advanced)}>
+            <summary className="flex min-h-11 cursor-pointer items-center text-sm font-medium text-warm-800">
+              More ways to define peers (optional)
+            </summary>
+            <div className="mt-2 flex flex-col gap-4">
+              <fieldset>
+                <legend className={fieldLabel}>Total assets range</legend>
+                <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <label className="flex flex-col gap-1 text-sm text-warm-800">
+                    <span>Lowest, in $ millions</span>
+                    <input
+                      name="asset_min_m"
+                      inputMode="decimal"
+                      defaultValue={millions(advanced?.asset_min)}
+                      placeholder="For example 500"
+                      className={`${inputClass} min-h-11`}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-sm text-warm-800">
+                    <span>Highest, in $ millions</span>
+                    <input
+                      name="asset_max_m"
+                      inputMode="decimal"
+                      defaultValue={millions(advanced?.asset_max)}
+                      placeholder="For example 2000"
+                      className={`${inputClass} min-h-11`}
+                    />
+                  </label>
+                </div>
+                <p className="mt-1 text-xs text-warm-600">
+                  Uses each institution&apos;s latest reported total assets. Fill in one side for an open-ended range.
+                </p>
+              </fieldset>
+
+              <fieldset>
+                <legend className={fieldLabel}>Primary regulator</legend>
+                <div className="mt-1 grid grid-cols-2 gap-x-3 sm:grid-cols-4">
+                  {SAVED_PEER_REGULATORS.map((key) => (
+                    <label key={key} className={tapLabel}>
+                      <input
+                        type="checkbox"
+                        name="regulators"
+                        value={key}
+                        defaultChecked={regulators.has(key)}
+                        className="accent-terra"
+                      />
+                      {PEER_REGULATOR_LABELS[key]}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+
+              <fieldset>
+                <legend className={fieldLabel}>Credit union charter</legend>
+                <div className="mt-1 flex flex-wrap gap-x-4">
+                  {[
+                    { value: "", label: "Any" },
+                    { value: "federal", label: "Federal charter" },
+                    { value: "state", label: "State charter" },
+                  ].map((opt) => (
+                    <label key={opt.value} className={tapLabel}>
+                      <input
+                        type="radio"
+                        name="cu_charter"
+                        value={opt.value}
+                        defaultChecked={(advanced?.cu_charter ?? "") === opt.value}
+                        className="accent-terra"
+                      />
+                      {opt.label}
+                    </label>
+                  ))}
+                </div>
+                <p className="text-xs text-warm-600">Applies to credit unions only.</p>
+              </fieldset>
+
+              <div className="flex flex-col gap-1 text-sm text-warm-800">
+                <label htmlFor="peer_set_market" className="font-medium">Metro market</label>
+                <select
+                  id="peer_set_market"
+                  aria-describedby="peer_set_market_help"
+                  name="market_code"
+                  defaultValue={savedMarket === undefined ? "" : String(savedMarket)}
+                  className={`${inputClass} min-h-11 sm:w-96`}
+                >
+                  <option value="">Any metro</option>
+                  {homeMarket && <option value={homeMarket.code}>My home market: {homeMarket.name}</option>}
+                  {!savedMarketListed && savedMarket !== undefined && (
+                    <option value={savedMarket}>{marketNames[savedMarket] ?? `Metro ${savedMarket}`}</option>
+                  )}
+                  {otherMarkets.length > 0 && (
+                    <optgroup label="All metros">
+                      {otherMarkets.map((m) => (
+                        <option key={m.code} value={m.code}>
+                          {m.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+                <p id="peer_set_market_help" className="text-xs text-warm-600">
+                  Institutions with a branch in the metro, from FDIC and NCUA branch records.
+                  {!homeMarket && otherMarkets.length === 0 ? " None found: the metro list is not available right now." : ""}
+                </p>
+              </div>
+
+              <fieldset>
+                <legend className={fieldLabel}>Holding company</legend>
+                {holdingRssd ? (
+                  <label className={tapLabel}>
+                    <input
+                      type="checkbox"
+                      name="holding_company_rssd"
+                      value={holdingRssd}
+                      defaultChecked={Boolean(advanced?.holding_company_rssd)}
+                      className="accent-terra"
+                    />
+                    {advanced?.holding_company_rssd && advanced.holding_company_rssd !== subject?.holdingCompanyRssd
+                      ? "Only institutions in the holding company this group was saved with"
+                      : `Only institutions in the same holding company as ${subjectName}`}
+                  </label>
+                ) : (
+                  <p className="mt-1 text-sm text-warm-600">
+                    {subject ? `None found: no holding company is on record for ${subjectName}.` : "Choose a research institution above to use this."}
+                  </p>
+                )}
+              </fieldset>
+
+              <div className="flex flex-col gap-1 text-sm text-warm-800">
+                <label htmlFor="peer_set_nearest" className="font-medium">Keep only the closest in total assets</label>
+                <input
+                  id="peer_set_nearest"
+                  aria-describedby="peer_set_nearest_help"
+                  name="nearest"
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={MAX_NEAREST_PEER_COUNT}
+                  step={1}
+                  defaultValue={advanced?.nearest ?? ""}
+                  disabled={!subject?.hasAssets && advanced?.nearest === undefined}
+                  placeholder={`1 to ${MAX_NEAREST_PEER_COUNT}`}
+                  className={`${inputClass} min-h-11 sm:w-40`}
+                />
+                <p id="peer_set_nearest_help" className="text-xs text-warm-600">
+                  {subject?.hasAssets
+                    ? `How many to keep, closest to ${subjectName}'s total assets, among institutions that publish fees and meet everything else. Leave blank to keep them all.`
+                    : subject
+                      ? `None found: no total assets are on record for ${subjectName}, so this can't be measured.`
+                      : "Choose a research institution above to use this."}
+                </p>
+              </div>
+            </div>
           </details>
           <p className="text-xs text-warm-600">Leave states or asset size blank to include all.</p>
         </>

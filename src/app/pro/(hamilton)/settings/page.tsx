@@ -16,8 +16,11 @@ import { getPeerGroupCounts, type PeerGroupCount } from "@/lib/data-store/fee-in
 import {
   buildInstitutionPeerFilterCandidates,
   describePeerFilters,
-  parseSavedPeerSetFilters,
+  resolveSavedPeerSetFilters,
 } from "@/lib/hamilton/peer-index";
+import { getPeerSubject } from "@/lib/data-store/peer-sets";
+import { getHomeMarket } from "@/lib/data-store/peer-markets";
+import { getMarketConcentration } from "@/lib/data-store/financial";
 import { MIN_PEERS_FOR_POSITION } from "@/lib/hamilton/workspace/scenario";
 import {
   getIntelligenceSnapshot,
@@ -111,16 +114,49 @@ export default async function SettingsPage({
   const peerSets: SavedPeerSet[] = loadedPeerSets.filter((set) =>
     set.institution_id === null || set.institution_id === peerSetWorkspace?.institutionId,
   );
-  // Real counts of the institutions each set resolves to, and names for the chosen-peer chips.
-  const [peerSetCounts, peerInstitutionNames] = await Promise.all([
-    getPeerGroupCounts(
-      peerSets.map((set) => parseSavedPeerSetFilters(set)),
-      peerSetWorkspace?.institutionId ?? selectedInstitution?.id ?? null,
-    ).catch((): PeerGroupCount[] => []),
+  // The institution "closest in assets", "same holding company" and "my home market" are
+  // measured against: the research subject.
+  const peerSubjectId = peerSetWorkspace?.institutionId ?? selectedInstitution?.id ?? null;
+  const [peerSubject, homeMarket, metroRows] = await Promise.all([
+    peerSubjectId ? getPeerSubject(peerSubjectId).catch(() => null) : null,
+    peerSubjectId ? getHomeMarket(peerSubjectId).catch(() => null) : null,
+    // Every metro with branch records, largest by deposits first (FDIC Summary of Deposits).
+    getMarketConcentration({ minInstitutions: 1, limit: 500, sort: "deposits_desc" }).catch(() => []),
+  ]);
+  const metroOptions = [...new Map(metroRows.map((row) => [Number(row.msa_code), String(row.msa_name)])).entries()]
+    .filter(([code, name]) => Number.isInteger(code) && code > 0 && name)
+    .map(([code, name]) => ({ code, name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const marketNames: Record<number, string> = Object.fromEntries(metroOptions.map((m) => [m.code, m.name]));
+  if (homeMarket) marketNames[homeMarket.code] = homeMarket.name;
+  // Real counts of the institutions each set resolves to (the path charts use), and names for
+  // the chosen-peer chips.
+  const [resolvedPeerSets, peerInstitutionNames] = await Promise.all([
+    Promise.all(peerSets.map(async (set) => {
+      try {
+        return await resolveSavedPeerSetFilters(set, peerSubjectId);
+      } catch {
+        return null;
+      }
+    })),
     getPeerInstitutionNames(peerSets.flatMap((set) => set.institution_ids ?? [])).catch(
       () => new Map<number, string>(),
     ),
   ]);
+  const countable = resolvedPeerSets.flatMap((resolved, i) => (resolved?.filters ? [{ i, filters: resolved.filters }] : []));
+  const countRows = await getPeerGroupCounts(
+    countable.map((entry) => entry.filters),
+    peerSubjectId,
+  ).catch((): PeerGroupCount[] => []);
+  const peerSetCounts: (PeerGroupCount | undefined)[] = peerSets.map((_, i) => {
+    const resolved = resolvedPeerSets[i];
+    if (resolved && !resolved.filters) return { institutions: 0, publishing: 0 };
+    const at = countable.findIndex((entry) => entry.i === i);
+    return at >= 0 ? countRows[at] : undefined;
+  });
+  const peerSetNotes: Record<number, string> = Object.fromEntries(
+    peerSets.flatMap((set, i) => (resolvedPeerSets[i]?.problem ? [[set.id, resolvedPeerSets[i]!.problem!]] : [])),
+  );
   // Where a set is too thin for a fee, charts fall back to the bank's own default group.
   const firstDefaultGroup = selectedInstitution
     ? buildInstitutionPeerFilterCandidates({
@@ -274,6 +310,15 @@ export default async function SettingsPage({
               peerSets.flatMap((set, i) => (peerSetCounts[i] ? [[set.id, peerSetCounts[i]]] : [])),
             )}
             initialInstitutionNames={Object.fromEntries(peerInstitutionNames)}
+            initialNotes={peerSetNotes}
+            marketOptions={metroOptions}
+            marketNames={marketNames}
+            homeMarket={homeMarket}
+            subject={peerSubject ? {
+              name: selectedInstitution?.name ?? null,
+              holdingCompanyRssd: peerSubject.holding_company_rssd ?? null,
+              hasAssets: Number(peerSubject.asset_size) > 0,
+            } : null}
             workspaceName={peerSetWorkspace ? selectedInstitution?.name ?? null : null}
             canEditWorkspaceSets={peerSetWorkspace?.role !== "viewer"}
             currentUserId={String(user.id)}

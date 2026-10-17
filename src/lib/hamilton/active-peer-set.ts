@@ -16,11 +16,19 @@
  * (getPeerFeeValues, getPeerIndex, getPeerIndexes) ignore `label` and honour the set's
  * `institutionIds` (exactly those peers) and `states`.
  *
+ * A set with a wider dimension (asset range in dollars, regulator, credit union charter, holding
+ * company, metro market, closest in assets) is resolved once through resolvePeerSet
+ * (src/lib/data-store/peer-sets.ts) into the exact institutions, so its filters are
+ * `institutionIds` and every reader above works unchanged. resolveSavedPeerSetFilters is that
+ * one path, for any caller holding a saved set.
+ *
  * The implementation lives in peer-index.ts beside the resolver, which uses the same default
  * when no peerSetId is passed.
  */
 export {
+  chooseDefaultPeerSet,
   getActivePeerSet,
+  resolveSavedPeerSetFilters,
   peerSetCandidate,
   pickActivePeerSet,
   type ActivePeerSet,

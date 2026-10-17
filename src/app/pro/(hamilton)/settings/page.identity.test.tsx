@@ -39,8 +39,11 @@ vi.mock("@/lib/data-store/fee-index", () => ({ getPeerGroupCounts: mocks.peerCou
 vi.mock("@/lib/hamilton/peer-index", () => ({
   buildInstitutionPeerFilterCandidates: () => [],
   describePeerFilters: () => "the national index",
-  parseSavedPeerSetFilters: () => ({}),
+  resolveSavedPeerSetFilters: async () => ({ filters: {}, label: "Peers", problem: null }),
 }));
+vi.mock("@/lib/data-store/peer-sets", () => ({ getPeerSubject: async () => null }));
+vi.mock("@/lib/data-store/peer-markets", () => ({ getHomeMarket: async () => null }));
+vi.mock("@/lib/data-store/financial", () => ({ getMarketConcentration: async () => [] }));
 vi.mock("@/lib/hamilton/workspace-invite-link", () => ({
   inviteLinksConfigured: () => false,
   buildWorkspaceInvitePath: () => null,

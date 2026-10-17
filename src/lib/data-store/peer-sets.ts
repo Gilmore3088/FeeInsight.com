@@ -19,7 +19,7 @@
 import { sql } from "./connection";
 import { peerInstitutionIds, type PeerFilterSet } from "./fee-index";
 import { getHomeMarket, getMarketInstitutionIds, type PeerMarket } from "./peer-markets";
-import { ASSET_TIER_RANGES } from "@/lib/hamilton/peer-index";
+import { ASSET_TIER_RANGES } from "@/lib/hamilton/asset-tier-ranges";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 
 export const PEER_REGULATORS = { occ: "OCC", fdic: "FDIC", fed: "Federal Reserve", ncua: "NCUA" } as const;

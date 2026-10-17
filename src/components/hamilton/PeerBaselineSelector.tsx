@@ -1,11 +1,15 @@
 "use client";
 
+import { describeSavedPeerDimensions, type SavedPeerDimensions } from "@/lib/peer-set-dimensions";
+
 export interface HamiltonPeerSetOption {
   id: number;
   name: string;
   tiers: string | null;
   districts: string | null;
   charter_type: string | null;
+  /** Asset range, regulator, credit union charter, holding company, metro, closest in assets. */
+  advanced?: SavedPeerDimensions | null;
 }
 
 interface PeerBaselineSelectorProps {
@@ -27,6 +31,7 @@ function formatPeerSetSummary(peerSet: HamiltonPeerSetOption): string {
     formatCharter(peerSet.charter_type),
     peerSet.tiers ? `tiers ${peerSet.tiers}` : null,
     peerSet.districts ? `districts ${peerSet.districts}` : null,
+    ...(peerSet.advanced ? describeSavedPeerDimensions(peerSet.advanced) : []),
   ].filter(Boolean);
   return parts.length > 0 ? parts.join(" · ") : "custom peer set";
 }

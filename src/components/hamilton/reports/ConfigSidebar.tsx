@@ -5,6 +5,7 @@ import type { ReportTemplateType } from "@/app/pro/(hamilton)/reports/actions";
 import type { ReportPeerCoveragePreview } from "@/lib/hamilton/report-evidence";
 import { hrefWithInstitutionContext, normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
 import type { HamiltonPeerSetOption } from "@/components/hamilton/PeerBaselineSelector";
+import { describeSavedPeerDimensions } from "@/lib/peer-set-dimensions";
 import { SERIF } from "@/components/hamilton/memo/memo";
 import {
   REPORT_GOALS,
@@ -136,6 +137,7 @@ function formatPeerSetSummary(peerSet: HamiltonPeerSetOption): string {
     charter,
     peerSet.tiers ? `asset tiers ${peerSet.tiers}` : null,
     peerSet.districts ? `Fed districts ${peerSet.districts}` : null,
+    ...(peerSet.advanced ? describeSavedPeerDimensions(peerSet.advanced) : []),
   ].filter(Boolean);
   return parts.length > 0 ? parts.join(" · ") : "your own list";
 }
