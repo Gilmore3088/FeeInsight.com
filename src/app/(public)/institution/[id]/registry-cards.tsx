@@ -260,6 +260,14 @@ export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint 
           {nearby.length > 0 && (
             <>
               <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.1em] text-ink-muted">Largest competitors nearby</p>
+              {footprint.marketName && (
+                <p className="mt-1 text-[11px] text-ink-soft">
+                  Local market: {footprint.marketName}
+                  {footprint.marketBasis === "hq_city"
+                    ? ", around its headquarters."
+                    : `, where it holds the most deposits${footprint.byState.length > 1 ? " in its main state" : ""}.`}
+                </p>
+              )}
               <table className="mt-1 w-full text-left text-[11px] tabular-nums">
                 <thead className="text-[10px] text-ink-muted">
                   <tr>
@@ -278,7 +286,7 @@ export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint 
               </table>
               {footprint.ownDepositSharePct != null && (
                 <p className="mt-1 text-[11px] text-ink-soft">
-                  This bank holds {footprint.ownDepositSharePct}% of the deposits in its local market.
+                  This bank holds {footprint.ownDepositSharePct}% of the deposits {footprint.marketName ? "there" : "in its local market"}.
                 </p>
               )}
             </>

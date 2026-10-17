@@ -55,6 +55,10 @@ export interface BranchFootprint {
   nearbyCount?: number;
   /** Banks only: this bank's share of the bank deposits in its local market, in percent. */
   ownDepositSharePct?: number | null;
+  /** The local market named for a reader: "Leon, Alachua and Gadsden counties, FL"; null when unknown. */
+  marketName?: string | null;
+  /** branch_counties: the counties holding most of its deposits; hq_city: its headquarters city's counties. */
+  marketBasis?: "branch_counties" | "hq_city" | null;
   /** Offices placed on the zoomed map (credit union coordinates are added over time). */
   mappedOffices?: number;
   /** True when the zoomed map applies but too few offices are placed yet to draw it. */
@@ -116,12 +120,36 @@ async function otherOfficesIn(
   return [...rows];
 }
 
+/** "Leon", "Leon and Wakulla", "Leon, Alachua and Gadsden". */
+function joinNames(names: string[]): string {
+  return names.length <= 2 ? names.join(" and ") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+/** The market counties by name (USDA county list), in market order: "Leon, Alachua and Gadsden counties, FL". */
+async function marketCountyName(countyFips: string[], fallbackPlaces: string[]): Promise<string | null> {
+  if (countyFips.length === 0) return null;
+  const rows = await sql<{ geo_code: string; geo_name: string; state_code: string | null }[]>`
+    SELECT DISTINCT ON (LPAD(geo_code, 5, '0')) LPAD(geo_code, 5, '0') AS geo_code, geo_name, state_code
+      FROM area_statistics
+     WHERE source = 'usda-rucc' AND geo_type = 'county' AND LPAD(geo_code, 5, '0') = ANY(${countyFips})
+     ORDER BY LPAD(geo_code, 5, '0')`.catch(() => []);
+  const byFips = new Map(rows.map((r) => [r.geo_code, r]));
+  const found = countyFips.map((f) => byFips.get(f)).filter((r): r is NonNullable<typeof r> => Boolean(r));
+  if (found.length !== countyFips.length) return fallbackPlaces.length > 0 ? fallbackPlaces.join("; ") : null;
+  const short = found.map((r) => r.geo_name.replace(/\s+(County|Parish|Borough|Census Area|Municipality)$/i, ""));
+  const states = [...new Set(found.map((r) => r.state_code).filter(Boolean))];
+  const kind = /Parish$/i.test(found[0].geo_name) ? "parish" : "county";
+  const noun = found.length === 1 ? kind : kind === "parish" ? "parishes" : "counties";
+  return `${joinNames(short)} ${noun}${states.length === 1 ? `, ${states[0]}` : ""}`;
+}
+
 /** The largest competitors in the institution's local market, and a bank's own deposit share there. */
 async function marketCompetitors(
   institutionId: number,
-): Promise<Pick<BranchFootprint, "nearby" | "nearbyCount" | "ownDepositSharePct">> {
+): Promise<Pick<BranchFootprint, "nearby" | "nearbyCount" | "ownDepositSharePct" | "marketName" | "marketBasis">> {
   const market = await getLocalMarketMembers(institutionId).catch(() => null);
   if (!market) return { nearby: [], nearbyCount: 0, ownDepositSharePct: null };
+  const marketName = await marketCountyName(market.county_fips, market.places);
   const total = market.members.reduce((sum, m) => sum + (m.market_deposits ?? 0), 0);
   const share = (deposits: number | null) =>
     deposits === null || total <= 0 ? null : Math.round((deposits / total) * 1000) / 10;
@@ -135,6 +163,8 @@ async function marketCompetitors(
     })),
     nearbyCount: rivals.length,
     ownDepositSharePct: subject ? share(subject.market_deposits) : null,
+    marketName,
+    marketBasis: market.basis,
   };
 }
 
@@ -152,7 +182,7 @@ async function localMapFor(
   points: OfficePoint[],
   isBank: boolean,
   totalOffices: number,
-): Promise<Pick<BranchFootprint, "localMap" | "mappedOffices" | "mapPending" | "approxOffices" | "nearby" | "nearbyCount" | "ownDepositSharePct">> {
+): Promise<Pick<BranchFootprint, "localMap" | "mappedOffices" | "mapPending" | "approxOffices" | "nearby" | "nearbyCount" | "ownDepositSharePct" | "marketName" | "marketBasis">> {
   if (states.length === 0 || states.length > LOCAL_MAP_MAX_STATES) return { localMap: null, mappedOffices: 0 };
   const own = points.map((p) => ({
     latitude: Number(p.latitude),
