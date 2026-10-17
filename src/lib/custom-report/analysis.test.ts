@@ -90,7 +90,7 @@ describe("tiered fees", () => {
     // Lowest first, each with its own quote; overdraft compares at the highest (standard) tier.
     expect(line.own?.tiers?.map((t) => t.amount)).toEqual([5, 35]);
     expect(line.own?.amount).toBe(35);
-    expect(line.own?.evidence?.basis).toBe("highest of 2 prices");
+    expect(line.own?.evidence?.basis).toBe("highest of 2 published prices");
   });
 });
 
@@ -189,7 +189,7 @@ describe("buildReportCsv", () => {
     const analysis = analyzeMarket(data);
     const rows = parseCsv(buildReportCsv(data, analysis)).filter((r) => r.row === "competitor" && r.institution_id === "100" && r.fee_line === "Overdraft (per item)");
     expect(rows.map((r) => [r.record_id, r.record_amount, r.record_used])).toEqual([["11", "10", "yes"], ["12", "30", "yes"], ["13", "35", "no"]]);
-    expect(rows[0]).toMatchObject({ amount: "30", amount_basis: "highest of 2 prices", published_range: "$10 to $30", records: "3" });
+    expect(rows[0]).toMatchObject({ amount: "30", amount_basis: "highest of 2 published prices", published_range: "$10 to $30", records: "3" });
     expect(rows[2].missing_reason).toBe(MISSING_EXCLUDED);
     expect(analysis.exclusions).toEqual({ competitorAmounts: 0, competitorRecords: 1, ownAmounts: 0, ownRecords: 0 });
   });

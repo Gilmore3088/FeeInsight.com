@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MarketFeeLine } from "@/lib/data-store/custom-report-market";
-import { amountBasis, buildAmountEvidence, educationalPage, evidenceProblem, quoteStatesFigure } from "./evidence";
+import { amountBasis, buildAmountEvidence, educationalPage, evidenceProblem, quoteNamesOtherFee, quoteStatesFigure } from "./evidence";
 
 const READ = "2026-10-15";
 
@@ -62,13 +62,13 @@ describe("buildAmountEvidence", () => {
     tiers[1] = { ...tiers[1], source_line: "Prime Checking Monthly service fee | $15" };
     const evidence = buildAmountEvidence({ ...wells, tiers });
     expect(evidence.excluded.map((r) => r.record_id)).toEqual([68708]);
-    expect(evidence).toMatchObject({ amount: 10, basis: "middle of 2 published prices" });
+    expect(evidence).toMatchObject({ amount: 10, basis: "midpoint of $5 and $15" });
   });
 });
 
 describe("evidence rules", () => {
   it("reads overdraft at the highest of its prices", () => {
-    expect(amountBasis("overdraft", [25, 30])).toBe("highest of 2 prices");
+    expect(amountBasis("overdraft", [25, 30])).toBe("highest of 2 published prices");
     expect(amountBasis("overdraft", [35, 35])).toBe("published price");
   });
 
@@ -85,5 +85,33 @@ describe("evidence rules", () => {
     expect(quoteStatesFigure(quote, 12)).toBe(false);
     expect(evidenceProblem("monthly_maintenance", { product: "Monthly Maintenance Fee", amount: 10, quote, source_url: null })).toBeNull();
     expect(evidenceProblem("monthly_maintenance", { product: "Monthly Maintenance Fee", amount: 12, quote, source_url: null })).toBe("quote_without_amount");
+  });
+
+  it("gives two prices as a midpoint", () => {
+    expect(amountBasis("card_replacement", [15, 10])).toBe("midpoint of $10 and $15");
+    expect(amountBasis("monthly_maintenance", [5, 15, 25])).toBe("middle of 3 published prices");
+  });
+});
+
+describe("quoteNamesOtherFee (sample market, 17 Oct 2026)", () => {
+  it("fails a quote that labels the amount as another fee", () => {
+    // TD row 64716, filed as a monthly maintenance fee.
+    const td = "Paper statements | $3 monthly fee | Free for customers aged 60+, otherwise $3 monthly fee";
+    expect(quoteNamesOtherFee("monthly_maintenance", td, 3)).toBe(true);
+    expect(evidenceProblem("monthly_maintenance", { product: "Monthly fee", amount: 3, quote: td, source_url: null })).toBe("quote_names_other_fee");
+    // Regions row 101170, an ATM figure on the bank-by-mail line.
+    expect(quoteNamesOtherFee("atm_non_network", "Bank By Mail Deposits . . . . . . $5.00 | including a check, in-person withdrawal, ATM", 5)).toBe(true);
+    // Hancock Whitney row 66419: the sustained overdraft fee, not the per-item fee.
+    expect(quoteNamesOtherFee("overdraft", "not qualify as a direct deposit. | Sustained Overdraft Fee of $36.00. This", 36)).toBe(true);
+    // ServisFirst row 66594: $10 is the incoming wire, filed as outgoing.
+    expect(quoteNamesOtherFee("wire_domestic_outgoing", "Domestic Wire Transfer Fees | Incoming - $10.00 Outgoing - $20.00", 10)).toBe(true);
+  });
+
+  it("keeps a quote whose label names the fee itself, or names no fee", () => {
+    expect(quoteNamesOtherFee("wire_intl_outgoing", "International Wire Transfer Fees | Incoming - $20.00 Outgoing - $20.00", 20)).toBe(false);
+    expect(quoteNamesOtherFee("wire_domestic_outgoing", "| Domestic Outgoing (per transfer) | $30.00 |", 30)).toBe(false);
+    expect(quoteNamesOtherFee("monthly_maintenance", "A service charge of $5 will be imposed every statement cycle the daily balance falls below $500", 5)).toBe(false);
+    expect(quoteNamesOtherFee("paper_statement", "Paper statements are available for an additional $2 per month", 2)).toBe(false);
+    expect(quoteNamesOtherFee("stop_payment", "$33.00 each", 33)).toBe(false);
   });
 });

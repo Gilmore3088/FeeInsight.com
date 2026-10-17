@@ -25,7 +25,7 @@ import { isArticleLink } from "@/lib/agents/magellan/link-coverage";
 import { checkFeeAgainstSource } from "./source-check";
 import { FEE_LINE_RULES } from "./rules";
 
-export type EvidenceProblem = "quote_without_amount" | "not_a_fee_schedule";
+export type EvidenceProblem = "quote_without_amount" | "quote_names_other_fee" | "not_a_fee_schedule";
 
 export interface EvidenceRecord {
   /** The published_fee_catalog row id, when the copy holds it. */
@@ -44,7 +44,7 @@ export interface EvidenceRecord {
 export interface AmountEvidence {
   /** The value compared for the institution, rebuilt from the usable records; null when none is usable. */
   amount: number | null;
-  /** "published price", "middle of 3 published prices" or "highest of 2 prices"; null when excluded. */
+  /** "published price", "midpoint of $10 and $15", "middle of 3 published prices" or "highest of 2 published prices"; null when excluded. */
   basis: string | null;
   /** The records the amount is built from, lowest first. */
   records: EvidenceRecord[];
@@ -90,6 +90,62 @@ export function quoteStatesFigure(quote: string, amount: number): boolean {
 
 const INCLUDE_BY_LINE = new Map(FEE_LINE_RULES.map((rule) => [rule.key, rule.include]));
 
+// The report's fee-line rules (Postgres `~*`, \m and \M word boundaries) read as JavaScript, as
+// whole words from their start: inside a fee name "nsf" may sit anywhere, but in a quoted label
+// "nsf" in "transfer" or "clos" in "disclosure" is not a fee word.
+const asRegex = (pattern: string) => new RegExp(`\\b(?:${pattern.replace(/\\[mM]/g, "\\b")})`, "i");
+/** The line's own words from its label ("Outgoing international wire"), five letters or more. */
+const labelWords = (label: string) =>
+  [...new Set(label.toLowerCase().match(/[a-z]{5,}/g) ?? [])].map((word) => new RegExp(`\\b${word}`, "i"));
+const LINE_TESTS = FEE_LINE_RULES.map((rule) => ({
+  rule,
+  include: asRegex(rule.include),
+  exclude: asRegex(rule.exclude),
+  words: labelWords(rule.label),
+}));
+
+/**
+ * The words that label each place the quote writes the record's amount: the last cell, bullet or
+ * sentence before the figure, back to the previous figure ("Paper statements" in "Paper
+ * statements | $3 monthly fee"; "Outgoing" in "Incoming - $20.00 Outgoing - $20.00").
+ */
+export function amountLabels(quote: string, amount: number): string[] {
+  const labels: string[] = [];
+  let from = 0;
+  for (const match of quote.matchAll(FIGURE)) {
+    const start = match.index ?? 0;
+    if (Math.abs(Number(match[1].replace(/,/g, "")) - amount) < 0.005) {
+      const segments = quote.slice(from, start).split(/\s\|\s?|\|\s|•|[.;:](?:\s|$)/).map((part) => part.trim());
+      const label = [...segments].reverse().find((part) => /[a-z]{3}/i.test(part));
+      if (label) labels.push(label);
+    }
+    from = start + match[0].length;
+  }
+  return labels;
+}
+
+/**
+ * Whether the labels on the record's amount name a different fee: a word the line's own rule
+ * excludes ("statement" on monthly maintenance, "sustained" on overdraft, "incoming" on an
+ * outgoing wire), or another line's fee words where the line's own are absent ("deposits" for an
+ * ATM figure). Lines that share catalog categories (overdraft, NSF, returned deposits) do not
+ * count against each other. Uses the rules in rules.ts, no other taxonomy.
+ */
+export function quoteNamesOtherFee(line: string, quote: string, amount: number): boolean {
+  const own = LINE_TESTS.find((t) => t.rule.key === line);
+  const labels = amountLabels(quote, amount);
+  if (!own || labels.length === 0) return false;
+  const namesOwn = (label: string) =>
+    !own.exclude.test(label) && (own.include.test(label) || own.words.some((word) => word.test(label)));
+  const namesOther = (label: string) =>
+    own.exclude.test(label) ||
+    (!namesOwn(label) &&
+      LINE_TESTS.some((t) => t.rule.key !== line && !t.rule.sourceKeys.some((key) => own.rule.sourceKeys.includes(key)) && t.include.test(label)));
+  // A label naming no fee ("Free for customers aged 60+, otherwise $3") settles nothing: the
+  // record fails when some label names another fee and none names its own.
+  return labels.some(namesOther) && !labels.some(namesOwn);
+}
+
 /** Why a record's evidence does not reproduce its amount, or null when it does. */
 export function evidenceProblem(line: string, record: Pick<EvidenceRecord, "product" | "amount" | "quote" | "source_url">): EvidenceProblem | null {
   if (educationalPage(record.source_url) || GENERAL_STATEMENT.test(record.quote) || GENERAL_STATEMENT.test(record.product)) {
@@ -101,13 +157,28 @@ export function evidenceProblem(line: string, record: Pick<EvidenceRecord, "prod
   const check = checkFeeAgainstSource(`${record.product}: ${record.quote}`, record.product, record.amount, INCLUDE_BY_LINE.get(line) ?? "");
   // A row that prices several accounts side by side, or an eliminated fee, can fail the shared
   // check read on its own and still state the amount; then the figure must appear in the quote.
-  return check.ok || quoteStatesFigure(record.quote, record.amount) ? null : "quote_without_amount";
+  if (!check.ok && !quoteStatesFigure(record.quote, record.amount)) return "quote_without_amount";
+  // Either way the words labelling the amount must not name another fee: TD's "Paper statements |
+  // $3 monthly fee", filed as a monthly maintenance fee, passes the shared check on its own.
+  return quoteNamesOtherFee(line, record.quote, record.amount) ? "quote_names_other_fee" : null;
 }
 
-/** "published price", "middle of 3 published prices", or for overdraft "highest of 2 prices". */
+/**
+ * "published price"; "midpoint of $10 and $15" for two prices; "middle of 3 published prices";
+ * for overdraft, "highest of 2 published prices".
+ */
 export function amountBasis(line: string, amounts: number[]): string {
   if (new Set(amounts).size < 2) return "published price";
-  return HIGHEST_TIER_CATEGORIES.has(line) ? `highest of ${amounts.length} prices` : `middle of ${amounts.length} published prices`;
+  if (HIGHEST_TIER_CATEGORIES.has(line)) return `highest of ${amounts.length} published prices`;
+  if (amounts.length === 2) {
+    const [low, high] = [...amounts].sort((a, b) => a - b);
+    return `midpoint of ${dollars(low)} and ${dollars(high)}`;
+  }
+  return `middle of ${amounts.length} published prices`;
+}
+
+function dollars(value: number): string {
+  return Number.isInteger(value) ? `$${value}` : `$${value.toFixed(2)}`;
 }
 
 /** The records behind a fee line: its tiers when it has several, otherwise the line itself. */

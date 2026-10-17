@@ -72,9 +72,15 @@ export function widestGapFinding(name: string, lines: ReportLine[]): string {
 
 /** The fees left out of the comparison, said once under the exhibit rather than on every row. */
 export function leftOutNote(name: string, lines: ReportLine[]): string | null {
-  const notFound = lines.filter((l) => !l.own && (l.peers?.n ?? 0) >= MIN_LOCAL_PEERS_PER_LINE).map((l) => l.label);
-  const thin = lines.filter((l) => !l.comparable && !notFound.includes(l.label)).map((l) => l.label);
+  const unsupported = lines.filter((l) => !l.own && l.ownExcluded).map((l) => l.label);
+  const notFound = lines
+    .filter((l) => !l.own && !l.ownExcluded && (l.peers?.n ?? 0) >= MIN_LOCAL_PEERS_PER_LINE)
+    .map((l) => l.label);
+  const thin = lines.filter((l) => !l.comparable && !notFound.includes(l.label) && !unsupported.includes(l.label)).map((l) => l.label);
   const parts: string[] = [];
+  if (unsupported.length > 0) {
+    parts.push(`Not compared, because the line quoted from ${name}'s schedule does not show the amount: ${unsupported.join(", ")}.`);
+  }
   if (thin.length > 0) {
     parts.push(`Not compared, because fewer than ${MIN_LOCAL_PEERS_PER_LINE} local competitors publish them: ${thin.join(", ")}.`);
   }

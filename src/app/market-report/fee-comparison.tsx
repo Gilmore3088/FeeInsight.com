@@ -53,31 +53,58 @@ function RecordLine({ record, showAmount }: { record: EvidenceRecord; showAmount
   );
 }
 
-/** The records behind an amount: one quoted line for a single price, else each price with its basis. */
-function Evidence({ evidence }: { evidence: AmountEvidence }) {
-  if (evidence.records.length === 1) return <RecordLine record={evidence.records[0]} showAmount={false} />;
+/** Why a record was left out, read after its amount: "(read from a general article about fees)". */
+const PROBLEM_TEXT: Record<NonNullable<EvidenceRecord["problem"]>, string> = {
+  quote_without_amount: "its quoted line does not state that amount",
+  quote_names_other_fee: "its quoted line gives that amount for a different fee",
+  not_a_fee_schedule: "read from a general article about fees",
+};
+
+/** Records the evidence check left out, each with its reason, so a row shows what was dropped. */
+function LeftOutRecords({ records }: { records: EvidenceRecord[] }) {
+  if (records.length === 0) return null;
   return (
-    <>
-      <span className="block">
-        {evidence.basis === "published price"
-          ? `Each of these lines states ${money(evidence.amount)}:`
-          : `Compared at ${money(evidence.amount)}, the ${evidence.basis}:`}
-      </span>
-      <ul className="mt-0.5 space-y-0.5">
-        {evidence.records.map((record, index) => (
-          <li key={record.record_id ?? index}>
-            <RecordLine record={record} showAmount />
-          </li>
-        ))}
-      </ul>
-    </>
+    <ul className="mt-0.5 space-y-0.5">
+      {records.map((record, index) => (
+        <li key={record.record_id ?? index}>
+          Left out: <RecordLine record={record} showAmount /> ({PROBLEM_TEXT[record.problem ?? "quote_without_amount"]})
+        </li>
+      ))}
+    </ul>
   );
 }
 
-const PROBLEM_TEXT: Record<NonNullable<EvidenceRecord["problem"]>, string> = {
-  quote_without_amount: "whose quoted line does not state that amount",
-  not_a_fee_schedule: "whose source is a general article about fees",
-};
+/** The records behind an amount: one quoted line for a single price, else each price under its basis. */
+function Evidence({ evidence }: { evidence: AmountEvidence }) {
+  return (
+    <div>
+      {evidence.records.length === 1 ? (
+        <RecordLine record={evidence.records[0]} showAmount={false} />
+      ) : (
+        <>
+          <span className="block">
+            {evidence.basis === "published price"
+              ? `Each of these lines states ${money(evidence.amount)}:`
+              : `Compared at ${money(evidence.amount)}, the ${evidence.basis}:`}
+          </span>
+          <ul className="mt-0.5 space-y-0.5">
+            {evidence.records.map((record, index) => (
+              <li key={record.record_id ?? index}>
+                <RecordLine record={record} showAmount />
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      <LeftOutRecords records={evidence.excluded} />
+    </div>
+  );
+}
+
+/** "TD Bank, National Association" reads "TD Bank" before a possessive. */
+function shortName(name: string): string {
+  return name.replace(/,?\s+(National Association|N\.?\s?A\.?)$/i, "").trim();
+}
 
 const GRID = "grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-4 sm:grid-cols-[minmax(0,15rem)_minmax(8rem,1fr)_8.5rem_6rem_5.5rem]";
 
@@ -150,9 +177,6 @@ export function FeeComparison({ name, lines, names, branches, footprint }: FeeCo
                 <dl className="grid grid-cols-2 gap-x-4 gap-y-2 self-start">
                   <dt className="text-ink-muted">{name}</dt>
                   <dd className="text-right font-semibold tabular-nums text-ink">{priceText(line.own)}</dd>
-                  {compared && (
-                    <dd className="col-span-2 -mt-1 text-[12px] text-ink-muted">{compared}, the value the medians count for each institution.</dd>
-                  )}
                   <dt className="text-ink-muted">Local median</dt>
                   <dd className="text-right tabular-nums text-ink">{money(line.peers.median)}</dd>
                   <dt className="text-ink-muted">Middle 50%</dt>
@@ -165,9 +189,10 @@ export function FeeComparison({ name, lines, names, branches, footprint }: FeeCo
                   <dd className="text-right tabular-nums text-ink">
                     {line.chargingLess === null ? "not stated" : `${line.chargingLess} of ${line.peers.n}`}
                   </dd>
-                  <dt className="col-span-2 mt-2 min-w-0 text-ink-muted [overflow-wrap:anywhere]">
-                    {name}&apos;s schedule: <Evidence evidence={ownEvidence} />
-                  </dt>
+                  <dd className="col-span-2 mt-2 min-w-0 text-ink-muted [overflow-wrap:anywhere]">
+                    <span className="block">{name}&apos;s schedule:</span>
+                    <Evidence evidence={ownEvidence} />
+                  </dd>
                 </dl>
                 <div className="min-w-0">
                   <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-ink-muted sm:mx-0 sm:text-left">
@@ -200,25 +225,27 @@ export function FeeComparison({ name, lines, names, branches, footprint }: FeeCo
                               money(figure.amount)
                             )}
                           </span>
-                          <span className="col-span-2 min-w-0 text-ink-muted [overflow-wrap:anywhere] sm:col-span-1">
+                          <div className="col-span-2 min-w-0 text-ink-muted [overflow-wrap:anywhere] sm:col-span-1">
                             <Evidence evidence={evidence} />
-                          </span>
+                          </div>
                         </li>
                       );
                     })}
                   </ul>
                   {leftOut.length > 0 && (
-                    <p className="mt-2 text-[12px] text-ink-muted sm:mx-0 sm:text-left">
-                      Left out of these figures:{" "}
-                      {leftOut
-                        .map(({ institution_id, evidence }) => {
-                          const record = evidence.excluded[0];
-                          const who = names.get(institution_id) ?? `Institution ${institution_id}`;
-                          return `${who} (${money(record.amount)}), ${PROBLEM_TEXT[record.problem ?? "quote_without_amount"]}`;
-                        })
-                        .join("; ")}
-                      .
-                    </p>
+                    <div className="mt-2 text-[12px] text-ink-muted">
+                      <p className="sm:mx-0 sm:text-left">Left out of these figures:</p>
+                      <ul className="mt-0.5 space-y-0.5">
+                        {leftOut.flatMap(({ institution_id, evidence }) =>
+                          evidence.excluded.map((record, index) => (
+                            <li key={`${institution_id}:${record.record_id ?? index}`} className="[overflow-wrap:anywhere]">
+                              {shortName(names.get(institution_id) ?? `Institution ${institution_id}`)}&apos;s {money(record.amount)} (
+                              {PROBLEM_TEXT[record.problem ?? "quote_without_amount"]}): <RecordLine record={record} showAmount={false} />
+                            </li>
+                          )),
+                        )}
+                      </ul>
+                    </div>
                   )}
                 </div>
               </div>
