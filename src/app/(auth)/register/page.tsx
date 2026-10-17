@@ -21,7 +21,7 @@ export const metadata: Metadata = {
 const FREE_ACCOUNT_BENEFITS = [
   "Save your bank or credit union and see what it charges on every fee guide",
   "One email when a saved institution changes a fee you follow",
-  `A one-click path to ${SITE_NAME} Pro when you need benchmarks, scenarios and monitoring`,
+  `A one-click path to Hamilton when you need benchmarks, scenarios and monitoring`,
 ];
 
 const PRO_ACCOUNT_BENEFITS = [
@@ -79,7 +79,7 @@ export default async function RegisterPage({
             style={{ fontFamily: "var(--fi-font-sans)", fontStyle: "italic" }}
           >
             {plan
-              ? `Finish setting up ${SITE_NAME} Pro — ${PLAN_DISPLAY_NAME[plan]}, ${PLAN_TEAM_LABEL}`
+              ? `Finish setting up Hamilton — ${PLAN_DISPLAY_NAME[plan]}, ${PLAN_TEAM_LABEL}`
               : "Create your free account"}
           </p>
 
@@ -88,7 +88,7 @@ export default async function RegisterPage({
               ? "Create your account, then continue straight to checkout. Your plan is active as soon as payment clears."
               : feeLabel
                 ? `Next you'll pick your bank or credit union. We'll email you when its ${feeLabel} changes.`
-                : `Published fees for ${summary.institutionsLabel} U.S. banks and credit unions. An account keeps your place and opens the path to ${SITE_NAME} Pro.`}
+                : `Published fees for ${summary.institutionsLabel} U.S. banks and credit unions. An account keeps your place and opens the path to Hamilton.`}
           </p>
 
           {/* Feature list: what an account gives, not what the public index already gives. */}
@@ -136,12 +136,12 @@ export default async function RegisterPage({
               </h1>
               <p className="mt-2 text-sm text-ink-muted">
                 {plan
-                  ? `Create your account, then continue to checkout for ${SITE_NAME} Pro — ${PLAN_DISPLAY_NAME[plan]}.`
+                  ? `Create your account, then continue to checkout for Hamilton — ${PLAN_DISPLAY_NAME[plan]}.`
                   : variant === "consumer"
                     ? feeLabel
                       ? `Then pick your bank or credit union and we'll tell you when its ${feeLabel} changes.`
                       : "Save your bank or credit union and get an email when its fees change."
-                    : `Save your institution and peer group; upgrade to ${SITE_NAME} Pro whenever you need benchmarks.`}
+                    : `Save your institution and peer group; upgrade to Hamilton whenever you need benchmarks.`}
               </p>
             </div>
             <RegisterForm redirectTo={destination} variant={variant} checkout={plan !== null} />

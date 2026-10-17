@@ -1130,3 +1130,10 @@ calls a month. A seat's key stops when the seat is removed, and every key stops 
 show at most 50: the top 50 by institution count, the national index's own order
 (`publicFeeTypes` in `src/lib/fee-taxonomy.ts`, applied to the shared public snapshot in
 `src/lib/public-stats.ts`). Internal, admin and Pro views keep all 52.
+
+**Hamilton is the paid product; there is no "Hamilton Pro".** James, 2026-10-17 08:27 UTC (Website
+thread): "there is no Hamilton and Hamilton pro. Hamilton is 'pro'. Pro is just a term to
+distinguish who has paid or not." Visitor copy names the subscription Hamilton ("See Hamilton
+plans", "Your Hamilton subscription"), never "Hamilton Pro", "Fee Insight Pro" or "the Pro
+workspace". "Pro" may still mark paid status (a Pro badge, `isPro`). The 2026-10-15 rule still
+holds: the header and footer name the workspace generically ("Workspace", "Plans").

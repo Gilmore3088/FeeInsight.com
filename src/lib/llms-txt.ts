@@ -33,7 +33,7 @@ export function buildLlmsTxt(base: string = SITE_URL): string {
     `- [${REPORT_OFFER.name}](${link("/reports")}): a paid report comparing one bank or credit union's published fees with named local competitors, quoted per institution. It contains:`,
     ...REPORT_INCLUDES.map((item) => `  - ${item}`),
     `- [Benchmarking and free reports](${link("/for-institutions")}): free national and Fed district fee reports`,
-    `- [Pro plans](${link("/subscribe")}): ${HAMILTON_CANONICAL}`,
+    `- [Hamilton plans](${link("/subscribe")}): ${HAMILTON_CANONICAL}`,
     `- [API documentation](${link("/api-docs")})`,
     "",
     "## Contact",

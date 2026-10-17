@@ -1,6 +1,5 @@
 import Link from "next/link";
 import type { User } from "@/lib/auth";
-import { SITE_NAME } from "@/lib/constants";
 import { ManageBillingButton } from "./manage-billing-button";
 import { isInPaymentGrace } from "@/lib/access";
 
@@ -15,7 +14,7 @@ export function SubscriptionStatusNotice({ user }: { user: Pick<User, "role" | "
   if (user.subscription_status === "past_due") {
     return (
       <div role="status" className="mb-8 rounded-xl border border-amber-200 bg-amber-50 p-5 text-amber-900">
-        <p className="text-[14px] font-semibold">Your {SITE_NAME} Pro payment is past due.</p>
+        <p className="text-[14px] font-semibold">Your Hamilton payment is past due.</p>
         <p className="mt-1 text-[13px]">
           {isInPaymentGrace(user as User)
             ? "Your last payment did not go through. Pro stays open while the card is retried; update it to keep Pro running."
@@ -33,7 +32,7 @@ export function SubscriptionStatusNotice({ user }: { user: Pick<User, "role" | "
   if (user.subscription_status === "canceled") {
     return (
       <div role="status" className="mb-8 rounded-xl border border-border bg-white/70 p-5">
-        <p className="text-[14px] font-semibold text-ink">Your {SITE_NAME} Pro subscription has ended.</p>
+        <p className="text-[14px] font-semibold text-ink">Your Hamilton subscription has ended.</p>
         <p className="mt-1 text-[13px] text-ink-muted">
           Your saved institutions and fee alerts are kept. Restart Pro any time to get the Hamilton workspace back.
         </p>

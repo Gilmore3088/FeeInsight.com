@@ -13,7 +13,7 @@ const INQUIRY_TYPES = [
   // Short enough to show whole in the select at 375px (growth OS review M2).
   { value: "demo", label: "Hamilton demo" },
   { value: "report", label: `${REPORT_OFFER.name} (${REPORT_PRICE_INLINE})` },
-  { value: "enterprise", label: "Hamilton Pro (seats, invoicing)" },
+  { value: "enterprise", label: "Hamilton (seats, invoicing)" },
   { value: "billing", label: "Billing or my subscription" },
   { value: "partnership", label: "Data licensing / API" },
   { value: "general", label: "Something else" },

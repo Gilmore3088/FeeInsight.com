@@ -245,7 +245,7 @@ export default async function SubscribePage({
               className="text-[2rem] font-semibold leading-[1.05] tracking-[-0.035em] text-ink sm:text-[2.5rem]"
               style={DISPLAY}
             >
-              Hamilton Pro
+              Hamilton
             </h1>
             <p className="mx-auto mt-3 max-w-xl text-[16px] leading-relaxed text-ink-soft sm:text-[17px]">
               Fee intelligence for your institution. Full {PRODUCT_NAME} access, competitive analysis, and board reports for up to{" "}

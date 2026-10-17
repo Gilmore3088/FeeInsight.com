@@ -44,10 +44,10 @@ export function gatedPageLabel(from: string | null | undefined): string | null {
  * the page they wanted, placed inside Pro. The headline itself is the same for everyone, so
  * no one feature is sold as the product. A fixed list of routes; no text comes from the URL.
  * It is the page's first mention of Hamilton, so it always gives the full name (site v3 brief
- * 03 section 4: "Hamilton, the Fee Insight Pro workspace"; Hamilton is the workspace, Pro the plan).
+ * 03 section 4). Hamilton is the paid product; "Pro" only marks who has paid (James, 2026-10-17).
  */
 export function hamiltonFullName(siteName: string): string {
-  return `Hamilton, the ${siteName} Pro workspace`;
+  return `Hamilton, the ${siteName} workspace`;
 }
 
 const ENTRY_POINTS: { path: string; context: (siteName: string) => string }[] = [

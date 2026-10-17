@@ -18,12 +18,12 @@ describe("/contact", () => {
     await renderPage("demo");
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Ask for a Hamilton demo");
     expect(document.body.textContent).toContain(
-      "We walk you through Hamilton, the Fee Insight Pro workspace, using your own market. We reply within one business day to set a time.",
+      "We walk you through Hamilton, the Fee Insight workspace, using your own market. We reply within one business day to set a time.",
     );
     const select = screen.getByLabelText("Inquiry type") as HTMLSelectElement;
     expect(select.selectedOptions[0].textContent).toBe("Hamilton demo");
     expect(screen.getByRole("button", { name: "Ask for a demo" })).toBeInTheDocument();
-    expect(document.body.textContent).not.toMatch(/Fee Insight Pro(?! workspace)/);
+    expect(document.body.textContent).not.toMatch(/Fee Insight Pro|Hamilton Pro/);
 
     // Choosing another option turns the heading, intro and button back into the general page.
     fireEvent.change(select, { target: { value: "report" } });

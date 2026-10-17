@@ -11,7 +11,7 @@ export function ProLock({ className = "" }: { className?: string }) {
     >
       <Lock className="h-2.5 w-2.5" aria-hidden="true" />
       Pro
-      <span className="sr-only"> (requires Fee Insight Pro)</span>
+      <span className="sr-only"> (requires a Hamilton subscription)</span>
     </span>
   );
 }
