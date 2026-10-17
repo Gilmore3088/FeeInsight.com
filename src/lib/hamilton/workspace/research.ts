@@ -256,6 +256,7 @@ export function toPeerValue(v: PeerFeeValue): PeerValue {
     sourceDocumentIds: v.source_document_ids,
     documentUrls: v.document_urls,
     publishedAt: v.published_at,
+    ...(v.fee_published_ids?.length ? { feePublishedIds: v.fee_published_ids } : {}),
   };
 }
 

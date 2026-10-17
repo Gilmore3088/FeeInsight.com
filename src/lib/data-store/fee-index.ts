@@ -964,9 +964,16 @@ export interface PeerFeeValue {
   amount: number;
   /** The source documents behind this value, so every peer figure can be checked. */
   source_document_ids: number[];
+  /** The published fee rows behind this value, so a saved output records them (H03-T09). */
+  fee_published_ids?: number[];
   document_urls: string[];
   /** When the newest row behind this value was published (ISO). */
   published_at: string | null;
+}
+
+/** The distinct published fee row ids among a peer's rows; rows read without the column give none. */
+function feeIdsOf(rows: { fee_published_id?: number | string | null }[]): number[] {
+  return [...new Set(rows.map((r) => Number(r.fee_published_id)).filter((v) => Number.isSafeInteger(v) && v > 0))];
 }
 
 /**
@@ -984,7 +991,7 @@ export async function getPeerFeeValues(
   const rows = await sql.unsafe(
     `SELECT ef.fee_category, ef.amount, ef.institution_id, ct.institution_name,
             ct.charter_type, ct.asset_size_tier, ct.fed_district, ct.state_code,
-            ef.source_document_id, ef.document_url, ef.created_at
+            ef.source_document_id, ef.document_url, ef.created_at, ef.fee_published_id
        FROM published_fee_catalog ef
        JOIN institution_sources ct ON ef.institution_id = ct.id
       WHERE ef.fee_category = ANY($1::text[])
@@ -996,6 +1003,7 @@ export async function getPeerFeeValues(
     source_document_id: number | string | null;
     document_url: string | null;
     created_at: Date | string | null;
+    fee_published_id?: number | string | null;
   })[];
   const peerRows = rows.filter((row) => Number(row.institution_id) !== excludeInstitutionId);
   const meta = new Map(peerRows.map((row) => [Number(row.institution_id), row]));
@@ -1026,6 +1034,7 @@ export async function getPeerFeeValues(
           state_code: row?.state_code ?? null,
           amount,
           source_document_ids: docIds,
+          fee_published_ids: feeIdsOf(own),
           document_urls: urls,
           published_at: published,
         });
@@ -1089,7 +1098,7 @@ export async function getSegmentFeeValues(
   const rows = (await sql.unsafe(
     `WITH seg AS (${segmentSql})
      SELECT ef.fee_category, ef.amount, ef.institution_id, ct.institution_name, ct.charter_type,
-            ct.state_code, ct.asset_size, ef.source_document_id, ef.document_url, ef.created_at
+            ct.state_code, ct.asset_size, ef.source_document_id, ef.document_url, ef.created_at, ef.fee_published_id
        FROM published_fee_catalog ef
        JOIN institution_sources ct ON ef.institution_id = ct.id
        JOIN seg ON seg.id = ct.id
@@ -1108,6 +1117,7 @@ export async function getSegmentFeeValues(
     source_document_id: number | string | null;
     document_url: string | null;
     created_at: Date | string | null;
+    fee_published_id?: number | string | null;
   }[];
   const kept = rows.filter((r) => Number(r.institution_id) !== excludeInstitutionId);
   const iso = (v: Date | string | null) => (v instanceof Date ? v.toISOString() : v ? String(v) : null);
@@ -1122,6 +1132,7 @@ export async function getSegmentFeeValues(
       state_code: first?.state_code ?? null,
       amount,
       source_document_ids: [...new Set(own.map((r) => Number(r.source_document_id)).filter((v) => Number.isFinite(v) && v > 0))],
+      fee_published_ids: feeIdsOf(own),
       document_urls: [...new Set(own.map((r) => r.document_url).filter((v): v is string => !!v))],
       published_at: own.map((r) => iso(r.created_at)).filter((v): v is string => !!v).sort().pop() ?? null,
       total_assets: first?.asset_size === null || first?.asset_size === undefined ? null : Number(first.asset_size),

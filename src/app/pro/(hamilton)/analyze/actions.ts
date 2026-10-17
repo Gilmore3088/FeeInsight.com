@@ -9,8 +9,9 @@ import { accountIdentitySnapshot } from "@/lib/hamilton/account-context";
 import { readHamiltonIdentitySnapshot } from "@/lib/hamilton/identity-display";
 import { normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
 import { normalizeLegacyAnalyzeConfidence } from "@/lib/hamilton/evidence-contract";
-import { getFeeChangesSince } from "@/lib/data-store/fee-correction-audit";
-import { savedOutputNotice, type SavedOutputNotice } from "@/lib/saved-output-corrections";
+import { savedOutputChangeNotice } from "@/lib/hamilton/saved-output-notice";
+import { collectFeeRefs, type SavedOutputNotice } from "@/lib/saved-output-corrections";
+import { recordSavedOutputFeeRefs } from "@/lib/data-store/saved-output-fee-refs";
 import type { AnalyzeResponse } from "@/lib/hamilton/types";
 import { recentQuestions, type RecentQuestion, type SavedAnalysisRow } from "@/lib/hamilton/recent-analyses";
 
@@ -104,6 +105,8 @@ export async function saveAnalysis(params: {
 
     const id = rows[0]?.id;
     if (!id) return { error: "Failed to save analysis" };
+    // H03-T09: the fee rows the saved answer names, so a later correction finds it.
+    await recordSavedOutputFeeRefs(sql, "analysis", id, collectFeeRefs(responseJson));
     return { id };
   } catch (err) {
     // Do not return raw SQL/driver messages to an authenticated browser action; log them here.
@@ -136,13 +139,6 @@ export async function listSavedAnalyses(limit = 10): Promise<RecentQuestion[]> {
   } catch {
     return [];
   }
-}
-
-/** H03-T09: the notice for a saved answer whose institution's fees changed after it; never fails the load. */
-async function changeNoticeFor(institutionId: string | null, savedAt: string | null): Promise<SavedOutputNotice | null> {
-  const id = Number(institutionId);
-  if (!savedAt || !Number.isSafeInteger(id) || id <= 0) return null;
-  return savedOutputNotice(await getFeeChangesSince(sql, id, savedAt), savedAt);
 }
 
 function savedAtIso(value: Date | string | null | undefined): string | null {
@@ -181,7 +177,9 @@ export async function loadAnalysisRecord(id: string): Promise<LoadedAnalysisReco
       analysisFocus: rows[0].analysis_focus,
       prompt: rows[0].prompt,
       savedAt,
-      changeNotice: await changeNoticeFor(institutionId, savedAt),
+      // H03-T09: a fee row this answer used (or, for an older answer, a fee at its institution)
+      // changed after it was saved; the answer itself is unchanged.
+      changeNotice: await savedOutputChangeNotice({ kind: "analysis", id: rows[0].id, institutionId, savedAt, noun: "answer" }),
     };
   } catch {
     return null;

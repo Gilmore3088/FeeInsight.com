@@ -10,6 +10,8 @@ import type { AnalyzeResponse } from "@/lib/hamilton/types";
 import { normalizeLegacyAnalyzeConfidence, type EvidenceBoundAnalyzeResponse } from "@/lib/hamilton/evidence-contract";
 import { withMemo } from "@/lib/hamilton/workspace/analysis-record";
 import type { StorylineMemo } from "@/lib/hamilton/workspace/storyline-types";
+import { collectFeeRefs, type SavedFeeRef } from "@/lib/saved-output-corrections";
+import { recordSavedOutputFeeRefs } from "./saved-output-fee-refs";
 
 /**
  * How long a repeat of the same request (same reader, institution, focus and question, and the
@@ -39,6 +41,11 @@ type SavedAnalysisInput = {
    * and a written answer to the same question stay separate rows.
    */
   replaceRecentDuplicate?: { request: string };
+  /**
+   * The published fee rows the answer was built from (H03-T09), recorded beside the row so a
+   * later correction finds it. Left out, the rows named in `response` are recorded.
+   */
+  feeRefs?: SavedFeeRef[];
 };
 
 /** The hash a saved row carries for the request it answered; case and spacing are ignored. */
@@ -67,6 +74,13 @@ function safeParse(value: string): unknown {
 }
 
 export async function insertSavedAnalysis(input: SavedAnalysisInput): Promise<string | null> {
+  const id = await saveRow(input);
+  // Best effort, after the save: an answer with no record keeps the institution match.
+  if (id) await recordSavedOutputFeeRefs(sql, "analysis", id, input.feeRefs ?? collectFeeRefs(input.response));
+  return id;
+}
+
+async function saveRow(input: SavedAnalysisInput): Promise<string | null> {
   const repeat = input.replaceRecentDuplicate;
   if (!repeat) return insertRow(sql, input);
   const requestHash = savedRequestHash(repeat.request);
@@ -101,7 +115,7 @@ export async function insertSavedAnalysis(input: SavedAnalysisInput): Promise<st
   });
 }
 
-async function insertRow(db: typeof sql, input: Omit<SavedAnalysisInput, "replaceRecentDuplicate">): Promise<string | null> {
+async function insertRow(db: typeof sql, input: Omit<SavedAnalysisInput, "replaceRecentDuplicate" | "feeRefs">): Promise<string | null> {
   const rows = await db<{ id: string }[]>`
     INSERT INTO hamilton_saved_analyses (user_id, institution_id, title, analysis_focus, prompt, response_json, status)
     VALUES (${input.userId}, ${input.institutionId}, ${input.title}, ${input.analysisFocus}, ${input.prompt},

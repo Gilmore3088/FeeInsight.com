@@ -3194,3 +3194,6 @@ ALTER TABLE public.fee_change_records
 
 -- #978 H03: versioned admin fee corrections and their newer-source review queue.
 \ir ../../supabase/migrations/20270110000053_published_fee_corrections.sql
+
+-- #978 H03-T09: the published fee rows each saved Hamilton output used.
+\ir ../../supabase/migrations/20270110000054_hamilton_saved_output_fee_refs.sql

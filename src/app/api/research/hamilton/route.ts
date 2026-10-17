@@ -44,6 +44,7 @@ import { SAVED_ANALYSIS_ID_KEY, questionOnly, writtenAnswerCheck, writtenAnswerR
 import { messageBoundsError } from "@/lib/hamilton/conversation-context";
 import { HELD_ANSWER_MESSAGE } from "@/lib/hamilton/answer-gate";
 import { insertSavedAnalysis } from "@/lib/data-store/hamilton-analyses";
+import { collectFeeRefs } from "@/lib/saved-output-corrections";
 import { normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
 import { withHamiltonAccountContext } from "@/lib/hamilton/account-context-store";
 import { accountIdentitySnapshot } from "@/lib/hamilton/account-context";
@@ -352,6 +353,8 @@ async function handlePOST(request: Request) {
                   // the full text answered, earlier turns included, so the same follow-up words in
                   // another conversation are saved as their own row.
                   replaceRecentDuplicate: { request: `written\n${focus}\n${lastUserText}` },
+                  // H03-T09: the fee rows the answer's tools read, so a later correction finds it.
+                  feeRefs: collectFeeRefs(toolOutputs, response),
                 }));
               } catch (error) {
                 console.error("[hamilton] saving the written answer failed", error);
