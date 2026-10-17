@@ -83,10 +83,23 @@ export function productHeading(productName: string | null | undefined, text: str
   const printed = text.split("\n").some((line) =>
     line.split("|").some((cell) => {
       const got = plain(cell.replace(/^[#•\-–*\s]+/, ""));
-      return got.startsWith(want) && !/^[a-z0-9-]/.test(got.slice(want.length));
+      if (!got.startsWith(want)) return false;
+      // A mark or footnote may follow ("Chase Total CheckingSM", "Gold Checking1"); another word may
+      // not ("Gold Checking Plus" is another account).
+      const rest = got.slice(want.length).replace(/^(?:sm|tm)?\d{0,2}/, "");
+      return !/^[a-z0-9-]|^\s+[a-z0-9]/.test(rest);
     }),
   );
   return printed ? heading : null;
+}
+
+/** The account a named monthly fee starts with: "Gold Checking Monthly Service Fee" -> "Gold Checking". */
+function namedAccount(feeName: string): string | null {
+  const words = feeName.trim().split(/\s+/);
+  for (let cut = 1; cut < words.length; cut += 1) {
+    if (GENERIC_ACCOUNT_FEE_NAME.test(words.slice(cut).join(" "))) return words.slice(0, cut).join(" ");
+  }
+  return null;
 }
 
 /** One key for one account however a lineup spelled it ("Gold Checking®", "GOLD CHECKING"). */
@@ -102,18 +115,21 @@ export function planAccountNames(fees: AccountNameFee[], texts: InstitutionText[
     `${Number(fee.institution_id)}|${fee.canonical_fee_key}|${fee.amount == null ? "" : Number(fee.amount).toFixed(2)}|${name.trim().toLowerCase()}`;
   const taken = new Set(liveFees.map((fee) => lineKey(fee, fee.fee_name)));
   const generic = fees.filter((fee) => ACCOUNT_FEE_KEYS.includes(fee.canonical_fee_key) && GENERIC_ACCOUNT_FEE_NAME.test(fee.fee_name));
-  // One recorded account on two account fees of one schedule is a lineup that spread one account
-  // across a comparison table's columns: it names neither. Fees already named count too.
-  const productKey = (fee: AccountNameFee) => `${fee.source_document_id ?? ""}|${accountKey(fee.product_name ?? "")}`;
+  // One account on two fees of one kind in one schedule is a lineup that spread one account across
+  // a comparison table's columns: it names neither. A fee already named counts under its recorded
+  // account and under the account its name starts with ("Gold Checking Monthly Service Fee").
+  const productKey = (fee: AccountNameFee, account: string) => `${fee.source_document_id ?? ""}|${fee.canonical_fee_key}|${accountKey(account)}`;
   const productCounts = new Map<string, number>();
   for (const fee of liveFees) {
-    if (!fee.product_name || fee.source_document_id == null || !ACCOUNT_FEE_KEYS.includes(fee.canonical_fee_key)) continue;
-    productCounts.set(productKey(fee), (productCounts.get(productKey(fee)) ?? 0) + 1);
+    if (fee.source_document_id == null || !ACCOUNT_FEE_KEYS.includes(fee.canonical_fee_key)) continue;
+    const named = GENERIC_ACCOUNT_FEE_NAME.test(fee.fee_name) ? null : namedAccount(fee.fee_name);
+    const keys = new Set([fee.product_name, named].filter((account): account is string => !!account).map((account) => productKey(fee, account)));
+    for (const key of keys) productCounts.set(key, (productCounts.get(key) ?? 0) + 1);
   }
   for (const fee of generic) {
     const own = texts.find((text) => fee.source_document_id != null && Number(text.source_document_id) === Number(fee.source_document_id));
     const above = accountHeadingForExcerpt(own?.normalized_text, excerptOf(fee.conditions));
-    const product = above || productCounts.get(productKey(fee)) !== 1 ? null : productHeading(fee.product_name, own?.normalized_text);
+    const product = above || !fee.product_name || productCounts.get(productKey(fee, fee.product_name)) !== 1 ? null : productHeading(fee.product_name, own?.normalized_text);
     const heading = above ?? product;
     if (!heading) {
       skipped.no_heading += 1;

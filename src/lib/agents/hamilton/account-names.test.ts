@@ -89,11 +89,20 @@ describe("Hamilton account names", () => {
       expect(plan.renames).toHaveLength(0);
     });
 
+    it("counts the account a fee's name already carries", () => {
+      const named = { ...pageFee(7, "15.00", null, "$15 monthly fee"), fee_name: "MaxMoney Checking Monthly fee" };
+      const plan = planAccountNames([pageFee(8, "9.95", "MaxMoney Checking", "$9.95 monthly fee")], [page], [named, pageFee(8, "9.95", "MaxMoney Checking", "$9.95 monthly fee")]);
+      expect(plan.renames).toHaveLength(0);
+    });
+
     it("rejects accounts not printed in the schedule, page furniture and group names", () => {
       expect(productHeading("Premier Checking", page.normalized_text)).toBeNull();
       expect(productHeading("Gold Checking", "Rose Gold Checking\n$5 monthly fee")).toBeNull();
       expect(productHeading("Free Checking", "Fee-Free Checking\n$5 monthly fee")).toBeNull();
       expect(productHeading("Gold Checking", "Account | Gold Checking | Silver Checking")).toBe("Gold Checking");
+      expect(productHeading("Gold Checking", "Gold Checking Plus\n$5 monthly fee")).toBeNull();
+      expect(productHeading("Chase Total Checking", "Chase Total CheckingSM\nMonthly Service Fee* | $15")).toBe("Chase Total Checking");
+      expect(productHeading("Gold Checking", "Gold Checking1 | $5")).toBe("Gold Checking");
       expect(productHeading("Account Login", page.normalized_text)).toBeNull();
       expect(productHeading("Restart Checking Account Today", "Restart Checking Account Today")).toBeNull();
       expect(productHeading("Checking Accounts", "Checking Accounts")).toBeNull();
