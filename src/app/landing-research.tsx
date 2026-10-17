@@ -76,9 +76,12 @@ export function ResearchStage() {
     initialElapsed: ANSWER_AT,
     holdOnInteract: false,
     threshold: 0.25,
+    tick: true,
+    settledElapsed: ANSWER_AT,
   });
   const example = RESEARCH_EXAMPLES[clock.index];
-  const t = clock.reduced ? ANSWER_AT : clock.elapsed;
+  // Stopped mid-example (paused, off screen, hidden tab), the example shows finished, never half-drawn.
+  const t = clock.reduced ? ANSWER_AT : clock.playing ? clock.elapsed : Math.max(clock.elapsed, ANSWER_AT);
   const selected = t >= SELECT_AT;
   const answered = t >= ANSWER_AT;
   const phase = answered ? "From sources to your next decision" : selected ? `Connecting ${example.sources.length} source families` : "Finding the right evidence";
@@ -191,7 +194,7 @@ export function ResearchStage() {
           <p
             key={`q-${clock.index}`}
             className="fi-home-fade mt-3 min-h-[4.6rem] text-[26px] font-semibold leading-[1.08] tracking-[-0.03em] text-ink sm:min-h-[5.4rem] sm:text-[30px]"
-            aria-live={clock.playing ? "off" : "polite"}
+            aria-live={clock.manual ? "polite" : "off"}
             data-research-question=""
           >
             {example.question}

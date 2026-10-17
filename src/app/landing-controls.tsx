@@ -32,7 +32,8 @@ export function SlideControls({
         <button
           type="button"
           onClick={clock.togglePause}
-          aria-label={`${clock.paused ? "Play" : "Pause"} ${name}`}
+          // One fixed name; the pressed state says whether it is paused.
+          aria-label={`Pause ${name}`}
           aria-pressed={clock.paused}
           className={`${round} inline-flex items-center justify-center rounded-full border border-control-border text-ink transition-colors hover:bg-surface-0`}
         >
@@ -49,7 +50,7 @@ export function SlideControls({
       </button>
       <span className="min-w-[3.25rem] text-center font-mono text-[12px] font-medium tabular-nums text-ink"
         // Announced when the visitor moves a slide, not on every automatic turn.
-        aria-live={clock.playing ? "off" : "polite"}
+        aria-live={clock.manual ? "polite" : "off"}
         aria-atomic="true"
       >
         <span className="sr-only">Slide </span>

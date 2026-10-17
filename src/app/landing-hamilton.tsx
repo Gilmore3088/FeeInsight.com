@@ -1,11 +1,16 @@
 import { ArrowLeftRight, ArrowUpRight, Check, Files, Landmark, ReceiptText } from "lucide-react";
 import type { ReactNode } from "react";
 import { HAMILTON_PAGE_NAV } from "@/components/nav-items";
+import { TrackLink } from "@/components/track-link";
+import { REPORT_OFFER } from "@/lib/constants";
 import type { MarketReport } from "@/lib/custom-report/report-data";
 import { placeLabel } from "./market-report/report-body";
 import { HamiltonCarousel, type HamiltonSlide } from "./landing-hamilton-carousel";
 import { cardMoney } from "./landing-index-view";
 import { HOME_WRAP, SAMPLE_REPORT_HREF, SANS, buildSampleView, type SampleRow, type SampleView } from "./landing-shared";
+
+/** The report request form, marked as reached from the homepage. */
+const REPORT_HREF = "/reports?report=institution&src=home#request";
 
 /** Benchmark rows shown, in report order. */
 const BENCHMARK_ROWS = 3;
@@ -115,7 +120,7 @@ function sampleSlides(sample: SampleView, market: string | null): HamiltonSlide[
           {picks.map((row) => (
             <FeeRow key={row.key} row={row} />
           ))}
-          <p className={NOTE}>Review service costs and waiver policies before you settle on a price.</p>
+          <p className={NOTE}>Weigh service costs and waiver policies alongside the market.</p>
           <SourceLink href={SAMPLE_REPORT_HREF}>View supporting evidence</SourceLink>
           <p className="mt-2 text-[11px] text-ink-muted">Based on the published sample report.</p>
         </>
@@ -124,7 +129,7 @@ function sampleSlides(sample: SampleView, market: string | null): HamiltonSlide[
     {
       key: "monitor",
       name: "Monitor",
-      line: "Follow competitor fee changes.",
+      line: "Keep competitors' published fees in view.",
       heading: "Monitor what matters",
       body: (
         <>
@@ -135,7 +140,7 @@ function sampleSlides(sample: SampleView, market: string | null): HamiltonSlide[
             {[
               { icon: Landmark, title: "Local competitors", line: `${sample.competitors} with published fees` },
               { icon: Files, title: "Fee schedules", line: "Published source documents" },
-              ...picks.map((p) => ({ icon: p.key.startsWith("wire") ? ArrowLeftRight : ReceiptText, title: p.label, line: `Published by ${p.competitors} local competitors` })),
+              ...picks.map((p) => ({ icon: p.key.startsWith("wire") ? ArrowLeftRight : ReceiptText, title: p.label, line: `Published by ${p.competitors} local ${p.competitors === 1 ? "competitor" : "competitors"}` })),
             ].map((item) => (
               <li key={item.title} className="flex items-center gap-2.5 rounded-[5px] bg-paper px-3 py-3">
                 <item.icon aria-hidden="true" strokeWidth={1.5} className="size-4 shrink-0 text-brick" />
@@ -146,7 +151,7 @@ function sampleSlides(sample: SampleView, market: string | null): HamiltonSlide[
               </li>
             ))}
           </ul>
-          <p className={NOTE}>See a schedule change, check its source, and bring it into your analysis.</p>
+          <p className={NOTE}>When a competitor&apos;s schedule is re-read, check its source and bring it into your analysis.</p>
           <SourceLink href={HAMILTON_PAGE_NAV.href}>Explore Hamilton</SourceLink>
         </>
       ),
@@ -179,7 +184,7 @@ function sampleSlides(sample: SampleView, market: string | null): HamiltonSlide[
           <ul className="mt-3 text-[13px] text-ink">
             <li className="flex items-center gap-2 border-b border-border py-2">
               <Check aria-hidden="true" className="size-3.5 text-brick" />
-              {rows.length} fees compared with {sample.competitors} local competitors
+              {rows.length} {rows.length === 1 ? "fee" : "fees"} compared with {sample.competitors} local {sample.competitors === 1 ? "competitor" : "competitors"}
             </li>
             <li className="flex items-center gap-2 border-b border-border py-2">
               <Check aria-hidden="true" className="size-3.5 text-brick" />
@@ -187,6 +192,17 @@ function sampleSlides(sample: SampleView, market: string | null): HamiltonSlide[
             </li>
           </ul>
           <SourceLink href={SAMPLE_REPORT_HREF}>Read the sample report</SourceLink>
+          <p className="mt-1">
+            {/* Funnel step 2: the paid report, next to the sample it sells (growthOS review). */}
+            <TrackLink
+              event="request_report_click"
+              eventProps={{ placement: "home_report" }}
+              href={REPORT_HREF}
+              className="text-[13px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+            >
+              {REPORT_OFFER.institutionCtaLabel} · {REPORT_OFFER.priceLabel}
+            </TrackLink>
+          </p>
         </>
       ),
     },
@@ -211,7 +227,7 @@ function plainSlides(): HamiltonSlide[] {
   return [
     plain("benchmark", "Benchmark", "Compare local, state and national fees.", "Benchmark your market", "How do our fees compare locally?", "See the market around you, with the schedule behind each number."),
     plain("analyze", "Analyze", "Decide what deserves a closer look.", "Analyze your options", "Which fees should we review next?", "Find where your fees sit furthest from your market, with the evidence."),
-    plain("monitor", "Monitor", "Follow competitor fee changes.", "Monitor what matters", "Keep your market in view.", "Follow the institutions and fees that matter to your next decision."),
+    plain("monitor", "Monitor", "Keep competitors' published fees in view.", "Monitor what matters", "Keep your market in view.", "Follow the institutions and fees that matter to your next decision."),
     plain("report", "Report", "Bring clear evidence to your board.", "Report with confidence", "Bring the evidence to your board.", "Every figure in the report traces to a published schedule."),
   ];
 }

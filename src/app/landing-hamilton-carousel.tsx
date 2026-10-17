@@ -44,7 +44,7 @@ export function HamiltonCarousel({ intro, slides }: { intro: ReactNode; slides: 
         <div className="fi-home-intro min-w-0 lg:pt-8">{intro}</div>
         <div className="min-w-0" role="region" aria-roledescription="carousel" aria-label="Hamilton examples">
           <div className="rounded-[10px] border border-border bg-surface-0 p-4 shadow-[0_6px_24px_rgb(23_42_59/0.03)] sm:p-5">
-            <p className="mb-3 text-[20px] font-semibold leading-tight tracking-[-0.02em] text-ink sm:text-[22px]" aria-live={clock.playing ? "off" : "polite"}>
+            <p className="mb-3 text-[20px] font-semibold leading-tight tracking-[-0.02em] text-ink sm:text-[22px]" aria-live={clock.manual ? "polite" : "off"}>
               {active.heading}
             </p>
             <div className="fi-home-stack">

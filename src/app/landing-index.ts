@@ -1,4 +1,5 @@
 import type { IndexRow } from "@/lib/data-store";
+import { FEE_LINE_LABELS } from "@/lib/custom-report/rules";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { STATE_NAMES } from "@/lib/us-states";
 import { countedAs, histogram, institutionsFor, statsFor } from "./(public)/fees/(index)/index-view";
@@ -14,6 +15,15 @@ import { CHARTERS, US, type Charter, type IndexCardData, type IndexCardFee, type
  * published row for one of them, and the three charter choices. Amounts are in cents so
  * the payload stays small.
  */
+
+/**
+ * The plain name a reader knows the fee by: the report's own line name where there is one
+ * ("Outgoing domestic wire"), else the taxonomy's, without a trailing note in brackets
+ * ("Overdraft (OD)", "Overdraft (per item)" both read "Overdraft").
+ */
+export function plainFeeName(fee: string): string {
+  return (FEE_LINE_LABELS[fee] ?? getDisplayName(fee)).replace(/\s*\([^)]*\)$/, "");
+}
 
 /** Cents, so a figure is an integer in the payload. */
 const cents = (v: number) => Math.round(v * 100);
@@ -47,7 +57,7 @@ export function buildIndexCard(rowsByFee: Map<string, IndexRow[]>): IndexCardDat
   for (const [fee, rows] of rowsByFee) {
     if (rows.length === 0) continue;
     const words = countedAs(fee);
-    fees.push({ key: fee, label: getDisplayName(fee), headline: words.headline, plural: words.labels });
+    fees.push({ key: fee, label: plainFeeName(fee), headline: words.headline, plural: words.labels });
     const byState = new Map<string, IndexRow[]>();
     for (const row of rows) {
       if (!row.state_code || !STATE_NAMES[row.state_code]) continue;

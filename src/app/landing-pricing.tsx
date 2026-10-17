@@ -28,12 +28,12 @@ export function LandingPricing() {
         <ul className="mt-6 grid grid-cols-3 gap-2 sm:gap-3.5">
           {PRO_TIERS.map((tier) => (
             <li key={tier.key} className="rounded-[6px] border border-border bg-surface-0 px-2 py-4 text-center sm:px-4 sm:py-6" data-plan={tier.key}>
-              <h3 className="min-h-[2.2em] text-[10px] font-medium leading-tight text-ink sm:min-h-0 sm:text-[14px]">{tier.assetsLabel}</h3>
+              <h3 className="min-h-[2.5em] text-[12px] font-medium leading-tight text-ink sm:min-h-0 sm:text-[14px]">{tier.assetsLabel}</h3>
               <p className="mt-2 text-[24px] font-semibold leading-none tracking-[-0.03em] text-ink sm:mt-3 sm:text-[36px]">
                 {tierAmountLabel(tier.key, "monthly")}
-                <span className="block text-[10px] font-normal tracking-normal text-ink-muted sm:ml-1.5 sm:inline sm:text-[13px]">/ month</span>
+                <span className="block text-[12px] font-normal tracking-normal text-ink-muted sm:ml-1.5 sm:inline sm:text-[13px]">/ month</span>
               </p>
-              <p className="mt-1.5 text-[10px] text-ink-muted sm:text-[12px]">or {tierAmountLabel(tier.key, "annual")} / year</p>
+              <p className="mt-1.5 text-[12px] text-ink-muted">or {tierAmountLabel(tier.key, "annual")} / year</p>
             </li>
           ))}
         </ul>

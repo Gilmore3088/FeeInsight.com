@@ -10,7 +10,7 @@ import { histogram, institutionsFor, statsFor } from "./(public)/fees/(index)/in
 import { LandingHero, LandingProof } from "./landing-hero";
 import { LandingHamilton, analyzeAnswer, analyzePicks, positionCounts } from "./landing-hamilton";
 import { HamiltonCarousel, type HamiltonSlide } from "./landing-hamilton-carousel";
-import { buildIndexCard } from "./landing-index";
+import { buildIndexCard, plainFeeName } from "./landing-index";
 import { IndexCard } from "./landing-index-card";
 import { cardHref, cellBars, hasMedian, US } from "./landing-index-view";
 import { LandingPricing } from "./landing-pricing";
@@ -87,8 +87,13 @@ describe("hero Bank Fee Index card", () => {
     expect(card.cells.monthly_maintenance.WY[0]).toEqual({ n: 2 });
     expect(card.states.map((s) => s.name)).toEqual(["Florida", "Georgia", "Wyoming"]);
     expect(card.fees).toEqual([
-      { key: "monthly_maintenance", label: "Monthly Maintenance", headline: "Median of each institution's median published price", plural: "institution medians" },
+      { key: "monthly_maintenance", label: "Monthly maintenance", headline: "Median of each institution's median published price", plural: "institution medians" },
     ]);
+  });
+
+  it("names fees plainly", () => {
+    expect(plainFeeName("overdraft")).toBe("Overdraft");
+    expect(plainFeeName("wire_domestic_outgoing")).toBe("Outgoing domestic wire");
   });
 
   it("leaves out a fee whose read returned nothing", () => {
@@ -151,6 +156,10 @@ describe("Hamilton band", () => {
     expect(html).toContain("02 / 04");
     // No timer or progress bar anywhere (James, Oct 17).
     expect(html).not.toMatch(/progress/i);
+    // Funnel step 2: the paid report, from constants, next to the sample.
+    expect(html).toMatch(/<a href="\/reports\?report=institution&amp;src=home#request"[^>]*data-event="request_report_click" data-placement="home_report">Request your institution report · From \$300</);
+    expect(html).toContain("Weigh service costs and waiver policies alongside the market.");
+    expect(html).not.toContain("before you settle on a price");
     // Every figure in the examples is a sample figure.
     for (const row of analyzePicks(sample.rows)) expect(html).toContain(row.label);
   });
@@ -261,6 +270,23 @@ describe("research, already connected", () => {
     // The first question's sources are lit from the start.
     for (const key of RESEARCH_EXAMPLES[0].sources) expect(html).toContain(`data-source="${key}" data-lit="true"`);
     expect(html).toContain("01 / 05");
+  });
+
+  it("lands on the finished example when moved while paused, never half-drawn", () => {
+    vi.useFakeTimers();
+    stubBrowser();
+    const { container } = render(<ResearchStage />);
+    fireEvent.click(screen.getByRole("button", { name: "Pause research examples" }));
+    expect(screen.getByRole("button", { name: "Pause research examples" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Next: research examples" }));
+    act(() => vi.advanceTimersByTime(5000));
+    expect(container.querySelector("[data-research-output]")?.getAttribute("data-answered")).toBe("true");
+    const lit = [...container.querySelectorAll('[data-lit="true"]')].map((el) => el.getAttribute("data-source"));
+    expect(lit.sort()).toEqual([...RESEARCH_EXAMPLES[1].sources].sort());
+    // The visitor's move is announced.
+    expect(screen.getByText(RESEARCH_EXAMPLES[1].question).getAttribute("aria-live")).toBe("polite");
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it("moves to the next question with the arrow", () => {

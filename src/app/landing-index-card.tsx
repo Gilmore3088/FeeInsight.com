@@ -196,19 +196,18 @@ export function IndexCard({ data, freshness, children }: { data: IndexCardData; 
         <h2 className="m-0 leading-none">
           <Logo mark="bank-fee-index-wordmark" height={22} title={PRODUCT_NAME} />
         </h2>
-        <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-muted">Published fee snapshot</span>
+        <span className="text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-muted max-[379px]:hidden">Published fee snapshot</span>
       </div>
       {data.fees.length === 0 ? (
         <p className="mt-6 text-[14px] text-ink-soft">The live figures are being refreshed. The full index is open on its own page.</p>
       ) : (
         <>
-          <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3" role="group" aria-label="Benchmark scope">
+          <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3" role="group" aria-label="Benchmark scope">
             <Picker
               label="Fee"
               value={fee}
               onChange={setFee}
               options={data.fees.map((f) => ({ value: f.key, label: f.label }))}
-              className="col-span-2 sm:col-span-1"
             />
             <Picker
               label="Headquartered in"
@@ -224,7 +223,13 @@ export function IndexCard({ data, freshness, children }: { data: IndexCardData; 
             />
           </div>
           <p className="mt-2 text-[11px] leading-snug text-ink-muted">A state counts the institutions headquartered there, wherever their branches are.</p>
-          <div className="mt-4 grid gap-5 sm:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] sm:gap-5" aria-live="polite">
+          {/* One short line is announced when a picker changes, not the whole result area. */}
+          <p className="sr-only" aria-live="polite" aria-atomic="true" data-index-summary="">
+            {hasMedian(pick)
+              ? `${feeDef?.label}, ${CHARTER_WORDS[charter]} in ${placeName}: median ${money(pick.median)}, ${institutions(pick.n)}.`
+              : `${feeDef?.label}, ${CHARTER_WORDS[charter]} in ${placeName}: no median yet.`}
+          </p>
+          <div className="mt-4 grid gap-5 sm:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] sm:gap-5">
             <div className="min-w-0">
               <h3 className="text-[13px] font-semibold text-ink">{benchmarkTitle}</h3>
               <p className="mt-0.5 text-[11px] leading-snug text-ink-muted">
