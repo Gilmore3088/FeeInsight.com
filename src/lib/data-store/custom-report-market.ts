@@ -132,6 +132,25 @@ export interface CustomReportMarketData {
   lines: MarketFeeLine[];
   /** Published rows left out because their source text does not state them, by reason. */
   dropped: Partial<Record<ReportDropReason, number>>;
+  /**
+   * The subject institution's own live records that passed a line's eligibility rules (category,
+   * name, consumer basis, amount range) and were left out only because the shared source check
+   * could not match them to its saved schedule. They make that line's comparison incomplete
+   * (analysis.ts `incomplete`). Competitors' records never go here. Missing on older copies.
+   */
+  unmatchedOwn?: UnmatchedOwnRecord[];
+}
+
+/** One of the subject's eligible records that failed the shared source check (see `unmatchedOwn`). */
+export interface UnmatchedOwnRecord {
+  line: string;
+  id: number | null;
+  amount: number;
+  fee_name: string;
+  /** The record's own stored excerpt, when it has one. */
+  excerpt: string | null;
+  source_url: string | null;
+  reason: SourceCheckFailure;
 }
 
 interface StoredText {
@@ -306,7 +325,7 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
     market_deposits: null,
     asset_size: num(subject.asset_size),
   };
-  if (counties.length === 0) return { subject: subjectRow, market: null, competitors: [], lines: [], dropped: {} };
+  if (counties.length === 0) return { subject: subjectRow, market: null, competitors: [], lines: [], dropped: {}, unmatchedOwn: [] };
 
   const countyFips = counties.map((row) => String(row.county_fips));
   const sodYear = Number(counties[0].year);
@@ -417,6 +436,7 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
   const includeByLine = new Map(FEE_LINE_RULES.map((rule) => [rule.key, rule.include]));
   const filled = new Map<string, MarketFeeLine>();
   const dropped: Partial<Record<ReportDropReason, number>> = {};
+  const unmatchedOwn: UnmatchedOwnRecord[] = [];
 
   const competitors = new Map<number, MarketInstitution>();
   const lines: MarketFeeLine[] = [];
@@ -455,6 +475,20 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
       }
       if (!check.ok) {
         dropped[check.reason] = (dropped[check.reason] ?? 0) + 1;
+        // The subject's own eligible record, left out only by the source check: kept so the report
+        // can say that line's comparison is missing an input (not a savings fee by its excerpt).
+        const excerpt = catalogExcerpt(row.conditions);
+        if (id === subjectRow.institution_id && !maintenanceLineIsNotChecking(row.line, excerpt ?? "")) {
+          unmatchedOwn.push({
+            line: row.line,
+            id: row.fee_id === null ? null : Number(row.fee_id),
+            amount,
+            fee_name: row.fee_name,
+            excerpt,
+            source_url: row.source_url ?? null,
+            reason: check.reason,
+          });
+        }
         continue;
       }
       // The line the record was read from, when its stored excerpt states the amount on this same
@@ -523,6 +557,7 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
     competitors: [...competitors.values()],
     lines,
     dropped,
+    unmatchedOwn,
   };
 }
 

@@ -5,18 +5,17 @@
  * the local spread, the institution's own schedule line, and every competitor's published fee
  * with the schedule it was read from.
  */
-import type { ReportLine } from "@/lib/custom-report/analysis";
+import { incompleteNote, isIncomplete, type ReportLine } from "@/lib/custom-report/analysis";
 import { evidenceOf, reasonOf, type AmountEvidence, type EvidenceRecord } from "@/lib/custom-report/evidence";
 import type { MarketBranchFootprint } from "@/lib/data-store/branches";
 import { rankOf, ordinal, type PlottedLine } from "./[token]/at-a-glance";
 import { ShowAll } from "./show-all";
-import { EXTRA_BLOCK_ROW, ROWS_SHOWN, comparedAt, comparedLines, medianMethod, money, priceText } from "./report-view";
+import { EXTRA_BLOCK_ROW, ROWS_SHOWN, comparedAt, comparedLines, medianMethod, money, positionWord, priceText } from "./report-view";
 
 type Tone = "above" | "inside" | "below";
 
 const DOT: Record<Tone, string> = { above: "bg-brick", inside: "bg-ink-soft", below: "bg-below-market" };
 const TEXT: Record<Tone, string> = { above: "text-brick", inside: "text-ink", below: "text-below-market" };
-const WORD: Record<Tone, string> = { above: "Above", inside: "Inside", below: "Below" };
 
 function toneOf(line: ReportLine): Tone {
   if (line.position === "above_market") return "above";
@@ -134,6 +133,7 @@ export function FeeComparison({ name, lines, names, branches, footprint }: FeeCo
           const figures = [...line.peerFigures].sort((a, b) => a.amount - b.amount);
           const ownEvidence = evidenceOf({ institution_id: 0, line: line.key, ...line.own });
           const leftOut = line.excludedFigures ?? [];
+          const incomplete = incompleteNote(name, line);
           return (
             <li key={line.key} className={`border-b border-border last:border-0 ${index >= ROWS_SHOWN ? EXTRA_BLOCK_ROW : ""}`}>
             <details className="group/fee">
@@ -161,9 +161,10 @@ export function FeeComparison({ name, lines, names, branches, footprint }: FeeCo
                 <span className="text-right text-[14px] font-semibold tabular-nums text-ink">
                   {priceText(line.own).replace(", depending on account", "")}
                   {compared && <span className="block text-[11px] font-normal text-ink-muted">compared at {money(line.own.amount)}</span>}
+                  {isIncomplete(line) && <span className="block text-[11px] font-semibold text-brick">incomplete inputs</span>}
                 </span>
                 <span className={`text-right text-[13px] tabular-nums ${TEXT[tone]}`}>{gapText(line)}</span>
-                <span className={`hidden text-right text-[12px] font-semibold sm:block print:block ${TEXT[tone]}`}>{WORD[tone]}</span>
+                <span className={`hidden text-right text-[12px] font-semibold sm:block print:block ${TEXT[tone]}`}>{positionWord(line)}</span>
               </summary>
 
               <div className="grid gap-5 pb-5 pl-5 pr-1 pt-1 text-[13px] text-ink-soft lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] lg:gap-10">
@@ -245,6 +246,7 @@ export function FeeComparison({ name, lines, names, branches, footprint }: FeeCo
                 </div>
               </div>
             </details>
+            {incomplete && <p className="pb-2.5 pl-5 pr-1 text-[12.5px] leading-snug text-ink-soft [overflow-wrap:anywhere]">{incomplete}</p>}
             </li>
           );
         })}

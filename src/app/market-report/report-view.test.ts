@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ReportLine } from "@/lib/custom-report/analysis";
 import type { CheckingLineupView } from "@/lib/custom-report/checking-lineup";
 import type { RevenueContext } from "@/lib/custom-report/revenue-context";
-import { bandText, comparedAt, countiesText, headlineFinding, leftOutNote, marketFinding, medianMethod, priceText, reviewPriorities, widestGapFinding } from "./report-view";
+import { bandText, comparedAt, countiesText, headlineFinding, leftOutNote, marketFinding, medianMethod, positionWord, priceText, reviewPriorities, widestGapFinding } from "./report-view";
 
 function line(key: string, label: string, own: number | null, peers: [number, number, number, number] | null, position: ReportLine["position"]): ReportLine {
   return {
@@ -110,5 +110,25 @@ describe("priorities for review", () => {
     expect(medianMethod("overdraft")).toBe("Median of local competitors, each at its standard fee");
     expect(medianMethod("stop_payment")).toBe("Median of local competitors, one fee each");
     expect(bandText("$1B-$10B")).toBe("$1B to $10B");
+  });
+});
+
+describe("an incomplete comparison's wording", () => {
+  const incomplete = { ...line("monthly_maintenance", "Monthly maintenance (checking)", 7.95, [20, 10, 14, 18], "below_market"), incomplete: [{ record_id: 140267, fee_name: "Monthly service charge (Everyday Checking)", amount: 8.95 }] };
+
+  it("says the position rests on incomplete inputs", () => {
+    expect(positionWord(incomplete)).toBe("Below, on incomplete inputs");
+    expect(positionWord({ ...incomplete, incomplete: [] })).toBe("Below");
+    expect(headlineFinding([lines[0], lines[1], incomplete])).toBe(
+      "One of three compared fees sits above the local middle 50%; one sits inside it and one below. Monthly maintenance (checking) rests on incomplete inputs.",
+    );
+    expect(widestGapFinding("Capital City Bank", [incomplete])).toBe(
+      "The widest gap is monthly maintenance: Capital City Bank's fee is $7.95, against a local median of $14 across 20 competitors, on incomplete inputs.",
+    );
+  });
+
+  it("adds nothing when every compared line is complete", () => {
+    expect(headlineFinding(lines)).not.toContain("incomplete");
+    expect(widestGapFinding("Bank", lines)).not.toContain("incomplete");
   });
 });

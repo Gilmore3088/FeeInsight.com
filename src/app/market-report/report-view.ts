@@ -6,7 +6,7 @@
  * for one fee follow the shared rule (src/lib/fee-representative.ts): the range is shown, and
  * the value compared is labelled.
  */
-import { MIN_LOCAL_PEERS_PER_LINE, positionCounts, type ReportLine } from "@/lib/custom-report/analysis";
+import { MIN_LOCAL_PEERS_PER_LINE, isIncomplete, positionCounts, type ReportLine } from "@/lib/custom-report/analysis";
 import { isScopeProblem } from "@/lib/custom-report/evidence";
 import type { CheckingLineupView } from "@/lib/custom-report/checking-lineup";
 import { shareLabel, type RevenueContext } from "@/lib/custom-report/revenue-context";
@@ -41,7 +41,23 @@ export function headlineFinding(lines: ReportLine[]): string {
   if (total === 0) return "Too few local competitors publish these fees for a comparison yet.";
   if (inside === total) return total === 1 ? "The one compared fee sits inside the local middle 50%." : `All ${word(total)} compared fees sit inside the local middle 50%.`;
   const lead = `${capital(word(above))} of ${word(total)} compared fees ${above === 1 ? "sits" : "sit"} above the local middle 50%`;
-  return `${lead}; ${word(inside)} ${inside === 1 ? "sits" : "sit"} inside it and ${word(below)} below.`;
+  return `${lead}; ${word(inside)} ${inside === 1 ? "sits" : "sit"} inside it and ${word(below)} below.${incompleteTail(lines)}`;
+}
+
+/** " Monthly maintenance rests on incomplete inputs." after a count that includes such a line. */
+function incompleteTail(lines: ReportLine[]): string {
+  const open = comparedLines(lines).filter(isIncomplete).map((l) => l.label);
+  if (open.length === 0) return "";
+  return ` ${join(open)} ${open.length === 1 ? "rests" : "rest"} on incomplete inputs.`;
+}
+
+/**
+ * The position in words for a compared line: "Below", or "Below, on incomplete inputs" while the
+ * comparison is missing one of the institution's own published records, so it never reads as settled.
+ */
+export function positionWord(line: Pick<ReportLine, "position" | "incomplete">): string {
+  const base = line.position === "above_market" ? "Above" : line.position === "in_market" ? "Inside" : "Below";
+  return isIncomplete(line) ? `${base}, on incomplete inputs` : base;
 }
 
 /** Every amount the institution states for the fee, the compared one included. */
@@ -66,11 +82,12 @@ export function comparedAt(key: string, own: { amount: number; tiers?: { amount:
 export function widestGapFinding(name: string, lines: ReportLine[]): string {
   const compared = comparedLines(lines);
   if (compared.length === 0) return `Too few local competitors publish ${name}'s fees for a comparison.`;
-  if (compared.every((l) => l.position === "in_market")) return `Every compared fee sits inside the local middle 50%.`;
+  if (compared.every((l) => l.position === "in_market")) return `Every compared fee sits inside the local middle 50%.${incompleteTail(lines)}`;
   const lead = [...compared].sort((a, b) => Math.abs(b.own.amount - b.peers.median) - Math.abs(a.own.amount - a.peers.median))[0];
   const several = new Set(amountsOf(lead.own)).size > 1;
   const what = several ? `${name} is compared at ${money(lead.own.amount)}` : `${name}'s fee is ${money(lead.own.amount)}`;
-  return `The widest gap is ${inSentence(lead.label)}: ${what}, against a local median of ${money(lead.peers.median)} across ${lead.peers.n} competitors.`;
+  const qualifier = isIncomplete(lead) ? ", on incomplete inputs" : "";
+  return `The widest gap is ${inSentence(lead.label)}: ${what}, against a local median of ${money(lead.peers.median)} across ${lead.peers.n} competitors${qualifier}.`;
 }
 
 /** The fees left out of the comparison, said once under the exhibit rather than on every row. */

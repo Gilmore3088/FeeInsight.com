@@ -152,7 +152,7 @@ export const getStateEconomicContextCached = cachedPublicRead(
   isEmptyEconomicContext,
 );
 export const getMarketReadinessCached = cachedPublicRead("market-readiness", getMarketReadiness);
-export const getCustomReportMarketDataCached = cachedPublicRead("custom-report-market-v4", getCustomReportMarketData);
+export const getCustomReportMarketDataCached = cachedPublicRead("custom-report-market-v5", getCustomReportMarketData);
 /**
  * Every institution's headline coverage, shared by all institution pages. Each page used to
  * recount the whole catalog for its own report rule check: about a second, 830 times an hour

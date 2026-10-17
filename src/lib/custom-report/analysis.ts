@@ -1,7 +1,7 @@
 import type { CustomReportMarketData, MarketFeeLine, MarketInstitution } from "@/lib/data-store/custom-report-market";
 import { countyLabel } from "@/lib/geo/counties";
 import { FEE_LINE_BASIS, FEE_LINE_LABELS, FEE_LINE_RULES } from "./rules";
-import { buildAmountEvidence, evidenceOf, isScopeProblem, reasonOf, withEvidence, type AmountEvidence, type EvidenceRecord, type ReportFigure } from "./evidence";
+import { buildAmountEvidence, educationalPage, evidenceOf, isScopeProblem, reasonOf, scopeProblem, withEvidence, type AmountEvidence, type EvidenceRecord, type ReportFigure } from "./evidence";
 
 export type { AmountEvidence, EvidenceRecord, ReportFigure } from "./evidence";
 
@@ -49,6 +49,21 @@ export interface ReportLine {
   peerFigures: ReportFigure[];
   /** Competitor amounts left out because no record's evidence shows the amount. */
   excludedFigures?: { institution_id: number; evidence: AmountEvidence }[];
+  /**
+   * The institution's own live records this compared line leaves out only because the shared
+   * source check could not match them to its saved schedule (`incompleteInputs`). Non-empty means
+   * the comparison is missing a known input, so its position is not a settled finding. Empty or
+   * missing (older copies) when complete.
+   */
+  incomplete?: IncompleteInput[];
+}
+
+/** One of the institution's own published records missing from a line's comparison. */
+export interface IncompleteInput {
+  record_id: number | null;
+  /** The fee's published name. */
+  fee_name: string;
+  amount: number;
 }
 
 export interface NamedCompetitor extends MarketInstitution {
@@ -112,6 +127,67 @@ export function positionFor(amount: number, peers: Pick<NonNullable<ReportLine["
   if (amount > peers.p75) return "above_market";
   if (amount < peers.p25) return "below_market";
   return "in_market";
+}
+
+/**
+ * The institution's own records a compared line leaves out only because the shared source check
+ * (`checkFeeAgainstSource`) could not match them to the saved schedule, while they pass the line's
+ * eligibility rules: the loader's `unmatchedOwn` (category, name, consumer basis and amount range
+ * already hold; here also the line's scope rules and an own-schedule source), and the records the
+ * evidence check left out because their quote does not show the amount. A price the comparison
+ * already uses is not missing. Only the subject's own records count, never a competitor's.
+ * Once the checker passes a record it is used, and the line is complete again by itself.
+ */
+export function incompleteInputs(
+  key: string,
+  unmatched: CustomReportMarketData["unmatchedOwn"],
+  evidence: AmountEvidence | null | undefined,
+): IncompleteInput[] {
+  const used = new Set((evidence?.records ?? []).map((r) => r.amount.toFixed(2)));
+  const candidates: IncompleteInput[] = [
+    ...(unmatched ?? [])
+      .filter((r) => r.line === key)
+      .filter((r) => !educationalPage(r.source_url))
+      .filter((r) => scopeProblem(key, { product: r.fee_name, amount: r.amount, quote: r.excerpt ?? "" }) === null)
+      .map((r) => ({ record_id: r.id, fee_name: r.fee_name, amount: r.amount })),
+    ...(evidence?.excluded ?? [])
+      .filter((r) => r.problem === "quote_without_amount")
+      .map((r) => ({ record_id: r.record_id, fee_name: r.product, amount: r.amount })),
+  ];
+  const seen = new Set<string>();
+  return candidates
+    .filter((r) => {
+      const amount = r.amount.toFixed(2);
+      if (used.has(amount) || seen.has(amount)) return false;
+      seen.add(amount);
+      return true;
+    })
+    .sort((a, b) => a.amount - b.amount);
+}
+
+/** "Monthly service charge (Everyday Checking)" -> "Everyday Checking"; otherwise the name as published. */
+export function inputProduct(feeName: string): string {
+  const named = /\(([^()]*[A-Za-z][^()]*)\)\s*$/.exec(feeName);
+  return (named ? named[1] : feeName).trim();
+}
+
+/**
+ * The qualification beside an incomplete comparison, shared by the page and the CSV: "Incomplete:
+ * Capital City Bank's Everyday Checking at $8.95 is on its published schedule, but we could not
+ * match it to a line in the saved schedule, so this comparison leaves it out." Null when complete.
+ */
+export function incompleteNote(name: string, line: Pick<ReportLine, "incomplete">): string | null {
+  const inputs = line.incomplete ?? [];
+  if (inputs.length === 0) return null;
+  const items = inputs.map((r) => `${inputProduct(r.fee_name)} at ${money(r.amount)}`);
+  const list = items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+  const several = inputs.length > 1;
+  return `Incomplete: ${name}'s ${list} ${several ? "are" : "is"} on its published schedule, but we could not match ${several ? "them" : "it"} to a line in the saved schedule, so this comparison leaves ${several ? "them" : "it"} out.`;
+}
+
+/** True when the line's comparison is missing one of the institution's own published records. */
+export function isIncomplete(line: Pick<ReportLine, "incomplete">): boolean {
+  return (line.incomplete?.length ?? 0) > 0;
 }
 
 export function analyzeMarket(data: CustomReportMarketData): CustomReportAnalysis {
@@ -194,6 +270,7 @@ export function analyzeMarket(data: CustomReportMarketData): CustomReportAnalysi
       chargingLess: comparable && mine ? peerAmounts.filter((a) => a < mine.amount).length : null,
       peerFigures,
       excludedFigures: excludedByLine.get(rule.key) ?? [],
+      incomplete: comparable && mine ? incompleteInputs(rule.key, data.unmatchedOwn, mine.evidence) : [],
     };
   });
 
@@ -275,9 +352,10 @@ export function buildFindings(lines: ReportLine[]): string[] {
     const label = (FEE_LINE_LABELS[l.key] ?? l.key).toLowerCase();
     const yours = money(l.own.amount);
     const median = money(l.peers.median);
-    if (l.position === "free") return `You charge nothing for ${label}; the local median is ${median} across ${l.peers.n} competitors.`;
+    const qualifier = isIncomplete(l) ? ", on incomplete inputs" : "";
+    if (l.position === "free") return `You charge nothing for ${label}${qualifier}; the local median is ${median} across ${l.peers.n} competitors.`;
     const direction = l.position === "above_market" ? "above" : "below";
-    return `Your ${label} fee (${yours}) is ${direction} the local middle half: the median is ${median} across ${l.peers.n} competitors, and the middle half charge ${money(l.peers.p25)} to ${money(l.peers.p75)}.`;
+    return `Your ${label} fee (${yours}) is ${direction} the local middle half${qualifier}: the median is ${median} across ${l.peers.n} competitors, and the middle half charge ${money(l.peers.p25)} to ${money(l.peers.p75)}.`;
   });
   const inMarket = comparable.filter((l) => l.position === "in_market").length;
   findings.push(`${inMarket} of your ${comparable.length} comparable fee lines sit inside the middle half of your local market.`);
@@ -317,7 +395,7 @@ const CSV_HEADER = [
   "amount", "amount_basis", "published_range", "record", "records",
   "record_id", "account_or_product", "record_amount", "record_used", "schedule_line", "source_url", "schedule_read_on",
   "local_median", "middle_half_low", "middle_half_high", "competitors", "competitors_charging_less", "position",
-  "missing_reason",
+  "missing_reason", "comparison_note",
 ] as const;
 
 function rangeText(amounts: number[]): string | null {
@@ -362,12 +440,13 @@ export function buildReportCsv(data: CustomReportMarketData, analysis: CustomRep
     evidence: AmountEvidence | null,
     stats: Stats,
     missing: string | null,
+    note: string | null = null,
   ) => {
     const used = evidence?.records ?? [];
     const all = [...used, ...(evidence?.excluded ?? [])];
     const head = [row, line.label, FEE_LINE_BASIS[line.key] ?? null, institutionId, institution];
     if (all.length === 0) {
-      rows.push([...context, ...head, null, null, null, null, null, null, null, null, null, null, null, null, ...stats, missing]);
+      rows.push([...context, ...head, null, null, null, null, null, null, null, null, null, null, null, null, ...stats, missing, note]);
       return;
     }
     all.forEach((record, index) => {
@@ -379,6 +458,7 @@ export function buildReportCsv(data: CustomReportMarketData, analysis: CustomRep
         record.record_id, record.product, record.amount, usedHere ? "yes" : "no", record.quote, record.source_url, record.read_on,
         ...stats,
         usedHere ? missing : excludedReason(record),
+        note,
       ]);
     });
   };
@@ -396,16 +476,18 @@ export function buildReportCsv(data: CustomReportMarketData, analysis: CustomRep
     const missing = line.own
       ? tooFew ? MISSING_TOO_FEW : null
       : line.ownExcluded ? excludedAmountReason(line.ownExcluded) : MISSING_NOT_FOUND;
-    push("yours", line, data.subject.institution_id, data.subject.institution_name, ownEvidence, stats, missing);
+    push("yours", line, data.subject.institution_id, data.subject.institution_name, ownEvidence, stats, missing, incompleteNote(data.subject.institution_name, line));
   }
   const blank: Stats = [null, null, null, null, null, null];
   for (const line of analysis.lines.filter((l) => l.comparable)) {
+    // The competitor rows of an incomplete line carry its qualification too: their median is the one in question.
+    const note = incompleteNote(data.subject.institution_name, line);
     const entries = [
       ...line.peerFigures.map((figure) => ({ id: figure.institution_id, evidence: evidenceOf(figure) })),
       ...(line.excludedFigures ?? []).map((figure) => ({ id: figure.institution_id, evidence: figure.evidence })),
     ];
     for (const entry of entries) {
-      push("competitor", line, entry.id, names.get(entry.id) ?? `Institution ${entry.id}`, entry.evidence, blank, entry.evidence.amount === null ? excludedAmountReason(entry.evidence) : null);
+      push("competitor", line, entry.id, names.get(entry.id) ?? `Institution ${entry.id}`, entry.evidence, blank, entry.evidence.amount === null ? excludedAmountReason(entry.evidence) : null, note);
     }
   }
   return rows.map((row) => row.map(csvCell).join(",")).join("\r\n") + "\r\n";

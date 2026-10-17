@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CustomReportMarketData, MarketFeeLine } from "@/lib/data-store/custom-report-market";
-import { analyzeMarket, buildReportCsv, diffReports, excludedReason, MISSING_EXCLUDED, MISSING_NOT_FOUND, MISSING_TOO_FEW, positionCounts, MIN_COMPARABLE_LINES, NAMED_COMPETITORS, NAMED_WITHOUT_DEPOSITS, pickNamedCompetitors, quantile, type NamedCompetitor } from "./analysis";
+import { analyzeMarket, buildReportCsv, diffReports, excludedReason, incompleteNote, inputProduct, isIncomplete, MISSING_EXCLUDED, MISSING_NOT_FOUND, MISSING_TOO_FEW, positionCounts, MIN_COMPARABLE_LINES, NAMED_COMPETITORS, NAMED_WITHOUT_DEPOSITS, pickNamedCompetitors, quantile, type NamedCompetitor } from "./analysis";
 
 const KEYS = ["overdraft", "nsf", "stop_payment", "cashiers_check", "wire_domestic_outgoing", "card_replacement"];
 
@@ -291,5 +291,75 @@ describe("positionCounts", () => {
   it("counts above, inside and below the local middle half", () => {
     const counts = positionCounts(analyzeMarket(market({ competitors: 20, ownAmount: 100 })).lines);
     expect(counts).toEqual({ above: KEYS.length, inside: 0, below: 0 });
+  });
+});
+
+describe("an incomplete comparison (the institution's own record the source check could not match)", () => {
+  // Capital City Bank, Oct 17: Everyday Checking's $8.95 (140267) is live but the shared check reads
+  // its waiver sentence as a tier, so the line compares only Carefree Checking's $7.95 (140263).
+  function checking(unmatched: CustomReportMarketData["unmatchedOwn"]): CustomReportMarketData {
+    const data = market({ competitors: 20 });
+    data.subject.institution_name = "Capital City Bank";
+    data.lines.push({ institution_id: 1, line: "monthly_maintenance", id: 140263, amount: 7.95, fee_name: "Carefree Checking Monthly service charge", source_url: "https://a", updated_at: null, schedule_read_on: "2026-10-12", source_line: "$7.95 monthly service charge" });
+    for (let i = 0; i < 20; i += 1) {
+      data.lines.push({ institution_id: 100 + i, line: "monthly_maintenance", amount: 5 + i, fee_name: "Monthly service charge", source_url: null, updated_at: null, schedule_read_on: null, source_line: `Monthly service charge $${5 + i}` });
+    }
+    data.unmatchedOwn = unmatched;
+    return data;
+  }
+  const everyday = {
+    line: "monthly_maintenance", id: 140267, amount: 8.95, fee_name: "Monthly service charge (Everyday Checking)",
+    excerpt: "No monthly service charge with either 20 debit card transactions* OR a minimum daily balance of $1,500; otherwise, $8.95 per month",
+    source_url: "https://a", reason: "tiered_fee" as const,
+  };
+  const NOTE = "Incomplete: Capital City Bank's Everyday Checking at $8.95 is on its published schedule, but we could not match it to a line in the saved schedule, so this comparison leaves it out.";
+
+  it("marks the line incomplete and says which record is missing, in the page's and the CSV's words", () => {
+    const data = checking([everyday]);
+    const analysis = analyzeMarket(data);
+    const line = analysis.lines.find((l) => l.key === "monthly_maintenance")!;
+    expect(line.own?.amount).toBe(7.95);
+    expect(line.incomplete).toEqual([{ record_id: 140267, fee_name: everyday.fee_name, amount: 8.95 }]);
+    expect(isIncomplete(line)).toBe(true);
+    expect(incompleteNote("Capital City Bank", line)).toBe(NOTE);
+    const rows = parseCsv(buildReportCsv(data, analysis)).filter((r) => r.fee_line === "Monthly maintenance (checking)");
+    expect(rows.find((r) => r.row === "yours")?.comparison_note).toBe(NOTE);
+    expect(rows.filter((r) => r.row === "competitor").every((r) => r.comparison_note === NOTE)).toBe(true);
+    // Other lines stay complete.
+    expect(parseCsv(buildReportCsv(data, analysis)).find((r) => r.row === "yours" && r.fee_line === "Overdraft (per item)")?.comparison_note).toBe("");
+    expect(analysis.lines.find((l) => l.key === "overdraft")?.incomplete).toEqual([]);
+  });
+
+  it("clears by itself once the checker passes the record (nothing unmatched, or its price already used)", () => {
+    expect(analyzeMarket(checking([])).lines.find((l) => l.key === "monthly_maintenance")?.incomplete).toEqual([]);
+    expect(analyzeMarket(checking(undefined)).lines.find((l) => l.key === "monthly_maintenance")?.incomplete).toEqual([]);
+    const samePrice = { ...everyday, amount: 7.95 };
+    expect(analyzeMarket(checking([samePrice])).lines.find((l) => l.key === "monthly_maintenance")?.incomplete).toEqual([]);
+  });
+
+  it("leaves out a record the line's own rules would leave out anyway (an add-on, an educational page)", () => {
+    const addOn = { ...everyday, fee_name: "ATM Freedom add-on monthly fee", amount: 2.99 };
+    const article = { ...everyday, source_url: "https://bank.example/learning/money-management/what-checking-costs" };
+    expect(analyzeMarket(checking([addOn, article])).lines.find((l) => l.key === "monthly_maintenance")?.incomplete).toEqual([]);
+  });
+
+  it("does not mark a line that is not compared", () => {
+    const data = checking([{ ...everyday, line: "paper_statement", amount: 3 }]);
+    expect(analyzeMarket(data).lines.find((l) => l.key === "paper_statement")?.incomplete).toEqual([]);
+  });
+
+  it("qualifies the line's finding so its position never reads as settled", () => {
+    const data = checking([everyday]);
+    // Every competitor above the bank puts its $7.95 below the local middle half.
+    for (const l of data.lines) if (l.line === "monthly_maintenance" && l.institution_id !== 1) { l.amount += 10; l.source_line = `Monthly service charge $${l.amount}`; }
+    const analysis = analyzeMarket(data);
+    const line = analysis.lines.find((l) => l.key === "monthly_maintenance")!;
+    expect(line.position).toBe("below_market");
+    expect(analysis.findings.find((f) => f.includes("monthly maintenance"))).toContain("below the local middle half, on incomplete inputs");
+  });
+
+  it("names the account from the fee's published name", () => {
+    expect(inputProduct("Monthly service charge (Everyday Checking)")).toBe("Everyday Checking");
+    expect(inputProduct("Overdraft fee")).toBe("Overdraft fee");
   });
 });
