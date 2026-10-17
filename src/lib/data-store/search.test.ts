@@ -6,7 +6,7 @@ vi.mock("./connection", () => ({
   },
 }));
 
-import { autocompleteInstitutions, institutionSearchPatterns } from "./search";
+import { autocompleteInstitutions, institutionSearchPatterns, searchInstitutions } from "./search";
 import { sql } from "./connection";
 
 const unsafeMock = sql.unsafe as unknown as ReturnType<typeof vi.fn>;
@@ -115,5 +115,19 @@ describe("institution search short names (#1545)", () => {
     expect(institutionSearchPatterns("U.S. Bank").squashed).toBe("%us bank%");
     expect(institutionSearchPatterns("BofA").aliases).toEqual(["Bank of America%"]);
     expect(institutionSearchPatterns("Navy Federal").aliases).toEqual([]);
+  });
+});
+
+describe("searchInstitutions name match", () => {
+  it("matches a full search the way the typeahead does, so Enter on M&T finds M&T", async () => {
+    unsafeMock.mockReset();
+    unsafeMock.mockResolvedValueOnce([{ cnt: 0 }]).mockResolvedValueOnce([]);
+    await searchInstitutions({ query: "M&T Bank", state_code: "NY" });
+    const [countText, countParams] = unsafeMock.mock.calls[0];
+    expect(countText).toContain("ct.institution_name ILIKE ANY($3::text[])");
+    expect(countText).toContain("ct.state_code = $4");
+    expect(countParams).toEqual(["%M&T Bank%", "%m&t bank%", ["Manufacturers and Traders Trust%"], "NY"]);
+    const [, rowParams] = unsafeMock.mock.calls[1];
+    expect(rowParams).toEqual(["%M&T Bank%", "%m&t bank%", ["Manufacturers and Traders Trust%"], "NY", 25, 0]);
   });
 });

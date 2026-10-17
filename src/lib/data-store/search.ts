@@ -230,13 +230,17 @@ export async function searchInstitutions(params: {
   pageSize?: number;
 }): Promise<{ rows: InstitutionSearchResult[]; total: number }> {
   const conditions: string[] = [];
-  const queryParams: (string | number)[] = [];
+  const queryParams: (string | number | string[])[] = [];
   let paramIdx = 0;
 
   if (params.query && params.query.trim().length >= 2) {
-    paramIdx++;
-    conditions.push(`ct.institution_name ILIKE $${paramIdx}`);
-    queryParams.push(`%${params.query.trim()}%`);
+    // The same name match as the typeahead, so "M&T" or "US Bank" finds the same banks on Enter.
+    const { pattern, squashed, aliases } = institutionSearchPatterns(params.query);
+    conditions.push(`(ct.institution_name ILIKE $${paramIdx + 1}
+      OR regexp_replace(lower(ct.institution_name), '[^a-z0-9& ]+', '', 'g') LIKE $${paramIdx + 2}
+      OR ct.institution_name ILIKE ANY($${paramIdx + 3}::text[]))`);
+    queryParams.push(pattern, squashed, aliases);
+    paramIdx += 3;
   }
   if (params.state_code) {
     paramIdx++;

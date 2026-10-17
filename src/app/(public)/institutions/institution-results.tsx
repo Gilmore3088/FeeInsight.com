@@ -17,17 +17,17 @@ function statusChip(row: InstitutionSearchResult, coverage: HeadlineCoverage): {
     return {
       label: getHeadlineCoverageLabel(categories, HEADLINE_FEE_KEYS.length),
       className: isInstitutionRich(categories)
-        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-        : "border-border bg-white text-ink-soft",
+        ? "border-ink/25 bg-surface-200 font-semibold text-ink"
+        : "border-border bg-surface-0 text-ink-soft",
     };
   }
   if (hasVerifiedFees(row)) {
-    return { label: "Fees published", className: "border-emerald-200 bg-emerald-50 text-emerald-800" };
+    return { label: "Fees published", className: "border-ink/25 bg-surface-200 text-ink" };
   }
   if (row.provisional_fee_count > 0 || row.fee_publication_status === "under_review") {
-    return { label: "Under review", className: "border-amber-200 bg-amber-50 text-amber-900" };
+    return { label: "Under review", className: "border-dashed border-border bg-surface-0 text-ink-soft" };
   }
-  return { label: getPublicStatusLabel("unavailable"), className: "border-border bg-white text-ink-muted" };
+  return { label: getPublicStatusLabel("unavailable"), className: "border-border bg-surface-0 text-ink-muted" };
 }
 
 /**
@@ -93,21 +93,22 @@ function StatusChip({
   );
 }
 
+/** The phone card's figure: published fees only, with its label, so the card stays short. */
+function PublishedFigure({ row }: { row: InstitutionSearchResult }) {
+  if (!hasVerifiedFees(row)) return <span className="text-[12px] text-ink-muted">None yet</span>;
+  return (
+    <span className="block">
+      <span className="block text-[17px] font-semibold tabular-nums text-ink">{row.published_fee_count.toLocaleString("en-US")}</span>
+      <span className="block text-[11px] text-ink-muted">published</span>
+    </span>
+  );
+}
+
 function FeeCount({ row }: { row: InstitutionSearchResult }) {
   if (hasVerifiedFees(row)) {
-    return (
-      <span className="tabular-nums">
-        <span className="font-medium text-brick">{row.published_fee_count.toLocaleString("en-US")}</span>
-        {row.provisional_fee_count > 0 && (
-          <span className="ml-1 text-xs text-ink-muted">+{row.provisional_fee_count} under review</span>
-        )}
-      </span>
-    );
+    return <span className="font-semibold tabular-nums text-ink">{row.published_fee_count.toLocaleString("en-US")}</span>;
   }
-  if (row.provisional_fee_count > 0) {
-    return <span className="tabular-nums text-[#9A5A00]">{row.provisional_fee_count} under review</span>;
-  }
-  return <span className="text-ink-muted">—</span>;
+  return <span className="text-ink-muted">None yet</span>;
 }
 
 const TH_CLASS = "px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-ink-muted";
@@ -122,7 +123,7 @@ export function InstitutionResultsTable({
   focus?: FeeFocus | null;
 }) {
   return (
-    <div className="hidden overflow-hidden border border-border bg-surface-0 sm:block">
+    <div className="hidden overflow-hidden rounded-xl border border-border bg-surface-0 sm:block">
       <div className="overflow-x-auto">
         <table className="w-full min-w-[760px] text-left text-sm">
           <thead>
@@ -131,8 +132,8 @@ export function InstitutionResultsTable({
               <th className={TH_CLASS}>Location</th>
               <th className={`hidden md:table-cell ${TH_CLASS}`}>Type</th>
               {focus && <th className={`text-right ${TH_CLASS}`}>{focus.label}</th>}
-              <th className={`text-right ${TH_CLASS}`}>Fees</th>
-              <th className={`hidden md:table-cell ${TH_CLASS}`}>Status</th>
+              <th className={`text-right ${TH_CLASS}`}>Published fees</th>
+              <th className={`hidden md:table-cell ${TH_CLASS}`}>Coverage</th>
             </tr>
           </thead>
           <tbody>
@@ -152,12 +153,7 @@ export function InstitutionResultsTable({
                 </td>
                 <td className="px-4 py-3 text-ink-muted">{locationLabel(row)}</td>
                 <td className="hidden px-4 py-3 text-ink-muted md:table-cell">
-                  {getCharterLabel(row.charter_type)}
-                  {getSegmentLabel(row.asset_size_tier, row.charter_type) && (
-                    <span className="ml-1 text-xs text-ink-muted">
-                      ({getSegmentLabel(row.asset_size_tier, row.charter_type)})
-                    </span>
-                  )}
+                  {getSegmentLabel(row.asset_size_tier, row.charter_type) ?? getCharterLabel(row.charter_type)}
                 </td>
                 {focus && (
                   <td className="px-4 py-3 text-right">
@@ -194,7 +190,7 @@ export function InstitutionMobileCards({
         <Link
           key={row.id}
           href={institutionHref(row.id, focus)}
-          className="fi-row-interaction block border border-border bg-surface-0 px-3 py-3"
+          className="fi-row-interaction block min-h-11 rounded-xl border border-border bg-surface-0 px-4 py-3"
         >
           <div className="flex min-w-0 items-start justify-between gap-3">
             <div className="min-w-0">
@@ -216,7 +212,7 @@ export function InstitutionMobileCards({
                   <FocusAmount row={row} focus={focus} />
                 </>
               ) : (
-                <FeeCount row={row} />
+                <PublishedFigure row={row} />
               )}
             </div>
           </div>
@@ -237,7 +233,7 @@ export function DirectoryPagination({
 }) {
   if (totalPages <= 1) return null;
   const linkClass =
-    "inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:border-ink";
+    "inline-flex min-h-11 items-center gap-1.5 rounded-full border border-border px-4 text-[14px] font-medium text-ink transition-colors hover:border-ink";
   return (
     <div className="mt-6 flex items-center justify-center gap-2">
       {page > 1 && (
@@ -246,7 +242,7 @@ export function DirectoryPagination({
           Previous
         </Link>
       )}
-      <span className="text-xs text-ink-muted">
+      <span className="text-[13px] text-ink-muted">
         Page {page} of {totalPages}
       </span>
       {page < totalPages && (
