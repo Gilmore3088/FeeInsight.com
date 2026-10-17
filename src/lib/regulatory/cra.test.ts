@@ -12,6 +12,7 @@ import {
   normalizeCraRegulator,
   parseCraDisclosureLine,
   parseCraRatingsText,
+  craLendingUrlCandidates,
   readCraDisclosure,
   readCraTransmittal,
 } from "./cra";
@@ -67,6 +68,21 @@ describe("CRA ratings file", () => {
 
   it("refuses a file without the required columns", () => {
     expect(parseCraRatingsText("NAME,CITY,STATE\nA,B,C").layoutProblem).toMatch(/examDate, rating/);
+  });
+
+  it("reads a headerless file in the spec's order and places the ID by regulator", () => {
+    const file = [
+      "24\t1\t20230515\tFIRST NATIONAL BANK, N.A.\tSPRINGFIELD\tIL\t125000\t2\t2",
+      "541101\t2\t20220801\tSTATE MEMBER BANK\tDENVER\tCO\t98000\t3\t1",
+      "57890\t3\t20240110\tCOMMUNITY BANK\tAUSTIN\ttx\t\t1\t3",
+    ].join("\n");
+    const parsed = parseCraRatingsText(file);
+    expect(parsed.layoutProblem).toBeNull();
+    expect(parsed.ratings).toHaveLength(3);
+    const [occ, frb, fdic] = parsed.ratings;
+    expect(occ).toMatchObject({ agencyId: "24", rssd: null, fdicCert: null, regulator: "OCC", name: "FIRST NATIONAL BANK, N.A.", examDate: "2023-05-15", ratingCode: 2, assetSize: 125000 });
+    expect(frb).toMatchObject({ rssd: "541101", fdicCert: null, regulator: "FRB", ratingCode: 1 });
+    expect(fdic).toMatchObject({ fdicCert: "57890", rssd: null, state: "TX", assetSize: null, ratingCode: 3 });
     expect(parseCraRatingsText("one value per line\nx").layoutProblem).toMatch(/No header row/);
   });
 
@@ -93,7 +109,13 @@ describe("CRA ratings file", () => {
 
 describe("CRA lending flat files", () => {
   it("builds two-digit-year URLs", () => {
-    expect(craLendingUrls(2024).disclosure).toBe("https://www.ffiec.gov/cra/xls/24exp_discl.zip");
+    expect(craLendingUrls(2024).disclosure).toBe("https://www.ffiec.gov/sites/default/files/data/cra/flat-files/24exp_discl.zip");
+  });
+
+  it("tries the revised 2022 and 2023 files before the originals", () => {
+    expect(craLendingUrlCandidates(2023).map((c) => c.disclosure.split("/").pop())).toEqual(["cra2023_Discl_D22.zip", "23exp_discl.zip"]);
+    expect(craLendingUrlCandidates(2023)[0].transmittal.split("/").pop()).toBe("CRA2023_Transmittal.zip");
+    expect(craLendingUrlCandidates(2024)).toHaveLength(1);
   });
 
   it("reads a disclosure line and keeps blanks as null", () => {
