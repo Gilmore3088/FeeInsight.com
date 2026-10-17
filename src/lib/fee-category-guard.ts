@@ -205,11 +205,11 @@ export function cardProductMisfile(canonicalFeeKey: string | null | undefined, f
  * (48 live fees on Oct 17, nearly all a wire price from the next column), so a live fee failing the
  * rule goes to the second look and comes down.
  *
- * Held by `BORROWED_DIRECTION_LIVE`: off, the rule reads nothing (Knox, Darwin and publish, and the
- * guard version stays). Switched on, with `CATEGORY_GUARD_VERSION` raised in the same change, the
- * catch-up sweep flags the live fees that fail it for the second look and takes them down.
+ * Held by `BORROWED_DIRECTION_LIVE`: off, the rule reads nothing (Knox, Darwin and publish). On since
+ * James's yes (Oct 17) with guard v73: the catch-up sweep flags the live fees that fail it for the
+ * second look and takes them down.
  */
-export const BORROWED_DIRECTION_LIVE = false;
+export const BORROWED_DIRECTION_LIVE = true;
 /** Categories a direction prices: wires, collections, ACH, faxes, transfers, foreign card use, delivery. */
 export const DIRECTION_KEYS: ReadonlySet<string> = new Set([
   "wire_domestic_outgoing",
@@ -730,7 +730,10 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // (`SUSTAINED_OVERDRAFT` by name, `sustainedOverdraftOnLine` by its own line) is the continuous
 // overdraft fee (4 live; 3 move, 98702 has a live twin), and a wire the member receives filed as an
 // outgoing wire (`INCOMING_WIRE`) is the matching incoming wire fee (7 live, all move).
-export const CATEGORY_GUARD_VERSION = 72;
+// v73 (Oct 17, #1837, James's yes): `borrowedDirection` switched on. A bare direction row read under
+// the other column's heading ("Check Printing: Incoming" $15, a wire price) fails outside the
+// categories a direction prices; 48 live fees (read-only dry run, Oct 17) go to the second look.
+export const CATEGORY_GUARD_VERSION = 73;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed

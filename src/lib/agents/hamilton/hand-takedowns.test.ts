@@ -197,10 +197,11 @@ const LIVE: LiveTakedownRow[] = [
   { fee_published_id: 152366, lineage_ref: 188269, institution_id: 4624, canonical_fee_key: "other_lending_fee", fee_name: "Mortgage satisfaction fee (varies)", amount: "1000.00" },
   { fee_published_id: 152591, lineage_ref: 188726, institution_id: 7859, canonical_fee_key: "other_lending_fee", fee_name: "Reconveyance", amount: "4.95" },
   { fee_published_id: 152306, lineage_ref: 187951, institution_id: 8579, canonical_fee_key: "bill_pay", fee_name: "Bill Payment, ACH, or Check", amount: "35.00" },
-  { fee_published_id: 53765, lineage_ref: 208, institution_id: 8579, canonical_fee_key: "stop_payment", fee_name: "Stop Payment Order for Bill Payment, ACH, or Check (one free per calendar year)", amount: "35.00" },
+  { fee_published_id: 53765, lineage_ref: 208, institution_id: 8579, canonical_fee_key: "stop_payment", fee_name: "Stop Payment Order for Bill Payment, ACH, or Check (one free per calendar year)", amount: "35.00" },  // #1837: lineage ref is a fixture number.
+  { fee_published_id: 45157, lineage_ref: 209, institution_id: 5622, canonical_fee_key: "overdraft", fee_name: "Non-Sufficient Funds / Overdraft: Non-members", amount: "0.00" },
 ];
 const CONDITIONAL_ZERO = [43512, 54014, 61335, 68893, 70121, 73737, 77121, 77122, 77618, 84553, 87079, 87461, 88213, 91505, 120559];
-const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689, 138828, 138832, 138833, 138839, 138827, 138834, 138841, 148352, 138831, 138830, 138848, 138849, 138850, 138851, 42961, 86536, 66721, 66722, 83125, 97335, 97904, 58414, 106021, 33705, 149143, 149806, 137241, 68335, 79402, 74149, 49817, 125584, 109893, 130622, 147193, 133860, 119352, 143826, 97434, 49606, 148620, 107546, 81215, 20420, 102296, 147811, 125359, 146800, 74560, 125809, 102758, 13031, 11722, 11427, 141821, 232, 101170, 64716, 65870, 122350, 81615, 16733, 142748, 152166, 107315, 152973, 152366, 152591, 152306];
+const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689, 138828, 138832, 138833, 138839, 138827, 138834, 138841, 148352, 138831, 138830, 138848, 138849, 138850, 138851, 42961, 86536, 66721, 66722, 83125, 97335, 97904, 58414, 106021, 33705, 149143, 149806, 137241, 68335, 79402, 74149, 49817, 125584, 109893, 130622, 147193, 133860, 119352, 143826, 97434, 49606, 148620, 107546, 81215, 20420, 102296, 147811, 125359, 146800, 74560, 125809, 102758, 13031, 11722, 11427, 141821, 232, 101170, 64716, 65870, 122350, 81615, 16733, 142748, 152166, 107315, 152973, 152366, 152591, 152306, 45157];
 
 // The standing list without the #1772/#1773 ATM rows, which have their own tests below.
 const STANDING = HAND_TAKEDOWNS.filter((entry) => entry.issue !== 1772 && entry.issue !== 1773);
@@ -318,6 +319,7 @@ describe("hand takedowns (James, Oct 16)", () => {
       [152366, "source_mismatch: #1827"],
       [152591, "source_mismatch: #1828"],
       [152306, "duplicate of #53765 (#1830)"],
+      [45157, "source_mismatch: #1837"],
     ]);
     expect(CARD_PRODUCT_TAKEDOWN_LIVE).toBe(true);
     // A wrong read names its issue; a second read of one printed fee names the live copy it repeats too.
@@ -428,6 +430,7 @@ describe("hand takedowns (James, Oct 16)", () => {
         { feePublishedId: 152366, feeVerifiedId: 188269, reason: "source_mismatch: #1827" },
         { feePublishedId: 152591, feeVerifiedId: 188726, reason: "source_mismatch: #1828" },
         { feePublishedId: 152306, feeVerifiedId: 187951, reason: "duplicate of #53765 (#1830)" },
+        { feePublishedId: 45157, feeVerifiedId: 209, reason: "source_mismatch: #1837" },
       ],
       skipped: [],
     });

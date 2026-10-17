@@ -577,7 +577,10 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
   { feePublishedId: 152306, institutionId: 8579, canonicalFeeKey: "bill_pay", amount: 35, feeName: "Bill Payment, ACH, or Check",
     reason: "duplicate of #53765 (#1830)", issue: 1830, kind: "duplicate",
     requiresLive: { feePublishedId: 53765, amount: 35, feeName: "Stop Payment Order for Bill Payment, ACH, or Check (one free per calendar year)" },
-    evidence: "The Southern FCU (doc 36961, text 35049): \"Stop payment order (one free per calendar year) Bill Payment, ACH, or Check | $35.00\": the stop payment fee, cut to its tail and filed as bill pay. It is already live as stop_payment 53765 at $35, so a re-file would list it twice." },
+    evidence: "The Southern FCU (doc 36961, text 35049): \"Stop payment order (one free per calendar year) Bill Payment, ACH, or Check | $35.00\": the stop payment fee, cut to its tail and filed as bill pay. It is already live as stop_payment 53765 at $35, so a re-file would list it twice." },  // #1837 (James chose "Take them down", Oct 17): East River FCU's two-column schedule read line by line.
+  { feePublishedId: 45157, institutionId: 5622, canonicalFeeKey: "overdraft", amount: 0, feeName: "Non-Sufficient Funds / Overdraft: Non-members",
+    reason: "source_mismatch: #1837", issue: 1837, kind: "wrong_category",
+    evidence: "East River FCU (doc 16371, text 11087): the left column's \"Non-Sufficient Funds / Overdraft\" heading sits over the right column's \"Notary Service\" rows; \"Non-members ... FREE\" is the free notary row, not an overdraft price." },
 ];
 
 export interface LiveTakedownRow {
