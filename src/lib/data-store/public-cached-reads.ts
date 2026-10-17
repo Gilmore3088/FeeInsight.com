@@ -34,6 +34,7 @@ import {
   type InstitutionPeerRank,
 } from "./peer-fee-rank";
 import { getMarketBranchFootprint } from "./branches";
+import { getInstitutionBranchCityCount } from "./branch-cities";
 import { getNationalRateStats } from "./rate-fees";
 import { getCountyFeeMap } from "./state-visuals";
 import { getDistrictHub, getStateHub, isEmptyDistrictHub } from "./district-hub";
@@ -176,6 +177,8 @@ export async function getInstitutionPeerRankCached(institutionId: number): Promi
   return peerRankFromGroupValues(institutionId, rule, filters, values);
 }
 export const getMarketBranchFootprintCached = cachedPublicRead("market-branch-footprint", getMarketBranchFootprint);
+/** How many cities an institution has branches in; the fee check reads it per institution. */
+export const getInstitutionBranchCityCountCached = cachedPublicRead("institution-branch-cities-v1", getInstitutionBranchCityCount);
 /** The district hub's exhibits beyond the fee board (district-hub.ts), one entry per district. */
 // v3: institution groups carry the regulator size_group.
 export const getDistrictHubCached = cachedPublicRead("district-hub-v3", getDistrictHub, isEmptyDistrictHub);

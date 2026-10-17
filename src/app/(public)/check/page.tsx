@@ -6,7 +6,12 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { getAlertSubscriptionForInstitution } from "@/lib/data-store/alerts";
 import { ExternalLink } from "lucide-react";
-import { getCityMarketCached, getStateFeeIndexesCached, searchInstitutionsCached } from "@/lib/data-store/public-cached-reads";
+import {
+  getCityMarketCached,
+  getInstitutionBranchCityCountCached,
+  getStateFeeIndexesCached,
+  searchInstitutionsCached,
+} from "@/lib/data-store/public-cached-reads";
 import type { InstitutionSearchResult } from "@/lib/data-store/search";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { formatAbsoluteDate, getPublicNationalIndex, getPublicStatsSummary } from "@/lib/public-stats";
@@ -20,7 +25,6 @@ import { FeeAlertControl } from "../institution/[id]/fee-alert-control";
 import { getCharterLabel, toTitleCase } from "../institution/[id]/enum-labels";
 import { MIN_VERIFIED_FEES_FOR_OFFER } from "../institution/[id]/profile-copy";
 import { getPublicInstitutionForPage, getVisibleFeesForPage, isVerifiedFee } from "../institution/[id]/profile-data";
-import { getInstitutionBranchCityCount } from "@/lib/data-store/branch-cities";
 import { loadConsumerGuides } from "@/lib/guides/source";
 import { SourceNote } from "../research/district/[id]/district-hub";
 import { cityPath, titleCase } from "../fees/city/[state]/[city]/city-lookup";
@@ -208,7 +212,7 @@ async function CheckAnswer({ id, refreshedOn }: { id: number; refreshedOn: strin
     hasFees && stateCode && cityName
       ? getCityMarketCached(cityName, stateCode, "city").catch(fallbackTo("city market", null))
       : Promise.resolve(null),
-    hasFees ? getInstitutionBranchCityCount(id).catch(fallbackTo("branch cities", 0)) : Promise.resolve(0),
+    hasFees ? getInstitutionBranchCityCountCached(id).catch(fallbackTo("branch cities", 0)) : Promise.resolve(0),
     getCurrentUser().catch(() => null),
   ]);
   const alertSubscription = user
