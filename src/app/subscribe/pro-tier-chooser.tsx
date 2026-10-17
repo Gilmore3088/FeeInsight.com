@@ -3,7 +3,7 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { InstitutionPicker } from "@/components/hamilton/InstitutionPicker";
 import { trackEvent } from "@/lib/analytics";
-import { CHOOSER_INPUT_ID } from "./pro-plan-cards";
+import { CHOOSER_INPUT_ID } from "./plan-ids";
 
 interface ProTierChooserProps {
   /** What the price below is for, once chosen: "First Bank, Huntsville, AL · Under $500M in assets". */

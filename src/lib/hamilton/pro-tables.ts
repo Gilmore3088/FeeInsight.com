@@ -26,6 +26,8 @@ import type { ReportArtifactMetadata, ReportSummaryResponse } from "@/lib/hamilt
 import type { HamiltonEvidencePolicy } from "@/lib/hamilton/request-contract";
 import type { HamiltonPeerIndexSource } from "@/lib/hamilton/peer-index";
 import type { HamiltonPersistedContextSource } from "@/lib/hamilton/context-source";
+import { collectFeeRefs, type SavedFeeRef } from "@/lib/saved-output-corrections";
+import { recordSavedOutputFeeRefs } from "@/lib/data-store/saved-output-fee-refs";
 
 export interface HamiltonReportLibraryItem {
   id: string;
@@ -165,6 +167,8 @@ export async function saveHamiltonReport(params: {
   selectedVerifiedFeeCount?: number;
   selectedProvisionalFeeCount?: number;
   selectedFeeDeltaCount?: number;
+  /** The published fee rows the report was built from (H03-T09); left out, the rows named in `reportJson`. */
+  feeRefs?: SavedFeeRef[];
 }): Promise<string> {
   const rows = await sql`
     INSERT INTO hamilton_reports
@@ -207,6 +211,8 @@ export async function saveHamiltonReport(params: {
       )
     RETURNING id
   `;
+  // Best effort: a report with no record keeps the institution match for correction notices.
+  await recordSavedOutputFeeRefs(sql, "report", String(rows[0].id), params.feeRefs ?? collectFeeRefs(params.reportJson));
   await trackFirstHamiltonUse(params.userId, "report");
   return rows[0].id as string;
 }

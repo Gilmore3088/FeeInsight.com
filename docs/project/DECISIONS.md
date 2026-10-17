@@ -1118,3 +1118,9 @@ on the account page; it works while Pro is active or inside the past-due grace w
 the subscription ends, and is revoked if the plan moves to $150. No free keys unless James makes one
 himself in `/admin/api-keys`; researchers pay like everyone else. No data license (bulk downloads,
 republishing) until someone asks. Planning notes: `/mnt/project-files/api-mcp/planning-notes.md`.
+
+**Every team seat on a $300 or $500 plan makes its own API key.** James, 2026-10-17 00:36 UTC
+(decision card in the API and MCP planning thread, after his /subscribe review said the payer may be
+finance and the user an analyst). The payer and each active seat on their workspace (up to 5
+people) make one key each on the account page. All keys draw on the plan's one allowance of 10,000
+calls a month. A seat's key stops when the seat is removed, and every key stops when the plan ends.

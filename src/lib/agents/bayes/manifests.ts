@@ -227,6 +227,10 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // Old texts are read again only when KNOX_RULES_STRATEGY moves, and the knox.rules manifest
   // counts that replay.
   KNOX_ACCOUNT_TABLE_STRATEGY: "A pass 2 specialist under extract.rules; the knox.rules manifest counts the replay when KNOX_RULES_STRATEGY moves.",
+  // v75 (Knox recall, Oct 17): raised from 26 so every current copy read before v75 is read once
+  // more. It is one of the extract step's own re-read triggers, which the knox.rules manifest's
+  // queue counts with the same query (`countKnoxRereadsDue`), so the replay is counted there.
+  KNOX_STALE_READ_BELOW_VERSION: "A re-read trigger inside the extract step's selection; the knox.rules manifest counts its queue (countKnoxRereadsDue).",
   // v2 (Oct 15): footnoted held names ("1Monthly fee") also meet the live fees printed without the
   // mark. The week mark carries the version, so each lane's next extract step reads its held lines
   // again under v2; there is no backlog for a replay to count.
@@ -245,7 +249,13 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   REFRESH_COPY_STRATEGY: "Writes the same refresh in place; the next publish steps pick up every stale fee as before.",
   // v2 (#1030) changes which institutions a paid search picks next (no live fee first) and what
   // it asks for; earlier searches are not redone, they age off the paid cooldown as before.
+  // v3 (2026-10-17, magellan/top-ten-first.ts) puts state top-10 slot holders with nothing live
+  // first and lets them try weekly inside the cooldown; its own selector picks them.
   SCHEDULE_SEARCH_STRATEGY: "A paid search: each institution becomes due again on the rolling cooldown, so there is nothing to replay.",
+  // v2 (2026-10-17, magellan/top-ten-first.ts) changes which institutions the paid web search
+  // picks first (state top-10 slot holders with nothing live) and when (a weekly early try on the
+  // disclosure rung); its own selector picks them, and earlier searches are not redone.
+  PAID_FIND_STRATEGY: "A paid search: its selector picks the top-10 slot holders itself, so there is nothing to replay.",
   // v2 (#1102): the re-check's flag carries its version, so every held percentage line is read
   // again by the extract steps themselves (100 a step); there is nothing to replay.
   HELD_RATE_RECHECK_VERSION: "Its versioned flag makes the extract steps re-read every held percentage line under v2.",

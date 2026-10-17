@@ -8,8 +8,9 @@
  * - Each action's refresh status is read from its run's events (`index.refresh`,
  *   `cache.invalidate`, and those of any retry run linked by `retry_of`), the national index's
  *   `computed_at`, and the live fee list itself (`fee-refresh-status.ts` decides).
- * - Saved outputs made before an action are counted by the institution they are about
- *   (`saved-output-corrections.ts` explains the limit of that match).
+ * - Saved outputs made before an action are counted by the fee rows they recorded
+ *   (`hamilton_saved_output_fee_refs`); one that recorded none is counted by the institution it
+ *   is about (`saved-output-corrections.ts` explains both matches).
  */
 
 import type { sql as Sql } from "./connection";
@@ -17,7 +18,8 @@ import { correctionsReady } from "@/lib/fee-correction-guard";
 import { FEE_HOLD_CHECK } from "@/lib/fee-hold-rules";
 import type { FeeValues } from "@/lib/fee-correction-rules";
 import { refreshStatus, rowsTouched, type AuditAction, type RefreshEvent, type RefreshStatus } from "@/lib/fee-refresh-status";
-import type { AffectedSavedOutputs, FeeChangeSince } from "@/lib/saved-output-corrections";
+import type { AffectedSavedOutputs, FeeChangeSince, NoticeBasis } from "@/lib/saved-output-corrections";
+import { feeRefsReady, readSavedOutputFeeRefs, type SavedOutputKind } from "./saved-output-fee-refs";
 
 type SqlTag = typeof Sql;
 
@@ -252,15 +254,32 @@ async function readIndexComputedAt(db: SqlTag): Promise<string | null> {
   }
 }
 
-/** Counts saved outputs about each institution made before each time. A table that cannot be read gives null. */
-async function readSavedOutputCounts(
-  db: SqlTag,
-  keys: { key: string; institutionId: number; at: string }[],
-): Promise<Map<string, AffectedSavedOutputs>> {
+/** The fee row an action changed for saved outputs: the row a correction or reversal took out, or the held/released row. */
+export function affectedFeeId(entry: Pick<FeeAuditBase, "action" | "previousFeePublishedId" | "feePublishedId">): number | null {
+  return entry.action === "correct" || entry.action === "reverse" ? entry.previousFeePublishedId : entry.feePublishedId;
+}
+
+interface SavedOutputKey {
+  key: string;
+  institutionId: number;
+  at: string;
+  /** The fee row the action changed; null when unknown. */
+  fee: number | null;
+  /** A release brings a fee back, so no saved output can name it: match by institution too. */
+  byInstitution: boolean;
+}
+
+/**
+ * Counts saved outputs made before each action that it affects: those that recorded the changed
+ * fee row, and those that recorded no fee rows and are about the action's institution (older
+ * outputs). Before the fee-rows table exists, every output is matched by institution. A table
+ * that cannot be read gives null.
+ */
+async function readSavedOutputCounts(db: SqlTag, keys: SavedOutputKey[]): Promise<Map<string, AffectedSavedOutputs>> {
   const out = new Map<string, AffectedSavedOutputs>();
   for (const k of keys) out.set(k.key, { analyses: null, reports: null, briefings: null });
   if (keys.length === 0) return out;
-  const payload = JSON.stringify(keys.map((k) => ({ key: k.key, inst: k.institutionId, at: k.at })));
+  const payload = JSON.stringify(keys.map((k) => ({ key: k.key, inst: k.institutionId, at: k.at, fee: k.fee, inst_match: k.byInstitution })));
   const count = async (field: keyof AffectedSavedOutputs, run: () => Promise<{ key: string; n: number | string }[]>) => {
     try {
       for (const row of await run()) {
@@ -271,16 +290,42 @@ async function readSavedOutputCounts(
       // The table is absent or unreadable here: the count stays unknown rather than zero.
     }
   };
-  await count("analyses", () => db<{ key: string; n: number }[]>`
-    SELECT k.key, (SELECT COUNT(*) FROM hamilton_saved_analyses a
-                    WHERE a.institution_id = k.inst::text AND a.status = 'active' AND a.created_at < k.at)::int AS n
-      FROM jsonb_to_recordset(${payload}::jsonb) AS k(key text, inst bigint, at timestamptz)
-  `);
-  await count("reports", () => db<{ key: string; n: number }[]>`
-    SELECT k.key, (SELECT COUNT(*) FROM hamilton_reports r
-                    WHERE r.institution_id = k.inst::text AND r.created_at < k.at)::int AS n
-      FROM jsonb_to_recordset(${payload}::jsonb) AS k(key text, inst bigint, at timestamptz)
-  `);
+  let withRefs = false;
+  try {
+    withRefs = await feeRefsReady(db);
+  } catch {
+    withRefs = false;
+  }
+  if (withRefs) {
+    await count("analyses", () => db<{ key: string; n: number }[]>`
+      SELECT k.key, (SELECT COUNT(*) FROM hamilton_saved_analyses a
+                      LEFT JOIN hamilton_saved_output_fee_refs r ON r.output_kind = 'analysis' AND r.output_id = a.id::text
+                      WHERE a.status = 'active' AND a.created_at < k.at
+                        AND ((r.output_id IS NOT NULL AND k.fee IS NOT NULL AND r.fee_published_ids @> ARRAY[k.fee])
+                             OR ((r.output_id IS NULL OR k.inst_match) AND a.institution_id = k.inst::text)))::int AS n
+        FROM jsonb_to_recordset(${payload}::jsonb) AS k(key text, inst bigint, at timestamptz, fee bigint, inst_match boolean)
+    `);
+    await count("reports", () => db<{ key: string; n: number }[]>`
+      SELECT k.key, (SELECT COUNT(*) FROM hamilton_reports rp
+                      LEFT JOIN hamilton_saved_output_fee_refs r ON r.output_kind = 'report' AND r.output_id = rp.id::text
+                      WHERE rp.created_at < k.at
+                        AND ((r.output_id IS NOT NULL AND k.fee IS NOT NULL AND r.fee_published_ids @> ARRAY[k.fee])
+                             OR ((r.output_id IS NULL OR k.inst_match) AND rp.institution_id = k.inst::text)))::int AS n
+        FROM jsonb_to_recordset(${payload}::jsonb) AS k(key text, inst bigint, at timestamptz, fee bigint, inst_match boolean)
+    `);
+  } else {
+    await count("analyses", () => db<{ key: string; n: number }[]>`
+      SELECT k.key, (SELECT COUNT(*) FROM hamilton_saved_analyses a
+                      WHERE a.institution_id = k.inst::text AND a.status = 'active' AND a.created_at < k.at)::int AS n
+        FROM jsonb_to_recordset(${payload}::jsonb) AS k(key text, inst bigint, at timestamptz)
+    `);
+    await count("reports", () => db<{ key: string; n: number }[]>`
+      SELECT k.key, (SELECT COUNT(*) FROM hamilton_reports r
+                      WHERE r.institution_id = k.inst::text AND r.created_at < k.at)::int AS n
+        FROM jsonb_to_recordset(${payload}::jsonb) AS k(key text, inst bigint, at timestamptz)
+    `);
+  }
+  // Briefings record no fee rows yet (their positions carry no row ids): matched by institution.
   await count("briefings", () => db<{ key: string; n: number }[]>`
     SELECT k.key, (SELECT COUNT(*) FROM hamilton_briefing_snapshots b
                     WHERE b.institution_id = k.inst AND b.created_at < k.at)::int AS n
@@ -334,7 +379,13 @@ export async function listFeeAuditEntries(
     readRowStates(db, [...feeIds]),
     readRefreshEvents(db, [...runIds]),
     readIndexComputedAt(db),
-    readSavedOutputCounts(db, entries.map((entry) => ({ key: entry.key, institutionId: entry.institutionId, at: entry.at }))),
+    readSavedOutputCounts(db, entries.map((entry) => ({
+      key: entry.key,
+      institutionId: entry.institutionId,
+      at: entry.at,
+      fee: affectedFeeId(entry),
+      byInstitution: entry.action === "release",
+    }))),
   ]);
 
   return entries.map((entry) => {
@@ -388,4 +439,66 @@ export async function getFeeChangesSince(db: SqlTag, institutionId: number, sinc
     return [];
   }
   return changes;
+}
+
+/**
+ * Operators' changes to the fee rows a saved output used, after a time (H03-T09): every version
+ * in the correction chain of a used row, and holds and releases of a used row, plus releases at
+ * the output's own institution (a fee brought back is one the output could not have named).
+ * Read-only; a failed read gives no changes, so a saved output still opens.
+ */
+export async function getFeeChangesForFees(
+  db: SqlTag,
+  feeIds: number[],
+  institutionId: number | null,
+  since: string,
+): Promise<FeeChangeSince[]> {
+  const ids = [...new Set(feeIds.filter((id) => Number.isSafeInteger(id) && id > 0))];
+  if (ids.length === 0 && institutionId == null) return [];
+  const changes: FeeChangeSince[] = [];
+  try {
+    if (ids.length > 0 && (await correctionsReady(db))) {
+      const rows = await db<{ action: "correct" | "reverse"; created_at: Date | string }[]>`
+        SELECT c.action, c.created_at FROM published_fee_corrections c
+         WHERE c.fee_chain_id IN (
+                 SELECT fee_chain_id FROM published_fee_corrections
+                  WHERE previous_fee_published_id = ANY(${ids}::bigint[]) OR fee_published_id = ANY(${ids}::bigint[]))
+           AND c.created_at > ${since}::timestamptz
+         ORDER BY c.created_at DESC LIMIT 200
+      `;
+      for (const row of rows) changes.push({ kind: row.action, at: iso(row.created_at) });
+    }
+    const holds = await db<{ kind: string; created_at: Date | string }[]>`
+      SELECT kind, created_at FROM pipeline_feedback
+       WHERE check_name = ${FEE_HOLD_CHECK} AND kind IN ('admin_hold', 'admin_release')
+         AND created_at > ${since}::timestamptz
+         AND (fee_published_id = ANY(${ids}::bigint[])
+              OR (kind = 'admin_release' AND ${institutionId}::bigint IS NOT NULL AND institution_id = ${institutionId}::bigint))
+       ORDER BY created_at DESC LIMIT 200
+    `;
+    for (const row of holds) changes.push({ kind: row.kind === "admin_hold" ? "hold" : "release", at: iso(row.created_at) });
+  } catch (error) {
+    console.error("[fee-correction-audit] fee changes since a saved output could not be read", { feeIds: ids.length, error });
+    return [];
+  }
+  return changes;
+}
+
+/**
+ * The fee changes behind a saved output's notice: by the fee rows it recorded when it has them,
+ * otherwise by the institution it is about. Read-only and never throws.
+ */
+export async function getSavedOutputChanges(
+  db: SqlTag,
+  output: { kind: SavedOutputKind; id: string; institutionId: number | null; savedAt: string },
+): Promise<{ basis: NoticeBasis; changes: FeeChangeSince[] }> {
+  const refs = await readSavedOutputFeeRefs(db, output.kind, output.id);
+  if (refs && refs.length > 0) {
+    return {
+      basis: "fees",
+      changes: await getFeeChangesForFees(db, refs.map((ref) => ref.feePublishedId), output.institutionId, output.savedAt),
+    };
+  }
+  if (output.institutionId == null) return { basis: "institution", changes: [] };
+  return { basis: "institution", changes: await getFeeChangesSince(db, output.institutionId, output.savedAt) };
 }

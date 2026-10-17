@@ -25,6 +25,8 @@ import {
   resolveArtifactContextInstitutionId,
 } from "@/lib/hamilton/artifact-context";
 import { DISTRICT_NAMES, FDIC_TIER_LABELS } from "@/lib/fed-districts";
+import { savedOutputChangeNotice } from "@/lib/hamilton/saved-output-notice";
+import { SavedChangeNotice } from "../analyze/saved-change-notice";
 
 export const metadata: Metadata = { title: "Reports" };
 
@@ -118,8 +120,31 @@ export default async function ReportsPage({
   if (initialReportId && !initialReport) {
     return <p role="alert">Saved report not found or unavailable.</p>;
   }
+  // H03-T09: a saved report keeps the figures it was written with; a later change to a fee it
+  // used gets a notice and a way to make a new one from current data.
+  const changeNotice = initialReport
+    ? await savedOutputChangeNotice({ kind: "report", id: initialReport.id, institutionId: initialReport.institution_id, savedAt: initialReport.created_at, noun: "report" })
+    : null;
+  const sourceAnalysisId = initialReport?.report_json.boardBrief?.sourceAnalysisId;
+  const regenerateHref = !changeNotice
+    ? null
+    : sourceAnalysisId
+      ? `/pro/analyze?${new URLSearchParams({ analysis: sourceAnalysisId })}`
+      : initialReport?.institution_id
+        ? `/pro/reports?${new URLSearchParams({ instId: initialReport.institution_id })}`
+        : null;
+  const noticeBlock = changeNotice ? (
+    <SavedChangeNotice
+      notice={changeNotice}
+      askAgainHref={regenerateHref}
+      actionLabel={sourceAnalysisId ? "Open the saved answer to ask again" : "Write a new report with current data"}
+    />
+  ) : null;
   if (initialReport?.report_type === "board_brief" && initialReport.report_json.boardBrief) {
-    return <BoardBriefEditor key={initialReport.id} initialReport={initialReport.report_json} reportId={initialReport.id} metadata={initialReport.artifact_metadata} />;
+    return <>
+      {noticeBlock}
+      <BoardBriefEditor key={initialReport.id} initialReport={initialReport.report_json} reportId={initialReport.id} metadata={initialReport.artifact_metadata} />
+    </>;
   }
   const contextInstitutionId = resolveArtifactContextInstitutionId({
     urlInstitutionId: params.instId,
@@ -151,6 +176,8 @@ export default async function ReportsPage({
   const institutionName = selectedInstitution?.name ?? "No research institution selected";
 
   return (
+    <>
+    {noticeBlock}
     <ReportWorkspace
       key={JSON.stringify([user.id, selectedInstitution?.id ?? null, params.intent ?? null, initialReport?.id ?? null])}
       userId={user.id}
@@ -167,6 +194,7 @@ export default async function ReportsPage({
       selectedSourceLabel={getHamiltonContextSourceLabel(selectedSource)}
       legacyPeerFilterLabel={buildLegacyPeerFilterLabel(params)}
     />
+    </>
   );
 }
 

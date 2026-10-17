@@ -7,6 +7,7 @@ import { getPublicStatsSummary } from "@/lib/public-stats";
 import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT } from "@/lib/data-store/maturity";
 import { API_MONTHLY_CALLS_LABEL, API_PLANS_LABEL } from "@/lib/api-subscriber-access";
 import { PAST_DUE_GRACE_DAYS } from "@/lib/access";
+import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import { PRO_PLANS_NAV } from "@/components/nav-items";
 import { NON_INSTITUTION_TIER, tierAmountLabel, tierPriceLabel } from "@/lib/pro-tiers";
 import { PAGE_HEADER } from "@/components/public/page-header";
@@ -268,11 +269,12 @@ export default async function ApiDocsPage() {
           </li>
           <li>
             <span className="font-semibold text-ink">Make your key on your account page.</span>{" "}
-            It shows once, with your Claude connector link. You can replace it or turn it off there.
+            Everyone on the plan, up to {WORKSPACE_SEAT_LIMIT} people, makes their own key. It shows once,
+            with a Claude connector link, and you can replace it or turn it off there.
           </li>
           <li>
             <span className="font-semibold text-ink">Call any endpoint below,</span> or add the
-            connector to Claude and ask in plain English. Each key gets {API_MONTHLY_CALLS_LABEL} calls a month.
+            connector to Claude and ask in plain English. Your team shares {API_MONTHLY_CALLS_LABEL} calls a month.
           </li>
         </ol>
         <p className="mt-3 text-[12px] text-ink-muted">
@@ -329,7 +331,7 @@ export default async function ApiDocsPage() {
       <SectionHeading id="authentication">Authentication</SectionHeading>
       <div className="rounded-xl border border-border/80 bg-white px-6 py-5">
         <p className="text-[13px] text-ink-muted">
-          Every request needs an API key. Subscribers on the {API_PLANS_LABEL} make theirs on the{" "}
+          Every request needs an API key. Everyone on the {API_PLANS_LABEL} makes their own on the{" "}
           <Link href="/account" className="font-medium text-brick underline underline-offset-2">account page</Link>. Pass yours in the{" "}
           <code className="rounded bg-border/40 px-1 text-[12px]">Authorization</code>{" "}
           header as a Bearer token, or as an{" "}
@@ -359,7 +361,7 @@ export default async function ApiDocsPage() {
         </p>
         <CodeBlock title="Connector link">{`${BASE}/mcp?api_key=YOUR_API_KEY`}</CodeBlock>
         <p className="mt-3 text-[13px] text-ink-muted">
-          Each question Claude answers uses a few calls from the same {API_MONTHLY_CALLS_LABEL}-a-month allowance.
+          Each question Claude answers uses a few calls from your team&apos;s {API_MONTHLY_CALLS_LABEL}-a-month allowance.
         </p>
       </div>
 
@@ -367,7 +369,7 @@ export default async function ApiDocsPage() {
       <SectionHeading id="rate-limits">Rate Limits</SectionHeading>
       <div className="rounded-xl border border-border/80 bg-white px-6 py-5">
         <p className="text-[13px] text-ink-muted">
-          Each API key gets one monthly allowance shared across all endpoints. Unlimited keys get no X-RateLimit-Limit or X-RateLimit-Remaining headers. Errors return JSON with an error message and a stable code such as invalid_parameter, plan_required or rate_limited.
+          Each plan gets one monthly allowance, shared by every key on it and across all endpoints. When it runs out, calls return 429 rate_limited until the allowance resets on the 1st of the next month (UTC). Unlimited keys get no X-RateLimit-Limit or X-RateLimit-Remaining headers. Errors return JSON with an error message and a stable code such as invalid_parameter, plan_required or rate_limited.
         </p>
         <div className="mt-3 space-y-1.5 text-[13px]">
           <ResponseField name="X-RateLimit-Limit" type="header" note="Maximum requests in the current window" />

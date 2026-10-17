@@ -161,15 +161,6 @@ export async function readSampleLadder(
   return { ladder: buildMarketLadder({ sample, stateIndex, charterIndex, national, preferKey }), failed };
 }
 
-/** The live sample's ladder for a page that renders per request: a failed read only drops that row. */
-export async function loadSampleLadder(
-  sample: MarketReport,
-  national: FeeCategorySummary[],
-  preferKey: string | null = null,
-): Promise<MarketLadderData | null> {
-  return (await readSampleLadder(sample, national, preferKey)).ladder;
-}
-
 /**
  * The Hamilton frame, My fees: the ladder drawn with the house box plot, every row on one axis.
  * `bare` drops its own window, for a page that already draws one around it.

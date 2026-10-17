@@ -120,9 +120,26 @@ is its own completed Hamilton run (`admin.fee_refresh`, `retry_of` the original 
 `refresh.retry` event on the original run; it changes no fee.
 
 Saved answers, reports and briefings are never rewritten (`src/lib/saved-output-corrections.ts`).
-The audit page counts the ones made before each change, about the same institution. A saved answer
-opened after a change says so above the unchanged answer, and offers to ask the question again
-(the reader sends it).
+Since H03-T09 (migration 20270110000054), a saved answer or report records the published fee rows
+it used and the source document behind each (`hamilton_saved_output_fee_refs`, written by
+`src/lib/data-store/saved-output-fee-refs.ts`): the bank's own rows, evidence facts, and named peers
+and local competitors (each `PeerValue` carries `feePublishedIds`). A storyline records the rows of
+the research it was built from; a written answer, the rows its tools read; a report, the bank's own
+rows it read (its peer figures are index medians, which name no rows); a board brief, the rows of
+the saved answer it reuses. Market layers (state, district, national) are aggregates and are not
+recorded. The record is best effort: a missing table or failed write leaves the output saved with
+no record.
+
+A change matches a saved output that recorded the changed row (every version in its correction
+chain, and holds and releases of it), so an answer that used the bank only as a peer is found and
+one about the same bank that used other rows is not. A release also matches outputs about the
+bank, since a fee that was held could not be named. An output with no record (saved before the
+migration, a briefing, or one that read no identifiable row) is still matched by the institution
+it is about. The audit page counts outputs made before each change on the same rules. A saved
+answer or report opened after a change says so above the unchanged output ("Fee data this answer
+used changed after this answer was saved: ...", or "This institution's fee data ..." for an output
+with no record) and offers a fresh one: ask again, or write a new report. Old rows are not
+backfilled.
 
 ## Where it lives
 
@@ -139,10 +156,9 @@ opened after a change says so above the unchanged answer, and offers to ask the 
 - Corrected conditions are kept in the version row, but `published_fee_catalog` still reads
   conditions from the fee's raw lineage, so the public pages show the source's conditions text.
 - Future-effective changes (a correction that takes effect on a later date) are not modelled.
-- Saved outputs keep no fee ids, so a saved output made before a change is found only by the
-  institution it is about. One that used the institution only as a peer is not found; that needs
-  saved answers, reports and briefings to record the published fee ids they read (a migration).
-- Only a saved answer (Ask Hamilton) shows the notice. Saved reports and briefings are counted on
-  the audit page but do not yet show it to the reader.
+- Outputs saved before migration 20270110000054, and every briefing (its positions carry no row
+  ids), are found only by the institution they are about. A report's peer medians, and market
+  layers in any output, name no rows, so a change to one peer's fee inside a median is not matched.
+- Briefings are counted on the audit page but do not show the notice to the reader.
 - An agent check (category guard, source check, rules re-check) can still take down a corrected
   row, the same as any live row. It cannot bring the superseded value back.
