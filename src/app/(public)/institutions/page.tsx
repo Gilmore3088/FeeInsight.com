@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { InstitutionSearchResult } from "@/lib/data-store/search";
-import { COVERAGE_LABELS, getPublicCategorySummaries, getPublicStatsSummary } from "@/lib/public-stats";
+import { getPublicCategorySummaries, getPublicStatsSummary } from "@/lib/public-stats";
 import { STATE_NAMES } from "@/lib/us-states";
 import { FEE_FAMILIES, getDisplayName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
@@ -259,9 +259,9 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
 
             {!hasState && (
               <div className="grid grid-cols-3 divide-x divide-border border-y border-border bg-surface-0">
-                <DirectoryStat label={COVERAGE_LABELS.institutions} value={stats.institutionsLabel} />
-                <DirectoryStat label={COVERAGE_LABELS.observations} value={stats.observationsLabel} />
-                <DirectoryStat label={COVERAGE_LABELS.monitored} value={stats.monitoredLabel} />
+                <DirectoryStat label="Institutions with published fees" value={stats.institutionsLabel} />
+                <DirectoryStat label="Published fees" value={stats.observationsLabel} />
+                <DirectoryStat label="Institutions monitored" value={stats.monitoredLabel} />
               </div>
             )}
           </div>
