@@ -3,6 +3,9 @@ import { formatAdminDateTime } from "@/lib/admin-time";
 import type { FeedFreshness } from "@/lib/data-store/feed-freshness";
 
 const FEED_LABELS: Record<string, string> = {
+  "cfpb-making-ends-meet": "CFPB Making Ends Meet survey (overdraft, bills, savings, alternative credit)",
+  "state-payday-reports": "State payday and small-dollar lending reports (WA, TX)",
+  "urban-debt-in-america": "Urban Institute debt in collections (held until license confirmed)",
   "fhlb-advance-rates": "FHLBank posted advance rates",
   "bank-merger-orders": "Fed and OCC merger decisions",
   "uscourts-bankruptcy": "US Courts bankruptcy filings",
@@ -90,6 +93,9 @@ export const FEED_GROUPS = [
 ] as const;
 
 const FEED_GROUP_OF: Record<string, (typeof FEED_GROUPS)[number]["key"]> = {
+  "cfpb-making-ends-meet": "economy",
+  "state-payday-reports": "economy",
+  "urban-debt-in-america": "economy",
   "fhlb-advance-rates": "national",
   "bank-merger-orders": "national",
   "uscourts-bankruptcy": "economy",

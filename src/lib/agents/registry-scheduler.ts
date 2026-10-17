@@ -67,6 +67,9 @@ import {
   industryEventsPartitions,
 } from "@/lib/agents/magellan/registry/industry-events";
 import { ECONOMY_DEFINITIONS, ECONOMY_PARSER_VERSION } from "@/lib/agents/magellan/registry/economy";
+import { MAKING_ENDS_MEET_PARSER_VERSION, MAKING_ENDS_MEET_SOURCE } from "@/lib/agents/magellan/registry/making-ends-meet";
+import { PAYDAY_REPORTS_PARSER_VERSION, PAYDAY_REPORTS_SOURCE, paydayReportsPartitions } from "@/lib/agents/magellan/registry/payday-reports";
+import { URBAN_DEBT_PARSER_VERSION, URBAN_DEBT_SOURCE } from "@/lib/agents/magellan/registry/state-lists";
 import { FHLB_ADVANCE_RATES_PARSER_VERSION, FHLB_ADVANCE_RATES_SOURCE, fhlbAdvanceRatesPartitions } from "@/lib/agents/magellan/registry/fhlb-advance-rates";
 import { BANK_MERGER_ORDERS_PARSER_VERSION, BANK_MERGER_ORDERS_SOURCE, bankMergerOrdersPartitions } from "@/lib/agents/magellan/registry/bank-merger-orders";
 import { BLS_OEWS_PARSER_VERSION, BLS_OEWS_SOURCE, blsOewsPartitions } from "@/lib/agents/magellan/registry/bls-oews";
@@ -146,6 +149,9 @@ export const REGISTRY_PARSER_VERSIONS: Record<string, number> = {
   [FINRA_NFCS_SOURCE]: FINRA_NFCS_PARSER_VERSION,
   [FHLB_ADVANCE_RATES_SOURCE]: FHLB_ADVANCE_RATES_PARSER_VERSION,
   [BANK_MERGER_ORDERS_SOURCE]: BANK_MERGER_ORDERS_PARSER_VERSION,
+  [MAKING_ENDS_MEET_SOURCE]: MAKING_ENDS_MEET_PARSER_VERSION,
+  [PAYDAY_REPORTS_SOURCE]: PAYDAY_REPORTS_PARSER_VERSION,
+  [URBAN_DEBT_SOURCE]: URBAN_DEBT_PARSER_VERSION,
   [INDUSTRY_EVENTS_SOURCE]: INDUSTRY_EVENTS_PARSER_VERSION,
   [PAYMENT_NETWORKS_SOURCE]: PAYMENT_NETWORKS_PARSER_VERSION,
   [HMDA_SOURCE]: HMDA_PARSER_VERSION,
@@ -250,6 +256,7 @@ export function registryPartitionsBySource(
     [FINRA_NFCS_SOURCE]: finraNfcsPartitions(now),
     [FHLB_ADVANCE_RATES_SOURCE]: fhlbAdvanceRatesPartitions(now),
     [BANK_MERGER_ORDERS_SOURCE]: bankMergerOrdersPartitions(now),
+    [PAYDAY_REPORTS_SOURCE]: paydayReportsPartitions(now),
     [CFPB_SOURCE]: years(Math.max(CFPB_FIRST_YEAR, from.year), now.getUTCFullYear()),
     [SEC_FILINGS_SOURCE]: secBatchPartitions(),
     [BEIGE_BOOK_SOURCE]: beigeBookCandidates(now),
