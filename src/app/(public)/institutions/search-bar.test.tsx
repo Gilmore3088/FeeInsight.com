@@ -67,11 +67,48 @@ describe("InstitutionSearchBar", () => {
     expect(push).toHaveBeenCalledWith("/institutions?q=Aspen");
   });
 
+  it("on /check, a pick and an Enter search both answer on /check", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ json: async () => BANKS })));
+    render(<InstitutionSearchBar resultPath="/check" />);
+    const input = screen.getByRole("combobox");
+    await typeAndWait(input, "Aspen");
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(push).toHaveBeenCalledWith("/check?q=Aspen");
+    await typeAndWait(input, "Aspe");
+    fireEvent.click(screen.getAllByRole("option")[0]);
+    expect(push).toHaveBeenCalledWith("/check?id=11");
+  });
+
+  it("announces suggestions politely, jumps with Home/End and closes on Tab", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ json: async () => BANKS })));
+    render(<InstitutionSearchBar />);
+    const input = screen.getByRole("combobox", { name: "Search institutions" });
+    expect(input.getAttribute("type")).toBe("search");
+    await typeAndWait(input, "Aspen");
+    expect(screen.getByRole("status").textContent).toBe("2 suggestions");
+    fireEvent.keyDown(input, { key: "End" });
+    expect(screen.getAllByRole("option")[1].getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(input, { key: "Home" });
+    expect(screen.getAllByRole("option")[0].getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(input, { key: "Tab" });
+    expect(input.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("on /check, Enter with one match opens that institution's answer", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ json: async () => [BANKS[0]] })));
+    render(<InstitutionSearchBar resultPath="/check" />);
+    const input = screen.getByRole("combobox");
+    await typeAndWait(input, "Aspen Bank");
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(push).toHaveBeenCalledWith("/check?id=11");
+  });
+
   it("offers to send a fee schedule, with the searched name, when nothing matches", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => ({ json: async () => [] })));
     render(<InstitutionSearchBar />);
     await typeAndWait(screen.getByRole("combobox"), "Nowhere Savings");
-    expect(screen.getByText(/No institutions found/)).toBeTruthy();
+    expect(screen.getByText(/No institutions found for/)).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toBe("No institutions found");
     expect(
       screen.getByRole("link", { name: /Send its fee schedule/ }).getAttribute("href"),
     ).toBe("/submit-fees?institutionName=Nowhere+Savings");

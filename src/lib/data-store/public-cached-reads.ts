@@ -1,11 +1,14 @@
 import { cachedPublicRead } from "./public-read-cache";
 import { getCityMarket, getStateMarketCities } from "./city-market";
 import { getStateMarketFees } from "./state-markets";
-import { getDataFreshness, getPublicStats, getStats } from "./core";
+import { getDataFreshness, getFeesByInstitution, getPublicStats, getStats } from "./core";
+import { ATM_EXAMPLE, buildAtmTwoFeeExample } from "@/lib/guides/atm-example";
 import { getDistrictMetrics } from "./dashboard";
 import { getCheapestAndMostExpensive, getFeeCategoryDetail, getIndexRows } from "./fees";
 import { getFeeEvidence } from "./fee-evidence";
 import { getDailyCapScope, getOverdraftComplaintThemes } from "./overdraft-policies";
+import { getAtmNetworkMentions } from "./atm-networks";
+import { isEmptyNetworkMentions } from "@/lib/guides/atm-networks";
 import { getComparableMarketIndex, getDistrictFeeIndexes, getPeerIndex, getStateFeeIndexes } from "./fee-index";
 import {
   getCitiesInState,
@@ -34,6 +37,7 @@ import {
   type InstitutionPeerRank,
 } from "./peer-fee-rank";
 import { getMarketBranchFootprint } from "./branches";
+import { getBranchCityForZip } from "./branch-cities";
 import { getNationalRateStats } from "./rate-fees";
 import { getCountyFeeMap } from "./state-visuals";
 import { getDistrictHub, getStateHub, isEmptyDistrictHub } from "./district-hub";
@@ -66,6 +70,22 @@ export const getOverdraftComplaintThemesCached = cachedPublicRead(
   getOverdraftComplaintThemes,
   (c) => c.themes.length === 0,
 );
+/** The ATM guide's and the consumer page's two-fee receipt, from two institutions' live published fees. */
+export const getAtmTwoFeeExampleCached = cachedPublicRead("atm-two-fee-example-v1", async () => {
+  const [holderFees, ownerFees] = await Promise.all([
+    getFeesByInstitution(ATM_EXAMPLE.holderId),
+    getFeesByInstitution(ATM_EXAMPLE.ownerId),
+  ]);
+  return buildAtmTwoFeeExample(holderFees, ownerFees);
+});
+
+/** The ATM guide's "Networks named in fee schedules": each network's institutions and their own lines. */
+export const getAtmNetworkMentionsCached = cachedPublicRead(
+  "atm-network-mentions-v1",
+  getAtmNetworkMentions,
+  isEmptyNetworkMentions,
+);
+
 export const getStatsCached = cachedPublicRead("collection-stats", getStats);
 // A failed read returns zeros; never cache those.
 export const getPublicStatsCached = cachedPublicRead("public-stats", getPublicStats, (s) => s.total_observations === 0);
@@ -181,6 +201,8 @@ export async function getInstitutionPeerRankCached(institutionId: number): Promi
   return peerRankFromGroupValues(institutionId, rule, filters, values);
 }
 export const getMarketBranchFootprintCached = cachedPublicRead("market-branch-footprint", getMarketBranchFootprint);
+/** The city a ZIP code belongs to, from the branch records; the fee check reads it per ZIP. */
+export const getBranchCityForZipCached = cachedPublicRead("branch-city-for-zip-v1", getBranchCityForZip);
 /** The district hub's exhibits beyond the fee board (district-hub.ts), one entry per district. */
 // v3: institution groups carry the regulator size_group.
 export const getDistrictHubCached = cachedPublicRead("district-hub-v3", getDistrictHub, isEmptyDistrictHub);

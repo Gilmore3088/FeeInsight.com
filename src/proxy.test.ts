@@ -55,8 +55,6 @@ describe("proxy", () => {
 
   it("permanently redirects retired public paths to their current homes", () => {
     const cases: Array<[string, string]> = [
-      ["https://feeinsight.com/consumer", "https://feeinsight.com/institutions"],
-      ["https://feeinsight.com/check", "https://feeinsight.com/institutions"],
       ["https://feeinsight.com/pricing", "https://feeinsight.com/subscribe"],
       ["https://feeinsight.com/districts", "https://feeinsight.com/research#districts"],
       ["https://feeinsight.com/waitlist", "https://feeinsight.com/for-institutions#report"],
@@ -69,7 +67,7 @@ describe("proxy", () => {
   });
 
   it("does not redirect nested or similarly named routes as legacy paths", () => {
-    for (const path of ["/pro/districts", "/research/district/2", "/checkout", "/consumers"]) {
+    for (const path of ["/pro/districts", "/research/district/2", "/check", "/checkout", "/consumer", "/consumers"]) {
       const response = proxy(
         request(`https://feeinsight.com${path}`, undefined, { cookie: "fsh_session=present" }),
       );
