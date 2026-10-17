@@ -6,7 +6,7 @@ import { PRO_PLANS_NAV } from "@/components/nav-items";
 import { TrackLink } from "@/components/track-link";
 import { REPORT_OFFER, REPORT_PRICE_INLINE } from "@/lib/constants";
 import { formatCompactDollars } from "@/lib/format";
-import { formatReportQuarter, type NormalizedFinancial } from "./financial-units";
+import { feeIncomeTerms, formatReportQuarter, type NormalizedFinancial } from "./financial-units";
 
 /** The recorded clip of the Hamilton tour; until it exists a marked slot holds its place. */
 export const INSTITUTION_TOUR_VIDEO: FrameVideo | null = null;
@@ -28,7 +28,7 @@ export interface HamiltonInsight {
 }
 
 /**
- * One quarter's service-charge income, oldest first. NCUA 5300 income is year to date, so a
+ * One quarter's call-report fee income (feeIncomeTerms names it per filing), oldest first. NCUA 5300 income is year to date, so a
  * credit union's quarter is its YTD less the prior quarter's in the same year (Q1 stands alone);
  * a quarter whose prior quarter is missing is left out rather than shown as a year's total.
  */
@@ -83,6 +83,7 @@ function InsightView({ insight, institutionName }: { insight: HamiltonInsight; i
   const comparePeers = plausibleShare(insight.ownSharePct) && plausibleShare(insight.peerSharePct) && (insight.peerCount ?? 0) >= 3;
   const top = Math.max(1, ...series.map((q) => q.value));
   const sourceName = latest?.source === "ncua" ? "NCUA 5300 call reports" : "FDIC call reports";
+  const terms = feeIncomeTerms(latest?.source);
   const span = first && last ? `${formatReportQuarter(first.reportDate)} to ${formatReportQuarter(last.reportDate)}` : null;
 
   return (
@@ -94,7 +95,7 @@ function InsightView({ insight, institutionName }: { insight: HamiltonInsight; i
             <span className="ml-2 align-middle font-sans text-[15px] font-normal text-ink-muted">vs {pct(insight.peerSharePct as number)} peer median</span>
           </p>
           <p className="mt-2 text-[15px] leading-snug text-ink">
-            Service charges were {pct(insight.ownSharePct as number)} of {institutionName}&apos;s revenue
+            {terms.subject} {terms.was} {pct(insight.ownSharePct as number)} of {institutionName}&apos;s revenue
             {latest ? ` ${latest.source === "ncua" ? "through" : "in"} ${formatReportQuarter(latest.reportDate)}` : ""}. The median for{" "}
             {(insight.peerCount as number).toLocaleString("en-US")} {insight.kind === "bank" ? "banks" : "credit unions"}
             {insight.sizeRange ? ` with ${insight.sizeRange} in assets` : " its size"} was {pct(insight.peerSharePct as number)}.
@@ -103,7 +104,7 @@ function InsightView({ insight, institutionName }: { insight: HamiltonInsight; i
       ) : (
         last && last.value > 0 && (
           <p className="text-[15px] leading-snug text-ink">
-            Service-charge income was {formatCompactDollars(last.value)} in {formatReportQuarter(last.reportDate)}
+            {terms.amount} was {formatCompactDollars(last.value)} in {formatReportQuarter(last.reportDate)}
             {change !== null ? `, ${change >= 0 ? "up" : "down"} ${pct(Math.abs(change))} since ${formatReportQuarter(first.reportDate)}` : ""}.
           </p>
         )
@@ -121,18 +122,18 @@ function InsightView({ insight, institutionName }: { insight: HamiltonInsight; i
             {insight.filerCount && insight.filerCount - 1 >= (insight.peerCount as number)
               ? ` of the ${(insight.filerCount - 1).toLocaleString("en-US")} peers that filed for ${formatReportQuarter(latest.reportDate)}`
               : ` peers that filed for ${formatReportQuarter(latest.reportDate)}`}{" "}
-            reported service-charge income above $0. {institutionName} itself is left out.
+            reported {terms.amount.toLowerCase()} above $0. {institutionName} itself is left out.
           </dd>
           <dt className="font-medium text-ink-soft">Share</dt>
           <dd>
-            Service charges on deposit accounts divided by revenue ({latest.source === "ncua" ? "interest income" : "net interest income"} plus
+            {terms.definition} divided by revenue ({latest.source === "ncua" ? "interest income" : "net interest income"} plus
             noninterest income).
           </dd>
         </dl>
       )}
       {series.length > 1 && (
-        <div className="mt-4" role="img" aria-label={`Service-charge income by quarter, ${span}`}>
-          <p className="text-[12px] font-medium text-ink-muted">Service-charge income by quarter</p>
+        <div className="mt-4" role="img" aria-label={`${terms.amount} by quarter, ${span}`}>
+          <p className="text-[12px] font-medium text-ink-muted">{terms.amount} by quarter</p>
           <div className="mt-2 flex h-24 items-end gap-2">
             {series.map((q) => (
               <div key={q.reportDate} className="flex flex-1 flex-col items-center gap-1">

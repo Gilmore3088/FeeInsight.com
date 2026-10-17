@@ -12,8 +12,9 @@ import { rateDisplayParts } from "@/lib/percent-fees";
 import { feeDisplayName } from "@/lib/fee-display-name";
 import { HIGHEST_TIER_CATEGORIES, institutionValue } from "@/lib/data-store/fee-stats";
 import { accountPricesText, comparedAtText, type AccountPrice } from "@/lib/fee-representative";
-import { notComparableReason } from "@/lib/fee-comparability";
+import { CARD_INACTIVITY_REASON, CD_IRA_REASON, notComparableReason } from "@/lib/fee-comparability";
 import { productNameFromFeeName, readableProductName } from "@/lib/agents/knox/lineup";
+import { waiverPhrase } from "./account-waiver";
 
 export const getPublicInstitutionForPage = cache(getPublicInstitutionById);
 
@@ -72,6 +73,7 @@ export function toDisplayFees(fees: ExtractedFee[]): DisplayFee[] {
     status: isVerifiedFee(fee) ? "verified" : "provisional",
     sourceUrl: fee.source_url ?? null,
     accountProduct: fee.account_product_type ?? null,
+    sourceLine: fee.source_line ?? null,
   }));
 }
 
@@ -112,7 +114,9 @@ export interface HeadlineFees {
 }
 
 const MONTHLY_MAINTENANCE_NAME = /monthly|maintenance|service charge|service fee/i;
-const NOT_A_MONTHLY_FEE = /fax|photocop|copy|per page|statement|research|wire|check|card/i;
+// Whole words, so an account's own name ("Flagship Checking Monthly Fee") is never read as a
+// per-check charge; a check, card, copy or statement fee filed here still drops out.
+const NOT_A_MONTHLY_FEE = /\bfax|\bphotocop|\bcop(?:y|ies)\b|\bper page\b|\bstatements?\b|\bresearch\b|\bwires?\b|\bchecks?\b|\bcards?\b/i;
 
 function pickAmount(
   fees: ExtractedFee[],
@@ -227,6 +231,10 @@ export interface HeadlineValue {
   highestTier?: boolean;
   /** CD or IRA fees filed under this category that this page leaves out of the compared value. */
   excludedCdIra?: number;
+  /** Card inactivity fees filed under an account-dormancy category, left out the same way. */
+  excludedCard?: number;
+  /** "waived with an average daily balance of $1,500 or more" when its one price states a waiver balance. */
+  waiver?: string | null;
 }
 
 /**
@@ -246,16 +254,14 @@ export function pickHeadlineValues(verifiedFees: ExtractedFee[], categories: rea
         fee.amount >= 0 &&
         countsAsPersonal(fee.fee_audience) &&
         !(fee.source_url && isBusinessOnlyLink(fee.source_url)) &&
-        notComparableReason(fee.fee_category, fee.fee_name, fee.account_product_type ?? null) === null,
+        notComparableReason(fee.fee_category, fee.fee_name, fee.account_product_type ?? null, fee.source_line ?? null) === null,
     );
     const amounts = rows.map((fee) => fee.amount as number);
-    const excludedCdIra = verifiedFees.filter(
-      (fee) =>
-        fee.fee_category === category &&
-        fee.amount !== null &&
-        countsAsPersonal(fee.fee_audience) &&
-        notComparableReason(fee.fee_category, fee.fee_name, fee.account_product_type ?? null) !== null,
-    ).length;
+    const excludedReasons = verifiedFees
+      .filter((fee) => fee.fee_category === category && fee.amount !== null && countsAsPersonal(fee.fee_audience))
+      .map((fee) => notComparableReason(fee.fee_category, fee.fee_name, fee.account_product_type ?? null, fee.source_line ?? null));
+    const excludedCdIra = excludedReasons.filter((reason) => reason === CD_IRA_REASON).length;
+    const excludedCard = excludedReasons.filter((reason) => reason === CARD_INACTIVITY_REASON).length;
     if (amounts.length === 0) continue;
     const quoted =
       category === "overdraft"
@@ -282,7 +288,17 @@ export function pickHeadlineValues(verifiedFees: ExtractedFee[], categories: rea
       accountPrices: several ? accountPricesText(named, amounts) : null,
       highestTier: HIGHEST_TIER_CATEGORIES.has(category),
       excludedCdIra,
+      excludedCard,
       comparedAt: comparedAtText({ value, amounts, highestTier: HIGHEST_TIER_CATEGORIES.has(category) }),
+      // One price only: with several, a waiver belongs to one account, not the compared value.
+      waiver:
+        !several && quoted
+          ? waiverPhrase({
+              minBalanceToAvoid: quoted.min_balance_to_avoid ?? null,
+              waiverText: quoted.waiver_text ?? null,
+              sourceLine: quoted.source_line ?? null,
+            })
+          : null,
     });
   }
   return values;

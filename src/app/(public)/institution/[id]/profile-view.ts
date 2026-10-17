@@ -86,6 +86,10 @@ export interface CompareRow {
   highestTier: boolean;
   /** CD or IRA fees filed under this fee that the compared value leaves out. */
   excludedCdIra: number;
+  /** Card inactivity fees filed under an account-dormancy fee that the compared value leaves out. */
+  excludedCard: number;
+  /** "waived with an average daily balance of $1,500 or more" when its one price states a waiver balance. */
+  waiver: string | null;
   state: Median | null;
   district: Median | null;
   us: Median | null;
@@ -146,6 +150,8 @@ export function compareRows(
     comparedAt: v.comparedAt ?? null,
     highestTier: v.highestTier ?? false,
     excludedCdIra: v.excludedCdIra ?? 0,
+    excludedCard: v.excludedCard ?? 0,
+    waiver: v.waiver ?? null,
     ...medians(v.category),
     missing: null,
   }));
@@ -163,6 +169,8 @@ export function compareRows(
     comparedAt: null,
     highestTier: false,
     excludedCdIra: 0,
+    excludedCard: 0,
+    waiver: null,
     ...medians(key),
     missing: missingNote(schedule),
   }));
@@ -183,10 +191,34 @@ export function referenceShort(row: CompareRow, stateShort: string): string | nu
   return ref.level === "state" ? `vs ${stateShort}` : "vs U.S.";
 }
 
-/** "Leaves out 2 CD/IRA fees filed under this fee", or null. */
+/** "Leaves out 2 CD/IRA fees filed under this fee", "Leaves out 1 card inactivity fee filed under this fee", or null. */
 export function excludedNote(row: CompareRow): string | null {
-  if (row.excludedCdIra <= 0) return null;
-  return `Leaves out ${row.excludedCdIra} CD/IRA ${row.excludedCdIra === 1 ? "fee" : "fees"} filed under this fee`;
+  const parts = [
+    row.excludedCdIra > 0 ? `${row.excludedCdIra} CD/IRA ${row.excludedCdIra === 1 ? "fee" : "fees"}` : null,
+    (row.excludedCard ?? 0) > 0 ? `${row.excludedCard} card inactivity ${row.excludedCard === 1 ? "fee" : "fees"}` : null,
+  ].filter((part): part is string => part !== null);
+  if (parts.length === 0) return null;
+  return `Leaves out ${parts.join(" and ")} filed under this fee`;
+}
+
+/**
+ * Fees a schedule prices per account (one checking account's monthly fee, its minimum-balance
+ * charge). A single such price is never stated as the institution's: the sentence names the
+ * account it belongs to, or says the schedule lists it when no account is named.
+ */
+export const ACCOUNT_PRICED_FEES: ReadonlySet<string> = new Set(["monthly_maintenance", "minimum_balance"]);
+
+/** "a" or "an" for a dollar amount as it is read aloud: "an $8", "an $18", "a $10". */
+export function amountArticle(amount: number): "a" | "an" {
+  const whole = String(Math.floor(Math.abs(amount)));
+  if (whole.startsWith("8")) return "an";
+  const lead = whole.length % 3 === 2 ? whole.slice(0, 2) : null;
+  return lead === "11" || lead === "18" ? "an" : "a";
+}
+
+/** "Flagship Checking account", leaving a name that already ends in "account" as it is. */
+function accountNoun(account: string): string {
+  return /\baccount$/i.test(account) ? account : `${account} account`;
 }
 
 /** Share gap from the reference median; null when nothing to compare. */
@@ -291,6 +323,11 @@ export function heroFinding(input: {
     // Several prices: the range, then the compared value in the shared rule's own words.
     if (isRange(lead) && lead.highestTier) {
       return `${owner} standard ${lowerLabel(lead.label)} fee, ${money(lead.amount)} (the highest of its prices), sits ${gap}.`;
+    }
+    if (ACCOUNT_PRICED_FEES.has(lead.key) && !isRange(lead)) {
+      const fee = `${amountArticle(lead.amount)} ${money(lead.amount)} ${lowerLabel(lead.label)} fee${lead.waiver ? `, ${lead.waiver}` : ""}`;
+      const subject = lead.account ? `${owner} ${accountNoun(lead.account)} carries` : `${owner} schedule lists`;
+      return `${subject} ${fee}. That is ${gap}.`;
     }
     return isRange(lead) && lead.comparedAt
       ? `${owner} ${lowerLabel(lead.label)} fee runs ${money(lead.low as number)} to ${money(lead.high as number)}, depending on account. ${lead.comparedAt}, it sits ${gap}.`

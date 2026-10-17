@@ -100,6 +100,7 @@ function Detail({ row }: { row: CompareRow }) {
   return (
     <>
       {row.account && <p className="text-[12px] text-ink-soft">{row.account}</p>}
+      {row.waiver && <p className="text-[12px] text-ink-muted">{`${row.waiver.charAt(0).toUpperCase()}${row.waiver.slice(1)}`}</p>}
       {note && <p className="text-[12px] text-ink-muted">{note}.</p>}
     </>
   );

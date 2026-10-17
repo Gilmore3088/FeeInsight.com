@@ -5,6 +5,7 @@ import {
   EXTRACTION_PENDING,
   NOT_IDENTIFIED,
   NO_SCHEDULE,
+  amountArticle,
   amountText,
   compareCounts,
   compareFinding,
@@ -85,7 +86,7 @@ describe("ordering and findings", () => {
   it("leads with the widest gap from the state median", () => {
     expect(leadRow(rows)?.key).toBe("monthly_maintenance");
     expect(heroFinding({ rows, stateName: "Florida", sparse: false, schedule: "reviewed", underReview: 0 })).toBe(
-      "Its monthly maintenance fee is $5, $5 below the $10 Florida median.",
+      "Its schedule lists a $5 monthly maintenance fee. That is $5 below the $10 Florida median.",
     );
   });
 
@@ -178,5 +179,50 @@ describe("sparse and empty profiles", () => {
     const found = compareRows([], markets, "found", null);
     expect(heroFinding({ rows: found, stateName: "Florida", sparse: true, schedule: "found", underReview: 0 })).toBe(EXTRACTION_PENDING);
     expect(heroFinding({ rows: found, stateName: "Florida", sparse: true, schedule: "found", underReview: 4 })).toMatch(/under review/);
+  });
+});
+
+describe("an account's own price in the headline (James, Oct 17: Navy Federal)", () => {
+  const navy = (extra: Partial<HeadlineValue>) =>
+    compareRows([value("monthly_maintenance", 10, { account: "Flagship Checking", ...extra })], markets, "reviewed", null);
+
+  it("names the account and its stated waiver, never an institution-wide price", () => {
+    const virginia = { ...markets, state: [entry("monthly_maintenance", 7, 25)] };
+    const rows = compareRows(
+      [value("monthly_maintenance", 10, { account: "Flagship Checking", waiver: "waived with an average daily balance of $1,500 or more" })],
+      virginia,
+      "reviewed",
+      null,
+    );
+    const text = heroFinding({ rows, name: "Navy Federal Credit Union", stateName: "Virginia", sparse: false, schedule: "reviewed", underReview: 0 });
+    expect(text).toBe(
+      "Navy Federal Credit Union\u2019s Flagship Checking account carries a $10 monthly maintenance fee, waived with an average daily balance of $1,500 or more. That is $3 above the $7 Virginia median.",
+    );
+  });
+
+  it("names the account only when the stored row states no waiver", () => {
+    const rows = compareRows([value("monthly_maintenance", 12, { account: "Flagship Checking" })], markets, "reviewed", null);
+    const text = heroFinding({ rows, name: "Navy Federal Credit Union", stateName: "Florida", sparse: false, schedule: "reviewed", underReview: 0 });
+    expect(text).toBe("Navy Federal Credit Union\u2019s Flagship Checking account carries a $12 monthly maintenance fee. That is $2 above the $10 Florida median.");
+    expect(text).not.toMatch(/monthly maintenance fee is/);
+  });
+
+  it("shows the waiver under the account in the comparison row", () => {
+    const [row] = navy({ waiver: "waived with an average daily balance of $1,500 or more" });
+    expect(row.waiver).toBe("waived with an average daily balance of $1,500 or more");
+  });
+
+  it("reads the article as the amount is spoken", () => {
+    expect(amountArticle(8)).toBe("an");
+    expect(amountArticle(18)).toBe("an");
+    expect(amountArticle(11.5)).toBe("an");
+    expect(amountArticle(10)).toBe("a");
+    expect(amountArticle(1)).toBe("a");
+    expect(amountArticle(110)).toBe("a");
+  });
+
+  it("notes a card inactivity fee left out of an account-dormancy comparison", () => {
+    const rows = compareRows([value("dormant_account", 3, { excludedCard: 1 })], markets, "reviewed", null);
+    expect(excludedNote(rows[0])).toBe("Leaves out 1 card inactivity fee filed under this fee");
   });
 });

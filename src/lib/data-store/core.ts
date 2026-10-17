@@ -90,7 +90,8 @@ export async function getFeesByInstitution(targetId: number): Promise<ExtractedF
            ef.extraction_confidence, ef.review_status,
            ef.validation_flags, ef.fee_category, ef.fee_family,
            ef.source_url, ef.created_at, ef.fee_audience, ef.audience_evidence, ef.fee_treatment,
-           ef.account_product_type,
+           ef.account_product_type, ef.min_balance_to_avoid, ef.waiver_text,
+           substring(ef.extraction_note from 'excerpt="(.*)"$') AS source_line,
            ct.institution_name, ef.institution_id, ef.source_document_id
     FROM published_fee_catalog ef
     JOIN institution_sources ct ON ef.institution_id = ct.id
@@ -106,6 +107,7 @@ export async function getFeesByInstitution(targetId: number): Promise<ExtractedF
     extraction_confidence: Number(r.extraction_confidence),
     conditions: readerFeeConditions(r.conditions),
     source_document_id: r.source_document_id == null ? null : Number(r.source_document_id),
+    min_balance_to_avoid: r.min_balance_to_avoid == null ? null : Number(r.min_balance_to_avoid),
   }));
 }
 

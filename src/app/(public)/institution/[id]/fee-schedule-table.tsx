@@ -22,6 +22,8 @@ export interface DisplayFee {
   rate?: { rate: string; detail: string | null } | null;
   /** The account product the schedule ties the fee to, when it names one. */
   accountProduct?: string | null;
+  /** The schedule line the fee was read from; never shown, read only by the comparability rule. */
+  sourceLine?: string | null;
 }
 
 /**
@@ -38,9 +40,9 @@ function AudienceMark({ fee }: { fee: DisplayFee }) {
   return <UnstatedAudienceMark show={isAudienceUnstated(fee.feeAudience)} />;
 }
 
-/** "CD/IRA fee" when the row is a different product's price than its category's median measures. */
+/** "CD/IRA fee" or "Card inactivity fee" when the row prices a different product than its category's median measures. */
 function notComparable(fee: DisplayFee): string | null {
-  return notComparableReason(fee.feeCategory, fee.feeName, fee.accountProduct ?? null);
+  return notComparableReason(fee.feeCategory, fee.feeName, fee.accountProduct ?? null, fee.sourceLine ?? null);
 }
 
 function NotCompared({ reason }: { reason: string }) {

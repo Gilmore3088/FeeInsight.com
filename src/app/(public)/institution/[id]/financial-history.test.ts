@@ -243,5 +243,20 @@ describe("outliers and peer rank", () => {
     expect(findOutliers(series, computeGrowth(series), null).map((f) => f.id)).toContain("fees-record-high");
     const short = buildFinancialSeries(quarters("2024-03-31", 10).map((report_date, i) => row({ report_date, service_charge_income: 100 + i })));
     expect(findOutliers(short, computeGrowth(short), null).map((f) => f.id)).not.toContain("fees-record-high");
+    expect(findOutliers(series, computeGrowth(series), null).find((f) => f.id === "fees-record-high")?.text).toBe(
+      "Deposit service charges are at their highest in the 5 years on file.",
+    );
+  });
+
+  it("names a credit union's figure NCUA fee income (Account 131), not deposit service charges", () => {
+    const dates = quarters("2020-03-31", 26);
+    const series = buildFinancialSeries(
+      dates.map((report_date, i) => row({ report_date, source: "ncua", service_charge_income: 100 + i * 2 })),
+    );
+    const growth = computeGrowth(series);
+    expect(growth.find((r) => r.key === "serviceCharges")?.label).toBe("Fee income (4 quarters)");
+    const texts = findOutliers(series, growth, null).map((f) => f.text);
+    expect(texts).toContain("Fee income is at its highest in the 5 years on file.");
+    expect(texts.join(" ")).not.toMatch(/service charge/i);
   });
 });

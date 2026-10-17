@@ -216,6 +216,43 @@ describe("headline fees", () => {
     expect(values[1]).toMatchObject({ amount: 8.45, low: 7.95, high: 8.95, comparedAt: "Compared at $8.45, the middle of its prices" });
     expect(values[1].accountPrices).toMatch(/Carefree Checking \$7\.95 \u00b7 Everyday Checking \$8\.95/);
   });
+
+  it("carries the stored waiver balance and leaves a card's inactivity fee out of dormant accounts (Navy Federal rows)", () => {
+    const values = pickHeadlineValues(
+      [
+        fee({
+          id: 122337,
+          fee_category: "monthly_maintenance",
+          fee_name: "Flagship Checking Monthly Fee",
+          amount: 10,
+          frequency: "monthly",
+          account_product_type: "Flagship Checking",
+          min_balance_to_avoid: 1500,
+          source_line: "Flagship Checking Monthly Fee | $10.00 if the average daily balance is less than $1,500.00 during the statement period",
+        }),
+        fee({ id: 80997, fee_category: "dormant_account", fee_name: "Dormant Checking fee", amount: 3 }),
+        fee({
+          id: 122350,
+          fee_category: "dormant_account",
+          fee_name: "Inactivity Fee",
+          amount: 5,
+          frequency: "monthly",
+          source_line: "Inactivity Fee (After 12 consecutive months of no activity, the card will be charged $5.00 per month",
+        }),
+      ],
+      ["monthly_maintenance", "dormant_account"],
+    );
+    expect(values[0]).toMatchObject({ account: "Flagship Checking", waiver: "waived with an average daily balance of $1,500 or more" });
+    expect(values[1]).toMatchObject({ category: "dormant_account", amount: 3, count: 1, excludedCard: 1, excludedCdIra: 0 });
+  });
+
+  it("quotes a monthly fee named for its checking account, and still drops per-check and card rows", () => {
+    expect(
+      pickHeadlineFees([fee({ id: 1, fee_category: "monthly_maintenance", fee_name: "Flagship Checking Monthly Fee", amount: 10 })]).monthly,
+    ).toBe(10);
+    expect(pickHeadlineFees([fee({ id: 2, fee_category: "monthly_maintenance", fee_name: "Check copy", amount: 2 })]).monthly).toBeNull();
+    expect(pickHeadlineFees([fee({ id: 3, fee_category: "monthly_maintenance", fee_name: "Replacement card", amount: 5 })]).monthly).toBeNull();
+  });
 });
 
 describe("profile title", () => {

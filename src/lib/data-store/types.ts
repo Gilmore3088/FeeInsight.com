@@ -41,6 +41,12 @@ export interface ExtractedFee {
   source_document_id?: number | null;
   /** The account the schedule lists the fee under, when the reader selects it. */
   account_product_type?: string | null;
+  /** The balance that avoids the fee, when the schedule states one and the reader selects it. */
+  min_balance_to_avoid?: number | null;
+  /** The schedule's own words for how the fee is waived, when the reader selects it. */
+  waiver_text?: string | null;
+  /** The schedule line the fee was read from, when the reader selects it. */
+  source_line?: string | null;
 }
 
 export interface ReviewableFee extends ExtractedFee {
