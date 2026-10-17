@@ -254,6 +254,15 @@ function narrateFinished(
         ? `Atlas restored ${count(n(detail, "repaired"), "credit union city", "credit union cities")} cut at 15 characters from NCUA's branch file.`
         : `Atlas found ${count(found, "credit union city", "credit union cities")} cut at 15 characters and changed none (${detail.dry_run === true ? "dry run" : "switched off"}).`;
     }
+    case "atlas-storage-retention": {
+      const size = detail.database_mb == null ? "could not read the database size" : `measured the database at ${count(n(detail, "database_mb"), "MB", "MB")}`;
+      const trims = Array.isArray(detail.trims) ? (detail.trims as Detail[]) : [];
+      const deleted = trims.reduce((sum, t) => sum + n(t, "deleted"), 0);
+      const eligible = trims.reduce((sum, t) => sum + n(t, "eligible"), 0);
+      return deleted > 0
+        ? `Atlas ${size} and trimmed ${count(deleted, "row")} of log history.`
+        : `Atlas ${size}; ${count(eligible, "row")} of log history could be trimmed (trims switched off).`;
+    }
     case "schedule-check": {
       const missed = n(detail, "missed") + n(detail, "failed");
       return `Atlas checked every schedule against the route ledger: ${n(detail, "ran")} ran on time, ${missed === 0 ? "none missed or failed" : `${missed} missed or failed`}${n(detail, "unknown") > 0 ? `, ${n(detail, "unknown")} unknown` : ""}.`;
@@ -665,6 +674,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "bayes-replay-ledger": "atlas",
   "schedule-check": "atlas",
   "atlas-city-repair": "atlas",
+  "atlas-storage-retention": "atlas",
   "deming-fresh-audit": "atlas",
   "deming-benchmark-health": "atlas",
   "deming-data-quality": "atlas",

@@ -20,7 +20,8 @@ async function isAuthorized(request: NextRequest): Promise<boolean> {
  * Atlas's daily measurement, as a visible run (cron, once a day): score the
  * pipeline against the hand-checked answer key, let Deming turn confirmed takedowns into
  * regression cases and replay them, audit a fresh seeded sample of live fees, run the daily data-quality checks (#1065), then snapshot the six scoreboard numbers (which include
- * that score), then restore cut credit union cities (#1213). Deterministic; no model calls.
+ * that score), then restore cut credit union cities (#1213), then measure the database and count
+ * (or, once switched on, trim) old log history. Deterministic; no model calls.
  */
 async function handleGET(request: NextRequest) {
   if (!(await isAuthorized(request))) {
@@ -49,6 +50,8 @@ async function handleGET(request: NextRequest) {
       { key: "deming-sunday-maintenance", agent: "atlas", title: "Deming: on Sunday, write James's hour of maintenance tasks" },
       // Last: a data repair, so a pipeline pause holds it without holding the measurements above.
       { key: "atlas-city-repair", agent: "atlas", title: "Atlas: restore credit union cities NCUA cut at 15 characters (#1213)" },
+      // Measures the database every day; its log trims delete only once James switches each on.
+      { key: "atlas-storage-retention", agent: "atlas", title: "Atlas: measure the database and trim old log history" },
     ],
   });
   if (started.reused) {
