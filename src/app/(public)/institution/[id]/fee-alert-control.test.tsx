@@ -79,6 +79,6 @@ describe("FeeAlertControl", () => {
     render(
       <FeeAlertControl {...base} mode="verify" focusCategory={null} initial={{ signedIn: true, saved: false, feeCategories: null }} />,
     );
-    expect(screen.getByRole("heading")).toHaveTextContent("fees are verified");
+    expect(screen.getByRole("heading")).toHaveTextContent("publishes more fees");
   });
 });

@@ -99,3 +99,41 @@ export function formatReportQuarter(reportDate: string | null | undefined): stri
   if (Number.isNaN(date.getTime())) return reportDate;
   return `Q${Math.floor(date.getUTCMonth() / 3) + 1} ${date.getUTCFullYear()}`;
 }
+
+/**
+ * The words for the call-report fee figure, by filing. A bank's figure is FDIC "service charges
+ * on deposit accounts"; a credit union's is NCUA 5300 Account 131, "Fee Income", which the
+ * registry stores in the same service_charge_income column (src/lib/regulatory/ncua.ts). The two
+ * lines measure different things, so a credit union's figure never borrows the bank's name.
+ */
+export interface FeeIncomeTerms {
+  /** Sentence-start noun: "Service charges" or "Fee income". */
+  subject: string;
+  /** Its verb agrees with the subject: "were" or "was". */
+  was: "were" | "was";
+  /** The dollar figure's name: "Service-charge income" or "Fee income". */
+  amount: string;
+  /** The Pro tile and chart title: "Deposit service charges" or "Fee income". */
+  title: string;
+  /** What the share divides, for its definition line. */
+  definition: string;
+}
+
+export function feeIncomeTerms(source: string | null | undefined): FeeIncomeTerms {
+  if ((source ?? "").toLowerCase() === "ncua") {
+    return {
+      subject: "Fee income",
+      was: "was",
+      amount: "Fee income",
+      title: "Fee income",
+      definition: "Fee income (NCUA 5300 Account 131)",
+    };
+  }
+  return {
+    subject: "Service charges",
+    was: "were",
+    amount: "Service-charge income",
+    title: "Deposit service charges",
+    definition: "Service charges on deposit accounts",
+  };
+}

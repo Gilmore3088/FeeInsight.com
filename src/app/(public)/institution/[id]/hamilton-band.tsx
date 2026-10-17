@@ -2,11 +2,11 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import type { FrameVideo } from "@/components/marketing/frame-media";
 import { FrameMedia } from "@/components/marketing/frame-media";
-import { DEMO_REQUEST_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
+import { PRO_PLANS_NAV } from "@/components/nav-items";
 import { TrackLink } from "@/components/track-link";
 import { REPORT_OFFER, REPORT_PRICE_INLINE } from "@/lib/constants";
 import { formatCompactDollars } from "@/lib/format";
-import { formatReportQuarter, type NormalizedFinancial } from "./financial-units";
+import { feeIncomeTerms, formatReportQuarter, type NormalizedFinancial } from "./financial-units";
 
 /** The recorded clip of the Hamilton tour; until it exists a marked slot holds its place. */
 export const INSTITUTION_TOUR_VIDEO: FrameVideo | null = null;
@@ -19,6 +19,8 @@ export interface HamiltonInsight {
   peerSharePct: number | null;
   /** The peers behind peerSharePct. */
   peerCount: number | null;
+  /** Every same-charter, same-size institution that filed for the quarter, itself included. */
+  filerCount?: number | null;
   /** "$1B to $10B": the asset tier the peers share. */
   sizeRange: string | null;
   /** "credit union" or "bank". */
@@ -26,7 +28,7 @@ export interface HamiltonInsight {
 }
 
 /**
- * One quarter's service-charge income, oldest first. NCUA 5300 income is year to date, so a
+ * One quarter's call-report fee income (feeIncomeTerms names it per filing), oldest first. NCUA 5300 income is year to date, so a
  * credit union's quarter is its YTD less the prior quarter's in the same year (Q1 stands alone);
  * a quarter whose prior quarter is missing is left out rather than shown as a year's total.
  */
@@ -80,7 +82,8 @@ function InsightView({ insight, institutionName }: { insight: HamiltonInsight; i
     first && last && first !== last && first.value > 0 ? ((last.value - first.value) / first.value) * 100 : null;
   const comparePeers = plausibleShare(insight.ownSharePct) && plausibleShare(insight.peerSharePct) && (insight.peerCount ?? 0) >= 3;
   const top = Math.max(1, ...series.map((q) => q.value));
-  const sourceName = latest?.source === "ncua" ? "NCUA call reports" : "FDIC call reports";
+  const sourceName = latest?.source === "ncua" ? "NCUA 5300 call reports" : "FDIC call reports";
+  const terms = feeIncomeTerms(latest?.source);
   const span = first && last ? `${formatReportQuarter(first.reportDate)} to ${formatReportQuarter(last.reportDate)}` : null;
 
   return (
@@ -92,7 +95,7 @@ function InsightView({ insight, institutionName }: { insight: HamiltonInsight; i
             <span className="ml-2 align-middle font-sans text-[15px] font-normal text-ink-muted">vs {pct(insight.peerSharePct as number)} peer median</span>
           </p>
           <p className="mt-2 text-[15px] leading-snug text-ink">
-            Service charges were {pct(insight.ownSharePct as number)} of {institutionName}&apos;s revenue
+            {terms.subject} {terms.was} {pct(insight.ownSharePct as number)} of {institutionName}&apos;s revenue
             {latest ? ` ${latest.source === "ncua" ? "through" : "in"} ${formatReportQuarter(latest.reportDate)}` : ""}. The median for{" "}
             {(insight.peerCount as number).toLocaleString("en-US")} {insight.kind === "bank" ? "banks" : "credit unions"}
             {insight.sizeRange ? ` with ${insight.sizeRange} in assets` : " its size"} was {pct(insight.peerSharePct as number)}.
@@ -101,20 +104,42 @@ function InsightView({ insight, institutionName }: { insight: HamiltonInsight; i
       ) : (
         last && last.value > 0 && (
           <p className="text-[15px] leading-snug text-ink">
-            Service-charge income was {formatCompactDollars(last.value)} in {formatReportQuarter(last.reportDate)}
+            {terms.amount} was {formatCompactDollars(last.value)} in {formatReportQuarter(last.reportDate)}
             {change !== null ? `, ${change >= 0 ? "up" : "down"} ${pct(Math.abs(change))} since ${formatReportQuarter(first.reportDate)}` : ""}.
           </p>
         )
       )}
+      {comparePeers && latest && (
+        <dl className="mt-4 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 border-t border-border pt-3 text-[12px] leading-snug text-ink-muted">
+          <dt className="font-medium text-ink-soft">Peers</dt>
+          <dd>
+            {insight.kind === "bank" ? "Banks filing FDIC call reports" : "Credit unions filing NCUA 5300 call reports"}
+            {insight.sizeRange ? `, ${insight.sizeRange} in assets` : ", the same asset size"}
+          </dd>
+          <dt className="font-medium text-ink-soft">Counted</dt>
+          <dd>
+            {(insight.peerCount as number).toLocaleString("en-US")}
+            {insight.filerCount && insight.filerCount - 1 >= (insight.peerCount as number)
+              ? ` of the ${(insight.filerCount - 1).toLocaleString("en-US")} peers that filed for ${formatReportQuarter(latest.reportDate)}`
+              : ` peers that filed for ${formatReportQuarter(latest.reportDate)}`}{" "}
+            reported {terms.amount.toLowerCase()} above $0. {institutionName} itself is left out.
+          </dd>
+          <dt className="font-medium text-ink-soft">Share</dt>
+          <dd>
+            {terms.definition} divided by revenue ({latest.source === "ncua" ? "interest income" : "net interest income"} plus
+            noninterest income).
+          </dd>
+        </dl>
+      )}
       {series.length > 1 && (
-        <div className="mt-4" role="img" aria-label={`Service-charge income by quarter, ${span}`}>
-          <p className="text-[12px] font-medium text-ink-muted">Service-charge income by quarter</p>
+        <div className="mt-4" role="img" aria-label={`${terms.amount} by quarter, ${span}`}>
+          <p className="text-[12px] font-medium text-ink-muted">{terms.amount} by quarter</p>
           <div className="mt-2 flex h-24 items-end gap-2">
             {series.map((q) => (
               <div key={q.reportDate} className="flex flex-1 flex-col items-center gap-1">
                 <span className="font-mono text-[11px] tabular-nums text-ink-muted">{formatCompactDollars(q.value)}</span>
                 <span
-                  className="w-3/5 rounded-t-[3px] bg-warm-ink-500"
+                  className="w-3/5 rounded-t-[3px] bg-ink/45"
                   style={{ height: `${Math.max(4, (Math.max(0, q.value) / top) * 64)}px` }}
                 />
                 <span className="text-[11px] text-ink-muted">{formatReportQuarter(q.reportDate)}</span>
@@ -125,27 +150,27 @@ function InsightView({ insight, institutionName }: { insight: HamiltonInsight; i
       )}
       {span && (
         <figcaption className="mt-3 text-[12px] text-ink-muted">
-          From {sourceName}, {span}
-          {comparePeers
-            ? `. Revenue is ${latest?.source === "ncua" ? "interest income" : "net interest income"} plus noninterest income.`
-            : "."}
+          From {sourceName}, {span}.
         </figcaption>
       )}
     </figure>
   );
 }
 
-/** The page's one next step: one complete Hamilton insight on this institution, then plans or a demo. */
+/** The page's one next step: one complete Hamilton insight, then the free sample report (when live), the paid report and Hamilton plans. */
 export function HamiltonBand({
   institutionName,
   insight,
   plansHref,
   reportOfferHref,
+  sampleReportHref = null,
 }: {
   institutionName: string;
   insight: HamiltonInsight | null;
   plansHref: string;
   reportOfferHref: string;
+  /** The live sample report, when one is published: the free first step before the paid report. */
+  sampleReportHref?: string | null;
 }) {
   const hasInsight = Boolean(insight && quarterlyServiceCharges(insight.quarters).length > 0);
   return (
@@ -161,43 +186,55 @@ export function HamiltonBand({
         )}
         <div className="min-w-0 space-y-4 lg:border-l lg:border-border lg:pl-10">
           <h2 id="hamilton-heading" className="text-[22px] font-semibold leading-tight tracking-[-0.02em] text-ink sm:text-[26px]">
-            Work at {institutionName}? See every fee and filing against your peers.
+            Hamilton puts {institutionName}&rsquo;s fees and filings beside its peers&rsquo;.
           </h2>
           <p className="text-[14px] leading-relaxed text-ink-muted">
-            Hamilton, the Fee Insight Pro workspace, opens on your institution with your market, your call reports and a
-            sourced brief for the board.
+            Hamilton, Fee Insight&rsquo;s workspace for banks and credit unions, sets an institution&rsquo;s published fees
+            beside its market and its call reports beside its peers. Each comparison comes with a sourced brief.
           </p>
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+          {sampleReportHref ? (
+            <Link
+              href={sampleReportHref}
+              className="inline-flex min-h-11 max-w-full items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-left text-[14px] font-semibold text-on-ink hover:opacity-90"
+            >
+              See a free sample {REPORT_OFFER.name}
+              <ArrowRight className="h-4 w-4 shrink-0" aria-hidden="true" />
+            </Link>
+          ) : (
             <TrackLink
               event="upgrade_click"
               eventProps={{ placement: "institution_hamilton_band" }}
               href={plansHref}
-              className="inline-flex items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-[14px] font-semibold text-on-ink hover:opacity-90"
+              className="inline-flex min-h-11 items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-[14px] font-semibold text-on-ink hover:opacity-90"
             >
               {PRO_PLANS_NAV.label}
               <ArrowRight className="h-4 w-4" aria-hidden="true" />
             </TrackLink>
-            <TrackLink
-              event="contact_sales"
-              eventProps={{ placement: "institution_hamilton_band_demo" }}
-              href={DEMO_REQUEST_NAV.href}
-              className="text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
-            >
-              {DEMO_REQUEST_NAV.label}
-            </TrackLink>
-          </div>
+          )}
+          <p className="flex flex-wrap items-center gap-x-2 text-[14px] text-ink-soft">
+            <Link href={reportOfferHref} className="inline-flex min-h-11 items-center font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
+              {sampleReportHref ? `Order one ${REPORT_PRICE_INLINE}` : `Order a ${REPORT_OFFER.name} ${REPORT_PRICE_INLINE}`}
+            </Link>
+            {sampleReportHref && (
+              <>
+                <span aria-hidden="true">&middot;</span>
+                <TrackLink
+                  event="upgrade_click"
+                  eventProps={{ placement: "institution_hamilton_band_secondary" }}
+                  href={plansHref}
+                  className="inline-flex min-h-11 items-center font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+                >
+                  {PRO_PLANS_NAV.label}
+                </TrackLink>
+              </>
+            )}
+          </p>
           {/* The tour shows only once the clip exists; no "coming soon" slot in the meantime. */}
           {INSTITUTION_TOUR_VIDEO && (
             <FrameMedia video={INSTITUTION_TOUR_VIDEO}>
               <TourVideoSlot />
             </FrameMedia>
           )}
-          <p className="text-[12px] text-ink-muted">
-            Prefer one document?{" "}
-            <Link href={reportOfferHref} className="underline underline-offset-2 hover:text-ink">
-              {REPORT_OFFER.name}, {REPORT_PRICE_INLINE}
-            </Link>
-          </p>
         </div>
       </div>
     </section>

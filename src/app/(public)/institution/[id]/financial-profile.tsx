@@ -18,6 +18,7 @@ import {
 import { Sparkline } from "@/components/sparkline";
 import { formatCompactDollars } from "@/lib/format";
 import type { FinancialPoint, PeerMedianPoints } from "./financial-history";
+import { feeIncomeTerms } from "./financial-units";
 
 /*
  * Gated Financial profile: call-report history as charts.
@@ -194,6 +195,7 @@ export function FinancialProfileCharts({
   const capitalLabel = latest.source === "ncua" ? "Net worth ratio" : "Tier 1 capital ratio";
   const latestIncome = [...points].reverse().find((p) => p.netIncome !== null) ?? null;
   const latestCharges = [...points].reverse().find((p) => p.serviceCharges !== null) ?? null;
+  const feeTerms = feeIncomeTerms(latestCharges?.source ?? latest.source);
 
   return (
     <div>
@@ -210,7 +212,7 @@ export function FinancialProfileCharts({
         <KpiTile label="Net charge-off rate" value={pct(latest.ncoRatePct)} peer={peers ? pct(peers.ncoRatePct) : null} spark={values(recent, "ncoRatePct")} />
         <KpiTile label={capitalLabel} value={pct(latest.tier1Pct, 1)} peer={peers ? pct(peers.tier1Pct, 1) : null} />
         <KpiTile
-          label={`Deposit service charges${latestCharges ? ` (${latestCharges.quarter})` : ""}`}
+          label={`${feeTerms.title}${latestCharges ? ` (${latestCharges.quarter})` : ""}`}
           value={formatCompactDollars(latestCharges?.serviceCharges ?? null)}
           spark={values(recent, "serviceCharges")}
         />
@@ -421,14 +423,18 @@ export function FinancialProfileCharts({
         )}
 
         {hasAny(visible, ["serviceCharges"]) && (
-          <ChartCard title="Deposit service charges" subtitle="Fee income on deposit accounts, by quarter" caption={caption}>
+          <ChartCard
+            title={feeTerms.title}
+            subtitle={latest.source === "ncua" ? "NCUA 5300 Account 131, by quarter" : "Fee income on deposit accounts, by quarter"}
+            caption={caption}
+          >
             <ResponsiveContainer width="100%" height={236}>
               <BarChart data={visible} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
                 <CartesianGrid stroke={GRID} vertical={false} />
                 <XAxis dataKey="quarter" {...axisProps} minTickGap={24} />
                 <YAxis {...axisProps} tickFormatter={compactAxis} width={56} />
                 <Tooltip cursor={{ fill: "#f3efe6" }} content={<ChartTooltip format={formatCompactDollars} />} />
-                <Bar dataKey="serviceCharges" name="Service charges" fill={SERIES[0]} radius={[4, 4, 0, 0]} maxBarSize={18} />
+                <Bar dataKey="serviceCharges" name={feeTerms.title} fill={SERIES[0]} radius={[4, 4, 0, 0]} maxBarSize={18} />
               </BarChart>
             </ResponsiveContainer>
           </ChartCard>
