@@ -4,8 +4,8 @@ import { getRecentPriceChanges } from "@/lib/data-store";
 import { FEE_FAMILIES, getDisplayName } from "@/lib/fee-taxonomy";
 import { logApiUsage } from "@/lib/api-usage";
 import { API_ATTRIBUTION } from "@/lib/constants";
-import { authorizePaidV1 } from "@/lib/api-v1-auth";
-import { ApiParamError, apiError, apiOptions, intParam, withApiHeaders } from "@/lib/api-v1";
+import { authorizeV1 } from "@/lib/api-v1-auth";
+import { ApiParamError, apiError, apiOptions, intParam, withApiCaching, withApiHeaders } from "@/lib/api-v1";
 
 const KNOWN_CATEGORIES = new Set(Object.values(FEE_FAMILIES).flat());
 
@@ -16,7 +16,7 @@ function toNumberOrNull(value: unknown): number | null {
 }
 
 async function handleGET(request: NextRequest) {
-  const caller = await authorizePaidV1(request, "Fee changes");
+  const caller = await authorizeV1(request, { paidOnly: "Fee changes", usageEvent: "api.v1.fee_changes" });
   if (caller instanceof Response) return caller;
   const { organizationId, anonymousId, rateLimit } = caller;
 
@@ -31,6 +31,7 @@ async function handleGET(request: NextRequest) {
     }
   } catch (error) {
     if (error instanceof ApiParamError) {
+      logApiUsage(organizationId, anonymousId, "api.v1.fee_changes", { status: 400 }).catch(() => {});
       return apiError(400, "invalid_parameter", error.message, { rateLimit });
     }
     throw error;
@@ -45,7 +46,7 @@ async function handleGET(request: NextRequest) {
     status: 200,
   }).catch(() => {});
 
-  return withApiHeaders(
+  return withApiCaching(request, withApiHeaders(
     NextResponse.json({
       days,
       category,
@@ -64,7 +65,7 @@ async function handleGET(request: NextRequest) {
       attribution: API_ATTRIBUTION,
     }),
     rateLimit,
-  );
+  ));
 }
 
 export const GET = withApiRoutePolicy("api.v1.fee_changes", "GET", handleGET);

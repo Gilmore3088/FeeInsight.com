@@ -41,6 +41,21 @@ describe("MCP connector", () => {
     await expect(response.json()).resolves.toMatchObject({ code: "api_key_required" });
   });
 
+  it("tells a caller with a revoked key why, with its own code", async () => {
+    vi.mocked(validateApiKey).mockResolvedValue({
+      valid: false,
+      organizationId: null,
+      tier: "free",
+      error: "API key has been revoked.",
+      code: "key_revoked",
+    });
+
+    const response = await handleMcpPost(rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" }), handlers());
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toMatchObject({ code: "key_revoked" });
+  });
+
   it("initializes with the client's protocol version and offers tools", async () => {
     const response = await handleMcpPost(
       rpc({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26" } }),

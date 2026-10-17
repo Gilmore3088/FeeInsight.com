@@ -3,14 +3,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { getLocalMarketMembers } from "@/lib/data-store/custom-report-market";
 import { logApiUsage } from "@/lib/api-usage";
 import { API_ATTRIBUTION } from "@/lib/constants";
-import { authorizePaidV1 } from "@/lib/api-v1-auth";
-import { ApiParamError, apiError, apiOptions, intParam, withApiHeaders } from "@/lib/api-v1";
+import { authorizeV1 } from "@/lib/api-v1-auth";
+import { ApiParamError, apiError, apiOptions, intParam, withApiCaching, withApiHeaders } from "@/lib/api-v1";
 
 const NOTE =
   "Local market: the counties holding most of the institution's deposits (FDIC Summary of Deposits), or its headquarters city's counties when it is not in the SOD (credit unions). Competitors are institutions with branches there, plus institutions headquartered in a market city. Deposit share counts SOD deposits only; credit unions have none, so their share is null.";
 
 async function handleGET(request: NextRequest) {
-  const caller = await authorizePaidV1(request, "Local market competitors");
+  const caller = await authorizeV1(request, { paidOnly: "Local market competitors", usageEvent: "api.v1.market" });
   if (caller instanceof Response) return caller;
   const { organizationId, anonymousId, rateLimit } = caller;
 
@@ -20,6 +20,7 @@ async function handleGET(request: NextRequest) {
     institutionId = intParam(request.nextUrl.searchParams, "institution_id", { fallback: 0, min: 1, max: 1_000_000_000 });
   } catch (error) {
     if (error instanceof ApiParamError) {
+      logApiUsage(organizationId, anonymousId, "api.v1.market", { status: 400 }).catch(() => {});
       return apiError(400, "invalid_parameter", error.message, { rateLimit });
     }
     throw error;
@@ -27,13 +28,14 @@ async function handleGET(request: NextRequest) {
 
   const market = await getLocalMarketMembers(institutionId);
   if (!market) {
+    logApiUsage(organizationId, anonymousId, "api.v1.market", { institution_id: institutionId, status: 404 }).catch(() => {});
     return apiError(404, "not_found", "No local market on file for that institution", { rateLimit });
   }
 
   const totalDeposits = market.members.reduce((sum, m) => sum + (m.market_deposits ?? 0), 0);
   logApiUsage(organizationId, anonymousId, "api.v1.market", { institution_id: institutionId, status: 200 }).catch(() => {});
 
-  return withApiHeaders(
+  return withApiCaching(request, withApiHeaders(
     NextResponse.json({
       institution_id: institutionId,
       basis: market.basis,
@@ -58,7 +60,7 @@ async function handleGET(request: NextRequest) {
       attribution: API_ATTRIBUTION,
     }),
     rateLimit,
-  );
+  ));
 }
 
 export const GET = withApiRoutePolicy("api.v1.market", "GET", handleGET);

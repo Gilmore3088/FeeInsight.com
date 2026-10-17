@@ -1,6 +1,8 @@
 import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 import { NextResponse } from "next/server";
 import { SITE_NAME, SITE_URL } from "@/lib/constants";
+import { API_ERROR_CODES } from "@/lib/api-v1";
+import { BURST_CALLS_PER_MINUTE } from "@/lib/api-subscriber-access";
 
 // The fee name pair (#1482, #1583), shared by fees[] and rate_fees[]. A completed name
 // ("3 X 10" shown as "Safe Deposit Box 3 X 10") is the schedule's own name, so its flag is false.
@@ -13,7 +15,7 @@ const spec = {
   openapi: "3.0.3",
   info: {
     title: "Bank Fee Index API",
-    version: "1.7.0",
+    version: "1.8.0",
     description:
       "Programmatic access to bank and credit union fee benchmarking data across thousands of U.S. financial institutions. Covers a curated catalog of consumer and commercial fee categories, sourced from published fee schedules, FDIC, and NCUA registries. Every request needs an API key. Fee Insight Pro subscribers on the $300 and $500 plans make theirs on their account page; partner keys are issued by hand.",
     contact: {
@@ -62,20 +64,18 @@ const spec = {
           error: { type: "string", example: "state must be a two-letter code such as TX" },
           code: {
             type: "string",
-            enum: [
-              "api_key_required",
-              "data_unavailable",
-              "invalid_api_key",
-              "invalid_parameter",
-              "not_found",
-              "plan_required",
-              "rate_limited",
-              "rate_limit_unavailable",
-            ],
+            enum: [...API_ERROR_CODES],
           },
           upgrade_url: { type: "string", description: "Present on plan_required errors." },
-          limit: { type: "integer", description: "Present on rate_limited errors." },
-          reset: { type: "string", format: "date-time", description: "Present on rate_limited errors." },
+          limit: {
+            type: "integer",
+            description: "Present on rate_limited errors (the monthly allowance) and burst_limited errors (calls a minute).",
+          },
+          reset: {
+            type: "string",
+            format: "date-time",
+            description: "Present on rate_limited and burst_limited errors: when the month or the minute resets.",
+          },
         },
         required: ["error", "code"],
       },
@@ -313,7 +313,8 @@ const spec = {
         content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
       },
       Unauthorized: {
-        description: "No API key was sent (code api_key_required), or it is unknown or revoked (code invalid_api_key)",
+        description:
+          "No API key was sent (code api_key_required), or the key was turned away: unknown (invalid_api_key), revoked (key_revoked), its Pro subscription is not active (subscription_inactive), or its holder no longer has a seat on the plan (seat_removed)",
         content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
       },
       PlanRequired: {
@@ -321,8 +322,22 @@ const spec = {
         content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
       },
       RateLimited: {
-        description: "The monthly allowance is used up (code rate_limited)",
+        description: `The monthly allowance is used up (code rate_limited), or the plan made more than ${BURST_CALLS_PER_MINUTE} calls this minute (code burst_limited; retry after the Retry-After seconds)`,
+        headers: {
+          "Retry-After": {
+            description: "On burst_limited: whole seconds until the next minute starts.",
+            schema: { type: "integer" },
+          },
+        },
         content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+      },
+      NotModified: {
+        description:
+          "The data has not changed since the ETag sent in If-None-Match. No body; the headers match a 200. The call still counts against the per-minute and monthly allowances.",
+        headers: {
+          ETag: { description: "Weak ETag of the unchanged body.", schema: { type: "string" } },
+          "Cache-Control": { description: "private, max-age=300", schema: { type: "string" } },
+        },
       },
       Unavailable: {
         description: "Usage tracking is temporarily down; retry after the Retry-After seconds (code rate_limit_unavailable)",
@@ -392,6 +407,7 @@ const spec = {
               },
             },
           },
+          "304": { $ref: "#/components/responses/NotModified" },
           "400": { $ref: "#/components/responses/BadRequest" },
           "401": { $ref: "#/components/responses/Unauthorized" },
           "403": { $ref: "#/components/responses/PlanRequired" },
@@ -491,6 +507,7 @@ const spec = {
               },
             },
           },
+          "304": { $ref: "#/components/responses/NotModified" },
           "400": { $ref: "#/components/responses/BadRequest" },
           "401": { $ref: "#/components/responses/Unauthorized" },
           "403": { $ref: "#/components/responses/PlanRequired" },
@@ -623,6 +640,7 @@ const spec = {
               },
             },
           },
+          "304": { $ref: "#/components/responses/NotModified" },
           "400": { $ref: "#/components/responses/BadRequest" },
           "401": { $ref: "#/components/responses/Unauthorized" },
           "403": { $ref: "#/components/responses/PlanRequired" },
@@ -690,6 +708,7 @@ const spec = {
               },
             },
           },
+          "304": { $ref: "#/components/responses/NotModified" },
           "400": { $ref: "#/components/responses/BadRequest" },
           "401": { $ref: "#/components/responses/Unauthorized" },
           "403": { $ref: "#/components/responses/PlanRequired" },
@@ -752,6 +771,7 @@ const spec = {
               },
             },
           },
+          "304": { $ref: "#/components/responses/NotModified" },
           "400": { $ref: "#/components/responses/BadRequest" },
           "401": { $ref: "#/components/responses/Unauthorized" },
           "403": { $ref: "#/components/responses/PlanRequired" },
@@ -819,6 +839,7 @@ const spec = {
               },
             },
           },
+          "304": { $ref: "#/components/responses/NotModified" },
           "400": { $ref: "#/components/responses/BadRequest" },
           "401": { $ref: "#/components/responses/Unauthorized" },
           "403": { $ref: "#/components/responses/PlanRequired" },
@@ -872,6 +893,7 @@ const spec = {
               },
             },
           },
+          "304": { $ref: "#/components/responses/NotModified" },
           "400": { $ref: "#/components/responses/BadRequest" },
           "401": { $ref: "#/components/responses/Unauthorized" },
           "403": { $ref: "#/components/responses/PlanRequired" },
@@ -911,13 +933,17 @@ const spec = {
     },
   ],
   "x-rateLimit": {
-    description:
-      "One monthly allowance per API key, shared across all endpoints. Free keys: 100 requests/month. Pro keys: 10,000 requests/month. Enterprise: unlimited, so X-RateLimit-Limit and X-RateLimit-Remaining are omitted.",
+    description: `One monthly allowance per API key, shared across all endpoints. Free keys: 100 requests/month. Pro keys: 10,000 requests/month. Enterprise: unlimited, so X-RateLimit-Limit and X-RateLimit-Remaining are omitted. Each plan can also make at most ${BURST_CALLS_PER_MINUTE} calls a minute (Enterprise exempt); past that, calls return 429 burst_limited with a Retry-After header in seconds, and a refused call does not use monthly allowance.`,
     headers: {
-      "X-RateLimit-Limit": "Maximum requests allowed in the current window",
-      "X-RateLimit-Remaining": "Requests remaining in the current window",
+      "X-RateLimit-Limit": "Maximum requests allowed in the current monthly window",
+      "X-RateLimit-Remaining": "Requests remaining in the current monthly window",
       "X-RateLimit-Reset": "ISO 8601 UTC time when the monthly window resets",
+      "Retry-After": "On 429 burst_limited: seconds until the next minute. On 503 rate_limit_unavailable: seconds to wait before retrying.",
     },
+  },
+  "x-caching": {
+    description:
+      "Successful JSON and CSV responses carry Cache-Control: private, max-age=300 and a weak ETag. Send the ETag back in If-None-Match to get 304 Not Modified with no body when the data has not changed. A 304 still counts against the per-minute and monthly allowances. Errors carry Cache-Control: no-store.",
   },
 };
 

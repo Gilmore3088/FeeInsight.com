@@ -3,52 +3,32 @@ import { NextRequest, NextResponse } from "next/server";
 import { getNationalIndex, getPeerIndex } from "@/lib/data-store";
 import { FEE_FAMILIES, getDisplayName, getFeeFamily, getFeeTier, getSpotlightCategories } from "@/lib/fee-taxonomy";
 import { getPublicFeeTypes } from "@/lib/public-stats";
-import { validateApiKey } from "@/lib/api-auth";
-import { checkRateLimitWithTier } from "@/lib/api-rate-limit";
 import { logApiUsage } from "@/lib/api-usage";
-import { getCurrentUser } from "@/lib/auth";
-import { canAccessPremium, canExportData } from "@/lib/access";
+import { canExportData } from "@/lib/access";
 import { API_ATTRIBUTION } from "@/lib/constants";
+import { authorizeV1 } from "@/lib/api-v1-auth";
 import {
-  API_V1_RATE_LIMIT_ROUTE,
   ApiParamError,
   apiError,
-  apiKeyRequiredError,
   apiOptions,
   assetTierParam,
   charterParam,
   districtParam,
   formatParam,
-  getAnonymousId,
   isPaidApiKey,
   planRequiredError,
-  rateLimitError,
   stateParam,
   toCsv,
+  withApiCaching,
   withApiHeaders,
 } from "@/lib/api-v1";
 
 const TAXONOMY_TYPES = new Set(Object.values(FEE_FAMILIES).flat());
 
 async function handleGET(request: NextRequest) {
-  // API auth + rate limiting
-  const auth = await validateApiKey(request);
-  if (auth.error) {
-    return apiError(401, "invalid_api_key", auth.error);
-  }
-  // The API is for partners we have issued a key to; the site's own signed-in
-  // download buttons still work without one.
-  const user = auth.valid ? null : await getCurrentUser();
-  if (!auth.valid && !user) return apiKeyRequiredError();
-  const anonId = auth.organizationId ? null : getAnonymousId(request);
-  const tier = auth.valid ? auth.tier : "free";
-  const rateLimit = await checkRateLimitWithTier(
-    auth.organizationId,
-    anonId,
-    tier,
-    API_V1_RATE_LIMIT_ROUTE,
-  );
-  if (!rateLimit.allowed) return rateLimitError(rateLimit);
+  const caller = await authorizeV1(request);
+  if (caller instanceof Response) return caller;
+  const { auth, user, anonymousId: anonId, rateLimit, paid } = caller;
 
   const { searchParams } = request.nextUrl;
   let state: string | null;
@@ -64,6 +44,7 @@ async function handleGET(request: NextRequest) {
     format = formatParam(searchParams);
   } catch (error) {
     if (error instanceof ApiParamError) {
+      logApiUsage(auth.organizationId, anonId, "api.v1.index", { status: 400 }).catch(() => {});
       return apiError(400, "invalid_parameter", error.message, { rateLimit });
     }
     throw error;
@@ -87,7 +68,6 @@ async function handleGET(request: NextRequest) {
     : await getNationalIndex();
 
   // The free tier gets the spotlight categories only, matching /fees.
-  const paid = paidKey || canAccessPremium(user);
   const spotlight = new Set(getSpotlightCategories());
 
   // The listing holds at most the top 50 fee types by institution count on the shared public
@@ -125,8 +105,8 @@ async function handleGET(request: NextRequest) {
       ]),
     );
 
-    logApiUsage(auth.organizationId, anonId, "api.v1.index.csv").catch(() => {});
-    return withApiHeaders(
+    logApiUsage(auth.organizationId, anonId, "api.v1.index.csv", { count: data.length, status: 200 }).catch(() => {});
+    return withApiCaching(request, withApiHeaders(
       new NextResponse(csv, {
         headers: {
           "Content-Type": "text/csv",
@@ -134,11 +114,11 @@ async function handleGET(request: NextRequest) {
         },
       }),
       rateLimit,
-    );
+    ));
   }
 
-  logApiUsage(auth.organizationId, anonId, "api.v1.index").catch(() => {});
-  return withApiHeaders(
+  logApiUsage(auth.organizationId, anonId, "api.v1.index", { count: data.length, status: 200 }).catch(() => {});
+  return withApiCaching(request, withApiHeaders(
     NextResponse.json({
       scope: hasFilters ? "filtered" : "national",
       filters: {
@@ -152,7 +132,7 @@ async function handleGET(request: NextRequest) {
       attribution: API_ATTRIBUTION,
     }),
     rateLimit,
-  );
+  ));
 }
 
 export const GET = withApiRoutePolicy("api.v1.index", "GET", handleGET);
