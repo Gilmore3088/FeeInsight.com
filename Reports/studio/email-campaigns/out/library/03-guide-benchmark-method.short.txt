@@ -14,6 +14,5 @@ Read the full methodology (https://feeinsight.com/methodology).
 James Gilmore, Fee Insight
 
 --
-Fee Insight LLC, 522 W Riverside Ave, Ste N, Spokane, WA 99201
 You're getting this because you signed up at feeinsight.com.
 Unsubscribe: {$unsubscribe}
