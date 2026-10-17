@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { PeerSetPicker } from "@/components/public/peer-set-picker";
 import { formatFeeAmount } from "@/lib/format";
 import { MIN_PEERS_FOR_PEER_SET_MEDIAN } from "@/lib/data-store/peer-fee-rank";
+import { ASSET_TIER_RANGES } from "@/lib/hamilton/peer-index";
 import type { PeerSetIndex } from "@/lib/data-store/public-peer-sets";
 
 /** One fee in the exhibit: the chosen group's median beside the whole state's. */
@@ -12,6 +13,16 @@ export interface PeerSetRow {
   median: number | null;
   institutions: number;
   stateMedian: number | null;
+  /** Institutions in the whole state's median. */
+  stateInstitutions: number;
+}
+
+/** One fee the state page shows, with the whole state's median and how many institutions it counts. */
+export interface StateFee {
+  key: string;
+  name: string;
+  median: number | null;
+  institutions: number;
 }
 
 export interface StatePeerSetView {
@@ -24,21 +35,28 @@ export interface StatePeerSetView {
 
 const ROWS_SHOWN = 5;
 
+/** An asset band's chip, from the one range table: "Under $300M", "$300M to $1B". */
+const sizeChip = (tier: string) => {
+  const range = ASSET_TIER_RANGES[tier] ?? tier;
+  return { group: "Size", label: `${range.charAt(0).toUpperCase()}${range.slice(1)}` };
+};
+
 /** Short chip text under a sub-label; the full plain-words label stays in the caption. */
 const CHIPS: Record<string, { group: string; label: string }> = {
-  community_small: { group: "Size", label: "Under $300M" },
-  community_mid: { group: "Size", label: "$300M to $1B" },
-  community_large: { group: "Size", label: "$1B to $10B" },
-  regional: { group: "Size", label: "$10B to $50B" },
+  community_small: sizeChip("community_small"),
+  community_mid: sizeChip("community_mid"),
+  community_large: sizeChip("community_large"),
+  regional: sizeChip("regional"),
   occ: { group: "Bank regulator", label: "OCC" },
   fdic: { group: "Bank regulator", label: "FDIC" },
   fed: { group: "Bank regulator", label: "Federal Reserve" },
-  federal_cu: { group: "Credit union charter", label: "Federal" },
-  state_cu: { group: "Credit union charter", label: "State" },
+  federal_cu: { group: "Credit union charter", label: "Federal charter" },
+  state_cu: { group: "Credit union charter", label: "State charter" },
 };
 const money = (n: number) => formatFeeAmount(n) ?? `$${n.toFixed(2)}`;
+const count = (n: number) => n.toLocaleString("en-US");
 
-function rowsFor(set: PeerSetIndex, fees: { key: string; name: string; median: number | null }[]): PeerSetRow[] {
+function rowsFor(set: PeerSetIndex, fees: StateFee[]): PeerSetRow[] {
   const byKey = new Map(set.entries.map((e) => [e.fee_category, e]));
   return fees.map((fee) => {
     const entry = byKey.get(fee.key);
@@ -49,6 +67,7 @@ function rowsFor(set: PeerSetIndex, fees: { key: string; name: string; median: n
       median: institutions >= MIN_PEERS_FOR_PEER_SET_MEDIAN ? entry?.median_amount ?? null : null,
       institutions,
       stateMedian: fee.median,
+      stateInstitutions: fee.institutions,
     };
   });
 }
@@ -65,7 +84,7 @@ export function peerSetStateFinding(label: string, stateName: string, rows: Peer
     return `${label} have about the same median as all ${stateName} banks and credit unions together on ${compared.length === 1 ? "the one fee" : `all ${compared.length} fees`} compared.`;
   }
   const fee = top.r.name.replace(/\s*\([^)]*\)/g, "").toLowerCase();
-  return `${label} have a ${top.gap < 0 ? "lower" : "higher"} ${fee} median than all ${stateName} banks and credit unions together: ${money(top.r.median)} against ${money(top.r.stateMedian)}.`;
+  return `${label} have a ${top.gap < 0 ? "lower" : "higher"} ${fee} median than all ${stateName} banks and credit unions together (${money(top.r.median)} across ${count(top.r.institutions)} against ${money(top.r.stateMedian)} across ${count(top.r.stateInstitutions)}).`;
 }
 
 /**
@@ -74,7 +93,7 @@ export function peerSetStateFinding(label: string, stateName: string, rows: Peer
  */
 export function statePeerSetView(
   sets: PeerSetIndex[],
-  fees: { key: string; name: string; median: number | null }[],
+  fees: StateFee[],
   stateName: string,
   requested: string | null | undefined,
 ): StatePeerSetView | null {
@@ -104,10 +123,17 @@ function Row({ row, stateName }: { row: PeerSetRow; stateName: string }) {
         )}
       </Cell>
       <Cell label="Institutions">
-        <span className="text-[14px] text-ink-soft">{row.institutions.toLocaleString("en-US")}</span>
+        <span className="text-[14px] text-ink-soft">{count(row.institutions)}</span>
       </Cell>
       <Cell label={`All ${stateName}`}>
-        <span className="text-[14px] text-ink-soft">{row.stateMedian !== null ? money(row.stateMedian) : "-"}</span>
+        {row.stateMedian !== null ? (
+          <>
+            <span className="text-[14px] text-ink-soft">{money(row.stateMedian)}</span>
+            <span className="block font-sans text-[12px] text-ink-muted">of {count(row.stateInstitutions)}</span>
+          </>
+        ) : (
+          <span className="text-[13px] text-ink-muted">Too few to compare</span>
+        )}
       </Cell>
     </li>
   );
@@ -123,7 +149,15 @@ function Cell({ label, children }: { label: string; children: ReactNode }) {
 }
 
 /** The exhibit: a picker of peer groups, then each fee's group median and count against the whole state. */
-export function StatePeerSets({ view, stateName, hrefFor }: { view: StatePeerSetView; stateName: string; hrefFor: (key: string) => string }) {
+export function StatePeerSets({
+  view,
+  stateName,
+  hrefFor,
+}: {
+  view: StatePeerSetView;
+  stateName: string;
+  hrefFor: (key: string) => string;
+}) {
   const head = (
     <div className="hidden grid-cols-[minmax(0,1.6fr)_repeat(3,minmax(0,1fr))] gap-x-4 pb-2 text-[12px] font-medium text-ink-muted sm:grid" aria-hidden="true">
       <span>Fee</span>
@@ -139,6 +173,7 @@ export function StatePeerSets({ view, stateName, hrefFor }: { view: StatePeerSet
       <PeerSetPicker
         label="Peer group"
         current={view.key}
+        surface="paper"
         options={view.options.map((option) => ({
           key: option.key,
           label: CHIPS[option.key]?.label ?? option.label,
@@ -169,6 +204,14 @@ export function StatePeerSets({ view, stateName, hrefFor }: { view: StatePeerSet
           </details>
         )}
       </figure>
+      <details className="text-[12px] text-ink-muted">
+        <summary className="inline-flex min-h-11 cursor-pointer items-center font-medium text-ink">How groups are counted</summary>
+        <ul className="mt-1 list-disc space-y-1 pl-5 text-left">
+          <li>Each institution counts once: its highest overdraft fee, the middle of its schedule for other fees.</li>
+          <li>Size bands come from FDIC and NCUA total assets, bank regulator from the FDIC registry and credit union charter from NCUA.</li>
+          <li>The {stateName} median counts every institution headquartered in the state that publishes the fee.</li>
+        </ul>
+      </details>
     </div>
   );
 }

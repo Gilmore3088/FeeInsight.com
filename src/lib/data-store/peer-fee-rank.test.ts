@@ -110,7 +110,7 @@ describe("peer sets on the institution page", () => {
   // Institution 1 and twelve banks in TX; nine publish overdraft, five monthly maintenance.
   const all: PeerRankValue[] = [
     [1, "overdraft", 30, "bank", "TX", 11, "community_mid"],
-    [1, "monthly_maintenance", 10, "bank", "TX", 11, "community_mid"],
+    [1, "monthly_maintenance", 10, "bank", "TX", 11, "community_mid", 3],
     ...[20, 22, 25, 28, 30, 32, 35, 35, 38].map((amount, i): PeerRankValue => [100 + i, "overdraft", amount, "bank", "TX", 11, "community_mid"]),
     ...[5, 6, 8, 10, 12].map((amount, i): PeerRankValue => [200 + i, "monthly_maintenance", amount, "bank", "TX", 11, "community_large"]),
   ];
@@ -118,12 +118,12 @@ describe("peer sets on the institution page", () => {
   const size = { key: "size", label: "Banks with $300M to $1B in assets", filters: { charter_type: "bank", asset_tiers: ["community_mid"] } };
   const metro = { key: "metro", label: "Banks with branches in the Austin metro", filters: { institutionIds: [100, 101, 102] } };
 
-  it("shows a median and peer count only at eight peers or more", () => {
+  it("shows a median and peer count only at eight peers or more, with how many prices its own value is built from", () => {
     const result = comparePeerSet(1, state, all);
     expect(MIN_PEERS_FOR_PEER_SET_MEDIAN).toBe(8);
     expect(result.lines).toEqual([
-      { key: "overdraft", own: 30, median: 30, peers: 9, lower: 4, same: 1, higher: 4 },
-      { key: "monthly_maintenance", own: 10, median: null, peers: 5, lower: 0, same: 0, higher: 0 },
+      { key: "overdraft", own: 30, ownPrices: 1, median: 30, peers: 9, lower: 4, same: 1, higher: 4 },
+      { key: "monthly_maintenance", own: 10, ownPrices: 3, median: null, peers: 5, lower: 0, same: 0, higher: 0 },
     ]);
   });
 

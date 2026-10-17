@@ -87,7 +87,9 @@ export async function getPeerGroupValues(filters: PeerFilterSet): Promise<PeerGr
 
 /**
  * One institution's ranked-fee value with what places it in a peer group:
- * [institution id, fee key, amount, charter, state, Fed district, asset-size tier].
+ * [institution id, fee key, amount, charter, state, Fed district, asset-size tier, distinct prices].
+ * The amount is the statistics contract's one value; with more than one price (monthly
+ * maintenance) it is the middle of them, so a page never presents it as the fee.
  */
 export type PeerRankValue = [
   institutionId: number,
@@ -97,6 +99,8 @@ export type PeerRankValue = [
   stateCode: string | null,
   fedDistrict: number | null,
   assetTier: string | null,
+  /** How many distinct prices the amount is built from; absent reads as one. */
+  prices?: number,
 ];
 
 /**
@@ -125,6 +129,7 @@ export async function getAllPeerRankValues(): Promise<PeerRankValue[]> {
         place?.state_code ?? null,
         place?.fed_district === null || place?.fed_district === undefined ? null : Number(place.fed_district),
         place?.asset_size_tier ?? null,
+        Math.max(1, new Set((value.fee_records ?? []).map((record) => record.amount)).size),
       ]);
     }
   }
@@ -199,6 +204,8 @@ export interface PeerSetLine {
   key: PeerRankLine["key"];
   /** The institution's own value; null when its schedule has none. */
   own: number | null;
+  /** How many distinct prices `own` is built from; above one, `own` is their middle. */
+  ownPrices: number;
   /** Null below MIN_PEERS_FOR_PEER_SET_MEDIAN peers. */
   median: number | null;
   /** Other institutions in the set that publish the fee. */
@@ -220,10 +227,11 @@ export function comparePeerSet(institutionId: number, choice: PeerSetChoice, all
   const lines = PEER_RANK_FEE_KEYS.map((key): PeerSetLine => {
     const forKey = values.filter((value) => value[1] === key);
     const own = forKey.find((value) => value[0] === institutionId)?.[2] ?? null;
+    const ownPrices = own === null ? 0 : (all.find((value) => value[0] === institutionId && value[1] === key)?.[7] ?? 1);
     const others = forKey.filter((value) => value[0] !== institutionId).map((value) => value[2]);
     const enough = others.length >= MIN_PEERS_FOR_PEER_SET_MEDIAN;
     const rank = own !== null && enough ? rankAgainstPeers(own, others) : { lower: 0, same: 0, higher: 0 };
-    return { key, own, median: enough ? computeStats(others).median : null, peers: others.length, lower: rank.lower, same: rank.same, higher: rank.higher };
+    return { key, own, ownPrices, median: enough ? computeStats(others).median : null, peers: others.length, lower: rank.lower, same: rank.same, higher: rank.higher };
   });
   return { key: choice.key, label: choice.label, lines };
 }

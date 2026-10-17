@@ -203,7 +203,7 @@ export default async function StateReportPage({ params, searchParams }: PageProp
   // Peer groups within the state, on the same fees the board shows, against the state's own medians.
   const peerView = statePeerSetView(
     peerSets,
-    shown.map((f) => ({ key: f.key, name: f.name, median: f.median })),
+    shown.map((f) => ({ key: f.key, name: f.name, median: f.median, institutions: f.institutions })),
     stateName,
     requestedPeers,
   );
@@ -351,10 +351,8 @@ export default async function StateReportPage({ params, searchParams }: PageProp
             line={peerView.finding}
             source={
               <>
-                Institutions headquartered in {stateName} that publish verified fees, {PRODUCT_NAME}. Size bands from FDIC and NCUA total
-                assets; bank regulator from the FDIC registry; credit union charter from NCUA. Each institution counts once: its highest
-                overdraft fee, the middle of its schedule for other fees. A group median needs at least {MIN_PEERS_FOR_PEER_SET_MEDIAN}{" "}
-                institutions. The {stateName} median counts every institution headquartered in the state.
+                Institutions headquartered in {stateName} with verified fees, {PRODUCT_NAME}; size, regulator and charter from FDIC and NCUA
+                records. A group median needs at least {MIN_PEERS_FOR_PEER_SET_MEDIAN} institutions.
               </>
             }
           >

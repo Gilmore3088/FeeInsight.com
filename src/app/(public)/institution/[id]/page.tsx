@@ -116,6 +116,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     // Thin profiles (fewer verified fees than the page's own thin threshold) stay reachable
     // but out of the index.
     robots: verifiedFees.length < MIN_VERIFIED_FEES_FOR_OFFER ? { index: false, follow: true } : undefined,
+    // The ?peers= and ?fee= views are the same page; only the bare address indexes.
+    alternates: { canonical: `/institution/${instId}` },
     title: buildProfileTitle(inst.institution_name, headline),
     description: `Published fees for ${inst.institution_name}${place ? ` (${place})` : ""}, from its own fee schedule, with national benchmarks from ${SITE_NAME}.`,
     keywords: [

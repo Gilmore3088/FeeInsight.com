@@ -171,7 +171,7 @@ const getHeadlineCoverageRowsCached = cachedPublicRead("headline-coverage-rows",
  * coverage rows, it is read beside the other cache, never inside it.
  */
 // v2: each value carries its asset-size tier, so a size peer set filters the same list.
-const getAllPeerRankValuesCached = cachedPublicRead("peer-rank-values-v2", getAllPeerRankValues);
+const getAllPeerRankValuesCached = cachedPublicRead("peer-rank-values-v3", getAllPeerRankValues);
 export async function getInstitutionPeerRankCached(institutionId: number): Promise<InstitutionPeerRank | null> {
   const rule = reportRuleCheckFromRows(institutionId, await getHeadlineCoverageRowsCached());
   const filters = peerFiltersForRule(rule);
