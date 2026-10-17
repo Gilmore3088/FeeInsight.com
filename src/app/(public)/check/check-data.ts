@@ -3,14 +3,13 @@ import type { IndexEntry } from "@/lib/data-store/fee-index";
 import type { CityFeeKey, CityMarket } from "@/lib/data-store/city-market";
 import { HIGHEST_TIER_CATEGORIES } from "@/lib/data-store/fee-stats";
 import { HEADLINE_FEE_KEYS } from "@/lib/data-store/market-readiness";
-import { countsAsPersonal } from "@/lib/fee-audience";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import type { Guide } from "@/lib/guides/types";
 import { productNameFromFeeName } from "@/lib/agents/knox/lineup";
-import { isBusinessOnlyLink } from "@/lib/agents/magellan/link-coverage";
 import { accountPricesText, comparedAtText, priceRangeText, type AccountPrice } from "@/lib/fee-representative";
 import { STATE_NAMES } from "@/lib/us-states";
-import { pickHeadlineValues } from "../institution/[id]/profile-data";
+import { marketEligibilityOf, pickHeadlineValues } from "../institution/[id]/profile-data";
+import { countsInMarketComparison } from "@/lib/market-eligibility";
 
 /** The first headline rows, in the institution page's order; the full schedule is one click away. */
 export const CHECK_ROWS_SHOWN = 5;
@@ -94,16 +93,12 @@ export function marketBand(entry: IndexEntry | undefined): CheckBand | null {
   };
 }
 
-/** The personal rows the statistics count for one fee, filtered as pickHeadlineValues does. */
+/**
+ * The rows the medians count for one fee: the shared market-eligibility test pickHeadlineValues
+ * uses (sourced, personal, not business-only, not a fee filed under a category it doesn't match).
+ */
 function personalRows(fees: ExtractedFee[], category: string): ExtractedFee[] {
-  return fees.filter(
-    (fee) =>
-      fee.fee_category === category &&
-      fee.amount !== null &&
-      fee.amount >= 0 &&
-      countsAsPersonal(fee.fee_audience) &&
-      !(fee.source_url && isBusinessOnlyLink(fee.source_url)),
-  );
+  return fees.filter((fee) => fee.fee_category === category && countsInMarketComparison(marketEligibilityOf(fee)));
 }
 
 /** Every named account price, lowest first; accountPricesText groups them by account. */

@@ -33,6 +33,7 @@ const fee = (overrides: Partial<ExtractedFee>): ExtractedFee =>
     review_status: "approved",
     validation_flags: null,
     source_url: "https://bank.example/fees.pdf",
+    source_document_id: 1,
     ...overrides,
   }) as ExtractedFee;
 
