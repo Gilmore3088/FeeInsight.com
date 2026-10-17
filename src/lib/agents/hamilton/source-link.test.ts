@@ -4,8 +4,14 @@ vi.mock("@/lib/data-store/fee-cache", () => ({ invalidatePublicReadCache: vi.fn(
 
 import { publishSkipReason, type VerifiedFeeRow } from "./publish";
 import {
+  DRIFTED_LINK_FEES_SQL,
   fillSourceLinks,
   findResourceDocument,
+  linkOpensOwnDocument,
+  planLinkDrift,
+  repairLinkDrift,
+  SOURCE_LINK_DRIFT_LIVE,
+  type DriftedLinkRow,
   NO_SOURCE_DOCUMENT_REASON,
   NO_SOURCE_LINK_REASON,
   planSourceLinkRepair,
@@ -316,5 +322,112 @@ describe("source link re-source (#1342)", () => {
     const failed = await resourceSourceLinks(failing.db, { runId: 7, batchId: "agentic-run-7", dryRun: false });
     expect([failed.linked, failed.restored]).toEqual([0, 0]);
     expect(failed.error).toMatch(/source link re-source write failed: permission denied/);
+  });
+});
+
+describe("link drift: a live link that opens another page than the fee's own document (#1347)", () => {
+  // Live on prod (read-only, Oct 17): imported fees whose raw row was moved to another document
+  // kept the old document's link.
+  const drifted = (id: number, overrides: Partial<DriftedLinkRow> = {}): DriftedLinkRow => ({
+    fee_published_id: id,
+    lineage_ref: id + 100,
+    fee_verified_id: id + 100,
+    fee_raw_id: id + 200,
+    institution_id: 8485,
+    source: "migration_v10",
+    source_document_id: 15882,
+    canonical_fee_key: "check_image",
+    fee_name: "Receipt Copy Fee",
+    amount: "2.00",
+    link: "https://firstcu.net/about/disclosures-and-agreements/",
+    fp_url: "https://firstcu.net/about/disclosures-and-agreements/",
+    fv_url: "https://firstcu.net/about/disclosures-and-agreements/",
+    raw_url: "https://firstcu.net/about/disclosures-and-agreements/",
+    document_institution_id: 8485,
+    target_url: "https://firstcu.net/wp-content/uploads/2025/01/Service-Charges-FirstCU-1.2.2025.pdf",
+    ...overrides,
+  });
+  const text = {
+    source_document_id: 15882,
+    normalized_text: "Receipt Copy............................... $2.00/Item\nStop Payment .............................................. $20.00/Occurrence",
+  };
+  const driftRows = [
+    drifted(150),
+    // Not in its own document's text at that price: a second look, never a re-point.
+    drifted(151, { fee_name: "Stop Payment", canonical_fee_key: "stop_payment", amount: "35.00" }),
+    drifted(152, { document_institution_id: 44 }),
+  ];
+
+  it("keeps a link to the page the document's text was read from, and to the same page written another way", () => {
+    // A schedule PDF the stored landing page links to is the fee's real source.
+    expect(linkOpensOwnDocument(
+      "https://www.pncu.com/wp-content/uploads/2025/08/Fee-Schedule-7.2025.pdf",
+      "https://www.pncu.com/fee-schedule/",
+      "https://www.pncu.com/wp-content/uploads/2025/08/Fee-Schedule-7.2025.pdf",
+    )).toBe(true);
+    expect(linkOpensOwnDocument("https://www.foxvalleycu.com/pdf/fee-schedule.pdf", "https://www.foxvalleycu.com:443/pdf/fee-schedule.pdf", null)).toBe(true);
+    expect(linkOpensOwnDocument(
+      "https://www.pinnaclebank.com/wp-content/uploads/2026/01/Schedule-of-Fees-2026-1-1.pdf",
+      "https://vallant.bank/wp-content/uploads/2026/01/Schedule-of-Fees-2026-1-1.pdf",
+      "https://vallant.bank/wp-content/uploads/2026/01/Schedule-of-Fees-2026-1-1.pdf",
+    )).toBe(false);
+  });
+
+  it("re-points a fee that traces in its own document, sends one that does not to the second look, skips another bank's document", () => {
+    const plan = planLinkDrift(driftRows, [text]);
+    expect(plan.repoints.map((fee) => [fee.feePublishedId, fee.to, fee.traced])).toEqual([
+      [150, "https://firstcu.net/wp-content/uploads/2025/01/Service-Charges-FirstCU-1.2.2025.pdf", true],
+    ]);
+    expect(plan.failing.map((fee) => fee.feePublishedId)).toEqual([151]);
+    expect(plan.failing[0].reason).toMatch(/^source_link_drift: not in own document #15882 \(/);
+    expect(plan.skipped).toEqual([{ feePublishedId: 152, why: "document_of_another_institution" }]);
+    expect(DRIFTED_LINK_FEES_SQL).toContain("AS target_url");
+    expect(DRIFTED_LINK_FEES_SQL).toContain("LEFT JOIN agent_source_texts ast ON ast.source_document_id = sd.id");
+  });
+
+  const driftDb = (pending: Array<{ fee_published_id: number; kind: string; evidence: Record<string, unknown> }> = []) => {
+    const calls: string[] = [];
+    const tag = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const sqlText = strings.join("?");
+      calls.push(sqlText);
+      if (sqlText.includes("to_regclass")) return Promise.resolve([{ ready: true }]);
+      if (sqlText.includes("FROM pipeline_feedback")) return Promise.resolve(pending);
+      if (sqlText.includes("UPDATE published_fee_records")) {
+        return Promise.resolve((values.find(Array.isArray) as number[]).map((id) => ({ fee_published_id: id })));
+      }
+      return Promise.resolve([]);
+    });
+    const unsafe = vi.fn((sqlText: string) => {
+      calls.push(sqlText);
+      return Promise.resolve(sqlText.includes("AS target_url") ? driftRows : [text]);
+    });
+    Object.assign(tag, { unsafe });
+    return { db: tag as unknown as Parameters<typeof repairLinkDrift>[0], calls };
+  };
+
+  it("is live; a dry run writes nothing; a live run re-points every tier and archives only on the second look", async () => {
+    expect(SOURCE_LINK_DRIFT_LIVE).toBe(true);
+    const dry = driftDb();
+    const preview = await repairLinkDrift(dry.db, { runId: 7, batchId: "agentic-run-7", dryRun: true });
+    expect([preview.scanned, preview.repoints.length, preview.flagged, preview.archived.length]).toEqual([3, 1, 1, 0]);
+    expect(dry.calls.filter((sqlText) => /UPDATE|INSERT/.test(sqlText))).toEqual([]);
+
+    const first = driftDb();
+    const firstLook = await repairLinkDrift(first.db, { runId: 7, batchId: "agentic-run-7", dryRun: false });
+    expect([firstLook.repoints.length, firstLook.flagged, firstLook.archived.length, firstLook.error]).toEqual([1, 1, 0, null]);
+    const written = first.calls.join("\n");
+    expect(written).toContain("UPDATE verified_fee_observations fv");
+    expect(written).toContain("UPDATE raw_fee_observations fr");
+    expect(written).not.toContain("rolled_back_reason = v.reason");
+    expect(written).toContain("'hamilton.source_link_drift'");
+
+    // Flagged 13 hours earlier by another run: archived, never deleted.
+    const flaggedAt = new Date(Date.now() - 13 * 60 * 60_000).toISOString();
+    const second = driftDb([{ fee_published_id: 151, kind: "takedown_pending", evidence: { flag_run_id: 6, flagged_at: flaggedAt, reason: "x" } }]);
+    const secondLook = await repairLinkDrift(second.db, { runId: 7, batchId: "agentic-run-7", dryRun: false });
+    expect(secondLook.archived.map((fee) => fee.feePublishedId)).toEqual([151]);
+    const archivedSql = second.calls.join("\n");
+    expect(archivedSql).toContain("rolled_back_reason = v.reason");
+    expect(archivedSql).not.toMatch(/DELETE FROM/);
   });
 });

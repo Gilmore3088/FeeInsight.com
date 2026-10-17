@@ -519,7 +519,10 @@ the detail.
 32. Imported twins (`linkImportedFeesToTwins`, `source-check.ts`): an imported live fee with no
     document is pointed at its twin row that has one, up to 100 a step. No rollback. Then the
     source link fill (`fillSourceLinks`, #1342): a live fee with no link takes its own document's
-    URL; never a takedown (see Source Link Repair).
+    URL; never a takedown (see Source Link Repair). Then the link drift pass (`repairLinkDrift`,
+    #1347): a live fee whose link opens neither its document's URL nor the page its text was read
+    from takes its document's link when it traces there, or goes through the second look (see
+    Source Link Repair).
 33. Feedback sync (`syncPipelineFeedback`, `learning/feedback-sync.ts`): this step's takedowns
     and restores go into the shared learning store.
 34. Index refresh (`refreshFeeIndexCache`): not on a dry run; forced when the step published,
@@ -906,6 +909,27 @@ document stays live for the re-source pass or the hand-started repair. Each fill
 write changes nothing, is kept in `source_link_fill.error`, and publishing carries on. Reverse a
 fill as above; roll the pass back by setting `SOURCE_LINK_FILL_ON` to false.
 
+**Link drift (`repairLinkDrift`, `SOURCE_LINK_DRIFT_LIVE`, #1347).** A fee's link is the page its
+document's stored text was read from: the text's address (`agent_source_texts.source_url`, a
+schedule PDF the stored landing page links to, or a redirect's target) when the text is completed,
+else the document's URL (`documentLinkSql`, `hamilton/document-link.ts`). Knox copies the text's
+address, which is right. On Oct 17 (read-only), of 2,089 live dollar fees whose link was written
+differently from their document's URL, 587 were the same page (":443", "%20"), 1,453 were the page
+the text was read from, and 49 at 12 institutions (all imported rows) had drifted: a step moved the
+raw row to another document and kept the old link. Prevent: the identical-copy move
+(`refresh-copy.ts`) and the source check's relink now re-link the moved rows at every tier in the
+same write (`pointFeeLinksAtDocument`). Repair, after the fill in every publish step: a live fee
+whose link opens neither page (`documentLinkKey`) is traced in its own document's newest completed
+text (`traceLiveFee`, the shared `checkFeeAgainstSource`); traced, its published, verified and raw
+links become the document's (one `pipeline_feedback` row, check `hamilton.source_link_drift`,
+evidence `action` `repointed` with each tier's earlier link); not traced, it goes through the shared
+12-hour second look and is archived on its second failure (`rolled_back_reason =
+'source_link_drift: not in own document #<id> (<reason>)'`, verified row rejected with flag
+`source_link_drift`), never deleted. A fee whose document is another institution's is left to the
+other-bank check. Each run writes a `hamilton.source_link_drift` event; the step detail carries
+`source_link_drift`. Dry run on Oct 17: 49 re-pointed, 0 to the second look. Reverse a re-point from
+its evidence; roll the pass back by setting `SOURCE_LINK_DRIFT_LIVE` to false (it then only reports).
+
 ## Source Check
 
 Every live fee must be stated in the bank's own stored schedule. After publishing, every
@@ -1003,6 +1027,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `RULES_RECHECK_STRATEGY` | `hamilton.rules_recheck` | v4 | `hamilton/rules-recheck.ts` |
 | `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v17 | `hamilton/source-check.ts` |
 | `SOURCE_LINK_VERSION` | `hamilton.source_link` | v2 | `hamilton/source-link.ts` |
+| `SOURCE_LINK_DRIFT_VERSION` | `hamilton.source_link_drift` | v1 | `hamilton/source-link.ts` |
 | `FEE_DEPENDENCE_VERSION` | — | v1 | `hamilton/studies/fee-dependence.ts` |
 | `PRICE_STUDY_VERSION` | — | v1 | `hamilton/studies/index.ts` |
 | `INFERRED_VOLUME_VERSION` | — | v2 | `hamilton/studies/inferred-volume.ts` |
