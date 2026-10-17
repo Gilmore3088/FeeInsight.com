@@ -1611,4 +1611,43 @@ describe("guard v69 (Oct 17)", () => {
     expect(checkFeeCategory("wire_domestic_outgoing", "Outgoing (U.S. or International) | Domestic incoming wire").ok).toBe(false);
     expect(checkFeeCategory("wire_intl_outgoing", "International outgoing wire in U.S. dollars")).toEqual({ ok: true });
   });
+
+  it("refuses ATM-named lines that price something other than ATM use (#1736's report, #1753)", () => {
+    // The 12 live rows that fail with no home on Oct 17, each read on its bank's own line.
+    for (const name of [
+      "ACH-ATM-SD Negative Balance fee",
+      "see ATM fees below additional copies",
+      "ATM Bank CheCks Treasurer’s Check",
+      "Telco ATM | Free | Temporary Checks",
+      "ATM/Debit Card Re-activation resulting from negative balance",
+      "ATM/DEBIT CARD: Replacing Card",
+      "ATM/Debit unblock card",
+      "Cashier’s Checks person withdrawals, ATM withdrawals, Debit Card",
+      "ATM/Debit blocked card (overdrawn, lost, etc.)",
+      "Official Checks: Debit/ATM Card",
+      "ATM withdrawal fee and balance inquiry charges: Cashier’s check",
+      "Branch Banking, a PNC ATM, or Mobile Banking, subject to cut off times",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name).ok, name).toBe(false);
+    }
+    // The 4 that move to their own type.
+    expect(refileCategory("atm_non_network", "Copy of ATM/Debit Card Sales")).toBe("account_research");
+    expect(refileCategory("atm_non_network", "ATM Dispute Fee – Three FREE per year (unless a data base breach)")).toBe("account_research");
+    expect(refileCategory("atm_non_network", "Lost/Stolen ATM/MasterCard®")).toBe("card_replacement");
+    expect(refileCategory("atm_non_network", "Service ATM Card Order (Lost or Stolen)")).toBe("card_replacement");
+    expect(refileCategory("atm_non_network", "ATM/Debit blocked card (overdrawn, lost, etc.)")).toBe("atm_non_network");
+    // An ATM balance inquiry stays: balance_inquiry is retired and folds here. So do Centennial's
+    // inquiry-or-transaction line, denials (left for James) and Regions' own non-network withdrawal.
+    for (const name of [
+      "ATM Balance Inquiry Fee or Transaction Fee at a Non-Centennial Bank or Non-Publix ATM",
+      "ATM Balance Inquiry",
+      "ATM Inquiry Fee",
+      "Account Balances At a Foreign ATM",
+      "ATM Transfer at Non-UNCLE/Non-CO-OP ATM",
+      "ATM denial fee",
+      "Non-Regions ATM: Withdrawal",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name), name).toEqual({ ok: true });
+    }
+  });
 });

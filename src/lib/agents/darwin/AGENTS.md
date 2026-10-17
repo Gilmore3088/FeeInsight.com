@@ -1188,10 +1188,15 @@ Darwin owns verification and classification.
   mentions the IRA, or a certificate's or club's, stays) is the IRA termination fee, each by guard,
   re-file rule and fold split. The non-network ATM fee refuses what non-customers pay at the
   institution's own ATMs (`OUTSIDER_ATM`; none of the 50 types holds it, #1196) and a monthly ATM
-  add-on or plan (`ATM_PLAN`, "Power Checking +ATM Freedom"). Its live re-check is the publish step's
-  fold split and the guard catch-up: the dry run moves 6 live NSF fees and 12 live early closure fees
-  (and 17 verified rows not live), and fails 63 live non-network ATM fees, 58 non-customer surcharges
-  and 5 ATM plans (flagged for the second look, then taken down). Two earlier NSF takedowns (41726, 22674) that trace on their
+  add-on or plan (`ATM_PLAN`, "Power Checking +ATM Freedom"), and ATM-named lines that price something
+  else (`NOT_ATM_USE`: a dispute, a copy of a card sale, a lost, stolen, blocked or replaced card, a
+  negative balance, a cashier's, treasurer's or official check, temporary checks, a cut-off-times
+  sentence). An ATM balance inquiry stays: `balance_inquiry` is retired and folds here. Its live
+  re-check is the publish step's fold split and the guard catch-up: the dry run moves 6 live NSF fees
+  and 12 live early closure fees (and 17 verified rows not live), and fails 79 live non-network ATM
+  fees: 58 non-customer surcharges, 5 ATM plans and 16 `NOT_ATM_USE` lines (flagged for the second
+  look; 4 of those come back re-filed, 2 as account research and 2 as card replacement, and the rest
+  are taken down). 9 verified rows not live fail it too. Two earlier NSF takedowns (41726, 22674) that trace on their
   own stored text come back as returned deposited items.
   v68 (Oct 17):
   a returned foreign, Canadian or international check or item (`FOREIGN_ITEM_RETURN` in

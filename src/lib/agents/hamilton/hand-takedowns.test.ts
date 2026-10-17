@@ -142,9 +142,11 @@ const LIVE: LiveTakedownRow[] = [
   { fee_published_id: 81339, lineage_ref: 75154, institution_id: 7239, canonical_fee_key: "garnishment_levy", fee_name: "Legal Process Service (Garnishment/Levy)", amount: "25.00" },
   { fee_published_id: 143826, lineage_ref: 173602, institution_id: 110, canonical_fee_key: "monthly_maintenance", fee_name: "3To receive Priority Checking benefits and waive the Monthly service charge", amount: "25.00" },
   { fee_published_id: 147464, lineage_ref: 62399, institution_id: 110, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly service charge", amount: "25.00" },
+  { fee_published_id: 101170, lineage_ref: 115326, institution_id: 27, canonical_fee_key: "atm_non_network", fee_name: "Regions ATM: Withdrawal", amount: "5.00" },
+  { fee_published_id: 81957, lineage_ref: 91573, institution_id: 27, canonical_fee_key: "card_foreign_txn", fee_name: "International ATM Transaction", amount: "5.00" },
 ];
 const CONDITIONAL_ZERO = [43512, 54014, 61335, 68893, 70121, 73737, 77121, 77122, 77618, 84553, 87079, 87461, 88213, 91505, 120559];
-const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689, 138828, 138832, 138833, 138839, 138827, 138834, 138841, 148352, 138831, 138830, 138848, 138849, 138850, 138851, 42961, 86536, 66721, 66722, 83125, 97335, 97904, 58414, 106021, 33705, 149143, 149806, 137241, 68335, 79402, 74149, 49817, 125584, 109893, 130622, 147193, 133860, 119352, 143826];
+const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689, 138828, 138832, 138833, 138839, 138827, 138834, 138841, 148352, 138831, 138830, 138848, 138849, 138850, 138851, 42961, 86536, 66721, 66722, 83125, 97335, 97904, 58414, 106021, 33705, 149143, 149806, 137241, 68335, 79402, 74149, 49817, 125584, 109893, 130622, 147193, 133860, 119352, 143826, 101170];
 
 function fakeDb(live: LiveTakedownRow[], failOn?: string) {
   const writes: Array<{ text: string; values: unknown[] }> = [];
@@ -226,6 +228,7 @@ describe("hand takedowns (James, Oct 16)", () => {
       [133860, "duplicate of #148614 (#1746)"],
       [119352, "duplicate of #81339 (#1746)"],
       [143826, "duplicate of #147464 (#1746)"],
+      [101170, "duplicate of #81957 (#1753)"],
     ]);
     // A wrong read names its issue; a second read of one printed fee names the live copy it repeats too.
     expect(HAND_TAKEDOWNS.every((entry) => entry.evidence.length > 0 && (entry.kind === "duplicate"
@@ -304,6 +307,7 @@ describe("hand takedowns (James, Oct 16)", () => {
         { feePublishedId: 133860, feeVerifiedId: 154540, reason: "duplicate of #148614 (#1746)" },
         { feePublishedId: 119352, feeVerifiedId: 25799, reason: "duplicate of #81339 (#1746)" },
         { feePublishedId: 143826, feeVerifiedId: 173602, reason: "duplicate of #147464 (#1746)" },
+        { feePublishedId: 101170, feeVerifiedId: 115326, reason: "duplicate of #81957 (#1753)" },
       ],
       skipped: [],
     });

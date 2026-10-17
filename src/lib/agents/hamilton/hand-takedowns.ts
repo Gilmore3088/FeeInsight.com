@@ -374,6 +374,12 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
     reason: "duplicate of #147464 (#1746)", issue: 1746, kind: "duplicate",
     requiresLive: { feePublishedId: 147464, amount: 25, feeName: "Monthly service charge" },
     evidence: "Bank of Hope: doc 21359 \"3To receive Priority Checking benefits and waive the $25 Monthly Service Charge each month: ...\" is the Priority Checking charge doc 17801 prints as \"Priority Checking ... $25 / Monthly Service Charge\", live as 147464." },
+  // #1753 (read-only, Oct 17; #1736's market report quoted it as Regions' ATM fee): a second read of
+  // Regions' international ATM withdrawal, filed as a non-network ATM fee under the wrong heading.
+  { feePublishedId: 101170, institutionId: 27, canonicalFeeKey: "atm_non_network", amount: 5, feeName: "Regions ATM: Withdrawal",
+    reason: "duplicate of #81957 (#1753)", issue: 1753, kind: "duplicate",
+    requiresLive: { feePublishedId: 81957, amount: 5, feeName: "International ATM Transaction" },
+    evidence: "Regions (doc 23188, text 20258): the $5.00 \"Withdrawal\" sits under \"International ATM:\" (\"International ATM: | ... Withdrawal ... $5.00 (Applies to all withdrawal requests, approved or declined)\"), not under \"Regions ATM:\"; the same $5 international ATM fee is live as card_foreign_txn 81957. Regions' non-network withdrawal is $3 (81982)." },
 ];
 
 export interface LiveTakedownRow {

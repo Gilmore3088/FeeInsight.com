@@ -111,6 +111,15 @@ const OUTSIDER_ATM = String.raw`\bnon[- ]?(?:customers?|clients?|account ?holder
  * optional ATM plan (#1753).
  */
 const ATM_PLAN = String.raw`\bunlimited\s+(?:[\w.]+\s+){0,2}atms?\b|\batms?\s+(?:unlimited|freedom)\b|\badd\s+atm\b|\+\s*atm\b|\batm\s+add[- ]?ons?\b`;
+/**
+ * v69: a line that names an ATM but prices something other than using another network's ATM: a
+ * dispute or a copy of a card sale (account research), a lost, stolen, blocked or replaced card, a
+ * negative balance, a cashier's, treasurer's or official check, temporary checks, or a
+ * cut-off-times sentence (#1736's market report, #1753). A balance inquiry at an ATM stays here:
+ * balance_inquiry is retired and folds into this type (v25). A denied ATM transaction ("ATM
+ * Denials", 12 live rows) is left for James: it may be the network ATM fee for a failed attempt.
+ */
+const NOT_ATM_USE = String.raw`\bdisput\w*|\b(?:photo ?)?cop(?:y|ies)\b|\bnegative\s+balance\b|\btreasurer|\bcashier|\bofficial\s+checks?\b|\btemporary\s+checks?\b|\bcut[- ]?off\s+times?\b|\blost\b|\bstolen\b|\b(?:un)?block(?:ed)?\s+cards?\b|\breplac`;
 
 export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   monthly_maintenance: {
@@ -227,7 +236,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // enrollment and reactivation; an adjustment, or a rebate the bank pays back, is not a fee.
     // v69: what a non-customer pays at the institution's own ATMs (`OUTSIDER_ATM`) is out too.
     // A monthly ATM add-on or plan (`ATM_PLAN`) is not a per-use fee either.
-    exclude: new RegExp(String.raw`${OUTSIDER_ATM}|${ATM_PLAN}|` +
+    exclude: new RegExp(String.raw`${OUTSIDER_ATM}|${ATM_PLAN}|${NOT_ATM_USE}|` +
       /(replace|statement|card fee|annual|\bpin\b|denied|declin|re-?order|initial order|instant issue|enrollment|reactivat|\badjustments?\b|rebates?|^(?!.*(withdraw|w\/d|transaction|surcharg|\bnon\b|non-|foreign|other|network|usage|\bused?\b|inquir|transfer|\bat\b|\bpos\b|purchase))\s*atm\s*cards?\b|between accounts|(savings|share) withdrawal|\breg[- ]?d\b|\blobby\b|^\s*(?:atm|visa|debit|check|mastercard)\s*(?:card)?\s*(?:or|\/|&|and)\s*(?:visa\s*|mastercard\s*)?(?:debit|check|atm)?\s*cards?\s*\*?\s*$|tele?phone|\bphone\b|representative|(?<!automated )\bteller\b|call center|non[- ]?members?|\bnon[- ]?(?!owned\b)[\w.]+ (debit |atm )?cards?|non[- ]proprietary card|foreign cards? used|(?<!free )\bat our atm|(?<!of )\bour network|\bin[- ]network|(?<!\bnon[- ]?)\b(?!(non|other|foreign)\b)\w+[- ]owned atm)/.source, "i"),
   },
   wire_domestic_outgoing: {
@@ -540,6 +549,10 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // fee refuses what non-customers pay at the institution's own ATMs (`OUTSIDER_ATM`; 58 live fees,
 // flagged for the second look, then taken down; 125584 is the hand-taken-down example), and a monthly
 // ATM add-on or plan (`ATM_PLAN`; 5 live fees, 114331 "Power Checking +ATM Freedom" among them).
+// It also refuses ATM-named lines that price something else (`NOT_ATM_USE`; 16 live fees): an ATM
+// dispute or a copy of a card sale moves to account research and a lost or stolen card to card
+// replacement (4, re-filed after the second look), and 12 with no home or a live twin come down.
+// An ATM balance inquiry stays (balance_inquiry is retired and folds here).
 export const CATEGORY_GUARD_VERSION = 69;
 
 /**
@@ -609,7 +622,10 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   { from: "excess_withdrawal", to: "ira_administration", when: /\bira\b/i },
   { from: "returned_mail", to: "account_research", when: /\bresearch|\breconcil/i },
   { from: "deposited_item_return", to: "card_dispute", when: /((\bcards?\b|visa)[^|]{0,25}charge[- ]?back|charge[- ]?back[^|]{0,25}(\bcards?\b|dispute))/i },
-  { from: "atm_non_network", to: "card_replacement", when: /(replace|reissue|re-?issu|lost|stolen)/i, unless: /\bpins?\b/i },
+  // v69: lost or stolen cards ("Lost/Stolen ATM/MasterCard®"); a blocked card is not a replacement.
+  { from: "atm_non_network", to: "card_replacement", when: /(replac|reissue|re-?issu|lost|stolen)/i, unless: /\bpins?\b|\bblock/i },
+  // v69: an ATM dispute or a copy of a card sale is research.
+  { from: "atm_non_network", to: "account_research", when: /\bdisput|\b(?:photo ?)?cop(?:y|ies) of\b/i },
   { from: "check_printing", to: "counter_check", when: /\btemporar/i },
   { from: "check_cashing", to: "collection_item", when: COLLECTION_ITEM },
   // v68: a returned foreign check or item filed as check cashing is a returned deposited item.
