@@ -48,6 +48,22 @@ export function money(value: number | null | undefined): string {
 }
 
 /**
+ * The findings section's one line: on how many of the compared fees credit unions have the lower
+ * median. Null when no fee has both a bank and a credit union median.
+ */
+export function charterCountLine(benchmarks: FeeCategorySummary[]): string | null {
+  const paired = benchmarks.filter((b) => b.bank_median_amount != null && b.cu_median_amount != null && b.bank_median_amount > 0);
+  if (paired.length === 0) return null;
+  const cuLower = paired.filter((b) => b.cu_median_amount! < b.bank_median_amount!).length;
+  const bankLower = paired.filter((b) => b.bank_median_amount! < b.cu_median_amount!).length;
+  const of = `${paired.length} everyday ${paired.length === 1 ? "fee" : "fees"} compared`;
+  if (cuLower === 0 && bankLower === 0) return `Banks and credit unions have the same median on all ${of}.`;
+  return cuLower >= bankLower
+    ? `Credit unions have the lower median on ${cuLower} of the ${of}.`
+    : `Banks have the lower median on ${bankLower} of the ${of}.`;
+}
+
+/**
  * Findings computed from the benchmark summaries. Each one leads with a plain statement, adds one
  * supporting sentence, and keeps the calculation in `about`. A finding appears only when the data
  * behind it clears the statistics contract (medians are null below the minimum sample).
@@ -60,7 +76,6 @@ export function computeFindings(benchmarks: FeeCategorySummary[]): Finding[] {
     (b) => b.bank_median_amount != null && b.cu_median_amount != null && b.bank_median_amount > 0,
   );
   if (paired.length > 0) {
-    const cuCheaper = paired.filter((b) => b.cu_median_amount! < b.bank_median_amount!);
     const widest = [...paired].sort(
       (a, b) => Math.abs(b.bank_median_amount! - b.cu_median_amount!) - Math.abs(a.bank_median_amount! - a.cu_median_amount!),
     )[0];
@@ -71,7 +86,7 @@ export function computeFindings(benchmarks: FeeCategorySummary[]): Finding[] {
         key: "charter-gap",
         figure: money(Math.abs(gap)),
         headline: `${lower} ${sentenceName(widest.fee_category)} fees are ${money(Math.abs(gap))} lower at the median.`,
-        detail: `The median is ${money(widest.cu_median_amount)} at credit unions and ${money(widest.bank_median_amount)} at banks. Credit union medians are lower on ${cuCheaper.length} of the ${paired.length} fees compared.`,
+        detail: `The median is ${money(widest.cu_median_amount)} at credit unions and ${money(widest.bank_median_amount)} at banks.`,
         about: `Each institution counts once, at the median of its published prices for the fee (overdraft: its highest). The figure is the median of those values among ${formatCount(widest.cu_count)} credit unions, set against the same among ${formatCount(widest.bank_count)} banks. It compares published prices, not what customers end up paying.`,
         exhibit: "benchmarks",
         fee_category: widest.fee_category,

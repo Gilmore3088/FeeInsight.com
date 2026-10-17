@@ -1,9 +1,9 @@
 export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
-import { US_TERRITORIES, STATE_NAMES } from "@/lib/us-states";
+import { US_TERRITORIES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { PRODUCT_NAME, SITE_URL } from "@/lib/constants";
-import { getPublicNationalIndex, getPublicSnapshot, formatCount } from "@/lib/public-stats";
+import { getPublicNationalIndex, getPublicSnapshot } from "@/lib/public-stats";
 import {
   getDistrictFeeIndexesCached,
   getPublishedArticleSummariesCached,
@@ -23,7 +23,7 @@ import { GeoReports } from "../geo-reports";
 import { ResearchLibrary } from "../research-library";
 import { MethodFlow, ProBand } from "../method-flow";
 import { HubFindings } from "../hub-findings";
-import { computeFindings } from "../findings";
+import { charterCountLine, computeFindings } from "../findings";
 import { DistrictsExhibit, type DistrictCard } from "../districts-exhibit";
 import { HubSection } from "../district/[id]/district-hub";
 import { DISTRICT_REGIONS } from "../district/[id]/district-exhibits";
@@ -51,8 +51,16 @@ async function loadArticles(): Promise<ArticleSummary[]> {
   }
 }
 
+/**
+ * District 7's size-weighted center falls on Lake Michigan, so its number sits on Illinois's
+ * label point instead.
+ */
+const LABEL_STATE: Record<number, string> = { 7: "IL" };
+
 /** Where a district's number sits: its mainland states' label points, weighted by each state's size. */
 function districtLabel(district: number): { x: number; y: number } | null {
+  const fixed = LABEL_STATE[district] ? stateShape(LABEL_STATE[district]) : null;
+  if (fixed) return fixed.label;
   const shapes = getStatesForDistrict(district)
     .filter((c) => !OFF_MAINLAND.has(c))
     .map((c) => stateShape(c))
@@ -104,18 +112,14 @@ export default async function ResearchHubPage() {
     region: DISTRICT_REGIONS[id] ?? `the ${name} district`,
     statement: opening?.statement ?? null,
     institutions: indexes?.verified_institutions ?? 0,
+    side: opening ? overdraftSide(opening) : null,
     label: districtLabel(id),
   }));
   const districtLine = districtsFinding(
-    openings.map((o) => (o.opening ? overdraftSide(o.opening) : null)),
+    districts.map((d) => d.side),
     DISTRICT_IDS.length,
   );
   const withoutLine = districts.filter((d) => !d.statement).length;
-
-  const topState = [...statesWithFees].sort((a, b) => b.verified_institutions - a.verified_institutions)[0];
-  const statesLine = topState
-    ? `${STATE_NAMES[topState.state_code] ?? topState.state_code} has the most institutions with published fees, ${formatCount(topState.verified_institutions)}.`
-    : undefined;
 
   return (
     <>
@@ -130,7 +134,7 @@ export default async function ResearchHubPage() {
       <ResearchSectionNav />
 
       <div className="mx-auto max-w-page space-y-16 px-4 py-10 sm:space-y-24 sm:px-6 sm:py-14">
-        <HubFindings findings={findings} asOf={asOf} />
+        <HubFindings findings={findings} line={charterCountLine(benchmarks)} asOf={asOf} />
 
         <BenchmarkBoard benchmarks={benchmarks} asOf={asOf} />
 
@@ -140,26 +144,37 @@ export default async function ResearchHubPage() {
           line={districtLine ?? "Too few districts have enough published overdraft fees yet for a comparison."}
           source={
             <>
-              {PRODUCT_NAME}, verified published fee schedules, one value per institution, against the national median. A district line
-              counts only fees with at least {STATE_FINDING_MIN_INSTITUTIONS} district institutions; within 1% of the national median
-              reads as about the same. Each state is shaded by the district that covers most of it.{asOf ? ` Data as of ${asOf}.` : ""}
+              {PRODUCT_NAME}, verified published fee schedules, one value per institution, against the national median.
+              {asOf ? ` Data as of ${asOf}.` : ""}
             </>
           }
         >
           <div>
             <DistrictsExhibit districts={districts} />
             {withoutLine > 0 && (
-              <p className="mt-3 text-[13px] text-ink-muted">
+              <p className="mt-3 text-[13px] text-ink-muted sm:mx-0 sm:text-left">
                 {withoutLine === 1 ? "One district has" : `${withoutLine} districts have`} too few published fees yet for a headline.
               </p>
             )}
+            <details className="group mt-3">
+              <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1 text-[13px] font-semibold text-brick [&::-webkit-details-marker]:hidden">
+                How districts are compared
+                <span aria-hidden="true" className="transition-transform group-open:rotate-90">&rsaquo;</span>
+              </summary>
+              <p className="max-w-3xl text-[13px] leading-relaxed text-ink-muted sm:mx-0 sm:text-left">
+                Each institution counts once, at its highest published overdraft price, and a district&apos;s median is taken across
+                its institutions. A district is shaded and counted only when at least {STATE_FINDING_MIN_INSTITUTIONS} of its
+                institutions publish an overdraft fee; a median within 1% of the national median reads as about the same. Each
+                state is shaded by the district that covers most of it. A district&apos;s line is the opening finding of its own
+                report, which ranks only fees with at least {STATE_FINDING_MIN_INSTITUTIONS} district institutions.
+              </p>
+            </details>
           </div>
         </HubSection>
 
         <HubSection
           id="states"
           title="State reports"
-          line={statesLine}
           source={`${PRODUCT_NAME}, verified published fee schedules. Reports cover ${coverageLabel}; a state is listed once any of its institutions has published fees.`}
         >
           <GeoReports states={coverage.states} />
@@ -173,7 +188,8 @@ export default async function ResearchHubPage() {
       </div>
 
       {/* Anchors clear the sticky header and section bar (/districts lands on #districts). Print / Save as PDF: drop site chrome and interactive controls, keep exhibits whole. */}
-      <style>{`#findings, #benchmarks, #districts, #states, #in-progress, #about-data { scroll-margin-top: 7rem; }
+      <style>{`#findings, #benchmarks, #districts, #states, #in-progress, #about-data { scroll-margin-top: 7.5rem; }
+      @media (min-width: 640px) { #findings, #benchmarks, #districts, #states, #in-progress, #about-data { scroll-margin-top: 7rem; } }
       @media print {
         header, footer, nextjs-portal, #geo-filter, #geo-pick { display: none !important; }
         body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }

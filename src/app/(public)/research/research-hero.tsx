@@ -59,12 +59,12 @@ export function ResearchSectionNav({
       <div className="mx-auto max-w-page px-4 py-2 sm:hidden">
         <SectionJump sections={sections} label={label} />
       </div>
-      <ul className="mx-auto hidden max-w-page flex-wrap gap-1 px-4 py-2 sm:flex sm:px-6">
+      <ul className="mx-auto hidden max-w-page flex-wrap gap-1 px-4 py-1 sm:flex sm:px-6">
         {sections.map((s) => (
           <li key={s.id} className="shrink-0">
             <a
               href={`#${s.id}`}
-              className="block rounded-full px-3.5 py-1.5 text-[12px] font-semibold text-ink-soft transition-colors hover:bg-ink hover:text-white"
+              className="inline-flex min-h-11 items-center rounded-full px-3.5 text-[13px] font-semibold text-ink-soft transition-colors hover:bg-ink hover:text-white"
             >
               {s.label}
             </a>

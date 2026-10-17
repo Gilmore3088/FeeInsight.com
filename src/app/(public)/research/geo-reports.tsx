@@ -53,7 +53,10 @@ export function GeoReports({ states }: { states: StateCoverage[] }) {
 
   return (
     <div>
-      <div className="sm:hidden">
+      <p id="state-reports-label" className="text-[13px] font-semibold text-ink sm:mx-0 sm:text-left">
+        States with a report, by institutions with published fees
+      </p>
+      <div className="mt-3 sm:hidden">
         <label className="sr-only" htmlFor="geo-pick">
           State report
         </label>
@@ -76,9 +79,9 @@ export function GeoReports({ states }: { states: StateCoverage[] }) {
         </select>
       </div>
 
-      <div className="hidden gap-6 sm:grid lg:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="mt-3 hidden gap-6 sm:grid lg:grid-cols-[minmax(0,1fr)_340px]">
         <figure className="relative rounded-2xl border border-border bg-white p-4 lg:p-6">
-          <svg viewBox="0 0 960 600" className="mx-auto h-auto max-h-[24rem] w-full" role="img" aria-label="Map of states with a report">
+          <svg viewBox="0 0 960 600" className="mx-auto h-auto max-h-[24rem] w-full" aria-hidden="true" focusable="false">
             {US_STATES.map((st) => {
               const entry = byCode.get(st.id);
               const path = (
@@ -96,11 +99,9 @@ export function GeoReports({ states }: { states: StateCoverage[] }) {
                   key={st.id}
                   href={entry.href}
                   prefetch={false}
-                  aria-label={`${st.name} report`}
+                  tabIndex={-1}
                   onMouseEnter={() => setHovered(st.id)}
                   onMouseLeave={() => setHovered(null)}
-                  onFocus={() => setHovered(st.id)}
-                  onBlur={() => setHovered(null)}
                 >
                   {path}
                 </Link>
@@ -110,7 +111,7 @@ export function GeoReports({ states }: { states: StateCoverage[] }) {
             })}
           </svg>
           {hoverEntry && (
-            <p aria-live="polite" className="pointer-events-none absolute left-6 top-6 rounded-xl border border-border bg-white/95 px-3.5 py-2.5 text-[12px] shadow-lg">
+            <p aria-hidden="true" className="pointer-events-none absolute left-6 top-6 rounded-xl border border-border bg-white/95 px-3.5 py-2.5 text-[12px] shadow-lg">
               <span className="block text-[14px] font-semibold text-ink">{hoverEntry.name}</span>
               <span className="text-ink-muted">{NUMBER.format(hoverEntry.institutions)} institutions with published fees</span>
             </p>
@@ -129,17 +130,17 @@ export function GeoReports({ states }: { states: StateCoverage[] }) {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Find a state"
-              className="min-h-10 w-full rounded-full border border-border bg-paper px-3.5 text-[13px] text-ink placeholder:text-ink-muted focus:border-brick focus:outline-none"
+              className="min-h-11 w-full rounded-full border border-border bg-paper px-3.5 text-[13px] text-ink placeholder:text-ink-muted focus:border-brick focus:outline-none"
             />
           </div>
-          <ul className="max-h-[22rem] divide-y divide-surface-200 overflow-y-auto">
+          <ul aria-labelledby="state-reports-label" className="max-h-[22rem] divide-y divide-surface-200 overflow-y-auto">
             {shown.map((e) => (
               <li key={e.code}>
                 <Link
                   href={e.href}
                   onMouseEnter={() => setHovered(e.code)}
                   onMouseLeave={() => setHovered(null)}
-                  className="group flex items-baseline gap-2 px-4 py-2.5 hover:bg-paper"
+                  className="group flex min-h-11 items-center gap-2 px-4 py-2 hover:bg-paper"
                 >
                   <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink group-hover:text-brick">{e.name}</span>
                   <span className="shrink-0 text-[11px] tabular-nums text-ink-muted">{NUMBER.format(e.institutions)} institutions</span>

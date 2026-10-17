@@ -75,7 +75,8 @@ export function MethodFlow({ summary, stateCount, coverageLabel }: { summary: Pu
       source={`${PRODUCT_NAME}, verified published fee schedules; coverage spans ${coverageLabel}.`}
     >
       <div>
-      <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-3">
+      <p id="about-data-label" className="text-[13px] font-semibold text-ink sm:mx-0 sm:text-left">Coverage of the index today</p>
+      <dl aria-labelledby="about-data-label" className="mt-3 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-3">
         {stats.map((s) => (
           <div key={s.label} className="bg-white px-4 py-4 last:col-span-2 sm:last:col-span-1">
             <dt className="sr-only">{s.label}</dt>
@@ -120,10 +121,10 @@ export function MethodFlow({ summary, stateCount, coverageLabel }: { summary: Pu
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-3 text-[13px]">
-        <Link href="/methodology" className="font-semibold text-ink underline decoration-border underline-offset-2 hover:decoration-ink">
+        <Link href="/methodology" className="inline-flex min-h-11 items-center font-semibold text-ink underline decoration-border underline-offset-2 hover:decoration-ink">
           Full methodology
         </Link>
-        <Link href="/research/national-fee-index" className="font-semibold text-ink underline decoration-border underline-offset-2 hover:decoration-ink">
+        <Link href="/research/national-fee-index" className="inline-flex min-h-11 items-center font-semibold text-ink underline decoration-border underline-offset-2 hover:decoration-ink">
           The full {PRODUCT_NAME}
         </Link>
         <PrintButton className="min-h-11 rounded-full border border-ink px-4 font-semibold text-ink hover:bg-ink hover:text-white print:hidden" />
@@ -140,23 +141,28 @@ export function ProBand({ sampleLive }: { sampleLive: boolean }) {
     ? { href: "/reports/sample-competitive-fee-position", label: `See the sample ${REPORT_OFFER.name}` }
     : { href: "/for-institutions#report", label: REPORT_OFFER.institutionCtaLabel };
   return (
-      <section aria-labelledby="pro-heading" className="rounded-2xl bg-ink px-6 py-6 text-paper print:hidden sm:px-8">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#e0716a]">{SITE_NAME} Pro · Hamilton</p>
-        <h2 id="pro-heading" className="mt-2 text-[20px] font-semibold leading-snug text-white" style={SERIF}>
+    <section
+      aria-labelledby="pro-heading"
+      className="grid gap-5 rounded-2xl bg-ink px-6 py-7 text-on-ink print:hidden sm:px-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:gap-12 lg:px-10"
+    >
+      <div>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-on-ink/70">{SITE_NAME} Pro · Hamilton</p>
+        <h2 id="pro-heading" className="mt-2 text-[22px] font-semibold leading-snug text-on-ink" style={SERIF}>
           Benchmark your institution against the peers you choose.
         </h2>
-        <p className="mt-2 text-[13px] leading-relaxed text-paper/80">{HAMILTON_CANONICAL}</p>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Link href={PRO_PLANS_HREF} className="inline-flex min-h-11 items-center rounded-full bg-brick px-4 text-[13px] font-semibold text-white hover:bg-brick-ink">
-            See Hamilton plans
-          </Link>
-          <Link href={secondary.href} className="inline-flex min-h-11 items-center rounded-full border border-white/25 px-4 text-[13px] font-semibold text-white hover:bg-white/10">
-            {secondary.label}
-          </Link>
-        </div>
-        <p className="mt-2 text-[12px] text-paper/60">
-          Not ready for Pro? A one-time {REPORT_OFFER.name} is quoted per institution, {REPORT_PRICE_INLINE}.
+        <p className="mt-2 max-w-2xl text-[14px] leading-relaxed text-on-ink/80">{HAMILTON_CANONICAL}</p>
+      </div>
+      <div className="flex flex-col gap-2 sm:flex-row lg:flex-col lg:items-stretch">
+        <Link href={PRO_PLANS_HREF} className="inline-flex min-h-11 items-center justify-center rounded-full bg-brick px-5 text-[14px] font-semibold text-on-brick hover:bg-brick-ink">
+          See Hamilton plans
+        </Link>
+        <Link href={secondary.href} className="inline-flex min-h-11 items-center justify-center rounded-full border border-on-ink/30 px-5 text-[14px] font-semibold text-on-ink hover:bg-on-ink/10">
+          {secondary.label}
+        </Link>
+        <p className="text-center text-[12px] text-on-ink/60">
+          {REPORT_OFFER.name}: one-time, quoted per institution, {REPORT_PRICE_INLINE}.
         </p>
-      </section>
+      </div>
+    </section>
   );
 }

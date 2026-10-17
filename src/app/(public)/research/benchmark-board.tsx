@@ -22,6 +22,10 @@ export function pickBenchmarks(summaries: FeeCategorySummary[]): FeeCategorySumm
   );
 }
 
+/** One grid for the header and every row; on wide screens the name column stops growing so figures sit near their names. */
+const ROW_GRID =
+  "sm:grid-cols-[minmax(0,1fr)_7rem_9rem_8rem_1rem] lg:grid-cols-[minmax(0,22rem)_8rem_10rem_8rem_minmax(1rem,1fr)]";
+
 function pct(value: number, scaleMax: number): number {
   return Math.max(0, Math.min(100, (value / scaleMax) * 100));
 }
@@ -37,7 +41,7 @@ function BenchmarkRow({ fee }: { fee: FeeCategorySummary }) {
 
   return (
     <details className="group">
-        <summary className="grid cursor-pointer list-none grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-4 gap-y-0.5 px-4 py-3.5 hover:bg-paper sm:grid-cols-[minmax(0,1fr)_7rem_9rem_8rem_1rem] sm:px-5 [&::-webkit-details-marker]:hidden">
+        <summary className={`grid min-h-11 cursor-pointer list-none grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-4 gap-y-0.5 px-4 py-3.5 hover:bg-paper ${ROW_GRID} sm:px-5 [&::-webkit-details-marker]:hidden`}>
           <span className="text-[14px] font-semibold text-ink">{name}</span>
           <span className="text-right text-[15px] font-semibold tabular-nums text-ink">
             {formatAmount(median)}
@@ -46,10 +50,14 @@ function BenchmarkRow({ fee }: { fee: FeeCategorySummary }) {
           </span>
           <span className="col-span-2 text-[12px] text-ink-muted sm:col-span-1 sm:tabular-nums sm:text-right sm:text-[13px] sm:text-ink-soft">
             <span className="sm:hidden">Middle 50% </span>
+            <span className="sr-only max-sm:hidden">Middle 50%: </span>
             {formatAmount(p25)} to {formatAmount(p75)}
             <span className="sm:hidden"> · {formatCount(fee.institution_count)} institutions</span>
           </span>
-          <span className="hidden text-right text-[13px] tabular-nums text-ink-soft sm:block">{formatCount(fee.institution_count)}</span>
+          <span className="hidden text-right text-[13px] tabular-nums text-ink-soft sm:block">
+            {formatCount(fee.institution_count)}
+            <span className="sr-only"> institutions</span>
+          </span>
           <span aria-hidden="true" className="hidden text-right text-ink-muted transition-transform group-open:rotate-90 sm:block">&rsaquo;</span>
         </summary>
 
@@ -100,7 +108,7 @@ function BenchmarkRow({ fee }: { fee: FeeCategorySummary }) {
             <span>
               {formatCount(fee.institution_count)} institutions, {formatCount(fee.total_observations)} published fee entries.
             </span>
-            <Link href={`/fees/${fee.fee_category}`} className="text-[12px] font-semibold text-brick hover:underline">
+            <Link href={`/fees/${fee.fee_category}`} className="inline-flex min-h-11 items-center text-[12px] font-semibold text-brick hover:underline">
               See every published price &rarr;
             </Link>
           </p>
@@ -142,7 +150,7 @@ export function BenchmarkBoard({ benchmarks, asOf }: { benchmarks: FeeCategorySu
           <div className="mt-3 overflow-hidden rounded-2xl border border-border bg-white">
             <div
               aria-hidden="true"
-              className="hidden grid-cols-[minmax(0,1fr)_7rem_9rem_8rem_1rem] gap-x-4 border-b border-border px-5 py-2 text-[10px] font-semibold uppercase tracking-wider text-ink-muted sm:grid"
+              className={`hidden ${ROW_GRID} gap-x-4 border-b border-border px-5 py-2 text-[10px] font-semibold uppercase tracking-wider text-ink-muted sm:grid`}
             >
               <span>Fee</span>
               <span className="text-right">Median</span>
@@ -165,8 +173,8 @@ export function BenchmarkBoard({ benchmarks, asOf }: { benchmarks: FeeCategorySu
               </summary>
               <p className="max-w-3xl text-[13px] leading-relaxed text-ink-muted sm:mx-0 sm:text-left">
                 Each institution counts once, at the median of its published prices for the fee (overdraft: its highest). The
-                median and the middle 50% (25th to 75th percentile) are taken across those values. Open a fee for its range,
-                banks and credit unions side by side, and the share of institutions that publish only $0.
+                median and the middle 50% (25th to 75th percentile) are taken across those values. Each fee&apos;s row holds its
+                range, banks and credit unions side by side, and the share of institutions that publish only $0.
               </p>
             </details>
             <Link href="/fees" className="inline-flex min-h-11 items-center text-[13px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
@@ -176,7 +184,7 @@ export function BenchmarkBoard({ benchmarks, asOf }: { benchmarks: FeeCategorySu
         </div>
       ) : (
         <p className="rounded-2xl border border-dashed border-border px-5 py-8 text-center text-[13px] text-ink-muted">
-          Benchmarks are refreshing. Check back shortly.
+          Benchmarks are refreshing.
         </p>
       )}
     </HubSection>

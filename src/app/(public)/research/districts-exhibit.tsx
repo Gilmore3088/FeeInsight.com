@@ -1,9 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { US_STATES } from "@/lib/us-map-paths";
 import { STATE_TO_DISTRICT } from "@/lib/fed-districts";
+
+/** Where a district's overdraft median sits against the national median; null when it can't be compared. */
+export type OverdraftSide = "above" | "below" | "same" | null;
 
 /** One Fed district as the hub's districts exhibit draws it. */
 export interface DistrictCard {
@@ -15,60 +18,81 @@ export interface DistrictCard {
   /** The district page's opening sentence, word for word; null when nothing clears the minimum. */
   statement: string | null;
   institutions: number;
+  /** The map's shading: the same rule as the section's finding. */
+  side: OverdraftSide;
   /** Where the district number sits on the map (mainland states only). */
   label: { x: number; y: number } | null;
 }
 
-/**
- * Four warm tones from the map ramp, assigned so no two neighboring districts share one.
- * The active district takes the darkest step.
- */
-const TONE: Record<number, string> = {
-  1: "var(--fi-viz-2)",
-  2: "var(--fi-viz-3)",
-  3: "var(--fi-viz-2)",
-  4: "var(--fi-viz-1)",
-  5: "var(--fi-viz-4)",
-  6: "var(--fi-viz-2)",
-  7: "var(--fi-viz-4)",
-  8: "var(--fi-viz-3)",
-  9: "var(--fi-viz-2)",
-  10: "var(--fi-viz-1)",
-  11: "var(--fi-viz-4)",
-  12: "var(--fi-viz-3)",
+/** Darker means a higher overdraft median against the U.S.; a district that can't be compared is hatched. */
+const SIDE_FILL: Record<"above" | "same" | "below", string> = {
+  above: "var(--fi-viz-4)",
+  same: "var(--fi-viz-2)",
+  below: "var(--fi-viz-1)",
 };
-const ACTIVE = "var(--fi-viz-5)";
+const NOT_COMPARED = "url(#district-not-compared)";
+const LEGEND: { key: string; label: string; fill: string }[] = [
+  { key: "above", label: "Above the national median", fill: SIDE_FILL.above },
+  { key: "same", label: "About the same", fill: SIDE_FILL.same },
+  { key: "below", label: "Below", fill: SIDE_FILL.below },
+  { key: "none", label: "Too few overdraft fees to compare", fill: "none" },
+];
 const NUMBER = new Intl.NumberFormat("en-US");
 /** Rows a phone shows before "Show all". */
 const PHONE_ROWS = 5;
 
+function fillFor(side: OverdraftSide): string {
+  return side ? SIDE_FILL[side] : NOT_COMPARED;
+}
+
+function Swatch({ fill }: { fill: string }) {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 14 14" className="h-3.5 w-3.5 shrink-0">
+      <defs>
+        <pattern id="legend-hatch" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <rect width="4" height="4" fill="var(--color-surface-200)" />
+          <line x1="0" y1="0" x2="0" y2="4" stroke="var(--color-ink)" strokeOpacity={0.3} strokeWidth={1.5} />
+        </pattern>
+      </defs>
+      <rect width="14" height="14" rx="3" fill={fill === "none" ? "url(#legend-hatch)" : fill} stroke="var(--color-ink)" strokeOpacity={0.25} />
+    </svg>
+  );
+}
+
 /**
- * All 12 Federal Reserve districts on one map, each with the opening finding its own page
- * leads with. On phones the map is left out and the list carries the same links.
+ * All 12 Federal Reserve districts on one map, shaded by where each overdraft median sits
+ * against the national median, with the opening finding each district page leads with. The
+ * map is a picture; the cards carry the links for keyboards and screen readers, and on
+ * phones the map is left out.
  */
 export function DistrictsExhibit({ districts }: { districts: DistrictCard[] }) {
   const [active, setActive] = useState<number | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const listRef = useRef<HTMLOListElement>(null);
   const byId = new Map(districts.map((d) => [d.id, d]));
 
   return (
     <div className="space-y-6">
       <figure className="hidden rounded-2xl border border-border bg-white p-4 sm:block lg:p-6">
-        <svg viewBox="0 0 960 600" className="mx-auto h-auto max-h-[30rem] w-full" role="img" aria-labelledby="districts-map-title">
-          <title id="districts-map-title">Map of the 12 Federal Reserve districts</title>
+        <svg viewBox="0 0 960 600" className="mx-auto h-auto max-h-[30rem] w-full" aria-hidden="true" focusable="false">
+          <defs>
+            <pattern id="district-not-compared" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+              <rect width="8" height="8" fill="var(--color-surface-200)" />
+              <line x1="0" y1="0" x2="0" y2="8" stroke="var(--color-ink)" strokeOpacity={0.25} strokeWidth={2} />
+            </pattern>
+          </defs>
           {US_STATES.map((st) => {
             const d = STATE_TO_DISTRICT[st.id];
             const card = d ? byId.get(d) : undefined;
-            const fill = !d ? "var(--fi-viz-none)" : active === d ? ACTIVE : (TONE[d] ?? "var(--fi-viz-2)");
             const path = (
               <path
                 d={st.d}
-                fill={fill}
-                fillOpacity={active === null || active === d || !d ? 1 : 0.45}
+                fill={card ? fillFor(card.side) : "var(--fi-viz-none)"}
+                fillOpacity={active === null || active === d || !d ? 1 : 0.4}
                 stroke="var(--color-paper)"
                 strokeWidth={1}
                 vectorEffect="non-scaling-stroke"
-                className="transition-[fill,fill-opacity] duration-150"
+                className="transition-[fill-opacity] duration-150"
               />
             );
             if (!d || !card) return <g key={st.id}>{path}</g>;
@@ -77,11 +101,9 @@ export function DistrictsExhibit({ districts }: { districts: DistrictCard[] }) {
                 key={st.id}
                 href={`/research/district/${d}`}
                 prefetch={false}
-                aria-label={`${st.name}: District ${d}, ${card.name}`}
+                tabIndex={-1}
                 onMouseEnter={() => setActive(d)}
                 onMouseLeave={() => setActive(null)}
-                onFocus={() => setActive(d)}
-                onBlur={() => setActive(null)}
               >
                 {path}
               </Link>
@@ -89,14 +111,21 @@ export function DistrictsExhibit({ districts }: { districts: DistrictCard[] }) {
           })}
           {districts.map((d) =>
             d.label ? (
-              <g key={d.id} aria-hidden="true" className="pointer-events-none">
-                <circle cx={d.label.x} cy={d.label.y} r={15} className={active === d.id ? "fill-ink" : "fill-paper"} stroke="var(--color-ink)" strokeWidth={1.5} />
+              <g key={d.id} className="pointer-events-none">
+                <circle
+                  cx={d.label.x}
+                  cy={d.label.y}
+                  r={19}
+                  className={active === d.id ? "fill-ink" : "fill-surface-0"}
+                  stroke="var(--color-ink)"
+                  strokeWidth={1.5}
+                />
                 <text
                   x={d.label.x}
                   y={d.label.y}
                   textAnchor="middle"
                   dominantBaseline="central"
-                  className={`text-[14px] font-bold ${active === d.id ? "fill-paper" : "fill-ink"}`}
+                  className={`text-[18px] font-bold ${active === d.id ? "fill-on-ink" : "fill-ink"}`}
                 >
                   {d.id}
                 </text>
@@ -104,55 +133,82 @@ export function DistrictsExhibit({ districts }: { districts: DistrictCard[] }) {
             ) : null,
           )}
         </svg>
-        <figcaption className="sr-only">Each state is shaded by the Federal Reserve district that covers most of it.</figcaption>
+        <figcaption className="mt-3 border-t border-surface-200 pt-3">
+          <p className="text-[13px] font-semibold text-ink">Overdraft median against the national median, by Federal Reserve district</p>
+          <ul className="mt-2 flex flex-wrap gap-x-5 gap-y-1.5 text-[12px] text-ink-soft">
+            {LEGEND.map((l) => (
+              <li key={l.key} className="flex items-center gap-1.5">
+                <Swatch fill={l.fill} />
+                {l.label}
+              </li>
+            ))}
+          </ul>
+        </figcaption>
       </figure>
 
-      <ol aria-label="Federal Reserve districts" className="grid gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-2 lg:grid-cols-3">
-        {districts.map((d, i) => (
-          <li key={d.id} className={`bg-white ${i >= PHONE_ROWS && !expanded ? "hidden sm:block" : ""}`}>
-            <Link
-              href={`/research/district/${d.id}`}
-              onMouseEnter={() => setActive(d.id)}
-              onMouseLeave={() => setActive(null)}
-              onFocus={() => setActive(d.id)}
-              onBlur={() => setActive(null)}
-              className={`group flex h-full min-h-11 gap-3 px-4 py-3.5 transition-colors hover:bg-paper ${active === d.id ? "bg-paper" : ""}`}
-            >
-              <span
-                aria-hidden="true"
-                className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-ink/70 text-[11px] font-bold tabular-nums text-ink"
-                style={{ background: TONE[d.id] }}
-              >
-                {d.id}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-[14px] font-semibold leading-snug text-ink group-hover:text-brick">
-                  {d.name}
-                  {d.region.replace(/^the /, "") !== d.name && (
-                    <span className="font-normal text-ink-muted"> · {d.region.replace(/^the /, "")}</span>
-                  )}
-                </span>
-                {d.statement && <span className="mt-1 block text-[13px] leading-snug text-ink-soft">{d.statement}</span>}
-                <span className="mt-1 block text-[11px] tabular-nums text-ink-muted">
-                  {NUMBER.format(d.institutions)} institutions with published fees
-                </span>
-              </span>
-              <span aria-hidden="true" className="self-center text-ink-muted group-hover:text-brick">
-                &rsaquo;
-              </span>
-            </Link>
-          </li>
-        ))}
-      </ol>
-      {!expanded && districts.length > PHONE_ROWS && (
-        <button
-          type="button"
-          onClick={() => setExpanded(true)}
-          className="-mt-2 inline-flex min-h-11 items-center text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink sm:hidden"
+      <div>
+        <p id="district-cards-label" className="text-[13px] font-semibold text-ink sm:mx-0 sm:text-left">
+          Each district&apos;s opening finding
+        </p>
+        <ol
+          ref={listRef}
+          id="district-cards"
+          aria-labelledby="district-cards-label"
+          className="mt-3 grid gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-2 lg:grid-cols-3"
         >
-          Show all {districts.length} districts
-        </button>
-      )}
+          {districts.map((d, i) => (
+            <li key={d.id} className={`bg-white ${i >= PHONE_ROWS && !expanded ? "hidden sm:block" : ""}`}>
+              <Link
+                href={`/research/district/${d.id}`}
+                onMouseEnter={() => setActive(d.id)}
+                onMouseLeave={() => setActive(null)}
+                onFocus={() => setActive(d.id)}
+                onBlur={() => setActive(null)}
+                className={`group flex h-full min-h-11 gap-3 px-4 py-3.5 transition-colors hover:bg-paper ${active === d.id ? "bg-paper" : ""}`}
+              >
+                <span
+                  aria-hidden="true"
+                  className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-[12px] font-bold tabular-nums text-on-ink"
+                >
+                  {d.id}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[14px] font-semibold leading-snug text-ink group-hover:text-brick">
+                    <span className="sr-only">District {d.id}, </span>
+                    {d.name}
+                    {d.region.replace(/^the /, "") !== d.name && (
+                      <span className="font-normal text-ink-muted"> · {d.region.replace(/^the /, "")}</span>
+                    )}
+                  </span>
+                  {d.statement && <span className="mt-1 block text-[13px] leading-snug text-ink-soft">{d.statement}</span>}
+                  <span className="mt-1 block text-[11px] tabular-nums text-ink-muted">
+                    {NUMBER.format(d.institutions)} institutions with published fees
+                  </span>
+                </span>
+                <span aria-hidden="true" className="self-center text-ink-muted group-hover:text-brick">
+                  &rsaquo;
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ol>
+        {districts.length > PHONE_ROWS && (
+          <button
+            type="button"
+            aria-expanded={expanded}
+            aria-controls="district-cards"
+            onClick={() => {
+              const opening = !expanded;
+              setExpanded(opening);
+              // Move focus to the first row that just appeared.
+              if (opening) requestAnimationFrame(() => listRef.current?.querySelectorAll("a")[PHONE_ROWS]?.focus());
+            }}
+            className="mt-2 inline-flex min-h-11 items-center text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink sm:hidden"
+          >
+            {expanded ? "Show fewer districts" : `Show all ${districts.length} districts`}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
