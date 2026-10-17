@@ -4,9 +4,11 @@ import Link from "next/link";
 import { useState } from "react";
 import { AUTH_BUTTON_CLASS, AUTH_FORM_CLASS, AUTH_INPUT_CLASS } from "../auth-card";
 import { resetPassword } from "./actions";
+import { useHydrated } from "@/lib/use-hydrated";
 
 export function ResetPasswordForm({ token }: { token: string }) {
   const [pending, setPending] = useState(false);
+  const hydrated = useHydrated();
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,7 +38,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className={AUTH_FORM_CLASS}>
+    <form method="post" onSubmit={handleSubmit} className={AUTH_FORM_CLASS}>
       <input type="hidden" name="token" value={token} />
       {error && (
         <div role="alert" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
@@ -61,7 +63,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
         </label>
         <input id="confirm" name="confirm" type="password" required minLength={8} autoComplete="new-password" className={AUTH_INPUT_CLASS} />
       </div>
-      <button type="submit" disabled={pending} className={AUTH_BUTTON_CLASS}>
+      <button type="submit" disabled={pending || !hydrated} className={AUTH_BUTTON_CLASS}>
         {pending ? "Saving..." : "Set new password"}
       </button>
     </form>
