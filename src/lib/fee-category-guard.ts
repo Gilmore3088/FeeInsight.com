@@ -193,6 +193,74 @@ export function cardProductMisfile(canonicalFeeKey: string | null | undefined, f
   return null;
 }
 
+/**
+ * #1837: a direction borrowed from the wrong heading. A two-column schedule flattened row by row puts
+ * one column's section heading over the other column's rows, so a bare direction row ("Incoming",
+ * "Outgoing (domestic)", "Foreign Incoming") is read under a heading it never sat under: "Check
+ * Printing: Incoming" $15 and "SAFE DEPOSIT BOXES15: Outgoing (domestic)" $25 are wires, "Stop
+ * Payment: Incoming" a transfer. A name whose part after its last colon is only a direction (with
+ * customer, unit and joining words), under a heading that names no direction, is that heading's fee
+ * only in a category priced by direction (`DIRECTION_KEYS`, any `wire_` key) or, for a stop payment or a
+ * research fee, a row naming a wire or transfer; in any other it is a misread
+ * (48 live fees on Oct 17, nearly all a wire price from the next column), so a live fee failing the
+ * rule goes to the second look and comes down.
+ *
+ * Held by `BORROWED_DIRECTION_LIVE`: off, the rule reads nothing (Knox, Darwin and publish, and the
+ * guard version stays). Switched on, with `CATEGORY_GUARD_VERSION` raised in the same change, the
+ * catch-up sweep flags the live fees that fail it for the second look and takes them down.
+ */
+export const BORROWED_DIRECTION_LIVE = false;
+/** Categories a direction prices: wires, collections, ACH, faxes, transfers, foreign card use, delivery. */
+export const DIRECTION_KEYS: ReadonlySet<string> = new Set([
+  "wire_domestic_outgoing",
+  "wire_domestic_incoming",
+  "wire_intl_outgoing",
+  "wire_intl_incoming",
+  "collection_item",
+  "ach_origination",
+  "ach_return",
+  "document_reproduction",
+  "ira_termination",
+  "card_foreign_txn",
+  "atm_international",
+  "rush_card",
+  "courier_delivery",
+  "cash_advance",
+  "od_protection_transfer",
+  "deposited_item_return",
+  // A foreign ATM is the non-network ATM; a replacement card or returned mail is priced by where it ships.
+  "atm_non_network",
+  "card_replacement",
+  "returned_mail",
+]);
+/** Categories where a wire or transfer row is a fee of its own (a wire's stop payment or trace). */
+const WIRE_ROW_KEYS: ReadonlySet<string> = new Set(["stop_payment", "account_research"]);
+const WIRE_ROW_WORD = /^(?:wires?|transfers?)$/;
+const DIRECTION_WORD = /\b(?:incoming|outgoing|domestic|international|foreign|intl)\b/i;
+/** The words a direction row is made of besides the direction itself. */
+const DIRECTION_ROW_WORDS = new Set(
+  "incoming outgoing domestic international foreign intl and or in out wire wires transfer transfers item items fee fees per each customer customers non nonmember member members business personal consumer only".split(" "),
+);
+export const BORROWED_DIRECTION_REASON = "borrowed direction";
+
+/** #1837: the direction row a fee's name borrowed a heading for, outside a direction category, or null. Pure. */
+export function borrowedDirection(
+  canonicalFeeKey: string | null | undefined,
+  feeName: string | null | undefined,
+  live: boolean = BORROWED_DIRECTION_LIVE,
+): string | null {
+  if (!live || !canonicalFeeKey || DIRECTION_KEYS.has(canonicalFeeKey) || canonicalFeeKey.startsWith("wire_")) return null;
+  const name = plainQuotes(feeName ?? "").trim();
+  const at = name.lastIndexOf(":");
+  if (at <= 0) return null;
+  const heading = name.slice(0, at);
+  const row = name.slice(at + 1).trim();
+  if (!row || DIRECTION_WORD.test(heading) || !DIRECTION_WORD.test(row)) return null;
+  const words = row.toLowerCase().split(/[^a-z]+/).filter((word) => word.length > 1);
+  if (WIRE_ROW_KEYS.has(canonicalFeeKey) && words.some((word) => WIRE_ROW_WORD.test(word))) return null;
+  return words.length > 0 && words.length <= 5 && words.every((word) => DIRECTION_ROW_WORDS.has(word)) ? row : null;
+}
+
 export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   monthly_maintenance: {
     // v10: "Minimum daily balance of $500 required to avoid a $5.00 service fee" names the
@@ -891,12 +959,23 @@ export function checkFeeCategory(
   canonicalFeeKey: string | null | undefined,
   feeName: string | null | undefined,
   context?: CategoryGuardContext,
-  /** `cardProducts: false` reads the fee without the v70 card-product rule (`cardProductMisfile`). */
-  options?: { cardProducts?: boolean },
+  /**
+   * `cardProducts: false` reads the fee without the v70 card-product rule (`cardProductMisfile`);
+   * `borrowedDirection` overrides `BORROWED_DIRECTION_LIVE` (the dry-run count and tests).
+   */
+  options?: { cardProducts?: boolean; borrowedDirection?: boolean },
 ): CategoryGuardVerdict {
   const rule = canonicalFeeKey ? CATEGORY_GUARD_RULES[canonicalFeeKey] : undefined;
   if (!canonicalFeeKey) return { ok: true };
   const name = plainQuotes(feeName ?? "").trim();
+  const direction = borrowedDirection(canonicalFeeKey, name, options?.borrowedDirection ?? BORROWED_DIRECTION_LIVE);
+  if (direction) {
+    return {
+      ok: false,
+      code: "name_contradicts",
+      reason: `${BORROWED_DIRECTION_REASON}: "${name}" is a direction row ("${direction}") read under a heading it did not sit under; ${canonicalFeeKey} is not priced by direction`,
+    };
+  }
   if (!rule) {
     const ceilingReason = aboveCeiling(canonicalFeeKey, name, context);
     return ceilingReason ? { ok: false, code: "amount_implausible", reason: ceilingReason } : { ok: true };
