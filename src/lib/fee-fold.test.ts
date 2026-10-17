@@ -209,6 +209,24 @@ describe("top-50 fold", () => {
     }
   });
 
+  test("a returned foreign item leaves NSF, and an IRA's own closing charge leaves early closure (guard v69)", () => {
+    const split = (key: string, name: string) => splitLiveCategory(key, name)?.to ?? null;
+    for (const name of ["International Returned Item", "Canadian Returned Checks (per check)", "Returned item fee for Canadian checks"]) {
+      expect(split("nsf", name), name).toBe("deposited_item_return");
+      expect(passesDarwinChecks("deposited_item_return", name, 35), name).toBe(true);
+    }
+    for (const name of ["Returned Items, each - Within U.S./Outside U.S.", "Non-Sufficient Funds Fee - Canadian Check", "NSF Fee", "Foreign returned check fee (at cost plus)8"]) {
+      expect(split("nsf", name), name).toBeNull();
+    }
+    for (const name of ["Individual Retirement Account Closing Fee", "IRA Closed Account Fee", "Retirement/HSA Account Closing Fee"]) {
+      expect(split("early_closure", name), name).toBe("ira_termination");
+      expect(passesDarwinChecks("ira_termination", name, 50), name).toBe(true);
+    }
+    for (const name of ["Early closure of CD (fee to close prior to maturity)", "Account Closed within 90 days of opening (including IRA's)", "Christmas Club Withdrawal Fee", "HSA Account Closure Fee"]) {
+      expect(split("early_closure", name), name).toBeNull();
+    }
+  });
+
   // Written for either setting of SUBORDINATION_REFILE_LIVE, so turning it on is a one-line change.
   test("a subordination stays legal process (James, Oct 15) and moves from other lending only once switched on; a money order copy is a check copy", () => {
     const split = (key: string, name: string) => splitLiveCategory(key, name)?.to ?? null;

@@ -67,8 +67,8 @@ describe("ABOUT_BLOCKS", () => {
     expect(text).not.toMatch(/James|Frost|Velocity|CSI|Atlas|Magellan|Rosetta|Knox|Darwin/);
   });
 
-  it("names Hamilton as the Pro workspace and links the reader to its plans", () => {
-    expect(ABOUT_BLOCKS[1].lines[0]).toContain("Hamilton, the Pro workspace");
+  it("names Hamilton as the Fee Insight workspace and links the reader to its plans", () => {
+    expect(ABOUT_BLOCKS[1].lines[0]).toContain("Hamilton, the Fee Insight workspace");
     expect(ABOUT_BLOCKS[1].link).toEqual({ href: "/subscribe", label: "See Hamilton plans" });
   });
 

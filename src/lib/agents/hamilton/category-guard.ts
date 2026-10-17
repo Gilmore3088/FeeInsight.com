@@ -358,6 +358,10 @@ const RESTORE_REFILES: ReadonlyMap<string, RegExp> = new Map([
   ["nsf>deposited_item_return", /\b(bonds?|coupons?)\b/i],
   // v60: a night deposit bag key or replacement bag filed as a safe deposit box (3/3 on source, Oct 9).
   ["safe_deposit_box>night_deposit", /[\s\S]/],
+  // v69 (#1753): a replaced, lost or stolen card, and an ATM dispute or a copy of a card sale, filed
+  // as a non-network ATM fee (5/5 on source, Oct 17).
+  ["atm_non_network>card_replacement", /replac|\blost\b|\bstolen\b/i],
+  ["atm_non_network>account_research", /\bdisput|\bcop(?:y|ies) of\b/i],
 ]);
 
 /**

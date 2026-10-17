@@ -18,7 +18,7 @@ function toNumberOrNull(value: unknown): number | null {
 async function handleGET(request: NextRequest) {
   const caller = await authorizeV1(request, { paidOnly: "Fee changes", usageEvent: "api.v1.fee_changes" });
   if (caller instanceof Response) return caller;
-  const { organizationId, anonymousId, rateLimit } = caller;
+  const { organizationId, keyId, anonymousId, rateLimit } = caller;
 
   const { searchParams } = request.nextUrl;
   let days: number;
@@ -31,7 +31,7 @@ async function handleGET(request: NextRequest) {
     }
   } catch (error) {
     if (error instanceof ApiParamError) {
-      logApiUsage(organizationId, anonymousId, "api.v1.fee_changes", { status: 400 }).catch(() => {});
+      logApiUsage(organizationId, anonymousId, "api.v1.fee_changes", { status: 400 }, keyId).catch(() => {});
       return apiError(400, "invalid_parameter", error.message, { rateLimit });
     }
     throw error;
@@ -44,7 +44,7 @@ async function handleGET(request: NextRequest) {
     category,
     count: changes.length,
     status: 200,
-  }).catch(() => {});
+  }, keyId).catch(() => {});
 
   return withApiCaching(request, withApiHeaders(
     NextResponse.json({

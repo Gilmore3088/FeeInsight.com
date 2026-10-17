@@ -43,7 +43,7 @@ function toNumberOrNull(value: unknown): number | null {
 async function handleGET(request: NextRequest) {
   const caller = await authorizeV1(request);
   if (caller instanceof Response) return caller;
-  const { organizationId, anonymousId, rateLimit, paid } = caller;
+  const { organizationId, keyId, anonymousId, rateLimit, paid } = caller;
 
   const { searchParams } = request.nextUrl;
   let id: number | null;
@@ -103,7 +103,7 @@ async function handleGET(request: NextRequest) {
     if (format === "csv" && view !== "benchmark") throw new ApiParamError("format=csv is available for view=benchmark");
   } catch (error) {
     if (error instanceof ApiParamError) {
-      logApiUsage(organizationId, anonymousId, "api.v1.institutions", { status: 400 }).catch(() => {});
+      logApiUsage(organizationId, anonymousId, "api.v1.institutions", { status: 400 }, keyId).catch(() => {});
       return apiError(400, "invalid_parameter", error.message, { rateLimit });
     }
     throw error;
@@ -115,7 +115,7 @@ async function handleGET(request: NextRequest) {
       logApiUsage(organizationId, anonymousId, "api.v1.institutions.detail", {
         institution_id: id,
         status: 403,
-      }).catch(() => {});
+      }, keyId).catch(() => {});
       return planRequiredError(rateLimit, "Institution detail");
     }
 
@@ -124,7 +124,7 @@ async function handleGET(request: NextRequest) {
       logApiUsage(organizationId, anonymousId, "api.v1.institutions.detail", {
         institution_id: id,
         status: 404,
-      }).catch(() => {});
+      }, keyId).catch(() => {});
       return apiError(404, "not_found", "Institution not found", { rateLimit });
     }
 
@@ -136,7 +136,7 @@ async function handleGET(request: NextRequest) {
         format,
         count: benchmark?.rows.length ?? 0,
         status: 200,
-      }).catch(() => {});
+      }, keyId).catch(() => {});
       if (format === "csv") {
         const slug = String(inst.institution_name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60);
         return withApiCaching(request, withApiHeaders(
@@ -158,7 +158,7 @@ async function handleGET(request: NextRequest) {
       logApiUsage(organizationId, anonymousId, "api.v1.institutions.regulatory_watch", {
         institution_id: id,
         status: 200,
-      }).catch(() => {});
+      }, keyId).catch(() => {});
       return withApiCaching(request, withApiHeaders(
         NextResponse.json({ id: Number(inst.id), name: inst.institution_name, ...watch, attribution: API_ATTRIBUTION }),
         rateLimit,
@@ -191,7 +191,7 @@ async function handleGET(request: NextRequest) {
     logApiUsage(organizationId, anonymousId, "api.v1.institutions.detail", {
       institution_id: id,
       status: 200,
-    }).catch(() => {});
+    }, keyId).catch(() => {});
 
     return withApiCaching(request, withApiHeaders(
       NextResponse.json({
@@ -238,7 +238,7 @@ async function handleGET(request: NextRequest) {
       logApiUsage(organizationId, anonymousId, "api.v1.institutions.rank", {
         fee_category: feeCategory,
         status: 403,
-      }).catch(() => {});
+      }, keyId).catch(() => {});
       return planRequiredError(rateLimit, "Fee ranking");
     }
     const { rows, total } = await searchInstitutions({
@@ -258,7 +258,7 @@ async function handleGET(request: NextRequest) {
       charter_type: charter,
       page,
       status: 200,
-    }).catch(() => {});
+    }, keyId).catch(() => {});
 
     const pages = Math.ceil(total / pageSize);
     return withApiCaching(request, withApiHeaders(
@@ -305,7 +305,7 @@ async function handleGET(request: NextRequest) {
       page,
       page_size: pageSize,
       status: 200,
-    }).catch(() => {});
+    }, keyId).catch(() => {});
 
     const pages = Math.ceil(total / pageSize);
     return withApiCaching(request, withApiHeaders(
@@ -357,7 +357,7 @@ async function handleGET(request: NextRequest) {
     page,
     page_size: pageSize,
     status: 200,
-  }).catch(() => {});
+  }, keyId).catch(() => {});
 
   const pages = Math.ceil(total / pageSize);
   return withApiCaching(request, withApiHeaders(

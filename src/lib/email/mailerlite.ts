@@ -13,6 +13,7 @@ import {
   stateGroupName,
   toStateGroups,
 } from "@/lib/agents/marketing/mailerlite-campaigns";
+import { PRO_MONTHLY_OFFER } from "./monthly-offer";
 
 const MAILERLITE_SUBSCRIBERS_ENDPOINT = "https://connect.mailerlite.com/api/subscribers";
 
@@ -37,6 +38,11 @@ export interface MailerLiteLeadInput {
    * fresh double opt-in may do that.
    */
   reconfirmed?: boolean;
+  /**
+   * Custom fields the lifecycle emails read (report_name, report_url, report_finding,
+   * report_finding_title, report_finding_cta, follow_name, follow_url). Each field must exist in MailerLite; a null value is left out.
+   */
+  fields?: Record<string, string | null>;
 }
 
 export function isMailerLiteSyncEnabled() {
@@ -46,31 +52,61 @@ export function isMailerLiteSyncEnabled() {
   );
 }
 
-// Each lead joins one group, so it runs one nurture sequence at a time. Highest intent
-// wins: report requests, then institution/state watchers, then the newsletter group.
-const REPORT_GROUP_SOURCES = new Set(["report", "report_national", "report_district", "capture_report_sample"]);
+// Each person runs one lifecycle sequence at a time (James, Oct 17). Highest intent wins:
+// Pro customers, then report requests, then institution/state followers, then free research
+// subscribers. Sources outside these sets (account sign-ups, contact forms, paid report quotes)
+// join no lifecycle group; they still get the monthly edition.
+const REPORT_GROUP_SOURCES = new Set(["report_national", "report_district", "capture_report_sample", "capture_homepage"]);
 const WATCHER_GROUP_SOURCES = new Set(["capture_institution", "capture_state"]);
+const NEWSLETTER_GROUP_SOURCES = new Set(["newsletter", "capture_national_index"]);
 
+const env = (name: string) => (process.env[name] || "").trim();
+
+/** Lifecycle group ids, highest intent first; unset ones are left out. */
+export function lifecycleGroupIds(): string[] {
+  return ["MAILERLITE_PRO_GROUP_ID", "MAILERLITE_REPORT_GROUP_ID", "MAILERLITE_WATCHER_GROUP_ID", "MAILERLITE_GROUP_ID"]
+    .map(env)
+    .filter(Boolean);
+}
+
+/** The lifecycle group a lead's sources call for, or "" when none does. */
 export function mailerLiteGroupForSource(source?: string | null): string {
-  const env = (name: string) => (process.env[name] || "").trim();
   const sources = new Set((source || "").split(",").map((s) => s.trim()).filter(Boolean));
   const has = (set: Set<string>) => [...sources].some((s) => set.has(s));
   if (has(REPORT_GROUP_SOURCES) && env("MAILERLITE_REPORT_GROUP_ID")) return env("MAILERLITE_REPORT_GROUP_ID");
   if (has(WATCHER_GROUP_SOURCES) && env("MAILERLITE_WATCHER_GROUP_ID")) return env("MAILERLITE_WATCHER_GROUP_ID");
-  return env("MAILERLITE_GROUP_ID");
+  if (has(NEWSLETTER_GROUP_SOURCES)) return env("MAILERLITE_GROUP_ID");
+  return "";
+}
+
+/**
+ * Which lifecycle group to join and which to leave, given the ones the subscriber is in now.
+ * Nobody joins a sequence while in one of equal or higher intent (a Pro customer gets no
+ * nurture at all), and joining a higher one leaves the lower ones.
+ */
+export function planLifecycleGroups(target: string, current: Set<string>): { join: string | null; leave: string[] } {
+  const ranked = lifecycleGroupIds();
+  const rank = (id: string) => ranked.indexOf(id);
+  if (!target || rank(target) < 0) return { join: null, leave: [] };
+  const held = ranked.filter((id) => current.has(id));
+  if (held.some((id) => rank(id) <= rank(target))) return { join: null, leave: [] };
+  return { join: target, leave: held };
 }
 
 export function buildMailerLitePayload(input: MailerLiteLeadInput, stateGroupId?: string | null) {
-  const groupId = mailerLiteGroupForSource(input.source);
-  const sourceField = (process.env.MAILERLITE_SOURCE_FIELD || "").trim();
+  const sourceField = env("MAILERLITE_SOURCE_FIELD");
   const payload: Record<string, unknown> = {
     email: input.email,
     status: input.subscribed ? "active" : "unsubscribed",
   };
-  const groups = [groupId, stateGroupId].filter((id): id is string => Boolean(id));
-  if (input.subscribed && groups.length) payload.groups = groups;
+  // The lifecycle group is added after the upsert (planLifecycleGroups), once the subscriber's
+  // current groups are known, so nobody is dropped into an overlapping sequence.
+  if (input.subscribed && stateGroupId) payload.groups = [stateGroupId];
   if (input.subscribed && input.reconfirmed) payload.resubscribe = true;
-  if (sourceField && input.source) payload.fields = { [sourceField]: input.source };
+  const fields: Record<string, string> = {};
+  if (sourceField && input.source) fields[sourceField] = input.source;
+  for (const [key, value] of Object.entries(input.fields ?? {})) if (value) fields[key] = value;
+  if (Object.keys(fields).length) payload.fields = fields;
   return payload;
 }
 
@@ -156,6 +192,10 @@ export async function syncLeadToMailerLite(input: MailerLiteLeadInput): Promise<
         fetch(`${apiBase()}/subscribers/${id}/groups/${groupId}`, { method: "DELETE", headers: authHeaders() }).catch(() => null),
       ));
     }
+    if (id && input.subscribed && Array.isArray(body?.data?.groups)) {
+      const current = new Set(body.data.groups.map((group) => String(group.id)));
+      await applyLifecycleGroups(id, planLifecycleGroups(mailerLiteGroupForSource(input.source), current)).catch(() => null);
+    }
     // One marketing email a month: a reader with no state gets the national email (its own
     // group); a reader in a state group gets that state's edition instead.
     if (id && input.subscribed) {
@@ -172,5 +212,49 @@ export async function syncLeadToMailerLite(input: MailerLiteLeadInput): Promise<
       status: "failed",
       error: error instanceof Error ? error.message : "MailerLite sync failed.",
     };
+  }
+}
+
+async function applyLifecycleGroups(id: string, plan: { join: string | null; leave: string[] }): Promise<void> {
+  await Promise.all(plan.leave.map((groupId) =>
+    fetch(`${apiBase()}/subscribers/${id}/groups/${groupId}`, { method: "DELETE", headers: authHeaders() }).catch(() => null),
+  ));
+  if (plan.join) await fetch(`${apiBase()}/subscribers/${id}/groups/${plan.join}`, { method: "POST", headers: authHeaders() });
+}
+
+/**
+ * A new Hamilton Pro customer joins the Pro customers group (its onboarding sequence) and
+ * leaves every other lifecycle group, which also ends generic upgrade prompts. It never sets a
+ * status: an address that unsubscribed stays unsubscribed.
+ */
+export async function syncProCustomerToMailerLite(email: string): Promise<MailerLiteSyncResult> {
+  const pro = env("MAILERLITE_PRO_GROUP_ID");
+  if (!isMailerLiteSyncEnabled() || !pro) {
+    return { status: "disabled", reason: "MailerLite sync is off or MAILERLITE_PRO_GROUP_ID is unset." };
+  }
+  try {
+    const response = await fetch(process.env.MAILERLITE_SUBSCRIBERS_ENDPOINT || MAILERLITE_SUBSCRIBERS_ENDPOINT, {
+      method: "POST",
+      headers: authHeaders(),
+      // The monthly edition reads these fields to swap its report offer for a Hamilton line.
+      body: JSON.stringify({ email, fields: PRO_MONTHLY_OFFER }),
+      // Runs inside the Stripe webhook response; a slow MailerLite must not hold it.
+      signal: AbortSignal.timeout(5_000),
+    });
+    const body = (await response.json().catch(() => null)) as {
+      data?: { id?: unknown; groups?: Array<{ id?: unknown }> };
+      message?: unknown;
+    } | null;
+    if (!response.ok) {
+      const message = typeof body?.message === "string" ? body.message : `HTTP ${response.status}`;
+      return { status: "failed", error: `MailerLite Pro sync failed: ${message}` };
+    }
+    const id = typeof body?.data?.id === "string" || typeof body?.data?.id === "number" ? String(body.data.id) : null;
+    if (!id) return { status: "failed", error: "MailerLite returned no subscriber id." };
+    const current = new Set((body?.data?.groups ?? []).map((group) => String(group.id)));
+    await applyLifecycleGroups(id, planLifecycleGroups(pro, current));
+    return { status: "synced", subscriberId: id };
+  } catch (error) {
+    return { status: "failed", error: error instanceof Error ? error.message : "MailerLite Pro sync failed." };
   }
 }

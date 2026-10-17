@@ -76,7 +76,7 @@ const TOOLS = [
   },
   {
     name: "API and Exports",
-    description: "Review public REST docs; Pro members can export verified-only CSV data.",
+    description: "Review public REST docs; Pro members can export published-fee CSV data.",
     icon: "M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4",
     href: "/api-docs",
   },

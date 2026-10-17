@@ -18,7 +18,7 @@ export async function createAccountApiKey(): Promise<ApiKeyActionResult> {
   if (!user) return { error: "Sign in again to make a key." };
   const payer = await findApiPayer(user.id).catch(() => null);
   if (!payer?.stripeCustomerId) {
-    return { error: "An active Pro subscription is needed to make a key." };
+    return { error: "An active Hamilton subscription is needed to make a key." };
   }
   const billing = await getBillingSummary(payer.stripeCustomerId);
   if (!billing) return { error: "We couldn't check your plan just now. Try again in a minute." };

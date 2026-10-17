@@ -23,7 +23,7 @@ import { countedInstitutionCount } from "@/lib/data-store/fee-stats";
 async function handleGET(request: NextRequest) {
   const caller = await authorizeV1(request);
   if (caller instanceof Response) return caller;
-  const { auth, user, organizationId, anonymousId, rateLimit, paid } = caller;
+  const { auth, user, organizationId, keyId, anonymousId, rateLimit, paid } = caller;
 
   const { searchParams } = request.nextUrl;
   const category = searchParams.get("category");
@@ -32,7 +32,7 @@ async function handleGET(request: NextRequest) {
     format = formatParam(searchParams);
   } catch (error) {
     if (error instanceof ApiParamError) {
-      logApiUsage(organizationId, anonymousId, category ? "api.fees.category" : "api.fees.list", { status: 400 });
+      logApiUsage(organizationId, anonymousId, category ? "api.fees.category" : "api.fees.list", { status: 400 }, keyId);
       return apiError(400, "invalid_parameter", error.message, { rateLimit });
     }
     throw error;
@@ -44,16 +44,16 @@ async function handleGET(request: NextRequest) {
   // Single category detail (Pro and Enterprise only)
   if (category) {
     if (!paid) {
-      logApiUsage(organizationId, anonymousId, "api.fees.category", { category, status: 403 });
+      logApiUsage(organizationId, anonymousId, "api.fees.category", { category, status: 403 }, keyId);
       return planRequiredError(rateLimit, "Category detail");
     }
     const detail = await getFeeCategoryDetail(category);
     if (!detail || detail.fees.length === 0) {
-      logApiUsage(organizationId, anonymousId, "api.fees.category", { category, status: 404 });
+      logApiUsage(organizationId, anonymousId, "api.fees.category", { category, status: 404 }, keyId);
       return apiError(404, "not_found", "Category not found", { rateLimit, extra: { category } });
     }
 
-    logApiUsage(organizationId, anonymousId, "api.fees.category", { category, status: 200 });
+    logApiUsage(organizationId, anonymousId, "api.fees.category", { category, status: 200 }, keyId);
     return withApiCaching(request, withApiHeaders(
       NextResponse.json({
         category,
@@ -95,7 +95,7 @@ async function handleGET(request: NextRequest) {
 
   if (format === "csv") {
     if (!paidKey && !canExportData(user)) {
-      logApiUsage(organizationId, anonymousId, "api.fees.list", { format: "csv", status: 403 });
+      logApiUsage(organizationId, anonymousId, "api.fees.list", { format: "csv", status: 403 }, keyId);
       return planRequiredError(rateLimit, "CSV export");
     }
     const csv = toCsv(
@@ -107,7 +107,7 @@ async function handleGET(request: NextRequest) {
       format: "csv",
       count: data.length,
       status: 200,
-    });
+    }, keyId);
     return withApiCaching(request, withApiHeaders(
       new NextResponse(csv, {
         headers: {
@@ -123,7 +123,7 @@ async function handleGET(request: NextRequest) {
     format: "json",
     count: data.length,
     status: 200,
-  });
+  }, keyId);
   return withApiCaching(request, withApiHeaders(
     NextResponse.json({
       total: data.length,

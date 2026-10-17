@@ -28,7 +28,7 @@ const TAXONOMY_TYPES = new Set(Object.values(FEE_FAMILIES).flat());
 async function handleGET(request: NextRequest) {
   const caller = await authorizeV1(request);
   if (caller instanceof Response) return caller;
-  const { auth, user, anonymousId: anonId, rateLimit, paid } = caller;
+  const { auth, user, keyId, anonymousId: anonId, rateLimit, paid } = caller;
 
   const { searchParams } = request.nextUrl;
   let state: string | null;
@@ -44,7 +44,7 @@ async function handleGET(request: NextRequest) {
     format = formatParam(searchParams);
   } catch (error) {
     if (error instanceof ApiParamError) {
-      logApiUsage(auth.organizationId, anonId, "api.v1.index", { status: 400 }).catch(() => {});
+      logApiUsage(auth.organizationId, anonId, "api.v1.index", { status: 400 }, keyId).catch(() => {});
       return apiError(400, "invalid_parameter", error.message, { rateLimit });
     }
     throw error;
@@ -53,7 +53,7 @@ async function handleGET(request: NextRequest) {
   const paidKey = isPaidApiKey(auth);
 
   if (format === "csv" && !paidKey && !canExportData(user)) {
-    logApiUsage(auth.organizationId, anonId, "api.v1.index.csv", { status: 403 }).catch(() => {});
+    logApiUsage(auth.organizationId, anonId, "api.v1.index.csv", { status: 403 }, keyId).catch(() => {});
     return planRequiredError(rateLimit, "CSV export");
   }
 
@@ -105,7 +105,7 @@ async function handleGET(request: NextRequest) {
       ]),
     );
 
-    logApiUsage(auth.organizationId, anonId, "api.v1.index.csv", { count: data.length, status: 200 }).catch(() => {});
+    logApiUsage(auth.organizationId, anonId, "api.v1.index.csv", { count: data.length, status: 200 }, keyId).catch(() => {});
     return withApiCaching(request, withApiHeaders(
       new NextResponse(csv, {
         headers: {
@@ -117,7 +117,7 @@ async function handleGET(request: NextRequest) {
     ));
   }
 
-  logApiUsage(auth.organizationId, anonId, "api.v1.index", { count: data.length, status: 200 }).catch(() => {});
+  logApiUsage(auth.organizationId, anonId, "api.v1.index", { count: data.length, status: 200 }, keyId).catch(() => {});
   return withApiCaching(request, withApiHeaders(
     NextResponse.json({
       scope: hasFilters ? "filtered" : "national",
