@@ -46,7 +46,7 @@ export type EvidenceProblem =
 export const PROBLEM_REASON: Record<EvidenceProblem, string> = {
   quote_without_amount: "the quote does not show the amount",
   quote_names_other_fee: "the quote gives the amount for a different fee",
-  not_a_fee_schedule: "general article, not the bank's fee schedule",
+  not_a_fee_schedule: "general article, not the institution's own fee schedule",
   add_on_feature: "optional add-on, not account maintenance",
   international_atm: "international ATM withdrawal, not domestic",
 };
@@ -110,7 +110,7 @@ function addOnKind(text: string): string {
  * The reason a record was left out, naming what its quote describes and the fee the line compares:
  * "sustained overdraft, not per-item overdraft", "incoming wire, not outgoing domestic wire",
  * "ATM surcharge-refund add-on, not account maintenance", "international ATM withdrawal, not
- * domestic", "educational article, not the bank's fee schedule". "The quote does not show the
+ * domestic", "educational article, not the institution's own fee schedule". "The quote does not show the
  * amount" is kept for a quote where the amount is truly absent. Shared by the page and the CSV.
  */
 export function problemReason(
@@ -123,8 +123,8 @@ export function problemReason(
       return "the quote does not show the amount";
     case "not_a_fee_schedule":
       return educationalPage(record.source_url)
-        ? "educational article, not the bank's fee schedule"
-        : "general statement about fees, not the bank's fee schedule";
+        ? "educational article, not the institution's own fee schedule"
+        : "general statement about fees, not the institution's own fee schedule";
     case "quote_names_other_fee": {
       const label = otherFeeLabel(line, record.quote, record.amount);
       return `${label ? describedFee(line, label) : "a different fee"}, not ${lineFee(line)}`;
@@ -266,6 +266,17 @@ export function otherFeeLabel(line: string, quote: string, amount: number): stri
   // record fails when some label names another fee and none names its own.
   if (labels.some(namesOwn)) return null;
   return labels.find(namesOther) ?? null;
+}
+
+/**
+ * Whether a label on the record's amount names the line's own fee and none names another
+ * ("Overdraft Charge/Overdraft Fee (each item) | $36.00" on overdraft).
+ */
+export function quoteNamesOwnFee(line: string, quote: string, amount: number): boolean {
+  const own = LINE_TESTS.find((t) => t.rule.key === line);
+  if (!own) return false;
+  const labels = amountLabels(quote, amount);
+  return labels.some((label) => !own.exclude.test(label) && (own.include.test(label) || own.words.some((word) => word.test(label))));
 }
 
 /**

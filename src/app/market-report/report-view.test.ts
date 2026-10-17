@@ -72,7 +72,7 @@ describe("priorities for review", () => {
   const wires = [
     line("wire_domestic_outgoing", "Outgoing domestic wire", 35, [19, 25, 27.5, 30], "above_market"),
     line("wire_intl_outgoing", "Outgoing international wire", 75, [16, 43.125, 47.5, 50], "above_market"),
-    line("monthly_maintenance", "Monthly maintenance (median checking price)", 7.95, [18, 8, 10, 11.5], "below_market"),
+    line("monthly_maintenance", "Monthly maintenance (checking)", 7.95, [18, 8, 10, 11.5], "below_market"),
   ];
   const revenue: RevenueContext = {
     quarters: [{ quarter: "2026-Q2", thousands: 5656 }],
@@ -83,9 +83,9 @@ describe("priorities for review", () => {
   it("names where to look from the report's own figures, never a price to change", () => {
     const items = reviewPriorities("Capital City Bank", wires, { revenue, lineup: { peersWithLineup: 20 } as CheckingLineupView });
     expect(items).toEqual([
-      "Wires: review the two fees above the local middle 50% (outgoing domestic and outgoing international).",
-      "Checking: compare equivalent account types and waiver conditions, not the monthly fee alone. Lineups are on file for 20 local competitors.",
-      "Fee income: the rank of 13 of 872 banks with $1B to $10B in assets is in raw dollars, and that asset band is broad. As a share of revenue, Capital City Bank's service charges are 8.7% against a median of 2.2%.",
+      "Wires: investigate the two fees above the local middle 50% (outgoing domestic and outgoing international).",
+      "Checking: compare equivalent account types and waiver conditions. Lineups are on file for 20 local competitors.",
+      "Fee income: rank 13 of 872 banks with $1B to $10B in assets in dollars. That asset band is broad, so size shapes the rank. As a share of revenue, Capital City Bank's service charges are 8.7%, against a median of 2.2% for the same 872 banks.",
     ]);
     expect(items.join(" ")).not.toMatch(/\b(raise|lower|cut|increase|reduce|should)\b/i);
   });
@@ -94,13 +94,13 @@ describe("priorities for review", () => {
     expect(reviewPriorities("Capital City Bank", [lines[1]])).toEqual([]);
     const noShare = { ...revenue, peer: { ...revenue.peer!, feeShare: null } };
     expect(reviewPriorities("Capital City Bank", [lines[0]], { revenue: noShare })).toEqual([
-      "Overdraft: review the fee above the local middle 50%.",
-      "Fee income: the rank of 13 of 872 banks with $1B to $10B in assets is in raw dollars, and that asset band is broad.",
+      "Overdraft: investigate the fee above the local middle 50%.",
+      "Fee income: rank 13 of 872 banks with $1B to $10B in assets in dollars. That asset band is broad, so size shapes the rank.",
     ]);
   });
 
   it("says beside each local median how it is built", () => {
-    expect(medianMethod("monthly_maintenance", 18)).toBe("Median of 18 competitors' median checking prices");
+    expect(medianMethod("monthly_maintenance", 18)).toBe("Median across 18 competitors, each at the middle of its checking fees");
     expect(medianMethod("atm_non_network", 15)).toBe("Median of 15 competitors' domestic fees, one each");
     expect(medianMethod("overdraft", 17)).toBe("Median of 17 competitors' standard fees, one each");
   });

@@ -167,16 +167,16 @@ function RevenueSection({ name, charterType, revenue }: { name: string; charterT
         </dl>
         {peer && peer.feeShare != null && peer.peerMedianFeeShare != null && (
           <>
-            <p className={`${FIGURE_CAPTION} mt-8`}>{creditUnion ? "Fee income" : "Service charges"} as a share of revenue, {quarterLabel(latest.quarter)}</p>
+            <p className={`${FIGURE_CAPTION} mt-8`}>{creditUnion ? "Fee income" : "Service charges"} as a share of revenue (net interest plus noninterest income), {quarterLabel(latest.quarter)}</p>
             <dl className="mt-4 grid grid-cols-1 gap-6 sm:grid-cols-3">
-              <Tile label={`${name}, share of revenue (net interest plus noninterest income)`} value={shareLabel(peer.feeShare)} />
+              <Tile label={`${name}, ${quarterLabel(latest.quarter)}`} value={shareLabel(peer.feeShare)} />
               <Tile label={`Median of the same ${peer.count.toLocaleString("en-US")} ${peer.population ?? "institutions"}`} value={shareLabel(peer.peerMedianFeeShare)} />
             </dl>
           </>
         )}
         {population && (
           <p className="mt-4 text-[13px] text-ink-soft sm:mx-0 sm:text-left">
-            Compared with {population}; the {peer?.tierLabel.replace(/\s*-\s*/, " to ")} asset band is broad, so the rank in dollars partly reflects size. {peer?.population === "banks" ? "Credit unions are left out: their NCUA fee income is a wider measure than bank service charges." : peer?.population === "credit unions" ? "Banks are left out: their service charges are a narrower measure than NCUA fee income." : ""}
+            Compared with {population}. That asset band is broad, so the rank in dollars partly reflects size. {peer?.population === "banks" ? "Credit unions are left out: their NCUA fee income is a wider measure than bank service charges." : peer?.population === "credit unions" ? "Banks are left out: their service charges are a narrower measure than NCUA fee income." : ""}
           </p>
         )}
       </figure>
@@ -216,6 +216,9 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
           {analysis.readiness.ready && (
             <p className="mx-auto mt-3 text-[18px] font-semibold leading-snug text-ink sm:mx-0 sm:text-[21px]">{headlineFinding(analysis.lines)}</p>
           )}
+          <p className="mx-auto mt-3 text-[14px] text-ink-soft sm:mx-0">
+            {counties} · prepared {DATE.format(preparedOn)} by {SITE_NAME}
+          </p>
           {analysis.readiness.ready && priorities.length > 0 && (
             <section aria-labelledby="priorities-heading" className="mx-auto mt-5 max-w-3xl border-l-2 border-brick pl-4 text-left sm:mx-0">
               <PriorityHeading id="priorities-heading" className="text-[13px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
@@ -228,9 +231,6 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
               </ul>
             </section>
           )}
-          <p className="mx-auto mt-3 text-[14px] text-ink-soft sm:mx-0">
-            {counties} · prepared {DATE.format(preparedOn)} by {SITE_NAME}
-          </p>
           <div className="mt-5 flex flex-wrap justify-center gap-3 sm:justify-start print:hidden">{actions}</div>
         </div>
       </header>
@@ -383,7 +383,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                 <li>
                   When an institution publishes several prices for one fee, the range is shown and the comparison uses the value the
                   Bank Fee Index counts for it: the middle of its prices, or for overdraft its standard fee, the highest of its prices.
-                  Monthly maintenance uses the same basis for {name} and every competitor: each one&apos;s median eligible checking price.
+                  Monthly maintenance uses the same basis for {name} and every competitor: the middle of each one&apos;s eligible checking account fees.
                   Opening a fee lists each of those prices with its account, the line that states it and its source.
                 </li>
                 <li>

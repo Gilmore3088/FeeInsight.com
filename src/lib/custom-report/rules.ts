@@ -27,9 +27,9 @@ export const CONDITIONAL_VARIANT = "^(?!.*(no (fee|charge)|waive|exempt|not char
 export const FEE_LINE_RULES: FeeLineRule[] = [
   {
     key: "monthly_maintenance",
-    // One basis for the institution and every competitor alike: each one's median eligible
-    // checking-account price (`institutionValue`), since few schedules name an entry account.
-    label: "Monthly maintenance (median checking price)",
+    // One basis for the institution and every competitor alike: the middle of each one's eligible
+    // checking account fees (`institutionValue`), since few schedules name an entry account.
+    label: "Monthly maintenance (checking)",
     sourceKeys: ["monthly_maintenance", "minimum_balance"],
     include: "(maintenance|monthly service|service charge|monthly fee)",
     exclude:

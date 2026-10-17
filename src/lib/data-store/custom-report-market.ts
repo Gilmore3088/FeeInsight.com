@@ -4,6 +4,8 @@ import { FEE_LINE_RULES } from "@/lib/custom-report/rules";
 import { checkFeeAgainstSource, type SourceCheckFailure } from "@/lib/custom-report/source-check";
 import { nameIsFragment } from "@/lib/agents/darwin/release-review";
 import { institutionDisplayName } from "@/lib/institution-display-name";
+import { quoteNamesOtherFee, quoteNamesOwnFee, quoteStatesFigure } from "@/lib/custom-report/evidence";
+import { catalogExcerpt } from "./account-lineup";
 
 /**
  * Live data for an automatic Competitive Fee Position Report: the institution, its local
@@ -58,6 +60,24 @@ export function reportRowProblem(row: { fee_name: string; takedown_pending?: boo
   return null;
 }
 const SOD_THOUSANDS = 1_000;
+
+const collapse = (text: string) => text.replace(/\s+/g, " ").trim().toLowerCase();
+
+/**
+ * The schedule line a report shows for a record. The shared source check finds the first line of
+ * the document that states the amount under the fee's words, which can be another fee's line: for
+ * Hancock Whitney's "Overdraft Charge/Overdraft Fee (each item)" $36 (row 66419) it found "Sustained
+ * Overdraft Fee of $36.00" higher up the same document. The record's own stored excerpt (the line
+ * it was read from) is used instead when it states the amount as this fee and appears in that same
+ * stored text.
+ */
+export function recordSourceLine(line: string, checked: string, excerpt: string | null, amount: number, text: string | null): string {
+  if (!excerpt || !text || !quoteStatesFigure(excerpt, amount)) return checked;
+  // Only to replace a line that labels the amount as another fee, with one that labels it as this
+  // fee: TD's "$3 monthly fee" excerpt must not hide the "Paper statements" its line names.
+  if (!quoteNamesOtherFee(line, checked, amount) || !quoteNamesOwnFee(line, excerpt, amount)) return checked;
+  return collapse(text).includes(collapse(excerpt)) ? excerpt : checked;
+}
 
 export interface MarketInstitution {
   institution_id: number;
@@ -307,6 +327,7 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
       updated_at: string | null;
       source_document_id: string | null;
       takedown_pending: boolean | null;
+      conditions: string | null;
     }[]
   >`
     WITH rules AS (
@@ -335,7 +356,8 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
       SELECT c.id AS fee_id, c.institution_id, r.k AS line, c.amount, c.fee_name, c.source_document_id,
              COALESCE(c.document_url, c.source_url) AS source_url, c.updated_at,
              EXISTS (SELECT 1 FROM pipeline_feedback pf
-                      WHERE pf.fee_published_id = c.id AND pf.kind = 'takedown_pending') AS takedown_pending
+                      WHERE pf.fee_published_id = c.id AND pf.kind = 'takedown_pending') AS takedown_pending,
+             COALESCE(c.extraction_note, c.conditions) AS conditions
       FROM published_fee_catalog c
       JOIN rules r ON c.canonical_fee_key = ANY (r.source_keys)
       WHERE c.institution_id IN (SELECT institution_id FROM members)
@@ -359,7 +381,7 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
     )
     SELECT m.institution_id, s.institution_name, s.city, s.state_code, s.charter_type,
            m.deposits AS market_deposits, p.line, p.fee_id, p.amount, p.fee_name, p.source_url, p.updated_at::text AS updated_at,
-           p.source_document_id::text AS source_document_id, p.takedown_pending
+           p.source_document_id::text AS source_document_id, p.takedown_pending, p.conditions
     FROM members m
     JOIN institution_sources s ON s.id = m.institution_id
     LEFT JOIN ranked p ON p.institution_id = m.institution_id
@@ -435,7 +457,10 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
         dropped[check.reason] = (dropped[check.reason] ?? 0) + 1;
         continue;
       }
-      if (maintenanceLineIsNotChecking(row.line, check.sourceLine)) {
+      // The line the record was read from, when its stored excerpt states the amount on this same
+      // document; otherwise the first line the shared check matched (recordSourceLine).
+      const sourceLine = recordSourceLine(row.line, check.sourceLine, catalogExcerpt(row.conditions), amount, source?.text ?? null);
+      if (maintenanceLineIsNotChecking(row.line, sourceLine)) {
         dropped.not_checking = (dropped.not_checking ?? 0) + 1;
         continue;
       }
@@ -443,7 +468,7 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
         id: row.fee_id === null ? null : Number(row.fee_id),
         amount,
         fee_name: row.fee_name,
-        source_line: check.sourceLine,
+        source_line: sourceLine,
         source_url: row.source_url ?? source?.url ?? null,
         schedule_read_on: source?.readOn ?? null,
       };
@@ -461,7 +486,7 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
             schedule_read_on: representative.schedule_read_on,
           },
         ];
-        if (!tiers.some((tier) => tier.amount === amount && tier.source_line === check.sourceLine)) {
+        if (!tiers.some((tier) => tier.amount === amount && tier.source_line === sourceLine)) {
           representative.tiers = [...tiers, record];
         }
         continue;
@@ -475,7 +500,7 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
         source_url: row.source_url ?? source?.url ?? null,
         updated_at: row.updated_at ? row.updated_at.slice(0, 10) : null,
         schedule_read_on: source?.readOn ?? null,
-        source_line: check.sourceLine,
+        source_line: sourceLine,
       };
       filled.set(slot, entry);
       lines.push(entry);

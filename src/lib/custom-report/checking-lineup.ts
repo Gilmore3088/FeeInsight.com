@@ -167,7 +167,7 @@ export function lineupMeasures(view: CheckingLineupView): { label: string; yours
     { label: "Lowest monthly fee", yours: lineupMoney(subject.lowestMonthlyFee), market: market(`${lineupMoney(peers.lowestMonthlyFee)} · ${reporting(peersWithLineup)}`) },
     {
       // Every account pooled, not one value per institution: the fee comparison's local median of
-      // monthly maintenance is the median of each competitor's own median checking price, so the
+      // monthly maintenance is the median across competitors, each at the middle of its checking fees, so the
       // two figures differ by method and population, and each says which beside it.
       label: "Median monthly fee, every account pooled",
       yours: lineupMoney(subject.medianMonthlyFee),

@@ -173,7 +173,7 @@ export function FeeComparison({ name, lines, names, branches, footprint }: FeeCo
                   <dt className="text-ink-muted">Local median</dt>
                   <dd className="text-right tabular-nums text-ink">
                     {money(line.peers.median)}
-                    <span className="block text-[11px] text-ink-muted">{medianMethod(line.key, line.peers.n)}</span>
+                    <span className="block text-[12px] leading-snug text-ink-muted">{medianMethod(line.key, line.peers.n)}</span>
                   </dd>
                   <dt className="text-ink-muted">Middle 50%</dt>
                   <dd className="text-right tabular-nums text-ink">

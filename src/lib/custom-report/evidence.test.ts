@@ -172,7 +172,7 @@ describe("problemReason names what the quote describes and the fee it is not", (
   });
 
   it("for an article, and only for a truly absent amount says the quote does not show it", () => {
-    expect(problemReason("overdraft", "not_a_fee_schedule", rec("Overdraft", 35, "The amount for overdraft fees varies, but $35 each occurrence is common.", "https://www.td.com/us/en/personal-banking/learning/money-management/types-of-checking-accounts"))).toBe("educational article, not the bank's fee schedule");
+    expect(problemReason("overdraft", "not_a_fee_schedule", rec("Overdraft", 35, "The amount for overdraft fees varies, but $35 each occurrence is common.", "https://www.td.com/us/en/personal-banking/learning/money-management/types-of-checking-accounts"))).toBe("educational article, not the institution's own fee schedule");
     expect(problemReason("stop_payment", "quote_without_amount", rec("Stop payment", 30, "Stop payment | $5"))).toBe("the quote does not show the amount");
   });
 
@@ -182,5 +182,14 @@ describe("problemReason names what the quote describes and the fee it is not", (
       source_line: "Paper statements | $3 monthly fee | Free for customers aged 60+, otherwise $3 monthly fee",
     };
     expect(buildAmountEvidence(td).excluded[0]).toMatchObject({ problem: "quote_names_other_fee", reason: "paper statements, not account maintenance" });
+  });
+});
+
+describe("Hancock Whitney's per-item overdraft fee (row 66419)", () => {
+  it("stays in on its own line and is left out only on the sustained fee's line", () => {
+    const product = "Overdraft Charge/Overdraft Fee (each item)";
+    const url = "https://www.hancockwhitney.com/hubfs/Forms/Access-TISA.pdf";
+    expect(evidenceProblem("overdraft", { product, amount: 36, quote: "Overdraft Charge/Overdraft Fee (each item) | $36.00", source_url: url })).toBeNull();
+    expect(evidenceProblem("overdraft", { product, amount: 36, quote: "not qualify as a direct deposit. | Sustained Overdraft Fee of $36.00. This", source_url: url })).toBe("quote_names_other_fee");
   });
 });

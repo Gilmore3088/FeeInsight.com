@@ -72,7 +72,7 @@ export function CheckingLineupSection({ name, lineup, live }: { name: string; li
           A competitor median needs at least {MIN_LINEUP_PEERS_FOR_MEDIAN} competitors stating the figure. Many schedules do not name each account or
           say how its fee is avoided, so medians rest only on the accounts that do.
           {lineup.leftOut > 0
-            ? ` ${lineup.leftOut.toLocaleString("en-US")} monthly fee ${lineup.leftOut === 1 ? "line" : "lines"} in this market for savings, money market, certificate, IRA or business accounts, or for an optional add-on, ${lineup.leftOut === 1 ? "is" : "are"} left out.`
+            ? ` ${lineup.leftOut.toLocaleString("en-US")} monthly fee ${lineup.leftOut === 1 ? "line in this market is" : "lines in this market are"} left out: savings, money market, certificate, IRA and business accounts, and optional add-ons.`
             : ""}
           {lineup.anyDerived ? ` ${DERIVED_MARK} Read from the schedule line that states the fee rather than a stored field.` : ""}
         </>
