@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const indexRefresh = vi.hoisted(() => ({ fn: vi.fn<(...args: unknown[]) => Promise<unknown>>() }));
 vi.mock("@/lib/data-store/fee-index", () => ({ refreshFeeIndexCache: (...args: unknown[]) => indexRefresh.fn(...args) }));
-const feedback = vi.hoisted(() => ({ fn: vi.fn(async (..._args: unknown[]) => 1) }));
+const feedback = vi.hoisted(() => ({ fn: vi.fn<(...args: unknown[]) => Promise<number>>(async () => 1) }));
 vi.mock("@/lib/agents/learning/feedback", () => ({ recordFeedback: (...args: unknown[]) => feedback.fn(...args) }));
 
 import { correctPublishedFee, resetCorrectionsReadyCache, reverseFeeCorrection } from "./fee-corrections";
