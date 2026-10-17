@@ -31,6 +31,6 @@
     { "pr": 1748, "issue": 1398, "metric": "detail.goal.accuracy.accuracy", "direction": "up", "min_change": 0.001, "note": "Research split on: 2,154 live account research fees move to returned mail (1,558) and excess withdrawals (596); Knox rules v77 file new reads there" },
     { "pr": 1757, "issue": 1059, "metric": "detail.goal.unstatedAudience.share", "direction": "down", "min_change": 0.001, "note": "Relabel v4: a schedule's own title decides its fees' audience; dry run 239 more unknown fees decided, 173 mixed-schedule both moved to one audience" },
     { "pr": 1769, "issue": 1110, "metric": "detail.goal.wrongAfterPublish.rate", "direction": "down", "min_change": 0.0001, "note": "Stop takedowns at source: publish refuses non-deposit rows and pairs Darwin judged another bank's; Darwin checks not-yet-live pairs first (dry run 94 waiting rows refused)" },
-    { "pr": 1776, "issue": 1092, "metric": "detail.goal.spend.weekUsd", "direction": "down", "min_change": 1, "note": "Knox buys no paid read for a bank's same text twice in a run or a page whose paid read found no fee (backtest 256 calls, $7.14 per 14 days)" }
+    { "pr": 1776, "issue": 1092, "metric": "detail.goal.spend.weekUsd", "direction": "down", "min_change": 1, "note": "Knox buys no paid read for a page whose earlier paid read found no fee (backtest 107 calls, $3.06 per 14 days, 0 live fees lost)" }
   ]
 }

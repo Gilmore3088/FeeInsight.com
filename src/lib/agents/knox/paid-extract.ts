@@ -46,9 +46,9 @@ type SqlTag = typeof sql;
  *
  * No call is bought for a text whose fees could never go live (takedowns at the source,
  * 2026-10-17): a closed institution's (publish never selects it) or a document Darwin's latest
- * document-owner read judged another bank's (publish refuses its rows). Nor for a read that
- * would yield nothing (`planPaidReads`): a bank's same text twice in one run, or a page whose
- * earlier paid read found no fee. Each skip is logged on the step (`knox.paid_read_skipped`).
+ * document-owner read judged another bank's (publish refuses its rows). Nor for a page whose
+ * earlier paid read found no fee (`planPaidReads`); each skip is logged on the step
+ * (`knox.paid_read_skipped`).
  */
 
 /** Version 2: monthly maintenance rows carry the account's lineup fields (`lineup.ts`). */
