@@ -15,7 +15,7 @@ export interface ApiUsageSummary {
   /** Calls counted against the allowance this month (the monthly reservation count). */
   used: number;
   allowance: number;
-  /** Successful (status 200) calls per key holder, most first. Calls logged without a key are not listed. */
+  /** Calls per key holder this month, most first, counting every logged outcome the way the allowance does. Calls logged without a key are not listed. */
   people: ApiUsagePerson[];
 }
 
@@ -60,7 +60,6 @@ export async function getApiUsageSummary(
       JOIN api_keys k ON k.id = ue.api_key_id
      WHERE ue.organization_id = ${orgId}
        AND ue.created_at >= ${monthStart}
-       AND ue.metadata ->> 'status' = '200'
      GROUP BY k.name
   `.catch((err: unknown) => {
     if ((err as { code?: unknown } | null)?.code === "42703") return [];

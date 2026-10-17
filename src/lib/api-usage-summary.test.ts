@@ -45,7 +45,7 @@ describe("getApiUsageSummary", () => {
     expect(text(1)).toContain("api_rate_limit_events");
     expect(values(1)).toEqual(["api.v1", "55", "2026-10-01T00:00:00.000Z"]);
     expect(text(2)).toContain("JOIN api_keys k ON k.id = ue.api_key_id");
-    expect(text(2)).toContain("metadata ->> 'status' = '200'");
+    expect(text(2)).not.toContain("metadata ->> 'status'");
     expect(values(2)).toEqual([55, "2026-10-01T00:00:00.000Z"]);
     expect(values(3)).toEqual([[12, 7]]);
   });

@@ -4,7 +4,8 @@
 --
 -- Data: this file adds one nullable column and one index. It changes no existing row and writes
 -- none; events logged before it keep api_key_id NULL (they are not backfilled). Code writes the
--- column only once it exists and tolerates it being absent on reads (the usage line is hidden).
+-- column only once it exists; without it, the account page shows the plan's monthly total with no
+-- per-person list.
 -- Deleting a key keeps its events and clears the link (ON DELETE SET NULL).
 -- Re-running is safe (IF NOT EXISTS throughout).
 -- Rollback: DROP INDEX IF EXISTS public.usage_events_api_key_id_created_at_idx;
