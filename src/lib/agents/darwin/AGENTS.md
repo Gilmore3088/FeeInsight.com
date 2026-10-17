@@ -242,9 +242,10 @@ Darwin owns verification and classification.
   `sentence_end` (a joining word at the end; "a", "an", "the" only in lower case so "N/A" never
   fires; never "above" or "each"), `trailing_range` ("up to" or "per", never "each"), `pronoun`
   ("will" or "you" only) and `plus` (a leading "+" with no fee noun after it). Step detail
-  `live_fragment_check`: rows read, the counts and samples by action below, the cursor. `FRAGMENT_NAME_TAKEDOWN_LIVE` is false: the
-  pass only reports. When a PR turns it on (after James has seen the whole-table dry run by
-  pattern), a `takedown` fee is archived in the same step (`rolled_back_reason` `fragment name:
+  `live_fragment_check`: rows read, the counts and samples by action below, the cursor. `FRAGMENT_NAME_TAKEDOWN_LIVE` is on
+  (James's yes, 2026-10-17, after the whole-table dry run: 619 matched, 8 down, 21 renamed, 572 kept
+  live for a re-read, 18 exempt; with round 8 below, 7 down and 23 renamed). Switched off it only
+  reports. On, a `takedown` fee is archived in the same step (`rolled_back_reason` `fragment name:
   <pattern>`, batch `darwin-live-fragment-<run>`, never deleted), its verified row is rejected
   with `darwin_live_fragment:<pattern>` so publish does not bring it back, the public read cache
   is cleared and a `darwin.live_fragment_name_taken_down` event lists the takedowns. A pure
@@ -314,7 +315,7 @@ Darwin owns verification and classification.
     dedupe key `darwin.live_fragment_check:reread:pub:<id>`, with the raw row and document from the
     fee's verified row and evidence `request: reread_source_line`), so the real fee can come back
     under a proper name. Knox reads this kind in its extract step (`knox/reread-feedback.ts`,
-    #1511, `KNOX_REREAD_FEEDBACK_LIVE`, off: count and report only; see Knox's AGENTS.md).
+    #1511, `KNOX_REREAD_FEEDBACK_LIVE`, on; see Knox's AGENTS.md).
     Step detail `would_request_reread` (also in shadow) and `reread_requested` (written); a failed
     request never undoes the takedown. `liveFragmentCountSql()` applies the same strip, bars and
     deposit wording; its `takedown` / `fragment` / `sentence_end` row is the re-read count. (v5:
@@ -649,6 +650,17 @@ Darwin owns verification and classification.
       $35, maximum of $100 per day; $5 minimum" $100) or an opening deposit as a reread, and "$N
       minimum" still reads "$500 minimum balance" as a floor. Closing either the issue's way adds
       takedowns.
+  - Round 8 (139153; still v6). A `pronoun` name whose only pronoun is a closing "account you
+    have at <bank>" clause (`LIVE_FRAGMENT_OWN_ACCOUNT`: account, loan, card or line of credit,
+    an optional "that"/"which", you have/hold/own/maintain, at or with, then "us" or up to four
+    capitalised words and an optional footnote digit, ending the line) renames to its head at any
+    amount, $0 included (`liveFragmentOwnAccountHead`). The head must name a fee, carry no price,
+    waiver or reduced wording, open on no sentence opener, be no fragment, and keep the category
+    guard's verdict. "Overdraft Protection Automatic Transfer from Another Deposit Account you have
+    at MSCU1" $0 is printed "| Free" on the schedule, a real $0 price (rule 3): it renames to the
+    head and stays live. On prod (2026-10-17) the clause matches 2 live fees: 139153 (a takedown
+    before) and 93520 "Overdraft Protection transfer to another deposit account you have at Cross
+    Bank" $10. The count SQL mirrors the rule (`own_account_head`).
 - Live hourly re-check (`hourly-frequency-check.ts`, #1456). About 802 live fees say in their name
   that they are priced by the hour ("Research Fee $25/hour", "Subpoena Fee - Per Hour") but carried
   no frequency or a per-item one, so a report read the price as a flat charge. `hourly` shows as "per

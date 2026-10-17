@@ -891,7 +891,7 @@ After the extract itself, each extract step runs these passes in order (`run-sto
   none ever verified. Earlier versions took 5,210 and 5,047, with real fees in them that two
   reviews found; those fees are test fixtures that stay held. A hand-read random 60 of the 3,601
   and four adversarial queries (see PR #1622) found no fee, which is a sample rather than proof.
-- `consumeRereadRequests` (#1511, `KNOX_REREAD_FEEDBACK_LIVE`, off): Darwin's re-read requests for
+- `consumeRereadRequests` (#1511, `KNOX_REREAD_FEEDBACK_LIVE`, on): Darwin's re-read requests for
   live fees named by a sentence fragment (below).
 - Batch review (`batch-review.ts`, below).
 
@@ -1024,19 +1024,20 @@ after the held-line passes, reads these requests (`consumeRereadRequests`, `knox
   `knox.reread_feedback:req:<request id>:v<pass>:rules<N>`, evidence with the outcome. The request
   row is not marked: Darwin upserts it again on each pass of the live table, which would wipe a
   mark. A rules bump makes every request pending again once; nothing loops within a version.
-- `KNOX_REREAD_FEEDBACK_LIVE` false (default): only a one-bank extract run reads the requests: it
+- `KNOX_REREAD_FEEDBACK_LIVE` is on (James's yes, 2026-10-17). Switched off (false), only a
+  one-bank extract run reads the requests: it
   counts that bank's pending ones (by kind and documents; `pipeline_feedback_institution_idx`) and
   reads up to 3 read-only (`KNOX_REREAD_FEEDBACK_SAMPLE`), reporting what it would do in one
   `knox.reread_feedback` event (only while requests are pending) and in the step detail
   `reread_feedback`. A state or all-bank lane skips it (`skipSample`, detail `skipped: true`):
-  `pipeline_feedback` has no index on `kind`, so the count was a full scan every step, and the same
-  sample was read again each time. Nothing else is written. On: 25 a step
+  before the `kind` index the count was a full scan every step, and the same sample was read again
+  each time. Nothing else is written. On: 25 a step
   (`KNOX_REREAD_FEEDBACK_BATCH`), claimed first with `FOR UPDATE ... SKIP LOCKED` so two lanes
   never take the same request; the pending count is read only when the claim found work. A dry
   run writes nothing.
-- The switch-on PR should come with a partial index,
-  `pipeline_feedback (id) WHERE kind = 'knox_reread_requested'`, so every lane's claim and count
-  read only the requests (a migration, so it needs James's approval).
+- The switch-on PR adds `pipeline_feedback_kind_idx` on `pipeline_feedback (kind, id)`
+  (`20270110000056_pipeline_feedback_kind_idx.sql`), so every lane's claim (`kind`, then `ORDER BY
+  id`) and count read only the requests, and the settled rows by kind.
 - `rereadFeedbackCountSql()` is the read-only count of pending requests by kind, documents and
   banks, and of settled requests by outcome.
 
