@@ -24,10 +24,11 @@ import { pageLinks, urlIdentity, type PageLink } from "./finders";
 import { LARGE_BANK_ASSETS, onBankDomain, websiteHost } from "./link-coverage";
 import { runScheduleSearch } from "./schedule-search";
 import { runWebsiteFind } from "./website-find";
+import { loadTopTenMissingIds, pickTopTenFirst, TOP_TEN_RETRY_DAYS } from "./top-ten-first";
 import { loadSharedNameIds } from "./other-bank-host";
 import { blockedAnswerHostConfirmed, loadOwnHosts, onBankHosts } from "./own-hosts";
 import { domainRule, ownSiteDomains, webSearchToolFor } from "./web-search-tool";
-import { loadGroupGaps, pickFromWorkLists, WORK_LIST_POOL, workListDetail, workListPoolRankSql, type GroupGaps, type WorkListPlacement } from "@/lib/agents/state-expert/work-list";
+import { loadGroupGaps, WORK_LIST_POOL, workListDetail, workListPoolRankSql, type GroupGaps, type WorkListPlacement } from "@/lib/agents/state-expert/work-list";
 
 type Fetcher = typeof fetch;
 
@@ -41,7 +42,12 @@ type Fetcher = typeof fetch;
  * the automation stop ends the step cleanly.
  */
 
-export const PAID_FIND_STRATEGY = { strategy: "discover.paid_web_search", version: 1 } as const;
+/**
+ * Version 2 (2026-10-17, `top-ten-first.ts`): state top-10 slot holders with nothing live are
+ * searched from any state's step, ahead of the work lists, and once a week inside the miss
+ * cooldown when the ladder moves them to the disclosure rung.
+ */
+export const PAID_FIND_STRATEGY = { strategy: "discover.paid_web_search", version: 2 } as const;
 /**
  * Before the web search: one model call, no tools, that picks the fee schedule from the
  * links already on the bank's homepage (a few cents of tokens, not a paid search). Its
@@ -78,6 +84,12 @@ interface PaidFindRow {
   web_searched?: boolean | null;
   /** Paid web-search misses on this website since the last paid find (escalation.ts). */
   paid_misses?: number | string | null;
+  /** Holds a state top-10 slot with nothing live (`top-ten-first.ts`). */
+  top_ten?: boolean | null;
+  /** A top-10 slot holder's weekly try inside the miss cooldown, on the disclosure rung. */
+  top_ten_retry?: boolean | null;
+  /** The homepage pick ran inside its cooldown. */
+  picked?: boolean | null;
   /** A report lead names it; a Pro account's own institution; its site platform (#1029 work lists). */
   requested?: boolean | null;
   paying?: boolean | null;
@@ -102,10 +114,11 @@ export interface RunMagellanPaidFindOptions extends PaidStepOptions {
 
 /**
  * Due banks, ordered by the state experts' work lists (#1029): requesters and paying
- * customers first, then one from each state's list in turn (`state-expert/work-list.ts`).
+ * customers first, then state top-10 slot holders with nothing live (`topTenIds`,
+ * `top-ten-first.ts`), then one from each state's list in turn (`state-expert/work-list.ts`).
  * The query reads up to WORK_LIST_POOL due banks; `limit` (the step's cap) applies after.
  */
-async function selectBanks(db: typeof sql, stateCode: string | null, limit: number, gaps: GroupGaps): Promise<PaidFindRow[]> {
+async function selectBanks(db: typeof sql, stateCode: string | null, limit: number, gaps: GroupGaps, topTenIds: number[]): Promise<PaidFindRow[]> {
   const currentMethod = JSON.stringify({ method_version: DISCOVERY_METHOD_VERSION });
   const pool = await db<PaidFindRow[]>`
     SELECT inst.id, inst.institution_name, inst.city, inst.cert_number, inst.state_code, inst.website_url, inst.asset_size,
@@ -116,17 +129,34 @@ async function selectBanks(db: typeof sql, stateCode: string | null, limit: numb
               WHERE pro.institution_id = inst.id AND pro.membership_status = 'active'
            ) AS paying,
            COALESCE(NULLIF(btrim(profile.platform), ''), NULLIF(btrim(inst.cms_platform), '')) AS platform,
-           EXISTS (
-             SELECT 1 FROM pipeline_attempts pa
-              WHERE pa.institution_id = inst.id
-                AND pa.stage = 'discover'
-                AND pa.strategy = ${PAID_FIND_STRATEGY.strategy}
-                AND pa.created_at >= NOW() - make_interval(days => CASE WHEN pa.outcome = 'ok' THEN ${FOUND_COOLDOWN_DAYS}::int ELSE ${MISS_COOLDOWN_DAYS}::int END)
-                AND pa.outcome <> ALL(${TRANSIENT_PAID_OUTCOMES})
-           ) AS web_searched,
+           (cooled.web AND NOT retry.early) AS web_searched,
+           cooled.pick AS picked,
+           inst.id = ANY(${topTenIds}::bigint[]) AS top_ten,
+           (cooled.web AND retry.early) AS top_ten_retry,
            ladder.misses AS paid_misses
       FROM institution_sources inst
       LEFT JOIN institution_source_profiles profile ON profile.institution_id = inst.id
+      -- The rolling cooldowns (#1031: 90 days after a find, 30 after a miss, counted from the
+      -- try) of the paid web search and the pick.
+      LEFT JOIN LATERAL (
+        SELECT
+          EXISTS (
+            SELECT 1 FROM pipeline_attempts pa
+             WHERE pa.institution_id = inst.id
+               AND pa.stage = 'discover'
+               AND pa.strategy = ${PAID_FIND_STRATEGY.strategy}
+               AND pa.created_at >= NOW() - make_interval(days => CASE WHEN pa.outcome = 'ok' THEN ${FOUND_COOLDOWN_DAYS}::int ELSE ${MISS_COOLDOWN_DAYS}::int END)
+               AND pa.outcome <> ALL(${TRANSIENT_PAID_OUTCOMES})
+          ) AS web,
+          EXISTS (
+            SELECT 1 FROM pipeline_attempts pa
+             WHERE pa.institution_id = inst.id
+               AND pa.stage = 'discover'
+               AND pa.strategy = ${PAID_PICK_STRATEGY.strategy}
+               AND pa.created_at >= NOW() - make_interval(days => CASE WHEN pa.outcome = 'ok' THEN ${FOUND_COOLDOWN_DAYS}::int ELSE ${MISS_COOLDOWN_DAYS}::int END)
+               AND pa.outcome <> ALL(${TRANSIENT_PAID_OUTCOMES})
+          ) AS pick
+      ) cooled ON true
       -- Escalation ladder (#1032; escalation.ts paidLadderSql): paid web-search misses on
       -- this website since the last paid find.
       LEFT JOIN LATERAL (
@@ -146,17 +176,36 @@ async function selectBanks(db: typeof sql, stateCode: string | null, limit: numb
                 AND found.outcome = 'ok'
            ), '-infinity'::timestamptz)
       ) ladder ON true
+      -- A state top-10 slot holder with nothing live (top-ten-first.ts) may skip the miss
+      -- cooldown when the ladder's next rung is the disclosure (an odd miss count, after a
+      -- schedule miss), at most once in TOP_TEN_RETRY_DAYS from its last real try. A find
+      -- keeps its FOUND_COOLDOWN_DAYS; "not published online" below still holds it.
+      LEFT JOIN LATERAL (
+        SELECT (
+          inst.id = ANY(${topTenIds}::bigint[])
+          AND ladder.misses % 2 = 1
+          AND NOT EXISTS (
+            SELECT 1 FROM pipeline_attempts pa
+             WHERE pa.institution_id = inst.id
+               AND pa.stage = 'discover'
+               AND pa.strategy = ${PAID_FIND_STRATEGY.strategy}
+               AND pa.created_at >= NOW() - make_interval(days => CASE WHEN pa.outcome = 'ok' THEN ${FOUND_COOLDOWN_DAYS}::int ELSE ${TOP_TEN_RETRY_DAYS}::int END)
+               AND pa.outcome <> ALL(${TRANSIENT_PAID_OUTCOMES})
+          )
+        ) AS early
+      ) retry ON true
      WHERE COALESCE(inst.status, 'active') = 'active'
        AND (inst.fee_schedule_url IS NULL OR btrim(inst.fee_schedule_url) = '')
        AND inst.website_url IS NOT NULL AND btrim(inst.website_url) <> ''
        AND inst.rescue_status = 'dead'
-       -- $10B+ banks and report requesters are searched from any state's paid step: they
-       -- are national names, and waiting for their own state's full pass can take weeks.
+       -- $10B+ banks, report requesters and state top-10 slot holders with nothing live are
+       -- searched from any state's paid step: waiting for their own state's pass can take weeks.
        AND (
          ${stateCode}::text IS NULL
          OR upper(btrim(inst.state_code)) = ${stateCode}
          OR inst.asset_size >= ${LARGE_BANK_ASSETS}
          OR EXISTS (SELECT 1 FROM leads lead WHERE lead.quote_institution_id = inst.id)
+         OR inst.id = ANY(${topTenIds}::bigint[])
        )
        AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
        AND COALESCE(profile.read_strategy, '') <> 'manual_review'
@@ -174,34 +223,22 @@ async function selectBanks(db: typeof sql, stateCode: string | null, limit: numb
             AND pa.stage = 'discover'
             AND pa.detail @> ${currentMethod}::jsonb
        )
-       -- Due when the pick or the web search is off cooldown (#1031: 90 days after a find,
-       -- 30 after a miss, counted from the try).
-       AND (
-         NOT EXISTS (
-           SELECT 1 FROM pipeline_attempts pa
-            WHERE pa.institution_id = inst.id
-              AND pa.stage = 'discover'
-              AND pa.strategy = ${PAID_PICK_STRATEGY.strategy}
-              AND pa.created_at >= NOW() - make_interval(days => CASE WHEN pa.outcome = 'ok' THEN ${FOUND_COOLDOWN_DAYS}::int ELSE ${MISS_COOLDOWN_DAYS}::int END)
-              AND pa.outcome <> ALL(${TRANSIENT_PAID_OUTCOMES})
-         )
-         OR NOT EXISTS (
-           SELECT 1 FROM pipeline_attempts pa
-            WHERE pa.institution_id = inst.id
-              AND pa.stage = 'discover'
-              AND pa.strategy = ${PAID_FIND_STRATEGY.strategy}
-              AND pa.created_at >= NOW() - make_interval(days => CASE WHEN pa.outcome = 'ok' THEN ${FOUND_COOLDOWN_DAYS}::int ELSE ${MISS_COOLDOWN_DAYS}::int END)
-              AND pa.outcome <> ALL(${TRANSIENT_PAID_OUTCOMES})
-         )
-       )
-     -- Requesters and paying customers first, then each work-list cell's first rows in turn
-     -- (#1269), so the cut never drops a whole small-bank group; the work lists reorder the rest.
-     ORDER BY requested DESC, paying DESC,
+       -- Due when the pick or the web search is off cooldown, or on a top-10 weekly try.
+       AND (NOT cooled.pick OR NOT cooled.web OR retry.early)
+     -- Requesters and paying customers first, then top-10 slot holders with nothing live, then
+     -- each work-list cell's first rows in turn (#1269), so the cut never drops a whole
+     -- small-bank group; the work lists reorder the rest.
+     ORDER BY requested DESC, paying DESC, top_ten DESC,
               ${workListPoolRankSql(db, { state: "inst.state_code", assets: "inst.asset_size", id: "inst.id" })},
               inst.asset_size DESC NULLS LAST, inst.id ASC
      LIMIT ${WORK_LIST_POOL}
   `;
-  return pickFromWorkLists(Array.isArray(pool) ? pool : [], gaps, limit);
+  return pickTopTenFirst(Array.isArray(pool) ? pool : [], gaps, limit, (row) => Boolean(row.top_ten));
+}
+
+/** What a result entry and attempt record about the top-10 rule (`top-ten-first.ts`). */
+function topTenDetail(row: Pick<PaidFindRow, "top_ten" | "top_ten_retry">): Record<string, unknown> {
+  return row.top_ten ? { top_ten: true, top_ten_retry: Boolean(row.top_ten_retry) } : {};
 }
 
 export { onBankDomain };
@@ -340,12 +377,14 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
   const limit = Math.max(1, Math.min(Math.floor(Number(options.limit ?? PAID_PASS_ITEMS_PER_RUN)) || PAID_PASS_ITEMS_PER_RUN, PAID_PASS_ITEMS_PER_RUN));
   // The state experts' work lists (#1029) share one read of the coverage gaps.
   const gaps = await loadGroupGaps(db);
-  const rows = await selectBanks(db, normalizeStateCode(options.stateCode), limit, gaps);
+  // State top-10 slot holders with nothing live go first in both searches (top-ten-first.ts).
+  const topTenIds = await loadTopTenMissingIds(db);
+  const rows = await selectBanks(db, normalizeStateCode(options.stateCode), limit, gaps, topTenIds);
   result.selected = rows.length;
   if (dryRun) {
-    result.results = rows.map((row) => ({ institution_id: Number(row.id), institution_name: row.institution_name, would_search: true, ...workListDetail(row.work_list) }));
+    result.results = rows.map((row) => ({ institution_id: Number(row.id), institution_name: row.institution_name, would_search: true, ...topTenDetail(row), ...workListDetail(row.work_list) }));
     await addWebsiteFind(result, options, db, gaps);
-    await addScheduleSearch(result, options, db, gaps);
+    await addScheduleSearch(result, options, db, gaps, topTenIds);
     return result;
   }
 
@@ -375,7 +414,9 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
     let verdict: string | null = null;
     const rung = paidRung(Number(row.paid_misses ?? 0));
 
-    if (usePick) {
+    // A top-10 slot holder's early try skips a pick that already ran inside its cooldown: the
+    // homepage links are the same, and the new ask is the disclosure rung's.
+    if (usePick && !(row.top_ten_retry && row.picked)) {
       const picked = await runPick(row, { ...options, fetchImpl, model, db });
       result.costMicrousd += picked.costMicrousd;
       if (picked.budgetStopped) {
@@ -395,14 +436,14 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
           method: "magellan_paid_pick",
           durationMs: Date.now() - startedAt,
         }));
-        result.results.push({ institution_id: institutionId, outcome: "ok", url: picked.url, cost_microusd: picked.costMicrousd, reason: picked.reason, by: "pick", ...workListDetail(row.work_list) });
+        result.results.push({ institution_id: institutionId, outcome: "ok", url: picked.url, cost_microusd: picked.costMicrousd, reason: picked.reason, by: "pick", ...topTenDetail(row), ...workListDetail(row.work_list) });
         continue;
       }
       if (row.web_searched) {
         // The web search missed within its cooldown; the pick was the only new try.
         result.processed += 1;
         result.failed += 1;
-        result.results.push({ institution_id: institutionId, outcome: picked.outcome, url: null, cost_microusd: picked.costMicrousd, reason: picked.reason, by: "pick", ...workListDetail(row.work_list) });
+        result.results.push({ institution_id: institutionId, outcome: picked.outcome, url: null, cost_microusd: picked.costMicrousd, reason: picked.reason, by: "pick", ...topTenDetail(row), ...workListDetail(row.work_list) });
         continue;
       }
     } else if (row.web_searched) {
@@ -521,13 +562,14 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
         verdict,
         document_type: documentType,
         reason,
+        ...topTenDetail(row),
         ...workListDetail(row.work_list),
       },
     });
-    result.results.push({ institution_id: institutionId, outcome, url, cost_microusd: costMicrousd, reason, rung, ...workListDetail(row.work_list) });
+    result.results.push({ institution_id: institutionId, outcome, url, cost_microusd: costMicrousd, reason, rung, ...topTenDetail(row), ...workListDetail(row.work_list) });
   }
   if (!result.budgetStopped) await addWebsiteFind(result, options, db, gaps);
-  if (!result.budgetStopped) await addScheduleSearch(result, options, db, gaps);
+  if (!result.budgetStopped) await addScheduleSearch(result, options, db, gaps, topTenIds);
   return result;
 }
 
@@ -561,9 +603,10 @@ async function addBlockedFetch(result: PaidPassResult, options: RunMagellanPaidF
  * with a link but no live fee first, then a few banks whose page is not the consumer schedule;
  * each answer is kept as a companion.
  */
-async function addScheduleSearch(result: PaidPassResult, options: RunMagellanPaidFindOptions, db: typeof sql, gaps: GroupGaps): Promise<void> {
+async function addScheduleSearch(result: PaidPassResult, options: RunMagellanPaidFindOptions, db: typeof sql, gaps: GroupGaps, topTenIds: number[]): Promise<void> {
   const searched = await runScheduleSearch({
     gaps,
+    topTenIds,
     runId: options.runId,
     stepId: options.stepId ?? null,
     dryRun: Boolean(options.dryRun),
@@ -716,6 +759,7 @@ async function runPick(
       model_reason: modelReason,
       document_type: documentType,
       reason,
+      ...topTenDetail(row),
       ...workListDetail(row.work_list),
     },
   });
