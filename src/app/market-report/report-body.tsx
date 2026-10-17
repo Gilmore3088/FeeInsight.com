@@ -32,7 +32,7 @@ import { EXTRA_ROW, ROWS_SHOWN, comparedLines, leftOutNote, namedFinding, positi
 const DATE = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
 
 export function money(value: number | null | undefined): string {
-  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  if (value === null || value === undefined || Number.isNaN(value)) return "-";
   return Number.isInteger(value) ? `$${value}` : `$${value.toFixed(2)}`;
 }
 
@@ -51,14 +51,14 @@ const POSITION_SHORT: Record<LinePosition, string> = {
 };
 
 const POSITION_CLASS: Record<LinePosition, string> = {
-  above_market: "bg-[#FBE9E4] text-brick",
+  above_market: "bg-brick-tint/60 text-brick",
   in_market: "bg-surface-200 text-ink",
-  below_market: "bg-[#EAF0EC] text-below-market",
-  free: "bg-[#EAF0EC] text-below-market",
+  below_market: "bg-below-market/10 text-below-market",
+  free: "bg-below-market/10 text-below-market",
 };
 
 function PositionChip({ line }: { line: ReportLine }) {
-  if (!line.position) return <span className="text-[12px] text-ink-muted">—</span>;
+  if (!line.position) return <span className="text-[12px] text-ink-muted">-</span>;
   return (
     <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${POSITION_CLASS[line.position]}`}>
       {/* Phones show the short word; the column heading says what it is the middle 50% of. */}
@@ -131,6 +131,8 @@ export interface MarketReportBodyProps {
   lineup?: CheckingLineupView | null;
   /** "h2" when the page already has its own h1 (the public sample); a page has one h1. */
   titleAs?: "h1" | "h2";
+  /** The closing Hamilton band; the public sample has its own close (the report request) instead. */
+  close?: boolean;
 }
 
 /** Whole dollars -> "$2.4 billion" / "$310 million". */
@@ -184,27 +186,29 @@ function RevenueSection({ name, charterType, revenue }: { name: string; charterT
       line={finding}
       source={
         <>
-          {name}&apos;s {filing}.
-          {revenue.peer && ` Institutions of its size hold ${revenue.peer.tierLabel} in assets and reported for the quarter.`} A published
-          schedule does not say how often each fee is charged, so this report does not estimate what any one fee earns.
+          {name}&apos;s {filing}, {quarterLabel(latest.quarter)}
+          {revenue.peer && `; median of institutions with ${revenue.peer.tierLabel} in assets that reported for the quarter`}.
         </>
       }
     >
-      <dl className="grid grid-cols-1 gap-6 min-[420px]:grid-cols-3 sm:max-w-3xl">
+      <figure className="min-w-0 max-w-5xl">
+      <figcaption className={FIGURE_CAPTION}>{name}&apos;s reported fee income, from its {filing}</figcaption>
+      <dl className="mt-4 grid grid-cols-1 gap-6 sm:grid-cols-3">
         {tiles.map((t) => (
-          <div key={t.label} className="flex flex-col-reverse border-l-2 border-brick pl-4">
+          <div key={t.label} className="flex min-w-0 flex-col-reverse border-l-2 border-brick pl-4">
             <dt className="mt-2 text-[13px] leading-snug text-ink-soft">{t.label}</dt>
-            <dd className="whitespace-nowrap font-mono text-[24px] font-semibold leading-none tabular-nums tracking-[-0.02em] text-ink sm:text-[32px]">
+            <dd className="font-mono text-[24px] font-semibold leading-tight tabular-nums tracking-[-0.02em] text-ink sm:text-[22px] lg:text-[30px]">
               {t.value}
             </dd>
           </div>
         ))}
       </dl>
+      </figure>
     </HubSection>
   );
 }
 
-export function MarketReportBody({ report, eyebrow, preparedOn, actions, contactHref, correctionNote, revenue, branches, lineup, titleAs: Title = "h1" }: MarketReportBodyProps) {
+export function MarketReportBody({ report, eyebrow, preparedOn, actions, contactHref, correctionNote, revenue, branches, lineup, titleAs: Title = "h1", close = true }: MarketReportBodyProps) {
   const { data, analysis, savedAt, sinceBought } = report;
   const market = data.market!;
   const droppedCount = Object.values(data.dropped ?? {}).reduce((sum, n) => sum + (n ?? 0), 0);
@@ -277,15 +281,9 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
             id="position"
             title="Position in the local market"
             line={positionFinding(name, analysis.lines)}
-            source={
-              <>
-                Each institution&apos;s own published fee schedule. Local competitors: every bank with a branch and every institution
-                headquartered in the {marketLabel}. A fee is compared when at least {MIN_LOCAL_PEERS_PER_LINE} of them publish it. Each dot is{" "}
-                {name}&apos;s fee ranked among them; the shaded band is their middle 50% (25th to 75th percentile) and the line their median.
-              </>
-            }
+            source={`Each institution's own published fee schedule; market from the FDIC Summary of Deposits, ${market.sod_year}. Definitions under Sources and method.`}
           >
-            <figure className="min-w-0">
+            <figure className="min-w-0 max-w-5xl">
               <figcaption className={FIGURE_CAPTION}>{name}&apos;s fees ranked against local competitors, highest first</figcaption>
               <div className="mt-4">
                 <AtAGlance lines={analysis.lines} bare fold={ROWS_SHOWN} ownLabel={name.length > 18 ? "Amount" : name} />
@@ -308,14 +306,9 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
             id="lines"
             title="Fee by fee"
             line={widestGapFinding(name, analysis.lines)}
-            source={
-              <>
-                Medians and the middle 50% count one published figure per local competitor. &ldquo;Charging less&rdquo; counts competitors
-                whose published fee is lower than {name}&apos;s.
-              </>
-            }
+            source={`${competitorsWithData} local competitors' published fee schedules, ${marketLabel}; each figure and the date its schedule was read are listed under Sources and method.`}
           >
-            <figure className="min-w-0">
+            <figure className="min-w-0 max-w-5xl">
               <figcaption className={FIGURE_CAPTION}>{name} against the local median, largest gap first</figcaption>
               <ShowAll total={byGap.length} shown={ROWS_SHOWN} noun="fees">
                 {/* Phones get the four columns that fit; the method lists every figure behind them. */}
@@ -330,8 +323,8 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                         <th className={`${TH} hidden text-right sm:table-cell print:table-cell`}>Competitors</th>
                         <th className={`${TH} hidden text-right sm:table-cell print:table-cell`}>Charging less</th>
                         <th className="py-2 font-semibold">
-                          <span className="sm:hidden">vs middle 50%</span>
-                          <span className="hidden sm:inline">Position</span>
+                          <span className="sm:hidden print:hidden">vs middle 50%</span>
+                          <span className="hidden sm:inline print:inline">Position</span>
                         </th>
                       </tr>
                     </thead>
@@ -353,7 +346,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                           </td>
                           <td className="hidden py-2.5 pr-3 text-right tabular-nums sm:table-cell print:table-cell">{line.peers.n}</td>
                           <td className="hidden py-2.5 pr-3 text-right tabular-nums sm:table-cell print:table-cell">
-                            {line.chargingLess !== null ? `${line.chargingLess} of ${line.peers.n}` : "—"}
+                            {line.chargingLess !== null ? `${line.chargingLess} of ${line.peers.n}` : "-"}
                           </td>
                           <td className="py-2.5">
                             <PositionChip line={line} />
@@ -379,17 +372,17 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
               line={named ?? `${analysis.named.length} local competitors side by side with ${name} on the same fees.`}
               source={
                 <>
-                  Banks by deposits held in the market (FDIC Summary of Deposits, {market.sod_year}), then up to {NAMED_WITHOUT_DEPOSITS} credit
-                  unions, which the Summary of Deposits does not cover, chosen by how many of {name}&apos;s fees they publish. Each amount
-                  links to the schedule it was read from.
+                  Each institution&apos;s published fee schedule (every amount links to it); branches and deposits from the FDIC Summary of
+                  Deposits, {market.sod_year}, and NCUA.
                   {branches &&
-                    ` The market's ${branches.totalBranches.toLocaleString("en-US")} bank branches hold ${depositsLabel(branches.totalDeposits)} in deposits; under each bank are its branches and share of those deposits. Credit unions show branches only, because NCUA reports no deposits by branch.`}
+                    ` The market's ${branches.totalBranches.toLocaleString("en-US")} bank branches hold ${depositsLabel(branches.totalDeposits)} in deposits.`}
                 </>
               }
             >
               <figure className="min-w-0">
                 <figcaption className={FIGURE_CAPTION}>Published fees, {name} and {analysis.named.length} local competitors</figcaption>
                 <NamedCompetitorsPhone
+                  shown={ROWS_SHOWN}
                   lines={tableKeys.map((key) => ({ key, label: FEE_LINE_LABELS[key] ?? key }))}
                   subject={{
                     id: data.subject.institution_id,
@@ -413,7 +406,9 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                     ),
                   }))}
                 />
-                <div className="mt-3 hidden overflow-x-auto sm:block print:block">
+                <div className="hidden sm:block print:block">
+                <ShowAll total={analysis.named.length} shown={ROWS_SHOWN} noun="competitors">
+                <div className="mt-3 overflow-x-auto">
                   <table className="w-full min-w-[760px] text-left text-sm print:min-w-0">
                     <thead className="border-b border-border text-[11px] uppercase tracking-[0.08em] text-ink-muted">
                       <tr>
@@ -439,8 +434,8 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                           </td>
                         ))}
                       </tr>
-                      {analysis.named.map((competitor) => (
-                        <tr key={competitor.institution_id} className="border-b border-border last:border-0">
+                      {analysis.named.map((competitor, index) => (
+                        <tr key={competitor.institution_id} className={`border-b border-border last:border-0 ${index >= ROWS_SHOWN ? EXTRA_ROW : ""}`}>
                           <td className="py-2.5 pr-3">
                             <a href={`/institution/${competitor.institution_id}`} className="text-ink underline-offset-2 hover:underline">
                               {competitor.institution_name}
@@ -475,6 +470,8 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                     </tbody>
                   </table>
                 </div>
+                </ShowAll>
+                </div>
               </figure>
             </HubSection>
           )}
@@ -487,7 +484,31 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
               <h3 className="text-[13px] font-semibold text-ink">Market</h3>
               <p className="sm:mx-0">{marketSource}</p>
               <h3 className="text-[13px] font-semibold text-ink">Competitors</h3>
-              <p className="sm:mx-0">Every bank with a branch there and every institution headquartered there.</p>
+              <p className="sm:mx-0">
+                Every bank with a branch there and every institution headquartered there. Named competitors are banks by deposits held in
+                the market, then up to {NAMED_WITHOUT_DEPOSITS} credit unions, which the Summary of Deposits does not cover, chosen by how
+                many of {name}&apos;s fees they publish. Under each bank are its branches and share of local deposits; credit unions show
+                branches only, because NCUA reports no deposits by branch.
+              </p>
+              <h3 className="text-[13px] font-semibold text-ink">Definitions</h3>
+              <ul className="list-disc space-y-1.5 pl-5">
+                <li>A fee is compared when at least {MIN_LOCAL_PEERS_PER_LINE} local competitors publish it.</li>
+                <li>
+                  Local median and middle 50% (25th to 75th percentile) count one published figure per local competitor. They are
+                  calculated from competitors&apos; fees, not a price any one institution sets.
+                </li>
+                <li>
+                  In the ranked rows, each dot is {name}&apos;s fee ranked among those competitors; the shaded band is their middle 50% and
+                  the line their median. &ldquo;vs median&rdquo; is {name}&apos;s fee less the local median.
+                </li>
+                <li>&ldquo;Charging less&rdquo; counts competitors whose published fee is lower than {name}&apos;s.</li>
+                {revenue && (
+                  <li>
+                    A published schedule does not say how often each fee is charged, so this report does not estimate what any one fee
+                    earns.
+                  </li>
+                )}
+              </ul>
               <h3 className="text-[13px] font-semibold text-ink">Figures</h3>
               <ul className="list-disc space-y-1.5 pl-5">
                 <li>
@@ -526,7 +547,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                         <>
                           {" "}
                           (
-                          <a href={line.own!.source_url} className="underline" rel="noopener noreferrer" target="_blank">
+                          <a href={line.own!.source_url} className="inline-flex min-h-11 items-center underline sm:min-h-0" rel="noopener noreferrer" target="_blank">
                             source
                           </a>
                           {line.own!.schedule_read_on ? `, read ${line.own!.schedule_read_on}` : ""})
@@ -554,7 +575,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                         <span className="col-span-2 sm:col-span-1">“{figure.source_line}”</span>
                         <span className="col-span-2 sm:col-span-1 sm:whitespace-nowrap">
                           {figure.source_url ? (
-                            <a href={figure.source_url} className="underline" rel="noopener noreferrer" target="_blank">
+                            <a href={figure.source_url} className="inline-flex min-h-11 items-center underline sm:min-h-0" rel="noopener noreferrer" target="_blank">
                               source
                             </a>
                           ) : (
@@ -570,7 +591,9 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
             </Disclosure>
             <p className="max-w-[860px] border-t border-border pt-3 text-[12.5px] leading-[1.65] text-ink-muted sm:mx-0 sm:text-left">{correctionNote}</p>
           </section>
-          <HamiltonClose competitors={competitorsWithData} institutionId={data.subject.institution_id} />
+          {close && (
+            <HamiltonClose competitors={competitorsWithData} institutionId={data.subject.institution_id} institutionName={name} />
+          )}
         </>
       )}
     </div>

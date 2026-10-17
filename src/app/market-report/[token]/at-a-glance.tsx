@@ -1,12 +1,12 @@
 import { positionCounts, type ReportChange, type ReportLine } from "@/lib/custom-report/analysis";
-import { EXTRA_GRID_ROW } from "../report-view";
+import { EXTRA_GRID_ROW, EXTRA_ROW, ROWS_SHOWN } from "../report-view";
 import { ShowAll } from "../show-all";
 
 const SERIF = { fontFamily: "var(--fi-font-sans)" };
 const DATE = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
 
 function money(value: number | null | undefined): string {
-  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  if (value === null || value === undefined || Number.isNaN(value)) return "-";
   return Number.isInteger(value) ? `$${value}` : `$${value.toFixed(2)}`;
 }
 
@@ -115,13 +115,21 @@ export function AtAGlance({
           <span role="columnheader" className="text-right">{ownLabel}</span>
           <span role="columnheader" className="text-right">vs median</span>
         </div>
+        {bare && (
+          // Phones: the two figures in each row get their own headings.
+          <div role="row" className="grid grid-cols-[1fr_auto_auto] gap-x-4 border-b border-border pb-2 text-[11px] uppercase tracking-[0.08em] text-ink-muted sm:hidden print:hidden">
+            <span role="columnheader">Fee</span>
+            <span role="columnheader" className="text-right">{ownLabel}</span>
+            <span role="columnheader" className="text-right">vs median</span>
+          </div>
+        )}
 
         {shown.map(({ line, rank, tone }, index) => (
           <div
             key={line.key}
             role="row"
             data-highlight={line.key === highlight ? "" : undefined}
-            className={`${folded !== null && index >= folded ? `${EXTRA_GRID_ROW}` : "grid"} grid-cols-[1fr_auto_auto] items-center gap-x-4 border-b border-[#F1ECE4] py-2.5 last:border-0 ${wide("sm:grid-cols-[13rem_1fr_5.5rem_6rem] sm:gap-x-5 sm:border-0 sm:py-0")} ${
+            className={`${folded !== null && index >= folded ? `${EXTRA_GRID_ROW}` : "grid"} grid-cols-[1fr_auto_auto] items-center gap-x-4 border-b ${bare ? "border-border" : "border-[#F1ECE4]"} py-2.5 last:border-0 ${wide("sm:grid-cols-[13rem_1fr_5.5rem_6rem] sm:gap-x-5 sm:border-0 sm:py-0")} ${
               line.key === highlight ? "-mx-3 rounded-lg bg-ink/[0.04] px-3 ring-1 ring-inset ring-border" : ""
             }`}
           >
@@ -129,8 +137,18 @@ export function AtAGlance({
             <span
               role="cell"
               className={`relative order-last col-span-3 mt-2 block h-6 ${wide("sm:order-none sm:col-span-1 sm:mt-0 sm:h-10")}`}
-              title={`${line.label}: yours ${money(line.own.amount)}; local median ${money(line.peers.median)}; middle half ${money(line.peers.p25)}–${money(line.peers.p75)} across ${line.peers.n} competitors`}
+              title={
+                bare
+                  ? `${line.label}: ${money(line.own.amount)}; local median ${money(line.peers.median)}; middle 50% ${money(line.peers.p25)} to ${money(line.peers.p75)} across ${line.peers.n} competitors`
+                  : `${line.label}: yours ${money(line.own.amount)}; local median ${money(line.peers.median)}; middle half ${money(line.peers.p25)}–${money(line.peers.p75)} across ${line.peers.n} competitors`
+              }
             >
+              {bare && (
+                <span className="sr-only">
+                  {ordinal(Math.round(rank))} percentile among {line.peers.n} local competitors; middle 50% {money(line.peers.p25)} to{" "}
+                  {money(line.peers.p75)}, median {money(line.peers.median)}.
+                </span>
+              )}
               <span className="absolute inset-y-0 left-1/4 right-1/4 bg-surface-200" aria-hidden="true" />
               <span className="absolute inset-y-0 left-1/2 w-px bg-ink-muted" aria-hidden="true" />
               <span className="absolute inset-x-0 top-1/2 h-px bg-border" aria-hidden="true" />
@@ -195,8 +213,8 @@ export function AtAGlance({
 
 function whose(change: ReportChange, name: string): string {
   if (change.subject === "own") return name;
-  if (change.subject === "median") return "Local median";
-  return change.who ?? "Competitor";
+  if (change.subject === "median") return "Local median, all competitors";
+  return change.who ?? "Named competitor";
 }
 
 /** The line under "Since this report was bought". */
@@ -216,19 +234,25 @@ export function SinceBought({ name, changes }: { name: string; changes: ReportCh
   const order = ["own", "median", "competitor"];
   const ordered = [...changes].sort((a, b) => order.indexOf(a.subject) - order.indexOf(b.subject));
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[22rem] text-left text-[14px]">
+    <figure className="min-w-0 max-w-5xl">
+      <figcaption className="text-[14px] font-semibold text-ink">Figures that moved since purchase, then and now</figcaption>
+      <ShowAll total={ordered.length} shown={ROWS_SHOWN} noun="changes">
+    <div className="mt-3 overflow-x-auto">
+      <table className="w-full min-w-[20rem] text-left text-[14px]">
         <thead className="border-b border-border text-[11px] uppercase tracking-[0.08em] text-ink-muted">
           <tr>
-            <th className="py-2 pr-3 font-semibold">Who</th>
+            <th className="py-2 pr-3 font-semibold">Whose figure</th>
             <th className="py-2 pr-3 font-semibold">Fee</th>
             <th className="py-2 pr-3 text-right font-semibold">Then</th>
             <th className="py-2 text-right font-semibold">Now</th>
           </tr>
         </thead>
         <tbody>
-          {ordered.map((change) => (
-            <tr key={`${change.subject}:${change.who ?? ""}:${change.key}`} className="border-b border-border last:border-0">
+          {ordered.map((change, index) => (
+            <tr
+              key={`${change.subject}:${change.who ?? ""}:${change.key}`}
+              className={`border-b border-border last:border-0 ${index >= ROWS_SHOWN ? EXTRA_ROW : ""}`}
+            >
               <td className="py-2.5 pr-3 text-ink">{whose(change, name)}</td>
               <td className="py-2.5 pr-3 text-ink-soft">{change.label}</td>
               <td className="py-2.5 pr-3 text-right tabular-nums text-ink-muted">
@@ -242,5 +266,7 @@ export function SinceBought({ name, changes }: { name: string; changes: ReportCh
         </tbody>
       </table>
     </div>
+      </ShowAll>
+    </figure>
   );
 }

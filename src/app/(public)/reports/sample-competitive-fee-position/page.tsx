@@ -25,7 +25,7 @@ const SAMPLE_PATH = "/reports/sample-competitive-fee-position";
 const SAMPLE_CSV_PATH = "/reports/sample-competitive-fee-position/csv";
 const REQUEST_HREF = "/reports?report=institution&src=sample-report#request";
 const REPORT_TITLE = "Sample Competitive Fee Position Report";
-const REPORT_DESCRIPTION = `A live ${REPORT_OFFER.name} for a community bank: its fees against its local competitors, the lines outside the local middle half, and named competitors with the schedule behind every amount.`;
+const REPORT_DESCRIPTION = `A live ${REPORT_OFFER.name} for a community bank: its fees against its local competitors, the lines outside the local middle 50%, and named competitors with the schedule behind every amount.`;
 
 export async function generateMetadata(): Promise<Metadata> {
   const report = await loadSampleReport().catch(() => null);
@@ -174,6 +174,7 @@ export default async function SampleReportPage() {
           branches={branches}
           eyebrow={REPORT_OFFER.name}
           titleAs="h2"
+          close={false}
           preparedOn={new Date()}
           contactHref="/contact?source=sample_report"
           actions={

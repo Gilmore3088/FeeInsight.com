@@ -26,10 +26,9 @@ interface PageProps {
 
 const DATE = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
 
-const PRIMARY_BUTTON =
-  "inline-flex min-h-11 items-center rounded-md bg-brick px-4 text-sm font-semibold text-white transition-colors hover:bg-brick-ink";
-const SECONDARY_BUTTON =
-  "inline-flex min-h-11 items-center rounded-md border border-border px-4 text-sm font-semibold text-ink transition-colors hover:border-brick hover:text-brick";
+// The district and state pages' button styles (Button in @/brand/components).
+const PRIMARY_BUTTON = "fi-btn fi-btn-primary min-h-11";
+const SECONDARY_BUTTON = "fi-btn fi-btn-secondary min-h-11";
 
 export const metadata: Metadata = {
   title: "Competitive Fee Position Report",
@@ -82,13 +81,15 @@ export default async function MarketReportPage({ params }: PageProps) {
           contactHref={contactHref(name)}
           actions={
             <>
-              <PrintButton className={PRIMARY_BUTTON} />
               {report.analysis.readiness.ready && (
-                <a href={`/market-report/${token}/csv`} className={SECONDARY_BUTTON}>
-                  Download CSV
-                </a>
+                <>
+                  <PrintButton className={PRIMARY_BUTTON} />
+                  <a href={`/market-report/${token}/csv`} className={SECONDARY_BUTTON}>
+                    Download CSV
+                  </a>
+                </>
               )}
-              <a href={contactHref(name)} className={SECONDARY_BUTTON}>
+              <a href={contactHref(name)} className={report.analysis.readiness.ready ? SECONDARY_BUTTON : PRIMARY_BUTTON}>
                 Ask us about this report
               </a>
             </>

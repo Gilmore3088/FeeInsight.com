@@ -21,27 +21,33 @@ export function NamedCompetitorsPhone({
   lines,
   subject,
   competitors,
+  shown,
 }: {
   lines: { key: string; label: string }[];
   subject: NamedPhoneRow;
   competitors: NamedPhoneRow[];
+  /** Competitors listed before "Show all N competitors"; every one when left out. */
+  shown?: number;
 }) {
   const [picked, setPicked] = useState(lines[0]?.key ?? "");
+  const [all, setAll] = useState(false);
+  const folded = shown !== undefined && !all && competitors.length > shown;
+  const listed = folded ? competitors.slice(0, shown) : competitors;
   if (lines.length === 0) return null;
   const money = (n: number) => (Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`);
   const row = (r: NamedPhoneRow, own: boolean) => {
     const fee = r.fees[picked];
     return (
-      <li key={r.id} className={`flex items-baseline justify-between gap-3 py-2 ${own ? "-mx-2 rounded-md bg-[#FBF3EF] px-2 font-semibold" : ""}`}>
+      <li key={r.id} className={`flex items-center justify-between gap-3 py-1 ${own ? "-mx-2 rounded-md bg-brick-tint/40 px-2 font-semibold" : ""}`}>
         <span className="min-w-0">
           {r.href ? (
-            <a href={r.href} className="text-ink underline-offset-2 hover:underline">
+            <a href={r.href} className="flex min-h-11 items-center text-ink underline-offset-2 hover:underline">
               {r.name}
             </a>
           ) : (
-            <span className="text-ink">{r.name}</span>
+            <span className="flex min-h-11 items-center text-ink">{r.name}</span>
           )}
-          {r.detail && <span className="block text-[12px] font-normal text-ink-muted">{r.detail}</span>}
+          {r.detail && <span className="-mt-2 block pb-1 text-[12px] font-normal text-ink-muted">{r.detail}</span>}
         </span>
         <span className="shrink-0 tabular-nums text-ink">
           {fee ? (
@@ -49,7 +55,7 @@ export function NamedCompetitorsPhone({
               <a
                 href={fee.url}
                 title={fee.line ? `“${fee.line}”` : undefined}
-                className="underline decoration-border underline-offset-2 hover:decoration-brick"
+                className="flex min-h-11 items-center underline decoration-border underline-offset-2 hover:decoration-brick"
                 rel="noopener noreferrer"
                 target="_blank"
               >
@@ -59,7 +65,7 @@ export function NamedCompetitorsPhone({
               money(fee.amount)
             )
           ) : (
-            <span className="text-ink-muted">—</span>
+            <span className="text-ink-muted">-</span>
           )}
         </span>
       </li>
@@ -83,8 +89,18 @@ export function NamedCompetitorsPhone({
       </label>
       <ul className="mt-3 divide-y divide-surface-200 text-sm">
         {row(subject, true)}
-        {competitors.map((c) => row(c, false))}
+        {listed.map((c) => row(c, false))}
       </ul>
+      {shown !== undefined && competitors.length > shown && (
+        <button
+          type="button"
+          aria-expanded={all}
+          onClick={() => setAll((a) => !a)}
+          className="mt-2 inline-flex min-h-11 items-center text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+        >
+          {all ? "Show fewer" : `Show all ${competitors.length} competitors`}
+        </button>
+      )}
     </div>
   );
 }

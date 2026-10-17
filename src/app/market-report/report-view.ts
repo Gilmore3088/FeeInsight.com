@@ -14,7 +14,7 @@ export const EXTRA_ROW = "hidden group-data-[open=true]/all:table-row print:tabl
 export const EXTRA_GRID_ROW = "hidden group-data-[open=true]/all:grid print:grid";
 
 export function money(value: number | null | undefined): string {
-  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  if (value === null || value === undefined || Number.isNaN(value)) return "-";
   return Number.isInteger(value) ? `$${value}` : `$${value.toFixed(2)}`;
 }
 

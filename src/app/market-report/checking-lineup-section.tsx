@@ -15,8 +15,9 @@ import {
 } from "@/lib/custom-report/checking-lineup";
 import { HubSection } from "@/app/(public)/research/district/[id]/district-hub";
 import { Disclosure } from "./disclosure";
+import { EXTRA_ROW, ROWS_SHOWN } from "./report-view";
+import { ShowAll } from "./show-all";
 
-const MAX_PEER_ROWS = 10;
 const DERIVED_MARK = "†";
 
 function Muted({ children }: { children: string }) {
@@ -42,7 +43,7 @@ export function lineupFinding(name: string, lineup: CheckingLineupView): string 
 
 export function CheckingLineupSection({ name, lineup, live }: { name: string; lineup: CheckingLineupView; live?: boolean }) {
   const measures = lineupMeasures(lineup);
-  const shownPeers = lineup.peerRows.slice(0, MAX_PEER_ROWS);
+  const shownPeers = lineup.peerRows;
   const own = lineup.subject.accountsList;
   return (
     <HubSection
@@ -63,7 +64,7 @@ export function CheckingLineupSection({ name, lineup, live }: { name: string; li
         </>
       }
     >
-      <figure className="min-w-0">
+      <figure className="min-w-0 max-w-5xl">
       <figcaption className="text-[14px] font-semibold text-ink">Checking accounts, {name} against local competitors</figcaption>
       <div className="mt-3 overflow-x-auto">
       <table className="w-full min-w-[20rem] text-left text-sm">
@@ -88,6 +89,7 @@ export function CheckingLineupSection({ name, lineup, live }: { name: string; li
       </figure>
 
       {(own.length > 0 || shownPeers.length > 0) && (
+      <div className="max-w-5xl">
       <Disclosure summary="Account by account">
       {own.length > 0 && (
         <>
@@ -133,6 +135,7 @@ export function CheckingLineupSection({ name, lineup, live }: { name: string; li
       {shownPeers.length > 0 && (
         <>
           <h3 className="mt-6 text-[15px] font-semibold text-ink">Competitors with a checking lineup on file</h3>
+          <ShowAll total={shownPeers.length} shown={ROWS_SHOWN} noun="competitors">
           <div className="mt-2 overflow-x-auto">
           <table className="w-full min-w-[20rem] text-left text-sm">
             <thead className="border-b border-border text-[11px] uppercase tracking-[0.08em] text-ink-muted">
@@ -146,10 +149,10 @@ export function CheckingLineupSection({ name, lineup, live }: { name: string; li
               </tr>
             </thead>
             <tbody>
-              {shownPeers.map((peer) => (
-                <tr key={peer.institutionId} className="border-b border-surface-200 last:border-0">
-                  <td className="py-2 pr-3">
-                    <a href={`/institution/${peer.institutionId}`} className="text-ink underline-offset-2 hover:underline">
+              {shownPeers.map((peer, index) => (
+                <tr key={peer.institutionId} className={`border-b border-surface-200 last:border-0 ${index >= ROWS_SHOWN ? EXTRA_ROW : ""}`}>
+                  <td className="py-1 pr-3">
+                    <a href={`/institution/${peer.institutionId}`} className="flex min-h-11 items-center text-ink underline-offset-2 hover:underline sm:min-h-0 sm:py-1">
                       {peer.name}
                     </a>
                   </td>
@@ -163,15 +166,13 @@ export function CheckingLineupSection({ name, lineup, live }: { name: string; li
             </tbody>
           </table>
           </div>
-          {lineup.peerRows.length > shownPeers.length && (
-            <p className="mt-1 text-[12px] text-ink-muted">
-              Showing {shownPeers.length} of {lineup.peerRows.length}, largest deposits in the market first.
-            </p>
-          )}
+          </ShowAll>
+          <p className="mt-1 text-[12px] text-ink-muted sm:mx-0 sm:text-left">Largest deposits in the market first.</p>
         </>
       )}
 
       </Disclosure>
+      </div>
       )}
     </HubSection>
   );
