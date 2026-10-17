@@ -56,6 +56,7 @@ export function BranchMapLive({ points, label, branchesById }: { points: BranchP
             <span className="w-4 border-t border-dashed border-ink/60" aria-hidden="true" /> City and town limits
           </span>
         )}
+        <span>Select a branch to see its institution.</span>
       </figcaption>
     </figure>
   );

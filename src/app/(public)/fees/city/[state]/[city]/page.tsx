@@ -9,12 +9,13 @@ import { PAGE_CRUMBS, PAGE_H1, PAGE_HEADER, PAGE_LEDE } from "@/components/publi
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { TrackLink } from "@/components/track-link";
 import { DEMO_REQUEST_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
-import { SITE_URL } from "@/lib/constants";
+import { SITE_NAME, SITE_URL } from "@/lib/constants";
 import { getCityMarketCached, getStateFeeIndexesCached } from "@/lib/data-store/public-cached-reads";
 import type { CityArea, CityFeeKey, CityMarket } from "@/lib/data-store";
 import { CITY_FEES } from "@/lib/data-store/city-market";
 import { titleCase } from "./city-lookup";
 import { CompareRows, type CompareRow } from "./market-exhibits";
+import { evidenceHeadline, FeeEvidence } from "./fee-evidence";
 import { BranchMapLive } from "./branch-map";
 import { ComparisonBars, feeBars } from "./comparison-bars";
 import { sortOf } from "./format";
@@ -27,8 +28,6 @@ interface PageProps {
   searchParams?: Promise<{ area?: string; fee?: string; sort?: string }>;
 }
 
-/** Cities served by fewer institutions with published fees than this are thin pages: rendered, not indexed. */
-const MIN_INDEXABLE_INSTITUTIONS = 3;
 
 const H2 = "text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-[24px]";
 const LINK = "font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink";
@@ -48,14 +47,19 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const cityName = titleCase(city);
   if (!stateName) notFound();
   const market = await loadMarket(stateCode, cityName, "city");
-  const withFees = market ? coverage(market).with_fees : 0;
+  const cov = market ? coverage(market) : null;
+  // A city with no fee published by enough institutions for a local median is a thin page:
+  // rendered, not indexed.
+  const indexable = market ? localFees(market, [], []).some((f) => f.median != null) : false;
 
   return {
-    robots: { index: withFees >= MIN_INDEXABLE_INSTITUTIONS, follow: true },
+    robots: { index: indexable, follow: true },
     // One address per city: "little-rock" and "little%20rock" render the same page.
     alternates: { canonical: `/fees/city/${state.toLowerCase()}/${encodeURIComponent(cityName.toLowerCase())}` },
-    title: `Banking and Fees in ${cityName}, ${stateCode}`,
-    description: `The banks and credit unions with branches in ${cityName}, ${stateName}, their published fees with sources, and how the market compares with ${stateName} and the U.S.`,
+    title: `${cityName}, ${stateCode} Bank Fees: Overdraft, ATM and More Compared`,
+    description: cov
+      ? `${cov.with_fees} of ${cov.institutions} banks and credit unions with branches in ${cityName}, ${stateCode} publish fees in the Bank Fee Index. See each fee with its source, set beside ${stateName} and the U.S.`
+      : `Banks and credit unions with branches in ${cityName}, ${stateCode}: each published fee with its source, set beside ${stateName} and the U.S.`,
   };
 }
 
@@ -85,7 +89,7 @@ export default async function CityFeePage({ params, searchParams }: PageProps) {
   const leadHeadline = hasLead
     ? `${isMetro ? `The ${placeName} metro's` : `${cityName}'s`} ${lowerLabel(lead!.label)} fee median is ${money(Math.abs(leadGap))} ${
         leadGap > 0 ? "above" : "below"
-      } the ${stateName} benchmark.`
+      } the ${stateName} median.`
     : null;
   // The name on the comparison bars and table: the city, or the metro.
   const barName = isMetro ? `${placeName} metro` : cityName;
@@ -96,8 +100,12 @@ export default async function CityFeePage({ params, searchParams }: PageProps) {
   const noLeadNote = hasLead
     ? null
     : comparable.length === 0
-      ? `Too few institutions with a branch here publish any one fee for a local median yet. A median needs at least ${MIN_INSTITUTIONS_FOR_MEDIAN}; the most for any fee here is ${mostPublishing}.`
-      : `Where enough institutions publish a fee for a local median, ${barName}'s sits within 10% of the ${stateName} median on all ${comparable.length} ${comparable.length === 1 ? "fee" : "fees"}.`;
+      ? `${cov.with_fees} ${cov.with_fees === 1 ? "institution" : "institutions"} with a branch here ${cov.with_fees === 1 ? "publishes" : "publish"} fees, not yet enough for a local median on any one fee. A median needs at least ${MIN_INSTITUTIONS_FOR_MEDIAN}; the most for any fee here is ${mostPublishing}.`
+      : `Where a fee has enough institutions for a local median, the ${barName} median is within 10% of the ${stateName} median on all ${comparable.length} ${comparable.length === 1 ? "fee" : "fees"}.`;
+  // A market where no fee reaches a local median leads with the institutions' own published
+  // amounts for its most-published fee rather than an empty comparison.
+  const sparse = !fees.some((f) => f.median != null) && fees.some((f) => f.n > 0);
+  const evidenceFee = sparse ? fees.reduce((best, f) => (f.n > best.n ? f : best)) : null;
   const leaders = depositLeaders(market);
   const cityHref = `/fees/city/${stateCode.toLowerCase()}/${encodeURIComponent(cityName.toLowerCase())}`;
   const initialFee = CITY_FEES.some((f) => f.key === query.fee) ? (query.fee as CityFeeKey) : "overdraft";
@@ -168,6 +176,22 @@ export default async function CityFeePage({ params, searchParams }: PageProps) {
           { name: cityName, href: `${SITE_URL}${cityHref}` },
         ]}
       />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "Dataset",
+            name: `${cityName}, ${stateCode} Bank Fees Compared`,
+            description: `Published fees of the ${cov.with_fees} banks and credit unions with branches in ${cityName}, ${stateName} that the Bank Fee Index holds, each with its source, set beside ${stateName} and the U.S.`,
+            url: `${SITE_URL}${cityHref}`,
+            spatialCoverage: { "@type": "Place", name: `${cityName}, ${stateName}` },
+            creator: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
+            isPartOf: { "@type": "Dataset", name: "Bank Fee Index" },
+            variableMeasured: fees.filter((f) => f.median != null).map((f) => `${f.label} median`),
+          }).replace(/</g, "\\u003c"),
+        }}
+      />
 
       {/* 1. The place, its boundary and what this page covers. */}
       <section className="border-b border-border bg-paper">
@@ -192,14 +216,14 @@ export default async function CityFeePage({ params, searchParams }: PageProps) {
                 <Link
                   href={cityHref}
                   aria-current={!isMetro ? "page" : undefined}
-                  className={`rounded-full px-4 py-1.5 ${!isMetro ? "bg-ink text-on-ink" : "text-ink-soft hover:text-ink"}`}
+                  className={`inline-flex min-h-11 items-center rounded-full px-4 ${!isMetro ? "bg-ink text-on-ink" : "text-ink-soft hover:text-ink"}`}
                 >
                   City of {cityName}
                 </Link>
                 <Link
                   href={`${cityHref}?area=metro`}
                   aria-current={isMetro ? "page" : undefined}
-                  className={`rounded-full px-4 py-1.5 ${isMetro ? "bg-ink text-on-ink" : "text-ink-soft hover:text-ink"}`}
+                  className={`inline-flex min-h-11 items-center rounded-full px-4 ${isMetro ? "bg-ink text-on-ink" : "text-ink-soft hover:text-ink"}`}
                 >
                   Metro area
                 </Link>
@@ -209,9 +233,17 @@ export default async function CityFeePage({ params, searchParams }: PageProps) {
               <strong className="font-semibold text-ink">{cov.institutions}</strong> banks and credit unions have branches in {isMetro ? `the ${placeName} metro area` : cityName}.
               The Bank Fee Index holds published fees for <strong className="font-semibold text-ink">{cov.with_fees}</strong> of them.
             </p>
-            <p className="mx-auto mt-2 text-[12px] text-ink-muted sm:mx-0">The count includes institutions based elsewhere that have a branch here.</p>
+            <p className="mx-auto mt-2 text-[12px] text-ink-muted sm:mx-0 sm:text-left">The count includes institutions based elsewhere that have a branch here.</p>
           </div>
-          {noLeadNote && (
+          {evidenceFee && (
+            <div className="mt-10 border-t border-border pt-8 text-left lg:mt-2 lg:border-l lg:border-t-0 lg:pl-12 lg:pt-0">
+              <h2 className="text-[22px] font-semibold leading-snug tracking-[-0.015em] text-ink sm:text-[28px]">{evidenceHeadline(evidenceFee)}</h2>
+              <div className="mt-5">
+                <FeeEvidence fee={evidenceFee} institutions={market.institutions} stateName={stateName} showNote />
+              </div>
+            </div>
+          )}
+          {noLeadNote && !evidenceFee && (
             <div className="mt-10 border-t border-border pt-8 text-left lg:mt-2 lg:border-l lg:border-t-0 lg:pl-12 lg:pt-0">
               <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-ink-muted">Compared with {stateName}</p>
               <p className="mt-2 max-w-xl text-[17px] leading-snug text-ink sm:text-[19px]">{noLeadNote}</p>
@@ -264,6 +296,8 @@ export default async function CityFeePage({ params, searchParams }: PageProps) {
             stateName={stateName}
             initialFee={initialFee}
             initialSort={initialSort}
+            medianNoteShown={sparse}
+            leadKey={evidenceFee?.key ?? null}
           />
         </div>
       </section>
@@ -274,7 +308,6 @@ export default async function CityFeePage({ params, searchParams }: PageProps) {
           <h2 id="map-heading" className={H2}>
             Where they have branches
           </h2>
-          <p className="mt-1 max-w-3xl text-[14px] text-ink-muted">Select a branch to see its institution.</p>
           <div className="mt-5">
             <BranchMapLive points={market.points} label={placeName} branchesById={branchesById} />
           </div>
@@ -321,7 +354,7 @@ export default async function CityFeePage({ params, searchParams }: PageProps) {
               <ol className="mt-3 space-y-2 text-[13px]">
                 {leaders.map((l) => (
                   <li key={l.id} className="grid grid-cols-[minmax(0,1fr)_minmax(0,6rem)_3rem] items-center gap-2">
-                    <Link href={`/institution/${l.id}`} className="truncate text-ink hover:text-brick">
+                    <Link href={`/institution/${l.id}`} className="line-clamp-2 leading-tight text-ink hover:text-brick">
                       {l.name}
                     </Link>
                     <span className="h-2.5 rounded-full bg-paper" aria-hidden="true">
@@ -372,7 +405,7 @@ export default async function CityFeePage({ params, searchParams }: PageProps) {
           <div className="rounded-2xl border border-border bg-surface-0 p-5">
             <p className="text-[16px] font-semibold text-ink">Work at a bank or credit union here?</p>
             <p className="mt-1 text-[14px] text-ink-muted">
-              Hamilton, the Fee Insight Pro workspace, puts your own fees next to every institution in this market, with the source for
+              Hamilton, the Fee Insight Pro workspace, sets an institution&apos;s own fees beside every institution in this market, with the source for
               each figure.
             </p>
             <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-3">
@@ -384,7 +417,7 @@ export default async function CityFeePage({ params, searchParams }: PageProps) {
               >
                 {PRO_PLANS_NAV.label}
               </TrackLink>
-              <TrackLink event="contact_sales" eventProps={{ placement: "city_staff_band_demo" }} href={DEMO_REQUEST_NAV.href} className={`text-[14px] ${LINK}`}>
+              <TrackLink event="contact_sales" eventProps={{ placement: "city_staff_band_demo" }} href={DEMO_REQUEST_NAV.href} className={`inline-flex min-h-11 items-center text-[14px] ${LINK}`}>
                 {DEMO_REQUEST_NAV.label}
               </TrackLink>
             </div>
@@ -392,14 +425,14 @@ export default async function CityFeePage({ params, searchParams }: PageProps) {
           <div className="rounded-2xl border border-border bg-surface-0 p-5">
             <p className="text-[16px] font-semibold text-ink">Choosing an account?</p>
             <p className="mt-1 text-[14px] text-ink-muted">Open any institution above to see all of its published fees and where each one came from.</p>
-            <Link href="/institutions" className={`mt-3 inline-block text-[14px] ${LINK}`}>
+            <Link href="/institutions" className={`mt-3 inline-flex min-h-11 items-center text-[14px] ${LINK}`}>
               Search institutions
             </Link>
           </div>
         </div>
       </section>
 
-      <nav aria-label="More fee pages" className="mx-auto flex max-w-page flex-wrap gap-x-6 gap-y-2 px-4 pb-16 pt-8 text-[14px] sm:px-6">
+      <nav aria-label="More fee pages" className="mx-auto flex max-w-page flex-wrap gap-x-6 px-4 pb-16 pt-8 text-[14px] sm:px-6 [&>a]:inline-flex [&>a]:min-h-11 [&>a]:items-center">
         <Link href={`/fees/city/${stateCode.toLowerCase()}`} className={LINK}>
           More {stateName} cities
         </Link>
@@ -407,7 +440,7 @@ export default async function CityFeePage({ params, searchParams }: PageProps) {
           {stateName} fee report
         </Link>
         <Link href="/methodology" className={LINK}>
-          How we build it
+          Methodology
         </Link>
       </nav>
     </>

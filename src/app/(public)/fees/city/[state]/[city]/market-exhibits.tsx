@@ -36,7 +36,7 @@ export function BranchMap({ points, label }: { points: BranchPoint[]; label: str
 
   return (
     <figure className="rounded-2xl border border-border bg-surface-0 p-4">
-      <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label={`${points.length} branch locations in ${label}`}>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" className="h-[380px] w-full sm:h-[460px]" role="img" aria-label={`${points.length} branch locations in ${label}`}>
         <rect x="0" y="0" width={W} height={H} rx="12" className="fill-paper" />
         {inside.map((p, i) => (
           <circle
@@ -55,7 +55,7 @@ export function BranchMap({ points, label }: { points: BranchPoint[]; label: str
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-full bg-brick/80" aria-hidden="true" /> {cus} credit union branches mapped
         </span>
-        {miles > 0 && <span>About {miles} miles across</span>}
+        {miles > 0 && <span>About {miles} {miles === 1 ? "mile" : "miles"} across</span>}
       </figcaption>
     </figure>
   );

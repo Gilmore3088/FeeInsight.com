@@ -6,14 +6,15 @@ import type { CityFeeKey, CityMarketInstitution } from "@/lib/data-store";
 import type { LocalFee } from "./market-view";
 import { ACCOUNT_NOT_IDENTIFIED, meaningfulConditions } from "./account-details";
 import { ComparisonBars, feeBars } from "./comparison-bars";
+import { evidenceHeadline, NO_LOCAL_MEDIAN } from "./fee-evidence";
 import { CITY_SORTS, FEE_SELECT_EVENT, lowerLabel, money, type CitySort, type FeeSelectDetail } from "./format";
 import { orderInstitutions, type CharterFilter } from "./table-order";
 
 /** Why a cell is empty: we hold no schedule, we found one but publish none of it yet, or it lists no such fee. */
 function missingNote(inst: CityMarketInstitution): string {
   if (inst.schedule === "none") return "No fee schedule found yet";
-  if (inst.schedule === "found") return "Schedule found, fees not yet published";
-  return "Not found on its schedule";
+  if (inst.schedule === "found") return "Schedule found; extraction pending.";
+  return "Fee not identified in the reviewed schedule.";
 }
 
 /** "ORLANDO" as "Orlando"; a name already in mixed case is kept. */
@@ -61,6 +62,8 @@ export function MarketTable({
   stateName,
   initialFee = "overdraft",
   initialSort = "branches",
+  medianNoteShown = false,
+  leadKey = null,
 }: {
   institutions: CityMarketInstitution[];
   fees: LocalFee[];
@@ -68,6 +71,10 @@ export function MarketTable({
   stateName: string;
   initialFee?: CityFeeKey;
   initialSort?: CitySort;
+  /** True when the page already says once that a local median needs more institutions. */
+  medianNoteShown?: boolean;
+  /** The fee the page's opening already lists amount by amount; its panel adds nothing more. */
+  leadKey?: CityFeeKey | null;
 }) {
   const [key, setKey] = useState<CityFeeKey>(initialFee);
   const [sort, setSort] = useState<CitySort>(initialSort);
@@ -122,24 +129,41 @@ export function MarketTable({
                 </option>
               ))}
             </select>
-            {fee.min != null && fee.max != null && fee.n >= 2 && fee.max > fee.min && (
+            {fee.median != null && fee.min != null && fee.max != null && fee.n >= 2 && fee.max > fee.min && (
               <p className="mt-3 text-[13px] text-ink-soft">
                 Published amounts here run from <span className="font-mono tabular-nums text-ink">{money(fee.min)}</span> to{" "}
                 <span className="font-mono tabular-nums text-ink">{money(fee.max)}</span>.
               </p>
             )}
           </div>
-          <div>
-            <p className="text-[14px] font-semibold text-ink">Median published {lowerLabel(fee.label)} fee</p>
-            <div className="mt-3">
-              <ComparisonBars bars={feeBars(fee, placeName, stateName)} />
+          {fee.median != null || fee.n === 0 ? (
+            <div>
+              <p className="text-[14px] font-semibold text-ink">Median published {lowerLabel(fee.label)} fee</p>
+              <div className="mt-3">
+                <ComparisonBars bars={feeBars(fee, placeName, stateName)} />
+              </div>
             </div>
-          </div>
+          ) : key === leadKey ? null : (
+            // Too few for a local median: the published amounts lead, the medians are references.
+            <div>
+              <p className="text-[17px] font-semibold leading-snug text-ink sm:text-[19px]">{evidenceHeadline(fee)}</p>
+              <p className="mt-2 text-[13px] text-ink-soft">
+                Medians for reference:{" "}
+                {[
+                  ...(fee.state_median != null ? [`${stateName} ${money(fee.state_median)}`] : []),
+                  ...(fee.us_median != null ? [`U.S. ${money(fee.us_median)}`] : []),
+                ].join(" · ") || "none yet"}
+              </p>
+              {!medianNoteShown && <p className="mt-1 text-[12px] text-ink-muted">{NO_LOCAL_MEDIAN}</p>}
+            </div>
+          )}
         </div>
-        <p className="mt-5 border-t border-border pt-3 text-[12px] text-ink-muted">
-          {placeName} covers every institution with a branch here, wherever it is headquartered. {stateName} covers institutions
-          headquartered in the state. U.S. covers every institution in the Bank Fee Index.
-        </p>
+        {fee.median != null && (
+          <p className="mt-5 border-t border-border pt-3 text-[12px] text-ink-muted">
+            {placeName} covers every institution with a branch here, wherever it is headquartered. {stateName} covers institutions
+            headquartered in the state. U.S. covers every institution in the Bank Fee Index.
+          </p>
+        )}
       </div>
 
       {/* The institutions behind it. */}
@@ -156,7 +180,7 @@ export function MarketTable({
               type="button"
               aria-pressed={charter === c.key}
               onClick={() => setCharter(c.key)}
-              className={`min-h-9 flex-1 whitespace-nowrap rounded-full px-3 ${charter === c.key ? "bg-ink text-on-ink" : "text-ink-soft hover:text-ink"}`}
+              className={`min-h-11 flex-1 whitespace-nowrap rounded-full px-3 ${charter === c.key ? "bg-ink text-on-ink" : "text-ink-soft hover:text-ink"}`}
             >
               {c.label}
             </button>
@@ -223,7 +247,7 @@ export function MarketTable({
                           href={v.source_url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="font-mono text-[15px] tabular-nums text-ink underline decoration-border underline-offset-2 hover:decoration-brick"
+                          className="-my-3 inline-block py-3 font-mono text-[15px] tabular-nums text-ink underline decoration-border underline-offset-2 hover:decoration-brick"
                         >
                           {money(v.amount)}
                         </a>
@@ -241,7 +265,7 @@ export function MarketTable({
                         {conditions.length > 0 && <p className="text-[12px] text-ink-soft">{conditions.join(" · ")}</p>}
                         {v.source_line && (
                           <details className="mt-1 text-[12px]">
-                            <summary className="cursor-pointer text-ink-muted hover:text-ink">Source wording</summary>
+                            <summary className="-my-3 inline-block cursor-pointer py-3 text-ink-muted hover:text-ink">Source wording</summary>
                             <blockquote className="mt-1 border-l-2 border-border pl-3 text-ink-soft [overflow-wrap:anywhere]">
                               &ldquo;{v.source_line}&rdquo;
                             </blockquote>
