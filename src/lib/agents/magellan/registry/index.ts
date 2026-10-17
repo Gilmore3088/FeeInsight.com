@@ -3,6 +3,9 @@ import { CENSUS_ACS_SOURCE, runRegistryCensusAcs } from "./census-acs";
 import { CFPB_SOURCE, runRegistryCfpb } from "./cfpb";
 import { IRS_ZIP_INCOME_SOURCE, runRegistryIrsZipIncome } from "./irs-zip-income";
 import { ECONOMY_DEFINITIONS, runRegistryEconomy } from "./economy";
+import { MAKING_ENDS_MEET_PARTITION, MAKING_ENDS_MEET_SOURCE, MAKING_ENDS_MEET_TITLE, runRegistryMakingEndsMeet } from "./making-ends-meet";
+import { PAYDAY_REPORTS_SOURCE, runRegistryPaydayReports } from "./payday-reports";
+import { runRegistryStateLists, URBAN_DEBT_PARTITION, URBAN_DEBT_SOURCE } from "./state-lists";
 import { FHLB_ADVANCE_RATES_SOURCE, runRegistryFhlbAdvanceRates } from "./fhlb-advance-rates";
 import { BANK_MERGER_ORDERS_SOURCE, runRegistryBankMergerOrders } from "./bank-merger-orders";
 import { BLS_OEWS_SOURCE, runRegistryBlsOews } from "./bls-oews";
@@ -820,6 +823,63 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
     run: async (input) => {
       const r = await runRegistryBankMergerOrders({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
       return { skipped: r.skipped, summary: r.summary, detail: { ...r.detail, source_url: r.sourceUrl, rows: r.rows, written_rows: r.writtenRows, matched_rows: r.matchedRows, empty: r.empty, empty_reason: r.emptyReason } };
+    },
+  },
+  {
+    source: MAKING_ENDS_MEET_SOURCE,
+    stepKey: "registry-cfpb-making-ends-meet",
+    title: MAKING_ENDS_MEET_TITLE,
+    fixedPartition: MAKING_ENDS_MEET_PARTITION,
+    run: async (input) => {
+      const r = await runRegistryMakingEndsMeet({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return {
+        summary: r.summary,
+        detail: {
+          ...r.detail,
+          source_url: r.sourceUrl,
+          rows: r.rows,
+          written_rows: r.writtenRows,
+          missing_fields: r.missingFields,
+          unexpected_fields: r.unexpectedFields,
+          empty: r.empty,
+          empty_reason: r.emptyReason,
+        },
+      };
+    },
+  },
+  {
+    source: PAYDAY_REPORTS_SOURCE,
+    stepKey: "registry-state-payday-reports",
+    title: "Read state payday and small-dollar lending annual reports",
+    run: async (input) => {
+      const r = await runRegistryPaydayReports({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return {
+        summary: r.summary,
+        detail: { source_url: r.sourceUrl, rows: r.rows, written_rows: r.writtenRows, missing_fields: r.missingFields, dry_run: r.dryRun, empty: r.empty, empty_reason: r.emptyReason },
+      };
+    },
+  },
+  {
+    source: URBAN_DEBT_SOURCE,
+    stepKey: "registry-urban-debt",
+    title: "Read Urban Institute debt in collections by county and state (held until license confirmed)",
+    fixedPartition: URBAN_DEBT_PARTITION,
+    run: async (input) => {
+      const r = await runRegistryStateLists({ source: URBAN_DEBT_SOURCE, runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return {
+        summary: r.summary,
+        detail: {
+          source_url: r.sourceUrl,
+          rows_read: r.rowsRead,
+          area_rows: r.areaRows,
+          written_rows: r.writtenRows,
+          missing_fields: r.missingFields,
+          held: r.held,
+          dry_run: r.dryRun,
+          empty: r.empty,
+          empty_reason: r.emptyReason,
+        },
+      };
     },
   },
   {
