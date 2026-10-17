@@ -51,7 +51,7 @@ const count = (n: number) => n.toLocaleString("en-US");
 
 const BAND = "min-w-0 border-t border-border pt-5";
 /** Each task: its words and controls on the left, a live example of the tool on the right. */
-const TASK_GRID = "grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-10";
+const TASK_GRID = "grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:grid-rows-[auto_1fr] lg:gap-x-10 lg:gap-y-3";
 
 /** The fee-check example: Capital City Bank, a well-covered demo institution. */
 const CHECK_EXAMPLE_ID = 323;
@@ -231,6 +231,18 @@ export default async function ConsumerPage() {
                 One withdrawal at another bank&apos;s ATM can bring two fees from two companies. Each guide explains a charge
                 and the ways around it.
               </p>
+            </div>
+            {atmExample && (
+              <div className="flex min-w-0 flex-col items-center gap-2 sm:items-start lg:col-start-2 lg:row-span-2 lg:row-start-1">
+                <AtmReceipt example={atmExample} />
+                {atmGuideHref && (
+                  <Link href={atmGuideHref} className={`inline-flex min-h-11 items-center text-[14px] font-semibold ${LINK}`}>
+                    Why one withdrawal brings two fees
+                  </Link>
+                )}
+              </div>
+            )}
+            <div className="min-w-0 lg:col-start-1">
               {guides.length === 0 && <p className={BAND_LINE}>The guides are not available right now.</p>}
               {guideRows.length > 0 && (
                 <ul className="mt-3 divide-y divide-border">
@@ -248,16 +260,6 @@ export default async function ConsumerPage() {
                 {guides.length > 0 ? `All ${guides.length} guides` : "Fee guides"}
               </Link>
             </div>
-            {atmExample && (
-              <div className="flex min-w-0 flex-col items-center gap-2 sm:items-start">
-                <AtmReceipt example={atmExample} />
-                {atmGuideHref && (
-                  <Link href={atmGuideHref} className={`inline-flex min-h-11 items-center text-[14px] font-semibold ${LINK}`}>
-                    Why one withdrawal brings two fees
-                  </Link>
-                )}
-              </div>
-            )}
           </section>
 
           <section aria-labelledby="compare-heading" className={`${BAND} ${TASK_GRID}`}>
@@ -266,23 +268,25 @@ export default async function ConsumerPage() {
                 Compare local options
               </h2>
               <p className={BAND_LINE}>See which banks and credit unions publish their fees in each city of a state.</p>
+            </div>
+            <div className="min-w-0 lg:col-start-2 lg:row-span-2 lg:row-start-1">
+              {stateOptions.length > 0 ? (
+                <StatePicker states={stateOptions} initial="FL" />
+              ) : (
+                <p className={BAND_LINE}>The state list is not available right now.</p>
+              )}
+            </div>
+            <div className="min-w-0 lg:col-start-1">
               {stateOptions.length > 0 && (
-                <div className="mt-3">
-                  <SourceNote>
-                    Banks and credit unions headquartered in each state with published fees, {PRODUCT_NAME}
-                    {asOf}.
-                  </SourceNote>
-                </div>
+                <SourceNote>
+                  Banks and credit unions headquartered in each state with published fees, {PRODUCT_NAME}
+                  {asOf}.
+                </SourceNote>
               )}
               <Link href="/institutions" className={MORE}>
                 Browse the directory
               </Link>
             </div>
-            {stateOptions.length > 0 ? (
-              <StatePicker states={stateOptions} initial="FL" />
-            ) : (
-              <p className={BAND_LINE}>The state list is not available right now.</p>
-            )}
           </section>
         </div>
 

@@ -281,7 +281,7 @@ function calculatorStart(
   if (block.kind !== "atm" || !example) return { defaults: block.defaults };
   return {
     defaults: { ...block.defaults, operatorFee: example.owner.amount, bankFee: example.holder.amount },
-    note: `Starting fees are the receipt's: ${example.owner.institutionName}'s surcharge and ${example.holder.institutionName}'s fee. Enter your own account's terms.`,
+    note: `Starting fees are the receipt's: ${example.owner.institutionName}'s surcharge and ${example.holder.institutionName}'s fee. ${block.defaults.withdrawals ?? 4} withdrawals is an example amount. Enter your own account's terms.`,
   };
 }
 

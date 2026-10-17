@@ -582,7 +582,7 @@ export const CONSUMER_GUIDES: Guide[] = [
               {
                 title: "Find your bank's ATM locator",
                 text: "Your bank or credit union lists the machines its customers can use without its fee, in its app or on its website. Search its locator before you go. Fee Insight does not track where ATMs are or which ones are free for you.",
-                links: [{ label: "Look up your bank's website", href: "/institutions" }],
+                links: [{ label: "Find your bank in the directory", href: "/institutions" }],
               },
               {
                 title: "Check a participating ATM network",

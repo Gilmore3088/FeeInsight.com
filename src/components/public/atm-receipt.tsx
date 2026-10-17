@@ -26,7 +26,7 @@ function SourceLink({ fee }: { fee: AtmFeeLine }) {
  * card holder's bank fee, each from that institution's own published schedule, adding to one
  * total. Labeled "Example" with both institutions named.
  */
-export function AtmReceipt({ example, compact = false }: { example: AtmTwoFeeExample; compact?: boolean }) {
+export function AtmReceipt({ example }: { example: AtmTwoFeeExample }) {
   const { holder, owner } = example;
   return (
     <figure className="w-full min-w-0 max-w-md rounded-xl border border-border bg-surface-0 shadow-fi-1">
@@ -43,7 +43,7 @@ export function AtmReceipt({ example, compact = false }: { example: AtmTwoFeeExa
           <dt className="min-w-0 text-ink-soft">
             <span aria-hidden="true" className="mr-1 text-ink-muted">+</span>
             {owner.institutionName}&apos;s surcharge for non-customers
-            {!compact && <span className="block text-[12px] text-ink-muted">Shown on the machine&apos;s screen</span>}
+            <span className="block text-[12px] text-ink-muted">Shown on the machine&apos;s screen</span>
           </dt>
           <dd className="shrink-0 font-mono tabular-nums text-ink">{cents(owner.amount)}</dd>
         </div>
@@ -51,7 +51,7 @@ export function AtmReceipt({ example, compact = false }: { example: AtmTwoFeeExa
           <dt className="min-w-0 text-ink-soft">
             <span aria-hidden="true" className="mr-1 text-ink-muted">+</span>
             {holder.institutionName}&apos;s fee for another bank&apos;s ATM
-            {!compact && <span className="block text-[12px] text-ink-muted">On the monthly statement</span>}
+            <span className="block text-[12px] text-ink-muted">On the monthly statement</span>
           </dt>
           <dd className="shrink-0 font-mono tabular-nums text-ink">{cents(holder.amount)}</dd>
         </div>
@@ -65,11 +65,11 @@ export function AtmReceipt({ example, compact = false }: { example: AtmTwoFeeExa
         </div>
       </dl>
       <div className="border-t border-border px-4 pb-1 pt-3 text-[12px] leading-relaxed text-ink-muted sm:px-5">
-        <p className="sm:mx-0 sm:text-left">
+        <p>
           Each fee as its institution publishes it. The {cents(example.withdrawal)} withdrawal is an example amount, and a
           shared network or a rebate can remove either fee.
         </p>
-        <p className="flex flex-wrap gap-x-4 sm:mx-0">
+        <p className="flex flex-wrap gap-x-4">
           <SourceLink fee={owner} />
           <SourceLink fee={holder} />
         </p>

@@ -31,12 +31,12 @@ export function StatePicker({ states, initial }: { states: StateOption[]; initia
               key={state.id}
               d={state.d}
               onClick={hasData ? () => setCode(state.id) : undefined}
-              className={`stroke-paper stroke-[1.5] transition-colors ${
+              className={`stroke-[1.5] transition-colors ${
                 selected
-                  ? "fill-brick"
+                  ? "fill-brick stroke-paper"
                   : hasData
-                    ? "cursor-pointer fill-surface-200 hover:fill-brick-tint"
-                    : "fill-paper"
+                    ? "cursor-pointer fill-surface-200 stroke-paper hover:fill-brick-tint"
+                    : "fill-paper stroke-border"
               }`}
             />
           );
