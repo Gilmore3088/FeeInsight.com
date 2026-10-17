@@ -739,6 +739,12 @@ export const HAND_REFILES: readonly HandRefile[] = [
   // `INCOMING_WIRE` cannot reach it; the $10 is the incoming price (outgoing is $20, live as 66596).
   { feePublishedId: 66594, from: "wire_domestic_outgoing", amount: 10, to: "wire_domestic_incoming", name: "Domestic Wire Transfer Fees: Incoming",
     why: "#1788, inst 113 (ServisFirst), doc 19655: \"Domestic Wire Transfer Fees | Incoming - $10.00 Outgoing - $20.00\"" },
+  // #1829 (#1691 cleanup, read-only Oct 17): fax fees filed as account research; a fax is document
+  // reproduction (`fax_fee` in the fold map). Neither bank has a live fax fee under document reproduction.
+  { feePublishedId: 152977, from: "account_research", amount: 1, to: "document_reproduction", name: "Fax (Domestic & International)",
+    why: "#1829, inst 480 (Open Bank), doc 36784: \"Fax (Domestic & International)\" then \"$1\"" },
+  { feePublishedId: 152288, from: "account_research", amount: 2, to: "document_reproduction", name: "Faxes (Domestic only)",
+    why: "#1829, inst 1229 (PromiseOne Bank), doc 36945: \"Faxes (Domestic only) | $2.00\"" },
 ];
 
 interface HandRow {

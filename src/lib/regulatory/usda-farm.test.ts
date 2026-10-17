@@ -1,7 +1,7 @@
 import { strToU8, zipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
 
-import { cashRentSeries, ersFileLinks, fetchErsFarmIncome, fetchNassCashRents, nassUrl, parseErsFarmIncome, parseNassCashRents, redactKey } from "./usda-farm";
+import { cashRentSeries, ersFileLinks, ersReleaseDate, fetchErsFarmIncome, fetchNassCashRents, nassUrl, parseErsFarmIncome, parseNassCashRents, redactKey } from "./usda-farm";
 
 const ERS_CSV = [
   "artificialKey,VariableDescriptionPart1,VariableDescriptionPart2,VariableDescriptionTotal,Year,State,Amount,ChainType_GDP_Deflator",
@@ -34,6 +34,23 @@ describe("ERS farm income", () => {
     const r = parseErsFarmIncome("Year,Amount\n2024,5", 2024, null);
     expect(r.rows).toEqual([]);
     expect(r.missingFields.join(" ")).toMatch(/state/);
+  });
+
+  it("prefers the newest dated release zip and skips the U.S.-only archive", () => {
+    const page = [
+      '<a href="/media/20807/ers-farm-income-and-wealth-statistics-data-archive.zip">ERS Farm Income and Wealth Statistics Data Archive</a>',
+      '<a href="/media/20808/february-5-2026-release.zip">February 5, 2026 release</a>',
+      '<a href="/media/29517/september-3-2026-release.zip">September 3, 2026 release</a>',
+      '<a href="/media/1/farm-income-1960-2003.zip">Farm income 1960-2003</a>',
+      '<a href="/media/21960/june-1-2025-release.zip">June 1, 2025 release</a>',
+    ].join("");
+    expect(ersFileLinks(page, "https://www.ers.usda.gov/data-products/x")).toEqual([
+      "https://www.ers.usda.gov/media/29517/september-3-2026-release.zip",
+      "https://www.ers.usda.gov/media/20808/february-5-2026-release.zip",
+      "https://www.ers.usda.gov/media/21960/june-1-2025-release.zip",
+    ]);
+    expect(ersReleaseDate("September 3, 2026 release")).toBe("2026-09-03");
+    expect(ersReleaseDate("Data archive")).toBeNull();
   });
 
   it("finds the file link on the data-files page and reads a zipped CSV", async () => {

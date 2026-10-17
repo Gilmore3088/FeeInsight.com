@@ -42,18 +42,41 @@ export const ERS_COLUMNS = { year: ["year"], state: ["state", "statename", "stat
 const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9_]/g, "");
 export const normaliseDescription = (s: string) => s.toLowerCase().replace(/[,;:()]/g, " ").replace(/\s+/g, " ").trim();
 
-/** The ERS CSV (or zip holding it) links on the data-files page, likeliest first. */
+const RELEASE_DATE = /(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2}),?\s+(\d{4})\s+release/i;
+const MONTH_NUMBER: Record<string, number> = { january: 1, february: 2, march: 3, april: 4, may: 5, june: 6, july: 7, august: 8, september: 9, october: 10, november: 11, december: 12 };
+
+/** "September 3, 2026 release" -> "2026-09-03"; null when the text names no release date. */
+export function ersReleaseDate(text: string): string | null {
+  const m = RELEASE_DATE.exec(text);
+  if (!m) return null;
+  return `${m[3]}-${String(MONTH_NUMBER[m[1].toLowerCase()]).padStart(2, "0")}-${m[2].padStart(2, "0")}`;
+}
+
+/**
+ * The ERS CSV (or zip holding it) links on the data-files page, likeliest first. The full U.S. and
+ * state bundles are linked as "<Month D, YYYY> release" zips (their /media/<id>/ numbers are not in
+ * date order), so the newest dated release comes first. The "Data Archive" zip is U.S. only and the
+ * 1960-2003 files are history, so neither is used.
+ */
 export function ersFileLinks(html: string, pageUrl: string): string[] {
-  const links = pageLinks(html, pageUrl).filter((l) => /\.(zip|csv)(\?|$)/i.test(l.href));
+  const links = pageLinks(html, pageUrl)
+    .filter((l) => /\.(zip|csv)(\?|$)/i.test(l.href))
+    .filter((l) => !/archive|\b1960\s*-/i.test(l.text) && !/archive/i.test(l.href));
+  const releases = links
+    .map((l) => ({ href: l.href, date: ersReleaseDate(l.text) }))
+    .filter((l): l is { href: string; date: string } => l.date !== null)
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .map((l) => l.href);
   const score = (href: string, text: string) => {
     const s = `${href} ${text}`.toLowerCase();
     return (/farmincome|farm income|wealthstatistics|wealth statistics/.test(s) ? 4 : 0) + (/\.zip/.test(href.toLowerCase()) ? 1 : 0) + (/state/.test(s) ? 1 : 0);
   };
-  return links
+  const named = links
     .map((l) => ({ href: l.href, score: score(l.href, l.text) }))
     .filter((l) => l.score >= 4)
     .sort((a, b) => b.score - a.score)
     .map((l) => l.href);
+  return [...new Set([...releases, ...named])];
 }
 
 function stateOf(value: string): { geo_type: "nation" | "state"; code: string } | null {

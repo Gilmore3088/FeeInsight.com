@@ -202,7 +202,10 @@ export const HOOVIE_SOURCES_02: HoovieSourceContract[] = [
     // magellan/registry/finra-nfcs.ts, regulatory/finra-nfcs.ts (finrafoundation.org NFCS downloads, waves every three years), magellan/registry/risk-costs.ts
     source: "finra-nfcs",
     publisher: "FINRA Investor Education Foundation (National Financial Capability Study)",
-    licence: { status: "terms-unconfirmed", note: "FINRA Foundation is not a federal publisher; the code states no terms." },
+    licence: {
+      status: "held",
+      note: "The FINRA Foundation's data terms allow use \"ONLY for your academic research and publication for non-commercial purposes\"; no partitions are scheduled until FINRA_NFCS_LICENSE_CONFIRMED=true.",
+    },
     connection: "bulk-file",
     cadence: "irregular",
     grain: ["national", "state"],
