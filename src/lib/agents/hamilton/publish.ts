@@ -35,10 +35,14 @@ import { feeKey, reproducibleFees, RULES_RECHECK_REASON } from "@/lib/agents/ham
 import { closedInstitutionSql } from "@/lib/agents/hamilton/closed-institution";
 import { nonDepositTakedownReason } from "@/lib/agents/darwin/non-deposit-document-check";
 import {
+  collapseKeepOrder,
+  collapseLineKey,
   exactDuplicateDecision,
   PUBLISH_DUPLICATE_REFUSE_REASON_PREFIX,
   PUBLISH_REFUSE_DUPLICATES_LIVE,
   selectExactCopies,
+  type CollapseLine,
+  type ExactCopyRow,
   type ExactDuplicateDecision,
   type PublishDuplicateCheck,
 } from "@/lib/agents/hamilton/exact-duplicate";
@@ -2015,8 +2019,23 @@ export async function runHamiltonPublish(
   // #1069 step 2: the sweeps' own rules, read once for the batch. Counted always; refused only
   // while `refuseSweepRulesLive` is on. A failed read refuses nothing.
   const sweepReads = await selectPublishSweepRefusals(db, rows.map((row) => Number(row.fee_verified_id)));
+  // #1069: of the rows on one exact-duplicate collapse line, the copy the collapse would keep is
+  // decided first, and a later twin is refused against it (`exactDuplicateDecision`), so a step
+  // publishes one copy of a fee instead of two the collapse then closes down to one.
+  const collapseLineOf = (row: (typeof rows)[number]): CollapseLine => {
+    const percent = isPercentFee(row);
+    return {
+      institutionId: Number(row.institution_id),
+      canonicalFeeKey: row.canonical_fee_key,
+      variantType: row.variant_type,
+      amount: percent ? null : normalizedAmount(row.amount),
+      ratePercent: percent ? ratePercentOf(row) : null,
+      feeName: publishedFeeName(row.fee_name, row.canonical_fee_key),
+    };
+  };
+  const stepCopies = new Map<string, ExactCopyRow[]>();
 
-  for (const row of rows) {
+  for (const row of collapseKeepOrder(rows, (row) => collapseLineKey(collapseLineOf(row)))) {
     const base = {
       feeVerifiedId: Number(row.fee_verified_id),
       institutionId: Number(row.institution_id),
@@ -2090,20 +2109,22 @@ export async function runHamiltonPublish(
     // #1069: a row about to publish whose line is already live under the collapse's own test
     // (same category, variant, value and name; frequencies that agree) is closed by the exact
     // duplicate collapse later. Counted always; refused only while `refuseDuplicatesLive` is on.
+    // Copies published earlier in this step are marked, and a dry run, which inserts nothing,
+    // adds the ones it would have published.
     let exactDuplicate: ExactDuplicateDecision = { kind: "none" };
+    const line = collapseLineOf(row);
+    const lineKey = collapseLineKey(line);
     if (!skipReason && decision?.kind !== "identical" && decision?.kind !== "older_document") {
-      const percent = isPercentFee(row);
-      exactDuplicate = exactDuplicateDecision(
-        row,
-        await selectExactCopies(db, {
-          institutionId: Number(row.institution_id),
-          canonicalFeeKey: row.canonical_fee_key,
-          variantType: row.variant_type,
-          amount: percent ? null : normalizedAmount(row.amount),
-          ratePercent: percent ? ratePercentOf(row) : null,
-          feeName: publishedFeeName(row.fee_name, row.canonical_fee_key),
-        }),
+      const inStep = stepCopies.get(lineKey) ?? [];
+      const inStepIds = new Set(inStep.map((copy) => Number(copy.fee_published_id)));
+      const live = (await selectExactCopies(db, line)).map((copy) =>
+        inStepIds.has(Number(copy.fee_published_id)) ? { ...copy, in_step: true } : copy,
       );
+      const liveIds = new Set(live.map((copy) => Number(copy.fee_published_id)));
+      exactDuplicate = exactDuplicateDecision(row, [
+        ...live,
+        ...inStep.filter((copy) => !liveIds.has(Number(copy.fee_published_id))),
+      ]);
     }
     const sweepRule =
       !skipReason && decision?.kind !== "identical" && decision?.kind !== "older_document"
@@ -2196,6 +2217,18 @@ export async function runHamiltonPublish(
     }
     if (exactDuplicate.kind !== "none") result.exactDuplicate = exactDuplicate;
     if (sweepRule) result.sweepRule = sweepRule;
+    if (result.status === "published") {
+      stepCopies.set(lineKey, [
+        ...(stepCopies.get(lineKey) ?? []),
+        {
+          fee_published_id: result.feePublishedId ?? 0,
+          frequency: row.frequency ?? null,
+          fee_audience: row.fee_audience ?? null,
+          published_at: null,
+          in_step: true,
+        },
+      ]);
+    }
     results.push(result);
 
     if (learning) {
