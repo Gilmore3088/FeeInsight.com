@@ -18,6 +18,6 @@ export default async function SavedPeerResearchPage({ params }: { params: Promis
   const response: PeerListResponse = { kind: "peer_list", shortAnswer: saved?.hamiltonView ?? "Saved peer research", peerList: data };
   return <div className="mx-auto w-full max-w-6xl px-4 py-6">
     <p className="mb-3 text-sm text-warm-700">Saved research snapshot — historical peer and fee evidence, not a refreshed market lookup.</p>
-    <PeerListView response={response} />
+    <PeerListView response={response} savedQuestion={typeof record.prompt === "string" ? record.prompt : ""} />
   </div>;
 }

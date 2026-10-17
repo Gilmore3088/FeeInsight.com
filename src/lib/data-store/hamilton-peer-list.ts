@@ -66,8 +66,16 @@ export async function getPeerListSubject(institutionId: number, asOf: string, db
   return rows[0] ? peerSubjectFromRow(rows[0]) : null;
 }
 
-/** One statement: count and page share one snapshot; fee coverage is read only after selection. */
-export async function getPeerListRows(subjectId: number, c: PeerListCriteria, asOf: string, db: typeof sql = sql): Promise<{ rows: PeerListRow[]; totalMatches: number }> {
+/**
+ * One statement: count and page share one snapshot; fee coverage is read only for the page's rows.
+ * `page` picks rows by their place in the stable selection order (#977, H02-T08): offset 50 is the
+ * 51st match onward. The count is of every match, so a page past the end still reports it.
+ */
+export async function getPeerListRows(
+  subjectId: number, c: PeerListCriteria, asOf: string, db: typeof sql = sql,
+  page: { offset: number; limit: number } = { offset: 0, limit: c.limit },
+): Promise<{ rows: PeerListRow[]; totalMatches: number }> {
+  if (!Number.isSafeInteger(page.offset) || page.offset < 0 || !Number.isSafeInteger(page.limit) || page.limit < 1) throw new Error("Invalid peer list page");
   const rows = await db`
     WITH candidates AS (
       SELECT inst.id AS institution_id, inst.institution_name, inst.charter_type, inst.city, inst.state_code,
@@ -101,25 +109,30 @@ export async function getPeerListRows(subjectId: number, c: PeerListCriteria, as
          AND (${c.maxAssets === null} OR
               (${c.maxAssets?.inclusive ?? false} AND total_assets_usd <= ${c.maxAssets?.value ?? null}::numeric) OR
               (${!(c.maxAssets?.inclusive ?? false)} AND total_assets_usd < ${c.maxAssets?.value ?? null}::numeric))
-    ), selected AS (
-      SELECT *, COUNT(*) OVER ()::int AS total_matches,
-             ROW_NUMBER() OVER (ORDER BY
+    ), ranked AS (
+      SELECT *, ROW_NUMBER() OVER (ORDER BY
                CASE WHEN ${c.sort === "closest_assets"} THEN ABS(LN(NULLIF(total_assets_usd, 0) / NULLIF(${c.referenceAssetsUsd}::numeric, 0))) END ASC NULLS LAST,
                CASE WHEN ${c.sort === "largest_assets"} THEN total_assets_usd END DESC NULLS LAST,
                LOWER(institution_name), institution_id) AS selection_rank
         FROM eligible
-       ORDER BY selection_rank LIMIT ${c.limit}
+    ), counted AS (
+      SELECT COUNT(*)::int AS total_matches FROM eligible
+    ), selected AS (
+      SELECT * FROM ranked
+       WHERE selection_rank > ${page.offset}
+       ORDER BY selection_rank LIMIT ${page.limit}
     )
-    SELECT selected.*,
+    SELECT selected.*, counted.total_matches,
            (EXISTS (SELECT 1 FROM published_fee_catalog fee WHERE fee.institution_id = selected.institution_id)
              OR EXISTS (SELECT 1 FROM published_fee_rate_catalog rate WHERE rate.institution_id = selected.institution_id)) AS has_published_fees
-      FROM selected ORDER BY selection_rank`;
-  const mapped = rows.map((row) => ({
+      FROM counted LEFT JOIN selected ON TRUE ORDER BY selected.selection_rank`;
+  // With no row on this page the count still arrives, on a row with no institution.
+  const mapped = rows.filter((row) => row.institution_id !== null).map((row) => ({
     ...peerSubjectFromRow(row),
     feeCoverage: row.has_published_fees === true ? "available" as const : "not_found" as const,
     inclusionReason: c.basis === "saved_peer_set" ? "Matches the saved group's filters and the stated criteria." : c.basis === "similar_assets" ? "Within the stated asset-size band and institution/state filters." : "Matches the stated institution, state and asset filters.",
   }));
   const totalMatches = rows[0] ? Number(rows[0].total_matches) : 0;
-  if (!Number.isSafeInteger(totalMatches) || totalMatches < mapped.length) throw new Error("Invalid peer result count");
+  if (!Number.isSafeInteger(totalMatches) || totalMatches < page.offset + mapped.length && mapped.length > 0) throw new Error("Invalid peer result count");
   return { rows: mapped, totalMatches };
 }

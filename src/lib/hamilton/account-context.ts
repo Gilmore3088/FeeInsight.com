@@ -25,8 +25,10 @@ export function accountContextFromMemberships(
   profileLabel?: unknown,
 ): HamiltonAccountContext {
   const institutions = new Map<number, string>();
+  // users.id is bigint, which the database driver returns as a string; compare as numbers.
+  const accountUserId = Number(userId);
   for (const membership of memberships) {
-    if (membership.userId !== userId || membership.status !== "active") continue;
+    if (Number(membership.userId) !== accountUserId || membership.status !== "active") continue;
     if (!Number.isSafeInteger(membership.institutionId) || membership.institutionId <= 0) continue;
     const name = accountProfileLabel(membership.institutionName);
     if (name && !institutions.has(membership.institutionId)) institutions.set(membership.institutionId, name);

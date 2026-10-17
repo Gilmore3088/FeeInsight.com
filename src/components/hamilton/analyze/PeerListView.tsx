@@ -3,7 +3,8 @@
 import { hamiltonInstitutionHref, publicInstitutionHref } from "@/lib/hamilton/context-link";
 import { useMemo, useRef, useState } from "react";
 import { createPeerSet } from "@/app/pro/(hamilton)/settings/actions";
-import { formatPeerAssets, type PeerListResponse, type PeerListContinuation } from "@/lib/hamilton/peer-list";
+import { formatPeerAssets, peerListPageOffsets, type PeerListResponse, type PeerListContinuation } from "@/lib/hamilton/peer-list";
+import { peerListCsv, peerListCsvFilename } from "@/lib/hamilton/peer-list-export";
 import { defaultPeerSetName } from "@/lib/hamilton/peer-set-name";
 import { fmtMoney } from "@/components/hamilton/memo/memo";
 import { sourceDateWithAge } from "@/components/hamilton/memo/exhibit-view";
@@ -12,17 +13,44 @@ type Sort = "selection" | "name" | "assets_desc" | "assets_asc";
 export interface PeerSaveContext {
   question: string;
   institutionId: string | null;
-  previousPeerList: PeerListContinuation | null;
+  /** Present only for a follow-up; a new list's save leaves it out (a null still means a follow-up). */
+  previousPeerList?: PeerListContinuation | null;
+  /** The displayed page's offset, so saving re-checks that page; absent for the first page. */
+  peerListOffset?: number;
 }
-export function PeerListView({ response, saveContext }: { response: PeerListResponse; saveContext?: PeerSaveContext }) {
-  const data = response.peerList;
+interface PeerListViewProps {
+  response: PeerListResponse;
+  saveContext?: PeerSaveContext;
+  /** Asks for the page that starts at this offset (#977, H02-T08); absent where the list cannot page. */
+  onPage?: (offset: number) => void;
+  /** True while a page is loading. */
+  paging?: boolean;
+  /** Set on a reopened saved snapshot: the question it answered, shown above the list. */
+  savedQuestion?: string;
+}
+export function PeerListView(props: PeerListViewProps) {
+  const data = props.response.peerList;
   // A newly answered list owns its selections and save receipt. An old action's
   // completion cannot update the next list or a different research institution.
-  const key = JSON.stringify([data.subject?.institutionId, data.queriedAt, data.criteria, data.rows.map(row => row.institutionId)]);
-  return <SelectablePeerList key={key} response={response} saveContext={saveContext} />;
+  const key = JSON.stringify([data.subject?.institutionId, data.queriedAt, data.criteria, data.offset ?? 0, data.rows.map(row => row.institutionId)]);
+  return <SelectablePeerList key={key} {...props} />;
 }
 
-function SelectablePeerList({ response, saveContext }: { response: PeerListResponse; saveContext?: PeerSaveContext }) {
+/** Saves the displayed list as a CSV file; the file is built from the same data as the table. */
+function downloadCsv(data: PeerListResponse["peerList"]) {
+  const text = peerListCsv(data);
+  if (!text) return;
+  const url = URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = peerListCsvFilename(data);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function SelectablePeerList({ response, saveContext, onPage, paging = false, savedQuestion }: PeerListViewProps) {
   const data = response.peerList;
   const [sort, setSort] = useState<Sort>("selection");
   const [selected, setSelected] = useState<Set<number>>(() => new Set());
@@ -98,6 +126,8 @@ function SelectablePeerList({ response, saveContext }: { response: PeerListRespo
   }, [data.rows, sort]);
   if (data.status !== "ready") return <p role="status" className="text-sm leading-relaxed text-warm-800">{response.shortAnswer}</p>;
   const criteria = data.criteria;
+  const pages = onPage ? peerListPageOffsets(data) : { previous: null, next: null };
+  const pageSize = criteria?.limit ?? 50;
   // Snapshots saved before #1538 carry no label; every one of them compared NSF fees.
   const feeLabel = data.feeComparison?.label ?? "NSF";
   // Missing is not $0. A fee charged as a rate is listed as that rate on its own line, never as dollars.
@@ -107,6 +137,7 @@ function SelectablePeerList({ response, saveContext }: { response: PeerListRespo
   return (
     <section aria-label="Peer list" className="flex min-w-0 flex-col gap-4 font-sans">
       <div>
+        {savedQuestion ? <p className="mb-1 text-sm text-warm-700">Question: {savedQuestion}</p> : null}
         <h2 className="text-xl font-semibold text-warm-900">{response.shortAnswer}</h2>
         <p className="mt-1 text-sm text-warm-700">Research subject: {data.subject?.name ?? "Not available"}. Amounts shown in US dollars{rateFees.length ? "; fees charged as a rate are shown as a percentage" : ""}.</p>
       </div>
@@ -211,9 +242,25 @@ function SelectablePeerList({ response, saveContext }: { response: PeerListRespo
               </tbody>
             </table>
           </div>
+          {pages.previous !== null || pages.next !== null ? (
+            <nav aria-label="Pages of this list" className="flex flex-wrap items-center gap-3">
+              {pages.previous !== null ? <button type="button" disabled={paging} onClick={() => onPage?.(pages.previous!)}
+                className="min-h-11 rounded-md border border-warm-300 px-3 py-2 text-sm font-medium text-warm-900 disabled:opacity-50">Previous {pageSize}</button> : null}
+              {pages.next !== null ? <button type="button" disabled={paging} onClick={() => onPage?.(pages.next!)}
+                className="min-h-11 rounded-md border border-warm-300 px-3 py-2 text-sm font-medium text-warm-900 disabled:opacity-50">{paging ? "Loading..." : `Next ${Math.min(pageSize, (data.totalMatches ?? 0) - pages.next, (criteria?.requestedCount ?? Number.POSITIVE_INFINITY) - pages.next)}`}</button> : null}
+              <p className="text-xs text-warm-600">Each page is read again in the same order. Selecting, saving and the file cover the page shown.</p>
+            </nav>
+          ) : null}
         </>
       ) : <p className="text-sm text-warm-800">No institutions matched. Change the criteria in the question field; no replacement peer group was selected.</p>}
-      {/* Criteria and rows lead; saving the research follows them. */}
+      {/* Criteria and rows lead; saving and the file follow them. */}
+      <div className="flex flex-wrap items-center gap-3">
+        <button type="button" onClick={() => downloadCsv(data)}
+          className="min-h-11 rounded-md border border-warm-300 px-3 py-2 text-sm font-medium text-warm-900">
+          Download this list (CSV)
+        </button>
+        <p className="text-xs text-warm-600">The file holds the rows, criteria, notes and fees shown here.</p>
+      </div>
       {saveContext ? <div className="flex flex-wrap items-center gap-3">
         <button type="button" onClick={saveResearch} disabled={savingResearch || savedResearchId !== null}
           className="rounded-md border border-warm-300 px-3 py-2 text-sm font-medium text-warm-900 disabled:opacity-50">
@@ -223,7 +270,9 @@ function SelectablePeerList({ response, saveContext }: { response: PeerListRespo
         {researchError ? <p role="alert" className="text-sm text-terra-text">{researchError}</p> : null}
         {savedResearchId ? <p role="status" className="text-sm text-warm-700">Research snapshot saved. <a className="font-medium text-terra-text underline" href={`/pro/peer-research/${encodeURIComponent(savedResearchId)}`}>Reopen saved research</a></p> : null}
       </div> : null}
-      <p className="text-xs text-warm-600">You can refine this exact displayed list by state (for example, “Only Florida”) or save selected institutions as a peer group. Fee comparisons use only this displayed selection. Use Save this peer research to reopen this exact list later. PDF and export are not available yet.</p>
+      {savedQuestion !== undefined
+        ? <p className="text-xs text-warm-600">This is the list as it was saved. To refine it or compare fees, run the question again in Analyze.</p>
+        : <p className="text-xs text-warm-600">You can refine this exact displayed list by state (for example, “Only Florida”) or save selected institutions as a peer group. Fee comparisons use only this displayed selection. Use Save this peer research to reopen this exact list later.</p>}
     </section>
   );
 }

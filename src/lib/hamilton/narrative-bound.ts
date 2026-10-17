@@ -6,7 +6,8 @@
  * - an observed fee record of the institution the sentence is about, with a source record and a
  *   source document, whose value, unit and period match the figure (`claimBindingMatches`), or
  * - a derivation whose inputs are in the bundle and still recompute to its value, stated as a
- *   comparison or a change in the direction its sign gives.
+ *   comparison or a change in the direction its sign gives, or a peer median stated as the median
+ *   (its inputs are one published record per peer; stated as a bank's own fee it is left out).
  *
  * Each sentence ends in one of four places:
  * - `supported`: every figure binds; the sentence keeps the IDs of the records it rests on.
@@ -26,6 +27,7 @@ import { getDisplayName } from "@/lib/fee-taxonomy";
 import { splitIntoSentences } from "./citation-gate";
 import {
   claimBindingMatches,
+  medianOf,
   type HamiltonDerivedFact,
   type HamiltonEvidenceBundle,
   type HamiltonEvidenceFact,
@@ -44,6 +46,8 @@ export const UNSOURCED_FIGURE_LIMITATION =
   "Some figures have no source document on record, so they are shown as Hamilton's reading only.";
 export const INTERPRETATION_LIMITATION =
   "Some sentences state figures that are not tied to a saved fee record. They are marked as Hamilton's reading.";
+export const MEDIAN_AS_FEE_LIMITATION =
+  "Some sentences were left out because they stated the peer median as an institution's own fee.";
 export const CONTRADICTED_LIMITATION =
   "Some sentences were left out because a figure in them did not match its fee record.";
 
@@ -56,7 +60,8 @@ export type OmitReason =
   | "wrong_direction"
   | "wrong_period"
   | "wrong_unit"
-  | "conflicting_sources";
+  | "conflicting_sources"
+  | "median_as_fee";
 
 export interface BoundSentence {
   text: string;
@@ -90,6 +95,9 @@ const COMPARISON = /\b(?:higher|lower|more|less|above|below|over|under|than|gap|
 const UP = /\b(?:higher|more|above|over|exceeds?|rose|rises|increased?|increases|up)\b/i;
 const DOWN = /\b(?:lower|less|below|under|fell|falls|decreased?|decreases|declined?|declines|down)\b/i;
 const YEAR = /\b(20\d{2})\b/g;
+/** Words that say a figure is the peers' median (#981, H06-T04). An average or mean is a different figure. */
+const MEDIAN_WORD = /\b(?:median|midpoint|middle)\b/i;
+const MEAN_WORD = /\b(?:average|mean)\b/i;
 
 type EvidenceRecord = HamiltonEvidenceFact | HamiltonDerivedFact;
 
@@ -115,7 +123,25 @@ function derivationHolds(derived: HamiltonDerivedFact, byId: ReadonlyMap<string,
     if (values.length !== 2 || values[1] === 0) return false;
     return Math.abs(((values[0] - values[1]) / values[1]) * 100 - derived.value) <= 0.05 + 1e-9;
   }
+  if (derived.derivation.kind === "peer_median") {
+    // One record per peer, each a dollar fee of the median's own category, recomputing to its value.
+    const peers = inputs.map((fact) => fact!.scope.institutionId);
+    if (derived.unit !== "usd" || peers.some((id) => id === null) || new Set(peers).size !== peers.length) return false;
+    if (inputs.some((fact) => fact!.unit !== "usd" || fact!.scope.feeCategory !== derived.scope.feeCategory)) return false;
+    const median = medianOf(values);
+    return median !== null && Math.abs(median - derived.value) <= 0.005;
+  }
   return true;
+}
+
+/**
+ * How the sentence names a figure: "median" when a median word sits within 40 characters of it,
+ * "mean" when an average or mean does (a different figure, never bound to the median), else "other".
+ */
+function medianNear(text: string, figure: NarrativeFigure): "median" | "mean" | "other" {
+  const window = text.slice(Math.max(0, figure.index - 40), figure.index + figure.raw.length + 40);
+  if (MEAN_WORD.test(window)) return "mean";
+  return MEDIAN_WORD.test(window) ? "median" : "other";
 }
 
 /** A record's reporting period. A publish or retrieval date is not one, so an undated record states no year. */
@@ -254,7 +280,16 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
         if (derivedPeriod === "no") { contradict("wrong_period"); continue; }
         if (derivedPeriod === "unknown") continue;
         const kind = derived.derivation.kind;
-        if (kind === "institution_value" || kind === "peer_median") {
+        // A peer median binds only where the sentence says it is the median; stated as a bank's
+        // own fee it is left out (#1414 item 8, #981 H06-T04).
+        if (kind === "peer_median") {
+          const named = medianNear(text, figure);
+          if (named === "mean") continue;
+          if (named === "other") { contradict("median_as_fee"); continue; }
+          ids.push(derived.id, ...derived.derivation.inputFactIds);
+          continue;
+        }
+        if (kind === "institution_value") {
           const owner = derived.scope.institutionId;
           if (subjects.length > 0 && owner !== null && !subjects.includes(owner)) { contradict("wrong_institution"); continue; }
           ids.push(derived.id, ...derived.derivation.inputFactIds);
@@ -312,7 +347,8 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
     if (outcomes.some((o) => o.kind === "unsourced")) limitations.push(UNSOURCED_FIGURE_LIMITATION);
   }
 
-  if (binding.omitted.some((o) => o.reason !== "advice" && o.reason !== "instruction_text" && o.reason !== "no_evidence" && o.reason !== "conflicting_sources")) {
+  if (binding.omitted.some((o) => o.reason === "median_as_fee")) limitations.push(MEDIAN_AS_FEE_LIMITATION);
+  if (binding.omitted.some((o) => o.reason !== "advice" && o.reason !== "instruction_text" && o.reason !== "no_evidence" && o.reason !== "conflicting_sources" && o.reason !== "median_as_fee")) {
     limitations.push(CONTRADICTED_LIMITATION);
   }
   limitations.push(...conflictLines.values());

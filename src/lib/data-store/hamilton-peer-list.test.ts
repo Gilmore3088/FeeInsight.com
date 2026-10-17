@@ -40,7 +40,9 @@ describe("dated asset read model", () => {
     expect(text.indexOf("EXISTS (SELECT 1 FROM published_fee_catalog") >= 0).toBe(true);
     expect(text.indexOf("LIMIT ?") < text.indexOf("EXISTS (SELECT 1 FROM published_fee_catalog")).toBe(true);
     expect(text).toContain("(f.total_assets::numeric * 1000) AS total_assets_usd");
-    expect(text).toContain("COUNT(*) OVER ()");
+    // The count is of every match, apart from the page, so a page past the end still reports it.
+    expect(text).toContain("SELECT COUNT(*)::int AS total_matches FROM eligible");
+    expect(text).toContain("WHERE selection_rank > ?");
     expect(text).toMatch(REGULATOR_SOURCE_CASE);
     expect(text).toContain("published_fee_rate_catalog");
     expect(text).not.toContain("total_deposits");

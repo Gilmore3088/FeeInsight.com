@@ -77,17 +77,22 @@ function PeerListRequest({
   const [response, setResponse] = useState<PeerListResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
+  // The page of a new list (#977, H02-T08). A follow-up answers from the displayed rows and has no pages.
+  const [offset, setOffset] = useState(0);
+  const [paging, setPaging] = useState(false);
   useEffect(() => {
     let current = true;
     const controller = new AbortController();
     onBusyChange?.(true);
-    setResponse(null);
+    // Turning a page keeps the current table on screen until the next page arrives.
+    if (offset === 0) setResponse(null);
+    setPaging(offset > 0);
     setError(null);
     void (async () => {
       try {
         const response = await fetch("/api/hamilton/ask", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question, institutionId, ...(submittedPrior ? { previousPeerList: submittedPrior } : withoutList ? { previousPeerList: null } : {}) }), signal: controller.signal,
+          body: JSON.stringify({ question, institutionId, ...(submittedPrior ? { previousPeerList: submittedPrior } : withoutList ? { previousPeerList: null } : offset > 0 ? { peerListOffset: offset } : {}) }), signal: controller.signal,
         });
         if (!response.ok) throw new Error("Peer list request failed");
         const data = await response.json() as PeerListResponse;
@@ -101,17 +106,18 @@ function PeerListRequest({
         onAnswered?.({ route: "peer_list", decisionId: null, feeCategory: null, savedAnalysisId: null });
       } catch {
         if (current) setError("The peer list could not be loaded. Retry it; no report or paid fallback was started.");
-      } finally { if (current) onBusyChange?.(false); }
+      } finally { if (current) { onBusyChange?.(false); setPaging(false); } }
     })();
     return () => { current = false; controller.abort(); onBusyChange?.(false); };
     // onAnswered only reports; a new callback must not send the request again.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [question, institutionId, onBusyChange, onLead, onResolved, retry, submittedPrior, withoutList]);
+  }, [question, institutionId, onBusyChange, onLead, onResolved, retry, submittedPrior, withoutList, offset]);
   if (error) return <div role="alert" className="text-sm text-terra-text"><p>{error}</p><button type="button" onClick={() => setRetry(n => n + 1)} className="mt-2 min-h-11 rounded-md border border-warm-300 px-3">Retry peer list</button></div>;
   // A peer request only mounts for a non-empty question; without one there is
   // nothing to save, so render the table read-only rather than save "".
+  const shownOffset = response?.peerList.offset ?? 0;
   if (response) return <PeerListView response={response} saveContext={question ? {
-    question, institutionId, previousPeerList: submittedPrior,
-  } : undefined} />;
+    question, institutionId, ...(submittedPrior || withoutList ? { previousPeerList: submittedPrior } : {}), ...(shownOffset > 0 ? { peerListOffset: shownOffset } : {}),
+  } : undefined} onPage={submittedPrior || withoutList ? undefined : setOffset} paging={paging} />;
   return onBusyChange ? null : <p role="status" className="text-sm text-warm-700">Loading matching institutions and dated assets…</p>;
 }
