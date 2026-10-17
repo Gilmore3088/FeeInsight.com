@@ -61,6 +61,7 @@ export interface NetworkShareRow {
 
 /** Share of tracked institutions on a network's newest list, by state, district, tier, charter or metro. */
 export async function getNetworkShare(network: LoadedNetwork, groupBy: NetworkGroup, asOf?: string): Promise<{ asOf: string | null; rows: NetworkShareRow[] }> {
+  if (!READABLE_NETWORKS.includes(network)) return { asOf: null, rows: [] };
   const date = asOf ?? (await latestNetworkSnapshot(network));
   if (!date) return { asOf: null, rows: [] };
   const group = sql.unsafe(groupExpression(groupBy));
@@ -115,6 +116,7 @@ export async function getNetworkListSummary(): Promise<NetworkListSummaryRow[]> 
 
 /** Listed rows on a network's newest list that matched no institution, for review. */
 export async function getUnmatchedListings(network: LoadedNetwork, limit = 200) {
+  if (!READABLE_NETWORKS.includes(network)) return [];
   return sql<Array<{ listed_name: string; listed_city: string | null; listed_state: string | null; listed_rssd: string | null; listed_cert: string | null }>>`
     SELECT listed_name, listed_city, listed_state, listed_rssd, listed_cert
       FROM institution_network_memberships

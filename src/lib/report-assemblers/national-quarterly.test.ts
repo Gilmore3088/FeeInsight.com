@@ -301,7 +301,7 @@ describe("NationalQuarterlyPayload shape", () => {
     expect(payload.beige_themes[0]).toHaveProperty("summary");
   });
 
-  it("fred payload includes all 7 indicators", () => {
+  it("fred payload includes all 6 indicators", () => {
     const payload = makeMockPayload();
 
     expect(payload.fred).not.toBeNull();

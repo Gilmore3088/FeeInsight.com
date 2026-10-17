@@ -227,13 +227,18 @@ function scaleOf(text: string): string {
   return "";
 }
 
-/** "percent", "index", "basis points", "dollars (millions)", "count (billions)" or "as published", from a label and its table's heading. */
+/**
+ * "percent", "index", "basis points", "dollars (millions)", "count (billions)" or "as published", from a label and its table's heading.
+ * A label that states its own unit in brackets ("Average value per transaction (dollars)") takes no scale from the heading,
+ * so another column's "billions" never rescales it.
+ */
 export function unitFromLabel(label: string, context = ""): string {
+  const scale = scaleOf(label) || (/\([^)]*\)/.test(label) ? "" : scaleOf(context));
   if (/basis points|\bbps\b/i.test(label)) return "basis points";
   if (/\bindex\b|diffusion/i.test(label)) return "index";
   if (/%|percent|\brate\b|\bshare\b|\bspread\b|\byield\b/i.test(label)) return "percent";
-  if (/\$|dollar|\bvalue\b|\bamount\b/i.test(label)) return `dollars${scaleOf(label) || scaleOf(context)}`;
-  if (/volume|\bnumber\b|\bcount\b|transactions|\bitems\b|payments|\bchecks\b/i.test(label)) return `count${scaleOf(label) || scaleOf(context)}`;
+  if (/\$|dollar|\bvalue\b|\bamount\b/i.test(label)) return `dollars${scale}`;
+  if (/volume|\bnumber\b|\bcount\b|transactions|\bitems\b|payments|\bchecks\b/i.test(label)) return `count${scale}`;
   if (/\bindex\b|diffusion/i.test(context)) return "index";
   return "as published";
 }
@@ -571,7 +576,10 @@ export async function fetchDataFile(url: string, options: RegistryFetchOptions =
 
 /** Reads one page: its own tables plus up to four linked data files when the page asks for them. */
 async function readStatsSource(page: PaymentStatsPage, env: Record<string, string | undefined>, options: RegistryFetchOptions): Promise<AreaFetch> {
-  const configured = env[page.urlEnv]?.trim();
+  // frbservices.org was struck on 2026-10-17 (its terms need written permission for commercial use), so an
+  // override pointing there is ignored.
+  const override = env[page.urlEnv]?.trim();
+  const configured = override && !/frbservices\.org/i.test(override) ? override : undefined;
   const urls = configured ? [configured] : page.urls;
   const tried: string[] = [];
   for (const url of urls) {

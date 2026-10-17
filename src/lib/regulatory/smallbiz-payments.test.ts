@@ -148,6 +148,22 @@ describe("workbooks", () => {
 });
 
 describe("payment volume pages", () => {
+  it("reads the Board's FedACH page without rescaling a column that states its own unit", () => {
+    const html = `
+      <table><tr><th>Quarter</th><th>Volume (millions of items)</th><th>Volume percent change</th>
+        <th>Value (billions of dollars)</th><th>Value percent change</th><th>Average daily volume</th>
+        <th>Average daily value</th><th>Average value per transaction (dollars)</th></tr>
+        <tr><td>2026:Q2</td><td>4,705.0</td><td>2.1</td><td>11,602</td><td>3.3</td><td>74.7</td><td>184.2</td><td>2,298</td></tr>
+        <tr><td>2026:Q1</td><td>4,612.4</td><td>1.8</td><td>11,230</td><td>2.9</td><td>73.2</td><td>178.3</td><td>2,435</td></tr></table>`;
+    const page = FED_PAYMENTS_PAGES.find((p) => p.key === "fedach")!;
+    const out = parseStatsTables(pageTables(html), page, "https://www.federalreserve.gov/paymentsystems/fedach_quarterlycomm.htm");
+    const unit = (prefix: string) => out.rows.find((r) => r.series_key.startsWith(prefix))?.unit;
+    expect(out.rows.find((r) => r.series_key.startsWith("fedach_average_value_per_transaction"))).toMatchObject({ period: "2026Q2", value: 2298, unit: "dollars" });
+    expect(unit("fedach_volume_millions")).toBe("count (millions)");
+    expect(unit("fedach_value_billions")).toBe("dollars (billions)");
+    expect(unit("fedach_volume_percent")).toBe("percent");
+  });
+
   const fedachHtml = `
     <h2>FedACH quarterly statistics</h2>
     <h3>2025</h3>

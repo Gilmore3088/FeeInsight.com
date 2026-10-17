@@ -370,14 +370,14 @@ describe("getDistrictBeigeBookSummaries audit", () => {
   });
 });
 
-// ── getFredSummary — 7 indicator fields ─────────────────────────────────────
+// ── getFredSummary — 6 indicator fields ─────────────────────────────────────
 
 describe("getFredSummary", () => {
   beforeEach(() => {
     resetMock(getMock());
   });
 
-  it("returns all 7 indicator fields plus as_of (8 total fields)", async () => {
+  it("returns all 6 indicator fields plus as_of (7 total fields)", async () => {
     // Mock: DISTINCT ON query returns rows for all 6 series
     getMock()
       .mockResolvedValueOnce([
