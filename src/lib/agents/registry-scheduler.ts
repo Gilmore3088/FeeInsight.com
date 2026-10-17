@@ -56,6 +56,11 @@ import {
   HMDA_SOURCE,
   hmdaPartitions,
 } from "@/lib/agents/magellan/registry/hmda";
+import {
+  PAYMENT_NETWORKS_PARSER_VERSION,
+  PAYMENT_NETWORKS_SOURCE,
+  paymentNetworksPartitions,
+} from "@/lib/agents/magellan/registry/payment-networks";
 import { REGISTRY_SOURCES } from "@/lib/agents/magellan/registry";
 import { isProviderStep } from "@/lib/agents/types";
 import { STATE_BILLS_PARTITION, STATE_BILLS_SOURCE } from "@/lib/agents/magellan/registry/state-bills";
@@ -111,6 +116,7 @@ export const REGISTRY_PARSER_VERSIONS: Record<string, number> = {
   [FFIEC_CALL_DETAIL_SOURCE]: FFIEC_CALL_DETAIL_PARSER_VERSION,
   [NCUA_EXTRAS_SOURCE]: NCUA_EXTRAS_PARSER_VERSION,
   [FDIC_HISTORY_SOURCE]: FDIC_HISTORY_PARSER_VERSION,
+  [PAYMENT_NETWORKS_SOURCE]: PAYMENT_NETWORKS_PARSER_VERSION,
   [HMDA_SOURCE]: HMDA_PARSER_VERSION,
   [HMDA_APOR_SOURCE]: HMDA_APOR_PARSER_VERSION,
   [DESIGNATION_LISTS_SOURCE]: DESIGNATION_LISTS_PARSER_VERSION,
@@ -190,6 +196,7 @@ export function registryPartitionsBySource(
     [FFIEC_CALL_DETAIL_SOURCE]: ffiecCallDetailPartitions(now),
     [NCUA_EXTRAS_SOURCE]: ncuaExtrasPartitions(now, compareQuarters(from, NCUA_EXTRAS_FIRST) > 0 ? from : NCUA_EXTRAS_FIRST),
     [FDIC_HISTORY_SOURCE]: fdicHistoryPartitions(now, Math.max(FDIC_HISTORY_FIRST_YEAR, from.year)),
+    [PAYMENT_NETWORKS_SOURCE]: paymentNetworksPartitions(now),
     [HMDA_SOURCE]: hmdaPartitions(now, from.year),
     [DESIGNATION_LISTS_SOURCE]: designationListsPartitions(now),
     [CRA_SOURCE]: craPartitions(now, Math.max(CRA_LENDING_FIRST_YEAR, from.year)),

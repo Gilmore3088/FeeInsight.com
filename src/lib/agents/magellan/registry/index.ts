@@ -8,6 +8,7 @@ import { FDIC_SOD_SOURCE, runRegistryFdicSod } from "./fdic-sod";
 import { FFIEC_CALL_DETAIL_SOURCE, runRegistryFfiecCallDetail } from "./ffiec-call-detail";
 import { NCUA_EXTRAS_SOURCE, runRegistryNcuaExtras } from "./ncua-extras";
 import { FDIC_HISTORY_SOURCE, runRegistryFdicHistory } from "./fdic-history";
+import { PAYMENT_NETWORKS_SOURCE, runRegistryPaymentNetworks } from "./payment-networks";
 import { HMDA_APOR_PARTITION, HMDA_APOR_SOURCE, HMDA_SOURCE, runRegistryHmda, runRegistryHmdaApor } from "./hmda";
 import { DESIGNATION_LISTS_SOURCE, runRegistryDesignationLists } from "./designation-lists";
 import { CRA_SOURCE, runRegistryCra } from "./cra";
@@ -503,6 +504,37 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
           ? `No APOR rates loaded: ${r.emptyReason}.`
           : `Magellan read ${n(r.rates)} APOR rates through ${r.latestEffectiveDate}: ${n(r.writtenRows)} written${dry(r.dryRun)}.`,
         detail: { source_url: r.sourceUrl, rates: r.rates, latest_effective_date: r.latestEffectiveDate, written_rows: r.writtenRows, tables: r.tables, empty: r.empty, empty_reason: r.emptyReason },
+      };
+    },
+  },
+  {
+    source: PAYMENT_NETWORKS_SOURCE,
+    stepKey: "registry-payment-networks",
+    title: "Pull payment-network lists (Zelle, FedNow, RTP, Reg II exempt / not exempt, Reg II interchange tables, OpenStreetMap ATMs and branches)",
+    run: async (input) => {
+      const r = await runRegistryPaymentNetworks({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      const what = r.network === null ? `${n(r.figures)} Regulation II table cells` : r.network === "osm" ? `${n(r.listedRows)} OpenStreetMap ATMs and branches` : `${n(r.listedRows)} listed institutions`;
+      const gaps = r.unrecognisedHeaders.length > 0 ? `; headings not recognised: ${r.unrecognisedHeaders.join(", ")}` : "";
+      return {
+        summary: r.empty
+          ? `No ${r.partitionKey} rows: ${r.emptyReason}.`
+          : `Magellan read ${what} for ${r.partitionKey} (as of ${r.asOf})${r.network === null ? "" : `: ${n(r.matchedRows)} matched, ${n(r.unmatchedRows)} unmatched kept`}, ${n(r.writtenRows)} written${gaps}${dry(r.dryRun)}.`,
+        detail: {
+          network: r.network,
+          as_of: r.asOf,
+          source_url: r.sourceUrl,
+          read_url: r.readUrl,
+          stated_date: r.statedDate,
+          listed_rows: r.listedRows,
+          matched_rows: r.matchedRows,
+          unmatched_rows: r.unmatchedRows,
+          figures: r.figures,
+          written_rows: r.writtenRows,
+          unrecognised_headers: r.unrecognisedHeaders,
+          missing_columns: r.missingColumns,
+          empty: r.empty,
+          empty_reason: r.emptyReason,
+        },
       };
     },
   },
