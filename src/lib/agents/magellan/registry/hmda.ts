@@ -32,7 +32,7 @@ import { recordRegistryPartition, type RegistryDb } from "./partitions";
  */
 
 export const HMDA_SOURCE = "hmda";
-export const HMDA_PARSER_VERSION = 1;
+export const HMDA_PARSER_VERSION = 2;
 const LATEST_REFRESH_HOURS = 24 * 90;
 const HISTORICAL_REFRESH_HOURS = 24 * 365;
 const NOT_PUBLISHED_RETRY_HOURS = 24 * 14;

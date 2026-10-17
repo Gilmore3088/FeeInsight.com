@@ -178,3 +178,75 @@ export async function getInstitutionStructureEvents(institutionId: number, limit
      LIMIT ${limit}
   `;
 }
+
+export interface CostOfDepositsRow {
+  group_value: string | null;
+  institutions: number;
+  /** Median annualized interest expense on deposits / total deposits, in percent. */
+  median_cost_of_deposits_pct: number | null;
+  /** Median noninterest expense / (net interest income + noninterest income), in percent. */
+  median_efficiency_ratio_pct: number | null;
+  /** Median deposit service charges / total deposits, annualized, in percent. */
+  median_service_charges_to_deposits_pct: number | null;
+  /** Banks behind each median. */
+  cost_of_deposits_institutions: number;
+  efficiency_ratio_institutions: number;
+  service_charges_institutions: number;
+}
+
+/**
+ * Cost of deposits, efficiency ratio and service charges per dollar of deposits for each bank,
+ * then the median across banks in each group. Year-to-date lines are annualized by the
+ * quarter's month (March x4, June x2, September x4/3). A bank missing any line a ratio needs
+ * is left out of that ratio; the counts say how many banks each median covers.
+ */
+export async function getCostOfDeposits(groupBy: CallItemGroup, reportDate?: string): Promise<{ reportDate: string | null; rows: CostOfDepositsRow[] }> {
+  const date = reportDate ?? (await latestCallItemDate("total_deposits", "ffiec"));
+  if (!date) return { reportDate: null, rows: [] };
+  const group = sql.unsafe(groupExpression(groupBy));
+  const rows = await sql<CostOfDepositsRow[]>`
+    WITH lines AS (
+      SELECT i.institution_id, i.item_key, MAX(i.value) AS value
+        FROM institution_call_report_items i
+       WHERE i.source = 'ffiec' AND i.report_date = ${date}::date
+         AND i.item_key IN ('interest_expense_transaction_ytd', 'interest_expense_savings_ytd',
+                            'interest_expense_time_250k_or_less_ytd', 'interest_expense_time_over_250k_ytd',
+                            'total_deposits', 'noninterest_expense_total_ytd', 'net_interest_income_ytd',
+                            'noninterest_income_total_ytd', 'service_charges_deposits_ytd')
+       GROUP BY i.institution_id, i.item_key
+    ),
+    per_bank AS (
+      SELECT institution_id,
+             12.0 / EXTRACT(MONTH FROM ${date}::date) AS annualize,
+             SUM(value) FILTER (WHERE item_key LIKE 'interest_expense_%') AS deposit_interest,
+             COUNT(*) FILTER (WHERE item_key LIKE 'interest_expense_%') AS deposit_interest_lines,
+             MAX(value) FILTER (WHERE item_key = 'total_deposits') AS deposits,
+             MAX(value) FILTER (WHERE item_key = 'noninterest_expense_total_ytd') AS nonint_expense,
+             MAX(value) FILTER (WHERE item_key = 'net_interest_income_ytd') AS nii,
+             MAX(value) FILTER (WHERE item_key = 'noninterest_income_total_ytd') AS nonint_income,
+             MAX(value) FILTER (WHERE item_key = 'service_charges_deposits_ytd') AS service_charges
+        FROM lines
+       GROUP BY institution_id
+    ),
+    ratios AS (
+      SELECT institution_id,
+             CASE WHEN deposit_interest_lines = 4 AND deposits > 0 THEN deposit_interest * annualize / deposits * 100 END AS cod,
+             CASE WHEN nii + nonint_income > 0 THEN nonint_expense / (nii + nonint_income) * 100 END AS eff,
+             CASE WHEN deposits > 0 THEN service_charges * annualize / deposits * 100 END AS sc
+        FROM per_bank
+    )
+    SELECT ${group} AS group_value,
+           COUNT(*)::int AS institutions,
+           CASE WHEN COUNT(cod) >= ${MIN_GROUP} THEN percentile_cont(0.5) WITHIN GROUP (ORDER BY cod)::float8 END AS median_cost_of_deposits_pct,
+           CASE WHEN COUNT(eff) >= ${MIN_GROUP} THEN percentile_cont(0.5) WITHIN GROUP (ORDER BY eff)::float8 END AS median_efficiency_ratio_pct,
+           CASE WHEN COUNT(sc) >= ${MIN_GROUP} THEN percentile_cont(0.5) WITHIN GROUP (ORDER BY sc)::float8 END AS median_service_charges_to_deposits_pct,
+           COUNT(cod)::int AS cost_of_deposits_institutions,
+           COUNT(eff)::int AS efficiency_ratio_institutions,
+           COUNT(sc)::int AS service_charges_institutions
+      FROM ratios r
+      JOIN institution_sources s ON s.id = r.institution_id
+     GROUP BY 1
+     ORDER BY 1 NULLS LAST
+  `;
+  return { reportDate: date, rows: [...rows] };
+}

@@ -3,6 +3,15 @@ import { CENSUS_ACS_SOURCE, runRegistryCensusAcs } from "./census-acs";
 import { CFPB_SOURCE, runRegistryCfpb } from "./cfpb";
 import { IRS_ZIP_INCOME_SOURCE, runRegistryIrsZipIncome } from "./irs-zip-income";
 import { ECONOMY_DEFINITIONS, runRegistryEconomy } from "./economy";
+import { FHLB_ADVANCE_RATES_SOURCE, runRegistryFhlbAdvanceRates } from "./fhlb-advance-rates";
+import { BANK_MERGER_ORDERS_SOURCE, runRegistryBankMergerOrders } from "./bank-merger-orders";
+import { BLS_OEWS_SOURCE, runRegistryBlsOews } from "./bls-oews";
+import { FINRA_NFCS_SOURCE, runRegistryFinraNfcs } from "./finra-nfcs";
+import { runRegistryUsdaFarm, USDA_FARM_SOURCE } from "./usda-farm";
+import { runRegistryUscourtsBankruptcy, USCOURTS_BANKRUPTCY_SOURCE } from "./uscourts-bankruptcy";
+import { MARKET_GROWTH_DEFINITIONS, runRegistryMarketGrowth } from "./market-growth";
+import { SMALLBIZ_PAYMENTS_DEFINITIONS, runRegistrySmallbizPayments } from "./smallbiz-payments";
+import { NATIONAL_CREDIT_DEFINITIONS, runRegistryNationalCredit } from "./national-credit";
 import { FDIC_FINANCIALS_SOURCE, runRegistryFdicFinancials } from "./fdic-financials";
 import { FFIEC_OVERDRAFT_SOURCE, runRegistryFfiecOverdraft } from "./ffiec-overdraft";
 import { FDIC_SOD_SOURCE, runRegistryFdicSod } from "./fdic-sod";
@@ -703,6 +712,116 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
       };
     },
   })),
+  ...MARKET_GROWTH_DEFINITIONS.map((definition): RegistrySourceDefinition => ({
+    source: definition.source,
+    stepKey: `registry-${definition.source}`,
+    title: definition.title,
+    run: async (input) => {
+      const r = await runRegistryMarketGrowth({
+        source: definition.source,
+        partitionKey: input.partitionKey,
+        runId: input.runId,
+        dryRun: input.dryRun,
+        db: input.db,
+      });
+      return {
+        summary: r.summary,
+        detail: { ...r.detail, source_url: r.sourceUrl, rows: r.rows, written_rows: r.writtenRows, empty: r.empty, empty_reason: r.emptyReason },
+      };
+    },
+  })),
+  ...SMALLBIZ_PAYMENTS_DEFINITIONS.map((definition): RegistrySourceDefinition => ({
+    source: definition.source,
+    stepKey: `registry-${definition.source}`,
+    title: definition.title,
+    fixedPartition: definition.fixedPartition,
+    run: async (input) => {
+      const r = await runRegistrySmallbizPayments({
+        source: definition.source,
+        partitionKey: input.partitionKey,
+        runId: input.runId,
+        dryRun: input.dryRun,
+        db: input.db,
+      });
+      return {
+        summary: r.summary,
+        detail: { ...r.detail, source_url: r.sourceUrl, rows: r.rows, written_rows: r.writtenRows, empty: r.empty, empty_reason: r.emptyReason },
+      };
+    },
+  })),
+  ...NATIONAL_CREDIT_DEFINITIONS.map((definition): RegistrySourceDefinition => ({
+    source: definition.source,
+    stepKey: `registry-${definition.source}`,
+    title: definition.title,
+    fixedPartition: definition.fixedPartition,
+    run: async (input) => {
+      const r = await runRegistryNationalCredit({
+        source: definition.source,
+        partitionKey: input.partitionKey,
+        runId: input.runId,
+        dryRun: input.dryRun,
+        db: input.db,
+      });
+      return {
+        summary: r.summary,
+        detail: { ...r.detail, source_url: r.sourceUrl, rows: r.rows, written_rows: r.writtenRows, empty: r.empty, empty_reason: r.emptyReason },
+      };
+    },
+  })),
+  {
+    source: USCOURTS_BANKRUPTCY_SOURCE,
+    stepKey: "registry-uscourts-bankruptcy",
+    title: "Pull US Courts bankruptcy filings by district (F-2)",
+    run: async (input) => {
+      const r = await runRegistryUscourtsBankruptcy({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return { summary: r.summary, detail: r.detail };
+    },
+  },
+  {
+    source: USDA_FARM_SOURCE,
+    stepKey: "registry-usda-farm",
+    title: "Pull USDA farm income by state and NASS cash rents",
+    run: async (input) => {
+      const r = await runRegistryUsdaFarm({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return { summary: r.summary, detail: { ...r.detail, nass_skipped_no_key: r.nassSkippedNoKey } };
+    },
+  },
+  {
+    source: BLS_OEWS_SOURCE,
+    stepKey: "registry-bls-oews",
+    title: "Pull BLS OEWS wages for bank occupations",
+    run: async (input) => {
+      const r = await runRegistryBlsOews({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return { summary: r.summary, detail: r.detail };
+    },
+  },
+  {
+    source: FINRA_NFCS_SOURCE,
+    stepKey: "registry-finra-nfcs",
+    title: "Pull FINRA NFCS state survey shares",
+    run: async (input) => {
+      const r = await runRegistryFinraNfcs({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return { summary: r.summary, detail: r.detail };
+    },
+  },
+  {
+    source: FHLB_ADVANCE_RATES_SOURCE,
+    stepKey: "registry-fhlb-advance-rates",
+    title: "Pull FHLBank posted advance rates",
+    run: async (input) => {
+      const r = await runRegistryFhlbAdvanceRates({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return { skipped: r.skipped, summary: r.summary, detail: { ...r.detail, source_url: r.sourceUrl, rows: r.rows, written_rows: r.writtenRows, empty: r.empty, empty_reason: r.emptyReason } };
+    },
+  },
+  {
+    source: BANK_MERGER_ORDERS_SOURCE,
+    stepKey: "registry-bank-merger-orders",
+    title: "Pull Fed and OCC merger decisions with their stated competitive figures",
+    run: async (input) => {
+      const r = await runRegistryBankMergerOrders({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return { skipped: r.skipped, summary: r.summary, detail: { ...r.detail, source_url: r.sourceUrl, rows: r.rows, written_rows: r.writtenRows, matched_rows: r.matchedRows, empty: r.empty, empty_reason: r.emptyReason } };
+    },
+  },
   {
     source: SEC_LINKS_SOURCE,
     stepKey: "registry-sec-links",

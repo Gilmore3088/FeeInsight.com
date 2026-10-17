@@ -67,6 +67,19 @@ import {
   industryEventsPartitions,
 } from "@/lib/agents/magellan/registry/industry-events";
 import { ECONOMY_DEFINITIONS, ECONOMY_PARSER_VERSION } from "@/lib/agents/magellan/registry/economy";
+import { FHLB_ADVANCE_RATES_PARSER_VERSION, FHLB_ADVANCE_RATES_SOURCE, fhlbAdvanceRatesPartitions } from "@/lib/agents/magellan/registry/fhlb-advance-rates";
+import { BANK_MERGER_ORDERS_PARSER_VERSION, BANK_MERGER_ORDERS_SOURCE, bankMergerOrdersPartitions } from "@/lib/agents/magellan/registry/bank-merger-orders";
+import { BLS_OEWS_PARSER_VERSION, BLS_OEWS_SOURCE, blsOewsPartitions } from "@/lib/agents/magellan/registry/bls-oews";
+import { FINRA_NFCS_PARSER_VERSION, FINRA_NFCS_SOURCE, finraNfcsPartitions } from "@/lib/agents/magellan/registry/finra-nfcs";
+import { USDA_FARM_PARSER_VERSION, USDA_FARM_SOURCE, usdaFarmPartitions } from "@/lib/agents/magellan/registry/usda-farm";
+import {
+  USCOURTS_BANKRUPTCY_PARSER_VERSION,
+  USCOURTS_BANKRUPTCY_SOURCE,
+  uscourtsBankruptcyPartitions,
+} from "@/lib/agents/magellan/registry/uscourts-bankruptcy";
+import { MARKET_GROWTH_DEFINITIONS, MARKET_GROWTH_PARSER_VERSION } from "@/lib/agents/magellan/registry/market-growth";
+import { SMALLBIZ_PAYMENTS_DEFINITIONS, SMALLBIZ_PAYMENTS_PARSER_VERSION } from "@/lib/agents/magellan/registry/smallbiz-payments";
+import { NATIONAL_CREDIT_DEFINITIONS, NATIONAL_CREDIT_PARSER_VERSION } from "@/lib/agents/magellan/registry/national-credit";
 import { REGISTRY_SOURCES } from "@/lib/agents/magellan/registry";
 import { isProviderStep } from "@/lib/agents/types";
 import { STATE_BILLS_PARTITION, STATE_BILLS_SOURCE } from "@/lib/agents/magellan/registry/state-bills";
@@ -124,6 +137,15 @@ export const REGISTRY_PARSER_VERSIONS: Record<string, number> = {
   [NCUA_EXTRAS_SOURCE]: NCUA_EXTRAS_PARSER_VERSION,
   [FDIC_HISTORY_SOURCE]: FDIC_HISTORY_PARSER_VERSION,
   ...Object.fromEntries(ECONOMY_DEFINITIONS.map((d) => [d.source, ECONOMY_PARSER_VERSION])),
+  ...Object.fromEntries(MARKET_GROWTH_DEFINITIONS.map((d) => [d.source, MARKET_GROWTH_PARSER_VERSION])),
+  ...Object.fromEntries(SMALLBIZ_PAYMENTS_DEFINITIONS.map((d) => [d.source, SMALLBIZ_PAYMENTS_PARSER_VERSION])),
+  ...Object.fromEntries(NATIONAL_CREDIT_DEFINITIONS.map((d) => [d.source, NATIONAL_CREDIT_PARSER_VERSION])),
+  [USCOURTS_BANKRUPTCY_SOURCE]: USCOURTS_BANKRUPTCY_PARSER_VERSION,
+  [USDA_FARM_SOURCE]: USDA_FARM_PARSER_VERSION,
+  [BLS_OEWS_SOURCE]: BLS_OEWS_PARSER_VERSION,
+  [FINRA_NFCS_SOURCE]: FINRA_NFCS_PARSER_VERSION,
+  [FHLB_ADVANCE_RATES_SOURCE]: FHLB_ADVANCE_RATES_PARSER_VERSION,
+  [BANK_MERGER_ORDERS_SOURCE]: BANK_MERGER_ORDERS_PARSER_VERSION,
   [INDUSTRY_EVENTS_SOURCE]: INDUSTRY_EVENTS_PARSER_VERSION,
   [PAYMENT_NETWORKS_SOURCE]: PAYMENT_NETWORKS_PARSER_VERSION,
   [HMDA_SOURCE]: HMDA_PARSER_VERSION,
@@ -206,6 +228,9 @@ export function registryPartitionsBySource(
     [NCUA_EXTRAS_SOURCE]: ncuaExtrasPartitions(now, compareQuarters(from, NCUA_EXTRAS_FIRST) > 0 ? from : NCUA_EXTRAS_FIRST),
     [FDIC_HISTORY_SOURCE]: fdicHistoryPartitions(now, Math.max(FDIC_HISTORY_FIRST_YEAR, from.year)),
     ...Object.fromEntries(ECONOMY_DEFINITIONS.filter((d) => !d.fixedPartition).map((d) => [d.source, d.partitions(now)])),
+    ...Object.fromEntries(MARKET_GROWTH_DEFINITIONS.map((d) => [d.source, d.partitions(now)])),
+    ...Object.fromEntries(SMALLBIZ_PAYMENTS_DEFINITIONS.filter((d) => !d.fixedPartition).map((d) => [d.source, d.partitions(now)])),
+    ...Object.fromEntries(NATIONAL_CREDIT_DEFINITIONS.filter((d) => !d.fixedPartition).map((d) => [d.source, d.partitions(now)])),
     [INDUSTRY_EVENTS_SOURCE]: industryEventsPartitions(now),
     [PAYMENT_NETWORKS_SOURCE]: paymentNetworksPartitions(now),
     [HMDA_SOURCE]: hmdaPartitions(now, from.year),
@@ -219,6 +244,12 @@ export function registryPartitionsBySource(
     [FDIC_SOD_SOURCE]: years(Math.max(SOD_FIRST_YEAR, from.year), latestSodYear(now)),
     [CENSUS_ACS_SOURCE]: censusAcsPartitions(now),
     [IRS_ZIP_INCOME_SOURCE]: irsZipIncomePartitions(now),
+    [USCOURTS_BANKRUPTCY_SOURCE]: uscourtsBankruptcyPartitions(now),
+    [USDA_FARM_SOURCE]: usdaFarmPartitions(now),
+    [BLS_OEWS_SOURCE]: blsOewsPartitions(now),
+    [FINRA_NFCS_SOURCE]: finraNfcsPartitions(now),
+    [FHLB_ADVANCE_RATES_SOURCE]: fhlbAdvanceRatesPartitions(now),
+    [BANK_MERGER_ORDERS_SOURCE]: bankMergerOrdersPartitions(now),
     [CFPB_SOURCE]: years(Math.max(CFPB_FIRST_YEAR, from.year), now.getUTCFullYear()),
     [SEC_FILINGS_SOURCE]: secBatchPartitions(),
     [BEIGE_BOOK_SOURCE]: beigeBookCandidates(now),

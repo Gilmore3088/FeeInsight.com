@@ -174,3 +174,11 @@ describe("hmdaCleaningReport", () => {
     expect(report.unmatched_lenders).toBeNull();
   });
 });
+
+describe("HMDA header spelling", () => {
+  it('reads the Data Browser\'s "derived_msa-md" column as derived_msa_md (2025-AL prod run)', () => {
+    const acc = new HmdaAccumulator(HEADER.replace("derived_msa_md", "derived_msa-md").split(","), 2025, "AL");
+    expect(acc.usable).toBe(true);
+    expect(acc.missingFields).not.toContain("derived_msa_md");
+  });
+});

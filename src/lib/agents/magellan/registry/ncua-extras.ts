@@ -24,7 +24,7 @@ import { recordRegistryPartition, type RegistryDb } from "./partitions";
  */
 
 export const NCUA_EXTRAS_SOURCE = "ncua-extras";
-export const NCUA_EXTRAS_PARSER_VERSION = 2;
+export const NCUA_EXTRAS_PARSER_VERSION = 3;
 /** Newest quarters first, back to here; older zips can be added by lowering it. */
 export const NCUA_EXTRAS_FIRST: Quarter = { year: 2020, quarter: 1 };
 const RECENT_REFRESH_HOURS = 24 * 7;
@@ -134,7 +134,7 @@ export async function runRegistryNcuaExtras(options: RegistryNcuaExtrasOptions):
     : !read?.hasDescriptionFile
       ? "The zip has no account description file (AcctDesc), so no line can be confirmed"
       : read.values.length === 0
-        ? "No 5300 line matched the account-count, employee, insured-limit or fee-income topics"
+        ? "No 5300 line matched the account-count, employee, insured-limit, fee-income, dividend or share-mix topics"
         : null;
   const values = read?.values ?? [];
   const charters = new Set(values.map((v) => v.charter));
