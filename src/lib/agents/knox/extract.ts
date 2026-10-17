@@ -1205,6 +1205,8 @@ export async function runKnoxExtract(
           runId: options.runId,
           stepId: options.stepId ?? null,
           foldIntoPlaybook: false,
+          // A Knox rules bump re-reads the document; a specialist with nothing new logs nothing new.
+          skipRepeat: true,
           detail: specialistDetail(row, run),
         });
       }
