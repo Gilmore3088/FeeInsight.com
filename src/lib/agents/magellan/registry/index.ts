@@ -3,9 +3,12 @@ import { CENSUS_ACS_SOURCE, runRegistryCensusAcs } from "./census-acs";
 import { CFPB_SOURCE, runRegistryCfpb } from "./cfpb";
 import { IRS_ZIP_INCOME_SOURCE, runRegistryIrsZipIncome } from "./irs-zip-income";
 import { ECONOMY_DEFINITIONS, runRegistryEconomy } from "./economy";
+<<<<<<< HEAD
 import { MAKING_ENDS_MEET_PARTITION, MAKING_ENDS_MEET_SOURCE, MAKING_ENDS_MEET_TITLE, runRegistryMakingEndsMeet } from "./making-ends-meet";
 import { PAYDAY_REPORTS_SOURCE, runRegistryPaydayReports } from "./payday-reports";
 import { runRegistryStateLists, URBAN_DEBT_PARTITION, URBAN_DEBT_SOURCE } from "./state-lists";
+=======
+>>>>>>> origin/main
 import { FHLB_ADVANCE_RATES_SOURCE, runRegistryFhlbAdvanceRates } from "./fhlb-advance-rates";
 import { BANK_MERGER_ORDERS_SOURCE, runRegistryBankMergerOrders } from "./bank-merger-orders";
 import { BLS_OEWS_SOURCE, runRegistryBlsOews } from "./bls-oews";
@@ -825,6 +828,7 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
       return { skipped: r.skipped, summary: r.summary, detail: { ...r.detail, source_url: r.sourceUrl, rows: r.rows, written_rows: r.writtenRows, matched_rows: r.matchedRows, empty: r.empty, empty_reason: r.emptyReason } };
     },
   },
+<<<<<<< HEAD
   {
     source: MAKING_ENDS_MEET_SOURCE,
     stepKey: "registry-cfpb-making-ends-meet",
@@ -882,6 +886,8 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
       };
     },
   },
+=======
+>>>>>>> origin/main
   {
     source: SEC_LINKS_SOURCE,
     stepKey: "registry-sec-links",

@@ -448,42 +448,58 @@ async function selectVerifiedFees(
   const params: Array<number | string> = [limit];
   // An institution that no longer operates publishes nothing (#1200, `closed-institution.ts`).
   const filters: string[] = [`AND NOT ${closedInstitutionSql("inst")}`];
-  if (minInstitutionFees > 1) {
-    // Rough cut in SQL so thin institutions' rows do not fill every batch and starve
-    // the rest of the queue; the exact count (with every publish rule) runs after.
-    const confidenceParam = `$${params.push(minConfidence)}`;
-    const minFeesParam = `$${params.push(minInstitutionFees)}`;
-    filters.push(`AND (
-           SELECT COUNT(DISTINCT depth.canonical_fee_key)
-             FROM (
-               SELECT fp.canonical_fee_key
-                 FROM published_fee_records fp
-                WHERE fp.institution_id = fv.institution_id
-                  AND fp.rolled_back_at IS NULL
-                  AND fp.quarantined_at IS NULL
-               UNION
-               SELECT pv.canonical_fee_key
-                 FROM verified_fee_observations pv
-                WHERE pv.institution_id = fv.institution_id
-                  AND pv.review_status IN ('verified', 'approved')
-                  AND pv.outlier_flags ? 'agentic_darwin_verified'
-                  AND COALESCE(pv.extraction_confidence, 0) >= ${confidenceParam}
-             ) depth
-         ) >= ${minFeesParam}`);
-  }
+  // The depth count reads only the institutions this call can select.
+  const depthScope: Array<(alias: string) => string> = [];
   if (institutionId) {
     params.push(institutionId);
     filters.push(`AND fv.institution_id = $${params.length}`);
+    const idParam = `$${params.length}`;
+    depthScope.push((alias) => `AND ${alias}.institution_id = ${idParam}`);
   }
   const normalizedState = normalizeStateCode(stateCode);
   if (normalizedState) {
     params.push(normalizedState);
     filters.push(`AND upper(btrim(inst.state_code)) = $${params.length}`);
+    const stateParam = `$${params.length}`;
+    depthScope.push(
+      (alias) =>
+        `AND ${alias}.institution_id IN (SELECT scope.id FROM institution_sources scope WHERE upper(btrim(scope.state_code)) = ${stateParam})`,
+    );
+  }
+  // Institutions with at least the minimum of distinct fees, live or verified, counted once each.
+  let deepCte = "";
+  if (minInstitutionFees > 1) {
+    // Rough cut in SQL so thin institutions' rows do not fill every batch and starve
+    // the rest of the queue; the exact count (with every publish rule) runs after.
+    // One grouped count per institution, not a count per verified row: correlated, it ran
+    // 164k times and took 32 s of the national fill (findings/2026-10-17-lane-publish-and-discover-reads.md).
+    const confidenceParam = `$${params.push(minConfidence)}`;
+    const minFeesParam = `$${params.push(minInstitutionFees)}`;
+    deepCte = `deep AS MATERIALIZED (
+        SELECT depth.institution_id
+          FROM (
+            SELECT fp.institution_id, fp.canonical_fee_key
+              FROM published_fee_records fp
+             WHERE fp.rolled_back_at IS NULL
+               AND fp.quarantined_at IS NULL
+               ${depthScope.map((scope) => scope("fp")).join(" ")}
+            UNION
+            SELECT pv.institution_id, pv.canonical_fee_key
+              FROM verified_fee_observations pv
+             WHERE pv.review_status IN ('verified', 'approved')
+               AND pv.outlier_flags ? 'agentic_darwin_verified'
+               AND COALESCE(pv.extraction_confidence, 0) >= ${confidenceParam}
+               ${depthScope.map((scope) => scope("pv")).join(" ")}
+          ) depth
+         GROUP BY depth.institution_id
+        HAVING COUNT(DISTINCT depth.canonical_fee_key) >= ${minFeesParam}
+      ),`;
+    filters.push(`AND fv.institution_id IN (SELECT deep.institution_id FROM deep)`);
   }
   if (learning) filters.push(undecidedAtThisVersionSql(params));
   return db.unsafe<VerifiedFeeRow[]>(
     `
-      WITH eligible AS (
+      WITH ${deepCte} eligible AS (
       SELECT fv.fee_verified_id,
              fv.fee_raw_id,
              fv.institution_id,

@@ -28,7 +28,7 @@ export const maxDuration = 300;
  */
 const DEFAULT_MAX_STEPS_PER_RUN = 10;
 /**
- * Runs advanced per tick, strictly one after another (see executeQueuedAgentRuns),
+ * Runs advanced per tick, one after another except up to PARALLEL_STATE_LANES state lanes side by side (see executeQueuedAgentRuns),
  * until the step-start deadline. No run starts past the deadline except the first.
  */
 const DEFAULT_RUN_LIMIT = 10;
