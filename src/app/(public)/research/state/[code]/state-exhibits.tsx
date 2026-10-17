@@ -40,7 +40,7 @@ function StateMap({ stateCode, district }: { stateCode: string; district: number
     : allShapes().filter((s) => s.code !== stateCode && !INSETS.has(s.code) && overlaps(s.box, view));
   const size = Math.max(view.w, view.h) * 0.045;
   return (
-    <svg viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`} className="h-auto max-h-[440px] w-full" aria-hidden="true">
+    <svg viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`} className="h-[200px] w-full sm:h-auto sm:max-h-[440px]" aria-hidden="true">
       {neighbors.map((s) => {
         const sibling = district != null && STATE_TO_DISTRICT[s.code] === district;
         const path = (
@@ -80,7 +80,7 @@ interface StateHeroProps {
   stateName: string;
   district: number | undefined;
   /** At most two figures; the page picks the two that carry the story. */
-  facts: { value: string; label: string }[];
+  facts: { value: string; label: string; note?: string }[];
   /** One oversized line under the heading: the page's thesis. */
   statement: string | null;
   freshnessLabel: string;
@@ -107,20 +107,23 @@ export function StateHero({ stateCode, stateName, district, facts, statement, fr
             <span className="text-ink-soft">{stateName}</span>
           </nav>
           {district && (
-            <p className="mt-5 text-[12px] font-semibold uppercase tracking-[0.14em] text-brick sm:mx-0">
+            <p className="mt-5 hidden text-[12px] font-semibold uppercase tracking-[0.14em] text-brick sm:mx-0 sm:block">
               {DISTRICT_NAMES[district]} Fed &middot; District {district}
             </p>
           )}
-          <h1 className="mt-2 text-[36px] font-semibold leading-[1.05] tracking-[-0.035em] text-ink sm:text-[56px]">Bank fees in {stateName}</h1>
+          <h1 className="mt-3 text-[36px] sm:mt-2 font-semibold leading-[1.05] tracking-[-0.035em] text-ink sm:text-[56px]">Bank fees in {stateName}</h1>
           {statement && (
             <p className="mt-5 text-[21px] font-semibold leading-[1.2] tracking-[-0.02em] text-ink sm:mx-0 sm:text-[28px]">{statement}</p>
           )}
 
           {facts.length > 0 && (
-            <dl className="mt-8 grid grid-cols-2 gap-6 text-left sm:max-w-xl">
+            <dl className="mt-6 grid grid-cols-2 items-start gap-6 text-left sm:mt-8 sm:max-w-xl">
               {facts.map((f) => (
-                <div key={f.label} className="flex flex-col-reverse border-l-2 border-brick pl-4">
-                  <dt className="mt-2 text-[13px] leading-snug text-ink-soft">{f.label}</dt>
+                <div key={f.label} className="flex flex-col-reverse justify-end border-l-2 border-brick pl-4">
+                  <dt className="mt-2 text-[13px] leading-snug text-ink-soft">
+                    {f.label}
+                    {f.note && <span className="mt-0.5 block text-[12px] text-ink-muted">{f.note}</span>}
+                  </dt>
                   <dd className="whitespace-nowrap font-mono text-[28px] font-semibold leading-none tabular-nums tracking-[-0.02em] text-ink sm:text-[44px]">
                     {f.value}
                   </dd>
@@ -129,16 +132,19 @@ export function StateHero({ stateCode, stateName, district, facts, statement, fr
             </dl>
           )}
 
-          <p className="mt-8 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[12px] text-ink-muted sm:mx-0 sm:justify-start">
-            <span className="inline-flex items-center gap-2">
-              <span aria-hidden="true" className="h-2 w-2 rounded-full bg-in-range" />
-              {freshnessLabel}
-            </span>
-            <a href="#free-report" className="font-semibold text-brick underline-offset-4 hover:text-brick-ink hover:underline print:hidden">
-              Get the free {stateName} fee report
-            </a>
-            <PrintButton className="font-semibold text-ink-soft underline decoration-border underline-offset-4 hover:text-ink print:hidden" />
+          <p className="mt-6 inline-flex items-center gap-2 text-[12px] text-ink-muted sm:mx-0 sm:mt-8">
+            <span aria-hidden="true" className="h-2 w-2 rounded-full bg-in-range" />
+            {freshnessLabel}
           </p>
+          <div className="mt-3 flex flex-col items-center gap-2 sm:flex-row sm:gap-5 print:hidden">
+            <a
+              href="#free-report"
+              className="inline-flex min-h-11 items-center rounded-full bg-ink px-5 text-[14px] font-semibold text-on-ink hover:opacity-90"
+            >
+              Get the free {stateName} report
+            </a>
+            <PrintButton className="min-h-10 text-[13px] font-semibold text-ink-soft underline decoration-border underline-offset-4 hover:text-ink" />
+          </div>
         </div>
         <div className="mx-auto w-full max-w-md lg:max-w-none">
           <StateMap stateCode={stateCode} district={district} />

@@ -247,14 +247,12 @@ export default async function StateReportPage({ params }: PageProps) {
       ? [
           {
             value: formatCount(indexes.verified_institutions),
-            label:
-              institutionsTracked > 0
-                ? `of ${formatCount(institutionsTracked)} banks and credit unions headquartered in ${stateName} have verified fee schedules`
-                : `banks and credit unions headquartered in ${stateName} have verified fee schedules`,
+            label: "institutions with published fees",
+            ...(institutionsTracked > 0 ? { note: `${formatCount(institutionsTracked)} headquartered in ${stateName}` } : {}),
           },
         ]
       : []),
-    ...(againstUs.length >= 3 ? [{ value: `${insideBand} of ${againstUs.length}`, label: "fee medians sit within the national middle range" }] : []),
+    ...(againstUs.length >= 3 ? [{ value: `${insideBand} of ${againstUs.length}`, label: "fee medians within the national middle range" }] : []),
   ];
   // The opening takeaway is the state's sharpest specific gap; the band count sits beside it as context.
   const statement = openingFinding(againstUs, STATE_FINDING_MIN_INSTITUTIONS) ?? takeaway;
