@@ -1204,6 +1204,20 @@ only on what the free team could not read.
     temporary reason (`timeout`, `network_error`, `http_429`, `http_5xx`, `budget_blocked`), which
     a later run tries again.
 
+  Before any call, `planPaidReads` skips a selected text that would yield nothing (zero-yield
+  reads, 2026-10-17):
+  - `same_text_this_run`: the run already holds the same bank's same text under another document
+    (a page stored twice). The first copy is read; the skip writes no attempt, so a temporary
+    failure on the first copy leaves both eligible.
+  - `page_read_before_no_fees`: an earlier paid read of the same page address (lowercased, query
+    and fragment dropped) returned no fee at all (`no_candidates`), and no paid read of that
+    address found one. The skip writes a `rejected` attempt for this text at $0, so it is not
+    selected again. A read that returned rows the text did not ground (`evidence_mismatch`) is
+    not a reason to skip: a later text of the page can ground them.
+
+  Each run's skips are logged as one `knox.paid_read_skipped` event on the step, with every text,
+  its reason and the earlier attempt, and appear in the step's results (`skip_reason`).
+
   It makes one `paidModelCall` per document and keeps a returned row only when (`groundPaidRow`):
   - it has a name, a canonical key that exists and an amount from $0 to $2,500;
   - it does not name a limit (`limit_not_fee`);
