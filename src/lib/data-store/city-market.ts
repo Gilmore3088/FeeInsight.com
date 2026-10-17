@@ -419,6 +419,9 @@ export interface StateMarketCity {
   with_fees: number;
   branches: number;
   metro: string | null;
+  /** The middle of the city's branch coordinates, for placing it on a state map; null when no branch has them. */
+  lat: number | null;
+  lon: number | null;
 }
 
 /** Every city in a state with a bank or credit union branch, by how many institutions serve it. */
@@ -427,11 +430,11 @@ export async function getStateMarketCities(stateCode: string): Promise<StateMark
   const year = await latestSodYear();
   const rows = (await sql`
     WITH branches AS (
-      SELECT UPPER(city) AS city, institution_id, msa_name
+      SELECT UPPER(city) AS city, institution_id, msa_name, latitude, longitude
         FROM institution_branch_deposits
        WHERE year = ${year} AND state = ${state} AND city IS NOT NULL AND city <> ''
       UNION ALL
-      SELECT UPPER(city), institution_id, NULL
+      SELECT UPPER(city), institution_id, NULL, latitude, longitude
         FROM credit_union_branches
        WHERE state = ${state} AND city IS NOT NULL AND city <> ''
     ),
@@ -442,7 +445,9 @@ export async function getStateMarketCities(stateCode: string): Promise<StateMark
            COUNT(DISTINCT b.institution_id) AS institutions,
            COUNT(DISTINCT p.institution_id) AS with_fees,
            COUNT(*) AS branches,
-           MAX(b.msa_name) AS metro
+           MAX(b.msa_name) AS metro,
+           PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY b.latitude) FILTER (WHERE b.latitude IS NOT NULL AND b.longitude IS NOT NULL AND b.latitude <> 0) AS lat,
+           PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY b.longitude) FILTER (WHERE b.latitude IS NOT NULL AND b.longitude IS NOT NULL AND b.latitude <> 0) AS lon
       FROM branches b
       LEFT JOIN published p ON p.institution_id = b.institution_id
      GROUP BY b.city
@@ -455,6 +460,8 @@ export async function getStateMarketCities(stateCode: string): Promise<StateMark
     with_fees: num(r.with_fees),
     branches: num(r.branches),
     metro: r.metro ? String(r.metro) : null,
+    lat: numOrNull(r.lat),
+    lon: numOrNull(r.lon),
   }));
 }
 

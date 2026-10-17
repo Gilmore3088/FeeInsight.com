@@ -17,7 +17,7 @@ describe("CityList", () => {
       "Tallahassee12 of 20 with fees",
       "Tampa25 of 45 with fees",
     ]);
-    fireEvent.change(screen.getByLabelText("Find your city"), { target: { value: "ta" } });
+    fireEvent.change(screen.getByLabelText("Find a city"), { target: { value: "ta" } });
     expect(screen.getAllByRole("link").map((a) => a.getAttribute("href"))).toEqual([
       "/fees/city/fl/tallahassee",
       "/fees/city/fl/tampa",
@@ -33,7 +33,7 @@ describe("CityList", () => {
 
   it("answers a town it doesn't cover with ways on, not an empty list", () => {
     render(<CityList cities={cities} stateName="Florida" stateCode="FL" />);
-    fireEvent.change(screen.getByLabelText("Find your city"), { target: { value: "Sarasota" } });
+    fireEvent.change(screen.getByLabelText("Find a city"), { target: { value: "Sarasota" } });
     expect(screen.getByText("No city comparison for Sarasota yet.")).toBeTruthy();
     expect(screen.getAllByRole("link").map((a) => a.getAttribute("href"))).toEqual([
       "/institutions?q=Sarasota",

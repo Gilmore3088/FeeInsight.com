@@ -79,7 +79,11 @@ function firstSentence(text: string): string {
 
 interface PageProps {
   params: Promise<{ code: string }>;
+  /** The local section's market and fee picks, as no-script links set them. */
+  searchParams?: Promise<{ market?: string | string[]; fee?: string | string[] }>;
 }
+
+const firstParam = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
 
 /** "2026-Q2" -> "2025-Q2", the quarter a year-over-year change starts from. */
 function yearEarlier(quarter: string): string {
@@ -126,8 +130,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   };
 }
 
-export default async function StateReportPage({ params }: PageProps) {
+export default async function StateReportPage({ params, searchParams }: PageProps) {
   const { code } = await params;
+  const picks = (await searchParams) ?? {};
   const stateCode = code.toUpperCase();
   const stateName = STATE_NAMES[stateCode];
   if (!stateName) notFound();
@@ -296,6 +301,8 @@ export default async function StateReportPage({ params }: PageProps) {
               directoryHref={`/fees/city/${stateCode.toLowerCase()}`}
               title="Local fee benchmarks"
               headingId="markets-heading"
+              initialMarket={firstParam(picks.market)}
+              initialFee={firstParam(picks.fee)}
             />
             <SourceNote label="Sources">
               Branches from the FDIC Summary of Deposits (banks) and NCUA (credit unions). One value per institution: its highest

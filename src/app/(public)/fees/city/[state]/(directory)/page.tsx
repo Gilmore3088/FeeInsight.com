@@ -7,15 +7,18 @@ import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { PAGE_CRUMBS, PAGE_H1, PAGE_HEADER, PAGE_LEDE } from "@/components/public/page-header";
 import { SITE_URL } from "@/lib/constants";
 import { getStateMarketCitiesCached } from "@/lib/data-store/public-cached-reads";
-import { CityList, type CityLink } from "./city-list";
+import { stateMarketMap } from "@/lib/geo/state-market-map";
+import { StateExplorer, type ExplorerCity } from "./state-explorer";
 import { titleCase } from "../[city]/city-lookup";
 
 interface PageProps {
   params: Promise<{ state: string }>;
+  searchParams: Promise<{ city?: string | string[]; q?: string | string[]; all?: string | string[] }>;
 }
 
-/** Markets offered as one-tap links under the search. */
-const SHORTCUTS = 6;
+const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
+
+const COUNT = new Intl.NumberFormat("en-US");
 
 const LINK = "font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink";
 
@@ -26,12 +29,15 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
   return {
     title: `Bank Fees by City in ${stateName}`,
+    // ?city=, ?q= and ?all= only change what the explorer shows; one URL per state.
+    alternates: { canonical: `/fees/city/${state.toLowerCase()}` },
     description: `Compare the published fees of the banks and credit unions with branches in each ${stateName} city: overdraft, monthly maintenance, ATM and more, each with its source.`,
   };
 }
 
-export default async function StateCityDirectory({ params }: PageProps) {
+export default async function StateCityDirectory({ params, searchParams }: PageProps) {
   const { state } = await params;
+  const query = await searchParams;
   const stateCode = state.toUpperCase();
   const stateName = STATE_NAMES[stateCode];
 
@@ -39,12 +45,22 @@ export default async function StateCityDirectory({ params }: PageProps) {
 
   const cities = await getStateMarketCitiesCached(stateCode);
   // getStateMarketCities ranks by institutions with a branch in the city, most first.
-  const links: CityLink[] = cities.map((c) => ({
+  const links: ExplorerCity[] = cities.map((c) => ({
+    key: c.city.toLowerCase(),
     name: titleCase(c.city),
     href: `/fees/city/${stateCode.toLowerCase()}/${encodeURIComponent(c.city.toLowerCase())}`,
     institutions: c.institutions,
     withFees: c.with_fees,
   }));
+  // Each city sits at the middle of its branches' recorded coordinates; a city without any is listed but not drawn.
+  const map = links.length
+    ? stateMarketMap(
+        stateCode,
+        cities.flatMap((c) => (c.lat != null && c.lon != null ? [{ key: c.city.toLowerCase(), lat: c.lat, lon: c.lon }] : [])),
+      )
+    : null;
+  const asked = first(query.city).toLowerCase();
+  const initialCity = links.some((l) => l.key === asked) ? asked : (links[0]?.key ?? "");
 
   return (
     <>
@@ -69,17 +85,34 @@ export default async function StateCityDirectory({ params }: PageProps) {
             </h1>
             <p className={`mt-2 ${PAGE_LEDE}`}>
               {links.length > 0
-                ? "Each city page compares the banks and credit unions with a branch there, using the fees they publish."
+                ? `${COUNT.format(links.length)} ${stateName} ${links.length === 1 ? "city has" : "cities have"} at least one bank or credit union with published fees. Each city page compares them.`
                 : `No ${stateName} city has an institution with published fees yet.`}
             </p>
           </div>
-          <div className="mt-6">
-            <CityList cities={links} stateName={stateName} stateCode={stateCode} shortcuts={links.slice(0, SHORTCUTS)} />
-          </div>
-          <p className="mt-4 text-[12px] text-ink-muted">
-            A city is listed once at least one bank or credit union with a branch there has published fees. Counts are
-            institutions with a branch in the city, from the FDIC Summary of Deposits and NCUA branch records.
+          {links.length > 0 && (
+            <StateExplorer
+              map={map}
+              cities={links}
+              initialCity={initialCity}
+              initialQuery={first(query.q)}
+              initialAll={first(query.all) === "1"}
+              stateName={stateName}
+              stateCode={stateCode}
+            />
+          )}
+          <p className="mt-6 text-[12px] text-ink-muted sm:mx-0 sm:text-left">
+            Sources: FDIC Summary of Deposits, NCUA branch records, U.S. Census Bureau outlines. Counts are institutions with a
+            branch in the city.
           </p>
+          <details className="mt-2 text-[12px] text-ink-muted">
+            <summary className="inline-flex min-h-11 cursor-pointer items-center font-medium text-ink underline decoration-border underline-offset-4">
+              How the map is drawn
+            </summary>
+            <p className="mt-1 sm:mx-0 sm:text-left">
+              A city is listed once at least one institution with a branch there has published fees. Each marker sits at the
+              middle of the city&apos;s branch locations and is sized by institutions with a branch there.
+            </p>
+          </details>
         </div>
       </section>
 
