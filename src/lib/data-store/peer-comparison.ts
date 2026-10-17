@@ -1,0 +1,217 @@
+/**
+ * One institution's published dollar fees against a peer group, category by category: the
+ * peers' median and middle half, and where the institution's amount falls among them. Values
+ * follow the statistics contract (fee-stats.ts): sourced consumer-facing rows only, one value
+ * per institution, and no median, percentile or placement below MIN_INSTITUTIONS_FOR_MEDIAN
+ * peers. Fees stated as a rate are listed apart and never compared with dollars.
+ *
+ * The default peers are the institution's own charter type, asset-size tier and Fed district,
+ * the narrowest of Hamilton's default peer candidates without a state
+ * (buildInstitutionPeerFilterCandidates). A caller may name up to 25 peers instead.
+ */
+import { getInstitutionById } from "./core";
+import { getInstitutionFeeValues, getPeerFeeValues, type PeerFeeValue, type PeerFilterSet } from "./fee-index";
+import { MIN_INSTITUTIONS_FOR_MEDIAN, summarizeFees, type MaturityTier } from "./fee-stats";
+import { getRateFeesByInstitution } from "./rate-fees";
+import { getDisplayName, getFeeFamily } from "@/lib/fee-taxonomy";
+import { ASSET_TIER_RANGES } from "@/lib/hamilton/peer-index";
+import { DISTRICT_NAMES } from "@/lib/fed-districts";
+import { institutionDisplayName } from "@/lib/institution-display-name";
+
+export const MAX_CHOSEN_PEERS = 25;
+
+/** Two amounts within half a cent are the same price. */
+const SAME_PRICE_TOLERANCE = 0.005;
+
+export interface PeerCategoryComparison {
+  category: string;
+  display_name: string;
+  family: string | null;
+  /** The institution's own value for the category under the statistics contract, in dollars. */
+  amount: number;
+  /** Peers with a published dollar amount for this category. */
+  peer_count: number;
+  peer_median: number | null;
+  peer_p25: number | null;
+  peer_p75: number | null;
+  /** How many peers' amounts are below, equal to and above the institution's. */
+  peers_lower: number | null;
+  peers_same: number | null;
+  peers_higher: number | null;
+  /**
+   * 0 to 100: the share of peers whose amount is lower, counting half of those with the same
+   * amount. null below the minimum sample.
+   */
+  percentile: number | null;
+  maturity_tier: MaturityTier;
+}
+
+export interface PeerComparisonRateFee {
+  category: string | null;
+  display_name: string | null;
+  fee_name: string;
+  rate_percent: number;
+  rate_min_amount: number | null;
+  rate_max_amount: number | null;
+  rate_basis: string | null;
+  rate_terms: string;
+  source_url: string | null;
+}
+
+export interface PeerGroup {
+  basis: "default" | "chosen";
+  label: string;
+  charter_type: string | null;
+  asset_tier: string | null;
+  fed_district: number | null;
+  /** The ids asked for, when basis is chosen. */
+  peer_ids: number[] | null;
+  /** Peers with at least one published dollar fee in the compared categories. */
+  peers_with_fees: number;
+}
+
+export interface PeerComparison {
+  institution: {
+    id: number;
+    name: string;
+    state: string | null;
+    charter_type: string | null;
+    asset_tier: string | null;
+    fed_district: number | null;
+  };
+  peer_group: PeerGroup;
+  min_peers: number;
+  categories: PeerCategoryComparison[];
+  rate_fees: PeerComparisonRateFee[];
+}
+
+/** Mid-rank percentile: share of values below, plus half of those equal, as 0 to 100. */
+export function midRankPercentile(amount: number, values: readonly number[]): { lower: number; same: number; higher: number; percentile: number | null } {
+  let lower = 0;
+  let same = 0;
+  let higher = 0;
+  for (const value of values) {
+    if (Math.abs(value - amount) < SAME_PRICE_TOLERANCE) same++;
+    else if (value < amount) lower++;
+    else higher++;
+  }
+  const n = values.length;
+  return { lower, same, higher, percentile: n === 0 ? null : Math.round((100 * (lower + same / 2)) / n) };
+}
+
+/** One category's comparison from the institution's value and each peer's value. */
+export function comparePeerCategory(category: string, amount: number, peers: readonly Pick<PeerFeeValue, "institution_id" | "amount">[]): PeerCategoryComparison {
+  const stats = summarizeFees(peers.map((p) => ({ institution_id: p.institution_id, amount: p.amount, fee_category: category })));
+  const enough = stats.maturity_tier !== "insufficient";
+  const rank = midRankPercentile(amount, peers.map((p) => p.amount));
+  return {
+    category,
+    display_name: getDisplayName(category),
+    family: getFeeFamily(category),
+    amount,
+    peer_count: stats.institution_count,
+    peer_median: enough ? stats.median_amount : null,
+    peer_p25: enough ? stats.p25_amount : null,
+    peer_p75: enough ? stats.p75_amount : null,
+    peers_lower: enough ? rank.lower : null,
+    peers_same: enough ? rank.same : null,
+    peers_higher: enough ? rank.higher : null,
+    percentile: enough ? rank.percentile : null,
+    maturity_tier: stats.maturity_tier,
+  };
+}
+
+/** The default peers: the institution's charter type, asset-size tier and Fed district, where known. */
+export function defaultPeerFilters(inst: { charter_type?: string | null; asset_size_tier?: string | null; fed_district?: number | string | null }): PeerFilterSet {
+  const filters: PeerFilterSet = {};
+  if (inst.charter_type) filters.charter_type = inst.charter_type;
+  if (inst.asset_size_tier) filters.asset_tiers = [inst.asset_size_tier];
+  const district = Number(inst.fed_district);
+  if (Number.isInteger(district) && district >= 1 && district <= 12) filters.fed_districts = [district];
+  return filters;
+}
+
+/** "Banks with $300M to $1B in assets in Fed district 11 (Dallas)", or "3 chosen institutions". */
+export function describePeerGroup(filters: PeerFilterSet): string {
+  if (filters.institutionIds?.length) {
+    const n = filters.institutionIds.length;
+    return `${n} chosen ${n === 1 ? "institution" : "institutions"}`;
+  }
+  const kind = filters.charter_type === "bank" ? "Banks" : filters.charter_type === "credit_union" ? "Credit unions" : "Institutions";
+  const tier = filters.asset_tiers?.[0];
+  const range = tier ? ASSET_TIER_RANGES[tier] ?? tier.replace(/_/g, " ") : null;
+  const district = filters.fed_districts?.[0];
+  const parts = [kind];
+  if (range) parts.push(`with ${range} in assets`);
+  if (district) parts.push(`in Fed district ${district}${DISTRICT_NAMES[district] ? ` (${DISTRICT_NAMES[district]})` : ""}`);
+  return parts.join(" ");
+}
+
+function byFamilyThenName(a: { family: string | null; display_name: string | null }, b: { family: string | null; display_name: string | null }): number {
+  return (a.family ?? "").localeCompare(b.family ?? "") || (a.display_name ?? "").localeCompare(b.display_name ?? "");
+}
+
+export async function getPeerComparison(institutionId: number, peerIds: number[] | null): Promise<PeerComparison | null> {
+  const inst = await getInstitutionById(institutionId);
+  if (!inst) return null;
+
+  const chosen = peerIds ? peerIds.filter((id) => id !== institutionId) : null;
+  const filters: PeerFilterSet = chosen ? { institutionIds: chosen } : defaultPeerFilters(inst);
+  const own = await getInstitutionFeeValues(institutionId);
+  const categories = [...own.keys()];
+  const [peerSets, rateFees] = await Promise.all([
+    // An empty chosen list would match nobody: never read it as "no filter", which is everyone.
+    categories.length > 0 && (!chosen || chosen.length > 0)
+      ? getPeerFeeValues([filters], categories, institutionId)
+      : Promise.resolve([new Map<string, PeerFeeValue[]>()]),
+    getRateFeesByInstitution(institutionId, "consumer"),
+  ]);
+  const peerValues = peerSets[0] ?? new Map<string, PeerFeeValue[]>();
+
+  const publishing = new Set<number>();
+  for (const values of peerValues.values()) for (const v of values) publishing.add(v.institution_id);
+
+  const rows = categories
+    .map((category) => comparePeerCategory(category, own.get(category) as number, peerValues.get(category) ?? []))
+    .sort(byFamilyThenName);
+
+  return {
+    institution: {
+      id: Number(inst.id),
+      name: institutionDisplayName(inst.institution_name),
+      state: inst.state_code,
+      charter_type: inst.charter_type ?? null,
+      asset_tier: inst.asset_size_tier,
+      fed_district: inst.fed_district == null ? null : Number(inst.fed_district),
+    },
+    peer_group: {
+      basis: chosen ? "chosen" : "default",
+      label: chosen && chosen.length === 0 ? "No chosen institutions" : describePeerGroup(filters),
+      charter_type: chosen ? null : filters.charter_type ?? null,
+      asset_tier: chosen ? null : filters.asset_tiers?.[0] ?? null,
+      fed_district: chosen ? null : filters.fed_districts?.[0] ?? null,
+      peer_ids: chosen,
+      peers_with_fees: publishing.size,
+    },
+    min_peers: MIN_INSTITUTIONS_FOR_MEDIAN,
+    categories: rows,
+    rate_fees: rateFees
+      .map((fee) => ({
+        category: fee.fee_category,
+        display_name: fee.fee_category ? getDisplayName(fee.fee_category) : null,
+        family: fee.fee_category ? getFeeFamily(fee.fee_category) : null,
+        fee_name: fee.fee_name,
+        rate_percent: fee.rate_percent,
+        rate_min_amount: fee.rate_min_amount == null ? null : Number(fee.rate_min_amount),
+        rate_max_amount: fee.rate_max_amount == null ? null : Number(fee.rate_max_amount),
+        rate_basis: fee.rate_basis ?? null,
+        rate_terms: fee.rate_label,
+        source_url: fee.source_url,
+      }))
+      .sort(byFamilyThenName)
+      .map(({ family, ...rest }) => {
+        void family;
+        return rest;
+      }),
+  };
+}

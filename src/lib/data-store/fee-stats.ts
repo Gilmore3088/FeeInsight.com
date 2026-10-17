@@ -51,6 +51,8 @@ export { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT, maturityTier, ty
  * - src/lib/research/tools.ts (:52)
  * - src/lib/hamilton/workspace/research.ts peer band and layers (raw quantiles, :258-270,
  *   :920, :952); answer-correctness.ts leaves rule 7 out of its recompute until they move.
+ * - src/lib/data-store/peer-comparison.ts (/api/v1/peers): its peer values come from
+ *   getPeerFeeValues, which selects no schedule keys, so summarizeFees would collapse nothing.
  * Also check, once on: the fee-category-detail cache entry carries the schedule fields
  * (fees.ts getFeeCategoryDetail) against Next's 2 MB per-entry limit.
  */
