@@ -650,7 +650,7 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // non-customer surcharges on their stored line, flagged for the second look, then taken down), and
 // re-files an ATM transaction verification to account research (`NOT_ATM_USE`; 96092). The bare
 // "ATM Surcharge" lines the name cannot place, and in-network $0s and sentence fragments, are hand
-// takedowns held by `ATM_SURCHARGE_TAKEDOWN_LIVE` (hand-takedowns.ts; 28, off).
+// takedowns held by `ATM_SURCHARGE_TAKEDOWN_LIVE` (hand-takedowns.ts; 28, on since James's yes, Oct 17).
 // v72 (Oct 17, #1788, James's sample-report review): an ATM used outside the U.S. filed as the
 // non-network ATM fee (`INTERNATIONAL_ATM` in fee-fold.ts: "Non-PNC Bank ATM Fee (All Other
 // Countries)" $5, 13164) is International ATM & Card, by guard, re-file rule and fold split (5 live

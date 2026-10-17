@@ -543,7 +543,7 @@ items wait.
 | `registry-enforcement` | `current` | `institution_enforcement_actions` (OCC EASearch export and Fed enforcement CSV; institution actions only, matched by name and state or to a holding company) |
 
 - Pure HTTP clients and parsers are in `src/lib/regulatory/` and never write to the DB.
-- `src/lib/agents/registry-scheduler.ts` runs from the cron tick and keeps one registry run in flight. It merges candidates round-robin across sources, newest partition first, and backfills to `REGISTRY_BACKFILL_FROM` (default `2010Q1`).
+- `src/lib/agents/registry-scheduler.ts` runs from the cron tick and keeps one registry run in flight. It runs the institution-roster sources in `PRIORITY_REGISTRY_SOURCES` (fdic-universe, ncua-financials, ffiec-overdraft) first whenever one is due, so closed-institution and merger checks keep their cadence, then merges the rest round-robin across sources, newest partition first, and backfills to `REGISTRY_BACKFILL_FROM` (default `2010Q1`).
 - Identity matching (`registry/identity.ts`) accepts only unambiguous names. Shared names are stored as `needs_review` and never used until a person accepts them. Links with `verified_by` set are never overwritten.
 - Operator view: `/admin/magellan/registry`. Manual queue: `POST /api/admin/registry/run` with `{ source, partition_key?, dry_run? }`.
 - Add a source: write a client in `regulatory/`, a worker in `registry/`, an entry in `REGISTRY_SOURCES` (`registry/index.ts`), a scheduler partition list, and a `narrate.ts` sentence. `run-store.ts` dispatches every `registry-*` key automatically.
@@ -587,6 +587,20 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KEEP_REFUSED_ANSWER_STRATEGY` | `discover.keep_refused_answer` | v1 | `magellan/refused-answers.ts` |
 | `CENSUS_ACS_PARSER_VERSION` | — | v3 | `magellan/registry/census-acs.ts` |
 | `CFPB_PARSER_VERSION` | — | v5 | `magellan/registry/cfpb.ts` |
+| `FDIC_HISTORY_PARSER_VERSION` | — | v1 | `magellan/registry/fdic-history.ts` |
+| `FFIEC_CALL_DETAIL_PARSER_VERSION` | — | v1 | `magellan/registry/ffiec-call-detail.ts` |
+| `NCUA_EXTRAS_PARSER_VERSION` | — | v1 | `magellan/registry/ncua-extras.ts` |
+| `ECONOMY_PARSER_VERSION` | — | v1 | `magellan/registry/economy.ts` (16 economy sources) |
+| `INDUSTRY_EVENTS_PARSER_VERSION` | — | v1 | `magellan/registry/industry-events.ts` |
+| `PAYMENT_NETWORKS_PARSER_VERSION` | — | v1 | `magellan/registry/payment-networks.ts` |
+| `HMDA_PARSER_VERSION` | — | v1 | `magellan/registry/hmda.ts` |
+| `HMDA_APOR_PARSER_VERSION` | — | v1 | `magellan/registry/hmda.ts` |
+| `DESIGNATION_LISTS_PARSER_VERSION` | — | v1 | `magellan/registry/designation-lists.ts` |
+| `CRA_PARSER_VERSION` | — | v1 | `magellan/registry/cra.ts` |
+| `FR_Y9C_PARSER_VERSION` | — | v1 | `magellan/registry/fr-y9c.ts` |
+| `NIC_STRUCTURE_PARSER_VERSION` | — | v1 | `magellan/registry/nic-structure.ts` |
+| `UBPR_PEER_GROUPS_PARSER_VERSION` | — | v1 | `magellan/registry/ubpr-peer-groups.ts` |
+| `CFPB_CARD_AGREEMENTS_PARSER_VERSION` | — | v1 | `magellan/registry/cfpb-card-agreements.ts` |
 | `ENFORCEMENT_MATCHER_VERSION` | — | v3 | `magellan/registry/enforcement.ts` |
 | `FDIC_UNIVERSE_PARSER_VERSION` | — | v2 | `magellan/registry/fdic-universe.ts` |
 | `FFIEC_OVERDRAFT_PARSER_VERSION` | — | v2 | `magellan/registry/ffiec-overdraft.ts` |

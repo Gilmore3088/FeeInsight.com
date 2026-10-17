@@ -17,6 +17,14 @@ describe("isArticlePage", () => {
     expect(isArticlePage("http://www.ffcocu.org/resources/fee-schedule.html")).toBe(false);
     expect(isArticlePage(null)).toBe(false);
   });
+
+  it("is Magellan's article rule: learning and advice pages count, a bank's own learn pages do not (#1774)", () => {
+    expect(isArticlePage("https://www.td.com/us/en/personal-banking/learning/money-management/types-of-checking-accounts")).toBe(true);
+    expect(isArticlePage("https://www.axosbank.com/personal/insights/finance/digital-banking/understanding-overdraft-fees-protection-and-more")).toBe(true);
+    expect(isArticlePage("https://www.kfcu.org/resources/advice/3-apps-to-scare-up-savings")).toBe(true);
+    expect(isArticlePage("https://www.snbt.com/learn/overdraft-services")).toBe(false);
+    expect(isArticlePage("https://www.alamosastatebank.com/home/personal/education-center/service-fees")).toBe(false);
+  });
 });
 
 const rows = [
