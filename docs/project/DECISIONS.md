@@ -1124,3 +1124,9 @@ republishing) until someone asks. Planning notes: `/mnt/project-files/api-mcp/pl
 finance and the user an analyst). The payer and each active seat on their workspace (up to 5
 people) make one key each on the account page. All keys draw on the plan's one allowance of 10,000
 calls a month. A seat's key stops when the seat is removed, and every key stops when the plan ends.
+
+**The taxonomy may hold 52 types; the public site publishes only the top 50.** James, 2026-10-17
+(approving the account research split, #1398). Public pages and API listings that list fee types
+show at most 50: the top 50 by institution count, the national index's own order
+(`publicFeeTypes` in `src/lib/fee-taxonomy.ts`, applied to the shared public snapshot in
+`src/lib/public-stats.ts`). Internal, admin and Pro views keep all 52.

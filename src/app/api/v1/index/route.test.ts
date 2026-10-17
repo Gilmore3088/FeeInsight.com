@@ -5,7 +5,7 @@ import { checkRateLimitWithTier } from "@/lib/api-rate-limit";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium, canExportData } from "@/lib/access";
 import { getNationalIndex, getPeerIndex } from "@/lib/data-store";
-import { getSpotlightCategories } from "@/lib/fee-taxonomy";
+import { FEE_FAMILIES, getSpotlightCategories } from "@/lib/fee-taxonomy";
 import { GET } from "./route";
 
 vi.mock("@/lib/api-auth", () => ({
@@ -28,6 +28,11 @@ vi.mock("@/lib/access", () => ({
 vi.mock("@/lib/api-usage", () => ({
   logApiUsage: vi.fn(() => Promise.resolve()),
 }));
+
+vi.mock("@/lib/public-stats", async () => {
+  const { publicFeeTypes } = await vi.importActual<typeof import("@/lib/fee-taxonomy")>("@/lib/fee-taxonomy");
+  return { getPublicFeeTypes: vi.fn(() => Promise.resolve(publicFeeTypes([]))) };
+});
 
 vi.mock("@/lib/data-store", () => ({
   getNationalIndex: vi.fn(() => Promise.resolve([])),
@@ -174,6 +179,17 @@ describe("/api/v1/index", () => {
     expect(response.headers.get("x-ratelimit-limit")).toBeNull();
     expect(response.headers.get("x-ratelimit-reset")).toBe("2026-11-01T00:00:00.000Z");
     expect(response.headers.get("access-control-allow-origin")).toBe("*");
+  });
+
+  it("lists at most the top 50 fee types: a taxonomy type outside them is left out (James, Oct 17 2026)", async () => {
+    vi.mocked(validateApiKey).mockResolvedValue(enterpriseKey);
+    const all = Object.values(FEE_FAMILIES).flat();
+    vi.mocked(getNationalIndex).mockResolvedValue(all.map((key) => indexEntry(key)) as never);
+
+    const response = await GET(new NextRequest("https://feeinsight.com/api/v1/index"));
+    const body = await response.json();
+
+    expect(body.data.length).toBe(Math.min(50, all.length));
   });
 
   it("reports each category's unstated-audience institution count, 0 when none (#1132)", async () => {
