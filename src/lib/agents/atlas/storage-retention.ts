@@ -30,7 +30,8 @@ type SqlTag = typeof sql;
  *    exists both before and after it. The first and last copy of every run of identical rows stay,
  *    so "already tried at this version", "first decided" and "latest outcome" read the same. The
  *    discover, fetch and read stages are left whole because their readers count misses and
- *    retries. The 30-day floor clears the longest count window in those three stages (the
+ *    retries. Rows with no institution (Darwin's verdict scores) are left whole, so the twin
+ *    lookups use the (institution, stage, created_at) index. The 30-day floor clears the longest count window in those three stages (the
  *    scoreboard's 30 days); state outliers read 90 days but take the newest row per fee, which
  *    stays. Read in a rolling window of `ATTEMPT_WINDOW` ids per run.
  */
@@ -57,7 +58,7 @@ export const ATTEMPT_WINDOW = 50_000;
  * Each statement in this step stops after this long: a slow count is reported as "could not count"
  * instead of holding the scoreboard run. It holds to the end of the step's own transaction.
  */
-export const STATEMENT_TIMEOUT = "20s";
+export const STATEMENT_TIMEOUT = "10s";
 /** Most rows one trim deletes in one run. */
 export const DELETE_BATCH = 20_000;
 /** A size above this, or a day's growth above `STORAGE_ALERT_GROWTH_MB`, is flagged in the summary. */
@@ -208,6 +209,7 @@ async function trimAttemptRepeats(
     WITH win AS (
       SELECT * FROM pipeline_attempts
        WHERE id > ${afterId}
+         AND institution_id IS NOT NULL
          AND stage = ANY(${stages}::text[])
          AND created_at < NOW() - make_interval(days => ${ATTEMPT_REPEAT_DAYS}::int)
        ORDER BY id
@@ -217,7 +219,7 @@ async function trimAttemptRepeats(
            max(win.id)::bigint AS through_id,
            count(*) FILTER (WHERE
              EXISTS (SELECT 1 FROM pipeline_attempts twin
-                      WHERE twin.institution_id IS NOT DISTINCT FROM win.institution_id
+                      WHERE twin.institution_id = win.institution_id
                         AND twin.stage = win.stage
                         AND twin.created_at < win.created_at
                         AND twin.source_document_id IS NOT DISTINCT FROM win.source_document_id
@@ -229,7 +231,7 @@ async function trimAttemptRepeats(
                         AND twin.cost_microusd = win.cost_microusd
                         AND twin.detail = win.detail)
              AND EXISTS (SELECT 1 FROM pipeline_attempts twin
-                      WHERE twin.institution_id IS NOT DISTINCT FROM win.institution_id
+                      WHERE twin.institution_id = win.institution_id
                         AND twin.stage = win.stage
                         AND twin.created_at > win.created_at
                         AND twin.source_document_id IS NOT DISTINCT FROM win.source_document_id
@@ -256,10 +258,11 @@ async function trimAttemptRepeats(
        WHERE pa.id IN (
          SELECT win.id FROM pipeline_attempts win
           WHERE win.id > ${afterId} AND win.id <= ${throughId}
+            AND win.institution_id IS NOT NULL
             AND win.stage = ANY(${stages}::text[])
             AND win.created_at < NOW() - make_interval(days => ${ATTEMPT_REPEAT_DAYS}::int)
             AND EXISTS (SELECT 1 FROM pipeline_attempts twin
-                         WHERE twin.institution_id IS NOT DISTINCT FROM win.institution_id
+                         WHERE twin.institution_id = win.institution_id
                            AND twin.stage = win.stage
                            AND twin.created_at < win.created_at
                            AND twin.source_document_id IS NOT DISTINCT FROM win.source_document_id
@@ -271,7 +274,7 @@ async function trimAttemptRepeats(
                            AND twin.cost_microusd = win.cost_microusd
                            AND twin.detail = win.detail)
             AND EXISTS (SELECT 1 FROM pipeline_attempts twin
-                         WHERE twin.institution_id IS NOT DISTINCT FROM win.institution_id
+                         WHERE twin.institution_id = win.institution_id
                            AND twin.stage = win.stage
                            AND twin.created_at > win.created_at
                            AND twin.source_document_id IS NOT DISTINCT FROM win.source_document_id
@@ -335,6 +338,8 @@ export async function runStorageRetention(
     attemptWindow = repeats.window;
   } catch (error) {
     trims.push(failed("attempt_repeats", error));
+    // A failed count keeps the cursor where it was, so the next run retries the same window.
+    attemptWindow = { afterId: previous.nextAfterId, throughId: null, nextAfterId: previous.nextAfterId };
   }
 
   const priorTimeout = prior[0]?.value;

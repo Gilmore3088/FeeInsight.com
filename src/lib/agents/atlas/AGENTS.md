@@ -66,7 +66,7 @@ switch turns on by PR after James's typed yes naming it: `legacy_event_log` (ret
 rows over 60 days old), `run_events` (run events over 90 days old, keeping the newest of each kind
 per step and any with a cost) and `attempt_repeats` (attempt-log rows over 30 days old in the
 extract, verify and publish stages that have an identical twin both before and after them; first
-and last copies stay). Fees and audit records are never in scope. It deletes rows, so the pipeline
+and last copies stay; rows with no institution stay). Fees and audit records are never in scope. It deletes rows, so the pipeline
 pause holds it.
 
 ## Direct state re-search (`priority-state-research.ts`)

@@ -98,6 +98,19 @@ describe("runStorageRetention", () => {
   });
 });
 
+describe("a failed attempt-log count", () => {
+  it("keeps the cursor where it was so the next run retries the same window", async () => {
+    const { db } = mockDb({ previous: [{ database_mb: "6000", next_after_id: "7000", created_at: "2026-10-16T12:00:00Z" }] });
+    const failing = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      if (strings.join(" ").includes("WITH win AS")) return Promise.reject(new Error("canceling statement due to statement timeout"));
+      return (db as unknown as (s: TemplateStringsArray, ...v: unknown[]) => Promise<unknown>)(strings, ...values);
+    }) as unknown as typeof db;
+    const result = await runStorageRetention({ db: failing });
+    expect(result.trims.find((t) => t.policy === "attempt_repeats")?.eligible).toBeNull();
+    expect(result.attemptWindow).toEqual({ afterId: 7000, throughId: null, nextAfterId: 7000 });
+  });
+});
+
 describe("storageAlerts and summary", () => {
   it("flags a size over 9,000 MB", () => {
     expect(storageAlerts(9_500, 10)).toEqual(["database is 9,500 MB, above 9,000 MB"]);

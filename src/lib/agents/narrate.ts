@@ -257,11 +257,15 @@ function narrateFinished(
     case "atlas-storage-retention": {
       const size = detail.database_mb == null ? "could not read the database size" : `measured the database at ${count(n(detail, "database_mb"), "MB", "MB")}`;
       const trims = Array.isArray(detail.trims) ? (detail.trims as Detail[]) : [];
+      const uncounted = trims.filter((t) => t.eligible == null).length;
+      const failedCount = uncounted > 0 ? ` ${count(uncounted, "trim")} could not count.` : "";
       const deleted = trims.reduce((sum, t) => sum + n(t, "deleted"), 0);
       const eligible = trims.reduce((sum, t) => sum + n(t, "eligible"), 0);
       return deleted > 0
-        ? `Atlas ${size} and trimmed ${count(deleted, "row")} of log history.`
-        : `Atlas ${size}; ${count(eligible, "row")} of log history could be trimmed (trims switched off).`;
+        ? `Atlas ${size} and trimmed ${count(deleted, "row")} of log history.${failedCount}`
+        : uncounted === trims.length
+          ? `Atlas ${size}; the log trims could not count this run.`
+          : `Atlas ${size}; ${count(eligible, "row")} of log history could be trimmed (trims switched off).${failedCount}`;
     }
     case "schedule-check": {
       const missed = n(detail, "missed") + n(detail, "failed");
