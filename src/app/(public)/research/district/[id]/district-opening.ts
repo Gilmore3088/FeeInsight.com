@@ -81,7 +81,8 @@ export function strongestFee(fees: OpeningFee[], minInstitutions: number): Openi
 }
 
 /**
- * The district's strongest supported difference as one sentence (see strongestFee). Says so
+ * The district's strongest supported difference as one short line, "Outgoing domestic wire: $20
+ * median, versus $25 nationally." (see strongestFee). Says so
  * once when no fee differs; null when no fee has enough institutions to compare.
  */
 export function strongestDifference(fees: OpeningFee[], minInstitutions: number): string | null {
@@ -93,9 +94,8 @@ export function strongestDifference(fees: OpeningFee[], minInstitutions: number)
       ? `The ${sentenceName(solid[0].key)} median is within $1 or 1% of the national median.`
       : `${solid.length === 2 ? "Both" : `All ${solid.length}`} fees with enough data are within $1 or 1% of the national median.`;
   }
-  const pct = Math.round((Math.abs(nationalGap(widest)) / widest.us!.median) * 100);
-  const side = nationalGap(widest) > 0 ? "above" : "below";
-  return `The ${sentenceName(widest.key)} median, ${formatFeeAmount(widest.median)}, is ${pct}% ${side} the national median of ${formatFeeAmount(widest.us!.median)}.`;
+  const name = sentenceName(widest.key);
+  return `${name.charAt(0).toUpperCase()}${name.slice(1)}: ${formatFeeAmount(widest.median)} median, versus ${formatFeeAmount(widest.us!.median)} nationally.`;
 }
 
 /**

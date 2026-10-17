@@ -57,7 +57,7 @@ describe("strongestDifference (the hub's card line)", () => {
     const o = districtOpening(indexes([entry("overdraft", 30.1, 50), entry("nsf", 30, 40), wire]), national, false, "Atlanta district", {
       lead: "strongest",
     });
-    expect(o.statement).toBe("The monthly maintenance median, $13, is 30% above the national median of $10.");
+    expect(o.statement).toBe("Monthly maintenance: $13 median, versus $10 nationally.");
   });
 
   it("leaves the district page's opening unchanged without the option", () => {
@@ -78,8 +78,8 @@ describe("strongestDifference (the hub's card line)", () => {
       { key: "atm_non_network", median: 2, institutions: 50, us: { median: 3 } },
       { key: "wire_domestic_outgoing", median: 30, institutions: 50, us: { median: 25 } },
     ];
-    expect(strongestDifference(fees, 10)).toBe("The outgoing domestic wire median, $30, is 20% above the national median of $25.");
-    expect(strongestDifference([{ ...fees[0], median: 1.5 }], 10)).toBe("The out-of-network ATM median, $1.50, is 50% below the national median of $3.");
+    expect(strongestDifference(fees, 10)).toBe("Outgoing domestic wire: $30 median, versus $25 nationally.");
+    expect(strongestDifference([{ ...fees[0], median: 1.5 }], 10)).toBe("Out-of-network ATM: $1.50 median, versus $3 nationally.");
     expect(strongestDifference([fees[0]], 10)).toBe(
       "The out-of-network ATM median is within $1 or 1% of the national median.",
     );

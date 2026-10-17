@@ -8,7 +8,7 @@ import { HubSection } from "./district/[id]/district-hub";
 import { ShowMore } from "./show-more";
 import { institutionValues, money, sentenceName, shareLabel } from "./findings";
 import { BENCHMARK_KEYS } from "@/lib/research-report/benchmark-keys";
-import { UnstatedAudienceFootnote, UnstatedAudienceMark, medianHasUnstatedAudience } from "@/components/unstated-audience";
+import { medianHasUnstatedAudience } from "@/components/unstated-audience";
 
 export { BENCHMARK_KEYS };
 
@@ -45,7 +45,6 @@ function BenchmarkRow({ fee }: { fee: FeeCategorySummary }) {
           <span className="text-[14px] font-semibold text-ink">{name}</span>
           <span className="text-right text-[15px] font-semibold tabular-nums text-ink">
             {formatAmount(median)}
-            <UnstatedAudienceMark show={medianHasUnstatedAudience(fee)} />
             <span className="sr-only"> median</span>
           </span>
           <span className="col-span-2 text-[12px] text-ink-muted sm:col-span-1 sm:tabular-nums sm:text-right sm:text-[13px] sm:text-ink-soft">
@@ -140,7 +139,6 @@ export function BenchmarkBoard({ benchmarks, asOf }: { benchmarks: FeeCategorySu
         <>
           {PRODUCT_NAME}, verified published fee schedules, one value per institution; a fee is shown only when at least {MIN_INSTITUTIONS}{" "}
           institutions publish it.{asOf ? ` Data as of ${asOf}.` : ""}
-          <UnstatedAudienceFootnote show={benchmarks.some(medianHasUnstatedAudience)} className="mt-2 sm:mx-0 sm:text-left" />
         </>
       }
     >
@@ -176,6 +174,15 @@ export function BenchmarkBoard({ benchmarks, asOf }: { benchmarks: FeeCategorySu
                 median and the middle 50% (25th to 75th percentile) are taken across those values. Each fee&apos;s row holds its
                 range, banks and credit unions side by side, and the share of institutions that publish only $0.
               </p>
+              {benchmarks.some(medianHasUnstatedAudience) && (
+                <p id="benchmarks-audience" className="mt-3 max-w-3xl text-[13px] leading-relaxed text-ink-muted sm:mx-0 sm:text-left">
+                  Some schedules do not say whether a fee is for personal or business accounts. Those fees are counted as
+                  personal; fees for business or commercial accounts may differ.{" "}
+                  <Link href="/methodology#audience" className="font-medium text-ink underline underline-offset-2 hover:text-ink-soft">
+                    How audience is decided
+                  </Link>
+                </p>
+              )}
             </details>
             <Link href="/fees" className="inline-flex min-h-11 items-center text-[13px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
               All fee categories &rarr;

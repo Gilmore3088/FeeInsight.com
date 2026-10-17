@@ -67,7 +67,7 @@ describe("DistrictsExhibit", () => {
     expect(select.closest("form")?.getAttribute("method")).toBe("get");
     expect(screen.getByText("Overdraft median against the national median, by Federal Reserve district")).toBeTruthy();
     expect(screen.getByText("Overdraft finding line.")).toBeTruthy();
-    expect(screen.getAllByText("· 9% above U.S.").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("· above U.S.").length).toBeGreaterThan(0);
     fireEvent.change(select, { target: { value: "nsf" } });
     expect(screen.getByText("NSF median against the national median, by Federal Reserve district")).toBeTruthy();
     expect(screen.getByText("NSF finding line.")).toBeTruthy();

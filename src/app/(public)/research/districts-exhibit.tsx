@@ -304,9 +304,8 @@ export function DistrictsExhibit({
 /** The selected fee in one district: its median and the national median, when it can be compared. */
 function FeeLine({ fee, cell }: { fee: MapFee; cell: DistrictFeeCell | undefined }) {
   if (!cell?.side || cell.median == null || cell.us == null || cell.us <= 0) return null;
-  const pct = Math.round((Math.abs(cell.median - cell.us) / cell.us) * 100);
   // Phones have no map, so the side is spelled out there.
-  const side = cell.side === "same" ? "about the same as U.S." : `${pct}% ${cell.side} U.S.`;
+  const side = cell.side === "same" ? "about the same as U.S." : `${cell.side} U.S.`;
   return (
     <span className="mt-1 block text-[12px] tabular-nums text-ink">
       {fee.name} median {formatFeeAmount(cell.median)}
