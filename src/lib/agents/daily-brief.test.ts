@@ -31,8 +31,8 @@ describe("buildDailyBrief", () => {
     const goal = {
       readAt: "2026-10-03T12:00:00Z",
       windowDays: 7,
-      coverageCells: { query: "goal.coverage_cells", readyCells: 64, totalCells: 161, institutionsShort: 524, bySize: [] },
-      liveInstitutions: { query: "goal.live_institutions", live: 3858, addedThisWeek: 12 },
+      coverageCells: { query: "goal.coverage_cells", readyCells: 64, totalCells: 161, institutionsShort: 524, institutionsShortWeekAgo: 480, bySize: [] },
+      liveInstitutions: { query: "goal.live_institutions", live: 3858, addedThisWeek: 12, droppedThisWeek: 20 },
       accuracy: null,
       wrongAfterPublish: { query: "goal.wrong_after_publish_7d", published: 1000, wrong: 20, rate: 0.02, housekeeping: 300, topErrors: [] },
       spend: { query: "goal.provider_spend_7d", weekUsd: 60, costPerNewInstitutionUsd: 5, byAgent: [] },
@@ -46,8 +46,8 @@ describe("buildDailyBrief", () => {
     });
     const text = brief.lines.join("\n");
     expect(text).not.toContain("documents downloaded");
-    expect(text).toContain("Coverage: 64 of 161 state and size groups under $10B meet the target; 524 more covered institutions would close the gap.");
-    expect(text).toContain("Institutions with live fees: 3,858, 12 added in the last 7 days.");
+    expect(text).toContain("Coverage: 64 of 161 state and size groups under $10B meet the target; 524 more covered institutions would close the gap (480 7 days ago).");
+    expect(text).toContain("Institutions with live fees: 3,858, 12 added in the last 7 days and 20 dropped (net -8).");
     expect(text).toContain("Accuracy: could not be read today.");
     expect(text).toContain("Wrong after publish: 2.0% (20 of 1,000");
     expect(text).toContain("$5.00 per institution added");
