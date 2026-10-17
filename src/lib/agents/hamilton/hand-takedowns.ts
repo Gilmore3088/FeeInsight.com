@@ -303,6 +303,50 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
   { feePublishedId: 97904, institutionId: 850, canonicalFeeKey: "od_protection_transfer", amount: 32, feeName: "overdrawn. Features of Overdraft Transfer include",
     reason: "source_mismatch: #1549", issue: 1549, kind: "wrong_category",
     evidence: "Pinnacle Bank Wyoming (doc 22705): the $32 is the next column's \"$32 per item NSF Paid Item Fee/Returned Item Fee for items paid over $10\" (live as 98267); the transfer is \"$2 fee for each Overdraft Transfer\" (live as 97975)." },
+  // #1436 (read-only, Oct 17; James's Oct 16 rule for fewer than 20 wrong fees): 1st Community FCU's
+  // waiver sentence, published as a $0 monthly fee. It is the waived price of the ePLUS Checking
+  // fee, which is live and right as 95264, so it comes down only while 95264 is.
+  { feePublishedId: 58414, institutionId: 5314, canonicalFeeKey: "monthly_maintenance", amount: 0,
+    feeName: "or take advantage of both options to reduce your monthly fee to",
+    reason: "source_mismatch: #1436", issue: 1436, kind: "not_a_fee",
+    requiresLive: { feePublishedId: 95264, amount: 7.95, feeName: "ePLUS Checking Monthly service charge" },
+    evidence: "1st Community FCU fee schedule (doc 16561, text 11680): \"ePLUS Checking …….. $7.95 per month or reduce your fee by $4.00 by receiving eStatements and/or reduce your fee $3.95 for having a minimum 15 1CFCU debit card transactions clear your account per month or take advantage of both options to reduce your monthly fee to $0.00\": the $0.00 is the fee with both waivers, not a fee; the price is 95264 ($7.95)." },
+  // #1389 (read-only, Oct 17): HawaiiUSA FCU's "Minimum Balance" $25 is the Savings Safari Club and
+  // Jump Start Student accounts' balance requirement, printed in the same column as the other
+  // accounts' requirements; the $25 beside it is the next column's early closure fee.
+  { feePublishedId: 106021, institutionId: 4589, canonicalFeeKey: "minimum_balance", amount: 25, feeName: "Minimum Balance",
+    reason: "source_mismatch: #1389", issue: 1389, kind: "not_a_fee",
+    evidence: "HawaiiUSA FCU schedule of fees (doc 2049, text 3445): \"Savings Safari Club & Jump Start Student Accounts | Early Closure Fee\" / \"Minimum Balance ........ $25.00 | Within 90 days ........ $25.00\", the same layout as \"Basic Savings Minimum Balance ........ $ 5.00\" and \"Secondary Savings Minimum Balance ........ $25.00\": a balance the account must keep, not a charge for falling below it." },
+  // #1735 (read-only, Oct 17; under James's Oct 16 rule for fewer than 20 wrong fees): Gate City's
+  // BankOn $0 read as its overdraft price, and eight misreads from the Oct 17 300-fee blind read,
+  // each re-read against its own stored text. Gate City's $0 NSF (33701) matches its text and stays.
+  { feePublishedId: 33705, institutionId: 349, canonicalFeeKey: "overdraft", amount: 0, feeName: "BankOn Checking Account Overdraft Fee for items",
+    reason: "source_mismatch: #1735", issue: 1735, kind: "wrong_amount",
+    evidence: "Gate City Bank (doc 13087, text 503): \"Overdraft fee for items paid resulting in a negative balance. Maximum of 4 fees per calendar day. $32 per item\"; the $0 is the BankOn Checking Account's own line (\"BankOn Checking Account Overdraft Fee for items $0 per item\")." },
+  { feePublishedId: 149143, institutionId: 6720, canonicalFeeKey: "other_lending_fee", amount: 5, feeName: "Loan Payments by Phone",
+    reason: "source_mismatch: #1735", issue: 1735, kind: "wrong_amount",
+    evidence: "Altra FCU (doc 23746, text 20919), two columns: \"*Loan Payments by Phone | • $5 – Incoming transfer\" / \"• $10 – payments posted by Altra Member Contact Center representatives\"; the $5 is the next column's incoming wire." },
+  { feePublishedId: 149806, institutionId: 4628, canonicalFeeKey: "money_order", amount: 5, feeName: "Par Value: Par value of one share",
+    reason: "source_mismatch: #1735", issue: 1735, kind: "not_a_fee",
+    evidence: "Primeway FCU (doc 36220, text 34365): \"Money Orders $2.00 per money order Par Value: Par value of one share is $5.00\"; the $5 is a membership share's par value, not a fee (the money order is live as 149805, $2)." },
+  { feePublishedId: 137241, institutionId: 7438, canonicalFeeKey: "atm_non_network", amount: 5, feeName: "Ten (10) free nationwide ATM withdrawals per year",
+    reason: "source_mismatch: #1735", issue: 1735, kind: "not_a_fee",
+    evidence: "Dupont Community FCU (doc 29948, text 27528): \"Ten (10) free nationwide ATM withdrawals per year ($5 maximum per ATM refund)\"; $5 is a refund cap, not a fee." },
+  { feePublishedId: 68335, institutionId: 199, canonicalFeeKey: "cash_advance", amount: 10, feeName: "3% (of the amount of each cash advance, minimum fee",
+    reason: "source_mismatch: #1735", issue: 1735, kind: "wrong_amount",
+    evidence: "BankPlus (doc 16197, text 10640): \"3% (of the amount of each cash advance, minimum fee $10\"; the fee is 3%, and $10 is only its floor." },
+  { feePublishedId: 79402, institutionId: 1842, canonicalFeeKey: "account_research", amount: 5, feeName: "MMDA Excess Transaction Fee (per item charge)",
+    reason: "source_mismatch: #1735", issue: 1735, kind: "wrong_amount",
+    evidence: "Southern Bank of Tennessee (doc 14670, text 2368), before and after columns: \"MMDA Excess Transaction Fee (per item charge) $ 5.00 | $ 10.00 (1)\"; $5 is the old price." },
+  { feePublishedId: 74149, institutionId: 576, canonicalFeeKey: "safe_deposit_box", amount: 25, feeName: "Safe Deposit Box Drilling Fee: Cost of Drilling +",
+    reason: "source_mismatch: #1735", issue: 1735, kind: "wrong_amount",
+    evidence: "Fidelity Bank & Trust (doc 20585, text 16470): \"Safe Deposit Box Drilling Fee: Cost of Drilling + $25.00\"; the fee is the drilling cost plus $25, not $25." },
+  { feePublishedId: 49817, institutionId: 6110, canonicalFeeKey: "cashiers_check", amount: 5, feeName: "UT bank check (after 90 days)",
+    reason: "source_mismatch: #1735", issue: 1735, kind: "wrong_category",
+    evidence: "University of Toledo FCU (doc 28493, text 25892): \"Stop Payment Fee\" / \"$5.00 UT bank check (after 90 days)\" / \"$5.00 own draft or ACH\"; a stop payment, live already as stop_payment 93031 ($5). The bank check itself is \"UT Bank Check – $0.75 each\"." },
+  { feePublishedId: 125584, institutionId: 5008, canonicalFeeKey: "atm_non_network", amount: 3.5, feeName: "ATM Surcharge Fee on WWFCU machines (non-credit union cards only)",
+    reason: "source_mismatch: #1735", issue: 1735, kind: "wrong_category",
+    evidence: "Wayne-Westland FCU (doc 34932, text 33030): \"ATM Surcharge Fee on WWFCU machines (non-credit union cards only) | $3.50\", charged to non-members at the CU's own ATMs, which has no home among the 50 (as 131129, #1196); the members' foreign ATM fee is \"Withdrawal at Foreign ATM Machine | $3.50\"." },
 ];
 
 export interface LiveTakedownRow {
