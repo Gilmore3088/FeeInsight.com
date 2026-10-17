@@ -409,7 +409,9 @@ const RESTORE_REFILES: ReadonlyMap<string, RegExp> = new Map([
   // v69 (#1753): a replaced, lost or stolen card, and an ATM dispute or a copy of a card sale, filed
   // as a non-network ATM fee (5/5 on source, Oct 17).
   ["atm_non_network>card_replacement", /replac|\blost\b|\bstolen\b/i],
-  ["atm_non_network>account_research", /\bdisput|\bcop(?:y|ies) of\b/i],
+  // v71 (#1773): verifying an ATM transaction (96092, "Verification of ATM Transaction (Plus fee
+  // charged by ATM owner/operator) | $3 each", Arrowhead, doc 21667) is research.
+  ["atm_non_network>account_research", /\bdisput|\bcop(?:y|ies) of\b|\bverification of\b/i],
   // v70 (Oct 17, each on its bank's stored line): an ATM-named bill payer service (147703, "e-Pay
   // (Bill Payer Service) without Checking and Debit/ATM Card | $6.95 per month") and a card charge on
   // early account closure (117628, "Account Closure ATM/Debit Card - if account closed within 12

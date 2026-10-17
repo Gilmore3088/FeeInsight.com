@@ -1288,7 +1288,7 @@ async function executeAgenticStep(
         institutionId,
       });
       // #1439: a live row that repeats a line of a newer copy of its page stored under another
-      // address ("?print=1", "www.", a mirror). Shadow until PAGE_COPY_COLLAPSE_LIVE is on.
+      // address ("?print=1", "www.", a mirror). Closes them while PAGE_COPY_COLLAPSE_LIVE is on (James, Oct 17).
       const pageCopyCollapse = await collapsePageCopies(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
@@ -1898,7 +1898,7 @@ async function executeAgenticStep(
           category_guard_failing: categoryGuard.failingFees,
           category_guard_live_refiled: categoryGuard.liveRefiledFees,
           category_guard_version: categoryGuard.guardVersion,
-          // v70: live card-product misfiles held live while CARD_PRODUCT_TAKEDOWN_LIVE is off.
+          // v70: live card-product misfiles held live while CARD_PRODUCT_TAKEDOWN_LIVE is off (0 while on).
           category_guard_card_product_pending: categoryGuard.cardProductPending,
           category_guard_card_product_samples: categoryGuard.cardProductPendingSamples.slice(0, 10),
           category_guard_samples: categoryGuard.failures.slice(0, 10).map((failure) => ({

@@ -3,9 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/data-store/fee-cache", () => ({ invalidatePublicReadCache: vi.fn() }));
 
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
+import { CARD_PRODUCT_TAKEDOWN_LIVE } from "@/lib/fee-category-guard";
 
 import {
-  applyHandAudienceFixes, applyHandTakedowns, HAND_AUDIENCE_FIXES, HAND_TAKEDOWN_BATCH_LIMIT, HAND_TAKEDOWNS, handAudienceEvidence,
+  applyHandAudienceFixes, applyHandTakedowns, ATM_SURCHARGE_TAKEDOWN_LIVE, atmSurchargeTakedowns, HAND_AUDIENCE_FIXES, HAND_TAKEDOWN_BATCH_LIMIT, HAND_TAKEDOWNS, handAudienceEvidence,
   handTakedownBatchSizes, planHandAudienceFixes, planHandTakedowns, type LiveAudienceRow, type LiveTakedownRow,
 } from "./hand-takedowns";
 
@@ -176,9 +177,10 @@ const LIVE: LiveTakedownRow[] = [
   { fee_published_id: 98982, lineage_ref: 112573, institution_id: 1559, canonical_fee_key: "overdraft", fee_name: "Overdraft per item (Consumer limit of 5 per day)", amount: "30.00" },
   { fee_published_id: 101170, lineage_ref: 115326, institution_id: 27, canonical_fee_key: "atm_non_network", fee_name: "Regions ATM: Withdrawal", amount: "5.00" },
   { fee_published_id: 81957, lineage_ref: 91573, institution_id: 27, canonical_fee_key: "card_foreign_txn", fee_name: "International ATM Transaction", amount: "5.00" },
+  { fee_published_id: 122350, lineage_ref: 142957, institution_id: 4956, canonical_fee_key: "dormant_account", fee_name: "Inactivity Fee", amount: "5.00" },
 ];
 const CONDITIONAL_ZERO = [43512, 54014, 61335, 68893, 70121, 73737, 77121, 77122, 77618, 84553, 87079, 87461, 88213, 91505, 120559];
-const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689, 138828, 138832, 138833, 138839, 138827, 138834, 138841, 148352, 138831, 138830, 138848, 138849, 138850, 138851, 42961, 86536, 66721, 66722, 83125, 97335, 97904, 58414, 106021, 33705, 149143, 149806, 137241, 68335, 79402, 74149, 49817, 125584, 109893, 130622, 147193, 133860, 119352, 143826, 97434, 49606, 148620, 107546, 81215, 20420, 102296, 147811, 125359, 146800, 74560, 125809, 102758, 13031, 11722, 11427, 141821, 232, 101170];
+const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689, 138828, 138832, 138833, 138839, 138827, 138834, 138841, 148352, 138831, 138830, 138848, 138849, 138850, 138851, 42961, 86536, 66721, 66722, 83125, 97335, 97904, 58414, 106021, 33705, 149143, 149806, 137241, 68335, 79402, 74149, 49817, 125584, 109893, 130622, 147193, 133860, 119352, 143826, 97434, 49606, 148620, 107546, 81215, 20420, 102296, 147811, 125359, 146800, 74560, 125809, 102758, 13031, 11722, 11427, 141821, 232, 101170, 122350];
 
 function fakeDb(live: LiveTakedownRow[], failOn?: string) {
   const writes: Array<{ text: string; values: unknown[] }> = [];
@@ -279,7 +281,10 @@ describe("hand takedowns (James, Oct 16)", () => {
       [141821, "source_mismatch: #1755"],
       [232, "source_mismatch: #1755"],
       [101170, "duplicate of #81957 (#1753)"],
+      // #1765: listed while CARD_PRODUCT_TAKEDOWN_LIVE is on (James, Oct 17).
+      [122350, "source_mismatch: #1765"],
     ]);
+    expect(CARD_PRODUCT_TAKEDOWN_LIVE).toBe(true);
     // A wrong read names its issue; a second read of one printed fee names the live copy it repeats too.
     expect(HAND_TAKEDOWNS.every((entry) => entry.evidence.length > 0 && (entry.kind === "duplicate"
       ? /^duplicate of #\d+ \(#\d+\)$/.test(entry.reason) && entry.reason.endsWith(`(#${entry.issue})`)
@@ -376,6 +381,7 @@ describe("hand takedowns (James, Oct 16)", () => {
         { feePublishedId: 141821, feeVerifiedId: 168381, reason: "source_mismatch: #1755" },
         { feePublishedId: 232, feeVerifiedId: 185, reason: "source_mismatch: #1755" },
         { feePublishedId: 101170, feeVerifiedId: 115326, reason: "duplicate of #81957 (#1753)" },
+        { feePublishedId: 122350, feeVerifiedId: 142957, reason: "source_mismatch: #1765" },
       ],
       skipped: [],
     });
@@ -650,5 +656,36 @@ describe("#1755: one printed line live under two frequencies or categories (Oct 
     // Without their twins only the four rows whose line prices neither copy come down (MBT Bank, Lakewood FCU).
     expect(planHandTakedowns(withoutTwins, batch).takenDown.map((item) => item.feePublishedId)).toEqual([125359, 146800, 74560, 125809]);
     expect(planHandTakedowns(LIVE, batch).takenDown.map((item) => item.feePublishedId)).toEqual(batch.map((entry) => entry.feePublishedId));
+  });
+});
+
+describe("#1772, #1773: non-network ATM takedowns wait on ATM_SURCHARGE_TAKEDOWN_LIVE", () => {
+  it("lists none while the switch is off", () => {
+    expect(ATM_SURCHARGE_TAKEDOWN_LIVE).toBe(false);
+    expect(atmSurchargeTakedowns()).toEqual([]);
+    expect(HAND_TAKEDOWNS.some((entry) => entry.issue === 1772 || entry.issue === 1773)).toBe(false);
+  });
+
+  it("lists 28 rows when on, 13 non-customer surcharges and 15 that are not the fee, each batch under the limit", () => {
+    const entries = atmSurchargeTakedowns(true);
+    expect(entries).toHaveLength(28);
+    expect(entries.filter((entry) => entry.issue === 1772)).toHaveLength(13);
+    expect(entries.filter((entry) => entry.issue === 1773)).toHaveLength(15);
+    expect(new Set(entries.map((entry) => entry.feePublishedId)).size).toBe(28);
+    expect(entries.every((entry) => entry.canonicalFeeKey === "atm_non_network" && entry.evidence.length > 0 &&
+      entry.reason === `source_mismatch: #${entry.issue}`)).toBe(true);
+    expect(handTakedownBatchSizes(entries).every((batch) => batch.entries <= HAND_TAKEDOWN_BATCH_LIMIT)).toBe(true);
+    // None is on the standing list too.
+    const listed = new Set(HAND_TAKEDOWNS.map((entry) => entry.feePublishedId));
+    expect(entries.some((entry) => listed.has(entry.feePublishedId))).toBe(false);
+  });
+
+  it("takes an entry down only while it reads as listed", () => {
+    const [entry] = atmSurchargeTakedowns(true);
+    const row: LiveTakedownRow = { fee_published_id: entry.feePublishedId, lineage_ref: 1, institution_id: entry.institutionId,
+      canonical_fee_key: "atm_non_network", fee_name: entry.feeName, amount: String(entry.amount) };
+    expect(planHandTakedowns([row], [entry]).takenDown.map((planned) => planned.feePublishedId)).toEqual([entry.feePublishedId]);
+    expect(planHandTakedowns([{ ...row, amount: "9.99" }], [entry]).skipped)
+      .toEqual([{ feePublishedId: entry.feePublishedId, reason: "changed since listed" }]);
   });
 });

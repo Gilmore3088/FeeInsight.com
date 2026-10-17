@@ -54,6 +54,69 @@ export interface HandTakedown {
   requiresLive?: { feePublishedId: number; amount: number; feeName: string };
 }
 
+/**
+ * #1772, #1773 (read-only, Oct 17): live non-network ATM fees that guard v69 to v71 cannot read by
+ * name, each confirmed against its bank's stored text: 13 surcharges non-customers pay at the bank's
+ * own ATMs whose name says only "ATM Surcharge" (the heading or line names the payer), and 15 lines
+ * that are not the fee (an in-network or own-ATM $0, a refund cap, a waived price, a figure from the
+ * next column). 28 in all, so they wait on James (fewer than 20 ride; DECISIONS.md, Oct 16): off,
+ * none of them is listed and none comes down. Turning it on takes all 28 down on the next publish.
+ */
+export const ATM_SURCHARGE_TAKEDOWN_LIVE = false;
+
+type AtmRow = [feePublishedId: number, institutionId: number, amount: number, feeName: string, evidence: string];
+
+/** #1772: a surcharge non-customers pay at the institution's own ATMs; none of the 50 types holds it. */
+const ATM_NON_CUSTOMER_ROWS: readonly AtmRow[] = [
+  [34087, 7083, 3.5, "CCU ATM Surcharge", "CCU (doc 2793): \"CCU ATM Surcharge | $3.50 Non-CCU card used at CCU ATM\"; CCU's own fee at others' ATMs is \"Foreign ATM | $2.00\"."],
+  [35195, 5252, 3, "RBFCU ATM Surcharge for non", "RBFCU (doc 6177): \"RBFCU ATM Surcharge for non-RBFCU card $3 each\"; its members' non-RBFCU ATM fee is \"$1 each\"."],
+  [41665, 4638, 3, "ATM Surcharge", "Buffalo Metropolitan FCU (doc 2865): \"ATM Surcharge (non member – non cu card) | $3.00 transaction\"."],
+  [54783, 7250, 3.5, "ATM Surcharge Fee", "Kalsee CU (doc 16847): under \"Non-Member Fees\": \"ATM Surcharge Fee | $3.50\"."],
+  [65803, 4924, 3, "ATM Surcharge", "Doc 19446: under \"Non-Member fees\": \"ATM Surcharge | $3.00\"."],
+  [75781, 5100, 3, "ATM Surcharge Fee", "Doc 28876: \"ATM Surcharge Fee | $3.00/transaction for Non-Member/Foreign Card\"; members' out-of-network fee is $2.00 after 15 free."],
+  [87948, 5319, 3, "ATM Surcharge", "McKesson & Healthcare Providers FCU (doc 36782): under \"NON-MEMBER FEES\": \"ATM Surcharge | $3.00 each\"."],
+  [100435, 8593, 3.75, "ATM Surcharge", "Doc 14907: \"ATM Surcharge (non-members $3.75) | Fee Amount N/A\"."],
+  [106205, 7165, 4, "ATM Usage Surcharge", "Doc 16114: under \"NON-MEMBER SERVICES\": \"ATM Usage Surcharge $ 4.00 per use\"."],
+  [115027, 4493, 4, "ATM-surcharge", "South Carolina Federal (doc 25757): \"ATM-surcharge | $4.00 per transaction | For using foreign cards in South Carolina Federal machines.\""],
+  [121089, 7118, 6, "ATM Surcharge Fee", "Doc 36880: under \"Non-Member Fees\": \"ATM Surcharge Fee | $6.00 per occurrence\"."],
+  [129420, 8639, 3, "ATM Surcharge Fee", "Marshland CU (doc 27614): \"ATM Surcharge Fee ... $3.00 per item if non-Marshland card used at Marshland ATM\"; members pay \"$1.00 per item if out-of-network ATM\"."],
+  [140313, 2653, 3.5, "ATM Surcharge", "MSB (doc 31385): under \"Non Customer Charges:\": \"ATM Surcharge $3.50 non-customer withdrawals at our ATM's\"."],
+];
+
+/** #1773: not the bank's fee for using another network's ATM. */
+const ATM_NOT_THE_FEE_ROWS: readonly AtmRow[] = [
+  [12926, 7013, 0, "ATM Transactions at Surcharge FREE ATMs", "NYEFCU (doc 18171): \"At Surcharge FREE ATMs No Charge\", the in-network line; at non-NYEFCU ATMs the fee \"Varies per ATM\"."],
+  [21409, 4594, 0, "Non-Surcharge ATM Withdrawal", "HOCU (doc 12722): \"Non-Surcharge ATM Withdrawal – HOCU, FHB, CO-OP Network ATM ... No Charge\", the in-network line."],
+  [32372, 7159, 0, "ATM Withdrawals – CU Owned and approved Non-Surcharge Networks 10", "Doc 7869: \"ATM Withdrawals – CU Owned and approved Non-Surcharge Networks 10 FREE withdrawals per Month\"; the foreign ATM fee is its own line (\"$ .50 each\")."],
+  [45098, 5279, 0, "Surcharge – SurF ATM Withdrawals", "Doc 16354: \"Surcharge – SurF ATM Withdrawals | No Fee\", the in-network line; foreign ATM withdrawals are \"$1.50 per transaction\" after 3 free."],
+  [46327, 1172, 10, "ATM surcharges (other bank ATM fee)", "StonehamBank (doc 15736): \"ATM surcharges (other bank ATM fee) | $10 cycle credit\", a refund of up to $10 a cycle, not a fee."],
+  [46570, 7682, 5, "counted as one of your ATM withdrawal transactions. There is a", "First Class Community CU (doc 16438): \"There is a $5.00 per card replacement fee for lost, stolen or replacement Debit cards\"; a sentence fragment."],
+  [46928, 5559, 1, "(FEE WAIVED) network fee per transaction; surcharge assessed by ATM Owner, at Owners discretion", "Tyndall FCU (doc 13909): \"Non-proprietary ATMs: $1.00 (FEE WAIVED) network fee per transaction\"; not charged."],
+  [48653, 8634, 0, "Proprietary ATM Surcharge .", "Doc 2077: \"Proprietary ATM Surcharge ... No Charge\", the credit union's own ATMs."],
+  [75617, 7343, 0, "Four (4) ATM withdrawals per month at surcharge-free ATMs", "Kemba (doc 36084): a free allowance; the fee is \"Each additional ATM withdrawal per month ... $3.00\"."],
+  [81293, 5102, 0, "Surcharge Free ATMs CULIANCE ATM Network", "Doc 15689: \"Surcharge Free ATMs CULIANCE ATM Network | Free\", the in-network line."],
+  [85790, 4451, 0, "Transaction on CO-OP Network ATM Surcharge", "Doc 19900: \"Transaction on CO-OP Network ATM Surcharge FREE\", in-network; \"Transaction on Non CO-OP Network ATM $2.00\" is its own line."],
+  [94863, 5254, 5, "ATM surcharge fees up to a maximum", "Teachers FCU (doc 16524): \"Platinum Members will receive a rebate of foreign (non-Teachers) ATM surcharge fees up to a maximum of $5 per calendar month\": a rebate."],
+  [96582, 6322, 0, "CU24 Surcharge-Free ATM Network", "SkyPoint (doc 22469): \"CU24 Surcharge-Free ATM Network | FREE\", in-network; \"All other ATMs* | $2\" is its own line."],
+  [106202, 8634, 3, "Proprietary ATM Surcharge . No Charge", "Doc 2077: \"Proprietary ATM Surcharge ... No Charge | Money Order Fee ... $3.00\"; the $3.00 is the next column's money order."],
+  [150415, 4489, 0, "ACFCU ATM and Participating Allpoint ATM Surcharge Fee", "ACFCU (doc 35546): \"ACFCU ATM and Participating Allpoint ATM Surcharge Fee | Free\", in-network; the non-network fee is $1.00 (98507)."],
+];
+
+const atmTakedown = (issue: number, kind: "wrong_category" | "not_a_fee") =>
+  ([feePublishedId, institutionId, amount, feeName, evidence]: AtmRow): HandTakedown => ({
+    feePublishedId, institutionId, canonicalFeeKey: "atm_non_network", amount, feeName,
+    reason: `source_mismatch: #${issue}`, issue, kind, evidence,
+  });
+
+/** The #1772 and #1773 entries, listed only while `ATM_SURCHARGE_TAKEDOWN_LIVE` is on (`live` for tests). */
+export function atmSurchargeTakedowns(live: boolean = ATM_SURCHARGE_TAKEDOWN_LIVE): HandTakedown[] {
+  if (!live) return [];
+  return [
+    ...ATM_NON_CUSTOMER_ROWS.map(atmTakedown(1772, "wrong_category")),
+    ...ATM_NOT_THE_FEE_ROWS.map(atmTakedown(1773, "not_a_fee")),
+  ];
+}
+
 export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
   // #1496 (James approved, Oct 16): Barksdale FCU's two-column fee schedule (text 17003) read line by line.
   { feePublishedId: 80423, institutionId: 5433, canonicalFeeKey: "document_reproduction", amount: 15, feeName: "Fax (Local)",
@@ -458,12 +521,14 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
     evidence: "Regions (doc 23188, text 20258): the $5.00 \"Withdrawal\" sits under \"International ATM:\" (\"International ATM: | ... Withdrawal ... $5.00 (Applies to all withdrawal requests, approved or declined)\"), not under \"Regions ATM:\"; the same $5 international ATM fee is live as card_foreign_txn 81957. Regions' non-network withdrawal is $3 (81982)." },
   // #1765 (read-only, Oct 17): Navy Federal's Visa gift card inactivity fee, filed as a dormant
   // account. Its name says only "Inactivity Fee", so the card-product rule cannot read it; it comes
-  // down with the other 61 only once James turns `CARD_PRODUCT_TAKEDOWN_LIVE` on.
+  // down with the other 61 under `CARD_PRODUCT_TAKEDOWN_LIVE` (on since James's yes, Oct 17).
   ...(CARD_PRODUCT_TAKEDOWN_LIVE
     ? [{ feePublishedId: 122350, institutionId: 4956, canonicalFeeKey: "dormant_account", amount: 5, feeName: "Inactivity Fee",
-        reason: "wrong_category: #1765", issue: 1765, kind: "wrong_category" as const,
+        reason: "source_mismatch: #1765", issue: 1765, kind: "wrong_category" as const,
         evidence: "Navy Federal: under \"Prepaid and Gift Cards | Visa® Gift Cards\", \"Inactivity Fee (After 12 consecutive months of no activity, the card will be charged $5.00 per month ...)\": a gift card's inactivity, not account dormancy; none of the 50 types holds it." }]
     : []),
+  // #1772, #1773: 28 non-network ATM rows, held by `ATM_SURCHARGE_TAKEDOWN_LIVE` (off).
+  ...atmSurchargeTakedowns(),
 ];
 
 export interface LiveTakedownRow {

@@ -17,10 +17,11 @@ type SqlTag = typeof sql;
  * category, variant and amount read from different documents of one page (`feePageKey`) under
  * the same or a near name are one fee: the copy from the latest edition stays.
  *
- * Shadow until James approves the dry-run counts: a step reports what it would close and
- * changes nothing. Set true to close the repeats.
+ * Live since James approved the dry-run counts (Oct 17, 10:47 UTC; 499 closes, 27 kept rows
+ * renamed). Set false to go back to shadow: a step then reports what it would close and changes
+ * nothing.
  */
-export const PAGE_COPY_COLLAPSE_LIVE = false;
+export const PAGE_COPY_COLLAPSE_LIVE = true;
 /** Institutions read per publish step; the step's run id picks which, so steps cover them in turn. */
 export const PAGE_COPY_COLLAPSE_INSTITUTIONS = 25;
 export const PAGE_COPY_COLLAPSE_REASON_SUFFIX = " (copy of the page)";

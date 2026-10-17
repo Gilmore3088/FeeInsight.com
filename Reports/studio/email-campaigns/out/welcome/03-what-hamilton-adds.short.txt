@@ -20,5 +20,6 @@ From here you'll get the monthly Fee Pulse: one finding and one thing to check. 
 James Gilmore, Fee Insight
 
 --
+3522 Southwest Barton Street, Seattle, United States of America
 You're getting this because you signed up at feeinsight.com.
 Unsubscribe: {$unsubscribe}

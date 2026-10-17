@@ -94,6 +94,16 @@ const ES_OUTGOING = "saliente|enviad";
 /** "Transferencia bancaria" and "Giro bancario" are a wire in a Spanish schedule. */
 const WIRE = /(wire|transferencias? (bancarias?|cablegr[aá]ficas?)|giros? bancarios?)/i;
 /**
+ * v71 (#1772): another institution's card named in more than one word after "non-": "ATM Non-STAR
+ * Financial Credit Union card Surcharge" $5 (55200), "ATM Surcharge Fee (Non-Onomea FCU Cards)" $2
+ * (125475), "Transactions at TFed ATM (Non-TFed Debit/ATM Card)" $3.50 (37295), "Non Co-Op Card ATM
+ * Withdrawals at TLC" $3 (135353), "Non-WPCCU or Non-CO-OP Debit Card ATM withdrawal" $3 (52328),
+ * "Non-AFCU Visa debit, credit card, or ... card ATM transactions will be assessed a" $2 (139525).
+ * The words after "non-" may not reach an ATM or machine first ("Non-Allpoint ATM using your card" is
+ * a non-network ATM), and "non-proprietary", "non-network" and "non-owned" never start one.
+ */
+const OUTSIDER_CARD_WORDS = String.raw`\bnon[- ](?!(?:proprietary|network|owned)\b)[\w.&',-]+(?:\s+(?!(?:atms?|machines?)\b)[\w.&',\/-]+){0,3}\s+(?:visa\s+)?(?:debit\s*(?:\/\s*atm\s*)?|atm\s*(?:\/\s*debit\s*)?|check\s+)?cards?\b`;
+/**
  * v69: the surcharge an institution charges people who are not its customers for using its own
  * ATMs: a non-customer, non-client or non-account holder ("ATM Surcharge (non-customer)" $4,
  * 16809), another institution's card or cardholder ("Foreign Cards using our ATM" $5, 60777;
@@ -103,7 +113,7 @@ const WIRE = /(wire|transferencias? (bancarias?|cablegr[aá]ficas?)|giros? banca
  * pay it, and none of the 50 types holds it (#1196, 131129; Knox does not read it, rules.ts).
  * A bare "ATM Surcharge" names no payer and is not matched.
  */
-const OUTSIDER_ATM = String.raw`\bnon[- ]?(?:customers?|clients?|account ?holders?|accountholders?|depositors?)\b|\bforeign\s+customers?\b|\bforeign\s+(?:bank\s+|debit\s*\/?\s*(?:atm\s+)?|atm\s*\/\s*debit\s+|atm\s+)?card(?:s|holders?)?\b|\bnon[- ][^|()]{0,30}?\bcard ?holders?\b|\bnon[- ]?(?:credit union|cu|bank)\s+(?:debit\s+|atm\s+)?cards?\b|\bcards?\s+(?:from|issued by)\s+(?:an?\s+)?(?:other|another|financial institutions? other)\b|\bissued by (?:other )?(?:financial institutions?|banks?|institutions?) other than\b|\bother (?:financial )?institution(?:'?s)? (?:debit\s+|atm\s+)?cards?\b|\bdebit cards? from (?:an?\s+)?(?:other|another)\b|\bout[- ]of[- ]network\s+(?:atm\s+)?card(?:s|holders?)\b|\b(?:using|use of)\s+our\s+(?:own\s+)?(?:\w+\s+)?atm`;
+const OUTSIDER_ATM = String.raw`\bnon[- ]?(?:customers?|clients?|account ?holders?|accountholders?|depositors?)\b|\bforeign\s+customers?\b|\bforeign\s+(?:bank\s+|debit\s*\/?\s*(?:atm\s+)?|atm\s*\/\s*debit\s+|atm\s+)?card(?:s|holders?)?\b|\bnon[- ][^|()]{0,30}?\bcard ?holders?\b|\bnon[- ]?(?:credit union|cu|bank)\s+(?:debit\s+|atm\s+)?cards?\b|\bcards?\s+(?:from|issued by)\s+(?:an?\s+)?(?:other|another|financial institutions? other)\b|\bissued by (?:other )?(?:financial institutions?|banks?|institutions?) other than\b|\bother (?:financial )?institution(?:'?s)? (?:debit\s+|atm\s+)?cards?\b|\bdebit cards? from (?:an?\s+)?(?:other|another)\b|\bout[- ]of[- ]network\s+(?:atm\s+)?card(?:s|holders?)\b|\b(?:using|use of)\s+our\s+(?:own\s+)?(?:\w+\s+)?atm|${OUTSIDER_CARD_WORDS}`;
 /**
  * v69: a monthly ATM add-on or plan ("Power Checking +ATM Freedom" $2.99 a month, 114331; "Add ATM
  * Unlimited" $10 a month, 93629; "Unlimited ATM Usage" $3.25 a month) is a subscription that refunds
@@ -123,10 +133,11 @@ const CARD_SERVICE_ELSEWHERE = String.raw`\bbill payer\b|\baccount clos\w*`;
  * dispute or a copy of a card sale (account research), a lost, stolen, blocked or replaced card, a
  * negative balance, a cashier's, treasurer's or official check, temporary checks, or a
  * cut-off-times sentence (#1736's market report, #1753). A balance inquiry at an ATM stays here:
- * balance_inquiry is retired and folds into this type (v25). A denied ATM transaction ("ATM
+ * balance_inquiry is retired and folds into this type (v25). v71: verifying an ATM transaction
+ * ("Verification of ATM Transaction" $3, 96092) is research. A denied ATM transaction ("ATM
  * Denials", 12 live rows) is left for James: it may be the network ATM fee for a failed attempt.
  */
-const NOT_ATM_USE = String.raw`\bdisput\w*|\b(?:photo ?)?cop(?:y|ies)\b|\bnegative\s+balance\b|\btreasurer|\bcashier|\bofficial\s+checks?\b|\btemporary\s+checks?\b|\bcut[- ]?off\s+times?\b|\blost\b|\bstolen\b|\b(?:un)?block(?:ed)?\s+cards?\b|\breplac`;
+const NOT_ATM_USE = String.raw`\bdisput\w*|\b(?:photo ?)?cop(?:y|ies)\b|\bnegative\s+balance\b|\btreasurer|\bcashier|\bofficial\s+checks?\b|\btemporary\s+checks?\b|\bcut[- ]?off\s+times?\b|\blost\b|\bstolen\b|\b(?:un)?block(?:ed)?\s+cards?\b|\breplac|\bverification of\b`;
 
 /**
  * v70 (#1765, card-product misfiles; #1690): a fee for the card itself is not a fee for using another
@@ -134,12 +145,12 @@ const NOT_ATM_USE = String.raw`\bdisput\w*|\b(?:photo ?)?cop(?:y|ies)\b|\bnegati
  * a card's monthly, annual or maintenance fee, its issue, activation or origination, a limit
  * increase, a reinstatement, a card's inactivity, or a point-of-sale purchase fee (`gift_card_purchase`
  * refuses inactivity; `card_replacement` is only a replacement), so a live fee failing this rule is
- * a takedown. Darwin and publish refuse new reads at once. The live sweep holds the takedowns until
- * James says yes: while `CARD_PRODUCT_TAKEDOWN_LIVE` is off it counts and samples the live fees that
- * fail only this rule (`cardProductPending` in the guard's result and the publish step's detail) and
- * takes none down. Turning it on takes them down through the second look like any guard failure.
+ * a takedown. Darwin and publish refuse new reads at once. James said yes on Oct 17 (10:47 UTC), so
+ * the switch is on: the live sweep takes them down through the second look like any guard failure.
+ * Switched off, it counts and samples the live fees that fail only this rule (`cardProductPending`
+ * in the guard's result and the publish step's detail) and takes none down.
  */
-export const CARD_PRODUCT_TAKEDOWN_LIVE = false;
+export const CARD_PRODUCT_TAKEDOWN_LIVE = true;
 
 /** v70: a word that makes an ATM-named line a charge for using an ATM or another network. */
 const ATM_USE_WORD = String.raw`withdraw|\bw\/d\b|\binquir|\btransfers?\b|\bnon\b|\bnon-|foreign|\bother\b|network|surcharg|usage|\bused?\b|\bowned\b|terminal|\bmachines?\b|\bdenied\b|\bdenials?\b|declin|\bcash\b|international|deposit`;
@@ -622,11 +633,17 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // card's monthly, annual or maintenance fee, issue, activation, inactivity, a limit increase or a
 // point-of-sale purchase fee) and a card's inactivity filed as a dormant account (`CARD_INACTIVITY`)
 // fail the guard. None of the 50 types holds them, so their live takedowns wait on
-// `CARD_PRODUCT_TAKEDOWN_LIVE` (off: counted, none taken down). An ATM-named bill payer service
+// `CARD_PRODUCT_TAKEDOWN_LIVE` (on since James's yes, Oct 17; off: counted, none taken down). An ATM-named bill payer service
 // re-files to bill pay and a card charge on early account closure to early closure. Skipping a loan
 // payment (`SKIP_A_PAY`, James, Oct 17) leaves late payment and loan origination for other lending,
 // by guard, re-file rule and fold split, and the taxonomy's skip-a-pay aliases point there too.
-export const CATEGORY_GUARD_VERSION = 70;
+// v71 (Oct 17, #1772, #1773): the non-network ATM fee also refuses another institution's card named
+// in more than one word after "non-" (`OUTSIDER_CARD_WORDS` in `OUTSIDER_ATM`; 8 live fees, 8 of 8
+// non-customer surcharges on their stored line, flagged for the second look, then taken down), and
+// re-files an ATM transaction verification to account research (`NOT_ATM_USE`; 96092). The bare
+// "ATM Surcharge" lines the name cannot place, and in-network $0s and sentence fragments, are hand
+// takedowns held by `ATM_SURCHARGE_TAKEDOWN_LIVE` (hand-takedowns.ts; 28, off).
+export const CATEGORY_GUARD_VERSION = 71;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -698,7 +715,8 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   // v69: lost or stolen cards ("Lost/Stolen ATM/MasterCard®"); a blocked card is not a replacement.
   { from: "atm_non_network", to: "card_replacement", when: /(replac|reissue|re-?issu|lost|stolen)/i, unless: /\bpins?\b|\bblock/i },
   // v69: an ATM dispute or a copy of a card sale is research.
-  { from: "atm_non_network", to: "account_research", when: /\bdisput|\b(?:photo ?)?cop(?:y|ies) of\b/i },
+  // v71: verifying an ATM transaction is research too (96092, #1773).
+  { from: "atm_non_network", to: "account_research", when: /\bdisput|\b(?:photo ?)?cop(?:y|ies) of\b|\bverification of\b/i },
   // v70: an ATM-named bill payer service is bill pay, and a card charge on closing the account early
   // is an early closure (`CARD_SERVICE_ELSEWHERE`).
   { from: "atm_non_network", to: "bill_pay", when: /\bbill payer\b/i },
