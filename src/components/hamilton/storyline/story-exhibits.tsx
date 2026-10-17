@@ -159,9 +159,12 @@ export function StoryExhibitView({ item, number, researchInstitutionName }: { it
       if (level === "working_estimate") return researchInstitutionName ? `Working estimate from ${researchInstitutionName}'s filings` : "Working estimate from institution filings";
       return researchInstitutionName ? `Published figures: ${researchInstitutionName}` : "Published institution figures";
     };
-    // A lone figure is an amount, not a change, so it carries no plus sign.
+    // A lone figure, or a filed figure read straight from the call report, is an amount, not a
+    // change, so it carries no plus sign.
+    const isAmount = (r: (typeof x.rows)[number]) =>
+      r.low === r.high && r.low >= 0 && (x.rows.length === 1 || (publicFilings && r.evidenceLevel === "institution"));
     const amount = (r: (typeof x.rows)[number]) =>
-      r.low === r.high ? (x.rows.length === 1 && r.low >= 0 ? fmtMoney(r.low) : fmtSignedMoney(r.low)) : `${fmtSignedMoney(r.low)} to ${fmtSignedMoney(r.high)}`;
+      isAmount(r) ? fmtMoney(r.low) : r.low === r.high ? fmtSignedMoney(r.low) : `${fmtSignedMoney(r.low)} to ${fmtSignedMoney(r.high)}`;
     return (
       <ExhibitFrame title={item.actionTitle} sources={x.sources} note={x.note} number={number}>
         <ul className={`grid gap-3 ${x.rows.length === 3 ? "sm:grid-cols-2 lg:grid-cols-3" : x.rows.length > 1 ? "sm:grid-cols-2" : ""}`}>
