@@ -119,6 +119,46 @@ export const HAND_AMOUNT_CORRECTIONS: readonly HandAmountCorrection[] = [
     why: "\"Bank Smartly Checking\" / \"$12 Monthly Maintenance Fee can be waived in multiple ways1\"; the $10 is the next line's \"$10 Monthly Maintenance Fee waived on all Elite Money Market account with a U.S. Bank Smartly® Checking account\"",
     pattern: "wrong_read", issue: 1659,
     wrongReadTracesTo: "$10 Monthly Maintenance Fee waived on all Elite Money Market account with a U.S. Bank Smartly® Checking account",
+  },  // #1827 (read-only, Oct 17): Valley Strong CU's safe deposit box table (doc 36716, text 34862)
+  // prints the price before the name ("| **$45** | Rental of 3 × 5 Box Annual Fee |"), and Knox gave
+  // each rent the next row's price. Each is corrected in place to its own row's price. The shared
+  // check matches a box size loosely, so the wrong read still traces, to the next row's line; the
+  // correction applies only while that exact line is the one it traces to. The five new prices are
+  // distinct and no other box rent is live there, so no correction makes a duplicate.
+  {
+    feePublishedId: 151737, institution: "Valley Strong Credit Union", institutionId: 8637, sourceDocumentId: 36716,
+    canonicalFeeKey: "safe_deposit_box", from: 55, to: 45, feeName: "Rental of 3 × 5 Box Annual Fee",
+    why: "\"| **$45** | Rental of 3 × 5 Box Annual Fee |\"; the $55 is the next row's \"| **$55** | Rental of 5 × 5 Box Annual Fee |\"",
+    pattern: "next_row_price", issue: 1827,
+    wrongReadTracesTo: "| **$55** | Rental of 5 × 5 Box Annual Fee |",
+  },
+  {
+    feePublishedId: 151738, institution: "Valley Strong Credit Union", institutionId: 8637, sourceDocumentId: 36716,
+    canonicalFeeKey: "safe_deposit_box", from: 80, to: 55, feeName: "Rental of 5 × 5 Box Annual Fee",
+    why: "\"| **$55** | Rental of 5 × 5 Box Annual Fee |\"; the $80 is the next row's \"| **$80** | Rental of 3 × 10 Box Annual Fee |\"",
+    pattern: "next_row_price", issue: 1827,
+    wrongReadTracesTo: "| **$80** | Rental of 3 × 10 Box Annual Fee |",
+  },
+  {
+    feePublishedId: 151739, institution: "Valley Strong Credit Union", institutionId: 8637, sourceDocumentId: 36716,
+    canonicalFeeKey: "safe_deposit_box", from: 100, to: 80, feeName: "Rental of 3 × 10 Box Annual Fee",
+    why: "\"| **$80** | Rental of 3 × 10 Box Annual Fee |\"; the $100 is the next row's \"| **$100** | Rental of 5 × 10 Box Annual Fee |\"",
+    pattern: "next_row_price", issue: 1827,
+    wrongReadTracesTo: "| **$100** | Rental of 5 × 10 Box Annual Fee |",
+  },
+  {
+    feePublishedId: 151740, institution: "Valley Strong Credit Union", institutionId: 8637, sourceDocumentId: 36716,
+    canonicalFeeKey: "safe_deposit_box", from: 120, to: 100, feeName: "Rental of 5 × 10 Box Annual Fee",
+    why: "\"| **$100** | Rental of 5 × 10 Box Annual Fee |\"; the $120 is the next row's \"| **$120** | Rental of 6 × 10 Box Annual Fee |\"",
+    pattern: "next_row_price", issue: 1827,
+    wrongReadTracesTo: "| **$120** | Rental of 6 × 10 Box Annual Fee |",
+  },
+  {
+    feePublishedId: 151741, institution: "Valley Strong Credit Union", institutionId: 8637, sourceDocumentId: 36716,
+    canonicalFeeKey: "safe_deposit_box", from: 175, to: 120, feeName: "Rental of 6 × 10 Box Annual Fee",
+    why: "\"| **$120** | Rental of 6 × 10 Box Annual Fee |\"; the $175 is the next row's \"| **$175** | Rental of 10 × 10 Box Annual Fee |\"",
+    pattern: "next_row_price", issue: 1827,
+    wrongReadTracesTo: "| **$175** | Rental of 10 × 10 Box Annual Fee |",
   },
 ];
 
@@ -176,6 +216,43 @@ export const HAND_REJECTED_TWINS: readonly HandRejectedTwin[] = [
     feeVerifiedId: 102462, ofFeePublishedId: 92248, sourceDocumentId: 12989, canonicalFeeKey: "overdraft", amount: 5,
     feeName: "E-statements Free Enhanced Overdraft Privilege Fee (per month)", pattern: "optional_overdraft_plan_twin", issue: 1360,
     why: "#1360: St. Louis Community's optional $5/month Enhanced Privilege plan, not the overdraft fee ($18 per item, 27613)",
+  },  // #1832 (read-only, Oct 17): unpublished copies of two misreads #1834 took down by hand
+  // (hand-takedowns.ts), each held back only as "Identical fee already published" behind its live
+  // twin. With the twin down, a publish strategy bump would select them again.
+  {
+    feeVerifiedId: 188270, ofFeePublishedId: 152366, sourceDocumentId: 32251, canonicalFeeKey: "other_lending_fee", amount: 1000,
+    feeName: "Varies – Mortgage satisfaction", pattern: "next_line_price_twin", issue: 1827,
+    why: "#1827: Citadel FCU (doc 32251) prints \"Mortgage satisfaction fee (varies)\" then \"$1,000.00 Mortgage modification\"; the $1,000 is the modification fee",
+  },
+  {
+    feeVerifiedId: 188271, ofFeePublishedId: 152366, sourceDocumentId: 23805, canonicalFeeKey: "other_lending_fee", amount: 1000,
+    feeName: "Mortgage satisfaction fee (varies)", pattern: "next_line_price_twin", issue: 1827,
+    why: "#1827: Citadel FCU (doc 23805) prints \"Mortgage satisfaction fee (varies)\" then \"$1,000.00 Mortgage modification\"; the $1,000 is the modification fee",
+  },
+  {
+    feeVerifiedId: 188272, ofFeePublishedId: 152366, sourceDocumentId: 23805, canonicalFeeKey: "other_lending_fee", amount: 1000,
+    feeName: "Varies – Mortgage satisfaction", pattern: "next_line_price_twin", issue: 1827,
+    why: "#1827: Citadel FCU (doc 23805) prints \"Mortgage satisfaction fee (varies)\" then \"$1,000.00 Mortgage modification\"; the $1,000 is the modification fee",
+  },
+  {
+    feeVerifiedId: 188273, ofFeePublishedId: 152366, sourceDocumentId: 20905, canonicalFeeKey: "other_lending_fee", amount: 1000,
+    feeName: "Mortgage satisfaction fee (varies)", pattern: "next_line_price_twin", issue: 1827,
+    why: "#1827: Citadel FCU (doc 20905) prints \"Mortgage satisfaction fee (varies)\" then \"$1,000.00 Mortgage modification\"; the $1,000 is the modification fee",
+  },
+  {
+    feeVerifiedId: 188274, ofFeePublishedId: 152366, sourceDocumentId: 20905, canonicalFeeKey: "other_lending_fee", amount: 1000,
+    feeName: "Varies – Mortgage satisfaction", pattern: "next_line_price_twin", issue: 1827,
+    why: "#1827: Citadel FCU (doc 20905) prints \"Mortgage satisfaction fee (varies)\" then \"$1,000.00 Mortgage modification\"; the $1,000 is the modification fee",
+  },
+  {
+    feeVerifiedId: 188724, ofFeePublishedId: 152591, sourceDocumentId: 13272, canonicalFeeKey: "other_lending_fee", amount: 4.95,
+    feeName: "Reconveyance .. Actual Cost: Returned payment", pattern: "heading_join_twin", issue: 1828,
+    why: "#1828: Oregon Community FCU (doc 13272) prints \"Reconveyance…… Actual Cost\" then \"Returned payment…… $4.95\"; two lines joined",
+  },
+  {
+    feeVerifiedId: 188725, ofFeePublishedId: 152591, sourceDocumentId: 21634, canonicalFeeKey: "other_lending_fee", amount: 4.95,
+    feeName: "Reconveyance .. Actual Cost: Returned payment", pattern: "heading_join_twin", issue: 1828,
+    why: "#1828: Oregon Community FCU (doc 21634) prints \"Reconveyance…… Actual Cost\" then \"Returned payment…… $4.95\"; two lines joined",
   },
 ];
 export const HAND_REJECTED_TWIN_FLAG = "hand_rejected:cut_cents_twin";

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { LEGAL_ENTITY_LINE } from "@/lib/constants";
+import { CONTACT_EMAIL, LEGAL_ENTITY_LINE } from "@/lib/constants";
 import { PAGE_HEADER } from "@/components/public/page-header";
 
 export const metadata: Metadata = {
@@ -170,8 +170,8 @@ export default function PrivacyPage() {
           <p>
             You may request access to, correction of, or deletion of your
             personal information at any time by contacting us at{" "}
-            <a href="mailto:hello@bankfeeindex.com" className="text-brick hover:underline">
-              hello@bankfeeindex.com
+            <a href={`mailto:${CONTACT_EMAIL}`} className="text-brick hover:underline">
+              {CONTACT_EMAIL}
             </a>.
           </p>
         </section>
@@ -203,8 +203,8 @@ export default function PrivacyPage() {
         <div className="pt-4 border-t border-border">
           <p className="text-[13px] text-ink-muted">
             Questions about this policy? Contact us at{" "}
-            <a href="mailto:hello@bankfeeindex.com" className="text-brick hover:underline">
-              hello@bankfeeindex.com
+            <a href={`mailto:${CONTACT_EMAIL}`} className="text-brick hover:underline">
+              {CONTACT_EMAIL}
             </a>
           </p>
         </div>

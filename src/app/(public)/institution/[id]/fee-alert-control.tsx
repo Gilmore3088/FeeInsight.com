@@ -25,11 +25,11 @@ export interface FeeAlertControlProps {
 }
 
 const INPUT =
-  "min-w-0 w-full rounded-md border border-border bg-white px-3 py-2 text-[14px] text-ink placeholder:text-ink-muted focus:border-transparent focus:outline-none focus:ring-2 focus:ring-brick/30";
+  "min-w-0 w-full rounded-md border border-border bg-surface-0 px-3 py-2 text-[14px] text-ink placeholder:text-ink-muted focus:border-transparent focus:outline-none focus:ring-2 focus:ring-brick/30";
 const PRIMARY =
-  "inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md border border-ink bg-surface-0 px-4 py-2 text-[13px] font-semibold text-ink transition-colors hover:bg-surface-200 disabled:opacity-50";
+  "inline-flex min-h-11 max-w-full items-center justify-center rounded-md border border-ink bg-surface-0 px-4 py-2 text-left text-[13px] font-semibold text-ink transition-colors hover:bg-surface-200 disabled:opacity-50";
 const SECONDARY =
-  "inline-flex items-center rounded-md border border-border bg-white px-3 py-1.5 text-[12px] font-semibold text-ink transition-colors hover:border-brick hover:text-brick disabled:opacity-50";
+  "inline-flex min-h-11 items-center rounded-md border border-border bg-surface-0 px-3 py-1.5 text-[12px] font-semibold text-ink transition-colors hover:border-brick hover:text-brick disabled:opacity-50";
 
 /**
  * Save this bank or credit union and get an email when a fee you follow changes in our data.
@@ -69,7 +69,7 @@ export function FeeAlertControl({
 
   const headline =
     mode === "verify"
-      ? `Get an email when ${institutionName}'s fees are verified`
+      ? `Get an email when ${institutionName} publishes more fees`
       : `Get an email when ${focusLabel ? `${institutionName}'s ${focusLabel.toLowerCase()}` : `a fee at ${institutionName}`} changes in our data`;
   // What the daily send (src/lib/agents/fee-alerts.ts) does: one email per reader per run,
   // after a followed fee's published amount changes or the fee is first published here.
@@ -177,14 +177,14 @@ export function FeeAlertControl({
                 Follow every fee
               </button>
             )}
-            <Link href="/account#alerts" className="text-[13px] font-medium text-brick hover:underline">
+            <Link href="/account#alerts" className="inline-flex min-h-11 items-center text-[13px] font-medium text-ink underline decoration-border underline-offset-2 hover:decoration-ink">
               Manage alerts
             </Link>
             <button
               type="button"
               disabled={pending}
               onClick={remove}
-              className="text-[13px] font-medium text-ink-muted hover:text-ink hover:underline disabled:opacity-50"
+              className="inline-flex min-h-11 items-center text-[13px] font-medium text-ink-muted hover:text-ink hover:underline disabled:opacity-50"
             >
               Remove
             </button>
@@ -268,7 +268,7 @@ export function FeeAlertControl({
       )}
 
       {error && (
-        <p role="alert" className="mt-2 text-[13px] text-red-700">
+        <p role="alert" className="mt-2 text-[13px] text-brick">
           {error}
           {loginHref && (
             <>

@@ -2,12 +2,12 @@
 
 ## Brand
 Fee Insight is the company and site (feeinsight.com). Bank Fee Index is its product
-(the dataset/index); Hamilton is the Pro workspace. Never name the site as the product.
+(the dataset/index); Hamilton is the paid workspace; never "Hamilton Pro" ("Pro" only marks who has paid). Never name the site as the product.
 Brand strings live in `src/lib/constants.ts`; `scripts/ci-guards.sh brand-kill` enforces it.
 Contact stays hello@bankfeeindex.com until feeinsight.com mail exists.
 
 ## Money thesis
-A bank/CU marketing, product or pricing manager subscribes to Hamilton Pro, paid monthly or
+A bank/CU marketing, product or pricing manager subscribes to Hamilton, paid monthly or
 annually. That subscription is the site's goal. The Competitive Fee Position Report ("from $300")
 is a high-value lead into Pro, not the goal; free reports and alerts are lead capture. The funnel:
 free sample report, then the paid report, then Pro or a Pro demo request. Why us:
@@ -126,6 +126,8 @@ Most are enforced by `scripts/ci-guards.sh` (`npm run guard:legacy` runs them al
   growth (marketing) steps (`MARKETING_STEP_KEYS`), and neither pause holds the other's work. The tick checks the provider budget
   only when a provider step is queued. Don't gate deterministic work on provider budget.
 - Don't query historical `crawl_*` source tables from app code (`source-read-model-kill`).
+- Any change to `/api/v1` or the Claude connector updates the OpenAPI spec and `/api-docs` in the same
+  PR and bumps `API_VERSION` in `src/lib/api-v1.ts` (`api-docs-kill`, `src/lib/api-docs-sync.test.ts`).
 - Document agents use `institution_id`, `source_document_id`, and `agent_source_texts`
   (`agent-source-contract-kill`).
 - Fee-tier agents use the semantic tier tables, never `fees_raw`, `fees_verified`,

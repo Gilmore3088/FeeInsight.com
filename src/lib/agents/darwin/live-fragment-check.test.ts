@@ -17,6 +17,7 @@ import {
   liveFragmentCredit,
   liveFragmentCreditHeaded,
   liveFragmentCapRefused,
+  liveFragmentOwnAccountHead,
   countLiveFragmentNames,
   findLiveFragments,
   liveFragmentCountSql,
@@ -111,8 +112,8 @@ const ROWS = [
 ];
 
 describe("Darwin live fragment re-check", () => {
-  it("ships with the takedown off", () => {
-    expect(FRAGMENT_NAME_TAKEDOWN_LIVE).toBe(false);
+  it("ships with the takedown on (James's yes, 2026-10-17); shadow tests pass live: false", () => {
+    expect(FRAGMENT_NAME_TAKEDOWN_LIVE).toBe(true);
     expect(LIVE_FRAGMENT_BATCH).toBe(2_000);
   });
 
@@ -156,7 +157,7 @@ describe("Darwin live fragment re-check", () => {
 
   it("in shadow reports what it would take down, records the cursor and writes no fee", async () => {
     const db = dbFor(ROWS, "58000");
-    const result = await recheckLiveFragmentNames(asDb(db), { runId: 7, stepId: 70, dryRun: false });
+    const result = await recheckLiveFragmentNames(asDb(db), { runId: 7, stepId: 70, dryRun: false, live: false });
     expect(result).toMatchObject({ live: false, checked: 8, matched: 6, wouldTakeDown: 2, wouldRename: 1, wouldReread: 1, exempt: 2, afterId: 58000, nextAfterId: 0, takenDown: [], renamed: [], rereadRequested: [] });
     const calls = JSON.stringify(db.mock.calls);
     expect(calls).not.toContain("UPDATE");
@@ -221,7 +222,7 @@ describe("Darwin live fragment re-check", () => {
 
   it("asks for no re-read in shadow, and keeps the takedowns when the request fails", async () => {
     const shadow = dbFor(ROWS);
-    const off = await recheckLiveFragmentNames(asDb(shadow), { runId: 7, dryRun: false });
+    const off = await recheckLiveFragmentNames(asDb(shadow), { runId: 7, dryRun: false, live: false });
     expect(off).toMatchObject({ wouldRequestReread: 1, rereadRequested: [] });
     expect(JSON.stringify(shadow.mock.calls)).not.toContain(LIVE_FRAGMENT_REREAD_KIND);
     const db = dbFor(ROWS);
@@ -267,7 +268,7 @@ describe("Darwin live fragment re-check", () => {
 
   it("counts the duplicate in shadow and in a dry run too", async () => {
     const existing = [{ institution_id: "77", canonical_fee_key: "overdraft", amount: "35", fee_name: "Overdraft Fee", source_document_id: 501 }];
-    for (const options of [{ dryRun: false }, { dryRun: true }]) {
+    for (const options of [{ dryRun: false, live: false }, { dryRun: true }]) {
       const result = await recheckLiveFragmentNames(asDb(dbFor(ROWS, null, existing)), { runId: 7, ...options });
       expect(result).toMatchObject({ wouldRename: 0, takedownByReason: { rename_duplicate: 1 }, takenDown: [], renamed: [] });
       expect(liveFragmentDetail(result).samples_rename_duplicate[0]).toMatchObject({ fee_published_id: 60003, rename_to: "Overdraft Fee", takedown_reason: "rename_duplicate" });
@@ -1648,5 +1649,49 @@ describe("live fragment switch-on rules (#1443)", () => {
       { fee_published_id: 2, fee_verified_id: 2, institution_id: 9, fee_name: "Account Closing Fee. This fee will be charged", amount: 25, canonical_fee_key: "early_closure", source_document_id: 4 },
     ]);
     expect(other.matches).toEqual([expect.objectContaining({ feePublishedId: 2, action: "reread", rereadRequest: true })]);
+  });
+});
+
+// Round 8 (139153, inst 8502): the schedule prints this transfer as "| Free". A real $0 price
+// (rule 3), so the fee is renamed to its head and kept live, never taken down.
+describe("round 8: a closing \"account you have at <bank>\" clause renames, even at $0 (139153)", () => {
+  const ROW_139153 = "Overdraft Protection Automatic Transfer from Another Deposit Account you have at MSCU1";
+  const HEAD_139153 = "Overdraft Protection Automatic Transfer from Another Deposit Account";
+
+  it("renames 139153 at $0 and keeps it live", () => {
+    expect(liveFragmentVerdict(ROW_139153, 0, "od_protection_transfer")).toEqual({
+      pattern: "pronoun",
+      action: "rename",
+      renameTo: HEAD_139153,
+      renameVia: "head",
+    });
+    expect(liveFragmentOwnAccountHead(ROW_139153, 0, "od_protection_transfer")).toBe(HEAD_139153);
+    const found = findLiveFragments([
+      { fee_published_id: 139153, fee_verified_id: 1, institution_id: 8502, fee_name: ROW_139153, amount: "0.00", canonical_fee_key: "od_protection_transfer", source_document_id: 1 },
+    ]);
+    expect(found).toMatchObject({ matched: 1, wouldTakeDown: 0, wouldRename: 1 });
+  });
+
+  it("renames the same line at a positive price", () => {
+    expect(liveFragmentVerdict(ROW_139153, 5, "od_protection_transfer")).toMatchObject({ action: "rename", renameTo: HEAD_139153 });
+  });
+
+  it("leaves real $0 fragments coming down", () => {
+    expect(liveFragmentVerdict(ROW_58414, 0)).toMatchObject({ action: "takedown" });
+    // The clause must close the line, and the bank must be named (capitalised) or "us".
+    expect(liveFragmentOwnAccountHead("Transfer Fee for each account you have at another bank if overdrawn", 0)).toBeNull();
+    expect(liveFragmentOwnAccountHead("Each account you have at", 0)).toBeNull();
+    // The head must name a fee and carry no waiver wording or price.
+    expect(liveFragmentOwnAccountHead("Another Deposit Account you have at MSCU", 0)).toBeNull();
+    expect(liveFragmentOwnAccountHead("Monthly fee waived for any account you have at MSCU", 0)).toBeNull();
+    expect(liveFragmentOwnAccountHead("$5 transfer fee from an account you have with us", 5)).toBeNull();
+    expect(liveFragmentOwnAccountHead(ROW_139153, null)).toBeNull();
+  });
+
+  it("mirrors the rename in the count SQL", () => {
+    const text = liveFragmentCountSql();
+    expect(text).toContain("AS own_account_head");
+    expect(text).toContain("(pattern = 'pronoun' AND amount >= 0 AND own_account_head IS NOT NULL AND renamable");
+    expect(text).toContain("THEN own_account_head WHEN head_ok OR exception_ok THEN head");
   });
 });

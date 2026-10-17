@@ -6,6 +6,8 @@ import {
   documentOwnerCountSql,
   documentOwnerFingerprint,
   documentOwnerPairsSql,
+  documentOwnerRefusalsSql,
+  DOCUMENT_OWNER_PENDING_DAYS,
   creditUnionAcronyms,
   documentOwnerVerdict,
   headerNamesInstitution,
@@ -532,16 +534,40 @@ describe("documentOwnerCountSql", () => {
     expect(text).toContain("LIMIT $4");
     expect(text).toContain("LIMIT $5");
   });
+
+  it("also reads pairs whose verified rows are not live yet, first, and re-reads only live pairs", () => {
+    expect(DOCUMENT_OWNER_PENDING_DAYS).toBe(14);
+    const text = documentOwnerPairsSql();
+    expect(text).toContain(`fv.created_at >= NOW() - INTERVAL '${DOCUMENT_OWNER_PENDING_DAYS} days'`);
+    expect(text).toContain("fv.review_status IN ('verified', 'approved')");
+    expect(text).toContain("count(*) FILTER (WHERE fee_published_id IS NULL)::int AS pending_rows");
+    expect(text).toContain("ORDER BY (s.pending_rows > 0) DESC, s.live_fees DESC");
+    expect(text).toContain("WHERE s.live_fees > 0");
+    // The dry-run count still counts live fees only.
+    expect(documentOwnerCountSql()).not.toContain(`INTERVAL '${DOCUMENT_OWNER_PENDING_DAYS} days'`);
+  });
+
+  it("the publish refusal reads the latest verdict, either mode, at the document's current text", () => {
+    const text = documentOwnerRefusalsSql();
+    expect(text).toContain("fv.fee_verified_id = ANY($1::bigint[])");
+    expect(text).toContain("'owner:' || fv.institution_id::text");
+    expect(text).toContain("'owner-shadow:' || fv.institution_id::text");
+    expect(text).toContain("COALESCE(cur.text_hash, 'none')");
+    expect(text).toContain("pa.strategy = 'verify.document_owner'");
+    expect(text).toContain("ORDER BY pa.created_at DESC, pa.id DESC");
+    expect(text).toContain("owner ON owner.outcome = 'evidence_mismatch'");
+    expect(text).not.toMatch(/\b(INSERT|UPDATE|DELETE)\b/);
+  });
 });
 
 function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
 }
 
-function createDb(pairs?: unknown[], lastEvent: Record<string, unknown> | null = null, lastEventAt: string | null = null) {
+function createDb(pairs?: unknown[], lastEvent: Record<string, unknown> | null = null, lastEventAt: string | null = null, verifiedId: number | null = null) {
   const query = vi.fn((strings: TemplateStringsArray) => {
     const text = templateText(strings);
-    if (text.includes("max(fee_published_id)")) return Promise.resolve([{ text_id: 10, fee_id: 20 }]);
+    if (text.includes("max(fee_published_id)")) return Promise.resolve([{ text_id: 10, fee_id: 20, verified_id: verifiedId }]);
     if (text.includes("SELECT detail, created_at FROM agent_run_events")) return Promise.resolve(lastEvent ? [{ detail: lastEvent, created_at: lastEventAt }] : []);
     if (text.includes("to_regclass")) return Promise.resolve([{ ready: true }]);
     if (text.includes("current_setting('statement_timeout')")) return Promise.resolve([{ value: "0", jit: "on", applied: "60s", jit_applied: "off" }]);
@@ -578,13 +604,13 @@ function createDb(pairs?: unknown[], lastEvent: Record<string, unknown> | null =
 }
 
 describe("recheckDocumentOwners (shadow)", () => {
-  it("is off by default", () => {
-    expect(DARWIN_DOCUMENT_OWNER_TAKEDOWN).toBe(false);
+  it("is on (James's yes, 2026-10-17); these tests pass takedown: false for the shadow path", () => {
+    expect(DARWIN_DOCUMENT_OWNER_TAKEDOWN).toBe(true);
   });
 
   it("reports the live fees it would take down, records each pair, and changes no fee", async () => {
     const db = createDb();
-    const result = await recheckDocumentOwners(db, { runId: 77, stepId: 3 });
+    const result = await recheckDocumentOwners(db, { runId: 77, stepId: 3, takedown: false });
     expect(result.live).toBe(false);
     expect(result.verdicts).toEqual({ other_bank: 1, own_named: 1, sibling_shared: 1 });
     expect(result.siblingSharedDocuments).toBe(1);
@@ -620,6 +646,13 @@ describe("recheckDocumentOwners (shadow)", () => {
     const moved = createDb([], { selected: 0, max_text_id: 9, max_fee_id: 20 });
     expect(await recheckDocumentOwners(moved, { runId: 79 })).toMatchObject({ skipped: false });
     expect(moved.unsafe).toHaveBeenCalled();
+
+    // A new verified row (not yet live) is new work too: the pending pairs are read before publish.
+    const sameVerified = createDb([], { selected: 0, max_text_id: 10, max_fee_id: 20, max_verified_id: 30 }, null, 30);
+    expect(await recheckDocumentOwners(sameVerified, { runId: 80 })).toMatchObject({ skipped: true });
+    const newVerified = createDb([], { selected: 0, max_text_id: 10, max_fee_id: 20, max_verified_id: 30 }, null, 31);
+    expect(await recheckDocumentOwners(newVerified, { runId: 80 })).toMatchObject({ skipped: false });
+    expect(newVerified.unsafe).toHaveBeenCalled();
   });
 
   it("scans at most once per interval, even with a backlog, and again once it has passed", async () => {
@@ -639,7 +672,7 @@ describe("recheckDocumentOwners: the skip keys on pairs selected (O3)", () => {
     const db = createDb([
       { institution_id: 99999, source_document_id: 17191, document_url: "https://ukcreditunion.org/x.pdf", live_fees: 2, other_ids: [6729], text_hash: "h1", reread: false },
     ]);
-    const result = await recheckDocumentOwners(db, { runId: 81 });
+    const result = await recheckDocumentOwners(db, { runId: 81, takedown: false });
     expect(result).toMatchObject({ selected: 1, pairs: 0, verdicts: { unproven: 1 } });
     const calls = JSON.stringify(db.mock.calls);
     expect(calls).toContain("owner-shadow:99999:17191:h1");
@@ -652,7 +685,7 @@ describe("recheckDocumentOwners: the skip keys on pairs selected (O3)", () => {
     const query = db.getMockImplementation() as unknown as (strings: TemplateStringsArray, ...values: unknown[]) => unknown;
     db.mockImplementation(((strings: TemplateStringsArray, ...values: unknown[]) =>
       templateText(strings).includes("document-owner name scan") ? Promise.reject(new Error("boom")) : query(strings, ...values)) as never);
-    const result = await recheckDocumentOwners(db, { runId: 82 });
+    const result = await recheckDocumentOwners(db, { runId: 82, takedown: false });
     expect(result).toMatchObject({ selected: 3, pairs: 0 });
     expect(JSON.stringify(db.mock.calls)).toContain('\\"selected\\":3');
   });

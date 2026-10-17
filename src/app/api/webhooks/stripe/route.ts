@@ -5,6 +5,7 @@ import { applyStripeEvent, recordStripeEvent } from "@/lib/stripe-webhook";
 import { stagePaymentEmails, drainPaymentEmails, paymentEmailStatus } from "@/lib/billing/payment-delivery";
 import { headers } from "next/headers";
 import { trackServerEvent } from "@/lib/analytics-server";
+import { syncProCustomerToMailerLite } from "@/lib/email/mailerlite";
 import type Stripe from "stripe";
 
 export const maxDuration = 60;
@@ -31,14 +32,14 @@ async function handlePOST(req: Request) {
 
   console.log(`[stripe-webhook] Received ${event.type} (${event.id})`);
 
-  let activated = 0;
+  let activated: string[] = [];
   try {
     await withTransaction(async (tx) => {
       if (!(await recordStripeEvent(tx, event))) return; // Already processed
 
       const effects = await applyStripeEvent(tx, event);
       await stagePaymentEmails(tx, event.id, effects);
-      activated = effects.welcome.length;
+      activated = effects.welcome.map((welcome) => welcome.email);
     });
   } catch (err) {
     console.error(`[stripe-webhook] Failed to process ${event.id} (${event.type}):`, err);
@@ -46,8 +47,11 @@ async function handlePOST(req: Request) {
   }
 
   // Preserve activation telemetry once per freshly committed event, not per email retry.
-  for (let i = 0; i < activated; i++) {
+  for (const email of activated) {
     await trackServerEvent("pro_activated", { source: "webhook" }).catch(() => {});
+    // Pro onboarding emails start, and every free sequence and upgrade prompt stops.
+    const sync = await syncProCustomerToMailerLite(email).catch(() => null);
+    if (sync?.status === "failed") console.error("[stripe-webhook] MailerLite Pro sync failed", { error: sync.error });
   }
 
   // A duplicate event still drains its already-committed delivery obligations.

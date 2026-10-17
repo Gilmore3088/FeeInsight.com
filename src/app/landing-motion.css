@@ -1,0 +1,101 @@
+/*
+ * Homepage motion and the hero's curve (James's examples, Oct 17). Everything that moves stops
+ * with prefers-reduced-motion; the slide clock itself lives in landing-motion.ts.
+ */
+
+/* Hero: a textured navy band clipped to a shallow ellipse, so its bottom edge curves; the
+   Bank Fee Index card sits above it (z-index 1) and hangs into the light section below. The
+   navy is fixed in both themes, like the example. */
+.fi-home-hero::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0 0 72px;
+  background: #102d43 url("/brand/hero-texture.webp") 38% center / cover no-repeat;
+  clip-path: ellipse(250% 100% at 35% 0%);
+}
+@media (min-width: 1024px) {
+  .fi-home-hero::before {
+    inset: 0 0 64px;
+    background-position: center;
+    clip-path: ellipse(250% 100% at 28% 0%);
+  }
+}
+@media print {
+  .fi-home-hero::before { clip-path: none; }
+}
+
+/* The h1's two lines never wrap (so no word is ever left alone on a line), and its size follows
+   the copy column's own width, so the longer line always stops short of the card. */
+.fi-home-hero-copy { container-type: inline-size; }
+.fi-home-h1 {
+  font-size: clamp(1.25rem, 10.2cqi, 4.5rem);
+  line-height: 1.06;
+  letter-spacing: -0.03em;
+}
+
+/* Section headings set on two fixed lines, sized to their column the same way. */
+.fi-home-intro { container-type: inline-size; }
+.fi-home-h2 {
+  font-size: clamp(1.25rem, 12cqi, 3.6rem);
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+}
+
+/* A changed figure fades in. */
+.fi-home-fade { animation: fi-home-appear 0.45s ease both; }
+@keyframes fi-home-appear {
+  from { opacity: 0.2; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Slides share one grid cell, so the frame keeps the tallest slide's height and nothing below
+   moves when a slide changes. */
+.fi-home-stack { display: grid; }
+.fi-home-stack > * { grid-area: 1 / 1; }
+/* The old slide leaves at once and the new one fades in, so two never show over each other. */
+.fi-home-slide {
+  transition: none;
+  opacity: 0;
+  transform: translateY(6px);
+  visibility: hidden;
+}
+.fi-home-slide[data-active="true"] {
+  transition: opacity 0.45s ease, transform 0.45s ease, visibility 0s;
+  opacity: 1;
+  transform: none;
+  visibility: visible;
+}
+
+/* Research: tiles dim and light, the connector lines draw in, and a dot runs along each line. */
+.fi-home-source { transition: opacity 0.55s, background-color 0.55s, border-color 0.55s, color 0.55s; }
+.fi-home-flow path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  transition: stroke-dashoffset 0.65s ease;
+}
+.fi-home-flow [data-on="true"] path { stroke-dashoffset: 0; }
+.fi-home-dot {
+  offset-rotate: 0deg;
+  animation: fi-home-travel 2.1s linear infinite;
+}
+.fi-home-flow[data-playing="false"] .fi-home-dot { animation-play-state: paused; }
+@keyframes fi-home-travel {
+  from { offset-distance: 0%; }
+  to { offset-distance: 100%; }
+}
+.fi-home-output { transition: opacity 0.5s ease, transform 0.5s ease; }
+.fi-home-question { transition: opacity 0.3s ease, transform 0.3s ease; }
+
+@media (prefers-reduced-motion: reduce) {
+  .fi-home-fade,
+  .fi-home-dot { animation: none; }
+  .fi-home-dot { display: none; }
+  .fi-home-slide,
+  .fi-home-slide[data-active="true"],
+  .fi-home-source,
+  .fi-home-flow path,
+  .fi-home-output,
+  .fi-home-question { transition: none; }
+  .fi-home-slide { transform: none; }
+}

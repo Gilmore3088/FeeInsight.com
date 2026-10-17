@@ -210,7 +210,8 @@ describe(`hard-document gate (category guard v${CATEGORY_GUARD_VERSION})`, () =>
   });
 });
 
-describe("hard documents the rules still get wrong (expected failures)", () => {
+// With no known misses left (guard v68 fixed the last, #1304), the suite has nothing to run.
+describe.runIf(hard.known_misses.same_price.length + hard.known_misses.category.length > 0)("hard documents the rules still get wrong (expected failures)", () => {
   it.fails.each(keys(hard.known_misses.same_price))("%s stays two fees", (_key, item) => {
     expect(samePriceDecision(item)).not.toBe("identical");
   });

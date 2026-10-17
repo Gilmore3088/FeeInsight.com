@@ -2,12 +2,20 @@ import { sql } from "@/lib/data-store/connection";
 import { hashApiKey } from "@/lib/api-keys";
 import { subscriberKeyAllowed, subscriberKeyUserId, subscriberUserIdFromSlug } from "@/lib/api-subscriber-access";
 import { seatStillCovered } from "@/lib/api-subscriber-keys";
+import { CONTACT_EMAIL } from "@/lib/constants";
+
+/** Why a key that was sent was turned away; each is its own v1 error code. */
+export type ApiKeyErrorCode = "invalid_api_key" | "key_revoked" | "subscription_inactive" | "seat_removed";
 
 export interface ApiKeyValidation {
   valid: boolean;
   organizationId: number | null;
   tier: string;
+  /** The api_keys row that was accepted; set only when `valid`. */
+  keyId?: number | null;
   error?: string;
+  /** Set together with `error`. */
+  code?: ApiKeyErrorCode;
 }
 
 function extractApiKey(request: Request): string | null {
@@ -49,7 +57,8 @@ export async function validateApiKey(
       valid: false,
       organizationId: null,
       tier: "free",
-      error: "Invalid API key",
+      error: "Invalid API key. Check that the whole key was copied, or make a new one on your account page.",
+      code: "invalid_api_key",
     };
   }
 
@@ -60,7 +69,8 @@ export async function validateApiKey(
       valid: false,
       organizationId: null,
       tier: "free",
-      error: "API key has been revoked",
+      error: `API key has been revoked. Make a new key on your account page, or ask ${CONTACT_EMAIL} for a new partner key.`,
+      code: "key_revoked",
     };
   }
 
@@ -76,7 +86,8 @@ export async function validateApiKey(
         valid: false,
         organizationId: null,
         tier: "free",
-        error: "This key's Fee Insight Pro subscription is not active. Restart Pro from your account to use it again.",
+        error: "This key's Hamilton subscription is not active. Restart Hamilton from your account to use it again.",
+        code: "subscription_inactive",
       };
     }
     const holderId = subscriberKeyUserId(row.name);
@@ -85,7 +96,9 @@ export async function validateApiKey(
         valid: false,
         organizationId: null,
         tier: "free",
-        error: "This key's holder no longer has a seat on the Fee Insight Pro plan that covered it.",
+        error:
+          "This key's holder no longer has a seat on the Hamilton plan that covered it. Ask the plan's owner to add you back to their workspace.",
+        code: "seat_removed",
       };
     }
   }
@@ -101,5 +114,6 @@ export async function validateApiKey(
     valid: true,
     organizationId: row.organization_id,
     tier: row.tier ?? "pro",
+    keyId: row.id == null ? null : Number(row.id),
   };
 }

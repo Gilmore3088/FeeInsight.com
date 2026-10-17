@@ -2,8 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/data-store/fee-cache", () => ({ invalidatePublicReadCache: vi.fn() }));
 
+import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
+import { CARD_PRODUCT_TAKEDOWN_LIVE } from "@/lib/fee-category-guard";
+
 import {
-  applyHandAudienceFixes, applyHandTakedowns, HAND_AUDIENCE_FIXES, HAND_TAKEDOWN_BATCH_LIMIT, HAND_TAKEDOWNS, handAudienceEvidence,
+  applyHandAudienceFixes, applyHandTakedowns, ATM_SURCHARGE_TAKEDOWN_LIVE, atmSurchargeTakedowns, HAND_AUDIENCE_FIXES, HAND_TAKEDOWN_BATCH_LIMIT, HAND_TAKEDOWNS, handAudienceEvidence,
   handTakedownBatchSizes, planHandAudienceFixes, planHandTakedowns, type LiveAudienceRow, type LiveTakedownRow,
 } from "./hand-takedowns";
 
@@ -112,9 +115,95 @@ const LIVE: LiveTakedownRow[] = [
   { fee_published_id: 83125, lineage_ref: 92572, institution_id: 33, canonical_fee_key: "overdraft", fee_name: "Overdraft Charge (each)", amount: "10.00" },
   { fee_published_id: 97335, lineage_ref: 110368, institution_id: 184, canonical_fee_key: "od_protection_transfer", fee_name: "OVERDRAFT TRANSFER", amount: "10.00" },
   { fee_published_id: 97904, lineage_ref: 111117, institution_id: 850, canonical_fee_key: "od_protection_transfer", fee_name: "overdrawn. Features of Overdraft Transfer include", amount: "32.00" },
+  // #1436's waiver-sentence $0 and the $7.95 ePLUS fee it waits on, and #1389's balance requirement, live on prod, read-only, Oct 17.
+  { fee_published_id: 58414, lineage_ref: 55074, institution_id: 5314, canonical_fee_key: "monthly_maintenance", fee_name: "or take advantage of both options to reduce your monthly fee to", amount: "0.00" },
+  { fee_published_id: 95264, lineage_ref: 107365, institution_id: 5314, canonical_fee_key: "monthly_maintenance", fee_name: "ePLUS Checking Monthly service charge", amount: "7.95" },
+  { fee_published_id: 106021, lineage_ref: 121345, institution_id: 4589, canonical_fee_key: "minimum_balance", fee_name: "Minimum Balance", amount: "25.00" },
+  // #1735's nine rows, as they read live on prod, read-only, Oct 17.
+  { fee_published_id: 33705, lineage_ref: 44428, institution_id: 349, canonical_fee_key: "overdraft", fee_name: "BankOn Checking Account Overdraft Fee for items", amount: "0.00" },
+  { fee_published_id: 149143, lineage_ref: 180933, institution_id: 6720, canonical_fee_key: "other_lending_fee", fee_name: "Loan Payments by Phone", amount: "5.00" },
+  { fee_published_id: 149806, lineage_ref: 182084, institution_id: 4628, canonical_fee_key: "money_order", fee_name: "Par Value: Par value of one share", amount: "5.00" },
+  { fee_published_id: 137241, lineage_ref: 159635, institution_id: 7438, canonical_fee_key: "atm_non_network", fee_name: "Ten (10) free nationwide ATM withdrawals per year", amount: "5.00" },
+  { fee_published_id: 68335, lineage_ref: 50030, institution_id: 199, canonical_fee_key: "cash_advance", fee_name: "3% (of the amount of each cash advance, minimum fee", amount: "10.00" },
+  { fee_published_id: 79402, lineage_ref: 89542, institution_id: 1842, canonical_fee_key: "account_research", fee_name: "MMDA Excess Transaction Fee (per item charge)", amount: "5.00" },
+  { fee_published_id: 74149, lineage_ref: 86595, institution_id: 576, canonical_fee_key: "safe_deposit_box", fee_name: "Safe Deposit Box Drilling Fee: Cost of Drilling +", amount: "25.00" },
+  { fee_published_id: 49817, lineage_ref: 50458, institution_id: 6110, canonical_fee_key: "cashiers_check", fee_name: "UT bank check (after 90 days)", amount: "5.00" },
+  { fee_published_id: 125584, lineage_ref: 177190, institution_id: 5008, canonical_fee_key: "atm_non_network", fee_name: "ATM Surcharge Fee on WWFCU machines (non-credit union cards only)", amount: "3.50" },
+  // #1746's six second reads and the live twins they wait on, as they read live on prod, read-only, Oct 17.
+  { fee_published_id: 109893, lineage_ref: 128166, institution_id: 7239, canonical_fee_key: "other_lending_fee", fee_name: "NON-MEMBER LOAN APPLICATION FEE: IF YOU ARE NOT A MEMBER OF WCDU, THERE IS A", amount: "10.00" },
+  { fee_published_id: 81340, lineage_ref: 75155, institution_id: 7239, canonical_fee_key: "other_lending_fee", fee_name: "NON-MEMBER Loan Application Fee", amount: "10.00" },
+  { fee_published_id: 130622, lineage_ref: 178358, institution_id: 4907, canonical_fee_key: "atm_non_network",
+    fee_name: "4To avoid paying a fee, choose any INOVA FCU ATM, Alliance One or CO-OP Network ATM across the nation. Foreign ATM trans", amount: "2.00" },
+  { fee_published_id: 130624, lineage_ref: 178373, institution_id: 4907, canonical_fee_key: "atm_non_network", fee_name: "Foreign ATM transactions", amount: "2.00" },
+  { fee_published_id: 147193, lineage_ref: 178165, institution_id: 3766, canonical_fee_key: "dormant_account", fee_name: "1A dormant fee", amount: "5.00" },
+  { fee_published_id: 101934, lineage_ref: 104175, institution_id: 3766, canonical_fee_key: "dormant_account", fee_name: "Dormant fee", amount: "5.00" },
+  { fee_published_id: 133860, lineage_ref: 154540, institution_id: 8016, canonical_fee_key: "paper_statement", fee_name: "1 Paper statement charge", amount: "5.00" },
+  { fee_published_id: 148614, lineage_ref: 180127, institution_id: 8016, canonical_fee_key: "paper_statement", fee_name: "Paper statement charge", amount: "5.00" },
+  { fee_published_id: 119352, lineage_ref: 25799, institution_id: 7239, canonical_fee_key: "garnishment_levy", fee_name: "each | 8Legal Process Service (Garnishment/Levy)", amount: "25.00" },
+  { fee_published_id: 81339, lineage_ref: 75154, institution_id: 7239, canonical_fee_key: "garnishment_levy", fee_name: "Legal Process Service (Garnishment/Levy)", amount: "25.00" },
+  { fee_published_id: 143826, lineage_ref: 173602, institution_id: 110, canonical_fee_key: "monthly_maintenance", fee_name: "3To receive Priority Checking benefits and waive the Monthly service charge", amount: "25.00" },
+  { fee_published_id: 147464, lineage_ref: 62399, institution_id: 110, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly service charge", amount: "25.00" },
+  // #1755's eighteen rows and the live twins they wait on, as they read live on prod, read-only, Oct 17.
+  { fee_published_id: 97434, lineage_ref: 110399, institution_id: 303, canonical_fee_key: "account_verification", fee_name: "Account verification", amount: "10.00" },
+  { fee_published_id: 49606, lineage_ref: 54070, institution_id: 303, canonical_fee_key: "safe_deposit_box", fee_name: "Safe Deposit Box drill fee", amount: "200.00" },
+  { fee_published_id: 148620, lineage_ref: 180145, institution_id: 1170, canonical_fee_key: "monthly_maintenance", fee_name: "RSA Token Monthly Fee", amount: "10.00" },
+  { fee_published_id: 107546, lineage_ref: 123832, institution_id: 4426, canonical_fee_key: "check_cashing", fee_name: "Check Cashing Service fee Minimum Share account balance of", amount: "10.00" },
+  { fee_published_id: 81215, lineage_ref: 75115, institution_id: 5085, canonical_fee_key: "card_replacement", fee_name: "Replacement DEBIT Card", amount: "5.00" },
+  { fee_published_id: 20420, lineage_ref: 16593, institution_id: 5165, canonical_fee_key: "bill_pay", fee_name: "Expedited Online Bill Pay", amount: "9.75" },
+  { fee_published_id: 102296, lineage_ref: 116917, institution_id: 6673, canonical_fee_key: "paper_statement", fee_name: "Monthly Paper Statements", amount: "2.00" },
+  { fee_published_id: 147811, lineage_ref: 141569, institution_id: 6673, canonical_fee_key: "paper_statement", fee_name: "Monthly Paper Statements", amount: "2.00" },
+  { fee_published_id: 125359, lineage_ref: 107005, institution_id: 1338, canonical_fee_key: "monthly_maintenance", fee_name: "No minimum balance requirements or monthly maintenance", amount: "10.00" },
+  { fee_published_id: 146800, lineage_ref: 177501, institution_id: 1338, canonical_fee_key: "monthly_maintenance", fee_name: "No minimum balance requirements or monthly maintenance", amount: "10.00" },
+  { fee_published_id: 74560, lineage_ref: 47104, institution_id: 8048, canonical_fee_key: "minimum_balance", fee_name: "Only on Money Market In Excess of 6 Withdrawals per month Minimum Balance Fee (if not maintained)", amount: "25.00" },
+  { fee_published_id: 125809, lineage_ref: 141750, institution_id: 8048, canonical_fee_key: "minimum_balance", fee_name: "Only on Money Market In Excess of 6 Withdrawals per month Minimum Balance Fee (if not maintained)", amount: "25.00" },
+  { fee_published_id: 102758, lineage_ref: 117168, institution_id: 58, canonical_fee_key: "wire_domestic_outgoing", fee_name: "Domestic Wire-IN", amount: "12.00" },
+  { fee_published_id: 13031, lineage_ref: 5696, institution_id: 1636, canonical_fee_key: "check_printing", fee_name: "Return Check Fee", amount: "15.00" },
+  { fee_published_id: 11722, lineage_ref: 4092, institution_id: 4802, canonical_fee_key: "check_printing", fee_name: "BILL PAY Return Fee - Paper Check Mailed", amount: "15.00" },
+  { fee_published_id: 11427, lineage_ref: 3923, institution_id: 4802, canonical_fee_key: "account_research", fee_name: "Consumer Loan Processing Fee", amount: "50.00" },
+  { fee_published_id: 141821, lineage_ref: 168381, institution_id: 1104, canonical_fee_key: "account_research", fee_name: "Expedited Payoff Fee", amount: "25.00" },
+  { fee_published_id: 232, lineage_ref: 185, institution_id: 1559, canonical_fee_key: "od_daily_cap", fee_name: "Overdraft per item (Consumer limit of 5 per day)", amount: "30.00" },
+  { fee_published_id: 9643, lineage_ref: 3031, institution_id: 303, canonical_fee_key: "account_verification", fee_name: "Account verification", amount: "10.00" },
+  { fee_published_id: 10760, lineage_ref: 3449, institution_id: 303, canonical_fee_key: "safe_deposit_box", fee_name: "Safe Deposit Box drill fee", amount: "200.00" },
+  { fee_published_id: 16593, lineage_ref: 10088, institution_id: 1170, canonical_fee_key: "monthly_maintenance", fee_name: "RSA Token Monthly Fee", amount: "10.00" },
+  { fee_published_id: 113766, lineage_ref: 133908, institution_id: 4426, canonical_fee_key: "check_cashing", fee_name: "Check Cashing Service fee Minimum Share account balance of", amount: "10.00" },
+  { fee_published_id: 11932, lineage_ref: 4191, institution_id: 5085, canonical_fee_key: "card_replacement", fee_name: "Replacement DEBIT Card", amount: "5.00" },
+  { fee_published_id: 13293, lineage_ref: 5528, institution_id: 5165, canonical_fee_key: "bill_pay", fee_name: "Expedited Online Bill Pay", amount: "9.75" },
+  { fee_published_id: 120678, lineage_ref: 179084, institution_id: 6673, canonical_fee_key: "paper_statement", fee_name: "Monthly Paper Statements", amount: "2.00" },
+  { fee_published_id: 30240, lineage_ref: 23557, institution_id: 58, canonical_fee_key: "wire_domestic_incoming", fee_name: "Domestic Wire-IN", amount: "12.00" },
+  { fee_published_id: 99586, lineage_ref: 35180, institution_id: 1636, canonical_fee_key: "deposited_item_return", fee_name: "Return Check Fee", amount: "15.00" },
+  { fee_published_id: 27024, lineage_ref: 18751, institution_id: 4802, canonical_fee_key: "bill_pay", fee_name: "BILL PAY Return Fee - Paper Check Mailed", amount: "15.00" },
+  { fee_published_id: 71397, lineage_ref: 84681, institution_id: 4802, canonical_fee_key: "other_lending_fee", fee_name: "Consumer Loan Processing fee", amount: "50.00" },
+  { fee_published_id: 141835, lineage_ref: 168405, institution_id: 1104, canonical_fee_key: "other_lending_fee", fee_name: "Expedited Payoff Fee", amount: "25.00" },
+  { fee_published_id: 98982, lineage_ref: 112573, institution_id: 1559, canonical_fee_key: "overdraft", fee_name: "Overdraft per item (Consumer limit of 5 per day)", amount: "30.00" },
+  { fee_published_id: 101170, lineage_ref: 115326, institution_id: 27, canonical_fee_key: "atm_non_network", fee_name: "Regions ATM: Withdrawal", amount: "5.00" },
+  { fee_published_id: 81957, lineage_ref: 91573, institution_id: 27, canonical_fee_key: "card_foreign_txn", fee_name: "International ATM Transaction", amount: "5.00" },
+  // #1774 TD rows as they read live, read-only, Oct 17 (lineage refs are prod values).
+  { fee_published_id: 64716, lineage_ref: 68894, institution_id: 12, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly fee", amount: "3.00" },
+  { fee_published_id: 64717, lineage_ref: 68895, institution_id: 12, canonical_fee_key: "paper_statement", fee_name: "Paper statements", amount: "3.00" },
+  { fee_published_id: 65870, lineage_ref: 71475, institution_id: 65, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly fee", amount: "3.00" },
+  { fee_published_id: 65871, lineage_ref: 71476, institution_id: 65, canonical_fee_key: "paper_statement", fee_name: "Paper statements", amount: "3.00" },
+  { fee_published_id: 122350, lineage_ref: 142957, institution_id: 4956, canonical_fee_key: "dormant_account", fee_name: "Inactivity Fee", amount: "5.00" },
+  // #1788: lineage refs here are fixture numbers.
+  { fee_published_id: 81615, lineage_ref: 201, institution_id: 19, canonical_fee_key: "atm_non_network", fee_name: "Non-Fifth Third ATM Fee", amount: "5.00" },
+  { fee_published_id: 81610, lineage_ref: 202, institution_id: 19, canonical_fee_key: "card_foreign_txn", fee_name: "International ATM Withdrawal", amount: "5.00" },
+  { fee_published_id: 16733, lineage_ref: 203, institution_id: 4967, canonical_fee_key: "atm_non_network", fee_name: "Excessive non-UNFCU/Co-op/Allpoint network ATM transactions", amount: "3.00" },
+  { fee_published_id: 144937, lineage_ref: 204, institution_id: 4967, canonical_fee_key: "card_foreign_txn", fee_name: "Over 8 withdrawals per month per account outside the US8: Excessive non-UNFCU/Co-op/Allpoint network ATM transactions", amount: "3.00" },
+  { fee_published_id: 142748, lineage_ref: 205, institution_id: 7327, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly fee", amount: "3.00" },
+  { fee_published_id: 152166, lineage_ref: 206, institution_id: 502, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly fee", amount: "28.00" },
+  { fee_published_id: 107315, lineage_ref: 207, institution_id: 8448, canonical_fee_key: "monthly_maintenance", fee_name: "Service charge", amount: "20.00" },
+  // #1691 cleanup (read-only, Oct 17): live as read; 53765 is the stop payment 152306 waits on.
+  { fee_published_id: 152139, lineage_ref: 187330, institution_id: 1192, canonical_fee_key: "safe_deposit_box", fee_name: "Safety Deposit Box Key Deposit at Account Opening (per key)", amount: "5.00" },
+  { fee_published_id: 152973, lineage_ref: 189559, institution_id: 8637, canonical_fee_key: "safe_deposit_box", fee_name: "Key Deposit", amount: "11.00" },
+  { fee_published_id: 152366, lineage_ref: 188269, institution_id: 4624, canonical_fee_key: "other_lending_fee", fee_name: "Mortgage satisfaction fee (varies)", amount: "1000.00" },
+  { fee_published_id: 152591, lineage_ref: 188726, institution_id: 7859, canonical_fee_key: "other_lending_fee", fee_name: "Reconveyance", amount: "4.95" },
+  { fee_published_id: 152306, lineage_ref: 187951, institution_id: 8579, canonical_fee_key: "bill_pay", fee_name: "Bill Payment, ACH, or Check", amount: "35.00" },
+  { fee_published_id: 53765, lineage_ref: 208, institution_id: 8579, canonical_fee_key: "stop_payment", fee_name: "Stop Payment Order for Bill Payment, ACH, or Check (one free per calendar year)", amount: "35.00" },
 ];
 const CONDITIONAL_ZERO = [43512, 54014, 61335, 68893, 70121, 73737, 77121, 77122, 77618, 84553, 87079, 87461, 88213, 91505, 120559];
-const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689, 138828, 138832, 138833, 138839, 138827, 138834, 138841, 148352, 138831, 138830, 138848, 138849, 138850, 138851, 42961, 86536, 66721, 66722, 83125, 97335, 97904];
+const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689, 138828, 138832, 138833, 138839, 138827, 138834, 138841, 148352, 138831, 138830, 138848, 138849, 138850, 138851, 42961, 86536, 66721, 66722, 83125, 97335, 97904, 58414, 106021, 33705, 149143, 149806, 137241, 68335, 79402, 74149, 49817, 125584, 109893, 130622, 147193, 133860, 119352, 143826, 97434, 49606, 148620, 107546, 81215, 20420, 102296, 147811, 125359, 146800, 74560, 125809, 102758, 13031, 11722, 11427, 141821, 232, 101170, 64716, 65870, 122350, 81615, 16733, 142748, 152166, 107315, 152973, 152366, 152591, 152306];
+
+// The standing list without the #1772/#1773 ATM rows, which have their own tests below.
+const STANDING = HAND_TAKEDOWNS.filter((entry) => entry.issue !== 1772 && entry.issue !== 1773);
 
 function fakeDb(live: LiveTakedownRow[], failOn?: string) {
   const writes: Array<{ text: string; values: unknown[] }> = [];
@@ -131,7 +220,7 @@ function fakeDb(live: LiveTakedownRow[], failOn?: string) {
 
 describe("hand takedowns (James, Oct 16)", () => {
   it("lists each confirmed-wrong fee with its reason and evidence", () => {
-    expect(HAND_TAKEDOWNS.map((entry) => [entry.feePublishedId, entry.reason])).toEqual([
+    expect(STANDING.map((entry) => [entry.feePublishedId, entry.reason])).toEqual([
       [80423, "source_mismatch: #1496"],
       [102440, "source_mismatch: #1496"],
       [83118, "source_mismatch: #1549"],
@@ -179,19 +268,70 @@ describe("hand takedowns (James, Oct 16)", () => {
       [83125, "source_mismatch: #1549"],
       [97335, "source_mismatch: #1549"],
       [97904, "source_mismatch: #1549"],
+      [58414, "source_mismatch: #1436"],
+      [106021, "source_mismatch: #1389"],
+      [33705, "source_mismatch: #1735"],
+      [149143, "source_mismatch: #1735"],
+      [149806, "source_mismatch: #1735"],
+      [137241, "source_mismatch: #1735"],
+      [68335, "source_mismatch: #1735"],
+      [79402, "source_mismatch: #1735"],
+      [74149, "source_mismatch: #1735"],
+      [49817, "source_mismatch: #1735"],
+      [125584, "source_mismatch: #1735"],
+      [109893, "duplicate of #81340 (#1746)"],
+      [130622, "duplicate of #130624 (#1746)"],
+      [147193, "duplicate of #101934 (#1746)"],
+      [133860, "duplicate of #148614 (#1746)"],
+      [119352, "duplicate of #81339 (#1746)"],
+      [143826, "duplicate of #147464 (#1746)"],
+      [97434, "duplicate of #9643 (#1755)"],
+      [49606, "duplicate of #10760 (#1755)"],
+      [148620, "duplicate of #16593 (#1755)"],
+      [107546, "duplicate of #113766 (#1755)"],
+      [81215, "duplicate of #11932 (#1755)"],
+      [20420, "duplicate of #13293 (#1755)"],
+      [102296, "duplicate of #120678 (#1755)"],
+      [147811, "duplicate of #120678 (#1755)"],
+      [125359, "source_mismatch: #1755"],
+      [146800, "source_mismatch: #1755"],
+      [74560, "source_mismatch: #1755"],
+      [125809, "source_mismatch: #1755"],
+      [102758, "source_mismatch: #1755"],
+      [13031, "source_mismatch: #1755"],
+      [11722, "source_mismatch: #1755"],
+      [11427, "source_mismatch: #1755"],
+      [141821, "source_mismatch: #1755"],
+      [232, "source_mismatch: #1755"],
+      [101170, "duplicate of #81957 (#1753)"],
+      [64716, "source_mismatch: #1774"],
+      [65870, "source_mismatch: #1774"],
+      // #1765: listed while CARD_PRODUCT_TAKEDOWN_LIVE is on (James, Oct 17).
+      [122350, "source_mismatch: #1765"],
+      // #1788 (guard v72): two international ATM repeats and three add-ons filed as monthly maintenance.
+      [81615, "duplicate of #81610 (#1788)"],
+      [16733, "duplicate of #144937 (#1788)"],
+      [142748, "source_mismatch: #1788"],
+      [152166, "source_mismatch: #1788"],
+      [107315, "source_mismatch: #1788"],
+      [152973, "source_mismatch: #1827"],
+      [152366, "source_mismatch: #1827"],
+      [152591, "source_mismatch: #1828"],
+      [152306, "duplicate of #53765 (#1830)"],
     ]);
+    expect(CARD_PRODUCT_TAKEDOWN_LIVE).toBe(true);
     // A wrong read names its issue; a second read of one printed fee names the live copy it repeats too.
     expect(HAND_TAKEDOWNS.every((entry) => entry.evidence.length > 0 && (entry.kind === "duplicate"
       ? /^duplicate of #\d+ \(#\d+\)$/.test(entry.reason) && entry.reason.endsWith(`(#${entry.issue})`)
       : entry.reason === `source_mismatch: #${entry.issue}`))).toBe(true);
     // James, Oct 16 03:37 UTC: fewer than 20 fees per batch (one issue) go this way; a bigger batch goes to him.
     expect(HAND_TAKEDOWN_BATCH_LIMIT).toBeLessThan(20);
-    expect(handTakedownBatchSizes()[0]).toEqual({ issue: 1571, entries: 15 });
+    expect(handTakedownBatchSizes()[0]).toEqual({ issue: 1755, entries: 18 });
     expect(handTakedownBatchSizes().every((batch) => batch.entries <= HAND_TAKEDOWN_BATCH_LIMIT)).toBe(true);
   });
 
   it("takes a row down only while it still reads as listed", () => {
-    expect(planHandTakedowns(LIVE)).toEqual({
+    expect(planHandTakedowns(LIVE, STANDING)).toEqual({
       takenDown: [
         { feePublishedId: 80423, feeVerifiedId: 90425, reason: "source_mismatch: #1496" },
         { feePublishedId: 102440, feeVerifiedId: 116687, reason: "source_mismatch: #1496" },
@@ -240,6 +380,54 @@ describe("hand takedowns (James, Oct 16)", () => {
         { feePublishedId: 83125, feeVerifiedId: 92572, reason: "source_mismatch: #1549" },
         { feePublishedId: 97335, feeVerifiedId: 110368, reason: "source_mismatch: #1549" },
         { feePublishedId: 97904, feeVerifiedId: 111117, reason: "source_mismatch: #1549" },
+        { feePublishedId: 58414, feeVerifiedId: 55074, reason: "source_mismatch: #1436" },
+        { feePublishedId: 106021, feeVerifiedId: 121345, reason: "source_mismatch: #1389" },
+        { feePublishedId: 33705, feeVerifiedId: 44428, reason: "source_mismatch: #1735" },
+        { feePublishedId: 149143, feeVerifiedId: 180933, reason: "source_mismatch: #1735" },
+        { feePublishedId: 149806, feeVerifiedId: 182084, reason: "source_mismatch: #1735" },
+        { feePublishedId: 137241, feeVerifiedId: 159635, reason: "source_mismatch: #1735" },
+        { feePublishedId: 68335, feeVerifiedId: 50030, reason: "source_mismatch: #1735" },
+        { feePublishedId: 79402, feeVerifiedId: 89542, reason: "source_mismatch: #1735" },
+        { feePublishedId: 74149, feeVerifiedId: 86595, reason: "source_mismatch: #1735" },
+        { feePublishedId: 49817, feeVerifiedId: 50458, reason: "source_mismatch: #1735" },
+        { feePublishedId: 125584, feeVerifiedId: 177190, reason: "source_mismatch: #1735" },
+        { feePublishedId: 109893, feeVerifiedId: 128166, reason: "duplicate of #81340 (#1746)" },
+        { feePublishedId: 130622, feeVerifiedId: 178358, reason: "duplicate of #130624 (#1746)" },
+        { feePublishedId: 147193, feeVerifiedId: 178165, reason: "duplicate of #101934 (#1746)" },
+        { feePublishedId: 133860, feeVerifiedId: 154540, reason: "duplicate of #148614 (#1746)" },
+        { feePublishedId: 119352, feeVerifiedId: 25799, reason: "duplicate of #81339 (#1746)" },
+        { feePublishedId: 143826, feeVerifiedId: 173602, reason: "duplicate of #147464 (#1746)" },
+        { feePublishedId: 97434, feeVerifiedId: 110399, reason: "duplicate of #9643 (#1755)" },
+        { feePublishedId: 49606, feeVerifiedId: 54070, reason: "duplicate of #10760 (#1755)" },
+        { feePublishedId: 148620, feeVerifiedId: 180145, reason: "duplicate of #16593 (#1755)" },
+        { feePublishedId: 107546, feeVerifiedId: 123832, reason: "duplicate of #113766 (#1755)" },
+        { feePublishedId: 81215, feeVerifiedId: 75115, reason: "duplicate of #11932 (#1755)" },
+        { feePublishedId: 20420, feeVerifiedId: 16593, reason: "duplicate of #13293 (#1755)" },
+        { feePublishedId: 102296, feeVerifiedId: 116917, reason: "duplicate of #120678 (#1755)" },
+        { feePublishedId: 147811, feeVerifiedId: 141569, reason: "duplicate of #120678 (#1755)" },
+        { feePublishedId: 125359, feeVerifiedId: 107005, reason: "source_mismatch: #1755" },
+        { feePublishedId: 146800, feeVerifiedId: 177501, reason: "source_mismatch: #1755" },
+        { feePublishedId: 74560, feeVerifiedId: 47104, reason: "source_mismatch: #1755" },
+        { feePublishedId: 125809, feeVerifiedId: 141750, reason: "source_mismatch: #1755" },
+        { feePublishedId: 102758, feeVerifiedId: 117168, reason: "source_mismatch: #1755" },
+        { feePublishedId: 13031, feeVerifiedId: 5696, reason: "source_mismatch: #1755" },
+        { feePublishedId: 11722, feeVerifiedId: 4092, reason: "source_mismatch: #1755" },
+        { feePublishedId: 11427, feeVerifiedId: 3923, reason: "source_mismatch: #1755" },
+        { feePublishedId: 141821, feeVerifiedId: 168381, reason: "source_mismatch: #1755" },
+        { feePublishedId: 232, feeVerifiedId: 185, reason: "source_mismatch: #1755" },
+        { feePublishedId: 101170, feeVerifiedId: 115326, reason: "duplicate of #81957 (#1753)" },
+        { feePublishedId: 64716, feeVerifiedId: 68894, reason: "source_mismatch: #1774" },
+        { feePublishedId: 65870, feeVerifiedId: 71475, reason: "source_mismatch: #1774" },
+        { feePublishedId: 122350, feeVerifiedId: 142957, reason: "source_mismatch: #1765" },
+        { feePublishedId: 81615, feeVerifiedId: 201, reason: "duplicate of #81610 (#1788)" },
+        { feePublishedId: 16733, feeVerifiedId: 203, reason: "duplicate of #144937 (#1788)" },
+        { feePublishedId: 142748, feeVerifiedId: 205, reason: "source_mismatch: #1788" },
+        { feePublishedId: 152166, feeVerifiedId: 206, reason: "source_mismatch: #1788" },
+        { feePublishedId: 107315, feeVerifiedId: 207, reason: "source_mismatch: #1788" },
+        { feePublishedId: 152973, feeVerifiedId: 189559, reason: "source_mismatch: #1827" },
+        { feePublishedId: 152366, feeVerifiedId: 188269, reason: "source_mismatch: #1827" },
+        { feePublishedId: 152591, feeVerifiedId: 188726, reason: "source_mismatch: #1828" },
+        { feePublishedId: 152306, feeVerifiedId: 187951, reason: "duplicate of #53765 (#1830)" },
       ],
       skipped: [],
     });
@@ -251,7 +439,7 @@ describe("hand takedowns (James, Oct 16)", () => {
         { feePublishedId: 102440, reason: "changed since listed" },
       ],
     });
-    expect(planHandTakedowns([]).skipped.map((row) => row.reason)).toEqual(IDS.map(() => "not live"));
+    expect(planHandTakedowns([], STANDING).skipped.map((row) => row.reason)).toEqual(IDS.map(() => "not live"));
     // #1659: the student page's copy waits until 102971 reads as corrected ($12, the account's name).
     const studentCopy = HAND_TAKEDOWNS.filter((entry) => entry.feePublishedId === 102973);
     const student = LIVE.find((row) => row.fee_published_id === 102973)!;
@@ -299,6 +487,42 @@ describe("hand takedowns (James, Oct 16)", () => {
     // Another institution or category at the same id, name and price is not the listed row.
     const moved = [{ ...LIVE[4], institution_id: 1 }, { ...LIVE[5], canonical_fee_key: "legal_process" }];
     expect(planHandTakedowns(moved, HAND_TAKEDOWNS.slice(4, 6)).skipped.map((row) => row.reason)).toEqual(["changed since listed", "changed since listed"]);
+  });
+
+  it("#1735: Gate City's BankOn $0 comes down and its $0 NSF stays; the $32 traces under its printed name", () => {
+    const batch = HAND_TAKEDOWNS.filter((entry) => entry.issue === 1735);
+    expect(batch).toHaveLength(9);
+    expect(batch.map((entry) => entry.feePublishedId)).not.toContain(33701);
+    // Text 503 (doc 13087, read-only, Oct 17), its overdraft and NSF lines.
+    const gateCity = "Overdraft Fees\nOverdraft fee for items paid resulting in a negative\nbalance.\nMaximum of 4 fees per calendar day.\n$32 per item\n" +
+      "If your account is charged more than four overdraft\nOverdraft /Non-Sufficient Funds (NSF) | fees per day, the additional fees will be refunded\n" +
+      "within 48 hours. The date the fee is charged is used\nto calculate the number of fees charged per day.\nBankOn Checking Account Overdraft Fee for items\n$0 per item\n" +
+      "paid resulting in a negative balance.\nReturned Item/Non-Sufficient Funds\n(NSF) Third parties or other banks may impose | Non-Sufficient Funds (NSF) Fee for items returned. $0 per item\n";
+    // The $0 traces only to the BankOn account's own line; the NSF $0 is the bank's printed price.
+    expect(checkFeeAgainstSource(gateCity, "BankOn Checking Account Overdraft Fee for items", 0, ".", "overdraft"))
+      .toEqual({ ok: true, sourceLine: "BankOn Checking Account Overdraft Fee for items | $0 per item" });
+    expect(checkFeeAgainstSource(gateCity, "Non-Sufficient Funds (NSF) Fee for items returned", 0, ".", "nsf").ok).toBe(true);
+    // The standard $32 sits below a count-limit note; the shared check reads past that note (#1744),
+    // so it traces under the printed name and comes in on the next Darwin read, not a hand fix.
+    expect(checkFeeAgainstSource(gateCity, "Overdraft fee for items paid resulting in a negative balance", 32, ".", "overdraft"))
+      .toEqual({ ok: true, sourceLine: "Overdraft fee for items paid resulting in a negative | $32 per item" });
+  });
+
+  it("#1691 cleanup: four live misreads v5 released come down, each under its cause issue", () => {
+    const batch = HAND_TAKEDOWNS.filter((entry) => [1827, 1828, 1830].includes(entry.issue));
+    expect(batch.map((entry) => [entry.feePublishedId, entry.issue, entry.kind])).toEqual([
+      [152973, 1827, "wrong_amount"], [152366, 1827, "wrong_amount"], [152591, 1828, "wrong_amount"], [152306, 1830, "duplicate"],
+    ]);
+    const live = LIVE.filter((row) => [152139, 152973, 152366, 152591, 152306, 53765].includes(Number(row.fee_published_id)));
+    expect(planHandTakedowns(live, batch).takenDown.map((item) => item.feePublishedId)).toEqual([152973, 152366, 152591, 152306]);
+    // The stop payment repeat leaves only while the bank's own stop payment row stays live.
+    expect(planHandTakedowns(live.filter((row) => Number(row.fee_published_id) !== 53765), batch).takenDown.map((item) => item.feePublishedId))
+      .toEqual([152973, 152366, 152591]);
+    // Central Bank's key deposit (152139) is filed as printed; whether any key deposit is a fee is
+    // James's call on #1831, so it is not listed. Neither is its lost key fee (139400). Valley
+    // Strong's box rents (151737-151741) are shifted one row too (#1827), but they are corrected in
+    // a batch of their own, not here.
+    expect(HAND_TAKEDOWNS.some((entry) => [152139, 139400, 151737, 151738, 151739, 151740, 151741].includes(entry.feePublishedId))).toBe(false);
   });
 
   it("archives the row, rejects its verified row, records feedback and one run event", async () => {
@@ -461,5 +685,90 @@ describe("hand audience fixes (#1302)", () => {
     const result = await applyHandAudienceFixes(failed.db as never, { runId: 4, stepId: 40, dryRun: false, list: ONLY_55401 });
     expect(result).toMatchObject({ fixed: [], error: "boom: UPDATE verified_fee_observations" });
     expect(String(failed.writes.find((entry) => entry.text.includes("'step.warning'"))?.values.at(-1))).toContain("hamilton.hand_audience_fix");
+  });
+});
+
+describe("#1746: the footnote cut's second reads (Oct 17)", () => {
+  it("each waits on its kept twin, live at the listed name and price", () => {
+    const batch = HAND_TAKEDOWNS.filter((entry) => entry.issue === 1746);
+    expect(batch.map((entry) => [entry.feePublishedId, entry.requiresLive?.feePublishedId])).toEqual([
+      [109893, 81340], [130622, 130624], [147193, 101934], [133860, 148614], [119352, 81339], [143826, 147464],
+    ]);
+    const twins = new Set(batch.map((entry) => entry.requiresLive!.feePublishedId));
+    const withoutTwins = LIVE.filter((row) => !twins.has(Number(row.fee_published_id)));
+    expect(planHandTakedowns(withoutTwins, batch).takenDown).toEqual([]);
+    expect(planHandTakedowns(LIVE, batch).takenDown.map((item) => item.feePublishedId)).toEqual([109893, 130622, 147193, 133860, 119352, 143826]);
+  });
+});
+
+describe("#1755: one printed line live under two frequencies or categories (Oct 17)", () => {
+  it("takes down the twin the line does not support, and waits on the twin it keeps", () => {
+    const batch = HAND_TAKEDOWNS.filter((entry) => entry.issue === 1755);
+    expect(batch).toHaveLength(18);
+    expect(batch.length).toBeLessThanOrEqual(HAND_TAKEDOWN_BATCH_LIMIT);
+    expect(batch.map((entry) => [entry.feePublishedId, entry.requiresLive?.feePublishedId ?? null])).toEqual([
+      [97434, 9643], [49606, 10760], [148620, 16593], [107546, 113766], [81215, 11932], [20420, 13293],
+      [102296, 120678], [147811, 120678], [125359, null], [146800, null], [74560, null], [125809, null],
+      [102758, 30240], [13031, 99586], [11722, 27024], [11427, 71397], [141821, 141835], [232, 98982],
+    ]);
+    // A kept twin is never itself listed, so one row of every pair the line supports stays live.
+    const listed = new Set(HAND_TAKEDOWNS.map((entry) => entry.feePublishedId));
+    expect(batch.some((entry) => entry.requiresLive && listed.has(entry.requiresLive.feePublishedId))).toBe(false);
+    const twins = new Set(batch.flatMap((entry) => (entry.requiresLive ? [entry.requiresLive.feePublishedId] : [])));
+    const withoutTwins = LIVE.filter((row) => !twins.has(Number(row.fee_published_id)));
+    // Without their twins only the four rows whose line prices neither copy come down (MBT Bank, Lakewood FCU).
+    expect(planHandTakedowns(withoutTwins, batch).takenDown.map((item) => item.feePublishedId)).toEqual([125359, 146800, 74560, 125809]);
+    expect(planHandTakedowns(LIVE, batch).takenDown.map((item) => item.feePublishedId)).toEqual(batch.map((entry) => entry.feePublishedId));
+  });
+});
+
+describe("#1772, #1773: non-network ATM takedowns listed by ATM_SURCHARGE_TAKEDOWN_LIVE", () => {
+  it("lists all 28 while the switch is on (James, Oct 17), and none when off", () => {
+    expect(ATM_SURCHARGE_TAKEDOWN_LIVE).toBe(true);
+    expect(HAND_TAKEDOWNS.filter((entry) => entry.issue === 1772 || entry.issue === 1773)).toHaveLength(28);
+    expect(atmSurchargeTakedowns(false)).toEqual([]);
+  });
+
+  it("lists 28 rows when on, 13 non-customer surcharges and 15 that are not the fee, each batch under the limit", () => {
+    const entries = atmSurchargeTakedowns(true);
+    expect(entries).toHaveLength(28);
+    expect(entries.filter((entry) => entry.issue === 1772)).toHaveLength(13);
+    expect(entries.filter((entry) => entry.issue === 1773)).toHaveLength(15);
+    expect(new Set(entries.map((entry) => entry.feePublishedId)).size).toBe(28);
+    expect(entries.every((entry) => entry.canonicalFeeKey === "atm_non_network" && entry.evidence.length > 0 &&
+      entry.reason === `source_mismatch: #${entry.issue}`)).toBe(true);
+    expect(handTakedownBatchSizes(entries).every((batch) => batch.entries <= HAND_TAKEDOWN_BATCH_LIMIT)).toBe(true);
+    // None is on the standing list too.
+    const listed = new Set(STANDING.map((entry) => entry.feePublishedId));
+    expect(entries.some((entry) => listed.has(entry.feePublishedId))).toBe(false);
+  });
+
+  it("takes an entry down only while it reads as listed", () => {
+    const [entry] = atmSurchargeTakedowns(true);
+    const row: LiveTakedownRow = { fee_published_id: entry.feePublishedId, lineage_ref: 1, institution_id: entry.institutionId,
+      canonical_fee_key: "atm_non_network", fee_name: entry.feeName, amount: String(entry.amount) };
+    expect(planHandTakedowns([row], [entry]).takenDown.map((planned) => planned.feePublishedId)).toEqual([entry.feePublishedId]);
+    expect(planHandTakedowns([{ ...row, amount: "9.99" }], [entry]).skipped)
+      .toEqual([{ feePublishedId: entry.feePublishedId, reason: "changed since listed" }]);
+  });
+});
+
+describe("#1788: guard v72 hand takedowns", () => {
+  const batch = HAND_TAKEDOWNS.filter((entry) => entry.issue === 1788);
+
+  it("lists 5 rows, each with its evidence, under the batch limit", () => {
+    expect(batch.map((entry) => entry.feePublishedId)).toEqual([81615, 16733, 142748, 152166, 107315]);
+    expect(batch.length).toBeLessThanOrEqual(HAND_TAKEDOWN_BATCH_LIMIT);
+    expect(batch.every((entry) => entry.evidence.length > 0)).toBe(true);
+  });
+
+  it("takes a duplicate international ATM read down only while the fee it repeats is live", () => {
+    const fifthThird = batch.find((entry) => entry.feePublishedId === 81615)!;
+    const row: LiveTakedownRow = { fee_published_id: 81615, lineage_ref: 1, institution_id: 19,
+      canonical_fee_key: "atm_non_network", fee_name: "Non-Fifth Third ATM Fee", amount: "5.00" };
+    const kept: LiveTakedownRow = { fee_published_id: 81610, lineage_ref: 2, institution_id: 19,
+      canonical_fee_key: "card_foreign_txn", fee_name: "International ATM Withdrawal", amount: "5.00" };
+    expect(planHandTakedowns([row], [fifthThird]).skipped).toEqual([{ feePublishedId: 81615, reason: "waiting on #81610" }]);
+    expect(planHandTakedowns([row, kept], [fifthThird]).takenDown.map((planned) => planned.feePublishedId)).toEqual([81615]);
   });
 });

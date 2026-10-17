@@ -96,6 +96,19 @@ describe("answer correctness", () => {
     expect(failures.some((f) => /^National layer: counts \d+ institutions, the catalog has \d+ publishing this fee$/.test(f))).toBe(true);
   });
 
+  it("recomputes a band that counts sister charters on one shared schedule once (rule 7, #1441)", () => {
+    // Peers 303 and 304 are sister charters of 302 reading one schedule: five values count, seven are listed.
+    const sisters = [10, 20, 30, 32, 34, 40, 50].map((amount, i) => ({ ...member(300 + i, amount), ...(i === 3 || i === 4 ? { countedAs: 302 } : {}) }));
+    const base = research();
+    const withLayer = (amounts: number[]): FeeResearch => ({ ...base, layers: [base.layers[0], marketLayer("state", "Tennessee", amounts, base.current, [], sisters)] });
+    const check = (r: FeeResearch) => {
+      const response = buildAskResponse({ question: "How does our overdraft fee compare?", intent: parseAsk("How does our overdraft fee compare?"), research: r, memory: [] });
+      return reconcileAnswer({ question: "How does our overdraft fee compare?", response, research: r, live: liveFor(r) }).failures.filter((f) => f.startsWith("Tennessee layer"));
+    };
+    expect(check(withLayer([10, 20, 32, 40, 50]))).toEqual([]);
+    expect(check(withLayer(sisters.map((m) => m.amount)))).toEqual(["Tennessee layer: p25, p75 do not recompute from the members' live values"]);
+  });
+
   it("leaves an answer unchecked when the catalog could not be read", () => {
     const r = research();
     const response = buildAskResponse({ question: "How does our overdraft fee compare?", intent: parseAsk("How does our overdraft fee compare?"), research: r, memory: [] });

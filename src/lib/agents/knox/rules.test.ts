@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { amountsIn, classifyFeeText, isConditionAmount, nameFrom, joinWrappedProse, foldedCategory, classifyPatternKey, extractCandidatesFromText, extractFromSegment, notAZeroPrice, stripFootnoteMarks } from "./rules";
 import { runFreeSpecialists } from "./specialists";
 import { joinWrappedLeaderNames } from "@/lib/custom-report/source-check";
+import { researchSplitTarget } from "@/lib/fee-fold";
 import { withBoxSizeCellsSplit, withDroppedDecimalPoints, withSidewaysBoxTable, withoutBusinessOnlyFees, withoutLeadingFootnoteMark } from "./rules";
 import { tidyFeeName } from "./layout";
 
@@ -52,7 +53,8 @@ describe("Knox extract.rules", () => {
     expect(fees("Money Orders ($1,000 Limit) Non-Customer ........................ $10.00")).toEqual([
       ["Money Orders ($1,000 Limit) Non-Customer", 10, "money_order"],
     ]);
-    expect(fees("COURTESY PAY ($300 THRESHOLD, FEE PER TRANS.) $ | 30.00")).toEqual([]);
+    // v76: the dollar sign in its own cell is the $30 price's ("$ | 30.00"); the $300 threshold is still no fee.
+    expect(fees("COURTESY PAY ($300 THRESHOLD, FEE PER TRANS.) $ | 30.00").map(([, amount]) => amount)).toEqual([30]);
     expect(fees("Safe Deposit Box / $10.00 refundable key deposit on each box")).toEqual([]);
     // "Limits may apply" after a real price is not a limit on that price.
     expect(fees("Check Cashing (non customers) $5.00 Limits may apply").map(([, amount]) => amount)).toEqual([5]);
@@ -541,18 +543,18 @@ describe("Knox extract.rules", () => {
   });
 
   it.each([
-    ["Returned Mail Fee", "account_research"],
-    ["Bad Address Fee", "account_research"],
+    ["Returned Mail Fee", researchSplitTarget("returned_mail")],
+    ["Bad Address Fee", researchSplitTarget("returned_mail")],
     ["Fax Outgoing", "document_reproduction"],
     ["Loan Payoff Fax/Mail Fee", "account_research"],
-    ["Excessive Withdrawal Fee", "account_research"],
-    ["Withdrawal Limit Fee", "account_research"],
+    ["Excessive Withdrawal Fee", researchSplitTarget("excess_withdrawal")],
+    ["Withdrawal Limit Fee", researchSplitTarget("excess_withdrawal")],
     ["Foreign Item Collection", "collection_item"],
     ["Canadian Check Processing Fee", "collection_item"],
     ["Collection Item", "collection_item"],
     ["Loan Cancellation Fee", "loan_origination"],
     ["Loan Refinance Fee", "other_lending_fee"],
-  ])("v26 folds %s into %s (James, Oct 7 2026)", (name, key) => {
+  ])("v26 folds %s into %s (James, Oct 7 2026; v77: its own type once the research split is on)", (name, key) => {
     expect(classifyFeeText(name)).toBe(key);
     expect(foldedCategory(name)).toBe(key);
   });
@@ -1573,5 +1575,194 @@ describe("v75: recurring held name families from the 62-bank answer key (Knox re
 
   it("leaves returned statements held (James's call since v26)", () => {
     expect(hint("Returned Statement fee | $10/each")).toEqual([]); // inst 7526, f2295
+  });
+});
+
+describe("v76: Knox recall on the 62-bank answer key (multi-price rows, free rows, varying prices)", () => {
+  const reads = (line: string) => extractFromSegment(line).candidates.map((c) => [c.canonicalHint, c.amount, c.feeName]);
+  const held = (line: string) => extractFromSegment(line).held.map((h) => [h.shape, h.canonicalHint, h.amount, h.feeName]);
+
+  it("keeps a free row under a fee heading a row of that heading's table (live doc 8862)", () => {
+    const found = extractCandidatesFromText("Excessive withdrawals, each:\nATM or counter | None\n3rd party/Telephonic | $5.00");
+    expect(found.candidates.map((c) => [c.canonicalHint, c.amount])).toEqual([[researchSplitTarget("excess_withdrawal"), 5]]);
+    expect(found.held).toEqual([]);
+  });
+
+  it("never lets free rows push a priced line past the document's segment cap (live doc 20905)", () => {
+    const free = Array.from({ length: 60 }, (_, i) => `Service ${i} statement copy ........ No Charge`);
+    const priced = Array.from({ length: 140 }, (_, i) => `Account ${i} balance of $${i + 1}00 or more`);
+    const text = [...free, ...priced, "$30.00 one-time ACH origination setup fee"].join("\n");
+    expect(extractCandidatesFromText(text).candidates.some((c) => c.canonicalHint === "ach_origination")).toBe(true);
+  });
+
+  it("prices each slash variant of a fee (inst 69, 1897, 8594)", () => {
+    expect(reads("Domestic Outbound Wires (Online/Manual) | $35/$60 | $35/$60")).toEqual([
+      ["wire_domestic_outgoing", 35, "Domestic Outbound Wires (Online)"],
+      ["wire_domestic_outgoing", 60, "Domestic Outbound Wires (Manual)"],
+    ]);
+    // Each variant takes its own category: the incoming wire is no longer read as the outgoing one.
+    expect(reads("Wire Transfers – Foreign Incoming / Outgoing | $15 / $40")).toEqual([
+      ["wire_intl_incoming", 15, "Wire Transfers – Foreign Incoming"],
+      ["wire_intl_outgoing", 40, "Wire Transfers – Foreign Outgoing"],
+    ]);
+    expect(reads("-Notary FL/GA $10.00/$2.00")).toEqual([["notary_fee", 10, "Notary FL"], ["notary_fee", 2, "Notary GA"]]);
+    expect(reads("Debit Card Replacement Fee | $10.00 / $50 expedited delivery")).toEqual([
+      ["card_replacement", 10, "Debit Card Replacement Fee"],
+      ["rush_card", 50, "Debit Card Replacement Fee expedited delivery"],
+    ]);
+  });
+
+  it("keeps the first price when the slash pair names no variants", () => {
+    expect(reads("Courtesy Pay | $35/$35").map(([key, amount]) => [key, amount])).toEqual([["overdraft", 35]]);
+    // A first-unit price and its add-on stay one read: the shared check reads the add-on as no fee's own price.
+    expect(reads("Photocopies & Faxes | $3 first page, $1 each additional page").map(([, amount]) => amount)).toEqual([3]);
+  });
+
+  it("reads both column prices of a box size, and a split dollar cell (inst 1175, 115)", () => {
+    expect(reads("2” x 5” $45.00 $65.00").map(([key, amount]) => [key, amount])).toEqual([["safe_deposit_box", 45], ["safe_deposit_box", 65]]);
+    const text = "Return Mail (per month) | $ | 5.00 | 3 x 5 | $ 55.00\nResearch per photocopy | $ | 1.00\nInterim statement (ATM/Branch) | $ | 2.00";
+    const found = extractCandidatesFromText(text).candidates.map((c) => [c.canonicalHint, c.amount]);
+    expect(found).toContainEqual([researchSplitTarget("returned_mail"), 5]);
+    expect(found).toContainEqual(["document_reproduction", 1]);
+    // An interim statement printed at an ATM is a statement copy, not an ATM fee.
+    expect(found).toContainEqual(["document_reproduction", 2]);
+    expect(found).not.toContainEqual([researchSplitTarget("returned_mail"), 55]);
+  });
+
+  it("holds a free schedule row at $0 in the shapes the line rules never read", () => {
+    expect(held("eStatements (View and Download) ........................................................ FREE")).toEqual([["zero", "estatement_fee", 0, "eStatements (View and Download)"]]);
+    expect(held("| Notary Public Services | No Cost to Members |")).toEqual([["zero", "notary_fee", 0, "Notary Public Services"]]);
+    expect(held("Notary Services (customers only): no fee")).toEqual([["zero", "notary_fee", 0, "Notary Services (customers only)"]]);
+    expect(held("No charge for notarization of Bank documents.")).toEqual([["zero", "notary_fee", 0, "notarization of Bank documents"]]);
+    expect(held("Account Balance inquiries | FREE")).toEqual([["zero", "balance_inquiry", 0, "Account Balance inquiries"]]);
+    // A two-column row: the second fee's free cell no longer hides the first fee's price.
+    expect(held("External Transfer | $20.00 | Overdraft Protection Transfer from Shares | Free")).toContainEqual(["zero", "od_protection_transfer", 0, "Overdraft Protection Transfer from Shares"]);
+    expect(held("E-Statements ............FREE | Money Order (per money order) ......... $1.50")).toContainEqual(["zero", "estatement_fee", 0, "E-Statements"]);
+  });
+
+  it("never reads an allowance, an own-network ATM or a benefit line as a $0 price", () => {
+    expect(held("Cashier's Checks, two per month ($500 minimum). | Free")).toEqual([]);
+    expect(held("Money Orders, two per month | Free")).toEqual([]);
+    expect(held("CUTX-owned ATM ............ FREE")).toEqual([]);
+    expect(held("Free Online Banking")).toEqual([]);
+    expect(held("Online Services | Free")).toEqual([]);
+  });
+
+  it("holds a fee whose price varies with no amount, never inventing one", () => {
+    expect(held("Check printing prices vary depending on style selected")).toEqual([["varies", "check_printing", null, "Check printing"]]);
+    expect(held("Check Orders | Varies by style")).toEqual([["varies", "check_printing", null, "Check Orders"]]);
+    expect(held("| PERSONALIZED CHECKS | Prices Vary With Selected Styles |")).toEqual([["varies", "check_printing", null, "PERSONALIZED CHECKS"]]);
+    expect(held("Safe deposit box – call for quotes 3 x 5 3 x 10 5 x 10")).toEqual([["varies", "safe_deposit_box", null, "Safe deposit box"]]);
+    expect(held("Bill Pay Services: varies by account type")).toEqual([["varies", "bill_pay", null, "Bill Pay Services"]]);
+    expect(held("ATM Withdrawals | Safe Deposit Drill & Lock Replacement.................Fee varies by service")).toEqual([
+      ["varies", "safe_deposit_box", null, "Safe Deposit Drill & Lock Replacement"],
+    ]);
+    // A rate that varies is no fee; a line with a price is read as before.
+    expect(held("Loan rates vary by credit score")).toEqual([]);
+    expect(held("Check Printing | $25.00 (prices vary)").filter(([shape]) => shape === "varies")).toEqual([]);
+  });
+
+  it("goes through the whole team: the reads trace and the holds keep their shapes", () => {
+    const text = [
+      "Domestic Outbound Wires (Online/Manual) | $35/$60",
+      "Download account information.............................................................. FREE",
+      "eStatements (View and Download) ........................................................ FREE",
+      "Check Orders | Varies by style",
+      "Stop Payment | $30.00",
+    ].join("\n");
+    const free = runFreeSpecialists(text, {});
+    expect(free.candidates.map((c) => [c.canonicalHint, c.amount])).toEqual(expect.arrayContaining([["wire_domestic_outgoing", 35], ["wire_domestic_outgoing", 60], ["stop_payment", 30]]));
+    expect(free.held.map((h) => [h.shape, h.canonicalHint])).toEqual(expect.arrayContaining([["zero", "estatement_fee"], ["varies", "check_printing"]]));
+    expect(free.held.some((h) => h.shape === "untraced")).toBe(false);
+  });
+});
+
+describe("v78: Knox recall round 3 and #1304's Knox half (Oct 17)", () => {
+  const team = (text: string) => runFreeSpecialists(text).candidates.map((c) => [c.canonicalHint, c.amount]);
+  const zero = (text: string) => runFreeSpecialists(text).held.filter((h) => h.shape === "zero").map((h) => [h.canonicalHint, h.feeName]);
+
+  it("files a bill payment priced under an overdraft or NSF heading as that fee, never as bill pay (#1304)", () => {
+    // #1304's row (live 88513) and the bill pay rows guard v68 (#1751) fails, read by the whole team.
+    expect(team("Schedule of Fees\nCourtesy Pay (Paid NSF) Check/ACH/Bill Pay Payment | $32.00/item")).toEqual([["overdraft", 32]]);
+    expect(team("Schedule of Fees\nCourtesy Pay (Paid NSF) | Check/ACH/Bill Pay Payment | $32.00/item")).toEqual([["overdraft", 32]]);
+    expect(team("Fee Schedule\nNon-Sufficient Funds (NSF) ACH, Share Draft, Bill Pay | $30.00/item")).toEqual([["nsf", 30]]);
+    expect(team("Fee Schedule\nNon-Sufficient Funds | Check, ACH, Bill Pay, recurring debit card transaction, / $30.00")).toEqual([["nsf", 30]]);
+    expect(team("Fee Schedule\nNonsufficient funds (NSF) Bill Pay | $35.00")).toEqual([["nsf", 35]]);
+    expect(team("Fee Schedule\nNon-sufficient/Uncollected Funds Item returned by Bill Payment Service..$30.00")).toEqual([["nsf", 30]]);
+    // A heading line above the row decides it too.
+    expect(team("Fee Schedule\nCourtesy Pay:\nCheck/ACH/Bill Pay Payment | $32.00/item")).toEqual([["overdraft", 32]]);
+    expect(team("Fee Schedule\nNon-Sufficient Funds (NSF)\nBill Pay | $30.00")).toEqual([["nsf", 30]]);
+    expect(team("Fee Schedule\nOverdraft Fees\nBill Pay | $30.00")).toEqual([["overdraft", 30]]);
+  });
+
+  it("keeps bill pay's own fees, with an overdraft or NSF word elsewhere on the line", () => {
+    expect(team("Fee Schedule\nBill Pay\nSame Day Bill Payment | $9.95\nBill Pay Inactive | $5.00")).toEqual([["bill_pay", 9.95], ["bill_pay", 5]]);
+    expect(team("Fee Schedule\nNon-Sufficient Funds (NSF) | Same Day Bill Payment | $ 9.95")).toEqual([["bill_pay", 9.95]]);
+    expect(team("Fee Schedule\nDaily overdraft fee.....$3.00 | Online Cash Management & Bill Pay.....$19.95/month")).toEqual(
+      expect.arrayContaining([["bill_pay", 19.95]]),
+    );
+  });
+
+  it("reads a bare late fee among a safe deposit box's lines as the box's", () => {
+    // Lines from the 62-bank key (inst 1741 and 69's schedules); no specialist adds it back as a late payment.
+    expect(team("Fee Schedule\nSafe Deposit Boxes\nBox size & availability varies by location\nBox Drilling: $125.00 minimum or actual cost\nLate Payment: $5.00/month")).toEqual([
+      ["safe_deposit_box", 5],
+    ]);
+    expect(team("Fee Schedule\nSafe Deposit Box 10x10 | $125 | $125\nLate Payment (Over 90 Days) | $10 | $10")).toEqual([
+      ["safe_deposit_box", 125],
+      ["safe_deposit_box", 10],
+    ]);
+    // A loan's late fee stays a late payment, also when a box section came before its heading.
+    expect(team("Fee Schedule\nLoan Fees\nLate Payment Fee | $25.00")).toEqual([["late_payment", 25]]);
+    expect(team("Fee Schedule\nSafe Deposit Box 3x5 | $25.00\nLoan Fees\nLate Fee | $25.00")).toEqual([
+      ["safe_deposit_box", 25],
+      ["late_payment", 25],
+    ]);
+  });
+
+  it("names a box size before its dot leader in a second column", () => {
+    expect(team("Fee Schedule\nmay earn, or your monthly statement. | 3 x 10.......................$30.00 per year")).toEqual([["safe_deposit_box", 30]]);
+  });
+
+  it("holds a checking account's own free row as its monthly fee at $0, not a priced one or a service column", () => {
+    expect(zero("Fee Schedule\nFree Checking (CK02) | Free\nStudent Checking (CK07) | FREE")).toEqual([
+      ["monthly_maintenance", "Free Checking (CK02)"],
+      ["monthly_maintenance", "Student Checking (CK07)"],
+    ]);
+    expect(zero("Fee Schedule\nOfficial Check Fee | $5.00\nPower Protected Checking Account | Free")).toEqual([]);
+    // Under another fee's heading it is a column of that fee's table, and the rows below keep the heading.
+    const pnc =
+      "Cash Alternatives\nCashier’s Checks\nPerformance Select Checking ......................No charge\nPerformance Checking ...................... $5.00 each\nAll other accounts ...................... $10.00 each";
+    expect(zero(pnc)).toEqual([]);
+    expect(team(pnc)).toEqual([
+      ["cashiers_check", 5],
+      ["cashiers_check", 10],
+    ]);
+  });
+
+  it("names the next held families", () => {
+    const hint = (name: string) => classifyFeeText(name);
+    // Statement printouts fold for the gate only: Knox still holds them for review.
+    expect(foldedCategory("Statement Printout: | $3.00")).toBe("document_reproduction");
+    expect(foldedCategory("Special Statement Fee | $5.00")).toBe("document_reproduction");
+    expect(foldedCategory("Account activity/statement printout (per statement) | $3.00")).toBe("document_reproduction");
+    expect(hint("Bank Draft")).toBe("cashiers_check");
+    expect(hint("Return Bankdraft/DBO Transfer")).not.toBe("cashiers_check");
+    expect(hint("Checking Cashing Fee")).toBe("check_cashing");
+    expect(hint("Inbound Wire")).toBe("wire_domestic_incoming");
+    expect(hint("Inquiry or transactions at non-Seacoast ATMs")).toBe("atm_non_network");
+    expect(hint("Fee for Non-CCU owned/affiliated machine transactions")).toBe("atm_non_network");
+    expect(hint("Special Handling Fee for Deposited Item Returns, monthly")).toBe("deposited_item_return");
+    expect(hint("Image Copy (staff assistance)")).toBe("check_image");
+    expect(hint("ELECTRONIC STATEMENTS")).toBe("estatement_fee");
+    expect(hint("Service Fee for Business Checking Accounts")).toBe("monthly_maintenance");
+    expect(hint("Business Checking Fee")).not.toBe("monthly_maintenance");
+    expect(hint("Reopen Checking Account Fee")).not.toBe("monthly_maintenance");
+    expect(hint("UPS Shipping Fee")).toBe("courier_delivery");
+    expect(hint("Redraw document fee")).toBe("other_lending_fee");
+    expect(hint("Same-Day ACH (per item)")).toBe("ach_origination");
+    expect(hint("ACH Same Day Processing Fee")).toBe("ach_origination");
+    // Travel cards stay held: the gate keys leave some unfiled and the 62-bank key files them two ways.
+    expect(hint("Travel Money Card")).toBeNull();
   });
 });

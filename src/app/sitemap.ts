@@ -1,5 +1,5 @@
 import type { MetadataRoute } from "next";
-import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
+import { FEE_FAMILIES, publicFeeTypes } from "@/lib/fee-taxonomy";
 import { STATE_CODES } from "@/lib/us-states";
 import {
   getDataFreshness,
@@ -8,7 +8,7 @@ import {
   getTopCitiesByState,
 } from "@/lib/data-store";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
-import { getPublicSnapshot } from "@/lib/public-stats";
+import { getPublicFeeTypes, getPublicSnapshot } from "@/lib/public-stats";
 import { loadGuides } from "@/lib/guides/source";
 import { getSql } from "@/lib/data-store/connection";
 import { SITE_URL } from "@/lib/constants";
@@ -195,8 +195,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ? await Promise.all([loadIndexableCategories(), loadIndexableStates()])
     : [null, null];
 
+  // The public site lists the top 50 fee types by institution count (James, Oct 17 2026); with no
+  // counts, the tier order decides (`publicFeeTypes`).
+  const publicTypes = dbAvailable ? await getPublicFeeTypes().catch(() => publicFeeTypes([])) : publicFeeTypes([]);
   const categoryPages: Entry[] = Object.values(FEE_FAMILIES)
     .flat()
+    .filter((category) => publicTypes.has(category))
     .filter((category) => !indexableCategories || indexableCategories.has(category))
     .map((category) => entry(`/fees/${category}`, dataUpdated, "weekly", 0.8));
 

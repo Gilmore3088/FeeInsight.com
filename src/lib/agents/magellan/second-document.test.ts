@@ -132,6 +132,20 @@ describe("Magellan companion finder", () => {
     expect(selects[1].slice(1)).not.toContain("MT");
   });
 
+  it("runs the stored-text tests only on banks that pass the cheap filters", async () => {
+    const db = createDb(true, [], []);
+    await runSecondDocumentFind({ db: asDb(db), fetchImpl: vi.fn(async () => notFound()), runId: 5, stateCode: "MT", deadline: Date.now() + 60_000, learning: true, dryRun: true });
+
+    const [, topUp] = db.mock.calls.filter(([strings]) => templateText(strings).includes("FROM published_fee_records"));
+    const text = templateText(topUp[0]);
+    // Run on every bank first, the national top-up scanned 5,141 banks' texts to keep 65 (17 Oct 2026).
+    const candidates = text.slice(text.indexOf("candidates AS MATERIALIZED"), text.indexOf("scoped AS"));
+    expect(candidates).toContain("pipeline_attempts");
+    expect(candidates).toContain("COALESCE(thin.categories, 0) <");
+    expect(candidates).not.toContain("agent_source_texts");
+    expect(text).toContain("FROM candidates inst");
+  });
+
   it("skips the top-up when the state fills every slot, or with no state", async () => {
     const full = createDb(true, Array.from({ length: 6 }, (_, index) => ({ ...thinBank, id: index + 1 })), [thinBank]);
     await runSecondDocumentFind({ db: asDb(full), fetchImpl: vi.fn(async () => notFound()), runId: 5, stateCode: "MT", deadline: Date.now() + 60_000, learning: true, dryRun: true });

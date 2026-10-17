@@ -25,9 +25,24 @@ async function isAuthorized(request: NextRequest): Promise<boolean> {
  * multi-step state lanes in the shared agents tick, and it gets its own function
  * time budget for large downloads (NCUA zips, SOD pages). Each call schedules the
  * next due partition (if no registry run is in flight) and executes one step of
- * the queued registry run. Deterministic only: no provider calls, no budget check;
- * it respects the pipeline pause and the execution backend.
+ * the queued registry run, then repeats while the tick is young: up to
+ * REGISTRY_RUNS_PER_TICK partitions, starting another only within
+ * START_NEXT_WITHIN_MS, so the backlog clears a few times faster than one
+ * partition per 5 minutes (James, Oct 17: "Let's get the data first"). Partitions
+ * still run one after another, never side by side. Deterministic only: no provider
+ * calls, no budget check; it respects the pipeline pause (checked before every
+ * partition) and the execution backend.
  */
+const REGISTRY_RUNS_PER_TICK = 6;
+/**
+ * A later partition starts only this soon after the tick began. Most registry steps are estimated
+ * at 30 seconds (QUICK_STEP_PREFIXES) though the heavy downloads allow 180-300 second fetches, so
+ * the window leaves every later partition at least 240 seconds under maxDuration, not just its
+ * estimate.
+ */
+const START_NEXT_WITHIN_MS = 60_000;
+/** Steps a later partition starts must be expected to finish by then (see STEP_EXPECTED_MS). */
+const TICK_DEADLINE_MS = 270_000;
 async function handleGET(request: NextRequest) {
   if (!(await isAuthorized(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -42,10 +57,26 @@ async function handleGET(request: NextRequest) {
     });
   }
 
-  const scheduled = await scheduleDueRegistryRuns({ triggeredBy: "api.admin.registry.tick" });
-  const runId = scheduled.runId ?? (await findQueuedRegistryRunId());
-  const executed = runId ? await executeAgentRun(runId, { maxSteps: 1 }) : null;
-  return NextResponse.json({ ok: true, scheduled, executed });
+  const startedAt = Date.now();
+  const deadlineAt = startedAt + TICK_DEADLINE_MS;
+  const runs: Array<{ scheduled: Awaited<ReturnType<typeof scheduleDueRegistryRuns>>; executed: Awaited<ReturnType<typeof executeAgentRun>> | null }> = [];
+  for (let index = 0; index < REGISTRY_RUNS_PER_TICK; index += 1) {
+    if (index > 0) {
+      if (Date.now() - startedAt > START_NEXT_WITHIN_MS) break;
+      if (!(await getPipelineControl()).enabled) break;
+    }
+    const scheduled = await scheduleDueRegistryRuns({ triggeredBy: "api.admin.registry.tick" });
+    const runId = scheduled.runId ?? (await findQueuedRegistryRunId());
+    const executed = runId
+      ? await executeAgentRun(runId, index === 0 ? { maxSteps: 1 } : { maxSteps: 1, deadlineAt, alwaysRunFirstStep: false })
+      : null;
+    runs.push({ scheduled, executed });
+    // Stop when nothing ran, the run did not finish (a deferred or multi-step run waits for the next
+    // tick), or it failed: a publisher outage should cost one partition's retry per tick, not six.
+    if (!executed || !executed.terminal || executed.status === "failed") break;
+  }
+  const [first] = runs;
+  return NextResponse.json({ ok: true, scheduled: first.scheduled, executed: first.executed, runs });
 }
 
 export const GET = withApiRoutePolicy("api.admin.registry.tick", "GET", handleGET);
