@@ -14,6 +14,7 @@ vi.mock("@/lib/ai-provider-usage", () => ({ trackAnthropicRequest: vi.fn() }));
 import { MEMO_ROUTE_ID, memoPayload, parseMemo, writeStorylineMemo, type MemoClient } from "./memo";
 import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
 import { buildFeeResearchEvidence } from "./evidence-contract";
+import { INTERPRETATION_LIMITATION } from "./narrative-bound";
 import { buildFeeAnswer } from "./workspace/answer";
 import { overdraftResearch } from "./workspace/test-fixtures";
 
@@ -187,6 +188,31 @@ describe("storyline memo", () => {
     if (result.status === "written") expect(result.memo.evidenceFactIds).toEqual([knownId]);
     expect(c.calls[0]).toContain("fact_evidence");
     expect(c.calls[0]).toContain(knownId);
+  });
+
+  it("saves each sentence's binding: own-fee figures carry record IDs, peer medians are Hamilton's reading (#981, H06-T06)", async () => {
+    const evidence = buildFeeResearchEvidence(overdraftResearch());
+    const knownId = evidence.facts[0].id;
+    const c = client(JSON.stringify({ ...JSON.parse(good), evidence_fact_ids: [knownId] }));
+    const result = await writeStorylineMemo(storyline, "q", { client: c, factEvidence: evidence });
+    expect(result.status).toBe("written");
+    if (result.status !== "written") return;
+    const binding = result.memo.narrativeBinding!;
+    expect(binding.omitted).toEqual([]);
+    expect(binding.interpretation).toContain("Your $32 overdraft fee is at the 75th percentile of 16 peers (median $29.50).");
+    expect(binding.supported.some((s) => s.text.startsWith("The board decision"))).toBe(true);
+    expect(binding.limitations).toContain(INTERPRETATION_LIMITATION);
+  });
+
+  it("retries a memo sentence that states a dollar figure for a rate fee", async () => {
+    const evidence = buildFeeResearchEvidence(overdraftResearch());
+    const rate = { ...evidence.facts[0], id: "fee:published:rate", unit: "percent" as const, currency: null, value: 3 };
+    const withRate = { ...evidence, facts: [...evidence.facts, rate] };
+    const bad = JSON.stringify({ ...JSON.parse(good), summary: "The bank charges $3 on each transfer. " + JSON.parse(good).summary, evidence_fact_ids: [rate.id] });
+    const c = client(bad, bad);
+    const result = await writeStorylineMemo(storyline, "q", { client: c, factEvidence: withRate });
+    expect(result.status).toBe("withheld");
+    expect(c.calls[1]).toContain("states a rate fee as a dollar amount");
   });
 
   it("retries a memo that invents an evidence ID", async () => {

@@ -159,6 +159,11 @@ export interface StorylineMemo {
   figureCheck: { checked: number; unmatched: string[] };
   /** Structured evidence IDs explicitly referenced by newly generated memos. Older memos may omit this. */
   evidenceFactIds?: string[];
+  /**
+   * Each memo sentence's binding to the saved records (#981, H06-T06): the record IDs a sentence rests
+   * on, and the sentences that are Hamilton's reading only. Memos written before it omit this.
+   */
+  narrativeBinding?: import("../narrative-bound").NarrativeBinding;
 }
 
 export type StorylineMemoResult =
