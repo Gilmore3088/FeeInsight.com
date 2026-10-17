@@ -89,7 +89,6 @@ import { SEC_MARKET_VALUE_PARSER_VERSION, SEC_MARKET_VALUE_SOURCE, secMarketValu
 import { FHLB_ADVANCE_RATES_PARSER_VERSION, FHLB_ADVANCE_RATES_SOURCE, fhlbAdvanceRatesPartitions } from "@/lib/agents/magellan/registry/fhlb-advance-rates";
 import { BANK_MERGER_ORDERS_PARSER_VERSION, BANK_MERGER_ORDERS_SOURCE, bankMergerOrdersPartitions } from "@/lib/agents/magellan/registry/bank-merger-orders";
 import { BLS_OEWS_PARSER_VERSION, BLS_OEWS_SOURCE, blsOewsPartitions } from "@/lib/agents/magellan/registry/bls-oews";
-import { FINRA_NFCS_PARSER_VERSION, FINRA_NFCS_SOURCE, finraNfcsPartitions } from "@/lib/agents/magellan/registry/finra-nfcs";
 import { USDA_FARM_PARSER_VERSION, USDA_FARM_SOURCE, usdaFarmPartitions } from "@/lib/agents/magellan/registry/usda-farm";
 import {
   USCOURTS_BANKRUPTCY_PARSER_VERSION,
@@ -162,7 +161,6 @@ export const REGISTRY_PARSER_VERSIONS: Record<string, number> = {
   [USCOURTS_BANKRUPTCY_SOURCE]: USCOURTS_BANKRUPTCY_PARSER_VERSION,
   [USDA_FARM_SOURCE]: USDA_FARM_PARSER_VERSION,
   [BLS_OEWS_SOURCE]: BLS_OEWS_PARSER_VERSION,
-  [FINRA_NFCS_SOURCE]: FINRA_NFCS_PARSER_VERSION,
   [FHLB_ADVANCE_RATES_SOURCE]: FHLB_ADVANCE_RATES_PARSER_VERSION,
   [BANK_MERGER_ORDERS_SOURCE]: BANK_MERGER_ORDERS_PARSER_VERSION,
   [MAKING_ENDS_MEET_SOURCE]: MAKING_ENDS_MEET_PARSER_VERSION,
@@ -274,9 +272,6 @@ export function registryPartitionsBySource(
     [USCOURTS_BANKRUPTCY_SOURCE]: uscourtsBankruptcyPartitions(now),
     [USDA_FARM_SOURCE]: usdaFarmPartitions(now),
     [BLS_OEWS_SOURCE]: blsOewsPartitions(now),
-    // Held: the FINRA Foundation's terms allow only non-commercial academic use, so nothing is
-    // fetched until James confirms otherwise (Hoovie contract, licence "held").
-    [FINRA_NFCS_SOURCE]: env.FINRA_NFCS_LICENSE_CONFIRMED?.trim() === "true" ? finraNfcsPartitions(now) : [],
     [FHLB_ADVANCE_RATES_SOURCE]: fhlbAdvanceRatesPartitions(now),
     [BANK_MERGER_ORDERS_SOURCE]: bankMergerOrdersPartitions(now),
     [PAYDAY_REPORTS_SOURCE]: paydayReportsPartitions(now),

@@ -1189,3 +1189,11 @@ so that a new connection needs only a contract and a parser.
 Work order: first get the data (unblock the failing sources, collect faster, and add a health check
 so failures show), then map it into the site and Hamilton. Hoovie is internal only and never appears
 to customers.
+
+**No non-commercial data.** James, 2026-10-17 19:11 UTC (Public data loaders thread): "No finra
+data. No non-commercial data. Strike it if it violated that." Fee Insight is a paid product, so a
+source whose terms allow only non-commercial, academic, personal or research use is never loaded,
+held or shown; its loader is removed, not paused. The FINRA Foundation's National Financial
+Capability Study (terms: "ONLY for your academic research and publication for non-commercial
+purposes") was removed; it had loaded no rows. Every new source's terms are read before its loader
+is built.

@@ -26,8 +26,8 @@ describe("risk-cost aggregate helpers", () => {
     expect(out[0]).toMatchObject({ period: "2025Q2", value: 1200, prior_period: "2024Q2", change_pct: 20, nation: { value: 120000, vs: { ratio: 0.01 } }, state: null });
   });
 
-  it("compares survey waves with the previous wave", () => {
-    const out = joinWithBenchmarks([r("nfcs_overdraws_checking", "2024", 22), r("nfcs_overdraws_checking", "2021", 20)], [], null, "previous");
+  it("compares a period with the previous one", () => {
+    const out = joinWithBenchmarks([r("k", "2024", 22), r("k", "2021", 20)], [], null, "previous");
     expect(out[0]).toMatchObject({ prior_period: "2021", change_pct: 10, nation: { value: null } });
   });
 

@@ -23,6 +23,9 @@ unconfirmed, never guessed.
 ## Rules
 
 - Free, public sources only. Use no proxies and no spoofed user agents.
+- No non-commercial data (James, 2026-10-17). A source whose terms allow only non-commercial,
+  academic, personal or research use is not loaded at all; its loader is removed. Read the terms
+  before building a loader.
 - Never fill a gap: a missing file, field or row is recorded as missing (`empty_reason`,
   `missing_fields`).
 - A `held` licence is not loaded or shown until James confirms the terms. A `terms-unconfirmed`

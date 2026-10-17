@@ -895,7 +895,6 @@ describe("registry dispatch", () => {
       "uscourts-bankruptcy",
       "usda-farm",
       "bls-oews",
-      "finra-nfcs",
       "fhlb-advance-rates",
       "bank-merger-orders",
       "cfpb-making-ends-meet",

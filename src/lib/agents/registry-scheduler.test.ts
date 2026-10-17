@@ -59,13 +59,6 @@ describe("registry scheduler", () => {
     expect(federal({ CONGRESS_GOV_API_KEY: "key" })).toEqual(["current"]);
   });
 
-  it("holds FINRA NFCS until its licence is confirmed", () => {
-    const nfcs = (env: Record<string, string>) =>
-      registryPartitionsBySource(now, { year: 2025, quarter: 4 }, env as NodeJS.ProcessEnv).find((entry) => entry.source === "finra-nfcs")?.partitions;
-    expect(nfcs({})).toEqual([]);
-    expect(nfcs({ FINRA_NFCS_LICENSE_CONFIRMED: "true" })?.length).toBeGreaterThan(0);
-  });
-
   it("defaults the backfill to 2010Q1 and honours REGISTRY_BACKFILL_FROM", () => {
     expect(backfillStart(undefined)).toEqual({ year: 2010, quarter: 1 });
     expect(backfillStart("2005Q3")).toEqual({ year: 2005, quarter: 3 });

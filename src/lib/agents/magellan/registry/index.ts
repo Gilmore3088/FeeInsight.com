@@ -12,7 +12,6 @@ import { SEC_MARKET_VALUE_SOURCE, runRegistrySecMarketValue } from "./sec-market
 import { FHLB_ADVANCE_RATES_SOURCE, runRegistryFhlbAdvanceRates } from "./fhlb-advance-rates";
 import { BANK_MERGER_ORDERS_SOURCE, runRegistryBankMergerOrders } from "./bank-merger-orders";
 import { BLS_OEWS_SOURCE, runRegistryBlsOews } from "./bls-oews";
-import { FINRA_NFCS_SOURCE, runRegistryFinraNfcs } from "./finra-nfcs";
 import { runRegistryUsdaFarm, USDA_FARM_SOURCE } from "./usda-farm";
 import { runRegistryUscourtsBankruptcy, USCOURTS_BANKRUPTCY_SOURCE } from "./uscourts-bankruptcy";
 import { MARKET_GROWTH_DEFINITIONS, runRegistryMarketGrowth } from "./market-growth";
@@ -798,15 +797,6 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
     title: "Pull BLS OEWS wages for bank occupations",
     run: async (input) => {
       const r = await runRegistryBlsOews({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
-      return { summary: r.summary, detail: r.detail };
-    },
-  },
-  {
-    source: FINRA_NFCS_SOURCE,
-    stepKey: "registry-finra-nfcs",
-    title: "Pull FINRA NFCS state survey shares",
-    run: async (input) => {
-      const r = await runRegistryFinraNfcs({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
       return { summary: r.summary, detail: r.detail };
     },
   },

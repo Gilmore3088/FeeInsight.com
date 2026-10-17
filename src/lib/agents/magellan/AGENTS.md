@@ -605,7 +605,6 @@ fails a PR that changes one of these constants without updating its line here (#
 | `USCOURTS_BANKRUPTCY_PARSER_VERSION` | — | v1 | `magellan/registry/uscourts-bankruptcy.ts` |
 | `USDA_FARM_PARSER_VERSION` | — | v2 (newest dated "release" zip, not the U.S.-only archive) | `magellan/registry/usda-farm.ts` |
 | `BLS_OEWS_PARSER_VERSION` | — | v1 | `magellan/registry/bls-oews.ts` |
-| `FINRA_NFCS_PARSER_VERSION` | — | v1 | `magellan/registry/finra-nfcs.ts` |
 | `MARKET_GROWTH_PARSER_VERSION` | — | v1 | `magellan/registry/market-growth.ts` (census-permits, census-popest, irs-migration, census-bfs, bls-laus, census-lehd) |
 | `SMALLBIZ_PAYMENTS_PARSER_VERSION` | — | v1 | `magellan/registry/smallbiz-payments.ts` (kcfed-sb-lending, fed-sbcs, fed-payments, nacha-volume) |
 | `NATIONAL_CREDIT_PARSER_VERSION` | — | v2 | `magellan/registry/national-credit.ts` (national-series, nyfed-household-debt, nyfed-sce-credit, cfpb-credit-trends) |
