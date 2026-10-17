@@ -23,6 +23,7 @@ import {
   toCsv,
   withApiHeaders,
 } from "@/lib/api-v1";
+import { countedInstitutionCount } from "@/lib/data-store/fee-stats";
 
 async function handleGET(request: NextRequest) {
   // --- API key validation (optional — free tier works without) ---
@@ -83,7 +84,7 @@ async function handleGET(request: NextRequest) {
         family: getFeeFamily(category),
         tier: getFeeTier(category),
         summary: {
-          institution_count: new Set(detail.fees.map((f) => f.institution_id)).size,
+          institution_count: countedInstitutionCount(detail.fees),
           observation_count: detail.fees.length,
         },
         by_charter_type: detail.by_charter_type,
