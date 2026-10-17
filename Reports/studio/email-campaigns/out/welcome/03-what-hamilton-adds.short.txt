@@ -20,6 +20,5 @@ From here you'll get the monthly Fee Pulse: one finding and one thing to check. 
 James Gilmore, Fee Insight
 
 --
-Fee Insight LLC, 522 W Riverside Ave, Ste N, Spokane, WA 99201
 You're getting this because you signed up at feeinsight.com.
 Unsubscribe: {$unsubscribe}

@@ -1,5 +1,6 @@
 import { feeApplicability } from "@/lib/fee-audience";
 import {
+  billPayByHeading,
   extractCandidatesFromText,
   isUnpricedHeldShape,
   MAX_FEES_PER_DOCUMENT,
@@ -102,7 +103,15 @@ import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 // `varies` with no amount. Every current copy read before v76 is read once more.
 // v77 (#1398, with `RESEARCH_SPLIT_LIVE` on): returned mail and excess withdrawal lines file under
 // their own types (`researchSplitTarget` in rules.ts), not account research.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 77 } as const;
+// v78 (Knox recall round 3, Oct 17; #1304's Knox half): a bill pay read priced under an overdraft
+// (courtesy pay) or NSF heading, on its own line or the heading line above, files under that fee
+// (`billPayByHeading`), and no later specialist adds it back as bill pay; a bare late fee right after a
+// safe deposit box read or under its heading is the box's (`boxLateFee`); a box size before its dot
+// leader names the box;
+// a checking account's own free row is its monthly fee at $0; and the next name families the 62-bank
+// key held (`V78_RECALL_PATTERNS`; statement printouts fold to document reproduction). Every current
+// copy read before v78 is read once more (`KNOX_STALE_READ_BELOW_VERSION`).
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 78 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -136,6 +145,11 @@ const NSF_AND_OVERDRAFT = new RegExp(
   "i",
 );
 const MAX_UNCLASSIFIED_PER_DOCUMENT = 10;
+/** v78: a read's category, and the categories the rules pass re-files it to by its heading (`billPayByHeading`, `boxLateFee`). */
+const REFILED_BY_HEADING: Readonly<Record<string, readonly string[]>> = {
+  bill_pay: ["overdraft", "nsf"],
+  late_payment: ["safe_deposit_box"],
+};
 
 function words(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
@@ -241,7 +255,10 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
   };
 
   for (const specialist of specialists) {
-    const found = specialist.run();
+    const run = specialist.run();
+    // v78 (#1304): no specialist files a bill payment priced under an overdraft or NSF heading on
+    // its own line as bill pay (`billPayByHeading`); the table pass named such a cell by its words.
+    const found = { ...run, candidates: run.candidates.map((read) => billPayByHeading(read)).filter((read): read is ExtractedFeeCandidate => read != null) };
     for (const [reason, count] of Object.entries(found.dropped ?? {})) countDropped(reason as DroppedLineReason, count);
     let added = 0;
     let selfCheckFailed = 0;
@@ -301,6 +318,21 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
           )
         : candidates.some((prior) => sameFee(prior, candidate));
       if (duplicate) continue;
+      // v78 (#1304): a later specialist's read of a row the rules pass already filed by its heading
+      // is that fee again: bill pay under an overdraft or NSF heading ("Courtesy Pay: Check/ACH/Bill
+      // Pay Payment"), a bare late fee among a safe deposit box's lines ("Safe Deposit Box Late Payment").
+      const refiledByHeading = REFILED_BY_HEADING[candidate.canonicalHint];
+      if (
+        refiledByHeading &&
+        candidates.some(
+          (prior) =>
+            refiledByHeading.includes(prior.canonicalHint) &&
+            prior.amount === candidate.amount &&
+            prior.feeName.toLowerCase().endsWith(candidate.feeName.toLowerCase()),
+        )
+      ) {
+        continue;
+      }
       candidates.push({ ...candidate, strategy: specialist.strategy });
       added += 1;
     }

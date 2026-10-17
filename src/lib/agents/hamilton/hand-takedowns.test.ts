@@ -5,7 +5,7 @@ vi.mock("@/lib/data-store/fee-cache", () => ({ invalidatePublicReadCache: vi.fn(
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 
 import {
-  applyHandAudienceFixes, applyHandTakedowns, HAND_AUDIENCE_FIXES, HAND_TAKEDOWN_BATCH_LIMIT, HAND_TAKEDOWNS, handAudienceEvidence,
+  applyHandAudienceFixes, applyHandTakedowns, ATM_SURCHARGE_TAKEDOWN_LIVE, atmSurchargeTakedowns, HAND_AUDIENCE_FIXES, HAND_TAKEDOWN_BATCH_LIMIT, HAND_TAKEDOWNS, handAudienceEvidence,
   handTakedownBatchSizes, planHandAudienceFixes, planHandTakedowns, type LiveAudienceRow, type LiveTakedownRow,
 } from "./hand-takedowns";
 
@@ -659,5 +659,36 @@ describe("#1755: one printed line live under two frequencies or categories (Oct 
     // Without their twins only the four rows whose line prices neither copy come down (MBT Bank, Lakewood FCU).
     expect(planHandTakedowns(withoutTwins, batch).takenDown.map((item) => item.feePublishedId)).toEqual([125359, 146800, 74560, 125809]);
     expect(planHandTakedowns(LIVE, batch).takenDown.map((item) => item.feePublishedId)).toEqual(batch.map((entry) => entry.feePublishedId));
+  });
+});
+
+describe("#1772, #1773: non-network ATM takedowns wait on ATM_SURCHARGE_TAKEDOWN_LIVE", () => {
+  it("lists none while the switch is off", () => {
+    expect(ATM_SURCHARGE_TAKEDOWN_LIVE).toBe(false);
+    expect(atmSurchargeTakedowns()).toEqual([]);
+    expect(HAND_TAKEDOWNS.some((entry) => entry.issue === 1772 || entry.issue === 1773)).toBe(false);
+  });
+
+  it("lists 28 rows when on, 13 non-customer surcharges and 15 that are not the fee, each batch under the limit", () => {
+    const entries = atmSurchargeTakedowns(true);
+    expect(entries).toHaveLength(28);
+    expect(entries.filter((entry) => entry.issue === 1772)).toHaveLength(13);
+    expect(entries.filter((entry) => entry.issue === 1773)).toHaveLength(15);
+    expect(new Set(entries.map((entry) => entry.feePublishedId)).size).toBe(28);
+    expect(entries.every((entry) => entry.canonicalFeeKey === "atm_non_network" && entry.evidence.length > 0 &&
+      entry.reason === `source_mismatch: #${entry.issue}`)).toBe(true);
+    expect(handTakedownBatchSizes(entries).every((batch) => batch.entries <= HAND_TAKEDOWN_BATCH_LIMIT)).toBe(true);
+    // None is on the standing list too.
+    const listed = new Set(HAND_TAKEDOWNS.map((entry) => entry.feePublishedId));
+    expect(entries.some((entry) => listed.has(entry.feePublishedId))).toBe(false);
+  });
+
+  it("takes an entry down only while it reads as listed", () => {
+    const [entry] = atmSurchargeTakedowns(true);
+    const row: LiveTakedownRow = { fee_published_id: entry.feePublishedId, lineage_ref: 1, institution_id: entry.institutionId,
+      canonical_fee_key: "atm_non_network", fee_name: entry.feeName, amount: String(entry.amount) };
+    expect(planHandTakedowns([row], [entry]).takenDown.map((planned) => planned.feePublishedId)).toEqual([entry.feePublishedId]);
+    expect(planHandTakedowns([{ ...row, amount: "9.99" }], [entry]).skipped)
+      .toEqual([{ feePublishedId: entry.feePublishedId, reason: "changed since listed" }]);
   });
 });

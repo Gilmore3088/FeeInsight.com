@@ -1202,7 +1202,17 @@ Darwin owns verification and classification.
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v70 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v70 (Oct 17,
+- The guard is at v71 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v71 (Oct 17,
+  #1772, #1773): the non-network ATM fee also refuses another institution's card named in more than
+  one word after "non-" (`OUTSIDER_CARD_WORDS` in `OUTSIDER_ATM`: "ATM Non-STAR Financial Credit Union
+  card Surcharge", "Non Co-Op Card ATM Withdrawals at TLC"); words that reach "ATM" or "machine" first
+  are a non-network ATM and stay. An ATM transaction verification re-files to account research
+  (`NOT_ATM_USE`, 96092). Its live re-check is the guard's live sweep: the dry run (Oct 17,
+  SELECT-only) counts 8 live fees newly failing, 8 of 8 non-customer surcharges on their stored line,
+  flagged for the second look and then taken down, and 1 re-filed in place. The bare "ATM Surcharge"
+  lines a name cannot place (13 non-customer surcharges by their heading or line) and 15 lines that
+  are not the fee (in-network $0s, a refund cap, a waived price) are hand takedowns held by
+  `ATM_SURCHARGE_TAKEDOWN_LIVE` (off). v70 (Oct 17,
   #1765): a card-product fee filed as the non-network ATM fee (`CARD_PRODUCT_FEE`: the card's monthly,
   annual, holder or maintenance fee, its issue, activation or origination, a reinstatement or limit
   increase, the card's inactivity, a point-of-sale purchase fee) and a card's inactivity filed as a
@@ -1249,7 +1259,7 @@ Darwin owns verification and classification.
   the night depository key is a key charge, not the service, so `night_deposit` refuses it; a lost or
   replaced key stays. Its live re-check is the category guard's live sweep (Hamilton's guard
   catch-up on the first tick after the deploy, then every publish step): 10 live key deposits fail
-  it, each flagged for the second look and then taken down. The notes for v43 to v70 are the version
+  it, each flagged for the second look and then taken down. The notes for v43 to v71 are the version
   comments above that constant, not this guide; v58 is the bond-return lesson above. v65 (James, Oct 15, #1398) adds guard rules for `excess_withdrawal` and
   `returned_mail` (amount envelopes $1 to $50 in `envelopes.ts`), re-files research filed under
   either back to account research. Once `RESEARCH_SPLIT_LIVE` is on, an over-limit activity charge
