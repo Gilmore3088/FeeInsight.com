@@ -218,7 +218,7 @@ export function priceWindows(text: string): PriceWindow[] {
       // Cross-border transaction fee": a two-column page), and so does one over a lone price-first
       // row (`inPriceFirstRun`: "Overdraft Fee" / "$35.00 | Stop Payment Fee").
       const priceFirst = opensLine && values.length === 1 && !value.zero && !(pending != null && runsOn(pending)) &&
-        ((line.includes(CELL_SEPARATOR) && (pending == null || inPriceFirstRun(lines, lineIndex))) ||
+        ((line.includes(CELL_SEPARATOR) && (pending == null || !/[a-z]{2,}/i.test(pending) || inPriceFirstRun(lines, lineIndex))) ||
           (pending != null && statesItsPriceVaries(pending)))
         ? nameAfterPrice(line.slice(value.end + qualifier.length))
         : null;

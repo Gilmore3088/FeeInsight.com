@@ -538,6 +538,14 @@ describe("a price-first row keeps its own price (#1827)", () => {
   it("reads a period word followed by a capitalized name as the row's name", () => {
     const text = ["| **$10** | Monthly Service Charge |", "| **$45** | Annual Rental 3 x 5 Box |"].join("\n");
     expect(priceWindows(text).map((window) => window.rawName)).toEqual(["Monthly Service Charge", "Annual Rental 3 x 5 Box"]);
+    expect(fees("| $5 | Monthly for paper statements |").some(([name]) => /^Monthly for/.test(name))).toBe(false);
+    const daily = ["Overdraft Fee", "$35 | Charged per item paid", "$5 | Daily after 7 days negative"].join("\n");
+    expect(amountsOf(fees(daily, "extract.table"), "Overdraft Fee")).toEqual([35]);
+  });
+
+  it("reads a lone price-first row under a markdown header and rule row", () => {
+    const text = ["| Amount | Service |", "| --- | --- |", "| $20 | Key Deposit |"].join("\n");
+    expect(amountsOf(fees(text), "Key Deposit")).toEqual([20]);
   });
 
   it("never reads a period or a waiver after the price as the row's name", () => {

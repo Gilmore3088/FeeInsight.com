@@ -109,7 +109,10 @@ export function runsOn(name: string): boolean {
 /** A word that opens a condition or a period after a price, never the next fee's name. */
 // A period word opens a fee's own name when a capitalized word follows it ("Monthly Service Charge",
 // "Annual Rental 3 x 5 Box"); alone or before lower-case words it is the price's period.
-const CONDITION_OPENING = /^(?:per|each|every|a|an|one-time|waived?|max(?:imum)?|min(?:imum)?|if|unless|plus|up|after|when|with|for|or|and|to|of|on|in|at|by|the|fee|charge|varies)\b|^(?:monthly|annual(?:ly)?|yearly|quarterly|daily|weekly)\b(?!\s+[A-Z])|^[/(]/i;
+const CONDITION_OPENING = /^(?:per|each|every|a|an|one-time|waived?|max(?:imum)?|min(?:imum)?|if|unless|plus|up|after|when|with|for|or|and|to|of|on|in|at|by|the|fee|charge|varies)\b|^[/(]/i;
+// Case-sensitive on the next word, so no /i: "Monthly Service Charge" is a name, "Monthly for paper
+// statements" is a period.
+const PERIOD_OPENING = /^(?:[Mm]onthly|[Aa]nnual(?:ly)?|[Yy]early|[Qq]uarterly|[Dd]aily|[Ww]eekly|MONTHLY|ANNUAL(?:LY)?|YEARLY|QUARTERLY|DAILY|WEEKLY)\b(?!\s+[A-Z])/;
 
 /**
  * #1827: the fee a price-first row names: the words printed after the price on its own line or in a
@@ -124,7 +127,7 @@ export function nameAfterPrice(rest: string): string | null {
     .split(/\s*\|\s*/)
     .map((part) => part.replace(/\s+/g, " ").trim())
     .find((part) => /[a-z]{2,}/i.test(part));
-  if (!cell || !/^[A-Z]/.test(cell) || CONDITION_OPENING.test(cell) || /\$\s*\d/.test(cell)) return null;
+  if (!cell || !/^[A-Z]/.test(cell) || CONDITION_OPENING.test(cell) || PERIOD_OPENING.test(cell) || /\$\s*\d/.test(cell)) return null;
   const name = cleanFeeName(cell);
   return name && /[a-z]{2,}/i.test(name) ? name : null;
 }
