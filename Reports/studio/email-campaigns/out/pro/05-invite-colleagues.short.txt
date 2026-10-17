@@ -1,7 +1,7 @@
 Invite the colleagues who work on pricing
 =========================================
 
-Pricing decisions involve product, marketing, finance and compliance. Add the people who need to see the same numbers, so everyone works from one peer set and one set of sources. Seats are included in your plan, up to five people.
+Pricing decisions involve product, marketing, finance and compliance. Add the people who need to see the same numbers, so everyone works from one peer set and one set of sources. Your plan covers up to five people, each with their own login.
 
 Invite colleagues: https://feeinsight.com/pro/settings#workspace-access
 
@@ -10,6 +10,5 @@ In Settings, open Team access.
 James Gilmore, Fee Insight
 
 --
-Fee Insight LLC, 522 W Riverside Ave, Ste N, Spokane, WA 99201
 You're getting this because your team subscribes to Hamilton.
 Unsubscribe: {$unsubscribe}

@@ -15,9 +15,10 @@ import { FEES, SNAPSHOT } from "./data.mjs";
 
 export const BRAND = {
   siteUrl: "https://feeinsight.com",
-  // CAN-SPAM requires a valid postal address in every commercial email. Same as MAILING_ADDRESS
-  // in src/lib/constants.ts and the MailerLite account footer; MARKETING_MAILING_ADDRESS overrides.
-  mailingAddress: (process.env.MARKETING_MAILING_ADDRESS || "").trim() || "Fee Insight LLC, 522 W Riverside Ave, Ste N, Spokane, WA 99201",
+  // CAN-SPAM requires a postal address in every commercial email. MailerLite appends its own
+  // footer with the account's address to every send, so the template carries none unless
+  // MARKETING_MAILING_ADDRESS is set (blank until the state registration; DECISIONS 2026-10-06).
+  mailingAddress: (process.env.MARKETING_MAILING_ADDRESS || "").trim() || null,
 };
 
 const S = BRAND.siteUrl;
@@ -37,7 +38,7 @@ const FIELD = {
   // Set only when the app read a finding; without one, email 2 is a guide to reading the report.
   findingTitle: "{$report_finding_title|default('How to read your fee report')}",
   findingCta: "{$report_finding_cta|default('Open your report')}",
-  followName: "{$follow_name|default('the market you follow')}",
+  followName: "{$follow_name|default('a state or an institution')}",
   followUrl: "{$follow_url|default('https://feeinsight.com/research')}",
 };
 
@@ -59,15 +60,9 @@ const welcome = {
       blocks: [
         { type: "kicker", text: "Welcome · 1 of 3" },
         { type: "h1", text: "Where to find the fee data for your market" },
-        { type: "p", text: "Thanks for subscribing. The fee benchmarks come from institutions' published schedules, and the views below need no login. Start with the one closest to the institutions you compete with." },
-        { type: "list", items: [
-          `**Your state:** each headline fee in your state next to the national median, banks and credit unions side by side. [Find your state](${S}/research).`,
-          `**Your Fed district:** the same view across a district. [Open the district reports](${S}/reports).`,
-          `**One institution:** its fee table, the schedule it came from, and the date we read it. [Search institutions](${S}/institutions).`,
-          `**One fee across the country:** the national median and middle 50%, with banks and credit unions compared. [Browse fees](${S}/fees).`,
-        ] },
-        { type: "p", text: "What's free: every fee's own page, with its national median and middle 50%, and the national index table for the headline fees, including overdraft, NSF and out-of-network ATM. The rest of the index table and breakdowns by asset size come with a Hamilton plan." },
-        { type: "cta", text: "Explore the free fee benchmarks", href: `${S}/research`, sub: "No login needed." },
+        { type: "p", text: "Thanks for subscribing. Start with your state: each headline fee next to the national median, banks and credit unions side by side. The benchmarks come from institutions' published schedules." },
+        { type: "cta", text: "Find your state's fee benchmarks", href: `${S}/research`, sub: "Free, no login." },
+        { type: "p", text: `Also free: [a Fed district](${S}/reports), [one institution's fees](${S}/institutions) with the schedule they came from, or [one fee across the country](${S}/fees). Breakdowns by asset size come with a Hamilton plan.` },
         { type: "sign" },
       ],
     },
@@ -81,8 +76,8 @@ const welcome = {
         { type: "h1", text: "One comparison to make before your next pricing meeting" },
         { type: "p", text: "Pick one fee your customers notice, such as overdraft or NSF, and place it against your own state rather than the country." },
         { type: "box", tone: "action", title: "Make the comparison", ordered: true, items: [
-          `Open your state's page and find the fee. [Find your state](${S}/research).`,
-          "Note the median and the middle 50% (the 25th to 75th percentile; half of institutions sit in it).",
+          `Open [your state's page](${S}/research) and find the fee.`,
+          "Note the median and the middle 50%, the range between the 25th and 75th percentiles.",
           "Check how many institutions stand behind the number. If only a few, check their schedules directly.",
           "Write your own price next to it: below, inside or above the middle 50%.",
         ] },
@@ -132,18 +127,16 @@ const report = {
     {
       key: "your-report",
       day: 0,
-      subject: "Your report: {$report_name|default('your fee report')}",
-      preheader: "The live link, and the three sections to read first.",
+      subject: "Your report is ready: {$report_name|default('the fee benchmarks you asked for')}",
+      preheader: "The live link, and where to start reading.",
       blocks: [
         { type: "kicker", text: "Your report · 1 of 3" },
         { type: "h1", text: `Here is ${FIELD.reportName}` },
         { type: "p", text: "Thanks for confirming. The report is live, so the link always shows the current numbers as new fee schedules are read." },
         { type: "cta", text: "Open your report", href: FIELD.reportUrl, sub: "Free, no login. Bookmark it." },
-        { type: "list", ordered: true, items: [
-          "**Key findings** sit at the top, each with how many institutions stand behind it.",
-          "**Headline fees** show the median and middle 50% where enough institutions publish the fee. The report states the minimum count it uses.",
-          "**Banks and credit unions** are compared where each side has enough institutions.",
-        ] },
+        // One line that holds for the benchmark reports and the sample Competitive Fee Position
+        // Report alike (report_name covers both); section names differ between them.
+        { type: "p", text: "Start at the top. The findings come first, and every table names the institutions and the published schedules behind it." },
         { type: "sign" },
       ],
     },
@@ -199,13 +192,13 @@ const explorer = {
     {
       key: "what-you-follow",
       day: 0,
-      subject: "You're following {$follow_name|default('the market you follow')}",
+      subject: "The page you're following on Fee Insight",
       preheader: "Your page, and the monthly snapshot you'll get.",
       blocks: [
         { type: "kicker", text: "Following" },
-        { type: "h1", text: `You're following ${FIELD.followName}` },
-        { type: "p", text: "Here is the page you asked to follow. Every figure on it comes from the institutions' published fee schedules, and it updates as new schedules are read." },
-        { type: "cta", text: `Open ${FIELD.followName}`, href: FIELD.followUrl, sub: "Free, no login." },
+        { type: "h1", text: "The page you're following" },
+        { type: "p", text: `You asked to follow ${FIELD.followName}. The figures on that page come from published schedules and update as new schedules are read.` },
+        { type: "cta", text: "Open the page", href: FIELD.followUrl, sub: "Free, no login." },
         { type: "box", tone: "term", title: "What you'll get", items: [
           "**Once a month:** your state's fee snapshot (the national one if you follow an institution), with how many institutions stand behind each number.",
         ] },
@@ -225,6 +218,7 @@ const pro = {
   name: "Pro onboarding: set up Hamilton",
   masthead: "Hamilton",
   footerReason: "You're getting this because your team subscribes to Hamilton.",
+  footer: "short", // setup emails are short; the footer is the reason and the unsubscribe link only
   trigger:
     "Joins group 'Fee Insight · Pro customers' when a Pro subscription turns active (Stripe webhook). Starts the day after the account's welcome email. Joining removes them from Newsletter, Report requests and Watchers, which ends those sequences.",
   emails: [
@@ -250,8 +244,8 @@ const pro = {
       blocks: [
         { type: "kicker", text: "Setup · 2 of 5" },
         { type: "h1", text: "Choose the peers you're measured against" },
-        { type: "p", text: "Build a peer set from the institutions your customers compare you with, by charter, asset size, district or county. Use the national median for broader context." },
-        { type: "cta", text: "Build your peer set", href: `${S}/pro/settings#peer-sets`, sub: "In Settings, open Peer groups." },
+        { type: "p", text: "Build a peer group from the institutions your customers compare you with, by charter, asset size, district or county. Use the national median for broader context." },
+        { type: "cta", text: "Build your peer group", href: `${S}/pro/settings#peer-sets`, sub: "In Settings, open Peer groups." },
         { type: "p", text: `Not sure which peers? [Building a Peer Set](${S}/guides/pro/building-a-peer-set) shows how to pick a set that holds up in a board meeting.` },
         { type: "sign" },
       ],
@@ -296,7 +290,7 @@ const pro = {
       blocks: [
         { type: "kicker", text: "Setup · 5 of 5" },
         { type: "h1", text: "Invite the colleagues who work on pricing" },
-        { type: "p", text: "Pricing decisions involve product, marketing, finance and compliance. Add the people who need to see the same numbers, so everyone works from one peer set and one set of sources. Seats are included in your plan, up to five people." },
+        { type: "p", text: "Pricing decisions involve product, marketing, finance and compliance. Add the people who need to see the same numbers, so everyone works from one peer set and one set of sources. Your plan covers up to five people, each with their own login." }, // WORKSPACE_SEAT_LIMIT (src/lib/hamilton/workspace-seats.ts)
         { type: "cta", text: "Invite colleagues", href: `${S}/pro/settings#workspace-access`, sub: "In Settings, open Team access." },
         { type: "sign" },
       ],
