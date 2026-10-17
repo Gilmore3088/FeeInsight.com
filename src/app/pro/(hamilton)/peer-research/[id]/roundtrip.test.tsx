@@ -44,9 +44,9 @@ describe("saved peer research round trip", () => {
     mocks.record.mockResolvedValue({ id, institutionId: saved.institutionId, analysisFocus: saved.analysisFocus, prompt: saved.prompt, responseJson: JSON.parse(JSON.stringify(saved.response)) });
 
     render(await SavedPeerResearchPage({ params: Promise.resolve({ id }) }));
-    expect(screen.getByText("Question: Compare their NSF fees")).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1, name: "Compare their NSF fees" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: shown.shortAnswer })).toBeTruthy();
-    const table = within(screen.getByRole("region", { name: "Peer table; scroll horizontally" }));
+    const table = within(screen.getByRole("table", { name: "Peer table" }));
     expect(table.getAllByRole("rowheader").map(cell => within(cell).getAllByRole("link")[0].textContent)).toEqual(["Gulf CU", "Bay CU"]);
     expect(table.getByText("$2,000,000,000")).toBeTruthy();
     expect(table.getAllByText("Not available")).toHaveLength(2);

@@ -197,9 +197,9 @@ describe("peer list: criteria and table before anything optional", () => {
       screen.getByRole("heading", { name: "Published NSF fees for 4 selected peers." }),
       screen.getByText(/Selection criteria: banks · FL/),
       screen.getByRole("table", { name: "Published NSF charges" }),
-      screen.getByRole("region", { name: "Peer table; scroll horizontally" }),
+      screen.getByRole("table", { name: "Peer table" }),
       screen.getByRole("button", { name: "Save this peer research" }),
-      screen.getByText(/You can refine this exact displayed list/),
+      screen.getByText(/Refine this list by state/),
     );
     // No report, summary or second question field comes with a peer list.
     expect(screen.queryByText(/board brief|executive|summary/i)).toBeNull();
@@ -254,7 +254,7 @@ describe("peer list: criteria and table before anything optional", () => {
     expect(row("Two Line Bank")[0].textContent).toContain("Jan 2024 · Source over a year old");
     expect(row("Two Line Bank")[1].textContent).toContain("Sep 2026");
     expect(row("Two Line Bank")[1].textContent).not.toContain("over a year old");
-    expect(row("Missing Bank")[0].textContent).toContain("Date unavailable");
+    expect(row("Missing Bank")[0].textContent).toContain("Date not recorded");
     expect(row("Missing Bank")[0].textContent).not.toContain("over a year old");
     } finally { vi.useRealTimers(); }
   });

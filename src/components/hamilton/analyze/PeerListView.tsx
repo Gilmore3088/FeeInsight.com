@@ -37,7 +37,7 @@ interface PeerListViewProps {
   onPage?: (offset: number) => void;
   /** True while a page is loading. */
   paging?: boolean;
-  /** Set on a reopened saved snapshot: the question it answered, shown above the list. */
+  /** Set on a reopened saved snapshot: the question it answered (the page shows it as its heading). */
   savedQuestion?: string;
 }
 export function PeerListView(props: PeerListViewProps) {
@@ -86,7 +86,7 @@ function SelectablePeerList({ response, saveContext, onPage, paging = false, sav
         body: JSON.stringify({ ...saveContext, expectedPeerList: data, savePeerResearchSnapshot: true }),
       });
       const result = await answer.json() as { savedAnalysisId?: string; error?: string };
-      if (!answer.ok || !result.savedAnalysisId) throw new Error(result.error ?? "The displayed evidence changed.");
+      if (!answer.ok || !result.savedAnalysisId) throw new Error(result.error ?? "The list changed after it was shown. Ask the question again to see the current list, then save it.");
       setSavedResearchId(result.savedAnalysisId);
     } catch (err) {
       setResearchError(err instanceof Error ? err.message : "Could not save research. Retry.");
@@ -146,10 +146,14 @@ function SelectablePeerList({ response, saveContext, onPage, paging = false, sav
   const noFeeLine = `No published consumer ${feeLabel} fee on file`;
   // Snapshots saved before rates were listed carry no rate lines.
   const rateFees = data.feeComparison?.rateFees ?? [];
+  const hasPages = pages.previous !== null || pages.next !== null;
+  const offset = data.offset ?? 0;
+  const rangeText = `${(offset + 1).toLocaleString("en-US")} to ${(offset + data.rows.length).toLocaleString("en-US")}`;
+  // Turning a page shows a new list, so a selection on this page does not carry over.
+  const clears = selectedIds.length > 0 ? " (clears your selection)" : "";
   return (
     <section aria-label="Peer list" className="flex min-w-0 flex-col gap-4 font-sans">
       <div>
-        {savedQuestion ? <p className="mb-1 text-sm text-warm-700">Question: {savedQuestion}</p> : null}
         <h2 className="text-xl font-semibold text-warm-900">{response.shortAnswer}</h2>
         <p className="mt-1 text-sm text-warm-700">Research subject: {data.subject?.name ?? "Not available"}. Amounts shown in US dollars{rateFees.length ? "; fees charged as a rate are shown as a percentage" : ""}.</p>
       </div>
@@ -166,11 +170,11 @@ function SelectablePeerList({ response, saveContext, onPage, paging = false, sav
         <div className="rounded-lg border border-warm-300 p-4">
           <h3 className="text-lg font-semibold text-warm-900">Published {feeLabel} fees for the selected peers</h3>
           <p className="mt-1 text-sm text-warm-700">{data.feeComparison.note}</p>
-          <div role="region" aria-label={`${feeLabel} fee comparison; scroll horizontally`} tabIndex={0} className="mt-3 overflow-x-auto">
-            <table aria-label={`Published ${feeLabel} charges`} className="w-full text-left text-sm max-md:block">
+          <div className="mt-3 overflow-x-auto">
+            <table role="table" aria-label={`Published ${feeLabel} charges`} className="w-full text-left text-sm max-md:block">
               {/* Below md every charge is a card of label and value, so a phone never scrolls sideways. */}
-              <thead className="max-md:sr-only"><tr><th scope="col" className="p-2">Institution</th><th scope="col" className="p-2">Fee</th><th scope="col" className="p-2">{rateFees.length ? "Amount or rate" : "Amount"}</th><th scope="col" className="p-2">Frequency</th><th scope="col" className="p-2">Published / source</th></tr></thead>
-              <tbody className="max-md:block">
+              <thead role="rowgroup" className="max-md:sr-only"><tr role="row"><th role="columnheader" scope="col" className="p-2">Institution</th><th role="columnheader" scope="col" className="p-2">Fee</th><th role="columnheader" scope="col" className="p-2">{rateFees.length ? "Amount or rate" : "Amount"}</th><th role="columnheader" scope="col" className="p-2">Frequency</th><th role="columnheader" scope="col" className="p-2">Published / source</th></tr></thead>
+              <tbody role="rowgroup" className="max-md:block">
                 {[...data.rows.map(row => ({ id: row.institutionId, name: row.name, isAccount: false })),
                   ...(data.feeComparison.account ? [{ id: data.feeComparison.account.institutionId, name: data.feeComparison.account.name, isAccount: true }] : [])
                 ].map(item => {
@@ -182,16 +186,16 @@ function SelectablePeerList({ response, saveContext, onPage, paging = false, sav
                       .map(fee => ({ ...fee, key: `${item.id}:rate:${fee.id}`, shown: fee.rateLabel })),
                   ];
                   return charges.length ? charges.map(charge => (
-                    <tr key={charge.key} className="border-t border-warm-200 max-md:block max-md:py-2">
-                      <th scope="row" className="p-2 font-medium max-md:block max-md:px-0 max-md:py-0.5">{item.name}{item.isAccount ? " (your institution)" : ""}</th>
-                      <td data-label="Fee:" className="p-2 max-md:block max-md:px-0 max-md:py-0.5 max-md:before:mr-1 max-md:before:font-medium max-md:before:text-warm-600 max-md:before:content-[attr(data-label)]">{charge.name}</td>
-                      <td data-label={rateFees.length ? "Amount or rate:" : "Amount:"} className="p-2 tabular-nums max-md:block max-md:px-0 max-md:py-0.5 max-md:before:mr-1 max-md:before:font-medium max-md:before:text-warm-600 max-md:before:content-[attr(data-label)]">{charge.shown}</td>
-                      <td data-label="Frequency:" className="p-2 max-md:block max-md:px-0 max-md:py-0.5 max-md:before:mr-1 max-md:before:font-medium max-md:before:text-warm-600 max-md:before:content-[attr(data-label)]">{frequencyLabel(charge.frequency)}</td>
-                      <td data-label="Published:" className="p-2 max-md:block max-md:px-0 max-md:py-0.5 max-md:before:mr-1 max-md:before:font-medium max-md:before:text-warm-600 max-md:before:content-[attr(data-label)]">{sourceDateWithAge(charge.publishedAt) ?? "Date unavailable"}
+                    <tr role="row" key={charge.key} className="border-t border-warm-200 max-md:block max-md:py-2">
+                      <th role="rowheader" scope="row" className="p-2 font-medium max-md:block max-md:px-0 max-md:py-0.5">{item.name}{item.isAccount ? " (your institution)" : ""}</th>
+                      <td role="cell" className="p-2 max-md:block max-md:px-0 max-md:py-0.5"><span aria-hidden className="mr-1 font-medium text-warm-600 md:hidden">Fee:</span>{charge.name}</td>
+                      <td role="cell" className="p-2 tabular-nums max-md:block max-md:px-0 max-md:py-0.5"><span aria-hidden className="mr-1 font-medium text-warm-600 md:hidden">{rateFees.length ? "Amount or rate:" : "Amount:"}</span>{charge.shown}</td>
+                      <td role="cell" className="p-2 max-md:block max-md:px-0 max-md:py-0.5"><span aria-hidden className="mr-1 font-medium text-warm-600 md:hidden">Frequency:</span>{frequencyLabel(charge.frequency)}</td>
+                      <td role="cell" className="p-2 max-md:block max-md:px-0 max-md:py-0.5"><span aria-hidden className="mr-1 font-medium text-warm-600 md:hidden">Published:</span>{sourceDateWithAge(charge.publishedAt) ?? "Date not recorded"}
                         {charge.documentUrl || charge.sourceUrl ? <a href={charge.documentUrl ?? charge.sourceUrl ?? "#"} target="_blank" rel="noopener noreferrer" className="ml-2 underline">Fee schedule</a> : <span className="ml-2">Source link unavailable</span>}
                       </td>
                     </tr>
-                  )) : <tr key={item.id} className="border-t border-warm-200 max-md:block max-md:py-2"><th scope="row" className="p-2 font-medium max-md:block max-md:px-0 max-md:py-0.5">{item.name}{item.isAccount ? " (your institution)" : ""}</th><td colSpan={4} className="p-2 max-md:block max-md:px-0 max-md:py-0.5">{noFeeLine}</td></tr>;
+                  )) : <tr role="row" key={item.id} className="border-t border-warm-200 max-md:block max-md:py-2"><th role="rowheader" scope="row" className="p-2 font-medium max-md:block max-md:px-0 max-md:py-0.5">{item.name}{item.isAccount ? " (your institution)" : ""}</th><td role="cell" colSpan={4} className="p-2 max-md:block max-md:px-0 max-md:py-0.5">{noFeeLine}</td></tr>;
                 })}
               </tbody>
             </table>
@@ -216,76 +220,78 @@ function SelectablePeerList({ response, saveContext, onPage, paging = false, sav
                   onChange={event => { setName(event.target.value); setSavedName(null); setError(null); }}
                   className="rounded-md border border-warm-300 bg-white px-3 py-2 text-warm-900" />
               </label>
-              <p className="text-xs text-warm-600">Leave the name blank to use “{automaticName}”. Saving keeps exactly these institutions; choose Use for all charts in Settings to apply the group.</p>
+              <p className="text-xs text-warm-600">Leave the name blank to use “{automaticName}”. Saving keeps exactly these institutions.</p>
               <button type="button" onClick={saveSelection} disabled={isSaving || savedName !== null}
-                className="self-start rounded-md bg-terra px-3.5 py-2 text-sm font-medium text-white hover:bg-terra-dark disabled:opacity-50">
+                className="min-h-11 self-start rounded-md bg-terra px-3.5 py-2 text-sm font-medium text-white hover:bg-terra-dark disabled:opacity-50 sm:min-h-9">
                 {isSaving ? "Saving peer group..." : `Save ${selectedIds.length} as a peer group`}
               </button>
               {error ? <p role="alert" className="text-sm text-terra-text">{error}</p> : null}
-              {savedName ? <p role="status" className="text-sm text-warm-800">Saved {selectedIds.length} selected institutions as “{savedName}”. <a href={`/pro/settings?instId=${data.subject.institutionId}#peer-sets`} className="font-medium text-terra-text underline">Manage peer groups</a></p> : null}
+              {savedName ? <p role="status" className="text-sm text-warm-800">Saved {selectedIds.length} selected institutions as “{savedName}”. <a href={`/pro/settings?instId=${data.subject.institutionId}#peer-sets`} className="font-medium text-terra-text underline">Use it for all charts in Settings</a></p> : null}
             </div>
           ) : null}
-          <div role="region" aria-label="Peer table; scroll horizontally" tabIndex={0} className="min-w-0 overflow-x-auto rounded-lg border border-warm-300 focus:outline-terra">
-            <table className="w-full text-left text-sm max-md:block">
+          <div className="min-w-0 overflow-x-auto rounded-lg border border-warm-300">
+            <table role="table" aria-label="Peer table" className="w-full text-left text-sm max-md:block">
               <caption className="sr-only">Institutions matching the criteria, with assets, reporting dates, sources and published-fee coverage</caption>
-              <thead className="border-b border-warm-300 bg-warm-100 text-warm-800 max-md:sr-only"><tr>
-                <th scope="col" className="p-3">Select</th>
-                <th scope="col" className="p-3">Institution</th><th scope="col" className="p-3">Headquarters</th>
-                <th scope="col" className="p-3 text-right">Total assets (USD)</th><th scope="col" className="p-3">Reporting date / source</th>
-                <th scope="col" className="p-3">Fee data</th>
+              <thead role="rowgroup" className="border-b border-warm-300 bg-warm-100 text-warm-800 max-md:sr-only"><tr role="row">
+                <th role="columnheader" scope="col" className="p-3">Select</th>
+                <th role="columnheader" scope="col" className="p-3">Institution</th><th role="columnheader" scope="col" className="p-3">Headquarters</th>
+                <th role="columnheader" scope="col" className="p-3 text-right">Total assets (USD)</th><th role="columnheader" scope="col" className="p-3">Reporting date / source</th>
+                <th role="columnheader" scope="col" className="p-3">Fee data</th>
               </tr></thead>
-              <tbody className="divide-y divide-warm-200 bg-white text-warm-900 max-md:block">
+              <tbody role="rowgroup" className="divide-y divide-warm-200 bg-white text-warm-900 max-md:block">
                 {/* Below md each institution is a card: the checkbox on the left, its facts stacked beside it. */}
-                {rows.map(row => <tr key={row.institutionId} className="max-md:grid max-md:grid-cols-[auto_minmax(0,1fr)] max-md:gap-x-3 max-md:px-3 max-md:py-3">
-                  <td className="p-3 max-md:row-span-5 max-md:p-0 max-md:pt-1"><input type="checkbox" aria-label={`Select ${row.name}`} checked={selected.has(row.institutionId)}
+                {rows.map(row => <tr role="row" key={row.institutionId} className="max-md:grid max-md:grid-cols-[auto_minmax(0,1fr)] max-md:gap-x-3 max-md:px-3 max-md:py-3">
+                  <td role="cell" className="p-3 max-md:row-span-5 max-md:p-0"><label className="grid min-h-11 min-w-11 cursor-pointer place-items-center md:min-h-0 md:min-w-0 md:place-items-start">
+                    <input type="checkbox" aria-label={`Select ${row.name}`} checked={selected.has(row.institutionId)}
                     onChange={() => toggleSelection(row.institutionId)} disabled={isSaving || (!selected.has(row.institutionId) && selected.size >= 50) || !data.subject}
-                    className="accent-terra" /></td>
-                  <th scope="row" className="max-w-[240px] p-3 font-normal max-md:col-start-2 max-md:max-w-none max-md:block max-md:px-0 max-md:py-0.5">
+                    className="h-5 w-5 accent-terra md:h-4 md:w-4" /></label></td>
+                  <th role="rowheader" scope="row" className="max-w-[240px] p-3 font-normal max-md:col-start-2 max-md:max-w-none max-md:block max-md:px-0 max-md:py-0.5">
                     <a href={hamiltonInstitutionHref(row.institutionId)} className="font-semibold text-terra-text underline">{row.name}</a>
                     <p className="mt-1 text-xs text-warm-600">{row.charterType === "credit_union" ? "Credit union" : row.charterType === "bank" ? "Bank" : "Type unavailable"} · <a href={publicInstitutionHref(row.institutionId)} className="underline">Public page</a></p>
                     <details className="mt-1 text-xs text-warm-600"><summary className="cursor-pointer">Why included</summary><p>{row.inclusionReason}</p></details>
                   </th>
-                  <td data-label="Headquarters:" className="p-3 max-md:col-start-2 max-md:block max-md:px-0 max-md:py-0.5 max-md:before:mr-1 max-md:before:font-medium max-md:before:text-warm-600 max-md:before:content-[attr(data-label)]">{[row.city, row.stateCode].filter(Boolean).join(", ") || "Not available"}</td>
-                  <td data-label="Total assets:" className="whitespace-nowrap p-3 text-right tabular-nums max-md:col-start-2 max-md:text-left max-md:block max-md:px-0 max-md:py-0.5 max-md:before:mr-1 max-md:before:font-medium max-md:before:text-warm-600 max-md:before:content-[attr(data-label)]">{formatPeerAssets(row.totalAssetsUsd)}</td>
-                  <td data-label="Reporting date:" className="p-3 max-md:col-start-2 max-md:block max-md:px-0 max-md:py-0.5 max-md:before:mr-1 max-md:before:font-medium max-md:before:text-warm-600 max-md:before:content-[attr(data-label)]"><p className="tabular-nums max-md:inline">{sourceDateWithAge(row.reportDate) ?? "Not available"}</p>
+                  <td role="cell" className="p-3 max-md:col-start-2 max-md:block max-md:px-0 max-md:py-0.5"><span aria-hidden className="mr-1 font-medium text-warm-600 md:hidden">Headquarters:</span>{[row.city, row.stateCode].filter(Boolean).join(", ") || "Not available"}</td>
+                  <td role="cell" className="whitespace-nowrap p-3 text-right tabular-nums max-md:col-start-2 max-md:text-left max-md:block max-md:px-0 max-md:py-0.5"><span aria-hidden className="mr-1 font-medium text-warm-600 md:hidden">Total assets:</span>{formatPeerAssets(row.totalAssetsUsd)}</td>
+                  <td role="cell" className="p-3 max-md:col-start-2 max-md:block max-md:px-0 max-md:py-0.5"><span aria-hidden className="mr-1 font-medium text-warm-600 md:hidden">Reporting date:</span><p className="tabular-nums max-md:inline">{sourceDateWithAge(row.reportDate) ?? "Not available"}</p>
                     {row.source ? <p className="mt-1 text-xs text-warm-600">{row.sourceUrl ? <a href={row.sourceUrl} target="_blank" rel="noopener noreferrer" className="underline">{row.source.toUpperCase()} filing source</a> : `${row.source.toUpperCase()} filing; link unavailable`}</p> : null}
                   </td>
-                  <td className="p-3 text-xs text-warm-700 max-md:col-start-2 max-md:block max-md:px-0 max-md:py-0.5">{row.feeCoverage === "available" ? "Published fees available" : "No published fees on file"}</td>
+                  <td role="cell" className="p-3 text-xs text-warm-700 max-md:col-start-2 max-md:block max-md:px-0 max-md:py-0.5">{row.feeCoverage === "available" ? "Published fees available" : "No published fees on file"}</td>
                 </tr>)}
               </tbody>
             </table>
           </div>
-          {pages.previous !== null || pages.next !== null ? (
+          {hasPages ? (
             <nav aria-label="Pages of this list" className="flex flex-wrap items-center gap-3">
+              <p aria-live="polite" className="text-sm text-warm-800">Showing {rangeText} of {(data.totalMatches ?? 0).toLocaleString("en-US")}.</p>
               {pages.previous !== null ? <button type="button" disabled={paging} onClick={() => onPage?.(pages.previous!)}
-                className="min-h-11 rounded-md border border-warm-300 px-3 py-2 text-sm font-medium text-warm-900 disabled:opacity-50">Previous {pageSize}</button> : null}
+                className="min-h-11 rounded-md border border-warm-300 px-3 py-2 text-sm font-medium text-warm-900 disabled:opacity-50 sm:min-h-9">Previous {pageSize}{clears}</button> : null}
               {pages.next !== null ? <button type="button" disabled={paging} onClick={() => onPage?.(pages.next!)}
-                className="min-h-11 rounded-md border border-warm-300 px-3 py-2 text-sm font-medium text-warm-900 disabled:opacity-50">{paging ? "Loading..." : `Next ${Math.min(pageSize, (data.totalMatches ?? 0) - pages.next, (criteria?.requestedCount ?? Number.POSITIVE_INFINITY) - pages.next)}`}</button> : null}
-              <p className="text-xs text-warm-600">Each page is read again in the same order. Selecting, saving and the file cover the page shown.</p>
+                className="min-h-11 rounded-md border border-warm-300 px-3 py-2 text-sm font-medium text-warm-900 disabled:opacity-50 sm:min-h-9">{paging ? "Loading..." : `Next ${Math.min(pageSize, (data.totalMatches ?? 0) - pages.next, (criteria?.requestedCount ?? Number.POSITIVE_INFINITY) - pages.next)}${clears}`}</button> : null}
+              <p className="w-full text-xs text-warm-600">Each page is read fresh from the data, in the same order. Selections, saves and the CSV download cover only the page shown.</p>
             </nav>
           ) : null}
         </>
-      ) : <p className="text-sm text-warm-800">No institutions matched. Change the criteria in the question field; no replacement peer group was selected.</p>}
+      ) : <p className="text-sm text-warm-800">No institutions match these criteria. Try a wider asset range or another state in the question box below.</p>}
       {/* Criteria and rows lead; saving and the file follow them. */}
       <div className="flex flex-wrap items-center gap-3">
         <button type="button" onClick={() => downloadCsv(data)}
-          className="min-h-11 rounded-md border border-warm-300 px-3 py-2 text-sm font-medium text-warm-900">
-          Download this list (CSV)
+          className="min-h-11 rounded-md border border-warm-300 px-3 py-2 text-sm font-medium text-warm-900 sm:min-h-9">
+          {hasPages ? `Download rows ${rangeText} (CSV)` : "Download this list (CSV)"}
         </button>
-        <p className="text-xs text-warm-600">The file holds the rows, criteria, notes and fees shown here.</p>
+        <p className="text-xs text-warm-600">The CSV holds the rows, criteria, notes and fees shown on this page.</p>
       </div>
       {saveContext ? <div className="flex flex-wrap items-center gap-3">
         <button type="button" onClick={saveResearch} disabled={savingResearch || savedResearchId !== null}
-          className="rounded-md border border-warm-300 px-3 py-2 text-sm font-medium text-warm-900 disabled:opacity-50">
+          className="min-h-11 rounded-md border border-warm-300 px-3 py-2 text-sm font-medium text-warm-900 disabled:opacity-50 sm:min-h-9">
           {savingResearch ? "Saving research..." : "Save this peer research"}
         </button>
-        {!savedResearchId && !savingResearch ? <p className="text-sm text-warm-700">Fee answers save on their own. A peer list is saved only when you save it.</p> : null}
+        {!savedResearchId && !savingResearch ? <p className="text-sm text-warm-700">Fee answers are saved automatically. A peer list is saved only when you choose Save this peer research.</p> : null}
         {researchError ? <p role="alert" className="text-sm text-terra-text">{researchError}</p> : null}
         {savedResearchId ? <p role="status" className="text-sm text-warm-700">Research snapshot saved. <a className="font-medium text-terra-text underline" href={`/pro/peer-research/${encodeURIComponent(savedResearchId)}`}>Reopen saved research</a></p> : null}
       </div> : null}
       {savedQuestion !== undefined
-        ? <p className="text-xs text-warm-600">This is the list as it was saved. To refine it or compare fees, run the question again in Analyze.</p>
-        : <p className="text-xs text-warm-600">You can refine this exact displayed list by state (for example, “Only Florida”) or save selected institutions as a peer group. Fee comparisons use only this displayed selection. Use Save this peer research to reopen this exact list later.</p>}
+        ? <p className="text-xs text-warm-600">This is the list as it was saved. To refine it or compare fees, run the question again.</p>
+        : <p className="text-xs text-warm-600">Refine this list by state (for example, “Only Florida”) or save selected institutions as a peer group. Fee comparisons use only the institutions shown.</p>}
     </section>
   );
 }

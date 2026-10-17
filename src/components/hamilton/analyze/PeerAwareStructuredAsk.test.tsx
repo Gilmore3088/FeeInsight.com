@@ -123,9 +123,14 @@ describe("peer-first Ask rendering", () => {
     // A first-turn list saves as a new list: a previousPeerList key, even null, reads as a follow-up and 409s.
     expect(JSON.parse(fetcher.mock.calls[2][1].body)).not.toHaveProperty("previousPeerList");
   });
-  it("provides a keyboard-focusable horizontal table region", () => {
+  it("adds no scroll region or extra tab stop, and keeps table roles when phones show rows as cards", () => {
     render(<PeerListView response={fixture} />);
-    expect(screen.getByRole("region", { name: "Peer table; scroll horizontally" }).getAttribute("tabindex")).toBe("0");
+    expect(screen.queryByRole("region", { name: /scroll horizontally/ })).toBeNull();
+    const table = screen.getByRole("table", { name: "Peer table" });
+    expect(table.getAttribute("tabindex")).toBeNull();
+    // Explicit roles, so a phone's block layout still reads as a table to a screen reader.
+    expect(within(table).getAllByRole("columnheader").map(cell => cell.getAttribute("role"))).toContain("columnheader");
+    expect(table.querySelectorAll("[data-label]")).toHaveLength(0);
   });
 });
 

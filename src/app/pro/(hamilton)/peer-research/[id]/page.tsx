@@ -1,8 +1,12 @@
 import { notFound } from "next/navigation";
 import { loadAnalysisRecord } from "@/app/pro/(hamilton)/analyze/actions";
 import { PeerListView } from "@/components/hamilton/analyze/PeerListView";
+import { LocalDate } from "@/components/hamilton/common/LocalDate";
+import { LinkButton, MemoHeader, MemoPage } from "@/components/hamilton/memo/memo";
 import type { PeerListData, PeerListResponse } from "@/lib/hamilton/peer-list";
 import type { AnalyzeResponse } from "@/lib/hamilton/types";
+
+const SAVED_DATE: Intl.DateTimeFormatOptions = { month: "short", day: "numeric", year: "numeric" };
 
 /** Only the user who saved this historical snapshot can reopen it. */
 export default async function SavedPeerResearchPage({ params }: { params: Promise<{ id: string }> }) {
@@ -16,8 +20,25 @@ export default async function SavedPeerResearchPage({ params }: { params: Promis
       String(data.subject.institutionId) !== record.institutionId || !Array.isArray(data.rows))
     notFound();
   const response: PeerListResponse = { kind: "peer_list", shortAnswer: saved?.hamiltonView ?? "Saved peer research", peerList: data };
-  return <div className="mx-auto w-full max-w-6xl px-4 py-6">
-    <p className="mb-3 text-sm text-warm-700">Saved research snapshot — historical peer and fee evidence, not a refreshed market lookup.</p>
-    <PeerListView response={response} savedQuestion={typeof record.prompt === "string" ? record.prompt : ""} />
-  </div>;
+  const prompt = typeof record.prompt === "string" ? record.prompt.trim() : "";
+  const savedOn = record.savedAt ?? data.queriedAt ?? null;
+  // A peer list is a lookup, not a written answer, so asking it again costs nothing.
+  const rerunHref = prompt && record.institutionId
+    ? `/pro/analyze?${new URLSearchParams({ q: prompt.slice(0, 500), instId: record.institutionId, send: "1" })}`
+    : null;
+  return (
+    <MemoPage>
+      <MemoHeader
+        kicker="Saved peer research"
+        title={prompt || "Saved peer research"}
+        compact={prompt.length > 120}
+        dek={<>
+          {savedOn ? <>Saved research from <LocalDate iso={savedOn} options={SAVED_DATE} />. </> : "Saved research. "}
+          These are the peers and fees as they were then, not a fresh lookup.
+        </>}
+        actions={rerunHref ? <LinkButton href={rerunHref} primary>Run this question again</LinkButton> : undefined}
+      />
+      <PeerListView response={response} savedQuestion={prompt} />
+    </MemoPage>
+  );
 }
