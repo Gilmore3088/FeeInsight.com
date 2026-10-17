@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { IndexRow } from "@/lib/data-store";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
 import { REPORT_OFFER } from "@/lib/constants";
+import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import { PRO_TIERS, tierAmountLabel } from "@/lib/pro-tiers";
 import type { PublicStatsSummary } from "@/lib/public-stats";
 import { histogram, institutionsFor, statsFor } from "./(public)/fees/(index)/index-view";
@@ -126,12 +127,12 @@ describe("hero and proof strip", () => {
   it("names the buyer, carries James's promise, one action and the institution search", () => {
     const html = renderToStaticMarkup(<LandingHero index={card} freshness="Oct 14, 2026" />);
     // The audience line is back, in sentence case, before the h1 (James, Oct 17).
-    expect(html).toMatch(/<p[^>]*>For bank and credit union pricing teams<\/p><h1/);
+    expect(html).toMatch(/<p[^>]*>Current competitor fees for bank and credit union teams<\/p><h1/);
     expect(html).not.toMatch(/uppercase|tracking-\[0\.1/);
-    expect(html).toContain("Know where your fees");
-    expect(html).toContain("stand in your market.");
-    expect(html).toContain("Every figure comes from an institution&#x27;s own fee schedule.");
-    expect(html).toMatch(/<a href="#hamilton"[^>]*fi-btn-brick[^>]*>See Hamilton in action</);
+    expect(html).toContain("See where your fees sit");
+    expect(html).toContain("before your board asks.");
+    expect(html).toContain("Every figure links to the");
+    expect(html).toMatch(/<a href="#hamilton"[^>]*fi-btn-brick[^>]*>See a live fee comparison</);
     expect(html).not.toContain("Explore the Index");
     // The h1 is set in the homepage serif (James, Oct 17).
     expect(html).toMatch(/<h1 id="hero-title"[^>]*style="font-family:var\(--fi-home-serif/);
@@ -158,8 +159,8 @@ describe("Hamilton band", () => {
 
   it("draws its four examples from the live sample report for Capital City Bank", () => {
     const html = renderToStaticMarkup(<LandingHamilton report={report} />);
-    expect(html).toContain("Answers for your");
-    expect(html).toContain("pricing committee.");
+    expect(html).toContain("Defend each fee");
+    expect(html).toContain("with its source.");
     expect(html).toContain("Capital City Bank");
     expect(html).not.toMatch(/Frost/i);
     expect(html.match(/data-hamilton-slide=/g)).toHaveLength(4);
@@ -279,7 +280,7 @@ describe("motion", () => {
 describe("research behind each answer", () => {
   it("renders the first question and its answer on the server, so the panel is never empty", () => {
     const html = renderToStaticMarkup(<LandingResearch />);
-    expect(html).toContain("The research behind each answer.");
+    expect(html).toMatch(/Ask Hamilton\.<\/span> <span class="block">Every answer shows its sources\./);
     expect(html).toContain("Filings and market data join as each source is connected.");
     expect(html).toContain(RESEARCH_EXAMPLES[0].question);
     expect(html).toContain(RESEARCH_EXAMPLES[0].title);
@@ -351,12 +352,14 @@ describe("licence rule", () => {
 describe("pricing", () => {
   it("takes every price from PRO_TIERS and offers the plan and a conversation", () => {
     const html = renderToStaticMarkup(<LandingPricing />);
-    expect(html).toContain("What Hamilton costs.");
+    expect(html).toContain("One plan for your whole pricing team.");
     // The billing line is worked out from PRO_TIERS, never typed.
     expect(html).toContain(pricingLine().replace("'", "&#x27;"));
-    expect(pricingLine()).toBe("Priced by your institution's total assets. Annual billing is ten monthly payments.");
-    expect(pricingLine([{ monthlyUsd: 100, annualUsd: 1_000 }, { monthlyUsd: 100, annualUsd: 1_100 }])).toBe(
-      "One plan for your institution, monthly or annual.",
+    expect(pricingLine()).toBe(
+      `Priced by your institution's total assets, for up to ${WORKSPACE_SEAT_LIMIT} people. Annual billing is ten monthly payments.`,
+    );
+    expect(pricingLine([{ monthlyUsd: 100, annualUsd: 1_000 }, { monthlyUsd: 100, annualUsd: 1_100 }], 3)).toBe(
+      "Priced by your institution's total assets, for up to 3 people. Monthly or annual.",
     );
     for (const tier of PRO_TIERS) {
       expect(html).toContain(tier.assetsLabel);

@@ -193,7 +193,7 @@ function plainSlides(): HamiltonSlide[] {
 const MIN_SAMPLE_ROWS = 3;
 
 /**
- * The Hamilton band (James's example, Oct 17; headings by growth): "Answers for your pricing committee." with four
+ * The Hamilton band (James's example, Oct 17; headings by growth): "Defend each fee with its source." with four
  * examples from the live sample report for Capital City Bank, the demo bank (loadSampleReport).
  */
 export function LandingHamilton({ report }: { report: MarketReport | null }) {
@@ -208,8 +208,8 @@ export function LandingHamilton({ report }: { report: MarketReport | null }) {
           intro={
             <>
               <h2 id="hamilton-title" className="fi-home-h2 !font-medium text-ink" style={SERIF}>
-                <span className="block whitespace-nowrap">Answers for your</span>
-                <span className="block whitespace-nowrap">pricing committee.</span>
+                <span className="block whitespace-nowrap">Defend each fee</span>
+                <span className="block whitespace-nowrap">with its source.</span>
               </h2>
               <p className="mt-5 text-[18px] leading-[1.45] text-ink-soft sm:text-[21px]">
                 Hamilton is your on-demand fee consultant.

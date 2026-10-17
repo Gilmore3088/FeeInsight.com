@@ -60,7 +60,7 @@ interface Line {
 }
 
 /**
- * "The research behind each answer." The source tiles; Hamilton's panel cycles five questions,
+ * "Ask Hamilton. Every answer shows its sources." The source tiles; Hamilton's panel cycles five questions,
  * and for each one the tiles it draws on light up and, from lg up, connector lines run from them
  * to the answer. The first question renders complete on the server, so the panel is never empty.
  * Lines and dots stop off screen, in a hidden tab, when paused, and with reduced motion

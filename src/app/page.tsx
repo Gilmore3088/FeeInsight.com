@@ -38,7 +38,7 @@ import { homeSerif } from "./landing-serif";
 import "./landing-motion.css";
 
 // James's headline (Oct 17); no counts, so nothing goes stale.
-const HOME_TITLE = `Know where your fees stand in your market | ${SITE_NAME}`;
+const HOME_TITLE = `See where your fees sit before your board asks | ${SITE_NAME}`;
 const HOME_DESCRIPTION =
   `Benchmark your fees with the ${PRODUCT_NAME}, then put Hamilton to work for your institution. ` +
   "Every figure traces to the institution's own published fee schedule.";
