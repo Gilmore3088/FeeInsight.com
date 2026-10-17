@@ -220,6 +220,9 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
  * in a manifest above.
  */
 export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
+  // v6 (Oct 17): an unclassified committee assignment moves a committee bill's stage date. The state
+  // bills read treats a state stored under an older version as due, so its next run re-reads them.
+  STATE_BILLS_TAGGING_VERSION: "The state bills read re-reads states stored under an older version on its next runs; nothing to replay.",
   // v1 (#1100 gap 3): a new pass 2 specialist inside the free team, logged under extract.rules.
   // Old texts are read again only when KNOX_RULES_STRATEGY moves, and the knox.rules manifest
   // counts that replay.
