@@ -39,9 +39,12 @@ import { combineScores, scoreAnswerKeys, type AnswerKeyDocument, type GateScore 
 // all to 567 / 14; held out stayed 53 / 4. No document gained a wrong read.
 // v76 (Knox recall round 2, Oct 17): every slash variant's price and both column prices of a box size
 // took all to 572 / 14; held out stayed 53 / 4. The wrong reads are the same 14 as v75's.
+// v78 (Knox recall round 3, Oct 17): the next held families, a checking account's free row, a box size
+// before its dot leader and a safe deposit box's bare late fee took all from 573 / 14 (main) to 584 / 12
+// (two late fees no longer read as loan late payments); held out 53 / 4 to 54 / 4.
 const FLOORS = {
-  all: { right: 572, wrong: 14 },
-  holdout: { right: 53, wrong: 4 },
+  all: { right: 584, wrong: 12 },
+  holdout: { right: 54, wrong: 4 },
 };
 
 const fixture = JSON.parse(
