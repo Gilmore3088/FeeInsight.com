@@ -197,7 +197,8 @@ const LIVE: LiveTakedownRow[] = [
   { fee_published_id: 152366, lineage_ref: 188269, institution_id: 4624, canonical_fee_key: "other_lending_fee", fee_name: "Mortgage satisfaction fee (varies)", amount: "1000.00" },
   { fee_published_id: 152591, lineage_ref: 188726, institution_id: 7859, canonical_fee_key: "other_lending_fee", fee_name: "Reconveyance", amount: "4.95" },
   { fee_published_id: 152306, lineage_ref: 187951, institution_id: 8579, canonical_fee_key: "bill_pay", fee_name: "Bill Payment, ACH, or Check", amount: "35.00" },
-  { fee_published_id: 53765, lineage_ref: 208, institution_id: 8579, canonical_fee_key: "stop_payment", fee_name: "Stop Payment Order for Bill Payment, ACH, or Check (one free per calendar year)", amount: "35.00" },  // #1837: lineage ref is a fixture number.
+  { fee_published_id: 53765, lineage_ref: 208, institution_id: 8579, canonical_fee_key: "stop_payment", fee_name: "Stop Payment Order for Bill Payment, ACH, or Check (one free per calendar year)", amount: "35.00" },
+  // #1837: lineage ref is a fixture number.
   { fee_published_id: 45157, lineage_ref: 209, institution_id: 5622, canonical_fee_key: "overdraft", fee_name: "Non-Sufficient Funds / Overdraft: Non-members", amount: "0.00" },
 ];
 const CONDITIONAL_ZERO = [43512, 54014, 61335, 68893, 70121, 73737, 77121, 77122, 77618, 84553, 87079, 87461, 88213, 91505, 120559];

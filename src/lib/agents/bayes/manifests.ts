@@ -411,6 +411,8 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // after "non-", and an ATM transaction verification re-files to account research.
     // v72 (Oct 17, #1788): an international ATM fee re-files to card_foreign_txn, a sustained overdraft
     // to continuous_od and an incoming wire to its incoming key; an optional add-on fails monthly maintenance.
+    // v73 (Oct 17, #1837): a bare direction row read under another column's heading ("Check Printing:
+    // Incoming", a wire price) fails outside the categories a direction prices.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",
