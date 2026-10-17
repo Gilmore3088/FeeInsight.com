@@ -5,6 +5,7 @@ vi.mock("@/lib/data-store/fee-cache", () => ({ invalidatePublicReadCache: vi.fn(
 import { publishSkipReason, type VerifiedFeeRow } from "./publish";
 import {
   fillSourceLinks,
+  findHandSourceLink,
   findResourceDocument,
   NO_SOURCE_DOCUMENT_REASON,
   NO_SOURCE_LINK_REASON,
@@ -243,6 +244,28 @@ describe("source link re-source (#1342)", () => {
     expect(findResourceDocument(candidate(5808, { taken_document_ids: [17763] }), [stored(17763)])).toEqual({ why: "document_holds_same_name_import" });
     expect(findResourceDocument(candidate(5808, { source: "knox" }), [stored(17763)])).toEqual({ why: "knox_fee" });
     expect(findResourceDocument(candidate(5808, { fee_r2_key: "other/file" }), [stored(17763)])).toEqual({ why: "no_stored_document" });
+  });
+
+  it("links Bay Cities 11764 by hand to the free print copy that prints its line, and nothing else (roadmap 6.14)", () => {
+    const line = "Express Checking Monthly Fee: $0 with e-Statements and Direct Deposit. With e-Statements OR Direct Deposit – $5.";
+    const bayCities = (overrides: Partial<InstitutionDocumentText> = {}) => stored(27381, {
+      institution_id: 8434, document_url: "https://www.baycities.org/schedule-of-fees/?print=1", document_r2_key: "c1/c17d",
+      normalized_text: `Reg. D Excessive Transaction: $5.\n\n${line} Without e-Statements & Direct Deposit – $10.`, ...overrides,
+    });
+    const fee = (overrides: Partial<ResourceCandidateRow> = {}) => candidate(11764, {
+      institution_id: 8434, taken_down: false, rolled_back_reason: null, fee_name: "Express Checking Monthly Fee",
+      canonical_fee_key: "monthly_maintenance", amount: "5.00", taken_document_ids: [17805, 31579], ...overrides,
+    });
+    // The shared check gives the $5 to the $0 tier's words, so only the hand link places it.
+    expect(findResourceDocument(fee(), [bayCities()])).toEqual({ why: "not_in_stored_documents:amount_is_a_threshold" });
+    expect(findHandSourceLink(fee(), [bayCities()])).toEqual({ sourceDocumentId: 27381, url: "https://www.baycities.org/schedule-of-fees/?print=1", sourceLine: line });
+    expect(planSourceLinkResource([fee()], [bayCities()]).resources.map((r) => [r.feePublishedId, r.sourceDocumentId, r.restore])).toEqual([[11764, 27381, false]]);
+    for (const changed of [fee({ amount: "10.00" }), fee({ fee_name: "Star Checking Monthly Fee" }), fee({ institution_id: 6288 }), fee({ taken_document_ids: [27381] })]) {
+      expect(findHandSourceLink(changed, [bayCities()])).toBeNull();
+    }
+    for (const document of [bayCities({ superseded: true }), bayCities({ status: "failed" }), bayCities({ normalized_text: "Express Checking Monthly Fee: $7." }), bayCities({ document_url: null })]) {
+      expect(findHandSourceLink(fee(), [document])).toBeNull();
+    }
   });
 
   it("restores a takedown, links a live fee with no traceable document, and leaves the repair's fills alone", () => {

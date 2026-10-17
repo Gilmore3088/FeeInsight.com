@@ -885,7 +885,11 @@ queued for the source check with `markRestoredForSourceCheck`), unless the same 
 is already live. Not found: nothing changes, and the repair takes it down as before. Only an
 imported fee is re-sourced (a Knox fee answers to the document Knox read it from), and a
 document that already holds another imported row of the same name is skipped (the import's
-unique key). The pass runs in every publish step (in a savepoint: a failed write is rolled back,
+unique key). A fee the shared check cannot tie to its price may be linked by hand
+(`HAND_SOURCE_LINKS`): 11764, Bay Cities' "$5 with e-Statements OR Direct Deposit" Express
+Checking tier, to the free print copy 27381 (the two plain copies hold its $0 and $10 tiers).
+A hand link applies only while the fee keeps its institution, name and amount, and the document
+is the institution's, current, completed, free and still prints the line. The pass runs in every publish step (in a savepoint: a failed write is rolled back,
 kept in the step's `source_link_resource.error`, and publishing carries on) and first in the
 hand-started repair (where a failed write fails the step). Each change writes one
 `pipeline_feedback` row (check `hamilton.source_link`, evidence `action` `resourced` or

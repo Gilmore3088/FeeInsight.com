@@ -564,6 +564,51 @@ export function findResourceDocument(
   return { why };
 }
 
+/**
+ * Imported fees the shared check cannot tie to their price, each linked by hand to a stored copy
+ * of its own schedule that prints the line (#1342, roadmap 6.14). 11764: Bay Cities CU prints
+ * "Express Checking Monthly Fee: $0 with e-Statements and Direct Deposit. With e-Statements OR
+ * Direct Deposit – $5." The check gives the $5 to the $0 tier's words; the import's other two
+ * tiers (11756, 11766) hold the two plain schedule copies, so only the print copy is free.
+ * A hand link applies only while the fee is still that fee (institution, name, amount) and the
+ * document is the institution's, current, completed, free, and still prints the line.
+ */
+export const HAND_SOURCE_LINKS: ReadonlyArray<{
+  feePublishedId: number;
+  institutionId: number;
+  feeName: string;
+  amount: number;
+  sourceDocumentId: number;
+  line: string;
+}> = [
+  {
+    feePublishedId: 11764,
+    institutionId: 8434,
+    feeName: "Express Checking Monthly Fee",
+    amount: 5,
+    sourceDocumentId: 27381,
+    line: "Express Checking Monthly Fee: $0 with e-Statements and Direct Deposit. With e-Statements OR Direct Deposit – $5.",
+  },
+];
+
+/** Pure: the hand link for a candidate the check could not place, or null. */
+export function findHandSourceLink(
+  fee: ResourceCandidateRow,
+  texts: InstitutionDocumentText[],
+): { sourceDocumentId: number; url: string; sourceLine: string } | null {
+  const hand = HAND_SOURCE_LINKS.find((entry) => entry.feePublishedId === Number(fee.fee_published_id));
+  if (!hand || hand.institutionId !== Number(fee.institution_id) || hand.feeName !== fee.fee_name) return null;
+  if (fee.amount == null || fee.amount === "" || Math.abs(Number(fee.amount) - hand.amount) >= 0.005) return null;
+  if ((fee.taken_document_ids ?? []).map(Number).includes(hand.sourceDocumentId)) return null;
+  const text = texts.find((candidate) => Number(candidate.source_document_id) === hand.sourceDocumentId);
+  if (!text || Number(text.institution_id) !== hand.institutionId || text.superseded || text.status !== "completed") return null;
+  const feeKey = fee.fee_r2_key?.trim() || null;
+  if (feeKey && feeKey !== text.document_r2_key?.trim()) return null;
+  const url = httpUrl(text.document_url);
+  if (!url || !text.normalized_text?.includes(hand.line)) return null;
+  return { sourceDocumentId: hand.sourceDocumentId, url, sourceLine: hand.line };
+}
+
 /** Pure: the re-source for each candidate, or why it has none. */
 export function planSourceLinkResource(
   rows: ResourceCandidateRow[],
@@ -595,10 +640,10 @@ export function planSourceLinkResource(
       continue;
     }
     const nameKey = `${row.source ?? ""}:${row.fee_name}`;
-    const found = findResourceDocument(
-      { ...row, taken_document_ids: [...(row.taken_document_ids ?? []), ...(claimed.get(nameKey) ?? [])] },
-      byInstitution.get(institutionId) ?? [],
-    );
+    const fee = { ...row, taken_document_ids: [...(row.taken_document_ids ?? []), ...(claimed.get(nameKey) ?? [])] };
+    const institutionTexts = byInstitution.get(institutionId) ?? [];
+    const checked = findResourceDocument(fee, institutionTexts);
+    const found = "why" in checked ? findHandSourceLink(fee, institutionTexts) ?? checked : checked;
     if ("why" in found) {
       miss(found.why);
       continue;
