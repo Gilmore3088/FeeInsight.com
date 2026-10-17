@@ -43,6 +43,7 @@ vi.mock("@/lib/hamilton/citation-gate", () => ({ evaluateCitationDensity: () => 
 vi.mock("@/lib/hamilton/answer-save", () => ({
   SAVED_ANALYSIS_ID_KEY: "savedAnalysisId", questionOnly: (text: string) => text,
   writtenAnswerCheck: () => ({ passed: true, problems: [], figureCheck: { checked: 0, unmatched: [] } }),
+  writtenAnswerBinding: () => null,
   writtenAnswerResponse: (text: string) => ({ title: "Test answer", hamiltonView: text, confidence: { level: "medium", basis: [] }, whatThisMeans: "", whyItMatters: [], evidence: { metrics: [] }, exploreFurther: [] }),
 }));
 vi.mock("ai", () => ({
