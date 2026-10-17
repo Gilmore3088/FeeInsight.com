@@ -17,7 +17,14 @@ import { renderInline } from "./markdown";
 import { inferFeeCategory } from "@/lib/hamilton/infer-category";
 import { basketItemId } from "@/lib/hamilton/report-basket";
 import { HAMILTON_VERSION } from "@/lib/hamilton/voice";
-import { withConversationContext, type ConversationTurn } from "@/lib/hamilton/conversation-context";
+import { withConversationContext } from "@/lib/hamilton/conversation-context";
+import {
+  clarificationInputError, composerMode, conversationReducer, currentTurn, decisionForQuestion, earlierTurns, emptyConversation,
+  resetConversation, serializeConversationState,
+  type ActivePeerSet, type ConversationAction, type HamiltonConversationState,
+} from "@/lib/hamilton/conversation-state";
+import { matchFeeCategory } from "@/lib/hamilton/workspace/ask";
+import type { ClarifyingQuestion } from "@/lib/hamilton/workspace/types";
 import { HAMILTON_PAUSED_MESSAGE, isHamiltonPausedText } from "@/lib/hamilton/provider-paused";
 import { STANDARD_METHOD, type AuditTrail } from "@/lib/hamilton/audit-trail";
 import { getDisplayName } from "@/lib/fee-taxonomy";
@@ -25,7 +32,7 @@ import { marketBriefHref, parseMarketQuestion } from "@/lib/hamilton/market-ques
 import { isPeerListContinuationQuestion } from "@/lib/hamilton/peer-list";
 import type { HamiltonSelectedInstitutionContext } from "@/lib/hamilton/institution-context";
 import { AddToReportButton } from "@/components/hamilton/basket/AddToReportButton";
-import { DownloadAnswerPdf } from "./StructuredAsk";
+import { DownloadAnswerPdf, type StructuredAnswerInfo } from "./StructuredAsk";
 import { PeerAwareStructuredAsk as StructuredAsk } from "./PeerAwareStructuredAsk";
 import { StorylineView } from "@/components/hamilton/storyline/StorylineView";
 import { ExhibitFrame } from "@/components/hamilton/memo/exhibit-view";
@@ -177,6 +184,17 @@ interface AnalyzeWorkspaceProps {
   autoSend?: boolean;
   /** Keep saved content readable without guessing a missing or unavailable subject. */
   readOnlyReason?: string | null;
+  /**
+   * The conversation this screen continues (#979, H04-T06): a reload or back/forward visit of
+   * ?conversation=, or the state stored when a reopened saved answer was filed. Its subject is
+   * already checked against the authorized institution by the page.
+   */
+  initialConversation?: HamiltonConversationState | null;
+  /** A visible line when the conversation's institution differs from the one asked for. */
+  subjectNotice?: { text: string; href?: string; linkLabel?: string } | null;
+  /** Stores the conversation (server actions); without them it lives only on this screen. */
+  startConversationAction?: () => Promise<{ id: string } | { error: string }>;
+  recordConversationAction?: (conversationId: string, state: unknown) => Promise<{ ok: boolean }>;
 }
 
 /**
@@ -319,6 +337,10 @@ function AnalyzeConversationWorkspace({
   initialQuestion = null,
   autoSend = false,
   readOnlyReason = null,
+  initialConversation = null,
+  subjectNotice = null,
+  startConversationAction,
+  recordConversationAction,
 }: AnalyzeWorkspaceProps) {
   // The focus lens still shapes the prompt from deep links; there are no lens tabs on screen.
   const focus = useRef<AnalysisFocus>(focusForIntent(initialIntent));
@@ -351,12 +373,30 @@ function AnalyzeConversationWorkspace({
   // The route's line in place of a written answer its source check held back (#981).
   const [heldLine, setHeldLine] = useState<string | null>(null);
   const [askedQuestion, setAskedQuestion] = useState<string | null>(null);
-  // Bumped on every ask, so asking the same question again (or Try again) really asks again.
-  const [askSeq, setAskSeq] = useState(0);
   // A new conversation drops the engine's decision context along with the earlier answers.
   const [conversation, setConversation] = useState(0);
-  // Earlier questions in this conversation and their one-line answers, oldest first.
-  const [thread, setThread] = useState<Array<{ question: string; lead: string | null }>>([]);
+  // The one conversation state (#979, H04-T02): turns, subject, peer list, carried decision and a
+  // pending clarification. Its nonce is bumped on every ask, so asking the same question again
+  // (or Try again) really asks again. Mirrored in a ref so an answer sent right after an ask never
+  // reads a stale list.
+  const [conv, setConv] = useState<HamiltonConversationState>(() => initialConversation ?? seedConversation({
+    institutionId: normalizeCanonicalInstitutionId(selectedInstitution?.id ?? institutionId),
+    institutionName: selectedInstitution?.name ?? null,
+  }, initialAnalysis ? { question: initialAnalysisPrompt, savedAnalysisId: initialAnalysisId } : null));
+  const convRef = useRef(conv);
+  // The revision the screen opened at; opening a conversation or saved answer stores nothing.
+  const openedRevision = useRef(conv.revision);
+  const apply = useCallback((action: ConversationAction) => {
+    const next = conversationReducer(convRef.current, action);
+    if (next !== convRef.current) {
+      convRef.current = next;
+      setConv(next);
+    }
+    return next;
+  }, []);
+  // The composer's reply to Hamilton's pending question, sent once per seq.
+  const [clarificationReply, setClarificationReply] = useState<{ value: string; seq: number } | null>(null);
+  const [composerError, setComposerError] = useState<string | null>(null);
   const [engineBusy, setEngineBusy] = useState(false);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [storyLead, setStoryLead] = useState<string | null>(null);
@@ -366,10 +406,6 @@ function AnalyzeConversationWorkspace({
   const currentLeadRef = useRef<string | null>(null);
   const answerHeadingRef = useRef<HTMLDivElement>(null);
   const lastPromptRef = useRef<string>("");
-  // The earlier turns of this conversation (question and one-line answer), so a follow-up's
-  // written answer knows what "this", "those" and "us" refer to. Kept in step with `thread`
-  // synchronously, so an answer sent right after an ask never reads a stale list.
-  const historyRef = useRef<ConversationTurn[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const active = useRef(true);
   const answerGeneration = useRef(0);
@@ -422,10 +458,14 @@ function AnalyzeConversationWorkspace({
       // The route saves the answer itself and sends the row's id, so a reload mid-stream loses
       // nothing; the browser saves only when an older route sent no id.
       const serverSaved = (message.metadata as { savedAnalysisId?: string } | undefined)?.savedAnalysisId;
+      const turnId = currentTurn(convRef.current)?.id ?? "";
+      const lead = shapeHamiltonView(parsed.hamiltonView).lead || null;
       if (serverSaved) {
         setSavedAnalysisId(serverSaved);
+        apply({ type: "answered", turnId, route: "written", lead, savedAnalysisId: serverSaved });
         return;
       }
+      apply({ type: "answered", turnId, route: "written", lead });
       if (userId) {
         const kept = withoutOmitted(parsed, sentBinding);
         const result = await saveAnalysis({
@@ -444,8 +484,10 @@ function AnalyzeConversationWorkspace({
           } satisfies AnalyzeResponse,
         });
         if (!active.current || generation !== answerGeneration.current) return;
-        if ("id" in result) setSavedAnalysisId(result.id);
-        else setSaveError("This answer couldn't be saved to your history.");
+        if ("id" in result) {
+          setSavedAnalysisId(result.id);
+          apply({ type: "answered", turnId, savedAnalysisId: result.id });
+        } else setSaveError("This answer couldn't be saved to your history.");
       }
     },
   });
@@ -483,7 +525,7 @@ function AnalyzeConversationWorkspace({
   const answerInProse = useCallback(
     (question: string) => {
       if (!active.current || readOnlyReason || question !== lastPromptRef.current) return;
-      sendMessage({ text: withConversationContext(question, historyRef.current) });
+      sendMessage({ text: withConversationContext(question, earlierTurns(convRef.current)) });
     },
     [sendMessage, readOnlyReason],
   );
@@ -496,19 +538,21 @@ function AnalyzeConversationWorkspace({
       // A question about a market, not this institution, opens the market brief (no provider call).
       // One that names the institution being researched stays here, so the answer is about it.
       if (opensMarketBrief(trimmed, selectedInstitution?.name ?? null)) {
-        window.location.assign(marketBriefHref(trimmed, institutionId));
+        // The brief is a turn of this conversation: its follow-up comes back here with the
+        // conversation, so the next answer knows what was asked.
+        const turn = currentTurn(apply({ type: "ask", question: trimmed, route: "market_brief", previousLead: currentLeadRef.current }));
+        if (turn) apply({ type: "answered", turnId: turn.id, route: "market_brief" });
+        const href = marketBriefHref(trimmed, institutionId);
+        void persistConversation().then((id) => window.location.assign(id ? `${href}&${new URLSearchParams({ conversation: id })}` : href));
         return;
       }
       const pendingSince = askPendingSince.current;
       if (pendingSince !== null && Date.now() - pendingSince < ASK_PENDING_MS) return;
       askPendingSince.current = Date.now();
       answerGeneration.current += 1;
-      if (lastPromptRef.current && lastPromptRef.current !== trimmed) {
-        // The answer just read moves up into the conversation, collapsed to its question and lead.
-        const earlier: ConversationTurn = { question: lastPromptRef.current, lead: currentLeadRef.current };
-        historyRef.current = [...historyRef.current, earlier];
-        setThread((t) => [...t, earlier]);
-      }
+      // The answer just read moves up into the conversation, collapsed to its question and lead.
+      apply({ type: "ask", question: trimmed, previousLead: currentLeadRef.current });
+      setComposerError(null);
       lastPromptRef.current = trimmed;
       setStartedAt(Date.now());
       setStoryLead(null);
@@ -520,7 +564,6 @@ function AnalyzeConversationWorkspace({
       setFigureCheck(null);
       setBinding(null);
       setAskedQuestion(trimmed);
-      setAskSeq((n) => n + 1);
       setMessages([]);
       // The engine answers first. A storyline answer gets Hamilton's memo in place; only a
       // question without one is sent on for a written answer (onNoStoryline below), so one
@@ -530,7 +573,9 @@ function AnalyzeConversationWorkspace({
       if (window.innerWidth < 640) textareaRef.current?.blur();
       window.scrollTo({ top: 0, behavior: "smooth" });
     },
-    [clearError, isLoading, engineBusy, readOnlyReason, setMessages, institutionId, selectedInstitution?.name],
+    // persistConversation is declared below and only read when a brief opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [clearError, isLoading, engineBusy, readOnlyReason, setMessages, institutionId, selectedInstitution?.name, apply],
   );
 
   /** Starts over: no earlier answers, no carried context, the start screen. */
@@ -539,8 +584,13 @@ function AnalyzeConversationWorkspace({
     askPendingSince.current = null;
     answerGeneration.current += 1;
     clearError();
-    setThread([]);
-    historyRef.current = [];
+    convRef.current = resetConversation(convRef.current);
+    setConv(convRef.current);
+    conversationEpoch.current += 1;
+    storing.current = null;
+    openedRevision.current = -1;
+    setClarificationReply(null);
+    setComposerError(null);
     lastPromptRef.current = "";
     setEngineBusy(false);
     setEngineRows(false);
@@ -556,6 +606,79 @@ function AnalyzeConversationWorkspace({
     window.scrollTo({ top: 0, behavior: "smooth" });
     textareaRef.current?.focus();
   }, [clearError, isLoading, setMessages, stop]);
+
+  // The conversation is stored once its first answer arrives (hamilton_conversations), then one
+  // snapshot per change, so a reload, back/forward visit or reopened answer resumes it. Storing
+  // never blocks an answer; a "New conversation" during a store drops that store's ID.
+  const conversationEpoch = useRef(0);
+  const storing = useRef<Promise<string | null> | null>(null);
+  const persistConversation = useCallback(async (): Promise<string | null> => {
+    if (!startConversationAction || !recordConversationAction || readOnlyReason) return null;
+    const epoch = conversationEpoch.current;
+    let id = convRef.current.conversationId;
+    if (!id) {
+      storing.current ??= startConversationAction().then((r) => ("id" in r ? r.id : null)).catch(() => null);
+      const started = storing.current;
+      id = await started;
+      if (!id) {
+        if (storing.current === started) storing.current = null;
+        return null;
+      }
+      if (!active.current || epoch !== conversationEpoch.current) return null;
+      apply({ type: "stored", conversationId: id });
+      try {
+        const url = new URL(window.location.href);
+        for (const key of ["q", "send", "analysis", "from_brief"]) url.searchParams.delete(key);
+        url.searchParams.set("conversation", id);
+        window.history.replaceState(window.history.state, "", url.toString());
+      } catch {
+        // The address is a convenience; the conversation is stored either way.
+      }
+    }
+    if (epoch !== conversationEpoch.current) return null;
+    const result = await recordConversationAction(id, serializeConversationState(convRef.current)).catch(() => null);
+    return result?.ok ? id : null;
+  }, [apply, readOnlyReason, recordConversationAction, startConversationAction]);
+
+  // Store each settled turn shortly after it changes (several changes land together).
+  const current = currentTurn(conv);
+  useEffect(() => {
+    if (conv.revision === openedRevision.current) return;
+    if (!current || current.status !== "answered" || current.route === "market_brief") return;
+    const timer = setTimeout(() => void persistConversation(), 250);
+    return () => clearTimeout(timer);
+  }, [conv.revision, current, persistConversation]);
+
+  const handleLead = useCallback((lead: string) => {
+    setStoryLead(lead);
+    const turn = currentTurn(convRef.current);
+    if (turn) apply({ type: "answered", turnId: turn.id, lead });
+  }, [apply]);
+  const handleAnswered = useCallback((info: StructuredAnswerInfo) => {
+    const turn = currentTurn(convRef.current);
+    if (!turn) return;
+    if (info.decisionId) apply({ type: "decision", value: { decisionId: info.decisionId, feeCategory: info.feeCategory } });
+    apply({ type: "answered", turnId: turn.id, route: info.route, savedAnalysisId: info.savedAnalysisId });
+  }, [apply]);
+  const handlePeerSet = useCallback((value: ActivePeerSet) => {
+    apply({ type: "peerSet", value });
+  }, [apply]);
+  const handleClarification = useCallback((question: ClarifyingQuestion | null, invalidValue: string | null) => {
+    const turn = currentTurn(convRef.current);
+    if (turn) apply({ type: "clarify", turnId: turn.id, question, invalidValue });
+  }, [apply]);
+  const handleReplyFailed = useCallback((value: string) => {
+    setInput((existing) => existing || value);
+    setComposerError("Hamilton couldn't save that answer just now. It is back in the box; try again.");
+  }, []);
+
+  // Hamilton's question takes the composer, so the reader answers where they type.
+  const pendingField = conv.clarification?.fieldKey ?? null;
+  useEffect(() => {
+    if (!pendingField) return;
+    textareaRef.current?.focus({ preventScroll: true });
+    document.getElementById("hamilton-ask")?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+  }, [pendingField]);
 
   // A storyline answer for a fee picked after a written answer replaces that answer.
   const dropWrittenAnswer = useCallback(() => {
@@ -579,16 +702,41 @@ function AnalyzeConversationWorkspace({
     }
   }, [autoSend, initialQuestion, initialAnalysis, ask]);
 
+  /** Sends the composer: an ordinary question, or the answer to Hamilton's pending question. */
+  function submitComposer() {
+    const pending = convRef.current.clarification;
+    if (!pending) {
+      ask(input);
+      return;
+    }
+    if (engineBusy) return;
+    const problem = clarificationInputError(pending.inputKind, input);
+    if (problem) {
+      setComposerError(problem);
+      return;
+    }
+    setComposerError(null);
+    setClarificationReply((r) => ({ value: input.trim(), seq: (r?.seq ?? 0) + 1 }));
+    setInput("");
+  }
+
+  /** Leaves Hamilton's question unanswered; the composer asks ordinary questions again. */
+  function cancelClarification() {
+    apply({ type: "cancelClarification" });
+    setComposerError(null);
+    textareaRef.current?.focus();
+  }
+
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    ask(input);
+    submitComposer();
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     // Enter that confirms an IME composition (Japanese, Chinese) is not a send.
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) {
       e.preventDefault();
-      ask(input);
+      submitComposer();
     }
   }
 
@@ -673,7 +821,17 @@ function AnalyzeConversationWorkspace({
     { label: "Research competitors", href: "/pro/intelligence?lens=fees", icon: Search },
     { label: "Build a board brief", href: "/pro/saved", icon: Presentation },
   ];
-  const starting = !(askedQuestion || shown);
+  // A conversation reopened without an answer to show (a reload after a peer list, say) picks up
+  // at the composer, with every earlier turn listed above it.
+  const resumedOnly = !askedQuestion && !shown && !reopenedStory && conv.turns.length > 0 && !initialAnalysis;
+  const starting = !(askedQuestion || shown || resumedOnly);
+  // The turn on screen is the last one; the ones before it are "earlier in this conversation".
+  const earlier = resumedOnly ? conv.turns : conv.turns.slice(0, -1);
+  const showEarlier = earlier.length > 0 && (Boolean(askedQuestion) || resumedOnly || (Boolean(initialAnalysis) && conversation === 0));
+  const mode = composerMode(conv, !starting);
+  const composerLabel = mode.kind === "clarification" ? mode.label : "Ask a follow-up";
+  const composerProblem = composerError ?? (mode.kind === "clarification" && mode.invalidValue ? `Hamilton couldn't read “${mode.invalidValue}”. Please try again.` : null);
+  const carriedDecision = askedQuestion ? decisionForQuestion(conv, matchFeeCategory(askedQuestion)) : null;
 
   // The ask box sits in the page, never over it: under the heading before the first question,
   // and after the answer once there is one, so it never covers a line of the answer.
@@ -715,18 +873,25 @@ function AnalyzeConversationWorkspace({
       className="flex scroll-mb-8 flex-col gap-2 rounded-lg border border-[var(--fi-border)] bg-[var(--fi-surface-0)] p-3 shadow-[var(--fi-shadow-1)] print:hidden sm:p-4"
     >
       <label htmlFor="hamilton-ask-page" className="text-sm font-semibold text-[var(--fi-ink)]">
-        Ask a follow-up
+        {composerLabel}
       </label>
       <div className="flex items-end gap-2 rounded-md border border-[var(--fi-control-border)] bg-white p-2 pl-3 focus-within:border-[var(--fi-ink)]">
         <textarea
           id="hamilton-ask-page"
           ref={textareaRef}
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) => {
+            setInput(e.target.value);
+            if (composerError) setComposerError(null);
+          }}
           onKeyDown={handleKeyDown}
           rows={1}
           maxLength={500}
-          placeholder="What about this institution’s NSF fee?"
+          inputMode={mode.kind === "clarification" ? mode.inputMode : undefined}
+          enterKeyHint="send"
+          aria-invalid={composerProblem ? true : undefined}
+          aria-describedby={composerProblem ? "hamilton-ask-problem" : undefined}
+          placeholder={mode.kind === "clarification" ? mode.placeholder : "What about this institution’s NSF fee?"}
           className="min-w-0 flex-1 resize-none bg-transparent px-1 py-2 text-base leading-relaxed text-[var(--fi-ink)] placeholder:text-[var(--fi-muted)] focus:outline-none"
         />
         <button
@@ -735,9 +900,17 @@ function AnalyzeConversationWorkspace({
           className="fi-btn fi-btn-primary fi-btn-sm min-h-11 sm:min-h-9"
         >
           {isLoading || engineBusy ? <Loader2 aria-hidden className="h-4 w-4 animate-spin" /> : <ArrowUp aria-hidden className="h-4 w-4" />}
-          Ask
+          {mode.kind === "clarification" ? "Answer" : "Ask"}
         </button>
       </div>
+      {composerProblem ? (
+        <p id="hamilton-ask-problem" role="alert" className="text-sm text-terra-text">{composerProblem}</p>
+      ) : null}
+      {mode.kind === "clarification" ? (
+        <button type="button" onClick={cancelClarification} className="min-h-11 self-start text-sm font-medium text-warm-800 underline sm:min-h-9">
+          Ask something else instead
+        </button>
+      ) : null}
     </form>
   );
 
@@ -759,6 +932,20 @@ function AnalyzeConversationWorkspace({
           ) : null}
         </div>
       ) : null}
+      {subjectNotice ? (
+        <Callout>
+          <p>{subjectNotice.text}</p>
+          {subjectNotice.href ? <a href={subjectNotice.href} className="font-medium text-terra-text underline">{subjectNotice.linkLabel ?? "Open it"}</a> : null}
+        </Callout>
+      ) : null}
+      {!subjectNotice && conv.previousSubject && conv.turns.length === 0 ? (
+        <Callout>
+          <p>
+            Now researching {conv.subject.institutionName ?? "a different institution"}. Earlier answers about{" "}
+            {conv.previousSubject.institutionName ?? "the previous institution"} are not carried into this conversation.
+          </p>
+        </Callout>
+      ) : null}
       {heldLine && !chatError && !isLoading ? (
         <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-terra bg-terra-soft px-4 py-3 text-sm text-warm-900">
           <span>{heldLine}</span>
@@ -770,11 +957,28 @@ function AnalyzeConversationWorkspace({
         </div>
       ) : null}
 
-      {thread.length > 0 && askedQuestion ? (
+      {resumedOnly ? (
+        <MemoHeader
+          kicker={instName ? `Conversation · ${instName}` : "Conversation"}
+          title="Pick up where you left off"
+          dek={conv.peerSet ? "Follow-ups keep this conversation's institution, peer list and earlier answers." : "Follow-ups keep this conversation's institution and earlier answers."}
+          actions={readOnlyReason ? undefined : (
+            <button
+              type="button"
+              onClick={newQuestion}
+              className="inline-flex min-h-11 items-center rounded-md border border-warm-300 bg-warm-50 px-3.5 py-2 text-sm font-medium text-warm-800 hover:border-warm-500 sm:min-h-9"
+            >
+              New question
+            </button>
+          )}
+        />
+      ) : null}
+
+      {showEarlier ? (
         <section aria-label="Earlier in this conversation" className="flex flex-col gap-2">
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-warm-600">Earlier in this conversation</p>
           <ol className="flex flex-col divide-y divide-warm-200 rounded-lg border border-warm-300 bg-warm-50">
-            {thread.map((t, i) => (
+            {earlier.map((t, i) => (
               <li key={i} className="flex flex-col gap-0.5 px-4 py-3">
                 <p className="text-warm-900" style={SERIF}>{t.question}</p>
                 {t.lead ? <p className="line-clamp-2 text-sm text-warm-700">{renderInline(t.lead)}</p> : null}
@@ -784,13 +988,13 @@ function AnalyzeConversationWorkspace({
         </section>
       ) : null}
 
-      {askedQuestion || shown ? (
+      {resumedOnly ? null : askedQuestion || shown ? (
         <div ref={answerHeadingRef} tabIndex={-1} className="focus:outline-none">
           <MemoHeader
             kicker={instName ? `You asked · ${instName}` : "You asked"}
             title={askedQuestion ?? initialAnalysisPrompt ?? "A saved answer"}
             compact={longQuestion}
-            dek={thread.length > 0 && askedQuestion ? `Following up on: “${thread[thread.length - 1].question}”` : undefined}
+            dek={showEarlier ? `Following up on: “${earlier[earlier.length - 1].question}”` : undefined}
             actions={readOnlyReason ? undefined : (
               <div className="flex flex-wrap gap-2">
               <a
@@ -903,10 +1107,18 @@ function AnalyzeConversationWorkspace({
         <StructuredAsk
           key={conversation}
           question={askedQuestion}
-          nonce={askSeq}
+          nonce={conv.nonce}
+          decisionId={carriedDecision}
+          onAnswered={handleAnswered}
+          peerSet={conv.peerSet}
+          onPeerSet={handlePeerSet}
+          onClarification={handleClarification}
+          clarificationReply={clarificationReply}
+          showClarification={Boolean(conv.clarification)}
+          onClarificationReplyFailed={handleReplyFailed}
           onStoryline={dropWrittenAnswer}
           onBusyChange={setEngineBusy}
-          onLead={setStoryLead}
+          onLead={handleLead}
           onEngineRows={setEngineRows}
           proseShown={Boolean(shown && view.lead)}
           institutionId={instId}
@@ -1063,9 +1275,24 @@ function AnalyzeConversationWorkspace({
         <p className="text-sm text-warm-600">Historical account and peer context was not recorded with this answer.</p>
       ) : null}
 
-      {askedQuestion || shown ? askBox : null}
+      {askedQuestion || shown || resumedOnly ? askBox : null}
     </MemoPage>
   );
+}
+
+/**
+ * A fresh conversation, or (for a saved answer reopened with no stored conversation) one whose
+ * only turn is that answer, so a follow-up knows what it follows.
+ */
+function seedConversation(
+  subject: { institutionId: string | null; institutionName: string | null },
+  saved: { question: string | null; savedAnalysisId: string | null } | null,
+): HamiltonConversationState {
+  const empty = emptyConversation(subject);
+  if (!saved?.question) return empty;
+  const asked = conversationReducer(empty, { type: "ask", question: saved.question });
+  const turn = currentTurn(asked);
+  return turn ? conversationReducer(asked, { type: "answered", turnId: turn.id, savedAnalysisId: saved.savedAnalysisId }) : asked;
 }
 
 /** "Oct 8" for a saved answer's date, in the reader's time zone. */
