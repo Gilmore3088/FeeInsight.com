@@ -6,7 +6,9 @@ import {
   type StateComparison,
 } from "@/lib/research-report/state-findings";
 import { boardFees, splitForAccess, type BoardFee } from "../../state/[code]/state-view";
-import { nationalGap, openingFinding } from "./district-hub-view";
+import { formatFeeAmount } from "@/lib/format";
+import { sentenceName } from "../../findings";
+import { nationalGap, openingFinding, type OpeningFee } from "./district-hub-view";
 
 /**
  * The district's fees against the U.S. and its one-line opening finding, shaped once so the
@@ -27,11 +29,20 @@ export interface DistrictOpening {
   statement: string | null;
 }
 
+export interface DistrictOpeningOptions {
+  /**
+   * "page" (default): the district page's opening, overdraft and NSF first. "strongest": the
+   * research hub's card line, the fee furthest from the national median relative to it.
+   */
+  lead?: "page" | "strongest";
+}
+
 export function districtOpening(
   indexes: Pick<StateFeeIndexes, "all" | "bank" | "credit_union" | "institution_values">,
   nationalIndex: IndexEntry[],
   showAllCategories: boolean,
   place: string,
+  options: DistrictOpeningOptions = {},
 ): DistrictOpening {
   const comparisons = buildComparisons(indexes.all, nationalIndex);
   const fees = boardFees(comparisons, indexes.bank, indexes.credit_union, indexes.institution_values);
@@ -40,8 +51,32 @@ export function districtOpening(
   const againstUs = shown.filter((f) => f.us);
   const takeaway = nationalBandTakeaway(place, `the ${place}`, visibleComparisons);
   // The opening takeaway is the district's sharpest specific gap; the band count sits beside it as context.
-  const statement = openingFinding(againstUs, STATE_FINDING_MIN_INSTITUTIONS) ?? takeaway;
+  const statement =
+    options.lead === "strongest"
+      ? strongestDifference(againstUs, STATE_FINDING_MIN_INSTITUTIONS)
+      : (openingFinding(againstUs, STATE_FINDING_MIN_INSTITUTIONS) ?? takeaway);
   return { comparisons, fees, shown, locked, visibleComparisons, againstUs, statement };
+}
+
+/**
+ * The district's strongest supported difference: among fees with at least `minInstitutions`
+ * district institutions and a national median, the one whose gap is the largest share of the
+ * national median. Gaps within 1% read as about the same (nationalGap). Says so once when no fee
+ * differs; null when no fee has enough institutions to compare.
+ */
+export function strongestDifference(fees: OpeningFee[], minInstitutions: number): string | null {
+  const solid = fees.filter((f) => f.us && f.us.median > 0 && f.institutions >= minInstitutions);
+  if (solid.length === 0) return null;
+  const share = (f: OpeningFee) => Math.abs(nationalGap(f)) / f.us!.median;
+  const widest = solid.filter((f) => nationalGap(f) !== 0).sort((a, b) => share(b) - share(a))[0];
+  if (!widest) {
+    return solid.length === 1
+      ? `The ${sentenceName(solid[0].key)} median is about the same as the national median.`
+      : `${solid.length === 2 ? "Both" : `All ${solid.length}`} fees with enough data are within 1% of the national median.`;
+  }
+  const pct = Math.round(share(widest) * 100);
+  const side = nationalGap(widest) > 0 ? "above" : "below";
+  return `The ${sentenceName(widest.key)} median, ${formatFeeAmount(widest.median)}, is ${pct}% ${side} the national median of ${formatFeeAmount(widest.us!.median)}.`;
 }
 
 /**
@@ -50,7 +85,12 @@ export function districtOpening(
  * the finding minimum of institutions publishing an overdraft fee.
  */
 export function overdraftSide(opening: Pick<DistrictOpening, "againstUs">): "above" | "below" | "same" | null {
-  const od = opening.againstUs.find((f) => f.key === "overdraft");
+  return feeSide(opening, "overdraft");
+}
+
+/** The same rule for any fee: where the district's median sits against the national median. */
+export function feeSide(opening: Pick<DistrictOpening, "againstUs">, key: string): "above" | "below" | "same" | null {
+  const od = opening.againstUs.find((f) => f.key === key);
   if (!od?.us || od.us.median <= 0 || od.institutions < STATE_FINDING_MIN_INSTITUTIONS) return null;
   const gap = nationalGap({ key: od.key, median: od.median, institutions: od.institutions, us: od.us });
   return gap > 0 ? "above" : gap < 0 ? "below" : "same";

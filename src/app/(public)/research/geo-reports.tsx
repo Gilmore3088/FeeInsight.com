@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { US_STATES } from "@/lib/us-map-paths";
 import { STATE_NAMES } from "@/lib/us-states";
 import type { StateCoverage } from "@/lib/data-store/geographic";
@@ -20,13 +19,12 @@ interface Entry {
 }
 
 /**
- * The state reports: a map and a searchable directory on wider screens, one dropdown on phones.
+ * The state reports: a map and a searchable directory, for wider screens (phones use the finder at the top).
  * A state is listed once it has institutions with published fees.
  */
 export function GeoReports({ states }: { states: StateCoverage[] }) {
   const [query, setQuery] = useState("");
   const [hovered, setHovered] = useState<string | null>(null);
-  const router = useRouter();
 
   const entries = useMemo<Entry[]>(
     () =>
@@ -56,30 +54,7 @@ export function GeoReports({ states }: { states: StateCoverage[] }) {
       <p id="state-reports-label" className="text-[13px] font-semibold text-ink sm:mx-0 sm:text-left">
         States with a report, by institutions with published fees
       </p>
-      <div className="mt-3 sm:hidden">
-        <label className="sr-only" htmlFor="geo-pick">
-          State report
-        </label>
-        <select
-          id="geo-pick"
-          defaultValue=""
-          onChange={(e) => {
-            if (e.target.value) router.push(e.target.value);
-          }}
-          className="min-h-11 w-full rounded-full border border-border bg-white px-4 text-[14px] font-semibold text-ink"
-        >
-          <option value="" disabled>
-            Choose a state
-          </option>
-          {entries.map((e) => (
-            <option key={e.code} value={e.href}>
-              {e.name} ({NUMBER.format(e.institutions)} institutions)
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="mt-3 hidden gap-6 sm:grid lg:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="mt-3 grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <figure className="relative rounded-2xl border border-border bg-white p-4 lg:p-6">
           <svg viewBox="0 0 960 600" className="mx-auto h-auto max-h-[24rem] w-full" aria-hidden="true" focusable="false">
             {US_STATES.map((st) => {

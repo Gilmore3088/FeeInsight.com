@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
-import { US_TERRITORIES } from "@/lib/us-states";
+import { STATE_NAMES, US_TERRITORIES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { PRODUCT_NAME, SITE_URL } from "@/lib/constants";
 import { getPublicNationalIndex, getPublicSnapshot } from "@/lib/public-stats";
@@ -23,12 +23,14 @@ import { GeoReports } from "../geo-reports";
 import { ResearchLibrary } from "../research-library";
 import { MethodFlow, ProBand } from "../method-flow";
 import { HubFindings } from "../hub-findings";
-import { charterCountLine, computeFindings } from "../findings";
-import { DistrictsExhibit, type DistrictCard } from "../districts-exhibit";
+import { charterCountLine, computeFindings, sentenceName } from "../findings";
+import { DistrictsExhibit, type DistrictCard, type DistrictFeeCell, type MapFee } from "../districts-exhibit";
+import { FindPlace } from "../find-place";
 import { HubSection } from "../district/[id]/district-hub";
 import { DISTRICT_REGIONS } from "../district/[id]/district-exhibits";
 import { stateShape } from "../district/[id]/district-geo";
-import { districtOpening, districtsFinding, overdraftSide } from "../district/[id]/district-opening";
+import { districtOpening, districtsFinding, feeSide, overdraftSide } from "../district/[id]/district-opening";
+import { hubFeeKeys } from "../district/[id]/district-hub-view";
 
 export const metadata: Metadata = {
   title: "Bank Fee Research by State and Fed District",
@@ -73,7 +75,13 @@ function districtLabel(district: number): { x: number; y: number } | null {
   };
 }
 
-export default async function ResearchHubPage() {
+function sentenceStart(key: string): string {
+  const name = sentenceName(key);
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+export default async function ResearchHubPage({ searchParams }: { searchParams: Promise<{ fee?: string | string[] }> }) {
+  const params = await searchParams;
   const user = await getCurrentUser();
   // The districts exhibit prints each district page's opening line for the same reader.
   const showAllCategories = canAccessAllCategories(user);
@@ -90,6 +98,9 @@ export default async function ResearchHubPage() {
   ]);
 
   const statesWithFees = coverage.states.filter((s) => s.verified_institutions > 0);
+  const placeStates = statesWithFees
+    .map((s) => ({ code: s.state_code, name: STATE_NAMES[s.state_code] ?? s.state_code, institutions: s.verified_institutions }))
+    .sort((a, b) => a.name.localeCompare(b.name));
   // US_TERRITORIES includes DC; count DC separately.
   const territoryCount = statesWithFees.filter((s) => US_TERRITORIES.has(s.state_code) && s.state_code !== "DC").length;
   const hasDc = statesWithFees.some((s) => s.state_code === "DC");
@@ -103,20 +114,34 @@ export default async function ResearchHubPage() {
   const openings = DISTRICT_IDS.map((id, i) => {
     const indexes = districtIndexes[i];
     const name = DISTRICT_NAMES[id] ?? `District ${id}`;
-    const opening = indexes ? districtOpening(indexes, nationalIndex, showAllCategories, `${name} district`) : null;
+    // The hub's card leads with the district's strongest difference; the district page keeps its own opening.
+    const opening = indexes
+      ? districtOpening(indexes, nationalIndex, showAllCategories, `${name} district`, { lead: "strongest" })
+      : null;
     return { id, name, indexes, opening };
   });
+  // The map's fees: the district hub's fees this reader may see, kept only where at least half the districts compare.
+  const mapFees: MapFee[] = hubFeeKeys(showAllCategories)
+    .filter((key) => openings.filter((o) => o.opening && feeSide(o.opening, key) !== null).length >= DISTRICT_IDS.length / 2)
+    .map((key) => ({ key, name: sentenceStart(key) }));
+  const requestedFee = Array.isArray(params.fee) ? params.fee[0] : params.fee;
+  const initialFee = mapFees.find((f) => f.key === requestedFee)?.key ?? mapFees[0]?.key ?? "overdraft";
   const districts: DistrictCard[] = openings.map(({ id, name, indexes, opening }) => ({
     id,
     name,
     region: DISTRICT_REGIONS[id] ?? `the ${name} district`,
     statement: opening?.statement ?? null,
     institutions: indexes?.verified_institutions ?? 0,
-    side: opening ? overdraftSide(opening) : null,
+    fees: Object.fromEntries(
+      mapFees.map(({ key }): [string, DistrictFeeCell] => {
+        const f = opening?.againstUs.find((x) => x.key === key);
+        return [key, { side: opening ? feeSide(opening, key) : null, median: f?.median ?? null, us: f?.us?.median ?? null }];
+      }),
+    ),
     label: districtLabel(id),
   }));
   const districtLine = districtsFinding(
-    districts.map((d) => d.side),
+    openings.map(({ opening }) => (opening ? overdraftSide(opening) : null)),
     DISTRICT_IDS.length,
   );
   const withoutLine = districts.filter((d) => !d.statement).length;
@@ -134,6 +159,14 @@ export default async function ResearchHubPage() {
       <ResearchSectionNav />
 
       <div className="mx-auto max-w-page space-y-16 px-4 py-10 sm:space-y-24 sm:px-6 sm:py-14">
+        <HubSection
+          id="find"
+          title="Find your state or district"
+          source={`${PRODUCT_NAME} reports cover ${coverageLabel} and all 12 Federal Reserve districts.`}
+        >
+          <FindPlace states={placeStates} districts={DISTRICT_IDS.map((id) => ({ id, name: DISTRICT_NAMES[id] ?? `District ${id}` }))} />
+        </HubSection>
+
         <HubFindings findings={findings} line={charterCountLine(benchmarks)} asOf={asOf} />
 
         <BenchmarkBoard benchmarks={benchmarks} asOf={asOf} />
@@ -150,7 +183,7 @@ export default async function ResearchHubPage() {
           }
         >
           <div>
-            <DistrictsExhibit districts={districts} />
+            <DistrictsExhibit districts={districts} mapFees={mapFees} initialFee={initialFee} />
             {withoutLine > 0 && (
               <p className="mt-3 text-[13px] text-ink-muted sm:mx-0 sm:text-left">
                 {withoutLine === 1 ? "One district has" : `${withoutLine} districts have`} too few published fees yet for a headline.
@@ -162,16 +195,19 @@ export default async function ResearchHubPage() {
                 <span aria-hidden="true" className="transition-transform group-open:rotate-90">&rsaquo;</span>
               </summary>
               <p className="max-w-3xl text-[13px] leading-relaxed text-ink-muted sm:mx-0 sm:text-left">
-                Each institution counts once, at its highest published overdraft price, and a district&apos;s median is taken across
-                its institutions. A district is shaded and counted only when at least {STATE_FINDING_MIN_INSTITUTIONS} of its
-                institutions publish an overdraft fee; a median within 1% of the national median reads as about the same. Each
-                state is shaded by the district that covers most of it. A district&apos;s line is the opening finding of its own
-                report, which ranks only fees with at least {STATE_FINDING_MIN_INSTITUTIONS} district institutions.
+                Each institution counts once, at the median of its published prices for a fee (overdraft: its highest), and a
+                district&apos;s median is taken across its institutions. A district is shaded for a fee only when at least{" "}
+                {STATE_FINDING_MIN_INSTITUTIONS} of its institutions publish it; a median within 1% of the national median reads as
+                about the same. Each state is shaded by the district that covers most of it. A district&apos;s line names its fee with
+                the largest gap from the national median, measured as a percent of that median. Only fees with at least{" "}
+                {STATE_FINDING_MIN_INSTITUTIONS} district institutions count. The district&apos;s own report opens with overdraft and NSF.
               </p>
             </details>
           </div>
         </HubSection>
 
+        {/* Phones reach a state from the finder at the top; the map and directory are for wider screens. */}
+        <div className="hidden sm:block">
         <HubSection
           id="states"
           title="State reports"
@@ -179,6 +215,7 @@ export default async function ResearchHubPage() {
         >
           <GeoReports states={coverage.states} />
         </HubSection>
+        </div>
 
         <ResearchLibrary articles={articles} asOf={asOf} />
 
@@ -188,10 +225,10 @@ export default async function ResearchHubPage() {
       </div>
 
       {/* Anchors clear the sticky header and section bar (/districts lands on #districts). Print / Save as PDF: drop site chrome and interactive controls, keep exhibits whole. */}
-      <style>{`#findings, #benchmarks, #districts, #states, #in-progress, #about-data { scroll-margin-top: 7.5rem; }
-      @media (min-width: 640px) { #findings, #benchmarks, #districts, #states, #in-progress, #about-data { scroll-margin-top: 7rem; } }
+      <style>{`#find, #findings, #benchmarks, #districts, #states, #in-progress, #about-data { scroll-margin-top: 7.5rem; }
+      @media (min-width: 640px) { #find, #findings, #benchmarks, #districts, #states, #in-progress, #about-data { scroll-margin-top: 7rem; } }
       @media print {
-        header, footer, nextjs-portal, #geo-filter, #geo-pick { display: none !important; }
+        header, footer, nextjs-portal, #geo-filter, #find, #district-fee { display: none !important; }
         body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         section { break-inside: avoid-page; }
         a { text-decoration: none !important; }

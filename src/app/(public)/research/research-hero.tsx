@@ -6,10 +6,10 @@ import { SectionJump } from "./section-jump";
 const SERIF = { fontFamily: "var(--fi-font-sans)" };
 
 export const RESEARCH_SECTIONS = [
+  { id: "find", label: "Your state" },
   { id: "findings", label: "Findings" },
   { id: "benchmarks", label: "Benchmarks" },
   { id: "districts", label: "Fed districts" },
-  { id: "states", label: "States" },
   { id: "in-progress", label: "In progress" },
   { id: "about-data", label: "About the data" },
 ] as const;

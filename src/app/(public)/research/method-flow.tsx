@@ -3,7 +3,6 @@ import { PRODUCT_NAME, REPORT_OFFER, REPORT_PRICE_INLINE, SITE_NAME } from "@/li
 import { PRO_PLANS_HREF } from "@/components/public/pro-next-step";
 import type { PublicStatsSummary } from "@/lib/public-stats";
 import { PrintButton } from "./print-button";
-import { HAMILTON_CANONICAL } from "@/app/for-institutions/hamilton-copy";
 import { HubSection } from "./district/[id]/district-hub";
 
 const SERIF = { fontFamily: "var(--fi-font-sans)" };
@@ -135,7 +134,7 @@ export function MethodFlow({ summary, stateCount, coverageLabel }: { summary: Pu
   );
 }
 
-/** The page's one Pro band: Hamilton plans first, then the sample report (or the paid report while the sample is offline). */
+/** The page's one paid-product band: Hamilton plans first, then the sample report (or the paid report while the sample is offline). */
 export function ProBand({ sampleLive }: { sampleLive: boolean }) {
   const secondary = sampleLive
     ? { href: "/reports/sample-competitive-fee-position", label: `See the sample ${REPORT_OFFER.name}` }
@@ -146,11 +145,14 @@ export function ProBand({ sampleLive }: { sampleLive: boolean }) {
       className="grid gap-5 rounded-2xl bg-ink px-6 py-7 text-on-ink print:hidden sm:px-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:gap-12 lg:px-10"
     >
       <div>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-on-ink/70">{SITE_NAME} Pro · Hamilton</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-on-ink/70">Hamilton</p>
         <h2 id="pro-heading" className="mt-2 text-[22px] font-semibold leading-snug text-on-ink" style={SERIF}>
           Benchmark your institution against the peers you choose.
         </h2>
-        <p className="mt-2 max-w-2xl text-[14px] leading-relaxed text-on-ink/80">{HAMILTON_CANONICAL}</p>
+        <p className="mt-2 max-w-2xl text-[14px] leading-relaxed text-on-ink/80">
+          Hamilton is the {SITE_NAME} workspace: research, model and report your fee position against a verified market, from your own
+          counties to the nation.
+        </p>
       </div>
       <div className="flex flex-col gap-2 sm:flex-row lg:flex-col lg:items-stretch">
         <Link href={PRO_PLANS_HREF} className="inline-flex min-h-11 items-center justify-center rounded-full bg-brick px-5 text-[14px] font-semibold text-on-brick hover:bg-brick-ink">

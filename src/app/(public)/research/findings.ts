@@ -115,9 +115,9 @@ export function computeFindings(benchmarks: FeeCategorySummary[]): Finding[] {
     findings.push({
       key: "spread",
       figure: `${ratio}×`,
-      headline: `${capitalize(sentenceName(spread.fee_category))} fees vary the most of these ${n} fees.`,
-      detail: `A quarter of institutions list ${money(spread.p25_amount)} or less, and a quarter list ${money(spread.p75_amount)} or more.`,
-      about: `The 75th percentile of ${institutionValues(spread.fee_category)} is ${ratio} times the 25th, the largest ratio among the ${n} benchmark fees. How often customers pay the fee isn't measured here.`,
+      headline: `${capitalize(sentenceName(spread.fee_category))} fees have the widest spread relative to price of these ${n} fees.`,
+      detail: `The middle 50% runs from ${money(spread.p25_amount)} to ${money(spread.p75_amount)}. The 75th percentile is ${ratio} times the 25th.`,
+      about: `Spread is measured as the 75th percentile of ${institutionValues(spread.fee_category)} divided by the 25th, so fees with different price levels compare fairly. A fee with a wider dollar range can rank lower if its prices are higher overall. How often customers pay the fee isn't measured here.`,
       exhibit: "benchmarks",
       fee_category: spread.fee_category,
     });

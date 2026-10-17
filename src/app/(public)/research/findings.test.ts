@@ -24,8 +24,8 @@ describe("computeFindings", () => {
     expect(byKey["charter-gap"].detail).toBe("The median is $20 at credit unions and $30 at banks.");
     expect(byKey.spread.figure).toBe("4.5×");
     expect(byKey.free.figure).toBe("30%");
-    expect(byKey.spread.headline).toBe("Outgoing international wire fees vary the most of these 3 fees.");
-    expect(byKey.spread.detail).toBe("A quarter of institutions list $10 or less, and a quarter list $45 or more.");
+    expect(byKey.spread.headline).toBe("Outgoing international wire fees have the widest spread relative to price of these 3 fees.");
+    expect(byKey.spread.detail).toBe("The middle 50% runs from $10 to $45. The 75th percentile is 4.5 times the 25th.");
     expect(byKey.free.headline).toBe("30% of institutions publish only $0 out-of-network ATM prices.");
     expect(byKey.overdraft.about).toContain("at its highest published overdraft price");
     for (const f of findings) {

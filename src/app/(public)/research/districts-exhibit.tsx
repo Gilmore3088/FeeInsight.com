@@ -1,12 +1,22 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { US_STATES } from "@/lib/us-map-paths";
 import { STATE_TO_DISTRICT } from "@/lib/fed-districts";
+import { formatFeeAmount } from "@/lib/format";
 
-/** Where a district's overdraft median sits against the national median; null when it can't be compared. */
-export type OverdraftSide = "above" | "below" | "same" | null;
+/** Where a district's median sits against the national median; null when it can't be compared. */
+export type Side = "above" | "below" | "same" | null;
+
+/** One fee in one district, as the map and the card's fee line read it. */
+export interface DistrictFeeCell {
+  side: Side;
+  /** The district median; null when the district has no median for the fee. */
+  median: number | null;
+  /** The national median it is compared with. */
+  us: number | null;
+}
 
 /** One Fed district as the hub's districts exhibit draws it. */
 export interface DistrictCard {
@@ -15,33 +25,49 @@ export interface DistrictCard {
   name: string;
   /** The region in a reader's words, e.g. "the Southeast". */
   region: string;
-  /** The district page's opening sentence, word for word; null when nothing clears the minimum. */
+  /** The district's strongest supported difference from the national median; null when nothing clears the minimum. */
   statement: string | null;
   institutions: number;
-  /** The map's shading: the same rule as the section's finding. */
-  side: OverdraftSide;
+  /** Each map fee's shading and figures, by fee key: the same rule as the section's finding. */
+  fees: Record<string, DistrictFeeCell>;
   /** Where the district number sits on the map (mainland states only). */
   label: { x: number; y: number } | null;
 }
 
-/** Darker means a higher overdraft median against the U.S.; a district that can't be compared is hatched. */
+/** A fee the map can be shaded by. */
+export interface MapFee {
+  key: string;
+  /** Sentence-start name, e.g. "Out-of-network ATM". */
+  name: string;
+}
+
+/** Darker means a higher median against the U.S.; a district that can't be compared is hatched. */
 const SIDE_FILL: Record<"above" | "same" | "below", string> = {
   above: "var(--fi-viz-4)",
   same: "var(--fi-viz-2)",
   below: "var(--fi-viz-1)",
 };
 const NOT_COMPARED = "url(#district-not-compared)";
-const LEGEND: { key: string; label: string; fill: string }[] = [
-  { key: "above", label: "Above the national median", fill: SIDE_FILL.above },
-  { key: "same", label: "About the same", fill: SIDE_FILL.same },
-  { key: "below", label: "Below", fill: SIDE_FILL.below },
-  { key: "none", label: "Too few overdraft fees to compare", fill: "none" },
-];
 const NUMBER = new Intl.NumberFormat("en-US");
+const noopSubscribe = () => () => {};
 /** Rows a phone shows before "Show all". */
 const PHONE_ROWS = 5;
 
-function fillFor(side: OverdraftSide): string {
+function legendFor(feeName: string): { key: "above" | "same" | "below" | "none"; label: string; fill: string }[] {
+  return [
+    { key: "above", label: "Above the national median", fill: SIDE_FILL.above },
+    { key: "same", label: "About the same", fill: SIDE_FILL.same },
+    { key: "below", label: "Below", fill: SIDE_FILL.below },
+    { key: "none", label: `Too few ${lowerFirst(feeName)} fees to compare`, fill: "none" },
+  ];
+}
+
+function lowerFirst(name: string): string {
+  // Keep acronyms ("NSF") as they are.
+  return /^[A-Z]{2}/.test(name) ? name : name.charAt(0).toLowerCase() + name.slice(1);
+}
+
+function fillFor(side: Side): string {
   return side ? SIDE_FILL[side] : NOT_COMPARED;
 }
 
@@ -60,19 +86,67 @@ function Swatch({ fill }: { fill: string }) {
 }
 
 /**
- * All 12 Federal Reserve districts on one map, shaded by where each overdraft median sits
- * against the national median, with the opening finding each district page leads with. The
- * map is a picture; the cards carry the links for keyboards and screen readers, and on
- * phones the map is left out.
+ * All 12 Federal Reserve districts on one map, shaded by where the selected fee's median sits
+ * against the national median, with each district's strongest supported difference. The map
+ * is a picture; the cards carry the links for keyboards and screen readers, and on phones the
+ * map is left out. The fee select is a GET form, so it re-shades the map without scripts too.
  */
-export function DistrictsExhibit({ districts }: { districts: DistrictCard[] }) {
+export function DistrictsExhibit({
+  districts,
+  mapFees,
+  initialFee,
+}: {
+  districts: DistrictCard[];
+  mapFees: MapFee[];
+  initialFee: string;
+}) {
   const [active, setActive] = useState<number | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const [feeKey, setFeeKey] = useState(initialFee);
+  // Before hydration the form's button submits the choice; afterwards the select applies it in place.
+  const hydrated = useSyncExternalStore(
+    noopSubscribe,
+    () => true,
+    () => false,
+  );
   const listRef = useRef<HTMLOListElement>(null);
   const byId = new Map(districts.map((d) => [d.id, d]));
+  const fee = mapFees.find((f) => f.key === feeKey) ?? mapFees[0];
+  const legend = fee ? legendFor(fee.name) : [];
+  const count = (key: string) => districts.filter((d) => (d.fees[fee?.key ?? ""]?.side ?? "none") === key).length;
+  const sideOf = (d: DistrictCard): Side => (fee ? (d.fees[fee.key]?.side ?? null) : null);
 
   return (
     <div className="space-y-6">
+      {mapFees.length > 1 && fee && (
+        <form method="get" action="/research#districts" className="flex flex-wrap items-center gap-2">
+          <label htmlFor="district-fee" className="text-[13px] font-semibold text-ink">
+            Compare by fee
+          </label>
+          <select
+            id="district-fee"
+            name="fee"
+            value={fee.key}
+            onChange={(e) => {
+              setFeeKey(e.target.value);
+              history.replaceState(null, "", `?fee=${encodeURIComponent(e.target.value)}#districts`);
+            }}
+            className="min-h-11 min-w-0 max-w-full rounded-full border border-border bg-surface-0 px-4 text-[14px] font-semibold text-ink"
+          >
+            {mapFees.map((f) => (
+              <option key={f.key} value={f.key}>
+                {f.name}
+              </option>
+            ))}
+          </select>
+          {!hydrated && (
+            <button type="submit" className="inline-flex min-h-11 items-center rounded-full bg-ink px-4 text-[14px] font-semibold text-on-ink">
+              Show
+            </button>
+          )}
+        </form>
+      )}
+
       <figure className="hidden rounded-2xl border border-border bg-white p-4 sm:block lg:p-6">
         <svg viewBox="0 0 960 600" className="mx-auto h-auto max-h-[30rem] w-full" aria-hidden="true" focusable="false">
           <defs>
@@ -87,12 +161,12 @@ export function DistrictsExhibit({ districts }: { districts: DistrictCard[] }) {
             const path = (
               <path
                 d={st.d}
-                fill={card ? fillFor(card.side) : "var(--fi-viz-none)"}
+                fill={card ? fillFor(sideOf(card)) : "var(--fi-viz-none)"}
                 fillOpacity={active === null || active === d || !d ? 1 : 0.4}
                 stroke="var(--color-paper)"
                 strokeWidth={1}
                 vectorEffect="non-scaling-stroke"
-                className="transition-[fill-opacity] duration-150"
+                className="transition-[fill,fill-opacity] duration-150"
               />
             );
             if (!d || !card) return <g key={st.id}>{path}</g>;
@@ -134,12 +208,15 @@ export function DistrictsExhibit({ districts }: { districts: DistrictCard[] }) {
           )}
         </svg>
         <figcaption className="mt-3 border-t border-surface-200 pt-3">
-          <p className="text-[13px] font-semibold text-ink">Overdraft median against the national median, by Federal Reserve district</p>
+          <p className="text-[13px] font-semibold text-ink">
+            {fee ? `${fee.name} median` : "Median"} against the national median, by Federal Reserve district
+          </p>
           <ul className="mt-2 flex flex-wrap gap-x-5 gap-y-1.5 text-[12px] text-ink-soft">
-            {LEGEND.map((l) => (
+            {legend.map((l) => (
               <li key={l.key} className="flex items-center gap-1.5">
                 <Swatch fill={l.fill} />
                 {l.label}
+                <span className="tabular-nums text-ink-muted">({count(l.key === "none" ? "none" : l.key)})</span>
               </li>
             ))}
           </ul>
@@ -148,7 +225,7 @@ export function DistrictsExhibit({ districts }: { districts: DistrictCard[] }) {
 
       <div>
         <p id="district-cards-label" className="text-[13px] font-semibold text-ink sm:mx-0 sm:text-left">
-          Each district&apos;s opening finding
+          Each district&apos;s largest gap from the national median
         </p>
         <ol
           ref={listRef}
@@ -181,6 +258,7 @@ export function DistrictsExhibit({ districts }: { districts: DistrictCard[] }) {
                     )}
                   </span>
                   {d.statement && <span className="mt-1 block text-[13px] leading-snug text-ink-soft">{d.statement}</span>}
+                  <FeeLine fee={fee} cell={fee ? d.fees[fee.key] : undefined} />
                   <span className="mt-1 block text-[11px] tabular-nums text-ink-muted">
                     {NUMBER.format(d.institutions)} institutions with published fees
                   </span>
@@ -210,5 +288,16 @@ export function DistrictsExhibit({ districts }: { districts: DistrictCard[] }) {
         )}
       </div>
     </div>
+  );
+}
+
+/** The selected fee in one district: its median and the national median, when it can be compared. */
+function FeeLine({ fee, cell }: { fee: MapFee | undefined; cell: DistrictFeeCell | undefined }) {
+  if (!fee || !cell?.side || cell.median == null || cell.us == null) return null;
+  return (
+    <span className="mt-1 block text-[12px] tabular-nums text-ink">
+      {fee.name} median {formatFeeAmount(cell.median)}
+      <span className="text-ink-muted"> · U.S. {formatFeeAmount(cell.us)}</span>
+    </span>
   );
 }
