@@ -65,6 +65,23 @@ describe("Magellan companion fetch", () => {
     );
   });
 
+  it("never fetches a copy a person supplied by hand: the bank's site refused us and the bytes are stored", async () => {
+    const db = createDb([]);
+    await runCompanionFetch({ db: asDb(db), fetchImpl: vi.fn(), vault: null, runId: 7 });
+    const select = db.mock.calls.find((call) => templateText(call[0]).includes("latest.content_hash AS last_hash"));
+    expect(templateText(select?.[0])).toContain("AND ias.found_by_strategy <> 'supply.hand_supplied'");
+  });
+
+  it("never retires a hand-supplied copy for its link words", async () => {
+    const supplied = {
+      id: 2302, institution_id: 44, account_name: null, found_by_strategy: "supply.hand_supplied",
+      url: "https://www.valley.com/pdfs/Schedule%20of%20Fees-Privacy%20Policy.pdf",
+    };
+    const db = createDb([supplied]);
+    const review = await reviewStoredCompanions(asDb(db), { stateCode: "NJ", institutionId: null });
+    expect(review.retired).toEqual([]);
+  });
+
   it("reuses a stored document with the same bytes instead of inserting a duplicate", async () => {
     const db = createDb([freedom], { existing: 512 });
     const result = await runCompanionFetch({ db: asDb(db), fetchImpl: vi.fn(async () => page("same bytes")), vault: null, runId: 7 });

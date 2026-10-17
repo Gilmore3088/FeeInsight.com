@@ -142,16 +142,31 @@ describe("links pasted on the hit list", () => {
       return Promise.resolve([{ id: 9 }]);
     });
     const result = await addHandFoundLink({ db: pasteAsDb(db), institutionId: 118, url: "https://mybank.com/a.pdf", givenBy: "j" });
-    expect(result).toEqual({ ok: false, error: "That link is on the website of First United Bank & Trust (MD), another institution" });
+    expect(result).toEqual({ ok: false, code: "other_institution_site", error: "That link is on the website of First United Bank & Trust (MD), another institution" });
     expect(inserts(db)).toHaveLength(0);
   });
 
   it("refuses a non-link, an unknown institution and a link already on file", async () => {
     expect(await addHandFoundLink({ db: pasteAsDb(pasteDb("X")), institutionId: 41, url: "fees please", givenBy: "j" })).toMatchObject({ ok: false });
     expect(await addHandFoundLink({ db: pasteAsDb(pasteDb("X")), institutionId: 41, url: "ftp://x.com/a.pdf", givenBy: "j" })).toMatchObject({ ok: false });
-    expect(await addHandFoundLink({ db: pasteAsDb(pasteDb(null)), institutionId: 41, url: "https://x.com/a.pdf", givenBy: "j" })).toEqual({ ok: false, error: "Institution not found" });
+    expect(await addHandFoundLink({ db: pasteAsDb(pasteDb(null)), institutionId: 41, url: "https://x.com/a.pdf", givenBy: "j" })).toEqual({ ok: false, code: "institution_not_found", error: "Institution not found" });
     const held = pasteDb("X", []);
     expect(await addHandFoundLink({ db: pasteAsDb(held), institutionId: 41, url: "https://x.com/a.pdf", givenBy: "j" })).toMatchObject({ ok: false });
     expect(attempts(held)).toHaveLength(0);
+  });
+
+  it("calls the bank's own fee link already on file and stores nothing", async () => {
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const sqlText = text(strings);
+      if (sqlText.includes("SELECT institution_name")) {
+        return Promise.resolve([{ institution_name: "X", fee_schedule_url: "https://www.x.com/fees.pdf" }]);
+      }
+      return Promise.resolve([{ id: 9 }]);
+    });
+    expect(await addHandFoundLink({ db: pasteAsDb(db), institutionId: 41, url: "https://x.com/fees.pdf", givenBy: "j" })).toMatchObject({
+      ok: false,
+      code: "already_on_file",
+    });
+    expect(inserts(db)).toHaveLength(0);
   });
 });
