@@ -221,13 +221,19 @@ export interface PeerSetComparison {
   lines: PeerSetLine[];
 }
 
-/** The institution's ranked fees against one peer set's values, itself left out. */
+/**
+ * The institution's ranked fees against one peer set's values, itself left out. Its own
+ * values come from the national list, never from the set: a resolved set (metro, regulator,
+ * nearest) names only the other institutions, so the choice of peers changes the comparison
+ * population and nothing about the institution being compared.
+ */
 export function comparePeerSet(institutionId: number, choice: PeerSetChoice, all: PeerRankValue[]): PeerSetComparison {
   const values = choice.filters ? peerGroupValuesFrom(all, choice.filters) : [];
   const lines = PEER_RANK_FEE_KEYS.map((key): PeerSetLine => {
     const forKey = values.filter((value) => value[1] === key);
-    const own = forKey.find((value) => value[0] === institutionId)?.[2] ?? null;
-    const ownPrices = own === null ? 0 : (all.find((value) => value[0] === institutionId && value[1] === key)?.[7] ?? 1);
+    const ownValue = all.find((value) => value[0] === institutionId && value[1] === key);
+    const own = ownValue?.[2] ?? null;
+    const ownPrices = ownValue ? (ownValue[7] ?? 1) : 0;
     const others = forKey.filter((value) => value[0] !== institutionId).map((value) => value[2]);
     const enough = others.length >= MIN_PEERS_FOR_PEER_SET_MEDIAN;
     const rank = own !== null && enough ? rankAgainstPeers(own, others) : { lower: 0, same: 0, higher: 0 };

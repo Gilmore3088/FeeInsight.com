@@ -139,4 +139,26 @@ describe("peer sets on the institution page", () => {
     expect(pickPeerSet(1, null, [state, metro, size], all, null)!.options.map((o) => o.key)).toEqual(["state", "size"]);
     expect(pickPeerSet(1, null, [metro], all, null)).toBeNull();
   });
+
+  it("keeps the institution's own fees the same under every peer set it offers", () => {
+    // Resolved sets (metro, regulator, nearest) list only the other institutions, never the subject.
+    const bigMetro = { key: "metro", label: "Banks with branches in the Austin metro", filters: { institutionIds: [100, 101, 102, 103, 104, 105, 106, 107, 108, 200] } };
+    const nearest = { key: "nearest", label: "The 25 banks closest in assets", filters: { institutionIds: [101, 102, 103, 104, 105, 106, 107, 108, 200, 201, 202, 203, 204] } };
+    const district = { key: "district", label: "Banks in the Dallas Fed district", filters: { charter_type: "bank", fed_districts: [11] } };
+    const choices = [state, district, size, bigMetro, nearest];
+    const offered = pickPeerSet(1, null, choices, all, null)!.options.map((o) => o.key);
+    expect(offered).toEqual(["state", "district", "size", "metro", "nearest"]);
+    const subject = (key: string) =>
+      pickPeerSet(1, null, choices, all, key)!.selected.lines.map(({ key: fee, own, ownPrices }) => ({ fee, own, ownPrices }));
+    for (const key of offered) {
+      expect(pickPeerSet(1, null, choices, all, key)!.selected.key).toBe(key);
+      expect(subject(key)).toEqual([
+        { fee: "overdraft", own: 30, ownPrices: 1 },
+        { fee: "monthly_maintenance", own: 10, ownPrices: 3 },
+      ]);
+    }
+    // Only the comparison population moves: one metro peer publishes monthly maintenance, five state peers do.
+    expect(pickPeerSet(1, null, choices, all, "metro")!.selected.lines[1].peers).toBe(1);
+    expect(pickPeerSet(1, null, choices, all, "state")!.selected.lines[1].peers).toBe(5);
+  });
 });

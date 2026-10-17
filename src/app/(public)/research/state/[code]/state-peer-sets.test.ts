@@ -35,6 +35,18 @@ describe("statePeerSetView", () => {
     expect(statePeerSetView([SETS[0]], FEES, "Texas", null)).toBeNull();
   });
 
+  it("keeps the state's own medians the same under every group it offers", () => {
+    const offered = statePeerSetView(SETS, FEES, "Texas", null)!.options.map((o) => o.key);
+    for (const key of offered) {
+      const view = statePeerSetView(SETS, FEES, "Texas", key)!;
+      expect(view.key).toBe(key);
+      expect(view.rows.map(({ key: fee, stateMedian, stateInstitutions }) => ({ fee, stateMedian, stateInstitutions }))).toEqual([
+        { fee: "overdraft", stateMedian: 30, stateInstitutions: 214 },
+        { fee: "nsf", stateMedian: 28, stateInstitutions: 190 },
+      ]);
+    }
+  });
+
   it("says about the same within 1%", () => {
     expect(peerSetStateFinding("Banks in TX", "Texas", [{ key: "nsf", name: "NSF", median: 28.1, institutions: 9, stateMedian: 28, stateInstitutions: 190 }])).toBe(
       "Banks in TX have about the same median as all Texas banks and credit unions together on the one fee compared.",
