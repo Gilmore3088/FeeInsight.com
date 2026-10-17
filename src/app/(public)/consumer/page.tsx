@@ -1,0 +1,180 @@
+export const dynamic = "force-dynamic";
+
+import type { Metadata } from "next";
+import Link from "next/link";
+import { loadConsumerGuides } from "@/lib/guides/source";
+import type { FeeCategorySummary } from "@/lib/data-store/fees";
+import { getDisplayName } from "@/lib/fee-taxonomy";
+import { formatFeeAmount } from "@/lib/format";
+import { getPublicNationalIndex, getPublicSnapshot } from "@/lib/public-stats";
+import { PRODUCT_NAME, SITE_URL } from "@/lib/constants";
+import { PAGE_HEADER } from "@/components/public/page-header";
+import { UnstatedAudienceFootnote, UnstatedAudienceMark, medianHasUnstatedAudience } from "@/components/unstated-audience";
+import { InstitutionSearchBar } from "../institutions/search-bar";
+import { SourceNote } from "../research/district/[id]/district-hub";
+import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
+
+const TITLE = "Bank Fees for Consumers: Check and Compare";
+const DESCRIPTION =
+  "Check your own bank or credit union's published fees, read plain-language fee guides, and see national medians for every fee type.";
+
+export const metadata: Metadata = {
+  title: TITLE,
+  description: DESCRIPTION,
+  alternates: { canonical: `${SITE_URL}/consumer` },
+  openGraph: { type: "website", title: TITLE, description: DESCRIPTION, url: `${SITE_URL}/consumer`, siteName: "Fee Insight" },
+};
+
+/** The fee most consumers come to compare; the lead finding is read live for it. */
+const LEAD_CATEGORY = "overdraft";
+const ROWS_SHOWN = 5;
+
+const money = (n: number) => formatFeeAmount(n) ?? `$${n.toFixed(2)}`;
+/** "Overdraft (OD)" reads as "overdraft" in a sentence. */
+const plain = (category: string) => getDisplayName(category).replace(/\s*\([^)]*\)/g, "");
+
+const BAND = "flex min-w-0 flex-col border-t border-border pt-5";
+const BAND_H2 = "text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-[22px]";
+const MORE = "mt-auto inline-flex min-h-11 items-center pt-3 text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink";
+
+export default async function ConsumerPage() {
+  const [{ summary, categories }, nationalIndex, guides] = await Promise.all([
+    getPublicSnapshot(),
+    getPublicNationalIndex(),
+    loadConsumerGuides().catch((error: unknown) => {
+      console.error("Consumer page guides failed:", error);
+      return [];
+    }),
+  ]);
+  const summaryFor = new Map<string, FeeCategorySummary>(categories.map((c) => [c.fee_category, c]));
+
+  const lead = summaryFor.get(LEAD_CATEGORY);
+  const leadReady = lead && lead.median_amount != null && lead.p25_amount != null && lead.p75_amount != null ? lead : null;
+
+  // The most widely published fee types with a median, the same figures as the fee index.
+  const indexRows = nationalIndex
+    .filter((entry) => entry.maturity_tier !== "insufficient" && entry.median_amount != null)
+    .sort((a, b) => b.institution_count - a.institution_count);
+  const guideRows = [...guides].sort((a, b) => Number(b.featured) - Number(a.featured)).slice(0, ROWS_SHOWN);
+  const unstatedShown =
+    medianHasUnstatedAudience(leadReady) ||
+    indexRows.slice(0, ROWS_SHOWN).some((entry) => medianHasUnstatedAudience(summaryFor.get(entry.fee_category))) ||
+    guideRows.some((guide) => medianHasUnstatedAudience(summaryFor.get(guide.primaryCategory)));
+
+  return (
+    <div className="min-h-screen bg-paper text-ink">
+      <BreadcrumbJsonLd items={[{ name: "Home", href: "/" }, { name: "For consumers", href: "/consumer" }]} />
+      <div className="mx-auto max-w-page px-4 py-7 sm:px-6 sm:py-10">
+        <section className="relative z-20 grid gap-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] lg:items-end">
+          <div className={`min-w-0 ${PAGE_HEADER}`}>
+            <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-brick">For consumers</p>
+            <h1 className="mt-2 text-[32px] font-semibold leading-[1.05] tracking-[-0.03em] text-ink sm:text-[44px]">
+              Your bank&apos;s fees, next to the national median
+            </h1>
+            <p className="mt-3 text-[15px] leading-relaxed text-ink-soft sm:mx-0 sm:text-left">
+              Published fees from {summary.institutionsLabel} banks and credit unions, each linked to its own fee schedule.
+            </p>
+            <div className="mx-auto mt-5 max-w-xl text-left sm:mx-0">
+              <InstitutionSearchBar resultPath="/check" ariaLabel="Your bank or credit union" placeholder="Your bank or credit union" />
+            </div>
+          </div>
+
+          {leadReady && (
+            <figure className="min-w-0 rounded-xl border border-border bg-surface-0 p-5 shadow-fi-1">
+              <p className="text-[13px] font-medium text-ink-muted">{plain(LEAD_CATEGORY)} fee, U.S. median</p>
+              <p className="mt-1 font-mono text-[40px] font-semibold leading-none tabular-nums text-ink">
+                {money(leadReady.median_amount as number)}
+                <UnstatedAudienceMark show={medianHasUnstatedAudience(leadReady)} />
+              </p>
+              <figcaption className="mt-3 text-[15px] leading-snug text-ink">
+                Across {leadReady.institution_count.toLocaleString("en-US")} banks and credit unions that publish an{" "}
+                {plain(LEAD_CATEGORY).toLowerCase()} fee, the middle 50% fall between {money(leadReady.p25_amount as number)} and{" "}
+                {money(leadReady.p75_amount as number)}.
+              </figcaption>
+              <p className="mt-3 text-[12px] text-ink-muted">
+                Source: banks&apos; and credit unions&apos; published fee schedules, {PRODUCT_NAME}
+                {summary.refreshedOn ? `, data as of ${summary.refreshedOn}` : ""}.
+              </p>
+            </figure>
+          )}
+        </section>
+
+        <div className="mt-10 grid gap-10 sm:mt-12 sm:grid-cols-2 sm:gap-8">
+          <section aria-labelledby="guides-heading" className={BAND}>
+            <h2 id="guides-heading" className={BAND_H2}>
+              Fee guides
+            </h2>
+            {guideRows.length > 0 ? (
+              <ul className="mt-3 divide-y divide-border">
+                {guideRows.map((guide) => {
+                  const median = summaryFor.get(guide.primaryCategory);
+                  return (
+                    <li key={guide.slug}>
+                      <Link
+                        href={`/guides/${guide.slug}`}
+                        className="flex min-h-11 items-baseline justify-between gap-3 py-2.5 text-[15px] text-ink hover:text-brick"
+                      >
+                        <span className="min-w-0">{guide.title}</span>
+                        {median?.median_amount != null && (
+                          <span className="shrink-0 font-mono text-[13px] tabular-nums text-ink-muted">
+                            {money(median.median_amount)}
+                            <UnstatedAudienceMark show={medianHasUnstatedAudience(median)} />
+                          </span>
+                        )}
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="mt-2 text-[15px] text-ink-soft">The guides are not available right now.</p>
+            )}
+            <Link href="/guides" className={MORE}>
+              {guides.length > 0 ? `All ${guides.length} guides` : "Fee guides"}
+            </Link>
+          </section>
+
+          <section aria-labelledby="index-heading" className={BAND}>
+            <h2 id="index-heading" className={BAND_H2}>
+              U.S. medians by fee
+            </h2>
+            {indexRows.length > 0 ? (
+              <ul className="mt-3 divide-y divide-border">
+                {indexRows.slice(0, ROWS_SHOWN).map((entry) => (
+                  <li key={entry.fee_category}>
+                    <Link
+                      href={`/fees/${entry.fee_category}`}
+                      className="flex min-h-11 items-baseline justify-between gap-3 py-2.5 text-[15px] text-ink hover:text-brick"
+                    >
+                      <span className="min-w-0">{plain(entry.fee_category)}</span>
+                      <span className="shrink-0 font-mono text-[13px] tabular-nums text-ink-muted">
+                        {money(entry.median_amount as number)}
+                        <UnstatedAudienceMark show={medianHasUnstatedAudience(summaryFor.get(entry.fee_category))} />
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-2 text-[15px] text-ink-soft">National medians are not available right now.</p>
+            )}
+            <Link href="/fees" className={MORE}>
+              {indexRows.length > 0 ? `All ${indexRows.length} fee types in the ${PRODUCT_NAME}` : `The ${PRODUCT_NAME}`}
+            </Link>
+          </section>
+        </div>
+
+        <div className="mt-10">
+          <SourceNote>
+            Medians come from banks&apos; and credit unions&apos; own published fee schedules, one value per institution.{" "}
+            {summary.freshnessLabel}.{" "}
+            <Link href="/methodology" className="font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
+              Methodology
+            </Link>
+          </SourceNote>
+          <UnstatedAudienceFootnote show={unstatedShown} className="mt-3" />
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -172,6 +172,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     entry("/methodology", undefined, "monthly", 0.8),
     entry("/institutions", dataUpdated, "weekly", 0.9),
     entry("/check", dataUpdated, "weekly", 0.8),
+    entry("/consumer", dataUpdated, "weekly", 0.7),
     entry("/fees", dataUpdated, "weekly", 0.9),
     entry("/research", dataUpdated, "weekly", 0.7),
     entry("/contact", undefined, "yearly", 0.5),
