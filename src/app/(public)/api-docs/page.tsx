@@ -11,6 +11,7 @@ import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import { PRO_PLANS_NAV } from "@/components/nav-items";
 import { NON_INSTITUTION_TIER, tierAmountLabel, tierPriceLabel } from "@/lib/pro-tiers";
 import { PAGE_HEADER } from "@/components/public/page-header";
+import { PEER_GROUP_PARAMS } from "@/lib/peer-set-dimensions";
 
 const PRO_LABEL = "Hamilton";
 
@@ -765,14 +766,19 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
           method="GET"
           path="/peers?institution_id={id}"
           summary="Compare one institution's fees with its peers"
-          description={`For each fee the institution publishes in dollars, shows its amount next to the peer median and the 25th and 75th percentiles. The percentile field is the share of peers with a lower amount, counting half of those with the same amount. Peers are banks or credit unions of the same charter type, asset size and Fed district, unless you name up to 25 yourself. When fewer than ${MIN_INSTITUTIONS_FOR_MEDIAN} peers publish a fee, the median and percentiles are left out. Fees stated as a percentage are listed separately and not compared.`}
+          description={`For each fee the institution publishes in dollars, shows its amount next to the peer median and the 25th and 75th percentiles. The percentile field is the share of peers with a lower amount, counting half of those with the same amount. Peers are banks or credit unions of the same charter type, asset size and Fed district, unless you set the peer-group parameters below or name up to 25 institutions yourself. When you set any peer-group parameter, only the ones you set apply, and same means the institution's own value. When fewer than ${MIN_INSTITUTIONS_FOR_MEDIAN} peers publish a fee, the median and percentiles are left out. Fees stated as a percentage are listed separately and not compared.`}
           tierNote="Pro"
           params={[
             { name: "institution_id", type: "integer", required: true, description: "Institution ID" },
             { name: "peer_ids", type: "string", description: "Up to 25 institution IDs, comma-separated, to use as the peer group" },
+            ...PEER_GROUP_PARAMS.map((p) => ({ name: p.name, type: "string", description: p.description })),
           ]}
           curlExample={`curl -H "Authorization: Bearer YOUR_API_KEY" \\
-  "${BASE}/peers?institution_id=2466"`}
+  "${BASE}/peers?institution_id=2466"
+
+# Banks with branches in the same metro, $500M to $2B in assets
+curl -H "Authorization: Bearer YOUR_API_KEY" \\
+  "${BASE}/peers?institution_id=2466&charter=bank&market=same&asset_min=500000000&asset_max=2000000000"`}
           responseFields={[
             { name: "peer_group.label", type: "string", note: "Which institutions were compared" },
             { name: "categories[].amount", type: "number", note: "The institution's amount in USD" },

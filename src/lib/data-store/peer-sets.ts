@@ -22,9 +22,9 @@ import { getHomeMarket, getMarketInstitutionIds, type PeerMarket } from "./peer-
 import { ASSET_TIER_RANGES } from "@/lib/hamilton/peer-index";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 
-export const PEER_REGULATORS = { occ: "OCC", fdic: "FDIC", fed: "Federal Reserve", ncua: "NCUA" } as const;
-export type PeerRegulator = keyof typeof PEER_REGULATORS;
-export const MAX_NEAREST_PEERS = 100;
+import { MAX_NEAREST_PEERS, PEER_REGULATORS, type PeerRegulator } from "@/lib/peer-set-dimensions";
+
+export { MAX_NEAREST_PEERS, PEER_REGULATORS, type PeerRegulator };
 
 export interface PeerSetDefinition extends PeerFilterSet {
   /** Total assets in dollars, inclusive. */

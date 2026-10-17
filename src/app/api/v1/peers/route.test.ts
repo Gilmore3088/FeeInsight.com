@@ -5,6 +5,7 @@ import { checkRateLimitWithTier } from "@/lib/api-rate-limit";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
 import { getPeerComparison } from "@/lib/data-store/peer-comparison";
+import { PeerSetError } from "@/lib/data-store/peer-sets";
 import { GET } from "./route";
 
 vi.mock("@/lib/api-auth", () => ({ validateApiKey: vi.fn() }));
@@ -69,8 +70,31 @@ describe("/api/v1/peers", () => {
     expect(getPeerComparison).toHaveBeenCalledWith(12, [4, 5, 9], null);
   });
 
+  it("passes peer-group parameters through, with same kept for the institution's own value", async () => {
+    await GET(new NextRequest("https://feeinsight.com/api/v1/peers?institution_id=12&charter=same&market=same&asset_min=500000000&asset_max=2000000000&state=tx,ok&regulator=OCC,fed&nearest=20"));
+    expect(getPeerComparison).toHaveBeenCalledWith(12, null, {
+      charter_type: "same", market: "same", asset_min: 500_000_000, asset_max: 2_000_000_000,
+      states: ["TX", "OK"], regulators: ["occ", "fed"], nearest: 20,
+    });
+  });
+
+  it("answers a definition the institution cannot meet with invalid_parameter", async () => {
+    vi.mocked(getPeerComparison).mockRejectedValue(new PeerSetError("This institution has no holding company on record"));
+    const response = await GET(new NextRequest("https://feeinsight.com/api/v1/peers?institution_id=12&holding_company=same"));
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ code: "invalid_parameter", error: expect.stringContaining("holding company") });
+  });
+
   it.each([
     ["no institution", ""],
+    ["peer_ids with a peer-group parameter", "institution_id=12&peer_ids=4&charter=bank"],
+    ["a bad charter", "institution_id=12&charter=thrift"],
+    ["a bad regulator", "institution_id=12&regulator=sec"],
+    ["dollars that are not whole", "institution_id=12&asset_min=5e8"],
+    ["a minimum above the maximum", "institution_id=12&asset_min=20&asset_max=10"],
+    ["too many nearest", "institution_id=12&nearest=500"],
+    ["a bad market", "institution_id=12&market=dallas"],
+    ["a bad state", "institution_id=12&state=Texas"],
     ["a bad institution id", "institution_id=abc"],
     ["a bad peer list", "institution_id=12&peer_ids=4,x"],
     ["a zero peer id", "institution_id=12&peer_ids=0"],
