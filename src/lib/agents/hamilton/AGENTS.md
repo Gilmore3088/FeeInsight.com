@@ -718,16 +718,17 @@ says, since it only reopens rows the collapse closed; a dry run writes nothing. 
 `page_copy_restore` (kept down, carried on, kept judged, failing, restored, samples, `error`). The
 exact and near-name collapses still have this gap.
 
-**At publish (#1069 step 1, shadow).** Each row the publish step is about to publish is checked
+**At publish (#1069 step 1, live).** Each row the publish step is about to publish is checked
 against its live copies with the exact collapse's own test (`exact-duplicate.ts`: institution,
 category, variant, value and name; frequency classes that agree; the copy kept states its
 audience, then its frequency, then is newest). A row the collapse would close is counted as
 `would_refuse`, and a row it would keep, closing the older copy, as `would_replace`. Both are
 reported in the step's `publish_duplicate_check`, with `closed_by_late_collapse` for agreement.
-While `PUBLISH_REFUSE_DUPLICATES_LIVE` is false nothing is refused; turning it on (skip reason
-`Exact duplicate of live fee #<id>`) needs James's OK.
+`PUBLISH_REFUSE_DUPLICATES_LIVE` is on (James's OK, 2026-10-17): a `would_refuse` row is skipped
+before insert (skip reason `Exact duplicate of live fee #<id>`), so it is never published only for
+the late collapse to close it. Set it back to false to count only.
 
-**At publish (#1069 step 2, shadow).** The rows a publish step is about to decide are read, once
+**At publish (#1069 step 2, live).** The rows a publish step is about to decide are read, once
 per batch, with three sweeps' own SQL in their `"verified"` scope (`publish-sweep-rules.ts`):
 another bank's document (`otherBankFeesSql`), an unconfirmed host that does not name the bank
 (`unconfirmedHostFeesSql`), and a business schedule's fee beside the bank's live consumer fee in
@@ -735,9 +736,9 @@ its category (`businessScheduleFeesSql`; a footnote-only business fee stays the 
 needs the page read). The sweeps and publish share one builder per rule, so they cannot disagree;
 the sweeps stay the live re-check and this check takes nothing down. A row a sweep would take down
 is counted in the step's `publish_sweep_check` (`would_refuse`, `by_rule`, samples, and `error`
-when a read failed; a failed read refuses nothing). While `PUBLISH_REFUSE_SWEEP_RULES_LIVE` is
-false nothing is refused; turning it on (skip reason `Refused at publish, a sweep would take it
-down: <the sweep's reason>`) needs James's OK.
+when a read failed; a failed read refuses nothing). `PUBLISH_REFUSE_SWEEP_RULES_LIVE` is
+on (James's OK, 2026-10-17): such a row is skipped (skip reason `Refused at publish, a sweep would
+take it down: <the sweep's reason>`). Set it back to false to count only.
 
 ## Rules Re-check
 
