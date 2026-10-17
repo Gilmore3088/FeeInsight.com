@@ -18,7 +18,7 @@
  * The one exception is a dollar amount in a category that is usually a rate (below).
  */
 
-import { COLLECTION_ITEM, foldRetiredCategory, ITEM_COPY, RESEARCH_SPLIT_LIVE } from "@/lib/fee-fold";
+import { COLLECTION_ITEM, foldRetiredCategory, FOREIGN_ITEM_RETURN, ITEM_COPY, RESEARCH_SPLIT_LIVE } from "@/lib/fee-fold";
 
 export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts" | "amount_implausible";
 
@@ -311,7 +311,9 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   deposited_item_return: {
     // v58: a returned bond or coupon is a deposited item coming back ("Bond return items",
     // "Bond/Coupon Returned Item Fee"; Darwin 883's dry read).
-    include: /(\b(bonds?|coupons?)\b[^|]{0,30}\breturn|\breturn(ed|s)?\b[^|]{0,30}\b(bonds?|coupons?)\b|deposit(ed)? (item|check|draft)|deposit(ed)? return(ed)? (item|check)s?|return(ed)? deposit|deposit return|(cheques?|art[ií]culos?|partidas?) depositad[oa]s? devuelt|dep[oó]sitos? (en|de) cheques? devuelt|devoluci[oó]n de dep[oó]sito|charge[- ]?backs?\b|return(ed)? (item|check)s?\b.{0,20}\bwritten to you|^\s*return(ed)?\s+(check|item)s?(\s+(fee|charge)s?)?\s*:?\s*$)/i,
+    // v68: a returned foreign, Canadian or international check or item ("Foreign Check Return Fee",
+    // "Returned Canadian Check"; `FOREIGN_ITEM_RETURN`) is a deposited item coming back too.
+    include: new RegExp(String.raw`${FOREIGN_ITEM_RETURN.source}|` + /(\b(bonds?|coupons?)\b[^|]{0,30}\breturn|\breturn(ed|s)?\b[^|]{0,30}\b(bonds?|coupons?)\b|deposit(ed)? (item|check|draft)|deposit(ed)? return(ed)? (item|check)s?|return(ed)? deposit|deposit return|(cheques?|art[ií]culos?|partidas?) depositad[oa]s? devuelt|dep[oó]sitos? (en|de) cheques? devuelt|devoluci[oó]n de dep[oó]sito|charge[- ]?backs?\b|return(ed)? (item|check)s?\b.{0,20}\bwritten to you|^\s*return(ed)?\s+(check|item)s?(\s+(fee|charge)s?)?\s*:?\s*$)/.source, "i"),
     exclude: /(night|safe|box|unresolved|membership|mobile deposit fee|remote|collection|correction|loan (item|payment)s? charge[- ]?back|charge[- ]?backs? on (a )?loan|unable|(\bcards?\b|visa)[^|]{0,25}charge[- ]?back|charge[- ]?back[^|]{0,25}(\bcards?\b|dispute)|dispute|research)/i,
   },
   // A bank selling zipper or locking deposit bags is pricing a supply, not charging a
@@ -335,9 +337,11 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   // for collection or a foreign check handled for deposit is a collection item. A collection
   // fee on a charged-off or past-due account, or a collection phone call, is debt collection;
   // every other name passes. v41 also catches "Charge off deposit collection fee" without the d.
+  // v68: a returned foreign check or item ("Foreign Check Return Fee" $30, 93859; "Foreign Check per
+  // Item Processing: Returned" $35, 93400) is a returned deposited item, not check cashing.
   check_cashing: {
     include: /\S/,
-    exclude: new RegExp(String.raw`(charge(d)?[- ]?off|past[- ]due|delinquen|\bcalls?\b)|${COLLECTION_ITEM.source}`, "i"),
+    exclude: new RegExp(String.raw`(charge(d)?[- ]?off|past[- ]due|delinquen|\bcalls?\b)|${COLLECTION_ITEM.source}|${FOREIGN_ITEM_RETURN.source}`, "i"),
   },
   collection_item: {
     include: COLLECTION_ITEM,
@@ -498,7 +502,13 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // service; a lost or replaced key stays night deposit. 10 live fees, each a key deposit on its own
 // schedule, fail it (#1605). A key bought for the depository is out too under option A, but the 43
 // live key purchases are a large batch for James, so this version does not refuse them yet.
-export const CATEGORY_GUARD_VERSION = RESEARCH_SPLIT_LIVE ? 67 : 66;
+// v68 (Oct 17; the research split is on since #1748, so this follows v67): a returned foreign,
+// Canadian or international check or item (`FOREIGN_ITEM_RETURN` in fee-fold.ts) leaves check
+// cashing for the returned deposited item fee, by guard, re-file rule and fold split (10 live fees,
+// 93859 and 93400 among them). And bill pay refuses a row that is the overdraft (courtesy pay) or NSF
+// fee by its own name or by the heading just before it on its source line (#1304; 8 live fees). The
+// v68 rules do not depend on the switch; turning the research split off again needs its own version.
+export const CATEGORY_GUARD_VERSION = 68;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -570,6 +580,8 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   { from: "atm_non_network", to: "card_replacement", when: /(replace|reissue|re-?issu|lost|stolen)/i, unless: /\bpins?\b/i },
   { from: "check_printing", to: "counter_check", when: /\btemporar/i },
   { from: "check_cashing", to: "collection_item", when: COLLECTION_ITEM },
+  // v68: a returned foreign check or item filed as check cashing is a returned deposited item.
+  { from: "check_cashing", to: "deposited_item_return", when: FOREIGN_ITEM_RETURN },
   { from: "money_order", to: "check_image", when: ITEM_COPY },
   { from: "card_replacement", to: "rush_card", when: new RegExp(EXPRESS_CARD, "i") },
   { from: "minimum_balance", to: "early_closure", when: new RegExp(EARLY_CLOSE, "i") },
@@ -748,6 +760,8 @@ export function checkFeeCategory(
   if (courtesyReason) return { ok: false, code: "name_contradicts", reason: courtesyReason };
   const noteReason = noteTailOfAnotherFee(canonicalFeeKey, name, context);
   if (noteReason) return { ok: false, code: "name_contradicts", reason: noteReason };
+  const billPayReason = overdraftOrNsfBillPay(canonicalFeeKey, name, context);
+  if (billPayReason) return { ok: false, code: billPayReason.code, reason: billPayReason.reason };
   const activityReason = activityChargeOnLine(canonicalFeeKey, context);
   if (activityReason) return { ok: false, code: "schedule_contradicts", reason: activityReason.reason };
   const slotReason = pairedPriceSlot(canonicalFeeKey, context);
@@ -984,4 +998,46 @@ function noteTailOfAnotherFee(canonicalFeeKey: string, name: string, context: Ca
   const head = excerpt.slice(excerpt.lastIndexOf("|", open) + 1, open).trim();
   const owner = NOTE_HEAD_FEES.find(([pattern, key]) => key !== canonicalFeeKey && pattern.test(head));
   return owner ? `"${name}" ends a note on "${head}", a ${owner[1]} fee, not ${canonicalFeeKey}` : null;
+}
+
+/** Words that make a charge the overdraft (courtesy pay) or NSF fee. */
+const OVERDRAFT_OR_NSF = /courtesy\s*pay|\bpaid\s+nsf\b|\bnsf\b|\boverdraft|\b(?:in|non[-\s]?)sufficient\b|\bbounce/i;
+/** Payment channels a courtesy pay or NSF row lists in its cell ("Check/ACH/Bill Pay Payment"). */
+const PAYMENT_CHANNEL = /\b(?:checks?|ach|bill\s*pay(?:ments?)?|share\s+drafts?|drafts?|debit(?:\s+cards?)?|atm|electronic|recurring|pre-?authori[sz]ed|pos)\b/gi;
+
+/**
+ * v68 (#1304): a bill payment priced as the overdraft (courtesy pay) or NSF fee is that fee, not
+ * the bill pay service. Knox names a row by the cell after its heading, so "Courtesy Pay (Paid NSF)
+ * Check/ACH/Bill Pay Payment | $32.00/item" was filed as bill pay under the name "Check/ACH/Bill Pay
+ * Payment" (live 88513, since re-filed by hand). Bill pay refuses a name that itself names courtesy
+ * pay, an overdraft, NSF or insufficient funds, and a row whose own source line puts such a heading
+ * just before the name: in the same cell ("Nonsufficient funds (NSF) Bill Pay | $35.00"), or, for a
+ * name that lists two or more payment channels, in the cell before it ("Non-Sufficient Funds |
+ * Check, ACH, Bill Pay, recurring debit card transaction, / $30.00"). Text before the last price
+ * belongs to another fee, and a heading two cells back over a single service ("Non-Sufficient Funds
+ * (NSF) | Same Day Bill Payment | $ 9.95") does not count. Pure.
+ */
+function overdraftOrNsfBillPay(
+  canonicalFeeKey: string,
+  name: string,
+  context: CategoryGuardContext | undefined,
+): { code: CategoryGuardCode; reason: string } | null {
+  if (canonicalFeeKey !== "bill_pay") return null;
+  const named = name.match(OVERDRAFT_OR_NSF);
+  if (named) return { code: "name_contradicts", reason: `"${name}" names "${named[0]}", the overdraft or NSF fee, not bill pay` };
+  const excerpt = context?.conditions?.match(/\bexcerpt=([\s\S]*)$/)?.[1];
+  if (!excerpt || name.length < 3) return null;
+  const line = plainQuotes(excerpt);
+  const at = line.toLowerCase().indexOf(name.toLowerCase());
+  if (at <= 0) return null;
+  const sincePrice = line.slice(0, at).split(/\$\s?\d[\d,]*(?:\.\d+)?|\$\s?\.\d+/).at(-1) ?? "";
+  const cells = sincePrice.split("|");
+  const channels = new Set((name.match(PAYMENT_CHANNEL) ?? []).map((word) => word.toLowerCase().replace(/\s+/g, " ")));
+  const heading = (channels.size >= 2 ? cells.slice(-2) : cells.slice(-1)).join("|");
+  const words = heading.match(OVERDRAFT_OR_NSF);
+  if (!words) return null;
+  return {
+    code: "schedule_contradicts",
+    reason: `the source line prices "${name}" under "${heading.replace(/^["\s|]+|[\s|]+$/g, "")}", the overdraft or NSF fee, not bill pay`,
+  };
 }
