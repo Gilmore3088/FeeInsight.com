@@ -59,8 +59,9 @@ describe("institution directory SQL category placeholders (#1012)", () => {
         charter_type: "bank",
         fee_category: "overdraft",
       },
-      feeParamIndex: 4,
-      values: ["%Pinnacle%", "TN", "bank", "overdraft", 25, 0],
+      // The name match binds three values: the typed name, its squashed form and short-name aliases.
+      feeParamIndex: 6,
+      values: ["%Pinnacle%", "%pinnacle%", [], "TN", "bank", "overdraft", 25, 0],
     },
   ])("binds the fee category as text with $name", async ({ input, feeParamIndex, values }) => {
     const result = await searchInstitutions({ ...input, page: 1, pageSize: 25 });
