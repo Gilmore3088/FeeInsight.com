@@ -12,11 +12,9 @@ Open Reports: https://feeinsight.com/pro/reports?utm_source=mailerlite&utm_mediu
 Use the analysis to inform your review. Your institution makes the pricing decision.
 
 James Gilmore
-Founder, Fee Insight · publisher of the Bank Fee Index
+Fee Insight
 
 ----
-Fee Insight publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules.
-Methodology: https://feeinsight.com/methodology
-Questions? Just reply.
-Fee Insight LLC, 522 W Riverside Ave, Ste N, Spokane, WA 99201
+3522 Southwest Barton Street, Seattle, United States of America
+You're getting this because your team subscribes to Hamilton.
 Unsubscribe: {$unsubscribe}

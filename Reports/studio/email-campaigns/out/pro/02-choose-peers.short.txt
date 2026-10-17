@@ -1,9 +1,9 @@
 Choose the peers you're measured against
 ========================================
 
-Build a peer set from the institutions your customers compare you with, by charter, asset size, district or county. Use the national median for broader context.
+Build a peer group from the institutions your customers compare you with, by charter, asset size, district or county. Use the national median for broader context.
 
-Build your peer set: https://feeinsight.com/pro/settings#peer-sets
+Build your peer group: https://feeinsight.com/pro/settings#peer-sets
 
 In Settings, open Peer groups.
 
@@ -12,6 +12,6 @@ Not sure which peers? Building a Peer Set (https://feeinsight.com/guides/pro/bui
 James Gilmore, Fee Insight
 
 --
-Fee Insight LLC, 522 W Riverside Ave, Ste N, Spokane, WA 99201
+3522 Southwest Barton Street, Seattle, United States of America
 You're getting this because your team subscribes to Hamilton.
 Unsubscribe: {$unsubscribe}

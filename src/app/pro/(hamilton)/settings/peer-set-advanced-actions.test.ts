@@ -82,7 +82,7 @@ describe("peer groups on the wider dimensions", () => {
         holding_company_rssd: "1234", market_code: 45220, nearest: 10,
       },
     });
-    expect(name).toBe("The 10 banks closest in assets with $500M to $2B in assets regulated by OCC or FDIC in the same...");
+    expect(name).toBe("The 10 banks closest in assets with $500M to $2B in assets regulated by the OCC or the FDIC in...");
     expect(name.length).toBeLessThanOrEqual(100);
   });
 

@@ -5,19 +5,17 @@ SETUP · 2 OF 5
 Choose the peers you're measured against
 ========================================
 
-Build a peer set from the institutions your customers compare you with, by charter, asset size, district or county. Use the national median for broader context.
+Build a peer group from the institutions your customers compare you with, by charter, asset size, district or county. Use the national median for broader context.
 
-Build your peer set: https://feeinsight.com/pro/settings?utm_source=mailerlite&utm_medium=email&utm_campaign=pro&utm_content=choose-peers#peer-sets
+Build your peer group: https://feeinsight.com/pro/settings?utm_source=mailerlite&utm_medium=email&utm_campaign=pro&utm_content=choose-peers#peer-sets
 In Settings, open Peer groups.
 
 Not sure which peers? Building a Peer Set (https://feeinsight.com/guides/pro/building-a-peer-set?utm_source=mailerlite&utm_medium=email&utm_campaign=pro&utm_content=choose-peers) shows how to pick a set that holds up in a board meeting.
 
 James Gilmore
-Founder, Fee Insight · publisher of the Bank Fee Index
+Fee Insight
 
 ----
-Fee Insight publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules.
-Methodology: https://feeinsight.com/methodology
-Questions? Just reply.
-Fee Insight LLC, 522 W Riverside Ave, Ste N, Spokane, WA 99201
+3522 Southwest Barton Street, Seattle, United States of America
+You're getting this because your team subscribes to Hamilton.
 Unsubscribe: {$unsubscribe}

@@ -1,21 +1,17 @@
 Where to find the fee data for your market
 ==========================================
 
-Thanks for subscribing. The fee benchmarks come from institutions' published schedules, and the views below need no login. Start with the one closest to the institutions you compete with.
+Thanks for subscribing. Start with your state: each headline fee next to the national median, banks and credit unions side by side. The benchmarks come from institutions' published schedules.
 
-- Your state: each headline fee in your state next to the national median, banks and credit unions side by side. Find your state (https://feeinsight.com/research).
+Find your state's fee benchmarks: https://feeinsight.com/research
 
-- Your Fed district: the same view across a district. Open the district reports (https://feeinsight.com/reports).
+Free, no login.
 
-- One institution: its fee table, the schedule it came from, and the date we read it. Search institutions (https://feeinsight.com/institutions).
-
-Explore the free fee benchmarks: https://feeinsight.com/research
-
-No login needed.
+Also free: a Fed district (https://feeinsight.com/reports), one institution's fees (https://feeinsight.com/institutions) with the schedule they came from, or one fee across the country (https://feeinsight.com/fees). Breakdowns by asset size come with a Hamilton plan.
 
 James Gilmore, Fee Insight
 
 --
-Fee Insight LLC, 522 W Riverside Ave, Ste N, Spokane, WA 99201
+3522 Southwest Barton Street, Seattle, United States of America
 You're getting this because you signed up at feeinsight.com.
 Unsubscribe: {$unsubscribe}

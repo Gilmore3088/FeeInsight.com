@@ -709,8 +709,8 @@ pairs; a box size counts as a word ("Safe Deposit Box - 3x5" / "3 x 5"), and two
 give a size must share one ("Safe Deposit Box - 3x10" / "Safe Deposit Box 3 x 5" never pair). A partner of the same name is taken first, then a near name, then a renamed one. `renamed`
 in the step detail counts these pairs, closed or kept, and `renamed_samples` lists those that close. Up to 25 institutions per step, picked by the run id; each
 step reports `page_copy_collapse` (live, institutions, pairs, apart on page, unproven, other
-document, renamed, would close, samples, and `error` when the read or the close failed). `PAGE_COPY_COLLAPSE_LIVE` stays
-off until James approves the dry-run counts. Rollback: clear `rolled_back_at` on rows whose reason
+document, renamed, would close, samples, and `error` when the read or the close failed). `PAGE_COPY_COLLAPSE_LIVE` is
+on since James approved the dry-run counts (Oct 17, 10:47 UTC; 499 closes). Rollback: clear `rolled_back_at` on rows whose reason
 ends in `(copy of the page)`.
 
 **The kept row keeps the fuller name.** The kept copy is chosen by edition, not name, so it can hold

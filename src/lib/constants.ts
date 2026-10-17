@@ -16,10 +16,11 @@ export const LEGAL_ENTITY_LINE = `${LEGAL_ENTITY_NAME}, a ${LEGAL_ENTITY_STATE} 
 export const TRADEMARK_NOTICE = `${SITE_NAME}™ and The ${PRODUCT_NAME}™ are trademarks of ${LEGAL_ENTITY_NAME}.`;
 export const CONTACT_EMAIL = "hello@bankfeeindex.com";
 /**
- * The postal address every subscription and marketing email carries in its footer (CAN-SPAM).
- * Same address as the MailerLite account footer. MARKETING_MAILING_ADDRESS overrides it.
+ * The postal address subscription and marketing email carry in the footer (CAN-SPAM). Blank
+ * until the state registration comes through (DECISIONS 2026-10-06): MARKETING_MAILING_ADDRESS
+ * sets it, and until then marketing sends stay refused and site email omits the line.
  */
-export const MAILING_ADDRESS = "Fee Insight LLC, 522 W Riverside Ave, Ste N, Spokane, WA 99201";
+export const MAILING_ADDRESS = "";
 /** Every email we send goes out under this display name. */
 export const EMAIL_SENDER_NAME = SITE_NAME;
 export const RESEARCH_IMPRINT = "Fee Insight Research";
