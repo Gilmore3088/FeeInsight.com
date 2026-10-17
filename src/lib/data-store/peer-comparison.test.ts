@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./core", () => ({ getInstitutionById: vi.fn() }));
-vi.mock("./fee-index", () => ({ getInstitutionFeeValues: vi.fn(), getPeerFeeValues: vi.fn() }));
+vi.mock("./fee-index", () => ({
+  getInstitutionFeeValues: vi.fn(),
+  getPeerFeeValues: vi.fn(),
+  peerInstitutionIds: (f: { institutionIds?: number[] }) => (f.institutionIds?.length ? f.institutionIds : null),
+}));
+vi.mock("./connection", () => ({ sql: vi.fn() }));
 vi.mock("./rate-fees", () => ({ getRateFeesByInstitution: vi.fn(() => Promise.resolve([])) }));
 
 import { getInstitutionById } from "./core";
@@ -101,7 +106,7 @@ describe("getPeerComparison", () => {
       ["overdraft", "wire_domestic_outgoing"],
       12,
     );
-    expect(result?.peer_group).toMatchObject({ basis: "default", fed_district: 11, peer_ids: null, peers_with_fees: 6 });
+    expect(result?.peer_group).toMatchObject({ basis: "default", definition: { fed_districts: [11] }, peer_ids: null, peers_with_fees: 6 });
     const overdraft = result?.categories.find((c) => c.category === "overdraft");
     // 4 lower, 0 the same, 2 higher of 6: 66.7%.
     expect(overdraft).toMatchObject({ amount: 35, peer_count: 6, peer_median: 31, peers_lower: 4, peers_higher: 2, percentile: 67 });
@@ -112,7 +117,7 @@ describe("getPeerComparison", () => {
   it("uses chosen peers exactly, without the institution itself", async () => {
     const result = await getPeerComparison(12, [12, 4, 5]);
     expect(getPeerFeeValues).toHaveBeenCalledWith([{ institutionIds: [4, 5] }], expect.any(Array), 12);
-    expect(result?.peer_group).toMatchObject({ basis: "chosen", label: "2 chosen institutions", peer_ids: [4, 5], charter_type: null });
+    expect(result?.peer_group).toMatchObject({ basis: "chosen", label: "2 chosen institutions", peer_ids: [4, 5], definition: null });
   });
 
   it("lists rate fees apart and words nothing as a judgment", async () => {

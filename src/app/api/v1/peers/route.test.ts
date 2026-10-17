@@ -22,9 +22,8 @@ const COMPARISON = {
   peer_group: {
     basis: "default" as const,
     label: "Banks with $300M to $1B in assets in Fed district 11 (Dallas)",
-    charter_type: "bank",
-    asset_tier: "community_mid",
-    fed_district: 11,
+    definition: { charter_type: "bank", asset_tiers: ["community_mid"], fed_districts: [11] },
+    market: null,
     peer_ids: null,
     peers_with_fees: 6,
   },
@@ -59,7 +58,7 @@ describe("/api/v1/peers", () => {
     const response = await GET(new NextRequest("https://feeinsight.com/api/v1/peers?institution_id=12"));
     const body = await response.json();
     expect(response.status).toBe(200);
-    expect(getPeerComparison).toHaveBeenCalledWith(12, null);
+    expect(getPeerComparison).toHaveBeenCalledWith(12, null, null);
     expect(body.categories[0]).toMatchObject({ category: "overdraft", peer_median: 30, percentile: 42 });
     expect(body.note).toContain("percentile is the share of peers whose amount is lower");
     expect(body.attribution).toBeDefined();
@@ -67,7 +66,7 @@ describe("/api/v1/peers", () => {
 
   it("passes chosen peers through, deduplicated", async () => {
     await GET(new NextRequest("https://feeinsight.com/api/v1/peers?institution_id=12&peer_ids=4,5,4,9"));
-    expect(getPeerComparison).toHaveBeenCalledWith(12, [4, 5, 9]);
+    expect(getPeerComparison).toHaveBeenCalledWith(12, [4, 5, 9], null);
   });
 
   it.each([

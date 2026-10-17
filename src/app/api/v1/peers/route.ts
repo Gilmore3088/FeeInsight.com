@@ -1,10 +1,20 @@
 import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 import { NextRequest, NextResponse } from "next/server";
 import { MAX_CHOSEN_PEERS, getPeerComparison } from "@/lib/data-store/peer-comparison";
+import { PeerSetError, type PeerSetRequest } from "@/lib/data-store/peer-sets";
+import { peerSetRequestParams } from "@/lib/api-v1-peer-params";
 import { logApiUsage } from "@/lib/api-usage";
 import { API_ATTRIBUTION } from "@/lib/constants";
 import { authorizeV1 } from "@/lib/api-v1-auth";
-import { ApiParamError, apiError, apiOptions, idListParam, intParam, withApiCaching, withApiHeaders } from "@/lib/api-v1";
+import {
+  ApiParamError,
+  apiError,
+  apiOptions,
+  idListParam,
+  intParam,
+  withApiCaching,
+  withApiHeaders,
+} from "@/lib/api-v1";
 
 const NOTE =
   "Each row compares the institution's published dollar amount for a fee with the same fee at its peers. " +
@@ -20,6 +30,7 @@ async function handleGET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   let institutionId: number;
   let peerIds: number[] | null;
+  let peerSet: PeerSetRequest | null;
   try {
     if (!searchParams.get("institution_id")) throw new ApiParamError("institution_id is required");
     institutionId = intParam(searchParams, "institution_id", { fallback: 0, min: 1, max: 1_000_000_000 });
@@ -27,6 +38,8 @@ async function handleGET(request: NextRequest) {
     if (peerIds && peerIds.every((id) => id === institutionId)) {
       throw new ApiParamError("peer_ids must name at least one institution other than institution_id");
     }
+    peerSet = peerSetRequestParams(searchParams);
+    if (peerIds && peerSet) throw new ApiParamError("peer_ids cannot be combined with other peer-group parameters");
   } catch (error) {
     if (error instanceof ApiParamError) {
       logApiUsage(organizationId, anonymousId, "api.v1.peers", { status: 400 }, keyId).catch(() => {});
@@ -35,7 +48,16 @@ async function handleGET(request: NextRequest) {
     throw error;
   }
 
-  const comparison = await getPeerComparison(institutionId, peerIds);
+  let comparison;
+  try {
+    comparison = await getPeerComparison(institutionId, peerIds, peerSet);
+  } catch (error) {
+    if (error instanceof PeerSetError) {
+      logApiUsage(organizationId, anonymousId, "api.v1.peers", { institution_id: institutionId, status: 400 }, keyId).catch(() => {});
+      return apiError(400, "invalid_parameter", error.message, { rateLimit });
+    }
+    throw error;
+  }
   if (!comparison) {
     logApiUsage(organizationId, anonymousId, "api.v1.peers", { institution_id: institutionId, status: 404 }, keyId).catch(() => {});
     return apiError(404, "not_found", "Institution not found", { rateLimit });
@@ -45,6 +67,7 @@ async function handleGET(request: NextRequest) {
     institution_id: institutionId,
     peer_basis: comparison.peer_group.basis,
     peer_ids: peerIds?.length ?? 0,
+    peer_set: peerSet,
     count: comparison.categories.length,
     status: 200,
   }, keyId).catch(() => {});

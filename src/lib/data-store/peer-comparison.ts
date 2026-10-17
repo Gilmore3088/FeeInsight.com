@@ -7,15 +7,16 @@
  *
  * The default peers are the institution's own charter type, asset-size tier and Fed district,
  * the narrowest of Hamilton's default peer candidates without a state
- * (buildInstitutionPeerFilterCandidates). A caller may name up to 25 peers instead.
+ * (buildInstitutionPeerFilterCandidates). A caller may name up to 25 peers instead, or define
+ * the group by any dimension of the shared peer-set definition (peer-sets.ts).
  */
 import { getInstitutionById } from "./core";
 import { getInstitutionFeeValues, getPeerFeeValues, type PeerFeeValue, type PeerFilterSet } from "./fee-index";
 import { MIN_INSTITUTIONS_FOR_MEDIAN, summarizeFees, type MaturityTier } from "./fee-stats";
 import { getRateFeesByInstitution } from "./rate-fees";
+import { describePeerSet, getPeerSubject, resolvePeerRequest, type PeerSetDefinition, type PeerSetRequest } from "./peer-sets";
+import type { PeerMarket } from "./peer-markets";
 import { getDisplayName, getFeeFamily } from "@/lib/fee-taxonomy";
-import { ASSET_TIER_RANGES } from "@/lib/hamilton/peer-index";
-import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { institutionDisplayName } from "@/lib/institution-display-name";
 
 export const MAX_CHOSEN_PEERS = 25;
@@ -59,11 +60,13 @@ export interface PeerComparisonRateFee {
 }
 
 export interface PeerGroup {
-  basis: "default" | "chosen";
+  /** default: same charter, asset tier and Fed district; chosen: named institutions; defined: the caller's dimensions. */
+  basis: "default" | "chosen" | "defined";
   label: string;
-  charter_type: string | null;
-  asset_tier: string | null;
-  fed_district: number | null;
+  /** The dimensions the group was built from, with "same" filled in. Null when chosen. */
+  definition: PeerSetDefinition | null;
+  /** The metro, when the group is defined by one. */
+  market: PeerMarket | null;
   /** The ids asked for, when basis is chosen. */
   peer_ids: number[] | null;
   /** Peers with at least one published dollar fee in the compared categories. */
@@ -133,35 +136,44 @@ export function defaultPeerFilters(inst: { charter_type?: string | null; asset_s
 
 /** "Banks with $300M to $1B in assets in Fed district 11 (Dallas)", or "3 chosen institutions". */
 export function describePeerGroup(filters: PeerFilterSet): string {
-  if (filters.institutionIds?.length) {
-    const n = filters.institutionIds.length;
-    return `${n} chosen ${n === 1 ? "institution" : "institutions"}`;
-  }
-  const kind = filters.charter_type === "bank" ? "Banks" : filters.charter_type === "credit_union" ? "Credit unions" : "Institutions";
-  const tier = filters.asset_tiers?.[0];
-  const range = tier ? ASSET_TIER_RANGES[tier] ?? tier.replace(/_/g, " ") : null;
-  const district = filters.fed_districts?.[0];
-  const parts = [kind];
-  if (range) parts.push(`with ${range} in assets`);
-  if (district) parts.push(`in Fed district ${district}${DISTRICT_NAMES[district] ? ` (${DISTRICT_NAMES[district]})` : ""}`);
-  return parts.join(" ");
+  return describePeerSet(filters);
 }
 
 function byFamilyThenName(a: { family: string | null; display_name: string | null }, b: { family: string | null; display_name: string | null }): number {
   return (a.family ?? "").localeCompare(b.family ?? "") || (a.display_name ?? "").localeCompare(b.display_name ?? "");
 }
 
-export async function getPeerComparison(institutionId: number, peerIds: number[] | null): Promise<PeerComparison | null> {
+export async function getPeerComparison(
+  institutionId: number,
+  peerIds: number[] | null,
+  request: PeerSetRequest | null = null,
+): Promise<PeerComparison | null> {
   const inst = await getInstitutionById(institutionId);
   if (!inst) return null;
 
   const chosen = peerIds ? peerIds.filter((id) => id !== institutionId) : null;
-  const filters: PeerFilterSet = chosen ? { institutionIds: chosen } : defaultPeerFilters(inst);
+  let filters: PeerFilterSet | null;
+  let label: string;
+  let definition: PeerSetDefinition | null = null;
+  let market: PeerMarket | null = null;
+  if (chosen) {
+    filters = { institutionIds: chosen };
+    label = chosen.length === 0 ? "No chosen institutions" : describePeerSet(filters);
+  } else if (request) {
+    const subject = await getPeerSubject(institutionId);
+    if (!subject) return null;
+    const resolved = await resolvePeerRequest(subject, request);
+    ({ filters, label, definition, market } = resolved);
+  } else {
+    filters = defaultPeerFilters(inst);
+    definition = filters;
+    label = describePeerSet(filters);
+  }
   const own = await getInstitutionFeeValues(institutionId);
   const categories = [...own.keys()];
   const [peerSets, rateFees] = await Promise.all([
-    // An empty chosen list would match nobody: never read it as "no filter", which is everyone.
-    categories.length > 0 && (!chosen || chosen.length > 0)
+    // An empty peer group matches nobody: never read it as "no filter", which is everyone.
+    categories.length > 0 && filters && !(chosen && chosen.length === 0)
       ? getPeerFeeValues([filters], categories, institutionId)
       : Promise.resolve([new Map<string, PeerFeeValue[]>()]),
     getRateFeesByInstitution(institutionId, "consumer"),
@@ -185,11 +197,10 @@ export async function getPeerComparison(institutionId: number, peerIds: number[]
       fed_district: inst.fed_district == null ? null : Number(inst.fed_district),
     },
     peer_group: {
-      basis: chosen ? "chosen" : "default",
-      label: chosen && chosen.length === 0 ? "No chosen institutions" : describePeerGroup(filters),
-      charter_type: chosen ? null : filters.charter_type ?? null,
-      asset_tier: chosen ? null : filters.asset_tiers?.[0] ?? null,
-      fed_district: chosen ? null : filters.fed_districts?.[0] ?? null,
+      basis: chosen ? "chosen" : request ? "defined" : "default",
+      label,
+      definition,
+      market,
       peer_ids: chosen,
       peers_with_fees: publishing.size,
     },
