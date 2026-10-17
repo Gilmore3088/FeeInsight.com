@@ -636,13 +636,23 @@ pass. The rest go through the 12-hour second look and then come down the same wa
 
 ## Article Page
 
-`article-page.ts`: a page whose address has an article segment (articles, blog, stories,
-news) and does not name a schedule is an article (`isArticlePage`). Its prices are national
-averages or examples, not the bank's price: Space Coast CU's $4.73 ATM fee came from a blog
-post (its schedule says $2.50). Publish never puts such a row live; a live one comes down only
+`article-page.ts`: a page whose address has an article segment and does not name a fee
+document is an article (`isArticlePage`). Its prices are national averages or examples, not the
+bank's price: Space Coast CU's $4.73 ATM fee came from a blog post (its schedule says $2.50).
+Publish never puts such a row live (its own link or its document's); a live one comes down only
 on its second look (check `hamilton.article_page`), archived as `article_page: #<document id>`,
 with the lesson going to Magellan. MTC Federal CU's real schedule, /articles/schedule-of-fees/,
-is not an article.
+is not an article, nor is any PDF.
+
+Since Oct 17 (#1774) the rule is Magellan's `isArticleLink` (`magellan/link-coverage.ts`), the
+one article rule for Magellan's link check, publish, this live re-check and Knox's paid read
+(`articleLinkSql`). It adds learning, insights, advice, post and news-room folders and dated blog
+paths ("/2022/01/<slug>/"); "/learn/" and "/resources/" stay out, since banks keep real fee pages
+there. Dry run on prod, Oct 17: 7 live fees at 6 institutions (TD Bank's /learning/ "$35 ... is
+common" overdraft on both TD records, Axos's /insights/ NSF, two SchoolsFirst /advice/ rows,
+Keesler's /advice/ app fee, Security First's 2022 blog post). A verified row skipped as identical
+to a fee this check took down is decided again (`ARTICLE_PAGE_RESELECT_SQL`), so the bank's own
+copy of the fee goes live in its place: TD's $35 overdraft from its overdraft-services page.
 
 **Qualifier pairs, check 4 (#1314, Oct 15).** `linesApartOnPage` keeps two names apart only when the
 shorter one is printed at the price clear of every place of the longer: a shorter name found only

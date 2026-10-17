@@ -7,6 +7,7 @@ vi.mock("@/lib/ai-provider-usage", async (importOriginal) => ({
 }));
 
 import { KNOX_RULES_STRATEGY } from "./specialists";
+import { articleLinkSql } from "@/lib/agents/magellan/link-coverage";
 import {
   groundPaidRow,
   KNOX_PAID_FLAG,
@@ -202,6 +203,8 @@ describe("Knox paid extraction (pass 3)", () => {
     expect(query).toContain("'owner:' || adt.institution_id::text");
     expect(query).toContain("owner.strategy = 'verify.document_owner'");
     expect(query).toContain("WHERE latest.outcome = 'evidence_mismatch'");
+    // No paid read of an article, blog, learning or advice page (#1774).
+    expect(query).toContain(`AND NOT ${articleLinkSql("adt.source_url")}`);
     expect(params).toEqual(expect.arrayContaining([KNOX_RULES_STRATEGY.strategy, KNOX_RULES_STRATEGY.version, KNOX_PAID_STRATEGY.strategy, "TX"]));
   });
 

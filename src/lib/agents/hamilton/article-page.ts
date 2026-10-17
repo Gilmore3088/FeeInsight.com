@@ -3,6 +3,7 @@ import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { articleLinkSql, isArticleLink } from "@/lib/agents/magellan/link-coverage";
 
 type SqlTag = typeof sql;
 
@@ -11,9 +12,8 @@ type SqlTag = typeof sql;
  * non-network ATM fee of $4.73 came from a blog post quoting a national average
  * (/articles/personal-finance/common-checking-account-fees-to-avoid; its schedule says $2.50),
  * and Ally's $35 overdraft from a /stories/ page ("Overdraft fees typically cost about").
- * A page whose address has an article segment (articles, blog, stories, news) and does not
- * name a schedule (MTC Federal CU's real schedule is /articles/schedule-of-fees/) is an
- * article page (`isArticlePage`).
+ * A page whose address has an article segment and does not name a fee document (MTC Federal
+ * CU's real schedule is /articles/schedule-of-fees/) is an article page (`isArticlePage`).
  *
  * Publish never puts an article-page row live (`publishSkipReason`). A live one comes down
  * only on its second look (`second-look.ts`, check `hamilton.article_page`), archived with
@@ -25,24 +25,25 @@ type SqlTag = typeof sql;
  * from the same Space Coast article ($167.40). A /post/ segment counts too (Oct 9): City National
  * Bank of Florida's blog post /post/overdraft-protection-how-to-prevent-fees-... put three
  * overdraft "fees" live (100123-100125), among them the commercial $37.
+ *
+ * One rule, Magellan's (Oct 17, #1774): `isArticleLink` in `magellan/link-coverage.ts`, so the
+ * link Magellan refuses, the row publish refuses, the live fee this check takes down and the text
+ * Knox will not pay to read are the same pages. It adds learning, insights, advice and news-room
+ * folders and dated blog paths ("/2022/01/<slug>/"), and spares any address that names a fee
+ * document or is a PDF. Until then TD Bank's /learning/ article ("$35 each occurrence is
+ * common"), Axos's /insights/ article ("typically around $35") and four other article rows were
+ * live: 7 live fees at 6 institutions on Oct 17 (64718, 65872, 87961, 100835, 62573, 87960,
+ * 139509), each re-checked by hand against the page's stored text.
  */
 export const ARTICLE_PAGE_CHECK = "hamilton.article_page";
 export const ARTICLE_PAGE_REASON = "article_page";
 export const ARTICLE_PAGE_FLAG = "article_page";
 export const ARTICLE_PAGE_ROLLBACK_LIMIT = 200;
-const ARTICLE_SEGMENT = "/(articles?|blogs?|posts?|stories|story|news)/";
-const SCHEDULE_WORDS = "(schedule|disclosure|pricing|rates-fees|rates-and-fees|truth-in-savings)";
 
-/** True for a page address with an article segment that does not name a fee schedule. */
+/** True for a page address with an article segment that does not name a fee document. */
 export function isArticlePage(url: string | null | undefined): boolean {
-  if (!url) return false;
-  const path = url.replace(/^https?:\/\/[^/]+/i, "").toLowerCase();
-  return new RegExp(ARTICLE_SEGMENT, "i").test(path) && !new RegExp(SCHEDULE_WORDS, "i").test(path);
+  return isArticleLink(url);
 }
-
-const ARTICLE_DOC_SQL = (column: string) =>
-  `(regexp_replace(${column}, '^https?://[^/]+', '') ~* '${ARTICLE_SEGMENT}'
-    AND regexp_replace(${column}, '^https?://[^/]+', '') !~* '${SCHEDULE_WORDS}')`;
 
 interface ArticleFeeRow {
   fee_published_id: number | string;
@@ -99,7 +100,7 @@ export async function retireArticlePageFees(
          JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
          JOIN source_documents sd ON sd.id = fr.source_document_id
         WHERE fp.rolled_back_at IS NULL
-          AND ${ARTICLE_DOC_SQL("sd.document_url")}
+          AND ${articleLinkSql("sd.document_url")}
           ${options.institutionId ? "AND fp.institution_id = $1" : ""}
         ORDER BY fp.fee_published_id`,
       options.institutionId ? [options.institutionId] : [],

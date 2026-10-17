@@ -456,6 +456,16 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
     reason: "duplicate of #81957 (#1753)", issue: 1753, kind: "duplicate",
     requiresLive: { feePublishedId: 81957, amount: 5, feeName: "International ATM Transaction" },
     evidence: "Regions (doc 23188, text 20258): the $5.00 \"Withdrawal\" sits under \"International ATM:\" (\"International ATM: | ... Withdrawal ... $5.00 (Applies to all withdrawal requests, approved or declined)\"), not under \"Regions ATM:\"; the same $5 international ATM fee is live as card_foreign_txn 81957. Regions' non-network withdrawal is $3 (81982)." },
+  // #1774 (read-only, Oct 17): TD Bank's paper statement fee read as a monthly maintenance fee, on
+  // both TD records. Each comes down only while TD's paper statement fee stays live.
+  { feePublishedId: 64716, institutionId: 12, canonicalFeeKey: "monthly_maintenance", amount: 3, feeName: "Monthly fee",
+    reason: "source_mismatch: #1774", issue: 1774, kind: "wrong_category",
+    requiresLive: { feePublishedId: 64717, amount: 3, feeName: "Paper statements" },
+    evidence: "TD Bank checking page (doc 19132): \"Paper statements | $3 monthly fee | Free for customers aged 60+, otherwise $3 monthly fee | $1 monthly fee\"; the paper statement fee, live as 64717. TD's monthly maintenance fees are $4.95, $15 and $25." },
+  { feePublishedId: 65870, institutionId: 65, canonicalFeeKey: "monthly_maintenance", amount: 3, feeName: "Monthly fee",
+    reason: "source_mismatch: #1774", issue: 1774, kind: "wrong_category",
+    requiresLive: { feePublishedId: 65871, amount: 3, feeName: "Paper statements" },
+    evidence: "TD Bank checking page (doc 19485, the same page as doc 19132): \"Paper statements | $3 monthly fee\"; the paper statement fee, live as 65871." },
   // #1765 (read-only, Oct 17): Navy Federal's Visa gift card inactivity fee, filed as a dormant
   // account. Its name says only "Inactivity Fee", so the card-product rule cannot read it; it comes
   // down with the other 61 only once James turns `CARD_PRODUCT_TAKEDOWN_LIVE` on.
