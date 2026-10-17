@@ -59,7 +59,7 @@ async function getRevenueContext(institutionId: number): Promise<RevenueContext 
   return buildRevenueContext(trend, ranking);
 }
 
-export const getRevenueContextCached = cachedPublicRead("report-revenue-context", getRevenueContext);
+export const getRevenueContextCached = cachedPublicRead("report-revenue-context-v2", getRevenueContext);
 
 /** "2026-Q2" -> "Q2 2026". */
 export function quarterLabel(quarter: string): string {

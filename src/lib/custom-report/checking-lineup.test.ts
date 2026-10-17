@@ -4,6 +4,7 @@ vi.mock("@/lib/data-store/connection", () => ({ getSql: vi.fn(), sql: vi.fn() })
 
 import type { LineupAccount } from "@/lib/data-store/account-lineup";
 import {
+  MIN_LINEUP_PEERS_FOR_MEDIAN,
   NOT_STATED,
   buildCheckingLineup,
   isConsumerCheckingAccount,
@@ -98,13 +99,23 @@ describe("buildCheckingLineup", () => {
 
   it("shows unknown figures as not stated, never as zero", () => {
     const measures = Object.fromEntries(lineupMeasures(view).map((m) => [m.label, m]));
-    expect(measures["Lowest monthly fee"]).toMatchObject({ yours: "$12", market: "$0" });
-    expect(measures["Median balance to avoid the fee"]).toMatchObject({ yours: "$1,500", market: "$500" });
-    expect(measures["Offers a no-fee checking account"]).toMatchObject({ yours: "No", market: "50% of competitors" });
+    expect(measures["Lowest monthly fee"]).toMatchObject({ yours: "$12", market: "$0 · 2 competitors reporting" });
+    // One competitor states a balance: below the floor, so no market median is shown.
+    expect(measures["Median balance to avoid the fee"]).toMatchObject({ yours: "$1,500", market: "Too few to compare · 1 competitor reporting" });
+    expect(measures["No-fee checking account found in the schedules reviewed"]).toMatchObject({ yours: "None found", market: "1 of 2 competitors" });
     const none = buildCheckingLineup(5, peers, accounts);
     const noneMeasures = Object.fromEntries(lineupMeasures(none).map((m) => [m.label, m]));
     expect(noneMeasures["Lowest monthly fee"].yours).toBe(NOT_STATED);
-    expect(noneMeasures["Offers a no-fee checking account"].yours).toBe(NOT_STATED);
+    expect(noneMeasures["No-fee checking account found in the schedules reviewed"].yours).toBe(NOT_STATED);
+  });
+});
+
+describe("market medians", () => {
+  it("shows a balance median with its count once enough competitors state one", () => {
+    const many = Array.from({ length: MIN_LINEUP_PEERS_FOR_MEDIAN }, (_, i) => ({ institutionId: 100 + i, name: `Peer ${i}` }));
+    const manyAccounts = many.map((p, i) => account({ institutionId: p.institutionId, productName: "Basic Checking", minBalanceToAvoid: 1000 + i * 100 }));
+    const measures = Object.fromEntries(lineupMeasures(buildCheckingLineup(1, many, manyAccounts)).map((m) => [m.label, m]));
+    expect(measures["Median balance to avoid the fee"].market).toBe(`$1,350 · ${MIN_LINEUP_PEERS_FOR_MEDIAN} competitors reporting`);
   });
 });
 

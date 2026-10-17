@@ -10,7 +10,8 @@ import {
   lineupCoverageLine,
   lineupMeasures,
   lineupMoney,
-  lineupShare,
+  MIN_LINEUP_PEERS_FOR_MEDIAN,
+  noFeeAccountText,
   type CheckingLineupView,
 } from "@/lib/custom-report/checking-lineup";
 import { HubSection } from "@/app/(public)/research/district/[id]/district-hub";
@@ -29,16 +30,14 @@ function Muted({ children }: { children: string }) {
  * many local competitors offer a no-fee one. When the market has no lineups on file it says so.
  */
 export function lineupFinding(name: string, lineup: CheckingLineupView): string {
-  const { subject, peers, peersWithLineup } = lineup;
+  const { subject, peersWithLineup } = lineup;
   const own =
     subject.accounts === 0
       ? `${name}'s published schedule shows no verified checking account monthly fee yet`
       : `${name} lists ${subject.accounts.toLocaleString("en-US")} checking ${subject.accounts === 1 ? "account" : "accounts"} with a monthly fee line`;
   if (peersWithLineup === 0) return `${own}, and no local competitor has a checking lineup on file yet.`;
-  const free = lineupShare(peers.shareWithFreeAccount);
-  return free === NOT_STATED
-    ? `${own}; ${peersWithLineup.toLocaleString("en-US")} local competitors have a lineup on file.`
-    : `${own}; ${free} of the ${peersWithLineup.toLocaleString("en-US")} local competitors with a lineup on file offer a no-fee checking account.`;
+  const free = lineup.peersWithFreeAccount;
+  return `${own}; in the schedules reviewed, ${free.toLocaleString("en-US")} of the ${peersWithLineup.toLocaleString("en-US")} local competitors with a checking lineup on file ${free === 1 ? "lists" : "list"} a no-fee checking account.`;
 }
 
 export function CheckingLineupSection({ name, lineup, live }: { name: string; lineup: CheckingLineupView; live?: boolean }) {
@@ -55,7 +54,9 @@ export function CheckingLineupSection({ name, lineup, live }: { name: string; li
           {PRODUCT_NAME} by {SITE_NAME}: every consumer checking account with a monthly fee line on each institution&apos;s
           own published schedule. {lineupCoverageLine(lineup)}
           {live ? " These figures are live as of today." : ""} &ldquo;{NOT_STATED[0].toUpperCase() + NOT_STATED.slice(1)}&rdquo;
-          means the schedule on file does not state the figure; it is not a zero. Many schedules do not name each account or
+          means the schedule on file does not state the figure; it is not a zero. &ldquo;None found&rdquo; means no no-fee
+          checking account appears in the schedules reviewed; an institution may offer accounts its schedule does not list.
+          A competitor median needs at least {MIN_LINEUP_PEERS_FOR_MEDIAN} competitors stating the figure. Many schedules do not name each account or
           say how its fee is avoided, so medians rest only on the accounts that do.
           {lineup.leftOut > 0
             ? ` ${lineup.leftOut.toLocaleString("en-US")} monthly fee ${lineup.leftOut === 1 ? "line" : "lines"} in this market for savings, money market, certificate, IRA or business accounts ${lineup.leftOut === 1 ? "is" : "are"} left out.`
@@ -144,7 +145,7 @@ export function CheckingLineupSection({ name, lineup, live }: { name: string; li
                 <th className="hidden sm:table-cell print:table-cell py-2 pr-3 text-right font-semibold">Accounts</th>
                 <th className="py-2 pr-3 text-right font-semibold">Lowest fee</th>
                 <th className="py-2 pr-3 text-right font-semibold">Median fee</th>
-                <th className="hidden sm:table-cell print:table-cell py-2 pr-3 text-right font-semibold">No-fee account</th>
+                <th className="hidden sm:table-cell print:table-cell py-2 pr-3 text-right font-semibold">No-fee account found</th>
                 <th className="hidden sm:table-cell print:table-cell py-2 text-right font-semibold">Median balance to avoid</th>
               </tr>
             </thead>
@@ -159,7 +160,7 @@ export function CheckingLineupSection({ name, lineup, live }: { name: string; li
                   <td className="hidden sm:table-cell print:table-cell py-2 pr-3 text-right tabular-nums">{peer.summary.accounts}</td>
                   <td className="py-2 pr-3 text-right tabular-nums">{lineupMoney(peer.summary.lowestMonthlyFee)}</td>
                   <td className="py-2 pr-3 text-right tabular-nums">{lineupMoney(peer.summary.medianMonthlyFee)}</td>
-                  <td className="hidden sm:table-cell print:table-cell py-2 pr-3 text-right">{peer.summary.shareWithFreeAccount === 1 ? "Yes" : "No"}</td>
+                  <td className="hidden sm:table-cell print:table-cell py-2 pr-3 text-right"><Muted>{noFeeAccountText(peer.summary)}</Muted></td>
                   <td className="hidden sm:table-cell print:table-cell py-2 text-right tabular-nums"><Muted>{lineupMoney(peer.summary.medianMinBalanceToAvoid)}</Muted></td>
                 </tr>
               ))}

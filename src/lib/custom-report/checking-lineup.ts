@@ -49,6 +49,10 @@ export interface CheckingLineupView {
   peersWithBalance: number;
   /** Of those, how many state another way to avoid the fee on any account. */
   peersWithWaiver: number;
+  /** Of those, how many list an account with no monthly fee. */
+  peersWithFreeAccount: number;
+  /** Competitors' fee-charging checking accounts: the base of the way-to-avoid share. */
+  peerChargingAccounts: number;
   /** One row per competitor with a lineup, in the order the caller gave (largest first). */
   peerRows: (LineupPeer & { summary: LineupSummary })[];
   /** Monthly fee rows left out as savings, money market, certificate, IRA or business. */
@@ -82,6 +86,8 @@ export function buildCheckingLineup(subjectId: number, peers: LineupPeer[], acco
     peersWithLineup: byPeer.size,
     peersWithBalance: peerAccounts.filter((list) => list.some((a) => a.minBalanceToAvoid !== null)).length,
     peersWithWaiver: peerAccounts.filter((list) => list.some((a) => a.waiverText !== null)).length,
+    peersWithFreeAccount: peerAccounts.filter((list) => list.some((a) => a.monthlyFee === 0)).length,
+    peerChargingAccounts: peerAccounts.flat().filter((a) => a.monthlyFee > 0).length,
     peerRows,
     leftOut: marketAccounts.length - checking.length,
     anyDerived: checking.some(
@@ -114,25 +120,55 @@ export function lineupCoverageLine(view: CheckingLineupView): string {
   return `${base} (${plural(peers.accounts, "account", "accounts")}). Of those competitors, ${states(view.peersWithBalance)} a balance that avoids the fee and ${states(view.peersWithWaiver)} another way to avoid it.`;
 }
 
-/** The measures shown side by side, subject then market. Values are display strings. */
+/**
+ * Fewest competitors that must state a figure before the market column shows a median of it:
+ * the same floor the report's fee lines use, so a figure from two schedules never reads as a
+ * market benchmark.
+ */
+export const MIN_LINEUP_PEERS_FOR_MEDIAN = 8;
+
+/** "Yes", or "None found": a missing no-fee account may only be missing from the schedules reviewed. */
+export function noFeeAccountText(summary: Pick<LineupSummary, "accounts" | "shareWithFreeAccount">): string {
+  if (summary.accounts === 0) return NOT_STATED;
+  return summary.shareWithFreeAccount !== null && summary.shareWithFreeAccount > 0 ? "Yes" : "None found";
+}
+
+const reporting = (n: number) => `${plural(n, "competitor", "competitors")} reporting`;
+
+/** A competitor median beside how many competitors it rests on; withheld below the floor. */
+function marketMedian(value: number | null, peersStating: number): string {
+  if (peersStating === 0 || value === null) return NOT_STATED;
+  if (peersStating < MIN_LINEUP_PEERS_FOR_MEDIAN) return `Too few to compare · ${reporting(peersStating)}`;
+  return `${lineupMoney(value)} · ${reporting(peersStating)}`;
+}
+
+/** The measures shown side by side, subject then market. Values are display strings, each market figure with its count. */
 export function lineupMeasures(view: CheckingLineupView): { label: string; yours: string; market: string }[] {
-  const { subject, peers } = view;
-  const noPeers = view.peersWithLineup === 0;
+  const { subject, peers, peersWithLineup } = view;
+  const noPeers = peersWithLineup === 0;
   const market = (value: string) => (noPeers ? NOT_STATED : value);
   return [
-    { label: "Checking accounts with a monthly fee line", yours: subject.accounts.toLocaleString("en-US"), market: market(peers.accounts.toLocaleString("en-US")) },
-    { label: "Lowest monthly fee", yours: lineupMoney(subject.lowestMonthlyFee), market: market(lineupMoney(peers.lowestMonthlyFee)) },
-    { label: "Median monthly fee", yours: lineupMoney(subject.medianMonthlyFee), market: market(lineupMoney(peers.medianMonthlyFee)) },
     {
-      label: "Offers a no-fee checking account",
-      yours: subject.accounts === 0 ? NOT_STATED : subject.shareWithFreeAccount === 1 ? "Yes" : "No",
-      market: market(`${lineupShare(peers.shareWithFreeAccount)} of competitors`),
+      label: "Checking accounts with a monthly fee line",
+      yours: subject.accounts.toLocaleString("en-US"),
+      market: market(`${peers.accounts.toLocaleString("en-US")} at ${plural(peersWithLineup, "competitor", "competitors")}`),
     },
-    { label: "Median balance to avoid the fee", yours: lineupMoney(subject.medianMinBalanceToAvoid), market: market(lineupMoney(peers.medianMinBalanceToAvoid)) },
+    { label: "Lowest monthly fee", yours: lineupMoney(subject.lowestMonthlyFee), market: market(`${lineupMoney(peers.lowestMonthlyFee)} · ${reporting(peersWithLineup)}`) },
+    { label: "Median monthly fee", yours: lineupMoney(subject.medianMonthlyFee), market: market(marketMedian(peers.medianMonthlyFee, peersWithLineup)) },
+    {
+      label: "No-fee checking account found in the schedules reviewed",
+      yours: noFeeAccountText(subject),
+      market: market(`${view.peersWithFreeAccount.toLocaleString("en-US")} of ${plural(peersWithLineup, "competitor", "competitors")}`),
+    },
+    { label: "Median balance to avoid the fee", yours: lineupMoney(subject.medianMinBalanceToAvoid), market: market(marketMedian(peers.medianMinBalanceToAvoid, view.peersWithBalance)) },
     {
       label: "Fee-charging accounts that say how to avoid the fee",
       yours: lineupShare(subject.shareWithWayToAvoid),
-      market: market(lineupShare(peers.shareWithWayToAvoid)),
+      market: market(
+        view.peerChargingAccounts === 0
+          ? NOT_STATED
+          : `${lineupShare(peers.shareWithWayToAvoid)} of ${plural(view.peerChargingAccounts, "account", "accounts")}`,
+      ),
     },
   ];
 }
