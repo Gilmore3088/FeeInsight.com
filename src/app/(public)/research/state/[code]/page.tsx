@@ -27,7 +27,6 @@ import {
   computeStateFindings,
   nationalBandTakeaway,
 } from "@/lib/research-report/state-findings";
-import { LockedRows } from "../../../fees/[category]/exhibits";
 import { CharterField, type CharterFee } from "../../district/[id]/district-charter";
 import {
   CpiChart,
@@ -87,9 +86,6 @@ function yearEarlier(quarter: string): string {
   const [year, q] = quarter.split("-");
   return `${Number(year) - 1}-${q}`;
 }
-
-/** Locked fees named for free visitors before the rest are counted. */
-const LOCKED_SHOWN = 5;
 
 const EMPTY_INDEXES: StateFeeIndexes = {
   all: [],
@@ -229,6 +225,8 @@ export default async function StateReportPage({ params }: PageProps) {
   const cuTrend = incomeTrend(revenue, "creditUnions");
   const sizes = hub ? sizeGroups(hub, stateCode) : null;
   const sized = sizes ? [...sizes.banks, ...sizes.creditUnions].some((g) => g.institutions > 0) : false;
+  // Institutions with no assets on file sit outside the size charts; the source note counts them.
+  const unsized = hub ? hub.institutions.filter((i) => !i.size_group).reduce((sum, i) => sum + i.institutions, 0) : 0;
   const branches = hub?.branches ?? null;
   const bankBranches = branches?.by_state.find((b) => b.state_code === stateCode)?.branches ?? null;
   const cuBranches = branches?.cu_by_state.find((b) => b.state_code === stateCode)?.branches ?? null;
@@ -259,7 +257,7 @@ export default async function StateReportPage({ params }: PageProps) {
           },
         ]
       : []),
-    ...(againstUs.length >= 3 ? [{ value: `${insideBand} of ${againstUs.length}`, label: "fee medians within the national middle range" }] : []),
+    ...(againstUs.length >= 3 ? [{ value: `${insideBand} of ${againstUs.length}`, label: "medians fall within the national middle 50%" }] : []),
   ];
   // The opening takeaway is the state's sharpest specific gap; the band count sits beside it as context.
   const statement = openingFinding(againstUs, STATE_FINDING_MIN_INSTITUTIONS) ?? takeaway;
@@ -325,7 +323,7 @@ export default async function StateReportPage({ params }: PageProps) {
                 Banks versus credit unions
               </h2>
               <p className="mt-3 text-[15px] leading-relaxed text-ink-soft">
-                {charterTitle}, among institutions headquartered in {stateName}. Each tile is one fee; pick one to see both medians.
+                {charterTitle}, among institutions headquartered in {stateName}.
               </p>
             </div>
             <CharterField fees={charter} place={stateName} />
@@ -353,6 +351,7 @@ export default async function StateReportPage({ params }: PageProps) {
             source={
               <>
                 Institutions headquartered in {stateName}, tracked by {SITE_NAME}. Total assets from FDIC and NCUA data, grouped the way each regulator reports them: the FDIC asset-size groups for banks and the NCUA groups for credit unions.
+                {unsized > 0 && ` The size charts leave out ${count(unsized)} ${unsized === 1 ? "institution" : "institutions"} with no assets on file.`}
                 {branches &&
                   ` Bank deposits from the FDIC Summary of Deposits, ${branches.sod_year}, for branches in ${stateName}; credit union branches from NCUA. Leading banks count banks with ${MIN_LEADER_BRANCHES} or more branches in the state.`}
               </>
@@ -479,22 +478,17 @@ export default async function StateReportPage({ params }: PageProps) {
                   <BoardRows fees={charted} ariaLabel={`${stateName} median for each fee`} limit={5} />
                 </div>
                 {locked.length > 0 && (
-                  <div className="mt-4 border-t border-border pt-1">
-                    <LockedRows rows={locked.slice(0, LOCKED_SHOWN).map((f) => ({ key: f.key, label: f.name, institutions: f.institutions }))} />
-                    {locked.length > LOCKED_SHOWN && (
-                      <p className="border-t border-border py-2 text-[12px] text-ink-muted">
-                        Plus {locked.length - LOCKED_SHOWN} more {stateName} fees.{" "}
-                        <TrackLink
-                          event="upgrade_click"
-                          eventProps={{ placement: "state_locked_rows", state: stateCode }}
-                          href={PRO_PLANS_NAV.href}
-                          className="font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
-                        >
-                          See them in Hamilton
-                        </TrackLink>
-                      </p>
-                    )}
-                  </div>
+                  <p className="mt-4 border-t border-border pt-3 text-[13px] text-ink-soft">
+                    <TrackLink
+                      event="upgrade_click"
+                      eventProps={{ placement: "state_locked_rows", state: stateCode }}
+                      href={PRO_PLANS_NAV.href}
+                      className="inline-flex min-h-11 items-center font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+                    >
+                      Explore {locked.length} additional {stateName} fee {locked.length === 1 ? "category" : "categories"} in Hamilton
+                    </TrackLink>
+                    .
+                  </p>
                 )}
               </div>
               <SourceNote label="Method">
