@@ -168,6 +168,7 @@ describe("takeDownUntraceableFees", () => {
       if (query.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
       if (query.includes("FROM pipeline_feedback") && query.includes("dedupe_key = ANY")) return Promise.resolve(flags);
       if (query.includes("MAX(fp.fee_published_id)")) return Promise.resolve([{ institution_id: 42, max_fee_id: 9 }]);
+      if (query.includes("SET source_document_id = link.source_document_id")) return Promise.resolve([{ fee_raw_id: 202 }]);
       if (query.includes("FROM agent_source_texts")) return Promise.resolve(storedTexts.map((text) => ({ ...text, institution_id: 42 })));
       if (query.includes("JOIN raw_fee_observations")) return Promise.resolve(rows);
       return Promise.resolve([]);
@@ -187,6 +188,8 @@ describe("takeDownUntraceableFees", () => {
     expect(result.takedowns.map((row) => row.feePublishedId)).toEqual([1]);
     expect(calls.some((query) => query.includes("UPDATE raw_fee_observations"))).toBe(true);
     expect(calls.some((query) => query.includes("UPDATE published_fee_records"))).toBe(true);
+    // #1347: the relinked fee takes its new document's link at every tier, in the same write.
+    expect(calls.some((query) => query.includes("SET source_url = target.url"))).toBe(true);
     expect(calls.some((query) => query.includes("review_status = 'rejected'"))).toBe(true);
     expect(calls.some((query) => query.includes("INSERT INTO pipeline_attempts"))).toBe(true);
     expect(calls.some((query) => query.includes("'hamilton.source_check'"))).toBe(true);

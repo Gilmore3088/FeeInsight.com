@@ -156,11 +156,15 @@ It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model c
   document counted beside it), and each category's share of live institutions against its median
   over the previous `SHARE_BASELINE_CHECKS` (7) checks.
 - Link mismatch (#1347), counted, not graded: live fees whose link opens another page than their
-  stored document's URL. Two links to one page are not a mismatch: scheme, "www.", case, a
-  trailing slash, a fragment and print or tracking parameters ("?print=1", "&output=amp",
-  "utm_*") are set aside (`documentLinkKey`, Postgres twin `documentLinkKeySql`) and counted apart
-  as `url_variants`. On Oct 17 (read-only): 3,507 live links differed from their document's URL as
-  written, 1,421 of them only in how the same page is written, 2,086 a real mismatch.
+  stored document's URL. Two links to one page are not a mismatch: scheme, "www.", case, a default
+  port (":443"), "%20" for a space, a trailing slash, a fragment and print or tracking parameters
+  ("?print=1", "&output=amp", "utm_*") are set aside (`documentLinkKey` in `src/lib/document-link-key.ts`,
+  Postgres twin `documentLinkKeySql`) and counted apart as `url_variants`. A link to the page the
+  document's stored text was read from (`agent_source_texts.source_url`: a schedule PDF the landing
+  page links to, or a redirect's target) is the fee's real source, counted apart as `read_page`. On
+  Oct 17 (read-only, #1744's reading: 3,507 differed as written, 2,086 a real mismatch), a later
+  read found 3,511 written differently; with the port and "%20" rule, 2,009 are URL variants, 1,453 read pages and 49 a real mismatch (all 49 imported
+  fees whose raw row was moved to another document; Hamilton's link drift pass re-points them).
 - Thresholds are the skills' own (PASS / WARN / FAIL): duplicates 1% / 3%, no category 3% / 8%,
   stale 15% / 30%; no source link takes the duplicate thresholds (the skills give none). A
   category share is out of line below 70% (`COLLAPSE_KEEPS_BELOW`) or above 150% of normal, for

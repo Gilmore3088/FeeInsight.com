@@ -2,6 +2,9 @@ import { sql } from "@/lib/data-store/connection";
 import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import { BENCHMARK_SHOW_FROM, COLLAPSE_KEEPS_BELOW } from "@/lib/agents/deming/benchmark-health";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { documentLinkKeySql } from "@/lib/document-link-key";
+
+export { documentLinkKey, documentLinkKeySql } from "@/lib/document-link-key";
 
 /**
  * Deming's daily data-quality checks (#1065): the SQL checks the `data-quality-audit` and
@@ -20,9 +23,12 @@ import { inSavepoint } from "@/lib/agents/savepoint";
  *   no source      live fees with no source link; no stored document is counted beside it
  *   link mismatch  live fees whose link opens a different page from their stored document's URL
  *                  (#1347), counted, not graded. Two links to one page are not a mismatch: the
- *                  scheme, "www.", case, a trailing slash, a fragment and print or tracking
- *                  parameters ("?print=1", "utm_*") are set aside (`documentLinkKey`); those are
- *                  counted apart as URL variants
+ *                  scheme, "www.", case, a default port (":443"), a space written "%20", a
+ *                  trailing slash, a fragment and print or tracking parameters ("?print=1",
+ *                  "utm_*") are set aside (`documentLinkKey`); those are counted apart as URL
+ *                  variants. A link to the page the document's stored text was read from (a
+ *                  schedule PDF linked from the stored landing page, or a redirect's target) is
+ *                  the fee's real source, not a mismatch; it is counted apart as `read_page`
  *   category share each category's share of live institutions against its median over the
  *                  previous checks: an alarm when it falls below 70% of that or rises above 150%
  *
@@ -83,6 +89,8 @@ export interface CatalogCounts {
   linkMismatch: number;
   /** #1347: the link differs from the document's URL only in how the same page is written. */
   linkUrlVariant: number;
+  /** #1347: the link is the page the document's stored text was read from, not the document's own URL. */
+  linkReadPage: number;
   linkMismatchSample: number[];
   samples: Record<GradedCheck, number[]>;
   /** Institutions with a live fee per category. */
@@ -122,6 +130,7 @@ export interface CatalogQuality {
   noDocument: number;
   linkMismatch: number;
   linkUrlVariant: number;
+  linkReadPage: number;
   linkMismatchSample: number[];
   samples: Record<GradedCheck, number[]>;
   categoryShare: CategoryShareResult;
@@ -220,6 +229,7 @@ export function catalogQuality(catalog: Catalog, counts: CatalogCounts, history:
     noDocument: counts.noDocument,
     linkMismatch: counts.linkMismatch,
     linkUrlVariant: counts.linkUrlVariant,
+    linkReadPage: counts.linkReadPage,
     linkMismatchSample: counts.linkMismatchSample,
     samples: counts.samples,
     categoryShare: categoryShares(counts, history),
@@ -245,38 +255,6 @@ export function alarms(catalogs: CatalogQuality[]): { failing: string[]; warning
 }
 
 /**
- * Query parameters that change how a page is shown or tracked, never which page it is
- * ("?print=1", "&output=amp", "utm_source"). On Oct 17 (read-only) every one of the 1,233 live
- * links that differed from their document's URL only in the query differed in these.
- */
-const PRESENTATION_PARAM = String.raw`print|output|utm_[a-z_]+|gclid|fbclid|mc_[a-z_]+`;
-
-/**
- * #1347: a link's key for "the same page": lower case, no scheme, no "www.", no fragment, no
- * presentation parameters and no trailing slash. Two links with one key open the same page.
- * `documentLinkKeySql` is its Postgres twin, the one the check runs.
- */
-export function documentLinkKey(url: string | null | undefined): string | null {
-  const raw = url?.trim();
-  if (!raw) return null;
-  return raw
-    .toLowerCase()
-    .replace(/#.*$/, "")
-    .replace(/^https?:\/\/(?:www\.)?/, "")
-    .replace(new RegExp(String.raw`([?&])(?:${PRESENTATION_PARAM})=[^&]*`, "g"), "$1")
-    .replace(/\?&+/g, "?")
-    .replace(/&{2,}/g, "&")
-    .replace(/[?&]+$|\/+(?=\?|$)/g, "");
-}
-
-/** Postgres twin of `documentLinkKey` for the SQL expression `column`. */
-export function documentLinkKeySql(column: string): string {
-  return `regexp_replace(regexp_replace(regexp_replace(regexp_replace(regexp_replace(regexp_replace(
-            lower(${column}), '#.*$', ''), '^https?://(www\\.)?', ''), '([?&])(${PRESENTATION_PARAM})=[^&]*', '\\1', 'g'),
-            '\\?&+', '?', 'g'), '&{2,}', '&', 'g'), '[?&]+$|/+(?=[?]|$)', '', 'g')`;
-}
-
-/**
  * The check's one read per catalog. `catalog` is one of the two view names, never user input;
  * `amountColumn` is `amount` for dollar fees and `rate_percent` for rate fees.
  * $1 the stale age in days, $2 the taxonomy keys, $3 the sample size. Exported for the SQL test.
@@ -288,6 +266,8 @@ export function dataQualitySql(catalog: "published_fee_catalog" | "published_fee
         SELECT c.fee_published_id, c.institution_id, NULLIF(btrim(c.fee_category), '') AS category, c.${amountColumn} AS value,
                NULLIF(btrim(c.source_url), '') AS source_url, c.source_document_id,
                NULLIF(btrim(sd.document_url), '') AS document_url,
+               -- #1347: the page the document's stored text was read from (one text per document).
+               NULLIF(btrim(ast.source_url), '') AS read_url,
                COALESCE(sd.last_checked_at, sd.crawled_at, c.created_at) AS evidence_at,
                row_number() OVER (
                  PARTITION BY c.institution_id, NULLIF(btrim(c.fee_category), ''), c.${amountColumn}
@@ -295,6 +275,11 @@ export function dataQualitySql(catalog: "published_fee_catalog" | "published_fee
                ) AS copy
           FROM ${catalog} c
           LEFT JOIN source_documents sd ON sd.id = c.source_document_id
+          LEFT JOIN agent_source_texts ast ON ast.source_document_id = c.source_document_id
+      ), keyed AS (
+        SELECT live.*, ${documentLinkKeySql("source_url")} AS link_key, ${documentLinkKeySql("document_url")} AS document_key,
+               ${documentLinkKeySql("read_url")} AS read_key
+          FROM live
       ), flags AS (
         SELECT fee_published_id, institution_id, category, source_document_id,
                (copy > 1 AND category IS NOT NULL AND value IS NOT NULL) AS duplicate,
@@ -302,12 +287,15 @@ export function dataQualitySql(catalog: "published_fee_catalog" | "published_fee
                (category IS NULL) AS no_category,
                (category IS NOT NULL AND NOT (category = ANY($2::text[]))) AS off_taxonomy,
                (source_url IS NULL) AS no_source,
-               -- #1347: the link and the document's URL, each as the page they open.
-               (source_url IS NOT NULL AND document_url IS NOT NULL
-                 AND ${documentLinkKeySql("source_url")} <> ${documentLinkKeySql("document_url")}) AS link_mismatch,
+               -- #1347: the link and the document's URL, each as the page they open. A link to the
+               -- page the document's text was read from is the fee's real source (read_page).
+               (source_url IS NOT NULL AND document_url IS NOT NULL AND link_key <> document_key
+                 AND read_key IS DISTINCT FROM link_key) AS link_mismatch,
                (source_url IS NOT NULL AND document_url IS NOT NULL AND source_url <> document_url
-                 AND ${documentLinkKeySql("source_url")} = ${documentLinkKeySql("document_url")}) AS link_url_variant
-          FROM live
+                 AND link_key = document_key) AS link_url_variant,
+               (source_url IS NOT NULL AND document_url IS NOT NULL AND link_key <> document_key
+                 AND read_key = link_key) AS link_read_page
+          FROM keyed
       )
       SELECT COUNT(*)::int AS live_fees,
              COUNT(DISTINCT institution_id)::int AS institutions,
@@ -319,6 +307,7 @@ export function dataQualitySql(catalog: "published_fee_catalog" | "published_fee
              (COUNT(*) FILTER (WHERE source_document_id IS NULL))::int AS no_document,
              (COUNT(*) FILTER (WHERE link_mismatch))::int AS link_mismatch,
              (COUNT(*) FILTER (WHERE link_url_variant))::int AS link_url_variant,
+             (COUNT(*) FILTER (WHERE link_read_page))::int AS link_read_page,
              (array_agg(fee_published_id ORDER BY fee_published_id) FILTER (WHERE link_mismatch))[1:$3] AS link_mismatch_sample,
              (array_agg(fee_published_id ORDER BY fee_published_id) FILTER (WHERE duplicate))[1:$3] AS duplicates_sample,
              (array_agg(fee_published_id ORDER BY fee_published_id) FILTER (WHERE stale))[1:$3] AS stale_sample,
@@ -349,6 +338,7 @@ function countsFrom(row: CountsRow | undefined): CatalogCounts {
     noDocument: num("no_document"),
     linkMismatch: num("link_mismatch"),
     linkUrlVariant: num("link_url_variant"),
+    linkReadPage: num("link_read_page"),
     linkMismatchSample: sample("link_mismatch_sample"),
     samples: {
       duplicates: sample("duplicates_sample"),
@@ -449,7 +439,7 @@ function catalogDetail(quality: CatalogQuality) {
     checks: quality.checks,
     off_taxonomy: quality.offTaxonomy,
     no_document: quality.noDocument,
-    link_mismatch: { count: quality.linkMismatch, url_variants: quality.linkUrlVariant, sample: quality.linkMismatchSample },
+    link_mismatch: { count: quality.linkMismatch, url_variants: quality.linkUrlVariant, read_page: quality.linkReadPage, sample: quality.linkMismatchSample },
     samples: quality.samples,
     category_share: {
       query: quality.categoryShare.query,
