@@ -148,14 +148,31 @@ describe("hand amount corrections (#1334)", () => {
     expect(planHandAmountCorrections([{ ...first, fee_published_id: 1 }]).corrected).toEqual([]);
   });
 
-  it("rejects the unpublished copies (four cut-cents, three #1360 plans) only while each reads as labelled", () => {
+  it("rejects the unpublished copies (four cut-cents, three #1360 plans, seven #1827/#1828 misreads) only while each reads as labelled", () => {
     const rows = HAND_REJECTED_TWINS.map((twin) => ({
       fee_verified_id: twin.feeVerifiedId, canonical_fee_key: twin.canonicalFeeKey, fee_name: twin.feeName,
       amount: twin.amount.toFixed(2), review_status: "verified", source_document_id: twin.sourceDocumentId, live_published: false,
     }));
-    expect(planTwinRejections(rows).rejectedTwins).toEqual([113133, 112658, 157467, 125738, 66392, 167844, 102462]);
+    expect(planTwinRejections(rows).rejectedTwins).toEqual([113133, 112658, 157467, 125738, 66392, 167844, 102462, 188270, 188271, 188272, 188273, 188274, 188724, 188725]);
     expect(planTwinRejections([{ ...rows[0], live_published: true }, ...rows.slice(1)]).skippedTwins).toEqual([{ feeVerifiedId: 113133, reason: "published" }]);
     expect(planTwinRejections([{ ...rows[0], amount: "29.95" }, ...rows.slice(1)]).skippedTwins).toEqual([{ feeVerifiedId: 113133, reason: "changed since labelling" }]);
+  });
+
+  it("#1832: the seven unpublished copies of the misreads #1834 took down are rejected, and nothing live changes", () => {
+    const misreads = HAND_REJECTED_TWINS.filter((twin) => twin.issue === 1827 || twin.issue === 1828);
+    expect(misreads.map((twin) => [twin.feeVerifiedId, twin.ofFeePublishedId, twin.sourceDocumentId])).toEqual([
+      [188270, 152366, 32251], [188271, 152366, 23805], [188272, 152366, 23805], [188273, 152366, 20905], [188274, 152366, 20905],
+      [188724, 152591, 13272], [188725, 152591, 21634],
+    ]);
+    const rows = misreads.map((twin) => ({
+      fee_verified_id: twin.feeVerifiedId, canonical_fee_key: twin.canonicalFeeKey, fee_name: twin.feeName,
+      amount: twin.amount.toFixed(2), review_status: "verified", source_document_id: twin.sourceDocumentId, live_published: false,
+    }));
+    const plan = planTwinRejections(rows);
+    expect(plan.rejectedTwins.filter((id) => misreads.some((twin) => twin.feeVerifiedId === id))).toHaveLength(7);
+    // A copy that has gone live, or was rejected already, is left alone: the path never touches a live fee.
+    expect(planTwinRejections([{ ...rows[0], live_published: true }]).skippedTwins).toContainEqual({ feeVerifiedId: 188270, reason: "published" });
+    expect(planTwinRejections([{ ...rows[5], review_status: "rejected" }]).skippedTwins).toContainEqual({ feeVerifiedId: 188724, reason: "already rejected" });
   });
 
   it("writes the published and verified rows, the rollback evidence and one run event", async () => {
@@ -175,7 +192,7 @@ describe("hand amount corrections (#1334)", () => {
     });
     const result = await applyHandAmountCorrections(db as never, { runId: 7, dryRun: false });
     expect(result.corrected).toHaveLength(15);
-    expect(result.rejectedTwins).toEqual([113133, 112658, 157467, 125738, 66392, 167844, 102462]);
+    expect(result.rejectedTwins).toEqual([113133, 112658, 157467, 125738, 66392, 167844, 102462, 188270, 188271, 188272, 188273, 188274, 188724, 188725]);
     const verifiedUpdates = calls.filter((call) => call.text.includes("UPDATE verified_fee_observations") && call.text.includes("SET amount"));
     expect(verifiedUpdates).toHaveLength(15);
     // Each update lands only while the row still holds the cut amount.
@@ -186,10 +203,12 @@ describe("hand amount corrections (#1334)", () => {
     expect(written.find((row) => row.dedupe_key === `${HAND_AMOUNT_CHECK}:pub:5600`)?.evidence).toMatchObject({
       old_amount: 0, new_amount: 35, old_name: "Overdraft Item Fee", new_name: "Overdraft or Returned-Item Fee", pattern: "wrong_read", issue: 1655,
     });
-    expect(written.filter((row) => row.dedupe_key.startsWith(`${HAND_AMOUNT_CHECK}:twin:`))).toHaveLength(7);
+    expect(written.filter((row) => row.dedupe_key.startsWith(`${HAND_AMOUNT_CHECK}:twin:`))).toHaveLength(14);
     // Each copy carries its own pattern: one UPDATE per flag.
     const flags = calls.filter((call) => call.text.includes("SET review_status = 'rejected'")).map((call) => call.values[0]);
-    expect(flags).toEqual(["hand_rejected:cut_cents_twin", "hand_rejected:optional_overdraft_plan_twin"]);
+    expect(flags).toEqual(["hand_rejected:cut_cents_twin", "hand_rejected:optional_overdraft_plan_twin", "hand_rejected:next_line_price_twin", "hand_rejected:heading_join_twin"]);
+    expect(written.find((row) => row.dedupe_key === `${HAND_AMOUNT_CHECK}:twin:188270`)?.evidence).toMatchObject({ issue: 1827, flag: "hand_rejected:next_line_price_twin" });
+    expect(written.find((row) => row.dedupe_key === `${HAND_AMOUNT_CHECK}:twin:188724`)?.evidence).toMatchObject({ issue: 1828, flag: "hand_rejected:heading_join_twin" });
     expect(written.find((row) => row.dedupe_key === `${HAND_AMOUNT_CHECK}:twin:66392`)?.evidence).toMatchObject({ issue: 1360, flag: "hand_rejected:optional_overdraft_plan_twin" });
     expect(calls.filter((call) => call.text.includes("INSERT INTO agent_run_events"))).toHaveLength(1);
   });
