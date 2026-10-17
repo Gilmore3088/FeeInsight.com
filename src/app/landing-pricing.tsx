@@ -1,30 +1,42 @@
-import { Check } from "lucide-react";
 import { DEMO_REQUEST_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
 import { TrackLink } from "@/components/track-link";
 import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import { PRO_TIERS, tierAmountLabel } from "@/lib/pro-tiers";
-import { HOME_WRAP, SANS } from "./landing-shared";
+import { HOME_WRAP, SERIF } from "./landing-shared";
+
+const MONTH_WORDS = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
 
 /**
- * Pricing (James's example, Oct 17): "Hamilton, for your institution." Three tiers by assets,
- * every price from PRO_TIERS, then the plan button and the demo link.
+ * How pricing works, read from PRO_TIERS and the seat limit: when every tier's annual price is
+ * the same whole number of monthly payments, the line says how many; otherwise it says only
+ * "Monthly or annual." and names no figure.
+ */
+export function pricingLine(
+  tiers: readonly { monthlyUsd: number; annualUsd: number }[] = PRO_TIERS,
+  seats: number = WORKSPACE_SEAT_LIMIT,
+): string {
+  const who = `Priced by your institution's total assets, for up to ${seats} people.`;
+  const months = new Set(tiers.map((t) => t.annualUsd / t.monthlyUsd));
+  const [n] = [...months];
+  if (tiers.length > 0 && months.size === 1 && Number.isInteger(n) && MONTH_WORDS[n]) {
+    return `${who} Annual billing is ${MONTH_WORDS[n]} monthly payments.`;
+  }
+  return `${who} Monthly or annual.`;
+}
+
+/**
+ * Pricing (James's example, Oct 17; heading by growth): "One plan for your whole pricing team." Three tiers by assets,
+ * every price from PRO_TIERS (the subhead carries the seat count), then the plan button and the demo link.
+ * No standalone report offer here or anywhere on the homepage (James, Oct 17).
  */
 export function LandingPricing() {
   return (
     <section id="plans" aria-labelledby="pricing-title" className="scroll-mt-20 bg-paper py-10 sm:py-14">
       <div className={HOME_WRAP}>
-        <p className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-brick">
-          <span aria-hidden="true" className="h-0.5 w-9 bg-brick" />
-          Pricing
-        </p>
-        <h2 id="pricing-title" className="mt-4 text-[32px] !font-semibold leading-[1.08] tracking-[-0.035em] text-ink sm:text-[46px]" style={SANS}>
-          Hamilton, for your institution.
+        <h2 id="pricing-title" className="text-[35px] !font-medium leading-[1.06] tracking-[-0.025em] text-ink sm:text-[50px]" style={SERIF}>
+          One plan for your whole pricing team.
         </h2>
-        <p className="mt-3 text-[15px] text-ink-soft sm:text-[16px]">Institution-specific analysis, competitor monitoring and shareable reports.</p>
-        <p className="mt-2 flex items-center gap-2 text-[13px] text-ink-muted">
-          <Check aria-hidden="true" className="size-3.5 text-brick" />
-          One institution. Up to {WORKSPACE_SEAT_LIMIT} users.
-        </p>
+        <p className="mt-3 text-[15px] text-ink-soft sm:text-[16px]">{pricingLine()}</p>
         <ul className="mt-6 grid grid-cols-3 gap-2 sm:gap-3.5">
           {PRO_TIERS.map((tier) => (
             <li key={tier.key} className="rounded-[6px] border border-border bg-surface-0 px-2 py-4 text-center sm:px-4 sm:py-6" data-plan={tier.key}>
@@ -52,7 +64,7 @@ export function LandingPricing() {
             href={DEMO_REQUEST_NAV.href}
             className="text-[14px] font-medium text-brick underline decoration-brick/40 underline-offset-4 hover:decoration-brick"
           >
-            Talk to us
+            Ask for a demo
           </TrackLink>
         </div>
       </div>
