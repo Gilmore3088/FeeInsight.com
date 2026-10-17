@@ -11,15 +11,10 @@ Stop payment: $22 to $30, median $27.50
 
 Deposited item returned: $9 to $25, median $15
 
-Place your fee on the range: https://feeinsight.com/fees/deposited_item_return
-
-National median, middle half, and banks against credit unions. Free, no login.
-
-James Gilmore, Fee Insight
+Middle half (25th to 75th percentile) with the median marked. Bank Fee Index, national, October 17, 2026. One value per institution, from its own published fee schedule. Institutions behind each fee: Overdraft (paid item) 2,500, NSF (returned item) 2,668, Stop payment 3,193, Deposited item returned 1,821.
 
 The chart is in the full email: {$url}
 
 --
-Fee Insight LLC, 522 W Riverside Ave, Ste N, Spokane, WA 99201
 You're getting this because you signed up at feeinsight.com.
 Unsubscribe: {$unsubscribe}

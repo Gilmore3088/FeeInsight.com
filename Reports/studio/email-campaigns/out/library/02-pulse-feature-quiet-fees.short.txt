@@ -11,7 +11,8 @@ Everyone benchmarks overdraft. Few institutions benchmark the fees a customer pa
 
 4. Cashier's check. Often priced once years ago and never revisited. See the market (https://feeinsight.com/fees/cashiers_check).
 
+James Gilmore, Fee Insight
+
 --
-Fee Insight LLC, 522 W Riverside Ave, Ste N, Spokane, WA 99201
 You're getting this because you signed up at feeinsight.com.
 Unsubscribe: {$unsubscribe}
