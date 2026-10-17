@@ -160,6 +160,7 @@ import {
   isLaneRoomRun,
   LANE_ROOM_MAX_IDLE_MS,
   waitedOutMaxSteps,
+  timedSweep,
   createStepTurns,
   executeQueuedAgentRuns,
   PARALLEL_STATE_LANES,
@@ -1175,6 +1176,44 @@ describe("agentic run store", () => {
     await expect(
       executeAgentRun(101, { maxSteps: 5, deadlineAt: Date.now() - 1 }),
     ).resolves.toMatchObject({ executedSteps: 1 });
+  });
+
+  it("times each publish sweep under its key and returns its result unchanged (sweep_ms)", async () => {
+    const times: Record<string, number> = {};
+    await expect(timedSweep(times, "taxonomyFold", async () => ({ moved: 3 }))).resolves.toEqual({ moved: 3 });
+    await expect(timedSweep(times, "categoryGuard", async () => { throw new Error("boom"); })).rejects.toThrow("boom");
+    expect(Object.keys(times).sort()).toEqual(["categoryGuard", "taxonomyFold"]);
+    expect(Object.values(times).every((ms) => Number.isFinite(ms) && ms >= 0)).toBe(true);
+  });
+
+  it("a waited-out Read-now run given every step stops at the deadline: it runs what fits, then defers the next (#1846 review)", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    getPipelineControlMock.mockResolvedValue({ enabled: true, reason: null });
+    const briefStep = [{ ...queuedStepRows[0], step_key: "daily-brief", agent_name: "atlas", title: "Daily brief" }];
+    const readNowRun = { ...runRow, progress_total: 3, params_json: { source: "atlas.priority_institution" } };
+    const runSteps = [...briefStep, { ...briefStep[0], id: 9002, step_key: "publish", sequence: 2 }, { ...briefStep[0], id: 9003, step_key: "publish", sequence: 3 }];
+    installSqlMocks({ finalRun: readNowRun, finalSteps: runSteps });
+    installTxMocks(runSteps, readNowRun);
+    // The run's queue: the brief runs as the tick's first step; then its publish (55 s at Read-now
+    // prices) does not fit the 50 s left, nor would a third step.
+    const queue = ["daily-brief", "publish", "publish"];
+    let peeks = 0;
+    const base = sqlMock.getMockImplementation()!;
+    sqlMock.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("SELECT step_key") && text.includes("LIMIT 1")) {
+        const key = queue[Math.min(peeks, queue.length - 1)];
+        peeks += 1;
+        return Promise.resolve([{ step_key: key }]);
+      }
+      return base(strings, ...values);
+    });
+
+    const result = await executeAgentRun(101, { maxSteps: waitedOutMaxSteps("atlas.priority_institution", 10), deadlineAt: Date.now() + 50_000 });
+    expect(result.executedSteps).toBe(1);
+    const deferred = sqlMock.mock.calls.filter(([strings]) => templateText(strings as TemplateStringsArray).includes("'step.deferred'"));
+    expect(deferred).toHaveLength(1);
+    expect(JSON.parse(String(deferred[0][3]))).toMatchObject({ step_key: "publish", expected_ms: 55_000 });
   });
 
   it("starts no step in a later run of the tick when that step cannot finish by the deadline", async () => {

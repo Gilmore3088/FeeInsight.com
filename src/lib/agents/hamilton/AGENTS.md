@@ -343,7 +343,7 @@ after the step began, once it has decided `PUBLISH_MIN_ROWS_PER_STEP` (50) rows.
 not reach get no attempt and publish on the next step. The cross-state top-up read is
 skipped only when the step is already `PUBLISH_TOP_UP_DEADLINE_MS` (160 s) in; the sweeps before
 the rows take 96-129 s, so a skip tied to the row deadline cut NC's and WI's publishes to their
-own few rows (Oct 17). The step detail records `publish_time_box` and `phase_ms`
+own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (each sweep's milliseconds, keyed by its result) and `phase_ms`
 (`sweeps_before`, `publish_rows`, `sweeps_after`).
 
 1. Outlier restore (`restoreOutliersNowInRange`, `outlier-rollback.ts`): brings back an
