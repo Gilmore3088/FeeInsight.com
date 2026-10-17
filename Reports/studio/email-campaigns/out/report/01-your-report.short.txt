@@ -1,7 +1,7 @@
 Here is {$report_name|default('your fee report')}
 =================================================
 
-Thanks for confirming. The report is live, so the link always shows the current numbers as new fee schedules are verified.
+Thanks for confirming. The report is live, so the link always shows the current numbers as new fee schedules are read.
 
 Open your report: {$report_url|default('https://feeinsight.com/reports')}
 

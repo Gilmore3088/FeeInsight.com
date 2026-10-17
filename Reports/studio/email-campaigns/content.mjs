@@ -137,7 +137,7 @@ const report = {
       blocks: [
         { type: "kicker", text: "Your report · 1 of 3" },
         { type: "h1", text: `Here is ${FIELD.reportName}` },
-        { type: "p", text: "Thanks for confirming. The report is live, so the link always shows the current numbers as new fee schedules are verified." },
+        { type: "p", text: "Thanks for confirming. The report is live, so the link always shows the current numbers as new fee schedules are read." },
         { type: "cta", text: "Open your report", href: FIELD.reportUrl, sub: "Free, no login. Bookmark it." },
         { type: "list", ordered: true, items: [
           "**Key findings** sit at the top, each with how many institutions stand behind it.",
