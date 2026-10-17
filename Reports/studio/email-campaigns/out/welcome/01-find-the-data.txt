@@ -12,7 +12,7 @@ Thanks for subscribing. The fee benchmarks come from institutions' published sch
 - One institution: its fee table, the schedule it came from, and the date we read it. Search institutions (https://feeinsight.com/institutions?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=find-the-data).
 - One fee across the country: the national median and middle 50%, with banks and credit unions compared. Browse fees (https://feeinsight.com/fees?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=find-the-data).
 
-What's free: every fee's own page, with its national median and middle 50%, and the national index table for the headline fees, including overdraft, NSF and out-of-network ATM. The rest of the index table and breakdowns by asset size come with a Hamilton Pro plan.
+What's free: every fee's own page, with its national median and middle 50%, and the national index table for the headline fees, including overdraft, NSF and out-of-network ATM. The rest of the index table and breakdowns by asset size come with a Hamilton plan.
 
 Explore the free fee benchmarks: https://feeinsight.com/research?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=find-the-data
 No login needed.

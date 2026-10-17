@@ -13,5 +13,5 @@ James Gilmore, Fee Insight
 
 --
 Fee Insight LLC, 522 W Riverside Ave, Ste N, Spokane, WA 99201
-You're getting this because your team subscribes to Fee Insight Pro.
+You're getting this because your team subscribes to Hamilton.
 Unsubscribe: {$unsubscribe}

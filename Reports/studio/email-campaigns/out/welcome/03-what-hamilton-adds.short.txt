@@ -1,7 +1,7 @@
 Your fees against the institutions you name
 ===========================================
 
-The free reports show the market. Hamilton, the Fee Insight Pro workspace, shows where your institution sits in it, against the peers you choose.
+The free reports show the market. Hamilton, the Fee Insight workspace, shows where your institution sits in it, against the peers you choose.
 
 - Your schedule, fee by fee, next to your peers' median and middle 50%.
 

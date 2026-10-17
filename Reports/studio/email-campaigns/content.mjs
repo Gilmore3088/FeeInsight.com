@@ -4,7 +4,7 @@
 //   welcome  - free research subscribers only (3 emails)
 //   report   - free report requesters: their exact report, a finding from it, then their institution
 //   explorer - people following one institution or state: that page, then the monthly snapshot
-//   pro      - paying Hamilton Pro customers: setup, not fee lessons
+//   pro      - paying Hamilton customers: setup, not fee lessons
 //   pulse    - the monthly broadcast: one finding, one visual, one action
 //   library  - earlier material kept for later use (topic email, Pulse feature, guide, kit); never in a sequence
 // Automations run for months after they are written, so they carry NO figures: numbers live on
@@ -66,7 +66,7 @@ const welcome = {
           `**One institution:** its fee table, the schedule it came from, and the date we read it. [Search institutions](${S}/institutions).`,
           `**One fee across the country:** the national median and middle 50%, with banks and credit unions compared. [Browse fees](${S}/fees).`,
         ] },
-        { type: "p", text: "What's free: every fee's own page, with its national median and middle 50%, and the national index table for the headline fees, including overdraft, NSF and out-of-network ATM. The rest of the index table and breakdowns by asset size come with a Hamilton Pro plan." },
+        { type: "p", text: "What's free: every fee's own page, with its national median and middle 50%, and the national index table for the headline fees, including overdraft, NSF and out-of-network ATM. The rest of the index table and breakdowns by asset size come with a Hamilton plan." },
         { type: "cta", text: "Explore the free fee benchmarks", href: `${S}/research`, sub: "No login needed." },
         { type: "sign" },
       ],
@@ -86,7 +86,7 @@ const welcome = {
           "Check how many institutions stand behind the number. If only a few do, treat it as a lead to check against their schedules.",
           "Write your own price next to it: below, inside or above the middle 50%.",
         ] },
-        { type: "p", text: "This gives your committee a starting point. Hamilton Pro takes the next step: the named institutions that sit next to you, fee by fee." },
+        { type: "p", text: "This gives your committee a starting point. Hamilton takes the next step: the named institutions that sit next to you, fee by fee." },
         { type: "cta", text: "Find your state's numbers", href: `${S}/research` },
         { type: "sign" },
       ],
@@ -95,11 +95,11 @@ const welcome = {
       key: "what-hamilton-adds",
       day: 7,
       subject: "Your fees against the institutions you name",
-      preheader: "What Hamilton Pro adds to the free reports.",
+      preheader: "What Hamilton adds to the free reports.",
       blocks: [
         { type: "kicker", text: "Welcome · 3 of 3" },
         { type: "h1", text: "Your fees against the institutions you name" },
-        { type: "p", text: "The free reports show the market. Hamilton, the Fee Insight Pro workspace, shows where your institution sits in it, against the peers you choose." },
+        { type: "p", text: "The free reports show the market. Hamilton, the Fee Insight workspace, shows where your institution sits in it, against the peers you choose." },
         { type: "list", items: [
           "**Your schedule, fee by fee,** next to your peers' median and middle 50%.",
           "**Peers you pick** by charter, asset size, district or county, instead of an anonymous average.",
@@ -217,14 +217,14 @@ const explorer = {
 };
 
 // ---------------------------------------------------------------------------
-// 4. Pro onboarding: paying Hamilton Pro customers
+// 4. Pro onboarding: paying Hamilton customers
 // ---------------------------------------------------------------------------
 // Setup steps in the order a new customer needs them. No fee lessons and no upgrade prompts.
 const pro = {
   key: "pro",
   name: "Pro onboarding: set up Hamilton",
-  masthead: "Hamilton · Fee Insight Pro",
-  footerReason: "You're getting this because your team subscribes to Fee Insight Pro.",
+  masthead: "Hamilton",
+  footerReason: "You're getting this because your team subscribes to Hamilton.",
   trigger:
     "Joins group 'Fee Insight · Pro customers' when a Pro subscription turns active (Stripe webhook). Starts the day after the account's welcome email. Joining removes them from Newsletter, Report requests and Watchers, which ends those sequences.",
   emails: [
