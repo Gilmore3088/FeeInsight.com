@@ -19,6 +19,7 @@ import { SourceNote } from "../research/district/[id]/district-hub";
 import { InstitutionSearchBar } from "./search-bar";
 import { StateDirectoryMap } from "./state-directory-map";
 import { StatePicker } from "./directory-filters";
+import { StateList } from "./state-list";
 import {
   DirectoryPagination,
   InstitutionMobileCards,
@@ -61,7 +62,7 @@ export async function generateMetadata({ searchParams }: PageProps): Promise<Met
   const params = await searchParams;
   const stateCode = normalizeStateCode(params.state);
   const stateName = stateCode ? STATE_NAMES[stateCode] : "";
-  const title = stateName ? `${stateName} Banks and Credit Unions: Published Fees` : "Find a Bank or Credit Union's Fees";
+  const title = stateName ? `${stateName} Banks and Credit Unions: Published Fees` : "Bank and Credit Union Fees by Institution";
   const description = stateName
     ? `Every ${stateName} bank and credit union the ${PRODUCT_NAME} monitors, with the fees each one publishes, from its own schedule.`
     : DESCRIPTION;
@@ -188,7 +189,9 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
     ? `/submit-fees?${new URLSearchParams({ institutionName: query }).toString()}`
     : "/submit-fees";
 
-  const resultsTitle = hasQuery ? "Search results" : `All ${charterNoun(charter)}`;
+  const resultsTitle = hasQuery ? "Search results" : "Institutions";
+  // A state-only view: the lede already gives the state's count and its published share.
+  const stateOnly = hasState && !hasQuery;
   const matchLine = `${COUNT.format(results.total)} ${results.total === 1 ? "institution" : "institutions"}${
     hasQuery ? ` ${results.total === 1 ? "matches" : "match"} \u201c${query}\u201d` : ""
   }${hasQuery && hasState ? ` in ${stateName}` : ""}.`;
@@ -208,7 +211,38 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
             : `${COUNT.format(results.published)} ${results.published === 1 ? "has" : "have"} published fees and ${
                 results.published === 1 ? "is" : "are"
               } listed first.`;
-  const resultsFinding = [matchLine, publishedLine].filter(Boolean).join(" ");
+  const focusLine =
+    focus && focus.median !== null ? `The national median ${focus.label.toLowerCase()} fee is ${formatAmount(focus.median)}.` : "";
+  const resultsFinding = (stateOnly ? [focusLine] : [matchLine, publishedLine, focusLine]).filter(Boolean).join(" ");
+
+  const resultsSource = (
+    <SourceNote label="Source">
+      Fees from each institution&apos;s own published schedule in the {PRODUCT_NAME}; institutions from FDIC and NCUA records,
+      counted by headquarters state. {stats.freshnessLabel}.
+    </SourceNote>
+  );
+  // The method sits under the first source line on the page, after the section it explains.
+  const method = (
+  <details className="group mt-4 text-center sm:text-left">
+    <summary className="mx-auto inline-flex sm:mx-0 min-h-11 cursor-pointer list-none items-center gap-2 text-[14px] font-medium text-ink [&::-webkit-details-marker]:hidden">
+      <span aria-hidden="true" className="text-ink-muted group-open:rotate-90 transition-transform">
+        &#8250;
+      </span>
+      How coverage is counted
+    </summary>
+    <div className="mx-auto mt-2 max-w-3xl space-y-2 text-[13px] leading-relaxed text-ink-muted sm:mx-0">
+      <p className="sm:mx-0 sm:text-left">
+        An institution has published fees when at least one fee from its own current schedule has passed review and is live in
+        the {PRODUCT_NAME}. Institutions monitored are every bank and credit union in the index, from FDIC and NCUA records.
+      </p>
+      <p className="sm:mx-0 sm:text-left">
+        The coverage label on each result counts how many of the {HEADLINE_FEE_KEYS.length} headline fees are published for
+        that institution: {HEADLINE_FEE_KEYS.map((key) => plainLabel(key).toLowerCase()).join(", ")}. Under review means fees
+        were found and are still being checked; None yet means no fee from the institution is live.
+      </p>
+    </div>
+  </details>
+  );
 
   return (
     <div className="min-h-screen bg-paper text-ink">
@@ -220,37 +254,23 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
         ]}
       />
       <div className="mx-auto max-w-page px-4 pb-14 pt-7 sm:px-6 sm:pb-20 sm:pt-10">
-        {focus && (
-          <div className="fi-reveal mb-6 rounded-xl border border-brick/20 bg-surface-0 px-5 py-4">
-            <p className="text-[15px] font-semibold text-ink">Comparing {focus.label.toLowerCase()} fees</p>
-            <p className="mt-1 text-[14px] leading-relaxed text-ink-soft sm:mx-0 sm:max-w-none sm:text-left">
-              Each institution below shows its published {focus.label.toLowerCase()} fee beside the national median
-              {focus.median !== null && (
-                <>
-                  {" "}
-                  of <span className="font-semibold tabular-nums text-ink">{formatAmount(focus.median)}</span>
-                </>
-              )}
-              .{" "}
-              <Link href={`/fees/${focus.category}`} className={LINK}>
-                See the full {focus.label.toLowerCase()} analysis
-              </Link>
-            </p>
-          </div>
-        )}
-
         {/* `relative z-20` keeps the search suggestions above the sections that follow; see .fi-reveal. */}
         <section aria-labelledby="directory-heading" className="fi-reveal relative z-20">
           <div className={PAGE_HEADER}>
             <h1 id="directory-heading" className={PAGE_H1}>
-              {hasState ? `${stateName} ${charterNoun(charter)}` : "Find a bank or credit union\u2019s fees"}
+              {hasState ? `${stateName} ${charterNoun(charter)}` : "Bank and credit union fees by institution"}
             </h1>
             {headline && <p className={`mt-3 ${PAGE_LEDE}`}>{headline}</p>}
+            {focus && !shouldShowResults && (
+              <p className={`mt-2 ${PAGE_LEDE}`}>
+                Results show each institution&apos;s published {focus.label.toLowerCase()} fee beside the national median
+                {focus.median !== null && ` of ${formatAmount(focus.median)}`}.
+              </p>
+            )}
           </div>
 
           <div className="mt-6 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_220px] lg:items-center">
             <InstitutionSearchBar
-              autoFocus={!hasQuery && !hasState}
               initialQuery={query}
               ariaLabel="Search by bank or credit union name"
               placeholder="Bank or credit union name"
@@ -278,13 +298,6 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
             </nav>
             <StatePicker query={keep.q} stateCode={stateCode} charter={charter} fee={focusCategory} />
           </div>
-
-          <div className="mt-4">
-            <SourceNote label="Source">
-              Fees from each institution&apos;s own published schedule in the {PRODUCT_NAME}; institutions from FDIC and NCUA
-              records, counted by headquarters state. {stats.freshnessLabel}.
-            </SourceNote>
-          </div>
         </section>
 
         {shouldShowResults && (
@@ -292,13 +305,28 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
             <h2 id="results-heading" className={`${H2} text-center sm:text-left`}>
               {resultsTitle}
             </h2>
-            <p className={`${FINDING} text-center`}>{resultsFinding}</p>
+            {(resultsFinding || focus) && (
+              <p className={`${FINDING} text-center`}>
+                {resultsFinding}
+                {focus && (
+                  <>
+                    {" "}
+                    <Link href={`/fees/${focus.category}`} className={LINK}>
+                      See the full {focus.label.toLowerCase()} analysis
+                    </Link>
+                    .
+                  </>
+                )}
+              </p>
+            )}
 
             {results.total > 0 ? (
               <div className="mt-5">
                 <InstitutionMobileCards rows={results.rows} coverage={coverage} focus={focus} />
                 <InstitutionResultsTable rows={results.rows} coverage={coverage} focus={focus} />
                 <DirectoryPagination page={page} totalPages={totalPages} buildHref={buildPageHref} />
+                <div className="mt-6">{resultsSource}</div>
+                {method}
               </div>
             ) : (
               <div className="mt-5 rounded-xl border border-dashed border-border px-5 py-8 text-center">
@@ -332,32 +360,36 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
             </h2>
             {byState && <p className={`${FINDING} text-center`}>{byState}</p>}
 
-            <div className="mt-6 grid gap-10 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:items-start">
-              <div className="hidden lg:block">
+            <figure className="mt-6 min-w-0">
+              <figcaption className="text-[13px] font-semibold text-ink">
+                {charter
+                  ? `Share of ${charterNoun(charter)} with published fees, by state`
+                  : "Share of institutions with published fees, by state"}
+              </figcaption>
+              <div className="mx-auto mt-3 hidden max-w-[860px] lg:block">
                 <StateDirectoryMap rows={rows} bands={bands} hrefFor={stateHref} />
               </div>
-              <div className="min-w-0">
-                <p className="text-[13px] font-semibold text-ink">
-                  {charter ? `${charterNoun(charter).replace(/^./, (c) => c.toUpperCase())} with published fees, by state` : "Institutions with published fees, by state"}
-                </p>
-                <StateList rows={rows.slice(0, STATE_ROWS_SHOWN)} hrefFor={stateHref} />
-                {rows.length > STATE_ROWS_SHOWN && (
-                  <details className="group">
-                    <summary className="mt-1 inline-flex min-h-11 cursor-pointer list-none items-center text-[14px] font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink [&::-webkit-details-marker]:hidden">
-                      <span className="group-open:hidden">Show all {rows.length}</span>
-                      <span className="hidden group-open:inline">Show fewer</span>
-                    </summary>
-                    <StateList rows={rows.slice(STATE_ROWS_SHOWN)} hrefFor={stateHref} />
-                  </details>
-                )}
+              <div className="mt-3 lg:mt-6">
+                <StateList
+                  rows={rows.map((r) => ({
+                    code: r.code,
+                    name: r.name,
+                    href: stateHref(r.code),
+                    published: COUNT.format(r.published),
+                    monitored: COUNT.format(r.monitored),
+                    share: percentLabel(r.share),
+                  }))}
+                  shown={STATE_ROWS_SHOWN}
+                />
               </div>
-            </div>
+            </figure>
             <div className="mt-6">
               <SourceNote label="Source">
-                Institutions monitored in the {PRODUCT_NAME}, counted by headquarters state, against those with at least one fee
-                published from their own schedule. {stats.freshnessLabel}.
+                Institutions monitored in the {PRODUCT_NAME}, from FDIC and NCUA records and counted by headquarters state, against
+                those with at least one fee published from their own schedule. {stats.freshnessLabel}.
               </SourceNote>
             </div>
+            {!(shouldShowResults && results.total > 0) && method}
           </section>
         )}
 
@@ -365,7 +397,7 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
         <section aria-labelledby="teams-heading" className="mt-12 rounded-2xl border border-border bg-surface-0 p-5 sm:mt-16 sm:flex sm:items-center sm:justify-between sm:gap-8 sm:p-7">
           <div className="min-w-0 text-center sm:text-left">
             <h2 id="teams-heading" className="text-[18px] font-semibold text-ink sm:text-[20px]">
-              Work at a bank or credit union?
+              For bank and credit union teams
             </h2>
             <p className="mt-1 text-[14px] leading-relaxed text-ink-soft sm:mx-0 sm:max-w-2xl sm:text-left">
               The Competitive Fee Position Report sets one institution&apos;s fees beside its market, with the source for each figure.
@@ -391,48 +423,7 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
           </div>
         </section>
 
-        <details className="group mt-8 border-t border-border pt-4">
-          <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-2 text-[14px] font-medium text-ink [&::-webkit-details-marker]:hidden">
-            <span aria-hidden="true" className="text-ink-muted group-open:rotate-90 transition-transform">
-              &#8250;
-            </span>
-            How coverage is counted
-          </summary>
-          <div className="mt-2 max-w-3xl space-y-2 text-[13px] leading-relaxed text-ink-muted">
-            <p className="sm:mx-0 sm:text-left">
-              An institution has published fees when at least one fee from its own current schedule has passed review and is live in
-              the {PRODUCT_NAME}. Institutions monitored are every bank and credit union in the index, from FDIC and NCUA records.
-            </p>
-            <p className="sm:mx-0 sm:text-left">
-              The coverage label on each result counts how many of the {HEADLINE_FEE_KEYS.length} headline fees are published for
-              that institution: {HEADLINE_FEE_KEYS.map((key) => plainLabel(key).toLowerCase()).join(", ")}. Under review means fees
-              were found and are still being checked; no published schedule found means none has been located yet.
-            </p>
-          </div>
-        </details>
       </div>
     </div>
-  );
-}
-
-function StateList({ rows, hrefFor }: { rows: ReturnType<typeof stateRows>; hrefFor: (code: string) => string }) {
-  return (
-    <ul className="divide-y divide-border border-b border-border">
-      {rows.map((row) => (
-        <li key={row.code}>
-          <Link
-            href={hrefFor(row.code)}
-            prefetch={false}
-            className="group flex min-h-11 items-center justify-between gap-3 py-2 text-[14px]"
-          >
-            <span className="min-w-0 font-medium text-ink group-hover:text-brick">{row.name}</span>
-            <span className="shrink-0 text-right tabular-nums text-ink-muted">
-              <span className="font-semibold text-ink">{COUNT.format(row.published)}</span> of {COUNT.format(row.monitored)}
-              <span className="ml-2 inline-block w-11 text-right">{percentLabel(row.share)}</span>
-            </span>
-          </Link>
-        </li>
-      ))}
-    </ul>
   );
 }

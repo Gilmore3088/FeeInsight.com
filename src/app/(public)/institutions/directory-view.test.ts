@@ -81,9 +81,9 @@ describe("states", () => {
     expect(rows.map((r) => r.code)).toEqual(["TX", "GA", "VT"]);
   });
 
-  it("states the leader and how many states have any", () => {
+  it("says how many states have any and the median state share, which the list doesn't show", () => {
     expect(stateFinding(rows)).toBe(
-      "Texas has the most institutions with published fees: 120 of 741. 2 of the 3 states, DC and territories in the index have at least one.",
+      "2 of the 3 states, DC and territories have at least one institution with published fees; the median state share is 16%.",
     );
     expect(stateFinding(stateRows([summary("VT", 0, 27)]))).toBeNull();
   });

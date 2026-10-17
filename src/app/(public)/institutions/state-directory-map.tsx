@@ -34,19 +34,19 @@ export function StateDirectoryMap({
           const fill = SHARE_BANDS[row ? shareBand(row.share) : 0].fill;
           if (!row) {
             return (
-              <path key={state.id} d={state.d} fill={fill} stroke="#fbf9f4" strokeWidth={1.2}>
+              <path key={state.id} d={state.d} style={{ fill, stroke: "var(--fi-surface-0)" }} strokeWidth={1.2}>
                 <title>{label}</title>
               </path>
             );
           }
           return (
-            <Link key={state.id} href={hrefFor(state.id)} prefetch={false} aria-label={label} className="group outline-none">
+            // Out of the tab order: keyboard users reach every state through the list below the map.
+            <Link key={state.id} href={hrefFor(state.id)} prefetch={false} tabIndex={-1} aria-label={label} className="group outline-none">
               <path
                 d={state.d}
-                fill={fill}
-                stroke="#fbf9f4"
+                style={{ fill }}
                 strokeWidth={1.2}
-                className="cursor-pointer transition-[stroke,stroke-width] duration-150 group-hover:stroke-ink group-hover:[stroke-width:2.4] group-focus-visible:stroke-ink group-focus-visible:[stroke-width:4]"
+                className="cursor-pointer [stroke:var(--fi-surface-0)] transition-[stroke,stroke-width] duration-150 group-hover:[stroke:var(--fi-ink)] group-hover:[stroke-width:2.4]"
               >
                 <title>{label}</title>
               </path>

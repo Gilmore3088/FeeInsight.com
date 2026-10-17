@@ -368,7 +368,14 @@ export function institutionSearchPatterns(query: string): { pattern: string; squ
   const squashedTerm = squashName(term);
   const short = squashedTerm.replace(/\s+bank$/, "");
   const alias = SHORT_NAMES[squashedTerm] ?? SHORT_NAMES[short] ?? SHORT_NAMES[short.replace(/&/g, "")];
-  return { pattern: `%${term}%`, squashed: `%${squashedTerm}%`, aliases: alias ? [`${alias}%`] : [] };
+  // A typed % or _ is a literal character, never a wildcard. A query with under two letters or
+  // digits once punctuation is dropped ("&", "..") matches no squashed name rather than every name.
+  const literal = term.replace(/[\\%_]/g, (c) => `\\${c}`);
+  return {
+    pattern: `%${literal}%`,
+    squashed: squashedTerm.replace(/[ &]/g, "").length >= 2 ? `%${squashedTerm}%` : "",
+    aliases: alias ? [`${alias}%`] : [],
+  };
 }
 
 // Matches the typed name, the name with punctuation dropped, or a short name's registry prefix.

@@ -113,11 +113,11 @@ export function coverageFinding(c: Coverage, charter: Charter, stateName?: strin
 
 /** The map's shading bands, lightest first; all from the brick ramp. */
 export const SHARE_BANDS = [
-  { min: 0, label: "None", fill: "#ebe5d9" },
-  { min: Number.MIN_VALUE, label: "Under 25%", fill: "#F0C4B9" },
-  { min: 0.25, label: "25 to 50%", fill: "#E39A86" },
-  { min: 0.5, label: "50 to 75%", fill: "#CF6A51" },
-  { min: 0.75, label: "75% or more", fill: "#b23a32" },
+  { min: 0, label: "None", fill: "var(--fi-surface-200)" },
+  { min: Number.MIN_VALUE, label: "Under 25%", fill: "color-mix(in srgb, var(--fi-brick) 25%, var(--fi-surface-0))" },
+  { min: 0.25, label: "25 to 50%", fill: "color-mix(in srgb, var(--fi-brick) 50%, var(--fi-surface-0))" },
+  { min: 0.5, label: "50 to 75%", fill: "color-mix(in srgb, var(--fi-brick) 75%, var(--fi-surface-0))" },
+  { min: 0.75, label: "75% or more", fill: "var(--fi-brick)" },
 ] as const;
 
 export function shareBand(share: number): number {
@@ -159,21 +159,24 @@ export function stateRows(summaries: InstitutionStateDirectorySummary[]): StateR
     .sort((a, b) => b.published - a.published || b.share - a.share || a.name.localeCompare(b.name));
 }
 
+/** The middle value of a list of numbers; null when empty. */
+function median(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((x, y) => x - y);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
 /**
- * The state section's finding: the state with the most institutions with published fees, and
- * how many states have any. Null when no state has one.
+ * The state section's finding, which the ranked list doesn't show: how many states have any
+ * institution with published fees, and the median state's share. Null when no state has one.
  */
 export function stateFinding(rows: StateRow[]): string | null {
-  const leader = rows[0];
-  if (!leader || leader.published === 0) return null;
   const withAny = rows.filter((r) => r.published > 0).length;
-  const states =
-    withAny === rows.length
-      ? `Each of the ${rows.length} states, DC and territories in the index has at least one.`
-      : `${withAny} of the ${rows.length} states, DC and territories in the index have at least one.`;
-  return `${leader.name} has the most institutions with published fees: ${COUNT.format(leader.published)} of ${COUNT.format(
-    leader.monitored,
-  )}. ${states}`;
+  const mid = median(rows.map((r) => r.share));
+  if (withAny === 0 || mid === null) return null;
+  const count = withAny === rows.length ? `All ${rows.length}` : `${withAny} of the ${rows.length}`;
+  return `${count} states, DC and territories have at least one institution with published fees; the median state share is ${percentLabel(mid)}.`;
 }
 
 /** The one next step for bank staff: the live sample report when it exists, else the request form. */

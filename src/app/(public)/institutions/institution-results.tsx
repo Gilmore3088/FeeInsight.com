@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import type { InstitutionSearchResult } from "@/lib/data-store/search";
 import { formatAmount } from "@/lib/format";
-import { getCharterLabel, getPublicStatusLabel, getSegmentLabel, toTitleCase } from "../institution/[id]/enum-labels";
+import { getCharterLabel, getSegmentLabel, toTitleCase } from "../institution/[id]/enum-labels";
 import { HEADLINE_FEE_KEYS, isInstitutionRich } from "@/lib/data-store/market-readiness";
 import { getHeadlineCoverageLabel } from "../institution/[id]/enum-labels";
 import { hasVerifiedFees } from "./directory-sort";
@@ -10,7 +10,8 @@ import { hasVerifiedFees } from "./directory-sort";
 /** Headline categories published per institution id; null when the count could not be read. */
 export type HeadlineCoverage = Map<number, number> | null;
 
-function statusChip(row: InstitutionSearchResult, coverage: HeadlineCoverage): { label: string; className: string } {
+/** The coverage chip; null for a row with nothing published or under review (its fee count already says "None yet"). */
+function statusChip(row: InstitutionSearchResult, coverage: HeadlineCoverage): { label: string; className: string } | null {
   // Completeness, never "verified": a published fee is not a checked, complete schedule.
   const categories = coverage?.get(row.id);
   if (hasVerifiedFees(row) && categories !== undefined) {
@@ -27,7 +28,7 @@ function statusChip(row: InstitutionSearchResult, coverage: HeadlineCoverage): {
   if (row.provisional_fee_count > 0 || row.fee_publication_status === "under_review") {
     return { label: "Under review", className: "border-dashed border-border bg-surface-0 text-ink-soft" };
   }
-  return { label: getPublicStatusLabel("unavailable"), className: "border-border bg-surface-0 text-ink-muted" };
+  return null;
 }
 
 /**
@@ -48,6 +49,8 @@ export function institutionHref(id: number, focus?: FeeFocus | null): string {
 
 function deltaLabel(amount: number, median: number | null): string | null {
   if (median === null) return null;
+  // Within 1% of the median reads as about the same, as on every other page.
+  if (Math.abs(amount - median) <= Math.abs(median) * 0.01) return "About the same as the median";
   if (amount > median) return `${formatAmount(amount - median)} above median`;
   if (amount < median) return `${formatAmount(median - amount)} below median`;
   return "at the median";
@@ -63,7 +66,7 @@ function FocusAmount({ row, focus, align = "right" }: { row: InstitutionSearchRe
   return (
     <span className={`block tabular-nums ${align === "right" ? "text-right" : ""}`}>
       <span className="font-semibold text-ink">{formatAmount(amount)}</span>
-      {delta && <span className="block text-[10px] text-ink-muted">{delta}</span>}
+      {delta && <span className="block text-[11px] text-ink-muted">{delta}</span>}
     </span>
   );
 }
@@ -82,6 +85,7 @@ function StatusChip({
   small?: boolean;
 }) {
   const chip = statusChip(row, coverage);
+  if (!chip) return null;
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-md border font-medium ${chip.className} ${
@@ -131,7 +135,12 @@ export function InstitutionResultsTable({
               <th className={TH_CLASS}>Institution</th>
               <th className={TH_CLASS}>Location</th>
               <th className={`hidden md:table-cell ${TH_CLASS}`}>Type</th>
-              {focus && <th className={`text-right ${TH_CLASS}`}>{focus.label}</th>}
+              {focus && (
+                <th className={`text-right ${TH_CLASS}`}>
+                  {focus.label}
+                  {focus.median !== null && ` (national median ${formatAmount(focus.median)})`}
+                </th>
+              )}
               <th className={`text-right ${TH_CLASS}`}>Published fees</th>
               <th className={`hidden md:table-cell ${TH_CLASS}`}>Coverage</th>
             </tr>
@@ -198,7 +207,7 @@ export function InstitutionMobileCards({
                 {row.institution_name}
               </p>
               <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-ink-muted">
-                <span>{getCharterLabel(row.charter_type)}</span>
+                <span>{getSegmentLabel(row.asset_size_tier, row.charter_type) ?? getCharterLabel(row.charter_type)}</span>
                 {locationLabel(row) && <span>{locationLabel(row)}</span>}
               </div>
               <div className="mt-2">
@@ -208,7 +217,7 @@ export function InstitutionMobileCards({
             <div className="shrink-0 text-right text-sm">
               {focus ? (
                 <>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-muted">{focus.label}</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-muted">{focus.label}</p>
                   <FocusAmount row={row} focus={focus} />
                 </>
               ) : (

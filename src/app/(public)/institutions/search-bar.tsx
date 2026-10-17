@@ -182,7 +182,7 @@ function InstitutionSearchBarInner({
           autoFocus={autoFocus}
           className={
             isDark
-              ? "w-full rounded-md border border-ink bg-[#1a2c44] pl-10 pr-4 py-3 text-sm text-paper placeholder:text-ink-muted focus:border-transparent focus:outline-none focus:ring-2 focus:ring-brick"
+              ? "w-full rounded-md border border-ink bg-ink pl-10 pr-4 py-3 text-sm text-paper placeholder:text-ink-muted focus:border-transparent focus:outline-none focus:ring-2 focus:ring-brick"
               : "min-h-12 w-full rounded-full border border-control-border bg-surface-0 pl-11 pr-10 py-3 text-base text-ink placeholder:text-ink-muted focus:border-transparent focus:outline-none focus:ring-2 focus:ring-brick"
           }
         />

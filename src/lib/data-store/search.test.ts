@@ -131,3 +131,12 @@ describe("searchInstitutions name match", () => {
     expect(rowParams).toEqual(["%M&T Bank%", "%m&t bank%", ["Manufacturers and Traders Trust%"], "NY", 25, 0]);
   });
 });
+
+describe("institution search patterns treat typed wildcards literally", () => {
+  it("escapes % and _ and needs two letters or digits for the squashed match", () => {
+    expect(institutionSearchPatterns("50%_off").pattern).toBe("%50\\%\\_off%");
+    expect(institutionSearchPatterns("&.").squashed).toBe("");
+    expect(institutionSearchPatterns("%%").pattern).toBe("%\\%\\%%");
+    expect(institutionSearchPatterns("Navy").squashed).toBe("%navy%");
+  });
+});
