@@ -6,7 +6,7 @@ import { REPORT_PRICE_INLINE } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
 import { LandingHero } from "./landing-hero";
 import { LandingProducts } from "./landing-products";
-import { LandingHamilton } from "./landing-hamilton";
+import { LandingHamilton, parseShowcase } from "./landing-hamilton";
 import { LandingPricing } from "./landing-pricing";
 import { LandingFaq, faqItems } from "./landing-faq";
 import { buildHomeData, buildSampleView, homeReadsCacheable } from "./landing-shared";
@@ -192,6 +192,41 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     expect(page).not.toContain("data-workflow-report");
     expect(page).not.toContain("weeks of gathering");
     expect(page).toContain("Full Bank Fee Index access");
+  });
+
+  it("draws the four Hamilton feature cards from the saved answer's own exhibits, or hides them", () => {
+    const exhibit = (kind: string, extra: object) => ({ id: kind, actionTitle: `${kind} headline`, exhibit: { kind, title: kind, sources: [], ...extra } });
+    const row = {
+      saved_on: "2026-10-16",
+      response_json: {
+        identityContext: { researchInstitutionName: "Capital City Bank" },
+        storyline: {
+          exhibits: [
+            exhibit("fee_position", { unit: "dollars", own: 35, ownLabel: "Capital City Bank", band: { label: "Peers", p25: 33, median: 35, p75: 36, n: 9 }, markers: [] }),
+            exhibit("competitor_range", { unit: "dollars", own: 35, ownLabel: "Capital City Bank", items: [{ name: "Truist Bank", amount: 36, url: null }] }),
+            exhibit("structure_matrix", { columns: ["Overdraft fee"], rows: [{ name: "Capital City Bank", own: true, cells: ["$35"] }] }),
+            exhibit("money_at_stake", { rows: [{ label: "Overdraft income", low: 10_147_000, high: 10_147_000, evidenceLevel: "institution" }] }),
+          ],
+        },
+      },
+    };
+    const showcase = parseShowcase(row);
+    expect(showcase?.exhibits.map((e) => e.exhibit.kind)).toEqual(["fee_position", "competitor_range", "structure_matrix", "money_at_stake"]);
+    const html = renderToStaticMarkup(<LandingHamilton showcase={showcase} />);
+    expect(html.match(/<h3[^>]*>/g)).toHaveLength(4);
+    expect(text(html)).toContain("From Hamilton’s answer on Capital City Bank’s overdraft fee, Oct 16, 2026. Sources:");
+    // The exhibits are pictures of the product: hidden from screen readers and out of the tab order.
+    expect(html.match(/aria-hidden="true" inert=""/g)).toHaveLength(4);
+    expect(html.indexOf("data-hamilton-video-placeholder")).toBeLessThan(html.indexOf("data-hamilton-features"));
+    expect(html.indexOf("data-hamilton-features")).toBeLessThan(html.indexOf("data-hamilton-actions"));
+    // A missing exhibit hides all four cards rather than showing three.
+    const three = { response_json: { ...row.response_json, storyline: { exhibits: row.response_json.storyline.exhibits.slice(0, 3) } } };
+    expect(parseShowcase(three)).toBeNull();
+    expect(renderToStaticMarkup(<LandingHamilton showcase={parseShowcase(three)} />)).not.toContain("data-hamilton-features");
+  });
+
+  it("names the paid product Hamilton, never Hamilton Pro", () => {
+    expect(text(wholePage())).not.toMatch(/Hamilton Pro|Pro workspace|What does Pro/);
   });
 
   it("keeps at most five short FAQ answers", () => {

@@ -146,3 +146,17 @@ export async function getSavedAnalysisResponse(userId: number, id: string, insti
   const parsed = typeof raw === "string" ? (JSON.parse(raw) as AnalyzeResponse) : raw;
   return normalizeLegacyAnalyzeConfidence(parsed);
 }
+
+/**
+ * One saved answer's stored JSON, read without a user: the homepage shows Hamilton's own exhibits
+ * from a chosen saved answer. Active rows only; null when the row is gone.
+ */
+export async function getShowcaseAnalysisRow(id: string): Promise<{ response_json: unknown; saved_on: string | null } | null> {
+  const rows = await sql<{ response_json: unknown; saved_on: string | null }[]>`
+    SELECT response_json, to_char(COALESCE(updated_at, created_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS saved_on
+    FROM hamilton_saved_analyses WHERE id::text = ${id} AND status = 'active'
+  `;
+  const raw = rows[0]?.response_json;
+  if (raw == null) return null;
+  return { response_json: typeof raw === "string" ? safeParse(raw) : raw, saved_on: rows[0].saved_on ?? null };
+}

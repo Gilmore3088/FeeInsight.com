@@ -28,11 +28,17 @@ import { getFeeCategoryDetailCached } from "@/lib/data-store/public-cached-reads
 import { shortenPageLife } from "@/lib/data-store/public-read-cache";
 import { LandingHero } from "./landing-hero";
 import { LandingProducts } from "./landing-products";
-import { LandingHamilton } from "./landing-hamilton";
+import { LandingHamilton, parseShowcase, showcaseAnswerId } from "./landing-hamilton";
+import { getShowcaseAnalysisRow } from "@/lib/data-store/hamilton-analyses";
+import { cachedPublicRead } from "@/lib/data-store/public-read-cache";
 import { LandingPricing } from "./landing-pricing";
 import { LandingFaq } from "./landing-faq";
 import { buildHomeData, buildSampleView, homeReadsCacheable } from "./landing-shared";
 import { buildScenario } from "./subscribe/scenario";
+
+// The saved Hamilton answer whose exhibits the Hamilton feature cards show; a stored row, so it
+// shares the public read cache.
+const showcaseRowCached = cachedPublicRead("home-hamilton-showcase", getShowcaseAnalysisRow);
 
 // The promise (James, Oct 16); no counts, so nothing goes stale.
 const HOME_TITLE = `Your next fee review doesn't need to take weeks | ${SITE_NAME}`;
@@ -85,7 +91,8 @@ export default async function LandingPage() {
   // live sample report (the same one /for-institutions and the sample page show) gives the
   // named bank, its competitors and its report for the workflow section; a failed read hides it.
   // The sample is read once: it is null both when none passes the bar today and on error.
-  const [{ summary, categories }, sampleRead, overdraftRead] = await Promise.all([
+  // The saved Hamilton answer is read the same way; a failed read hides the feature cards.
+  const [{ summary, categories }, sampleRead, overdraftRead, showcaseRead] = await Promise.all([
     getPublicSnapshot(),
     loadSampleReport().then(
       (report) => ({ report, failed: false }),
@@ -102,6 +109,17 @@ export default async function LandingPage() {
         return { detail: null, failed: true };
       },
     ),
+    showcaseRowCached(showcaseAnswerId()).then(
+      (row) => {
+        const showcase = parseShowcase(row);
+        if (!showcase) console.warn("[home] Hamilton feature cards hidden: showcase answer missing or incomplete");
+        return { showcase, failed: false };
+      },
+      (error: unknown) => {
+        console.error("[home] Hamilton answer read failed; feature cards hidden", error);
+        return { showcase: null, failed: true };
+      },
+    ),
   ]);
   const liveSample = sampleRead.report;
   const cacheable = homeReadsCacheable({
@@ -109,6 +127,7 @@ export default async function LandingPage() {
     categories,
     sampleFailed: sampleRead.failed,
     overdraftFailed: overdraftRead.failed,
+    showcaseFailed: showcaseRead.failed,
   });
   // A render with a failed read is cached for a minute, not fifteen (see the note at the top).
   if (!cacheable) await shortenPageLife();
@@ -133,7 +152,7 @@ export default async function LandingPage() {
             (a walkthrough video), the subscription, then the questions. */}
         <LandingHero />
         <LandingProducts data={data} summary={summary} />
-        <LandingHamilton />
+        <LandingHamilton showcase={showcaseRead.showcase} />
         <LandingPricing />
         <LandingFaq summary={summary} />
       </main>
