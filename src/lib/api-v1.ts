@@ -12,21 +12,32 @@ import type { RateLimitResult } from "@/lib/api-rate-limit";
 /** One monthly allowance per key (or anonymous caller) across all v1 endpoints. */
 export const API_V1_RATE_LIMIT_ROUTE = "api.v1";
 
-export type ApiErrorCode =
-  | "api_key_required"
-  | "data_unavailable"
-  | "invalid_api_key"
-  | "invalid_parameter"
-  | "not_found"
-  | "plan_required"
-  | "rate_limited"
-  | "rate_limit_unavailable";
+/** Every stable machine code a v1 error carries; openapi.json lists the same set. */
+export const API_ERROR_CODES = [
+  "api_key_required",
+  "burst_limited",
+  "data_unavailable",
+  "invalid_api_key",
+  "invalid_parameter",
+  "key_revoked",
+  "not_found",
+  "plan_required",
+  "rate_limited",
+  "rate_limit_unavailable",
+  "seat_removed",
+  "subscription_inactive",
+] as const;
+
+export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
+
+/** How long a client may reuse a successful data response before asking again. */
+export const API_V1_CACHE_CONTROL = "private, max-age=300";
 
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
-  "Access-Control-Allow-Headers": "Authorization, Content-Type",
-  "Access-Control-Expose-Headers": "X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset",
+  "Access-Control-Allow-Headers": "Authorization, Content-Type, If-None-Match",
+  "Access-Control-Expose-Headers": "X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, Retry-After, ETag",
 };
 
 export function getAnonymousId(request: NextRequest): string {
@@ -68,6 +79,8 @@ export function apiError(
     { error: message, code, ...options.extra },
     { status, headers: options.headers },
   );
+  // Errors are never cached: a retry should reach the server.
+  response.headers.set("Cache-Control", "no-store");
   return withApiHeaders(response, options.rateLimit);
 }
 
@@ -90,11 +103,48 @@ export function rateLimitError(rateLimit: RateLimitResult): NextResponse {
   });
 }
 
+/** The response when a plan has made more than its per-minute calls. */
+export function burstLimitError(burst: RateLimitResult, now: Date = new Date()): NextResponse {
+  const retryAfter = Math.max(1, Math.ceil((burst.reset.getTime() - now.getTime()) / 1000));
+  return apiError(429, "burst_limited", `Too many requests this minute. Each plan can make ${burst.limit} calls a minute, so retry after ${retryAfter} seconds.`, {
+    headers: { "Retry-After": String(retryAfter) },
+    extra: { limit: burst.limit, reset: burst.reset.toISOString() },
+  });
+}
+
 export function planRequiredError(rateLimit: RateLimitResult, what: string): NextResponse {
   return apiError(403, "plan_required", `${what} requires a Pro or Enterprise API key`, {
     rateLimit,
     extra: { upgrade_url: "/subscribe" },
   });
+}
+
+function ifNoneMatchHits(header: string | null, etag: string): boolean {
+  if (!header) return false;
+  const bare = etag.replace(/^W\//, "");
+  return header
+    .split(",")
+    .map((tag) => tag.trim())
+    .some((tag) => tag === "*" || tag.replace(/^W\//, "") === bare);
+}
+
+/**
+ * Caching for a successful v1 data response (JSON or CSV): a short private max-age, a weak
+ * ETag over the body, and a 304 with the same headers when the client already holds that
+ * body. The call still counts against the burst and monthly allowances.
+ */
+export async function withApiCaching(request: Request, response: Response): Promise<Response> {
+  if (response.status !== 200) return response;
+  const body = Buffer.from(await response.clone().arrayBuffer());
+  const etag = `W/"${createHash("sha1").update(body).digest("hex")}"`;
+  response.headers.set("ETag", etag);
+  response.headers.set("Cache-Control", API_V1_CACHE_CONTROL);
+  response.headers.set("Vary", "Authorization, Cookie");
+  if (!ifNoneMatchHits(request.headers.get("if-none-match"), etag)) return response;
+
+  const headers = new Headers(response.headers);
+  headers.delete("Content-Length");
+  return new NextResponse(null, { status: 304, headers });
 }
 
 export function apiOptions(): Response {
