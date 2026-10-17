@@ -1,10 +1,9 @@
 import type { DistrictHubData, HubComplaintGroup } from "@/lib/data-store/district-hub";
-import { HUB_FEES, MIN_COMPLAINT_PEERS } from "@/lib/data-store/district-hub";
+import { HUB_FEES, MIN_COMPLAINT_PEERS, REGULATOR_SIZE_GROUPS } from "@/lib/data-store/district-hub";
 import type { IndicatorSeries, IndicatorPoint } from "@/lib/data-store/economic-context";
 import type { FeeChangeEvent } from "@/lib/data-store/fee-changes";
 import { CPI_BANK_SERVICES_SERIES } from "@/lib/regulatory/fed";
 import { getDisplayName, isFeaturedFee } from "@/lib/fee-taxonomy";
-import { FDIC_TIER_LABELS, FDIC_TIER_ORDER } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
 import { formatFeeAmount } from "@/lib/format";
 import { lowerName } from "@/lib/research-report/finding";
@@ -136,34 +135,34 @@ export function stateHubRows(hub: DistrictHubData, states: string[]): StateHubRo
     .filter((r) => r.institutions > 0 || r.bankBranches != null || r.unemployment != null);
 }
 
-export interface TierRow {
-  tier: string;
+export interface SizeGroupRow {
+  key: string;
   label: string;
-  banks: number;
-  creditUnions: number;
+  institutions: number;
 }
 
-const OLD_TIER: Record<string, string> = {
-  community_small: "micro",
-  community_mid: "community",
-  community_large: "midsize",
-  large_regional: "regional",
-  super_regional: "mega",
-};
+export interface SizeGroups {
+  /** FDIC asset-size groups, smallest first. */
+  banks: SizeGroupRow[];
+  /** NCUA asset-size groups, smallest first. */
+  creditUnions: SizeGroupRow[];
+}
 
-/** Institutions by asset size and charter, smallest first; institutions with no size on file are left out. */
-export function tierMix(hub: Pick<DistrictHubData, "institutions">, state?: string): TierRow[] {
-  const rows = new Map<string, TierRow>();
-  for (const g of hub.institutions) {
-    if (state && g.state_code !== state) continue;
-    const tier = g.tier ? (OLD_TIER[g.tier] ?? g.tier) : null;
-    if (!tier || !FDIC_TIER_LABELS[tier]) continue;
-    const row = rows.get(tier) ?? { tier, label: FDIC_TIER_LABELS[tier], banks: 0, creditUnions: 0 };
-    if (g.charter_type === "bank") row.banks += g.institutions;
-    else if (g.charter_type === "credit_union") row.creditUnions += g.institutions;
-    rows.set(tier, row);
-  }
-  return FDIC_TIER_ORDER.flatMap((t) => (rows.has(t) ? [rows.get(t)!] : [])).filter((r) => r.banks + r.creditUnions > 0);
+/**
+ * Institutions by the regulator's own asset-size groups: banks by FDIC's, credit unions by NCUA's.
+ * Every group is kept, empty ones included, so both charts read on a full scale; institutions with
+ * no assets on file are left out.
+ */
+export function sizeGroups(hub: Pick<DistrictHubData, "institutions">, state?: string): SizeGroups {
+  const count = (charter: "bank" | "credit_union") =>
+    REGULATOR_SIZE_GROUPS[charter].map((g) => ({
+      key: g.key,
+      label: g.label,
+      institutions: hub.institutions
+        .filter((i) => i.charter_type === charter && i.size_group === g.key && (!state || i.state_code === state))
+        .reduce((sum, i) => sum + i.institutions, 0),
+    }));
+  return { banks: count("bank"), creditUnions: count("credit_union") };
 }
 
 export interface ComplaintRate {

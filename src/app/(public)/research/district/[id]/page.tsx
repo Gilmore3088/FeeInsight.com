@@ -42,7 +42,8 @@ import {
   KICKER,
   PriceMoves,
   STORY_H2,
-  SizeColumns,
+  SizeByRegulator,
+  SourceNote,
   StatePanel,
   compact,
   count,
@@ -63,7 +64,7 @@ import {
   quarterLabel,
   revenueTrend,
   stateHubRows,
-  tierMix,
+  sizeGroups,
 } from "./district-hub-view";
 
 const NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
@@ -190,7 +191,8 @@ export default async function DistrictReportPage({ params }: PageProps) {
   const bankTrend = incomeTrend(revenue, "banks");
   const cuTrend = incomeTrend(revenue, "creditUnions");
   const institutionsTracked = hub ? hub.institutions.reduce((sum, g) => sum + g.institutions, 0) : 0;
-  const tiers = hub ? tierMix(hub) : [];
+  const sizes = hub ? sizeGroups(hub) : null;
+  const sized = sizes ? [...sizes.banks, ...sizes.creditUnions].some((g) => g.institutions > 0) : false;
   // Fed districts split some states (Dallas takes north Louisiana and south New Mexico); those
   // institutions count in the district totals but have no state row of their own.
   const outsideStates = Math.max(institutionsTracked - rows.reduce((sum, r) => sum + r.institutions, 0), 0);
@@ -353,10 +355,10 @@ export default async function DistrictReportPage({ params }: PageProps) {
                   </div>
                 )}
               </div>
-              <p className="max-w-3xl text-[12px] text-ink-muted">
+              <SourceNote label="Method">
                 Findings rank only fees with at least {STATE_FINDING_MIN_INSTITUTIONS} {place} institutions. Fees with fewer appear in the
                 list, unranked. The U.S. middle half runs from the 25th to the 75th percentile of U.S. institutions.
-              </p>
+              </SourceNote>
             </section>
           </StateBoard>
         ) : (
@@ -456,7 +458,7 @@ export default async function DistrictReportPage({ params }: PageProps) {
         )}
 
         {/* Story 5: who serves the district, by deposits and by size. */}
-        {(tiers.length > 0 || branches) && (
+        {(sized || branches) && (
           <HubSection
             id="market"
             collapse="deposit share"
@@ -475,17 +477,16 @@ export default async function DistrictReportPage({ params }: PageProps) {
             }
             source={
               <>
-                Institutions tracked by {SITE_NAME}, sized by total assets.
+                Institutions tracked by {SITE_NAME}. Total assets from FDIC and NCUA data, grouped the way each regulator reports them: the FDIC asset-size groups for banks and the NCUA groups for credit unions.
                 {branches &&
                   ` Bank deposits from the FDIC Summary of Deposits, ${branches.sod_year}, counted for each whole state, even where the district line splits one; credit union branches from NCUA. Leading banks count banks with ${MIN_LEADER_BRANCHES} or more branches here.`}
               </>
             }
           >
             {branches && <DepositStrip branches={branches} />}
-            {tiers.length > 0 && (
-              <div className="space-y-4 pt-4">
-                <h3 className="text-[18px] font-semibold tracking-[-0.01em] text-ink">Banks and credit unions by asset size</h3>
-                <SizeColumns tiers={tiers} />
+            {sizes && sized && (
+              <div className="pt-4">
+                <SizeByRegulator groups={sizes} />
               </div>
             )}
           </HubSection>

@@ -53,6 +53,8 @@ export interface HubInstitutionGroup {
   state_code: string;
   charter_type: "bank" | "credit_union" | "other";
   tier: string | null;
+  /** The regulator's own asset-size group: FDIC's for banks, NCUA's for credit unions (REGULATOR_SIZE_GROUPS). */
+  size_group: string | null;
   institutions: number;
   /** Of those, institutions with at least one verified published fee. */
   with_fees: number;
@@ -217,9 +219,40 @@ async function loadStateFees(district: number): Promise<HubStateFees[]> {
   return buildStateFeeMedians(rows);
 }
 
+/**
+ * The asset-size groups each regulator reports by: the FDIC Quarterly Banking Profile's for banks
+ * and NCUA's quarterly credit union data summary's for credit unions. Upper bounds are in
+ * thousands of dollars, the unit of institution_sources.asset_size; the last group has none.
+ */
+export const REGULATOR_SIZE_GROUPS = {
+  bank: [
+    { key: "lt100m", label: "Under $100M", below: 100_000 },
+    { key: "100m-1b", label: "$100M to $1B", below: 1_000_000 },
+    { key: "1b-10b", label: "$1B to $10B", below: 10_000_000 },
+    { key: "10b-250b", label: "$10B to $250B", below: 250_000_000 },
+    { key: "gt250b", label: "Over $250B", below: null },
+  ],
+  credit_union: [
+    { key: "lt10m", label: "Under $10M", below: 10_000 },
+    { key: "10m-100m", label: "$10M to $100M", below: 100_000 },
+    { key: "100m-500m", label: "$100M to $500M", below: 500_000 },
+    { key: "500m-1b", label: "$500M to $1B", below: 1_000_000 },
+    { key: "gt1b", label: "Over $1B", below: null },
+  ],
+} as const;
+
+function sizeGroupSql(charter: keyof typeof REGULATOR_SIZE_GROUPS): string {
+  const groups = REGULATOR_SIZE_GROUPS[charter];
+  return groups.map((g) => (g.below == null ? `ELSE '${g.key}'` : `WHEN ct.asset_size < ${g.below} THEN '${g.key}'`)).join(" ");
+}
+
 async function loadInstitutions(district: number): Promise<HubInstitutionGroup[]> {
   const rows = (await sql.unsafe(
     `SELECT ct.state_code, ct.charter_type, ct.asset_size_tier AS tier,
+            CASE WHEN ct.asset_size IS NULL OR ct.asset_size <= 0 THEN NULL
+                 WHEN ct.charter_type = 'bank' THEN CASE ${sizeGroupSql("bank")} END
+                 WHEN ct.charter_type = 'credit_union' THEN CASE ${sizeGroupSql("credit_union")} END
+            END AS size_group,
             COUNT(*)::int AS institutions,
             COUNT(*) FILTER (WHERE EXISTS (
               SELECT 1 FROM published_fee_catalog ef
@@ -228,7 +261,7 @@ async function loadInstitutions(district: number): Promise<HubInstitutionGroup[]
        FROM institution_sources ct
       WHERE ct.fed_district = $1
         AND ct.regulatory_status IS DISTINCT FROM 'inactive'
-      GROUP BY 1, 2, 3`,
+      GROUP BY 1, 2, 3, 4`,
     [district],
   )) as unknown as Record<string, unknown>[];
   return rows
@@ -237,6 +270,7 @@ async function loadInstitutions(district: number): Promise<HubInstitutionGroup[]
       state_code: String(r.state_code).trim(),
       charter_type: charterOf(r.charter_type),
       tier: r.tier == null ? null : String(r.tier),
+      size_group: r.size_group == null ? null : String(r.size_group),
       institutions: num(r.institutions),
       with_fees: num(r.with_fees),
     }));

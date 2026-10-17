@@ -13,7 +13,8 @@ import {
   type FeeChangeSummary,
   type RevenueQuarter,
   type StateHubRow,
-  type TierRow,
+  type SizeGroupRow,
+  type SizeGroups,
 } from "./district-hub-view";
 
 /**
@@ -27,6 +28,19 @@ export const money = (n: number | null | undefined) => (n == null ? "-" : (forma
 export const compact = (n: number | null | undefined) => (n == null ? "-" : formatCompactDollars(n));
 export const pct = (n: number | null | undefined, digits = 1) => (n == null ? "-" : `${n.toFixed(digits)}%`);
 export const signedPct = (n: number) => `${n > 0 ? "+" : n < 0 ? "−" : ""}${Math.abs(n).toFixed(1)}%`;
+
+/**
+ * A section's source or method note: its own row under the whole exhibit, left-aligned with the
+ * charts and about 860px wide. A div, not a p, so the site-wide 34em paragraph cap doesn't apply.
+ */
+export function SourceNote({ label = "Source", children }: { label?: string; children: ReactNode }) {
+  return (
+    <div className="max-w-[860px] border-t border-border pt-3 text-[12.5px] leading-[1.65] text-ink-muted">
+      {label && <span className="font-semibold text-ink-soft">{label}: </span>}
+      {children}
+    </div>
+  );
+}
 
 /** Story headings state the finding; the small kicker above names the subject. */
 export const STORY_H2 = "text-[26px] font-semibold leading-[1.1] tracking-[-0.03em] text-ink sm:text-[36px]";
@@ -62,9 +76,7 @@ export function HubSection({
   const body = (
     <>
       {children}
-      <p className="text-[11px] leading-snug text-ink-muted">
-        <span className="font-semibold">Source:</span> {source}
-      </p>
+      <SourceNote>{source}</SourceNote>
     </>
   );
   return (
@@ -316,50 +328,52 @@ export function RankBars({ rows, format, tick, tickLabel }: { rows: { key: strin
   );
 }
 
-/**
- * Institutions by asset size as stacked columns, one per size: banks at the base, credit unions
- * above, each part labeled with its count.
- */
-export function SizeColumns({ tiers }: { tiers: TierRow[] }) {
-  const max = Math.max(...tiers.map((t) => t.banks + t.creditUnions), 1);
+/** The largest group's share, as the chart's heading: "62% of the 516 credit unions hold under $100M in assets". */
+function sizeFinding(rows: SizeGroupRow[], noun: string): string | null {
+  const total = rows.reduce((sum, r) => sum + r.institutions, 0);
+  if (total === 0) return null;
+  const top = rows.reduce((a, b) => (b.institutions > a.institutions ? b : a));
+  const range = top.label.replace(/^Under/, "under").replace(/^Over/, "over");
+  return `${Math.round((top.institutions / total) * 100)}% of the ${count(total)} ${noun} hold ${range} in assets`;
+}
+
+function SizeChart({ rows, noun, regulator, bar }: { rows: SizeGroupRow[]; noun: string; regulator: string; bar: string }) {
+  const finding = sizeFinding(rows, noun);
+  if (!finding) return null;
+  const max = Math.max(...rows.map((r) => r.institutions), 1);
   return (
-    <figure>
-      <p className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-muted" aria-hidden="true">
-        <span className="inline-flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-sm bg-ink" /> Banks
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-sm bg-ink/30" /> Credit unions
-        </span>
-      </p>
+    <figure className="min-w-0">
+      <h3 className="text-[18px] font-semibold leading-snug tracking-[-0.01em] text-ink sm:text-[20px]">{finding}</h3>
       <ol
-        className="flex h-52 items-end gap-2 sm:gap-4"
-        aria-label={`Institutions by asset size: ${tiers.map((t) => `${t.label}, ${count(t.banks)} banks and ${count(t.creditUnions)} credit unions`).join("; ")}`}
+        className="mt-6 flex h-44 items-end gap-2 sm:gap-3"
+        aria-label={`${noun[0].toUpperCase()}${noun.slice(1)} by ${regulator} asset size: ${rows.map((r) => `${r.label}, ${count(r.institutions)}`).join("; ")}`}
       >
-        {tiers.map((t) => {
-          const total = t.banks + t.creditUnions;
-          return (
-            <li key={t.tier} className="flex h-full min-w-0 flex-1 flex-col justify-end" aria-hidden="true">
-              <span className="mb-1 text-center font-mono text-[13px] font-semibold tabular-nums text-ink">{count(total)}</span>
-              <span className="flex flex-col overflow-hidden rounded-t-md" style={{ height: `${(total / max) * 82}%` }}>
-                <span className="bg-ink/30" style={{ flexGrow: t.creditUnions }} />
-                <span className="bg-ink" style={{ flexGrow: t.banks }} />
-              </span>
-            </li>
-          );
-        })}
+        {rows.map((r) => (
+          <li key={r.key} className="flex h-full min-w-0 flex-1 flex-col justify-end" aria-hidden="true">
+            <span className="mb-1 text-center font-mono text-[13px] font-semibold tabular-nums text-ink">{count(r.institutions)}</span>
+            <span className={`rounded-t-sm ${bar}`} style={{ height: `${Math.max((r.institutions / max) * 82, r.institutions > 0 ? 2 : 0)}%` }} />
+          </li>
+        ))}
       </ol>
-      <div className="mt-2 flex gap-2 sm:gap-4" aria-hidden="true">
-        {tiers.map((t) => (
-          <span key={t.tier} className="min-w-0 flex-1 text-center text-[11px] leading-tight text-ink-muted">
-            {t.label}
-            <span className="mt-0.5 block tabular-nums">
-              {count(t.banks)} banks · {count(t.creditUnions)} credit unions
-            </span>
+      <div className="mt-2 flex gap-2 border-t border-border pt-2 sm:gap-3" aria-hidden="true">
+        {rows.map((r) => (
+          <span key={r.key} className="min-w-0 flex-1 text-center text-[11px] leading-tight text-ink-muted">
+            {r.label}
           </span>
         ))}
       </div>
+      <figcaption className="mt-3 text-[12px] text-ink-muted">{regulator} asset-size groups</figcaption>
     </figure>
+  );
+}
+
+/** Banks by FDIC asset-size group beside credit unions by NCUA's, each on its own scale. */
+export function SizeByRegulator({ groups }: { groups: SizeGroups }) {
+  return (
+    <div className="grid gap-12 sm:grid-cols-2 sm:gap-16">
+      <SizeChart rows={groups.banks} noun="banks" regulator="FDIC" bar="bg-ink" />
+      <SizeChart rows={groups.creditUnions} noun="credit unions" regulator="NCUA" bar="bg-ink/40" />
+    </div>
   );
 }
 

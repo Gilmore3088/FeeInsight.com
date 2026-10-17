@@ -174,4 +174,5 @@ export async function getInstitutionPeerRankCached(institutionId: number): Promi
 }
 export const getMarketBranchFootprintCached = cachedPublicRead("market-branch-footprint", getMarketBranchFootprint);
 /** The district hub's exhibits beyond the fee board (district-hub.ts), one entry per district. */
-export const getDistrictHubCached = cachedPublicRead("district-hub-v2", getDistrictHub, isEmptyDistrictHub);
+// v3: institution groups carry the regulator size_group.
+export const getDistrictHubCached = cachedPublicRead("district-hub-v3", getDistrictHub, isEmptyDistrictHub);
