@@ -146,20 +146,3 @@ export async function getSavedAnalysisResponse(userId: number, id: string, insti
   const parsed = typeof raw === "string" ? (JSON.parse(raw) as AnalyzeResponse) : raw;
   return normalizeLegacyAnalyzeConfidence(parsed);
 }
-
-/**
- * One saved answer by id, whoever saved it, for the homepage's Hamilton demonstration: the
- * row is chosen in code (`HAMILTON_SHOWCASE_ANSWER_ID`), never from a request, and only an
- * active row is returned.
- */
-export async function getShowcaseAnalysisRow(
-  id: string,
-): Promise<{ institution_id: string; prompt: string | null; created_at: string; response_json: unknown } | null> {
-  const rows = await sql<{ institution_id: string; prompt: string | null; created_at: string; response_json: unknown }[]>`
-    SELECT institution_id::text, prompt, created_at::text, response_json FROM hamilton_saved_analyses
-     WHERE id::text = ${id} AND status = 'active'
-  `;
-  const row = rows[0];
-  if (!row) return null;
-  return { ...row, response_json: typeof row.response_json === "string" ? safeParse(row.response_json) : row.response_json };
-}

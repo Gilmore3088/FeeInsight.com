@@ -29,16 +29,10 @@ import { shortenPageLife } from "@/lib/data-store/public-read-cache";
 import { LandingHero } from "./landing-hero";
 import { LandingProducts } from "./landing-products";
 import { LandingHamilton } from "./landing-hamilton";
-import { parseShowcaseAnswer, showcaseAnswerId } from "./landing-hamilton-answer";
-import { getShowcaseAnalysisRow } from "@/lib/data-store/hamilton-analyses";
-import { cachedPublicRead } from "@/lib/data-store/public-read-cache";
 import { LandingPricing } from "./landing-pricing";
 import { LandingFaq } from "./landing-faq";
 import { buildHomeData, buildSampleView, homeReadsCacheable } from "./landing-shared";
 import { buildScenario } from "./subscribe/scenario";
-
-// The saved Hamilton answer the Hamilton section shows; a stored row, so it shares the public read cache.
-const showcaseRowCached = cachedPublicRead("home-hamilton-showcase", getShowcaseAnalysisRow);
 
 // The promise (James, Oct 16); no counts, so nothing goes stale.
 const HOME_TITLE = `Your next fee review doesn't need to take weeks | ${SITE_NAME}`;
@@ -91,8 +85,7 @@ export default async function LandingPage() {
   // live sample report (the same one /for-institutions and the sample page show) gives the
   // named bank, its competitors and its report for the workflow section; a failed read hides it.
   // The sample is read once: it is null both when none passes the bar today and on error.
-  // The saved Hamilton answer is read the same way; a failed read hides the demonstration.
-  const [{ summary, categories }, sampleRead, overdraftRead, showcaseRead] = await Promise.all([
+  const [{ summary, categories }, sampleRead, overdraftRead] = await Promise.all([
     getPublicSnapshot(),
     loadSampleReport().then(
       (report) => ({ report, failed: false }),
@@ -109,13 +102,6 @@ export default async function LandingPage() {
         return { detail: null, failed: true };
       },
     ),
-    showcaseRowCached(showcaseAnswerId()).then(
-      (row) => ({ answer: parseShowcaseAnswer(row), failed: false }),
-      (error: unknown) => {
-        console.error("[home] Hamilton answer read failed; Hamilton demonstration hidden", error);
-        return { answer: null, failed: true };
-      },
-    ),
   ]);
   const liveSample = sampleRead.report;
   const cacheable = homeReadsCacheable({
@@ -123,7 +109,6 @@ export default async function LandingPage() {
     categories,
     sampleFailed: sampleRead.failed,
     overdraftFailed: overdraftRead.failed,
-    showcaseFailed: showcaseRead.failed,
   });
   // A render with a failed read is cached for a minute, not fifteen (see the note at the top).
   if (!cacheable) await shortenPageLife();
@@ -145,10 +130,10 @@ export default async function LandingPage() {
       <ConsumerNav />
       <main id="main-content">
         {/* James's order (Oct 16, Oct 17): the promise, the Index, Hamilton in its own section
-            (one institution from question to report), the subscription, then the questions. */}
+            (a walkthrough video), the subscription, then the questions. */}
         <LandingHero />
         <LandingProducts data={data} summary={summary} />
-        <LandingHamilton report={liveSample} answer={showcaseRead.answer} />
+        <LandingHamilton />
         <LandingPricing />
         <LandingFaq summary={summary} />
       </main>

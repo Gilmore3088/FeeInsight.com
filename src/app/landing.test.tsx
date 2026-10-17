@@ -6,9 +6,7 @@ import { REPORT_PRICE_INLINE } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
 import { LandingHero } from "./landing-hero";
 import { LandingProducts } from "./landing-products";
-import { sampleShowcaseRow, sampleWorkflowReport } from "./landing-workflow.test-fixture";
 import { LandingHamilton } from "./landing-hamilton";
-import { parseShowcaseAnswer } from "./landing-hamilton-answer";
 import { LandingPricing } from "./landing-pricing";
 import { LandingFaq, faqItems } from "./landing-faq";
 import { buildHomeData, buildSampleView, homeReadsCacheable } from "./landing-shared";
@@ -115,7 +113,7 @@ const wholePage = () =>
     <>
       <LandingHero />
       <LandingProducts data={data} summary={summary} />
-      <LandingHamilton report={sampleWorkflowReport()} answer={parseShowcaseAnswer(sampleShowcaseRow())} />
+      <LandingHamilton />
       <LandingPricing />
       <LandingFaq summary={summary} />
     </>,
@@ -181,13 +179,17 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     expect(renderToStaticMarkup(<LandingPricing />)).toContain("/reports?report=institution#request");
   });
 
-  it("runs promise, the Index, Hamilton with its three steps, then plans and the FAQ", () => {
+  it("runs promise, the Index, Meet Hamilton with its video, then plans and the FAQ", () => {
     const page = wholePage();
     const at = (marker: string) => page.indexOf(marker);
     expect(at("<h1")).toBeLessThan(at('id="products-heading"'));
     expect(at('id="products-heading"')).toBeLessThan(at('id="hamilton-heading"'));
-    expect(at('id="hamilton-heading"')).toBeLessThan(at("data-workflow-report"));
-    expect(at("data-workflow-report")).toBeLessThan(at('id="plans"'));
+    expect(page).toMatch(/<h2 id="hamilton-heading"[^>]*>Meet Hamilton<\/h2>/);
+    expect(at('id="hamilton-heading"')).toBeLessThan(at("data-hamilton-video-placeholder"));
+    expect(at("data-hamilton-video-placeholder")).toBeLessThan(at('id="plans"'));
+    // No demonstration or report preview until the video replaces the placeholder.
+    expect(page).not.toContain('role="tabpanel"');
+    expect(page).not.toContain("data-workflow-report");
     expect(page).not.toContain("weeks of gathering");
     expect(page).toContain("Full Bank Fee Index access");
   });
@@ -203,11 +205,7 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
 
   it("keeps the copy rules and the word budget", () => {
     // The report page is the report's own section, in its words; tables are names and figures, not copy.
-    // Hamilton's three views are product output (the saved answer and the report), not page copy.
-    const full = wholePage();
-    const panels = full.lastIndexOf("<div", full.indexOf('role="tabpanel"'));
-    const html = (full.slice(0, panels) + full.slice(full.lastIndexOf("<div", full.indexOf("data-hamilton-actions"))))
-      .replace(/<table[\s\S]*?<\/table>/g, "");
+    const html = wholePage().replace(/<table[\s\S]*?<\/table>/g, "");
     expect(text(html)).not.toMatch(/—|!|real-time|recommend|\bAI\b|verified|99%/i);
     // Under the old page's 889 words, with every reveal's contents counted.
     expect(words(html)).toBeLessThan(800);
