@@ -68,13 +68,6 @@ export function StatePicker({ states, initial }: { states: StateOption[]; initia
             </Link>
           )}
         </div>
-        {chosen && (
-          <p className="mt-2 text-[13px] text-ink-muted sm:mx-0 sm:text-left" aria-live="polite">
-            {chosen.institutions === 1
-              ? `1 bank or credit union headquartered in ${chosen.name} has published fees.`
-              : `${chosen.institutions.toLocaleString("en-US")} banks and credit unions headquartered in ${chosen.name} have published fees.`}
-          </p>
-        )}
       </div>
     </div>
   );

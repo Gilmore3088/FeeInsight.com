@@ -11,7 +11,7 @@ import { AtmReceipt } from "@/components/public/atm-receipt";
 import { formatFeeAmount } from "@/lib/format";
 import { getPublicSnapshot } from "@/lib/public-stats";
 import { STATE_NAMES } from "@/lib/us-states";
-import { PRODUCT_NAME, SITE_URL } from "@/lib/constants";
+import { PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { PAGE_HEADER } from "@/components/public/page-header";
 import { UnstatedAudienceFootnote, UnstatedAudienceMark, medianHasUnstatedAudience } from "@/components/unstated-audience";
 import { InstitutionSearchBar } from "../institutions/search-bar";
@@ -22,13 +22,13 @@ import { CheckExample } from "./check-example";
 
 const TITLE = "Bank Fees Explained: Check and Avoid Them";
 const DESCRIPTION =
-  "Plain-language guides to bank and credit union fees, a fee check for any bank, and named local alternatives with lower monthly and overdraft fees.";
+  "Plain-language guides to bank and credit union fees, a fee check for any bank against state and U.S. medians, and city-by-city fee comparisons.";
 
 export const metadata: Metadata = {
   title: TITLE,
   description: DESCRIPTION,
   alternates: { canonical: `${SITE_URL}/consumer` },
-  openGraph: { type: "website", title: TITLE, description: DESCRIPTION, url: `${SITE_URL}/consumer`, siteName: "Fee Insight" },
+  openGraph: { type: "website", title: TITLE, description: DESCRIPTION, url: `${SITE_URL}/consumer`, siteName: SITE_NAME },
 };
 
 /** The five most-searched charges: an icon, the guide, and the national median it explains. */
@@ -42,7 +42,7 @@ const CHARGES = [
 
 /** The three tasks, as icon entrances under the header. */
 const TASKS = [
-  { href: "#find-bank", title: "Check your bank", line: "Its fees beside the medians", Icon: Search },
+  { href: "#find-bank", title: "Check your bank", line: "Its fees beside state and U.S. medians", Icon: Search },
   { href: "#charges", title: "Understand a charge", line: "What it is, how to avoid it", Icon: Receipt },
   { href: "#compare", title: "Compare local options", line: "Banks and credit unions near you", Icon: MapPin },
 ] as const;
@@ -217,25 +217,26 @@ export default async function ConsumerPage() {
                 {guides.length > 0 ? `All ${guides.length} guides` : "Fee guides"}
               </Link>
             </div>
-            {atmExample && (
-              <div className="mt-8 grid items-center gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-10">
-                <div className="min-w-0">
-                  <h3 className="text-[17px] font-semibold text-ink">One ATM withdrawal, two fees</h3>
-                  <p className={BAND_LINE}>Your bank charges one. The ATM&apos;s owner can add another.</p>
-                  {atmGuideHref && (
-                    <div className="flex justify-center sm:justify-start">
-                      <Link href={atmGuideHref} className={`mt-1 inline-flex min-h-11 items-center text-[14px] font-semibold ${LINK}`}>
-                        How to avoid both
-                      </Link>
-                    </div>
-                  )}
-                </div>
-                <div className="flex min-w-0 justify-center sm:justify-start">
-                  <AtmReceipt example={atmExample} />
-                </div>
-              </div>
-            )}
           </section>
+
+          {atmExample && (
+            <section id="atm" aria-labelledby="atm-heading" className={`${BAND} grid items-center gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-10`}>
+              <div className="min-w-0">
+                <h2 id="atm-heading" className={BAND_H2}>
+                  One ATM withdrawal, two fees
+                </h2>
+                <p className={BAND_LINE}>Your bank charges one. The ATM&apos;s owner can add another.</p>
+                {atmGuideHref && (
+                  <Link href={atmGuideHref} className={`mt-1 inline-flex min-h-11 items-center text-[14px] font-semibold ${LINK}`}>
+                    How to avoid both
+                  </Link>
+                )}
+              </div>
+              <div className="flex min-w-0 justify-center sm:justify-start">
+                <AtmReceipt example={atmExample} />
+              </div>
+            </section>
+          )}
 
           <section id="compare" aria-labelledby="compare-heading" className={BAND}>
             <h2 id="compare-heading" className={BAND_H2}>

@@ -71,12 +71,6 @@ export async function CheckExample({ id, guides }: { id: number; guides: Guide[]
         >
           See {inst.institution_name}&apos;s full fee check
         </Link>
-        <a
-          href="#find-bank"
-          className="inline-flex min-h-11 items-center text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
-        >
-          Check your own bank
-        </a>
       </p>
     </figure>
   );
