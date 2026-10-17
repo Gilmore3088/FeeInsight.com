@@ -13,8 +13,8 @@ export function AboutHero({ proof }: { proof: AboutProof }) {
     <section className="fi-on-navy bg-ink text-paper" aria-labelledby="about-heading">
       <div className="mx-auto grid max-w-page gap-8 px-4 pb-10 pt-10 sm:px-6 sm:pb-12 sm:pt-14 lg:grid-cols-[minmax(0,6fr)_minmax(0,5fr)] lg:items-end">
         <div className="text-center sm:text-left">
-          <p className="flex items-center justify-center gap-2 sm:justify-start text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e0716a]">
-            <span aria-hidden="true" className="h-px w-8 bg-[#e0716a]/60" />
+          <p className="flex items-center justify-center gap-2 sm:justify-start text-[11px] font-semibold uppercase tracking-[0.16em] text-brick-on-navy">
+            <span aria-hidden="true" className="h-px w-8 bg-brick-on-navy/60" />
             About
           </p>
           <h1
@@ -59,7 +59,7 @@ export function ProofExhibit({ proof }: { proof: AboutProof }) {
             aria-label={`${proof.publishedShare}% of monitored institutions have fees in the index`}
             className="block h-1.5 w-full overflow-hidden rounded-full bg-white/10"
           >
-            <span className="block h-full rounded-full bg-[#e0716a]" style={{ width: `${proof.publishedShare}%` }} />
+            <span className="block h-full rounded-full bg-brick-on-navy" style={{ width: `${proof.publishedShare}%` }} />
           </span>
           <p aria-hidden="true" className="mt-1.5 text-[12px] text-paper/70">
             {proof.publishedShare}% of monitored institutions have fees in the index
@@ -68,7 +68,7 @@ export function ProofExhibit({ proof }: { proof: AboutProof }) {
       )}
       {proof.freshness && (
         <p className="mt-4 inline-flex items-center gap-2 text-[12px] text-paper/75">
-          <span aria-hidden="true" className="h-2 w-2 rounded-full bg-[#7fb59b]" />
+          <span aria-hidden="true" className="h-2 w-2 rounded-full bg-good-on-navy" />
           {proof.freshness}
         </p>
       )}
@@ -119,7 +119,7 @@ export function AboutNextAction({ action }: { action: AboutAction }) {
         id="next"
         className="fi-on-navy scroll-mt-24 rounded-2xl bg-ink px-5 py-6 text-paper sm:px-8 sm:py-8"
       >
-        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#e0716a]">For banks and credit unions</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-brick-on-navy">For banks and credit unions</p>
         <h2 id="next-heading" className="mt-1.5 text-[1.4rem] font-bold leading-tight text-white sm:text-[1.75rem]" style={SANS}>
           See where one institution&apos;s fees stand
         </h2>

@@ -8,7 +8,10 @@ import { getLocalMarketMembers } from "@/lib/data-store/custom-report-market";
 import { GET } from "./route";
 
 vi.mock("@/lib/api-auth", () => ({ validateApiKey: vi.fn() }));
-vi.mock("@/lib/api-rate-limit", () => ({ checkRateLimitWithTier: vi.fn() }));
+vi.mock("@/lib/api-rate-limit", () => ({
+  checkRateLimitWithTier: vi.fn(),
+  checkBurstLimitWithTier: vi.fn(() => Promise.resolve({ allowed: true, remaining: 59, limit: 60, reset: new Date("2026-10-17T12:01:00.000Z") })),
+}));
 vi.mock("@/lib/auth", () => ({ getCurrentUser: vi.fn() }));
 vi.mock("@/lib/access", () => ({ canAccessPremium: vi.fn() }));
 vi.mock("@/lib/api-usage", () => ({ logApiUsage: vi.fn(() => Promise.resolve()) }));

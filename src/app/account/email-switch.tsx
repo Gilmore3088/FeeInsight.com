@@ -44,7 +44,7 @@ export function EmailSwitch({
           {description}
         </p>
         {error && (
-          <p role="alert" className="mt-1 text-[12px] text-red-700">
+          <p role="alert" className="mt-1 text-[12px] text-brick">
             {error}
           </p>
         )}
@@ -58,7 +58,7 @@ export function EmailSwitch({
         disabled={pending}
         onClick={toggle}
         className={`relative mt-0.5 inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brick focus-visible:ring-offset-2 disabled:opacity-60 ${
-          on ? "bg-brick" : "bg-[#D8CDBD]"
+          on ? "bg-brick" : "bg-control-border"
         }`}
       >
         <span

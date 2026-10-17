@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildMailerLitePayload, mailerLiteGroupForSource, syncLeadToMailerLite } from "./mailerlite";
+import {
+  buildMailerLitePayload,
+  mailerLiteGroupForSource,
+  planLifecycleGroups,
+  syncLeadToMailerLite,
+  syncProCustomerToMailerLite,
+} from "./mailerlite";
+import { PRO_MONTHLY_OFFER } from "./monthly-offer";
 
 describe("MailerLite sync", () => {
   afterEach(() => {
@@ -16,14 +23,19 @@ describe("MailerLite sync", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("upserts an active subscriber into the configured group", async () => {
+  it("upserts an active subscriber with its fields, then joins its lifecycle group", async () => {
     vi.stubEnv("MAILERLITE_SYNC_ENABLED", "true");
     vi.stubEnv("MAILERLITE_API_KEY", "key");
     vi.stubEnv("MAILERLITE_GROUP_ID", "123");
     vi.stubEnv("MAILERLITE_SOURCE_FIELD", "lead_source");
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: { id: "sub_1" } }), { status: 201 }));
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ data: { id: "sub_1", groups: [] } }), { status: 201 }));
     vi.stubGlobal("fetch", fetchMock);
-    const result = await syncLeadToMailerLite({ email: "a@b.co", subscribed: true, source: "capture_state" });
+    const result = await syncLeadToMailerLite({
+      email: "a@b.co",
+      subscribed: true,
+      source: "newsletter",
+      fields: { follow_name: "Texas", report_url: null },
+    });
     expect(result).toEqual({ status: "synced", subscriberId: "sub_1" });
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("https://connect.mailerlite.com/api/subscribers");
@@ -31,9 +43,10 @@ describe("MailerLite sync", () => {
     expect(JSON.parse(init.body as string)).toEqual({
       email: "a@b.co",
       status: "active",
-      groups: ["123"],
-      fields: { lead_source: "capture_state" },
+      fields: { lead_source: "newsletter", follow_name: "Texas" },
     });
+    const joined = fetchMock.mock.calls.filter(([u, i]) => String(u).includes("/subscribers/sub_1/groups/") && (i as RequestInit)?.method === "POST");
+    expect(joined.map(([u]) => String(u).split("/").pop())).toEqual(["123"]);
   });
 
   it("adds a reader who picked a state to that state's group, creating it the first time", async () => {
@@ -50,7 +63,7 @@ describe("MailerLite sync", () => {
     const created = fetchMock.mock.calls.find(([url, init]) => String(url).endsWith("/groups") && init?.method === "POST");
     expect(JSON.parse(String(created?.[1]?.body))).toEqual({ name: "Fee Insight · State · TX" });
     const upsert = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/subscribers"));
-    expect(JSON.parse(String(upsert?.[1]?.body)).groups).toEqual(["123", "77"]);
+    expect(JSON.parse(String(upsert?.[1]?.body)).groups).toEqual(["77"]);
   });
 
   it("resubscribes only on a fresh confirm, and reports a status MailerLite didn't store", async () => {
@@ -90,7 +103,7 @@ describe("MailerLite sync", () => {
     const result = await syncLeadToMailerLite({ email: "a@b.co", subscribed: true, state: "FL" });
     expect(result).toEqual({ status: "synced", subscriberId: "sub_1" });
     const upsert = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/subscribers"));
-    expect(JSON.parse(String((upsert as unknown as [string, RequestInit])[1].body)).groups).toEqual(["123", "10"]);
+    expect(JSON.parse(String((upsert as unknown as [string, RequestInit])[1].body)).groups).toEqual(["10"]);
     const removed = fetchMock.mock.calls.map(([url]) => String(url)).filter((url) => url.includes("/subscribers/sub_1/groups/"));
     // Leaving the national group too: a state reader gets the state edition instead.
     expect(removed.sort()).toEqual([
@@ -141,21 +154,63 @@ describe("MailerLite sync", () => {
     vi.stubEnv("MAILERLITE_GROUP_ID", "news");
     vi.stubEnv("MAILERLITE_REPORT_GROUP_ID", "report");
     vi.stubEnv("MAILERLITE_WATCHER_GROUP_ID", "watch");
-    expect(mailerLiteGroupForSource("newsletter,capture_homepage")).toBe("news");
+    expect(mailerLiteGroupForSource("newsletter,capture_national_index")).toBe("news");
+    // The homepage form delivers the sample report, so it starts the report sequence.
+    expect(mailerLiteGroupForSource("newsletter,capture_homepage")).toBe("report");
     expect(mailerLiteGroupForSource("capture_state")).toBe("watch");
-    expect(mailerLiteGroupForSource("newsletter,capture_institution,report")).toBe("report");
+    expect(mailerLiteGroupForSource("newsletter,capture_institution,report_national")).toBe("report");
+    // A paid report quote is handled by hand, and an account or contact form starts nothing.
+    expect(mailerLiteGroupForSource("report")).toBe("");
+    expect(mailerLiteGroupForSource("website")).toBe("");
     expect(mailerLiteGroupForSource("capture_report_sample")).toBe("report");
     expect(mailerLiteGroupForSource("report_district")).toBe("report");
     expect(mailerLiteGroupForSource("report_national")).toBe("report");
-    expect(mailerLiteGroupForSource(null)).toBe("news");
+    expect(mailerLiteGroupForSource(null)).toBe("");
   });
 
-  it("falls back to the default group when a routed group is not configured", () => {
+  it("starts no sequence when the routed group is not configured", () => {
     vi.stubEnv("MAILERLITE_GROUP_ID", "news");
     vi.stubEnv("MAILERLITE_REPORT_GROUP_ID", "");
     vi.stubEnv("MAILERLITE_WATCHER_GROUP_ID", "");
-    expect(mailerLiteGroupForSource("report")).toBe("news");
-    expect(mailerLiteGroupForSource("capture_state")).toBe("news");
+    expect(mailerLiteGroupForSource("report_district")).toBe("");
+    expect(mailerLiteGroupForSource("capture_state")).toBe("");
+  });
+
+  it("never starts a sequence alongside one of equal or higher intent, and leaves lower ones", () => {
+    vi.stubEnv("MAILERLITE_PRO_GROUP_ID", "pro");
+    vi.stubEnv("MAILERLITE_REPORT_GROUP_ID", "report");
+    vi.stubEnv("MAILERLITE_WATCHER_GROUP_ID", "watch");
+    vi.stubEnv("MAILERLITE_GROUP_ID", "news");
+    expect(planLifecycleGroups("report", new Set(["news", "9"]))).toEqual({ join: "report", leave: ["news"] });
+    expect(planLifecycleGroups("news", new Set(["report"]))).toEqual({ join: null, leave: [] });
+    expect(planLifecycleGroups("watch", new Set(["watch"]))).toEqual({ join: null, leave: [] });
+    expect(planLifecycleGroups("report", new Set(["pro"]))).toEqual({ join: null, leave: [] });
+    expect(planLifecycleGroups("pro", new Set(["report", "watch"]))).toEqual({ join: "pro", leave: ["report", "watch"] });
+    expect(planLifecycleGroups("", new Set(["news"]))).toEqual({ join: null, leave: [] });
+  });
+
+  it("moves a new Pro customer into onboarding and out of every free sequence, without touching status", async () => {
+    vi.stubEnv("MAILERLITE_SYNC_ENABLED", "true");
+    vi.stubEnv("MAILERLITE_API_KEY", "key");
+    vi.stubEnv("MAILERLITE_PRO_GROUP_ID", "pro");
+    vi.stubEnv("MAILERLITE_GROUP_ID", "news");
+    const fetchMock = vi.fn().mockImplementation(async (url: string) =>
+      url.includes("/groups/")
+        ? new Response(null, { status: 204 })
+        : new Response(JSON.stringify({ data: { id: "sub_1", groups: [{ id: "news" }, { id: "9" }] } }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await syncProCustomerToMailerLite("a@b.co")).toEqual({ status: "synced", subscriberId: "sub_1" });
+    expect(JSON.parse(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body))).toEqual({ email: "a@b.co", fields: PRO_MONTHLY_OFFER });
+    const moves = fetchMock.mock.calls.slice(1).map(([url, init]) => `${(init as RequestInit).method} ${String(url).split("/").pop()}`);
+    expect(moves).toEqual(["DELETE news", "POST pro"]);
+  });
+
+  it("skips the Pro sync when the Pro group isn't configured", async () => {
+    vi.stubEnv("MAILERLITE_SYNC_ENABLED", "true");
+    vi.stubEnv("MAILERLITE_API_KEY", "key");
+    vi.stubEnv("MAILERLITE_PRO_GROUP_ID", "");
+    expect((await syncProCustomerToMailerLite("a@b.co")).status).toBe("disabled");
   });
 
   it("reports provider errors instead of throwing", async () => {

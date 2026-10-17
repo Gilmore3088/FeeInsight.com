@@ -8,7 +8,7 @@ import { collapseNearNameDuplicates, collapsePublishedDuplicates } from "@/lib/a
 import { collapsePageCopies } from "@/lib/agents/hamilton/page-copy-collapse";
 import { retireClosedInstitutionFees } from "@/lib/agents/hamilton/closed-institution";
 import { fillBlankFrequencies, fillFrequenciesInPublish, FREQUENCY_FILL_VERSION } from "@/lib/agents/hamilton/frequency-fill";
-import { fillSourceLinks, repairSourceLinks, resourceSourceLinks, SOURCE_LINK_VERSION } from "@/lib/agents/hamilton/source-link";
+import { fillSourceLinks, repairLinkDrift, repairSourceLinks, resourceSourceLinks, SOURCE_LINK_VERSION } from "@/lib/agents/hamilton/source-link";
 import { restoreFeesNowInTaxonomy, rollBackOffTaxonomyFees } from "@/lib/agents/hamilton/off-taxonomy-rollback";
 import { foldRetiredCategories } from "@/lib/agents/hamilton/taxonomy-fold";
 import { rollBackLimitsPublishedAsFees } from "@/lib/agents/hamilton/limit-guard";
@@ -1474,6 +1474,15 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // #1347: a live fee whose link opens neither its document's URL nor the page its text was
+      // read from takes its document's link when it traces there; one that does not goes through
+      // the second look and is archived. Off with SOURCE_LINK_DRIFT_LIVE (then it only reports).
+      const linkDrift = await repairLinkDrift(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       // Every agent learns from what happened to its output: this step's takedowns and
       // restores (and a batch of older outcomes) go into the shared learning store.
       const feedbackSync = await syncPipelineFeedback(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
@@ -1502,6 +1511,7 @@ async function executeAgenticStep(
               crossPageRestore.restored.length > 0 ||
               pageCopyRestore.restored.length > 0 ||
               sourceLinkResource.restored > 0 ||
+              (!linkDrift.dryRun && linkDrift.archived.length > 0) ||
               articlePage.rolledBack.length > 0 ||
               closedInstitution.rolledBack.length > 0 ||
               productPage.rolledBack.length > 0 ||
@@ -1583,6 +1593,10 @@ async function executeAgenticStep(
       const resourceCount = published.dryRun
         ? { linked: sourceLinkResource.resources.filter((fee) => !fee.restore).length, restored: sourceLinkResource.resources.filter((fee) => fee.restore).length }
         : { linked: sourceLinkResource.linked, restored: sourceLinkResource.restored };
+      const linkDriftNote =
+        linkDrift.repoints.length + linkDrift.archived.length + linkDrift.flagged > 0
+          ? ` ${linkDrift.dryRun ? "Would re-point" : "Re-pointed"} ${linkDrift.repoints.length.toLocaleString()} live fee link(s) that opened another page to their own document; ${linkDrift.flagged.toLocaleString()} that do not trace there flagged for a second look, ${linkDrift.archived.length.toLocaleString()} ${linkDrift.dryRun ? "would be archived" : "archived"}.`
+          : "";
       const sourceLinkFillNote =
         sourceLinkFill.fills.length > 0
           ? ` ${published.dryRun ? "Would link" : "Linked"} ${sourceLinkFill.fills.length.toLocaleString()} live fee(s) with no link to their own document.`
@@ -1675,7 +1689,7 @@ async function executeAgenticStep(
           : "");
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${handRefileNote}${offTaxonomyNote}${limitNote}${businessNote}${sameLineNote}${otherBankNote}${evalVerdictNote}${closedNote}${articleNote}${productNote}${productConflictNote}${crossPageConflictNote}${categoryGuardNote}${guardRefileNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${lostRestoreNote}${crossPageNote}${pageCopyRestoreNote}${resourceNote}${sourceLinkFillNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${handRefileNote}${offTaxonomyNote}${limitNote}${businessNote}${sameLineNote}${otherBankNote}${evalVerdictNote}${closedNote}${articleNote}${productNote}${productConflictNote}${crossPageConflictNote}${categoryGuardNote}${guardRefileNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${lostRestoreNote}${crossPageNote}${pageCopyRestoreNote}${resourceNote}${sourceLinkFillNote}${linkDriftNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -1884,6 +1898,9 @@ async function executeAgenticStep(
           category_guard_failing: categoryGuard.failingFees,
           category_guard_live_refiled: categoryGuard.liveRefiledFees,
           category_guard_version: categoryGuard.guardVersion,
+          // v70: live card-product misfiles held live while CARD_PRODUCT_TAKEDOWN_LIVE is off.
+          category_guard_card_product_pending: categoryGuard.cardProductPending,
+          category_guard_card_product_samples: categoryGuard.cardProductPendingSamples.slice(0, 10),
           category_guard_samples: categoryGuard.failures.slice(0, 10).map((failure) => ({
             fee_published_id: failure.feePublishedId,
             institution_id: failure.institutionId,
@@ -1911,6 +1928,19 @@ async function executeAgenticStep(
             untraceable_left_live: sourceLinkFill.untraceable,
             error: sourceLinkFill.error,
             fills: sourceLinkFill.fills.map((fee) => ({ fee_published_id: fee.feePublishedId, source_document_id: fee.sourceDocumentId, url: fee.url })),
+          },
+          source_link_drift: {
+            live: linkDrift.live,
+            dry_run: linkDrift.dryRun,
+            scanned: linkDrift.scanned,
+            repointed: linkDrift.repoints.length,
+            flagged_for_second_look: linkDrift.flagged,
+            awaiting_second_look: linkDrift.waiting,
+            archived: linkDrift.archived.length,
+            skipped: linkDrift.skipped,
+            error: linkDrift.error,
+            repoints: linkDrift.repoints.slice(0, 50).map((fee) => ({ fee_published_id: fee.feePublishedId, from: fee.from, to: fee.to })),
+            failing: linkDrift.failing.slice(0, 50).map((fee) => ({ fee_published_id: fee.feePublishedId, link: fee.link, reason: fee.reason })),
           },
           identical_copy_documents: identicalCopy.documents,
           identical_copy_rows_moved: identicalCopy.rowsMoved,
@@ -2110,6 +2140,13 @@ async function executeAgenticStep(
               kept_fee_name: row.keptFeeName,
               amount: row.amount,
             })),
+            [pageCopyCollapse.live && run.runKind !== "dry_run" ? "kept_names_carried" : "would_carry_kept_name"]: pageCopyCollapse.collapses.filter((row) => row.keptNewName).length,
+            carried_name_samples: pageCopyCollapse.collapses.filter((row) => row.keptNewName).slice(0, 10).map((row) => ({
+              kept_fee_published_id: row.keptFeePublishedId,
+              kept_fee_name: row.keptFeeName,
+              kept_new_name: row.keptNewName,
+              amount: row.amount,
+            })),
           },
           duplicate_collapse_samples: duplicateCollapses.slice(0, 10).map((row) => ({
             fee_published_id: row.feePublishedId,
@@ -2180,6 +2217,8 @@ async function executeAgenticStep(
           restored_fees: guard.restoredFees,
           refiled_fees: guard.refiledFees,
           live_refiled_fees: guard.liveRefiledFees,
+          card_product_pending: guard.cardProductPending,
+          card_product_pending_samples: guard.cardProductPendingSamples,
           category_guard_limit: guard.limit,
           rollback_batch_id: guard.rollbackBatchId,
           guard_version: guard.guardVersion,
@@ -2231,7 +2270,7 @@ async function executeAgenticStep(
         status: "completed",
         summary: relabel.mode === "rollback"
           ? `Darwin audience relabel rolled back: ${relabel.restored.toLocaleString()} fees back to their old audience${relabel.dryRun ? " (dry run, nothing written)" : ""}; ${relabel.remaining.toLocaleString()} recorded fees left.`
-          : `Darwin audience relabel${relabel.dryRun ? " (dry run, nothing written)" : ""}: ${relabel.fees.toLocaleString()} live fees verified as unknown on ${relabel.documents.toLocaleString()} documents; decisions ${counts || "none"}. ${relabel.dryRun ? "" : `${relabel.relabeled.toLocaleString()} written, ${relabel.publishedTouched.toLocaleString()} live rows updated.`} ${relabel.remaining.toLocaleString()} documents left${relabel.mode === "off" ? " outside this sample" : ""}.${totals ? ` Full dry run done: ${Object.entries(totals.shares).map(([audience, share]) => `${audience} ${share}%`).join(", ")} of ${totals.fees.toLocaleString()} fees.` : ""}`.replace(/\s+/g, " ").trim(),
+          : `Darwin audience relabel${relabel.dryRun ? " (dry run, nothing written)" : ""}: ${relabel.fees.toLocaleString()} live fees verified as unknown or mixed-schedule both on ${relabel.documents.toLocaleString()} documents; decisions ${counts || "none"}. ${relabel.dryRun ? "" : `${relabel.relabeled.toLocaleString()} written, ${relabel.publishedTouched.toLocaleString()} live rows updated.`} ${relabel.remaining.toLocaleString()} documents left${relabel.mode === "off" ? " outside this sample" : ""}.${totals ? ` Full dry run done: ${Object.entries(totals.shares).map(([audience, share]) => `${audience} ${share}%`).join(", ")} of ${totals.fees.toLocaleString()} fees.` : ""}`.replace(/\s+/g, " ").trim(),
         detail: {
           audience_relabel_version: AUDIENCE_RELABEL_VERSION,
           mode: relabel.mode,
@@ -2240,6 +2279,7 @@ async function executeAgenticStep(
           fees: relabel.fees,
           by_audience: relabel.byAudience,
           by_source: relabel.bySource,
+          by_change: relabel.byChange,
           relabeled: relabel.relabeled,
           published_touched: relabel.publishedTouched,
           restored: relabel.restored,

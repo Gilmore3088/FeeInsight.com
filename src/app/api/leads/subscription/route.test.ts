@@ -7,6 +7,9 @@ vi.mock("@/lib/api-hardening/audit", () => ({
   getRequestSubjectKey: vi.fn(() => "test"),
 }));
 vi.mock("@/lib/email/mailerlite", () => ({ syncLeadToMailerLite: vi.fn() }));
+vi.mock("@/lib/email/lifecycle-deps", () => ({
+  lifecycleDeps: { loadFinding: async () => null, institutionName: async () => "Capital City Bank" },
+}));
 
 import { sql } from "@/lib/data-store/connection";
 import { syncLeadToMailerLite } from "@/lib/email/mailerlite";
@@ -49,7 +52,7 @@ describe("POST /api/leads/subscription", () => {
     expect(issuedText(0)).toContain("email_confirmed_at = COALESCE(email_confirmed_at, now())");
     expect(issuedText(0)).toContain("email_unsubscribed_at = NULL");
     expect(sqlMock.mock.calls[0].slice(1)).toEqual([null, null, null, "vp@bank.example"]);
-    expect(syncMock).toHaveBeenCalledWith({ email: "vp@bank.example", subscribed: true, source: "capture_state", state: null, reconfirmed: true });
+    expect(syncMock).toHaveBeenCalledWith({ email: "vp@bank.example", subscribed: true, source: "capture_state", state: null, reconfirmed: true, fields: expect.any(Object) });
     // The confirmed reader is remembered, so free report forms don't ask for the email again.
     const setCookie = res.headers.get("set-cookie") ?? "";
     expect(setCookie).toMatch(/HttpOnly/i);
@@ -67,7 +70,7 @@ describe("POST /api/leads/subscription", () => {
     expect(res.status).toBe(200);
     expect(sqlMock.mock.calls[0].slice(1)).toEqual(["state=TX", "state=TX", "state=TX", "vp@bank.example"]);
     expect(issuedText(0)).toContain("contact(_[a-z0-9-]+)?");
-    expect(syncMock).toHaveBeenCalledWith({ email: "vp@bank.example", subscribed: true, source: "newsletter,report", state: "TX", reconfirmed: true });
+    expect(syncMock).toHaveBeenCalledWith({ email: "vp@bank.example", subscribed: true, source: "newsletter,report", state: "TX", reconfirmed: true, fields: expect.any(Object) });
   });
 
   it("syncs the newest row's latest state when the confirm page picks none", async () => {

@@ -6,7 +6,7 @@ vi.mock("@/lib/data-store/email-send-log", () => ({
 }));
 
 import { emailSendLogConfigured, insertEmailSendLog } from "@/lib/data-store/email-send-log";
-import { sendLogLabel, sendResendEmail } from "./resend";
+import { sendLogLabel, sendResendEmail, withSenderName } from "./resend";
 
 const insertMock = insertEmailSendLog as unknown as ReturnType<typeof vi.fn>;
 const configuredMock = emailSendLogConfigured as unknown as ReturnType<typeof vi.fn>;
@@ -67,5 +67,12 @@ describe("sendResendEmail send log", () => {
   it("names the sender from its failure label", () => {
     expect(sendLogLabel("the Atlas daily brief")).toBe("Atlas daily brief");
     expect(sendLogLabel("")).toBe("email");
+  });
+});
+
+describe("withSenderName", () => {
+  it("sends every message as Fee Insight", () => {
+    expect(withSenderName("hello@feeinsight.com")).toBe("Fee Insight <hello@feeinsight.com>");
+    expect(withSenderName("FeeInsight. com <hello@bankfeeindex.com>")).toBe("Fee Insight <hello@bankfeeindex.com>");
   });
 });

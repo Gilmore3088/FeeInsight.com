@@ -14,6 +14,7 @@ export type AudienceSource =
   | "document_url"
   | "document_title"
   | "section_heading"
+  | "schedule_section_title"
   | "default_general_schedule"
   | "mixed_schedule_unqualified";
 
@@ -97,6 +98,8 @@ const SECTION_HEADING = new RegExp(
   String.raw`\b(?:personal|consumer|individual|business|commercial)\s+(?:(?:deposit|checking|savings|banking|account|share|fee)s?\s+)?(?:accounts?|banking|checking|savings|fees?|fee schedule|services|products|deposit accounts|share accounts|members?|customers?)\b|\bfor\s+(?:personal|consumer|business|commercial)\s+(?:accounts?|customers?|members?|clients?)\b`,
   "i",
 );
+/** A title naming a schedule, never a fee row: no "service charge" (#1687). */
+const SECTION_SCHEDULE_TITLE = /\b(?:fee schedule|schedule of (?:fees|charges)|fees and charges|fee disclosure)\b/i;
 /** A title names the schedule itself ("Consumer Fee Schedule", "Business Schedule of Fees"). */
 const SCHEDULE_TITLE = /\b(?:fee schedule|schedule of (?:fees|charges)|fees and charges|service charges?|fee disclosure)\b/i;
 /**
@@ -395,6 +398,16 @@ export function suggestAudience(input: {
   if (feeIndex >= 0) {
     const cell = priceCellAudience(lines, feeIndex, input.amount);
     if (cell) return { audience: cell, source: "fee_price_cell", evidence: lines[feeIndex].trim().slice(0, 200) };
+    // A schedule's own title above the fee ("PERSONAL SCHEDULE OF FEES", "Consumer Deposit Account"
+    // over "Fee Schedule"), with nothing between that names another audience, is the schedule the
+    // fee is in, even where a later part of the document prices business items (#1687: Kaw Valley
+    // 53479 and F&M 143832 were `both`).
+    const titled = scheduleSectionTitle(lines, feeIndex);
+    if (titled) {
+      // The document's own title, at its top, keeps that name.
+      const atTop = lines.slice(0, titled.index).join("\n").length < TITLE_CHARS;
+      return { audience: titled.audience, source: atTop ? "document_title" : "schedule_section_title", evidence: titled.title };
+    }
     const section = sectionHeadingAudience(lines, feeIndex);
     // A fee in one of two audience columns stays unknown: the text does not say which column.
     // So does one under an unclear section, except a consumer sentence with no heading above it
@@ -494,13 +507,93 @@ function scheduleTitle(lines: string[]): { audience: ContextAudience; line: stri
     chars += lines[index].length + 1;
     const line = lines[index];
     if (!isHeading(line) || !SCHEDULE_TITLE.test(line)) continue;
-    const audience = audienceOf(line);
-    if (!audience) continue;
+    // A title set on two lines ("Consumer Deposit Account" over "Fee Schedule") reads as one (#1687).
+    const joined = audienceOf(line) ? null : twoLineTitle(lines, index);
+    const title = joined && audienceScheduleTitle(joined) ? joined : audienceOf(line) ? line.trim() : null;
+    const audience = title ? audienceOf(title) : null;
+    if (!title || !audience) continue;
     if (overAPrice(lines, index)) return { ambiguous: line.trim() };
-    found.push({ audience, line: line.trim() });
+    found.push({ audience, line: title });
   }
   if (found.length === 0 || new Set(found.map((title) => title.audience)).size > 1) return null;
   return found[0];
+}
+
+/**
+ * A heading-case schedule title naming no audience ("Fee Schedule") under a heading-case line that
+ * names one and no schedule ("Consumer Deposit Account"): the two lines of one title, joined.
+ */
+function twoLineTitle(lines: string[], index: number): string | null {
+  const line = lines[index].trim();
+  const above = (lines[index - 1] ?? "").trim();
+  if (!above || !headingCase(line) || !headingCase(above) || !isHeading(above) || SCHEDULE_TITLE.test(above)) return null;
+  return audienceOf(above) ? `${above} ${line}` : null;
+}
+
+/** A schedule title at this line, on one line or two, set like a title (heading case, no price). */
+function titleAt(lines: string[], index: number): string | null {
+  const line = lines[index];
+  // "Service charge" names a fee row as often as a schedule, so it is no title here; nor is a
+  // line over a price ("Business Checking Monthly Service Charge" / "$10.00").
+  if (!isHeading(line) || !SECTION_SCHEDULE_TITLE.test(line) || !headingCase(line.trim()) || overAPrice(lines, index)) return null;
+  const title = audienceOf(line) ? line.trim() : twoLineTitle(lines, index) ?? line.trim();
+  return !audienceOf(title) || audienceScheduleTitle(title) ? title : null;
+}
+
+/** Words that may sit between the audience and the schedule ("Consumer Deposit Account Fee Schedule"). */
+const TITLE_FILLER = String.raw`(?:(?:banking|bank|accounts?|deposits?|services?|checking|savings|share|membership|additional|products?|account analysis|&|and)\s+)*`;
+const AUDIENCE_TITLE_WORD = String.raw`(?:personal|consumer|individual|business(?:es)?|commercial)`;
+const SCHEDULE_WORDS = String.raw`(?:fee schedule|schedule of (?:fees|charges)|fees and charges|fee disclosure)`;
+/**
+ * A title that is the audience's whole schedule: the audience, then only words for accounts or
+ * banking, then the schedule ("PERSONAL SCHEDULE OF FEES", "Commercial Account FEE SCHEDULE",
+ * "Northwest Personal Additional Account Fee Schedule"), or the schedule, then the audience ("SCHEDULE
+ * OF FEES - BUSINESS", "Schedule of Fees for Businesses"). A product's schedule ("Business Remote
+ * Deposit Capture Fee Schedule"), a joined audience ("General and Business Membership Fee
+ * Schedule", "and/or Business"), a menu ("Business Rates & Fees · Fee Schedule") or a line that
+ * starts mid-sentence ("of Fees and/or ...") is not.
+ */
+const AUDIENCE_FIRST_TITLE = new RegExp(String.raw`(?<!(?:\band|\bor|&|\/)\s*)\b${AUDIENCE_TITLE_WORD}\s+${TITLE_FILLER}${SCHEDULE_WORDS}\b`, "i");
+const SCHEDULE_FIRST_TITLE = new RegExp(String.raw`\b${SCHEDULE_WORDS}\s*(?:[-–—:]|\bfor\b)\s*${AUDIENCE_TITLE_WORD}(?:\s+(?:accounts?|banking|customers|members))?\s*$`, "i");
+function audienceScheduleTitle(title: string): boolean {
+  if (/^[a-z]/.test(title) || /[·•]/.test(title)) return false;
+  return AUDIENCE_FIRST_TITLE.test(title) || SCHEDULE_FIRST_TITLE.test(title);
+}
+
+/** The audiences a line names: both for a two-sided or all-accounts line. */
+function audiencesNamed(line: string): ContextAudience[] {
+  const text = neutral(line);
+  if (BOTH_WORDS.test(text) || MEMBER_AND_BUSINESS.test(text) || ALL_ACCOUNTS.test(text)) return ["both"];
+  const named: ContextAudience[] = [];
+  if (BUSINESS_WORDS.test(text)) named.push("business");
+  if (CONSUMER_WORDS.test(text)) named.push("consumer");
+  return named;
+}
+
+/**
+ * The nearest schedule title above the fee's line that names one audience ("PERSONAL SCHEDULE OF
+ * FEES", "Consumer Deposit Account" / "Fee Schedule"), when the fee's line and every line between
+ * name no other audience (#1687). A title naming no audience ends the search: the fee is in another
+ * schedule. So do two titles for different audiences one over the other: a menu or a contents list.
+ */
+export function scheduleSectionTitle(lines: string[], feeIndex: number): { audience: "consumer" | "business"; title: string; index: number } | null {
+  const seen = new Set<ContextAudience>(audiencesNamed(lines[feeIndex] ?? ""));
+  for (let index = feeIndex - 1; index >= 0 && index >= feeIndex - HEADING_LOOKBACK_LINES; index -= 1) {
+    const title = titleAt(lines, index);
+    if (title) {
+      const audience = audienceOf(title);
+      if (audience !== "consumer" && audience !== "business") return null;
+      if ([...seen].some((named) => named !== audience)) return null;
+      const top = index - (title === lines[index].trim() ? 0 : 1);
+      for (let above = top - 1; above >= Math.max(0, top - 2); above -= 1) {
+        const other = titleAt(lines, above);
+        if (other && audienceOf(other) !== audience) return null;
+      }
+      return { audience, title, index: top };
+    }
+    for (const named of audiencesNamed(lines[index])) seen.add(named);
+  }
+  return null;
 }
 
 const PRICED = /\$\s*\d|\b\d+\.\d{2}\b/;

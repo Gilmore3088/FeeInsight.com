@@ -20,7 +20,7 @@ const noSamples = { duplicates: [], stale: [], noCategory: [], noSource: [] };
 function counts(overrides: Partial<CatalogCounts> = {}): CatalogCounts {
   return {
     liveFees: 10_000, institutions: 1_000, duplicates: 50, stale: 900, noCategory: 0, offTaxonomy: 0,
-    noSource: 20, noDocument: 40, linkMismatch: 0, linkUrlVariant: 0, linkMismatchSample: [], samples: noSamples,
+    noSource: 20, noDocument: 40, linkMismatch: 0, linkUrlVariant: 0, linkReadPage: 0, linkMismatchSample: [], samples: noSamples,
     categories: [{ category: "overdraft", institutions: 800 }, { category: "nsf", institutions: 600 }],
     ...overrides,
   };
@@ -61,7 +61,7 @@ describe("Deming daily data-quality checks (#1065)", () => {
   it("names a failing check as an ALARM in the summary and keeps dollar and rate fees apart", async () => {
     const row = (live: number, extra: Record<string, unknown> = {}) => ({
       live_fees: live, institutions: 900, duplicates: 400, stale: 100, no_category: 0, off_taxonomy: 2, no_source: 10, no_document: 30,
-      link_mismatch: 25, link_url_variant: 14, link_mismatch_sample: ["3", 4],
+      link_mismatch: 25, link_url_variant: 14, link_read_page: 9, link_mismatch_sample: ["3", 4],
       duplicates_sample: ["11", 12], stale_sample: null, no_category_sample: [], no_source_sample: [7],
       categories: JSON.stringify([{ category: "overdraft", institutions: 700 }]), ...extra,
     });
@@ -78,7 +78,7 @@ describe("Deming daily data-quality checks (#1065)", () => {
     expect(result.rate.checks.duplicates.status).toBe("too_few");
     expect(result.failing).toEqual(["dollar.duplicates"]);
     // #1347: counted beside the graded checks, never an alarm.
-    expect(dataQualityDetail(result).dollar.link_mismatch).toEqual({ count: 25, url_variants: 14, sample: [3, 4] });
+    expect(dataQualityDetail(result).dollar.link_mismatch).toEqual({ count: 25, url_variants: 14, read_page: 9, sample: [3, 4] });
     expect(summarizeDataQuality(result)).toContain("ALARM: duplicates");
     expect(summarizeDataQuality(result)).toContain("category shares recorded (first check, nothing to compare)");
   });
@@ -104,6 +104,10 @@ describe("Deming daily data-quality checks (#1065)", () => {
       ["http://bank.example/fees/", "https://www.bank.example/fees"],
       ["https://bank.example/Fees.pdf#page=2", "https://bank.example/fees.pdf"],
       ["https://bank.example/fees?utm_source=x&id=7", "https://bank.example/fees/?id=7"],
+      // Oct 17: 587 live links differed from their document's URL only by a default port or "%20".
+      ["https://www.goldenrulecu.org/services/fee-schedule", "https://www.goldenrulecu.org:443/services/fee-schedule"],
+      ["https://www.coffee.bank/assets/files/5mEWZuG6/Additional%20Service%20and%20Fee%20Disclosure.pdf", "https://www.coffee.bank/assets/files/5mEWZuG6/Additional Service and Fee Disclosure.pdf"],
+      ["http://bank.example:80/fees", "https://bank.example/fees"],
     ];
     for (const [link, document] of same) expect(documentLinkKey(link)).toBe(documentLinkKey(document));
     // Another page, another document, or a parameter that picks the page is a mismatch.
@@ -112,12 +116,16 @@ describe("Deming daily data-quality checks (#1065)", () => {
       ["https://bank.example/rates.php?e=1183", "https://bank.example/rates.php?e=540"],
       ["https://bank.example/fees", "https://other.example/fees"],
       ["https://bank.example/fees?blueprint=1", "https://bank.example/fees"],
+      ["https://bank.example:8443/fees", "https://bank.example/fees"],
     ];
     for (const [link, document] of other) expect(documentLinkKey(link)).not.toBe(documentLinkKey(document));
     expect(documentLinkKey("  ")).toBeNull();
     const text = dataQualitySql("published_fee_catalog");
     expect(text).toContain("NULLIF(btrim(sd.document_url), '') AS document_url");
     expect(text).toContain("AS link_mismatch");
+    // A link to the page the document's text was read from is the fee's source, counted apart.
+    expect(text).toContain("NULLIF(btrim(ast.source_url), '') AS read_url");
+    expect(text).toContain("AS link_read_page");
     expect(text).toContain(documentLinkKeySql("source_url"));
   });
 });

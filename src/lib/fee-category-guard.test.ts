@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { amountEnvelopeFor } from "@/lib/agents/darwin/envelopes";
 
-import { checkFeeCategory, GUARDED_CATEGORIES, refileCategory, refileFromLine } from "./fee-category-guard";
+import { cardProductMisfile, checkFeeCategory, GUARDED_CATEGORIES, refileCategory, refileFromLine } from "./fee-category-guard";
 
 describe("checkFeeCategory", () => {
   it("passes keys it does not guard", () => {
@@ -152,10 +152,12 @@ describe("checkFeeCategory", () => {
       expect(checkFeeCategory("collection_item", name)).toEqual({ ok: true });
       expect(refileCategory("check_cashing", name)).toBe("collection_item");
     }
-    for (const name of ["Foreign Check Cashing", "Returned Canadian Check", "Non-Member Check Cashing"]) {
+    for (const name of ["Foreign Check Cashing", "Non-Member Check Cashing"]) {
       expect(checkFeeCategory("check_cashing", name)).toEqual({ ok: true });
       expect(checkFeeCategory("collection_item", name).ok).toBe(false);
     }
+    // A returned one is not a collection item either; since v68 it is a returned deposited item (below).
+    expect(checkFeeCategory("collection_item", "Returned Canadian Check").ok).toBe(false);
     expect(checkFeeCategory("collection_item", "Collection Fee for Charged-Off Accounts").ok).toBe(false);
     expect(checkFeeCategory("collection_item", "Negative Balance Collection Fee").ok).toBe(false);
   });
@@ -1396,5 +1398,367 @@ describe("excess withdrawals and returned mail, their own types (guard v65, Jame
     expect(refileCategory("returned_mail", "Returned mail research fee")).toBe("account_research");
     expect(refileCategory("excess_withdrawal", "IRA Excess Withdrawal Fee")).toBe("ira_administration");
     expect(refileCategory("excess_withdrawal", "Excess Transaction Fee")).toBe("excess_withdrawal");
+  });
+});
+
+describe("guard v68 (Oct 17)", () => {
+  it("files a returned foreign check or item as a returned deposited item, not check cashing", () => {
+    // The 10 live check cashing rows (93859 and 93400 among them), each on its bank's own schedule.
+    for (const name of [
+      "Foreign Check Cashing Return",
+      "Foreign Check per Item Processing: Returned",
+      "Foreign Check Return Fee",
+      "FOREIGN CHECK RETURN FEE",
+      "Foreign Item Return Fee",
+      "RETURN FOREIGN CHECK FEE",
+      "Returned Canadian Check",
+      "Returned Canadian Check Fee",
+      "Returned Foreign Check Handling Fee",
+    ]) {
+      expect(checkFeeCategory("check_cashing", name).ok, name).toBe(false);
+      expect(checkFeeCategory("deposited_item_return", name), name).toEqual({ ok: true });
+      expect(refileCategory("check_cashing", name), name).toBe("deposited_item_return");
+    }
+    // Every other foreign check cashing row live on Oct 17 stays check cashing.
+    for (const name of [
+      "Canadian Check Cashing",
+      "CANADIAN CHECK CASHING - PER CHECK",
+      "Canadian Check Cashing/Processing",
+      "Canadian Checks - Deposited or Cashed",
+      "Cashing checks drawn on foreign bank",
+      "Check Cashing - Foreign check - non-customer",
+      "Check Cashing – Canadian checks",
+      "Foreign (International) Checks - Deposited",
+      "Foreign Check (cash/deposit, per item)",
+      "Foreign Check Cashing",
+      "Foreign Item & Cash Letter Processing",
+      "Foreign Item Cashed/Deposited Fee",
+      "Foreign Negotiable Instrument",
+      "Non-USCB Customer Check Cashing Fee",
+      "Return of Check Due to Hold or Uncollected Funds",
+    ]) {
+      expect(checkFeeCategory("check_cashing", name), name).toEqual({ ok: true });
+    }
+    // A returned foreign collection stays a collection item; a wire or mail return is not a deposited item.
+    expect(refileCategory("check_cashing", "Returned Foreign Item Collection")).toBe("collection_item");
+    expect(checkFeeCategory("deposited_item_return", "Foreign Wire Return Fee").ok).toBe(false);
+    expect(checkFeeCategory("deposited_item_return", "Foreign: Returned Mail Fee").ok).toBe(false);
+  });
+
+  it("keeps the overdraft (courtesy pay) and NSF fee out of bill pay (#1304)", () => {
+    const bill = (name: string, excerpt: string, amount = 30) =>
+      checkFeeCategory("bill_pay", name, { amount, conditions: `Knox deterministic extraction. excerpt="${excerpt}"` });
+    // #1304's row (88513), and the 8 live bill pay rows that fail on Oct 17, each on its own schedule.
+    expect(bill("Check/ACH/Bill Pay Payment", "Courtesy Pay (Paid NSF) Check/ACH/Bill Pay Payment | $32.00/item", 32).ok).toBe(false);
+    expect(bill("ACH, Share Draft, Bill Pay", "Non-Sufficient Funds (NSF) ACH, Share Draft, Bill Pay | $30.00/item").ok).toBe(false);
+    expect(bill("Check, ACH, Bill Pay, recurring debit card transaction", "Non-Sufficient Funds | Check, ACH, Bill Pay, recurring debit card transaction, / $30.00").ok).toBe(false);
+    expect(bill("Bill Pay", "Nonsufficient funds (NSF) Bill Pay | $35.00", 35).ok).toBe(false);
+    expect(bill("Online Bill Payment", "Non-Sufficient funds for Online Bill Payment | $ 7.00 each", 7).ok).toBe(false);
+    expect(bill("Bill Pay", "Insufficient funds (Check, ATM, pre-authorized ACH drafts, Bill Pay) | $20.00", 20).ok).toBe(false);
+    expect(bill("Bill Payment Service", "Non-sufficient/Uncollected Funds Item returned by Bill Payment Service..$30.00").ok).toBe(false);
+    expect(bill("Online Bill Pay Insufficient Funds", "Online Bill Pay Insufficient Funds2 ........ $25.00/item", 25).ok).toBe(false);
+    expect(bill("TruCourtesy Pay Program Bill Payment Transaction Fee", "1 | TruCourtesy Pay Program Bill Payment Transaction Fee____ $15.00", 15).ok).toBe(false);
+    // Bill pay's own fees stay, with an NSF or overdraft heading in another cell or before another price.
+    for (const [name, excerpt] of [
+      ["Same Day Bill Payment", "Automatic Transfer Fee / Non-Sufficient Funds (NSF) | Same Day Bill Payment | $ 9.95"],
+      ["Business Bill Pay Inactive (6 months no activity)", "Overdraft Protection Fees4 | Business Bill Pay Inactive (6 months no activity) | $5.00"],
+      ["Bill Payment Recall Fee", "Bill Payment Non-Sufficient Funds Fee: $25 Bill Payment Recall Fee: $25 per item"],
+      ["Online Cash Management & Bill Pay", "Daily overdraft fee.....$3.00 | Online Cash Management & Bill Pay.....$19.95/month"],
+      ["Bill Pay Expedite Fee (electronic)", "Bill Pay Expedite Fee (electronic) | $10.00 | Overdraft Paid or Returned Check 2 | $35.00 per transaction"],
+      ["Online Bill Pay for business accounts after 20 paid items - per month, per item", "Online Bill Pay for business accounts after 20 paid items - per month, per item | $0.40"],
+      ["Bill Pay - Less than 3 bills paid per month", "Bill Pay - Less than 3 bills paid per month | $5.95 per month"],
+    ] as const) {
+      expect(bill(name, excerpt), name).toEqual({ ok: true });
+    }
+    expect(checkFeeCategory("bill_pay", "Same Day Bill Payment")).toEqual({ ok: true });
+  });
+});
+
+describe("guard v69 (Oct 17)", () => {
+  it("files a returned Canadian or international item as a returned deposited item, not NSF", () => {
+    // The 6 live NSF rows that move (92115, 85209, 93491, 16421, 79024, 117427), each read on its
+    // bank's own schedule beside that bank's foreign deposit or collection lines.
+    for (const name of [
+      "International Returned Item",
+      "International returned item",
+      "International Return Item (each)",
+      "Canadian Returned Item",
+      "Returned item fee for Canadian checks",
+      "Canadian Returned Checks (per check)",
+    ]) {
+      expect(checkFeeCategory("nsf", name).ok, name).toBe(false);
+      expect(checkFeeCategory("deposited_item_return", name), name).toEqual({ ok: true });
+      expect(refileCategory("nsf", name), name).toBe("deposited_item_return");
+    }
+    // One price for domestic and foreign items, an NSF charge on a Canadian check, and a price on top
+    // of a cost never move.
+    for (const name of [
+      "Returned Items, each - Within U.S./Outside U.S.",
+      "Non-Sufficient Funds Fee - Canadian Check",
+      "Domestic/Foreign – Incoming and Outgoing Returned Item for Insufficient or Uncollected Funds",
+      "Foreign returned check fee (at cost plus)8",
+    ]) {
+      expect(refileCategory("nsf", name), name).not.toBe("deposited_item_return");
+    }
+    expect(checkFeeCategory("nsf", "Returned Items, each - Within U.S./Outside U.S.")).toEqual({ ok: true });
+    expect(checkFeeCategory("nsf", "Non-Sufficient Funds Fee - Canadian Check")).toEqual({ ok: true });
+  });
+
+  it("files an IRA's own closing charge as IRA termination, not early closure", () => {
+    // The 12 live early closure rows that move (two share a name), each on its bank's own schedule.
+    for (const name of [
+      "A penalty will be charged, if the IRA is closed within the first year of opening",
+      "Early Closing of IRA (within 1st year of opening)",
+      "Individual Retirement Account (IRA) Close Fee",
+      "Individual Retirement Account Closing Fee",
+      "IRA /HSA Account Closed, if closed within 6 months of opening",
+      "IRA Account Closed (within 1 yr. of opening)",
+      "IRA accounts closed within 90 days of open",
+      "IRA Close Fee, if closed within 180 days of opening",
+      "IRA Closed Account Fee",
+      "IRA Closed within 18 Months of Opening",
+      "Retirement/HSA Account Closing Fee",
+    ]) {
+      expect(checkFeeCategory("early_closure", name).ok, name).toBe(false);
+      expect(refileCategory("early_closure", name), name).toBe("ira_termination");
+    }
+    // An account closure that only mentions the IRA, a certificate's or a club's, and an HSA alone stay.
+    for (const name of [
+      "Account Closed within 90 days of opening (including IRA's)",
+      "Early Account Closing - DDA and Savings less than 3 months - IRA prior to 3 years",
+      "Early Account Closure within 90 days (except IRA accounts)",
+      "Early closing (account closed within 6 months of opening) Not applicable to CD accounts",
+      "Early closure of CD (fee to close prior to maturity)",
+      "CD Early Withdrawal Penalty",
+      "Christmas Club & CD Early Withdrawal Fee",
+      "Christmas/Vacation Club early withdrawal (1 per year allowed)",
+      "HSA Account Closure Fee",
+      "IRA Early Withdrawal Processing Fee",
+    ]) {
+      expect(checkFeeCategory("early_closure", name), name).toEqual({ ok: true });
+      expect(refileCategory("early_closure", name), name).toBe("early_closure");
+    }
+  });
+
+  it("refuses the surcharge non-customers pay at the institution's own ATMs", () => {
+    // A sample of the 58 live rows that fail on Oct 17, each read on its bank's own schedule.
+    for (const name of [
+      "ATM Surcharge Fee on WWFCU machines (non-credit union cards only)",
+      "ATM Surcharge (non-customer)",
+      "Non-Customer transactions on ATM's we own or operate",
+      "Non-customer & Out-Of-Network ATM cardholders",
+      "Foreign Card ATM/ITM Transaction Fee",
+      "Foreign Cards using our ATM",
+      "Cards using our ATM",
+      "ATM transaction fee for a non-First National Bank cardholder at a First National Bank ATM",
+      "Foreign Debit/ATM card transaction fee at all 1CFCU ATMs on Goodfellow AFB",
+      "Centier ATM fee to non-Clients",
+      "In-house ATM Withdrawal Fee (If using Debit Card from other Financial Institution)",
+      "ATM fees (non-account holders)",
+      "ATM withdrawal (non credit union card)",
+      "ATM Cash Withdrawal surcharge on debit & credit cards issued by financial institutions other than MVFCU",
+      "Use of Out-of-Network Cards at MIT FCU ATMs",
+      "Transaction fee to use an ACCU ATM for a Non CO-OP Network Cardholder",
+      "Foreign ATM card used at the State Bank of Whittington’s ATM",
+      "ATM Foreign Customer Surcharge",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name).ok, name).toBe(false);
+      expect(refileCategory("atm_non_network", name), name).toBe("atm_non_network");
+    }
+    // What the institution's own customers pay at another network's ATM stays.
+    for (const name of [
+      "Withdrawal at Foreign ATM Machine",
+      "Foreign ATM Surcharge",
+      "ATM Surcharge",
+      "Non-Co-Op Member ATM Surcharge",
+      "Foreign ATM/Card Activity Charge",
+      "ATM Withdrawal at an ATM we do not operate",
+      "Non-Bank of America ATM Fee",
+      "ATM Usage Fee (Non-Credit Union Owned/MoneyPass)",
+      "ATM services at non-Credit Union",
+      "Non-owned ATM Cash Withdrawals",
+      "Debit Card Withdrawal or Inquire at a Non First American Bank ATM",
+      "ATM Surcharge (Bank Customer At Foreign ATM)",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name), name).toEqual({ ok: true });
+    }
+  });
+
+  it("refuses a monthly ATM add-on or plan as a non-network ATM fee", () => {
+    // The 5 live rows that fail on Oct 17, each a monthly plan on its bank's own page.
+    for (const name of [
+      "Power Checking +ATM Freedom",
+      "Add ATM Unlimited",
+      "Unlimited ATM Usage",
+      "Unlimited ATM Usage (This gives immediate access to cash from any Plus Network throughout the continental United States",
+      "unlimited 1st National ATM access",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name).ok, name).toBe(false);
+      expect(refileCategory("atm_non_network", name), name).toBe("atm_non_network");
+    }
+    for (const name of [
+      "ATM fee – 5 free per month, LPCCU ATM FREE unlimited, POS no fee",
+      "ATM Withdrawals (10 FREE per month)",
+      "Non-Network Fee ATM Withdrawal",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name), name).toEqual({ ok: true });
+    }
+  });
+
+  it("keeps an incoming wire line out of the outgoing wire types (Bank of America, #1753)", () => {
+    // Knox's raw reads 137328 and 144213 hinted these international outgoing; they never went live.
+    expect(checkFeeCategory("wire_intl_outgoing", "Outgoing (U.S. or International) | Domestic incoming wire").ok).toBe(false);
+    expect(checkFeeCategory("wire_domestic_outgoing", "Outgoing (U.S. or International) | Domestic incoming wire").ok).toBe(false);
+    expect(checkFeeCategory("wire_intl_outgoing", "International outgoing wire in U.S. dollars")).toEqual({ ok: true });
+  });
+
+  it("refuses ATM-named lines that price something other than ATM use (#1736's report, #1753)", () => {
+    // The 12 live rows that fail with no home on Oct 17, each read on its bank's own line.
+    for (const name of [
+      "ACH-ATM-SD Negative Balance fee",
+      "see ATM fees below additional copies",
+      "ATM Bank CheCks Treasurer’s Check",
+      "Telco ATM | Free | Temporary Checks",
+      "ATM/Debit Card Re-activation resulting from negative balance",
+      "ATM/DEBIT CARD: Replacing Card",
+      "ATM/Debit unblock card",
+      "Cashier’s Checks person withdrawals, ATM withdrawals, Debit Card",
+      "ATM/Debit blocked card (overdrawn, lost, etc.)",
+      "Official Checks: Debit/ATM Card",
+      "ATM withdrawal fee and balance inquiry charges: Cashier’s check",
+      "Branch Banking, a PNC ATM, or Mobile Banking, subject to cut off times",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name).ok, name).toBe(false);
+    }
+    // The 4 that move to their own type.
+    expect(refileCategory("atm_non_network", "Copy of ATM/Debit Card Sales")).toBe("account_research");
+    expect(refileCategory("atm_non_network", "ATM Dispute Fee – Three FREE per year (unless a data base breach)")).toBe("account_research");
+    expect(refileCategory("atm_non_network", "Lost/Stolen ATM/MasterCard®")).toBe("card_replacement");
+    expect(refileCategory("atm_non_network", "Service ATM Card Order (Lost or Stolen)")).toBe("card_replacement");
+    expect(refileCategory("atm_non_network", "ATM/Debit blocked card (overdrawn, lost, etc.)")).toBe("atm_non_network");
+    // An ATM balance inquiry stays: balance_inquiry is retired and folds here. So do Centennial's
+    // inquiry-or-transaction line, denials (left for James) and Regions' own non-network withdrawal.
+    for (const name of [
+      "ATM Balance Inquiry Fee or Transaction Fee at a Non-Centennial Bank or Non-Publix ATM",
+      "ATM Balance Inquiry",
+      "ATM Inquiry Fee",
+      "Account Balances At a Foreign ATM",
+      "ATM Transfer at Non-UNCLE/Non-CO-OP ATM",
+      "ATM denial fee",
+      "Non-Regions ATM: Withdrawal",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name), name).toEqual({ ok: true });
+    }
+  });
+});
+
+describe("guard v70: card-product fees, card inactivity and skipped loan payments", () => {
+  it("refuses card-product fees filed as the non-network ATM fee (each on its bank's stored line, Oct 17)", () => {
+    for (const name of [
+      "ATM/Debit Card - Monthly Fee",
+      "ATM Only Cardholder Fee (monthly)",
+      "ATM/VISA™ Debit Card Holder Fee",
+      "Visa Debit/ATM Card Maintenance",
+      "ATM or Debit Card Maint.. Fee",
+      "ATM/Check Card Maintenance Fee - Monthly",
+      "ATM/Debit Card Service Fee (per month)",
+      "ATM /Debit Card Monthly Fee for Share Account Access (if no checking account)",
+      "Savings with only an ATM Card (per month) Fee",
+      "Monthly ATM Access Charge",
+      "Monthly ATM DEBIT fee",
+      "ATM Monthly Service Charge",
+      "ATM - Access of Membership Share",
+      "ATM savings account access only",
+      "ATM Access Fee with Select or PLUS Checking",
+      "ATM/Debit Card Issue Fee",
+      "ATM/Visa Check Card First Issue Fee",
+      "Card Services ATM Card Issuance Service Charge",
+      "ATM Debit Card Activation Fee",
+      "ATM or Debit Card Origination",
+      "per card ATM Card or Debit Card Re-Activation ........",
+      "Reinstate Suspended Checking/Debit/ATM/Credit Card Privileges",
+      "Temporary Limit Increase Debit/ATM Card",
+      "DEBIT ATM/POS Limit Increase",
+      "Debit / ATM Card Inactivity",
+      "Dormant ATM/Debit Fee",
+      "Inactive Debit/ATM/Visa (after 90 days) (per billing period)",
+      "ATM point of sale",
+      "ATM Point of Sale (POS) Fee",
+      "ATM POS Purchase",
+      "POS w/ATM card transactions",
+      "ATM Activity Fee (Point-of-Sale Transactions only)",
+    ]) {
+      const verdict = checkFeeCategory("atm_non_network", name);
+      expect(verdict.ok, name).toBe(false);
+      expect(cardProductMisfile("atm_non_network", name), name).not.toBeNull();
+      // Without the card-product rule the guard passes it, so the switch holds exactly these.
+      expect(checkFeeCategory("atm_non_network", name, undefined, { cardProducts: false }), name).toEqual({ ok: true });
+      // No home among the 50: nothing re-files it.
+      expect(refileCategory("atm_non_network", name), name).toBe("atm_non_network");
+    }
+  });
+
+  it("keeps ATM use, including card and POS words beside a withdrawal, inquiry, network or denial", () => {
+    for (const name of [
+      "ATM Card Usage Over 8 per month",
+      "ATM withdrawals in excess of 8 a month(Visa Debit Card)",
+      "ATM Monthly Fee (7 or more transactions)",
+      "ATM Access Fee (8 free per month) after 8 per Month",
+      "ATM/POS User Fee at a Terminal not owned by us (Withdrawal or Inquiry)",
+      "ATM card withdrawal, purchase (POS)",
+      "Foreign ATM Inquiry Fee (Point of Sale Terminal)",
+      "ATM/POS Activity Charge",
+      "ATM Withdrawal/POS transactions in excess of 1 per month",
+      "Nuvision ATM or Visa Debit Card",
+      "ATM /Debit Card Services",
+      "ATM Service Charge",
+    ]) {
+      expect(cardProductMisfile("atm_non_network", name), name).toBeNull();
+    }
+  });
+
+  it("re-files an ATM-named bill payer service and an early-closure card charge", () => {
+    expect(refileCategory("atm_non_network", "e-Pay (Bill Payer Service) without Checking and Debit/ATM Card")).toBe("bill_pay");
+    expect(refileCategory("atm_non_network", "Account Closure ATM/Debit Card - if account closed within 12 months")).toBe("early_closure");
+  });
+
+  it("refuses a card's inactivity filed as a dormant account, and keeps the account's own dormancy", () => {
+    for (const name of [
+      "Inactive Debit Card Per month",
+      "Inactive Credit Card Per month",
+      "Dormant debit card",
+      "Inactive Card for 90 Days or More (Business)",
+      "Inactive card fee",
+      "Debit/Check Card Inactivity Fee (Inactivity for 180 days or more)",
+      "Debit Card Inactivity Annual Fee (after 12 months)",
+      "Inactive Visa® Debit Card (no activity for 6+ months)",
+      "DEBIT CARD INACTIVE FEE",
+      "Debit Card, Inactive: 6 mo",
+      "Card Inactivity Fee (No activity within 12 months)",
+      "Debit Card Inactivity Fee After 12 months of non- use",
+    ]) {
+      expect(checkFeeCategory("dormant_account", name).ok, name).toBe(false);
+      expect(checkFeeCategory("dormant_account", name, undefined, { cardProducts: false }), name).toEqual({ ok: true });
+    }
+    for (const name of [
+      "Dormant Checking fee",
+      "Inactivity Fee",
+      "Inactive Account Fee (no deposits, withdrawals or debit card transactions for 12 months)",
+      "Dormant/Inactive Accounts",
+    ]) {
+      expect(checkFeeCategory("dormant_account", name), name).toEqual({ ok: true });
+    }
+  });
+
+  it("moves a skipped loan payment out of late payment and loan origination to other lending", () => {
+    for (const name of ["Skip-A-Pay Fee", "Skip A Payment (each)", "One Time Skip Payment", "Holiday skip payment program", "Extension Agreement or Skip Pay"]) {
+      expect(checkFeeCategory("late_payment", name).ok, name).toBe(false);
+      expect(refileCategory("late_payment", name), name).toBe("other_lending_fee");
+    }
+    expect(refileCategory("loan_origination", "Loan Extension (Skip-A-Pay)")).toBe("other_lending_fee");
+    expect(refileCategory("loan_origination", "Consumer Loan Extension/Skip Payment")).toBe("other_lending_fee");
+    expect(refileCategory("late_payment", "Auto overdraft from shares Loan Skip Payment fee")).toBe("late_payment");
+    expect(checkFeeCategory("late_payment", "Late Payment Fee")).toEqual({ ok: true });
+    expect(checkFeeCategory("loan_origination", "Loan Extension Fee")).toEqual({ ok: true });
   });
 });
