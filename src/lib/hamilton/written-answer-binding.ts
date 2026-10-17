@@ -156,7 +156,7 @@ export function bindWrittenAnswer(input: { sections: WrittenAnswerSections; tool
 
 const OMIT_REASONS = new Set<OmitReason>([
   "advice", "instruction_text", "no_evidence", "wrong_institution", "gap_as_fee",
-  "wrong_direction", "wrong_period", "wrong_unit", "conflicting_sources",
+  "wrong_direction", "wrong_period", "wrong_unit", "conflicting_sources", "median_as_fee",
 ]);
 
 const strings = (value: unknown): value is string[] => Array.isArray(value) && value.every((item) => typeof item === "string");

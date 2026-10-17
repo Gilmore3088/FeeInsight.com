@@ -228,6 +228,7 @@ function savedEvidence(analysis: AnalyzeResponse): SavedEvidenceAppendix | null 
 
 /** The two calculations Hamilton records, in words; any other formula prints as recorded. */
 const FORMULA_WORDS: Record<string, string> = {
+  "median of published peer amounts": "The median of the peers' published fees, one per peer",
   "left - right": "The first figure minus the second",
   "(current - prior) / prior * 100": "The change from the earlier figure, as a percent of it",
 };

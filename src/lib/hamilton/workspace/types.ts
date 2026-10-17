@@ -211,6 +211,22 @@ export interface PeerValue {
   sourceDocumentIds: number[];
   documentUrls: string[];
   publishedAt: string | null;
+  /**
+   * The published_fee_catalog rows behind `amount` (#981, H06-T04), so the peer median can name its
+   * records. Absent on answers saved before them and where a reader does not load them.
+   */
+  feeRecords?: PeerFeeRecordRef[];
+}
+
+/** One published_fee_catalog row behind a peer's value. */
+export interface PeerFeeRecordRef {
+  id: number;
+  amount: number;
+  feeName: string | null;
+  frequency: string | null;
+  feeAudience: "consumer" | "business" | "both" | "unknown";
+  sourceDocumentId: number | null;
+  documentUrl: string | null;
 }
 
 /** One of the bank's own published rows for a fee. */

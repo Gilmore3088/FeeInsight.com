@@ -6,6 +6,7 @@ import {
   LEGACY_HIGH_CONFIDENCE_LIMITATION,
   OWN_AGGREGATE_LIMITATION,
   PEER_AGGREGATE_LIMITATION,
+  PEER_MEDIAN_RECORDS_LIMITATION,
   STORED_SNAPSHOT_LIMITATION,
 } from "./evidence-contract";
 import {
@@ -36,6 +37,7 @@ export function readerLimitation(text: string): string {
   if (text === OWN_AGGREGATE_LIMITATION) return "The institution's figure combines fee lines that differ in product, frequency or source document, so it is not tied to one listed fee.";
   if (text === INCOMPLETE_RECORDS_LIMITATION) return "Some records behind this answer are incomplete; the records table marks which.";
   if (text === PEER_AGGREGATE_LIMITATION) return "Peer figures are medians with no single fee record behind them; read them as directional.";
+  if (text === PEER_MEDIAN_RECORDS_LIMITATION) return "The peer median is worked out from each peer's own published fee, listed in the records table. The other peer figures, such as the middle half and wider-market medians, are directional.";
   return text;
 }
 
@@ -82,13 +84,14 @@ function factRow(fact: SavedEvidenceFactRow, names: ReadonlyMap<number, string>)
 
 /** The two calculations Hamilton records, in words; any other formula prints as recorded. */
 const FORMULA_WORDS: Record<string, string> = {
+  "median of published peer amounts": "the median of the peers' published fees, one per peer",
   "left - right": "the first record minus the second",
   "(current - prior) / prior * 100": "the change from the earlier record, as a percent of it",
 };
 
 function derivationRow(fact: SavedEvidenceDerivationRow): string[] {
   const denominator = fact.denominatorFactId ? `; divided by ${fact.denominatorFactId}` : "";
-  const detail = `record ${fact.id} · ${FORMULA_WORDS[fact.formula] ?? fact.formula}, from ${fact.inputFactIds.join(" and ") || "no recorded inputs"}${denominator}; rounded to ${fact.rounding.replace(/;/g, ",")}`
+  const detail = `record ${fact.id} · ${FORMULA_WORDS[fact.formula] ?? fact.formula}, from ${fact.inputFactIds.length > 2 ? `${fact.inputFactIds.length} records (${fact.inputFactIds.join(", ")})` : fact.inputFactIds.join(" and ") || "no recorded inputs"}${denominator}; rounded to ${fact.rounding.replace(/;/g, ",")}`
     + ` · reporting date ${fact.scope.reportingDate ? readerAsOf(fact.scope.reportingDate) : "not recorded"}`;
   const label = fact.scope.feeCategory ? `${getDisplayName(fact.scope.feeCategory)}, calculated` : "Calculated figure";
   return [label, recordValue(fact.value, fact.unit), detail, fact.problems.length ? `Cannot be recalculated: ${recordProblems(fact.problems)}` : "Recalculated from the saved records"];
