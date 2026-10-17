@@ -220,6 +220,9 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
  * in a manifest above.
  */
 export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
+  // v1 (Oct 17): a person uploads a copy of a schedule they downloaded. It runs only on an upload,
+  // so there is no backlog of older documents to read again.
+  HAND_SUPPLIED_STRATEGY: "Runs only when a person uploads a file on /admin/magellan/hand-supplied; nothing older to replay.",
   // v6 (Oct 17): an unclassified committee assignment moves a committee bill's stage date. The state
   // bills read treats a state stored under an older version as due, so its next run re-reads them.
   STATE_BILLS_TAGGING_VERSION: "The state bills read re-reads states stored under an older version on its next runs; nothing to replay.",

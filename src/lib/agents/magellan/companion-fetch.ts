@@ -93,6 +93,9 @@ async function selectDue(db: SqlTag, stateCode: string | null, institutionId: nu
       LEFT JOIN source_documents latest ON latest.id = ias.last_source_document_id
      WHERE ias.status IN ('found', 'fetched')
        AND ias.document_role <> 'business'
+       -- A copy a person supplied by hand (hand-supplied.ts) came from a site that refuses us:
+       -- there is nothing to fetch, and its bytes are in the vault.
+       AND ias.found_by_strategy <> 'supply.hand_supplied'
        AND (
          COALESCE(inst.status, 'active') = 'active'
          -- A schedule found by hand is fetched for a bank whose own link went dormant (Stock
@@ -132,6 +135,9 @@ interface ReviewRow {
   account_name: string | null;
   found_by_strategy?: string | null;
 }
+
+/** Pages a person gave: a hand-found link or a hand-supplied copy; judged by reading them, not by their link words. */
+const HAND_GIVEN_STRATEGIES: ReadonlySet<string> = new Set(["discover.operator_schedule", "supply.hand_supplied"]);
 
 const NON_DEPOSIT_REASON = `${NOT_CONSUMER_FEE_PAGE_REASON}: loan or other non-deposit document`;
 
@@ -208,7 +214,7 @@ export async function reviewStoredCompanions(
   for (const row of rows) {
     const companionId = Number(row.id);
     const label = row.account_name ?? "";
-    if (row.found_by_strategy !== "discover.operator_schedule" && isNonDepositLink(label, row.url)) {
+    if (!HAND_GIVEN_STRATEGIES.has(row.found_by_strategy ?? "") && isNonDepositLink(label, row.url)) {
       await db`
         UPDATE institution_additional_sources
            SET status = 'rejected',
