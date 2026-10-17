@@ -189,14 +189,14 @@ describe("an account's own price in the headline (James, Oct 17: Navy Federal)",
   it("names the account and its stated waiver, never an institution-wide price", () => {
     const virginia = { ...markets, state: [entry("monthly_maintenance", 7, 25)] };
     const rows = compareRows(
-      [value("monthly_maintenance", 10, { account: "Flagship Checking", waiver: "waived with an average daily balance of $1,500 or more" })],
+      [value("monthly_maintenance", 10, { account: "Flagship Checking", waiver: "can be waived with an average daily balance of $1,500 or more" })],
       virginia,
       "reviewed",
       null,
     );
     const text = heroFinding({ rows, name: "Navy Federal Credit Union", stateName: "Virginia", sparse: false, schedule: "reviewed", underReview: 0 });
     expect(text).toBe(
-      "Navy Federal Credit Union\u2019s Flagship Checking account carries a $10 monthly maintenance fee, waived with an average daily balance of $1,500 or more. That is $3 above the $7 Virginia median.",
+      "Navy Federal Credit Union\u2019s Flagship Checking account carries a $10 monthly maintenance fee, which can be waived with an average daily balance of $1,500 or more. That is $3 above the $7 Virginia median.",
     );
   });
 
@@ -208,8 +208,8 @@ describe("an account's own price in the headline (James, Oct 17: Navy Federal)",
   });
 
   it("shows the waiver under the account in the comparison row", () => {
-    const [row] = navy({ waiver: "waived with an average daily balance of $1,500 or more" });
-    expect(row.waiver).toBe("waived with an average daily balance of $1,500 or more");
+    const [row] = navy({ waiver: "can be waived with an average daily balance of $1,500 or more" });
+    expect(row.waiver).toBe("can be waived with an average daily balance of $1,500 or more");
   });
 
   it("reads the article as the amount is spoken", () => {

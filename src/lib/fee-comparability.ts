@@ -38,8 +38,8 @@ export function notComparableReason(
 ): string | null {
   if (!category) return null;
   if (ACCOUNT_DORMANCY_CATEGORIES.has(category)) {
-    const named = [feeName ?? "", accountProduct ?? ""].join(" ");
-    if (CARD_NAME.test(named) || CARD_LINE.test(sourceLine ?? "")) return CARD_INACTIVITY_REASON;
+    // The account's product name is left out: a "card" there names the account, not the fee.
+    if (CARD_NAME.test(feeName ?? "") || CARD_LINE.test(sourceLine ?? "")) return CARD_INACTIVITY_REASON;
   }
   if (CD_IRA_CATEGORIES.has(category)) return null;
   const text = [feeName ?? "", accountProduct ?? ""].join(" ");

@@ -325,7 +325,7 @@ export function heroFinding(input: {
       return `${owner} standard ${lowerLabel(lead.label)} fee, ${money(lead.amount)} (the highest of its prices), sits ${gap}.`;
     }
     if (ACCOUNT_PRICED_FEES.has(lead.key) && !isRange(lead)) {
-      const fee = `${amountArticle(lead.amount)} ${money(lead.amount)} ${lowerLabel(lead.label)} fee${lead.waiver ? `, ${lead.waiver}` : ""}`;
+      const fee = `${amountArticle(lead.amount)} ${money(lead.amount)} ${lowerLabel(lead.label)} fee${lead.waiver ? `, which ${lead.waiver}` : ""}`;
       const subject = lead.account ? `${owner} ${accountNoun(lead.account)} carries` : `${owner} schedule lists`;
       return `${subject} ${fee}. That is ${gap}.`;
     }

@@ -349,6 +349,13 @@ const ASSET_JUMP_PCT = 25;
 const ASSET_DROP_PCT = -10;
 const MIN_YEARS_FOR_RECORD = 5;
 
+/** "rose 12%", "fell 4%", or "held flat". */
+function moved(value: number): string {
+  const rounded = Math.round(value);
+  if (rounded === 0) return "held flat";
+  return `${rounded > 0 ? "rose" : "fell"} ${Math.abs(rounded)}%`;
+}
+
 function signedPct(value: number): string {
   const rounded = Math.round(value);
   return `${rounded > 0 ? "+" : ""}${rounded}%`;
@@ -371,7 +378,7 @@ export function findOutliers(points: FinancialPoint[], growth: GrowthRow[], peer
   if (charges?.yoy != null && assets?.yoy != null && Math.abs(charges.yoy - assets.yoy) >= FEE_GAP_POINTS) {
     flags.push({
       id: "fees-vs-assets",
-      text: `${fees} ${signedPct(charges.yoy)} over the past year while total assets moved ${signedPct(assets.yoy)}.`,
+      text: `${fees} ${moved(charges.yoy)} over the past year while total assets ${moved(assets.yoy)}.`,
     });
   }
   if (assets?.yoy != null && assets.yoy >= ASSET_JUMP_PCT) {

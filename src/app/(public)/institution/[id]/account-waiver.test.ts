@@ -8,11 +8,11 @@ describe("waiverPhrase", () => {
         minBalanceToAvoid: 1500,
         sourceLine: "Flagship Checking Monthly Fee | $10.00 if the average daily balance is less than $1,500.00 during the statement period",
       }),
-    ).toBe("waived with an average daily balance of $1,500 or more");
+    ).toBe("can be waived with an average daily balance of $1,500 or more");
     expect(waiverPhrase({ minBalanceToAvoid: 500, waiverText: "Maintain a minimum daily balance of $500" })).toBe(
-      "waived with a minimum daily balance of $500 or more",
+      "can be waived with a minimum daily balance of $500 or more",
     );
-    expect(waiverPhrase({ minBalanceToAvoid: 250 })).toBe("waived with a balance of $250 or more");
+    expect(waiverPhrase({ minBalanceToAvoid: 250 })).toBe("can be waived with a balance of $250 or more");
   });
 
   it("says nothing when the stored row states no waiver balance", () => {

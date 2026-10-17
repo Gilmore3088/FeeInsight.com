@@ -220,7 +220,7 @@ describe("outliers and peer rank", () => {
     );
     const flags = findOutliers(series, computeGrowth(series), null);
     expect(flags.map((f) => f.id)).toEqual(["fees-vs-assets", "asset-jump", "net-loss"]);
-    expect(flags[0].text).toBe("Deposit service charges +100% over the past year while total assets moved +40%.");
+    expect(flags[0].text).toBe("Deposit service charges rose 100% over the past year while total assets rose 40%.");
   });
 
   it("flags only the top and bottom 5% of peers, never asset size", () => {

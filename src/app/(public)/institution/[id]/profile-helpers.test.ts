@@ -242,7 +242,7 @@ describe("headline fees", () => {
       ],
       ["monthly_maintenance", "dormant_account"],
     );
-    expect(values[0]).toMatchObject({ account: "Flagship Checking", waiver: "waived with an average daily balance of $1,500 or more" });
+    expect(values[0]).toMatchObject({ account: "Flagship Checking", waiver: "can be waived with an average daily balance of $1,500 or more" });
     expect(values[1]).toMatchObject({ category: "dormant_account", amount: 3, count: 1, excludedCard: 1, excludedCdIra: 0 });
   });
 

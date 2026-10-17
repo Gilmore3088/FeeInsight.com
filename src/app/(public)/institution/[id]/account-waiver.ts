@@ -19,11 +19,11 @@ const BALANCE_KINDS: Array<[RegExp, string]> = [
   [/minimum balance/i, "minimum balance"],
 ];
 
-/** "waived with an average daily balance of $1,500 or more", or null. */
+/** "can be waived with an average daily balance of $1,500 or more", or null. */
 export function waiverPhrase(input: WaiverInput): string | null {
   const balance = input.minBalanceToAvoid;
   if (balance == null || !Number.isFinite(balance) || balance <= 0) return null;
   const words = [input.waiverText ?? "", input.sourceLine ?? ""].join(" ");
   const kind = BALANCE_KINDS.find(([pattern]) => pattern.test(words))?.[1] ?? "balance";
-  return `waived with ${/^[aeiou]/i.test(kind) ? "an" : "a"} ${kind} of ${formatFeeAmount(balance)} or more`;
+  return `can be waived with ${/^[aeiou]/i.test(kind) ? "an" : "a"} ${kind} of ${formatFeeAmount(balance)} or more`;
 }
