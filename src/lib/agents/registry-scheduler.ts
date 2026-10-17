@@ -29,6 +29,11 @@ import { CENSUS_ACS_PARSER_VERSION, CENSUS_ACS_SOURCE, censusAcsPartitions } fro
 import { IRS_ZIP_INCOME_SOURCE, irsZipIncomePartitions } from "@/lib/agents/magellan/registry/irs-zip-income";
 import { NCUA_BRANCHES_SOURCE, ncuaBranchPartitions } from "@/lib/agents/magellan/registry/ncua-branches";
 import { SEC_FILINGS_SOURCE, SEC_LINKS_PARSER_VERSION, SEC_LINKS_SOURCE, secBatchPartitions } from "@/lib/agents/magellan/registry/sec";
+import {
+  CFPB_CARD_AGREEMENTS_PARSER_VERSION,
+  CFPB_CARD_AGREEMENTS_SOURCE,
+  cfpbCardAgreementsPartitions,
+} from "@/lib/agents/magellan/registry/cfpb-card-agreements";
 import { REGISTRY_SOURCES } from "@/lib/agents/magellan/registry";
 import { isProviderStep } from "@/lib/agents/types";
 import { STATE_BILLS_PARTITION, STATE_BILLS_SOURCE } from "@/lib/agents/magellan/registry/state-bills";
@@ -84,6 +89,7 @@ export const REGISTRY_PARSER_VERSIONS: Record<string, number> = {
   [FFIEC_CALL_DETAIL_SOURCE]: FFIEC_CALL_DETAIL_PARSER_VERSION,
   [NCUA_EXTRAS_SOURCE]: NCUA_EXTRAS_PARSER_VERSION,
   [FDIC_HISTORY_SOURCE]: FDIC_HISTORY_PARSER_VERSION,
+  [CFPB_CARD_AGREEMENTS_SOURCE]: CFPB_CARD_AGREEMENTS_PARSER_VERSION,
 };
 
 /**
@@ -155,6 +161,7 @@ export function registryPartitionsBySource(
     [FFIEC_CALL_DETAIL_SOURCE]: ffiecCallDetailPartitions(now),
     [NCUA_EXTRAS_SOURCE]: ncuaExtrasPartitions(now, compareQuarters(from, NCUA_EXTRAS_FIRST) > 0 ? from : NCUA_EXTRAS_FIRST),
     [FDIC_HISTORY_SOURCE]: fdicHistoryPartitions(now, Math.max(FDIC_HISTORY_FIRST_YEAR, from.year)),
+    [CFPB_CARD_AGREEMENTS_SOURCE]: cfpbCardAgreementsPartitions(now, from),
     [NCUA_BRANCHES_SOURCE]: ncuaBranchPartitions(now),
     [FDIC_SOD_SOURCE]: years(Math.max(SOD_FIRST_YEAR, from.year), latestSodYear(now)),
     [CENSUS_ACS_SOURCE]: censusAcsPartitions(now),

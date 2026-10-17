@@ -846,6 +846,7 @@ describe("registry dispatch", () => {
       "ffiec-call-detail",
       "ncua-extras",
       "fdic-history",
+      "cfpb-card-agreements",
       "fdic-sod",
       "ncua-branches",
       "ncua-branch-geocode",

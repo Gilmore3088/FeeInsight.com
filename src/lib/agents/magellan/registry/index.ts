@@ -8,6 +8,7 @@ import { FDIC_SOD_SOURCE, runRegistryFdicSod } from "./fdic-sod";
 import { FFIEC_CALL_DETAIL_SOURCE, runRegistryFfiecCallDetail } from "./ffiec-call-detail";
 import { NCUA_EXTRAS_SOURCE, runRegistryNcuaExtras } from "./ncua-extras";
 import { FDIC_HISTORY_SOURCE, runRegistryFdicHistory } from "./fdic-history";
+import { CFPB_CARD_AGREEMENTS_SOURCE, runRegistryCfpbCardAgreements } from "./cfpb-card-agreements";
 import { FDIC_UNIVERSE_PARTITION, FDIC_UNIVERSE_SOURCE, runRegistryFdicUniverse } from "./fdic-universe";
 import {
   BEIGE_BOOK_SOURCE,
@@ -254,6 +255,39 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
           undated_records: r.undatedRecords,
           top_change_codes: r.topChangeCodes,
           empty: r.empty,
+        },
+      };
+    },
+  },
+  {
+    source: CFPB_CARD_AGREEMENTS_SOURCE,
+    stepKey: "registry-cfpb-card-agreements",
+    title: "Pull CFPB card and prepaid agreements and the Terms of Credit Card Plans survey",
+    run: async (input) => {
+      const r = await runRegistryCfpbCardAgreements({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      const pending = r.feePending > 0 ? `; ${n(r.feePending)} agreements wait for the next run` : "";
+      return {
+        summary: r.empty
+          ? `No CFPB ${r.family} agreements for ${r.period}: ${r.emptyReason}.`
+          : `Magellan loaded ${n(r.agreements)} CFPB ${r.family} agreements for ${r.period} from ${n(r.issuers)} issuers (${n(r.matchedIssuers)} matched, ${n(r.unmatchedIssuers)} unmatched): ${n(r.feeRead)} read, ${n(r.terms)} fee terms${pending}${dry(r.dryRun)}.`,
+        detail: {
+          family: r.family,
+          period: r.period,
+          source_url: r.sourceUrl,
+          agreements: r.agreements,
+          issuers: r.issuers,
+          matched_issuers: r.matchedIssuers,
+          unmatched_issuers: r.unmatchedIssuers,
+          fee_read: r.feeRead,
+          fee_no_text: r.feeNoText,
+          fee_fetch_failed: r.feeFetchFailed,
+          fee_kept: r.feeKept,
+          fee_pending: r.feePending,
+          terms: r.terms,
+          written_rows: r.writtenRows,
+          missing_headers: r.missingHeaders,
+          empty: r.empty,
+          empty_reason: r.emptyReason,
         },
       };
     },
