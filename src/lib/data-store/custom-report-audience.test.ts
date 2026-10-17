@@ -33,13 +33,11 @@ describe("competitive report consumer boundary", () => {
 });
 
 describe("the subject's records the source check could not match", () => {
-  // Capital City Bank's checking page, as stored (agent_source_texts 29133, read Oct 12).
+  // A stored checking page that states the Carefree price but not the Everyday one, so the
+  // Everyday record cannot be matched to a line of it.
   const TEXT = [
     "Carefree Checking", "Features and benefits:", "No minimum balance", "$7.95 monthly service charge", "Only $50 minimum opening deposit",
-    "Everyday Checking", "Features and benefits:",
-    "No monthly service charge with either 20 debit card transactions* OR a minimum daily balance of $1,500; otherwise, $8.95 per month",
-    "Free e-statements**",
-    "Performance Checking", "Features and benefits:", "No monthly service charge with a minimum daily balance of $4,000; otherwise, $8.95 per month",
+    "Everyday Checking", "Features and benefits:", "Free e-statements**",
   ].join("\n\n");
   const fee = (institution_id: number, fee_id: number, fee_name: string, amount: string, excerpt: string) => ({
     institution_id, institution_name: institution_id === 323 ? "Capital City Bank" : "Rival Bank", city: "Tallahassee", state_code: "FL", charter_type: "bank",
