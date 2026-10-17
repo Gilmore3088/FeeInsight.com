@@ -1,5 +1,6 @@
 import { feeApplicability } from "@/lib/fee-audience";
 import {
+  billPayByHeading,
   extractCandidatesFromText,
   isUnpricedHeldShape,
   MAX_FEES_PER_DOCUMENT,
@@ -241,7 +242,10 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
   };
 
   for (const specialist of specialists) {
-    const found = specialist.run();
+    const run = specialist.run();
+    // v78 (#1304): no specialist files a bill payment priced under an overdraft or NSF heading on
+    // its own line as bill pay (`billPayByHeading`); the table pass named such a cell by its words.
+    const found = { ...run, candidates: run.candidates.map((read) => billPayByHeading(read)).filter((read): read is ExtractedFeeCandidate => read != null) };
     for (const [reason, count] of Object.entries(found.dropped ?? {})) countDropped(reason as DroppedLineReason, count);
     let added = 0;
     let selfCheckFailed = 0;
@@ -301,6 +305,19 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
           )
         : candidates.some((prior) => sameFee(prior, candidate));
       if (duplicate) continue;
+      // v78 (#1304): a later specialist's bill pay read of a row the rules pass already filed under
+      // its overdraft or NSF heading ("Courtesy Pay: Check/ACH/Bill Pay Payment") is that fee again.
+      if (
+        candidate.canonicalHint === "bill_pay" &&
+        candidates.some(
+          (prior) =>
+            (prior.canonicalHint === "overdraft" || prior.canonicalHint === "nsf") &&
+            prior.amount === candidate.amount &&
+            prior.feeName.toLowerCase().endsWith(candidate.feeName.toLowerCase()),
+        )
+      ) {
+        continue;
+      }
       candidates.push({ ...candidate, strategy: specialist.strategy });
       added += 1;
     }

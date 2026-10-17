@@ -140,6 +140,7 @@ export const FOLDED_PATTERNS: FeePattern[] = [
   // A fax service is document reproduction since Oct 9 (one home for fax and copies, as the
   // fold has it); fax as the way a wire, payoff or closing is sent stays below.
   { key: "document_reproduction", pattern: FAX_SERVICE },
+  { key: "document_reproduction", pattern: /\bstatement\s*print[- ]?outs?\b|\bspecial statement (?:fee|request)s?\b|\bhard copy print[- ]?outs?\b/i },
   // v77 (#1398): returned mail and excess withdrawals file under their own types while
   // `RESEARCH_SPLIT_LIVE` is on (`researchSplitTarget`), account research while it is off.
   {
@@ -260,6 +261,33 @@ export const RECALL_FAMILY_PATTERNS: FeePattern[] = [
   // Mobile deposit under its other names ("Mobile Check Deposit", "deposit via mobile"). Remote
   // deposit capture stays held: a business service the seven-state key leaves unfiled.
   { key: "mobile_deposit", pattern: /\bmobile check deposits?\b|\bdeposits? (?:by|via|through|using) mobile\b/i },
+];
+
+/**
+ * v78: the next name families the 62-bank answer key showed held as unclassified at v77 (Knox recall
+ * round 3, 17 Oct 2026). Kept after v75's, so they only claim names no rule above recognizes.
+ */
+export const V78_RECALL_PATTERNS: FeePattern[] = [
+  { key: "cashiers_check", pattern: /^(?![\s\S]*\breturn)[\s\S]*\bbank drafts?\b/i },
+  { key: "check_cashing", pattern: /\bchecking cashing\b/i },
+  { key: "wire_domestic_incoming", pattern: /^(?![\s\S]*\b(?:international|foreign|intl)\b)[\s\S]*\binbound wires?\b/i },
+  { key: "wire_domestic_outgoing", pattern: /^(?![\s\S]*\b(?:international|foreign|intl)\b)[\s\S]*\boutbound wires?\b/i },
+  { key: "atm_non_network", pattern: /\bnon[-\s]?[\w-]+(?:\s+owned)?(?:\s*\/\s*affiliated)?\s+(?:ATMs|machines?)\b/i },
+  { key: "deposited_item_return", pattern: /\bdeposited items? returns\b/i },
+  { key: "check_image", pattern: /\bimage cop(?:y|ies)\b/i },
+  { key: "estatement_fee", pattern: /^\W*electronic statements?\W*$/i },
+  {
+    key: "monthly_maintenance",
+    pattern:
+      /^(?![\s\S]*\b(?:re-?open\w*|clos\w*|balanc\w*|research|order\w*|return\w*|inactiv\w*|dormant)\b)\W*(?:(?:(?:monthly|account|maintenance)\s+)?service (?:fee|charge)s?(?:\s+for\s+[\w\s]{0,30}\b(?:checking|savings)\b(?:\s+accounts?)?)?|(?:[A-Z][\w'’&+-]*\s+){0,3}checking (?:account )?(?:fee|charge))\W*$/i,
+  },
+  // A checking account's own row ("Free Checking (CK02) | Free", "Interest Checking | $8.00") prices
+  // its monthly fee. Not one named "... Checking Account" in a column of services it gets free.
+  { key: "monthly_maintenance", pattern: /^(?![\s\S]*\b(?:re-?open\w*|clos\w*|balanc\w*|research|order\w*|return\w*|overdraft|transfer\w*)\b)\W*(?:[A-Z][\w'’&+-]*\s+){1,3}checking(?:\s*\([A-Z]{2}\d{2}\))?\W*$/i },
+  { key: "courier_delivery", pattern: /\b(?:UPS|DHL)\b|\bshipping fee\b/i },
+  { key: "duplicate_title", pattern: /\b(?:duplicate|(?:certified )?copy of)\s+(?:vehicle |car |auto )?titles?\b/i },
+  { key: "other_lending_fee", pattern: /\bredraw (?:of )?documents?\b/i },
+  { key: "ach_origination", pattern: /\bsame[- ]day ACH\b|\bACH same[- ]day\b/i },
 ];
 
 /** The folded category for a line no earlier rule names, or null. */
@@ -550,6 +578,7 @@ export const FEE_PATTERNS: FeePattern[] = [
   // lines no rule above names: a club's excess withdrawals and a faxed payoff request stay where
   // the fold files them. Returned statements stay held (James's call since v26).
   ...RECALL_FAMILY_PATTERNS,
+  ...V78_RECALL_PATTERNS,
 ];
 
 /**
@@ -926,6 +955,65 @@ export function readUnderHeading(segment: string, heading: string): ExtractedFee
     );
 }
 
+/** v78 (#1304): words that make a charge the overdraft (courtesy pay) fee or the NSF fee. */
+const OVERDRAFT_WORDS = /courtesy\s*pay|\boverdraft|\bpaid\s+nsf\b|\bbounce/i;
+const NSF_WORDS = /\bnsf\b|\b(?:in|non[-\s]?)sufficient\b/i;
+/** Payment channels an overdraft or NSF row lists in its cell ("Check/ACH/Bill Pay Payment"). */
+const PAYMENT_CHANNEL = /\b(?:checks?|ach|bill\s*pay(?:ments?)?|share\s+drafts?|drafts?|debit(?:\s+cards?)?|atm|electronic|recurring|pre-?authori[sz]ed|pos)\b/gi;
+
+function overdraftOrNsf(text: string): "overdraft" | "nsf" | null {
+  if (OVERDRAFT_WORDS.test(text)) return "overdraft";
+  return NSF_WORDS.test(text) ? "nsf" : null;
+}
+
+/**
+ * v78 (#1304, the Knox half of guard v68): a bill payment priced under an overdraft (courtesy pay)
+ * or NSF heading is that fee, not the bill pay service. Knox named the row by the cell after its
+ * heading and filed "Courtesy Pay (Paid NSF) Check/ACH/Bill Pay Payment | $32.00/item" as bill pay
+ * under "Check/ACH/Bill Pay Payment" (live 88513). A bill pay read is filed by its heading when the
+ * name itself says courtesy pay, overdraft or NSF; when its own line puts such a heading just before
+ * the name, in the same cell or, for a name listing two or more payment channels, in the cell before
+ * it (the same reading as guard v68's `overdraftOrNsfBillPay`); or when the heading line above it
+ * (`heading`) is one ("Courtesy Pay:" over "Check/ACH/Bill Pay Payment | $32.00"). Text before an
+ * earlier price on the line belongs to another fee. The read keeps its price and takes the heading
+ * into its name; one that would not pass Darwin's checks under the heading's category is dropped,
+ * never filed as bill pay. Every other read passes through unchanged. Pure.
+ */
+export function billPayByHeading(candidate: ExtractedFeeCandidate, heading?: string | null): ExtractedFeeCandidate | null {
+  if (candidate.canonicalHint !== "bill_pay") return candidate;
+  const refile = (category: "overdraft" | "nsf", name: string): ExtractedFeeCandidate | null =>
+    passesDarwinChecks(category, name, candidate.amount) ? { ...candidate, canonicalHint: category, feeName: name } : null;
+  const own = overdraftOrNsf(candidate.feeName);
+  if (own) return refile(own, candidate.feeName);
+  const line = normalizeSegment(candidate.excerpt ?? "").replace(/[‘’]/g, "'");
+  const at = line.toLowerCase().indexOf(candidate.feeName.toLowerCase());
+  if (at > 0) {
+    const sincePrice = line.slice(0, at).split(/\$\s?\d[\d,]*(?:\.\d+)?|\$\s?\.\d+/).at(-1) ?? "";
+    const cells = sincePrice.split("|");
+    const channels = new Set((candidate.feeName.match(PAYMENT_CHANNEL) ?? []).map((word) => word.toLowerCase().replace(/\s+/g, " ")));
+    const before = normalizeSegment((channels.size >= 2 ? cells.slice(-2) : cells.slice(-1)).join(" "));
+    const kind = before ? overdraftOrNsf(before) : null;
+    if (kind) return refile(kind, normalizeSegment(`${before} ${candidate.feeName}`));
+  }
+  const headed = heading ? overdraftOrNsf(heading) : null;
+  if (headed) return refile(headed, `${heading!.replace(/\s*:\s*$/, "")}: ${candidate.feeName}`);
+  return candidate;
+}
+
+/**
+ * v78: a bare late fee on a safe deposit box's lines ("Box Drilling: $125.00" / "Late Payment:
+ * $5.00/month"; "Safe Deposit Box 10x10 | $125" / "Late Payment (Over 90 Days) | $10") is the box's
+ * late rental charge, not a loan's late payment. Only a name that is just the late fee, read right
+ * after a safe deposit box read; a late fee naming a loan, card or payment kind stays a late payment.
+ */
+const BARE_LATE_FEE = /^\W*late\s+(?:payment|fee|charge)s?(?:\s+(?:fee|charge))?\s*(?:\([^)]*\))?\W*$/i;
+
+export function boxLateFee(candidate: ExtractedFeeCandidate, previousKind: string | null): ExtractedFeeCandidate {
+  if (candidate.canonicalHint !== "late_payment" || previousKind !== "safe_deposit_box" || !BARE_LATE_FEE.test(candidate.feeName)) return candidate;
+  const feeName = `Safe Deposit Box ${candidate.feeName}`;
+  return passesDarwinChecks("safe_deposit_box", feeName, candidate.amount) ? { ...candidate, canonicalHint: "safe_deposit_box", feeName } : candidate;
+}
+
 /** The FEE_PATTERNS key a fee name matches, before mapping to its canonical key. */
 export function classifyPatternKey(value: string): string | null {
   // PDFs usually render the apostrophe in "Cashier's check" as a curly quote. A waiver
@@ -1027,7 +1115,8 @@ const BOX_SIZE_NAME = /^\d{1,2}(?:\.\d)?\s?["”″]?\s?[x×]\s?\d{1,2}\s?["”�
 export function nearestFeeText(prefix: string): string {
   // v68: a box size alone in its cell ("RESEARCH | 5 x 10 | $ 100.00", "3×10 | $55.00",
   // "2” x 5” $45.00") names the box it prices, though it has no word.
-  const cells = prefix.split(CELL_SEPARATOR).filter((cell) => /[a-z]{3,}/i.test(cell) || BOX_SIZE_NAME.test(cell.trim()));
+  // v78: and so does one followed by its dot leader ("... | 3 x 10.......$30.00 per year").
+  const cells = prefix.split(CELL_SEPARATOR).filter((cell) => /[a-z]{3,}/i.test(cell) || BOX_SIZE_NAME.test(cell.trim().replace(/[\s.…_]+$/, "")));
   // v38: a cell holding only a threshold's comparison word, cut off from its figure
   // ("Courtesy Pay | Over $5 | Per occurrence | $32", Lighthouse), names no fee.
   while (cells.length > 1 && THRESHOLD_WORD_CELL.test(cells.at(-1) ?? "")) cells.pop();
@@ -2347,8 +2436,10 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
   // v69: a heading whose rows read as another kind of fee is a column beside a second table
   // ("Non-Ameris Bank ATM Usage:" over "ACH File Fee | $15.00"), so it names none of the rows under it.
   const crossedHeadings = new Set<number>();
+  let previousKind: string | null = null;
   for (const { segment, heading, headingAt, headingOpensRows } of candidateSegments(text)) {
     let found = extractFromSegment(segment);
+    const crossedBefore = headingAt != null && crossedHeadings.has(headingAt);
     const headingKey = heading ? classifyPatternKey(heading) : null;
     // v76: a free line under a fee heading whose own read is another kind of fee is a row of the
     // heading's table ("Excessive withdrawals, each:" over "ATM or counter | None" and
@@ -2368,16 +2459,26 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
       crossedHeadings.add(headingAt);
     }
     // v69: a line dropped for naming no fee is read under the fee heading above it.
-    if (heading && headingAt != null && !crossedHeadings.has(headingAt) && found.candidates.length === 0 && found.held.length === 0 && (found.tableHeld?.length || found.dropped?.no_fee_word_not_table_row)) {
+    // v78: so is a line held only as unclassified ("Deposited Items Returned Unpaid" / "From Third
+    // Party | $5.00"), when the read under the heading names a fee.
+    const onlyUnclassified = found.held.length > 0 && found.held.every((read) => read.shape === "unclassified" && read.canonicalHint == null);
+    if (heading && headingAt != null && !crossedHeadings.has(headingAt) && found.candidates.length === 0 && (found.held.length === 0 || onlyUnclassified) && (found.tableHeld?.length || found.dropped?.no_fee_word_not_table_row || onlyUnclassified)) {
       const headed = readUnderHeading(segment, heading);
       if (headed.length > 0) found = { candidates: headed, held: [] };
     }
-    for (const candidate of found.candidates) {
+    for (const read of found.candidates) {
+      // v78: a bill pay read under an overdraft or NSF heading is that fee (#1304); a bare late fee
+      // right after a safe deposit box read is the box's.
+      const headed = billPayByHeading(read, crossedBefore ? null : heading);
+      if (!headed) continue;
+      const candidate = boxLateFee(headed, headingKind === "safe_deposit_box" && !crossedBefore ? headingKind : previousKind);
       const key = `fee:${candidate.canonicalHint}:${candidate.feeName.toLowerCase()}:${candidate.amount}`;
       if (seen.has(key) || result.candidates.length >= MAX_FEES_PER_DOCUMENT) continue;
       seen.add(key);
       result.candidates.push(candidate);
     }
+    const lastKind = [...found.candidates, ...found.held].map((read) => read.canonicalHint).filter(Boolean).at(-1);
+    if (lastKind) previousKind = lastKind;
     for (const held of found.held) keep(held);
     tableHeld.push(...(found.tableHeld ?? []));
     for (const [reason, count] of Object.entries(found.dropped ?? {})) countDrop(result, reason as DroppedLineReason, count);
