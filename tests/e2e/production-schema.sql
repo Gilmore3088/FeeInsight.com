@@ -3199,3 +3199,6 @@ ALTER TABLE public.fee_change_records
 \ir ../../supabase/migrations/20270108000002_financial_nsf_revenue.sql
 -- #978 H03-T09: the published fee rows each saved Hamilton output used.
 \ir ../../supabase/migrations/20270110000055_hamilton_saved_output_fee_refs.sql
+
+-- Usage per API key: which issued key made each /api/v1 call.
+\ir ../../supabase/migrations/20270110000057_usage_events_api_key_id.sql

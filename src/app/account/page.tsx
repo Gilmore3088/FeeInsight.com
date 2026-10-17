@@ -18,6 +18,7 @@ import {
 import { PRO_TIERS } from "@/lib/pro-tiers";
 import { apiIncludedInTier } from "@/lib/api-subscriber-access";
 import { findApiPayer, getSubscriberKey } from "@/lib/api-subscriber-keys";
+import { getApiUsageSummary } from "@/lib/api-usage-summary";
 import type { ApiAccess } from "./api-access-card";
 import { getAccountEmails } from "./account-emails";
 import { getAccountReports, getOwnInstitution, getPaidReports } from "./account-data";
@@ -96,7 +97,14 @@ export default async function AccountPage({
     const apiTier = paysForPro ? billing?.tier ?? null : await seatPlanTier(user.id);
     if (apiTier) {
       apiAccess = apiIncludedInTier(apiTier)
-        ? { kind: "included", key: await getSubscriberKey(user.id).catch(() => null) }
+        ? {
+            kind: "included",
+            key: await getSubscriberKey(user.id).catch(() => null),
+            // The plan's shared allowance: everyone on it sees the team's total. A failed read hides the line.
+            usage: await findApiPayer(user.id)
+              .then((payer) => (payer ? getApiUsageSummary(payer.userId) : null))
+              .catch(() => null),
+          }
         : { kind: "upgrade" };
     }
   }
