@@ -145,12 +145,12 @@ const NOT_ATM_USE = String.raw`\bdisput\w*|\b(?:photo ?)?cop(?:y|ies)\b|\bnegati
  * a card's monthly, annual or maintenance fee, its issue, activation or origination, a limit
  * increase, a reinstatement, a card's inactivity, or a point-of-sale purchase fee (`gift_card_purchase`
  * refuses inactivity; `card_replacement` is only a replacement), so a live fee failing this rule is
- * a takedown. Darwin and publish refuse new reads at once. The live sweep holds the takedowns until
- * James says yes: while `CARD_PRODUCT_TAKEDOWN_LIVE` is off it counts and samples the live fees that
- * fail only this rule (`cardProductPending` in the guard's result and the publish step's detail) and
- * takes none down. Turning it on takes them down through the second look like any guard failure.
+ * a takedown. Darwin and publish refuse new reads at once. James said yes on Oct 17 (10:47 UTC), so
+ * the switch is on: the live sweep takes them down through the second look like any guard failure.
+ * Switched off, it counts and samples the live fees that fail only this rule (`cardProductPending`
+ * in the guard's result and the publish step's detail) and takes none down.
  */
-export const CARD_PRODUCT_TAKEDOWN_LIVE = false;
+export const CARD_PRODUCT_TAKEDOWN_LIVE = true;
 
 /** v70: a word that makes an ATM-named line a charge for using an ATM or another network. */
 const ATM_USE_WORD = String.raw`withdraw|\bw\/d\b|\binquir|\btransfers?\b|\bnon\b|\bnon-|foreign|\bother\b|network|surcharg|usage|\bused?\b|\bowned\b|terminal|\bmachines?\b|\bdenied\b|\bdenials?\b|declin|\bcash\b|international|deposit`;
@@ -633,7 +633,7 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // card's monthly, annual or maintenance fee, issue, activation, inactivity, a limit increase or a
 // point-of-sale purchase fee) and a card's inactivity filed as a dormant account (`CARD_INACTIVITY`)
 // fail the guard. None of the 50 types holds them, so their live takedowns wait on
-// `CARD_PRODUCT_TAKEDOWN_LIVE` (off: counted, none taken down). An ATM-named bill payer service
+// `CARD_PRODUCT_TAKEDOWN_LIVE` (on since James's yes, Oct 17; off: counted, none taken down). An ATM-named bill payer service
 // re-files to bill pay and a card charge on early account closure to early closure. Skipping a loan
 // payment (`SKIP_A_PAY`, James, Oct 17) leaves late payment and loan origination for other lending,
 // by guard, re-file rule and fold split, and the taxonomy's skip-a-pay aliases point there too.

@@ -521,10 +521,10 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
     evidence: "Regions (doc 23188, text 20258): the $5.00 \"Withdrawal\" sits under \"International ATM:\" (\"International ATM: | ... Withdrawal ... $5.00 (Applies to all withdrawal requests, approved or declined)\"), not under \"Regions ATM:\"; the same $5 international ATM fee is live as card_foreign_txn 81957. Regions' non-network withdrawal is $3 (81982)." },
   // #1765 (read-only, Oct 17): Navy Federal's Visa gift card inactivity fee, filed as a dormant
   // account. Its name says only "Inactivity Fee", so the card-product rule cannot read it; it comes
-  // down with the other 61 only once James turns `CARD_PRODUCT_TAKEDOWN_LIVE` on.
+  // down with the other 61 under `CARD_PRODUCT_TAKEDOWN_LIVE` (on since James's yes, Oct 17).
   ...(CARD_PRODUCT_TAKEDOWN_LIVE
     ? [{ feePublishedId: 122350, institutionId: 4956, canonicalFeeKey: "dormant_account", amount: 5, feeName: "Inactivity Fee",
-        reason: "wrong_category: #1765", issue: 1765, kind: "wrong_category" as const,
+        reason: "source_mismatch: #1765", issue: 1765, kind: "wrong_category" as const,
         evidence: "Navy Federal: under \"Prepaid and Gift Cards | Visa® Gift Cards\", \"Inactivity Fee (After 12 consecutive months of no activity, the card will be charged $5.00 per month ...)\": a gift card's inactivity, not account dormancy; none of the 50 types holds it." }]
     : []),
   // #1772, #1773: 28 non-network ATM rows, held by `ATM_SURCHARGE_TAKEDOWN_LIVE` (off).

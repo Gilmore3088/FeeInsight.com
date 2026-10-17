@@ -1214,9 +1214,10 @@ Darwin owns verification and classification.
   increase, the card's inactivity, a point-of-sale purchase fee) and a card's inactivity filed as a
   dormant account (`CARD_INACTIVITY`) fail the guard; none of the 50 types holds them. Darwin and
   publish refuse new reads at once. Their live re-check is the guard's live sweep (catch-up, then every
-  publish step), which holds the takedowns while `CARD_PRODUCT_TAKEDOWN_LIVE` is off: it counts and
-  samples the live fees failing only this rule (`category_guard_card_product_pending` in the publish
-  step's detail) and flags none. The dry run (Oct 17, SELECT-only) counts 61: 39 non-network ATM fees
+  publish step). `CARD_PRODUCT_TAKEDOWN_LIVE` is on since James's yes (Oct 17, 10:47 UTC), so they are
+  flagged and taken down through the second look; switched off, the sweep counts and samples the live
+  fees failing only this rule (`category_guard_card_product_pending` in the publish step's detail)
+  and flags none. The dry run (Oct 17, SELECT-only) counts 61: 39 non-network ATM fees
   and 22 dormant account fees; 59 trace on their stored line and 2 do not (25037, 57456). Navy
   Federal's gift card "Inactivity Fee" (122350) names no card, so it is a hand takedown under the same
   switch (62 in all). An ATM-named bill payer service (147703) re-files to bill pay and a card charge
