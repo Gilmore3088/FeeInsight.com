@@ -901,6 +901,19 @@ Darwin owns verification and classification.
 - A verified $0 row carries the `zero_fee` flag, which is what lets Hamilton publish it.
 - Pass 2 (`peer-checks.ts`, free, rows the rules accept), each its own strategy in
   `pipeline_attempts` (stage `verify`, fingerprint `raw:<fee_raw_id>`):
+  - `verify.peer_range` v5 (#1112, Oct 16): a state-level outlier is held only in
+    `PEER_HOLD_CATEGORIES` (atm_non_network, overdraft, od_protection_transfer, rush_card,
+    minimum_balance, wire_domestic_outgoing), where an outlier was usually a misread. In every
+    other category the outlier is recorded on the attempt (`peer_outlier: true`, `peer_held:
+    false`) and the fee is not held: graded on the 123 v4 and 113 v3 holds against their stored
+    text, nearly all of those were real fees at an unusual printed price (photocopies, box
+    drilling, $5 stop payments). No-fee, discount and allowance lines are the shared name rule's
+    (`ruleFor`, Hamilton `EVAL_VERDICT_VERSION` v8). Each `verify.rules` attempt records
+    `peer_version`, and a `peer_outlier` row decided under an older peer version is re-decided
+    once. An older hold that has no `peer_version` is re-decided only when its own run's
+    `verify.peer_range` attempt was a graded version (`DARWIN_PEER_GRADED_VERSIONS`, v3 and v4)
+    and held it; the ungraded v1/v2 holds of Oct 5–10 stay held until they are graded (#1694).
+    Below, "is held" means held in those categories.
   - `verify.peer_range` v4: a fee enters on the benchmarks' terms (`entersPeerCheck`, #1112).
     The peer levels are the benchmark population (`statsRowFilter`: consumer, both and unknown
     fees, no business-only schedule), so consumer and both fees are compared, an unknown fee is
@@ -1232,7 +1245,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `AUDIENCE_RELABEL_VERSION` | `darwin.audience_relabel` | v3 | `darwin/audience-relabel.ts` |
 | `DARWIN_ADJUDICATE_STRATEGY` | `verify.adjudicate` | v2 | `darwin/adjudicate.ts` |
 | `DARWIN_CATEGORY_MODEL_STRATEGY` | `verify.category_model` | v1 | `darwin/category-model.ts` |
-| `DARWIN_PEER_STRATEGY` | `verify.peer_range` | v4 | `darwin/peer-checks.ts` |
+| `DARWIN_PEER_STRATEGY` | `verify.peer_range` | v5 | `darwin/peer-checks.ts` |
 | `DARWIN_SECOND_SOURCE_STRATEGY` | `verify.second_source` | v2 | `darwin/peer-checks.ts` |
 | `DARWIN_RELEASE_STRATEGY` | `verify.release` | v4 | `darwin/release-held.ts` |
 | `DARWIN_RECORDED_RELEASE_STRATEGY` | `verify.release_recorded` | v1 | `darwin/release-review.ts` |

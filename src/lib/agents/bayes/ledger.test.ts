@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { replayStatus, summarizeBayesLedger, STUCK_AFTER_CHECKS, type BayesLedgerResult } from "./ledger";
-import { changeKey, currentCopyCount, guardRunCount, loadManifests, retidyCount } from "./manifests";
+import { changeKey, currentCopyCount, guardRunCount, loadManifests, peerRangeCount, retidyCount } from "./manifests";
 import { KNOX_RULES_STRATEGY } from "@/lib/agents/knox/specialists";
 import { CATEGORY_GUARD_VERSION } from "@/lib/fee-category-guard";
 import { FREQUENCY_FILL_VERSION } from "@/lib/agents/hamilton/frequency-fill";
@@ -80,12 +80,17 @@ describe("current copy and retidy counts", () => {
     expect(retidyCount({ due: [], doneCurrent: [] })).toEqual({ affected: 0, done: 0, queued: 0, exclusions: {} });
   });
 
+  it("counts the graded peer holds v5 re-decides and keeps the ungraded ones as an exclusion (#1112, #1694)", () => {
+    expect(peerRangeCount({ affected: 242, done: 0, queued: 242, ungraded: 2350 })).toEqual({ affected: 242, done: 0, queued: 242, exclusions: { ungraded_peer_version: 2350 } });
+    expect(peerRangeCount({ affected: 0, done: 0, queued: 0, ungraded: 0 })).toEqual({ affected: 0, done: 0, queued: 0, exclusions: {} });
+  });
+
   it("counts every change except those whose owner's selection is not shared yet (#1120)", async () => {
     const manifests = await loadManifests();
     const uncounted = manifests.filter((manifest) => !manifest.count).map((manifest) => manifest.key);
     expect(uncounted).toEqual([
       "rosetta.read", "rosetta.pdf_layout", "rosetta.ocr", "rosetta.js_fallback", "rosetta.table_rows",
-      "darwin.verify_rules", "darwin.peer_range", "darwin.envelopes",
+      "darwin.verify_rules", "darwin.envelopes",
     ]);
     // An uncounted change always says why, so it reads as not_counted, never as finished.
     expect(manifests.filter((manifest) => !manifest.count).every((manifest) => Boolean(manifest.notCounted))).toBe(true);

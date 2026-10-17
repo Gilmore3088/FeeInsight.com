@@ -361,7 +361,16 @@ the detail.
 10. Eval verdicts (`eval-verdicts.ts`): the complete-record eval's critical rows on first look,
     `eval_critical:<verdict>`; the name rules learned from them (a rebate as an ATM fee, a
     "no fee for" or waiver sentence as a $0 fee, and others) on their second look,
-    `not_a_fee:<rule>`.
+    `not_a_fee:<rule>`. The live read is a SQL prefilter (`evalVerdictFeesSql`); a new rule
+    reaches live fees only when the prefilter selects its shape, so v8's shapes have their own
+    clauses (`V8_PREFILTER`). v8 (#1112, Oct 16) reads no-fee lines that open the name ("No-Fee
+    on …", "There is/are no … fee", "Fee-free …") unless a later clause prices the fee at its own
+    amount, a discount or allowance the bank gives (an allowance on the line only at the fee's own
+    amount; never a discounted price, or a "discount of" a percentage or of a dollar figure that is
+    not the fee's amount), and a loan's term amount
+    read as its fee. A takedown batch stays under 20 (DECISIONS 2026-10-16, #1613): fees left
+    for the next batch sit in `EVAL_VERDICT_SECOND_BATCH` (#1696), and the step event names them
+    (`deferred`, `deferred_ids`).
 10b. Account type hold (`account-type-hold.ts`, #1100 gap 1, James Oct 16): monthly maintenance
     is the consumer checking account's fee. A live monthly maintenance fee of a savings, money
     market, club, business or IRA/HSA/CD account (`accountTypeOf` in `src/lib/account-type.ts`:
@@ -985,7 +994,7 @@ fails a PR that changes one of these constants without updating its line here (#
 |---|---|---|---|
 | `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v1 | `hamilton/account-names.ts` |
 | `CURRENT_COPY_STRATEGY` | `hamilton.current_copy_check` | v2 | `hamilton/current-copy.ts` |
-| `EVAL_VERDICT_VERSION` | — | v7 | `hamilton/eval-verdicts.ts` |
+| `EVAL_VERDICT_VERSION` | — | v8 | `hamilton/eval-verdicts.ts` |
 | `FREQUENCY_FILL_VERSION` | — | v14 | `hamilton/frequency-fill.ts` |
 | `GUARD_REQUEUE_STRATEGY` | `publish.guard_requeue` | v1 | `hamilton/guard-requeue.ts` |
 | `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v1 | `hamilton/newer-copy-retire.ts` |
