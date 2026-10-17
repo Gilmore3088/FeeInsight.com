@@ -11,6 +11,7 @@ import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import { PRO_PLANS_NAV } from "@/components/nav-items";
 import { NON_INSTITUTION_TIER, tierAmountLabel, tierPriceLabel } from "@/lib/pro-tiers";
 import { PAGE_HEADER } from "@/components/public/page-header";
+import { MAX_CHOSEN_PEERS, PEER_GROUP_PARAMS } from "@/lib/peer-set-dimensions";
 
 const PRO_LABEL = "Hamilton";
 
@@ -303,6 +304,12 @@ export default async function ApiDocsPage() {
         </a>
         <a href="#institutions" className="rounded-md border border-border px-3 py-1.5 text-ink-soft hover:bg-paper transition-colors">
           Institutions
+        </a>
+        <a href="#peers" className="rounded-md border border-border px-3 py-1.5 text-ink-soft hover:bg-paper transition-colors">
+          Peers
+        </a>
+        <a href="#rate-fees" className="rounded-md border border-border px-3 py-1.5 text-ink-soft hover:bg-paper transition-colors">
+          Rate fees
         </a>
         <a href="#pricing" className="rounded-md border border-border px-3 py-1.5 text-ink-soft hover:bg-paper transition-colors">
           Pricing
@@ -629,6 +636,11 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
           tierNote="Pro"
           params={[
             { name: "id", type: "integer", required: true, description: "Institution ID" },
+            {
+              name: "updated_since",
+              type: "string",
+              description: "An ISO 8601 date or time, such as 2026-10-01 or 2026-10-01T00:00:00Z. Only fees published on or after it are returned.",
+            },
           ]}
           curlExample={`curl -H "Authorization: Bearer YOUR_API_KEY" \\
   "${BASE}/institutions?id=2466"`}
@@ -693,6 +705,173 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
         />
       </div>
 
+      <div className="mt-6 space-y-6">
+        <Endpoint
+          method="GET"
+          path="/institutions?view=fees"
+          summary="Published fee rows, filtered by publish date"
+          description="Every published dollar fee as its own row, oldest first by publish date, then by fee_id. To keep your own copy current, save the newest published_at you hold and ask again with updated_since set to it. Rows published at exactly that time come back again, so match them on fee_id. A fee that is taken down drops out of the list and is not reported as a change, so pull the full list without updated_since from time to time to catch removals."
+          tierNote="Pro"
+          params={[
+            { name: "view", type: "string", required: true, description: '"fees"' },
+            { name: "updated_since", type: "string", description: "An ISO 8601 date or time, such as 2026-10-01 or 2026-10-01T00:00:00Z. Only fees published on or after it are returned." },
+            { name: "id", type: "integer", description: "One institution's fees" },
+            { name: "state", type: "string", description: "Two-letter state code" },
+            { name: "charter", type: "string", description: '"bank" or "credit_union"' },
+            { name: "page", type: "integer", description: "Page number (default: 1)" },
+            { name: "limit", type: "integer", description: "Results per page (default: 50, max: 200)" },
+          ]}
+          curlExample={`curl -H "Authorization: Bearer YOUR_API_KEY" \\
+  "${BASE}/institutions?view=fees&updated_since=2026-10-01&limit=200"`}
+          responseFields={[
+            { name: "data[].fee_id", type: "integer", note: "Stable id of the published fee" },
+            { name: "data[].amount", type: "number", note: "Fee amount in USD" },
+            { name: "data[].published_at", type: "string", note: "When the fee was published" },
+          ]}
+          responseExample={`{
+  "view": "fees",
+  "updated_since": "2026-10-01T00:00:00.000Z",
+  "total": 2,
+  "page": 1,
+  "page_size": 200,
+  "pages": 1,
+  "has_more": false,
+  "data": [
+    {
+      "fee_id": 501,
+      "institution_id": 2466,
+      "institution_name": "Gateway Bank",
+      "state": "MN",
+      "charter_type": "bank",
+      "fee_name": "Overdraft Fee",
+      "name_is_category_fallback": false,
+      "category": "overdraft",
+      "amount": 30.00,
+      "frequency": "per_occurrence",
+      "conditions": null,
+      "source_url": "https://example.com/fee-schedule.pdf",
+      "published_at": "2026-10-02T14:05:00.000Z"
+    },
+    ...
+  ]
+}`}
+        />
+      </div>
+
+      {/* ---- PEERS ---- */}
+      <SectionHeading id="peers">Peer Comparison</SectionHeading>
+
+      <div className="space-y-6">
+        <Endpoint
+          method="GET"
+          path="/peers?institution_id={id}"
+          summary="Compare one institution's fees with its peers"
+          description={`For each fee the institution publishes in dollars, shows its amount next to the peer median and the 25th and 75th percentiles. The percentile field is the share of peers with a lower amount, counting half of those with the same amount. By default, peers are banks or credit unions of the same charter type, asset size and Fed district. To choose them yourself, either set the peer-group parameters below or list institutions in peer_ids, not both. When you set any peer-group parameter, only the ones you set apply, and "same" means the institution's own value. When fewer than ${MIN_INSTITUTIONS_FOR_MEDIAN} peers publish a fee, the median and percentiles are left out. Fees stated as a percentage are listed separately and not compared.`}
+          tierNote="Pro"
+          params={[
+            { name: "institution_id", type: "integer", required: true, description: "Institution ID" },
+            { name: "peer_ids", type: "string", description: `Up to ${MAX_CHOSEN_PEERS} institution IDs, comma-separated, to use as the peer group. Not combined with the parameters below` },
+            ...PEER_GROUP_PARAMS.map((p) => ({ name: p.name, type: "string", description: `${p.description}, e.g. ${p.example}` })),
+          ]}
+          curlExample={`curl -H "Authorization: Bearer YOUR_API_KEY" \\
+  "${BASE}/peers?institution_id=2466"
+
+# Banks with branches in the same metro, $500M to $2B in assets
+curl -H "Authorization: Bearer YOUR_API_KEY" \\
+  "${BASE}/peers?institution_id=2466&charter=bank&market=same&asset_min=500000000&asset_max=2000000000"`}
+          responseFields={[
+            { name: "peer_group.label", type: "string", note: "Which institutions were compared" },
+            { name: "categories[].amount", type: "number", note: "The institution's amount in USD" },
+            { name: "categories[].peer_median", type: "number", note: "Median among peers that publish the fee" },
+            { name: "categories[].peer_count", type: "integer", note: "Peers that publish the fee" },
+            { name: "categories[].percentile", type: "integer", note: "0 to 100, the share of peers with a lower amount" },
+            { name: "rate_fees[]", type: "array", note: "Fees stated as a percentage, listed apart" },
+          ]}
+          responseExample={`{
+  "institution": { "id": 2466, "name": "Gateway Bank", "state": "MN", "charter_type": "bank", "asset_tier": "community_mid", "fed_district": 9 },
+  "peer_group": {
+    "basis": "default",
+    "label": "Banks with $300M to $1B in assets in the Minneapolis Fed district",
+    "peers_with_fees": 41
+  },
+  "min_peers": ${MIN_INSTITUTIONS_FOR_MEDIAN},
+  "categories": [
+    {
+      "category": "overdraft",
+      "display_name": "Overdraft (OD)",
+      "amount": 30.00,
+      "peer_count": 38,
+      "peer_median": 30.00,
+      "peer_p25": 27.00,
+      "peer_p75": 32.00,
+      "peers_lower": 12,
+      "peers_same": 9,
+      "peers_higher": 17,
+      "percentile": 43,
+      "maturity_tier": "strong"
+    },
+    ...
+  ],
+  "rate_fees": []
+}`}
+        />
+      </div>
+
+      {/* ---- RATE FEES ---- */}
+      <SectionHeading id="rate-fees">Rate Fees</SectionHeading>
+
+      <div className="space-y-6">
+        <Endpoint
+          method="GET"
+          path="/rate-fees"
+          summary="Fees stated as a percentage"
+          description="Some fees are a percentage rather than a flat amount, such as a foreign transaction fee charged as a share of the purchase. This endpoint lists them with the rate, any dollar minimum or maximum the schedule states, and the link to the schedule. They are kept apart from dollar fees and never included in dollar medians."
+          tierNote="Pro"
+          params={[
+            { name: "institution_id", type: "integer", description: "One institution's rate fees" },
+            { name: "state", type: "string", description: "Two-letter state code" },
+            { name: "category", type: "string", description: "Fee category key, such as card_foreign_txn" },
+            { name: "charter", type: "string", description: '"bank" or "credit_union"' },
+            { name: "updated_since", type: "string", description: "An ISO 8601 date or time, such as 2026-10-01 or 2026-10-01T00:00:00Z. Only fees published on or after it are returned." },
+            { name: "page", type: "integer", description: "Page number (default: 1)" },
+            { name: "limit", type: "integer", description: "Results per page (default: 100, max: 500)" },
+          ]}
+          curlExample={`curl -H "Authorization: Bearer YOUR_API_KEY" \\
+  "${BASE}/rate-fees?state=MN&category=card_foreign_txn"`}
+          responseFields={[
+            { name: "data[].rate_percent", type: "number", note: "The rate in percent, e.g. 3 for 3%" },
+            { name: "data[].rate_min_amount", type: "number", note: "Dollar minimum, when the schedule states one" },
+            { name: "data[].rate_max_amount", type: "number", note: "Dollar maximum, when the schedule states one" },
+            { name: "data[].rate_terms", type: "string", note: 'The rate in words, e.g. "3% of the transaction"' },
+          ]}
+          responseExample={`{
+  "total": 1,
+  "page": 1,
+  "page_size": 100,
+  "pages": 1,
+  "has_more": false,
+  "data": [
+    {
+      "id": 9001,
+      "institution_id": 2466,
+      "institution_name": "Gateway Bank",
+      "state": "MN",
+      "charter_type": "bank",
+      "fee_name": "Foreign Transaction Fee",
+      "category": "card_foreign_txn",
+      "rate_percent": 3,
+      "rate_min_amount": null,
+      "rate_max_amount": null,
+      "rate_basis": "transaction",
+      "rate_terms": "3% of the transaction",
+      "source_url": "https://example.com/fee-schedule.pdf",
+      "published_at": "2026-10-02T14:05:00.000Z"
+    }
+  ]
+}`}
+        />
+      </div>
+
       {/* ---- PRICING ---- */}
       <SectionHeading id="pricing">API Pricing</SectionHeading>
 
@@ -706,7 +885,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
             "Claude connector",
             `${API_MONTHLY_CALLS_LABEL} calls a month`,
             `All ${categoriesLabel} fee categories`,
-            "Institution-level fees, fee revenue and branches",
+            "Institution-level fees, peer comparison, fee revenue and branches",
             "CSV output for Excel",
           ]}
           cta={PRO_PLANS_NAV.label}

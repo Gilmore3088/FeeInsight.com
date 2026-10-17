@@ -401,6 +401,8 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v70 (Oct 17): card-product fees under the non-network ATM fee and card inactivity under the
     // dormant account fee fail (takedowns held by CARD_PRODUCT_TAKEDOWN_LIVE), and skipped loan
     // payments leave late payment and loan origination for other lending.
+    // v71 (Oct 17): the non-network ATM fee refuses another institution's card named in several words
+    // after "non-", and an ATM transaction verification re-files to account research.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

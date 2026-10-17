@@ -9,8 +9,8 @@ Pick one fee your customers notice, such as overdraft or NSF, and place it again
 
 
 [ MAKE THE COMPARISON ]
-1. Open your state's page and find the fee. Find your state (https://feeinsight.com/research?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=one-comparison).
-2. Note the median and the middle 50% (the 25th to 75th percentile; half of institutions sit in it).
+1. Open your state's page (https://feeinsight.com/research?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=one-comparison) and find the fee.
+2. Note the median and the middle 50%, the range between the 25th and 75th percentiles.
 3. Check how many institutions stand behind the number. If only a few, check their schedules directly.
 4. Write your own price next to it: below, inside or above the middle 50%.
 
@@ -25,5 +25,6 @@ Founder, Fee Insight · publisher of the Bank Fee Index
 Fee Insight publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules.
 Methodology: https://feeinsight.com/methodology
 Questions? Just reply.
-Fee Insight LLC, 522 W Riverside Ave, Ste N, Spokane, WA 99201
+3522 Southwest Barton Street, Seattle, United States of America
+You're getting this because you signed up at feeinsight.com.
 Unsubscribe: {$unsubscribe}

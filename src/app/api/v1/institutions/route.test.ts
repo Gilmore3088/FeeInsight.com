@@ -9,6 +9,7 @@ import { searchInstitutions } from "@/lib/data-store/search";
 import { getInstitutionBenchmark } from "@/lib/data-store/benchmark-export";
 import { getRegulatoryWatch } from "@/lib/data-store/regulatory-watch";
 import { getRateFeesByInstitution } from "@/lib/data-store/rate-fees";
+import { listPublishedFeeRows } from "@/lib/data-store/published-fee-rows";
 import { GET } from "./route";
 
 vi.mock("@/lib/api-auth", () => ({ validateApiKey: vi.fn() }));
@@ -33,6 +34,10 @@ vi.mock("@/lib/data-store/benchmark-export", async (importOriginal) => ({
 }));
 vi.mock("@/lib/data-store/regulatory-watch", () => ({ getRegulatoryWatch: vi.fn() }));
 vi.mock("@/lib/data-store/rate-fees", () => ({ getRateFeesByInstitution: vi.fn(() => Promise.resolve([])) }));
+
+vi.mock("@/lib/data-store/published-fee-rows", () => ({
+  listPublishedFeeRows: vi.fn(() => Promise.resolve({ total: 0, rows: [] })),
+}));
 
 vi.mock("@/lib/data-store/search", () => ({
   searchInstitutions: vi.fn(() => Promise.resolve({ rows: [], total: 0 })),
@@ -288,6 +293,77 @@ describe("/api/v1/institutions", () => {
       expect(noId.status).toBe(400);
       const csv = await GET(new NextRequest("https://feeinsight.com/api/v1/institutions?id=12&view=regulatory_watch&format=csv"));
       expect(csv.status).toBe(400);
+    });
+  });
+  describe("changed-since sync", () => {
+    const enterprise = () => vi.mocked(validateApiKey).mockResolvedValue({ valid: true, organizationId: 7, tier: "enterprise" });
+
+    it("keeps fee rows behind a paid key", async () => {
+      const response = await GET(new NextRequest("https://feeinsight.com/api/v1/institutions?view=fees"));
+      expect(response.status).toBe(403);
+      expect(listPublishedFeeRows).not.toHaveBeenCalled();
+    });
+
+    it("lists fee rows published since a date, oldest first, paged", async () => {
+      enterprise();
+      vi.mocked(listPublishedFeeRows).mockResolvedValue({
+        total: 201,
+        rows: [{
+          fee_id: 501, institution_id: 12, institution_name: "Example Bank", state: "TX", charter_type: "bank",
+          fee_name: "Overdraft Fee", fee_category: "overdraft", amount: 35, frequency: "per item", conditions: null,
+          source_url: "https://example.com/fees.pdf", published_at: "2026-10-02T14:05:00.000Z",
+        }],
+      });
+
+      const response = await GET(new NextRequest(
+        "https://feeinsight.com/api/v1/institutions?view=fees&updated_since=2026-10-01T00:00:00-05:00&state=TX&limit=200&page=1",
+      ));
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(listPublishedFeeRows).toHaveBeenCalledWith(
+        { institution_id: null, state_code: "TX", charter_type: null, updated_since: new Date("2026-10-01T05:00:00.000Z") },
+        { limit: 200, offset: 0 },
+      );
+      expect(body).toMatchObject({ view: "fees", updated_since: "2026-10-01T05:00:00.000Z", total: 201, pages: 2, has_more: true });
+      expect(body.data[0]).toMatchObject({ fee_id: 501, fee_name: "Overdraft Fee", amount: 35, published_at: "2026-10-02T14:05:00.000Z" });
+    });
+
+    it("rejects a bad updated_since, and updated_since where no fee rows are returned", async () => {
+      enterprise();
+      for (const query of [
+        "view=fees&updated_since=last-week",
+        "view=fees&updated_since=2026-13-01",
+        "updated_since=2026-10-01",
+        "id=12&view=benchmark&updated_since=2026-10-01",
+        "view=fees&q=chase",
+        "view=fees&fee_category=overdraft",
+      ]) {
+        const response = await GET(new NextRequest(`https://feeinsight.com/api/v1/institutions?${query}`));
+        expect(response.status, query).toBe(400);
+        await expect(response.json()).resolves.toMatchObject({ code: "invalid_parameter" });
+      }
+      expect(listPublishedFeeRows).not.toHaveBeenCalled();
+    });
+
+    it("keeps only fees published since the date on institution detail", async () => {
+      enterprise();
+      vi.mocked(getInstitutionById).mockResolvedValue({ id: "12", institution_name: "Example Bank", state_code: "TX" } as never);
+      vi.mocked(getFeesByInstitution).mockResolvedValueOnce([
+        { fee_name: "Overdraft Fee", fee_category: "overdraft", amount: 35, review_status: "approved", created_at: new Date("2026-10-05T00:00:00Z") },
+        { fee_name: "NSF Fee", fee_category: "nsf", amount: 30, review_status: "approved", created_at: new Date("2026-09-01T00:00:00Z") },
+        { fee_name: "Wire Fee", fee_category: "wire_domestic_outgoing", amount: 25, review_status: "approved", created_at: null },
+      ] as never);
+      vi.mocked(getRateFeesByInstitution).mockResolvedValueOnce([
+        { id: 9, fee_name: "Foreign Transaction Fee", fee_category: "card_foreign_txn", rate_percent: 3, rate_label: "3% of the transaction", published_at: "2026-09-01T00:00:00.000Z" },
+      ] as never);
+
+      const body = await (await GET(new NextRequest("https://feeinsight.com/api/v1/institutions?id=12&updated_since=2026-10-01"))).json();
+
+      expect(body.updated_since).toBe("2026-10-01T00:00:00.000Z");
+      expect(body.fee_count).toBe(1);
+      expect(body.fees).toEqual([expect.objectContaining({ fee_name: "Overdraft Fee", published_at: "2026-10-05T00:00:00.000Z" })]);
+      expect(body.rate_fees).toEqual([]);
     });
   });
 });

@@ -2,12 +2,12 @@ Your page, and the monthly snapshot you'll get.
 
 FOLLOWING
 
-You're following {$follow_name|default('the market you follow')}
-============================================================
+The page you're following
+=========================
 
-Here is the page you asked to follow. Every figure on it comes from the institutions' published fee schedules, and it updates as new schedules are read.
+You asked to follow {$follow_name|default('a state or an institution')}. Fee benchmarks come from published schedules and update as new schedules are read.
 
-Open {$follow_name|default('the market you follow')}: {$follow_url|default('https://feeinsight.com/research')}
+Open the page: {$follow_url|default('https://feeinsight.com/research')}
 Free, no login.
 
 
@@ -23,5 +23,6 @@ Founder, Fee Insight · publisher of the Bank Fee Index
 Fee Insight publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules.
 Methodology: https://feeinsight.com/methodology
 Questions? Just reply.
-Fee Insight LLC, 522 W Riverside Ave, Ste N, Spokane, WA 99201
+3522 Southwest Barton Street, Seattle, United States of America
+You're getting this because you signed up at feeinsight.com.
 Unsubscribe: {$unsubscribe}

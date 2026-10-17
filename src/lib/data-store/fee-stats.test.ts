@@ -325,11 +325,17 @@ describe("count once: sibling charters sharing one schedule (#1441, rule 7)", ()
     expect(summarizeRates(rateRows, { countSharedScheduleOnce: true })).toMatchObject({ institution_count: 5, median_rate: 2 });
   });
 
-  it("is off by default and selects no keys while off", () => {
-    expect(COUNT_SHARED_SCHEDULE_ONCE).toBe(false);
-    expect(summarizeFees(rows).institution_count).toBe(9);
-    expect(STATS_SCHEDULE_KEYS).toBe("NULL::text[] AS schedule_keys, NULL::text AS schedule_group");
-    expect(STATS_METHOD_VERSION).toBe(7);
+  it("is on (James, Oct 17) and selects the schedule keys", () => {
+    expect(COUNT_SHARED_SCHEDULE_ONCE).toBe(true);
+    expect(summarizeFees(rows).institution_count).toBe(5);
+    expect(STATS_SCHEDULE_KEYS).toBe(`${scheduleKeysSql("ef", true)} AS schedule_keys, ${scheduleGroupSql("ef", true)} AS schedule_group`);
+    expect(STATS_METHOD_VERSION).toBe(8);
+  });
+
+  it("switched off, selects no keys and counts each charter", () => {
+    expect(summarizeFees(rows, { countSharedScheduleOnce: false }).institution_count).toBe(9);
+    expect(scheduleKeysSql("ef", false)).toBe("NULL::text[]");
+    expect(scheduleGroupSql("ef", false)).toBe("NULL::text");
   });
 
   it("builds the schedule keys and holding company scope when on", () => {

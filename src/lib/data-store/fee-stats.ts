@@ -46,8 +46,8 @@ import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT, maturityTier, ty
 
 export { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT, maturityTier, type MaturityTier };
 /**
- * Rule 7 switch. Off until the read's cost and the affected counts are checked on prod (#1441).
- * Readers select STATS_SCHEDULE_KEYS; while this is false it selects NULL and nothing changes.
+ * Rule 7 switch. On since James's yes (Oct 17, 10:47 UTC; dry count 126 statistic values, 285 rows,
+ * #1441, #1764). Readers select STATS_SCHEDULE_KEYS; set false and it selects NULL and nothing changes.
  *
  * Readers that count institutions or rank values outside summarizeFees use the same rule
  * (#1441, 17 Oct): countedInstitutionCount (national-trends counts and provenance, the API's
@@ -60,7 +60,7 @@ export { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT, maturityTier, ty
  * 2.0 to 3.6 MB without them (safe_deposit_box 6,687 rows), and the fields add about 30%, so
  * those entries miss Next's 2 MB per-entry cache with or without this switch.
  */
-export const COUNT_SHARED_SCHEDULE_ONCE: boolean = false;
+export const COUNT_SHARED_SCHEDULE_ONCE: boolean = true;
 
 /** Bump when these rules change; fee_index_cache rows carry it and older ones are ignored. */
 export const STATS_METHOD_VERSION = COUNT_SHARED_SCHEDULE_ONCE ? 8 : 7;

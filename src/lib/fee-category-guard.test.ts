@@ -1762,3 +1762,47 @@ describe("guard v70: card-product fees, card inactivity and skipped loan payment
     expect(checkFeeCategory("loan_origination", "Loan Extension Fee")).toEqual({ ok: true });
   });
 });
+
+describe("guard v71: non-customer cards named in several words, and ATM transaction verification (#1772, #1773)", () => {
+  it("refuses another institution's card named after \"non-\" in more than one word (8 live, each on its stored line)", () => {
+    for (const name of [
+      "Transactions at TFed ATM (Non-TFed Debit/ATM Card)",
+      "Non-WPCCU or Non-CO-OP Debit Card ATM withdrawal",
+      "Non-WPCCU or Non-CO-OP Debit Card ATM withdrawal: Fees & Charges",
+      "ATM Non-STAR Financial Credit Union card Surcharge",
+      "Non-FAMU FCU Debit Card transactions at Non FAMU FCU ATM Machine Surcharge",
+      "ATM Surcharge Fee (Non-Onomea FCU Cards)",
+      "Non Co-Op Card ATM Withdrawals at TLC",
+      "Non-AFCU Visa debit, credit card, or Aerospace Corporation American Express card ATM transactions will be assessed a",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name).ok, name).toBe(false);
+      // No home among the 50.
+      expect(refileCategory("atm_non_network", name), name).toBe("atm_non_network");
+    }
+  });
+
+  it("keeps the institution's own fee at another network's ATM", () => {
+    for (const name of [
+      "Nonproprietary ATM/Check Card Withdrawal, Transfer",
+      "Nonproprietary ATM/Debit Card Withdrawal/Transfer",
+      "Non-Proprietary ATM Withdrawal, Transfer or Inquiry Fee",
+      "Non-Allpoint ATM withdrawal with your debit card",
+      "Non-network ATM transactions using your card",
+      "ATM withdrawals on non-CU ATMs",
+      "Each non-Huntington ATM transaction; plus any fee charged by ATM owner",
+      "ATM Surcharge for Non-CO-OP Network Transactions",
+      "ATM Surcharge (Non-GMFCU ATM)",
+      "Foreign ATM Surcharge",
+      "ATM Surcharge (Bank Customer At Foreign ATM)",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name), name).toEqual({ ok: true });
+    }
+  });
+
+  it("re-files an ATM transaction verification to account research (96092)", () => {
+    const name = "Verification of ATM Transaction (Plus fee charged by ATM owner/operator)";
+    expect(checkFeeCategory("atm_non_network", name).ok).toBe(false);
+    expect(refileCategory("atm_non_network", name)).toBe("account_research");
+    expect(checkFeeCategory("account_research", name)).toEqual({ ok: true });
+  });
+});

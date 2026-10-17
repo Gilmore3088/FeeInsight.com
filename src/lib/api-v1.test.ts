@@ -5,7 +5,9 @@ import {
   apiError,
   burstLimitError,
   csvField,
+  dateTimeParam,
   districtParam,
+  idListParam,
   intParam,
   stateParam,
   toCsv,
@@ -115,5 +117,30 @@ describe("api-v1 burst error", () => {
     expect(response.status).toBe(429);
     expect(response.headers.get("retry-after")).toBe("37");
     await expect(response.json()).resolves.toMatchObject({ code: "burst_limited", limit: 60 });
+  });
+});
+
+describe("dateTimeParam and idListParam", () => {
+  const params = (query: string) => new URLSearchParams(query);
+
+  it("reads a date or date-time as UTC unless it carries a zone", () => {
+    expect(dateTimeParam(params(""), "updated_since")).toBeNull();
+    expect(dateTimeParam(params("updated_since=2026-10-01"), "updated_since")?.toISOString()).toBe("2026-10-01T00:00:00.000Z");
+    expect(dateTimeParam(params("updated_since=2026-10-01T12:30"), "updated_since")?.toISOString()).toBe("2026-10-01T12:30:00.000Z");
+    expect(dateTimeParam(params("updated_since=2026-10-01T12:30:00%2B02:00"), "updated_since")?.toISOString()).toBe("2026-10-01T10:30:00.000Z");
+    expect(dateTimeParam(params("updated_since=2026-10-01T12:30:00.123Z"), "updated_since")?.toISOString()).toBe("2026-10-01T12:30:00.123Z");
+  });
+
+  it("refuses malformed and calendar-impossible dates", () => {
+    for (const bad of ["yesterday", "2026-10", "2026-02-30", "2026-13-01", "2026-10-01T24:00:00Z", "1696118400"]) {
+      expect(() => dateTimeParam(params(`updated_since=${bad}`), "updated_since"), bad).toThrow(ApiParamError);
+    }
+  });
+
+  it("reads comma-separated ids, deduplicated, up to the cap", () => {
+    expect(idListParam(params(""), "peer_ids", 25)).toBeNull();
+    expect(idListParam(params("peer_ids=3, 4,3"), "peer_ids", 25)).toEqual([3, 4]);
+    expect(() => idListParam(params("peer_ids=3,-4"), "peer_ids", 25)).toThrow(ApiParamError);
+    expect(() => idListParam(params("peer_ids=1,2,3"), "peer_ids", 2)).toThrow(ApiParamError);
   });
 });
