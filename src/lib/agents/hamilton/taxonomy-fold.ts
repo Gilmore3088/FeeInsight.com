@@ -735,6 +735,10 @@ export const HAND_REFILES: readonly HandRefile[] = [
   { feePublishedId: 66351, from: "bill_pay", amount: 5.95, to: "bill_pay", name: "Bill pay monthly fee",
     oldName: "3If you opt-in to the bill pay feature, then bill pay must be utilized monthly to avoid",
     why: "#1746, inst 2291, doc 25538: \"3If you opt-in to the bill pay feature, then bill pay must be utilized monthly to avoid $5.95 monthly fee.\"" },
+  // #1788 (guard v72, read-only Oct 17): the name says only "Domestic Wire Transfer Fees", so
+  // `INCOMING_WIRE` cannot reach it; the $10 is the incoming price (outgoing is $20, live as 66596).
+  { feePublishedId: 66594, from: "wire_domestic_outgoing", amount: 10, to: "wire_domestic_incoming", name: "Domestic Wire Transfer Fees: Incoming",
+    why: "#1788, inst 113 (ServisFirst), doc 19655: \"Domestic Wire Transfer Fees | Incoming - $10.00 Outgoing - $20.00\"" },
 ];
 
 interface HandRow {

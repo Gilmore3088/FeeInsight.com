@@ -759,6 +759,16 @@ reported in the step's `publish_duplicate_check`, with `closed_by_late_collapse`
 `PUBLISH_REFUSE_DUPLICATES_LIVE` is on (James's OK, 2026-10-17): a `would_refuse` row is skipped
 before insert (skip reason `Exact duplicate of live fee #<id>`), so it is never published only for
 the late collapse to close it. Set it back to false to count only.
+Two gaps let 14 of the first 16 such rows through on Oct 17 (#1069). Twins read in one step: the
+step now takes each collapse line's rows best first (`collapseKeepOrder`: stated audience, then
+frequency, then the row it would insert last, which the collapse keeps). A later twin is refused
+against the copy already published in the step (`in_step`), so one copy goes live. A dry run
+tracks the copies it would have published. Before this, 13 rows of step 42289 went live and were
+closed at the same instant. A category the fold's live split moves: copies are looked up under the
+row's category and its `splitLiveCategory` target (`collapseCategories`). 152013 published as
+account research and was re-filed beside live 86530 under excess withdrawal. A twin in a later
+step of equal rank is still published, and the collapse closes the older copy, as its keep-newest
+rule says (152164/152246, 152245/152256).
 
 **At publish (#1069 step 2, live).** The rows a publish step is about to decide are read, once
 per batch, with three sweeps' own SQL in their `"verified"` scope (`publish-sweep-rules.ts`):
