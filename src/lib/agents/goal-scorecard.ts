@@ -22,6 +22,8 @@ import { BATCH_REVIEW_CHECK, type BatchMissKind } from "@/lib/agents/rosetta/bat
 type SqlTag = typeof sql;
 
 export const GOAL_WINDOW_DAYS = 7;
+/** `published_fee_catalog` shows an institution only once it has live fees in this many categories. */
+export const CATALOG_MIN_CATEGORIES = 3;
 
 /** James, 2026-10-12 (#1028): a state × size group under $10B is covered at 30 live institutions, or 75% below 40. */
 export const COVERAGE_TARGET_INSTITUTIONS = 30;
@@ -97,6 +99,8 @@ export interface CoverageCells {
   totalCells: number;
   /** Covered institutions still needed to bring every group to its target. */
   institutionsShort: number;
+  /** The same gap seven days ago, from the institutions live then. Absent on snapshots from before it. */
+  institutionsShortWeekAgo?: number;
   bySize: Array<{ size: SizeGroupKey; label: string; readyCells: number; totalCells: number; institutionsShort: number }>;
   /** Each state's gap (#1117), largest first: the same groups, summed per state. Absent on snapshots from before it. */
   byState?: StateCoverageGap[];
@@ -129,6 +133,8 @@ export interface LiveInstitutions {
   live: number;
   /** Live now, with no live fee seven days ago. */
   addedThisWeek: number;
+  /** Live seven days ago, with no live fee now (taken down). Absent on snapshots from before it. */
+  droppedThisWeek?: number;
 }
 
 export interface WeeklyAccuracy {
@@ -416,6 +422,23 @@ export function coverageShort(total: number, covered: number): number {
 }
 
 /**
+ * Institutions live seven days ago, by the catalog's own rule: a fee neither taken down nor
+ * quarantined by then, at an institution with three or more such categories. Without the
+ * three-category rule an institution with one or two fees counted as live a week ago though the
+ * catalog never showed it, so it read as dropped this week (283 "dropped" on 2026-10-17, 98 real).
+ */
+export function liveWeekAgoSql(db: SqlTag) {
+  return db`
+    SELECT fp.institution_id FROM public.published_fee_records fp
+     WHERE fp.published_at < NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int)
+       AND (fp.rolled_back_at IS NULL OR fp.rolled_back_at >= NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int))
+       AND (fp.quarantined_at IS NULL OR fp.quarantined_at >= NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int))
+     GROUP BY fp.institution_id
+    HAVING COUNT(DISTINCT fp.canonical_fee_key) >= ${CATALOG_MIN_CATEGORIES}::int
+  `;
+}
+
+/**
  * The state × size groups under $10B, one row each: state_code, size_group, total, covered,
  * covered_week_ago, newly_covered, target and short. The one definition the scorecard and Atlas's lane
  * priority (#1117) both read, so the gap a lane works on is the gap the page shows. Institutions
@@ -430,17 +453,15 @@ export function coverageShort(total: number, covered: number): number {
  */
 export function coverageGroupsSql(db: SqlTag, options: { weekAgo?: boolean } = {}) {
   const liveWeekAgo = options.weekAgo
-    ? db`EXISTS (
-        SELECT 1 FROM public.published_fee_records fp
-         WHERE fp.institution_id = i.id
-           AND fp.published_at < NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int)
-           AND (fp.rolled_back_at IS NULL OR fp.rolled_back_at >= NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int))
-      )`
+    ? db`(i.id IN (SELECT institution_id FROM week_ago))`
     : db`FALSE`;
+  const weekAgoCte = options.weekAgo
+    ? db`, week_ago AS MATERIALIZED (${liveWeekAgoSql(db)})`
+    : db``;
   return db`
     WITH live AS MATERIALIZED (
       SELECT DISTINCT institution_id FROM public.published_fee_catalog
-    )
+    )${weekAgoCte}
     SELECT state_code, size_group, total, covered, covered_week_ago, newly_covered, target,
            GREATEST(0, target - covered)::int AS short
       FROM (
@@ -503,6 +524,9 @@ export function summarizeCoverageCells(rows: CoverageGroupRow[]): Omit<CoverageC
     readyCells: bySize.reduce((sum, row) => sum + row.readyCells, 0),
     totalCells: bySize.reduce((sum, row) => sum + row.totalCells, 0),
     institutionsShort: bySize.reduce((sum, row) => sum + row.institutionsShort, 0),
+    ...(rows.some((row) => row.covered_week_ago !== undefined)
+      ? { institutionsShortWeekAgo: rows.reduce((sum, row) => sum + (row.total > 0 ? coverageShort(row.total, row.covered_week_ago ?? row.covered) : 0), 0) }
+      : {}),
     bySize,
     ...(rows.some((row) => row.state_code) ? { byState: summarizeStateGaps(rows) } : {}),
   };
@@ -635,17 +659,24 @@ async function readCoverageCells(db: SqlTag): Promise<CoverageCells> {
 }
 
 async function readLiveInstitutions(db: SqlTag): Promise<LiveInstitutions> {
+  // Added and dropped both compare with the institutions live seven days ago, so a week of
+  // takedowns shows beside the week's additions instead of hiding behind them.
   const [row] = await db`
-    SELECT COUNT(*)::int AS live,
-           (COUNT(*) FILTER (WHERE NOT EXISTS (
-             SELECT 1 FROM published_fee_records fp
-              WHERE fp.institution_id = live.institution_id
-                AND fp.published_at < NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int)
-                AND (fp.rolled_back_at IS NULL OR fp.rolled_back_at >= NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int))
-           )))::int AS added
-      FROM (SELECT DISTINCT institution_id FROM published_fee_catalog) live
+    WITH live AS MATERIALIZED (
+      SELECT DISTINCT institution_id FROM published_fee_catalog
+    ), week_ago AS MATERIALIZED (${liveWeekAgoSql(db)})
+    SELECT (SELECT COUNT(*) FROM live)::int AS live,
+           (SELECT COUNT(*) FROM live
+             WHERE NOT EXISTS (SELECT 1 FROM week_ago w WHERE w.institution_id = live.institution_id))::int AS added,
+           (SELECT COUNT(*) FROM week_ago w
+             WHERE NOT EXISTS (SELECT 1 FROM live WHERE live.institution_id = w.institution_id))::int AS dropped
   `;
-  return { query: GOAL_QUERIES.liveInstitutions, live: Number(row?.live ?? 0), addedThisWeek: Number(row?.added ?? 0) };
+  return {
+    query: GOAL_QUERIES.liveInstitutions,
+    live: Number(row?.live ?? 0),
+    addedThisWeek: Number(row?.added ?? 0),
+    ...(row?.dropped == null ? {} : { droppedThisWeek: Number(row.dropped) }),
+  };
 }
 
 async function readAccuracy(db: SqlTag): Promise<WeeklyAccuracy> {
@@ -996,6 +1027,7 @@ export async function readGoalScorecard(db: SqlTag = sql, now = new Date()): Pro
 
 const pct = (value: number | null | undefined) => (value == null ? "n/a" : `${(value * 100).toFixed(1)}%`);
 const count = (value: number) => value.toLocaleString("en-US");
+const signedCount = (value: number) => `${value > 0 ? "+" : ""}${count(value)}`;
 
 /** One clause for the step summary: the three numbers the goal turns on. */
 export function goalHeadline(goal: GoalScorecard): string {
@@ -1012,7 +1044,7 @@ export function goalBriefLines(goal: GoalScorecard): string[] {
   const lines: string[] = [];
   const c = goal.coverageCells;
   lines.push(c
-    ? `Coverage: ${c.readyCells} of ${c.totalCells} state and size groups under $10B meet the target; ${count(c.institutionsShort)} more covered institutions would close the gap.`
+    ? `Coverage: ${c.readyCells} of ${c.totalCells} state and size groups under $10B meet the target; ${count(c.institutionsShort)} more covered institutions would close the gap${c.institutionsShortWeekAgo == null ? "" : ` (${count(c.institutionsShortWeekAgo)} 7 days ago)`}.`
     : "Coverage: could not be read today.");
   const gaps = c?.byState?.filter((state) => state.institutionsShort > 0).slice(0, 5) ?? [];
   if (gaps.length > 0) {
@@ -1020,7 +1052,7 @@ export function goalBriefLines(goal: GoalScorecard): string[] {
   }
   const live = goal.liveInstitutions;
   lines.push(live
-    ? `Institutions with live fees: ${count(live.live)}, ${count(live.addedThisWeek)} added in the last 7 days.`
+    ? `Institutions with live fees: ${count(live.live)}, ${count(live.addedThisWeek)} added in the last 7 days${live.droppedThisWeek == null ? "" : ` and ${count(live.droppedThisWeek)} dropped (net ${signedCount(live.addedThisWeek - live.droppedThisWeek)})`}.`
     : "Institutions with live fees: could not be read today.");
   const a = goal.accuracy;
   lines.push(!a ? "Accuracy: could not be read today."
