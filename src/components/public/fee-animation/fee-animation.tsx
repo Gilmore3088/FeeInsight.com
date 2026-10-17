@@ -171,7 +171,7 @@ export function FeeAnimation({ scene, actions }: { scene: FeeScene; actions: Fee
         aria-live="polite"
         aria-atomic="true"
         data-testid="fee-animation-caption"
-        className="flex min-h-[3.75rem] items-center justify-center px-4 pt-3 text-center text-[19px] font-semibold leading-snug text-ink sm:px-5"
+        className="flex min-h-[5rem] items-center justify-center px-4 pt-3 sm:min-h-[3.75rem] text-center text-[19px] font-semibold leading-snug text-ink sm:px-5"
       >
         {caption}
       </p>

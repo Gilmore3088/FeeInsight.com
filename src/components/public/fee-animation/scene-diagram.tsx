@@ -89,7 +89,7 @@ export function SceneDiagram({
             </text>
           ) : (
             <>
-              <text x={200} y={62} textAnchor="middle" fontSize={14} className="fill-ink-muted">
+              <text x={200} y={62} textAnchor="middle" fontSize={15} className="fill-ink-muted">
                 {frame.item.label}
               </text>
               <text x={200} y={94} textAnchor="middle" fontSize={26} fontWeight={700} className="fill-ink tabular-nums">
