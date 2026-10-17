@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/data-store/fee-cache", () => ({ invalidatePublicReadCache: vi.fn() }));
 
+import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
+
 import {
   applyHandAudienceFixes, applyHandTakedowns, HAND_AUDIENCE_FIXES, HAND_TAKEDOWN_BATCH_LIMIT, HAND_TAKEDOWNS, handAudienceEvidence,
   handTakedownBatchSizes, planHandAudienceFixes, planHandTakedowns, type LiveAudienceRow, type LiveTakedownRow,
@@ -112,9 +114,19 @@ const LIVE: LiveTakedownRow[] = [
   { fee_published_id: 83125, lineage_ref: 92572, institution_id: 33, canonical_fee_key: "overdraft", fee_name: "Overdraft Charge (each)", amount: "10.00" },
   { fee_published_id: 97335, lineage_ref: 110368, institution_id: 184, canonical_fee_key: "od_protection_transfer", fee_name: "OVERDRAFT TRANSFER", amount: "10.00" },
   { fee_published_id: 97904, lineage_ref: 111117, institution_id: 850, canonical_fee_key: "od_protection_transfer", fee_name: "overdrawn. Features of Overdraft Transfer include", amount: "32.00" },
+  // #1735's nine rows, as they read live on prod, read-only, Oct 17.
+  { fee_published_id: 33705, lineage_ref: 44428, institution_id: 349, canonical_fee_key: "overdraft", fee_name: "BankOn Checking Account Overdraft Fee for items", amount: "0.00" },
+  { fee_published_id: 149143, lineage_ref: 180933, institution_id: 6720, canonical_fee_key: "other_lending_fee", fee_name: "Loan Payments by Phone", amount: "5.00" },
+  { fee_published_id: 149806, lineage_ref: 182084, institution_id: 4628, canonical_fee_key: "money_order", fee_name: "Par Value: Par value of one share", amount: "5.00" },
+  { fee_published_id: 137241, lineage_ref: 159635, institution_id: 7438, canonical_fee_key: "atm_non_network", fee_name: "Ten (10) free nationwide ATM withdrawals per year", amount: "5.00" },
+  { fee_published_id: 68335, lineage_ref: 50030, institution_id: 199, canonical_fee_key: "cash_advance", fee_name: "3% (of the amount of each cash advance, minimum fee", amount: "10.00" },
+  { fee_published_id: 79402, lineage_ref: 89542, institution_id: 1842, canonical_fee_key: "account_research", fee_name: "MMDA Excess Transaction Fee (per item charge)", amount: "5.00" },
+  { fee_published_id: 74149, lineage_ref: 86595, institution_id: 576, canonical_fee_key: "safe_deposit_box", fee_name: "Safe Deposit Box Drilling Fee: Cost of Drilling +", amount: "25.00" },
+  { fee_published_id: 49817, lineage_ref: 50458, institution_id: 6110, canonical_fee_key: "cashiers_check", fee_name: "UT bank check (after 90 days)", amount: "5.00" },
+  { fee_published_id: 125584, lineage_ref: 177190, institution_id: 5008, canonical_fee_key: "atm_non_network", fee_name: "ATM Surcharge Fee on WWFCU machines (non-credit union cards only)", amount: "3.50" },
 ];
 const CONDITIONAL_ZERO = [43512, 54014, 61335, 68893, 70121, 73737, 77121, 77122, 77618, 84553, 87079, 87461, 88213, 91505, 120559];
-const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689, 138828, 138832, 138833, 138839, 138827, 138834, 138841, 148352, 138831, 138830, 138848, 138849, 138850, 138851, 42961, 86536, 66721, 66722, 83125, 97335, 97904];
+const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689, 138828, 138832, 138833, 138839, 138827, 138834, 138841, 148352, 138831, 138830, 138848, 138849, 138850, 138851, 42961, 86536, 66721, 66722, 83125, 97335, 97904, 33705, 149143, 149806, 137241, 68335, 79402, 74149, 49817, 125584];
 
 function fakeDb(live: LiveTakedownRow[], failOn?: string) {
   const writes: Array<{ text: string; values: unknown[] }> = [];
@@ -179,6 +191,15 @@ describe("hand takedowns (James, Oct 16)", () => {
       [83125, "source_mismatch: #1549"],
       [97335, "source_mismatch: #1549"],
       [97904, "source_mismatch: #1549"],
+      [33705, "source_mismatch: #1735"],
+      [149143, "source_mismatch: #1735"],
+      [149806, "source_mismatch: #1735"],
+      [137241, "source_mismatch: #1735"],
+      [68335, "source_mismatch: #1735"],
+      [79402, "source_mismatch: #1735"],
+      [74149, "source_mismatch: #1735"],
+      [49817, "source_mismatch: #1735"],
+      [125584, "source_mismatch: #1735"],
     ]);
     // A wrong read names its issue; a second read of one printed fee names the live copy it repeats too.
     expect(HAND_TAKEDOWNS.every((entry) => entry.evidence.length > 0 && (entry.kind === "duplicate"
@@ -240,6 +261,15 @@ describe("hand takedowns (James, Oct 16)", () => {
         { feePublishedId: 83125, feeVerifiedId: 92572, reason: "source_mismatch: #1549" },
         { feePublishedId: 97335, feeVerifiedId: 110368, reason: "source_mismatch: #1549" },
         { feePublishedId: 97904, feeVerifiedId: 111117, reason: "source_mismatch: #1549" },
+        { feePublishedId: 33705, feeVerifiedId: 44428, reason: "source_mismatch: #1735" },
+        { feePublishedId: 149143, feeVerifiedId: 180933, reason: "source_mismatch: #1735" },
+        { feePublishedId: 149806, feeVerifiedId: 182084, reason: "source_mismatch: #1735" },
+        { feePublishedId: 137241, feeVerifiedId: 159635, reason: "source_mismatch: #1735" },
+        { feePublishedId: 68335, feeVerifiedId: 50030, reason: "source_mismatch: #1735" },
+        { feePublishedId: 79402, feeVerifiedId: 89542, reason: "source_mismatch: #1735" },
+        { feePublishedId: 74149, feeVerifiedId: 86595, reason: "source_mismatch: #1735" },
+        { feePublishedId: 49817, feeVerifiedId: 50458, reason: "source_mismatch: #1735" },
+        { feePublishedId: 125584, feeVerifiedId: 177190, reason: "source_mismatch: #1735" },
       ],
       skipped: [],
     });
@@ -299,6 +329,25 @@ describe("hand takedowns (James, Oct 16)", () => {
     // Another institution or category at the same id, name and price is not the listed row.
     const moved = [{ ...LIVE[4], institution_id: 1 }, { ...LIVE[5], canonical_fee_key: "legal_process" }];
     expect(planHandTakedowns(moved, HAND_TAKEDOWNS.slice(4, 6)).skipped.map((row) => row.reason)).toEqual(["changed since listed", "changed since listed"]);
+  });
+
+  it("#1735: Gate City's BankOn $0 comes down and its $0 NSF stays; the $32 does not trace under its printed name", () => {
+    const batch = HAND_TAKEDOWNS.filter((entry) => entry.issue === 1735);
+    expect(batch).toHaveLength(9);
+    expect(batch.map((entry) => entry.feePublishedId)).not.toContain(33701);
+    // Text 503 (doc 13087, read-only, Oct 17), its overdraft and NSF lines.
+    const gateCity = "Overdraft Fees\nOverdraft fee for items paid resulting in a negative\nbalance.\nMaximum of 4 fees per calendar day.\n$32 per item\n" +
+      "If your account is charged more than four overdraft\nOverdraft /Non-Sufficient Funds (NSF) | fees per day, the additional fees will be refunded\n" +
+      "within 48 hours. The date the fee is charged is used\nto calculate the number of fees charged per day.\nBankOn Checking Account Overdraft Fee for items\n$0 per item\n" +
+      "paid resulting in a negative balance.\nReturned Item/Non-Sufficient Funds\n(NSF) Third parties or other banks may impose | Non-Sufficient Funds (NSF) Fee for items returned. $0 per item\n";
+    // The $0 traces only to the BankOn account's own line; the NSF $0 is the bank's printed price.
+    expect(checkFeeAgainstSource(gateCity, "BankOn Checking Account Overdraft Fee for items", 0, ".", "overdraft"))
+      .toEqual({ ok: true, sourceLine: "BankOn Checking Account Overdraft Fee for items | $0 per item" });
+    expect(checkFeeAgainstSource(gateCity, "Non-Sufficient Funds (NSF) Fee for items returned", 0, ".", "nsf").ok).toBe(true);
+    // The standard $32 sits below a note line, so the shared check does not trace it under the
+    // printed name yet: it has to come from a re-read once the reader can (#1735), not from here.
+    expect(checkFeeAgainstSource(gateCity, "Overdraft fee for items paid resulting in a negative balance", 32, ".", "overdraft"))
+      .toEqual({ ok: false, reason: "amount_not_the_fee" });
   });
 
   it("archives the row, rejects its verified row, records feedback and one run event", async () => {
