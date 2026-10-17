@@ -1493,3 +1493,85 @@ describe("withoutLeadingFootnoteMark (v74)", () => {
     expect(read.some((name) => /^\d/.test(name))).toBe(false);
   });
 });
+
+describe("v75: recurring held name families from the 62-bank answer key (Knox recall, Oct 17)", () => {
+  // Every line is the answer key's own source line (answer_key_fees.source_line, inst and fee id noted).
+  const hint = (line: string) => extractFromSegment(line).candidates.map((c) => [c.canonicalHint, c.amount]);
+
+  it("reads rush shipping of a card or PIN as a rush card", () => {
+    expect(hint("Expedited PIN Only (by mail) | $36.00")).toEqual([["rush_card", 36]]); // inst 80, f159
+    expect(hint("Express Shipping (domestic U.S. only): $25")).toEqual([["rush_card", 25]]); // inst 316, f433
+    expect(hint("Expedited shipping fee $ 50.00")).toEqual([["rush_card", 50]]); // inst 1175, f714
+    expect(hint("| Rush Fee | $25.00 2nd day |  |")).toEqual([["rush_card", 25]]); // inst 6808, f1918
+  });
+
+  it("leaves a rushed check payment, a bare expedited delivery and an instant-issue card held", () => {
+    expect(hint("| RUSH FEE FOR CHECK PAYMENT (Non-Refundable) | Next Day $19.95 |")).toEqual([]); // inst 7902, bill pay
+    expect(classifyPatternKey("Expedited Delivery")).toBeNull(); // inst 6834 keys it as courier delivery
+    expect(classifyPatternKey("Debit Card – Instant Issue and Emboss")).toBeNull();
+  });
+
+  it("reads a mortgage's payoff, satisfaction and reconveyance as other lending, its processing as origination", () => {
+    expect(hint("Demand for Payoff (Mortgage Loan) | $25")).toEqual([["other_lending_fee", 25]]); // inst 4937, f1497
+    expect(hint("Lender Request Payoff | $10.00")).toEqual([["other_lending_fee", 10]]); // inst 7088, f2012
+    expect(hint("Duplicate Satisfaction of Mortgage | $20/each")).toEqual([["other_lending_fee", 20]]); // inst 7526, f2299
+    expect(hint("Lien Satisfied | $20")).toEqual([["other_lending_fee", 20]]); // inst 4937, f1500
+    expect(hint("Mortgage Reconveyance Fee | $50")).toEqual([["other_lending_fee", 50]]); // inst 4937, f1498
+    expect(hint("Deed of reconveyance/recording | $188")).toEqual([["other_lending_fee", 188]]); // inst 8466, f2758
+    expect(hint("First mortgage processing | $450 each")).toEqual([["loan_origination", 450]]); // inst 8466, f2755
+    expect(hint("Mortgage Funding | $100")).toEqual([["loan_origination", 100]]); // inst 8466, f2757
+  });
+
+  it("reads a club withdrawal and a short-window closure as early closure", () => {
+    expect(hint("Holiday Club Withdrawal | $3")).toEqual([["early_closure", 3]]); // inst 7288, f2204
+    expect(hint("Christmas club early close fee | $25.00")).toEqual([["early_closure", 25]]); // inst 5410, f1646
+    expect(hint("Early Christmas Account Withdrawal | $10")).toEqual([["early_closure", 10]]); // inst 4937, f1478
+    expect(hint("Christmas Club Withdrawal .................................... $5.00")).toEqual([["early_closure", 5]]); // inst 6109, f1807
+    expect(hint("Cancel Membership < 180 days | $20.00 per account")).toEqual([["early_closure", 20]]); // inst 5107, f1564
+    expect(hint("Closing Membership Fee (less than 1 year) | $25.00")).toEqual([["early_closure", 25]]); // inst 8197, f2557
+    expect(hint("Closed Savings (Within first year opened) | $5.00")).toEqual([["early_closure", 5]]); // inst 7346, f2261
+    expect(hint("Closed account during first 90 days $40.00")).toEqual([["early_closure", 40]]); // inst 1175, f705
+    expect(hint("Primary Savings Closure (within six months of opening) | $10.00")).toEqual([["early_closure", 10]]); // inst 8625, f3015
+    expect(hint("Share Savings Closure ........................................... $10.00")).toEqual([["early_closure", 10]]); // inst 6109, f1811
+  });
+
+  it("keeps a loan's closure, a reopened account and a free-withdrawal club line out of early closure", () => {
+    // inst 8466, f2765: the key files the home equity line's early closure as other lending.
+    expect(classifyPatternKey("Early closure fee for home equity loan/line within two years of opening")).not.toBe("early_closure");
+    expect(classifyPatternKey("Reopen Closed Account")).toBeNull();
+    expect(classifyPatternKey("Christmas Club (withdrawals free Oct.1 – Jan.1)")).toBeNull();
+  });
+
+  it("reads a wire within the U.S. as a domestic outgoing wire, and leaves a bare wire fee held", () => {
+    expect(hint("Wire Transfer Fee - Within U.S.A. (per item) | $25.00")).toEqual([["wire_domestic_outgoing", 25]]); // inst 8569, f2900
+    expect(classifyPatternKey("Wire Transfer Fee")).toBeNull();
+    expect(classifyPatternKey("Incoming Wire Within the U.S.")).not.toBe("wire_domestic_outgoing");
+  });
+
+  it("reads an IRA's withdrawal, transfer out and early closing as IRA termination", () => {
+    expect(hint("IRA Account Early Withdrawal Fee | $100.00 per withdrawal")).toEqual([["ira_termination", 100]]); // inst 4888, f1450
+    expect(hint("| IRA Early Withdrawal (before age 60) | $2.50 |")).toEqual([["ira_termination", 2.5]]); // inst 5824, f1710
+    expect(hint("IRA Documentation Fee if closed before one year | $37.00")).toEqual([["ira_termination", 37]]); // inst 302, f383
+    expect(hint("IRA transferred to another institution | $25 per transfer")).toEqual([["ira_termination", 25]]); // inst 8466, f2747
+  });
+
+  it("reads an assisted loan payment and a skip payment as other lending", () => {
+    expect(hint("Agent-Supported Loan Payment Fee | $20.00 per transaction")).toEqual([["other_lending_fee", 20]]); // inst 8448, f2704
+    expect(hint("Bank Assisted Loan Payment Funds Transfer | $5.00")).toEqual([["other_lending_fee", 5]]); // inst 2267, f1062
+    expect(hint("| Loan Skip Payment Fee | $15.00 per item |")).toEqual([["other_lending_fee", 15]]); // inst 4600, f1237
+    expect(hint("Skip Payment for each Loan | $32.00")).toEqual([["other_lending_fee", 32]]); // inst 7346, f2266
+    expect(hint("Skip Payment Fee | $20.00/payment")).toEqual([["other_lending_fee", 20]]); // inst 8197, f2571
+    // inst 8466, f2754: the key files "Skip-a-Loan payment" as a late fee, so it stays out.
+    expect(hint("Skip-a-Loan payment | $25 per request")).toEqual([]);
+  });
+
+  it("reads mobile check deposit as mobile deposit and a debit-or-credit card replacement as the debit card's", () => {
+    expect(hint("Mobile Check Deposit | $1.00")).toEqual([["mobile_deposit", 1]]);
+    expect(hint("Debit Card or Credit Card Replacement | $20")).toEqual([["card_replacement", 20]]); // inst 4937, f1481
+    expect(hint("Credit Card Replacement | $20")).toEqual([]);
+  });
+
+  it("leaves returned statements held (James's call since v26)", () => {
+    expect(hint("Returned Statement fee | $10/each")).toEqual([]); // inst 7526, f2295
+  });
+});

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   API_PLANS_LABEL,
+  subscriberKeyName,
+  subscriberKeyUserId,
   apiIncludedInTier,
   subscriberKeyAllowed,
   subscriberOrgSlug,
@@ -38,5 +40,17 @@ describe("subscriber key rules", () => {
 describe("API_PLANS_LABEL", () => {
   it("names the monthly prices of the plans that include the API", () => {
     expect(API_PLANS_LABEL).toBe("$300 and $500 plans");
+  });
+});
+
+describe("subscriber key names", () => {
+  it("round-trips the holder's user id", () => {
+    expect(subscriberKeyUserId(subscriberKeyName(12))).toBe(12);
+  });
+  it("returns null for other names", () => {
+    expect(subscriberKeyUserId("Pro subscription")).toBeNull();
+    expect(subscriberKeyUserId("Pro user 0")).toBeNull();
+    expect(subscriberKeyUserId("Pro user 1x")).toBeNull();
+    expect(subscriberKeyUserId(null)).toBeNull();
   });
 });

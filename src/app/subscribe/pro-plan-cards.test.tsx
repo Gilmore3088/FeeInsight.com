@@ -194,7 +194,8 @@ describe("/subscribe plan benefits", () => {
     const details = screen.getByText(API_DETAILS_SUMMARY).closest("details")!;
     expect(details.open).toBe(false);
     for (const line of API_DETAILS) expect(details.textContent).toContain(line);
-    expect(API_DETAILS.join(" ")).toMatch(/10,000 API calls a month, shared/);
-    expect(API_DETAILS.join(" ")).toMatch(/account holder makes it/);
+    expect(API_DETAILS.join(" ")).toMatch(/shares 10,000 API calls a month/);
+    expect(API_DETAILS.join(" ")).toMatch(/up to 5 people, makes their own key/);
+    expect(API_DETAILS.join(" ")).not.toMatch(/account holder/);
   });
 });

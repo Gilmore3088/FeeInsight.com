@@ -97,7 +97,7 @@ describe("AnalyzeWorkspace multi-turn context for written answers (#979)", () =>
     render(<AnalyzeWorkspace userId={7} institutionId="2945" selectedInstitution={bank} />);
     await askTurn("What is the overdraft fee?", "The overdraft fee is $30.");
     await askTurn("And the NSF fee?", "The NSF fee is $25.");
-    fireEvent.click(screen.getByRole("button", { name: "New question" }));
+    fireEvent.click(screen.getByRole("button", { name: "New conversation" }));
     const fresh = await askTurn("What is the wire fee?", "The wire fee is $20.");
     expect(fresh).toBe("What is the wire fee?");
     const followUp = await askTurn("And incoming?", "Incoming wires are $15.");
@@ -129,5 +129,25 @@ describe("AnalyzeWorkspace when the route holds a written answer back (#981)", (
     fireEvent.click(screen.getByRole("button", { name: "Ask again" }));
     await waitFor(() => expect(chat.send).toHaveBeenCalledTimes(2));
     expect((chat.send.mock.calls[1][0] as { text: string }).text).toBe("What is the overdraft fee?");
+  });
+
+  it("offers the one fee the held question named as a sourced comparison", async () => {
+    render(<AnalyzeWorkspace userId={7} institutionId="2945" selectedInstitution={bank} />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Tell me about our overdraft fee and what drives it" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Ask( Hamilton)?$/ }));
+    await waitFor(() => expect(chat.send).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await chat.options.at(-1)?.onFinish?.({
+        message: { parts: [{ type: "text", text: HELD }], metadata: { answerEvidence: { passed: false, held: true } } },
+        isError: false,
+        isAbort: false,
+      });
+    });
+    const compare = await screen.findByRole("button", { name: "Compare the overdraft fee only" });
+    const calls = engineCalls;
+    fireEvent.click(compare);
+    // The comparison goes to the fee engine first, which answers from the published fee data.
+    await waitFor(() => expect(engineCalls).toBe(calls + 1));
+    expect(screen.getByRole("heading", { level: 1, name: "How does this institution's overdraft fee compare with its peers?" })).toBeTruthy();
   });
 });

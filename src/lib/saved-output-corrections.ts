@@ -5,9 +5,13 @@
  * output's institution was corrected, reversed, held or released after it was saved, the reader
  * is told so and offered a fresh answer from current data.
  *
- * Saved outputs keep no fee ids, so the match is the institution the output is about. An output
- * that used this institution only as a peer is not found (that needs the output to record the
- * fees it read). Pure: no database imports. The reader is `src/lib/data-store/fee-correction-audit.ts`.
+ * A saved output records the published fee rows it read, and their source documents
+ * (`hamilton_saved_output_fee_refs`, written by `src/lib/data-store/saved-output-fee-refs.ts`), so
+ * a change to any of those rows finds it, including an answer that used the institution only as a
+ * peer. An output saved before that record existed (or one that read no identifiable fee row,
+ * such as a quarterly briefing) is still matched by the institution it is about.
+ *
+ * Pure: no database imports. The reader is `src/lib/data-store/fee-correction-audit.ts`.
  */
 
 export type FeeChangeKind = "correct" | "reverse" | "hold" | "release";
@@ -22,6 +26,92 @@ export interface SavedOutputNotice {
   text: string;
   latestAt: string;
   count: number;
+}
+
+/** A published fee row a saved output used, with the source document version it was read from. */
+export interface SavedFeeRef {
+  feePublishedId: number;
+  institutionId: number | null;
+  sourceDocumentId: number | null;
+  sourceContentHash: string | null;
+}
+
+/** How a saved output was matched to fee changes: by the fee rows it recorded, or by its institution. */
+export type NoticeBasis = "fees" | "institution";
+
+/** The most fee rows one saved output records (the table's check allows no more). */
+export const MAX_SAVED_FEE_REFS = 2000;
+
+function positiveId(value: unknown): number | null {
+  const n = typeof value === "string" && value.trim() !== "" ? Number(value) : value;
+  return typeof n === "number" && Number.isSafeInteger(n) && n > 0 ? n : null;
+}
+
+function hashOf(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 && value.length <= 200 ? value : null;
+}
+
+/**
+ * The published fee rows found in what a saved output was built from: the institution's own rows
+ * (`ownRows`), evidence facts read from `published_fee_catalog`, and named peers or competitors
+ * that carry `feePublishedIds`. Market layers (state, district, national) are aggregates and are
+ * skipped. First sighting of a row wins, then one that names its document fills the gap. Capped
+ * at MAX_SAVED_FEE_REFS. Pure.
+ */
+export function collectFeeRefs(...values: unknown[]): SavedFeeRef[] {
+  const refs = new Map<number, SavedFeeRef>();
+  const seen = new WeakSet<object>();
+  const add = (id: unknown, institutionId: unknown, documentId: unknown, hash: unknown) => {
+    const feePublishedId = positiveId(id);
+    if (feePublishedId == null) return;
+    const existing = refs.get(feePublishedId);
+    if (existing) {
+      if (existing.sourceDocumentId == null && positiveId(documentId) != null) {
+        existing.sourceDocumentId = positiveId(documentId);
+        existing.sourceContentHash = hashOf(hash);
+      }
+      return;
+    }
+    if (refs.size >= MAX_SAVED_FEE_REFS) return;
+    refs.set(feePublishedId, {
+      feePublishedId,
+      institutionId: positiveId(institutionId),
+      sourceDocumentId: positiveId(documentId),
+      sourceContentHash: hashOf(hash),
+    });
+  };
+  const single = (ids: unknown): unknown => (Array.isArray(ids) && ids.length === 1 ? ids[0] : null);
+  const walk = (value: unknown, depth: number) => {
+    if (depth > 16 || value === null || typeof value !== "object") return;
+    if (seen.has(value)) return;
+    seen.add(value);
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item, depth + 1);
+      return;
+    }
+    const obj = value as Record<string, unknown>;
+    if (Array.isArray(obj.ownRows)) {
+      for (const row of obj.ownRows as Record<string, unknown>[]) {
+        if (row && typeof row === "object") add(row.id, obj.institutionId, row.sourceDocumentId, row.sourceContentHash);
+      }
+    }
+    const source = obj.source as Record<string, unknown> | undefined;
+    if (source && typeof source === "object" && source.table === "published_fee_catalog") {
+      const scope = obj.scope as Record<string, unknown> | undefined;
+      add(source.recordId, scope?.institutionId, single(source.sourceDocumentIds), source.documentContentHash);
+    }
+    const peerIds = obj.feePublishedIds ?? obj.fee_published_ids;
+    if (Array.isArray(peerIds)) {
+      const docs = obj.sourceDocumentIds ?? obj.source_document_ids;
+      for (const id of peerIds) add(id, obj.institutionId ?? obj.institution_id, single(docs), null);
+    }
+    for (const [key, child] of Object.entries(obj)) {
+      if (key === "layers") continue;
+      walk(child, depth + 1);
+    }
+  };
+  for (const value of values) walk(value, 0);
+  return [...refs.values()];
 }
 
 /** Saved outputs about one institution made before an operator's change. Null when the table could not be read. */
@@ -49,10 +139,16 @@ function time(iso: string): number {
 }
 
 /**
- * The notice for a saved output, or null when no fee for its institution changed after it was
- * saved. Changes at or before `savedAt` are ignored. Pure.
+ * The notice for a saved output, or null when no fee it used (basis "fees") or no fee for its
+ * institution (basis "institution") changed after it was saved. Changes at or before `savedAt`
+ * are ignored. Pure.
  */
-export function savedOutputNotice(changes: FeeChangeSince[], savedAt: string, noun = "answer"): SavedOutputNotice | null {
+export function savedOutputNotice(
+  changes: FeeChangeSince[],
+  savedAt: string,
+  noun = "answer",
+  basis: NoticeBasis = "institution",
+): SavedOutputNotice | null {
   const saved = time(savedAt);
   if (!Number.isFinite(saved)) return null;
   const after = changes.filter((change) => time(change.at) > saved);
@@ -70,7 +166,7 @@ export function savedOutputNotice(changes: FeeChangeSince[], savedAt: string, no
   const when = after.length === 1 ? ` on ${noticeDate(latestAt)}` : `, the latest on ${noticeDate(latestAt)}`;
   return {
     text:
-      `This institution's fee data changed after this ${noun} was saved: ${list}${when}. ` +
+      `${basis === "fees" ? `Fee data this ${noun} used` : "This institution's fee data"} changed after this ${noun} was saved: ${list}${when}. ` +
       `This ${noun} still shows the figures from when it was saved.`,
     latestAt,
     count: after.length,

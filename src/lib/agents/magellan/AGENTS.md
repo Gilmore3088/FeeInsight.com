@@ -278,7 +278,24 @@ and `detail.method_version`).
   the automation stop ends the step cleanly (`budgetStopped`); the unspent bank stays due.
   $10B+ banks and requesters are picked from any state's paid step, not only their own.
   Order: the state experts' work lists (#1029, below).
-- Schedule search (`schedule-search.ts`, `discover.paid_schedule_search`, version 2, #1030), in
+- State top-10 slot holders with nothing live go first (`top-ten-first.ts`, 2026-10-17; paid
+  web search version 2, schedule search version 3). The ten largest institutions by in-state
+  deposits in each state and DC with nothing in `published_fee_catalog` (`loadTopTenMissingIds`,
+  from `getTopTenCoverage` in `src/lib/data-store/top-ten-coverage.ts`; none if the ranking
+  fails) are picked from any state's paid step, after report requesters and Pro accounts'
+  institutions and ahead of the work lists' state rotation (`pickTopTenFirst`), in both paid
+  searches and each schedule-search lane. A narrow exception to the miss cooldown, at most one
+  paid try per institution per `TOP_TEN_RETRY_DAYS` (7) from its last real try, only when the
+  ask moves up: the paid web search only when the ladder's next rung is `disclosure` (an odd
+  miss count, after a schedule miss), skipping a pick that already ran in its cooldown; the
+  schedule search only in the uncovered lane (no live record at all) and only while no try in
+  the miss cooldown used its three-document ask (`detail.lane = 'uncovered'`; the version 1
+  tries of Oct 6-11 asked for the schedule only). A find keeps its 90 days, "not published
+  online" (2 misses, 120 days) and `MAX_TRANSIENT_TRIES` are unchanged, so each institution gets
+  one early try per ladder cycle. Each try and result entry records `detail.top_ten` and
+  `detail.top_ten_retry`. The state lane scheduler's due counts do not count the early tries:
+  any state's paid step takes them.
+- Schedule search (`schedule-search.ts`, `discover.paid_schedule_search`, version 3, #1030), in
   the same paid step, from any state, off the paid cooldown, in two lanes, the uncovered lane first:
   - **Uncovered first:** up to `SCHEDULE_SEARCH_PER_RUN` (10) institutions that hold a fee link but
     have no live fee at all, whose oldest stored copy is at least `UNCOVERED_SETTLE_DAYS` (3) old,
@@ -545,7 +562,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `MAGELLAN_FETCH_STRATEGY` | `fetch.http` | v2 | `magellan/fetch.ts` |
 | `OPERATOR_SCHEDULE_STRATEGY` | `discover.operator_schedule` | v1 | `magellan/operator-schedules.ts` |
 | `PAGE_CLASSIFIER_VERSION` | — | v2 | `magellan/page-classifier.ts` |
-| `PAID_FIND_STRATEGY` | `discover.paid_web_search` | v1 | `magellan/paid-find.ts` |
+| `PAID_FIND_STRATEGY` | `discover.paid_web_search` | v2 (top-10 first) | `magellan/paid-find.ts` |
 | `PAID_PICK_STRATEGY` | `discover.paid_pick` | v1 | `magellan/paid-find.ts` |
 | `KEEP_REFUSED_ANSWER_STRATEGY` | `discover.keep_refused_answer` | v1 | `magellan/refused-answers.ts` |
 | `CENSUS_ACS_PARSER_VERSION` | — | v3 | `magellan/registry/census-acs.ts` |
@@ -559,6 +576,6 @@ fails a PR that changes one of these constants without updating its line here (#
 | `STATE_ENFORCEMENT_PARSER_VERSION` | — | v6 (stated subjects, #1428) | `magellan/registry/state-enforcement.ts` |
 | `STATE_NEWS_PARSER_VERSION` | — | v2 | `magellan/registry/state-reg-news.ts` |
 | `RESTORE_FEE_PAGE_VERSION` | — | v1 | `magellan/restore-fee-page.ts` |
-| `SCHEDULE_SEARCH_STRATEGY` | `discover.paid_schedule_search` | v2 | `magellan/schedule-search.ts` |
+| `SCHEDULE_SEARCH_STRATEGY` | `discover.paid_schedule_search` | v3 (top-10 first) | `magellan/schedule-search.ts` |
 | `SITE_SEARCH_STRATEGY` | `discover.site_search` | v1 | `magellan/second-document.ts` |
 | `WEBSITE_FIND_STRATEGY` | `discover.website_search` | v1 | `magellan/website-find.ts` |

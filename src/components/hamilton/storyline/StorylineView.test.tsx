@@ -49,6 +49,19 @@ describe("StorylineView with Hamilton's memo", () => {
     expect(html).toContain("recurring payroll");
   });
 
+  it("moves sentences no fee record backs into their own labelled list", () => {
+    const reading = "The peer median is $29.50.";
+    const bound = {
+      ...memo,
+      summary: `Your fee is $32. ${reading}`,
+      narrativeBinding: { version: 1 as const, supported: [], interpretation: [reading], omitted: [], limitations: [] },
+    };
+    const html = renderToStaticMarkup(<StorylineView story={sampleStoryline()} memo={{ state: "written", memo: bound }} />);
+    expect(html).toContain("Hamilton&#x27;s reading, not tied to a fee record");
+    expect(html.split(reading).length - 1).toBe(1);
+    expect(html).toContain("Your fee is");
+  });
+
   it("shows a writing state, and one quiet line when no memo is written", () => {
     expect(renderToStaticMarkup(<StorylineView story={sampleStoryline()} memo={{ state: "writing" }} />)).toContain("Hamilton is writing this up");
     const none = renderToStaticMarkup(<StorylineView story={sampleStoryline()} memo={{ state: "none", reason: "Hamilton's daily writing budget is used up." }} />);

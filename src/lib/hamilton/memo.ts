@@ -14,6 +14,7 @@ import { trackAnthropicRequest } from "@/lib/ai-provider-usage";
 import { extractFigures } from "./figure-check";
 import { checkAnswerEvidence } from "./answer-gate";
 import type { HamiltonEvidenceBundle } from "./evidence-contract";
+import { bindNarrative, type NarrativeBinding } from "./narrative-bound";
 import { HAMILTON_VOICE } from "./voice";
 import type { Storyline, StorylineMemo, StorylineMemoResult } from "./workspace/storyline-types";
 import type { HamiltonIdentitySnapshot } from "./account-context";
@@ -151,8 +152,34 @@ export function parseMemo(raw: string): MemoDraft | null {
   }
 }
 
+/** Why a memo sentence was left out, in words the model can act on. */
+const OMIT_FEEDBACK: Record<string, string> = {
+  wrong_institution: "states another institution's figure as this one's",
+  gap_as_fee: "states a gap between two fees as a fee",
+  median_as_fee: "states the peer median as an institution's own fee; call it the peer median",
+  wrong_direction: "states a gap or change in the wrong direction",
+  wrong_period: "states a figure for the wrong year",
+  wrong_unit: "states a rate fee as a dollar amount",
+  conflicting_sources: "picks one of two sources that disagree; say that they disagree instead",
+  instruction_text: "repeats instruction-like text from a source",
+};
+
+/**
+ * The memo's sentence binding (#981, H06-T06): with record evidence in DATA, each sentence's figures
+ * must bind to a validated record. A sentence the records contradict is a problem; a figure the records
+ * do not hold is kept as Hamilton's reading and listed in the binding. Advice is the shared gate's.
+ */
+export function memoBinding(draft: MemoDraft, payload: unknown, question?: string): NarrativeBinding | null {
+  const evidence = (payload as { fact_evidence?: HamiltonEvidenceBundle } | null)?.fact_evidence;
+  if (!evidence) return null;
+  const identity = (payload as { identityContext?: HamiltonIdentitySnapshot } | null)?.identityContext;
+  const names = new Map<number, string>();
+  if (identity?.researchInstitutionId && identity.researchInstitutionName) names.set(identity.researchInstitutionId, identity.researchInstitutionName);
+  return bindNarrative({ text: [draft.summary, draft.board, draft.market].join("\n"), evidence, names, question });
+}
+
 /** What is wrong with a draft: untraced figures, advice, internal names. Empty when it passes. */
-export function memoProblems(draft: MemoDraft, payload: unknown): { problems: string[]; figureCheck: { checked: number; unmatched: string[] } } {
+export function memoProblems(draft: MemoDraft, payload: unknown, question?: string): { problems: string[]; figureCheck: { checked: number; unmatched: string[] }; binding: NarrativeBinding | null } {
   const all = [draft.summary, draft.board, draft.market, ...draft.questions].join("\n");
   // The shared gate every paid answer passes (answer-gate.ts); the checks below are the memo's own.
   const shared = checkAnswerEvidence(all, payload);
@@ -170,6 +197,12 @@ export function memoProblems(draft: MemoDraft, payload: unknown): { problems: st
       problems.push(`These evidence_fact_ids are not in DATA.fact_evidence: ${unknown.join(", ")}.`);
     }
   }
+  const binding = memoBinding(draft, payload, question);
+  for (const omitted of binding?.omitted ?? []) {
+    const why = OMIT_FEEDBACK[omitted.reason];
+    if (why) problems.push(`This sentence ${why}: "${omitted.text}"`);
+  }
+  for (const line of binding?.limitations ?? []) if (line.startsWith("Sources disagree")) problems.push(`State this instead of either figure: ${line}`);
   const noFee = ownFeeMissing(payload) ? all.match(NO_FEE_CLAIM) : null;
   if (noFee) problems.push(`"${noFee[0]}" reads as if the bank charges no fee. Its fee is not in the index yet; say that instead.`);
   const opening = firstSentence(draft.summary).match(LIMIT_OPENING);
@@ -185,7 +218,7 @@ export function memoProblems(draft: MemoDraft, payload: unknown): { problems: st
       problems.push(`The memo references ${home} without account-institution evidence in the storyline. Account identity alone supplies no fee or financial facts.`);
     }
   }
-  return { problems, figureCheck };
+  return { problems, figureCheck, binding };
 }
 
 export interface MemoClient {
@@ -275,9 +308,16 @@ export async function writeStorylineMemo(
       feedback = "\n\nYour last reply was not the complete JSON object asked for. Return only the JSON object, within the word limits.";
       continue;
     }
-    const { problems, figureCheck } = memoProblems(draft, payload);
+    const { problems, figureCheck, binding } = memoProblems(draft, payload, question);
     if (problems.length === 0) {
-      const memo: StorylineMemo = { ...draft, model, generatedAt: (options.now ?? new Date()).toISOString(), figureCheck, ...(options.identityContext ? { identityContext: options.identityContext } : {}) };
+      const memo: StorylineMemo = {
+        ...draft,
+        model,
+        generatedAt: (options.now ?? new Date()).toISOString(),
+        figureCheck,
+        ...(binding ? { narrativeBinding: binding } : {}),
+        ...(options.identityContext ? { identityContext: options.identityContext } : {}),
+      };
       return { status: "written", memo };
     }
     lastProblems = problems;

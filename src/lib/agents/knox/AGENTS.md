@@ -75,8 +75,9 @@ text Knox has read before is picked again when any one of these holds:
 3. Large bank: the bank has $10B or more in assets (`KNOX_REREAD_ASSET_FLOOR`, `asset_size` in
    thousands) and the document is a page's current copy.
 4. Older copy still live: an older copy of this page still carries a live fee.
-5. Stale read: the current copy has no `extract.rules` attempt at v26 or later
-   (`KNOX_STALE_READ_BELOW_VERSION`).
+5. Stale read: the current copy has no `extract.rules` attempt at v75 or later
+   (`KNOX_STALE_READ_BELOW_VERSION`; v26 until Oct 17, raised with v75 so every current copy read
+   by an older version is read once more).
 6. Lineup gap: the current copy has a `monthly_maintenance` row with no account name, or with
    neither the balance that avoids it nor its waiver, or (v73) a `minimum_balance` row with no
    account name, or a monthly maintenance or minimum balance row whose stored account names no
@@ -506,6 +507,40 @@ hand check found wrong, from their real lines.
 - A bare "Overdrafts" priced per transfer is the share transfer that covers them ("Share
   Transfer for\nOverdrafts - $2.00 per transfer", raw 112570). A bare "Overdrafts" priced per
   item is still the overdraft fee.
+
+v75 (Oct 17, Knox recall on the 62-bank answer key): names for the recurring line families the key
+showed held as unclassified or not read (`RECALL_FAMILY_PATTERNS` in `rules.ts`, after every other
+name rule). Each files under one of the 50 types; where the key uses a retired key, the read takes
+that key's fold home.
+- Rush shipping of a card or PIN: "Expedited PIN Only (by mail)", "Express Shipping (domestic U.S.
+  only)", "Expedited shipping fee", "Rush Fee" (`rush_card`). A rushed check order, check payment,
+  wire, statement or loan line is not one.
+- A mortgage's payoff demand, satisfaction and reconveyance ("Demand for Payoff (Mortgage Loan)",
+  "Duplicate Satisfaction of Mortgage", "Lien Satisfied", "Mortgage Reconveyance Fee") are other
+  lending, the fold's home for mortgage payoff, lien release and reconveyance; "First mortgage
+  processing", "underwriting" and "Mortgage Funding" are loan origination.
+- A club's withdrawal or early close ("Holiday Club Withdrawal", "Christmas club early close fee"), an
+  account, savings or membership closed inside a year ("Cancel Membership < 180 days", "Closed
+  account during first 90 days", "Account closing (90 days from open date)") and a savings account's
+  own closure fee ("Share Savings Closure") are early closure. A loan's, a certificate's or an IRA's
+  is not, and reopening an account still is not.
+- "Wire Transfer Fee - Within U.S.A." is a domestic outgoing wire.
+- An IRA's withdrawal, distribution, transfer out or closing is IRA termination (the fold's home for
+  IRA distributions).
+- An assisted loan payment ("Agent-Supported Loan Payment Fee") and a skip payment ("Skip Payment
+  Fee", "Loan Skip Payment Fee") are other lending. "Skip-a-Loan payment" stays out: one key files it
+  as a late fee.
+- "Mobile Check Deposit" is mobile deposit.
+- One price for a "Debit Card or Credit Card Replacement" is the debit card's (a credit card alone
+  is still a lending fee).
+- Left held on purpose: returned statements (James's call since v26); a bare "Wire Transfer Fee"
+  (about 1 in 5 say incoming or international after the price); and printouts, instant-issue cards,
+  travel and reloadable cards, loan coupon books, remote deposit capture and a bare "Expedited
+  Delivery", which the Texas or seven-state gate keys leave unfiled or file elsewhere.
+- Gates: Texas 556 to 567 right (14 wrong), held out 53 / 4, seven states 797 to 833 right (41
+  wrong); no document gained a wrong read.
+- Every current copy read before v75 is read once more (`KNOX_STALE_READ_BELOW_VERSION`, raised from
+  26): 41 of the 62 answer-key pages were last read at v65 or earlier.
 
 v74 (Oct 16): a footnote number glued to the front of a name comes off (`withoutLeadingFootnoteMark`
 in `rules.ts`, applied to every specialist's read and held line in `runFreeSpecialists`).
@@ -1163,7 +1198,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v20 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v74 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v75 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v6 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v1 | `knox/takedown-lessons.ts` |

@@ -7,6 +7,7 @@ vi.mock("@/lib/ai-provider-usage", async (importOriginal) => ({
 }));
 
 import { FOUND_COOLDOWN_DAYS, MISS_COOLDOWN_DAYS } from "./cooldowns";
+import { TOP_TEN_RETRY_DAYS } from "./top-ten-first";
 import {
   GAP_FILL_CAP_DAYS,
   GAP_FILL_CAP_MICROUSD,
@@ -132,7 +133,7 @@ describe("paid schedule search for the largest banks", () => {
     expect(result.results.slice(0, 3).map((entry) => entry.lane)).toEqual(["uncovered", "uncovered", "uncovered"]);
     expect(new Set(ids.slice(0, 2).map((id) => (id % 2 ? "VT" : "TX"))).size).toBe(2);
     const select = text(db.mock.calls.find((call) => text(call[0]).includes("incomplete-link schedule search"))![0]);
-    expect(select).toContain("PARTITION BY pool_lane ORDER BY requested DESC, paying DESC, leader DESC, cell_rank ASC");
+    expect(select).toContain("PARTITION BY pool_lane ORDER BY requested DESC, paying DESC, top_ten DESC, leader DESC, cell_rank ASC");
   });
 
   it("searches a small bank on its own sites only, and never sends it to a parent company's domain (#1251)", async () => {
@@ -243,6 +244,31 @@ describe("institutions without live fees come first (#1030)", () => {
     // Gap-filling is only for banks that already have live fees.
     expect(sqlText).toContain("(NOT uncovered AND priority AND (business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy OR hidden))");
     expect(selection(db).slice(1)).toContain(UNCOVERED_SETTLE_DAYS);
+  });
+
+  it("searches a state top-10 slot holder with nothing live first, and once a week with the three-document ask it never had", async () => {
+    const topTen = { ...pinnacle, id: 41, institution_name: "Aloha Pacific Federal Credit Union", state_code: "HI", top_ten: true, top_ten_retry: true };
+    const db = createDb([{ ...pinnacle }, topTen]);
+    const create = vi.fn().mockResolvedValue(answer({ fee_schedule: null, truth_in_savings: null, account_agreement: null }));
+    await runScheduleSearch({ runId: 4, db: asDb(db), create, leaderIds: [], topTenIds: [41], fetchImpl: serve(SCHEDULE) });
+
+    const select = selection(db);
+    const sqlText = text(select[0]);
+    // Off the cooldown, or on the weekly try: only uncovered, only while no try in the cooldown
+    // used the three-document ask, at most once in TOP_TEN_RETRY_DAYS, never inside a find's 90 days.
+    expect(sqlText).toContain("AND (NOT cooled.on_cooldown OR retry.early)");
+    expect(sqlText).toContain("pa.detail->>'lane' = 'uncovered'");
+    expect(sqlText).toContain("(cooled.on_cooldown AND retry.early) AS top_ten_retry");
+    expect(sqlText).toContain("PARTITION BY pool_lane ORDER BY requested DESC, paying DESC, top_ten DESC, leader DESC");
+    expect(select.slice(1)).toContain(TOP_TEN_RETRY_DAYS);
+    expect(select.slice(1)).toContainEqual([41]);
+    // The few-timeouts cap still applies to the weekly try.
+    expect(select.slice(1)).toContain(MAX_TRANSIENT_TRIES);
+
+    expect(String(create.mock.calls[0][0].messages[0].content)).toContain("Aloha Pacific");
+    const logged = attempts(db).map(detailOf);
+    expect(logged[0]).toMatchObject({ lane: "uncovered", top_ten: true, top_ten_retry: true });
+    expect(logged[1]).not.toHaveProperty("top_ten");
   });
 
   it("asks for the fee schedule, the Truth in Savings disclosure and the deposit account agreement", () => {

@@ -6,7 +6,7 @@ vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 vi.mock("./generate", () => ({ generateVerifiedSection: mocks.generateVerifiedSection }));
 vi.mock("./report-inputs", () => ({ assembleReportInputs: mocks.assembleReportInputs }));
 
-const { prepareReportAnswer, reconcileReportAnswer, writeReportAnswer } = await import("./report-answer-read");
+const { misplacedReportFigures, prepareReportAnswer, reconcileReportAnswer, writeReportAnswer } = await import("./report-answer-read");
 type Prepared = NonNullable<Awaited<ReturnType<typeof prepareReportAnswer>>>;
 
 const delta = (category: string, amount: number, tier: "verified" | "provisional" = "verified") => ({
@@ -87,5 +87,27 @@ describe("the report answer page for the paid eval (#1079)", () => {
     const byName = await reconcileReportAnswer(prepared, "Its overdraft fee sits above peers.", fresh(29));
     expect(byName).toMatchObject({ checked: true, figures: 1 });
     expect(byName.failures).toEqual(["Overdraft (OD): the report uses $32.00, the catalog has $29.00"]);
+  });
+
+  it("ties each figure to the fee its sentence names (#1414 item 8)", async () => {
+    const deltas = [delta("overdraft", 32), { ...delta("wire_domestic_outgoing", 25), peer_median: 20, peer_p25: 15, peer_p75: 22 }];
+    // Right: the bank's amount and the median, each labeled.
+    expect(misplacedReportFigures("Its overdraft fee is $32, above the peer median of $30.", deltas)).toEqual([]);
+    expect(misplacedReportFigures("Peers charge $30 for an overdraft; this bank charges $32.", deltas)).toEqual([]);
+    expect(misplacedReportFigures("The overdraft fee sits $2 above the median.", deltas)).toEqual([]);
+    // The peer median stated as the bank's own fee.
+    expect(misplacedReportFigures("The bank charges $30 for an overdraft.", deltas)).toEqual(["Overdraft (OD): the page states the peer median $30.00 as the bank's own fee $32.00"]);
+    // The bank's amount stated as the median.
+    expect(misplacedReportFigures("The overdraft median is $32.", deltas)).toEqual(["Overdraft (OD): the page states the bank's $32.00 as the peer median $30.00"]);
+    // Another fee's figure on this fee.
+    expect(misplacedReportFigures("The bank charges $20 for an overdraft.", deltas)).toEqual(["Overdraft (OD): the page states $20.00, which is the peer median for Wire Transfer (Domestic Out)"]);
+    // Two fees in one sentence, or a figure that matches nothing, is left to other checks.
+    expect(misplacedReportFigures("Its $25 wire and $32 overdraft fees sit above peers.", deltas)).toEqual([]);
+    expect(misplacedReportFigures("The overdraft fee is $99.", deltas)).toEqual([]);
+    // reconcileReportAnswer reports it with the fresh-read checks, and without a fresh read.
+    const page = "The bank charges $30 for an overdraft.";
+    const tied = await reconcileReportAnswer({ ...prepared, deltas }, page, vi.fn(async () => deltas));
+    expect(tied).toEqual({ checked: true, figures: 1, failures: ["Overdraft (OD): the page states the peer median $30.00 as the bank's own fee $32.00"] });
+    expect((await reconcileReportAnswer({ ...prepared, deltas }, page, vi.fn(async () => null))).failures).toHaveLength(1);
   });
 });
