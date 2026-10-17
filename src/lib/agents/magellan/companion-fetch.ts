@@ -93,6 +93,9 @@ async function selectDue(db: SqlTag, stateCode: string | null, institutionId: nu
       LEFT JOIN source_documents latest ON latest.id = ias.last_source_document_id
      WHERE ias.status IN ('found', 'fetched')
        AND ias.document_role <> 'business'
+       -- A copy a person supplied by hand (hand-supplied.ts) came from a site that refuses us:
+       -- there is nothing to fetch, and its bytes are in the vault.
+       AND ias.found_by_strategy <> 'supply.hand_supplied'
        AND (
          COALESCE(inst.status, 'active') = 'active'
          -- A schedule found by hand is fetched for a bank whose own link went dormant (Stock
@@ -132,6 +135,9 @@ interface ReviewRow {
   account_name: string | null;
   found_by_strategy?: string | null;
 }
+
+/** Pages a person gave: a hand-found link or a hand-supplied copy; judged by reading them, not by their link words. */
+const HAND_GIVEN_STRATEGIES: ReadonlySet<string> = new Set(["discover.operator_schedule", "supply.hand_supplied"]);
 
 const NON_DEPOSIT_REASON = `${NOT_CONSUMER_FEE_PAGE_REASON}: loan or other non-deposit document`;
 
@@ -208,7 +214,7 @@ export async function reviewStoredCompanions(
   for (const row of rows) {
     const companionId = Number(row.id);
     const label = row.account_name ?? "";
-    if (row.found_by_strategy !== "discover.operator_schedule" && isNonDepositLink(label, row.url)) {
+    if (!HAND_GIVEN_STRATEGIES.has(row.found_by_strategy ?? "") && isNonDepositLink(label, row.url)) {
       await db`
         UPDATE institution_additional_sources
            SET status = 'rejected',
@@ -266,6 +272,27 @@ const PDF_LINK = /\.pdf($|[?#])/i;
 
 export function isPdfLink(url: string): boolean {
   return PDF_LINK.test(url);
+}
+
+async function storeCompanionCopy(
+  db: SqlTag,
+  vault: DocumentVault,
+  sourceDocumentId: number,
+  companionId: number,
+  bytes: Uint8Array,
+  contentHash: string,
+  contentType: string | null,
+): Promise<void> {
+  const stored = await vault.store(bytes, contentHash, contentType);
+  if (stored.key) {
+    await db`
+      UPDATE source_documents
+         SET document_r2_key = ${stored.key}, content_type = ${contentType}, byte_size = ${bytes.byteLength}
+       WHERE id = ${sourceDocumentId}
+    `;
+  } else if (stored.error) {
+    console.error(`Document vault store failed for companion page ${companionId}: ${stored.error}`);
+  }
 }
 
 async function fetchOne(
@@ -344,21 +371,21 @@ async function fetchOne(
       sourceDocumentId = inserted?.id == null ? null : Number(inserted.id);
       outcome = "success";
       if (vault?.configured && sourceDocumentId != null) {
-        const stored = await vault.store(bytes, contentHash, contentType);
-        if (stored.key) {
-          await db`
-            UPDATE source_documents
-               SET document_r2_key = ${stored.key}, content_type = ${contentType}, byte_size = ${bytes.byteLength}
-             WHERE id = ${sourceDocumentId}
-          `;
-        } else if (stored.error) {
-          console.error(`Document vault store failed for companion page ${companionId}: ${stored.error}`);
-        }
+        await storeCompanionCopy(db, vault, sourceDocumentId, companionId, bytes, contentHash, contentType);
       }
     }
   }
   if (outcome === "unchanged" && sourceDocumentId != null) {
     await db`UPDATE source_documents SET last_checked_at = NOW() WHERE id = ${sourceDocumentId}`;
+    // The same bytes as a copy stored before the vault: keep these so Rosetta reads them instead
+    // of asking the bank again. Alliant's fee PDF (doc 1933, Feb 2026) has no stored copy; its
+    // read got HTTP 403, and the paid fetch's 215,719 bytes of the same file (Oct 17) were dropped.
+    if (vault?.configured) {
+      const [existing] = await db`SELECT document_r2_key FROM source_documents WHERE id = ${sourceDocumentId}`;
+      if (existing && existing.document_r2_key == null) {
+        await storeCompanionCopy(db, vault, sourceDocumentId, companionId, bytes, contentHash, contentType);
+      }
+    }
   }
   // The copy this fetch stored or confirmed is the page's current one.
   await markCurrentCopy(db, sourceDocumentId);

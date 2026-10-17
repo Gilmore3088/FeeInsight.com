@@ -1,0 +1,20 @@
+The page you're following
+=========================
+
+You asked to follow {$follow_name|default('a state or an institution')}. Fee benchmarks come from published schedules and update as new schedules are read.
+
+Open the page: {$follow_url|default('https://feeinsight.com/research')}
+
+Free, no login.
+
+[ WHAT YOU'LL GET ]
+- Once a month: your state's fee snapshot (the national one if you follow an institution), with how many institutions stand behind each number.
+
+Reply any time with a question about a number.
+
+James Gilmore, Fee Insight
+
+--
+3522 Southwest Barton Street, Seattle, United States of America
+You're getting this because you signed up at feeinsight.com.
+Unsubscribe: {$unsubscribe}

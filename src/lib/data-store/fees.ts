@@ -1,5 +1,5 @@
 import { sql } from "./connection";
-import { COUNT_SHARED_SCHEDULE_ONCE, STATS_ROW_FILTER, STATS_SCHEDULE_KEYS, summarizeFeesBy, valuePerInstitution, type StatsInputRow } from "./fee-stats";
+import { COUNT_SHARED_SCHEDULE_ONCE, STATS_ROW_FILTER, STATS_SCHEDULE_KEYS, countedValuePerInstitution, summarizeFeesBy, type StatsInputRow } from "./fee-stats";
 import { consumerPriceMoveSql } from "./consumer-price-moves";
 import type { FeeReview } from "./types";
 import { institutionDisplayName } from "@/lib/institution-display-name";
@@ -397,7 +397,8 @@ export async function getFeeCategoryDetail(category: string): Promise<{
     LIMIT 50
   ` as FeeChangeEvent[];
 
-  const perInstitution = valuePerInstitution(sourcedFees);
+  // The median's own population (summarizeFees): sister charters of one shared schedule count once.
+  const perInstitution = countedValuePerInstitution(sourcedFees);
   const markets = new Map<number, Omit<InstitutionPoint, "value">>();
   for (const f of rawFees) {
     const id = Number(f.institution_id);

@@ -9,8 +9,8 @@ import { PRO_TIERS, tierPriceLabel, type ProTier } from "@/lib/pro-tiers";
 export const FIND_PRICING_LABEL = "Find your price";
 export const SEE_PLAN_LABEL = "See your plan";
 /** The closing card's heading, in the same two states as its button. */
-export const FIND_PRICE_HEADING = "Find your Hamilton Pro price";
-export const CHOSEN_PLAN_HEADING = "Your Hamilton Pro plan";
+export const FIND_PRICE_HEADING = "Find your Hamilton price";
+export const CHOSEN_PLAN_HEADING = "Your Hamilton plan";
 
 export interface ChosenInstitutionPrice {
   name: string;

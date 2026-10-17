@@ -27,6 +27,7 @@ import { classifyFetchFailure, countOutcomes, type AttemptOutcome } from "@/lib/
 import { runCompanionFetch, type RunCompanionFetchResult } from "./companion-fetch";
 import { addOperatorSchedules, OPERATOR_SCHEDULE_STRATEGY, OPERATOR_SCHEDULES, type OperatorScheduleResult } from "./operator-schedules";
 import { isErrorPageLink } from "./link-coverage";
+import { normalizeDocumentUrl } from "@/lib/agents/answer-key-score";
 
 type SqlTag = typeof sql;
 type Fetcher = typeof fetch;
@@ -72,6 +73,8 @@ export interface FetchCandidateRow {
 /** The last stored copy of an institution's fee document, for conditional requests. */
 interface PreviousDocument {
   id: number | null;
+  /** The address this copy was stored under; null when unknown (the profile's last hash). */
+  url: string | null;
   contentHash: string | null;
   etag: string | null;
   lastModified: string | null;
@@ -216,6 +219,23 @@ function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+/**
+ * Validators (ETag, Last-Modified) belong to one address. The previous copy is the bank's latest
+ * stored document, which is often another page: a checking page's May 2026 Last-Modified sent
+ * with a request for a fee PDF dated January 2025 gets a 304, and the PDF is never stored.
+ * Dupaco's new schedule link was logged "unchanged" against its checking page this way
+ * (2026-10-13 and 10-15). Over Oct 3-17, 219 fetches at 219 banks were answered 304 for
+ * another page's copy; 75 of those addresses have no stored copy at all. Pure.
+ */
+export function sendsValidators(
+  previous: { url: string | null; contentHash: string | null; etag: string | null; lastModified: string | null } | null,
+  url: string,
+): boolean {
+  if (!previous?.contentHash || !(previous.etag || previous.lastModified)) return false;
+  const stored = normalizeDocumentUrl(previous.url);
+  return stored != null && stored === normalizeDocumentUrl(url);
+}
+
 async function fetchWithTimeout(
   fetchImpl: Fetcher,
   url: string,
@@ -228,8 +248,10 @@ async function fetchWithTimeout(
     Accept: "text/html,application/pdf;q=0.9,text/plain;q=0.8,*/*;q=0.5",
   };
   // Conditional GET: a 304 means the stored copy is current and costs no download.
-  if (previous?.contentHash && previous.etag) headers["If-None-Match"] = previous.etag;
-  if (previous?.contentHash && previous.lastModified) headers["If-Modified-Since"] = previous.lastModified;
+  if (previous && sendsValidators(previous, url)) {
+    if (previous.etag) headers["If-None-Match"] = previous.etag;
+    if (previous.lastModified) headers["If-Modified-Since"] = previous.lastModified;
+  }
   try {
     return await fetchImpl(url, {
       signal: controller.signal,
@@ -303,7 +325,8 @@ async function fetchCandidate(
     lastModified: response.headers.get("last-modified"),
   };
 
-  if (response.status === 304 && previous?.contentHash) {
+  // Only a 304 to our own validators means "this copy": without them it says nothing about it.
+  if (response.status === 304 && previous?.contentHash && sendsValidators(previous, sourceUrl)) {
     return finish({
       ...headerFields,
       outcome: "unchanged",
@@ -511,6 +534,7 @@ async function loadPreviousDocument(
   const fromProfile: PreviousDocument | null = row.profile_last_source_hash
     ? {
         id: row.profile_last_document_id == null ? null : Number(row.profile_last_document_id),
+        url: null,
         contentHash: row.profile_last_source_hash,
         etag: null,
         lastModified: null,
@@ -520,7 +544,7 @@ async function loadPreviousDocument(
   if (!learning) return fromProfile;
   const [latest] = vaultSchema
     ? await db`
-    SELECT id, content_hash, etag, last_modified, document_r2_key
+    SELECT id, document_url, content_hash, etag, last_modified, document_r2_key
       FROM source_documents
      WHERE institution_id = ${Number(row.id)}
        AND status = 'success'
@@ -529,7 +553,7 @@ async function loadPreviousDocument(
      LIMIT 1
   `
     : await db`
-    SELECT id, content_hash, etag, last_modified
+    SELECT id, document_url, content_hash, etag, last_modified
       FROM source_documents
      WHERE institution_id = ${Number(row.id)}
        AND status = 'success'
@@ -540,6 +564,7 @@ async function loadPreviousDocument(
   if (!latest) return fromProfile;
   return {
     id: Number(latest.id),
+    url: latest.document_url == null ? null : String(latest.document_url),
     contentHash: String(latest.content_hash),
     etag: latest.etag == null ? null : String(latest.etag),
     lastModified: latest.last_modified == null ? null : String(latest.last_modified),

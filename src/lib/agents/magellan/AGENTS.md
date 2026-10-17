@@ -47,6 +47,23 @@ Magellan owns institution source discovery and source fetching.
   checked-in list of consumer fee schedules James gave for banks Magellan had not found (Chase,
   Citi). Just before companion fetch, each listed schedule the bank does not hold yet is added
   as a `consumer_supplement` companion, once, with an attempt row. Add a bank by adding a line.
+- Hand-supplied schedules (`hand-supplied.ts`, strategy `supply.hand_supplied`, page
+  `/admin/magellan/hand-supplied`, admins only): a fee schedule PDF a person downloaded from the
+  bank's own site as a normal visitor, for a bank whose site refuses our fetcher (HTTP 403) or
+  where we hold the wrong page. The file is named `<institution_id>__<short-name>__consumer.pdf`;
+  `__business.pdf` files are not loaded. It needs a source address (the browser hunt CSV's
+  `found_url`) on the bank's own site, as a hand-found link does. The PDF is stored as a
+  `consumer_supplement` companion document with who supplied it and when, its bytes go to the
+  document vault, and Rosetta reads them at once (`readHandSuppliedDocument`, the read step's
+  reader and records); the bank's site is never asked for the file, and companion fetch and the
+  paid fetch skip these pages. When the address is already a companion (a hand-found link we
+  could not open) the copy joins that page as its current copy; a page that was ruled out stays
+  ruled out. Like a hand-found link it never sets the fee link, and nothing on file is replaced
+  or deleted. The same bytes twice for one institution (any stored document) is a no-op. Each
+  file is its own run (`openInlineAgentRun`, step `hand-supply`) with an attempt row. The page
+  also takes the browser hunt CSV: each `FOUND_PDF`/`FOUND_PAGE` row with a `found_url` and no
+  loaded file (and not a business file) goes through `addHandFoundLink`, reported per row as
+  added, already on file, another institution's site or invalid, in one run.
 - Companion fetch (`companion-fetch.ts`, strategy `fetch.companion`): at the end of every
   fetch step (60 s budget, 10 pages), companion pages from `institution_additional_sources`
   (not `business`) are downloaded when new and again after 30 days, each as its own source
@@ -218,7 +235,9 @@ and `detail.method_version`).
   and the NCUA sync stores none.
 - A homepage that blocks bots (HTTP 401/403, or a challenge page served with 200) does not end
   the search: the known link and the site map still run (nothing else needs the homepage).
-  Nothing tries to get past the wall: same crawler name, no proxies, no browser. A find is
+  Nothing in Magellan tries to get past the wall: same crawler name, no proxies, no browser. A
+  person may hand-supply a copy they downloaded from the bank's site as a normal visitor
+  (hand-supplied schedules, below). A find is
   code `found_blocked_homepage` (`detail.rescue = 'blocked_homepage'` on the finding attempt),
   every attempt for that bank carries `detail.homepage_blocked = true`, and the step detail
   counts `blocked_homepage_rescues` and `websites_repaired`. A 429 asks us to slow down, so
@@ -524,7 +543,7 @@ items wait.
 | `registry-enforcement` | `current` | `institution_enforcement_actions` (OCC EASearch export and Fed enforcement CSV; institution actions only, matched by name and state or to a holding company) |
 
 - Pure HTTP clients and parsers are in `src/lib/regulatory/` and never write to the DB.
-- `src/lib/agents/registry-scheduler.ts` runs from the cron tick and keeps one registry run in flight. It merges candidates round-robin across sources, newest partition first, and backfills to `REGISTRY_BACKFILL_FROM` (default `2010Q1`).
+- `src/lib/agents/registry-scheduler.ts` runs from the cron tick and keeps one registry run in flight. It runs the institution-roster sources in `PRIORITY_REGISTRY_SOURCES` (fdic-universe, ncua-financials, ffiec-overdraft) first whenever one is due, so closed-institution and merger checks keep their cadence, then merges the rest round-robin across sources, newest partition first, and backfills to `REGISTRY_BACKFILL_FROM` (default `2010Q1`).
 - Identity matching (`registry/identity.ts`) accepts only unambiguous names. Shared names are stored as `needs_review` and never used until a person accepts them. Links with `verified_by` set are never overwritten.
 - Operator view: `/admin/magellan/registry`. Manual queue: `POST /api/admin/registry/run` with `{ source, partition_key?, dry_run? }`.
 - Add a source: write a client in `regulatory/`, a worker in `registry/`, an entry in `REGISTRY_SOURCES` (`registry/index.ts`), a scheduler partition list, and a `narrate.ts` sentence. `run-store.ts` dispatches every `registry-*` key automatically.
@@ -560,6 +579,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `BUSINESS_SEARCH_VERSION` | — | v1 | `magellan/discovery.ts` |
 | `FRESHNESS_SEARCH_VERSION` | — | v2 | `magellan/discovery.ts` |
 | `MAGELLAN_FETCH_STRATEGY` | `fetch.http` | v2 | `magellan/fetch.ts` |
+| `HAND_SUPPLIED_STRATEGY` | `supply.hand_supplied` | v1 | `magellan/hand-supplied.ts` |
 | `OPERATOR_SCHEDULE_STRATEGY` | `discover.operator_schedule` | v1 | `magellan/operator-schedules.ts` |
 | `PAGE_CLASSIFIER_VERSION` | — | v2 | `magellan/page-classifier.ts` |
 | `PAID_FIND_STRATEGY` | `discover.paid_web_search` | v2 (top-10 first) | `magellan/paid-find.ts` |
@@ -567,6 +587,20 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KEEP_REFUSED_ANSWER_STRATEGY` | `discover.keep_refused_answer` | v1 | `magellan/refused-answers.ts` |
 | `CENSUS_ACS_PARSER_VERSION` | — | v3 | `magellan/registry/census-acs.ts` |
 | `CFPB_PARSER_VERSION` | — | v5 | `magellan/registry/cfpb.ts` |
+| `FDIC_HISTORY_PARSER_VERSION` | — | v1 | `magellan/registry/fdic-history.ts` |
+| `FFIEC_CALL_DETAIL_PARSER_VERSION` | — | v3 (reads RC-O account-size labels as filed: "AMT OF DEP ACCNT $250K OR LESS"; v2 matches the bulk file's abbreviated descriptions; reads split "(1 of 2)" schedules) | `magellan/registry/ffiec-call-detail.ts` |
+| `NCUA_EXTRAS_PARSER_VERSION` | — | v2 (reads AcctDesc.txt, not the trade-names file) | `magellan/registry/ncua-extras.ts` |
+| `ECONOMY_PARSER_VERSION` | — | v1 | `magellan/registry/economy.ts` (16 economy sources) |
+| `INDUSTRY_EVENTS_PARSER_VERSION` | — | v1 | `magellan/registry/industry-events.ts` |
+| `PAYMENT_NETWORKS_PARSER_VERSION` | — | v1 | `magellan/registry/payment-networks.ts` |
+| `HMDA_PARSER_VERSION` | — | v1 | `magellan/registry/hmda.ts` |
+| `HMDA_APOR_PARSER_VERSION` | — | v1 | `magellan/registry/hmda.ts` |
+| `DESIGNATION_LISTS_PARSER_VERSION` | — | v1 | `magellan/registry/designation-lists.ts` |
+| `CRA_PARSER_VERSION` | — | v1 | `magellan/registry/cra.ts` |
+| `FR_Y9C_PARSER_VERSION` | — | v1 | `magellan/registry/fr-y9c.ts` |
+| `NIC_STRUCTURE_PARSER_VERSION` | — | v1 | `magellan/registry/nic-structure.ts` |
+| `UBPR_PEER_GROUPS_PARSER_VERSION` | — | v1 | `magellan/registry/ubpr-peer-groups.ts` |
+| `CFPB_CARD_AGREEMENTS_PARSER_VERSION` | — | v1 | `magellan/registry/cfpb-card-agreements.ts` |
 | `ENFORCEMENT_MATCHER_VERSION` | — | v3 | `magellan/registry/enforcement.ts` |
 | `FDIC_UNIVERSE_PARSER_VERSION` | — | v2 | `magellan/registry/fdic-universe.ts` |
 | `FFIEC_OVERDRAFT_PARSER_VERSION` | — | v2 | `magellan/registry/ffiec-overdraft.ts` |

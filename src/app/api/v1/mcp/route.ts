@@ -7,6 +7,8 @@ import { GET as feesGET } from "../fees/route";
 import { GET as indexGET } from "../index/route";
 import { GET as institutionsGET } from "../institutions/route";
 import { GET as marketGET } from "../market/route";
+import { GET as peersGET } from "../peers/route";
+import { GET as rateFeesGET } from "../rate-fees/route";
 import { GET as revenueGET } from "../revenue/route";
 
 // MCP connector for AI assistants. Each tool call runs the matching v1 route
@@ -20,5 +22,7 @@ export const POST = withApiRoutePolicy("api.v1.mcp", "POST", (request: NextReque
     feeChanges: feeChangesGET,
     branches: branchesGET,
     market: marketGET,
+    peers: peersGET,
+    rateFees: rateFeesGET,
   }),
 );

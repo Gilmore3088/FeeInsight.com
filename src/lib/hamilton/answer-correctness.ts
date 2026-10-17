@@ -21,7 +21,7 @@
  */
 
 import { getContractFeeRows, getFeeValuesForInstitutions } from "@/lib/data-store/fee-index";
-import { summarizeFees, valuePerInstitution, type StatsInputRow } from "@/lib/data-store/fee-stats";
+import { countedAmounts, summarizeFees, valuePerInstitution, type StatsInputRow } from "@/lib/data-store/fee-stats";
 import { extractFigures } from "./figure-check";
 import type { ScheduleOverview } from "./workspace/schedule";
 import type { AskResponse, Fact, FeeResearch, PeerValue } from "./workspace/types";
@@ -244,7 +244,7 @@ function reconcileValues(input: ReconcileInput, facts: Fact[]): { failures: stri
     for (const group of groupsOf(research)) {
       let missing = 0;
       let differ = 0;
-      const memberRows: StatsInputRow[] = [];
+      const counted: { institutionId: number; amount: number; countedAs?: number }[] = [];
       for (const m of group.members) {
         const value = values.get(m.institutionId);
         if (value === undefined) {
@@ -253,7 +253,7 @@ function reconcileValues(input: ReconcileInput, facts: Fact[]): { failures: stri
         }
         if (!near(m.amount, value)) differ++;
         singles.push(value);
-        memberRows.push({ institution_id: m.institutionId, amount: value, fee_category: research.feeCategory });
+        counted.push({ institutionId: m.institutionId, amount: value, countedAs: m.countedAs });
       }
       if (missing > 0) failures.push(`${group.label}: ${missing} of ${group.members.length} values have no live catalog row`);
       if (differ > 0) failures.push(`${group.label}: ${differ} of ${group.members.length} values differ from the catalog`);
@@ -263,9 +263,10 @@ function reconcileValues(input: ReconcileInput, facts: Fact[]): { failures: stri
           failures.push(`${group.label}: counts ${group.members.length} institutions, the catalog has ${liveCount} publishing this fee`);
         }
       }
-      // TODO(#1441): Hamilton's peer band and layers (workspace/research.ts) are raw quantiles
-      // over every member, so this recompute leaves statistics rule 7 (count once) out until
-      // they move onto summarizeFees; then carry each member's schedule keys here.
+      // Statistics rule 7 (count once) as the band applies it: sister charters of one shared
+      // schedule (each member's `countedAs`) are one value. Those values are already collapsed,
+      // so summarizeFees must not collapse again.
+      const memberRows: StatsInputRow[] = countedAmounts(counted).map((amount, index) => ({ institution_id: index + 1, amount, fee_category: research.feeCategory }));
       const stats = summarizeFees(memberRows, { countSharedScheduleOnce: false });
       const recomputed = { p25: stats.p25_amount, median: stats.median_amount, p75: stats.p75_amount };
       if (group.printed) {

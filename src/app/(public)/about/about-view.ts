@@ -89,7 +89,7 @@ export const ABOUT_BLOCKS: readonly AboutBlock[] = [
     eyebrow: "Who it is for",
     title: "Two kinds of reader",
     lines: [
-      "Bank and credit union pricing, product and marketing teams who need to see their fees against their market. Hamilton, the Pro workspace, keeps that view current.",
+      "Bank and credit union pricing, product and marketing teams who need to see their fees against their market. Hamilton, the Fee Insight workspace, keeps that view current.",
       "People comparing what their bank charges with what others charge.",
     ],
     link: { href: "/subscribe", label: "See Hamilton plans" },

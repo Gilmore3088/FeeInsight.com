@@ -126,6 +126,9 @@ describe("Darwin held-fee release", () => {
     expect(query).toContain("pa.detail->>'decision' = 'needs_review'");
     expect(query).toMatch(/done.detail->>'verdict' = 'reject_pending'[\s\S]*make_interval/);
     expect(params).toEqual(expect.arrayContaining(["VT", DARWIN_RELEASE_STRATEGY.strategy, DARWIN_REJECT_SECOND_LOOK_HOURS]));
+    // The state's institutions are read once, never scanned per held attempt (2026-10-17 timeouts).
+    expect(query).toMatch(/WITH scope AS MATERIALIZED \([\s\S]*upper\(btrim\(state_code\)\) = \$\d+/);
+    expect(query).toContain("JOIN scope inst ON inst.id = fr.institution_id");
   });
 
   it("rejects on the second look with a note naming both looks", async () => {

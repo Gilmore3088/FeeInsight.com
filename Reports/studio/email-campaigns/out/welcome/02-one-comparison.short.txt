@@ -1,0 +1,21 @@
+One comparison to make before your next pricing meeting
+=======================================================
+
+Pick one fee your customers notice, such as overdraft or NSF, and place it against your own state rather than the country.
+
+[ MAKE THE COMPARISON ]
+1. Open your state's page (https://feeinsight.com/research) and find the fee.
+2. Note the median and the middle 50%, the range between the 25th and 75th percentiles.
+3. Check how many institutions stand behind the number. If only a few, check their schedules directly.
+4. Write your own price next to it: below, inside or above the middle 50%.
+
+This gives your committee a starting point. Hamilton then names the institutions that sit next to you, fee by fee.
+
+Find your state's numbers: https://feeinsight.com/research
+
+James Gilmore, Fee Insight
+
+--
+3522 Southwest Barton Street, Seattle, United States of America
+You're getting this because you signed up at feeinsight.com.
+Unsubscribe: {$unsubscribe}

@@ -647,8 +647,13 @@ function fullyTidiedName(name: string, canonicalKey: string): string | null {
  * opening a line or a cell and never inside a line (`withoutLeadingFootnoteMark`, Knox rules v74):
  * "3Hill CU Cashier's Checks" keeps its name, since the page also says "Call 3Hill CU for Details".
  * 35 live fees at 25 banks carried one on 2026-10-16.
+ * v21 (#1450): a monthly maintenance or minimum balance name loses the footnote marks, product codes
+ * and quotes the bank prints around its words ("Monthly Service Charge¹", "Rewards Checking (CK06)
+ * Monthly service charge", "Monthly2 Maintenance Fee", "A “maintenance service charge”"), and
+ * nothing else (`footnoteMarkFreeName`). A mark opening a sentence ("¹A service charge") is a
+ * fragment and waits for #1443. 30 live fees carried a mark on 2026-10-17; 24 take the rename.
  */
-export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 20 } as const;
+export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 21 } as const;
 export const NAME_RETIDY_KIND = "name_retidied";
 /**
  * Institutions the scan visits first after a version change, then the rest in id order. v9:
@@ -667,7 +672,38 @@ export const NAME_RETIDY_FIRST_INSTITUTIONS = [
   4624, 278, 268, 8658, 2526, 217, 5668, 834, 7757, 457,
   // v17: the junk-glyph names UAT found (77845 at 8511) and the institutions with the most of them.
   8511, 6272, 219, 5647, 8445, 1484, 206, 6512, 4802, 6048, 1445, 699, 887, 4769, 568, 8024, 3397,
+  // v21 (#1450): the institutions with a marked maintenance or minimum balance name on Oct 17.
+  68, 229, 745, 1141, 2193, 2341, 2524, 2993, 4818, 6133, 7911, 8221, 8448,
 ];
+
+/** v21 (#1450): the categories whose live names lose their footnote marks. */
+export const FOOTNOTE_MARK_KEYS: ReadonlySet<string> = new Set(["monthly_maintenance", "minimum_balance"]);
+/** A footnote glyph the bank prints after a word ("Charge¹", "Checking†", "accounts) †"). */
+const FOOTNOTE_GLYPHS = /\s*[†‡§¹²³⁴⁵⁶⁷⁸⁹⁰]+/gu;
+/** A product code in parentheses after an account's name ("Rewards Checking (CK06)", "(CB02)*"). */
+const PRODUCT_CODE = /\s*\([A-Z]{1,4}-?\d{1,4}\)\*?/g;
+/** A footnote number glued to a plain word of a monthly fee's name ("Monthly2", "Account5", "Checking09"). */
+const GLUED_WORD_MARK = /\b(monthly|account|checking|savings|maintenance|service|charge)\d{1,2}(?=[\s,:;)]|$)/gi;
+/** The words a name opens with, in the bank's quotes, after an article ("A “maintenance service charge”"). */
+const QUOTED_OPENING = /^(?:(?:a|an|the)\s+)?[“"]([^“”"]+)[”"]/i;
+
+/**
+ * v21 (#1450): the name without the footnote marks, product codes and opening quotes the bank
+ * prints around its words, or null. Only a name that is otherwise whole is renamed: one that opens
+ * on a mark ("¹A service charge", a footnote's sentence), in lower case, with "No", with a
+ * condition or a verb is a fragment and waits for #1443 or a re-read.
+ */
+export function footnoteMarkFreeName(name: string): string | null {
+  const current = name.replace(/\s+/g, " ").trim();
+  if (/^[†‡§¹²³⁴⁵⁶⁷⁸⁹⁰]/u.test(current)) return null;
+  let next = current.replace(FOOTNOTE_GLYPHS, "").replace(PRODUCT_CODE, "").replace(GLUED_WORD_MARK, "$1");
+  const quoted = next.match(QUOTED_OPENING);
+  if (quoted) next = `${quoted[1].charAt(0).toUpperCase()}${quoted[1].slice(1)}${next.slice(quoted[0].length)}`;
+  next = next.replace(/\s+/g, " ").replace(/\s+([,:;)])/g, "$1").trim();
+  if (!next || next === current) return null;
+  if (/^[a-z]/.test(next) || NOT_A_NAME.test(next) || CONDITION_TAIL.test(next) || SENTENCE_VERB.test(next) || next.includes("|") || /[“”"]/.test(next)) return null;
+  return next;
+}
 /**
  * v16: a live name that opens in lower case (758 of 67,670 live names on 2026-10-09, Agentic OS's
  * adversarial test). A list marker ("f. Returned Mail Fee", "ii. Stop Payment Charge", "o A
@@ -692,15 +728,19 @@ const LOWER_NOT_A_START =
 const LOWER_CONDITION =
   /\b(?:waived?|reduced|regardless|requirements?|without|such as|plus|charged|created|received|section|and no)\b|\s[-–—]\s*get$|,\s*or\b|\b([a-z]{3,})\s+(?:[a-z]+\s+)?\1\b/i;
 const LOWER_NAME_MAX_WORDS = 8;
+/** v20: the prefixes a bank's lower-case brand opens with ("eStatement", "iBank", "myChance", "e-Checking"). */
+const BRAND_PREFIX = /^(?:e|i|my)-?[A-Z][A-Za-z]{2,}/;
 /**
  * v20: the name with its first word in the case the stored name writes it, when that word is a
  * lower-case brand ("myChance", "eCorp") the stored name holds; null when there is nothing to keep.
+ * Only a real brand prefix counts: "ofOperation" is a run-together word, "lAte" a font's mangled
+ * text, and neither keeps its case.
  */
 export function brandCased(name: string, storedName: string): string | null {
   const first = name.match(/^\S+/)?.[0];
   if (!first || !/^[A-Z]/.test(first)) return null;
   const lower = first.charAt(0).toLowerCase() + first.slice(1);
-  if (!LOWER_BRAND.test(lower)) return null;
+  if (!BRAND_PREFIX.test(lower)) return null;
   const words = storedName.split(/\s+/);
   return words.includes(lower) ? lower + name.slice(first.length) : null;
 }
@@ -1380,6 +1420,33 @@ export function planRetidy(
     // v15: a name v14 trimmed past its condition gets the condition back from its logged old name.
     // v16: or a condition publish cut off Knox's name.
     const last = logged.get(Number(stored.fee_published_id)) ?? publishCutName(stored);
+    // v21 (#1450): a maintenance name whose only flaw is its footnote marks loses them, and nothing else.
+    const markFree = FOOTNOTE_MARK_KEYS.has(stored.canonical_fee_key) ? footnoteMarkFreeName(stored.fee_name) : null;
+    if (markFree) {
+      if (checkFeeCategory(stored.canonical_fee_key, stored.fee_name).ok && !checkFeeCategory(stored.canonical_fee_key, markFree).ok) {
+        skipped.category_guard += 1;
+        continue;
+      }
+      if (taken.has(lineKey(stored, markFree))) {
+        skipped.same_name_live += 1;
+        continue;
+      }
+      if (traceLiveFee(stored, texts).kind !== "untraceable" && traceLiveFee({ ...stored, fee_name: markFree }, texts).kind === "untraceable") {
+        skipped.would_not_trace += 1;
+        continue;
+      }
+      taken.add(lineKey(stored, markFree));
+      renames.push({
+        feePublishedId: Number(stored.fee_published_id),
+        institutionId: Number(stored.institution_id),
+        sourceDocumentId: stored.source_document_id == null ? null : Number(stored.source_document_id),
+        canonicalFeeKey: stored.canonical_fee_key,
+        amount: stored.amount == null ? null : Number(stored.amount),
+        oldName: stored.fee_name,
+        newName: markFree,
+      });
+      continue;
+    }
     const restored =
       last && last.newName === stored.fee_name && !CONTROL_CHARACTER.test(last.oldName) && !LIGATURE_CHARACTER.test(last.oldName)
         ? restoredName(last.oldName, stored.fee_name, stored.canonical_fee_key)
@@ -1667,6 +1734,12 @@ export function retidyDueInstitutions(
                    OR fp.fee_name ~* '[[:space:]](below|under|than|over|above)[[:space:]]*$'
                    OR fp.fee_name ~ '^(([A-H]|[IVX]{1,4})[.)][[:space:]]+[A-Z]|(The|A|An)[[:space:]]+[A-Za-z])'
                    OR fp.fee_name ~ '^[[:space:]]*[0-9.]+[[:space:]]*[xX×][[:space:]]*[0-9.]+[[:space:]]*["”″][[:space:]]*[0-9]{1,2}[[:space:]]*$'
+                   -- v21 (#1450): a maintenance name with footnote marks, a product code or opening quotes.
+                   OR (fp.canonical_fee_key IN ('monthly_maintenance', 'minimum_balance')
+                       AND (fp.fee_name ~ '[†‡§¹²³⁴⁵⁶⁷⁸⁹⁰]'
+                            OR fp.fee_name ~ '\\([A-Z]{1,4}-?[0-9]{1,4}\\)'
+                            OR fp.fee_name ~* '(monthly|account|checking|savings|maintenance|service|charge)[0-9]{1,2}([[:space:],:;)]|$)'
+                            OR fp.fee_name ~ '^((A|An|The)[[:space:]]+)?[“"]'))
                  )
                  -- v14: the same test as sharedNameFeeIds, a monthly-fee name shared at different prices.
                  OR count(DISTINCT lower(regexp_replace(btrim(fp.fee_name), '[[:space:]]+', ' ', 'g')))
@@ -1822,6 +1895,8 @@ export async function retidyLiveFeeNames(
     const messy = fees.filter(
       (fee) =>
         isMessyName(fee.fee_name) ||
+        // v21 (#1450): a maintenance name with footnote marks.
+        (FOOTNOTE_MARK_KEYS.has(fee.canonical_fee_key) && footnoteMarkFreeName(fee.fee_name) != null) ||
         shared.has(Number(fee.fee_published_id)) ||
         logged.get(Number(fee.fee_published_id))?.newName === fee.fee_name ||
         publishCutName(fee) != null,

@@ -31,19 +31,25 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // v75 (Knox recall, Oct 17): the recurring held name families took CA 141 to 153, FL 117 to 120,
   // GA 164 to 169, IL 99 to 102, MI 122 to 127, MN 111 to 119, all 797 to 833; NY unchanged and no
   // state gained a wrong read.
-  CA: { right: 153, wrong: 5 },
-  FL: { right: 120, wrong: 7 },
-  GA: { right: 169, wrong: 9 },
+  // v76 (Knox recall round 2, Oct 17): slash variants, box price columns and split "$ | 5.00" cells took
+  // CA 153 to 156, FL 120 to 133, GA 169 to 171 (main read 170), IL 102 to 108, MI 127 to 128, MN 119 to
+  // 120, NY 43 to 44, all 833 to 860 (main read 834); the 41 wrong reads are the same as main's.
+  // v78 (Knox recall round 3, Oct 17): from main's reads (CA 156, FL 133 / 7, GA 172, IL 108 / 7, MI 128,
+  // MN 121, NY 44, all 862 / 41) to CA 157, FL 136 / 6, GA 174, IL 112 / 5, MI 130, MN 121, NY 44, all
+  // 874 / 38; the three wrong reads that left are safe deposit box late fees once read as loan late fees.
+  CA: { right: 157, wrong: 5 },
+  FL: { right: 136, wrong: 6 },
+  GA: { right: 174, wrong: 9 },
   // 88 since the top-50 fold (Oct 8): a "Travel Card Reload" at $4.95 now files as a gift card
   // at $4.95, the same (category, price) pair as that schedule's gift card, so two right reads count once.
-  IL: { right: 102, wrong: 7 },
-  MI: { right: 127, wrong: 0 },
+  IL: { right: 112, wrong: 5 },
+  MI: { right: 130, wrong: 0 },
   // 96 since collection items got their own type (Oct 8): the key files a "$20.00 for the first
   // item" line under check cashing, and Knox now reads that schedule's "Collection Item" $20
   // as a collection item, so one right read became one wrong one.
-  MN: { right: 119, wrong: 8 },
-  NY: { right: 43, wrong: 5 },
-  all: { right: 833, wrong: 41 },
+  MN: { right: 121, wrong: 8 },
+  NY: { right: 44, wrong: 5 },
+  all: { right: 874, wrong: 38 },
 };
 
 const fixture = JSON.parse(
