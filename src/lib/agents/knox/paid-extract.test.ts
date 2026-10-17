@@ -197,6 +197,11 @@ describe("Knox paid extraction (pass 3)", () => {
     expect(query).toContain("pa.strategy_version");
     expect(query).toContain("free.yield_count <");
     expect(query).toContain("paid.strategy =");
+    // No paid read for a closed bank or for a text Darwin judged another bank's (2026-10-17).
+    expect(query).toContain("AND NOT (inst.");
+    expect(query).toContain("'owner:' || adt.institution_id::text");
+    expect(query).toContain("owner.strategy = 'verify.document_owner'");
+    expect(query).toContain("WHERE latest.outcome = 'evidence_mismatch'");
     expect(params).toEqual(expect.arrayContaining([KNOX_RULES_STRATEGY.strategy, KNOX_RULES_STRATEGY.version, KNOX_PAID_STRATEGY.strategy, "TX"]));
   });
 
