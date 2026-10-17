@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { ReportRuleCheck } from "./market-readiness";
 import {
+  MIN_PEERS_FOR_PEER_SET_MEDIAN,
+  comparePeerSet,
   peerFiltersForRule,
   peerGroupValuesFrom,
+  pickPeerSet,
   peerRankFromGroupValues,
   rankAgainstPeers,
   type PeerGroupValue,
@@ -73,10 +76,10 @@ describe("peerRankFromGroupValues", () => {
 
 describe("peerGroupValuesFrom", () => {
   const all: PeerRankValue[] = [
-    [1, "overdraft", 30, "bank", "TX", 11],
-    [2, "overdraft", 25, "credit_union", "TX", 11],
-    [3, "overdraft", 35, "bank", "OK", 10],
-    [4, "overdraft", 20, "bank", "NM", 11],
+    [1, "overdraft", 30, "bank", "TX", 11, "community_mid"],
+    [2, "overdraft", 25, "credit_union", "TX", 11, "community_mid"],
+    [3, "overdraft", 35, "bank", "OK", 10, "community_large"],
+    [4, "overdraft", 20, "bank", "NM", 11, "community_mid"],
   ];
 
   it("keeps the same charter in the state", () => {
@@ -88,5 +91,74 @@ describe("peerGroupValuesFrom", () => {
       [1, "overdraft", 30],
       [4, "overdraft", 20],
     ]);
+  });
+
+
+  it("keeps a size band and hand-picked peers the way the fee index does", () => {
+    expect(peerGroupValuesFrom(all, { charter_type: "bank", asset_tiers: ["community_mid"] })).toEqual([
+      [1, "overdraft", 30],
+      [4, "overdraft", 20],
+    ]);
+    expect(peerGroupValuesFrom(all, { institutionIds: [3, 2] })).toEqual([
+      [2, "overdraft", 25],
+      [3, "overdraft", 35],
+    ]);
+  });
+});
+
+describe("peer sets on the institution page", () => {
+  // Institution 1 and twelve banks in TX; nine publish overdraft, five monthly maintenance.
+  const all: PeerRankValue[] = [
+    [1, "overdraft", 30, "bank", "TX", 11, "community_mid"],
+    [1, "monthly_maintenance", 10, "bank", "TX", 11, "community_mid", 3],
+    ...[20, 22, 25, 28, 30, 32, 35, 35, 38].map((amount, i): PeerRankValue => [100 + i, "overdraft", amount, "bank", "TX", 11, "community_mid"]),
+    ...[5, 6, 8, 10, 12].map((amount, i): PeerRankValue => [200 + i, "monthly_maintenance", amount, "bank", "TX", 11, "community_large"]),
+  ];
+  const state = { key: "state", label: "Banks in TX", filters: { charter_type: "bank", states: ["TX"] } };
+  const size = { key: "size", label: "Banks with $300M to $1B in assets", filters: { charter_type: "bank", asset_tiers: ["community_mid"] } };
+  const metro = { key: "metro", label: "Banks with branches in the Austin metro", filters: { institutionIds: [100, 101, 102] } };
+
+  it("shows a median and peer count only at eight peers or more, with how many prices its own value is built from", () => {
+    const result = comparePeerSet(1, state, all);
+    expect(MIN_PEERS_FOR_PEER_SET_MEDIAN).toBe(8);
+    expect(result.lines).toEqual([
+      { key: "overdraft", own: 30, ownPrices: 1, median: 30, peers: 9, lower: 4, same: 1, higher: 4 },
+      { key: "monthly_maintenance", own: 10, ownPrices: 3, median: null, peers: 5, lower: 0, same: 0, higher: 0 },
+    ]);
+  });
+
+  it("offers only sets that clear the floor, leaving out the report rule's group the findings already show", () => {
+    const rule = { passes: true, charter_type: "bank", state_code: "TX", fed_district: 11, peerScope: "state" } as ReportRuleCheck;
+    const picked = pickPeerSet(1, rule, [state, metro, size], all, null)!;
+    expect(picked.options.map((o) => o.key)).toEqual(["size"]);
+    expect(picked.selected.key).toBe("size");
+    // A set below the floor, or the rule's own group, is never shown, even when asked for.
+    expect(pickPeerSet(1, rule, [state, metro, size], all, "metro")!.selected.key).toBe("size");
+    expect(pickPeerSet(1, rule, [state, metro, size], all, "state")!.selected.key).toBe("size");
+    // Without a report rule group, every set that clears the floor is offered.
+    expect(pickPeerSet(1, null, [state, metro, size], all, null)!.options.map((o) => o.key)).toEqual(["state", "size"]);
+    expect(pickPeerSet(1, null, [metro], all, null)).toBeNull();
+  });
+
+  it("keeps the institution's own fees the same under every peer set it offers", () => {
+    // Resolved sets (metro, regulator, nearest) list only the other institutions, never the subject.
+    const bigMetro = { key: "metro", label: "Banks with branches in the Austin metro", filters: { institutionIds: [100, 101, 102, 103, 104, 105, 106, 107, 108, 200] } };
+    const nearest = { key: "nearest", label: "The 25 banks closest in assets", filters: { institutionIds: [101, 102, 103, 104, 105, 106, 107, 108, 200, 201, 202, 203, 204] } };
+    const district = { key: "district", label: "Banks in the Dallas Fed district", filters: { charter_type: "bank", fed_districts: [11] } };
+    const choices = [state, district, size, bigMetro, nearest];
+    const offered = pickPeerSet(1, null, choices, all, null)!.options.map((o) => o.key);
+    expect(offered).toEqual(["state", "district", "size", "metro", "nearest"]);
+    const subject = (key: string) =>
+      pickPeerSet(1, null, choices, all, key)!.selected.lines.map(({ key: fee, own, ownPrices }) => ({ fee, own, ownPrices }));
+    for (const key of offered) {
+      expect(pickPeerSet(1, null, choices, all, key)!.selected.key).toBe(key);
+      expect(subject(key)).toEqual([
+        { fee: "overdraft", own: 30, ownPrices: 1 },
+        { fee: "monthly_maintenance", own: 10, ownPrices: 3 },
+      ]);
+    }
+    // Only the comparison population moves: one metro peer publishes monthly maintenance, five state peers do.
+    expect(pickPeerSet(1, null, choices, all, "metro")!.selected.lines[1].peers).toBe(1);
+    expect(pickPeerSet(1, null, choices, all, "state")!.selected.lines[1].peers).toBe(5);
   });
 });
