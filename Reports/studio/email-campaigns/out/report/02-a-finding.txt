@@ -12,8 +12,6 @@ A market finding tells you where the typical institution sits. It can't tell you
 See it in your report: {$report_url|default('https://feeinsight.com/reports')}
 The finding links to the table behind it.
 
-Next: what the same view looks like for one institution against the competitors it names.
-
 James Gilmore
 Founder, Fee Insight · publisher of the Bank Fee Index
 

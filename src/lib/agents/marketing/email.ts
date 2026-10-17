@@ -2,6 +2,7 @@ import { getDisplayName } from "@/lib/fee-taxonomy";
 import { SITE_NAME, PRODUCT_NAME } from "@/lib/constants";
 import type { FactBundle, FeeStat } from "./facts";
 import type { MarketingFormatKey } from "./formats";
+import { FREE_MONTHLY_OFFER, MONTHLY_OFFER_FIELDS, mergeTag } from "@/lib/email/monthly-offer";
 
 /**
  * The email Hamilton's marketing agent writes: copy from the model, tables from live data.
@@ -87,6 +88,15 @@ function link(path: string, month: string, format: string, text: string): string
   return `<a href="${esc(url)}" style="color:#b3261e;">${esc(text)}</a>`;
 }
 
+/**
+ * The report offer, as merge fields: free readers see the report offer (the defaults), Pro
+ * customers see the Hamilton line set on their subscriber record (src/lib/email/monthly-offer.ts).
+ */
+function offerHtml(month: string, format: string): string {
+  const url = `https://feeinsight.com/for-institutions?report=institution&utm_source=mailerlite&utm_medium=email&utm_campaign=agent-${month}&utm_content=${format}#report`;
+  return `${esc(mergeTag(MONTHLY_OFFER_FIELDS.text, FREE_MONTHLY_OFFER.text))} <a href="${esc(mergeTag(MONTHLY_OFFER_FIELDS.url, url))}" style="color:#b3261e;">${esc(mergeTag(MONTHLY_OFFER_FIELDS.cta, FREE_MONTHLY_OFFER.cta))}</a>`;
+}
+
 const paragraphs = (text: string) =>
   text.split(/\n{2,}/).map((p) => `<p style="font-size:16px;line-height:1.55;margin:0 0 14px 0;">${esc(p.trim())}</p>`).join("");
 
@@ -122,7 +132,7 @@ ${copy.sections.map((s) => `<h2 style="font-family:Georgia,'Times New Roman',ser
 </td></tr>
 <tr><td style="padding:0 32px 28px 32px;">
 <table role="presentation" width="100%" cellpadding="16" cellspacing="0" style="background:#f6f3ec;border-left:3px solid #b3261e;"><tr><td style="font-size:15px;line-height:1.55;">
-<strong>Want your own institution against the competitors you name?</strong> We check that your market has enough published data, then reply with scope and price. ${link("/for-institutions?report=institution#report", bundle.month, format, "Request your report")}
+${offerHtml(bundle.month, format)}
 </td></tr></table>
 ${whatsNew.length ? `<p style="font-size:14px;line-height:1.55;margin:20px 0 0 0;"><strong>What's new:</strong> ${esc(whatsNew.join(" "))}</p>` : ""}
 <p style="font-size:15px;line-height:1.55;margin:20px 0 0 0;">Questions, or a fee you want us to look at? Just reply.<br>James Gilmore, Founder</p>

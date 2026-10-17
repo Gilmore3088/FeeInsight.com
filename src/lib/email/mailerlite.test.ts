@@ -6,6 +6,7 @@ import {
   syncLeadToMailerLite,
   syncProCustomerToMailerLite,
 } from "./mailerlite";
+import { PRO_MONTHLY_OFFER } from "./monthly-offer";
 
 describe("MailerLite sync", () => {
   afterEach(() => {
@@ -200,7 +201,7 @@ describe("MailerLite sync", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
     expect(await syncProCustomerToMailerLite("a@b.co")).toEqual({ status: "synced", subscriberId: "sub_1" });
-    expect(JSON.parse(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body))).toEqual({ email: "a@b.co" });
+    expect(JSON.parse(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body))).toEqual({ email: "a@b.co", fields: PRO_MONTHLY_OFFER });
     const moves = fetchMock.mock.calls.slice(1).map(([url, init]) => `${(init as RequestInit).method} ${String(url).split("/").pop()}`);
     expect(moves).toEqual(["DELETE news", "POST pro"]);
   });

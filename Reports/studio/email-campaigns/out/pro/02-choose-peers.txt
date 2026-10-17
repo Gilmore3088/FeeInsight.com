@@ -5,7 +5,7 @@ SETUP · 2 OF 5
 Choose the peers you're measured against
 ========================================
 
-The national median is the wrong yardstick for one institution. Build a peer set from the institutions your customers actually compare you with, by charter, asset size, district or county.
+Start with relevant peers; use the national median for broader context. Build a peer set from the institutions your customers compare you with, by charter, asset size, district or county.
 
 Build your peer set: https://feeinsight.com/pro/settings?utm_source=mailerlite&utm_medium=email&utm_campaign=pro&utm_content=choose-peers#peer-sets
 How to pick one that holds up in a board meeting: Building a Peer Set (https://feeinsight.com/guides/pro/building-a-peer-set?utm_source=mailerlite&utm_medium=email&utm_campaign=pro&utm_content=choose-peers).

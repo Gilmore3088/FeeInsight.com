@@ -1,19 +1,17 @@
-Twice the normal range of overdraft, and where your fee sits.
+The middle half spans $16, compared with $8 for overdraft.
 
 FEE PULSE · OCTOBER 2026
 
-The returned-deposit fee has twice the normal range of overdraft
-============================================================
+Returned-deposit fees: the middle half spans $16
+================================================
 
-When a customer deposits a check that bounces, the middle half of U.S. banks and credit unions list a fee between $9 and $25. That $16 spread is twice the overdraft fee's ($25 to $33), across 1,821 institutions that publish it.
+When a customer deposits a check that bounces, the middle half of U.S. banks and credit unions list a fee between $9 and $25. That spans $16, compared with $8 for overdraft ($25 to $33). 1,821 institutions publish a returned-deposit fee.
 
 Overdraft (paid item): $25 to $33, median $30
 NSF (returned item): $25 to $32, median $30
 Stop payment: $22 to $30, median $27.50
 Deposited item returned: $9 to $25, median $15
 Middle half (25th to 75th percentile) with the median marked. Bank Fee Index, national, October 17, 2026. One value per institution, from its own published fee schedule. Institutions behind each fee: overdraft (paid item) 2,500, nsf (returned item) 2,668, stop payment 3,193, deposited item returned 1,821.
-
-The customer who deposited the check didn't write it, which makes this fee harder to explain at the counter than an overdraft.
 
 Place your fee on the range: https://feeinsight.com/fees/deposited_item_return?utm_source=mailerlite&utm_medium=email&utm_campaign=pulse&utm_content=fee-pulse
 National median, middle half, and banks against credit unions. Free, no login.

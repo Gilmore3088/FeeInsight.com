@@ -1,16 +1,16 @@
-Every competitor fee traces to its published schedule.
+Trace a competitor's fee to the schedule it came from.
 
 SETUP · 3 OF 5
 
 Check the source behind any figure
 ==================================
 
-Before a number goes in front of your committee, you should be able to show where it came from. Each competitor fee in Hamilton links to the published fee schedule it was read from, with the date we read it.
+Before a number goes in front of your committee, you should be able to show where it came from. Each institution's public profile names the published fee schedule we read and the date we read it.
 
 
 [ TRY IT ONCE ]
 1. Open Hamilton and pick a fee where you sit above your peers.
-2. Open the competitor with the highest price and follow its source link.
+2. Find the competitor with the highest price and open its profile from Institutions (https://feeinsight.com/institutions?utm_source=mailerlite&utm_medium=email&utm_campaign=pro&utm_content=inspect-evidence). Follow the fee schedule link.
 3. If the schedule disagrees with what we show, reply with the institution and fee. We re-check it.
 
 Open Hamilton: https://feeinsight.com/pro/hamilton?utm_source=mailerlite&utm_medium=email&utm_campaign=pro&utm_content=inspect-evidence

@@ -36,6 +36,20 @@ review kit (needs the worksheet and summary files before it is offered).
 `follow_name`, `follow_url`. Each must exist as a text field in MailerLite. Every email has a
 fallback for a subscriber without them.
 
+`monthly_offer_text`, `monthly_offer_cta`, `monthly_offer_url` are set only for Pro customers
+(`syncProCustomerToMailerLite`, `src/lib/email/monthly-offer.ts`). The monthly edition's report
+offer is written as these merge fields with the free wording as defaults, so a Pro customer keeps
+the monthly digest and reads a Hamilton line instead of the report upsell.
+
+### Routing tests
+`src/lib/email/lifecycle-routing.test.ts` runs the cases James listed (Oct 17) against a stateful
+fake MailerLite: free subscriber requests a report; report subscriber becomes Pro; duplicate
+confirm and duplicate Stripe activation; finding unavailable; Pro customer keeps the monthly
+digest with no report offer; an unsubscribed Pro customer stays unsubscribed. Not covered in code:
+what MailerLite does with emails already queued when someone leaves a group mid-sequence
+(`exit_when_no_longer_matches`). That needs one automation switched on for test addresses James
+names, and waits for his typed yes.
+
 ## Before activating
 1. Sender domain: authenticated (MailerLite reports `needs_domain_auth: false`, checked Oct 6).
 2. **Set a real postal address** (CAN-SPAM). The footers leave the line out until then (James, Oct 6:

@@ -5,7 +5,6 @@ Open {$follow_name|default('the market you follow')}: {$follow_url|default('http
 Free, no login.
 [ WHAT YOU'LL GET ]
 - Once a month: a snapshot of the fees you follow, with how many institutions stand behind each number.
-- Alerts when a saved institution's schedule changes: create a free account and save it. Find an institution (https://feeinsight.com/institutions?utm_source=mailerlite&utm_medium=email&utm_campaign=explorer&utm_content=what-you-follow).
 
 Full email with tables and charts: {$url}
 

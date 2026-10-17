@@ -13,6 +13,7 @@ import {
   stateGroupName,
   toStateGroups,
 } from "@/lib/agents/marketing/mailerlite-campaigns";
+import { PRO_MONTHLY_OFFER } from "./monthly-offer";
 
 const MAILERLITE_SUBSCRIBERS_ENDPOINT = "https://connect.mailerlite.com/api/subscribers";
 
@@ -235,7 +236,8 @@ export async function syncProCustomerToMailerLite(email: string): Promise<Mailer
     const response = await fetch(process.env.MAILERLITE_SUBSCRIBERS_ENDPOINT || MAILERLITE_SUBSCRIBERS_ENDPOINT, {
       method: "POST",
       headers: authHeaders(),
-      body: JSON.stringify({ email }),
+      // The monthly edition reads these fields to swap its report offer for a Hamilton line.
+      body: JSON.stringify({ email, fields: PRO_MONTHLY_OFFER }),
       // Runs inside the Stripe webhook response; a slow MailerLite must not hold it.
       signal: AbortSignal.timeout(5_000),
     });

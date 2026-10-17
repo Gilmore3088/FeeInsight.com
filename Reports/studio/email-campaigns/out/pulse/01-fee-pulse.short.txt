@@ -1,6 +1,6 @@
-Twice the normal range of overdraft, and where your fee sits.
+The middle half spans $16, compared with $8 for overdraft.
 
-The returned-deposit fee has twice the normal range of overdraft
+Returned-deposit fees: the middle half spans $16
 Overdraft (paid item): $25 to $33, median $30
 NSF (returned item): $25 to $32, median $30
 Stop payment: $22 to $30, median $27.50
