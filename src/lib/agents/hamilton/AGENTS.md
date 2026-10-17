@@ -508,7 +508,9 @@ the detail.
 31. Source check (`takeDownUntraceableFees`, `source-check.ts`): up to 120 institutions,
     `source_check_untraceable:<reason>`; restores earlier takedowns that now trace, except those on `SOURCE_CHECK_KEPT_DOWN` (each with its issue, logged as `kept_down`; 36542, #1369).
 32. Imported twins (`linkImportedFeesToTwins`, `source-check.ts`): an imported live fee with no
-    document is pointed at its twin row that has one, up to 100 a step. No rollback.
+    document is pointed at its twin row that has one, up to 100 a step. No rollback. Then the
+    source link fill (`fillSourceLinks`, #1342): a live fee with no link takes its own document's
+    URL; never a takedown (see Source Link Repair).
 33. Feedback sync (`syncPipelineFeedback`, `learning/feedback-sync.ts`): this step's takedowns
     and restores go into the shared learning store.
 34. Index refresh (`refreshFeeIndexCache`): not on a dry run; forced when the step published,
@@ -817,7 +819,9 @@ keep hinting the retired keys. Publish skips a fee still under a retired key.
 The same step applies the live splits (`SPLIT_CATEGORIES`): fees in a live category whose name
 belongs to another type move there, under the same guard and range test. Fold v17 (`FOLD_RULES_VERSION`, 16 until the switch is on; James, Oct 15,
 #1398: "Add both") gives excess withdrawals (`excess_withdrawal`) and returned mail
-(`returned_mail`) their own types, dark until `RESEARCH_SPLIT_LIVE` is on. While it is off,
+(`returned_mail`) their own types. `RESEARCH_SPLIT_LIVE` is on (James, Oct 17 2026), so fold v17
+and the 52-type taxonomy are in force; public pages and API listings show only the top 50 types
+by institution count (`publicFeeTypes`). While it is off,
 returned statements leaving paper statements, excess activity leaving other lending and the hand
 re-files (21141 and 77918 renamed in place, 44516) all still go to account research, the paper
 statement and e-statement rules match exactly as before (a "return to paper statements" charge
@@ -880,6 +884,17 @@ gets a `hamilton.source_link_resource` event. Reverse one by setting the raw row
 `source_document_id` back to `from_source_document_id`, the URLs back to NULL, and for a restore
 `rolled_back_reason` back to `previous_reason` with `rolled_back_at` set. Roll the pass back by
 setting `SOURCE_LINK_RESOURCE_ON` to false.
+
+**Fill in every publish step (`fillSourceLinks`, `SOURCE_LINK_FILL_ON`).** The repair ran once by
+hand (run 6508, Oct 15). Fees that were down then and that the source check restored later came
+back live with no link (14 on Oct 17, all imported). After the source check and the imported-twin
+link, each publish step gives every live fee with no link its own document's URL, exactly as the
+repair's fill would (`planSourceLinkRepair`). It never takes a fee down: a fee with no traceable
+document stays live for the re-source pass or the hand-started repair. Each fill writes one
+`pipeline_feedback` row (check `hamilton.source_link`, evidence `action` `filled`) and a
+`hamilton.source_link_fill` event; the step detail carries `source_link_fill`. A failed read or
+write changes nothing, is kept in `source_link_fill.error`, and publishing carries on. Reverse a
+fill as above; roll the pass back by setting `SOURCE_LINK_FILL_ON` to false.
 
 ## Source Check
 

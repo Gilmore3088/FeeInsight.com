@@ -8,7 +8,7 @@ import { collapseNearNameDuplicates, collapsePublishedDuplicates } from "@/lib/a
 import { collapsePageCopies } from "@/lib/agents/hamilton/page-copy-collapse";
 import { retireClosedInstitutionFees } from "@/lib/agents/hamilton/closed-institution";
 import { fillBlankFrequencies, fillFrequenciesInPublish, FREQUENCY_FILL_VERSION } from "@/lib/agents/hamilton/frequency-fill";
-import { repairSourceLinks, resourceSourceLinks, SOURCE_LINK_VERSION } from "@/lib/agents/hamilton/source-link";
+import { fillSourceLinks, repairSourceLinks, resourceSourceLinks, SOURCE_LINK_VERSION } from "@/lib/agents/hamilton/source-link";
 import { restoreFeesNowInTaxonomy, rollBackOffTaxonomyFees } from "@/lib/agents/hamilton/off-taxonomy-rollback";
 import { foldRetiredCategories } from "@/lib/agents/hamilton/taxonomy-fold";
 import { rollBackLimitsPublishedAsFees } from "@/lib/agents/hamilton/limit-guard";
@@ -1466,6 +1466,14 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // #1342: a live fee with no link (one the source check restored after the hand repair,
+      // say) takes its own document's URL. Never a takedown. Off with SOURCE_LINK_FILL_ON.
+      const sourceLinkFill = await fillSourceLinks(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       // Every agent learns from what happened to its output: this step's takedowns and
       // restores (and a batch of older outcomes) go into the shared learning store.
       const feedbackSync = await syncPipelineFeedback(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
@@ -1575,6 +1583,10 @@ async function executeAgenticStep(
       const resourceCount = published.dryRun
         ? { linked: sourceLinkResource.resources.filter((fee) => !fee.restore).length, restored: sourceLinkResource.resources.filter((fee) => fee.restore).length }
         : { linked: sourceLinkResource.linked, restored: sourceLinkResource.restored };
+      const sourceLinkFillNote =
+        sourceLinkFill.fills.length > 0
+          ? ` ${published.dryRun ? "Would link" : "Linked"} ${sourceLinkFill.fills.length.toLocaleString()} live fee(s) with no link to their own document.`
+          : "";
       const resourceNote =
         resourceCount.linked + resourceCount.restored > 0
           ? ` ${published.dryRun ? "Would re-source" : "Re-sourced"} ${(resourceCount.linked + resourceCount.restored).toLocaleString()} fee(s) with no traceable document from a stored document of their own institution (${resourceCount.restored.toLocaleString()} ${published.dryRun ? "would be restored" : "restored"}).`
@@ -1663,7 +1675,7 @@ async function executeAgenticStep(
           : "");
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${handRefileNote}${offTaxonomyNote}${limitNote}${businessNote}${sameLineNote}${otherBankNote}${evalVerdictNote}${closedNote}${articleNote}${productNote}${productConflictNote}${crossPageConflictNote}${categoryGuardNote}${guardRefileNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${lostRestoreNote}${crossPageNote}${pageCopyRestoreNote}${resourceNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${handRefileNote}${offTaxonomyNote}${limitNote}${businessNote}${sameLineNote}${otherBankNote}${evalVerdictNote}${closedNote}${articleNote}${productNote}${productConflictNote}${crossPageConflictNote}${categoryGuardNote}${guardRefileNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${lostRestoreNote}${crossPageNote}${pageCopyRestoreNote}${resourceNote}${sourceLinkFillNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -1890,6 +1902,14 @@ async function executeAgenticStep(
           })),
           imported_twin_checked: importedTwins.checked,
           imported_twin_linked: importedTwins.linked,
+          source_link_fill: {
+            on: sourceLinkFill.on,
+            scanned: sourceLinkFill.scanned,
+            filled: sourceLinkFill.fills.length,
+            untraceable_left_live: sourceLinkFill.untraceable,
+            error: sourceLinkFill.error,
+            fills: sourceLinkFill.fills.map((fee) => ({ fee_published_id: fee.feePublishedId, source_document_id: fee.sourceDocumentId, url: fee.url })),
+          },
           identical_copy_documents: identicalCopy.documents,
           identical_copy_rows_moved: identicalCopy.rowsMoved,
           extraction_note_move: { moved: extractionNotes.moved, remaining: extractionNotes.remaining },
