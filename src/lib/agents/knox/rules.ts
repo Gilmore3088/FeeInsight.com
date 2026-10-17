@@ -281,9 +281,6 @@ export const V78_RECALL_PATTERNS: FeePattern[] = [
     pattern:
       /^(?![\s\S]*\b(?:re-?open\w*|clos\w*|balanc\w*|research|order\w*|return\w*|inactiv\w*|dormant)\b)\W*(?:(?:(?:monthly|account|maintenance)\s+)?service (?:fee|charge)s?(?:\s+for\s+[\w\s]{0,30}\b(?:checking|savings)\b(?:\s+accounts?)?)?|(?:[A-Z][\w'’&+-]*\s+){0,3}checking (?:account )?(?:fee|charge))\W*$/i,
   },
-  // A checking account's own row ("Free Checking (CK02) | Free", "Interest Checking | $8.00") prices
-  // its monthly fee. Not one named "... Checking Account" in a column of services it gets free.
-  { key: "monthly_maintenance", pattern: /^(?![\s\S]*\b(?:re-?open\w*|clos\w*|balanc\w*|research|order\w*|return\w*|overdraft|transfer\w*)\b)\W*(?:[A-Z][\w'’&+-]*\s+){1,3}checking(?:\s*\([A-Z]{2}\d{2}\))?\W*$/i },
   { key: "courier_delivery", pattern: /\b(?:UPS|DHL)\b|\bshipping fee\b/i },
   { key: "duplicate_title", pattern: /\b(?:duplicate|(?:certified )?copy of)\s+(?:vehicle |car |auto )?titles?\b/i },
   { key: "other_lending_fee", pattern: /\bredraw (?:of )?documents?\b/i },
@@ -745,8 +742,20 @@ export function variesCategory(name: string): string | null {
  * plural "eStatements" is usually a condition ("Bill Pay (free with eStatements) | $5.95").
  */
 export function unpricedRowCategory(name: string): string | null {
-  return classifyFeeText(name) ?? classifyFeeText(name.replace(/\b(e[-\s]?statement)s\b/gi, "$1").replace(/\binquiries\b/gi, "inquiry"));
+  return (
+    classifyFeeText(name) ??
+    classifyFeeText(name.replace(/\b(e[-\s]?statement)s\b/gi, "$1").replace(/\binquiries\b/gi, "inquiry")) ??
+    (FREE_CHECKING_ROW.test(name) ? "monthly_maintenance" : null)
+  );
 }
+
+/**
+ * v78: a checking account's own free row ("Free Checking (CK02) | Free", "Student Checking (CK07) |
+ * FREE") is its monthly fee at $0. Only a free row: a priced one is the account expert's to read,
+ * and one named "... Checking Account" in a column of services it gets free ("Power Protected
+ * Checking Account | Free" under official checks) is not the account's own fee.
+ */
+const FREE_CHECKING_ROW = /^(?![\s\S]*\b(?:re-?open\w*|clos\w*|balanc\w*|research|order\w*|return\w*|overdraft|transfer\w*)\b)\W*(?:[A-Z][\w'’&+-]*\s+){1,3}checking(?:\s*\([A-Z]{2}\d{2}\))?\W*$/i;
 
 export function variesRowName(line: string): string | null {
   const row = line.replace(/^\s*\|\s*/, "").replace(/(?:\s*\|)+\s*$/, "").trim();
