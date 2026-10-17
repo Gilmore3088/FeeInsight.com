@@ -32,6 +32,7 @@
     { "pr": 1757, "issue": 1059, "metric": "detail.goal.unstatedAudience.share", "direction": "down", "min_change": 0.001, "note": "Relabel v4: a schedule's own title decides its fees' audience; dry run 239 more unknown fees decided, 173 mixed-schedule both moved to one audience" },
     { "pr": 1769, "issue": 1110, "metric": "detail.goal.wrongAfterPublish.rate", "direction": "down", "min_change": 0.0001, "note": "Stop takedowns at source: publish refuses non-deposit rows and pairs Darwin judged another bank's; Darwin checks not-yet-live pairs first (dry run 94 waiting rows refused)" },
     { "pr": 1770, "issue": 1304, "metric": "detail.goal.accuracy.accuracy", "direction": "up", "min_change": 0.0001, "note": "Knox v78: recall 70.7% -> 72.3% on the 62-bank key, 0 new wrong rows; 129 safe deposit box late fees leave late payment as box fees (James yes 10:47 Oct 17)" },
+    { "pr": 1775, "issue": 1772, "metric": "detail.goal.accuracy.accuracy", "direction": "up", "min_change": 0.0001, "note": "Guard v71: 8 live non-customer ATM surcharges under the non-network ATM fee taken down after the second look, 96092 re-filed to account research; 28 hand takedowns wait on ATM_SURCHARGE_TAKEDOWN_LIVE" },
     { "pr": 1776, "issue": 1092, "metric": "detail.goal.spend.weekUsd", "direction": "down", "min_change": 1, "note": "Knox buys no paid read for a page whose earlier paid read found no fee (backtest 107 calls, $3.06 per 14 days, 0 live fees lost)" }
   ]
 }
