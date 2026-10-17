@@ -27,7 +27,7 @@ import { PricingJump } from "./pricing-jump";
 import { StickyCta } from "./sticky-cta";
 import { TrackView } from "@/components/track-view";
 import { getProPricingInstitution } from "@/lib/data-store/pro-accounts";
-import { NON_INSTITUTION_TIER, PRO_TIERS, isProTier, proTier, tierAmountLabel, tierForAssets } from "@/lib/pro-tiers";
+import { NON_INSTITUTION_TIER, PRO_TIERS, assetsDetail, isProTier, proTier, tierAmountLabel, tierForAssets } from "@/lib/pro-tiers";
 import { GatedOptions, OtherOptions, PricingFaq } from "./pricing-sections";
 import { chosenPriceLine, closingHeading, fromPriceLine, pricingCtaLabel, type ChosenInstitutionPrice } from "./plan-cta";
 import { loadPlansExhibitData } from "./exhibit-data";
@@ -244,7 +244,7 @@ export default async function SubscribePage({
     chosenLabel = [pricingInstitution.name, place].filter(Boolean).join(", ");
     if (tier) {
       selection = { tier, institutionId: pricingInstitution.id, otherOrganization: false };
-      chosenDetail = proTier(tier).assetsLabel;
+      chosenDetail = assetsDetail(proTier(tier).assetsLabel, pricingInstitution.assetsThousands!, pricingInstitution.assetsReport ?? null);
     } else if (isProTier(params.band)) {
       selection = { tier: params.band, institutionId: pricingInstitution.id, otherOrganization: false, tierPicked: true };
       chosenDetail = `${proTier(params.band).assetsLabel} (your pick)`;

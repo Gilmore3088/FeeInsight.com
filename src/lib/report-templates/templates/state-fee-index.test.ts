@@ -29,7 +29,7 @@ describe("renderStateFeeIndexReport", () => {
   });
 
   it("includes key findings, the charter comparison and coverage", () => {
-    expect(html).toContain("The typical Fixture State overdraft fee");
+    expect(html).toContain("The Fixture State median overdraft fee");
     expect(html).toContain("Credit unions");
     expect(html).toMatch(/credit unions are lower on \d+ of \d+ fees/);
     expect(html).toContain("Banks with verified fees");

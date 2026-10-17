@@ -21,7 +21,8 @@ const row: StateHubRow = {
   withFees: 20,
   coveragePct: 50,
   fees: { overdraft: { median: 32, institutions: 12 }, nsf: { median: null, institutions: 3 } },
-  serviceCharges: 1_500_000,
+  bankServiceCharges: 1_500_000,
+  cuFeeIncome: null,
   bankBranches: null,
   cuBranches: null,
   deposits: null,
@@ -46,21 +47,27 @@ describe("StatePanel", () => {
 });
 
 describe("RevenueChart", () => {
-  it("labels each quarter with its total", () => {
+  it("draws one charter on its own, never the banks and credit unions summed", () => {
     render(
       <RevenueChart
+        series="banks"
+        title="Banks: service charges on deposit accounts"
         quarters={[
           { quarter: "2026-Q1", banks: 90_000_000, creditUnions: 10_000_000, total: 100_000_000, institutions: 40 },
           { quarter: "2026-Q2", banks: 80_000_000, creditUnions: 20_000_000, total: 100_000_000, institutions: 40 },
         ]}
       />,
     );
-    expect(screen.getAllByText("$100.0M")).toHaveLength(2);
+    expect(screen.getByText("$90.0M")).toBeTruthy();
+    expect(screen.getByText("$80.0M")).toBeTruthy();
+    expect(screen.queryByText("$100.0M")).toBeNull();
     // The year sits on its own line on phones, so the label spans two elements.
     expect(screen.getByText((_, el) => el?.tagName === "SPAN" && el.textContent === "Q2 ’26")).toBeTruthy();
-    // Phones show only the newest total; the chart's label carries every figure.
-    expect(screen.getAllByText("$100.0M")[0].className).toContain("hidden sm:block");
-    expect(screen.getByRole("img").getAttribute("aria-label")).toBe("Fee income by quarter, Q1 2026 to Q2 2026: $100.0M, $100.0M");
+    // Phones show only the newest figure; the chart's label carries every one.
+    expect(screen.getByText("$90.0M").className).toContain("hidden sm:block");
+    expect(screen.getByRole("img").getAttribute("aria-label")).toBe(
+      "Banks: service charges on deposit accounts by quarter, Q1 2026 to Q2 2026: $90.0M, $80.0M",
+    );
   });
 });
 

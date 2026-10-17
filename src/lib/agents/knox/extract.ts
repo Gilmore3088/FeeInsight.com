@@ -1109,7 +1109,7 @@ export async function runKnoxExtract(
     });
 
     const startedAt = Date.now();
-    const free = runFreeSpecialists(row.normalized_text);
+    const free = runFreeSpecialists(row.normalized_text, { institutionName: row.institution_name ?? null });
     const { held, rates, runs } = free;
     for (const [reason, count] of Object.entries(free.dropped)) {
       droppedLines[reason as DroppedLineReason] = (droppedLines[reason as DroppedLineReason] ?? 0) + count;

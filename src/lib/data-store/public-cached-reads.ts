@@ -1,8 +1,10 @@
 import { cachedPublicRead } from "./public-read-cache";
+import { getCityMarket, getStateMarketCities } from "./city-market";
 import { getDataFreshness, getPublicStats, getStats } from "./core";
 import { getDistrictMetrics } from "./dashboard";
 import { getCheapestAndMostExpensive, getFeeCategoryDetail, getIndexRows } from "./fees";
 import { getFeeEvidence } from "./fee-evidence";
+import { getDailyCapScope, getOverdraftComplaintThemes } from "./overdraft-policies";
 import { getDistrictFeeIndexes, getPeerIndex, getStateFeeIndexes } from "./fee-index";
 import {
   getCitiesInState,
@@ -43,6 +45,26 @@ import { getDistrictHub, isEmptyDistrictHub } from "./district-hub";
  */
 
 export const getDataFreshnessCached = cachedPublicRead("data-freshness", getDataFreshness);
+/**
+ * What a guide page needs from a category's detail: breakdowns and one value per institution.
+ * The full detail carries every row and passes Next's 2 MB cache limit for the largest
+ * categories (NSF, monthly maintenance), so it was re-read on every guide request.
+ */
+export const getFeeCategoryGuideDetailCached = cachedPublicRead("fee-category-guide-v1", async (category: string) => {
+  const detail = await getFeeCategoryDetail(category);
+  return {
+    by_charter_type: detail.by_charter_type,
+    by_asset_tier: detail.by_asset_tier,
+    by_state: detail.by_state,
+    institution_values: detail.institution_values,
+  };
+}, (detail) => detail.institution_values.length === 0);
+export const getDailyCapScopeCached = cachedPublicRead("daily-cap-scope-v1", getDailyCapScope);
+export const getOverdraftComplaintThemesCached = cachedPublicRead(
+  "overdraft-complaint-themes-v1",
+  getOverdraftComplaintThemes,
+  (c) => c.themes.length === 0,
+);
 export const getStatsCached = cachedPublicRead("collection-stats", getStats);
 // A failed read returns zeros; never cache those.
 export const getPublicStatsCached = cachedPublicRead("public-stats", getPublicStats, (s) => s.total_observations === 0);
@@ -74,6 +96,8 @@ export const getStateStatsCached = cachedPublicRead("state-stats", getStateStats
 export const getDistrictStatsCached = cachedPublicRead("district-stats", getDistrictStats);
 export const getStatesWithFeeDataCached = cachedPublicRead("states-with-fee-data", getStatesWithFeeData);
 export const getCitiesInStateCached = cachedPublicRead("cities-in-state", getCitiesInState);
+export const getCityMarketCached = cachedPublicRead("city-market-v1", getCityMarket);
+export const getStateMarketCitiesCached = cachedPublicRead("state-market-cities-v1", getStateMarketCities);
 export const getCityFeeAveragesCached = cachedPublicRead("city-fee-averages", getCityFeeAverages);
 export const getDataCoverageSummaryCached = cachedPublicRead("data-coverage-summary", getDataCoverageSummary);
 export const getMarketConcentrationCached = cachedPublicRead("market-concentration", getMarketConcentration);

@@ -136,7 +136,7 @@ export const PRICE_MAP_SAME = 1;
 /** Beyond this many dollars from the price a county takes the darker shade. */
 export const PRICE_MAP_FAR = 5;
 /** Far lower, lower, about the same, higher, far higher. */
-export const PRICE_MAP_FILLS = ["#2F5A85", "#9DB8D3", "#C4B89F", "#E09276", "#A93D25"] as const;
+export const PRICE_MAP_FILLS = CHART.diverging;
 export const PRICE_MAP_LEGEND = ["$5+ lower", "Lower", "About the same", "Higher", "$5+ higher"] as const;
 
 /** Which of the five shades a county's fee takes against the price (0 = far lower). */

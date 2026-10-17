@@ -49,8 +49,9 @@ const BATCH_IDLE_RETRY_HOURS = 24;
  * 3: any "overdraft" in a water bill that never mentions banking is dropped (2026-10-08).
  * 4: overdraft and insufficient funds count only in a sentence about banking or fees (2026-10-08).
  * 5: a fee or penalty sentence about taxes or a state agency no longer counts (NC HB 1164, 2026-10-09).
+ * 6: an unclassified committee assignment moves a committee bill's stage date; bump re-reads stored bills (IL HB 4474, 2026-10-17).
  */
-export const STATE_BILLS_TAGGING_VERSION = 5;
+export const STATE_BILLS_TAGGING_VERSION = 6;
 
 export function stateBillsLive(env: NodeJS.ProcessEnv = process.env): boolean {
   return flagOn(env.STATE_BILLS_TRACKER_LIVE);
@@ -211,6 +212,7 @@ export async function runRegistryStateBills(
       untagged: result.untagged,
       bills: items.slice(0, 25).map((item) => `${item.identifier} (${item.stage})`),
       matches: Object.fromEntries(items.slice(0, 25).map((item) => [item.identifier, item.match])),
+      actions: Object.fromEntries(items.slice(0, 25).map((item) => [item.identifier, item.recent_actions])),
       rejected_sample: rejectedSample,
     },
   });

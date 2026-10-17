@@ -18,10 +18,15 @@ import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import { getPeerIndexCached, getStateFeeIndexesCached, getStateStatsCached } from "@/lib/data-store/public-cached-reads";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import type { StateFeeIndexes } from "@/lib/data-store";
-import { buildCharterPairs, buildComparisons, computeStateFindings } from "@/lib/research-report/state-findings";
-import { buildHistogram } from "@/components/public/distribution-chart";
+import {
+  STATE_FINDING_MIN_INSTITUTIONS,
+  buildCharterPairs,
+  buildComparisons,
+  computeStateFindings,
+  nationalBandTakeaway,
+} from "@/lib/research-report/state-findings";
 import { LockedRows } from "../../../fees/[category]/exhibits";
-import { StateHero, StateVideo } from "./state-exhibits";
+import { StateHero } from "./state-exhibits";
 import { BoardChart, BoardHeading, BoardLegend, BoardRows, CharterRows, FindingButtons, StateBoard } from "./state-board";
 import { boardFees, charterFees, charterHeadline, leadFindings, splitForAccess } from "./state-view";
 
@@ -111,6 +116,8 @@ export default async function StateReportPage({ params }: PageProps) {
     charted,
   );
 
+  const takeaway = nationalBandTakeaway(stateName, stateName, visibleComparisons);
+
   // Two counts and two market findings: what the state's fees do against the U.S., and the
   // banks against credit unions split, each from the fees a visitor can read.
   const againstUs = shown.filter((f) => f.us);
@@ -124,7 +131,6 @@ export default async function StateReportPage({ params }: PageProps) {
   ];
   // The district switch shows only when the district has a median for a fee the board draws.
   const districtName = district && charted.some((f) => f.district) ? `${DISTRICT_NAMES[district]} Fed district` : null;
-  const posterBars = charted[0] ? buildHistogram(charted[0].values.map(([v]) => v), 12).map((b) => b.count) : [];
 
   return (
     <>
@@ -146,9 +152,6 @@ export default async function StateReportPage({ params }: PageProps) {
         subhead={districtName ? "What they charge, against their Fed district and the U.S." : "What they charge, against the U.S."}
       />
 
-      {/* 2. The video, in its own section under the hero. */}
-      <StateVideo stateName={stateName} bars={posterBars} />
-
       <div className="mx-auto max-w-page space-y-10 px-4 py-8 sm:space-y-12 sm:px-6 sm:py-12">
         {charted.length > 0 ? (
           // 3-6 share one selection: a fee picked in a finding or a list redraws the chart.
@@ -159,7 +162,13 @@ export default async function StateReportPage({ params }: PageProps) {
                 <h2 id="findings-heading" className="text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-[24px]">
                   What stands out
                 </h2>
+                {takeaway && <p className="max-w-3xl text-[15px] leading-relaxed text-ink">{takeaway}</p>}
                 <FindingButtons findings={findings} />
+                <p className="text-[12px] text-ink-muted">
+                  Findings rank only fees with at least {STATE_FINDING_MIN_INSTITUTIONS} {stateName} institutions. Fees with fewer
+                  appear in the list below, unranked. The national middle half runs from the 25th to the 75th percentile
+                  of U.S. institutions.
+                </p>
               </section>
             )}
 
@@ -200,7 +209,7 @@ export default async function StateReportPage({ params }: PageProps) {
               secondaryLink={
                 sampleLive
                   ? { href: "/reports/sample-competitive-fee-position", label: `See the sample ${REPORT_OFFER.name}` }
-                  : { href: `/for-institutions?report=institution&src=state-${stateCode.toLowerCase()}#report`, label: REPORT_OFFER.institutionCtaLabel }
+                  : { href: `/reports?report=institution&src=state-${stateCode.toLowerCase()}#request`, label: REPORT_OFFER.institutionCtaLabel }
               }
             />
 

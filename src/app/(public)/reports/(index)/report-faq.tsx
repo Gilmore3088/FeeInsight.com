@@ -24,7 +24,7 @@ export function reportFaqItems(): FaqItem[] {
       answer: `${REPORT_INCLUDES.join(". ")}.`,
     },
     {
-      question: "How are the peers chosen?",
+      question: "How are the competitors chosen?",
       answer: "By charter, asset size and the counties you serve, and we confirm the list with you first.",
     },
     {

@@ -4,6 +4,7 @@ import { formatAmount } from "@/lib/format";
 import { DISTRICT_NAMES, STATE_TO_DISTRICT } from "@/lib/fed-districts";
 import { US_STATES } from "@/lib/us-map-paths";
 import { STATE_NAMES } from "@/lib/us-states";
+import { PAGE_HEADER } from "@/components/public/page-header";
 import { PrintButton } from "../../print-button";
 import { SectionHeading } from "../../research-hero";
 import { ExhibitSource } from "../../exhibits";
@@ -66,8 +67,8 @@ export function StateHero({ stateCode, stateName, district, figures, freshnessLa
   return (
     <section className="bg-ink text-paper">
       <div className="mx-auto grid max-w-page gap-6 px-4 pb-8 pt-6 sm:px-6 sm:pb-12 sm:pt-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:items-center lg:gap-10">
-        <div>
-          <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12px] text-paper/60 print:hidden">
+        <div className={PAGE_HEADER}>
+          <nav aria-label="Breadcrumb" className="flex items-center justify-center gap-2 text-[12px] text-paper/60 sm:justify-start print:hidden">
             <Link href="/research" className="hover:text-white">Research</Link>
             <span aria-hidden="true">/</span>
             <span className="text-paper/85">{stateName}</span>
@@ -77,7 +78,7 @@ export function StateHero({ stateCode, stateName, district, figures, freshnessLa
           </h1>
           <p className="mt-2 text-[15px] text-paper/75">{subhead}</p>
 
-          <dl className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-white/10">
+          <dl className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-white/10 text-left">
             {figures.map((f) => (
               <div key={f.label} className="bg-ink px-4 py-3">
                 <dt className="text-[12px] text-paper/65">{f.label}</dt>
@@ -86,7 +87,7 @@ export function StateHero({ stateCode, stateName, district, figures, freshnessLa
             ))}
           </dl>
 
-          <p className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-[12px] text-paper/70">
+          <p className="mt-4 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[12px] text-paper/70 sm:justify-start">
             <span className="inline-flex items-center gap-2">
               <span aria-hidden="true" className="h-2 w-2 rounded-full bg-[#7fb59b]" />
               {freshnessLabel}
@@ -103,42 +104,6 @@ export function StateHero({ stateCode, stateName, district, figures, freshnessLa
           <StateMap stateCode={stateCode} district={district} />
         </div>
       </div>
-    </section>
-  );
-}
-
-/**
- * The video, in its own section under the hero. Until the clip exists the poster draws the
- * state's real spread for its first fee, so the slot shows the product.
- */
-export function StateVideo({ stateName, bars }: { stateName: string; bars: number[] }) {
-  const top = Math.max(...bars, 1);
-  return (
-    <section aria-labelledby="video-heading" className="mx-auto max-w-page px-4 pt-8 sm:px-6 sm:pt-12 print:hidden">
-      <figure className="mx-auto max-w-3xl">
-        <figcaption className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <h2 id="video-heading" className="text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-[24px]">
-            Watch Hamilton explore {stateName}
-          </h2>
-          <span className="text-[13px] text-ink-muted">Video coming</span>
-        </figcaption>
-        <div className="relative aspect-video overflow-hidden rounded-2xl bg-warm-ink-900 shadow-fi-2 ring-1 ring-ink/10" aria-hidden="true">
-          {bars.length > 0 && (
-            <div className="absolute inset-x-[8%] bottom-[14%] top-[22%] flex items-end gap-[4%] opacity-40">
-              {bars.map((n, i) => (
-                <span key={i} className="block flex-1 rounded-t-sm bg-[#e0716a]" style={{ height: `${n > 0 ? Math.max((n / top) * 100, 3) : 0}%` }} />
-              ))}
-            </div>
-          )}
-          <span className="absolute inset-0 flex items-center justify-center">
-            <span className="flex h-16 w-16 items-center justify-center rounded-full bg-white shadow-fi-2 sm:h-20 sm:w-20">
-              <svg viewBox="0 0 12 12" className="ml-1 h-6 w-6 text-ink sm:h-7 sm:w-7">
-                <path d="M3 1.5v9l7.5-4.5z" fill="currentColor" />
-              </svg>
-            </span>
-          </span>
-        </div>
-      </figure>
     </section>
   );
 }

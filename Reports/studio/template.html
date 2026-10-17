@@ -4,25 +4,34 @@
 <meta charset="utf-8">
 <title>{{DOC_TITLE}}</title>
 <style>
-  /* Brand system: warm ink on paper, terracotta accent, Newsreader serif — the Hamilton
-     palette (src/lib/report-templates/base/styles.ts). Print edition swaps the web sans
-     for IBM Plex Sans (labels) + IBM Plex Mono (figures) to read as a ledger, not a web page. */
-  @import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,300;1,6..72,400;1,6..72,500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+  /* Brand system: Fee Insight design tokens (src/brand/tokens/tokens.json, light theme;
+     the back cover uses the dark-theme values on ink). Oxford Navy ink on warm paper, brick
+     as the one accent, Geist for text and Geist Mono for figures, the same fonts as the site
+     (src/app/layout.tsx). Hex values are copied from src/brand/tokens; change them there first. */
+  @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap');
 
   :root {
-    --ink:#1A1815; --ink2:#3D3830; --text2:#6E655A; --muted:#9A9082;
-    --paper:#FFFFFF; --cream:#FDFBF8; --sand:#F4EEE4;
-    --terra:#C44B2E; --terra-deep:#9E3A22; --terra-soft:#FBEDE8; --terra-ghost:#F7E3DC;
-    --good:#1F7A4A; --good-soft:#E8F2EB;
-    --line:#E3DACB; --line-light:#EFE8DC; --line-dark:#1A1815;
-    --serif:"Newsreader","Georgia","Times New Roman",serif;
-    --sans:"IBM Plex Sans","Helvetica Neue",Helvetica,Arial,sans-serif;
-    --mono:"IBM Plex Mono","SFMono-Regular",Menlo,Consolas,monospace;
+    /* ink, muted, control-border */
+    --ink:#132338; --ink2:#132338; --text2:#55606f; --muted:#767c87;
+    /* Page ground stays white: a tinted ground prints as a box inside the page margins.
+       Cover: paper. "You" column and own row: surface-200. */
+    --paper:#ffffff; --cream:#f3efe6; --sand:#ebe5d9;
+    /* brick, brick-ink, brick-tint */
+    --terra:#b23a32; --terra-deep:#7f2620; --terra-soft:#f1d5d0; --terra-ghost:#f1d5d0;
+    /* below-market; its soft fill is below-market at 12% over surface-0 */
+    --good:#3b6350; --good-soft:#e4e7e0;
+    /* border, surface-200, ink */
+    --line:#ddd5c6; --line-light:#ebe5d9; --line-dark:#132338;
+    /* Dark-theme tokens for the back cover, which sits on ink: muted, border, brick, control-border */
+    --on-ink-muted:#a9b3c1; --on-ink-rule:#263a55; --on-ink-accent:#e0716a; --on-ink-faint:#5d6f87;
+    --display:"Geist","Helvetica Neue",Helvetica,Arial,sans-serif;
+    --sans:"Geist","Helvetica Neue",Helvetica,Arial,sans-serif;
+    --mono:"Geist Mono","SFMono-Regular",Menlo,Consolas,monospace;
   }
   * { box-sizing:border-box; margin:0; padding:0; }
   html { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
   html, body { background:var(--paper); color:var(--ink);
-    font-family:var(--serif); font-size:10.5pt; line-height:1.55;
+    font-family:var(--display); font-size:10.5pt; line-height:1.55;
     font-feature-settings:"kern","liga"; }
 
   @page { size:Letter; margin:0.75in 0.85in 0.8in; }
@@ -34,9 +43,9 @@
   /* ---------- Type scale ---------- */
   .kicker { font-family:var(--mono); font-size:7.2pt; font-weight:500; letter-spacing:0.16em;
     text-transform:uppercase; color:var(--terra); }
-  h2 { font-family:var(--serif); font-size:24pt; font-weight:500; letter-spacing:-0.015em;
+  h2 { font-family:var(--display); font-size:24pt; font-weight:700; letter-spacing:-0.015em;
     line-height:1.12; color:var(--ink); margin:6pt 0 0; }
-  h3 { font-family:var(--serif); font-size:12.5pt; font-weight:600; color:var(--ink); line-height:1.3; }
+  h3 { font-family:var(--display); font-size:12.5pt; font-weight:600; color:var(--ink); line-height:1.3; }
   p { margin:7pt 0; }
   /* No one-word orphan lines (site-wide rule). */
   h1, h2, h3, h4 { text-wrap:balance; }
@@ -69,7 +78,7 @@
   .cover .spine .vert { position:absolute; left:50%; bottom:0.9in; transform:translateX(-50%) rotate(180deg);
     writing-mode:vertical-rl; font-family:var(--mono); font-size:7.4pt; letter-spacing:0.22em;
     text-transform:uppercase; color:var(--cream); white-space:nowrap; font-weight:500; }
-  .cover .spine .vert b { color:#F9D5C8; font-weight:600; }
+  .cover .spine .vert b { color:var(--terra-soft); font-weight:600; }
   .cover .spine .mark { position:absolute; left:50%; top:0.85in; transform:translateX(-50%);
     width:22pt; height:22pt; }
   .cover .spine .mark svg { display:block; width:22pt; height:22pt; }
@@ -81,10 +90,10 @@
   .cover .title { margin-top:1.55in; }
   .cover .title .series { font-family:var(--mono); font-size:7.4pt; letter-spacing:0.18em;
     text-transform:uppercase; color:var(--terra); font-weight:500; margin-bottom:14pt; }
-  .cover h1 { font-family:var(--serif); font-size:46pt; font-weight:500; line-height:0.98;
+  .cover h1 { font-family:var(--display); font-size:46pt; font-weight:700; line-height:0.98;
     letter-spacing:-0.025em; color:var(--ink); }
-  .cover h1 em { font-style:italic; font-weight:400; color:var(--ink2); }
-  .cover .for { margin-top:30pt; font-family:var(--serif); font-size:12.5pt; font-style:italic;
+  .cover h1 em { font-style:normal; font-weight:700; color:var(--terra); }
+  .cover .for { margin-top:30pt; font-family:var(--display); font-size:12.5pt;
     font-weight:400; color:var(--text2); }
   .cover .instname { display:block; font-style:normal; font-weight:600; font-size:24pt;
     line-height:1.15; color:var(--terra); letter-spacing:-0.01em; margin-top:2pt; }
@@ -93,7 +102,7 @@
   .cover .instmeta i { font-style:normal; color:var(--muted); padding:0 5pt; }
   .cover .cohortnote { margin-top:14pt; font-family:var(--sans); font-size:8pt; line-height:1.5;
     color:var(--text2); max-width:5in; }
-  .cover .ghost { position:absolute; right:0.6in; bottom:1.6in; font-family:var(--serif);
+  .cover .ghost { position:absolute; right:0.6in; bottom:1.6in; font-family:var(--display);
     font-size:160pt; font-weight:600; letter-spacing:-0.06em; line-height:1; color:var(--terra-ghost);
     z-index:0; pointer-events:none; }
   .cover .card { position:relative; z-index:1; margin-top:auto; display:grid;
@@ -102,9 +111,9 @@
   .cover .card > div:last-child { border-right:none; margin-right:0; }
   .cover .card .lbl { font-family:var(--mono); font-size:6.6pt; letter-spacing:0.16em;
     text-transform:uppercase; color:var(--muted); margin-bottom:5pt; }
-  .cover .card .val { font-family:var(--serif); font-size:12pt; font-weight:500; line-height:1.3; color:var(--ink); }
+  .cover .card .val { font-family:var(--display); font-size:12pt; font-weight:500; line-height:1.3; color:var(--ink); }
   .cover .card .val.mono { font-family:var(--mono); font-size:9.5pt; font-weight:500; padding-top:2pt; }
-  .cover .card .big { font-family:var(--serif); font-size:30pt; font-weight:600; line-height:1;
+  .cover .card .big { font-family:var(--display); font-size:30pt; font-weight:600; line-height:1;
     color:var(--terra); letter-spacing:-0.02em; }
   .cover .card .big small { display:block; font-family:var(--sans); font-size:7.5pt; color:var(--text2);
     letter-spacing:0; margin-top:4pt; font-weight:400; }
@@ -115,17 +124,17 @@
     column-gap:14pt; padding:10pt 0 11pt; border-top:0.5pt solid var(--line); page-break-inside:avoid; }
   .finding::before { content:counter(finding, decimal-leading-zero); font-family:var(--mono);
     font-size:7.5pt; color:var(--muted); padding-top:8pt; letter-spacing:0.05em; }
-  .finding .num { font-family:var(--serif); font-size:24pt; font-weight:600; color:var(--terra);
+  .finding .num { font-family:var(--display); font-size:24pt; font-weight:600; color:var(--terra);
     line-height:1.05; letter-spacing:-0.02em; font-variant-numeric:tabular-nums; }
   .finding .num small { display:block; font-family:var(--sans); font-size:7.4pt; font-weight:400;
     color:var(--text2); margin-top:5pt; line-height:1.4; letter-spacing:0; }
   .finding p { margin:0; font-size:9.6pt; line-height:1.55; color:var(--ink2); }
-  .finding p b { display:block; font-family:var(--serif); font-size:11.5pt; font-weight:600;
+  .finding p b { display:block; font-family:var(--display); font-size:11.5pt; font-weight:600;
     color:var(--ink); line-height:1.3; margin-bottom:3pt; }
-  .narrative { font-family:var(--serif); font-size:9.8pt; line-height:1.58; color:var(--ink2); }
+  .narrative { font-family:var(--display); font-size:9.8pt; line-height:1.58; color:var(--ink2); }
   .narrative p { margin:0 0 9pt; }
   p.narrative { margin-top:12pt; }
-  .drop::first-letter { font-family:var(--serif); font-size:34pt; font-weight:500; float:left;
+  .drop::first-letter { font-family:var(--display); font-size:34pt; font-weight:500; float:left;
     line-height:0.85; padding:4pt 6pt 0 0; color:var(--terra); }
 
   /* ---------- Tables (ledger) ---------- */
@@ -197,7 +206,7 @@
     border-bottom:0.5pt solid var(--line); page-break-inside:avoid; min-height:0.78in; }
   .statcard .lbl { font-family:var(--mono); font-size:6.5pt; letter-spacing:0.14em;
     text-transform:uppercase; color:var(--text2); margin-bottom:7pt; }
-  .statcard .val { font-family:var(--serif); font-size:18pt; font-weight:500; color:var(--ink);
+  .statcard .val { font-family:var(--display); font-size:18pt; font-weight:500; color:var(--ink);
     font-variant-numeric:tabular-nums; line-height:1; letter-spacing:-0.02em; }
   .statcard .cmp { font-family:var(--sans); font-size:7.4pt; color:var(--text2); margin-top:6pt;
     font-variant-numeric:tabular-nums; }
@@ -226,24 +235,24 @@
   .back { background:var(--ink); color:var(--cream); padding:0.85in 0.95in 0.85in;
     display:flex; flex-direction:column; }
   .back .brandline { display:flex; justify-content:space-between; font-family:var(--mono);
-    font-size:7.2pt; letter-spacing:0.16em; text-transform:uppercase; color:#B8AE9F;
-    padding-bottom:8pt; border-bottom:1pt solid #3D3830; }
-  .back .brandline b { color:#F1A48F; font-weight:600; }
-  .back h2 { color:var(--cream); font-size:34pt; font-weight:400; line-height:1.08;
+    font-size:7.2pt; letter-spacing:0.16em; text-transform:uppercase; color:var(--on-ink-muted);
+    padding-bottom:8pt; border-bottom:1pt solid var(--on-ink-rule); }
+  .back .brandline b { color:var(--on-ink-accent); font-weight:600; }
+  .back h2 { color:var(--cream); font-size:34pt; font-weight:700; line-height:1.08;
     letter-spacing:-0.02em; margin-top:1.9in; max-width:5.4in; }
-  .back h2 em { font-style:italic; color:#F1A48F; }
-  .back .sub { font-family:var(--serif); font-size:12pt; font-weight:300; line-height:1.55;
-    color:#CFC6B8; max-width:5in; margin-top:16pt; }
+  .back h2 em { font-style:normal; color:var(--on-ink-accent); }
+  .back .sub { font-family:var(--display); font-size:12pt; font-weight:300; line-height:1.55;
+    color:var(--on-ink-muted); max-width:5in; margin-top:16pt; }
   .back .cta { margin-top:auto; border-top:1.5pt solid var(--terra); padding-top:16pt;
     display:grid; grid-template-columns:1fr 1fr; column-gap:28pt; }
-  .back .cta h4 { font-family:var(--serif); font-size:15pt; font-weight:500; color:var(--cream);
+  .back .cta h4 { font-family:var(--display); font-size:15pt; font-weight:500; color:var(--cream);
     line-height:1.3; margin-bottom:6pt; }
-  .back .cta p { font-family:var(--sans); font-size:8.8pt; line-height:1.6; color:#CFC6B8; margin:0; }
+  .back .cta p { font-family:var(--sans); font-size:8.8pt; line-height:1.6; color:var(--on-ink-muted); margin:0; }
   .back .cta .mail { font-family:var(--mono); font-size:9.5pt; color:var(--cream); font-weight:500;
     display:block; margin-top:8pt; letter-spacing:0.02em; text-decoration:none; }
-  .back .colophon { margin-top:26pt; padding-top:8pt; border-top:0.5pt solid #3D3830;
+  .back .colophon { margin-top:26pt; padding-top:8pt; border-top:0.5pt solid var(--on-ink-rule);
     font-family:var(--mono); font-size:6.6pt; letter-spacing:0.1em; text-transform:uppercase;
-    color:#7A7062; display:flex; justify-content:space-between; }
+    color:var(--on-ink-faint); display:flex; justify-content:space-between; }
 </style>
 </head>
 <body>
@@ -251,7 +260,7 @@
 <!-- 1. COVER -->
 <div class="bleed cover">
   <div class="spine">
-    <div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="#FDFBF8" stroke-width="1.5" aria-hidden="true"><rect x="4" y="13" width="4" height="8" rx="1"/><rect x="10" y="8" width="4" height="13" rx="1"/><rect x="16" y="3" width="4" height="18" rx="1"/></svg></div>
+    <div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="#fbf9f4" stroke-width="1.5" aria-hidden="true"><rect x="4" y="13" width="4" height="8" rx="1"/><rect x="10" y="8" width="4" height="13" rx="1"/><rect x="16" y="3" width="4" height="18" rx="1"/></svg></div>
     <div class="vert"><b>Fee Insight</b> &nbsp;·&nbsp; Bank Fee Index Series</div>
   </div>
   <div class="body">

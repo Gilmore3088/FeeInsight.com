@@ -136,7 +136,7 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     expect(t).toContain("Your next fee review doesn't need to take weeks.");
     expect(t).not.toMatch(/cost thousands/);
     expect(t).toContain(
-      "Fee Insight helps you compare competitors with the Bank Fee Index. Turn the evidence into analysis and board reports with Hamilton.",
+      "Fee Insight helps you compare your fees with competitors using the Bank Fee Index. Turn the evidence into analysis and board reports with Hamilton.",
     );
     expect(html).toMatch(/<a href="\/subscribe"[^>]*fi-btn-primary[^>]*data-event="upgrade_click" data-placement="home_hero">See plans</);
     expect(html).toMatch(/<a href="\/reports\/sample-competitive-fee-position"[^>]*>Explore a sample report</);

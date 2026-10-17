@@ -82,9 +82,11 @@ export interface PeerFeeEntry {
   documentUrl: string | null;
   sourceUrl: string | null;
 }
-/** Preserve individual published charges; never collapse distinct NSF fees into a median. */
+/** Preserve individual published charges; never collapse distinct fees into a median. */
 export interface PeerFeeComparison {
-  category: "nsf";
+  category: string;
+  /** The fee's plain name ("overdraft"); absent on snapshots saved before #1538, which were all NSF. */
+  label?: string;
   comparedPeerIds: number[];
   fees: PeerFeeEntry[];
   account: { institutionId: number; name: string } | null;
@@ -164,20 +166,33 @@ export function peerListReferencesUnchanged(rows: PeerListRow[], prior: PeerList
 export function isPeerListContinuationQuestion(question: string): boolean {
   return /^(?:only\b|show\s+only\b|filter\s+to\b|(?:compare|show|list)\s+their\b|how\s+does\s+this\s+compare\s+(?:with|to)\s+us\b)/i.test(question.trim());
 }
+const THEIR_FEES = /^(?:compare|show|list)\s+their\s+(.{1,60}?)\s+fees?(\s+(?:with|to|against)\s+(?:us|ours))?$/i;
+
 /** A finite comparison grammar; other question types never trigger paid inference. */
 export function peerListFeeFollowUp(question: string): "peer_fees" | "with_account" | null {
   const clean = question.trim().replace(/[?.!]+$/, "").trim();
-  if (/^(?:compare|show|list)\s+their\s+(?:nsf|nonsufficient funds|non-sufficient funds)\s+fees?$/i.test(clean)) return "peer_fees";
+  const their = clean.match(THEIR_FEES);
+  if (their) return their[2] ? "with_account" : "peer_fees";
   if (/^how\s+does\s+this\s+compare\s+(?:with|to)\s+us$/i.test(clean)) return "with_account";
   return null;
+}
+
+/**
+ * The fee a "Compare their overdraft fees" follow-up names, as typed; null for "How does this
+ * compare with us?", which compares NSF fees (#1538). The server matches it to one fee category.
+ */
+export function peerListFollowUpFeePhrase(question: string): string | null {
+  return question.trim().replace(/[?.!]+$/, "").trim().match(THEIR_FEES)?.[1] ?? null;
 }
 
 /** Deliberately finite grammar: other follow-ups receive explicit guidance. */
 export function peerListRefinementState(question: string): string | null {
   const cleaned = question.trim().replace(/[?.!]+$/, "").replace(/\s+/g, " ");
-  if (!/^only\s+/i.test(cleaned)) return null;
+  // "Only show the California ones", "Show only Texas", "Filter to Florida" (#1538). A word that is
+  // a condition ("Texas banks") stays in the term, so it matches no state rather than being dropped.
+  if (!/^(?:only|show\s+(?:me\s+)?only|filter\s+to)\s+/i.test(cleaned)) return null;
   const term = cleaned
-    .replace(/^only\s+(?:show\s+)?(?:me\s+)?(?:the\s+)?/i, "")
+    .replace(/^(?:only\s+(?:show\s+)?(?:me\s+)?|show\s+(?:me\s+)?only\s+|filter\s+to\s+)(?:the\s+)?/i, "")
     .replace(/\s+(?:ones|peers|institutions)$/i, "").trim();
   const match = Object.entries(STATE_NAMES).find(([code, name]) =>
     code.toLowerCase() === term.toLowerCase() || name.toLowerCase() === term.toLowerCase());

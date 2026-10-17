@@ -47,10 +47,20 @@ export function PlanIncludes() {
   );
 }
 
-/** The homepage's views, then the Regulatory Wire item when one was read; empty without live figures. */
+/**
+ * What paying unlocks comes first (James, Oct 16: the district map is the public research a
+ * visitor has already seen): My fees, then Reports and Try a price, then the map as another tab.
+ */
+export const PLANS_VIEW_ORDER = ["fees", "reports", "price", "map"] as const;
+
+/** The homepage's views in PLANS_VIEW_ORDER, then the Regulatory Wire item when one was read; empty without live figures. */
 export function plansExhibitViews(data: HomeData, wire: WirePreviewLead | null): DemoView[] {
   if (!data.overdraft || data.lines.length === 0) return [];
-  const views = demoViews(data);
+  const rank = (key: string) => {
+    const i = (PLANS_VIEW_ORDER as readonly string[]).indexOf(key);
+    return i === -1 ? PLANS_VIEW_ORDER.length : i;
+  };
+  const views = demoViews(data).sort((a, b) => rank(a.key) - rank(b.key));
   if (wire) {
     views.push({
       key: "wire",
@@ -67,8 +77,8 @@ export function plansExhibitViews(data: HomeData, wire: WirePreviewLead | null):
 }
 
 /**
- * The product beside the price: the homepage's Hamilton window (district map, the sample bank's
- * fees, Try a price, Reports) plus the Wire, every figure read live. The Pro demo request is the
+ * The product beside the price: the homepage's Hamilton window (the sample bank's fees first, then
+ * Reports, Try a price and the district map) plus the Wire, every figure read live. The Pro demo request is the
  * section's one action, the page's second action after subscribing.
  */
 export function PlansExhibit({ data, wire }: { data: HomeData; wire: WirePreviewLead | null }) {

@@ -26,7 +26,7 @@ export function CheckingLineupSection({ name, lineup, live }: { name: string; li
   const shownPeers = lineup.peerRows.slice(0, MAX_PEER_ROWS);
   const own = lineup.subject.accountsList;
   return (
-    <section className="mt-8 overflow-x-auto rounded-xl border border-border bg-surface-0 p-6" aria-labelledby="lineup-heading">
+    <section className="mt-8 rounded-xl border border-border bg-surface-0 p-4 sm:overflow-x-auto sm:p-6" aria-labelledby="lineup-heading">
       <h2 id="lineup-heading" className="font-bold text-xl text-ink" style={SERIF}>
         Checking account lineup
       </h2>
@@ -36,7 +36,7 @@ export function CheckingLineupSection({ name, lineup, live }: { name: string; li
         {live ? " These figures are live as of today." : ""}
       </p>
 
-      <table className="mt-4 w-full min-w-[560px] text-left text-sm">
+      <table className="mt-4 w-full text-left text-sm sm:min-w-[560px]">
         <thead className="border-b border-border text-[11px] uppercase tracking-[0.08em] text-ink-muted">
           <tr>
             <th className="py-2 pr-3 font-semibold">Measure</th>
@@ -61,13 +61,13 @@ export function CheckingLineupSection({ name, lineup, live }: { name: string; li
           We have no verified checking account monthly fee on {name}&apos;s published schedule yet.
         </p>
       ) : (
-        <table className="mt-2 w-full min-w-[560px] text-left text-sm">
+        <table className="mt-2 w-full text-left text-sm sm:min-w-[560px]">
           <thead className="border-b border-border text-[11px] uppercase tracking-[0.08em] text-ink-muted">
             <tr>
               <th className="py-2 pr-3 font-semibold">Account</th>
               <th className="py-2 pr-3 text-right font-semibold">Monthly fee</th>
               <th className="py-2 pr-3 text-right font-semibold">Balance to avoid it</th>
-              <th className="py-2 font-semibold">Other way to avoid it</th>
+              <th className="hidden sm:table-cell print:table-cell py-2 font-semibold">Other way to avoid it</th>
             </tr>
           </thead>
           <tbody>
@@ -76,13 +76,17 @@ export function CheckingLineupSection({ name, lineup, live }: { name: string; li
                 <td className="py-2 pr-3 text-ink">
                   {a.productName ?? <span className="text-ink-muted">Name {NOT_STATED}</span>}
                   {a.productNameSource === "derived" ? DERIVED_MARK : ""}
+                  {/* Phones read the other way to avoid the fee under the account's name. */}
+                  <span className="mt-0.5 block text-[12px] text-ink-muted sm:hidden print:hidden">
+                    {a.waiverText ?? `Other way to avoid it: ${NOT_STATED}`}
+                  </span>
                 </td>
                 <td className="py-2 pr-3 text-right tabular-nums">{lineupMoney(a.monthlyFee)}</td>
                 <td className="py-2 pr-3 text-right tabular-nums">
                   <Muted>{lineupMoney(a.minBalanceToAvoid)}</Muted>
                   {a.minBalanceSource === "derived" ? DERIVED_MARK : ""}
                 </td>
-                <td className="py-2 text-[13px]">
+                <td className="hidden sm:table-cell print:table-cell py-2 text-[13px]">
                   <Muted>{a.waiverText ?? NOT_STATED}</Muted>
                   {a.waiverSource === "derived" ? DERIVED_MARK : ""}
                 </td>
@@ -95,15 +99,15 @@ export function CheckingLineupSection({ name, lineup, live }: { name: string; li
       {shownPeers.length > 0 && (
         <>
           <h3 className="mt-6 text-[15px] font-semibold text-ink">Competitors with a checking lineup on file</h3>
-          <table className="mt-2 w-full min-w-[640px] text-left text-sm">
+          <table className="mt-2 w-full text-left text-sm sm:min-w-[640px]">
             <thead className="border-b border-border text-[11px] uppercase tracking-[0.08em] text-ink-muted">
               <tr>
                 <th className="py-2 pr-3 font-semibold">Institution</th>
-                <th className="py-2 pr-3 text-right font-semibold">Accounts</th>
+                <th className="hidden sm:table-cell print:table-cell py-2 pr-3 text-right font-semibold">Accounts</th>
                 <th className="py-2 pr-3 text-right font-semibold">Lowest fee</th>
                 <th className="py-2 pr-3 text-right font-semibold">Median fee</th>
-                <th className="py-2 pr-3 text-right font-semibold">No-fee account</th>
-                <th className="py-2 text-right font-semibold">Median balance to avoid</th>
+                <th className="hidden sm:table-cell print:table-cell py-2 pr-3 text-right font-semibold">No-fee account</th>
+                <th className="hidden sm:table-cell print:table-cell py-2 text-right font-semibold">Median balance to avoid</th>
               </tr>
             </thead>
             <tbody>
@@ -114,11 +118,11 @@ export function CheckingLineupSection({ name, lineup, live }: { name: string; li
                       {peer.name}
                     </a>
                   </td>
-                  <td className="py-2 pr-3 text-right tabular-nums">{peer.summary.accounts}</td>
+                  <td className="hidden sm:table-cell print:table-cell py-2 pr-3 text-right tabular-nums">{peer.summary.accounts}</td>
                   <td className="py-2 pr-3 text-right tabular-nums">{lineupMoney(peer.summary.lowestMonthlyFee)}</td>
                   <td className="py-2 pr-3 text-right tabular-nums">{lineupMoney(peer.summary.medianMonthlyFee)}</td>
-                  <td className="py-2 pr-3 text-right">{peer.summary.shareWithFreeAccount === 1 ? "Yes" : "No"}</td>
-                  <td className="py-2 text-right tabular-nums"><Muted>{lineupMoney(peer.summary.medianMinBalanceToAvoid)}</Muted></td>
+                  <td className="hidden sm:table-cell print:table-cell py-2 pr-3 text-right">{peer.summary.shareWithFreeAccount === 1 ? "Yes" : "No"}</td>
+                  <td className="hidden sm:table-cell print:table-cell py-2 text-right tabular-nums"><Muted>{lineupMoney(peer.summary.medianMinBalanceToAvoid)}</Muted></td>
                 </tr>
               ))}
             </tbody>

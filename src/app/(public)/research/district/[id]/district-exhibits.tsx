@@ -2,6 +2,7 @@ import Link from "next/link";
 import { STATE_TO_DISTRICT } from "@/lib/fed-districts";
 import { US_STATES } from "@/lib/us-map-paths";
 import { STATE_NAMES } from "@/lib/us-states";
+import { PAGE_HEADER } from "@/components/public/page-header";
 
 /**
  * The country with the district's states lit. Each lit state links to its own report; the map
@@ -42,8 +43,8 @@ export function DistrictHero({ district, name, figures, freshnessLabel, reportHr
   return (
     <section className="bg-ink text-paper">
       <div className="mx-auto grid max-w-page gap-6 px-4 pb-8 pt-6 sm:px-6 sm:pb-12 sm:pt-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:items-center lg:gap-10">
-        <div>
-          <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12px] text-paper/60 print:hidden">
+        <div className={PAGE_HEADER}>
+          <nav aria-label="Breadcrumb" className="flex items-center justify-center gap-2 text-[12px] text-paper/60 sm:justify-start print:hidden">
             <Link href="/research" className="hover:text-white">Research</Link>
             <span aria-hidden="true">/</span>
             <span className="text-paper/85">District {district}</span>
@@ -51,9 +52,9 @@ export function DistrictHero({ district, name, figures, freshnessLabel, reportHr
           <h1 className="mt-4 text-[30px] font-semibold leading-tight tracking-[-0.03em] text-white sm:text-[44px]">
             {name} Fed district bank &amp; credit union fees
           </h1>
-          <p className="mt-2 text-[15px] text-paper/75">Federal Reserve District {district}, against the U.S.</p>
+          <p className="mx-auto mt-2 max-w-[34rem] text-[15px] text-paper/75 sm:mx-0 sm:max-w-none">Federal Reserve District {district}, against the U.S.</p>
 
-          <dl className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-white/10">
+          <dl className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-white/10 text-left">
             {figures.map((f) => (
               <div key={f.label} className="bg-ink px-4 py-3">
                 <dt className="text-[12px] text-paper/65">{f.label}</dt>
@@ -62,7 +63,7 @@ export function DistrictHero({ district, name, figures, freshnessLabel, reportHr
             ))}
           </dl>
 
-          <p className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-[12px] text-paper/70">
+          <p className="mt-4 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[12px] text-paper/70 sm:justify-start">
             <span className="inline-flex items-center gap-2">
               <span aria-hidden="true" className="h-2 w-2 rounded-full bg-[#7fb59b]" />
               {freshnessLabel}
@@ -72,7 +73,7 @@ export function DistrictHero({ district, name, figures, freshnessLabel, reportHr
             </Link>
           </p>
         </div>
-        <div className="-mx-1 lg:mx-0">
+        <div className="-mx-1 hidden sm:block lg:mx-0">
           <DistrictMap district={district} tone="dark" />
         </div>
       </div>

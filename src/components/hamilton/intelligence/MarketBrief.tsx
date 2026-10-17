@@ -36,7 +36,7 @@ export function MarketBriefView({ question, market, data, instId }: { question: 
   ].filter((line): line is string => line !== null);
 
   return <div className="mx-auto flex max-w-7xl flex-col gap-7">
-    <header className="flex flex-wrap items-start justify-between gap-4">
+    <header className="flex flex-col items-center gap-4 text-center sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:text-left">
       <div className="max-w-3xl">
         <p className="fi-text-label text-[var(--fi-muted)]">Ask Hamilton · Market brief</p>
         <h1 className="mt-1 text-3xl font-semibold sm:text-4xl">{state ? place : "United States"}: {topics.length === 5 ? "fees, finances and market" : listWords(topics)}</h1>

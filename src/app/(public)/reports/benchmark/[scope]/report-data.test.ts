@@ -66,7 +66,7 @@ describe("report findings", () => {
 
   it("leads a district report with its overdraft median against national", () => {
     const [first] = computeDistrictFindings("St. Louis district", rows, []);
-    expect(first.headline).toBe("The typical St. Louis district overdraft fee");
+    expect(first.headline).toBe("The St. Louis district median overdraft fee");
     expect(first.detail).toContain("20% above the national median of $25.00");
   });
 
@@ -77,10 +77,17 @@ describe("report findings", () => {
   });
 
   it("leads the national report with overdraft and NSF, then the charter gap", () => {
-    const national = buildReportRows([entry("overdraft", 30, 1200), entry("nsf", 32, 1100)], null);
+    const national = buildReportRows(
+      [entry("overdraft", 30, 1200), entry("nsf", 32, 1100), entry("monthly_maintenance", 8, 900), entry("stop_payment", 30, 900)],
+      null,
+    );
     const pairs = [{ fee_category: "overdraft", bank_median_amount: 32, cu_median_amount: 25 }];
     const findings = computeNationalFindings(national, pairs);
-    expect(findings.map((f) => f.key)).toEqual(["overdraft", "nsf", "charter-gap"]);
-    expect(findings[2].headline).toBe("Credit unions charge less for overdraft");
+    // Across fees first; overdraft last, with NSF folded into it.
+    expect(findings.map((f) => f.key)).toEqual(["charter-gap", "spread", "overdraft"]);
+    expect(findings[0].headline).toBe("The widest charter gap is on overdraft, where the credit union median is lower");
+    expect(findings[1].fee_category).toBe("monthly_maintenance");
+    expect(findings[1].figure).toBe("$3.00 to $13.00");
+    expect(findings[2].detail).toContain("NSF median is $32.00 across 1,100");
   });
 });

@@ -29,6 +29,7 @@ import {
   type GuideBreakdowns,
 } from "@/components/public/guide-blocks";
 import { SITE_URL } from "@/lib/constants";
+import { PAGE_HEADER } from "@/components/public/page-header";
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -132,7 +133,7 @@ export default async function ProGuidePage({ params }: PageProps) {
 
       <nav
         aria-label="Breadcrumb"
-        className="mb-8 flex items-center gap-2 text-[12px] text-ink-muted"
+        className="mb-8 flex items-center justify-center gap-2 text-[12px] text-ink-muted sm:justify-start"
       >
         <Link href="/" className="transition-colors hover:text-ink">
           Home
@@ -149,8 +150,8 @@ export default async function ProGuidePage({ params }: PageProps) {
         <span className="truncate text-ink-soft">{guide.title}</span>
       </nav>
 
-      <div className="max-w-3xl">
-        <div className="mb-4 flex items-center gap-2">
+      <header className={`mx-auto max-w-3xl sm:mx-0 ${PAGE_HEADER}`}>
+        <div className="mb-4 flex items-center justify-center gap-2 sm:justify-start">
           <span className="h-px w-8 bg-ink/30" aria-hidden="true" />
           <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-ink/60">
             Professional Guide
@@ -164,11 +165,11 @@ export default async function ProGuidePage({ params }: PageProps) {
           {guide.title}
         </h1>
 
-        <p className="mt-4 text-[15px] leading-relaxed text-ink-muted">
+        <p className="mx-auto mt-4 max-w-[34rem] text-[15px] leading-relaxed text-ink-muted sm:mx-0 sm:max-w-none">
           {guide.description}
         </p>
 
-        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-muted">
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[12px] text-ink-muted sm:justify-start">
           <span>{guide.author}</span>
           {reviewDate && (
             <>
@@ -188,7 +189,7 @@ export default async function ProGuidePage({ params }: PageProps) {
             </>
           )}
         </div>
-      </div>
+      </header>
 
       {!isPro ? (
         <div className="mt-10 max-w-2xl">

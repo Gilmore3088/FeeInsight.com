@@ -10,10 +10,11 @@ import type { MarketReport } from "@/lib/custom-report/report-data";
 import { lineName } from "@/app/for-institutions/board-math";
 import { sourcedFees, type SourcedFee } from "@/app/for-institutions/sample-sources";
 import type { AnalyzeScenario } from "@/app/subscribe/scenario";
+import { REPORT_SHOWCASE } from "@/lib/report-showcase";
 
 /** The one report request form, on /reports (site v3 brief 05 §3-4, #1171). */
 export const REPORT_REQUEST_HREF = "/reports?report=institution#request";
-export const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
+export const SAMPLE_REPORT_HREF = REPORT_SHOWCASE.sampleHref;
 
 export const SANS = { fontFamily: "var(--fi-font-sans)" } as const;
 export const TEXT_LINK = "font-semibold text-ink underline underline-offset-4 decoration-border hover:decoration-ink";
@@ -134,6 +135,9 @@ export interface DistrictPoint {
   /** The district's lowest and highest fee; null when the district is thin. */
   min: number | null;
   max: number | null;
+  /** The middle half of the district's institution prices; null when thin or not read. */
+  p25: number | null;
+  p75: number | null;
   institutions: number;
 }
 
@@ -254,6 +258,8 @@ export function buildHomeData(
         median: thin ? null : Number(row.median_amount),
         min: thin || row.min_amount === null ? null : Number(row.min_amount),
         max: thin || row.max_amount === null ? null : Number(row.max_amount),
+        p25: thin || row.p25_amount == null ? null : Number(row.p25_amount),
+        p75: thin || row.p75_amount == null ? null : Number(row.p75_amount),
         institutions: row.count,
       };
     })

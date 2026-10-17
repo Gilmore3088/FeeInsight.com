@@ -22,6 +22,7 @@ import { HAMILTON_PAUSED_MESSAGE, isHamiltonPausedText } from "@/lib/hamilton/pr
 import { STANDARD_METHOD, type AuditTrail } from "@/lib/hamilton/audit-trail";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { marketBriefHref, parseMarketQuestion } from "@/lib/hamilton/market-question";
+import { isPeerListContinuationQuestion } from "@/lib/hamilton/peer-list";
 import type { HamiltonSelectedInstitutionContext } from "@/lib/hamilton/institution-context";
 import { AddToReportButton } from "@/components/hamilton/basket/AddToReportButton";
 import { DownloadAnswerPdf } from "./StructuredAsk";
@@ -59,6 +60,15 @@ export function namesInstitution(question: string, name: string | null): boolean
   if (core.length < 3 || words.every((w) => GENERIC_NAME_WORDS.has(w))) return false;
   const escaped = core.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(`(?:^|[^a-z0-9])${escaped}(?![a-z0-9])`).test(question.toLowerCase());
+}
+
+/**
+ * A question about a market opens the market brief, unless it names the institution being
+ * researched or follows up a peer list (#1538). "Only show the California ones" names a state,
+ * but it narrows the list on screen; sending it to the brief left the page and lost the list.
+ */
+export function opensMarketBrief(question: string, institutionName: string | null): boolean {
+  return Boolean(parseMarketQuestion(question)) && !namesInstitution(question, institutionName) && !isPeerListContinuationQuestion(question);
 }
 
 /** The data lookups Hamilton made for an answer, named in plain words ("tool-getPeerFees" -> "peer fees"). */
@@ -472,7 +482,7 @@ function AnalyzeConversationWorkspace({
       if (!active.current || readOnlyReason || !trimmed || isLoading || engineBusy) return;
       // A question about a market, not this institution, opens the market brief (no provider call).
       // One that names the institution being researched stays here, so the answer is about it.
-      if (parseMarketQuestion(trimmed) && !namesInstitution(trimmed, selectedInstitution?.name ?? null)) {
+      if (opensMarketBrief(trimmed, selectedInstitution?.name ?? null)) {
         window.location.assign(marketBriefHref(trimmed, institutionId));
         return;
       }
@@ -771,7 +781,7 @@ function AnalyzeConversationWorkspace({
         </div>
       ) : (
         <div className="flex max-w-[72rem] flex-col gap-10">
-          <header className="flex flex-col gap-3">
+          <header className="flex flex-col gap-3 text-center sm:text-left">
             <p className="fi-text-label text-[var(--fi-muted)]">Ask Hamilton</p>
             <h1 className="text-4xl font-semibold leading-tight tracking-tight text-[var(--fi-ink)] sm:text-[2.75rem]">
               What are you working on?

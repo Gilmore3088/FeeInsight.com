@@ -222,7 +222,7 @@ export function countedAs(fee: string): {
   return HIGHEST_TIER_CATEGORIES.has(fee)
     ? {
         label: "highest published price",
-        labels: "highest published prices",
+        labels: "institutions' highest published prices",
         measure: "highest published price",
         of: "the highest",
         headline: "Median of each institution's highest published price",
@@ -243,7 +243,7 @@ export function money(n: number): string {
 /** Codes in STATE_NAMES that aren't states: the coverage finding counts the 50 states only. */
 const NOT_STATES = new Set(["DC", "PR", "VI", "GU", "AS"]);
 
-/** The most common price is called out when this share of institutions charge it. */
+/** The most common counted value is called out when this share of institutions share it. */
 const CONCENTRATED = 0.2;
 
 /**
@@ -277,7 +277,7 @@ export function findings(rows: IndexRow[], sel: Selection, institutions: IndexIn
     if (share >= CONCENTRATED) {
       out.push(`${Math.round(share * 100)}% of the ${institutions.length.toLocaleString()} institutions have a ${measure} of exactly ${money(price)}.`);
     } else {
-      out.push(`No single ${label} dominates: the most common, ${money(price)}, is the ${measure} for ${Math.round(share * 100)}% of the ${institutions.length.toLocaleString()} institutions.`);
+      out.push(`The most common ${label} is ${money(price)}, shared by ${Math.round(share * 100)}% of the ${institutions.length.toLocaleString()} institutions.`);
     }
   }
 
@@ -285,7 +285,7 @@ export function findings(rows: IndexRow[], sel: Selection, institutions: IndexIn
     if (institutions.length < MIN_INSTITUTIONS_FOR_MEDIAN) {
       out.push(
         institutions.length === 0
-          ? `No institution headquartered in ${STATE_NAMES[sel.state]} publishes this fee in a schedule we hold yet.`
+          ? `No institution headquartered in ${STATE_NAMES[sel.state]} publishes this fee in a schedule the Index holds yet.`
           : `Only ${institutions.length} ${institutions.length === 1 ? "institution" : "institutions"} headquartered in ${STATE_NAMES[sel.state]} ${institutions.length === 1 ? "publishes" : "publish"} this fee, too few for a median (${MIN_INSTITUTIONS_FOR_MEDIAN} needed).`,
       );
     }

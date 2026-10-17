@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { billStage, introducedDate, openStatesJurisdictionId, openStatesUrl, parseOpenStatesBill, STATE_BILL_JURISDICTIONS, stateBillQueries } from "./open-states";
+import { billStage, introducedDate, recentActions, openStatesJurisdictionId, openStatesUrl, parseOpenStatesBill, STATE_BILL_JURISDICTIONS, stateBillQueries } from "./open-states";
 
 describe("Open States client", () => {
   it("covers the 50 states, DC and Puerto Rico", () => {
@@ -50,6 +50,21 @@ describe("Open States client", () => {
     });
     expect(introducedDate(actions)).toBe("2026-01-20");
     expect(introducedDate([{ date: "2026-01-16", classification: ["filing"] }])).toBeNull();
+  });
+
+  it("counts an unclassified committee assignment once a bill is in committee (IL HB 4474, prod 2026-10-16)", () => {
+    const actions = [
+      { date: "2026-01-16", classification: ["introduction"], description: "Filed with the Clerk by Rep." },
+      { date: "2026-03-18", classification: ["referral-committee"], description: "Referred to Rules Committee" },
+      { date: "2026-03-27", classification: [], description: "Assigned to Financial Institutions and Licensing Committee" },
+      { date: "2026-04-03", classification: [], description: "Added Co-Sponsor Rep." },
+    ];
+    expect(billStage(actions)).toEqual({ stage: "in_committee", date: "2026-03-27" });
+    expect(billStage([{ date: "2026-01-16", classification: ["referral"], description: "Referred" }])).toEqual({ stage: "in_committee", date: "2026-01-16" });
+    expect(recentActions(actions, 2)).toEqual([
+      "2026-03-27 [] Assigned to Financial Institutions and Licensing Committee",
+      "2026-04-03 [] Added Co-Sponsor Rep.",
+    ]);
   });
 
   it("searches Puerto Rico in Spanish and everywhere else in English (#1427)", () => {

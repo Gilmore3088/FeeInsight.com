@@ -9,6 +9,7 @@ import { hamiltonIdentityLines, readHamiltonIdentitySnapshot } from "@/lib/hamil
  */
 import {
   Document,
+  Font,
   Page,
   Text,
   View,
@@ -18,6 +19,10 @@ import type { ReportArtifactMetadata, ReportExhibit, ReportSummaryResponse } fro
 import { HAMILTON_ATTRIBUTION } from "@/lib/constants";
 import { REPORT_SECTION_HEADINGS, evidencePolicyLabel, reportTypeLabel } from "./report-labels";
 import { RD_PDF } from "@/lib/report-design/tokens";
+
+// Words wrap whole, as in AnalysisPdfDocument (the same route loads both): default hyphenation split
+// evidence record IDs mid-way ("fee:pub-lished:502"), so a printed ID no longer matched its record.
+Font.registerHyphenationCallback((word) => [word]);
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 

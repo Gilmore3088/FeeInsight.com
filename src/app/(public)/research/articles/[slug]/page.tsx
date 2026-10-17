@@ -8,6 +8,7 @@ import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { SITE_NAME } from "@/lib/constants";
 import { linkPreview } from "@/lib/link-preview";
 import { renderArticleMarkdown } from "@/lib/article-markdown";
+import { PAGE_HEADER } from "@/components/public/page-header";
 
 export async function generateMetadata({
   params,
@@ -69,7 +70,7 @@ export default async function ArticlePage({
       <div className="grid grid-cols-1 gap-10 xl:grid-cols-[1fr_280px]">
         {/* Main content */}
         <article className="min-w-0">
-          <div className="mb-8">
+          <header className={`mb-8 ${PAGE_HEADER}`}>
             <Link
               href="/research"
               className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted hover:text-ink transition-colors"
@@ -83,9 +84,9 @@ export default async function ArticlePage({
               {article.title}
             </h1>
             {article.subtitle && (
-              <p className="mt-2 text-[15px] text-ink-muted">{article.subtitle}</p>
+              <p className="mx-auto mt-2 max-w-[34rem] text-[15px] text-ink-muted sm:mx-0 sm:max-w-none">{article.subtitle}</p>
             )}
-            <div className="mt-3 flex items-center gap-3 text-[12px] text-ink-muted">
+            <div className="mt-3 flex items-center justify-center gap-3 text-[12px] text-ink-muted sm:justify-start">
               <span>{article.author}</span>
               {publishedDate && (
                 <>
@@ -96,7 +97,7 @@ export default async function ArticlePage({
               <span className="text-border">&middot;</span>
               <span className="capitalize">{article.category}</span>
             </div>
-          </div>
+          </header>
 
           {/* Render markdown as HTML-safe prose */}
           <div className="prose prose-slate max-w-none prose-headings:tracking-tight prose-h2:text-lg prose-h3:text-base prose-p:text-[15px] prose-p:leading-relaxed prose-li:text-[15px] prose-table:text-sm prose-td:px-3 prose-td:py-2 prose-th:px-3 prose-th:py-2">

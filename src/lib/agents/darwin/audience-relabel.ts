@@ -40,7 +40,14 @@ export const AUDIENCE_RELABEL_MODE: AudienceRelabelMode = "live";
  * v2 (#1626): the fee-name reading changed (product words, exceptions and two-sided lists), so the
  * full dry run's key chain and totals start again from the first document under v2.
  */
-export const AUDIENCE_RELABEL_VERSION = 2;
+/**
+ * v3 (#1059 unknown review, 2026-10-16): the context reading leaves fewer fees unknown (a neutral
+ * section heading or schedule title ends the heading climb, a bullet is no heading, a sign-off, a
+ * wrapped "business days" and "individual check" name no audience, and a two-audience price cell
+ * names the fee's). The live chain starts again from the first document, so the fees still unknown
+ * are read again; fees already labelled are not read.
+ */
+export const AUDIENCE_RELABEL_VERSION = 3;
 export const AUDIENCE_RELABEL_SOURCE = "darwin.audience_relabel";
 export const AUDIENCE_RELABEL_KIND = "audience_relabeled";
 const SAMPLE_SIZE = 25;

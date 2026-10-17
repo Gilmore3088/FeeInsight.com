@@ -692,6 +692,21 @@ export const API_ROUTE_POLICIES = [
     auditPriority: "low",
   },
   {
+    routeId: "api.guides.account_policies",
+    routeTemplate: "/api/guides/account-policies",
+    file: "src/app/api/guides/account-policies/route.ts",
+    surface: "public",
+    allowedMethods: ["GET"],
+    authRequirement: "public",
+    rateLimitBucket: "public-read",
+    costPolicy: "none",
+    telemetryEvent: "api.guides.account_policies",
+    failBehavior: "fail_open_audit_only",
+    auditPriority: "low",
+    notes:
+      "Account-policy comparison island on the overdraft guide: published lines for up to three institutions. The page never depends on it.",
+  },
+  {
     routeId: "api.guides.saved_institutions",
     routeTemplate: "/api/guides/saved-institutions",
     file: "src/app/api/guides/saved-institutions/route.ts",
