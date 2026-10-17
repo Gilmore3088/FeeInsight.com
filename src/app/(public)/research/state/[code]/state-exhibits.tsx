@@ -2,12 +2,11 @@ import Link from "next/link";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
 import { DISTRICT_NAMES, STATE_TO_DISTRICT } from "@/lib/fed-districts";
-import { US_STATES } from "@/lib/us-map-paths";
 import { STATE_NAMES } from "@/lib/us-states";
-import { PAGE_HEADER } from "@/components/public/page-header";
 import { PrintButton } from "../../print-button";
 import { SectionHeading } from "../../research-hero";
 import { ExhibitSource } from "../../exhibits";
+import { allShapes, overlaps, stateShape, unionBox } from "../../district/[id]/district-geo";
 import {
   POSITION_AXIS_MAX_PCT,
   STATE_FINDING_MIN_INSTITUTIONS,
@@ -24,83 +23,124 @@ function SmallSample() {
   );
 }
 
-interface StateHeroProps {
-  stateCode: string;
-  stateName: string;
-  district: number | undefined;
-  /** The live figures under the heading, already formatted. */
-  figures: { value: string; label: string }[];
-  freshnessLabel: string;
-  /** The line under the heading: what the state's fees are read against. */
-  subhead: string;
-}
+const INSETS = new Set(["AK", "HI"]);
 
 /**
- * The country with this state lit and its Fed district's states a shade lighter. Every other
- * state links to its own report; the map is a picture to screen readers (the breadcrumb and the
- * research index are the way round for them).
+ * The state drawn with the states around it: the state lit and named, the rest of its Fed
+ * district a shade lighter, every other neighbor faint. Each neighbor links to its own report;
+ * the map is a picture to screen readers (the breadcrumb and the research index are the way round).
  */
 function StateMap({ stateCode, district }: { stateCode: string; district: number | undefined }) {
+  const own = stateShape(stateCode);
+  const view = unionBox([stateCode], 0.32);
+  if (!own || !view) return null;
+  // Alaska and Hawaii sit in insets on this projection, so neither is ever drawn as a neighbor.
+  const neighbors = INSETS.has(stateCode)
+    ? []
+    : allShapes().filter((s) => s.code !== stateCode && !INSETS.has(s.code) && overlaps(s.box, view));
+  const size = Math.max(view.w, view.h) * 0.045;
   return (
-    <svg viewBox="0 0 960 600" className="h-auto w-full" aria-hidden="true">
-      {US_STATES.map((s) => {
-        const fill =
-          s.id === stateCode
-            ? "fill-[#e0716a]"
-            : district && STATE_TO_DISTRICT[s.id] === district
-              ? "fill-white/30 hover:fill-white/45"
-              : "fill-white/[0.12] hover:fill-white/30";
-        const path = <path d={s.d} className={`${fill} stroke-ink transition-colors`} strokeWidth={1.2} />;
-        return s.id === stateCode || !STATE_NAMES[s.id] ? (
-          <g key={s.id}>{path}</g>
-        ) : (
-          <Link key={s.id} href={`/research/state/${s.id}`} tabIndex={-1} prefetch={false}>
+    <svg viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`} className="h-auto max-h-[440px] w-full" aria-hidden="true">
+      {neighbors.map((s) => {
+        const sibling = district != null && STATE_TO_DISTRICT[s.code] === district;
+        const path = (
+          <path
+            d={s.d}
+            className={`${sibling ? "fill-[var(--fi-viz-1)] hover:fill-[var(--fi-viz-2)]" : "fill-[var(--fi-viz-none)] hover:fill-[var(--fi-viz-1)]"} stroke-paper transition-colors`}
+            strokeWidth={1}
+            vectorEffect="non-scaling-stroke"
+          />
+        );
+        return STATE_NAMES[s.code] ? (
+          <Link key={s.code} href={`/research/state/${s.code}`} tabIndex={-1} prefetch={false}>
+            <title>{STATE_NAMES[s.code]}</title>
             {path}
           </Link>
+        ) : (
+          <g key={s.code}>{path}</g>
         );
       })}
+      <path d={own.d} className="fill-[var(--fi-viz-3)] stroke-paper" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+      <text
+        x={own.label.x}
+        y={own.label.y}
+        textAnchor="middle"
+        dominantBaseline="middle"
+        className="pointer-events-none fill-ink font-semibold"
+        style={{ fontSize: size }}
+      >
+        {own.box.w >= view.w * (0.024 * (STATE_NAMES[stateCode] ?? stateCode).length) ? STATE_NAMES[stateCode] : stateCode}
+      </text>
     </svg>
   );
 }
 
-export function StateHero({ stateCode, stateName, district, figures, freshnessLabel, subhead }: StateHeroProps) {
+interface StateHeroProps {
+  stateCode: string;
+  stateName: string;
+  district: number | undefined;
+  /** At most two figures; the page picks the two that carry the story. */
+  facts: { value: string; label: string }[];
+  /** One oversized line under the heading: the page's thesis. */
+  statement: string | null;
+  freshnessLabel: string;
+}
+
+export function StateHero({ stateCode, stateName, district, facts, statement, freshnessLabel }: StateHeroProps) {
   return (
-    <section className="bg-ink text-paper">
-      <div className="mx-auto grid max-w-page gap-6 px-4 pb-8 pt-6 sm:px-6 sm:pb-12 sm:pt-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:items-center lg:gap-10">
-        <div className={PAGE_HEADER}>
-          <nav aria-label="Breadcrumb" className="flex items-center justify-center gap-2 text-[12px] text-paper/60 sm:justify-start print:hidden">
-            <Link href="/research" className="hover:text-white">Research</Link>
+    <section className="bg-paper">
+      <div className="mx-auto grid max-w-page gap-8 px-4 pb-8 pt-6 sm:px-6 sm:pb-12 sm:pt-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-center lg:gap-12">
+        <div className="text-center sm:text-left">
+          <nav aria-label="Breadcrumb" className="flex items-center justify-center gap-2 text-[12px] text-ink-muted sm:justify-start print:hidden">
+            <Link href="/research" className="hover:text-ink">
+              Research
+            </Link>
+            {district && (
+              <>
+                <span aria-hidden="true">/</span>
+                <Link href={`/research/district/${district}`} className="hover:text-ink">
+                  District {district}
+                </Link>
+              </>
+            )}
             <span aria-hidden="true">/</span>
-            <span className="text-paper/85">{stateName}</span>
+            <span className="text-ink-soft">{stateName}</span>
           </nav>
-          <h1 className="mt-4 text-[30px] font-semibold leading-tight tracking-[-0.03em] text-white sm:text-[44px]">
-            {stateName} bank &amp; credit union fees
-          </h1>
-          <p className="mt-2 text-[15px] text-paper/75">{subhead}</p>
+          {district && (
+            <p className="mt-5 text-[12px] font-semibold uppercase tracking-[0.14em] text-brick sm:mx-0">
+              {DISTRICT_NAMES[district]} Fed &middot; District {district}
+            </p>
+          )}
+          <h1 className="mt-2 text-[36px] font-semibold leading-[1.05] tracking-[-0.035em] text-ink sm:text-[56px]">Bank fees in {stateName}</h1>
+          {statement && (
+            <p className="mt-5 text-[21px] font-semibold leading-[1.2] tracking-[-0.02em] text-ink sm:mx-0 sm:text-[28px]">{statement}</p>
+          )}
 
-          <dl className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-white/10 text-left">
-            {figures.map((f) => (
-              <div key={f.label} className="bg-ink px-4 py-3">
-                <dt className="text-[12px] text-paper/65">{f.label}</dt>
-                <dd className="font-mono text-[26px] font-semibold leading-tight tabular-nums text-white">{f.value}</dd>
-              </div>
-            ))}
-          </dl>
+          {facts.length > 0 && (
+            <dl className="mt-8 grid grid-cols-2 gap-6 text-left sm:max-w-xl">
+              {facts.map((f) => (
+                <div key={f.label} className="flex flex-col-reverse border-l-2 border-brick pl-4">
+                  <dt className="mt-2 text-[13px] leading-snug text-ink-soft">{f.label}</dt>
+                  <dd className="whitespace-nowrap font-mono text-[28px] font-semibold leading-none tabular-nums tracking-[-0.02em] text-ink sm:text-[44px]">
+                    {f.value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          )}
 
-          <p className="mt-4 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[12px] text-paper/70 sm:justify-start">
+          <p className="mt-8 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[12px] text-ink-muted sm:mx-0 sm:justify-start">
             <span className="inline-flex items-center gap-2">
-              <span aria-hidden="true" className="h-2 w-2 rounded-full bg-[#7fb59b]" />
+              <span aria-hidden="true" className="h-2 w-2 rounded-full bg-in-range" />
               {freshnessLabel}
             </span>
-            {district && (
-              <Link href={`/research/district/${district}`} className="font-semibold text-[#e0716a] hover:text-white">
-                {DISTRICT_NAMES[district]} Fed district &rarr;
-              </Link>
-            )}
-            <PrintButton className="font-semibold text-paper/80 underline decoration-white/30 underline-offset-4 hover:text-white print:hidden" />
+            <a href="#free-report" className="font-semibold text-brick underline-offset-4 hover:text-brick-ink hover:underline print:hidden">
+              Get the free {stateName} fee report
+            </a>
+            <PrintButton className="font-semibold text-ink-soft underline decoration-border underline-offset-4 hover:text-ink print:hidden" />
           </p>
         </div>
-        <div className="-mx-1 lg:mx-0">
+        <div className="mx-auto w-full max-w-md lg:max-w-none">
           <StateMap stateCode={stateCode} district={district} />
         </div>
       </div>

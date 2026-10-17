@@ -6,7 +6,7 @@ vi.mock("./connection", () => {
   return { sql, getSql: () => sql };
 });
 
-import { buildLeaders, buildStateFeeMedians, districtStates, getDistrictHub, isEmptyDistrictHub } from "./district-hub";
+import { buildLeaders, buildStateFeeMedians, districtStates, getDistrictHub, getStateHub, isEmptyDistrictHub } from "./district-hub";
 import { sql } from "./connection";
 
 type Mock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
@@ -85,5 +85,24 @@ describe("getDistrictHub", () => {
     expect(hub.revenue).toEqual([]);
     expect(hub.fee_changes_since).toBe("2025-10-16");
     expect(isEmptyDistrictHub(hub)).toBe(true);
+  });
+});
+
+describe("getStateHub", () => {
+  beforeEach(() => { db.unsafe.mockReset(); });
+
+  it("reads every institution in the state, whichever district holds it", async () => {
+    db.unsafe.mockResolvedValue([]);
+    const hub = await getStateHub("la", new Date("2026-10-16T00:00:00Z"));
+    expect(hub.states).toEqual(["LA"]);
+    expect(hub.district).toBe(6);
+    const feeRead = db.unsafe.mock.calls.find(([text]) => String(text).includes("ef.fee_category = ANY"))!;
+    expect(feeRead[0]).toContain("ct.state_code = $1");
+    expect(feeRead[0]).not.toContain("ct.fed_district = $1");
+    expect(feeRead[1][0]).toBe("LA");
+    const revenueRead = db.unsafe.mock.calls.find(([text]) => String(text).includes("service_charge_income"))!;
+    expect(revenueRead[1]).toEqual(["LA", "2023-01-01"]);
+    const branchRead = db.unsafe.mock.calls.find(([text]) => String(text).includes("institution_branch_deposits"))!;
+    expect(branchRead[1]).toEqual([["LA"]]);
   });
 });

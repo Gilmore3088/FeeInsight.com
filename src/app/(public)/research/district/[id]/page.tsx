@@ -377,7 +377,7 @@ export default async function DistrictReportPage({ params }: PageProps) {
               </h2>
               <p className="mt-3 text-[15px] leading-relaxed text-ink-soft">Each tile is one fee. Pick one to see both medians.</p>
             </div>
-            <CharterField fees={charter} place={place} />
+            <CharterField fees={charter} place={`the ${place}`} />
           </section>
         )}
 

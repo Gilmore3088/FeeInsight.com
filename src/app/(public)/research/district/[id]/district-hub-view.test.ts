@@ -11,6 +11,7 @@ import {
   quarterLabel,
   revenueTrend,
   sizeGroups,
+  stateComplaintView,
   stateHubRows,
 } from "./district-hub-view";
 
@@ -146,6 +147,25 @@ describe("complaintView", () => {
 
   it("is null when the district has no matched institutions", () => {
     expect(complaintView(hub({ complaints: { year: "2025", groups: [group(11, "TX", 40, 4, 1)] } }), 8, ["MO"])).toBeNull();
+  });
+
+  it("reads a whole state across districts beside its home district and the U.S.", () => {
+    const view = stateComplaintView(
+      hub({
+        complaints: {
+          year: "2025",
+          groups: [group(8, "MO", 6, 12, 2_000_000), group(10, "MO", 6, 6, 1_000_000), group(8, "AR", 3, 9, 1_000_000), group(11, "TX", 40, 40, 20_000_000)],
+        },
+      }),
+      "MO",
+      8,
+    )!;
+    expect(view.state.matched).toBe(12);
+    expect(view.state.rate).toBeCloseTo(18 / 3);
+    expect(view.district!.matched).toBe(9);
+    expect(view.district!.rate).toBeNull();
+    expect(view.us.rate).toBeCloseTo(67 / 24);
+    expect(stateComplaintView(hub({ complaints: { year: "2025", groups: [group(11, "TX", 40, 4, 1)] } }), "MO", 8)).toBeNull();
   });
 });
 

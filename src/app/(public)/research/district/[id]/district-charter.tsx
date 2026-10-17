@@ -109,7 +109,7 @@ export function CharterField({ fees, place }: { fees: CharterFee[]; place: strin
           ))}
         </div>
         <figcaption className="mt-2 text-[12px] text-ink-muted">
-          {fees.length} fees with both a bank and a credit union median in the {place}.
+          {fees.length} fees with both a bank and a credit union median in {place}.
         </figcaption>
       </figure>
 
@@ -148,8 +148,8 @@ export function CharterField({ fees, place }: { fees: CharterFee[]; place: strin
             <p className="text-[15px] font-semibold text-ink">{current.name}</p>
             <p className="mb-5 text-[12px] text-ink-muted">
               {current.cu === current.bank
-                ? `The same median in the ${place}.`
-                : `${current.cu < current.bank ? "Credit unions" : "Banks"} ${money(Math.abs(current.bank - current.cu))} lower in the ${place}.`}
+                ? `The same median in ${place}.`
+                : `${current.cu < current.bank ? "Credit unions" : "Banks"} ${money(Math.abs(current.bank - current.cu))} lower in ${place}.`}
             </p>
             <Pair f={current} size="md" />
           </div>
@@ -181,7 +181,7 @@ export function CharterField({ fees, place }: { fees: CharterFee[]; place: strin
         </summary>
         <div className="mt-3 overflow-x-auto">
           <table className="w-full text-left text-[13px]">
-            <caption className="sr-only">Bank and credit union medians in the {place}; the lower median is shaded.</caption>
+            <caption className="sr-only">Bank and credit union medians in {place}; the lower median is shaded.</caption>
             <thead>
               <tr className="border-b border-border text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
                 <th scope="col" className="py-2 pr-3">Fee</th>

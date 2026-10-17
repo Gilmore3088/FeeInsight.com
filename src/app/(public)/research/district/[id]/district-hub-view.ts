@@ -206,6 +206,26 @@ export function complaintView(hub: Pick<DistrictHubData, "complaints">, district
   return view.district.matched > 0 ? view : null;
 }
 
+export interface StateComplaintView {
+  year: string;
+  state: ComplaintRate;
+  district: ComplaintRate | null;
+  us: ComplaintRate;
+}
+
+/** One whole state's fee complaint rate beside its home district's and the U.S.; null with no matched institution in the state. */
+export function stateComplaintView(hub: Pick<DistrictHubData, "complaints">, state: string, district: number | null): StateComplaintView | null {
+  const c = hub.complaints;
+  if (!c) return null;
+  const view: StateComplaintView = {
+    year: c.year,
+    state: rateOf(c.groups.filter((g) => g.state_code === state)),
+    district: district ? rateOf(c.groups.filter((g) => g.fed_district === district)) : null,
+    us: rateOf(c.groups),
+  };
+  return view.state.matched > 0 ? view : null;
+}
+
 /** Price moves a district needs before the hub shows them; one or two read as noise. */
 export const MIN_FEE_CHANGES = 5;
 
