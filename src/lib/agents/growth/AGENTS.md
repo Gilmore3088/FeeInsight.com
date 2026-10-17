@@ -30,10 +30,11 @@ writes fee data. James approved it on 2026-10-08 (`growth-os/BUILD-PLAN.md`, pha
 
 The same walk Magellan makes for fee schedules, aimed at people. For each prospect (assets
 $100M to $5B with a website, and either 10+ live fees or comparison-ready: a live row on 3+
-market-snapshot fees each held by 5+ other local institutions) it reads robots.txt, the
+market-snapshot fees each held by 5+ other local institutions, or for an institution in no metro
+a live row on 3+ snapshot fees, since its comparison is statewide) it reads robots.txt, the
 homepage, and up to three same-site leadership, about or contact pages, as `FeeInsightBot
-(Growth)`. Comparison-ready sites go first, never-read before re-reads, then biggest local
-markets. It keeps only addresses the institution publishes under its own domain, with the name
+(Growth)`. Comparison-ready sites go first, $500M-$2B before the rest, never-read before
+re-reads, then biggest local markets. It keeps only addresses the institution publishes under its own domain, with the name
 and title printed just before each one. Nothing is guessed from a name pattern, and nothing
 sends: the contacts feed outreach drafts James sends himself. Rechecks after 30 days.
 
@@ -91,7 +92,10 @@ names and amounts. The snapshot compares everyday consumer fees (`SNAPSHOT_FEE_K
 no wire fees, never a non-customer price) with the open institutions in the prospect's CBSA, leaving out banks that gather deposits
 nationally from one office (FDIC Summary of Deposits: $3B+ through at most 4 offices, one holding
 90%+, e.g. Ally, SoFi, Schwab), and a value counts as verified only when every catalog row behind it passes `checkFeeAgainstSource`.
-Comparisons are local only. All emails sign off "Founder, Fee Insight" with one ask. Each run reads every candidate, scores it with the plan's
+Figures are quoted for local comparisons only. An institution in no metro is compared with the
+`SNAPSHOT_STATE_PEERS` (40) open institutions in its state closest to it in assets (`loadMarket`,
+scope `state`; James, Oct 17: rural prospects with a statewide comparison) and gets campaign A or B,
+never C; B names the state ("5 other institutions in Kansas"). All emails sign off "Founder, Fee Insight" with one ask. Each run reads every candidate, scores it with the plan's
 weights (`prospect-score.ts`: fit 25, buyer 20, research 20, data confidence 20, commercial 15) and
 drafts the highest scores first. Every fee type gets a comparison tier (A: prospect and 5+ local
 verify; B: fewer verified peers; C: the source check fails; D: a row waits on a takedown second

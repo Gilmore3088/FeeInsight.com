@@ -33,9 +33,12 @@ export const PROSPECT_MIN_FEES = 10;
 /**
  * Comparison-ready institutions join the pool whatever their fee count: a live row on this many
  * market-snapshot fees, each held by at least SNAPSHOT_MIN_PEERS other open institutions in the
- * same metro (the bar the Oct 16 prospect count used).
+ * same metro (the bar the Oct 16 prospect count used), or, for an institution in no metro, a
+ * live row on this many snapshot fees (its comparison is statewide).
  */
 export const PROSPECT_READY_FEE_TYPES = 3;
+/** Outreach's first segment ($500M-$2B, `OUTREACH_FIRST_SEGMENT_K`), read before the rest of the pool. */
+export const PROSPECT_FIRST_SEGMENT_K = [500_000, 2_000_000] as const;
 
 const REQUEST_TIMEOUT_MS = 8_000;
 const MAX_PAGE_BYTES = 2 * 1024 * 1024;
@@ -462,8 +465,9 @@ export async function contactsSchemaReady(db: SqlTag = sql): Promise<boolean> {
  * Prospects due a check: the GTM plan's pool (by size and live fees) plus every comparison-ready
  * institution (PROSPECT_READY_FEE_TYPES), with a website. Due means never checked, last checked
  * more than CONTACTS_RECHECK_DAYS ago, or (once leaders are kept) a comparison-ready site last
- * read before leaders were kept. Comparison-ready sites first (they can be pitched now), never-checked
- * before re-reads, then the oldest checks, biggest local markets first.
+ * read before leaders were kept. Comparison-ready sites first (they can be pitched now), outreach's
+ * $500M-$2B segment first among them, never-checked before re-reads, then the oldest checks,
+ * biggest local markets first.
  */
 export async function loadProspectSites(db: SqlTag, limit: number, leadersReady: boolean = false): Promise<ProspectSite[]> {
   const rows = await db`
@@ -473,10 +477,10 @@ export async function loadProspectSites(db: SqlTag, limit: number, leadersReady:
       SELECT DISTINCT f.institution_id, f.fee_category, s.cbsa_code
         FROM published_fee_catalog f
         JOIN institution_sources s ON s.id = f.institution_id
-       WHERE s.closed_date IS NULL AND s.cbsa_code IS NOT NULL AND f.amount IS NOT NULL
+       WHERE s.closed_date IS NULL AND f.amount IS NOT NULL
          AND f.fee_category = ANY(${[...SNAPSHOT_FEE_KEYS]}::text[])
     ), holders AS (
-      SELECT cbsa_code, fee_category, COUNT(*) AS n FROM held GROUP BY cbsa_code, fee_category
+      SELECT cbsa_code, fee_category, COUNT(*) AS n FROM held WHERE cbsa_code IS NOT NULL GROUP BY cbsa_code, fee_category
     ), ready AS (
       SELECT h.institution_id
         FROM held h
@@ -484,8 +488,14 @@ export async function loadProspectSites(db: SqlTag, limit: number, leadersReady:
        WHERE p.n - 1 >= ${SNAPSHOT_MIN_PEERS}
        GROUP BY h.institution_id
       HAVING COUNT(*) >= ${PROSPECT_READY_FEE_TYPES}
+      UNION
+      -- In no metro: compared across the state (loadMarket), where every snapshot fee has peers.
+      SELECT institution_id FROM held WHERE cbsa_code IS NULL
+       GROUP BY institution_id
+      HAVING COUNT(*) >= ${PROSPECT_READY_FEE_TYPES}
     ), live AS (
-      SELECT s.id, s.institution_name, s.website_url, s.cbsa_code, (r.institution_id IS NOT NULL) AS ready
+      SELECT s.id, s.institution_name, s.website_url, s.cbsa_code, (r.institution_id IS NOT NULL) AS ready,
+             s.asset_size BETWEEN ${PROSPECT_FIRST_SEGMENT_K[0]} AND ${PROSPECT_FIRST_SEGMENT_K[1]} AS first_segment
         FROM institution_sources s
         JOIN fees f ON f.institution_id = s.id
         LEFT JOIN ready r ON r.institution_id = s.id
@@ -502,7 +512,7 @@ export async function loadProspectSites(db: SqlTag, limit: number, leadersReady:
      WHERE c.institution_id IS NULL
         OR c.checked_at < now() - make_interval(days => ${CONTACTS_RECHECK_DAYS})
         OR (${leadersReady} AND l.ready AND c.leaders_found IS NULL AND c.outcome IN ('found', 'none'))
-     ORDER BY l.ready DESC, (c.institution_id IS NULL) DESC, c.checked_at, COALESCE(m.peers, 0) DESC, l.id
+     ORDER BY l.ready DESC, l.first_segment DESC, (c.institution_id IS NULL) DESC, c.checked_at, COALESCE(m.peers, 0) DESC, l.id
      LIMIT ${limit}
   `;
   return rows.map((row) => ({ institutionId: Number(row.id), name: String(row.institution_name), websiteUrl: String(row.website_url) }));

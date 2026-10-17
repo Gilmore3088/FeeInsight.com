@@ -31,7 +31,7 @@ function snapshot(): MarketSnapshot {
     row("paper_statement", 1, 3, "No such wording"), row("paper_statement", 10, 2),
   ];
   const inst = (id: number) => ({ id, name: `Bank ${id}`, city: null, stateCode: "TX", cbsaCode: "1", cbsaName: "Waco, TX", charterType: "bank" });
-  return { subject: inst(1), peers: peers.map(inst), fees: ["stop_payment", "money_order", "paper_statement", "nsf"].map((c) => buildSnapshotFee(c, 1, rows)) };
+  return { subject: inst(1), peers: peers.map(inst), fees: ["stop_payment", "money_order", "paper_statement", "nsf"].map((c) => buildSnapshotFee(c, 1, rows)), scope: "metro" };
 }
 
 describe("comparison tiers", () => {

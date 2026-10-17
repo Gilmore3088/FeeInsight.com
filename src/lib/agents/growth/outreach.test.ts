@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { isMarketingStep, isProviderStep } from "@/lib/agents/types";
 import { buildSnapshotFee, marketLabel, type MarketSnapshot, type SnapshotFeeRow, type SnapshotValue } from "./market-snapshot";
-import { OUTREACH_HELD_REASON, OUTREACH_STALE_WORDING_REASON, institutionKinds, outreachCampaignsFromEnv, runOutreachDrafts, buildFollowUpDraft, buildOutreachDraft, checkOutreachDestination, runOutreachFollowUps, firstName, isDecisionMaker, loadOutreachCandidates, summarizeOutreach, withdrawNonBuyerDrafts, type OutreachContact } from "./outreach";
+import { OUTREACH_HELD_REASON, OUTREACH_STALE_WORDING_REASON, institutionKinds, outreachCampaignsFromEnv, outreachMarket, runOutreachDrafts, buildFollowUpDraft, buildOutreachDraft, checkOutreachDestination, runOutreachFollowUps, firstName, isDecisionMaker, loadOutreachCandidates, summarizeOutreach, withdrawNonBuyerDrafts, type OutreachContact } from "./outreach";
 
 function odRow(institutionId: number, amount: number, text: string | null = `Overdraft Fee $${amount.toFixed(2)} per item`): SnapshotFeeRow {
   return {
@@ -37,6 +37,7 @@ function snapshot(feeRows: SnapshotFeeRow[] = rows): MarketSnapshot {
       charterType: "bank",
     })),
     fees: [buildSnapshotFee("overdraft", 1, feeRows)],
+    scope: "metro",
   };
 }
 
@@ -156,6 +157,21 @@ describe("buildOutreachDraft", () => {
     expect(email).not.toMatch(/\$\d|https?:/);
     expect(audit).toContain("Campaign B");
     expect(email).toContain("be useful for your product reviews?");
+  });
+
+  it("compares an institution in no metro across its state, with no figures or link", () => {
+    const metro = multiSnapshot();
+    const rural: MarketSnapshot = { ...metro, scope: "state", subject: { ...metro.subject, cbsaCode: null, cbsaName: null, city: "Hico" } };
+    const built = buildOutreachDraft(rural, [jane], { allowInsight: true });
+    if (!("draft" in built)) throw new Error(`skipped: ${built.skip}`);
+    expect(built.draft.campaign).toBe("personalized_research");
+    expect(built.draft.link).toBeNull();
+    const [email] = built.draft.caption.split("--- For your audit");
+    expect(email).toContain("along with those of 5 other institutions in Texas, including Peer 10 and Peer 11.");
+    expect(email).toContain("a few Texas institutions you choose");
+    expect(email).not.toMatch(/\$\d|https?:|\barea\b|\blocal\b/);
+    expect(outreachMarket(rural)).toBe("Texas");
+    expect(outreachMarket(metro)).toBe("Waco, TX");
   });
 
   it("never quotes a comparison with a row waiting on a takedown second look", () => {

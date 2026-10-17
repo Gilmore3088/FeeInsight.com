@@ -5,6 +5,7 @@ import { journeySchemaReady } from "@/lib/data-store/outreach-journey";
 import { contactConfidence, contactsSchemaReady, isDecisionMaker, normalizeContact, rankContacts, type ContactConfidence, type ContactKind, type ContactRole } from "./contacts";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { loadMarketSnapshot, marketLabel, SNAPSHOT_MIN_PEERS, type MarketSnapshot, type SnapshotValue } from "./market-snapshot";
+import { STATE_NAMES } from "@/lib/us-states";
 import { roleProblem, scoreProspect, type ProspectScore } from "./prospect-score";
 
 /**
@@ -14,8 +15,10 @@ import { roleProblem, scoreProspect, type ProspectScore } from "./prospect-score
  * local competitors' values all verify (`checkFeeAgainstSource` on every row behind them, via the
  * market snapshot). The email names those competitors and links to the prospect's snapshot page,
  * which shows the same figures with a link to each schedule; a draft is written only after that
- * page is fetched and found to show them. Comparisons are local only, because the page is local
- * (the 21:31 "Statewide" fallback can't be delivered by the page, so it no longer drafts).
+ * page is fetched and found to show them. Figures are quoted for local comparisons only, because
+ * the page is local (the 21:31 "Statewide" fallback can't be delivered by the page). An
+ * institution in no metro is compared across its state (James, Oct 17: rural prospects with a
+ * statewide comparison) and gets campaign A or B, which quote no figures and link nowhere.
  *
  * Nothing sends. James, 15:14: "agents DRAFT, never send these"; 15:39: "DONT SEND THE EMAIL".
  * The draft lands in the /admin/growth queue with an audit block under the email: the
@@ -40,7 +43,7 @@ export const OUTREACH_CAMPAIGN = "outreach-launch";
  * so the draft holds a placeholder he fills before sending; nothing is invented.
  */
 export const OUTREACH_POSTAL_ADDRESS = "[postal address: James to add before sending]";
-/** The plan's segments: $500M-$2B first, then $100M-$500M (asset_size is in thousands). */
+/** The plan's segments: $500M-$2B first, then $100M-$500M (asset_size is in thousands). The contact finder reads the first segment first (`PROSPECT_FIRST_SEGMENT_K`). */
 export const OUTREACH_FIRST_SEGMENT_K = [500_000, 2_000_000] as const;
 export const OUTREACH_SECOND_SEGMENT_K = [100_000, 500_000] as const;
 
@@ -260,7 +263,10 @@ export function buildOutreachDraft(
   const primary = { ...primaryContact, confidence: contactConfidence(primaryContact) };
   const backup = backupContact ? { ...backupContact, confidence: contactConfidence(backupContact) } : null;
   const institution = snapshot.subject.name;
-  const market = marketLabel(snapshot.subject);
+  const market = outreachMarket(snapshot);
+  // "in the Waco, TX area" for a metro; "in Kansas" for a statewide comparison.
+  const where = snapshot.scope === "state" ? `in ${market}` : `in the ${market} area`;
+  const nearby = snapshot.scope === "state" ? `${market} ` : "local ";
   const names = new Map(snapshot.peers.map((peer) => [peer.id, peer.name]));
   const peerName = (id: number) => names.get(id) ?? `Institution ${id}`;
   const score = scoreProspect(snapshot, primary, options.assetsK ?? null, options.pendingTakedown);
@@ -285,7 +291,7 @@ export function buildOutreachDraft(
   const kindsOf = (ids: number[]) => institutionKinds(ids.map((id) => charters.get(id)));
   const problem = roleProblem(primary, snapshot.subject.charterType);
   const campaign: OutreachCampaign =
-    options.allowInsight && findings.length >= OUTREACH_MIN_FINDINGS && leadIndex >= 0
+    options.allowInsight && snapshot.scope === "metro" && findings.length >= OUTREACH_MIN_FINDINGS && leadIndex >= 0
       ? "market_insight"
       : supported.length >= OUTREACH_MIN_FINDINGS
         ? "personalized_research"
@@ -332,16 +338,16 @@ export function buildOutreachDraft(
       ? [
           "I'm James, founder of Fee Insight. We compile published credit union and bank fee schedules so competitive research is faster and every figure can be traced to its source.",
           "",
-          `${institution}'s schedule is in our research, along with those of ${sharedCount.size} other ${kindsOf([...sharedCount.keys()])} in the ${market} area, including ${named.map((peer) => peer.name).join(" and ")}. Between them, ${supported.length} fee types can be compared line by line.`,
+          `${institution}'s schedule is in our research, along with those of ${sharedCount.size} other ${kindsOf([...sharedCount.keys()])} ${where}, including ${named.map((peer) => peer.name).join(" and ")}. Between them, ${supported.length} fee types can be compared line by line.`,
           "",
-          `Would a short, source-linked comparison of ${institution}'s member fees and those of a few local credit unions and banks you choose be useful for ${problem.useFor}?`,
+          `Would a short, source-linked comparison of ${institution}'s member fees and those of a few ${nearby}credit unions and banks you choose be useful for ${problem.useFor}?`,
         ]
       : [
           "I'm James, founder of Fee Insight. We compile published fee schedules so competitive research is faster and every figure can be traced to its source.",
           "",
-          `${institution}'s schedule is in our research, along with those of ${sharedCount.size} other institutions in the ${market} area, including ${named.map((peer) => peer.name).join(" and ")}. Between them, ${supported.length} fee types can be compared line by line.`,
+          `${institution}'s schedule is in our research, along with those of ${sharedCount.size} other institutions ${where}, including ${named.map((peer) => peer.name).join(" and ")}. Between them, ${supported.length} fee types can be compared line by line.`,
           "",
-          `Would a short, source-linked comparison of ${institution} and a few local institutions you choose be useful for ${problem.useFor}?`,
+          `Would a short, source-linked comparison of ${institution} and a few ${nearby}institutions you choose be useful for ${problem.useFor}?`,
         ];
   } else {
     const fact = findings[0];
@@ -455,6 +461,15 @@ export async function checkOutreachDestination(
   }
 }
 
+/**
+ * Where the email says the compared institutions are: the metro ("Waco, TX") for a metro
+ * snapshot, the state's name ("Kansas") for an institution in no metro.
+ */
+export function outreachMarket(snapshot: Pick<MarketSnapshot, "subject" | "scope">): string {
+  if (snapshot.scope === "state" && snapshot.subject.stateCode) return STATE_NAMES[snapshot.subject.stateCode] ?? snapshot.subject.stateCode;
+  return marketLabel(snapshot.subject);
+}
+
 /** Prospects with saved contacts, $500M-$2B first, then $100M-$500M, biggest first. */
 export async function loadOutreachCandidates(db: SqlTag, limit: number): Promise<OutreachCandidate[]> {
   const rows = await db`
@@ -462,7 +477,7 @@ export async function loadOutreachCandidates(db: SqlTag, limit: number): Promise
       FROM prospect_contacts c
       JOIN institution_sources s ON s.id = c.institution_id
      WHERE s.asset_size BETWEEN ${OUTREACH_SECOND_SEGMENT_K[0]} AND ${OUTREACH_FIRST_SEGMENT_K[1]}
-       AND s.closed_date IS NULL AND s.cbsa_code IS NOT NULL
+       AND s.closed_date IS NULL AND (s.cbsa_code IS NOT NULL OR s.state_code IS NOT NULL)
      ORDER BY (s.asset_size >= ${OUTREACH_FIRST_SEGMENT_K[0]}) DESC, s.asset_size DESC, c.institution_id, c.email
   `;
   // Every institution with saved contacts, biggest first; only those with a decision-maker
@@ -676,7 +691,8 @@ export async function runOutreachDrafts(input: {
         facts: {
           institution_id: candidate.institutionId,
           institution_name: snapshot.subject.name,
-          market: marketLabel(snapshot.subject),
+          market: outreachMarket(snapshot),
+          market_scope: snapshot.scope,
           charter_type: snapshot.subject.charterType,
           to: { email: draft.primary.email, name: draft.primary.name, title: draft.primary.title, role: draft.primary.role, confidence: draft.primary.confidence, source_url: draft.primary.source_url },
           backup: draft.backup ? { email: draft.backup.email, name: draft.backup.name, title: draft.backup.title, confidence: draft.backup.confidence } : null,
@@ -704,7 +720,7 @@ export async function runOutreachDrafts(input: {
             : [],
           destination_checked_at: draft.link ? now.toISOString() : null,
           link: draft.link,
-          method: "published_fee_catalog, sourced rows only; one value per institution (overdraft at its highest tier), consumer tier, never a non-customer price; peers are open institutions in the same CBSA; only campaign C quotes figures, each traced to its own schedule text with 5+ verified local institutions, and its link was fetched and showed every name and amount it quotes",
+          method: "published_fee_catalog, sourced rows only; one value per institution (overdraft at its highest tier), consumer tier, never a non-customer price; peers are open institutions in the same CBSA, or for an institution in no metro the 40 open institutions in its state closest in assets (campaigns A and B only); only campaign C quotes figures, each traced to its own schedule text with 5+ verified local institutions, and its link was fetched and showed every name and amount it quotes",
         },
         asOf: now,
         agentRunId: input.runId,
