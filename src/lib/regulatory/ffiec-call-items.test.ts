@@ -33,6 +33,14 @@ describe("description checks", () => {
     expect(describes(item("charge_offs_other_consumer_ytd"), "CHARGE-OFFS ALL OTHER")).toBe(true);
     expect(describes(item("charge_offs_other_consumer_ytd"), "RECOVERIES ALL OTHER")).toBe(false);
     expect(describes(item("recoveries_other_consumer_ytd"), "RECOVERIES ALL OTHER")).toBe(true);
+    // RC-O Memo 1 as filed in the 2026Q1 bulk file (v2 run refused these).
+    expect(describes(item("deposits_250k_or_less_amount"), "AMT OF DEP ACCNT $250K OR LESS")).toBe(true);
+    expect(describes(item("deposits_250k_or_less_amount"), "NBR OF DEP ACCNTS OF $250K OR LESS")).toBe(false);
+    expect(describes(item("deposits_250k_or_less_count"), "NBR OF DEP ACCNTS OF $250K OR LESS")).toBe(true);
+    expect(describes(item("deposits_over_250k_amount"), "AMT OF DEP ACCNT MORE THAN $250K")).toBe(true);
+    expect(describes(item("deposits_over_250k_amount"), "NBR OF DEP ACCNT GT $250K")).toBe(false);
+    expect(describes(item("deposits_over_250k_count"), "NBR OF DEP ACCNT GT $250K")).toBe(true);
+    expect(describes(item("deposits_over_250k_count"), "NBR OF DEP ACCNTS OF $250K OR LESS")).toBe(false);
   });
 
   it("keeps charge-off and recovery columns apart", () => {
