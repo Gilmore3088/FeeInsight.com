@@ -5,12 +5,18 @@ import Link from "next/link";
 import { ArrowRight, ArrowUpRight } from "lucide-react";
 import { notFound } from "next/navigation";
 import { getFinancialsByInstitution } from "@/lib/data-store";
-import { getFinancialHistory, getPeerFinancialMedians, getPeerPercentiles } from "@/lib/data-store/financial";
+import {
+  getFinancialHistory,
+  getPeerFinancialMedians,
+  getPeerPercentiles,
+  type InstitutionFinancialHistoryRow,
+} from "@/lib/data-store/financial";
 import {
   getBranchFootprint,
   getEnforcementRecord,
   getComplaintTrend,
   getHoldingCompanyProfile,
+  getRegulatorInfo,
 } from "@/lib/data-store/registry-profile";
 import { getRegulatoryWatch } from "@/lib/data-store/regulatory-watch";
 import { canAccessPremium } from "@/lib/access";
@@ -49,6 +55,7 @@ import {
   toPeerMedianPoints,
   toPeerRankRows,
 } from "./financial-history";
+import { RegistryCards } from "./registry-cards";
 import { FinancialProfileSection } from "./financial-profile-section";
 import { assetSizeToDollars, formatReportQuarter, selectFinancialsByQuarter } from "./financial-units";
 import { MIN_VERIFIED_FEES_FOR_OFFER } from "./profile-copy";
@@ -186,20 +193,29 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
       .filter((category): category is string => Boolean(category))
       .map((category) => [category, getDisplayName(category).replace(/\s*\([^)]*\)/g, "")]),
   );
-  // Financial history is Pro-only; free users never receive it in the RSC payload.
+  // Financial history is Pro-only; free users never receive it in the RSC payload. The branch
+  // footprint, complaints, enforcement and holding company are public records every visitor sees.
   const isPro = canAccessPremium(user);
-  const [financialHistory, peerMedians, peerPercentiles, footprint, complaints, holdingCompany, enforcement, regulatoryWatch] = isPro
-    ? await Promise.all([
-        getFinancialHistory(instId).catch(fallbackTo("financial history", [])),
-        getPeerFinancialMedians(instId).catch(fallbackTo("peer medians", null)),
-        getPeerPercentiles(instId).catch(fallbackTo("peer percentiles", null)),
-        getBranchFootprint(instId).catch(fallbackTo("branch footprint", null)),
-        getComplaintTrend(instId).catch(fallbackTo("complaint trend", null)),
-        getHoldingCompanyProfile(instId).catch(fallbackTo("holding company", null)),
-        getEnforcementRecord(instId).catch(fallbackTo("enforcement actions", null)),
-        getRegulatoryWatch(instId).catch(fallbackTo("regulatory watch", null)),
-      ])
-    : [[], null, null, null, null, null, null, null];
+  const [
+    [financialHistory, peerMedians, peerPercentiles, regulatoryWatch],
+    [footprint, complaints, holdingCompany, enforcement, regulator],
+  ] = await Promise.all([
+    isPro
+      ? Promise.all([
+          getFinancialHistory(instId).catch(fallbackTo("financial history", [])),
+          getPeerFinancialMedians(instId).catch(fallbackTo("peer medians", null)),
+          getPeerPercentiles(instId).catch(fallbackTo("peer percentiles", null)),
+          getRegulatoryWatch(instId).catch(fallbackTo("regulatory watch", null)),
+        ])
+      : Promise.resolve([[], null, null, null] as [InstitutionFinancialHistoryRow[], null, null, null]),
+    Promise.all([
+      getBranchFootprint(instId).catch(fallbackTo("branch footprint", null)),
+      getComplaintTrend(instId).catch(fallbackTo("complaint trend", null)),
+      getHoldingCompanyProfile(instId).catch(fallbackTo("holding company", null)),
+      getEnforcementRecord(instId).catch(fallbackTo("enforcement actions", null)),
+      getRegulatorInfo(instId).catch(fallbackTo("regulator info", null)),
+    ]),
+  ]);
   const financialSeries = buildFinancialSeries(financialHistory);
   const peerMedianPoints = toPeerMedianPoints(peerMedians);
   const financialGrowth = computeGrowth(financialSeries);
@@ -312,6 +328,22 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
   ]
     .filter((part): part is string => Boolean(part))
     .join(" \u00b7 ");
+  // The regulator line under the district: who supervises it, its holding company, and whether it
+  // has closed or merged.
+  const holdingName = regulator?.holding_company_name
+    ? (toTitleCase(regulator.holding_company_name) ?? regulator.holding_company_name)
+    : null;
+  const recordFacts = [
+    regulator?.primary_regulator ? `Regulator: ${regulator.primary_regulator}` : null,
+    holdingName ? `Holding company: ${holdingName}` : null,
+    regulator?.regulatory_status === "inactive"
+      ? regulator.closed_date
+        ? `Closed or merged ${regulator.closed_date}`
+        : "Closed or merged"
+      : null,
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join(" \u00b7 ");
 
   const showHamiltonBand = !isPro && !sparse && published.length > 0;
   // The one Hamilton finding shown free: its fee-income share against the peer median from the
@@ -364,6 +396,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
           stateName={stateName}
           stateCode={stateCode}
           facts={heroFacts}
+          recordFacts={recordFacts}
           districtName={districtName}
           district={district}
           counts={sparse ? null : counts}
@@ -517,17 +550,26 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
             </Link>
           )}
 
-          {isPro && (financialSeries.length > 0 || Boolean(footprint || complaints || holdingCompany || regulatoryWatch)) && (
+          {/* 4. Where it operates and its public record: FDIC, NCUA, CFPB and SEC data, for every visitor. */}
+          {(footprint || complaints || enforcement || holdingCompany) && (
+            <section aria-labelledby="record-heading">
+              <h2 id="record-heading" className={H2} style={SERIF}>
+                Branches and public record
+              </h2>
+              <p className={FINDING}>Where {inst.institution_name} operates, and what regulators and customers have on file.</p>
+              <div className="mt-6">
+                <RegistryCards footprint={footprint} complaints={complaints} enforcement={enforcement} holdingCompany={holdingCompany} />
+              </div>
+            </section>
+          )}
+
+          {isPro && (financialSeries.length > 0 || Boolean(regulatoryWatch)) && (
             <FinancialProfileSection
               isPro={isPro}
               points={financialSeries}
               peers={peerMedianPoints}
               insights={insights}
               charterLabel={charterLabel}
-              footprint={footprint}
-              complaints={complaints}
-              holdingCompany={holdingCompany}
-              enforcement={enforcement}
               regulatoryWatch={regulatoryWatch}
               exportHref={`/api/v1/institutions?id=${instId}&view=benchmark&format=csv`}
               institutionName={inst.institution_name}

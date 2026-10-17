@@ -14,6 +14,7 @@ export function ProfileHero({
   stateName,
   stateCode,
   facts,
+  recordFacts,
   districtName,
   district,
   counts,
@@ -27,6 +28,8 @@ export function ProfileHero({
   stateCode: string | null;
   /** "Tallahassee, Florida · Bank · $4.4B assets". */
   facts: string;
+  /** "Regulator: OCC · Holding company: Capital City Bank Group"; empty when unknown. */
+  recordFacts: string;
   districtName: string | null;
   district: number | null;
   counts: CompareCounts | null;
@@ -74,6 +77,7 @@ export function ProfileHero({
               </Link>
             </p>
           )}
+          {recordFacts && <p className="mt-1 text-[14px] text-[#d9e2e9] sm:text-[15px]">{recordFacts}</p>}
           {!counts && (
             <>
               <p className="mt-6 max-w-2xl text-[18px] font-semibold leading-snug text-white sm:text-[20px]">{finding}</p>

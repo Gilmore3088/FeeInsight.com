@@ -15,7 +15,8 @@ import type {
 } from "@/lib/data-store/registry-profile";
 
 /*
- * Registry cards for the gated Financial profile. Colors reuse the validated
+ * Registry cards for the profile's public record section (branches, complaints, enforcement and
+ * the holding company, all public filings). Colors reuse the validated
  * categorical slots from financial-profile.tsx; the map uses one blue hue,
  * light to dark (sequential), and every chart has a text/table equivalent.
  */
@@ -75,6 +76,32 @@ function formatQuarterEnd(date: string): string {
   return Number.isNaN(d.getTime())
     ? date
     : d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
+}
+
+/** The public record section's cards: the footprint full width, then the smaller records in pairs. */
+export function RegistryCards({
+  footprint,
+  complaints,
+  enforcement,
+  holdingCompany,
+}: {
+  footprint: BranchFootprint | null;
+  complaints: ComplaintTrend | null;
+  enforcement: EnforcementRecord | null;
+  holdingCompany: HoldingCompanyProfile | null;
+}) {
+  return (
+    <div className="grid gap-4">
+      {footprint && <BranchFootprintCard footprint={footprint} />}
+      {(complaints || enforcement || holdingCompany) && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {complaints && <ComplaintsCard trend={complaints} />}
+          {enforcement && <EnforcementCard record={enforcement} />}
+          {holdingCompany && <HoldingCompanyCard profile={holdingCompany} />}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint }) {
