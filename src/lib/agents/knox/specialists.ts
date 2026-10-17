@@ -87,7 +87,13 @@ import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 // v74: a footnote number glued to the front of a name comes off when the page prints the footnote
 // as its own line or cell ("1Monthly fee of $5.95 applies ..." is "Monthly fee";
 // `withoutLeadingFootnoteMark`). 35 live fees and 51 raw reads in two days carried one on Oct 16.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 74 } as const;
+// v75: the recurring name families the 62-bank answer key showed held or unread (`RECALL_FAMILY_PATTERNS`:
+// rush shipping, mortgage payoff/satisfaction/reconveyance, mortgage processing, club withdrawals and
+// short-window closures, wires "within the U.S.", IRA withdrawals and transfers, assisted loan
+// payments, skip payments, mobile check deposit), and
+// one price for a "debit or credit card" is the debit card's. Every current copy read before v75 is
+// read once more (`KNOX_STALE_READ_BELOW_VERSION`).
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 75 } as const;
 
 export interface SpecialistRun {
   strategy: string;

@@ -124,7 +124,8 @@ interface FeePattern {
  * file them; loan refinancing and document fees -> other lending). Returned statements stay
  * held: the keys file them as paper statements, a featured fee they would skew. The hand-checked answer keys file these
  * lines as "unmapped", so the gate re-files them with `foldedCategory` (answer-key-gate.ts).
- * Kept last in FEE_PATTERNS, so they only claim lines no other rule recognizes. Membership,
+ * Kept last in FEE_PATTERNS but for v75's recall families, so they only claim lines no other
+ * rule recognizes. Membership,
  * phone transfers, credit card and uncollected-funds fees have no right home and stay held.
  */
 export const FOLDED_PATTERNS: FeePattern[] = [
@@ -158,6 +159,92 @@ export const FOLDED_PATTERNS: FeePattern[] = [
     key: "other_lending_fee",
     pattern: /\bloan (?:refinanc\w*|document(?:ation)? (?:prep\w*|fee))\b/i,
   },
+];
+
+/**
+ * A loan's or a certificate's early closure is not a deposit account's, and neither is one with a
+ * window longer than a year ("within 36 months of opening it ... $750 plus any mortgage ... taxes").
+ */
+const NOT_AN_ACCOUNT_CLOSURE = String.raw`^(?!.*\b(?:loans?|heloc|line of credit|mortgage|equit(?:y|ies)|lease|certificates?|CDs?|IRA|terminate|refinanc\w*)\b)(?!.*\b(?:(?:1[3-9]|[2-9]\d)\s*months?|(?:[2-9]|\d{2})\s*years?)\b)`;
+/** A closure window of a year or less: "within 90 days", "less than 6 months", "(Open < 3 months)". */
+const SHORT_WINDOW = String.raw`(?:\b(?:less than|within|before|prior to)|\bw\/in|<)\s*(?:(?:\d{1,3}|thirty|sixty|ninety)\s*-?\s*days?|(?:[1-9]|1[0-2]|one|two|three|six|nine|twelve)\s*-?\s*months?|(?:1|one)\s*-?\s*years?)\b`;
+
+/**
+ * v75: the recurring name families the 62-bank answer key showed held as unclassified or not read
+ * (Knox recall diagnosis, 17 Oct 2026, `knox-recall-misses-2026-10-17.md`). Each files under one of
+ * the 50 types: a family the key files under a retired key (mortgage payoff, reconveyance, lien
+ * release, IRA distribution) takes that key's fold home (`RETIRED_CATEGORIES` in
+ * fee-fold.ts), never the retired key. Kept after every other name rule (see FEE_PATTERNS).
+ * Returned statements stay held (James's call since v26), and so does a bare "Wire Transfer Fee":
+ * about 1 in 5 such lines say incoming or international after the price, which a name rule cannot see.
+ * A family the Texas or seven-state gate keys leave unfiled (printouts, instant-issue cards, travel
+ * and reloadable cards, loan coupon books, remote deposit capture) stays held too, so the gates add
+ * no wrong read.
+ */
+export const RECALL_FAMILY_PATTERNS: FeePattern[] = [
+  // Rush shipping of a card or PIN: "Expedited PIN Only (by mail)", "Express Shipping (domestic U.S.
+  // only)", "Expedited shipping fee", "Rush Fee". A rushed check order, check payment, wire or
+  // statement is not a card's rush delivery. Left held: a bare "Expedited Delivery" (two keys file it
+  // as courier delivery, one as a rush card) and "Instant Issue" cards (the Texas and seven-state keys
+  // leave them unfiled).
+  {
+    key: "rush_card",
+    pattern:
+      /^(?![\s\S]*\b(?:checks?|payments?|bill ?pay\w*|wires?|statements?|loans?)\b)[\s\S]*(?:\b(?:expedit\w*|rush(?:ed)?)\s+(?:shipping|order|fees?|charges?|pin)\b|\bexpress shipping\b)/i,
+  },
+  // A mortgage's payoff demand, its satisfaction or lien release, and its reconveyance: the fold
+  // files mortgage_payoff, mortgage_lien_release and reconveyance as other lending.
+  {
+    key: "other_lending_fee",
+    pattern:
+      /\bsatisf(?:ied|action)\b[^|$]{0,25}\b(?:mortgages?|liens?|deeds? of trust)\b|\b(?:mortgages?|liens?)\b[^|$]{0,25}\bsatisf(?:ied|action)\b|\bpay-?offs?\b[^|$]{0,25}\b(?:demands?|requests?|statements?|quotes?|letters?)\b|\b(?:demand|request)\w*\b[^|$]{0,25}\bpay-?offs?\b|\breconvey\w*/i,
+  },
+  // A mortgage's own processing, underwriting and funding charges are what it costs to make it.
+  { key: "loan_origination", pattern: /\bmortgage\s+(?:processing|underwriting|funding)\b/i },
+  // A holiday or Christmas club's early withdrawal or close ("Holiday Club Withdrawal", "Early
+  // Christmas Account Withdrawal", "Christmas club early close fee"). A line that says when
+  // withdrawals are free ("Christmas Club (withdrawals free Oct.1 – Jan.1) | $2.50") stays held: the
+  // Texas key leaves it unfiled.
+  {
+    key: "early_closure",
+    pattern: /^(?![\s\S]*\bfree\b)[\s\S]*\b(?:christmas|xmas|holiday|vacation|club)\b[^|$]{0,25}\b(?:withdrawals?|early clos\w*|close-?outs?)\b/i,
+  },
+  // An account, savings or membership closed inside a window of a year or less ("Cancel Membership
+  // < 180 days", "Closed account during first 90 days", "Account closing (90 days from open date)").
+  // A loan's, a certificate's or an IRA's closure is not one (NOT_AN_ACCOUNT_CLOSURE).
+  {
+    key: "early_closure",
+    pattern: new RegExp(
+      NOT_AN_ACCOUNT_CLOSURE +
+        String.raw`(?=.*\b(?:accounts?|savings|shares?|membership|checking)\b).*\b(?:clos(?:e|ed|ing|ure)|cancel\w*)\b.{0,40}(?:` +
+        SHORT_WINDOW +
+        String.raw`|\b(?:within|during|in)\s+(?:the\s+)?first\s+(?:\d{1,3}\s*days?|year|(?:[1-9]|1[0-2]|one|three|six|nine|twelve)\s*months?)\b|\b\d{1,3}\s*days?\s+(?:from|of|after)\s+(?:the\s+)?open)`,
+      "i",
+    ),
+  },
+  // A savings or share account's own closure fee, as v14 files "Account Closing Fee".
+  { key: "early_closure", pattern: /^\W*(?:(?:share|primary|regular)\s+)?(?:savings|share|checking)\s+(?:account\s+)?closure\b/i },
+  // A wire sent within the U.S. is a domestic wire ("Wire Transfer Fee - Within U.S.A. (per item)").
+  {
+    key: "wire_domestic_outgoing",
+    pattern: /^(?![\s\S]*\b(?:in|incoming|inbound|receiv\w*)\b)[\s\S]*\bwires?\b[^|$]{0,30}\bwithin\s+(?:the\s+)?(?:U\.?S\.?A?\.?|United States)(?!\w)/i,
+  },
+  // An IRA's withdrawal, distribution, transfer out or closing closes out (part of) it; the fold
+  // files ira_distribution as IRA termination.
+  { key: "ira_termination", pattern: /\bIRA\b[^|$]{0,40}\b(?:withdrawals?|distributions?|transferr?ed|closed|close-?outs?)\b/i },
+  // A loan payment made with a person's help is the loan's own servicing fee ("Agent-Supported Loan
+  // Payment Fee", "Bank Assisted Loan Payment Funds Transfer"). Coupon books stay held: the
+  // seven-state key leaves "Loan Coupon Book Fee" unfiled.
+  {
+    key: "other_lending_fee",
+    pattern: /\b(?:bank|agent|staff|teller|employee|branch)[- ](?:assisted|supported)\b[^|$]{0,20}\bloan payments?\b/i,
+  },
+  // "Skip Payment Fee", "Loan Skip Payment Fee", "Skip Payment for each Loan" (the v5 rule reads
+  // "skip-a-pay"). "Skip-a-Loan payment" stays out: one key files it as a late fee.
+  { key: "other_lending_fee", pattern: /\bskip[- ]payments?\b/i },
+  // Mobile deposit under its other names ("Mobile Check Deposit", "deposit via mobile"). Remote
+  // deposit capture stays held: a business service the seven-state key leaves unfiled.
+  { key: "mobile_deposit", pattern: /\bmobile check deposits?\b|\bdeposits? (?:by|via|through|using) mobile\b/i },
 ];
 
 /** The folded category for a line no earlier rule names, or null. */
@@ -442,6 +529,12 @@ export const FEE_PATTERNS: FeePattern[] = [
   { key: "continuous_od", pattern: /\b(?:continuous|continued|daily|sustained)\s+negative balance\b/i },
   { key: "nsf", pattern: /\binsufficient items?\b/i },
   ...FOLDED_PATTERNS,
+  // v75: the recurring name families the 62-bank answer key showed held as unclassified or not
+  // read at all (Knox recall diagnosis, 17 Oct 2026). Each files under one of the 50 types (a
+  // retired key's fold home, never the retired key). Last, after the fold too, so they only claim
+  // lines no rule above names: a club's excess withdrawals and a faxed payoff request stay where
+  // the fold files them. Returned statements stay held (James's call since v26).
+  ...RECALL_FAMILY_PATTERNS,
 ];
 
 /**
@@ -457,14 +550,6 @@ export const FEE_PATTERNS: FeePattern[] = [
  * reads them the same way. Off, only the extract step's read-only preview applies them.
  */
 export const KNOX_HELD_NAME_RULES_LIVE = false;
-
-/**
- * A loan's or a certificate's early closure is not a deposit account's, and neither is one with a
- * window longer than a year ("within 36 months of opening it ... $750 plus any mortgage ... taxes").
- */
-const NOT_AN_ACCOUNT_CLOSURE = String.raw`^(?!.*\b(?:loans?|heloc|line of credit|mortgage|equit(?:y|ies)|lease|certificates?|CDs?|IRA|terminate|refinanc\w*)\b)(?!.*\b(?:(?:1[3-9]|[2-9]\d)\s*months?|(?:[2-9]|\d{2})\s*years?)\b)`;
-/** A closure window of a year or less: "within 90 days", "less than 6 months", "(Open < 3 months)". */
-const SHORT_WINDOW = String.raw`(?:\b(?:less than|within|before|prior to)|\bw\/in|<)\s*(?:(?:\d{1,3}|thirty|sixty|ninety)\s*-?\s*days?|(?:[1-9]|1[0-2]|one|two|three|six|nine|twelve)\s*-?\s*months?|(?:1|one)\s*-?\s*years?)\b`;
 
 export const HELD_NAME_PATTERNS: FeePattern[] = [
   { key: "stop_payment", pattern: /\bstop[- ]?pay\b(?![- ]?ments?)|\bstop p(?:y)?mts?\b/i },
@@ -744,7 +829,8 @@ export function classifyPatternKey(value: string): string | null {
     key = "late_payment";
   }
   // Credit card fees are lending fees, not deposit-account card fees.
-  if ((key === "card_replacement" || key === "rush_card") && /\bcredit cards?\b/i.test(text)) return null;
+  // v75: one price for a debit or credit card ("Debit Card or Credit Card Replacement") is the debit card's too.
+  if ((key === "card_replacement" || key === "rush_card") && /\bcredit cards?\b/i.test(text) && !/\bdebit\b/i.test(text)) return null;
   // A book transfer inside the bank is not a wire.
   if (key?.startsWith("wire_") && /\bbook transfer\b/i.test(text)) return null;
   // Reopening a closed account is not an early-closure fee.
