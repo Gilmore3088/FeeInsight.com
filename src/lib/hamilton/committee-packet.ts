@@ -144,6 +144,8 @@ export interface PacketExhibit extends Omit<ReportExhibit, "id"> {
   id: PacketExhibitId;
   /** Said once when the exhibit has no rows. */
   empty: string | null;
+  /** The kinds of source behind the exhibit, for its source line ("published fee schedules"). */
+  source: string;
 }
 
 export interface PriceYieldPoint {
@@ -164,6 +166,8 @@ export interface PriceYield {
   medianFee: number | null;
   medianIncome: number | null;
   peersCompared: number;
+  /** The peer group the fee was compared with. */
+  peerLabel: string;
 }
 
 // ─── Formatting ──────────────────────────────────────────────────────────────
@@ -182,6 +186,14 @@ export function filedDollars(dollars: number): string {
   if (abs >= 1_000_000) return `$${(dollars / 1_000_000).toFixed(1)} million`;
   return `$${Math.round(dollars).toLocaleString("en-US")}`;
 }
+
+/** A placement that starts a cell or sentence: "At the 60th percentile of 5 peers". */
+export function capitalize(text: string): string {
+  return text ? text[0].toUpperCase() + text.slice(1) : text;
+}
+
+const SCHEDULES = "published fee schedules";
+const FILINGS = "FDIC call reports and NCUA 5300 reports";
 
 function span(lo: number, hi: number): string {
   return Math.abs(lo - hi) < 0.005 ? packetMoney(lo) : `${packetMoney(lo)} to ${packetMoney(hi)}`;
@@ -323,7 +335,16 @@ function ownCell(fee: PacketFeeInput, notes: Footnotes, input: CommitteePacketIn
   return `${packetMoney(fee.current)}${range} [${n}]`;
 }
 
+/** The group most fees were compared with: the Settings group when set, else the commonest label. */
+function mainPeerGroup(input: CommitteePacketInput): string {
+  if (input.peerSetLabel) return input.peerSetLabel;
+  const counts = new Map<string, number>();
+  for (const f of input.fees) counts.set(f.peerLabel, (counts.get(f.peerLabel) ?? 0) + 1);
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "Default peer group";
+}
+
 function positionsExhibit(input: CommitteePacketInput, notes: Footnotes): PacketExhibit {
+  const group = mainPeerGroup(input);
   const rows = input.fees.map((fee) => {
     const sorted = fee.peers.map((p) => p.amount).sort((a, b) => a - b);
     const n = sorted.length;
@@ -338,27 +359,28 @@ function positionsExhibit(input: CommitteePacketInput, notes: Footnotes): Packet
     const band = enough ? `${span(quantile(sorted, 0.25), quantile(sorted, 0.75))} ${refs([peerNote as number])}` : n ? `Too few peers (${n})` : NONE_FOUND;
     const median = enough ? `${packetMoney(quantile(sorted, 0.5))}, median of ${n} peers ${refs([peerNote as number])}` : n ? `Too few peers (${n})` : NONE_FOUND;
     let place = fee.current === null ? NOT_PUBLISHED : NONE_FOUND;
-    let below = NONE_FOUND;
-    let above = NONE_FOUND;
+    let nearest = NONE_FOUND;
     if (fee.current !== null && n) {
       const check = checkPosition(fee.current, asPositionPeers(fee.peers));
       const byId = new Map(fee.peers.map((p) => [p.institutionId, p]));
-      place = `${check.placement}; ${check.less} charge less, ${check.same} the same, ${check.more} more`;
-      below = neighbourCell(check.below, notes, byId);
-      above = neighbourCell(check.above, notes, byId);
+      place = `${capitalize(check.placement)}; ${check.less} charge less, ${check.same} about the same, ${check.more} more`;
+      nearest = `Below: ${neighbourCell(check.below, notes, byId)} · Above: ${neighbourCell(check.above, notes, byId)}`;
     }
-    return [feeName(fee.feeCategory), ownCell(fee, notes, input), band, median, place, below, above, fee.peerLabel];
+    // A fee that widened to another group says so in its own row.
+    const name = fee.peerLabel === group ? feeName(fee.feeCategory) : `${feeName(fee.feeCategory)} (compared with ${fee.peerLabel})`;
+    return [name, ownCell(fee, notes, input), band, median, place, nearest];
   });
   return {
     id: "peer_range",
     title: `${input.institutionName}'s watched fees against its peers`,
     subtitle: input.feeListSource === "watchlist"
-      ? "The fees saved on your watchlist, each against the peers it was compared with."
-      : `No fees are saved on your watchlist, so the packet shows the institution's own published fees (up to ${MAX_PACKET_FEES}).`,
-    columns: ["Fee", input.institutionName, "Peers' middle 50%", "Peer median", "Where it sits", "Nearest peer below", "Nearest peer above", "Compared with"],
+      ? `The fees saved on your watchlist, compared with ${group}.`
+      : `Watched fees: None found, so the packet shows the institution's own published fees (up to ${MAX_PACKET_FEES}), compared with ${group}.`,
+    columns: ["Fee", input.institutionName, "Peers' middle 50%", "Peer median", "Where it sits", "Nearest peers"],
     rows,
     note: "One comparison value per institution: the median of its published amounts for the fee, or the highest tier for overdraft. The middle 50% and median are worked out from the peers' values; no institution necessarily charges them.",
     empty: rows.length ? null : NONE_FOUND,
+    source: SCHEDULES,
   };
 }
 
@@ -378,7 +400,7 @@ function matrixExhibit(input: CommitteePacketInput, notes: Footnotes): PacketExh
     : null;
   const ownRow = [
     input.institutionName,
-    ...input.fees.map((f) => (f.current === null ? "Not published" : packetMoney(f.current))),
+    ...input.fees.map((f) => (f.current === null ? NOT_PUBLISHED : packetMoney(f.current))),
     ownNote ? refs([ownNote]) : NONE_FOUND,
   ];
   const rows = shown.map(([id, entry]) => {
@@ -386,7 +408,7 @@ function matrixExhibit(input: CommitteePacketInput, notes: Footnotes): PacketExh
     const n = notes.schedule(id, entry.name, values.flatMap((v) => v.sourceDocumentIds), values.flatMap((v) => v.documentUrls), values.map((v) => v.publishedAt));
     return [entry.name, ...input.fees.map((f) => {
       const v = entry.values.get(f.feeCategory);
-      return v ? packetMoney(v.amount) : "Not published";
+      return v ? packetMoney(v.amount) : NOT_PUBLISHED;
     }), refs([n])];
   });
   return {
@@ -397,8 +419,9 @@ function matrixExhibit(input: CommitteePacketInput, notes: Footnotes): PacketExh
       : `${ranked.length} ${ranked.length === 1 ? "peer" : "peers"}, those publishing the most of these fees first.`,
     columns: ["Institution", ...input.fees.map((f) => feeName(f.feeCategory)), "Source"],
     rows: ranked.length ? [ownRow, ...rows] : [],
-    note: "\"Not published\" means the fee is not on that institution's published schedule in the index; it is never read as $0.",
+    note: "\"Not found in published schedules\" means the fee is not on that institution's published schedule in the index. It is never read as $0.",
     empty: ranked.length ? null : NONE_FOUND,
+    source: SCHEDULES,
   };
 }
 
@@ -438,7 +461,7 @@ function movesExhibit(input: CommitteePacketInput, notes: Footnotes): PacketExhi
   const firstOnly = q?.kind === "first"
     ? `Hamilton stored its first quarterly copy for ${input.institutionName} in ${quarterLabel(q.quarter)}; the quarter-on-quarter comparison starts with the next copy.`
     : q === null
-      ? "Hamilton has no stored quarterly copy for this institution yet."
+      ? "Stored quarterly copies for this institution: None found."
       : null;
   return {
     id: "competitor_moves",
@@ -448,13 +471,14 @@ function movesExhibit(input: CommitteePacketInput, notes: Footnotes): PacketExhi
     rows,
     note: [firstOnly, "A peer's change is listed only when its own schedule bears it out, and only for the fees and peers in this packet."].filter(Boolean).join(" "),
     empty: rows.length ? null : NONE_FOUND,
+    source: q?.kind === "diff" ? `Hamilton's stored quarterly copies and ${SCHEDULES}` : SCHEDULES,
   };
 }
 
 function incomeExhibit(input: CommitteePacketInput, notes: Footnotes): PacketExhibit {
   const f = input.financials;
   if (!f) {
-    return { id: "fee_income_trend", title: "Filed fee income", subtitle: "Deposit service charge income from the institution's own filings.", columns: ["Quarter ending", input.institutionName], rows: [], note: null, empty: NOT_FILED };
+    return { id: "fee_income_trend", title: "Filed fee income", subtitle: "Deposit service charge income from the institution's own filings.", columns: ["Quarter ending", input.institutionName], rows: [], note: null, empty: NOT_FILED, source: FILINGS };
   }
   const own = notes.source(`filing:${input.institutionId}`, {
     label: `${input.institutionName}, ${f.label}`,
@@ -488,6 +512,7 @@ function incomeExhibit(input: CommitteePacketInput, notes: Footnotes): PacketExh
     rows,
     note: "Deposit service charge income for the whole institution as filed, each quarter on its own; not the income from any one fee.",
     empty: rows.length ? null : NOT_FILED,
+    source: FILINGS,
   };
 }
 
@@ -512,6 +537,7 @@ function rulesExhibit(input: CommitteePacketInput, notes: Footnotes): PacketExhi
     rows,
     note: "Listed, not interpreted. Only items whose topics bear on the fees in this packet appear.",
     empty: rows.length ? null : NONE_FOUND,
+    source: "the Federal Register, state legislatures via Open States, and federal and state enforcement action lists",
   };
 }
 
@@ -558,8 +584,12 @@ export function priceAndYield(input: CommitteePacketInput): PriceYield | null {
     medianFee,
     medianIncome,
     peersCompared: peers.length,
+    peerLabel: fee.peerLabel,
   };
 }
+
+/** The price-and-yield exhibit's main limitation; the screen shows it before the chart. */
+export const PRICE_YIELD_LIMIT = "Income is the whole institution's deposit service charge income, not this fee's.";
 
 export const READING_TEXT: Record<NonNullable<PriceYieldPoint["reading"]>, string> = {
   fee_high_income_low: "Fee above the peer median, income below it",
@@ -588,18 +618,19 @@ function priceYieldExhibit(input: CommitteePacketInput, py: PriceYield | null, n
     ];
   });
   const medians = py && py.medianFee !== null && py.medianIncome !== null
-    ? `Peer medians: fee ${packetMoney(py.medianFee)} and income ${packetMoney(py.medianIncome)} per $10,000 of assets, each the median of ${py.peersCompared} peers.`
+    ? `Peer medians: fee ${packetMoney(py.medianFee)} and income ${packetMoney(py.medianIncome)} per $10,000 of assets, each the median of ${py.peersCompared} peers (${py.peerLabel}).`
     : py
       ? `Too few peers with both figures for medians (${py.peersCompared}).`
       : null;
   return {
     id: "price_and_yield",
     title: py ? `${py.feeName}: published fee beside filed fee income` : "Published fee beside filed fee income",
-    subtitle: py ? `Filings for the quarter ending ${readerAsOf(py.quarter)}. ${medians}` : "No peer has both a published fee and a filing on record.",
+    subtitle: py ? `Filings for the quarter ending ${readerAsOf(py.quarter)}. ${medians}` : "Peers with both a published fee and a filing: None found.",
     columns: ["Institution", py ? py.feeName : "Fee", "Service charge income, quarter", "Income per $10,000 of assets", "Against the peer medians"],
     rows,
-    note: "Income is the whole institution's deposit service charge income, not this fee's. Income per $10,000 of assets puts institutions of different sizes on one scale. Peers filing for another quarter are left out.",
+    note: `${PRICE_YIELD_LIMIT} Income per $10,000 of assets puts institutions of different sizes on one scale. Peers filing for another quarter are left out.`,
     empty: rows.length ? null : NONE_FOUND,
+    source: `${SCHEDULES} and FDIC/NCUA filings`,
   };
 }
 
@@ -616,8 +647,8 @@ function positionExhibit(input: CommitteePacketInput, notes: Footnotes): { exhib
   const rows = [
     ["Proposed fee", packetMoney(check.proposed)],
     ["Peers compared", `${check.n}${mark}`],
-    ["Where it would sit", check.placement],
-    ["Peers charging less, the same, more", `${check.less}, ${check.same}, ${check.more}`],
+    ["Where it would sit", capitalize(check.placement)],
+    ["Peers charging less, about the same, more", `${check.less}, ${check.same}, ${check.more}`],
     ["Nearest peer below", neighbourCell(check.below, notes, byId)],
     ["Nearest peer above", neighbourCell(check.above, notes, byId)],
     ...(fee.current !== null ? [["Today's comparison value", ownCell(fee, notes, input)]] : []),
@@ -631,6 +662,7 @@ function positionExhibit(input: CommitteePacketInput, notes: Footnotes): { exhib
       rows,
       note: "Places an entered price among the peers' published values; it says nothing about whether to charge it.",
       empty: null,
+      source: SCHEDULES,
     },
     check: { feeCategory: fee.feeCategory, feeName: feeName(fee.feeCategory), peerLabel: fee.peerLabel, check },
   };
@@ -659,7 +691,7 @@ export function buildCommitteePacket(input: CommitteePacketInput): CommitteePack
   const keyFigures: PacketKeyFigure[] = [
     { value: `${published} of ${input.fees.length}`, label: "watched fees on the institution's published schedule" },
     { value: peerIds.size.toLocaleString("en-US"), label: "peers compared across these fees" },
-    ...(placed.length ? [{ value: `${above} above, ${below} below`, label: `the peers' middle 50%, of ${placed.length} fees with enough peers` }] : []),
+    ...(placed.length ? [{ value: `${above} above · ${below} below`, label: `watched fees outside the peers' middle 50% (${placed.length} with enough peers)` }] : []),
     { value: moveRows ? String(moveRows) : NONE_FOUND, label: `moves since ${readerAsOf(input.changesSince)}` },
   ];
   const peerGroupLabel = input.peerSetLabel ?? input.fees[0]?.peerLabel ?? "Default peer group";
@@ -682,7 +714,7 @@ export function buildCommitteePacket(input: CommitteePacketInput): CommitteePack
         : `Peers: the narrowest default group (state, charter, size and district, then wider) where at least ${MIN_PEERS_FOR_POSITION} other institutions publish each fee, named in Exhibit 1.`,
       "One comparison value per institution: the median of its published amounts for the fee, or the highest tier for overdraft. Fees stated as a rate are not in these tables.",
       "Fees are live published fees, each verified against the institution's own schedule; read on the date at the top.",
-      `A percentile needs at least ${MIN_PEERS_FOR_POSITION} peers. "Where it sits" counts the peers charging less, the same and more.`,
+      `A percentile needs at least ${MIN_PEERS_FOR_POSITION} peers. "Where it sits" counts the peers charging less, about the same and more.`,
       "Fee income comes from FDIC call reports and NCUA 5300 reports as filed; NCUA year-to-date figures are split into quarters.",
       "Rules, bills and enforcement actions are listed as published, not interpreted.",
     ],
@@ -701,7 +733,7 @@ export function committeePacketReport(packet: CommitteePacket): ReportSummaryRes
     snapshot: [],
     strategicRationale: [figures.join(" "), ...packet.method].join("\n\n"),
     tradeoffs: [],
-    recommendation: "Figures are read live on the date above and are not saved. Each number carries a footnote; the numbered sources are listed below. Where Hamilton holds no data a cell says so; it is never shown as $0.",
+    recommendation: "Figures are read live on the date above and are not saved. Each number carries a footnote; the numbered sources are listed below. Where Hamilton finds no data, the cell says \"None found\" or \"Not found in published schedules\", never $0.",
     implementationNotes: [`Peer group: ${packet.peerGroupLabel}.`],
     exhibits: packet.exhibits.map((e) => ({
       id: e.id,
@@ -709,7 +741,7 @@ export function committeePacketReport(packet: CommitteePacket): ReportSummaryRes
       subtitle: e.subtitle,
       columns: e.columns,
       rows: e.rows.length ? e.rows : [[e.empty ?? NONE_FOUND, ...e.columns.slice(1).map(() => "")]],
-      note: e.note,
+      note: [e.note, `Source: ${e.source}, read ${readerAsOf(packet.generatedAt)}.`].filter(Boolean).join(" "),
     })),
     sources: packet.footnotes.map((f) => ({ label: `[${f.n}] ${f.label}`, detail: f.detail, url: f.url })),
     exportControls: { pdfEnabled: true, shareEnabled: false },

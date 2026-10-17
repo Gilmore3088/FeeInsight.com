@@ -1,7 +1,7 @@
 /**
  * Position check: where one proposed fee would sit among a bank's peers. Pure and client-safe.
  *
- * It reports the percentile, how many peers charge less, the same or more, and the named peers
+ * It reports the percentile, how many peers charge less, about the same or more, and the named peers
  * just below and just above the price, each with the published amount Hamilton holds for them.
  * It never says whether the price is a good one: the reader brings the price, Hamilton places it.
  */
@@ -37,7 +37,7 @@ export interface PositionCheck {
   more: number;
   /** Mid-rank percentile; null below MIN_PEERS_FOR_POSITION peers. */
   percentile: number | null;
-  /** "at the 62nd percentile of 14 peers", or why there is none. */
+  /** "at the 62nd percentile of 14 peers", or why there is none; lower case, so it can follow a colon. */
   placement: string;
   below: PositionNeighbours | null;
   above: PositionNeighbours | null;
@@ -72,8 +72,8 @@ export function checkPosition(proposed: number, peers: readonly PositionPeer[]):
   const percentile = pricePosition(proposed, amounts);
   const placement = percentile === null
     ? n === 0
-      ? "No peer publishes this fee"
-      : `Too few peers for a percentile (${n} publish this fee; Hamilton needs ${MIN_PEERS_FOR_POSITION})`
+      ? "not found in any peer's published schedule"
+      : `too few peers for a percentile: ${n} publish this fee, and a percentile needs ${MIN_PEERS_FOR_POSITION}`
     : placeAmong(percentile, n);
   const lower = peers.filter((p) => p.amount < proposed - SAME);
   const higher = peers.filter((p) => p.amount > proposed + SAME);

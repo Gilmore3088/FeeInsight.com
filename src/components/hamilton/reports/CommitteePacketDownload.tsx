@@ -37,7 +37,7 @@ export function CommitteePacketDownload({
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "PDF download failed.");
+      setError(e instanceof Error ? e.message : "The PDF could not be prepared. Retry the download.");
     } finally {
       setBusy(false);
     }

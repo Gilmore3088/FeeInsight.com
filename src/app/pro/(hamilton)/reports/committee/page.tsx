@@ -2,6 +2,7 @@
 export const dynamic = "force-dynamic";
 
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
@@ -36,9 +37,9 @@ export default async function CommitteePacketPage({
         <MemoHeader kicker="Reports" title="Pricing committee packet" />
         <Callout>
           Choose a research institution first.{" "}
-          <a href="/pro/settings" className="font-medium text-terra-text underline">
+          <Link href="/pro/settings" className="font-medium text-terra-text underline">
             Choose an institution
-          </a>
+          </Link>
         </Callout>
       </MemoPage>
     );

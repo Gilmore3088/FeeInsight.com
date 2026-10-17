@@ -36,8 +36,8 @@ describe("checkPosition", () => {
 
   it("gives no percentile for too few peers or none", () => {
     expect(checkPosition(30, peers.slice(0, 3))).toMatchObject({ percentile: null, n: 3 });
-    expect(checkPosition(30, peers.slice(0, 3)).placement).toMatch(/Too few peers/);
-    expect(checkPosition(30, []).placement).toBe("No peer publishes this fee");
+    expect(checkPosition(30, peers.slice(0, 3)).placement).toBe("too few peers for a percentile: 3 publish this fee, and a percentile needs 5");
+    expect(checkPosition(30, []).placement).toBe("not found in any peer's published schedule");
   });
 });
 

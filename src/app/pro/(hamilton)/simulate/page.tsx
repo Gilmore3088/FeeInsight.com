@@ -32,6 +32,7 @@ import {
   fmtMoney,
   fmtSignedMoney,
   fmtSignedPrice,
+  dayDate,
 } from "@/components/hamilton/memo/memo";
 
 export const metadata: Metadata = { title: "Try a price" };
@@ -150,10 +151,15 @@ export default async function ModelPage({ searchParams }: PageProps) {
   const csvHref = hrefWithInstitutionContext(`/pro/research/peers?fee=${encodeURIComponent(ws.fee)}&layer=${layer.key}`, instId);
 
   // Position check: the proposed fee among the same layer's named institutions.
+  // The count comes from the institutions actually compared; a layer whose members are not all
+  // listed (members.length < n) has no named list to place a price in, so the panel says so.
+  const members = layer.members ?? [];
+  const membersComplete = members.length > 0 && members.length >= layer.n;
   const proposed = parseProposedFee(params.check);
-  const positionCheck = proposed === null
+  const positionCheck = proposed === null || !membersComplete
     ? null
-    : checkPosition(proposed, (layer.members ?? []).map((m) => ({ institutionId: m.institutionId, name: m.institutionName, amount: m.amount, publishedAt: m.publishedAt, documentUrl: m.documentUrls[0] ?? null })));
+    : checkPosition(proposed, members.map((m) => ({ institutionId: m.institutionId, name: m.institutionName, amount: m.amount, publishedAt: m.publishedAt, documentUrl: m.documentUrls[0] ?? null })));
+  const readOn = dayDate(new Date().toISOString());
 
   const row = "border-b border-warm-200";
   const head = "px-4 py-2.5 text-left text-xs font-medium uppercase tracking-[0.08em] text-warm-600";
@@ -338,16 +344,6 @@ export default async function ModelPage({ searchParams }: PageProps) {
         <p className="text-xs text-warm-600">Volume is held steady at every price; Hamilton doesn&apos;t estimate how customers respond.</p>
       </MemoSection>
 
-      <PositionCheckPanel
-        action="/pro/simulate"
-        hidden={{ fee: ws.fee, layer: layer.key, prices: params.prices, paid: params.paid, waiver: params.waiver, est: fromFiling ? "filing" : null, instId }}
-        defaultValue={params.check}
-        check={positionCheck}
-        feeName={ws.feeName}
-        peerLabel={`${layer.label}: ${layer.scope} (${layer.n})`}
-        invalid={Boolean(params.check) && proposed === null}
-      />
-
       {positionExhibit ? (
         <ExhibitView exhibit={positionExhibit} />
       ) : (
@@ -359,6 +355,18 @@ export default async function ModelPage({ searchParams }: PageProps) {
           <DistributionBars amounts={layer.amounts} own={current} tested={prices.length === 1 ? prices[0] : null} />
         </Exhibit>
       )}
+
+      <PositionCheckPanel
+        action="/pro/simulate#position-check"
+        hidden={{ fee: ws.fee, layer: layer.key, prices: params.prices, paid: params.paid, waiver: params.waiver, est: fromFiling ? "filing" : null, instId }}
+        defaultValue={params.check}
+        check={positionCheck}
+        feeName={ws.feeName}
+        peerLabel={`${layer.label}: ${layer.scope} (${positionCheck?.n ?? members.length} compared)`}
+        readOn={readOn}
+        invalid={Boolean(params.check) && proposed === null}
+        unavailable={membersComplete ? null : "Peer list not available for this group, so a proposed fee cannot be placed by name. Choose another comparison below."}
+      />
 
       <AuditPanel trail={trail} downloadHref={csvHref} />
 

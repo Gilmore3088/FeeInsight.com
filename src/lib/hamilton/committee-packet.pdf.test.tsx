@@ -59,6 +59,6 @@ it("renders the screen with the same exhibits, a footnote list and the position 
     fees: [{ category: "overdraft", name: "Overdraft" }],
     selected: { yieldFee: null, positionFee: "overdraft", positionPrice: "35", invalidPrice: false },
   }));
-  for (const phrase of ["Exhibit 1", "Exhibit 6", "median of 5 peers", "id=\"fn-1\"", "Position check", "Nearest peer above", "How this packet is built"]) expect(html).toContain(phrase);
+  for (const phrase of ["Exhibit 1", "Exhibit 6", "median of 5 peers", "id=\"fn-1\"", "Position check", "Nearest peer above", "How this packet is built", "Exhibit 7", "Back to Exhibit 1", "action=\"/pro/reports/committee#position\"", "Published fee schedules, read Oct 17, 2026 · notes"]) expect(html).toContain(phrase);
   expect(html).not.toMatch(/you should|Hamilton Pro/i);
 });

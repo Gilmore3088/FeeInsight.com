@@ -437,15 +437,16 @@ export function ReportWorkspace({
         </p>
       )}
 
-      {selectedInstitution && !reportGenerated && (
+      {selectedInstitution && (
         <Link
-          href={`/pro/reports/committee?instId=${encodeURIComponent(String(selectedInstitution.id))}`}
-          className="flex flex-col gap-0.5 rounded-lg border border-warm-300 bg-warm-50 px-5 py-4 no-underline hover:border-warm-500"
+          href={hrefWithInstitutionContext("/pro/reports/committee", String(selectedInstitution.id))}
+          className="flex flex-col gap-0.5 rounded-lg border border-warm-300 bg-warm-50 px-5 py-4 no-underline hover:border-warm-500 focus:outline-none focus-visible:border-terra focus-visible:ring-2 focus-visible:ring-terra"
         >
           <span className="text-base font-semibold text-warm-900">Pricing committee packet</span>
           <span className="text-sm text-warm-700">
             Watched fees against your peers, what moved since last quarter, filed fee income and new rules, each footnoted to its source.
           </span>
+          <span className="mt-1 text-sm font-medium text-terra-text">Open the packet →</span>
         </Link>
       )}
 
