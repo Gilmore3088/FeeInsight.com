@@ -24,7 +24,9 @@ const C = {
 const SANS = "Geist,Inter,'Helvetica Neue',Helvetica,Arial,sans-serif";
 const SERIF = SANS;
 // The site header logo (public/brand), served from the live site; mail clients block SVG, so PNG at 2x.
-const LOGO_URL = "https://feeinsight.com/brand/png/fee-insight-oneline@2x.png";
+// The email logo carries its own parchment background, so Gmail dark mode (which inverts
+// backgrounds but not images) keeps the navy wordmark readable.
+const LOGO_URL = "https://feeinsight.com/brand/png/fee-insight-oneline-email@2x.png";
 const MONO = "'Geist Mono','SFMono-Regular',Menlo,Consolas,monospace";
 
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -169,7 +171,7 @@ function renderEmail(automation, email) {
 <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:${C.sand};">${esc(email.preheader)}&#8199;&#65279;&#847;&#8199;&#65279;&#847;&#8199;&#65279;&#847;&#8199;&#65279;&#847;&#8199;&#65279;&#847;</div>
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:${C.sand};"><tr><td align="center" style="padding:24px 12px;">
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:100%;max-width:600px;background:${C.paper};">
-<tr><td style="padding:22px 32px 16px;border-bottom:2px solid ${C.ink};"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td style="white-space:nowrap;"><a href="https://feeinsight.com" style="text-decoration:none;"><img src="${LOGO_URL}" width="124" height="22" alt="Fee Insight" style="display:block;border:0;width:124px;height:22px;font-family:${SANS};font-size:18px;color:${C.ink};"></a></td><td align="right" style="font-family:${MONO};font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:${C.text2};">${esc(email.masthead || automation.masthead)}</td></tr></table></td></tr>
+<tr><td style="padding:22px 32px 16px;border-bottom:2px solid ${C.ink};"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td style="white-space:nowrap;"><a href="https://feeinsight.com" style="text-decoration:none;"><img src="${LOGO_URL}" width="128" height="25" alt="Fee Insight" style="display:block;border:0;width:128px;height:25px;font-family:${SANS};font-size:18px;color:${C.ink};"></a></td><td align="right" style="font-family:${MONO};font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:${C.text2};">${esc(email.masthead || automation.masthead)}</td></tr></table></td></tr>
 <tr><td style="padding:30px 32px 10px;">
 ${bodyHtml}
 </td></tr>
