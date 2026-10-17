@@ -1,7 +1,8 @@
 /**
  * The pricing committee brief on screen, set as the document it prints: a white sheet with the
- * assessment first (a restrained header, one conclusion, the three findings that matter most with
- * their uncertainty beside them, and the recommended next step), then the supporting exhibits. The
+ * assessment first (a restrained header, one conclusion, up to three benchmark differences selected
+ * for review with every limitation beside them, the comparisons to resolve first, and the recommended
+ * next step), then the supporting exhibits. The
  * evidence appendix sits below the sheet, one tap per table, with limitations, method and the
  * numbered sources. The PDF (CommitteePacketPdf) prints the same brief. A printable document: no
  * form sits in it; a proposed price is placed on Try a price (/pro/simulate). Server component.
@@ -333,7 +334,7 @@ export function CommitteePacketView({
 }) {
   const readOn = readerAsOf(packet.generatedAt);
   const sections = packetSections(packet);
-  const { conclusion, findings, nextStep } = packet.brief;
+  const { conclusion, findings, unresolved, impact, nextStep } = packet.brief;
   const sourceLine = (t: PacketTableData) => {
     const marks = tableMarks(t);
     return `${t.source[0].toUpperCase()}${t.source.slice(1)}, read ${readOn}${marks.length ? ` · notes ${noteRanges(marks)}` : ""}`;
@@ -390,27 +391,47 @@ export function CommitteePacketView({
 
           {findings.length ? (
             <div className="mt-10">
-              <Label>Findings</Label>
+              <Label>Benchmark differences selected for review</Label>
               <ol className="mt-3">
                 {findings.map((f, i) => (
-                  <li key={f.feeCategory} className="grid gap-x-8 gap-y-3 border-t border-warm-200 py-5 lg:grid-cols-[1fr_13rem]">
+                  <li key={f.feeCategory} className={`grid gap-x-8 gap-y-3 border-t border-warm-200 py-5 ${findings.some((g) => g.caveats.length) ? "lg:grid-cols-[1fr_13rem]" : ""}`}>
                     <div className="flex gap-3">
                       <span className="text-lg font-bold text-terra-text">{i + 1}</span>
                       <div className="flex flex-col gap-1.5">
                         <p className="text-lg font-semibold leading-snug text-warm-900">{f.statement}</p>
                         <p className={`text-base leading-relaxed text-warm-900 ${ANSWER_TYPE.num}`}>{withMarks(f.evidence)}</p>
-                        {f.why ? <p className="text-base leading-relaxed text-warm-600">{f.why}</p> : null}
                       </div>
                     </div>
-                    {f.uncertainty ? (
-                      <aside aria-label="Uncertainty" className="ml-8 border-l-2 border-terra pl-3 lg:ml-0">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-terra-text">Uncertainty</p>
-                        <p className="mt-1 text-sm leading-relaxed text-warm-700">{f.uncertainty}</p>
+                    {f.caveats.length ? (
+                      <aside aria-label="Limits" className="ml-8 border-l-2 border-terra pl-3 lg:ml-0">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-terra-text">Limits</p>
+                        {f.caveats.map((c) => (
+                          <p key={c} className="mt-1 text-sm leading-relaxed text-warm-700">
+                            {c}
+                          </p>
+                        ))}
                       </aside>
                     ) : null}
                   </li>
                 ))}
               </ol>
+              {impact ? <p className="border-t border-warm-200 pt-4 text-base leading-relaxed text-warm-600">{impact}</p> : null}
+            </div>
+          ) : null}
+
+          {unresolved.length ? (
+            <div className="mt-6">
+              <Label>Comparisons to resolve first</Label>
+              <ul className="mt-3">
+                {unresolved.map((u) => (
+                  <li key={u.feeCategory} className="grid gap-x-6 gap-y-1 border-t border-warm-200 py-3 sm:grid-cols-[14rem_1fr]">
+                    <p className={`text-base font-semibold text-warm-900 ${ANSWER_TYPE.num}`}>
+                      {u.fee}: {u.position}
+                    </p>
+                    <p className="text-sm leading-relaxed text-warm-700">{u.caveats.join(" ")}</p>
+                  </li>
+                ))}
+              </ul>
             </div>
           ) : null}
 

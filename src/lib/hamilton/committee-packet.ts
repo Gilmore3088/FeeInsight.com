@@ -3,27 +3,25 @@
  * deterministic; the loader (committee-packet-data.ts) reads the data and this file only arranges it.
  *
  * A two-page executive briefing, then an optional evidence appendix:
- * 1. Executive brief (page one): one evidence-backed conclusion; the three findings that matter most,
- *    each with its numbers, why it matters and its one material uncertainty; and the recommended next
- *    step with its rationale. Findings are ranked by assessFees: how far the bank's fee sits from the
- *    peers' median, weighted by how much the fee matters (the index's headline fees weigh most), so a
- *    headline fee at the edge of the range can outrank a minor fee outside it.
+ * 1. Executive brief (page one): one evidence-backed conclusion; up to three benchmark differences
+ *    selected for review, each with its dollar gap, coverage and every limitation that applies, and
+ *    the decision they bear on; the comparisons to resolve before relying on them; and the recommended
+ *    next step (investigate, resolve, or retain and monitor) with its rationale. assessFees selects the
+ *    largest like-for-like differences by percentage gap from the peers' median, with no category
+ *    weight. That shows unusual prices, not business importance: volumes and waivers are not in the
+ *    data, so the brief says the impact is unknown and leaves the institution's priorities to it.
  * 2. Supporting exhibits (page two): every fee against the peers, and fee income per $10,000 of assets.
- * The tables below are the appendix: they back the brief and are never its identity.
- * 2. Competitive position: one compact row per fee (the bank's value, the peers' median with N, the
- *    middle 50%, where the bank sits, and how many peers publish it), and the peer fee changes that
- *    the peers' own schedules bear out.
- * 3. Financial context: the filed income trend against same-charter, same-size filers, and one
- *    normalized comparison (service charge income per $10,000 of total assets) with its denominator.
- * 4. Appendix: the full peer matrix, nearest peers, the bank's published amounts, rules, the
- *    price-and-yield table, the method and the numbered sources.
+ * 3. Evidence appendix: the full position table, the peer fee changes the peers' own schedules bear
+ *    out, the filed income trend, the normalized comparison with its denominator, the peer matrix,
+ *    nearest peers, the bank's published amounts, rules, the price-and-yield table, the method and
+ *    the numbered sources. The tables back the brief and are never its identity.
  *
  * An analysis with no data is one line under "Not available in this packet", never an empty table.
  * Missing history is never shown as stability: "no change" appears only when two stored quarterly
  * copies were compared. Hamilton is neutral here: the packet describes positions and asks
  * questions; it never recommends a fee.
  */
-import { FEE_TIERS, getDisplayName, getFeeTier } from "@/lib/fee-taxonomy";
+import { getDisplayName } from "@/lib/fee-taxonomy";
 import { readerAsOf } from "./board-brief";
 import { plainFeeName } from "./briefing-observations";
 import { directionalTitle } from "./workspace/names";
@@ -155,23 +153,31 @@ export interface PacketTable {
   ownFirst: boolean;
 }
 
-/** One of the brief's findings: what the position is, the numbers behind it, why it matters, and its doubt. */
+/** A benchmark difference selected for review: the position, its numbers, what it could bear on, its limits. */
 export interface PacketFinding {
   feeCategory: string;
   fee: string;
   /** The position in one sentence: "Outgoing domestic wire, at $30, is above all 9 peers." */
   statement: string;
-  /** The supporting numbers, with footnote marks. */
+  /** The dollar gap, the middle 50% and coverage, with footnote marks. */
   evidence: string;
-  /** Why the committee should weigh it; null when an earlier finding already said it. */
-  why: string | null;
-  /** The one material uncertainty, printed beside the finding; null when there is none. */
-  uncertainty: string | null;
+  /** Every limitation that applies, printed beside the finding; empty when none. */
+  caveats: string[];
 }
 
-/** What management should look into next, and why. An investigation, never a price. */
-export interface PacketNextStep {
+/** A difference the brief cannot rely on yet: several published amounts or a widened peer group. */
+export interface PacketUnresolved {
   feeCategory: string;
+  fee: string;
+  /** "$4, below all 10 peers". */
+  position: string;
+  caveats: string[];
+}
+
+/** What the committee could do next and why. Never a price change for its own sake. */
+export interface PacketNextStep {
+  kind: "investigate" | "resolve" | "retain";
+  feeCategory: string | null;
   action: string;
   rationale: string;
 }
@@ -273,8 +279,12 @@ export interface CommitteePacket {
   brief: {
     /** The main conclusion: one sentence, with footnote marks. */
     conclusion: string;
-    /** Up to three, most material first. */
+    /** Up to three like-for-like benchmark differences, largest percentage gap first. */
     findings: PacketFinding[];
+    /** Differences outside the middle 50% whose comparison is in doubt; kept out of the findings. */
+    unresolved: PacketUnresolved[];
+    /** What the selected differences bear on, and that their business impact is unknown; null with no findings. */
+    impact: string | null;
     nextStep: PacketNextStep | null;
     limitations: string[];
   };
@@ -591,24 +601,16 @@ export function inText(name: string): string {
   return name.split(" ").map((w) => (/^[A-Z]{2,}$/.test(w) ? w : w.toLowerCase())).join(" ");
 }
 
-const TIER_WEIGHT = { spotlight: 3, core: 2, extended: 1, comprehensive: 1 } as const;
-const HEADLINE_FEES = Object.values(FEE_TIERS).filter((t) => t === "spotlight").length;
 /** Fewer peers than this and one peer's change can move the median; said beside the finding. */
 const THIN_PEERS = 8;
 
-/** How far the bank's fee sits from the peers' median, in widths of their middle 50%. */
-function spread(r: FeeRead): number {
-  const width = Math.max((r.q3 as number) - (r.q1 as number), (r.med as number) * 0.1, 0.5);
-  return Math.abs((r.fee.current as number) - (r.med as number)) / width;
-}
-
-/** A placed fee's weight in the brief: distance from the median, scaled by how much the fee matters. */
-function materiality(r: FeeRead): number {
-  return TIER_WEIGHT[getFeeTier(r.fee.feeCategory)] * (Math.min(spread(r), 3) + (r.band === "within" ? 0 : 0.5));
-}
-
 function severalAmounts(r: FeeRead): boolean {
   return r.amounts.length > 1 && Math.abs(Math.min(...r.amounts) - Math.max(...r.amounts)) >= SAME;
+}
+
+/** A comparison in doubt: the bank's amount or the peer group is not like for like. */
+function questionable(r: FeeRead): boolean {
+  return severalAmounts(r) || r.widened;
 }
 
 /** Where the fee sits, in words: "above all 9 peers", "at the 85th percentile of 10 peers, above the middle 50%". */
@@ -620,13 +622,13 @@ function whereItSits(r: FeeRead): string {
   return `${at}, ${side}`;
 }
 
-function uncertaintyOf(r: FeeRead, group: string): string | null {
-  if (severalAmounts(r)) {
-    return `The schedule lists ${r.amounts.length} amounts (${span(Math.min(...r.amounts), Math.max(...r.amounts))}); the comparison uses ${packetMoney(r.fee.current as number)}. Another product's amount would move the position.`;
-  }
-  if (r.widened) return `Compared with ${r.fee.peerLabel}, because fewer than ${MIN_PEERS_FOR_POSITION} of ${group} publish it.`;
-  if (r.n < THIN_PEERS) return `Only ${r.n} peers publish it, so one peer's change can move the median.`;
-  return null;
+/** Every limitation on a fee's comparison, in the order a reader should weigh them. */
+function caveatsOf(r: FeeRead, group: string): string[] {
+  return [
+    ...(severalAmounts(r) ? [`The schedule lists ${r.amounts.length} amounts (${span(Math.min(...r.amounts), Math.max(...r.amounts))}); the comparison uses ${packetMoney(r.fee.current as number)}; another product's amount would change the position.`] : []),
+    ...(r.widened ? [`Compared with ${r.fee.peerLabel}, because fewer than ${MIN_PEERS_FOR_POSITION} of ${group} publish it.`] : []),
+    ...(r.n < THIN_PEERS ? [`Only ${r.n} peers publish it, so one peer's change can move the median.`] : []),
+  ];
 }
 
 /** "$6 (25%) above the peer median of $24". */
@@ -639,87 +641,101 @@ function gapToMedian(r: FeeRead): string {
   return `${packetMoney(Math.round(Math.abs(d) * 100) / 100)}${pct} ${d > 0 ? "above" : "below"} the peer median of ${packetMoney(med)}`;
 }
 
-function whyOf(r: FeeRead): string {
-  const tier = getFeeTier(r.fee.feeCategory);
-  if (tier === "spotlight") return `A headline fee: one of the ${HEADLINE_FEES} fees banks and credit unions are most often compared on.`;
-  if (tier === "core") return "A routine service fee, so its position weighs less than a headline fee's.";
-  return "A less common fee, so its position weighs least.";
+/** The gap as a share of the median: the ranking measure, the same for every fee. */
+function gapShare(r: FeeRead): number {
+  return Math.abs((r.fee.current as number) - (r.med as number)) / Math.max(r.med as number, 0.01);
 }
 
 function findingOf(r: FeeRead, group: string): PacketFinding {
+  const lower = inText(r.name);
   return {
     feeCategory: r.fee.feeCategory,
     fee: r.name,
-    statement: `${r.name}, at ${packetMoney(r.fee.current as number)}, is ${whereItSits(r)}.`,
-    evidence: `${capitalize(gapToMedian(r))}; middle 50% ${span(r.q1 as number, r.q3 as number)} ${refs([r.ownMark, r.peerMark])}`.trim(),
-    why: whyOf(r),
-    uncertainty: uncertaintyOf(r, group),
+    statement: `${capitalize(lower)}, at ${packetMoney(r.fee.current as number)}, is ${whereItSits(r)}.`,
+    evidence: `${capitalize(gapToMedian(r))}; middle 50% ${span(r.q1 as number, r.q3 as number)}; ${r.n} of ${r.groupTotal} peers publish it ${refs([r.ownMark, r.peerMark])}`.trim(),
+    caveats: caveatsOf(r, group),
   };
 }
 
-function nextStepOf(r: FeeRead, input: CommitteePacketInput): PacketNextStep {
+function investigate(r: FeeRead): PacketNextStep {
   const lower = inText(r.name);
   const amount = packetMoney(r.fee.current as number);
-  const vs = `At ${amount} against a median of ${packetMoney(r.med as number)}, it is ${whereItSits(r)}.`;
-  if (severalAmounts(r)) {
-    return {
-      feeCategory: r.fee.feeCategory,
-      action: `Confirm which ${lower} amount applies to the accounts most customers hold, and compare that amount with the peers.`,
-      rationale: `${input.institutionName}'s schedule lists ${r.amounts.length} amounts (${span(Math.min(...r.amounts), Math.max(...r.amounts))}), and the position depends on which one is compared.`,
-    };
-  }
-  if (r.band === "above") {
-    return {
-      feeCategory: r.fee.feeCategory,
-      action: `Compare the ${lower} terms with the nearest peers in Appendix B: which accounts it applies to, waivers and caps.`,
-      rationale: `${vs} Different terms would explain the gap; matching terms make it a pricing question for the committee.`,
-    };
-  }
-  if (r.band === "below") {
-    return {
-      feeCategory: r.fee.feeCategory,
-      action: `Check whether the ${amount} ${lower} fee reflects a waiver, a product tier or an out-of-date schedule.`,
-      rationale: `${vs} If the terms match the peers', the gap is a pricing question for the committee.`,
-    };
-  }
-  return {
-    feeCategory: r.fee.feeCategory,
-    action: `Watch ${lower} against these ${r.n} peers each quarter.`,
-    rationale: `${vs} A peer's change could move it outside the middle 50%.`,
-  };
+  return r.band === "above"
+    ? {
+        kind: "investigate",
+        feeCategory: r.fee.feeCategory,
+        action: `Before the committee weighs the price, compare the ${lower} terms (eligible accounts, waivers, caps) with the nearest peers in Appendix B.`,
+        rationale: "Different terms may explain the gap. If the terms match, the committee can decide whether to keep the current price; nothing here requires a change.",
+      }
+    : {
+        kind: "investigate",
+        feeCategory: r.fee.feeCategory,
+        action: `Check whether the ${amount} ${lower} fee reflects a waiver, a product tier or an out-of-date schedule before the committee weighs the price.`,
+        rationale: "If the terms match the peers', the committee can decide whether to keep the current price; nothing here requires a change.",
+      };
 }
 
-/** The brief: a conclusion, up to three findings ranked by materiality, and the next step for the first. */
-function assessFees(reads: FeeRead[], input: CommitteePacketInput, group: string): Pick<CommitteePacket["brief"], "conclusion" | "findings" | "nextStep"> {
+/**
+ * The brief. Benchmark differences are the like-for-like fees outside the peers' middle 50%, largest
+ * percentage gap first; fees whose comparison is in doubt are listed apart until resolved. The next
+ * step follows the evidence: investigate the largest difference, resolve a doubtful one, or, when no
+ * comparable fee sits outside the middle 50%, retain the current policy and monitor.
+ */
+function assessFees(reads: FeeRead[], input: CommitteePacketInput, group: string): Pick<CommitteePacket["brief"], "conclusion" | "findings" | "unresolved" | "impact" | "nextStep"> {
   const placed = reads.filter((r) => r.band !== null && r.check?.percentile !== null && r.check?.percentile !== undefined);
   if (!placed.length) {
     const published = reads.filter((r) => r.fee.current !== null).length;
     return {
-      conclusion: `${input.institutionName} publishes ${published} of the ${reads.length} fees in this packet, but none has ${MIN_PEERS_FOR_POSITION} or more peers in ${group} publishing it, so no position can be assessed yet.`,
+      conclusion: `${input.institutionName} publishes ${published} of the ${reads.length} fees in this packet, but none has ${MIN_PEERS_FOR_POSITION} or more peers in ${group} publishing it, so no benchmark difference can be assessed yet.`,
       findings: [],
+      unresolved: [],
+      impact: null,
       nextStep: null,
     };
   }
-  const ranked = [...placed].sort((a, b) => materiality(b) - materiality(a));
-  const top = ranked[0];
-  const count = (band: Band) => placed.filter((r) => r.band === band).length;
-  const above = count("above");
-  const below = count("below");
-  const fees = (k: number) => `${k} of the ${placed.length} fees compared`;
-  const position = above && below
-    ? `sit above the peers' middle 50% on ${fees(above)} and below it on ${below}`
-    : above
-      ? `sit above the peers' middle 50% on ${fees(above)}`
-      : below
-        ? `sit below the peers' middle 50% on ${fees(below)}`
-        : placed.length === 1
-          ? "sit within the peers' middle 50% on the one fee compared"
-          : `sit within the peers' middle 50% on all ${placed.length} fees compared`;
+  const byGap = (a: FeeRead, b: FeeRead) => gapShare(b) - gapShare(a) || Math.abs((b.fee.current as number) - (b.med as number)) - Math.abs((a.fee.current as number) - (a.med as number));
+  const outside = placed.filter((r) => r.band !== "within").sort(byGap);
+  const comparable = outside.filter((r) => !questionable(r));
+  const doubtful = outside.filter(questionable);
+  const selected = comparable.slice(0, MAX_PACKET_FINDINGS);
+  const unresolved = doubtful.map((r) => ({
+    feeCategory: r.fee.feeCategory,
+    fee: capitalize(inText(r.name)),
+    position: `${packetMoney(r.fee.current as number)}, ${whereItSits(r)}`,
+    caveats: caveatsOf(r, group),
+  }));
+  const placedCount = `${placed.length} ${placed.length === 1 ? "fee" : "fees"} compared`;
+  const doubtNote = (also: string) => (doubtful.length ? ` ${capitalize(listOf(doubtful.map((r) => inText(r.name))))} ${also}${doubtful.length === 1 ? "sits" : "sit"} outside it, but the comparison needs resolving first.` : "");
+  if (!selected.length) {
+    const retain = !doubtful.length;
+    const within = retain ? (placed.length === 1 ? "the one fee compared sits" : `all ${placedCount} sit`) : "every fee that compares like for like sits";
+    return {
+      conclusion: `On a like-for-like basis, ${within} within the peers' middle 50%.${doubtNote("")}`,
+      findings: [],
+      unresolved,
+      impact: null,
+      nextStep: retain
+        ? {
+            kind: "retain",
+            feeCategory: null,
+            action: "Retain the current fee policy and monitor these positions at the next review.",
+            rationale: `Every fee compared sits within the peers' middle 50%, so the benchmark gives no reason to revisit a price.`,
+          }
+        : {
+            kind: "resolve",
+            feeCategory: doubtful[0].fee.feeCategory,
+            action: `Resolve the ${inText(doubtful[0].name)} comparison before the committee relies on it: ${caveatsOf(doubtful[0], group)[0].charAt(0).toLowerCase()}${caveatsOf(doubtful[0], group)[0].slice(1)}`,
+            rationale: "Every other fee compared sits within the peers' middle 50%; this is the only difference left to check.",
+          },
+    };
+  }
+  const top = selected[0];
   return {
-    conclusion: `${input.institutionName}'s fees ${position}. The position that matters most is ${inText(top.name)}: ${packetMoney(top.fee.current as number)}, ${gapToMedian(top)} ${refs([top.ownMark, top.peerMark])}.`.replace(/ \.$/, "."),
-    // Why a tier of fee matters is said once, on the first finding of that tier.
-    findings: ranked.slice(0, MAX_PACKET_FINDINGS).map((r) => findingOf(r, group)).map((f, i, all) => (all.slice(0, i).some((g) => g.why === f.why) ? { ...f, why: null } : f)),
-    nextStep: nextStepOf(top, input),
+    conclusion: `On a like-for-like basis, ${comparable.length} of the ${placedCount} ${comparable.length === 1 ? "sits" : "sit"} outside the peers' middle 50%. The largest benchmark difference selected for review is ${inText(top.name)}: ${packetMoney(top.fee.current as number)}, ${gapToMedian(top)} ${refs([top.ownMark, top.peerMark])}.`.replace(/ \.(?= |$)/, "."),
+    findings: selected.map((r) => findingOf(r, group)),
+    unresolved,
+    impact: "Each bears on whether the fee is kept or revisited at the next review. Business impact is unknown: the brief does not show how often each fee is charged or waived.",
+    nextStep: investigate(top),
   };
 }
 
@@ -1247,7 +1263,9 @@ export function buildCommitteePacket(input: CommitteePacketInput): CommitteePack
       "One comparison value per institution: the median of its published amounts for the fee, or the highest tier for overdraft. Fees stated as a rate are not in these tables.",
       "Fees are live published fees, each verified against the institution's own schedule; read on the date at the top.",
       `A median, middle 50% or percentile needs at least ${MIN_PEERS_FOR_POSITION} peers. The middle 50% runs from the 25th to the 75th percentile of the peers' values.`,
-      `Findings are ranked by how far the fee sits from the peers' median (in widths of their middle 50%), weighted by how much the fee matters: the index's ${HEADLINE_FEES} headline fees count three times, other featured service fees twice. The next step is an investigation for management, never a price.`,
+      "Benchmark differences selected for review are the fees outside the peers' middle 50% that compare like for like (one published amount, the packet's own peer group), largest percentage gap from the median first. No fee type is weighted above another. The ranking shows unusual prices, not business importance: that depends on how often a fee is charged and waived, which the index does not hold, so the institution sets its own priorities.",
+      "A comparison in doubt (several published amounts, or a wider peer group) is listed apart from the findings until it is resolved.",
+      "The next step follows the evidence: investigate a difference, resolve a doubtful comparison, or retain the current policy and monitor. It never calls for a price change because a fee differs from the median.",
       "Fee income comes from FDIC call reports and NCUA 5300 reports as filed; NCUA year-to-date figures are split into quarters. Income per $10,000 of total assets divides the quarter's deposit service charge income by total assets in the same filing.",
       "Rules, bills and enforcement actions are listed as published, not interpreted.",
     ],

@@ -38,10 +38,12 @@ describe("committee packet PDF", () => {
       const all = pages.join("\n").replace(/\s+/g, " ");
       // Page one is the assessment; page two the supporting exhibits; then the evidence appendix.
       const one = pages[0].replace(/\s+/g, " ");
-      expect(one).toContain("The position that matters most is");
-      expect(one).toContain("Compare the outgoing domestic wire terms with the nearest peers");
+      expect(one).toContain("The largest benchmark difference selected for review is");
+      expect(one).toContain("COMPARISONS TO RESOLVE FIRST");
+      expect(one).toContain("RECOMMENDED NEXT STEP");
+      expect(one).toContain("compare the outgoing domestic wire terms (eligible accounts, waivers, caps) with the nearest peers");
       expect(pages[1]).toContain("Supporting exhibits");
-      const order = ["The position that matters most", "Supporting exhibits", "Each fee against", "Evidence appendix", "'s fees against", "Each peer's published fees, part 1 of 2", "Nearest peers on each side", "Limitations, method and sources", "Material limitations", "Not available in this packet", "Method", "Sources"];
+      const order = ["The largest benchmark difference selected for review", "Supporting exhibits", "Each fee against", "Evidence appendix", "'s fees against", "Each peer's published fees, part 1 of 2", "Nearest peers on each side", "Limitations, method and sources", "Material limitations", "Not available in this packet", "Method", "Sources"];
       let at = -1;
       for (const phrase of order) {
         const i = all.indexOf(phrase, at + 1);
@@ -80,7 +82,7 @@ it("renders the screen in the same order, with a source list and no form", () =>
     fees: packet.feeCategories.map((category) => ({ category, name: category })),
     selected: { yieldFee: null },
   }));
-  const order = ["Pricing committee brief", "The position that matters most", "Findings", "Uncertainty", "Recommended next step", "Supporting exhibits", "Exhibit 1", "Evidence appendix", "Appendix A", "Material limitations", "Not available in this packet", "Method", "Sources"];
+  const order = ["Pricing committee brief", "The largest benchmark difference selected for review", "Benchmark differences selected for review", "Comparisons to resolve first", "Recommended next step", "Supporting exhibits", "Exhibit 1", "Evidence appendix", "Appendix A", "Material limitations", "Not available in this packet", "Method", "Sources"];
   let at = -1;
   for (const phrase of order) {
     const i = html.indexOf(phrase, at + 1);

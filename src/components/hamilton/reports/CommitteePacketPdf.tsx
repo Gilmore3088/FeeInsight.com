@@ -6,8 +6,9 @@
  * copy of the screen: white page, wide margins, 11-12pt prose, open exhibits with hairline rules and
  * no boxes, badges or tiles.
  * - Page one is the assessment: a restrained header (institution, date, comparison group), the main
- *   conclusion, the three findings that matter most with their numbers and why, each material
- *   uncertainty in the margin beside its finding, and the recommended next step with its rationale.
+ *   conclusion, up to three benchmark differences selected for review with their numbers, every
+ *   limitation in the margin beside its finding, what they bear on, the comparisons to resolve
+ *   first, and the recommended next step with its rationale.
  * - Page two carries the strongest supporting exhibits: every fee against the peers, and fee income
  *   per $10,000 of assets.
  * - The evidence appendix follows on as many pages as it needs, at 9pt and never smaller: every
@@ -53,6 +54,9 @@ const s = StyleSheet.create({
   evidence: { fontSize: 11, lineHeight: 1.45 },
   why: { fontSize: 11, lineHeight: 1.45, color: C.textSecondary, marginTop: 2 },
   margin: { width: 148 },
+  unresolved: { flexDirection: "row", paddingTop: 3, paddingBottom: 3 },
+  unresolvedFee: { width: 150, fontSize: 10.5, fontFamily: "Helvetica-Bold", lineHeight: 1.4, paddingRight: 8 },
+  unresolvedText: { flex: 1, fontSize: 10, lineHeight: 1.4, color: C.textSecondary },
   marginRuled: { borderLeftWidth: 0.75, borderLeftColor: C.accent, borderLeftStyle: "solid", paddingLeft: 8 },
   marginLabel: { fontSize: 8, fontFamily: "Helvetica-Bold", color: C.accent, letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 2 },
   marginText: { fontSize: 9.5, lineHeight: 1.4, color: C.textSecondary },
@@ -245,6 +249,11 @@ function keepTogether(text: string): string {
   return i > 0 ? `${text.slice(0, i)}\u00a0${text.slice(i + 1)}` : text;
 }
 
+/** Keeps a footnote mark ("[1, 6]") on one line with the word before it. */
+function glueMarks(text: string): string {
+  return text.replace(/ \[(\d+(?:, \d+)*)\]/g, (_, marks: string) => `\u00a0[${marks.replace(/, /g, ",\u00a0")}]`);
+}
+
 function widths(t: PacketTable): number[] {
   const known = WIDTHS[t.id];
   if (known && known.length === t.columns.length) return known;
@@ -422,7 +431,8 @@ export function CommitteePacketPdf({ packet, pageSize = "LETTER" }: { packet: Co
   const [exhibit1] = sections.position;
   const n = packet.financial.normalized;
   const normalizedTable = sections.financial.find((l) => l.table.id === "normalized_income");
-  const { conclusion, findings, nextStep } = packet.brief;
+  const { conclusion, findings, unresolved, impact, nextStep } = packet.brief;
+  const limited = findings.some((f) => f.caveats.length);
   // The appendix: Exhibit 1 in full first, then every other table in reading order.
   const exhibits = [...sections.position, ...sections.financial].sort((a, b) => a.label.localeCompare(b.label, "en", { numeric: true }));
   const appendixTables = [...exhibits.map((l) => (l.table.id === "position" || l.table.id === "normalized_income" ? { ...l, label: `${l.label} in full` } : l)), ...sections.appendix];
@@ -436,37 +446,57 @@ export function CommitteePacketPdf({ packet, pageSize = "LETTER" }: { packet: Co
             <Text style={s.mastRight}>{readOn}</Text>
           </View>
           <Text style={s.context}>
-            {packet.institutionName} · Compared with {packet.peerGroupLabel}
+            {packet.institutionName}
+            {"\n"}Compared with {packet.peerGroupLabel}
           </Text>
-          <Text style={s.conclusion}>{conclusion}</Text>
+          <Text style={s.conclusion}>{keepTogether(glueMarks(conclusion))}</Text>
           {findings.length ? (
             <>
-              <Text style={s.section}>Findings</Text>
+              <Text style={s.section}>Benchmark differences selected for review</Text>
               {findings.map((f, i) => (
                 <View key={f.feeCategory} style={s.finding} wrap={false}>
                   <Text style={s.findingN}>{i + 1}</Text>
                   <View style={s.findingMain}>
-                    <Text style={s.statement}>{f.statement}</Text>
-                    <Text style={s.evidence}>{f.evidence}</Text>
-                    {f.why ? <Text style={s.why}>{f.why}</Text> : null}
+                    <Text style={s.statement}>{keepTogether(f.statement)}</Text>
+                    <Text style={s.evidence}>{glueMarks(f.evidence)}</Text>
                   </View>
-                  {/* The material uncertainty sits beside the finding it qualifies. */}
-                  <View style={s.margin}>
-                    {f.uncertainty ? (
-                      <View style={s.marginRuled}>
-                        <Text style={s.marginLabel}>Uncertainty</Text>
-                        <Text style={s.marginText}>{f.uncertainty}</Text>
-                      </View>
-                    ) : null}
-                  </View>
+                  {/* Every limitation sits beside the finding it qualifies; no empty column when none has one. */}
+                  {limited ? (
+                    <View style={s.margin}>
+                      {f.caveats.length ? (
+                        <View style={s.marginRuled}>
+                          <Text style={s.marginLabel}>Limits</Text>
+                          {f.caveats.map((c, j) => (
+                            <Text key={j} style={[s.marginText, j ? { marginTop: 4 } : {}]}>
+                              {c}
+                            </Text>
+                          ))}
+                        </View>
+                      ) : null}
+                    </View>
+                  ) : null}
                 </View>
               ))}
+              {impact ? <Text style={[s.why, { marginTop: 0, marginBottom: 12 }]}>{impact}</Text> : null}
             </>
+          ) : null}
+          {unresolved.length ? (
+            <View style={{ marginBottom: 6 }} wrap={false}>
+              <Text style={s.section}>Comparisons to resolve first</Text>
+              {unresolved.map((u) => (
+                <View key={u.feeCategory} style={s.unresolved}>
+                  <Text style={s.unresolvedFee}>
+                    {u.fee}: {u.position}
+                  </Text>
+                  <Text style={s.unresolvedText}>{u.caveats.join(" ")}</Text>
+                </View>
+              ))}
+            </View>
           ) : null}
           {nextStep ? (
             <View style={s.next} wrap={false}>
               <Text style={s.section}>Recommended next step</Text>
-              <Text style={s.action}>{nextStep.action}</Text>
+              <Text style={s.action}>{keepTogether(nextStep.action)}</Text>
               <Text style={s.rationale}>{nextStep.rationale}</Text>
             </View>
           ) : null}
