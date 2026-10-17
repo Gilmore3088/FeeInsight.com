@@ -614,7 +614,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `HMDA_PARSER_VERSION` | — | v2 (reads the public LAR's "derived_msa-md" header) | `magellan/registry/hmda.ts` |
 | `HMDA_APOR_PARSER_VERSION` | — | v1 | `magellan/registry/hmda.ts` |
 | `DESIGNATION_LISTS_PARSER_VERSION` | — | v1 | `magellan/registry/designation-lists.ts` |
-| `CRA_PARSER_VERSION` | — | v1 | `magellan/registry/cra.ts` |
+| `CRA_PARSER_VERSION` | — | v2 (FFIEC ratings and flat-file URLs; headerless ratings file, ID by regulator; revised 2022-23 files) | `magellan/registry/cra.ts` |
 | `FR_Y9C_PARSER_VERSION` | — | v1 | `magellan/registry/fr-y9c.ts` |
 | `NIC_STRUCTURE_PARSER_VERSION` | — | v1 | `magellan/registry/nic-structure.ts` |
 | `UBPR_PEER_GROUPS_PARSER_VERSION` | — | v1 | `magellan/registry/ubpr-peer-groups.ts` |
