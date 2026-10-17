@@ -16,9 +16,12 @@ import {
   STOP_PAYMENT_ITEM_WORDS,
   LEADING_VALUE,
   looksLikeHeading,
+  nameAfterPrice,
   passesDarwinChecks,
   QUALIFIER,
   qualifiesName,
+  runsOn,
+  statesItsPriceVaries,
   ZERO_WORD,
 } from "@/lib/agents/knox/layout";
 
@@ -34,7 +37,9 @@ import {
  * the adapter; the extractor only sees `KnoxTableRow`.
  */
 
-export const KNOX_TABLE_STRATEGY = { strategy: "extract.table", version: 6 } as const;
+// v7 (#1827): a price-first cell row ("$10 | Replacement Debit Card") under a name line, or a
+// price-first line under a name that says its price varies, is the row of the name after its price.
+export const KNOX_TABLE_STRATEGY = { strategy: "extract.table", version: 7 } as const;
 
 export interface KnoxTableRow {
   cells: string[];
@@ -72,6 +77,27 @@ export function tableRowsFromText(text: string): KnoxTableRow[] {
     const lead = line.match(LEADING_VALUE);
 
     if (pendingName && !lead && qualifiesName(line) && LEADING_VALUE.test(next)) continue;
+
+    // #1827: a price-first row ("$10 | Replacement Debit Card" / "$30 | Replacement Debit Card Rush")
+    // is the name after its price, not the name above: read as a wrapped chain, every row took the
+    // next row's price. So is a price with a name after it under a name that says its price varies
+    // ("Mortgage satisfaction fee (varies)" / "$1,000.00 Mortgage modification", Citadel FCU: the
+    // $1,000 is the modification's). A bare price still goes to the name above ("Skip-A-Payment Fee
+    // (Varies with payment)" / "$25.00").
+    // A name that runs on keeps its price ("Inactivity Fee - Savings Account per" / "$5 |
+    // Cross-border transaction fee": a two-column page), and so does a line with a second price.
+    if (lead && pendingName && !runsOn(pendingName) && amountsIn(line).length === 1 &&
+      (line.includes(CELL_SEPARATOR) || statesItsPriceVaries(pendingName))) {
+      const rest = line.slice(lead[0].length);
+      const qualifier = rest.match(QUALIFIER)?.[0] ?? "";
+      const own = nameAfterPrice(rest.slice(qualifier.length));
+      if (own) {
+        // A bare direction or unit ("Wire Transfer - Outgoing" / "$25 | Domestic") borrows the name above.
+        rows.push({ cells: [own, `${lead[0]}${qualifier}`.trim()], heading: composableTail(own) ? pendingName : heading, layout: "stacked" });
+        pendingName = null;
+        continue;
+      }
+    }
 
     if (lead && pendingName) {
       const rest = line.slice(lead[0].length);

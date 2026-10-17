@@ -1,6 +1,6 @@
 import { withinAmountEnvelope } from "@/lib/agents/darwin/envelopes";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
-import { MAX_REASONABLE_FEE_AMOUNT, nameFrom, stripFootnoteMarks, usableName } from "@/lib/agents/knox/rules";
+import { MAX_REASONABLE_FEE_AMOUNT, nameFrom, stripFootnoteMarks, usableName, VARIES_PRICE } from "@/lib/agents/knox/rules";
 
 /**
  * Layout helpers shared by Knox's pass 2 specialists (`table-rows.ts`, `families.ts`).
@@ -82,6 +82,47 @@ export function titleTail(name: string): string | null {
   while (start < words.length && TITLE_CONNECTORS.has(words[start].toLowerCase())) start += 1;
   if (start === 0 || words.length - start < 2) return null;
   return words.slice(start).join(" ");
+}
+
+/**
+ * #1827: a fee name that says its price varies ("Mortgage satisfaction fee (varies)"), so a price-first
+ * line below it ("$1,000.00 Mortgage modification", Citadel FCU) is the name after that price, not
+ * this one's. A bare price below it is still its own ("Skip-A-Payment Fee (Varies with payment)" /
+ * "$25.00").
+ */
+export function statesItsPriceVaries(name: string): boolean {
+  return VARIES_PRICE.test(name);
+}
+
+/**
+ * #1827: a name line that runs on ("Inactivity Fee - Savings Account per", "Overdraft Protection
+ * Transfer (From"): a two-column page wrapped it, and the price below is still its own, whatever the
+ * other column prints beside that price ("$5 | Cross-border transaction fee").
+ */
+export function runsOn(name: string): boolean {
+  const open = (name.match(/\(/g) ?? []).length > (name.match(/\)/g) ?? []).length;
+  return open || /(?:^|\s)(?:per|of|for|from|to|and|or|with|the|a|an|in|on|at|by|if|than|over|under|[-–—&/,])\s*$/i.test(name.replace(/[\s|*]+$/, ""));
+}
+
+/** A word that opens a condition or a period after a price, never the next fee's name. */
+const CONDITION_OPENING = /^(?:per|each|every|a|an|monthly|annual(?:ly)?|yearly|quarterly|daily|weekly|one-time|waived?|max(?:imum)?|min(?:imum)?|if|unless|plus|up|after|when|with|for|or|and|to|of|on|in|at|by|the|fee|charge|varies)\b|^[/(]/i;
+
+/**
+ * #1827: the fee a price-first row names: the words printed after the price on its own line or in a
+ * later cell of its row ("| **$20** | Key Deposit |", "$1,000.00 Mortgage modification"). `rest` is
+ * the line after the price and its qualifier. Only a capitalized name that does not open as a
+ * condition or a period ("$5.00 per month", "| $25 | Waived for seniors |") and holds two letters
+ * or more; else null, and the price keeps whatever name it had.
+ */
+export function nameAfterPrice(rest: string): string | null {
+  const cell = rest
+    .replace(/[*_`]+/g, " ")
+    .split(/\s*\|\s*/)
+    .map((part) => part.replace(/\s+/g, " ").trim())
+    .find((part) => /[a-z]{2,}/i.test(part));
+  if (!cell || !/^[A-Z]/.test(cell) || CONDITION_OPENING.test(cell) || /\$\s*\d/.test(cell)) return null;
+  const name = cleanFeeName(cell);
+  return name && /[a-z]{2,}/i.test(name) ? name : null;
 }
 
 /**

@@ -17,10 +17,13 @@ import {
   cleanFeeName,
   composableTail,
   looksLikeHeading,
+  nameAfterPrice,
   qualifiesName,
   passesDarwinChecks,
   QUALIFIER,
+  runsOn,
   splitCapsHeading,
+  statesItsPriceVaries,
   titleTail,
 } from "@/lib/agents/knox/layout";
 
@@ -120,6 +123,8 @@ export interface PriceWindow {
   feeLine?: string | null;
   lineIndex: number;
   excerpt: string;
+  /** #1827: the name is the whole cell after a price-first row's price, never a tail of prose. */
+  priceFirst?: boolean;
 }
 
 const ZERO_TOKEN = /\b(FREE|NONE|No Charge|NO CHARGE|N\/C)\b/g;
@@ -177,6 +182,7 @@ export function priceWindows(text: string): PriceWindow[] {
     }
     let nameStart = 0;
     let afterCondition: number | null = null;
+    let priceFirstLine = false;
     // "... a fee of $25.00 on the 7th day. This fee is in addition to any Overdraft Fees. | $25.00":
     // a row's price cell repeating the price before it, in the same cell, is the same fee.
     const lastCell = line.lastIndexOf(CELL_SEPARATOR);
@@ -197,13 +203,26 @@ export function priceWindows(text: string): PriceWindow[] {
         const fresh = line.slice(afterCondition, value.start);
         if ((fresh.match(/[a-z]{2,}/gi) ?? []).length >= 2) own = fresh;
       }
-      // A price at the start of a line belongs to the name on the line above.
-      const stacked = index === 0 && !/[a-z]/i.test(own) && pending != null;
-      const rawName = stacked ? `${pending} ${own}` : own;
       const nextStart = values[index + 1]?.start ?? line.length;
       const after = line.slice(value.end, Math.min(nextStart, value.end + 80));
       const condition = !value.zero && isConditionAmount(line, value);
       const qualifier = after.match(QUALIFIER)?.[0] ?? "";
+      const opensLine = index === 0 && !/[a-z]/i.test(own);
+      // #1827: a price that opens a table row with a name after it ("| **$20** | Key Deposit |",
+      // Valley Strong CU) is that name's, and so is one with a name after it under a name that says
+      // its price varies ("Mortgage satisfaction fee (varies)" / "$1,000.00 Mortgage modification",
+      // Citadel FCU). Read as stacked, every row took the next row's price. A bare price under a
+      // "varies" name is still that name's ("Skip-A-Payment Fee (Varies with payment)" / "$25.00").
+      // A name above that runs on keeps the price ("Inactivity Fee - Savings Account per" / "$5 |
+      // Cross-border transaction fee": a two-column page).
+      const priceFirst = opensLine && values.length === 1 && !value.zero && !(pending != null && runsOn(pending)) &&
+        (line.includes(CELL_SEPARATOR) || (pending != null && statesItsPriceVaries(pending)))
+        ? nameAfterPrice(line.slice(value.end + qualifier.length))
+        : null;
+      // A price at the start of a line belongs to the name on the line above.
+      const stacked = !priceFirst && opensLine && pending != null;
+      const rawName = priceFirst ?? (stacked ? `${pending} ${own}` : own);
+      if (priceFirst) priceFirstLine = true;
       windows.push({
         rawName,
         amount: value.amount,
@@ -214,7 +233,10 @@ export function priceWindows(text: string): PriceWindow[] {
         heading,
         feeLine: feeLine && lineIndex - feeLine.lineIndex <= 3 ? feeLine.name : null,
         lineIndex,
-        excerpt: `${stacked ? `${pending} / ` : ""}${line.slice(value.start - own.length, value.end + qualifier.length)}`.trim().slice(-280),
+        ...(priceFirst ? { priceFirst: true } : {}),
+        excerpt: priceFirst
+          ? line.slice(0, 280)
+          : `${stacked ? `${pending} / ` : ""}${line.slice(value.start - own.length, value.end + qualifier.length)}`.trim().slice(-280),
       });
       if (condition) {
         afterCondition = value.end + qualifier.length;
@@ -224,7 +246,8 @@ export function priceWindows(text: string): PriceWindow[] {
       }
     });
     const tail = line.slice(nameStart).trim();
-    pending = /[a-z]/i.test(tail) && tail.length <= 160 ? tail : null;
+    // A price-first row's name is its own price's, never the next line's.
+    pending = !priceFirstLine && /[a-z]/i.test(tail) && tail.length <= 160 ? tail : null;
   });
   return windows;
 }
@@ -293,7 +316,7 @@ export function runFamilyExpert(expert: FamilyExpert, windows: PriceWindow[]): E
     const cleaned = cleanFeeName(split.name);
     // The fee's own name ends right before its price; earlier lowercase terms belong
     // to the fee before it.
-    const tail = cleaned ? titleTail(cleaned) : null;
+    const tail = cleaned && !window.priceFirst ? titleTail(cleaned) : null;
     // v28: a fee named after the previous fee's note ("Check printing – (fee depends on
     // style) Temporary check – $.20") is the words after the note.
     const afterNote = cleanFeeName(split.name.match(/\)\s*([A-Z][^()]*?)\s*[–—-]?\s*$/)?.[1] ?? "");
