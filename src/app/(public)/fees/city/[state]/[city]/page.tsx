@@ -87,12 +87,21 @@ export default async function CityFeePage({ params, searchParams }: PageProps) {
         leadGap > 0 ? "above" : "below"
       } the ${stateName} benchmark.`
     : null;
+  // The name on the comparison bars and table: the city, or the metro.
+  const barName = isMetro ? `${placeName} metro` : cityName;
+  // Without a lead finding the header says why, rather than forcing one: too few institutions for
+  // a local median, or every local median sits close to the state's.
+  const comparable = fees.filter((f) => f.median != null && f.state_median != null);
+  const mostPublishing = Math.max(0, ...fees.map((f) => f.n));
+  const noLeadNote = hasLead
+    ? null
+    : comparable.length === 0
+      ? `Too few institutions with a branch here publish any one fee for a local median yet. A median needs at least ${MIN_INSTITUTIONS_FOR_MEDIAN}; the most for any fee here is ${mostPublishing}.`
+      : `Where enough institutions publish a fee for a local median, ${barName}'s sits within 10% of the ${stateName} median on all ${comparable.length} ${comparable.length === 1 ? "fee" : "fees"}.`;
   const leaders = depositLeaders(market);
   const cityHref = `/fees/city/${stateCode.toLowerCase()}/${encodeURIComponent(cityName.toLowerCase())}`;
   const initialFee = CITY_FEES.some((f) => f.key === query.fee) ? (query.fee as CityFeeKey) : "overdraft";
   const initialSort = sortOf(query.sort);
-  // The name on the comparison bars and table: the city, or the metro.
-  const barName = isMetro ? `${placeName} metro` : cityName;
   const leadHref = lead ? `${cityHref}?${isMetro ? "area=metro&" : ""}fee=${lead.key}&sort=low#compare` : "";
   const branchesById = Object.fromEntries(market.institutions.map((i) => [i.id, i.branches]));
   const unplotted = cov.branches - market.points.length;
@@ -164,7 +173,7 @@ export default async function CityFeePage({ params, searchParams }: PageProps) {
       <section className="border-b border-border bg-paper">
         <div
           className={`mx-auto max-w-page px-4 pb-10 pt-6 sm:px-6 sm:pb-12 sm:pt-10 ${
-            hasLead ? "lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:items-start lg:gap-16" : ""
+            "lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:items-start lg:gap-16"
           }`}
         >
           <div className={PAGE_HEADER}>
@@ -202,6 +211,15 @@ export default async function CityFeePage({ params, searchParams }: PageProps) {
             </p>
             <p className="mx-auto mt-2 text-[12px] text-ink-muted sm:mx-0">The count includes institutions based elsewhere that have a branch here.</p>
           </div>
+          {noLeadNote && (
+            <div className="mt-10 border-t border-border pt-8 text-left lg:mt-2 lg:border-l lg:border-t-0 lg:pl-12 lg:pt-0">
+              <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-ink-muted">Compared with {stateName}</p>
+              <p className="mt-2 max-w-xl text-[17px] leading-snug text-ink sm:text-[19px]">{noLeadNote}</p>
+              <p className="mt-2 text-[13px] text-ink-muted">
+                {barName} counts institutions with a branch here, wherever headquartered. {stateName} counts institutions headquartered in the state.
+              </p>
+            </div>
+          )}
           {hasLead && lead && (
             <div className="mt-10 border-t border-border pt-8 text-left lg:mt-2 lg:border-l lg:border-t-0 lg:pl-12 lg:pt-0">
               <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-brick">Largest gap from {stateName}</p>
