@@ -1,4 +1,5 @@
 import type { ReportConfidence, ReportDecision, ReportExhibit, ReportSource } from "@/lib/hamilton/types";
+import { displayReportDecision } from "@/lib/hamilton/report-answer";
 
 const CONFIDENCE_STYLE: Record<ReportConfidence, { background: string; color: string }> = {
   High: { background: "var(--hamilton-accent-subtle)", color: "var(--hamilton-text-accent)" },
@@ -23,7 +24,7 @@ export function ReportAnswer({ headline, decisions, goal = null }: { headline: s
         {headline}
       </p>
       <ol className="space-y-3">
-        {decisions.map((decision, i) => (
+        {decisions.map(displayReportDecision).map((decision, i) => (
           <li
             key={i}
             className="hamilton-card flex gap-4 p-4"

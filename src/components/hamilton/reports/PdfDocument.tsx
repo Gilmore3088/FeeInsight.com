@@ -19,6 +19,7 @@ import type { ReportArtifactMetadata, ReportExhibit, ReportSummaryResponse } fro
 import { HAMILTON_ATTRIBUTION } from "@/lib/constants";
 import { REPORT_SECTION_HEADINGS, evidencePolicyLabel, reportTypeLabel } from "./report-labels";
 import { RD_PDF } from "@/lib/report-design/tokens";
+import { displayReportDecision } from "@/lib/hamilton/report-answer";
 
 // Words wrap whole, as in AnalysisPdfDocument (the same route loads both): default hyphenation split
 // evidence record IDs mid-way ("fee:pub-lished:502"), so a printed ID no longer matched its record.
@@ -417,7 +418,7 @@ function ConsultantPdfBody({ report }: { report: ReportSummaryResponse }) {
         <View style={styles.section}>
           <Text style={styles.answerLabel}>{answer.goal ? `The answer · Goal: ${answer.goal}` : "The answer"}</Text>
           <Text style={styles.headline}>{answer.headline}</Text>
-          {answer.decisions.map((decision, i) => (
+          {answer.decisions.map(displayReportDecision).map((decision, i) => (
             <View key={i} style={styles.decision} wrap={false}>
               <Text style={styles.decisionNumber}>{i + 1}</Text>
               <View style={styles.decisionBody}>

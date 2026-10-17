@@ -40,6 +40,24 @@ function parseConfidence(raw: string | undefined): { confidence: ReportConfidenc
   return { confidence: level, reason };
 }
 
+/** Shown beside a report decision saved as High before the High rating was retired (#981, H06-T07). */
+export const LEGACY_REPORT_CONFIDENCE_NOTE =
+  "This report was saved before Hamilton tied each figure to its record, so its high rating shows as medium. A new report runs the current checks.";
+
+/**
+ * Read-time display policy for a saved report decision (#981, H06-T07). New decisions are never
+ * High (parseConfidence). A stored High predates record-bound evidence, so it is shown as Medium
+ * with a note. The stored report is never rewritten; a new report is the only way to re-check it.
+ */
+export function displayReportDecision(decision: ReportDecision): ReportDecision {
+  if (decision.confidence !== "High") return decision;
+  return {
+    ...decision,
+    confidence: "Medium",
+    confidenceReason: [decision.confidenceReason, LEGACY_REPORT_CONFIDENCE_NOTE].filter(Boolean).join(" · "),
+  };
+}
+
 function stripLabel(line: string, label: string): string {
   return line.replace(new RegExp(`^\\s*[*_#\\d.\\s]*${label}\\s*:?\\s*`, "i"), "").trim();
 }
