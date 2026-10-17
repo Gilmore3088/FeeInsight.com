@@ -34,8 +34,11 @@ import { combineScores, scoreAnswerKeys, type AnswerKeyDocument, type GateScore 
 // in the key, which made Knox's night deposit read of it wrong (556 / 15, held out 53 / 5); guard v66
 // (#1605) refuses key deposits, so Knox no longer reads it and the wrong read leaves: all 556 / 14,
 // held out 53 / 4.
+// v75 (Knox recall, Oct 17): the recurring held name families (rush shipping, mortgage payoff and
+// satisfaction, club withdrawals and short-window closures, IRA withdrawals, skip payments, ...) took
+// all to 567 / 14; held out stayed 53 / 4. No document gained a wrong read.
 const FLOORS = {
-  all: { right: 556, wrong: 14 },
+  all: { right: 567, wrong: 14 },
   holdout: { right: 53, wrong: 4 },
 };
 

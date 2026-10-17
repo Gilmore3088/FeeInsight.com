@@ -28,19 +28,22 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // v70 (#1100): low-balance and maintenance fees, CA 140 to 141, FL 116 to 117, GA 161 to 164,
   // NY 42 to 43, all 791 to 797; no state gained a wrong read.
   // v73 (#1100): reads record their account; every state unchanged.
-  CA: { right: 141, wrong: 5 },
-  FL: { right: 117, wrong: 7 },
-  GA: { right: 164, wrong: 9 },
+  // v75 (Knox recall, Oct 17): the recurring held name families took CA 141 to 153, FL 117 to 120,
+  // GA 164 to 169, IL 99 to 102, MI 122 to 127, MN 111 to 119, all 797 to 833; NY unchanged and no
+  // state gained a wrong read.
+  CA: { right: 153, wrong: 5 },
+  FL: { right: 120, wrong: 7 },
+  GA: { right: 169, wrong: 9 },
   // 88 since the top-50 fold (Oct 8): a "Travel Card Reload" at $4.95 now files as a gift card
   // at $4.95, the same (category, price) pair as that schedule's gift card, so two right reads count once.
-  IL: { right: 99, wrong: 7 },
-  MI: { right: 122, wrong: 0 },
+  IL: { right: 102, wrong: 7 },
+  MI: { right: 127, wrong: 0 },
   // 96 since collection items got their own type (Oct 8): the key files a "$20.00 for the first
   // item" line under check cashing, and Knox now reads that schedule's "Collection Item" $20
   // as a collection item, so one right read became one wrong one.
-  MN: { right: 111, wrong: 8 },
+  MN: { right: 119, wrong: 8 },
   NY: { right: 43, wrong: 5 },
-  all: { right: 797, wrong: 41 },
+  all: { right: 833, wrong: 41 },
 };
 
 const fixture = JSON.parse(

@@ -45,10 +45,12 @@ type SqlTag = typeof sql;
  * per version, and every reader picks one series, so a rule change never splices two
  * series into one trend. v2 scores the bank's link and the key's own documents; v3 is v2 plus fees
  * published as a rate (`published_fee_rate_catalog`), which can match a key fee keyed as
- * "varies". v1 (the bank's newest stored page, every document's fees) and v2 keep running
- * for their history.
+ * "varies". v4 is v3 plus the bank's documents holding the same text as the key's document (one
+ * page Magellan stored under several URLs). v1 (the bank's newest stored page, every document's
+ * fees) and v2 keep running for their history. The headline stays v3 until James moves it: v4 is a
+ * change of measure, not of data.
  */
-export const ANSWER_KEY_SCORER_VERSIONS = [1, 2, 3] as const;
+export const ANSWER_KEY_SCORER_VERSIONS = [1, 2, 3, 4] as const;
 export type AnswerKeyScorerVersion = (typeof ANSWER_KEY_SCORER_VERSIONS)[number];
 /** The series the scoreboard, the admin page and the goal read. */
 export const ANSWER_KEY_SCORER_VERSION: AnswerKeyScorerVersion = 3;
