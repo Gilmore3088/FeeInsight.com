@@ -3196,4 +3196,4 @@ ALTER TABLE public.fee_change_records
 \ir ../../supabase/migrations/20270110000053_published_fee_corrections.sql
 
 -- #978 H03-T09: the published fee rows each saved Hamilton output used.
-\ir ../../supabase/migrations/20270110000054_hamilton_saved_output_fee_refs.sql
+\ir ../../supabase/migrations/20270110000055_hamilton_saved_output_fee_refs.sql
