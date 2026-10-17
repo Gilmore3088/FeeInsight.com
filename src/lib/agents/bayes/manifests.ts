@@ -332,6 +332,8 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
       affects: "Fees Knox reads from each current fee schedule. A rules fix reaches a text only when Knox reads it again.",
       count: countKnoxRules,
     },
+    // Counts every CATEGORY_GUARD_VERSION bump. v68 (Oct 17): returned foreign checks leave check
+    // cashing for returned deposited items, and bill pay refuses overdraft and NSF rows (#1304).
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

@@ -223,6 +223,17 @@ export const RETIRED_CATEGORY_KEYS: ReadonlySet<string> = new Set(Object.keys(RE
 export const COLLECTION_ITEM =
   /^(?![\s\S]*(?:charged[- ]?off|past[- ]due|delinquen|\bcalls?\b|negative balance|overdrawn|\bdebts?\b|agenc))(?:[\s\S]*\bcollections?\b|(?![\s\S]*\b(?:cash\w*|returns?|returned)\b)[\s\S]*\b(?:foreign|canadian|international|non[- ]?u\.?s\.?)\s+(?:checks?|items?|drafts?)\b)/i;
 
+/**
+ * Guard v68: a foreign, Canadian, international or non-U.S. check or item that came back unpaid
+ * ("Foreign Check Return Fee", "Returned Canadian Check", "Foreign Item Return Fee", "Foreign Check
+ * per Item Processing: Returned"). It is a deposited or cashed item returned, the returned deposited
+ * item fee, as the 14 live "Foreign Returned Deposited Item" fees already are; not check cashing. One
+ * that names a collection stays a collection item (`COLLECTION_ITEM` is tried first), and a wire,
+ * mail or statement return is another fee.
+ */
+export const FOREIGN_ITEM_RETURN =
+  /^(?![\s\S]*\b(?:collections?|wires?|mail(?:ed|ing)?|statements?)\b)(?=[\s\S]*\b(?:foreign|canadian|international|non[- ]?u\.?s\b))(?=[\s\S]*\b(?:checks?|cheques?|items?|drafts?)\b)[\s\S]*\b(?:return(?:s|ed)?|unpaid|dishonou?red|charge[- ]?backs?)\b/i;
+
 /** A mortgage, lien or loan subordination; a wire line under a "Subordination Request" heading is not one. */
 export const SUBORDINATION = /^(?![\s\S]*subordination request:\s*(?:incoming|outgoing))[\s\S]*\bsubordinat/i;
 
@@ -415,7 +426,13 @@ export function splitCategoriesFor(options: {
 }): Readonly<Record<string, SplitCategory>> {
   const research = options.researchSplitLive ?? false;
   return {
-    check_cashing: { to: "collection_item", name: COLLECTION_ITEM, sqlPattern: "collection|foreign|canadian|international|non[- ]?u\\.?s" },
+    // Guard v68: a returned foreign check or item is a returned deposited item, not check cashing.
+    check_cashing: {
+      to: "collection_item",
+      name: COLLECTION_ITEM,
+      also: [{ to: "deposited_item_return", name: FOREIGN_ITEM_RETURN }],
+      sqlPattern: "collection|foreign|canadian|international|non[- ]?u\\.?s",
+    },
     // A lien release is other lending (James, Oct 8: Lien Release gave up its spot). A subordination
     // stays legal process (James, Oct 15).
     legal_process: { to: "other_lending_fee", name: LENDING_LEGAL, sqlPattern: "lien" },

@@ -168,8 +168,8 @@ describe("top-50 fold", () => {
       "Check Cashing",
       "Non-Member Check Cashing",
       "Foreign Check Cashing",
-      "Returned Canadian Check",
-      "Foreign Item Return Fee",
+      "Canadian Check Cashing/Processing",
+      "Foreign Item Cashed/Deposited Fee",
       "Negative Balance Collection Fee (after 30 days)",
       "Overdrawn Account Sent for Collection",
       "Return of Check Due to Hold or Uncollected Funds",
@@ -178,6 +178,35 @@ describe("top-50 fold", () => {
     }
     expect(splitLiveCategory("nsf", "Collection Item")).toBeNull();
     expect(TAXONOMY.has("collection_item")).toBe(true);
+  });
+
+  test("a returned foreign check or item leaves check cashing for the returned deposited item fee (guard v68)", () => {
+    const split = (name: string) => splitLiveCategory("check_cashing", name)?.to ?? null;
+    // The 10 live check cashing rows, each read on its bank's own schedule (Oct 17).
+    for (const name of [
+      "Foreign Check Cashing Return",
+      "Foreign Check per Item Processing: Returned",
+      "Foreign Check Return Fee",
+      "FOREIGN CHECK RETURN FEE",
+      "Foreign Item Return Fee",
+      "RETURN FOREIGN CHECK FEE",
+      "Returned Canadian Check",
+      "Returned Canadian Check Fee",
+      "Returned Foreign Check Handling Fee",
+    ]) {
+      expect(split(name), name).toBe("deposited_item_return");
+      expect(passesDarwinChecks("deposited_item_return", name, 20), name).toBe(true);
+    }
+    // A collection names its collection first; cashing a foreign check, a domestic return and mail stay.
+    expect(split("Returned Foreign Item Collection")).toBe("collection_item");
+    for (const name of [
+      "Foreign Check Cashing",
+      "Return of Check Due to Hold or Uncollected Funds",
+      "Foreign: Returned Mail Fee",
+      "Returned Check",
+    ]) {
+      expect(split(name), name).toBeNull();
+    }
   });
 
   // Written for either setting of SUBORDINATION_REFILE_LIVE, so turning it on is a one-line change.

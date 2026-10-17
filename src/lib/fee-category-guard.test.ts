@@ -152,10 +152,12 @@ describe("checkFeeCategory", () => {
       expect(checkFeeCategory("collection_item", name)).toEqual({ ok: true });
       expect(refileCategory("check_cashing", name)).toBe("collection_item");
     }
-    for (const name of ["Foreign Check Cashing", "Returned Canadian Check", "Non-Member Check Cashing"]) {
+    for (const name of ["Foreign Check Cashing", "Non-Member Check Cashing"]) {
       expect(checkFeeCategory("check_cashing", name)).toEqual({ ok: true });
       expect(checkFeeCategory("collection_item", name).ok).toBe(false);
     }
+    // A returned one is not a collection item either; since v68 it is a returned deposited item (below).
+    expect(checkFeeCategory("collection_item", "Returned Canadian Check").ok).toBe(false);
     expect(checkFeeCategory("collection_item", "Collection Fee for Charged-Off Accounts").ok).toBe(false);
     expect(checkFeeCategory("collection_item", "Negative Balance Collection Fee").ok).toBe(false);
   });
@@ -1396,5 +1398,78 @@ describe("excess withdrawals and returned mail, their own types (guard v65, Jame
     expect(refileCategory("returned_mail", "Returned mail research fee")).toBe("account_research");
     expect(refileCategory("excess_withdrawal", "IRA Excess Withdrawal Fee")).toBe("ira_administration");
     expect(refileCategory("excess_withdrawal", "Excess Transaction Fee")).toBe("excess_withdrawal");
+  });
+});
+
+describe("guard v68 (Oct 17)", () => {
+  it("files a returned foreign check or item as a returned deposited item, not check cashing", () => {
+    // The 10 live check cashing rows (93859 and 93400 among them), each on its bank's own schedule.
+    for (const name of [
+      "Foreign Check Cashing Return",
+      "Foreign Check per Item Processing: Returned",
+      "Foreign Check Return Fee",
+      "FOREIGN CHECK RETURN FEE",
+      "Foreign Item Return Fee",
+      "RETURN FOREIGN CHECK FEE",
+      "Returned Canadian Check",
+      "Returned Canadian Check Fee",
+      "Returned Foreign Check Handling Fee",
+    ]) {
+      expect(checkFeeCategory("check_cashing", name).ok, name).toBe(false);
+      expect(checkFeeCategory("deposited_item_return", name), name).toEqual({ ok: true });
+      expect(refileCategory("check_cashing", name), name).toBe("deposited_item_return");
+    }
+    // Every other foreign check cashing row live on Oct 17 stays check cashing.
+    for (const name of [
+      "Canadian Check Cashing",
+      "CANADIAN CHECK CASHING - PER CHECK",
+      "Canadian Check Cashing/Processing",
+      "Canadian Checks - Deposited or Cashed",
+      "Cashing checks drawn on foreign bank",
+      "Check Cashing - Foreign check - non-customer",
+      "Check Cashing – Canadian checks",
+      "Foreign (International) Checks - Deposited",
+      "Foreign Check (cash/deposit, per item)",
+      "Foreign Check Cashing",
+      "Foreign Item & Cash Letter Processing",
+      "Foreign Item Cashed/Deposited Fee",
+      "Foreign Negotiable Instrument",
+      "Non-USCB Customer Check Cashing Fee",
+      "Return of Check Due to Hold or Uncollected Funds",
+    ]) {
+      expect(checkFeeCategory("check_cashing", name), name).toEqual({ ok: true });
+    }
+    // A returned foreign collection stays a collection item; a wire or mail return is not a deposited item.
+    expect(refileCategory("check_cashing", "Returned Foreign Item Collection")).toBe("collection_item");
+    expect(checkFeeCategory("deposited_item_return", "Foreign Wire Return Fee").ok).toBe(false);
+    expect(checkFeeCategory("deposited_item_return", "Foreign: Returned Mail Fee").ok).toBe(false);
+  });
+
+  it("keeps the overdraft (courtesy pay) and NSF fee out of bill pay (#1304)", () => {
+    const bill = (name: string, excerpt: string, amount = 30) =>
+      checkFeeCategory("bill_pay", name, { amount, conditions: `Knox deterministic extraction. excerpt="${excerpt}"` });
+    // #1304's row (88513), and the 8 live bill pay rows that fail on Oct 17, each on its own schedule.
+    expect(bill("Check/ACH/Bill Pay Payment", "Courtesy Pay (Paid NSF) Check/ACH/Bill Pay Payment | $32.00/item", 32).ok).toBe(false);
+    expect(bill("ACH, Share Draft, Bill Pay", "Non-Sufficient Funds (NSF) ACH, Share Draft, Bill Pay | $30.00/item").ok).toBe(false);
+    expect(bill("Check, ACH, Bill Pay, recurring debit card transaction", "Non-Sufficient Funds | Check, ACH, Bill Pay, recurring debit card transaction, / $30.00").ok).toBe(false);
+    expect(bill("Bill Pay", "Nonsufficient funds (NSF) Bill Pay | $35.00", 35).ok).toBe(false);
+    expect(bill("Online Bill Payment", "Non-Sufficient funds for Online Bill Payment | $ 7.00 each", 7).ok).toBe(false);
+    expect(bill("Bill Pay", "Insufficient funds (Check, ATM, pre-authorized ACH drafts, Bill Pay) | $20.00", 20).ok).toBe(false);
+    expect(bill("Bill Payment Service", "Non-sufficient/Uncollected Funds Item returned by Bill Payment Service..$30.00").ok).toBe(false);
+    expect(bill("Online Bill Pay Insufficient Funds", "Online Bill Pay Insufficient Funds2 ........ $25.00/item", 25).ok).toBe(false);
+    expect(bill("TruCourtesy Pay Program Bill Payment Transaction Fee", "1 | TruCourtesy Pay Program Bill Payment Transaction Fee____ $15.00", 15).ok).toBe(false);
+    // Bill pay's own fees stay, with an NSF or overdraft heading in another cell or before another price.
+    for (const [name, excerpt] of [
+      ["Same Day Bill Payment", "Automatic Transfer Fee / Non-Sufficient Funds (NSF) | Same Day Bill Payment | $ 9.95"],
+      ["Business Bill Pay Inactive (6 months no activity)", "Overdraft Protection Fees4 | Business Bill Pay Inactive (6 months no activity) | $5.00"],
+      ["Bill Payment Recall Fee", "Bill Payment Non-Sufficient Funds Fee: $25 Bill Payment Recall Fee: $25 per item"],
+      ["Online Cash Management & Bill Pay", "Daily overdraft fee.....$3.00 | Online Cash Management & Bill Pay.....$19.95/month"],
+      ["Bill Pay Expedite Fee (electronic)", "Bill Pay Expedite Fee (electronic) | $10.00 | Overdraft Paid or Returned Check 2 | $35.00 per transaction"],
+      ["Online Bill Pay for business accounts after 20 paid items - per month, per item", "Online Bill Pay for business accounts after 20 paid items - per month, per item | $0.40"],
+      ["Bill Pay - Less than 3 bills paid per month", "Bill Pay - Less than 3 bills paid per month | $5.95 per month"],
+    ] as const) {
+      expect(bill(name, excerpt), name).toEqual({ ok: true });
+    }
+    expect(checkFeeCategory("bill_pay", "Same Day Bill Payment")).toEqual({ ok: true });
   });
 });
