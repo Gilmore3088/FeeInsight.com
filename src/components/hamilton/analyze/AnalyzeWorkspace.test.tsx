@@ -137,7 +137,7 @@ describe("EvidenceExhibit", () => {
         ]}
       />,
     );
-    expect(html).toContain("The figures behind this answer");
+    expect(html).toContain("Figures Hamilton cited");
     expect(html).toContain("Your fees");
     expect(html).toContain("$30");
     expect(html).not.toContain("**");

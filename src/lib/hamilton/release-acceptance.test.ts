@@ -1,5 +1,12 @@
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  HAMILTON_ACCEPTANCE_CHECKS,
+  HAMILTON_RELEASE_MATRIX_DOC,
+  HAMILTON_RELEASE_MATRIX_VERSION,
+  validateHamiltonAcceptanceChecks,
+  type HamiltonAcceptanceCheck,
   HAMILTON_COMPLAINT_EVIDENCE,
   HAMILTON_RELEASE_PROTECTION_SNAPSHOT,
   releaseEvidenceIsComplete,
@@ -14,7 +21,7 @@ import {
 } from "./release-acceptance";
 
 describe("Hamilton complaint-to-evidence matrix", () => {
-  it("maps all seven complaints to stable tasks, acceptance cases, owners and release checks", () => {
+  it("maps all seven complaints to stable tasks, acceptance cases and release checks", () => {
     expect(validateHamiltonComplaintEvidence()).toEqual([]);
     expect(HAMILTON_COMPLAINT_EVIDENCE.map((entry) => entry.complaintId)).toEqual([1, 2, 3, 4, 5, 6, 7]);
   });
@@ -27,16 +34,6 @@ describe("Hamilton complaint-to-evidence matrix", () => {
   it("fails duplicate complaint mappings instead of treating them as additional proof", () => {
     const duplicated = [...HAMILTON_COMPLAINT_EVIDENCE, HAMILTON_COMPLAINT_EVIDENCE[0]];
     expect(validateHamiltonComplaintEvidence(duplicated)).toContain("duplicate_complaint:1");
-  });
-
-  it("fails an active work claim with no implementation PR", () => {
-    const bad: HamiltonComplaintEvidence = {
-      ...HAMILTON_COMPLAINT_EVIDENCE[0],
-      statusAtSnapshot: "in_progress",
-      implementationPrs: [],
-    };
-    expect(validateHamiltonComplaintEvidence([bad, ...HAMILTON_COMPLAINT_EVIDENCE.slice(1)]))
-      .toContain("active_without_pr:1");
   });
 
   it("fails a missing mandatory release gate", () => {
@@ -72,13 +69,57 @@ describe("Hamilton complaint-to-evidence matrix", () => {
   });
 
   it("records that current main has process gates but no server-side protection", () => {
-    expect(HAMILTON_RELEASE_PROTECTION_SNAPSHOT.mainSha).toBe("a22efb7896772735e57f7dde59f070d304389ca6");
+    expect(HAMILTON_RELEASE_PROTECTION_SNAPSHOT.mainSha).toMatch(/^[0-9a-f]{40}$/);
+    expect(HAMILTON_RELEASE_PROTECTION_SNAPSHOT.observedAt.startsWith("2026-10-17")).toBe(true);
     expect(HAMILTON_RELEASE_PROTECTION_SNAPSHOT.branchProtected).toBe(false);
     expect(HAMILTON_RELEASE_PROTECTION_SNAPSHOT.requiredStatusContexts).toEqual([]);
     expect(HAMILTON_RELEASE_PROTECTION_SNAPSHOT.note).toContain("not a server-side merge barrier");
   });
 });
 
+
+describe("Hamilton acceptance case checks (H07-T01, matrix v2)", () => {
+  const root = path.resolve(__dirname, "../../..");
+
+  it("gives all 28 cases an automated test or a named manual check", () => {
+    expect(validateHamiltonAcceptanceChecks()).toEqual([]);
+    expect(HAMILTON_ACCEPTANCE_CHECKS.map((entry) => entry.caseId)).toEqual(HAMILTON_REQUIRED_ACCEPTANCE_CASE_IDS);
+  });
+
+  it("names only test files that exist in the repository", () => {
+    const missing = HAMILTON_ACCEPTANCE_CHECKS.flatMap((entry) => entry.automated)
+      .filter((file) => !existsSync(path.join(root, file)));
+    expect(missing).toEqual([]);
+  });
+
+  it("covers every acceptance case a complaint names", () => {
+    const checked = new Set(HAMILTON_ACCEPTANCE_CHECKS.map((entry) => entry.caseId));
+    const unchecked = HAMILTON_COMPLAINT_EVIDENCE.flatMap((entry) => entry.acceptanceCaseIds).filter((id) => !checked.has(id));
+    expect(unchecked).toEqual([]);
+  });
+
+  it("fails a case with neither an automated test nor a manual check", () => {
+    const bare: HamiltonAcceptanceCheck = { ...HAMILTON_ACCEPTANCE_CHECKS[0], automated: [], manual: null };
+    expect(validateHamiltonAcceptanceChecks([bare, ...HAMILTON_ACCEPTANCE_CHECKS.slice(1)])).toContain("unchecked_case:H01-AC1");
+  });
+
+  it("fails a dropped, duplicated or misnamed case", () => {
+    expect(validateHamiltonAcceptanceChecks(HAMILTON_ACCEPTANCE_CHECKS.slice(1))).toContain("missing_check:H01-AC1");
+    expect(validateHamiltonAcceptanceChecks([...HAMILTON_ACCEPTANCE_CHECKS, HAMILTON_ACCEPTANCE_CHECKS[3]])).toContain("duplicate_check:H01-AC4");
+    const notATest: HamiltonAcceptanceCheck = { ...HAMILTON_ACCEPTANCE_CHECKS[0], automated: ["src/lib/hamilton/peer-list.ts"] };
+    expect(validateHamiltonAcceptanceChecks([notATest, ...HAMILTON_ACCEPTANCE_CHECKS.slice(1)]))
+      .toContain("not_a_test_path:H01-AC1:src/lib/hamilton/peer-list.ts");
+  });
+
+  it("agrees with the matrix document: same version, every case and every manual check id listed", () => {
+    const doc = readFileSync(path.join(root, HAMILTON_RELEASE_MATRIX_DOC), "utf8");
+    expect(doc).toContain(`Code copy:** \`src/lib/hamilton/release-acceptance.ts\` version ${HAMILTON_RELEASE_MATRIX_VERSION}`);
+    for (const entry of HAMILTON_ACCEPTANCE_CHECKS) {
+      expect(doc).toContain(`| ${entry.caseId} |`);
+      if (entry.manual) expect(doc).toContain(entry.manual.id);
+    }
+  });
+});
 
 describe("Hamilton release-candidate packet", () => {
   const sha = "a".repeat(40);

@@ -969,6 +969,41 @@ export interface PeerFeeValue {
   document_urls: string[];
   /** When the newest row behind this value was published (ISO). */
   published_at: string | null;
+  /**
+   * The published_fee_catalog rows this value is built from (#981, H06-T04), so a peer median can
+   * name the records behind it. Absent where a reader does not load them.
+   */
+  fee_records?: PeerFeeRecord[];
+}
+
+/** One published_fee_catalog row behind a peer's value. */
+export interface PeerFeeRecord {
+  id: number;
+  amount: number;
+  fee_name: string | null;
+  frequency: string | null;
+  fee_audience: "consumer" | "business" | "both" | "unknown";
+  source_document_id: number | null;
+  document_url: string | null;
+}
+
+function peerFeeRecords(rows: Array<{ id?: number | string | null; amount: number | string | null; fee_name?: string | null; frequency?: string | null; fee_audience?: string | null; source_document_id: number | string | null; document_url: string | null }>): PeerFeeRecord[] {
+  const records: PeerFeeRecord[] = [];
+  for (const r of rows) {
+    const id = Number(r.id);
+    const amount = r.amount === null || r.amount === "" ? NaN : Number(r.amount);
+    if (!Number.isSafeInteger(id) || id <= 0 || !Number.isFinite(amount)) continue;
+    const doc = Number(r.source_document_id);
+    records.push({
+      id, amount,
+      fee_name: typeof r.fee_name === "string" ? r.fee_name : null,
+      frequency: typeof r.frequency === "string" ? r.frequency : null,
+      fee_audience: r.fee_audience === "consumer" || r.fee_audience === "business" || r.fee_audience === "both" ? r.fee_audience : "unknown",
+      source_document_id: Number.isSafeInteger(doc) && doc > 0 ? doc : null,
+      document_url: r.document_url ?? null,
+    });
+  }
+  return records.sort((a, b) => a.id - b.id);
 }
 
 /** The distinct published fee row ids among a peer's rows; rows read without the column give none. */
@@ -989,9 +1024,10 @@ export async function getPeerFeeValues(
 ): Promise<Map<string, PeerFeeValue[]>[]> {
   if (categories.length === 0 || filterSets.length === 0) return filterSets.map(() => new Map());
   const rows = await sql.unsafe(
-    `SELECT ef.fee_category, ef.amount, ef.institution_id, ct.institution_name,
+    `SELECT ef.id, ef.fee_category, ef.amount, ef.institution_id, ct.institution_name,
             ct.charter_type, ct.asset_size_tier, ct.fed_district, ct.state_code,
-            ef.source_document_id, ef.document_url, ef.created_at, ef.fee_published_id
+            ef.source_document_id, ef.document_url, ef.created_at, ef.fee_published_id,
+            ef.fee_name, ef.frequency, ef.fee_audience
        FROM published_fee_catalog ef
        JOIN institution_sources ct ON ef.institution_id = ct.id
       WHERE ef.fee_category = ANY($1::text[])
@@ -999,11 +1035,15 @@ export async function getPeerFeeValues(
         AND ${STATS_ROW_FILTER}`,
     [categories] as never[],
   ) as (PeerRow & {
+    id: number | string;
     institution_name: string;
     source_document_id: number | string | null;
     document_url: string | null;
     created_at: Date | string | null;
     fee_published_id?: number | string | null;
+    fee_name: string | null;
+    frequency: string | null;
+    fee_audience: string | null;
   })[];
   const peerRows = rows.filter((row) => Number(row.institution_id) !== excludeInstitutionId);
   const meta = new Map(peerRows.map((row) => [Number(row.institution_id), row]));
@@ -1037,6 +1077,7 @@ export async function getPeerFeeValues(
           fee_published_ids: feeIdsOf(own),
           document_urls: urls,
           published_at: published,
+          fee_records: peerFeeRecords(own),
         });
       }
       result.set(category, values.sort((a, b) => a.amount - b.amount));

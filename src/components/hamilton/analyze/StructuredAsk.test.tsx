@@ -154,7 +154,7 @@ describe("StructuredAsk", () => {
     const onNoStoryline = vi.fn();
     render(<StructuredAsk question="Why is our fee income lower than peers?" institutionId="8109" modelHrefFor={() => "/"} onNoStoryline={onNoStoryline} />);
     await screen.findByText(/per \$1,000 of deposits/);
-    expect(screen.getByText("Call reports, 2026-06-30 · 25 institutions")).toBeTruthy();
+    expect(screen.getByText("Call reports · Jun 2026 · n=25")).toBeTruthy();
     expect(onNoStoryline).not.toHaveBeenCalled();
   });
 

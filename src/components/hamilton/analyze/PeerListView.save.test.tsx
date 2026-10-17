@@ -46,7 +46,7 @@ describe("save a chosen peer group", () => {
     expect(body.get("created_by")).toBeNull();
     expect(actions.defaults).not.toHaveBeenCalled();
     expect(await screen.findByRole("status")).toHaveTextContent("Saved 3 selected institutions");
-    expect(screen.getByRole("link", { name: "Manage peer groups" })).toHaveAttribute("href", "/pro/settings?instId=101#peer-sets");
+    expect(screen.getByRole("link", { name: "Use it for all charts in Settings" })).toHaveAttribute("href", "/pro/settings?instId=101#peer-sets");
   });
 
   it("keeps selected rows after a failed save and allows an explicit retry", async () => {
