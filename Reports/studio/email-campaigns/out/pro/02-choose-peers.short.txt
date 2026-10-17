@@ -1,11 +1,15 @@
-The peer set decides every comparison you'll show your committee.
-
 Choose the peers you're measured against
-Build your peer set: https://feeinsight.com/pro/settings?utm_source=mailerlite&utm_medium=email&utm_campaign=pro&utm_content=choose-peers#peer-sets
-Settings, Peer groups. How to pick one that holds up in a board meeting: Building a Peer Set (https://feeinsight.com/guides/pro/building-a-peer-set?utm_source=mailerlite&utm_medium=email&utm_campaign=pro&utm_content=choose-peers).
+========================================
 
-Full email with tables and charts: {$url}
+Start with relevant peers; use the national median for broader context. Build a peer set from the institutions your customers compare you with, by charter, asset size, district or county.
+
+Build your peer set: https://feeinsight.com/pro/settings#peer-sets
+
+Settings, Peer groups. How to pick one that holds up in a board meeting: Building a Peer Set (https://feeinsight.com/guides/pro/building-a-peer-set).
+
+James Gilmore, Fee Insight
 
 --
-Fee Insight · feeinsight.com · reply with questions
+Fee Insight LLC, 522 W Riverside Ave, Ste N, Spokane, WA 99201
+You're getting this because your team subscribes to Fee Insight Pro.
 Unsubscribe: {$unsubscribe}

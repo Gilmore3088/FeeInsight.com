@@ -33,7 +33,8 @@ review kit (needs the worksheet and summary files before it is offered).
 
 ### Subscriber fields (set by the app on confirm, `src/lib/email/lifecycle-fields.ts`)
 `report_name`, `report_url`, `report_finding` (the report's first key finding, read on confirm),
-`follow_name`, `follow_url`. Each must exist as a text field in MailerLite. Every email has a
+`report_finding_title` and `report_finding_cta` (set only with a finding; without them report email 2
+reads "How to read your fee report" / "Open your report"), `follow_name`, `follow_url`. Each must exist as a text field in MailerLite. Every email has a
 fallback for a subscriber without them.
 
 `monthly_offer_text`, `monthly_offer_cta`, `monthly_offer_url` are set only for Pro customers
@@ -52,9 +53,11 @@ names, and waits for his typed yes.
 
 ## Before activating
 1. Sender domain: authenticated (MailerLite reports `needs_domain_auth: false`, checked Oct 6).
-2. **Set a real postal address** (CAN-SPAM). The footers leave the line out until then (James, Oct 6:
-   waiting on the business registration). Rebuild with `MARKETING_MAILING_ADDRESS="..." node build.mjs`
-   and re-upload every email.
+2. Postal address (CAN-SPAM): every footer carries Fee Insight LLC's Spokane address, the same one as
+   the MailerLite account footer (`MAILING_ADDRESS` in `src/lib/constants.ts`). `MARKETING_MAILING_ADDRESS`
+   overrides it; rebuild and re-upload every email if it changes.
+   Plain text: upload each `out/<automation>/*.short.txt` (whole message and button, under MailerLite's
+   1,000-character cap). Campaign plain text (the Pulse) is pasted in the dashboard.
 3. Exclusion: the app keeps one lifecycle group per person (above); each automation's membership check ends a lower sequence.
 4. **Wire the app (Vercel env):** `MAILERLITE_SYNC_ENABLED=true`, `MAILERLITE_API_KEY` from the Fee Insight account,
    `MAILERLITE_GROUP_ID=200322864366224433` (Newsletter), `MAILERLITE_REPORT_GROUP_ID=200322865521755984`

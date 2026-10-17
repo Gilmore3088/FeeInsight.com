@@ -1,16 +1,16 @@
-The number at the top of your report, and the question it raises.
+What the top of your report tells you, and what it leaves out.
 
 YOUR REPORT · 2 OF 3
 
-One finding from your report
-============================
+{$report_finding_title|default('How to read your fee report')}
+============================================================
 
 {$report_finding|default('Start with the key findings at the top of your report. Each one names the fee, the market and how many institutions stand behind it.')}
 
 A market finding shows where the typical institution sits. Seeing where yours sits, and which competitors set the top and bottom of the range, takes a fee-by-fee comparison against named competitors.
 
-See it in your report: {$report_url|default('https://feeinsight.com/reports')}
-The finding links to the table behind it.
+{$report_finding_cta|default('Open your report')}: {$report_url|default('https://feeinsight.com/reports')}
+Each finding links to the table behind it.
 
 James Gilmore
 Founder, Fee Insight · publisher of the Bank Fee Index
@@ -19,4 +19,5 @@ Founder, Fee Insight · publisher of the Bank Fee Index
 Fee Insight publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules.
 Methodology: https://feeinsight.com/methodology
 Questions? Just reply.
+Fee Insight LLC, 522 W Riverside Ave, Ste N, Spokane, WA 99201
 Unsubscribe: {$unsubscribe}

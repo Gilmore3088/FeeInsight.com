@@ -17,7 +17,13 @@ export interface LeadRow {
   created_at?: string | Date | null;
 }
 
-export type LifecycleFields = Record<"report_name" | "report_url" | "report_finding" | "follow_name" | "follow_url", string | null>;
+export type LifecycleFields = Record<
+  "report_name" | "report_url" | "report_finding" | "report_finding_title" | "report_finding_cta" | "follow_name" | "follow_url",
+  string | null
+>;
+
+/** Report email 2's subject, heading and button when it carries a finding; unset, it reads "How to read your fee report". */
+export const FINDING_EMAIL = { title: "One finding from your report", cta: "See it in your report" } as const;
 
 export interface LifecycleDeps {
   /** The report's first key finding, as the report page shows it. */
@@ -69,6 +75,8 @@ export async function lifecycleFields(rows: LeadRow[], deps: LifecycleDeps): Pro
     report_name: null,
     report_url: null,
     report_finding: null,
+    report_finding_title: null,
+    report_finding_cta: null,
     follow_name: null,
     follow_url: null,
   };
@@ -84,6 +92,8 @@ export async function lifecycleFields(rows: LeadRow[], deps: LifecycleDeps): Pro
       fields.report_url = `${SITE}${benchmarkReportPath(scope)}`;
       const finding = await withDeadline(deps.loadFinding(scope), FINDING_DEADLINE_MS);
       fields.report_finding = finding ? findingSentence(finding) : null;
+      fields.report_finding_title = finding ? FINDING_EMAIL.title : null;
+      fields.report_finding_cta = finding ? FINDING_EMAIL.cta : null;
       break;
     }
     if (sources(row).some((s) => s === "capture_report_sample" || s === "capture_homepage")) {

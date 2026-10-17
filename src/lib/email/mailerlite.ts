@@ -40,7 +40,7 @@ export interface MailerLiteLeadInput {
   reconfirmed?: boolean;
   /**
    * Custom fields the lifecycle emails read (report_name, report_url, report_finding,
-   * follow_name, follow_url). Each field must exist in MailerLite; a null value is left out.
+   * report_finding_title, report_finding_cta, follow_name, follow_url). Each field must exist in MailerLite; a null value is left out.
    */
   fields?: Record<string, string | null>;
 }

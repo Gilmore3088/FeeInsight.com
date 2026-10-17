@@ -106,6 +106,7 @@ describe("lifecycle routing against a stateful MailerLite", () => {
     await syncLeadToMailerLite({ email: "c@d.co", subscribed: true, source: "report_national", reconfirmed: true, fields });
     expect(ml.groupsOf("c@d.co")).toContain(G.report);
     expect(ml.subs.get("c@d.co")!.fields).not.toHaveProperty("report_finding");
+    expect(ml.subs.get("c@d.co")!.fields).not.toHaveProperty("report_finding_title");
     expect(ml.subs.get("c@d.co")!.fields.report_url).toMatch(/\/reports\/benchmark\/national$/);
   });
 

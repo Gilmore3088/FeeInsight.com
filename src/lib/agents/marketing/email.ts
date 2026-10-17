@@ -97,6 +97,13 @@ function offerHtml(month: string, format: string): string {
   return `${esc(mergeTag(MONTHLY_OFFER_FIELDS.text, FREE_MONTHLY_OFFER.text))} <a href="${esc(mergeTag(MONTHLY_OFFER_FIELDS.url, url))}" style="color:#b3261e;">${esc(mergeTag(MONTHLY_OFFER_FIELDS.cta, FREE_MONTHLY_OFFER.cta))}</a>`;
 }
 
+/**
+ * MailerLite appends its own account footer to campaigns as a fixed 680px table
+ * (class mlMainContent). This lets it shrink to the screen on phones.
+ */
+export const FLUID_ML_FOOTER =
+  "<style>table.mlMainContent{width:100%!important;min-width:0!important;max-width:680px!important;}</style>";
+
 const paragraphs = (text: string) =>
   text.split(/\n{2,}/).map((p) => `<p style="font-size:16px;line-height:1.55;margin:0 0 14px 0;">${esc(p.trim())}</p>`).join("");
 
@@ -115,7 +122,7 @@ export function renderEmail(
 ): string {
   const table = renderTable(copy.table, bundle);
   const sources = `National figures as of ${esc(bundle.asOf)}, from ${bundle.liveFees.toLocaleString("en-US")} live fees across ${bundle.liveInstitutions.toLocaleString("en-US")} institutions. The middle half is the 25th to 75th percentile.`;
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(copy.headline)}</title></head>
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(copy.headline)}</title>${FLUID_ML_FOOTER}</head>
 <body style="margin:0;padding:0;background:#f6f3ec;font-family:Helvetica,Arial,sans-serif;color:#1c1c1c;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f3ec;"><tr><td align="center" style="padding:24px 12px;">
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border:1px solid #e6e0d4;">

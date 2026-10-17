@@ -1,10 +1,15 @@
-Your position against your peers, ready for the committee.
-
 Produce your first report
-Open Reports: https://feeinsight.com/pro/reports?utm_source=mailerlite&utm_medium=email&utm_campaign=pro&utm_content=produce-report
+=========================
 
-Full email with tables and charts: {$url}
+With your institution and peers set, Hamilton builds a report of your fee position: each fee next to your peers' median and middle 50%, with the sources listed, for your pricing or ALCO committee.
+
+Open Reports: https://feeinsight.com/pro/reports
+
+Use the analysis to inform your review. Your institution makes the pricing decision.
+
+James Gilmore, Fee Insight
 
 --
-Fee Insight · feeinsight.com · reply with questions
+Fee Insight LLC, 522 W Riverside Ave, Ste N, Spokane, WA 99201
+You're getting this because your team subscribes to Fee Insight Pro.
 Unsubscribe: {$unsubscribe}

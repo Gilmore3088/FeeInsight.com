@@ -18,6 +18,8 @@ describe("lifecycle fields", () => {
     expect(fields.report_name).toBe("the St. Louis district Fee Benchmark Report");
     expect(fields.report_url).toMatch(/\/reports\/benchmark\/district-8$/);
     expect(fields.report_finding).toMatch(/^As of [A-Z][a-z]+ \d{1,2}, \d{4}: The St. Louis district median overdraft fee: \$30. Median across 120 institutions.$/);
+    expect(fields.report_finding_title).toBe("One finding from your report");
+    expect(fields.report_finding_cta).toBe("See it in your report");
     expect(d.loadFinding).toHaveBeenCalledWith({ kind: "district", district: 8 });
   });
 
@@ -29,6 +31,7 @@ describe("lifecycle fields", () => {
     expect(fields.report_name).toBe("the sample Competitive Fee Position Report");
     expect(fields.report_url).toMatch(/\/reports\/sample-competitive-fee-position$/);
     expect(fields.report_finding).toBeNull();
+    expect(fields.report_finding_title).toBeNull();
   });
 
   it("leaves the finding out when it can't be read", async () => {

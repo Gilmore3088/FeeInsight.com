@@ -15,9 +15,9 @@ import { FEES, SNAPSHOT } from "./data.mjs";
 
 export const BRAND = {
   siteUrl: "https://feeinsight.com",
-  // CAN-SPAM requires a valid postal address in every commercial email. Left out until the
-  // business registration gives one (James, Oct 6); set MARKETING_MAILING_ADDRESS and rebuild.
-  mailingAddress: (process.env.MARKETING_MAILING_ADDRESS || "").trim() || null,
+  // CAN-SPAM requires a valid postal address in every commercial email. Same as MAILING_ADDRESS
+  // in src/lib/constants.ts and the MailerLite account footer; MARKETING_MAILING_ADDRESS overrides.
+  mailingAddress: (process.env.MARKETING_MAILING_ADDRESS || "").trim() || "Fee Insight LLC, 522 W Riverside Ave, Ste N, Spokane, WA 99201",
 };
 
 const S = BRAND.siteUrl;
@@ -34,6 +34,9 @@ const FIELD = {
   reportName: "{$report_name|default('your fee report')}",
   reportUrl: "{$report_url|default('https://feeinsight.com/reports')}",
   reportFinding: "{$report_finding|default('Start with the key findings at the top of your report. Each one names the fee, the market and how many institutions stand behind it.')}",
+  // Set only when the app read a finding; without one, email 2 is a guide to reading the report.
+  findingTitle: "{$report_finding_title|default('How to read your fee report')}",
+  findingCta: "{$report_finding_cta|default('Open your report')}",
   followName: "{$follow_name|default('the market you follow')}",
   followUrl: "{$follow_url|default('https://feeinsight.com/research')}",
 };
@@ -115,7 +118,8 @@ const welcome = {
 // 2. Report requests: free benchmark reports and the sample report
 // ---------------------------------------------------------------------------
 // Email 1 delivers the exact report they asked for ({$report_url}); email 2 carries a finding
-// from that report ({$report_finding}, read on confirm). No email assumes a geography: a
+// from that report ({$report_finding}, read on confirm), or, when no finding was read, becomes
+// "How to read your fee report" ({$report_finding_title} and {$report_finding_cta} unset). No email assumes a geography: a
 // district request never gets a state follow-up. Paid institution-report requests are quoted
 // by hand and stay out of this sequence.
 const report = {
@@ -146,14 +150,14 @@ const report = {
     {
       key: "a-finding",
       day: 4,
-      subject: "One finding from your report",
-      preheader: "The number at the top of your report, and the question it raises.",
+      subject: FIELD.findingTitle,
+      preheader: "What the top of your report tells you, and what it leaves out.",
       blocks: [
         { type: "kicker", text: "Your report · 2 of 3" },
-        { type: "h1", text: "One finding from your report" },
+        { type: "h1", text: FIELD.findingTitle },
         { type: "p", text: FIELD.reportFinding },
         { type: "p", text: "A market finding shows where the typical institution sits. Seeing where yours sits, and which competitors set the top and bottom of the range, takes a fee-by-fee comparison against named competitors." },
-        { type: "cta", text: "See it in your report", href: FIELD.reportUrl, sub: "The finding links to the table behind it." },
+        { type: "cta", text: FIELD.findingCta, href: FIELD.reportUrl, sub: "Each finding links to the table behind it." },
         { type: "sign" },
       ],
     },
@@ -418,7 +422,7 @@ const library = {
       blocks: [
         { type: "kicker", text: "Downloadable kit · draft" },
         { type: "h1", text: "Fee review kit for the pricing committee" },
-        { type: "p", text: "Planned deliverables: a one-page agenda (below), a worksheet with one row per headline fee (your price, peer 25th, median, 75th, position, decision), and a one-page summary template for the board pack." },
+        { type: "p", text: "Planned deliverables: a one-page agenda, a worksheet with one row per headline fee (your price, peer 25th, median, 75th, position, decision), and a one-page summary template for the board pack." },
         { type: "box", tone: "action", title: "Fee review agenda (60 minutes)", ordered: true, items: [
           "**Position (15 min):** headline fees against the peer 25th percentile, median and 75th percentile. List every fee above the 75th.",
           "**Revenue (10 min):** service charges on deposit accounts from the Call Report (Schedule RI) or NCUA 5300. Which 3 fees drive most of it?",

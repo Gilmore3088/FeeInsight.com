@@ -1,13 +1,20 @@
-Your page, and the monthly snapshot you'll get.
-
 You're following {$follow_name|default('the market you follow')}
+============================================================
+
+Here is the page you asked to follow. Every figure on it comes from the institutions' published fee schedules, and it updates as new schedules are read.
+
 Open {$follow_name|default('the market you follow')}: {$follow_url|default('https://feeinsight.com/research')}
+
 Free, no login.
+
 [ WHAT YOU'LL GET ]
 - Once a month: your state's fee snapshot (the national one if you follow an institution), with how many institutions stand behind each number.
 
-Full email with tables and charts: {$url}
+Reply any time with a question about a number.
+
+James Gilmore, Fee Insight
 
 --
-Fee Insight · feeinsight.com · reply with questions
+Fee Insight LLC, 522 W Riverside Ave, Ste N, Spokane, WA 99201
+You're getting this because you signed up at feeinsight.com.
 Unsubscribe: {$unsubscribe}

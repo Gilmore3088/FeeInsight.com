@@ -1,11 +1,15 @@
-Your plan includes seats for your team.
-
 Invite the colleagues who work on pricing
-Invite colleagues: https://feeinsight.com/pro/settings?utm_source=mailerlite&utm_medium=email&utm_campaign=pro&utm_content=invite-colleagues#workspace-access
+=========================================
+
+Pricing decisions involve product, marketing, finance and compliance. Add the people who need to see the same numbers, so everyone works from one peer set and one set of sources.
+
+Invite colleagues: https://feeinsight.com/pro/settings#workspace-access
+
 Settings, Team access.
 
-Full email with tables and charts: {$url}
+James Gilmore, Fee Insight
 
 --
-Fee Insight · feeinsight.com · reply with questions
+Fee Insight LLC, 522 W Riverside Ave, Ste N, Spokane, WA 99201
+You're getting this because your team subscribes to Fee Insight Pro.
 Unsubscribe: {$unsubscribe}

@@ -164,7 +164,7 @@ function renderEmail(automation, email) {
   const bodyText = parts.map((p) => p[1]).join("\n\n");
   const footerHtml = `<p style="margin:0 0 8px;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.muted};"><strong style="color:${C.ink2};">Fee Insight</strong> publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules. <a href="${utm(BRAND.siteUrl + "/methodology", automation.key, email.key)}" style="color:${C.text2};">Methodology</a></p><p style="margin:0 0 8px;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.muted};">Questions or a fee you think we got wrong? Just reply. A person reads every one.</p><p style="margin:0;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.muted};">${BRAND.mailingAddress ? `${esc(BRAND.mailingAddress)}<br>` : ""}${esc(automation.footerReason || "You're getting this because you signed up at feeinsight.com.")} <a href="{$unsubscribe}" style="color:${C.text2};">Unsubscribe</a></p>`;
   const html = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"><title>${esc(email.subject)}</title></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"><title>${esc(email.subject)}</title><style>table.mlMainContent{width:100%!important;min-width:0!important;max-width:680px!important;}</style></head>
 <body style="margin:0;padding:0;background:${C.sand};">
 <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:${C.sand};">${esc(email.preheader)}&#8199;&#65279;&#847;&#8199;&#65279;&#847;&#8199;&#65279;&#847;&#8199;&#65279;&#847;&#8199;&#65279;&#847;</div>
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:${C.sand};"><tr><td align="center" style="padding:24px 12px;">
@@ -177,31 +177,35 @@ ${bodyHtml}
 </table></td></tr></table></body></html>
 `;
   const text = `${email.preheader}\n\n${bodyText}\n\n----\nFee Insight publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules.\nMethodology: ${BRAND.siteUrl}/methodology\nQuestions? Just reply.\n${BRAND.mailingAddress ? `${BRAND.mailingAddress}\n` : ""}Unsubscribe: {$unsubscribe}\n`;
-  return { html, text, short: condense(email, parts) };
+  return { html, text, short: condense(automation, email, parts) };
 }
 
-// MailerLite's API caps plain text at 1,000 characters. The condensed version keeps the
-// headline, the numbers and the action items, and links to the full email ({$url}).
+// MailerLite's API caps plain text at 1,000 characters. The plain version is the whole
+// message when it fits; otherwise every heading, paragraph, box and button goes in, in order,
+// until the cap. Only an email with a chart or table points to the full version ({$url}).
 const SHORT_LIMIT = 1000;
-function condense(email, parts) {
-  const head = `${email.preheader}\n\n`;
-  const tail = `\n\nFull email with tables and charts: {$url}\n\n--\nFee Insight · feeinsight.com · reply with questions\n${BRAND.mailingAddress ? `${BRAND.mailingAddress}\n` : ""}Unsubscribe: {$unsubscribe}\n`;
-  // A box stays whole, so its title never appears without its text; other blocks go line by line.
+const VISUAL_BLOCKS = new Set(["stats", "bench", "bars", "range"]);
+function condense(automation, email, parts) {
+  const visual = email.blocks.some((b) => VISUAL_BLOCKS.has(b.type));
+  const reason = automation.footerReason || "You're getting this because you signed up at feeinsight.com.";
+  const tail = `\n\n${visual ? "The chart is in the full email: {$url}\n\n" : ""}--\n${BRAND.mailingAddress ? `${BRAND.mailingAddress}\n` : ""}${reason}\nUnsubscribe: {$unsubscribe}\n`;
+  // UTM tags would eat the character cap; MailerLite tracks plain-text clicks on its own.
+  const bare = (t) => t.replace(/https?:\/\/[^\s)]+/g, (u) => u.replace(/([?&])utm_[a-z]+=[^&#]*/g, "$1").replace(/&{2,}/g, "&").replace(/\?&+/, "?").replace(/[?&]+(?=#|$)/, ""));
   const chunks = [];
   email.blocks.forEach((b, i) => {
-    if (b.type === "h1") chunks.push(plain(b.text));
-    // A paragraph built from a merge field (the report finding) is the point of its email.
-    else if (b.type === "p" && b.text.includes("{$")) chunks.push(plain(b.text));
-    else if (b.type === "box") chunks.push(parts[i][1].trim());
-    else if (["stats", "list", "cta", "range"].includes(b.type)) chunks.push(...parts[i][1].trim().split("\n"));
+    parts[i] = [parts[i][0], bare(parts[i][1])];
+    if (b.type === "kicker" || b.type === "rule") return;
+    if (b.type === "sign") chunks.push("James Gilmore, Fee Insight");
+    else if (["box", "p", "h1", "h2"].includes(b.type)) chunks.push(parts[i][1].trim());
+    else chunks.push(...parts[i][1].trim().split("\n"));
   });
   let body = "";
   for (const chunk of chunks) {
-    const next = body ? `${body}\n${chunk}` : chunk;
-    if (head.length + next.length + tail.length > SHORT_LIMIT) continue;
+    const next = body ? `${body}\n\n${chunk}` : chunk;
+    if (next.length + tail.length > SHORT_LIMIT) continue;
     body = next;
   }
-  return head + body + tail;
+  return body + tail;
 }
 
 rmSync(outDir, { recursive: true, force: true });

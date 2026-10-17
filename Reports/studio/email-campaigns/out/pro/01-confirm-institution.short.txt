@@ -1,11 +1,17 @@
-Every view in Hamilton starts from it.
-
 Welcome to Hamilton. Start by confirming your institution.
-Confirm your institution: https://feeinsight.com/pro/settings?utm_source=mailerlite&utm_medium=email&utm_campaign=pro&utm_content=confirm-institution
+==========================================================
+
+Thanks for subscribing. Hamilton measures every comparison against your institution, so check that it's the right one, with the right charter and location, before you build on it.
+
+Confirm your institution: https://feeinsight.com/pro/settings
+
 Settings, Research institution.
 
-Full email with tables and charts: {$url}
+If your institution isn't listed, or its fee schedule looks out of date, reply to this email and we'll check it.
+
+James Gilmore, Fee Insight
 
 --
-Fee Insight · feeinsight.com · reply with questions
+Fee Insight LLC, 522 W Riverside Ave, Ste N, Spokane, WA 99201
+You're getting this because your team subscribes to Fee Insight Pro.
 Unsubscribe: {$unsubscribe}

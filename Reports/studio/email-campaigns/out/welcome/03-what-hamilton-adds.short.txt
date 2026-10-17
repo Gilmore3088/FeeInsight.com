@@ -1,15 +1,23 @@
-What Hamilton Pro adds to the free reports.
-
 Your fees against the institutions you name
-- Your schedule, fee by fee, next to your peers' median and middle 50%.
-- Peers you pick by charter, asset size, district or county, instead of an anonymous average.
-- The source behind every figure: the competitor's published schedule and the date we read it.
-- Reports for your committee built from your peer set.
-See Hamilton plans: https://feeinsight.com/subscribe?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=what-hamilton-adds
-Prefer a walkthrough first? Ask for a demo (https://feeinsight.com/contact?source=demo&utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=what-hamilton-adds).
+===========================================
 
-Full email with tables and charts: {$url}
+The free reports show the market. Hamilton, the Fee Insight Pro workspace, shows where your institution sits in it, against the peers you choose.
+
+- Your schedule, fee by fee, next to your peers' median and middle 50%.
+
+- Peers you pick by charter, asset size, district or county, instead of an anonymous average.
+
+- The source behind every figure: the competitor's published schedule and the date we read it.
+
+- Reports for your committee built from your peer set.
+
+See Hamilton plans: https://feeinsight.com/subscribe
+
+Prefer a walkthrough first? Ask for a demo (https://feeinsight.com/contact?source=demo).
+
+From here you'll get the monthly Fee Pulse: one finding from the index and one thing to check. Reply any time with a question.
 
 --
-Fee Insight · feeinsight.com · reply with questions
+Fee Insight LLC, 522 W Riverside Ave, Ste N, Spokane, WA 99201
+You're getting this because you signed up at feeinsight.com.
 Unsubscribe: {$unsubscribe}

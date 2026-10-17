@@ -12,6 +12,13 @@ export const LEGAL_ENTITY_LINE = `${LEGAL_ENTITY_NAME}, a ${LEGAL_ENTITY_STATE} 
 // Unregistered marks take ™; switch to ® only for a mark the USPTO has registered.
 export const TRADEMARK_NOTICE = `${SITE_NAME}™ and The ${PRODUCT_NAME}™ are trademarks of ${LEGAL_ENTITY_NAME}.`;
 export const CONTACT_EMAIL = "hello@bankfeeindex.com";
+/**
+ * The postal address every subscription and marketing email carries in its footer (CAN-SPAM).
+ * Same address as the MailerLite account footer. MARKETING_MAILING_ADDRESS overrides it.
+ */
+export const MAILING_ADDRESS = "Fee Insight LLC, 522 W Riverside Ave, Ste N, Spokane, WA 99201";
+/** Every email we send goes out under this display name. */
+export const EMAIL_SENDER_NAME = SITE_NAME;
 export const RESEARCH_IMPRINT = "Fee Insight Research";
 export const HAMILTON_ATTRIBUTION = "Hamilton — Fee Insight";
 /** Credit line returned with every public API response, for partners to display with the data. */
