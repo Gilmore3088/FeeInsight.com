@@ -11,6 +11,12 @@ import { sql } from "./connection";
  */
 
 export const MAKING_ENDS_MEET_AREA_SOURCE = "cfpb-making-ends-meet";
+/**
+ * The citation the CFPB's terms ask for. Show it under any figure from this survey, and never use
+ * CFPB branding or suggest the CFPB endorses the figure (our weighted shares are our own work).
+ */
+export const MAKING_ENDS_MEET_CITATION =
+  "Consumer Financial Protection Bureau. Making Ends Meet Public Use File. https://www.consumerfinance.gov/data-research/making-ends-meet-survey-data/public-data/";
 export const OVERDRAFT_SERIES = "mem_paid_overdraft_fee";
 const PAYERS = "_among_od_payers";
 const NONPAYERS = "_among_od_nonpayers";

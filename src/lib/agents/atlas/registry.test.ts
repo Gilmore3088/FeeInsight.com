@@ -54,6 +54,6 @@ describe("unknownCrew", () => {
     const crew = unknownCrew(new Date("2026-10-09T12:00:00Z"));
     expect(crew).toHaveLength(CREW.length);
     expect(crew.every((member) => member.state === "unknown" && member.lastSuccessAt === null)).toBe(true);
-    expect(crew.find((member) => member.agent === "atlas")?.nextRunAt).toBe("2026-10-09T12:05:00.000Z");
+    expect(crew.find((member) => member.agent === "atlas")?.nextRunAt).toBe("2026-10-09T12:09:00.000Z");
   });
 });

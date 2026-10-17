@@ -602,6 +602,24 @@ describe("Hamilton agentic publish", () => {
     expect(unsafeSql).toContain("upper(btrim(inst.state_code))");
   });
 
+  it("counts each institution's fees once, in one grouped read scoped like the selection", async () => {
+    const db = createDbMock([]);
+    await runHamiltonPublish({ runId: 120, stateCode: "CA", limit: 10, db: asPublishDb(db) });
+
+    const selects = db.unsafe.mock.calls.filter((call) => String(call[0]).includes("WITH deep AS MATERIALIZED"));
+    expect(selects).toHaveLength(2);
+    const [state, national] = selects.map((call) => String(call[0]));
+    // Correlated per verified row, the count ran 164k times in the national fill (17 Oct 2026).
+    for (const text of [state, national]) {
+      expect(text).toContain("GROUP BY depth.institution_id");
+      expect(text).toContain("AND fv.institution_id IN (SELECT deep.institution_id FROM deep)");
+      expect(text).not.toContain("WHERE fp.institution_id = fv.institution_id");
+    }
+    expect(state).toContain("AND fp.institution_id IN (SELECT scope.id FROM institution_sources scope");
+    expect(state).toContain("AND pv.institution_id IN (SELECT scope.id FROM institution_sources scope");
+    expect(national).not.toContain("institution_sources scope");
+  });
+
   it("fills a state lane's short publish batch with the oldest eligible rows from any state", async () => {
     const other = { ...verifiedFee, fee_verified_id: 802, fee_raw_id: 702, institution_id: 43 };
     const db = createDbMock([]);
@@ -614,7 +632,7 @@ describe("Hamilton agentic publish", () => {
 
     const result = await runHamiltonPublish({ runId: 118, stateCode: "CA", limit: 10, db: asPublishDb(db) });
 
-    const selects = db.unsafe.mock.calls.filter((call) => String(call[0]).includes("WITH eligible AS"));
+    const selects = db.unsafe.mock.calls.filter((call) => String(call[0]).includes(" eligible AS ("));
     expect(selects).toHaveLength(2);
     expect(selects[0][1]).toContain("CA");
     expect(selects[1][1]).not.toContain("CA");
@@ -625,7 +643,7 @@ describe("Hamilton agentic publish", () => {
   it("keeps a single bank's read scoped to that bank", async () => {
     const db = createDbMock([]);
     await runHamiltonPublish({ runId: 119, stateCode: "CA", institutionId: 42, db: asPublishDb(db) });
-    const selects = db.unsafe.mock.calls.filter((call) => String(call[0]).includes("WITH eligible AS"));
+    const selects = db.unsafe.mock.calls.filter((call) => String(call[0]).includes(" eligible AS ("));
     expect(selects).toHaveLength(1);
   });
 

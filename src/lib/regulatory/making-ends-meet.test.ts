@@ -7,6 +7,7 @@ import {
   computeMakingEndsMeet,
   csvHeaders,
   fetchMakingEndsMeet,
+  MEM_KNOWN_DATA_URLS,
   MEM_DATA_URL_ENV,
   normCode,
   parseTableCodebook,
@@ -287,6 +288,8 @@ describe("transport", () => {
     const r = await fetchMakingEndsMeet({}, { fetchImpl, backoffMs: 0 });
     expect(r.rows).toEqual([]);
     expect(r.emptyReason).toMatch(/MAKING_ENDS_MEET_DATA_URL/);
-    expect(Object.values(r.transport.pages)).toEqual(["HTTP 404", "HTTP 404"]);
+    expect(Object.values(r.transport.pages)).toEqual(["HTTP 404", "HTTP 404", "HTTP 404"]);
+    // With no listed file, every known sample zip is tried, not just the first.
+    expect(Object.keys(r.transport.dataTried)).toEqual([...MEM_KNOWN_DATA_URLS]);
   });
 });

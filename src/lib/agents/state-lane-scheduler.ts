@@ -140,7 +140,7 @@ export const STATE_LANE_STEPS: AgentRunStepDefinition[] = [
     title: "Verify state raw fee observations",
     // Darwin's per-step maximum. At the default 100 a lane cleared about 75 fees per pass
     // while Knox re-extraction queued thousands an hour (2026-10-05: 16,471 waiting).
-    // A 500-row pass takes seconds and lanes still run one at a time.
+    // A 500-row pass takes seconds, even with lanes side by side (PARALLEL_STATE_LANES).
     input: { verify_limit: DARWIN_VERIFY_MAX_LIMIT },
   },
   {

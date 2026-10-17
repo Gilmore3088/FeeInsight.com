@@ -23,6 +23,7 @@ import { CsvStreamParser, parseCsvTable } from "./industry-events";
  */
 
 export const MEM_PAGE_URLS = [
+  "https://www.consumerfinance.gov/data-research/making-ends-meet-survey-data/public-data/",
   "https://www.consumerfinance.gov/data-research/making-ends-meet-survey-data/public-use-file/",
   "https://www.consumerfinance.gov/data-research/making-ends-meet-survey-data/",
 ] as const;
@@ -32,11 +33,13 @@ export const MEM_GUESS_CODEBOOK_URLS = [
   "https://files.consumerfinance.gov/f/documents/cfpb_making-ends-meet_public-use-file_codebook.pdf",
   "https://files.consumerfinance.gov/f/documents/cfpb_making-ends-meet_public-use-file_codebook.xlsx",
 ] as const;
-export const MEM_GUESS_DATA_URLS = [
-  "https://files.consumerfinance.gov/f/documents/cfpb_making-ends-meet_public-use-file_csv.zip",
-  "https://files.consumerfinance.gov/f/documents/cfpb_making-ends-meet_public-use-file.zip",
-  "https://files.consumerfinance.gov/f/documents/cfpb_making-ends-meet_public-use-file.csv",
-] as const;
+/**
+ * One zip per sample (data CSV and DTA, questionnaires, codebook), as the public-data page listed
+ * them on 2026-10-17. Sample 2 is not released. Used, all of them, when the pages list no file.
+ */
+export const MEM_KNOWN_DATA_URLS = [1, 3, 4, 5, 6].map(
+  (sample) => `https://files.consumerfinance.gov/f/documents/cfpb_making-ends-meet_data-sample-${sample}.zip`,
+);
 export const MEM_DATA_URL_ENV = "MAKING_ENDS_MEET_DATA_URL";
 export const MEM_CODEBOOK_URL_ENV = "MAKING_ENDS_MEET_CODEBOOK_URL";
 
@@ -1034,10 +1037,8 @@ export async function fetchMakingEndsMeet(env: Record<string, string | undefined
   transport.unreadableData = found.unreadableData;
   if (found.userGuides[0]) transport.userGuideUrl = found.userGuides[0];
 
-  const dataUrls = splitUrls(env[MEM_DATA_URL_ENV]).length > 0 ? splitUrls(env[MEM_DATA_URL_ENV]) : found.data.length > 0 ? found.data : [...MEM_GUESS_DATA_URLS];
+  const dataUrls = splitUrls(env[MEM_DATA_URL_ENV]).length > 0 ? splitUrls(env[MEM_DATA_URL_ENV]) : found.data.length > 0 ? found.data : MEM_KNOWN_DATA_URLS;
   const codebookUrls = splitUrls(env[MEM_CODEBOOK_URL_ENV]).length > 0 ? splitUrls(env[MEM_CODEBOOK_URL_ENV]) : found.codebooks.length > 0 ? found.codebooks : [...MEM_GUESS_CODEBOOK_URLS];
-  // Listed files are all read (they may be one per wave); guesses stop at the first that answers.
-  const readAll = splitUrls(env[MEM_DATA_URL_ENV]).length > 0 || found.data.length > 0;
 
   const files: DataFile[] = [];
   const zipCodebooks: Array<{ name: string; bytes: Uint8Array }> = [];
@@ -1051,7 +1052,6 @@ export async function fetchMakingEndsMeet(env: Record<string, string | undefined
     transport.dataTried[url] = `ok: ${unpacked.files.length} CSV file(s)${unpacked.other.length ? `; also ${unpacked.other.slice(0, 5).join(", ")}` : ""}`;
     files.push(...unpacked.files);
     zipCodebooks.push(...unpacked.codebookFiles);
-    if (!readAll && unpacked.files.length > 0) break;
   }
   if (files.length === 0) {
     const nonCsv = found.unreadableData.length > 0 ? `; the page lists only ${found.unreadableData.map((u) => u.split("/").pop()).join(", ")}, which are not read (no CSV)` : "";
@@ -1059,14 +1059,20 @@ export async function fetchMakingEndsMeet(env: Record<string, string | undefined
   }
   const headers = [...new Set(files.flatMap((f) => csvHeaders(f.text)))];
 
+  // Each sample's zip carries its own codebook; all are read and merged (first entry per variable
+  // wins) so a later sample's variables are documented too.
   let codebook: Codebook | null = null;
   for (const z of zipCodebooks) {
-    codebook = await readCodebook(z.name, z.bytes, headers);
-    transport.codebookTried[`zip:${z.name}`] = codebook ? `ok: ${codebook.entries.length} entries` : "no entries read";
-    if (codebook) {
+    const book = await readCodebook(z.name, z.bytes, headers);
+    transport.codebookTried[`zip:${z.name}`] = book ? `ok: ${book.entries.length} entries` : "no entries read";
+    if (!book) continue;
+    if (!codebook) {
+      codebook = { format: book.format, entries: [...book.entries] };
       transport.codebookUrl = `zip:${z.name}`;
-      break;
+      continue;
     }
+    const known = new Set(codebook.entries.map((e) => e.variable.toLowerCase()));
+    for (const e of book.entries) if (!known.has(e.variable.toLowerCase())) codebook.entries.push(e);
   }
   if (!codebook) {
     for (const url of codebookUrls.slice(0, 4)) {
