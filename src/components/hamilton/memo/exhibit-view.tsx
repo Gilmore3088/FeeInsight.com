@@ -8,6 +8,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { Callout, More, QuestionCard, SERIF, fmtMoney } from "./memo";
 import { REPORT_DESIGN_CSS } from "@/lib/report-design/css";
 import type { Exhibit, ExhibitMarker, Fact, HamiltonAnswer, SourceRef } from "@/lib/hamilton/workspace/types";
+import { staleSourceLabel } from "@/lib/hamilton/source-age";
 
 export type ExhibitSpec = Exhibit;
 export type AnswerSpec = Pick<HamiltonAnswer, "feeCategory" | "headline" | "claims" | "drivers" | "exhibit" | "question" | "evidenceLevel">;
@@ -35,9 +36,21 @@ export function sourceDate(iso: string | null | undefined): string | null {
   return new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
 }
 
+/**
+ * A source's date with its age label when it is old ("Jun 2024 · Source over a year old").
+ * Every answer branch shows source dates through this, so the old-source rule reads the same
+ * everywhere. A missing date stays missing (null); a recent one shows the date alone.
+ */
+export function sourceDateWithAge(iso: string | null | undefined, now: Date = new Date()): string | null {
+  const date = sourceDate(iso);
+  if (!date) return null;
+  const age = staleSourceLabel(iso, now);
+  return age ? `${date} · ${age}` : date;
+}
+
 /** A source as the reader sees it: name, date and, for a market figure, how many institutions. */
 export function SourceChip({ source, n }: { source: SourceRef; n?: number }) {
-  const date = sourceDate(source.asOf);
+  const date = sourceDateWithAge(source.asOf);
   const text = [source.label, date, n != null ? `n=${n.toLocaleString("en-US")}` : null].filter(Boolean).join(" · ");
   const cls = "inline-block rounded border border-warm-200 bg-white px-1.5 py-0.5 text-[11px] leading-tight text-warm-600";
   return source.url ? (
@@ -71,7 +84,7 @@ function sourceLine(sources: readonly SourceRef[]): ReactNode {
       ) : (
         s.label
       )}
-      {s.asOf ? `, ${sourceDate(s.asOf)}` : ""}
+      {s.asOf ? `, ${sourceDateWithAge(s.asOf)}` : ""}
     </span>
   ));
 }

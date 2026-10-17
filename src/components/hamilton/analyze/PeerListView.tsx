@@ -6,8 +6,7 @@ import { createPeerSet } from "@/app/pro/(hamilton)/settings/actions";
 import { formatPeerAssets, type PeerListResponse, type PeerListContinuation } from "@/lib/hamilton/peer-list";
 import { defaultPeerSetName } from "@/lib/hamilton/peer-set-name";
 import { fmtMoney } from "@/components/hamilton/memo/memo";
-import { sourceDate } from "@/components/hamilton/memo/exhibit-view";
-import { percentFeeAllowed } from "@/lib/percent-fees";
+import { sourceDateWithAge } from "@/components/hamilton/memo/exhibit-view";
 
 type Sort = "selection" | "name" | "assets_desc" | "assets_asc";
 export interface PeerSaveContext {
@@ -101,15 +100,15 @@ function SelectablePeerList({ response, saveContext }: { response: PeerListRespo
   const criteria = data.criteria;
   // Snapshots saved before #1538 carry no label; every one of them compared NSF fees.
   const feeLabel = data.feeComparison?.label ?? "NSF";
-  // Missing is not $0, and a fee charged as a rate is not missing: this table lists dollar fees only.
-  const noFeeLine = data.feeComparison && percentFeeAllowed(data.feeComparison.category)
-    ? `No published consumer ${feeLabel} fee in dollars is on file. Fees charged as a rate are not listed here.`
-    : `No published consumer ${feeLabel} fee on file`;
+  // Missing is not $0. A fee charged as a rate is listed as that rate on its own line, never as dollars.
+  const noFeeLine = `No published consumer ${feeLabel} fee on file`;
+  // Snapshots saved before rates were listed carry no rate lines.
+  const rateFees = data.feeComparison?.rateFees ?? [];
   return (
     <section aria-label="Peer list" className="flex min-w-0 flex-col gap-4 font-sans">
       <div>
         <h2 className="text-xl font-semibold text-warm-900">{response.shortAnswer}</h2>
-        <p className="mt-1 text-sm text-warm-700">Research subject: {data.subject?.name ?? "Not available"}. Amounts shown in US dollars.</p>
+        <p className="mt-1 text-sm text-warm-700">Research subject: {data.subject?.name ?? "Not available"}. Amounts shown in US dollars{rateFees.length ? "; fees charged as a rate are shown as a percentage" : ""}.</p>
       </div>
       {criteria ? (
         <details className="rounded-lg border border-warm-300 bg-warm-50 px-4 py-3">
@@ -126,19 +125,25 @@ function SelectablePeerList({ response, saveContext }: { response: PeerListRespo
           <p className="mt-1 text-sm text-warm-700">{data.feeComparison.note}</p>
           <div role="region" aria-label={`${feeLabel} fee comparison; scroll horizontally`} tabIndex={0} className="mt-3 overflow-x-auto">
             <table aria-label={`Published ${feeLabel} charges`} className="w-full min-w-[700px] text-left text-sm">
-              <thead><tr><th scope="col" className="p-2">Institution</th><th scope="col" className="p-2">Fee</th><th scope="col" className="p-2">Amount</th><th scope="col" className="p-2">Frequency</th><th scope="col" className="p-2">Published / source</th></tr></thead>
+              <thead><tr><th scope="col" className="p-2">Institution</th><th scope="col" className="p-2">Fee</th><th scope="col" className="p-2">{rateFees.length ? "Amount or rate" : "Amount"}</th><th scope="col" className="p-2">Frequency</th><th scope="col" className="p-2">Published / source</th></tr></thead>
               <tbody>
                 {[...data.rows.map(row => ({ id: row.institutionId, name: row.name, isAccount: false })),
                   ...(data.feeComparison.account ? [{ id: data.feeComparison.account.institutionId, name: data.feeComparison.account.name, isAccount: true }] : [])
                 ].map(item => {
-                  const charges = data.feeComparison!.fees.filter(fee => fee.institutionId === item.id);
+                  // Dollar lines first, then rate lines; each stays its own line and nothing is pooled.
+                  const charges = [
+                    ...data.feeComparison!.fees.filter(fee => fee.institutionId === item.id)
+                      .map(fee => ({ ...fee, key: `${item.id}:${fee.id}`, shown: fee.amount === null ? "Amount not stated" : fmtMoney(fee.amount) })),
+                    ...rateFees.filter(fee => fee.institutionId === item.id)
+                      .map(fee => ({ ...fee, key: `${item.id}:rate:${fee.id}`, shown: fee.rateLabel })),
+                  ];
                   return charges.length ? charges.map(charge => (
-                    <tr key={`${item.id}:${charge.id}`} className="border-t border-warm-200">
+                    <tr key={charge.key} className="border-t border-warm-200">
                       <th scope="row" className="p-2 font-medium">{item.name}{item.isAccount ? " (your institution)" : ""}</th>
                       <td className="p-2">{charge.name}</td>
-                      <td className="p-2 tabular-nums">{charge.amount === null ? "Amount not stated" : fmtMoney(charge.amount)}</td>
+                      <td className="p-2 tabular-nums">{charge.shown}</td>
                       <td className="p-2">{charge.frequency ?? "Not stated"}</td>
-                      <td className="p-2">{sourceDate(charge.publishedAt) ?? "Date unavailable"}
+                      <td className="p-2">{sourceDateWithAge(charge.publishedAt) ?? "Date unavailable"}
                         {charge.documentUrl || charge.sourceUrl ? <a href={charge.documentUrl ?? charge.sourceUrl ?? "#"} target="_blank" rel="noopener noreferrer" className="ml-2 underline">Fee schedule</a> : <span className="ml-2">Source link unavailable</span>}
                       </td>
                     </tr>
@@ -198,7 +203,7 @@ function SelectablePeerList({ response, saveContext }: { response: PeerListRespo
                   </th>
                   <td className="p-3">{[row.city, row.stateCode].filter(Boolean).join(", ") || "Not available"}</td>
                   <td className="whitespace-nowrap p-3 text-right tabular-nums">{formatPeerAssets(row.totalAssetsUsd)}</td>
-                  <td className="p-3"><p className="tabular-nums">{sourceDate(row.reportDate) ?? "Not available"}</p>
+                  <td className="p-3"><p className="tabular-nums">{sourceDateWithAge(row.reportDate) ?? "Not available"}</p>
                     {row.source ? <p className="mt-1 text-xs text-warm-600">{row.sourceUrl ? <a href={row.sourceUrl} target="_blank" rel="noopener noreferrer" className="underline">{row.source.toUpperCase()} filing source</a> : `${row.source.toUpperCase()} filing; link unavailable`}</p> : null}
                   </td>
                   <td className="p-3 text-xs text-warm-700">{row.feeCoverage === "available" ? "Published fees available" : "No published fees on file"}</td>

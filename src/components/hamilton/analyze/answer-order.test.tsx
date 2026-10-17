@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildFeeAnswer } from "@/lib/hamilton/workspace/answer";
 import { overdraftResearch } from "@/lib/hamilton/workspace/test-fixtures";
 import type { AskResponse, Scenario } from "@/lib/hamilton/workspace/types";
-import type { PeerFeeEntry, PeerListResponse, PeerListRow } from "@/lib/hamilton/peer-list";
+import type { PeerFeeEntry, PeerListResponse, PeerListRow, PeerRateFeeEntry } from "@/lib/hamilton/peer-list";
 import { StorylineView } from "@/components/hamilton/storyline/StorylineView";
 import { sampleStoryline } from "@/components/hamilton/storyline/test-fixture";
 import { SourceChip } from "@/components/hamilton/memo/exhibit-view";
@@ -167,6 +167,9 @@ const peer = (id: number, name: string): PeerListRow => ({
 const fee = (institutionId: number, id: number, amount: number | null, publishedAt: string | null, name = "NSF Fee"): PeerFeeEntry => ({
   institutionId, id, name, amount, frequency: "per_item", publishedAt, sourceDocumentId: id, documentUrl: "https://bank.test/fees", sourceUrl: null,
 });
+const rateFee = (institutionId: number, id: number, rateLabel: string, publishedAt: string | null): PeerRateFeeEntry => ({
+  institutionId, id, name: "Foreign transaction", rateLabel, frequency: "per_item", publishedAt, sourceDocumentId: id, documentUrl: "https://bank.test/fees", sourceUrl: null,
+});
 function peerList(category = "nsf", label = "NSF", fees: PeerFeeEntry[] = []): PeerListResponse {
   return {
     kind: "peer_list",
@@ -217,9 +220,43 @@ describe("peer list: criteria and table before anything optional", () => {
     expect(table.textContent).not.toMatch(/\bfree\b|verified/i);
   });
 
-  it("does not call a peer with a rate-stated fee missing", () => {
+  it("lists a peer's rate fee on its own line as a rate, never as dollars or missing", () => {
+    const response = peerList("card_foreign_txn", "foreign transaction", [fee(201, 1, 0, "2026-09-01T00:00:00Z", "Foreign transaction fee")]);
+    response.peerList.feeComparison!.rateFees = [
+      rateFee(201, 2, "1.1% of the transaction", "2026-09-01T00:00:00Z"),
+      rateFee(203, 3, "3% of the transaction ($10 minimum)", "2026-08-01T00:00:00Z"),
+    ];
+    render(<PeerListView response={response} />);
+    const table = screen.getByRole("table", { name: "Published foreign transaction charges" });
+    const row = (name: string) => within(table).getAllByRole("row").filter((r) => r.textContent?.includes(name));
+    // The $0 dollar line and the rate line from one peer stay two lines; neither is merged into the other.
+    expect(row("Zero Bank").map((r) => r.textContent)).toEqual([expect.stringContaining("$0"), expect.stringContaining("1.1% of the transaction")]);
+    expect(row("Zero Bank")[1].textContent).not.toMatch(/\$/);
+    expect(row("Variable Bank")[0].textContent).toContain("3% of the transaction ($10 minimum)");
+    expect(row("Missing Bank")[0].textContent).toContain("No published consumer foreign transaction fee on file");
+    expect(within(table).getByRole("columnheader", { name: "Amount or rate" })).toBeTruthy();
+    expect(table.textContent).not.toMatch(/not listed here|in dollars is on file|average|median|\bfree\b/i);
+  });
+
+  it("says a peer with neither a dollar nor a rate fee has none on file, and older snapshots still render", () => {
     render(<PeerListView response={peerList("card_foreign_txn", "foreign transaction", [])} />);
-    expect(screen.getAllByText("No published consumer foreign transaction fee in dollars is on file. Fees charged as a rate are not listed here.")).toHaveLength(4);
+    expect(screen.getAllByText("No published consumer foreign transaction fee on file")).toHaveLength(4);
+    expect(screen.getByRole("columnheader", { name: "Amount" })).toBeTruthy();
+  });
+
+  it("labels an old fee source beside its date and leaves recent and missing dates plain", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-17T12:00:00Z"));
+    try {
+    render(<PeerListView response={peerList("nsf", "NSF", fees.concat(fee(202, 6, 25, null)))} />);
+    const table = screen.getByRole("table", { name: "Published NSF charges" });
+    const row = (name: string) => within(table).getAllByRole("row").filter((r) => r.textContent?.includes(name));
+    expect(row("Two Line Bank")[0].textContent).toContain("Jan 2024 · Source over a year old");
+    expect(row("Two Line Bank")[1].textContent).toContain("Sep 2026");
+    expect(row("Two Line Bank")[1].textContent).not.toContain("over a year old");
+    expect(row("Missing Bank")[0].textContent).toContain("Date unavailable");
+    expect(row("Missing Bank")[0].textContent).not.toContain("over a year old");
+    } finally { vi.useRealTimers(); }
   });
 
   it("names the reader's own institution plainly, not as verified", () => {

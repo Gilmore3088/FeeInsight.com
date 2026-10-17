@@ -1,6 +1,7 @@
 import { recordProRequest } from "@/lib/agents/run-store";
 import { getPeerListRows, getPeerListSubject } from "@/lib/data-store/hamilton-peer-list";
-import { getPublishedPeerFees } from "@/lib/data-store/hamilton-peer-fees";
+import { getPublishedPeerFees, getPublishedPeerRateFees } from "@/lib/data-store/hamilton-peer-fees";
+import { isStaleSource, SOURCE_STALE_AFTER_DAYS } from "./source-age";
 import { getActivePeerSet } from "./active-peer-set";
 import { loadHamiltonAccountContext } from "./account-context-store";
 import { normalizeCanonicalInstitutionId } from "./context-link";
@@ -104,11 +105,13 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
               return message("unavailable", "The account institution ID is invalid. No comparison was generated.");
           }
           const ids = rows.map(row => row.institutionId);
-          const fees = ids.length || account ? await getPublishedPeerFees(
-            [...new Set([...ids, ...(account ? [account.institutionId] : [])])], category) : [];
+          const compared = [...new Set([...ids, ...(account ? [account.institutionId] : [])])];
+          const [fees, rateFees] = compared.length
+            ? await Promise.all([getPublishedPeerFees(compared, category), getPublishedPeerRateFees(compared, category)])
+            : [[], []];
           feeComparison = {
-            category, label, comparedPeerIds: ids, fees, account, includesAccount: account !== null,
-            note: `Each consumer ${label} fee a peer publishes is listed on its own line, $0 fees included. A peer with no line has no matching published fee on file, and Hamilton fills in no amount for it.`,
+            category, label, comparedPeerIds: ids, fees, rateFees, account, includesAccount: account !== null,
+            note: `Each consumer ${label} fee a peer publishes is listed on its own line, $0 fees included.${rateFees.length ? " A fee charged as a rate is shown as that rate and is not converted to dollars or compared with dollar amounts." : ""} A peer with no line has no matching published fee on file, and Hamilton fills in no amount for it.`,
           };
         }
         return {
@@ -176,8 +179,8 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
         if (criteria.requestedCount !== null && found.totalMatches < criteria.requestedCount) notes.push(found.totalMatches === 0
           ? `No institution meets these criteria. The filters above were not widened to find ${criteria.requestedCount}.`
           : `Only ${found.totalMatches} institution${found.totalMatches === 1 ? " meets" : "s meet"} these criteria. The filters above were not widened to reach ${criteria.requestedCount}.`);
-        const older = found.rows.filter(row => row.reportDate && now.getTime() - new Date(`${row.reportDate}T00:00:00Z`).getTime() > 365 * 86400000).length;
-        if (older) notes.push(`${older} displayed asset filing${older === 1 ? " is" : "s are"} more than 365 days old. Review the reporting dates before comparing.`);
+        const older = found.rows.filter(row => isStaleSource(row.reportDate, now)).length;
+        if (older) notes.push(`${older} displayed asset filing${older === 1 ? " is" : "s are"} more than ${SOURCE_STALE_AFTER_DAYS} days old. Review the reporting dates before comparing.`);
         result = {
           kind: "peer_list",
           shortAnswer: `${found.rows.length} of ${found.totalMatches} matching institutions for ${subject.name}.`,

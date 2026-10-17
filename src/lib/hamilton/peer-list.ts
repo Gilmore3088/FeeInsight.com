@@ -82,6 +82,23 @@ export interface PeerFeeEntry {
   documentUrl: string | null;
   sourceUrl: string | null;
 }
+/**
+ * A peer's fee stated as a rate ("1.1% of the transaction"), read from
+ * published_fee_rate_catalog. It has no dollar amount and is never pooled, averaged,
+ * compared with or converted into the dollar entries beside it.
+ */
+export interface PeerRateFeeEntry {
+  institutionId: number;
+  id: number;
+  name: string;
+  /** "1.1% of the transaction", "3% of the advance ($10 minimum)". */
+  rateLabel: string;
+  frequency: string | null;
+  publishedAt: string | null;
+  sourceDocumentId: number | null;
+  documentUrl: string | null;
+  sourceUrl: string | null;
+}
 /** Preserve individual published charges; never collapse distinct fees into a median. */
 export interface PeerFeeComparison {
   category: string;
@@ -89,6 +106,8 @@ export interface PeerFeeComparison {
   label?: string;
   comparedPeerIds: number[];
   fees: PeerFeeEntry[];
+  /** Fees stated as a rate, each on its own line; absent on snapshots saved before rates were listed. */
+  rateFees?: PeerRateFeeEntry[];
   account: { institutionId: number; name: string } | null;
   includesAccount: boolean;
   note: string;

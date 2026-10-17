@@ -9,7 +9,7 @@ import { Loader2 } from "lucide-react";
 import type { Fact, SourceRef } from "@/lib/hamilton/workspace/types";
 import { withFiguresBold } from "@/components/hamilton/memo/answer-memo";
 import { SERIF } from "@/components/hamilton/memo/memo";
-import { sourceDate } from "@/components/hamilton/memo/exhibit-view";
+import { sourceDateWithAge } from "@/components/hamilton/memo/exhibit-view";
 import { LensSwitch } from "./LensSwitch";
 import { StoryExhibitView } from "./story-exhibits";
 import { OptionLetter, OptionScaleChart, OptionStanding, optionPoints, optionScale } from "./option-compare";
@@ -123,7 +123,7 @@ function SourceList({ notes }: { notes: SourceNotes }) {
       <ol className="grid gap-x-6 gap-y-1 text-[13px] leading-snug text-warm-600 sm:grid-cols-2">
         {notes.list.map((s, i) => {
           // One sample size reads as n=; several different ones would only clutter the note.
-          const detail = [sourceDate(s.asOf), s.n.length === 1 ? `n=${s.n[0].toLocaleString("en-US")}` : null]
+          const detail = [sourceDateWithAge(s.asOf), s.n.length === 1 ? `n=${s.n[0].toLocaleString("en-US")}` : null]
             .filter(Boolean)
             .join(" · ");
           return (

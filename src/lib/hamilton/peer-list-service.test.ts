@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ subject: vi.fn(), rows: vi.fn(), fees: vi.fn(), resolve: vi.fn(), account: vi.fn(), active: vi.fn(), record: vi.fn() }));
+const mocks = vi.hoisted(() => ({ subject: vi.fn(), rows: vi.fn(), fees: vi.fn(), rateFees: vi.fn(), resolve: vi.fn(), account: vi.fn(), active: vi.fn(), record: vi.fn() }));
 vi.mock("@/lib/data-store/hamilton-peer-list", () => ({ getPeerListSubject: mocks.subject, getPeerListRows: mocks.rows }));
-vi.mock("@/lib/data-store/hamilton-peer-fees", () => ({ getPublishedPeerFees: mocks.fees }));
+vi.mock("@/lib/data-store/hamilton-peer-fees", () => ({ getPublishedPeerFees: mocks.fees, getPublishedPeerRateFees: mocks.rateFees }));
 vi.mock("./workspace-context", () => ({ resolveHamiltonInstitutionContext: mocks.resolve }));
 vi.mock("./account-context-store", () => ({ loadHamiltonAccountContext: mocks.account }));
 vi.mock("./active-peer-set", () => ({ getActivePeerSet: mocks.active }));
@@ -15,6 +15,7 @@ beforeEach(() => {
   mocks.subject.mockReset().mockResolvedValue(subject);
   mocks.rows.mockReset().mockResolvedValue({ rows: [peer], totalMatches: 1 });
   mocks.fees.mockReset().mockResolvedValue([{ institutionId: 303, id: 55, name: "NSF", amount: 0, frequency: "per_item", publishedAt: "2026-10-01T00:00:00Z", sourceDocumentId: 5, documentUrl: null, sourceUrl: null }]);
+  mocks.rateFees.mockReset().mockResolvedValue([]);
   mocks.resolve.mockReset().mockImplementation(async ({ instId }: { instId?: string }) => ({ institution: { id: instId ? Number(instId) : 202 }, error: null }));
   mocks.account.mockReset().mockResolvedValue({ status: "identified", institution: { id: 101, name: "Synthetic Account CU" }, profileLabel: null });
   mocks.active.mockReset().mockResolvedValue(null);
@@ -96,6 +97,25 @@ describe("exact displayed peer-list continuation", () => {
     expect(mocks.fees).toHaveBeenCalledWith([303], "nsf");
     expect(mocks.account).not.toHaveBeenCalled();
     expect(result.peerList.subject?.institutionId).toBe(202);
+  });
+  it("lists a peer's rate fee on its own line as a rate, apart from dollar fees", async () => {
+    mocks.fees.mockResolvedValue([]);
+    mocks.rateFees.mockResolvedValue([{ institutionId: 303, id: 77, name: "Foreign transaction", rateLabel: "1.1% of the transaction", frequency: "per_item", publishedAt: "2026-09-01T00:00:00Z", sourceDocumentId: 6, documentUrl: null, sourceUrl: null }]);
+    const original = (await answerPeerList(user, { institutionId: 202, question: "List peers" }))!;
+    const prior = makePeerListContinuation(original, "List peers", "202")!;
+    const result = (await answerPeerList(user, { institutionId: 202, question: "Compare their foreign transaction fees", previousPeerList: prior }))!;
+    expect(mocks.rateFees).toHaveBeenCalledWith([303], "card_foreign_txn");
+    expect(result.peerList.feeComparison?.fees).toEqual([]);
+    expect(result.peerList.feeComparison?.rateFees?.map(f => f.rateLabel)).toEqual(["1.1% of the transaction"]);
+    expect(result.peerList.feeComparison?.note).toContain("shown as that rate and is not converted to dollars");
+  });
+  it("adds no rate wording when no peer has a rate fee", async () => {
+    const original = (await answerPeerList(user, { institutionId: 202, question: "List peers" }))!;
+    const prior = makePeerListContinuation(original, "List peers", "202")!;
+    const result = (await answerPeerList(user, { institutionId: 202, question: "Compare their NSF fees", previousPeerList: prior }))!;
+    expect(mocks.rateFees).toHaveBeenCalledWith([303], "nsf");
+    expect(result.peerList.feeComparison?.rateFees).toEqual([]);
+    expect(result.peerList.feeComparison?.note).not.toMatch(/rate/);
   });
   it("compares any one named fee, not only NSF (#1538)", async () => {
     const original = (await answerPeerList(user, { institutionId: 202, question: "List peers" }))!;

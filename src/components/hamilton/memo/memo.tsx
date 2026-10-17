@@ -9,6 +9,7 @@ import { TabSelect } from "./TabSelect";
 import type { ReactNode } from "react";
 import { priceBands } from "@/lib/hamilton/fee-scenario";
 import type { AuditTrail } from "@/lib/hamilton/audit-trail";
+import { staleSourceLabel } from "@/lib/hamilton/source-age";
 
 export const SERIF = { fontFamily: "var(--fi-font-sans)" } as const;
 
@@ -626,6 +627,12 @@ export function QuestionCard({
   );
 }
 
+/** " · Source over a year old" after an old source date; nothing after a recent or unreadable one. */
+function withAge(iso: string): string {
+  const age = staleSourceLabel(iso);
+  return age ? ` · ${age}` : "";
+}
+
 function longDateOrRange(asOf: string): string {
   return /^\d{4}-\d{2}-\d{2}$/.test(asOf)
     ? new Date(`${asOf}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })
@@ -679,7 +686,7 @@ export function AuditPanel({
                   )}
                 </span>
                 <span className="text-warm-700">{s.detail}</span>
-                <span className="text-warm-600 sm:text-right">{s.asOf ? `As of ${longDateOrRange(s.asOf)}` : "Date not recorded"}</span>
+                <span className="text-warm-600 sm:text-right">{s.asOf ? `As of ${longDateOrRange(s.asOf)}${withAge(s.asOf)}` : "Date not recorded"}</span>
               </li>
             ))}
           </ul>
@@ -699,7 +706,7 @@ export function AuditPanel({
                     {r.feeName}: {fmtMoney(r.amount)}
                   </span>
                   <span className="text-warm-600">
-                    {r.publishedAt ? `Published ${longDateOrRange(r.publishedAt.slice(0, 10))}` : "Publish date not recorded"}
+                    {r.publishedAt ? `Published ${longDateOrRange(r.publishedAt.slice(0, 10))}${withAge(r.publishedAt)}` : "Publish date not recorded"}
                     {r.verifiedByEventId ? <span title={`Verification record ${r.verifiedByEventId}`}> · Verified against the schedule</span> : null}
                     {r.documentUrl || r.sourceUrl ? (
                       <>
