@@ -12,29 +12,22 @@ import { searchInstitutions } from "@/lib/data-store/search";
 import { BENCHMARK_CSV_HEADER, benchmarkCsvRows, getInstitutionBenchmark } from "@/lib/data-store/benchmark-export";
 import { getRegulatoryWatch } from "@/lib/data-store/regulatory-watch";
 import { getRateFeesByInstitution } from "@/lib/data-store/rate-fees";
-import { validateApiKey } from "@/lib/api-auth";
-import { checkRateLimitWithTier } from "@/lib/api-rate-limit";
 import { logApiUsage } from "@/lib/api-usage";
-import { getCurrentUser } from "@/lib/auth";
-import { canAccessPremium } from "@/lib/access";
+import { authorizeV1 } from "@/lib/api-v1-auth";
 import { API_ATTRIBUTION } from "@/lib/constants";
 import { FEE_FAMILIES, getDisplayName } from "@/lib/fee-taxonomy";
 import {
-  API_V1_RATE_LIMIT_ROUTE,
   ApiParamError,
   apiError,
-  apiKeyRequiredError,
   apiOptions,
   assetTierParam,
   formatParam,
   toCsv,
   charterParam,
-  getAnonymousId,
   intParam,
-  isPaidApiKey,
   planRequiredError,
-  rateLimitError,
   stateParam,
+  withApiCaching,
   withApiHeaders,
 } from "@/lib/api-v1";
 
@@ -48,25 +41,9 @@ function toNumberOrNull(value: unknown): number | null {
 }
 
 async function handleGET(request: NextRequest) {
-  const auth = await validateApiKey(request);
-  if (auth.error) {
-    return apiError(401, "invalid_api_key", auth.error);
-  }
-  // The API is for partners we have issued a key to; the site's own signed-in
-  // download buttons still work without one.
-  const user = auth.valid ? null : await getCurrentUser();
-  if (!auth.valid && !user) return apiKeyRequiredError();
-
-  const organizationId = auth.organizationId;
-  const anonymousId = organizationId ? null : getAnonymousId(request);
-  const tier = auth.valid ? auth.tier : "free";
-  const rateLimit = await checkRateLimitWithTier(
-    organizationId,
-    anonymousId,
-    tier,
-    API_V1_RATE_LIMIT_ROUTE,
-  );
-  if (!rateLimit.allowed) return rateLimitError(rateLimit);
+  const caller = await authorizeV1(request);
+  if (caller instanceof Response) return caller;
+  const { organizationId, anonymousId, rateLimit, paid } = caller;
 
   const { searchParams } = request.nextUrl;
   let id: number | null;
@@ -126,6 +103,7 @@ async function handleGET(request: NextRequest) {
     if (format === "csv" && view !== "benchmark") throw new ApiParamError("format=csv is available for view=benchmark");
   } catch (error) {
     if (error instanceof ApiParamError) {
+      logApiUsage(organizationId, anonymousId, "api.v1.institutions", { status: 400 }).catch(() => {});
       return apiError(400, "invalid_parameter", error.message, { rateLimit });
     }
     throw error;
@@ -133,7 +111,6 @@ async function handleGET(request: NextRequest) {
 
   // Single institution detail (Pro and Enterprise only)
   if (id !== null) {
-    const paid = isPaidApiKey(auth) || canAccessPremium(user);
     if (!paid) {
       logApiUsage(organizationId, anonymousId, "api.v1.institutions.detail", {
         institution_id: id,
@@ -162,7 +139,7 @@ async function handleGET(request: NextRequest) {
       }).catch(() => {});
       if (format === "csv") {
         const slug = String(inst.institution_name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60);
-        return withApiHeaders(
+        return withApiCaching(request, withApiHeaders(
           new NextResponse(toCsv(BENCHMARK_CSV_HEADER, benchmark ? benchmarkCsvRows(benchmark) : []), {
             headers: {
               "Content-Type": "text/csv",
@@ -170,9 +147,9 @@ async function handleGET(request: NextRequest) {
             },
           }),
           rateLimit,
-        );
+        ));
       }
-      return withApiHeaders(NextResponse.json({ ...benchmark, attribution: API_ATTRIBUTION }), rateLimit);
+      return withApiCaching(request, withApiHeaders(NextResponse.json({ ...benchmark, attribution: API_ATTRIBUTION }), rateLimit));
     }
 
     // Regulatory watch: enforcement actions against local competitors and federal rule changes on its fees.
@@ -182,10 +159,10 @@ async function handleGET(request: NextRequest) {
         institution_id: id,
         status: 200,
       }).catch(() => {});
-      return withApiHeaders(
+      return withApiCaching(request, withApiHeaders(
         NextResponse.json({ id: Number(inst.id), name: inst.institution_name, ...watch, attribution: API_ATTRIBUTION }),
         rateLimit,
-      );
+      ));
     }
 
     const fees = (await getFeesByInstitution(id))
@@ -216,7 +193,7 @@ async function handleGET(request: NextRequest) {
       status: 200,
     }).catch(() => {});
 
-    return withApiHeaders(
+    return withApiCaching(request, withApiHeaders(
       NextResponse.json({
         id: Number(inst.id),
         name: inst.institution_name,
@@ -252,12 +229,16 @@ async function handleGET(request: NextRequest) {
         attribution: API_ATTRIBUTION,
       }),
       rateLimit,
-    );
+    ));
   }
 
   // Fee ranking: who charges the most (or least) for one fee (Pro and Enterprise only).
   if (feeCategory !== null) {
-    if (!(isPaidApiKey(auth) || canAccessPremium(user))) {
+    if (!paid) {
+      logApiUsage(organizationId, anonymousId, "api.v1.institutions.rank", {
+        fee_category: feeCategory,
+        status: 403,
+      }).catch(() => {});
       return planRequiredError(rateLimit, "Fee ranking");
     }
     const { rows, total } = await searchInstitutions({
@@ -280,7 +261,7 @@ async function handleGET(request: NextRequest) {
     }).catch(() => {});
 
     const pages = Math.ceil(total / pageSize);
-    return withApiHeaders(
+    return withApiCaching(request, withApiHeaders(
       NextResponse.json({
         fee_category: feeCategory,
         display_name: getDisplayName(feeCategory),
@@ -305,7 +286,7 @@ async function handleGET(request: NextRequest) {
         attribution: API_ATTRIBUTION,
       }),
       rateLimit,
-    );
+    ));
   }
 
   // Name search: banks with published fees sort first; has_fees does not apply.
@@ -327,7 +308,7 @@ async function handleGET(request: NextRequest) {
     }).catch(() => {});
 
     const pages = Math.ceil(total / pageSize);
-    return withApiHeaders(
+    return withApiCaching(request, withApiHeaders(
       NextResponse.json({
         total,
         page,
@@ -348,7 +329,7 @@ async function handleGET(request: NextRequest) {
         attribution: API_ATTRIBUTION,
       }),
       rateLimit,
-    );
+    ));
   }
 
   // List institutions
@@ -379,7 +360,7 @@ async function handleGET(request: NextRequest) {
   }).catch(() => {});
 
   const pages = Math.ceil(total / pageSize);
-  return withApiHeaders(
+  return withApiCaching(request, withApiHeaders(
     NextResponse.json({
       total,
       page,
@@ -400,7 +381,7 @@ async function handleGET(request: NextRequest) {
       attribution: API_ATTRIBUTION,
     }),
     rateLimit,
-  );
+  ));
 }
 
 export const GET = withApiRoutePolicy("api.v1.institutions", "GET", handleGET);

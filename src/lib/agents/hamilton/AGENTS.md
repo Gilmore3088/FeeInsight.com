@@ -519,7 +519,10 @@ the detail.
 32. Imported twins (`linkImportedFeesToTwins`, `source-check.ts`): an imported live fee with no
     document is pointed at its twin row that has one, up to 100 a step. No rollback. Then the
     source link fill (`fillSourceLinks`, #1342): a live fee with no link takes its own document's
-    URL; never a takedown (see Source Link Repair).
+    URL; never a takedown (see Source Link Repair). Then the link drift pass (`repairLinkDrift`,
+    #1347): a live fee whose link opens neither its document's URL nor the page its text was read
+    from takes its document's link when it traces there, or goes through the second look (see
+    Source Link Repair).
 33. Feedback sync (`syncPipelineFeedback`, `learning/feedback-sync.ts`): this step's takedowns
     and restores go into the shared learning store.
 34. Index refresh (`refreshFeeIndexCache`): not on a dry run; forced when the step published,
@@ -710,6 +713,16 @@ document, renamed, would close, samples, and `error` when the read or the close 
 off until James approves the dry-run counts. Rollback: clear `rolled_back_at` on rows whose reason
 ends in `(copy of the page)`.
 
+**The kept row keeps the fuller name.** The kept copy is chosen by edition, not name, so it can hold
+only the tail of a line ("Farmers ATM", "10X10") while the closed copy has it whole ("Non-customer
+use of Farmers ATM", "Safe Deposit Box: 10X10"). `carriedName` moves the closed name onto the kept
+row when the closed name is the kept name with a heading of one to five words in front, reads as a
+line's name (no `|`, not `unclearName`), and the kept copy's own text prints that heading shortly
+before the kept name. It runs only with the close (live), renames a live row still under its old
+name, and the `hamilton.page_copy_duplicates_collapsed` event lists each old and new name
+(`kept_names_carried`); the step reports `would_carry_kept_name` and `carried_name_samples`.
+Full-table dry count, 17 Oct: 27 of the 499 closes carry a name.
+
 **A closed page copy comes back (#1439 item 3).** `page-copy-restore.ts` runs just before the
 collapse on every publish step and reads closed page copies whose kept row is no longer live (up to
 500 a step, rotated by the run id). It follows the kept row's takedown through the rows it names
@@ -885,7 +898,11 @@ queued for the source check with `markRestoredForSourceCheck`), unless the same 
 is already live. Not found: nothing changes, and the repair takes it down as before. Only an
 imported fee is re-sourced (a Knox fee answers to the document Knox read it from), and a
 document that already holds another imported row of the same name is skipped (the import's
-unique key). The pass runs in every publish step (in a savepoint: a failed write is rolled back,
+unique key). A fee the shared check cannot tie to its price may be linked by hand
+(`HAND_SOURCE_LINKS`): 11764, Bay Cities' "$5 with e-Statements OR Direct Deposit" Express
+Checking tier, to the free print copy 27381 (the two plain copies hold its $0 and $10 tiers).
+A hand link applies only while the fee keeps its institution, name and amount, and the document
+is the institution's, current, completed, free and still prints the line. The pass runs in every publish step (in a savepoint: a failed write is rolled back,
 kept in the step's `source_link_resource.error`, and publishing carries on) and first in the
 hand-started repair (where a failed write fails the step). Each change writes one
 `pipeline_feedback` row (check `hamilton.source_link`, evidence `action` `resourced` or
@@ -905,6 +922,27 @@ document stays live for the re-source pass or the hand-started repair. Each fill
 `hamilton.source_link_fill` event; the step detail carries `source_link_fill`. A failed read or
 write changes nothing, is kept in `source_link_fill.error`, and publishing carries on. Reverse a
 fill as above; roll the pass back by setting `SOURCE_LINK_FILL_ON` to false.
+
+**Link drift (`repairLinkDrift`, `SOURCE_LINK_DRIFT_LIVE`, #1347).** A fee's link is the page its
+document's stored text was read from: the text's address (`agent_source_texts.source_url`, a
+schedule PDF the stored landing page links to, or a redirect's target) when the text is completed,
+else the document's URL (`documentLinkSql`, `hamilton/document-link.ts`). Knox copies the text's
+address, which is right. On Oct 17 (read-only), of 2,089 live dollar fees whose link was written
+differently from their document's URL, 587 were the same page (":443", "%20"), 1,453 were the page
+the text was read from, and 49 at 12 institutions (all imported rows) had drifted: a step moved the
+raw row to another document and kept the old link. Prevent: the identical-copy move
+(`refresh-copy.ts`) and the source check's relink now re-link the moved rows at every tier in the
+same write (`pointFeeLinksAtDocument`). Repair, after the fill in every publish step: a live fee
+whose link opens neither page (`documentLinkKey`) is traced in its own document's newest completed
+text (`traceLiveFee`, the shared `checkFeeAgainstSource`); traced, its published, verified and raw
+links become the document's (one `pipeline_feedback` row, check `hamilton.source_link_drift`,
+evidence `action` `repointed` with each tier's earlier link); not traced, it goes through the shared
+12-hour second look and is archived on its second failure (`rolled_back_reason =
+'source_link_drift: not in own document #<id> (<reason>)'`, verified row rejected with flag
+`source_link_drift`), never deleted. A fee whose document is another institution's is left to the
+other-bank check. Each run writes a `hamilton.source_link_drift` event; the step detail carries
+`source_link_drift`. Dry run on Oct 17: 49 re-pointed, 0 to the second look. Reverse a re-point from
+its evidence; roll the pass back by setting `SOURCE_LINK_DRIFT_LIVE` to false (it then only reports).
 
 ## Source Check
 
@@ -1003,6 +1041,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `RULES_RECHECK_STRATEGY` | `hamilton.rules_recheck` | v4 | `hamilton/rules-recheck.ts` |
 | `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v17 | `hamilton/source-check.ts` |
 | `SOURCE_LINK_VERSION` | `hamilton.source_link` | v2 | `hamilton/source-link.ts` |
+| `SOURCE_LINK_DRIFT_VERSION` | `hamilton.source_link_drift` | v1 | `hamilton/source-link.ts` |
 | `FEE_DEPENDENCE_VERSION` | — | v1 | `hamilton/studies/fee-dependence.ts` |
 | `PRICE_STUDY_VERSION` | — | v1 | `hamilton/studies/index.ts` |
 | `INFERRED_VOLUME_VERSION` | — | v2 | `hamilton/studies/inferred-volume.ts` |

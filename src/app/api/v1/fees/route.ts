@@ -3,49 +3,27 @@ import { NextRequest, NextResponse } from "next/server";
 import { getFeeCategoryDetail } from "@/lib/data-store";
 import { getPublicCategorySummaries } from "@/lib/public-stats";
 import { getDisplayName, getFeeFamily, getFeeTier, getSpotlightCategories } from "@/lib/fee-taxonomy";
-import { getCurrentUser } from "@/lib/auth";
-import { canAccessPremium, canExportData } from "@/lib/access";
-import { validateApiKey } from "@/lib/api-auth";
-import { checkRateLimitWithTier } from "@/lib/api-rate-limit";
+import { canExportData } from "@/lib/access";
 import { logApiUsage } from "@/lib/api-usage";
 import { API_ATTRIBUTION } from "@/lib/constants";
+import { authorizeV1 } from "@/lib/api-v1-auth";
 import {
-  API_V1_RATE_LIMIT_ROUTE,
   ApiParamError,
   apiError,
-  apiKeyRequiredError,
   apiOptions,
   formatParam,
-  getAnonymousId,
   isPaidApiKey,
   planRequiredError,
-  rateLimitError,
   toCsv,
+  withApiCaching,
   withApiHeaders,
 } from "@/lib/api-v1";
+import { countedInstitutionCount } from "@/lib/data-store/fee-stats";
 
 async function handleGET(request: NextRequest) {
-  // --- API key validation (optional — free tier works without) ---
-  const auth = await validateApiKey(request);
-  if (auth.error) {
-    return apiError(401, "invalid_api_key", auth.error);
-  }
-  // The API is for partners we have issued a key to; the site's own signed-in
-  // download buttons still work without one.
-  const user = auth.valid ? null : await getCurrentUser();
-  if (!auth.valid && !user) return apiKeyRequiredError();
-
-  const organizationId = auth.organizationId;
-  const anonymousId = organizationId ? null : getAnonymousId(request);
-  const tier = auth.valid ? auth.tier : "free";
-
-  const rateLimit = await checkRateLimitWithTier(
-    organizationId,
-    anonymousId,
-    tier,
-    API_V1_RATE_LIMIT_ROUTE,
-  );
-  if (!rateLimit.allowed) return rateLimitError(rateLimit);
+  const caller = await authorizeV1(request);
+  if (caller instanceof Response) return caller;
+  const { auth, user, organizationId, anonymousId, rateLimit, paid } = caller;
 
   const { searchParams } = request.nextUrl;
   const category = searchParams.get("category");
@@ -54,6 +32,7 @@ async function handleGET(request: NextRequest) {
     format = formatParam(searchParams);
   } catch (error) {
     if (error instanceof ApiParamError) {
+      logApiUsage(organizationId, anonymousId, category ? "api.fees.category" : "api.fees.list", { status: 400 });
       return apiError(400, "invalid_parameter", error.message, { rateLimit });
     }
     throw error;
@@ -61,7 +40,6 @@ async function handleGET(request: NextRequest) {
 
   // A paid key, or a signed-in Pro session, sees the full catalog.
   const paidKey = isPaidApiKey(auth);
-  const paid = paidKey || canAccessPremium(user);
 
   // Single category detail (Pro and Enterprise only)
   if (category) {
@@ -76,14 +54,14 @@ async function handleGET(request: NextRequest) {
     }
 
     logApiUsage(organizationId, anonymousId, "api.fees.category", { category, status: 200 });
-    return withApiHeaders(
+    return withApiCaching(request, withApiHeaders(
       NextResponse.json({
         category,
         display_name: getDisplayName(category),
         family: getFeeFamily(category),
         tier: getFeeTier(category),
         summary: {
-          institution_count: new Set(detail.fees.map((f) => f.institution_id)).size,
+          institution_count: countedInstitutionCount(detail.fees),
           observation_count: detail.fees.length,
         },
         by_charter_type: detail.by_charter_type,
@@ -93,7 +71,7 @@ async function handleGET(request: NextRequest) {
         attribution: API_ATTRIBUTION,
       }),
       rateLimit,
-    );
+    ));
   }
 
   // All categories summary; the free tier gets the spotlight categories only.
@@ -130,7 +108,7 @@ async function handleGET(request: NextRequest) {
       count: data.length,
       status: 200,
     });
-    return withApiHeaders(
+    return withApiCaching(request, withApiHeaders(
       new NextResponse(csv, {
         headers: {
           "Content-Type": "text/csv",
@@ -138,7 +116,7 @@ async function handleGET(request: NextRequest) {
         },
       }),
       rateLimit,
-    );
+    ));
   }
 
   logApiUsage(organizationId, anonymousId, "api.fees.list", {
@@ -146,14 +124,14 @@ async function handleGET(request: NextRequest) {
     count: data.length,
     status: 200,
   });
-  return withApiHeaders(
+  return withApiCaching(request, withApiHeaders(
     NextResponse.json({
       total: data.length,
       data,
       attribution: API_ATTRIBUTION,
     }),
     rateLimit,
-  );
+  ));
 }
 
 export const GET = withApiRoutePolicy("api.v1.fees", "GET", handleGET);

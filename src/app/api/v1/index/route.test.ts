@@ -5,6 +5,7 @@ import { checkRateLimitWithTier } from "@/lib/api-rate-limit";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium, canExportData } from "@/lib/access";
 import { getNationalIndex, getPeerIndex } from "@/lib/data-store";
+import { logApiUsage } from "@/lib/api-usage";
 import { FEE_FAMILIES, getSpotlightCategories } from "@/lib/fee-taxonomy";
 import { GET } from "./route";
 
@@ -14,6 +15,7 @@ vi.mock("@/lib/api-auth", () => ({
 
 vi.mock("@/lib/api-rate-limit", () => ({
   checkRateLimitWithTier: vi.fn(),
+  checkBurstLimitWithTier: vi.fn(() => Promise.resolve({ allowed: true, remaining: 59, limit: 60, reset: new Date("2026-10-17T12:01:00.000Z") })),
 }));
 
 vi.mock("@/lib/auth", () => ({
@@ -204,6 +206,26 @@ describe("/api/v1/index", () => {
 
     expect(body.data.map((d: { category: string; unstated_audience_institution_count: number }) => [d.category, d.unstated_audience_institution_count]))
       .toEqual([[spotlight, 38], [second, 0]]);
+  });
+
+  it("tags the index with an ETag and answers 304 when the client already has it", async () => {
+    const first = await GET(new NextRequest("https://feeinsight.com/api/v1/index"));
+    const etag = first.headers.get("etag") as string;
+
+    expect(first.headers.get("cache-control")).toBe("private, max-age=300");
+    expect(etag).toMatch(/^W\//);
+
+    const again = await GET(new NextRequest("https://feeinsight.com/api/v1/index", { headers: { "if-none-match": etag } }));
+
+    expect(again.status).toBe(304);
+    expect(again.headers.get("x-ratelimit-remaining")).toBe("99");
+  });
+
+  it("logs a refused parameter as a 400", async () => {
+    const response = await GET(new NextRequest("https://feeinsight.com/api/v1/index?state=Texas"));
+
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(logApiUsage).toHaveBeenCalledWith(3, null, "api.v1.index", { status: 400 });
   });
 
   it("answers 503, not 429, when usage tracking is down", async () => {

@@ -182,7 +182,12 @@ describe("moveRowsToIdenticalCopy", () => {
     expect(await moveRowsToIdenticalCopy(asDb(db), { runId: 9, dryRun: false })).toEqual({ documents: 1, rowsMoved: 2 });
     const statements = writes(db);
     expect(statements.some((text) => text.includes("UPDATE raw_fee_observations"))).toBe(true);
-    expect(statements.some((text) => /(UPDATE|INSERT INTO) published_fee_records/.test(text))).toBe(false);
+    expect(statements.some((text) => /INSERT INTO published_fee_records/.test(text))).toBe(false);
+    // #1347: the moved rows take the current copy's link at every tier; nothing else on a live row changes.
+    const relink = statements.filter((text) => /UPDATE published_fee_records/.test(text));
+    expect(relink).toHaveLength(1);
+    expect(relink[0]).toContain("SET source_url = target.url");
+    expect(relink[0]).not.toMatch(/rolled_back|amount|canonical_fee_key/);
   });
 
   it("changes nothing in a dry run or when no copy is identical", async () => {
