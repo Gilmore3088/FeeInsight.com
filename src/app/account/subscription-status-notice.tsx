@@ -14,7 +14,7 @@ export function SubscriptionStatusNotice({ user }: { user: Pick<User, "role" | "
 
   if (user.subscription_status === "past_due") {
     return (
-      <div role="status" className="mb-8 rounded-xl border border-amber-200 bg-amber-50 p-5 text-amber-900">
+      <div role="status" className="mb-8 rounded-xl border border-brick/30 bg-brick-tint/40 p-5 text-ink">
         <p className="text-[14px] font-semibold">Your {SITE_NAME} Pro payment is past due.</p>
         <p className="mt-1 text-[13px]">
           {isInPaymentGrace(user as User)
