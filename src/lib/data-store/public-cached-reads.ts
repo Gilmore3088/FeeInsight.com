@@ -119,8 +119,9 @@ export const getInstitutionStateDirectorySummariesCached = cachedPublicRead(
   "institution-state-directory",
   getInstitutionStateDirectorySummaries,
 );
+// v2: a name search matches from the start of a word ("US Bank" no longer finds Pegasus Bank).
 export const searchInstitutionsCached = cachedPublicRead(
-  "institution-search",
+  "institution-search-v2",
   searchInstitutions,
   (result) => result.rows.length === 0,
 );

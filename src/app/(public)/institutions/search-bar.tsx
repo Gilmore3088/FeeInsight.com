@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { Search } from "lucide-react";
+import { directoryHref } from "./directory-view";
 
 interface Result {
   id: number;
@@ -142,21 +143,31 @@ function InstitutionSearchBarInner({
     if (q.length < 2) return;
     e.preventDefault();
     setShowResults(false);
-    const params = new URLSearchParams({ q });
-    if (fee) params.set("fee", fee);
-    router.push(`/institutions?${params.toString()}`);
+    // A new search keeps the state and the institution type already picked on /institutions.
+    router.push(
+      directoryHref({
+        q,
+        state: searchParams?.get("state") ?? "",
+        charter: searchParams?.get("charter") ?? "",
+        fee,
+      }),
+    );
   }
 
   return (
-    <div ref={wrapperRef} className="relative w-full max-w-xl">
+    <div ref={wrapperRef} className="relative w-full">
       <div className="relative">
         <Search
           aria-hidden="true"
-          className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-ink-muted"
+          className="absolute left-4 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-ink-muted"
           strokeWidth={1.75}
         />
         <input
           type="text"
+          inputMode="search"
+          enterKeyHint="search"
+          autoComplete="off"
+          spellCheck={false}
           role="combobox"
           aria-label={ariaLabel}
           aria-autocomplete="list"
@@ -171,8 +182,8 @@ function InstitutionSearchBarInner({
           autoFocus={autoFocus}
           className={
             isDark
-              ? "w-full rounded-md border border-ink bg-[#1a2c44] pl-10 pr-4 py-3 text-sm text-paper placeholder:text-ink-muted focus:border-transparent focus:outline-none focus:ring-2 focus:ring-brick"
-              : "w-full rounded-md border border-border bg-surface-0 pl-10 pr-4 py-3 text-sm text-ink placeholder:text-ink-muted focus:border-transparent focus:outline-none focus:ring-2 focus:ring-brick"
+              ? "w-full rounded-md border border-ink bg-ink pl-10 pr-4 py-3 text-sm text-paper placeholder:text-ink-muted focus:border-transparent focus:outline-none focus:ring-2 focus:ring-brick"
+              : "min-h-12 w-full rounded-full border border-control-border bg-surface-0 pl-11 pr-10 py-3 text-base text-ink placeholder:text-ink-muted focus:border-transparent focus:outline-none focus:ring-2 focus:ring-brick"
           }
         />
         {loading && (
@@ -201,7 +212,7 @@ function InstitutionSearchBarInner({
             onMouseDown={(e) => e.preventDefault()}
             onMouseEnter={() => setActiveIndex(index)}
             onClick={() => handleSelect(r.id)}
-            className={`fi-row-interaction w-full cursor-pointer border-b border-border px-4 py-3 text-left last:border-0 ${index === activeIndex ? "bg-[#F3ECE2]" : ""}`}
+            className={`fi-row-interaction w-full cursor-pointer border-b border-border px-4 py-3 text-left last:border-0 ${index === activeIndex ? "bg-surface-200" : ""}`}
           >
             <div className="text-sm font-medium text-ink">
               {r.institution_name}
@@ -214,17 +225,17 @@ function InstitutionSearchBarInner({
                 </span>
               )}
               {(r.published_fee_count ?? 0) > 0 && (
-                <span className="rounded-sm border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                <span className="rounded-sm border border-brick/30 bg-brick-tint px-1.5 py-0.5 text-[11px] font-semibold text-brick-ink">
                   {r.published_fee_count} fees published
                 </span>
               )}
               {(r.published_fee_count ?? 0) === 0 && (r.provisional_fee_count ?? 0) > 0 && (
-                <span className="rounded-sm border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-[#9A5A00]">
+                <span className="rounded-sm border border-border bg-surface-200 px-1.5 py-0.5 text-[11px] font-semibold text-ink-soft">
                   {r.provisional_fee_count} fees under review
                 </span>
               )}
               {(r.published_fee_count ?? 0) === 0 && (r.provisional_fee_count ?? 0) === 0 && (
-                <span className="rounded-sm border border-border bg-white px-1.5 py-0.5 text-[10px] font-semibold text-ink-muted">
+                <span className="rounded-sm border border-border bg-surface-0 px-1.5 py-0.5 text-[11px] font-semibold text-ink-muted">
                   {r.fee_publication_status === "under_review" ? "Under review" : "No published schedule found"}
                 </span>
               )}
@@ -256,7 +267,7 @@ function InstitutionSearchBarInner({
  */
 export function InstitutionSearchBar(props: Parameters<typeof InstitutionSearchBarInner>[0]) {
   return (
-    <Suspense fallback={<div className="h-[46px] w-full max-w-xl rounded-md border border-border bg-surface-0" aria-hidden="true" />}>
+    <Suspense fallback={<div className="h-12 w-full rounded-full border border-border bg-surface-0" aria-hidden="true" />}>
       <InstitutionSearchBarInner {...props} />
     </Suspense>
   );
