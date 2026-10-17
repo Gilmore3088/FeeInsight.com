@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   monthPartition,
   NATIONAL_CREDIT_DEFINITIONS,
+  NATIONAL_CREDIT_PARSER_VERSION,
   NATIONAL_CREDIT_SOURCES,
   nationalCreditPartitions,
   runRegistryNationalCredit,
@@ -60,7 +61,7 @@ describe("runRegistryNationalCredit", () => {
     const p = partition(statements)!;
     expect(p.status).toBe("succeeded");
     expect(p.detail.per_series.MORTGAGE30US).toEqual({ rows: 2, latest: "2026-10-08", problem: null });
-    expect(p.detail.parser_version).toBe(1);
+    expect(p.detail.parser_version).toBe(NATIONAL_CREDIT_PARSER_VERSION);
   });
 
   it("records the partition empty, never failing, when nothing comes back", async () => {

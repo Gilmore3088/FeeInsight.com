@@ -30,7 +30,7 @@ import { recordRegistryPartition, type RegistryDb } from "./partitions";
  * workbook/file sources use one standing `current` partition.
  */
 
-export const NATIONAL_CREDIT_PARSER_VERSION = 1;
+export const NATIONAL_CREDIT_PARSER_VERSION = 2;
 
 export const NATIONAL_CREDIT_SOURCES = {
   nationalSeries: "national-series",

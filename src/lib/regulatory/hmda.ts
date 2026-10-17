@@ -732,11 +732,15 @@ export function hmdaCleaningReport(input: HmdaCleaningInput): HmdaCleaningReport
 export type AporRateType = "fixed" | "adjustable";
 
 export const APOR_URLS: Record<AporRateType, readonly string[]> = {
+  // files.ffiec.cfpb.gov is the current home (CFPB rate-spread documentation, checked 2026-10-17);
+  // the two older locations returned HTTP 403 on prod.
   fixed: [
+    "https://files.ffiec.cfpb.gov/apor/YieldTableFixed.txt",
     "https://s3.amazonaws.com/cfpb-hmda-public/prod/apor/YieldTableFixed.txt",
     "https://ffiec.cfpb.gov/public/rateSpread/YieldTableFixed.txt",
   ],
   adjustable: [
+    "https://files.ffiec.cfpb.gov/apor/YieldTableAdjustable.txt",
     "https://s3.amazonaws.com/cfpb-hmda-public/prod/apor/YieldTableAdjustable.txt",
     "https://ffiec.cfpb.gov/public/rateSpread/YieldTableAdjustable.txt",
   ],
