@@ -2,7 +2,7 @@ import { cache } from "react";
 import { sql } from "@/lib/data-store/connection";
 import { getFeeCategorySummaries, type FeeCategorySummary } from "@/lib/data-store/fees";
 import { cachedPublicRead } from "@/lib/data-store/public-read-cache";
-import { FEE_FAMILIES, getFeeFamily } from "@/lib/fee-taxonomy";
+import { FEE_FAMILIES, getFeeFamily, onlyPublicFeeTypes, publicFeeTypes } from "@/lib/fee-taxonomy";
 import type { IndexEntry } from "@/lib/data-store/fee-index";
 import { maturityTier } from "@/lib/data-store/maturity";
 import { US_STATES_ONLY, VALID_US_CODES } from "@/lib/us-states";
@@ -208,7 +208,18 @@ const cachedPublicSnapshot = cachedPublicRead(
   (snapshot) => !snapshot.summary.complete || snapshot.categories.length === 0,
 );
 
-export const getPublicSnapshot = cache(cachedPublicSnapshot);
+/**
+ * The taxonomy may hold 52 fee types; public pages publish only the top 50 by institution count
+ * (James, Oct 17 2026; `publicFeeTypes`). Applied on read, so a snapshot cached before the rule
+ * reads the same way.
+ */
+export const getPublicSnapshot = cache(async (): Promise<PublicSnapshot> => {
+  const snapshot = await cachedPublicSnapshot();
+  return { ...snapshot, categories: onlyPublicFeeTypes(snapshot.categories) };
+});
+
+/** The fee types public pages may list (at most 50), ranked on the shared snapshot's institution counts. */
+export const getPublicFeeTypes = cache(async (): Promise<Set<string>> => publicFeeTypes((await cachedPublicSnapshot()).categories));
 
 /** Headline counts from the shared snapshot. */
 export const getPublicStatsSummary = cache(async (): Promise<PublicStatsSummary> => (await getPublicSnapshot()).summary);

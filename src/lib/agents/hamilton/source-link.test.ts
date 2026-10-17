@@ -4,6 +4,7 @@ vi.mock("@/lib/data-store/fee-cache", () => ({ invalidatePublicReadCache: vi.fn(
 
 import { publishSkipReason, type VerifiedFeeRow } from "./publish";
 import {
+  fillSourceLinks,
   findResourceDocument,
   NO_SOURCE_DOCUMENT_REASON,
   NO_SOURCE_LINK_REASON,
@@ -12,6 +13,7 @@ import {
   publishSourceLink,
   repairSourceLinks,
   resourceSourceLinks,
+  SOURCE_LINK_FILL_ON,
   SOURCE_LINK_RESOURCE_ON,
   type InstitutionDocumentText,
   type ResourceCandidateRow,
@@ -131,6 +133,46 @@ describe("source link repair", () => {
         : ok(strings, ...values));
     await expect(repairSourceLinks(live.db, { runId: 7, batchId: "agentic-run-7", dryRun: false }))
       .rejects.toThrow(/source link repair write failed: permission denied for table published_fee_records/);
+  });
+});
+
+describe("source link fill in every publish step (#1342 follow-up)", () => {
+  it("is on, and on a dry run lists the fills and writes nothing", async () => {
+    expect(SOURCE_LINK_FILL_ON).toBe(true);
+    const dry = createDb();
+    const preview = await fillSourceLinks(dry.db, { runId: 7, batchId: "agentic-run-7", dryRun: true });
+    expect([preview.scanned, preview.fills.length, preview.untraceable]).toEqual([5, 2, 3]);
+    expect(dry.calls.filter((text) => /UPDATE|INSERT/.test(text))).toEqual([]);
+  });
+
+  it("links each fee its own document can link, takes nothing down, and records each fill", async () => {
+    const live = createDb();
+    const result = await fillSourceLinks(live.db, { runId: 7, batchId: "agentic-run-7", dryRun: false });
+    expect(result.fills.map((fee) => [fee.feePublishedId, fee.url])).toEqual([
+      [1, "https://bank.example/fees.pdf"],
+      [2, "https://bank.example/fees.pdf"],
+    ]);
+    expect(result.untraceable).toBe(3);
+    const written = live.calls.join("\n");
+    expect(written).toContain("SET source_url = v.url");
+    expect(written).toContain("INSERT INTO pipeline_feedback");
+    expect(written).toContain("'hamilton.source_link_fill'");
+    // Never a takedown: an untraceable fee stays live for the repair or the re-source pass.
+    expect(written).not.toContain("rolled_back_at = NOW()");
+    expect(written).not.toContain("rolled_back_reason = v.reason");
+  });
+
+  it("keeps the publish step going when the write fails", async () => {
+    const live = createDb();
+    const tag = live.db as unknown as ReturnType<typeof vi.fn>;
+    const ok = tag.getMockImplementation()! as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown>;
+    tag.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) =>
+      strings.join("?").includes("UPDATE published_fee_records")
+        ? Promise.reject(new Error("permission denied for table published_fee_records"))
+        : ok(strings, ...values));
+    const result = await fillSourceLinks(live.db, { runId: 7, batchId: "agentic-run-7", dryRun: false });
+    expect(result.fills).toEqual([]);
+    expect(result.error).toMatch(/permission denied/);
   });
 });
 

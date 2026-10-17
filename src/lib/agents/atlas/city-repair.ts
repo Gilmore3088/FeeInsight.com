@@ -26,6 +26,21 @@ export const CITY_CUT_WIDTH = 15;
 /** Changes listed in the ledger detail; the count is always whole. */
 const LISTED = 200;
 
+/**
+ * Cut cities NCUA's branch file cannot restore (no longer office city), each checked by hand
+ * (#1213, read-only, Oct 17): in each case one place in the state starts with the cut name, and the
+ * other institutions stored there carry it in full. Written by the same guarded update, only while
+ * the stored city is still the cut. Add later checks below, never edit a past one.
+ */
+export const HAND_CITY_REPAIRS: ReadonlyArray<{ institutionId: number; oldCity: string; newCity: string; why: string }> = [
+  { institutionId: 7011, oldCity: "North Little Ro", newCity: "North Little Rock",
+    why: "People Trust Community FCU, AR: 4 other AR institutions are stored in North Little Rock, the only AR city starting with the cut" },
+  { institutionId: 5738, oldCity: "PALM BEACH GARD", newCity: "Palm Beach Gardens",
+    why: "Velocity Community FCU, FL: 2 other FL institutions are stored in Palm Beach Gardens (one is 8777, VELOCITY COMMUNITY, likely the same credit union)" },
+  { institutionId: 6714, oldCity: "Saratoga Spring", newCity: "Saratoga Springs",
+    why: "Stewart's FCU, NY: 2 other NY institutions are stored in Saratoga Springs, the only NY city starting with the cut" },
+];
+
 export interface CityRepairChange {
   institutionId: number;
   stateCode: string | null;
@@ -66,6 +81,8 @@ export async function runCityRepair(options: { db?: SqlTag; dryRun?: boolean; li
   const db = options.db ?? sql;
   const dryRun = Boolean(options.dryRun);
   const live = options.live ?? CITY_REPAIR_LIVE;
+  const hand = JSON.stringify(HAND_CITY_REPAIRS.map((h) => ({ id: h.institutionId, old_city: h.oldCity, new_city: h.newCity })));
+  const handIds = HAND_CITY_REPAIRS.map((h) => h.institutionId);
   const rows = await db<CandidateRow[]>`
     WITH latest AS (SELECT max(report_date) AS d FROM credit_union_branches),
     offices AS (
@@ -77,11 +94,23 @@ export async function runCityRepair(options: { db?: SqlTag; dryRun?: boolean; li
          AND length(btrim(i.city)) = ${CITY_CUT_WIDTH}
          AND length(btrim(b.city)) > ${CITY_CUT_WIDTH}
          AND upper(left(btrim(b.city), ${CITY_CUT_WIDTH})) = upper(btrim(i.city))
+         AND i.id <> ALL(${handIds}::bigint[])
+    ),
+    branch_file AS (
+      SELECT id, state_code, old_city, min(new_city) AS new_city,
+             count(DISTINCT upper(new_city))::int AS choices
+        FROM offices
+       GROUP BY id, state_code, old_city
+    ),
+    by_hand AS (
+      SELECT i.id, i.state_code, btrim(i.city) AS old_city, h.new_city, 1 AS choices
+        FROM institution_sources i
+        JOIN jsonb_to_recordset(${hand}::jsonb) AS h(id bigint, old_city text, new_city text) ON h.id = i.id
+       WHERE btrim(i.city) = h.old_city
     )
-    SELECT id, state_code, old_city, min(new_city) AS new_city,
-           count(DISTINCT upper(new_city))::int AS choices
-      FROM offices
-     GROUP BY id, state_code, old_city
+    SELECT * FROM branch_file
+    UNION ALL
+    SELECT * FROM by_hand
      ORDER BY state_code, old_city, id
   `;
   const candidates: CityRepairChange[] = [];

@@ -8,7 +8,7 @@ import { collapseNearNameDuplicates, collapsePublishedDuplicates } from "@/lib/a
 import { collapsePageCopies } from "@/lib/agents/hamilton/page-copy-collapse";
 import { retireClosedInstitutionFees } from "@/lib/agents/hamilton/closed-institution";
 import { fillBlankFrequencies, fillFrequenciesInPublish, FREQUENCY_FILL_VERSION } from "@/lib/agents/hamilton/frequency-fill";
-import { repairSourceLinks, resourceSourceLinks, SOURCE_LINK_VERSION } from "@/lib/agents/hamilton/source-link";
+import { fillSourceLinks, repairSourceLinks, resourceSourceLinks, SOURCE_LINK_VERSION } from "@/lib/agents/hamilton/source-link";
 import { restoreFeesNowInTaxonomy, rollBackOffTaxonomyFees } from "@/lib/agents/hamilton/off-taxonomy-rollback";
 import { foldRetiredCategories } from "@/lib/agents/hamilton/taxonomy-fold";
 import { rollBackLimitsPublishedAsFees } from "@/lib/agents/hamilton/limit-guard";
@@ -27,6 +27,7 @@ import { retireCrossPageConflicts } from "@/lib/agents/hamilton/cross-page-confl
 import { recheckUncheckedRestores } from "@/lib/agents/hamilton/restore-recheck";
 import { restoreLostRecheckTakedowns } from "@/lib/agents/hamilton/lost-recheck-restore";
 import { restoreCrossPageSupersedes } from "@/lib/agents/hamilton/cross-page-restore";
+import { restorePageCopiesOfDownedKeepers } from "@/lib/agents/hamilton/page-copy-restore";
 import { pairFeeChangeRecords } from "@/lib/agents/hamilton/change-pairing";
 import { rollBackRetiredCompanionFees } from "@/lib/agents/hamilton/companion-retire";
 import { restoreOutliersNowInRange, rollBackPublishedOutliers } from "@/lib/agents/hamilton/outlier-rollback";
@@ -1278,6 +1279,14 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // #1439 item 3: a copy the page-copy collapse closed comes back when the copy it was kept
+      // for came down for its own reasons (not the fee's), so the fee does not vanish. Runs
+      // before the collapse; it never makes a second live copy of a price.
+      const pageCopyRestore = await restorePageCopiesOfDownedKeepers(tx, {
+        runId: run.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       // #1439: a live row that repeats a line of a newer copy of its page stored under another
       // address ("?print=1", "www.", a mirror). Shadow until PAGE_COPY_COLLAPSE_LIVE is on.
       const pageCopyCollapse = await collapsePageCopies(tx, {
@@ -1457,6 +1466,14 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // #1342: a live fee with no link (one the source check restored after the hand repair,
+      // say) takes its own document's URL. Never a takedown. Off with SOURCE_LINK_FILL_ON.
+      const sourceLinkFill = await fillSourceLinks(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       // Every agent learns from what happened to its output: this step's takedowns and
       // restores (and a batch of older outcomes) go into the shared learning store.
       const feedbackSync = await syncPipelineFeedback(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
@@ -1483,6 +1500,7 @@ async function executeAgenticStep(
               sameLineDuplicates.restored > 0 ||
               otherBank.rolledBack.length > 0 ||
               crossPageRestore.restored.length > 0 ||
+              pageCopyRestore.restored.length > 0 ||
               sourceLinkResource.restored > 0 ||
               articlePage.rolledBack.length > 0 ||
               closedInstitution.rolledBack.length > 0 ||
@@ -1554,6 +1572,10 @@ async function executeAgenticStep(
         lostRestore.candidates > 0
           ? ` Judged ${lostRestore.candidates.toLocaleString()} lost re-check take-down(s) of Oct 5-11: ${lostRestore.passed.length.toLocaleString()} passed the restore bar (${published.dryRun ? "would restore" : `${lostRestore.restored.toLocaleString()} restored`}), ${lostRestore.failed.length.toLocaleString()} failed, ${lostRestore.skipped.length.toLocaleString()} skipped.`
           : "";
+      const pageCopyRestoreNote =
+        pageCopyRestore.restored.length > 0
+          ? ` ${published.dryRun ? "Would restore" : "Restored"} ${pageCopyRestore.restored.length.toLocaleString()} page cop(ies) whose kept copy came down.`
+          : "";
       const crossPageNote =
         crossPageRestore.restored.length > 0
           ? ` ${published.dryRun ? "Would restore" : "Restored"} ${crossPageRestore.restored.length.toLocaleString()} live fee(s) another page's price had superseded.`
@@ -1561,6 +1583,10 @@ async function executeAgenticStep(
       const resourceCount = published.dryRun
         ? { linked: sourceLinkResource.resources.filter((fee) => !fee.restore).length, restored: sourceLinkResource.resources.filter((fee) => fee.restore).length }
         : { linked: sourceLinkResource.linked, restored: sourceLinkResource.restored };
+      const sourceLinkFillNote =
+        sourceLinkFill.fills.length > 0
+          ? ` ${published.dryRun ? "Would link" : "Linked"} ${sourceLinkFill.fills.length.toLocaleString()} live fee(s) with no link to their own document.`
+          : "";
       const resourceNote =
         resourceCount.linked + resourceCount.restored > 0
           ? ` ${published.dryRun ? "Would re-source" : "Re-sourced"} ${(resourceCount.linked + resourceCount.restored).toLocaleString()} fee(s) with no traceable document from a stored document of their own institution (${resourceCount.restored.toLocaleString()} ${published.dryRun ? "would be restored" : "restored"}).`
@@ -1649,7 +1675,7 @@ async function executeAgenticStep(
           : "");
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${handRefileNote}${offTaxonomyNote}${limitNote}${businessNote}${sameLineNote}${otherBankNote}${evalVerdictNote}${closedNote}${articleNote}${productNote}${productConflictNote}${crossPageConflictNote}${categoryGuardNote}${guardRefileNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${lostRestoreNote}${crossPageNote}${resourceNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${handRefileNote}${offTaxonomyNote}${limitNote}${businessNote}${sameLineNote}${otherBankNote}${evalVerdictNote}${closedNote}${articleNote}${productNote}${productConflictNote}${crossPageConflictNote}${categoryGuardNote}${guardRefileNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${lostRestoreNote}${crossPageNote}${pageCopyRestoreNote}${resourceNote}${sourceLinkFillNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -1876,6 +1902,14 @@ async function executeAgenticStep(
           })),
           imported_twin_checked: importedTwins.checked,
           imported_twin_linked: importedTwins.linked,
+          source_link_fill: {
+            on: sourceLinkFill.on,
+            scanned: sourceLinkFill.scanned,
+            filled: sourceLinkFill.fills.length,
+            untraceable_left_live: sourceLinkFill.untraceable,
+            error: sourceLinkFill.error,
+            fills: sourceLinkFill.fills.map((fee) => ({ fee_published_id: fee.feePublishedId, source_document_id: fee.sourceDocumentId, url: fee.url })),
+          },
           identical_copy_documents: identicalCopy.documents,
           identical_copy_rows_moved: identicalCopy.rowsMoved,
           extraction_note_move: { moved: extractionNotes.moved, remaining: extractionNotes.remaining },
@@ -2031,6 +2065,20 @@ async function executeAgenticStep(
               kept_fee_name: row.keptFeeName,
               source_document_id: row.sourceDocumentId,
               amount: row.amount,
+            })),
+          },
+          page_copy_restore: {
+            ...(pageCopyRestore.error ? { error: pageCopyRestore.error } : {}),
+            kept_down: pageCopyRestore.keptDown,
+            carried_on: pageCopyRestore.carriedOn,
+            kept_judged: pageCopyRestore.keptJudged,
+            failing: pageCopyRestore.failing.length,
+            [run.runKind === "dry_run" ? "would_restore" : "restored"]: pageCopyRestore.restored.length,
+            samples: pageCopyRestore.restored.slice(0, 10).map((fee) => ({
+              fee_published_id: fee.feePublishedId,
+              kept_fee_published_id: fee.keptFeePublishedId,
+              fee_name: fee.feeName,
+              amount: fee.amount,
             })),
           },
           page_copy_collapse: {

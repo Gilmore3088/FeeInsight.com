@@ -213,7 +213,127 @@ export const UNLINKED_LIVE_FEES_SQL = `
     LEFT JOIN source_documents sd ON sd.id = fr.source_document_id
    WHERE fp.rolled_back_at IS NULL
      AND fp.quarantined_at IS NULL
+     -- Implied by the next line; filters the published rows first (60 ms instead of 390 ms, Oct 17).
+     AND NULLIF(btrim(fp.source_url), '') IS NULL
      AND NULLIF(btrim(COALESCE(fp.source_url, fv.source_url, fr.source_url)), '') IS NULL`;
+
+/** Writes each fill to the published row (and the verified row when it has no link). Returns those written. */
+async function writeSourceLinkFills(scope: SqlTag, planned: SourceLinkFill[]): Promise<SourceLinkFill[]> {
+  if (planned.length === 0) return [];
+  const updated = await scope<{ fee_published_id: number | string }[]>`
+    UPDATE published_fee_records fp
+       SET source_url = v.url
+      FROM unnest(${planned.map((fee) => fee.feePublishedId)}::bigint[], ${planned.map((fee) => fee.url)}::text[])
+           AS v(fee_published_id, url)
+     WHERE fp.fee_published_id = v.fee_published_id
+       AND NULLIF(btrim(fp.source_url), '') IS NULL
+       AND fp.rolled_back_at IS NULL
+    RETURNING fp.fee_published_id
+  `;
+  const ids = new Set(updated.map((row) => Number(row.fee_published_id)));
+  const fills = planned.filter((fee) => ids.has(fee.feePublishedId));
+  // The verified row takes the same link, so a republish or refresh keeps it.
+  const verified = fills.filter((fee) => fee.verifiedBlank && fee.feeVerifiedId != null);
+  if (verified.length > 0) {
+    await scope`
+      UPDATE verified_fee_observations fv
+         SET source_url = v.url
+        FROM unnest(${verified.map((fee) => fee.feeVerifiedId!)}::bigint[], ${verified.map((fee) => fee.url)}::text[])
+             AS v(fee_verified_id, url)
+       WHERE fv.fee_verified_id = v.fee_verified_id
+         AND NULLIF(btrim(fv.source_url), '') IS NULL
+    `;
+  }
+  return fills;
+}
+
+/**
+ * #1342 follow-up: the fill half of the repair, in every publish step. The repair ran once by
+ * hand (run 6508, Oct 15). Fees down at that moment and restored later (the source check's
+ * restore, `hamilton.restore`) came back live with no link: 14 on Oct 17, all imported rows, 13
+ * of them naming a document of their own institution with a link. Each such fee takes its own
+ * document's URL, exactly as the repair would give it (`planSourceLinkRepair`). This pass never
+ * takes a fee down, holds it or changes its category: a fee with no traceable document stays live
+ * and waits for the re-source pass or the hand-started repair. Every fill is one `pipeline_feedback`
+ * row (check `hamilton.source_link`, action `filled`), undone by setting `source_url` back to NULL.
+ * A dry run reports and writes nothing. A failed read or write changes nothing and is returned as
+ * `error`, so the publish step carries on without the pass.
+ *
+ * Rollback: set SOURCE_LINK_FILL_ON to false.
+ */
+export const SOURCE_LINK_FILL_ON = true;
+export const SOURCE_LINK_FILL_LIMIT = 500;
+
+export interface SourceLinkFillResult {
+  on: boolean;
+  dryRun: boolean;
+  /** Live fees with no link at any tier that this pass read. */
+  scanned: number;
+  /** Fills made (live) or planned (dry run). */
+  fills: SourceLinkFill[];
+  /** Live fees with no link whose own document cannot give one; left for the repair. */
+  untraceable: number;
+  error: string | null;
+}
+
+export async function fillSourceLinks(
+  db: SqlTag,
+  options: { runId: number; batchId: string; dryRun: boolean; institutionId?: number; limit?: number },
+): Promise<SourceLinkFillResult> {
+  const result: SourceLinkFillResult = { on: SOURCE_LINK_FILL_ON, dryRun: options.dryRun, scanned: 0, fills: [], untraceable: 0, error: null };
+  if (!SOURCE_LINK_FILL_ON) return result;
+  const limit = Math.max(1, Math.min(options.limit ?? SOURCE_LINK_FILL_LIMIT, 2_000));
+  let rows: UnlinkedLiveFeeRow[];
+  try {
+    rows = await inSavepoint(db, (scope) => scope.unsafe<UnlinkedLiveFeeRow[]>(
+      `${UNLINKED_LIVE_FEES_SQL}
+       ${options.institutionId ? "AND fp.institution_id = $2" : ""}
+       ORDER BY fp.fee_published_id
+       LIMIT $1`,
+      options.institutionId ? [limit, options.institutionId] : [limit],
+    ));
+  } catch (error) {
+    console.error("fillSourceLinks read failed:", error);
+    result.error = error instanceof Error ? error.message : String(error);
+    return result;
+  }
+  result.scanned = rows.length;
+  const plan = planSourceLinkRepair(rows);
+  result.untraceable = plan.takedowns.length;
+  if (options.dryRun || plan.fills.length === 0) return { ...result, fills: plan.fills };
+
+  try {
+    result.fills = await inSavepoint(db, async (scope) => {
+      const fills = await writeSourceLinkFills(scope, plan.fills);
+      if (fills.length === 0) return fills;
+      // The rollback records are written with the change, or neither is.
+      await recordFeedback(scope as SqlTag, sourceLinkRecords({ fills, takedowns: [] }, options.runId, options.batchId));
+      await scope`
+        INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+        VALUES (
+          ${options.runId}, 'hamilton.source_link_fill', 'completed',
+          ${`Linked ${fills.length} live fee(s) with no link to their own document`},
+          ${JSON.stringify({
+            batch_id: options.batchId,
+            version: SOURCE_LINK_VERSION,
+            scanned: rows.length,
+            filled: fills.length,
+            untraceable_left_live: plan.takedowns.length,
+            fills: fills.map((fee) => ({ fee_published_id: fee.feePublishedId, source_document_id: fee.sourceDocumentId, url: fee.url })),
+          })}::jsonb
+        )
+      `;
+      return fills;
+    });
+  } catch (error) {
+    console.error("fillSourceLinks write failed:", error);
+    result.error = error instanceof Error ? error.message : String(error);
+    result.fills = [];
+    return result;
+  }
+  if (result.fills.length > 0) invalidatePublicReadCache();
+  return result;
+}
 
 /**
  * Gives each live fee with no link its own document's URL, or takes it down when it has no
@@ -259,33 +379,7 @@ export async function repairSourceLinks(
 
   try {
     const written = await inSavepoint(db, async (scope) => {
-      let fills: SourceLinkFill[] = [];
-      if (plan.fills.length > 0) {
-        const updated = await scope<{ fee_published_id: number | string }[]>`
-          UPDATE published_fee_records fp
-             SET source_url = v.url
-            FROM unnest(${plan.fills.map((fee) => fee.feePublishedId)}::bigint[], ${plan.fills.map((fee) => fee.url)}::text[])
-                 AS v(fee_published_id, url)
-           WHERE fp.fee_published_id = v.fee_published_id
-             AND NULLIF(btrim(fp.source_url), '') IS NULL
-             AND fp.rolled_back_at IS NULL
-          RETURNING fp.fee_published_id
-        `;
-        const ids = new Set(updated.map((row) => Number(row.fee_published_id)));
-        fills = plan.fills.filter((fee) => ids.has(fee.feePublishedId));
-        // The verified row takes the same link, so a republish or refresh keeps it.
-        const verified = fills.filter((fee) => fee.verifiedBlank && fee.feeVerifiedId != null);
-        if (verified.length > 0) {
-          await scope`
-            UPDATE verified_fee_observations fv
-               SET source_url = v.url
-              FROM unnest(${verified.map((fee) => fee.feeVerifiedId!)}::bigint[], ${verified.map((fee) => fee.url)}::text[])
-                   AS v(fee_verified_id, url)
-             WHERE fv.fee_verified_id = v.fee_verified_id
-               AND NULLIF(btrim(fv.source_url), '') IS NULL
-          `;
-        }
-      }
+      const fills = await writeSourceLinkFills(scope, plan.fills);
       let takedowns: SourceLinkTakedown[] = [];
       if (plan.takedowns.length > 0) {
         const closed = await scope<{ fee_published_id: number | string }[]>`

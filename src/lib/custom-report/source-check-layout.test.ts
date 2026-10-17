@@ -708,3 +708,35 @@ describe("name words match whole words", () => {
     expect(checkFeeAgainstSource("Overdraft Fee | $35.00", "Draft Fee", 35, ".").ok).toBe(false);
   });
 });
+
+describe("checkFeeAgainstSource joined prices (Knox v76)", () => {
+  const ok = (text: string, name: string, amount: number) => checkFeeAgainstSource(text, name, amount, ".").ok;
+
+  it("traces each slash variant to its own price, and only that one", () => {
+    const row = "Domestic Outbound Wires (Online/Manual) | $35/$60 | $35/$60";
+    expect(ok(row, "Domestic Outbound Wires (Online)", 35)).toBe(true);
+    expect(ok(row, "Domestic Outbound Wires (Manual)", 60)).toBe(true);
+    expect(ok(row, "Domestic Outbound Wires (Manual)", 35)).toBe(false);
+    expect(ok(row, "Domestic Outbound Wires (Online)", 60)).toBe(false);
+    // A name keeping both variants reads the first price, as before.
+    expect(ok(row, "Domestic Outbound Wires (Online/Manual)", 35)).toBe(true);
+    expect(ok(row, "Domestic Outbound Wires (Online/Manual)", 60)).toBe(false);
+  });
+
+  it("traces the second price of a slash pair to the words after it", () => {
+    const row = "Debit Card Replacement Fee | $10.00 / $50 expedited delivery";
+    expect(ok(row, "Debit Card Replacement Fee expedited delivery", 50)).toBe(true);
+    expect(ok(row, "Debit Card Replacement Fee", 10)).toBe(true);
+    expect(ok(row, "Debit Card Replacement Fee", 50)).toBe(false);
+  });
+
+  it("traces both column prices of a box size", () => {
+    expect(ok("2” x 5” $45.00 $65.00", "2” x 5”", 45)).toBe(true);
+    expect(ok("2” x 5” $45.00 $65.00", "2” x 5”", 65)).toBe(true);
+    expect(ok("Monthly Fee $5.00 $10.00", "Monthly Fee", 10)).toBe(false);
+  });
+
+  it("reads No Cost and No fees as free words", () => {
+    expect(ok("Notary Public Services | No Cost to Members", "Notary Public Services", 0)).toBe(true);
+  });
+});
