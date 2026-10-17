@@ -775,14 +775,33 @@ async function insertHandFoundSchedule(
   return true;
 }
 
+export type HandFoundLinkErrorCode =
+  | "invalid_institution"
+  | "invalid_link"
+  | "institution_not_found"
+  | "other_institution_site"
+  | "already_on_file";
+
 export type HandFoundLinkResult =
   | { ok: true; institutionName: string }
-  | { ok: false; error: string };
+  | { ok: false; code: HandFoundLinkErrorCode; error: string };
+
+/** A pasted link as stored: trimmed, http(s) only. Null when it is not a web link. */
+export function cleanHandFoundUrl(value: string): { url: string } | { error: string } {
+  try {
+    const parsed = new URL(value.trim());
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return { error: "Link must start with https://" };
+    return { url: parsed.toString() };
+  } catch {
+    return { error: "That is not a link" };
+  }
+}
 
 /**
  * A schedule link a person pasted on the hit list. It is stored like an OPERATOR_SCHEDULES
  * entry, so Atlas's priority path (`priority-institutions.ts`, tier hand_found) fetches,
- * reads, verifies and publishes that one institution on its next tick.
+ * reads, verifies and publishes that one institution on its next tick. The bank's own fee
+ * link (`institution_sources.fee_schedule_url`) is never changed.
  */
 export async function addHandFoundLink(options: {
   db?: SqlTag;
@@ -791,27 +810,31 @@ export async function addHandFoundLink(options: {
   givenBy: string;
 }): Promise<HandFoundLinkResult> {
   const db = options.db ?? sql;
-  if (!Number.isInteger(options.institutionId) || options.institutionId < 1) return { ok: false, error: "Invalid institution" };
-  let url: string;
-  try {
-    const parsed = new URL(options.url.trim());
-    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return { ok: false, error: "Link must start with https://" };
-    url = parsed.toString();
-  } catch {
-    return { ok: false, error: "That is not a link" };
-  }
+  if (!Number.isInteger(options.institutionId) || options.institutionId < 1) return { ok: false, code: "invalid_institution", error: "Invalid institution" };
+  const cleaned = cleanHandFoundUrl(options.url);
+  if ("error" in cleaned) return { ok: false, code: "invalid_link", error: cleaned.error };
+  const url = cleaned.url;
   const [institution] = await db`
-    SELECT institution_name FROM institution_sources WHERE id = ${options.institutionId}
+    SELECT institution_name, fee_schedule_url FROM institution_sources WHERE id = ${options.institutionId}
   `;
-  if (!institution) return { ok: false, error: "Institution not found" };
+  if (!institution) return { ok: false, code: "institution_not_found", error: "Institution not found" };
   const institutionName = String(institution.institution_name);
+  if (institution.fee_schedule_url && urlIdentity(String(institution.fee_schedule_url)) === urlIdentity(url)) {
+    return { ok: false, code: "already_on_file", error: "That link is already this institution's fee link" };
+  }
   const other = await otherInstitutionAtHost(db, options.institutionId, url);
-  if (other) return { ok: false, error: `That link is on the website of ${other.institutionName}${other.stateCode ? ` (${other.stateCode})` : ""}, another institution` };
+  if (other) {
+    return {
+      ok: false,
+      code: "other_institution_site",
+      error: `That link is on the website of ${other.institutionName}${other.stateCode ? ` (${other.stateCode})` : ""}, another institution`,
+    };
+  }
   const added = await insertHandFoundSchedule(
     db,
     { institutionId: options.institutionId, url, givenBy: options.givenBy },
     { runId: null, stepId: null },
   );
-  if (!added) return { ok: false, error: "That link is already on file for this institution" };
+  if (!added) return { ok: false, code: "already_on_file", error: "That link is already on file for this institution" };
   return { ok: true, institutionName };
 }
