@@ -119,8 +119,7 @@ export function benchmarkFinding(benchmarks: FeeCategorySummary[]): string | nul
   const high = sorted[0];
   const low = sorted[sorted.length - 1];
   if (high.median_amount === low.median_amount) return null;
-  const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
-  return `${cap(sentenceName(high.fee_category))} fees have the highest median of these ${benchmarks.length}, ${money(high.median_amount)}; ${sentenceName(low.fee_category)} fees the lowest, ${money(low.median_amount)}.`;
+  return `Of these ${benchmarks.length} fees, ${sentenceName(high.fee_category)} has the highest median (${money(high.median_amount)}) and ${sentenceName(low.fee_category)} the lowest (${money(low.median_amount)}).`;
 }
 
 export function BenchmarkBoard({ benchmarks, asOf }: { benchmarks: FeeCategorySummary[]; asOf: string | null }) {

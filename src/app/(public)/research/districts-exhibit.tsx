@@ -127,7 +127,10 @@ export function DistrictsExhibit({ districts }: { districts: DistrictCard[] }) {
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block text-[14px] font-semibold leading-snug text-ink group-hover:text-brick">
-                  {d.name} <span className="font-normal text-ink-muted">· {d.region.replace(/^the /, "")}</span>
+                  {d.name}
+                  {d.region.replace(/^the /, "") !== d.name && (
+                    <span className="font-normal text-ink-muted"> · {d.region.replace(/^the /, "")}</span>
+                  )}
                 </span>
                 {d.statement && <span className="mt-1 block text-[13px] leading-snug text-ink-soft">{d.statement}</span>}
                 <span className="mt-1 block text-[11px] tabular-nums text-ink-muted">

@@ -31,9 +31,9 @@ import { stateShape } from "../district/[id]/district-geo";
 import { districtOpening, districtsFinding, overdraftSide } from "../district/[id]/district-opening";
 
 export const metadata: Metadata = {
-  title: "Bank Fee Research: National, State and Fed District Benchmarks",
+  title: "Bank Fee Research by State and Fed District",
   description:
-    "Bank and credit union fee research: national medians for everyday fees, all 12 Federal Reserve districts against the U.S., and a report for every state. Every figure traces to a published fee schedule.",
+    "National medians for everyday bank and credit union fees, all 12 Federal Reserve districts against the U.S., and a report for each state.",
   alternates: { canonical: "/research" },
 };
 
@@ -172,8 +172,9 @@ export default async function ResearchHubPage() {
         <ProBand sampleLive={sampleLive} />
       </div>
 
-      {/* Print / Save as PDF: drop site chrome and interactive controls, keep exhibits whole. */}
-      <style>{`@media print {
+      {/* Anchors clear the sticky header and section bar (/districts lands on #districts). Print / Save as PDF: drop site chrome and interactive controls, keep exhibits whole. */}
+      <style>{`#findings, #benchmarks, #districts, #states, #in-progress, #about-data { scroll-margin-top: 7rem; }
+      @media print {
         header, footer, nextjs-portal, #geo-filter, #geo-pick { display: none !important; }
         body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         section { break-inside: avoid-page; }
