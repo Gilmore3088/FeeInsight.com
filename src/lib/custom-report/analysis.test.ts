@@ -1,19 +1,19 @@
 import { describe, expect, it } from "vitest";
 import type { CustomReportMarketData, MarketFeeLine } from "@/lib/data-store/custom-report-market";
-import { analyzeMarket, buildReportCsv, diffReports, positionCounts, MIN_COMPARABLE_LINES, NAMED_COMPETITORS, NAMED_WITHOUT_DEPOSITS, pickNamedCompetitors, quantile, type NamedCompetitor } from "./analysis";
+import { analyzeMarket, buildReportCsv, diffReports, MISSING_EXCLUDED, MISSING_NOT_FOUND, MISSING_TOO_FEW, positionCounts, MIN_COMPARABLE_LINES, NAMED_COMPETITORS, NAMED_WITHOUT_DEPOSITS, pickNamedCompetitors, quantile, type NamedCompetitor } from "./analysis";
 
 const KEYS = ["overdraft", "nsf", "stop_payment", "cashiers_check", "wire_domestic_outgoing", "card_replacement"];
 
 function market(opts: { competitors: number; ownKeys?: string[]; ownAmount?: number }): CustomReportMarketData {
   const lines: MarketFeeLine[] = [];
   for (const key of opts.ownKeys ?? KEYS) {
-    lines.push({ institution_id: 1, line: key, amount: opts.ownAmount ?? 20, fee_name: `Own ${key}`, source_url: "https://a", updated_at: "2026-10-01", schedule_read_on: "2026-09-30", source_line: `${key} | $20` });
+    lines.push({ institution_id: 1, line: key, amount: opts.ownAmount ?? 20, fee_name: `Own ${key}`, source_url: "https://a", updated_at: "2026-10-01", schedule_read_on: "2026-09-30", source_line: `${key} | $${opts.ownAmount ?? 20}` });
   }
   const competitors = [];
   for (let i = 0; i < opts.competitors; i += 1) {
     const id = 100 + i;
     competitors.push({ institution_id: id, institution_name: `Rival ${i}`, city: "X", state_code: "CA", charter_type: "bank", market_deposits: 1000 - i });
-    for (const key of KEYS) lines.push({ institution_id: id, line: key, amount: 10 + i, fee_name: key, source_url: null, updated_at: null, schedule_read_on: null, source_line: key });
+    for (const key of KEYS) lines.push({ institution_id: id, line: key, amount: 10 + i, fee_name: key, source_url: null, updated_at: null, schedule_read_on: null, source_line: `${key} | $${10 + i}` });
   }
   return {
     subject: { institution_id: 1, institution_name: "Subject Bank", city: "X", state_code: "CA", charter_type: "bank", market_deposits: null, asset_size: null },
@@ -87,7 +87,10 @@ describe("tiered fees", () => {
       { amount: 5, fee_name: "Negative $25 or less", source_line: "Negative $25 or less | $5" },
     ];
     const line = analyzeMarket(data).lines.find((l) => l.key === "overdraft")!;
-    expect(line.own?.tiers?.map((t) => t.amount)).toEqual([35, 5]);
+    // Lowest first, each with its own quote; overdraft compares at the highest (standard) tier.
+    expect(line.own?.tiers?.map((t) => t.amount)).toEqual([5, 35]);
+    expect(line.own?.amount).toBe(35);
+    expect(line.own?.evidence?.basis).toBe("highest of 2 prices");
   });
 });
 
@@ -100,7 +103,7 @@ describe("rank and sources", () => {
     expect(overdraft.peerFigures).toHaveLength(20);
     expect(overdraft.peerFigures[0].amount).toBe(10);
     expect(overdraft.own?.schedule_read_on).toBe("2026-09-30");
-    expect(result.named[0].sources.overdraft.source_line).toBe("overdraft");
+    expect(result.named[0].sources.overdraft.source_line).toBe("overdraft | $10");
   });
 
   it("is null on lines that are not comparable", () => {
@@ -132,14 +135,63 @@ describe("pickNamedCompetitors", () => {
   });
 });
 
+function parseCsv(csv: string): Record<string, string>[] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+  for (let i = 0; i < csv.length; i += 1) {
+    const ch = csv[i];
+    if (quoted) {
+      if (ch === '"' && csv[i + 1] === '"') { cell += '"'; i += 1; }
+      else if (ch === '"') quoted = false;
+      else cell += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === ",") { row.push(cell); cell = ""; }
+    else if (ch === "\r") continue;
+    else if (ch === "\n") { row.push(cell); rows.push(row); row = []; cell = ""; }
+    else cell += ch;
+  }
+  const [header, ...body] = rows;
+  return body.map((cells) => Object.fromEntries(header.map((h, i) => [h, cells[i] ?? ""])));
+}
+
 describe("buildReportCsv", () => {
-  it("lists the institution's lines, then every competitor figure on comparable lines", () => {
+  it("writes one row per record with the report's context, the institution first", () => {
     const data = market({ competitors: 20 });
-    const csv = buildReportCsv(data, analyzeMarket(data));
-    const rows = csv.trim().split("\r\n");
-    expect(rows[0]).toContain("competitors_charging_less");
-    expect(rows.filter((r) => r.startsWith("yours,"))).toHaveLength(analyzeMarket(data).lines.length);
-    expect(rows.filter((r) => r.startsWith("competitor,"))).toHaveLength(20 * KEYS.length);
+    const rows = parseCsv(buildReportCsv(data, analyzeMarket(data), "2026-10-17"));
+    const yours = rows.filter((r) => r.row === "yours");
+    expect(yours).toHaveLength(analyzeMarket(data).lines.length);
+    expect(rows.filter((r) => r.row === "competitor")).toHaveLength(20 * KEYS.length);
+    expect(rows[0]).toMatchObject({ report_institution_id: "1", report_date: "2026-10-17", currency: "USD" });
+    expect(rows[0].market_counties).toContain("Los Angeles");
+    const overdraft = yours.find((r) => r.fee_line === "Overdraft (per item)")!;
+    expect(overdraft).toMatchObject({ fee_basis: "per item", amount: "20", amount_basis: "published price", record: "1", records: "1", record_used: "yes", missing_reason: "" });
+  });
+
+  it("says why a cell is empty: not found, too few competitors", () => {
+    const data = market({ competitors: 20, ownKeys: KEYS.slice(0, 5) });
+    data.lines = data.lines.filter((l) => !(l.line === "nsf" && l.institution_id >= 107));
+    const rows = parseCsv(buildReportCsv(data, analyzeMarket(data))).filter((r) => r.row === "yours");
+    expect(rows.find((r) => r.fee_line === "Debit card replacement")?.missing_reason).toBe(MISSING_NOT_FOUND);
+    expect(rows.find((r) => r.fee_line === "NSF / returned item")?.missing_reason).toBe(MISSING_TOO_FEW);
+    expect(rows.find((r) => r.fee_line === "Paper statement")?.missing_reason).toBe(MISSING_NOT_FOUND);
+  });
+
+  it("lists every record behind a calculated amount and the record left out", () => {
+    const data = market({ competitors: 20 });
+    const rival = data.lines.find((l) => l.institution_id === 100 && l.line === "overdraft")!;
+    rival.tiers = [
+      { id: 11, amount: 10, fee_name: "Overdraft (Basic)", source_line: "Overdraft fee | $10", source_url: "https://r/fees.pdf", schedule_read_on: "2026-10-01" },
+      { id: 12, amount: 30, fee_name: "Overdraft (Premier)", source_line: "Overdraft fee | $30", source_url: "https://r/fees.pdf", schedule_read_on: "2026-10-01" },
+      { id: 13, amount: 35, fee_name: "Overdraft fees vary", source_line: "The amount for overdraft fees varies, but $35 is common.", source_url: "https://r/learning/money-management/checking", schedule_read_on: "2026-10-01" },
+    ];
+    const analysis = analyzeMarket(data);
+    const rows = parseCsv(buildReportCsv(data, analysis)).filter((r) => r.row === "competitor" && r.institution_id === "100" && r.fee_line === "Overdraft (per item)");
+    expect(rows.map((r) => [r.record_id, r.record_amount, r.record_used])).toEqual([["11", "10", "yes"], ["12", "30", "yes"], ["13", "35", "no"]]);
+    expect(rows[0]).toMatchObject({ amount: "30", amount_basis: "highest of 2 prices", published_range: "$10 to $30", records: "3" });
+    expect(rows[2].missing_reason).toBe(MISSING_EXCLUDED);
+    expect(analysis.exclusions).toEqual({ competitorAmounts: 0, competitorRecords: 1, ownAmounts: 0, ownRecords: 0 });
   });
 
   it("quotes commas and neutralizes spreadsheet formulas", () => {
@@ -147,6 +199,36 @@ describe("buildReportCsv", () => {
     data.subject.institution_name = "=HYPERLINK(1), Bank";
     const csv = buildReportCsv(data, analyzeMarket(data));
     expect(csv).toContain(`"'=HYPERLINK(1), Bank"`);
+  });
+});
+
+describe("evidence check", () => {
+  it("leaves out a competitor amount its evidence does not show and works the medians out without it", () => {
+    const data = market({ competitors: 20 });
+    const before = analyzeMarket(data).lines.find((l) => l.key === "overdraft")!;
+    const rival = data.lines.find((l) => l.institution_id === 119 && l.line === "overdraft")!;
+    rival.source_url = "https://bank.example/personal-banking/learning/money-management/types-of-checking-accounts";
+    rival.source_line = "The amount for overdraft fees varies, but $29 each occurrence is common.";
+    const analysis = analyzeMarket(data);
+    const after = analysis.lines.find((l) => l.key === "overdraft")!;
+    expect(before.peers?.n).toBe(20);
+    expect(after.peers?.n).toBe(19);
+    expect(after.peers?.median).toBe(19);
+    expect(after.excludedFigures?.map((f) => f.institution_id)).toEqual([119]);
+    expect(after.excludedFigures?.[0].evidence.excluded[0].problem).toBe("not_a_fee_schedule");
+    expect(analysis.named.find((c) => c.institution_id === 119)?.fees.overdraft).toBeUndefined();
+    expect(analysis.exclusions?.competitorAmounts).toBe(1);
+    const csv = parseCsv(buildReportCsv(data, analysis)).filter((r) => r.institution_id === "119" && r.fee_line === "Overdraft (per item)");
+    expect(csv).toHaveLength(1);
+    expect(csv[0]).toMatchObject({ amount: "", record_used: "no", missing_reason: MISSING_EXCLUDED });
+  });
+
+  it("leaves out a record whose quote does not state its amount", () => {
+    const data = market({ competitors: 20 });
+    const rival = data.lines.find((l) => l.institution_id === 105 && l.line === "stop_payment")!;
+    rival.source_line = "Stop payment | $5";
+    const line = analyzeMarket(data).lines.find((l) => l.key === "stop_payment")!;
+    expect(line.excludedFigures?.[0].evidence.excluded[0].problem).toBe("quote_without_amount");
   });
 });
 
@@ -160,7 +242,9 @@ describe("diffReports", () => {
     const before = market({ competitors: 20 });
     const after = market({ competitors: 20 });
     // Every rival raises stop payment by $5: each named rival's fee and the median move.
-    after.lines = after.lines.map((l) => (l.institution_id !== 1 && l.line === "stop_payment" ? { ...l, amount: l.amount + 5 } : l));
+    after.lines = after.lines.map((l) =>
+      l.institution_id !== 1 && l.line === "stop_payment" ? { ...l, amount: l.amount + 5, source_line: `stop_payment | $${l.amount + 5}` } : l,
+    );
     const changes = diffReports(analyzeMarket(before), analyzeMarket(after));
     const median = changes.find((c) => c.subject === "median");
     expect(median).toMatchObject({ key: "stop_payment", before: expect.any(Number) });

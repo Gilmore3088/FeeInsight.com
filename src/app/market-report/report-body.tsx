@@ -179,6 +179,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
   const { data, analysis, savedAt, sinceBought } = report;
   const market = data.market!;
   const droppedCount = Object.values(data.dropped ?? {}).reduce((sum, n) => sum + (n ?? 0), 0);
+  const evidenceLeftOut = (analysis.exclusions?.competitorRecords ?? 0) + (analysis.exclusions?.ownRecords ?? 0);
   const name = data.subject.institution_name;
   const counties = countiesText(market.county_fips);
   const leftOut = leftOutNote(name, analysis.lines);
@@ -359,6 +360,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                 <li>
                   When an institution publishes several prices for one fee, the range is shown and the comparison uses the value the
                   Bank Fee Index counts for it: the middle of its prices, or for overdraft its standard fee, the highest of its prices.
+                  Opening a fee lists each of those prices with its account, the line that states it and its source.
                 </li>
                 <li>
                   Each dot is {name}&apos;s fee ranked among the competitors that publish it; the shaded band is their middle 50% and the
@@ -383,6 +385,10 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                   under review for a correction, business prices, savings fees on the checking line, and records whose fee name was not
                   read cleanly
                   {droppedCount > 0 ? ` (${droppedCount} published figures in this market)` : ""}.
+                </li>
+                <li>
+                  Also left out: a price whose quoted line does not state it, and a price read from a general article about fees
+                  {evidenceLeftOut > 0 ? ` (${evidenceLeftOut} in this market)` : ""}. The medians are worked out without them.
                 </li>
               </ul>
             </Disclosure>

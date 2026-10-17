@@ -1,5 +1,9 @@
 import type { CustomReportMarketData, MarketFeeLine, MarketInstitution } from "@/lib/data-store/custom-report-market";
-import { FEE_LINE_LABELS, FEE_LINE_RULES } from "./rules";
+import { countyLabel } from "@/lib/geo/counties";
+import { FEE_LINE_BASIS, FEE_LINE_LABELS, FEE_LINE_RULES } from "./rules";
+import { buildAmountEvidence, evidenceOf, withEvidence, type AmountEvidence, type ReportFigure } from "./evidence";
+
+export type { AmountEvidence, EvidenceRecord, ReportFigure } from "./evidence";
 
 /** A fee line is comparable only when this many local competitors publish it. */
 export const MIN_LOCAL_PEERS_PER_LINE = 8;
@@ -29,7 +33,11 @@ export interface ReportLine {
     schedule_read_on: string | null;
     source_line: string;
     tiers?: MarketFeeLine["tiers"];
+    /** The amount's basis and every record it is built from (optional on copies saved before it). */
+    evidence?: AmountEvidence;
   } | null;
+  /** The bank's own amount when its evidence does not show it, so it is left out; else null. */
+  ownExcluded?: AmountEvidence | null;
   peers: { n: number; p25: number; median: number; p75: number; min: number; max: number } | null;
   comparable: boolean;
   position: LinePosition | null;
@@ -37,14 +45,16 @@ export interface ReportLine {
   percentile: number | null;
   /** Local competitors charging strictly less than the bank on a comparable line. */
   chargingLess: number | null;
-  /** Every competitor figure behind the local numbers, lowest first, each with its source. */
-  peerFigures: MarketFeeLine[];
+  /** Every competitor figure behind the local numbers, lowest first, each with its evidence. */
+  peerFigures: ReportFigure[];
+  /** Competitor amounts left out because no record's evidence shows the amount. */
+  excludedFigures?: { institution_id: number; evidence: AmountEvidence }[];
 }
 
 export interface NamedCompetitor extends MarketInstitution {
   fees: Record<string, number>;
   /** The source of each figure in `fees`, by fee line. */
-  sources: Record<string, MarketFeeLine>;
+  sources: Record<string, ReportFigure>;
 }
 
 export interface ReadinessResult {
@@ -58,8 +68,22 @@ export interface ReadinessResult {
   reason: string | null;
 }
 
+/** What the evidence check left out of the analysis (live fee rows are never changed). */
+export interface EvidenceExclusions {
+  /** Competitor amounts dropped from a line's comparison: no record shows the amount. */
+  competitorAmounts: number;
+  /** Competitor records dropped (their amounts rebuilt from the records that remain). */
+  competitorRecords: number;
+  /** The institution's own amounts left out for the same reason. */
+  ownAmounts: number;
+  /** The institution's own records dropped. */
+  ownRecords: number;
+}
+
 export interface CustomReportAnalysis {
   readiness: ReadinessResult;
+  /** Optional on copies analysed before the evidence check. */
+  exclusions?: EvidenceExclusions;
   lines: ReportLine[];
   named: NamedCompetitor[];
   findings: string[];
@@ -87,14 +111,39 @@ export function positionFor(amount: number, peers: Pick<NonNullable<ReportLine["
 
 export function analyzeMarket(data: CustomReportMarketData): CustomReportAnalysis {
   const subjectId = data.subject.institution_id;
-  const byLine = new Map<string, MarketFeeLine[]>();
+  // Every amount is rebuilt from the records whose evidence shows it (evidence.ts); an amount
+  // with no such record is left out, so the medians below are worked out without it.
+  const exclusions: EvidenceExclusions = { competitorAmounts: 0, competitorRecords: 0, ownAmounts: 0, ownRecords: 0 };
+  const figures: (ReportFigure & { evidence: AmountEvidence })[] = [];
+  const excludedByLine = new Map<string, { institution_id: number; evidence: AmountEvidence }[]>();
+  const ownExcluded = new Map<string, AmountEvidence>();
   for (const line of data.lines) {
+    const figure = withEvidence(line);
+    const isOwn = line.institution_id === subjectId;
+    const dropped = (figure?.evidence ?? buildAmountEvidence(line)).excluded.length;
+    if (isOwn) exclusions.ownRecords += dropped;
+    else exclusions.competitorRecords += dropped;
+    if (figure) {
+      figures.push(figure);
+      continue;
+    }
+    const evidence = buildAmountEvidence(line);
+    if (isOwn) {
+      exclusions.ownAmounts += 1;
+      ownExcluded.set(line.line, evidence);
+    } else {
+      exclusions.competitorAmounts += 1;
+      excludedByLine.set(line.line, [...(excludedByLine.get(line.line) ?? []), { institution_id: line.institution_id, evidence }]);
+    }
+  }
+  const byLine = new Map<string, ReportFigure[]>();
+  for (const line of figures) {
     if (line.institution_id === subjectId) continue;
     const list = byLine.get(line.line) ?? [];
     list.push(line);
     byLine.set(line.line, list);
   }
-  const own = new Map(data.lines.filter((l) => l.institution_id === subjectId).map((l) => [l.line, l]));
+  const own = new Map(figures.filter((l) => l.institution_id === subjectId).map((l) => [l.line, l]));
 
   const lines: ReportLine[] = FEE_LINE_RULES.map((rule) => {
     const peerFigures = [...(byLine.get(rule.key) ?? [])].sort((a, b) => a.amount - b.amount || a.institution_id - b.institution_id);
@@ -124,8 +173,10 @@ export function analyzeMarket(data: CustomReportMarketData): CustomReportAnalysi
             schedule_read_on: mine.schedule_read_on ?? null,
             source_line: mine.source_line,
             tiers: mine.tiers,
+            evidence: mine.evidence,
           }
         : null,
+      ownExcluded: ownExcluded.get(rule.key) ?? null,
       peers,
       comparable,
       position: comparable && mine && peers ? positionFor(mine.amount, peers) : null,
@@ -135,12 +186,13 @@ export function analyzeMarket(data: CustomReportMarketData): CustomReportAnalysi
           : null,
       chargingLess: comparable && mine ? peerAmounts.filter((a) => a < mine.amount).length : null,
       peerFigures,
+      excludedFigures: excludedByLine.get(rule.key) ?? [],
     };
   });
 
   const feesByCompetitor = new Map<number, Record<string, number>>();
-  const sourcesByCompetitor = new Map<number, Record<string, MarketFeeLine>>();
-  for (const line of data.lines) {
+  const sourcesByCompetitor = new Map<number, Record<string, ReportFigure>>();
+  for (const line of figures) {
     if (line.institution_id === subjectId) continue;
     const fees = feesByCompetitor.get(line.institution_id) ?? {};
     fees[line.line] = line.amount;
@@ -181,7 +233,7 @@ export function analyzeMarket(data: CustomReportMarketData): CustomReportAnalysi
           : `Only ${comparableLines} of its fee lines have at least ${MIN_LOCAL_PEERS_PER_LINE} local competitors with verified fees; a report needs ${MIN_COMPARABLE_LINES}.`;
   }
 
-  return { readiness, lines, named, findings: buildFindings(lines) };
+  return { readiness, exclusions, lines, named, findings: buildFindings(lines) };
 }
 
 /**
@@ -233,29 +285,106 @@ function csvCell(value: string | number | null | undefined): string {
   return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 
-/** The report as CSV: the institution's lines first, then every competitor figure with its source. */
-export function buildReportCsv(data: CustomReportMarketData, analysis: CustomReportAnalysis): string {
+/** The CSV's reasons in place of a blank cell, so "not found" never reads as "too few competitors". */
+export const MISSING_NOT_FOUND = "not found on schedule";
+export const MISSING_TOO_FEW = `too few competitors (n<${MIN_LOCAL_PEERS_PER_LINE})`;
+export const MISSING_EXCLUDED = "excluded: evidence does not show amount";
+
+const CSV_HEADER = [
+  "report_institution_id", "report_institution", "report_date", "market_counties", "currency",
+  "row", "fee_line", "fee_basis", "institution_id", "institution",
+  "amount", "amount_basis", "published_range", "record", "records",
+  "record_id", "account_or_product", "record_amount", "record_used", "schedule_line", "source_url", "schedule_read_on",
+  "local_median", "middle_half_low", "middle_half_high", "competitors", "competitors_charging_less", "position",
+  "missing_reason",
+] as const;
+
+function rangeText(amounts: number[]): string | null {
+  if (amounts.length === 0) return null;
+  const low = Math.min(...amounts);
+  const high = Math.max(...amounts);
+  return low === high ? money(low) : `${money(low)} to ${money(high)}`;
+}
+
+/** "Leon County, FL; Alachua County, FL", each county named when the code is known. */
+function countiesCell(countyFips: string[]): string {
+  return countyFips
+    .map((fips) => {
+      const code = String(fips).padStart(5, "0");
+      return countyLabel(code) ?? `county ${code}`;
+    })
+    .join("; ");
+}
+
+/**
+ * The report as CSV, one row per contributing record (long format, so it pivots and filters
+ * without unpacking cells): the institution's own lines first, then every competitor record on
+ * the compared lines. An amount built from several records repeats on each of them with its
+ * basis ("middle of 3 published prices") and "record 2 of 3"; take record 1 for one row per
+ * institution and line. A record left out by the evidence check stays in the file with
+ * record_used "no" and its reason. Every row carries the report's context (institution id,
+ * date, market counties, currency, fee basis), and an empty figure always says why.
+ */
+export function buildReportCsv(data: CustomReportMarketData, analysis: CustomReportAnalysis, reportDate = new Date().toISOString().slice(0, 10)): string {
   const names = new Map(data.competitors.map((c) => [c.institution_id, c.institution_name]));
-  const header = [
-    "row", "fee_line", "institution", "amount", "local_median", "middle_half_low", "middle_half_high",
-    "competitors", "competitors_charging_less", "position", "schedule_line", "source_url", "schedule_read_on",
+  const context = [
+    data.subject.institution_id, data.subject.institution_name, reportDate,
+    data.market ? countiesCell(data.market.county_fips) : null, "USD",
   ];
-  const rows: (string | number | null)[][] = [header];
+  const rows: (string | number | null)[][] = [[...CSV_HEADER]];
+  type Stats = (string | number | null)[];
+  const push = (
+    row: "yours" | "competitor",
+    line: ReportLine,
+    institutionId: number,
+    institution: string,
+    evidence: AmountEvidence | null,
+    stats: Stats,
+    missing: string | null,
+  ) => {
+    const used = evidence?.records ?? [];
+    const all = [...used, ...(evidence?.excluded ?? [])];
+    const head = [row, line.label, FEE_LINE_BASIS[line.key] ?? null, institutionId, institution];
+    if (all.length === 0) {
+      rows.push([...context, ...head, null, null, null, null, null, null, null, null, null, null, null, null, ...stats, missing]);
+      return;
+    }
+    all.forEach((record, index) => {
+      const usedHere = record.problem === null;
+      rows.push([
+        ...context, ...head,
+        evidence?.amount ?? null, evidence?.basis ?? null, rangeText(used.map((r) => r.amount)),
+        index + 1, all.length,
+        record.record_id, record.product, record.amount, usedHere ? "yes" : "no", record.quote, record.source_url, record.read_on,
+        ...stats,
+        usedHere ? missing : MISSING_EXCLUDED,
+      ]);
+    });
+  };
+
   for (const line of analysis.lines) {
     const peers = line.comparable ? line.peers : null;
-    rows.push([
-      "yours", line.label, data.subject.institution_name, line.own?.amount ?? null,
+    const tooFew = (line.peers?.n ?? 0) < MIN_LOCAL_PEERS_PER_LINE;
+    const stats: Stats = [
       peers?.median ?? null, peers?.p25 ?? null, peers?.p75 ?? null, line.peers?.n ?? 0,
-      line.chargingLess, line.position, line.own?.source_line ?? null, line.own?.source_url ?? null,
-      line.own?.schedule_read_on ?? null,
-    ]);
+      line.chargingLess, line.position,
+    ];
+    const ownEvidence = line.own
+      ? (line.own.evidence ?? buildAmountEvidence({ institution_id: data.subject.institution_id, line: line.key, ...line.own }))
+      : (line.ownExcluded ?? null);
+    const missing = line.own
+      ? tooFew ? MISSING_TOO_FEW : null
+      : line.ownExcluded ? MISSING_EXCLUDED : MISSING_NOT_FOUND;
+    push("yours", line, data.subject.institution_id, data.subject.institution_name, ownEvidence, stats, missing);
   }
+  const blank: Stats = [null, null, null, null, null, null];
   for (const line of analysis.lines.filter((l) => l.comparable)) {
-    for (const figure of line.peerFigures) {
-      rows.push([
-        "competitor", line.label, names.get(figure.institution_id) ?? `Institution ${figure.institution_id}`, figure.amount,
-        null, null, null, null, null, null, figure.source_line, figure.source_url, figure.schedule_read_on,
-      ]);
+    const entries = [
+      ...line.peerFigures.map((figure) => ({ id: figure.institution_id, evidence: evidenceOf(figure) })),
+      ...(line.excludedFigures ?? []).map((figure) => ({ id: figure.institution_id, evidence: figure.evidence })),
+    ];
+    for (const entry of entries) {
+      push("competitor", line, entry.id, names.get(entry.id) ?? `Institution ${entry.id}`, entry.evidence, blank, entry.evidence.amount === null ? MISSING_EXCLUDED : null);
     }
   }
   return rows.map((row) => row.map(csvCell).join(",")).join("\r\n") + "\r\n";

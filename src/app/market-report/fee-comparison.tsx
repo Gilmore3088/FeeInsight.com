@@ -6,6 +6,7 @@
  * with the schedule it was read from.
  */
 import type { ReportLine } from "@/lib/custom-report/analysis";
+import { evidenceOf, type AmountEvidence, type EvidenceRecord } from "@/lib/custom-report/evidence";
 import type { MarketBranchFootprint } from "@/lib/data-store/branches";
 import { rankOf, ordinal, type PlottedLine } from "./[token]/at-a-glance";
 import { ShowAll } from "./show-all";
@@ -28,6 +29,55 @@ function gapText(line: PlottedLine): string {
   if (Math.abs(diff) < 0.005) return "at median";
   return `${diff > 0 ? "+" : "\u2212"}${money(Math.abs(diff))}`;
 }
+
+/** One record behind an amount: its account or product, price, quoted line, source and read date. */
+function RecordLine({ record, showAmount }: { record: EvidenceRecord; showAmount: boolean }) {
+  return (
+    <>
+      {showAmount && (
+        <span className="font-semibold tabular-nums text-ink">
+          {money(record.amount)} {record.product}:{" "}
+        </span>
+      )}
+      &ldquo;{record.quote}&rdquo;
+      {record.source_url && (
+        <>
+          {" "}
+          <a href={record.source_url} className="inline-flex min-h-11 items-center underline sm:min-h-0" rel="noopener noreferrer" target="_blank">
+            source
+          </a>
+        </>
+      )}
+      {record.read_on ? `, read ${record.read_on}` : ""}
+    </>
+  );
+}
+
+/** The records behind an amount: one quoted line for a single price, else each price with its basis. */
+function Evidence({ evidence }: { evidence: AmountEvidence }) {
+  if (evidence.records.length === 1) return <RecordLine record={evidence.records[0]} showAmount={false} />;
+  return (
+    <>
+      <span className="block">
+        {evidence.basis === "published price"
+          ? `Each of these lines states ${money(evidence.amount)}:`
+          : `Compared at ${money(evidence.amount)}, the ${evidence.basis}:`}
+      </span>
+      <ul className="mt-0.5 space-y-0.5">
+        {evidence.records.map((record, index) => (
+          <li key={record.record_id ?? index}>
+            <RecordLine record={record} showAmount />
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+const PROBLEM_TEXT: Record<NonNullable<EvidenceRecord["problem"]>, string> = {
+  quote_without_amount: "whose quoted line does not state that amount",
+  not_a_fee_schedule: "whose source is a general article about fees",
+};
 
 const GRID = "grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-4 sm:grid-cols-[minmax(0,15rem)_minmax(8rem,1fr)_8.5rem_6rem_5.5rem]";
 
@@ -62,6 +112,8 @@ export function FeeComparison({ name, lines, names, branches, footprint }: FeeCo
         {rows.map(({ line, rank, tone }, index) => {
           const compared = comparedAt(line.key, line.own);
           const figures = [...line.peerFigures].sort((a, b) => a.amount - b.amount);
+          const ownEvidence = evidenceOf({ institution_id: 0, line: line.key, ...line.own });
+          const leftOut = line.excludedFigures ?? [];
           return (
             <li key={line.key} className={`border-b border-border last:border-0 ${index >= ROWS_SHOWN ? EXTRA_BLOCK_ROW : ""}`}>
             <details className="group/fee">
@@ -114,16 +166,7 @@ export function FeeComparison({ name, lines, names, branches, footprint }: FeeCo
                     {line.chargingLess === null ? "not stated" : `${line.chargingLess} of ${line.peers.n}`}
                   </dd>
                   <dt className="col-span-2 mt-2 min-w-0 text-ink-muted [overflow-wrap:anywhere]">
-                    {name}&apos;s schedule: &ldquo;{line.own.source_line}&rdquo;
-                    {line.own.source_url && (
-                      <>
-                        {" "}
-                        <a href={line.own.source_url} className="inline-flex min-h-11 items-center underline sm:min-h-0" rel="noopener noreferrer" target="_blank">
-                          source
-                        </a>
-                      </>
-                    )}
-                    {line.own.schedule_read_on ? `, read ${line.own.schedule_read_on}` : ""}
+                    {name}&apos;s schedule: <Evidence evidence={ownEvidence} />
                   </dt>
                 </dl>
                 <div className="min-w-0">
@@ -133,7 +176,8 @@ export function FeeComparison({ name, lines, names, branches, footprint }: FeeCo
                   <ul className="mt-2 text-[12.5px]">
                     {figures.map((figure) => {
                       const where = footprint(branches, figure.institution_id);
-                      const several = figure.tiers && new Set(figure.tiers.map((t) => t.amount)).size > 1;
+                      const evidence = evidenceOf(figure);
+                      const several = new Set(evidence.records.map((r) => r.amount)).size > 1;
                       return (
                         <li
                           key={figure.institution_id}
@@ -157,13 +201,25 @@ export function FeeComparison({ name, lines, names, branches, footprint }: FeeCo
                             )}
                           </span>
                           <span className="col-span-2 min-w-0 text-ink-muted [overflow-wrap:anywhere] sm:col-span-1">
-                            &ldquo;{figure.source_line}&rdquo;{figure.schedule_read_on ? `, read ${figure.schedule_read_on}` : ""}
-                            {several ? `; compared at ${money(figure.amount)}` : ""}
+                            <Evidence evidence={evidence} />
                           </span>
                         </li>
                       );
                     })}
                   </ul>
+                  {leftOut.length > 0 && (
+                    <p className="mt-2 text-[12px] text-ink-muted sm:mx-0 sm:text-left">
+                      Left out of these figures:{" "}
+                      {leftOut
+                        .map(({ institution_id, evidence }) => {
+                          const record = evidence.excluded[0];
+                          const who = names.get(institution_id) ?? `Institution ${institution_id}`;
+                          return `${who} (${money(record.amount)}), ${PROBLEM_TEXT[record.problem ?? "quote_without_amount"]}`;
+                        })
+                        .join("; ")}
+                      .
+                    </p>
+                  )}
                 </div>
               </div>
             </details>

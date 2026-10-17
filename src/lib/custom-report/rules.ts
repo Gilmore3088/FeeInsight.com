@@ -162,6 +162,23 @@ export const FEE_LINE_RULES: FeeLineRule[] = [
   },
 ];
 
+/** How each line is charged, for the CSV's fee_basis column. */
+export const FEE_LINE_BASIS: Record<string, string> = {
+  monthly_maintenance: "per month",
+  overdraft: "per item",
+  nsf: "per item",
+  atm_non_network: "per withdrawal",
+  wire_domestic_outgoing: "per transfer",
+  wire_intl_outgoing: "per transfer",
+  wire_domestic_incoming: "per transfer",
+  stop_payment: "per request",
+  cashiers_check: "per check",
+  od_protection_transfer: "per transfer",
+  paper_statement: "per statement cycle",
+  card_replacement: "per card",
+  deposited_item_return: "per item",
+};
+
 export const FEE_LINE_LABELS: Record<string, string> = Object.fromEntries(
   FEE_LINE_RULES.map((rule) => [rule.key, rule.label]),
 );
