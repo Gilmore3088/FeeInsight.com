@@ -5,6 +5,23 @@ import { FDIC_FINANCIALS_SOURCE, FDIC_FILING_LAG_DAYS } from "@/lib/agents/magel
 import { FDIC_UNIVERSE_PARSER_VERSION, FDIC_UNIVERSE_SOURCE } from "@/lib/agents/magellan/registry/fdic-universe";
 import { FFIEC_OVERDRAFT_PARSER_VERSION, FFIEC_OVERDRAFT_SOURCE, ffiecOverdraftPartitions } from "@/lib/agents/magellan/registry/ffiec-overdraft";
 import { FDIC_SOD_SOURCE, SOD_FIRST_YEAR, latestSodYear } from "@/lib/agents/magellan/registry/fdic-sod";
+import {
+  FFIEC_CALL_DETAIL_PARSER_VERSION,
+  FFIEC_CALL_DETAIL_SOURCE,
+  ffiecCallDetailPartitions,
+} from "@/lib/agents/magellan/registry/ffiec-call-detail";
+import {
+  NCUA_EXTRAS_FIRST,
+  NCUA_EXTRAS_PARSER_VERSION,
+  NCUA_EXTRAS_SOURCE,
+  ncuaExtrasPartitions,
+} from "@/lib/agents/magellan/registry/ncua-extras";
+import {
+  FDIC_HISTORY_FIRST_YEAR,
+  FDIC_HISTORY_PARSER_VERSION,
+  FDIC_HISTORY_SOURCE,
+  fdicHistoryPartitions,
+} from "@/lib/agents/magellan/registry/fdic-history";
 import { BEIGE_BOOK_SOURCE, beigeBookCandidates } from "@/lib/agents/magellan/registry/fed";
 import { NCUA_FILING_LAG_DAYS, NCUA_FINANCIALS_SOURCE, NCUA_PARSER_VERSION } from "@/lib/agents/magellan/registry/ncua-financials";
 import { CFPB_PARSER_VERSION, CFPB_SOURCE } from "@/lib/agents/magellan/registry/cfpb";
@@ -22,6 +39,7 @@ import { STATE_NEWS_PARSER_VERSION, STATE_REG_NEWS_SOURCE } from "@/lib/agents/m
 import { STATE_BILL_NEWS_SOURCE } from "@/lib/agents/magellan/registry/state-bill-news";
 import { CFPB_FIRST_YEAR } from "@/lib/regulatory/cfpb";
 import {
+  compareQuarters,
   latestPublishableQuarter,
   parseQuarterKey,
   quarterKey,
@@ -63,6 +81,9 @@ export const REGISTRY_PARSER_VERSIONS: Record<string, number> = {
   [CFPB_SOURCE]: CFPB_PARSER_VERSION,
   [SEC_LINKS_SOURCE]: SEC_LINKS_PARSER_VERSION,
   [FFIEC_OVERDRAFT_SOURCE]: FFIEC_OVERDRAFT_PARSER_VERSION,
+  [FFIEC_CALL_DETAIL_SOURCE]: FFIEC_CALL_DETAIL_PARSER_VERSION,
+  [NCUA_EXTRAS_SOURCE]: NCUA_EXTRAS_PARSER_VERSION,
+  [FDIC_HISTORY_SOURCE]: FDIC_HISTORY_PARSER_VERSION,
 };
 
 /**
@@ -131,6 +152,9 @@ export function registryPartitionsBySource(
     [FDIC_FINANCIALS_SOURCE]: quarters(FDIC_FILING_LAG_DAYS),
     [NCUA_FINANCIALS_SOURCE]: quarters(NCUA_FILING_LAG_DAYS),
     [FFIEC_OVERDRAFT_SOURCE]: ffiecOverdraftPartitions(now),
+    [FFIEC_CALL_DETAIL_SOURCE]: ffiecCallDetailPartitions(now),
+    [NCUA_EXTRAS_SOURCE]: ncuaExtrasPartitions(now, compareQuarters(from, NCUA_EXTRAS_FIRST) > 0 ? from : NCUA_EXTRAS_FIRST),
+    [FDIC_HISTORY_SOURCE]: fdicHistoryPartitions(now, Math.max(FDIC_HISTORY_FIRST_YEAR, from.year)),
     [NCUA_BRANCHES_SOURCE]: ncuaBranchPartitions(now),
     [FDIC_SOD_SOURCE]: years(Math.max(SOD_FIRST_YEAR, from.year), latestSodYear(now)),
     [CENSUS_ACS_SOURCE]: censusAcsPartitions(now),

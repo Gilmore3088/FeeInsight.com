@@ -5,6 +5,9 @@ import { IRS_ZIP_INCOME_SOURCE, runRegistryIrsZipIncome } from "./irs-zip-income
 import { FDIC_FINANCIALS_SOURCE, runRegistryFdicFinancials } from "./fdic-financials";
 import { FFIEC_OVERDRAFT_SOURCE, runRegistryFfiecOverdraft } from "./ffiec-overdraft";
 import { FDIC_SOD_SOURCE, runRegistryFdicSod } from "./fdic-sod";
+import { FFIEC_CALL_DETAIL_SOURCE, runRegistryFfiecCallDetail } from "./ffiec-call-detail";
+import { NCUA_EXTRAS_SOURCE, runRegistryNcuaExtras } from "./ncua-extras";
+import { FDIC_HISTORY_SOURCE, runRegistryFdicHistory } from "./fdic-history";
 import { FDIC_UNIVERSE_PARTITION, FDIC_UNIVERSE_SOURCE, runRegistryFdicUniverse } from "./fdic-universe";
 import {
   BEIGE_BOOK_SOURCE,
@@ -172,6 +175,85 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
           quarterly_values: r.quarterlyValues,
           empty: r.empty,
           empty_reason: r.emptyReason,
+        },
+      };
+    },
+  },
+  {
+    source: FFIEC_CALL_DETAIL_SOURCE,
+    stepKey: "registry-ffiec-call-detail",
+    title: "Pull bank call-report detail (service charges by type, account sizes, past-due loans, charge-offs by loan type)",
+    run: async (input) => {
+      const r = await runRegistryFfiecCallDetail({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      const gaps = r.missingLines.length > 0 ? `; ${r.missingLines.length} lines not loaded (missing or described differently in the file)` : "";
+      return {
+        summary: r.empty
+          ? `No bank call-report detail for ${r.partitionKey}: ${r.emptyReason}.`
+          : `Magellan read ${r.loadedLines.length} call-report detail lines for ${n(r.banks)} banks for ${r.partitionKey}: ${n(r.matchedBanks)} matched, ${n(r.writtenRows)} values written${gaps}${dry(r.dryRun)}.`,
+        detail: {
+          report_date: r.reportDate,
+          source_url: r.sourceUrl,
+          file: r.fileName,
+          banks: r.banks,
+          matched_banks: r.matchedBanks,
+          values: r.values,
+          written_rows: r.writtenRows,
+          loaded_lines: r.loadedLines,
+          missing_lines: r.missingLines,
+          charge_off_parts_over_total: r.chargeOffPartsOverTotal,
+          empty: r.empty,
+          empty_reason: r.emptyReason,
+        },
+      };
+    },
+  },
+  {
+    source: NCUA_EXTRAS_SOURCE,
+    stepKey: "registry-ncua-extras",
+    title: "Pull NCUA 5300 extras (account counts, employees, uninsured shares, fee-income lines)",
+    run: async (input) => {
+      const r = await runRegistryNcuaExtras({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      const gaps = r.topicsWithoutLines.length > 0 ? `; nothing found for ${r.topicsWithoutLines.join(", ")}` : "";
+      return {
+        summary: r.empty
+          ? `No NCUA 5300 extras for ${r.partitionKey}: ${r.emptyReason}.`
+          : `Magellan read ${r.lines} NCUA 5300 extra lines for ${n(r.creditUnions)} credit unions for ${r.partitionKey}: ${n(r.writtenRows)} values written${gaps}${dry(r.dryRun)}.`,
+        detail: {
+          report_date: r.reportDate,
+          source_url: r.sourceUrl,
+          lines: r.lines,
+          credit_unions: r.creditUnions,
+          values: r.values,
+          written_rows: r.writtenRows,
+          topics_without_lines: r.topicsWithoutLines,
+          empty: r.empty,
+          empty_reason: r.emptyReason,
+        },
+      };
+    },
+  },
+  {
+    source: FDIC_HISTORY_SOURCE,
+    stepKey: "registry-fdic-history",
+    title: "Pull FDIC structure history (mergers, charter changes, branch openings and closings)",
+    run: async (input) => {
+      const r = await runRegistryFdicHistory({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      const gaps = r.missingFields.length > 0 ? `; fields never present: ${r.missingFields.join(", ")}` : "";
+      return {
+        summary: r.empty
+          ? `FDIC returned no structure events for ${r.partitionKey}.`
+          : `Magellan read ${n(r.events)} FDIC structure events for ${r.partitionKey}: ${n(r.writtenRows)} written, ${n(r.linkedEvents)} linked to a bank we track${r.truncated ? `; FDIC reported ${n(r.total)}, so the year is incomplete` : ""}${gaps}${dry(r.dryRun)}.`,
+        detail: {
+          source_url: r.sourceUrl,
+          total: r.total,
+          events: r.events,
+          written_rows: r.writtenRows,
+          linked_events: r.linkedEvents,
+          truncated: r.truncated,
+          missing_fields: r.missingFields,
+          undated_records: r.undatedRecords,
+          top_change_codes: r.topChangeCodes,
+          empty: r.empty,
         },
       };
     },
