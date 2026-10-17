@@ -12,15 +12,18 @@ import { PROGRAM, BRAND } from "./content.mjs";
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, "out");
 
+// The Fee Insight design system (src/brand/tokens): Oxford Navy ink and brick on parchment.
+// Old key names stay (terra = brick) so the renderers below read the same.
 const C = {
-  ink: "#1A1815", ink2: "#3D3830", text2: "#6E655A", muted: "#9A9082",
-  paper: "#FFFFFF", cream: "#FDFBF8", sand: "#F4EEE4",
-  terra: "#C44B2E", terraSoft: "#FBEDE8", good: "#1F7A4A", goodSoft: "#E8F2EB",
-  line: "#E3DACB",
+  ink: "#132338", ink2: "#132338", text2: "#55606f", muted: "#767c87",
+  paper: "#fbf9f4", cream: "#fbf9f4", sand: "#f3efe6",
+  terra: "#b23a32", terraSoft: "#f1d5d0", good: "#3b6350", goodSoft: "#e3ebe6",
+  line: "#ddd5c6",
 };
-const SERIF = "Georgia,'Times New Roman',serif";
-const SANS = "'Helvetica Neue',Helvetica,Arial,sans-serif";
-const MONO = "'SFMono-Regular',Menlo,Consolas,monospace";
+// Geist where the mail client has it, then close system faces; the brand has no serif.
+const SANS = "Geist,Inter,'Helvetica Neue',Helvetica,Arial,sans-serif";
+const SERIF = SANS;
+const MONO = "'Geist Mono','SFMono-Regular',Menlo,Consolas,monospace";
 
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 // Inline markup in copy: **bold** and [text](url).
@@ -208,7 +211,7 @@ const rows = (a) =>
     .join("");
 writeFileSync(
   join(outDir, "index.html"),
-  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fee Insight Email Program</title><style>body{margin:0;background:#F4EEE4;font:15px/1.5 Helvetica,Arial,sans-serif;color:#1A1815;padding:24px 16px}h1{font-family:Georgia,serif;font-weight:normal}h2{font-family:Georgia,serif;font-weight:normal;margin-top:40px;border-bottom:2px solid #1A1815}.meta{font-size:13px;margin:18px 0 6px}section{max-width:640px}iframe{width:100%;max-width:640px;height:900px;border:1px solid #E3DACB;background:#fff}</style></head><body><h1>Fee Insight email program</h1><p>${index.length} emails across ${PROGRAM.length} automations. Each file: <code>.html</code> for MailerLite custom HTML, <code>.txt</code> for the plain-text version.</p>${PROGRAM.map((a) => `<h2>${esc(a.name)}</h2><p>Trigger: ${esc(a.trigger)}</p>${rows(a)}`).join("")}</body></html>`,
+  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fee Insight Email Program</title><style>body{margin:0;background:${C.sand};font:15px/1.5 ${SANS};color:${C.ink};padding:24px 16px}h1{font-weight:600}h2{font-weight:600;margin-top:40px;border-bottom:2px solid ${C.ink}}.meta{font-size:13px;margin:18px 0 6px}section{max-width:640px}iframe{width:100%;max-width:640px;height:900px;border:1px solid ${C.line};background:${C.paper}}</style></head><body><h1>Fee Insight email program</h1><p>${index.length} emails across ${PROGRAM.length} automations. Each file: <code>.html</code> for MailerLite custom HTML, <code>.txt</code> for the plain-text version.</p>${PROGRAM.map((a) => `<h2>${esc(a.name)}</h2><p>Trigger: ${esc(a.trigger)}</p>${rows(a)}`).join("")}</body></html>`,
 );
 
 if (!BRAND.mailingAddress) console.warn("WARN: No mailing address (MARKETING_MAILING_ADDRESS unset); CAN-SPAM requires a real postal address before sending.");
