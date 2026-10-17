@@ -164,9 +164,10 @@ export interface IndexStatistic {
 }
 
 const STATISTIC_WORDS: Record<IndexStatistic["statistic"], RegExp> = {
-  median: /\b(?:median|midpoint|middle)\b/i,
-  p25: /\b(?:25th percentile|lower quartile|first quartile|p25)\b/i,
-  p75: /\b(?:75th percentile|upper quartile|third quartile|p75)\b/i,
+  // "Middle" alone is not the median: "the middle 50%" is the band between the quartiles.
+  median: /\b(?:median|midpoint)\b/i,
+  p25: /\b(?:25th percentile|lower quartile|first quartile|p25)\b|\bmiddle (?:50%|50 percent|half)/i,
+  p75: /\b(?:75th percentile|upper quartile|third quartile|p75)\b|\bmiddle (?:50%|50 percent|half)/i,
 };
 
 function indexScope(filters: Record<string, unknown> | null): string {
@@ -174,7 +175,7 @@ function indexScope(filters: Record<string, unknown> | null): string {
   const state = typeof filters.state === "string" && filters.state.trim() ? filters.state.trim().toUpperCase() : null;
   const charter = filters.charter === "bank" ? "banks" : filters.charter === "credit_union" ? "credit unions" : null;
   const district = typeof filters.district === "string" && filters.district.trim() ? `Fed district ${filters.district.trim()}` : null;
-  const parts = [state, district, charter ?? (state || district ? "institutions" : null)].filter(Boolean);
+  const parts = [state, district, charter].filter(Boolean);
   return parts.length > 0 ? parts.join(" ") : "national";
 }
 

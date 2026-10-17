@@ -368,10 +368,10 @@ export function AnalysisPdfDocument({
             {shown.reading.map((sentence, i) => (
               <View key={i} style={styles.bulletRow}>
                 <Text style={styles.bulletMark}>{"\u2022"}</Text>
-                <Text style={styles.bulletText}>
-                  {humanizeAnswerText(sentence)}
-                  {shown.readingBasis[sentence.trim()] ? `\n${shown.readingBasis[sentence.trim()]}` : ""}
-                </Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.bulletText}>{humanizeAnswerText(sentence)}</Text>
+                  {shown.readingBasis[sentence.trim()] ? <Text style={styles.evidenceNote}>{shown.readingBasis[sentence.trim()]}</Text> : null}
+                </View>
               </View>
             ))}
           </View>

@@ -59,6 +59,18 @@ describe("the basis line", () => {
     expect(indexBasisFor("Most banks charge $29 for an overdraft.", stats)).toBeNull();
   });
 
+  it("reads \"middle 50%\" as the quartile band, never as the median", () => {
+    expect(indexBasisFor("The middle 50% of overdraft fees runs from $25 to $35.", stats)).toBe(
+      "Basis: overdraft 25th percentile from the national index, 3,120 institutions; overdraft 75th percentile from the national index, 3,120 institutions.",
+    );
+    expect(indexBasisFor("The middle overdraft fee is $29.", stats)).toBeNull();
+  });
+
+  it("names a state filter without repeating the word institutions", () => {
+    const stateOnly = writtenAnswerIndexStats([{ scope: "filtered", filters: { state: "TX" }, data: [{ category: "overdraft", median: 31, institution_count: 400 }] }]);
+    expect(indexBasisFor("The Texas overdraft median is $31.", stateOnly)).toBe("Basis: overdraft median from the index for TX, 400 institutions.");
+  });
+
   it("gives no basis when the sentence names another fee or the amount differs", () => {
     expect(indexBasisFor("The national NSF median is $29.", stats)).toBeNull();
     expect(indexBasisFor("The national overdraft median is $30.", stats)).toBeNull();
