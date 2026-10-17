@@ -34,7 +34,7 @@ export default async function SavedPeerResearchPage({ params }: { params: Promis
         compact={prompt.length > 120}
         dek={<>
           {savedOn ? <>Saved research from <LocalDate iso={savedOn} options={SAVED_DATE} />. </> : "Saved research. "}
-          These are the peers and fees as they were then, not a fresh lookup.
+          It shows the peers and fees as they were on that date.
         </>}
         actions={rerunHref ? <LinkButton href={rerunHref} primary>Run this question again</LinkButton> : undefined}
       />

@@ -103,7 +103,7 @@ describe("shared answer primitives", () => {
     expect(seg).toContain("Bank Fee Index, Sep 2026");
     expect(seg).not.toContain("2026-09-30");
     // Missing figures say so in words; a phone keeps the source link without a hidden column.
-    expect(seg).toContain("Assets Not available · Daily limit not published");
+    expect(seg).toContain("Assets not available · Daily limit not published");
     expect(seg).toMatch(/sm:hidden[^>]*>[\s\S]*https:\/\/example\.com\/a\.pdf/);
     expect(dailyLimitText({ dailyCap: null, dailyFeeLimit: null })).toBe("Not published");
   });

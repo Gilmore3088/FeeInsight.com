@@ -25,7 +25,7 @@ describe("user-scoped saved peer research reopening", () => {
     expect(mocks.record).toHaveBeenCalledWith(id);
     const [header] = node.props.children;
     expect(header.props.title).toBe("Compare their NSF fees");
-    expect(JSON.stringify(header.props.dek)).toContain("not a fresh lookup");
+    expect(JSON.stringify(header.props.dek)).toContain("as they were on that date");
     expect(header.props.actions.props.href).toBe("/pro/analyze?q=Compare+their+NSF+fees&instId=202&send=1");
   });
   it("does not open a record from another user", async () => {

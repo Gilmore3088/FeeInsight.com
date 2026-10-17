@@ -125,6 +125,15 @@ describe("one active composer (H04-T03)", () => {
     expect(screen.getByText("Pick up where you left off")).toBeTruthy();
     expectOneComposer(/Ask a follow-up/);
   });
+
+  it("lets a resumed conversation show its unsaved peer list again, and open a saved answer", () => {
+    const state = resumable();
+    const withSaved = { ...state, turns: [{ ...state.turns[0], id: "t0", question: "What is the overdraft fee?", route: "written" as const, savedAnalysisId: "sa-9" }, ...state.turns] };
+    render(<AnalyzeWorkspace userId={7} institutionId="101" selectedInstitution={cu} initialConversation={withSaved} />);
+    expect(screen.getByText("Your last peer list wasn't saved. Show it again, or ask a follow-up below.")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Open this answer" }).getAttribute("href")).toContain("analysis=sa-9");
+    expect(screen.getByRole("button", { name: "Show this list again" })).toBeTruthy();
+  });
 });
 
 describe("clarifications in the same composer (H04-T04, AC3)", () => {
@@ -149,7 +158,7 @@ describe("clarifications in the same composer (H04-T04, AC3)", () => {
     await type("12,000");
     await waitFor(() => expect(engineAsks().filter((r) => r.body.answer)).toHaveLength(1));
     expect(engineAsks().at(-1)?.body.answer).toEqual({ fieldKey: "fee.overdraft.annual_items", value: "12,000" });
-    await screen.findByText("Hamilton couldn't read “12,000”. Please try again.");
+    await screen.findByText("Hamilton couldn't read “12,000” as a number. Enter a number, for example 12,000.");
     expectOneComposer(/Answer Hamilton's question/);
 
     await type("12000");
@@ -177,7 +186,7 @@ describe("clarifications in the same composer (H04-T04, AC3)", () => {
     engine = () => json(clarifying("fee.overdraft.annual_items", "number", "How many overdraft items a year?"));
     await type("What if we charged $26 for overdraft?");
     await screen.findByText("How many overdraft items a year?");
-    fireEvent.click(screen.getByRole("button", { name: "New question" }));
+    fireEvent.click(screen.getByRole("button", { name: "New conversation" }));
     expect(screen.queryByText("How many overdraft items a year?")).toBeNull();
     expect(screen.queryByText("Earlier in this conversation")).toBeNull();
     expectOneComposer(/Your question/);
@@ -194,7 +203,7 @@ describe("clarifications in the same composer (H04-T04, AC3)", () => {
     await type("What if we charged $25 for overdraft?");
     await screen.findByText("How many overdraft items a year?");
     await type("12000");
-    await screen.findByText("Hamilton couldn't save that answer just now. It is back in the box; try again.");
+    await screen.findByText("Hamilton couldn't send your reply just now. It's back in the question box. Send it again.");
     expect(composer().value).toBe("12000");
   });
 
@@ -300,7 +309,7 @@ describe("reload, navigation and reset (H04-T06)", () => {
     const revisions = s.recorded.map((r) => r.revision);
     expect([...revisions].sort((a, b) => a - b)).toEqual(revisions);
 
-    fireEvent.click(screen.getByRole("button", { name: "New question" }));
+    fireEvent.click(screen.getByRole("button", { name: "New conversation" }));
     engine = () => noStoryline();
     await type("What is the wire fee?");
     await act(async () => {
@@ -352,13 +361,13 @@ describe("no stale requests (H04-T07, AC4)", () => {
     expectOneComposer(/Your question/);
   });
 
-  it("drops a slow answer after New question, so it cannot fill the fresh conversation", async () => {
+  it("drops a slow answer after New conversation, so it cannot fill the fresh conversation", async () => {
     let release: (r: Response) => void = () => {};
     engine = () => new Promise<Response>((resolve) => { release = resolve; });
     render(<AnalyzeWorkspace userId={7} institutionId="101" selectedInstitution={cu} />);
     await type("What if we charged $25 for overdraft?");
     await waitFor(() => expect(engineAsks()).toHaveLength(1));
-    fireEvent.click(screen.getByRole("button", { name: "New question" }));
+    fireEvent.click(screen.getByRole("button", { name: "New conversation" }));
     expect(engineAsks()[0].signal?.aborted).toBe(true);
     await act(async () => { release(json(clarifying("fee.overdraft.annual_items", "number", "How many overdraft items a year?"))); });
     expect(screen.queryByText("How many overdraft items a year?")).toBeNull();

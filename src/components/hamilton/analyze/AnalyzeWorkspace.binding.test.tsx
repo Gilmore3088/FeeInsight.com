@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AnalyzeResponse } from "@/lib/hamilton/types";
 import { parseAnalyzeResponse } from "./parse-response";
 import { INTERPRETATION_LABEL } from "@/lib/hamilton/narrative-bound";
-import { bindWrittenAnswer, withoutOmitted } from "@/lib/hamilton/written-answer-binding";
+import { bindWrittenAnswer, READING_ONLY_LEAD, withoutOmitted } from "@/lib/hamilton/written-answer-binding";
 
 type Part = { type: string; text?: string; output?: unknown };
 type Finished = { message: { id: string; role: string; metadata?: unknown; parts: Part[] }; isError: boolean; isAbort: boolean };
@@ -96,6 +96,16 @@ describe("AnalyzeWorkspace written answer binding", () => {
     // The reading is shown once, under the label, never in the answer's own paragraphs.
     expect(page().split(READING)).toHaveLength(2);
     expect(page()).toContain("Some sentences were left out because a figure in them did not match its fee record.");
+  });
+
+  it("a reading-only answer leads with a plain line and offers the fee with sourced figures", () => {
+    const readingOnly = "## Hamilton's View\nThe peer median is $27.";
+    const only = bindWrittenAnswer({ sections: parseAnalyzeResponse(readingOnly), toolOutputs: TOOLS })!;
+    render(<AnalyzeWorkspace userId={7} institutionId="9001" initialAnalysisId="saved-1" initialAnalysisPrompt="How does our overdraft fee compare?" initialAnalysis={saved(readingOnly, only)} />);
+    expect(page()).toContain(READING_ONLY_LEAD);
+    const box = screen.getByText(INTERPRETATION_LABEL).closest("section")!;
+    expect(box.textContent).toContain(READING);
+    expect(screen.getByRole("button", { name: "Compare the overdraft fee with sourced figures" })).toBeTruthy();
   });
 
   it("a reopened legacy answer with no binding renders as before: every sentence, no label", () => {

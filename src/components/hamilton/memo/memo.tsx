@@ -11,6 +11,7 @@ import { priceBands } from "@/lib/hamilton/fee-scenario";
 import type { AuditTrail } from "@/lib/hamilton/audit-trail";
 import { staleSourceLabel } from "@/lib/hamilton/source-age";
 import { REPORT_DESIGN_CSS } from "@/lib/report-design/css";
+import { INTERPRETATION_LABEL } from "@/lib/hamilton/narrative-bound";
 
 /** The display face. Kept under its old name: Hamilton's display type is Geist Sans, not a serif. */
 export const SERIF = { fontFamily: "var(--fi-font-sans)" } as const;
@@ -26,7 +27,7 @@ export const ANSWER_TYPE = {
   /** The governing thought: the one sentence that answers the question. */
   lead: "text-[1.375rem] leading-snug text-warm-900 sm:text-2xl",
   /** A section inside an answer ("Where things stand", "What the data says"). */
-  section: "text-xl leading-snug text-warm-900",
+  section: "text-lg leading-snug text-warm-900 sm:text-xl",
   /** Answer sentences, takeaways and findings. */
   body: "text-base leading-relaxed",
   /** Captions, source lines, evidence lines. */
@@ -72,7 +73,7 @@ export function KeyFigures({ figures }: { figures: readonly KeyFigureTile[] }) {
       {figures.map((f) => (
         <div key={f.title} className="flex min-w-0 flex-col bg-white px-5 py-4">
           {/* The label comes first for screen readers; the figure still shows on top. */}
-          <dt className="order-2 mt-1 line-clamp-3 text-[13px] leading-snug text-warm-600" title={f.title}>
+          <dt className="order-2 mt-1 text-[13px] leading-snug text-warm-600">
             {f.label}
           </dt>
           <dd className={`order-1 ${figureSize(f.value)} text-warm-900 ${ANSWER_TYPE.num}`} style={SERIF}>
@@ -84,12 +85,41 @@ export function KeyFigures({ figures }: { figures: readonly KeyFigureTile[] }) {
   );
 }
 
-/** A section heading inside an answer. */
-export function SectionHeading({ children }: { children: ReactNode }) {
+/**
+ * A section heading inside an answer. On a phone it steps below the page title and the exhibit
+ * headline (h1 > h2 > h3). `as="h2"` for a section that sits directly under the page title.
+ */
+export function SectionHeading({ children, as: Tag = "h3" }: { children: ReactNode; as?: "h2" | "h3" }) {
   return (
-    <h3 className={`mb-3 ${ANSWER_TYPE.section}`} style={SERIF}>
+    <Tag className={`mb-3 ${ANSWER_TYPE.section}`} style={SERIF}>
       {children}
-    </h3>
+    </Tag>
+  );
+}
+
+/**
+ * Hamilton's reading: sentences whose figures are not tied to a fee record, set apart under one
+ * label on every screen (the PDFs print the same label).
+ */
+export function InterpretationBox({
+  sentences,
+  renderSentence = (sentence) => sentence,
+  children,
+}: {
+  sentences: readonly string[];
+  renderSentence?: (sentence: string) => ReactNode;
+  children?: ReactNode;
+}) {
+  return (
+    <section aria-label={INTERPRETATION_LABEL} className="rounded-md border border-warm-300 bg-warm-50 px-4 py-3">
+      <p className="text-xs font-semibold text-warm-700">{INTERPRETATION_LABEL}</p>
+      <ul className="mt-1.5 flex list-disc flex-col gap-1 pl-5 text-sm leading-relaxed text-warm-800">
+        {sentences.map((sentence) => (
+          <li key={sentence}>{renderSentence(sentence)}</li>
+        ))}
+      </ul>
+      {children}
+    </section>
   );
 }
 
@@ -115,7 +145,8 @@ export function ExhibitShell({
   children: ReactNode;
 }) {
   return (
-    <div className="rd w-full">
+    // The shared report sheet centres itself at 960px; inside an answer it runs the column's full width.
+    <div className="rd w-full [&.rd]:mx-0 [&.rd]:max-w-none">
       <style href="report-design" precedence="medium">
         {REPORT_DESIGN_CSS}
       </style>
@@ -166,7 +197,7 @@ export function MemoHeader({
     <header className="flex flex-col items-center gap-4 border-b border-warm-300 pb-5 text-center sm:flex-row sm:flex-wrap sm:items-end sm:justify-between sm:text-left">
       <div className="min-w-0 max-w-3xl">
         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-terra-text">{kicker}</p>
-        <h1 className={`mt-1.5 leading-tight text-warm-900 ${compact ? "text-xl sm:text-2xl" : "text-3xl sm:text-4xl"}`} style={SERIF}>
+        <h1 className={`mt-1.5 leading-tight text-warm-900 ${compact ? "text-[1.375rem] sm:text-2xl" : "text-3xl sm:text-4xl"}`} style={SERIF}>
           {title}
         </h1>
         {dek ? <p className="mt-2 text-pretty text-base leading-relaxed text-warm-700">{dek}</p> : null}
@@ -772,7 +803,7 @@ export function AuditPanel({
         </span>
         <span className="flex items-center gap-3 text-xs text-warm-600">
           <span className="rounded-full border border-warm-300 px-2 py-0.5 text-warm-700">{trail.evidence}</span>
-          <span>{trail.sources.length} sources</span>
+          <span>{trail.sources.length} {trail.sources.length === 1 ? "source" : "sources"}</span>
           <span aria-hidden className="print:hidden group-open:rotate-180">▾</span>
         </span>
       </summary>

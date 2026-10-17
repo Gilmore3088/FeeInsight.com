@@ -257,6 +257,16 @@ export function clarificationInputError(kind: ClarificationInputKind, raw: strin
   return null;
 }
 
+/**
+ * The composer line when Hamilton could not use a reply it was sent (the server's reading rules
+ * turned it down), saying what kind of answer Hamilton expects.
+ */
+export function unreadableReplyMessage(kind: ClarificationInputKind, value: string): string {
+  if (kind === "number") return `Hamilton couldn't read “${value}” as a number. Enter a number, for example 12,000.`;
+  if (kind === "percent") return `Hamilton couldn't read “${value}” as a percentage. Enter a percentage, for example 8%.`;
+  return `Hamilton couldn't use “${value}”. Try different wording, or choose Ask something else instead.`;
+}
+
 // ---- Stored snapshots -------------------------------------------------------------------------
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

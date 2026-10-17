@@ -8,7 +8,7 @@ import type { ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import type { Fact, SourceRef } from "@/lib/hamilton/workspace/types";
 import { withFiguresBold } from "@/components/hamilton/memo/answer-memo";
-import { ANSWER_TYPE, AnswerLead, KeyFigures, SERIF, SectionHeading } from "@/components/hamilton/memo/memo";
+import { ANSWER_TYPE, AnswerLead, InterpretationBox, KeyFigures, SERIF, SectionHeading } from "@/components/hamilton/memo/memo";
 import { sourceDateWithAge } from "@/components/hamilton/memo/exhibit-view";
 import { LensSwitch } from "./LensSwitch";
 import { StoryExhibitView } from "./story-exhibits";
@@ -16,7 +16,6 @@ import { OptionLetter, OptionScaleChart, OptionStanding, optionPoints, optionSca
 import type { StorylineMemo } from "@/lib/hamilton/workspace/storyline-types";
 import type { HamiltonIdentitySnapshot } from "@/lib/hamilton/account-context";
 import { splitIntoSentences } from "@/lib/hamilton/citation-gate";
-import { INTERPRETATION_LABEL } from "@/lib/hamilton/narrative-bound";
 import type { Storyline } from "./types";
 
 /** Hamilton's written memo over the storyline: still being written, written, or not written and why. */
@@ -163,7 +162,7 @@ export function StorylineView({ story, nextSteps, memo, identityContext }: { sto
   const notes = buildSourceNotes(story);
   const figures = story.keyFigures.slice(0, 4);
   return (
-    <article className="flex flex-col gap-10 [&_.rd]:mx-0 [&_.rd]:max-w-none [&_.rd-exhibit]:mt-0">
+    <article className="flex flex-col gap-10 [&_.rd-exhibit]:mt-0">
       <AnswerLead
         after={
           memo?.state === "writing" ? (
@@ -214,17 +213,14 @@ export function StorylineView({ story, nextSteps, memo, identityContext }: { sto
           <Kicker>Hamilton&apos;s commentary</Kicker>
           {written.summary ? <MemoNote text={written.summary} size="lead" /> : null}
           {reading.length > 0 ? (
-            <div className="mt-3 rounded-md border border-warm-300 bg-warm-50 px-4 py-3">
-              <p className="text-xs font-semibold text-warm-700">{INTERPRETATION_LABEL}</p>
-              <ul className="mt-1.5 flex list-disc flex-col gap-1 pl-5 text-sm leading-relaxed text-warm-800">
-                {reading.map((t) => (
-                  <li key={t}>{t}</li>
-                ))}
-              </ul>
+            <div className="mt-3">
+              <InterpretationBox sentences={reading} />
             </div>
           ) : null}
           <p className="text-xs text-warm-600">
-            Written by Hamilton from the exhibits above; {written.figureCheck.checked.toLocaleString("en-US")} figures checked against them.
+            {reading.length > 0
+              ? `Written by Hamilton from the exhibits above. ${written.figureCheck.checked.toLocaleString("en-US")} figures checked against them; the sentences under Hamilton's reading are not.`
+              : `Written by Hamilton from the exhibits above; ${written.figureCheck.checked.toLocaleString("en-US")} figures checked against them.`}
           </p>
         </section>
       ) : null}

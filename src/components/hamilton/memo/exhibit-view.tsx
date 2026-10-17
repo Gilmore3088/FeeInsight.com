@@ -531,7 +531,7 @@ export function FactList({ facts, layout = "inline" }: { facts: readonly Fact[];
   if (facts.length === 0) return null;
   if (layout === "boxed") {
     return (
-      <ul className="flex max-w-[68ch] flex-col divide-y divide-warm-200 rounded-lg border border-warm-300 bg-white">
+      <ul className="flex flex-col divide-y divide-warm-200 rounded-lg border border-warm-300 bg-white">
         {facts.map((f, i) => (
           <li key={i} className="flex flex-col gap-1 px-4 py-3">
             <span className={`${ANSWER_TYPE.body} text-warm-900 ${ANSWER_TYPE.num}`}>{f.text}</span>

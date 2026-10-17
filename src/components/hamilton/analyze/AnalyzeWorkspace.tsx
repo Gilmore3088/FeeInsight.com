@@ -20,7 +20,7 @@ import { HAMILTON_VERSION } from "@/lib/hamilton/voice";
 import { withConversationContext } from "@/lib/hamilton/conversation-context";
 import {
   clarificationInputError, composerMode, conversationReducer, currentTurn, decisionForQuestion, earlierTurns, emptyConversation,
-  resetConversation, serializeConversationState,
+  resetConversation, serializeConversationState, unreadableReplyMessage,
   type ActivePeerSet, type ConversationAction, type HamiltonConversationState,
 } from "@/lib/hamilton/conversation-state";
 import { matchFeeCategory } from "@/lib/hamilton/workspace/ask";
@@ -35,9 +35,9 @@ import { AddToReportButton } from "@/components/hamilton/basket/AddToReportButto
 import { DownloadAnswerPdf, type StructuredAnswerInfo } from "./StructuredAsk";
 import { PeerAwareStructuredAsk as StructuredAsk } from "./PeerAwareStructuredAsk";
 import { StorylineView } from "@/components/hamilton/storyline/StorylineView";
-import { ExhibitFrame } from "@/components/hamilton/memo/exhibit-view";
-import { AuditPanel, Callout, LinkButton, MemoHeader, MemoPage, MemoSection, More, SERIF } from "@/components/hamilton/memo/memo";
-import { INTERPRETATION_LABEL, type NarrativeBinding } from "@/lib/hamilton/narrative-bound";
+import { ANSWER_TYPE, AuditPanel, Callout, InterpretationBox, LinkButton, MemoHeader, MemoPage, MemoSection, More, SERIF, SectionHeading } from "@/components/hamilton/memo/memo";
+import type { NarrativeBinding } from "@/lib/hamilton/narrative-bound";
+import { proseFeeName } from "@/lib/hamilton/workspace/names";
 import { applyNarrativeBinding, boundFallbackLead, readNarrativeBinding, withoutOmitted } from "@/lib/hamilton/written-answer-binding";
 
 type MessagePart = { type: string; text?: string; output?: unknown };
@@ -203,10 +203,12 @@ interface AnalyzeWorkspaceProps {
  * and how it was built. Hamilton shows evidence; it never recommends a price.
  */
 /**
- * The Evidence rows ("- Label: Value — note") drawn as figure tiles in the shared exhibit frame;
- * a row with no value is a group heading. The figures are the answer's own, unchanged.
+ * The Evidence rows ("- Label: Value — note") drawn as figure tiles; a row with no value is a
+ * group heading. The figures are the answer's own, unchanged. Model-written figures carry no
+ * source of their own, so they sit under a plain heading rather than in a sourced exhibit, and a
+ * figure the check could not trace to the data is marked on its tile.
  */
-export function EvidenceExhibit({ rows }: { rows: ParsedResponse["evidence"] }) {
+export function EvidenceExhibit({ rows, untraced = [] }: { rows: ParsedResponse["evidence"]; untraced?: readonly string[] }) {
   const groups: { heading: string | null; items: { label: string; value: string; note?: string }[] }[] = [];
   for (const m of rows) {
     const label = m.label.replace(/^\*+|\*+$/g, "").trim();
@@ -218,30 +220,37 @@ export function EvidenceExhibit({ rows }: { rows: ParsedResponse["evidence"] }) 
     if (groups.length === 0) groups.push({ heading: null, items: [] });
     groups[groups.length - 1].items.push({ label, value, note: m.note });
   }
+  const isUntraced = (value: string) => untraced.some((figure) => figure && value.includes(figure));
   return (
-    <ExhibitFrame title="The figures behind this answer" sources={[]}>
-      <div className="flex flex-col gap-4">
-        {groups
-          .filter((g) => g.items.length > 0)
-          .map((g, gi) => (
-            <section key={gi} className="flex flex-col gap-2">
-              {g.heading ? <h3 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-warm-600">{g.heading}</h3> : null}
-              <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                {g.items.map((m, i) => (
-                  <div key={i} className="flex min-w-0 flex-col gap-1 rounded-lg border border-warm-200 bg-warm-100/50 px-4 py-3">
-                    <dt className="text-xs leading-tight text-warm-600">{m.label}</dt>
-                    <dd className="text-2xl leading-tight text-warm-900 [font-variant-numeric:tabular-nums]" style={SERIF}>
-                      {m.value ? renderInline(m.value) : null}
-                    </dd>
-                    {m.note ? <dd className="text-xs leading-snug text-warm-700">{renderInline(m.note)}</dd> : null}
-                  </div>
-                ))}
-              </dl>
-            </section>
-          ))}
-      </div>
-    </ExhibitFrame>
+    <section aria-labelledby="figures-cited" className="flex flex-col gap-4">
+      <h2 id="figures-cited" className={ANSWER_TYPE.section} style={SERIF}>Figures Hamilton cited</h2>
+      {groups
+        .filter((g) => g.items.length > 0)
+        .map((g, gi) => (
+          <section key={gi} className="flex flex-col gap-2">
+            {g.heading ? <h3 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-warm-600">{g.heading}</h3> : null}
+            <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {g.items.map((m, i) => (
+                <div key={i} className="flex min-w-0 flex-col gap-1 rounded-lg border border-warm-200 bg-warm-100/50 px-4 py-3">
+                  <dt className="text-xs leading-tight text-warm-600">{m.label}</dt>
+                  <dd className="text-2xl leading-tight text-warm-900 [font-variant-numeric:tabular-nums]" style={SERIF}>
+                    {/* A true minus sign, as every other Hamilton figure prints it. */}
+                    {m.value ? renderInline(m.value.replace(/(^|[\s(])-(?=[$\d])/g, "$1\u2212")) : null}
+                  </dd>
+                  {m.value && isUntraced(m.value) ? <dd className="text-xs font-medium text-warm-600">Not traced to the data</dd> : null}
+                  {m.note ? <dd className="text-xs leading-snug text-warm-700">{renderInline(m.note)}</dd> : null}
+                </div>
+              ))}
+            </dl>
+          </section>
+        ))}
+    </section>
   );
+}
+
+/** The question that asks for one fee from the published fee data, for a sourced comparison. */
+export function sourcedFeeQuestion(feeCategory: string): string {
+  return `How does this institution's ${proseFeeName(feeCategory)} fee compare with its peers?`;
 }
 
 /** How long a sent ask holds the composer before the page's own busy state must have taken over. */
@@ -669,7 +678,7 @@ function AnalyzeConversationWorkspace({
   }, [apply]);
   const handleReplyFailed = useCallback((value: string) => {
     setInput((existing) => existing || value);
-    setComposerError("Hamilton couldn't save that answer just now. It is back in the box; try again.");
+    setComposerError("Hamilton couldn't send your reply just now. It's back in the question box. Send it again.");
   }, []);
 
   // Hamilton's question takes the composer, so the reader answers where they type.
@@ -807,6 +816,20 @@ function AnalyzeConversationWorkspace({
     : [];
   const feeCategory = view.lead ? inferFeeCategory(view.lead) : null;
   const feeName = feeCategory ? getDisplayName(feeCategory).replace(/\s*\([^)]*\)\s*$/, "").toLowerCase() : null;
+  // The one fee a held or unsourced answer was about, so the reader can ask for it from the
+  // published fee data in one step.
+  const feeAskedAbout = (question: string | null | undefined) => (question ? matchFeeCategory(question) ?? inferFeeCategory(question) : null);
+  const heldFee = heldLine ? feeAskedAbout(lastPromptRef.current) : null;
+  const sourcedFee = feeAskedAbout(askedQuestion ?? initialAnalysisPrompt) ?? (reading.length ? inferFeeCategory(reading.join(" ")) : null) ?? feeCategory;
+  const sourcedAsk = sourcedFee && !readOnlyReason ? (
+    <button
+      type="button"
+      onClick={() => ask(sourcedFeeQuestion(sourcedFee))}
+      className="mt-2 inline-flex min-h-11 items-center rounded-md border border-warm-300 bg-white px-3.5 text-sm font-medium text-warm-800 hover:border-warm-500 sm:min-h-9"
+    >
+      Compare the {proseFeeName(sourcedFee)} fee with sourced figures
+    </button>
+  ) : null;
   const instId = normalizeCanonicalInstitutionId(selectedInstitution?.id ?? institutionId);
   const complete = !isLoading && parsedResponse !== null && Boolean(view.lead);
   const instName = answerIdentity?.researchInstitutionName ?? selectedInstitution?.name ?? null;
@@ -827,10 +850,14 @@ function AnalyzeConversationWorkspace({
   const starting = !(askedQuestion || shown || resumedOnly);
   // The turn on screen is the last one; the ones before it are "earlier in this conversation".
   const earlier = resumedOnly ? conv.turns : conv.turns.slice(0, -1);
+  const lastTurn = conv.turns[conv.turns.length - 1];
+  const lastTurnUnsavedList = resumedOnly && lastTurn?.route === "peer_list" && !lastTurn.savedAnalysisId;
   const showEarlier = earlier.length > 0 && (Boolean(askedQuestion) || resumedOnly || (Boolean(initialAnalysis) && conversation === 0));
   const mode = composerMode(conv, !starting);
   const composerLabel = mode.kind === "clarification" ? mode.label : "Ask a follow-up";
-  const composerProblem = composerError ?? (mode.kind === "clarification" && mode.invalidValue ? `Hamilton couldn't read “${mode.invalidValue}”. Please try again.` : null);
+  const composerProblem = composerError ?? (mode.kind === "clarification" && mode.invalidValue && conv.clarification
+    ? unreadableReplyMessage(conv.clarification.inputKind, mode.invalidValue)
+    : null);
   const carriedDecision = askedQuestion ? decisionForQuestion(conv, matchFeeCategory(askedQuestion)) : null;
 
   // The ask box sits in the page, never over it: under the heading before the first question,
@@ -840,7 +867,7 @@ function AnalyzeConversationWorkspace({
       id="hamilton-ask"
       onSubmit={handleSubmit}
       aria-label="Ask Hamilton"
-      className="flex scroll-mb-8 flex-col gap-3 rounded-lg border border-[var(--fi-control-border)] bg-[var(--fi-surface-0)] p-4 shadow-[var(--fi-shadow-1)] focus-within:border-[var(--fi-ink)] print:hidden"
+      className="flex scroll-mb-8 flex-col gap-3 rounded-lg border border-[var(--fi-control-border)] bg-[var(--fi-surface-0)] p-4 shadow-[var(--fi-shadow-1)] focus-within:border-[var(--fi-ink)] focus-within:ring-2 focus-within:ring-terra/40 print:hidden"
     >
       <label htmlFor="hamilton-ask-page" className="sr-only">Your question</label>
       <textarea
@@ -875,7 +902,7 @@ function AnalyzeConversationWorkspace({
       <label htmlFor="hamilton-ask-page" className="text-sm font-semibold text-[var(--fi-ink)]">
         {composerLabel}
       </label>
-      <div className="flex items-end gap-2 rounded-md border border-[var(--fi-control-border)] bg-white p-2 pl-3 focus-within:border-[var(--fi-ink)]">
+      <div className="flex items-end gap-2 rounded-md border border-[var(--fi-control-border)] bg-white p-2 pl-3 focus-within:border-[var(--fi-ink)] focus-within:ring-2 focus-within:ring-terra/40">
         <textarea
           id="hamilton-ask-page"
           ref={textareaRef}
@@ -926,7 +953,7 @@ function AnalyzeConversationWorkspace({
         <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-terra bg-terra-soft px-4 py-3 text-sm text-warm-900">
           <span>{askErrorMessage(chatError)}</span>
           {lastPromptRef.current ? (
-            <button type="button" onClick={() => ask(lastPromptRef.current)} className="font-medium text-terra-text underline">
+            <button type="button" onClick={() => ask(lastPromptRef.current)} className="min-h-11 font-medium text-terra-text underline sm:min-h-9">
               Try again
             </button>
           ) : null}
@@ -948,11 +975,22 @@ function AnalyzeConversationWorkspace({
       ) : null}
       {heldLine && !chatError && !isLoading ? (
         <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-terra bg-terra-soft px-4 py-3 text-sm text-warm-900">
-          <span>{heldLine}</span>
+          <span className="min-w-0 flex-1">{heldLine}</span>
           {lastPromptRef.current ? (
-            <button type="button" onClick={() => ask(lastPromptRef.current)} className="font-medium text-terra-text underline">
-              Ask again
-            </button>
+            <span className="flex flex-wrap items-center gap-3">
+              {heldFee ? (
+                <button
+                  type="button"
+                  onClick={() => ask(sourcedFeeQuestion(heldFee))}
+                  className="min-h-11 rounded-md border border-terra bg-white px-3.5 font-medium text-terra-text hover:bg-terra-soft sm:min-h-9"
+                >
+                  Compare the {proseFeeName(heldFee)} fee only
+                </button>
+              ) : null}
+              <button type="button" onClick={() => ask(lastPromptRef.current)} className="min-h-11 font-medium text-terra-text underline sm:min-h-9">
+                Ask again
+              </button>
+            </span>
           ) : null}
         </div>
       ) : null}
@@ -961,14 +999,16 @@ function AnalyzeConversationWorkspace({
         <MemoHeader
           kicker={instName ? `Conversation · ${instName}` : "Conversation"}
           title="Pick up where you left off"
-          dek={conv.peerSet ? "Follow-ups keep this conversation's institution, peer list and earlier answers." : "Follow-ups keep this conversation's institution and earlier answers."}
+          dek={lastTurnUnsavedList
+            ? "Your last peer list wasn't saved. Show it again, or ask a follow-up below."
+            : conv.peerSet ? "Follow-ups keep this conversation's institution, peer list and earlier answers." : "Follow-ups keep this conversation's institution and earlier answers."}
           actions={readOnlyReason ? undefined : (
             <button
               type="button"
               onClick={newQuestion}
               className="inline-flex min-h-11 items-center rounded-md border border-warm-300 bg-warm-50 px-3.5 py-2 text-sm font-medium text-warm-800 hover:border-warm-500 sm:min-h-9"
             >
-              New question
+              New conversation
             </button>
           )}
         />
@@ -982,6 +1022,23 @@ function AnalyzeConversationWorkspace({
               <li key={i} className="flex flex-col gap-0.5 px-4 py-3">
                 <p className="text-warm-900" style={SERIF}>{t.question}</p>
                 {t.lead ? <p className="line-clamp-2 text-sm text-warm-700">{renderInline(t.lead)}</p> : null}
+                {readOnlyReason ? null : t.savedAnalysisId ? (
+                  <a
+                    href={hrefWithInstitutionContext(`/pro/analyze?analysis=${encodeURIComponent(t.savedAnalysisId)}`, instId)}
+                    className="mt-1 inline-flex min-h-11 items-center self-start text-sm font-medium text-terra-text underline sm:min-h-0"
+                  >
+                    Open this answer
+                  </a>
+                ) : resumedOnly && t.route === "peer_list" ? (
+                  // A peer list is a lookup, so showing it again makes no paid call.
+                  <button
+                    type="button"
+                    onClick={() => ask(t.question)}
+                    className="mt-1 inline-flex min-h-11 items-center self-start text-sm font-medium text-terra-text underline sm:min-h-0"
+                  >
+                    Show this list again
+                  </button>
+                ) : null}
               </li>
             ))}
           </ol>
@@ -1013,7 +1070,7 @@ function AnalyzeConversationWorkspace({
                 onClick={newQuestion}
                 className="inline-flex min-h-11 items-center rounded-md border border-warm-300 bg-warm-50 px-3.5 py-2 text-sm font-medium text-warm-800 hover:border-warm-500 sm:min-h-9"
               >
-                New question
+                New conversation
               </button>
               </div>
             )}
@@ -1131,15 +1188,18 @@ function AnalyzeConversationWorkspace({
 
       {shown && view.lead && !reopenedStory ? (
         <div className="flex flex-col gap-8">
-          {/* The figures lead and the prose follows, so a written answer opens on an exhibit. */}
-          {shown.evidence.length > 0 ? <EvidenceExhibit rows={shown.evidence} /> : null}
-          {/* A limitation comes before the commentary it qualifies. */}
+          {/* A limitation comes before the figures and commentary it qualifies. */}
           {complete && !activeBinding && figureCheck && figureCheck.unmatched.length > 0 ? (
             <Callout>
-              <strong>Check these figures:</strong> {figureCheck.unmatched.join(", ")} could not be traced to the data
-              Hamilton looked up for this answer. Treat them as unverified.
+              <p>
+                <strong>Check these figures:</strong> {figureCheck.unmatched.join(", ")} could not be traced to the data
+                Hamilton looked up for this answer. Treat them as unverified.
+              </p>
+              {sourcedAsk}
             </Callout>
           ) : null}
+          {/* The figures lead and the prose follows. */}
+          {shown.evidence.length > 0 ? <EvidenceExhibit rows={shown.evidence} untraced={complete ? figureCheck?.unmatched : undefined} /> : null}
           {complete && bound && bound.notes.length > 0 ? (
             <Callout>
               {bound.notes.map((line) => (
@@ -1147,11 +1207,10 @@ function AnalyzeConversationWorkspace({
               ))}
             </Callout>
           ) : null}
-          <article className="flex max-w-[68ch] flex-col gap-4">
-            {askedQuestion ? (
-              <h2 className="text-xs font-semibold uppercase tracking-[0.12em] text-warm-600">Hamilton&apos;s commentary</h2>
-            ) : null}
-            <p className={askedQuestion ? "text-xl leading-snug text-warm-900" : "text-2xl leading-snug text-warm-900 sm:text-[1.7rem]"} style={SERIF}>
+          {/* The lead keeps a reading measure; the rest runs the column's full width. */}
+          <article className="flex flex-col gap-4">
+            {askedQuestion ? <SectionHeading as="h2">Hamilton&apos;s commentary</SectionHeading> : null}
+            <p className={`max-w-[68ch] ${askedQuestion ? "text-xl leading-snug text-warm-900" : "text-2xl leading-snug text-warm-900 sm:text-[1.7rem]"}`} style={SERIF}>
               {renderInline(view.lead)}
             </p>
             {view.paragraphs.slice(0, 1).map((para, i) => (
@@ -1171,7 +1230,7 @@ function AnalyzeConversationWorkspace({
                 ) : null}
                 {shown.whyItMatters.length > 0 ? (
                   <section>
-                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.1em] text-warm-600">Why it matters</h3>
+                    <SectionHeading>Why it matters</SectionHeading>
                     <ul className="flex list-disc flex-col gap-2 pl-5 text-base text-warm-800">
                       {shown.whyItMatters.map((item, i) => (
                         <li key={i}>{renderInline(item)}</li>
@@ -1182,19 +1241,15 @@ function AnalyzeConversationWorkspace({
               </More>
             ) : null}
             {reading.length > 0 ? (
-              <section aria-label={INTERPRETATION_LABEL} className="rounded-md border border-warm-300 bg-warm-50 px-4 py-3">
-                <p className="text-xs font-semibold text-warm-700">{INTERPRETATION_LABEL}</p>
-                <ul className="mt-1.5 flex list-disc flex-col gap-1 pl-5 text-sm leading-relaxed text-warm-800">
-                  {reading.map((sentence) => (
-                    <li key={sentence}>{renderInline(sentence)}</li>
-                  ))}
-                </ul>
+              <InterpretationBox sentences={reading} renderSentence={renderInline}>
                 {untracedInReading.length > 0 ? (
                   <p className="mt-2 text-xs text-warm-700">
                     These figures were not in the data Hamilton looked up: {untracedInReading.join(", ")}.
                   </p>
                 ) : null}
-              </section>
+                {/* With no fee-record figure in the answer, the reader gets one step to a sourced one. */}
+                {complete && fallbackLead ? sourcedAsk : null}
+              </InterpretationBox>
             ) : null}
           </article>
 
@@ -1215,7 +1270,7 @@ function AnalyzeConversationWorkspace({
                   type="button"
                   onClick={handleExportPdf}
                   disabled={isExporting}
-                  className="rounded-md border border-warm-300 bg-warm-50 px-3.5 py-2 text-sm text-warm-800 hover:border-warm-500 disabled:opacity-50"
+                  className="min-h-11 rounded-md border border-warm-300 bg-warm-50 px-3.5 py-2 text-sm text-warm-800 hover:border-warm-500 disabled:opacity-50 sm:min-h-9"
                 >
                   {isExporting ? "Preparing the PDF…" : "Download PDF"}
                 </button>

@@ -33,7 +33,7 @@ describe("peer list CSV export (#977, H02-T08)", () => {
   it("keeps zero distinct from missing and never runs a cell as a formula", () => {
     expect(lines.find(l => l.startsWith("52,203,"))).toContain(`"'=HYPERLINK(""x"")",Bank,Tampa,FL,0,`);
     expect(lines.find(l => l.startsWith("53,204,"))).toBe('53,204,Missing Bank,Bank,Tampa,FL,,,,,,Published fees available,"Matches the stated institution, state and asset filters."');
-    expect(lines).toContain('Note,"Amounts are in US dollars. A blank amount means none is on file, or the fee is charged as a rate (see the rate column); it is never zero."');
+    expect(lines).toContain("Note,Amounts are in US dollars. A blank amount means none is on file or the fee is charged as a rate (see the rate column). A blank is never zero.");
     expect(peerCsvCell(-5)).toBe("-5");
     expect(peerCsvCell("-5")).toBe("'-5");
   });

@@ -1,10 +1,9 @@
 import { hamiltonIdentityLines, readHamiltonIdentitySnapshot } from "@/lib/hamilton/identity-display";
-import { INTERPRETATION_LABEL } from "@/lib/hamilton/narrative-bound";
 import type {
   ReportArtifactMetadata,
   ReportSummaryResponse,
 } from "@/lib/hamilton/types";
-import { SERIF } from "@/components/hamilton/memo/memo";
+import { InterpretationBox, SERIF } from "@/components/hamilton/memo/memo";
 import { ReportSection } from "./ReportSection";
 import { StatCalloutBox } from "./StatCalloutBox";
 import {
@@ -163,12 +162,7 @@ function ConsultantReportBody({ report, onRunAgain }: { report: ReportSummaryRes
       <ReportSection heading="What is behind it">
         <Paragraphs text={report.strategicRationale} />
         {report.boardBrief?.reading?.length ? (
-          <section aria-label={INTERPRETATION_LABEL} className="mt-6 rounded-md border border-warm-300 bg-warm-50 px-4 py-3">
-            <p className="text-xs font-semibold text-warm-700">{INTERPRETATION_LABEL}</p>
-            <ul className="mt-1.5 flex list-disc flex-col gap-1 pl-5 text-sm leading-relaxed text-warm-800">
-              {report.boardBrief.reading.map((sentence) => <li key={sentence}>{sentence}</li>)}
-            </ul>
-          </section>
+          <div className="mt-6"><InterpretationBox sentences={report.boardBrief.reading} /></div>
         ) : null}
       </ReportSection>
 

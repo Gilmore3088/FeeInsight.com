@@ -151,7 +151,7 @@ export default async function AnalyzePage({
   // H03-T09: a saved answer made before a fee change keeps its figures and says so.
   const changeNotice = initialAnalysisRecord?.changeNotice ?? null;
   const askAgainHref = changeNotice && initialAnalysisRecord?.prompt && institutionId
-    ? `/pro/analyze?${new URLSearchParams({ q: initialAnalysisRecord.prompt.slice(0, 500), instId: institutionId })}`
+    ? `/pro/analyze?${new URLSearchParams({ q: initialAnalysisRecord.prompt.slice(0, 500), instId: institutionId, send: "1" })}`
     : null;
   if (changeNotice) return <>
     <SavedChangeNotice notice={changeNotice} askAgainHref={askAgainHref} />
@@ -203,7 +203,7 @@ async function conversationForWorkspace(input: {
       ? {
           text: `This conversation is about ${subject.institutionName ?? "an earlier institution"}. Your workspace is now set to ${today?.institution?.name ?? "another institution"}; follow-ups here stay about ${subject.institutionName ?? "the earlier institution"}.`,
           href: `/pro/analyze?${new URLSearchParams({ instId: todayId })}`,
-          linkLabel: `Start a new conversation about ${today?.institution?.name ?? "it"}`,
+          linkLabel: `Start a new conversation about ${today?.institution?.name ?? "your workspace institution"}`,
         }
       : null;
     return { conversation, notice };

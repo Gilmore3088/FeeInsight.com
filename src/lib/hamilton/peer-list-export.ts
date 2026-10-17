@@ -41,7 +41,7 @@ export function peerListCsv(data: PeerListData): string | null {
   out.push(line(["Rows in this file", data.rows.length === 0 ? "0" : `${offset + 1} to ${offset + data.rows.length} of ${data.totalMatches ?? "an unknown number of"} matching institutions`]));
   for (const description of data.criteria?.descriptions ?? []) out.push(line(["Criteria", description]));
   for (const note of data.notes) out.push(line(["Note", note]));
-  out.push(line(["Note", "Amounts are in US dollars. A blank amount means none is on file, or the fee is charged as a rate (see the rate column); it is never zero."]));
+  out.push(line(["Note", "Amounts are in US dollars. A blank amount means none is on file or the fee is charged as a rate (see the rate column). A blank is never zero."]));
   out.push("");
   out.push(line(["row", "institution_id", "institution", "type", "city", "state", "total_assets_usd", "asset_report_date", "asset_source", "asset_source_url", "asset_record_id", "fee_data", "why_included"]));
   data.rows.slice(0, MAX_PEER_LIST_ROWS).forEach((row, i) => {

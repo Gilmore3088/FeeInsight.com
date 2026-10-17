@@ -49,7 +49,7 @@ export const LEGACY_REPORT_CONFIDENCE_NOTE =
 
 /** The same fact as one neutral footnote in the exported PDF, which has no button. */
 export const LEGACY_REPORT_CONFIDENCE_FOOTNOTE =
-  "Ratings saved as High before figure-level checks are shown as Medium.";
+  "Ratings saved as High before Hamilton tied each figure to its fee record are shown as Medium.";
 
 /** True when a saved report holds a decision rated High, which now shows as Medium. */
 export function hasLegacyHighRating(decisions: readonly ReportDecision[]): boolean {

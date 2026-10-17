@@ -35,8 +35,9 @@ export interface SegmentData {
 export function fmtAssets(thousands: number | null): string {
   if (thousands == null) return "Not available";
   const dollars = thousands * 1000;
-  if (dollars >= 1e12) return `$${(dollars / 1e12).toFixed(1)}T`;
-  if (dollars >= 1e9) return `$${(dollars / 1e9).toFixed(1)}B`;
+  // "$750B", not "$750.0B": a trailing ".0" adds no precision.
+  if (dollars >= 1e12) return `$${(dollars / 1e12).toFixed(1).replace(/\.0$/, "")}T`;
+  if (dollars >= 1e9) return `$${(dollars / 1e9).toFixed(1).replace(/\.0$/, "")}B`;
   return `$${Math.round(dollars / 1e6)}M`;
 }
 
@@ -63,7 +64,7 @@ function Rows({ rows, start, own, max }: { rows: SegmentRow[]; start: number; ow
               {m.stateCode ? <span className="ml-1.5 text-xs text-warm-500">{m.stateCode}</span> : null}
               {/* On a phone the assets, limit and source columns fold into one line here, so nothing scrolls sideways. */}
               <span className={`mt-0.5 block text-xs text-warm-600 sm:hidden ${ANSWER_TYPE.num}`}>
-                Assets {fmtAssets(m.totalAssets)} · Daily limit {dailyLimitText(m).toLowerCase()}
+                Assets {m.totalAssets == null ? "not available" : fmtAssets(m.totalAssets)} · Daily limit {dailyLimitText(m).toLowerCase()}
                 {m.documentUrls[0] ? (
                   <>
                     {" · "}
@@ -143,8 +144,8 @@ export function SegmentTable({
   const max = Math.max(own ?? 0, ...data.members.map((m) => m.amount));
   const shown = data.members.slice(0, SHOWN);
   const rest = data.members.slice(SHOWN);
-  // The bars only draw from sm up; the caption says so rather than describing a bar a phone never shows.
-  const caption = `${own != null ? `Red bars on wider screens mark institutions that charge less than ${ownLabel}. ` : ""}Assets from the institution registry.`;
+  // The bars only draw from sm up, so their key shows only there; the caption is about the data.
+  const caption = "Assets from the institution registry.";
   const title = titleOverride ?? `The ${data.members.length === 1 ? "one" : data.members.length.toLocaleString("en-US")} ${data.segment.label} that publish this fee, largest first`;
   return (
     // The shared exhibit treatment: label, headline, table, then the source line with its "Sep 2026" date.
@@ -170,6 +171,12 @@ export function SegmentTable({
           </dd>
         </div>
       </dl>
+      ) : null}
+      {own != null ? (
+        <p className="mb-2 hidden items-center gap-2 text-xs text-warm-700 sm:flex">
+          <span aria-hidden className="h-2 w-5 rounded-full bg-terra/70" />
+          Charges less than {ownLabel}
+        </p>
       ) : null}
       <div className="overflow-x-auto rounded-md border border-warm-200 bg-white">
         <table className="w-full text-sm">

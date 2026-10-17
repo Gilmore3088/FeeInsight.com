@@ -32,7 +32,7 @@ const ANSWER = [
 const before = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
 
 describe("AnalyzeWorkspace written answer order", () => {
-  it("shows figures, then the untraced-figure warning, then the commentary, then the identity record", async () => {
+  it("shows the untraced-figure warning, then the figures it qualifies, then the commentary, then the identity record", async () => {
     render(<AnalyzeWorkspace userId={1} institutionId="8109" />);
     await act(async () => {
       await chat.opts?.onFinish?.({
@@ -45,12 +45,16 @@ describe("AnalyzeWorkspace written answer order", () => {
         isAbort: false,
       });
     });
-    const figures = screen.getByText("The figures behind this answer");
+    const figures = screen.getByRole("heading", { name: "Figures Hamilton cited" });
     const warning = screen.getByText("Check these figures:");
     const lead = screen.getByText(/sits above the \$29 peer median/);
     const identity = screen.getByText("Institution and peer group behind this answer");
-    expect(before(figures, warning)).toBe(true);
-    expect(before(warning, lead)).toBe(true);
+    // A limitation sits before the figures it qualifies; the figures carry no exhibit source line.
+    expect(before(warning, figures)).toBe(true);
+    expect(before(figures, lead)).toBe(true);
+    expect(screen.queryByText(/^Source:/)).toBeNull();
+    // The untraced figure is marked on its own tile.
+    expect(screen.getAllByText("Not traced to the data").length).toBeGreaterThan(0);
     expect(before(lead, identity)).toBe(true);
     // One intro: the lead is written once.
     expect(screen.getAllByText(/sits above the \$29 peer median/)).toHaveLength(1);
