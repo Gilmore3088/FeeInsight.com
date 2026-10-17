@@ -59,10 +59,11 @@ export interface HandTakedown {
  * name, each confirmed against its bank's stored text: 13 surcharges non-customers pay at the bank's
  * own ATMs whose name says only "ATM Surcharge" (the heading or line names the payer), and 15 lines
  * that are not the fee (an in-network or own-ATM $0, a refund cap, a waived price, a figure from the
- * next column). 28 in all, so they wait on James (fewer than 20 ride; DECISIONS.md, Oct 16): off,
- * none of them is listed and none comes down. Turning it on takes all 28 down on the next publish.
+ * next column). 28 in all, so they waited on James (fewer than 20 ride; DECISIONS.md, Oct 16). He said
+ * yes on Oct 17 (11:28 UTC), so the switch is on and all 28 come down on the next publish. Set false
+ * and none of them is listed.
  */
-export const ATM_SURCHARGE_TAKEDOWN_LIVE = false;
+export const ATM_SURCHARGE_TAKEDOWN_LIVE = true;
 
 type AtmRow = [feePublishedId: number, institutionId: number, amount: number, feeName: string, evidence: string];
 
@@ -519,6 +520,16 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
     reason: "duplicate of #81957 (#1753)", issue: 1753, kind: "duplicate",
     requiresLive: { feePublishedId: 81957, amount: 5, feeName: "International ATM Transaction" },
     evidence: "Regions (doc 23188, text 20258): the $5.00 \"Withdrawal\" sits under \"International ATM:\" (\"International ATM: | ... Withdrawal ... $5.00 (Applies to all withdrawal requests, approved or declined)\"), not under \"Regions ATM:\"; the same $5 international ATM fee is live as card_foreign_txn 81957. Regions' non-network withdrawal is $3 (81982)." },
+  // #1774 (read-only, Oct 17): TD Bank's paper statement fee read as a monthly maintenance fee, on
+  // both TD records. Each comes down only while TD's paper statement fee stays live.
+  { feePublishedId: 64716, institutionId: 12, canonicalFeeKey: "monthly_maintenance", amount: 3, feeName: "Monthly fee",
+    reason: "source_mismatch: #1774", issue: 1774, kind: "wrong_category",
+    requiresLive: { feePublishedId: 64717, amount: 3, feeName: "Paper statements" },
+    evidence: "TD Bank checking page (doc 19132): \"Paper statements | $3 monthly fee | Free for customers aged 60+, otherwise $3 monthly fee | $1 monthly fee\"; the paper statement fee, live as 64717. TD's monthly maintenance fees are $4.95, $15 and $25." },
+  { feePublishedId: 65870, institutionId: 65, canonicalFeeKey: "monthly_maintenance", amount: 3, feeName: "Monthly fee",
+    reason: "source_mismatch: #1774", issue: 1774, kind: "wrong_category",
+    requiresLive: { feePublishedId: 65871, amount: 3, feeName: "Paper statements" },
+    evidence: "TD Bank checking page (doc 19485, the same page as doc 19132): \"Paper statements | $3 monthly fee\"; the paper statement fee, live as 65871." },
   // #1765 (read-only, Oct 17): Navy Federal's Visa gift card inactivity fee, filed as a dormant
   // account. Its name says only "Inactivity Fee", so the card-product rule cannot read it; it comes
   // down with the other 61 under `CARD_PRODUCT_TAKEDOWN_LIVE` (on since James's yes, Oct 17).
@@ -527,7 +538,7 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
         reason: "source_mismatch: #1765", issue: 1765, kind: "wrong_category" as const,
         evidence: "Navy Federal: under \"Prepaid and Gift Cards | Visa® Gift Cards\", \"Inactivity Fee (After 12 consecutive months of no activity, the card will be charged $5.00 per month ...)\": a gift card's inactivity, not account dormancy; none of the 50 types holds it." }]
     : []),
-  // #1772, #1773: 28 non-network ATM rows, held by `ATM_SURCHARGE_TAKEDOWN_LIVE` (off).
+  // #1772, #1773: 28 non-network ATM rows, listed while `ATM_SURCHARGE_TAKEDOWN_LIVE` is on (James, Oct 17).
   ...atmSurchargeTakedowns(),
 ];
 

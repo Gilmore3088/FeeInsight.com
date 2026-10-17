@@ -17,6 +17,10 @@ Darwin owns verification and classification.
   re-check in Hamilton's publish step (`hamilton/account-type-hold.ts`, part 1), which reads every
   live `monthly_maintenance` fee each step and holds a typed one as verified; see Hamilton
   `AGENTS.md` item 10b.
+  The article-page refusal (publish never puts a fee read from an article, blog, learning or
+  advice page live; #1774 widened it on Oct 17 to Magellan's article rule) has its live re-check
+  in Hamilton's publish step too (`hamilton/article-page.ts`, check `hamilton.article_page`,
+  through the shared second look). Dry run, Oct 17: 7 live fees at 6 institutions.
   The Oct 15 re-file of excess withdrawals and returned mail out of account research (#1398) has
   no Darwin-only live pass yet: its live re-check is Hamilton's fold step (`taxonomy-fold.ts`,
   every publish step), which reads up to 2,000 live and verified account research fees whose name
@@ -1208,7 +1212,7 @@ Darwin owns verification and classification.
   flagged for the second look and then taken down, and 1 re-filed in place. The bare "ATM Surcharge"
   lines a name cannot place (13 non-customer surcharges by their heading or line) and 15 lines that
   are not the fee (in-network $0s, a refund cap, a waived price) are hand takedowns held by
-  `ATM_SURCHARGE_TAKEDOWN_LIVE` (off). v70 (Oct 17,
+  `ATM_SURCHARGE_TAKEDOWN_LIVE` (on since James's yes, Oct 17 11:28 UTC). v70 (Oct 17,
   #1765): a card-product fee filed as the non-network ATM fee (`CARD_PRODUCT_FEE`: the card's monthly,
   annual, holder or maintenance fee, its issue, activation or origination, a reinstatement or limit
   increase, the card's inactivity, a point-of-sale purchase fee) and a card's inactivity filed as a
