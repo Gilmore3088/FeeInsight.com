@@ -95,7 +95,7 @@ describe("lifecycle routing against a stateful MailerLite", () => {
     await syncLeadToMailerLite({ email: "a@b.co", subscribed: true, source: "newsletter,report_district", fields });
     expect(ml.groupsOf("a@b.co")).toEqual([G.national, G.report].sort());
     expect(ml.subs.get("a@b.co")!.fields.report_url).toMatch(/\/reports\/benchmark\/district-8$/);
-    expect(ml.subs.get("a@b.co")!.fields.report_finding).toBe("St. Louis overdraft median: $30. Median across 210 institutions.");
+    expect(ml.subs.get("a@b.co")!.fields.report_finding).toMatch(/^As of [A-Z][a-z]+ \d{1,2}, \d{4}: St. Louis overdraft median: \$30. Median across 210 institutions.$/);
   });
 
   it("leaves the finding unset when it can't be read, so email 2 falls back to its default wording", async () => {

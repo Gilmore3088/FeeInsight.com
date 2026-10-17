@@ -7,7 +7,7 @@ Your fees against the institutions you name
 
 The free reports show the market. Hamilton, the Fee Insight Pro workspace, shows where your institution sits in it, against the peers you choose.
 
-- Your schedule, fee by fee, below, inside or above your peers' range.
+- Your schedule, fee by fee, next to your peers' median and middle 50%.
 - Peers you pick by charter, asset size, district or county, instead of an anonymous average.
 - The source behind every figure: the competitor's published schedule and the date we read it.
 - Reports for your committee built from your peer set.

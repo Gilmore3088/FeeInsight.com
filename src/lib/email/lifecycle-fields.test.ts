@@ -17,7 +17,7 @@ describe("lifecycle fields", () => {
     const fields = await lifecycleFields([{ source: "report_district", use_case: "benchmark-report; scope=district-8; src=reports" }], d);
     expect(fields.report_name).toBe("the St. Louis district Fee Benchmark Report");
     expect(fields.report_url).toMatch(/\/reports\/benchmark\/district-8$/);
-    expect(fields.report_finding).toBe("The St. Louis district median overdraft fee: $30. Median across 120 institutions.");
+    expect(fields.report_finding).toMatch(/^As of [A-Z][a-z]+ \d{1,2}, \d{4}: The St. Louis district median overdraft fee: \$30. Median across 120 institutions.$/);
     expect(d.loadFinding).toHaveBeenCalledWith({ kind: "district", district: 8 });
   });
 

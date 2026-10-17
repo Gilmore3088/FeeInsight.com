@@ -56,7 +56,7 @@ const welcome = {
       blocks: [
         { type: "kicker", text: "Welcome · 1 of 3" },
         { type: "h1", text: "Where to find the fee data for your market" },
-        { type: "p", text: "Thanks for subscribing. Every figure on the site comes from a bank's or credit union's own published fee schedule, and the views below need no login. Start with the one closest to the institutions you compete with." },
+        { type: "p", text: "Thanks for subscribing. The fee benchmarks come from institutions' published schedules, and the views below need no login. Start with the one closest to the institutions you compete with." },
         { type: "list", items: [
           `**Your state:** each headline fee in your state next to the national median, banks and credit unions side by side. [Find your state](${S}/research).`,
           `**Your Fed district:** the same view across a district. [Open the district reports](${S}/reports).`,
@@ -97,7 +97,7 @@ const welcome = {
         { type: "h1", text: "Your fees against the institutions you name" },
         { type: "p", text: "The free reports show the market. Hamilton, the Fee Insight Pro workspace, shows where your institution sits in it, against the peers you choose." },
         { type: "list", items: [
-          "**Your schedule, fee by fee,** below, inside or above your peers' range.",
+          "**Your schedule, fee by fee,** next to your peers' median and middle 50%.",
           "**Peers you pick** by charter, asset size, district or county, instead of an anonymous average.",
           "**The source behind every figure:** the competitor's published schedule and the date we read it.",
           "**Reports for your committee** built from your peer set.",
@@ -166,7 +166,7 @@ const report = {
         { type: "h1", text: "Your institution against the competitors you name" },
         { type: "p", text: "The Competitive Fee Position Report puts one institution's fee schedule next to the local competitors you list, fee by fee." },
         { type: "box", tone: "rule", title: "What's in it", items: [
-          "Each of your fees marked below, inside or above your competitors' range.",
+          "Each of your fees marked below, inside or above the middle 50% of your competitors' fees.",
           "The competitors you name, side by side with you.",
           "A source for every figure: the competitor's published schedule and the date we read it.",
         ] },
@@ -276,7 +276,7 @@ const pro = {
       blocks: [
         { type: "kicker", text: "Setup · 4 of 5" },
         { type: "h1", text: "Produce your first report" },
-        { type: "p", text: "With your institution and peers set, Hamilton builds a report of your fee position: each fee below, inside or above your peers' range, with the sources listed, for your pricing or ALCO committee." },
+        { type: "p", text: "With your institution and peers set, Hamilton builds a report of your fee position: each fee next to your peers' median and middle 50%, with the sources listed, for your pricing or ALCO committee." },
         { type: "cta", text: "Open Reports", href: `${S}/pro/reports` },
         { type: "p", text: "Use the analysis to inform your review. Your institution makes the pricing decision." },
         { type: "sign" },

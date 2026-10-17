@@ -47,9 +47,13 @@ export function institutionIdFromUseCase(useCase: string | null | undefined): nu
   return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
 
-/** One finding as a sentence an email can carry: "The X median overdraft fee: $30. Median across ...". */
-export function findingSentence(finding: Finding): string {
-  return `${finding.headline}: ${finding.figure}. ${finding.detail}`;
+/**
+ * One finding as a sentence an email can carry, dated because it is read on confirm and emailed
+ * days later, when the live report may have moved: "As of October 17, 2026: The X median ...".
+ */
+export function findingSentence(finding: Finding, asOf: Date = new Date()): string {
+  const date = asOf.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
+  return `As of ${date}: ${finding.headline}: ${finding.figure}. ${finding.detail}`;
 }
 
 async function withDeadline<T>(work: Promise<T>, ms: number): Promise<T | null> {

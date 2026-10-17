@@ -5,7 +5,7 @@ WELCOME · 1 OF 3
 Where to find the fee data for your market
 ==========================================
 
-Thanks for subscribing. Every figure on the site comes from a bank's or credit union's own published fee schedule, and the views below need no login. Start with the one closest to the institutions you compete with.
+Thanks for subscribing. The fee benchmarks come from institutions' published schedules, and the views below need no login. Start with the one closest to the institutions you compete with.
 
 - Your state: each headline fee in your state next to the national median, banks and credit unions side by side. Find your state (https://feeinsight.com/research?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=find-the-data).
 - Your Fed district: the same view across a district. Open the district reports (https://feeinsight.com/reports?utm_source=mailerlite&utm_medium=email&utm_campaign=welcome&utm_content=find-the-data).
