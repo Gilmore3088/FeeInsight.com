@@ -37,6 +37,9 @@ vi.mock("@/lib/email/resend", async (importOriginal) => ({
   sendResendEmail: vi.fn(() => Promise.resolve({ status: "sent", providerId: "alert_1" })),
 }));
 
+vi.mock("@/lib/email/lifecycle-deps", () => ({
+  lifecycleDeps: { loadFinding: async () => null, institutionName: async () => "Capital City Bank" },
+}));
 vi.mock("@/lib/email/mailerlite", () => ({
   syncLeadToMailerLite: vi.fn(() => Promise.resolve({ status: "disabled", reason: "test" })),
 }));
@@ -175,7 +178,7 @@ describe("POST /api/leads", () => {
       .mockResolvedValueOnce([{ id: 7, source: "newsletter", use_case: null, email_confirmed_at: "2026-10-01", email_unsubscribed_at: null }])
       .mockResolvedValue([]);
     await post({ email: "vp@bank.example", source: "capture_state", state: "TX" });
-    expect(syncMock).toHaveBeenCalledWith({ email: "vp@bank.example", subscribed: true, source: "newsletter,capture_state", state: "TX" });
+    expect(syncMock).toHaveBeenCalledWith({ email: "vp@bank.example", subscribed: true, source: "newsletter,capture_state", state: "TX", fields: expect.objectContaining({ follow_name: "Texas" }) });
   });
 
   it("waits for the confirm click when the reader hasn't confirmed", async () => {

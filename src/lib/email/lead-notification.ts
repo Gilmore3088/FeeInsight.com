@@ -4,7 +4,7 @@
  * Never throws; every branch resolves to a delivery result so the lead is stored
  * regardless of email health.
  */
-import { CONTACT_EMAIL, EMAIL_LOGO_URL, PRODUCT_NAME, SITE_DOMAIN, SITE_NAME, SITE_URL } from "@/lib/constants";
+import { CONTACT_EMAIL, EMAIL_LOGO_URL, MAILING_ADDRESS, PRODUCT_NAME, SITE_DOMAIN, SITE_NAME, SITE_URL } from "@/lib/constants";
 import {
   escapeHtml,
   getResendApiKey,
@@ -245,6 +245,7 @@ ${signature}
 </td></tr>
 <tr><td style="padding:20px 32px 26px;background:${C.cream};border-top:1px solid ${C.line};">
 <p style="margin:0 0 8px;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.muted};"><strong style="color:${C.ink2};">${escapeHtml(SITE_NAME)}</strong> publishes the ${escapeHtml(PRODUCT_NAME)}, built from U.S. banks' and credit unions' own published fee schedules.</p>
+<p style="margin:0 0 8px;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.muted};">${escapeHtml(MAILING_ADDRESS)}</p>
 <p style="margin:0;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.muted};">Questions? Just reply, or write to <a href="mailto:${escapeHtml(CONTACT_EMAIL)}" style="color:${C.text2};">${escapeHtml(CONTACT_EMAIL)}</a> &middot; <a href="${escapeHtml(site)}" style="color:${C.text2};">${escapeHtml(SITE_DOMAIN)}</a></p>
 </td></tr>
 </table>
@@ -265,7 +266,7 @@ export function renderLeadEmailText(content: LeadEmailContent) {
   const signature = content.signed ? ["", "James Gilmore", `Founder, ${SITE_NAME}`] : [];
   const cta = content.cta ? ["", `${content.cta.label}: ${content.cta.href}`] : [];
   const closing = content.closing?.length ? ["", ...content.closing] : [];
-  return [...status, ...content.lines, ...steps, ...cta, ...closing, ...signature].join("\n");
+  return [...status, ...content.lines, ...steps, ...cta, ...closing, ...signature, "", "--", `${SITE_NAME} · ${MAILING_ADDRESS}`].join("\n");
 }
 
 /**
