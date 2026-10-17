@@ -31,6 +31,12 @@ describe("Hoovie source contracts", () => {
     }
   });
 
+  it("names optional keys as environment variables", () => {
+    for (const contract of HOOVIE_SOURCES) {
+      for (const key of contract.optionalEnvKeys ?? []) expect(key, contract.source).toMatch(/^[A-Z][A-Z0-9_]+$/);
+    }
+  });
+
   it("names the licence for every open-licence source", () => {
     for (const contract of HOOVIE_SOURCES.filter((c) => c.licence.status === "open-licence")) {
       expect(contract.licence.licenceName, contract.source).toBeTruthy();

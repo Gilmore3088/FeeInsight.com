@@ -83,6 +83,8 @@ export interface HoovieSourceContract {
   connection: HoovieConnection;
   /** Environment variable holding the key, for keyed-api sources. */
   envKey?: string;
+  /** Keys that unlock part of a source that otherwise loads without one. */
+  optionalEnvKeys?: string[];
   cadence: HoovieCadence;
   /** The level(s) the stored rows describe. */
   grain: HoovieGrain[];

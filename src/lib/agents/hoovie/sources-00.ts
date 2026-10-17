@@ -83,7 +83,10 @@ export const HOOVIE_SOURCES_00: HoovieSourceContract[] = [
     // magellan/registry/cfpb-card-agreements.ts, regulatory/cfpb-card-agreements.ts (files.consumerfinance.gov)
     source: "cfpb-card-agreements",
     publisher: "CFPB (Credit Card Agreement Database, Prepaid Product Agreements Database, TCCP survey)",
-    licence: { status: "public-domain" },
+    licence: {
+      status: "terms-unconfirmed",
+      note: "CFPB hosts the issuers' own agreement PDFs; the CFPB did not write them, so 17 U.S.C. 105 does not cover the text. Fee facts read from them are not in question; quoting agreement text needs the terms checked.",
+    },
     connection: "bulk-file",
     cadence: "quarterly",
     grain: ["document"],
@@ -190,9 +193,10 @@ export const HOOVIE_SOURCES_00: HoovieSourceContract[] = [
     publisher: "Federal Reserve Board, OCC, FDIC, NCUA, FHFA, CDFI Fund, SBA, SEC, regulations.gov and CourtListener",
     licence: {
       status: "terms-unconfirmed",
-      note: "Most lists are federal works; CourtListener (fee lawsuits) is not a federal publisher and its terms are not stated in code. The comments partition needs DATA_GOV_API_KEY; COURTLISTENER_API_TOKEN is optional.",
+      note: "Most lists are federal works; CourtListener (fee lawsuits) is not a federal publisher and its terms are not stated in code.",
     },
     connection: "web-pages",
+    optionalEnvKeys: ["DATA_GOV_API_KEY", "COURTLISTENER_API_TOKEN"],
     cadence: "irregular",
     grain: ["institution", "document"],
     linkKeys: ["fdic-cert", "ncua-charter", "rssd", "cik", "institution-name"],

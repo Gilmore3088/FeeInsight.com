@@ -178,11 +178,10 @@ export const HOOVIE_SOURCES_02: HoovieSourceContract[] = [
     // magellan/registry/usda-farm.ts, regulatory/usda-farm.ts (ERS data files; NASS Quick Stats API with NASS_API_KEY), magellan/registry/risk-costs.ts
     source: "usda-farm",
     publisher: "US Department of Agriculture (Economic Research Service and NASS)",
-    licence: {
-      status: "public-domain",
-      note: "The NASS cash-rent half needs NASS_API_KEY; without it only the ERS state farm income loads.",
-    },
+    licence: { status: "public-domain" },
     connection: "bulk-file",
+    // The NASS cash-rent half needs it; without it only the ERS state farm income loads.
+    optionalEnvKeys: ["NASS_API_KEY"],
     cadence: "annual",
     grain: ["national", "state", "county"],
     linkKeys: ["county-fips", "state"],

@@ -127,6 +127,7 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
       note: "FRED series come from many publishers, each with its own terms; the St. Louis Fed is not a federal agency. BLS series are public domain.",
     },
     connection: "rest-api",
+    optionalEnvKeys: ["BLS_API_KEY"],
     cadence: "irregular",
     grain: ["national", "fed-district"],
     linkKeys: ["fed-district"],

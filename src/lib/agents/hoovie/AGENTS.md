@@ -10,7 +10,7 @@ Every registry source (`REGISTRY_SOURCES`, `src/lib/agents/magellan/registry/ind
 contract in `sources.ts` (type in `contract.ts`) that records:
 
 - publisher and licence;
-- connection kind, plus the env key when one is needed;
+- connection kind, plus the env key when one is needed, and any optional keys;
 - cadence and grain;
 - link keys and the tables it writes.
 
