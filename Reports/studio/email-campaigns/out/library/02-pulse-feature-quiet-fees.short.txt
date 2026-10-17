@@ -1,0 +1,17 @@
+The fees nobody benchmarks (customers notice them anyway)
+=========================================================
+
+Everyone benchmarks overdraft. Few institutions benchmark the fees a customer pays once a year, and those come up in a branch argument or a one-star review.
+
+1. Debit card replacement. Check whether a standard reissue is priced like a rush order. See the market (https://feeinsight.com/fees/card_replacement).
+
+2. Deposited item returned. The customer who deposited a bad check didn't write it. See the market (https://feeinsight.com/fees/deposited_item_return).
+
+3. Stop payment. A lower online price is an easy way to stand out. See the market (https://feeinsight.com/fees/stop_payment).
+
+4. Cashier's check. Often priced once years ago and never revisited. See the market (https://feeinsight.com/fees/cashiers_check).
+
+--
+Fee Insight LLC, 522 W Riverside Ave, Ste N, Spokane, WA 99201
+You're getting this because you signed up at feeinsight.com.
+Unsubscribe: {$unsubscribe}

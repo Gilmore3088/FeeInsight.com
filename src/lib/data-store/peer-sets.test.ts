@@ -28,13 +28,15 @@ describe("definitionFor", () => {
 describe("describePeerSet", () => {
   it("names basic and wider groups in plain words", () => {
     expect(describePeerSet({ charter_type: "bank", asset_tiers: ["community_mid"], fed_districts: [11] }))
-      .toBe("Banks with $300M to $1B in assets in Fed district 11 (Dallas)");
+      .toBe("Banks with $300M to $1B in assets in the Dallas Fed district");
     expect(describePeerSet({ charter_type: "credit_union", cu_charter: "state", asset_min: 500_000_000, asset_max: 2_000_000_000, states: ["TX", "OK"] }))
-      .toBe("State credit unions with $500M to $2B in assets in TX, OK");
+      .toBe("State credit unions with $500M to $2B in assets in Texas or Oklahoma");
     expect(describePeerSet({ market_code: 19100 }, { code: 19100, name: "Dallas-Fort Worth-Arlington, TX" }))
       .toBe("Institutions with branches in the Dallas-Fort Worth-Arlington, TX metro");
     expect(describePeerSet({ charter_type: "bank", nearest: 20 })).toBe("The 20 banks closest in assets");
     expect(describePeerSet({ institutionIds: [4, 5] })).toBe("2 chosen institutions");
+    expect(describePeerSet({ charter_type: "bank", asset_tiers: ["community_small"], regulators: ["fed", "occ"], fed_districts: [6, 11] }))
+      .toBe("Banks under $300M in assets regulated by the Federal Reserve or the OCC in the Atlanta or Dallas Fed districts");
   });
 });
 

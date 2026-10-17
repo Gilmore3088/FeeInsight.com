@@ -4,6 +4,7 @@ import { SITE_NAME, SITE_URL } from "@/lib/constants";
 import { API_ERROR_CODES } from "@/lib/api-v1";
 import { BURST_CALLS_PER_MINUTE } from "@/lib/api-subscriber-access";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
+import { PEER_GROUP_PARAMS } from "@/lib/peer-set-dimensions";
 
 // The fee name pair (#1482, #1583), shared by fees[] and rate_fees[]. A completed name
 // ("3 X 10" shown as "Safe Deposit Box 3 X 10") is the schedule's own name, so its flag is false.
@@ -993,7 +994,7 @@ const spec = {
         operationId: "getPeerComparison",
         summary: "Fees against peers",
         description:
-          `For each fee category where an institution publishes a dollar amount: its amount, the peers' median and 25th to 75th percentiles, how many peers publish the fee, and the institution's percentile among them. Peers default to the institution's charter type, asset-size tier and Fed district, or are the institutions named in peer_ids. One value per institution, from sourced consumer-facing rows; median, percentiles and placement are left out when fewer than ${MIN_INSTITUTIONS_FOR_MEDIAN} peers publish the fee. Fees stated as a rate are listed in rate_fees and never compared with dollar amounts. Pro and Enterprise only.`,
+          `For each fee category where an institution publishes a dollar amount: its amount, the peers' median and 25th to 75th percentiles, how many peers publish the fee, and the institution's percentile among them. Peers default to the institution's charter type, asset-size tier and Fed district. Any of the peer-group parameters define the group instead (only those given apply; same means the institution's own value), or peer_ids names the institutions. One value per institution, from sourced consumer-facing rows; median, percentiles and placement are left out when fewer than ${MIN_INSTITUTIONS_FOR_MEDIAN} peers publish the fee. Fees stated as a rate are listed in rate_fees and never compared with dollar amounts. Pro and Enterprise only.`,
         tags: ["Institutions"],
         parameters: [
           { name: "institution_id", in: "query", required: true, schema: { type: "integer", minimum: 1 } },
@@ -1004,6 +1005,7 @@ const spec = {
             description: "Up to 25 institution ids, comma-separated, to compare against instead of the default peers.",
             example: "12,48,301",
           },
+          ...PEER_GROUP_PARAMS.map((p) => ({ name: p.name, in: "query", schema: { type: "string" }, description: p.description, example: p.example })),
         ],
         responses: {
           "200": {
@@ -1027,11 +1029,19 @@ const spec = {
                     peer_group: {
                       type: "object",
                       properties: {
-                        basis: { type: "string", enum: ["default", "chosen"] },
-                        label: { type: "string", example: "Banks with $300M to $1B in assets in Fed district 11 (Dallas)" },
-                        charter_type: { type: "string", nullable: true },
-                        asset_tier: { type: "string", nullable: true },
-                        fed_district: { type: "integer", nullable: true },
+                        basis: { type: "string", enum: ["default", "chosen", "defined"] },
+                        label: { type: "string", example: "Banks with $300M to $1B in assets in the Dallas Fed district" },
+                        definition: {
+                          type: "object",
+                          nullable: true,
+                          description: "The dimensions the group was built from, with same filled in. Null when peer_ids named the group.",
+                          additionalProperties: true,
+                        },
+                        market: {
+                          type: "object",
+                          nullable: true,
+                          properties: { code: { type: "integer" }, name: { type: "string" } },
+                        },
                         peer_ids: { type: "array", nullable: true, items: { type: "integer" } },
                         peers_with_fees: { type: "integer", description: "Peers with at least one published dollar fee in the compared categories." },
                       },

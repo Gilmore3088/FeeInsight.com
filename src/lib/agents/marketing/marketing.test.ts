@@ -24,7 +24,8 @@ import { campaignName, parseCampaignName, planMonth, scoreCampaign, type Campaig
 import { createAbDraft, toAgentCampaign } from "./mailerlite-campaigns";
 import { nationalAudience, stateEditionCopy, summarizeStateEditions } from "./state-edition";
 import { whatsNewFor, WHATS_NEW } from "./whats-new";
-import { lessonsFrom, runMarketingSend, summarizeScore, summarizeWrite } from "./monthly";
+import { lessonsFrom, mailingAddress, runMarketingSend, summarizeScore, summarizeWrite } from "./monthly";
+import { MAILING_ADDRESS } from "@/lib/constants";
 
 const bundle: FactBundle = {
   month: "2026-11",
@@ -155,12 +156,9 @@ describe("MailerLite", () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
-  it("refuses to send without a postal address", async () => {
+  it("falls back to the company postal address", () => {
     delete process.env.MARKETING_MAILING_ADDRESS;
-    const fetcher = vi.fn();
-    const result = await runMarketingSend({ month: "2026-11", fetcher });
-    expect(result.refused).toMatch(/MARKETING_MAILING_ADDRESS/);
-    expect(fetcher).not.toHaveBeenCalled();
+    expect(mailingAddress()).toBe(MAILING_ADDRESS);
   });
 
   it("adds the address to a draft's footer before sending it", async () => {

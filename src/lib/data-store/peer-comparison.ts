@@ -19,7 +19,7 @@ import type { PeerMarket } from "./peer-markets";
 import { getDisplayName, getFeeFamily } from "@/lib/fee-taxonomy";
 import { institutionDisplayName } from "@/lib/institution-display-name";
 
-export const MAX_CHOSEN_PEERS = 25;
+export { MAX_CHOSEN_PEERS } from "@/lib/peer-set-dimensions";
 
 /** Two amounts within half a cent are the same price. */
 const SAME_PRICE_TOLERANCE = 0.005;

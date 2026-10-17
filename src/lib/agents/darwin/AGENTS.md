@@ -1198,7 +1198,22 @@ Darwin owns verification and classification.
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v69 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v69 (Oct 17):
+- The guard is at v70 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v70 (Oct 17,
+  #1765): a card-product fee filed as the non-network ATM fee (`CARD_PRODUCT_FEE`: the card's monthly,
+  annual, holder or maintenance fee, its issue, activation or origination, a reinstatement or limit
+  increase, the card's inactivity, a point-of-sale purchase fee) and a card's inactivity filed as a
+  dormant account (`CARD_INACTIVITY`) fail the guard; none of the 50 types holds them. Darwin and
+  publish refuse new reads at once. Their live re-check is the guard's live sweep (catch-up, then every
+  publish step), which holds the takedowns while `CARD_PRODUCT_TAKEDOWN_LIVE` is off: it counts and
+  samples the live fees failing only this rule (`category_guard_card_product_pending` in the publish
+  step's detail) and flags none. The dry run (Oct 17, SELECT-only) counts 61: 39 non-network ATM fees
+  and 22 dormant account fees; 59 trace on their stored line and 2 do not (25037, 57456). Navy
+  Federal's gift card "Inactivity Fee" (122350) names no card, so it is a hand takedown under the same
+  switch (62 in all). An ATM-named bill payer service (147703) re-files to bill pay and a card charge
+  on early account closure (117628) to early closure, in place, switch or not. Skipped loan payments
+  (`SKIP_A_PAY`, James, Oct 17) leave late payment (29 live) and loan origination (2) for other lending
+  by guard, re-file rule and fold split (31 of 31 trace), and the taxonomy's skip-a-pay aliases point
+  there. v69 (Oct 17):
   a returned Canadian or international item filed as NSF (`FOREIGN_DEPOSIT_RETURN` in `fee-fold.ts`;
   one that also names domestic items, insufficient funds or a cost stays) is a returned deposited item,
   and an IRA's own closing charge filed as an early closure (`IRA_CLOSING`; a closure that only
@@ -1230,7 +1245,7 @@ Darwin owns verification and classification.
   the night depository key is a key charge, not the service, so `night_deposit` refuses it; a lost or
   replaced key stays. Its live re-check is the category guard's live sweep (Hamilton's guard
   catch-up on the first tick after the deploy, then every publish step): 10 live key deposits fail
-  it, each flagged for the second look and then taken down. The notes for v43 to v69 are the version
+  it, each flagged for the second look and then taken down. The notes for v43 to v70 are the version
   comments above that constant, not this guide; v58 is the bond-return lesson above. v65 (James, Oct 15, #1398) adds guard rules for `excess_withdrawal` and
   `returned_mail` (amount envelopes $1 to $50 in `envelopes.ts`), re-files research filed under
   either back to account research. Once `RESEARCH_SPLIT_LIVE` is on, an over-limit activity charge

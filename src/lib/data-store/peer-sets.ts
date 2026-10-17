@@ -21,10 +21,11 @@ import { peerInstitutionIds, type PeerFilterSet } from "./fee-index";
 import { getHomeMarket, getMarketInstitutionIds, type PeerMarket } from "./peer-markets";
 import { ASSET_TIER_RANGES } from "@/lib/hamilton/peer-index";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
+import { STATE_NAMES } from "@/lib/us-states";
 
-export const PEER_REGULATORS = { occ: "OCC", fdic: "FDIC", fed: "Federal Reserve", ncua: "NCUA" } as const;
-export type PeerRegulator = keyof typeof PEER_REGULATORS;
-export const MAX_NEAREST_PEERS = 100;
+import { MAX_NEAREST_PEERS, PEER_REGULATORS, type PeerRegulator } from "@/lib/peer-set-dimensions";
+
+export { MAX_NEAREST_PEERS, PEER_REGULATORS, type PeerRegulator };
 
 export interface PeerSetDefinition extends PeerFilterSet {
   /** Total assets in dollars, inclusive. */
@@ -127,6 +128,11 @@ export function definitionFor(subject: PeerSubject, request: PeerSetRequest, hom
   return def;
 }
 
+/** "Texas", "Texas or Oklahoma", "Texas, Oklahoma or Kansas". */
+function listWords(items: string[]): string {
+  return items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} or ${items[items.length - 1]}`;
+}
+
 function formatDollars(value: number): string {
   if (value >= 1e9) return `$${+(value / 1e9).toFixed(1)}B`;
   if (value >= 1e6) return `$${+(value / 1e6).toFixed(1)}M`;
@@ -144,20 +150,22 @@ export function describePeerSet(def: PeerSetDefinition, market: PeerMarket | nul
       : def.cu_charter ? `${def.cu_charter === "federal" ? "Federal" : "State"} credit unions` : "Institutions";
   const parts = [def.nearest ? `The ${def.nearest} ${kind.toLowerCase()} closest in assets` : kind];
   if (def.asset_tiers?.length) {
-    parts.push(`with ${def.asset_tiers.map((tier) => ASSET_TIER_RANGES[tier] ?? tier.replace(/_/g, " ")).join(" or ")} in assets`);
+    const ranges = def.asset_tiers.map((tier) => ASSET_TIER_RANGES[tier] ?? tier.replace(/_/g, " "));
+    // "under $300M" and "over $250B" read on their own; a "$300M to $1B" range needs "with".
+    const bare = ranges.length === 1 && /^(under|over) /.test(ranges[0]);
+    parts.push(`${bare ? "" : "with "}${ranges.join(" or ")} in assets`);
   }
   if (def.asset_min !== undefined && def.asset_max !== undefined) parts.push(`with ${formatDollars(def.asset_min)} to ${formatDollars(def.asset_max)} in assets`);
   else if (def.asset_min !== undefined) parts.push(`with at least ${formatDollars(def.asset_min)} in assets`);
   else if (def.asset_max !== undefined) parts.push(`with at most ${formatDollars(def.asset_max)} in assets`);
-  if (def.regulators?.length) parts.push(`regulated by ${def.regulators.map((r) => PEER_REGULATORS[r]).join(" or ")}`);
+  if (def.regulators?.length) parts.push(`regulated by ${def.regulators.map((r) => `the ${PEER_REGULATORS[r]}`).join(" or ")}`);
   if (def.holding_company_rssd) parts.push(`in the same holding company`);
   if (def.market_code !== undefined) parts.push(`with branches in the ${market?.name || `metro ${def.market_code}`} metro`);
   const states = [...(def.states ?? []), ...(def.state_code ? [def.state_code] : [])];
-  if (states.length) parts.push(`in ${states.join(", ")}`);
+  if (states.length) parts.push(`in ${listWords(states.map((code) => STATE_NAMES[code] ?? code))}`);
   if (def.fed_districts?.length) {
-    parts.push(def.fed_districts.length === 1
-      ? `in Fed district ${def.fed_districts[0]}${DISTRICT_NAMES[def.fed_districts[0]] ? ` (${DISTRICT_NAMES[def.fed_districts[0]]})` : ""}`
-      : `in Fed districts ${def.fed_districts.join(", ")}`);
+    const names = def.fed_districts.map((d) => DISTRICT_NAMES[d] ?? `district ${d}`);
+    parts.push(`in the ${listWords(names)} Fed ${names.length === 1 ? "district" : "districts"}`);
   }
   return parts.join(" ");
 }

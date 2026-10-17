@@ -1,8 +1,9 @@
 import { ApiParamError, assetTierParam, districtParam, intParam } from "@/lib/api-v1";
-import { MAX_NEAREST_PEERS, PEER_REGULATORS, type PeerRegulator, type PeerSetRequest } from "@/lib/data-store/peer-sets";
+import type { PeerSetRequest } from "@/lib/data-store/peer-sets";
+import { MAX_NEAREST_PEERS, PEER_GROUP_PARAMS, PEER_REGULATORS, type PeerRegulator } from "@/lib/peer-set-dimensions";
 
 /** Query parameters that define a peer group on /api/v1/peers and the connector's get_peer_comparison. */
-const GROUP_PARAMS = ["charter", "asset_tier", "asset_min", "asset_max", "state", "district", "regulator", "cu_charter", "holding_company", "market", "nearest"];
+const GROUP_PARAMS = PEER_GROUP_PARAMS.map((p) => p.name);
 
 /** "same", or the value read by parse. */
 function sameOr<T>(params: URLSearchParams, name: string, parse: () => T): T | "same" | undefined {
