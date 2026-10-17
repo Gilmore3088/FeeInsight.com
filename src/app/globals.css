@@ -1520,3 +1520,38 @@ details[open] summary .expand-icon { transform: rotate(180deg); }
     animation-delay: var(--fi-d, 0ms);
   }
 }
+
+/* City branch map (MapLibre): the popup and attribution in the page's own surfaces. */
+.fi-branch-map .maplibregl-popup-content {
+  background: var(--fi-surface-0);
+  color: var(--fi-ink);
+  border: 1px solid var(--fi-border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  box-shadow: 0 8px 24px -12px rgb(19 35 56 / 0.35);
+}
+.fi-branch-map .maplibregl-popup-anchor-bottom .maplibregl-popup-tip {
+  border-top-color: var(--fi-surface-0);
+}
+.fi-branch-map .maplibregl-popup-anchor-top .maplibregl-popup-tip {
+  border-bottom-color: var(--fi-surface-0);
+}
+.fi-branch-map .maplibregl-popup-anchor-left .maplibregl-popup-tip {
+  border-right-color: var(--fi-surface-0);
+}
+.fi-branch-map .maplibregl-popup-anchor-right .maplibregl-popup-tip {
+  border-left-color: var(--fi-surface-0);
+}
+.fi-branch-map .maplibregl-popup-close-button {
+  color: var(--fi-muted);
+  font-size: 18px;
+  padding: 0 6px;
+}
+.fi-branch-map .maplibregl-ctrl-attrib {
+  background: color-mix(in srgb, var(--fi-paper) 85%, transparent);
+  color: var(--fi-muted);
+  font-size: 11px;
+}
+.fi-branch-map .maplibregl-ctrl-attrib a {
+  color: var(--fi-ink);
+}
