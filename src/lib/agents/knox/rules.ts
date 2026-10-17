@@ -282,7 +282,6 @@ export const V78_RECALL_PATTERNS: FeePattern[] = [
       /^(?![\s\S]*\b(?:re-?open\w*|clos\w*|balanc\w*|research|order\w*|return\w*|inactiv\w*|dormant)\b)\W*(?:(?:(?:monthly|account|maintenance)\s+)?service (?:fee|charge)s?(?:\s+for\s+[\w\s]{0,30}\b(?:checking|savings)\b(?:\s+accounts?)?)?|(?:[A-Z][\w'’&+-]*\s+){0,3}checking (?:account )?(?:fee|charge))\W*$/i,
   },
   { key: "courier_delivery", pattern: /\b(?:UPS|DHL)\b|\bshipping fee\b/i },
-  { key: "duplicate_title", pattern: /\b(?:duplicate|(?:certified )?copy of)\s+(?:vehicle |car |auto )?titles?\b/i },
   { key: "other_lending_fee", pattern: /\bredraw (?:of )?documents?\b/i },
   { key: "ach_origination", pattern: /\bsame[- ]day ACH\b|\bACH same[- ]day\b/i },
 ];
@@ -1019,8 +1018,8 @@ const BARE_LATE_FEE = /^\W*late\s+(?:payment|fee|charge)s?(?:\s+(?:fee|charge))?
 
 export function boxLateFee(candidate: ExtractedFeeCandidate, previousKind: string | null): ExtractedFeeCandidate {
   if (candidate.canonicalHint !== "late_payment" || previousKind !== "safe_deposit_box" || !BARE_LATE_FEE.test(candidate.feeName)) return candidate;
-  const feeName = `Safe Deposit Box ${candidate.feeName}`;
-  return passesDarwinChecks("safe_deposit_box", feeName, candidate.amount) ? { ...candidate, canonicalHint: "safe_deposit_box", feeName } : candidate;
+  // The name stays the page's own, so the self-check still traces it to its row.
+  return passesDarwinChecks("safe_deposit_box", candidate.feeName, candidate.amount) ? { ...candidate, canonicalHint: "safe_deposit_box" } : candidate;
 }
 
 /** The FEE_PATTERNS key a fee name matches, before mapping to its canonical key. */
@@ -2468,10 +2467,7 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
       crossedHeadings.add(headingAt);
     }
     // v69: a line dropped for naming no fee is read under the fee heading above it.
-    // v78: so is a line held only as unclassified ("Deposited Items Returned Unpaid" / "From Third
-    // Party | $5.00"), when the read under the heading names a fee.
-    const onlyUnclassified = found.held.length > 0 && found.held.every((read) => read.shape === "unclassified" && read.canonicalHint == null);
-    if (heading && headingAt != null && !crossedHeadings.has(headingAt) && found.candidates.length === 0 && (found.held.length === 0 || onlyUnclassified) && (found.tableHeld?.length || found.dropped?.no_fee_word_not_table_row || onlyUnclassified)) {
+    if (heading && headingAt != null && !crossedHeadings.has(headingAt) && found.candidates.length === 0 && found.held.length === 0 && (found.tableHeld?.length || found.dropped?.no_fee_word_not_table_row)) {
       const headed = readUnderHeading(segment, heading);
       if (headed.length > 0) found = { candidates: headed, held: [] };
     }
