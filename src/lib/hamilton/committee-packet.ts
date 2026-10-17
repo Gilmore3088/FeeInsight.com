@@ -158,6 +158,53 @@ export interface PacketPriority {
   evidence: string;
   /** What management should look into; a question, never an instruction. */
   question: string;
+  /** Which side of the peers' middle 50% the bank's value sits. */
+  band: "above" | "below";
+  /** The comparison in one line: "$30 against a median of $24 (9 peers)". */
+  fact: string;
+}
+
+/** One fee as a row of the position chart: the peers' spread, middle 50% and median, and the bank's value. */
+export interface PacketFeeBar {
+  feeCategory: string;
+  name: string;
+  /** The bank's comparison value; null when it does not publish the fee. */
+  current: number | null;
+  /** Null below MIN_PEERS_FOR_POSITION peers publishing. */
+  median: number | null;
+  q1: number | null;
+  q3: number | null;
+  /** The lowest and highest peer values, for the chart's scale; null with no peer publishing. */
+  low: number | null;
+  high: number | null;
+  /** Peers publishing the fee. */
+  peers: number;
+  band: "above" | "within" | "below" | null;
+  /** The wider group the fee was compared with, when it differs from the packet's group. */
+  comparedWith: string | null;
+  /** Footnote marks for the bank's value and the peers' schedules: "[1, 4]", or "". */
+  marks: string;
+}
+
+/** The counts behind the packet's key figures. */
+export interface PacketGlance {
+  fees: number;
+  /** Fees the bank publishes. */
+  published: number;
+  /** Fees with enough peers publishing to place the bank's value. */
+  placed: number;
+  above: number;
+  within: number;
+  below: number;
+}
+
+/** Filed quarterly income for the trend chart, oldest quarter first, in dollars. */
+export interface PacketIncomeSeries {
+  quarters: string[];
+  own: number[];
+  /** The same-charter, same-size median per quarter; null where none was filed. */
+  peer: (number | null)[];
+  peerLabel: string | null;
 }
 
 export interface NormalizedIncome {
@@ -210,6 +257,7 @@ export interface CommitteePacket {
   feeCategories: string[];
   /** "Fees in this packet: ..." */
   feeListNote: string;
+  glance: PacketGlance;
   brief: {
     findings: string[];
     priorities: PacketPriority[];
@@ -224,10 +272,13 @@ export interface CommitteePacket {
     changes: PacketTable | null;
     /** "Stored Q3 and Q4 copies compared: ..." when two copies were compared and nothing moved. */
     comparedNote: string | null;
+    /** Exhibit 1 as a chart, one row per fee in the packet's order. */
+    bars: PacketFeeBar[];
   };
   financial: {
     trend: PacketTable | null;
     trendSummary: string | null;
+    series: PacketIncomeSeries | null;
     normalized: NormalizedIncome | null;
     normalizedTable: PacketTable | null;
     /** The one sentence that says what the normalized figure is not. */
@@ -571,6 +622,8 @@ function priority(r: FeeRead): PacketPriority {
   return {
     feeCategory: r.fee.feeCategory,
     fee: r.name,
+    band: r.band === "below" ? "below" : "above",
+    fact: `${packetMoney(current)} against a median of ${packetMoney(r.med as number)} (${r.n} peers${r.widened ? `, ${r.fee.peerLabel}` : ""}) ${refs([r.ownMark, r.peerMark])}`.trim(),
     evidence: `${ownValue(r)} against a middle 50% of ${span(r.q1 as number, r.q3 as number)}; median ${packetMoney(r.med as number)} of ${r.n} peers${r.widened ? ` (${r.fee.peerLabel})` : ""} ${refs([r.ownMark, r.peerMark])}`,
     question,
   };
@@ -1045,6 +1098,37 @@ export function buildCommitteePacket(input: CommitteePacketInput): CommitteePack
     ...(pyTable ? [] : ["Published fee beside filed income: fewer than two institutions have both a published fee and a filing for the same quarter."]),
   ];
 
+  const bars: PacketFeeBar[] = reads.map((r) => {
+    const values = r.fee.peers.map((p) => p.amount);
+    return {
+      feeCategory: r.fee.feeCategory,
+      name: r.name,
+      current: r.fee.current,
+      median: r.med,
+      q1: r.q1,
+      q3: r.q3,
+      low: values.length ? Math.min(...values) : null,
+      high: values.length ? Math.max(...values) : null,
+      peers: r.n,
+      band: r.band,
+      comparedWith: r.widened ? r.fee.peerLabel : null,
+      marks: refs([r.ownMark, r.peerMark]),
+    };
+  });
+  const f = input.financials;
+  const series: PacketIncomeSeries | null = f && f.quarters.length > 1
+    ? (() => {
+        const oldestFirst = [...f.quarters].reverse();
+        const peerBy = new Map((f.peerMedian?.quarters ?? []).map((q) => [q.quarterEnd, q.amount]));
+        return {
+          quarters: oldestFirst.map((q) => quarterOf(q.quarterEnd)),
+          own: oldestFirst.map((q) => q.amount),
+          peer: oldestFirst.map((q) => peerBy.get(q.quarterEnd) ?? null),
+          peerLabel: f.peerMedian?.label ?? null,
+        };
+      })()
+    : null;
+
   const appendix = [matrix, nearest, products, rules, pyTable].filter((t): t is PacketTable => t !== null);
   return {
     title: `Pricing committee packet: ${input.institutionName}, ${quarterLabel(quarter)}`,
@@ -1055,12 +1139,21 @@ export function buildCommitteePacket(input: CommitteePacketInput): CommitteePack
     peerGroupLabel: input.peerSetLabel ?? input.fees[0]?.peerLabel ?? "Default peer group",
     feeCategories: input.fees.map((f) => f.feeCategory),
     feeListNote,
+    glance: {
+      fees: reads.length,
+      published: reads.filter((r) => r.fee.current !== null).length,
+      placed: placed.length,
+      above: placed.filter((r) => r.band === "above").length,
+      within: inside.length,
+      below: placed.filter((r) => r.band === "below").length,
+    },
     brief: { findings, priorities, prioritiesNote, limitations },
     unavailable,
-    position: { table: position, changes: moves.table, comparedNote: moves.comparedNote },
+    position: { table: position, changes: moves.table, comparedNote: moves.comparedNote, bars },
     financial: {
       trend: trend.table,
       trendSummary: trend.summary,
+      series,
       normalized: normalized.value,
       normalizedTable: normalized.table,
       context: NORMALIZED_CONTEXT,

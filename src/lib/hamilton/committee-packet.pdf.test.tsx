@@ -36,7 +36,8 @@ describe("committee packet PDF", () => {
       // No page holds only its footer.
       for (const page of pages) expect(page.replace(/\s+/g, " ").replace(/Hamilton — Fee Insight · Pricing committee packet · read [A-Za-z]+ \d+, \d{4}/, "").replace(/Page \d+ of \d+/, "").trim().length).toBeGreaterThan(40);
       const all = pages.join("\n").replace(/\s+/g, " ");
-      const order = ["Executive brief", "Findings", "Priorities for review", "Material limitations", "Not available in this packet", "Competitive position", "Financial context", "Service charge income per $10,000 of total assets", "Each peer's published fees, part 1 of 2", "Nearest peers on each side", "Method and sources"];
+      // Exhibits first; every table in the appendix; limitations, method and sources last.
+      const order = ["Executive brief", "Fees above the peers' middle 50%", "Where each fee sits among", "Priorities for review", "Competitive position", "Financial context", "Service charge income per $10,000 of total assets", "Appendix", "'s fees against", "Each peer's published fees, part 1 of 2", "Nearest peers on each side", "Limitations, method and sources", "Material limitations", "Not available in this packet", "Method", "Sources"];
       let at = -1;
       for (const phrase of order) {
         const i = all.indexOf(phrase, at + 1);
@@ -75,7 +76,7 @@ it("renders the screen in the same order, with a source list and no form", () =>
     fees: packet.feeCategories.map((category) => ({ category, name: category })),
     selected: { yieldFee: null },
   }));
-  const order = ["Executive brief", "Priorities for review", "Material limitations", "Not available in this packet", "Competitive position", "Exhibit 1", "Financial context", "Appendix", "Appendix A", "Method", "Sources"];
+  const order = ["Executive brief", "Fees above the peers&#x27; middle 50%", "Exhibit 1", "Where each fee sits among", "Priorities for review", "Competitive position", "Financial context", "Appendix", "Appendix A", "Material limitations", "Not available in this packet", "Method", "Sources"];
   let at = -1;
   for (const phrase of order) {
     const i = html.indexOf(phrase, at + 1);
