@@ -31,7 +31,7 @@ import {
   type SavedPeerSet,
 } from "@/lib/data-store/saved-peers";
 import { getPeerGroupCounts, type PeerGroupCount } from "@/lib/data-store/fee-index";
-import { resolveSavedPeerSetFilters, savedPeerSetDefinition } from "@/lib/hamilton/peer-index";
+import { resolveSavedPeerGroupMembership, savedPeerSetDefinition } from "@/lib/hamilton/peer-index";
 import { defaultPeerSetName } from "@/lib/hamilton/peer-set-name";
 import { describePeerSet } from "@/lib/data-store/peer-sets";
 import { getMarketInstitutionIds, type PeerMarket } from "@/lib/data-store/peer-markets";
@@ -529,11 +529,12 @@ async function savedPeerSetResult(
     const peerSet = sets.find((set) => set.id === id);
     if (!peerSet) return { success: true, id };
     const [resolved, names] = await Promise.all([
-      resolveSavedPeerSetFilters(peerSet, subjectId),
+      resolveSavedPeerGroupMembership(peerSet, subjectId),
       getPeerInstitutionNames(peerSet.institution_ids ?? []),
     ]);
+    // The group's size is its membership (the same institutions charts, lists and reports read).
     const count = resolved.filters
-      ? await getPeerGroupCounts([resolved.filters], subjectId).then((c) => c[0] ?? null)
+      ? await getPeerGroupCounts([resolved.filters], subjectId).then((c) => (c[0] ? { ...c[0], institutions: resolved.institutionIds.length } : null))
       : { institutions: 0, publishing: 0 };
     return { success: true, id, peerSet, count, institutionNames: Object.fromEntries(names), note: resolved.problem };
   } catch {

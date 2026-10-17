@@ -29,6 +29,7 @@ import { buildAskResponse, clarifyAgain, parseAsk, parseObjective, type AskInten
 import { proseFeeName } from "./workspace/names";
 import { getFeeResearch, getWorkspaceBriefing, type EnginePeerOptions } from "./workspace/research";
 import { getActivePeerSet } from "./active-peer-set";
+import { emptyPeerGroupMessage, peerGroupCoverage } from "./peer-group-copy";
 import { asksWholeSchedule, scheduleOverview, withOwnScheduleNote, type ScheduleOverview } from "./workspace/schedule";
 import { PRO_INSTITUTION_MIN_FEES, countCatalogFees } from "@/lib/data-store/data-room";
 import { asksIncome, asksIncomeWhy, explainIncome, incomeSplit } from "./workspace/why";
@@ -190,9 +191,12 @@ function identityForAsk(
   account: HamiltonAccountContext,
   peers: EnginePeerOptions,
   baselineLabel: string | null,
+  /** Institutions in the group publishing the fee, when the answer is about one fee. */
+  publishing: number | null = null,
 ): HamiltonIdentitySnapshot {
   const selected = peers.peerSet;
   const selectedUsed = selected && baselineLabel === selected.label;
+  const size = selectedUsed ? selected.institutionCount ?? null : null;
   return accountIdentitySnapshot(institutionId, account, {
     researchInstitutionName: institutionName,
     researchSelectionSource: source,
@@ -200,6 +204,7 @@ function identityForAsk(
     peerBaselineLabel: baselineLabel,
     peerBaselineSource: baselineLabel ? selectedUsed ? "saved-peer-set" : baselineLabel.startsWith("Verified national index") ? "national" : "selected-institution-default" : null,
     peerBaselineFallbackReason: selected && baselineLabel && !selectedUsed ? "The selected peer set could not support this fee comparison; the named institution peer group was used." : null,
+    ...(size !== null ? { peerGroupCoverage: peerGroupCoverage(size, publishing) } : {}),
   });
 }
 
@@ -310,8 +315,9 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
   const institution = resolved.institution;
   if (!institution) return { status: 400, body: { error: resolved.error ?? "Choose an institution first." } };
   const institutionId = Number(institution.id);
-  // The peer group the bank picked in Settings leads every comparison in the answer.
-  const peers: EnginePeerOptions = { peerSet: await getActivePeerSet({ userId: user.id, institutionId }).catch(() => null) };
+  // The peer group the bank picked in Settings is the only peer group in the answer.
+  const activeGroup = await getActivePeerSet({ userId: user.id, institutionId, institutionName: institution.name }).catch(() => null);
+  const peers: EnginePeerOptions = { peerSet: activeGroup?.status === "ready" ? activeGroup : null };
   const actor = actorOf(user);
   const ready = await workspaceSchemaReady();
   const objective = OBJECTIVES.includes(body.objective as AskObjective) ? (body.objective as AskObjective) : null;
@@ -366,6 +372,34 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
   }
 
   if (!question) return { status: 400, body: { error: "Ask a question." } };
+  // The chosen group matches no institutions: say so, and compute nothing against another group.
+  if (activeGroup?.status === "empty") {
+    const shortAnswer = emptyPeerGroupMessage(activeGroup);
+    await recordProRequest({
+      operation: "ask",
+      title: "Hamilton ask: peer group matches no institutions",
+      status: "completed",
+      summary: shortAnswer,
+      userId: user.id,
+      institutionId,
+      detail: { question, response_kind: "peer_group_empty", peer_set_id: activeGroup.id, provider_called: false },
+    });
+    const response: AskResponse = {
+      kind: "peer_group_empty",
+      shortAnswer,
+      pageChange: { screen: "none" },
+      peerGroupEmpty: activeGroup,
+      identityContext: accountIdentitySnapshot(institutionId, account, {
+        researchInstitutionName: institution.name,
+        researchSelectionSource: resolved.source,
+        peerSetId: activeGroup.id,
+        peerBaselineLabel: activeGroup.label,
+        peerBaselineSource: "saved-peer-set",
+        peerBaselineFallbackReason: shortAnswer,
+      }),
+    };
+    return { status: 200, body: response };
+  }
   const resolvedAsk = await resolveAskIntent(institutionId, question, peers, institution.name, fallbackFee);
   const { intent, why } = resolvedAsk;
   // A carried decision is about one fee (#979, H04-T05): a follow-up naming another fee opens its
@@ -404,7 +438,7 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
   const built = buildAskResponse({ question, intent, research, memory, objective: effectiveObjective, priorTested });
   const rawResponse = withDepth(built, schedule, why, research?.provenance.dataAsOf.fees ?? null, institution.name);
   const subjectName = institution.name || research?.institutionName || `Institution ${institutionId}`;
-  const identity = identityForAsk(institutionId, subjectName, resolved.source, account, peers, research?.peerLabel ?? null);
+  const identity = identityForAsk(institutionId, subjectName, resolved.source, account, peers, research?.peerLabel ?? null, research ? research.peers.length : null);
   const response = await withResearchIdentity(rawResponse, identity, question, intent.feeCategory, account);
   const savedAnalysisId = await fileAnalysis(user.id, institution.id, question, response, research, {
     decisionId: decision?.id ?? null,
@@ -608,7 +642,10 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
     // Reuse the evidence bound when the answer was saved; never rebuild it from today's data.
     factEvidence = (savedResponse as EvidenceBoundAnalyzeResponse).factEvidence ?? null;
   } else {
-    const peers: EnginePeerOptions = { peerSet: await getActivePeerSet({ userId: user.id, institutionId }).catch(() => null) };
+    const activeGroup = await getActivePeerSet({ userId: user.id, institutionId, institutionName: institution.name }).catch(() => null);
+    // A written answer cannot show the empty state: it says the group is empty and computes no peers.
+    if (activeGroup?.status === "empty") return { status: 200, body: { status: "unavailable", reason: emptyPeerGroupMessage(activeGroup) } };
+    const peers: EnginePeerOptions = { peerSet: activeGroup?.status === "ready" ? activeGroup : null };
     const ready = await workspaceSchemaReady();
     const decision = ready && typeof body.decisionId === "string" ? await getDecision(user.id, body.decisionId).catch(() => null) : null;
     const { intent, schedule, why } = await resolveAskIntent(
@@ -627,7 +664,7 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
     const memory = ready ? await getMemoryFacts(user.id, institutionId).catch(() => []) : [];
     const objective = OBJECTIVES.includes(body.objective as AskObjective) ? (body.objective as AskObjective) : null;
     const response = withDepth(buildAskResponse({ question, intent, research, memory, objective }), schedule, why, research.provenance.dataAsOf.fees ?? null, institution.name);
-    identity = identityForAsk(institutionId, institution.name || research.institutionName, resolved.source, account, peers, research.peerLabel);
+    identity = identityForAsk(institutionId, institution.name || research.institutionName, resolved.source, account, peers, research.peerLabel, research.peers.length);
     storyline = (await withResearchIdentity(response, identity, question, feeCategory, account)).answer?.storyline ?? undefined;
   }
   if (!storyline) return { status: 200, body: { status: "unavailable", reason: "There is no storyline to write up for this question." } };

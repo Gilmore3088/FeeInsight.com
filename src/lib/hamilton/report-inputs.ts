@@ -31,6 +31,7 @@ import { getFeeIncomeTrend } from "@/lib/hamilton/report-trend";
 import { ANSWER_SECTION_FORMAT, TRADEOFF_SECTION_FORMAT } from "@/lib/hamilton/report-answer";
 import type { ReportBasketItem } from "@/lib/hamilton/report-basket";
 import { resolveHamiltonPeerIndex } from "@/lib/hamilton/peer-index";
+import { peerGroupCoverage, publishingRange } from "@/lib/hamilton/peer-group-copy";
 import { getFeePublicationStatusLabel } from "@/lib/institution-quality";
 import {
   getHamiltonContextSourceLabel,
@@ -284,6 +285,12 @@ export async function assembleReportInputs(input: {
     approvedOnly: true,
     minUsableCategories: 3,
   });
+  // A chosen group with no institutions: no report is written against another group in its place.
+  if (peerIndex.status === "empty") {
+    const { entries: _entries, source: _source, peerSetId: _id, ...group } = peerIndex;
+    void _entries; void _source; void _id;
+    return { kind: "peer_group_empty" as const, group };
+  }
   const indexData = peerIndex.entries;
   const allCategories = indexData.filter((e) => e.institution_count >= MIN_INSTITUTIONS_FOR_MEDIAN);
 
@@ -306,6 +313,20 @@ export async function assembleReportInputs(input: {
   const evidencePolicy = params.evidencePolicy ?? "provisional-first";
   const addedFindings = await input.resolveFindings(selectedInstitution ? String(selectedInstitution.id) : null);
   const selectedSourceContext = resolveReportSelectedSource(params);
+  const { deltas: selectedFeeDeltas, notLikeForLike } = compareSelectedInstitutionFees({
+    selectedFees: selectedVisibleFees,
+    indexEntries: indexData,
+    chargeBases,
+    evidencePolicy,
+  });
+  // A saved group's size, and how many of its institutions publish each compared fee.
+  const comparedCategories = new Set(selectedFeeDeltas.map((delta) => delta.fee_category));
+  const groupCoverage = peerIndex.group
+    ? peerGroupCoverage(
+        peerIndex.group.institutionCount,
+        publishingRange(indexData.filter((e) => comparedCategories.has(e.fee_category)).map((e) => e.institution_count)),
+      )
+    : null;
   const identityContext = accountIdentitySnapshot(selectedInstitution?.id ?? null, accountContext, {
     researchInstitutionName: selectedInstitution?.institution_name ?? null,
     researchSelectionSource: selectedSourceContext.selectedSourceLabel,
@@ -313,12 +334,7 @@ export async function assembleReportInputs(input: {
     peerBaselineLabel: peerIndex.label,
     peerBaselineSource: peerIndex.source,
     peerBaselineFallbackReason: peerIndex.fallbackReason,
-  });
-  const { deltas: selectedFeeDeltas, notLikeForLike } = compareSelectedInstitutionFees({
-    selectedFees: selectedVisibleFees,
-    indexEntries: indexData,
-    chargeBases,
-    evidencePolicy,
+    peerGroupCoverage: groupCoverage,
   });
   const pipelineCounts = selectedEvidence?.pipeline_counts ?? null;
   const pipelineFeeCount =

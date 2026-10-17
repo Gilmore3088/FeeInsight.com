@@ -147,4 +147,32 @@ describe("Simulate actions institution identity", () => {
 
     expect(await getInstitutionFee("2945", "wire_transfer")).toBeNull();
   });
+
+  it("shows an empty saved group as empty and simulates against no other group", async () => {
+    const { getDistributionForCategory, getSimulationCategories, getSimulationPeerGroup } = await import("@/app/pro/(hamilton)/simulate/actions");
+    const group = { status: "empty", id: 51, name: "Lake banks", label: "Lake banks", institutionId: 2945, institutionName: "Example Bank", reason: "None found: no institution meets all of its filters." };
+    mocks.resolveHamiltonPeerIndex.mockResolvedValue({ ...group, entries: [], source: "saved-peer-set", peerSetId: "51" });
+
+    expect(await getDistributionForCategory("wire_transfer", { institutionId: "2945", peerSetId: "51" })).toEqual({
+      error: "This peer group matches no institutions.", peerGroupEmpty: group,
+    });
+    expect(await getSimulationCategories({ institutionId: "2945", peerSetId: "51" })).toEqual([]);
+    expect(await getSimulationPeerGroup({ institutionId: "2945", peerSetId: "51" })).toEqual(group);
+  });
+
+  it("keeps a saved group's own distribution, with its coverage line, and never swaps in the national index", async () => {
+    const { getDistributionForCategory } = await import("@/app/pro/(hamilton)/simulate/actions");
+    const ready = {
+      ...peerIndex(9), status: "ready", source: "saved-peer-set", label: "Lake banks", peerSetId: "51",
+      group: { id: 51, name: "Lake banks", label: "Lake banks", institutionId: 2945, institutionName: "Example Bank", institutionCount: 14 },
+    };
+    mocks.resolveHamiltonPeerIndex.mockResolvedValue(ready);
+    const result = await getDistributionForCategory("wire_transfer", { institutionId: "2945", peerSetId: "51" });
+    expect(result).toMatchObject({
+      distribution: { peer_source: "saved-peer-set", peer_group_line: '"Lake banks" for Example Bank: 14 institutions in the group; 9 publish this fee.' },
+    });
+    expect(await getDistributionForCategory("overdraft", { institutionId: "2945", peerSetId: "51" })).toEqual({
+      error: 'None found: none of the 14 institutions in "Lake banks" publish this fee. Choose another fee or peer group.',
+    });
+  });
 });

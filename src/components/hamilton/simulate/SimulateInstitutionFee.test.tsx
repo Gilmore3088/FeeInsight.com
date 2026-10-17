@@ -4,6 +4,7 @@ import { SimulateWorkspace } from "./SimulateWorkspace";
 
 const actions = vi.hoisted(() => ({
   getSimulationCategories: vi.fn(),
+  getSimulationPeerGroup: vi.fn(),
   getDistributionForCategory: vi.fn(),
   getInstitutionFee: vi.fn(),
   getScenario: vi.fn(),
@@ -42,6 +43,7 @@ describe("Simulate with the selected institution's own fee", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     actions.listScenarios.mockResolvedValue([]);
+    actions.getSimulationPeerGroup.mockResolvedValue(null);
     actions.getSimulationCategories.mockResolvedValue([
       { fee_category: "wire_transfer", display_name: "Wire Transfer", approved_count: 40, confidence_tier: "strong" },
     ]);

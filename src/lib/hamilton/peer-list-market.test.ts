@@ -58,7 +58,7 @@ describe("metro peer lists", () => {
   });
 
   it("keeps a saved group's institutions inside the metro", () => {
-    const saved: ActivePeerSet = { id: 7, name: "Rivals", label: "Rivals", filters: { institutionIds: [5, 6] } };
+    const saved: ActivePeerSet = { status: "ready", institutionCount: 2, institutionId: 323, id: 7, name: "Rivals", label: "Rivals", filters: { institutionIds: [5, 6] } };
     expect(planPeerList(intent("List my saved peers in my metro"), subject, saved, market).criteria?.institutionIds).toEqual([5]);
   });
 

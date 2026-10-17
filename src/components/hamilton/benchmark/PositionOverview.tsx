@@ -5,6 +5,7 @@
  * Server component — no "use client".
  */
 
+import { PeerGroupEmpty, PeerGroupLine } from "@/components/hamilton/PeerGroupEmpty";
 import Link from "next/link";
 import { formatAmount } from "@/lib/format";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
@@ -82,6 +83,8 @@ export function PositionOverview({
   const inline = tones.filter((t) => t === "inline").length;
   const headline = headlineFor(positioning);
 
+  if (positioning.peerGroupEmpty) return <PeerGroupEmpty group={positioning.peerGroupEmpty} />;
+
   if (entries.length === 0) {
     return (
       <section
@@ -114,6 +117,7 @@ export function PositionOverview({
         <Tile label="In line" value={inline} color={TONE_COLORS.inline} note={`within ${MEDIUM_PRIORITY_GAP_PCT}% of the median`} />
         <Tile label="Below peers" value={below} color={TONE_COLORS.below} note={`${MEDIUM_PRIORITY_GAP_PCT}%+ under the median`} />
       </div>
+      <PeerGroupLine line={positioning.peerGroupLine} />
 
       <div
         className="rounded-xl border"

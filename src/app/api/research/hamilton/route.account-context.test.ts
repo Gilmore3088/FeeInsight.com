@@ -168,13 +168,13 @@ describe("live written-answer account/subject boundary", () => {
     expect((await POST(request())).status).toBe(404);
     expect(mocks.generate).not.toHaveBeenCalled();
   });
-  const savedSet = { id: 55, name: "Synthetic peers", label: "Synthetic peers", filters: { institutionIds: [301, 302] } };
+  const savedSet = { status: "ready", id: 55, name: "Synthetic peers", label: "Synthetic peers", filters: { institutionIds: [301, 302] }, institutionCount: 2, institutionId: 101 };
   const peersCall = { toolCalls: [{ toolName: "queryFeeRevenueCorrelation", input: { view: "peers", institution_id: 202, peer_institution_ids: [301, 302] } }], toolResults: [] };
   it("records the saved peer set as the baseline when a tool call used it (#1084)", async () => {
     mocks.peerSet.mockResolvedValue(savedSet);
     mocks.generate.mockResolvedValue({ text: "Test written answer", totalUsage: { inputTokens: 1, outputTokens: 1 }, steps: [peersCall] });
     const response = await POST(request());
-    expect(mocks.peerSet).toHaveBeenCalledWith({ userId: 7, institutionId: 101 });
+    expect(mocks.peerSet).toHaveBeenCalledWith(expect.objectContaining({ userId: 7, institutionId: 101 }));
     expect(mocks.generate.mock.calls[0][0].system).toContain("SAVED PEER SET 55.");
     expect((await response.json()).identityContext).toMatchObject({ peerSetId: 55, peerBaselineLabel: "Synthetic peers", peerBaselineSource: "saved-peer-set", peerBaselineFallbackReason: null });
   });

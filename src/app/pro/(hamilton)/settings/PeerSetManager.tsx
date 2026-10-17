@@ -160,7 +160,6 @@ export function PeerSetManager({
   currentUserId = "",
   researchInstitutionId,
   minPeers,
-  widerGroupLabel = "the national index",
 }: {
   initialPeerSets: PeerSetRow[];
   initialCounts?: Record<number, PeerSetCount>;
@@ -182,8 +181,6 @@ export function PeerSetManager({
   researchInstitutionId?: number | null;
   /** The engine's minimum peers for a position (MIN_PEERS_FOR_POSITION), passed from the server. */
   minPeers: number;
-  /** The group charts widen to when a set is too thin for a fee. */
-  widerGroupLabel?: string;
 }) {
   const [peerSets, setPeerSets] = useState(initialPeerSets);
   const [counts, setCounts] = useState<Record<number, PeerSetCount>>(initialCounts);
@@ -283,7 +280,7 @@ export function PeerSetManager({
         </p>
       )}
 
-      <fieldset className="flex flex-col gap-0">
+      <fieldset id="peer-default" className="flex flex-col gap-0 scroll-mt-24">
         <legend className="sr-only">Peer group for all charts</legend>
         {teamDefaultLocked && (
           <p className="mb-2 text-sm text-warm-600">Your team&apos;s owner or admin picks the peer group charts use.</p>
@@ -364,7 +361,7 @@ export function PeerSetManager({
                         : `${plural(count.institutions, "institution", "institutions")} in this group; ${count.publishing.toLocaleString("en-US")} publish live fees.`}
                     </p>
                     <p className={`mt-0.5 text-xs ${thin ? "text-terra-text" : "text-warm-600"}`}>
-                      Where fewer than {minPeers} institutions in this group publish a fee, charts widen to {widerGroupLabel} for that fee (or wider, if that group is thin too).
+                      Charts use only this group&apos;s institutions, for every fee. Where fewer than {minPeers} of them publish a fee, that fee&apos;s comparison rests on few institutions. The group is never widened.
                     </p>
                   </div>
                 </div>

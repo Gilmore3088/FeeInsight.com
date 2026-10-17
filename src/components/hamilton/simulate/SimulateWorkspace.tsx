@@ -16,6 +16,7 @@ import { canSimulate, describeSimulationBasis, type ConfidenceTier } from "@/lib
 import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 import {
   getSimulationCategories,
+  getSimulationPeerGroup,
   getDistributionForCategory,
   getInstitutionFee,
   getScenario,
@@ -38,6 +39,8 @@ import {
   type HamiltonPeerSetOption,
 } from "@/components/hamilton/PeerBaselineSelector";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
+import type { EmptyPeerGroup } from "@/lib/hamilton/peer-group-copy";
+import { PeerGroupEmpty, PeerGroupLine } from "@/components/hamilton/PeerGroupEmpty";
 import type { HamiltonContextSource } from "@/lib/hamilton/context-source";
 
 interface InstitutionContext {
@@ -106,6 +109,8 @@ export function SimulateWorkspace({
   const [scenarios, setScenarios] = useState<ScenarioListItem[]>([]);
   const [selectedScenarioId, setSelectedScenarioId] = useState<string | null>(null);
   const [scenarioPeerSetId, setScenarioPeerSetId] = useState<string | null | undefined>(undefined);
+  // The chosen saved group when it matches no institutions: shown instead of any result.
+  const [emptyPeerGroup, setEmptyPeerGroup] = useState<EmptyPeerGroup | null>(null);
   const activePeerSetId = scenarioPeerSetId === undefined ? peerSetId ?? null : scenarioPeerSetId;
   const defaultPeerSetLabel = institutionId
     ? "Selected institution peer default"
@@ -156,10 +161,12 @@ export function SimulateWorkspace({
       peerSetId: effectivePeerSetId,
     });
     if ("error" in result) {
-      setError(result.error);
+      setEmptyPeerGroup(result.peerGroupEmpty ?? null);
+      setError(result.peerGroupEmpty ? null : result.error);
       setDistribution(null);
       setConfidenceTier(null);
     } else {
+      setEmptyPeerGroup(null);
       setDistribution(result.distribution);
       setConfidenceTier(result.confidenceTier);
 
@@ -187,6 +194,9 @@ export function SimulateWorkspace({
 
   // ─── Initialization ───────────────────────────────────────────────────────
   useEffect(() => {
+    getSimulationPeerGroup({ institutionId, peerSetId: activePeerSetId })
+      .then(setEmptyPeerGroup)
+      .catch(() => setEmptyPeerGroup(null));
     getSimulationCategories({ institutionId, peerSetId: activePeerSetId })
       .then((cats) => {
         setCategories(cats);
@@ -496,6 +506,14 @@ export function SimulateWorkspace({
           {distribution.peer_fallback_reason}
         </p>
       )}
+      {emptyPeerGroup ? (
+        <div className="mb-4 max-w-xl">
+          <PeerGroupEmpty
+            group={emptyPeerGroup}
+            onCompare={() => document.getElementById("simulate-peer-baseline")?.focus()}
+          />
+        </div>
+      ) : null}
 
       <div className="mb-5 max-w-xl">
         <PeerBaselineSelector
@@ -505,7 +523,13 @@ export function SimulateWorkspace({
           peerSets={savedPeerSets}
           disabled={loadingCategories || loadingCategory}
           onChange={handlePeerSetChange}
+          automaticOption
         />
+        {!emptyPeerGroup && distribution?.peer_group_line ? (
+          <div className="mt-2">
+            <PeerGroupLine line={distribution.peer_group_line} />
+          </div>
+        ) : null}
         <div
           className="mt-3 rounded border px-3 py-2 text-xs leading-relaxed"
           style={{

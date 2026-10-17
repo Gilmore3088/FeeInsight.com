@@ -1,5 +1,6 @@
 "use client";
 
+import { PeerGroupEmpty } from "@/components/hamilton/PeerGroupEmpty";
 import { hamiltonInstitutionHref, publicInstitutionHref } from "@/lib/hamilton/context-link";
 import { useMemo, useRef, useState } from "react";
 import { createPeerSet } from "@/app/pro/(hamilton)/settings/actions";
@@ -136,7 +137,11 @@ function SelectablePeerList({ response, saveContext, onPage, paging = false, sav
       return (sort === "assets_desc" ? b.totalAssetsUsd - a.totalAssetsUsd : a.totalAssetsUsd - b.totalAssetsUsd) || a.name.localeCompare(b.name) || a.institutionId - b.institutionId;
     });
   }, [data.rows, sort]);
-  if (data.status !== "ready") return <p role="status" className="text-sm leading-relaxed text-warm-800">{response.shortAnswer}</p>;
+  if (data.status !== "ready") {
+    return data.peerGroupEmpty
+      ? <PeerGroupEmpty group={data.peerGroupEmpty} />
+      : <p role="status" className="text-sm leading-relaxed text-warm-800">{response.shortAnswer}</p>;
+  }
   const criteria = data.criteria;
   const pages = onPage ? peerListPageOffsets(data) : { previous: null, next: null };
   const pageSize = criteria?.limit ?? 50;
@@ -159,7 +164,7 @@ function SelectablePeerList({ response, saveContext, onPage, paging = false, sav
       </div>
       {criteria ? (
         <details className="rounded-lg border border-warm-300 bg-warm-50 px-4 py-3">
-          <summary className="cursor-pointer text-sm font-semibold text-warm-900">Selection criteria: {criteria.charterType === "credit_union" ? "credit unions" : criteria.charterType === "bank" ? "banks" : "both types"} · {criteria.states.join(" / ") || "nationwide"}{criteria.minAssets ? ` · ${criteria.minAssets.inclusive ? "≥" : ">"} ${formatPeerAssets(criteria.minAssets.value)}` : ""}{criteria.maxAssets ? ` · ${criteria.maxAssets.inclusive ? "≤" : "<"} ${formatPeerAssets(criteria.maxAssets.value)}` : ""}{criteria.peerSetLabel ? ` · ${criteria.peerSetLabel}` : ""}</summary>
+          <summary className="cursor-pointer text-sm font-semibold text-warm-900">Selection criteria: {criteria.charterType === "credit_union" ? "credit unions" : criteria.charterType === "bank" ? "banks" : "both types"} · {criteria.states.join(" / ") || (criteria.basis === "saved_peer_set" ? "saved group" : "nationwide")}{criteria.minAssets ? ` · ${criteria.minAssets.inclusive ? "≥" : ">"} ${formatPeerAssets(criteria.minAssets.value)}` : ""}{criteria.maxAssets ? ` · ${criteria.maxAssets.inclusive ? "≤" : "<"} ${formatPeerAssets(criteria.maxAssets.value)}` : ""}{criteria.peerSetLabel ? ` · ${criteria.peerSetLabel}` : ""}</summary>
           <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-warm-700">
             {criteria.descriptions.map((line, i) => <li key={i}>{line}</li>)}
           </ul>

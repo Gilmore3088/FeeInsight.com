@@ -13,11 +13,7 @@ import {
   type SavedPeerSet,
 } from "@/lib/data-store/saved-peers";
 import { getPeerGroupCounts, type PeerGroupCount } from "@/lib/data-store/fee-index";
-import {
-  buildInstitutionPeerFilterCandidates,
-  describePeerFilters,
-  resolveSavedPeerSetFilters,
-} from "@/lib/hamilton/peer-index";
+import { resolveSavedPeerGroupMembership } from "@/lib/hamilton/peer-index";
 import { getPeerSubject } from "@/lib/data-store/peer-sets";
 import { getHomeMarket } from "@/lib/data-store/peer-markets";
 import { getMarketConcentration } from "@/lib/data-store/financial";
@@ -134,7 +130,7 @@ export default async function SettingsPage({
   const [resolvedPeerSets, peerInstitutionNames] = await Promise.all([
     Promise.all(peerSets.map(async (set) => {
       try {
-        return await resolveSavedPeerSetFilters(set, peerSubjectId);
+        return await resolveSavedPeerGroupMembership(set, peerSubjectId);
       } catch {
         return null;
       }
@@ -148,26 +144,18 @@ export default async function SettingsPage({
     countable.map((entry) => entry.filters),
     peerSubjectId,
   ).catch((): PeerGroupCount[] => []);
+  // The group's size is its membership (the same institutions charts, lists and reports read).
   const peerSetCounts: (PeerGroupCount | undefined)[] = peerSets.map((_, i) => {
     const resolved = resolvedPeerSets[i];
     if (resolved && !resolved.filters) return { institutions: 0, publishing: 0 };
     const at = countable.findIndex((entry) => entry.i === i);
-    return at >= 0 ? countRows[at] : undefined;
+    return at >= 0 && countRows[at] && resolved
+      ? { ...countRows[at], institutions: resolved.institutionIds.length }
+      : undefined;
   });
   const peerSetNotes: Record<number, string> = Object.fromEntries(
     peerSets.flatMap((set, i) => (resolvedPeerSets[i]?.problem ? [[set.id, resolvedPeerSets[i]!.problem!]] : [])),
   );
-  // Where a set is too thin for a fee, charts fall back to the bank's own default group.
-  const firstDefaultGroup = selectedInstitution
-    ? buildInstitutionPeerFilterCandidates({
-        institution_name: selectedInstitution.name,
-        state_code: selectedInstitution.stateCode,
-        charter_type: selectedInstitution.charterType,
-        asset_size_tier: selectedInstitution.assetTier,
-        fed_district: selectedInstitution.fedDistrict,
-      })[0]
-    : undefined;
-  const widerGroupLabel = firstDefaultGroup ? describePeerFilters(firstDefaultGroup) : "the national index";
   const canManageWorkspaceAccess =
     isAdmin ||
     selectedMembership?.role === "owner" ||
@@ -324,7 +312,6 @@ export default async function SettingsPage({
             canEditWorkspaceSets={peerSetWorkspace?.role !== "viewer"}
             currentUserId={String(user.id)}
             minPeers={MIN_PEERS_FOR_POSITION}
-            widerGroupLabel={widerGroupLabel}
           />
         </div>
       </MemoSection>

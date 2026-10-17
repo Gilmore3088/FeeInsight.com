@@ -16,9 +16,11 @@ import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/fee-stats";
 import {
   PeerSetError,
   getPeerSubject,
+  resolvePeerInstitutionIds,
   resolvePeerSet,
   type PeerSetDefinition,
 } from "@/lib/data-store/peer-sets";
+import { AUTOMATIC_PEERS_ID, type EmptyPeerGroup, type PeerGroupSummary } from "./peer-group-copy";
 import { hasSavedPeerDimensions } from "@/lib/peer-set-dimensions";
 import { ASSET_TIER_RANGES } from "./asset-tier-ranges";
 
@@ -43,14 +45,6 @@ export type HamiltonPeerIndexSource =
   | "selected-institution-default"
   | "national";
 
-export interface HamiltonPeerIndexContext {
-  entries: IndexEntry[];
-  label: string;
-  source: HamiltonPeerIndexSource;
-  filters: HamiltonPeerFilters | null;
-  peerSetId: string | null;
-  fallbackReason: string | null;
-}
 
 interface ResolveHamiltonPeerIndexParams {
   userId?: string | number | null;
@@ -148,61 +142,83 @@ export function savedPeerSetDefinition(
   return def;
 }
 
-export interface SavedPeerSetFilters {
-  /** What getPeerIndex / getPeerFeeValues / getPeerGroupCounts read. Null when no peers resolve. */
+/**
+ * A saved peer group's members for one research institution: the one answer the peer list,
+ * benchmarks, charts and reports all read, so the same group never has two memberships.
+ */
+export interface SavedPeerGroupMembership {
+  /** "ready": at least one institution; "empty": none, and `problem` says why. */
+  status: "ready" | "empty";
+  /** Exactly the group's institutions, the research institution left out. Empty when "empty". */
+  institutionIds: number[];
+  /** What getPeerIndex / getPeerFeeValues / getPeerGroupCounts read: these institutions. Null when empty. */
   filters: HamiltonPeerFilters | null;
   /** The set's name, or a plain-words description of it when unnamed. */
   label: string;
-  /** Why the set has no peers right now, in plain words; null when it resolved. */
+  /** Why the set has no institutions right now, in plain words; null when it has some. */
   problem: string | null;
 }
 
+/** @deprecated The membership's older name; same shape. */
+export type SavedPeerSetFilters = SavedPeerGroupMembership;
+
+const NO_MATCH = "None found: no institution meets all of its filters.";
+
 /**
- * One resolution per saved set, subject and request. The subject matters only for the
- * dimensions that read it (closest in assets; every wider set leaves the subject out).
+ * One resolution per saved set, subject and request, only through the shared peer-set module
+ * (src/lib/data-store/peer-sets.ts): a set with a wider dimension through resolvePeerSet, a
+ * basic one through resolvePeerInstitutionIds, the query resolvePeerSet itself uses.
  */
-const resolveAdvancedOnce = cache(
-  async (definitionKey: string, subjectId: number | null) => {
+const resolveMembershipOnce = cache(
+  async (definitionKey: string, subjectId: number | null, advanced: boolean): Promise<{ ids: number[]; label: string | null }> => {
     const def = JSON.parse(definitionKey) as PeerSetDefinition;
-    const subject = subjectId === null ? null : await getPeerSubject(subjectId);
-    return resolvePeerSet(def, subject);
+    if (advanced) {
+      const subject = subjectId === null ? null : await getPeerSubject(subjectId);
+      const resolved = await resolvePeerSet(def, subject);
+      return { ids: resolved.filters?.institutionIds ?? [], label: resolved.label };
+    }
+    return { ids: await resolvePeerInstitutionIds(def, subjectId === null ? null : { id: subjectId }), label: null };
   },
 );
 
 /**
- * The one path from a saved peer group to the fee readers' filters. A basic set is exactly
- * parseSavedPeerSetFilters (unchanged from before the wider dimensions). A set with any wider
- * dimension is resolved only through resolvePeerSet, which returns the exact institutions; no
- * other peer query runs.
+ * The single source of a saved peer group's membership: the exact institutions it holds for
+ * this research institution (which is left out), resolved once per request. Every reader gets
+ * them as `institutionIds`, so the peer list, the benchmark and the report hold the same
+ * institutions; only how many of them publish a given fee differs.
  */
-export async function resolveSavedPeerSetFilters(
+export async function resolveSavedPeerGroupMembership(
   peerSet: Parameters<typeof savedPeerSetDefinition>[0] & Pick<SavedPeerSet, "name">,
   subjectInstitutionId: number | null | undefined,
-): Promise<SavedPeerSetFilters> {
+): Promise<SavedPeerGroupMembership> {
   const name = peerSet.name?.trim() ?? "";
-  if (!savedPeerSetHasAdvanced(peerSet)) {
-    const filters = parseSavedPeerSetFilters(peerSet);
-    return { filters, label: name || describePeerFilters(filters), problem: null };
-  }
   const subjectId = subjectInstitutionId && Number.isInteger(subjectInstitutionId) && subjectInstitutionId > 0
     ? subjectInstitutionId
     : null;
   const def = savedPeerSetDefinition(peerSet);
+  const basicLabel = name || describePeerFilters(parseSavedPeerSetFilters(peerSet));
+  const empty = (label: string, problem: string): SavedPeerGroupMembership =>
+    ({ status: "empty", institutionIds: [], filters: null, label, problem });
+  if (Object.keys(def).length === 0) {
+    return empty(name || "Saved peer group", "It has no filters yet. Add at least one in Settings.");
+  }
   try {
-    const resolved = await resolveAdvancedOnce(JSON.stringify(def), subjectId);
-    const label = name || resolved.label;
-    if (!resolved.filters) {
-      return { filters: null, label, problem: "None found: no institution meets every part of this peer group." };
-    }
-    return { filters: cleanFilters(resolved.filters), label, problem: null };
+    const resolved = await resolveMembershipOnce(JSON.stringify(def), subjectId, savedPeerSetHasAdvanced(peerSet));
+    const label = name || resolved.label || basicLabel;
+    const ids = [...new Set(resolved.ids)];
+    if (!ids.length) return empty(label, NO_MATCH);
+    return { status: "ready", institutionIds: ids, filters: { institutionIds: ids }, label, problem: null };
   } catch (error) {
     if (!(error instanceof PeerSetError)) throw error;
     const problem = def.nearest !== undefined && subjectId === null
       ? "Choose a research institution in Settings first. \"Closest in total assets\" is measured against it."
-      : error.message;
-    return { filters: null, label: name || "Saved peer group", problem };
+      : error.message.replace(/\.?$/, ".");
+    return empty(name || "Saved peer group", problem);
   }
 }
+
+/** The membership's older name, kept for Settings: the same function. */
+export const resolveSavedPeerSetFilters = resolveSavedPeerGroupMembership;
 
 export { ASSET_TIER_RANGES } from "./asset-tier-ranges";
 
@@ -266,17 +282,42 @@ export function hasUsablePeerIndex(
   ).length >= minUsableCategories;
 }
 
-/** A saved peer group that applies to every Pro chart and benchmark. */
+/**
+ * A saved peer group that applies to every Pro chart and benchmark, resolved for one research
+ * institution and holding at least one institution.
+ */
 export interface ActivePeerSet {
+  status: "ready";
   id: number;
   name: string;
-  /** The group's filters, ready for getPeerIndex / getPeerFeeValues (no label). */
+  /** The group's members for the readers ({ institutionIds }), no label. */
   filters: HamiltonPeerFilters;
   /** What charts call the group: its name, or a description of its filters when unnamed. */
   label: string;
+  /** Institutions in the group, the research institution left out. */
+  institutionCount: number;
+  /** The research institution the membership was resolved for. */
+  institutionId: number | null;
+  /**
+   * A basic set's stored filters (charter, tiers, districts, states), for a tool that takes
+   * filters rather than more than its limit of ids. Null for a set with wider dimensions.
+   */
+  definition?: HamiltonPeerFilters | null;
 }
 
-function toActivePeerSet(set: SavedPeerSet): ActivePeerSet {
+/** The chosen group: ready with its members, or empty with why. Null when no group is chosen. */
+export type ActivePeerSetResult = ActivePeerSet | EmptyPeerGroup;
+
+/** Which saved set is the default, by its stored columns only (no institutions resolved). */
+export interface PickedPeerSet {
+  id: number;
+  name: string;
+  /** The set's stored basic filters. Charts never read these; they read getActivePeerSet. */
+  filters: HamiltonPeerFilters;
+  label: string;
+}
+
+function toPickedPeerSet(set: SavedPeerSet): PickedPeerSet {
   const filters = parseSavedPeerSetFilters(set);
   return { id: set.id, name: set.name, filters, label: set.name.trim() || describePeerFilters(filters) };
 }
@@ -293,56 +334,87 @@ export function chooseDefaultPeerSet(defaults: SavedPeerSet[], institutionId: nu
   return workspace ?? personal ?? null;
 }
 
-/**
- * Pick the set that applies from the candidate defaults (see chooseDefaultPeerSet). Its
- * filters are the set's basic columns only: for a set with wider dimensions (asset range,
- * regulator, metro and the rest) charts use getActivePeerSet, which resolves them.
- */
+/** Which set is the default (see chooseDefaultPeerSet), without resolving its institutions. */
 export function pickActivePeerSet(
   defaults: SavedPeerSet[],
   institutionId: number | null,
-): ActivePeerSet | null {
+): PickedPeerSet | null {
   const chosen = chooseDefaultPeerSet(defaults, institutionId);
-  return chosen ? toActivePeerSet(chosen) : null;
+  return chosen ? toPickedPeerSet(chosen) : null;
 }
 
-/** The default set resolved for charts, with the reason when it has no peers right now. */
-async function loadActivePeerSet(params: {
-  userId: string | number | null | undefined;
-  institutionId: number | null | undefined;
-}): Promise<{ active: ActivePeerSet | null; chosen: SavedPeerSet | null; problem: string | null }> {
-  if (params.userId === null || params.userId === undefined || params.userId === "") return { active: null, chosen: null, problem: null };
-  const institutionId = params.institutionId && Number.isInteger(params.institutionId) && params.institutionId > 0
-    ? params.institutionId
-    : null;
-  const defaults = await getDefaultPeerSets({ userId: String(params.userId), institutionId });
-  const chosen = chooseDefaultPeerSet(defaults, institutionId);
-  if (!chosen) return { active: null, chosen: null, problem: null };
-  if (!savedPeerSetHasAdvanced(chosen)) return { active: toActivePeerSet(chosen), chosen, problem: null };
-  const resolved = await resolveSavedPeerSetFilters(chosen, institutionId);
-  if (!resolved.filters) return { active: null, chosen, problem: resolved.problem };
-  return { active: { id: chosen.id, name: chosen.name, filters: resolved.filters, label: resolved.label }, chosen, problem: null };
+/** A positive integer institution id, or null. */
+function subjectIdOf(value: number | null | undefined): number | null {
+  return value && Number.isInteger(value) && value > 0 ? value : null;
+}
+
+/** A saved set resolved for a research institution: ready with its members, or empty with why. */
+export async function savedPeerGroupFor(
+  set: SavedPeerSet,
+  institutionId: number | null,
+  institutionName: string | null = null,
+): Promise<ActivePeerSetResult> {
+  const membership = await resolveSavedPeerGroupMembership(set, institutionId);
+  if (membership.status === "empty" || !membership.filters) {
+    return {
+      status: "empty",
+      id: set.id,
+      name: set.name,
+      label: membership.label,
+      institutionId,
+      institutionName,
+      reason: membership.problem ?? NO_MATCH,
+    };
+  }
+  return {
+    status: "ready",
+    id: set.id,
+    name: set.name,
+    filters: membership.filters,
+    label: membership.label,
+    institutionCount: membership.institutionIds.length,
+    institutionId,
+    definition: savedPeerSetHasAdvanced(set) || set.institution_ids?.length ? null : parseSavedPeerSetFilters(set),
+  };
 }
 
 /**
  * The peer group every Pro chart and benchmark uses for this user and bank: the workspace's
  * default set (when the user is an active member of that workspace), else the user's own
- * default set. Null when neither exists, with no user (a workspace's choice is never shown
- * to someone outside it), or when a set with wider dimensions has no peers for this bank
- * right now (charts then use automatic peers). A wider set's filters are the exact
- * institutions resolvePeerSet returned.
+ * default set, resolved to its exact institutions. Null when neither exists, or with no user
+ * (a workspace's choice is never shown to someone outside it); charts then use automatic
+ * peers. A chosen set that matches no institutions comes back `status: "empty"` with the
+ * reason: callers show that and never substitute another group.
  */
 export async function getActivePeerSet(params: {
   userId: string | number | null | undefined;
   institutionId: number | null | undefined;
-}): Promise<ActivePeerSet | null> {
-  return (await loadActivePeerSet(params)).active;
+  /** The research institution's name, for the empty-group message. */
+  institutionName?: string | null;
+}): Promise<ActivePeerSetResult | null> {
+  if (params.userId === null || params.userId === undefined || params.userId === "") return null;
+  const institutionId = subjectIdOf(params.institutionId);
+  const defaults = await getDefaultPeerSets({ userId: String(params.userId), institutionId });
+  const chosen = chooseDefaultPeerSet(defaults, institutionId);
+  return chosen ? savedPeerGroupFor(chosen, institutionId, params.institutionName ?? null) : null;
+}
+
+/** The ready group as a summary for captions (see peerGroupCoverageLine). */
+export function peerGroupSummary(set: ActivePeerSet, institutionName: string | null): PeerGroupSummary {
+  return {
+    id: set.id,
+    name: set.name,
+    label: set.label,
+    institutionId: set.institutionId,
+    institutionName,
+    institutionCount: set.institutionCount,
+  };
 }
 
 /**
- * The active set as a filter candidate the engine can put first in its candidate list. It
- * carries the set's name as `label`, so describePeerFilters (and every chart label built on it)
- * names the group the way the bank named it.
+ * The active set as a filter candidate the engine reads. It carries the set's name as `label`,
+ * so describePeerFilters (and every chart label built on it) names the group the way the bank
+ * named it.
  */
 export function peerSetCandidate(set: Pick<ActivePeerSet, "filters" | "label">): HamiltonPeerFilters {
   return { ...set.filters, label: set.label };
@@ -355,11 +427,40 @@ function queryFilters(filters: HamiltonPeerFilters): HamiltonPeerFilters {
   return rest;
 }
 
+export interface HamiltonPeerIndexContext {
+  status: "ready";
+  entries: IndexEntry[];
+  label: string;
+  source: HamiltonPeerIndexSource;
+  filters: HamiltonPeerFilters | null;
+  peerSetId: string | null;
+  fallbackReason: string | null;
+  /** The saved group behind these entries, with its size; null for automatic peers or national. */
+  group: PeerGroupSummary | null;
+}
+
+/**
+ * A saved group the user picked (or their default) that matches no institutions. Nothing was
+ * computed: the caller shows this and lets the user choose another comparison.
+ */
+export interface HamiltonEmptyPeerIndex extends EmptyPeerGroup {
+  entries: [];
+  source: "saved-peer-set";
+  peerSetId: string | null;
+}
+
+export type HamiltonPeerIndexResult = HamiltonPeerIndexContext | HamiltonEmptyPeerIndex;
+
+function emptyPeerIndex(group: EmptyPeerGroup): HamiltonEmptyPeerIndex {
+  return { ...group, entries: [], source: "saved-peer-set", peerSetId: group.id === null ? null : String(group.id) };
+}
+
 async function resolveNationalIndex(
   fallbackReason: string | null,
   approvedOnly = true,
 ): Promise<HamiltonPeerIndexContext> {
   return {
+    status: "ready",
     // The approved national index is cached (fee_index_cache, refreshed on publish).
     entries: approvedOnly ? await getNationalIndexCached() : await getNationalIndex(false),
     label: "Verified national index",
@@ -367,6 +468,7 @@ async function resolveNationalIndex(
     filters: null,
     peerSetId: null,
     fallbackReason,
+    group: null,
   };
 }
 
@@ -379,68 +481,65 @@ const loadCandidateIndexes = cache(
     getPeerIndexes(JSON.parse(candidatesKey) as HamiltonPeerFilters[], approvedOnly),
 );
 
+/**
+ * The peer index a Pro chart, benchmark or report reads.
+ *
+ * - peerSetId names a saved group (or, with none, the user's default group applies): its exact
+ *   institutions are read, however few publish a given fee. A group that matches no
+ *   institutions, or that is not available to this user, comes back `status: "empty"`; nothing
+ *   is substituted for it.
+ * - peerSetId "auto" (automatic peers, chosen by the user), or no group at all: the research
+ *   institution's automatic peers, widened until enough publish, else the national index.
+ */
 export async function resolveHamiltonPeerIndex(
   params: ResolveHamiltonPeerIndexParams,
-): Promise<HamiltonPeerIndexContext> {
+): Promise<HamiltonPeerIndexResult> {
   const approvedOnly = params.approvedOnly ?? true;
   const minUsableCategories = params.minUsableCategories ?? 3;
   const userId = params.userId === null || params.userId === undefined ? null : String(params.userId);
-  const peerSetId = params.peerSetId?.trim() || null;
-  const institutionId = params.institutionId ?? params.selectedInstitution?.id ?? null;
-  let activeFallbackReason: string | null = null;
-  /** A default group with no peers: its reason names the group charts use instead, once known. */
-  let emptyActiveReason: ((fallbackLabel: string) => string) | null = null;
+  const requested = params.peerSetId?.trim() || null;
+  const automatic = requested === AUTOMATIC_PEERS_ID;
+  const peerSetId = automatic ? null : requested;
+  const institutionId = subjectIdOf(params.institutionId ?? params.selectedInstitution?.id ?? null);
+  const institutionName = params.selectedInstitution?.institution_name ?? null;
 
-  if (!peerSetId && userId) {
-    // No explicit choice: the workspace's (or the user's) default peer group applies.
-    const loaded = await loadActivePeerSet({ userId, institutionId }).catch(() => null);
-    const active = loaded?.active ?? null;
-    if (!active && loaded?.chosen && loaded.problem) {
-      const name = loaded.chosen.name.trim();
-      const problem = loaded.problem;
-      emptyActiveReason = (fallbackLabel) =>
-        `${name ? `Your peer group "${name}"` : "Your peer group"} matches no institutions, so this chart uses ${fallbackLabel} instead. ${problem}`;
-    }
-    if (active) {
-      const entries = await getPeerIndex(queryFilters(active.filters), approvedOnly);
-      if (hasUsablePeerIndex(entries, minUsableCategories)) {
-        return {
-          entries,
-          label: active.label,
-          source: "saved-peer-set",
-          filters: active.filters,
-          peerSetId: String(active.id),
-          fallbackReason: null,
-        };
-      }
-      activeFallbackReason = `Your peer group "${active.label}" has too few institutions publishing these fees, so Hamilton widened to the next group.`;
-    }
-  }
-
+  let group: ActivePeerSetResult | null = null;
   if (peerSetId && userId) {
     const parsedPeerSetId = Number(peerSetId);
     const savedPeerSet = Number.isInteger(parsedPeerSetId) && parsedPeerSetId > 0
       ? await getSavedPeerSetById(parsedPeerSetId, userId).catch(() => null)
       : null;
-    if (savedPeerSet) {
-      const resolved = await resolveSavedPeerSetFilters(savedPeerSet, institutionId);
-      const filters = resolved.filters;
-      if (!filters) {
-        return resolveNationalIndex(`Your peer group "${resolved.label}" matches no institutions, so this chart uses the national index. ${resolved.problem ?? "None found."}`, approvedOnly);
-      }
-      const entries = await getPeerIndex(filters, approvedOnly);
-      if (hasUsablePeerIndex(entries, minUsableCategories)) {
-        return {
-          entries,
-          label: resolved.label,
-          source: "saved-peer-set",
-          filters,
-          peerSetId,
-          fallbackReason: null,
+    group = savedPeerSet
+      ? await savedPeerGroupFor(savedPeerSet, institutionId, institutionName)
+      : {
+          status: "empty",
+          id: Number.isInteger(parsedPeerSetId) && parsedPeerSetId > 0 ? parsedPeerSetId : null,
+          name: "",
+          label: "Saved peer group",
+          institutionId,
+          institutionName,
+          reason: "It is no longer available to your account. Choose another group.",
         };
-      }
-      return resolveNationalIndex(`Saved peer set "${savedPeerSet.name}" is too sparse for this analysis.`, approvedOnly);
-    }
+  } else if (!automatic && userId) {
+    // No explicit choice: the workspace's (or the user's) default peer group applies.
+    group = await getActivePeerSet({ userId, institutionId, institutionName });
+  }
+
+  if (group?.status === "empty") return emptyPeerIndex(group);
+  if (group) {
+    // The group's own institutions, however few publish a fee: coverage may differ by fee,
+    // membership never does.
+    const entries = await getPeerIndex(queryFilters(group.filters), approvedOnly);
+    return {
+      status: "ready",
+      entries,
+      label: group.label,
+      source: "saved-peer-set",
+      filters: group.filters,
+      peerSetId: String(group.id),
+      fallbackReason: null,
+      group: peerGroupSummary(group, institutionName),
+    };
   }
 
   const candidates = buildInstitutionPeerFilterCandidates(params.selectedInstitution);
@@ -449,22 +548,22 @@ export async function resolveHamiltonPeerIndex(
     const entries = candidateIndexes[index] ?? [];
     if (hasUsablePeerIndex(entries, minUsableCategories)) {
       return {
+        status: "ready",
         entries,
         label: describePeerFilters(filters),
         source: "selected-institution-default",
         filters,
         peerSetId: null,
-        fallbackReason: emptyActiveReason ? emptyActiveReason(`"${describePeerFilters(filters)}"`) : activeFallbackReason,
+        fallbackReason: null,
+        group: null,
       };
     }
   }
 
   return resolveNationalIndex(
-    (emptyActiveReason ? emptyActiveReason("the national index") : null) ??
-    activeFallbackReason ??
-      (params.selectedInstitution
-        ? "Selected-institution peer filters were too sparse, so Hamilton used the verified national index."
-        : null),
+    params.selectedInstitution
+      ? "Selected-institution peer filters were too sparse, so Hamilton used the verified national index."
+      : null,
     approvedOnly,
   );
 }

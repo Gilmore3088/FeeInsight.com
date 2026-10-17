@@ -10,6 +10,11 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/data-store/fee-index", () => mocks);
 const savedPeers = vi.hoisted(() => ({ getSavedPeerSetById: vi.fn(), getDefaultPeerSets: vi.fn() }));
 vi.mock("@/lib/data-store/saved-peers", () => savedPeers);
+const peerSets = vi.hoisted(() => {
+  class PeerSetError extends Error {}
+  return { PeerSetError, resolvePeerSet: vi.fn(), getPeerSubject: vi.fn(), resolvePeerInstitutionIds: vi.fn() };
+});
+vi.mock("@/lib/data-store/peer-sets", () => peerSets);
 
 import { resolveHamiltonPeerIndex } from "./peer-index";
 
@@ -67,6 +72,7 @@ describe("resolveHamiltonPeerIndex", () => {
 
     it("uses the active set when no peerSetId is passed", async () => {
       savedPeers.getDefaultPeerSets.mockResolvedValue([teamSet]);
+      peerSets.resolvePeerInstitutionIds.mockResolvedValue([11, 12, 13, 14, 15]);
       mocks.getPeerIndex.mockResolvedValue(usable(4));
 
       const result = await resolveHamiltonPeerIndex({
@@ -75,25 +81,29 @@ describe("resolveHamiltonPeerIndex", () => {
       });
 
       expect(savedPeers.getDefaultPeerSets).toHaveBeenCalledWith({ userId: "7", institutionId: 2945 });
+      expect(peerSets.resolvePeerInstitutionIds).toHaveBeenCalledWith({ institutionIds: [11, 12, 13, 14, 15] }, { id: 2945 });
       expect(mocks.getPeerIndex).toHaveBeenCalledWith({ institutionIds: [11, 12, 13, 14, 15] }, true);
       expect(mocks.getPeerIndexes).not.toHaveBeenCalled();
       expect(result).toMatchObject({
+        status: "ready",
         source: "saved-peer-set",
         label: "Our five rivals",
         peerSetId: "42",
         fallbackReason: null,
+        group: { id: 42, label: "Our five rivals", institutionName: "Example Bank", institutionCount: 5 },
       });
     });
 
-    it("widens to the bank's default groups when the active set is too thin", async () => {
+    it("keeps a thin active set as chosen instead of widening it", async () => {
       savedPeers.getDefaultPeerSets.mockResolvedValue([teamSet]);
+      peerSets.resolvePeerInstitutionIds.mockResolvedValue([11, 12, 13, 14, 15]);
       mocks.getPeerIndex.mockResolvedValue([]);
       mocks.getPeerIndexes.mockImplementation(async (sets: unknown[]) => sets.map(() => usable(3)));
 
       const result = await resolveHamiltonPeerIndex({ userId: 7, institutionId: 2945, selectedInstitution: institution });
 
-      expect(result.source).toBe("selected-institution-default");
-      expect(result.fallbackReason).toContain("Our five rivals");
+      expect(mocks.getPeerIndexes).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ status: "ready", source: "saved-peer-set", entries: [], fallbackReason: null });
     });
 
     it("does not look up a default without a user", async () => {
@@ -107,13 +117,15 @@ describe("resolveHamiltonPeerIndex", () => {
 
     it("keeps an explicit peerSetId ahead of the default", async () => {
       savedPeers.getSavedPeerSetById.mockResolvedValue({ ...teamSet, id: 5, name: "Picked", institution_ids: null, states: ["GA"] });
+      peerSets.resolvePeerInstitutionIds.mockResolvedValue([31, 32]);
       mocks.getPeerIndex.mockResolvedValue(usable(2));
 
       const result = await resolveHamiltonPeerIndex({ userId: 7, peerSetId: "5", selectedInstitution: institution });
 
       expect(savedPeers.getDefaultPeerSets).not.toHaveBeenCalled();
-      expect(mocks.getPeerIndex).toHaveBeenCalledWith({ states: ["GA"] }, true);
-      expect(result).toMatchObject({ source: "saved-peer-set", label: "Picked", peerSetId: "5" });
+      expect(peerSets.resolvePeerInstitutionIds).toHaveBeenCalledWith({ states: ["GA"] }, null);
+      expect(mocks.getPeerIndex).toHaveBeenCalledWith({ institutionIds: [31, 32] }, true);
+      expect(result).toMatchObject({ status: "ready", source: "saved-peer-set", label: "Picked", peerSetId: "5" });
     });
   });
 });

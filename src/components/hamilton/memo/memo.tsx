@@ -810,8 +810,13 @@ export function AuditPanel({
       <div className="flex flex-col gap-5 border-t border-warm-200 px-5 py-4">
         {trail.peerGroup ? (
           <p>
-            <span className="font-medium text-warm-900">Peer group:</span> {trail.peerGroup.label},{" "}
-            {trail.peerGroup.n.toLocaleString("en-US")} {trail.peerGroup.n === 1 ? "institution" : "institutions"}.
+            <span className="font-medium text-warm-900">Peer group:</span>{" "}
+            {trail.peerGroup.coverage ?? (
+              <>
+                {trail.peerGroup.label}, {trail.peerGroup.n.toLocaleString("en-US")}{" "}
+                {trail.peerGroup.n === 1 ? "institution" : "institutions"}.
+              </>
+            )}
           </p>
         ) : null}
         <div>

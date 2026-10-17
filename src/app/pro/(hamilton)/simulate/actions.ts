@@ -8,6 +8,7 @@ import { getInstitutionById } from "@/lib/data-store";
 import { computeConfidenceTier, canSimulate } from "@/lib/hamilton/confidence";
 import { getHamiltonScenarioById } from "@/lib/hamilton/pro-tables";
 import { resolveHamiltonPeerIndex } from "@/lib/hamilton/peer-index";
+import { peerGroupCoverageLine, type EmptyPeerGroup } from "@/lib/hamilton/peer-group-copy";
 import { completeHamiltonRefreshJobsForInstitution } from "@/lib/hamilton/refresh-jobs";
 import {
   getHamiltonContextSourceLabel,
@@ -24,6 +25,12 @@ import type { HamiltonEvidencePolicy } from "@/lib/hamilton/request-contract";
 interface SimulationPeerContextParams {
   institutionId?: string | null;
   peerSetId?: string | null;
+}
+
+/** A saved group none of whose institutions publish the fee: said plainly, nothing substituted. */
+function noPublisherMessage(label: string, institutionCount: number): string {
+  const n = institutionCount.toLocaleString("en-US");
+  return `None found: none of the ${n} ${institutionCount === 1 ? "institution" : "institutions"} in "${label}" publish this fee. Choose another fee or peer group.`;
 }
 
 /** Server actions are public POST endpoints: every Pro benchmark read checks access itself. */
@@ -57,17 +64,27 @@ async function resolveSimulationPeerContext(params?: SimulationPeerContextParams
 export async function getDistributionForCategory(
   feeCategory: string,
   peerContext?: SimulationPeerContextParams,
-): Promise<{ distribution: DistributionData; confidenceTier: ConfidenceTier } | { error: string }> {
+): Promise<
+  | { distribution: DistributionData; confidenceTier: ConfidenceTier }
+  | { error: string; peerGroupEmpty?: EmptyPeerGroup }
+> {
   if (!(await hasProAccess())) return { error: "Pro subscription required" };
   try {
     const peerIndex = await resolveSimulationPeerContext(peerContext);
+    // A chosen group with no institutions is shown as empty; no other group stands in for it.
+    if (peerIndex.status === "empty") {
+      const { entries: _entries, source: _source, peerSetId: _id, ...group } = peerIndex;
+      void _entries; void _source; void _id;
+      return { error: "This peer group matches no institutions.", peerGroupEmpty: group };
+    }
     let entry = peerIndex.entries.find((e) => e.fee_category === feeCategory);
     let peerLabel = peerIndex.label;
     let peerSource = peerIndex.source;
     let peerSetId = peerIndex.peerSetId;
     let peerFallbackReason = peerIndex.fallbackReason;
 
-    if (!entry && peerIndex.source !== "national") {
+    // Automatic peers only: a saved group is never swapped for the national index.
+    if (!entry && peerIndex.source === "selected-institution-default") {
       const nationalIndex = await getNationalIndex();
       entry = nationalIndex.find((e) => e.fee_category === feeCategory);
       peerLabel = "Verified national index";
@@ -75,6 +92,10 @@ export async function getDistributionForCategory(
       peerSetId = null;
       peerFallbackReason =
         `The selected peer baseline did not have usable ${feeCategory.replace(/_/g, " ")} data, so this simulation uses the verified national index.`;
+    }
+
+    if (!entry && peerIndex.group) {
+      return { error: noPublisherMessage(peerIndex.group.label, peerIndex.group.institutionCount) };
     }
 
     if (!entry) {
@@ -104,6 +125,9 @@ export async function getDistributionForCategory(
       peer_source: peerSource,
       peer_set_id: peerSetId,
       peer_fallback_reason: peerFallbackReason,
+      peer_group_line: peerIndex.group && peerSource === "saved-peer-set"
+        ? peerGroupCoverageLine(peerIndex.group, entry.institution_count)
+        : null,
     };
 
     const confidenceTier = computeConfidenceTier(entry.institution_count);
@@ -364,6 +388,23 @@ export async function getScenario(
 }
 
 /**
+ * The chosen saved peer group when it matches no institutions for this research institution,
+ * else null. The page shows it in place of results and lets the reader choose another group.
+ */
+export async function getSimulationPeerGroup(peerContext?: SimulationPeerContextParams): Promise<EmptyPeerGroup | null> {
+  if (!(await hasProAccess())) return null;
+  try {
+    const peerIndex = await resolveSimulationPeerContext(peerContext);
+    if (peerIndex.status !== "empty") return null;
+    const { entries: _entries, source: _source, peerSetId: _id, ...group } = peerIndex;
+    void _entries; void _source; void _id;
+    return group;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Load the fee categories available for simulation (those with distribution data).
  * Returns array of { fee_category, display_name, approved_count, confidence_tier }.
  * Sorted by approved_count descending so strongest-data categories appear first.
@@ -379,8 +420,11 @@ export async function getSimulationCategories(peerContext?: SimulationPeerContex
   if (!(await hasProAccess())) return [];
   try {
     const peerIndex = await resolveSimulationPeerContext(peerContext);
+    // An empty group has no categories; getSimulationPeerGroup says why.
+    if (peerIndex.status === "empty") return [];
     const entriesByCategory = new Map(peerIndex.entries.map((entry) => [entry.fee_category, entry]));
-    if (peerIndex.source !== "national") {
+    // Automatic peers borrow national categories they lack; a saved group lists only its own.
+    if (peerIndex.source === "selected-institution-default") {
       const nationalIndex = await getNationalIndex();
       for (const nationalEntry of nationalIndex) {
         if (!entriesByCategory.has(nationalEntry.fee_category)) {

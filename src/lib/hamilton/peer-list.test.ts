@@ -5,7 +5,7 @@ import type { ActivePeerSet } from "./active-peer-set";
 export const subject: PeerListSubject = { institutionId: 101, name: "Synthetic Home CU", charterType: "credit_union", city: "Orlando", stateCode: "FL", totalAssetsUsd: 10_000_000_000, reportDate: "2026-06-30", source: "ncua", sourceUrl: null, recordId: 1 };
 const intent = (question: string) => { const result = parsePeerListQuestion(question); if (!result) throw new Error("Not a list"); return result; };
 const plan = (question: string, active: ActivePeerSet | null = null, target = subject) => planPeerList(intent(question), target, active);
-const saved: ActivePeerSet = { id: 7, name: "Chosen peers", label: "Chosen peers", filters: { institutionIds: [202, 203], charter_type: "credit_union", states: ["FL", "GA"] } };
+const saved: ActivePeerSet = { status: "ready", institutionCount: 2, institutionId: 101, id: 7, name: "Chosen peers", label: "Chosen peers", filters: { institutionIds: [202, 203], charter_type: "credit_union", states: ["FL", "GA"] } };
 
 describe("peer list question matrix", () => {
   for (const question of ["List ten peers", "Show 10 similarly sized credit unions in Florida", "List 15 banks between $1B and $5B in TX", "List institutions above $10B", "Who are our peers?", "List my saved peers", "Show peers in the same state", "List banks in Florida and Georgia", "List the 25 largest banks nationwide", "List all credit unions up to $1 billion"]) {
@@ -187,7 +187,7 @@ const PEER_REQUEST_MATRIX: MatrixRow[] = [
   { question: "List all credit unions in Florida", task: "peer_list", filters: { charterType: "credit_union", states: ["FL"], requestedCount: null, sort: "largest_assets" }, basis: "explicit_filters", output: "institution_table" },
   { question: "List 10 banks and credit unions in Georgia", task: "peer_list", filters: { charterType: null, states: ["GA"], requestedCount: 10 }, basis: "explicit_filters", output: "institution_table" },
   { question: "Show peers in the same state", task: "peer_list", filters: { charterType: "credit_union", states: ["FL"] }, basis: "similar_assets", output: "institution_table" },
-  { question: "List my saved peers", task: "peer_list", filters: { charterType: "credit_union", states: ["FL", "GA"] }, basis: "saved_peer_set", output: "institution_table", active: { id: 7, name: "Chosen peers", label: "Chosen peers", filters: { institutionIds: [202, 203], charter_type: "credit_union", states: ["FL", "GA"] } } },
+  { question: "List my saved peers", task: "peer_list", filters: { charterType: "credit_union", states: ["FL", "GA"] }, basis: "saved_peer_set", output: "institution_table", active: { status: "ready", institutionCount: 2, institutionId: 101, id: 7, name: "Chosen peers", label: "Chosen peers", filters: { institutionIds: [202, 203], charter_type: "credit_union", states: ["FL", "GA"] } } },
   { question: "List my saved peers", task: "clarify", output: "guidance", source: "no saved group: says so, runs no substitute" },
   { question: "List local competitors with assets above $5B", task: "clarify", output: "guidance" },
   { question: "List peers excluding Bank A", task: "clarify", output: "guidance" },

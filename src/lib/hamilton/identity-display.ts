@@ -13,7 +13,7 @@ export function readHamiltonIdentitySnapshot(value: unknown): HamiltonIdentitySn
     accountInstitutionId: row.accountInstitutionId as number | null,
     accountStatus: row.accountStatus as HamiltonIdentitySnapshot["accountStatus"],
   };
-  for (const key of ["researchInstitutionName", "accountInstitutionName", "researchSelectionSource", "peerBaselineLabel", "peerBaselineSource", "peerBaselineFallbackReason"] as const) {
+  for (const key of ["researchInstitutionName", "accountInstitutionName", "researchSelectionSource", "peerBaselineLabel", "peerBaselineSource", "peerBaselineFallbackReason", "peerGroupCoverage"] as const) {
     if (row[key] === null || typeof row[key] === "string") out[key] = row[key] as string | null;
   }
   if (validId(row.peerSetId)) out.peerSetId = row.peerSetId as number | null;
@@ -35,7 +35,7 @@ export function hamiltonIdentityLines(snapshot: HamiltonIdentitySnapshot | null 
     `Account institution: ${snapshot.accountStatus === "identified" && snapshot.accountInstitutionId
       ? name(snapshot.accountInstitutionName, snapshot.accountInstitutionId)
       : snapshot.accountStatus === "ambiguous" ? "Multiple memberships; not selected" : snapshot.accountStatus === "unavailable" ? "Could not be verified" : "Not linked"}`,
-    `Peer baseline: ${snapshot.peerBaselineLabel || "Not recorded"}${peerSourceNote(snapshot.peerBaselineSource)}`,
+    `Peer baseline: ${snapshot.peerBaselineLabel || "Not recorded"}${peerSourceNote(snapshot.peerBaselineSource)}${snapshot.peerGroupCoverage ? `. ${snapshot.peerGroupCoverage}` : ""}`,
     ...(snapshot.peerBaselineFallbackReason ? [`Peer baseline note: ${snapshot.peerBaselineFallbackReason}`] : []),
   ];
 }

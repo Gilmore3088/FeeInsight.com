@@ -259,6 +259,37 @@ describe("Hamilton Reports generateReport", () => {
     );
   });
 
+  it("writes no report against another group when the picked group matches no institutions", async () => {
+    const group = {
+      status: "empty" as const, id: 51, name: "Lake banks", label: "Lake banks", institutionId: 2945,
+      institutionName: "Hamilton Federal Credit Union", reason: "None found: no institution meets all of its filters.",
+    };
+    mocks.resolveHamiltonPeerIndex.mockResolvedValue({ ...group, entries: [], source: "saved-peer-set", peerSetId: "51" });
+
+    const result = await generateReport(reportParams());
+    expect(result).toEqual({
+      success: false,
+      error: 'Your peer group "Lake banks" matches no institutions for Hamilton Federal Credit Union. None found: no institution meets all of its filters.',
+      peerGroupEmpty: group,
+    });
+    expect(mocks.generateSection).not.toHaveBeenCalled();
+    expect(mocks.saveHamiltonReport).not.toHaveBeenCalled();
+
+    const preview = await previewReportPeerCoverage({ templateType: "peer_benchmarking", institutionId: 2945, peerSetId: "51" });
+    expect(preview).toMatchObject({ success: false, peerGroupEmpty: group });
+  });
+
+  it("names the saved group's size in the report's peer line", async () => {
+    mocks.resolveHamiltonPeerIndex.mockResolvedValue({
+      ...peerIndex(),
+      status: "ready",
+      group: { id: 1, name: "Custom CU peers", label: "Custom CU peers", institutionId: 2945, institutionName: "Hamilton Federal Credit Union", institutionCount: 12 },
+    });
+    const result = await generateReport(reportParams());
+    if (!result.success) throw new Error(result.error);
+    expect(result.report.identityContext).toMatchObject({ peerBaselineLabel: "Custom CU peers", peerGroupCoverage: "12 institutions in the group." });
+  });
+
   it("records the selected canonical research subject separately from authenticated account identity", async () => {
     const result = await generateReport({ ...reportParams(), selectedInstitutionName: "Forged browser name" });
     expect(result.success).toBe(true);

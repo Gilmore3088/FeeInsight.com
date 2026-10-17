@@ -52,7 +52,7 @@ describe("monthly briefing research identity", () => {
   it("names public research figures and asks about that institution without account pronouns", async () => {
     mocks.briefing.mockResolvedValue(briefing);
     const html = renderToStaticMarkup(await HamiltonHomePage({ searchParams: Promise.resolve({ instId: "2945" }) }));
-    expect(mocks.peer).toHaveBeenCalledWith({ userId: 25, institutionId: 2945 });
+    expect(mocks.peer).toHaveBeenCalledWith(expect.objectContaining({ userId: 25, institutionId: 2945 }));
     expect(html).toContain("Space Coast Credit Union");
     expect(html).not.toMatch(/your published|your fee|your call report|your state|>Yours</i);
     const rendered = document.createElement("div");
@@ -98,6 +98,19 @@ describe("monthly briefing research identity", () => {
   ])("does not query unrelated alerts while rendering a %s research subject", async (_label, params) => {
     renderToStaticMarkup(await HamiltonHomePage({ searchParams: Promise.resolve(params) }));
     expect(mocks.signals).not.toHaveBeenCalled();
+  });
+
+  it("shows an empty saved group as empty and builds no briefing against other peers", async () => {
+    mocks.peer.mockResolvedValue({
+      status: "empty", id: 51, name: "Lake banks", label: "Lake banks", institutionId: 2945,
+      institutionName: subject.name, reason: "None found: no institution meets all of its filters.",
+    });
+    const html = renderToStaticMarkup(await HamiltonHomePage({ searchParams: Promise.resolve({ instId: "2945" }) }));
+    expect(mocks.briefing).not.toHaveBeenCalled();
+    expect(html).toContain("Your peer group &quot;Lake banks&quot; matches no institutions for Space Coast Credit Union.");
+    expect(html).toContain("Edit this group");
+    expect(html).toContain("Compare with another group");
+    expect(html).toContain('href="/pro/settings?instId=2945#peer-sets"');
   });
 
   it("queries changes only for the named canonical research subject when rendering the briefing", async () => {

@@ -57,6 +57,8 @@ export interface HamiltonIdentitySnapshot {
   peerBaselineLabel?: string | null;
   peerBaselineSource?: string | null;
   peerBaselineFallbackReason?: string | null;
+  /** A saved group's coverage when the figures used it: "24 institutions in the group; 9 publish this fee." */
+  peerGroupCoverage?: string | null;
 }
 
 export type HamiltonIdentitySnapshotOptions = Omit<HamiltonIdentitySnapshot, "version" | "researchInstitutionId" | "accountInstitutionId" | "accountStatus" | "accountInstitutionName">;

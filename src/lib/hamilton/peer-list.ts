@@ -1,6 +1,7 @@
 /** Institution lists, not fee analysis. All amounts in this contract are whole USD. */
 import { STATE_NAMES } from "@/lib/us-states";
 import type { ActivePeerSet } from "./active-peer-set";
+import { peerGroupCoverageLine } from "./peer-group-copy";
 
 export const PEER_LIST_VERSION = 1;
 export const MAX_PEER_LIST_ROWS = 50;
@@ -82,6 +83,8 @@ export interface PeerListData {
    * second. Absent on lists saved before paging, which all start at the first match.
    */
   offset?: number;
+  /** The chosen saved group matched no institutions; no list was run in its place. */
+  peerGroupEmpty?: import("./peer-group-copy").EmptyPeerGroup;
 }
 export interface PeerFeeEntry {
   institutionId: number;
@@ -479,9 +482,10 @@ export function planPeerList(
   }
   if (minAssets && maxAssets && (minAssets.value > maxAssets.value || (minAssets.value === maxAssets.value && (!minAssets.inclusive || !maxAssets.inclusive)))) return { criteria: null, problem: "The requested asset range does not overlap the similar-size band. No wider band was used." };
   if (!useSaved && !intent.market && (intent.peerBased || intent.similarSize) && !charterType && !intent.bothTypes) return { criteria: null, problem: `Choose banks, credit unions, or both. None found: no institution type is on record for ${subject.name.replace(/\.$/, "")}.` };
-  if (useSaved) descriptions.push(`Saved peer group: ${active!.label}. Its filters remain in force.`);
+  if (useSaved) descriptions.push(`Saved peer group ${peerGroupCoverageLine({ label: active!.label, institutionName: subject.name, institutionCount: active!.institutionCount })} Only its institutions are listed.`);
   if (market) descriptions.push(`Institutions with a branch in the ${market.name} metro, from FDIC and NCUA branch records.`);
-  descriptions.push(`${charterType === "bank" ? "Banks" : charterType === "credit_union" ? "Credit unions" : "Banks and credit unions"}; ${states.length ? states.map(s => STATE_NAMES[s] ?? s).join(" or ") + " (headquarters state)" : "nationwide"}.`);
+  // A saved group's own institutions need no "nationwide": only a narrowing the question added is named.
+  if (!useSaved || charterType || states.length) descriptions.push(`${charterType === "bank" ? "Banks" : charterType === "credit_union" ? "Credit unions" : "Banks and credit unions"}; ${states.length ? states.map(s => STATE_NAMES[s] ?? s).join(" or ") + " (headquarters state)" : useSaved ? "in the saved group" : "nationwide"}.`);
   if (minAssets) descriptions.push(`Assets ${minAssets.inclusive ? "at least" : "greater than"} ${formatPeerAssets(minAssets.value)}.`);
   if (maxAssets) descriptions.push(`Assets ${maxAssets.inclusive ? "at most" : "less than"} ${formatPeerAssets(maxAssets.value)}.`);
   if (filters?.asset_tiers?.length) descriptions.push(`Saved registry asset tiers: ${filters.asset_tiers.join(", ")}; displayed dollar assets come from dated filings.`);

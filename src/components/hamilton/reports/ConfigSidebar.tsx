@@ -5,6 +5,8 @@ import type { ReportTemplateType } from "@/app/pro/(hamilton)/reports/actions";
 import type { ReportPeerCoveragePreview } from "@/lib/hamilton/report-evidence";
 import { hrefWithInstitutionContext, normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
 import type { HamiltonPeerSetOption } from "@/components/hamilton/PeerBaselineSelector";
+import { PeerGroupEmpty } from "@/components/hamilton/PeerGroupEmpty";
+import type { EmptyPeerGroup } from "@/lib/hamilton/peer-group-copy";
 import { describeSavedPeerDimensions } from "@/lib/peer-set-dimensions";
 import { SERIF } from "@/components/hamilton/memo/memo";
 import {
@@ -27,6 +29,8 @@ interface ConfigSidebarProps {
   peerCoveragePreview: ReportPeerCoveragePreview | null;
   isPeerCoverageLoading: boolean;
   peerCoverageError: string | null;
+  /** The chosen saved group matched no institutions; shown in place of coverage. */
+  peerGroupEmpty?: EmptyPeerGroup | null;
   onPeerSetChange: (peerSetId: string | null) => void;
   onNarrativeToneChange: (v: NarrativeTone) => void;
   clientGoal: ReportClientGoal;
@@ -125,7 +129,7 @@ const AUDIENCES: Array<{
 ];
 
 const inputClass =
-  "w-full rounded-md border border-warm-300 bg-white px-3 py-2 text-sm text-warm-900 focus:border-terra focus:outline-none focus:ring-1 focus:ring-terra disabled:opacity-60";
+  "min-h-11 w-full rounded-md border border-warm-300 bg-white px-3 py-2 text-sm text-warm-900 focus:border-terra focus:outline-none focus:ring-1 focus:ring-terra disabled:opacity-60";
 
 function formatPeerSetSummary(peerSet: HamiltonPeerSetOption): string {
   const charter = peerSet.charter_type
@@ -183,6 +187,7 @@ export function ConfigSidebar({
   peerCoveragePreview,
   isPeerCoverageLoading,
   peerCoverageError,
+  peerGroupEmpty = null,
   onPeerSetChange,
   onNarrativeToneChange,
   clientGoal,
@@ -244,8 +249,9 @@ export function ConfigSidebar({
           <div>
             <StepHeading>Compare against</StepHeading>
             <p className="mt-1 text-sm text-warm-600">
-              The peer group behind every comparison. If it is too small for a
-              fee, Hamilton uses all institutions nationally and says so.
+              The peer group behind every comparison. A saved group is used as
+              saved. Automatic peers widen to all institutions nationally when
+              too few publish a fee, and the report says so.
             </p>
           </div>
           <label htmlFor="report-peer-baseline" className="sr-only">
@@ -281,6 +287,13 @@ export function ConfigSidebar({
           )}
         </div>
 
+        {peerGroupEmpty && (
+          <PeerGroupEmpty
+            group={peerGroupEmpty}
+            onCompare={() => document.getElementById("report-peer-baseline")?.focus()}
+          />
+        )}
+
         {peerCoverageError && (
           <p className="text-sm text-terra-text">
             Hamilton couldn&apos;t check the data for this report:{" "}
@@ -289,6 +302,7 @@ export function ConfigSidebar({
         )}
 
         {!peerCoverageError &&
+          !peerGroupEmpty &&
           !peerCoveragePreview &&
           !isPeerCoverageLoading && (
             <p className="text-sm text-warm-600">
@@ -309,6 +323,11 @@ export function ConfigSidebar({
                 <dt className="text-xs text-warm-600">Peer group</dt>
                 <dd className="mt-0.5 font-medium leading-snug text-warm-900">
                   {peerCoveragePreview.peerBaselineLabel ?? "Not settled yet"}
+                  {peerCoveragePreview.peerGroupCoverage ? (
+                    <span className="mt-0.5 block text-xs font-normal text-warm-600">
+                      {peerCoveragePreview.peerGroupCoverage}
+                    </span>
+                  ) : null}
                 </dd>
               </div>
               <div>

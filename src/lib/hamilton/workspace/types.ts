@@ -45,7 +45,8 @@ export interface Provenance {
   engineVersion: string;
   generatedAt: string;
   evidenceLevel?: EvidenceLevel;
-  peerGroup?: { label: string; n: number };
+  /** n: institutions publishing the fee. coverage: a saved group's line (name, research institution, size). */
+  peerGroup?: { label: string; n: number; coverage?: string };
   /** Newest data each source contributed (ISO dates). */
   dataAsOf: { fees?: string | null; financials?: string | null; changes?: string | null };
   sources: SourceRef[];
@@ -188,6 +189,8 @@ export interface Briefing {
   /** One row per reviewed fee: the bank's price against its peer band. Unranked; band is null below the peer minimum. */
   positions: FeePositionRow[];
   peerLabel: string;
+  /** A saved group's name, research institution and coverage in one line; absent for automatic peers. */
+  peerGroupCoverage?: string | null;
   generatedAt: string;
   provenance: Provenance;
 }
@@ -375,6 +378,8 @@ export interface FeeResearch {
   /** The bank's published amount; null when its schedule has none. */
   current: number | null;
   peerLabel: string;
+  /** A saved group's name, research institution and coverage in one line; absent for automatic peers. */
+  peerGroupCoverage?: string | null;
   peers: PeerValue[];
   band: { p25: number; median: number; p75: number; n: number } | null;
   bands: PriceBand[];
@@ -629,7 +634,9 @@ export type AskResponseKind =
   | "saved_fact"
   | "deliverable_draft"
   | "opinion"
-  | "clarifying_question";
+  | "clarifying_question"
+  /** The bank's chosen peer group matches no institutions; nothing was computed. */
+  | "peer_group_empty";
 
 /** Which screen the answer opens, and what it puts there. */
 export type AskPageChange =
@@ -674,6 +681,8 @@ export interface AskResponse {
   savedAnalysisId?: string;
   /** For a question about every fee: each fee against its peer median, furthest first. */
   positions?: SchedulePosition[];
+  /** Set with kind "peer_group_empty": the group, and why it matches no institutions. */
+  peerGroupEmpty?: import("../peer-group-copy").EmptyPeerGroup;
 }
 
 export interface SchedulePosition {

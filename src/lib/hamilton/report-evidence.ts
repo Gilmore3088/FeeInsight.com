@@ -38,6 +38,8 @@ export interface ReportPeerCoveragePreview {
   peerBaselineSource: string | null;
   peerBaselineLabel: string | null;
   peerFallbackReason: string | null;
+  /** A saved group's size and how many of it publish the compared fees; null for automatic peers. */
+  peerGroupCoverage?: string | null;
   usablePeerCategoryCount: number;
   focusCategoryCovered: boolean | null;
   focusCategoryPeerInstitutionCount: number | null;
@@ -321,6 +323,7 @@ export function buildReportPeerCoveragePreview(params: {
   peerBaselineSource?: string | null;
   peerBaselineLabel?: string | null;
   peerFallbackReason?: string | null;
+  peerGroupCoverage?: string | null;
   pipelineFeeCount?: number | null;
   focusCategory?: string | null;
 }): ReportPeerCoveragePreview {
@@ -400,6 +403,7 @@ export function buildReportPeerCoveragePreview(params: {
     peerBaselineSource: params.peerBaselineSource ?? null,
     peerBaselineLabel: params.peerBaselineLabel ?? null,
     peerFallbackReason: params.peerFallbackReason ?? null,
+    peerGroupCoverage: params.peerGroupCoverage ?? null,
     usablePeerCategoryCount,
     focusCategoryCovered,
     focusCategoryPeerInstitutionCount,

@@ -18,6 +18,8 @@ export interface DistributionData {
   peer_source?: "saved-peer-set" | "selected-institution-default" | "national";
   peer_set_id?: string | null;
   peer_fallback_reason?: string | null;
+  /** For a saved group: its name, the research institution and coverage, in one line. */
+  peer_group_line?: string | null;
 }
 
 export interface FeePosition {

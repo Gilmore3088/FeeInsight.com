@@ -3,6 +3,7 @@ import { getPeerListRows, getPeerListSubject } from "@/lib/data-store/hamilton-p
 import { getPublishedPeerFees, getPublishedPeerRateFees } from "@/lib/data-store/hamilton-peer-fees";
 import { isStaleSource } from "./source-age";
 import { getActivePeerSet } from "./active-peer-set";
+import { emptyPeerGroupMessage } from "./peer-group-copy";
 import { PeerSetError, getPeerSubject, resolvePeerRequest } from "@/lib/data-store/peer-sets";
 import { loadHamiltonAccountContext } from "./account-context-store";
 import { normalizeCanonicalInstitutionId } from "./context-link";
@@ -188,7 +189,7 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
         const explicitFilters = Boolean(intent.charterType || intent.bothTypes || intent.states.length || intent.sameState || intent.minAssets || intent.maxAssets || intent.similarSize || intent.largest || intent.market);
         // Do not silently discard a saved-group lookup failure and switch to a national default.
         const active = intent.saved || (!explicitFilters && intent.peerBased)
-          ? await getActivePeerSet({ userId: user.id, institutionId: subject.institutionId })
+          ? await getActivePeerSet({ userId: user.id, institutionId: subject.institutionId, institutionName: subject.name })
           : null;
         // "In my metro": the subject's own metro and its institutions, only through the shared
         // peer-set module (resolvePeerSet), so a metro list and a saved metro group never differ.
@@ -203,6 +204,11 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
             if (!(error instanceof PeerSetError)) throw error;
             return message("needs_criteria", `None found: no branch market is on record for ${subject.name.replace(/\.$/, "")}. Ask by US state or asset size instead.`);
           }
+        }
+        // The chosen group matches no institutions: say so; no other list is run in its place.
+        if (active?.status === "empty") {
+          const empty = message("needs_criteria", emptyPeerGroupMessage(active));
+          return { ...empty, peerList: { ...empty.peerList, peerGroupEmpty: active } };
         }
         const planned = planPeerList(intent, subject, active, market);
         if (!planned.criteria) return message("needs_criteria", planned.problem ?? "Specify peer criteria.");
