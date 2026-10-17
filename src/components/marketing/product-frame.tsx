@@ -28,7 +28,7 @@ export function ProductFrame({
         .join(" ")}
     >
       <div className="flex items-center gap-3 border-b border-border bg-paper/70 px-4 py-2.5">
-        <span className="min-w-0 truncate text-[13px] font-semibold text-ink">{label}</span>
+        <span className="min-w-0 text-[13px] font-semibold text-ink sm:truncate">{label}</span>
         {aside ? <span className="ml-auto flex shrink-0 items-center gap-2 text-[12px] text-ink-muted">{aside}</span> : null}
       </div>
       <div className={`relative ${bodyClassName}`}>{children}</div>

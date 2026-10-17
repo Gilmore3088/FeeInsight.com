@@ -111,3 +111,55 @@ export function sampleWorkflowReport(): MarketReport {
     sinceBought: null,
   } as MarketReport;
 }
+
+/** Test data only: a saved Hamilton answer row in the shape `hamilton_saved_analyses` stores. */
+export function sampleShowcaseRow(overrides: { institution_id?: string; title?: string } = {}) {
+  const source = (label: string, extra: Record<string, unknown> = {}) => ({ label, asOf: "2026-10-15", ...extra });
+  return {
+    institution_id: overrides.institution_id ?? String(SUBJECT_ID),
+    prompt: "What is Capital City Bank's overdraft fee?",
+    created_at: "2026-10-16 00:04:27.743756+00",
+    response_json: {
+      hamiltonView: "Capital City Bank publishes a $37 overdraft fee. The filings do not show how often the fee is charged or waived.",
+      memo: {
+        market: "At $37, Capital City Bank sits above the local median. The change history is still building.",
+        board: "The board would need item volumes before weighing any option.",
+      },
+      whyItMatters: ["Peers' middle half charges $33 to $36.", "2 of 8 competitors charge less.", "Overdraft income is $10 million."],
+      exploreFurther: ["How many overdraft items does it charge each year?"],
+      identityContext: { researchInstitutionName: "Capital City Bank", peerBaselineLabel: "FL · bank · $1B to $10B · Fed district 6 peers" },
+      storyline: {
+        situation: [{ text: "Across 9 peers, the median is $35.", source: source("Bank Fee Index, published fee schedules", { table: "published_fee_catalog" }) }],
+        lenses: {
+          market: [{ text: "2 of 8 local competitors charge less.", source: source("FDIC Summary of Deposits, branch deposits by county") }],
+          finance: [
+            { text: "Overdraft income was $10 million.", source: source("Consumer overdraft and NSF fee income (call report)", { table: "institution_financial_records" }) },
+            { text: "Surprise overdraft fees can be an unfair practice.", source: { label: "CFPB circular on surprise overdraft fees, CFPB Circular 2022-06", asOf: null } },
+          ],
+        },
+        exhibits: [
+          {
+            exhibit: {
+              kind: "fee_position",
+              title: overrides.title ?? "Overdraft fee: Capital City Bank against 9 peers",
+              own: 37,
+              markers: [
+                { label: "Peer median", value: 35, n: 9 },
+                { label: "Local market (Tallahassee, FL) median", value: 35, n: 8 },
+              ],
+              sources: [source("Fees on each institution's own published schedule (verified, live)", { table: "published_fee_catalog" })],
+            },
+          },
+          {
+            exhibit: {
+              kind: "competitor_range",
+              title: "Overdraft fees in Capital City Bank's market, by local deposits",
+              note: "The 8 largest by local deposits of 8.",
+              items: COMPETITORS.map(([id, name], i) => ({ name, amount: LINES[1][4][i], url: url(id) })),
+            },
+          },
+        ],
+      },
+    },
+  };
+}

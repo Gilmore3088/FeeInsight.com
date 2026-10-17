@@ -192,13 +192,16 @@ export function homeReadsCacheable({
   categories,
   sampleFailed,
   overdraftFailed,
+  showcaseFailed = false,
 }: {
   summary: Pick<PublicStatsSummary, "complete">;
   categories: FeeCategorySummary[];
   sampleFailed: boolean;
   overdraftFailed: boolean;
+  /** The saved Hamilton answer the Hamilton section shows. */
+  showcaseFailed?: boolean;
 }): boolean {
-  return summary.complete && categories.length > 0 && !sampleFailed && !overdraftFailed;
+  return summary.complete && categories.length > 0 && !sampleFailed && !overdraftFailed && !showcaseFailed;
 }
 
 /** The sample report's fees and comparable lines, with only verified source lines kept. */

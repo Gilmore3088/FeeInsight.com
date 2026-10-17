@@ -6,7 +6,9 @@ import { REPORT_PRICE_INLINE } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
 import { LandingHero } from "./landing-hero";
 import { LandingProducts } from "./landing-products";
-import { sampleWorkflowReport } from "./landing-workflow.test-fixture";
+import { sampleShowcaseRow, sampleWorkflowReport } from "./landing-workflow.test-fixture";
+import { LandingHamilton } from "./landing-hamilton";
+import { parseShowcaseAnswer } from "./landing-hamilton-answer";
 import { LandingPricing } from "./landing-pricing";
 import { LandingFaq, faqItems } from "./landing-faq";
 import { buildHomeData, buildSampleView, homeReadsCacheable } from "./landing-shared";
@@ -112,7 +114,8 @@ const wholePage = () =>
   renderToStaticMarkup(
     <>
       <LandingHero />
-      <LandingProducts data={data} summary={summary} report={sampleWorkflowReport()} />
+      <LandingProducts data={data} summary={summary} />
+      <LandingHamilton report={sampleWorkflowReport()} answer={parseShowcaseAnswer(sampleShowcaseRow())} />
       <LandingPricing />
       <LandingFaq summary={summary} />
     </>,
@@ -145,30 +148,27 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     expect(t).not.toContain(REPORT_PRICE_INLINE);
   });
 
-  it("introduces the Index with the search and the map, and Hamilton with one answer, then the report", () => {
-    const html = renderToStaticMarkup(<LandingProducts data={data} summary={summary} report={sampleWorkflowReport()} />);
+  it("introduces the Index with the search and the map, then Hamilton in its own section", () => {
+    const html = renderToStaticMarkup(<LandingProducts data={data} summary={summary} />);
     const t = text(html);
     const at = (marker: string) => html.indexOf(marker);
-    expect(html).toContain('role="img" aria-label="Bank Fee Index"');
-    expect(html).toContain('role="img" aria-label="Hamilton"');
+    expect(html).toMatch(/<h2 id="products-heading"[\s\S]*?<span class="sr-only">Bank Fee Index<\/span><\/h2>/);
+    expect(html).not.toContain(">Hamilton</span>");
     // Index: search, live count, map with its ranking folded away.
     expect(html).toMatch(/<form[^>]*action="\/institutions"[^>]*method="get"/);
     expect(t).toContain("1,234 institutions · Data refreshed Oct 14, 2026");
     expect(at("<form")).toBeLessThan(at("data-district-map"));
-    expect(at('aria-label="Hamilton"')).toBeGreaterThan(at("data-district-map"));
     expect(html).toMatch(/data-district-takeaway=""/);
-    // Hamilton: the question and answer, no separate fee list.
-    expect(html).not.toContain("data-hamilton-snapshot");
-    expect(at("data-example-question")).toBeGreaterThan(at('aria-label="Hamilton"'));
-    // One compact report preview after both, linked to the full report.
-    expect(at("data-workflow-report")).toBeGreaterThan(at("data-workflow-compare"));
-    expect(html.match(/data-workflow-report/g)).toHaveLength(1);
     expect(html).toContain('href="/methodology"');
-    // Without a sample: the Index stays; the answer and the report preview are left out.
-    const bare = renderToStaticMarkup(<LandingProducts data={buildHomeData(summary, [], null)} summary={summary} report={null} />);
+    // The $9 sample answer and the separate report preview are gone.
+    expect(html).not.toContain("data-example-question");
+    expect(html).not.toContain("data-workflow-report");
+    // Without a map: the Index stays, with no empty frame.
+    const bare = renderToStaticMarkup(<LandingProducts data={buildHomeData(summary, [], null)} summary={summary} />);
     expect(bare).not.toContain("fi-window");
     expect(bare).toContain("<form");
-    expect(bare).not.toContain("data-workflow-report");
+    const page = wholePage();
+    expect(page.indexOf('id="hamilton-heading"')).toBeGreaterThan(page.indexOf("data-district-map"));
   });
 
   it("renders Pro prices from PRO_TIERS with the report as one line", () => {
@@ -181,11 +181,12 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     expect(renderToStaticMarkup(<LandingPricing />)).toContain("/reports?report=institution#request");
   });
 
-  it("runs promise, products with the answer and report, then plans and the FAQ", () => {
+  it("runs promise, the Index, Hamilton with its three steps, then plans and the FAQ", () => {
     const page = wholePage();
     const at = (marker: string) => page.indexOf(marker);
     expect(at("<h1")).toBeLessThan(at('id="products-heading"'));
-    expect(at('id="products-heading"')).toBeLessThan(at("data-workflow-report"));
+    expect(at('id="products-heading"')).toBeLessThan(at('id="hamilton-heading"'));
+    expect(at('id="hamilton-heading"')).toBeLessThan(at("data-workflow-report"));
     expect(at("data-workflow-report")).toBeLessThan(at('id="plans"'));
     expect(page).not.toContain("weeks of gathering");
     expect(page).toContain("Full Bank Fee Index access");
@@ -202,8 +203,10 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
 
   it("keeps the copy rules and the word budget", () => {
     // The report page is the report's own section, in its words; tables are names and figures, not copy.
-    const html = wholePage()
-      .replace(/<div class="\[&amp;&gt;section\][\s\S]*?<\/section><\/div>/, "")
+    // Hamilton's three views are product output (the saved answer and the report), not page copy.
+    const full = wholePage();
+    const panels = full.lastIndexOf("<div", full.indexOf('role="tabpanel"'));
+    const html = (full.slice(0, panels) + full.slice(full.lastIndexOf("<div", full.indexOf("data-hamilton-actions"))))
       .replace(/<table[\s\S]*?<\/table>/g, "");
     expect(text(html)).not.toMatch(/—|!|real-time|recommend|\bAI\b|verified|99%/i);
     // Under the old page's 889 words, with every reveal's contents counted.
@@ -220,8 +223,8 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     );
     expect(tracked).toEqual([
       "upgrade_click home_hero /subscribe See plans",
-      "upgrade_click home_products /subscribe See Hamilton plans",
-      "contact_sales home_workspace_demo /contact?source=demo Ask for a demo",
+      "upgrade_click home_hamilton /subscribe See Hamilton plans",
+      "sample_report_click home_hamilton /reports/sample-competitive-fee-position Open the sample report",
       "upgrade_click home_pricing /subscribe See plans",
       "contact_sales home_pricing_demo /contact?source=demo Or ask for a demo",
     ]);
