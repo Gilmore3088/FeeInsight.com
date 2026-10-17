@@ -96,7 +96,7 @@ export function LandingProducts({
             benefit="Compare your fees, investigate the differences, and produce reports for your board."
             className="lg:pl-10"
             action={
-              <p className="flex justify-center">
+              <div className="flex justify-center">
                 <TrackLink
                   event="upgrade_click"
                   eventProps={{ placement: "home_products" }}
@@ -105,7 +105,7 @@ export function LandingProducts({
                 >
                   {PRO_PLANS_NAV.label}
                 </TrackLink>
-              </p>
+              </div>
             }
           >
             {lead ? <HamiltonAnswer lead={lead} /> : null}

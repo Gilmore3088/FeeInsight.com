@@ -266,14 +266,14 @@ export function ReportPreview({ report, lead }: { report: MarketReport; lead: Wo
           It sets each of your published fees against your local competitors, ties every figure to its source and marks the{" "}
           {lineName(lead.line.label).toLowerCase()} fee from the answer above.
         </p>
-        <p className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-3">
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-3">
           <a href={SAMPLE_REPORT_HREF} className="fi-btn fi-btn-secondary min-h-11">
             Open the full report
           </a>
           <TrackLink event="contact_sales" eventProps={{ placement: "home_workspace_demo" }} href={DEMO_REQUEST_NAV.href} className={`text-[14px] ${TEXT_LINK}`}>
             {DEMO_REQUEST_NAV.standaloneLabel}
           </TrackLink>
-        </p>
+        </div>
       </div>
       <div className="min-w-0">
         <ProductFrame label={`${REPORT_OFFER.name} · Sample`}>
