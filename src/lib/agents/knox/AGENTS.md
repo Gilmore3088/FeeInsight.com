@@ -78,10 +78,10 @@ text Knox has read before is picked again when any one of these holds:
 3. Large bank: the bank has $10B or more in assets (`KNOX_REREAD_ASSET_FLOOR`, `asset_size` in
    thousands) and the document is a page's current copy.
 4. Older copy still live: an older copy of this page still carries a live fee.
-5. Stale read: the current copy has no `extract.rules` attempt at v76 or later
+5. Stale read: the current copy has no `extract.rules` attempt at v78 or later
    (`KNOX_STALE_READ_BELOW_VERSION`; v26 until Oct 17, raised with v75 so every current copy read
-   by an older version is read once more, and with v76 the same day so the rest of that re-read
-   reads at v76).
+   by an older version is read once more, and with v76 and v78 the same day so the rest of that
+   re-read reads at the newest rules).
 6. Lineup gap: the current copy has a `monthly_maintenance` row with no account name, or with
    neither the balance that avoids it nor its waiver, or (v73) a `minimum_balance` row with no
    account name, or a monthly maintenance or minimum balance row whose stored account names no
@@ -511,6 +511,47 @@ hand check found wrong, from their real lines.
 - A bare "Overdrafts" priced per transfer is the share transfer that covers them ("Share
   Transfer for\nOverdrafts - $2.00 per transfer", raw 112570). A bare "Overdrafts" priced per
   item is still the overdraft fee.
+
+v78 (Oct 17, Knox recall round 3 on the 62-bank answer key, and #1304's Knox half): a read is filed
+by its heading where its own words mislead, and the next held families get names (`rules.ts`).
+- A bill pay read priced as the overdraft (courtesy pay) or NSF fee files under that fee
+  (`billPayByHeading`): when its name says so, when its own line puts the heading just before it
+  ("Courtesy Pay (Paid NSF) Check/ACH/Bill Pay Payment | $32.00/item", live 88513 in #1304; for a
+  name listing two or more payment channels, the cell before it), or when the heading line above it
+  is one ("Courtesy Pay:" over "Check/ACH/Bill Pay Payment | $32.00"). Every specialist's reads pass
+  through it, and a later specialist's bill pay read of a row the rules pass re-filed is dropped as
+  the same fee. Bill pay's own fees stay ("Same Day Bill Payment" beside an NSF cell). Guard v68
+  (#1751) refuses the same rows as bill pay on Darwin's side.
+- A bare late fee read under a safe deposit heading ("Box Drilling: $125.00" / "Late Payment:
+  $5.00/month"), or after a safe deposit box read with no heading line between them ("Safe Deposit
+  Box 10x10 | $125" / "Late Payment (Over 90 Days) | $10"), is the box's late rental charge
+  (`boxLateFee`), and no later specialist adds it back as a loan late payment. Any heading-like
+  line ("Loan Fees") ends the box's section, so a loan's late fee after it stays a late payment.
+- A box size before its dot leader in a second column ("... statement. | 3 x 10.......$30.00 per
+  year") names the box.
+- A checking account's own free row ("Free Checking (CK02) | Free", "Student Checking (CK07) |
+  FREE") is its monthly fee at $0 (`unpricedRowCategory`). Only a free row: a priced one stays the
+  account expert's, and "Power Protected Checking Account | Free" in a column of services is not one.
+- Names (`V78_RECALL_PATTERNS`, after v75's): "Bank Draft" (cashier's check), "Checking Cashing"
+  (check cashing), "Inbound/Outbound Wire" (domestic), "non-Seacoast ATMs" and "Non-CCU
+  owned/affiliated machine" (ATM non-network), "Deposited Item Returns", "Image Copy" (check image),
+  a bare "Electronic Statements" row (e-statement), "Service Fee for ... Checking/Savings Accounts"
+  (monthly maintenance), "UPS"/"DHL" (courier), "Redraw document" (other lending) and "Same-Day ACH" (ACH origination). A statement
+  printout ("Statement Printout:", "Account activity/statement printout", "Special Statement Fee",
+  "Hard Copy Print Out") folds to document reproduction (`FOLDED_PATTERNS`, which the gates' unmapped
+  key lines follow).
+- Left held on purpose: travel and reloadable cards (one gate key leaves "Travel Money Card"
+  unfiled, the 62-bank key files them two ways), a printout without "statement" (the keys split it
+  between research and copies), a copy of a title, stop pay (`HELD_NAME_PATTERNS`, James's switch),
+  returned statements, reopening an account, and a bare "Service Fee", "Checking Fee" or "Shipping
+  Fee" (on live texts those names took rows the heading pass reads right, "Cashier's Checks: |
+  Performance Checking", "Credit/Debit Replacement Card: | Standard Shipping").
+- 62-bank key, free-team replay of the 62 key texts (scorer fee rule, a key's account research
+  matching a returned mail or excess withdrawal read since v77): recall 70.7% to 72.3% (1,620 to
+  1,656 of 2,292; 69.9% to 71.4% against the raw key); no key fee lost; no new read the key files as another fee or leaves out; 5 wrong
+  reads gone (box late fees read as loan late payments). Gates: Texas 573 to 584 right, 14 to 12
+  wrong; held out 53 to 54 / 4; seven states 862 to 874 right, 41 to 38 wrong.
+- Every current copy read before v78 is read once more (`KNOX_STALE_READ_BELOW_VERSION`).
 
 v77 (Oct 17, #1398, with `RESEARCH_SPLIT_LIVE` on): the three rules that
 filed returned mail and excess withdrawals under account research file them under their own types
@@ -1284,7 +1325,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v21 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v77 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v78 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v6 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v1 | `knox/takedown-lessons.ts` |
