@@ -1,18 +1,17 @@
 /**
- * The pricing committee packet screen (Reports). It leads with exhibits, not prose: four key
- * figures, Exhibit 1 drawn as one range row per fee, the fees for review as short cards, and the
- * filed income as a chart with its normalized figures. Every table sits one tap away under its
- * exhibit or in the appendix, and limitations, method and sources close the page. Each figure's
- * numbered footnote links to the source list. The PDF (CommitteePacketPdf) prints the same
- * exhibits. A printable document: no form sits in it; a proposed price is placed on Try a price
- * (/pro/simulate). Server component.
+ * The pricing committee brief on screen, set as the document it prints: a white sheet with the
+ * assessment first (a restrained header, one conclusion, the three findings that matter most with
+ * their uncertainty beside them, and the recommended next step), then the supporting exhibits. The
+ * evidence appendix sits below the sheet, one tap per table, with limitations, method and the
+ * numbered sources. The PDF (CommitteePacketPdf) prints the same brief. A printable document: no
+ * form sits in it; a proposed price is placed on Try a price (/pro/simulate). Server component.
  */
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { readerAsOf } from "@/lib/hamilton/board-brief";
-import { PRICE_YIELD_LIMIT, READING_TEXT, footnoteMarks, inText, packetMoney, per10k, packetSections, type CommitteePacket, type LabelledTable, type PacketFeeBar, type PacketIncomeSeries, type PacketTable as PacketTableData, type PriceYield } from "@/lib/hamilton/committee-packet";
+import { PRICE_YIELD_LIMIT, READING_TEXT, footnoteMarks, inText, packetMoney, per10k, packetSections, type CommitteePacket, type LabelledTable, type NormalizedIncome, type PacketFeeBar, type PacketTable as PacketTableData, type PriceYield } from "@/lib/hamilton/committee-packet";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
-import { ANSWER_TYPE, Callout, ExhibitShell, KeyFigures, LinkButton, MemoHeader, MemoPage, More, QuarterLines, SectionHeading, Tabs, type KeyFigureTile } from "@/components/hamilton/memo/memo";
+import { ANSWER_TYPE, Callout, LinkButton, MemoHeader, MemoPage, More, Tabs } from "@/components/hamilton/memo/memo";
 import { CommitteePacketDownload } from "./CommitteePacketDownload";
 
 const MARK = /\[(\d+(?:, \d+)*)\]/g;
@@ -179,135 +178,145 @@ function tableMarks(t: PacketTableData): number[] {
   return t.rows.flat().flatMap(footnoteMarks);
 }
 
-/** A part of the packet: its h2 and what sits under it. */
-function Part({ id, title, children }: { id: string; title: string; children: ReactNode }) {
-  return (
-    <section id={id} aria-labelledby={`${id}-h`} className="flex scroll-mt-24 flex-col gap-6 border-t border-warm-300 pt-6">
-      <h2 id={`${id}-h`} className="text-xl font-bold text-warm-900 sm:text-2xl">
-        {title}
-      </h2>
-      {children}
-    </section>
-  );
-}
-
 const BAND_WORD = { above: "Above", within: "Within", below: "Below" } as const;
 
-/** The four figures over the brief: how many fees sit above, within and below the peers, and income. */
-function glanceTiles(packet: CommitteePacket): KeyFigureTile[] {
-  const g = packet.glance;
-  const of = (count: number) => `${count} of ${g.placed}`;
-  const tiles: KeyFigureTile[] = g.placed
-    ? [
-        { value: of(g.above), label: "Fees above the peers' middle 50%", title: "Above" },
-        { value: of(g.within), label: "Fees within it", title: "Within" },
-        { value: of(g.below), label: "Fees below it", title: "Below" },
-      ]
-    : [{ value: `${g.published} of ${g.fees}`, label: "Fees published; too few peers publish any of them to place", title: "Published" }];
-  const n = packet.financial.normalized;
-  if (n && n.own !== null && n.median !== null) {
-    tiles.push({ value: per10k(n.own), label: `Fee income per $10,000 of assets; peer median ${per10k(n.median)}`, title: "Income" });
-  }
-  return tiles;
+/** One row of an exhibit: the peers' spread, middle 50% and median, and the bank's value. */
+interface TrackRow {
+  key: string;
+  name: string;
+  note: string | null;
+  own: number | null;
+  median: number | null;
+  q1: number | null;
+  q3: number | null;
+  low: number | null;
+  high: number | null;
+  outside: boolean;
+  /** Under the value: "Above · 9 peers". */
+  detail: string | null;
+  marks: string;
+  /** Said instead of a drawing when there is none. */
+  empty: string;
+  fmt: (v: number) => string;
 }
 
-/** A fee row's scale: the peers' full spread and the bank's value, padded so no mark sits on an edge. */
-function barScale(b: PacketFeeBar): (v: number) => number {
-  const values = [b.low, b.high, b.current, b.median].filter((v): v is number => v !== null);
+function feeRow(b: PacketFeeBar): TrackRow {
+  return {
+    key: b.feeCategory,
+    name: b.name,
+    note: b.comparedWith ? `Compared with ${b.comparedWith}` : null,
+    own: b.current,
+    median: b.median,
+    q1: b.q1,
+    q3: b.q3,
+    low: b.low,
+    high: b.high,
+    outside: b.band === "above" || b.band === "below",
+    detail: b.band && b.median !== null ? `${BAND_WORD[b.band]} · ${b.peers} peers` : null,
+    marks: b.marks,
+    empty: b.peers === 0 ? "No peer publishes it" : `Only ${b.peers} ${b.peers === 1 ? "peer publishes" : "peers publish"} it; not placed`,
+    fmt: packetMoney,
+  };
+}
+
+function incomeRow(n: NormalizedIncome): TrackRow {
+  return {
+    key: "income",
+    name: "Income per $10,000 of assets",
+    note: null,
+    own: n.own,
+    median: n.median,
+    q1: n.q1,
+    q3: n.q3,
+    low: null,
+    high: null,
+    outside: n.own !== null && n.q1 !== null && n.q3 !== null && (n.own > n.q3 || n.own < n.q1),
+    detail: `${n.peersCompared} peers${n.placement ? ` · ${n.placement}` : ""}`,
+    marks: "",
+    empty: "Too few peers filed for the quarter",
+    fmt: per10k,
+  };
+}
+
+function Track({ row }: { row: TrackRow }) {
+  const values = [row.low, row.high, row.q1, row.q3, row.median, row.own].filter((v): v is number => v !== null);
   const lo = Math.min(...values);
   const hi = Math.max(...values);
   const pad = hi > lo ? (hi - lo) * 0.08 : Math.max(hi * 0.2, 1);
   const min = Math.max(0, lo - pad);
   const max = hi + pad;
-  return (v) => Math.min(100, Math.max(0, ((v - min) / (max - min || 1)) * 100));
-}
-
-/** One fee: the peers' spread as a line, their middle 50% as a band, the median as a tick, the bank as a dot. */
-function FeeBarRow({ bar, institutionName }: { bar: PacketFeeBar; institutionName: string }) {
-  const placed = bar.median !== null && bar.q1 !== null && bar.q3 !== null && bar.low !== null && bar.high !== null;
-  const x = placed ? barScale(bar) : null;
-  const outside = bar.band === "above" || bar.band === "below";
-  const name = (
-    <span className="font-medium text-warm-900">
-      {bar.name}
-      {bar.comparedWith ? <span className="block text-xs font-normal text-warm-600">Compared with {bar.comparedWith}</span> : null}
-    </span>
-  );
-  const value = bar.current === null ? (
-    <span className={`text-warm-600 ${ANSWER_TYPE.num}`}>
-      Not on the schedule{placed ? ` · median ${packetMoney(bar.median as number)}` : ""}
-      {bar.marks ? <span className="text-xs">{withMarks(bar.marks)}</span> : null}
-    </span>
-  ) : (
-    <span className={ANSWER_TYPE.num}>
-      <span className={`font-semibold ${outside ? "text-terra-text" : "text-warm-900"}`}>{packetMoney(bar.current)}</span>
-      {placed ? <span className="text-warm-600"> · median {packetMoney(bar.median as number)}</span> : null}
-      {bar.marks ? <span className="text-xs">{withMarks(bar.marks)}</span> : null}
-    </span>
-  );
+  const x = (v: number) => Math.min(100, Math.max(0, ((v - min) / (max - min || 1)) * 100));
+  const { q1, q3, median } = row as { q1: number; q3: number; median: number };
   return (
-    <li className="grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-1.5 border-b border-warm-200 py-3 last:border-0 md:grid-cols-[13rem_1fr_15rem]">
-      <div className="text-sm">{name}</div>
-      <div className="order-3 col-span-2 md:order-none md:col-span-1">
-        {x ? (
-          <div
-            role="img"
-            aria-label={`${bar.name}: ${institutionName} ${bar.current === null ? "does not publish it" : packetMoney(bar.current)}; peers' middle 50% ${packetMoney(bar.q1 as number)} to ${packetMoney(bar.q3 as number)}; median ${packetMoney(bar.median as number)} of ${bar.peers} peers`}
-            className="relative h-8"
-          >
-            <span className="absolute top-1/2 h-px -translate-y-1/2 bg-warm-400" style={{ left: `${x(bar.low as number)}%`, width: `${x(bar.high as number) - x(bar.low as number)}%` }} />
-            <span className="absolute top-1/2 h-3.5 -translate-y-1/2 rounded-sm bg-warm-300" style={{ left: `${x(bar.q1 as number)}%`, width: `${Math.max(1, x(bar.q3 as number) - x(bar.q1 as number))}%` }} />
-            <span className="absolute top-1/2 h-6 w-0.5 -translate-x-1/2 -translate-y-1/2 bg-warm-900" style={{ left: `${x(bar.median as number)}%` }} />
-            {bar.current !== null ? (
-              <span
-                className={`absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-white ${outside ? "bg-terra" : "bg-warm-700"}`}
-                style={{ left: `${x(bar.current)}%` }}
-              />
-            ) : null}
-            <span className={`absolute -bottom-1.5 left-0 text-[11px] text-warm-500 ${ANSWER_TYPE.num}`} style={{ left: `${x(bar.low as number)}%` }}>
-              {packetMoney(bar.low as number)}
-            </span>
-            <span className={`absolute -bottom-1.5 -translate-x-full text-[11px] text-warm-500 ${ANSWER_TYPE.num}`} style={{ left: `${x(bar.high as number)}%` }}>
-              {packetMoney(bar.high as number)}
-            </span>
-          </div>
-        ) : (
-          <p className="text-xs text-warm-600">{bar.peers === 0 ? "No peer publishes it" : `Only ${bar.peers} ${bar.peers === 1 ? "peer publishes" : "peers publish"} it; not placed`}</p>
-        )}
-      </div>
-      <div className="text-right text-sm">
-        {value}
-        {bar.band && placed ? <span className="block text-xs text-warm-600">{BAND_WORD[bar.band]} · {bar.peers} peers</span> : null}
-      </div>
-    </li>
+    <div
+      role="img"
+      aria-label={`${row.name}: ${row.own === null ? "not published" : row.fmt(row.own)}; peers' middle 50% ${row.fmt(q1)} to ${row.fmt(q3)}; median ${row.fmt(median)}`}
+      className="relative h-8"
+    >
+      {row.low !== null && row.high !== null ? (
+        <>
+          <span className="absolute top-1/2 h-px -translate-y-1/2 bg-warm-400" style={{ left: `${x(row.low)}%`, width: `${x(row.high) - x(row.low)}%` }} />
+          <span className={`absolute -bottom-1.5 text-[11px] text-warm-500 ${ANSWER_TYPE.num}`} style={{ left: `${x(row.low)}%` }}>
+            {row.fmt(row.low)}
+          </span>
+          <span className={`absolute -bottom-1.5 -translate-x-full text-[11px] text-warm-500 ${ANSWER_TYPE.num}`} style={{ left: `${x(row.high)}%` }}>
+            {row.fmt(row.high)}
+          </span>
+        </>
+      ) : null}
+      <span className="absolute top-1/2 h-3.5 -translate-y-1/2 rounded-sm bg-terra-soft" style={{ left: `${x(q1)}%`, width: `${Math.max(1, x(q3) - x(q1))}%` }} />
+      <span className="absolute top-1/2 h-6 w-0.5 -translate-x-1/2 -translate-y-1/2 bg-warm-900" style={{ left: `${x(median)}%` }} />
+      {row.own !== null ? (
+        <span className={`absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-white ${row.outside ? "bg-terra" : "bg-warm-600"}`} style={{ left: `${x(row.own)}%` }} />
+      ) : null}
+    </div>
   );
 }
 
-function PositionChart({ bars, institutionName }: { bars: PacketFeeBar[]; institutionName: string }) {
+function TrackRows({ rows }: { rows: TrackRow[] }) {
   return (
-    <figure className="flex flex-col gap-3">
-      <figcaption className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-warm-700">
-        <span className="inline-flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-full bg-terra" />Your fee, outside the middle 50%</span>
-        <span className="inline-flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-full bg-warm-700" />Within it</span>
-        <span className="inline-flex items-center gap-1.5"><span className="inline-block h-3 w-5 rounded-sm bg-warm-300" />Peers&apos; middle 50%</span>
-        <span className="inline-flex items-center gap-1.5"><span className="inline-block h-3.5 w-0.5 bg-warm-900" />Peer median</span>
-        <span className="inline-flex items-center gap-1.5"><span className="inline-block h-px w-5 bg-warm-400" />Lowest to highest peer</span>
-      </figcaption>
-      <ul className="rounded-lg border border-warm-300 bg-white px-4">
-        {bars.map((b) => (
-          <FeeBarRow key={b.feeCategory} bar={b} institutionName={institutionName} />
-        ))}
-      </ul>
-    </figure>
+    <ul className="border-t border-warm-300">
+      {rows.map((row) => {
+        const placed = row.median !== null && row.q1 !== null && row.q3 !== null;
+        return (
+          <li key={row.key} className="grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-1.5 border-b border-warm-200 py-3 md:grid-cols-[12rem_1fr_13rem]">
+            <div className="text-[15px] text-warm-900">
+              {row.name}
+              {row.note ? <span className="block text-xs text-warm-600">{row.note}</span> : null}
+            </div>
+            <div className="order-3 col-span-2 md:order-none md:col-span-1">{placed ? <Track row={row} /> : <p className="text-xs text-warm-600">{row.empty}</p>}</div>
+            <div className={`text-right text-[15px] ${ANSWER_TYPE.num}`}>
+              {row.own === null ? (
+                <span className="text-warm-600">Not on the schedule</span>
+              ) : (
+                <span className={`font-semibold ${row.outside ? "text-terra-text" : "text-warm-900"}`}>{row.fmt(row.own)}</span>
+              )}
+              {placed ? <span className="text-warm-600"> · median {row.fmt(row.median as number)}</span> : null}
+              {row.marks ? <span className="text-xs">{withMarks(row.marks)}</span> : null}
+              {row.detail && placed ? <span className="block text-xs text-warm-600">{row.detail}</span> : null}
+            </div>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
-/**
- * The bank's own filed income by quarter (QuarterLines reads thousands). No peer line: a median in
- * raw dollars across a size band mixes in size, so peers are compared per $10,000 of assets beside it.
- */
-function IncomeChart({ series, institutionName }: { series: PacketIncomeSeries; institutionName: string }) {
-  return <QuarterLines quarters={series.quarters} series={[{ label: institutionName, values: series.own.map((v) => v / 1000), own: true }]} />;
+function Legend() {
+  return (
+    <p className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-warm-700">
+      <span className="inline-flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-full bg-terra" />Your fee, outside the middle 50%</span>
+      <span className="inline-flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-full bg-warm-600" />Within it</span>
+      <span className="inline-flex items-center gap-1.5"><span className="inline-block h-3 w-5 rounded-sm bg-terra-soft" />Peers&apos; middle 50%</span>
+      <span className="inline-flex items-center gap-1.5"><span className="inline-block h-3.5 w-0.5 bg-warm-900" />Peer median</span>
+      <span className="inline-flex items-center gap-1.5"><span className="inline-block h-px w-5 bg-warm-400" />Lowest to highest peer</span>
+    </p>
+  );
+}
+
+/** A small capitals label over a block of the brief. */
+function Label({ children }: { children: ReactNode }) {
+  return <p className="text-xs font-semibold uppercase tracking-[0.12em] text-terra-text">{children}</p>;
 }
 
 export function CommitteePacketView({
@@ -324,6 +333,7 @@ export function CommitteePacketView({
 }) {
   const readOn = readerAsOf(packet.generatedAt);
   const sections = packetSections(packet);
+  const { conclusion, findings, nextStep } = packet.brief;
   const sourceLine = (t: PacketTableData) => {
     const marks = tableMarks(t);
     return `${t.source[0].toUpperCase()}${t.source.slice(1)}, read ${readOn}${marks.length ? ` · notes ${noteRanges(marks)}` : ""}`;
@@ -333,12 +343,13 @@ export function CommitteePacketView({
   const cite = (marks: number[], anchor: string, label: string) => {
     for (const n of marks) if (!firstUse.has(n)) firstUse.set(n, { anchor, label });
   };
-  cite([...packet.position.bars.map((b) => b.marks), ...packet.brief.priorities.map((p) => p.fact)].flatMap(footnoteMarks), "brief", "the executive brief");
-  for (const l of [...sections.position, ...sections.financial, ...sections.appendix]) cite(tableMarks(l.table), l.anchor, l.label);
+  cite([conclusion, ...findings.map((f) => f.evidence)].flatMap(footnoteMarks), "brief", "the brief");
+  cite(packet.position.bars.map((b) => b.marks).flatMap(footnoteMarks), "exhibits", "the supporting exhibits");
+  const exhibits = [...sections.position, ...sections.financial].sort((a, b) => a.label.localeCompare(b.label, "en", { numeric: true }));
+  for (const l of [...exhibits, ...sections.appendix]) cite(tableMarks(l.table), l.anchor, l.label);
   const reportsHref = hrefWithInstitutionContext("/pro/reports", String(packet.institutionId));
-  const [exhibit1, ...otherPosition] = sections.position;
-  const trend = sections.financial.find((l) => l.table.id === "income_trend");
-  const normalizedTable = sections.financial.find((l) => l.table.id === "normalized_income");
+  const exhibit1 = sections.position[0];
+  const incomeExhibit = sections.financial.find((l) => l.table.id === "normalized_income");
   const n = packet.financial.normalized;
   const tableIn = (l: LabelledTable) => (
     <More key={l.anchor} label={`${l.label}: ${l.table.title}`}>
@@ -347,16 +358,16 @@ export function CommitteePacketView({
         <PacketTable exhibit={l.table} />
         {l.table.note ? <p className="mt-2 text-xs leading-relaxed text-warm-600">{l.table.note}</p> : null}
         <p className="mt-1 text-xs text-warm-600">Source: {sourceLine(l.table)}</p>
+        {l.table.id === "peer_changes" && packet.position.comparedNote ? <p className="mt-2 text-sm text-warm-800">{withMarks(packet.position.comparedNote)}</p> : null}
       </div>
     </More>
   );
   return (
     <MemoPage>
       <MemoHeader
-        kicker="Reports · Pricing committee packet"
-        title={packet.title}
+        kicker="Reports"
+        title="Pricing committee brief"
         compact
-        dek={`Read ${readOn}. Peers: ${packet.peerGroupLabel}.`}
         actions={
           <>
             <CommitteePacketDownload institutionId={packet.institutionId} yieldFee={selected.yieldFee} />
@@ -365,100 +376,91 @@ export function CommitteePacketView({
         }
       />
 
-      <Part id="brief" title="Executive brief">
-        <KeyFigures figures={glanceTiles(packet)} />
-
-        {exhibit1 ? (
-          <div id={exhibit1.anchor} className="flex scroll-mt-24 flex-col gap-3">
-            <div>
-              <p className={ANSWER_TYPE.kicker}>{exhibit1.label}</p>
-              <h3 className={`mt-1 ${ANSWER_TYPE.section} font-semibold`}>Where each fee sits among {packet.peerGroupLabel}</h3>
-            </div>
-            <PositionChart bars={packet.position.bars} institutionName={packet.institutionName} />
-            <p className={ANSWER_TYPE.caption}>Source: {sourceLine(exhibit1.table)}</p>
-            <More label="Exhibit 1 as a table">
-              {exhibit1.table.subtitle ? <p className="text-xs text-warm-600">{exhibit1.table.subtitle}</p> : null}
-              <PacketTable exhibit={exhibit1.table} />
-              {exhibit1.table.note ? <p className="text-xs leading-relaxed text-warm-600">{exhibit1.table.note}</p> : null}
-            </More>
+      {/* The document itself: the assessment, then the supporting exhibits. */}
+      <article className="mx-auto w-full max-w-[52rem] border border-warm-200 bg-white px-5 py-8 shadow-sm sm:px-12 sm:py-12">
+        <section id="brief" aria-label="Executive brief" className="scroll-mt-24">
+          <div className="flex items-baseline justify-between gap-4 border-b border-warm-900 pb-2">
+            <p className="text-xs font-bold uppercase tracking-[0.1em] text-warm-900">Pricing committee brief</p>
+            <p className={`text-xs text-warm-600 ${ANSWER_TYPE.num}`}>{readOn}</p>
           </div>
-        ) : null}
+          <p className="mt-2 text-sm text-warm-600">
+            {packet.institutionName} · Compared with {packet.peerGroupLabel}
+          </p>
+          <h2 className="mt-8 text-[1.5rem] font-semibold leading-snug text-warm-900 sm:text-[1.75rem]">{withMarks(conclusion)}</h2>
 
-        <div className="flex flex-col gap-3">
-          <SectionHeading>Priorities for review</SectionHeading>
-          {packet.brief.priorities.length ? (
-            <>
-              <p className={ANSWER_TYPE.caption}>Fees outside the peers&apos; middle 50%. Questions to look into, not pricing recommendations.</p>
-              <ul className="grid gap-3 md:grid-cols-2">
-                {packet.brief.priorities.map((p) => (
-                  <li key={p.feeCategory} className="flex flex-col gap-1.5 rounded-lg border border-warm-300 bg-white px-4 py-3 text-sm">
-                    <p className="flex items-baseline justify-between gap-3">
-                      <span className="font-semibold text-warm-900">{p.fee}</span>
-                      <span className="shrink-0 rounded-full bg-terra-soft px-2 py-0.5 text-xs font-medium text-terra-text">{BAND_WORD[p.band]} the middle 50%</span>
-                    </p>
-                    <p className={`text-warm-800 ${ANSWER_TYPE.num}`}>{withMarks(p.fact)}</p>
-                    <p className="text-warm-700">{p.question}</p>
+          {findings.length ? (
+            <div className="mt-10">
+              <Label>Findings</Label>
+              <ol className="mt-3">
+                {findings.map((f, i) => (
+                  <li key={f.feeCategory} className="grid gap-x-8 gap-y-3 border-t border-warm-200 py-5 lg:grid-cols-[1fr_13rem]">
+                    <div className="flex gap-3">
+                      <span className="text-lg font-bold text-terra-text">{i + 1}</span>
+                      <div className="flex flex-col gap-1.5">
+                        <p className="text-lg font-semibold leading-snug text-warm-900">{f.statement}</p>
+                        <p className={`text-base leading-relaxed text-warm-900 ${ANSWER_TYPE.num}`}>{withMarks(f.evidence)}</p>
+                        {f.why ? <p className="text-base leading-relaxed text-warm-600">{f.why}</p> : null}
+                      </div>
+                    </div>
+                    {f.uncertainty ? (
+                      <aside aria-label="Uncertainty" className="ml-8 border-l-2 border-terra pl-3 lg:ml-0">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-terra-text">Uncertainty</p>
+                        <p className="mt-1 text-sm leading-relaxed text-warm-700">{f.uncertainty}</p>
+                      </aside>
+                    ) : null}
                   </li>
                 ))}
-              </ul>
-            </>
-          ) : (
-            <p className="text-sm text-warm-700">{packet.brief.prioritiesNote}</p>
-          )}
-        </div>
-      </Part>
-
-      {otherPosition.length || packet.position.comparedNote ? (
-        <Part id="position" title="Competitive position">
-          {otherPosition.map((l) => (
-            <div key={l.anchor} id={l.anchor} className="scroll-mt-24">
-              <ExhibitShell label={l.label} title={l.table.title} sub={l.table.subtitle ?? undefined} note={l.table.note ?? undefined} source={sourceLine(l.table)}>
-                <PacketTable exhibit={l.table} />
-              </ExhibitShell>
+              </ol>
             </div>
-          ))}
-          {packet.position.comparedNote ? <p className="text-sm text-warm-800">{withMarks(packet.position.comparedNote)}</p> : null}
-        </Part>
-      ) : null}
+          ) : null}
 
-      <Part id="financial" title="Financial context">
-        {trend || n ? (
-          <div className="grid gap-6 lg:grid-cols-[3fr_2fr]">
-            {trend ? (
-              <div id={trend.anchor} className="flex scroll-mt-24 flex-col gap-2">
-                <p className={ANSWER_TYPE.kicker}>{trend.label}</p>
-                <h3 className="text-base font-semibold text-warm-900">Deposit service charge income by quarter</h3>
-                {packet.financial.series ? <IncomeChart series={packet.financial.series} institutionName={packet.institutionName} /> : null}
-                {packet.financial.trendSummary ? <p className={`text-sm text-warm-800 ${ANSWER_TYPE.num}`}>{withMarks(packet.financial.trendSummary)}</p> : null}
-              </div>
-            ) : null}
-            {normalizedTable && n && n.own !== null && n.median !== null ? (
-              <div id={normalizedTable.anchor} className="flex scroll-mt-24 flex-col gap-2">
-                <p className={ANSWER_TYPE.kicker}>{normalizedTable.label}</p>
-                <h3 className="text-base font-semibold text-warm-900">Per $10,000 of total assets, {readerAsOf(n.quarter)}</h3>
-                <KeyFigures
-                  figures={[
-                    { value: per10k(n.own), label: packet.institutionName, title: "Own" },
-                    { value: per10k(n.median), label: `Median of ${n.peersCompared} peers`, title: "Median" },
-                  ]}
-                />
-                {n.q1 !== null && n.q3 !== null ? (
-                  <p className={`text-sm text-warm-800 ${ANSWER_TYPE.num}`}>
-                    Middle 50% {per10k(n.q1)} to {per10k(n.q3)}{n.placement ? `; ${n.placement}` : ""}.
-                  </p>
-                ) : null}
-                <p className={ANSWER_TYPE.caption}>{packet.financial.context}</p>
-              </div>
-            ) : null}
-          </div>
-        ) : (
-          <p className="text-sm text-warm-700">No filed income for this packet; see Not available in this packet.</p>
-        )}
-        {sections.financial.length ? <div className="flex flex-col gap-1">{sections.financial.map(tableIn)}</div> : null}
-      </Part>
+          {nextStep ? (
+            <div className="mt-6 border-t-2 border-warm-900 pt-5">
+              <Label>Recommended next step</Label>
+              <p className="mt-2 text-lg font-semibold leading-snug text-warm-900">{nextStep.action}</p>
+              <p className="mt-2 text-base leading-relaxed text-warm-700">{nextStep.rationale}</p>
+            </div>
+          ) : null}
+        </section>
 
-      <Part id="appendix" title="Appendix">
+        <section id="exhibits" aria-labelledby="exhibits-h" className="mt-14 flex scroll-mt-24 flex-col gap-10 border-t border-warm-300 pt-10">
+          <h2 id="exhibits-h" className="text-xl font-bold text-warm-900">
+            Supporting exhibits
+          </h2>
+          {exhibit1 ? (
+            <div className="flex flex-col gap-3">
+              <div>
+                <Label>{exhibit1.label}</Label>
+                <h3 className="mt-1 text-lg font-semibold text-warm-900">Each fee against {packet.peerGroupLabel}</h3>
+              </div>
+              <Legend />
+              <TrackRows rows={packet.position.bars.map(feeRow)} />
+              <p className={ANSWER_TYPE.caption}>Source: {sourceLine(exhibit1.table)}. In full in the appendix, with each peer by name.</p>
+            </div>
+          ) : null}
+          {incomeExhibit && n && n.own !== null && n.median !== null && n.q1 !== null && n.q3 !== null ? (
+            <div className="flex flex-col gap-3">
+              <div>
+                <Label>{incomeExhibit.label}</Label>
+                <h3 className="mt-1 text-lg font-semibold text-warm-900">Deposit service charge income per $10,000 of total assets, quarter ending {readerAsOf(n.quarter)}</h3>
+              </div>
+              <TrackRows rows={[incomeRow(n)]} />
+              {packet.financial.trendSummary ? <p className={`text-base text-warm-900 ${ANSWER_TYPE.num}`}>{withMarks(packet.financial.trendSummary)}</p> : null}
+              <p className="text-sm leading-relaxed text-warm-600">{packet.financial.context}</p>
+              <p className={ANSWER_TYPE.caption}>Source: {sourceLine(incomeExhibit.table)}</p>
+            </div>
+          ) : packet.financial.trendSummary ? (
+            <p className="text-base text-warm-900">{withMarks(packet.financial.trendSummary)}</p>
+          ) : null}
+        </section>
+      </article>
+
+      <section id="appendix" aria-labelledby="appendix-h" className="mx-auto flex w-full max-w-[52rem] scroll-mt-24 flex-col gap-4">
+        <h2 id="appendix-h" className="text-lg font-semibold text-warm-900">
+          Evidence appendix
+        </h2>
         <div className="flex flex-col gap-1">
+          {exhibits.map(tableIn)}
           {sections.appendix.map((l) =>
             l.table.id === "price_and_yield" ? (
               <More key={l.anchor} label={`${l.label}: ${l.table.title}`}>
@@ -498,12 +500,12 @@ export function CommitteePacketView({
           ) : null}
           <More label="Method">
             <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm text-warm-700">
-              {packet.method.map((m) => (
+              {[packet.feeListNote, ...packet.method].map((m) => (
                 <li key={m}>{m}</li>
               ))}
             </ul>
             <p className="text-sm text-warm-700">
-              {packet.feeListNote} The figures are read live and are not saved; download the PDF to keep a dated copy. The fee list comes from your{" "}
+              The figures are read live and are not saved; download the PDF to keep a dated copy. The fee list comes from your{" "}
               <Link href={hrefWithInstitutionContext("/pro/monitor", String(packet.institutionId))} className="text-terra-text underline">
                 watchlist
               </Link>{" "}
@@ -547,7 +549,7 @@ export function CommitteePacketView({
             ))}
           </ol>
         </section>
-      </Part>
+      </section>
     </MemoPage>
   );
 }

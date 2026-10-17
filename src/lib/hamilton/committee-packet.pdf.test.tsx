@@ -30,14 +30,18 @@ describe("committee packet PDF", () => {
     it(`renders at ${size} in the packet's order, with a sane page count and no blank page`, async () => {
       const { pages, totalPages, head } = await render(packet, size);
       expect(head).toBe("%PDF");
-      // Brief, position, financial context, appendix and sources: more than 5 pages, fewer than 20.
+      // Two pages of brief, the appendix and sources: more than 5 pages, fewer than 20.
       expect(totalPages).toBeGreaterThanOrEqual(6);
       expect(totalPages).toBeLessThanOrEqual(20);
       // No page holds only its footer.
-      for (const page of pages) expect(page.replace(/\s+/g, " ").replace(/Hamilton — Fee Insight · Pricing committee packet · read [A-Za-z]+ \d+, \d{4}/, "").replace(/Page \d+ of \d+/, "").trim().length).toBeGreaterThan(40);
+      for (const page of pages) expect(page.replace(/\s+/g, " ").replace(/Hamilton — Fee Insight · Pricing committee brief · read [A-Za-z]+ \d+, \d{4}/, "").replace(/Page \d+ of \d+/, "").trim().length).toBeGreaterThan(40);
       const all = pages.join("\n").replace(/\s+/g, " ");
-      // Exhibits first; every table in the appendix; limitations, method and sources last.
-      const order = ["Executive brief", "Fees above the peers' middle 50%", "Where each fee sits among", "Priorities for review", "Competitive position", "Financial context", "Service charge income per $10,000 of total assets", "Appendix", "'s fees against", "Each peer's published fees, part 1 of 2", "Nearest peers on each side", "Limitations, method and sources", "Material limitations", "Not available in this packet", "Method", "Sources"];
+      // Page one is the assessment; page two the supporting exhibits; then the evidence appendix.
+      const one = pages[0].replace(/\s+/g, " ");
+      expect(one).toContain("The position that matters most is");
+      expect(one).toContain("Compare the outgoing domestic wire terms with the nearest peers");
+      expect(pages[1]).toContain("Supporting exhibits");
+      const order = ["The position that matters most", "Supporting exhibits", "Each fee against", "Evidence appendix", "'s fees against", "Each peer's published fees, part 1 of 2", "Nearest peers on each side", "Limitations, method and sources", "Material limitations", "Not available in this packet", "Method", "Sources"];
       let at = -1;
       for (const phrase of order) {
         const i = all.indexOf(phrase, at + 1);
@@ -76,13 +80,13 @@ it("renders the screen in the same order, with a source list and no form", () =>
     fees: packet.feeCategories.map((category) => ({ category, name: category })),
     selected: { yieldFee: null },
   }));
-  const order = ["Executive brief", "Fees above the peers&#x27; middle 50%", "Exhibit 1", "Where each fee sits among", "Priorities for review", "Competitive position", "Financial context", "Appendix", "Appendix A", "Material limitations", "Not available in this packet", "Method", "Sources"];
+  const order = ["Pricing committee brief", "The position that matters most", "Findings", "Uncertainty", "Recommended next step", "Supporting exhibits", "Exhibit 1", "Evidence appendix", "Appendix A", "Material limitations", "Not available in this packet", "Method", "Sources"];
   let at = -1;
   for (const phrase of order) {
     const i = html.indexOf(phrase, at + 1);
     expect(i, phrase).toBeGreaterThan(at);
     at = i;
   }
-  for (const phrase of ["id=\"fn-1\"", "Back to the executive brief", "Try a price", "Download PDF", "A4"]) expect(html).toContain(phrase);
+  for (const phrase of ["id=\"fn-1\"", "Back to the brief", "Try a price", "Download PDF", "A4"]) expect(html).toContain(phrase);
   expect(html).not.toMatch(/<form|Position check|Watched fees|None found|you should|Hamilton Pro/i);
 });

@@ -2,10 +2,14 @@
  * The pricing committee packet: one quarterly document for a bank's pricing committee. Pure and
  * deterministic; the loader (committee-packet-data.ts) reads the data and this file only arranges it.
  *
- * Four parts, in reading order:
- * 1. Executive brief: three to five findings, each one sentence with its evidence and footnote; the
- *    fees outside the peers' middle 50% with the question management should look into; the material
- *    limitations; and one line for each analysis this packet could not include.
+ * A two-page executive briefing, then an optional evidence appendix:
+ * 1. Executive brief (page one): one evidence-backed conclusion; the three findings that matter most,
+ *    each with its numbers, why it matters and its one material uncertainty; and the recommended next
+ *    step with its rationale. Findings are ranked by assessFees: how far the bank's fee sits from the
+ *    peers' median, weighted by how much the fee matters (the index's headline fees weigh most), so a
+ *    headline fee at the edge of the range can outrank a minor fee outside it.
+ * 2. Supporting exhibits (page two): every fee against the peers, and fee income per $10,000 of assets.
+ * The tables below are the appendix: they back the brief and are never its identity.
  * 2. Competitive position: one compact row per fee (the bank's value, the peers' median with N, the
  *    middle 50%, where the bank sits, and how many peers publish it), and the peer fee changes that
  *    the peers' own schedules bear out.
@@ -19,7 +23,7 @@
  * copies were compared. Hamilton is neutral here: the packet describes positions and asks
  * questions; it never recommends a fee.
  */
-import { getDisplayName } from "@/lib/fee-taxonomy";
+import { FEE_TIERS, getDisplayName, getFeeTier } from "@/lib/fee-taxonomy";
 import { readerAsOf } from "./board-brief";
 import { plainFeeName } from "./briefing-observations";
 import { directionalTitle } from "./workspace/names";
@@ -38,7 +42,7 @@ export const MAX_PACKET_CHANGES = 25;
 /** Rule, bill and enforcement lines listed. */
 export const MAX_PACKET_RULES = 8;
 /** Findings in the executive brief. */
-export const MAX_PACKET_FINDINGS = 5;
+export const MAX_PACKET_FINDINGS = 3;
 /** The bank's own published rows listed in the appendix. */
 export const MAX_PACKET_PRODUCT_ROWS = 40;
 
@@ -151,17 +155,25 @@ export interface PacketTable {
   ownFirst: boolean;
 }
 
-export interface PacketPriority {
+/** One of the brief's findings: what the position is, the numbers behind it, why it matters, and its doubt. */
+export interface PacketFinding {
   feeCategory: string;
   fee: string;
-  /** The bank's value against the peers, with its footnote marks. */
+  /** The position in one sentence: "Outgoing domestic wire, at $30, is above all 9 peers." */
+  statement: string;
+  /** The supporting numbers, with footnote marks. */
   evidence: string;
-  /** What management should look into; a question, never an instruction. */
-  question: string;
-  /** Which side of the peers' middle 50% the bank's value sits. */
-  band: "above" | "below";
-  /** The comparison in one line: "$30 against a median of $24 (9 peers)". */
-  fact: string;
+  /** Why the committee should weigh it; null when an earlier finding already said it. */
+  why: string | null;
+  /** The one material uncertainty, printed beside the finding; null when there is none. */
+  uncertainty: string | null;
+}
+
+/** What management should look into next, and why. An investigation, never a price. */
+export interface PacketNextStep {
+  feeCategory: string;
+  action: string;
+  rationale: string;
 }
 
 /** One fee as a row of the position chart: the peers' spread, middle 50% and median, and the bank's value. */
@@ -259,10 +271,11 @@ export interface CommitteePacket {
   feeListNote: string;
   glance: PacketGlance;
   brief: {
-    findings: string[];
-    priorities: PacketPriority[];
-    /** Said when no fee is outside the peers' middle 50%, or none can be placed. */
-    prioritiesNote: string | null;
+    /** The main conclusion: one sentence, with footnote marks. */
+    conclusion: string;
+    /** Up to three, most material first. */
+    findings: PacketFinding[];
+    nextStep: PacketNextStep | null;
     limitations: string[];
   };
   /** One line per analysis this packet could not include, and why. */
@@ -573,59 +586,140 @@ function positionTable(input: CommitteePacketInput, reads: FeeRead[], group: str
 
 // ─── Executive brief ─────────────────────────────────────────────────────────
 
-/** How far outside the middle 50% the bank's value sits, against the median; 0 inside it. */
-function distance(r: FeeRead): number {
-  if (!r.band || r.band === "within" || r.med === null || r.fee.current === null) return 0;
-  return Math.abs(r.fee.current - r.med) / Math.max(r.med, 1);
-}
-
-function feeFinding(r: FeeRead): string {
-  const where = r.band === "within" ? "within" : r.band === "above" ? "above" : "below";
-  const place = r.check?.percentile !== null && r.check?.percentile !== undefined ? `, ${placeAmong(r.check.percentile, r.n, true)}` : "";
-  const population = r.widened ? `${r.n} peers' published fees (${r.fee.peerLabel})` : `${r.n} peers' published fees`;
-  return `${r.name}: ${ownValue(r)} sits ${where} the peers' middle 50% (${span(r.q1 as number, r.q3 as number)})${place}; the median of ${population} is ${packetMoney(r.med as number)} ${refs([r.ownMark, r.peerMark])}.`;
-}
-
 /** "NSF / returned item": lower case for running text, acronyms kept. */
 export function inText(name: string): string {
   return name.split(" ").map((w) => (/^[A-Z]{2,}$/.test(w) ? w : w.toLowerCase())).join(" ");
 }
 
-function coverageFinding(reads: FeeRead[], input: CommitteePacketInput): string {
-  const published = reads.filter((r) => r.fee.current !== null);
-  const placed = reads.filter((r) => r.band !== null);
-  const above = placed.filter((r) => r.band === "above").length;
-  const below = placed.filter((r) => r.band === "below").length;
-  const marks = refs(published.map((r) => r.ownMark));
-  const head = `${input.institutionName} publishes ${published.length} of the ${reads.length} ${reads.length === 1 ? "fee" : "fees"} in this packet`;
-  if (!placed.length) {
-    return `${head}; none has ${MIN_PEERS_FOR_POSITION} or more peers publishing it, so no fee is placed against a peer median ${marks}.`.replace(/ \.$/, ".");
+const TIER_WEIGHT = { spotlight: 3, core: 2, extended: 1, comprehensive: 1 } as const;
+const HEADLINE_FEES = Object.values(FEE_TIERS).filter((t) => t === "spotlight").length;
+/** Fewer peers than this and one peer's change can move the median; said beside the finding. */
+const THIN_PEERS = 8;
+
+/** How far the bank's fee sits from the peers' median, in widths of their middle 50%. */
+function spread(r: FeeRead): number {
+  const width = Math.max((r.q3 as number) - (r.q1 as number), (r.med as number) * 0.1, 0.5);
+  return Math.abs((r.fee.current as number) - (r.med as number)) / width;
+}
+
+/** A placed fee's weight in the brief: distance from the median, scaled by how much the fee matters. */
+function materiality(r: FeeRead): number {
+  return TIER_WEIGHT[getFeeTier(r.fee.feeCategory)] * (Math.min(spread(r), 3) + (r.band === "within" ? 0 : 0.5));
+}
+
+function severalAmounts(r: FeeRead): boolean {
+  return r.amounts.length > 1 && Math.abs(Math.min(...r.amounts) - Math.max(...r.amounts)) >= SAME;
+}
+
+/** Where the fee sits, in words: "above all 9 peers", "at the 85th percentile of 10 peers, above the middle 50%". */
+function whereItSits(r: FeeRead): string {
+  const p = r.check?.percentile ?? null;
+  const at = p === null ? "" : placeAmong(p, r.n);
+  if (p === 0 || p === 100) return at;
+  const side = r.band === "above" ? "above the middle 50%" : r.band === "below" ? "below the middle 50%" : (p ?? 50) >= 50 ? "in the upper half of the middle 50%" : "in the lower half of the middle 50%";
+  return `${at}, ${side}`;
+}
+
+function uncertaintyOf(r: FeeRead, group: string): string | null {
+  if (severalAmounts(r)) {
+    return `The schedule lists ${r.amounts.length} amounts (${span(Math.min(...r.amounts), Math.max(...r.amounts))}); the comparison uses ${packetMoney(r.fee.current as number)}. Another product's amount would move the position.`;
   }
-  return `${head}; of the ${placed.length} with ${MIN_PEERS_FOR_POSITION} or more peers publishing, ${above} ${above === 1 ? "sits" : "sit"} above the peers' middle 50% and ${below} below ${marks}.`.replace(/ \.$/, ".");
+  if (r.widened) return `Compared with ${r.fee.peerLabel}, because fewer than ${MIN_PEERS_FOR_POSITION} of ${group} publish it.`;
+  if (r.n < THIN_PEERS) return `Only ${r.n} peers publish it, so one peer's change can move the median.`;
+  return null;
 }
 
-function normalizedFinding(n: NormalizedIncome, input: CommitteePacketInput, mark: number | null): string | null {
-  if (n.own === null || n.median === null || n.q1 === null || n.q3 === null) return null;
-  return `Service charge income per $10,000 of total assets: ${input.institutionName} filed ${per10k(n.own)} for the quarter ending ${readerAsOf(n.quarter)}, against a median of ${per10k(n.median)} across ${n.peersCompared} peers in this packet filing for that quarter (middle 50% ${per10k(n.q1)} to ${per10k(n.q3)}) ${refs([mark])}. This is context, not a measure of pricing.`;
-}
-
-function priority(r: FeeRead): PacketPriority {
+/** "$6 (25%) above the peer median of $24". */
+function gapToMedian(r: FeeRead): string {
   const current = r.fee.current as number;
-  const amount = packetMoney(current);
-  const lower = inText(r.name);
-  const several = r.amounts.length > 1 && Math.abs(Math.min(...r.amounts) - Math.max(...r.amounts)) >= SAME;
-  const question = several
-    ? `The schedule lists ${r.amounts.length} amounts for ${lower} (${span(Math.min(...r.amounts), Math.max(...r.amounts))}): which product's amount is the one comparable with the peers' published fees?`
-    : r.band === "above"
-      ? `Is the ${amount} ${lower} fee compared on the same product tier and conditions as the peers' published fees, and which customers pay it?`
-      : `Is the ${amount} ${lower} fee stated on the same basis as the peers' (per item or per month, waivers, caps), or does a condition on the schedule explain the difference?`;
+  const med = r.med as number;
+  const d = current - med;
+  if (Math.abs(d) < SAME) return `at the peer median of ${packetMoney(med)}`;
+  const pct = med > 0 ? ` (${Math.round((Math.abs(d) / med) * 100)}%)` : "";
+  return `${packetMoney(Math.round(Math.abs(d) * 100) / 100)}${pct} ${d > 0 ? "above" : "below"} the peer median of ${packetMoney(med)}`;
+}
+
+function whyOf(r: FeeRead): string {
+  const tier = getFeeTier(r.fee.feeCategory);
+  if (tier === "spotlight") return `A headline fee: one of the ${HEADLINE_FEES} fees banks and credit unions are most often compared on.`;
+  if (tier === "core") return "A routine service fee, so its position weighs less than a headline fee's.";
+  return "A less common fee, so its position weighs least.";
+}
+
+function findingOf(r: FeeRead, group: string): PacketFinding {
   return {
     feeCategory: r.fee.feeCategory,
     fee: r.name,
-    band: r.band === "below" ? "below" : "above",
-    fact: `${packetMoney(current)} against a median of ${packetMoney(r.med as number)} (${r.n} peers${r.widened ? `, ${r.fee.peerLabel}` : ""}) ${refs([r.ownMark, r.peerMark])}`.trim(),
-    evidence: `${ownValue(r)} against a middle 50% of ${span(r.q1 as number, r.q3 as number)}; median ${packetMoney(r.med as number)} of ${r.n} peers${r.widened ? ` (${r.fee.peerLabel})` : ""} ${refs([r.ownMark, r.peerMark])}`,
-    question,
+    statement: `${r.name}, at ${packetMoney(r.fee.current as number)}, is ${whereItSits(r)}.`,
+    evidence: `${capitalize(gapToMedian(r))}; middle 50% ${span(r.q1 as number, r.q3 as number)} ${refs([r.ownMark, r.peerMark])}`.trim(),
+    why: whyOf(r),
+    uncertainty: uncertaintyOf(r, group),
+  };
+}
+
+function nextStepOf(r: FeeRead, input: CommitteePacketInput): PacketNextStep {
+  const lower = inText(r.name);
+  const amount = packetMoney(r.fee.current as number);
+  const vs = `At ${amount} against a median of ${packetMoney(r.med as number)}, it is ${whereItSits(r)}.`;
+  if (severalAmounts(r)) {
+    return {
+      feeCategory: r.fee.feeCategory,
+      action: `Confirm which ${lower} amount applies to the accounts most customers hold, and compare that amount with the peers.`,
+      rationale: `${input.institutionName}'s schedule lists ${r.amounts.length} amounts (${span(Math.min(...r.amounts), Math.max(...r.amounts))}), and the position depends on which one is compared.`,
+    };
+  }
+  if (r.band === "above") {
+    return {
+      feeCategory: r.fee.feeCategory,
+      action: `Compare the ${lower} terms with the nearest peers in Appendix B: which accounts it applies to, waivers and caps.`,
+      rationale: `${vs} Different terms would explain the gap; matching terms make it a pricing question for the committee.`,
+    };
+  }
+  if (r.band === "below") {
+    return {
+      feeCategory: r.fee.feeCategory,
+      action: `Check whether the ${amount} ${lower} fee reflects a waiver, a product tier or an out-of-date schedule.`,
+      rationale: `${vs} If the terms match the peers', the gap is a pricing question for the committee.`,
+    };
+  }
+  return {
+    feeCategory: r.fee.feeCategory,
+    action: `Watch ${lower} against these ${r.n} peers each quarter.`,
+    rationale: `${vs} A peer's change could move it outside the middle 50%.`,
+  };
+}
+
+/** The brief: a conclusion, up to three findings ranked by materiality, and the next step for the first. */
+function assessFees(reads: FeeRead[], input: CommitteePacketInput, group: string): Pick<CommitteePacket["brief"], "conclusion" | "findings" | "nextStep"> {
+  const placed = reads.filter((r) => r.band !== null && r.check?.percentile !== null && r.check?.percentile !== undefined);
+  if (!placed.length) {
+    const published = reads.filter((r) => r.fee.current !== null).length;
+    return {
+      conclusion: `${input.institutionName} publishes ${published} of the ${reads.length} fees in this packet, but none has ${MIN_PEERS_FOR_POSITION} or more peers in ${group} publishing it, so no position can be assessed yet.`,
+      findings: [],
+      nextStep: null,
+    };
+  }
+  const ranked = [...placed].sort((a, b) => materiality(b) - materiality(a));
+  const top = ranked[0];
+  const count = (band: Band) => placed.filter((r) => r.band === band).length;
+  const above = count("above");
+  const below = count("below");
+  const fees = (k: number) => `${k} of the ${placed.length} fees compared`;
+  const position = above && below
+    ? `sit above the peers' middle 50% on ${fees(above)} and below it on ${below}`
+    : above
+      ? `sit above the peers' middle 50% on ${fees(above)}`
+      : below
+        ? `sit below the peers' middle 50% on ${fees(below)}`
+        : placed.length === 1
+          ? "sit within the peers' middle 50% on the one fee compared"
+          : `sit within the peers' middle 50% on all ${placed.length} fees compared`;
+  return {
+    conclusion: `${input.institutionName}'s fees ${position}. The position that matters most is ${inText(top.name)}: ${packetMoney(top.fee.current as number)}, ${gapToMedian(top)} ${refs([top.ownMark, top.peerMark])}.`.replace(/ \.$/, "."),
+    // Why a tier of fee matters is said once, on the first finding of that tier.
+    findings: ranked.slice(0, MAX_PACKET_FINDINGS).map((r) => findingOf(r, group)).map((f, i, all) => (all.slice(0, i).some((g) => g.why === f.why) ? { ...f, why: null } : f)),
+    nextStep: nextStepOf(top, input),
   };
 }
 
@@ -1049,28 +1143,13 @@ export function buildCommitteePacket(input: CommitteePacketInput): CommitteePack
 
   // Executive brief.
   const placed = reads.filter((r) => r.band !== null);
-  const outside = placed.filter((r) => r.band !== "within").sort((a, b) => distance(b) - distance(a));
   const inside = placed.filter((r) => r.band === "within");
-  const normalizedLine = normalized.value ? normalizedFinding(normalized.value, input, normalized.mark) : null;
-  const feeSlots = MAX_PACKET_FINDINGS - 1 - (normalizedLine ? 1 : 0);
-  const findings = [
-    coverageFinding(reads, input),
-    ...[...outside, ...inside].slice(0, feeSlots).map(feeFinding),
-    ...(normalizedLine ? [normalizedLine] : []),
-  ];
-  const priorities = outside.map(priority);
-  const prioritiesNote = !reads.length
-    ? "No fees are in this packet."
-    : !placed.length
-      ? `No fee in this packet has ${MIN_PEERS_FOR_POSITION} or more peers publishing it, so none is placed against the peers' middle 50%.`
-      : !priorities.length
-        ? `Every fee placed (${placed.length}) sits within the peers' middle 50%.`
-        : null;
+  const assessment = assessFees(reads, input, group);
 
   const thin = reads.filter((r) => r.fee.current !== null && r.n < MIN_PEERS_FOR_POSITION);
   const missing = reads.filter((r) => r.fee.current === null);
   const widened = reads.filter((r) => r.widened);
-  const several = reads.filter((r) => r.amounts.length > 1 && Math.abs(Math.min(...r.amounts) - Math.max(...r.amounts)) >= SAME);
+  const several = reads.filter(severalAmounts);
   const q = input.quarterly;
   const limitations = [
     ...(thin.length ? [`Coverage: fewer than ${MIN_PEERS_FOR_POSITION} peers publish ${listOf(thin.map((r) => inText(r.name)))}, so ${thin.length === 1 ? "it is" : "they are"} not placed.`] : []),
@@ -1147,7 +1226,7 @@ export function buildCommitteePacket(input: CommitteePacketInput): CommitteePack
       within: inside.length,
       below: placed.filter((r) => r.band === "below").length,
     },
-    brief: { findings, priorities, prioritiesNote, limitations },
+    brief: { ...assessment, limitations },
     unavailable,
     position: { table: position, changes: moves.table, comparedNote: moves.comparedNote, bars },
     financial: {
@@ -1168,7 +1247,7 @@ export function buildCommitteePacket(input: CommitteePacketInput): CommitteePack
       "One comparison value per institution: the median of its published amounts for the fee, or the highest tier for overdraft. Fees stated as a rate are not in these tables.",
       "Fees are live published fees, each verified against the institution's own schedule; read on the date at the top.",
       `A median, middle 50% or percentile needs at least ${MIN_PEERS_FOR_POSITION} peers. The middle 50% runs from the 25th to the 75th percentile of the peers' values.`,
-      "Priorities for review are the fees outside the peers' middle 50%, with a question to look into. They are not pricing recommendations.",
+      `Findings are ranked by how far the fee sits from the peers' median (in widths of their middle 50%), weighted by how much the fee matters: the index's ${HEADLINE_FEES} headline fees count three times, other featured service fees twice. The next step is an investigation for management, never a price.`,
       "Fee income comes from FDIC call reports and NCUA 5300 reports as filed; NCUA year-to-date figures are split into quarters. Income per $10,000 of total assets divides the quarter's deposit service charge income by total assets in the same filing.",
       "Rules, bills and enforcement actions are listed as published, not interpreted.",
     ],
@@ -1194,10 +1273,13 @@ export interface LabelledTable {
   table: PacketTable;
 }
 
-/** The packet's tables by section, numbered in reading order. */
+/**
+ * The packet's tables by section. Exhibits are numbered in the brief's reading order: the two on
+ * page two (each fee, then income per $10,000 of assets) come first, then peer changes and the trend.
+ */
 export function packetSections(packet: CommitteePacket): { position: LabelledTable[]; financial: LabelledTable[]; appendix: LabelledTable[] } {
-  let n = 0;
-  const exhibit = (table: PacketTable | null): LabelledTable[] => (table ? [{ label: `Exhibit ${++n}`, anchor: `exhibit-${table.id}`, table }] : []);
+  const order = [packet.position.table, packet.financial.normalizedTable, packet.position.changes, packet.financial.trend].filter((t): t is PacketTable => t !== null);
+  const exhibit = (table: PacketTable | null): LabelledTable[] => (table ? [{ label: `Exhibit ${order.indexOf(table) + 1}`, anchor: `exhibit-${table.id}`, table }] : []);
   return {
     position: [...exhibit(packet.position.table), ...exhibit(packet.position.changes)],
     financial: [...exhibit(packet.financial.trend), ...exhibit(packet.financial.normalizedTable)],

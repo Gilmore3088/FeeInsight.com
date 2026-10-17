@@ -1,3 +1,4 @@
+import { fullPacketInput } from "./committee-packet.fixture";
 import { describe, expect, it } from "vitest";
 import {
   buildCommitteePacket,
@@ -67,8 +68,8 @@ function input(over: Partial<CommitteePacketInput> = {}): CommitteePacketInput {
 function allText(packet: CommitteePacket): string[] {
   const tables = [packet.position.table, packet.position.changes, packet.financial.trend, packet.financial.normalizedTable, ...packet.appendix].filter(Boolean);
   return [
-    ...packet.brief.findings,
-    ...packet.brief.priorities.map((p) => p.evidence),
+    packet.brief.conclusion,
+    ...packet.brief.findings.map((f) => f.evidence),
     packet.position.comparedNote ?? "",
     packet.financial.trendSummary ?? "",
     ...tables.flatMap((t) => t!.rows.flat()),
@@ -145,29 +146,49 @@ describe("buildCommitteePacket: competitive position", () => {
 });
 
 describe("buildCommitteePacket: executive brief", () => {
-  it("leads with three to five one-sentence findings, each with its evidence and footnote", () => {
+  it("leads with one evidence-backed conclusion, then up to three findings with their numbers", () => {
     const packet = buildCommitteePacket(input());
-    expect(packet.brief.findings.length).toBeGreaterThanOrEqual(2);
-    expect(packet.brief.findings.length).toBeLessThanOrEqual(5);
-    for (const f of packet.brief.findings) expect(footnoteMarks(f).length).toBeGreaterThan(0);
-    expect(packet.brief.findings[0]).toBe("Capital City Bank publishes 1 of the 2 fees in this packet; of the 1 with 5 or more peers publishing, 0 sit above the peers' middle 50% and 0 below [1].");
-    expect(packet.brief.findings[1]).toMatch(/^Overdraft: \$32 \(2 published amounts, \$15 to \$32\) sits within the peers' middle 50% \(\$25 to \$36\), at the 60th percentile; the median of 5 peers' published fees is \$30 \[\d+, \d+\]\.$/);
+    expect(packet.brief.conclusion).toMatch(/^Capital City Bank's fees sit within the peers' middle 50% on the one fee compared\. The position that matters most is overdraft: \$32, \$2 \(7%\) above the peer median of \$30 \[\d+, \d+\]\.$/);
+    expect(packet.brief.findings).toHaveLength(1);
+    const [f] = packet.brief.findings;
+    expect(f.statement).toBe("Overdraft, at $32, is at the 60th percentile of 5 peers, in the upper half of the middle 50%.");
+    expect(f.evidence).toMatch(/^\$2 \(7%\) above the peer median of \$30; middle 50% \$25 to \$36 \[\d+, \d+\]$/);
+    expect(f.why).toMatch(/^A headline fee/);
+    // Two published amounts: the doubt sits beside the finding.
+    expect(f.uncertainty).toBe("The schedule lists 2 amounts ($15 to $32); the comparison uses $32. Another product's amount would move the position.");
   });
 
-  it("lists the fees outside the middle 50% with a neutral question, never an instruction", () => {
+  it("ranks findings by what matters, not by the middle 50% alone", () => {
+    const packet = buildCommitteePacket(fullPacketInput());
+    expect(packet.brief.findings.map((f) => f.feeCategory)).toEqual(["wire_domestic_outgoing", "monthly_maintenance", "nsf"]);
+    // Cashier's check sits outside the middle 50% but is a routine fee, so the headline NSF fee outranks it.
+    expect(packet.position.bars.find((b) => b.feeCategory === "cashiers_check")?.band).toBe("above");
+    // Each tier's reason is said once.
+    expect(packet.brief.findings.filter((f) => f.why).length).toBe(1);
+    expect(packet.brief.conclusion).toMatch(/fees sit above the peers' middle 50% on 3 of the 8 fees compared and below it on 1\. The position that matters most is outgoing domestic wire: \$30, \$6 \(25%\) above the peer median of \$24 \[\d+, \d+\]\.$/);
+  });
+
+  it("recommends an investigation for management, never a price", () => {
     const base = input();
     const high = { ...base.fees[0], current: 45, ownRows: [{ amount: 45, sourceDocumentId: 1, documentUrl: null, publishedAt: null }] };
     const packet = buildCommitteePacket({ ...base, fees: [high, base.fees[1]] });
-    expect(packet.brief.priorities).toHaveLength(1);
-    const [p] = packet.brief.priorities;
-    expect(p.fee).toBe("Overdraft");
-    expect(p.evidence).toMatch(/^\$45 against a middle 50% of \$25 to \$36; median \$30 of 5 peers \[\d+, \d+\]$/);
-    expect(p.question).toBe("Is the $45 overdraft fee compared on the same product tier and conditions as the peers' published fees, and which customers pay it?");
+    expect(packet.brief.nextStep).toEqual({
+      feeCategory: "overdraft",
+      action: "Compare the overdraft terms with the nearest peers in Appendix B: which accounts it applies to, waivers and caps.",
+      rationale: "At $45 against a median of $30, it is above all 5 peers. Different terms would explain the gap; matching terms make it a pricing question for the committee.",
+    });
     expect(JSON.stringify(packet.brief)).not.toMatch(/\b(raise|lower (it|the fee)|increase|cut|should)\b/i);
-    // Inside the band: no priorities, and the brief says why.
-    const inside = buildCommitteePacket(input());
-    expect(inside.brief.priorities).toEqual([]);
-    expect(inside.brief.prioritiesNote).toBe("Every fee placed (1) sits within the peers' middle 50%.");
+    // Several published amounts: confirm which one compares before anything else.
+    expect(buildCommitteePacket(input()).brief.nextStep?.action).toBe("Confirm which overdraft amount applies to the accounts most customers hold, and compare that amount with the peers.");
+  });
+
+  it("says so plainly when no fee can be placed", () => {
+    const base = input();
+    const thin = { ...base.fees[0], peers: base.fees[0].peers.slice(0, 2) };
+    const packet = buildCommitteePacket({ ...base, fees: [thin, base.fees[1]] });
+    expect(packet.brief.findings).toEqual([]);
+    expect(packet.brief.nextStep).toBeNull();
+    expect(packet.brief.conclusion).toMatch(/^Capital City Bank publishes 1 of the 2 fees in this packet, but none has 5 or more peers in .* publishing it, so no position can be assessed yet\.$/);
   });
 
   it("states the material limitations once, in one short list", () => {
@@ -216,7 +237,6 @@ describe("buildCommitteePacket: financial context", () => {
     expect(n.definition).toContain("divided by total assets in the same filing, times 10,000. Denominator: total assets as filed, not deposits.");
     expect(packet.financial.context).toMatch(/^This is context, not a measure of pricing effectiveness, customer burden or revenue opportunity/);
     expect(packet.financial.normalizedTable?.rows[0]).toEqual(["Capital City Bank", expect.stringMatching(/^\$4\.50 \[\d+\]$/)]);
-    expect(packet.brief.findings.at(-1)).toMatch(/^Service charge income per \$10,000 of total assets: Capital City Bank filed \$4\.50 .* median of \$3\.00 across 5 peers .*\. This is context, not a measure of pricing\.$/);
   });
 
   it("turns missing filings into availability lines, not empty exhibits", () => {
@@ -239,7 +259,9 @@ describe("buildCommitteePacket: appendix and sources", () => {
     expect(sections.appendix.map((l) => `${l.label} ${l.table.id}`)).toEqual([
       "Appendix A peer_fee_matrix", "Appendix B nearest_peers", "Appendix C product_details", "Appendix E price_and_yield",
     ]);
-    expect(sections.position.map((l) => l.label)).toEqual(["Exhibit 1", "Exhibit 2"]);
+    // Exhibits run in the brief's reading order: each fee, then income per $10,000 of assets, then the rest.
+    expect(sections.position.map((l) => l.label)).toEqual(["Exhibit 1", "Exhibit 3"]);
+    expect(sections.financial.find((l) => l.table.id === "normalized_income")?.label).toBe("Exhibit 2");
     const nearest = packet.appendix.find((t) => t.id === "nearest_peers")!;
     expect(nearest.rows[0][2]).toMatch(/^\$30: Example Savings Bank \[\d+\]$/);
     expect(nearest.rows[0][3]).toMatch(/^\$36: U\.S\. Bank \[\d+\]$/);

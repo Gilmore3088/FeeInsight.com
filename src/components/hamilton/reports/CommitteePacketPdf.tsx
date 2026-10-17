@@ -2,20 +2,23 @@
  * The pricing committee packet as a printed document (@react-pdf/renderer). Server-side only;
  * the /api/pro/report-pdf route loads it on demand.
  *
- * The same parts as the screen, exhibits first: the executive brief opens with four key figures and
- * Exhibit 1 drawn as one range row per fee, then the fees for review as short cards; financial context
- * is a chart and two figures; every table follows in the appendix (Exhibit 1 in full first); the
- * limitations, method and numbered sources close the document. Print rules, checked at Letter and A4:
- * - every row is kept whole (wrap={false}), so no row splits across pages;
- * - a table short enough for one page is kept whole with its heading; a longer one gets pages of its
- *   own whose header (label, title and column headings) repeats on each;
- * - the wide peer matrix is printed five fees at a time, so no column is clipped;
- * - no text is smaller than 8pt, and each footnote mark is the number in the Sources list.
+ * A two-page executive briefing, then an optional evidence appendix. Designed for paper, not as a
+ * copy of the screen: white page, wide margins, 11-12pt prose, open exhibits with hairline rules and
+ * no boxes, badges or tiles.
+ * - Page one is the assessment: a restrained header (institution, date, comparison group), the main
+ *   conclusion, the three findings that matter most with their numbers and why, each material
+ *   uncertainty in the margin beside its finding, and the recommended next step with its rationale.
+ * - Page two carries the strongest supporting exhibits: every fee against the peers, and fee income
+ *   per $10,000 of assets.
+ * - The evidence appendix follows on as many pages as it needs, at 9pt and never smaller: every
+ *   table, then limitations, method and numbered sources. Rows are never split across pages; a long
+ *   table repeats its heading and column headings on each page; the wide peer matrix prints five
+ *   fees at a time.
  */
 import { Circle, Document, Font, Line, Link, Page, Rect, StyleSheet, Svg, Text, View } from "@react-pdf/renderer";
 import type { ReactNode } from "react";
 import { readerAsOf } from "@/lib/hamilton/board-brief";
-import { packetMoney, packetSections, per10k, type CommitteePacket, type LabelledTable, type PacketFeeBar, type PacketIncomeSeries, type PacketTable, type PacketTableId } from "@/lib/hamilton/committee-packet";
+import { packetMoney, packetSections, per10k, type CommitteePacket, type LabelledTable, type NormalizedIncome, type PacketFeeBar, type PacketTable, type PacketTableId } from "@/lib/hamilton/committee-packet";
 import { HAMILTON_ATTRIBUTION } from "@/lib/constants";
 import { RD_PDF, RD_PDF_CHART } from "@/lib/report-design/tokens";
 
@@ -30,131 +33,154 @@ const SHORT_TABLE_ROWS = 12;
 const MATRIX_FEES_PER_PART = 5;
 
 const C = RD_PDF;
+const K = RD_PDF_CHART;
+const PAPER = "#ffffff";
+const MARGIN = 58;
 
 const s = StyleSheet.create({
-  page: { backgroundColor: C.surface, paddingTop: 44, paddingBottom: 60, paddingHorizontal: 44, fontFamily: "Helvetica", fontSize: 10, color: C.textPrimary },
-  kicker: { fontSize: 8, fontFamily: "Helvetica-Bold", color: C.accent, textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 6 },
-  title: { fontSize: 20, fontFamily: "Helvetica-Bold", lineHeight: 1.2, marginBottom: 6 },
-  meta: { fontSize: 9, color: C.textSecondary, lineHeight: 1.45 },
-  header: { borderBottomWidth: 1, borderBottomColor: C.borderDark, borderBottomStyle: "solid", paddingBottom: 12, marginBottom: 16 },
-  part: { fontSize: 15, fontFamily: "Helvetica-Bold", marginBottom: 10 },
-  sub: { fontSize: 11, fontFamily: "Helvetica-Bold", marginTop: 12, marginBottom: 6 },
+  page: { backgroundColor: PAPER, paddingTop: 50, paddingBottom: 64, paddingHorizontal: MARGIN, fontFamily: "Helvetica", fontSize: 11, color: C.textPrimary },
+  // Page one.
+  masthead: { flexDirection: "row", justifyContent: "space-between", borderBottomWidth: 0.75, borderBottomColor: C.textPrimary, borderBottomStyle: "solid", paddingBottom: 6, marginBottom: 4 },
+  mastLeft: { fontSize: 9, fontFamily: "Helvetica-Bold", letterSpacing: 0.6, textTransform: "uppercase", color: C.textPrimary },
+  mastRight: { fontSize: 9, color: C.textSecondary },
+  context: { fontSize: 9.5, color: C.textSecondary, lineHeight: 1.4, marginBottom: 22 },
+  conclusion: { fontSize: 16, fontFamily: "Helvetica-Bold", lineHeight: 1.35, marginBottom: 22 },
+  section: { fontSize: 9, fontFamily: "Helvetica-Bold", letterSpacing: 0.8, textTransform: "uppercase", color: C.accent, marginBottom: 8 },
+  finding: { flexDirection: "row", borderTopWidth: 0.5, borderTopColor: C.borderDark, borderTopStyle: "solid", paddingTop: 9, paddingBottom: 10 },
+  findingN: { width: 18, fontSize: 12, fontFamily: "Helvetica-Bold", color: C.accent },
+  findingMain: { flex: 1, paddingRight: 14 },
+  statement: { fontSize: 12, fontFamily: "Helvetica-Bold", lineHeight: 1.35, marginBottom: 3 },
+  evidence: { fontSize: 11, lineHeight: 1.45 },
+  why: { fontSize: 11, lineHeight: 1.45, color: C.textSecondary, marginTop: 2 },
+  margin: { width: 148 },
+  marginRuled: { borderLeftWidth: 0.75, borderLeftColor: C.accent, borderLeftStyle: "solid", paddingLeft: 8 },
+  marginLabel: { fontSize: 8, fontFamily: "Helvetica-Bold", color: C.accent, letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 2 },
+  marginText: { fontSize: 9.5, lineHeight: 1.4, color: C.textSecondary },
+  next: { borderTopWidth: 0.75, borderTopColor: C.textPrimary, borderTopStyle: "solid", paddingTop: 10, marginTop: 10 },
+  action: { fontSize: 12, fontFamily: "Helvetica-Bold", lineHeight: 1.4, marginBottom: 4 },
+  rationale: { fontSize: 11, lineHeight: 1.45, color: C.textSecondary },
+  // Page two.
+  pageTitle: { fontSize: 15, fontFamily: "Helvetica-Bold", marginBottom: 14 },
+  exhibit: { marginBottom: 22 },
+  exLabel: { fontSize: 8.5, fontFamily: "Helvetica-Bold", color: C.accent, letterSpacing: 0.8, textTransform: "uppercase" },
+  exTitle: { fontSize: 12, fontFamily: "Helvetica-Bold", lineHeight: 1.3, marginTop: 2, marginBottom: 6 },
+  legend: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginBottom: 4 },
+  legendItem: { flexDirection: "row", alignItems: "center", gap: 4 },
+  legendText: { fontSize: 8.5, color: C.textSecondary },
+  barRow: { flexDirection: "row", alignItems: "center", borderTopWidth: 0.5, borderTopColor: C.borderDark, borderTopStyle: "solid", paddingVertical: 4.5 },
+  barName: { width: 132, fontSize: 10, paddingRight: 6 },
+  barNote: { fontSize: 8.5, color: C.textTertiary },
+  barValue: { flex: 1, fontSize: 10, textAlign: "right", lineHeight: 1.35 },
+  axis: { fontSize: 8, color: C.textTertiary },
+  exNote: { fontSize: 9, color: C.textSecondary, lineHeight: 1.4, marginTop: 6 },
+  // Appendix and tables (9pt, never smaller).
+  kicker: { fontSize: 8.5, fontFamily: "Helvetica-Bold", color: C.accent, textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 6 },
+  part: { fontSize: 15, fontFamily: "Helvetica-Bold", marginBottom: 12 },
+  sub: { fontSize: 11, fontFamily: "Helvetica-Bold", marginTop: 14, marginBottom: 6 },
   body: { fontSize: 10, lineHeight: 1.45 },
   item: { flexDirection: "row", marginBottom: 5 },
-  itemMark: { width: 16, fontSize: 10, fontFamily: "Helvetica-Bold", color: C.accent },
   itemSmallMark: { width: 12, fontSize: 9, color: C.textSecondary },
-  itemText: { flex: 1, fontSize: 10, lineHeight: 1.45 },
-  itemSmall: { flex: 1, fontSize: 9, lineHeight: 1.4, color: C.textSecondary },
-  priority: { backgroundColor: C.surfaceElevated, borderRadius: 3, padding: 8, marginBottom: 6 },
-  priorityFee: { fontSize: 10, fontFamily: "Helvetica-Bold", marginBottom: 2 },
-  callout: { borderLeftWidth: 2, borderLeftColor: C.accent, borderLeftStyle: "solid", backgroundColor: C.surfaceElevated, padding: 8, marginBottom: 8, fontSize: 9, lineHeight: 1.4 },
-  block: { marginBottom: 16 },
-  label: { fontSize: 8, fontFamily: "Helvetica-Bold", color: C.accent, textTransform: "uppercase", letterSpacing: 1 },
+  itemSmall: { flex: 1, fontSize: 9.5, lineHeight: 1.45, color: C.textSecondary },
+  block: { marginBottom: 20 },
+  label: { fontSize: 8.5, fontFamily: "Helvetica-Bold", color: C.accent, textTransform: "uppercase", letterSpacing: 1 },
   tableTitle: { fontSize: 12, fontFamily: "Helvetica-Bold", lineHeight: 1.3, marginTop: 2 },
-  tableSub: { fontSize: 8.5, color: C.textSecondary, lineHeight: 1.35, marginTop: 2, marginBottom: 5 },
-  headRow: { flexDirection: "row", backgroundColor: C.surfaceElevated, paddingVertical: 4 },
-  headCell: { fontSize: 8, fontFamily: "Helvetica-Bold", color: C.textSecondary, paddingHorizontal: 3, lineHeight: 1.25 },
-  row: { flexDirection: "row", borderTopWidth: 0.5, borderTopColor: C.borderDark, borderTopStyle: "solid", paddingVertical: 3.5 },
-  ownRow: { backgroundColor: RD_PDF_CHART.band },
-  cell: { fontSize: 8, paddingHorizontal: 3, lineHeight: 1.3 },
+  tableSub: { fontSize: 9, color: C.textSecondary, lineHeight: 1.4, marginTop: 2, marginBottom: 6 },
+  headRow: { flexDirection: "row", borderBottomWidth: 0.75, borderBottomColor: C.textPrimary, borderBottomStyle: "solid", paddingVertical: 4 },
+  headCell: { fontSize: 9, fontFamily: "Helvetica-Bold", color: C.textSecondary, paddingHorizontal: 3, lineHeight: 1.3 },
+  row: { flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: C.borderDark, borderBottomStyle: "solid", paddingVertical: 4 },
+  ownRow: { backgroundColor: K.band },
+  cell: { fontSize: 9, paddingHorizontal: 3, lineHeight: 1.35 },
   firstCell: { fontFamily: "Helvetica-Bold" },
   num: { textAlign: "right" },
-  note: { fontSize: 8, color: C.textTertiary, lineHeight: 1.35, marginTop: 4 },
-  source: { fontSize: 8, color: C.textTertiary, marginTop: 2 },
+  note: { fontSize: 9, color: C.textTertiary, lineHeight: 1.4, marginTop: 5 },
+  source: { fontSize: 9, color: C.textTertiary, marginTop: 3 },
   fixedHead: { marginBottom: 0 },
-  footer: { position: "absolute", bottom: 28, left: 44, right: 44, borderTopWidth: 0.5, borderTopColor: C.borderDark, borderTopStyle: "solid", paddingTop: 6, flexDirection: "row", justifyContent: "space-between" },
+  footer: { position: "absolute", bottom: 30, left: MARGIN, right: MARGIN, flexDirection: "row", justifyContent: "space-between" },
   footerText: { fontSize: 8, color: C.textTertiary },
   sourceItem: { flexDirection: "row", marginBottom: 4 },
-  sourceN: { width: 24, fontSize: 8, fontFamily: "Helvetica-Bold" },
-  sourceText: { flex: 1, fontSize: 8, lineHeight: 1.35, color: C.textSecondary },
+  sourceN: { width: 26, fontSize: 9, fontFamily: "Helvetica-Bold" },
+  sourceText: { flex: 1, fontSize: 9, lineHeight: 1.4, color: C.textSecondary },
   link: { color: C.accent, textDecoration: "none" },
-  tiles: { flexDirection: "row", gap: 6, marginBottom: 14 },
-  tile: { flex: 1, backgroundColor: C.surfaceElevated, borderRadius: 3, paddingVertical: 8, paddingHorizontal: 9 },
-  tileValue: { fontSize: 17, fontFamily: "Helvetica-Bold", color: C.textPrimary },
-  tileLabel: { fontSize: 8, color: C.textSecondary, lineHeight: 1.3, marginTop: 2 },
-  legend: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginTop: 4, marginBottom: 4 },
-  legendItem: { flexDirection: "row", alignItems: "center", gap: 4 },
-  legendText: { fontSize: 8, color: C.textSecondary },
-  barRow: { flexDirection: "row", alignItems: "center", borderTopWidth: 0.5, borderTopColor: C.borderDark, borderTopStyle: "solid", paddingVertical: 4 },
-  barName: { width: 128, fontSize: 9, fontFamily: "Helvetica-Bold", paddingRight: 6 },
-  barNote: { fontSize: 8, color: C.textTertiary, fontFamily: "Helvetica" },
-  barValue: { flex: 1, fontSize: 8.5, textAlign: "right", lineHeight: 1.35 },
-  cards: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  card: { width: "48.8%", backgroundColor: C.surfaceElevated, borderRadius: 3, padding: 8 },
-  cardHead: { flexDirection: "row", justifyContent: "space-between", marginBottom: 3 },
-  chip: { fontSize: 7.5, color: C.accent, fontFamily: "Helvetica-Bold" },
-  axis: { fontSize: 7.5, color: C.textTertiary },
 });
 
-/** Width of a fee row's drawing in Exhibit 1. */
-const TRACK = 230;
+/** Width of a fee row's drawing on page two. */
+const TRACK = 210;
 
-/** The figures over the brief: fees above, within and below the peers' middle 50%, and income. */
-function Glance({ packet }: { packet: CommitteePacket }) {
-  const g = packet.glance;
-  const n = packet.financial.normalized;
-  const tiles = g.placed
-    ? [
-        { value: `${g.above} of ${g.placed}`, label: "Fees above the peers' middle 50%" },
-        { value: `${g.within} of ${g.placed}`, label: "Fees within it" },
-        { value: `${g.below} of ${g.placed}`, label: "Fees below it" },
-      ]
-    : [{ value: `${g.published} of ${g.fees}`, label: "Fees published; too few peers publish any of them to place" }];
-  if (n && n.own !== null && n.median !== null) tiles.push({ value: per10k(n.own), label: `Fee income per $10,000 of assets; peer median ${per10k(n.median)}` });
-  return <Tiles tiles={tiles} />;
+function Legend() {
+  return (
+    <View style={s.legend} wrap={false}>
+      <View style={s.legendItem}>
+        <Svg width={8} height={8}><Circle cx={4} cy={4} r={3.5} fill={K.accent} /></Svg>
+        <Text style={s.legendText}>Your fee, outside the middle 50%</Text>
+      </View>
+      <View style={s.legendItem}>
+        <Svg width={8} height={8}><Circle cx={4} cy={4} r={3.5} fill={K.muted} /></Svg>
+        <Text style={s.legendText}>Within it</Text>
+      </View>
+      <View style={s.legendItem}>
+        <Svg width={14} height={8}><Rect x={0} y={1} width={14} height={6} fill={K.band} /></Svg>
+        <Text style={s.legendText}>Peers&apos; middle 50%</Text>
+      </View>
+      <View style={s.legendItem}>
+        <Svg width={4} height={10}><Line x1={2} y1={0} x2={2} y2={10} stroke={K.ink} strokeWidth={1.2} /></Svg>
+        <Text style={s.legendText}>Peer median</Text>
+      </View>
+      <View style={s.legendItem}>
+        <Svg width={14} height={8}><Line x1={0} y1={4} x2={14} y2={4} stroke={K.faint} strokeWidth={1} /></Svg>
+        <Text style={s.legendText}>Lowest to highest peer</Text>
+      </View>
+    </View>
+  );
 }
 
-function Tiles({ tiles }: { tiles: { value: string; label: string }[] }) {
+interface Track {
+  low: number | null;
+  high: number | null;
+  q1: number;
+  q3: number;
+  median: number;
+  own: number | null;
+  outside: boolean;
+  fmt: (v: number) => string;
+}
+
+/** One row's drawing: the peers' spread as a line, middle 50% as a band, median as a tick, the bank as a dot. */
+function TrackDrawing({ t }: { t: Track }) {
+  const values = [t.low, t.high, t.q1, t.q3, t.median, t.own].filter((v): v is number => v !== null);
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const pad = hi > lo ? (hi - lo) * 0.08 : Math.max(hi * 0.2, 1);
+  const min = Math.max(0, lo - pad);
+  const max = hi + pad;
+  const x = (v: number) => 5 + ((v - min) / (max - min || 1)) * (TRACK - 10);
   return (
-    <View style={s.tiles} wrap={false}>
-      {tiles.map((t) => (
-        <View key={t.label} style={s.tile}>
-          <Text style={s.tileValue}>{t.value}</Text>
-          <Text style={s.tileLabel}>{t.label}</Text>
+    <View>
+      <Svg width={TRACK} height={16}>
+        {t.low !== null && t.high !== null ? <Line x1={x(t.low)} y1={8} x2={x(t.high)} y2={8} stroke={K.faint} strokeWidth={0.8} /> : null}
+        <Rect x={x(t.q1)} y={3.5} width={Math.max(2, x(t.q3) - x(t.q1))} height={9} fill={K.band} />
+        <Line x1={x(t.median)} y1={0.5} x2={x(t.median)} y2={15.5} stroke={K.ink} strokeWidth={1.2} />
+        {t.own !== null ? <Circle cx={x(t.own)} cy={8} r={4} fill={t.outside ? K.accent : K.muted} /> : null}
+      </Svg>
+      {/* The lowest and highest peer, under the ends of the line they label. */}
+      {t.low !== null && t.high !== null ? (
+        <View style={{ width: TRACK, height: 10, position: "relative" }}>
+          <Text style={[s.axis, { position: "absolute", left: x(t.low) - 2 }]}>{t.fmt(t.low)}</Text>
+          <Text style={[s.axis, { position: "absolute", left: x(t.high) - 48, width: 50, textAlign: "right" }]}>{t.fmt(t.high)}</Text>
         </View>
-      ))}
+      ) : null}
     </View>
   );
 }
 
 const BAND_WORD = { above: "Above", within: "Within", below: "Below" } as const;
 
-/** Exhibit 1 drawn: per fee, the peers' spread as a line, middle 50% as a band, median as a tick, the bank as a dot. */
 function FeeBars({ bars }: { bars: PacketFeeBar[] }) {
   return (
     <View>
-      <View style={s.legend} wrap={false}>
-        <View style={s.legendItem}>
-          <Svg width={8} height={8}><Circle cx={4} cy={4} r={3.5} fill={RD_PDF_CHART.accent} /></Svg>
-          <Text style={s.legendText}>Your fee, outside the middle 50%</Text>
-        </View>
-        <View style={s.legendItem}>
-          <Svg width={8} height={8}><Circle cx={4} cy={4} r={3.5} fill={RD_PDF_CHART.muted} /></Svg>
-          <Text style={s.legendText}>Within it</Text>
-        </View>
-        <View style={s.legendItem}>
-          <Svg width={14} height={8}><Rect x={0} y={1} width={14} height={6} fill={RD_PDF_CHART.band} /></Svg>
-          <Text style={s.legendText}>Peers&apos; middle 50%</Text>
-        </View>
-        <View style={s.legendItem}>
-          <Svg width={4} height={10}><Line x1={2} y1={0} x2={2} y2={10} stroke={RD_PDF_CHART.ink} strokeWidth={1.2} /></Svg>
-          <Text style={s.legendText}>Peer median</Text>
-        </View>
-        <View style={s.legendItem}>
-          <Svg width={14} height={8}><Line x1={0} y1={4} x2={14} y2={4} stroke={RD_PDF_CHART.faint} strokeWidth={1} /></Svg>
-          <Text style={s.legendText}>Lowest to highest peer</Text>
-        </View>
-      </View>
+      <Legend />
       {bars.map((b) => {
-        const placed = b.median !== null && b.q1 !== null && b.q3 !== null && b.low !== null && b.high !== null;
+        const placed = b.median !== null && b.q1 !== null && b.q3 !== null;
         const outside = b.band === "above" || b.band === "below";
-        const values = [b.low, b.high, b.current, b.median].filter((v): v is number => v !== null);
-        const lo = Math.min(...values);
-        const hi = Math.max(...values);
-        const pad = hi > lo ? (hi - lo) * 0.08 : Math.max(hi * 0.2, 1);
-        const min = Math.max(0, lo - pad);
-        const max = hi + pad;
-        const x = (v: number) => 5 + ((v - min) / (max - min || 1)) * (TRACK - 10);
         return (
           <View key={b.feeCategory} style={s.barRow} wrap={false}>
             <Text style={s.barName}>
@@ -162,19 +188,7 @@ function FeeBars({ bars }: { bars: PacketFeeBar[] }) {
               {b.comparedWith ? <Text style={s.barNote}>{`\ncompared with ${b.comparedWith}`}</Text> : null}
             </Text>
             {placed ? (
-              <View>
-                <Svg width={TRACK} height={16}>
-                  <Line x1={x(b.low as number)} y1={8} x2={x(b.high as number)} y2={8} stroke={RD_PDF_CHART.faint} strokeWidth={0.8} />
-                  <Rect x={x(b.q1 as number)} y={3.5} width={Math.max(2, x(b.q3 as number) - x(b.q1 as number))} height={9} fill={RD_PDF_CHART.band} />
-                  <Line x1={x(b.median as number)} y1={0.5} x2={x(b.median as number)} y2={15.5} stroke={RD_PDF_CHART.ink} strokeWidth={1.2} />
-                  {b.current !== null ? <Circle cx={x(b.current)} cy={8} r={4} fill={outside ? RD_PDF_CHART.accent : RD_PDF_CHART.muted} /> : null}
-                </Svg>
-                {/* The lowest and highest peer, under the ends of the line they label. */}
-                <View style={{ width: TRACK, height: 10, position: "relative" }}>
-                  <Text style={[s.axis, { position: "absolute", left: x(b.low as number) - 2 }]}>{packetMoney(b.low as number)}</Text>
-                  <Text style={[s.axis, { position: "absolute", left: x(b.high as number) - 48, width: 50, textAlign: "right" }]}>{packetMoney(b.high as number)}</Text>
-                </View>
-              </View>
+              <TrackDrawing t={{ low: b.low, high: b.high, q1: b.q1 as number, q3: b.q3 as number, median: b.median as number, own: b.current, outside, fmt: packetMoney }} />
             ) : (
               <Text style={[s.axis, { width: TRACK }]}>{b.peers === 0 ? "No peer publishes it" : `Only ${b.peers} ${b.peers === 1 ? "peer publishes" : "peers publish"} it; not placed`}</Text>
             )}
@@ -186,7 +200,7 @@ function FeeBars({ bars }: { bars: PacketFeeBar[] }) {
               )}
               {placed ? <Text style={{ color: C.textSecondary }}>{` · median ${packetMoney(b.median as number)}`}</Text> : null}
               {b.marks ? <Text style={{ color: C.textTertiary }}>{` ${b.marks}`}</Text> : null}
-              {b.band && placed ? <Text style={{ color: C.textTertiary }}>{`\n${BAND_WORD[b.band]} · ${b.peers} peers`}</Text> : null}
+              {b.band && placed ? <Text style={{ color: C.textTertiary, fontSize: 9 }}>{`\n${BAND_WORD[b.band]} · ${b.peers} peers`}</Text> : null}
             </Text>
           </View>
         );
@@ -195,30 +209,18 @@ function FeeBars({ bars }: { bars: PacketFeeBar[] }) {
   );
 }
 
-/** The bank's own filed income by quarter, oldest first; no raw-dollar peer line (size would mix in). */
-function IncomeBars({ series }: { series: PacketIncomeSeries }) {
-  const W = 300;
-  const H = 90;
-  const max = Math.max(...series.own) * 1.12 || 1;
-  const slot = W / series.own.length;
-  const y = (v: number) => H - (v / max) * H;
-  const short = (v: number) => (v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M` : `$${Math.round(v / 1000)}K`);
+/** Fee income per $10,000 of assets, drawn like a fee row: the peers' middle 50% and median, and the bank. */
+function IncomeRow({ n }: { n: NormalizedIncome }) {
+  const outside = n.own !== null && n.q1 !== null && n.q3 !== null && (n.own > n.q3 || n.own < n.q1);
   return (
-    <View wrap={false}>
-      <Svg width={W} height={H + 10}>
-        <Line x1={0} y1={H} x2={W} y2={H} stroke={RD_PDF_CHART.rule} strokeWidth={1} />
-        {series.own.map((v, i) => (
-          <Rect key={series.quarters[i]} x={slot * i + slot * 0.2} y={y(v)} width={slot * 0.6} height={H - y(v)} fill={i === series.own.length - 1 ? RD_PDF_CHART.accent : RD_PDF_CHART.bar} />
-        ))}
-      </Svg>
-      <View style={{ width: W, flexDirection: "row" }}>
-        {series.quarters.map((q, i) => (
-          <Text key={q} style={[s.axis, { width: slot, textAlign: "center" }]}>
-            {q.replace("-", " ")}
-            {`\n${short(series.own[i])}`}
-          </Text>
-        ))}
-      </View>
+    <View style={s.barRow} wrap={false}>
+      <Text style={s.barName}>Income per $10,000 of assets</Text>
+      <TrackDrawing t={{ low: null, high: null, q1: n.q1 as number, q3: n.q3 as number, median: n.median as number, own: n.own, outside, fmt: per10k }} />
+      <Text style={s.barValue}>
+        <Text style={{ fontFamily: "Helvetica-Bold", color: outside ? C.accent : C.textPrimary }}>{per10k(n.own as number)}</Text>
+        <Text style={{ color: C.textSecondary }}>{` · median ${per10k(n.median as number)}`}</Text>
+        <Text style={{ color: C.textTertiary, fontSize: 9 }}>{`\n${n.peersCompared} peers${n.placement ? ` · ${n.placement}` : ""}`}</Text>
+      </Text>
     </View>
   );
 }
@@ -322,7 +324,7 @@ function Footer({ packet }: { packet: CommitteePacket }) {
   return (
     <View style={s.footer} fixed>
       <Text style={s.footerText}>
-        {HAMILTON_ATTRIBUTION} · Pricing committee packet · read {readerAsOf(packet.generatedAt)}
+        {HAMILTON_ATTRIBUTION} · Pricing committee brief · read {readerAsOf(packet.generatedAt)}
       </Text>
       <Text style={s.footerText} render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`} />
     </View>
@@ -395,13 +397,13 @@ function appendixPlan(appendix: LabelledTable[]): AppendixStep[] {
   return steps;
 }
 
-function Bullets({ items, small = false }: { items: string[]; small?: boolean }) {
+function Bullets({ items }: { items: string[] }) {
   return (
     <>
       {items.map((text, i) => (
         <View key={i} style={s.item} wrap={false}>
           <Text style={s.itemSmallMark}>•</Text>
-          <Text style={small ? s.itemSmall : s.itemText}>{text}</Text>
+          <Text style={s.itemSmall}>{text}</Text>
         </View>
       ))}
     </>
@@ -417,107 +419,89 @@ export function CommitteePacketPdf({ packet, pageSize = "LETTER" }: { packet: Co
       <Footer packet={packet} />
     </Page>
   );
-  const shortOf = (ls: LabelledTable[]) => ls.filter((l) => !isLong(l.table));
-  const longOf = (ls: LabelledTable[]) => ls.filter((l) => isLong(l.table));
-  const [exhibit1, ...otherPosition] = sections.position;
+  const [exhibit1] = sections.position;
   const n = packet.financial.normalized;
-  const trend = sections.financial.find((l) => l.table.id === "income_trend");
   const normalizedTable = sections.financial.find((l) => l.table.id === "normalized_income");
-  const readOnSource = (l: LabelledTable) => `Source: ${l.table.source}, read ${readOn}.`;
-  // Exhibit 1's table leads the appendix, under its own label.
-  const fullExhibit1 = exhibit1 ? [{ ...exhibit1, label: `${exhibit1.label} in full` }] : [];
+  const { conclusion, findings, nextStep } = packet.brief;
+  // The appendix: Exhibit 1 in full first, then every other table in reading order.
+  const exhibits = [...sections.position, ...sections.financial].sort((a, b) => a.label.localeCompare(b.label, "en", { numeric: true }));
+  const appendixTables = [...exhibits.map((l) => (l.table.id === "position" || l.table.id === "normalized_income" ? { ...l, label: `${l.label} in full` } : l)), ...sections.appendix];
   return (
-    <Document title={packet.title} author="Fee Insight" subject="Pricing committee packet">
+    <Document title={packet.title} author="Fee Insight" subject="Pricing committee brief">
       {page(
         "brief",
         <>
-          <View style={s.header}>
-            <Text style={s.kicker}>Pricing committee packet</Text>
-            <Text style={s.title}>{keepTogether(packet.title)}</Text>
-            <Text style={s.meta}>
-              Read {readOn}. Peers: {packet.peerGroupLabel}.
-            </Text>
+          <View style={s.masthead}>
+            <Text style={s.mastLeft}>Pricing committee brief</Text>
+            <Text style={s.mastRight}>{readOn}</Text>
           </View>
-          <Text style={s.part}>Executive brief</Text>
-          <Glance packet={packet} />
-          {exhibit1 ? (
-            <View style={s.block}>
-              <Text style={s.label}>{exhibit1.label}</Text>
-              <Text style={s.tableTitle}>{keepTogether(`Where each fee sits among ${packet.peerGroupLabel}`)}</Text>
-              <FeeBars bars={packet.position.bars} />
-              <Text style={s.source}>{readOnSource(exhibit1)} The table is in the appendix.</Text>
+          <Text style={s.context}>
+            {packet.institutionName} · Compared with {packet.peerGroupLabel}
+          </Text>
+          <Text style={s.conclusion}>{conclusion}</Text>
+          {findings.length ? (
+            <>
+              <Text style={s.section}>Findings</Text>
+              {findings.map((f, i) => (
+                <View key={f.feeCategory} style={s.finding} wrap={false}>
+                  <Text style={s.findingN}>{i + 1}</Text>
+                  <View style={s.findingMain}>
+                    <Text style={s.statement}>{f.statement}</Text>
+                    <Text style={s.evidence}>{f.evidence}</Text>
+                    {f.why ? <Text style={s.why}>{f.why}</Text> : null}
+                  </View>
+                  {/* The material uncertainty sits beside the finding it qualifies. */}
+                  <View style={s.margin}>
+                    {f.uncertainty ? (
+                      <View style={s.marginRuled}>
+                        <Text style={s.marginLabel}>Uncertainty</Text>
+                        <Text style={s.marginText}>{f.uncertainty}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+              ))}
+            </>
+          ) : null}
+          {nextStep ? (
+            <View style={s.next} wrap={false}>
+              <Text style={s.section}>Recommended next step</Text>
+              <Text style={s.action}>{nextStep.action}</Text>
+              <Text style={s.rationale}>{nextStep.rationale}</Text>
             </View>
           ) : null}
-          <Text style={s.sub} minPresenceAhead={80}>
-            Priorities for review
-          </Text>
-          {packet.brief.priorities.length ? (
-            <>
-              <Text style={[s.note, { marginTop: 0, marginBottom: 6 }]}>Fees outside the peers&apos; middle 50%. Questions to look into, not pricing recommendations.</Text>
-              <View style={s.cards}>
-                {packet.brief.priorities.map((p) => (
-                  <View key={p.feeCategory} style={s.card} wrap={false}>
-                    <View style={s.cardHead}>
-                      <Text style={s.priorityFee}>{p.fee}</Text>
-                      <Text style={s.chip}>{BAND_WORD[p.band]} the middle 50%</Text>
-                    </View>
-                    <Text style={[s.body, { fontSize: 9 }]}>{p.fact}</Text>
-                    <Text style={[s.body, { fontSize: 8.5, marginTop: 3, color: C.textSecondary }]}>{p.question}</Text>
-                  </View>
-                ))}
-              </View>
-            </>
-          ) : (
-            <Text style={s.body}>{packet.brief.prioritiesNote}</Text>
-          )}
-          {/* Competitive position follows when its exhibits fit; its heading moves with the first. */}
-          {shortOf(otherPosition).map((l, i) => (
-            <ShortTable key={l.anchor} l={l} readOn={readOn} heading={i === 0 ? "Competitive position" : undefined} />
-          ))}
-          {packet.position.comparedNote ? <Text style={s.body}>{packet.position.comparedNote}</Text> : null}
         </>,
       )}
-      {longOf(otherPosition).map((l) => (
-        <LongTablePages key={l.anchor} part="Competitive position" l={l} readOn={readOn} size={pageSize} packet={packet} />
-      ))}
 
       {page(
-        "financial",
+        "exhibits",
         <>
-          <Text style={s.part}>Financial context</Text>
-          {trend ? (
-            <View style={s.block} wrap={false}>
-              <Text style={s.label}>{trend.label}</Text>
-              <Text style={s.tableTitle}>{keepTogether(`${packet.institutionName}: deposit service charge income by quarter`)}</Text>
-              {packet.financial.series ? <View style={{ marginTop: 6 }}><IncomeBars series={packet.financial.series} /></View> : null}
-              {packet.financial.trendSummary ? <Text style={[s.body, { marginTop: 6, fontSize: 9 }]}>{packet.financial.trendSummary}</Text> : null}
-              <Text style={s.source}>{readOnSource(trend)}</Text>
+          <Text style={s.pageTitle}>Supporting exhibits</Text>
+          {exhibit1 ? (
+            <View style={s.exhibit}>
+              <Text style={s.exLabel}>{exhibit1.label}</Text>
+              <Text style={s.exTitle}>{keepTogether(`Each fee against ${packet.peerGroupLabel}`)}</Text>
+              <FeeBars bars={packet.position.bars} />
+              <Text style={s.exNote}>Source: {exhibit1.table.source}, read {readOn}. In full in the appendix, with each peer by name.</Text>
             </View>
           ) : null}
-          {normalizedTable && n && n.own !== null && n.median !== null ? (
-            <View style={s.block} wrap={false}>
-              <Text style={s.label}>{normalizedTable.label}</Text>
-              <Text style={s.tableTitle}>{keepTogether(`Service charge income per $10,000 of total assets, ${readerAsOf(n.quarter)}`)}</Text>
-              <View style={{ marginTop: 6 }}>
-                <Tiles
-                  tiles={[
-                    { value: per10k(n.own), label: packet.institutionName },
-                    { value: per10k(n.median), label: `Median of ${n.peersCompared} peers` },
-                    ...(n.q1 !== null && n.q3 !== null ? [{ value: `${per10k(n.q1)} to ${per10k(n.q3)}`, label: `Peers' middle 50%${n.placement ? `; ${packet.institutionName} ${n.placement}` : ""}` }] : []),
-                  ]}
-                />
-              </View>
-              <Text style={s.callout}>{packet.financial.context}</Text>
-              <Text style={s.source}>{readOnSource(normalizedTable)}</Text>
+          {normalizedTable && n && n.own !== null && n.median !== null && n.q1 !== null && n.q3 !== null ? (
+            <View style={s.exhibit} wrap={false}>
+              <Text style={s.exLabel}>{normalizedTable.label}</Text>
+              <Text style={s.exTitle}>{keepTogether(`Deposit service charge income per $10,000 of total assets, quarter ending ${readerAsOf(n.quarter)}`)}</Text>
+              <IncomeRow n={n} />
+              {packet.financial.trendSummary ? <Text style={[s.exNote, { fontSize: 10, color: C.textPrimary }]}>{packet.financial.trendSummary}</Text> : null}
+              <Text style={s.exNote}>{packet.financial.context}</Text>
+              <Text style={s.exNote}>Source: {normalizedTable.table.source}, read {readOn}.</Text>
             </View>
+          ) : packet.financial.trendSummary ? (
+            <Text style={s.body}>{packet.financial.trendSummary}</Text>
           ) : null}
-          {!sections.financial.length ? <Text style={s.body}>No filed income for this packet; see Not available in this packet at the end.</Text> : null}
-          {sections.financial.length ? <Text style={s.note}>Both exhibits are in full in the appendix.</Text> : null}
         </>,
       )}
 
-      {appendixPlan([...fullExhibit1, ...sections.financial, ...sections.appendix]).map((step, i) => {
-        const heading = i === 0 ? "Appendix" : undefined;
+      {appendixPlan(appendixTables).map((step, i) => {
+        const heading = i === 0 ? "Evidence appendix" : undefined;
         if (step.kind === "long") {
           return <LongTablePages key={`${step.table.anchor}-${step.table.table.title}`} part="Appendix" l={step.table} readOn={readOn} size={pageSize} packet={packet} heading={heading} />;
         }
@@ -528,6 +512,7 @@ export function CommitteePacketPdf({ packet, pageSize = "LETTER" }: { packet: Co
             {step.tables.map((l) => (
               <ShortTable key={l.anchor} l={l} readOn={readOn} />
             ))}
+            {i === 0 && packet.position.comparedNote ? <Text style={s.body}>{packet.position.comparedNote}</Text> : null}
           </>,
         );
       })}
@@ -536,20 +521,20 @@ export function CommitteePacketPdf({ packet, pageSize = "LETTER" }: { packet: Co
         "method",
         <>
           <Text style={s.part}>Limitations, method and sources</Text>
-          <Text style={s.sub}>Material limitations</Text>
-          <Bullets items={packet.brief.limitations} small />
+          <Text style={[s.sub, { marginTop: 0 }]}>Material limitations</Text>
+          <Bullets items={packet.brief.limitations} />
           {packet.unavailable.length ? (
             <>
               <Text style={s.sub} minPresenceAhead={40}>
                 Not available in this packet
               </Text>
-              <Bullets items={packet.unavailable} small />
+              <Bullets items={packet.unavailable} />
             </>
           ) : null}
           <Text style={s.sub} minPresenceAhead={40}>
             Method
           </Text>
-          <Bullets items={[packet.feeListNote, ...packet.method]} small />
+          <Bullets items={[packet.feeListNote, ...packet.method]} />
           <Text style={s.sub} minPresenceAhead={40}>
             Sources
           </Text>
