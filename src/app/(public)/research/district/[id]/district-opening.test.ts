@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { IndexEntry } from "@/lib/data-store";
-import { districtOpening, districtsFinding, feeSide, overdraftSide, strongestDifference } from "./district-opening";
+import { districtOpening, districtsFallback, districtsFinding, feeSide, overdraftSide, strongestDifference } from "./district-opening";
 
 function entry(fee_category: string, median: number, institutions: number, p25 = median * 0.8, p75 = median * 1.2): IndexEntry {
   return {
@@ -70,7 +70,25 @@ describe("strongestDifference (the hub's card line)", () => {
       { key: "overdraft", median: 30.1, institutions: 50, us: { median: 30 } },
       { key: "nsf", median: 30, institutions: 50, us: { median: 30 } },
     ];
-    expect(strongestDifference(fees, 10)).toBe("Both fees with enough data are within 1% of the national median.");
+    expect(strongestDifference(fees, 10)).toBe("Both fees with enough data are within $1 or 1% of the national median.");
+  });
+
+  it("needs a $1 gap before a fee can lead, so $2 against $3 can't win on percent", () => {
+    const fees = [
+      { key: "atm_non_network", median: 2, institutions: 50, us: { median: 3 } },
+      { key: "wire_domestic_outgoing", median: 30, institutions: 50, us: { median: 25 } },
+    ];
+    expect(strongestDifference(fees, 10)).toBe("The outgoing domestic wire median, $30, is 20% above the national median of $25.");
+    expect(strongestDifference([{ ...fees[0], median: 1.5 }], 10)).toBe("The out-of-network ATM median, $1.50, is 50% below the national median of $3.");
+    expect(strongestDifference([fees[0]], 10)).toBe(
+      "The out-of-network ATM median is within $1 or 1% of the national median.",
+    );
+  });
+
+  it("names the lead fee for the card", () => {
+    const o = districtOpening(indexes([entry("monthly_maintenance", 13, 40)]), national, false, "Atlanta district", { lead: "strongest" });
+    expect(o.leadKey).toBe("monthly_maintenance");
+    expect(districtOpening(indexes([]), national, false, "Atlanta district").leadKey).toBeNull();
   });
 
   it("ignores fees below the institution minimum and returns null when none qualify", () => {
@@ -97,6 +115,14 @@ describe("districtsFinding", () => {
     const sides = [...Array(6).fill("above"), ...Array(2).fill("below"), null, null, null, null];
     expect(districtsFinding(sides, 12)).toBe(
       "The overdraft median is above the national median in 6 of 8 districts with enough overdraft fees and below it in 2.",
+    );
+  });
+
+  it("words the finding for the selected fee", () => {
+    const sides = [...Array(7).fill("above"), ...Array(5).fill("below")];
+    expect(districtsFinding(sides, 12, "nsf")).toBe("The NSF median is above the national median in 7 of 12 districts and below it in 5.");
+    expect(districtsFallback("wire_domestic_outgoing")).toBe(
+      "Too few districts have enough published outgoing domestic wire fees yet for a comparison.",
     );
   });
 

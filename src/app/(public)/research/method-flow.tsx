@@ -147,11 +147,11 @@ export function ProBand({ sampleLive }: { sampleLive: boolean }) {
       <div>
         <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-on-ink/70">Hamilton</p>
         <h2 id="pro-heading" className="mt-2 text-[22px] font-semibold leading-snug text-on-ink" style={SERIF}>
-          Benchmark your institution against the peers you choose.
+          Benchmark an institution against a chosen peer set.
         </h2>
         <p className="mt-2 max-w-2xl text-[14px] leading-relaxed text-on-ink/80">
-          Hamilton is the {SITE_NAME} workspace: research, model and report your fee position against a verified market, from your own
-          counties to the nation.
+          Hamilton is the {SITE_NAME} workspace. It sets an institution&apos;s fees against a verified market, from its own counties to
+          the nation.
         </p>
       </div>
       <div className="flex flex-col gap-2 sm:flex-row lg:flex-col lg:items-stretch">

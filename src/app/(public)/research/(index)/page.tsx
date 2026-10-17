@@ -29,7 +29,7 @@ import { FindPlace } from "../find-place";
 import { HubSection } from "../district/[id]/district-hub";
 import { DISTRICT_REGIONS } from "../district/[id]/district-exhibits";
 import { stateShape } from "../district/[id]/district-geo";
-import { districtOpening, districtsFinding, feeSide, overdraftSide } from "../district/[id]/district-opening";
+import { districtOpening, districtsFallback, districtsFinding, feeSide } from "../district/[id]/district-opening";
 import { hubFeeKeys } from "../district/[id]/district-hub-view";
 
 export const metadata: Metadata = {
@@ -131,6 +131,7 @@ export default async function ResearchHubPage({ searchParams }: { searchParams: 
     name,
     region: DISTRICT_REGIONS[id] ?? `the ${name} district`,
     statement: opening?.statement ?? null,
+    leadKey: opening?.leadKey ?? null,
     institutions: indexes?.verified_institutions ?? 0,
     fees: Object.fromEntries(
       mapFees.map(({ key }): [string, DistrictFeeCell] => {
@@ -140,9 +141,16 @@ export default async function ResearchHubPage({ searchParams }: { searchParams: 
     ),
     label: districtLabel(id),
   }));
-  const districtLine = districtsFinding(
-    openings.map(({ opening }) => (opening ? overdraftSide(opening) : null)),
-    DISTRICT_IDS.length,
+  // The section's finding for each map fee; the exhibit shows the one for the selected fee.
+  const districtLines: Record<string, string> = Object.fromEntries(
+    mapFees.map(({ key }) => [
+      key,
+      districtsFinding(
+        openings.map(({ opening }) => (opening ? feeSide(opening, key) : null)),
+        DISTRICT_IDS.length,
+        key,
+      ) ?? districtsFallback(key),
+    ]),
   );
   const withoutLine = districts.filter((d) => !d.statement).length;
 
@@ -162,7 +170,8 @@ export default async function ResearchHubPage({ searchParams }: { searchParams: 
         <HubSection
           id="find"
           title="Find your state or district"
-          source={`${PRODUCT_NAME} reports cover ${coverageLabel} and all 12 Federal Reserve districts.`}
+          line={`Reports cover ${coverageLabel}, plus all 12 Federal Reserve districts.`}
+          source={`${PRODUCT_NAME}, verified published fee schedules.${asOf ? ` Data as of ${asOf}.` : ""}`}
         >
           <FindPlace states={placeStates} districts={DISTRICT_IDS.map((id) => ({ id, name: DISTRICT_NAMES[id] ?? `District ${id}` }))} />
         </HubSection>
@@ -174,7 +183,6 @@ export default async function ResearchHubPage({ searchParams }: { searchParams: 
         <HubSection
           id="districts"
           title="Federal Reserve districts"
-          line={districtLine ?? "Too few districts have enough published overdraft fees yet for a comparison."}
           source={
             <>
               {PRODUCT_NAME}, verified published fee schedules, one value per institution, against the national median.
@@ -183,7 +191,14 @@ export default async function ResearchHubPage({ searchParams }: { searchParams: 
           }
         >
           <div>
-            <DistrictsExhibit districts={districts} mapFees={mapFees} initialFee={initialFee} />
+            <DistrictsExhibit
+              districts={districts}
+              mapFees={mapFees}
+              initialFee={initialFee}
+              findings={districtLines}
+              fallback={districtsFallback("overdraft")}
+              minInstitutions={STATE_FINDING_MIN_INSTITUTIONS}
+            />
             {withoutLine > 0 && (
               <p className="mt-3 text-[13px] text-ink-muted sm:mx-0 sm:text-left">
                 {withoutLine === 1 ? "One district has" : `${withoutLine} districts have`} too few published fees yet for a headline.
@@ -199,7 +214,7 @@ export default async function ResearchHubPage({ searchParams }: { searchParams: 
                 district&apos;s median is taken across its institutions. A district is shaded for a fee only when at least{" "}
                 {STATE_FINDING_MIN_INSTITUTIONS} of its institutions publish it; a median within 1% of the national median reads as
                 about the same. Each state is shaded by the district that covers most of it. A district&apos;s line names its fee with
-                the largest gap from the national median, measured as a percent of that median. Only fees with at least{" "}
+                the largest gap from the national median, measured as a percent of that median. The gap must be more than $1. Only fees with at least{" "}
                 {STATE_FINDING_MIN_INSTITUTIONS} district institutions count. The district&apos;s own report opens with overdraft and NSF.
               </p>
             </details>

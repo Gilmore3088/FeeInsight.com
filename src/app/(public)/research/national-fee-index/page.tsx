@@ -114,7 +114,7 @@ export default async function NationalFeeIndexPage() {
       </p>
       {!isPro && (
         <p className="text-[14px] text-ink-soft">
-          With a Pro plan this table shows every fee category, with its bank and credit union counts.{" "}
+          With a Hamilton plan this table shows every fee category, with its bank and credit union counts.{" "}
           <Link href={PRO_PLANS_NAV.href} className="whitespace-nowrap font-semibold text-brick hover:underline">
             {PRO_PLANS_NAV.label} &rarr;
           </Link>

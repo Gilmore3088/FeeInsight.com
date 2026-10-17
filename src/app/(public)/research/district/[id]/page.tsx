@@ -633,7 +633,7 @@ export default async function DistrictReportPage({ params }: PageProps) {
           {!isPro && (
             <div className="mt-4 border-t border-border pt-4">
               <p className="text-[14px] text-ink-muted">
-                Hamilton, the Fee Insight Pro workspace, sets every fee you charge against institutions your size and in your
+                Hamilton, the Fee Insight workspace, sets every fee you charge against institutions your size and in your
                 district.
               </p>
               <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-3">

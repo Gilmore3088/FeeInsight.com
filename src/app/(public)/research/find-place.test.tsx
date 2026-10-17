@@ -1,7 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
-
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+import { describe, expect, it } from "vitest";
 
 import { FindPlace } from "./find-place";
 
@@ -15,7 +13,10 @@ describe("FindPlace", () => {
     );
     const select = screen.getByLabelText("State report") as HTMLSelectElement;
     expect(select.className).toContain("min-h-11");
-    expect(screen.getByRole("option", { name: "Florida (412 institutions)" }).getAttribute("value")).toBe("/research/state/FL");
+    expect(select.getAttribute("name")).toBe("state");
+    expect(select.closest("form")?.getAttribute("action")).toBe("/research/state");
+    expect(screen.getByRole("option", { name: "Florida (412 institutions)" }).getAttribute("value")).toBe("FL");
+    expect(screen.getByRole("button", { name: "Go" }).className).toContain("min-h-11");
     const links = screen.getByRole("list", { name: "Federal Reserve district report" }).querySelectorAll("a");
     expect(links).toHaveLength(12);
     expect(links[5].getAttribute("href")).toBe("/research/district/6");

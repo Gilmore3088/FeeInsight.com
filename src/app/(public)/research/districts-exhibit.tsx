@@ -27,6 +27,8 @@ export interface DistrictCard {
   region: string;
   /** The district's strongest supported difference from the national median; null when nothing clears the minimum. */
   statement: string | null;
+  /** The fee the statement names, so its card doesn't repeat it as the selected fee's line. */
+  leadKey: string | null;
   institutions: number;
   /** Each map fee's shading and figures, by fee key: the same rule as the section's finding. */
   fees: Record<string, DistrictFeeCell>;
@@ -53,18 +55,13 @@ const noopSubscribe = () => () => {};
 /** Rows a phone shows before "Show all". */
 const PHONE_ROWS = 5;
 
-function legendFor(feeName: string): { key: "above" | "same" | "below" | "none"; label: string; fill: string }[] {
+function legendFor(minInstitutions: number): { key: "above" | "same" | "below" | "none"; label: string; fill: string }[] {
   return [
     { key: "above", label: "Above the national median", fill: SIDE_FILL.above },
     { key: "same", label: "About the same", fill: SIDE_FILL.same },
     { key: "below", label: "Below", fill: SIDE_FILL.below },
-    { key: "none", label: `Too few ${lowerFirst(feeName)} fees to compare`, fill: "none" },
+    { key: "none", label: `Fewer than ${minInstitutions} institutions publish it`, fill: "none" },
   ];
-}
-
-function lowerFirst(name: string): string {
-  // Keep acronyms ("NSF") as they are.
-  return /^[A-Z]{2}/.test(name) ? name : name.charAt(0).toLowerCase() + name.slice(1);
 }
 
 function fillFor(side: Side): string {
@@ -95,10 +92,19 @@ export function DistrictsExhibit({
   districts,
   mapFees,
   initialFee,
+  findings,
+  fallback,
+  minInstitutions,
 }: {
   districts: DistrictCard[];
   mapFees: MapFee[];
   initialFee: string;
+  /** The section's finding line for each map fee, computed on the server. */
+  findings: Record<string, string>;
+  /** The line when no fee can be mapped. */
+  fallback: string;
+  /** Institutions a district needs before it is shaded for a fee. */
+  minInstitutions: number;
 }) {
   const [active, setActive] = useState<number | null>(null);
   const [expanded, setExpanded] = useState(false);
@@ -112,12 +118,16 @@ export function DistrictsExhibit({
   const listRef = useRef<HTMLOListElement>(null);
   const byId = new Map(districts.map((d) => [d.id, d]));
   const fee = mapFees.find((f) => f.key === feeKey) ?? mapFees[0];
-  const legend = fee ? legendFor(fee.name) : [];
+  const legend = legendFor(minInstitutions);
+  const finding = (fee && findings[fee.key]) || fallback;
   const count = (key: string) => districts.filter((d) => (d.fees[fee?.key ?? ""]?.side ?? "none") === key).length;
   const sideOf = (d: DistrictCard): Side => (fee ? (d.fees[fee.key]?.side ?? null) : null);
 
   return (
     <div className="space-y-6">
+      <p aria-live="polite" className="-mt-5 max-w-3xl text-[15px] leading-relaxed text-ink-soft sm:mx-0 sm:text-left">
+        {finding}
+      </p>
       {mapFees.length > 1 && fee && (
         <form method="get" action="/research#districts" className="flex flex-wrap items-center gap-2">
           <label htmlFor="district-fee" className="text-[13px] font-semibold text-ink">
@@ -258,7 +268,7 @@ export function DistrictsExhibit({
                     )}
                   </span>
                   {d.statement && <span className="mt-1 block text-[13px] leading-snug text-ink-soft">{d.statement}</span>}
-                  <FeeLine fee={fee} cell={fee ? d.fees[fee.key] : undefined} />
+                  {fee && fee.key !== d.leadKey && <FeeLine fee={fee} cell={d.fees[fee.key]} />}
                   <span className="mt-1 block text-[11px] tabular-nums text-ink-muted">
                     {NUMBER.format(d.institutions)} institutions with published fees
                   </span>
@@ -292,12 +302,16 @@ export function DistrictsExhibit({
 }
 
 /** The selected fee in one district: its median and the national median, when it can be compared. */
-function FeeLine({ fee, cell }: { fee: MapFee | undefined; cell: DistrictFeeCell | undefined }) {
-  if (!fee || !cell?.side || cell.median == null || cell.us == null) return null;
+function FeeLine({ fee, cell }: { fee: MapFee; cell: DistrictFeeCell | undefined }) {
+  if (!cell?.side || cell.median == null || cell.us == null || cell.us <= 0) return null;
+  const pct = Math.round((Math.abs(cell.median - cell.us) / cell.us) * 100);
+  // Phones have no map, so the side is spelled out there.
+  const side = cell.side === "same" ? "about the same as U.S." : `${pct}% ${cell.side} U.S.`;
   return (
     <span className="mt-1 block text-[12px] tabular-nums text-ink">
       {fee.name} median {formatFeeAmount(cell.median)}
       <span className="text-ink-muted"> · U.S. {formatFeeAmount(cell.us)}</span>
+      <span className="text-ink-muted sm:hidden"> · {side}</span>
     </span>
   );
 }
