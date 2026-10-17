@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getInstitutionIdsWithFeeDates, getStatesWithFeeData, getTopCitiesByState } from "@/lib/data-store";
-import { getPublicSnapshot } from "@/lib/public-stats";
+import { getPublicFeeTypes, getPublicSnapshot } from "@/lib/public-stats";
+import { publicFeeTypes } from "@/lib/fee-taxonomy";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { SITE_URL } from "@/lib/constants";
 import { getSql } from "@/lib/data-store/connection";
@@ -18,6 +19,7 @@ vi.mock("@/lib/data-store", () => ({
 
 vi.mock("@/lib/public-stats", () => ({
   getPublicSnapshot: vi.fn(),
+  getPublicFeeTypes: vi.fn(),
 }));
 
 vi.mock("@/lib/guides/source", () => ({
@@ -44,6 +46,7 @@ async function urls(): Promise<string[]> {
 
 describe("sitemap thin-page floor", () => {
   beforeEach(() => {
+    vi.mocked(getPublicFeeTypes).mockImplementation(async () => publicFeeTypes((await getPublicSnapshot()).categories));
     vi.mocked(getPublicSnapshot).mockResolvedValue({
       summary: {} as never,
       categories: [

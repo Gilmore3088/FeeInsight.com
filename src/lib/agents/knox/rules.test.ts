@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { amountsIn, classifyFeeText, isConditionAmount, nameFrom, joinWrappedProse, foldedCategory, classifyPatternKey, extractCandidatesFromText, extractFromSegment, notAZeroPrice, stripFootnoteMarks } from "./rules";
 import { runFreeSpecialists } from "./specialists";
 import { joinWrappedLeaderNames } from "@/lib/custom-report/source-check";
+import { researchSplitTarget } from "@/lib/fee-fold";
 import { withBoxSizeCellsSplit, withDroppedDecimalPoints, withSidewaysBoxTable, withoutBusinessOnlyFees, withoutLeadingFootnoteMark } from "./rules";
 import { tidyFeeName } from "./layout";
 
@@ -541,18 +542,18 @@ describe("Knox extract.rules", () => {
   });
 
   it.each([
-    ["Returned Mail Fee", "account_research"],
-    ["Bad Address Fee", "account_research"],
+    ["Returned Mail Fee", researchSplitTarget("returned_mail")],
+    ["Bad Address Fee", researchSplitTarget("returned_mail")],
     ["Fax Outgoing", "document_reproduction"],
     ["Loan Payoff Fax/Mail Fee", "account_research"],
-    ["Excessive Withdrawal Fee", "account_research"],
-    ["Withdrawal Limit Fee", "account_research"],
+    ["Excessive Withdrawal Fee", researchSplitTarget("excess_withdrawal")],
+    ["Withdrawal Limit Fee", researchSplitTarget("excess_withdrawal")],
     ["Foreign Item Collection", "collection_item"],
     ["Canadian Check Processing Fee", "collection_item"],
     ["Collection Item", "collection_item"],
     ["Loan Cancellation Fee", "loan_origination"],
     ["Loan Refinance Fee", "other_lending_fee"],
-  ])("v26 folds %s into %s (James, Oct 7 2026)", (name, key) => {
+  ])("v26 folds %s into %s (James, Oct 7 2026; v77: its own type once the research split is on)", (name, key) => {
     expect(classifyFeeText(name)).toBe(key);
     expect(foldedCategory(name)).toBe(key);
   });

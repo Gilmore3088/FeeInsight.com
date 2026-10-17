@@ -93,7 +93,9 @@ import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 // payments, skip payments, mobile check deposit), and
 // one price for a "debit or credit card" is the debit card's. Every current copy read before v75 is
 // read once more (`KNOX_STALE_READ_BELOW_VERSION`).
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 75 } as const;
+// v77 (#1398, with `RESEARCH_SPLIT_LIVE` on): returned mail and excess withdrawal lines file under
+// their own types (`researchSplitTarget` in rules.ts), not account research. (v76 is another branch's.)
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 77 } as const;
 
 export interface SpecialistRun {
   strategy: string;
