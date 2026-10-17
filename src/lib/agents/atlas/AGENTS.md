@@ -62,7 +62,7 @@ size, the 12 largest tables and the growth since its last run, and warns in its 
 9,000 MB or 300 MB a day. Supabase grew the disk from 8 to 12 GB on Oct 17, 2026; that day 2.5 of
 the 6.3 GB was log history nothing trimmed. Three trims count what they would delete every day and
 delete (at most 20,000 rows each a run) only while their `RETENTION_LIVE` switch is true; each
-switch turns on by PR after James's typed yes naming it: `legacy_event_log` (retired `agent_events`
+switch turns on by PR after James's yes naming it (he chose all three on Oct 17, 2026): `legacy_event_log` (retired `agent_events`
 rows over 60 days old), `run_events` (run events over 90 days old, keeping the newest of each kind
 per step and any with a cost) and `attempt_repeats` (attempt-log rows over 30 days old in the
 extract, verify and publish stages that have an identical twin both before and after them; first
