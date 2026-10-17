@@ -60,7 +60,7 @@ describe("market comparison", () => {
     ]);
     expect(atm.rungs[0].population).toBe("With a branch in Atlanta, wherever headquartered");
     expect(atm.rungs[1].population).toBe("Headquartered in Georgia");
-    expect(atm.takeaway).toBe("The Atlanta median is $2.50: $1.50 above the Georgia median, and the same as the U.S. median.");
+    expect(atm.takeaway).toBe("Atlanta's out-of-network ATM median is $2.50; Georgia's is $1.");
     expect([atm.low, atm.high]).toEqual([2, 3]);
     expect(panel.fees[0].takeaway).toBe("2 institutions with a branch in Atlanta publish an overdraft fee, too few for a local median (5 needed).");
     // ATM sits 150% above the state median; overdraft has no local median.

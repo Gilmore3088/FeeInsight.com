@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import type { StateMarketMap } from "@/lib/geo/state-market-map";
+import { LayerHead } from "./state-layers";
 import { money, openingFee, type MarketPanel } from "./market-compare-view";
 
 /**
@@ -96,11 +97,15 @@ export function MarketCompare({
   map,
   stateName,
   directoryHref,
+  title,
+  headingId,
 }: {
   panels: MarketPanel[];
   map: StateMarketMap | null;
   stateName: string;
   directoryHref: string;
+  title: string;
+  headingId: string;
 }) {
   const [city, setCity] = useState(panels[0]?.city ?? "");
   const panel = panels.find((p) => p.city === city) ?? panels[0];
@@ -110,11 +115,14 @@ export function MarketCompare({
   const fee = panel.fees.find((f) => f.key === feeKey) ?? panel.fees[0];
   const top = fee ? Math.max(1, ...fee.rungs.map((r) => r.median ?? 0)) : 1;
 
+  // Report order: title, the one finding for what is picked, then the exhibit.
   return (
+    <div className="space-y-6 sm:space-y-8">
+    <LayerHead id={headingId} title={title} line={fee?.takeaway} live />
     <div className="grid gap-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-14">
       <div className="space-y-4">
         {/* Phones pick with two dropdowns; the map opens on request. */}
-        <div className="grid grid-cols-[2fr_3fr] gap-3 sm:hidden">
+        <div className="grid gap-3 sm:hidden">
           <label className="block min-w-0">
             <span className="text-[12px] font-medium text-ink-muted">Market</span>
             <select value={panel.city} onChange={(e) => setCity(e.target.value)} className={SELECT}>
@@ -144,7 +152,7 @@ export function MarketCompare({
               type="button"
               aria-expanded={showMap}
               onClick={() => setShowMap((v) => !v)}
-              className="inline-flex min-h-10 items-center text-[13px] font-semibold text-ink underline decoration-border underline-offset-4 sm:hidden"
+              className="inline-flex min-h-11 items-center text-[13px] font-semibold text-ink underline decoration-border underline-offset-4 sm:hidden"
             >
               {showMap ? "Hide the map" : `Show the markets on a map of ${stateName}`}
             </button>
@@ -160,7 +168,7 @@ export function MarketCompare({
               type="button"
               aria-pressed={p.city === panel.city}
               onClick={() => setCity(p.city)}
-              className={`min-h-10 rounded-full px-3.5 text-[13px] font-medium ring-1 transition-colors ${
+              className={`min-h-11 rounded-full px-3.5 text-[13px] font-medium ring-1 transition-colors ${
                 p.city === panel.city ? "bg-ink text-on-ink ring-ink" : "bg-surface-0 text-ink ring-border hover:ring-ink"
               }`}
             >
@@ -177,18 +185,6 @@ export function MarketCompare({
       </div>
 
       <div className="min-w-0 space-y-5 sm:space-y-7">
-        <dl className="grid grid-cols-3 gap-4 border-b border-border pb-6">
-          {[
-            { value: panel.institutions, label: `institutions with a branch in ${panel.name}` },
-            { value: panel.withFees, label: "of them publish fees" },
-            { value: panel.branches, label: "branches" },
-          ].map((f) => (
-            <div key={f.label} className="flex flex-col-reverse justify-end">
-              <dt className="mt-1.5 text-[12px] leading-snug text-ink-soft sm:text-[13px]">{f.label}</dt>
-              <dd className="font-mono text-[28px] font-semibold leading-none tabular-nums text-ink sm:text-[36px]">{COUNT.format(f.value)}</dd>
-            </div>
-          ))}
-        </dl>
 
         {fee ? (
           <>
@@ -199,7 +195,7 @@ export function MarketCompare({
                   type="button"
                   aria-pressed={f.key === fee.key}
                   onClick={() => setFeeKey(f.key)}
-                  className={`min-h-9 rounded-md px-2.5 text-[13px] ring-1 transition-colors ${
+                  className={`min-h-11 rounded-md px-2.5 text-[13px] ring-1 transition-colors ${
                     f.key === fee.key ? "bg-brick font-semibold text-on-ink ring-brick" : "text-ink-soft ring-border hover:text-ink hover:ring-ink"
                   }`}
                 >
@@ -234,23 +230,25 @@ export function MarketCompare({
               </ol>
             </div>
 
-            <p className="max-w-2xl font-serif text-[19px] leading-snug text-ink sm:text-[22px]" aria-live="polite">
-              {fee.takeaway}
+            <p className="text-[12px] text-ink-muted sm:mx-0">
+              Coverage: {COUNT.format(panel.institutions)} institutions have a branch in {panel.name}; {COUNT.format(panel.withFees)} publish fees.
             </p>
-            {fee.low != null && fee.high != null && fee.rungs[0].institutions > 1 && (
-              <p className="text-[13px] text-ink-soft">
-                Published {fee.label.replace(/\b[A-Z][a-z]+/g, (w) => w.toLowerCase())} fees in {panel.name} run from {money(fee.low)} to {money(fee.high)} across{" "}
-                {fee.rungs[0].institutions} institutions.
-              </p>
-            )}
-            <dl className="grid border-t border-border pt-3 gap-x-4 gap-y-0.5 text-[12px] leading-snug text-ink-muted sm:grid-cols-[auto_minmax(0,1fr)]">
-              {fee.rungs.map((r) => (
-                <div key={r.level} className="contents">
-                  <dt className="font-medium text-ink-soft">{r.place}</dt>
-                  <dd className="mb-1 sm:mb-0">{r.population}</dd>
-                </div>
-              ))}
-            </dl>
+            <details className="group/how">
+              <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-2 text-[13px] font-semibold text-ink [&::-webkit-details-marker]:hidden">
+                <span aria-hidden="true" className="transition-transform group-open/how:rotate-90">
+                  &rsaquo;
+                </span>
+                Who each median counts
+              </summary>
+              <dl className="mt-2 grid gap-x-4 gap-y-0.5 text-[12px] leading-snug text-ink-muted sm:grid-cols-[auto_minmax(0,1fr)]">
+                {fee.rungs.map((r) => (
+                  <div key={r.level} className="contents">
+                    <dt className="font-medium text-ink-soft">{r.place}</dt>
+                    <dd className="mb-1 sm:mb-0">{r.population}</dd>
+                  </div>
+                ))}
+              </dl>
+            </details>
           </>
         ) : (
           <p className="text-[14px] text-ink-muted">No fee has a {stateName} median to compare yet.</p>
@@ -263,6 +261,7 @@ export function MarketCompare({
           Open the full {panel.name} report
         </Link>
       </div>
+    </div>
     </div>
   );
 }

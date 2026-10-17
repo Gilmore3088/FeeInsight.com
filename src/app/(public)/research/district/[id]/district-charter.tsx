@@ -25,7 +25,9 @@ const COUNT = new Intl.NumberFormat("en-US");
 
 type Side = "cu" | "bank" | "same";
 
+/** Medians within 1% of each other read as about the same, as on the rest of the page. */
 function sideOf(f: CharterFee): Side {
+  if (Math.abs(f.cu - f.bank) <= Math.abs(f.bank) * 0.01) return "same";
   if (f.cu < f.bank) return "cu";
   if (f.bank < f.cu) return "bank";
   return "same";
@@ -34,7 +36,7 @@ function sideOf(f: CharterFee): Side {
 const GROUP_LABEL: Record<Side, string> = {
   cu: "Lower at credit unions",
   bank: "Lower at banks",
-  same: "Equal",
+  same: "About the same",
 };
 
 export function charterGroups(fees: CharterFee[]): { side: Side; fees: CharterFee[] }[] {
@@ -86,7 +88,7 @@ const FILL: Record<Side, string> = {
 const COUNT_LABEL: Record<Side, string> = {
   cu: "lower at credit unions",
   bank: "lower at banks",
-  same: "equal",
+  same: "about the same",
 };
 
 export function CharterField({ fees, place }: { fees: CharterFee[]; place: string }) {
@@ -123,7 +125,8 @@ export function CharterField({ fees, place }: { fees: CharterFee[]; place: strin
       </figure>
 
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] lg:gap-12">
-        <div className="space-y-6">
+        {/* Phones pick a fee from a list above its result; the tiles start at the small breakpoint. */}
+        <div className="hidden space-y-6 sm:block">
           {groups.map((g) => (
             <div key={g.side} role="group" aria-label={`${GROUP_LABEL[g.side]}: ${g.fees.length}`}>
               <p className="mb-2 text-[12px] font-semibold uppercase tracking-[0.1em] text-ink-muted">{GROUP_LABEL[g.side]}</p>
@@ -154,10 +157,28 @@ export function CharterField({ fees, place }: { fees: CharterFee[]; place: strin
         </div>
         {current && (
           <div aria-live="polite" className="order-first border-b border-border pb-6 lg:order-none lg:sticky lg:top-24 lg:self-start lg:border-b-0 lg:border-l lg:pb-0 lg:pl-10">
-            <p className="text-[15px] font-semibold text-ink">{current.name}</p>
+            <label className="mb-4 block sm:hidden">
+              <span className="text-[12px] font-medium text-ink-muted">Fee</span>
+              <select
+                value={current.key}
+                onChange={(e) => setPicked(e.target.value)}
+                className="mt-1 block min-h-11 w-full rounded-md border border-border bg-surface-0 px-3 text-[15px] text-ink"
+              >
+                {groups.map((g) => (
+                  <optgroup key={g.side} label={GROUP_LABEL[g.side]}>
+                    {g.fees.map((f) => (
+                      <option key={f.key} value={f.key}>
+                        {f.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </label>
+            <p className="hidden text-[15px] font-semibold text-ink sm:block">{current.name}</p>
             <p className="mb-5 text-[12px] text-ink-muted">
-              {current.cu === current.bank
-                ? `The same median in ${place}.`
+              {sideOf(current) === "same"
+                ? `About the same in ${place}.`
                 : `${current.cu < current.bank ? "Credit unions" : "Banks"} ${money(Math.abs(current.bank - current.cu))} lower in ${place}.`}
             </p>
             <Pair f={current} size="md" />

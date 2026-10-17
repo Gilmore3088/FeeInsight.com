@@ -107,7 +107,7 @@ export function StateHero({ stateCode, stateName, district, facts, statement, fr
             <span className="text-ink-soft">{stateName}</span>
           </nav>
           {district && (
-            <p className="mt-5 hidden text-[12px] font-semibold uppercase tracking-[0.14em] text-brick sm:mx-0 sm:block">
+            <p className="mt-5 hidden max-w-none text-[12px] font-semibold uppercase tracking-[0.14em] text-brick sm:mx-0 sm:block sm:text-left">
               {DISTRICT_NAMES[district]} Fed &middot; District {district}
             </p>
           )}
@@ -125,7 +125,10 @@ export function StateHero({ stateCode, stateName, district, facts, statement, fr
                     {f.note && <span className="mt-0.5 block text-[12px] text-ink-muted">{f.note}</span>}
                   </dt>
                   <dd className="whitespace-nowrap font-mono text-[28px] font-semibold leading-none tabular-nums tracking-[-0.02em] text-ink sm:text-[44px]">
-                    {f.value}
+                    {/* "13 of 14": the figures in the data face, the word in the text face. */}
+                    {String(f.value)
+                      .split(/( of )/)
+                      .map((part, i) => (part === " of " ? <span key={i} className="font-sans text-[0.6em] font-medium"> of </span> : part))}
                   </dd>
                 </div>
               ))}
@@ -143,7 +146,7 @@ export function StateHero({ stateCode, stateName, district, facts, statement, fr
             >
               Get the free {stateName} report
             </a>
-            <PrintButton className="min-h-10 text-[13px] font-semibold text-ink-soft underline decoration-border underline-offset-4 hover:text-ink" />
+            <PrintButton className="min-h-11 text-[13px] font-semibold text-ink-soft underline decoration-border underline-offset-4 hover:text-ink" />
           </div>
         </div>
         <div className="mx-auto w-full max-w-md lg:max-w-none">

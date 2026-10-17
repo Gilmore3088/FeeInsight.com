@@ -233,25 +233,25 @@ describe("openingFinding", () => {
 
   it("leads with overdraft and NSF when both sit the same amount off the benchmark", () => {
     expect(openingFinding([fee("overdraft", 25, 30), fee("nsf", 25, 30)], 10)).toBe(
-      "Overdraft and NSF medians are $5 below the national benchmark.",
+      "Overdraft and NSF medians are $5 below the national median.",
     );
   });
 
   it("names each amount when the two gaps differ", () => {
     expect(openingFinding([fee("overdraft", 33, 30), fee("nsf", 32, 30)], 10)).toBe(
-      "Overdraft and NSF medians are $3 and $2 above the national benchmark.",
+      "Overdraft and NSF medians are $3 and $2 above the national median.",
     );
   });
 
   it("says which one matches when only one is off", () => {
     expect(openingFinding([fee("overdraft", 30, 30), fee("nsf", 28, 30)], 10)).toBe(
-      "The NSF median is $2 below the national benchmark; overdraft matches it.",
+      "The NSF median is $2 below the national median; overdraft is about the same.",
     );
   });
 
   it("falls back to the widest gap when both match", () => {
     expect(openingFinding([fee("overdraft", 30, 30), fee("nsf", 30, 30), fee("stop_payment", 30, 27.5), fee("wire_domestic_outgoing", 20, 25)], 10)).toBe(
-      "Overdraft and NSF medians match the national benchmark at $30. The outgoing wire median is $5 below it.",
+      "Overdraft and NSF medians are about the same as the national median. The outgoing wire median is $5 below the national median.",
     );
   });
 

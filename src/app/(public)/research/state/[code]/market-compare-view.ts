@@ -69,12 +69,6 @@ function sameAmount(a: number, b: number): boolean {
   return Math.abs(a - b) <= Math.abs(b) * 0.01;
 }
 
-function gap(value: number, against: number, place: string): string {
-  if (value === against) return `the same as the ${place} median`;
-  if (sameAmount(value, against)) return `about the same as the ${place} median`;
-  return `${money(Math.abs(value - against))} ${value > against ? "above" : "below"} the ${place} median`;
-}
-
 /** The one sentence under the ladder: only what the medians show. */
 export function marketTakeaway(name: string, label: string, rungs: Rung[]): string {
   const city = rungs.find((r) => r.level === "city")!;
@@ -88,12 +82,11 @@ export function marketTakeaway(name: string, label: string, rungs: Rung[]): stri
           city.institutions === 1 ? "publishes" : "publish"
         } ${/^[aeiou]/i.test(fee) ? "an" : "a"} ${fee} fee, too few for a local median (${MIN_INSTITUTIONS_FOR_MEDIAN} needed).`;
   }
-  const parts = [
-    ...(state?.median != null ? [gap(city.median, state.median, state.place)] : []),
-    ...(us?.median != null ? [gap(city.median, us.median, "U.S.")] : []),
-  ];
-  if (parts.length === 0) return `The ${name} median is ${money(city.median)}.`;
-  return `The ${name} median is ${money(city.median)}: ${parts.join(", and ")}.`;
+  // "Atlanta's ATM median is $2.50; Georgia's is $1." The U.S. figure stays in the exhibit.
+  const lead = `${name}'s ${fee} median is ${money(city.median)}`;
+  if (state?.median != null) return `${lead}; ${state.place}'s is ${money(state.median)}.`;
+  if (us?.median != null) return `${lead}; the U.S. median is ${money(us.median)}.`;
+  return `${lead}.`;
 }
 
 export interface Benchmarks {
@@ -126,7 +119,7 @@ export function marketPanels(
           ? [
               {
                 level: "district" as const,
-                place: `${b.districtName} district`,
+                place: `${b.districtName} Fed district`,
                 population: `Headquartered in the ${b.districtName} Fed district`,
                 median: f.district?.median ?? null,
                 institutions: f.district?.institutions ?? 0,

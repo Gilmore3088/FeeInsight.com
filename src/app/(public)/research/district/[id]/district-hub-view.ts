@@ -297,7 +297,7 @@ export interface OpeningFee {
   us: { median: number } | null;
 }
 
-/** Gaps under this share of the U.S. median read as matching it (the heading's "above" rule). */
+/** Gaps under this share of the U.S. median read as about the same (the heading's "above" rule). */
 const MATCH_SHARE = 0.01;
 
 function gapOf(f: OpeningFee): number {
@@ -310,8 +310,8 @@ function gapWords(gap: number): string {
 }
 
 /**
- * The district's opening takeaway: its overdraft and NSF medians against the national benchmark,
- * or, when both match it, the fee with the widest gap. Only fees with at least `minInstitutions`
+ * The district's opening takeaway: its overdraft and NSF medians against the national median,
+ * or, when both are about the same as it, the fee with the widest gap. Only fees with at least `minInstitutions`
  * district institutions count. Null when nothing qualifies.
  */
 export function openingFinding(fees: OpeningFee[], minInstitutions: number): string | null {
@@ -322,21 +322,21 @@ export function openingFinding(fees: OpeningFee[], minInstitutions: number): str
     const [a, b] = [gapOf(od), gapOf(nsf)];
     if (a !== 0 && b !== 0 && Math.sign(a) === Math.sign(b)) {
       const amounts = a === b ? formatFeeAmount(Math.abs(a)) : `${formatFeeAmount(Math.abs(a))} and ${formatFeeAmount(Math.abs(b))}`;
-      return `Overdraft and NSF medians are ${amounts} ${a > 0 ? "above" : "below"} the national benchmark.`;
+      return `Overdraft and NSF medians are ${amounts} ${a > 0 ? "above" : "below"} the national median.`;
     }
-    if (a !== 0 && b !== 0) return `The overdraft median is ${gapWords(a)} the national benchmark and the NSF median ${gapWords(b)} it.`;
-    if (a !== 0) return `The overdraft median is ${gapWords(a)} the national benchmark; NSF matches it.`;
-    if (b !== 0) return `The NSF median is ${gapWords(b)} the national benchmark; overdraft matches it.`;
+    if (a !== 0 && b !== 0) return `The overdraft median is ${gapWords(a)} the national median and the NSF median ${gapWords(b)} it.`;
+    if (a !== 0) return `The overdraft median is ${gapWords(a)} the national median; NSF is about the same.`;
+    if (b !== 0) return `The NSF median is ${gapWords(b)} the national median; overdraft is about the same.`;
   }
   const widest = [...solid]
     .filter((f) => gapOf(f) !== 0)
     .sort((x, y) => Math.abs(gapOf(y)) / y.us!.median - Math.abs(gapOf(x)) / x.us!.median)[0];
-  // Reached with both present only when both match the benchmark.
+  // Reached with both present only when both are about the same as the U.S..
   const matched = od && nsf
-    ? `Overdraft and NSF medians match the national benchmark${od.median === nsf.median ? ` at ${formatFeeAmount(od.median)}` : ""}. `
+    ? "Overdraft and NSF medians are about the same as the national median. "
     : "";
   if (!widest) return matched ? matched.trim() : null;
   const short = HUB_FEE_SHORT[widest.key];
   const name = short ? short[0].toLowerCase() + short.slice(1) : lowerName(widest.key);
-  return `${matched}The ${name} median is ${gapWords(gapOf(widest))} ${matched ? "it" : "the national benchmark"}.`;
+  return `${matched}The ${name} median is ${gapWords(gapOf(widest))} the national median.`;
 }

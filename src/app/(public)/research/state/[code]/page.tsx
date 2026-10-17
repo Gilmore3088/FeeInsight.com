@@ -35,7 +35,6 @@ import {
   HubSection,
   IncomeLine,
   KICKER,
-  PriceMoves,
   RankBars,
   STORY_H2,
   SizeByRegulator,
@@ -49,7 +48,6 @@ import {
 } from "../../district/[id]/district-hub";
 import {
   cpiBankServices,
-  feeChangeSummary,
   monthYear,
   openingFinding,
   quarterLabel,
@@ -84,6 +82,12 @@ interface PageProps {
   params: Promise<{ code: string }>;
 }
 
+/** "2026-Q2" -> "2025-Q2", the quarter a year-over-year change starts from. */
+function yearEarlier(quarter: string): string {
+  const [year, q] = quarter.split("-");
+  return `${Number(year) - 1}-${q}`;
+}
+
 /** Locked fees named for free visitors before the rest are counted. */
 const LOCKED_SHOWN = 5;
 
@@ -107,8 +111,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const stats = await getStateStatsCached(stateCode).catch(() => null);
   const thin = stats !== null && stats.with_fees < MIN_INSTITUTIONS_FOR_MEDIAN;
 
-  const title = `${name} Bank Fees - State Fee Report`;
-  const description = `What ${name} banks and credit unions charge for overdraft, NSF, maintenance, ATM and wire fees, compared with the state's largest local markets, its Fed district and national medians. Every figure from verified, published fee schedules.`;
+  const title = `${name} Bank and Credit Union Fees Compared`;
+  const description = `Overdraft, NSF, ATM, maintenance and wire fee medians for ${name} banks and credit unions, against local markets, the Fed district and the U.S., each sourced.`;
   return {
     title,
     // One URL per state: /research/state/tx and /research/state/TX both render this page.
@@ -184,17 +188,21 @@ export default async function StateReportPage({ params }: PageProps) {
     banks: f.bank.institutions,
     creditUnions: f.cu.institutions,
   }));
-  const cuLowerOn = charter.filter((f) => f.cu < f.bank).length;
-  const bankLowerOn = charter.filter((f) => f.bank < f.cu).length;
+  // Medians within 1% of each other count as about the same, as everywhere on the page.
+  const near = (a: number, b: number) => Math.abs(a - b) <= Math.abs(b) * 0.01;
+  const cuLowerOn = charter.filter((f) => f.cu < f.bank && !near(f.cu, f.bank)).length;
+  const bankLowerOn = charter.filter((f) => f.bank < f.cu && !near(f.bank, f.cu)).length;
   const charterTitle =
     cuLowerOn === 0 && bankLowerOn === 0
-      ? `Banks and credit unions have the same median on all ${charter.length} fees`
+      ? `Banks and credit unions have about the same median on all ${charter.length} fees`
       : cuLowerOn >= bankLowerOn
         ? `Credit unions have lower medians on ${cuLowerOn} of ${charter.length} fees`
         : `Banks have lower medians on ${bankLowerOn} of ${charter.length} fees`;
   // The local layer: the state's largest markets, each read against the state, district and U.S.
   const districtLabel = district ? DISTRICT_NAMES[district] : null;
-  const panels = marketPanels(stateCode, marketFees, CITY_FEES, {
+  // The ladder names each fee as the rest of the page does.
+  const feeOrder = CITY_FEES.map((f) => ({ key: f.key, label: fees.find((x) => x.key === f.key)?.name ?? f.label }));
+  const panels = marketPanels(stateCode, marketFees, feeOrder, {
     stateName,
     districtName: districtLabel,
     fees: shown,
@@ -208,10 +216,10 @@ export default async function StateReportPage({ params }: PageProps) {
   const hasLocal = panels.some((p) => p.fees.length > 0);
   const hasDistrict = Boolean(district && districtLabel && (vsDistrict || beigeHeadline));
   const layers = [
-    ...(hasLocal ? [{ id: "local", label: "Local markets" }] : []),
-    { id: "state", label: stateName },
-    ...(hasDistrict ? [{ id: "district", label: `${districtLabel} district` }] : []),
-    { id: "national", label: "United States" },
+    ...(hasLocal ? [{ id: "local", label: "Local markets", short: "Local" }] : []),
+    { id: "state", label: stateName, short: stateCode },
+    ...(hasDistrict ? [{ id: "district", label: `${districtLabel} district`, short: "District" }] : []),
+    { id: "national", label: "United States", short: "U.S." },
   ];
 
   // The state's own hub: every institution in the state, its income, branches and economy.
@@ -233,7 +241,6 @@ export default async function StateReportPage({ params }: PageProps) {
         ...(complaints.us.rate != null ? [{ key: "us", label: "U.S.", value: complaints.us.rate }] : []),
       ]
     : [];
-  const moves = hub ? feeChangeSummary(hub, showAllCategories) : null;
   const cpi = hub ? cpiBankServices(hub) : null;
   const usUnemployment = hub?.series.UNRATE ?? null;
   const stateUnemployment = hub?.series[`${stateCode}UR`] ?? null;
@@ -263,6 +270,7 @@ export default async function StateReportPage({ params }: PageProps) {
         items={[
           { name: "Home", href: "/" },
           { name: "Research", href: "/research" },
+          ...(district ? [{ name: `District ${district}`, href: `/research/district/${district}` }] : []),
           { name: stateName, href: `/research/state/${stateCode}` },
         ]}
       />
@@ -283,12 +291,14 @@ export default async function StateReportPage({ params }: PageProps) {
         {/* Layer 1, local: one market against the state, its district and the U.S., inside the page. */}
         {hasLocal && (
           <section id="local" aria-labelledby="markets-heading" className="scroll-mt-32 space-y-6 sm:space-y-8">
-            <LayerHead
-              id="markets-heading"
-              title="How local fees compare"
-              line={`Pick a market and a fee to set its median beside ${stateName}${districtLabel ? `, the ${districtLabel} district` : ""} and the U.S.`}
+            <MarketCompare
+              panels={panels}
+              map={marketMap}
+              stateName={stateName}
+              directoryHref={`/fees/city/${stateCode.toLowerCase()}`}
+              title="Local fee benchmarks"
+              headingId="markets-heading"
             />
-            <MarketCompare panels={panels} map={marketMap} stateName={stateName} directoryHref={`/fees/city/${stateCode.toLowerCase()}`} />
             <SourceNote label="Sources">
               Branches from the FDIC Summary of Deposits (banks) and NCUA (credit unions). One value per institution: its highest
               overdraft fee, the middle of its schedule for other fees. A median needs at least {MIN_INSTITUTIONS_FOR_MEDIAN} institutions.
@@ -365,7 +375,7 @@ export default async function StateReportPage({ params }: PageProps) {
             title="Fee income"
             line={`${
               bankTrend?.yoyPct != null
-                ? `${stateName} bank service charges ${bankTrend.yoyPct >= 0 ? "rose" : "fell"} ${Math.abs(bankTrend.yoyPct).toFixed(1)}% in a year. `
+                ? `${stateName} bank service charges ${bankTrend.yoyPct >= 0 ? "rose" : "fell"} ${Math.abs(bankTrend.yoyPct).toFixed(1)}% from ${quarterLabel(yearEarlier(bankTrend.latest.quarter))} to ${quarterLabel(bankTrend.latest.quarter)}. `
                 : bankTrend
                   ? `${stateName} banks reported ${compact(bankTrend.latest.value)} in deposit service charges in ${quarterLabel(bankTrend.latest.quarter)}. `
                   : ""
@@ -429,7 +439,7 @@ export default async function StateReportPage({ params }: PageProps) {
                       href={PRO_PLANS_NAV.href}
                       className="font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
                     >
-                      Read it beside your fees in Hamilton
+                      Hamilton sets it beside an institution&apos;s own fees
                     </TrackLink>
                   )}
                 </figcaption>
@@ -553,14 +563,14 @@ export default async function StateReportPage({ params }: PageProps) {
           </HubSection>
         )}
         </section>
-        {/* Complaints and fee changes: kept for readers who want them, behind one disclosure. */}
-        {(complaintRows.length > 0 || (moves && hub)) && (
+        {/* Complaints: kept for readers who want them, behind one disclosure. */}
+        {complaints && complaintRows.length > 0 && (
           <details className="group/disc border-t border-border pt-6">
             <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 text-[16px] font-semibold text-ink [&::-webkit-details-marker]:hidden">
               <span aria-hidden="true" className="transition-transform group-open/disc:rotate-90">
                 &rsaquo;
               </span>
-              More {stateName} data: fee complaints and fee changes
+              More {stateName} data: fee complaints to the CFPB
             </summary>
             <div className="mt-8 space-y-16">
               {complaints && complaintRows.length > 0 && (
@@ -578,15 +588,6 @@ export default async function StateReportPage({ params }: PageProps) {
                       </p>
                     )}
                   </div>
-                </HubSection>
-              )}
-              {moves && hub && (
-                <HubSection
-                  id="changes"
-                  title="Fee changes in the last 12 months"
-                  source={`Changes between two copies of the same institution's fee schedule, seen since ${monthYear(hub.fee_changes_since)}.`}
-                >
-                  <PriceMoves summary={moves} showAll={showAllCategories} />
                 </HubSection>
               )}
             </div>
@@ -608,7 +609,7 @@ export default async function StateReportPage({ params }: PageProps) {
           {!isPro && (
             <div className="mt-4 border-t border-border pt-4">
               <p className="text-[14px] text-ink-muted">
-                Hamilton, the Fee Insight Pro workspace, sets every fee you charge against institutions your size and in{" "}
+                Hamilton, the Fee Insight Pro workspace, sets an institution&apos;s own fees beside institutions its size in{" "}
                 {stateName}.
               </p>
               <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-3">
@@ -616,7 +617,7 @@ export default async function StateReportPage({ params }: PageProps) {
                   event="upgrade_click"
                   eventProps={{ placement: "state_report_end", state: stateCode }}
                   href={PRO_PLANS_NAV.href}
-                  className="inline-flex items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-[14px] font-semibold text-on-ink hover:opacity-90"
+                  className="inline-flex min-h-11 items-center gap-2 rounded-full border border-ink px-5 text-[14px] font-semibold text-ink hover:bg-surface-0"
                 >
                   {PRO_PLANS_NAV.label}
                 </TrackLink>
@@ -624,7 +625,7 @@ export default async function StateReportPage({ params }: PageProps) {
                   event="contact_sales"
                   eventProps={{ placement: "state_report_end_demo", state: stateCode }}
                   href={DEMO_REQUEST_NAV.href}
-                  className="text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+                  className="inline-flex min-h-11 items-center text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
                 >
                   {DEMO_REQUEST_NAV.label}
                 </TrackLink>
@@ -637,7 +638,7 @@ export default async function StateReportPage({ params }: PageProps) {
           From {formatCount(indexes.verified_institutions)} {stateName} banks and credit unions&apos; own published fee schedules, one
           value per institution; a median needs at least {MIN_INSTITUTIONS_FOR_MEDIAN} institutions. Data as of {asOf}.{" "}
           <Link href="/methodology" className="font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink print:hidden">
-            How we build it
+            Methodology
           </Link>
         </p>
         </div>
@@ -656,12 +657,15 @@ export default async function StateReportPage({ params }: PageProps) {
         dangerouslySetInnerHTML={{
           __html: JSON.stringify({
             "@context": "https://schema.org",
-            "@type": "Article",
-            headline: `${stateName} Bank & Credit Union Fees`,
-            description: `Fee benchmarks for banks and credit unions in ${stateName}, compared with national medians.`,
+            "@type": "Dataset",
+            name: `${stateName} Bank and Credit Union Fees Compared`,
+            description: `Overdraft, NSF, ATM, maintenance and wire fee medians for ${stateName} banks and credit unions, against local markets, the Fed district and the U.S.`,
             url: `${SITE_URL}/research/state/${stateCode}`,
+            spatialCoverage: { "@type": "Place", name: `${stateName}, United States` },
             dateModified: asOf && !Number.isNaN(Date.parse(asOf)) ? new Date(asOf).toISOString() : undefined,
-            publisher: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
+            creator: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
+            isPartOf: { "@type": "Dataset", name: "Bank Fee Index" },
+            variableMeasured: shown.filter((f) => f.median != null).map((f) => `${f.name} median`),
           }).replace(/</g, "\\u003c"),
         }}
       />

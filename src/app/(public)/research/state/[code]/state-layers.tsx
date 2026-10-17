@@ -5,24 +5,24 @@ import { districtDifferences, money, sameLabel, sameMedian, type DistrictRow } f
 
 /**
  * The state page's four geographic layers: local, state, district and U.S. A sticky row of
- * numbered links under the site header, and a numbered heading that opens each layer.
+ * links under the site header, short names on phones, and a plain heading that opens each layer.
  */
 
-export function LayerNav({ layers }: { layers: { id: string; label: string }[] }) {
+export function LayerNav({ layers }: { layers: { id: string; label: string; short: string }[] }) {
   return (
     <nav
       aria-label="Sections"
       className="sticky top-[57px] z-30 -mx-4 border-b border-border bg-surface-0/95 px-4 backdrop-blur sm:-mx-6 sm:px-6 print:hidden"
     >
       <ol className="flex gap-1 overflow-x-auto py-2 [scrollbar-width:none]">
-        {layers.map((l, i) => (
+        {layers.map((l) => (
           <li key={l.id} className="shrink-0">
             <a
               href={`#${l.id}`}
-              className="flex min-h-10 items-center gap-2 rounded-md px-3 text-[14px] font-medium text-ink-soft hover:bg-paper hover:text-ink"
+              className="flex min-h-11 items-center rounded-md px-3 text-[14px] font-medium text-ink-soft hover:bg-paper hover:text-ink"
             >
-              <span className="font-mono text-[12px] text-brick">{String(i + 1).padStart(2, "0")}</span>
-              {l.label}
+              <span className="sm:hidden">{l.short}</span>
+              <span className="hidden sm:inline">{l.label}</span>
             </a>
           </li>
         ))}
@@ -31,14 +31,18 @@ export function LayerNav({ layers }: { layers: { id: string; label: string }[] }
   );
 }
 
-/** A layer's plain heading and its one supporting line; the sticky row above names and numbers the layers. */
-export function LayerHead({ title, line, id }: { title: string; line?: string; id: string }) {
+/** A layer's plain heading and its one supporting line; the sticky row above names the layers. */
+export function LayerHead({ title, line, id, live }: { title: string; line?: string; id: string; live?: boolean }) {
   return (
     <div className="max-w-3xl">
       <h2 id={id} className="text-[26px] font-semibold leading-[1.15] tracking-[-0.02em] text-ink sm:text-[38px]">
         {title}
       </h2>
-      {line && <p className="mt-2 text-[15px] leading-relaxed text-ink-soft sm:mt-3">{line}</p>}
+      {line && (
+        <p className="mt-2 text-[15px] leading-relaxed text-ink-soft sm:mx-0 sm:mt-3" aria-live={live ? "polite" : undefined}>
+          {line}
+        </p>
+      )}
     </div>
   );
 }
