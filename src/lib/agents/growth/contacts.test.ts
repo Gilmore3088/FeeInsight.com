@@ -4,6 +4,7 @@ import { isMarketingStep, isProviderStep } from "@/lib/agents/types";
 import {
   belongsToSite,
   checkSite,
+  cleanContactTitle,
   contactPageLinks,
   contactConfidence,
   contactsCsv,
@@ -16,6 +17,7 @@ import {
   rankContacts,
   roleFor,
   runContactFinder,
+  splitContactSentence,
   summarizeContactFinder,
   type ProspectContactRow,
 } from "./contacts";
@@ -395,5 +397,30 @@ describe("extractLeaders", () => {
       },
     ]);
     expect(line).toBe(`7,First Bank,bank,TX,Austin,900,,,Maria Gomez,Chief Marketing Officer,marketing,,leader,${url},2026-10-17T00:00:00.000Z,,`);
+  });
+});
+
+describe("titles that are sentences", () => {
+  it("drops sentences, bullets and prices printed where a title would be", () => {
+    for (const line of [
+      "Angie serves on the Finance and Audit Committee for the Charlotte Community Foundation.",
+      "Gretchen is a member of the Board of Directors and Treasurer for the Boca Grande Area Chamber of Commerce.",
+      "- Checking, savings, money market, and loan accounts are eligible for e-Statements.",
+      "Per Item Fee: $0.15 per item (Each additional item deposited or presented after 500)",
+    ]) expect(cleanContactTitle(line)).toBeNull();
+  });
+
+  it("keeps long titles that list several roles", () => {
+    const title = "Executive Vice President / Reynolds Market President / Chief Financial Officer / Senior Loan Officer";
+    expect(cleanContactTitle(title)).toBe(title);
+    expect(cleanContactTitle("Sr. Vice President, Marketing")).toBe("Sr. Vice President, Marketing");
+  });
+
+  it("reads the name and title out of a 'Meet our …' line", () => {
+    expect(splitContactSentence("Meet our President and CEO, Julieann Thurlow.")).toEqual({ name: "Julieann Thurlow", title: "President and CEO" });
+    const html = "<h2>Meet our President and CEO, Julieann Thurlow.</h2><p>Julieann has led the bank since 2010.</p>";
+    expect(extractLeaders(html, "https://www.reading.coop/about").map(({ name, title, role }) => [name, title, role])).toEqual([
+      ["Julieann Thurlow", "President and CEO", "executive"],
+    ]);
   });
 });
