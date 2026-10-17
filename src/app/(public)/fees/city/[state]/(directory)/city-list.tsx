@@ -26,15 +26,26 @@ export function CityList({
   stateName,
   stateCode,
   shortcuts = [],
+  query: controlledQuery,
+  initialAll = false,
+  allHref,
 }: {
   cities: CityLink[];
   stateName: string;
   stateCode: string;
   /** The cities with the most institutions, shown as one-tap links under the search until the reader types. */
   shortcuts?: CityLink[];
+  /** A search typed elsewhere on the page (the explorer's); the list then draws no search box of its own. */
+  query?: string;
+  /** Open with every city listed, as `?all=1` asks without scripts. */
+  initialAll?: boolean;
+  /** Where "Show all" goes without scripts. */
+  allHref?: string;
 }) {
-  const [query, setQuery] = useState("");
-  const [all, setAll] = useState(false);
+  const [ownQuery, setQuery] = useState("");
+  const [all, setAll] = useState(initialAll);
+  const controlled = controlledQuery !== undefined;
+  const query = controlled ? controlledQuery : ownQuery;
   const q = query.trim();
   const shown = useMemo(() => {
     const lower = q.toLowerCase();
@@ -49,6 +60,7 @@ export function CityList({
 
   return (
     <div>
+      {!controlled && (
       <label className="block max-w-md">
         <span className="text-[13px] font-medium text-ink">Find your city</span>
         <input
@@ -59,9 +71,14 @@ export function CityList({
           className="mt-1 min-h-11 w-full rounded-full border border-ink bg-surface-0 px-4 text-[15px] text-ink placeholder:text-ink-muted focus:outline-2 focus:outline-ink"
         />
       </label>
-      <p className="mt-2 text-[12px] text-ink-muted" aria-live="polite">
+      )}
+      <p className={`${controlled ? "" : "mt-2 "}text-[12px] text-ink-muted sm:mx-0 sm:text-left`} aria-live="polite">
         {shown.length === cities.length
-          ? `${cities.length} ${cities.length === 1 ? "city has" : "cities have"} fee coverage.${collapsed ? ` The ${FIRST_CITIES} with the most institutions are listed below.` : ""}`
+          ? controlled
+            ? collapsed
+              ? `The ${FIRST_CITIES} cities with the most institutions, A to Z.`
+              : `All ${cities.length} cities, A to Z.`
+            : `${cities.length} ${cities.length === 1 ? "city has" : "cities have"} fee coverage.${collapsed ? ` The ${FIRST_CITIES} with the most institutions are listed below.` : ""}`
           : `${shown.length} of ${cities.length} cities with fee coverage`}
       </p>
       {!q && shortcuts.length > 0 && (
@@ -98,7 +115,19 @@ export function CityList({
           ))}
         </ul>
       ) : null}
-      {shown.length > 0 && collapsed && (
+      {shown.length > 0 && collapsed && allHref && (
+        <a
+          href={allHref}
+          onClick={(e) => {
+            e.preventDefault();
+            setAll(true);
+          }}
+          className="mt-4 inline-flex min-h-11 items-center rounded-full border border-ink px-5 text-[14px] font-semibold text-ink hover:bg-surface-0"
+        >
+          Show all {cities.length} cities
+        </a>
+      )}
+      {shown.length > 0 && collapsed && !allHref && (
         <button
           type="button"
           onClick={() => setAll(true)}
