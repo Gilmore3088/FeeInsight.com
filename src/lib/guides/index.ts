@@ -122,6 +122,8 @@ export function blockText(block: GuideBlock): string[] {
       ];
     case "cap_scope":
       return [];
+    case "network_mentions":
+      return [block.title, block.caption];
     case "policy_table":
       return [...block.rows.flatMap((r) => [r.feature, r.question]), ...(block.compare ? [block.compare.intro] : [])];
     case "complaints":

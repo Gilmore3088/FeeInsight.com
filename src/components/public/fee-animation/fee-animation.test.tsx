@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FeeAnimation } from "./fee-animation";
 import { ATM_FEES_SCENE } from "./scenes/atm-fees";
+import { FEE_SCENES } from "./scenes";
 import { sceneLengthMs, stepStarts } from "./timeline";
 
 const ACTIONS = [
@@ -37,7 +38,7 @@ describe("FeeAnimation: ATM pilot", () => {
   it("follows James's sequence word for word and second for second", () => {
     expect(ATM_FEES_SCENE.title).toBe("One withdrawal. Two possible fees.");
     expect(ATM_FEES_SCENE.steps.map((s) => s.caption)).toEqual([
-      "One withdrawal...",
+      "You withdraw $40 at another bank's ATM.",
       "The ATM operator may charge you.",
       "Your bank may charge you, too.",
       "Check both before you withdraw.",
@@ -91,11 +92,11 @@ describe("FeeAnimation: ATM pilot", () => {
   it("advances the steps over time and ends on the two actions", () => {
     render(<FeeAnimation scene={ATM_FEES_SCENE} actions={ACTIONS} />);
     fireEvent.click(screen.getByRole("button", { name: "Watch: 25 seconds" }));
-    expect(caption()).toBe("One withdrawal...");
+    expect(caption()).toBe("You withdraw $40 at another bank's ATM.");
     expect(screen.queryByText("+$3")).toBeNull();
 
     advance(4900);
-    expect(caption()).toBe("One withdrawal...");
+    expect(caption()).toBe("You withdraw $40 at another bank's ATM.");
     advance(100);
     expect(caption()).toBe("The ATM operator may charge you.");
     // The charge counts up to its amount.
@@ -128,7 +129,7 @@ describe("FeeAnimation: ATM pilot", () => {
     advance(6000);
     expect(caption()).toBe("Your bank may charge you, too.");
     fireEvent.click(screen.getByRole("button", { name: "Replay" }));
-    expect(caption()).toBe("One withdrawal...");
+    expect(caption()).toBe("You withdraw $40 at another bank's ATM.");
   });
 
   it("keeps focus on the play button as it becomes pause and replay", () => {
@@ -148,7 +149,7 @@ describe("FeeAnimation: ATM pilot", () => {
     expect(screen.queryByRole("button", { name: "Watch: 25 seconds" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "See it step by step" }));
     expect(screen.getByText("Step 1 of 4")).toBeInTheDocument();
-    expect(caption()).toBe("One withdrawal...");
+    expect(caption()).toBe("You withdraw $40 at another bank's ATM.");
     const previous = screen.getByRole("button", { name: "Previous" });
     expect(previous).toHaveAttribute("aria-disabled", "true");
     fireEvent.click(previous);
@@ -156,7 +157,7 @@ describe("FeeAnimation: ATM pilot", () => {
 
     // No clock runs: time passing changes nothing.
     advance(30000);
-    expect(caption()).toBe("One withdrawal...");
+    expect(caption()).toBe("You withdraw $40 at another bank's ATM.");
 
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(caption()).toBe("The ATM operator may charge you.");
@@ -171,5 +172,16 @@ describe("FeeAnimation: ATM pilot", () => {
     fireEvent.click(screen.getByRole("button", { name: "Previous" }));
     expect(caption()).toBe("Your bank may charge you, too.");
     expect(screen.queryByTestId("fee-animation-end")).toBeNull();
+  });
+});
+
+describe("FeeAnimation: every scene", () => {
+  beforeEach(() => mockReducedMotion(false));
+  afterEach(() => vi.unstubAllGlobals());
+
+  it.each(Object.entries(FEE_SCENES))("%s states its real length on the play button", (_id, scene) => {
+    render(<FeeAnimation scene={scene} actions={ACTIONS} />);
+    const seconds = scene.steps.reduce((sum, s) => sum + s.durationMs, 0) / 1000;
+    expect(screen.getByRole("button", { name: `Watch: ${seconds} seconds` })).toBeInTheDocument();
   });
 });

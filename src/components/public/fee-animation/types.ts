@@ -40,8 +40,11 @@ export type FeeSceneCharge = {
   under: "left" | "right";
 };
 
-/** Which part of a frame moves in during its step. Everything else is already in place. */
-export type FeeSceneIntro = "item" | "fork" | "total" | "lookFor" | (string & {});
+/**
+ * Which part of a frame moves in during its step: a part, one charge by its id, or "charges" for
+ * every charge on screen at once. Everything else is already in place.
+ */
+export type FeeSceneIntro = "item" | "fork" | "total" | "lookFor" | "charges" | (string & {});
 
 /** What the diagram shows at the end of a step. */
 export type FeeSceneFrame = {

@@ -13,6 +13,7 @@ import {
   CapScopeBlock,
   ComplaintsBlock,
   DistributionBlock,
+  NetworkMentionsBlock,
   OutcomesBlock,
   PathsBlock,
   PolicyTableBlock,
@@ -338,6 +339,8 @@ export function GuideBlockRenderer({
       return <DistributionBlock block={block} extras={extras} />;
     case "cap_scope":
       return <CapScopeBlock extras={extras} />;
+    case "network_mentions":
+      return <NetworkMentionsBlock block={block} extras={extras} />;
     case "policy_table":
       return <PolicyTableBlock block={block} summaries={summaries} />;
     case "complaints":

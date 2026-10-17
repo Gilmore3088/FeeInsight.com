@@ -7,6 +7,8 @@ import { getDistrictMetrics } from "./dashboard";
 import { getCheapestAndMostExpensive, getFeeCategoryDetail, getIndexRows } from "./fees";
 import { getFeeEvidence } from "./fee-evidence";
 import { getDailyCapScope, getOverdraftComplaintThemes } from "./overdraft-policies";
+import { getAtmNetworkMentions } from "./atm-networks";
+import { isEmptyNetworkMentions } from "@/lib/guides/atm-networks";
 import { getDistrictFeeIndexes, getPeerIndex, getStateFeeIndexes } from "./fee-index";
 import {
   getCitiesInState,
@@ -76,6 +78,13 @@ export const getAtmTwoFeeExampleCached = cachedPublicRead("atm-two-fee-example-v
   ]);
   return buildAtmTwoFeeExample(holderFees, ownerFees);
 });
+
+/** The ATM guide's "Networks named in fee schedules": each network's institutions and their own lines. */
+export const getAtmNetworkMentionsCached = cachedPublicRead(
+  "atm-network-mentions-v1",
+  getAtmNetworkMentions,
+  isEmptyNetworkMentions,
+);
 
 export const getStatsCached = cachedPublicRead("collection-stats", getStats);
 // A failed read returns zeros; never cache those.

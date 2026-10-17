@@ -64,7 +64,8 @@ describe("fee animation scenes", () => {
     for (const { frame } of scene.steps) {
       for (const id of frame.charges) expect(ids.has(id), id).toBe(true);
       expect([frame.total, frame.fork, frame.lookFor].filter(Boolean).length).toBeLessThanOrEqual(1);
-      if (frame.intro && !["item", "fork", "total", "lookFor"].includes(frame.intro)) {
+      if (frame.intro === "charges") expect(frame.charges.length).toBeGreaterThan(1);
+      else if (frame.intro && !["item", "fork", "total", "lookFor"].includes(frame.intro)) {
         expect(frame.charges).toContain(frame.intro);
       }
     }
@@ -133,5 +134,43 @@ describe("fee animation scenes", () => {
       ...s.steps.flatMap((st) => [st.caption, ...(st.frame.lookFor ?? [])]),
     ]);
     for (const w of words) expect(w, w).not.toMatch(/\b(will be|is|are) declined\b|\bdeclines? (it|the payment)\b/i);
+  });
+
+  it("keeps the overdraft scene on paid versus sent back, ending on one prompt", () => {
+    const scene = FEE_SCENES.overdraft;
+    expect(scene.steps.map((s) => s.caption)).toEqual([
+      "You have $40 in checking, and a $60 payment is taken from your account.",
+      "Your bank can pay it or send it back.",
+      "If your bank pays it, an overdraft fee may apply.",
+      "Check which transactions your overdraft choice covers.",
+    ]);
+    for (const { frame } of scene.steps) expect(frame.lookFor).toBeUndefined();
+    const words = [scene.takeaway, scene.describe, ...scene.steps.map((s) => s.caption)].join(" ");
+    expect(words).not.toMatch(/daily limit|stay negative|exemption|opt-in|consent/i);
+  });
+
+  it("tells the NSF scene in four beats, 20 to 25 seconds", () => {
+    const scene = FEE_SCENES.nsf;
+    expect(scene.steps.map((s) => s.id)).toEqual(["payment", "returned", "charges", "owed"]);
+    expect(sceneLengthMs(scene)).toBeGreaterThanOrEqual(20000);
+    expect(sceneLengthMs(scene)).toBeLessThanOrEqual(25000);
+    expect(scene.steps[2].frame.charges).toEqual(["nsf", "biller"]);
+    expect(scene.steps[3].caption).toBe("You still owe the $60 bill.");
+  });
+
+  it("tells the monthly maintenance scene as month, year, waivers, check, 20 to 25 seconds", () => {
+    const scene = FEE_SCENES.monthly_maintenance;
+    expect(scene.steps.map((s) => s.id)).toEqual(["monthly", "year", "waivers", "check"]);
+    expect(scene.steps[1].caption).toBe("A $10 monthly fee costs $120 a year unless waived.");
+    expect(sceneLengthMs(scene)).toBeGreaterThanOrEqual(20000);
+    expect(sceneLengthMs(scene)).toBeLessThanOrEqual(25000);
+  });
+
+  it("uses exact wording, without trailing ellipses or multiplier drama", () => {
+    for (const scene of Object.values(FEE_SCENES)) {
+      for (const w of [scene.title, scene.takeaway, ...scene.steps.map((s) => s.caption)]) {
+        expect(w, w).not.toMatch(/\.\.\.|…|times what it looks like|or a hundred/i);
+      }
+    }
   });
 });

@@ -137,8 +137,10 @@ export function SceneDiagram({
 
       {/* The charges, each under the party that charges it. */}
       {charges.map((c) => {
-        const visible = shown(c.id);
-        const value = intro === c.id ? countUp(c.amount, elapsedMs) : c.amount;
+        // "charges" moves every charge on screen in together.
+        const entering = intro === c.id || intro === "charges";
+        const visible = !entering || elapsedMs >= INTRO_DELAY_MS;
+        const value = entering ? countUp(c.amount, elapsedMs) : c.amount;
         const x0 = c.under === "left" ? 8 : 216;
         const inward = joined ? (c.under === "left" ? 10 : -10) : 0;
         return (

@@ -1,8 +1,9 @@
 import type { FeeScene } from "../types";
 
 /**
- * NSF guide, "What is an NSF fee?". The payment is returned unpaid, a fee may still apply, and
- * the biller may add its own, so one returned payment can cost twice. Uses the guide's $40 and $60.
+ * NSF guide, "What is an NSF fee?". Four beats (James's review, Oct 17): the payment is
+ * attempted, it is returned unpaid, your bank and the biller may each charge, and the bill is
+ * still owed. Uses the guide's $40 and $60.
  */
 const payment = { label: "Payment", amount: 60 };
 const returned = { ...payment, status: "Returned unpaid", statusTone: "alert" as const };
@@ -21,8 +22,8 @@ export const NSF_FEES_SCENE: FeeScene = {
     {
       id: "payment",
       kind: "transaction",
-      durationMs: 6000,
-      caption: "You have $40 in checking, and a $60 payment comes due.",
+      durationMs: 5000,
+      caption: "You have $40 in checking, and a $60 payment is attempted.",
       frame: { item: payment, charges: [], intro: "item" },
     },
     {
@@ -33,45 +34,26 @@ export const NSF_FEES_SCENE: FeeScene = {
       frame: { item: returned, charges: [], fork, intro: "fork" },
     },
     {
-      id: "nsf",
+      id: "charges",
       kind: "charge",
       durationMs: 7000,
-      caption: "The payment fails, and an NSF fee may still apply.",
-      frame: { item: returned, charges: ["nsf"], fork, intro: "nsf" },
+      caption: "Your bank may charge an NSF fee, and the biller may add its own.",
+      frame: { item: returned, charges: ["nsf", "biller"], fork, intro: "charges" },
     },
     {
-      id: "biller",
-      kind: "charge",
-      durationMs: 7000,
-      caption: "The biller may add a fee of its own.",
-      frame: { item: returned, charges: ["nsf", "biller"], fork, intro: "biller" },
-    },
-    {
-      id: "twice",
+      id: "owed",
       kind: "outcome",
       durationMs: 6000,
-      caption: "One returned payment can cost you twice.",
+      caption: "You still owe the $60 bill.",
       frame: {
         item: returned,
         charges: ["nsf", "biller"],
-        total: { label: "Fees, one payment", note: "And the $60 bill is still unpaid" },
+        total: { label: "Fees, one payment", note: "And the $60 bill is still owed" },
         intro: "total",
       },
     },
-    {
-      id: "look",
-      kind: "decision",
-      durationMs: 7000,
-      caption: "Check your account's NSF policy before it happens.",
-      frame: {
-        item: returned,
-        charges: ["nsf", "biller"],
-        lookFor: ["An NSF fee on your account", "A daily limit on these fees", "A fee each time it's retried"],
-        intro: "lookFor",
-      },
-    },
   ],
-  takeaway: "With an NSF fee, the payment fails and you can still be charged.",
+  takeaway: "A returned payment can bring an NSF fee and a biller's fee, and you still owe the bill.",
   describe:
-    "With $40 in checking, a $60 payment comes due and your bank returns it unpaid. A $35 NSF fee may apply, and the biller may add $20 of its own: $55 in fees, with the bill still unpaid. Look for an NSF fee on your account, a daily limit and a fee each time the payment is retried.",
+    "With $40 in checking, a $60 payment is attempted and your bank returns it unpaid. Your bank may charge a $35 NSF fee, and the biller may add $20 of its own: $55 in fees, and you still owe the $60 bill.",
 };

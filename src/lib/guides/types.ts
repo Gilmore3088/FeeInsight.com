@@ -154,6 +154,16 @@ export type GuideBlock =
       actions: { label: string; href: string }[];
     }
   | {
+      /**
+       * Institutions whose own out-of-network ATM lines name a surcharge-free network, shown
+       * verbatim with the amount and source. Naming a network is not membership, so the
+       * caption says the list is a floor and never claims an institution belongs.
+       */
+      type: "network_mentions";
+      title: string;
+      caption: string;
+    }
+  | {
       /** Regulatory changes in practical terms, each with its current status. */
       type: "updates";
       items: RegulatoryUpdate[];
@@ -224,6 +234,8 @@ export type PolicyFeature = {
    * measure the same thing (daily limits cover different fees).
    */
   countOnly?: boolean;
+  /** Where the guide explains a feature the Index does not track, in place of "Not verified". */
+  link?: { label: string; href: string };
 }
 
 export type RegulatoryStatus = "proposed" | "effective" | "blocked" | "withdrawn" | "repealed";

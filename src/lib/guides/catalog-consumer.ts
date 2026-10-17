@@ -576,6 +576,41 @@ export const CONSUMER_GUIDES: Guide[] = [
         ],
       },
       {
+        id: "networks",
+        heading: "How ATM networks work",
+        blocks: [
+          {
+            type: "paragraph",
+            text: "Which machine you use decides who can charge you. There are three kinds:",
+          },
+          {
+            type: "list",
+            items: [
+              "Your own bank's or credit union's ATMs. No one charges you a fee.",
+              "A machine in a surcharge-free network your institution belongs to, such as Allpoint, MoneyPass or the CO-OP network many credit unions use. The machine owner waives its fee for you, but only if your institution takes part.",
+              "Any other machine. The owner can charge a fee, and your own institution may add its out-of-network fee.",
+            ],
+          },
+          {
+            type: "paragraph",
+            text: "At the machine, look for three things:",
+          },
+          {
+            type: "list",
+            items: [
+              "The network logos on the machine, which show the networks it belongs to.",
+              "The logos on the back of your card, such as Star, Pulse, Plus or Cirrus. They show where your card works. Your institution's terms decide whether it is free.",
+              "The fee notice on screen. This is the real test. If a fee appears, the machine is not free for you, and you can cancel.",
+            ],
+          },
+          {
+            type: "network_mentions",
+            title: "Networks named in fee schedules",
+            caption: "Each line is the institution's own published wording, with its amount and source. A line that names a network may still charge for its machines. This list is a floor: many institutions belong to a network without naming it in their fee schedule, so check your own institution's ATM locator.",
+          },
+        ],
+      },
+      {
         id: "what-it-costs",
         heading: "What it costs over a month",
         blocks: [
@@ -690,7 +725,7 @@ export const CONSUMER_GUIDES: Guide[] = [
               { feature: "Out-of-network fee", question: "What does my bank charge when I use another bank's machine?", category: "atm_non_network" },
               { feature: "Machine owner's fee reimbursed", question: "Does the account pay back the fee the machine owner charges?" },
               { feature: "Monthly limit", question: "How many withdrawals, or how many dollars of fees, are free or reimbursed each month?" },
-              { feature: "Networks", question: "Which surcharge-free networks can I use?" },
+              { feature: "Networks", question: "Which surcharge-free networks can I use?", link: { label: "How ATM networks work", href: "#networks" } },
               { feature: "Account requirements", question: "Does the ATM benefit need a minimum balance, direct deposit or a premium account?" },
               { feature: "International ATM fee", question: "What does a withdrawal abroad cost, before any percentage?", category: "card_foreign_txn" },
               { feature: "Monthly maintenance", question: "What does the account cost each month?", category: "monthly_maintenance" },

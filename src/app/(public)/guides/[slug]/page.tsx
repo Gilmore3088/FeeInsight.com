@@ -25,6 +25,7 @@ import {
   loadRelatedGuides,
 } from "@/lib/guides/source";
 import {
+  getAtmNetworkMentionsCached,
   getAtmTwoFeeExampleCached,
   getDailyCapScopeCached,
   getDataFreshnessCached,
@@ -144,9 +145,10 @@ export default async function GuidePage({ params }: PageProps) {
   const needsCapScope = blocks.some((b) => b.type === "cap_scope");
   const needsComplaints = blocks.some((b) => b.type === "complaints");
   const needsAtmExample = blocks.some((b) => b.type === "breakdown" && b.live === "atm_two_fee");
+  const needsAtmNetworks = blocks.some((b) => b.type === "network_mentions");
 
   // National medians and counts from the shared public snapshot (same as the fee index).
-  const [{ summary, categories: allSummaries }, freshness, primaryDetail, related, capScope, complaints, atmExample] =
+  const [{ summary, categories: allSummaries }, freshness, primaryDetail, related, capScope, complaints, atmExample, atmNetworks] =
     await Promise.all([
       getPublicSnapshot(),
       // The shared public cache, as the fee pages read it: a guide rebuilt after a takedown
@@ -158,6 +160,7 @@ export default async function GuidePage({ params }: PageProps) {
       needsCapScope ? getDailyCapScopeCached().catch(() => null) : null,
       needsComplaints ? getOverdraftComplaintThemesCached().catch(() => null) : null,
       needsAtmExample ? getAtmTwoFeeExampleCached().catch(() => null) : null,
+      needsAtmNetworks ? getAtmNetworkMentionsCached().catch(() => null) : null,
     ]);
 
   // Editorial order — never the global sort by institution count.
@@ -209,6 +212,7 @@ export default async function GuidePage({ params }: PageProps) {
     capScope,
     complaints,
     atmExample,
+    atmNetworks,
   };
   const sections = withDistribution(guide.sections, guide.primaryCategory);
   // The overdraft guide compares institutions itself; other guides keep the lookup band.

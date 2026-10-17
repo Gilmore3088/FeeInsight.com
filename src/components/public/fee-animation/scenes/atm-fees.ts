@@ -2,7 +2,8 @@ import type { FeeScene } from "../types";
 
 /**
  * ATM fees guide, "Why was I charged twice?". The timing and the captions are James's pilot
- * sequence (Oct 17): 0-5 s, 5-12 s, 12-19 s, 19-25 s, then the end frame.
+ * sequence (Oct 17): 0-5 s, 5-12 s, 12-19 s, 19-25 s, then the end frame. The first caption
+ * states the withdrawal instead of trailing off (James's review, Oct 17: exact wording).
  */
 export const ATM_FEES_SCENE: FeeScene = {
   id: "atm_two_fee",
@@ -18,7 +19,7 @@ export const ATM_FEES_SCENE: FeeScene = {
       id: "withdrawal",
       kind: "transaction",
       durationMs: 5000,
-      caption: "One withdrawal...",
+      caption: "You withdraw $40 at another bank's ATM.",
       frame: { item: { label: "Cash", amount: 40, via: "card" }, charges: [], intro: "item" },
     },
     {

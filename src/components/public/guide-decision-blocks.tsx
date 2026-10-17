@@ -11,6 +11,8 @@ import { DistributionChart } from "@/components/public/distribution-chart";
 import { AccountCompare, type CompareFeature } from "@/components/public/guide-account-compare";
 import { AtmReceipt } from "@/components/public/atm-receipt";
 import type { AtmTwoFeeExample } from "@/lib/guides/atm-example";
+import type { NetworkMentions } from "@/lib/guides/atm-networks";
+import { AtmNetworkExhibit } from "@/components/public/atm-network-exhibit";
 
 /**
  * The decision blocks of a consumer guide: where the reader starts, what happens to one
@@ -25,6 +27,8 @@ export interface GuideExtras {
   complaints?: NationalComplaintThemes | null;
   /** Two institutions' live published ATM fees, for a breakdown marked `live: "atm_two_fee"`. */
   atmExample?: AtmTwoFeeExample | null;
+  /** Institutions whose own ATM lines name Allpoint, MoneyPass or CO-OP, for `network_mentions`. */
+  atmNetworks?: NetworkMentions[] | null;
 }
 
 function Prose({ text, summaries, className }: { text: string; summaries: FeeCategorySummary[]; className?: string }) {
@@ -206,6 +210,19 @@ export function CapScopeBlock({ extras }: { extras: GuideExtras }) {
   );
 }
 
+/** Live: each network's institutions and their own published lines. Nothing renders without data. */
+export function NetworkMentionsBlock({
+  block,
+  extras,
+}: {
+  block: Extract<GuideBlock, { type: "network_mentions" }>;
+  extras: GuideExtras;
+}) {
+  const networks = extras.atmNetworks?.filter((n) => n.institutions.length > 0) ?? [];
+  if (networks.length === 0) return null;
+  return <AtmNetworkExhibit title={block.title} caption={block.caption} networks={networks} />;
+}
+
 export function PolicyTableBlock({
   block,
   summaries,
@@ -231,6 +248,10 @@ export function PolicyTableBlock({
                   <Link href={`/fees?fee=${row.category}#explorer`} className="text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
                     Median {formatAmount(s.median_amount)}, {s.institution_count.toLocaleString()} institutions
                   </Link>
+                ) : row.link ? (
+                  <a href={row.link.href} className="text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
+                    {row.link.label}
+                  </a>
                 ) : (
                   "Not verified. Ask the institution."
                 )}
