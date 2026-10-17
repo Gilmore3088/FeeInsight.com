@@ -347,6 +347,33 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
   { feePublishedId: 125584, institutionId: 5008, canonicalFeeKey: "atm_non_network", amount: 3.5, feeName: "ATM Surcharge Fee on WWFCU machines (non-credit union cards only)",
     reason: "source_mismatch: #1735", issue: 1735, kind: "wrong_category",
     evidence: "Wayne-Westland FCU (doc 34932, text 33030): \"ATM Surcharge Fee on WWFCU machines (non-credit union cards only) | $3.50\", charged to non-members at the CU's own ATMs, which has no home among the 50 (as 131129, #1196); the members' foreign ATM fee is \"Withdrawal at Foreign ATM Machine | $3.50\"." },
+  // #1746 (read-only, Oct 17, after the knox.name_retidy v20 pass reached all 26 banks of #1689's
+  // footnote set): second reads of one printed fee, each down only while its kept twin is live as listed.
+  { feePublishedId: 109893, institutionId: 7239, canonicalFeeKey: "other_lending_fee", amount: 10, feeName: "NON-MEMBER LOAN APPLICATION FEE: IF YOU ARE NOT A MEMBER OF WCDU, THERE IS A",
+    reason: "duplicate of #81340 (#1746)", issue: 1746, kind: "duplicate",
+    requiresLive: { feePublishedId: 81340, amount: 10, feeName: "NON-MEMBER Loan Application Fee" },
+    evidence: "WCU Credit Union (doc 20097): the table row \"$10.00 each | 10NON-MEMBER Loan Application Fee\" (live as 81340) and its footnote \"10NON-MEMBER LOAN APPLICATION FEE: IF YOU ARE NOT A MEMBER OF WCDU, THERE IS A $10.00 NON-MEMBER APPLICATION FEE.\" are one fee." },
+  { feePublishedId: 130622, institutionId: 4907, canonicalFeeKey: "atm_non_network", amount: 2,
+    feeName: "4To avoid paying a fee, choose any INOVA FCU ATM, Alliance One or CO-OP Network ATM across the nation. Foreign ATM trans",
+    reason: "duplicate of #130624 (#1746)", issue: 1746, kind: "duplicate",
+    requiresLive: { feePublishedId: 130624, amount: 2, feeName: "Foreign ATM transactions" },
+    evidence: "Inova FCU (doc 35277): \"4To avoid paying a fee, choose any INOVA FCU ATM, Alliance One or CO-OP Network ATM across the nation. Foreign ATM transactions will be charged $2 per transaction.\"; the same $2 is live from the same line as 130624." },
+  { feePublishedId: 147193, institutionId: 3766, canonicalFeeKey: "dormant_account", amount: 5, feeName: "1A dormant fee",
+    reason: "duplicate of #101934 (#1746)", issue: 1746, kind: "duplicate",
+    requiresLive: { feePublishedId: 101934, amount: 5, feeName: "Dormant fee" },
+    evidence: "First National Bank of Kansas: doc 34910 \"1A dormant fee of $5.00 may be charged each cycle period if the account balance is less than $100\" and doc 1099 \"A dormant fee of $5.00 may be charged each cycle period if the account balance is less than $100.00\" (live as 101934) are one fee." },
+  { feePublishedId: 133860, institutionId: 8016, canonicalFeeKey: "paper_statement", amount: 5, feeName: "1 Paper statement charge",
+    reason: "duplicate of #148614 (#1746)", issue: 1746, kind: "duplicate",
+    requiresLive: { feePublishedId: 148614, amount: 5, feeName: "Paper statement charge" },
+    evidence: "CODE FCU (doc 28881): \"Paper statement charge of $5.00 will apply if not enrolled in eStatements.\" (footnotes 1 and 2, the same charge); live as 148614." },
+  { feePublishedId: 119352, institutionId: 7239, canonicalFeeKey: "garnishment_levy", amount: 25, feeName: "each | 8Legal Process Service (Garnishment/Levy)",
+    reason: "duplicate of #81339 (#1746)", issue: 1746, kind: "duplicate",
+    requiresLive: { feePublishedId: 81339, amount: 25, feeName: "Legal Process Service (Garnishment/Levy)" },
+    evidence: "WCU Credit Union: \"$25.00 each | 8Legal Process Service (Garnishment/Levy)\" on docs 3516 and 20097, one schedule; live as 81339." },
+  { feePublishedId: 143826, institutionId: 110, canonicalFeeKey: "monthly_maintenance", amount: 25, feeName: "3To receive Priority Checking benefits and waive the Monthly service charge",
+    reason: "duplicate of #147464 (#1746)", issue: 1746, kind: "duplicate",
+    requiresLive: { feePublishedId: 147464, amount: 25, feeName: "Monthly service charge" },
+    evidence: "Bank of Hope: doc 21359 \"3To receive Priority Checking benefits and waive the $25 Monthly Service Charge each month: ...\" is the Priority Checking charge doc 17801 prints as \"Priority Checking ... $25 / Monthly Service Charge\", live as 147464." },
 ];
 
 export interface LiveTakedownRow {
