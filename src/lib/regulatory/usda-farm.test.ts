@@ -42,10 +42,12 @@ describe("ERS farm income", () => {
       '<a href="/media/20808/february-5-2026-release.zip">February 5, 2026 release</a>',
       '<a href="/media/29517/september-3-2026-release.zip">September 3, 2026 release</a>',
       '<a href="/media/1/farm-income-1960-2003.zip">Farm income 1960-2003</a>',
+      '<a href="/media/21960/june-1-2025-release.zip">June 1, 2025 release</a>',
     ].join("");
     expect(ersFileLinks(page, "https://www.ers.usda.gov/data-products/x")).toEqual([
       "https://www.ers.usda.gov/media/29517/september-3-2026-release.zip",
       "https://www.ers.usda.gov/media/20808/february-5-2026-release.zip",
+      "https://www.ers.usda.gov/media/21960/june-1-2025-release.zip",
     ]);
     expect(ersReleaseDate("September 3, 2026 release")).toBe("2026-09-03");
     expect(ersReleaseDate("Data archive")).toBeNull();

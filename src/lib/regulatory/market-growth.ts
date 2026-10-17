@@ -1005,7 +1005,7 @@ export function parseLausText(body: string, wantPeriod: string | null = null): A
  */
 export function parseLausTable(rows: string[][], year: number | null): AreaFetch {
   const firstData = rows.findIndex((r) => /^CN\d{6,}/.test((r[0] ?? "").trim()));
-  if (firstData < 0) return emptyFetch(null, "BLS annual county table held no CN (county) rows", ["county rows (LAUS code CN...)"]);
+  if (firstData < 0) return emptyFetch(null, "BLS county workbook held no CN (county) rows", ["county rows (LAUS code CN...)"]);
   const headerRows = rows.slice(Math.max(0, firstData - 3), firstData);
   const width = Math.max(...headerRows.map((r) => r.length), 0);
   const labels = Array.from({ length: width }, (_, i) => headerRows.map((r) => r[i] ?? "").join(" ").replace(/\s+/g, " ").trim().toLowerCase());
@@ -1021,7 +1021,7 @@ export function parseLausTable(rows: string[][], year: number | null): AreaFetch
     rate: find((l) => /rate/.test(l)),
   };
   const missing = Object.entries(cols).filter(([, at]) => at < 0).map(([k]) => `column ${k}`);
-  if (cols.st < 0 || cols.co < 0 || cols.lf < 0) return emptyFetch(null, `BLS annual county table not in the expected layout; missing ${missing.join(", ")}`, missing);
+  if (cols.st < 0 || cols.co < 0 || cols.lf < 0) return emptyFetch(null, `BLS county workbook not in the expected layout; missing ${missing.join(", ")}`, missing);
   const skipped: Record<string, number> = {};
   const records: LausRecord[] = [];
   for (const r of rows.slice(firstData)) {
@@ -1069,9 +1069,10 @@ export function parseLausCurrentBytes(bytes: Uint8Array): AreaFetch {
   if (!isZipBytes(bytes)) return parseLausText(decodeText(bytes));
   const files = unzipSync(bytes, { filter: (f) => /\.(txt|xlsx)$/i.test(f.name) || f.name === "[Content_Types].xml" });
   const names = Object.keys(files);
-  const txt = names.find((n) => /\.txt$/i.test(n));
+  const pick = (ext: RegExp) => names.find((n) => ext.test(n) && /laucnty/i.test(n)) ?? names.find((n) => ext.test(n));
+  const txt = pick(/\.txt$/i);
   if (txt) return parseLausText(decodeText(files[txt]));
-  const xlsx = names.find((n) => /\.xlsx$/i.test(n));
+  const xlsx = pick(/\.xlsx$/i);
   if (xlsx) return parseLausTable(readTableRows(files[xlsx]).rows, null);
   // The download itself is a workbook (an xlsx is a zip with [Content_Types].xml at its root).
   if (names.includes("[Content_Types].xml")) return parseLausTable(readTableRows(bytes).rows, null);

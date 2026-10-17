@@ -1465,7 +1465,7 @@ const BANK_WORDS = /\b(bank|bancorp|bancshares|bankshares|banc|savings|trust|fin
 export function h2ReleaseDates(html: string): string[] {
   const absolute = [...html.matchAll(/releases\/h2\/(\d{8})(?!\d)/g)].map((m) => m[1]);
   const relative = [...html.matchAll(/href\s*=\s*["'](?:\.\/)?(\d{8})(?:\/(?:default\.htm)?)?["'#?]/gi)].map((m) => m[1]);
-  const dates = [...absolute, ...relative];
+  const dates = [...absolute, ...relative].filter((d) => /^(19|20)\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])$/.test(d));
   return [...new Set(dates)].sort().reverse();
 }
 

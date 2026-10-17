@@ -61,7 +61,7 @@ export function ersReleaseDate(text: string): string | null {
 export function ersFileLinks(html: string, pageUrl: string): string[] {
   const links = pageLinks(html, pageUrl)
     .filter((l) => /\.(zip|csv)(\?|$)/i.test(l.href))
-    .filter((l) => !/archive|1960/i.test(`${l.href} ${l.text}`));
+    .filter((l) => !/archive|\b1960\s*-/i.test(l.text) && !/archive/i.test(l.href));
   const releases = links
     .map((l) => ({ href: l.href, date: ersReleaseDate(l.text) }))
     .filter((l): l is { href: string; date: string } => l.date !== null)

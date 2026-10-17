@@ -271,7 +271,7 @@ describe("BLS county labor force", () => {
   });
 
   it("reads the 14-month file from the zip BLS now links, as text or as a workbook", () => {
-    const fromText = parseLausCurrentBytes(zipSync({ "laucntycur14.txt": strToU8(current) }));
+    const fromText = parseLausCurrentBytes(zipSync({ "readme.txt": strToU8("About this file"), "laucntycur14.txt": strToU8(current) }));
     expect(find(fromText.rows, "01001", "laus_labor_force", "2025-08")?.value).toBe(26123);
     expect(parseLausCurrentBytes(strToU8(current)).rows.length).toBe(fromText.rows.length);
 
