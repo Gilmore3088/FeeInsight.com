@@ -3,13 +3,9 @@ Fee review kit for the pricing committee
 
 Planned deliverables: a one-page agenda, a worksheet with one row per headline fee (your price, peer 25th, median, 75th, position, decision), and a one-page summary template for the board pack.
 
-[ FEE REVIEW AGENDA (60 MINUTES) ]
-1. Position (15 min): headline fees against the peer 25th percentile, median and 75th percentile. List every fee above the 75th.
-2. Revenue (10 min): service charges on deposit accounts from the Call Report (Schedule RI) or NCUA 5300. Which 3 fees drive most of it?
-3. Risk (10 min): re-presentment NSF, authorize-positive/settle-negative, overdraft caps, Reg E opt-in records.
-4. Customer (10 min): complaints and reviews that name a fee in the last 12 months.
-5. Decide (15 min): for each fee above the 75th percentile, keep (with a written reason), change, or study further.
+James Gilmore, Fee Insight
 
 --
+3522 Southwest Barton Street, Seattle, United States of America
 You're getting this because you signed up at feeinsight.com.
 Unsubscribe: {$unsubscribe}

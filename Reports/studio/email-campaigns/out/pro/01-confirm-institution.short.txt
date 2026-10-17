@@ -12,5 +12,6 @@ If your institution isn't listed, or its fee schedule looks out of date, reply t
 James Gilmore, Fee Insight
 
 --
+3522 Southwest Barton Street, Seattle, United States of America
 You're getting this because your team subscribes to Hamilton.
 Unsubscribe: {$unsubscribe}

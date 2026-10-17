@@ -48,7 +48,9 @@ type SqlTag = typeof sql;
  * No call is bought for a text whose fees could never go live (takedowns at the source,
  * 2026-10-17): a closed institution's (publish never selects it) or a document Darwin's latest
  * document-owner read judged another bank's (publish refuses its rows), or an article, blog,
- * learning or advice page (#1774; publish refuses its rows, `hamilton/article-page.ts`).
+ * learning or advice page (#1774; publish refuses its rows, `hamilton/article-page.ts`). Nor for
+ * a page whose earlier paid read found no fee (`planPaidReads`); each skip is logged on the step
+ * (`knox.paid_read_skipped`).
  */
 
 /** Version 2: monthly maintenance rows carry the account's lineup fields (`lineup.ts`). */
@@ -71,6 +73,62 @@ interface PaidTextRow {
   normalized_text: string;
   text_hash: string;
   free_yield: number | string | null;
+  /** The latest paid read of this page's address that found no fee at all, when no paid read of it found one. */
+  no_fee_read_id?: number | string | null;
+}
+
+/**
+ * Why a selected text gets no paid call (zero-yield reads, 2026-10-17). Deterministic, decided
+ * before the call from the attempt log alone:
+ * - `page_read_before_no_fees`: the paid reader read this page's address before, the model
+ *   returned no fee at all, and no paid read of the address ever found one. A re-fetched copy
+ *   with a changed text was bought again: 107 calls ($3.06) in 14 days, none with a live fee.
+ *
+ * A bank's same text under two documents in one run is still read twice: skipping the second
+ * copy would have lost 6 live fees in the same 14 days (149 calls, $4.08), and the rule is that a
+ * skip loses none.
+ */
+export type PaidReadSkipReason = "page_read_before_no_fees";
+
+export interface PaidReadSkip {
+  documentTextId: number;
+  sourceDocumentId: number;
+  institutionId: number;
+  textHash: string;
+  reason: PaidReadSkipReason;
+  /** `page_read_before_no_fees`: the earlier attempt that found no fee. */
+  priorAttemptId: number | null;
+}
+
+export const PAID_READ_SKIP_LABEL: Record<PaidReadSkipReason, string> = {
+  page_read_before_no_fees: "a paid read of this page found no fee before",
+};
+
+type PlannedRow = Pick<PaidTextRow, "document_text_id" | "source_document_id" | "institution_id" | "text_hash" | "no_fee_read_id">;
+
+/**
+ * Pure: which selected texts get a paid call, in order and up to `limit`, and which are skipped
+ * and why. Exported for tests.
+ */
+export function planPaidReads<T extends PlannedRow>(rows: T[], limit: number): { reads: T[]; skips: PaidReadSkip[] } {
+  const reads: T[] = [];
+  const skips: PaidReadSkip[] = [];
+  for (const row of rows) {
+    if (reads.length >= limit) break;
+    if (row.no_fee_read_id != null) {
+      skips.push({
+        documentTextId: Number(row.document_text_id),
+        sourceDocumentId: Number(row.source_document_id),
+        institutionId: Number(row.institution_id),
+        textHash: row.text_hash,
+        reason: "page_read_before_no_fees",
+        priorAttemptId: Number(row.no_fee_read_id),
+      });
+      continue;
+    }
+    reads.push(row);
+  }
+  return { reads, skips };
 }
 
 /** One row as the model returns it. */
@@ -229,6 +287,11 @@ export function paidExtractPrompt(text: string): string {
   ].join("\n");
 }
 
+/** SQL: a page's address without its query or fragment, lowercased, so a re-fetched copy matches. */
+function pageAddressSql(column: string): string {
+  return `lower(regexp_replace(${column}, '[?#].*$', ''))`;
+}
+
 async function selectPaidTexts(db: SqlTag, limit: number, stateCode?: string): Promise<PaidTextRow[]> {
   const params: Array<string | number> = [];
   const strategy = `$${params.push(KNOX_RULES_STRATEGY.strategy)}`;
@@ -251,9 +314,36 @@ async function selectPaidTexts(db: SqlTag, limit: number, stateCode?: string): P
              adt.source_url,
              adt.normalized_text,
              adt.text_hash,
-             free.yield_count AS free_yield
+             free.yield_count AS free_yield,
+             -- The paid reader read this page's address before and the model returned no fee at
+             -- all, and no paid read of the address found one (zero-yield reads, 2026-10-17). The
+             -- text is still selected so the step logs the skip (planPaidReads). Looked up only
+             -- for the rows returned.
+             (
+               SELECT prior.id
+                 FROM pipeline_attempts prior
+                 JOIN source_documents prior_page ON prior_page.id = prior.source_document_id
+                WHERE prior.stage = 'extract'
+                  AND prior.strategy = ${paidStrategy}
+                  AND prior.institution_id = adt.institution_id
+                  AND prior.outcome = 'no_candidates'
+                  AND ${pageAddressSql("prior_page.document_url")} = ${pageAddressSql("COALESCE(page.document_url, adt.source_url)")}
+                  AND NOT EXISTS (
+                    SELECT 1
+                      FROM pipeline_attempts found
+                      JOIN source_documents found_page ON found_page.id = found.source_document_id
+                     WHERE found.stage = 'extract'
+                       AND found.strategy = ${paidStrategy}
+                       AND found.institution_id = adt.institution_id
+                       AND found.yield_count > 0
+                       AND ${pageAddressSql("found_page.document_url")} = ${pageAddressSql("COALESCE(page.document_url, adt.source_url)")}
+                  )
+                ORDER BY prior.created_at DESC, prior.id DESC
+                LIMIT 1
+             ) AS no_fee_read_id
         FROM agent_source_texts adt
         JOIN institution_sources inst ON inst.id = adt.institution_id
+        LEFT JOIN source_documents page ON page.id = adt.source_document_id
         JOIN LATERAL (
           -- The current free version already read this exact text and found few fees.
           SELECT pa.yield_count
@@ -332,6 +422,53 @@ function isStopError(error: unknown): boolean {
   return error instanceof Error && STOP_ERRORS.has(error.name);
 }
 
+/**
+ * Every skip is visible: one `knox.paid_read_skipped` event on the step lists each text and its
+ * reason. Each skipped text also gets a `rejected` attempt (cost 0), so later runs do not select
+ * it again.
+ */
+async function logPaidReadSkips(db: SqlTag, options: PaidStepOptions, skips: PaidReadSkip[]): Promise<void> {
+  if (skips.length === 0) return;
+  for (const skip of skips) {
+    await recordAttempt(db, {
+      institutionId: skip.institutionId,
+      sourceDocumentId: skip.sourceDocumentId,
+      stage: "extract",
+      strategy: KNOX_PAID_STRATEGY.strategy,
+      version: KNOX_PAID_STRATEGY.version,
+      fingerprint: skip.textHash,
+      outcome: "rejected",
+      yieldCount: 0,
+      costMicrousd: 0,
+      durationMs: 0,
+      runId: options.runId,
+      stepId: options.stepId ?? null,
+      foldIntoPlaybook: false,
+      detail: { document_text_id: skip.documentTextId, skipped: skip.reason, prior_attempt_id: skip.priorAttemptId },
+    });
+  }
+  const counts: Partial<Record<PaidReadSkipReason, number>> = {};
+  for (const skip of skips) counts[skip.reason] = (counts[skip.reason] ?? 0) + 1;
+  const reasons = Object.entries(counts)
+    .map(([reason, count]) => `${count} because ${PAID_READ_SKIP_LABEL[reason as PaidReadSkipReason]}`)
+    .join("; ");
+  const message = `Knox skipped ${skips.length} paid read${skips.length === 1 ? "" : "s"} that would yield nothing, $0 spent: ${reasons}.`;
+  const detail = {
+    by_reason: counts,
+    skips: skips.map((skip) => ({
+      document_text_id: skip.documentTextId,
+      source_document_id: skip.sourceDocumentId,
+      institution_id: skip.institutionId,
+      reason: skip.reason,
+      prior_attempt_id: skip.priorAttemptId,
+    })),
+  };
+  await db`
+    INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
+    VALUES (${options.runId}, ${options.stepId ?? null}, 'knox.paid_read_skipped', 'completed', ${message}, ${JSON.stringify(detail)}::jsonb)
+  `;
+}
+
 export async function runKnoxPaidExtract(
   options: PaidStepOptions & { create?: PaidMessageCreator },
 ): Promise<PaidPassResult> {
@@ -342,14 +479,25 @@ export async function runKnoxPaidExtract(
   // Selection reads the attempt log; without it there is no free result to compare.
   if (!(await learningSchemaReady(db))) return result;
 
-  const rows = (await selectPaidTexts(db, limit, options.stateCode))
-    .filter((row) => pricedLineCount(row.normalized_text) >= PAID_MIN_PRICED_LINES)
-    .slice(0, limit);
+  const { reads: rows, skips } = planPaidReads(
+    (await selectPaidTexts(db, limit, options.stateCode)).filter((row) => pricedLineCount(row.normalized_text) >= PAID_MIN_PRICED_LINES),
+    limit,
+  );
   result.selected = rows.length;
+  const skipResults = skips.map((skip) => ({
+    document_text_id: skip.documentTextId,
+    skip_reason: skip.reason,
+    ...(skip.priorAttemptId != null ? { prior_attempt_id: skip.priorAttemptId } : {}),
+  }));
   if (dryRun) {
-    result.results = rows.map((row) => ({ document_text_id: Number(row.document_text_id), free_yield: Number(row.free_yield ?? 0) }));
+    result.results = [
+      ...rows.map((row) => ({ document_text_id: Number(row.document_text_id), free_yield: Number(row.free_yield ?? 0) })),
+      ...skipResults,
+    ];
     return result;
   }
+  await logPaidReadSkips(db, options, skips);
+  result.results.push(...skipResults);
 
   const model = PAID_PASS_MODELS.extract();
   for (const row of rows) {

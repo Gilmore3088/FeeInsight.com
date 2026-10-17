@@ -10,6 +10,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PROGRAM, BRAND } from "./content.mjs";
 
+// MailerLite appends its own footer, with the account's postal address, to the HTML of every
+// send but not to the plain-text part. The plain text carries the same address so both parts
+// comply (James, 2026-10-17 11:10 UTC). Exactly as the MailerLite account footer prints it;
+// MARKETING_MAILING_ADDRESS replaces it in both parts once the registration comes through.
+const PLAIN_TEXT_ADDRESS = BRAND.mailingAddress || "3522 Southwest Barton Street, Seattle, United States of America";
+
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, "out");
 
@@ -184,7 +190,7 @@ ${bodyHtml}
 </table></td></tr></table></body></html>
 `;
   const textIntro = automation.footer === "short" ? "" : `Fee Insight publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules.\nMethodology: ${BRAND.siteUrl}/methodology\nQuestions? Just reply.\n`;
-  const text = `${email.preheader}\n\n${bodyText}\n\n----\n${textIntro}${BRAND.mailingAddress ? `${BRAND.mailingAddress}\n` : ""}${automation.footerReason || "You're getting this because you signed up at feeinsight.com."}\nUnsubscribe: {$unsubscribe}\n`;
+  const text = `${email.preheader}\n\n${bodyText}\n\n----\n${textIntro}${PLAIN_TEXT_ADDRESS}\n${automation.footerReason || "You're getting this because you signed up at feeinsight.com."}\nUnsubscribe: {$unsubscribe}\n`;
   return { html, text, short: condense(automation, email, parts) };
 }
 
@@ -196,7 +202,7 @@ const VISUAL_BLOCKS = new Set(["stats", "bench", "bars", "range"]);
 function condense(automation, email, parts) {
   const visual = email.blocks.some((b) => VISUAL_BLOCKS.has(b.type));
   const reason = automation.footerReason || "You're getting this because you signed up at feeinsight.com.";
-  const tail = `\n\n${visual ? "The chart is in the full email: {$url}\n\n" : ""}--\n${BRAND.mailingAddress ? `${BRAND.mailingAddress}\n` : ""}${reason}\nUnsubscribe: {$unsubscribe}\n`;
+  const tail = `\n\n${visual ? "The chart is in the full email: {$url}\n\n" : ""}--\n${PLAIN_TEXT_ADDRESS}\n${reason}\nUnsubscribe: {$unsubscribe}\n`;
   // UTM tags would eat the character cap; MailerLite tracks plain-text clicks on its own.
   const bare = (t) => t.replace(/https?:\/\/[^\s)]+/g, (u) => u.replace(/([?&])utm_[a-z]+=[^&#]*/g, "$1").replace(/&{2,}/g, "&").replace(/\?&+/, "?").replace(/[?&]+(?=#|$)/, ""));
   const chunks = [];
@@ -247,6 +253,6 @@ writeFileSync(
   `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fee Insight Email Program</title><style>body{margin:0;background:${C.sand};font:15px/1.5 ${SANS};color:${C.ink};padding:24px 16px}h1{font-weight:600}h2{font-weight:600;margin-top:40px;border-bottom:2px solid ${C.ink}}.meta{font-size:13px;margin:18px 0 6px}section{max-width:640px}iframe{width:100%;max-width:640px;height:900px;border:1px solid ${C.line};background:${C.paper}}</style></head><body><h1>Fee Insight email program</h1><p>${index.length} emails across ${PROGRAM.length} automations. Each file: <code>.html</code> for MailerLite custom HTML, <code>.txt</code> for the plain-text version.</p>${PROGRAM.map((a) => `<h2>${esc(a.name)}</h2><p>Trigger: ${esc(a.trigger)}</p>${rows(a)}`).join("")}</body></html>`,
 );
 
-if (!BRAND.mailingAddress) console.warn("Note: no address in the template; MailerLite's appended footer carries the account address (MARKETING_MAILING_ADDRESS adds one).");
+if (!BRAND.mailingAddress) console.warn("Note: no address in the HTML template (MailerLite's appended footer carries the account address); plain text carries the account footer address.");
 console.log(`Built ${index.length} emails into ${outDir}`);
 for (const x of index) console.log(`  ${x.path}  (day ${x.e.day}, ${x.chars} chars plain text)  ${x.e.subject}`);
