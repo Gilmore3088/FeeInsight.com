@@ -898,12 +898,9 @@ describe("registry dispatch", () => {
       "finra-nfcs",
       "fhlb-advance-rates",
       "bank-merger-orders",
-<<<<<<< HEAD
       "cfpb-making-ends-meet",
       "state-payday-reports",
       "urban-debt-in-america",
-=======
->>>>>>> origin/main
       "sec-links",
       "sec-filings",
       "beige-book",

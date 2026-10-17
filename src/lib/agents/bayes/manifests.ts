@@ -376,10 +376,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v17 (#1646): name words match where a word begins. The version is in each institution's check
   // fingerprint, so every publish step's batch re-checks institutions not yet checked at v17.
   SOURCE_CHECK_STRATEGY: "Its fingerprint carries the version, so each publish step's batch re-checks every institution not yet checked at the new version; nothing to replay.",
-<<<<<<< HEAD
   STATE_LISTS_PARSER_VERSION: "New sources; the depository and non-bank lender steps are not scheduled until their tables are migrated, and Urban debt writes nothing until its license is confirmed; no older rows to replay.",
-=======
->>>>>>> origin/main
   SEC_MARKET_VALUE_PARSER_VERSION: "New source, not scheduled until its table (sec_market_value_facts) is migrated; no older rows to replay.",
 };
 
