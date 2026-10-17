@@ -6,8 +6,8 @@
  */
 import Link from "next/link";
 import type { Fact, SchedulePosition } from "@/lib/hamilton/workspace/types";
-import { fmtMoney, SERIF } from "@/components/hamilton/memo/memo";
-import { SourceChip, middleHalfText } from "@/components/hamilton/memo/exhibit-view";
+import { ANSWER_TYPE, figureSize, fmtMoney, SERIF } from "@/components/hamilton/memo/memo";
+import { FactList as SourcedFactList, middleHalfText } from "@/components/hamilton/memo/exhibit-view";
 
 const capitalizeFirst = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -146,7 +146,7 @@ export function SchedulePositionsChart({
         <div className="flex flex-col gap-4 border-b border-warm-200 bg-warm-100/70 px-5 py-5 sm:flex-row sm:items-end sm:justify-between">
           <div className="flex flex-col gap-2">
             <p className="text-[11px] font-medium uppercase tracking-[0.1em] text-terra-text">Fee scorecard</p>
-            <h3 className="text-xl text-warm-900" style={SERIF}>
+            <h3 className={ANSWER_TYPE.section} style={SERIF}>
               Every fee against its peers
             </h3>
             <p className="sr-only">
@@ -191,7 +191,7 @@ export function SchedulePositionsChart({
                 {gapPct(r) ? ` ${gapPct(r)}` : ""}
               </span>
             </div>
-            <p className="text-3xl leading-none text-warm-900 [font-variant-numeric:tabular-nums]" style={SERIF}>
+            <p className={`${figureSize(fmtMoney(r.current))} leading-none text-warm-900 ${ANSWER_TYPE.num}`} style={SERIF}>
               {fmtMoney(r.current)}
             </p>
             <RangeStrip row={r} />
@@ -211,20 +211,7 @@ export function SchedulePositionsChart({
   );
 }
 
-/** Sourced findings, one per line, each with its source badge. */
+/** Sourced findings, one per row, each with its source badge: the shared list in its boxed layout. */
 export function FactList({ facts }: { facts: Fact[] }) {
-  if (facts.length === 0) return null;
-  return (
-    <ul className="flex max-w-[68ch] flex-col divide-y divide-warm-200 rounded-lg border border-warm-300 bg-white">
-      {facts.map((f, i) => (
-        <li key={i} className="flex flex-col gap-1 px-4 py-3">
-          <span className="text-[15px] leading-relaxed text-warm-900 [font-variant-numeric:tabular-nums]">{f.text}</span>
-          {/* The same source badge as every other answer: label, "Jun 2026", n=. */}
-          <span>
-            <SourceChip source={f.source} n={f.sampleSize} />
-          </span>
-        </li>
-      ))}
-    </ul>
-  );
+  return <SourcedFactList facts={facts} layout="boxed" />;
 }

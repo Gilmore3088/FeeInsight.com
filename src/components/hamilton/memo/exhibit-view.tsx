@@ -5,8 +5,7 @@
  */
 import { RD } from "@/lib/report-design/tokens";
 import type { CSSProperties, ReactNode } from "react";
-import { Callout, More, QuestionCard, SERIF, fmtMoney } from "./memo";
-import { REPORT_DESIGN_CSS } from "@/lib/report-design/css";
+import { ANSWER_TYPE, Callout, ExhibitShell, More, QuestionCard, SectionHeading, SERIF, fmtMoney } from "./memo";
 import type { Exhibit, ExhibitMarker, Fact, HamiltonAnswer, SourceRef } from "@/lib/hamilton/workspace/types";
 import { staleSourceLabel } from "@/lib/hamilton/source-age";
 
@@ -115,19 +114,9 @@ export function ExhibitFrame({
 }) {
   const label = [number != null ? `Exhibit ${number}` : "Exhibit", topic].filter(Boolean).join(" · ");
   return (
-    <div className="rd w-full">
-      <style href="report-design" precedence="medium">
-        {REPORT_DESIGN_CSS}
-      </style>
-      <section className="rd-exhibit">
-        <div className="rd-label">{label}</div>
-        <h2>{title}</h2>
-        {sub ? <p className="rd-sub">{sub}</p> : null}
-        {children}
-        {note ? <p className="rd-source not-italic">{note}</p> : null}
-        {sources.length > 0 ? <div className="rd-source">Source: {sourceLine(sources)}</div> : null}
-      </section>
-    </div>
+    <ExhibitShell label={label} title={title} sub={sub} note={note} source={sources.length > 0 ? sourceLine(sources) : null}>
+      {children}
+    </ExhibitShell>
   );
 }
 
@@ -533,11 +522,31 @@ export function ExhibitView({ exhibit, number, title }: { exhibit: ExhibitSpec; 
   );
 }
 
-export function FactList({ facts }: { facts: readonly Fact[] }) {
+/**
+ * Sourced findings, each with its source badge. The one list every answer branch uses:
+ * "inline" puts the badge at the end of the sentence (a short answer's reasoning), "boxed"
+ * sets each finding on its own row with the badge under it (findings with nothing to draw).
+ */
+export function FactList({ facts, layout = "inline" }: { facts: readonly Fact[]; layout?: "inline" | "boxed" }) {
+  if (facts.length === 0) return null;
+  if (layout === "boxed") {
+    return (
+      <ul className="flex max-w-[68ch] flex-col divide-y divide-warm-200 rounded-lg border border-warm-300 bg-white">
+        {facts.map((f, i) => (
+          <li key={i} className="flex flex-col gap-1 px-4 py-3">
+            <span className={`${ANSWER_TYPE.body} text-warm-900 ${ANSWER_TYPE.num}`}>{f.text}</span>
+            <span>
+              <SourceChip source={f.source} n={f.sampleSize} />
+            </span>
+          </li>
+        ))}
+      </ul>
+    );
+  }
   return (
     <ul className="flex flex-col gap-2.5">
       {facts.map((f, i) => (
-        <li key={i} className="text-[15px] leading-relaxed text-warm-800">
+        <li key={i} className={`${ANSWER_TYPE.body} text-warm-800`}>
           {f.text} <SourceChip source={f.source} n={f.sampleSize} />
         </li>
       ))}
@@ -572,7 +581,7 @@ export function AnswerView({
   const rest = answer.claims.slice(LEAD_CLAIMS);
   return (
     <article className="flex flex-col gap-5">
-      <p className="text-xl leading-snug text-warm-900 sm:text-2xl" style={SERIF}>
+      <p className={ANSWER_TYPE.lead} style={SERIF}>
         {answer.headline}
       </p>
       {answer.exhibit ? <ExhibitView exhibit={answer.exhibit} /> : null}
@@ -582,7 +591,7 @@ export function AnswerView({
           {rest.length > 0 ? <FactList facts={rest} /> : null}
           {answer.drivers.length > 0 ? (
             <section>
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.1em] text-warm-600">What moves this</h3>
+              <SectionHeading>What moves this</SectionHeading>
               <FactList facts={answer.drivers} />
             </section>
           ) : null}
@@ -605,7 +614,7 @@ export function AnswerView({
           </Callout>
         )
       ) : null}
-      <p className="text-xs text-warm-600">
+      <p className={ANSWER_TYPE.caption}>
         Evidence: <span className="font-medium text-warm-800">{ANSWER_EVIDENCE_LABELS[answer.evidenceLevel]}</span>
       </p>
     </article>

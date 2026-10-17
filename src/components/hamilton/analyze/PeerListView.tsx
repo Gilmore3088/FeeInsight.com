@@ -167,9 +167,10 @@ function SelectablePeerList({ response, saveContext, onPage, paging = false, sav
           <h3 className="text-lg font-semibold text-warm-900">Published {feeLabel} fees for the selected peers</h3>
           <p className="mt-1 text-sm text-warm-700">{data.feeComparison.note}</p>
           <div role="region" aria-label={`${feeLabel} fee comparison; scroll horizontally`} tabIndex={0} className="mt-3 overflow-x-auto">
-            <table aria-label={`Published ${feeLabel} charges`} className="w-full min-w-[700px] text-left text-sm">
-              <thead><tr><th scope="col" className="p-2">Institution</th><th scope="col" className="p-2">Fee</th><th scope="col" className="p-2">{rateFees.length ? "Amount or rate" : "Amount"}</th><th scope="col" className="p-2">Frequency</th><th scope="col" className="p-2">Published / source</th></tr></thead>
-              <tbody>
+            <table aria-label={`Published ${feeLabel} charges`} className="w-full text-left text-sm max-md:block">
+              {/* Below md every charge is a card of label and value, so a phone never scrolls sideways. */}
+              <thead className="max-md:sr-only"><tr><th scope="col" className="p-2">Institution</th><th scope="col" className="p-2">Fee</th><th scope="col" className="p-2">{rateFees.length ? "Amount or rate" : "Amount"}</th><th scope="col" className="p-2">Frequency</th><th scope="col" className="p-2">Published / source</th></tr></thead>
+              <tbody className="max-md:block">
                 {[...data.rows.map(row => ({ id: row.institutionId, name: row.name, isAccount: false })),
                   ...(data.feeComparison.account ? [{ id: data.feeComparison.account.institutionId, name: data.feeComparison.account.name, isAccount: true }] : [])
                 ].map(item => {
@@ -181,16 +182,16 @@ function SelectablePeerList({ response, saveContext, onPage, paging = false, sav
                       .map(fee => ({ ...fee, key: `${item.id}:rate:${fee.id}`, shown: fee.rateLabel })),
                   ];
                   return charges.length ? charges.map(charge => (
-                    <tr key={charge.key} className="border-t border-warm-200">
-                      <th scope="row" className="p-2 font-medium">{item.name}{item.isAccount ? " (your institution)" : ""}</th>
-                      <td className="p-2">{charge.name}</td>
-                      <td className="p-2 tabular-nums">{charge.shown}</td>
-                      <td className="p-2">{frequencyLabel(charge.frequency)}</td>
-                      <td className="p-2">{sourceDateWithAge(charge.publishedAt) ?? "Date unavailable"}
+                    <tr key={charge.key} className="border-t border-warm-200 max-md:block max-md:py-2">
+                      <th scope="row" className="p-2 font-medium max-md:block max-md:px-0 max-md:py-0.5">{item.name}{item.isAccount ? " (your institution)" : ""}</th>
+                      <td data-label="Fee:" className="p-2 max-md:block max-md:px-0 max-md:py-0.5 max-md:before:mr-1 max-md:before:font-medium max-md:before:text-warm-600 max-md:before:content-[attr(data-label)]">{charge.name}</td>
+                      <td data-label={rateFees.length ? "Amount or rate:" : "Amount:"} className="p-2 tabular-nums max-md:block max-md:px-0 max-md:py-0.5 max-md:before:mr-1 max-md:before:font-medium max-md:before:text-warm-600 max-md:before:content-[attr(data-label)]">{charge.shown}</td>
+                      <td data-label="Frequency:" className="p-2 max-md:block max-md:px-0 max-md:py-0.5 max-md:before:mr-1 max-md:before:font-medium max-md:before:text-warm-600 max-md:before:content-[attr(data-label)]">{frequencyLabel(charge.frequency)}</td>
+                      <td data-label="Published:" className="p-2 max-md:block max-md:px-0 max-md:py-0.5 max-md:before:mr-1 max-md:before:font-medium max-md:before:text-warm-600 max-md:before:content-[attr(data-label)]">{sourceDateWithAge(charge.publishedAt) ?? "Date unavailable"}
                         {charge.documentUrl || charge.sourceUrl ? <a href={charge.documentUrl ?? charge.sourceUrl ?? "#"} target="_blank" rel="noopener noreferrer" className="ml-2 underline">Fee schedule</a> : <span className="ml-2">Source link unavailable</span>}
                       </td>
                     </tr>
-                  )) : <tr key={item.id} className="border-t border-warm-200"><th scope="row" className="p-2 font-medium">{item.name}{item.isAccount ? " (your institution)" : ""}</th><td colSpan={4} className="p-2">{noFeeLine}</td></tr>;
+                  )) : <tr key={item.id} className="border-t border-warm-200 max-md:block max-md:py-2"><th scope="row" className="p-2 font-medium max-md:block max-md:px-0 max-md:py-0.5">{item.name}{item.isAccount ? " (your institution)" : ""}</th><td colSpan={4} className="p-2 max-md:block max-md:px-0 max-md:py-0.5">{noFeeLine}</td></tr>;
                 })}
               </tbody>
             </table>
@@ -224,32 +225,32 @@ function SelectablePeerList({ response, saveContext, onPage, paging = false, sav
               {savedName ? <p role="status" className="text-sm text-warm-800">Saved {selectedIds.length} selected institutions as “{savedName}”. <a href={`/pro/settings?instId=${data.subject.institutionId}#peer-sets`} className="font-medium text-terra-text underline">Manage peer groups</a></p> : null}
             </div>
           ) : null}
-          <p className="text-xs text-warm-600">On a narrow screen, scroll the table horizontally to see every column.</p>
           <div role="region" aria-label="Peer table; scroll horizontally" tabIndex={0} className="min-w-0 overflow-x-auto rounded-lg border border-warm-300 focus:outline-terra">
-            <table className="w-full min-w-[760px] text-left text-sm">
+            <table className="w-full text-left text-sm max-md:block">
               <caption className="sr-only">Institutions matching the criteria, with assets, reporting dates, sources and published-fee coverage</caption>
-              <thead className="border-b border-warm-300 bg-warm-100 text-warm-800"><tr>
+              <thead className="border-b border-warm-300 bg-warm-100 text-warm-800 max-md:sr-only"><tr>
                 <th scope="col" className="p-3">Select</th>
                 <th scope="col" className="p-3">Institution</th><th scope="col" className="p-3">Headquarters</th>
                 <th scope="col" className="p-3 text-right">Total assets (USD)</th><th scope="col" className="p-3">Reporting date / source</th>
                 <th scope="col" className="p-3">Fee data</th>
               </tr></thead>
-              <tbody className="divide-y divide-warm-200 bg-white text-warm-900">
-                {rows.map(row => <tr key={row.institutionId}>
-                  <td className="p-3"><input type="checkbox" aria-label={`Select ${row.name}`} checked={selected.has(row.institutionId)}
+              <tbody className="divide-y divide-warm-200 bg-white text-warm-900 max-md:block">
+                {/* Below md each institution is a card: the checkbox on the left, its facts stacked beside it. */}
+                {rows.map(row => <tr key={row.institutionId} className="max-md:grid max-md:grid-cols-[auto_minmax(0,1fr)] max-md:gap-x-3 max-md:px-3 max-md:py-3">
+                  <td className="p-3 max-md:row-span-5 max-md:p-0 max-md:pt-1"><input type="checkbox" aria-label={`Select ${row.name}`} checked={selected.has(row.institutionId)}
                     onChange={() => toggleSelection(row.institutionId)} disabled={isSaving || (!selected.has(row.institutionId) && selected.size >= 50) || !data.subject}
                     className="accent-terra" /></td>
-                  <th scope="row" className="max-w-[240px] p-3 font-normal">
+                  <th scope="row" className="max-w-[240px] p-3 font-normal max-md:col-start-2 max-md:max-w-none max-md:block max-md:px-0 max-md:py-0.5">
                     <a href={hamiltonInstitutionHref(row.institutionId)} className="font-semibold text-terra-text underline">{row.name}</a>
                     <p className="mt-1 text-xs text-warm-600">{row.charterType === "credit_union" ? "Credit union" : row.charterType === "bank" ? "Bank" : "Type unavailable"} · <a href={publicInstitutionHref(row.institutionId)} className="underline">Public page</a></p>
                     <details className="mt-1 text-xs text-warm-600"><summary className="cursor-pointer">Why included</summary><p>{row.inclusionReason}</p></details>
                   </th>
-                  <td className="p-3">{[row.city, row.stateCode].filter(Boolean).join(", ") || "Not available"}</td>
-                  <td className="whitespace-nowrap p-3 text-right tabular-nums">{formatPeerAssets(row.totalAssetsUsd)}</td>
-                  <td className="p-3"><p className="tabular-nums">{sourceDateWithAge(row.reportDate) ?? "Not available"}</p>
+                  <td data-label="Headquarters:" className="p-3 max-md:col-start-2 max-md:block max-md:px-0 max-md:py-0.5 max-md:before:mr-1 max-md:before:font-medium max-md:before:text-warm-600 max-md:before:content-[attr(data-label)]">{[row.city, row.stateCode].filter(Boolean).join(", ") || "Not available"}</td>
+                  <td data-label="Total assets:" className="whitespace-nowrap p-3 text-right tabular-nums max-md:col-start-2 max-md:text-left max-md:block max-md:px-0 max-md:py-0.5 max-md:before:mr-1 max-md:before:font-medium max-md:before:text-warm-600 max-md:before:content-[attr(data-label)]">{formatPeerAssets(row.totalAssetsUsd)}</td>
+                  <td data-label="Reporting date:" className="p-3 max-md:col-start-2 max-md:block max-md:px-0 max-md:py-0.5 max-md:before:mr-1 max-md:before:font-medium max-md:before:text-warm-600 max-md:before:content-[attr(data-label)]"><p className="tabular-nums max-md:inline">{sourceDateWithAge(row.reportDate) ?? "Not available"}</p>
                     {row.source ? <p className="mt-1 text-xs text-warm-600">{row.sourceUrl ? <a href={row.sourceUrl} target="_blank" rel="noopener noreferrer" className="underline">{row.source.toUpperCase()} filing source</a> : `${row.source.toUpperCase()} filing; link unavailable`}</p> : null}
                   </td>
-                  <td className="p-3 text-xs text-warm-700">{row.feeCoverage === "available" ? "Published fees available" : "No published fees on file"}</td>
+                  <td className="p-3 text-xs text-warm-700 max-md:col-start-2 max-md:block max-md:px-0 max-md:py-0.5">{row.feeCoverage === "available" ? "Published fees available" : "No published fees on file"}</td>
                 </tr>)}
               </tbody>
             </table>
