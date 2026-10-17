@@ -62,7 +62,8 @@ import { BoardChart, BoardLegend, BoardRows, FindingButtons, StateBoard } from "
 import { boardFees, charterFees, leadFindings, positionIn, splitForAccess } from "./state-view";
 import { TrendChart, lastMonths } from "./trend-chart";
 import { MarketCompare } from "./market-compare";
-import { marketPanels } from "./market-compare-view";
+import { districtComparison, districtTitle, marketPanels } from "./market-compare-view";
+import { DistrictCompare, LayerHead, LayerNav } from "./state-layers";
 import { CITY_FEES } from "@/lib/data-store/city-market";
 import { stateMarketMap } from "@/lib/geo/state-market-map";
 
@@ -203,6 +204,16 @@ export default async function StateReportPage({ params }: PageProps) {
     stateCode,
     marketFees.flatMap((m) => (m.lat != null && m.lon != null ? [{ key: m.city, lat: m.lat, lon: m.lon }] : [])),
   );
+  const vsDistrict = districtLabel ? districtComparison(shown) : null;
+  const hasLocal = panels.some((p) => p.fees.length > 0);
+  const hasDistrict = Boolean(district && districtLabel && (vsDistrict || beigeHeadline));
+  const layers = [
+    ...(hasLocal ? [{ id: "local", label: "Local markets" }] : []),
+    { id: "state", label: stateName },
+    ...(hasDistrict ? [{ id: "district", label: `${districtLabel} district` }] : []),
+    { id: "national", label: "United States" },
+  ];
+  const layerNumber = (id: string) => layers.findIndex((l) => l.id === id) + 1;
 
   // The state's own hub: every institution in the state, its income, branches and economy.
   const institutionsTracked = hub ? hub.institutions.reduce((sum, g) => sum + g.institutions, 0) : 0;
@@ -269,16 +280,19 @@ export default async function StateReportPage({ params }: PageProps) {
         freshnessLabel={summary.freshnessLabel}
       />
 
-      <div className="mx-auto max-w-page space-y-20 px-4 py-12 sm:space-y-28 sm:px-6 sm:py-16">
-        {/* Story 1: one local market against the state, its district and the U.S., inside the page. */}
-        {panels.length > 0 && panels.some((p) => p.fees.length > 0) && (
-          <section id="markets" aria-labelledby="markets-heading" className="scroll-mt-20 space-y-8">
-            <div className="max-w-3xl">
-              <p className={`${KICKER} mb-2`}>Local markets</p>
-              <h2 id="markets-heading" className={STORY_H2}>
-                Compare a {stateName} market with the state, {districtLabel ? "its district " : ""}and the U.S.
-              </h2>
-            </div>
+      <div className="mx-auto max-w-page px-4 pb-12 sm:px-6 sm:pb-16">
+        <LayerNav layers={layers} />
+        <div className="mt-12 space-y-24 sm:mt-16 sm:space-y-32">
+        {/* Layer 1, local: one market against the state, its district and the U.S., inside the page. */}
+        {hasLocal && (
+          <section id="local" aria-labelledby="markets-heading" className="scroll-mt-32 space-y-8">
+            <LayerHead
+              n={layerNumber("local")}
+              id="markets-heading"
+              place="Local markets"
+              title={`Compare a ${stateName} market with the state, ${districtLabel ? "its district " : ""}and the U.S.`}
+              line="Pick a market and a fee. A market counts every institution with a branch there, wherever it is headquartered."
+            />
             <MarketCompare panels={panels} map={marketMap} stateName={stateName} directoryHref={`/fees/city/${stateCode.toLowerCase()}`} />
             <SourceNote label="Who each median counts">
               A market counts every bank and credit union with a branch in the city, wherever it is headquartered: FDIC Summary of Deposits
@@ -290,16 +304,173 @@ export default async function StateReportPage({ params }: PageProps) {
           </section>
         )}
 
-        {/* Story 2: the state against the U.S. or its district, one fee at a time. */}
-        {charted.length > 0 ? (
-          <StateBoard fees={charted} stateName={stateName} districtName={districtLabel}>
-            <section id="benchmarks" aria-labelledby="board-heading" className="scroll-mt-20 space-y-8">
-              <div className="max-w-3xl">
-                <p className={`${KICKER} mb-2`}>Against the U.S.</p>
-                <h2 id="board-heading" className={STORY_H2}>
-                  {againstUs.length > 0 ? `${aboveUs} of ${againstUs.length} ${stateName} medians sit above the U.S. median` : `Fee medians in ${stateName}`}
-                </h2>
+        {/* Layer 2, the state: its own institutions, by charter, market and fee income. */}
+        <section id="state" aria-labelledby="state-heading" className="scroll-mt-32 space-y-16 sm:space-y-20">
+          <LayerHead
+            n={layerNumber("state")}
+            id="state-heading"
+            place={stateName}
+            title={
+              institutionsTracked > 0
+                ? `${formatCount(indexes.verified_institutions)} of ${formatCount(institutionsTracked)} institutions headquartered in ${stateName} publish verified fee schedules`
+                : `Institutions headquartered in ${stateName}`
+            }
+            line={`Figures in this section count institutions headquartered in ${stateName}, except branches and deposits, which count every institution serving the state.`}
+          />
+        {/* Banks against credit unions, as one field of fees. */}
+        {charter.length > 0 && (
+          <section id="charter" aria-labelledby="charter-heading" className="scroll-mt-20 space-y-8">
+            <div className="max-w-3xl">
+              <p className={`${KICKER} mb-2`}>Banks and credit unions</p>
+              <h2 id="charter-heading" className={STORY_H2}>
+                {charterTitle}
+              </h2>
+              <p className="mt-3 text-[15px] leading-relaxed text-ink-soft">Institutions headquartered in {stateName}. Each tile is one fee; pick one to see both medians.</p>
+            </div>
+            <CharterField fees={charter} place={stateName} />
+          </section>
+        )}
+
+        {/* Who serves the state: deposits at branches in the state, and headquartered institutions by size. */}
+        {(sized || branches) && (
+          <HubSection
+            id="market"
+            collapse="deposit share"
+            kicker={`Who serves ${stateName}`}
+            title={
+              leaders
+                ? `The ${NUMBER_WORDS[leaders.banks] ?? leaders.banks} largest banks hold ${Math.round(leaders.pct)}% of bank deposits in ${stateName}`
+                : `${count(institutionsTracked)} banks and credit unions`
+            }
+            line={
+              institutionsTracked > 0
+                ? `${count(institutionsTracked)} banks and credit unions headquartered in ${stateName}${
+                    bankBranches != null ? `. Serving ${stateName}: ${count(bankBranches)} bank branches${cuBranches ? ` and ${count(cuBranches)} credit union branches` : ""} in the state, wherever headquartered` : ""
+                  }.`
+                : undefined
+            }
+            source={
+              <>
+                Institutions headquartered in {stateName}, tracked by {SITE_NAME}. Total assets from FDIC and NCUA data, grouped the way each regulator reports them: the FDIC asset-size groups for banks and the NCUA groups for credit unions.
+                {branches &&
+                  ` Bank deposits from the FDIC Summary of Deposits, ${branches.sod_year}, for branches in ${stateName}; credit union branches from NCUA. Leading banks count banks with ${MIN_LEADER_BRANCHES} or more branches in the state.`}
+              </>
+            }
+          >
+            {branches && <DepositStrip branches={branches} />}
+            {sizes && sized && (
+              <div className="pt-4">
+                <SizeByRegulator groups={sizes} />
               </div>
+            )}
+          </HubSection>
+        )}
+
+        {/* Fee income, banks and credit unions apart. */}
+        {(bankTrend || cuTrend) && (
+          <HubSection
+            id="income"
+            collapse="income trends"
+            kicker="Fee income"
+            title={
+              bankTrend?.yoyPct != null
+                ? `${stateName} bank service charges ${bankTrend.yoyPct >= 0 ? "rose" : "fell"} ${Math.abs(bankTrend.yoyPct).toFixed(1)}% in a year`
+                : bankTrend
+                  ? `${stateName} banks reported ${compact(bankTrend.latest.value)} in deposit service charges in ${quarterLabel(bankTrend.latest.quarter)}`
+                  : `${stateName} credit union fee income`
+            }
+            line="Credit union fee income is a wider measure than bank service charges, so the two charts stay separate and are never added together."
+            source="Institutions headquartered in the state. Banks: service charges on deposit accounts, FDIC call reports. Credit unions: all fee income, NCUA call reports. Credit union year-to-date income is split into quarters; a quarter shows once most institutions have filed."
+          >
+            <div className="grid gap-14 lg:grid-cols-2 lg:gap-16">
+              <IncomeLine quarters={revenue} series="banks" title="Banks: service charges on deposit accounts" />
+              <IncomeLine quarters={revenue} series="creditUnions" title="Credit unions: all fee income" />
+            </div>
+          </HubSection>
+        )}
+
+        {/* The free state report, straight after the fee stories it summarizes. */}
+        <div id="free-report" className="scroll-mt-20">
+          <LeadCapture
+            placement="state_benchmark"
+            className="print:hidden"
+            stateCode={stateCode}
+            eyebrow="Free report"
+            headline={`Get the free ${stateName} fee report`}
+            body={`The ${stateName} medians against the U.S., sent to you and updated as schedules are verified.`}
+            buttonLabel="Send it to me"
+            secondaryLink={
+              sampleLive
+                ? { href: "/reports/sample-competitive-fee-position", label: `See the sample ${REPORT_OFFER.name}` }
+                : { href: `/reports?report=institution&src=state-${stateCode.toLowerCase()}#request`, label: REPORT_OFFER.institutionCtaLabel }
+            }
+          />
+        </div>
+
+        </section>
+        {/* Layer 3, district: the state's medians against its Fed district's, then the Beige Book. */}
+        {hasDistrict && district && districtLabel && (
+          <section id="district" aria-labelledby="district-heading" className="scroll-mt-32 space-y-10">
+            <LayerHead
+              n={layerNumber("district")}
+              id="district-heading"
+              place={`${districtLabel} Fed district`}
+              title={vsDistrict ? districtTitle(vsDistrict, stateName, districtLabel) : `${stateName} in the ${districtLabel} district`}
+              line={`Both medians count institutions by headquarters. The district takes in ${stateName} and the rest of the Federal Reserve's ${districtLabel} district.`}
+            />
+            {vsDistrict && <DistrictCompare rows={vsDistrict.rows} stateName={stateName} districtName={districtLabel} />}
+            {beigeHeadline && district && (
+              <figure className="min-w-0 max-w-3xl">
+                <p className={`${KICKER} mb-3`}>What the Fed sees in the district</p>
+                <blockquote className="font-serif text-[19px] leading-snug text-ink sm:text-[22px]">
+                  &ldquo;{showFullDistrict && beigeSummary ? beigeSummary : firstSentence(beigeHeadline.text)}&rdquo;
+                </blockquote>
+                <figcaption className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-muted">
+                  <a
+                    href="https://www.federalreserve.gov/monetarypolicy/beige-book-default.htm"
+                    className="underline decoration-border underline-offset-4 hover:text-ink"
+                    rel="noopener noreferrer"
+                    target="_blank"
+                  >
+                    Beige Book, {DISTRICT_NAMES[district]} district, {beigeHeadline.release_date}
+                  </a>
+                  {!showFullDistrict && (
+                    <TrackLink
+                      event="upgrade_click"
+                      eventProps={{ placement: "state_beige_book", state: stateCode }}
+                      href={PRO_PLANS_NAV.href}
+                      className="font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+                    >
+                      Read it beside your fees in Hamilton
+                    </TrackLink>
+                  )}
+                </figcaption>
+              </figure>
+            )}
+            <Link
+              href={`/research/district/${district}`}
+              className="inline-flex min-h-11 items-center text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+            >
+              Open the {districtLabel} district report
+            </Link>
+            <SourceNote label="Source">
+              Medians from each institution&apos;s own published schedule, one value per institution; a median needs at least {MIN_INSTITUTIONS_FOR_MEDIAN}. A gap under 1% reads as the same. Federal Reserve Beige Book, {districtLabel} district.
+            </SourceNote>
+          </section>
+        )}
+        {/* Layer 4, the U.S.: the state's medians against the country, then national context. */}
+        <section id="national" className="scroll-mt-32 space-y-16 sm:space-y-20">
+        {/* The state against the U.S., one fee at a time. */}
+        {charted.length > 0 ? (
+          <StateBoard fees={charted} stateName={stateName} districtName={null}>
+            <section id="benchmarks" aria-labelledby="board-heading" className="space-y-8">
+              <LayerHead
+                n={layerNumber("national")}
+                id="board-heading"
+                place="United States"
+                title={againstUs.length > 0 ? `${aboveUs} of ${againstUs.length} ${stateName} medians sit above the U.S. median` : `Fee medians in ${stateName}`}
+                line={`${stateName} medians count institutions headquartered in ${stateName}; U.S. medians count every institution in the index.`}
+              />
               {findings.length > 0 && <FindingButtons findings={findings} />}
               <BoardChart />
               <div>
@@ -338,118 +509,27 @@ export default async function StateReportPage({ params }: PageProps) {
           </p>
         )}
 
-        {/* Story 3: banks against credit unions, as one field of fees. */}
-        {charter.length > 0 && (
-          <section id="charter" aria-labelledby="charter-heading" className="scroll-mt-20 space-y-8">
-            <div className="max-w-3xl">
-              <p className={`${KICKER} mb-2`}>Banks and credit unions</p>
-              <h2 id="charter-heading" className={STORY_H2}>
-                {charterTitle}
-              </h2>
-              <p className="mt-3 text-[15px] leading-relaxed text-ink-soft">Each tile is one fee. Pick one to see both medians.</p>
-            </div>
-            <CharterField fees={charter} place={stateName} />
-          </section>
-        )}
-
-        {/* The free state report, straight after the fee stories it summarizes. */}
-        <div id="free-report" className="scroll-mt-20">
-          <LeadCapture
-            placement="state_benchmark"
-            className="print:hidden"
-            stateCode={stateCode}
-            eyebrow="Free report"
-            headline={`Get the free ${stateName} fee report`}
-            body={`The ${stateName} medians against the U.S., sent to you and updated as schedules are verified.`}
-            buttonLabel="Send it to me"
-            secondaryLink={
-              sampleLive
-                ? { href: "/reports/sample-competitive-fee-position", label: `See the sample ${REPORT_OFFER.name}` }
-                : { href: `/reports?report=institution&src=state-${stateCode.toLowerCase()}#request`, label: REPORT_OFFER.institutionCtaLabel }
-            }
-          />
-        </div>
-
-        {/* Story 4: fee income, banks and credit unions apart. */}
-        {(bankTrend || cuTrend) && (
-          <HubSection
-            id="income"
-            collapse="income trends"
-            kicker="Fee income"
-            title={
-              bankTrend?.yoyPct != null
-                ? `${stateName} bank service charges ${bankTrend.yoyPct >= 0 ? "rose" : "fell"} ${Math.abs(bankTrend.yoyPct).toFixed(1)}% in a year`
-                : bankTrend
-                  ? `${stateName} banks reported ${compact(bankTrend.latest.value)} in deposit service charges in ${quarterLabel(bankTrend.latest.quarter)}`
-                  : `${stateName} credit union fee income`
-            }
-            line="Credit union fee income is a wider measure than bank service charges, so the two charts stay separate and are never added together."
-            source="Institutions headquartered in the state. Banks: service charges on deposit accounts, FDIC call reports. Credit unions: all fee income, NCUA call reports. Credit union year-to-date income is split into quarters; a quarter shows once most institutions have filed."
-          >
-            <div className="grid gap-14 lg:grid-cols-2 lg:gap-16">
-              <IncomeLine quarters={revenue} series="banks" title="Banks: service charges on deposit accounts" />
-              <IncomeLine quarters={revenue} series="creditUnions" title="Credit unions: all fee income" />
-            </div>
-          </HubSection>
-        )}
-
-        {/* Story 5: who serves the state, by deposits and by size. */}
-        {(sized || branches) && (
-          <HubSection
-            id="market"
-            collapse="deposit share"
-            kicker={`Who serves ${stateName}`}
-            title={
-              leaders
-                ? `The ${NUMBER_WORDS[leaders.banks] ?? leaders.banks} largest banks hold ${Math.round(leaders.pct)}% of bank deposits in ${stateName}`
-                : `${count(institutionsTracked)} banks and credit unions`
-            }
-            line={
-              institutionsTracked > 0
-                ? `${count(institutionsTracked)} banks and credit unions${
-                    bankBranches != null ? `, with ${count(bankBranches)} bank branches${cuBranches ? ` and ${count(cuBranches)} credit union branches` : ""}` : ""
-                  }.`
-                : undefined
-            }
-            source={
-              <>
-                Institutions headquartered in {stateName}, tracked by {SITE_NAME}. Total assets from FDIC and NCUA data, grouped the way each regulator reports them: the FDIC asset-size groups for banks and the NCUA groups for credit unions.
-                {branches &&
-                  ` Bank deposits from the FDIC Summary of Deposits, ${branches.sod_year}, for branches in ${stateName}; credit union branches from NCUA. Leading banks count banks with ${MIN_LEADER_BRANCHES} or more branches in the state.`}
-              </>
-            }
-          >
-            {branches && <DepositStrip branches={branches} />}
-            {sizes && sized && (
-              <div className="pt-4">
-                <SizeByRegulator groups={sizes} />
-              </div>
-            )}
-          </HubSection>
-        )}
-
-        {/* Context beneath the fees, each block naming the geography it covers. */}
-        {(stateUnemployment || cpi || beigeHeadline) && (
+        {/* National context: the state's unemployment against the U.S., and U.S. bank-services prices. */}
+        {(stateUnemployment || cpi) && (
           <HubSection
             id="economy"
             collapse="economic context"
-            kicker="Context"
+            kicker="National context"
             title={
               stateUnemployment && usSameMonth
                 ? `${stateName} unemployment was ${pct(stateUnemployment.latest.value)} in ${longMonth(stateUnemployment.latest.date)}, against ${pct(usSameMonth.value)} for the U.S.`
                 : cpi
                   ? `U.S. prices for bank services ${cpi.latestPct >= 0 ? "rose" : "fell"} ${Math.abs(cpi.latestPct).toFixed(1)}% in a year`
-                  : `What the Fed sees around ${stateName}`
+                  : `${stateName} against the U.S. economy`
             }
             source={
               <>
                 BLS unemployment and the CPI for checking accounts and other bank services via FRED
-                {income ? `; Census ACS ${income.year} median household income` : ""}; Federal Reserve Beige Book
-                {district ? `, ${DISTRICT_NAMES[district]} district` : ""}.
+                {income ? `; Census ACS ${income.year} median household income` : ""}. The CPI is national; it has no state figure.
               </>
             }
           >
-            <div className="grid gap-14 lg:grid-cols-3 lg:gap-12">
+            <div className="grid gap-14 lg:grid-cols-2 lg:gap-16">
               {stateUnemployment && stateUnemployment.history.length > 1 && (
                 <div className="min-w-0">
                   <p className={`${KICKER} mb-2`}>{stateName}</p>
@@ -469,51 +549,20 @@ export default async function StateReportPage({ params }: PageProps) {
                   )}
                 </div>
               )}
-              {beigeHeadline && district && (
-                <figure className="min-w-0">
-                  <p className={`${KICKER} mb-2`}>{DISTRICT_NAMES[district]} Fed district</p>
-                  <blockquote className="font-serif text-[19px] leading-snug text-ink sm:text-[22px]">
-                    &ldquo;{showFullDistrict && beigeSummary ? beigeSummary : firstSentence(beigeHeadline.text)}&rdquo;
-                  </blockquote>
-                  <figcaption className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-muted">
-                    <a
-                      href="https://www.federalreserve.gov/monetarypolicy/beige-book-default.htm"
-                      className="underline decoration-border underline-offset-4 hover:text-ink"
-                      rel="noopener noreferrer"
-                      target="_blank"
-                    >
-                      Beige Book, {DISTRICT_NAMES[district]} district, {beigeHeadline.release_date}
-                    </a>
-                    <Link href={`/research/district/${district}`} className="font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
-                      The {DISTRICT_NAMES[district]} district report
-                    </Link>
-                    {!showFullDistrict && (
-                      <TrackLink
-                        event="upgrade_click"
-                        eventProps={{ placement: "state_beige_book", state: stateCode }}
-                        href={PRO_PLANS_NAV.href}
-                        className="font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
-                      >
-                        Read it beside your fees in Hamilton
-                      </TrackLink>
-                    )}
-                  </figcaption>
-                </figure>
-              )}
               {cpi && cpi.history.length > 1 && (
                 <div className="min-w-0">
                   <p className={`${KICKER} mb-2`}>United States</p>
                   <p className="mb-3 text-[14px] font-semibold text-ink">Bank services prices, change over 12 months</p>
                   <CpiChart history={cpi.history} label="CPI for checking accounts and other bank services, 12-month change" />
                   <p className="mt-3 text-[13px] text-ink-soft">
-                    {signedPct(cpi.latestPct)} in the 12 months to {monthYear(cpi.date)}, nationally; the CPI has no state figure.
+                    {signedPct(cpi.latestPct)} in the 12 months to {monthYear(cpi.date)}, nationally.
                   </p>
                 </div>
               )}
             </div>
           </HubSection>
         )}
-
+        </section>
         {/* Complaints and fee changes: kept for readers who want them, behind one disclosure. */}
         {(complaintRows.length > 0 || (moves && hub)) && (
           <details className="group/disc border-t border-border pt-6">
@@ -601,6 +650,7 @@ export default async function StateReportPage({ params }: PageProps) {
             How we build it
           </Link>
         </p>
+        </div>
       </div>
 
       {/* Print / Save as PDF: drop site chrome and interactive controls, keep exhibits whole. */}

@@ -168,3 +168,53 @@ export function openingFee(panel: MarketPanel): string | null {
   const widest = gaps.sort((a, b) => b.gap - a.gap)[0];
   return widest?.key ?? (panel.fees.find((f) => f.rungs[0].median != null) ?? panel.fees[0])?.key ?? null;
 }
+
+export interface DistrictRow {
+  key: string;
+  name: string;
+  state: number;
+  stateInstitutions: number;
+  district: number;
+  districtInstitutions: number;
+  /** State median minus district median, in dollars. */
+  diff: number;
+}
+
+export interface DistrictComparison {
+  rows: DistrictRow[];
+  above: number;
+  below: number;
+  same: number;
+}
+
+/** The state's medians against its Fed district's, for every fee with both; null when none has both. */
+export function districtComparison(fees: BoardFee[]): DistrictComparison | null {
+  const rows = fees
+    .filter((f) => f.district)
+    .map((f) => ({
+      key: f.key,
+      name: f.name,
+      state: f.median,
+      stateInstitutions: f.institutions,
+      district: f.district!.median,
+      districtInstitutions: f.district!.institutions,
+      diff: f.median - f.district!.median,
+    }));
+  if (rows.length === 0) return null;
+  const same = rows.filter((r) => sameAmount(r.state, r.district)).length;
+  const above = rows.filter((r) => !sameAmount(r.state, r.district) && r.diff > 0).length;
+  return { rows, above, below: rows.length - same - above, same };
+}
+
+/** True when the state and district medians read as the same. */
+export function sameMedian(r: DistrictRow): boolean {
+  return sameAmount(r.state, r.district);
+}
+
+/** The district layer's heading, from its counts. */
+export function districtTitle(c: DistrictComparison, stateName: string, districtName: string): string {
+  const n = c.rows.length;
+  if (c.same === n) return `${stateName} matches the ${districtName} district on all ${n} fees`;
+  if (c.above >= c.below) return `${stateName} sits above the ${districtName} district median on ${c.above} of ${n} fees`;
+  return `${stateName} sits below the ${districtName} district median on ${c.below} of ${n} fees`;
+}
