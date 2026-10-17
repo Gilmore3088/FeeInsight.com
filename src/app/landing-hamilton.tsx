@@ -1,12 +1,13 @@
 import { PRO_PLANS_NAV } from "@/components/nav-items";
 import { TrackLink } from "@/components/track-link";
-import { DISPLAY_H2, SAMPLE_REPORT_HREF, SANS, SECTION_INNER } from "./landing-shared";
+import { DISPLAY_H2, SAMPLE_REPORT_HREF, SANS, SECTION_INNER, TEXT_LINK } from "./landing-shared";
 
 /**
  * The walkthrough video (James, Oct 17 05:27: he records it). Until it is set the section shows
- * a plain placeholder in its place; set `src` (and `captions`, a WebVTT file) to show the video.
+ * a plain placeholder in its place. A poster keeps phones from showing a black box, and captions
+ * are required (WebVTT).
  */
-export const HAMILTON_VIDEO: { src: string; poster?: string; captions?: string } | null = null;
+export const HAMILTON_VIDEO: { src: string; type: string; poster: string; captions: string } | null = null;
 
 function HamiltonVideo() {
   if (HAMILTON_VIDEO) {
@@ -19,21 +20,18 @@ function HamiltonVideo() {
         className="aspect-video w-full rounded-2xl border border-border bg-ink"
         aria-label="Hamilton walkthrough"
       >
-        <source src={HAMILTON_VIDEO.src} />
-        {HAMILTON_VIDEO.captions ? <track kind="captions" src={HAMILTON_VIDEO.captions} srcLang="en" label="English" default /> : null}
+        <source src={HAMILTON_VIDEO.src} type={HAMILTON_VIDEO.type} />
+        <track kind="captions" src={HAMILTON_VIDEO.captions} srcLang="en" label="English" default />
+        <a href={SAMPLE_REPORT_HREF}>Open the sample report</a>
       </video>
     );
   }
+  // No play mark: nothing here plays yet, so nothing should look like a button.
   return (
     <div
-      className="flex aspect-video w-full flex-col items-center justify-center gap-4 rounded-2xl border border-border bg-surface-0 px-6 text-center"
+      className="flex aspect-video w-full items-center justify-center rounded-2xl border border-dashed border-border bg-surface-0 px-6 text-center"
       data-hamilton-video-placeholder=""
     >
-      <span aria-hidden="true" className="flex h-16 w-16 items-center justify-center rounded-full border border-border bg-paper sm:h-20 sm:w-20">
-        <svg viewBox="0 0 24 24" className="ml-1 h-6 w-6 text-ink-muted sm:h-7 sm:w-7" fill="currentColor">
-          <path d="M8 5.5v13l10.5-6.5z" />
-        </svg>
-      </span>
       <p className="text-[15px] font-semibold text-ink-soft">Video walkthrough coming soon</p>
     </div>
   );
@@ -48,22 +46,27 @@ export function LandingHamilton() {
           <h2 id="hamilton-heading" className={DISPLAY_H2} style={SANS}>
             Meet Hamilton
           </h2>
-          <p className="mx-auto mt-5 max-w-2xl text-[19px] leading-relaxed text-ink sm:text-[21px]">
+          <p className="mx-auto mt-5 max-w-2xl text-[17px] leading-relaxed text-ink sm:text-[19px]">
             See your fee schedule beside named local competitors and peers, with the source behind every figure.
           </p>
-          <p className="mx-auto mt-3 max-w-xl text-[16px] leading-relaxed text-ink-soft">
-            Hamilton is the Pro workspace for bank and credit union teams who price fees and present them to committee.
+          <p className="mx-auto mt-3 max-w-2xl text-[16px] leading-relaxed text-ink-soft">
+            Hamilton is the{" "}
+            <a href="/for-institutions#hamilton" className={TEXT_LINK}>
+              Pro workspace
+            </a>{" "}
+            where bank and credit union teams track that position each month, try a price and build the committee report.
           </p>
         </div>
-        <div className="mx-auto mt-10 max-w-5xl sm:mt-12">
+        {/* The placeholder stays smaller than the video will be, so the actions stay in view. */}
+        <div className={`mx-auto mt-10 sm:mt-12 ${HAMILTON_VIDEO ? "max-w-5xl" : "max-w-3xl"}`}>
           <HamiltonVideo />
         </div>
-        <div className="mt-10 flex flex-wrap items-center justify-center gap-3" data-hamilton-actions="">
+        <div className="mx-auto mt-10 flex w-full max-w-sm flex-col items-center gap-3 sm:max-w-none sm:flex-row sm:justify-center sm:gap-4" data-hamilton-actions="">
           <TrackLink
             event="upgrade_click"
             eventProps={{ placement: "home_hamilton" }}
             href={PRO_PLANS_NAV.href}
-            className="fi-btn fi-btn-primary min-h-11 justify-center whitespace-nowrap"
+            className="fi-btn fi-btn-primary min-h-11 w-full justify-center sm:w-auto"
           >
             {PRO_PLANS_NAV.label}
           </TrackLink>
@@ -71,7 +74,7 @@ export function LandingHamilton() {
             event="sample_report_click"
             eventProps={{ placement: "home_hamilton" }}
             href={SAMPLE_REPORT_HREF}
-            className="fi-btn fi-btn-secondary min-h-11 justify-center whitespace-nowrap"
+            className="fi-btn fi-btn-secondary min-h-11 w-full justify-center sm:w-auto"
           >
             Open the sample report
           </TrackLink>
