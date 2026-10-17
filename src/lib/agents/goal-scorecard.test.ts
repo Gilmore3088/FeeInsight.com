@@ -239,7 +239,7 @@ function fakeDb(answers: Array<[RegExp, unknown[] | Error]>) {
 describe("readGoalScorecard", () => {
   const answers: Array<[RegExp, unknown[] | Error]> = [
     [/\) coverage_groups/, [{ state_code: "TN", size_group: "under_300m", total: 50, covered: 30, covered_week_ago: 27, newly_covered: 4 }]],
-    [/AS added/, [{ live: 3900, added: 40 }]],
+    [/AS added/, [{ live: 3900, added: 40, dropped: 25 }]],
     [/deming-fresh-audit/, [{ created_at: new Date("2026-10-12T06:00:00Z"), detail: { right: 190, scorable: 200, accuracy: 0.95 } }]],
     [/refresh_copy/, [{ reason: null, count: 1000 }, { reason: "product_page: #1", count: 10 }]],
     [/ai_api_usage_events/, [{ agent: "knox", week: 20_000_000, week_calls: 700, month: 75_000_000 }]],
@@ -264,7 +264,8 @@ describe("readGoalScorecard", () => {
     const groups = queries.find((q) => /AS covered_week_ago\s+FROM public\.institution_sources/.test(q));
     expect(groups).toContain("asset_size <");
     expect(queries.some((q) => /fp\.published_at < NOW\(\)/.test(q))).toBe(true);
-    expect(goal.liveInstitutions).toMatchObject({ live: 3900, addedThisWeek: 40 });
+    expect(goal.liveInstitutions).toMatchObject({ live: 3900, addedThisWeek: 40, droppedThisWeek: 25 });
+    expect(goal.coverageCells?.institutionsShortWeekAgo).toBe(3);
     expect(goal.accuracy).toMatchObject({ accuracy: 0.95, audits: 1 });
     expect(goal.wrongAfterPublish).toMatchObject({ published: 1010, wrong: 10 });
     expect(goal.spend).toMatchObject({ weekUsd: 20, costPerNewInstitutionUsd: 0.5 });
