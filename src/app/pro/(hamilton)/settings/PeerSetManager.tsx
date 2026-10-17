@@ -10,7 +10,7 @@ import {
   SAVED_PEER_REGULATORS,
   describeSavedPeerDimensions,
   type SavedPeerDimensions,
-} from "@/lib/peer-set-dimensions";
+} from "@/lib/hamilton/saved-peer-dimensions";
 import {
   createPeerSet,
   editPeerSet,

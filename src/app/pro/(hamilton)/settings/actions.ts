@@ -41,7 +41,7 @@ import {
   SAVED_PEER_REGULATORS,
   hasSavedPeerDimensions,
   type SavedPeerDimensions,
-} from "@/lib/peer-set-dimensions";
+} from "@/lib/hamilton/saved-peer-dimensions";
 import { STATE_NAMES } from "@/lib/us-states";
 
 export type WorkspaceInstitutionState = {

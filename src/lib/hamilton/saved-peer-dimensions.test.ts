@@ -9,7 +9,7 @@ import {
   describeSavedPeerDimensions,
   hasSavedPeerDimensions,
   parseSavedPeerDimensions,
-} from "./peer-set-dimensions";
+} from "./saved-peer-dimensions";
 
 describe("client-safe peer dimensions", () => {
   it("match the shared peer-set module's lists", () => {

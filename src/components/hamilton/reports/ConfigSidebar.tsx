@@ -7,7 +7,7 @@ import { hrefWithInstitutionContext, normalizeCanonicalInstitutionId } from "@/l
 import type { HamiltonPeerSetOption } from "@/components/hamilton/PeerBaselineSelector";
 import { PeerGroupEmpty } from "@/components/hamilton/PeerGroupEmpty";
 import type { EmptyPeerGroup } from "@/lib/hamilton/peer-group-copy";
-import { describeSavedPeerDimensions } from "@/lib/peer-set-dimensions";
+import { describeSavedPeerDimensions } from "@/lib/hamilton/saved-peer-dimensions";
 import { SERIF } from "@/components/hamilton/memo/memo";
 import {
   REPORT_GOALS,

@@ -1,6 +1,6 @@
 "use client";
 
-import { describeSavedPeerDimensions, type SavedPeerDimensions } from "@/lib/peer-set-dimensions";
+import { describeSavedPeerDimensions, type SavedPeerDimensions } from "@/lib/hamilton/saved-peer-dimensions";
 import { AUTOMATIC_PEERS_ID } from "@/lib/hamilton/peer-group-copy";
 
 export interface HamiltonPeerSetOption {

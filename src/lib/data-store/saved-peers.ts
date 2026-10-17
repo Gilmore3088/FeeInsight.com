@@ -1,5 +1,5 @@
 import { sql, withTransaction } from "./connection";
-import { parseSavedPeerDimensions, type SavedPeerDimensions } from "@/lib/peer-set-dimensions";
+import { parseSavedPeerDimensions, type SavedPeerDimensions } from "@/lib/hamilton/saved-peer-dimensions";
 
 export interface SavedPeerSet {
   id: number;

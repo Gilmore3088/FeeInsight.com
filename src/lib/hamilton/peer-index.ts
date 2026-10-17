@@ -21,7 +21,7 @@ import {
   type PeerSetDefinition,
 } from "@/lib/data-store/peer-sets";
 import { AUTOMATIC_PEERS_ID, type EmptyPeerGroup, type PeerGroupSummary } from "./peer-group-copy";
-import { hasSavedPeerDimensions } from "@/lib/peer-set-dimensions";
+import { hasSavedPeerDimensions } from "@/lib/hamilton/saved-peer-dimensions";
 import { ASSET_TIER_RANGES } from "./asset-tier-ranges";
 
 export interface HamiltonPeerFilters {
