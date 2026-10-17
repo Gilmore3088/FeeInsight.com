@@ -15,7 +15,7 @@ const NOTE =
 async function handleGET(request: NextRequest) {
   const caller = await authorizeV1(request, { paidOnly: "Peer comparison", usageEvent: "api.v1.peers" });
   if (caller instanceof Response) return caller;
-  const { organizationId, anonymousId, rateLimit } = caller;
+  const { organizationId, keyId, anonymousId, rateLimit } = caller;
 
   const { searchParams } = request.nextUrl;
   let institutionId: number;
@@ -29,7 +29,7 @@ async function handleGET(request: NextRequest) {
     }
   } catch (error) {
     if (error instanceof ApiParamError) {
-      logApiUsage(organizationId, anonymousId, "api.v1.peers", { status: 400 }).catch(() => {});
+      logApiUsage(organizationId, anonymousId, "api.v1.peers", { status: 400 }, keyId).catch(() => {});
       return apiError(400, "invalid_parameter", error.message, { rateLimit });
     }
     throw error;
@@ -37,7 +37,7 @@ async function handleGET(request: NextRequest) {
 
   const comparison = await getPeerComparison(institutionId, peerIds);
   if (!comparison) {
-    logApiUsage(organizationId, anonymousId, "api.v1.peers", { institution_id: institutionId, status: 404 }).catch(() => {});
+    logApiUsage(organizationId, anonymousId, "api.v1.peers", { institution_id: institutionId, status: 404 }, keyId).catch(() => {});
     return apiError(404, "not_found", "Institution not found", { rateLimit });
   }
 
@@ -47,7 +47,7 @@ async function handleGET(request: NextRequest) {
     peer_ids: peerIds?.length ?? 0,
     count: comparison.categories.length,
     status: 200,
-  }).catch(() => {});
+  }, keyId).catch(() => {});
 
   return withApiCaching(request, withApiHeaders(
     NextResponse.json({ ...comparison, note: NOTE, attribution: API_ATTRIBUTION }),

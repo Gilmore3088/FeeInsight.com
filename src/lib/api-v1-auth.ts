@@ -20,6 +20,8 @@ export interface V1Caller {
   /** The signed-in site user, looked up only when no valid key was sent. */
   user: User | null;
   organizationId: number | null;
+  /** The issued key that made the call (null for a signed-in session); logged per usage event. */
+  keyId: number | null;
   anonymousId: string | null;
   /** The monthly allowance after this call's reservation. */
   rateLimit: RateLimitResult;
@@ -53,6 +55,7 @@ export async function authorizeV1(
   if (!auth.valid && !user) return apiKeyRequiredError();
 
   const organizationId = auth.organizationId;
+  const keyId = auth.valid ? (auth.keyId ?? null) : null;
   const anonymousId = organizationId ? null : getAnonymousId(request);
   const tier = auth.valid ? auth.tier : "free";
 
@@ -65,10 +68,10 @@ export async function authorizeV1(
   const paid = isPaidApiKey(auth) || canAccessPremium(user);
   if (options.paidOnly && !paid) {
     if (options.usageEvent) {
-      logApiUsage(organizationId, anonymousId, options.usageEvent, { status: 403 }).catch(() => {});
+      logApiUsage(organizationId, anonymousId, options.usageEvent, { status: 403 }, keyId).catch(() => {});
     }
     return planRequiredError(rateLimit, options.paidOnly);
   }
 
-  return { auth, user, organizationId, anonymousId, rateLimit, paid };
+  return { auth, user, organizationId, keyId, anonymousId, rateLimit, paid };
 }

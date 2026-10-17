@@ -22,6 +22,8 @@ export interface StateComparison {
   national_p75: number | null;
   /** State median relative to the national median, in percent. */
   delta_pct: number | null;
+  /** Institutions behind the median whose row states no audience (#1132): the asterisk test. */
+  unstated_audience_institution_count?: number;
 }
 
 export interface CharterPair {
@@ -53,6 +55,7 @@ export function buildComparisons(state: IndexEntry[], national: IndexEntry[]): S
         national_p25: n?.p25_amount ?? null,
         national_p75: n?.p75_amount ?? null,
         delta_pct: nationalMedian && nationalMedian > 0 ? ((e.median_amount - nationalMedian) / nationalMedian) * 100 : null,
+        unstated_audience_institution_count: e.unstated_audience_institution_count ?? 0,
       };
     })
     .sort((a, b) => b.institution_count - a.institution_count);

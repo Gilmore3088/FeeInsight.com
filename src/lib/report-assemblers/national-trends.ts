@@ -9,7 +9,7 @@
 
 import { getRevenueTrend, getDistrictIncomeTrend, type DistrictIncomeQuarter, type RevenueSnapshot } from "@/lib/data-store/call-reports";
 import { getSegmentFeeRows, type SegmentFeeRow } from "@/lib/data-store/fee-index";
-import { MIN_INSTITUTIONS_FOR_MEDIAN, summarizeFees, valuePerInstitution } from "@/lib/data-store/fee-stats";
+import { MIN_INSTITUTIONS_FOR_MEDIAN, countedInstitutionCount, countedValuePerInstitution, summarizeFees } from "@/lib/data-store/fee-stats";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { ASSET_TIER_RANGES } from "@/lib/hamilton/peer-index";
@@ -112,8 +112,9 @@ function feeMedians(rows: SegmentFeeRow[]): Record<TrendFee, FeeMedian> {
   return out;
 }
 
+/** Institutions behind these rows, counted as the medians count them (sister charters of one schedule once). */
 function institutionsIn(rows: SegmentFeeRow[]): number {
-  return new Set(rows.map((r) => r.institution_id)).size;
+  return countedInstitutionCount(rows);
 }
 
 function groupBy<K>(rows: SegmentFeeRow[], key: (r: SegmentFeeRow) => K | null | undefined): Map<K, SegmentFeeRow[]> {
@@ -216,7 +217,8 @@ function outliers(rows: SegmentFeeRow[]): FeeOutlier[] {
   const out: FeeOutlier[] = [];
   for (const fee of TREND_FEES) {
     const group = rows.filter((r) => r.fee_category === fee);
-    const values = valuePerInstitution(group);
+    // The medians' own population: one value per institution, sister charters of one schedule once.
+    const values = countedValuePerInstitution(group);
     const stats = summarizeFees(group);
     if (stats.p25_amount === null || stats.p75_amount === null || stats.median_amount === null) continue;
     const fence = stats.p75_amount + 1.5 * (stats.p75_amount - stats.p25_amount);

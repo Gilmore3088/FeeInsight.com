@@ -174,9 +174,11 @@ const LIVE: LiveTakedownRow[] = [
   { fee_published_id: 71397, lineage_ref: 84681, institution_id: 4802, canonical_fee_key: "other_lending_fee", fee_name: "Consumer Loan Processing fee", amount: "50.00" },
   { fee_published_id: 141835, lineage_ref: 168405, institution_id: 1104, canonical_fee_key: "other_lending_fee", fee_name: "Expedited Payoff Fee", amount: "25.00" },
   { fee_published_id: 98982, lineage_ref: 112573, institution_id: 1559, canonical_fee_key: "overdraft", fee_name: "Overdraft per item (Consumer limit of 5 per day)", amount: "30.00" },
+  { fee_published_id: 101170, lineage_ref: 115326, institution_id: 27, canonical_fee_key: "atm_non_network", fee_name: "Regions ATM: Withdrawal", amount: "5.00" },
+  { fee_published_id: 81957, lineage_ref: 91573, institution_id: 27, canonical_fee_key: "card_foreign_txn", fee_name: "International ATM Transaction", amount: "5.00" },
 ];
 const CONDITIONAL_ZERO = [43512, 54014, 61335, 68893, 70121, 73737, 77121, 77122, 77618, 84553, 87079, 87461, 88213, 91505, 120559];
-const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689, 138828, 138832, 138833, 138839, 138827, 138834, 138841, 148352, 138831, 138830, 138848, 138849, 138850, 138851, 42961, 86536, 66721, 66722, 83125, 97335, 97904, 58414, 106021, 33705, 149143, 149806, 137241, 68335, 79402, 74149, 49817, 125584, 109893, 130622, 147193, 133860, 119352, 143826, 97434, 49606, 148620, 107546, 81215, 20420, 102296, 147811, 125359, 146800, 74560, 125809, 102758, 13031, 11722, 11427, 141821, 232];
+const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689, 138828, 138832, 138833, 138839, 138827, 138834, 138841, 148352, 138831, 138830, 138848, 138849, 138850, 138851, 42961, 86536, 66721, 66722, 83125, 97335, 97904, 58414, 106021, 33705, 149143, 149806, 137241, 68335, 79402, 74149, 49817, 125584, 109893, 130622, 147193, 133860, 119352, 143826, 97434, 49606, 148620, 107546, 81215, 20420, 102296, 147811, 125359, 146800, 74560, 125809, 102758, 13031, 11722, 11427, 141821, 232, 101170];
 
 function fakeDb(live: LiveTakedownRow[], failOn?: string) {
   const writes: Array<{ text: string; values: unknown[] }> = [];
@@ -276,6 +278,7 @@ describe("hand takedowns (James, Oct 16)", () => {
       [11427, "source_mismatch: #1755"],
       [141821, "source_mismatch: #1755"],
       [232, "source_mismatch: #1755"],
+      [101170, "duplicate of #81957 (#1753)"],
     ]);
     // A wrong read names its issue; a second read of one printed fee names the live copy it repeats too.
     expect(HAND_TAKEDOWNS.every((entry) => entry.evidence.length > 0 && (entry.kind === "duplicate"
@@ -372,6 +375,7 @@ describe("hand takedowns (James, Oct 16)", () => {
         { feePublishedId: 11427, feeVerifiedId: 3923, reason: "source_mismatch: #1755" },
         { feePublishedId: 141821, feeVerifiedId: 168381, reason: "source_mismatch: #1755" },
         { feePublishedId: 232, feeVerifiedId: 185, reason: "source_mismatch: #1755" },
+        { feePublishedId: 101170, feeVerifiedId: 115326, reason: "duplicate of #81957 (#1753)" },
       ],
       skipped: [],
     });

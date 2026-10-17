@@ -48,7 +48,7 @@ export default async function LoginPage({
           className="absolute inset-0 opacity-[0.03]"
           style={{
             backgroundImage:
-              "linear-gradient(#132338 1px, transparent 1px), linear-gradient(90deg, #132338 1px, transparent 1px)",
+              "linear-gradient(var(--fi-ink) 1px, transparent 1px), linear-gradient(90deg, var(--fi-ink) 1px, transparent 1px)",
             backgroundSize: "40px 40px",
           }}
         />
