@@ -1,20 +1,24 @@
 import type { BranchPoint } from "@/lib/data-store";
-import { pctLabel } from "./market-view";
 
 const MILES_PER_DEGREE_LAT = 69;
 
+/** The branches' extent with the outermost 1% trimmed, so one misplaced branch can't shrink the rest to a dot. */
+export function trimmedBounds(points: BranchPoint[]): { lat0: number; lat1: number; lon0: number; lon1: number } {
+  const lats = points.map((p) => p.lat).sort((a, b) => a - b);
+  const lons = points.map((p) => p.lon).sort((a, b) => a - b);
+  const q = (list: number[], f: number) => list[Math.min(list.length - 1, Math.max(0, Math.round((list.length - 1) * f)))];
+  return { lat0: q(lats, 0.01), lat1: q(lats, 0.99), lon0: q(lons, 0.01), lon1: q(lons, 0.99) };
+}
+
 /**
  * Every branch with a map position as a dot: banks dark, credit unions terracotta. Plotted on
- * its own latitude and longitude, with no base map, so it shows spread and clustering; the
- * institution table below is the list alternative.
+ * its own latitude and longitude, with no base map, so it shows spread and clustering. The
+ * fallback when the live map (branch-map-gl.tsx) can't load; the institution table is the list
+ * alternative.
  */
 export function BranchMap({ points, label }: { points: BranchPoint[]; label: string }) {
   if (points.length < 2) return null;
-  const lats = points.map((p) => p.lat).sort((a, b) => a - b);
-  const lons = points.map((p) => p.lon).sort((a, b) => a - b);
-  // Trim the outermost 1% so one misplaced branch can't shrink the rest to a dot.
-  const q = (list: number[], f: number) => list[Math.min(list.length - 1, Math.max(0, Math.round((list.length - 1) * f)))];
-  const [lat0, lat1, lon0, lon1] = [q(lats, 0.01), q(lats, 0.99), q(lons, 0.01), q(lons, 0.99)];
+  const { lat0, lat1, lon0, lon1 } = trimmedBounds(points);
   const kx = Math.cos((((lat0 + lat1) / 2) * Math.PI) / 180);
   const w = Math.max((lon1 - lon0) * kx, 0.01);
   const h = Math.max(lat1 - lat0, 0.01);
@@ -101,5 +105,3 @@ export function CompareRows({ rows }: { rows: CompareRow[] }) {
     </ul>
   );
 }
-
-export { pctLabel };

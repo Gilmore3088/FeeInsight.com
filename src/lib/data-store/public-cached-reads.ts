@@ -96,7 +96,8 @@ export const getStateStatsCached = cachedPublicRead("state-stats", getStateStats
 export const getDistrictStatsCached = cachedPublicRead("district-stats", getDistrictStats);
 export const getStatesWithFeeDataCached = cachedPublicRead("states-with-fee-data", getStatesWithFeeData);
 export const getCitiesInStateCached = cachedPublicRead("cities-in-state", getCitiesInState);
-export const getCityMarketCached = cachedPublicRead("city-market-v1", getCityMarket);
+// v2: branch points carry their institution, and fees carry account, conditions and source line.
+export const getCityMarketCached = cachedPublicRead("city-market-v2", getCityMarket);
 export const getStateMarketCitiesCached = cachedPublicRead("state-market-cities-v1", getStateMarketCities);
 export const getCityFeeAveragesCached = cachedPublicRead("city-fee-averages", getCityFeeAverages);
 export const getDataCoverageSummaryCached = cachedPublicRead("data-coverage-summary", getDataCoverageSummary);

@@ -13,13 +13,17 @@ import { getCityMarketCached, getStateFeeIndexesCached } from "@/lib/data-store/
 import type { CityArea, CityFeeKey, CityMarket } from "@/lib/data-store";
 import { CITY_FEES } from "@/lib/data-store/city-market";
 import { titleCase } from "./city-lookup";
-import { BranchMap, CompareRows, type CompareRow } from "./market-exhibits";
+import { CompareRows, type CompareRow } from "./market-exhibits";
+import { BranchMapLive } from "./branch-map";
+import { ComparisonBars, feeBars } from "./comparison-bars";
+import { sortOf } from "./format";
+import { LeadLink } from "./lead-link";
 import { MarketTable } from "./market-table";
-import { coverage, depositLeaders, depositsLabel, localFees, marketFindings, pctLabel, trend } from "./market-view";
+import { coverage, depositLeaders, depositsLabel, leadFinding, localFees, lowerLabel, money, pctLabel, trend } from "./market-view";
 
 interface PageProps {
   params: Promise<{ state: string; city: string }>;
-  searchParams?: Promise<{ area?: string; fee?: string }>;
+  searchParams?: Promise<{ area?: string; fee?: string; sort?: string }>;
 }
 
 /** Cities served by fewer institutions with published fees than this are thin pages: rendered, not indexed. */
@@ -72,19 +76,26 @@ export default async function CityFeePage({ params, searchParams }: PageProps) {
 
   const isMetro = market.area === "metro";
   const placeName = isMetro && market.metro ? market.metro.name.replace(/,\s*[A-Z-]+$/, "") : cityName;
-  const placeShort = isMetro ? "the metro" : cityName;
   const cov = coverage(market);
   const fees = localFees(market, stateIndexes?.all ?? [], nationalIndex);
-  const findings = marketFindings(fees, placeShort, stateName);
+  const lead = leadFinding(fees);
   const leaders = depositLeaders(market);
   const cityHref = `/fees/city/${stateCode.toLowerCase()}/${encodeURIComponent(cityName.toLowerCase())}`;
   const initialFee = CITY_FEES.some((f) => f.key === query.fee) ? (query.fee as CityFeeKey) : "overdraft";
+  const initialSort = sortOf(query.sort);
+  // The name on the comparison bars and table: the city, or the metro.
+  const barName = isMetro ? `${placeName} metro` : cityName;
+  const leadHref = lead ? `${cityHref}?${isMetro ? "area=metro&" : ""}fee=${lead.key}&sort=low#compare` : "";
+  const branchesById = Object.fromEntries(market.institutions.map((i) => [i.id, i.branches]));
+  const unplotted = cov.branches - market.points.length;
 
   const deposits5 = trend(market.deposit_years, 5, (y) => [y.area_deposits, y.state_deposits, y.us_deposits]);
   const branches10 = trend(market.deposit_years, 10, (y) => [y.area_branches, y.state_branches, y.us_branches]);
   const c = market.community;
   const popChange = (f: typeof c.area) => (f?.population && f.population_before ? (f.population - f.population_before) / f.population_before : null);
   const areaLabel = c.area?.name || placeName;
+  // Census figures are county figures: the county holding most of the city's branches, or the metro's counties.
+  const contextKicker = isMetro ? `Metro context: the ${placeName} metro's counties` : c.area?.name ? `County context: ${c.area.name}` : null;
   const economy: CompareRow[] = [];
   if (deposits5) {
     economy.push({
@@ -177,97 +188,137 @@ export default async function CityFeePage({ params, searchParams }: PageProps) {
             The Bank Fee Index holds published fees for <strong className="font-semibold text-ink">{cov.with_fees}</strong> of them.
           </p>
           <p className="mt-2 text-[12px] text-ink-muted">The count includes institutions based elsewhere that have a branch here.</p>
-          {findings.length > 0 && (
-            <ul className={`mt-5 space-y-2.5 ${PAGE_HEADER_BLOCK}`}>
-              {findings.map((f) => (
-                <li key={f} className="flex gap-2.5 text-[15px] leading-snug text-ink">
-                  <span aria-hidden="true" className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-brick" />
-                  {f}
-                </li>
-              ))}
-            </ul>
+          {lead && lead.median != null && lead.state_median != null && (
+            <div className={`mt-8 rounded-2xl border border-border bg-surface-0 p-5 text-left sm:p-6 ${PAGE_HEADER_BLOCK}`}>
+              <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-brick">Furthest from the {stateName} median</p>
+              <p className="mt-2 text-[20px] font-semibold leading-snug tracking-[-0.01em] text-ink sm:text-[24px]">
+                {isMetro ? `The ${placeName} metro's` : `${cityName}'s`} median published {lowerLabel(lead.label)} fee is {money(lead.median)}.{" "}
+                {stateName}&apos;s is {money(lead.state_median)}.
+              </p>
+              <div className="mt-5">
+                <ComparisonBars bars={feeBars(lead, barName, stateName)} size="lg" />
+              </div>
+              <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3">
+                <LeadLink fee={lead.key} sort="low" href={leadHref} target="compare">
+                  See the {lead.n} institutions
+                </LeadLink>
+                <p className="text-[12px] text-ink-muted">
+                  {stateName}: institutions headquartered there. {barName}: institutions with a branch here.
+                </p>
+              </div>
+            </div>
           )}
         </div>
       </section>
 
-      {/* 2. Who serves the market: three facts beside the branch map. */}
+      {/* 2. Compare: pick a fee, see the median against the state and the U.S., then the institutions behind it. */}
+      <section id="compare" aria-labelledby="compare-heading" className="mx-auto max-w-page scroll-mt-20 px-4 pt-12 sm:px-6 sm:pt-16">
+        <h2 id="compare-heading" className={H2}>
+          Compare published fees
+        </h2>
+        <p className="mt-1 max-w-3xl text-[14px] text-ink-muted">
+          Pick a fee to compare {barName} with {stateName} and the U.S. Each amount below links to the fee schedule it was read
+          from, and an empty cell says why.
+        </p>
+        <div className="mt-5">
+          <MarketTable
+            key={`${initialFee}-${initialSort}`}
+            institutions={market.institutions}
+            fees={fees}
+            placeName={barName}
+            stateName={stateName}
+            initialFee={initialFee}
+            initialSort={initialSort}
+          />
+        </div>
+      </section>
+
+      {/* 3. Where they are: the branch map. */}
+      {market.points.length >= 2 && (
+        <section aria-labelledby="map-heading" className="mx-auto max-w-page px-4 pt-12 sm:px-6 sm:pt-16">
+          <h2 id="map-heading" className={H2}>
+            Where they have branches
+          </h2>
+          <p className="mt-1 max-w-3xl text-[14px] text-ink-muted">Select a branch to see its institution.</p>
+          <div className="mt-5">
+            <BranchMapLive points={market.points} label={placeName} branchesById={branchesById} />
+          </div>
+          {unplotted > 0 && (
+            <p className="mt-2 text-[12px] text-ink-muted">
+              The map shows {market.points.length} of {cov.branches} branch locations. {unplotted} {unplotted === 1 ? "has" : "have"} no
+              map coordinates in the FDIC or NCUA branch records, so {unplotted === 1 ? "it is" : "they are"} counted but not plotted.
+            </p>
+          )}
+        </section>
+      )}
+
+      {/* 4. Who holds the market: counts and deposit leaders. */}
       <section aria-labelledby="market-heading" className="mx-auto max-w-page px-4 pt-12 sm:px-6 sm:pt-16">
         <h2 id="market-heading" className={H2}>
           {placeName}&apos;s banking market
         </h2>
-        <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-          <div className="space-y-5">
-            <dl className="grid grid-cols-2 gap-4">
-              <div className="rounded-2xl border border-border bg-surface-0 p-4">
-                <dt className="text-[12px] text-ink-muted">Banks and credit unions with branches here</dt>
-                <dd className="mt-1 font-mono text-[28px] tabular-nums text-ink">{cov.institutions}</dd>
-              </div>
-              <div className="rounded-2xl border border-border bg-surface-0 p-4">
-                <dt className="text-[12px] text-ink-muted">Branch locations</dt>
-                <dd className="mt-1 font-mono text-[28px] tabular-nums text-ink">{cov.branches}</dd>
-              </div>
-            </dl>
-            {leaders.length > 0 && (
-              <div className="rounded-2xl border border-border bg-surface-0 p-4">
-                <p className="text-[14px] font-semibold text-ink">Largest banks by local bank deposits</p>
-                <p className="text-[12px] text-ink-muted">
-                  Share of the {depositsLabel(market.deposit_years.at(-1)?.area_deposits ?? 0)} in bank deposits at branches here. Credit
-                  unions report no deposits by branch.
-                </p>
-                <ol className="mt-3 space-y-2 text-[13px]">
-                  {leaders.map((l) => (
-                    <li key={l.id} className="grid grid-cols-[minmax(0,1fr)_minmax(0,6rem)_3rem] items-center gap-2">
-                      <Link href={`/institution/${l.id}`} className="truncate text-ink hover:text-brick">
-                        {l.name}
-                      </Link>
-                      <span className="h-2.5 rounded-full bg-paper" aria-hidden="true">
-                        <span className="block h-full rounded-full bg-brick" style={{ width: `${Math.min(l.share / leaders[0].share, 1) * 100}%` }} />
-                      </span>
-                      <span className="text-right font-mono tabular-nums text-ink">{(l.share * 100).toFixed(0)}%</span>
-                    </li>
-                  ))}
-                </ol>
-              </div>
-            )}
-          </div>
-          <div>
-            <BranchMap points={market.points} label={placeName} />
-            {market.points.length < cov.branches && (
-              <p className="mt-2 text-[12px] text-ink-muted">
-                {market.points.length >= 2 ? `The map shows ${market.points.length} of ${cov.branches} branch locations. ` : ""}
-                {cov.branches - market.points.length} {cov.branches - market.points.length === 1 ? "has" : "have"} no map coordinates in the FDIC or NCUA branch records, so {cov.branches - market.points.length === 1 ? "it is" : "they are"} counted but not plotted.
+        <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+          <dl className="grid grid-cols-2 content-start gap-4">
+            <div className="rounded-2xl border border-border bg-surface-0 p-4">
+              <dt className="text-[12px] text-ink-muted">Banks with branches here</dt>
+              <dd className="mt-1 font-mono text-[28px] tabular-nums text-ink">{cov.banks}</dd>
+            </div>
+            <div className="rounded-2xl border border-border bg-surface-0 p-4">
+              <dt className="text-[12px] text-ink-muted">Credit unions with branches here</dt>
+              <dd className="mt-1 font-mono text-[28px] tabular-nums text-ink">{cov.credit_unions}</dd>
+            </div>
+            <div className="rounded-2xl border border-border bg-surface-0 p-4">
+              <dt className="text-[12px] text-ink-muted">Bank branch locations</dt>
+              <dd className="mt-1 font-mono text-[28px] tabular-nums text-ink">{market.bank_branches}</dd>
+            </div>
+            <div className="rounded-2xl border border-border bg-surface-0 p-4">
+              <dt className="text-[12px] text-ink-muted">Credit union branch locations</dt>
+              <dd className="mt-1 font-mono text-[28px] tabular-nums text-ink">{market.cu_branches}</dd>
+            </div>
+          </dl>
+          {leaders.length > 0 && (
+            <div className="rounded-2xl border border-border bg-surface-0 p-4">
+              <p className="text-[14px] font-semibold text-ink">Largest banks by local bank deposits</p>
+              <p className="text-[12px] text-ink-muted">
+                Share of the {depositsLabel(market.deposit_years.at(-1)?.area_deposits ?? 0)} in bank deposits at branches here, FDIC
+                Summary of Deposits {market.sod_year}. Credit unions report no deposits by branch.
               </p>
-            )}
-          </div>
+              <ol className="mt-3 space-y-2 text-[13px]">
+                {leaders.map((l) => (
+                  <li key={l.id} className="grid grid-cols-[minmax(0,1fr)_minmax(0,6rem)_3rem] items-center gap-2">
+                    <Link href={`/institution/${l.id}`} className="truncate text-ink hover:text-brick">
+                      {l.name}
+                    </Link>
+                    <span className="h-2.5 rounded-full bg-paper" aria-hidden="true">
+                      <span className="block h-full rounded-full bg-brick" style={{ width: `${Math.min(l.share / leaders[0].share, 1) * 100}%` }} />
+                    </span>
+                    <span className="text-right font-mono tabular-nums text-ink">{(l.share * 100).toFixed(0)}%</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
         </div>
       </section>
 
-      {/* 3. Compare: one table, one fee at a time. */}
-      <section aria-labelledby="compare-heading" className="mx-auto max-w-page px-4 pt-12 sm:px-6 sm:pt-16">
-        <h2 id="compare-heading" className={H2}>
-          Compare their published fees
-        </h2>
-        <p className="mt-1 max-w-3xl text-[14px] text-ink-muted">
-          Listed by branches here, most first. Each amount links to the fee schedule it was read from, and an empty cell says why.
-        </p>
-        <div className="mt-5">
-          <MarketTable institutions={market.institutions} fees={fees} placeName={placeShort === "the metro" ? "Metro" : cityName} stateName={stateName} initialFee={initialFee} />
-        </div>
-      </section>
-
-      {/* 4. Community context: the area against its state and the U.S. */}
+      {/* 5. Community context: county figures, labelled as the county, against the state and the U.S. */}
       {economy.length > 0 && (
         <section aria-labelledby="economy-heading" className="mx-auto max-w-page px-4 pt-12 sm:px-6 sm:pt-16">
           <details className="group rounded-2xl border border-border bg-surface-0 p-5" open>
             <summary className="cursor-pointer list-none">
-              <h2 id="economy-heading" className={`${H2} inline`}>
+              {contextKicker && <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-brick">{contextKicker}</p>}
+              <h2 id="economy-heading" className={`${H2} mt-1 inline-block`}>
                 Community context
               </h2>
               <span className="ml-2 text-[13px] text-ink-muted group-open:hidden">Show</span>
             </summary>
             <p className="mt-1 max-w-3xl text-[14px] text-ink-muted">
-              How the local economy and bank presence have moved, against {stateName} and the U.S. This is background. None of it sets
-              or explains a fee.
+              {isMetro
+                ? `Deposits and branches cover the ${placeName} metro. Population and income cover the metro's counties.`
+                : c.area?.name
+                  ? `Deposits and branches cover the City of ${cityName}. Population and income cover ${c.area.name}, the county with most of ${cityName}'s bank branches, not the city alone.`
+                  : `Deposits and branches cover the City of ${cityName}.`}{" "}
+              This is background. None of it sets or explains a fee.
             </p>
             <div className="mt-4">
               <CompareRows rows={economy} />
@@ -280,7 +331,7 @@ export default async function CityFeePage({ params, searchParams }: PageProps) {
         </section>
       )}
 
-      {/* 5. Two next steps: banking teams first (the Pro subscription is the goal), then anyone choosing an account. */}
+      {/* 6. Two next steps: banking teams first (the Pro subscription is the goal), then anyone choosing an account. */}
       <section className="mx-auto max-w-page px-4 pt-12 sm:px-6 sm:pt-16">
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="rounded-2xl border border-border bg-surface-0 p-5">

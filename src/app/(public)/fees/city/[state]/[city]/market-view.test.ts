@@ -18,7 +18,7 @@ function inst(id: number, over: Partial<CityMarketInstitution> = {}): CityMarket
 }
 
 function overdraft(amount: number) {
-  return { overdraft: { amount, fee_name: "Overdraft", conditions: null, source_url: null, read_on: null } };
+  return { overdraft: { amount, fee_name: "Overdraft", account: null, conditions: [], source_line: null, source_url: null, read_on: null } };
 }
 
 function market(institutions: CityMarketInstitution[], areaDeposits = 0): CityMarket {

@@ -1,6 +1,9 @@
 import { sql } from "./connection";
 import { statsRowFilter } from "./fee-stats";
 import { STATE_TO_FIPS } from "@/lib/geo/state-fips";
+import { readerFeeConditions } from "@/lib/fee-conditions";
+import { feeEvidence, storedLineOf } from "@/lib/fee-evidence";
+import { productNameFromFeeName, readableProductName, waiverForDisplay } from "@/lib/agents/knox/lineup";
 
 /**
  * A city's banking market, defined by where institutions have branches, not where they are
@@ -36,7 +39,15 @@ export type CityFeeKey = (typeof CITY_FEES)[number]["key"];
 export interface CityFeeValue {
   amount: number;
   fee_name: string;
-  conditions: string | null;
+  /** The account the fee belongs to, when the schedule names one; null when it does not say. */
+  account: string | null;
+  /**
+   * Condition and waiver text from the schedule, the pipeline's own notes removed. Unfiltered:
+   * the page decides which of these read as conditions (`account-details.ts`).
+   */
+  conditions: string[];
+  /** The schedule's own line for the fee, verbatim, when one was stored. */
+  source_line: string | null;
   source_url: string | null;
   read_on: string | null;
 }
@@ -61,6 +72,11 @@ export interface BranchPoint {
   lat: number;
   lon: number;
   charter: "bank" | "credit_union";
+  /** The institution the branch belongs to, so the map can name it and link to its page. */
+  institution_id: number;
+  name: string;
+  /** Street address from the FDIC or NCUA branch record, when it has one. */
+  address: string | null;
 }
 
 /** One year of Summary of Deposits totals for the area, its state and the U.S. */
@@ -136,11 +152,11 @@ export async function getCityMarket(city: string, stateCode: string, area: CityA
 
   const bankBranches = (useMetro
     ? await sql`
-        SELECT institution_id, deposits, latitude, longitude, state, UPPER(city) AS city, county_fips
+        SELECT institution_id, deposits, latitude, longitude, state, UPPER(city) AS city, county_fips, address
           FROM institution_branch_deposits
          WHERE year = ${year} AND msa_code = ${metro!.code}`
     : await sql`
-        SELECT institution_id, deposits, latitude, longitude, state, UPPER(city) AS city, county_fips
+        SELECT institution_id, deposits, latitude, longitude, state, UPPER(city) AS city, county_fips, address
           FROM institution_branch_deposits
          WHERE year = ${year} AND state = ${state} AND UPPER(city) = ${upperCity}`) as Record<string, unknown>[];
 
@@ -148,7 +164,7 @@ export async function getCityMarket(city: string, stateCode: string, area: CityA
     ? [...new Set(bankBranches.map((b) => `${b.state}|${b.city}`))]
     : [`${state}|${upperCity}`];
   const cuBranches = (await sql`
-    SELECT c.institution_id, c.latitude, c.longitude
+    SELECT c.institution_id, c.latitude, c.longitude, c.address
       FROM credit_union_branches c
      WHERE c.institution_id IS NOT NULL
        AND (c.state || '|' || UPPER(c.city)) = ANY(${places}::text[])
@@ -193,6 +209,7 @@ export async function getCityMarket(city: string, stateCode: string, area: CityA
       ? (sql.unsafe(
           `WITH rows AS (
              SELECT ef.institution_id, ef.fee_category, ef.amount, ef.fee_name, ef.conditions,
+                    ef.account_product_type, ef.waiver_text, ef.extraction_note,
                     COALESCE(ef.document_url, ef.source_url) AS source_url, ef.created_at::date::text AS read_on,
                     ROW_NUMBER() OVER (PARTITION BY ef.institution_id, ef.fee_category ORDER BY ef.amount, ef.id) AS rn,
                     COUNT(*) OVER (PARTITION BY ef.institution_id, ef.fee_category) AS n
@@ -202,7 +219,8 @@ export async function getCityMarket(city: string, stateCode: string, area: CityA
                 AND ef.review_status = 'approved' AND ef.amount IS NOT NULL AND ef.amount >= 0
                 AND ${statsRowFilter("ef")}
            )
-           SELECT institution_id, fee_category, amount, fee_name, conditions, source_url, read_on
+           SELECT institution_id, fee_category, amount, fee_name, conditions,
+                  account_product_type, waiver_text, extraction_note, source_url, read_on
              FROM rows
             WHERE (fee_category = ANY($3::text[]) AND rn = n)
                OR (NOT fee_category = ANY($3::text[]) AND rn = (n + 1) / 2)`,
@@ -217,13 +235,7 @@ export async function getCityMarket(city: string, stateCode: string, area: CityA
   for (const r of feeRows) {
     const id = num(r.institution_id);
     const entry = fees.get(id) ?? {};
-    entry[r.fee_category as CityFeeKey] = {
-      amount: num(r.amount),
-      fee_name: String(r.fee_name ?? ""),
-      conditions: r.conditions ? String(r.conditions) : null,
-      source_url: r.source_url ? String(r.source_url) : null,
-      read_on: r.read_on ? String(r.read_on) : null,
-    };
+    entry[r.fee_category as CityFeeKey] = cityFeeValue(r);
     fees.set(id, entry);
   }
 
@@ -244,17 +256,18 @@ export async function getCityMarket(city: string, stateCode: string, area: CityA
   });
   institutions.sort((a, b) => b.branches - a.branches || (b.deposits ?? 0) - (a.deposits ?? 0) || a.name.localeCompare(b.name));
 
+  const names = new Map(institutions.map((i) => [i.id, i.name]));
   const points: BranchPoint[] = [];
-  for (const b of bankBranches) {
-    const lat = numOrNull(b.latitude);
-    const lon = numOrNull(b.longitude);
-    if (lat != null && lon != null && lat !== 0) points.push({ lat, lon, charter: "bank" });
-  }
-  for (const c of cuBranches) {
-    const lat = numOrNull(c.latitude);
-    const lon = numOrNull(c.longitude);
-    if (lat != null && lon != null && lat !== 0) points.push({ lat, lon, charter: "credit_union" });
-  }
+  const addPoint = (row: Record<string, unknown>, charter: BranchPoint["charter"]) => {
+    const lat = numOrNull(row.latitude);
+    const lon = numOrNull(row.longitude);
+    const id = row.institution_id == null ? null : num(row.institution_id);
+    if (lat == null || lon == null || lat === 0 || id == null || !names.has(id)) return;
+    const address = row.address ? String(row.address).trim() : "";
+    points.push({ lat, lon, charter, institution_id: id, name: names.get(id)!, address: address || null });
+  };
+  for (const b of bankBranches) addPoint(b, "bank");
+  for (const c of cuBranches) addPoint(c, "credit_union");
 
   return {
     city,
@@ -268,6 +281,35 @@ export async function getCityMarket(city: string, stateCode: string, area: CityA
     points,
     deposit_years: depositRows,
     community,
+  };
+}
+
+/**
+ * One catalog row as the city page shows it: the account it belongs to when the schedule names
+ * one, the condition and waiver text without the pipeline's notes, and the schedule's own line.
+ * The line is the shared evidence read (`feeEvidence`) when it prints the price, else the line
+ * stored with the fee.
+ */
+export function cityFeeValue(r: Record<string, unknown>): CityFeeValue {
+  const feeName = String(r.fee_name ?? "");
+  const extractionNote = r.extraction_note ? String(r.extraction_note) : null;
+  const rawConditions = r.conditions ? String(r.conditions) : null;
+  const evidence = feeEvidence(
+    { fee_name: feeName, amount: num(r.amount), fee_category: r.fee_category ? String(r.fee_category) : null, extraction_note: extractionNote, conditions: rawConditions },
+    null,
+  );
+  const stored = storedLineOf({ extraction_note: extractionNote, conditions: rawConditions });
+  const conditions = [readerFeeConditions(rawConditions), waiverForDisplay(r.waiver_text ? String(r.waiver_text) : null), evidence?.condition ?? null]
+    .filter((c): c is string => Boolean(c && c.trim()))
+    .map((c) => c.trim());
+  return {
+    amount: num(r.amount),
+    fee_name: feeName,
+    account: readableProductName(r.account_product_type ? String(r.account_product_type) : null) ?? productNameFromFeeName(feeName) ?? evidence?.heading ?? null,
+    conditions: [...new Set(conditions)],
+    source_line: evidence?.line ?? (stored ? stored.replace(/\\"/g, '"').replace(/\s+/g, " ").trim() || null : null),
+    source_url: r.source_url ? String(r.source_url) : null,
+    read_on: r.read_on ? String(r.read_on) : null,
   };
 }
 
