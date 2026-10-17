@@ -5,12 +5,14 @@ import {
   EXTRACTION_PENDING,
   NOT_IDENTIFIED,
   NO_SCHEDULE,
+  amountText,
   compareCounts,
   compareFinding,
   compareRows,
   heroFinding,
   leadRow,
   orderRows,
+  positionFinding,
   scheduleState,
 } from "./profile-view";
 
@@ -69,8 +71,13 @@ describe("ordering and findings", () => {
     ),
   );
 
-  it("puts the widest share gap first and fees about the same after the differences", () => {
-    expect(rows.map((r) => r.key)).toEqual(["monthly_maintenance", "overdraft", "atm_non_network", "nsf"]);
+  it("orders the rest by dollar gap from the median", () => {
+    expect(rows.map((r) => r.key)).toEqual(["monthly_maintenance", "overdraft", "nsf", "atm_non_network"]);
+  });
+
+  it("pins the lead fee first, then headline fees in headline order", () => {
+    const pinned = orderRows(rows, ["overdraft", "nsf", "monthly_maintenance"], "atm_non_network");
+    expect(pinned.map((r) => r.key)).toEqual(["atm_non_network", "overdraft", "nsf", "monthly_maintenance"]);
   });
 
   it("leads with the widest gap from the state median", () => {
@@ -83,13 +90,39 @@ describe("ordering and findings", () => {
   it("counts against the state median with the 1% tolerance", () => {
     const counts = compareCounts(rows)!;
     expect(counts).toMatchObject({ above: 1, below: 1, same: 1, compared: 3, level: "state" });
-    expect(compareFinding(counts, "Florida")).toBe("Above the Florida median on 1 of 3 fees, below on 1 and about the same on 1.");
+    expect(compareFinding(counts, "Florida")).toBe("Above the Florida median on 1 of 3 compared fees, below on 1 and about the same on 1.");
   });
 
   it("says all about the same when nothing differs", () => {
     expect(compareFinding({ above: 0, below: 0, same: 4, compared: 4, level: "state" }, "Florida")).toBe(
       "About the same as the Florida median on all 4 compared fees.",
     );
+  });
+});
+
+describe("ranges and $0", () => {
+  it("shows a range, takes the gap from the high end and never quotes a computed median", () => {
+    const rows = compareRows([value("monthly_maintenance", 2.5, { count: 2, low: 0, high: 5 })], markets, "reviewed", null);
+    const mm = rows.find((r) => r.key === "monthly_maintenance")!;
+    expect(amountText(mm)).toBe("$0 to $5");
+    expect(mm.amount).toBe(5);
+    expect(heroFinding({ rows, stateName: "Florida", sparse: false, schedule: "reviewed", underReview: 0 })).toBe(
+      "Its highest published monthly maintenance fee is $5, $5 below the $10 Florida median.",
+    );
+  });
+
+  it("shows a published $0 as No fee", () => {
+    const rows = compareRows([value("monthly_maintenance", 0)], markets, "reviewed", null);
+    expect(amountText(rows.find((r) => r.key === "monthly_maintenance")!)).toBe("No fee");
+  });
+
+  it("states where benchmarked fees sit against the U.S. middle 50%", () => {
+    expect(positionFinding({ below: 6, within: 12, above: 9 })).toBe(
+      "9 of its 27 benchmarked fees sit above the U.S. middle 50%, 12 inside and 6 below.",
+    );
+    expect(positionFinding({ below: 0, within: 1, above: 1 })).toBe("1 of its 2 benchmarked fees sits above the U.S. middle 50%, 1 inside.");
+    expect(positionFinding({ below: 2, within: 3, above: 0 })).toBe("None of its 5 benchmarked fees sits above the U.S. middle 50%; 3 inside and 2 below.");
+    expect(positionFinding({ below: 0, within: 0, above: 0 })).toBeNull();
   });
 });
 

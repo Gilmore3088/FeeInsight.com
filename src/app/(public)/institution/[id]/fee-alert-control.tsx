@@ -25,11 +25,11 @@ export interface FeeAlertControlProps {
 }
 
 const INPUT =
-  "min-w-0 w-full rounded-md border border-border bg-white px-3 py-2 text-[14px] text-ink placeholder:text-ink-muted focus:border-transparent focus:outline-none focus:ring-2 focus:ring-brick/30";
+  "min-w-0 w-full rounded-md border border-border bg-surface-0 px-3 py-2 text-[14px] text-ink placeholder:text-ink-muted focus:border-transparent focus:outline-none focus:ring-2 focus:ring-brick/30";
 const PRIMARY =
   "inline-flex min-h-11 max-w-full items-center justify-center rounded-md border border-ink bg-surface-0 px-4 py-2 text-left text-[13px] font-semibold text-ink transition-colors hover:bg-surface-200 disabled:opacity-50";
 const SECONDARY =
-  "inline-flex min-h-11 items-center rounded-md border border-border bg-white px-3 py-1.5 text-[12px] font-semibold text-ink transition-colors hover:border-brick hover:text-brick disabled:opacity-50";
+  "inline-flex min-h-11 items-center rounded-md border border-border bg-surface-0 px-3 py-1.5 text-[12px] font-semibold text-ink transition-colors hover:border-brick hover:text-brick disabled:opacity-50";
 
 /**
  * Save this bank or credit union and get an email when a fee you follow changes.
@@ -69,7 +69,7 @@ export function FeeAlertControl({
 
   const headline =
     mode === "verify"
-      ? `Get an email when ${institutionName}'s fees are verified`
+      ? `Get an email when ${institutionName} publishes more fees`
       : `Get an email when ${institutionName} updates ${focusLabel ? `its published ${focusLabel.toLowerCase()}` : "a published fee"}`;
   const body =
     mode === "verify"
@@ -261,7 +261,7 @@ export function FeeAlertControl({
       )}
 
       {error && (
-        <p role="alert" className="mt-2 text-[13px] text-red-700">
+        <p role="alert" className="mt-2 text-[13px] text-brick">
           {error}
           {loginHref && (
             <>

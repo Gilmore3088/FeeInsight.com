@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ACCOUNT_NOT_IDENTIFIED, aboutSame, money, reference, type CompareRow, type Median } from "./profile-view";
+import { aboutSame, amountText, money, reference, type CompareRow, type Median } from "./profile-view";
 
 /** Rows shown before "Show all". */
 const ROWS_SHOWN = 5;
@@ -12,19 +12,19 @@ function Amount({ row }: { row: CompareRow }) {
   if (row.amount == null) {
     return <span className="inline-block max-w-[9rem] text-[12px] leading-snug text-ink-muted md:max-w-none">{row.missing}</span>;
   }
-  const text = money(row.amount);
+  const text = amountText(row);
   return row.sourceUrl ? (
     <a
       href={row.sourceUrl}
       target="_blank"
       rel="noopener noreferrer"
       title="Open the fee schedule it was read from"
-      className="-my-3 inline-block py-3 font-mono text-[15px] font-semibold tabular-nums text-ink underline decoration-border underline-offset-2 hover:decoration-brick"
+      className="-my-3 inline-block whitespace-nowrap py-3 font-mono text-[15px] font-semibold tabular-nums text-ink underline decoration-border underline-offset-2 hover:decoration-brick"
     >
       {text}
     </a>
   ) : (
-    <span className="font-mono text-[15px] font-semibold tabular-nums text-ink">{text}</span>
+    <span className="whitespace-nowrap font-mono text-[15px] font-semibold tabular-nums text-ink">{text}</span>
   );
 }
 
@@ -41,10 +41,14 @@ function MedianCell({ m, label }: { m: Median | null; label: string }) {
   );
 }
 
-/** Its value against the first reference median: "+$4", "−$2", or "About the same" within 1%. */
+/**
+ * Its amount (the highest, when it lists several) against the first reference median: "+$4",
+ * "−$2", "About the same" within 1%, or "None charged" for a published $0.
+ */
 function Gap({ row }: { row: CompareRow }) {
   const ref = reference(row);
   if (row.amount == null || !ref) return <span className="text-[12px] text-ink-muted">&nbsp;</span>;
+  if (row.amount === 0) return <span className="text-[13px] text-ink-muted">None charged</span>;
   const m = ref.median.median;
   if (aboutSame(row.amount, m)) return <span className="text-[13px] text-ink-muted">{row.amount === m ? "Same" : "About the same"}</span>;
   const diff = row.amount - m;
@@ -56,21 +60,16 @@ function Gap({ row }: { row: CompareRow }) {
   );
 }
 
+/** The account the schedule names for the fee; nothing when it names none. */
 function Detail({ row }: { row: CompareRow }) {
-  if (row.amount == null) return null;
-  if (row.count > 1 && row.low != null && row.high != null && row.high > row.low) {
-    return (
-      <p className="text-[12px] text-ink-muted">
-        {row.key === "overdraft" ? "Highest" : "Median"} of its {row.count} amounts, {money(row.low)} to {money(row.high)}
-      </p>
-    );
-  }
-  return <p className={`text-[12px] ${row.account ? "text-ink-soft" : "text-ink-muted"}`}>{row.account ?? ACCOUNT_NOT_IDENTIFIED}</p>;
+  if (row.amount == null || !row.account) return null;
+  return <p className="text-[12px] text-ink-soft">{row.account}</p>;
 }
 
 /**
- * Each published fee beside the state, district and U.S. medians. The fees that differ most come
- * first, five show before "Show all", and phones get stacked rows so nothing scrolls sideways.
+ * Each published fee beside the state, district and U.S. medians, in the order orderRows sets
+ * (the hero's fee first). Five show before "Show all"; phones get stacked rows so nothing
+ * scrolls sideways.
  */
 export function CompareTable({
   rows,
@@ -153,6 +152,7 @@ export function CompareTable({
                 </span>
                 {row.amount != null && reference(row) && (
                   <span className="ml-auto">
+                    {row.amount !== 0 && <span className="mr-1">vs {hasState ? shortState : "U.S."}</span>}
                     <Gap row={row} />
                   </span>
                 )}
@@ -167,7 +167,7 @@ export function CompareTable({
           onClick={() => setAll(true)}
           className="mt-4 inline-flex min-h-11 items-center rounded-full border border-ink px-5 text-[14px] font-semibold text-ink hover:bg-surface-0"
         >
-          Compare all {rows.length} fees
+          Show all {rows.length} fees
         </button>
       )}
     </div>

@@ -33,7 +33,8 @@ import { formatAbsoluteDate, getPublicNationalIndex } from "@/lib/public-stats";
 import { formatCompactDollars } from "@/lib/format";
 import { getCharterLabel, getSegmentLabel, toTitleCase } from "./enum-labels";
 import { FeeFocusScroll } from "./fee-focus-scroll";
-import { FeeScheduleTable, type FeeBenchmarks, type StateMedians } from "./fee-schedule-table";
+import { FeeScheduleTable, countPositions, groupFeesByFamily, type FeeBenchmarks } from "./fee-schedule-table";
+import { ShowAll } from "./show-all";
 import type { IndexEntry } from "@/lib/data-store/fee-index";
 import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import {
@@ -68,6 +69,7 @@ import {
   heroFinding,
   leadRow,
   orderRows,
+  positionFinding,
   scheduleState,
 } from "./profile-view";
 import { ComparisonBars, type ComparisonBar } from "../../fees/city/[state]/[city]/comparison-bars";
@@ -84,9 +86,9 @@ const FINANCIAL_HISTORY_QUARTERS = 4;
 /** fdic and ncua can both carry the same quarter; fetch enough rows to dedupe. */
 const FINANCIAL_SOURCES_PER_QUARTER = 2;
 
-const H2 = "text-[22px] font-semibold tracking-[-0.02em] text-ink sm:text-[28px]";
-const FINDING = "mt-2 max-w-3xl text-[15px] leading-relaxed text-ink-soft sm:mx-0 sm:text-left";
-const SOURCE = "mt-3 text-[12px] leading-relaxed text-ink-muted sm:mx-0 sm:text-left";
+const H2 = "text-center text-[22px] font-semibold tracking-[-0.02em] text-ink sm:text-left sm:text-[28px]";
+const FINDING = "mx-auto mt-2 max-w-3xl text-center text-[15px] leading-relaxed text-ink-soft sm:mx-0 sm:text-left";
+const SOURCE = "mt-3 text-center text-[12px] leading-relaxed text-ink-muted sm:mx-0 sm:max-w-none sm:text-left";
 const LINK = "font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink";
 
 function fallbackTo<T>(label: string, fallback: T) {
@@ -97,6 +99,9 @@ function fallbackTo<T>(label: string, fallback: T) {
 }
 
 const count = (n: number) => n.toLocaleString("en-US");
+
+/** Schedule rows shown before "Show all". */
+const SCHEDULE_ROWS = 5;
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { id } = await params;
@@ -228,37 +233,31 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
   const districtIndex = districtIndexes?.all ?? [];
 
   const usable = (entry: IndexEntry) => entry.median_amount != null && entry.institution_count >= MIN_INSTITUTIONS_FOR_MEDIAN;
-  const nationalMedians = new Map<string, number | null>(
-    nationalIndex.filter(usable).map((entry) => [entry.fee_category, entry.median_amount]),
-  );
   const feeBenchmarks: FeeBenchmarks = {};
   for (const entry of nationalIndex) {
     if (!usable(entry) || entry.p25_amount == null || entry.p75_amount == null) continue;
     feeBenchmarks[entry.fee_category] = { p25: entry.p25_amount, median: entry.median_amount as number, p75: entry.p75_amount };
   }
   const stateName = stateCode ? STATE_NAMES[stateCode] : null;
-  const stateMedians: StateMedians | undefined =
-    stateName && stateIndex.length > 0
-      ? { place: stateName, medians: new Map(stateIndex.filter(usable).map((entry) => [entry.fee_category, entry.median_amount])) }
-      : undefined;
 
   const sparse = verifiedFees.length < MIN_VERIFIED_FEES_FOR_OFFER;
   const schedule = scheduleState({ publishedFees: verifiedFees.length, hasSchedule: Boolean(inst.fee_schedule_url) });
   const categories = [...new Set(verifiedFees.map((fee) => fee.fee_category).filter((c): c is string => Boolean(c)))];
-  const rows = orderRows(
-    compareRows(
-      pickHeadlineValues(verifiedFees, categories),
-      { state: stateIndex, district: districtIndex, us: nationalIndex },
-      schedule,
-      inst.fee_schedule_url ?? null,
-    ),
-    HEADLINE_FEE_KEYS,
+  const rawRows = compareRows(
+    pickHeadlineValues(verifiedFees, categories),
+    { state: stateIndex, district: districtIndex, us: nationalIndex },
+    schedule,
+    inst.fee_schedule_url ?? null,
   );
+  const lead = sparse ? null : leadRow(rawRows, HEADLINE_FEE_KEYS);
+  // The hero's lead fee is the table's first row, so the reader finds it where the page started.
+  const rows = orderRows(rawRows, HEADLINE_FEE_KEYS, lead?.key ?? null);
   const published = rows.filter((row) => row.amount != null);
   const counts = compareCounts(rows);
-  const lead = sparse ? null : leadRow(rows, HEADLINE_FEE_KEYS);
   const publishedRows = displayFees.filter((fee) => fee.status === "verified").length;
   const reviewRows = displayFees.length - publishedRows;
+  const scheduleRowCount = groupFeesByFamily(displayFees).reduce((n, group) => n + group.rows.length, 0);
+  const positionLine = positionFinding(countPositions(displayFees, feeBenchmarks));
   const finding = heroFinding({
     rows,
     name: inst.institution_name,
@@ -334,7 +333,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
             name: inst.institution_name,
             sample:
               lead.count > 1
-                ? `${lead.key === "overdraft" ? "Highest" : "Median"} of its ${lead.count} published amounts`
+                ? `Highest of its ${lead.count} published amounts`
                 : "Its published fee",
             value: lead.amount,
           },
@@ -369,16 +368,22 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
           },
         ]
       : null;
+  // Phones show three bars (it, its state, the U.S.); the district bar waits for wider screens.
+  const phoneBars = leadBars?.filter((bar) => !bar.name.endsWith(" district")) ?? null;
+  const shortFacts = [charterLabel, [city, stateCode].filter(Boolean).join(", "), assetsDollars ? `${formatCompactDollars(assetsDollars)} in assets` : segmentLabel]
+    .filter((part): part is string => Boolean(part))
+    .join(" \u00b7 ");
 
   const showHamiltonBand = !isPro && !sparse && published.length > 0;
   // The one Hamilton finding shown free: its fee-income share against the peer median from the
   // same quarter's call reports (a Pro visitor already has the full financial profile).
-  const [freePeerMedians, sampleLive] = showHamiltonBand
-    ? await Promise.all([
-        latestFinancial ? getPeerFinancialMedians(instId).catch(fallbackTo("peer medians", null)) : Promise.resolve(null),
-        sampleReportAvailable().catch(() => false),
-      ])
-    : [null, false];
+  const [freePeerMedians, sampleLive] = await Promise.all([
+    showHamiltonBand && latestFinancial
+      ? getPeerFinancialMedians(instId).catch(fallbackTo("peer medians", null))
+      : Promise.resolve(null),
+    showHamiltonBand || (sparse && !isPro) ? sampleReportAvailable().catch(() => false) : Promise.resolve(false),
+  ]);
+  const sampleHref = sampleLive ? "/reports/sample-competitive-fee-position" : null;
   const hamiltonInsight: HamiltonInsight | null =
     showHamiltonBand && normalizedFinancials.length > 0
       ? {
@@ -400,7 +405,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
   );
   const places = [stateName, districtName ? `the ${districtName} district` : null, "the U.S."].filter((p): p is string => Boolean(p));
   const medianPlaces = places.length > 1 ? `${places.slice(0, -1).join(", ")} and ${places[places.length - 1]}` : places.join("");
-  const scheduleOpen = Boolean(focusFeeCategory) || published.length === 0 || sparse;
+  const scheduleAll = Boolean(focusFeeCategory) || sparse;
 
   return (
     <>
@@ -435,7 +440,8 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                 )}
               </nav>
               <h1 className={`mt-2 break-words ${PAGE_H1}`}>{inst.institution_name}</h1>
-              <dl className="mx-auto mt-5 grid max-w-xl grid-cols-2 gap-x-6 gap-y-3 text-left sm:mx-0 sm:max-w-none sm:grid-cols-3 xl:flex xl:flex-wrap xl:gap-x-10">
+              {shortFacts && <p className="mt-3 text-center text-[14px] text-ink-soft sm:hidden">{shortFacts}</p>}
+              <dl className="mt-5 hidden grid-cols-2 gap-x-6 gap-y-3 text-left sm:grid sm:grid-cols-3 xl:flex xl:flex-wrap xl:gap-x-10">
                 {facts.map((fact) => (
                   <div key={fact.label} className="min-w-0">
                     <dt className="text-[12px] text-ink-muted">{fact.label}</dt>
@@ -450,7 +456,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                 {published.length > 0 ? (
                   <>
                     Source: {scheduleLink}
-                    {collectedOn ? `, read ${collectedOn}` : ""}. Medians: {PRODUCT_NAME}, live published fees.
+                    {collectedOn ? `, read ${collectedOn}` : ""}.
                   </>
                 ) : (
                   <>
@@ -465,7 +471,10 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
             {leadBars && lead && (
               <figure className="mt-10 border-t border-border pt-8 text-left lg:mt-2 lg:border-l lg:border-t-0 lg:pl-12 lg:pt-0">
                 <figcaption className="text-[14px] font-semibold text-ink">{lead.label}</figcaption>
-                <div className="mt-4">
+                <div className="mt-4 sm:hidden">
+                  <ComparisonBars bars={phoneBars ?? leadBars} />
+                </div>
+                <div className="mt-4 hidden sm:block">
                   <ComparisonBars bars={leadBars} />
                 </div>
               </figure>
@@ -517,6 +526,8 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                   <dd>Every institution in the {PRODUCT_NAME}.</dd>
                   <dt className="font-medium text-ink-soft">About the same</dt>
                   <dd>Within 1% of the median.</dd>
+                  <dt className="font-medium text-ink-soft">Account</dt>
+                  <dd>Fees not tied to a named account apply across its personal accounts.</dd>
                 </dl>
               </details>
             </section>
@@ -530,30 +541,28 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
               </h2>
               <p className={FINDING}>
                 {published.length > 0
-                  ? `${count(publishedRows)} published ${publishedRows === 1 ? "fee" : "fees"}${reviewRows > 0 ? ` and ${count(reviewRows)} under review` : ""} from its schedule${collectedOn ? `, read ${collectedOn}` : ""}, grouped by type.`
+                  ? (positionLine ??
+                    `${count(publishedRows)} published ${publishedRows === 1 ? "fee" : "fees"}${reviewRows > 0 ? ` and ${count(reviewRows)} under review` : ""} from its schedule, grouped by type.`)
                   : "They stay out of every comparison until review is done."}
               </p>
-              <details open={scheduleOpen} className="group mt-5 overflow-hidden rounded-2xl border border-border bg-surface-0">
-                <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-[14px] font-semibold text-ink sm:px-5 [&::-webkit-details-marker]:hidden">
-                  <span className="group-open:hidden">Show all {count(displayFees.length)} fees</span>
-                  <span className="hidden group-open:inline">Hide the fee list</span>
-                  <span aria-hidden="true" className="text-ink-muted transition-transform group-open:rotate-90">
-                    &rsaquo;
-                  </span>
-                </summary>
-                <div className="border-t border-border">
-                  {focusFeeCategory && <FeeFocusScroll category={focusFeeCategory} />}
-                  <FeeScheduleTable
-                    fees={displayFees}
-                    disclosureUrl={inst.fee_schedule_url}
-                    focusCategory={focusFeeCategory}
-                    medians={nationalMedians}
-                    stateMedians={stateMedians}
-                    benchmarks={feeBenchmarks}
-                  />
-                </div>
-              </details>
-              <p className={SOURCE}>Source: each amount links to the fee schedule it was read from.</p>
+              <div className="mt-5">
+                <ShowAll total={scheduleRowCount} shown={SCHEDULE_ROWS} initialAll={scheduleAll}>
+                  <div className="overflow-hidden rounded-2xl border border-border bg-surface-0">
+                    {focusFeeCategory && <FeeFocusScroll category={focusFeeCategory} />}
+                    <FeeScheduleTable
+                      fees={displayFees}
+                      disclosureUrl={inst.fee_schedule_url}
+                      focusCategory={focusFeeCategory}
+                      benchmarks={feeBenchmarks}
+                      limit={scheduleAll ? Number.POSITIVE_INFINITY : SCHEDULE_ROWS}
+                    />
+                  </div>
+                </ShowAll>
+              </div>
+              <p className={SOURCE}>
+                Source: each amount links to {scheduleLink}
+                {collectedOn ? `, read ${collectedOn}` : ""}. Position: the U.S. middle 50% of {PRODUCT_NAME} published fees.
+              </p>
             </section>
           )}
 
@@ -563,7 +572,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
               insight={hamiltonInsight}
               plansHref={links.plansHref}
               reportOfferHref={links.reportOfferHref}
-              sampleReportHref={sampleLive ? "/reports/sample-competitive-fee-position" : null}
+              sampleReportHref={sampleHref}
             />
           )}
 
@@ -603,6 +612,14 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
             }}
           />
 
+          {sparse && !isPro && sampleHref && (
+            <p className="-mt-8 text-center text-[14px] text-ink-soft sm:-mt-10 sm:text-left">
+              <Link href={sampleHref} className={`inline-flex min-h-11 items-center ${LINK}`}>
+                See what a free sample Competitive Fee Position Report shows
+              </Link>
+            </p>
+          )}
+
           <ProfileFootnote
             correctSourceHref={links.correctSourceHref}
             claimHref={links.claimHref}
@@ -618,6 +635,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
         institutionName={inst.institution_name}
         city={city}
         stateCode={inst.state_code}
+        dateModified={inst.latest_source_collected_at ?? null}
       />
     </>
   );
