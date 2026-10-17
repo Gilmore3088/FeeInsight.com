@@ -215,9 +215,10 @@ Darwin owns verification and classification.
   60 s statement timeout inside its savepoint, both put back after the read. Up to 25 new pairs a step, one attempt each (fingerprint
   `owner-shadow:<institution>:<document>:<text_hash>` in shadow, `owner:...` once live, so a
   re-extracted text is read again). A step skips the scoped read when the last one of its mode
-  selected no pair and the newest stored text and live fee ids are unchanged. With
-  `DARWIN_DOCUMENT_OWNER_TAKEDOWN` off (the default) it only logs the live fees it would take down
-  (`darwin.document_owner_shadow` event, step detail `document_owner`); on, `other_bank` pairs are
+  selected no pair and the newest stored text and live fee ids are unchanged. `DARWIN_DOCUMENT_OWNER_TAKEDOWN` is on
+  (James's yes, 2026-10-17; dry count 228 live fees, 19 pairs, 10 institutions). Off, it only logs
+  the live fees it would take down (`darwin.document_owner_shadow` event, step detail
+  `document_owner`); on, `other_bank` pairs are
   re-read under their own cap of 25, a failing fee goes through the shared second look
   (`darwin.document_owner`), passing fees clear their pending flags, and a confirmed fee is
   archived with reason `document_owner: names institution <id>`, never deleted.
@@ -815,8 +816,8 @@ Darwin owns verification and classification.
   `release_repair`: `checked`, `passed`, `would_take_down`, `deferred`, `report_only` (`text_only`,
   `model_only`, `other`), `by_reason`, `by_category`, `text_only_by_category`,
   `model_only_by_category`, up to 20 samples of each bucket (with the model's pick and its
-  probability), the cursor. `DARWIN_RELEASE_REPAIR_LIVE` is false: the pass only reports. When a PR
-  turns it on, a candidate goes through the shared 12-hour second look (`secondLook`, check
+  probability), the cursor. `DARWIN_RELEASE_REPAIR_LIVE` is on (James's OK, 2026-10-17; the last full
+  loops found 0 takedown candidates among 1,639 live released fees, so it guards future releases): a candidate goes through the shared 12-hour second look (`secondLook`, check
   `darwin.release_repair`): flagged `takedown_pending` first, archived only when a run at least 12
   hours on fails it again (`rolled_back_reason` `release_repair:<reason>`, batch
   `darwin-release-repair-<run>`, never deleted), its verified row rejected with
@@ -912,6 +913,19 @@ Darwin owns verification and classification.
 - A verified $0 row carries the `zero_fee` flag, which is what lets Hamilton publish it.
 - Pass 2 (`peer-checks.ts`, free, rows the rules accept), each its own strategy in
   `pipeline_attempts` (stage `verify`, fingerprint `raw:<fee_raw_id>`):
+  - `verify.peer_range` v5 (#1112, Oct 16): a state-level outlier is held only in
+    `PEER_HOLD_CATEGORIES` (atm_non_network, overdraft, od_protection_transfer, rush_card,
+    minimum_balance, wire_domestic_outgoing), where an outlier was usually a misread. In every
+    other category the outlier is recorded on the attempt (`peer_outlier: true`, `peer_held:
+    false`) and the fee is not held: graded on the 123 v4 and 113 v3 holds against their stored
+    text, nearly all of those were real fees at an unusual printed price (photocopies, box
+    drilling, $5 stop payments). No-fee, discount and allowance lines are the shared name rule's
+    (`ruleFor`, Hamilton `EVAL_VERDICT_VERSION` v8). Each `verify.rules` attempt records
+    `peer_version`, and a `peer_outlier` row decided under an older peer version is re-decided
+    once. An older hold that has no `peer_version` is re-decided only when its own run's
+    `verify.peer_range` attempt was a graded version (`DARWIN_PEER_GRADED_VERSIONS`, v3 and v4)
+    and held it; the ungraded v1/v2 holds of Oct 5–10 stay held until they are graded (#1694).
+    Below, "is held" means held in those categories.
   - `verify.peer_range` v4: a fee enters on the benchmarks' terms (`entersPeerCheck`, #1112).
     The peer levels are the benchmark population (`statsRowFilter`: consumer, both and unknown
     fees, no business-only schedule), so consumer and both fees are compared, an unknown fee is
@@ -1243,7 +1257,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `AUDIENCE_RELABEL_VERSION` | `darwin.audience_relabel` | v3 | `darwin/audience-relabel.ts` |
 | `DARWIN_ADJUDICATE_STRATEGY` | `verify.adjudicate` | v2 | `darwin/adjudicate.ts` |
 | `DARWIN_CATEGORY_MODEL_STRATEGY` | `verify.category_model` | v1 | `darwin/category-model.ts` |
-| `DARWIN_PEER_STRATEGY` | `verify.peer_range` | v4 | `darwin/peer-checks.ts` |
+| `DARWIN_PEER_STRATEGY` | `verify.peer_range` | v5 | `darwin/peer-checks.ts` |
 | `DARWIN_SECOND_SOURCE_STRATEGY` | `verify.second_source` | v2 | `darwin/peer-checks.ts` |
 | `DARWIN_RELEASE_STRATEGY` | `verify.release` | v4 | `darwin/release-held.ts` |
 | `DARWIN_RECORDED_RELEASE_STRATEGY` | `verify.release_recorded` | v1 | `darwin/release-review.ts` |

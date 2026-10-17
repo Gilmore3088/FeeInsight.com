@@ -25,6 +25,7 @@
     { "pr": 1632, "issue": 1442, "metric": "detail.goal.accuracy.accuracy", "direction": "up", "min_change": 0.001, "note": "Darwin switch-on: 830 per-hour fees set hourly; 92 lending/card and 7 brokerage-page fees archived after the 12-hour second look; 14 due tier-perk $0s archived" },
     { "pr": 1638, "issue": 1440, "metric": "detail.goal.accuracy.accuracy", "direction": "up", "min_change": 0.0002, "note": "Switch on: 29 live rows that read one printed line a second way archived after the 12-hour second look; Selco's $10 optional overdraft plan (143753) held beside its per-item fee" },
     { "pr": 1745, "issue": 1443, "metric": "detail.goal.accuracy.accuracy", "direction": "up", "min_change": 0.0001, "note": "Switch on: 7 live sentence-fragment names at $0 taken down, 23 renamed to their fee name (139153 kept live at its printed Free); Knox re-reads the kept-live lines" },
+    { "pr": 1741, "issue": 1455, "metric": "detail.goal.accuracy.accuracy", "direction": "up", "min_change": 0.001, "note": "Switch on: 228 live fees on another bank's schedule (19 document/bank pairs, 10 institutions) archived after the 12-hour second look" },
     { "pr": 1748, "issue": 1398, "metric": "detail.goal.accuracy.accuracy", "direction": "up", "min_change": 0.001, "note": "Research split on: 2,154 live account research fees move to returned mail (1,558) and excess withdrawals (596); Knox rules v77 file new reads there" }
   ]
 }

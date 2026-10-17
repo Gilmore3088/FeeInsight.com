@@ -11,8 +11,8 @@ const copy = (id: number, frequency: string | null, fee_audience: string | null,
 });
 
 describe("exact duplicate check at publish (#1069 step 1)", () => {
-  it("stays in shadow until James turns it on", () => {
-    expect(PUBLISH_REFUSE_DUPLICATES_LIVE).toBe(false);
+  it("is on: publish refuses a row the collapse would close", () => {
+    expect(PUBLISH_REFUSE_DUPLICATES_LIVE).toBe(true);
   });
 
   it("decides as the exact duplicate collapse would", () => {
@@ -93,9 +93,9 @@ describe("exact duplicate check at publish (#1069 step 1)", () => {
     const inserts = (db: ReturnType<typeof dbWithLiveCopy>) =>
       db.mock.calls.filter((call) => (call[0] as string[]).join(" ").includes("INSERT INTO published_fee_records")).length;
 
-    it("in shadow, publishes the row and counts it as one the collapse would close", async () => {
+    it("switched off, publishes the row and counts it as one the collapse would close", async () => {
       const db = dbWithLiveCopy();
-      const result = await runHamiltonPublish({ runId: 1069, db: asDb(db) });
+      const result = await runHamiltonPublish({ runId: 1069, db: asDb(db), refuseDuplicatesLive: false, refuseSweepRulesLive: false });
       expect(result.publishedFees).toBe(1);
       expect(inserts(db)).toBe(1);
       expect(result.results[0].exactDuplicate).toEqual({ kind: "refuse", keptFeePublishedId: 555 });

@@ -70,12 +70,13 @@ export const DOCUMENT_OWNER_REASON = "document_owner";
 export const DOCUMENT_OWNER_FLAG = "document_owner";
 export const DOCUMENT_OWNER_PAIR_LIMIT = 25;
 /**
- * Default-off switch. Off: shadow, as above. On: an `other_bank` fee goes through the shared
- * 12-hour second look (`darwin.document_owner`) and is archived (rolled back with the reason,
- * the verified row rejected with the `document_owner` flag), never deleted. It turns on by PR
- * once James has seen the count from `documentOwnerCountSql` and a sample.
+ * Takedown switch, on (James's yes, 2026-10-17, after the dry count: 228 live fees on 19
+ * document/bank pairs at 10 institutions, 19 of 19 pairs right by hand). On: an `other_bank` fee
+ * goes through the shared 12-hour second look (`darwin.document_owner`) and is archived (rolled
+ * back with the reason, the verified row rejected with the `document_owner` flag), never deleted.
+ * Off (set it to false): shadow, as above.
  */
-export const DARWIN_DOCUMENT_OWNER_TAKEDOWN = false;
+export const DARWIN_DOCUMENT_OWNER_TAKEDOWN = true;
 
 /**
  * Website-vendor download paths that serve one institution's file on many member domains

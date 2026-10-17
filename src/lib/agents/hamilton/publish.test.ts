@@ -409,7 +409,7 @@ describe("Hamilton agentic publish", () => {
   it("counts a row a sweep would take down but still publishes it while the switch is off", async () => {
     const db = createDbMock([verifiedFee], [], undefined, [], sweepFixture);
 
-    const result = await runHamiltonPublish({ runId: 131, db: asPublishDb(db) });
+    const result = await runHamiltonPublish({ runId: 131, refuseSweepRulesLive: false, db: asPublishDb(db) });
 
     expect(result.sweepCheck).toMatchObject({ live: false, wouldRefuse: 1, refused: 0, byRule: { other_bank_document: 1 }, error: null });
     expect(result.results[0]).toMatchObject({
@@ -485,7 +485,7 @@ describe("Hamilton agentic publish", () => {
       3: { rule: "unconfirmed_document_host", sweepReason: "unconfirmed_document_host: cdnless.example" },
       4: { rule: "business_schedule", sweepReason: "business_schedule: consumer fee #9002" },
     });
-    expect(PUBLISH_REFUSE_SWEEP_RULES_LIVE).toBe(false);
+    expect(PUBLISH_REFUSE_SWEEP_RULES_LIVE).toBe(true);
   });
 
   it("skips rows below the publish confidence threshold", async () => {

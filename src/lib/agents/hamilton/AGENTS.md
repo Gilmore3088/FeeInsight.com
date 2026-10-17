@@ -361,7 +361,16 @@ the detail.
 10. Eval verdicts (`eval-verdicts.ts`): the complete-record eval's critical rows on first look,
     `eval_critical:<verdict>`; the name rules learned from them (a rebate as an ATM fee, a
     "no fee for" or waiver sentence as a $0 fee, and others) on their second look,
-    `not_a_fee:<rule>`.
+    `not_a_fee:<rule>`. The live read is a SQL prefilter (`evalVerdictFeesSql`); a new rule
+    reaches live fees only when the prefilter selects its shape, so v8's shapes have their own
+    clauses (`V8_PREFILTER`). v8 (#1112, Oct 16) reads no-fee lines that open the name ("No-Fee
+    on …", "There is/are no … fee", "Fee-free …") unless a later clause prices the fee at its own
+    amount, a discount or allowance the bank gives (an allowance on the line only at the fee's own
+    amount; never a discounted price, or a "discount of" a percentage or of a dollar figure that is
+    not the fee's amount), and a loan's term amount
+    read as its fee. A takedown batch stays under 20 (DECISIONS 2026-10-16, #1613): fees left
+    for the next batch sit in `EVAL_VERDICT_SECOND_BATCH` (#1696), and the step event names them
+    (`deferred`, `deferred_ids`).
 10b. Account type hold (`account-type-hold.ts`, #1100 gap 1, James Oct 16): monthly maintenance
     is the consumer checking account's fee. A live monthly maintenance fee of a savings, money
     market, club, business or IRA/HSA/CD account (`accountTypeOf` in `src/lib/account-type.ts`:
@@ -718,16 +727,17 @@ says, since it only reopens rows the collapse closed; a dry run writes nothing. 
 `page_copy_restore` (kept down, carried on, kept judged, failing, restored, samples, `error`). The
 exact and near-name collapses still have this gap.
 
-**At publish (#1069 step 1, shadow).** Each row the publish step is about to publish is checked
+**At publish (#1069 step 1, live).** Each row the publish step is about to publish is checked
 against its live copies with the exact collapse's own test (`exact-duplicate.ts`: institution,
 category, variant, value and name; frequency classes that agree; the copy kept states its
 audience, then its frequency, then is newest). A row the collapse would close is counted as
 `would_refuse`, and a row it would keep, closing the older copy, as `would_replace`. Both are
 reported in the step's `publish_duplicate_check`, with `closed_by_late_collapse` for agreement.
-While `PUBLISH_REFUSE_DUPLICATES_LIVE` is false nothing is refused; turning it on (skip reason
-`Exact duplicate of live fee #<id>`) needs James's OK.
+`PUBLISH_REFUSE_DUPLICATES_LIVE` is on (James's OK, 2026-10-17): a `would_refuse` row is skipped
+before insert (skip reason `Exact duplicate of live fee #<id>`), so it is never published only for
+the late collapse to close it. Set it back to false to count only.
 
-**At publish (#1069 step 2, shadow).** The rows a publish step is about to decide are read, once
+**At publish (#1069 step 2, live).** The rows a publish step is about to decide are read, once
 per batch, with three sweeps' own SQL in their `"verified"` scope (`publish-sweep-rules.ts`):
 another bank's document (`otherBankFeesSql`), an unconfirmed host that does not name the bank
 (`unconfirmedHostFeesSql`), and a business schedule's fee beside the bank's live consumer fee in
@@ -735,9 +745,9 @@ its category (`businessScheduleFeesSql`; a footnote-only business fee stays the 
 needs the page read). The sweeps and publish share one builder per rule, so they cannot disagree;
 the sweeps stay the live re-check and this check takes nothing down. A row a sweep would take down
 is counted in the step's `publish_sweep_check` (`would_refuse`, `by_rule`, samples, and `error`
-when a read failed; a failed read refuses nothing). While `PUBLISH_REFUSE_SWEEP_RULES_LIVE` is
-false nothing is refused; turning it on (skip reason `Refused at publish, a sweep would take it
-down: <the sweep's reason>`) needs James's OK.
+when a read failed; a failed read refuses nothing). `PUBLISH_REFUSE_SWEEP_RULES_LIVE` is
+on (James's OK, 2026-10-17): such a row is skipped (skip reason `Refused at publish, a sweep would
+take it down: <the sweep's reason>`). Set it back to false to count only.
 
 ## Rules Re-check
 
@@ -984,7 +994,7 @@ fails a PR that changes one of these constants without updating its line here (#
 |---|---|---|---|
 | `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v1 | `hamilton/account-names.ts` |
 | `CURRENT_COPY_STRATEGY` | `hamilton.current_copy_check` | v2 | `hamilton/current-copy.ts` |
-| `EVAL_VERDICT_VERSION` | — | v7 | `hamilton/eval-verdicts.ts` |
+| `EVAL_VERDICT_VERSION` | — | v8 | `hamilton/eval-verdicts.ts` |
 | `FREQUENCY_FILL_VERSION` | — | v14 | `hamilton/frequency-fill.ts` |
 | `GUARD_REQUEUE_STRATEGY` | `publish.guard_requeue` | v1 | `hamilton/guard-requeue.ts` |
 | `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v1 | `hamilton/newer-copy-retire.ts` |
