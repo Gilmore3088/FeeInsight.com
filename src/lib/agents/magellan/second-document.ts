@@ -571,11 +571,39 @@ async function selectThinBanks(
          AND (${stateCode}::text IS NULL OR upper(btrim(scoped.state_code)) = ${stateCode})
        GROUP BY c.institution_id
     ),
-    scoped AS (
+    -- The banks this call can pick, by the cheap tests first. The stored-text tests below scan up
+    -- to 60k characters of every text a bank has; run before these filters, the national top-up
+    -- ran them for 5,141 banks to keep 65 (32 s, findings/2026-10-17-lane-publish-and-discover-reads.md).
+    candidates AS MATERIALIZED (
       SELECT inst.id, inst.institution_name, inst.city, inst.cert_number, inst.state_code, inst.website_url, inst.fee_schedule_url, inst.asset_size,
              COALESCE(thin.categories, 0) AS categories,
              COALESCE(thin.has_monthly_fee, FALSE) AS has_monthly_fee,
-             COALESCE(thin.has_overdraft, FALSE) AS has_overdraft,
+             COALESCE(thin.has_overdraft, FALSE) AS has_overdraft
+        FROM institution_sources inst
+        LEFT JOIN thin ON thin.institution_id = inst.id
+       WHERE COALESCE(inst.status, 'active') = 'active'
+         AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode})
+         AND inst.website_url IS NOT NULL AND btrim(inst.website_url) <> ''
+         AND inst.fee_schedule_url IS NOT NULL AND btrim(inst.fee_schedule_url) <> ''
+         AND inst.id <> ALL(${excludeIds}::bigint[])
+         AND (NOT ${leaderOnly}::boolean OR inst.id = ANY(${leaderIds}::bigint[]))
+         -- Both also tested in the final filter; here they only cut the rows early.
+         AND (NOT ${leaderOnly}::boolean OR NOT COALESCE(thin.has_overdraft, FALSE))
+         AND (NOT ${hiddenOnly}::boolean OR COALESCE(thin.categories, 0) < ${HIDDEN_BELOW_CATEGORIES})
+         AND NOT EXISTS (
+           SELECT 1 FROM pipeline_attempts pa
+            WHERE pa.institution_id = inst.id
+              AND pa.stage = 'discover'
+              AND pa.strategy = ${SECOND_DOCUMENT_FINDER.strategy}
+              AND pa.strategy_version = ${SECOND_DOCUMENT_FINDER.version}
+              AND pa.created_at > NOW() - make_interval(days => ${RECHECK_DAYS})
+         )
+    ),
+    scoped AS (
+      SELECT inst.id, inst.institution_name, inst.city, inst.cert_number, inst.state_code, inst.website_url, inst.fee_schedule_url, inst.asset_size,
+             inst.categories,
+             inst.has_monthly_fee,
+             inst.has_overdraft,
              EXISTS (SELECT 1 FROM leads lead WHERE lead.quote_institution_id = inst.id) AS requested,
              -- The link is not the consumer schedule yet (link-coverage.ts): a business-only
              -- schedule, no stored text that prices an overdraft, a text that sends the
@@ -605,22 +633,7 @@ async function selectThinBanks(
                   AND substring(doc.document_url from ${DOCUMENT_YEAR_SQL})::int
                       <= extract(year from NOW())::int - ${STALE_DOCUMENT_YEARS}
              ) AS stale_copy
-        FROM institution_sources inst
-        LEFT JOIN thin ON thin.institution_id = inst.id
-       WHERE COALESCE(inst.status, 'active') = 'active'
-         AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode})
-         AND inst.website_url IS NOT NULL AND btrim(inst.website_url) <> ''
-         AND inst.fee_schedule_url IS NOT NULL AND btrim(inst.fee_schedule_url) <> ''
-         AND inst.id <> ALL(${excludeIds}::bigint[])
-         AND (NOT ${leaderOnly}::boolean OR inst.id = ANY(${leaderIds}::bigint[]))
-         AND NOT EXISTS (
-           SELECT 1 FROM pipeline_attempts pa
-            WHERE pa.institution_id = inst.id
-              AND pa.stage = 'discover'
-              AND pa.strategy = ${SECOND_DOCUMENT_FINDER.strategy}
-              AND pa.strategy_version = ${SECOND_DOCUMENT_FINDER.version}
-              AND pa.created_at > NOW() - make_interval(days => ${RECHECK_DAYS})
-         )
+        FROM candidates inst
     )
     SELECT id, institution_name, city, cert_number, state_code, website_url, fee_schedule_url, categories,
            (business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy) AS incomplete
