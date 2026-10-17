@@ -1,7 +1,19 @@
 import { describe, expect, it } from "vitest";
 import type { ExtractedFee } from "@/lib/data-store/types";
 import type { IndexEntry } from "@/lib/data-store/fee-index";
-import { buildCheckRows, marketBand, parseCheckId, stateGroupLabel } from "./check-data";
+import type { CityMarket, CityMarketInstitution } from "@/lib/data-store/city-market";
+import type { Guide } from "@/lib/guides/types";
+import { accountPricesText } from "@/lib/fee-representative";
+import {
+  avoidGuideHref,
+  buildAlternatives,
+  buildCheckRows,
+  checkFinding,
+  marketBand,
+  parseCheckId,
+  rowPriceText,
+  stateGroupLabel,
+} from "./check-data";
 
 const fee = (overrides: Partial<ExtractedFee>): ExtractedFee =>
   ({
@@ -71,9 +83,122 @@ describe("buildCheckRows", () => {
 
   it("names the state group only when a row has a state band", () => {
     const rows = buildCheckRows({ verifiedFees: fees, nationalIndex: [entry("nsf", 28)], stateIndex: [], fallbackSourceUrl: null });
-    expect(stateGroupLabel(rows, "Florida", "bank")).toBeNull();
+    expect(stateGroupLabel(rows, "Florida")).toBeNull();
     const withState = buildCheckRows({ verifiedFees: fees, nationalIndex: [], stateIndex: [entry("nsf", 28)], fallbackSourceUrl: null });
-    expect(stateGroupLabel(withState, "Florida", "credit_union")).toBe("Florida credit unions");
+    expect(stateGroupLabel(withState, "Florida")).toBe("Florida banks and credit unions");
+  });
+});
+
+describe("several prices for one fee (the shared rule)", () => {
+  // Capital City Bank's two monthly maintenance prices, as its schedule names them.
+  const monthly = [
+    fee({ id: 10, fee_category: "monthly_maintenance", fee_name: "Carefree Checking Monthly service charge", amount: 7.95, frequency: "monthly" }),
+    fee({ id: 11, fee_category: "monthly_maintenance", fee_name: "Monthly service charge (Everyday Checking)", amount: 8.95, frequency: "monthly" }),
+  ];
+  const [row] = buildCheckRows({
+    verifiedFees: monthly,
+    nationalIndex: [entry("monthly_maintenance", 7)],
+    stateIndex: [entry("monthly_maintenance", 7)],
+    fallbackSourceUrl: null,
+  });
+
+  it("shows the range, never the computed value, and labels the compared value", () => {
+    expect(rowPriceText(row)).toBe("$7.95 to $8.95, depending on account");
+    expect(row.value).toBeCloseTo(8.45);
+    expect(row.comparedAt).toBe("Compared at $8.45, the middle of its prices");
+    expect(row.prices).toEqual([
+      { account: "Carefree Checking", amount: 7.95 },
+      { account: "Everyday Checking", amount: 8.95 },
+    ]);
+    expect(accountPricesText(row.prices, row.amounts)).toBe("Carefree Checking $7.95 \u00b7 Everyday Checking $8.95");
+  });
+
+  it("leads the finding with the range and the compared value", () => {
+    expect(checkFinding([row], "Capital City Bank", "Florida")).toBe(
+      "Capital City Bank's monthly maintenance fee runs $7.95 to $8.95, depending on account. Compared at $8.45, the middle of its prices, it sits $1.45 above the $7 Florida median.",
+    );
+  });
+
+  it("labels overdraft at its highest price", () => {
+    const [od] = buildCheckRows({
+      verifiedFees: [
+        fee({ id: 20, fee_category: "overdraft", fee_name: "Overdraft Item Fee", amount: 25 }),
+        fee({ id: 21, fee_category: "overdraft", fee_name: "Overdraft Item Fee tier 2", amount: 35 }),
+      ],
+      nationalIndex: [entry("overdraft", 30)],
+      stateIndex: [],
+      fallbackSourceUrl: null,
+    });
+    expect(od.comparedAt).toBe("Compared at $35, its standard fee, the highest of its prices");
+  });
+
+  it("names no compared value for one price", () => {
+    const [one] = buildCheckRows({ verifiedFees: [monthly[0]], nationalIndex: [entry("monthly_maintenance", 7)], stateIndex: [], fallbackSourceUrl: null });
+    expect(one.comparedAt).toBeNull();
+    expect(rowPriceText(one)).toBe("$7.95");
+  });
+});
+
+describe("checkFinding without a fee above the median", () => {
+  it("counts below and about the same", () => {
+    const rows = buildCheckRows({
+      verifiedFees: [
+        fee({ id: 1, fee_category: "overdraft", fee_name: "Overdraft Item Paid", amount: 25 }),
+        fee({ id: 2, fee_category: "nsf", fee_name: "NSF Item Returned", amount: 28 }),
+      ],
+      nationalIndex: [entry("overdraft", 30), entry("nsf", 28)],
+      stateIndex: [],
+      fallbackSourceUrl: null,
+    });
+    expect(checkFinding(rows, "Test Bank", "Florida")).toBe("Below the U.S. median on 1 of 2 compared fees and about the same on 1.");
+  });
+});
+
+describe("avoidGuideHref", () => {
+  const guide = (slug: string, primaryCategory: string, ids: string[]) =>
+    ({ slug, primaryCategory, relatedCategories: [], sections: ids.map((id) => ({ id, heading: id, blocks: [] })) }) as unknown as Guide;
+  it("links the fee's guide at its section on avoiding the fee", () => {
+    const guides = [guide("atm-fees", "atm_non_network", ["start-here", "find-cash"]), guide("wire-transfer-fees", "wire_domestic_outgoing", ["what-it-is"])];
+    expect(avoidGuideHref("atm_non_network", guides)).toBe("/guides/atm-fees#find-cash");
+    expect(avoidGuideHref("wire_domestic_outgoing", guides)).toBe("/guides/wire-transfer-fees");
+    expect(avoidGuideHref("stop_payment", guides)).toBeNull();
+  });
+});
+
+describe("buildAlternatives", () => {
+  const inst = (id: number, name: string, amount: number | null): CityMarketInstitution =>
+    ({
+      id,
+      name,
+      charter: "bank",
+      hq_city: null,
+      hq_state: "FL",
+      branches: 1,
+      deposits: null,
+      schedule: "published",
+      fees:
+        amount === null
+          ? {}
+          : { monthly_maintenance: { amount, fee_name: "Monthly fee", account: "Basic Checking", conditions: [], source_line: null, source_url: null, read_on: null } },
+    }) as CityMarketInstitution;
+  const market = { institutions: [inst(323, "Capital City Bank", 7.95), inst(1, "Cheaper Bank", 0), inst(2, "Same Bank", 7.95), inst(3, "No Fee Listed", null)] } as unknown as CityMarket;
+  const rows = buildCheckRows({
+    verifiedFees: [fee({ id: 10, fee_category: "monthly_maintenance", fee_name: "Monthly service charge", amount: 7.95, frequency: "monthly" })],
+    nationalIndex: [entry("monthly_maintenance", 7)],
+    stateIndex: [],
+    fallbackSourceUrl: null,
+  });
+
+  it("lists only institutions below every price it lists, itself left out", () => {
+    const [list] = buildAlternatives(market, 323, rows);
+    expect(list.category).toBe("monthly_maintenance");
+    expect(list.publishing).toBe(2);
+    expect(list.lower.map((alt) => alt.name)).toEqual(["Cheaper Bank"]);
+    expect(list.lower[0].account).toBe("Basic Checking");
+  });
+
+  it("returns nothing without a market", () => {
+    expect(buildAlternatives(null, 323, rows)).toEqual([]);
   });
 });
 

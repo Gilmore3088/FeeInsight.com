@@ -5,7 +5,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { getAlertSubscriptionForInstitution } from "@/lib/data-store/alerts";
-import { getPeerIndexCached, searchInstitutionsCached } from "@/lib/data-store/public-cached-reads";
+import { ExternalLink } from "lucide-react";
+import { getCityMarketCached, getStateFeeIndexesCached, searchInstitutionsCached } from "@/lib/data-store/public-cached-reads";
 import type { InstitutionSearchResult } from "@/lib/data-store/search";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { formatAbsoluteDate, getPublicNationalIndex, getPublicStatsSummary } from "@/lib/public-stats";
@@ -16,13 +17,24 @@ import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { PAGE_HEADER } from "@/components/public/page-header";
 import { InstitutionSearchBar } from "../institutions/search-bar";
 import { FeeAlertControl } from "../institution/[id]/fee-alert-control";
-import { HeadlineTable } from "../institution/[id]/market-position";
-import { buildFindings } from "../institution/[id]/findings";
 import { getCharterLabel, toTitleCase } from "../institution/[id]/enum-labels";
 import { MIN_VERIFIED_FEES_FOR_OFFER } from "../institution/[id]/profile-copy";
 import { getPublicInstitutionForPage, getVisibleFeesForPage, isVerifiedFee } from "../institution/[id]/profile-data";
+import { loadConsumerGuides } from "@/lib/guides/source";
 import { SourceNote } from "../research/district/[id]/district-hub";
-import { buildCheckRows, parseCheckId, stateGroupLabel } from "./check-data";
+import { cityPath, titleCase } from "../fees/city/[state]/[city]/city-lookup";
+import {
+  avoidGuideHref,
+  buildAlternatives,
+  buildCheckRows,
+  checkFinding,
+  leadRow,
+  lowerLabel,
+  parseCheckId,
+  stateGroupLabel,
+} from "./check-data";
+import { CheckTable } from "./check-table";
+import { Alternatives } from "./alternatives";
 import { CheckAnswerFocus } from "./answer-focus";
 
 const TITLE = "Check a Bank's Fees Against the Market";
@@ -181,56 +193,55 @@ async function CheckAnswer({ id, refreshedOn }: { id: number; refreshedOn: strin
 
   const fees = Number(inst.fee_count ?? 0) > 0 ? await getVisibleFeesForPage(id) : [];
   const verifiedFees = fees.filter(isVerifiedFee);
-  const [nationalIndex, stateIndex, user] = await Promise.all([
-    verifiedFees.length > 0 ? getPublicNationalIndex().catch(fallbackTo("national index", [])) : Promise.resolve([]),
-    verifiedFees.length > 0 && inst.state_code
-      ? getPeerIndexCached({ state_code: inst.state_code, charter_type: inst.charter_type }).catch(fallbackTo("state index", []))
-      : Promise.resolve([]),
+  const hasFees = verifiedFees.length > 0;
+  const stateCode = inst.state_code && STATE_NAMES[inst.state_code] ? inst.state_code : null;
+  const stateName = stateCode ? STATE_NAMES[stateCode] : null;
+  const cityName = inst.city ? titleCase(inst.city) : null;
+  // The state page's index (every bank and credit union headquartered in the state), the same
+  // population the institution profile compares against, so the two pages quote one median.
+  const [nationalIndex, stateIndexes, guides, market, user] = await Promise.all([
+    hasFees ? getPublicNationalIndex().catch(fallbackTo("national index", [])) : Promise.resolve([]),
+    hasFees && stateCode ? getStateFeeIndexesCached(stateCode).catch(fallbackTo("state index", null)) : Promise.resolve(null),
+    hasFees ? loadConsumerGuides().catch(fallbackTo("guides", [])) : Promise.resolve([]),
+    hasFees && stateCode && cityName
+      ? getCityMarketCached(cityName, stateCode, "city").catch(fallbackTo("city market", null))
+      : Promise.resolve(null),
     getCurrentUser().catch(() => null),
   ]);
   const alertSubscription = user
     ? await getAlertSubscriptionForInstitution(user.id, id).catch(fallbackTo("alert subscription", null))
     : null;
 
-  const stateName = inst.state_code ? (STATE_NAMES[inst.state_code] ?? null) : null;
   const rows = buildCheckRows({
     verifiedFees,
     nationalIndex,
-    stateIndex,
+    stateIndex: stateIndexes?.all ?? [],
     fallbackSourceUrl: inst.fee_schedule_url ?? null,
   });
-  const stateGroup = stateGroupLabel(rows, stateName, inst.charter_type);
+  const stateLabel = stateGroupLabel(rows, stateName);
   const thin = verifiedFees.length < MIN_VERIFIED_FEES_FOR_OFFER;
-  // The profile's own lead finding, from the same rows, so the two pages say the same thing.
-  const lead = thin
-    ? null
-    : (buildFindings({
-        rows,
-        stateGroup,
-        stateCode: inst.state_code,
-        peerRank: null,
-        peerGroup: null,
-        positionCounts: { below: 0, within: 0, above: 0 },
-      })[0] ?? null);
   const publishedCount = inst.published_fee_count ?? verifiedFees.length;
-  const place = [toTitleCase(inst.city), inst.state_code].filter(Boolean).join(", ");
+  const place = [cityName, inst.state_code].filter(Boolean).join(", ");
   const collectedOn = formatAbsoluteDate(inst.latest_source_collected_at ?? null);
+  const guideHrefs = Object.fromEntries(rows.map((row) => [row.category, avoidGuideHref(row.category, guides)]));
+  const alternatives = buildAlternatives(market, id, rows);
 
-  const sparseLine =
-    verifiedFees.length === 0
-      ? `Fee Insight has not published fees for ${inst.institution_name} yet.`
-      : rows.length === 0
-        ? `${publishedCount.toLocaleString("en-US")} published ${publishedCount === 1 ? "fee" : "fees"}, none yet with a market median to compare against.`
-        : thin
-          ? `Only ${verifiedFees.length} of its fees are published so far; the comparison covers those.`
-          : null;
-  const comparedWith = stateGroup ?? "U.S. institutions";
-  // Always one finding sentence: the profile's lead finding, else the sparse line, else what is compared.
+  const sparseLine = !hasFees
+    ? `Fee Insight has not published fees for ${inst.institution_name} yet.`
+    : rows.length === 0
+      ? `${publishedCount.toLocaleString("en-US")} published ${publishedCount === 1 ? "fee" : "fees"}, none yet with a market median to compare against.`
+      : thin
+        ? `Only ${verifiedFees.length} of its fees are published so far; the comparison covers those.`
+        : null;
   const findingLine =
-    lead?.text ??
-    sparseLine ??
-    `Its ${rows.length} main ${rows.length === 1 ? "fee" : "fees"}, each against the median of ${comparedWith}.`;
-  const tableCaption = `Its main fees against ${stateGroup ?? "the U.S."}`;
+    sparseLine ?? checkFinding(rows, inst.institution_name, stateName) ?? `Its main fees against the ${stateLabel ?? "U.S."} median.`;
+
+  // The next step is the consumer's: the account terms behind the lead fee, then how to avoid it.
+  const lead = leadRow(rows) ?? rows[0] ?? null;
+  const termsHref = lead?.sourceUrl ?? inst.fee_schedule_url ?? null;
+  const avoidHref = lead ? guideHrefs[lead.category] : null;
+  const cityHref = stateCode && cityName ? cityPath(stateCode, cityName) : null;
+  const stateHref = stateCode ? `/research/state/${stateCode}` : null;
 
   return (
     <div className="mt-8 space-y-8 sm:mt-10 sm:space-y-10">
@@ -249,26 +260,43 @@ async function CheckAnswer({ id, refreshedOn }: { id: number; refreshedOn: strin
             {inst.institution_name}
           </h2>
           <p className="mt-3 text-[15px] leading-relaxed text-ink-soft sm:mx-0 sm:text-left">{findingLine}</p>
-          <div className="mt-5 flex justify-center sm:justify-start">
-            <Link href={`/institution/${id}`} className="fi-btn fi-btn-primary inline-flex min-h-11 max-w-full items-center justify-center px-5 text-center">
-              {publishedCount > 0
-                ? `See all ${publishedCount.toLocaleString("en-US")} fees at ${inst.institution_name}`
-                : `Open ${inst.institution_name}'s profile`}
-            </Link>
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 sm:justify-start">
+            {termsHref ? (
+              <a
+                href={termsHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="fi-btn fi-btn-primary inline-flex min-h-11 max-w-full items-center justify-center gap-1.5 px-5 text-center"
+              >
+                See the account terms
+                <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+              </a>
+            ) : null}
+            {avoidHref && lead ? (
+              <Link href={avoidHref} className={`inline-flex min-h-11 items-center text-[14px] ${LINK}`}>
+                Ways to avoid the {lowerLabel(lead.label)} fee
+              </Link>
+            ) : null}
           </div>
+          <Link href={`/institution/${id}`} className={`mt-1 inline-flex min-h-11 items-center text-[13px] ${LINK}`}>
+            {publishedCount > 0
+              ? `See all ${publishedCount.toLocaleString("en-US")} fees at ${inst.institution_name}`
+              : `Open ${inst.institution_name}'s profile`}
+          </Link>
         </div>
 
         {rows.length > 0 && (
           <div className="min-w-0 space-y-3">
-            <h3 className="text-center text-[16px] font-semibold text-ink sm:text-left">{tableCaption}</h3>
-            {/* The shared table carries its own h2; the h3 above is this page's caption for it. */}
-            <div className="[&_#headline-table-heading]:hidden">
-              <HeadlineTable rows={rows} stateCode={stateGroup ? inst.state_code : null} stateLabel={stateGroup} />
-            </div>
+            <h3 className="text-center text-[16px] font-semibold text-ink sm:text-left">
+              Its main fees against {stateLabel ? `${stateName} and the U.S.` : "the U.S."}
+            </h3>
+            <CheckTable rows={rows} stateCode={stateLabel ? stateCode : null} stateLabel={stateLabel} guideHrefs={guideHrefs} />
             <SourceNote>
-              {inst.institution_name}&apos;s own published fee schedule{collectedOn ? `, collected ${collectedOn}` : ""}. Medians
-              come from the published schedules of the institutions counted on each row; a median needs at least{" "}
-              {MIN_INSTITUTIONS_FOR_MEDIAN}.{refreshedOn ? ` Medians as of ${refreshedOn}.` : ""}{" "}
+              {inst.institution_name}&apos;s own published fee schedule{collectedOn ? `, collected ${collectedOn}` : ""}.
+              {stateLabel
+                ? ` State medians count every bank and credit union headquartered in ${stateName} that publishes the fee, the group the ${stateName} page and this institution's profile use. U.S. medians count every U.S. bank and credit union that publishes it.`
+                : " U.S. medians count every U.S. bank and credit union that publishes the fee."}{" "}
+              A median needs at least {MIN_INSTITUTIONS_FOR_MEDIAN} institutions.{refreshedOn ? ` Medians as of ${refreshedOn}.` : ""}{" "}
               <Link href="/methodology" className={LINK}>
                 Methodology
               </Link>
@@ -276,6 +304,25 @@ async function CheckAnswer({ id, refreshedOn }: { id: number; refreshedOn: strin
           </div>
         )}
       </section>
+
+      {alternatives.length > 0 && cityName && cityHref ? (
+        <Alternatives
+          lists={alternatives}
+          name={inst.institution_name}
+          city={cityName}
+          cityHref={cityHref}
+          stateHref={stateHref}
+          stateName={stateName}
+          source={`Published fee schedules of banks and credit unions with a branch in ${cityName} (FDIC Summary of Deposits and NCUA branch records), the same list as the ${cityName} fee page.`}
+        />
+      ) : hasFees && stateCode ? (
+        <p className="border-t border-border pt-6 text-center text-[14px] text-ink-soft sm:text-left">
+          No city comparison is available for {inst.institution_name} yet.{" "}
+          <Link href={`/institutions?state=${stateCode}`} className={`inline-flex min-h-11 items-center ${LINK}`}>
+            Other {stateName} banks and credit unions
+          </Link>
+        </p>
+      ) : null}
 
       <FeeAlertControl
         institutionId={id}
@@ -291,8 +338,9 @@ async function CheckAnswer({ id, refreshedOn }: { id: number; refreshedOn: strin
       />
 
       <p className="text-center text-[13px] text-ink-muted sm:text-left">
+        For bank and credit union teams:{" "}
         <Link href={REPORT_SHOWCASE.sampleHref} className={`inline-flex min-h-11 items-center ${LINK}`}>
-          See a sample Competitive Fee Position report
+          a sample Competitive Fee Position report
         </Link>
       </p>
     </div>
