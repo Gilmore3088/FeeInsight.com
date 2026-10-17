@@ -608,11 +608,11 @@ fails a PR that changes one of these constants without updating its line here (#
 | `FINRA_NFCS_PARSER_VERSION` | — | v1 | `magellan/registry/finra-nfcs.ts` |
 | `MARKET_GROWTH_PARSER_VERSION` | — | v1 | `magellan/registry/market-growth.ts` (census-permits, census-popest, irs-migration, census-bfs, bls-laus, census-lehd) |
 | `SMALLBIZ_PAYMENTS_PARSER_VERSION` | — | v1 | `magellan/registry/smallbiz-payments.ts` (kcfed-sb-lending, fed-sbcs, fed-payments, nacha-volume) |
-| `NATIONAL_CREDIT_PARSER_VERSION` | — | v1 | `magellan/registry/national-credit.ts` (national-series, nyfed-household-debt, nyfed-sce-credit, cfpb-credit-trends) |
+| `NATIONAL_CREDIT_PARSER_VERSION` | — | v2 | `magellan/registry/national-credit.ts` (national-series, nyfed-household-debt, nyfed-sce-credit, cfpb-credit-trends) |
 | `INDUSTRY_EVENTS_PARSER_VERSION` | — | v1 | `magellan/registry/industry-events.ts` |
 | `PAYMENT_NETWORKS_PARSER_VERSION` | — | v1 | `magellan/registry/payment-networks.ts` |
 | `HMDA_PARSER_VERSION` | — | v2 (reads the public LAR's "derived_msa-md" header) | `magellan/registry/hmda.ts` |
-| `HMDA_APOR_PARSER_VERSION` | — | v1 | `magellan/registry/hmda.ts` |
+| `HMDA_APOR_PARSER_VERSION` | — | v2 | `magellan/registry/hmda.ts` |
 | `DESIGNATION_LISTS_PARSER_VERSION` | — | v1 | `magellan/registry/designation-lists.ts` |
 | `CRA_PARSER_VERSION` | — | v2 (FFIEC ratings and flat-file URLs; headerless ratings file, ID by regulator; revised 2022-23 files) | `magellan/registry/cra.ts` |
 | `FR_Y9C_PARSER_VERSION` | — | v1 | `magellan/registry/fr-y9c.ts` |

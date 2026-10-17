@@ -427,7 +427,7 @@ export async function runRegistryHmda(options: RegistryHmdaOptions): Promise<Reg
  * rate spread is measured against. One fixed partition; the whole history is re-read weekly.
  */
 export const HMDA_APOR_SOURCE = "hmda-apor";
-export const HMDA_APOR_PARSER_VERSION = 1;
+export const HMDA_APOR_PARSER_VERSION = 2;
 export const HMDA_APOR_PARTITION = "current";
 const APOR_REFRESH_HOURS = 24 * 7;
 

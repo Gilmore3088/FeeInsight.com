@@ -85,7 +85,7 @@ export function checkNationalCreditStats(rows: AreaStat[], signedSeries: Readonl
 
 export type FredFrequency = "weekly" | "monthly" | "quarterly";
 
-export type NationalSeriesGroup = "h8" | "pmms" | "lbccm" | "sloos" | "cre" | "delinquency";
+export type NationalSeriesGroup = "h8" | "pmms" | "lbccm" | "sloos" | "cre" | "delinquency" | "deposit_rates";
 
 export interface NationalSeriesConfig {
   /** FRED series id, checked against the CSV header. */
@@ -104,6 +104,10 @@ const h8 = (id: string, key: string, title: string): NationalSeriesConfig => ({ 
 const sloos = (id: string, key: string, title: string): NationalSeriesConfig => ({ id, key: `natl_sloos_${key}`, title, group: "sloos", frequency: "quarterly", unit: "percent", signed: true });
 const lbccm = (id: string, key: string, title: string, unit = "percent"): NationalSeriesConfig => ({ id, key: `natl_lbccm_${key}`, title, group: "lbccm", frequency: "quarterly", unit });
 const delinquency = (id: string, key: string, title: string): NationalSeriesConfig => ({ id, key: `natl_delinq_${key}`, title, group: "delinquency", frequency: "quarterly", unit: "percent" });
+// FDIC national deposit rates (the averages behind the national rate caps), as FRED republishes
+// them. Series ids, titles, units and monthly frequency checked on fred.stlouisfed.org/series/SNDR,
+// 2026-10-17; the FDIC's own page offers no plain-file download (fdic-national-rates).
+const depositRate = (id: string, key: string, title: string): NationalSeriesConfig => ({ id, key: `natl_fdic_rate_${key}`, title, group: "deposit_rates", frequency: "monthly", unit: "percent" });
 
 /**
  * The configured FRED series (ids from memory; unconfirmed until the first run reports which
@@ -145,6 +149,10 @@ export const NATIONAL_SERIES: NationalSeriesConfig[] = [
   delinquency("DRCRELEXFACBS", "cre_ex_farmland", "Delinquency rate on CRE loans (excluding farmland), all commercial banks"),
   delinquency("DRCCLACBS", "credit_cards", "Delinquency rate on credit card loans, all commercial banks"),
   delinquency("DRCLACBS", "consumer", "Delinquency rate on consumer loans, all commercial banks"),
+  depositRate("SNDR", "savings", "FDIC national rate: savings"),
+  depositRate("ICNDR", "interest_checking", "FDIC national rate: interest checking"),
+  depositRate("MMNDR", "money_market", "FDIC national rate: money market, under $100,000"),
+  depositRate("NDR12MCD", "cd_12_month", "FDIC national rate: 12-month CD, under $100,000"),
 ];
 
 /** Observations before this date are not loaded (H.8 runs back to 1973). */
@@ -527,6 +535,8 @@ export async function fetchHhdcState(env: Record<string, string | undefined>, op
 
 export const NYFED_SCE_CREDIT_URL_ENV = "NYFED_SCE_CREDIT_XLSX_URL";
 export const NYFED_SCE_CREDIT_URLS = [
+  // Current file name (no "-chart"), linked from newyorkfed.org/microeconomics/sce/credit-access, 2026-10-17.
+  "https://www.newyorkfed.org/medialibrary/interactives/sce/sce/downloads/data/frbny-sce-credit-access-data.xlsx",
   "https://www.newyorkfed.org/medialibrary/interactives/sce/sce/downloads/data/frbny-sce-credit-access-chart-data.xlsx",
 ] as const;
 
