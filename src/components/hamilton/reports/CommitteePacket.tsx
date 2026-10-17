@@ -1,15 +1,15 @@
 /**
- * The pricing committee packet screen (Reports). Exhibits first, each with its source line; every
- * figure's numbered footnote links to the source list at the foot. The PDF prints the same rows
- * (committeePacketReport). Server component.
+ * The pricing committee packet screen (Reports): executive brief, competitive position, financial
+ * context, appendix. Every figure's numbered footnote links to the source list at the foot. The
+ * PDF (CommitteePacketPdf) prints the same text and rows. A printable document: no form sits in
+ * it; a proposed price is placed on Try a price (/pro/simulate). Server component.
  */
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { readerAsOf } from "@/lib/hamilton/board-brief";
-import { NONE_FOUND, PRICE_YIELD_LIMIT, READING_TEXT, packetMoney, type CommitteePacket, type PacketExhibit, type PriceYield } from "@/lib/hamilton/committee-packet";
+import { PRICE_YIELD_LIMIT, READING_TEXT, footnoteMarks, packetMoney, packetSections, type CommitteePacket, type LabelledTable, type PacketTable as PacketTableData, type PriceYield } from "@/lib/hamilton/committee-packet";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
-import { ANSWER_TYPE, Callout, ExhibitShell, KeyFigures, LinkButton, MemoHeader, MemoPage, More, Tabs } from "@/components/hamilton/memo/memo";
-import { PositionCheckPanel } from "@/components/hamilton/PositionCheckPanel";
+import { ANSWER_TYPE, Callout, ExhibitShell, LinkButton, MemoHeader, MemoPage, More, SectionHeading, Tabs } from "@/components/hamilton/memo/memo";
 import { CommitteePacketDownload } from "./CommitteePacketDownload";
 
 const MARK = /\[(\d+(?:, \d+)*)\]/g;
@@ -50,17 +50,15 @@ function figureColumns(rows: readonly string[][]): Set<number> {
   const out = new Set<number>();
   const width = rows[0]?.length ?? 0;
   for (let c = 1; c < width; c++) {
-    const cells = rows.map((r) => r[c]).filter((v) => v && !/^Not found|^None found/.test(v));
+    const cells = rows.map((r) => r[c]).filter((v) => v && v !== "–" && !/^Not found/.test(v));
     if (cells.length && cells.every((v) => FIGURE_CELL.test(v))) out.add(c);
   }
   return out;
 }
 
 /** A table from md up (scrolling inside its own box when wide); a card per row on phones. */
-function PacketTable({ exhibit, firstRowOwn = false }: { exhibit: PacketExhibit; firstRowOwn?: boolean }) {
-  if (!exhibit.rows.length) {
-    return <p className="rounded-md border border-warm-300 bg-warm-50 px-4 py-3 text-sm text-warm-700">{exhibit.empty ?? NONE_FOUND}</p>;
-  }
+function PacketTable({ exhibit }: { exhibit: PacketTableData }) {
+  const firstRowOwn = exhibit.ownFirst;
   const [lead, ...rest] = exhibit.columns;
   const figures = figureColumns(exhibit.rows);
   return (
@@ -174,10 +172,20 @@ function noteRanges(numbers: readonly number[]): string {
   return parts.join(", ");
 }
 
-function marksIn(e: PacketExhibit): number[] {
-  const out: number[] = [];
-  for (const row of e.rows) for (const cell of row) for (const m of cell.matchAll(MARK)) for (const n of m[1].split(", ")) out.push(Number(n));
-  return out;
+function tableMarks(t: PacketTableData): number[] {
+  return t.rows.flat().flatMap(footnoteMarks);
+}
+
+/** A part of the packet: its h2 and what sits under it. */
+function Part({ id, title, children }: { id: string; title: string; children: ReactNode }) {
+  return (
+    <section id={id} aria-labelledby={`${id}-h`} className="flex scroll-mt-24 flex-col gap-6 border-t border-warm-300 pt-6">
+      <h2 id={`${id}-h`} className="text-xl font-bold text-warm-900 sm:text-2xl">
+        {title}
+      </h2>
+      {children}
+    </section>
+  );
 }
 
 export function CommitteePacketView({
@@ -190,100 +198,166 @@ export function CommitteePacketView({
   /** The page's link with some parameters changed. */
   hrefFor: (over: Record<string, string | null>) => string;
   fees: { category: string; name: string }[];
-  selected: { yieldFee: string | null; positionFee: string | null; positionPrice: string | null; invalidPrice: boolean };
+  selected: { yieldFee: string | null };
 }) {
   const readOn = readerAsOf(packet.generatedAt);
-  const sourceLine = (e: PacketExhibit) => {
-    const marks = marksIn(e);
-    return `${e.source[0].toUpperCase()}${e.source.slice(1)}, read ${readOn}${marks.length ? ` · notes ${noteRanges(marks)}` : ""}`;
+  const sections = packetSections(packet);
+  const sourceLine = (t: PacketTableData) => {
+    const marks = tableMarks(t);
+    return `${t.source[0].toUpperCase()}${t.source.slice(1)}, read ${readOn}${marks.length ? ` · notes ${noteRanges(marks)}` : ""}`;
   };
-  const exhibit = (id: PacketExhibit["id"]) => packet.exhibits.find((e) => e.id === id);
-  const order: PacketExhibit["id"][] = ["peer_range", "peer_fee_matrix", "competitor_moves", "fee_income_trend", "regulatory", "price_and_yield"];
-  // Each source links back to the first exhibit that cites it.
+  // Each source links back to the first place that cites it.
   const firstUse = new Map<number, { anchor: string; label: string }>();
-  order.forEach((id, i) => {
-    const e = exhibit(id);
-    if (!e) return;
-    for (const n of marksIn(e)) if (!firstUse.has(n)) firstUse.set(n, { anchor: `exhibit-${id}`, label: `Exhibit ${i + 1}` });
-  });
-  const position = exhibit("position_check");
-  if (position) for (const n of marksIn(position)) if (!firstUse.has(n)) firstUse.set(n, { anchor: "position", label: "Exhibit 7" });
+  const cite = (marks: number[], anchor: string, label: string) => {
+    for (const n of marks) if (!firstUse.has(n)) firstUse.set(n, { anchor, label });
+  };
+  cite([...packet.brief.findings, ...packet.brief.priorities.map((p) => p.evidence)].flatMap(footnoteMarks), "brief", "the executive brief");
+  for (const l of [...sections.position, ...sections.financial, ...sections.appendix]) cite(tableMarks(l.table), l.anchor, l.label);
   const reportsHref = hrefWithInstitutionContext("/pro/reports", String(packet.institutionId));
+  const shell = (l: LabelledTable, children?: ReactNode) => (
+    <div key={l.anchor} id={l.anchor} className="scroll-mt-24">
+      <ExhibitShell label={l.label} title={l.table.title} sub={l.table.subtitle ?? undefined} note={l.table.note ?? undefined} source={sourceLine(l.table)}>
+        {children ?? <PacketTable exhibit={l.table} />}
+      </ExhibitShell>
+    </div>
+  );
   return (
     <MemoPage>
       <MemoHeader
         kicker="Reports · Pricing committee packet"
         title={packet.title}
         compact
-        dek={`Read ${readerAsOf(packet.generatedAt)} from live published fees and filings. Peers: ${packet.peerGroupLabel}.`}
+        dek={`Read ${readOn} from live published fees and filings. Peers: ${packet.peerGroupLabel}. ${packet.feeListNote}`}
         actions={
           <>
-            <CommitteePacketDownload
-              institutionId={packet.institutionId}
-              yieldFee={selected.yieldFee}
-              positionFee={packet.positionCheck?.feeCategory ?? null}
-              positionPrice={packet.positionCheck?.check.proposed ?? null}
-            />
+            <CommitteePacketDownload institutionId={packet.institutionId} yieldFee={selected.yieldFee} />
             <LinkButton href={reportsHref}>Back to Reports</LinkButton>
           </>
         }
       />
-      <KeyFigures figures={packet.keyFigures.map((f) => ({ value: f.value, label: f.label, title: f.label }))} />
-      {order.map((id, i) => {
-        const e = exhibit(id);
-        if (!e) return null;
-        return (
-          <div key={id} id={`exhibit-${id}`} className="scroll-mt-24">
-          <ExhibitShell
-            label={`Exhibit ${i + 1}`}
-            title={e.title}
-            sub={e.subtitle}
-            // The screen states the income limitation before the chart, so the note keeps the rest.
-            note={id === "price_and_yield" ? e.note?.replace(PRICE_YIELD_LIMIT, "").trim() : e.note}
-            source={sourceLine(e)}
-          >
-            {id === "price_and_yield" ? (
-              <div id="price-and-yield" className="flex scroll-mt-24 flex-col gap-4">
-                {fees.length > 1 ? (
-                  <Tabs
-                    label="Fee for price and yield"
-                    items={fees.map((f) => ({ label: f.name, href: `${hrefFor({ yield: f.category })}#price-and-yield`, active: f.category === packet.priceYield?.feeCategory }))}
-                  />
-                ) : null}
-                <Callout>{PRICE_YIELD_LIMIT}</Callout>
-                {packet.priceYield ? <PriceYieldChart py={packet.priceYield} institutionName={packet.institutionName} /> : null}
-                <PacketTable exhibit={e} firstRowOwn={packet.priceYield?.points[0]?.own ?? false} />
-              </div>
-            ) : (
-              <PacketTable exhibit={e} firstRowOwn={id === "peer_fee_matrix"} />
-            )}
-          </ExhibitShell>
+
+      <Part id="brief" title="Executive brief">
+        <div className="flex flex-col gap-3">
+          <SectionHeading>Findings</SectionHeading>
+          <ol className={`flex list-decimal flex-col gap-2 pl-5 ${ANSWER_TYPE.body} text-warm-900`}>
+            {packet.brief.findings.map((f) => (
+              <li key={f} className="max-w-[68ch]">
+                {withMarks(f)}
+              </li>
+            ))}
+          </ol>
+        </div>
+        <div className="flex flex-col gap-3">
+          <SectionHeading>Priorities for review</SectionHeading>
+          {packet.brief.priorities.length ? (
+            <>
+              <p className="text-sm text-warm-700">The fees outside the peers&apos; middle 50%, with the question to look into. These are questions, not pricing recommendations.</p>
+              <ul className="flex flex-col gap-2">
+                {packet.brief.priorities.map((p) => (
+                  <li key={p.feeCategory} className="rounded-lg border border-warm-300 bg-white px-4 py-3 text-sm">
+                    <p className="font-semibold text-warm-900">{p.fee}</p>
+                    <p className={`mt-1 text-warm-800 ${ANSWER_TYPE.num}`}>{withMarks(p.evidence)}</p>
+                    <p className="mt-1.5 text-warm-900">
+                      <span className="font-medium">Question: </span>
+                      {p.question}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <p className="text-sm text-warm-700">{packet.brief.prioritiesNote}</p>
+          )}
+        </div>
+        <div className="flex flex-col gap-3">
+          <SectionHeading>Material limitations</SectionHeading>
+          <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm leading-relaxed text-warm-800">
+            {packet.brief.limitations.map((l) => (
+              <li key={l}>{l}</li>
+            ))}
+          </ul>
+        </div>
+        {packet.unavailable.length ? (
+          <div className="flex flex-col gap-3">
+            <SectionHeading>Not available in this packet</SectionHeading>
+            <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm leading-relaxed text-warm-700">
+              {packet.unavailable.map((l) => (
+                <li key={l}>{l}</li>
+              ))}
+            </ul>
           </div>
-        );
-      })}
-      <div>
-        <PositionCheckPanel
-          id="position"
-          label="Exhibit 7"
-          action="/pro/reports/committee#position"
-          readOn={readOn}
-          hidden={{ instId: String(packet.institutionId), yield: selected.yieldFee }}
-          name="price"
-          defaultValue={selected.positionPrice ?? undefined}
-          check={packet.positionCheck?.check ?? null}
-          feeName={packet.positionCheck?.feeName ?? ""}
-          peerLabel={packet.positionCheck?.peerLabel ?? ""}
-          fees={fees}
-          feeParam="fee"
-          selectedFee={selected.positionFee ?? fees[0]?.category}
-          invalid={selected.invalidPrice}
-        />
-      </div>
-      <section aria-labelledby="packet-sources" className="flex flex-col gap-3">
-        <h2 id="packet-sources" className="text-lg font-bold text-warm-900 sm:text-xl">
-          Sources
-        </h2>
-        {packet.footnotes.length ? (
+        ) : null}
+      </Part>
+
+      <Part id="position" title="Competitive position">
+        {sections.position.map((l) => shell(l))}
+        {packet.position.comparedNote ? <p className="text-sm text-warm-800">{withMarks(packet.position.comparedNote)}</p> : null}
+      </Part>
+
+      <Part id="financial" title="Financial context">
+        {packet.financial.trendSummary ? <p className={`${ANSWER_TYPE.body} max-w-[68ch]`}>{withMarks(packet.financial.trendSummary)}</p> : null}
+        {sections.financial.map((l) =>
+          l.table.id === "normalized_income"
+            ? shell(
+                l,
+                <div className="flex flex-col gap-3">
+                  <Callout>{packet.financial.context}</Callout>
+                  <PacketTable exhibit={l.table} />
+                </div>,
+              )
+            : shell(l),
+        )}
+        {!sections.financial.length ? <p className="text-sm text-warm-700">No filed income for this packet; see Not available in this packet.</p> : null}
+      </Part>
+
+      <Part id="appendix" title="Appendix">
+        {sections.appendix.map((l) =>
+          l.table.id === "price_and_yield"
+            ? shell(
+                l,
+                <div id="price-and-yield" className="flex scroll-mt-24 flex-col gap-4">
+                  {fees.length > 1 ? (
+                    <Tabs
+                      label="Fee for price and yield"
+                      items={fees.map((f) => ({ label: f.name, href: `${hrefFor({ yield: f.category })}#price-and-yield`, active: f.category === packet.priceYield?.feeCategory }))}
+                    />
+                  ) : null}
+                  <Callout>{PRICE_YIELD_LIMIT}</Callout>
+                  {packet.priceYield ? <PriceYieldChart py={packet.priceYield} institutionName={packet.institutionName} /> : null}
+                  <PacketTable exhibit={l.table} />
+                </div>,
+              )
+            : shell(l),
+        )}
+        <div className="flex flex-col gap-3">
+          <SectionHeading>Method</SectionHeading>
+          <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm text-warm-700">
+            {packet.method.map((m) => (
+              <li key={m}>{m}</li>
+            ))}
+          </ul>
+          <More label="Where the inputs come from">
+            <p className="text-sm text-warm-700">
+              The figures are read live and are not saved. To keep a dated copy, download the PDF. The fee list comes from your{" "}
+              <Link href={hrefWithInstitutionContext("/pro/monitor", String(packet.institutionId))} className="text-terra-text underline">
+                watchlist
+              </Link>{" "}
+              when it has fees; the peer group from{" "}
+              <Link href={hrefWithInstitutionContext("/pro/settings", String(packet.institutionId))} className="text-terra-text underline">
+                Settings
+              </Link>
+              . To place a proposed price among these peers, use{" "}
+              <Link href={hrefWithInstitutionContext("/pro/simulate", String(packet.institutionId))} className="text-terra-text underline">
+                Try a price
+              </Link>
+              .
+            </p>
+          </More>
+        </div>
+        <section aria-labelledby="packet-sources" className="flex flex-col gap-3">
+          <h3 id="packet-sources" className={ANSWER_TYPE.section}>
+            Sources
+          </h3>
           <ol className="flex flex-col gap-1.5 text-xs leading-relaxed text-warm-700">
             {packet.footnotes.map((f) => (
               <li key={f.n} id={`fn-${f.n}`} className="scroll-mt-24 break-words">
@@ -307,28 +381,8 @@ export function CommitteePacketView({
               </li>
             ))}
           </ol>
-        ) : (
-          <p className="text-sm text-warm-700">{NONE_FOUND}</p>
-        )}
-        <More label="How this packet is built">
-          <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm text-warm-700">
-            {packet.method.map((m) => (
-              <li key={m}>{m}</li>
-            ))}
-          </ul>
-          <p className="text-sm text-warm-700">
-            The figures are read live and are not saved. To keep a dated copy, download the PDF. Watched fees come from your{" "}
-            <Link href={hrefWithInstitutionContext("/pro/monitor", String(packet.institutionId))} className="text-terra-text underline">
-              watchlist
-            </Link>
-            ; the peer group from{" "}
-            <Link href={hrefWithInstitutionContext("/pro/settings", String(packet.institutionId))} className="text-terra-text underline">
-              Settings
-            </Link>
-            .
-          </p>
-        </More>
-      </section>
+        </section>
+      </Part>
     </MemoPage>
   );
 }

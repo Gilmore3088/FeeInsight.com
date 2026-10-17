@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   buildCommitteePacket,
-  committeePacketReport,
+  footnoteMarks,
+  packetSections,
   previousQuarterStart,
   priceAndYield,
+  type CommitteePacket,
   type CommitteePacketInput,
 } from "./committee-packet";
 import type { PeerValue } from "./workspace/types";
@@ -61,73 +63,133 @@ function input(over: Partial<CommitteePacketInput> = {}): CommitteePacketInput {
   };
 }
 
-describe("buildCommitteePacket", () => {
-  it("puts each watched fee against its peers with a sourced median of N peers and the named neighbours", () => {
+/** Every cell and sentence of the packet that can carry a footnote mark. */
+function allText(packet: CommitteePacket): string[] {
+  const tables = [packet.position.table, packet.position.changes, packet.financial.trend, packet.financial.normalizedTable, ...packet.appendix].filter(Boolean);
+  return [
+    ...packet.brief.findings,
+    ...packet.brief.priorities.map((p) => p.evidence),
+    packet.position.comparedNote ?? "",
+    packet.financial.trendSummary ?? "",
+    ...tables.flatMap((t) => t!.rows.flat()),
+  ];
+}
+
+describe("buildCommitteePacket: competitive position", () => {
+  it("gives one compact row per fee: value, median with N, middle 50%, position and coverage", () => {
     const packet = buildCommitteePacket(input());
-    const positions = packet.exhibits.find((e) => e.id === "peer_range")!;
-    const [overdraft, stop] = positions.rows;
+    const table = packet.position.table;
+    expect(table.columns).toEqual(["Fee", "Capital City Bank", "Peer median (N)", "Peers' middle 50%", "Position", "Coverage"]);
+    const [overdraft, stop] = table.rows;
     expect(overdraft[0]).toBe("Overdraft");
-    // Several published amounts: labelled the comparison value, with the range shown.
-    expect(overdraft[1]).toMatch(/^\$32 \(comparison value; 2 published amounts, \$15 to \$32\) \[\d+\]$/);
-    expect(overdraft[3]).toMatch(/^\$30, median of 5 peers \[\d+\]$/);
-    expect(overdraft[4]).toBe("At the 60th percentile of 5 peers; 3 charge less, 0 about the same, 2 more");
-    expect(overdraft[5]).toMatch(/^Below: \$30: Example Savings Bank \[\d+\] · Above: \$36: U\.S\. Bank \[\d+\]$/);
-    // One peer group for every fee here, so it is named once in the subtitle, not per row.
-    expect(positions.columns).not.toContain("Compared with");
-    expect(positions.subtitle).toContain("compared with Florida peers");
+    // Several published amounts: the comparison value with the range beside it.
+    expect(overdraft[1]).toMatch(/^\$32 \(2 published amounts, \$15 to \$32\) \[\d+\]$/);
+    expect(overdraft[2]).toMatch(/^\$30 \(5 peers\) \[\d+\]$/);
+    expect(overdraft[3]).toBe("$25 to $36");
+    expect(overdraft[4]).toBe("Within the middle 50%; at the 60th percentile");
+    expect(overdraft[5]).toBe("5 of 5 peers publish");
+    // Nearest peers and per-peer citations are not in this table.
+    expect(overdraft.join(" ")).not.toMatch(/U\.S\. Bank|Example Savings Bank/);
     // A fee the bank does not publish, and too few peers: said, never 0.
     expect(stop[1]).toBe("Not found in published schedules");
-    expect(stop[3]).toBe("Too few peers (1)");
-    expect(stop).toHaveLength(6);
+    expect(stop[2]).toBe("–");
+    expect(stop[4]).toBe("Not placed");
+    expect(stop[5]).toBe("1 of 5 peers publish");
   });
 
-  it("numbers every source once and ties each institution's schedule to its documents and dates", () => {
+  it("names a widened group in its row and in the limitations", () => {
+    const base = input();
+    const widened = { ...base.fees[0], feeCategory: "nsf", peerLabel: "FL · bank peers" };
+    const packet = buildCommitteePacket({ ...base, fees: [base.fees[0], widened] });
+    expect(packet.position.table.rows[1][0]).toBe("NSF / Returned Item (compared with FL · bank peers)");
+    expect(packet.brief.limitations.join(" ")).toContain("NSF / returned item was compared with a wider group");
+  });
+
+  it("lists only the packet's peers' confirmed moves, and says so in one line when there are none", () => {
     const packet = buildCommitteePacket(input());
-    const ccb = packet.footnotes.find((f) => f.label === "Capital City Bank, published fee schedule")!;
-    expect(ccb.detail).toBe("document 32301 · published Oct 1, 2026");
-    expect(ccb.url).toBe("https://example.test/ccb.pdf");
-    const usBank = packet.footnotes.filter((f) => f.label === "U.S. Bank, published fee schedule");
-    expect(usBank).toHaveLength(1);
-    expect(packet.footnotes.map((f) => f.n)).toEqual(packet.footnotes.map((_, i) => i + 1));
-    // Every footnote number used in a cell resolves to a listed source.
-    const used = packet.exhibits.flatMap((e) => e.rows.flat()).flatMap((c) => [...c.matchAll(/\[(\d+(?:, \d+)*)\]/g)].flatMap((m) => m[1].split(", ").map(Number)));
-    expect(used.length).toBeGreaterThan(0);
-    for (const n of used) expect(n).toBeLessThanOrEqual(packet.footnotes.length);
+    expect(packet.position.changes?.rows).toHaveLength(1);
+    expect(packet.position.changes?.rows[0].slice(0, 4)).toEqual(["M&T Bank", "Overdraft", "$35 to $37 ($2 higher)", "Sep 2, 2026"]);
+    const none = buildCommitteePacket(input({ changes: [] }));
+    expect(none.position.changes).toBeNull();
+    const line = none.unavailable.find((l) => l.startsWith("Peer fee changes"));
+    expect(line).toContain("not evidence that peer fees held steady");
   });
 
-  it("lists only the packet's peers' moves, each with its schedule, and says None found otherwise", () => {
-    const moves = buildCommitteePacket(input()).exhibits.find((e) => e.id === "competitor_moves")!;
-    expect(moves.rows).toHaveLength(1);
-    expect(moves.rows[0].slice(0, 4)).toEqual(["M&T Bank", "Overdraft", "$35 to $37 ($2 higher)", "Sep 2, 2026"]);
-    expect(moves.note).toContain("Stored quarterly copies for this institution: None found.");
-    const none = buildCommitteePacket(input({ changes: [] })).exhibits.find((e) => e.id === "competitor_moves")!;
-    expect(none.rows).toEqual([]);
-    expect(none.empty).toBe("None found");
+  it("never shows missing history as stability", () => {
+    const first = buildCommitteePacket(input({ quarterly: { kind: "first", quarter: "2026-Q4" }, changes: [] }));
+    expect(first.unavailable).toContain("Quarter-on-quarter changes: Hamilton has one stored copy (Q4 2026); the comparison starts next quarter.");
+    const none = buildCommitteePacket(input({ quarterly: null, changes: [] }));
+    expect(none.unavailable[0]).toMatch(/^Quarter-on-quarter changes: Hamilton holds no stored quarterly copy/);
+    for (const p of [first, none]) {
+      expect(p.position.comparedNote).toBeNull();
+      expect(JSON.stringify(p)).not.toMatch(/No changes? found|None found|no change recorded/i);
+    }
   });
 
-  it("compares the stored quarterly copies when two exist", () => {
-    const moves = buildCommitteePacket(input({
-      quarterly: {
-        kind: "diff",
-        diff: {
-          institutionId: 323, fromQuarter: "2026-Q3", toQuarter: "2026-Q4",
-          fromGeneratedAt: "2026-07-02T00:00:00.000Z", toGeneratedAt: "2026-10-02T00:00:00.000Z",
-          fromPeerLabel: "Florida peers", toPeerLabel: "Florida peers",
-          changes: [{ kind: "peer_median", feeCategory: "overdraft", text: "Overdraft: the peer median moved from $29.00 to $30.00 ($1.00 higher; 5 peers)." }],
-        },
+  it("says no change only when two stored copies were compared", () => {
+    const diff = (changes: { kind: "peer_median"; feeCategory: string; text: string }[]): CommitteePacketInput["quarterly"] => ({
+      kind: "diff",
+      diff: {
+        institutionId: 323, fromQuarter: "2026-Q3", toQuarter: "2026-Q4",
+        fromGeneratedAt: "2026-07-02T00:00:00.000Z", toGeneratedAt: "2026-10-02T00:00:00.000Z",
+        fromPeerLabel: "Florida peers", toPeerLabel: "Florida peers",
+        changes,
       },
-    })).exhibits.find((e) => e.id === "competitor_moves")!;
-    expect(moves.rows[0].slice(0, 4)).toEqual(["Quarterly copies compared", "Overdraft", "Overdraft: the peer median moved from $29.00 to $30.00 ($1.00 higher; 5 peers).", "Q3 2026 to Q4 2026"]);
-    expect(moves.subtitle).toContain("Q3 2026 and Q4 2026 copies compared");
+    });
+    const moved = buildCommitteePacket(input({ quarterly: diff([{ kind: "peer_median", feeCategory: "overdraft", text: "Overdraft: the peer median moved from $29.00 to $30.00 ($1.00 higher; 5 peers)." }]) }));
+    expect(moved.position.changes?.rows[0].slice(0, 4)).toEqual(["Stored quarterly copies", "Overdraft", "Overdraft: the peer median moved from $29.00 to $30.00 ($1.00 higher; 5 peers).", "Q3 2026 to Q4 2026"]);
+    const still = buildCommitteePacket(input({ quarterly: diff([]) }));
+    expect(still.position.comparedNote).toMatch(/^Stored Q3 2026 and Q4 2026 quarterly copies compared: no change recorded between them .* \[\d+, \d+\]\.$/);
+    expect(still.unavailable.some((l) => l.startsWith("Quarter-on-quarter"))).toBe(false);
   });
+});
 
-  it("says once when filings, rules or a quarterly copy are missing", () => {
+describe("buildCommitteePacket: executive brief", () => {
+  it("leads with three to five one-sentence findings, each with its evidence and footnote", () => {
     const packet = buildCommitteePacket(input());
-    expect(packet.exhibits.find((e) => e.id === "fee_income_trend")!.empty).toBe("Not found in filings");
-    expect(packet.exhibits.find((e) => e.id === "regulatory")!.empty).toBe("None found");
+    expect(packet.brief.findings.length).toBeGreaterThanOrEqual(2);
+    expect(packet.brief.findings.length).toBeLessThanOrEqual(5);
+    for (const f of packet.brief.findings) expect(footnoteMarks(f).length).toBeGreaterThan(0);
+    expect(packet.brief.findings[0]).toBe("Capital City Bank publishes 1 of the 2 fees in this packet; of the 1 with 5 or more peers publishing, 0 sit above the peers' middle 50% and 0 below [1].");
+    expect(packet.brief.findings[1]).toMatch(/^Overdraft: \$32 \(2 published amounts, \$15 to \$32\) sits within the peers' middle 50% \(\$25 to \$36\), at the 60th percentile; the median of 5 peers' published fees is \$30 \[\d+, \d+\]\.$/);
   });
 
-  it("prints the filed income trend with the peer median's population", () => {
+  it("lists the fees outside the middle 50% with a neutral question, never an instruction", () => {
+    const base = input();
+    const high = { ...base.fees[0], current: 45, ownRows: [{ amount: 45, sourceDocumentId: 1, documentUrl: null, publishedAt: null }] };
+    const packet = buildCommitteePacket({ ...base, fees: [high, base.fees[1]] });
+    expect(packet.brief.priorities).toHaveLength(1);
+    const [p] = packet.brief.priorities;
+    expect(p.fee).toBe("Overdraft");
+    expect(p.evidence).toMatch(/^\$45 against a middle 50% of \$25 to \$36; median \$30 of 5 peers \[\d+, \d+\]$/);
+    expect(p.question).toBe("Is the $45 overdraft fee compared on the same product tier and conditions as the peers' published fees, and which customers pay it?");
+    expect(JSON.stringify(packet.brief)).not.toMatch(/\b(raise|lower (it|the fee)|increase|cut|should)\b/i);
+    // Inside the band: no priorities, and the brief says why.
+    const inside = buildCommitteePacket(input());
+    expect(inside.brief.priorities).toEqual([]);
+    expect(inside.brief.prioritiesNote).toBe("Every fee placed (1) sits within the peers' middle 50%.");
+  });
+
+  it("states the material limitations once, in one short list", () => {
+    const packet = buildCommitteePacket(input());
+    const text = packet.brief.limitations.join("\n");
+    expect(text).toContain("Coverage: stop payment is not on Capital City Bank's published schedule in the index.");
+    expect(text).toContain("History: no stored quarterly copy");
+    expect(text).toContain("Comparability: each institution counts once per fee");
+    expect(text).toContain("Overdraft has several published amounts at Capital City Bank (Appendix C)");
+    expect(packet.brief.limitations.length).toBeLessThanOrEqual(6);
+  });
+
+  it("drops the watched-fee label when no fees are saved", () => {
+    const published = buildCommitteePacket(input({ feeListSource: "published" }));
+    expect(published.feeListNote).toBe("Fees in this packet: the institution's published fees, overdraft and NSF first (up to 10).");
+    expect(JSON.stringify(published)).not.toMatch(/watched fee/i);
+    expect(buildCommitteePacket(input()).feeListNote).toBe("Fees in this packet: the fees saved on your watchlist.");
+  });
+});
+
+describe("buildCommitteePacket: financial context", () => {
+  it("prints the filed income trend with the peer median's filer count", () => {
     const packet = buildCommitteePacket(input({
       financials: {
         source: "fdic", label: "Service charges on deposit accounts (FDIC call report)",
@@ -141,18 +203,69 @@ describe("buildCommitteePacket", () => {
         },
       },
     }));
-    const trend = packet.exhibits.find((e) => e.id === "fee_income_trend")!;
-    expect(trend.rows[0]).toEqual(["Jun 30, 2026", expect.stringMatching(/^\$4\.2 million \[\d+\]$/), expect.stringMatching(/^\$2\.5 million, median of 412 filers \[\d+\]$/)]);
+    const trend = packet.financial.trend!;
+    expect(trend.rows[0]).toEqual(["Jun 30, 2026", expect.stringMatching(/^\$4\.2 million \[\d+\]$/), expect.stringMatching(/^\$2\.5 million \(median of 412 filers\) \[\d+\]$/)]);
     expect(trend.rows[1][2]).toBe("Not found in filings");
+    expect(packet.financial.trendSummary).toMatch(/^Fewer than four quarters on file/);
   });
 
-  it("places a proposed fee only when the reader entered one, with no advice", () => {
-    expect(buildCommitteePacket(input()).positionCheck).toBeNull();
-    const packet = buildCommitteePacket(input({ proposed: { feeCategory: "overdraft", amount: 35 } }));
-    expect(packet.positionCheck?.check).toMatchObject({ n: 5, less: 3, more: 2, percentile: 60 });
-    const text = JSON.stringify(packet);
-    expect(text).not.toMatch(/you should|we recommend|consider raising|consider lowering/i);
-    expect(text).not.toMatch(/Hamilton Pro|Knox|Darwin|Magellan|Rosetta|Atlas/);
+  it("gives one normalized comparison with its denominator and says it is context only", () => {
+    const packet = buildCommitteePacket(input());
+    const n = packet.financial.normalized!;
+    expect(n).toMatchObject({ quarter: "2026-06-30", own: 4.5, peersCompared: 5, median: 3, q1: 2.1, q3: 5.2 });
+    expect(n.definition).toContain("divided by total assets in the same filing, times 10,000. Denominator: total assets as filed, not deposits.");
+    expect(packet.financial.context).toMatch(/^This is context, not a measure of pricing effectiveness, customer burden or revenue opportunity/);
+    expect(packet.financial.normalizedTable?.rows[0]).toEqual(["Capital City Bank", expect.stringMatching(/^\$4\.50 \[\d+\]$/)]);
+    expect(packet.brief.findings.at(-1)).toMatch(/^Service charge income per \$10,000 of total assets: Capital City Bank filed \$4\.50 .* median of \$3 across 5 peers/);
+  });
+
+  it("turns missing filings into availability lines, not empty exhibits", () => {
+    const packet = buildCommitteePacket(input({ income: [], rules: [] }));
+    expect(packet.financial.trend).toBeNull();
+    expect(packet.financial.normalizedTable).toBeNull();
+    expect(packet.unavailable).toEqual(expect.arrayContaining([
+      "Filed fee income trend: no FDIC call report or NCUA 5300 service charge income on file for Capital City Bank.",
+      "Service charge income per $10,000 of total assets: no filing on file for this institution or its peers in this packet.",
+      "Rules, bills and enforcement actions: none on file that bear on these fees.",
+    ]));
+    expect(packet.appendix.map((t) => t.id)).toEqual(["peer_fee_matrix", "nearest_peers", "product_details"]);
+  });
+});
+
+describe("buildCommitteePacket: appendix and sources", () => {
+  it("holds the full matrix, nearest peers, product details and price and yield, lettered", () => {
+    const packet = buildCommitteePacket(input());
+    const sections = packetSections(packet);
+    expect(sections.appendix.map((l) => `${l.label} ${l.table.id}`)).toEqual([
+      "Appendix A peer_fee_matrix", "Appendix B nearest_peers", "Appendix C product_details", "Appendix E price_and_yield",
+    ]);
+    expect(sections.position.map((l) => l.label)).toEqual(["Exhibit 1", "Exhibit 2"]);
+    const nearest = packet.appendix.find((t) => t.id === "nearest_peers")!;
+    expect(nearest.rows[0][2]).toMatch(/^\$30: Example Savings Bank \[\d+\]$/);
+    expect(nearest.rows[0][3]).toMatch(/^\$36: U\.S\. Bank \[\d+\]$/);
+    const matrix = packet.appendix.find((t) => t.id === "peer_fee_matrix")!;
+    expect(matrix.rows[0][0]).toBe("Capital City Bank");
+    expect(matrix.rows.find((r) => r[0] === "M&T Bank")?.[2]).toBe("Not found");
+  });
+
+  it("numbers every source once and every mark resolves to a listed source", () => {
+    const packet = buildCommitteePacket(input());
+    const ccb = packet.footnotes.find((f) => f.label === "Capital City Bank, published fee schedule")!;
+    expect(ccb.detail).toBe("document 32301 · published Oct 1, 2026");
+    expect(ccb.url).toBe("https://example.test/ccb.pdf");
+    expect(packet.footnotes.filter((f) => f.label === "U.S. Bank, published fee schedule")).toHaveLength(1);
+    expect(packet.footnotes.map((f) => f.n)).toEqual(packet.footnotes.map((_, i) => i + 1));
+    const used = allText(packet).flatMap(footnoteMarks);
+    expect(used.length).toBeGreaterThan(0);
+    for (const n of used) expect(n).toBeLessThanOrEqual(packet.footnotes.length);
+    // Every listed source is cited somewhere.
+    for (const f of packet.footnotes) expect(used).toContain(f.n);
+  });
+
+  it("recommends no fee and names no internal agent or plan", () => {
+    const text = JSON.stringify(buildCommitteePacket(input()));
+    expect(text).not.toMatch(/you should|we recommend|consider raising|consider lowering|Position check/i);
+    expect(text).not.toMatch(/Hamilton Pro|Knox|Darwin|Magellan|Rosetta|Atlas|Frost/);
   });
 });
 
@@ -178,34 +291,9 @@ describe("priceAndYield", () => {
   });
 });
 
-describe("committeePacketReport", () => {
-  it("prints the same exhibits, lists findings and no actions, and footnotes as numbered sources", () => {
-    const packet = buildCommitteePacket(input());
-    const report = committeePacketReport(packet);
-    expect(report.answer?.decisions).toEqual([]);
-    expect(report.exhibits?.map((e) => e.id)).toEqual(["peer_range", "peer_fee_matrix", "competitor_moves", "fee_income_trend", "regulatory", "price_and_yield"]);
-    expect(report.exhibits?.find((e) => e.id === "regulatory")?.rows).toEqual([["None found", "", ""]]);
-    expect(report.sources?.[0]?.label).toMatch(/^\[1\] /);
-  });
-});
-
 describe("previousQuarterStart", () => {
   it("is the first day of the quarter before", () => {
     expect(previousQuarterStart("2026-10-17T00:00:00.000Z")).toBe("2026-07-01");
     expect(previousQuarterStart("2027-02-01T00:00:00.000Z")).toBe("2026-10-01");
-  });
-});
-
-describe("review wording", () => {
-  it("names a widened group in its row, counts the outside-the-band fees and tags each exhibit's source", () => {
-    const base = input();
-    const widened = { ...base.fees[0], feeCategory: "nsf", peerLabel: "FL · bank peers; your group Florida peers has 2 publishing this fee" };
-    const packet = buildCommitteePacket({ ...base, fees: [base.fees[0], widened] });
-    const rows = packet.exhibits.find((e) => e.id === "peer_range")!.rows;
-    expect(rows[0][0]).toBe("Overdraft");
-    expect(rows[1][0]).toMatch(/\(compared with FL · bank peers; your group Florida peers has 2 publishing this fee\)$/);
-    expect(packet.keyFigures.find((f) => f.label.startsWith("watched fees outside"))).toEqual({ value: "0 above · 0 below", label: "watched fees outside the peers' middle 50% (2 with enough peers)" });
-    expect(packet.exhibits.map((e) => e.source).every(Boolean)).toBe(true);
-    expect(JSON.stringify(packet)).not.toContain("\"Not published\"");
   });
 });

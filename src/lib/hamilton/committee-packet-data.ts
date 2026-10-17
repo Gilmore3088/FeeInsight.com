@@ -8,7 +8,8 @@
  * - rules: loadWire + wireFacts (reg_tracker_items, institution_enforcement_actions);
  * - price and yield: getFeeRevenueDataCached (institution_financial_records, latest quarter).
  * Read-only and deterministic: no provider calls, no writes. Each read fails to empty on its own,
- * so a missing piece shows "None found" rather than taking the packet down.
+ * so a missing piece becomes one line under "Not available in this packet" rather than taking the
+ * packet down.
  */
 import { getFeeRevenueDataCached } from "@/lib/data-store/public-cached-reads";
 import { getInstitutionFeeRows, getInstitutionFeeValues } from "@/lib/data-store/fee-index";
@@ -49,7 +50,6 @@ export async function loadCommitteePacket(params: {
   institutionId: number;
   institutionName: string;
   yieldFee?: string | null;
-  proposed?: { feeCategory: string; amount: number } | null;
   now?: Date;
 }): Promise<CommitteePacket | null> {
   const now = params.now ?? new Date();
@@ -80,7 +80,15 @@ export async function loadCommitteePacket(params: {
     current: fee.current,
     peerLabel: fee.peerLabel,
     peers: fee.peers,
-    ownRows: (ownRows[i] ?? []).map((r) => ({ amount: r.amount, sourceDocumentId: r.sourceDocumentId, documentUrl: r.documentUrl, publishedAt: r.publishedAt })),
+    ownRows: (ownRows[i] ?? []).map((r) => ({
+      amount: r.amount,
+      sourceDocumentId: r.sourceDocumentId,
+      documentUrl: r.documentUrl,
+      publishedAt: r.publishedAt,
+      feeName: r.feeName,
+      frequency: r.frequency,
+      conditions: r.conditions,
+    })),
   }));
   const packetChanges: PacketChange[] = changes
     .filter((c) => typeof c.institution_id === "number")
@@ -105,6 +113,7 @@ export async function loadCommitteePacket(params: {
       reportDate: r.report_date ?? null,
       source: r.financial_source ?? null,
       serviceChargeIncomeThousands: r.service_charge_income === null ? null : Number(r.service_charge_income),
+      totalAssetsThousands: r.total_assets === null ? null : Number(r.total_assets),
       incomePer10kAssets: r.fee_income_ratio === null ? null : Number(r.fee_income_ratio),
     }));
   return buildCommitteePacket({
@@ -121,6 +130,5 @@ export async function loadCommitteePacket(params: {
     rules,
     income: incomeRows,
     yieldFee: params.yieldFee ?? null,
-    proposed: params.proposed ?? null,
   });
 }

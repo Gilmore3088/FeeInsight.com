@@ -8,7 +8,6 @@ import { getCurrentUser } from "@/lib/auth";
 import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
 import { loadCommitteePacket } from "@/lib/hamilton/committee-packet-data";
 import { packetFeeName } from "@/lib/hamilton/committee-packet";
-import { parseProposedFee } from "@/lib/hamilton/position-check";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 import { CommitteePacketView } from "@/components/hamilton/reports/CommitteePacket";
 import { Callout, LinkButton, MemoHeader, MemoPage } from "@/components/hamilton/memo/memo";
@@ -20,7 +19,7 @@ const FEE_KEY = /^[a-z0-9_]+$/;
 export default async function CommitteePacketPage({
   searchParams,
 }: {
-  searchParams: Promise<{ instId?: string; yield?: string; fee?: string; price?: string }>;
+  searchParams: Promise<{ instId?: string; yield?: string }>;
 }) {
   const params = await searchParams;
   const user = await getCurrentUser();
@@ -45,14 +44,11 @@ export default async function CommitteePacketPage({
     );
   }
   const yieldFee = params.yield && FEE_KEY.test(params.yield) ? params.yield : null;
-  const positionFee = params.fee && FEE_KEY.test(params.fee) ? params.fee : null;
-  const price = parseProposedFee(params.price);
   const packet = await loadCommitteePacket({
     userId: user.id,
     institutionId: institution.id,
     institutionName: institution.name,
     yieldFee,
-    proposed: positionFee && price !== null ? { feeCategory: positionFee, amount: price } : null,
   });
   if (!packet) {
     return (
@@ -69,8 +65,6 @@ export default async function CommitteePacketPage({
     const q = new URLSearchParams();
     q.set("instId", String(institution.id));
     if (yieldFee) q.set("yield", yieldFee);
-    if (positionFee) q.set("fee", positionFee);
-    if (params.price) q.set("price", params.price);
     for (const [k, v] of Object.entries(over)) {
       if (v === null) q.delete(k);
       else q.set(k, v);
@@ -82,7 +76,7 @@ export default async function CommitteePacketPage({
       packet={packet}
       hrefFor={hrefFor}
       fees={feeList}
-      selected={{ yieldFee: packet.priceYield?.feeCategory ?? yieldFee, positionFee, positionPrice: params.price ?? null, invalidPrice: Boolean(params.price) && price === null }}
+      selected={{ yieldFee: packet.priceYield?.feeCategory ?? yieldFee }}
     />
   );
 }

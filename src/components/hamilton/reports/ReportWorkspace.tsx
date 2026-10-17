@@ -444,7 +444,7 @@ export function ReportWorkspace({
         >
           <span className="text-base font-semibold text-warm-900">Pricing committee packet</span>
           <span className="text-sm text-warm-700">
-            Watched fees against your peers, what moved since last quarter, filed fee income and new rules, each footnoted to its source.
+            A printable brief for the pricing committee: findings and questions to review, each fee against your peers, filed fee income, and an appendix with every source.
           </span>
           <span className="mt-1 text-sm font-medium text-terra-text">Open the packet →</span>
         </Link>

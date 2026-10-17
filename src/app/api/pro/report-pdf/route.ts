@@ -3,7 +3,7 @@ import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
  * POST /api/pro/report-pdf
  *
  * Accepts: { type: "report", reportId }, { type: "analysis", analysisId } or
- * { type: "committee_packet", institutionId, yieldFee?, positionFee?, positionPrice? }
+ * { type: "committee_packet", institutionId, yieldFee?, pageSize?: "LETTER" | "A4" }
  * Returns: PDF blob (application/pdf) as download
  *
  * The PDF is rendered only from records loaded on the server: the user's own saved
@@ -27,8 +27,6 @@ import { AnalysisPdfDocument } from "@/components/hamilton/reports/AnalysisPdfDo
 import { getHamiltonReportById } from "@/lib/hamilton/pro-tables";
 import { loadAnalysisRecord } from "@/app/pro/(hamilton)/analyze/actions";
 import { loadPublishedReport } from "@/app/pro/(hamilton)/reports/actions";
-import { committeePacketReport } from "@/lib/hamilton/committee-packet";
-import { parseProposedFee } from "@/lib/hamilton/position-check";
 import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -91,8 +89,7 @@ async function handlePOST(req: NextRequest): Promise<NextResponse> {
     if (!institution || String(institution.id) !== instId) {
       return NextResponse.json({ error: "Institution not found" }, { status: 404 });
     }
-    const positionFee = feeKey(body.positionFee);
-    const price = parseProposedFee(body.positionPrice === null || body.positionPrice === undefined ? null : String(body.positionPrice));
+    const pageSize = body.pageSize === "A4" ? "A4" : "LETTER";
     // Loaded on demand: the packet's readers stay out of the saved-report branches' import graph.
     const { loadCommitteePacket } = await import("@/lib/hamilton/committee-packet-data");
     const packet = await loadCommitteePacket({
@@ -100,19 +97,15 @@ async function handlePOST(req: NextRequest): Promise<NextResponse> {
       institutionId: institution.id,
       institutionName: institution.name,
       yieldFee: feeKey(body.yieldFee),
-      proposed: positionFee && price !== null ? { feeCategory: positionFee, amount: price } : null,
     });
     if (!packet) {
       return NextResponse.json({ error: "The packet could not be read" }, { status: 503 });
     }
     try {
-      const element = createElement(PdfDocument, {
-        report: committeePacketReport(packet),
-        reportType: "committee_packet",
-        artifactMetadata: null,
-      }) as unknown as ReactElement<DocumentProps, string | JSXElementConstructor<unknown>>;
+      const { CommitteePacketPdf } = await import("@/components/hamilton/reports/CommitteePacketPdf");
+      const element = createElement(CommitteePacketPdf, { packet, pageSize }) as unknown as ReactElement<DocumentProps, string | JSXElementConstructor<unknown>>;
       const buffer = await renderToBuffer(element);
-      return pdfResponse(buffer, `pricing-committee-packet-${packet.generatedAt.slice(0, 10)}.pdf`);
+      return pdfResponse(buffer, `pricing-committee-packet-${packet.generatedAt.slice(0, 10)}${pageSize === "A4" ? "-a4" : ""}.pdf`);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return NextResponse.json({ error: `PDF generation failed: ${message}` }, { status: 500 });
