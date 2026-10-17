@@ -77,22 +77,39 @@ export function productHeading(productName: string | null | undefined, text: str
   // A word printed twice is two lines run together ("Free Checking Free Checking", "Current Account New Account").
   const words = heading.toLowerCase().split(/\s+/);
   if (new Set(words).size !== words.length) return null;
-  return plain(text).includes(plain(heading)) ? heading : null;
+  // Printed as its own line or table cell, not inside a longer name ("Rose Gold Checking" does not
+  // print "Gold Checking").
+  const want = plain(heading);
+  const printed = text.split("\n").some((line) =>
+    line.split("|").some((cell) => {
+      const got = plain(cell.replace(/^[#•\-–*\s]+/, ""));
+      return got.startsWith(want) && !/^[a-z0-9-]/.test(got.slice(want.length));
+    }),
+  );
+  return printed ? heading : null;
+}
+
+/** One key for one account however a lineup spelled it ("Gold Checking®", "GOLD CHECKING"). */
+function accountKey(productName: string): string {
+  return plain(accountHeading(capsCasedName(productName) ?? productName) ?? productName);
 }
 
 /** Pure: which generic live names take their account heading. */
-export function planAccountNames(fees: AccountNameFee[], texts: InstitutionText[], liveFees: LiveFeeRow[] = fees): AccountNamePlan {
+export function planAccountNames(fees: AccountNameFee[], texts: InstitutionText[], liveFees: AccountNameFee[] = fees): AccountNamePlan {
   const skipped: Record<AccountNameSkip, number> = { no_heading: 0, would_not_trace: 0, category_guard: 0, same_name_live: 0 };
   const renames: AccountRename[] = [];
   const lineKey = (fee: Pick<LiveFeeRow, "institution_id" | "canonical_fee_key" | "amount">, name: string) =>
     `${Number(fee.institution_id)}|${fee.canonical_fee_key}|${fee.amount == null ? "" : Number(fee.amount).toFixed(2)}|${name.trim().toLowerCase()}`;
   const taken = new Set(liveFees.map((fee) => lineKey(fee, fee.fee_name)));
   const generic = fees.filter((fee) => ACCOUNT_FEE_KEYS.includes(fee.canonical_fee_key) && GENERIC_ACCOUNT_FEE_NAME.test(fee.fee_name));
-  // One recorded account on two generic fees of one schedule is a lineup that spread one account
-  // across a comparison table's columns: it names neither.
-  const productKey = (fee: AccountNameFee) => `${fee.source_document_id ?? ""}|${(fee.product_name ?? "").trim().toLowerCase()}`;
+  // One recorded account on two account fees of one schedule is a lineup that spread one account
+  // across a comparison table's columns: it names neither. Fees already named count too.
+  const productKey = (fee: AccountNameFee) => `${fee.source_document_id ?? ""}|${accountKey(fee.product_name ?? "")}`;
   const productCounts = new Map<string, number>();
-  for (const fee of generic) if (fee.product_name) productCounts.set(productKey(fee), (productCounts.get(productKey(fee)) ?? 0) + 1);
+  for (const fee of liveFees) {
+    if (!fee.product_name || fee.source_document_id == null || !ACCOUNT_FEE_KEYS.includes(fee.canonical_fee_key)) continue;
+    productCounts.set(productKey(fee), (productCounts.get(productKey(fee)) ?? 0) + 1);
+  }
   for (const fee of generic) {
     const own = texts.find((text) => fee.source_document_id != null && Number(text.source_document_id) === Number(fee.source_document_id));
     const above = accountHeadingForExcerpt(own?.normalized_text, excerptOf(fee.conditions));
