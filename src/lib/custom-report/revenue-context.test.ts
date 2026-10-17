@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/data-store/call-reports", () => ({ getInstitutionPeerRanking: vi.fn(), getInstitutionRevenueTrend: vi.fn() }));
 vi.mock("@/lib/data-store/public-read-cache", () => ({ cachedPublicRead: (_key: string, fn: unknown) => fn }));
 
-import { buildRevenueContext, incomeLabel, quarterLabel } from "./revenue-context";
+import { buildRevenueContext, incomeLabel, quarterLabel, shareLabel } from "./revenue-context";
 
 const quarter = (q: string, amount: number) => ({ quarter: q, service_charge_income: amount });
 
@@ -39,5 +39,20 @@ describe("labels", () => {
     expect(quarterLabel("2026-Q2")).toBe("Q2 2026");
     expect(incomeLabel(1180)).toBe("$1.2 million");
     expect(incomeLabel(840)).toBe("$840,000");
+  });
+});
+
+describe("the normalized fee income measure", () => {
+  it("keeps service charges as a share of revenue, the institution's and the peers' median, when filed", () => {
+    const context = buildRevenueContext([quarter("2026-Q2", 5656)], {
+      tier: "midsize", sc_rank: 13, peer_count: 872, peer_median_sc: 449, source: "fdic", fee_income_ratio: 0.087089, peer_median_fee_ratio: 0.021662, peer_ratio_count: 870,
+    });
+    expect(context?.peer).toMatchObject({ tierLabel: "$1B-$10B", population: "banks", feeShare: 0.087089, peerMedianFeeShare: 0.021662, peerShareCount: 870 });
+    expect(shareLabel(0.087089)).toBe("8.7%");
+  });
+
+  it("drops a share that is not a fraction (a mis-scaled filing)", () => {
+    const context = buildRevenueContext([quarter("2026-Q2", 300)], { tier: "community", sc_rank: 3, peer_count: 900, peer_median_sc: 250, fee_income_ratio: 87, peer_median_fee_ratio: null });
+    expect(context?.peer).toMatchObject({ feeShare: null, peerMedianFeeShare: null });
   });
 });

@@ -345,16 +345,30 @@ export interface PeerRanking {
   peer_median_sc: number | null;
   fee_income_ratio: number | null;
   peer_median_fee_ratio: number | null;
+  /** Peers with a fee income ratio filed: the population of peer_median_fee_ratio. */
+  peer_ratio_count?: number;
+  /** The filing the figures come from ("fdic" for banks, "ncua" for credit unions). */
+  source?: string;
+  /** The quarter-end the ranking is for (YYYY-MM-DD). */
+  report_date?: string;
 }
 
+/**
+ * The institution's deposit service-charge income ranked among institutions of its FDIC asset
+ * tier for its latest quarter. `sameCharter` keeps the peers to its own filing (banks against
+ * FDIC filers, credit unions against NCUA filers): NCUA fee income is a wider measure than bank
+ * service charges, so the Competitive Fee Position Report never ranks one against the other.
+ * Without it, both filings count, as before.
+ */
 export async function getInstitutionPeerRanking(
-  targetId: number
+  targetId: number,
+  options: { sameCharter?: boolean } = {},
 ): Promise<PeerRanking | null> {
   const sql = getSql();
 
   const instRows = await sql.unsafe(
     `SELECT ct.institution_name, inf.total_assets, ${QUARTER_SC} AS service_charge_income,
-            inf.fee_income_ratio, inf.report_date
+            inf.fee_income_ratio, inf.report_date, inf.source
      FROM institution_financial_records inf
      JOIN institution_sources ct ON ct.id = inf.institution_id
      ${PRIOR_QUARTER_JOIN}
@@ -371,10 +385,14 @@ export async function getInstitutionPeerRanking(
     service_charge_income: string;
     fee_income_ratio: string | null;
     report_date: string;
+    source: string;
   }[];
 
   if (!instRows.length) return null;
   const inst = instRows[0];
+  // The peers' filing, as the next placeholder after each query's own parameters.
+  const charterFilter = (n: number) => (options.sameCharter ? `AND inf.source = $${n}` : "");
+  const charterParam = options.sameCharter ? [inst.source] : [];
 
   const totalAssets = Number(inst.total_assets);
   const scIncome = Number(inst.service_charge_income);
@@ -390,15 +408,17 @@ export async function getInstitutionPeerRanking(
     `SELECT
        COUNT(DISTINCT inf.institution_id)::int AS peer_count,
        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ${QUARTER_SC}) AS median_sc,
-       PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY inf.fee_income_ratio) AS median_fee_ratio
+       PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY inf.fee_income_ratio) AS median_fee_ratio,
+       COUNT(inf.fee_income_ratio)::int AS ratio_count
      FROM institution_financial_records inf
      ${PRIOR_QUARTER_JOIN}
      WHERE inf.report_date = $1
        AND inf.total_assets >= $2 AND inf.total_assets < $3
        AND ${QUARTER_SC} > 0
-       AND ${SAME_SCALE_SOURCES}`,
-    [inst.report_date, tierMin, tierMax]
-  ) as { peer_count: string; median_sc: string; median_fee_ratio: string | null }[];
+       AND ${SAME_SCALE_SOURCES}
+       ${charterFilter(4)}`,
+    [inst.report_date, tierMin, tierMax, ...charterParam]
+  ) as { peer_count: string; median_sc: string; median_fee_ratio: string | null; ratio_count: string | number | null }[];
 
   const rankRows = await sql.unsafe(
     `SELECT COUNT(*)::int AS better_count
@@ -407,14 +427,18 @@ export async function getInstitutionPeerRanking(
      WHERE inf.report_date = $1
        AND inf.total_assets >= $2 AND inf.total_assets < $3
        AND ${QUARTER_SC} > $4
-       AND ${SAME_SCALE_SOURCES}`,
-    [inst.report_date, tierMin, tierMax, scIncome]
+       AND ${SAME_SCALE_SOURCES}
+       ${charterFilter(5)}`,
+    [inst.report_date, tierMin, tierMax, scIncome, ...charterParam]
   ) as { better_count: string }[];
 
   const stats = statsRows[0];
   const peerCount = stats ? Number(stats.peer_count) : 0;
   // Same minimum sample as the fee statistics contract: no peer median from a handful.
   const enoughPeers = peerCount >= MIN_INSTITUTIONS_FOR_MEDIAN;
+  // PERCENTILE_CONT skips peers with no ratio filed, so the ratio median has its own count.
+  const ratioCount = stats ? Number(stats.ratio_count ?? 0) : 0;
+  const enoughRatios = ratioCount >= MIN_INSTITUTIONS_FOR_MEDIAN;
   const rank = rankRows[0] ? Number(rankRows[0].better_count) + 1 : peerCount;
 
   return {
@@ -425,7 +449,10 @@ export async function getInstitutionPeerRanking(
     peer_count: peerCount,
     peer_median_sc: enoughPeers && stats?.median_sc != null ? Number(stats.median_sc) : null,
     fee_income_ratio: feeRatio,
-    peer_median_fee_ratio: enoughPeers && stats?.median_fee_ratio ? Number(stats.median_fee_ratio) : null,
+    peer_median_fee_ratio: enoughRatios && stats?.median_fee_ratio ? Number(stats.median_fee_ratio) : null,
+    peer_ratio_count: ratioCount,
+    source: inst.source,
+    report_date: inst.report_date,
   };
 }
 

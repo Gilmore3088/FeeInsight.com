@@ -157,7 +157,11 @@ export const getStateEconomicContextCached = cachedPublicRead(
   isEmptyEconomicContext,
 );
 export const getMarketReadinessCached = cachedPublicRead("market-readiness", getMarketReadiness);
-export const getCustomReportMarketDataCached = cachedPublicRead("custom-report-market", getCustomReportMarketData);
+// v6: the shared source check now passes a waiver's "otherwise" price (#1797), so a copy saved
+// before it can still be missing a record the institution profile shows.
+// v7: a row read under its section heading takes the category word from that heading (#1835),
+// so Capital City Bank's incoming domestic wire ($25) enters its report.
+export const getCustomReportMarketDataCached = cachedPublicRead("custom-report-market-v7", getCustomReportMarketData);
 /**
  * Every institution's headline coverage, shared by all institution pages. Each page used to
  * recount the whole catalog for its own report rule check: about a second, 830 times an hour
@@ -180,7 +184,7 @@ export async function getInstitutionPeerRankCached(institutionId: number): Promi
   const values = peerGroupValuesFrom(await getAllPeerRankValuesCached(), filters);
   return peerRankFromGroupValues(institutionId, rule, filters, values);
 }
-export const getMarketBranchFootprintCached = cachedPublicRead("market-branch-footprint", getMarketBranchFootprint);
+export const getMarketBranchFootprintCached = cachedPublicRead("market-branch-footprint-v2", getMarketBranchFootprint);
 /** The district hub's exhibits beyond the fee board (district-hub.ts), one entry per district. */
 // v3: institution groups carry the regulator size_group.
 export const getDistrictHubCached = cachedPublicRead("district-hub-v3", getDistrictHub, isEmptyDistrictHub);

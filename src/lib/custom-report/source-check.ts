@@ -1220,7 +1220,15 @@ function checkAgainstLines(
       continue;
     }
     const context = lines.slice(Math.max(0, i - CATEGORY_LOOKBACK_LINES), i + 1).join(" ");
-    if (!category.test(context)) {
+    // A row whose name was read under its section heading may take the category word from that
+    // heading, however many priced rows down the section it sits ("Wire Transfers" / "Outgoing
+    // Domestic Fee" / "$35" / ... / "Incoming Domestic Fee" / "$25", #1835). Only the nearest
+    // heading counts, and only when it carries one of the fee's own name words: a heading further
+    // up belongs to an earlier section ("ATM Service Charge" above "Faxes – | Outgoing | $4.00").
+    const section = headings[headings.length - 1];
+    const sectionNamesCategory =
+      underHeading && !namesFee(line, stems) && section !== undefined && namesFee(section, stems, 1) && category.test(section);
+    if (!category.test(context) && !sectionNamesCategory) {
       best = "category_not_in_text";
       continue;
     }

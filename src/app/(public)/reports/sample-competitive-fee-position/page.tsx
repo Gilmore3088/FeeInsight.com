@@ -11,10 +11,10 @@ import Link from "next/link";
 import { TrackLink } from "@/components/track-link";
 import { TrackView } from "@/components/track-view";
 import { PAGE_CRUMBS, PAGE_HEADER } from "@/components/public/page-header";
-import { HamiltonLine } from "../hamilton-line";
 import { CONTACT_EMAIL, SITE_NAME, SITE_URL, REPORT_OFFER } from "@/lib/constants";
 import { loadSampleReport } from "@/lib/custom-report/sample-report";
 import { getRevenueContextCached } from "@/lib/custom-report/revenue-context";
+import { loadMarketCheckingLineup } from "@/lib/custom-report/checking-lineup-data";
 import { getMarketBranchFootprintCached } from "@/lib/data-store/public-cached-reads";
 import { MarketReportBody } from "@/app/market-report/report-body";
 import { PrintButton } from "@/app/market-report/[token]/print-button";
@@ -25,7 +25,7 @@ const SAMPLE_PATH = "/reports/sample-competitive-fee-position";
 const SAMPLE_CSV_PATH = "/reports/sample-competitive-fee-position/csv";
 const REQUEST_HREF = "/reports?report=institution&src=sample-report#request";
 const REPORT_TITLE = "Sample Competitive Fee Position Report";
-const REPORT_DESCRIPTION = `A live ${REPORT_OFFER.name} for a community bank: its fees against its local competitors, the lines outside the local middle half, and named competitors with the schedule behind every amount.`;
+const REPORT_DESCRIPTION = `A live ${REPORT_OFFER.name} for a community bank: its fees against its local competitors, the lines outside the local middle 50%, and named competitors with the schedule behind every amount.`;
 
 export async function generateMetadata(): Promise<Metadata> {
   const report = await loadSampleReport().catch(() => null);
@@ -74,9 +74,9 @@ function SampleCoverArt() {
 /** Shown while the sample is offline for a re-render, so no stale figures stay public. */
 function SampleComingSoon() {
   return (
-    <div className={`mx-auto max-w-3xl px-6 pb-24 pt-14 ${PAGE_HEADER}`}>
+    <div className={`mx-auto max-w-3xl px-4 pb-24 pt-14 sm:px-6 ${PAGE_HEADER}`}>
       <nav aria-label="Breadcrumb" className={`mb-6 ${PAGE_CRUMBS}`}>
-        <Link href="/reports" className="transition-colors hover:text-ink">
+        <Link href="/reports" className="inline-flex min-h-11 items-center transition-colors hover:text-ink sm:min-h-0">
           Reports
         </Link>
         <span className="text-border">/</span>
@@ -123,61 +123,45 @@ export default async function SampleReportPage() {
     return null;
   });
   if (!report) return <SampleComingSoon />;
-  const name = report.data.subject.institution_name;
   const market = report.data.market;
   const branches = market
     ? await getMarketBranchFootprintCached(market.county_fips, market.sod_year).catch(() => null)
     : null;
   const revenue = await getRevenueContextCached(report.data.subject.institution_id).catch(() => null);
+  // The same checking-account lineup a buyer's report shows, from live published fees.
+  const lineup = await loadMarketCheckingLineup(report.data.subject.institution_id).catch(() => null);
 
   return (
-    <div className="mx-auto max-w-page px-6 pb-24 pt-14">
+    <div className="mx-auto max-w-page px-4 pb-24 pt-14 sm:px-6">
       <TrackView event="sample_report_view" eventProps={{ institution_id: report.data.subject.institution_id }} />
       <nav aria-label="Breadcrumb" className={`mb-6 ${PAGE_CRUMBS}`}>
-        <Link href="/reports" className="transition-colors hover:text-ink">
+        <Link href="/reports" className="inline-flex min-h-11 items-center transition-colors hover:text-ink sm:min-h-0">
           Reports
         </Link>
         <span className="text-border">/</span>
         <span className="text-ink-soft">Sample</span>
       </nav>
 
-      <header className={`border-b border-border pb-8 ${PAGE_HEADER}`}>
-        <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-brick">
-          Sample: {REPORT_OFFER.name}
-        </p>
-        <h1
-          className="text-[32px] font-semibold leading-[1.1] tracking-[-0.03em] text-ink sm:text-[44px]"
-        >
-          This is what your institution report looks like.
-        </h1>
-        <p className="mx-auto mt-4 max-w-[680px] sm:mx-0 text-[16px] leading-relaxed text-ink-soft">
-          Today&apos;s report for {name}, built live by the same code that builds yours, every amount linked to its
-          fee schedule.
-        </p>
-        <div className="mt-6 flex flex-wrap items-center justify-center gap-3 sm:justify-start">
-          <TrackLink
-            event="request_report_click"
-            eventProps={{ placement: "sample_report_header" }}
-            href={REQUEST_HREF}
-            className={PRIMARY_BUTTON}
-          >
-            {REPORT_OFFER.institutionCtaLabel}
-          </TrackLink>
-          <HamiltonLine placement="sample_report_header" firstMention className="max-w-[420px]" />
-        </div>
-      </header>
-
       <div className="pt-2">
         <MarketReportBody
           report={report}
           revenue={revenue}
+          lineup={lineup}
           branches={branches}
-          eyebrow={REPORT_OFFER.name}
-          titleAs="h2"
+          eyebrow={`Sample ${REPORT_OFFER.name}`}
+          close={false}
           preparedOn={new Date()}
           contactHref="/contact?source=sample_report"
           actions={
             <>
+              <TrackLink
+                event="request_report_click"
+                eventProps={{ placement: "sample_report_header" }}
+                href={REQUEST_HREF}
+                className={PRIMARY_BUTTON}
+              >
+                {REPORT_OFFER.institutionCtaLabel}
+              </TrackLink>
               <PrintButton className={SECONDARY_BUTTON} />
               <a href={SAMPLE_CSV_PATH} className={SECONDARY_BUTTON}>
                 Download CSV
@@ -187,7 +171,7 @@ export default async function SampleReportPage() {
           correctionNote={
             <>
               If a figure does not match an institution&apos;s current schedule,{" "}
-              <a href="/contact?source=sample_report" className="underline">
+              <a href="/contact?source=sample_report" className="inline-flex min-h-11 items-center underline sm:min-h-0">
                 tell us through the contact form
               </a>{" "}
               and we will correct it.
