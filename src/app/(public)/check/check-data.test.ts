@@ -11,6 +11,8 @@ import {
   checkFinding,
   marketBand,
   parseCheckId,
+  localFeeWords,
+  localOptionsLine,
   parseLocation,
   rowPriceText,
   stateGroupLabel,
@@ -250,5 +252,49 @@ describe("parseLocation", () => {
   it("is null when empty", () => {
     expect(parseLocation(undefined)).toBeNull();
     expect(parseLocation("   ")).toBeNull();
+  });
+});
+
+describe("localOptionsLine", () => {
+  const rows = buildCheckRows({
+    verifiedFees: [
+      fee({ id: 1, fee_category: "monthly_maintenance", fee_name: "Basic Checking Monthly fee", amount: 10 }),
+      fee({ id: 2, fee_category: "overdraft", fee_name: "Overdraft Item Paid", amount: 35 }),
+    ],
+    nationalIndex: [entry("monthly_maintenance", 7), entry("overdraft", 30)],
+    stateIndex: [],
+    fallbackSourceUrl: null,
+  });
+  const list = (publishing: number, lower: number[] = []) => ({
+    category: "overdraft" as const,
+    label: "Overdraft (OD)",
+    floor: 35,
+    floorAccount: null,
+    publishing,
+    lower: lower.map((id) => ({ id, name: `Bank ${id}`, account: null, amount: 25 })),
+  });
+
+  it("names the fees from the institution's rows before a place is chosen", () => {
+    const fees = localFeeWords(rows);
+    expect(fees).toBe("monthly maintenance or overdraft");
+    expect(localOptionsLine({ kind: "none" }, [], fees, "Test Bank")).toBe(
+      "Banks and credit unions with a branch in your city that list a lower monthly maintenance or overdraft fee than Test Bank.",
+    );
+  });
+
+  it("claims nothing when no one in the place publishes a compared fee", () => {
+    const found = { kind: "found" as const, place: "Tampa, FL" };
+    expect(localOptionsLine(found, [], "overdraft", "Test Bank")).toBe("No comparison is available for Tampa, FL yet.");
+    expect(localOptionsLine(found, [list(0)], "overdraft", "Test Bank")).toBe("No comparison is available for Tampa, FL yet.");
+    expect(localOptionsLine(found, [list(4)], "overdraft", "Test Bank")).toBe(
+      "No other bank or credit union with a branch in Tampa, FL lists a lower overdraft fee than Test Bank's lowest price.",
+    );
+    expect(localOptionsLine(found, [list(4, [7, 8])], "overdraft", "Test Bank")).toBe(
+      "2 banks and credit unions with a branch in Tampa, FL list a lower overdraft fee than Test Bank's lowest price.",
+    );
+  });
+
+  it("says a ZIP's city has no published fees yet", () => {
+    expect(localOptionsLine({ kind: "no-fees", city: "Quincy, FL" }, [], "overdraft", "Test Bank")).toBe("No published fees for Quincy, FL yet.");
   });
 });

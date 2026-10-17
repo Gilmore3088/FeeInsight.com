@@ -317,6 +317,51 @@ export function buildAlternatives(
   return lists;
 }
 
+/** The fees a local comparison covers for this institution, as words: "monthly maintenance or overdraft". */
+export function localFeeWords(rows: CheckRow[]): string {
+  return rows
+    .filter((row) => (ALTERNATIVE_FEES as string[]).includes(row.category))
+    .map((row) => lowerLabel(row.label))
+    .join(" or ");
+}
+
+/** True when another institution in the place publishes a fee the lists compare. */
+export function hasLocalComparison(lists: AlternativeList[]): boolean {
+  return lists.length > 0 && lists.some((list) => list.publishing > 0);
+}
+
+/** Where the visitor's place stands, without the market itself, for the section's one line. */
+export type LocalLineStatus =
+  | { kind: "none" }
+  | { kind: "needs-state"; text: string }
+  | { kind: "not-found"; text: string }
+  | { kind: "no-fees"; city: string }
+  | { kind: "found"; place: string };
+
+/** The local section's one line: a prompt, a problem with the place entered, or the finding. */
+export function localOptionsLine(status: LocalLineStatus, lists: AlternativeList[], fees: string, name: string): string {
+  switch (status.kind) {
+    case "needs-state":
+      return /^[\d-]+$/.test(status.text)
+        ? "Enter a five-digit ZIP code, or a city and state such as Tampa, FL."
+        : `Add the state to \u201c${status.text}\u201d, for example Tampa, FL.`;
+    case "not-found":
+      return `No bank or credit union branch is on record for \u201c${status.text}\u201d. Try a nearby city or another ZIP code.`;
+    case "no-fees":
+      return `No published fees for ${status.city} yet.`;
+    case "found": {
+      if (!hasLocalComparison(lists)) return `No comparison is available for ${status.place} yet.`;
+      const lower = new Set(lists.flatMap((l) => l.lower.map((alt) => alt.id))).size;
+      const listed = lists.map((l) => lowerLabel(l.label)).join(" or ");
+      return lower === 0
+        ? `No other bank or credit union with a branch in ${status.place} lists a lower ${listed} fee than ${name}'s lowest price.`
+        : `${lower} ${lower === 1 ? "bank or credit union" : "banks and credit unions"} with a branch in ${status.place} ${lower === 1 ? "lists" : "list"} a lower ${listed} fee than ${name}'s lowest price.`;
+    }
+    default:
+      return `Banks and credit unions with a branch in your city that list a lower ${fees} fee than ${name}.`;
+  }
+}
+
 /**
  * Where the visitor is, from `?near=`: a five-digit ZIP, or a city with its state ("Tallahassee,
  * FL", "Tallahassee FL", "Tallahassee, Florida"). A city without a recognizable state is

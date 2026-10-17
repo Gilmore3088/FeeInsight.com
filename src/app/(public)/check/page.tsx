@@ -35,6 +35,7 @@ import {
   buildCheckRows,
   checkFinding,
   leadRow,
+  localFeeWords,
   lowerLabel,
   parseCheckId,
   parseLocation,
@@ -220,7 +221,10 @@ async function resolveLocal(near: string): Promise<LocalStatus> {
     market = await readMarket(dotted);
     if (market) city = dotted;
   }
-  if (!market) return { kind: "not-found", text: location.kind === "zip" ? location.zip : `${city}, ${state}` };
+  if (!market) {
+    // A ZIP that names a branch city the city read cannot show has no fee data there yet.
+    return location.kind === "zip" ? { kind: "no-fees", city: `${city}, ${state}` } : { kind: "not-found", text: `${city}, ${state}` };
+  }
   return { kind: "found", market, city, state, viaZip: location.kind === "zip" ? location.zip : null };
 }
 
@@ -369,6 +373,7 @@ async function CheckAnswer({ id, near, refreshedOn }: { id: number; near: string
           near={near}
           status={local}
           lists={alternatives}
+          fees={localFeeWords(rows)}
           name={inst.institution_name}
           cityHref={local.kind === "found" ? cityPath(local.state, local.city) : null}
           headquarters={headquarters}

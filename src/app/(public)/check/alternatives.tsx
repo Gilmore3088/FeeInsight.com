@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { CityMarket } from "@/lib/data-store/city-market";
 import { STATE_NAMES } from "@/lib/us-states";
-import { ALTERNATIVES_SHOWN, lowerLabel, money, type AlternativeList } from "./check-data";
+import { ALTERNATIVES_SHOWN, hasLocalComparison, localOptionsLine, lowerLabel, money, type AlternativeList } from "./check-data";
 
 const LINK = "font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink";
 
@@ -10,6 +10,7 @@ export type LocalStatus =
   | { kind: "none" }
   | { kind: "needs-state"; text: string }
   | { kind: "not-found"; text: string }
+  | { kind: "no-fees"; city: string }
   | { kind: "found"; market: CityMarket; city: string; state: string; viaZip: string | null };
 
 /** One fee's lower-priced institutions in the city, named with their account and price. */
@@ -66,7 +67,7 @@ function AlternativeFee({
 /** A plain GET form, so the choice works without JavaScript: `/check?id=…&near=…`. */
 function LocationForm({ id, near }: { id: number; near: string }) {
   return (
-    <form action="/check" method="get" className="mx-auto flex max-w-xl flex-col gap-2 sm:mx-0 sm:flex-row sm:items-end">
+    <form action="/check#alternatives-heading" method="get" className="mx-auto flex max-w-xl flex-col gap-2 sm:mx-0 sm:flex-row sm:items-end">
       <input type="hidden" name="id" value={id} />
       <label className="flex min-w-0 flex-1 flex-col gap-1 text-left text-[13px] font-medium text-ink-soft">
         Your city and state, or ZIP code
@@ -76,7 +77,7 @@ function LocationForm({ id, near }: { id: number; near: string }) {
           defaultValue={near}
           placeholder="Tampa, FL or 33602"
           maxLength={80}
-          className="min-h-11 w-full rounded-lg border border-border bg-surface-0 px-3 text-[15px] font-normal text-ink placeholder:text-ink-muted focus:border-ink focus:outline-none"
+          className="min-h-11 w-full rounded-lg border border-border bg-surface-0 px-3 text-[15px] font-normal text-ink placeholder:text-ink-muted focus:border-ink"
         />
       </label>
       <button type="submit" className="fi-btn fi-btn-secondary inline-flex min-h-11 items-center justify-center px-5">
@@ -95,6 +96,7 @@ export function LocalOptions({
   near,
   status,
   lists,
+  fees,
   name,
   cityHref,
   headquarters,
@@ -103,6 +105,8 @@ export function LocalOptions({
   near: string;
   status: LocalStatus;
   lists: AlternativeList[];
+  /** The fees compared, as words, from the institution's own rows ("monthly maintenance or overdraft"). */
+  fees: string;
   name: string;
   cityHref: string | null;
   /** "Tallahassee, FL": offered as one choice, never assumed. */
@@ -110,19 +114,12 @@ export function LocalOptions({
 }) {
   const found = status.kind === "found" ? status : null;
   const place = found ? `${found.city}, ${found.state}` : null;
-  const lower = new Set(lists.flatMap((l) => l.lower.map((alt) => alt.id))).size;
-  const fees = lists.map((l) => lowerLabel(l.label)).join(" or ");
-  const line = found
-    ? lower === 0
-      ? `No other bank or credit union with a branch in ${place} lists a lower ${fees} fee than ${name}'s lowest price.`
-      : `${lower} ${lower === 1 ? "bank or credit union" : "banks and credit unions"} with a branch in ${place} ${lower === 1 ? "lists" : "list"} a lower ${fees} fee than ${name}'s lowest price.`
-    : status.kind === "needs-state"
-      ? /^[\d-]+$/.test(status.text)
-        ? "Enter a five-digit ZIP code, or a city and state such as Tampa, FL."
-        : `Add the state to “${status.text}”, for example Tampa, FL.`
-      : status.kind === "not-found"
-        ? `No bank or credit union branch is on record for “${status.text}”. Try a nearby city or another ZIP code.`
-        : `Banks and credit unions with a branch in your city that list a lower ${fees} fee than ${name}.`;
+  const line = localOptionsLine(
+    status.kind === "found" ? { kind: "found", place: `${status.city}, ${status.state}` } : status,
+    lists,
+    fees,
+    name,
+  );
   const showHeadquarters = headquarters && !found && near.trim() === "";
   return (
     <section aria-labelledby="alternatives-heading" className="border-t border-border pt-6">
@@ -130,7 +127,7 @@ export function LocalOptions({
         {place ? `Compare local options in ${place}` : "Compare local options"}
       </h2>
       <p
-        role={status.kind === "needs-state" || status.kind === "not-found" ? "status" : undefined}
+        role={status.kind === "none" || found ? undefined : "status"}
         className="mt-2 text-[15px] leading-relaxed text-ink-soft sm:mx-0 sm:text-left"
       >
         {line}
@@ -148,7 +145,7 @@ export function LocalOptions({
           </p>
         )}
       </div>
-      {found && cityHref && lists.length > 0 && (
+      {found && cityHref && hasLocalComparison(lists) && (
         <>
           <div className="mt-5 grid gap-4 md:grid-cols-2">
             {lists.map((list) => (

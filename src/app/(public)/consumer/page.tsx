@@ -126,7 +126,7 @@ export default async function ConsumerPage() {
       return {
         key: "overdraft",
         title: "Understand overdraft choices",
-        line: "Opting out of debit card overdraft coverage stops overdraft fees on ATM withdrawals and one-time debit card purchases, which are typically declined instead. Recurring debit card payments, checks and ACH payments are not covered and can still be paid with an overdraft fee or returned with an NSF fee, depending on the bank.",
+        line: "Without overdraft coverage on a debit card, ATM withdrawals and one-time card purchases are typically declined, not charged. Checks, ACH and recurring card payments can still bring a fee.",
         figure:
           overdraft && transfer ? (
             <>
