@@ -523,6 +523,14 @@ export const CONSUMER_GUIDES: Guide[] = [
             text: "At an ATM outside your bank's network, one withdrawal can carry two fees from two different companies.",
           },
           {
+            type: "animation",
+            scene: "atm_two_fee",
+            actions: [
+              { label: "Check your bank's fee", href: "/check" },
+              { label: "Find an in-network ATM", href: "#find-cash" },
+            ],
+          },
+          {
             type: "breakdown",
             title: "One out-of-network withdrawal",
             items: [

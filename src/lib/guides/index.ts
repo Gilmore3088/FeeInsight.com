@@ -126,6 +126,8 @@ export function blockText(block: GuideBlock): string[] {
       return [...block.rows.flatMap((r) => [r.feature, r.question]), ...(block.compare ? [block.compare.intro] : [])];
     case "complaints":
       return [block.text];
+    case "animation":
+      return block.actions.map((a) => a.label);
     case "updates":
       return block.items.flatMap((u) => [u.title, u.changed, u.who, u.action]);
   }

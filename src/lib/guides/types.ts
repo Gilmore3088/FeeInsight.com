@@ -144,10 +144,23 @@ export type GuideBlock =
       source: GuideSource;
     }
   | {
+      /**
+       * A short animation the reader plays, beside the explanation it supports. Its amounts are
+       * illustrative and labeled so; the scene lives in `src/components/public/fee-animation`.
+       */
+      type: "animation";
+      scene: GuideAnimationScene;
+      /** The two links on its end frame: a section of this guide, or a site path such as /check. */
+      actions: { label: string; href: string }[];
+    }
+  | {
       /** Regulatory changes in practical terms, each with its current status. */
       type: "updates";
       items: RegulatoryUpdate[];
     };
+
+/** The animation scenes a guide can place. */
+export type GuideAnimationScene = "atm_two_fee";
 
 export type GuideAction = {
   title: string;

@@ -6,6 +6,7 @@ import type { DimensionBreakdown, FeeCategorySummary } from "@/lib/data-store/fe
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
 import { GuideCalculator } from "./guide-calculator";
+import { GuideAnimation } from "./fee-animation/guide-animation";
 import {
   ActionsBlock,
   BreakdownBlock,
@@ -341,6 +342,8 @@ export function GuideBlockRenderer({
       return <PolicyTableBlock block={block} summaries={summaries} />;
     case "complaints":
       return <ComplaintsBlock block={block} summaries={summaries} extras={extras} />;
+    case "animation":
+      return <GuideAnimation scene={block.scene} actions={block.actions} />;
     case "updates":
       return <UpdatesBlock block={block} summaries={summaries} />;
   }
