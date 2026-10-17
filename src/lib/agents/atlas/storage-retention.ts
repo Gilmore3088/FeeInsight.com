@@ -52,7 +52,12 @@ export const ATTEMPT_REPEAT_DAYS = 30;
 /** Stages whose readers never count identical repeats (see the module note). */
 export const ATTEMPT_REPEAT_STAGES = ["extract", "verify", "publish"] as const;
 /** Attempt-log rows read per run for repeats, in id order from the last run's cursor. */
-export const ATTEMPT_WINDOW = 200_000;
+export const ATTEMPT_WINDOW = 50_000;
+/**
+ * Each statement in this step stops after this long: a slow count is reported as "could not count"
+ * instead of holding the scoreboard run. It holds to the end of the step's own transaction.
+ */
+export const STATEMENT_TIMEOUT = "20s";
 /** Most rows one trim deletes in one run. */
 export const DELETE_BATCH = 20_000;
 /** A size above this, or a day's growth above `STORAGE_ALERT_GROWTH_MB`, is flagged in the summary. */
@@ -309,6 +314,9 @@ export async function runStorageRetention(
   const dryRun = Boolean(options.dryRun);
   const isLive = (policy: RetentionPolicy) => !dryRun && (options.live?.[policy] ?? RETENTION_LIVE[policy]);
 
+  const prior = await inSavepoint(db, (scope) => scope<{ value: string | null }[]>`
+    SELECT current_setting('statement_timeout') AS value, set_config('statement_timeout', ${STATEMENT_TIMEOUT}, true) AS applied
+  `).catch(() => [] as Array<{ value: string | null }>);
   const sized = await inSavepoint(db, measure).catch(() => ({ databaseMb: null, tables: [] as TableSize[] }));
   const previous = await inSavepoint(db, previousRun).catch(() => ({ databaseMb: null, at: null, nextAfterId: 0 }));
   const growthMb = sized.databaseMb != null && previous.databaseMb != null
@@ -328,6 +336,9 @@ export async function runStorageRetention(
   } catch (error) {
     trims.push(failed("attempt_repeats", error));
   }
+
+  const priorTimeout = prior[0]?.value;
+  if (priorTimeout != null) await inSavepoint(db, (scope) => scope`SELECT set_config('statement_timeout', ${priorTimeout}, true)`).catch(() => undefined);
 
   return {
     dryRun,
