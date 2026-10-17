@@ -155,6 +155,12 @@ It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model c
   category outside the 50-type taxonomy counted beside it), fees with no source link (no stored
   document counted beside it), and each category's share of live institutions against its median
   over the previous `SHARE_BASELINE_CHECKS` (7) checks.
+- Link mismatch (#1347), counted, not graded: live fees whose link opens another page than their
+  stored document's URL. Two links to one page are not a mismatch: scheme, "www.", case, a
+  trailing slash, a fragment and print or tracking parameters ("?print=1", "&output=amp",
+  "utm_*") are set aside (`documentLinkKey`, Postgres twin `documentLinkKeySql`) and counted apart
+  as `url_variants`. On Oct 17 (read-only): 3,507 live links differed from their document's URL as
+  written, 1,421 of them only in how the same page is written, 2,086 a real mismatch.
 - Thresholds are the skills' own (PASS / WARN / FAIL): duplicates 1% / 3%, no category 3% / 8%,
   stale 15% / 30%; no source link takes the duplicate thresholds (the skills give none). A
   category share is out of line below 70% (`COLLAPSE_KEEPS_BELOW`) or above 150% of normal, for
