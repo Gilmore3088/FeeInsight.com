@@ -555,7 +555,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `FFIEC_OVERDRAFT_PARSER_VERSION` | — | v2 | `magellan/registry/ffiec-overdraft.ts` |
 | `NCUA_PARSER_VERSION` | — | v3 | `magellan/registry/ncua-financials.ts` |
 | `SEC_LINKS_PARSER_VERSION` | — | v2 | `magellan/registry/sec.ts` |
-| `STATE_BILLS_TAGGING_VERSION` | — | v5 | `magellan/registry/state-bills.ts` |
+| `STATE_BILLS_TAGGING_VERSION` | — | v6 | `magellan/registry/state-bills.ts` |
 | `STATE_ENFORCEMENT_PARSER_VERSION` | — | v6 (stated subjects, #1428) | `magellan/registry/state-enforcement.ts` |
 | `STATE_NEWS_PARSER_VERSION` | — | v2 | `magellan/registry/state-reg-news.ts` |
 | `RESTORE_FEE_PAGE_VERSION` | — | v1 | `magellan/restore-fee-page.ts` |
