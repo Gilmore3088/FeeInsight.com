@@ -1,8 +1,8 @@
 import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 import { NextResponse } from "next/server";
 import { SITE_NAME, SITE_URL } from "@/lib/constants";
-import { API_ERROR_CODES } from "@/lib/api-v1";
-import { BURST_CALLS_PER_MINUTE } from "@/lib/api-subscriber-access";
+import { API_ERROR_CODES, API_VERSION } from "@/lib/api-v1";
+import { API_MONTHLY_CALLS_LABEL, BURST_CALLS_PER_MINUTE } from "@/lib/api-subscriber-access";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { PEER_GROUP_PARAMS } from "@/lib/peer-set-dimensions";
 
@@ -17,7 +17,7 @@ const spec = {
   openapi: "3.0.3",
   info: {
     title: "Bank Fee Index API",
-    version: "1.9.0",
+    version: API_VERSION,
     description:
       "Programmatic access to bank and credit union fee benchmarking data across thousands of U.S. financial institutions. Covers a curated catalog of consumer and commercial fee categories, sourced from published fee schedules, FDIC, and NCUA registries. Every request needs an API key. Hamilton subscribers on the $300 and $500 plans make theirs on their account page; partner keys are issued by hand.",
     contact: {
@@ -40,14 +40,14 @@ const spec = {
         type: "http",
         scheme: "bearer",
         description:
-          "Pass a manually issued API key as a Bearer token in the Authorization header.",
+          "Pass your API key as a Bearer token in the Authorization header. Subscribers on the $300 and $500 plans make theirs on the account page; partner keys are issued by hand.",
       },
       ApiKeyQuery: {
         type: "apiKey",
         in: "query",
         name: "api_key",
         description:
-          "Pass a manually issued API key as a query parameter. Prefer the Authorization header: keys in URLs end up in logs and browser history.",
+          "Pass your API key as a query parameter. Prefer the Authorization header: keys in URLs end up in logs and browser history.",
       },
     },
     schemas: {
@@ -90,7 +90,7 @@ const spec = {
           },
           display_name: {
             type: "string",
-            example: "Overdraft Fee",
+            example: "Overdraft (OD)",
           },
           family: {
             type: "string",
@@ -150,7 +150,7 @@ const spec = {
           category: { type: "string", example: "monthly_maintenance" },
           display_name: {
             type: "string",
-            example: "Monthly Maintenance Fee",
+            example: "Monthly Maintenance",
           },
           family: { type: "string", example: "Account Maintenance" },
           tier: { type: "string" },
@@ -187,10 +187,11 @@ const spec = {
             type: "string",
             enum: ["bank", "credit_union"],
           },
-          asset_size: { type: "number", example: 1200000000 },
-          asset_tier: { type: "string", example: "1B-10B" },
+          asset_size: { type: "number", nullable: true, example: 1200000, description: "Total assets in thousands of US dollars (1200000 = $1.2B)" },
+          asset_tier: { type: "string", nullable: true, example: "community_large", description: "community_small, community_mid, community_large, regional, large_regional or super_regional" },
           fed_district: { type: "integer", example: 2 },
           fee_count: { type: "integer", example: 18 },
+          fee_amount: { type: "number", nullable: true, description: "With fee_category only: the institution's lowest published amount for that fee, or null" },
         },
       },
       InstitutionDetail: {
@@ -230,7 +231,8 @@ const spec = {
                 },
                 review_status: {
                   type: "string",
-                  enum: ["pending", "staged", "approved"],
+                  enum: ["approved"],
+                  description: "Always approved: the API returns published fees only.",
                 },
                 category: { type: "string", nullable: true, example: "overdraft" },
                 confidence: { type: "number", example: 0.97 },
@@ -252,7 +254,7 @@ const spec = {
               properties: {
                 fee_name: { type: "string", example: "Foreign Transaction Fee", description: FEE_NAME },
                 name_is_category_fallback: { type: "boolean", description: NAME_IS_CATEGORY_FALLBACK },
-                category: { type: "string", nullable: true, example: "foreign_transaction" },
+                category: { type: "string", nullable: true, example: "card_foreign_txn" },
                 rate_percent: { type: "number", example: 3 },
                 rate_min_amount: { type: "number", nullable: true, description: "Dollar floor, when the schedule states one." },
                 rate_max_amount: { type: "number", nullable: true, description: "Dollar cap, when the schedule states one." },
@@ -268,7 +270,7 @@ const spec = {
           call_reports: {
             type: "array",
             description:
-              "Latest 8 quarters of FDIC (banks) or NCUA (credit unions) call report figures, newest first. Dollar amounts are whole dollars.",
+              "The latest quarters (8 by default; set quarters, up to 66) of FDIC (banks) or NCUA (credit unions) call report figures, newest first. Dollar amounts are whole dollars.",
             items: {
               type: "object",
               properties: {
@@ -392,7 +394,7 @@ const spec = {
         },
       },
       Unavailable: {
-        description: "Usage tracking is temporarily down; retry after the Retry-After seconds (code rate_limit_unavailable)",
+        description: "Usage tracking is temporarily down; retry after the Retry-After seconds (code rate_limit_unavailable). On /revenue, also when call report figures cannot be read (code data_unavailable)",
         content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
       },
     },
@@ -408,8 +410,8 @@ const spec = {
       FormatParam: {
         name: "format",
         in: "query",
-        schema: { type: "string", enum: ["csv"] },
-        description: 'Set to "csv" for CSV download. Requires a pro or enterprise API key, or a signed-in Pro export session.',
+        schema: { type: "string", enum: ["json", "csv"], default: "json" },
+        description: 'Set to "csv" for CSV download. Requires a Pro or Enterprise API key, or a signed-in Pro export session. On /institutions, CSV is offered for view=benchmark.',
       },
     },
   },
@@ -419,7 +421,7 @@ const spec = {
         operationId: "listFees",
         summary: "List fee categories",
         description:
-          "Returns every fee category in the catalog with national median, P25/P75 percentiles, min/max, and institution counts. Free-tier keys are limited to 6 spotlight categories. Pass `category` for one category's breakdown by charter type, asset tier, Fed district, and state (Pro and Enterprise only).",
+          "Returns every fee category in the catalog with national median, P25/P75 percentiles, min/max, and institution counts. Pass `category` for one category's breakdown by charter type, asset tier, Fed district, and state (Pro and Enterprise only).",
         tags: ["Fees"],
         parameters: [
           {
@@ -481,7 +483,7 @@ const spec = {
         operationId: "getFeeIndex",
         summary: "National & peer fee index",
         description:
-          "Returns the national fee index. The free tier gets the spotlight categories; Pro and Enterprise keys get every category. Apply filters for peer benchmarking by state, charter type, or Fed district. Includes maturity indicators and bank/CU counts.",
+          "Returns the national fee index. Covers the top 50 public fee types. Apply filters for peer benchmarking by state, charter type, Fed district or asset-size tier. Includes maturity indicators and bank/CU counts.",
         tags: ["Index"],
         parameters: [
           {
@@ -573,7 +575,7 @@ const spec = {
         operationId: "listInstitutions",
         summary: "List institutions",
         description:
-          "Paginated list of financial institutions with fee data. Filter by state and charter type. Maximum 200 results per page. Pass `id` for one institution's profile with fees, call reports and complaints (Pro and Enterprise only).",
+          "Paginated list of financial institutions. Filter by state, charter, asset_tier, city or has_fees; search by name with q; rank by one fee with fee_category and sort. Maximum 200 results per page. Pass `id` for one institution's profile with fees, call reports and complaints (Pro and Enterprise only); add view=benchmark for its fees beside peer medians (also as CSV with format=csv) or view=regulatory_watch for its enforcement actions and complaint counts. view=fees lists published fees one row each and does not take q, fee_category, asset_tier, city or has_fees=true.",
         tags: ["Institutions"],
         parameters: [
           {
@@ -677,11 +679,13 @@ const spec = {
             },
             description: "Results per page",
           },
+          { $ref: "#/components/parameters/FormatParam" },
         ],
         responses: {
           "200": {
             description: "Paginated institution list, or one institution's detail when `id` is set",
             content: {
+              "text/csv": { schema: { type: "string" }, description: "view=benchmark with format=csv" },
               "application/json": {
                 schema: {
                   oneOf: [
@@ -1190,7 +1194,7 @@ const spec = {
     },
   ],
   "x-rateLimit": {
-    description: `One monthly allowance per API key, shared across all endpoints. Free keys: 100 requests/month. Pro keys: 10,000 requests/month. Enterprise: unlimited, so X-RateLimit-Limit and X-RateLimit-Remaining are omitted. Each plan can also make at most ${BURST_CALLS_PER_MINUTE} calls a minute (Enterprise exempt); past that, calls return 429 burst_limited with a Retry-After header in seconds, and a refused call does not use monthly allowance.`,
+    description: `One monthly allowance per plan, shared by every key on it and across all endpoints: subscriber keys on the $300 and $500 plans get ${API_MONTHLY_CALLS_LABEL} calls a month. Partner (Enterprise) keys are issued by hand and are unlimited, so X-RateLimit-Limit and X-RateLimit-Remaining are omitted. There are no free keys. Each plan can also make at most ${BURST_CALLS_PER_MINUTE} calls a minute (Enterprise exempt); past that, calls return 429 burst_limited with a Retry-After header in seconds, and a refused call does not use monthly allowance.`,
     headers: {
       "X-RateLimit-Limit": "Maximum requests allowed in the current monthly window",
       "X-RateLimit-Remaining": "Requests remaining in the current monthly window",

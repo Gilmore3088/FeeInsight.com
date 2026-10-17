@@ -1154,3 +1154,9 @@ ATM surcharges that banks charge only non-customers?", option "Take down").
 takedowns: 13 surcharges non-customers pay at the bank's own ATMs (#1772) and 15 lines that are not
 the fee (#1773). All 28 were live on the dry read (SELECT-only, 11:35 UTC). Archived, never deleted;
 set the switch false to stop, and restore by clearing `rolled_back_at`.
+
+**API docs move with the API.** James, 2026-10-17 11:37 UTC (API & MCP thread): "any update to the
+API automatically triggers documentation update." Every route, query parameter and connector tool
+must be in the OpenAPI spec and on /api-docs (`src/lib/api-docs-sync.test.ts`), and a PR that
+changes API code must bump `API_VERSION` in `src/lib/api-v1.ts`, which the spec and the connector
+both report (`scripts/ci-guards.sh api-docs-kill`).
