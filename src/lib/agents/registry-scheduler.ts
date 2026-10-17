@@ -34,6 +34,28 @@ import {
   CFPB_CARD_AGREEMENTS_SOURCE,
   cfpbCardAgreementsPartitions,
 } from "@/lib/agents/magellan/registry/cfpb-card-agreements";
+import {
+  UBPR_FIRST,
+  UBPR_PEER_GROUPS_PARSER_VERSION,
+  UBPR_PEER_GROUPS_SOURCE,
+  ubprPeerGroupsPartitions,
+} from "@/lib/agents/magellan/registry/ubpr-peer-groups";
+import { FR_Y9C_FIRST, FR_Y9C_PARSER_VERSION, FR_Y9C_SOURCE, frY9cPartitions } from "@/lib/agents/magellan/registry/fr-y9c";
+import { NIC_STRUCTURE_PARSER_VERSION, NIC_STRUCTURE_SOURCE, nicStructurePartitions } from "@/lib/agents/magellan/registry/nic-structure";
+import { craPartitions, CRA_PARSER_VERSION, CRA_SOURCE } from "@/lib/agents/magellan/registry/cra";
+import { CRA_LENDING_FIRST_YEAR } from "@/lib/regulatory/cra";
+import {
+  DESIGNATION_LISTS_PARSER_VERSION,
+  DESIGNATION_LISTS_SOURCE,
+  designationListsPartitions,
+} from "@/lib/agents/magellan/registry/designation-lists";
+import {
+  HMDA_APOR_PARSER_VERSION,
+  HMDA_APOR_SOURCE,
+  HMDA_PARSER_VERSION,
+  HMDA_SOURCE,
+  hmdaPartitions,
+} from "@/lib/agents/magellan/registry/hmda";
 import { REGISTRY_SOURCES } from "@/lib/agents/magellan/registry";
 import { isProviderStep } from "@/lib/agents/types";
 import { STATE_BILLS_PARTITION, STATE_BILLS_SOURCE } from "@/lib/agents/magellan/registry/state-bills";
@@ -89,6 +111,13 @@ export const REGISTRY_PARSER_VERSIONS: Record<string, number> = {
   [FFIEC_CALL_DETAIL_SOURCE]: FFIEC_CALL_DETAIL_PARSER_VERSION,
   [NCUA_EXTRAS_SOURCE]: NCUA_EXTRAS_PARSER_VERSION,
   [FDIC_HISTORY_SOURCE]: FDIC_HISTORY_PARSER_VERSION,
+  [HMDA_SOURCE]: HMDA_PARSER_VERSION,
+  [HMDA_APOR_SOURCE]: HMDA_APOR_PARSER_VERSION,
+  [DESIGNATION_LISTS_SOURCE]: DESIGNATION_LISTS_PARSER_VERSION,
+  [CRA_SOURCE]: CRA_PARSER_VERSION,
+  [FR_Y9C_SOURCE]: FR_Y9C_PARSER_VERSION,
+  [NIC_STRUCTURE_SOURCE]: NIC_STRUCTURE_PARSER_VERSION,
+  [UBPR_PEER_GROUPS_SOURCE]: UBPR_PEER_GROUPS_PARSER_VERSION,
   [CFPB_CARD_AGREEMENTS_SOURCE]: CFPB_CARD_AGREEMENTS_PARSER_VERSION,
 };
 
@@ -161,6 +190,12 @@ export function registryPartitionsBySource(
     [FFIEC_CALL_DETAIL_SOURCE]: ffiecCallDetailPartitions(now),
     [NCUA_EXTRAS_SOURCE]: ncuaExtrasPartitions(now, compareQuarters(from, NCUA_EXTRAS_FIRST) > 0 ? from : NCUA_EXTRAS_FIRST),
     [FDIC_HISTORY_SOURCE]: fdicHistoryPartitions(now, Math.max(FDIC_HISTORY_FIRST_YEAR, from.year)),
+    [HMDA_SOURCE]: hmdaPartitions(now, from.year),
+    [DESIGNATION_LISTS_SOURCE]: designationListsPartitions(now),
+    [CRA_SOURCE]: craPartitions(now, Math.max(CRA_LENDING_FIRST_YEAR, from.year)),
+    [FR_Y9C_SOURCE]: frY9cPartitions(now, compareQuarters(from, FR_Y9C_FIRST) > 0 ? from : FR_Y9C_FIRST),
+    [NIC_STRUCTURE_SOURCE]: nicStructurePartitions(),
+    [UBPR_PEER_GROUPS_SOURCE]: ubprPeerGroupsPartitions(now, compareQuarters(from, UBPR_FIRST) > 0 ? from : UBPR_FIRST),
     [CFPB_CARD_AGREEMENTS_SOURCE]: cfpbCardAgreementsPartitions(now, from),
     [NCUA_BRANCHES_SOURCE]: ncuaBranchPartitions(now),
     [FDIC_SOD_SOURCE]: years(Math.max(SOD_FIRST_YEAR, from.year), latestSodYear(now)),
