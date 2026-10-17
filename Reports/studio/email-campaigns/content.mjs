@@ -33,7 +33,7 @@ const SAMPLE_REPORT = `${S}/reports/sample-competitive-fee-position`;
 const FIELD = {
   reportName: "{$report_name|default('your fee report')}",
   reportUrl: "{$report_url|default('https://feeinsight.com/reports')}",
-  reportFinding: "{$report_finding|default('')}",
+  reportFinding: "{$report_finding|default('Start with the key findings at the top of your report. Each one names the fee, the market and how many institutions stand behind it.')}",
   followName: "{$follow_name|default('the market you follow')}",
   followUrl: "{$follow_url|default('https://feeinsight.com/research')}",
 };

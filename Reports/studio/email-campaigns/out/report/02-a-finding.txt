@@ -5,7 +5,7 @@ YOUR REPORT · 2 OF 3
 One finding from your report
 ============================
 
-{$report_finding|default('')}
+{$report_finding|default('Start with the key findings at the top of your report. Each one names the fee, the market and how many institutions stand behind it.')}
 
 A market finding tells you where the typical institution sits. It can't tell you where yours sits, or which competitors pull the range up or down.
 
