@@ -90,15 +90,35 @@ describe("fee animation scenes", () => {
       expect(block.actions).toHaveLength(2);
       const anchors = new Set(guide.sections.map((s) => `#${s.id}`));
       for (const a of block.actions) {
+        expect(a.label, a.label).not.toMatch(/—|–/);
         if (a.href.startsWith("#")) expect(anchors.has(a.href), `${guide.slug} ${a.href}`).toBe(true);
         else expect(a.href, a.label).toMatch(/^\/(check|guides\/[a-z-]+(#[a-z-]+)?)$/);
       }
     }
   });
 
-  it("places the ATM pilot beside the explanation of being charged twice", () => {
-    const atm = placements.find((p) => p.block.scene === "atm_two_fee");
-    expect(atm?.guide.slug).toBe("atm-fees");
-    expect(atm?.section).toBe("charged-twice");
+  it("places each scene beside the section it explains", () => {
+    const where = Object.fromEntries(placements.map((p) => [p.block.scene, `${p.guide.slug}#${p.section}`]));
+    expect(where).toEqual({
+      atm_two_fee: "atm-fees#charged-twice",
+      overdraft: "overdraft-fees#what-happened",
+      nsf: "nsf-fees#what-it-is",
+      wire_transfer: "wire-transfer-fees#what-it-is",
+      monthly_maintenance: "monthly-maintenance-fees#what-it-is",
+      foreign_transaction: "foreign-transaction-fees#what-it-is",
+      check_stop_payment: "check-fees#what-it-costs",
+      digital_speed: "digital-banking-fees#speed-costs-money",
+      dormant_account: "account-closure-fees#what-it-is",
+      safe_deposit: "safe-deposit-fees#what-it-is",
+    });
+  });
+
+  it("never promises that opting out declines a payment", () => {
+    const words = Object.values(FEE_SCENES).flatMap((s) => [
+      s.takeaway,
+      s.describe,
+      ...s.steps.flatMap((st) => [st.caption, ...(st.frame.lookFor ?? [])]),
+    ]);
+    for (const w of words) expect(w, w).not.toMatch(/\b(will be|is|are) declined\b|\bdeclines? (it|the payment)\b/i);
   });
 });

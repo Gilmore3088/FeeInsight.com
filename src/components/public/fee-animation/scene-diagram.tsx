@@ -10,13 +10,14 @@ export const VIEW_H = 380;
 /** Text limits that keep every label inside its shape at the sizes below. */
 export const TEXT_LIMITS = {
   actor: 16,
-  item: 12,
+  item: 11,
   status: 22,
   charge: 18,
   total: 18,
   totalNote: 40,
   fork: 18,
   lookFor: 36,
+  lookForTitle: 24,
 } as const;
 
 const LEFT_X = 80;
@@ -46,7 +47,7 @@ export function SceneDiagram({
   const move = motion ? "motion-safe:transition-[opacity,transform] motion-safe:duration-700 motion-safe:ease-out" : "";
 
   const charges = scene.charges.filter((c) => frame.charges.includes(c.id));
-  const totalAmount = charges.reduce((sum, c) => sum + c.amount, 0);
+  const totalAmount = frame.total?.amount ?? charges.reduce((sum, c) => sum + c.amount, 0);
   const joined = Boolean(frame.total) && shown("total");
 
   return (
@@ -151,7 +152,7 @@ export function SceneDiagram({
             {dollars(intro === "total" ? countUp(totalAmount, elapsedMs, TOTAL_DELAY_MS + 200) : totalAmount)}
           </text>
           {frame.total.note && (
-            <text x={200} y={372} textAnchor="middle" fontSize={14} className="fill-ink-muted">
+            <text x={200} y={373} textAnchor="middle" fontSize={15} className="fill-ink-muted">
               {frame.total.note}
             </text>
           )}
@@ -174,7 +175,7 @@ export function SceneDiagram({
         <Moving className={move} opacity={shown("lookFor") ? 1 : 0} y={shown("lookFor") ? 0 : 12}>
           <rect x={14} y={262} width={372} height={112} rx={12} strokeWidth={2} className="fill-surface-0 stroke-border" />
           <text x={30} y={286} fontSize={14} fontWeight={700} className="fill-brick" letterSpacing={1}>
-            LOOK FOR
+            {(frame.lookForTitle ?? "Look for").toUpperCase()}
           </text>
           {frame.lookFor.map((line, i) => (
             <g key={line}>

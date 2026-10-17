@@ -58,12 +58,17 @@ export type FeeSceneFrame = {
   };
   /** Ids of the charges on screen, from the scene's `charges`. */
   charges: string[];
-  /** The visible charges add into this total. */
-  total?: { label: string; note?: string };
+  /**
+   * The visible charges add into this total. `amount` replaces the sum when the total is not a
+   * plain sum of the charges on screen (a monthly fee over a year).
+   */
+  total?: { label: string; note?: string; amount?: number };
   /** Two ways a transaction can go; the chosen one is marked. */
   fork?: { a: string; b: string; chosen?: "a" | "b" };
   /** Things to look for, at most three short lines. */
   lookFor?: string[];
+  /** The heading over `lookFor`; "Look for" when not set. */
+  lookForTitle?: string;
   /** The part that moves in during this step. */
   intro?: FeeSceneIntro;
 };

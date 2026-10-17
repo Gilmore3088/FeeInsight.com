@@ -160,7 +160,17 @@ export type GuideBlock =
     };
 
 /** The animation scenes a guide can place. */
-export type GuideAnimationScene = "atm_two_fee";
+export type GuideAnimationScene =
+  | "atm_two_fee"
+  | "overdraft"
+  | "nsf"
+  | "wire_transfer"
+  | "monthly_maintenance"
+  | "foreign_transaction"
+  | "check_stop_payment"
+  | "digital_speed"
+  | "dormant_account"
+  | "safe_deposit";
 
 export type GuideAction = {
   title: string;

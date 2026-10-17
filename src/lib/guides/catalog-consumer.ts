@@ -101,6 +101,14 @@ export const CONSUMER_GUIDES: Guide[] = [
             ],
           },
           {
+            type: "animation",
+            scene: "overdraft",
+            actions: [
+              { label: "Check your bank's fee", href: "/check" },
+              { label: "See your consent choices", href: "#consent" },
+            ],
+          },
+          {
             type: "list",
             ordered: true,
             items: [
@@ -323,6 +331,14 @@ export const CONSUMER_GUIDES: Guide[] = [
           {
             type: "paragraph",
             text: "A non-sufficient funds fee, or NSF fee, may be charged when your institution returns a payment unpaid because your account did not have the money to cover it. The check bounces or the automatic payment fails, and depending on its policy, your institution may still charge you.",
+          },
+          {
+            type: "animation",
+            scene: "nsf",
+            actions: [
+              { label: "Check your bank's fee", href: "/check" },
+              { label: "NSF versus overdraft", href: "#nsf-vs-overdraft" },
+            ],
           },
           {
             type: "paragraph",
@@ -753,6 +769,14 @@ export const CONSUMER_GUIDES: Guide[] = [
             text: "A wire transfer moves money directly between banks, usually the same day, and the money cannot be pulled back once it lands. That finality is what you are paying for.",
           },
           {
+            type: "animation",
+            scene: "wire_transfer",
+            actions: [
+              { label: "Check your bank's fee", href: "/check" },
+              { label: "Ways to pay less", href: "#how-to-avoid" },
+            ],
+          },
+          {
             type: "paragraph",
             text: "That is why wires are used for house closings and large purchases, and also why fraudsters ask for them. A wire is not reversible in the way a card payment or an ACH transfer can be.",
           },
@@ -918,6 +942,14 @@ export const CONSUMER_GUIDES: Guide[] = [
             text: "A monthly maintenance fee is a recurring charge for having an account. It is not tied to anything you do. It arrives whether you make one transaction or a hundred.",
           },
           {
+            type: "animation",
+            scene: "monthly_maintenance",
+            actions: [
+              { label: "Check your bank's fee", href: "/check" },
+              { label: "Ways to avoid it", href: "#how-to-avoid" },
+            ],
+          },
+          {
             type: "paragraph",
             text: "It is also one of the more avoidable fees. Many accounts that charge one also list conditions that waive it, so the conditions matter as much as the price.",
           },
@@ -1075,6 +1107,14 @@ export const CONSUMER_GUIDES: Guide[] = [
           {
             type: "paragraph",
             text: "A foreign transaction fee is a percentage your card issuer adds when you buy something in another currency, or from a merchant whose bank is outside the US.",
+          },
+          {
+            type: "animation",
+            scene: "foreign_transaction",
+            actions: [
+              { label: "Check your bank's fee", href: "/check" },
+              { label: "The pay-in-dollars trap", href: "#dynamic-currency-conversion" },
+            ],
           },
           {
             type: "paragraph",
@@ -1269,6 +1309,14 @@ export const CONSUMER_GUIDES: Guide[] = [
               "Money order: median {{money_order.median}}",
               "Check printing: median {{check_printing.median}}, varying widely by style and quantity",
               "Counter check: median {{counter_check.median}}",
+            ],
+          },
+          {
+            type: "animation",
+            scene: "check_stop_payment",
+            actions: [
+              { label: "Check your bank's fee", href: "/check" },
+              { label: "Ways to pay less", href: "#how-to-avoid" },
             ],
           },
           {
@@ -1469,6 +1517,14 @@ export const CONSUMER_GUIDES: Guide[] = [
             text: "Most digital banking charges you will actually meet are expedite fees. Faster mobile deposit availability, same-day bill payment and instant transfer to a debit card often have a slower version with no fee.",
           },
           {
+            type: "animation",
+            scene: "digital_speed",
+            actions: [
+              { label: "Check your bank's fee", href: "/check" },
+              { label: "Ways to pay less", href: "#how-to-avoid" },
+            ],
+          },
+          {
             type: "paragraph",
             text: "Before paying one, check when the money genuinely needs to arrive. A payment due Friday does not need instant delivery on Wednesday. Planning a few days ahead can avoid an expedite fee.",
           },
@@ -1589,6 +1645,14 @@ export const CONSUMER_GUIDES: Guide[] = [
           {
             type: "paragraph",
             text: "Two fees sit at the end of an account's life, and they catch people in opposite ways.",
+          },
+          {
+            type: "animation",
+            scene: "dormant_account",
+            actions: [
+              { label: "Check your bank's fee", href: "/check" },
+              { label: "Ways to avoid it", href: "#how-to-avoid" },
+            ],
           },
           {
             type: "paragraph",
@@ -1757,6 +1821,14 @@ export const CONSUMER_GUIDES: Guide[] = [
           {
             type: "paragraph",
             text: "A safe deposit box is a locked container in your bank's vault, rented by the year. People use them for passports, deeds, wills, and things that are difficult or impossible to replace.",
+          },
+          {
+            type: "animation",
+            scene: "safe_deposit",
+            actions: [
+              { label: "Check your bank's fee", href: "/check" },
+              { label: "Do you need one?", href: "#how-to-avoid" },
+            ],
           },
           {
             type: "paragraph",

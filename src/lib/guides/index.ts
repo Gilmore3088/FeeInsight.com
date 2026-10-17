@@ -127,7 +127,8 @@ export function blockText(block: GuideBlock): string[] {
     case "complaints":
       return [block.text];
     case "animation":
-      return block.actions.map((a) => a.label);
+      // A scene's captions and button labels are not guide prose; fee-animation/scenes tests them.
+      return [];
     case "updates":
       return block.items.flatMap((u) => [u.title, u.changed, u.who, u.action]);
   }
