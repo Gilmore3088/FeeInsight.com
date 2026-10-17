@@ -1,10 +1,11 @@
 /** Durable user-scoped peer research snapshots in the EXISTING analyses ledger.
- * The typed page uses these only as research records; PDF/report parity is not implied.
+ * The typed page uses these only as research records. The saved page reopens the snapshot as it was
+ * saved, and its CSV export (peer-list-export.ts) prints those same rows; no PDF is made of a list.
  */
 import { insertSavedAnalysis } from "@/lib/data-store/hamilton-analyses";
 import { loadHamiltonAccountContext } from "./account-context-store";
 import { accountIdentitySnapshot } from "./account-context";
-import type { PeerListData, PeerListResponse } from "./peer-list";
+import { MAX_PEER_LIST_ROWS, type PeerListData, type PeerListResponse } from "./peer-list";
 import type { AnalyzeResponse } from "./types";
 
 type SnapshotAsker = { id: number; institution_name?: string | null };
@@ -13,7 +14,7 @@ export function peerSnapshotSignature(data: PeerListData): string {
   return JSON.stringify({
     version: data.version, status: data.status, subject: data.subject,
     criteria: data.criteria, rows: data.rows, totalMatches: data.totalMatches,
-    feeComparison: data.feeComparison ?? null,
+    feeComparison: data.feeComparison ?? null, offset: data.offset ?? 0,
   });
 }
 
@@ -21,7 +22,7 @@ export function peerSnapshotSignature(data: PeerListData): string {
 export function matchesFreshPeerSnapshot(expected: unknown, fresh: PeerListData): boolean {
   if (!expected || typeof expected !== "object" || Array.isArray(expected)) return false;
   if (fresh.status !== "ready" || !fresh.subject ||
-      fresh.rows.length > 50 || fresh.rows.some(row => !Number.isSafeInteger(row.institutionId))) return false;
+      fresh.rows.length > MAX_PEER_LIST_ROWS || fresh.rows.some(row => !Number.isSafeInteger(row.institutionId))) return false;
   const provided = expected as Partial<PeerListData>;
   if (provided.version !== 1 || provided.status !== "ready" ||
       !Array.isArray(provided.rows) || !provided.subject || !provided.criteria) return false;

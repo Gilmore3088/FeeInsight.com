@@ -8,7 +8,7 @@ import { normalizeCanonicalInstitutionId } from "./context-link";
 import { resolveHamiltonInstitutionContext } from "./workspace-context";
 import { feeCategoriesIn } from "./workspace/ask";
 import { proseFeeName } from "./workspace/names";
-import { isPeerListContinuationQuestion, peerListFeeFollowUp, peerListFollowUpFeePhrase, parsePeerListQuestion, peerListRefinementState, validatePeerListContinuation, peerListReferencesUnchanged, planPeerList, MAX_PEER_LIST_ROWS, type PeerListCriteria, type PeerListData, type PeerListResponse, type PeerListSubject } from "./peer-list";
+import { isPeerListContinuationQuestion, peerListFeeFollowUp, peerListFollowUpFeePhrase, parsePeerListQuestion, peerListRefinementState, validatePeerListContinuation, peerListReferencesUnchanged, planPeerList, readPeerListOffset, MAX_PEER_LIST_ROWS, type PeerListCriteria, type PeerListData, type PeerListResponse, type PeerListSubject } from "./peer-list";
 
 /** Why "us" has no institution: none linked, or more than one. Never the researched institution. */
 function noAccountInstitution(status: string): string {
@@ -18,14 +18,22 @@ function noAccountInstitution(status: string): string {
   return `${why} Hamilton did not treat the institution you are researching as yours.`;
 }
 
-interface PeerAskBody { institutionId?: unknown; question?: unknown; answer?: unknown; previousPeerList?: unknown }
+interface PeerAskBody { institutionId?: unknown; question?: unknown; answer?: unknown; previousPeerList?: unknown; peerListOffset?: unknown }
 interface PeerAsker { id: number; institution_name?: string | null }
 
-/** Says which institutions a capped list kept and how to see the others (#1540). */
-export function cappedListNote(criteria: Pick<PeerListCriteria, "sort" | "limit">, shown: number, total: number): string {
+/**
+ * Says which institutions a capped list kept and how to see the others (#1540). A list asked for
+ * "all" pages through the rest (#977, H02-T08), so its note names the rows shown and the way on.
+ */
+export function cappedListNote(criteria: Pick<PeerListCriteria, "sort" | "limit">, shown: number, total: number, offset = 0): string {
+  const order = criteria.sort === "closest_assets" ? "closest in size first" : criteria.sort === "largest_assets" ? "largest by assets first" : "by name";
+  if (criteria.limit >= MAX_PEER_LIST_ROWS) {
+    const end = offset + shown;
+    const more = total - end;
+    return `Showing institutions ${offset + 1} to ${end} of ${total} matching institutions, ${order}.${more > 0 ? ` ${more} more ${more === 1 ? "is" : "are"} on the next pages.` : ""}`;
+  }
   const kept = criteria.sort === "closest_assets" ? `the ${shown} closest in size` : criteria.sort === "largest_assets" ? `the ${shown} largest by assets` : `the first ${shown} by name`;
-  const rest = criteria.limit < MAX_PEER_LIST_ROWS ? `Ask for "all" to see up to ${MAX_PEER_LIST_ROWS}.` : "Narrow the criteria to see the rest.";
-  return `Showing ${kept} of ${total} matching institutions; ${total - shown} more are not shown. ${rest}`;
+  return `Showing ${kept} of ${total} matching institutions; ${total - shown} more are not shown. Ask for "all" to see them ${MAX_PEER_LIST_ROWS} at a time.`;
 }
 
 /** A recognized list is never sent to fee analysis or a paid narrative fallback. */
@@ -81,6 +89,7 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
         const original = await answerPeerList(user, {
           question: prior.originQuestion,
           institutionId: prior.originInstitutionId,
+          ...(prior.originOffset ? { peerListOffset: prior.originOffset } : {}),
         }, false);
         if (!original || original.peerList.status !== "ready" ||
             original.peerList.subject?.institutionId !== prior.originSubjectId ||
@@ -114,23 +123,26 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
             note: `Each consumer ${label} fee a peer publishes is listed on its own line, $0 fees included.${rateFees.length ? " A fee charged as a rate is shown as that rate and is not converted to dollars or compared with dollar amounts." : ""} A peer with no line has no matching published fee on file, and Hamilton fills in no amount for it.`,
           };
         }
+        // A refinement is its own list of the displayed rows, so it has no pages of its own.
+        const { offset: _page, ...originalList } = original.peerList;
+        void _page;
         return {
           kind: "peer_list",
           shortAnswer: feeIntent
             ? feeIntent === "with_account" ? `${label[0].toUpperCase()}${label.slice(1)} fees for ${rows.length} selected peer${rows.length === 1 ? "" : "s"} compared with your institution.` : `Published ${label} fees for ${rows.length} selected peer${rows.length === 1 ? "" : "s"}.`
             : rows.length + " of " + count + " previously displayed peers are in " + state + ".",
           peerList: {
-            ...original.peerList,
+            ...originalList,
             rows,
             totalMatches: rows.length,
-            criteria: original.peerList.criteria ? {
-              ...original.peerList.criteria,
-              states: state ? [state] : original.peerList.criteria.states,
+            criteria: originalList.criteria ? {
+              ...originalList.criteria,
+              states: state ? [state] : originalList.criteria.states,
               institutionIds: [...prior.selectedIds],
-              descriptions: [...original.peerList.criteria.descriptions,
+              descriptions: [...originalList.criteria.descriptions,
                 "This refinement used only the " + count + " institutions displayed in the previous list."],
             } : null,
-            notes: [...original.peerList.notes,
+            notes: [...originalList.notes,
               "Only the previously displayed peer IDs were considered; no new peers were introduced. Reporting dates were rechecked."],
             ...(feeComparison ? { feeComparison } : {}),
           },
@@ -141,7 +153,10 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
         result = message("needs_criteria", "Keep the peer-list question to 1,000 characters or fewer.");
       } else if (intent.problems.length) {
         result = message("needs_criteria", intent.problems.join(" "));
+      } else if (readPeerListOffset(body.peerListOffset) === null) {
+        result = message("needs_criteria", "That page of the list is not available. Run the list again from its first page.");
       } else {
+        const offset = readPeerListOffset(body.peerListOffset) ?? 0;
         const supplied = body.institutionId;
         const hasSupplied = supplied !== undefined && supplied !== null && supplied !== "";
         const explicitId = typeof supplied === "string" || typeof supplied === "number" ? normalizeCanonicalInstitutionId(supplied) : null;
@@ -172,9 +187,15 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
         const planned = planPeerList(intent, subject, active);
         if (!planned.criteria) return message("needs_criteria", planned.problem ?? "Specify peer criteria.");
         const criteria = planned.criteria;
-        const found = await getPeerListRows(subject.institutionId, criteria, asOf);
+        // A page never runs past the count asked for: "List 60 peers" shows 50, then 10.
+        const pageLimit = criteria.requestedCount === null ? criteria.limit : Math.min(criteria.limit, criteria.requestedCount - offset);
+        if (offset > 0 && (criteria.limit < MAX_PEER_LIST_ROWS || pageLimit < 1))
+          return message("needs_criteria", "That page of the list is not available. Run the list again from its first page.");
+        const found = await getPeerListRows(subject.institutionId, criteria, asOf, undefined, { offset, limit: pageLimit });
+        if (offset > 0 && found.rows.length === 0)
+          return message("needs_criteria", `The list now has ${found.totalMatches} matching institution${found.totalMatches === 1 ? "" : "s"}, so that page is empty. Run the list again from its first page.`);
         const notes = ["Assets are from each institution's latest stored FDIC or NCUA filing, not a live check. Reporting dates may differ.", "Stored financial amounts are in USD thousands and are converted once to dollars here; dollar formatting does not imply more source precision."];
-        if (found.totalMatches > found.rows.length) notes.push(cappedListNote(criteria, found.rows.length, found.totalMatches));
+        if (found.totalMatches > found.rows.length) notes.push(cappedListNote(criteria, found.rows.length, found.totalMatches, offset));
         else if ((criteria.requestedCount ?? 0) > criteria.limit) notes.push(`This view shows at most ${criteria.limit} institutions.`);
         if (criteria.requestedCount !== null && found.totalMatches < criteria.requestedCount) notes.push(found.totalMatches === 0
           ? `No institution meets these criteria. The filters above were not widened to find ${criteria.requestedCount}.`
@@ -183,8 +204,10 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
         if (older) notes.push(`${older} displayed asset filing${older === 1 ? " is" : "s are"} more than ${SOURCE_STALE_AFTER_DAYS} days old. Review the reporting dates before comparing.`);
         result = {
           kind: "peer_list",
-          shortAnswer: `${found.rows.length} of ${found.totalMatches} matching institutions for ${subject.name}.`,
-          peerList: { version: 1, status: "ready", subject, criteria, rows: found.rows, totalMatches: found.totalMatches, queriedAt, notes },
+          shortAnswer: offset > 0
+            ? `Institutions ${offset + 1} to ${offset + found.rows.length} of ${found.totalMatches} matching institutions for ${subject.name}.`
+            : `${found.rows.length} of ${found.totalMatches} matching institutions for ${subject.name}.`,
+          peerList: { version: 1, status: "ready", subject, criteria, rows: found.rows, totalMatches: found.totalMatches, queriedAt, notes, ...(offset > 0 ? { offset } : {}) },
         };
       }
     } catch (error) {
@@ -200,7 +223,7 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
     operation: "ask", title: "Hamilton peer list", status: result.peerList.status === "unavailable" ? "failed" : "completed",
     summary: result.shortAnswer, userId: user.id,
     ...(recordedSubject ? { institutionId: recordedSubject.institutionId } : {}),
-    detail: { response_kind: "peer_list", question, criteria: result.peerList.criteria, returned_count: result.peerList.rows.length, matching_count: result.peerList.totalMatches, provider_called: false },
+    detail: { response_kind: "peer_list", question, criteria: result.peerList.criteria, offset: result.peerList.offset ?? 0, returned_count: result.peerList.rows.length, matching_count: result.peerList.totalMatches, provider_called: false },
   }).catch((error) => console.error("[hamilton-peer-list] activity receipt failed", error));
   return result;
 }
