@@ -42,7 +42,7 @@ describe("validateApiKey on subscriber keys", () => {
     seatStillCovered.mockResolvedValue(true);
     const result = await validateApiKey(request());
     expect(seatStillCovered).toHaveBeenCalledWith(12, 7);
-    expect(result).toMatchObject({ valid: true, organizationId: 9 });
+    expect(result).toMatchObject({ valid: true, organizationId: 9, keyId: 1 });
   });
 
   it("stops a removed seat's key", async () => {
@@ -50,6 +50,7 @@ describe("validateApiKey on subscriber keys", () => {
     seatStillCovered.mockResolvedValue(false);
     const result = await validateApiKey(request());
     expect(result.valid).toBe(false);
+    expect(result.keyId).toBeUndefined();
     expect(result.code).toBe("seat_removed");
     expect(result.error).toMatch(/no longer has a seat/);
   });

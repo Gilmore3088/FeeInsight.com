@@ -236,4 +236,52 @@ describe("AccountView", () => {
     expect(card).toHaveTextContent("not used yet");
     expect(within(card).getByRole("button", { name: "Turn off key" })).toBeInTheDocument();
   });
+
+  it("api: the plan's calls this month show, split by person when more than one has a key", () => {
+    render(
+      <AccountView
+        data={{
+          ...base,
+          plan: proPlan,
+          apiAccess: {
+            kind: "included",
+            key: null,
+            usage: {
+              used: 1234,
+              allowance: 10000,
+              people: [
+                { userId: 7, label: "Dana Lee", calls: 1200 },
+                { userId: 12, label: "sam@bank.example", calls: 1 },
+              ],
+            },
+          },
+        }}
+      />,
+    );
+    const card = section("API and Claude connector");
+    expect(card).toHaveTextContent("Calls used this month: 1,234 of 10,000");
+    expect(card).toHaveTextContent("Dana Lee: 1,200 calls");
+    expect(card).toHaveTextContent("sam@bank.example: 1 call");
+  });
+
+  it("api: one person's use shows the total only, and no usage hides the line", () => {
+    const { unmount } = render(
+      <AccountView
+        data={{
+          ...base,
+          plan: proPlan,
+          apiAccess: {
+            kind: "included",
+            key: null,
+            usage: { used: 0, allowance: 10000, people: [{ userId: 7, label: "Dana Lee", calls: 0 }] },
+          },
+        }}
+      />,
+    );
+    expect(section("API and Claude connector")).toHaveTextContent("Calls used this month: 0 of 10,000");
+    expect(section("API and Claude connector")).not.toHaveTextContent("Dana Lee");
+    unmount();
+    render(<AccountView data={{ ...base, plan: proPlan, apiAccess: { kind: "included", key: null, usage: null } }} />);
+    expect(section("API and Claude connector")).not.toHaveTextContent("Calls used this month");
+  });
 });
