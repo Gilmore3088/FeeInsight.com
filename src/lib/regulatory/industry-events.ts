@@ -1458,9 +1458,14 @@ export const EARLY_WARNING_RELEASES = 6;
 const APPLICATION_WORDS = /\b(merge|merger|mergers|acquire|acquisition|purchase and assumption|branch|branches|charter|conversion|de novo|establish|relocat\w*|close|closing|become a (bank|savings and loan) holding company)\b/i;
 const BANK_WORDS = /\b(bank|bancorp|bancshares|bankshares|banc|savings|trust|financial|holding|n\.a\.|fsb)\b/i;
 
-/** Dated H.2 release folders on the index page ("/releases/h2/20261009/"), newest first. */
+/**
+ * Dated H.2 release folders on the index page, newest first. Links come absolute
+ * ("/releases/h2/20261009/") or relative to the index ("20261009", "20261009/default.htm").
+ */
 export function h2ReleaseDates(html: string): string[] {
-  const dates = [...html.matchAll(/releases\/h2\/(\d{8})\/?/g)].map((m) => m[1]);
+  const absolute = [...html.matchAll(/releases\/h2\/(\d{8})(?!\d)/g)].map((m) => m[1]);
+  const relative = [...html.matchAll(/href\s*=\s*["'](?:\.\/)?(\d{8})(?:\/(?:default\.htm)?)?["'#?]/gi)].map((m) => m[1]);
+  const dates = [...absolute, ...relative];
   return [...new Set(dates)].sort().reverse();
 }
 

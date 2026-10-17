@@ -119,6 +119,7 @@ describe("FHLB advance rate parsing", () => {
 
   it("tells a login page from an image page from an empty one", () => {
     expect(pageVerdict(LOGIN_PAGE, 0)).toBe("member_login");
+    expect(pageVerdict('<p>Please enter your work email address below</p><img src="WithoutRates.png">', 0)).toBe("member_login");
     expect(pageVerdict(IMAGE_PAGE, 0)).toBe("images_only");
     expect(pageVerdict("<html><p>About us</p></html>", 0)).toBe("no_rate_table");
   });

@@ -61,7 +61,7 @@ import { cikBatch, SEC_FILING_BATCHES } from "./sec";
  */
 
 export const INDUSTRY_EVENTS_SOURCE = "industry-events";
-export const INDUSTRY_EVENTS_PARSER_VERSION = 1;
+export const INDUSTRY_EVENTS_PARSER_VERSION = 2;
 export const INDUSTRY_EVENTS_LAWSUIT_FIRST_YEAR = 2010;
 const WRITE_CHUNK = 1_000;
 const SEC_PAUSE_MS = 250;

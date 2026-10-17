@@ -1,4 +1,4 @@
-import { Gunzip } from "fflate";
+import { Gunzip, unzipSync } from "fflate";
 import { checkValues, flaggedOnly } from "./data-checks";
 import { readTableRows } from "./designation-lists";
 import {
@@ -865,8 +865,9 @@ export async function fetchBfsCounty(configuredUrl: string | undefined, options:
 // (5) BLS Local Area Unemployment Statistics by county
 // ---------------------------------------------------------------------------
 
-/** The last 14 months for every county, pipe-delimited. */
-export const LAUS_CURRENT_URL = "https://www.bls.gov/web/metro/laucntycur14.txt";
+/** The last 14 months for every county: BLS now links a zip; the old pipe-delimited text is the fallback. */
+export const LAUS_CURRENT_URL = "https://www.bls.gov/web/metro/laucntycur14.zip";
+export const LAUS_CURRENT_URLS = [LAUS_CURRENT_URL, "https://www.bls.gov/web/metro/laucntycur14.txt"];
 
 /** Annual averages by county (xlsx first, then the text version). */
 export function lausAnnualUrls(year: number): string[] {
@@ -997,8 +998,12 @@ export function parseLausText(body: string, wantPeriod: string | null = null): A
   return lausRows(records, missing, skipped, wantPeriod);
 }
 
-/** The annual xlsx: header labels found at run time (they can span two rows). */
-export function parseLausTable(rows: string[][], year: number): AreaFetch {
+/**
+ * A county workbook: the annual xlsx (pass its year) or the 14-month workbook (pass null; each
+ * row's Period cell, e.g. "Sep-25(p)", names its month). Header labels are found at run time and
+ * can span two rows.
+ */
+export function parseLausTable(rows: string[][], year: number | null): AreaFetch {
   const firstData = rows.findIndex((r) => /^CN\d{6,}/.test((r[0] ?? "").trim()));
   if (firstData < 0) return emptyFetch(null, "BLS annual county table held no CN (county) rows", ["county rows (LAUS code CN...)"]);
   const headerRows = rows.slice(Math.max(0, firstData - 3), firstData);
@@ -1009,7 +1014,7 @@ export function parseLausTable(rows: string[][], year: number): AreaFetch {
     st: find((l) => /state/.test(l) && /fips/.test(l)),
     co: find((l) => /county/.test(l) && /fips/.test(l)),
     name: find((l) => /county name|name/.test(l) && !/fips/.test(l)),
-    year: find((l) => /^year$|\byear\b/.test(l)),
+    year: find((l) => /^year$|\byear\b|\bperiod\b/.test(l)),
     lf: find((l) => /labor force/.test(l)),
     emp: find((l) => /^employed|\bemployed\b/.test(l) && !/unemploy/.test(l)),
     un: find((l) => /unemployed/.test(l) && !/rate/.test(l)),
@@ -1028,12 +1033,16 @@ export function parseLausTable(rows: string[][], year: number): AreaFetch {
       bump(skipped, "bad_fips");
       continue;
     }
-    const filedYear = cols.year >= 0 ? (r[cols.year] ?? "").trim() : String(year);
+    const filed = cols.year >= 0 ? lausPeriod(r[cols.year] ?? "") : null;
+    const period = filed ?? (year === null ? null : { period: String(year), preliminary: false });
+    if (!period) {
+      bump(skipped, "bad_period");
+      continue;
+    }
     records.push({
       fips: `${st.padStart(2, "0")}${co.padStart(3, "0")}`,
       name: cols.name >= 0 ? text(r[cols.name]) : null,
-      period: /^\d{4}$/.test(filedYear) ? filedYear : String(year),
-      preliminary: false,
+      ...period,
       laborForce: r[cols.lf],
       employed: cols.emp >= 0 ? r[cols.emp] : undefined,
       unemployed: cols.un >= 0 ? r[cols.un] : undefined,
@@ -1041,13 +1050,32 @@ export function parseLausTable(rows: string[][], year: number): AreaFetch {
       laus,
     });
   }
-  return lausRows(records, missing, skipped, String(year));
+  return lausRows(records, missing, skipped, year === null ? null : String(year));
 }
 
 export async function fetchLausCurrent(options: RegistryFetchOptions = {}): Promise<AreaFetch> {
-  const found = await fetchFirstAvailable([LAUS_CURRENT_URL], { timeoutMs: 120_000, ...options });
-  if (found.url === null) return emptyFetch(LAUS_CURRENT_URL, `No BLS county file at ${LAUS_CURRENT_URL}`);
-  return { ...parseLausText(decodeText(new Uint8Array(await found.response.arrayBuffer()))), url: found.url };
+  const found = await fetchFirstAvailable(LAUS_CURRENT_URLS, { timeoutMs: 120_000, ...options });
+  if (found.url === null) return emptyFetch(LAUS_CURRENT_URL, `No BLS county file at ${LAUS_CURRENT_URLS.join(" or ")}`);
+  return { ...parseLausCurrentBytes(new Uint8Array(await found.response.arrayBuffer())), url: found.url };
+}
+
+const isZipBytes = (b: Uint8Array) => b[0] === 0x50 && b[1] === 0x4b;
+
+/**
+ * The 14-month file as served: the pipe-delimited text, or a zip holding it as .txt or .xlsx.
+ * A workbook is read by its header labels, with each row's Period cell naming its month.
+ */
+export function parseLausCurrentBytes(bytes: Uint8Array): AreaFetch {
+  if (!isZipBytes(bytes)) return parseLausText(decodeText(bytes));
+  const files = unzipSync(bytes, { filter: (f) => /\.(txt|xlsx)$/i.test(f.name) || f.name === "[Content_Types].xml" });
+  const names = Object.keys(files);
+  const txt = names.find((n) => /\.txt$/i.test(n));
+  if (txt) return parseLausText(decodeText(files[txt]));
+  const xlsx = names.find((n) => /\.xlsx$/i.test(n));
+  if (xlsx) return parseLausTable(readTableRows(files[xlsx]).rows, null);
+  // The download itself is a workbook (an xlsx is a zip with [Content_Types].xml at its root).
+  if (names.includes("[Content_Types].xml")) return parseLausTable(readTableRows(bytes).rows, null);
+  return emptyFetch(null, "BLS 14-month county zip held no .txt or .xlsx file", ["county file in zip"]);
 }
 
 export async function fetchLausAnnual(year: number, options: RegistryFetchOptions = {}): Promise<AreaFetch> {

@@ -1,4 +1,4 @@
-import { gzipSync, strToU8 } from "fflate";
+import { gzipSync, strToU8, zipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -16,6 +16,7 @@ import {
   parseBpsCounty,
   parseIrsSide,
   parseLausTable,
+  parseLausCurrentBytes,
   parseLausText,
   parsePopest,
   popestUrl,
@@ -267,6 +268,29 @@ describe("BLS county labor force", () => {
     expect(find(out.rows, "AL", "laus_labor_force", "2025-09")?.value).toBe(136200);
     expect(find(out.rows, "AL", "laus_unemployment_rate", "2025-09")?.value).toBe(2.7);
     expect(find(out.rows, "US", "laus_unemployed", "2025-09")?.value).toBeNull();
+  });
+
+  it("reads the 14-month file from the zip BLS now links, as text or as a workbook", () => {
+    const fromText = parseLausCurrentBytes(zipSync({ "laucntycur14.txt": strToU8(current) }));
+    expect(find(fromText.rows, "01001", "laus_labor_force", "2025-08")?.value).toBe(26123);
+    expect(parseLausCurrentBytes(strToU8(current)).rows.length).toBe(fromText.rows.length);
+
+    const cell = (v: string, ref: string) => (v === "" ? "" : `<c r="${ref}" t="inlineStr"><is><t>${v}</t></is></c>`);
+    const sheetRows = [
+      ["LAUS Code", "State FIPS Code", "County FIPS Code", "County Name/State Abbreviation", "Period", "", "Labor Force", "Employed", "Unemployed", "Unemployment Rate (%)"],
+      ["CN0100100000000", "01", "001", "Autauga County, AL", "Aug-25", "", "26123", "25456", "667", "2.6"],
+      ["CN0100100000000", "01", "001", "Autauga County, AL", "Sep-25(p)", "", "26200", "25500", "700", "2.7"],
+    ];
+    const sheet = `<worksheet><sheetData>${sheetRows
+      .map((r, i) => `<row r="${i + 1}">${r.map((v, j) => cell(v, `${"ABCDEFGHIJ"[j]}${i + 1}`)).join("")}</row>`)
+      .join("")}</sheetData></worksheet>`;
+    const book = zipSync({ "[Content_Types].xml": strToU8("<Types/>"), "xl/worksheets/sheet1.xml": strToU8(sheet) });
+    for (const bytes of [zipSync({ "laucntycur14.xlsx": book }), book]) {
+      const out = parseLausCurrentBytes(bytes);
+      expect(find(out.rows, "01001", "laus_labor_force", "2025-08")?.value).toBe(26123);
+      expect(find(out.rows, "01001", "laus_unemployment_rate", "2025-09")).toMatchObject({ value: 2.7, note: "preliminary" });
+    }
+    expect(parseLausCurrentBytes(zipSync({ "readme.pdf": strToU8("x") })).emptyReason).toMatch(/no \.txt or \.xlsx/);
   });
 
   it("parses periods", () => {

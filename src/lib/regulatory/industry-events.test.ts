@@ -211,6 +211,8 @@ describe("lawsuits and comments", () => {
 describe("early warning", () => {
   it("lists H.2 releases newest first and keeps application lines under their heading", () => {
     expect(h2ReleaseDates('<a href="/releases/h2/20261002/">x</a><a href="/releases/h2/20261009/">y</a>')).toEqual(["20261009", "20261002"]);
+    expect(h2ReleaseDates('<a href="20261010">Oct 10</a><a href="20261003/default.htm">Oct 3</a><a href="https://www.federalreserve.gov/releases/h2/20200103/default.htm">2020</a>')).toEqual(["20261010", "20261003", "20200103"]);
+    expect(h2ReleaseDates('<a href="/releases/h2/current/">current</a><a href="123456789">x</a>')).toEqual([]);
     const text = "Bank Holding Companies\nAcme Bancorp, Springfield, Illinois -- to acquire Beta Bank, Peoria, Illinois.\nOther business of the board was conducted today in session.";
     const lines = applicationLines(text, "20261009", "2026-10-09", "https://x", "h2");
     expect(lines).toHaveLength(1);
