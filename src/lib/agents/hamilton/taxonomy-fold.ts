@@ -744,7 +744,13 @@ export const HAND_REFILES: readonly HandRefile[] = [
   { feePublishedId: 152977, from: "account_research", amount: 1, to: "document_reproduction", name: "Fax (Domestic & International)",
     why: "#1829, inst 480 (Open Bank), doc 36784: \"Fax (Domestic & International)\" then \"$1\"" },
   { feePublishedId: 152288, from: "account_research", amount: 2, to: "document_reproduction", name: "Faxes (Domestic only)",
-    why: "#1829, inst 1229 (PromiseOne Bank), doc 36945: \"Faxes (Domestic only) | $2.00\"" },
+    why: "#1829, inst 1229 (PromiseOne Bank), doc 36945: \"Faxes (Domestic only) | $2.00\"" },  // #1828 (read-only, Oct 17): a two-column loan fee table read across its columns. The left column's
+  // CUDL late fee is 5% (live in the rate catalog as 83791); the $4.95 is the right column's
+  // Personal Credit Line returned payment. No returned payment fee is live at the bank (152591, the
+  // same $4.95 under "Reconveyance", came down in #1834), so the row is re-filed, not taken down.
+  // Returned loan payments are other lending (Knox v72, #1534).
+  { feePublishedId: 83794, from: "late_payment", amount: 4.95, to: "other_lending_fee", name: "Returned payment",
+    why: "#1828, inst 7859 (Oregon Community FCU), doc 13272: \"Credit Union Direct Lending (CUDL) late payment…… 5% | Returned payment…… | $4.95\" under \"Loan fees | Personal Credit Line fees\"" },
 ];
 
 interface HandRow {
