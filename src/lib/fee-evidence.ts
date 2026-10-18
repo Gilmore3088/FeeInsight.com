@@ -101,7 +101,6 @@ function tidy(line: string): string {
 
 /** Longest gap between the fee's own name and its price for the name to open the line. */
 const NAME_TO_PRICE_CHARS = 80;
-/** Words that make a line's opening another fee's text: a price, or a fee or charge of its own. */
 const ANOTHER_PRICE = /\$\s?\.?\d/;
 const FEE_WORD = /\b(?:fees?|charges?)\b/i;
 /**
@@ -109,25 +108,37 @@ const FEE_WORD = /\b(?:fees?|charges?)\b/i;
  * a price with its lower-case unit ("$100 per levy order", "$35 each"), so a capitalised account
  * name after it ("$100 per order Basic Checking") starts the next clause.
  */
-const CLAUSE_END = /[.;|](?=\s)|\|\s*|\$\s?\d[\d,]*(?:\.\d+)?(?:\s+(?:each|per(?:\s+[a-z]+){1,2}|an?\s+[a-z]+))?/g;
-/**
- * A clause this long before the name that names a fee more than OWN_LABEL_CHARS before it is
- * another fee's description ("Fee applied to process a tax liability"), not this fee's qualifier.
- */
+const CLAUSE_END = /[.;|](?=\s)|\|\s*|\$\s?\d[\d,]*(?:\.\d+)?(?:\s+(?:each|per\s+(?:levy\s+)?[a-z]+|an?\s+[a-z]+))?/g;
+/** A clause that opens with "Fee"/"Charge" and runs this many words is a fee's description. */
 const DESCRIPTION_WORDS = 4;
-const OWN_LABEL_CHARS = 20;
+/** Capitalised words right before the name: its account or direction ("Student Checking"). */
+const CAPITALISED_RUN = /(?:\b[A-Z][\w&'-]*\s+)+$/;
+
+/**
+ * The clause just before a cut is another fee's when it prints a price beside a fee word or a
+ * table bar ("Levy Processing Fee $100 per levy order", "Stop Payment | $30"); a minimum deposit
+ * or "no overdraft fees" is the account's own text and keeps the line whole.
+ */
+function anotherFeesClause(dropped: string): boolean {
+  const clause = dropped.replace(/[\s.;|]+$/, "").split(/[.;](?=\s)/).pop() ?? "";
+  return ANOTHER_PRICE.test(clause) && (FEE_WORD.test(clause) || clause.includes("|"));
+}
 
 /**
  * A line that opens with another fee's words starts at this fee's own clause (#1902): a schedule
  * stored as one paragraph gave 1st Source Bank's dormant fee the line "Fee applied to process a
  * tax liability Dormant Account Fee $5 per month", the levy fee's description first. It reads
- * "… Dormant Account Fee $5 per month". The cut lands after the last clause end before the name,
- * so the words that say which account or direction the fee is ("… Basic Checking Monthly Service
- * Fee $10", "… Outgoing domestic Wire Transfer Fee $25") stay; it lands at the name itself only when
- * that clause is another fee's description. Nothing is cut unless the dropped words hold a price or
- * a fee word, the fee's own name prints the price within NAME_TO_PRICE_CHARS, and neither the
- * dropped words print this price nor a price sits right before the name (catalog 30013's "$2.00
- * paper statement charge, $5.00 early withdraw penalty", where a reader must see both).
+ * "… Dormant Account Fee $5 per month".
+ *
+ * Two cuts, both only when the fee's own name prints its price within NAME_TO_PRICE_CHARS and the
+ * dropped words neither print this price nor end on a price right before the name (catalog
+ * 30013's "$2.00 paper statement charge, $5.00 early withdraw penalty", where a reader must see
+ * both):
+ * - after the last clause end before the name, when the clause before it is another fee's
+ *   (`anotherFeesClause`), so the fee's own account or direction stays ("… Basic Checking Monthly
+ *   Service Fee $10");
+ * - inside a clause that opens with "Fee" or "Charge" and runs past DESCRIPTION_WORDS words (another
+ *   fee's description), at the capitalised words right before the name, else at the name.
  */
 export function fromOwnName(line: string, feeName: string | null, amount: number): string {
   const name = (feeName ?? "").replace(/\s+/g, " ").trim();
@@ -138,14 +149,18 @@ export function fromOwnName(line: string, feeName: string | null, amount: number
   const opening = line.slice(0, at);
   if (!printsAmount(line.slice(at + name.length, at + name.length + NAME_TO_PRICE_CHARS), amount)) return line;
   if (printsAmount(opening, amount) || /\$\s?\d[\d,]*(?:\.\d+)?\s*$/.test(opening)) return line;
+  let end = 0;
+  for (const match of opening.matchAll(CLAUSE_END)) end = (match.index ?? 0) + match[0].length;
+  const clause = opening.slice(end);
+  const words = clause.trim().split(/\s+/).filter(Boolean);
   let cut = 0;
-  for (const end of opening.matchAll(CLAUSE_END)) cut = (end.index ?? 0) + end[0].length;
-  const clause = opening.slice(cut);
-  const words = clause.trim().split(/\s+/).filter(Boolean).length;
-  if (words > DESCRIPTION_WORDS && FEE_WORD.test(clause.slice(0, Math.max(0, clause.length - OWN_LABEL_CHARS)))) cut = at;
-  const dropped = opening.slice(0, cut);
-  if (cut === 0 || (!ANOTHER_PRICE.test(dropped) && !FEE_WORD.test(dropped))) return line;
-  return `… ${line.slice(cut).trimStart()}`;
+  if (words.length > DESCRIPTION_WORDS && /^(?:fees?|charges?)$/i.test(words[0])) {
+    cut = at - (CAPITALISED_RUN.exec(clause)?.[0].length ?? 0);
+  } else if (end > 0 && anotherFeesClause(opening.slice(0, end))) {
+    cut = end;
+  }
+  if (cut <= 0) return line;
+  return `… ${line.slice(cut).replace(/^[\s.;,|]+/, "")}`;
 }
 
 /** A long line cut to the part around its price, so the reader sees the price and what precedes it. */

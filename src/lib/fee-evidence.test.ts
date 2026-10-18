@@ -524,9 +524,31 @@ describe("a line opening with another fee's words (#1902)", () => {
   it("keeps the account or direction that opens the fee's own clause (#1902 review)", () => {
     expect(fromOwnName("Overdraft Fee $35 per item. Basic Checking Monthly Service Fee $10 per month", "Monthly Service Fee", 10)).toBe("… Basic Checking Monthly Service Fee $10 per month");
     expect(fromOwnName("Levy Fee $100 per order Basic Checking Monthly Service Fee $10 per month", "Monthly Service Fee", 10)).toBe("… Basic Checking Monthly Service Fee $10 per month");
-    expect(fromOwnName("Incoming domestic wire, no charge. Outgoing domestic Wire Transfer Fee $25", "Wire Transfer Fee", 25)).toBe("… Outgoing domestic Wire Transfer Fee $25");
+    expect(fromOwnName("Outgoing international wire fee $45. Outgoing domestic Wire Transfer Fee $25", "Wire Transfer Fee", 25)).toBe("… Outgoing domestic Wire Transfer Fee $25");
     expect(fromOwnName("Levy fee $100. Dormant Account Fee $5 per month", "Account Fee", 5)).toBe("… Dormant Account Fee $5 per month");
     expect(fromOwnName("Stop Payment | $30 | Dormant Account Fee | $5 per month", "Dormant Account Fee", 5)).toBe("… Dormant Account Fee | $5 per month");
+  });
+
+  it("keeps a line whose earlier sentences are the account's own, not another fee (#1902 re-review)", () => {
+    for (const line of [
+      "Basic Checking. Minimum opening deposit $25. Monthly Service Fee $10 per month",
+      "Basic Checking; no overdraft fees. Monthly Service Fee $10",
+      "Incoming domestic wire, no charge. Outgoing domestic Wire Transfer Fee $25",
+      "Service charges for Premier Checking accounts Monthly Service Fee $15",
+      "Wire fees for business accounts include Outgoing domestic Wire Transfer Fee $25",
+    ]) {
+      const name = line.includes("Wire") ? "Wire Transfer Fee" : "Monthly Service Fee";
+      const amount = Number(/\$(\d+)(?!.*\$\d)/.exec(line)?.[1]);
+      expect(fromOwnName(line, name, amount)).toBe(line);
+    }
+  });
+
+  it("keeps the account named at the end of another fee's description", () => {
+    expect(fromOwnName("Fees vary by account and are listed here Student Checking Monthly Maintenance Fee $12", "Monthly Maintenance Fee", 12)).toBe("… Student Checking Monthly Maintenance Fee $12");
+  });
+
+  it("drops a stop left after another fee's price", () => {
+    expect(fromOwnName("Levy fee $100.Dormant Account Fee $5", "Dormant Account Fee", 5)).toBe("… Dormant Account Fee $5");
   });
 
   it("cuts a packed row at the stop after another fee's price", () => {
