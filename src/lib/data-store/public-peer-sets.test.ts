@@ -26,12 +26,13 @@ describe("public peer sets", () => {
     vi.mocked((sql as unknown as { unsafe: ReturnType<typeof vi.fn> }).unsafe).mockResolvedValue([{ id: 4 }]);
     vi.mocked(getHomeMarket).mockResolvedValue(null);
     const choices = await getInstitutionPeerChoices(323);
+    // Closest in assets is listed first, so it is the default set.
     expect(choices.map((c) => [c.key, c.label])).toEqual([
+      ["nearest", "The 25 banks closest in assets"],
       ["state", "Banks in Florida"],
       ["district", "Banks in the Atlanta Fed district"],
       ["size", "Banks with $1B to $10B in assets"],
       ["regulator", "Banks regulated by the Federal Reserve"],
-      ["nearest", "The 25 banks closest in assets"],
     ]);
   });
 

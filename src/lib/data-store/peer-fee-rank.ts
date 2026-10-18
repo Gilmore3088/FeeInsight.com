@@ -248,8 +248,11 @@ export function isComparable(comparison: PeerSetComparison): boolean {
 }
 
 export interface InstitutionPeerSets {
-  options: { key: string; label: string }[];
+  /** `count`: how many institutions a chosen set names (nearest, metro, regulator); absent for a filter. */
+  options: { key: string; label: string; count?: number }[];
   selected: PeerSetComparison;
+  /** The selected set as the fee index reads it, for the explorer's read. */
+  selectedFilters: PeerFilterSet;
 }
 
 /**
@@ -268,9 +271,16 @@ export function pickPeerSet(
   const ruleKey = peerFiltersForRule(rule) ? (rule?.peerScope === "district" ? "district" : "state") : null;
   const comparable = choices
     .filter((choice) => choice.key !== ruleKey)
-    .map((choice) => comparePeerSet(institutionId, choice, all))
-    .filter(isComparable);
+    .map((choice) => ({ choice, comparison: comparePeerSet(institutionId, choice, all) }))
+    .filter(({ comparison }) => isComparable(comparison));
   if (comparable.length === 0) return null;
-  const selected = comparable.find((c) => c.key === requested) ?? comparable[0];
-  return { options: comparable.map(({ key, label }) => ({ key, label })), selected };
+  const picked = comparable.find(({ comparison }) => comparison.key === requested) ?? comparable[0];
+  return {
+    options: comparable.map(({ choice, comparison: { key, label } }) => {
+      const ids = choice.filters?.institutionIds;
+      return ids ? { key, label, count: ids.length } : { key, label };
+    }),
+    selected: picked.comparison,
+    selectedFilters: picked.choice.filters as PeerFilterSet,
+  };
 }

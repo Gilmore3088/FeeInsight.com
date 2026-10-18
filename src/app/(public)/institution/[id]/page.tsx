@@ -30,8 +30,8 @@ import { getDisplayName } from "@/lib/fee-taxonomy";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { HEADLINE_FEE_KEYS } from "@/lib/data-store/market-readiness";
 import { FeeAlertControl } from "./fee-alert-control";
-import { PeerRankTeaser } from "./peer-rank-teaser";
-import { getComparableMarketIndexCached, getInstitutionPeerSetsCached } from "@/lib/data-store/public-cached-reads";
+import { PeerExplorerSection } from "./peer-explorer-section";
+import { getComparableMarketIndexCached, getInstitutionPeerSetsCached, getPeerExplorerSetCached } from "@/lib/data-store/public-cached-reads";
 import { PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import { buildPublicInstitutionProfileLinks } from "@/lib/institution-profile-links";
@@ -95,7 +95,7 @@ interface PageProps {
    * `peers`: the peer set the "Against peers" section compares with (state, district, size,
    * regulator, metro, nearest) beyond the report rule's group; absent, the first that clears the floor.
    */
-  searchParams?: Promise<{ fee?: string; peers?: string }>;
+  searchParams?: Promise<{ fee?: string; peers?: string; peer?: string; pfee?: string; pview?: string }>;
 }
 
 const TAXONOMY = new Set(Object.values(FEE_FAMILIES).flat());
@@ -193,10 +193,24 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
     getCurrentUser().catch(() => null),
     getInstitutionPeerSetsCached(instId, requestedPeers).catch(fallbackTo("peer sets", null)),
   ]);
+  const explorerInitial = {
+    peer: typeof query.peer === "string" ? query.peer : null,
+    fee: typeof query.pfee === "string" ? query.pfee : null,
+    view: typeof query.pview === "string" ? query.pview : null,
+  };
+  // A new set keeps the chosen fee and view; the selected peer may not be in it, so it resets.
   const peerSetHref = (key: string) => {
-    const params = new URLSearchParams({ ...(focusFeeCategory ? { fee: focusFeeCategory } : {}), peers: key });
+    const params = new URLSearchParams({
+      ...(focusFeeCategory ? { fee: focusFeeCategory } : {}),
+      peers: key,
+      ...(explorerInitial.fee ? { pfee: explorerInitial.fee } : {}),
+      ...(explorerInitial.view ? { pview: explorerInitial.view } : {}),
+    });
     return `/institution/${instId}?${params.toString()}#peers`;
   };
+  const peerExplorerSet = peerSets
+    ? await getPeerExplorerSetCached(instId, peerSets.selectedFilters).catch(fallbackTo("peer explorer", null))
+    : null;
 
   const alertSubscription = user
     ? await getAlertSubscriptionForInstitution(user.id, instId).catch(fallbackTo("alert subscription", null))
@@ -498,8 +512,10 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
             </section>
           )}
 
-          {/* Overdraft and maintenance against a peer group the visitor picks. */}
-          {!sparse && peerSets && <PeerRankTeaser sets={peerSets} hrefFor={peerSetHref} hamiltonHref={links.analyzeHref} isPro={isPro} />}
+          {/* One peer set the visitor picks, drawn three ways around one shared selection. */}
+          {!sparse && peerSets && peerExplorerSet && (
+            <PeerExplorerSection sets={peerSets} set={peerExplorerSet} hrefFor={peerSetHref} initial={explorerInitial} isPro={isPro} />
+          )}
 
           {/* The fee position beside its call-report context: the band a visitor sees right after the comparison. */}
           {showHamiltonBand && (

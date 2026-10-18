@@ -36,6 +36,7 @@ import {
   type InstitutionPeerSets,
 } from "./peer-fee-rank";
 import { getInstitutionPeerChoices, getStatePeerSetIndexes } from "./public-peer-sets";
+import { getPeerExplorerSet } from "./peer-explorer";
 import { getMarketBranchFootprint } from "./branches";
 import { getNationalRateStats } from "./rate-fees";
 import { getCountyFeeMap } from "./state-visuals";
@@ -185,7 +186,8 @@ export async function getInstitutionPeerRankCached(institutionId: number): Promi
   return peerRankFromGroupValues(institutionId, rule, filters, values);
 }
 /** The institution page's peer-set choices, resolved once per institution between publishes. */
-const getInstitutionPeerChoicesCached = cachedPublicRead("institution-peer-sets-v1", getInstitutionPeerChoices);
+// v2: closest in assets is listed first, so it is the default set.
+const getInstitutionPeerChoicesCached = cachedPublicRead("institution-peer-sets-v2", getInstitutionPeerChoices);
 /**
  * The peer sets an institution page offers and the one it shows (pickPeerSet): the choices
  * resolve per institution, the values filter the shared national list in code.
@@ -198,6 +200,12 @@ export async function getInstitutionPeerSetsCached(institutionId: number, reques
   ]);
   return pickPeerSet(institutionId, reportRuleCheckFromRows(institutionId, rows), choices, all, requested);
 }
+/**
+ * One peer set for the institution page's explorer: its institutions with names, assets,
+ * headquarters and five fees. One entry per institution and set; the set's filters are part of
+ * the key, so a set that resolves to new members is read again.
+ */
+export const getPeerExplorerSetCached = cachedPublicRead("peer-explorer-set-v1", getPeerExplorerSet);
 /** The state page's peer sets (size, regulator, credit union charter) with their fee medians. */
 export const getStatePeerSetIndexesCached = cachedPublicRead("state-peer-sets-v1", getStatePeerSetIndexes);
 export const getMarketBranchFootprintCached = cachedPublicRead("market-branch-footprint", getMarketBranchFootprint);

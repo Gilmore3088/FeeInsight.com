@@ -161,4 +161,16 @@ describe("peer sets on the institution page", () => {
     expect(pickPeerSet(1, null, choices, all, "metro")!.selected.lines[1].peers).toBe(1);
     expect(pickPeerSet(1, null, choices, all, "state")!.selected.lines[1].peers).toBe(5);
   });
+
+  it("counts a chosen set's institutions and hands the explorer the selected set's filters", () => {
+    const nearest = { key: "nearest", label: "The 25 banks closest in assets", filters: { institutionIds: [101, 102, 103, 104, 105, 106, 107, 108, 200, 201, 202, 203, 204] } };
+    const picked = pickPeerSet(1, null, [nearest, state], all, null)!;
+    expect(picked.options).toEqual([
+      { key: "nearest", label: "The 25 banks closest in assets", count: 13 },
+      { key: "state", label: state.label },
+    ]);
+    expect(picked.selected.key).toBe("nearest");
+    expect(picked.selectedFilters).toEqual(nearest.filters);
+    expect(pickPeerSet(1, null, [nearest, state], all, "state")!.selectedFilters).toEqual(state.filters);
+  });
 });

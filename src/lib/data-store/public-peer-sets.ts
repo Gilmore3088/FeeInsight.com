@@ -19,8 +19,11 @@ import {
 /** How many institutions closest in assets make the "nearest" set. */
 export const NEAREST_PEER_COUNT = 25;
 
-/** The institution page's choices, in the order the picker lists them (?peers=...). */
-export const INSTITUTION_PEER_SET_KEYS = ["state", "district", "size", "regulator", "metro", "nearest"] as const;
+/**
+ * The institution page's choices, in the order the picker lists them (?peers=...). The first one
+ * that clears the median floor is the default: closest in assets, then the home metro.
+ */
+export const INSTITUTION_PEER_SET_KEYS = ["nearest", "metro", "state", "district", "size", "regulator"] as const;
 export type InstitutionPeerSetKey = (typeof INSTITUTION_PEER_SET_KEYS)[number];
 
 /** Every choice keeps the institution's own charter, so banks meet banks and credit unions credit unions. */
