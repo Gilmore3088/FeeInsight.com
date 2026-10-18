@@ -89,7 +89,7 @@ describe("StorylineView dataset note (#1924 step 3)", () => {
   });
 
   it("shows where the figures came from under them, from the stamps it is given", () => {
-    const html = renderToStaticMarkup(<StorylineView story={sampleStoryline()} stamps={[{ label: "Peers", stamp }]} />);
+    const html = renderToStaticMarkup(<StorylineView story={sampleStoryline()} stamps={[{ label: "your peer group", stamp }]} />);
     expect(html).toContain("Published fee schedules, read live 18 Oct 2026 14:10 UTC. Institutions sharing one fee schedule count once.");
     expect(html).toContain("How these figures were built");
     expect(html).toContain("Institutions in Texas");

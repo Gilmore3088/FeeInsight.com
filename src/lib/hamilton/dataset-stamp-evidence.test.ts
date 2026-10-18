@@ -26,9 +26,9 @@ const read: DatasetStampInput = {
   counting: "counted_once",
   filters: [SOURCED, LEFT_OUT],
 };
-const peerStamp = makeStamp({ ...read, filters: [SOURCED, { key: "state:TN", label: "Institutions in Tennessee" }, { key: "charter:credit_union", label: "Credit unions only" }, LEFT_OUT] });
+const peerStamp = makeStamp({ ...read, filters: [SOURCED, { key: "peers:state:TN", label: "Institutions in Tennessee" }, { key: "peers:charter:credit_union", label: "Credit unions only" }, LEFT_OUT] });
 const nationalStamp = makeStamp(read);
-const stateStamp = makeStamp({ ...read, filters: [SOURCED, { key: "state:TN", label: "Institutions in Tennessee" }, LEFT_OUT] });
+const stateStamp = makeStamp({ ...read, filters: [SOURCED, { key: "peers:state:TN", label: "Institutions in Tennessee" }, LEFT_OUT] });
 
 function stampedResearch() {
   return overdraftResearch({ peerStamp, layerStamps: { national: nationalStamp, state: stateStamp } });
@@ -38,7 +38,7 @@ describe("Ask answer stamps (#1924 step 3)", () => {
   it("puts the stamp of each read behind the answer's figures in its provenance: peers, then each layer", () => {
     const answer = buildFeeAnswer(stampedResearch());
     expect(answer.provenance.stamps).toEqual([
-      { label: "Peers", stamp: peerStamp },
+      { label: "your peer group", stamp: peerStamp },
       { label: "National", stamp: nationalStamp },
       { label: "Tennessee", stamp: stateStamp },
     ]);
@@ -52,7 +52,7 @@ describe("Ask answer stamps (#1924 step 3)", () => {
       layerStamps: { national: nationalStamp, state: stateStamp },
       layers: overdraftResearch().layers.map((l) => (l.scope === "state" ? { ...l, median: null } : l)),
     });
-    expect(answerStamps(research)).toEqual([{ label: "Peers", stamp: nationalStamp }]);
+    expect(answerStamps(research)).toEqual([{ label: "your peer group", stamp: nationalStamp }]);
   });
 
   it("shows no stamp for figures from a read that has none, and never makes one up", () => {
@@ -61,8 +61,8 @@ describe("Ask answer stamps (#1924 step 3)", () => {
     expect(answerStamps(overdraftResearch({ band: null, peerStamp }))).toEqual([]);
   });
 
-  it("keeps only the national stamp on a segment-led answer, since a segment read has none", () => {
-    expect(answerStamps(stampedResearch(), true)).toEqual([{ label: "National", stamp: nationalStamp }]);
+  it("gives a segment-led answer no stamp, since its lead figures come from a read with none", () => {
+    expect(answerStamps(stampedResearch(), true)).toEqual([]);
   });
 
   it("reaches the Ask bar's response: the answer it returns carries the stamps", () => {
@@ -99,15 +99,16 @@ describe("saved evidence keeps the stamp from save time (#1924 step 3)", () => {
     expect(words?.filters).toEqual([SOURCED.label, "Institutions in Tennessee", "Credit unions only", LEFT_OUT.label]);
     expect(words?.details).toContain(`Data reference (for support): ${peerStamp.id}`);
     expect(words?.differences?.heading).toBe("Why these figures can differ");
-    expect(words?.differences?.lines).toContain("Only Peers: Credit unions only");
+    expect(words?.differences?.lines).toContain("Applies only to your peer group: Credit unions only");
   });
 
   it("carries the stamps into a board brief, and prints their words among its sources", () => {
     const brief = boardBriefFromAnalysis(reopened, "analysis-1", { title: "", teamNote: "", includeEvidence: true });
     expect(readStampedFigures(brief.datasetStamps)).toEqual(answer.provenance.stamps);
-    const line = brief.sources?.find((s) => s.label.startsWith("Published fee schedules, read live"));
-    expect(line?.label).toBe("Published fee schedules, read live 18 Oct 2026 14:10 UTC. Institutions sharing one fee schedule count once.");
-    expect(line?.detail).toContain("What is counted: Only fees traced to a stored copy of the institution's own fee schedule; Institutions in Tennessee; Credit unions only");
+    const line = brief.sources?.find((s) => s.label === "Bank Fee Index figures in this brief");
+    expect(line?.detail).toContain("Published fee schedules, read live 18 Oct 2026 14:10 UTC. Institutions sharing one fee schedule count once.");
+    expect(line?.detail).toMatch(/Who is counted: Institutions in Tennessee, Credit unions only, The institution being compared left out, under the index's standard rules/);
+    expect(line?.detail).not.toContain("Only fees traced to a stored copy");
     expect(line?.detail).toContain(`Data reference (for support): ${peerStamp.id}, ${nationalStamp.id}, ${stateStamp.id}.`);
     expect(line?.detail).not.toMatch(/—/);
     // Editing the brief keeps the stamps it was made with.
@@ -131,7 +132,7 @@ describe("older saved records without a stamp (#1924 step 3)", () => {
   });
 
   it("drops a damaged stamp rather than repairing it", () => {
-    const damaged = { ...old, datasetStamps: [{ label: "Peers", stamp: { ...peerStamp, readAt: "not a time" } }, { label: 7, stamp: peerStamp }] } as unknown as AnalyzeResponse;
+    const damaged = { ...old, datasetStamps: [{ label: "your peer group", stamp: { ...peerStamp, readAt: "not a time" } }, { label: 7, stamp: peerStamp }] } as unknown as AnalyzeResponse;
     expect(readStampedFigures(damaged.datasetStamps)).toEqual([]);
     expect(savedEvidenceAppendix(damaged).dataset).toBeNull();
   });

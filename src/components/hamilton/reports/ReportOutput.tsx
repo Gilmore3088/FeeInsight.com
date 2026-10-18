@@ -81,7 +81,8 @@ export function ReportOutput({
           </p>
         )}
         {/* Where the report's medians came from, as saved with it (#1924); nothing on older reports. */}
-        <DatasetNote className="mt-3" figures={readStampedFigures(report.datasetStamps)} />
+        {/* A board brief prints the stamp in its sources instead, the copy a committee sees. */}
+        {!report.boardBrief ? <DatasetNote className="mt-3" figures={readStampedFigures(report.datasetStamps)} /> : null}
       </header>
 
       <div className="max-w-3xl">

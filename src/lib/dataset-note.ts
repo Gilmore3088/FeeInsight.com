@@ -60,12 +60,12 @@ function detailLines(stamp: DatasetStamp): string[] {
 
 /**
  * stampDifferences in the figures' own names: a filter only one figure has reads
- * "Only Texas: Institutions in Texas" rather than "added" or "removed".
+ * "Applies only to Texas: Institutions in Texas" rather than "added" or "removed".
  */
 function differenceLines(a: StampedFigure, b: StampedFigure): string[] {
   return stampDifferences(a.stamp, b.stamp).map((line) => {
-    if (line.startsWith("Filter added: ")) return `Only ${b.label}: ${line.slice("Filter added: ".length)}`;
-    if (line.startsWith("Filter removed: ")) return `Only ${a.label}: ${line.slice("Filter removed: ".length)}`;
+    if (line.startsWith("Filter added: ")) return `Applies only to ${b.label}: ${line.slice("Filter added: ".length)}`;
+    if (line.startsWith("Filter removed: ")) return `Applies only to ${a.label}: ${line.slice("Filter removed: ".length)}`;
     return line;
   });
 }

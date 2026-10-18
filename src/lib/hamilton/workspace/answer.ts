@@ -363,16 +363,18 @@ function evidenceLevel(research: FeeResearch): EvidenceLevel {
 
 /**
  * The dataset stamps behind the medians, percentiles and counts an answer quotes (#1924): the
- * peer band, then each market layer with a median, each stamp once. A segment-led answer quotes
- * the segment and the national median only, and a segment read has no stamp, so only the national
- * layer's stamp stays. A figure from a read with no stamp (local market, segment, rates) adds none.
+ * peer band, then each market layer with a median, each stamp once. A segment-led answer leads
+ * with the segment, whose read has no stamp yet, so it gets none: the national stamp alone would
+ * read as the source of the segment's figures. A figure from a read with no stamp (local market,
+ * segment, rates) adds none.
  */
 export function answerStamps(research: Pick<FeeResearch, "band" | "layers" | "layerStamps" | "peerStamp">, segmentLed = false): StampedFigure[] {
+  if (segmentLed) return [];
   const layerStamps = research.layerStamps ?? {};
   return uniqueStampedFigures([
-    !segmentLed && research.band && research.peerStamp ? { label: "Peers", stamp: research.peerStamp } : null,
+    research.band && research.peerStamp ? { label: "your peer group", stamp: research.peerStamp } : null,
     ...research.layers
-      .filter((layer) => layer.median !== null && (!segmentLed || layer.scope === "national"))
+      .filter((layer) => layer.median !== null)
       .map((layer) => {
         const stamp = layerStamps[layer.scope];
         return stamp ? { label: layer.label, stamp } : null;

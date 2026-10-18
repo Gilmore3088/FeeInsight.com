@@ -183,13 +183,24 @@ export function boardBriefFromAnalysis(analysis: AnalyzeResponse & { factEvidenc
  * The saved answer's dataset stamps as one source line (#1924): the note's line, then the filters
  * that set who is counted and the reference support can trace. Null without stamps.
  */
+/** Stamp filters that set a figure's group (peers, segment, the bank left out); the rest are the index's standard rules. */
+const GROUP_FILTER = /^(peers|segment|exclude):/;
+
+/**
+ * The stamp as one sources entry, the copy a committee reads: the summary, the filters that set
+ * the group (the standard rules every figure shares are named, not listed), how figures differ,
+ * and the reference ids.
+ */
 export function savedDatasetSource(figures: readonly StampedFigure[]): { label: string; detail: string; url: null } | null {
   const words = datasetNoteWords(figures);
   if (!words) return null;
-  const counted = words.filters.length ? `What is counted: ${words.filters.join("; ")}.` : null;
-  const differ = words.differences ? `${words.differences.heading}: ${words.differences.lines.join("; ")}.` : null;
+  const group = figures[0].stamp.filters.filter((f) => GROUP_FILTER.test(f.key)).map((f) => f.label);
+  const counted = group.length
+    ? `Who is counted: ${group.join(", ")}, under the index's standard rules (open the saved answer for the full list).`
+    : "Who is counted: the index's standard rules (open the saved answer for the full list).";
+  const differ = words.differences ? `${words.differences.heading}: ${words.differences.lines.join(". ")}.` : null;
   const reference = `Data reference (for support): ${[...new Set(figures.map((f) => f.stamp.id))].join(", ")}.`;
-  return { label: words.summary, detail: [counted, differ, reference].filter(Boolean).join(" "), url: null };
+  return { label: "Bank Fee Index figures in this brief", detail: [words.summary, counted, differ, reference].filter(Boolean).join(" "), url: null };
 }
 
 /** Editing preserves the frozen report exhibits, source references and original identity. */

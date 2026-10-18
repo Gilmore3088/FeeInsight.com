@@ -63,9 +63,9 @@ describe("dataset note words (#1924 step 2)", () => {
     const state = makeStamp({ ...live, filters: [...POPULATION, { key: "peers:state:TX", label: "Institutions in Texas" }] });
     const national = makeStamp(live);
     const words = datasetNoteWords([{ label: "Texas", stamp: state }, { label: "the U.S. reference", stamp: national }]);
-    expect(words?.differences).toEqual({ heading: "How Texas and the U.S. reference differ", lines: ["Only Texas: Institutions in Texas"] });
+    expect(words?.differences).toEqual({ heading: "How Texas and the U.S. reference differ", lines: ["Applies only to Texas: Institutions in Texas"] });
     const other = datasetNoteWords([{ label: "the U.S. reference", stamp: national }, { label: "Texas", stamp: state }]);
-    expect(other?.differences?.lines).toEqual(["Only Texas: Institutions in Texas"]);
+    expect(other?.differences?.lines).toEqual(["Applies only to Texas: Institutions in Texas"]);
   });
 
   it("names each reason once when three or more figures differ from the first", () => {
@@ -77,7 +77,7 @@ describe("dataset note words (#1924 step 2)", () => {
       { label: "Banks, $1B to $10B in assets", stamp: makeStamp({ ...live, filters: [...POPULATION, { key: "peers:charter:bank", label: "Banks only" }] }) },
     ]);
     expect(words?.differences?.heading).toBe("Why these figures can differ");
-    expect(words?.differences?.lines.filter((l) => l === "Only Texas: Institutions in Texas")).toHaveLength(1);
+    expect(words?.differences?.lines.filter((l) => l === "Applies only to Texas: Institutions in Texas")).toHaveLength(1);
     expect(new Set(words?.differences?.lines).size).toBe(words?.differences?.lines.length);
   });
 
