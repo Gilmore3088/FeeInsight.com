@@ -464,6 +464,37 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
             )}
           </div>
         )}
+
+        {/* The free answer, then the question only Hamilton answers (James, Oct 18: "Want to know how your institution compares?"). */}
+        {!subscriber && usStats.median_amount != null && (
+          <aside aria-labelledby="compare-heading" className="mt-8 grid gap-5 rounded-2xl border border-ink bg-surface-0 p-5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)] sm:p-6">
+            <dl className="grid grid-cols-2 gap-4 sm:border-r sm:border-border sm:pr-6">
+              <div className="col-span-2">
+                <dt className="sr-only">Fee</dt>
+                <dd className="text-[15px] font-semibold text-ink">{feeLabel}</dd>
+              </div>
+              <div>
+                <dt className="text-[12px] text-ink-muted">U.S. median</dt>
+                <dd className="font-mono text-[24px] font-semibold tabular-nums text-ink">{money(usStats.median_amount)}</dd>
+              </div>
+              <div>
+                <dt className="text-[12px] text-ink-muted">Publishing institutions</dt>
+                <dd className="font-mono text-[24px] font-semibold tabular-nums text-ink">{usStats.institution_count.toLocaleString()}</dd>
+              </div>
+            </dl>
+            <div>
+              <h3 id="compare-heading" className="text-[18px] font-semibold text-ink">
+                Want to know how your institution compares?
+              </h3>
+              <p className="mt-1 text-[14px] text-ink-soft">
+                Build a competitive peer group, set this fee against financial performance, and get a source-backed analysis in Hamilton.
+              </p>
+              <Link href={PRO_PLANS_NAV.href} className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-full bg-ink px-5 text-[14px] font-semibold text-on-ink">
+                Explore Hamilton <ArrowRight aria-hidden="true" className="h-4 w-4" />
+              </Link>
+            </div>
+          </aside>
+        )}
       </section>
 
       {/* 3. Every state on one map, for the same fee and charter */}
@@ -567,8 +598,9 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
             <h2 id="hamilton-heading" className="text-[24px] font-semibold tracking-[-0.02em] sm:text-[32px]">
               Hamilton turns the Index into your pricing review
             </h2>
-            <ul className="mt-4 grid gap-3 text-[15px] text-on-ink/85 sm:grid-cols-3">
+            <ul className="mt-4 grid gap-3 text-[15px] text-on-ink/85 sm:grid-cols-2">
               <li>Your institution against peer sets you build.</li>
+              <li>Your fees set against your financial performance and local market.</li>
               <li>A flag when a competitor&apos;s fee changes, once its schedule is re-read.</li>
               <li>Committee briefs and spreadsheets with every source attached.</li>
             </ul>
