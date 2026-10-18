@@ -82,6 +82,6 @@ describe("overview and financial performance", () => {
     );
     expect(screen.getByText(/13 banks with \$1B to \$10B in assets filing for Q2 2026; 12 reported a share above 0%/)).toBeTruthy();
     expect(screen.getAllByRole("option").map((o) => o.textContent)).toContain("Revenue (net interest + noninterest income)");
-    expect(within(screen.getByRole("list", { name: "Cohort members" })).getAllByRole("button")).toHaveLength(12);
+    expect(within(screen.getByRole("list", { name: "Cohort members" })).getAllByRole("button")).toHaveLength(12); // 12 peers, under the preview cap of 15
   });
 });

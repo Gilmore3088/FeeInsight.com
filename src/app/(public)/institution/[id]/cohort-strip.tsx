@@ -29,6 +29,8 @@ export interface CohortStripProps {
   yearToDate: boolean;
 }
 
+/** Rows the member list shows before "Show all"; a search always lists every match. */
+const LIST_PREVIEW = 15;
 const H = 132;
 const PAD = { left: 12, right: 12 };
 const BOX_Y = 18;
@@ -112,6 +114,7 @@ export function CohortStrip(props: CohortStripProps) {
   const [hover, setHover] = useState<CohortPoint | null>(null);
   const [picked, setPicked] = useState<CohortPoint | null>(null);
   const [query, setQuery] = useState("");
+  const [showAll, setShowAll] = useState(false);
 
   const sorted = peers.map((p) => p.sharePct);
   const p98 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.98))] ?? 0;
@@ -245,7 +248,7 @@ export function CohortStrip(props: CohortStripProps) {
         />
         <ul className="mt-2 max-h-72 overflow-y-auto rounded-lg border border-border bg-surface-0" aria-label="Cohort members">
           {filtered.length === 0 && <li className="px-3 py-3 text-[13px] text-ink-muted">No match.</li>}
-          {filtered.map((p) => (
+          {(query.trim() || showAll ? filtered : filtered.slice(0, LIST_PREVIEW)).map((p) => (
             <li key={p.id} className="border-t border-border first:border-t-0">
               <button
                 type="button"
@@ -263,6 +266,15 @@ export function CohortStrip(props: CohortStripProps) {
             </li>
           ))}
         </ul>
+        {!query.trim() && !showAll && filtered.length > LIST_PREVIEW && (
+          <button
+            type="button"
+            onClick={() => setShowAll(true)}
+            className="mt-1 inline-flex min-h-11 items-center text-[13px] font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+          >
+            Show all {filtered.length.toLocaleString("en-US")}
+          </button>
+        )}
       </div>
     </div>
   );
