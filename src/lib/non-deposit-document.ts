@@ -27,7 +27,7 @@
  * by "/".
  */
 
-export type NonDepositDocumentKind = "brokerage" | "loan";
+export type NonDepositDocumentKind = "brokerage" | "loan" | "card_program";
 
 /** One normalisation step: a global replace (JS `$n`, Postgres `\n` back-references), or lower-casing. */
 type NormalizeStep = { pattern: string; js: string; pg: string } | "lower";
@@ -121,6 +121,18 @@ export const LOAN_PRODUCT_SEGMENT = `/(?:${LOAN_CORE})(?: (?:${LOAN_TAIL}))*/`;
 /** The address's last segment names a fee document ("fee schedule", "fees", "schedule of charges", "pricing"). */
 export const FEE_LAST_SEGMENT = "(?:^|/)(?:[^/]* )?(?:fees?|charges?|schedule|pricing)(?: [^/]*)?/$";
 
+/**
+ * A prepaid, payroll, gift or travel card program's own document, as the address's last segment
+ * (#1908): SchoolsFirst's `/disclosures/payroll-card-statement-of-fees-disclosure/`, Acadia's
+ * `/checking/cards/prepaid-travel-card/`, "Gift_Card_Terms_and_Conditions.pdf",
+ * "PrePaidVISA-FeeSchedule.pdf", CO-OP TravelMoney card agreements. Such a card is not a deposit account, so its monthly, inactivity,
+ * ATM and replacement fees are not the institution's account fees. Only the last segment counts
+ * (a deposit section above it, "/checking/cards/", does not save it), and a deposit word in that
+ * same segment does ("prepaid-checking-account" stays a deposit page). A loan's "prepaid finance
+ * charge" or "prepaid interest" is not a card.
+ */
+export const CARD_PROGRAM_LAST_SEGMENT = "(?:^|/)(?:[^/]* )?(?:pre ?paid(?! (?:finance|interest|charges?|points?))|payroll cards?|pay ?cards?|gift ?cards?|gift and travel cards?|travel cards?|travel ?money|reloadable(?: [a-z]+)? cards?)(?: [^/]*)?/$";
+
 /** Host first labels that name a brokerage or wealth site ("wealth.bank.com"). */
 export const BROKERAGE_HOST_LABELS = ["wealth", "invest", "investing", "investments", "brokerage"] as const;
 
@@ -139,6 +151,7 @@ const LOAN_RE = re(LOAN_SEGMENT);
 const LOAN_LAST_RE = re(LOAN_LAST_SEGMENT);
 const LOAN_PRODUCT_RE = re(LOAN_PRODUCT_SEGMENT);
 const FEE_LAST_RE = re(FEE_LAST_SEGMENT);
+const CARD_PROGRAM_LAST_RE = re(CARD_PROGRAM_LAST_SEGMENT);
 const COMPILED = new Map<string, RegExp>();
 
 function applySteps(value: string, steps: NormalizeStep[]): string {
@@ -187,7 +200,9 @@ export function brokerageLinkText(text: string | null | undefined): boolean {
 /** Pure: the kind from a normalised path (and optional title segment and host label). */
 function kindOf(path: string, titleSegment: string | null, hostLabel: string): NonDepositDocumentKind | null {
   const texts = titleSegment ? [path, titleSegment] : [path];
-  if (texts.some((text) => BUSINESS_RE.test(text) || DEPOSIT_RE.test(text))) return null;
+  if (texts.some((text) => BUSINESS_RE.test(text))) return null;
+  if (cardProgramLast(path) || (titleSegment != null && cardProgramLast(titleSegment))) return "card_program";
+  if (texts.some((text) => DEPOSIT_RE.test(text))) return null;
   if (BROKERAGE_RE.test(path) || (titleSegment != null && BROKERAGE_RE.test(titleSegment))) return "brokerage";
   if ((BROKERAGE_HOST_LABELS as readonly string[]).includes(hostLabel)) return "brokerage";
   if (LOAN_LAST_RE.test(path) || (LOAN_RE.test(path) && !FEE_LAST_RE.test(path))) return "loan";
@@ -195,10 +210,18 @@ function kindOf(path: string, titleSegment: string | null, hostLabel: string): N
   return null;
 }
 
+/** The text's last segment names a card program and carries no deposit word of its own. */
+function cardProgramLast(text: string): boolean {
+  if (!CARD_PROGRAM_LAST_RE.test(text)) return false;
+  const last = text.slice(text.lastIndexOf("/", text.length - 2));
+  return !DEPOSIT_RE.test(last);
+}
+
 /**
- * Pure: "brokerage" or "loan" when the document's address (or its title, when given) names it as
- * a brokerage/wealth/investment page or a loan/card/mortgage/HELOC/rate page; null otherwise,
- * and always null for a business or deposit document. See the module note.
+ * Pure: "brokerage", "loan" or "card_program" when the document's address (or its title, when given) names it as
+ * a brokerage/wealth/investment page, a loan/card/mortgage/HELOC/rate page, or a prepaid, payroll,
+ * gift or travel card program's page (`CARD_PROGRAM_LAST_SEGMENT`); null otherwise, and always
+ * null for a business or deposit document. See the module note.
  */
 export function nonDepositDocumentKind(url: string | null | undefined, title?: string | null): NonDepositDocumentKind | null {
   const titleSegment = title != null && title.trim() !== "" ? documentTitleSegment(title) : null;
@@ -238,12 +261,14 @@ export function documentHostLabelSql(column: string): string {
 /**
  * Postgres: the `CASE` that mirrors `nonDepositDocumentKind(url)` (no title) over a normalised
  * path expression `path` (from `documentPathSegmentsSql`) and host label `host`:
- * 'brokerage', 'loan' or NULL.
+ * 'brokerage', 'loan', 'card_program' or NULL.
  */
 export function nonDepositKindSql(path: string, host: string): string {
   const hosts = BROKERAGE_HOST_LABELS.map(pgLiteral).join(", ");
   return `CASE
-    WHEN ${path} ~ ${pgLiteral(BUSINESS_TOKEN)} OR ${path} ~ ${pgLiteral(DEPOSIT_TOKEN)} THEN NULL
+    WHEN ${path} ~ ${pgLiteral(BUSINESS_TOKEN)} THEN NULL
+    WHEN ${path} ~ ${pgLiteral(CARD_PROGRAM_LAST_SEGMENT)} AND substring(${path} from ${pgLiteral("/[^/]*/$")}) !~ ${pgLiteral(DEPOSIT_TOKEN)} THEN 'card_program'
+    WHEN ${path} ~ ${pgLiteral(DEPOSIT_TOKEN)} THEN NULL
     WHEN ${path} ~ ${pgLiteral(BROKERAGE_SEGMENT)} OR ${host} IN (${hosts}) THEN 'brokerage'
     WHEN ${path} ~ ${pgLiteral(LOAN_LAST_SEGMENT)} OR (${path} ~ ${pgLiteral(LOAN_SEGMENT)} AND ${path} !~ ${pgLiteral(FEE_LAST_SEGMENT)}) THEN 'loan'
     ELSE NULL
