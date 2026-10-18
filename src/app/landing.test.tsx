@@ -297,7 +297,7 @@ describe("research behind each answer", () => {
   it("renders the first question and its answer on the server, so the panel is never empty", () => {
     const html = renderToStaticMarkup(<LandingResearch />);
     expect(html).toMatch(/Ask Hamilton\.<\/span> <span class="block">Every answer shows its sources\./);
-    expect(html).toContain("Answers start from published fee schedules. Filings and market data join as each source is connected.");
+    expect(html).toContain("Answers draw on published fee schedules, financial filings, market data and regulatory sources.");
     expect(html).toContain(RESEARCH_EXAMPLES[0].question);
     expect(html).toContain(RESEARCH_EXAMPLES[0].title);
     expect(html).toContain('data-answered="true"');
@@ -334,10 +334,12 @@ describe("research behind each answer", () => {
     expect(container.querySelector("[data-research-output]")?.getAttribute("data-answered")).toBe("true");
     const lit = [...container.querySelectorAll('[data-lit="true"]')].map((el) => el.getAttribute("data-source"));
     expect(lit.sort()).toEqual([...RESEARCH_EXAMPLES[1].sources].sort());
+    // Only sources Hamilton reads are shown; USDA geography is not one of them.
+    expect(SOURCES.map((s) => s.provider).join(" ")).not.toContain("USDA");
     // An unlit tile fades its icon only: the tile and its name keep full opacity.
     const unlit = container.querySelector('[data-lit="false"]')!;
     expect(unlit.className).not.toMatch(/opacity/);
-    const label = [...unlit.querySelectorAll("span")].find((el) => !el.classList.contains("sr-only"))!;
+    const label = unlit.querySelector("span > span")!;
     expect(label.className).not.toMatch(/opacity/);
     expect(label.className).toContain("text-ink");
     expect(unlit.querySelector("svg")!.getAttribute("class")).toContain("opacity-60");
@@ -390,7 +392,7 @@ describe("pricing", () => {
     // The billing line is worked out from PRO_TIERS, never typed.
     expect(html).toContain(pricingLine().replace("'", "&#x27;"));
     expect(pricingLine()).toBe(
-      `Priced by your institution's total assets, for up to ${WORKSPACE_SEAT_LIMIT} people. Annual billing is ten monthly payments.`,
+      `Priced by your institution's total assets, for up to ${WORKSPACE_SEAT_LIMIT} people. Pay annually and get two months free.`,
     );
     expect(pricingLine([{ monthlyUsd: 100, annualUsd: 1_000 }, { monthlyUsd: 100, annualUsd: 1_100 }], 3)).toBe(
       "Priced by your institution's total assets, for up to 3 people. Monthly or annual.",

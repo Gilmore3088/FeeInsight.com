@@ -12,7 +12,7 @@ export function LandingResearch() {
             <span className="block">Ask Hamilton.</span> <span className="block">Every answer shows its sources.</span>
           </h2>
           <p className="mt-3 text-[15px] leading-relaxed text-ink-soft sm:text-[16px]">
-            Answers start from published fee schedules. Filings and market data join as each source is connected.
+            Answers draw on published fee schedules, financial filings, market data and regulatory sources.
           </p>
         </header>
         <ResearchStage />

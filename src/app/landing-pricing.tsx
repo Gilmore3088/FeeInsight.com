@@ -12,7 +12,7 @@ const MONTH_WORDS = ["", "one", "two", "three", "four", "five", "six", "seven", 
 
 /**
  * How pricing works, read from PRO_TIERS and the seat limit: when every tier's annual price is
- * the same whole number of monthly payments, the line says how many; otherwise it says only
+ * the same whole number of monthly payments, the line says how many months annual billing saves; otherwise it says only
  * "Monthly or annual." and names no figure.
  */
 export function pricingLine(
@@ -23,7 +23,8 @@ export function pricingLine(
   const months = new Set(tiers.map((t) => t.annualUsd / t.monthlyUsd));
   const [n] = [...months];
   if (tiers.length > 0 && months.size === 1 && Number.isInteger(n) && MONTH_WORDS[n]) {
-    return `${who} Annual billing is ${MONTH_WORDS[n]} monthly payments.`;
+    const free = 12 - n;
+    if (free > 0 && MONTH_WORDS[free]) return `${who} Pay annually and get ${MONTH_WORDS[free]} months free.`;
   }
   return `${who} Monthly or annual.`;
 }

@@ -62,7 +62,8 @@ export function formatAbsoluteDate(value: string | Date | null | undefined): str
   if (!value) return null;
   const d = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  // U.S. Eastern, so a fee published on a U.S. evening is never dated tomorrow (the server runs on UTC).
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "America/New_York" });
 }
 
 export function formatFreshness(value: string | Date | null | undefined): string {

@@ -6,7 +6,6 @@ import {
   FileChartColumn,
   Files,
   Landmark,
-  MapPin,
   MessagesSquare,
   Network,
   Percent,
@@ -21,7 +20,7 @@ import { SlideControls } from "./landing-controls";
 import { REPORT_SHOWCASE } from "@/lib/report-showcase";
 import { useAutoAdvance } from "./landing-motion";
 
-type SourceKey = "fees" | "financials" | "branches" | "income" | "geography" | "cfpb" | "rules" | "fred" | "regional";
+type SourceKey = "fees" | "financials" | "branches" | "income" | "cfpb" | "rules" | "fred" | "regional";
 
 /**
  * The source families (James accepted the list, Oct 17: "we are building towards it"). Only
@@ -34,7 +33,6 @@ export const SOURCES: { key: SourceKey; icon: LucideIcon; name: string; provider
   { key: "financials", icon: Landmark, name: "Financial filings", provider: "FDIC · NCUA · SEC", detail: "Bank and credit union financials, fee income detail and SEC filings." },
   { key: "branches", icon: Network, name: "Branches & mergers", provider: "FDIC · NCUA", detail: "Summary of Deposits, credit union branches, merger and charter history." },
   { key: "income", icon: UsersRound, name: "Local income", provider: "Census · IRS", detail: "Household income from the Census ACS and IRS ZIP-level data." },
-  { key: "geography", icon: MapPin, name: "Market geography", provider: "USDA", detail: "USDA urban and rural county classifications." },
   { key: "cfpb", icon: MessagesSquare, name: "Complaints", provider: "CFPB", detail: "CFPB consumer complaints, where an institution can be matched." },
   { key: "rules", icon: ScrollText, name: "Rules & actions", provider: "Regulators · States", detail: "Federal and state rules, fee bills, regulator announcements and actions." },
   { key: "fred", icon: Percent, name: "Rates & credit", provider: "FRED", detail: "National FRED series for interest-rate and credit context." },
@@ -56,17 +54,17 @@ export const RESEARCH_EXAMPLES: { question: string; sources: SourceKey[]; title:
   },
   {
     question: "What’s happening in our local market?",
-    sources: ["fees", "branches", "income", "geography"],
+    sources: ["fees", "branches", "income"],
     title: "Local market brief",
     excerpt: "Who competes in your counties, how their fees compare with yours, and the household income behind that market.",
     cites: "Fee schedules · FDIC Summary of Deposits · Census",
   },
   {
     question: "What’s happening across our region?",
-    sources: ["fees", "financials", "income", "geography", "fred", "regional"],
+    sources: ["fees", "financials", "income", "fred", "regional"],
     title: "Regional outlook",
-    excerpt: "Fee levels across your Fed district, read against its institutions' filings and household income.",
-    cites: "Fee schedules · FFIEC · NCUA · Census",
+    excerpt: "Fee levels across your Fed district, read against the latest Beige Book and national rate and credit series.",
+    cites: "Fee schedules · Beige Book · FRED",
   },
   {
     question: "Which fees should we review next?",
@@ -205,7 +203,7 @@ export function ResearchStage() {
             {example.question}
           </p>
         </div>
-        <ul className="relative grid grid-cols-3 gap-1.5 sm:grid-cols-5 sm:gap-2.5 lg:col-start-1 lg:row-span-4 lg:row-start-1 lg:self-start" aria-label="Source families Hamilton draws on">
+        <ul className="relative grid grid-cols-2 gap-1.5 sm:grid-cols-4 sm:gap-2.5 lg:col-start-1 lg:row-span-4 lg:row-start-1 lg:self-start" aria-label="Source families Hamilton draws on">
           {SOURCES.map((s) => {
             const on = lit.has(s.key);
             return (
@@ -215,7 +213,7 @@ export function ResearchStage() {
                   if (el) tiles.current.set(s.key, el);
                   else tiles.current.delete(s.key);
                 }}
-                className={`fi-home-source relative z-[1] flex min-h-[5.5rem] flex-col items-center justify-center rounded-[6px] border px-1 py-2.5 text-center sm:min-h-[6.5rem] sm:px-1.5 ${
+                className={`fi-home-source relative z-[1] flex min-h-[3.5rem] items-center gap-2.5 rounded-[6px] border px-2.5 py-2 text-left sm:min-h-[6.5rem] sm:flex-col sm:justify-center sm:gap-0 sm:px-1.5 sm:py-2.5 sm:text-center ${
                   on ? "border-brick/60 bg-brick-tint" : "border-border bg-surface-0"
                 }`}
                 data-source={s.key}
@@ -225,10 +223,12 @@ export function ResearchStage() {
                 <s.icon
                   aria-hidden="true"
                   strokeWidth={1.5}
-                  className={`fi-home-source mb-1.5 size-6 sm:size-7 ${on ? "text-brick" : selected ? "text-ink-muted opacity-60" : "text-ink-muted"}`}
+                  className={`fi-home-source size-5 shrink-0 sm:mb-1.5 sm:size-7 ${on ? "text-brick" : selected ? "text-ink-muted opacity-60" : "text-ink-muted"}`}
                 />
-                <span className="text-[10px] font-semibold leading-tight text-ink sm:text-[12px]">{s.name}</span>
-                <span className="mt-0.5 text-[9.5px] leading-tight text-ink-soft sm:text-[11px]" data-source-provider="">{s.provider}</span>
+                <span className="flex min-w-0 flex-col">
+                  <span className="text-[12px] font-semibold leading-tight text-ink">{s.name}</span>
+                  <span className="mt-0.5 text-[11px] leading-tight text-ink-soft" data-source-provider="">{s.provider}</span>
+                </span>
                 <span className="sr-only">. {s.detail}</span>
               </li>
             );
