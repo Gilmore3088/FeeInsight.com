@@ -2,7 +2,7 @@ import { unstable_cache } from "next/cache";
 
 import { withTransaction } from "@/lib/data-store/connection";
 import type { AreaGeoType } from "@/lib/data-store/economy-aggregates";
-import { STRUCK_AREA_SOURCES, STRUCK_SOURCE_URL_PATTERN } from "@/lib/data-store/struck-sources";
+import { STRUCK_AREA_SERIES_KEYS, STRUCK_AREA_SOURCES, STRUCK_FRED_SERIES, STRUCK_SOURCE_URL_PATTERN } from "@/lib/data-store/struck-sources";
 import { areaCatalogEntries, scopeForAreaGeoType, type CatalogScopeKind } from "./catalog";
 
 /**
@@ -152,7 +152,9 @@ export async function readAreaSeries(db?: Db): Promise<CatalogSeries[]> {
       if (fromDetail) described.push(...fromDetail);
       else needGroupBy.push(source);
     }
-    if (needGroupBy.length === 0) return described;
+    // Struck series (DECISIONS.md "No non-commercial data") are never listed, whichever path described them.
+    const allowed = (s: CatalogSeries) => !STRUCK_AREA_SERIES_KEYS.includes(s.series_key) && !STRUCK_FRED_SERIES.includes(s.series_key);
+    if (needGroupBy.length === 0) return described.filter(allowed);
     const groupRows = await tx<GroupRow[]>`
       SELECT source, series_key, geo_type, unit,
              MIN(period) AS period_min, MAX(period) AS period_max,
@@ -163,7 +165,7 @@ export async function readAreaSeries(db?: Db): Promise<CatalogSeries[]> {
          AND COALESCE(source_url, '') NOT ILIKE ${STRUCK_SOURCE_URL_PATTERN}
        GROUP BY source, series_key, geo_type, unit
     `;
-    return [...described, ...mergeGroupRows([...groupRows], partitions)].sort(
+    return [...described, ...mergeGroupRows([...groupRows], partitions)].filter(allowed).sort(
       (a, b) => a.source.localeCompare(b.source) || a.series_key.localeCompare(b.series_key),
     );
   };
