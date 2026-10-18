@@ -34,6 +34,15 @@ function formatDay(date: string | null): string | null {
 const plural = (n: number, one: string, many: string) => `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
 const LABEL = "text-[11px] font-bold uppercase tracking-[0.1em] text-ink-muted";
 
+/** The visible source line under each chart (the Details drawer holds the rest). */
+function SourceLine({ children }: { children: React.ReactNode }) {
+  return <p className="mt-2 text-[11px] leading-snug text-ink-muted">{children}</p>;
+}
+
+function ncuaSource(reportDate: string | null): string {
+  return `NCUA branch file${reportDate ? `, quarter ending ${formatDay(reportDate)}` : ""}`;
+}
+
 export function MarketPositionCard({
   position,
   institutionName,
@@ -217,6 +226,15 @@ function MetroMapPanel({ metro, institutionName }: { metro: MetroPosition; insti
         <LegendDot fill={PEER}>Other banks</LegendDot>
         <LegendDot ring>Credit unions</LegendDot>
       </div>
+      {metro.mappableOffices > dots.length && (
+        <p className="mt-2 text-[12px] text-ink-soft tabular-nums">
+          Showing {dots.length.toLocaleString("en-US")} of {plural(metro.mappableOffices, "office", "offices")}: the largest institutions&apos; offices, with
+          banks and credit unions in proportion.
+        </p>
+      )}
+      <SourceLine>
+        Source: FDIC Summary of Deposits, as of {sodDate(metro.year)} (bank offices); {ncuaSource(metro.creditUnions.reportDate)} (credit union offices).
+      </SourceLine>
       <MarketProvenance
         rows={[
           { label: "Source", value: `FDIC Summary of Deposits (bank offices, ${sodDate(metro.year)}); NCUA credit union branch file${metro.creditUnions.reportDate ? ` (quarter ending ${formatDay(metro.creditUnions.reportDate)})` : ""}` },
@@ -288,6 +306,7 @@ function ShareChart({ metro, institutionName }: { metro: MetroPosition; institut
         {metro.shares.length < metro.institutions ? `${metro.shares.length} of ${metro.institutions} institutions shown. ` : ""}
         {formatCompactDollars(metro.totalDeposits * 1_000)} in bank deposits in the metro.
       </p>
+      <SourceLine>Source: FDIC Summary of Deposits, as of {sodDate(metro.year)}.</SourceLine>
       <MarketProvenance
         rows={[
           { label: "Source", value: "FDIC Summary of Deposits" },
@@ -334,6 +353,9 @@ function HistoryPanel({ metro, institutionName }: { metro: MetroPosition; instit
         <Spark title="Offices" points={h} value={(p) => p.branches} format={(v) => String(v)} hoverYear={hoverYear} onHover={setHoverYear} integer />
         <Spark title="Rank (1 is largest)" points={h} value={(p) => p.rank} format={(v) => `#${v}`} hoverYear={hoverYear} onHover={setHoverYear} invert integer />
       </div>
+      <SourceLine>
+        Source: FDIC Summary of Deposits, as of June 30 of each year, {first} to {last}.
+      </SourceLine>
       <MarketProvenance
         rows={[
           { label: "Source", value: "FDIC Summary of Deposits, every survey year on file" },
@@ -467,9 +489,10 @@ function CreditUnionNote({ metro }: { metro: MetroPosition }) {
       <p className={LABEL}>Credit unions, reported separately</p>
       <p className="mt-1 tabular-nums">
         {cu.offices > 0
-          ? `${plural(cu.offices, "office", "offices")} of ${plural(cu.institutions, "credit union", "credit unions")} in the metro's cities${cu.reportDate ? `, NCUA branch file for the quarter ending ${formatDay(cu.reportDate)}` : ""}. NCUA does not report deposits by office, so credit unions have no share above.`
+          ? `${plural(cu.offices, "office", "offices")} of ${plural(cu.institutions, "credit union", "credit unions")} in the metro's cities. NCUA does not report deposits by office, so credit unions have no share above.`
           : "No credit union offices on file in the metro's cities. NCUA does not report deposits by office, so credit unions never have a share above."}
       </p>
+      <SourceLine>Source: {ncuaSource(cu.reportDate)}.</SourceLine>
     </div>
   );
 }

@@ -29,6 +29,7 @@ function metro(overrides: Partial<MetroPosition>): MetroPosition {
     ],
     subjectIndex: 0,
     map: { width: 600, height: 420, counties: [{ d: "M0 0L10 0L10 10Z", inMetro: true }], points: [100, 100, 0, 120, 110, 1, 130, 140, 2] },
+    mappableOffices: 3,
     unmappedOffices: 0,
     ...overrides,
   };
@@ -46,6 +47,13 @@ describe("MarketPositionCard", () => {
     expect(container.textContent).toContain("holds 20.6% of bank deposits, #1 of 3, with 16 offices");
     expect(container.textContent).toContain("As of June 30, 2026. FDIC-insured offices only; credit unions are not included.");
     expect(container.textContent).toContain("12 offices of 4 credit unions in the metro's cities");
+    expect(container.textContent).toContain("Source: FDIC Summary of Deposits, as of June 30, 2026.");
+    expect(container.textContent).toContain("Source: FDIC Summary of Deposits, as of June 30 of each year, 2024 to 2026.");
+    expect(container.textContent).toContain(
+      "Source: FDIC Summary of Deposits, as of June 30, 2026 (bank offices); NCUA branch file, quarter ending June 30, 2026 (credit union offices).",
+    );
+    expect(container.textContent).toContain("Source: NCUA branch file, quarter ending June 30, 2026.");
+    expect(container.textContent).not.toContain("Showing 3 of");
     expect(container.textContent).toContain("Position over time, 2024 to 2026");
     expect(screen.getByRole("link", { name: /Compare fees with these local competitors/ })).toHaveAttribute("href", "?peers=metro#peers");
     expect(container.textContent).not.toMatch(/Frost/);
@@ -56,6 +64,12 @@ describe("MarketPositionCard", () => {
     expect(container.textContent).toContain("3 offices of 3 institutions shown.");
     fireEvent.click(screen.getByRole("button", { name: "Credit unions" }));
     expect(container.textContent).toContain("2 offices of 2 institutions shown.");
+  });
+
+  it("says how many offices a capped map shows", () => {
+    const capped: MarketPosition = { ...POSITION, metros: [metro({ mappableOffices: 2345 })] };
+    const { container } = render(<MarketPositionCard position={capped} institutionName="Subject Bank" selectedCode={45220} onSelect={() => {}} />);
+    expect(container.textContent).toContain("Showing 3 of 2,345 offices");
   });
 
   it("says when one survey year is all there is, and points a non-home metro at the home metro's peers", () => {

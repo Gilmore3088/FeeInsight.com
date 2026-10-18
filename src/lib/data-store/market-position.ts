@@ -5,6 +5,7 @@ import {
   assetBandIndex,
   isExcludedName,
   sharesByYear,
+  splitMapCap,
   subjectHistory,
   topShares,
   type CertYearRow,
@@ -23,7 +24,7 @@ import {
 export const MARKET_POSITION_METROS = 4;
 /** Named institutions in each share chart. */
 export const SHARE_CHART_ROWS = 8;
-/** Offices sent for one metro's map; a larger metro shows the largest institutions' offices. */
+/** Offices sent for one metro's map; a larger metro keeps each type's share, largest institutions first. */
 const MAX_MAP_OFFICES = 900;
 
 export interface MarketInstitution {
@@ -49,7 +50,7 @@ export interface MetroPosition {
   year: number;
   /** All SOD deposits in the metro, thousands of dollars. */
   totalDeposits: number;
-  /** FDIC-insured institutions with offices there (ranked). */
+  /** FDIC-insured institutions with offices there, every one ranked (the FDIC's count). */
   institutions: number;
   subject: Pick<ShareEntry, "sharePct" | "rank" | "branches" | "deposits"> | null;
   shares: Array<Pick<ShareEntry, "name" | "sharePct" | "rank" | "branches" | "subject">>;
@@ -59,6 +60,8 @@ export interface MetroPosition {
   /** Index of the subject in institutionsOnMap; -1 when its offices have no coordinates. */
   subjectIndex: number;
   map: MetroMap | null;
+  /** Offices with coordinates; more than the map's points when the map is capped. */
+  mappableOffices: number;
   /** Offices in the metro with no coordinates on file (left off the map). */
   unmappedOffices: number;
 }
@@ -156,30 +159,35 @@ export async function getMarketPosition(institutionId: number): Promise<MarketPo
       indexOf.set(key, institutions.length - 1);
       return institutions.length - 1;
     };
-    const points: MetroPoint[] = [];
     let unmapped = 0;
     const rankOf = new Map(current.entries.map((e) => [e.id === null ? null : e.id, e.rank]));
+    const officeOrder = (id: number | null) => {
+      const n = num(id);
+      return n === institutionId ? 0 : rankOf.get(n) ?? 1e6;
+    };
     const metroOffices = offices
       .filter((o) => Number(o.msa_code) === code)
       .filter((o) => !isExcludedName(o.institution_id === null ? null : names.get(Number(o.institution_id))))
-      // Largest institutions first, so a cap drops the smallest ones' offices.
-      .sort((a, b) => (rankOf.get(num(a.institution_id)) ?? 1e6) - (rankOf.get(num(b.institution_id)) ?? 1e6));
-    for (const o of metroOffices) {
-      if (o.latitude == null || o.longitude == null) {
-        unmapped += 1;
-        continue;
-      }
+      // The subject's own offices, then the largest institutions, so a cap drops the smallest ones' offices.
+      .sort((a, b) => officeOrder(a.institution_id) - officeOrder(b.institution_id));
+    const bankOffices = metroOffices.filter((o) => o.latitude != null && o.longitude != null);
+    unmapped += metroOffices.length - bankOffices.length;
+    const cus = cuOffices.filter((c) => Number(c.msa_code) === code && !isExcludedName(c.name));
+    const cuMapped = cus
+      .filter((c) => c.latitude != null && c.longitude != null)
+      // Largest credit unions first, for the same reason.
+      .sort((a, b) => (num(b.asset_size) ?? -1) - (num(a.asset_size) ?? -1));
+    unmapped += cus.length - cuMapped.length;
+    // A large metro keeps each type's proportional share of the cap, so both types stay on the map.
+    const keep = splitMapCap(bankOffices.length, cuMapped.length, MAX_MAP_OFFICES);
+    const points: MetroPoint[] = [];
+    for (const o of bankOffices.slice(0, keep.banks)) {
       const id = num(o.institution_id);
       const meta = id === null ? null : info.get(id);
       const inst = add(id === null ? `c${o.cert}` : `i${id}`, { name: meta?.name ?? null, kind: "bank", band: assetBandIndex(meta?.asset_size) });
       points.push({ latitude: Number(o.latitude), longitude: Number(o.longitude), inst });
     }
-    const cus = cuOffices.filter((c) => Number(c.msa_code) === code && !isExcludedName(c.name));
-    for (const c of cus) {
-      if (c.latitude == null || c.longitude == null) {
-        unmapped += 1;
-        continue;
-      }
+    for (const c of cuMapped.slice(0, keep.creditUnions)) {
       const inst = add(c.institution_id === null ? `n${c.name}` : `i${c.institution_id}`, {
         name: c.name ? institutionDisplayName(c.name) : null,
         kind: "credit_union",
@@ -187,10 +195,9 @@ export async function getMarketPosition(institutionId: number): Promise<MarketPo
       });
       points.push({ latitude: Number(c.latitude), longitude: Number(c.longitude), inst });
     }
-    const capped = points.slice(0, MAX_MAP_OFFICES);
     const map = buildMetroMap(
       countyRows.filter((r) => Number(r.msa_code) === code).map((r) => String(r.county_fips).padStart(5, "0")),
-      capped,
+      points,
     );
     const reportDate = cus.map((c) => (c.report_date instanceof Date ? c.report_date.toISOString().slice(0, 10) : c.report_date ? String(c.report_date).slice(0, 10) : null)).find(Boolean) ?? null;
 
@@ -212,7 +219,8 @@ export async function getMarketPosition(institutionId: number): Promise<MarketPo
       institutionsOnMap: institutions,
       subjectIndex: indexOf.get(`i${institutionId}`) ?? -1,
       map,
-      unmappedOffices: unmapped + (points.length - capped.length),
+      mappableOffices: bankOffices.length + cuMapped.length,
+      unmappedOffices: unmapped,
     });
   }
   if (out.length === 0) return null;

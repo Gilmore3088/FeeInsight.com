@@ -183,7 +183,7 @@ export async function getInstitutionPeerRankCached(institutionId: number): Promi
 }
 export const getMarketBranchFootprintCached = cachedPublicRead("market-branch-footprint", getMarketBranchFootprint);
 /** An institution profile's market position section (FDIC SOD shares and history, NCUA offices), per institution. */
-export const getMarketPositionCached = cachedPublicRead("institution-market-position-v1", getMarketPosition);
+export const getMarketPositionCached = cachedPublicRead("institution-market-position-v2", getMarketPosition);
 /** The district hub's exhibits beyond the fee board (district-hub.ts), one entry per district. */
 // v3: institution groups carry the regulator size_group.
 export const getDistrictHubCached = cachedPublicRead("district-hub-v3", getDistrictHub, isEmptyDistrictHub);

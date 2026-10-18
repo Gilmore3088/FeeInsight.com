@@ -9,9 +9,9 @@
  *     certificate on its own. Offices with a blank deposit figure count as offices only.
  *   - Share = its deposits in the metro / all SOD deposits in the metro that year. The SOD covers
  *     FDIC-insured offices only, so credit unions are never part of the total.
- *   - Rank is by deposits among the institutions listed (an excluded name is left out of the
- *     ranks and counts; its deposits stay in the metro total, so every share is still of all
- *     bank deposits there).
+ *   - Rank is by deposits among every institution in the metro, the FDIC's own ranking. An
+ *     excluded name is ranked and counted like any other, then only its own row is dropped, so
+ *     the ranks below it skip a number rather than move up one.
  */
 
 /** Never shown on any list, count, chart or map (owner's rule, see district-hub.ts). */
@@ -46,8 +46,9 @@ export interface YearShares {
   year: number;
   /** All SOD deposits in the metro that year, thousands of dollars. */
   totalDeposits: number;
-  /** Institutions ranked (excluded names left out). */
+  /** Every institution ranked in the metro, excluded names included. */
   institutions: number;
+  /** Ranked entries, largest first, with the excluded name's own row removed. */
   entries: ShareEntry[];
 }
 
@@ -71,9 +72,8 @@ export function sharesByYear(rows: CertYearRow[], subjectId: number, names: Map<
   for (const [year, byKey] of years) {
     const total = totals.get(year) ?? 0;
     if (total <= 0) continue;
-    const entries = [...byKey.values()]
+    const ranked = [...byKey.values()]
       .map((e) => ({ ...e, name: e.id === null ? null : names.get(e.id) ?? null }))
-      .filter((e) => !isExcludedName(e.name))
       .sort((a, b) => b.deposits - a.deposits || (a.id ?? 0) - (b.id ?? 0))
       .map((e, i) => ({
         id: e.id,
@@ -84,7 +84,9 @@ export function sharesByYear(rows: CertYearRow[], subjectId: number, names: Map<
         rank: i + 1,
         subject: e.id === subjectId,
       }));
-    out.push({ year, totalDeposits: total, institutions: entries.length, entries });
+    // Rank first, then hide: the rows after an excluded one keep their true rank.
+    const entries = ranked.filter((e) => !isExcludedName(e.name));
+    out.push({ year, totalDeposits: total, institutions: ranked.length, entries });
   }
   return out.sort((a, b) => a.year - b.year);
 }
@@ -118,6 +120,21 @@ export function topShares(year: YearShares, limit: number): ShareEntry[] {
   const own = named.find((e) => e.subject);
   if (own && !top.includes(own)) top.push(own);
   return top;
+}
+
+/**
+ * How many offices of each type the map keeps when a metro has more than `cap`: each type gets
+ * its proportional share of the cap (at least one office when it has any), and a type with fewer
+ * offices than its share hands the rest to the other, so credit unions never drop off a large
+ * metro's map.
+ */
+export function splitMapCap(banks: number, creditUnions: number, cap: number): { banks: number; creditUnions: number } {
+  if (banks + creditUnions <= cap) return { banks, creditUnions };
+  let cu = creditUnions === 0 ? 0 : Math.max(1, Math.round((cap * creditUnions) / (banks + creditUnions)));
+  cu = Math.min(cu, creditUnions, cap);
+  const bk = Math.min(banks, cap - cu);
+  cu = Math.min(creditUnions, cap - bk);
+  return { banks: bk, creditUnions: cu };
 }
 
 /** Asset bands for the map toggles; `asset_size` is stored in thousands of dollars. */

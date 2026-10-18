@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assetBandIndex, sharesByYear, subjectHistory, topShares, type CertYearRow } from "./market-position";
+import { assetBandIndex, sharesByYear, splitMapCap, subjectHistory, topShares, type CertYearRow } from "./market-position";
 import { buildMetroMap } from "./geo/metro-market-map";
 
 const names = new Map<number, string>([
@@ -23,18 +23,27 @@ const rows: CertYearRow[] = [
 describe("sharesByYear", () => {
   const years = sharesByYear(rows, 1, names);
 
-  it("keeps every bank's deposits in the total but leaves the excluded name off the ranks", () => {
+  it("ranks every bank, the excluded name included, then hides only its row", () => {
     const y2026 = years.find((y) => y.year === 2026)!;
     expect(y2026.totalDeposits).toBe(1000);
-    expect(y2026.institutions).toBe(3);
+    expect(y2026.institutions).toBe(4);
     expect(y2026.entries.map((e) => e.name)).toEqual(["Big Bank", "Subject Bank", "Small Bank"]);
     expect(y2026.entries[1]).toMatchObject({ sharePct: 30, rank: 2, subject: true, branches: 5 });
+    // Small Bank keeps its true rank (#4), skipping the hidden #3 rather than moving up.
+    expect(y2026.entries[2]).toMatchObject({ name: "Small Bank", rank: 4 });
+  });
+
+  it("keeps the FDIC rank for a bank below the excluded name", () => {
+    const y2025 = years.find((y) => y.year === 2025)!;
+    expect(y2025.institutions).toBe(4);
+    expect(y2025.entries.find((e) => e.subject)).toMatchObject({ rank: 3, sharePct: 20 });
+    expect(y2025.entries.map((e) => e.rank)).toEqual([1, 3, 4]);
   });
 
   it("gives the subject's share, offices and rank each year", () => {
     expect(subjectHistory(years)).toEqual([
-      { year: 2025, sharePct: 20, branches: 4, rank: 2, institutions: 3 },
-      { year: 2026, sharePct: 30, branches: 5, rank: 2, institutions: 3 },
+      { year: 2025, sharePct: 20, branches: 4, rank: 3, institutions: 4 },
+      { year: 2026, sharePct: 30, branches: 5, rank: 2, institutions: 4 },
     ]);
   });
 
@@ -42,6 +51,22 @@ describe("sharesByYear", () => {
     const y2025 = years.find((y) => y.year === 2025)!;
     expect(topShares(y2025, 1).map((e) => e.name)).toEqual(["Big Bank", "Subject Bank"]);
     expect(topShares(y2025, 5).some((e) => e.name === null)).toBe(false);
+    expect(topShares(y2025, 5).some((e) => /frost/i.test(e.name ?? ""))).toBe(false);
+  });
+});
+
+describe("splitMapCap", () => {
+  it("keeps everything under the cap", () => {
+    expect(splitMapCap(300, 100, 900)).toEqual({ banks: 300, creditUnions: 100 });
+  });
+
+  it("splits a large metro in proportion, so credit unions stay on the map", () => {
+    expect(splitMapCap(2400, 600, 900)).toEqual({ banks: 720, creditUnions: 180 });
+  });
+
+  it("gives a small type at least one office and hands unused room to the other", () => {
+    expect(splitMapCap(5000, 1, 900)).toEqual({ banks: 899, creditUnions: 1 });
+    expect(splitMapCap(950, 0, 900)).toEqual({ banks: 900, creditUnions: 0 });
   });
 });
 
