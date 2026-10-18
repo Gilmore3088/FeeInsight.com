@@ -1177,12 +1177,12 @@ function InstitutionRow({
             </p>
           )}
           {named === 0 && (
-            <p className="flex items-center gap-1 text-[12px] text-ink-muted">
+            <div className="flex items-center gap-1 text-[12px] text-ink-muted">
               <span className="rounded-full border border-border px-2 py-0.5">Account mapping unavailable</span>
               <InfoTip label="About account mapping">
                 The Index hasn&apos;t yet matched each price to its account in the schedule, so these prices can&apos;t be compared account by account.
               </InfoTip>
-            </p>
+            </div>
           )}
           <ul className="divide-y divide-border rounded-xl border border-border bg-paper">
             {listed.map((p) => {
