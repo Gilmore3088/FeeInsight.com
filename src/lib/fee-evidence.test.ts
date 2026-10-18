@@ -521,6 +521,32 @@ describe("a line opening with another fee's words (#1902)", () => {
     expect(fromOwnName(line, "Paper statement charge", 5)).toBe(line);
   });
 
+  it("keeps the account or direction that opens the fee's own clause (#1902 review)", () => {
+    expect(fromOwnName("Overdraft Fee $35 per item. Basic Checking Monthly Service Fee $10 per month", "Monthly Service Fee", 10)).toBe("… Basic Checking Monthly Service Fee $10 per month");
+    expect(fromOwnName("Levy Fee $100 per order Basic Checking Monthly Service Fee $10 per month", "Monthly Service Fee", 10)).toBe("… Basic Checking Monthly Service Fee $10 per month");
+    expect(fromOwnName("Incoming domestic wire, no charge. Outgoing domestic Wire Transfer Fee $25", "Wire Transfer Fee", 25)).toBe("… Outgoing domestic Wire Transfer Fee $25");
+    expect(fromOwnName("Levy fee $100. Dormant Account Fee $5 per month", "Account Fee", 5)).toBe("… Dormant Account Fee $5 per month");
+    expect(fromOwnName("Stop Payment | $30 | Dormant Account Fee | $5 per month", "Dormant Account Fee", 5)).toBe("… Dormant Account Fee | $5 per month");
+  });
+
+  it("cuts a packed row at the stop after another fee's price", () => {
+    expect(fromOwnName("Levy Fee $100. Dormant Account Fee $5.00 per month", "Dormant Account Fee", 5)).toBe("… Dormant Account Fee $5.00 per month");
+  });
+
+  it("keeps a fee's own label, a short name, a first-word name and a repeat that prints this price first", () => {
+    expect(fromOwnName("Account Fees: The monthly service charge $5", "monthly service charge", 5)).toBe("Account Fees: The monthly service charge $5");
+    expect(fromOwnName("Levy Fee $100. NSF Fee $5", "NSF Fee", 5)).toBe("Levy Fee $100. NSF Fee $5");
+    expect(fromOwnName("Dormant Account Fee $5 per month. Levy Fee $100", "Dormant Account Fee", 5)).toBe("Dormant Account Fee $5 per month. Levy Fee $100");
+    expect(fromOwnName("Levy Fee $100 Dormant Account Fee $5 per month", "Dormant Account Fee", 5)).toBe("Levy Fee $100 Dormant Account Fee $5 per month");
+  });
+
+  it("cuts a long line and still centres its price", () => {
+    const line = `${"Fee applied to process a tax liability ".repeat(10)}Dormant Account Fee $5 per month ${"y".repeat(300)}`;
+    const evidence = feeEvidence({ fee_name: "Dormant Account Fee", amount: 5, fee_category: "dormant_account", extraction_note: `excerpt="${line}"` }, null);
+    expect(evidence?.line.startsWith("… Dormant Account Fee $5 per month")).toBe(true);
+    expect(evidence!.line.length).toBeLessThanOrEqual(EVIDENCE_MAX_CHARS + 4);
+  });
+
   it("cuts after another fee's price", () => {
     expect(fromOwnName("Levy Processing Fee $100 per levy order Dormant Account Fee $5 per month", "Dormant Account Fee", 5)).toBe("… Dormant Account Fee $5 per month");
   });
