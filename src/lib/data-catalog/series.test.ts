@@ -5,7 +5,9 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("next/cache", () => ({ unstable_cache: (fn: unknown) => fn }));
 vi.mock("@/lib/data-store/connection", () => ({ withTransaction: vi.fn() }));
 
-import { mergeGroupRows, readAreaSeries, seriesFromPartitionDetail } from "./series";
+import { withTransaction } from "@/lib/data-store/connection";
+import { STRUCK_AREA_SERIES_KEYS } from "@/lib/data-store/struck-sources";
+import { AreaSeriesUnavailable, getAreaSeries, mergeGroupRows, readAreaSeries, resetAreaSeriesCooldown, seriesFromPartitionDetail } from "./series";
 
 const partition = { source_url: "https://www.bls.gov/lau/", fetched_at: "2026-10-12T00:00:00Z" };
 
@@ -50,6 +52,61 @@ describe("area series discovery", () => {
     expect(seen[0]).toContain("statement_timeout");
     expect(seen.some((t) => t.includes("registry_ingest_partitions"))).toBe(true);
     expect(seen.some((t) => t.includes("GROUP BY"))).toBe(true);
+  });
+
+  it("never lists a struck series", async () => {
+    const struck = STRUCK_AREA_SERIES_KEYS[0];
+    const db = vi.fn((strings: TemplateStringsArray) =>
+      Promise.resolve(strings.join("?").includes("GROUP BY")
+        ? [
+            { source: "bls-laus", series_key: "laus_unemployment_rate", geo_type: "state", unit: "percent", period_min: "2020", period_max: "2026", source_url: null, fetched_at: null },
+            { source: "bls-laus", series_key: struck, geo_type: "state", unit: "percent", period_min: "2020", period_max: "2026", source_url: null, fetched_at: null },
+          ]
+        : []));
+    const keys = (await readAreaSeries(db as never)).map((s) => s.series_key);
+    expect(keys).toContain("laus_unemployment_rate");
+    expect(keys).not.toContain(struck);
+  });
+
+  it("runs a root handle inside its own transaction, so the statement timeout holds", async () => {
+    const tx = vi.fn(() => Promise.resolve([]));
+    const begin = vi.fn((cb: (t: typeof tx) => Promise<unknown>) => cb(tx));
+    const root = Object.assign(vi.fn(() => Promise.resolve([])), { begin });
+    await readAreaSeries(root as never);
+    expect(begin).toHaveBeenCalledTimes(1);
+    expect(root).not.toHaveBeenCalled();
+    expect(tx).toHaveBeenCalled();
+  });
+
+  it("does not read the table again for a while after a failed or empty read, and says it is unavailable", async () => {
+    const read = vi.mocked(withTransaction);
+    read.mockReset();
+    read.mockResolvedValueOnce([] as never);
+    resetAreaSeriesCooldown();
+    await expect(getAreaSeries()).rejects.toBeInstanceOf(AreaSeriesUnavailable);
+    await expect(getAreaSeries()).rejects.toBeInstanceOf(AreaSeriesUnavailable);
+    expect(read).toHaveBeenCalledTimes(1);
+
+    read.mockRejectedValueOnce(new Error("canceling statement due to statement timeout"));
+    resetAreaSeriesCooldown();
+    await expect(getAreaSeries()).rejects.toThrow("statement timeout");
+    await expect(getAreaSeries()).rejects.toBeInstanceOf(AreaSeriesUnavailable);
+    expect(read).toHaveBeenCalledTimes(2);
+    resetAreaSeriesCooldown();
+  });
+
+  it("shares one read between callers that ask at the same time", async () => {
+    const read = vi.mocked(withTransaction);
+    read.mockReset();
+    let finish: (rows: unknown) => void = () => undefined;
+    read.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }) as never);
+    resetAreaSeriesCooldown();
+    const a = getAreaSeries();
+    const b = getAreaSeries();
+    finish([{ source: "bls-laus", series_key: "u" }]);
+    expect(await a).toEqual(await b);
+    expect(read).toHaveBeenCalledTimes(1);
+    resetAreaSeriesCooldown();
   });
 
   it("is never read per question: queryData does not import it", () => {

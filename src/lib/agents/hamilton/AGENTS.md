@@ -152,7 +152,10 @@ Hamilton supports the decision; it does not make it.
   its read-only tools, `getLocalCompetitors` (shared with chat, `research/tool-local-competitors.ts`),
   `queryFeeRevenueCorrelation` (its `peers` view compares one institution's service charge
   income with a peer group's median on the same quarter and filer, `research/fee-income-peers.ts`),
-  `queryDistrictData` and `queryStateData` (#1084). The reader's saved default peer set
+  `queryDistrictData` and `queryStateData` (#1084), and the data catalog through `listData` and
+  `queryData` (shared with chat, `research/tool-query-data.ts`, #1855): listData names the servable
+  public-data series and fee measures for a question, queryData reads one at one scope through
+  `data-catalog/query-data.ts` and returns its citation or a refusal. The reader's saved default peer set
   (`getActivePeerSet`) is in its prompt; the answer's identity snapshot names it as the peer
   baseline only when a tool call used it (the `peers` view with the set's filters).
 - The bank's own numbers arrive by answer or upload. `POST /api/hamilton/uploads` reads a

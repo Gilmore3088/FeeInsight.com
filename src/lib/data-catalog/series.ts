@@ -2,7 +2,7 @@ import { unstable_cache } from "next/cache";
 
 import { withTransaction } from "@/lib/data-store/connection";
 import type { AreaGeoType } from "@/lib/data-store/economy-aggregates";
-import { STRUCK_AREA_SOURCES, STRUCK_SOURCE_URL_PATTERN } from "@/lib/data-store/struck-sources";
+import { STRUCK_AREA_SERIES_KEYS, STRUCK_AREA_SOURCES, STRUCK_FRED_SERIES, STRUCK_SOURCE_URL_PATTERN } from "@/lib/data-store/struck-sources";
 import { areaCatalogEntries, scopeForAreaGeoType, type CatalogScopeKind } from "./catalog";
 
 /**
@@ -152,7 +152,9 @@ export async function readAreaSeries(db?: Db): Promise<CatalogSeries[]> {
       if (fromDetail) described.push(...fromDetail);
       else needGroupBy.push(source);
     }
-    if (needGroupBy.length === 0) return described;
+    // Struck series (DECISIONS.md "No non-commercial data") are never listed, whichever path described them.
+    const allowed = (s: CatalogSeries) => !STRUCK_AREA_SERIES_KEYS.includes(s.series_key) && !STRUCK_FRED_SERIES.includes(s.series_key);
+    if (needGroupBy.length === 0) return described.filter(allowed);
     const groupRows = await tx<GroupRow[]>`
       SELECT source, series_key, geo_type, unit,
              MIN(period) AS period_min, MAX(period) AS period_max,
@@ -163,11 +165,14 @@ export async function readAreaSeries(db?: Db): Promise<CatalogSeries[]> {
          AND COALESCE(source_url, '') NOT ILIKE ${STRUCK_SOURCE_URL_PATTERN}
        GROUP BY source, series_key, geo_type, unit
     `;
-    return [...described, ...mergeGroupRows([...groupRows], partitions)].sort(
+    return [...described, ...mergeGroupRows([...groupRows], partitions)].filter(allowed).sort(
       (a, b) => a.source.localeCompare(b.source) || a.series_key.localeCompare(b.series_key),
     );
   };
-  return db ? run(db) : withTransaction(run);
+  if (!db) return withTransaction(run);
+  // SET LOCAL holds only inside a transaction: a root handle (it has begin) gets one of its own.
+  const root = db as Db & { begin?: (cb: (tx: Db) => Promise<CatalogSeries[]>) => Promise<CatalogSeries[]> };
+  return typeof root.begin === "function" ? root.begin(run) : run(db);
 }
 
 class EmptySeriesRead extends Error {
@@ -183,18 +188,53 @@ const cachedAreaSeries = unstable_cache(
     if (value.length === 0) throw new EmptySeriesRead();
     return value;
   },
-  ["data-catalog", "area-series-v1"],
+  ["data-catalog", "area-series-v2"],
   { revalidate: SERIES_CACHE_SECONDS },
 );
 
-/** Every area series, cached for a day. For the catalog and tool listings; not for per-question reads. */
-export async function getAreaSeries(): Promise<CatalogSeries[]> {
+/** After a failed or empty read, how long before the table is read again. */
+export const SERIES_RETRY_COOLDOWN_MS = 10 * 60 * 1000;
+let retryAfter = 0;
+let inFlight: Promise<CatalogSeries[]> | null = null;
+
+/** Thrown while a failed or empty read's cooldown runs: the list is unavailable, not empty. */
+export class AreaSeriesUnavailable extends Error {
+  constructor() {
+    super("area series list unavailable until the retry cooldown ends");
+  }
+}
+
+/** Test hook: forget a cooldown and any read in flight. */
+export function resetAreaSeriesCooldown(): void {
+  retryAfter = 0;
+  inFlight = null;
+}
+
+async function loadAreaSeries(): Promise<CatalogSeries[]> {
   try {
     return await cachedAreaSeries();
   } catch (error) {
-    if (error instanceof EmptySeriesRead) return [];
     // Outside a Next request (tests, scripts) there is no incremental cache: read directly.
     if (error instanceof Error && error.message.startsWith("Invariant: incrementalCache missing")) return readAreaSeries();
+    retryAfter = Date.now() + SERIES_RETRY_COOLDOWN_MS;
+    // An empty read means the list could not be built, not that no data exists.
+    if (error instanceof EmptySeriesRead) throw new AreaSeriesUnavailable();
     throw error;
   }
+}
+
+/**
+ * Every area series, cached for a day. For the catalog and tool listings; not for per-question reads.
+ * Callers at the same moment share one read, so a cold cache costs one whole-table GROUP BY, not one
+ * per request. A failed or empty read is not cached by Next, so it starts a cooldown: until it ends,
+ * callers get AreaSeriesUnavailable instead of another read.
+ */
+export function getAreaSeries(): Promise<CatalogSeries[]> {
+  if (Date.now() < retryAfter) return Promise.reject(new AreaSeriesUnavailable());
+  if (!inFlight) {
+    inFlight = loadAreaSeries().finally(() => {
+      inFlight = null;
+    });
+  }
+  return inFlight;
 }

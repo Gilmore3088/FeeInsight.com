@@ -207,4 +207,17 @@ describe("queryData: fee measures", () => {
     });
     expect(resolvePeerSet).not.toHaveBeenCalled();
   });
+
+  it("refuses a peer group with no filters and nearest peers with no institution", async () => {
+    expect(await queryData({ measure: "fee:overdraft", scope: { kind: "peer_set", peer: {} } })).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining("at least one filter"),
+    });
+    expect(await queryData({ measure: "fee:overdraft", scope: { kind: "peer_set", peer: { nearest: 10 } } })).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining('"nearest" peers need scope.id'),
+    });
+    expect(resolvePeerSet).not.toHaveBeenCalled();
+    expect(getPeerIndex).not.toHaveBeenCalled();
+  });
 });
