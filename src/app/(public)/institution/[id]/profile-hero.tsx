@@ -37,7 +37,8 @@ export function ProfileHero({
   finding: string;
   /** The source line under the finding, shown only when there is no count. */
   source: React.ReactNode;
-  primary: { href: string; label: string };
+  /** The Hamilton link: a client island, since its label and target depend on who is signed in. */
+  primary: React.ReactNode;
   /** The schedule section's anchor; null when nothing is published. */
   schedulesHref: string | null;
 }) {
@@ -95,9 +96,7 @@ export function ProfileHero({
             </>
           )}
           <div className="mt-7 flex flex-wrap items-center gap-x-7 gap-y-4">
-            <Link href={primary.href} className="fi-btn fi-btn-brick min-h-12 px-8 text-[15px]">
-              {primary.label}
-            </Link>
+            {primary}
             {schedulesHref && (
               <a
                 href={schedulesHref}
