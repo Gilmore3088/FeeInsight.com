@@ -3,7 +3,7 @@
 import { sql } from "@/lib/data-store/connection";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
-import { getInstitutionOwnFees, getNationalIndex } from "@/lib/data-store/fee-index";
+import { getInstitutionOwnFees, getNationalIndex, getNationalIndexStamped } from "@/lib/data-store/fee-index";
 import { getInstitutionById } from "@/lib/data-store";
 import { computeConfidenceTier, canSimulate } from "@/lib/hamilton/confidence";
 import { getHamiltonScenarioById } from "@/lib/hamilton/pro-tables";
@@ -66,10 +66,12 @@ export async function getDistributionForCategory(
     let peerSource = peerIndex.source;
     let peerSetId = peerIndex.peerSetId;
     let peerFallbackReason = peerIndex.fallbackReason;
+    let stamp = peerIndex.stamp;
 
     if (!entry && peerIndex.source !== "national") {
-      const nationalIndex = await getNationalIndex();
-      entry = nationalIndex.find((e) => e.fee_category === feeCategory);
+      const national = await getNationalIndexStamped();
+      entry = national.entries.find((e) => e.fee_category === feeCategory);
+      stamp = national.stamp;
       peerLabel = "Verified national index";
       peerSource = "national";
       peerSetId = null;
@@ -104,6 +106,7 @@ export async function getDistributionForCategory(
       peer_source: peerSource,
       peer_set_id: peerSetId,
       peer_fallback_reason: peerFallbackReason,
+      stamp,
     };
 
     const confidenceTier = computeConfidenceTier(entry.institution_count);

@@ -14,6 +14,10 @@ import { STATE_NAMES } from "@/lib/us-states";
 import { plainName, proseFeeName } from "./names";
 import { MIN_PEERS_FOR_POSITION, pricePosition } from "./scenario";
 import type { AskSegment, Exhibit, Fact, SegmentMember, SegmentResearch, SourceRef } from "./types";
+import { segmentLabel, shortSegmentLabel } from "@/lib/segment-words";
+
+// The wording lives in lib/segment-words.ts so data-store can use it without a Hamilton import (#2007).
+export { segmentLabel, shortSegmentLabel };
 
 /** Most members an exhibit names. */
 export const MAX_SEGMENT_EXHIBIT = 15;
@@ -38,15 +42,6 @@ function thousands(num: string, unit: string): number | null {
   const mult = UNIT_OF(unit);
   if (!Number.isFinite(n) || !mult) return null;
   return Math.round((n * mult) / 1000);
-}
-
-function assetsWords(thousandsValue: number): string {
-  const dollars = thousandsValue * 1000;
-  const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.0$/, ""));
-  if (dollars >= 1e12) return `$${fmt(dollars / 1e12)} trillion`;
-  if (dollars >= 1e9) return `$${fmt(dollars / 1e9)} billion`;
-  if (dollars >= 1e6) return `$${fmt(dollars / 1e6)} million`;
-  return `$${Math.round(dollars).toLocaleString("en-US")}`;
 }
 
 const STATE_BY_NAME = Object.entries(STATE_NAMES)
@@ -102,45 +97,6 @@ function largestIn(question: string): number | null {
     return Number.isFinite(n) && n > 0 ? Math.min(n, MAX_LARGEST) : null;
   }
   return /\b(?:largest|biggest)\b/i.test(question) ? DEFAULT_LARGEST : null;
-}
-
-export function segmentLabel(s: Omit<AskSegment, "label">): string {
-  const who = s.charterType === "credit_union" ? "credit unions" : s.charterType === "bank" ? "banks" : "institutions";
-  const size =
-    s.minAssets !== null && s.maxAssets !== null
-      ? ` with ${assetsWords(s.minAssets)} to ${assetsWords(s.maxAssets)} in assets`
-      : s.minAssets !== null
-        ? ` with ${assetsWords(s.minAssets)} or more in assets`
-        : s.maxAssets !== null
-          ? ` with under ${assetsWords(s.maxAssets)} in assets`
-          : "";
-  const where = s.stateCode ? ` in ${STATE_NAMES[s.stateCode] ?? s.stateCode}` : "";
-  const head = s.largest !== null ? `the ${s.largest} largest ${who}` : who;
-  return `${head}${size}${where}`;
-}
-
-function assetsShort(thousandsValue: number): string {
-  const dollars = thousandsValue * 1000;
-  const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.0$/, ""));
-  if (dollars >= 1e12) return `$${fmt(dollars / 1e12)}T`;
-  if (dollars >= 1e9) return `$${fmt(dollars / 1e9)}B`;
-  if (dollars >= 1e6) return `$${fmt(dollars / 1e6)}M`;
-  return `$${Math.round(dollars).toLocaleString("en-US")}`;
-}
-
-/** The segment in a few words for titles and table lines: "$10B+ institutions", "the 20 largest banks in Texas". */
-export function shortSegmentLabel(s: AskSegment): string {
-  const who = s.charterType === "credit_union" ? "credit unions" : s.charterType === "bank" ? "banks" : "institutions";
-  const size =
-    s.minAssets !== null && s.maxAssets !== null
-      ? `${assetsShort(s.minAssets)} to ${assetsShort(s.maxAssets)} `
-      : s.minAssets !== null
-        ? `${assetsShort(s.minAssets)}+ `
-        : s.maxAssets !== null
-          ? `under-${assetsShort(s.maxAssets)} `
-          : "";
-  const where = s.stateCode ? ` in ${STATE_NAMES[s.stateCode] ?? s.stateCode}` : "";
-  return s.largest !== null ? `the ${s.largest} largest ${size}${who}${where}` : `${size}${who}${where}`;
 }
 
 /**

@@ -16,6 +16,7 @@ import { buildFeeAnswer } from "@/lib/hamilton/workspace/answer";
 import { institutionFactsFrom } from "@/lib/hamilton/workspace/ask";
 import { getMemoryFacts } from "@/lib/data-store/hamilton-workspace";
 import { ExhibitView } from "@/components/hamilton/memo/exhibit-view";
+import { DatasetNote } from "@/components/hamilton/DatasetNote";
 import {
   AuditPanel,
   DistributionBars,
@@ -329,6 +330,7 @@ export default async function ModelPage({ searchParams }: PageProps) {
           </table>
         </div>
         <p className="text-xs text-warm-600">Volume is held steady at every price; Hamilton doesn&apos;t estimate how customers respond.</p>
+        <DatasetNote figures={[layer.stamp ? { label: layer.label, stamp: layer.stamp } : null]} />
       </MemoSection>
 
       {positionExhibit ? (

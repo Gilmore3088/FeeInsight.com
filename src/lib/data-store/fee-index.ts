@@ -20,8 +20,7 @@ import {
 } from "./fee-stats";
 import { makeStamp, toIsoTime, toRunId, type DatasetStamp, type PopulationFilter, type StampMode } from "@/lib/dataset-stamp";
 import { peerFilterParts } from "@/lib/peer-filter-words";
-import { segmentLabel } from "@/lib/hamilton/workspace/segment";
-import type { AskSegment } from "@/lib/hamilton/workspace/types";
+import { segmentLabel, type SegmentFields } from "@/lib/segment-words";
 
 /** The canonical fee catalog — only these categories appear in indexes and reports */
 const CANONICAL_CATEGORIES = Object.values(FEE_FAMILIES).flat();
@@ -74,16 +73,16 @@ export interface StampClock {
 }
 
 /** Which slice of the market an index covers: a peer filter set, a segment named in a question, or the nation. */
-export type StampScope = PeerFilterSet | AskSegment | null | undefined;
+export type StampScope = PeerFilterSet | (SegmentFields & { label?: string }) | null | undefined;
 
-function isAskSegment(scope: StampScope): scope is AskSegment {
+function isSegment(scope: StampScope): scope is SegmentFields {
   return !!scope && "minAssets" in scope && "largest" in scope;
 }
 
 /** The scope's filters, in the words describePeerFilters and segmentLabel already use. */
 export function scopeFilters(scope: StampScope): PopulationFilter[] {
   if (!scope) return [];
-  if (isAskSegment(scope)) {
+  if (isSegment(scope)) {
     const none = { minAssets: null, maxAssets: null, charterType: null, stateCode: null, largest: null } as const;
     const out: PopulationFilter[] = [];
     if (scope.charterType) {
@@ -130,6 +129,8 @@ export function catalogStamp(params: {
   scope?: StampScope;
   /** A snapshot computed under another method (cache rows carry their own). */
   methodVersion?: number;
+  /** Conditions the caller applied on top of the scope (an institution left out of its own comparison). */
+  extraFilters?: PopulationFilter[];
 }): DatasetStamp {
   return makeStamp({
     dataset: params.mode === "cached" ? "fee_index_cache" : "published_fee_catalog",
@@ -140,7 +141,7 @@ export function catalogStamp(params: {
     newestRecordAt: toIsoTime(params.newestRecordAt),
     methodVersion: params.methodVersion ?? STATS_METHOD_VERSION,
     counting: statsCounting(),
-    filters: [...statsPopulationFilters(), ...scopeFilters(params.scope)],
+    filters: [...statsPopulationFilters(), ...scopeFilters(params.scope), ...(params.extraFilters ?? [])],
   });
 }
 
@@ -860,8 +861,10 @@ export async function getNationalIndexCached(): Promise<IndexEntry[]> {
 
 /**
  * The national index from fee_index_cache with its stamp: the snapshot's computed_at, the run
- * that wrote it (agent_run_id) and its method version. When the cache is empty, stale or from
- * an older method, the live index and a live stamp. Memoised for a minute like before.
+ * that wrote it (agent_run_id) and its method version. The time, run and method are the newest
+ * cache row's: one refresh replaces every row, so they normally agree, but the stamp names only
+ * that row's run (#2007). When the cache is empty, stale or from an older method, the live
+ * index and a live stamp. Memoised for a minute like before.
  */
 export async function getNationalIndexCachedStamped(clock?: StampClock): Promise<StampedIndex> {
   const now = Date.now();
@@ -949,6 +952,7 @@ async function readNationalIndexCached(clock?: StampClock): Promise<StampedIndex
     const stamp = catalogStamp({
       mode: "cached",
       readAt: new Date(newest),
+      // The newest row's run only; older rows from another run are not named (#2007).
       runId: snapshot.agent_run_id ?? null,
       // The cache has no record-time column; unknown rather than guessed.
       newestRecordAt: null,

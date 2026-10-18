@@ -29,6 +29,7 @@ import {
 import { PrintButton } from "@/components/hamilton/memo/PrintButton";
 import { buildFeeAnswer } from "@/lib/hamilton/workspace/answer";
 import { ExhibitView, FactList } from "@/components/hamilton/memo/exhibit-view";
+import { DatasetNote } from "@/components/hamilton/DatasetNote";
 
 export const metadata: Metadata = { title: "Plan a change" };
 
@@ -115,12 +116,18 @@ export default async function PlanPage({ searchParams }: PageProps) {
     .filter((l) => l.n > 0)
     .map((l) => ({ layer: l, now: peerPosition(l.amounts, from), after: peerPosition(l.amounts, to) }));
 
+  // The chosen layer's stamp leads the note; each other layer shown says how its read differs.
+  const stampedLayers = [mainLayer, ...layerRows.map((r) => r.layer).filter((l) => l.key !== mainLayer.key)]
+    .flatMap((l) => (l.stamp ? [{ label: l.label, stamp: l.stamp }] : []));
   const marketTable = (
-    <PositionShift
-      fromLabel={`${fmtMoney(from)} today`}
-      toLabel={`${fmtMoney(to)}`}
-      rows={layerRows.map(({ layer, now, after }) => ({ label: layer.label, n: layer.n, median: layer.median, from: now, to: after }))}
-    />
+    <>
+      <PositionShift
+        fromLabel={`${fmtMoney(from)} today`}
+        toLabel={`${fmtMoney(to)}`}
+        rows={layerRows.map(({ layer, now, after }) => ({ label: layer.label, n: layer.n, median: layer.median, from: now, to: after }))}
+      />
+      <DatasetNote figures={stampedLayers} />
+    </>
   );
 
   const timing = (

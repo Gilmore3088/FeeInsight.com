@@ -19,6 +19,7 @@ import { assetSizeFor, type AssetSize } from "@/lib/hamilton/asset-size";
 import { ScopeControls } from "./ScopeControls";
 import { BoardBriefButton } from "./BoardBriefButton";
 import { EvidenceDetails } from "./EvidenceDetails";
+import { DatasetNote } from "@/components/hamilton/DatasetNote";
 import { FeeLandscapeChart, HorizontalBars, MultiTrend, StateFeeMap } from "./IntelligenceCharts";
 import { LandingResearchResults } from "@/components/hamilton/landing/LandingResearchResults";
 
@@ -278,6 +279,10 @@ function FeePanels({ data, selection, place, state, stateHrefs, compact, explore
             </tr>)}</tbody>
           </table>
         </div> : null}
+        {result?.stamps ? <DatasetNote className="mt-4" figures={[
+          { label: place, stamp: result.stamps.selected },
+          result.stamps.national ? { label: "the U.S. reference", stamp: result.stamps.national } : null,
+        ]} /> : null}
         <EvidenceDetails source="Bank Fee Index · published fee catalog" period="Per-category record dates in the table" geography={place} coverage="Published consumer fees from the selected institution type; cohorts under the minimum are withheld" method="One value per institution; median and 25th–75th percentiles. State figures use the same institution type as the national reference. Missing is not zero; record dates are not a fresh schedule recheck." />
       </Panel>
       <Panel title={`${primaryName} by state`} subtitle={`Published median by state · ${CHARTER_LABEL[selection.charter]}${sizeNote ? ` ${sizeNote}` : ""}${data.feeMap?.nationalMedian != null ? ` · U.S. ${dollars(data.feeMap.nationalMedian)}` : ""}`}>

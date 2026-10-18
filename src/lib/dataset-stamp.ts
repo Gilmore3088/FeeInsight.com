@@ -37,7 +37,10 @@ export interface DatasetStamp {
   mode: StampMode;
   /** ISO time: when the live query returned, or when the snapshot was computed. */
   readAt: string;
-  /** The agent run that built the snapshot; null for a live read or when unknown. */
+  /**
+   * The agent run that built the snapshot; null for a live read or when unknown. For
+   * fee_index_cache, the run of the newest cache row only (#2007).
+   */
   runId: number | null;
   /** ISO time of the newest record behind the figures, when known. Context only: not part of `id`. */
   newestRecordAt: string | null;

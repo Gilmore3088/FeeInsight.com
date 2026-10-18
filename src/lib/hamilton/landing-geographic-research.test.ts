@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { IndexEntry, PeerFilterSet } from "@/lib/data-store/fee-index";
+import { makeStamp } from "@/lib/dataset-stamp";
 import {
   buildGeographicResearchResult, loadLandingGeographicResearch, measureFromIndex,
 } from "./landing-geographic-research";
@@ -96,5 +97,21 @@ describe("governed geographic landing research", () => {
     expect(result.comparisons.map((row) => row.category)).toEqual(["paper_statement", "money_order"]);
     expect(result.comparisons[0].selected.status).toBe("not_observed");
     expect(result.comparisons[1].national?.status).toBe("not_observed");
+  });
+  it("carries the stamps of the selected scope and its national reference when the reader gives them (#1924)", async () => {
+    const stamp = (filters: { key: string; label: string }[]) => makeStamp({
+      dataset: "published_fee_catalog", mode: "live", readAt: "2026-10-18T14:10:00Z", runId: null,
+      newestRecordAt: null, methodVersion: 13, counting: "counted_once", filters,
+    });
+    const wa = stamp([{ key: "peers:state:WA", label: "Peers: WA" }]);
+    const us = stamp([]);
+    const result = await loadLandingGeographicResearch(base, async () => [
+      { entries: [entry("paper_statement", 2, 9)], stamp: wa },
+      { entries: [entry("paper_statement", 3, 17)], stamp: us },
+    ]);
+    expect(result.stamps).toEqual({ selected: wa, national: us });
+    expect(result.comparisons[0].selected.median).toBe(2);
+    const plain = await loadLandingGeographicResearch(base, async () => [[entry("paper_statement", 2, 9)], []]);
+    expect(plain.stamps).toBeUndefined();
   });
 });

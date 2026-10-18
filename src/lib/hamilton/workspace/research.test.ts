@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { briefingLocalMarket, choosePeers, localMarketView, marketLayerSets, peerAmounts } from "./research";
+import { briefingLocalMarket, choosePeers, feeLayerStamps, localMarketView, marketLayerSets, peerAmounts } from "./research";
 
 const peer = (amount: number, id: number) => ({ institution_id: id, institution_name: `Bank ${id}`, state_code: "TX", amount, source_document_ids: [id], document_urls: [], published_at: null });
 
@@ -151,5 +151,38 @@ describe("localMarketView", () => {
     expect(view.competitors?.find((c) => c.institutionId === 3)?.several).toEqual(levy);
     expect(view.competitors?.find((c) => c.institutionId === 2)?.several).toBeUndefined();
     expect(view.layer?.amounts).toEqual([35, 35]);
+  });
+});
+
+describe("market layer stamps (#1924)", () => {
+  const base = {
+    institutionId: 7,
+    institutionName: "Subject Bank",
+    stateCode: "TX",
+    fedDistrict: 11,
+    charterType: "bank",
+    assetTier: "community_mid",
+    peerLabel: "TX peers",
+    ownValues: new Map<string, number>(),
+    ownCategories: new Set<string>(),
+    peers: new Map(),
+    readAt: new Date("2026-10-18T14:10:00Z"),
+    layers: [
+      { scope: "national" as const, label: "National", filters: {}, values: new Map([["overdraft", [{ ...peer(35, 2), published_at: "2026-10-01T00:00:00Z" }]]]) },
+      { scope: "state" as const, label: "Texas", filters: { state_code: "TX" }, values: new Map() },
+    ],
+  };
+
+  it("stamps each layer as a live catalog read with its own filters and the bank left out", () => {
+    const stamps = feeLayerStamps(base, "overdraft");
+    expect(stamps.national).toMatchObject({ dataset: "published_fee_catalog", mode: "live", readAt: "2026-10-18T14:10:00.000Z", newestRecordAt: "2026-10-01T00:00:00.000Z" });
+    expect(stamps.national?.filters.map((f) => f.key)).toContain("exclude:institution:7");
+    expect(stamps.state?.filters.map((f) => f.label)).toContain("Peers: TX");
+    expect(stamps.national?.filters.some((f) => f.key.startsWith("peers:"))).toBe(false);
+    expect(stamps.state?.newestRecordAt).toBeNull();
+  });
+
+  it("gives no stamp without the read time, rather than a guessed one", () => {
+    expect(feeLayerStamps({ ...base, readAt: undefined }, "overdraft")).toEqual({});
   });
 });

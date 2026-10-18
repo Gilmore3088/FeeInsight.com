@@ -13,6 +13,7 @@
 import type { LineupAccount, LineupSummary } from "@/lib/data-store/account-lineup";
 import type { Storyline, StorylineExhibit } from "./storyline-types";
 import type { SeveralFees } from "@/lib/own-fee";
+import type { DatasetStamp } from "@/lib/dataset-stamp";
 
 /** A source behind a fact, named so the reader can check it. */
 export interface SourceRef {
@@ -400,6 +401,8 @@ export interface FeeResearch {
    * null percentiles when too few institutions publish the fee.
    */
   layers: MarketLayer[];
+  /** Each layer's dataset stamp by scope (#1924); none for the local market. Shown on Research and Try a price. */
+  layerStamps?: Partial<Record<MarketLayerScope, DatasetStamp>>;
   /** Named competitors in the bank's local market that publish this fee, largest deposits first; null when no market is on file. */
   localCompetitors: PeerValue[] | null;
   localMarket: LocalMarketInfo | null;
