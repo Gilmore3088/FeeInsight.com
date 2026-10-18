@@ -5,7 +5,8 @@ import { CsvStreamParser } from "./industry-events";
 
 /**
  * GLEIF legal entity identifiers (https://www.gleif.org), free to use under GLEIF's terms of
- * use (not confirmed as CC0; the loader records the terms URL with every run). Pure transport
+ * use: "The data available through the Access Service are provided under the CC0 licence"
+ * (read 2026-10-17; the loader records the terms URL with every run). Pure transport
  * and parsing: no DB access.
  *
  * - Level 1 (who is who): read from GLEIF's API (`/lei-records?filter[lei]=...`, 200 per call),
@@ -23,7 +24,7 @@ import { CsvStreamParser } from "./industry-events";
 export const GLEIF_API_BASE = "https://api.gleif.org/api/v1";
 export const GLEIF_GOLDEN_COPY_LATEST_URL = "https://goldencopy.gleif.org/api/v2/golden-copies/publishes/latest";
 export const GLEIF_TERMS_URL = "https://www.gleif.org/en/meta/lei-data-terms-of-use";
-export const GLEIF_LICENSE_NOTE = "GLEIF data, free of charge under GLEIF's terms of use; not confirmed as CC0";
+export const GLEIF_LICENSE_NOTE = "GLEIF data, CC0 1.0 under GLEIF's terms of use (read 2026-10-17); do not imply GLEIF endorsement";
 
 export const GLEIF_LEVEL2_PARTITION = "level2";
 export const GLEIF_LEVEL1_SHARDS = 8;

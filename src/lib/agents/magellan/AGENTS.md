@@ -537,8 +537,8 @@ items wait.
 | `registry-federal-bills` | `current` (daily) | `reg_tracker_items` (bank and credit union fee bills in the current Congress from the Congress.gov API, found by title, stage from the latest action; scheduled only when `CONGRESS_GOV_API_KEY` is set; shadow mode, nothing stored, until `FEDERAL_BILLS_TRACKER_LIVE=true`) |
 | `registry-state-bills` | `current` (hourly while states are due; each state also gets its own weekly row) | `reg_tracker_items` (12 states a run, bank and credit union fee bills from the Open States API with their stage from the action history, last 400 days; Puerto Rico is searched in Spanish; a state whose searches find nothing is probed once more and, when Open States holds no searchable bill text there in the window, its row and the step detail record `no_source_data`; scheduled only when `OPEN_STATES_API_KEY` is set; shadow mode, nothing stored, until `STATE_BILLS_TRACKER_LIVE=true`) |
 | `registry-state-regulators` | `current` | `state_regulators`, credit-union charter agency |
-| `registry-state-reg-news` | `current` (daily) | `reg_articles` source `state:XX` (each state banking and credit union regulator's press releases: the feed its home page advertises, else its news page read as article links; each agency's mode, count and fee headlines are in the partition detail; shadow mode, nothing stored, until `STATE_NEWS_TRACKER_LIVE=true`) |
-| `registry-state-bill-news` | `current` (daily) | `reg_articles` source `news:XX` (Google News RSS coverage of each fee bill in the `state-bills` partition rows, plus fee legislation news for a quarter of the states each day; shadow mode, nothing stored, until `STATE_NEWS_TRACKER_LIVE=true`) |
+| `registry-state-reg-news` | `current` (daily) | `reg_articles` source `state:XX` (each state banking and credit union regulator's press releases, except New York, North Carolina and Florida, whose sites allow only non-commercial use: the feed its home page advertises, else its news page read as article links; each agency's mode, count and fee headlines are in the partition detail; shadow mode, nothing stored, until `STATE_NEWS_TRACKER_LIVE=true`) |
+| `registry-state-bill-news` | held: nothing scheduled (`HELD_REGISTRY_SOURCES`; Google News RSS terms unconfirmed, 2026-10-18) | `reg_articles` source `news:XX`, which no reader returns (Google News RSS coverage of each fee bill in the `state-bills` partition rows, plus fee legislation news for a quarter of the states each day; shadow mode, nothing stored, until `STATE_NEWS_TRACKER_LIVE=true`) |
 | `registry-wire-research` | `current` (every 12 hours) | `reg_wire_research` (Regulatory Wire research notes: the newest federal releases, state regulator banking posts and state fee bills without a note, 20 a run (`REG_WIRE_SUMMARIES_PER_RUN`, at most 30); reads each item's own page with a plain fetch (a PDF's text layer through Rosetta's `layoutDocumentText`, first 8 pages; a scan stays unreadable) and asks `claude-haiku-4-5-20251001` (`REG_WIRE_SUMMARY_MODEL`) for a JSON summary from that text only, through `paidModelCall`; a date the text does not state is dropped in code; press is never summarised. Shadow mode until `REG_WIRE_SUMMARIES_LIVE=true`: picks and reads the items and logs them, no model call, nothing stored) |
 | `registry-enforcement` | `current` | `institution_enforcement_actions` (OCC EASearch export and Fed enforcement CSV; institution actions only, matched by name and state or to a holding company) |
 
@@ -595,10 +595,10 @@ fails a PR that changes one of these constants without updating its line here (#
 | `GLEIF_PARSER_VERSION` | — | v1 | `magellan/registry/gleif.ts` |
 | `MAKING_ENDS_MEET_PARSER_VERSION` | — | v1 (questions found by codebook wording; weight named in the codebook) | `magellan/registry/making-ends-meet.ts` |
 | `PAYDAY_REPORTS_PARSER_VERSION` | — | v1 | `magellan/registry/payday-reports.ts` |
-| `STATE_LISTS_PARSER_VERSION` | — | v1 | `magellan/registry/state-lists.ts` (state-public-depositories, state-nonbank-lenders, urban-debt-in-america) |
+| `STATE_LISTS_PARSER_VERSION` | — | v1 | `magellan/registry/state-lists.ts` (shared empty-partition record; state-nonbank-lenders) |
 | `STATE_DEPOSITORIES_PARSER_VERSION` | — | v2 (Florida list removed; no state wired) | `magellan/registry/state-lists.ts` |
 | `STATE_NONBANK_LENDERS_PARSER_VERSION` | — | v1 | `magellan/registry/state-lists.ts` |
-| `URBAN_DEBT_PARSER_VERSION` | — | v1 | `magellan/registry/state-lists.ts` |
+| `URBAN_DEBT_PARSER_VERSION` | — | v2 (licence ODC-By 1.0 confirmed; rows written with their attribution) | `magellan/registry/state-lists.ts` |
 | `BANK_MERGER_ORDERS_PARSER_VERSION` | — | v1 | `magellan/registry/bank-merger-orders.ts` |
 | `SEC_MARKET_VALUE_PARSER_VERSION` | — | v1 | `magellan/registry/sec-market-value.ts` |
 | `USCOURTS_BANKRUPTCY_PARSER_VERSION` | — | v1 | `magellan/registry/uscourts-bankruptcy.ts` |
@@ -606,7 +606,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `BLS_OEWS_PARSER_VERSION` | — | v1 | `magellan/registry/bls-oews.ts` |
 | `MARKET_GROWTH_PARSER_VERSION` | — | v1 | `magellan/registry/market-growth.ts` (census-permits, census-popest, irs-migration, census-bfs, bls-laus, census-lehd) |
 | `SMALLBIZ_PAYMENTS_PARSER_VERSION` | — | v2 (FedACH read from the Fed Board's page; struck sources removed) | `magellan/registry/smallbiz-payments.ts` (fed-payments) |
-| `NATIONAL_CREDIT_PARSER_VERSION` | — | v2 | `magellan/registry/national-credit.ts` (national-series, nyfed-household-debt, nyfed-sce-credit, cfpb-credit-trends) |
+| `NATIONAL_CREDIT_PARSER_VERSION` | — | v3 (Freddie Mac PMMS and Philadelphia Fed card series struck) | `magellan/registry/national-credit.ts` (national-series, nyfed-household-debt, nyfed-sce-credit, cfpb-credit-trends) |
 | `INDUSTRY_EVENTS_PARSER_VERSION` | — | v3 (CourtListener fee lawsuits removed; v2 reads H.2 release links when relative) | `magellan/registry/industry-events.ts` |
 | `PAYMENT_NETWORKS_PARSER_VERSION` | — | v1 | `magellan/registry/payment-networks.ts` |
 | `HMDA_PARSER_VERSION` | — | v2 (reads the public LAR's "derived_msa-md" header) | `magellan/registry/hmda.ts` |
@@ -623,8 +623,8 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NCUA_PARSER_VERSION` | — | v3 | `magellan/registry/ncua-financials.ts` |
 | `SEC_LINKS_PARSER_VERSION` | — | v2 | `magellan/registry/sec.ts` |
 | `STATE_BILLS_TAGGING_VERSION` | — | v6 | `magellan/registry/state-bills.ts` |
-| `STATE_ENFORCEMENT_PARSER_VERSION` | — | v6 (stated subjects, #1428) | `magellan/registry/state-enforcement.ts` |
-| `STATE_NEWS_PARSER_VERSION` | — | v2 | `magellan/registry/state-reg-news.ts` |
+| `STATE_ENFORCEMENT_PARSER_VERSION` | — | v7 (New York and North Carolina struck; v6 stated subjects, #1428) | `magellan/registry/state-enforcement.ts` |
+| `STATE_NEWS_PARSER_VERSION` | — | v3 (New York, North Carolina and Florida sites no longer read) | `magellan/registry/state-reg-news.ts` |
 | `RESTORE_FEE_PAGE_VERSION` | — | v1 | `magellan/restore-fee-page.ts` |
 | `SCHEDULE_SEARCH_STRATEGY` | `discover.paid_schedule_search` | v3 (top-10 first) | `magellan/schedule-search.ts` |
 | `SITE_SEARCH_STRATEGY` | `discover.site_search` | v1 | `magellan/second-document.ts` |

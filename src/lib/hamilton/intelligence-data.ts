@@ -6,6 +6,7 @@
  * never filled; a reader that fails returns null so its exhibit says so instead of showing zeros.
  */
 import { getSql } from "@/lib/data-store/connection";
+import { STRUCK_REG_ARTICLE_SOURCES } from "@/lib/data-store/struck-sources";
 import { getPeerFeeValues, getSegmentFeeValues, type PeerFilterSet } from "@/lib/data-store/fee-index";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { computeStats } from "@/lib/data-store/fees";
@@ -215,6 +216,8 @@ export interface StatePost {
 
 /** A state regulator's own posts (Regulatory Wire source "state:XX"), newest first. Never cited as federal releases. */
 export async function loadStatePosts(stateCode: string, limit = 6): Promise<StatePost[] | null> {
+  // Struck states' posts (non-commercial site terms; DECISIONS.md "No non-commercial data") are never read.
+  if (STRUCK_REG_ARTICLE_SOURCES.includes(`state:${stateCode.toUpperCase()}`)) return [];
   try {
     const rows = await getSql().unsafe(
       `SELECT title, link, published_at

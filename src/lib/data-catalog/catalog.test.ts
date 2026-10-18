@@ -38,8 +38,9 @@ describe("data catalog", () => {
     for (const id of [...STRUCK_AREA_SOURCES, ...HELD_SOURCES]) {
       expect(isServable({ status: "public-domain" }, id).servable, id).toBe(false);
     }
-    expect(catalogEntry("world-bank-remittance-prices")?.servable).toBe(false);
-    expect(catalogEntry("urban-debt-in-america")?.servable).toBe(false);
+    // Released 2026-10-18 with attribution (CC BY 4.0; ODC-By 1.0).
+    expect(catalogEntry("world-bank-remittance-prices")?.servable).toBe(true);
+    expect(catalogEntry("urban-debt-in-america")?.servable).toBe(true);
     expect(catalogEntry("national-series")?.servable).toBe(false);
     expect(catalogEntry("bls-laus")?.servable).toBe(true);
   });

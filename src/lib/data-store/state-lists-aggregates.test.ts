@@ -27,7 +27,11 @@ describe("state-lists aggregates helpers", () => {
     ]);
   });
 
-  it("returns nothing for Urban debt while its license is unconfirmed", async () => {
-    await expect(getUrbanDebtComparison("01001", {})).resolves.toEqual({ held: true, series: [] });
+  it("carries the Urban Institute attribution with every Debt in America read", async () => {
+    await expect(getUrbanDebtComparison("not-a-county")).resolves.toEqual({
+      licence: "ODC-By 1.0",
+      attribution: "Braga et al., Debt in America, Urban Institute",
+      series: [],
+    });
   });
 });

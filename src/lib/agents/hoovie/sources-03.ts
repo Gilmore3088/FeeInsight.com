@@ -4,12 +4,13 @@ import type { HoovieSourceContract } from "./contract";
 export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
   {
     // magellan/registry/state-lists.ts (runRegistryUrbanDebt), regulatory/state-lists.ts (datacatalog.urban.org
-    // debt-america page, county/state CSVs); writes area_statistics (economy.ts upsertAreaStats) only once confirmed
+    // debt-america page, county/state CSVs); writes area_statistics (economy.ts upsertAreaStats)
     source: "urban-debt-in-america",
     publisher: "Urban Institute (Debt in America)",
     licence: {
-      status: "held",
-      note: "Licence is \"Check\": rows are read and held, nothing written until URBAN_DEBT_LICENSE_CONFIRMED=true after a person reads the licence text the loader records.",
+      status: "open-licence",
+      licenceName: "ODC-By 1.0",
+      note: "Released from held 2026-10-18: ODC-By 1.0, \"These rights explicitly include commercial use\". Cite as \"Braga et al., Debt in America, Urban Institute\" (URBAN_DEBT_ATTRIBUTION), carried on every stored row and every read.",
     },
     connection: "bulk-file",
     cadence: "irregular",
@@ -35,8 +36,9 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     source: "gleif",
     publisher: "Global Legal Entity Identifier Foundation (GLEIF)",
     licence: {
-      status: "terms-unconfirmed",
-      note: "GLEIF data, free of charge under GLEIF's terms of use; not confirmed as CC0 (GLEIF_LICENSE_NOTE). Terms: https://www.gleif.org/en/meta/lei-data-terms-of-use",
+      status: "open-licence",
+      licenceName: "CC0 1.0",
+      note: "\"The data available through the Access Service are provided under the CC0 licence\" (licence audit 2026-10-17). No attribution required; do not imply GLEIF endorsement. Terms: https://www.gleif.org/en/meta/lei-data-terms-of-use",
     },
     connection: "rest-api",
     cadence: "irregular",
@@ -202,7 +204,10 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // writes only when STATE_BILLS_TRACKER_LIVE=true)
     source: "state-bills",
     publisher: "Open States (state legislature bill data)",
-    licence: { status: "terms-unconfirmed", note: "Open States terms not stated in code." },
+    licence: {
+      status: "public-domain",
+      note: "Open States: \"No attribution is required for using data obtained via Open States\" (licence audit 2026-10-17); the publisher disclaims copyright. Do not imply endorsement.",
+    },
     connection: "keyed-api",
     envKey: "OPEN_STATES_API_KEY",
     cadence: "irregular",
@@ -214,8 +219,11 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // magellan/registry/state-reg-news.ts, regulatory/state-regulators.ts (agency sites), regulatory/state-news.ts
     // (feeds or news pages; writes only when STATE_NEWS_TRACKER_LIVE=true, source "state:XX")
     source: "state-reg-news",
-    publisher: "State banking and credit union regulators",
-    licence: { status: "terms-unconfirmed", note: "State government sites; terms not stated in code." },
+    publisher: "State banking and credit union regulators (New York, North Carolina and Florida struck)",
+    licence: {
+      status: "terms-unconfirmed",
+      note: "New York DFS (\"for non-commercial purposes\"), North Carolina (\"for non-commercial use\") and Florida were struck 2026-10-18 (STRUCK_REGULATOR_STATES; readers hide their stored posts). New Jersey allows free reuse; the other state sites' terms are not yet read.",
+    },
     connection: "web-pages",
     cadence: "irregular",
     grain: ["document", "state"],
@@ -227,7 +235,10 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // STATE_NEWS_TRACKER_LIVE=true, source "news:XX")
     source: "state-bill-news",
     publisher: "News outlets, found through Google News RSS search",
-    licence: { status: "terms-unconfirmed", note: "Third-party news stories via Google News; terms not stated in code." },
+    licence: {
+      status: "held",
+      note: "Held 2026-10-18 (DECISIONS.md \"No non-commercial data\"): Google's News RSS terms are unread and reported as personal, non-commercial use. The code is kept; no partitions are scheduled (HELD_REGISTRY_SOURCES) and no reader returns its \"news:XX\" rows until James confirms the terms.",
+    },
     connection: "web-pages",
     cadence: "irregular",
     grain: ["document", "state"],
@@ -239,7 +250,10 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // regulatory/state-regulators.ts and tags credit unions' chartering agency; nothing is fetched
     source: "state-regulators",
     publisher: "Fee Insight's reviewed list of state banking regulators (agency names and websites)",
-    licence: { status: "terms-unconfirmed", note: "Derived from state agency names and URLs held in code; state government terms not stated." },
+    licence: {
+      status: "public-domain",
+      note: "Facts compiled by Fee Insight: state agency names and URLs held in code, nothing fetched (licence audit 2026-10-18). Facts are not copyrightable.",
+    },
     connection: "derived",
     cadence: "irregular",
     grain: ["state", "institution"],
@@ -262,8 +276,11 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // magellan/registry/state-enforcement.ts, regulatory/state-enforcement.ts (STATE_ORDER_SOURCES pages);
     // matched by name within the state
     source: "state-enforcement",
-    publisher: "State banking departments",
-    licence: { status: "terms-unconfirmed", note: "State government sites; terms not stated in code." },
+    publisher: "State banking departments (New Jersey, Illinois, Maryland, Washington, Texas)",
+    licence: {
+      status: "terms-unconfirmed",
+      note: "New York and North Carolina were struck 2026-10-18 (non-commercial site terms; readers hide their stored orders). New Jersey allows free reuse; Washington, Texas, Illinois and Maryland state no reuse terms.",
+    },
     connection: "web-pages",
     cadence: "irregular",
     grain: ["institution"],
@@ -277,7 +294,7 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     publisher: "Fee Insight model notes on federal agency releases, state regulator posts and state fee bills",
     licence: {
       status: "terms-unconfirmed",
-      note: "Inputs mix federal releases (public domain), state regulator posts and Open States bills, whose terms are not confirmed.",
+      note: "Inputs mix federal releases (public domain), state regulator posts and Open States bills (public domain). Posts from struck states (NY, NC, FL) and held press are never read; the other state sites' terms are not yet read.",
     },
     connection: "web-pages",
     cadence: "irregular",

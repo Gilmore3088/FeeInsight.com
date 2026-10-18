@@ -9,6 +9,7 @@
  */
 import { sql } from "./connection";
 import { getLocalMarketMembers } from "./custom-report-market";
+import { STRUCK_ENFORCEMENT_AGENCIES } from "./struck-sources";
 import { getFeeValuesForInstitutions, getInstitutionFeeValues } from "./fee-index";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "./fee-stats";
 import { FEE_FAMILIES, getDisplayName } from "@/lib/fee-taxonomy";
@@ -291,7 +292,9 @@ export async function getRegulatoryWatch(
 
   const [loaded, holdings] = await Promise.all([
     sql<{ agency: string; fetched_at: unknown }[]>`
-      SELECT agency, MAX(fetched_at) AS fetched_at FROM institution_enforcement_actions GROUP BY agency`,
+      SELECT agency, MAX(fetched_at) AS fetched_at FROM institution_enforcement_actions
+       WHERE agency <> ALL(${[...STRUCK_ENFORCEMENT_AGENCIES]}::text[])
+       GROUP BY agency`,
     peerIds.length > 0
       ? sql<{ id: number; holding_company_name: string }[]>`
           SELECT id, holding_company_name FROM institution_sources
@@ -311,6 +314,8 @@ export async function getRegulatoryWatch(
                  start_date, termination_date, penalty_amount, document_url
             FROM institution_enforcement_actions
            WHERE (institution_id = ANY(${peerIds}) OR holding_company = ANY(${holdingNames}))
+             -- Struck states' orders (DECISIONS.md "No non-commercial data") are never read.
+             AND agency <> ALL(${[...STRUCK_ENFORCEMENT_AGENCIES]}::text[])
              AND start_date >= ${since.toISOString().slice(0, 10)}
            ORDER BY start_date DESC NULLS LAST, id DESC`
       : [];
