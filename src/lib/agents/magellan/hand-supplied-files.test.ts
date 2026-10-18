@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { huntRowForFile, parseCsv, parseHuntCsv, parseSuppliedFileName, planHuntRows } from "./hand-supplied-files";
+import { huntRowForFile, parseCsv, parseHuntCsv, parseSuppliedFileName, planHuntRows, suppliedFileNameFor } from "./hand-supplied-files";
 
 const HEADER =
   "order,tier,institution_id,institution,state,type,assets_$B,website,link_on_file_(not_a_schedule),last_fetch_code,status,found_url,file_name,effective_date,notes";
@@ -19,6 +19,22 @@ describe("hand-supplied file names", () => {
     expect(parseSuppliedFileName("102_townebank_consumer.pdf")).toBeNull();
     expect(parseSuppliedFileName("102__townebank__consumer.html")).toBeNull();
     expect(parseSuppliedFileName("0__x__consumer.pdf")).toBeNull();
+  });
+});
+
+describe("file names for an upload from the institution page", () => {
+  it("names any PDF for the institution, keeping a name that already follows the rule", () => {
+    expect(suppliedFileNameFor(96, "25BBT002_Beacon Consumer Fee Schedule_V12 2026-08-31.pdf")).toBe(
+      "96__25bbt002-beacon-consumer-fee-schedule-v12-2026-08-31__consumer.pdf",
+    );
+    expect(suppliedFileNameFor(102, "102__townebank__consumer.pdf")).toBe("102__townebank__consumer.pdf");
+    expect(parseSuppliedFileName(suppliedFileNameFor(6, "Personal-Banking-Fee-Schedule.pdf"))?.institutionId).toBe(6);
+  });
+
+  it("never keeps another institution's id or a business suffix", () => {
+    expect(suppliedFileNameFor(29, "102__townebank__consumer.pdf")).toBe("29__102-townebank-consumer__consumer.pdf");
+    expect(parseSuppliedFileName(suppliedFileNameFor(96, "96__beacon__business.pdf"))?.audience).toBe("consumer");
+    expect(suppliedFileNameFor(7, "....pdf")).toBe("7__schedule__consumer.pdf");
   });
 });
 

@@ -6,8 +6,9 @@ import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { CARD_PRODUCT_TAKEDOWN_LIVE } from "@/lib/fee-category-guard";
 
 import {
-  applyHandAudienceFixes, applyHandTakedowns, ATM_SURCHARGE_TAKEDOWN_LIVE, atmSurchargeTakedowns, HAND_AUDIENCE_FIXES, HAND_TAKEDOWN_BATCH_LIMIT, HAND_TAKEDOWNS, handAudienceEvidence,
-  handTakedownBatchSizes, planHandAudienceFixes, planHandTakedowns, type LiveAudienceRow, type LiveTakedownRow,
+  applyHandAudienceFixes, applyHandTakedowns, ATM_SURCHARGE_TAKEDOWN_LIVE, atmSurchargeTakedowns, HAND_AUDIENCE_FIXES, HAND_TAKEDOWN_BATCH_LIMIT, HAND_TAKEDOWNS,
+  HAND_WAITING_REJECTIONS, handAudienceEvidence, handTakedownBatchSizes, JAMES_APPROVED_BATCHES, planHandAudienceFixes, planHandTakedowns,
+  TEXAS_CAPITAL_TAKEDOWN_LIVE, texasCapitalTakedowns, texasCapitalWaitingRejections, type LiveAudienceRow, type LiveTakedownRow,
 } from "./hand-takedowns";
 
 // #1659: U.S. Bank's Bank Smartly row, live at $10 now; the hand amount correction makes it $12.
@@ -200,19 +201,31 @@ const LIVE: LiveTakedownRow[] = [
   { fee_published_id: 53765, lineage_ref: 208, institution_id: 8579, canonical_fee_key: "stop_payment", fee_name: "Stop Payment Order for Bill Payment, ACH, or Check (one free per calendar year)", amount: "35.00" },
   // #1837: lineage ref is a fixture number.
   { fee_published_id: 45157, lineage_ref: 209, institution_id: 5622, canonical_fee_key: "overdraft", fee_name: "Non-Sufficient Funds / Overdraft: Non-members", amount: "0.00" },
+  // #1905: Navy Federal's five rows and the cash advance row its repeat waits on, live on prod, read-only, Oct 18.
+  { fee_published_id: 145735, lineage_ref: 15218, institution_id: 4956, canonical_fee_key: "cash_advance", fee_name: "Credit card cash advance§ | None", amount: "0.50" },
+  { fee_published_id: 28173, lineage_ref: 176232, institution_id: 4956, canonical_fee_key: "cash_advance", fee_name: "Credit card cash advance§", amount: "0.50" },
+  { fee_published_id: 122351, lineage_ref: 142958, institution_id: 4956, canonical_fee_key: "card_replacement", fee_name: "Lost/Stolen Card", amount: "5.00" },
+  { fee_published_id: 129718, lineage_ref: 142959, institution_id: 4956, canonical_fee_key: "atm_non_network", fee_name: "Visa/PLUS Network ATM domestic and foreign cash withdrawal and balance inquiry", amount: "1.00" },
+  { fee_published_id: 19884, lineage_ref: 14884, institution_id: 4956, canonical_fee_key: "late_payment", fee_name: "Generally 4% of principal and interest for government loans (VA &amp; FHA); maximum late charge of", amount: "30.00" },
+  { fee_published_id: 15730, lineage_ref: 9070, institution_id: 4956, canonical_fee_key: "late_payment", fee_name: "Generally a maximum late charge", amount: "10.00" },
 ];
 const CONDITIONAL_ZERO = [43512, 54014, 61335, 68893, 70121, 73737, 77121, 77122, 77618, 84553, 87079, 87461, 88213, 91505, 120559];
-const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689, 138828, 138832, 138833, 138839, 138827, 138834, 138841, 148352, 138831, 138830, 138848, 138849, 138850, 138851, 42961, 86536, 66721, 66722, 83125, 97335, 97904, 58414, 106021, 33705, 149143, 149806, 137241, 68335, 79402, 74149, 49817, 125584, 109893, 130622, 147193, 133860, 119352, 143826, 97434, 49606, 148620, 107546, 81215, 20420, 102296, 147811, 125359, 146800, 74560, 125809, 102758, 13031, 11722, 11427, 141821, 232, 101170, 64716, 65870, 122350, 81615, 16733, 142748, 152166, 107315, 152973, 152366, 152591, 152306, 45157];
+const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689, 138828, 138832, 138833, 138839, 138827, 138834, 138841, 148352, 138831, 138830, 138848, 138849, 138850, 138851, 42961, 86536, 66721, 66722, 83125, 97335, 97904, 58414, 106021, 33705, 149143, 149806, 137241, 68335, 79402, 74149, 49817, 125584, 109893, 130622, 147193, 133860, 119352, 143826, 97434, 49606, 148620, 107546, 81215, 20420, 102296, 147811, 125359, 146800, 74560, 125809, 102758, 13031, 11722, 11427, 141821, 232, 101170, 64716, 65870, 122350, 81615, 16733, 142748, 152166, 107315, 152973, 152366, 152591, 152306, 45157, 145735, 122351, 129718, 19884, 15730];
 
-// The standing list without the #1772/#1773 ATM rows, which have their own tests below.
-const STANDING = HAND_TAKEDOWNS.filter((entry) => entry.issue !== 1772 && entry.issue !== 1773);
+// The standing list without the #1772/#1773 ATM rows and #1880's Texas Capital rows, which have their own tests below.
+const STANDING = HAND_TAKEDOWNS.filter((entry) => ![1772, 1773, 1880].includes(entry.issue));
 
-function fakeDb(live: LiveTakedownRow[], failOn?: string) {
+function fakeDb(live: LiveTakedownRow[], failOn?: string, pending: Array<{ fee_verified_id: number; institution_id: number }> = []) {
   const writes: Array<{ text: string; values: unknown[] }> = [];
   const db = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
     const text = strings.join("?");
     if (failOn && text.includes(failOn)) throw new Error(`boom: ${failOn}`);
     if (text.includes("SELECT fp.fee_published_id")) return live;
+    if (text.includes("SELECT v.fee_verified_id")) return pending;
+    if (text.includes("RETURNING fee_verified_id")) {
+      writes.push({ text, values });
+      return [{ fee_verified_id: values.find((value) => typeof value === "number") }];
+    }
     writes.push({ text, values });
     if (text.includes("UPDATE published_fee_records")) return [{ fee_published_id: values.find((value) => typeof value === "number") }];
     return [];
@@ -321,6 +334,8 @@ describe("hand takedowns (James, Oct 16)", () => {
       [152591, "source_mismatch: #1828"],
       [152306, "duplicate of #53765 (#1830)"],
       [45157, "source_mismatch: #1837"],
+      [145735, "duplicate of #28173 (#1905)"], [122351, "source_mismatch: #1905"], [129718, "source_mismatch: #1905"],
+      [19884, "source_mismatch: #1905"], [15730, "source_mismatch: #1905"],
     ]);
     expect(CARD_PRODUCT_TAKEDOWN_LIVE).toBe(true);
     // A wrong read names its issue; a second read of one printed fee names the live copy it repeats too.
@@ -329,8 +344,11 @@ describe("hand takedowns (James, Oct 16)", () => {
       : entry.reason === `source_mismatch: #${entry.issue}`))).toBe(true);
     // James, Oct 16 03:37 UTC: fewer than 20 fees per batch (one issue) go this way; a bigger batch goes to him.
     expect(HAND_TAKEDOWN_BATCH_LIMIT).toBeLessThan(20);
-    expect(handTakedownBatchSizes()[0]).toEqual({ issue: 1755, entries: 18 });
-    expect(handTakedownBatchSizes().every((batch) => batch.entries <= HAND_TAKEDOWN_BATCH_LIMIT)).toBe(true);
+    expect(handTakedownBatchSizes()[0]).toEqual({ issue: 1880, entries: 32 });
+    // Only a batch James approved by name holds more (#1880: his "Take them down", Oct 18).
+    expect([...JAMES_APPROVED_BATCHES.keys()]).toEqual([1880]);
+    expect(handTakedownBatchSizes().filter((batch) => !JAMES_APPROVED_BATCHES.has(batch.issue))[0]).toEqual({ issue: 1755, entries: 18 });
+    expect(handTakedownBatchSizes().every((batch) => batch.entries <= HAND_TAKEDOWN_BATCH_LIMIT || JAMES_APPROVED_BATCHES.has(batch.issue))).toBe(true);
   });
 
   it("takes a row down only while it still reads as listed", () => {
@@ -432,6 +450,11 @@ describe("hand takedowns (James, Oct 16)", () => {
         { feePublishedId: 152591, feeVerifiedId: 188726, reason: "source_mismatch: #1828" },
         { feePublishedId: 152306, feeVerifiedId: 187951, reason: "duplicate of #53765 (#1830)" },
         { feePublishedId: 45157, feeVerifiedId: 209, reason: "source_mismatch: #1837" },
+        { feePublishedId: 145735, feeVerifiedId: 15218, reason: "duplicate of #28173 (#1905)" },
+        { feePublishedId: 122351, feeVerifiedId: 142958, reason: "source_mismatch: #1905" },
+        { feePublishedId: 129718, feeVerifiedId: 142959, reason: "source_mismatch: #1905" },
+        { feePublishedId: 19884, feeVerifiedId: 14884, reason: "source_mismatch: #1905" },
+        { feePublishedId: 15730, feeVerifiedId: 9070, reason: "source_mismatch: #1905" },
       ],
       skipped: [],
     });
@@ -774,5 +797,66 @@ describe("#1788: guard v72 hand takedowns", () => {
       canonical_fee_key: "card_foreign_txn", fee_name: "International ATM Withdrawal", amount: "5.00" };
     expect(planHandTakedowns([row], [fifthThird]).skipped).toEqual([{ feePublishedId: 81615, reason: "waiting on #81610" }]);
     expect(planHandTakedowns([row, kept], [fifthThird]).takenDown.map((planned) => planned.feePublishedId)).toEqual([81615]);
+  });
+});
+
+describe("#1880: Texas Capital's closed-account table", () => {
+  // The 32 rows as they read live on prod, read-only, Oct 18 (lineage refs from the same read).
+  const live: LiveTakedownRow[] = texasCapitalTakedowns(true).map((entry, index) => ({
+    fee_published_id: entry.feePublishedId, lineage_ref: 900000 + index, institution_id: 69,
+    canonical_fee_key: entry.canonicalFeeKey, fee_name: entry.feeName, amount: entry.amount.toFixed(2),
+  }));
+
+  it("lists all 32 live rows and 36 waiting copies while James's switch is on", () => {
+    expect(TEXAS_CAPITAL_TAKEDOWN_LIVE).toBe(true);
+    const entries = texasCapitalTakedowns(true);
+    expect(entries).toHaveLength(32);
+    expect(new Set(entries.map((entry) => entry.feePublishedId)).size).toBe(32);
+    expect(entries.every((entry) => entry.institutionId === 69 && entry.issue === 1880 && entry.kind === "not_on_schedule" &&
+      entry.reason === "source_mismatch: #1880" && entry.evidence.includes("no longer available to open"))).toBe(true);
+    expect(HAND_TAKEDOWNS.filter((entry) => entry.issue === 1880)).toHaveLength(32);
+    expect(texasCapitalWaitingRejections(true)).toHaveLength(36);
+    expect(HAND_WAITING_REJECTIONS.filter((entry) => entry.issue === 1880)).toHaveLength(36);
+    expect(texasCapitalTakedowns(false)).toEqual([]);
+    expect(texasCapitalWaitingRejections(false)).toEqual([]);
+    // None is on another batch too.
+    const elsewhere = new Set(HAND_TAKEDOWNS.filter((entry) => entry.issue !== 1880).map((entry) => entry.feePublishedId));
+    expect(entries.some((entry) => elsewhere.has(entry.feePublishedId))).toBe(false);
+  });
+
+  it("takes every row down while it reads as listed", () => {
+    const entries = texasCapitalTakedowns(true);
+    expect(planHandTakedowns(live, entries).takenDown).toHaveLength(32);
+    // A row re-priced since it was listed stays.
+    const repriced = live.map((row) => (row.fee_published_id === 153190 ? { ...row, amount: "35.00" } : row));
+    expect(planHandTakedowns(repriced, entries).skipped).toEqual([{ feePublishedId: 153190, reason: "changed since listed" }]);
+  });
+
+  it("rejects the waiting copies at the listed institution only, in the same run event", async () => {
+    const entries = texasCapitalTakedowns(true);
+    const waiting = texasCapitalWaitingRejections(true);
+    const pending = [{ fee_verified_id: 191907, institution_id: 69 }, { fee_verified_id: 191908, institution_id: 70 }];
+    const dry = fakeDb(live, undefined, pending);
+    const planned = await applyHandTakedowns(dry.db as never, { runId: 1, batchId: "b", dryRun: true, list: entries, waiting });
+    expect(planned.waitingRejected).toEqual([191907]);
+    expect(dry.writes).toHaveLength(0);
+
+    const { db, writes } = fakeDb(live, undefined, pending);
+    const result = await applyHandTakedowns(db as never, { runId: 2, stepId: 20, batchId: "b", dryRun: false, list: entries, waiting });
+    expect(result.takenDown).toHaveLength(32);
+    expect(result.waitingRejected).toEqual([191907]);
+    const rejection = writes.find((write) => write.text.includes("RETURNING fee_verified_id"));
+    expect(rejection?.text).toContain("AND institution_id = ?");
+    expect(rejection?.text).toContain("AND review_status IN ('verified', 'approved')");
+    expect(rejection?.values).toEqual(expect.arrayContaining([191907, 69]));
+    const events = writes.filter((write) => write.text.includes("INSERT INTO agent_run_events"));
+    expect(events).toHaveLength(1);
+    expect(events[0].values).toEqual(expect.arrayContaining(["Took down 32 listed live fee(s) confirmed wrong against their bank's own text and rejected 1 waiting copy"]));
+
+    // Once all are down and rejected, nothing is written again.
+    const again = fakeDb([]);
+    const after = await applyHandTakedowns(again.db as never, { runId: 3, batchId: "b", dryRun: false, list: entries, waiting });
+    expect(after).toMatchObject({ takenDown: [], waitingRejected: [] });
+    expect(again.writes).toHaveLength(0);
   });
 });

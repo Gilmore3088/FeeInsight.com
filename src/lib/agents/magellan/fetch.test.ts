@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 import { describe, expect, it, vi } from "vitest";
 
-import { MAGELLAN_FETCH_STRATEGY, MAGELLAN_STALE_LINK_REFETCH_DAYS, redirectedToHomepage, runMagellanFetch, sendsValidators } from "./fetch";
+import { MAGELLAN_FETCH_STRATEGY, MAGELLAN_STALE_LINK_REFETCH_DAYS, redirectedToHomepage, runMagellanFetch, sendsValidators, withRequestedUrl } from "./fetch";
 
 type DbMock = ReturnType<typeof vi.fn>;
 
@@ -26,6 +26,45 @@ function response(body: string, contentType = "text/html", status = 200): Respon
 }
 
 describe("Magellan agentic fetch", () => {
+  // #1881: Texas Capital's row before run 8472 (Oct 18, read-only): its saved link was the new PDF,
+  // its profile still remembered the old services-fees page.
+  const TEXAS_CAPITAL = {
+    id: 69,
+    institution_name: "Texas Capital Bank",
+    fee_schedule_url: "https://texascapitalbank.com/sites/default/files/documents/Disclosures/Personal-Banking-Fee-Schedule.pdf",
+    asset_size: "1000",
+    last_crawl_at: null,
+    consecutive_failures: 0,
+    profile_canonical_source_url: "https://texascapitalbank.com/personal-banking/services-fees",
+  };
+
+  it("fetches the fee link a person's extract asked for, not the remembered page (#1881)", async () => {
+    const db = createDbMock([TEXAS_CAPITAL]);
+    const fetchImpl = vi.fn().mockResolvedValueOnce(response("%PDF", "application/pdf"));
+    const result = await runMagellanFetch({
+      runId: 8472, institutionId: 69, requestedUrl: TEXAS_CAPITAL.fee_schedule_url, db: asFetchDb(db), fetchImpl,
+    });
+    expect(fetchImpl.mock.calls[0][0]).toBe(TEXAS_CAPITAL.fee_schedule_url);
+    expect(result.results[0]).toMatchObject({ sourceUrl: TEXAS_CAPITAL.fee_schedule_url, documentType: "pdf" });
+    // The fetch then remembers the new page: the profile takes the fetched address unless locked.
+    const upsert = db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO institution_source_profiles"));
+    expect(upsert?.slice(1)).toContain(TEXAS_CAPITAL.fee_schedule_url);
+  });
+
+  it("keeps the remembered page without a request, or when the request is not the saved link", () => {
+    const row = TEXAS_CAPITAL as Parameters<typeof withRequestedUrl>[0];
+    expect(withRequestedUrl(row)).toBe(row);
+    expect(withRequestedUrl(row, 69, null)).toBe(row);
+    expect(withRequestedUrl(row, 70, TEXAS_CAPITAL.fee_schedule_url)).toBe(row);
+    expect(withRequestedUrl(row, 69, "https://texascapitalbank.com/other.pdf")).toBe(row);
+    expect(withRequestedUrl(row, 69, ` ${TEXAS_CAPITAL.fee_schedule_url} `)).toEqual({ ...row, profile_canonical_source_url: null });
+    // A remembered spelling of the saved page is kept on an extract (navigatorcu's `?print=1`, read-only, Oct 18).
+    const variant = { ...row, id: 7024, fee_schedule_url: "https://navigatorcu.org/checking/free-checking/", profile_canonical_source_url: "https://navigatorcu.org/checking/free-checking/?print=1" };
+    expect(withRequestedUrl(variant, 7024, variant.fee_schedule_url)).toBe(variant);
+    const port = { ...row, id: 4527, fee_schedule_url: "https://www.newcenturyfcu.org:443/images/pdfs/fee-schedule.pdf", profile_canonical_source_url: "https://www.newcenturyfcu.org/images/pdfs/fee-schedule.pdf" };
+    expect(withRequestedUrl(port, 4527, port.fee_schedule_url)).toBe(port);
+  });
+
   it("fetches a source document and writes crawl result plus target health", async () => {
     const body = "monthly maintenance fee overdraft fee";
     const db = createDbMock([
