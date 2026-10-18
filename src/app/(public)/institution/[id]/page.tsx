@@ -41,6 +41,7 @@ import { FeeFocusScroll } from "./fee-focus-scroll";
 import {
   FeeScheduleTable,
   groupFeesByFamily,
+  isBusinessFee,
   splitFeesByAudience,
   type DisplayFee,
   type FeeBenchmarks,
@@ -300,7 +301,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
   const publishedDisplay = displayFees.filter((fee) => fee.status === "verified");
   const audience = splitFeesByAudience(publishedDisplay);
   const personalRows = rowCount(audience ? audience.personal : publishedDisplay);
-  const businessOnlyRows = audience ? rowCount(audience.business.filter((fee) => fee.feeAudience === "business")) : 0;
+  const businessOnlyRows = audience ? rowCount(audience.business.filter(isBusinessFee)) : 0;
   const scheduleRowCount = rowCount(displayFees);
   const finding = heroFinding({
     rows,
@@ -579,6 +580,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                 <ShowAll
                   total={scheduleRowCount}
                   shown={SCHEDULE_ROWS}
+                  tabbed={splitFeesByAudience(displayFees) !== null}
                   initialAll={scheduleAll}
                   aside={
                     <Link href={links.correctSourceHref} className={`inline-flex min-h-11 items-center gap-1.5 text-[14px] ${LINK}`}>

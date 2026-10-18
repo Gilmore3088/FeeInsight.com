@@ -21,19 +21,20 @@
 }
 
 /*
- * Overview and financial performance charts: one accent for the institution the page is about,
- * neutral slate for its peers, recessive grid and axes (validated with the dataviz palette check
+ * Overview and financial performance charts: the institution the page is about is ink (red and
+ * blue mean above and below a median on this site, so the subject takes neither), neutral slate
+ * for its peers, recessive grid and axes (validated with the dataviz palette check
  * on the paper surface in each theme; the slate is a deliberate neutral, relieved by labels and
  * the searchable list).
  */
 :root, [data-theme="light"] {
-  --fi-subject: #2a6fc4;
+  --fi-subject: var(--fi-ink, #132338);
   --fi-peer: #a3abb7;
   --fi-chart-grid: #e7e0d2;
   --fi-chart-axis: #9aa1ab;
 }
 [data-theme="dark"], .dark {
-  --fi-subject: #4d8fe0;
+  --fi-subject: var(--fi-ink, #f3efe6);
   --fi-peer: #56677e;
   --fi-chart-grid: #263a55;
   --fi-chart-axis: #5d6f87;

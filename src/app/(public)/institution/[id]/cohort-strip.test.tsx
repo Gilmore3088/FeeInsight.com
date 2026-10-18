@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { CohortStrip } from "./cohort-strip";
@@ -49,5 +51,22 @@ describe("CohortStrip search", () => {
     expect(screen.getByText("Capital Bank")).toBeTruthy();
     expect(screen.queryByText("Cascade Bank")).toBeNull();
     expect(screen.queryByText("No match.")).toBeNull();
+  });
+});
+
+describe("subject colour", () => {
+  it("draws the subject in ink, never the variance red or blue", () => {
+    const css = fs.readFileSync(path.join(__dirname, "profile.css"), "utf8");
+    const subject = [...css.matchAll(/--fi-subject:\s*([^;]+);/g)].map((m) => m[1]);
+    expect(subject.length).toBeGreaterThan(0);
+    for (const value of subject) expect(value).toMatch(/^var\(--fi-ink/);
+    expect(css).not.toMatch(/2a6fc4|4d8fe0/);
+    const { container } = render(
+      <CohortStrip institutionId={1} subjectName="Subject Bank" data={DATA} quarter="Q2 2026" sourceName="FDIC" measureName="Service charges" yearToDate={false} />,
+    );
+    expect(container.querySelector('circle[fill="var(--fi-subject)"]')).toBeTruthy();
+    expect(container.innerHTML).not.toMatch(/variance-(above|below)|fi-brick|2a6fc4/);
+    // The median and a hovered bar are dark slate, so nothing else shares the subject's ink.
+    expect(container.innerHTML).not.toMatch(/var\(--color-ink\)/);
   });
 });

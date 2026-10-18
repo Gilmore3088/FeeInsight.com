@@ -8,7 +8,7 @@ export { niceTicks };
 
 /**
  * One measure by quarter, as SVG: columns for income over a quarter, a line for balances and
- * ratios. The subject institution wears the one accent (--fi-subject); grid and axes stay
+ * ratios. The subject institution is ink (--fi-subject); grid and axes stay
  * recessive. Hover, tap or arrow keys move one readout across the quarters; a missing quarter is a
  * gap and reads "Not reported". The figure's table view sits beside it (financial-performance.tsx).
  */

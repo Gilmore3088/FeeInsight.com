@@ -8,7 +8,7 @@ import type { CohortPoint, CohortStripData } from "./fee-share-cohort";
 /**
  * Financial performance B: where the institution's service-charge share of revenue sits in its
  * asset-size cohort. A box (quartiles, from the real cohort) over a histogram of the cohort's
- * shares, the subject in the one accent. The page ships bins and the nearest few peers, never
+ * shares, the subject in ink (never the variance red or blue), the median and a hovered bar in dark slate. The page ships bins and the nearest few peers, never
  * the whole cohort; a search or "Show all" reads members from /api/institutions/[id]/cohort.
  * Peers past the axis are counted at its edge, never dropped silently.
  */
@@ -168,7 +168,7 @@ export function CohortStrip(props: CohortStripProps) {
           </g>
         ))}
         <rect x={x(p25)} y={BOX_Y} width={Math.max(1, x(p75) - x(p25))} height={BOX_H} rx={4} fill="var(--fi-peer)" opacity={0.35} />
-        <line x1={x(median)} x2={x(median)} y1={BOX_Y - 4} y2={BOX_Y + BOX_H + 4} stroke="var(--color-ink)" strokeWidth={2} />
+        <line x1={x(median)} x2={x(median)} y1={BOX_Y - 4} y2={BOX_Y + BOX_H + 4} stroke="var(--fi-viz-bar)" strokeWidth={2} />
         {counts.map((n, i) => {
           const h = n === 0 ? 0 : Math.max(2, (n / tallest) * STRIP_H);
           return (
@@ -180,7 +180,7 @@ export function CohortStrip(props: CohortStripProps) {
                   y={STRIP_Y + STRIP_H - h}
                   width={Math.max(1, binW - 1)}
                   height={h}
-                  fill={hoverBin === i ? "var(--color-ink)" : "var(--fi-peer)"}
+                  fill={hoverBin === i ? "var(--fi-viz-bar)" : "var(--fi-peer)"}
                   opacity={0.85}
                 />
               )}
@@ -205,7 +205,7 @@ export function CohortStrip(props: CohortStripProps) {
           </span>
         )}
         <span className="inline-flex items-center gap-1.5">
-          <span aria-hidden="true" className="inline-block h-0.5 w-3 bg-ink" />
+          <span aria-hidden="true" className="inline-block h-0.5 w-3 bg-[var(--fi-viz-bar)]" />
           Median {pct(median)}
         </span>
         <span className="inline-flex items-center gap-1.5">
