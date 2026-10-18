@@ -1099,13 +1099,19 @@ v23 (Oct 18, #1596, James's live-fee check): footnote marks leave every category
 only maintenance and minimum balance (`footnoteMarkFreeName`): "^", "*" and "∞" count as marks
 beside "†", "‡", "§" and superscripts, a number glued to a word before ":" or ")" is a mark
 ("Wire Transfer1: Domestic – Outgoing", "ATM3:", "(all items4)") unless the word numbers the name
-("Tier3:", "Level", "Plan", "Step"), and a colon left doubled closes up ("Domestic Wires**: :"). A
+("Tier3:", "Level", "Plan", "Step", "Age55)", "Months12)", "Page1)", "COVID19:"), and a colon left
+doubled closes up ("Domestic Wires**: :"). "^" or "*" between numbers or standing alone between words
+is arithmetic and the name is left ("2^3", "$25 * hours"). Product codes ("(MT103)"), plain words'
+glued numbers and quotes still come off only maintenance and minimum balance names. A
 mark standing alone before words ("^^ If your account ...") or glued to the next word mid-name
 ("Withdrawals§ §Non-TEFCU owned ATMs only") opens a footnote's sentence and is left; a web page's
 footnote link ("Fee[4](#disclaimer4)") goes, and so does a comma left dangling ("OD Charge‡, ‡‡").
-Dry run Oct 18 over every live name with a mark: 157 distinct names on 160 live rows would change,
-before the category, twin-name and trace guards.
-The same guards hold: the category guard, no other live row's name, and the fee must still trace.
+The guards: the category guard; no other live row of the institution's category may have the new
+name at any price, and two rows whose marks come off to the same name ("Wire (MT103)", "Wire (MT202)",
+"Treasurer’s Checks†^" $7 beside "Treasurer’s Checks" $8) are both left; and the fee must still trace.
+Dry run Oct 18 over the 266 live rows of every institution and category with a marked name (186
+marked): 148 renames before the trace guard, 11 left as twins, 105 with no better name, 2 keeping a
+condition.
 
 `isCutoffName` (publish's `cutoff_name` hold) has a narrow live twin beside it, `liveFragmentName`
 (#1443), built from the same regex pieces: a dangling joining word (lower-case "a/an/the" only;

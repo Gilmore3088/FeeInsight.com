@@ -1065,6 +1065,39 @@ describe("v23 (#1596): footnote marks in every category's live names (James's li
     const row = fee({ fee_published_id: 75931, institution_id: 5, source_document_id: 5, canonical_fee_key: "wire_domestic_outgoing", fee_name: "Wire Transfer1: Domestic – Outgoing", amount: 30 });
     expect(planRetidy([row], page).renames.map((rename) => rename.newName)).toEqual(["Wire Transfer: Domestic – Outgoing"]);
   });
+
+  it("keeps product codes, ages, terms and arithmetic outside maintenance and minimum balance", () => {
+    const cases: Array<[string, string]> = [
+      ["Wire (MT103)", "wire_domestic_outgoing"],
+      ["Copy of Tax Form (W-9)", "research"],
+      ["Safe Deposit Box (A1)", "safe_deposit_box"],
+      ["Senior (Age55)", "monthly_maintenance"],
+      ["CD Early Withdrawal (Months12)", "cd_early_withdrawal"],
+      ["COVID19: Fee waiver", "overdraft"],
+      ["Statement Copy (Page1)", "statement_copy"],
+      ["Research 2^3", "research"],
+      ["Research Fee $25 * hours", "research"],
+      ["Stop Payment * 2", "stop_payment"],
+    ];
+    expect(cases.map(([name, key]) => footnoteMarkFreeName(name, key))).toEqual(cases.map(() => null));
+    expect(footnoteMarkFreeName("Rewards Checking (CK06) Monthly service charge", "monthly_maintenance")).toBe("Rewards Checking Monthly service charge");
+  });
+
+  it("leaves a rename that lands on another live row's name at any price, or that two rows would share", () => {
+    const at = (id: number, name: string, amount: number, key = "wire_domestic_outgoing") =>
+      fee({ fee_published_id: id, institution_id: 9, source_document_id: 9, canonical_fee_key: key, fee_name: name, amount });
+    const rows = [
+      at(1, "Wire Transfer¹", 25),
+      at(2, "Wire Transfer²", 30),
+      at(3, "Platinum50: Monthly fee", 12, "monthly_maintenance"),
+      at(4, "Platinum: Monthly fee", 8, "monthly_maintenance"),
+      at(5, "Stop Payment†", 30, "stop_payment"),
+    ];
+    const page = [{ source_document_id: 9, normalized_text: rows.map((row) => `${row.fee_name} | $${row.amount}`).join("\n") }];
+    const plan = planRetidy(rows, page);
+    expect(plan.renames.map((rename) => [rename.feePublishedId, rename.newName])).toEqual([[5, "Stop Payment"]]);
+    expect(plan.skipped.same_name_live).toBe(3);
+  });
 });
 
 describe("capsCasedName (v22, #1810)", () => {
