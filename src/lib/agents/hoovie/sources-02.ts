@@ -92,6 +92,7 @@ export const HOOVIE_SOURCES_02: HoovieSourceContract[] = [
     licence: {
       status: "open-licence",
       licenceName: "FRBNY Terms of Use",
+      attribution: "New York Fed Consumer Credit Panel / Equifax. © Federal Reserve Bank of New York",
       note: "NY Fed licence \"to use, copy, and distribute Content\" for \"your personal or business purposes\" (licence audit 2026-10-17). Cite \"New York Fed Consumer Credit Panel / Equifax\" and \"© [year] Federal Reserve Bank of New York\".",
     },
     connection: "bulk-file",
@@ -107,6 +108,7 @@ export const HOOVIE_SOURCES_02: HoovieSourceContract[] = [
     licence: {
       status: "open-licence",
       licenceName: "FRBNY SCE licence",
+      attribution: "Source: Survey of Consumer Expectations, © 2013-2019 Federal Reserve Bank of New York (FRBNY).",
       note: "SCE licence: \"a worldwide, royalty-free, nonexclusive right to reproduce, use, and distribute\" (licence audit 2026-10-18); no FRBNY logos or implied endorsement. Cite \"Source: Survey of Consumer Expectations, © 2013-2019 Federal Reserve Bank of New York (FRBNY).\"",
     },
     connection: "bulk-file",

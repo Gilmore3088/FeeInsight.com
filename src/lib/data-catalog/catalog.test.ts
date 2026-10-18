@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import { HOOVIE_SOURCES } from "@/lib/agents/hoovie/sources";
 import { HELD_SOURCES, STRUCK_AREA_SOURCES } from "@/lib/data-store/struck-sources";
+import { ATP_ATTRIBUTION } from "@/lib/regulatory/alltheplaces";
+import { REMITTANCE_PRICES_ATTRIBUTION } from "@/lib/regulatory/economy";
+import { OSM_ATTRIBUTION } from "@/lib/regulatory/payment-networks";
+import { URBAN_DEBT_ATTRIBUTION } from "@/lib/regulatory/state-lists";
 import {
   DATA_CATALOG,
   PIPELINE_AGENT_NAMES,
@@ -43,6 +47,18 @@ describe("data catalog", () => {
     expect(catalogEntry("urban-debt-in-america")?.servable).toBe(true);
     expect(catalogEntry("national-series")?.servable).toBe(false);
     expect(catalogEntry("bls-laus")?.servable).toBe(true);
+  });
+
+  it("gives every servable open-licence source the credit its licence requires, matching what the loader stores", () => {
+    for (const entry of DATA_CATALOG) {
+      if (!entry.servable || entry.licence.status !== "open-licence") continue;
+      // CC0 asks for no credit; every other open licence here does.
+      if (!/^CC0\b/.test(entry.licence.licenceName ?? "")) expect(entry.licence.attribution, entry.id).toBeTruthy();
+    }
+    expect(catalogEntry("world-bank-remittance-prices")?.licence.attribution).toBe(REMITTANCE_PRICES_ATTRIBUTION);
+    expect(catalogEntry("urban-debt-in-america")?.licence.attribution).toBe(URBAN_DEBT_ATTRIBUTION);
+    expect(catalogEntry("alltheplaces")?.licence.attribution).toBe(ATP_ATTRIBUTION);
+    expect(catalogEntry("payment-networks")?.licence.attribution).toBe(OSM_ATTRIBUTION);
   });
 
   it("never names a pipeline agent in a customer-facing label or publisher", () => {
