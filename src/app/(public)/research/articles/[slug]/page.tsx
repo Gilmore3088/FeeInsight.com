@@ -3,12 +3,15 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { after } from "next/server";
 import Link from "next/link";
+import { ArrowRight, ChartColumn, Table2, TextQuote, type LucideIcon } from "lucide-react";
 import { incrementViewCount, getPublishedArticles, type Article } from "@/lib/data-store/articles";
 import { getGuidesForCategory } from "@/lib/data-store/guides";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { TrackLink } from "@/components/track-link";
 import { DEMO_REQUEST_NAV, PRIMARY_CTA_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
-import { PAGE_CRUMBS, PAGE_H1, PAGE_HEADER, PAGE_HEADER_BLOCK } from "@/components/public/page-header";
+import { PAGE_CRUMBS, PAGE_HEADER, PAGE_HEADER_BLOCK } from "@/components/public/page-header";
+import { homeSerif } from "@/app/landing-serif";
+import { SERIF, SERIF_HEAD } from "@/app/landing-shared";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
 import { PRODUCT_NAME, REPORT_OFFER, RESEARCH_IMPRINT, SITE_NAME, SITE_URL } from "@/lib/constants";
@@ -17,7 +20,17 @@ import { linkPreview } from "@/lib/link-preview";
 import { renderArticleMarkdown, renderInlineMarkdown } from "@/lib/article-markdown";
 import { SourceNote } from "../../district/[id]/district-hub";
 import { ArticleExhibit } from "./article-exhibits";
-import { articleTags, bylineDate, parseArticle, plainSummary, plainText, type ArticleSection, type ExhibitGroup } from "./article-view";
+import {
+  articleTags,
+  bylineDate,
+  parseArticle,
+  plainSummary,
+  plainText,
+  takeaways,
+  type ArticleSection,
+  type ExhibitGroup,
+  type Takeaway,
+} from "./article-view";
 import { loadPublishedArticle } from "./load-article";
 import { PREVIEW_FIXTURE_SLUG } from "./preview-fixture";
 
@@ -32,7 +45,11 @@ function byline(author: string | null | undefined): string {
 
 const FOCUS = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
 const LINK = "font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink";
-const H2 = "text-[22px] font-semibold leading-[1.15] tracking-[-0.02em] text-ink sm:text-[28px]";
+/** Section heads in the homepage serif (SERIF), at the article's own section size. */
+const H2 = "text-[24px] !font-medium leading-[1.12] tracking-[-0.02em] text-ink sm:text-[30px]";
+/** The band's second action: a text link with an arrow, as on the institution page. */
+const SECONDARY =
+  "inline-flex min-h-11 items-center gap-2 rounded-sm text-[15px] font-medium text-ink underline decoration-border underline-offset-[6px] hover:decoration-ink";
 /** Article paragraphs, lists and subheads, as stored, in the page's own type and colors. */
 const BODY =
   "space-y-3 break-words text-[15px] leading-relaxed text-ink-soft [&_a]:font-medium [&_a]:text-ink [&_a]:underline [&_a]:decoration-border [&_a]:underline-offset-4 [&_h3]:pt-2 [&_h3]:text-[17px] [&_h3]:font-semibold [&_h3]:text-ink [&_li]:mt-1.5 [&_strong]:font-semibold [&_strong]:text-ink [&_ul]:list-disc [&_ul]:pl-5";
@@ -74,19 +91,85 @@ function Exhibits({ group }: { group: ExhibitGroup }) {
   );
 }
 
+/** A one-tap disclosure, closed at first: the method, and the paragraphs that follow an exhibit. */
+function Disclosure({ summary, children }: { summary: string; children: React.ReactNode }) {
+  return (
+    <details className="group/more">
+      <summary
+        className={`flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-sm text-[15px] font-semibold text-ink [&::-webkit-details-marker]:hidden ${FOCUS}`}
+      >
+        <span aria-hidden="true" className="transition-transform group-open/more:rotate-90 motion-reduce:transition-none">
+          &rsaquo;
+        </span>
+        {summary}
+      </summary>
+      <div className="mt-3">{children}</div>
+    </details>
+  );
+}
+
+const EVIDENCE: Record<Takeaway["evidence"], { icon: LucideIcon; label: string }> = {
+  chart: { icon: ChartColumn, label: "chart" },
+  table: { icon: Table2, label: "table" },
+  text: { icon: TextQuote, label: "section" },
+};
+const TAKEAWAY_COLS = ["", "", "lg:grid-cols-2", "lg:grid-cols-3"];
+
+/** The article's points, one line each; the icon says what backs the point up, and the point links to it. */
+function Takeaways({ points }: { points: Takeaway[] }) {
+  if (points.length === 0) return null;
+  return (
+    <ul aria-label="Key points" className={`mx-auto mt-6 grid max-w-[34rem] gap-2 text-left sm:mx-0 sm:max-w-none ${TAKEAWAY_COLS[points.length] ?? ""}`}>
+      {points.map((point) => {
+        const { icon: Icon, label } = EVIDENCE[point.evidence];
+        return (
+          <li key={point.id} className="min-w-0">
+            <a
+              href={`#${point.id}`}
+              className={`group flex h-full min-h-11 items-start gap-3 rounded-xl bg-surface-0 p-3 ring-1 ring-border hover:ring-ink/40 ${FOCUS}`}
+            >
+              <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-full bg-brick-tint text-brick">
+                <Icon className="size-[18px]" strokeWidth={2} />
+              </span>
+              <span className="min-w-0 pt-1.5 text-[15px] font-medium leading-snug text-ink">
+                {plainText(point.text)}
+                <span className="sr-only">, see the {label}</span>
+              </span>
+            </a>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 /** Title, finding, exhibit, source, then any further paragraphs. */
 function Section({ section }: { section: ArticleSection }) {
   const head = (
     <div className="max-w-3xl">
-      <h2 id={`${section.id}-heading`} className={H2} dangerouslySetInnerHTML={{ __html: renderInlineMarkdown(section.title) }} />
+      <h2
+        id={`${section.id}-heading`}
+        className={H2}
+        style={SERIF}
+        dangerouslySetInnerHTML={{ __html: renderInlineMarkdown(section.title) }}
+      />
       {section.finding && <Finding text={section.finding} />}
     </div>
   );
-  const notes = section.notes.length > 0 && (
-    <div className="max-w-3xl">
-      <Markdown blocks={section.notes} />
-    </div>
-  );
+  // Beside an exhibit, the further paragraphs wait behind one tap so the figures carry the section.
+  const notes =
+    section.notes.length > 0 &&
+    (section.exhibits.length > 0 ? (
+      <div className="max-w-3xl">
+        <Disclosure summary="More on this">
+          <Markdown blocks={section.notes} />
+        </Disclosure>
+      </div>
+    ) : (
+      <div className="max-w-3xl">
+        <Markdown blocks={section.notes} />
+      </div>
+    ));
   return (
     <section id={section.id} aria-labelledby={`${section.id}-heading`} className="scroll-mt-24">
       {section.exhibits.length > 0 ? (
@@ -154,9 +237,10 @@ export default async function ArticlePage({ params }: PageProps) {
   }`;
   const brief = parseArticle(article.content, defaultSource);
   const path = `/research/articles/${slug}`;
+  const points = takeaways(brief);
 
   return (
-    <>
+    <div className={homeSerif.variable}>
       <BreadcrumbJsonLd
         items={[
           { name: "Home", href: "/" },
@@ -180,7 +264,9 @@ export default async function ArticlePage({ params }: PageProps) {
             <span aria-hidden="true">/</span>
             <span className="capitalize text-ink-soft">{article.category}</span>
           </nav>
-          <h1 className={`mx-auto mt-1 max-w-4xl sm:mx-0 sm:mt-2 ${PAGE_H1}`}>{article.title}</h1>
+          <h1 className={`mx-auto mt-1 max-w-4xl text-ink sm:mx-0 sm:mt-2 ${SERIF_HEAD}`} style={SERIF}>
+            {article.title}
+          </h1>
           {article.subtitle && <p className="mt-3 text-[16px] leading-relaxed text-ink-soft sm:mx-0 sm:text-[17px]">{article.subtitle}</p>}
           <p className="mt-4 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[13px] text-ink-muted sm:mx-0 sm:justify-start">
             <span>{byline(article.author)}</span>
@@ -197,6 +283,7 @@ export default async function ArticlePage({ params }: PageProps) {
               </>
             )}
           </p>
+          <Takeaways points={points} />
           {brief.lead.length > 0 && (
             <div
               className={`mt-6 border-t border-border pt-5 text-[17px] leading-relaxed text-ink sm:text-[19px] [&_strong]:font-semibold ${PAGE_HEADER_BLOCK}`}
@@ -245,22 +332,22 @@ export default async function ArticlePage({ params }: PageProps) {
             </div>
           </details>
 
-          {/* Hamilton, once. */}
+          {/* Hamilton, once, in the house band: "Hey Hamilton," one line, one action. */}
           {!isPro && (
-            <section aria-labelledby="hamilton-heading" className="rounded-2xl bg-paper px-4 py-6 ring-1 ring-border sm:px-8 sm:py-8 print:hidden">
-              <h2 id="hamilton-heading" className="text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-[22px]">
-                One institution&apos;s fees against these figures
+            <section aria-labelledby="hamilton-heading" className="border-t border-border pt-10 sm:pt-12 print:hidden">
+              <h2 id="hamilton-heading" className={`${SERIF_HEAD} text-ink`} style={SERIF}>
+                <span className="block text-brick">Hey Hamilton,</span>
+                <span className="block">How do our fees compare?</span>
               </h2>
-              <p className="mt-2 text-[15px] leading-relaxed text-ink-soft sm:mx-0">
-                Hamilton, the {SITE_NAME} Pro workspace, sets an institution&apos;s own published fees beside the peers and markets it
-                chooses, with the source document for every figure.
+              <p className="mt-4 text-[16px] leading-relaxed text-ink-soft">
+                Hamilton sets your own published fees beside the peers and markets you choose.
               </p>
-              <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3">
+              <div className="mt-6 flex flex-wrap items-center gap-x-7 gap-y-4">
                 <TrackLink
                   event="upgrade_click"
                   eventProps={{ placement: "research_article_end", article: slug }}
                   href={PRO_PLANS_NAV.href}
-                  className={`inline-flex min-h-11 items-center rounded-full bg-ink px-5 text-[14px] font-semibold text-on-ink hover:opacity-90 ${FOCUS}`}
+                  className={`fi-btn fi-btn-brick min-h-12 px-8 text-[15px] ${FOCUS}`}
                 >
                   {PRO_PLANS_NAV.label}
                 </TrackLink>
@@ -269,18 +356,20 @@ export default async function ArticlePage({ params }: PageProps) {
                     event="sample_report_click"
                     eventProps={{ placement: "research_article_end", article: slug }}
                     href="/reports/sample-competitive-fee-position"
-                    className={`inline-flex min-h-11 items-center rounded-sm text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink ${FOCUS}`}
+                    className={`${SECONDARY} ${FOCUS}`}
                   >
                     See the sample {REPORT_OFFER.name}
+                    <ArrowRight className="size-4" aria-hidden="true" />
                   </TrackLink>
                 ) : (
                   <TrackLink
                     event="contact_sales"
                     eventProps={{ placement: "research_article_end_demo", article: slug }}
                     href={DEMO_REQUEST_NAV.href}
-                    className={`inline-flex min-h-11 items-center rounded-sm text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink ${FOCUS}`}
+                    className={`${SECONDARY} ${FOCUS}`}
                   >
                     {DEMO_REQUEST_NAV.standaloneLabel}
+                    <ArrowRight className="size-4" aria-hidden="true" />
                   </TrackLink>
                 )}
               </div>
@@ -343,6 +432,6 @@ export default async function ArticlePage({ params }: PageProps) {
           }}
         />
       )}
-    </>
+    </div>
   );
 }

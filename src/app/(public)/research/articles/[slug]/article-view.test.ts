@@ -3,11 +3,13 @@ import {
   METHOD_TITLE,
   articleTags,
   bylineDate,
+  firstSentence,
   isEmptyCell,
   parseArticle,
   plainSummary,
   tableFolds,
   tableLabel,
+  takeaways,
   unsourcedSections,
 } from "./article-view";
 
@@ -173,5 +175,37 @@ describe("article helpers", () => {
     expect(articleTags('["overdraft","states"]')).toEqual(["overdraft", "states"]);
     expect(articleTags("not json")).toEqual([]);
     expect(articleTags(null)).toEqual([]);
+  });
+});
+
+describe("takeaways", () => {
+  it("keeps a sentence whole across prices, decimals and abbreviations", () => {
+    expect(firstSentence("Banks sit at $30.50 in the U.S. on average. Credit unions sit lower.")).toBe(
+      "Banks sit at $30.50 in the U.S. on average.",
+    );
+    expect(firstSentence("One line only")).toBe("One line only");
+  });
+
+  it("takes the first sentence of up to three section findings, with what backs each up", () => {
+    const content = [
+      "Opening line.",
+      "## Charted",
+      "```bars Fee by size\nSmall | 30 | $30\n```",
+      "Small institutions sit at $30. More detail follows.",
+      "## Tabled",
+      "| Size | Fee |\n|---|---|\n| Small | $30 |",
+      "A table finding.",
+      "## Prose",
+      "- a list is never a finding",
+      "## Prose two",
+      "Second prose finding.",
+      "## Prose three",
+      "Third prose finding.",
+    ].join("\n\n");
+    expect(takeaways(parseArticle(content))).toEqual([
+      { id: "s-charted", text: "Small institutions sit at $30.", evidence: "chart" },
+      { id: "s-tabled", text: "A table finding.", evidence: "table" },
+      { id: "s-prose-two", text: "Second prose finding.", evidence: "text" },
+    ]);
   });
 });

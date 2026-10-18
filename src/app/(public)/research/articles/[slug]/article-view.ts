@@ -239,6 +239,36 @@ export function unsourcedSections(brief: ArticleBrief): string[] {
   return brief.sections.filter((s) => s.exhibits.length > 0 && !s.source).map((s) => s.title);
 }
 
+/** One point for the top of the page: a section's first sentence, and what backs it up. */
+export interface Takeaway {
+  /** The section it comes from, so the point links to its evidence. */
+  id: string;
+  /** Markdown, as the article wrote it. */
+  text: string;
+  evidence: "chart" | "table" | "text";
+}
+
+/** The first sentence of a paragraph; a "$30.50" or "U.S." never ends one. */
+export function firstSentence(text: string): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  const end = /(?<=[a-z0-9%)*][.!?])\s+(?=[A-Z*"(\[])/.exec(flat);
+  return end ? flat.slice(0, end.index) : flat;
+}
+
+/**
+ * Up to three one-line takeaways, in reading order: the first sentence of each section's finding.
+ * Articles have no takeaway field, so these are the article's own words and nothing is invented.
+ */
+export function takeaways(brief: ArticleBrief, max = 3): Takeaway[] {
+  return brief.sections
+    .filter((s) => s.finding)
+    .slice(0, max)
+    .map((s) => {
+      const kind = s.exhibits[0]?.kind;
+      return { id: s.id, text: firstSentence(s.finding!), evidence: kind === "bars" ? "chart" : kind === "table" ? "table" : "text" };
+    });
+}
+
 /** Rows shown before "Show all": a table or chart of up to this many plus two shows whole. */
 export const TABLE_ROWS_SHOWN = 5;
 

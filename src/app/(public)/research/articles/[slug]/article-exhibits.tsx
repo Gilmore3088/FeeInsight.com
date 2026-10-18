@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useRevealOnScroll } from "@/app/landing-motion";
+import "@/app/landing-motion.css";
 import { renderInlineMarkdown } from "@/lib/article-markdown";
 import { TABLE_ROWS_SHOWN, isEmptyCell, plainText, tableFolds, type BarsRow, type Exhibit, type TableData } from "./article-view";
 
@@ -112,8 +114,10 @@ function Table({ table, label }: { table: TableData; label: string }) {
 export function ArticleExhibit({ exhibit }: { exhibit: Exhibit }) {
   // Screen readers get the label without its Markdown marks.
   const plain = plainText(exhibit.label) || "Exhibit";
+  // The homepage's reveal: the exhibit fades up as it first scrolls into view.
+  const ref = useRevealOnScroll<HTMLElement>();
   return (
-    <figure className="min-w-0 space-y-5">
+    <figure ref={ref} className="min-w-0 space-y-5">
       <figcaption className="text-[14px] font-semibold text-ink">
         <Inline text={exhibit.label} />
       </figcaption>

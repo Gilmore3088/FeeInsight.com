@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   }),
 }));
 
+// next/font runs only under the Next compiler; the page reads just the CSS variable name.
+vi.mock("next/font/local", () => ({ default: () => ({ variable: "home-serif", className: "" }) }));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
 vi.mock("next/server", () => ({ after: mocks.after }));
 vi.mock("@/lib/data-store/articles", () => ({

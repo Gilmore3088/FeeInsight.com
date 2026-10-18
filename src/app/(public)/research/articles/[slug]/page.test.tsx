@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   sample: false,
 }));
 
+// next/font runs only under the Next compiler; the page reads just the CSS variable name.
+vi.mock("next/font/local", () => ({ default: () => ({ variable: "home-serif", className: "" }) }));
 vi.mock("next/server", () => ({ after: mocks.after }));
 vi.mock("@/lib/data-store/articles", () => ({
   getArticleBySlug: vi.fn(async () => mocks.article),
@@ -94,6 +96,24 @@ describe("research article page", () => {
     expect(within(header).getByText(/A single national number hides the pattern/)).toBeTruthy();
   });
 
+  it("puts the sections' own first sentences at the top as key points, each linked to its evidence", async () => {
+    await renderPage();
+    const points = within(screen.getByRole("list", { name: "Key points" })).getAllByRole("link");
+    expect(points.map((p) => p.getAttribute("href"))).toEqual([
+      "#s-banks-the-larger-the-bank-the-higher-the-fee",
+      "#s-the-state-matters-less-than-the-institution",
+    ]);
+    expect(points[0].textContent).toBe("Banks under $300 million in assets sit at a $30 median; banks over $50 billion at $35., see the chart");
+    expect(points[1].textContent).toBe("State medians run from $25 to $35., see the section");
+  });
+
+  it("sets the headline, section heads and Hamilton band in the homepage serif", async () => {
+    await renderPage();
+    for (const heading of [screen.getByRole("heading", { level: 1 }), ...screen.getAllByRole("heading", { level: 2 }).slice(0, 4)]) {
+      expect(heading.getAttribute("style")).toContain("--fi-home-serif");
+    }
+  });
+
   it("writes nothing while rendering: the view count waits for after()", async () => {
     await renderPage();
     expect(mocks.incrementViewCount).not.toHaveBeenCalled();
@@ -109,7 +129,7 @@ describe("research article page", () => {
       "Banks: the larger the bank, the higher the fee",
       "The state matters less than the institution",
       "Every state with enough data",
-      "One institution's fees against these figures",
+      "Hey Hamilton,How do our fees compare?",
     ]);
     const banks = document.getElementById("s-banks-the-larger-the-bank-the-higher-the-fee")!;
     const text = banks.textContent!;
