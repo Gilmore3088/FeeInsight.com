@@ -794,6 +794,16 @@ when a read failed; a failed read refuses nothing). `PUBLISH_REFUSE_SWEEP_RULES_
 on (James's OK, 2026-10-17): such a row is skipped (skip reason `Refused at publish, a sweep would
 take it down: <the sweep's reason>`). Set it back to false to count only.
 
+**Page copies at publish (live).** Each dollar row about to publish is read with the page-copy
+collapse's own test (`pageCopyRepeats`, via `page-copy-refuse.ts`) against the live rows of its
+institution, category, variant and amount from other documents. A row the collapse would close
+behind a live copy of the same page is counted in the step's `page_copy_check` and, while
+`PUBLISH_REFUSE_PAGE_COPIES_LIVE` is on, skipped (`Copy of the page of live fee #<kept id>`). A row
+the collapse would keep (the newer edition) publishes as before. The collapse stays the live
+re-check; this check takes nothing down, and a failed read refuses nothing. Dry count: 51 of the 53
+rows closed as page copies in the 30 hours to Oct 18 02:40 UTC were closed behind a row already live
+when they published.
+
 ## Rules Re-check
 
 In state-lane (or single-institution) publish steps, `rules-recheck.ts` re-runs Knox's

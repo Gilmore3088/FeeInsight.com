@@ -2094,6 +2094,13 @@ async function executeAgenticStep(
             error: published.sweepCheck.error,
             samples: published.sweepCheck.samples,
           },
+          // Rows this step was about to publish that the page-copy collapse would close (page-copy-refuse.ts).
+          page_copy_check: {
+            live: published.pageCopyCheck.live,
+            would_refuse: published.pageCopyCheck.wouldRefuse,
+            refused: published.pageCopyCheck.refused,
+            samples: published.pageCopyCheck.samples,
+          },
           near_name_collapse: {
             live: nearNameCollapse.live,
             documents: nearNameCollapse.documents,
