@@ -31,7 +31,16 @@ import {
   getInstitutionLeiLink,
   type FamilyNode,
 } from "@/lib/data-store/locations-gleif-aggregates";
-import { CALL_REPORT_ROW_SOURCES, FAMILY_MEASURE, callReportEntries, catalogEntry, scopeForAreaGeoType, type CatalogEntry, type CatalogScopeKind } from "./catalog";
+import {
+  CALL_REPORT_ROW_SOURCES,
+  FACT_MEASURES,
+  FAMILY_MEASURE,
+  callReportEntries,
+  catalogEntry,
+  scopeForAreaGeoType,
+  type CatalogEntry,
+  type CatalogScopeKind,
+} from "./catalog";
 import {
   AREA_PERIOD_FIRST_MONTH_SQL,
   AREA_PERIOD_LAST_MONTH_SQL,
@@ -61,6 +70,8 @@ import {
  * - `area:<source>:<series_key>`: a public-data series from area_statistics.
  * - `fee:<category>`: a fee category from the published fee index.
  * - `call:<item_key>`: a call-report line from institution_call_report_items (FFIEC and NCUA).
+ * - `fact:<name>`: an institution fact read from its own documents (institution_payment_features),
+ *   for one institution, with the link to the document it was read from.
  * - `family:lei`: one institution's corporate family from GLEIF (parents and subsidiaries).
  *
  * A peer group (`peer_set`) is resolved by the shared definition in data-store/peer-sets.ts, the
@@ -113,8 +124,8 @@ export const queryDataInputSchema = z
       .string()
       .max(160)
       .regex(
-        /^(?:area:[a-z0-9-]+:[A-Za-z0-9_.-]+|fee:[a-z0-9_]+|call:[a-z0-9_]+|family:lei)$/,
-        'measure is "area:<source>:<series_key>", "fee:<category>", "call:<item_key>" or "family:lei"',
+        /^(?:area:[a-z0-9-]+:[A-Za-z0-9_.-]+|fee:[a-z0-9_]+|call:[a-z0-9_]+|fact:[a-z0-9_]+|family:lei)$/,
+        'measure is "area:<source>:<series_key>", "fee:<category>", "call:<item_key>", "fact:<name>" or "family:lei"',
       ),
     scope: z
       .object({
@@ -183,10 +194,16 @@ function iso(value: unknown): string | null {
 /** Parses a measure; the schema has already checked the characters. */
 export function parseMeasure(
   measure: string,
-): { kind: "area"; source: string; seriesKey: string } | { kind: "fee"; category: string } | { kind: "call"; itemKey: string } | { kind: "family" } {
+):
+  | { kind: "area"; source: string; seriesKey: string }
+  | { kind: "fee"; category: string }
+  | { kind: "call"; itemKey: string }
+  | { kind: "fact"; name: string }
+  | { kind: "family" } {
   if (measure === FAMILY_MEASURE) return { kind: "family" };
   if (measure.startsWith("fee:")) return { kind: "fee", category: measure.slice(4) };
   if (measure.startsWith("call:")) return { kind: "call", itemKey: measure.slice(5) };
+  if (measure.startsWith("fact:")) return { kind: "fact", name: measure.slice(5) };
   const rest = measure.slice(5);
   const cut = rest.indexOf(":");
   return { kind: "area", source: rest.slice(0, cut), seriesKey: rest.slice(cut + 1) };
@@ -202,6 +219,7 @@ export async function queryData(raw: unknown): Promise<QueryDataResult> {
   try {
     if (measure.kind === "area") return await queryArea(input, measure.source, measure.seriesKey);
     if (measure.kind === "call") return await queryCall(input, measure.itemKey);
+    if (measure.kind === "fact") return await queryFact(input, measure.name);
     if (measure.kind === "family") return await queryFamily(input);
     return await queryFee(input, measure.category);
   } catch (error) {
@@ -633,6 +651,72 @@ async function queryCall(input: QueryDataInput, itemKey: string): Promise<QueryD
     unit: units.length === 1 ? units[0] : units.length > 1 ? "mixed" : null,
     citation: citation(rows, [...new Set(rows.flatMap((r) => r.sources ?? []))]),
     note: `${coverageNote(rows, memberCount, "a filed figure")}${coldNote ? ` ${coldNote}` : ""}`,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Institution facts from their own documents (institution_payment_features)
+// ---------------------------------------------------------------------------
+
+interface FactRow {
+  status: string;
+  evidence_url: string;
+  evidence_snippet: string;
+  read_at: Date | string | null;
+  rule: string;
+}
+
+/** What each stored status means, in the words an answer uses. */
+const FACT_ANSWERS: Record<string, string> = {
+  offers: "yes",
+  does_not_offer: "no",
+  unclear: "unclear",
+};
+
+/**
+ * One institution's fact, read from its own documents: yes, no or unclear, with the sentence and
+ * the link to the document it came from. No row means none of its stored documents names the
+ * service, which is not a "no".
+ */
+async function queryFact(input: QueryDataInput, name: string): Promise<QueryDataResult> {
+  const fact = FACT_MEASURES[name];
+  if (!fact) return refuse(input.measure, `"${name}" is not an institution fact; the facts are ${Object.keys(FACT_MEASURES).map((k) => `fact:${k}`).join(", ")}.`);
+  const entry = catalogEntry(fact.source);
+  if (!entry?.servable) return refuse(input.measure, entry?.notServableReason ?? "This fact is not available.");
+  const { scope } = input;
+  if (scope.kind !== "institution") return refuse(input.measure, "This fact is answered for one institution at a time; ask with scope.kind institution.");
+  const rows = await withTransaction(async (tx) => {
+    await tx`SET LOCAL statement_timeout = '5s'`;
+    return tx<FactRow[]>`
+      SELECT status, evidence_url, evidence_snippet, read_at, rule
+        FROM institution_payment_features
+       WHERE institution_id = ${Number(scope.id)}
+         AND feature = ${fact.feature}
+    `;
+  });
+  const row = [...rows][0];
+  if (!row) {
+    return {
+      ok: true,
+      measure: input.measure,
+      scope: scope.kind,
+      rows: [],
+      unit: null,
+      citation: { publisher: entry.publisher, source_url: null, as_of: null, fetched_at: null },
+      note: "None of this institution's documents that we hold names this service, so whether it offers it is not known.",
+    };
+  }
+  const readAt = iso(row.read_at);
+  return {
+    ok: true,
+    measure: input.measure,
+    scope: scope.kind,
+    rows: [{ fact: fact.name, answer: FACT_ANSWERS[row.status] ?? "unclear", evidence: row.evidence_snippet, document_url: row.evidence_url, read_at: readAt }],
+    unit: null,
+    citation: { publisher: entry.publisher, source_url: row.evidence_url, as_of: readAt ? readAt.slice(0, 10) : null, fetched_at: readAt },
+    ...(row.status === "unclear"
+      ? { note: row.rule === "conflict" ? "The institution's documents disagree about this service." : "The institution's documents name this service without saying whether it is offered." }
+      : {}),
   };
 }
 

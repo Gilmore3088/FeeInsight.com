@@ -218,3 +218,23 @@ export const HELD_REG_ARTICLE_PATTERN = "news:%";
 export function isHiddenRegArticleSource(source: string): boolean {
   return source.startsWith("news:") || STRUCK_REG_ARTICLE_SOURCES.includes(source);
 }
+
+/**
+ * Zelle's own sites (zellepay.com, and Early Warning Services, which runs Zelle). The Zelle
+ * participant list there was struck on 2026-10-17 (#1840): its terms allow only personal,
+ * non-commercial use. "Offers Zelle" is read only from each institution's own documents
+ * (registry-bank-zelle, #1875); a stored document whose address is on one of these hosts is never
+ * read or cited as evidence.
+ */
+export const ZELLE_LIST_HOSTS: readonly string[] = ["zellepay.com", "earlywarning.com"];
+
+/** True when the URL's host is one of ZELLE_LIST_HOSTS or a subdomain of one; an unreadable URL counts as true. */
+export function isZelleListHost(url: string): boolean {
+  let host: string;
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    return true;
+  }
+  return ZELLE_LIST_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
+}
