@@ -147,7 +147,8 @@ async function getReportPeerContext(institutionId: number, lines: [key: string, 
   const fees: PeerFeeRow[] = [];
   const thinFeeKeys: string[] = [];
   for (const [key, amount] of lines) {
-    const row = comparePeerCategory(key, amount, values.get(key) ?? []);
+    // The report shows one amount per line, so it is the price and its own range.
+    const row = comparePeerCategory(key, { price: amount, low: amount, high: amount, fees: [] }, values.get(key) ?? []);
     // A median from fewer than MIN_PEERS_FOR_RANK peers is named as thin, never shown.
     if (row.peer_median === null || row.peer_count < MIN_PEERS_FOR_RANK) {
       thinFeeKeys.push(key);
