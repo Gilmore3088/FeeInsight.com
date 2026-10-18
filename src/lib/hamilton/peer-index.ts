@@ -1,11 +1,13 @@
 import { cache } from "react";
 import {
-  getNationalIndex,
-  getNationalIndexCached,
-  getPeerIndex,
-  getPeerIndexes,
+  getNationalIndexCachedStamped,
+  getNationalIndexStamped,
+  getPeerIndexStamped,
+  getPeerIndexesStamped,
   type IndexEntry,
+  type StampedIndex,
 } from "@/lib/data-store/fee-index";
+import type { DatasetStamp } from "@/lib/dataset-stamp";
 import {
   getDefaultPeerSets,
   getSavedPeerSetById,
@@ -13,6 +15,7 @@ import {
 } from "@/lib/data-store/saved-peers";
 import type { InstitutionDetail } from "@/lib/data-store/types";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/fee-stats";
+import { ASSET_TIER_RANGES, chosenInstitutionsLabel, peerFilterParts } from "@/lib/peer-filter-words";
 
 export interface HamiltonPeerFilters {
   charter_type?: string;
@@ -42,6 +45,8 @@ export interface HamiltonPeerIndexContext {
   filters: HamiltonPeerFilters | null;
   peerSetId: string | null;
   fallbackReason: string | null;
+  /** The data behind `entries`: dataset, live or snapshot and when, method, counting and filters (#1924). */
+  stamp: DatasetStamp;
 }
 
 interface ResolveHamiltonPeerIndexParams {
@@ -109,37 +114,13 @@ export function parseSavedPeerSetFilters(
   });
 }
 
-/** Asset ranges for both tier vocabularies (institution segments and FDIC tiers). */
-export const ASSET_TIER_RANGES: Record<string, string> = {
-  community_small: "under $300M",
-  community_mid: "$300M to $1B",
-  community_large: "$1B to $10B",
-  regional: "$10B to $50B",
-  large_regional: "$50B to $250B",
-  super_regional: "over $250B",
-  micro: "under $100M",
-  community: "$100M to $1B",
-  midsize: "$1B to $10B",
-  mega: "over $250B",
-};
+export { ASSET_TIER_RANGES };
 
 export function describePeerFilters(filters: HamiltonPeerFilters | null): string {
   if (!filters) return "Verified national index";
   if (filters.label?.trim()) return filters.label.trim();
-  if (filters.institutionIds?.length) {
-    const n = filters.institutionIds.length;
-    return `${n} chosen ${n === 1 ? "institution" : "institutions"}`;
-  }
-  const parts: string[] = [];
-  if (filters.state_code) parts.push(filters.state_code);
-  if (filters.states?.length) parts.push(filters.states.join("/"));
-  if (filters.charter_type) parts.push(filters.charter_type.replace(/_/g, " "));
-  if (filters.asset_tiers?.length) {
-    parts.push(filters.asset_tiers.map((tier) => ASSET_TIER_RANGES[tier] ?? tier.replace(/_/g, " ")).join(" or "));
-  }
-  if (filters.fed_districts?.length) {
-    parts.push(`Fed district ${filters.fed_districts.join("/")}`);
-  }
+  if (filters.institutionIds?.length) return chosenInstitutionsLabel(filters.institutionIds.length);
+  const parts = peerFilterParts(filters).map((part) => part.label);
   return parts.length > 0 ? `${parts.join(" · ")} peers` : "Configured peer set";
 }
 
@@ -252,14 +233,16 @@ async function resolveNationalIndex(
   fallbackReason: string | null,
   approvedOnly = true,
 ): Promise<HamiltonPeerIndexContext> {
+  // The approved national index is cached (fee_index_cache, refreshed on publish).
+  const { entries, stamp } = approvedOnly ? await getNationalIndexCachedStamped() : await getNationalIndexStamped(false);
   return {
-    // The approved national index is cached (fee_index_cache, refreshed on publish).
-    entries: approvedOnly ? await getNationalIndexCached() : await getNationalIndex(false),
+    entries,
     label: "Verified national index",
     source: "national",
     filters: null,
     peerSetId: null,
     fallbackReason,
+    stamp,
   };
 }
 
@@ -268,8 +251,8 @@ async function resolveNationalIndex(
  * serialized candidates, since cache() compares arguments by identity).
  */
 const loadCandidateIndexes = cache(
-  (candidatesKey: string, approvedOnly: boolean): Promise<IndexEntry[][]> =>
-    getPeerIndexes(JSON.parse(candidatesKey) as HamiltonPeerFilters[], approvedOnly),
+  (candidatesKey: string, approvedOnly: boolean): Promise<StampedIndex[]> =>
+    getPeerIndexesStamped(JSON.parse(candidatesKey) as HamiltonPeerFilters[], approvedOnly),
 );
 
 export async function resolveHamiltonPeerIndex(
@@ -286,7 +269,7 @@ export async function resolveHamiltonPeerIndex(
     // No explicit choice: the workspace's (or the user's) default peer group applies.
     const active = await getActivePeerSet({ userId, institutionId }).catch(() => null);
     if (active) {
-      const entries = await getPeerIndex(queryFilters(active.filters), approvedOnly);
+      const { entries, stamp } = await getPeerIndexStamped(queryFilters(active.filters), approvedOnly);
       if (hasUsablePeerIndex(entries, minUsableCategories)) {
         return {
           entries,
@@ -295,6 +278,7 @@ export async function resolveHamiltonPeerIndex(
           filters: active.filters,
           peerSetId: String(active.id),
           fallbackReason: null,
+          stamp,
         };
       }
       activeFallbackReason = `Your peer group "${active.label}" has too few institutions publishing these fees, so Hamilton widened to the next group.`;
@@ -308,7 +292,7 @@ export async function resolveHamiltonPeerIndex(
       : null;
     if (savedPeerSet) {
       const filters = parseSavedPeerSetFilters(savedPeerSet);
-      const entries = await getPeerIndex(filters, approvedOnly);
+      const { entries, stamp } = await getPeerIndexStamped(filters, approvedOnly);
       if (hasUsablePeerIndex(entries, minUsableCategories)) {
         return {
           entries,
@@ -317,6 +301,7 @@ export async function resolveHamiltonPeerIndex(
           filters,
           peerSetId,
           fallbackReason: null,
+          stamp,
         };
       }
       return resolveNationalIndex(`Saved peer set "${savedPeerSet.name}" is too sparse for this analysis.`, approvedOnly);
@@ -326,8 +311,9 @@ export async function resolveHamiltonPeerIndex(
   const candidates = buildInstitutionPeerFilterCandidates(params.selectedInstitution);
   const candidateIndexes = await loadCandidateIndexes(JSON.stringify(candidates), approvedOnly);
   for (const [index, filters] of candidates.entries()) {
-    const entries = candidateIndexes[index] ?? [];
-    if (hasUsablePeerIndex(entries, minUsableCategories)) {
+    const candidate = candidateIndexes[index];
+    const entries = candidate?.entries ?? [];
+    if (candidate && hasUsablePeerIndex(entries, minUsableCategories)) {
       return {
         entries,
         label: describePeerFilters(filters),
@@ -335,6 +321,7 @@ export async function resolveHamiltonPeerIndex(
         filters,
         peerSetId: null,
         fallbackReason: activeFallbackReason,
+        stamp: candidate.stamp,
       };
     }
   }

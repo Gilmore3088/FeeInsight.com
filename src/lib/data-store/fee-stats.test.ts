@@ -20,6 +20,9 @@ import {
   COUNT_SHARED_SCHEDULE_ONCE,
   STATS_SCHEDULE_KEYS,
   STATS_METHOD_VERSION,
+  STATS_POPULATION_FILTERS,
+  statsPopulationFilters,
+  statsCounting,
 } from "./fee-stats";
 import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL, isBusinessOnlyLink } from "@/lib/agents/magellan/link-coverage";
 import { SAFE_DEPOSIT_SERVICE_SQL, basisMismatchSql } from "@/lib/fee-comparability";
@@ -367,5 +370,74 @@ describe("count once: sibling charters sharing one schedule (#1441, rule 7)", ()
     expect(scheduleGroupSql("ef", true)).toContain("hc.holding_company_rssd");
     expect(() => scheduleKeysSql("ef; drop", true)).toThrow();
     expect(() => scheduleGroupSql("ef; drop", true)).toThrow();
+  });
+});
+
+/** Split a SQL boolean expression on its top-level ANDs, ignoring ANDs inside parentheses or quotes. */
+function topLevelPredicates(expr: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let quoted = false;
+  let start = 0;
+  for (let i = 0; i < expr.length; i++) {
+    const ch = expr[i];
+    if (ch === "'") quoted = !quoted; // '' inside a literal toggles twice and stays quoted
+    if (quoted) continue;
+    if (ch === "(") depth++;
+    else if (ch === ")") depth--;
+    else if (depth === 0 && /^\sAND\s/i.test(expr.slice(i, i + 5))) {
+      parts.push(expr.slice(start, i).trim());
+      start = i + 5;
+      i += 4;
+    }
+  }
+  parts.push(expr.slice(start).trim());
+  return parts.filter(Boolean);
+}
+
+describe("statistics population descriptions (#1924)", () => {
+  const predicates = topLevelPredicates(statsRowFilter("ef"));
+
+  it("splits the filter into its predicates", () => {
+    expect(predicates.length).toBeGreaterThanOrEqual(5);
+    expect(predicates[0]).toBe("ef.source_document_id IS NOT NULL");
+  });
+
+  it("describes every predicate in the SQL exactly once, and nothing the SQL lacks", () => {
+    for (const predicate of predicates) {
+      const describedBy = STATS_POPULATION_FILTERS.filter((f) => predicate.includes(f.sqlMarker)).map((f) => f.key);
+      expect({ predicate, describedBy: describedBy.length }).toEqual({ predicate, describedBy: 1 });
+    }
+    for (const filter of STATS_POPULATION_FILTERS) {
+      expect(predicates.filter((p) => p.includes(filter.sqlMarker)), filter.key).toHaveLength(1);
+    }
+    expect(STATS_POPULATION_FILTERS).toHaveLength(predicates.length);
+  });
+
+  it("catches a predicate added without words", () => {
+    const drifted = topLevelPredicates(`${statsRowFilter("ef")} AND ef.amount > 0`);
+    const undescribed = drifted.filter((p) => !STATS_POPULATION_FILTERS.some((f) => p.includes(f.sqlMarker)));
+    expect(undescribed).toEqual(["ef.amount > 0"]);
+  });
+
+  it("returns labels as stamp data with stable keys and no em dashes", () => {
+    const filters = statsPopulationFilters();
+    expect(filters.map((f) => f.key)).toEqual([
+      "sourced",
+      "consumer_audience",
+      "no_business_schedule",
+      "safe_deposit_rent_only",
+      "one_charging_basis",
+    ]);
+    for (const f of filters) {
+      expect(Object.keys(f).sort()).toEqual(["key", "label"]);
+      expect(f.label).not.toMatch(/\u2014/);
+    }
+  });
+
+  it("names the counting rule from the count-once switch", () => {
+    expect(statsCounting()).toBe(COUNT_SHARED_SCHEDULE_ONCE ? "counted_once" : "per_charter");
+    expect(statsCounting(true)).toBe("counted_once");
+    expect(statsCounting(false)).toBe("per_charter");
   });
 });
