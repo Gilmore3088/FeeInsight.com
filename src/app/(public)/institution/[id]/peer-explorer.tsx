@@ -287,7 +287,7 @@ export function PeerExplorer({
           onClick={() => setPreview((open) => !open)}
           className="fi-btn fi-btn-brick min-h-12 w-full gap-2 px-6 text-[15px] sm:w-auto"
         >
-          Open this peer set in Hamilton
+          Open {set.subject.name} in Hamilton
           <ArrowRight aria-hidden="true" className="size-4" />
         </button>
         {setKey === "metro" && (
@@ -298,7 +298,7 @@ export function PeerExplorer({
       </div>
       {preview && (
         <div id="peer-briefing-preview" role="region" aria-label="Before you open Hamilton" className="mt-3 max-w-xl rounded-lg border border-border bg-paper p-4 text-[13px]">
-          <p className="text-[14px] font-semibold text-ink">Hamilton opens for {set.subject.name}. Bring this set:</p>
+          <p className="text-[14px] font-semibold text-ink">Hamilton opens for {set.subject.name}. Add this set under Peer sets:</p>
           <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5">
             {briefingSet(set, setName, fee, `Published prices against the peer median${median ? ` of ${median.peers.toLocaleString("en-US")} publishing peers` : ""}`).map((row) => (
               <Fragment key={row.label}>

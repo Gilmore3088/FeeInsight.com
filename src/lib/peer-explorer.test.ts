@@ -223,7 +223,7 @@ describe("peer set purpose", () => {
   it("states what the set is for and how spread out it is", () => {
     expect(purposeLine("nearest", set)).toBe("Banks of similar size, for comparing published prices. Not local competitors: they're spread over 2 states.");
     expect(purposeLine("size", { ...set, peers: set.peers.slice(0, 3) })).toBe(
-      "Banks in the same asset-size band that publish fees, for comparing published prices. All are headquartered in Florida. A pricing set: it is not the financial cohort under Financial performance, which counts every call report filer in the band.",
+      "Banks in the same asset-size band that publish fees, for comparing published prices. All are headquartered in Florida. A pricing set: it is not the financial cohort under Financial performance, which is drawn from Call Report filings in the band.",
     );
     expect(purposeLine("metro", { ...set, market: { name: "Tallahassee, FL", cities: [] } })).toBe(
       "Banks with branches in the Tallahassee, FL metro: the local competitors for deposits and customers. They range from $2.1B to $6.1B in assets, so compare prices here, not size.",
@@ -351,7 +351,7 @@ describe("peer pricing snapshot", () => {
     const s = { ...mm(8.45, [7.95, 8.95]), medians: withMedian(8.48).medians };
     expect(peerSnapshot(s, "nearest", "monthly_maintenance")).toEqual({
       headline: "Monthly maintenance is about the same as similar-sized banks.",
-      facts: "Comparison price $8.45, the middle of its two checking prices ($7.95 and $8.95), against a $8.48 median among 16 publishing peers.",
+      facts: "Comparison price $8.45, the middle of its two checking prices ($7.95 and $8.95), against a median of $8.48 among 16 publishing peers.",
       caveat: SNAPSHOT_CAVEAT,
     });
   });
@@ -370,13 +370,13 @@ describe("peer pricing snapshot", () => {
       "Monthly maintenance is $2 below the median of credit unions with the same charter.",
     );
     expect(peerSnapshot({ ...mm(12), medians: withMedian(10).medians }, "nearest", "monthly_maintenance").facts).toBe(
-      "Published price $12, against a $10 median among 16 publishing peers.",
+      "Published price $12, against a median of $10 among 16 publishing peers.",
     );
   });
 
   it("names overdraft's comparison price as the highest of its prices", () => {
     const od = { ...set, subject: { ...set.subject, fees: { overdraft: { amount: 36, prices: [10, 25, 36].map((p) => ({ amount: p, name: null, conditions: null })) } } }, medians: { overdraft: { median: 32, peers: 16 } } };
-    expect(peerSnapshot(od, "nearest", "overdraft").facts).toBe("Comparison price $36, the highest of its three prices ($10, $25 and $36), against a $32 median among 16 publishing peers.");
+    expect(peerSnapshot(od, "nearest", "overdraft").facts).toBe("Comparison price $36, the highest of its three prices ($10, $25 and $36), against a median of $32 among 16 publishing peers.");
   });
 
   it("says when the fee is not published or too few peers publish it", () => {

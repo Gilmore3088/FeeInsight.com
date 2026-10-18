@@ -119,10 +119,14 @@ describe("PeerExplorerSection", () => {
     renderSection();
     expect(screen.queryByRole("region", { name: "Before you open Hamilton" })).toBeNull();
     expect(screen.queryByText(/briefing/i)).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /^Open this peer set in Hamilton/ }));
+    // The button names the institution Hamilton opens for, never a set it cannot load.
+    for (const control of [...screen.queryAllByRole("button"), ...screen.queryAllByRole("link")]) {
+      expect(control.textContent ?? "").not.toMatch(/open this (peer )?set/i);
+    }
+    fireEvent.click(screen.getByRole("button", { name: /^Open Capital City Bank in Hamilton/ }));
     const preview = screen.getByRole("region", { name: "Before you open Hamilton" });
     // Hamilton's settings page reads only instId today: the panel never says the link loads the set.
-    expect(within(preview).getByText("Hamilton opens for Capital City Bank. Bring this set:")).toBeTruthy();
+    expect(within(preview).getByText("Hamilton opens for Capital City Bank. Add this set under Peer sets:")).toBeTruthy();
     expect(preview.textContent).not.toMatch(/This link opens|opens Hamilton with|briefing/i);
     expect(within(preview).getByText("The 25 banks closest in assets")).toBeTruthy();
     expect(within(preview).getByText("3: Pine State Bank, Summit Bank and First US Bank")).toBeTruthy();
@@ -172,7 +176,7 @@ describe("PeerExplorerSection", () => {
     renderSection();
     const snapshot = screen.getByRole("region", { name: /Monthly maintenance is \$1\.55 below the median of similar-sized banks\./ });
     expect(within(snapshot).getByText("Peer pricing snapshot")).toBeTruthy();
-    expect(within(snapshot).getByText("Comparison price $8.45, the middle of its two checking prices ($5 and $11.90), against a $10 median among 3 publishing peers.")).toBeTruthy();
+    expect(within(snapshot).getByText("Comparison price $8.45, the middle of its two checking prices ($5 and $11.90), against a median of $10 among 3 publishing peers.")).toBeTruthy();
     expect(within(snapshot).getByText("Published prices only. Account mix, waivers and fee revenue are not shown.")).toBeTruthy();
   });
 
@@ -205,7 +209,7 @@ describe("PeerExplorerSection", () => {
     };
     render(<PeerExplorerSection sets={sizeSets} set={SET} hrefFor={(key) => `/institution/323?peers=${key}#peers`} initial={{}} isPro={false} />);
     expect(screen.getByText("Banks with $1B to $10B in assets that publish fees")).toBeTruthy();
-    expect(screen.getByText(/A pricing set: it is not the financial cohort under Financial performance/)).toBeTruthy();
+    expect(screen.getByText(/A pricing set: it is not the financial cohort under Financial performance, which is drawn from Call Report filings in the band\./)).toBeTruthy();
     expect(screen.getByText("Actual range: $2.1B to $7.3B")).toBeTruthy();
     expect(screen.getByText(/published fee schedules, as of Oct 17, 2026\./)).toBeTruthy();
   });

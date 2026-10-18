@@ -461,7 +461,7 @@ export function purposeLine(key: string, set: PeerExplorerSet): string {
     case "nearest":
       return `${kind} of similar size, for comparing published prices.${spread}`;
     case "size":
-      return `${kind} in the same asset-size band that publish fees, for comparing published prices.${spread} A pricing set: it is not the financial cohort under Financial performance, which counts every call report filer in the band.`;
+      return `${kind} in the same asset-size band that publish fees, for comparing published prices.${spread} A pricing set: it is not the financial cohort under Financial performance, which is drawn from Call Report filings in the band.`;
     case "regulator":
       return `${kind} with the same ${set.charterType === "credit_union" ? "charter" : "primary regulator"}, for comparing published prices.${spread}`;
     case "state":
@@ -690,7 +690,7 @@ export function peerSnapshot(set: PeerExplorerSet, key: string, fee: ExplorerFee
     : `${label} is ${money(Math.abs(gap))} ${gap > 0 ? "above" : "below"} the median of ${noun}.`;
   return {
     headline,
-    facts: `${valueWords}, against a ${money(median.median)} median among ${peersWord(median.peers)}.`,
+    facts: `${valueWords}, against a median of ${money(median.median)} among ${peersWord(median.peers)}.`,
     caveat: SNAPSHOT_CAVEAT,
   };
 }
