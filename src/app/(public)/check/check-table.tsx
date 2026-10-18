@@ -80,16 +80,47 @@ function PopulationLine({ name, band }: { name: string; band: CheckBand }) {
   );
 }
 
+/** The summary grid: fee, its prices, the compared median, the U.S. median when the compared one is the state's, and the gap. */
+function gridOf(withUs: boolean): string {
+  return withUs
+    ? "grid-cols-[minmax(0,1fr)_8.5rem] sm:grid-cols-[minmax(0,1fr)_8rem_5rem_5rem_7rem]"
+    : "grid-cols-[minmax(0,1fr)_8.5rem] sm:grid-cols-[minmax(0,1fr)_9rem_6rem_8.5rem]";
+}
+
+/** "$7.00" over "3,412 in U.S.": a median with the count behind it. */
+function MedianCell({ band, place, srLabel }: { band: CheckBand | null; place: string; srLabel: string }) {
+  return (
+    <span className="col-start-2 text-right text-[12px] text-ink-muted sm:col-start-auto sm:text-[13px]">
+      {band ? (
+        <>
+          <span className="sm:sr-only">{srLabel} </span>
+          <span className="font-mono tabular-nums text-ink">{money(band.median)}</span>
+          <span className="block text-[11px]">
+            {band.institutions.toLocaleString("en-US")} in {place}
+          </span>
+        </>
+      ) : (
+        <>
+          <span className="sm:sr-only">{srLabel} </span>
+          <span>No median</span>
+        </>
+      )}
+    </span>
+  );
+}
+
 function Row({
   row,
   stateCode,
   stateLabel,
   guideHref,
+  withUs,
 }: {
   row: CheckRow;
   stateCode: string | null;
   stateLabel: string | null;
   guideHref: string | null;
+  withUs: boolean;
 }) {
   const ref = referenceOf(row);
   const domain = domainOf(row);
@@ -100,7 +131,9 @@ function Row({
   return (
     <li className="border-t border-border first:border-t-0">
       <details className="group">
-        <summary className="grid min-h-11 cursor-pointer list-none grid-cols-[minmax(0,1fr)_8.5rem] items-baseline gap-x-3 gap-y-0.5 px-4 py-3 hover:bg-paper sm:grid-cols-[minmax(0,1fr)_9rem_6rem_8.5rem] sm:px-5 [&::-webkit-details-marker]:hidden">
+        <summary
+          className={`grid min-h-11 cursor-pointer list-none ${gridOf(withUs)} items-baseline gap-x-3 gap-y-0.5 px-4 py-3 hover:bg-paper sm:px-5 [&::-webkit-details-marker]:hidden`}
+        >
           <span className="flex min-w-0 items-baseline gap-2 text-[14px] text-ink">
             <span aria-hidden="true" className="text-ink-muted transition-transform group-open:rotate-90">
               ›
@@ -120,17 +153,18 @@ function Row({
               money(row.value)
             )}
           </span>
-          <span className="col-start-2 text-right text-[12px] text-ink-muted sm:col-start-auto sm:text-[13px]">
-            {ref ? (
-              <>
-                <span className="sm:sr-only">{ref.level === "state" ? (stateCode ?? "State") : "U.S."} median </span>
-                <span className="font-mono tabular-nums text-ink">{money(ref.band.median)}</span>
-                <span className="block text-[11px]">
-                  {ref.band.institutions.toLocaleString("en-US")} in {ref.level === "state" ? (stateCode ?? "state") : "U.S."}
-                </span>
-              </>
-            ) : null}
-          </span>
+          {withUs ? (
+            <>
+              <MedianCell band={row.state} place={stateCode ?? "state"} srLabel={`${stateCode ?? "State"} median`} />
+              <MedianCell band={row.nation} place="U.S." srLabel="U.S. median" />
+            </>
+          ) : (
+            <MedianCell
+              band={ref?.band ?? null}
+              place={ref?.level === "state" ? (stateCode ?? "state") : "U.S."}
+              srLabel={`${ref?.level === "state" ? (stateCode ?? "State") : "U.S."} median`}
+            />
+          )}
           <span className="col-start-2 text-right text-[13px] sm:col-start-auto">
             {gapLabel && <span className="text-[12px] text-ink-muted sm:sr-only">{gapLabel}</span>}
             <Gap row={row} band={ref?.band ?? null} />
@@ -180,20 +214,31 @@ export function CheckTable({
 }) {
   if (rows.length === 0) return null;
   const medianHead = stateCode ? `${stateCode} median` : "U.S. median";
+  // With a state comparison, the U.S. median sits beside the state's on every row.
+  const withUs = stateCode !== null && rows.some((row) => row.nation !== null);
+  const gapHead = withUs && rows.every((row) => row.state !== null) ? `Vs ${stateCode} median` : "Compared vs median";
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-surface-0 shadow-fi-1">
       <div
         aria-hidden="true"
-        className="grid grid-cols-[minmax(0,1fr)_8.5rem] gap-x-3 border-b border-border bg-paper px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted sm:grid-cols-[minmax(0,1fr)_9rem_6rem_8.5rem] sm:px-5"
+        className={`grid ${gridOf(withUs)} gap-x-3 border-b border-border bg-paper px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted sm:px-5`}
       >
         <span>Fee</span>
         <span className="text-right">Its prices</span>
         <span className="hidden text-right sm:block">{medianHead}</span>
-        <span className="hidden text-right sm:block">Compared vs median</span>
+        {withUs && <span className="hidden text-right sm:block">U.S. median</span>}
+        <span className="hidden text-right sm:block">{gapHead}</span>
       </div>
       <ul>
         {rows.map((row) => (
-          <Row key={row.category} row={row} stateCode={stateCode} stateLabel={stateLabel} guideHref={guideHrefs[row.category] ?? null} />
+          <Row
+            key={row.category}
+            row={row}
+            stateCode={stateCode}
+            stateLabel={stateLabel}
+            guideHref={guideHrefs[row.category] ?? null}
+            withUs={withUs}
+          />
         ))}
       </ul>
     </div>
