@@ -83,7 +83,7 @@ describe("area series discovery", () => {
     read.mockReset();
     read.mockResolvedValueOnce([] as never);
     resetAreaSeriesCooldown();
-    expect(await getAreaSeries()).toEqual([]);
+    await expect(getAreaSeries()).rejects.toBeInstanceOf(AreaSeriesUnavailable);
     await expect(getAreaSeries()).rejects.toBeInstanceOf(AreaSeriesUnavailable);
     expect(read).toHaveBeenCalledTimes(1);
 

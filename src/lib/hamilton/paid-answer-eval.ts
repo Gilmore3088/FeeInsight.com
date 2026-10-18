@@ -300,7 +300,28 @@ const FEE_PRICE_KEY = /amount|median|^p\d{2}|avg|mean|average|^min|^max|price|fe
 /** Never money: ids, counts and ranks, whatever else the key says. */
 const NOT_MONEY_KEY = /(^|_)(id|ids|n|rank)$|count|number|^total$/i;
 
-/** queryData on a public-data measure reads another source; its figures sit under `value`. Fee measures stay with the catalog. */
+/** A public-data row whose unit is dollars; rates, counts and indexes are not money. */
+const DOLLAR_UNIT = /usd|dollar/i;
+
+/** The dollar values in a queryData public-data result (rows of { value, unit }), compacted or not. */
+function publicDataDollars(output: unknown): number[] {
+  let parsed = output;
+  if (typeof parsed === "string") {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      return [];
+    }
+  }
+  const rows = (parsed as { rows?: unknown } | null)?.rows;
+  if (!Array.isArray(rows)) return [];
+  return rows.flatMap((row) => {
+    const { value, unit } = (row ?? {}) as { value?: unknown; unit?: unknown };
+    return typeof value === "number" && Number.isFinite(value) && typeof unit === "string" && DOLLAR_UNIT.test(unit) ? [value] : [];
+  });
+}
+
+/** queryData on a public-data measure reads another source: its dollar figures are accepted as read. Fee measures stay with the catalog. */
 function publicDataQuery(result: { toolName: string; input?: unknown }): boolean {
   const input = result.input as { measure?: unknown } | null | undefined;
   return result.toolName === "queryData" && typeof input?.measure === "string" && input.measure.startsWith("area:");
@@ -322,9 +343,9 @@ function catalogDerived(result: { toolName: string; input?: unknown }): boolean 
 
 export function toolMoneyFigures(results: ReadonlyArray<{ toolName: string; input?: unknown; output: unknown }>): number[] {
   const out: number[] = [];
-  const walk = (value: unknown, key: string, depth: number, otherSource: boolean, area: boolean) => {
+  const walk = (value: unknown, key: string, depth: number, otherSource: boolean) => {
     if (depth > 8 || value === null || value === undefined) return;
-    const money = !NOT_MONEY_KEY.test(key) && (OTHER_MONEY_KEY.test(key) || (otherSource && FEE_PRICE_KEY.test(key)) || (area && key === "value"));
+    const money = !NOT_MONEY_KEY.test(key) && (OTHER_MONEY_KEY.test(key) || (otherSource && FEE_PRICE_KEY.test(key)));
     if (typeof value === "number") {
       if (Number.isFinite(value) && money) out.push(value);
     } else if (typeof value === "string") {
@@ -332,18 +353,22 @@ export function toolMoneyFigures(results: ReadonlyArray<{ toolName: string; inpu
       // Compacted tool results carry their JSON as text.
       if (text.startsWith("{") || text.startsWith("[")) {
         try {
-          walk(JSON.parse(text), key, depth + 1, otherSource, area);
+          walk(JSON.parse(text), key, depth + 1, otherSource);
         } catch {
           // Not JSON: nothing to read.
         }
       } else if (money && /^-?\$?\d[\d,]*(\.\d+)?$/.test(text)) out.push(Number(text.replace(/[$,]/g, "")));
     } else if (Array.isArray(value)) {
-      for (const item of value) walk(item, key, depth + 1, otherSource, area);
+      for (const item of value) walk(item, key, depth + 1, otherSource);
     } else if (typeof value === "object") {
-      for (const [k, v] of Object.entries(value as Record<string, unknown>)) walk(v, k, depth + 1, otherSource, area);
+      for (const [k, v] of Object.entries(value as Record<string, unknown>)) walk(v, k, depth + 1, otherSource);
     }
   };
-  for (const r of results) if (!catalogDerived(r)) walk(r.output, "", 0, OTHER_SOURCE_TOOLS.has(r.toolName) || publicDataQuery(r), publicDataQuery(r));
+  for (const r of results) {
+    if (catalogDerived(r)) continue;
+    if (publicDataQuery(r)) out.push(...publicDataDollars(r.output));
+    else walk(r.output, "", 0, OTHER_SOURCE_TOOLS.has(r.toolName));
+  }
   return out;
 }
 

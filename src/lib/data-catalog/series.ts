@@ -188,7 +188,7 @@ const cachedAreaSeries = unstable_cache(
     if (value.length === 0) throw new EmptySeriesRead();
     return value;
   },
-  ["data-catalog", "area-series-v1"],
+  ["data-catalog", "area-series-v2"],
   { revalidate: SERIES_CACHE_SECONDS },
 );
 
@@ -217,7 +217,8 @@ async function loadAreaSeries(): Promise<CatalogSeries[]> {
     // Outside a Next request (tests, scripts) there is no incremental cache: read directly.
     if (error instanceof Error && error.message.startsWith("Invariant: incrementalCache missing")) return readAreaSeries();
     retryAfter = Date.now() + SERIES_RETRY_COOLDOWN_MS;
-    if (error instanceof EmptySeriesRead) return [];
+    // An empty read means the list could not be built, not that no data exists.
+    if (error instanceof EmptySeriesRead) throw new AreaSeriesUnavailable();
     throw error;
   }
 }
