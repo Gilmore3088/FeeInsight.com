@@ -1237,13 +1237,19 @@ attribution on every stored row and read. Rows already loaded from struck source
 no reader returns them (`src/lib/data-store/struck-sources.ts`).
 
 **PRs merge without James; accuracy comes from recorded reviews.** James, 2026-10-18 06:40-06:43 UTC
-(Triage thread, after a PR pipeline review): "i jsut want the most accurate but autonomous way", "i
-cant merge every PR how quickly we are shipping them", then "yes, make the rule change". Page PRs no
-longer wait for his typed yes (this replaces the Oct 17 hold after #1815). A page PR merges when a
-growthOS reviewer approves its desktop and phone screenshots, an independent reviewer finds no
-blockers on the exact head, and CI is green. Every merge gets a receipt comment with the head SHA
-and both verdicts. Batch to at most one PR per page or area a day. From Oct 15 to 18, 286 PRs merged
-(median 23 minutes from open to merge, 1,249 CI runs), and about half of a 21-PR sample had no review
-on record. The day's merges go to him as one digest with screenshots, and he can ask for a revert.
-Migrations, production-data changes and the other gated actions in CLAUDE.md still need his yes.
-
+(project thread "Triage open GitHub issues", after a PR pipeline review that proposed these rules):
+"i jsut want the most accurate but autonomous way", "i cant merge every PR how quickly we are
+shipping them", then "yes, make the rule change". Page PRs, redesigns included, no longer wait for
+his review or typed yes. This replaces the 2026-10-05 entry ("redesigns wait for James's review"),
+the Oct 9 entry ("public, Pro and Hamilton screens still wait for his review"), the 2026-10-12 entry
+("copy and page changes wait as open PRs"), the Oct 14 design-system rollout's review on the
+Vercel preview, and the Oct 17 coordinator hold after #1815, which lived in project memory, not here.
+A page PR merges when the growthOS review (the Oct 15 rule that the growthOS team approves the
+experience) approves its desktop and phone screenshots, an independent reviewer finds no blockers
+on the exact head, and CI is green. Every merge gets a receipt comment with the head SHA and both
+verdicts, on top of the Oct 14 "Reviewed" rule. Batch to at most one PR per page or area a day. The
+day's merges go to him as one digest with screenshots, and he can ask for a revert. The review
+counted, from the GitHub REST pulls and actions/runs endpoints, PRs closed Oct 15 05:00 UTC to Oct 18
+06:40 UTC: 286 merged (median 23 minutes from open to merge), 1,249 CI workflow runs, and about half
+of a sample of 21 merged PRs had no review verdict on the PR. Migrations, production-data changes
+and the other gated actions in CLAUDE.md still need his yes.
