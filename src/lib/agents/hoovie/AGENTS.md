@@ -89,3 +89,8 @@ are never relabelled; readers that group the ledger by agent file a `registry-*`
 Magellan's name as Hoovie's (`names.ts`). The run marker `params_json.source = 'magellan.registry'`
 and the idempotency key prefix `magellan:registry:` are unchanged, so the registry tick finds old
 and new runs alike and a run queued before the switch is reused, not doubled.
+
+`agent_runs.agent_name` references `agent_registry`, so before it writes `hoovie` the scheduler
+reads the `hoovie` row once per process (`registryLedgerAgent` in `registry-scheduler.ts`). While
+the row is missing, or the read fails, runs keep the name `magellan` and record why in
+`params_json.ledger_agent_fallback`.

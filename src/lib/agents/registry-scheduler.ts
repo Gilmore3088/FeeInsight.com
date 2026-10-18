@@ -431,6 +431,39 @@ async function claimPartition(candidate: RegistryPartitionCandidate): Promise<bo
   return [...rows].length > 0;
 }
 
+export interface RegistryLedgerAgent {
+  agent: "hoovie" | "magellan";
+  /** Why the run is written under Magellan's name instead of Hoovie's; absent when it is Hoovie's. */
+  fallback?: string;
+}
+
+let hoovieRowCheck: Promise<boolean> | null = null;
+
+/**
+ * The name new registry runs are written under. agent_runs.agent_name references
+ * agent_registry(agent_name), so a run written as `hoovie` before the row from
+ * 20270110000061_hoovie_agent.sql exists would fail to insert. The row is read once per process and
+ * the answer cached; while it is missing (or the read fails) runs keep Magellan's name, as before
+ * #1865, and say so in `params_json.ledger_agent_fallback`. Every reader accepts both names. A
+ * failed read is not cached, so the next run asks again.
+ */
+export async function registryLedgerAgent(): Promise<RegistryLedgerAgent> {
+  hoovieRowCheck ??= sql<{ present: boolean }[]>`
+    SELECT EXISTS (SELECT 1 FROM agent_registry WHERE agent_name = ${HOOVIE_AGENT}) AS present
+  `.then((rows) => Boolean(rows[0]?.present));
+  try {
+    return (await hoovieRowCheck) ? { agent: HOOVIE_AGENT } : { agent: "magellan", fallback: "hoovie row missing" };
+  } catch {
+    hoovieRowCheck = null;
+    return { agent: "magellan", fallback: "hoovie row check failed" };
+  }
+}
+
+/** Test seam: forget the cached agent_registry read. */
+export function resetRegistryLedgerAgentCache(): void {
+  hoovieRowCheck = null;
+}
+
 export async function startRegistryRun(input: {
   source: string;
   partitionKey: string;
@@ -443,14 +476,17 @@ export async function startRegistryRun(input: {
   const label = input.partitionKey === definition.fixedPartition ? "" : ` ${input.partitionKey}`;
   // Hoovie owns public data (#1865). The idempotency key keeps its `magellan:registry:` prefix so
   // a run queued under Magellan's name before the switch is reused rather than started twice.
+  const ledger = await registryLedgerAgent();
+  const name = ledger.agent === HOOVIE_AGENT ? "Hoovie" : "Magellan";
   return startAgentRun({
-    agent: HOOVIE_AGENT,
+    agent: ledger.agent,
     kind: input.dryRun ? "dry_run" : "workflow",
-    title: `Hoovie registry: ${definition.title}${label}`,
+    title: `${name} registry: ${definition.title}${label}`,
     params: {
       source: REGISTRY_RUN_SOURCE,
       registry_source: input.source,
       partition_key: input.partitionKey,
+      ...(ledger.fallback ? { ledger_agent_fallback: ledger.fallback } : {}),
     },
     triggeredBy: input.triggeredBy,
     triggerSource: input.triggerSource ?? "schedule",
@@ -458,14 +494,14 @@ export async function startRegistryRun(input: {
     steps: [
       {
         key: definition.stepKey,
-        agent: HOOVIE_AGENT,
+        agent: ledger.agent,
         title: `${definition.title}${label}`,
         input: { partition_key: input.partitionKey },
       },
     ],
     summary: isProviderStep(definition.stepKey)
-      ? `Hoovie registry run for ${input.source} ${input.partitionKey}. Provider step: budget-checked model calls, each logged with its cost.`
-      : `Hoovie registry run for ${input.source} ${input.partitionKey}. Deterministic: published regulator data only, no provider calls.`,
+      ? `${name} registry run for ${input.source} ${input.partitionKey}. Provider step: budget-checked model calls, each logged with its cost.`
+      : `${name} registry run for ${input.source} ${input.partitionKey}. Deterministic: published regulator data only, no provider calls.`,
   });
 }
 
