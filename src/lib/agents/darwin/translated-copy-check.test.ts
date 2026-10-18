@@ -55,7 +55,7 @@ describe("spanishCopyDocument and readsSpanish (#1909)", () => {
   });
 
   it("reads Spanish names and leaves English ones", () => {
-    for (const name of ["Cargo por sobregiro", "Giro postal", "Detener pago", "Notario (no miembro)", "Análisis de cuentas (por hora)", "Llave de repuesto"]) {
+    for (const name of ["Cargo por sobregiro", "Fondos insuficientes", "Giro postal", "Detener pago", "Notario (no miembro)", "Análisis de cuentas (por hora)", "Llave de repuesto"]) {
       expect(readsSpanish(name)).toBe(true);
     }
     for (const name of ["Overdraft Fee", "Cashier’s Check (Bank Check) Fees: Non-Customer", "(per money order)", "Research Fee Deposit account research", "Visa Gift Card"]) {
@@ -82,14 +82,25 @@ describe("findTranslatedCopies", () => {
   });
 });
 
+describe("translatedCopyRowsSql (v2)", () => {
+  it("never pairs a fee with no dollar amount (a percent fee)", async () => {
+    const db = dbFor([]);
+    await recheckTranslatedCopies(asDb(db), { runId: 7, dryRun: true });
+    const read = texts(db).find((text) => text.includes("FROM source_documents sd")) ?? "";
+    expect(read).toContain("AND fp.amount IS NOT NULL");
+    expect(read).toContain("AND other.amount = fp.amount");
+    expect(read).not.toContain("IS NOT DISTINCT FROM");
+  });
+});
+
 describe("recheckTranslatedCopies", () => {
-  it("is off until James sees the dry-run count", () => {
-    expect(TRANSLATED_COPY_TAKEDOWN_LIVE).toBe(false);
+  it("is on (James, 2026-10-18)", () => {
+    expect(TRANSLATED_COPY_TAKEDOWN_LIVE).toBe(true);
   });
 
   it("switched off, it reports and writes only its event", async () => {
     const db = dbFor(ROWS);
-    const result = await recheckTranslatedCopies(asDb(db), { runId: 7, stepId: 70, dryRun: false });
+    const result = await recheckTranslatedCopies(asDb(db), { runId: 7, stepId: 70, dryRun: false, live: false });
     expect(result.matched).toBe(2);
     expect(result.takenDown).toEqual([]);
     const writes = texts(db).filter((text) => text.includes("UPDATE") || text.includes("INSERT"));
