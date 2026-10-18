@@ -518,7 +518,7 @@ export default async function StateReportPage({ params }: PageProps) {
             }
             source={
               <>
-                BLS unemployment and the CPI for checking accounts and other bank services via FRED
+                BLS unemployment and the BLS CPI for checking accounts and other bank services
                 {income ? `; Census ACS ${income.year} median household income` : ""}. The CPI is national; it has no state figure.
               </>
             }

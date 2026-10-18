@@ -64,7 +64,7 @@ function pct(value: number | null): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
 }
 
-/** Industry deposit service charges (FDIC Quarterly Banking Profile via FRED), millions of dollars. */
+/** Industry deposit service charges (FDIC Quarterly Banking Profile), millions of dollars. Rows stored from FRED are no longer served (2026-10-18). */
 function industryQuarters(observations: DatedValue[]): QuarterValue[] {
   return Array.from(quarterlyDeflator(observations.map((o) => ({ date: o.date, value: o.value * 1_000_000 }))))
     .map(([quarter, value]) => ({ quarter, value }))
@@ -74,9 +74,9 @@ function industryQuarters(observations: DatedValue[]): QuarterValue[] {
 export function buildFeeIncomeTrend(params: {
   institutionName: string;
   records: Array<{ report_date: string; source: string; service_charge_income: number | null }>;
-  /** FRED GDPCTPI observations. */
+  /** GDPCTPI observations (BEA). */
   gdpPriceIndex: DatedValue[];
-  /** FRED QBPQYTNIYSRVDP observations (all FDIC-insured institutions, millions). */
+  /** QBPQYTNIYSRVDP observations (all FDIC-insured institutions, millions); none are served since 2026-10-18. */
   industryServiceCharges: DatedValue[];
 }): FeeIncomeTrendResult | null {
   const nominal = quarterlyServiceCharges(params.records);
@@ -192,13 +192,13 @@ export function buildFeeIncomeTrend(params: {
       detail: nominal.source === "ncua" ? "NCUA 5300 call reports, quarterly." : "FDIC call reports, quarterly.",
       url: null,
     },
-    { label: "GDP chain-type price index (GDPCTPI)", detail: "U.S. Bureau of Economic Analysis via FRED.", url: "https://fred.stlouisfed.org/series/GDPCTPI" },
+    { label: "GDP chain-type price index (GDPCTPI)", detail: "U.S. Bureau of Economic Analysis, NIPA table 1.1.4.", url: "https://apps.bea.gov/iTable/?reqid=19&step=2&isuri=1&categories=survey" },
   ];
   if (industryYears.length > 0) {
     sources.push({
       label: "Industry service charges on deposit accounts (QBPQYTNIYSRVDP)",
-      detail: "FDIC Quarterly Banking Profile via FRED.",
-      url: "https://fred.stlouisfed.org/series/QBPQYTNIYSRVDP",
+      detail: "FDIC Quarterly Banking Profile.",
+      url: "https://www.fdic.gov/quarterly-banking-profile",
     });
   }
   return { data, exhibits, sources };
@@ -248,7 +248,7 @@ function appendixRows(data: FeeIncomeTrendData): string[][] {
   return rows;
 }
 
-/** FRED observations come back from Postgres as Date or text. */
+/** Indicator observations come back from Postgres as Date or text. */
 function toDatedValue(o: { observation_date: unknown; value: unknown }): DatedValue {
   const date = o.observation_date instanceof Date ? o.observation_date.toISOString() : String(o.observation_date);
   return { date: date.slice(0, 10), value: Number(o.value) };

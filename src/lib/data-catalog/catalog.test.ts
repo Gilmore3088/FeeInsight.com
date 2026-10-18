@@ -7,7 +7,9 @@ import { REMITTANCE_PRICES_ATTRIBUTION } from "@/lib/regulatory/economy";
 import { OSM_ATTRIBUTION } from "@/lib/regulatory/payment-networks";
 import { URBAN_DEBT_ATTRIBUTION } from "@/lib/regulatory/state-lists";
 import {
+  CALL_REPORT_ROW_SOURCES,
   DATA_CATALOG,
+  callReportEntries,
   PIPELINE_AGENT_NAMES,
   SERVABLE_LICENCES,
   areaGeoTypeForScope,
@@ -45,7 +47,8 @@ describe("data catalog", () => {
     // Released 2026-10-18 with attribution (CC BY 4.0; ODC-By 1.0).
     expect(catalogEntry("world-bank-remittance-prices")?.servable).toBe(true);
     expect(catalogEntry("urban-debt-in-america")?.servable).toBe(true);
-    expect(catalogEntry("national-series")?.servable).toBe(false);
+    // Read from the Fed Board's own public-domain files since 2026-10-18 (FRED replaced).
+    expect(catalogEntry("national-series")?.servable).toBe(true);
     expect(catalogEntry("bls-laus")?.servable).toBe(true);
   });
 
@@ -82,11 +85,14 @@ describe("data catalog", () => {
     for (const entry of DATA_CATALOG) expect(entry.areaGeoTypes as string[], entry.id).not.toContain("national");
   });
 
-  it("gives an area measure prefix only to sources that write area_statistics", () => {
+  it("gives an area measure prefix to sources that write area_statistics and a call prefix to call-report loaders", () => {
     for (const entry of DATA_CATALOG.filter((e) => e.kind === "public-data")) {
       if (entry.tables.includes("area_statistics")) expect(entry.measurePrefix, entry.id).toBe(`area:${entry.id}:`);
+      else if (entry.tables.includes("institution_call_report_items")) expect(entry.measurePrefix, entry.id).toBe("call:");
       else expect(entry.measurePrefix, entry.id).toBeNull();
     }
     expect(catalogEntry("published-fees")?.measurePrefix).toBe("fee:");
+    // Every row source maps to a catalog entry that loads it.
+    expect(callReportEntries().map((e) => e.id).sort()).toEqual(Object.values(CALL_REPORT_ROW_SOURCES).sort());
   });
 });

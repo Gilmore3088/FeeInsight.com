@@ -64,9 +64,9 @@ function AudienceMark({ fee }: { fee: DisplayFee }) {
   return <UnstatedAudienceMark show={showsUnstatedMark(fee)} />;
 }
 
-/** "CD/IRA fee" or "Card inactivity fee" when the row prices a different product than its category's median measures. */
+/** "CD/IRA fee", "Card inactivity fee" or a charging-basis reason when the row prices something other than its category's median measures. */
 function notComparable(fee: DisplayFee): string | null {
-  return notComparableReason(fee.feeCategory, fee.rawFeeName ?? fee.feeName, fee.accountProduct ?? null, fee.sourceLine ?? null);
+  return notComparableReason(fee.feeCategory, fee.rawFeeName ?? fee.feeName, fee.accountProduct ?? null, fee.sourceLine ?? null, fee.frequency);
 }
 
 function NotCompared({ reason }: { reason: string }) {
@@ -84,6 +84,7 @@ function countsAgainstMarket(fee: DisplayFee): boolean {
     feeName: fee.rawFeeName ?? fee.feeName,
     accountProduct: fee.accountProduct ?? null,
     sourceLine: fee.sourceLine ?? null,
+    frequency: fee.frequency,
   });
 }
 

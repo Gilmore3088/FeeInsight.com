@@ -3,7 +3,7 @@
 import { Bell, ChartNoAxesColumnIncreasing, ChartNoAxesCombined, FileText } from "lucide-react";
 import { useRef, type ReactNode } from "react";
 import { SlideControls } from "./landing-controls";
-import { useAutoAdvance } from "./landing-motion";
+import { useAutoAdvance, type AutoAdvance } from "./landing-motion";
 
 export interface HamiltonSlide {
   key: "benchmark" | "analyze" | "monitor" | "report";
@@ -19,27 +19,41 @@ const ICONS = {
   report: FileText,
 } as const;
 
-/** How long a slide shows before the next, in ms (the example's 8.5 s). */
+/** How long a stage shows before the next, in ms (the example's 8.5 s). */
 const SLIDE_MS = 8500;
-/** The band opens on Analyze, as James's example does. */
-const FIRST = 1;
 
 /**
- * Hamilton's four examples in one frame, with four one-line cards under it: the frame turns to the
- * next example on its own, the cards and arrows pick one, and the pause button stops it. It also
- * holds while the pointer or focus is in the band, while the band is off screen or the tab is
- * hidden, and always with reduced motion. No timer or progress bar is drawn (James, Oct 17).
+ * Hamilton's four stages of one investigation in one frame, with four one-line cards under it.
+ * It opens on the first stage (Benchmark) and reads in order. The frame turns to the next stage on
+ * its own until the visitor pauses it or picks a stage (a card or an arrow), which pauses it too: a
+ * chosen stage stays until the visitor presses play. It also holds while the pointer or focus is in
+ * the band, while the band is off screen or the tab is hidden, and always with reduced motion,
+ * where the cards and arrows still reach every stage. No timer or progress bar is drawn (James, Oct 17).
+ * `subject` names the sample institution once, above every stage.
  */
-export function HamiltonCarousel({ intro, slides }: { intro: ReactNode; slides: HamiltonSlide[] }) {
+export function HamiltonCarousel({ intro, slides, subject = null }: { intro: ReactNode; slides: HamiltonSlide[]; subject?: string | null }) {
   const root = useRef<HTMLDivElement>(null);
-  const clock = useAutoAdvance({ count: slides.length, duration: SLIDE_MS, rootRef: root, initialIndex: Math.min(FIRST, slides.length - 1) });
+  const auto = useAutoAdvance({ count: slides.length, duration: SLIDE_MS, rootRef: root });
+  // A stage the visitor picks stays: the pick also pauses the clock (the play button resumes it).
+  const clock: AutoAdvance = {
+    ...auto,
+    go: (i: number) => {
+      auto.go(i);
+      if (!auto.paused && !auto.reduced) auto.togglePause();
+    },
+  };
   const active = slides[clock.index];
   return (
     <div ref={root}>
       <div className="grid gap-8 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:gap-14">
         <div className="fi-home-intro min-w-0 lg:pt-8">{intro}</div>
-        <div className="min-w-0" role="region" aria-roledescription="carousel" aria-label="Hamilton examples">
+        <div className="min-w-0" role="region" aria-roledescription="carousel" aria-label="Hamilton investigation">
           <div className="rounded-[10px] border border-border bg-surface-0 p-4 shadow-[0_6px_24px_rgb(23_42_59/0.03)] sm:p-5">
+            {subject ? (
+              <p className="mb-3 text-[12px] text-ink-muted" data-hamilton-subject>
+                {subject}
+              </p>
+            ) : null}
             {/* The slide's own question heads it; a visitor's move is announced by name. */}
             <p className="sr-only" aria-live={clock.manual ? "polite" : "off"}>
               {active.name}
@@ -64,11 +78,11 @@ export function HamiltonCarousel({ intro, slides }: { intro: ReactNode; slides: 
             </div>
           </div>
           <div className="mt-3 flex justify-center">
-            <SlideControls clock={clock} count={slides.length} name="Hamilton examples" />
+            <SlideControls clock={clock} count={slides.length} name="Hamilton investigation" />
           </div>
         </div>
       </div>
-      <div className="mt-6 grid grid-cols-2 gap-2 sm:mt-8 sm:gap-3 lg:grid-cols-4" role="group" aria-label="Choose a Hamilton example">
+      <div className="mt-6 grid grid-cols-2 gap-2 sm:mt-8 sm:gap-3 lg:grid-cols-4" role="group" aria-label="Choose a stage">
         {slides.map((slide, i) => {
           const Icon = ICONS[slide.key];
           const on = i === clock.index;

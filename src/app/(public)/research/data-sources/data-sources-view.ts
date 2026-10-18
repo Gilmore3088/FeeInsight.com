@@ -150,15 +150,16 @@ export const DATA_SOURCES: readonly DataSource[] = [
     href: "https://data.bls.gov/timeseries/CUUR0000SS68021",
   },
   {
-    // registry-fred: REQUIRED_FRED_SERIES (GDPCTPI, state unemployment and payrolls)
-    // (src/lib/regulatory/fed.ts); FRED_REFRESH_HOURS = 24.
+    // registry-fred: PUBLISHER_INDICATORS (GDPCTPI from BEA, state unemployment and payrolls from
+    // BLS, fed funds from the Fed Board; src/lib/regulatory/federal-indicators.ts);
+    // FRED_REFRESH_HOURS = 24. FRED is no longer read (2026-10-18).
     id: "fred",
-    name: "FRED",
-    publisher: "Federal Reserve Bank of St. Louis",
+    name: "Economic indicators",
+    publisher: "BLS, BEA and the Federal Reserve Board",
     group: "context",
     takes: "A price index and state job figures for economic context.",
     refresh: "Daily",
-    href: "https://fred.stlouisfed.org/",
+    href: "https://www.bls.gov/data/",
   },
   {
     // registry-cfpb: institution_complaint_records, complaint counts by institution, product and

@@ -117,6 +117,23 @@ describe("state-nonbank-lenders", () => {
     expect(p.detail.missing_fields).toEqual(["city", "licenseDate"]);
   });
 
+  it("sends SOCRATA_APP_TOKEN as X-App-Token only when it is set", async () => {
+    const tokens = async (extra: Record<string, string>) => {
+      const seen: (string | undefined)[] = [];
+      const routes = fetchMap({ "/api/views/": () => Response.json(meta), "/resource/": () => Response.json(rows) });
+      const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => {
+        seen.push((init?.headers as Record<string, string> | undefined)?.["X-App-Token"]);
+        return routes(url);
+      }) as unknown as typeof fetch;
+      await runRegistryStateNonbankLenders({ partitionKey: "NY-abcd-1234", db: createDb().db, env: { ...env, ...extra }, fetchOptions: { fetchImpl, backoffMs: 0 }, counties });
+      return seen;
+    };
+    const withToken = await tokens({ SOCRATA_APP_TOKEN: " tok-123 " });
+    expect(withToken.length).toBeGreaterThanOrEqual(2);
+    expect(withToken.every((t) => t === "tok-123")).toBe(true);
+    expect((await tokens({})).every((t) => t === undefined)).toBe(true);
+  });
+
   it("counts active and status-less rows, never inactive ones", () => {
     const base = { state: "NY", dataset: "d", recordKey: "k", licenseeName: "x", dba: null, licenseType: "Check Casher", licenseCategory: "check_casher" as const, licenseNumber: null, address: null, city: null, zip: null, county: null, countyFips: "36047", countyBasis: null, status: null, licenseDate: null, raw: {} };
     expect(countLenders([{ ...base, active: true }, { ...base, active: null }, { ...base, active: false }])).toEqual([

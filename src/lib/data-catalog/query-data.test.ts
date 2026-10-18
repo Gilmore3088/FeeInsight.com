@@ -8,6 +8,8 @@ vi.mock("@/lib/data-store/connection", () => {
     calls.push({ text: strings.join("?"), values });
     return Promise.resolve(strings.join("").includes("SET LOCAL") ? [] : nextRows);
   });
+  // unsafe() carries constant SQL (the served-row rule); the mock passes its text through as a value.
+  Object.assign(tx, { unsafe: (text: string) => ({ unsafe: text }) });
   return { sql: tx, withTransaction: (cb: (db: typeof tx) => Promise<unknown>) => cb(tx) };
 });
 vi.mock("@/lib/data-store/economy-aggregates", async (importOriginal) => ({
@@ -25,11 +27,13 @@ vi.mock("@/lib/data-store/peer-sets", async (importOriginal) => ({
   getPeerSubject: vi.fn(),
   resolvePeerRequest: vi.fn(),
   resolvePeerSet: vi.fn(),
+  peerSetMemberIds: vi.fn(),
 }));
 
 import { getInstitutionHqLocation } from "@/lib/data-store/economy-aggregates";
 import { getInstitutionFeeRows, getNationalIndexCached, getPeerIndex, getStateFeeIndexes } from "@/lib/data-store/fee-index";
-import { resolvePeerSet } from "@/lib/data-store/peer-sets";
+import { getPeerSubject, peerSetMemberIds, resolvePeerRequest, resolvePeerSet } from "@/lib/data-store/peer-sets";
+import { areaRowServedSql } from "@/lib/data-store/struck-sources";
 import { URBAN_DEBT_ATTRIBUTION } from "@/lib/regulatory/state-lists";
 import { QUERY_DATA_MAX_LIMIT, parseMeasure, periodMonths, queryData, queryDataInputSchema } from "./query-data";
 
@@ -78,6 +82,11 @@ describe("queryDataInputSchema", () => {
   it("parses a measure into source and series", () => {
     expect(parseMeasure(AREA)).toEqual({ kind: "area", source: "bls-laus", seriesKey: "laus_unemployment_rate" });
     expect(parseMeasure("fee:overdraft")).toEqual({ kind: "fee", category: "overdraft" });
+    expect(parseMeasure("call:service_charges_deposits_ytd")).toEqual({ kind: "call", itemKey: "service_charges_deposits_ytd" });
+    expect(queryDataInputSchema.safeParse({ measure: "call:acct_564a", scope: { kind: "institution", id: "12" } }).success).toBe(true);
+    for (const measure of ["call:", "call:RIAD4080", "call:x;drop", "call:a:b"]) {
+      expect(queryDataInputSchema.safeParse({ measure, scope: { kind: "national" } }).success, measure).toBe(false);
+    }
   });
 });
 
@@ -89,11 +98,24 @@ describe("queryData: area measures", () => {
   });
 
   it("refuses a measure the catalog may not show", async () => {
-    for (const measure of ["area:national-series:mortgage30", "area:state-bill-news:x", "area:kcfed-sb-lending:x", "area:fdic-sod:x"]) {
+    for (const measure of ["area:national-series:natl_pmms_30y_fixed","area:state-bill-news:x", "area:kcfed-sb-lending:x", "area:fdic-sod:x"]) {
       const result = await queryData({ measure, scope: { kind: "national" } });
       expect(result.ok, measure).toBe(false);
       if (!result.ok) expect(result.reason.length, measure).toBeGreaterThan(10);
     }
+    expect(calls).toHaveLength(0);
+  });
+
+  it("refuses a dropped FDIC rate as not yet from its publisher, not as non-commercial", async () => {
+    const result = await queryData({ measure: "area:national-series:natl_fdic_rate_savings", scope: { kind: "national" } });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toContain("not published from its original source yet");
+      expect(result.reason).not.toContain("commercial");
+    }
+    const struck = await queryData({ measure: "area:national-series:natl_pmms_30y_fixed", scope: { kind: "national" } });
+    expect(struck.ok).toBe(false);
+    if (!struck.ok) expect(struck.reason).toContain("commercial");
     expect(calls).toHaveLength(0);
   });
 
@@ -115,11 +137,9 @@ describe("queryData: area measures", () => {
     for (const q of queries()) expect(q.text).not.toMatch(/laus_unemployment_rate|bls-laus|48201/);
   });
 
-  it("refuses a level the source does not cover and a peer group", async () => {
+  it("refuses a level the source does not cover", async () => {
     const metro = await queryData({ measure: AREA, scope: { kind: "metro", id: "26420" } });
     expect(metro).toMatchObject({ ok: false, reason: expect.stringContaining("no metro figures") });
-    const peer = await queryData({ measure: AREA, scope: { kind: "peer_set", peer: { charter_type: "bank" } } });
-    expect(peer).toMatchObject({ ok: false, reason: expect.stringContaining("not supported for public-data measures yet") });
     const badState = await queryData({ measure: AREA, scope: { kind: "state", id: "Texas" } });
     expect(badState.ok).toBe(false);
     expect(queries()).toHaveLength(0);
@@ -169,7 +189,9 @@ describe("queryData: area measures", () => {
     expect(values).toContain("2026-04");
     expect(values).toContain("2026-09");
     expect(values).not.toContain("2026Q2");
-    expect(text).toMatch(/NOT ILIKE/);
+    // The served-row rule (struck URLs, FRED-era rows) rides along as constant SQL.
+    expect(values).toContainEqual({ unsafe: areaRowServedSql("a") });
+    expect(text).not.toContain("stlouisfed");
   });
 });
 
@@ -219,5 +241,148 @@ describe("queryData: fee measures", () => {
     });
     expect(resolvePeerSet).not.toHaveBeenCalled();
     expect(getPeerIndex).not.toHaveBeenCalled();
+  });
+});
+
+const MEMBERS = [11, 12, 13, 14, 15, 16, 17];
+const BANKS = { definition: { charter_type: "bank" }, filters: { charter_type: "bank" }, label: "Banks", market: null };
+
+describe("queryData: area measures over a peer group", () => {
+  it("rolls the series up over the group's members at their headquarters county, with a median, count and citation", async () => {
+    vi.mocked(resolvePeerSet).mockResolvedValue(BANKS);
+    vi.mocked(peerSetMemberIds).mockResolvedValue(MEMBERS);
+    nextRows = [
+      { period: "2026-09", unit: "percent", median: 4.1, p25: 3.6, p75: 4.8, institution_count: 7, area_count: 5, source_url: "https://www.bls.gov/lau", fetched_at: "2026-10-12T00:00:00Z" },
+      { period: "2026-08", unit: "percent", median: 4.0, p25: 3.5, p75: 4.7, institution_count: 3, area_count: 2, source_url: "https://www.bls.gov/lau", fetched_at: "2026-10-10T00:00:00Z" },
+    ];
+    const result = await queryData({ measure: AREA, scope: { kind: "peer_set", peer: { charter_type: "bank" } }, period: { from: "2026" } });
+
+    // The shared definition resolves the group; its members are read from the shared helper.
+    expect(resolvePeerSet).toHaveBeenCalledWith({ charter_type: "bank" }, null);
+    expect(peerSetMemberIds).toHaveBeenCalledWith(BANKS);
+    const { text, values } = lastQuery();
+    expect(values).toContainEqual(MEMBERS);
+    expect(values).toContain("county");
+    expect(values).toContain("bls-laus");
+    expect(values).toContain("laus_unemployment_rate");
+    expect(values).toContain("2026-01");
+    expect(values).toContainEqual({ unsafe: areaRowServedSql("a") });
+    expect(text).toContain("institution_hq_counties");
+    expect(text).not.toMatch(/bls-laus|laus_unemployment_rate/);
+
+    expect(result).toMatchObject({
+      ok: true,
+      scope: "peer_set",
+      unit: "percent",
+      citation: { source_url: "https://www.bls.gov/lau", as_of: "2026-09", fetched_at: "2026-10-12T00:00:00.000Z" },
+      rows: [
+        expect.objectContaining({ scope_label: "Banks", period: "2026-09", median: 4.1, institution_count: 7, member_count: 7, geo_level: "county", note: null }),
+        // Under the minimum group size: no median, never zero, and the reason.
+        expect.objectContaining({ period: "2026-08", median: null, p25: null, p75: null, institution_count: 3, note: expect.stringContaining("at least 5") }),
+      ],
+    });
+    if (result.ok) {
+      expect(result.citation.publisher).toMatch(/Bureau of Labor Statistics/);
+      expect(result.note).toContain("7 of the group's 7 institutions");
+      expect(result.note).toContain("headquarters county");
+    }
+  });
+
+  it("resolves a group around an institution with the shared request path", async () => {
+    vi.mocked(getPeerSubject).mockResolvedValue({ id: 12, charter_type: "bank" });
+    vi.mocked(resolvePeerRequest).mockResolvedValue(BANKS);
+    vi.mocked(peerSetMemberIds).mockResolvedValue(MEMBERS);
+    await queryData({ measure: AREA, scope: { kind: "peer_set", id: "12", peer: { charter_type: "same", nearest: 10 } } });
+    expect(resolvePeerRequest).toHaveBeenCalledWith({ id: 12, charter_type: "bank" }, { charter_type: "same", nearest: 10 });
+    expect(lastQuery().values).toContainEqual(MEMBERS);
+  });
+
+  it("keeps the peer-group refusals and runs no SQL for them", async () => {
+    expect(await queryData({ measure: AREA, scope: { kind: "peer_set", peer: {} } })).toMatchObject({ ok: false, reason: expect.stringContaining("at least one filter") });
+    expect(await queryData({ measure: AREA, scope: { kind: "peer_set", peer: { nearest: 10 } } })).toMatchObject({ ok: false, reason: expect.stringContaining('"nearest" peers need scope.id') });
+    expect(await queryData({ measure: AREA, scope: { kind: "peer_set", peer: { states: "same" } } })).toMatchObject({ ok: false, reason: expect.stringContaining("needs scope.id") });
+    expect(queries()).toHaveLength(0);
+  });
+
+  it("says when no institution matches, and refuses a national-only source and a struck series before resolving anything", async () => {
+    vi.mocked(resolvePeerSet).mockResolvedValue({ definition: { states: ["WY"] }, filters: null, label: "Institutions in Wyoming", market: null });
+    vi.mocked(peerSetMemberIds).mockResolvedValue([]);
+    const empty = await queryData({ measure: AREA, scope: { kind: "peer_set", peer: { states: ["WY"] } } });
+    expect(empty).toMatchObject({ ok: true, rows: [], note: expect.stringContaining("No institutions match the peer group (Institutions in Wyoming)") });
+    expect(queries()).toHaveLength(0);
+
+    vi.mocked(resolvePeerSet).mockClear();
+    const national = await queryData({ measure: "area:fed-shed:x", scope: { kind: "peer_set", peer: { charter_type: "bank" } } });
+    expect(national).toMatchObject({ ok: false, reason: expect.stringContaining("only national figures") });
+    const struck = await queryData({ measure: "area:national-series:natl_pmms_30y_fixed", scope: { kind: "peer_set", peer: { charter_type: "bank" } } });
+    expect(struck).toMatchObject({ ok: false });
+    const held = await queryData({ measure: "area:fdic-sod:x", scope: { kind: "peer_set", peer: { charter_type: "bank" } } });
+    expect(held).toMatchObject({ ok: false });
+    expect(resolvePeerSet).not.toHaveBeenCalled();
+    expect(queries()).toHaveLength(0);
+  });
+});
+
+describe("queryData: call-report lines", () => {
+  const CALL = "call:service_charges_deposits_ytd";
+
+  it("reads one institution's own filed values, in dollars, with the regulator's citation", async () => {
+    nextRows = [
+      { period: "2026-06-30", item_code: "RIAD4080", item_description: "SERVICE CHARGES ON DEPOSIT ACCOUNTS", schedule: "RI", value: 1_234_000, unit: "USD", period_basis: "ytd", source: "ffiec", source_url: "https://cdr.ffiec.gov/x", fetched_at: "2026-08-01T00:00:00Z" },
+    ];
+    const result = await queryData({ measure: CALL, scope: { kind: "institution", id: "12" } });
+    const { text, values } = lastQuery();
+    expect(text).toContain("institution_call_report_items");
+    expect(values).toContain(12);
+    expect(values).toContain("service_charges_deposits_ytd");
+    expect(values).toContainEqual(["ffiec", "ncua"]);
+    expect(text).not.toContain("service_charges_deposits_ytd");
+    expect(result).toMatchObject({
+      ok: true,
+      scope: "institution",
+      unit: "USD",
+      rows: [expect.objectContaining({ period: "2026-06-30", value: 1_234_000, item_code: "RIAD4080", period_basis: "ytd" })],
+      citation: { publisher: "FFIEC Central Data Repository (call report)", source_url: "https://cdr.ffiec.gov/x", as_of: "2026-06-30" },
+    });
+  });
+
+  it("rolls a line up over a peer group, a state and every filer, and refuses a county", async () => {
+    vi.mocked(resolvePeerSet).mockResolvedValue(BANKS);
+    vi.mocked(peerSetMemberIds).mockResolvedValue(MEMBERS);
+    nextRows = [{ period: "2026-06-30", unit: "USD", median: 900_000, p25: 400_000, p75: 2_000_000, institution_count: 6, period_basis: "ytd", sources: ["ffiec"], source_url: "https://cdr.ffiec.gov/x", fetched_at: "2026-08-01T00:00:00Z" }];
+    const peer = await queryData({ measure: CALL, scope: { kind: "peer_set", peer: { charter_type: "bank" } } });
+    expect(lastQuery().values).toContainEqual(MEMBERS);
+    expect(peer).toMatchObject({
+      ok: true,
+      rows: [expect.objectContaining({ scope_label: "Banks", median: 900_000, institution_count: 6, member_count: 7, period_basis: "ytd" })],
+      citation: { publisher: "FFIEC Central Data Repository (call report)" },
+      note: expect.stringContaining("6 of the group's 7 institutions"),
+    });
+
+    vi.mocked(resolvePeerSet).mockResolvedValue({ definition: { states: ["TX"] }, filters: { states: ["TX"] }, label: "Institutions in Texas", market: null });
+    await queryData({ measure: CALL, scope: { kind: "state", id: "tx" } });
+    expect(resolvePeerSet).toHaveBeenLastCalledWith({ states: ["TX"] }, null);
+
+    vi.mocked(resolvePeerSet).mockResolvedValue({ definition: { market_code: 26420 }, filters: { institutionIds: MEMBERS }, label: "Institutions with branches in the Houston metro", market: null });
+    await queryData({ measure: CALL, scope: { kind: "metro", id: "26420" } });
+    expect(resolvePeerSet).toHaveBeenLastCalledWith({ market_code: 26420 }, null);
+
+    vi.mocked(peerSetMemberIds).mockClear();
+    const all = await queryData({ measure: CALL, scope: { kind: "national" } });
+    expect(peerSetMemberIds).not.toHaveBeenCalled();
+    expect(lastQuery().values).toContain(null);
+    expect(all).toMatchObject({ ok: true, rows: [expect.not.objectContaining({ member_count: expect.anything() })] });
+
+    const before = queries().length;
+    expect(await queryData({ measure: CALL, scope: { kind: "county", id: "48201" } })).toMatchObject({ ok: false, reason: expect.stringContaining("not rolled up by county") });
+    expect(queries()).toHaveLength(before);
+  });
+
+  it("shows no median, never zero, for a thin group", async () => {
+    vi.mocked(resolvePeerSet).mockResolvedValue(BANKS);
+    vi.mocked(peerSetMemberIds).mockResolvedValue([11, 12]);
+    nextRows = [{ period: "2026-06-30", unit: "USD", median: 0, p25: 0, p75: 0, institution_count: 2, period_basis: "ytd", sources: ["ffiec"], source_url: null, fetched_at: null }];
+    const result = await queryData({ measure: CALL, scope: { kind: "peer_set", peer: { charter_type: "bank" } } });
+    expect(result).toMatchObject({ ok: true, rows: [expect.objectContaining({ median: null, p25: null, p75: null, institution_count: 2 })] });
   });
 });

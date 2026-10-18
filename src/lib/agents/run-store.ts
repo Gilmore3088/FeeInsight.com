@@ -107,6 +107,7 @@ import { freshAuditDetail, runFreshAudit, summarizeFreshAudit } from "@/lib/agen
 import { benchmarkHealthDetail, runBenchmarkHealth, summarizeBenchmarkHealth } from "@/lib/agents/deming/benchmark-health";
 import { playbookContradictionsDetail, runPlaybookContradictions, summarizePlaybookContradictions } from "@/lib/agents/deming/playbook-contradictions";
 import { dataQualityDetail, runDataQuality, summarizeDataQuality } from "@/lib/agents/deming/data-quality";
+import { readSourceHealth, sourceHealthDetail, summarizeSourceHealth } from "@/lib/agents/hoovie/source-health";
 import { knoxMissesDetail, runKnoxMisses, summarizeKnoxMisses } from "@/lib/agents/deming/knox-misses";
 import { runBayesLedger, summarizeBayesLedger, BAYES_LEDGER_VERSION } from "@/lib/agents/bayes/ledger";
 import { runScheduleCheck, summarizeScheduleCheck, SCHEDULE_CHECK_VERSION } from "@/lib/agents/atlas/schedule-check";
@@ -504,6 +505,7 @@ async function executeAgenticStep(
         institutionId: numericRunParam(params, ["institution_id"]),
         stateCode,
         newLinksOnly: params.new_links_only === true,
+        requestedUrl: typeof params.fee_schedule_url === "string" ? params.fee_schedule_url : null,
       });
       // Fee links the plain fetch keeps failing to reach, tried at the bank's other
       // spellings of the address (#1051). Free; a failure here never fails the step.
@@ -953,10 +955,10 @@ async function executeAgenticStep(
         ? ` Live name re-check: ${liveFragments.matched.toLocaleString()} of ${liveFragments.checked.toLocaleString()} live fee(s) read have a fragment name: ${liveFragments.wouldTakeDown.toLocaleString()} takedown, ${liveFragments.wouldRename.toLocaleString()} rename (${liveFragments.wouldRenameByVia.tail.toLocaleString()} by the fee the line ends on), ${liveFragments.exempt.toLocaleString()} exempt, ${liveFragments.wouldReread.toLocaleString()} kept live to ask Knox to re-read (${liveFragments.live && !liveFragments.dryRun ? `${liveFragments.takenDown.length.toLocaleString()} archived, ${liveFragments.renamed.length.toLocaleString()} renamed, ${liveFragments.rereadRequested.length.toLocaleString()} re-read request(s)` : "switch off: nothing written"}).`
         : "";
       const hourlyNote = hourly.matched > 0
-        ? ` Hourly re-check: ${hourly.wouldSet.toLocaleString()} of ${hourly.checked.toLocaleString()} live fee(s) read are priced by the hour with no hourly frequency, ${hourly.exempt.toLocaleString()} exempt (${hourly.live && !hourly.dryRun ? `${hourly.set.length.toLocaleString()} set hourly` : "switch off: nothing written"}).`
+        ? ` Hourly re-check: ${hourly.wouldSet.toLocaleString()} of ${hourly.checked.toLocaleString()} live fee(s) read are priced by the hour with no hourly frequency (${hourly.wouldSetFromLine.toLocaleString()} only on their line${hourly.lineLive ? "" : ", line switch off: not written"}), ${hourly.exempt.toLocaleString()} exempt (${hourly.live && !hourly.dryRun ? `${hourly.set.length.toLocaleString()} set hourly` : "switch off: nothing written"}).`
         : "";
       const hourlyFullNote = hourlyFull
-        ? ` Whole live table: ${hourlyFull.wouldSet.toLocaleString()} live fees would be set hourly, ${hourlyFull.exempt.toLocaleString()} exempt.`
+        ? ` Whole live table: ${hourlyFull.wouldSet.toLocaleString()} live fees would be set hourly (${hourlyFull.wouldSetFromLine.toLocaleString()} only on their line), ${hourlyFull.exempt.toLocaleString()} exempt.`
         : "";
       const nonDepositNote = nonDeposit.matched > 0 || nonDeposit.brokerageDocument > 0
         ? ` Non-deposit document re-check: ${nonDeposit.matched.toLocaleString()} of ${nonDeposit.checked.toLocaleString()} live fee(s) read would come down from a brokerage or wealth (${nonDeposit.byKind.brokerage.toLocaleString()}) or loan, card or rate (${nonDeposit.byKind.loan.toLocaleString()}) document (${nonDeposit.byRule.lending_category.toLocaleString()} lending category, ${nonDeposit.byRule.lending_wording_on_loan_document.toLocaleString()} lending wording on a loan document); ${nonDeposit.brokerageDocument.toLocaleString()} deposit-category fee(s) on brokerage documents (own sub-switch${nonDeposit.live && nonDeposit.brokerageLive ? "" : ", off: they stay"}); ${(nonDeposit.keptDepositCategory + nonDeposit.keptGenericOnRatePage).toLocaleString()} fee(s) there stay live. Takedowns: ${nonDeposit.live && !nonDeposit.dryRun ? `${nonDeposit.flagged.toLocaleString()} flagged, ${nonDeposit.takenDown.length.toLocaleString()} archived` : "switch off, none made, nothing written"}.`
@@ -1777,6 +1779,7 @@ async function executeAgenticStep(
           hand_takedown: {
             taken_down: handTakedowns.takenDown.map((item) => ({ fee_published_id: item.feePublishedId, reason: item.reason })),
             skipped: handTakedowns.skipped.length,
+            waiting_rejected: handTakedowns.waitingRejected.length,
             error: handTakedowns.error,
           },
           hand_audience_fix: {
@@ -2688,6 +2691,11 @@ async function executeAgenticStep(
       // Read-only (#1065): two SELECTs over the live catalogs and one over the step's own history.
       const result = await runDataQuality({ db: tx });
       return { status: "completed", summary: summarizeDataQuality(result), detail: dataQualityDetail(result) };
+    }
+    case "deming-source-health": {
+      // Read-only (#1866): one SELECT over registry_ingest_partitions and one over Atlas's newest table sizes.
+      const report = await readSourceHealth({ db: tx });
+      return { status: "completed", summary: summarizeSourceHealth(report), detail: sourceHealthDetail(report) };
     }
     case "deming-knox-misses": {
       // #1099: writes only eval_cases (new missed-fee cases and each case's replay); never a fee row.
@@ -3615,6 +3623,10 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   "public-discovery": 60_000,
   "registry-ncua-extras": 110_000,
   "registry-cfpb-card-agreements": 50_000,
+  // Not measured yet (2026-10-18): each downloads and inflates a Board SDMX zip, H.15 about 68 MB
+  // and H.8 about 75 MB, before the BLS/BEA or table reads; priced so a tick starts them early.
+  "registry-fred": 150_000,
+  "registry-national-series": 150_000,
 };
 /**
  * Steps the tick never starts, because they do not fit its 270 s budget even alone: the tick

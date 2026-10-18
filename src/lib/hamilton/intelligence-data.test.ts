@@ -3,9 +3,17 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/data-store/connection", () => ({ getSql: () => { throw new Error("no database in unit tests"); } }));
 
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
-import { buildFeeMap, buildFeeSpread, joinSeries, loadComplaintTrend, percentChange, yearOverYear } from "./intelligence-data";
+import { buildFeeMap, buildFeeSpread, median, joinSeries, loadComplaintTrend, percentChange, yearOverYear } from "./intelligence-data";
 
 describe("buildFeeMap", () => {
+  it("counts charters that share one fee schedule once, as the landscape table does", () => {
+    const rows = Array.from({ length: 6 }, (_, i) => ({ institution_id: i + 1, state_code: "FL", amount: 30 + i }));
+    const map = buildFeeMap("overdraft", [...rows, { institution_id: 99, state_code: "FL", amount: 20, counted_as: 1 }]);
+    expect(map.nationalInstitutions).toBe(6);
+    // Institution 1's schedule counts once, at the lower middle of $30 and $20.
+    expect(map.nationalMedian).toBe(median([20, 31, 32, 33, 34, 35]));
+  });
+
   it("withholds a state under the cohort floor instead of reporting its median", () => {
     const thick = Array.from({ length: MIN_INSTITUTIONS_FOR_MEDIAN }, (_, i) => ({ state_code: "TX", amount: 30 + i }));
     const map = buildFeeMap("overdraft", [...thick, { state_code: "VT", amount: 10 }, { state_code: null, amount: 99 }]);

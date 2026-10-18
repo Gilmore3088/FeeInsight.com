@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { aggregationBuckets, fetchCfpbCompanyBreakdown, fullCompanyKey, normalizeCompanyName, subIssueBuckets } from "./cfpb";
 import { parseFdicSod } from "./fdic";
 import { retryAfterMs } from "./http";
-import { isFredNativeSeries, parseBeigeBookPage, parseBeigeBookReleaseCodes, parseFredCsv } from "./fed";
+import { parseBeigeBookPage, parseBeigeBookReleaseCodes } from "./fed";
 import { blankUnreportedFeeIncome, ncuaZipUrl, parseCsv, parseNcuaFinancial, parseNcuaInstitution, readNcuaArchive } from "./ncua";
 import { parseSecCompanyFacts, parseSecSubmissions } from "./sec";
 import { chartering, STATE_REGULATORS } from "./state-regulators";
@@ -316,15 +316,6 @@ describe("Federal Reserve", () => {
     ).toEqual(["202601", "202608"]);
   });
 
-  it("parses FRED graph CSV and skips missing values", () => {
-    expect(parseFredCsv("observation_date,UNRATE\n2026-06-01,4.1\n2026-07-01,.\n2026-08-01,4.2\n")).toEqual([
-      { observation_date: "2026-06-01", value: 4.1 },
-      { observation_date: "2026-08-01", value: 4.2 },
-    ]);
-    expect(isFredNativeSeries("UNRATE")).toBe(true);
-    expect(isFredNativeSeries("NYFED_SOFR")).toBe(false);
-    expect(isFredNativeSeries("OFR_FSI")).toBe(false);
-  });
 });
 
 describe("state regulators", () => {

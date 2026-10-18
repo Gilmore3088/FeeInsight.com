@@ -12,7 +12,13 @@ import { rateDisplayParts } from "@/lib/percent-fees";
 import { feeDisplayName } from "@/lib/fee-display-name";
 import { HIGHEST_TIER_CATEGORIES, institutionValue } from "@/lib/data-store/fee-stats";
 import { accountPricesText, comparedAtText, type AccountPrice } from "@/lib/fee-representative";
-import { CARD_INACTIVITY_REASON, CD_IRA_REASON, SAFE_DEPOSIT_SERVICE_REASON, notComparableReason } from "@/lib/fee-comparability";
+import {
+  CARD_INACTIVITY_REASON,
+  CD_IRA_REASON,
+  SAFE_DEPOSIT_SERVICE_REASON,
+  basisMismatchReason,
+  notComparableReason,
+} from "@/lib/fee-comparability";
 import { countsInMarketComparison, marketIneligibleReason, type MarketEligibilityInput } from "@/lib/market-eligibility";
 import { productNameFromFeeName, readableProductName } from "@/lib/agents/knox/lineup";
 import { waiverPhrase } from "./account-waiver";
@@ -226,6 +232,7 @@ export function marketEligibilityOf(fee: ExtractedFee): MarketEligibilityInput {
     feeName: fee.fee_name,
     accountProduct: fee.account_product_type ?? null,
     sourceLine: fee.source_line ?? null,
+    frequency: fee.frequency ?? null,
   };
 }
 
@@ -252,6 +259,8 @@ export interface HeadlineValue {
   excludedCard?: number;
   /** Safe deposit drilling, key and late fees filed under the box's rent, left out the same way. */
   excludedSafeDeposit?: number;
+  /** Fees whose stated frequency contradicts the category's charging basis (#1901), left out the same way. */
+  excludedBasis?: number;
   /** "waived with an average daily balance of $1,500 or more" when its one price states a waiver balance. */
   waiver?: string | null;
 }
@@ -266,16 +275,22 @@ export function pickHeadlineValues(verifiedFees: ExtractedFee[], categories: rea
   for (const category of categories) {
     // Exactly the rows the medians beside it count (market-eligibility, the one test for both
     // sides): sourced, personal, not from a business-only schedule, and not a CD/IRA, card
-    // inactivity or safe deposit service fee filed under a category that measures something else.
+    // inactivity or safe deposit service fee filed under a category that measures something else,
+    // and not a fee charged on a different basis than the category's (#1901).
     const inCategory = verifiedFees.filter((fee) => fee.fee_category === category);
     const rows = inCategory.filter((fee) => countsInMarketComparison(marketEligibilityOf(fee)));
     const amounts = rows.map((fee) => fee.amount as number);
     const excludedReasons = inCategory
       .filter((fee) => marketIneligibleReason(marketEligibilityOf(fee)) === "not_comparable")
-      .map((fee) => notComparableReason(fee.fee_category, fee.fee_name, fee.account_product_type ?? null, fee.source_line ?? null));
+      .map((fee) => notComparableReason(fee.fee_category, fee.fee_name, fee.account_product_type ?? null, fee.source_line ?? null, fee.frequency ?? null));
     const excludedCdIra = excludedReasons.filter((reason) => reason === CD_IRA_REASON).length;
     const excludedCard = excludedReasons.filter((reason) => reason === CARD_INACTIVITY_REASON).length;
     const excludedSafeDeposit = excludedReasons.filter((reason) => reason === SAFE_DEPOSIT_SERVICE_REASON).length;
+    const excludedBasis = inCategory.filter(
+      (fee) =>
+        marketIneligibleReason(marketEligibilityOf(fee)) === "not_comparable" &&
+        basisMismatchReason(fee.fee_category, fee.frequency) !== null,
+    ).length;
     if (amounts.length === 0) continue;
     const quoted =
       category === "overdraft"
@@ -304,6 +319,7 @@ export function pickHeadlineValues(verifiedFees: ExtractedFee[], categories: rea
       excludedCdIra,
       excludedCard,
       excludedSafeDeposit,
+      excludedBasis,
       comparedAt: comparedAtText({ value, amounts, highestTier: HIGHEST_TIER_CATEGORIES.has(category) }),
       // One price only: with several, a waiver belongs to one account, not the compared value.
       waiver:

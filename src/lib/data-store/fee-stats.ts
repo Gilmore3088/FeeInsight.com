@@ -37,6 +37,12 @@
  *    paying late is a service charge, not the box's rent, and stays out of the rent's medians,
  *    ranges and counts (safeDepositServiceSql). It stays on the bank's own page, marked as not
  *    compared, by the same name rule (fee-comparability.ts).
+ * 9. One charging basis per category (#1901): a dormant, minimum balance or monthly maintenance
+ *    row stated as quarterly, annual, daily, hourly or one-time, and a safe deposit box or IRA
+ *    administration row stated as monthly, quarterly, daily, hourly or one-time, prices a
+ *    different period than the category's median and stays out of its medians, ranges and
+ *    counts (basisMismatchSql). Per item, other and blank frequencies stay. The bank's own page
+ *    keeps the row, marked as not compared (fee-comparability.ts basisMismatchReason).
  */
 import { computePercentile, computeStats } from "./fees";
 import { countedAmounts } from "./counted-amounts";
@@ -45,7 +51,7 @@ import { countedAmounts } from "./counted-amounts";
 // database imports, because client components reach it through hamilton/workspace/segment.ts.
 export { countedAmounts };
 import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL } from "@/lib/agents/magellan/link-coverage";
-import { SAFE_DEPOSIT_CATEGORY, SAFE_DEPOSIT_SERVICE_SQL } from "@/lib/fee-comparability";
+import { SAFE_DEPOSIT_CATEGORY, SAFE_DEPOSIT_SERVICE_SQL, basisMismatchSql } from "@/lib/fee-comparability";
 
 import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT, maturityTier, type MaturityTier } from "./maturity";
 
@@ -70,8 +76,10 @@ export const COUNT_SHARED_SCHEDULE_ONCE: boolean = true;
 /**
  * Bump when these rules change; fee_index_cache rows carry it and older ones are ignored.
  * 9/10 (#1816): safe deposit drilling, key, lock and late charges leave every median.
+ * 11/12 (#1901): a fee whose stated frequency contradicts its category's basis leaves every median.
+ * 13/14 (#1879): medians and quartiles round half a cent up on the decimal value (roundCents).
  */
-export const STATS_METHOD_VERSION = COUNT_SHARED_SCHEDULE_ONCE ? 9 : 10;
+export const STATS_METHOD_VERSION = COUNT_SHARED_SCHEDULE_ONCE ? 13 : 14;
 
 /** SQL predicate: the row's source address names a business-only schedule (rule 6). */
 export function businessSourceSql(alias: string): string {
@@ -91,7 +99,7 @@ export function safeDepositServiceSql(alias: string): string {
 /** Shared audience/source boundary for dollar and rate catalogs. Alias is code, not input. */
 export function statsRowFilter(alias = "ef"): string {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(alias)) throw new Error("Invalid statistics table alias");
-  return `${alias}.source_document_id IS NOT NULL AND ${alias}.fee_audience IN ('consumer', 'both', 'unknown') AND NOT ${businessSourceSql(alias)} AND NOT ${safeDepositServiceSql(alias)}`;
+  return `${alias}.source_document_id IS NOT NULL AND ${alias}.fee_audience IN ('consumer', 'both', 'unknown') AND NOT ${businessSourceSql(alias)} AND NOT ${safeDepositServiceSql(alias)} AND NOT ${basisMismatchSql(alias)}`;
 }
 
 /** Compatibility predicate for readers using the conventional ef alias. */

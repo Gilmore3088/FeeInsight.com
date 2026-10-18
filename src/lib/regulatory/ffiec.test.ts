@@ -1,7 +1,16 @@
 import { strToU8, zipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
 
-import { fetchFfiecCallBulk, periodOptionValue, readFfiecOverdraft, readFormState, readScheduleRiOverdraft } from "./ffiec";
+import {
+  describeFfiecPage,
+  downloadButtonName,
+  fetchFfiecCallBulk,
+  formatFfiecPage,
+  periodOptionValue,
+  readFfiecOverdraft,
+  readFormState,
+  readScheduleRiOverdraft,
+} from "./ffiec";
 
 const RI = [
   '"IDRSSD"\t"RIAD4340"\t"RIADH032"\t"RIADH033"',
@@ -99,5 +108,46 @@ describe("FFIEC bulk form", () => {
     const out = await fetchFfiecCallBulk({ year: 2027, quarter: 1 }, { fetchImpl: fetchImpl as unknown as typeof fetch });
     expect(out.files).toBeNull();
     expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("describeFfiecPage", () => {
+  const html = `<html><head><title> Download Bulk Data </title></head><body>
+    <input type="hidden" name="__VIEWSTATE" value="huge" />
+    <input type="email" name="contact" value="someone@example.com" />
+    <span id="ctl00_MainContentHolder_ErrorMessage" class="err">Please select a   file format.</span>
+    <div class="validation-summary">Please select a file format.</div>
+    <script>alert('Session expired');</script>
+    <input type="radio" name="ctl00$MainContentHolder$FormatType" value="TSVRadioButton" />
+    <input type="radio" name="ctl00$MainContentHolder$FormatType" value="XBRLRadioButton" checked="checked" />
+    <select name="ctl00$MainContentHolder$DatesDropDownList"><option value="1">09/30/2026</option><option value="2" selected="selected">06/30/2026</option></select>
+    <input type="submit" name="ctl00$MainContentHolder$TabStrip1$Download_0" value="Download" />
+  </body></html>`;
+
+  it("names the title, the visible messages and the form fields without hidden values", () => {
+    const page = describeFfiecPage(html);
+    expect(page.title).toBe("Download Bulk Data");
+    expect(page.messages).toEqual(["Please select a file format.", "Session expired"]);
+    expect(page.fields).toEqual([
+      "__VIEWSTATE",
+      "contact",
+      "ctl00$MainContentHolder$FormatType[radio=TSVRadioButton]",
+      "ctl00$MainContentHolder$FormatType[radio=XBRLRadioButton*]",
+      "ctl00$MainContentHolder$TabStrip1$Download_0[submit=Download]",
+      "ctl00$MainContentHolder$DatesDropDownList[select 2 options, 06/30/2026*]",
+    ]);
+    const line = formatFfiecPage(page);
+    expect(line).toMatch(/^title "Download Bulk Data"; messages: "Please select a file format\." \| "Session expired"; fields: __VIEWSTATE, /);
+    expect(line).not.toContain("huge");
+    expect(line).not.toContain("someone@example.com");
+  });
+
+  it("finds the Download control by its label", () => {
+    expect(downloadButtonName(html)).toBe("ctl00$MainContentHolder$TabStrip1$Download_0");
+    expect(downloadButtonName('<input type="submit" name="other" value="Search" />')).toBeNull();
+  });
+
+  it("says none when the page has nothing", () => {
+    expect(formatFfiecPage(describeFfiecPage(""))).toBe("title none; messages: none; fields: none");
   });
 });

@@ -375,6 +375,7 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
           missing_lines: r.missingLines,
           used_mdrm: r.usedMdrm,
           quality: r.quality,
+          missing_source: r.missingSource,
           empty: r.empty,
           empty_reason: r.emptyReason,
         },
@@ -404,6 +405,7 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
           header_checks: r.headerChecks,
           missing_files: r.missingFiles,
           quality: r.quality,
+          missing_source: r.missingSource,
           empty: r.empty,
           empty_reason: r.emptyReason,
         },
@@ -1012,13 +1014,23 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
   {
     source: FRED_SOURCE,
     stepKey: "registry-fred",
-    title: "Refresh FRED economic indicators",
+    title: "Refresh economic indicators from BLS, BEA and the Federal Reserve Board",
     fixedPartition: FRED_PARTITION,
     run: async (input) => {
       const r = await runRegistryFred({ runId: input.runId, dryRun: input.dryRun, db: input.db });
       return {
-        summary: `Magellan refreshed ${r.refreshedSeries} of ${r.series} FRED series (${n(r.observations)} observations)${dry(r.dryRun)}.`,
-        detail: { series: r.series, refreshed_series: r.refreshedSeries, missing_series: r.missingSeries, observations: r.observations },
+        summary:
+          `Magellan refreshed ${r.refreshedSeries} of ${r.series} economic indicators from BLS, BEA and the Fed Board (${n(r.observations)} observations)` +
+          (r.stillOnFredEra.length > 0 ? `; ${r.stillOnFredEra.length} still on FRED-era values (${r.stillOnFredEra.slice(0, 8).join(", ")}${r.stillOnFredEra.length > 8 ? ", ..." : ""})` : "") +
+          `${dry(r.dryRun)}.`,
+        detail: {
+          series: r.series,
+          refreshed_series: r.refreshedSeries,
+          missing_series: r.missingSeries,
+          still_on_fred_era_values: r.stillOnFredEra,
+          skipped_packages: r.skippedPackages,
+          observations: r.observations,
+        },
       };
     },
   },

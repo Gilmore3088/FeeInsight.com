@@ -1,4 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
+import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
+
+const FEE_CATEGORIES = new Set<string>(Object.values(FEE_FAMILIES).flat());
+/** The directory's filters; any one of them makes the view per request. */
+const DIRECTORY_FILTER_KEYS = ["q", "state", "charter", "page", "fee"];
+
+/**
+ * The cached route that serves a public address whose query string changes the page (#1811).
+ * The profile and the directory are cached (ISR), and a cached page cannot read its query
+ * string, so the variants live at their own paths: /institution/82?fee=nsf is served by
+ * /institution/82/fee/nsf (also cached) and a filtered directory by /institutions/results.
+ * The address in the browser keeps its query string. Null when no rewrite applies.
+ */
+export function cachedVariantPath(pathname: string, search: URLSearchParams): string | null {
+  const profile = /^\/institution\/(\d+)$/.exec(pathname);
+  if (profile) {
+    const fee = search.get("fee");
+    return fee && FEE_CATEGORIES.has(fee) ? `/institution/${profile[1]}/fee/${fee}` : null;
+  }
+  if (pathname === "/institutions" && DIRECTORY_FILTER_KEYS.some((key) => search.get(key))) {
+    return "/institutions/results";
+  }
+  return null;
+}
 
 function requestHeadersWithPath(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
@@ -87,6 +111,13 @@ export function proxy(request: NextRequest) {
       loginUrl.searchParams.set("from", `${pathname}${request.nextUrl.search}`);
       return NextResponse.redirect(loginUrl);
     }
+  }
+
+  const variant = cachedVariantPath(pathname, request.nextUrl.searchParams);
+  if (variant) {
+    const url = request.nextUrl.clone();
+    url.pathname = variant;
+    return NextResponse.rewrite(url, { request: { headers: requestHeadersWithPath(request) } });
   }
 
   return NextResponse.next({
