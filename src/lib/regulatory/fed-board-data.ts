@@ -32,7 +32,6 @@ export const FRB_BASE = "https://www.federalreserve.gov";
 export const FRB_XML_PACKAGES = {
   h8: `${FRB_BASE}/releases/h8/data/FRB_h8_xml.zip`,
   h15: `${FRB_BASE}/releases/h15/data/FRB_h15_xml.zip`,
-  z1: `${FRB_BASE}/releases/z1/data/FRB_Z1_xml.zip`,
 } as const;
 
 /** Charge-off and delinquency rates: delinquency rates, all banks, seasonally adjusted (one HTML table). */

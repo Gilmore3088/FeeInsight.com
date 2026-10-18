@@ -124,7 +124,7 @@ describe("national series from the Federal Reserve Board", () => {
   });
 
   it("names every series the Board's files do not carry and loads the rest, never asking FRED", async () => {
-    const series: NationalSeriesConfig[] = [DEPOSITS, SLOOS, CARD_DELINQUENCY, NATIONAL_SERIES.find((s) => s.id === "BOGZ1FL893065505Q")!];
+    const series: NationalSeriesConfig[] = [DEPOSITS, SLOOS, CARD_DELINQUENCY, NATIONAL_SERIES.find((s) => s.id === "DRTSCLCC")!];
     const h8 = sdmxPackage("H8_H8", [{ name: "B1058NCBA", unitMult: "9", obs: [["2026-10-08", "18050"]] }]);
     const asked: string[] = [];
     const fetchImpl = vi.fn(async (url: string) => {
@@ -137,7 +137,9 @@ describe("national series from the Federal Reserve Board", () => {
     const r = await fetchNationalSeries(series, { fetchImpl, backoffMs: 0 }, undefined, new Date("2026-10-18T00:00:00Z"));
     expect(asked.some((u) => u.includes("stlouisfed"))).toBe(false);
     expect(r.sloosRelease).toBe("202607");
-    expect(r.missingFields).toEqual(["BOGZ1FL893065505Q (HTTP 404)"]);
+    expect(r.missingFields).toHaveLength(1);
+    expect(r.missingFields[0]).toMatch(/^DRTSCLCC \(no table column/);
+    expect(asked.some((u) => u.includes("FRB_Z1"))).toBe(false);
     expect(r.perSeries.DPSACBW027SBOG).toEqual({ rows: 1, latest: "2026-10-08", problem: null });
     expect(r.perSeries.DRTSCILM).toEqual({ rows: 2, latest: "2026Q3", problem: null });
     expect(r.perSeries.DRCCLACBS.latest).toBe("2026Q2");

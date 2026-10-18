@@ -73,12 +73,12 @@ export const HOOVIE_SOURCES_02: HoovieSourceContract[] = [
   },
   {
     // magellan/registry/national-credit.ts (nationalSeries), regulatory/national-credit.ts and regulatory/fed-board-data.ts
-    // (federalreserve.gov: FRB_h8_xml.zip, FRB_Z1_xml.zip, chargeoff/delallsa.htm, data/sloos/sloos-YYYYMM-chart-data.htm)
+    // (federalreserve.gov: FRB_h8_xml.zip, chargeoff/delallsa.htm, data/sloos/sloos-YYYYMM-chart-data.htm)
     source: "national-series",
-    publisher: "Board of Governors of the Federal Reserve System (H.8, Z.1, charge-off and delinquency rates, SLOOS)",
+    publisher: "Board of Governors of the Federal Reserve System (H.8, charge-off and delinquency rates, SLOOS)",
     licence: {
       status: "public-domain",
-      note: "Read from the Board's own files since 2026-10-18 (FRED replaced by the original publishers: FRED's terms bar commercial use and storing FRED content). Board site: \"information on Board's website is in the public domain and may be copied and distributed without permission\" (federalreserve.gov/disclaimer.htm); cite the Board. FDIC national deposit rates dropped (no FDIC file confirmed); Freddie Mac PMMS and the Philadelphia Fed card series struck 2026-10-18 (non-commercial terms). A row stored from FRED (fred.stlouisfed.org source_url) is served only until its key has a Board row (areaRowServedSql).",
+      note: "Read from the Board's own files since 2026-10-18 (FRED replaced by the original publishers: FRED's terms bar commercial use and storing FRED content). Board site: \"information on Board's website is in the public domain and may be copied and distributed without permission\" (federalreserve.gov/disclaimer.htm); cite the Board. FDIC national deposit rates dropped (no FDIC file confirmed); the two Z.1 commercial-mortgage series are not read yet (the Z.1 package is about 592 MB) and keep their FRED-era rows; Freddie Mac PMMS and the Philadelphia Fed card series struck 2026-10-18 (non-commercial terms). A row stored from FRED (fred.stlouisfed.org source_url) is served only until its key has a Board row (areaRowServedSql).",
     },
     connection: "bulk-file",
     cadence: "weekly",

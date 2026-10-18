@@ -98,7 +98,12 @@ export function checkNationalCreditStats(rows: AreaStat[], signedSeries: Readonl
 }
 
 // ---------------------------------------------------------------------------
-// (1) national-series: Federal Reserve Board files (H.8, Z.1, charge-off and delinquency rates, SLOOS)
+// (1) national-series: Federal Reserve Board files (H.8, charge-off and delinquency rates, SLOOS)
+//
+// Not read: the two Z.1 commercial-mortgage series (BOGZ1FL893065505Q, BOGZ1FL763065505Q). The
+// Board's Z.1 SDMX package is about 592 MB (Data Download Program listing, 2026-10-18), which does
+// not fit one registry step; their FRED-era rows keep serving (areaRowServedSql) until a small
+// Board file is wired.
 // ---------------------------------------------------------------------------
 
 export type NationalSeriesFrequency = "weekly" | "monthly" | "quarterly";
@@ -106,7 +111,7 @@ export type NationalSeriesFrequency = "weekly" | "monthly" | "quarterly";
 export type NationalSeriesGroup = "h8" | "sloos" | "cre" | "delinquency";
 
 /** Where a series is read: an SDMX release package, or a column of a Board HTML table. */
-export type NationalSeriesPublisher = "frb-h8" | "frb-z1" | "frb-chgdel" | "frb-sloos";
+export type NationalSeriesPublisher = "frb-h8" | "frb-chgdel" | "frb-sloos";
 
 export interface NationalSeriesConfig {
   /** Stable id (the series' FRED id before 2026-10-18), kept in raw_json and the run detail. */
@@ -120,7 +125,7 @@ export interface NationalSeriesConfig {
   /** Can legitimately be negative (net percentages). */
   signed?: boolean;
   publisher: NationalSeriesPublisher;
-  /** The Board's own series name in the SDMX package (H.8, Z.1). */
+  /** The Board's own series name in the SDMX package (H.8). */
   frbSeries?: string;
   /** The column in the Board's HTML table (charge-off and delinquency rates, SLOOS chart data). */
   column?: HtmlColumnMatch;
@@ -207,26 +212,6 @@ export const NATIONAL_SERIES: NationalSeriesConfig[] = [
   sloos("DEMAUTO", "auto_demand", "Net share of banks reporting stronger auto loan demand", CONSUMER_FIGURE, DEMAND, /\bauto/i),
   sloos("DRTSCLNG", "consumer_other_tightening", "Net share of banks tightening standards on other consumer loans", CONSUMER_FIGURE, TIGHTENING, /\|\s*other\b/i),
   sloos("DRTSSP", "subprime_mortgage_tightening", "Net share of banks tightening subprime mortgage standards", MORTGAGE_FIGURE, TIGHTENING, /\|\s*subprime$/i),
-  {
-    id: "BOGZ1FL893065505Q",
-    frbSeries: "FL893065505.Q",
-    key: "natl_z1_commercial_mortgages_all",
-    title: "Z.1 all sectors: commercial mortgages, asset level",
-    group: "cre",
-    frequency: "quarterly",
-    unit: "millions_dollars",
-    publisher: "frb-z1",
-  },
-  {
-    id: "BOGZ1FL763065505Q",
-    frbSeries: "FL763065505.Q",
-    key: "natl_z1_commercial_mortgages_banks",
-    title: "Z.1 US-chartered depository institutions: commercial mortgages, asset level",
-    group: "cre",
-    frequency: "quarterly",
-    unit: "millions_dollars",
-    publisher: "frb-z1",
-  },
   delinquency("DRCRELEXFACBS", "cre_ex_farmland", "Delinquency rate on CRE loans (excluding farmland), all commercial banks", [/real estate/i, /\bcommercial\b/i]),
   delinquency("DRCCLACBS", "credit_cards", "Delinquency rate on credit card loans, all commercial banks", [/consumer/i, /credit cards?/i]),
   delinquency("DRCLACBS", "consumer", "Delinquency rate on consumer loans, all commercial banks", [/consumer/i, /\|\s*all$/i]),
@@ -238,7 +223,6 @@ export const NATIONAL_SERIES_FIRST_DATE = "2000-01-01";
 /** The page or package each publisher's rows cite as source_url. */
 export function nationalSeriesSourceUrl(publisher: NationalSeriesPublisher, sloosRelease?: string | null): string {
   if (publisher === "frb-h8") return FRB_XML_PACKAGES.h8;
-  if (publisher === "frb-z1") return FRB_XML_PACKAGES.z1;
   if (publisher === "frb-chgdel") return FRB_CHGDEL_DELINQUENCY_SA_URL;
   return sloosRelease ? sloosChartDataUrl(sloosRelease) : `${FRB_BASE}/data/sloos.htm`;
 }
@@ -288,7 +272,7 @@ export interface NationalSeriesParse {
   skipped: Record<string, number>;
 }
 
-/** One series' rows from an SDMX package read (H.8, Z.1). */
+/** One series' rows from an SDMX package read (H.8). */
 export function nationalRowsFromSdmx(config: NationalSeriesConfig, series: SdmxSeries | undefined, firstDate = NATIONAL_SERIES_FIRST_DATE): NationalSeriesParse {
   const skipped: Record<string, number> = {};
   if (!series) return { rows: [], problem: `${config.frbSeries} not in the package`, skipped };
@@ -369,14 +353,13 @@ export async function fetchNationalSeries(
     for (const c of members) parsed.set(c.id, { rows: [], problem, skipped: {} });
   };
 
-  for (const publisher of ["frb-h8", "frb-z1"] as const) {
-    const members = series.filter((c) => c.publisher === publisher && c.frbSeries);
-    if (members.length === 0) continue;
+  const h8Members = series.filter((c) => c.publisher === "frb-h8" && c.frbSeries);
+  if (h8Members.length > 0) {
     try {
-      const { found } = await fetchSdmxPackage(nationalSeriesSourceUrl(publisher), members.map((c) => c.frbSeries as string), options);
-      for (const c of members) parsed.set(c.id, nationalRowsFromSdmx(c, found.get(c.frbSeries as string), firstDate));
+      const { found } = await fetchSdmxPackage(nationalSeriesSourceUrl("frb-h8"), h8Members.map((c) => c.frbSeries as string), options);
+      for (const c of h8Members) parsed.set(c.id, nationalRowsFromSdmx(c, found.get(c.frbSeries as string), firstDate));
     } catch (error) {
-      fail(members, problemOf(error));
+      fail(h8Members, problemOf(error));
     }
   }
 
