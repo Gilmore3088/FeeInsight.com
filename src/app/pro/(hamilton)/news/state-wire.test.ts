@@ -10,7 +10,7 @@ describe("States wire empty messages", () => {
     expect(all).toContain("no fee bills or regulator posts");
     expect(all).toContain("Regulator posts are read once a day.");
     expect(all.toLowerCase()).not.toContain("press");
-    expect(emptyMessage({ ...base, kind: "press" }, "any state", "this month")).toBe("Press coverage is paused while we confirm its licence.");
+    expect(emptyMessage({ ...base, kind: "press" }, "any state", "this month")).toBe("Press coverage is paused while we confirm its license.");
   });
 
   it("say why a struck state's regulator posts are missing", () => {

@@ -256,7 +256,7 @@ export function emptyMessage(params: WireParams, where: string, phrase: string):
   const news = struckRegulatorNote(params.state) ?? "Regulator posts are read once a day.";
   if (params.kind === "bills") return `No fee bills are stored for ${where} ${phrase}${searched}. ${bills}`;
   if (params.kind === "regulators") return `No regulator posts are stored for ${where} ${phrase}${searched}. Only the state banking and credit union regulators' posts about banking are kept. ${news}`;
-  if (params.kind === "press") return "Press coverage is paused while we confirm its licence.";
+  if (params.kind === "press") return "Press coverage is paused while we confirm its license.";
   return `Nothing is stored for ${where} ${phrase}${searched}: no fee bills or regulator posts. ${news} ${bills}`;
 }
 
@@ -426,7 +426,7 @@ export function StateWire({
       <WireSummary params={params} win={win} noun={noun} phrase={phrase} />
       <FeeChips params={params} />
 
-      {params.state && struckRegulatorNote(params.state) && wire.items.length > 0 ? (
+      {params.kind !== "bills" && struckRegulatorNote(params.state) && wire.items.length > 0 ? (
         <p className="mt-2 text-[11px] text-warm-600">{struckRegulatorNote(params.state)}</p>
       ) : null}
 
