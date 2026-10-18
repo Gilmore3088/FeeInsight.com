@@ -3,7 +3,7 @@ import { formatStamp, makeStamp, stampDifferences, stampId, toIsoTime, toRunId, 
 
 const POPULATION = [
   { key: "sourced", label: "Only fees traced to a stored copy of the institution's own fee schedule" },
-  { key: "consumer_audience", label: "Consumer fees, including fees whose schedule names no audience; business fees left out" },
+  { key: "consumer_audience", label: "Consumer fees, fees for both consumers and businesses, and fees whose schedule names no audience; business-only fees left out" },
 ];
 
 /**
