@@ -88,6 +88,7 @@ export function RegistryCards({
   enforcement,
   holdingCompany,
   market = null,
+  institutionId,
   institutionName = "This bank",
 }: {
   footprint: BranchFootprint | null;
@@ -96,6 +97,8 @@ export function RegistryCards({
   holdingCompany: HoldingCompanyProfile | null;
   /** Bank metros' deposit share, history and competitor offices; null for credit unions or when not on file. */
   market?: MarketPosition | null;
+  /** Needed with `market`: its "compare fees" link opens this institution's metro peer set. */
+  institutionId?: number;
   institutionName?: string;
 }) {
   // One selected metro drives both the footprint's metro list and the market position section.
@@ -114,8 +117,14 @@ export function RegistryCards({
           onSelectMarket={market ? (code) => (marketCodes.has(code) ? selectMetro(code) : setMetroCode(code)) : undefined}
         />
       )}
-      {market && market.metros.length > 0 && (
-        <MarketPositionCard position={market} institutionName={institutionName} selectedCode={metroCode} onSelect={setMetroCode} />
+      {market && market.metros.length > 0 && institutionId !== undefined && (
+        <MarketPositionCard
+          position={market}
+          institutionId={institutionId}
+          institutionName={institutionName}
+          selectedCode={metroCode}
+          onSelect={setMetroCode}
+        />
       )}
       {(complaints || enforcement || holdingCompany) && (
         <div className="grid gap-4 lg:grid-cols-2">

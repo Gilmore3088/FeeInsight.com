@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { formatCompactDollars } from "@/lib/format";
 import { ASSET_BANDS, type HistoryPoint } from "@/lib/market-position";
 import type { MarketPosition, MetroPosition } from "@/lib/data-store/market-position";
@@ -20,6 +20,30 @@ const PEER = "var(--fi-peer, #a3abb7)";
 const GRID = "var(--fi-chart-grid, #e7e0d2)";
 const METRO_FILL = "#EEF1F5";
 const AROUND_FILL = "#F7F5F0";
+
+/**
+ * The "compare fees with local competitors" link: this institution's page on the home metro peer
+ * set (the peer explorer reads ?peers= in the browser), keeping the fee the reader came to compare.
+ */
+export function metroPeersHref(institutionId: number, fee: string | null): string {
+  const query = new URLSearchParams();
+  if (fee) query.set("fee", fee);
+  query.set("peers", "metro");
+  return `/institution/${institutionId}?${query.toString()}#peers`;
+}
+
+/** The address's ?fee=, read in the browser: the profile is cached and never reads its query. */
+function subscribeToHistory(onChange: () => void): () => void {
+  window.addEventListener("popstate", onChange);
+  return () => window.removeEventListener("popstate", onChange);
+}
+function useAddressFee(): string | null {
+  return useSyncExternalStore(
+    subscribeToHistory,
+    () => new URLSearchParams(window.location.search).get("fee"),
+    () => null,
+  );
+}
 
 /** "June 30, 2026" for an SOD year. */
 export function sodDate(year: number): string {
@@ -46,11 +70,13 @@ function ncuaSource(reportDate: string | null): string {
 
 export function MarketPositionCard({
   position,
+  institutionId,
   institutionName,
   selectedCode,
   onSelect,
 }: {
   position: MarketPosition;
+  institutionId: number;
   institutionName: string;
   selectedCode: number | null;
   onSelect: (code: number) => void;
@@ -79,7 +105,7 @@ export function MarketPositionCard({
           ))}
         </div>
       )}
-      <MetroSummary metro={metro} institutionName={institutionName} home={home} />
+      <MetroSummary metro={metro} institutionId={institutionId} institutionName={institutionName} home={home} />
       <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <MetroMapPanel metro={metro} institutionName={institutionName} />
         <ShareChart metro={metro} institutionName={institutionName} />
@@ -90,8 +116,19 @@ export function MarketPositionCard({
   );
 }
 
-function MetroSummary({ metro, institutionName, home }: { metro: MetroPosition; institutionName: string; home: MetroPosition | null }) {
+function MetroSummary({
+  metro,
+  institutionId,
+  institutionName,
+  home,
+}: {
+  metro: MetroPosition;
+  institutionId: number;
+  institutionName: string;
+  home: MetroPosition | null;
+}) {
   const own = metro.subject;
+  const fee = useAddressFee();
   return (
     <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <p className="text-[15px] leading-snug text-ink tabular-nums" aria-live="polite">
@@ -108,7 +145,7 @@ function MetroSummary({ metro, institutionName, home }: { metro: MetroPosition; 
         // The peer explorer reads ?peers= in the browser (the profile is cached), so a soft
         // navigation to the same cached page switches its set.
         <Link
-          href="?peers=metro#peers"
+          href={metroPeersHref(institutionId, fee)}
           className="inline-flex min-h-11 shrink-0 items-center text-[14px] font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
         >
           {metro.isHome ? "Compare fees with these local competitors" : `Compare fees with competitors in ${home.name}`} &rarr;

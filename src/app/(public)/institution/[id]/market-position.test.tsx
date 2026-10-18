@@ -43,7 +43,7 @@ const POSITION: MarketPosition = {
 
 describe("MarketPositionCard", () => {
   it("shows the share with its reporting date and banks-only coverage, credit unions apart", () => {
-    const { container } = render(<MarketPositionCard position={POSITION} institutionName="Subject Bank" selectedCode={45220} onSelect={() => {}} />);
+    const { container } = render(<MarketPositionCard institutionId={323} position={POSITION} institutionName="Subject Bank" selectedCode={45220} onSelect={() => {}} />);
     expect(container.textContent).toContain("holds 20.6% of bank deposits, #1 of 3, with 16 offices");
     expect(container.textContent).toContain("As of June 30, 2026. FDIC-insured offices only; credit unions are not included.");
     expect(container.textContent).toContain("12 offices of 4 credit unions in the metro's cities");
@@ -55,12 +55,12 @@ describe("MarketPositionCard", () => {
     expect(container.textContent).toContain("Source: NCUA branch file, quarter ending June 30, 2026.");
     expect(container.textContent).not.toContain("Showing 3 of");
     expect(container.textContent).toContain("Position over time, 2024 to 2026");
-    expect(screen.getByRole("link", { name: /Compare fees with these local competitors/ })).toHaveAttribute("href", "?peers=metro#peers");
+    expect(screen.getByRole("link", { name: /Compare fees with these local competitors/ })).toHaveAttribute("href", "/institution/323?peers=metro#peers");
     expect(container.textContent).not.toMatch(/Frost/);
   });
 
   it("hides credit union offices with the charter toggle but keeps the subject", () => {
-    const { container } = render(<MarketPositionCard position={POSITION} institutionName="Subject Bank" selectedCode={45220} onSelect={() => {}} />);
+    const { container } = render(<MarketPositionCard institutionId={323} position={POSITION} institutionName="Subject Bank" selectedCode={45220} onSelect={() => {}} />);
     expect(container.textContent).toContain("3 offices of 3 institutions shown.");
     fireEvent.click(screen.getByRole("button", { name: "Credit unions" }));
     expect(container.textContent).toContain("2 offices of 2 institutions shown.");
@@ -68,22 +68,35 @@ describe("MarketPositionCard", () => {
 
   it("draws the subject in ink, never the variance red or blue", () => {
     expect(SUBJECT).toContain("--color-ink");
-    const { container } = render(<MarketPositionCard position={POSITION} institutionName="Subject Bank" selectedCode={45220} onSelect={() => {}} />);
+    const { container } = render(<MarketPositionCard institutionId={323} position={POSITION} institutionName="Subject Bank" selectedCode={45220} onSelect={() => {}} />);
     expect(container.innerHTML).not.toMatch(/fi-subject|2a6fc4|variance-(above|below)/);
   });
 
   it("says how many offices a capped map shows", () => {
     const capped: MarketPosition = { ...POSITION, metros: [metro({ mappableOffices: 2345 })] };
-    const { container } = render(<MarketPositionCard position={capped} institutionName="Subject Bank" selectedCode={45220} onSelect={() => {}} />);
+    const { container } = render(<MarketPositionCard institutionId={323} position={capped} institutionName="Subject Bank" selectedCode={45220} onSelect={() => {}} />);
     expect(container.textContent).toContain("Showing 3 of 2,345 offices");
   });
 
   it("says when one survey year is all there is, and points a non-home metro at the home metro's peers", () => {
     const onSelect = vi.fn();
-    const { container } = render(<MarketPositionCard position={POSITION} institutionName="Subject Bank" selectedCode={23540} onSelect={onSelect} />);
+    const { container } = render(<MarketPositionCard institutionId={323} position={POSITION} institutionName="Subject Bank" selectedCode={23540} onSelect={onSelect} />);
     expect(container.textContent).toContain("Only the 2026 survey has Subject Bank in this metro");
     expect(screen.getByRole("link", { name: /Compare fees with competitors in Tallahassee, FL/ })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Tallahassee, FL" }));
     expect(onSelect).toHaveBeenCalledWith(45220);
+  });
+
+  it("keeps the fee the reader came to compare on the metro peers link", () => {
+    window.history.replaceState(null, "", "/institution/323?fee=nsf");
+    try {
+      render(<MarketPositionCard institutionId={323} position={POSITION} institutionName="Subject Bank" selectedCode={45220} onSelect={() => {}} />);
+      expect(screen.getByRole("link", { name: /Compare fees with these local competitors/ })).toHaveAttribute(
+        "href",
+        "/institution/323?fee=nsf&peers=metro#peers",
+      );
+    } finally {
+      window.history.replaceState(null, "", "/");
+    }
   });
 });

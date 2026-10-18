@@ -416,6 +416,7 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
                   enforcement={enforcement}
                   holdingCompany={holdingCompany}
                   market={marketPosition}
+                  institutionId={instId}
                   institutionName={inst.institution_name}
                 />
               </div>
