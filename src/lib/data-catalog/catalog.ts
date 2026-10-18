@@ -126,13 +126,19 @@ function fromContract(contract: HoovieSourceContract): CatalogEntry {
     notServableReason: reason,
     measurePrefix: areaGeoTypes.length > 0
       ? `area:${contract.source}:`
-      : contract.tables.includes(CALL_REPORT_TABLE) ? CALL_MEASURE_PREFIX : null,
+      : contract.tables.includes(CALL_REPORT_TABLE)
+        ? CALL_MEASURE_PREFIX
+        : contract.tables.includes(FAMILY_TABLE) ? FAMILY_MEASURE : null,
   };
 }
 
 /** Call-report lines: institution grain, read for one institution or rolled up over a group. */
 export const CALL_REPORT_TABLE = "institution_call_report_items";
 export const CALL_MEASURE_PREFIX = "call:";
+
+/** GLEIF corporate families: one measure, read for one institution (its parents and subsidiaries). */
+export const FAMILY_TABLE = "gleif_entities";
+export const FAMILY_MEASURE = "family:lei";
 
 /** institution_call_report_items.source → the catalog entry (registry source) that loads it. */
 export const CALL_REPORT_ROW_SOURCES: Readonly<Record<string, string>> = { ffiec: "ffiec-call-detail", ncua: "ncua-extras" };

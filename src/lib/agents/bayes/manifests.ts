@@ -275,6 +275,9 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
  * in a manifest above.
  */
 export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
+  // v1 (#1868): the first LEI match rules. Every institution is checked by the gleif registry's
+  // lei-match partitions in bounded batches; nothing was matched under an earlier version.
+  LEI_MATCH_PARSER_VERSION: "First version: the gleif lei-match partitions check every institution in bounded batches; nothing older to replay.",
   // v1 (#1909): Darwin re-reads every live fee on a Spanish copy of a schedule each verify step (no
   // cursor; a few hundred rows), so there is no backlog for a replay to count.
   TRANSLATED_COPY_CHECK_VERSION: "Each verify step re-reads every live fee on a Spanish-copy document (no cursor); nothing to replay.",
