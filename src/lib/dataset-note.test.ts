@@ -60,16 +60,16 @@ describe("dataset note words (#1924 step 2)", () => {
   });
 
   it("says how two figures on one screen differ, in their own names", () => {
-    const state = makeStamp({ ...live, filters: [...POPULATION, { key: "peers:state:TX", label: "Institutions in TX" }] });
+    const state = makeStamp({ ...live, filters: [...POPULATION, { key: "peers:state:TX", label: "Institutions in Texas" }] });
     const national = makeStamp(live);
     const words = datasetNoteWords([{ label: "Texas", stamp: state }, { label: "the U.S. reference", stamp: national }]);
-    expect(words?.differences).toEqual({ heading: "How Texas and the U.S. reference differ", lines: ["Only Texas: Institutions in TX"] });
+    expect(words?.differences).toEqual({ heading: "How Texas and the U.S. reference differ", lines: ["Only Texas: Institutions in Texas"] });
     const other = datasetNoteWords([{ label: "the U.S. reference", stamp: national }, { label: "Texas", stamp: state }]);
-    expect(other?.differences?.lines).toEqual(["Only Texas: Institutions in TX"]);
+    expect(other?.differences?.lines).toEqual(["Only Texas: Institutions in Texas"]);
   });
 
   it("names each reason once when three or more figures differ from the first", () => {
-    const state = makeStamp({ ...live, filters: [...POPULATION, { key: "peers:state:TX", label: "Institutions in TX" }] });
+    const state = makeStamp({ ...live, filters: [...POPULATION, { key: "peers:state:TX", label: "Institutions in Texas" }] });
     const words = datasetNoteWords([
       { label: "Texas", stamp: state },
       { label: "National", stamp: makeStamp(live) },
@@ -77,14 +77,14 @@ describe("dataset note words (#1924 step 2)", () => {
       { label: "Banks, $1B to $10B in assets", stamp: makeStamp({ ...live, filters: [...POPULATION, { key: "peers:charter:bank", label: "Banks only" }] }) },
     ]);
     expect(words?.differences?.heading).toBe("Why these figures can differ");
-    expect(words?.differences?.lines.filter((l) => l === "Only Texas: Institutions in TX")).toHaveLength(1);
+    expect(words?.differences?.lines.filter((l) => l === "Only Texas: Institutions in Texas")).toHaveLength(1);
     expect(new Set(words?.differences?.lines).size).toBe(words?.differences?.lines.length);
   });
 
   it("explains a snapshot against a live read, and stays quiet when every figure shares one stamp", () => {
     const words = datasetNoteWords([{ label: "Market", stamp: makeStamp(snapshot) }, { label: "Overview", stamp: makeStamp(live) }]);
     expect(words?.differences?.lines).toEqual([
-      "Dataset: National index snapshot vs Published dollar fees",
+      "Dataset: Bank Fee Index national snapshot vs Published dollar fees",
       "Computed from: Published dollar fees vs none",
       "Read: snapshot computed 2026-10-17 02:00 UTC vs read live 2026-10-18 14:10 UTC",
       "Run: 9001 vs none",

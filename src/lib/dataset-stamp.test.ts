@@ -75,9 +75,9 @@ describe("formatStamp", () => {
   it("formats a snapshot with its run and method", () => {
     const stamp = makeStamp(marketSnapshot);
     const { short, detail } = formatStamp(stamp);
-    expect(short).toBe("National index snapshot, snapshot computed 2026-10-17 02:00 UTC");
+    expect(short).toBe("Bank Fee Index national snapshot, snapshot computed 2026-10-17 02:00 UTC");
     expect(detail).toEqual([
-      "Dataset: National index snapshot",
+      "Dataset: Bank Fee Index national snapshot",
       "Computed from: Published dollar fees",
       "Snapshot computed: 2026-10-17 02:00 UTC",
       "Built by run 9001",
@@ -118,7 +118,7 @@ describe("stampDifferences: why 2,495, 2,503 and 2,505 differ", () => {
 
   it("names the snapshot against the live read: dataset, time and run", () => {
     expect(stampDifferences(market, overview)).toEqual([
-      "Dataset: National index snapshot vs Published dollar fees",
+      "Dataset: Bank Fee Index national snapshot vs Published dollar fees",
       "Computed from: Published dollar fees vs none",
       "Read: snapshot computed 2026-10-17 02:00 UTC vs read live 2026-10-18 14:00 UTC",
       "Run: 9001 vs none",

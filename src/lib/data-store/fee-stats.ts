@@ -119,7 +119,7 @@ export const STATS_POPULATION_FILTERS: ReadonlyArray<PopulationFilter & { sqlMar
   },
   {
     key: "consumer_audience",
-    label: "Consumer fees, fees for both consumers and businesses, and fees whose schedule names no audience; business-only fees and fees not yet sorted by audience left out",
+    label: "Consumer fees, fees for both consumers and businesses, and fees whose schedule names no audience; business-only fees and fees we have not yet sorted by audience left out",
     sqlMarker: ".fee_audience IN (",
   },
   {
@@ -134,7 +134,7 @@ export const STATS_POPULATION_FILTERS: ReadonlyArray<PopulationFilter & { sqlMar
   },
   {
     key: "one_charging_basis",
-    label: "In categories with a usual charging basis, fees charged over a different period left out",
+    label: "Where a fee is usually charged on one schedule (for example monthly), the same fee charged over a different period left out",
     sqlMarker: ".frequency",
   },
 ];

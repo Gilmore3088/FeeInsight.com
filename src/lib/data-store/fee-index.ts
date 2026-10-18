@@ -1,3 +1,4 @@
+import { STATE_NAMES } from "@/lib/us-states";
 import { sql } from "./connection";
 import { readerFeeConditions } from "../fee-conditions";
 import { dailyFeeLimitFor, type DailyFeeLimit } from "@/lib/fee-daily-limit";
@@ -105,10 +106,12 @@ export function scopeFilters(scope: StampScope): PopulationFilter[] {
   return peerFilterParts(scope).map((part) => ({ key: part.key, label: peerStampLabel(part) }));
 }
 
-/** A peer filter as a stamp line: "Institutions in TX", "Credit unions only", "Assets $1B to $10B". */
+/** A peer filter as a stamp line: "Institutions in Texas", "Credit unions only", "Assets $1B to $10B". */
 function peerStampLabel(part: { key: string; label: string }): string {
   const kind = part.key.split(":")[1];
-  if (kind === "state" || kind === "states") return `Institutions in ${part.label}`;
+  if (kind === "state" || kind === "states") {
+    return `Institutions in ${part.label.split("/").map((code) => STATE_NAMES[code] ?? code).join(", ")}`;
+  }
   if (kind === "charter") return part.key.endsWith(":credit_union") ? "Credit unions only" : part.key.endsWith(":bank") ? "Banks only" : `Charter: ${part.label}`;
   if (kind === "asset_tiers") return `Assets ${part.label}`;
   return part.label;

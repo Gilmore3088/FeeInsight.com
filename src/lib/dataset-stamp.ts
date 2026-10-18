@@ -57,7 +57,7 @@ export type DatasetStampInput = Omit<DatasetStamp, "id">;
 const DATASET_LABELS: Record<DatasetId, string> = {
   published_fee_catalog: "Published dollar fees",
   published_fee_rate_catalog: "Published rate fees",
-  fee_index_cache: "National index snapshot",
+  fee_index_cache: "Bank Fee Index national snapshot",
 };
 
 const COUNTING_LABELS: Record<CountingRule, string> = {

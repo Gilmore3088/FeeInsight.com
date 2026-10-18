@@ -355,7 +355,7 @@ export default async function ResearchPage({ searchParams }: PageProps) {
             panel: (
               <div className="flex flex-col gap-4">
                 <LayerExhibit layer={l} ownAmount={ws.ownAmount} feeName={ws.feeName} />
-                <DatasetNote figures={[l.stamp ? { label: l.label, stamp: l.stamp } : null]} />
+                <DatasetNote className="mt-3" figures={[l.stamp ? { label: l.label, stamp: l.stamp } : null]} />
                 <AuditPanel trail={trailFor(l)} downloadHref={csvHrefFor(l)} />
                 {l.key === "local" && ws.local ? (
         <MemoSection

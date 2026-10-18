@@ -122,7 +122,7 @@ export default async function ProMarketPage() {
               </li>
             ))}
           </ul>
-          <DatasetNote figures={[{ label: "National medians", stamp: indexStamp }]} />
+          <DatasetNote className="mt-3" figures={[{ label: "National medians", stamp: indexStamp }]} />
         </MemoSection>
       )}
 

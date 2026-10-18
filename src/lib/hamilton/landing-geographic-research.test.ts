@@ -103,7 +103,7 @@ describe("governed geographic landing research", () => {
       dataset: "published_fee_catalog", mode: "live", readAt: "2026-10-18T14:10:00Z", runId: null,
       newestRecordAt: null, methodVersion: 13, counting: "counted_once", filters,
     });
-    const wa = stamp([{ key: "peers:state:WA", label: "Institutions in WA" }]);
+    const wa = stamp([{ key: "peers:state:WA", label: "Institutions in Washington" }]);
     const us = stamp([]);
     const result = await loadLandingGeographicResearch(base, async () => [
       { entries: [entry("paper_statement", 2, 9)], stamp: wa },

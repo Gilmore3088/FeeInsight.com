@@ -11,14 +11,17 @@ export function DatasetNote({ figures, className = "" }: { figures: readonly (St
   if (!words) return null;
   return (
     <details className={`dataset-note text-xs text-warm-600 ${className}`.trim()}>
-      <summary className="cursor-pointer">{words.summary}</summary>
+      <summary className="cursor-pointer">
+        {words.summary}{" "}
+        <span className="underline decoration-dotted underline-offset-2">How these figures were built</span>
+      </summary>
       <div className="mt-2 flex flex-col gap-2 border-l border-warm-300 pl-3">
         <ul className="flex flex-col gap-0.5">
           {words.details.map((line) => <li key={line}>{line}</li>)}
         </ul>
         {words.filters.length > 0 ? (
           <div>
-            <p className="font-medium text-warm-700">Who is counted</p>
+            <p className="font-medium text-warm-700">What is counted</p>
             <ul className="mt-0.5 flex list-disc flex-col gap-0.5 pl-4">
               {words.filters.map((line) => <li key={line}>{line}</li>)}
             </ul>

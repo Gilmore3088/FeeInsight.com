@@ -60,7 +60,7 @@ function detailLines(stamp: DatasetStamp): string[] {
 
 /**
  * stampDifferences in the figures' own names: a filter only one figure has reads
- * "Only Texas: Institutions in TX" rather than "added" or "removed".
+ * "Only Texas: Institutions in Texas" rather than "added" or "removed".
  */
 function differenceLines(a: StampedFigure, b: StampedFigure): string[] {
   return stampDifferences(a.stamp, b.stamp).map((line) => {
