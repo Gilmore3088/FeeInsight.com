@@ -51,7 +51,7 @@ export async function stagePaymentEmails(tx: typeof sql, eventId: string, effect
           `Stripe charge: ${refund.chargeId}`,
           refund.revoked
             ? "The report access check uses the refunded payment state. No customer email was sent by this alert."
-            : "This charge is not the payment recorded for the request, so the report stays open. No customer email was sent by this alert."] }) });
+            : "This charge could not be matched to the payment recorded for the request (a duplicate, or a payment Stripe did not name), so the report stays open. Check it in Stripe. No customer email was sent by this alert."] }) });
   }
   return welcomed;
 }

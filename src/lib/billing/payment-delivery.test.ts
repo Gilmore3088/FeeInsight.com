@@ -50,6 +50,6 @@ describe("stagePaymentEmails refund alert (#1973)", () => {
 
   it("tells James the report stays open when a duplicate payment was refunded", async () => {
     await stagePaymentEmails({} as never, "evt_refund", refund(false));
-    expect(text()).toContain("not the payment recorded for the request, so the report stays open");
+    expect(text()).toContain("could not be matched to the payment recorded for the request (a duplicate, or a payment Stripe did not name), so the report stays open. Check it in Stripe.");
   });
 });
