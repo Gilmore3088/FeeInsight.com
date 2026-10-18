@@ -12,8 +12,8 @@ import { HOME_WRAP, SAMPLE_REPORT_HREF, SERIF, buildSampleView, type SampleRow }
 /** Fee lines the cover shows. */
 const COVER_ROWS = 3;
 
-/** The full sample report's prepared date, in the same form and time zone (report-body.tsx). */
-const DATE = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
+/** The prepared date, in the full sample's form, dated in U.S. Eastern so a U.S. evening render is never dated tomorrow. */
+const DATE = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "America/New_York" });
 
 const POSITION: Record<LinePosition, { label: string; className: string }> = {
   above_market: { label: "Above", className: "bg-[#FBE9E4] text-brick" },
@@ -120,7 +120,7 @@ function CoverPage({ cover, preparedOn }: { cover: DeliverableCover; preparedOn:
         {cover.income && (
           <p className="mt-4 flex items-baseline justify-between gap-3 rounded-[5px] bg-paper px-3 py-2.5 text-[12px] text-ink-soft" data-deliverable-income="">
             <span>Deposit service charges, {cover.income.quarter}</span>
-            <strong className="text-[15px] font-semibold tabular-nums text-ink">{cover.income.amount}</strong>
+            <strong className="shrink-0 whitespace-nowrap text-[15px] font-semibold tabular-nums text-ink">{cover.income.amount}</strong>
           </p>
         )}
       </figure>

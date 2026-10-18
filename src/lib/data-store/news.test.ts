@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("./connection", () => ({ sql: {}, withTransaction: vi.fn() }));
 
-import { FEDERAL_RELEASES_ONLY, buildArticleFilter } from "./news";
+import { ENFORCEMENT_TITLE, FEDERAL_RELEASES_ONLY, TOPIC_SQL, buildArticleFilter, classify } from "./news";
 
 describe("federal release filter", () => {
   it("always keeps to federal releases", () => {
@@ -12,7 +12,7 @@ describe("federal release filter", () => {
   it("numbers each value as a bind parameter, search last", () => {
     const { where, params } = buildArticleFilter({ source: "OCC", topic: "general", since: "2026-10-01T00:00:00.000Z", q: "fraud" });
     expect(where).toBe(
-      `WHERE ${FEDERAL_RELEASES_ONLY} AND source = $1 AND topic = $2 AND published_at >= $3 AND title ILIKE $4`,
+      `WHERE ${FEDERAL_RELEASES_ONLY} AND source = $1 AND ${TOPIC_SQL} = $2 AND published_at >= $3 AND title ILIKE $4`,
     );
     expect(params).toEqual(["OCC", "general", "2026-10-01T00:00:00.000Z", "%fraud%"]);
   });
@@ -34,5 +34,22 @@ describe("federal release filter", () => {
 
   it("ignores a blank search", () => {
     expect(buildArticleFilter({ q: "   " }).params).toEqual([]);
+  });
+});
+
+describe("classify", () => {
+  it("files enforcement actions and their terminations as Enforcement, not Rulemaking", () => {
+    expect(classify("Federal Reserve Board announces termination of enforcement actions with Example Bancorp")).toBe("enforcement");
+    expect(classify("OCC issues consent order against Example Bank, N.A.")).toBe("enforcement");
+    expect(classify("Agencies issue final rule on overdraft fees")).toBe("overdraft");
+    expect(classify("CFPB issues consent order over overdraft fees")).toBe("overdraft");
+    expect(classify("Agencies request comment on proposed rule")).toBe("rulemaking_compliance");
+  });
+
+  it("reads stored rows by the same enforcement rule", () => {
+    expect(TOPIC_SQL).toContain("'enforcement'");
+    expect(TOPIC_SQL).not.toMatch(/\$\d/);
+    // The pattern is inlined into a quoted SQL literal: plain words only.
+    expect(ENFORCEMENT_TITLE.source).toMatch(/^[a-z |]+$/);
   });
 });

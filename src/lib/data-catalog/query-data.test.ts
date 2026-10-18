@@ -8,6 +8,8 @@ vi.mock("@/lib/data-store/connection", () => {
     calls.push({ text: strings.join("?"), values });
     return Promise.resolve(strings.join("").includes("SET LOCAL") ? [] : nextRows);
   });
+  // unsafe() carries constant SQL (the served-row rule); the mock passes its text through as a value.
+  Object.assign(tx, { unsafe: (text: string) => ({ unsafe: text }) });
   return { sql: tx, withTransaction: (cb: (db: typeof tx) => Promise<unknown>) => cb(tx) };
 });
 vi.mock("@/lib/data-store/economy-aggregates", async (importOriginal) => ({
@@ -30,6 +32,7 @@ vi.mock("@/lib/data-store/peer-sets", async (importOriginal) => ({
 import { getInstitutionHqLocation } from "@/lib/data-store/economy-aggregates";
 import { getInstitutionFeeRows, getNationalIndexCached, getPeerIndex, getStateFeeIndexes } from "@/lib/data-store/fee-index";
 import { resolvePeerSet } from "@/lib/data-store/peer-sets";
+import { areaRowServedSql } from "@/lib/data-store/struck-sources";
 import { URBAN_DEBT_ATTRIBUTION } from "@/lib/regulatory/state-lists";
 import { QUERY_DATA_MAX_LIMIT, parseMeasure, periodMonths, queryData, queryDataInputSchema } from "./query-data";
 
@@ -89,11 +92,24 @@ describe("queryData: area measures", () => {
   });
 
   it("refuses a measure the catalog may not show", async () => {
-    for (const measure of ["area:national-series:mortgage30", "area:state-bill-news:x", "area:kcfed-sb-lending:x", "area:fdic-sod:x"]) {
+    for (const measure of ["area:national-series:natl_pmms_30y_fixed","area:state-bill-news:x", "area:kcfed-sb-lending:x", "area:fdic-sod:x"]) {
       const result = await queryData({ measure, scope: { kind: "national" } });
       expect(result.ok, measure).toBe(false);
       if (!result.ok) expect(result.reason.length, measure).toBeGreaterThan(10);
     }
+    expect(calls).toHaveLength(0);
+  });
+
+  it("refuses a dropped FDIC rate as not yet from its publisher, not as non-commercial", async () => {
+    const result = await queryData({ measure: "area:national-series:natl_fdic_rate_savings", scope: { kind: "national" } });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toContain("not published from its original source yet");
+      expect(result.reason).not.toContain("commercial");
+    }
+    const struck = await queryData({ measure: "area:national-series:natl_pmms_30y_fixed", scope: { kind: "national" } });
+    expect(struck.ok).toBe(false);
+    if (!struck.ok) expect(struck.reason).toContain("commercial");
     expect(calls).toHaveLength(0);
   });
 
@@ -169,7 +185,9 @@ describe("queryData: area measures", () => {
     expect(values).toContain("2026-04");
     expect(values).toContain("2026-09");
     expect(values).not.toContain("2026Q2");
-    expect(text).toMatch(/NOT ILIKE/);
+    // The served-row rule (struck URLs, FRED-era rows) rides along as constant SQL.
+    expect(values).toContainEqual({ unsafe: areaRowServedSql("a") });
+    expect(text).not.toContain("stlouisfed");
   });
 });
 

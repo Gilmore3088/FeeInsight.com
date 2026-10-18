@@ -504,6 +504,7 @@ async function executeAgenticStep(
         institutionId: numericRunParam(params, ["institution_id"]),
         stateCode,
         newLinksOnly: params.new_links_only === true,
+        requestedUrl: typeof params.fee_schedule_url === "string" ? params.fee_schedule_url : null,
       });
       // Fee links the plain fetch keeps failing to reach, tried at the bank's other
       // spellings of the address (#1051). Free; a failure here never fails the step.
@@ -1777,6 +1778,7 @@ async function executeAgenticStep(
           hand_takedown: {
             taken_down: handTakedowns.takenDown.map((item) => ({ fee_published_id: item.feePublishedId, reason: item.reason })),
             skipped: handTakedowns.skipped.length,
+            waiting_rejected: handTakedowns.waitingRejected.length,
             error: handTakedowns.error,
           },
           hand_audience_fix: {
@@ -3615,6 +3617,10 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   "public-discovery": 60_000,
   "registry-ncua-extras": 110_000,
   "registry-cfpb-card-agreements": 50_000,
+  // Not measured yet (2026-10-18): each downloads and inflates a Board SDMX zip, H.15 about 68 MB
+  // and H.8 about 75 MB, before the BLS/BEA or table reads; priced so a tick starts them early.
+  "registry-fred": 150_000,
+  "registry-national-series": 150_000,
 };
 /**
  * Steps the tick never starts, because they do not fit its 270 s budget even alone: the tick

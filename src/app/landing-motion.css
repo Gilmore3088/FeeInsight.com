@@ -71,7 +71,9 @@
 /* Evidence flow: a short brick dash runs along each connector toward Hamilton, then on to the outputs. */
 .fi-home-evidence-pulse {
   stroke-dasharray: 14 86;
-  animation: fi-home-evidence 3.2s linear infinite;
+  /* Three passes, under 5 seconds in all, then the lines stay still (WCAG 2.2.2 needs no pause control then). */
+  animation: fi-home-evidence 1.6s linear 3;
+  animation-fill-mode: forwards;
 }
 @keyframes fi-home-evidence {
   from { stroke-dashoffset: 100; }

@@ -1,7 +1,21 @@
 import { strFromU8, unzipSync } from "fflate";
 import { checkValues, flaggedOnly } from "./data-checks";
 import { areaStatKey, periodFromDate, publishedNumber, seriesSlug, stateCodeFromName, type AreaFetch, type AreaStat, type AreaStatChecks } from "./economy";
-import { fredCsvUrl } from "./fed";
+import {
+  boardQuarter,
+  fetchSdmxPackage,
+  findHtmlColumn,
+  FRB_BASE,
+  FRB_CHGDEL_DELINQUENCY_SA_URL,
+  FRB_XML_PACKAGES,
+  parseHtmlGridTables,
+  periodStartDate,
+  scaleSdmxValue,
+  sloosChartDataUrl,
+  type HtmlColumnMatch,
+  type HtmlGridTable,
+  type SdmxSeries,
+} from "./fed-board-data";
 import { registryFetch, RegistryHttpError, type RegistryFetchOptions } from "./http";
 import { parseCsvTable } from "./industry-events";
 
@@ -9,14 +23,16 @@ import { parseCsvTable } from "./industry-events";
  * National and state funding and credit context for bank pricing committees. Pure transport and
  * parsing: no DB access. Four sources, all landing in area_statistics:
  *
- * - `national-series`: FRED's keyless graph CSV (fredCsvUrl in ./fed) for a fixed list of series:
- *   Fed H.8 deposits and loans (all, large and small domestically chartered commercial banks),
- *   Fed SLOOS net tightening and demand, CRE exposure (H.8 and Z.1), bank delinquency rates and
- *   FDIC national deposit rates. Freddie Mac PMMS and the Philadelphia Fed's large-bank credit
- *   card series were struck on 2026-10-18 (DECISIONS.md "No non-commercial data"; their
- *   publishers' terms bar commercial use); data-store/struck-sources.ts hides rows already loaded.
- *   Each file's header must name the series id asked for; a series FRED does not return, or
- *   returns under another id, is reported in missing_fields and never substituted.
+ * - `national-series`: Federal Reserve Board files, each series from its original publisher
+ *   (FRED is no longer read; DECISIONS.md "No non-commercial data", 2026-10-18): H.8 deposits and
+ *   loans (all, large and small domestically chartered commercial banks) from the H.8 XML
+ *   package (Z.1 is not read yet: its package is about 592 MB), bank delinquency rates from the charge-off and
+ *   delinquency rates table, and SLOOS net tightening and demand from the survey's chart-data page
+ *   (./fed-board-data). Freddie Mac PMMS and the Philadelphia Fed's large-bank credit card series
+ *   were struck on 2026-10-18 (their publishers' terms bar commercial use), and the FDIC national
+ *   deposit rates were dropped the same day (no FDIC file we could confirm);
+ *   data-store/struck-sources.ts hides rows already loaded. A series the Board's file does not
+ *   carry is reported in missing_fields and never substituted.
  * - `nyfed-household-debt`: NY Fed Household Debt and Credit state-level workbook (balance per
  *   capita and share 90+ days delinquent, by loan type and state).
  * - `nyfed-sce-credit`: NY Fed Survey of Consumer Expectations credit access chart data (national,
@@ -82,187 +98,331 @@ export function checkNationalCreditStats(rows: AreaStat[], signedSeries: Readonl
 }
 
 // ---------------------------------------------------------------------------
-// (1) national-series: FRED graph CSV
+// (1) national-series: Federal Reserve Board files (H.8, charge-off and delinquency rates, SLOOS)
+//
+// Not read: the two Z.1 commercial-mortgage series (BOGZ1FL893065505Q, BOGZ1FL763065505Q). The
+// Board's Z.1 SDMX package is about 592 MB (Data Download Program listing, 2026-10-18), which does
+// not fit one registry step; their FRED-era rows keep serving (areaRowServedSql) until a small
+// Board file is wired.
 // ---------------------------------------------------------------------------
 
-export type FredFrequency = "weekly" | "monthly" | "quarterly";
+export type NationalSeriesFrequency = "weekly" | "monthly" | "quarterly";
 
-export type NationalSeriesGroup = "h8" | "sloos" | "cre" | "delinquency" | "deposit_rates";
+export type NationalSeriesGroup = "h8" | "sloos" | "cre" | "delinquency";
+
+/** Where a series is read: an SDMX release package, or a column of a Board HTML table. */
+export type NationalSeriesPublisher = "frb-h8" | "frb-chgdel" | "frb-sloos";
 
 export interface NationalSeriesConfig {
-  /** FRED series id, checked against the CSV header. */
+  /** Stable id (the series' FRED id before 2026-10-18), kept in raw_json and the run detail. */
   id: string;
   /** area_statistics series_key. */
   key: string;
   title: string;
   group: NationalSeriesGroup;
-  frequency: FredFrequency;
+  frequency: NationalSeriesFrequency;
   unit: string;
   /** Can legitimately be negative (net percentages). */
   signed?: boolean;
+  publisher: NationalSeriesPublisher;
+  /** The Board's own series name in the SDMX package (H.8). */
+  frbSeries?: string;
+  /** The column in the Board's HTML table (charge-off and delinquency rates, SLOOS chart data). */
+  column?: HtmlColumnMatch;
 }
 
-const h8 = (id: string, key: string, title: string): NationalSeriesConfig => ({ id, key: `natl_h8_${key}`, title, group: "h8", frequency: "weekly", unit: "billions_dollars" });
-const sloos = (id: string, key: string, title: string): NationalSeriesConfig => ({ id, key: `natl_sloos_${key}`, title, group: "sloos", frequency: "quarterly", unit: "percent", signed: true });
-const delinquency = (id: string, key: string, title: string): NationalSeriesConfig => ({ id, key: `natl_delinq_${key}`, title, group: "delinquency", frequency: "quarterly", unit: "percent" });
-// FDIC national deposit rates (the averages behind the national rate caps), as FRED republishes
-// them. Series ids, titles, units and monthly frequency checked on fred.stlouisfed.org/series/SNDR,
-// 2026-10-17; the FDIC's own page offers no plain-file download (fdic-national-rates).
-const depositRate = (id: string, key: string, title: string): NationalSeriesConfig => ({ id, key: `natl_fdic_rate_${key}`, title, group: "deposit_rates", frequency: "monthly", unit: "percent" });
+const UNIT_FACTOR: Record<string, number> = { billions_dollars: 1e9, millions_dollars: 1e6, percent: 1 };
 
 /**
- * The configured FRED series (ids from memory; unconfirmed until the first run reports which
- * ones FRED returned). H.8 levels are seasonally adjusted, billions of dollars, weekly (Wednesday).
+ * H.8 weekly (Wednesday) levels, seasonally adjusted. Board series names read from the Board's H.8
+ * series list as mirrored by DBnomics (FED/H8, 2026-10-18): B1058 deposits, B1020 loans and leases
+ * in bank credit, B1023 C&I, B1247 credit cards and other revolving plans, B1029 consumer loans,
+ * B1221 residential real estate, B3219 commercial real estate; NCB all commercial banks, NLG large
+ * and NSM small domestically chartered; trailing A = seasonally adjusted weekly level.
+ */
+const h8 = (id: string, frbSeries: string, key: string, title: string, group: NationalSeriesGroup = "h8"): NationalSeriesConfig => ({
+  id,
+  frbSeries,
+  key: `natl_h8_${key}`,
+  title,
+  group,
+  frequency: "weekly",
+  unit: "billions_dollars",
+  publisher: "frb-h8",
+});
+
+/** SLOOS chart data (quarterly, net percentages). `figure` picks the table, `panel` and `sub` the column. */
+const sloos = (id: string, key: string, title: string, figure: RegExp, panel: RegExp, sub: RegExp): NationalSeriesConfig => ({
+  id,
+  key: `natl_sloos_${key}`,
+  title,
+  group: "sloos",
+  frequency: "quarterly",
+  unit: "percent",
+  signed: true,
+  publisher: "frb-sloos",
+  column: { table: figure, column: [panel, sub] },
+});
+
+/** Charge-off and delinquency rates, delinquency rates, all banks, seasonally adjusted (quarterly). */
+const delinquency = (id: string, key: string, title: string, column: RegExp[]): NationalSeriesConfig => ({
+  id,
+  key: `natl_delinq_${key}`,
+  title,
+  group: "delinquency",
+  frequency: "quarterly",
+  unit: "percent",
+  publisher: "frb-chgdel",
+  column: { column },
+});
+
+const TIGHTENING = /tightening standards/i;
+const DEMAND = /stronger demand/i;
+const CI_FIGURE = /C&(amp;)?I loans/i;
+const CONSUMER_FIGURE = /consumer loans/i;
+const MORTGAGE_FIGURE = /mortgage/i;
+
+/**
+ * The configured series, all from Federal Reserve Board files (FRED is no longer read,
+ * 2026-10-18). FDIC national deposit rates (SNDR, ICNDR, MMNDR, NDR12MCD) were dropped: the FDIC's
+ * own page could not be fetched and offers no machine-readable file we could confirm; their rows
+ * are hidden (data-store/struck-sources.ts).
  */
 export const NATIONAL_SERIES: NationalSeriesConfig[] = [
-  h8("DPSACBW027SBOG", "deposits_all", "Deposits, all commercial banks"),
-  h8("DPSLCBW027SBOG", "deposits_large", "Deposits, large domestically chartered commercial banks"),
-  h8("DPSSCBW027SBOG", "deposits_small", "Deposits, small domestically chartered commercial banks"),
-  h8("TOTLL", "loans_leases_all", "Loans and leases in bank credit, all commercial banks"),
-  h8("LLBLCBW027SBOG", "loans_leases_large", "Loans and leases in bank credit, large domestically chartered commercial banks"),
-  h8("LLBSCBW027SBOG", "loans_leases_small", "Loans and leases in bank credit, small domestically chartered commercial banks"),
-  h8("TOTCI", "ci_loans_all", "Commercial and industrial loans, all commercial banks"),
-  h8("CCLACBW027SBOG", "credit_card_loans_all", "Consumer loans: credit cards and other revolving plans, all commercial banks"),
-  h8("CLSACBW027SBOG", "consumer_loans_all", "Consumer loans, all commercial banks"),
-  h8("RREACBW027SBOG", "residential_re_loans_all", "Residential real estate loans, all commercial banks"),
-  { ...h8("CREACBW027SBOG", "cre_loans_all", "Commercial real estate loans, all commercial banks"), group: "cre" },
-  { ...h8("CRELCBW027SBOG", "cre_loans_large", "Commercial real estate loans, large domestically chartered commercial banks"), group: "cre" },
-  { ...h8("CRESCBW027SBOG", "cre_loans_small", "Commercial real estate loans, small domestically chartered commercial banks"), group: "cre" },
-  sloos("DRTSCILM", "ci_large_mid_tightening", "Net share of banks tightening C&I standards, large and middle-market firms"),
-  sloos("DRTSCIS", "ci_small_tightening", "Net share of banks tightening C&I standards, small firms"),
-  sloos("DRSDCILM", "ci_large_mid_demand", "Net share of banks reporting stronger C&I demand, large and middle-market firms"),
-  sloos("DRSDCIS", "ci_small_demand", "Net share of banks reporting stronger C&I demand, small firms"),
-  sloos("DRTSCLCC", "credit_card_tightening", "Net share of banks tightening credit card standards"),
-  sloos("DEMCC", "credit_card_demand", "Net share of banks reporting stronger credit card demand"),
-  sloos("STDSAUTO", "auto_tightening", "Net share of banks tightening auto loan standards"),
-  sloos("DEMAUTO", "auto_demand", "Net share of banks reporting stronger auto loan demand"),
-  sloos("DRTSCLNG", "consumer_other_tightening", "Net share of banks tightening standards on other consumer loans"),
-  sloos("DRTSSP", "subprime_mortgage_tightening", "Net share of banks tightening subprime mortgage standards"),
-  { id: "BOGZ1FL893065505Q", key: "natl_z1_commercial_mortgages_all", title: "Z.1 all sectors: commercial mortgages, asset level", group: "cre", frequency: "quarterly", unit: "millions_dollars" },
-  { id: "BOGZ1FL763065505Q", key: "natl_z1_commercial_mortgages_banks", title: "Z.1 US-chartered depository institutions: commercial mortgages, asset level", group: "cre", frequency: "quarterly", unit: "millions_dollars" },
-  delinquency("DRCRELEXFACBS", "cre_ex_farmland", "Delinquency rate on CRE loans (excluding farmland), all commercial banks"),
-  delinquency("DRCCLACBS", "credit_cards", "Delinquency rate on credit card loans, all commercial banks"),
-  delinquency("DRCLACBS", "consumer", "Delinquency rate on consumer loans, all commercial banks"),
-  depositRate("SNDR", "savings", "FDIC national rate: savings"),
-  depositRate("ICNDR", "interest_checking", "FDIC national rate: interest checking"),
-  depositRate("MMNDR", "money_market", "FDIC national rate: money market, under $100,000"),
-  depositRate("NDR12MCD", "cd_12_month", "FDIC national rate: 12-month CD, under $100,000"),
+  h8("DPSACBW027SBOG", "B1058NCBA", "deposits_all", "Deposits, all commercial banks"),
+  h8("DPSLCBW027SBOG", "B1058NLGA", "deposits_large", "Deposits, large domestically chartered commercial banks"),
+  h8("DPSSCBW027SBOG", "B1058NSMA", "deposits_small", "Deposits, small domestically chartered commercial banks"),
+  h8("TOTLL", "B1020NCBA", "loans_leases_all", "Loans and leases in bank credit, all commercial banks"),
+  h8("LLBLCBW027SBOG", "B1020NLGA", "loans_leases_large", "Loans and leases in bank credit, large domestically chartered commercial banks"),
+  h8("LLBSCBW027SBOG", "B1020NSMA", "loans_leases_small", "Loans and leases in bank credit, small domestically chartered commercial banks"),
+  h8("TOTCI", "B1023NCBA", "ci_loans_all", "Commercial and industrial loans, all commercial banks"),
+  h8("CCLACBW027SBOG", "B1247NCBA", "credit_card_loans_all", "Consumer loans: credit cards and other revolving plans, all commercial banks"),
+  h8("CLSACBW027SBOG", "B1029NCBA", "consumer_loans_all", "Consumer loans, all commercial banks"),
+  h8("RREACBW027SBOG", "B1221NCBA", "residential_re_loans_all", "Residential real estate loans, all commercial banks"),
+  h8("CREACBW027SBOG", "B3219NCBA", "cre_loans_all", "Commercial real estate loans, all commercial banks", "cre"),
+  h8("CRELCBW027SBOG", "B3219NLGA", "cre_loans_large", "Commercial real estate loans, large domestically chartered commercial banks", "cre"),
+  h8("CRESCBW027SBOG", "B3219NSMA", "cre_loans_small", "Commercial real estate loans, small domestically chartered commercial banks", "cre"),
+  sloos("DRTSCILM", "ci_large_mid_tightening", "Net share of banks tightening C&I standards, large and middle-market firms", CI_FIGURE, TIGHTENING, /\blarge\b/i),
+  sloos("DRTSCIS", "ci_small_tightening", "Net share of banks tightening C&I standards, small firms", CI_FIGURE, TIGHTENING, /\|\s*small\b/i),
+  sloos("DRSDCILM", "ci_large_mid_demand", "Net share of banks reporting stronger C&I demand, large and middle-market firms", CI_FIGURE, DEMAND, /\blarge\b/i),
+  sloos("DRSDCIS", "ci_small_demand", "Net share of banks reporting stronger C&I demand, small firms", CI_FIGURE, DEMAND, /\|\s*small\b/i),
+  sloos("DRTSCLCC", "credit_card_tightening", "Net share of banks tightening credit card standards", CONSUMER_FIGURE, TIGHTENING, /credit card/i),
+  sloos("DEMCC", "credit_card_demand", "Net share of banks reporting stronger credit card demand", CONSUMER_FIGURE, DEMAND, /credit card/i),
+  sloos("STDSAUTO", "auto_tightening", "Net share of banks tightening auto loan standards", CONSUMER_FIGURE, TIGHTENING, /\bauto/i),
+  sloos("DEMAUTO", "auto_demand", "Net share of banks reporting stronger auto loan demand", CONSUMER_FIGURE, DEMAND, /\bauto/i),
+  sloos("DRTSCLNG", "consumer_other_tightening", "Net share of banks tightening standards on other consumer loans", CONSUMER_FIGURE, TIGHTENING, /\|\s*other\b/i),
+  sloos("DRTSSP", "subprime_mortgage_tightening", "Net share of banks tightening subprime mortgage standards", MORTGAGE_FIGURE, TIGHTENING, /\|\s*subprime$/i),
+  delinquency("DRCRELEXFACBS", "cre_ex_farmland", "Delinquency rate on CRE loans (excluding farmland), all commercial banks", [/real estate/i, /\bcommercial\b/i]),
+  delinquency("DRCCLACBS", "credit_cards", "Delinquency rate on credit card loans, all commercial banks", [/consumer/i, /credit cards?/i]),
+  delinquency("DRCLACBS", "consumer", "Delinquency rate on consumer loans, all commercial banks", [/consumer/i, /\|\s*all$/i]),
 ];
 
 /** Observations before this date are not loaded (H.8 runs back to 1973). */
 export const NATIONAL_SERIES_FIRST_DATE = "2000-01-01";
-export const FRED_GRAPH_CSV_BASE = "https://fred.stlouisfed.org/graph/fredgraph.csv";
 
-/** "2026-10-08" -> weekly "2026-10-08"; monthly "2026-09"; quarterly "2026Q3". Null when the date does not fit the frequency. */
-export function fredPeriod(date: string, frequency: FredFrequency): string | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date.trim());
-  if (!m) return null;
-  if (frequency === "weekly") return date.trim();
-  if (m[3] !== "01") return null;
-  if (frequency === "monthly") return `${m[1]}-${m[2]}`;
-  const month = Number(m[2]);
-  return (month - 1) % 3 === 0 ? `${m[1]}Q${(month - 1) / 3 + 1}` : null;
+/** The page or package each publisher's rows cite as source_url. */
+export function nationalSeriesSourceUrl(publisher: NationalSeriesPublisher, sloosRelease?: string | null): string {
+  if (publisher === "frb-h8") return FRB_XML_PACKAGES.h8;
+  if (publisher === "frb-chgdel") return FRB_CHGDEL_DELINQUENCY_SA_URL;
+  return sloosRelease ? sloosChartDataUrl(sloosRelease) : `${FRB_BASE}/data/sloos.htm`;
 }
 
-export interface FredSeriesParse {
+/** Period for area_statistics: weekly "2026-10-08"; monthly "2026-09"; quarterly "2026Q3". Null when it does not fit. */
+export function nationalPeriod(timePeriod: string, frequency: NationalSeriesFrequency): string | null {
+  const quarter = boardQuarter(timePeriod);
+  if (quarter) return frequency === "quarterly" ? quarter : null;
+  const start = periodStartDate(timePeriod, frequency);
+  if (!start) return null;
+  if (frequency === "weekly") return start;
+  if (frequency === "monthly") return start.slice(0, 7);
+  return `${start.slice(0, 4)}Q${(Number(start.slice(5, 7)) - 1) / 3 + 1}`;
+}
+
+/** The period's first day, for the NATIONAL_SERIES_FIRST_DATE cut. */
+function periodFirstDay(period: string): string {
+  const q = /^(\d{4})Q([1-4])$/.exec(period);
+  if (q) return `${q[1]}-${String((Number(q[2]) - 1) * 3 + 1).padStart(2, "0")}-01`;
+  return period.length === 7 ? `${period}-01` : period;
+}
+
+function nationalRow(config: NationalSeriesConfig, period: string, value: number | null, cell: string, sourceUrl: string, publisherPeriod: string): AreaStat {
+  return {
+    ...NATION,
+    period,
+    series_key: config.key,
+    value,
+    unit: config.unit,
+    note: value === null ? text(cell) ?? "blank" : null,
+    raw: {
+      series_id: config.id,
+      publisher_series: config.frbSeries ?? null,
+      publisher_period: publisherPeriod,
+      value_cell: cell,
+      group: config.group,
+      frequency: config.frequency,
+      source_url: sourceUrl,
+    },
+  };
+}
+
+export interface NationalSeriesParse {
   rows: AreaStat[];
-  /** Why nothing was read (header did not name the series, not a CSV); null when read. */
+  /** Why nothing was read; null when read. */
   problem: string | null;
   skipped: Record<string, number>;
-  /** The header row as served. */
-  header: string[];
 }
 
-/** One FRED graph CSV: `observation_date,<ID>` (older files `DATE,<ID>`); "." or blank is a missing value. */
-export function parseFredSeriesCsv(csv: string, config: NationalSeriesConfig, firstDate = NATIONAL_SERIES_FIRST_DATE): FredSeriesParse {
+/** One series' rows from an SDMX package read (H.8). */
+export function nationalRowsFromSdmx(config: NationalSeriesConfig, series: SdmxSeries | undefined, firstDate = NATIONAL_SERIES_FIRST_DATE): NationalSeriesParse {
   const skipped: Record<string, number> = {};
-  if (/^\s*</.test(csv)) return { rows: [], problem: "response was HTML, not a CSV", skipped, header: [] };
-  const table = parseCsvTable(csv);
-  const header = (table[0] ?? []).map((h) => h.trim());
-  if (header.length < 2 || !/^(observation_date|date)$/i.test(header[0])) {
-    return { rows: [], problem: `header was "${header.join(",").slice(0, 80)}"`, skipped, header };
-  }
-  if (header[1] !== config.id) {
-    return { rows: [], problem: `header names ${header[1] || "nothing"}, not ${config.id}`, skipped, header };
-  }
+  if (!series) return { rows: [], problem: `${config.frbSeries} not in the package`, skipped };
+  const url = nationalSeriesSourceUrl(config.publisher);
   const rows: AreaStat[] = [];
-  for (const line of table.slice(1)) {
-    const date = text(line[0]);
-    if (!date) continue;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      bump(skipped, "unreadable_date");
-      continue;
-    }
-    if (date < firstDate) {
-      bump(skipped, "before_first_date");
-      continue;
-    }
-    const period = fredPeriod(date, config.frequency);
+  for (const o of series.observations) {
+    const period = nationalPeriod(o.period, config.frequency);
     if (!period) {
       bump(skipped, `date_not_${config.frequency}`);
       continue;
     }
-    const cell = line[1] ?? "";
-    const value = publishedNumber(cell);
-    rows.push({
-      ...NATION,
-      period,
-      series_key: config.key,
-      value,
-      unit: config.unit,
-      note: value === null ? text(cell) ?? "blank" : null,
-      raw: { fred_id: config.id, observation_date: date, value_cell: cell, group: config.group, frequency: config.frequency },
-    });
+    if (periodFirstDay(period) < firstDate) {
+      bump(skipped, "before_first_date");
+      continue;
+    }
+    const value = o.value === null ? null : scaleSdmxValue(o.value, series.multiplier, UNIT_FACTOR[config.unit] ?? 1);
+    rows.push(nationalRow(config, period, value, o.value === null ? o.status ?? "" : String(o.value), url, o.period));
   }
-  return { rows, problem: null, skipped, header };
+  return { rows, problem: rows.length === 0 ? `no observations since ${firstDate}` : null, skipped };
+}
+
+/** One series' rows from a Board HTML table page (charge-off and delinquency rates, SLOOS chart data). */
+export function nationalRowsFromHtml(
+  config: NationalSeriesConfig,
+  tables: HtmlGridTable[],
+  sourceUrl: string,
+  firstDate = NATIONAL_SERIES_FIRST_DATE,
+): NationalSeriesParse {
+  const skipped: Record<string, number> = {};
+  if (!config.column) return { rows: [], problem: "no column configured", skipped };
+  const hit = findHtmlColumn(tables, config.column);
+  if (!hit) return { rows: [], problem: `no table column matching ${config.column.column.map(String).join(" + ")}`, skipped };
+  const rows: AreaStat[] = [];
+  for (const line of hit.table.rows) {
+    const period = boardQuarter(line[0] ?? "");
+    if (!period) continue;
+    if (periodFirstDay(period) < firstDate) {
+      bump(skipped, "before_first_date");
+      continue;
+    }
+    const cell = line[hit.index] ?? "";
+    rows.push(nationalRow(config, period, publishedNumber(cell), cell, sourceUrl, line[0] ?? ""));
+  }
+  return { rows, problem: rows.length === 0 ? `no observations since ${firstDate}` : null, skipped };
+}
+
+/** SLOOS release codes to try, newest first: each month back to `months` ago (a missing page is a 404). */
+export function sloosReleaseCandidates(now: Date, months = 15): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < months; i += 1) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+    out.push(`${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}`);
+  }
+  return out;
 }
 
 export interface NationalSeriesFetch extends NationalCreditFetch {
   /** Per series id: rows read and the newest period, or why it was not read. */
   perSeries: Record<string, { rows: number; latest: string | null; problem: string | null }>;
+  /** The SLOOS release whose chart data was read, when one was found. */
+  sloosRelease: string | null;
 }
 
-/** Fetches every configured series one by one; a series FRED does not return is a named gap. */
+function problemOf(error: unknown): string {
+  if (error instanceof RegistryHttpError) return error.status ? `HTTP ${error.status}` : error.message;
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** Fetches every configured series from the Board's files; a series the Board does not return is a named gap. */
 export async function fetchNationalSeries(
   series: NationalSeriesConfig[] = NATIONAL_SERIES,
   options: RegistryFetchOptions = {},
   firstDate = NATIONAL_SERIES_FIRST_DATE,
+  now = new Date(),
 ): Promise<NationalSeriesFetch> {
+  const parsed = new Map<string, NationalSeriesParse>();
+  const fail = (members: NationalSeriesConfig[], problem: string) => {
+    for (const c of members) parsed.set(c.id, { rows: [], problem, skipped: {} });
+  };
+
+  const h8Members = series.filter((c) => c.publisher === "frb-h8" && c.frbSeries);
+  if (h8Members.length > 0) {
+    try {
+      const { found } = await fetchSdmxPackage(nationalSeriesSourceUrl("frb-h8"), h8Members.map((c) => c.frbSeries as string), options);
+      for (const c of h8Members) parsed.set(c.id, nationalRowsFromSdmx(c, found.get(c.frbSeries as string), firstDate));
+    } catch (error) {
+      fail(h8Members, problemOf(error));
+    }
+  }
+
+  const delinquencyMembers = series.filter((c) => c.publisher === "frb-chgdel");
+  if (delinquencyMembers.length > 0) {
+    try {
+      const response = await registryFetch(FRB_CHGDEL_DELINQUENCY_SA_URL, options);
+      const tables = parseHtmlGridTables(await response.text());
+      for (const c of delinquencyMembers) parsed.set(c.id, nationalRowsFromHtml(c, tables, FRB_CHGDEL_DELINQUENCY_SA_URL, firstDate));
+    } catch (error) {
+      fail(delinquencyMembers, problemOf(error));
+    }
+  }
+
+  let sloosRelease: string | null = null;
+  const sloosMembers = series.filter((c) => c.publisher === "frb-sloos");
+  if (sloosMembers.length > 0) {
+    let html: string | null = null;
+    let lastProblem = "no SLOOS chart-data page in the last 15 months";
+    for (const code of sloosReleaseCandidates(now)) {
+      try {
+        const response = await registryFetch(sloosChartDataUrl(code), { ...options, retries: 0 });
+        html = await response.text();
+        sloosRelease = code;
+        break;
+      } catch (error) {
+        if (error instanceof RegistryHttpError && error.status === 404) continue;
+        lastProblem = problemOf(error);
+        break;
+      }
+    }
+    if (html && sloosRelease) {
+      const tables = parseHtmlGridTables(html);
+      for (const c of sloosMembers) parsed.set(c.id, nationalRowsFromHtml(c, tables, sloosChartDataUrl(sloosRelease), firstDate));
+    } else {
+      fail(sloosMembers, lastProblem);
+    }
+  }
+
   const rows: AreaStat[] = [];
   const missingFields: string[] = [];
   const skipped: Record<string, number> = {};
   const perSeries: NationalSeriesFetch["perSeries"] = {};
   for (const config of series) {
-    let problem: string | null = null;
-    let parsed: FredSeriesParse | null = null;
-    try {
-      const response = await registryFetch(fredCsvUrl(config.id), options);
-      parsed = parseFredSeriesCsv(await response.text(), config, firstDate);
-      problem = parsed.problem ?? (parsed.rows.length === 0 ? "no observations since " + firstDate : null);
-    } catch (error) {
-      if (error instanceof RegistryHttpError) problem = error.status ? `HTTP ${error.status}` : error.message;
-      else problem = error instanceof Error ? error.message : String(error);
-    }
-    if (problem) missingFields.push(`${config.id} (${problem})`);
-    if (parsed && !parsed.problem) {
-      rows.push(...parsed.rows);
-      for (const [k, v] of Object.entries(parsed.skipped)) skipped[`${config.id}:${k}`] = v;
-    }
-    const kept = parsed && !parsed.problem ? parsed.rows : [];
+    const p = parsed.get(config.id) ?? { rows: [], problem: "not read", skipped: {} };
+    if (p.problem) missingFields.push(`${config.id} (${p.problem})`);
+    rows.push(...p.rows);
+    for (const [k, v] of Object.entries(p.skipped)) skipped[`${config.id}:${k}`] = v;
     perSeries[config.id] = {
-      rows: kept.length,
-      latest: kept.reduce<string | null>((max, r) => (max === null || r.period > max ? r.period : max), null),
-      problem,
+      rows: p.rows.length,
+      latest: p.rows.reduce<string | null>((max, r) => (max === null || r.period > max ? r.period : max), null),
+      problem: p.problem,
     };
   }
   return {
-    url: FRED_GRAPH_CSV_BASE,
+    url: FRB_BASE,
     rows,
     missingFields,
     unexpectedFields: [],
     skipped,
     perSeries,
-    emptyReason: rows.length === 0 ? `FRED returned none of the ${series.length} configured series` : null,
+    sloosRelease,
+    emptyReason: rows.length === 0 ? `The Federal Reserve Board files returned none of the ${series.length} configured series` : null,
   };
 }
 

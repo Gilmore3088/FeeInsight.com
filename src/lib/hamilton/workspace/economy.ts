@@ -8,14 +8,26 @@
  */
 
 import type { IndicatorSeries, StateEconomicContext } from "@/lib/data-store/economic-context";
+import { STATE_TO_FIPS } from "@/lib/geo/state-fips";
 import type { EconomicBackdrop, EconomicIndicator, EconomicIndicatorKey, SourceRef } from "./types";
 
 const TABLE = "fed_economic_indicators";
 
-function fredUrl(seriesId: string): string {
-  return seriesId.startsWith("CUUR")
-    ? `https://data.bls.gov/timeseries/${seriesId}`
-    : `https://fred.stlouisfed.org/series/${seriesId}`;
+/**
+ * The series' page at its original publisher (FRED is no longer read, 2026-10-18): BLS for CPI,
+ * unemployment and payrolls (LAUS LASST..03 and CES state SMS..01 for {ST}UR and {ST}NA), the Fed
+ * Board's H.15 release for the federal funds rate.
+ */
+export function publisherUrl(seriesId: string): string {
+  if (seriesId === "FEDFUNDS") return "https://www.federalreserve.gov/releases/h15/";
+  if (seriesId === "UNRATE") return "https://data.bls.gov/timeseries/LNS14000000";
+  if (seriesId === "CPIAUCSL") return "https://data.bls.gov/timeseries/CUSR0000SA0";
+  const state = /^([A-Z]{2})(UR|NA)$/.exec(seriesId);
+  const fips = state ? STATE_TO_FIPS[state[1]] : undefined;
+  if (state && fips) {
+    return `https://data.bls.gov/timeseries/${state[2] === "UR" ? `LASST${fips}0000000000003` : `SMS${fips}000000000000001`}`;
+  }
+  return `https://data.bls.gov/timeseries/${seriesId}`;
 }
 
 function round1(n: number): number {
@@ -31,7 +43,7 @@ function rate(key: EconomicIndicatorKey, label: string, publisher: string, serie
     value: round1(series.latest.value),
     yearAgo: series.year_ago ? round1(series.year_ago.value) : null,
     asOf: series.latest.date,
-    source: { label: `${publisher} (${series.series_id})`, table: TABLE, url: fredUrl(series.series_id), asOf: series.latest.date },
+    source: { label: `${publisher} (${series.series_id})`, table: TABLE, url: publisherUrl(series.series_id), asOf: series.latest.date },
   };
 }
 
@@ -45,7 +57,7 @@ function change12m(key: EconomicIndicatorKey, label: string, publisher: string, 
     value: round1(((series.latest.value - series.year_ago.value) / series.year_ago.value) * 100),
     yearAgo: null,
     asOf: series.latest.date,
-    source: { label: `${publisher} (${series.series_id})`, table: TABLE, url: fredUrl(series.series_id), asOf: series.latest.date },
+    source: { label: `${publisher} (${series.series_id})`, table: TABLE, url: publisherUrl(series.series_id), asOf: series.latest.date },
   };
 }
 
@@ -68,10 +80,10 @@ export function economicBackdrop(
   districtName: string | null,
 ): EconomicBackdrop | null {
   const indicators = [
-    rate("state_unemployment", `${place} unemployment rate`, "BLS, via FRED", ctx.state_unemployment),
-    rate("national_unemployment", "U.S. unemployment rate", "BLS, via FRED", ctx.national_unemployment),
-    change12m("state_payrolls", `${place} payroll jobs`, "BLS, via FRED", ctx.state_payrolls),
-    rate("fed_funds", "Federal funds rate", "Federal Reserve, via FRED", ctx.fed_funds),
+    rate("state_unemployment", `${place} unemployment rate`, "BLS Local Area Unemployment Statistics", ctx.state_unemployment),
+    rate("national_unemployment", "U.S. unemployment rate", "BLS Current Population Survey", ctx.national_unemployment),
+    change12m("state_payrolls", `${place} payroll jobs`, "BLS Current Employment Statistics", ctx.state_payrolls),
+    rate("fed_funds", "Federal funds rate", "Federal Reserve Board H.15", ctx.fed_funds),
     change12m("cpi_all_items", "All consumer prices", "BLS Consumer Price Index", ctx.cpi_all_items),
     change12m("cpi_bank_services", "Prices for checking and other bank services", "BLS Consumer Price Index", ctx.cpi_bank_services),
   ].filter((i): i is EconomicIndicator => i !== null);

@@ -7,6 +7,7 @@ import { MIN_INSTITUTIONS_FOR_MEDIAN, STATS_ROW_FILTER } from "./fee-stats";
 import { financialSourceFilter } from "./financial-sources";
 import { feeComplaintFilterSql } from "./complaints";
 import { buildIndicatorSeries, type IndicatorSeries } from "./economic-context";
+import { fedIndicatorServedSql } from "./struck-sources";
 import { getFeeChangeEvents, type FeeChangeEvent } from "./fee-changes";
 import { institutionDisplayName } from "@/lib/institution-display-name";
 
@@ -16,7 +17,7 @@ import { institutionDisplayName } from "@/lib/institution-display-name";
  * fee medians from published_fee_catalog, institutions from institution_sources, deposit
  * service charges from FDIC/NCUA call reports, branches from the FDIC Summary of Deposits and
  * NCUA's branch file, CFPB complaints for institutions with an accepted CFPB match, Census ACS
- * income, and FRED/BLS series. A part whose table is missing or empty comes back empty, and
+ * income, and BLS, BEA and Fed Board series. A part whose table is missing or empty comes back empty, and
  * the page drops that exhibit; nothing is filled with zeros.
  */
 
@@ -118,7 +119,7 @@ export interface DistrictHubData {
   branches: HubBranches | null;
   complaints: HubComplaints | null;
   demographics: HubDemographics[];
-  /** FRED/BLS series by id: {ST}UR, {ST}NA, UNRATE and CPI bank services. */
+  /** BLS series by id: {ST}UR, {ST}NA, UNRATE and CPI bank services. */
   series: Record<string, IndicatorSeries>;
   fee_changes: FeeChangeEvent[];
   fee_changes_capped: boolean;
@@ -486,6 +487,7 @@ async function loadSeries(states: string[]): Promise<Record<string, IndicatorSer
                 ROW_NUMBER() OVER (PARTITION BY series_id ORDER BY observation_date DESC) AS rn
            FROM fed_economic_indicators
           WHERE series_id = ANY($1::text[]) AND value IS NOT NULL
+            AND ${fedIndicatorServedSql()}
        ) ranked
       WHERE rn <= $2
       ORDER BY series_id, observation_date DESC`,

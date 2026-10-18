@@ -124,16 +124,17 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     tables: ["fed_beige_book"],
   },
   {
-    // magellan/registry/fed.ts (runRegistryFred), regulatory/fed.ts (fred.stlouisfed.org keyless graph CSV;
-    // api.bls.gov for BLS CPI series, BLS_API_KEY optional)
+    // magellan/registry/fed.ts (runRegistryFred), regulatory/federal-indicators.ts (PUBLISHER_INDICATORS:
+    // api.bls.gov, BLS_API_KEY optional; apps.bea.gov NIPA, BEA_API_KEY; federalreserve.gov FRB_h15_xml.zip).
+    // The source key keeps its FRED-era name so the step and its history stay joined.
     source: "fred",
-    publisher: "Federal Reserve Bank of St. Louis (FRED), plus US Bureau of Labor Statistics CPI series",
+    publisher: "US Bureau of Labor Statistics, US Bureau of Economic Analysis and the Federal Reserve Board (H.15)",
     licence: {
-      status: "terms-unconfirmed",
-      note: "FRED series come from many publishers, each with its own terms; the St. Louis Fed is not a federal agency. BLS series are public domain.",
+      status: "public-domain",
+      note: "Each series from its original publisher since 2026-10-18; FRED is no longer read (its terms bar commercial use and storing FRED content). BLS: \"everything that we publish ... is in the public domain\" (bls.gov/opub/copyright-information.htm); Fed Board: public domain (federalreserve.gov/disclaimer.htm); BEA data are federal works (17 USC 105). QBPQYTNIYSRVDP and DRCBLACBS have no confirmed publisher file and are struck. FRED-era rows are retired per series: served until the series' first publisher row lands (fedIndicatorServedSql); registry-fred names any still on FRED-era values.",
     },
     connection: "rest-api",
-    optionalEnvKeys: ["BLS_API_KEY"],
+    optionalEnvKeys: ["BLS_API_KEY", "BEA_API_KEY"],
     cadence: "irregular",
     grain: ["national", "fed-district"],
     linkKeys: ["fed-district"],

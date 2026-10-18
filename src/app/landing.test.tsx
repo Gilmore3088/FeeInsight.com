@@ -97,7 +97,7 @@ describe("hero Bank Fee Index card", () => {
     expect(card.cells.monthly_maintenance.WY[0]).toEqual({ n: 2 });
     expect(card.states.map((s) => s.name)).toEqual(["Florida", "Georgia", "Wyoming"]);
     expect(card.fees).toEqual([
-      { key: "monthly_maintenance", label: "Monthly maintenance", headline: "Median of each institution's median published price", plural: "institution medians" },
+      { key: "monthly_maintenance", label: "Monthly maintenance", headline: "Median of each institution's median published price", plural: "institution medians", measure: "institution median" },
     ]);
   });
 
@@ -176,16 +176,16 @@ describe("hero Bank Fee Index card: your institution", () => {
     const { container } = render(<IndexCard data={withInstitution} freshness="Oct 14, 2026" />);
     const ownCents = Math.round(ownValue * 100);
     const marker = container.querySelector("[data-index-marker]");
-    expect(marker?.textContent).toBe(`Institution 5${dollars(ownCents)}`);
+    expect(marker?.textContent).toBe(`Institution 5median${dollars(ownCents)}`);
     expect(container.querySelectorAll("[data-marker-bar]")).toHaveLength(1);
     const usMedian = medianOf(withInstitution, US, 0);
-    expect(container.querySelector("[data-index-position]")?.textContent).toBe(positionSentence("Institution 5", ownCents, usMedian, "U.S."));
-    expect(container.querySelector("[data-index-position]")?.textContent).toMatch(/^Institution 5’s \$[\d.]+ (is (higher|lower) than the U\.S\. median of \$[\d.]+|matches the U\.S\. median)\.$/);
+    expect(container.querySelector("[data-index-position]")?.textContent).toBe(positionSentence("Institution 5", "institution median", ownCents, usMedian, "U.S."));
+    expect(container.querySelector("[data-index-position]")?.textContent).toMatch(/^Institution 5’s institution median, \$[\d.]+, (is (higher|lower) than the U\.S\. median of \$[\d.]+|matches the U\.S\. median)\.$/);
     // The scope follows the pickers: state, then charter.
     fireEvent.change(screen.getByLabelText("State"), { target: { value: "FL" } });
     fireEvent.change(screen.getByLabelText("Institutions"), { target: { value: "bank" } });
     expect(container.querySelector("[data-index-position]")?.textContent).toBe(
-      positionSentence("Institution 5", ownCents, medianOf(withInstitution, "FL", 1), "Florida bank"),
+      positionSentence("Institution 5", "institution median", ownCents, medianOf(withInstitution, "FL", 1), "Florida bank"),
     );
     // The selection carries through: the index with its name search, its own page on this fee, the plans priced for it.
     expect(screen.getByRole("link", { name: /See this fee in the index/ }).getAttribute("href")).toBe(
@@ -196,9 +196,10 @@ describe("hero Bank Fee Index card: your institution", () => {
   });
 
   it("words the position neutrally", () => {
-    expect(positionSentence("Capital City Bank", 800, 500, "Florida")).toBe("Capital City Bank’s $8 is higher than the Florida median of $5.");
-    expect(positionSentence("Capital City Bank", 395, 500, "U.S. credit union")).toBe("Capital City Bank’s $3.95 is lower than the U.S. credit union median of $5.");
-    expect(positionSentence("Capital City Bank", 500, 500, "Florida bank")).toBe("Capital City Bank’s $5 matches the Florida bank median.");
+    // The counted value is a calculation, so it is named, never "charged" (James, Oct 16).
+    expect(positionSentence("Capital City Bank", "institution median", 800, 500, "Florida")).toBe("Capital City Bank’s institution median, $8, is higher than the Florida median of $5.");
+    expect(positionSentence("Capital City Bank", "highest published price", 395, 500, "U.S. credit union")).toBe("Capital City Bank’s highest published price, $3.95, is lower than the U.S. credit union median of $5.");
+    expect(positionSentence("Capital City Bank", "institution median", 500, 500, "Florida bank")).toBe("Capital City Bank’s institution median, $5, matches the Florida bank median.");
     expect(noFeeSentence("Capital City Bank", "Monthly maintenance")).toBe("No published monthly maintenance fee for Capital City Bank yet.");
     expect(noFeeSentence("Capital City Bank", "NSF")).toBe("No published NSF fee for Capital City Bank yet.");
   });
@@ -251,9 +252,9 @@ describe("hero Bank Fee Index card: your institution", () => {
       expect(container.querySelector("[data-index-marker]")).toBeNull();
       await act(async () => answer({ monthly_maintenance: 1200 }));
       expect(container.querySelector("[data-index-reading]")).toBeNull();
-      expect(container.querySelector("[data-index-marker]")?.textContent).toBe("Harbor Bank$12");
+      expect(container.querySelector("[data-index-marker]")?.textContent).toBe("Harbor Bankmedian$12");
       expect(container.querySelector("[data-index-position]")?.textContent).toBe(
-        positionSentence("Harbor Bank", 1200, medianOf(withInstitution, US, 0), "U.S."),
+        positionSentence("Harbor Bank", "institution median", 1200, medianOf(withInstitution, US, 0), "U.S."),
       );
       expect(screen.getByRole("link", { name: /See its fees/ }).getAttribute("href")).toBe("/institution/77?fee=monthly_maintenance");
       expect(screen.getByRole("link", { name: /See Hamilton plans/ }).getAttribute("href")).toBe("/subscribe?inst=77");

@@ -96,6 +96,8 @@ function barLabel(bar: { min: number | null; max: number | null }): string {
 interface ChartMarker {
   name: string;
   cents: number;
+  /** What the value is, in a word: "median", or "highest" for overdraft. */
+  word: string;
 }
 
 function Histogram({ cell, label, marker }: { cell: IndexCell; label: string; marker?: ChartMarker }) {
@@ -138,6 +140,7 @@ function Histogram({ cell, label, marker }: { cell: IndexCell; label: string; ma
             style={{ left: markerAt < 25 ? `calc(${markerAt}% - 0.5rem)` : markerAt > 75 ? `calc(${markerAt}% + 0.5rem)` : `${markerAt}%` }}
           >
             <span className="min-w-0 truncate">{marker.name}</span>
+            <span className="font-normal text-ink-soft">{marker.word}</span>
             <span>{money(marker.cents)}</span>
           </span>
         </div>
@@ -281,13 +284,17 @@ export function IndexCard({ data, freshness }: { data: IndexCardData; freshness:
   const benchmarkTitle = scopeLabel(placeName, charter);
 
   const own = institution?.fees ? institution.fees[fee] : undefined;
-  const marker = institution && own !== undefined ? { name: institution.name, cents: own } : undefined;
+  // The marker names what it counts in a word ("median", or "highest" for overdraft), as the sentence does in full.
+  const marker =
+    institution && own !== undefined
+      ? { name: institution.name, cents: own, word: feeDef?.measure === "highest published price" ? "highest" : "median" }
+      : undefined;
   const position =
     !institution?.fees || !hasMedian(pick)
       ? null
       : own === undefined
         ? noFeeSentence(institution.name, feeDef?.label ?? "")
-        : positionSentence(institution.name, own, pick.median, benchmarkPhrase(placeName, charter));
+        : positionSentence(institution.name, feeDef?.measure ?? "institution median", own, pick.median, benchmarkPhrase(placeName, charter));
 
   function choose(p: PickedInstitution) {
     const seq = ++pickSeq.current;

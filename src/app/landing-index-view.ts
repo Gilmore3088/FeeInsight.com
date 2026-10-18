@@ -37,6 +37,8 @@ export interface IndexCardFee {
   headline: string;
   /** "institution medians" (or the highest-price wording for overdraft). */
   plural: string;
+  /** One institution's counted value, in words: "institution median" or "highest published price". */
+  measure: string;
 }
 
 /**
@@ -124,14 +126,16 @@ export function benchmarkPhrase(placeName: string, charter: Charter): string {
 }
 
 /**
- * One neutral line on where an institution's fee sits against the benchmark on screen. It says
+ * One neutral line on where an institution's counted value sits against the benchmark on screen.
+ * The value is a calculation (its median published price, or its highest for overdraft), so the
+ * line names it as such and never says the institution "charges" it (James, Oct 16). It says
  * higher, lower or the same, and nothing about whether that is good or what to charge.
  */
-export function positionSentence(name: string, cents: number, medianCents: number, phrase: string): string {
+export function positionSentence(name: string, measure: string, cents: number, medianCents: number, phrase: string): string {
   const own = cardMoney(cents / 100);
   const median = cardMoney(medianCents / 100);
-  if (cents === medianCents) return `${name}’s ${own} matches the ${phrase} median.`;
-  return `${name}’s ${own} is ${cents > medianCents ? "higher" : "lower"} than the ${phrase} median of ${median}.`;
+  if (cents === medianCents) return `${name}’s ${measure}, ${own}, matches the ${phrase} median.`;
+  return `${name}’s ${measure}, ${own}, is ${cents > medianCents ? "higher" : "lower"} than the ${phrase} median of ${median}.`;
 }
 
 /** "No published monthly maintenance fee for Capital City Bank yet." An acronym keeps its capitals. */
