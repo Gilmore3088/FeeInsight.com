@@ -93,7 +93,7 @@ export function basisMismatchSql(alias: string): string {
       .map(([c]) => `'${c}'`)
       .join(", ");
     const frequencies = CONTRADICTING_FREQUENCIES[basis].map((f) => `'${f}'`).join(", ");
-    return `(${alias}.fee_category IN (${categories}) AND lower(btrim(${alias}.frequency)) IN (${frequencies}))`;
+    return `(${alias}.fee_category IN (${categories}) AND lower(btrim(${alias}.frequency, E' \\t\\r\\n')) IN (${frequencies}))`;
   });
   // COALESCE: a blank frequency or category is never a mismatch, and NOT NULL would drop the row.
   return `COALESCE(${arms.join(" OR ")}, false)`;
