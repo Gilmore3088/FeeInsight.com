@@ -124,7 +124,8 @@ export async function createCheckoutSession(input: ProCheckoutInput): Promise<Pr
       pro_plan: plan,
       ...(institutionId ? { institution_id: String(institutionId) } : { organization: "other" }),
       ...(tierPicked ? { tier_picked_by_buyer: "true" } : {}),
-      ...(hasReturnTo ? { return_to: sanitizedReturnTo } : {}),
+      // Stripe refuses a metadata value over 500 characters; success_url carries the address either way.
+      ...(hasReturnTo && sanitizedReturnTo.length <= 500 ? { return_to: sanitizedReturnTo } : {}),
     },
     // Kept on the subscription itself so the consultant report cap can tell who it covers.
     subscription_data: {
