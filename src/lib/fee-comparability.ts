@@ -28,8 +28,20 @@ const CARD_LINE = /\bthe card (?:will be|is) charged\b|\bcard balance\b/i;
  * own prices ($250 to drill against a $30 to $65 rent), so they are never placed against the rent's
  * median or range. The taxonomy keeps them in the category; only the comparison leaves them out.
  */
-const SAFE_DEPOSIT_RENT_CATEGORIES: ReadonlySet<string> = new Set(["safe_deposit_box"]);
-const SAFE_DEPOSIT_SERVICE = /\bdrill|\bkeys?\b|\block(?:s|ed|out)?\b|\blate\b|\bpast due\b|\bforced?\b/i;
+/**
+ * A safe deposit row whose name says it is a service charge, not the rent. "Lock Box Rental" and
+ * "Lock Box Annual Fee" are rents, so "lock" counts only when "box" does not follow it (#1816).
+ */
+const SAFE_DEPOSIT_SERVICE = /\bdrill|\bkeys?\b|\block(?:s|ed|out)?\b(?!\s*box)|\blate\b|\bpast due\b|\bforced?\b/i;
+/**
+ * The same rule as a Postgres `~*` pattern, for the statistics row filter (fee-stats.ts
+ * statsRowFilter), so every median leaves out the rows the institution page does. Postgres marks
+ * word edges with \m and \M (\b is a backspace there). Kept in step by fee-comparability.test.ts.
+ */
+export const SAFE_DEPOSIT_SERVICE_SQL =
+  "\\mdrill|\\mkeys?\\M|\\mlock(s|ed|out)?\\M(?!\\s*box)|\\mlate\\M|\\mpast due\\M|\\mforced?\\M";
+export const SAFE_DEPOSIT_CATEGORY = "safe_deposit_box";
+const SAFE_DEPOSIT_RENT_CATEGORIES: ReadonlySet<string> = new Set([SAFE_DEPOSIT_CATEGORY]);
 
 export const CD_IRA_REASON = "CD/IRA fee";
 export const CARD_INACTIVITY_REASON = "Card inactivity fee";
