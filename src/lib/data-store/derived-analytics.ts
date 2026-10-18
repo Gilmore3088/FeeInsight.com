@@ -200,7 +200,7 @@ export async function getFeeDependencyTrend(
           CASE WHEN total_revenue > 0
                THEN service_charge_income * 1.0 / total_revenue * 100
                ELSE NULL END
-        ), 2) as avg_fee_income_ratio,
+        )::numeric, 2) as avg_fee_income_ratio,
         COUNT(DISTINCT institution_id) as institution_count
       FROM institution_financial_records
       WHERE service_charge_income IS NOT NULL
@@ -243,7 +243,7 @@ export async function getRevenuePerInstitutionTrend(
     const tierRows = await sql`
       SELECT
         ct.asset_size_tier as tier,
-        ROUND(AVG(ifin.service_charge_income * 1000), 0) as avg_sc_income,
+        ROUND(AVG(ifin.service_charge_income * 1000)::numeric, 0) as avg_sc_income,
         COUNT(DISTINCT ct.id) as institution_count
       FROM institution_sources ct
       JOIN institution_financial_records ifin ON ct.id = ifin.institution_id
@@ -261,7 +261,7 @@ export async function getRevenuePerInstitutionTrend(
     const charterRows = await sql`
       SELECT
         ct.charter_type as charter,
-        ROUND(AVG(ifin.service_charge_income * 1000), 0) as avg_sc_income,
+        ROUND(AVG(ifin.service_charge_income * 1000)::numeric, 0) as avg_sc_income,
         COUNT(DISTINCT ct.id) as institution_count
       FROM institution_sources ct
       JOIN institution_financial_records ifin ON ct.id = ifin.institution_id
@@ -277,7 +277,7 @@ export async function getRevenuePerInstitutionTrend(
     const trendRows = await sql`
       SELECT
         report_date,
-        ROUND(AVG(service_charge_income * 1000), 0) as avg_sc_income,
+        ROUND(AVG(service_charge_income * 1000)::numeric, 0) as avg_sc_income,
         COUNT(DISTINCT institution_id) as institution_count
       FROM institution_financial_records
       WHERE service_charge_income IS NOT NULL

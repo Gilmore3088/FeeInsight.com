@@ -48,8 +48,14 @@ vi.mock("@/lib/data-store/alerts", () => ({ getAlertSubscriptionForInstitution: 
 vi.mock("@/lib/data-store/public-cached-reads", () => ({ getComparableMarketIndexCached: vi.fn(async () => []) }));
 vi.mock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => null) }));
 vi.mock("@/lib/custom-report/sample-report", () => ({ sampleReportAvailable: vi.fn(async () => false) }));
+const shortenPageLife = vi.hoisted(() => vi.fn(async () => undefined));
+vi.mock("@/lib/data-store/public-read-cache", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/data-store/public-read-cache")>()),
+  shortenPageLife,
+}));
 
-import InstitutionProfilePage, { generateMetadata } from "./page";
+import { generateMetadata } from "./page";
+import { InstitutionProfile } from "./profile-page";
 import InstitutionLayout from "./layout";
 import { degradedMetadata, LAYOUT_READ_BUDGET_MS, METADATA_READ_BUDGET_MS, PAGE_READ_BUDGET_MS } from "./profile-budget";
 import { ReadDeadlineError } from "@/lib/read-deadline";
@@ -90,9 +96,14 @@ function collect(node: ReactNode, out: ReactElement[] = []): ReactElement[] {
 
 let id = 1000;
 
+/** The cached page's whole render (page.tsx only hands the id to it). */
+const InstitutionProfilePage = async (p: ReturnType<typeof props>) =>
+  InstitutionProfile({ id: (await p.params).id, focusFeeCategory: null });
+
 beforeEach(() => {
   vi.useFakeTimers();
   vi.spyOn(console, "error").mockImplementation(() => undefined);
+  shortenPageLife.mockClear();
   // A fresh id per test: the page's reads are memoized per institution id.
   id += 1;
   db.institution.mockReset().mockImplementation(async (instId: number) => ({ ...WAFD, id: instId }));
@@ -113,6 +124,8 @@ describe("institution page with a database that never answers (#1919)", () => {
   it("renders straight away when every read answers", async () => {
     const node = await InstitutionProfilePage(props(String(id)));
     expect(node).toBeTruthy();
+    // A clean render keeps the page's hour in the cache.
+    expect(shortenPageLife).not.toHaveBeenCalled();
   });
 
   it("gives up on the layout's existence check, which runs before anything streams", async () => {
@@ -140,6 +153,8 @@ describe("institution page with a database that never answers (#1919)", () => {
     const node = await page;
     const ids = collect(node).map((element) => (element.props as { id?: string }).id);
     expect(ids).not.toContain("record-heading");
+    // A render with a section missing is cached for a minute, not an hour (#1572).
+    expect(shortenPageLife).toHaveBeenCalled();
   });
 
   it("falls back to plain metadata instead of holding the page when the institution read hangs", async () => {
@@ -147,6 +162,7 @@ describe("institution page with a database that never answers (#1919)", () => {
     const metadata = generateMetadata(props(String(id)));
     await vi.advanceTimersByTimeAsync(METADATA_READ_BUDGET_MS);
     await expect(metadata).resolves.toEqual(degradedMetadata(id));
+    expect(shortenPageLife).toHaveBeenCalled();
     expect(degradedMetadata(id).robots).toEqual({ index: false, follow: true });
   });
 

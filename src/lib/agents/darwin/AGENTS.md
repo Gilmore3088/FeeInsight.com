@@ -695,6 +695,15 @@ Darwin owns verification and classification.
   `darwin.hourly_frequency_set` event lists them. Whole-table dry run: a verify run with
   `hourly_full_count: true` (step detail `hourly_frequency_full_count`), or `hourlyCountSql()` /
   `hourlySamplesSql()` for someone with prod access.
+  v2 (James's live-fee check, Oct 18: per-hour fees shown as flat charges at 7 of 15 institutions):
+  a fee whose name is silent on the hour but whose own stored line prices it by the hour
+  ("Account Research Fee $20 per hour") is read too, by `hourlyFromLine` on Knox's `excerpt="..."`,
+  which must print the fee's price; the same exemptions apply and matches carry `basis` (`name` or
+  `line`); a line-only fee is also exempt for a period word anywhere on its line. Line-only fees are written only with `HOURLY_LINE_LIVE` on (off until James sees the
+  count); step detail `would_set_from_line` counts them, and the whole-table count reads any fee
+  whose name or line mentions the hour. Prod read Oct 18: 1,894 live fees at 1,433 institutions
+  print "$X per/an hour" on their line with a silent name and a non-hourly frequency (a regex
+  estimate; the step's count is the exact one). `hourlyCountSql()` still mirrors the name rule only.
 - Live non-deposit document re-check (`non-deposit-document-check.ts`, #1442). James's catalog
   review (Oct 15, URL heuristics) found live deposit-fee rows read from brokerage and wealth pages
   (33 rows: Northern Trust wealth, U.S. Bank self-directed investing "Research" $20) and from
@@ -1387,7 +1396,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v1 | `darwin/verdict-score.ts` |
 | `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v5 | `darwin/verified-recheck.ts` |
 | `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v6 | `darwin/live-fragment-check.ts` |
-| `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v1 | `darwin/hourly-frequency-check.ts` |
+| `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v2 | `darwin/hourly-frequency-check.ts` |
 | `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v3 | `darwin/non-deposit-document-check.ts` |
 | `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v1 | `darwin/line-conflict-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |
