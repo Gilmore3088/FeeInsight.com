@@ -232,6 +232,7 @@ export function PeerExplorer({
             <div className="mt-4">
               <p className="text-[12px] font-medium text-ink-muted">
                 Against {selected.id === set.subject.id ? "this institution" : selected.name}&apos;s {EXPLORER_FEE_LABELS[fee].toLowerCase()} fee
+                {set.whole ? `, among the ${set.peers.length} peers shown` : ""}
               </p>
               <ul className="mt-1.5 flex flex-wrap gap-2">
                 {findings.map((finding) => {
@@ -647,12 +648,19 @@ function Distribution({ set, fee, selectedId, highlight, onSelect }: ViewProps) 
               </text>
               {ownPrices.map((price, i) => {
                 const x = xOf(price.amount);
-                const anchor = x > width - 120 ? "end" : x < 120 ? "start" : "middle";
+                // The lowest price is labelled to its left and the highest to its right, beside the
+                // marker, so two close prices never share a line; any between sit below, alternating.
+                const first = i === 0;
+                const last = i === ownPrices.length - 1;
+                const side = (first && x > 200) || (last && x < width - 200);
+                const anchor = side ? (first ? "end" : "start") : x > width - 120 ? "end" : x < 120 ? "start" : "middle";
+                const lx = side ? x + (first ? -10 : 10) : x;
+                const ly = side ? priceRow + 4 : priceRow + (i % 2 === 0 ? 20 : 31);
                 return (
                   <g key={i} className="cursor-default" onMouseEnter={() => setHoverPrice(i)} onMouseLeave={() => setHoverPrice(null)}>
                     <circle cx={x} cy={priceRow} r={10} fill="transparent" />
                     <rect x={x - 5} y={priceRow - 5} width={10} height={10} transform={`rotate(45 ${x} ${priceRow})`} fill={SUBJECT} stroke="var(--fi-surface-0)" strokeWidth={1.5} />
-                    <text x={x} y={priceRow + (i % 2 === 0 ? 20 : 31)} textAnchor={anchor} className="fill-ink text-[11px]">
+                    <text x={lx} y={ly} textAnchor={anchor} className="fill-ink text-[11px]">
                       {short(price.name ?? `Price ${i + 1}`)} {money(price.amount)}
                     </text>
                   </g>
