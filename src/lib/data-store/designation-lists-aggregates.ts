@@ -1,6 +1,7 @@
 import { sql } from "./connection";
 import { matchesPeerFilters, type PeerFilterSet } from "./fee-index";
 import { STATS_ROW_FILTER, STATS_SCHEDULE_KEYS, summarizeFees, type FeeStatistics, type StatsInputRow } from "./fee-stats";
+import { STRUCK_DESIGNATIONS } from "./struck-sources";
 
 /**
  * Reads over institution_designations (Magellan's designation-lists loader): how many
@@ -71,6 +72,8 @@ export function countByDimension(rows: InstitutionDimRow[], dimension: Designati
 }
 
 function designatedSql(sel: DesignationSelector) {
+  // A struck list's rows (Bank On) may still be on prod; no institution counts as carrying it.
+  if (STRUCK_DESIGNATIONS.includes(sel.designation)) return sql`FALSE`;
   return sel.value === undefined
     ? sql`EXISTS (SELECT 1 FROM institution_designations d WHERE d.institution_id = s.id AND d.designation = ${sel.designation})`
     : sql`EXISTS (SELECT 1 FROM institution_designations d WHERE d.institution_id = s.id AND d.designation = ${sel.designation} AND d.value = ${sel.value})`;
@@ -105,6 +108,7 @@ export interface DesignationValueCount {
 
 /** The values a designation takes (MDI groups, specialty groups, FOM codes) with matched institution counts. */
 export async function getDesignationValues(designation: string): Promise<DesignationValueCount[]> {
+  if (STRUCK_DESIGNATIONS.includes(designation)) return [];
   const rows = (await sql`
     SELECT value, COUNT(DISTINCT institution_id)::int AS institutions
       FROM institution_designations

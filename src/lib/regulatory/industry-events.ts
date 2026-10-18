@@ -9,8 +9,7 @@ import { registryFetch, registryFetchJson, RegistryHttpError, type RegistryFetch
 
 /**
  * Industry events from public lists: bank and credit union failures, credit union mergers and
- * liquidations, merger 8-Ks and fee passages in 10-Ks, overdraft and NSF fee lawsuits, public
- * comments on fee rules, SBA 7(a)/504 lending by lender, CDFI Fund awards and FHLBank
+ * liquidations, merger 8-Ks and fee passages in 10-Ks, public comments on fee rules, SBA 7(a)/504 lending by lender, CDFI Fund awards and FHLBank
  * membership. Pure: fetches, parses and checks; never writes to the database.
  *
  * Every column name and URL below was written from memory of the publishers' documentation
@@ -169,7 +168,7 @@ export interface MatchKeys {
   rssd?: string | null;
   name?: string | null;
   state?: string | null;
-  /** Allow a nationwide exact-name match when no state is known (lawsuit defendants, commenters). */
+  /** Allow a nationwide exact-name match when no state is known (commenters). */
   nameWithoutState?: boolean;
 }
 
@@ -809,133 +808,8 @@ export async function fetchSecDocumentText(url: string, options: RegistryFetchOp
   return /\.(htm|html|xml)$/i.test(new URL(url).pathname) || /^\s*</.test(body) ? htmlToText(body) : body;
 }
 
-// ---------------------------------------------------------------------------
-// (d) Fee lawsuits from CourtListener (RECAP dockets)
-// ---------------------------------------------------------------------------
-
-export const COURTLISTENER_SEARCH_URL = "https://www.courtlistener.com/api/rest/v4/search/";
-export const COURTLISTENER_QUERY =
-  '("overdraft fee" OR "overdraft fees" OR "NSF fee" OR "NSF fees" OR "insufficient funds fee" OR "insufficient funds fees" OR representment OR "re-presentment" OR "re-presented") AND (bank OR "credit union")';
-export const COURTLISTENER_FIELDS = ["caseName", "court", "court_id", "dateFiled", "docketNumber", "docket_absolute_url", "docket_id"] as const;
-const COURTLISTENER_MAX_PAGES = 25;
-
-export interface FeeLawsuit {
-  docketId: string;
-  caseName: string | null;
-  court: string | null;
-  courtId: string | null;
-  docketNumber: string | null;
-  filedDate: string | null;
-  docketUrl: string | null;
-  suitNature: string | null;
-  cause: string | null;
-  defendantName: string | null;
-  raw: Raw;
-}
-
-export interface FetchedLawsuits {
-  sourceUrl: string;
-  count: number | null;
-  cases: FeeLawsuit[];
-  truncated: boolean;
-  missingFields: string[];
-  unexpectedFields: string[];
-  /** Set when CourtListener refused anonymous access; the partition is skipped with this reason. */
-  authRequired: string | null;
-}
-
-/**
- * The defendant side of a case name ("Doe v. First Bank, N.A." -> "First Bank, N.A.";
- * "In re Acme Bank Overdraft Litigation" -> "Acme Bank"). Null when the name has no "v.".
- */
-export function defendantOf(caseName: string | null): string | null {
-  if (!caseName) return null;
-  const inRe = /^in re:?\s+(.+?)\s+(overdraft|nsf|non-?sufficient|insufficient|fee|checking|debit|deposit)\b.*$/i.exec(caseName);
-  if (inRe) return inRe[1].replace(/[,\s]+$/, "").trim();
-  const parts = caseName.split(/\s+v(?:s)?\.?\s+/i);
-  if (parts.length < 2) return null;
-  const right = parts.slice(1).join(" v. ")
-    .replace(/,?\s+et\.? al\.?$/i, "")
-    .replace(/,?\s+and (others|another)$/i, "")
-    .trim();
-  return right || null;
-}
-
-interface CourtListenerResponse {
-  count?: number;
-  next?: string | null;
-  results?: Raw[];
-}
-
-export async function fetchCourtListenerYear(year: number, options: RegistryFetchOptions = {}, token: string | null = null): Promise<FetchedLawsuits> {
-  const search = new URLSearchParams({
-    q: COURTLISTENER_QUERY,
-    type: "r",
-    filed_after: `${year}-01-01`,
-    filed_before: `${year}-12-31`,
-    order_by: "dateFiled desc",
-  });
-  const first = `${COURTLISTENER_SEARCH_URL}?${search.toString()}`;
-  const fetchOptions: RegistryFetchOptions = token ? { ...options, headers: { ...options.headers, Authorization: `Token ${token}` } } : options;
-  const records: Raw[] = [];
-  let count: number | null = null;
-  let next: string | null = first;
-  let pages = 0;
-  try {
-    while (next && pages < COURTLISTENER_MAX_PAGES) {
-      const body: CourtListenerResponse = await registryFetchJson<CourtListenerResponse>(next, fetchOptions);
-      if (count === null && typeof body.count === "number") count = body.count;
-      records.push(...(body.results ?? []));
-      next = body.next ?? null;
-      pages += 1;
-    }
-  } catch (error) {
-    if (error instanceof RegistryHttpError && (error.status === 401 || error.status === 403)) {
-      return {
-        sourceUrl: first,
-        count: null,
-        cases: [],
-        truncated: false,
-        missingFields: [],
-        unexpectedFields: [],
-        authRequired: `CourtListener answered HTTP ${error.status}: search needs an API token${token ? " (the one set was refused)" : "; set COURTLISTENER_API_TOKEN (free account) to load fee lawsuits"}`,
-      };
-    }
-    throw error;
-  }
-  const byDocket = new Map<string, FeeLawsuit>();
-  for (const raw of records) {
-    const docketId = idValue(raw.docket_id);
-    if (!docketId || byDocket.has(docketId)) continue;
-    const { recap_documents: _documents, ...kept } = raw;
-    void _documents;
-    const caseName = cellText(raw.caseName);
-    const path = cellText(raw.docket_absolute_url);
-    byDocket.set(docketId, {
-      docketId,
-      caseName,
-      court: cellText(raw.court),
-      courtId: cellText(raw.court_id),
-      docketNumber: cellText(raw.docketNumber),
-      filedDate: eventDate(raw.dateFiled),
-      docketUrl: path ? new URL(path, "https://www.courtlistener.com").toString() : null,
-      suitNature: cellText(raw.suitNature),
-      cause: cellText(raw.cause),
-      defendantName: defendantOf(caseName),
-      raw: kept,
-    });
-  }
-  const seen = new Set(records.flatMap((r) => Object.keys(r)));
-  return {
-    sourceUrl: first,
-    count,
-    cases: [...byDocket.values()],
-    truncated: next !== null,
-    missingFields: records.length === 0 ? [] : COURTLISTENER_FIELDS.filter((f) => !seen.has(f)),
-    unexpectedFields: [],
-    authRequired: null,
-  };
-}
+// (d) Fee lawsuits from CourtListener were removed on 2026-10-17: its terms allow only personal,
+// educational or research use (DECISIONS.md "No non-commercial data").
 
 // ---------------------------------------------------------------------------
 // (e) Public comments on fee rules (regulations.gov v4; needs a free api.data.gov key)
@@ -1458,9 +1332,14 @@ export const EARLY_WARNING_RELEASES = 6;
 const APPLICATION_WORDS = /\b(merge|merger|mergers|acquire|acquisition|purchase and assumption|branch|branches|charter|conversion|de novo|establish|relocat\w*|close|closing|become a (bank|savings and loan) holding company)\b/i;
 const BANK_WORDS = /\b(bank|bancorp|bancshares|bankshares|banc|savings|trust|financial|holding|n\.a\.|fsb)\b/i;
 
-/** Dated H.2 release folders on the index page ("/releases/h2/20261009/"), newest first. */
+/**
+ * Dated H.2 release folders on the index page, newest first. Links come absolute
+ * ("/releases/h2/20261009/") or relative to the index ("20261009", "20261009/default.htm").
+ */
 export function h2ReleaseDates(html: string): string[] {
-  const dates = [...html.matchAll(/releases\/h2\/(\d{8})\/?/g)].map((m) => m[1]);
+  const absolute = [...html.matchAll(/releases\/h2\/(\d{8})(?!\d)/g)].map((m) => m[1]);
+  const relative = [...html.matchAll(/href\s*=\s*["'](?:\.\/)?(\d{8})(?:\/(?:default\.htm)?)?["'#?]/gi)].map((m) => m[1]);
+  const dates = [...absolute, ...relative].filter((d) => /^(19|20)\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])$/.test(d));
   return [...new Set(dates)].sort().reverse();
 }
 

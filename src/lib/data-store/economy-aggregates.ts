@@ -1,6 +1,7 @@
 import { STATE_FROM_FIPS } from "@/lib/regulatory/economy";
 import { groupExpression, MIN_GROUP, type CallItemGroup } from "./call-report-items";
 import { sql } from "./connection";
+import { HELD_SOURCES, STRUCK_AREA_SOURCES, STRUCK_SOURCE_URL_PATTERN } from "./struck-sources";
 
 /**
  * Reads over the local-economy tables Magellan's economy steps fill: area_statistics (one value
@@ -88,6 +89,9 @@ export async function getAreaStatistics(geoType: AreaGeoType, code: string): Pro
         SELECT a.*, ROW_NUMBER() OVER (PARTITION BY source, series_key ORDER BY period DESC) AS rn
           FROM area_statistics a
          WHERE a.geo_type = ${geoType} AND a.geo_code = ${geoCode}
+           -- Struck sources (DECISIONS.md "No non-commercial data"): rows already loaded are never returned.
+           AND a.source <> ALL(${[...STRUCK_AREA_SOURCES]}::text[])
+           AND COALESCE(a.source_url, '') NOT ILIKE ${STRUCK_SOURCE_URL_PATTERN}
       ) ranked
      WHERE rn <= 2
   `;
@@ -258,9 +262,14 @@ export async function getUrbanRuralCounts(groupBy: CallItemGroup) {
   `;
 }
 
-/** US-send remittance quotes for the newest period, by corridor: median fee and total cost with the quote count. */
-export async function getRemittanceCorridors() {
-  return sql<Array<{ destination_country: string; period: string; quotes: number; firms: number; median_fee: number | null; median_total_cost_pct: number | null }>>`
+/**
+ * US-send remittance quotes for the newest period, by corridor: median fee and total cost with the
+ * quote count. Held: World Bank RPW terms are unconfirmed (DECISIONS.md "No non-commercial data",
+ * 2026-10-17), so this returns nothing until James confirms them; the query is kept for then.
+ */
+export async function getRemittanceCorridors(): Promise<RemittanceCorridorRow[]> {
+  if (HELD_SOURCES.includes("world-bank-remittance-prices")) return [];
+  return sql<RemittanceCorridorRow[]>`
     WITH latest AS (SELECT MAX(period) AS period FROM remittance_prices)
     SELECT r.destination_country, r.period, COUNT(*)::int AS quotes, COUNT(DISTINCT r.firm)::int AS firms,
            percentile_cont(0.5) WITHIN GROUP (ORDER BY r.fee)::float8 AS median_fee,
@@ -270,4 +279,13 @@ export async function getRemittanceCorridors() {
      GROUP BY 1, 2
      ORDER BY 1
   `;
+}
+
+export interface RemittanceCorridorRow {
+  destination_country: string;
+  period: string;
+  quotes: number;
+  firms: number;
+  median_fee: number | null;
+  median_total_cost_pct: number | null;
 }

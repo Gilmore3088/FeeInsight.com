@@ -7,10 +7,8 @@ import {
   cleaningReport,
   commentSubmitter,
   CsvStreamParser,
-  defendantOf,
   eventDate,
   exactNameKey,
-  fetchCourtListenerYear,
   fetchPublishedList,
   findDataLinks,
   h2ReleaseDates,
@@ -178,29 +176,7 @@ describe("SEC", () => {
   });
 });
 
-describe("lawsuits and comments", () => {
-  it("reads the defendant side of a case name", () => {
-    expect(defendantOf("Jane Doe v. First Bank, N.A., et al.")).toBe("First Bank, N.A.");
-    expect(defendantOf("In re Acme Bank Overdraft Litigation")).toBe("Acme Bank");
-    expect(defendantOf("Smith Trust")).toBeNull();
-  });
-
-  it("skips with a reason when CourtListener needs a token", async () => {
-    const fetchImpl = vi.fn(async () => new Response("{}", { status: 401 })) as unknown as typeof fetch;
-    const r = await fetchCourtListenerYear(2025, { fetchImpl, backoffMs: 0 });
-    expect(r.cases).toEqual([]);
-    expect(r.authRequired).toMatch(/COURTLISTENER_API_TOKEN/);
-  });
-
-  it("dedupes dockets and reports fields no result carried", async () => {
-    const result = { caseName: "Doe v. Acme Bank", court: "S.D. Ohio", dateFiled: "2025-02-01", docket_id: 7, docket_absolute_url: "/docket/7/doe-v-acme/" };
-    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ count: 2, next: null, results: [result, result] }), { status: 200 })) as unknown as typeof fetch;
-    const r = await fetchCourtListenerYear(2025, { fetchImpl, backoffMs: 0 });
-    expect(r.cases).toHaveLength(1);
-    expect(r.cases[0]).toMatchObject({ defendantName: "Acme Bank", docketUrl: "https://www.courtlistener.com/docket/7/doe-v-acme/" });
-    expect(r.missingFields).toEqual(["court_id", "docketNumber"]);
-  });
-
+describe("rule comments", () => {
   it("reads the commenter from a regulations.gov title", () => {
     expect(commentSubmitter("Comment from Navy Federal Credit Union")).toBe("Navy Federal Credit Union");
     expect(looksLikeInstitution("Navy Federal Credit Union")).toBe(true);
@@ -211,6 +187,8 @@ describe("lawsuits and comments", () => {
 describe("early warning", () => {
   it("lists H.2 releases newest first and keeps application lines under their heading", () => {
     expect(h2ReleaseDates('<a href="/releases/h2/20261002/">x</a><a href="/releases/h2/20261009/">y</a>')).toEqual(["20261009", "20261002"]);
+    expect(h2ReleaseDates('<a href="20261010">Oct 10</a><a href="20261003/default.htm">Oct 3</a><a href="https://www.federalreserve.gov/releases/h2/20200103/default.htm">2020</a>')).toEqual(["20261010", "20261003", "20200103"]);
+    expect(h2ReleaseDates('<a href="/releases/h2/current/">current</a><a href="123456789">x</a><a href="99999999">y</a>')).toEqual([]);
     const text = "Bank Holding Companies\nAcme Bancorp, Springfield, Illinois -- to acquire Beta Bank, Peoria, Illinois.\nOther business of the board was conducted today in session.";
     const lines = applicationLines(text, "20261009", "2026-10-09", "https://x", "h2");
     expect(lines).toHaveLength(1);

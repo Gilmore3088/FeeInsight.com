@@ -53,7 +53,7 @@ describe("readMembershipHtml", () => {
         <tr><td>Elm CU</td><td></td><td>Narnia</td><td>Send</td></tr>
         <tr><td></td><td>Nowhere</td><td>OH</td><td>Send</td></tr>
       </table>`;
-    const read = readMembershipHtml("fednow", html);
+    const read = readMembershipHtml("reg-ii-exempt", html);
     expect(read.shape).toBe("table");
     expect(read.rows).toHaveLength(2);
     expect(read.rows[0]).toMatchObject({ listedName: "First Bank & Trust", city: "Austin", state: "TX" });
@@ -68,14 +68,14 @@ describe("readMembershipHtml", () => {
     const html = `<ul><li>Home</li><li>About</li><li>Contact</li></ul>
       <h2>A</h2><ul><li>Ally Bank</li><li>Alpine Credit Union</li><li>Amex</li></ul>
       <h2>B</h2><ul><li><a href="#">Bank of Somewhere, N.A.</a></li></ul>`;
-    const read = readMembershipHtml("zelle", html);
+    const read = readMembershipHtml("reg-ii-exempt", html);
     expect(read.shape).toBe("lists");
     expect(read.rows.map((r) => r.listedName)).toEqual(["Ally Bank", "Alpine Credit Union", "Amex", "Bank of Somewhere, N.A."]);
     expect(read.skippedLists).toBe(1);
   });
 
   it("finds nothing in a page that builds its list with script", () => {
-    const read = readMembershipHtml("zelle", `<div id="root"></div><script>render([{"name":"Ally Bank"}])</script>`);
+    const read = readMembershipHtml("reg-ii-exempt", `<div id="root"></div><script>render([{"name":"Ally Bank"}])</script>`);
     expect(read.shape).toBe("none");
     expect(read.rows).toHaveLength(0);
   });
@@ -122,7 +122,7 @@ describe("splitTrailingState", () => {
   });
 
   it("gives RTP list rows their states", () => {
-    const read = readMembershipHtml("rtp", "<ul><li>Elm Bank (TX)</li><li>Oak Credit Union (OH)</li></ul>");
+    const read = readMembershipHtml("reg-ii-exempt", "<ul><li>Elm Bank (TX)</li><li>Oak Credit Union (OH)</li></ul>");
     expect(read.rows.map((r) => r.state)).toEqual(["TX", "OH"]);
     expect(read.missingRoles).not.toContain("state");
   });
@@ -178,7 +178,7 @@ describe("matching", () => {
   const html = (rows: string) => `<table><tr><th>Name</th><th>State</th></tr>${rows}</table>`;
 
   it("matches by name and state, never by name alone when a state is given", () => {
-    const read = readMembershipHtml("fednow", html("<tr><td>First National Bank</td><td>OK</td></tr><tr><td>First National Bank</td><td>KS</td></tr>"));
+    const read = readMembershipHtml("reg-ii-exempt", html("<tr><td>First National Bank</td><td>OK</td></tr><tr><td>First National Bank</td><td>KS</td></tr>"));
     expect(read.rows.map(match)).toEqual([
       { institutionId: 2, method: "name_state", unmatchedReason: null },
       { institutionId: null, method: null, unmatchedReason: "no_match" },
@@ -186,7 +186,7 @@ describe("matching", () => {
   });
 
   it("matches a stateless name only when one institution carries it", () => {
-    const read = readMembershipHtml("zelle", "<ul><li>Navy FCU</li><li>First National Bank</li></ul>");
+    const read = readMembershipHtml("reg-ii-exempt", "<ul><li>Navy FCU</li><li>First National Bank</li></ul>");
     expect(read.rows.map(match)).toEqual([
       { institutionId: 3, method: "name_only_unique", unmatchedReason: null },
       { institutionId: null, method: null, unmatchedReason: "ambiguous" },
@@ -199,7 +199,7 @@ describe("matching", () => {
   });
 
   it("reports unmatched, ambiguous, duplicates and a big count change", () => {
-    const read = readMembershipHtml("zelle", "<ul><li>Navy FCU</li><li>First National Bank</li><li>Navy FCU</li></ul>");
+    const read = readMembershipHtml("reg-ii-exempt", "<ul><li>Navy FCU</li><li>First National Bank</li><li>Navy FCU</li></ul>");
     const { rows, duplicates } = dedupeListed([...read.rows, read.rows[0]]);
     const checks = checkMembershipList({ ...read, rows }, rows.map(match), duplicates, 10);
     expect(checks).toMatchObject({ rows: 2, duplicate_rows: 1, matched: 1, unmatched: 1, ambiguous: 1, previous_rows: 10, count_change_flag: true });

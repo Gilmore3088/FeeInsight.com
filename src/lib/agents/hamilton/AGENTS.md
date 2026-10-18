@@ -337,6 +337,15 @@ transaction. A takedown is a soft rollback (`rolled_back_at`, batch `agentic-run
 unless named, the reason below); a dry run reports and writes nothing. Sections below give
 the detail.
 
+The step must end inside the tick's 300 s function limit (2026-10-17 finding, steps overrun
+the tick budget). Its row loop (`runHamiltonPublish`) stops `PUBLISH_ROW_DEADLINE_MS` (120 s)
+after the step began, once it has decided `PUBLISH_MIN_ROWS_PER_STEP` (50) rows. Rows it did
+not reach get no attempt and publish on the next step. The cross-state top-up read is
+skipped only when the step is already `PUBLISH_TOP_UP_DEADLINE_MS` (160 s) in; the sweeps before
+the rows take 96-129 s, so a skip tied to the row deadline cut NC's and WI's publishes to their
+own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (each sweep's milliseconds, keyed by its result) and `phase_ms`
+(`sweeps_before`, `publish_rows`, `sweeps_after`).
+
 1. Outlier restore (`restoreOutliersNowInRange`, `outlier-rollback.ts`): brings back an
    outlier takedown whose amount is inside today's range, unless the bank already shows that
    fee at that amount. No reason written; it clears one.
@@ -496,7 +505,10 @@ the detail.
     tidy name, up to 100 banks a step; the old name is a `name_retidied` feedback row. No
     rollback.
 25. Account names (`account-names.ts`): a live "Monthly Service Fee" takes the account heading
-    above it, up to 40 banks a step (`name_account_added` feedback row). No rollback.
+    above it, up to 40 banks a step (`name_account_added` feedback row). No rollback. v2 (#1810):
+    with no heading above it, the account Knox's lineup recorded on the raw row names it, when that
+    account reads as an account name, is printed in the fee's own schedule and is on no other
+    generic fee of that schedule (`evidence.heading_from` says which).
 26. Lineup correct (`correctStoredLineups`, `knox/lineup-correct.ts`): lineup values stored
     before Knox v55 that came from a neighbouring account are corrected from the stored text,
     up to 200 documents a step (`lineup_corrected` feedback row). No rollback.
@@ -1050,7 +1062,7 @@ fails a PR that changes one of these constants without updating its line here (#
 
 | Constant | Strategy | Version | File |
 |---|---|---|---|
-| `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v1 | `hamilton/account-names.ts` |
+| `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v2 | `hamilton/account-names.ts` |
 | `CURRENT_COPY_STRATEGY` | `hamilton.current_copy_check` | v2 | `hamilton/current-copy.ts` |
 | `EVAL_VERDICT_VERSION` | — | v8 | `hamilton/eval-verdicts.ts` |
 | `FREQUENCY_FILL_VERSION` | — | v14 | `hamilton/frequency-fill.ts` |

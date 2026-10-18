@@ -62,6 +62,12 @@ export const HAMILTON_PUBLISH_STRATEGY = { strategy: "publish.rules", version: 3
 
 export const HAMILTON_PUBLISH_DEFAULT_LIMIT = 100;
 export const HAMILTON_PUBLISH_MAX_LIMIT = 500;
+/**
+ * A publish step's row loop stops at its deadline (`RunHamiltonPublishOptions.deadlineAt`) once it
+ * has decided at least this many rows, so a slow step still makes progress. Rows it did not reach
+ * get no attempt, stay selectable and are decided by the next publish step.
+ */
+export const PUBLISH_MIN_ROWS_PER_STEP = 50;
 export const HAMILTON_PUBLISH_DEFAULT_MIN_CONFIDENCE = 0.8;
 /**
  * An institution enters the catalog only once it has this many distinct fees (canonical
@@ -177,6 +183,13 @@ export interface RunHamiltonPublishOptions {
   refuseDuplicatesLive?: boolean;
   /** Refuse rows a sweep would take down (`publish-sweep-rules.ts`); defaults to `PUBLISH_REFUSE_SWEEP_RULES_LIVE`. */
   refuseSweepRulesLive?: boolean;
+  /**
+   * Epoch ms after which the row loop stops (after `PUBLISH_MIN_ROWS_PER_STEP` rows), so the step
+   * ends inside the tick (2026-10-17 finding).
+   */
+  deadlineAt?: number;
+  /** Epoch ms after which the cross-state top-up is not read; defaults to `deadlineAt`. */
+  topUpDeadlineAt?: number;
 }
 
 export interface HeldThinInstitution {
@@ -211,6 +224,8 @@ export interface RunHamiltonPublishResult {
   duplicateCheck: PublishDuplicateCheck;
   /** #1069 step 2: rows a sweep (another bank's or an unconfirmed host's document, a business schedule) would take down. */
   sweepCheck: PublishSweepCheck;
+  /** Rows the loop left for the next step because it reached `deadlineAt`, and whether the top-up was skipped. */
+  timeBox: { stopped: boolean; rowsLeft: number; topUpSkipped: boolean };
 }
 
 function boundedLimit(value: unknown): number {
@@ -1998,7 +2013,11 @@ export async function runHamiltonPublish(
   // for its own state's lane to come round (the 100 re-filed returned-check fees sat across 37
   // states while lanes published 0-44 rows each). A lane whose own queue is short now fills the
   // rest with the oldest eligible rows from any state, as the release review does.
-  if (options.stateCode && !options.institutionId && selected.length < limit) {
+  // The top-up is a second catalog read; a step already past `topUpDeadlineAt` leaves it to the
+  // next step. On Oct 17 the whole rows phase, top-up included, took under 8 s (AK, 242 rows).
+  const topUpDeadlineAt = options.topUpDeadlineAt ?? options.deadlineAt;
+  const topUpSkipped = topUpDeadlineAt != null && Date.now() > topUpDeadlineAt;
+  if (options.stateCode && !options.institutionId && selected.length < limit && !topUpSkipped) {
     const taken = new Set(selected.map((row) => Number(row.fee_verified_id)));
     const others = await selectVerifiedFees(db, limit - selected.length, learning, minConfidence, minInstitutionFees);
     selected.push(...others.filter((row) => !taken.has(Number(row.fee_verified_id))));
@@ -2051,7 +2070,15 @@ export async function runHamiltonPublish(
   };
   const stepCopies = new Map<string, ExactCopyRow[]>();
 
-  for (const row of collapseKeepOrder(rows, (row) => collapseLineKey(collapseLineOf(row)))) {
+  const ordered = collapseKeepOrder(rows, (row) => collapseLineKey(collapseLineOf(row)));
+  let reached = 0;
+  let rowsLeft = 0;
+  for (const row of ordered) {
+    if (options.deadlineAt != null && reached >= PUBLISH_MIN_ROWS_PER_STEP && Date.now() > options.deadlineAt) {
+      rowsLeft = ordered.length - reached;
+      break;
+    }
+    reached += 1;
     const base = {
       feeVerifiedId: Number(row.fee_verified_id),
       institutionId: Number(row.institution_id),
@@ -2344,5 +2371,6 @@ export async function runHamiltonPublish(
     results,
     duplicateCheck,
     sweepCheck,
+    timeBox: { stopped: rowsLeft > 0, rowsLeft, topUpSkipped },
   };
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { compareLenders, priorPeriod, railOf, seriesChanges, yearAgoPeriod, type SbcsRow } from "./smallbiz-payments-aggregates";
+import { priorPeriod, railOf, seriesChanges, yearAgoPeriod } from "./smallbiz-payments-aggregates";
 
 describe("period arithmetic", () => {
   it("steps back one period and one year", () => {
@@ -15,7 +15,7 @@ describe("period arithmetic", () => {
 });
 
 describe("series changes", () => {
-  const base = { source: "fed-payments", series_key: "fednow_volume", unit: "count", note: null };
+  const base = { source: "fed-payments", series_key: "fedach_volume", unit: "count", note: null };
 
   it("gives the latest quarter with its quarter and year changes", () => {
     const [c] = seriesChanges([
@@ -44,42 +44,11 @@ describe("series changes", () => {
   });
 
   it("names the payment rail of a series", () => {
-    expect(railOf("nacha_same_day_ach_volume")).toBe("nacha_same_day_ach");
     expect(railOf("fedach_total_volume_millions")).toBe("fedach");
-    expect(railOf("fed_check_volume")).toBe("fed_check");
-    expect(railOf("fednow_value")).toBe("fednow");
-  });
-});
-
-describe("SBCS lender comparison", () => {
-  const row = (lender: string, value: number | null, metric = "approved_for_all", note: string | null = null): SbcsRow => ({
-    geo_type: "nation",
-    geo_code: "US",
-    period: "2025",
-    value,
-    unit: "percent",
-    note,
-    topic: "approval",
-    metric_key: metric,
-    metric: "Approved for all",
-    lender_type: lender,
-  });
-
-  it("puts lenders side by side with the gaps to large banks", () => {
-    const [c] = compareLenders([row("large_bank", 44), row("small_bank", 56), row("credit_union", 50), row("online_lender", null, "approved_for_all", "(S)")]);
-    expect(c).toMatchObject({
-      period: "2025",
-      metric_key: "approved_for_all",
-      by_lender: { large_bank: 44, small_bank: 56, credit_union: 50, online_lender: null },
-      lenders_with_value: 3,
-      credit_union_vs_large_bank: 6,
-      small_bank_vs_large_bank: 12,
-      notes: { online_lender: "(S)" },
-    });
-  });
-
-  it("gives no gap when large banks are missing", () => {
-    const [c] = compareLenders([row("credit_union", 50), row("small_bank", 56)]);
-    expect(c.credit_union_vs_large_bank).toBeNull();
+    expect(railOf("frps_number_card")).toBe("frps");
+    // Struck rails have no rail, so the reader drops their rows.
+    expect(railOf("nacha_same_day_ach_volume")).toBe("other");
+    expect(railOf("fed_check_volume")).toBe("other");
+    expect(railOf("fednow_value")).toBe("other");
   });
 });

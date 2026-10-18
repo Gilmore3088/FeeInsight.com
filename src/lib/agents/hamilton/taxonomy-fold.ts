@@ -739,6 +739,25 @@ export const HAND_REFILES: readonly HandRefile[] = [
   // `INCOMING_WIRE` cannot reach it; the $10 is the incoming price (outgoing is $20, live as 66596).
   { feePublishedId: 66594, from: "wire_domestic_outgoing", amount: 10, to: "wire_domestic_incoming", name: "Domestic Wire Transfer Fees: Incoming",
     why: "#1788, inst 113 (ServisFirst), doc 19655: \"Domestic Wire Transfer Fees | Incoming - $10.00 Outgoing - $20.00\"" },
+  // #1829 (#1691 cleanup, read-only Oct 17): fax fees filed as account research; a fax is document
+  // reproduction (`fax_fee` in the fold map). Neither bank has a live fax fee under document reproduction.
+  { feePublishedId: 152977, from: "account_research", amount: 1, to: "document_reproduction", name: "Fax (Domestic & International)",
+    why: "#1829, inst 480 (Open Bank), doc 36784: \"Fax (Domestic & International)\" then \"$1\"" },
+  { feePublishedId: 152288, from: "account_research", amount: 2, to: "document_reproduction", name: "Faxes (Domestic only)",
+    why: "#1829, inst 1229 (PromiseOne Bank), doc 36945: \"Faxes (Domestic only) | $2.00\"" },  // #1828 (read-only, Oct 17): a two-column loan fee table read across its columns. The left column's
+  // CUDL late fee is 5% (live in the rate catalog as 83791); the $4.95 is the right column's
+  // Personal Credit Line returned payment. No returned payment fee is live at the bank (152591, the
+  // same $4.95 under "Reconveyance", came down in #1834), so the row is re-filed, not taken down.
+  // Returned loan payments are other lending (Knox v72, #1534).
+  { feePublishedId: 83794, from: "late_payment", amount: 4.95, to: "other_lending_fee", name: "Returned payment",
+    why: "#1828, inst 7859 (Oregon Community FCU), doc 13272: \"Credit Union Direct Lending (CUDL) late payment…… 5% | Returned payment…… | $4.95\" under \"Loan fees | Personal Credit Line fees\"" },  // #1828 (read-only, Oct 17): the same schedule's card column joined to the safe deposit box
+  // column's heading and first rent. The page prints "Expedited card delivery" with "Domestic ... $30"
+  // and "International (Int'l) ... $45" under it, so rush_card $30 is right and only the name is
+  // renamed in place (the $45 international price is not live). Runs once, only while the live name
+  // is still the joined one.
+  { feePublishedId: 83792, from: "rush_card", amount: 30, to: "rush_card", name: "Expedited card delivery (domestic)",
+    oldName: "Safe deposit box fees Expedited card delivery 2 X 5 annual rent (Downtown Branch only)",
+    why: "#1828, inst 7859 (Oregon Community FCU), doc 13272: \"Expedited card delivery | 2 X 5 annual rent (Downtown Branch only)…… $30\" then \"Domestic…… $30 | 3 X 5 annual rent…… $35\" and \"International (Int'l)…… $45\"" },
 ];
 
 interface HandRow {

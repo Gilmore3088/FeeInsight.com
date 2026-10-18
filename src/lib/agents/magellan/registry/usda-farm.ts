@@ -13,7 +13,7 @@ import { HOURS, runRiskCostArea, yearsNewestFirst, type RiskCostRunResult } from
  */
 
 export const USDA_FARM_SOURCE = "usda-farm";
-export const USDA_FARM_PARSER_VERSION = 1;
+export const USDA_FARM_PARSER_VERSION = 2;
 /** Years kept: ERS revises recent years at each release and publishes a forecast for the current one. */
 export const USDA_FARM_YEARS = 10;
 

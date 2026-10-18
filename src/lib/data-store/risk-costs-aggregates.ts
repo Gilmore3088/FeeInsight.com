@@ -3,8 +3,8 @@ import { sql } from "./connection";
 
 /**
  * Reads for Hamilton over the risk-and-cost area sources in area_statistics: US Courts
- * bankruptcy filings (`uscourts-bankruptcy`), USDA farm income and cash rents (`usda-farm`), BLS
- * OEWS bank-occupation wages (`bls-oews`) and FINRA NFCS state survey shares (`finra-nfcs`).
+ * bankruptcy filings (`uscourts-bankruptcy`), USDA farm income and cash rents (`usda-farm`) and
+ * BLS OEWS bank-occupation wages (`bls-oews`).
  * Server only; nothing here fetches from outside.
  *
  * Each read puts an area's value next to the nation (and, for a metro or county, its state) for
@@ -17,7 +17,6 @@ export const RISK_COST_SOURCES = {
   bankruptcy: "uscourts-bankruptcy",
   farm: "usda-farm",
   oews: "bls-oews",
-  nfcs: "finra-nfcs",
 } as const;
 
 export interface AreaValueRow {
@@ -356,7 +355,7 @@ export async function getOewsStateSpread(occupation: (typeof OEWS_OCCUPATION_SLU
 }
 
 // ---------------------------------------------------------------------------
-// USDA farm and NFCS
+// USDA farm
 // ---------------------------------------------------------------------------
 
 /** A state's farm income and wealth, newest year, against the nation and a year earlier. */
@@ -386,9 +385,4 @@ export async function getCountyCashRents(stateCode: string, seriesKey = "usda_fa
     county_median: medianWithCount(counties.map((r) => r.value)),
     counties,
   };
-}
-
-/** A state's NFCS shares for its newest wave against the nation, with the earlier wave's change (respondent counts in raw). */
-export function getStateFinancialCapability(stateCode: string) {
-  return getAreaVsBenchmarks({ source: RISK_COST_SOURCES.nfcs, geoType: "state", geoCode: stateCode, seriesPrefix: "nfcs_", periods: 2, compare: "previous" });
 }

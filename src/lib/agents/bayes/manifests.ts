@@ -290,6 +290,9 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // Old texts are read again only when KNOX_RULES_STRATEGY moves, and the knox.rules manifest
   // counts that replay.
   KNOX_ACCOUNT_TABLE_STRATEGY: "A pass 2 specialist under extract.rules; the knox.rules manifest counts the replay when KNOX_RULES_STRATEGY moves.",
+  // v7 (#1827): a price-first row keeps its own price. It moves with KNOX_RULES_STRATEGY (v79), whose
+  // knox.rules manifest counts the replay.
+  KNOX_TABLE_STRATEGY: "A pass 2 specialist under extract.rules; it moves with KNOX_RULES_STRATEGY, whose knox.rules manifest counts the replay.",
   // v75 (Knox recall, Oct 17): raised from 26 so every current copy read before v75 is read once
   // more. It is one of the extract step's own re-read triggers, which the knox.rules manifest's
   // queue counts with the same query (`countKnoxRereadsDue`), so the replay is counted there.
@@ -376,6 +379,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v17 (#1646): name words match where a word begins. The version is in each institution's check
   // fingerprint, so every publish step's batch re-checks institutions not yet checked at v17.
   SOURCE_CHECK_STRATEGY: "Its fingerprint carries the version, so each publish step's batch re-checks every institution not yet checked at the new version; nothing to replay.",
+  // v2 (#1810): a fee with no heading above it takes the account Knox recorded on its raw row.
+  ACCOUNT_NAME_STRATEGY: "Its fingerprint carries the version, so each publish step's batch (40 institutions) re-reads every institution with a generic monthly name not yet read at v2; nothing to replay.",
   STATE_LISTS_PARSER_VERSION: "New sources (depositories, non-bank lenders, Urban debt held until its license is confirmed); no older rows to replay.",
 };
 
@@ -406,6 +411,8 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // after "non-", and an ATM transaction verification re-files to account research.
     // v72 (Oct 17, #1788): an international ATM fee re-files to card_foreign_txn, a sustained overdraft
     // to continuous_od and an incoming wire to its incoming key; an optional add-on fails monthly maintenance.
+    // v73 (Oct 17, #1837): a bare direction row read under another column's heading ("Check Printing:
+    // Incoming", a wire price) fails outside the categories a direction prices.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

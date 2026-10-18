@@ -48,6 +48,15 @@ describe("registry scheduler", () => {
     expect(candidates.filter((c) => c.startsWith("fdic-financials:"))).toHaveLength(3);
   });
 
+  it("schedules nothing for a held source, and no partition of a struck one", () => {
+    const lists = registryPartitionsBySource(now, { year: 2025, quarter: 4 });
+    const of = (source: string) => lists.find((entry) => entry.source === source);
+    expect(of("world-bank-remittance-prices")?.partitions).toEqual([]);
+    for (const struck of ["nacha-volume", "kcfed-sb-lending", "atlanta-fed-payment-choice", "fed-sbcs", "fhlb-advance-rates"]) expect(of(struck)).toBeUndefined();
+    expect(of("fed-payments")?.partitions).toEqual(["fedach", "frps"]);
+    expect(registryCandidates(now, { year: 2025, quarter: 4 }).some((c) => c.source === "world-bank-remittance-prices")).toBe(false);
+  });
+
   it("schedules state bills only once the Open States key is set", () => {
     const bills = (env: Record<string, string>) =>
       registryPartitionsBySource(now, { year: 2025, quarter: 4 }, env as NodeJS.ProcessEnv).find((entry) => entry.source === "state-bills")?.partitions ?? [];

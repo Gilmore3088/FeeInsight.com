@@ -205,6 +205,8 @@ export function roleFor(text: string): ContactRole {
  * a line quoting an address, "CEO For questions or concerns not resolved by staff").
  */
 const NOT_A_TITLE = /^\s*contact\b|@|\byour\b|\be-?mail:|message|\bquestions?\b|\bconcerns?\b|\bnot resolved\b|\bmailing\b|branches served|p\.?\s?o\.?\s+box|\bby mail\b|\battn\b|\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}|\b(?:19|20)\d{2}\b|^\s*(?:operations|commercial services)\s*$/i;
+/** A sentence printed where a title would be ("Angie serves on…", "- Checking accounts are…", "Per Item Fee: $0.15"). */
+const SENTENCE = /^\s*[-–•*]|[a-z]{3}[.!?]\s*$|\b(?:is|are|was|were|serves|served|has|have|our|we|please)\b|\$\s?\d/i;
 /** Words a page prints where a name would be ("Accessibility Statement", "Commercial Lender", "SEND EMAIL", "Mailing Address"). */
 const NOT_A_NAME =
   /\b(?:statement|e-?mail|send|contact|us|department|inquir\w*|form|request|lender|lending|banker|officer|underwriter|support|services?|press|human|resources|collections|advisor|counsel|administrator|coordinator|manager|message|branch|team|bank|union|pointe|residential|commercial|general|meeting|annual|mailing|address|questions?|concerns?|hours|location|phone|fax|office)\b/i;
@@ -221,7 +223,7 @@ export function cleanContactName(name: string | null): string | null {
 export function cleanContactTitle(title: string | null): string | null {
   if (!title) return null;
   const trimmed = title.trim().replace(/[,&|*:]+\s*$/, "").trim();
-  return trimmed && !NOT_A_TITLE.test(trimmed) ? trimmed : null;
+  return trimmed && !NOT_A_TITLE.test(trimmed) && !SENTENCE.test(trimmed) ? trimmed : null;
 }
 
 /** Mailbox names that belong to a role, so any printed name beside them may be the person in it. */
@@ -253,10 +255,16 @@ export function nameFitsEmail(name: string | null, email: string): boolean {
 /** "Contact Nicole Andrushko, VP of Marketing, at": a sentence that names the person and their title. */
 const CONTACT_SENTENCE = /^\s*[Cc]ontact\s+([A-Z][\w.'-]+(?:\s+[A-Z][\w.'-]+){1,2}),\s*(.+?)(?:,?\s+at)?\s*[.:,]?\s*$/;
 
-/** The name and title out of a "Contact <name>, <title>, at" line, or null for any other line. */
+/** "Meet our President and CEO, Julieann Thurlow.": the title first, then the name. */
+const MEET_SENTENCE = /^\s*(?:[Mm]eet|[Ii]ntroducing)\s+(?:our\s+)?(.{3,80}?),\s*([A-Z][\w.'-]+(?:\s+[A-Z][\w.'-]+){1,2})\s*[.!]?\s*$/;
+
+/** The name and title out of a "Contact <name>, <title>, at" or "Meet our <title>, <name>" line, or null for any other line. */
 export function splitContactSentence(line: string | null): { name: string; title: string } | null {
-  const match = line ? CONTACT_SENTENCE.exec(line) : null;
-  return match ? { name: match[1], title: match[2] } : null;
+  if (!line) return null;
+  const contact = CONTACT_SENTENCE.exec(line);
+  if (contact) return { name: contact[1], title: contact[2] };
+  const meet = MEET_SENTENCE.exec(line);
+  return meet ? { name: meet[2].replace(/(?<!\b(?:Jr|Sr))\.$/, ""), title: meet[1] } : null;
 }
 
 export function normalizeContact<T extends { name: string | null; title: string | null; role: ContactRole; kind: ContactKind; email?: string }>(input: T): T {
@@ -297,8 +305,10 @@ export function extractContacts(html: string, pageUrl: string, websiteHost: stri
       const kind: ContactKind = GENERAL_MAILBOX.test(local) ? "general" : "person";
       const window = lines.slice(Math.max(0, index - 3), index + 1);
       const before = window.map((text) => text.replace(raw, "").trim()).filter(Boolean);
-      const title = kind === "person" ? cleanContactTitle([...before].reverse().find(looksLikeTitle) ?? null) : null;
-      const name = kind === "person" ? cleanContactName([...before].reverse().find(looksLikeName) ?? null) : null;
+      const titleLine = kind === "person" ? [...before].reverse().find(looksLikeTitle) ?? null : null;
+      const sentence = splitContactSentence(titleLine);
+      const title = cleanContactTitle(sentence ? sentence.title : titleLine);
+      const name = kind === "person" ? cleanContactName(sentence ? sentence.name : [...before].reverse().find(looksLikeName) ?? null) : null;
       found.set(email, {
         email,
         kind,
@@ -343,6 +353,8 @@ export function extractLeaders(html: string, pageUrl: string): FoundLeader[] {
   lines.forEach((line, index) => {
     const next = lines[index + 1];
     if (next && looksLikeTitle(next)) consider(line, next, `${line} | ${next}`);
+    const sentence = splitContactSentence(line);
+    if (sentence) return consider(sentence.name, sentence.title, line);
     const pair = NAME_AND_TITLE.exec(line);
     if (pair && looksLikeTitle(pair[2])) consider(pair[1].trim(), pair[2].trim(), line);
   });
@@ -1050,7 +1062,7 @@ export async function listProspectLeaders(db: SqlTag = sql): Promise<ProspectLea
   `;
   const leaders = rows
     .map((row) => {
-      const title = String(row.title);
+      const title = cleanContactTitle(String(row.title)) ?? "";
       return {
         institution_id: Number(row.institution_id),
         institution_name: institutionDisplayName(String(row.institution_name)),

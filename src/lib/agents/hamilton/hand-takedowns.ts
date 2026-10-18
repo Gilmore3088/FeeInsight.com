@@ -561,6 +561,27 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
   { feePublishedId: 107315, institutionId: 8448, canonicalFeeKey: "monthly_maintenance", amount: 20, feeName: "Service charge",
     reason: "source_mismatch: #1788", issue: 1788, kind: "wrong_category",
     evidence: "Velocity CU (velocitycu.com fee schedule): the $20.00 is the next cell's \"CU Rewards Program for Debit Mastercard* .......$20.00 annually\", a rewards add-on; the row's own \"Service Charge\" line is \"$10.00 per month\" (live as 32923). Choice Checking's $20 is its own live row (95335)." },
+  // #1691 cleanup (read-only, Oct 17): live misreads that peer check v5 released, found by its fresh
+  // held-out grade and re-read against the bank's stored text. One entry per cause issue; the two
+  // fax fees are re-filed in place instead (taxonomy-fold HAND_REFILES, #1829). 4 entries. Central
+  // Bank's key deposit (152139) stays: whether a key deposit is a fee is James's call on #1831.
+  { feePublishedId: 152973, institutionId: 8637, canonicalFeeKey: "safe_deposit_box", amount: 11, feeName: "Key Deposit",
+    reason: "source_mismatch: #1827", issue: 1827, kind: "wrong_amount",
+    evidence: "Valley Strong CU (doc 36716, text 34862), a price-first table: \"| **$20** | Key Deposit |\" then \"| **$11** | Key Replacement |\"; the $11 is the next row's key replacement price, read one row late (#1827). Whether a key deposit is a fee at all is #1831." },
+  { feePublishedId: 152366, institutionId: 4624, canonicalFeeKey: "other_lending_fee", amount: 1000, feeName: "Mortgage satisfaction fee (varies)",
+    reason: "source_mismatch: #1827", issue: 1827, kind: "wrong_amount",
+    evidence: "Citadel FCU (doc 32251, text 30203): \"Mortgage satisfaction fee (varies)\" then \"$1,000.00 Mortgage modification\"; the satisfaction fee has no price, and the $1,000 is the modification fee." },
+  { feePublishedId: 152591, institutionId: 7859, canonicalFeeKey: "other_lending_fee", amount: 4.95, feeName: "Reconveyance",
+    reason: "source_mismatch: #1828", issue: 1828, kind: "wrong_amount",
+    evidence: "Oregon Community FCU (doc 19849, text 15643): \"Reconveyance………… Actual Cost | Returned payment………… | $4.95\"; reconveyance is at actual cost, and the $4.95 is the next line's returned loan payment." },
+  { feePublishedId: 152306, institutionId: 8579, canonicalFeeKey: "bill_pay", amount: 35, feeName: "Bill Payment, ACH, or Check",
+    reason: "duplicate of #53765 (#1830)", issue: 1830, kind: "duplicate",
+    requiresLive: { feePublishedId: 53765, amount: 35, feeName: "Stop Payment Order for Bill Payment, ACH, or Check (one free per calendar year)" },
+    evidence: "The Southern FCU (doc 36961, text 35049): \"Stop payment order (one free per calendar year) Bill Payment, ACH, or Check | $35.00\": the stop payment fee, cut to its tail and filed as bill pay. It is already live as stop_payment 53765 at $35, so a re-file would list it twice." },
+  // #1837 (James chose "Take them down", Oct 17): East River FCU's two-column schedule read line by line.
+  { feePublishedId: 45157, institutionId: 5622, canonicalFeeKey: "overdraft", amount: 0, feeName: "Non-Sufficient Funds / Overdraft: Non-members",
+    reason: "source_mismatch: #1837", issue: 1837, kind: "wrong_category",
+    evidence: "East River FCU (doc 16371, text 11087): the left column's \"Non-Sufficient Funds / Overdraft\" heading sits over the right column's \"Notary Service\" rows; \"Non-members ... FREE\" is the free notary row, not an overdraft price." },
 ];
 
 export interface LiveTakedownRow {

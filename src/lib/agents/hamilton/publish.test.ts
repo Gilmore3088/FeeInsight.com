@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import { ARTICLE_PAGE_RESELECT_SQL, ARTICLE_PAGE_SKIP_REASON, CATALOG_DEPTH_LIVE_SQL, decidePriorFee, HAMILTON_PUBLISH_MIN_INSTITUTION_FEES, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, qualifiedLines, namesShareReading, newerCopyPrintsLine, otherBalanceLine, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, sentenceFragmentName, separateLines } from "./publish";
+import { PUBLISH_MIN_ROWS_PER_STEP, ARTICLE_PAGE_RESELECT_SQL, ARTICLE_PAGE_SKIP_REASON, CATALOG_DEPTH_LIVE_SQL, decidePriorFee, HAMILTON_PUBLISH_MIN_INSTITUTION_FEES, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, qualifiedLines, namesShareReading, newerCopyPrintsLine, otherBalanceLine, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, sentenceFragmentName, separateLines } from "./publish";
 import { feePageKey } from "./page-key";
 import { PUBLISH_REFUSE_SWEEP_RULES_LIVE, publishSweepRefusals } from "./publish-sweep-rules";
 
@@ -103,6 +103,23 @@ const priorPublishedFee = {
 };
 
 describe("Hamilton agentic publish", () => {
+  it("stops the row loop at its deadline after the minimum rows, and leaves the rest undecided (2026-10-17)", async () => {
+    // 70 distinct rows at 70 banks; a deadline already past.
+    const rows = Array.from({ length: 70 }, (_, index) => ({
+      ...verifiedFee, fee_verified_id: 5000 + index, fee_raw_id: 6000 + index, institution_id: 7000 + index, source_document_id: 8000 + index,
+    }));
+    const boxed = await runHamiltonPublish({ runId: 1700, db: asPublishDb(createDbMock(rows)), deadlineAt: Date.now() - 1, stateCode: "TX" });
+    expect(boxed.processedVerifiedFees).toBe(PUBLISH_MIN_ROWS_PER_STEP);
+    expect(boxed.timeBox).toEqual({ stopped: true, rowsLeft: 70 - PUBLISH_MIN_ROWS_PER_STEP, topUpSkipped: true });
+    // The top-up has its own, later deadline: a step past the row deadline still tops up.
+    const toppedUp = await runHamiltonPublish({ runId: 1702, db: asPublishDb(createDbMock(rows)), deadlineAt: Date.now() - 1, topUpDeadlineAt: Date.now() + 60_000, stateCode: "TX" });
+    expect(toppedUp.timeBox.topUpSkipped).toBe(false);
+    // The rows it did not reach get no attempt: the next step selects them again.
+    const free = await runHamiltonPublish({ runId: 1701, db: asPublishDb(createDbMock(rows)) });
+    expect(free.processedVerifiedFees).toBe(70);
+    expect(free.timeBox).toEqual({ stopped: false, rowsLeft: 0, topUpSkipped: false });
+  });
+
   it("rejects verified rows filed under the wrong category instead of publishing them", async () => {
     const db = createDbMock([
       { ...verifiedFee, fee_name: "Continuous Overdraft Fee (per day)", amount: "3.00" },
