@@ -13,6 +13,13 @@ describe("report FAQ (#1174)", () => {
     expect(items[0].question).toContain(REPORT_OFFER.name);
   });
 
+  it("says who it is for, with Hamilton as the next step (#1174)", () => {
+    const who = items.find((item) => item.question === "Who is it for?");
+    expect(who?.answer).toContain(REPORT_OFFER.audience);
+    expect(who?.answer).toContain("Hamilton");
+    expect(who?.answer).not.toContain("Hamilton Pro");
+  });
+
   it("never promises a turnaround or a fixed price", () => {
     const text = items.map((item) => `${item.question} ${item.answer}`).join(" ");
     // "Within one business day" is the reply promise; no delivery time is given in digits.

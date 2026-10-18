@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { REPORT_REQUEST_HREF } from "./lib/report-request-href";
 
 function requestHeadersWithPath(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
@@ -18,7 +19,7 @@ const LEGACY_PATH_REDIRECTS: Record<string, string> = {
   "/consumer": "/institutions",
   "/check": "/institutions",
   "/districts": "/research#districts",
-  "/waitlist": "/for-institutions#report",
+  "/waitlist": REPORT_REQUEST_HREF,
   // Typed and drafted often; the site's own links go to /subscribe.
   "/pricing": "/subscribe",
 };

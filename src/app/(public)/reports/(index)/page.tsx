@@ -32,7 +32,7 @@ import { formatReadOn, mapStates, sampleExhibit, type StateCoverage } from "./re
 export const revalidate = 3600;
 
 export const metadata: Metadata = {
-  title: "Fee Reports",
+  title: `${REPORT_OFFER.name} for Banks and Credit Unions`,
   description: `See where your fees stand against your competitors: free national, Fed district and state fee reports, and the ${REPORT_OFFER.name}.`,
 };
 

@@ -1,4 +1,4 @@
-import { REPORT_INCLUDES, REPORT_OFFER } from "@/lib/constants";
+import { REPORT_INCLUDES, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
 
 export interface FaqItem {
   question: string;
@@ -14,6 +14,10 @@ export function reportFaqItems(): FaqItem[] {
     {
       question: `What is the ${REPORT_OFFER.name}?`,
       answer: "A one-time report placing your published fees next to named competitors in your market, fee by fee.",
+    },
+    {
+      question: "Who is it for?",
+      answer: `${REPORT_OFFER.audience}. Teams that want it kept current use Hamilton, the ${SITE_NAME} workspace.`,
     },
     {
       question: "What does it cost?",

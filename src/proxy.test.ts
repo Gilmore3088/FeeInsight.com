@@ -59,7 +59,7 @@ describe("proxy", () => {
       ["https://feeinsight.com/check", "https://feeinsight.com/institutions"],
       ["https://feeinsight.com/pricing", "https://feeinsight.com/subscribe"],
       ["https://feeinsight.com/districts", "https://feeinsight.com/research#districts"],
-      ["https://feeinsight.com/waitlist", "https://feeinsight.com/for-institutions#report"],
+      ["https://feeinsight.com/waitlist", "https://feeinsight.com/reports?report=institution#request"],
     ];
     for (const [from, to] of cases) {
       const response = proxy(request(from));

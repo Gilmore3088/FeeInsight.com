@@ -52,6 +52,8 @@ export const REPORT_OFFER = {
   institutionCtaLabel: "Request your institution report",
   nextStep: "We reply within one business day with scope and price",
   refreshLabel: "Quarterly refreshes on request",
+  /** Who buys it (the FAQ's "Who is it for?", #1174). */
+  audience: "Marketing, product and pricing managers at banks and credit unions",
 } as const;
 /** The report price inside a sentence ("a report from $300"), from the one label (#1176). */
 export const REPORT_PRICE_INLINE = `${REPORT_OFFER.priceLabel.charAt(0).toLowerCase()}${REPORT_OFFER.priceLabel.slice(1)}`;

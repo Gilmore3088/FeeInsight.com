@@ -9,6 +9,7 @@ import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { benchmarkReportPath, isFedDistrict, type BenchmarkScope } from "@/lib/benchmark-report";
 import { LEAD_HONEYPOT_FIELD } from "@/lib/lead-capture";
 import { readFirstTouch } from "@/lib/marketing-touch";
+import { REPORT_REQUEST_HREF, reportRequestHref } from "@/lib/report-request-href";
 import { STATE_CODES, STATE_NAMES } from "@/lib/us-states";
 import { HoneypotField, honeypotValue } from "@/components/public/honeypot-field";
 import { InstitutionCombobox, type PickedInstitution } from "./institution-combobox";
@@ -22,7 +23,6 @@ const DISTRICT_REPORT_SOURCE = "report_district";
 /** Each bank's free page is the instant own-institution snapshot (James, 8 Oct 2026). */
 const OWN_INSTITUTION_HREF = "/institutions";
 const DEFAULT_SRC = "for-institutions";
-const INSTITUTION_REPORT_HREF = "/reports?report=institution#request";
 const SRC_PATTERN = /^[a-z0-9][a-z0-9_-]{0,39}$/i;
 const FALLBACK_ID_SUFFIX = "-fallback";
 
@@ -560,14 +560,8 @@ function RequestReportSuccess({
 
 /** The paid-report link after a free report, keeping the bank the reader arrived with. */
 export function institutionReportHref(prefill: Pick<Prefill, "institutionId" | "institutionName" | "src"> | null): string {
-  if (!prefill?.institutionId || !prefill.institutionName) return INSTITUTION_REPORT_HREF;
-  const params = new URLSearchParams({
-    report: "institution",
-    institution: String(prefill.institutionId),
-    name: prefill.institutionName,
-    src: prefill.src,
-  });
-  return `/reports?${params.toString()}#request`;
+  if (!prefill?.institutionId || !prefill.institutionName) return REPORT_REQUEST_HREF;
+  return reportRequestHref({ institution: String(prefill.institutionId), name: prefill.institutionName, src: prefill.src });
 }
 
 function FreeReportSuccess({
