@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import type { User } from "@/lib/auth";
 import { withTransaction } from "@/lib/data-store/connection";
+import { PRE_CHECKOUT_INTENT } from "@/lib/pro-checkout-institution";
 import {
   acceptWorkspaceInvitation,
   getWorkspaceInvitationForAccept,
@@ -145,15 +146,18 @@ export async function acceptSignedWorkspaceInvite(params: {
       );
       if (!membership) return { status: "failed" };
       // A teammate with no saved bank starts on the team's bank, so Hamilton follows the
-      // team's peer group from their first visit. A bank they already saved is kept.
+      // team's peer group from their first visit. A bank they already saved is kept, except
+      // one picked before paying, which the team's bank replaces.
       await tx`
         INSERT INTO hamilton_workspace_contexts (user_id, selected_institution_id, selected_source, created_at, updated_at)
         VALUES (${params.user.id}, ${invitation.institutionId}, 'manual', NOW(), NOW())
         ON CONFLICT (user_id) DO UPDATE SET
           selected_institution_id = EXCLUDED.selected_institution_id,
           selected_source = EXCLUDED.selected_source,
+          last_intent = NULL,
           updated_at = NOW()
         WHERE hamilton_workspace_contexts.selected_institution_id IS NULL
+           OR hamilton_workspace_contexts.last_intent = ${PRE_CHECKOUT_INTENT}
       `;
       return { status: "accepted", membership };
     });

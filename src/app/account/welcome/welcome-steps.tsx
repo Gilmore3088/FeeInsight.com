@@ -110,6 +110,8 @@ export function WelcomeSteps({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedInstitution, setSavedInstitution] = useState<string | null>(null);
+  // The bank just picked, so the plans link prices it without another search (#1958).
+  const [savedInstitutionId, setSavedInstitutionId] = useState<number | null>(null);
   const [pickedInstitution, setPickedInstitution] = useState(workspaceInstitution !== null);
   const [notAnInstitution, setNotAnInstitution] = useState(
     !!user.institution_type && user.institution_type !== "bank" && user.institution_type !== "credit_union"
@@ -130,6 +132,7 @@ export function WelcomeSteps({
       return;
     }
     setSavedInstitution(result.institutionName ?? null);
+    setSavedInstitutionId(result.institutionId ?? null);
     setStep(2);
   }
 
@@ -338,7 +341,7 @@ export function WelcomeSteps({
           <div className="grid grid-cols-2 gap-3 mb-6">
             {TOOLS.map((tool) => {
               const href = tool.requiresPro && !isPro
-                ? activationPending ? refreshHref : "/subscribe"
+                ? activationPending ? refreshHref : savedInstitutionId ? `/subscribe?inst=${savedInstitutionId}` : "/subscribe"
                 : tool.href;
 
               return (

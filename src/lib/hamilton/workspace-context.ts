@@ -1,4 +1,5 @@
 import { sql } from "@/lib/data-store/connection";
+import { PRE_CHECKOUT_INTENT } from "@/lib/pro-checkout-institution";
 import {
   getHamiltonInstitutionContext,
   parseInstitutionId,
@@ -95,7 +96,9 @@ export async function setHamiltonWorkspaceContext(params: {
     ON CONFLICT (user_id) DO UPDATE SET
       selected_institution_id = EXCLUDED.selected_institution_id,
       selected_source = EXCLUDED.selected_source,
-      last_intent = COALESCE(EXCLUDED.last_intent, hamilton_workspace_contexts.last_intent),
+      -- A write with no intent keeps the last one, except the pre-checkout mark: a later choice is
+      -- deliberate, so checkout and invites must no longer replace it (#1958).
+      last_intent = COALESCE(EXCLUDED.last_intent, NULLIF(hamilton_workspace_contexts.last_intent, ${PRE_CHECKOUT_INTENT})),
       updated_at = NOW()
   `;
 }
