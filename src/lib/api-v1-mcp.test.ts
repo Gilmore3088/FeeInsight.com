@@ -22,6 +22,8 @@ function handlers(): McpV1Handlers {
     feeChanges: vi.fn(async () => Response.json({ count: 0, data: [] })),
     branches: vi.fn(async () => Response.json({ total: 0, data: [] })),
     market: vi.fn(async () => Response.json({ data: [] })),
+    peers: vi.fn(async () => Response.json({ categories: [] })),
+    rateFees: vi.fn(async () => Response.json({ total: 0, data: [] })),
   };
 }
 
@@ -39,6 +41,21 @@ describe("MCP connector", () => {
     expect(response.status).toBe(401);
     expect(response.headers.get("www-authenticate")).toBe("Bearer");
     await expect(response.json()).resolves.toMatchObject({ code: "api_key_required" });
+  });
+
+  it("tells a caller with a revoked key why, with its own code", async () => {
+    vi.mocked(validateApiKey).mockResolvedValue({
+      valid: false,
+      organizationId: null,
+      tier: "free",
+      error: "API key has been revoked.",
+      code: "key_revoked",
+    });
+
+    const response = await handleMcpPost(rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" }), handlers());
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toMatchObject({ code: "key_revoked" });
   });
 
   it("initializes with the client's protocol version and offers tools", async () => {
@@ -109,12 +126,38 @@ describe("MCP connector", () => {
     expect(market.nextUrl.searchParams.get("institution_id")).toBe("69");
   });
 
+  it("sends peer, rate-fee and changed-since calls to their routes", async () => {
+    const h = handlers();
+    const response = await handleMcpPost(
+      rpc([
+        { jsonrpc: "2.0", id: 20, method: "tools/call", params: { name: "get_peer_comparison", arguments: { institution_id: 12, peer_ids: [4, 5] } } },
+        { jsonrpc: "2.0", id: 21, method: "tools/call", params: { name: "get_rate_fees", arguments: { state: "TX", category: "card_foreign_txn", updated_since: "2026-10-01" } } },
+        { jsonrpc: "2.0", id: 22, method: "tools/call", params: { name: "get_institution", arguments: { id: 12, updated_since: "2026-10-01" } } },
+        { jsonrpc: "2.0", id: 23, method: "tools/call", params: { name: "get_peer_comparison", arguments: { peer_ids: "4" } } },
+      ]),
+      h,
+    );
+
+    const peers = vi.mocked(h.peers).mock.calls[0][0];
+    expect(peers.nextUrl.pathname).toBe("/api/v1/peers");
+    expect(peers.nextUrl.searchParams.get("institution_id")).toBe("12");
+    expect(peers.nextUrl.searchParams.get("peer_ids")).toBe("4,5");
+    const rates = vi.mocked(h.rateFees).mock.calls[0][0];
+    expect(rates.nextUrl.pathname).toBe("/api/v1/rate-fees");
+    expect(rates.nextUrl.searchParams.get("updated_since")).toBe("2026-10-01");
+    const detail = vi.mocked(h.institutions).mock.calls[0][0];
+    expect(detail.nextUrl.searchParams.get("updated_since")).toBe("2026-10-01");
+    const body = await response.json();
+    expect(body[3].result).toMatchObject({ isError: true });
+    expect(h.peers).toHaveBeenCalledTimes(1);
+  });
+
   it("lists the read-only tools", async () => {
     const response = await handleMcpPost(rpc({ jsonrpc: "2.0", id: 2, method: "tools/list" }), handlers());
     const body = await response.json();
 
     expect(body.result.tools.map((t: { name: string }) => t.name)).toEqual(MCP_TOOL_NAMES);
-    expect(MCP_TOOL_NAMES).toHaveLength(10);
+    expect(MCP_TOOL_NAMES).toHaveLength(12);
     expect(body.result.tools.every((t: { annotations: { readOnlyHint: boolean } }) => t.annotations.readOnlyHint)).toBe(true);
   });
 

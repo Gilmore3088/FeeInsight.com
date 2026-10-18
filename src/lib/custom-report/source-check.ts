@@ -91,7 +91,9 @@ const PRICE_FIRST_CELL = /^\s*(?:\$|\d|¢|free\b|no\s+(?:charge|fee|cost)\b|none
 const NAME_WORD_SHARE = 0.75;
 const STEM_LENGTH = 5;
 const STOP_WORDS = new Set(["the", "and", "for", "per", "each", "fee", "fees", "charge", "with", "from", "your", "our", "any", "item", "items", "occurrence", "occurance", "transfer"]);
-const ZERO_WORDS = /\b(free|none|no charge|no fee|n\/c|waived)\b|\$\s*0(?:\.00)?(?![\d.])/i;
+// v76: "No Cost" and "No fees" are free words too where they end the price ("Digital deposits | No
+// Cost", "No Cost to Members", Knox recall), never inside a name ("Low to no cost checking Monthly fee").
+const ZERO_WORDS = /\b(free|none|no charge|no fee|n\/c|waived)\b|\bno (?:cost|fees)(?=\s*(?:$|[|.;,)]|\s(?:to|for)\s))|\$\s*0(?:\.00)?(?![\d.])/i;
 const THRESHOLD_BEFORE = /(from|over|under|below|above|exceed(?:s|ing)?|negative|balance(?: of)?|minimum|min\.?|maintain(?:s|ed)?|keep|[<>≤≥]|&[lg]t;?|up to|less than|more than|greater than|or equal to|at least|between|\$\s*[\d,.]+\s*[-–])\s*$/i;
 // "$200+" (attached) is a threshold; "$100.00 + Locksmith Fee" (spaced) adds a cost to a price.
 // A spaced "+" whose next cell is a price ("$1,000.01 + | $10.00") is a band's open top, as
@@ -107,8 +109,33 @@ const THRESHOLD_AFTER = /^\+|^\s+\+\s*\|\s*\$|^\s*[-–]\s*(?:over|up|above)\b|^
 /** A cap stated after a row's per-item price, and the name words that ask for it. */
 const CAP_BEFORE = /\b(?:max(?:imum)?|cap(?:ped)?|limit(?:ed)?)\b(?:\s+(?:of|at|to))?\s*$/i;
 const CAP_STEMS = new Set(["maxim", "max", "cap", "limit"]);
+/**
+ * A note that only caps how many times the fee named above it is charged ("Maximum of 4 fees per
+ * calendar day.", Gate City Bank 349). It carries a count, never a dollar figure, so the price
+ * printed under it is still the named fee's.
+ */
+const COUNT_CAP_NOTE_LINE =
+  /^\s*\(?\s*(?:a\s+)?(?:max(?:imum)?\.?|limit(?:ed)?(?:\s+to)?|up\s+to|no\s+more\s+than|not\s+to\s+exceed)(?:\s+of)?\s+(?:\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten)(?:\s*\(\d{1,2}\))?\s+(?:[a-z/]+\s+){0,2}?(?:fees?|charges?|items?|overdrafts?|times?)\s+(?:(?:may\s+be\s+|will\s+be\s+)?(?:charged|assessed|imposed)\s+)?(?:per|each|a|in\s+(?:a|one|any))\s+(?:calendar\s+|business\s+)?(?:day|month|statement(?:\s+cycle)?|cycle)\s*\.?\s*\)?\s*$/i;
+/** The last words of a name's sentence wrapped onto their own line ("balance."): lower case, at most four words. */
+const WRAPPED_NAME_TAIL = /^\s*[a-z][a-z'’-]*(?:\s+[a-z][a-z'’-]*){0,3}\s*[.;]?\s*$/;
+function isCountCapNote(line: string): boolean {
+  return COUNT_CAP_NOTE_LINE.test(line) && moneyTokens(line).length === 0 && !ZERO_WORDS.test(line);
+}
+/**
+ * The price under a name, its sentence's wrapped last words and a count-cap note ("Overdraft fee
+ * for items paid resulting in a negative" / "balance." / "Maximum of 4 fees per calendar day." /
+ * "$32 per item"). Only a short price line counts, so another fee's row never gives its price.
+ */
+function priceUnderCapNote(lines: string[], index: number): string | null {
+  let k = index + 1;
+  if (WRAPPED_NAME_TAIL.test(lines[k] ?? "") && !/[.;:,|)]\s*$/.test(lines[index])) k += 1;
+  if (!isCountCapNote(lines[k] ?? "")) return null;
+  const price = lines[k + 1];
+  if (!price || price.length > PRICE_BELOW_MAX_LENGTH || !PRICE_LINE.test(price) || moneyTokens(price).length === 0) return null;
+  return price;
+}
 /** A line that only qualifies the fee named above it. */
-const QUALIFIER_LINE = /^(?:\([^()]*(?:\([^()]*\)[^()]*)*\)|(?:if|when|for each)\b.{0,80})$/i;
+const QUALIFIER_LINE =/^(?:\([^()]*(?:\([^()]*\)[^()]*)*\)|(?:if|when|for each)\b.{0,80})$/i;
 /** Dot leaders (or an ellipsis run) at the end of a line. */
 const TRAILING_LEADER = /(?:\.\s?){3,}\s*$|…\s*$/;
 /** A price that opens a line, with its unit ("$20.00", "$5 each", "FREE"). */
@@ -577,7 +604,12 @@ function statesAmount(line: string, amount: number, stems: NameStems): SourceChe
   // not the fee's price when the row prints another; alone ("5 free, $2.00 each additional") it is.
   const base = noted.filter((t) => !ADD_ON_RATE.test(line.slice(t.end)));
   const prices = base.length > 0 ? base : noted;
-  const before = prices.map((price, i) => nearNameCount(line.slice(i === 0 ? 0 : prices[i - 1].end, price.start), stems));
+  const before = withJoinedPrices(
+    line,
+    prices,
+    prices.map((price, i) => nearNameCount(line.slice(i === 0 ? 0 : prices[i - 1].end, price.start), stems)),
+    stems,
+  );
   const after = prices.map((price, i) => nearNameCount(line.slice(price.end, prices[i + 1]?.start ?? line.length), stems));
   // A line that opens with a price and ends with a name ("$25 (3 X 5), $35 (3 X 10)")
   // names each fee after its price.
@@ -612,7 +644,81 @@ function statesAmount(line: string, amount: number, stems: NameStems): SourceChe
     !/^\s*min/i.test(line.slice(t.end)) &&
     !inNote(line, t) &&
     !/\b(?:maintain(?:s|ed)?|keep)\s*$/i.test(line.slice(Math.max(0, t.start - 16), t.start));
-  return tokens.some((t) => t.start >= from && t.start < prices[index].start && band(t)) ? "tiered_fee" : null;
+  // Nor is the balance that waives the fee when "otherwise" sets the price ("No monthly service
+  // charge with ... a minimum daily balance of $1,500; otherwise, $8.95 per month"): one price,
+  // not a price per band.
+  const waivedUntil = waiverConditionEnd(line, tokens, from, prices[index].start);
+  return tokens.some((t) => t.start >= from && t.start < prices[index].start && t.start >= waivedUntil && band(t)) ? "tiered_fee" : null;
+}
+
+/**
+ * A waiver sentence states one price: "$0 when a condition holds, otherwise $X" is $X.
+ * "No monthly service charge with ... a minimum daily balance of $1,500; otherwise, $8.95" names a
+ * balance that waives the fee, not a balance band with its own price. Returns where the waiver's
+ * conditions end (its "otherwise"), so the figures before it are not read as bands; `from` when the
+ * words before the price are not a waiver. A true band schedule ("Balance under $500 | $15;
+ * $500 to $1,499 | $8.95; otherwise none") is unchanged: its band sits right before its price with
+ * no "otherwise" between them. Pure.
+ */
+const WAIVER_OTHERWISE = /\b(?:otherwise|if\s+not)\b[^$\d]*$/i;
+const WAIVER_WORDS = /\b(?:no|none|waived?|avoid(?:ed)?|free)\b/i;
+
+function waiverConditionEnd(line: string, tokens: MoneyToken[], from: number, priceStart: number): number {
+  const lead = line.slice(from, priceStart);
+  const otherwise = WAIVER_OTHERWISE.exec(lead);
+  if (!otherwise) return from;
+  const at = from + otherwise.index;
+  if (!WAIVER_WORDS.test(line.slice(from, at))) return from;
+  if (tokens.some((t) => t.start >= at && t.start < priceStart)) return from;
+  return at;
+}
+
+/**
+ * Knox v76 (answer-key recall): prices joined on one row share the words before them.
+ *
+ *   "Domestic Outbound Wires (Online/Manual) | $35/$60"  the slash variant the fee's name keeps
+ *     ("Domestic Outbound Wires (Manual)") picks its price: Online $35, Manual $60. A name that
+ *     keeps both variants, or neither, reads the first price as before.
+ *   "Debit Card Replacement Fee | $10.00 / $50 expedited delivery"  the words after the second
+ *     price name it ("... Fee expedited delivery" is $50); the bare name stays $10.
+ *   "2” x 5” $45.00 $65.00"  a box size priced in two columns: both prices are the size's.
+ *
+ * Each joined price is scored with the words of the first; otherwise a price after "/" had no
+ * words of its own and could never be a fee's price. Pure.
+ */
+const SLASH_PRICE_JOIN = /^\s*\/\s*$/;
+const COLUMN_PRICE_JOIN = /^\s*\|?\s*$/;
+const LINE_VARIANTS = /([A-Za-z][\w'’-]*)\s*\/\s*([A-Za-z][\w'’-]*)(?:\s*\/\s*([A-Za-z][\w'’-]*))?/g;
+
+function withJoinedPrices(line: string, prices: MoneyToken[], before: number[], stems: NameStems): number[] {
+  const scores = [...before];
+  const words = new Set(stems.words);
+  for (let start = 0; start < prices.length; start += 1) {
+    let end = start;
+    while (end + 1 < prices.length && SLASH_PRICE_JOIN.test(line.slice(prices[end].end, prices[end + 1].start))) end += 1;
+    const opening = line.slice(start === 0 ? 0 : prices[start - 1].end, prices[start].start);
+    if (end > start) {
+      const count = end - start + 1;
+      const variants = [...opening.matchAll(LINE_VARIANTS)].filter((match) => match.slice(1).filter(Boolean).length === count).at(-1);
+      if (variants) {
+        const named = variants.slice(1).filter(Boolean).map((part) => words.has(comparable(part).replace(/[^a-z0-9' ]/g, "")));
+        if (named.filter(Boolean).length === 1) named.forEach((own, i) => (scores[start + i] = own ? before[start] : 0));
+      } else if (count === 2) {
+        const tail = line.slice(prices[end].end, prices[end + 1]?.start ?? line.length).split("|")[0];
+        const tailWords = comparable(tail).replace(/[^a-z0-9' ]/g, " ").split(" ").filter((word) => word.length >= 3 && !STOP_WORDS.has(word));
+        if (tailWords.length > 0 && tailWords.every((word) => words.has(word))) scores[end] = before[start] + tailWords.length;
+      }
+      start = end;
+      continue;
+    }
+    // A box size's row of bare column prices: each price is the size's.
+    const size = stems.find((stem) => /^ \d+x\d+ $/.test(stem));
+    if (size && start + 1 < prices.length && COLUMN_PRICE_JOIN.test(line.slice(prices[start].end, prices[start + 1].start)) &&
+      ` ${comparable(opening)} `.includes(size)) {
+      scores[start + 1] = Math.max(scores[start + 1], before[start]);
+    }
+  }
+  return scores;
 }
 
 /**
@@ -700,7 +806,11 @@ function feeRow(lines: string[], index: number): string {
           PRICE_LINE.test(next) &&
           (moneyTokens(next).length > 0 || ZERO_WORDS.test(next))),
     );
-  if (!price) return line;
+  if (!price) {
+    // A count-cap note after the name's wrapped last words pushes the price one line further down.
+    const capped = priceUnderCapNote(lines, index);
+    return capped ? `${line} | ${capped}` : line;
+  }
   const between = lines.slice(index + 1, lines.indexOf(price, index + 1));
   // Units ("/Item") and notes that only qualify the name ("If checks are not on order
   // (10 maximum)", "(up to $1,000)") may sit between a name and its price.
@@ -722,6 +832,7 @@ function feeRow(lines: string[], index: number): string {
       QUALIFIER_LINE.test(next) ||
       (FEE_SHOWN_AS_LINE.test(next) && moneyTokens(next).length === 0) ||
       COLUMN_LABEL_LINE.test(next.trim()) ||
+      isCountCapNote(next) ||
       (perColumn && next.length <= 20 && moneyTokens(next).length === 0 && !ZERO_WORDS.test(next)),
   )
     ? `${line} | ${price}`
@@ -1035,6 +1146,7 @@ function checkAgainstLines(
   const rounded = Math.round(amount * 100) / 100;
 
   let best: SourceCheckFailure = "name_not_in_text";
+  let stated: { row: string; score: number } | null = null;
   const rank: Record<SourceCheckFailure, number> = {
     no_source_text: 0,
     name_not_in_text: 1,
@@ -1112,9 +1224,27 @@ function checkAgainstLines(
       best = "category_not_in_text";
       continue;
     }
-    return { ok: true, sourceLine: row.slice(0, 240) };
+    const score = statedLineScore(row, rounded, feeName, stems);
+    if (!stated || score > stated.score) stated = { row, score };
   }
-  return { ok: false, reason: best };
+  return stated ? { ok: true, sourceLine: stated.row.slice(0, 240) } : { ok: false, reason: best };
+}
+
+/**
+ * Which of several lines that state the amount is the fee's own (#1110): the one whose label
+ * (its words before the amount) carries most of the fee's name words, and never, while another
+ * line states it, a label that names a different fee type. "Overdraft Charge/Overdraft Fee (each
+ * item) | $36.00" is that fee's row; "Sustained Overdraft Fee of $36.00" earlier on the page is
+ * another fee at the same price. Ties keep the first line, as before. Pure.
+ */
+const OTHER_FEE_TYPE_WORDS = /\b(?:sustained|continuous|continuing|extended|prolonged)\b/gi;
+
+function statedLineScore(row: string, amount: number, feeName: string, stems: NameStems): number {
+  const at = moneyTokens(row).find((t) => Math.abs(t.value - amount) < 0.005);
+  const label = at ? row.slice(0, at.start) : row;
+  const name = feeName.toLowerCase();
+  const otherType = (label.match(OTHER_FEE_TYPE_WORDS) ?? []).some((word) => !name.includes(word.toLowerCase()));
+  return stemCount(label, stems) - (otherType ? 1000 : 0);
 }
 
 /**

@@ -3,6 +3,7 @@ import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordFeedback, type FeedbackKind, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { recordStepWarning } from "@/lib/agents/hamilton/step-warning";
+import { CARD_PRODUCT_TAKEDOWN_LIVE } from "@/lib/fee-category-guard";
 
 type SqlTag = typeof sql;
 
@@ -51,6 +52,70 @@ export interface HandTakedown {
    * land in one step.
    */
   requiresLive?: { feePublishedId: number; amount: number; feeName: string };
+}
+
+/**
+ * #1772, #1773 (read-only, Oct 17): live non-network ATM fees that guard v69 to v71 cannot read by
+ * name, each confirmed against its bank's stored text: 13 surcharges non-customers pay at the bank's
+ * own ATMs whose name says only "ATM Surcharge" (the heading or line names the payer), and 15 lines
+ * that are not the fee (an in-network or own-ATM $0, a refund cap, a waived price, a figure from the
+ * next column). 28 in all, so they waited on James (fewer than 20 ride; DECISIONS.md, Oct 16). He said
+ * yes on Oct 17 (11:28 UTC), so the switch is on and all 28 come down on the next publish. Set false
+ * and none of them is listed.
+ */
+export const ATM_SURCHARGE_TAKEDOWN_LIVE = true;
+
+type AtmRow = [feePublishedId: number, institutionId: number, amount: number, feeName: string, evidence: string];
+
+/** #1772: a surcharge non-customers pay at the institution's own ATMs; none of the 50 types holds it. */
+const ATM_NON_CUSTOMER_ROWS: readonly AtmRow[] = [
+  [34087, 7083, 3.5, "CCU ATM Surcharge", "CCU (doc 2793): \"CCU ATM Surcharge | $3.50 Non-CCU card used at CCU ATM\"; CCU's own fee at others' ATMs is \"Foreign ATM | $2.00\"."],
+  [35195, 5252, 3, "RBFCU ATM Surcharge for non", "RBFCU (doc 6177): \"RBFCU ATM Surcharge for non-RBFCU card $3 each\"; its members' non-RBFCU ATM fee is \"$1 each\"."],
+  [41665, 4638, 3, "ATM Surcharge", "Buffalo Metropolitan FCU (doc 2865): \"ATM Surcharge (non member – non cu card) | $3.00 transaction\"."],
+  [54783, 7250, 3.5, "ATM Surcharge Fee", "Kalsee CU (doc 16847): under \"Non-Member Fees\": \"ATM Surcharge Fee | $3.50\"."],
+  [65803, 4924, 3, "ATM Surcharge", "Doc 19446: under \"Non-Member fees\": \"ATM Surcharge | $3.00\"."],
+  [75781, 5100, 3, "ATM Surcharge Fee", "Doc 28876: \"ATM Surcharge Fee | $3.00/transaction for Non-Member/Foreign Card\"; members' out-of-network fee is $2.00 after 15 free."],
+  [87948, 5319, 3, "ATM Surcharge", "McKesson & Healthcare Providers FCU (doc 36782): under \"NON-MEMBER FEES\": \"ATM Surcharge | $3.00 each\"."],
+  [100435, 8593, 3.75, "ATM Surcharge", "Doc 14907: \"ATM Surcharge (non-members $3.75) | Fee Amount N/A\"."],
+  [106205, 7165, 4, "ATM Usage Surcharge", "Doc 16114: under \"NON-MEMBER SERVICES\": \"ATM Usage Surcharge $ 4.00 per use\"."],
+  [115027, 4493, 4, "ATM-surcharge", "South Carolina Federal (doc 25757): \"ATM-surcharge | $4.00 per transaction | For using foreign cards in South Carolina Federal machines.\""],
+  [121089, 7118, 6, "ATM Surcharge Fee", "Doc 36880: under \"Non-Member Fees\": \"ATM Surcharge Fee | $6.00 per occurrence\"."],
+  [129420, 8639, 3, "ATM Surcharge Fee", "Marshland CU (doc 27614): \"ATM Surcharge Fee ... $3.00 per item if non-Marshland card used at Marshland ATM\"; members pay \"$1.00 per item if out-of-network ATM\"."],
+  [140313, 2653, 3.5, "ATM Surcharge", "MSB (doc 31385): under \"Non Customer Charges:\": \"ATM Surcharge $3.50 non-customer withdrawals at our ATM's\"."],
+];
+
+/** #1773: not the bank's fee for using another network's ATM. */
+const ATM_NOT_THE_FEE_ROWS: readonly AtmRow[] = [
+  [12926, 7013, 0, "ATM Transactions at Surcharge FREE ATMs", "NYEFCU (doc 18171): \"At Surcharge FREE ATMs No Charge\", the in-network line; at non-NYEFCU ATMs the fee \"Varies per ATM\"."],
+  [21409, 4594, 0, "Non-Surcharge ATM Withdrawal", "HOCU (doc 12722): \"Non-Surcharge ATM Withdrawal – HOCU, FHB, CO-OP Network ATM ... No Charge\", the in-network line."],
+  [32372, 7159, 0, "ATM Withdrawals – CU Owned and approved Non-Surcharge Networks 10", "Doc 7869: \"ATM Withdrawals – CU Owned and approved Non-Surcharge Networks 10 FREE withdrawals per Month\"; the foreign ATM fee is its own line (\"$ .50 each\")."],
+  [45098, 5279, 0, "Surcharge – SurF ATM Withdrawals", "Doc 16354: \"Surcharge – SurF ATM Withdrawals | No Fee\", the in-network line; foreign ATM withdrawals are \"$1.50 per transaction\" after 3 free."],
+  [46327, 1172, 10, "ATM surcharges (other bank ATM fee)", "StonehamBank (doc 15736): \"ATM surcharges (other bank ATM fee) | $10 cycle credit\", a refund of up to $10 a cycle, not a fee."],
+  [46570, 7682, 5, "counted as one of your ATM withdrawal transactions. There is a", "First Class Community CU (doc 16438): \"There is a $5.00 per card replacement fee for lost, stolen or replacement Debit cards\"; a sentence fragment."],
+  [46928, 5559, 1, "(FEE WAIVED) network fee per transaction; surcharge assessed by ATM Owner, at Owners discretion", "Tyndall FCU (doc 13909): \"Non-proprietary ATMs: $1.00 (FEE WAIVED) network fee per transaction\"; not charged."],
+  [48653, 8634, 0, "Proprietary ATM Surcharge .", "Doc 2077: \"Proprietary ATM Surcharge ... No Charge\", the credit union's own ATMs."],
+  [75617, 7343, 0, "Four (4) ATM withdrawals per month at surcharge-free ATMs", "Kemba (doc 36084): a free allowance; the fee is \"Each additional ATM withdrawal per month ... $3.00\"."],
+  [81293, 5102, 0, "Surcharge Free ATMs CULIANCE ATM Network", "Doc 15689: \"Surcharge Free ATMs CULIANCE ATM Network | Free\", the in-network line."],
+  [85790, 4451, 0, "Transaction on CO-OP Network ATM Surcharge", "Doc 19900: \"Transaction on CO-OP Network ATM Surcharge FREE\", in-network; \"Transaction on Non CO-OP Network ATM $2.00\" is its own line."],
+  [94863, 5254, 5, "ATM surcharge fees up to a maximum", "Teachers FCU (doc 16524): \"Platinum Members will receive a rebate of foreign (non-Teachers) ATM surcharge fees up to a maximum of $5 per calendar month\": a rebate."],
+  [96582, 6322, 0, "CU24 Surcharge-Free ATM Network", "SkyPoint (doc 22469): \"CU24 Surcharge-Free ATM Network | FREE\", in-network; \"All other ATMs* | $2\" is its own line."],
+  [106202, 8634, 3, "Proprietary ATM Surcharge . No Charge", "Doc 2077: \"Proprietary ATM Surcharge ... No Charge | Money Order Fee ... $3.00\"; the $3.00 is the next column's money order."],
+  [150415, 4489, 0, "ACFCU ATM and Participating Allpoint ATM Surcharge Fee", "ACFCU (doc 35546): \"ACFCU ATM and Participating Allpoint ATM Surcharge Fee | Free\", in-network; the non-network fee is $1.00 (98507)."],
+];
+
+const atmTakedown = (issue: number, kind: "wrong_category" | "not_a_fee") =>
+  ([feePublishedId, institutionId, amount, feeName, evidence]: AtmRow): HandTakedown => ({
+    feePublishedId, institutionId, canonicalFeeKey: "atm_non_network", amount, feeName,
+    reason: `source_mismatch: #${issue}`, issue, kind, evidence,
+  });
+
+/** The #1772 and #1773 entries, listed only while `ATM_SURCHARGE_TAKEDOWN_LIVE` is on (`live` for tests). */
+export function atmSurchargeTakedowns(live: boolean = ATM_SURCHARGE_TAKEDOWN_LIVE): HandTakedown[] {
+  if (!live) return [];
+  return [
+    ...ATM_NON_CUSTOMER_ROWS.map(atmTakedown(1772, "wrong_category")),
+    ...ATM_NOT_THE_FEE_ROWS.map(atmTakedown(1773, "not_a_fee")),
+  ];
 }
 
 export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
@@ -303,6 +368,220 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
   { feePublishedId: 97904, institutionId: 850, canonicalFeeKey: "od_protection_transfer", amount: 32, feeName: "overdrawn. Features of Overdraft Transfer include",
     reason: "source_mismatch: #1549", issue: 1549, kind: "wrong_category",
     evidence: "Pinnacle Bank Wyoming (doc 22705): the $32 is the next column's \"$32 per item NSF Paid Item Fee/Returned Item Fee for items paid over $10\" (live as 98267); the transfer is \"$2 fee for each Overdraft Transfer\" (live as 97975)." },
+  // #1436 (read-only, Oct 17; James's Oct 16 rule for fewer than 20 wrong fees): 1st Community FCU's
+  // waiver sentence, published as a $0 monthly fee. It is the waived price of the ePLUS Checking
+  // fee, which is live and right as 95264, so it comes down only while 95264 is.
+  { feePublishedId: 58414, institutionId: 5314, canonicalFeeKey: "monthly_maintenance", amount: 0,
+    feeName: "or take advantage of both options to reduce your monthly fee to",
+    reason: "source_mismatch: #1436", issue: 1436, kind: "not_a_fee",
+    requiresLive: { feePublishedId: 95264, amount: 7.95, feeName: "ePLUS Checking Monthly service charge" },
+    evidence: "1st Community FCU fee schedule (doc 16561, text 11680): \"ePLUS Checking …….. $7.95 per month or reduce your fee by $4.00 by receiving eStatements and/or reduce your fee $3.95 for having a minimum 15 1CFCU debit card transactions clear your account per month or take advantage of both options to reduce your monthly fee to $0.00\": the $0.00 is the fee with both waivers, not a fee; the price is 95264 ($7.95)." },
+  // #1389 (read-only, Oct 17): HawaiiUSA FCU's "Minimum Balance" $25 is the Savings Safari Club and
+  // Jump Start Student accounts' balance requirement, printed in the same column as the other
+  // accounts' requirements; the $25 beside it is the next column's early closure fee.
+  { feePublishedId: 106021, institutionId: 4589, canonicalFeeKey: "minimum_balance", amount: 25, feeName: "Minimum Balance",
+    reason: "source_mismatch: #1389", issue: 1389, kind: "not_a_fee",
+    evidence: "HawaiiUSA FCU schedule of fees (doc 2049, text 3445): \"Savings Safari Club & Jump Start Student Accounts | Early Closure Fee\" / \"Minimum Balance ........ $25.00 | Within 90 days ........ $25.00\", the same layout as \"Basic Savings Minimum Balance ........ $ 5.00\" and \"Secondary Savings Minimum Balance ........ $25.00\": a balance the account must keep, not a charge for falling below it." },
+  // #1735 (read-only, Oct 17; under James's Oct 16 rule for fewer than 20 wrong fees): Gate City's
+  // BankOn $0 read as its overdraft price, and eight misreads from the Oct 17 300-fee blind read,
+  // each re-read against its own stored text. Gate City's $0 NSF (33701) matches its text and stays.
+  { feePublishedId: 33705, institutionId: 349, canonicalFeeKey: "overdraft", amount: 0, feeName: "BankOn Checking Account Overdraft Fee for items",
+    reason: "source_mismatch: #1735", issue: 1735, kind: "wrong_amount",
+    evidence: "Gate City Bank (doc 13087, text 503): \"Overdraft fee for items paid resulting in a negative balance. Maximum of 4 fees per calendar day. $32 per item\"; the $0 is the BankOn Checking Account's own line (\"BankOn Checking Account Overdraft Fee for items $0 per item\")." },
+  { feePublishedId: 149143, institutionId: 6720, canonicalFeeKey: "other_lending_fee", amount: 5, feeName: "Loan Payments by Phone",
+    reason: "source_mismatch: #1735", issue: 1735, kind: "wrong_amount",
+    evidence: "Altra FCU (doc 23746, text 20919), two columns: \"*Loan Payments by Phone | • $5 – Incoming transfer\" / \"• $10 – payments posted by Altra Member Contact Center representatives\"; the $5 is the next column's incoming wire." },
+  { feePublishedId: 149806, institutionId: 4628, canonicalFeeKey: "money_order", amount: 5, feeName: "Par Value: Par value of one share",
+    reason: "source_mismatch: #1735", issue: 1735, kind: "not_a_fee",
+    evidence: "Primeway FCU (doc 36220, text 34365): \"Money Orders $2.00 per money order Par Value: Par value of one share is $5.00\"; the $5 is a membership share's par value, not a fee (the money order is live as 149805, $2)." },
+  { feePublishedId: 137241, institutionId: 7438, canonicalFeeKey: "atm_non_network", amount: 5, feeName: "Ten (10) free nationwide ATM withdrawals per year",
+    reason: "source_mismatch: #1735", issue: 1735, kind: "not_a_fee",
+    evidence: "Dupont Community FCU (doc 29948, text 27528): \"Ten (10) free nationwide ATM withdrawals per year ($5 maximum per ATM refund)\"; $5 is a refund cap, not a fee." },
+  { feePublishedId: 68335, institutionId: 199, canonicalFeeKey: "cash_advance", amount: 10, feeName: "3% (of the amount of each cash advance, minimum fee",
+    reason: "source_mismatch: #1735", issue: 1735, kind: "wrong_amount",
+    evidence: "BankPlus (doc 16197, text 10640): \"3% (of the amount of each cash advance, minimum fee $10\"; the fee is 3%, and $10 is only its floor." },
+  { feePublishedId: 79402, institutionId: 1842, canonicalFeeKey: "account_research", amount: 5, feeName: "MMDA Excess Transaction Fee (per item charge)",
+    reason: "source_mismatch: #1735", issue: 1735, kind: "wrong_amount",
+    evidence: "Southern Bank of Tennessee (doc 14670, text 2368), before and after columns: \"MMDA Excess Transaction Fee (per item charge) $ 5.00 | $ 10.00 (1)\"; $5 is the old price." },
+  { feePublishedId: 74149, institutionId: 576, canonicalFeeKey: "safe_deposit_box", amount: 25, feeName: "Safe Deposit Box Drilling Fee: Cost of Drilling +",
+    reason: "source_mismatch: #1735", issue: 1735, kind: "wrong_amount",
+    evidence: "Fidelity Bank & Trust (doc 20585, text 16470): \"Safe Deposit Box Drilling Fee: Cost of Drilling + $25.00\"; the fee is the drilling cost plus $25, not $25." },
+  { feePublishedId: 49817, institutionId: 6110, canonicalFeeKey: "cashiers_check", amount: 5, feeName: "UT bank check (after 90 days)",
+    reason: "source_mismatch: #1735", issue: 1735, kind: "wrong_category",
+    evidence: "University of Toledo FCU (doc 28493, text 25892): \"Stop Payment Fee\" / \"$5.00 UT bank check (after 90 days)\" / \"$5.00 own draft or ACH\"; a stop payment, live already as stop_payment 93031 ($5). The bank check itself is \"UT Bank Check – $0.75 each\"." },
+  { feePublishedId: 125584, institutionId: 5008, canonicalFeeKey: "atm_non_network", amount: 3.5, feeName: "ATM Surcharge Fee on WWFCU machines (non-credit union cards only)",
+    reason: "source_mismatch: #1735", issue: 1735, kind: "wrong_category",
+    evidence: "Wayne-Westland FCU (doc 34932, text 33030): \"ATM Surcharge Fee on WWFCU machines (non-credit union cards only) | $3.50\", charged to non-members at the CU's own ATMs, which has no home among the 50 (as 131129, #1196); the members' foreign ATM fee is \"Withdrawal at Foreign ATM Machine | $3.50\"." },
+  // #1746 (read-only, Oct 17, after the knox.name_retidy v20 pass reached all 26 banks of #1689's
+  // footnote set): second reads of one printed fee, each down only while its kept twin is live as listed.
+  { feePublishedId: 109893, institutionId: 7239, canonicalFeeKey: "other_lending_fee", amount: 10, feeName: "NON-MEMBER LOAN APPLICATION FEE: IF YOU ARE NOT A MEMBER OF WCDU, THERE IS A",
+    reason: "duplicate of #81340 (#1746)", issue: 1746, kind: "duplicate",
+    requiresLive: { feePublishedId: 81340, amount: 10, feeName: "NON-MEMBER Loan Application Fee" },
+    evidence: "WCU Credit Union (doc 20097): the table row \"$10.00 each | 10NON-MEMBER Loan Application Fee\" (live as 81340) and its footnote \"10NON-MEMBER LOAN APPLICATION FEE: IF YOU ARE NOT A MEMBER OF WCDU, THERE IS A $10.00 NON-MEMBER APPLICATION FEE.\" are one fee." },
+  { feePublishedId: 130622, institutionId: 4907, canonicalFeeKey: "atm_non_network", amount: 2,
+    feeName: "4To avoid paying a fee, choose any INOVA FCU ATM, Alliance One or CO-OP Network ATM across the nation. Foreign ATM trans",
+    reason: "duplicate of #130624 (#1746)", issue: 1746, kind: "duplicate",
+    requiresLive: { feePublishedId: 130624, amount: 2, feeName: "Foreign ATM transactions" },
+    evidence: "Inova FCU (doc 35277): \"4To avoid paying a fee, choose any INOVA FCU ATM, Alliance One or CO-OP Network ATM across the nation. Foreign ATM transactions will be charged $2 per transaction.\"; the same $2 is live from the same line as 130624." },
+  { feePublishedId: 147193, institutionId: 3766, canonicalFeeKey: "dormant_account", amount: 5, feeName: "1A dormant fee",
+    reason: "duplicate of #101934 (#1746)", issue: 1746, kind: "duplicate",
+    requiresLive: { feePublishedId: 101934, amount: 5, feeName: "Dormant fee" },
+    evidence: "First National Bank of Kansas: doc 34910 \"1A dormant fee of $5.00 may be charged each cycle period if the account balance is less than $100\" and doc 1099 \"A dormant fee of $5.00 may be charged each cycle period if the account balance is less than $100.00\" (live as 101934) are one fee." },
+  { feePublishedId: 133860, institutionId: 8016, canonicalFeeKey: "paper_statement", amount: 5, feeName: "1 Paper statement charge",
+    reason: "duplicate of #148614 (#1746)", issue: 1746, kind: "duplicate",
+    requiresLive: { feePublishedId: 148614, amount: 5, feeName: "Paper statement charge" },
+    evidence: "CODE FCU (doc 28881): \"Paper statement charge of $5.00 will apply if not enrolled in eStatements.\" (footnotes 1 and 2, the same charge); live as 148614." },
+  { feePublishedId: 119352, institutionId: 7239, canonicalFeeKey: "garnishment_levy", amount: 25, feeName: "each | 8Legal Process Service (Garnishment/Levy)",
+    reason: "duplicate of #81339 (#1746)", issue: 1746, kind: "duplicate",
+    requiresLive: { feePublishedId: 81339, amount: 25, feeName: "Legal Process Service (Garnishment/Levy)" },
+    evidence: "WCU Credit Union: \"$25.00 each | 8Legal Process Service (Garnishment/Levy)\" on docs 3516 and 20097, one schedule; live as 81339." },
+  { feePublishedId: 143826, institutionId: 110, canonicalFeeKey: "monthly_maintenance", amount: 25, feeName: "3To receive Priority Checking benefits and waive the Monthly service charge",
+    reason: "duplicate of #147464 (#1746)", issue: 1746, kind: "duplicate",
+    requiresLive: { feePublishedId: 147464, amount: 25, feeName: "Monthly service charge" },
+    evidence: "Bank of Hope: doc 21359 \"3To receive Priority Checking benefits and waive the $25 Monthly Service Charge each month: ...\" is the Priority Checking charge doc 17801 prints as \"Priority Checking ... $25 / Monthly Service Charge\", live as 147464." },
+  // #1755 (read-only, Oct 17; under James's Oct 16 rule for fewer than 20 wrong fees): live pairs of
+  // one printed line (same institution, name, amount and URL) left undecided by the line-conflict
+  // takedown (#1635). Each row re-read against its document's newest completed text. Class F, one
+  // category under two frequencies: the twin whose frequency the line does not state comes down
+  // while the kept twin is live; where the line prices neither row (1338, 8048) both come down.
+  { feePublishedId: 97434, institutionId: 303, canonicalFeeKey: "account_verification", amount: 10, feeName: "Account verification",
+    reason: "duplicate of #9643 (#1755)", issue: 1755, kind: "duplicate",
+    requiresLive: { feePublishedId: 9643, amount: 10, feeName: "Account verification" },
+    evidence: "HomeTrust Bank (doc 8040, text 485): \"Account verification | $10 00\", a charge per request with no month in it; filed monthly here, live per occurrence as 9643." },
+  { feePublishedId: 49606, institutionId: 303, canonicalFeeKey: "safe_deposit_box", amount: 200, feeName: "Safe Deposit Box drill fee",
+    reason: "duplicate of #10760 (#1755)", issue: 1755, kind: "duplicate",
+    requiresLive: { feePublishedId: 10760, amount: 200, feeName: "Safe Deposit Box drill fee" },
+    evidence: "HomeTrust Bank (doc 8040, text 485): \"Safe Deposit Box drill fee | $200 00\", charged when a box is drilled; filed monthly here, live one-time as 10760." },
+  { feePublishedId: 148620, institutionId: 1170, canonicalFeeKey: "monthly_maintenance", amount: 10, feeName: "RSA Token Monthly Fee",
+    reason: "duplicate of #16593 (#1755)", issue: 1755, kind: "duplicate",
+    requiresLive: { feePublishedId: 16593, amount: 10, feeName: "RSA Token Monthly Fee" },
+    evidence: "First Federal Community Bank (doc 35740, text 33839; doc 14569, text 3108, same page): \"RSA Token Monthly Fee | $10 each\", a monthly fee per token; filed per item here, live monthly as 16593." },
+  { feePublishedId: 107546, institutionId: 4426, canonicalFeeKey: "check_cashing", amount: 10, feeName: "Check Cashing Service fee Minimum Share account balance of",
+    reason: "duplicate of #113766 (#1755)", issue: 1755, kind: "duplicate",
+    requiresLive: { feePublishedId: 113766, amount: 10, feeName: "Check Cashing Service fee Minimum Share account balance of" },
+    evidence: "BFG FCU (doc 23619, text 20695; doc 25421, text 22647, same page): \"Check Cashing Service fee *Minimum Share account balance of $250.00. ... | $10.00/Check\"; filed monthly here, live per item as 113766." },
+  { feePublishedId: 81215, institutionId: 5085, canonicalFeeKey: "card_replacement", amount: 5, feeName: "Replacement DEBIT Card",
+    reason: "duplicate of #11932 (#1755)", issue: 1755, kind: "duplicate",
+    requiresLive: { feePublishedId: 11932, amount: 5, feeName: "Replacement DEBIT Card" },
+    evidence: "AOD FCU (doc 30494, text 28127; doc 2420, text 3876, same page): \"Replacement DEBIT Card | $5.00\", a charge per card; filed monthly here, live per occurrence as 11932." },
+  { feePublishedId: 20420, institutionId: 5165, canonicalFeeKey: "bill_pay", amount: 9.75, feeName: "Expedited Online Bill Pay",
+    reason: "duplicate of #13293 (#1755)", issue: 1755, kind: "duplicate",
+    requiresLive: { feePublishedId: 13293, amount: 9.75, feeName: "Expedited Online Bill Pay" },
+    evidence: "Blue FCU (doc 2090, text 2685): \"Expedited Online Bill Pay ....$9.75 | 4 Courtesy Pay charges will not exceed five (5) per day.\"; the \"per day\" is the next column's Courtesy Pay note. Filed daily here, live per occurrence as 13293." },
+  { feePublishedId: 102296, institutionId: 6673, canonicalFeeKey: "paper_statement", amount: 2, feeName: "Monthly Paper Statements",
+    reason: "duplicate of #120678 (#1755)", issue: 1755, kind: "duplicate",
+    requiresLive: { feePublishedId: 120678, amount: 2, feeName: "Monthly Paper Statements" },
+    evidence: "Tulane/Loyola FCU (doc 23467, text 20515; doc 35433, text 33528, same page): \"Monthly Paper Statements\" / \"$2.00 Each\"; one fee, live per item from the newest copy as 120678." },
+  { feePublishedId: 147811, institutionId: 6673, canonicalFeeKey: "paper_statement", amount: 2, feeName: "Monthly Paper Statements",
+    reason: "duplicate of #120678 (#1755)", issue: 1755, kind: "duplicate",
+    requiresLive: { feePublishedId: 120678, amount: 2, feeName: "Monthly Paper Statements" },
+    evidence: "Tulane/Loyola FCU (doc 26560, text 23827; doc 35433, text 33528, same page): \"Monthly Paper Statements\" / \"$2.00 Each\"; an older copy's second read of the fee live as 120678." },
+  { feePublishedId: 125359, institutionId: 1338, canonicalFeeKey: "monthly_maintenance", amount: 10, feeName: "No minimum balance requirements or monthly maintenance",
+    reason: "source_mismatch: #1755", issue: 1755, kind: "not_a_fee",
+    evidence: "MBT Bank checking page (doc 22192, text 18819): GoSimple Checking is the \"Low-cost account with no minimum balance requirements\" with \"No Minimum Balance No monthly maintenance fee\"; the $10 is GoPremium and GoPlus's \"$10 minimum balance charge waived with $5,000 [$1,000] balance\"." },
+  { feePublishedId: 146800, institutionId: 1338, canonicalFeeKey: "monthly_maintenance", amount: 10, feeName: "No minimum balance requirements or monthly maintenance",
+    reason: "source_mismatch: #1755", issue: 1755, kind: "not_a_fee",
+    evidence: "MBT Bank checking page (doc 35116, text 33204): the same table as doc 22192; \"No Minimum Balance No monthly maintenance fee\" for GoSimple, and the $10 is the other accounts' minimum balance charge (filed annual here)." },
+  { feePublishedId: 74560, institutionId: 8048, canonicalFeeKey: "minimum_balance", amount: 25, feeName: "Only on Money Market In Excess of 6 Withdrawals per month Minimum Balance Fee (if not maintained)",
+    reason: "source_mismatch: #1755", issue: 1755, kind: "wrong_amount",
+    evidence: "Lakewood FCU (doc 15677, text 9858), two lines joined: \"Only on Money Market In Excess of 6 Withdrawals per month Minimum Balance Fee (if not maintained) | $25.00 per transaction $10.00 per month\"; the $25 per transaction is the money market excess withdrawal, the minimum balance fee is $10.00 per month." },
+  { feePublishedId: 125809, institutionId: 8048, canonicalFeeKey: "minimum_balance", amount: 25, feeName: "Only on Money Market In Excess of 6 Withdrawals per month Minimum Balance Fee (if not maintained)",
+    reason: "source_mismatch: #1755", issue: 1755, kind: "wrong_amount",
+    evidence: "Lakewood FCU (doc 26581, text 23855): the same joined line as doc 15677, \"... | $25.00 per transaction $10.00 per month\"; the minimum balance fee is $10.00 per month." },
+  // #1755 class H and others: one twin plainly under the wrong category; each comes down only while
+  // its kept twin is live.
+  { feePublishedId: 102758, institutionId: 58, canonicalFeeKey: "wire_domestic_outgoing", amount: 12, feeName: "Domestic Wire-IN",
+    reason: "source_mismatch: #1755", issue: 1755, kind: "wrong_category",
+    requiresLive: { feePublishedId: 30240, amount: 12, feeName: "Domestic Wire-IN" },
+    evidence: "MidFirst Bank (doc 23511, text 20594): \"Domestic Wire-IN $12 Charged for each incoming Domestic Wire transfer requested.\" / \"Domestic Wire-OUT $25 Charged for each outgoing ...\"; an incoming wire, live as 30240." },
+  { feePublishedId: 13031, institutionId: 1636, canonicalFeeKey: "check_printing", amount: 15, feeName: "Return Check Fee",
+    reason: "source_mismatch: #1755", issue: 1755, kind: "wrong_category",
+    requiresLive: { feePublishedId: 99586, amount: 15, feeName: "Return Check Fee" },
+    evidence: "First Federal S&L of Lorain (doc 746, text 7151): \"Return Check Fee $15.00\", a returned item, not check printing; live as deposited_item_return 99586." },
+  { feePublishedId: 11722, institutionId: 4802, canonicalFeeKey: "check_printing", amount: 15, feeName: "BILL PAY Return Fee - Paper Check Mailed",
+    reason: "source_mismatch: #1755", issue: 1755, kind: "wrong_category",
+    requiresLive: { feePublishedId: 27024, amount: 15, feeName: "BILL PAY Return Fee - Paper Check Mailed" },
+    evidence: "Georgia Heritage FCU (doc 2830, text 4227), under \"Returned Item Fees\": \"BILL PAY Return Fee - Paper Check Mailed ....$15.00\", a returned bill payment, not check printing; live as bill_pay 27024." },
+  { feePublishedId: 11427, institutionId: 4802, canonicalFeeKey: "account_research", amount: 50, feeName: "Consumer Loan Processing Fee",
+    reason: "source_mismatch: #1755", issue: 1755, kind: "wrong_category",
+    requiresLive: { feePublishedId: 71397, amount: 50, feeName: "Consumer Loan Processing fee" },
+    evidence: "Georgia Heritage FCU (doc 2830, text 4227): \"Consumer Loan Processing fee ....$50.00\", next to \"Quick Cash Loan Application Fee\": a loan fee, not account research; live as other_lending_fee 71397." },
+  { feePublishedId: 141821, institutionId: 1104, canonicalFeeKey: "account_research", amount: 25, feeName: "Expedited Payoff Fee",
+    reason: "source_mismatch: #1755", issue: 1755, kind: "wrong_category",
+    requiresLive: { feePublishedId: 141835, amount: 25, feeName: "Expedited Payoff Fee" },
+    evidence: "Colonial Savings loan servicing fees (doc 32399, text 30372): \"Expedited Payoff Fee Fee assessed to fax, email or overnight a payoff statement. ... | $25.00 per request\", a loan payoff fee, not account research; live as other_lending_fee 141835." },
+  { feePublishedId: 232, institutionId: 1559, canonicalFeeKey: "od_daily_cap", amount: 30, feeName: "Overdraft per item (Consumer limit of 5 per day)",
+    reason: "source_mismatch: #1755", issue: 1755, kind: "wrong_category",
+    requiresLive: { feePublishedId: 98982, amount: 30, feeName: "Overdraft per item (Consumer limit of 5 per day)" },
+    evidence: "Community Savings Bank (doc 4502, text 3058; doc 13841, text 1357, same page): \"Overdraft per item (Consumer limit of 5 per day) ** | $30.00\", the per-item overdraft fee; the daily cap is five items, not $30. Live as overdraft 98982." },
+  // #1753 (read-only, Oct 17; #1736's market report quoted it as Regions' ATM fee): a second read of
+  // Regions' international ATM withdrawal, filed as a non-network ATM fee under the wrong heading.
+  { feePublishedId: 101170, institutionId: 27, canonicalFeeKey: "atm_non_network", amount: 5, feeName: "Regions ATM: Withdrawal",
+    reason: "duplicate of #81957 (#1753)", issue: 1753, kind: "duplicate",
+    requiresLive: { feePublishedId: 81957, amount: 5, feeName: "International ATM Transaction" },
+    evidence: "Regions (doc 23188, text 20258): the $5.00 \"Withdrawal\" sits under \"International ATM:\" (\"International ATM: | ... Withdrawal ... $5.00 (Applies to all withdrawal requests, approved or declined)\"), not under \"Regions ATM:\"; the same $5 international ATM fee is live as card_foreign_txn 81957. Regions' non-network withdrawal is $3 (81982)." },
+  // #1774 (read-only, Oct 17): TD Bank's paper statement fee read as a monthly maintenance fee, on
+  // both TD records. Each comes down only while TD's paper statement fee stays live.
+  { feePublishedId: 64716, institutionId: 12, canonicalFeeKey: "monthly_maintenance", amount: 3, feeName: "Monthly fee",
+    reason: "source_mismatch: #1774", issue: 1774, kind: "wrong_category",
+    requiresLive: { feePublishedId: 64717, amount: 3, feeName: "Paper statements" },
+    evidence: "TD Bank checking page (doc 19132): \"Paper statements | $3 monthly fee | Free for customers aged 60+, otherwise $3 monthly fee | $1 monthly fee\"; the paper statement fee, live as 64717. TD's monthly maintenance fees are $4.95, $15 and $25." },
+  { feePublishedId: 65870, institutionId: 65, canonicalFeeKey: "monthly_maintenance", amount: 3, feeName: "Monthly fee",
+    reason: "source_mismatch: #1774", issue: 1774, kind: "wrong_category",
+    requiresLive: { feePublishedId: 65871, amount: 3, feeName: "Paper statements" },
+    evidence: "TD Bank checking page (doc 19485, the same page as doc 19132): \"Paper statements | $3 monthly fee\"; the paper statement fee, live as 65871." },
+  // #1765 (read-only, Oct 17): Navy Federal's Visa gift card inactivity fee, filed as a dormant
+  // account. Its name says only "Inactivity Fee", so the card-product rule cannot read it; it comes
+  // down with the other 61 under `CARD_PRODUCT_TAKEDOWN_LIVE` (on since James's yes, Oct 17).
+  ...(CARD_PRODUCT_TAKEDOWN_LIVE
+    ? [{ feePublishedId: 122350, institutionId: 4956, canonicalFeeKey: "dormant_account", amount: 5, feeName: "Inactivity Fee",
+        reason: "source_mismatch: #1765", issue: 1765, kind: "wrong_category" as const,
+        evidence: "Navy Federal: under \"Prepaid and Gift Cards | Visa® Gift Cards\", \"Inactivity Fee (After 12 consecutive months of no activity, the card will be charged $5.00 per month ...)\": a gift card's inactivity, not account dormancy; none of the 50 types holds it." }]
+    : []),
+  // #1772, #1773: 28 non-network ATM rows, listed while `ATM_SURCHARGE_TAKEDOWN_LIVE` is on (James, Oct 17).
+  ...atmSurchargeTakedowns(),
+  // #1788 (read-only, Oct 17; James's sample-report review): rows guard v72 cannot read by name, each
+  // confirmed against its bank's stored text. Two international ATM fees filed as the non-network ATM
+  // fee that repeat a live International ATM & Card fee, and three optional add-ons filed as monthly
+  // maintenance; none of the 50 types holds an add-on. 5 entries, under James's fewer-than-20 rule.
+  { feePublishedId: 81615, institutionId: 19, canonicalFeeKey: "atm_non_network", amount: 5, feeName: "Non-Fifth Third ATM Fee",
+    reason: "duplicate of #81610 (#1788)", issue: 1788, kind: "duplicate",
+    requiresLive: { feePublishedId: 81610, amount: 5, feeName: "International ATM Withdrawal" },
+    evidence: "Fifth Third (doc 21042, text of Oct 7): \"Non-Fifth Third ATM Fee | $3.50 for U.S. transactions | $5 for international transactions\"; the $5 is the international withdrawal, live as card_foreign_txn 81610 (\"International ATM Withdrawal: $5.00\"). Its U.S. fee is live as 81609 ($3.50)." },
+  { feePublishedId: 16733, institutionId: 4967, canonicalFeeKey: "atm_non_network", amount: 3, feeName: "Excessive non-UNFCU/Co-op/Allpoint network ATM transactions",
+    reason: "duplicate of #144937 (#1788)", issue: 1788, kind: "duplicate",
+    requiresLive: { feePublishedId: 144937, amount: 3, feeName: "Over 8 withdrawals per month per account outside the US8: Excessive non-UNFCU/Co-op/Allpoint network ATM transactions" },
+    evidence: "United Nations FCU (unfcu.org fee page): \"Over 8 withdrawals per month per account outside the US | Excessive non-UNFCU/Co-op/Allpoint network ATM transactions $3.00/withdrawal\"; the same $3 line is 144937, which guard v72 re-files to card_foreign_txn. Within the U.S. the charge is $1.00." },
+  { feePublishedId: 142748, institutionId: 7327, canonicalFeeKey: "monthly_maintenance", amount: 3, feeName: "Monthly fee",
+    reason: "source_mismatch: #1788", issue: 1788, kind: "wrong_category",
+    evidence: "Frankenmuth CU (frankenmuthcu.org/mi-open-checking): identity monitoring, credit monitoring and recovery coverage, \"All this coverage is provided to you for a monthly $3.00 fee, charged to the head of household consumer checking account. Take advantage of this exciting security coverage today.\": an optional identity protection service, not a checking account's fee." },
+  { feePublishedId: 152166, institutionId: 502, canonicalFeeKey: "monthly_maintenance", amount: 28, feeName: "Monthly fee",
+    reason: "source_mismatch: #1788", issue: 1788, kind: "wrong_category",
+    evidence: "United Bank (unitedbk.bank/ag-checking), under \"Data Trac\": \"Ag customers can add this package of benefits to any ag checking account! This record keeping service ... Monthly fee of $28.00 plus tax or a discounted annual fee of $285.00 plus tax\": a record keeping add-on, not the account's fee." },
+  { feePublishedId: 107315, institutionId: 8448, canonicalFeeKey: "monthly_maintenance", amount: 20, feeName: "Service charge",
+    reason: "source_mismatch: #1788", issue: 1788, kind: "wrong_category",
+    evidence: "Velocity CU (velocitycu.com fee schedule): the $20.00 is the next cell's \"CU Rewards Program for Debit Mastercard* .......$20.00 annually\", a rewards add-on; the row's own \"Service Charge\" line is \"$10.00 per month\" (live as 32923). Choice Checking's $20 is its own live row (95335)." },
+  // #1691 cleanup (read-only, Oct 17): live misreads that peer check v5 released, found by its fresh
+  // held-out grade and re-read against the bank's stored text. One entry per cause issue; the two
+  // fax fees are re-filed in place instead (taxonomy-fold HAND_REFILES, #1829). 4 entries. Central
+  // Bank's key deposit (152139) stays: whether a key deposit is a fee is James's call on #1831.
+  { feePublishedId: 152973, institutionId: 8637, canonicalFeeKey: "safe_deposit_box", amount: 11, feeName: "Key Deposit",
+    reason: "source_mismatch: #1827", issue: 1827, kind: "wrong_amount",
+    evidence: "Valley Strong CU (doc 36716, text 34862), a price-first table: \"| **$20** | Key Deposit |\" then \"| **$11** | Key Replacement |\"; the $11 is the next row's key replacement price, read one row late (#1827). Whether a key deposit is a fee at all is #1831." },
+  { feePublishedId: 152366, institutionId: 4624, canonicalFeeKey: "other_lending_fee", amount: 1000, feeName: "Mortgage satisfaction fee (varies)",
+    reason: "source_mismatch: #1827", issue: 1827, kind: "wrong_amount",
+    evidence: "Citadel FCU (doc 32251, text 30203): \"Mortgage satisfaction fee (varies)\" then \"$1,000.00 Mortgage modification\"; the satisfaction fee has no price, and the $1,000 is the modification fee." },
+  { feePublishedId: 152591, institutionId: 7859, canonicalFeeKey: "other_lending_fee", amount: 4.95, feeName: "Reconveyance",
+    reason: "source_mismatch: #1828", issue: 1828, kind: "wrong_amount",
+    evidence: "Oregon Community FCU (doc 19849, text 15643): \"Reconveyance………… Actual Cost | Returned payment………… | $4.95\"; reconveyance is at actual cost, and the $4.95 is the next line's returned loan payment." },
+  { feePublishedId: 152306, institutionId: 8579, canonicalFeeKey: "bill_pay", amount: 35, feeName: "Bill Payment, ACH, or Check",
+    reason: "duplicate of #53765 (#1830)", issue: 1830, kind: "duplicate",
+    requiresLive: { feePublishedId: 53765, amount: 35, feeName: "Stop Payment Order for Bill Payment, ACH, or Check (one free per calendar year)" },
+    evidence: "The Southern FCU (doc 36961, text 35049): \"Stop payment order (one free per calendar year) Bill Payment, ACH, or Check | $35.00\": the stop payment fee, cut to its tail and filed as bill pay. It is already live as stop_payment 53765 at $35, so a re-file would list it twice." },
+  // #1837 (James chose "Take them down", Oct 17): East River FCU's two-column schedule read line by line.
+  { feePublishedId: 45157, institutionId: 5622, canonicalFeeKey: "overdraft", amount: 0, feeName: "Non-Sufficient Funds / Overdraft: Non-members",
+    reason: "source_mismatch: #1837", issue: 1837, kind: "wrong_category",
+    evidence: "East River FCU (doc 16371, text 11087): the left column's \"Non-Sufficient Funds / Overdraft\" heading sits over the right column's \"Notary Service\" rows; \"Non-members ... FREE\" is the free notary row, not an overdraft price." },
 ];
 
 export interface LiveTakedownRow {

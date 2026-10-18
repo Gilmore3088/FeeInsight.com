@@ -21,7 +21,7 @@ export default async function BillingIssuePage() {
   return (
     <main className="mx-auto max-w-lg px-6 py-20">
       <h1 className="text-2xl font-semibold text-ink">Your payment didn&apos;t go through</h1>
-      <p className="mt-4 text-sm text-[#5C554C]">
+      <p className="mt-4 text-sm text-ink-muted">
         We couldn&apos;t charge the card on file for your Hamilton subscription, and the {PAST_DUE_GRACE_DAYS}-day
         grace period has ended. Update your payment method and your workspace, saved reports and analyses come back
         right away. Nothing has been deleted.
@@ -32,7 +32,7 @@ export default async function BillingIssuePage() {
           Account settings
         </Link>
       </div>
-      <p className="mt-8 text-xs text-[#5C554C]">Questions? Email {CONTACT_EMAIL}.</p>
+      <p className="mt-8 text-xs text-ink-muted">Questions? Email {CONTACT_EMAIL}.</p>
     </main>
   );
 }

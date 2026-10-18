@@ -275,10 +275,20 @@ async function selectHeldFees(
     : "NULL::bigint";
   const filters: string[] = [];
   const state = normalizeStateCode(stateCode);
-  if (state) filters.push(`AND upper(btrim(inst.state_code)) = $${params.push(state)}`);
+  // A state lane reads its state's institutions once, before the held attempts. Postgres
+  // estimates one held attempt where there are 13,233 (the jsonb filters), so with the state as a
+  // plain filter it scanned every institution once per held attempt: 116M rows, over the 120 s
+  // timeout in every lane's classify step on 2026-10-17 (ID: >60 s; 1.6 s this way).
+  const scope = state
+    ? `WITH scope AS MATERIALIZED (
+        SELECT id, institution_name, state_code FROM institution_sources
+         WHERE upper(btrim(state_code)) = $${params.push(state)}
+      )`
+    : "";
   if (institutionId) filters.push(`AND fr.institution_id = $${params.push(institutionId)}`);
   return db.unsafe<HeldFeeRow[]>(
     `
+      ${scope}
       SELECT fr.fee_raw_id,
              fr.institution_id,
              fr.source_url,
@@ -302,7 +312,7 @@ async function selectHeldFees(
              ${currentDocument} AS current_document_id
         FROM pipeline_attempts pa
         JOIN raw_fee_observations fr ON fr.fee_raw_id = substring(pa.input_fingerprint from 5)::bigint
-        JOIN institution_sources inst ON inst.id = fr.institution_id
+        JOIN ${state ? "scope" : "institution_sources"} inst ON inst.id = fr.institution_id
        WHERE pa.stage = 'verify'
          AND pa.strategy = $2
          AND pa.strategy_version = $3

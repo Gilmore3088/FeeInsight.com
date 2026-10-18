@@ -6,7 +6,7 @@ describe("/subscribe pricing buttons (growth OS review N2)", () => {
   it("invites a search when no institution is chosen", () => {
     expect(pricingCtaLabel(null)).toBe(FIND_PRICING_LABEL);
     expect(FIND_PRICING_LABEL).toBe("Find your price");
-    expect(closingHeading(null)).toBe("Find your Hamilton Pro price");
+    expect(closingHeading(null)).toBe("Find your Hamilton price");
   });
 
   it("leads with the annual price, the plan the page recommends", () => {
@@ -22,7 +22,7 @@ describe("/subscribe pricing buttons (growth OS review N2)", () => {
       );
       expect(pricingCtaLabel(chosen)).toBe(SEE_PLAN_LABEL);
       // The price is already found, so the closing heading names the plan instead.
-      expect(closingHeading(chosen)).toBe("Your Hamilton Pro plan");
+      expect(closingHeading(chosen)).toBe("Your Hamilton plan");
     }
   });
 });

@@ -90,7 +90,10 @@ describe("Knox agentic extraction", () => {
     expect(JSON.stringify(db.mock.calls)).toContain("needs_darwin_verification");
     expect(JSON.stringify(db.mock.calls)).toContain("knox_extraction_completed");
     expect(JSON.stringify(db.mock.calls)).toContain("raw_observations_pending_verification");
-    expect(JSON.stringify(db.mock.calls)).not.toContain("No fee for e-statements");
+    // v76: "No fee for e-statements" is a free schedule row, written as a held $0 row Darwin
+    // verifies (`knox_review:zero`), never as one of the priced reads above.
+    expect(result.results[0].candidates.map((candidate) => candidate.feeName)).not.toContain("e-statements");
+    expect(JSON.stringify(db.mock.calls)).toContain("knox_review:zero");
   });
 
   it("records shadow calibrated confidence and the text's layout without changing the stored confidence", async () => {

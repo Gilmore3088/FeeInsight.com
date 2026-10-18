@@ -21,6 +21,12 @@ export const API_INCLUDED_TIERS: readonly ProTier[] = ["mid", "large"];
 export const API_MONTHLY_CALLS = 10_000;
 export const API_MONTHLY_CALLS_LABEL = API_MONTHLY_CALLS.toLocaleString("en-US");
 
+/**
+ * Calls a minute per plan (per organization, or per anonymous caller), on top of the monthly
+ * allowance. Enterprise keys are exempt, as they are from the monthly count.
+ */
+export const BURST_CALLS_PER_MINUTE = 60;
+
 /** "$300 and $500 plans": the monthly prices of the plans that include the API. */
 export const API_PLANS_LABEL = `${API_INCLUDED_TIERS.map((tier) => tierAmountLabel(tier, "monthly")).join(" and ")} plans`;
 

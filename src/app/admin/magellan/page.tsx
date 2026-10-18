@@ -41,6 +41,12 @@ export default async function MagellanPage() {
           </a>{" "}
           — the largest institutions with no live fees; paste a schedule link to run one next.
         </p>
+        <p className="mt-1 text-sm">
+          <a href="/admin/magellan/hand-supplied" className="font-medium underline">
+            Hand-supplied schedules
+          </a>{" "}
+          — load fee schedule PDFs a person downloaded from sites that block our fetcher, and the browser hunt&rsquo;s CSV.
+        </p>
       </header>
       <AgentFrame agent="magellan" />
       <AgentHandoffStrip

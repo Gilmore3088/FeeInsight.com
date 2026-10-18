@@ -151,7 +151,9 @@ export function middleHalfText(p25: number, p75: number, fmt: (v: number) => str
 }
 
 /** About how wide an 11px label is on a ~900px track, in %. */
-const labelWidth = (text: string) => text.length * 0.58 + 1;
+// Percent of the track one 11px label takes: the names only sit on the track when it is at least
+// 56rem wide (the @4xl container below), so this is sized for that width, not the page.
+const labelWidth = (text: string) => text.length * 0.68 + 1;
 
 function ownLabelStyle(at: number, left: number): CSSProperties {
   if (at >= 70) return { right: `${Math.max(0, 100 - at - 1)}%` };
@@ -186,9 +188,10 @@ function FeePosition({ x }: { x: Extract<ExhibitSpec, { kind: "fee_position" }> 
   const ownText = x.own != null ? `${x.ownLabel} ${fmtMoney(x.own)}` : "";
   const ownPlaced = x.own != null ? placeLabels([{ x: axis.at(x.own), width: labelWidth(ownText) + 1 }])[0] : null;
   return (
-    <div>
-      {/* On a phone the market names do not fit on the track: it carries ticks, and the names sit in a list below. */}
-      <div className="relative h-[3.6rem] md:h-[var(--track-h)]" style={{ "--track-h": `${3.6 + rowCount * 1.5}rem` } as CSSProperties}>
+    <div className="@container">
+      {/* In a narrow exhibit (a phone, or a column beside another) the market names do not fit on the
+          track: it carries ticks, and the names sit in a list below. */}
+      <div className="relative h-[3.6rem] @4xl:h-[var(--track-h)]" style={{ "--track-h": `${3.6 + rowCount * 1.5}rem` } as CSSProperties}>
         {ownPlaced ? (
           <span
             className="absolute top-0 whitespace-nowrap text-xs font-semibold text-terra-text [font-variant-numeric:tabular-nums]"
@@ -207,13 +210,13 @@ function FeePosition({ x }: { x: Extract<ExhibitSpec, { kind: "fee_position" }> 
         <span className="absolute top-6 h-6 w-0.5 -translate-x-1/2 bg-warm-800" style={{ left: `${axis.at(x.band.median)}%` }} title={`${x.band.label} median ${fmtMoney(x.band.median)}`} />
         {markers.map((m, i) => (
           <span key={m.label}>
-            <span className="absolute top-7 h-4 w-px -translate-x-1/2 bg-warm-500 md:hidden" style={{ left: `${axis.at(m.value)}%` }} />
+            <span className="absolute top-7 h-4 w-px -translate-x-1/2 bg-warm-500 @4xl:hidden" style={{ left: `${axis.at(m.value)}%` }} />
             <span
-              className="absolute top-[2.4rem] hidden w-px -translate-x-1/2 bg-warm-400 md:block"
+              className="absolute top-[2.4rem] hidden w-px -translate-x-1/2 bg-warm-400 @4xl:block"
               style={{ left: `${axis.at(m.value)}%`, height: `${0.85 + placed[i].row * 1.5}rem` }}
             />
             <span
-              className="absolute z-10 hidden whitespace-nowrap bg-warm-50 px-1 text-[11px] text-warm-700 [font-variant-numeric:tabular-nums] md:block"
+              className="absolute z-10 hidden whitespace-nowrap bg-warm-50 px-1 text-[11px] text-warm-700 [font-variant-numeric:tabular-nums] @4xl:block"
               style={{ left: `${placed[i].left}%`, top: `${3.3 + placed[i].row * 1.5}rem` }}
             >
               {markerText(m)}
@@ -233,7 +236,7 @@ function FeePosition({ x }: { x: Extract<ExhibitSpec, { kind: "fee_position" }> 
         <span>{fmtMoney(axis.hi)}</span>
       </div>
       {markers.length > 0 ? (
-        <ul className="mt-3 flex flex-wrap gap-1.5 md:hidden" aria-label="Market medians">
+        <ul className="mt-3 flex flex-wrap gap-1.5 @4xl:hidden" aria-label="Market medians">
           {markers.map((m) => (
             <li key={m.label} className="inline-flex items-center gap-1.5 rounded-full border border-warm-300 bg-white px-2.5 py-1 text-xs text-warm-800 [font-variant-numeric:tabular-nums]">
               <span className="inline-block h-3 w-px bg-warm-500" />

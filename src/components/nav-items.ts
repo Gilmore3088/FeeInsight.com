@@ -30,17 +30,18 @@ export const MARKET_DATA_NAV = {
 } as const;
 export const NATIONAL_INDEX_NAV = { label: `${PRODUCT_NAME}: national`, href: "/research/national-fee-index" } as const;
 /**
- * The header and footer name the Pro workspace generically: Hamilton's name and mark appear only
+ * The header and footer name the workspace generically: Hamilton's name and mark appear only
  * on the pages that sell it and inside the workspace (James, 2026-10-15, docs/project/DECISIONS.md).
+ * Hamilton is the paid product; "Pro" only marks who has paid, never a product name (James, 2026-10-17).
  */
 export const HAMILTON_PAGE_NAV = {
-  label: "Pro workspace",
+  label: "Workspace",
   href: "/for-institutions#hamilton",
   description: "Your fees against every market layer",
 } as const;
 
 /** The header's link to the plans; page bodies keep PRO_PLANS_NAV ("See Hamilton plans"). */
-export const HEADER_PLANS_NAV = { label: "Pro plans", href: "/subscribe" } as const;
+export const HEADER_PLANS_NAV = { label: "Plans", href: "/subscribe" } as const;
 
 /** The Pro button everywhere outside the workspace: Hamilton is the workspace, Pro is the plan. */
 export const PRO_PLANS_NAV = { label: "See Hamilton plans", href: "/subscribe" } as const;

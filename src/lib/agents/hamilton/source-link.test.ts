@@ -4,7 +4,15 @@ vi.mock("@/lib/data-store/fee-cache", () => ({ invalidatePublicReadCache: vi.fn(
 
 import { publishSkipReason, type VerifiedFeeRow } from "./publish";
 import {
+  DRIFTED_LINK_FEES_SQL,
+  fillSourceLinks,
+  findHandSourceLink,
   findResourceDocument,
+  linkOpensOwnDocument,
+  planLinkDrift,
+  repairLinkDrift,
+  SOURCE_LINK_DRIFT_LIVE,
+  type DriftedLinkRow,
   NO_SOURCE_DOCUMENT_REASON,
   NO_SOURCE_LINK_REASON,
   planSourceLinkRepair,
@@ -12,6 +20,7 @@ import {
   publishSourceLink,
   repairSourceLinks,
   resourceSourceLinks,
+  SOURCE_LINK_FILL_ON,
   SOURCE_LINK_RESOURCE_ON,
   type InstitutionDocumentText,
   type ResourceCandidateRow,
@@ -134,6 +143,46 @@ describe("source link repair", () => {
   });
 });
 
+describe("source link fill in every publish step (#1342 follow-up)", () => {
+  it("is on, and on a dry run lists the fills and writes nothing", async () => {
+    expect(SOURCE_LINK_FILL_ON).toBe(true);
+    const dry = createDb();
+    const preview = await fillSourceLinks(dry.db, { runId: 7, batchId: "agentic-run-7", dryRun: true });
+    expect([preview.scanned, preview.fills.length, preview.untraceable]).toEqual([5, 2, 3]);
+    expect(dry.calls.filter((text) => /UPDATE|INSERT/.test(text))).toEqual([]);
+  });
+
+  it("links each fee its own document can link, takes nothing down, and records each fill", async () => {
+    const live = createDb();
+    const result = await fillSourceLinks(live.db, { runId: 7, batchId: "agentic-run-7", dryRun: false });
+    expect(result.fills.map((fee) => [fee.feePublishedId, fee.url])).toEqual([
+      [1, "https://bank.example/fees.pdf"],
+      [2, "https://bank.example/fees.pdf"],
+    ]);
+    expect(result.untraceable).toBe(3);
+    const written = live.calls.join("\n");
+    expect(written).toContain("SET source_url = v.url");
+    expect(written).toContain("INSERT INTO pipeline_feedback");
+    expect(written).toContain("'hamilton.source_link_fill'");
+    // Never a takedown: an untraceable fee stays live for the repair or the re-source pass.
+    expect(written).not.toContain("rolled_back_at = NOW()");
+    expect(written).not.toContain("rolled_back_reason = v.reason");
+  });
+
+  it("keeps the publish step going when the write fails", async () => {
+    const live = createDb();
+    const tag = live.db as unknown as ReturnType<typeof vi.fn>;
+    const ok = tag.getMockImplementation()! as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown>;
+    tag.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) =>
+      strings.join("?").includes("UPDATE published_fee_records")
+        ? Promise.reject(new Error("permission denied for table published_fee_records"))
+        : ok(strings, ...values));
+    const result = await fillSourceLinks(live.db, { runId: 7, batchId: "agentic-run-7", dryRun: false });
+    expect(result.fills).toEqual([]);
+    expect(result.error).toMatch(/permission denied/);
+  });
+});
+
 // #1342 re-source: the text of Alliance Niagara's schedule as stored (doc 17763), and another
 // institution's page printing the same fee.
 const STORED = "Fee Schedule\nStop Payment | $20.00\nReturned Deposit | $20.00\nCopy of Statement | $5.00";
@@ -201,6 +250,28 @@ describe("source link re-source (#1342)", () => {
     expect(findResourceDocument(candidate(5808, { taken_document_ids: [17763] }), [stored(17763)])).toEqual({ why: "document_holds_same_name_import" });
     expect(findResourceDocument(candidate(5808, { source: "knox" }), [stored(17763)])).toEqual({ why: "knox_fee" });
     expect(findResourceDocument(candidate(5808, { fee_r2_key: "other/file" }), [stored(17763)])).toEqual({ why: "no_stored_document" });
+  });
+
+  it("links Bay Cities 11764 by hand to the free print copy that prints its line, and nothing else (roadmap 6.14)", () => {
+    const line = "Express Checking Monthly Fee: $0 with e-Statements and Direct Deposit. With e-Statements OR Direct Deposit – $5.";
+    const bayCities = (overrides: Partial<InstitutionDocumentText> = {}) => stored(27381, {
+      institution_id: 8434, document_url: "https://www.baycities.org/schedule-of-fees/?print=1", document_r2_key: "c1/c17d",
+      normalized_text: `Reg. D Excessive Transaction: $5.\n\n${line} Without e-Statements & Direct Deposit – $10.`, ...overrides,
+    });
+    const fee = (overrides: Partial<ResourceCandidateRow> = {}) => candidate(11764, {
+      institution_id: 8434, taken_down: false, rolled_back_reason: null, fee_name: "Express Checking Monthly Fee",
+      canonical_fee_key: "monthly_maintenance", amount: "5.00", taken_document_ids: [17805, 31579], ...overrides,
+    });
+    // The shared check gives the $5 to the $0 tier's words, so only the hand link places it.
+    expect(findResourceDocument(fee(), [bayCities()])).toEqual({ why: "not_in_stored_documents:amount_is_a_threshold" });
+    expect(findHandSourceLink(fee(), [bayCities()])).toEqual({ sourceDocumentId: 27381, url: "https://www.baycities.org/schedule-of-fees/?print=1", sourceLine: line });
+    expect(planSourceLinkResource([fee()], [bayCities()]).resources.map((r) => [r.feePublishedId, r.sourceDocumentId, r.restore])).toEqual([[11764, 27381, false]]);
+    for (const changed of [fee({ amount: "10.00" }), fee({ fee_name: "Star Checking Monthly Fee" }), fee({ institution_id: 6288 }), fee({ taken_document_ids: [27381] })]) {
+      expect(findHandSourceLink(changed, [bayCities()])).toBeNull();
+    }
+    for (const document of [bayCities({ superseded: true }), bayCities({ status: "failed" }), bayCities({ normalized_text: "Express Checking Monthly Fee: $7." }), bayCities({ document_url: null })]) {
+      expect(findHandSourceLink(fee(), [document])).toBeNull();
+    }
   });
 
   it("restores a takedown, links a live fee with no traceable document, and leaves the repair's fills alone", () => {
@@ -274,5 +345,112 @@ describe("source link re-source (#1342)", () => {
     const failed = await resourceSourceLinks(failing.db, { runId: 7, batchId: "agentic-run-7", dryRun: false });
     expect([failed.linked, failed.restored]).toEqual([0, 0]);
     expect(failed.error).toMatch(/source link re-source write failed: permission denied/);
+  });
+});
+
+describe("link drift: a live link that opens another page than the fee's own document (#1347)", () => {
+  // Live on prod (read-only, Oct 17): imported fees whose raw row was moved to another document
+  // kept the old document's link.
+  const drifted = (id: number, overrides: Partial<DriftedLinkRow> = {}): DriftedLinkRow => ({
+    fee_published_id: id,
+    lineage_ref: id + 100,
+    fee_verified_id: id + 100,
+    fee_raw_id: id + 200,
+    institution_id: 8485,
+    source: "migration_v10",
+    source_document_id: 15882,
+    canonical_fee_key: "check_image",
+    fee_name: "Receipt Copy Fee",
+    amount: "2.00",
+    link: "https://firstcu.net/about/disclosures-and-agreements/",
+    fp_url: "https://firstcu.net/about/disclosures-and-agreements/",
+    fv_url: "https://firstcu.net/about/disclosures-and-agreements/",
+    raw_url: "https://firstcu.net/about/disclosures-and-agreements/",
+    document_institution_id: 8485,
+    target_url: "https://firstcu.net/wp-content/uploads/2025/01/Service-Charges-FirstCU-1.2.2025.pdf",
+    ...overrides,
+  });
+  const text = {
+    source_document_id: 15882,
+    normalized_text: "Receipt Copy............................... $2.00/Item\nStop Payment .............................................. $20.00/Occurrence",
+  };
+  const driftRows = [
+    drifted(150),
+    // Not in its own document's text at that price: a second look, never a re-point.
+    drifted(151, { fee_name: "Stop Payment", canonical_fee_key: "stop_payment", amount: "35.00" }),
+    drifted(152, { document_institution_id: 44 }),
+  ];
+
+  it("keeps a link to the page the document's text was read from, and to the same page written another way", () => {
+    // A schedule PDF the stored landing page links to is the fee's real source.
+    expect(linkOpensOwnDocument(
+      "https://www.pncu.com/wp-content/uploads/2025/08/Fee-Schedule-7.2025.pdf",
+      "https://www.pncu.com/fee-schedule/",
+      "https://www.pncu.com/wp-content/uploads/2025/08/Fee-Schedule-7.2025.pdf",
+    )).toBe(true);
+    expect(linkOpensOwnDocument("https://www.foxvalleycu.com/pdf/fee-schedule.pdf", "https://www.foxvalleycu.com:443/pdf/fee-schedule.pdf", null)).toBe(true);
+    expect(linkOpensOwnDocument(
+      "https://www.pinnaclebank.com/wp-content/uploads/2026/01/Schedule-of-Fees-2026-1-1.pdf",
+      "https://vallant.bank/wp-content/uploads/2026/01/Schedule-of-Fees-2026-1-1.pdf",
+      "https://vallant.bank/wp-content/uploads/2026/01/Schedule-of-Fees-2026-1-1.pdf",
+    )).toBe(false);
+  });
+
+  it("re-points a fee that traces in its own document, sends one that does not to the second look, skips another bank's document", () => {
+    const plan = planLinkDrift(driftRows, [text]);
+    expect(plan.repoints.map((fee) => [fee.feePublishedId, fee.to, fee.traced])).toEqual([
+      [150, "https://firstcu.net/wp-content/uploads/2025/01/Service-Charges-FirstCU-1.2.2025.pdf", true],
+    ]);
+    expect(plan.failing.map((fee) => fee.feePublishedId)).toEqual([151]);
+    expect(plan.failing[0].reason).toMatch(/^source_link_drift: not in own document #15882 \(/);
+    expect(plan.skipped).toEqual([{ feePublishedId: 152, why: "document_of_another_institution" }]);
+    expect(DRIFTED_LINK_FEES_SQL).toContain("AS target_url");
+    expect(DRIFTED_LINK_FEES_SQL).toContain("LEFT JOIN agent_source_texts ast ON ast.source_document_id = sd.id");
+  });
+
+  const driftDb = (pending: Array<{ fee_published_id: number; kind: string; evidence: Record<string, unknown> }> = []) => {
+    const calls: string[] = [];
+    const tag = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const sqlText = strings.join("?");
+      calls.push(sqlText);
+      if (sqlText.includes("to_regclass")) return Promise.resolve([{ ready: true }]);
+      if (sqlText.includes("FROM pipeline_feedback")) return Promise.resolve(pending);
+      if (sqlText.includes("UPDATE published_fee_records")) {
+        return Promise.resolve((values.find(Array.isArray) as number[]).map((id) => ({ fee_published_id: id })));
+      }
+      return Promise.resolve([]);
+    });
+    const unsafe = vi.fn((sqlText: string) => {
+      calls.push(sqlText);
+      return Promise.resolve(sqlText.includes("AS target_url") ? driftRows : [text]);
+    });
+    Object.assign(tag, { unsafe });
+    return { db: tag as unknown as Parameters<typeof repairLinkDrift>[0], calls };
+  };
+
+  it("is live; a dry run writes nothing; a live run re-points every tier and archives only on the second look", async () => {
+    expect(SOURCE_LINK_DRIFT_LIVE).toBe(true);
+    const dry = driftDb();
+    const preview = await repairLinkDrift(dry.db, { runId: 7, batchId: "agentic-run-7", dryRun: true });
+    expect([preview.scanned, preview.repoints.length, preview.flagged, preview.archived.length]).toEqual([3, 1, 1, 0]);
+    expect(dry.calls.filter((sqlText) => /UPDATE|INSERT/.test(sqlText))).toEqual([]);
+
+    const first = driftDb();
+    const firstLook = await repairLinkDrift(first.db, { runId: 7, batchId: "agentic-run-7", dryRun: false });
+    expect([firstLook.repoints.length, firstLook.flagged, firstLook.archived.length, firstLook.error]).toEqual([1, 1, 0, null]);
+    const written = first.calls.join("\n");
+    expect(written).toContain("UPDATE verified_fee_observations fv");
+    expect(written).toContain("UPDATE raw_fee_observations fr");
+    expect(written).not.toContain("rolled_back_reason = v.reason");
+    expect(written).toContain("'hamilton.source_link_drift'");
+
+    // Flagged 13 hours earlier by another run: archived, never deleted.
+    const flaggedAt = new Date(Date.now() - 13 * 60 * 60_000).toISOString();
+    const second = driftDb([{ fee_published_id: 151, kind: "takedown_pending", evidence: { flag_run_id: 6, flagged_at: flaggedAt, reason: "x" } }]);
+    const secondLook = await repairLinkDrift(second.db, { runId: 7, batchId: "agentic-run-7", dryRun: false });
+    expect(secondLook.archived.map((fee) => fee.feePublishedId)).toEqual([151]);
+    const archivedSql = second.calls.join("\n");
+    expect(archivedSql).toContain("rolled_back_reason = v.reason");
+    expect(archivedSql).not.toMatch(/DELETE FROM/);
   });
 });

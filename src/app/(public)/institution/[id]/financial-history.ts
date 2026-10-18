@@ -5,7 +5,7 @@ import type {
   PeerRankMetric,
 } from "@/lib/data-store/financial";
 import { isFinancialSource } from "@/lib/data-store/financial-sources";
-import { balanceToDollars, formatReportQuarter, sourceRank } from "./financial-units";
+import { balanceToDollars, feeIncomeTerms, formatReportQuarter, sourceRank } from "./financial-units";
 
 /**
  * Chart-ready call-report history for the gated Financial profile.
@@ -290,7 +290,7 @@ export function computeGrowth(points: FinancialPoint[]): GrowthRow[] {
     if (now === null) continue;
     rows.push({
       key: flow.key,
-      label: flow.label,
+      label: flow.key === "serviceCharges" ? `${feeIncomeTerms(latest.source).title} (4 quarters)` : flow.label,
       kind: "flow",
       latest: now,
       latestQuarter: latest.quarter,
@@ -349,6 +349,13 @@ const ASSET_JUMP_PCT = 25;
 const ASSET_DROP_PCT = -10;
 const MIN_YEARS_FOR_RECORD = 5;
 
+/** "rose 12%", "fell 4%", or "held flat". */
+function moved(value: number): string {
+  const rounded = Math.round(value);
+  if (rounded === 0) return "held flat";
+  return `${rounded > 0 ? "rose" : "fell"} ${Math.abs(rounded)}%`;
+}
+
 function signedPct(value: number): string {
   const rounded = Math.round(value);
   return `${rounded > 0 ? "+" : ""}${rounded}%`;
@@ -364,11 +371,14 @@ export function findOutliers(points: FinancialPoint[], growth: GrowthRow[], peer
   const assets = g("assets");
   const charges = g("serviceCharges");
   const income = g("netIncome");
+  const feeTerms = feeIncomeTerms(points[points.length - 1]?.source);
+  const fees = feeTerms.title;
+  const atIts = feeTerms.was === "was" ? "is at its" : "are at their";
 
   if (charges?.yoy != null && assets?.yoy != null && Math.abs(charges.yoy - assets.yoy) >= FEE_GAP_POINTS) {
     flags.push({
       id: "fees-vs-assets",
-      text: `Deposit service charges ${signedPct(charges.yoy)} over the past year while total assets moved ${signedPct(assets.yoy)}.`,
+      text: `${fees} ${moved(charges.yoy)} over the past year while total assets ${moved(assets.yoy)}.`,
     });
   }
   if (assets?.yoy != null && assets.yoy >= ASSET_JUMP_PCT) {
@@ -393,9 +403,9 @@ export function findOutliers(points: FinancialPoint[], growth: GrowthRow[], peer
     if (years >= MIN_YEARS_FOR_RECORD) {
       const latest = totals[totals.length - 1];
       if (latest >= Math.max(...totals)) {
-        flags.push({ id: "fees-record-high", text: `Deposit service charges are at their highest in the ${years} years on file.` });
+        flags.push({ id: "fees-record-high", text: `${fees} ${atIts} highest in the ${years} years on file.` });
       } else if (latest <= Math.min(...totals)) {
-        flags.push({ id: "fees-record-low", text: `Deposit service charges are at their lowest in the ${years} years on file.` });
+        flags.push({ id: "fees-record-low", text: `${fees} ${atIts} lowest in the ${years} years on file.` });
       }
     }
   }

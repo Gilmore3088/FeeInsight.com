@@ -46,6 +46,30 @@ describe("money exhibit evidence identity", () => {
     expect(html).not.toContain("Published figures:");
   });
 
+  it("shows filed income as amounts, without a plus sign", () => {
+    const html = renderToStaticMarkup(<StoryExhibitView item={publicIncome} number={1} />);
+    expect(html).toContain("$100,000");
+    expect(html).toContain("$200,000");
+    expect(html).not.toMatch(/\+\$/);
+  });
+
+  it("keeps the sign on modelled changes", () => {
+    const item: StoryExhibit = {
+      ...publicIncome,
+      exhibit: {
+        kind: "money_at_stake",
+        title: "Fee income",
+        rows: [
+          { label: "At $30", low: 50_000, high: 50_000, evidenceLevel: "working_estimate" },
+          { label: "At $25", low: -40_000, high: -20_000, evidenceLevel: "working_estimate" },
+        ],
+        sources: [{ label: "NCUA 5300", table: "institution_financial_records" }],
+      },
+    };
+    const html = renderToStaticMarkup(<StoryExhibitView item={item} number={1} />);
+    expect(html).toMatch(/\+\$50,000/);
+  });
+
   it("names the researched institution in public archetype badges", () => {
     const item: StoryExhibit = { id: "archetype", actionTitle: "Published pricing models", exhibit: { kind: "archetype_map", title: "Models", ownKey: "mid", archetypes: [{ key: "mid", label: "Middle", rule: "Published fee", count: 4, names: [] }], sources: [] } };
     const html = renderToStaticMarkup(<StoryExhibitView item={item} number={1} researchInstitutionName="Space Coast Credit Union" />);

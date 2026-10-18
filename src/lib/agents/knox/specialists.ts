@@ -1,6 +1,8 @@
 import { feeApplicability } from "@/lib/fee-audience";
 import {
+  billPayByHeading,
   extractCandidatesFromText,
+  isUnpricedHeldShape,
   MAX_FEES_PER_DOCUMENT,
   withBoxSizeCellsSplit,
   withSidewaysBoxTable,
@@ -93,7 +95,29 @@ import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 // payments, skip payments, mobile check deposit), and
 // one price for a "debit or credit card" is the debit card's. Every current copy read before v75 is
 // read once more (`KNOX_STALE_READ_BELOW_VERSION`).
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 75 } as const;
+// v76: the next three recall families on the 62-bank answer key (`rules.ts`): a row pricing each slash
+// variant of its fee ("(Online/Manual) | $35/$60") or a box size in two price columns reads every price,
+// and a "$ | 5.00" split cell is one price; a free schedule row the line rules never read (dot leader,
+// markdown row, "No Cost to Members", "Notary Services: no fee", "No charge for notarization") is held
+// at $0 unless it is an allowance; a price that varies ("Check printing prices vary") is held as
+// `varies` with no amount. Every current copy read before v76 is read once more.
+// v77 (#1398, with `RESEARCH_SPLIT_LIVE` on): returned mail and excess withdrawal lines file under
+// their own types (`researchSplitTarget` in rules.ts), not account research.
+// v78 (Knox recall round 3, Oct 17; #1304's Knox half): a bill pay read priced under an overdraft
+// (courtesy pay) or NSF heading, on its own line or the heading line above, files under that fee
+// (`billPayByHeading`), and no later specialist adds it back as bill pay; a bare late fee right after a
+// safe deposit box read or under its heading is the box's (`boxLateFee`); a box size before its dot
+// leader names the box;
+// a checking account's own free row is its monthly fee at $0; and the next name families the 62-bank
+// key held (`V78_RECALL_PATTERNS`; statement printouts fold to document reproduction). Every current
+// copy read before v78 is read once more (`KNOX_STALE_READ_BELOW_VERSION`).
+// v79 (#1827): a price-first row keeps its own price. A table row that opens with its price ("| **$20** |
+// Key Deposit |", Valley Strong CU; "$10 | Replacement Debit Card") is the name after it, not the line
+// above, so the rows no longer each take the next row's price; under a name that says its price varies
+// ("Mortgage satisfaction fee (varies)", Citadel FCU) a price with a name after it is that name's. A
+// bare price still goes to the name above, and so does any price under a name that runs on ("...
+// Savings Account per"). The stale-read floor stays at v78: no page is read again for this alone.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 79 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -118,6 +142,8 @@ export interface FreeExtractionResult extends ExtractionRulesResult {
 }
 
 const MAX_HELD_PER_DOCUMENT = 40;
+/** v76: a $0 or "prices vary" hold, untraced $0 rows included, counts in the unpriced half of the held cap. */
+const unpricedHalf = (row: HeldFeeCandidate): boolean => isUnpricedHeldShape(row.shape) || (row.shape === "untraced" && row.amount === 0);
 /** NSF and overdraft joined as one item's name: "NSFs/Overdrafts", "Overdraft or NSF Item". */
 const NSF_TERM = String.raw`(?:nsfs?|non[-\s]?sufficient funds?|insufficient funds?)`;
 const NSF_AND_OVERDRAFT = new RegExp(
@@ -125,6 +151,11 @@ const NSF_AND_OVERDRAFT = new RegExp(
   "i",
 );
 const MAX_UNCLASSIFIED_PER_DOCUMENT = 10;
+/** v78: a read's category, and the categories the rules pass re-files it to by its heading (`billPayByHeading`, `boxLateFee`). */
+const REFILED_BY_HEADING: Readonly<Record<string, readonly string[]>> = {
+  bill_pay: ["overdraft", "nsf"],
+  late_payment: ["safe_deposit_box"],
+};
 
 function words(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
@@ -230,7 +261,10 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
   };
 
   for (const specialist of specialists) {
-    const found = specialist.run();
+    const run = specialist.run();
+    // v78 (#1304): no specialist files a bill payment priced under an overdraft or NSF heading on
+    // its own line as bill pay (`billPayByHeading`); the table pass named such a cell by its words.
+    const found = { ...run, candidates: run.candidates.map((read) => billPayByHeading(read)).filter((read): read is ExtractedFeeCandidate => read != null) };
     for (const [reason, count] of Object.entries(found.dropped ?? {})) countDropped(reason as DroppedLineReason, count);
     let added = 0;
     let selfCheckFailed = 0;
@@ -290,11 +324,29 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
           )
         : candidates.some((prior) => sameFee(prior, candidate));
       if (duplicate) continue;
+      // v78 (#1304): a later specialist's read of a row the rules pass already filed by its heading
+      // is that fee again: bill pay under an overdraft or NSF heading ("Courtesy Pay: Check/ACH/Bill
+      // Pay Payment"), a bare late fee among a safe deposit box's lines ("Safe Deposit Box Late Payment").
+      const refiledByHeading = REFILED_BY_HEADING[candidate.canonicalHint];
+      if (
+        refiledByHeading &&
+        candidates.some(
+          (prior) =>
+            refiledByHeading.includes(prior.canonicalHint) &&
+            prior.amount === candidate.amount &&
+            prior.feeName.toLowerCase().endsWith(candidate.feeName.toLowerCase()),
+        )
+      ) {
+        continue;
+      }
       candidates.push({ ...candidate, strategy: specialist.strategy });
       added += 1;
     }
     for (const heldRow of found.held) {
-      if (held.length >= MAX_HELD_PER_DOCUMENT) {
+      // v76: $0 and "prices vary" holds take their own half of the cap, so a schedule's free rows
+      // never push out a priced hold (or the other way round).
+      const unpricedHold = unpricedHalf(heldRow);
+      if (held.filter((row) => unpricedHalf(row) === unpricedHold).length >= MAX_HELD_PER_DOCUMENT) {
         if (heldRow.shape === "unclassified") countDropped("unclassified_cap");
         continue;
       }
@@ -338,7 +390,7 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
 
   // An untraced read is held once, and only when no specialist read the same fee traceably.
   for (const row of untraced) {
-    if (held.length >= MAX_HELD_PER_DOCUMENT) break;
+    if (held.filter((prior) => !unpricedHalf(prior)).length >= MAX_HELD_PER_DOCUMENT) break;
     const key = heldKey(row);
     if (seenHeld.has(key)) continue;
     seenHeld.add(key);

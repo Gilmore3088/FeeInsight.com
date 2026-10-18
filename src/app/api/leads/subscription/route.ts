@@ -2,6 +2,8 @@ import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@/lib/data-store/connection";
 import { syncLeadToMailerLite } from "@/lib/email/mailerlite";
+import { lifecycleFields } from "@/lib/email/lifecycle-fields";
+import { lifecycleDeps } from "@/lib/email/lifecycle-deps";
 import { parseStateCode, stateFromUseCase } from "@/lib/lead-capture";
 import {
   getSubscriptionTokenSecret,
@@ -101,6 +103,8 @@ async function handlePOST(request: NextRequest) {
       state: pickedState ?? latestState(rows),
       // A fresh double opt-in may bring back an address that unsubscribed earlier.
       ...(input.action === "confirm" ? { reconfirmed: true } : {}),
+      // What the lifecycle emails name: the report they asked for, or what they follow.
+      ...(input.action === "confirm" ? { fields: await lifecycleFields(rows, lifecycleDeps) } : {}),
     });
     if (sync.status === "failed") {
       console.error("[api/leads/subscription] MailerLite sync failed", { action: input.action, error: sync.error });

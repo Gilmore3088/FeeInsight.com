@@ -1,6 +1,9 @@
 import { NextRequest } from "next/server";
 import { validateApiKey } from "@/lib/api-auth";
 import { PRODUCT_NAME, SITE_URL } from "@/lib/constants";
+import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
+import { MAX_CHOSEN_PEERS, PEER_GROUP_PARAMS } from "@/lib/peer-set-dimensions";
+import { API_VERSION } from "@/lib/api-v1";
 
 /**
  * A Model Context Protocol server over the /api/v1 endpoints, so an AI
@@ -23,6 +26,8 @@ export interface McpV1Handlers {
   feeChanges: V1Handler;
   branches: V1Handler;
   market: V1Handler;
+  peers: V1Handler;
+  rateFees: V1Handler;
 }
 
 const ENDPOINT_PATHS: Record<keyof McpV1Handlers, string> = {
@@ -33,6 +38,8 @@ const ENDPOINT_PATHS: Record<keyof McpV1Handlers, string> = {
   feeChanges: "/api/v1/fee-changes",
   branches: "/api/v1/branches",
   market: "/api/v1/market",
+  peers: "/api/v1/peers",
+  rateFees: "/api/v1/rate-fees",
 };
 
 const SUPPORTED_PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
@@ -45,6 +52,7 @@ const SERVER_INSTRUCTIONS =
   "rank_institutions_by_fee for who charges the most or least for one fee, and get_institution for one institution's fees with source links. " +
   "get_revenue_trend gives market-wide fee revenue by quarter back to 2010; get_fee_changes lists fee changes detected recently. " +
   "get_branches gives bank and credit union branch addresses with latitude/longitude (good for maps); get_local_market lists who competes in an institution's market with deposit share. " +
+  "get_peer_comparison places one institution's dollar fees among its peers (median, middle half, percentile); get_rate_fees lists fees stated as a percentage, which are never mixed into dollar figures. " +
   "There is no full fee history yet, so do not infer fee trends from one snapshot. Credit the data as shown in each result's attribution field.";
 
 type Endpoint = keyof McpV1Handlers;
@@ -152,7 +160,7 @@ const TOOLS: ToolDefinition[] = [
     name: "find_institutions",
     title: "Find banks",
     description:
-      "Find banks and credit unions by name, state, city or asset size. Returns ids, city, assets and how many published fees each has. Use the id with get_institution. City and asset_tier can't be combined with name.",
+      "Find banks and credit unions by name, state, city or asset size. Returns ids, city, total assets (in thousands of dollars) and how many published fees each has. Use the id with get_institution. City and asset_tier can't be combined with name.",
     inputSchema: {
       type: "object",
       properties: {
@@ -189,12 +197,16 @@ const TOOLS: ToolDefinition[] = [
     name: "get_institution",
     title: "One bank in full",
     description:
-      "One institution's published fees (amount, conditions, the source link it was read from and the date), its FDIC/NCUA call report figures by quarter (8 by default, up to 66, back to 2010), and its CFPB complaint counts.",
+      "One institution's published fees (amount, conditions, the source link it was read from and the date), fees stated as a percentage listed apart in rate_fees, its FDIC/NCUA call report figures by quarter (8 by default, up to 66, back to 2010), and its CFPB complaint counts.",
     inputSchema: {
       type: "object",
       properties: {
         id: { type: "integer", minimum: 1, description: "Institution id from find_institutions" },
         quarters: { type: "integer", minimum: 1, maximum: 66, default: 8, description: "Call report quarters to include" },
+        updated_since: {
+          type: "string",
+          description: "Optional ISO 8601 date or date-time, e.g. 2026-10-01. Keeps only fees published at or after it.",
+        },
       },
       required: ["id"],
       additionalProperties: false,
@@ -203,7 +215,7 @@ const TOOLS: ToolDefinition[] = [
     toParams: (args) => {
       const id = optionalNumber(args, "id");
       if (!id) throw new ToolArgumentError("id is required");
-      return compact({ id, quarters: optionalNumber(args, "quarters") });
+      return compact({ id, quarters: optionalNumber(args, "quarters"), updated_since: optionalString(args, "updated_since") });
     },
   },
   {
@@ -322,6 +334,76 @@ const TOOLS: ToolDefinition[] = [
       return { institution_id: id };
     },
   },
+  {
+    name: "get_peer_comparison",
+    title: "Fees against peers",
+    description:
+      `One institution's published dollar fees, category by category, next to its peers: the peer median, 25th and 75th percentiles, how many peers publish the fee, and the institution's percentile among them (the share of peers with a lower amount, counting half of ties). Peers default to the same charter type, asset size and Fed district. Or define them with any of charter, asset_tier, asset_min, asset_max, state, district, regulator, cu_charter, holding_company, market and nearest (only those given apply; \"same\" means the institution's own value), or name up to ${MAX_CHOSEN_PEERS} with peer_ids. ` +
+      `Figures are left out when fewer than ${MIN_INSTITUTIONS_FOR_MEDIAN} peers publish a fee. Fees stated as a rate are listed apart, not compared.`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        institution_id: { type: "integer", minimum: 1, description: "Institution id from find_institutions" },
+        peer_ids: {
+          type: "string",
+          description: "Optional institution ids to compare against instead of the default peers, comma-separated, at most 25, e.g. 12,48,301",
+        },
+        ...Object.fromEntries(PEER_GROUP_PARAMS.map((p) => [p.name, { type: "string", description: `${p.description}, e.g. ${p.example}` }])),
+      },
+      required: ["institution_id"],
+      additionalProperties: false,
+    },
+    endpoint: "peers",
+    toParams: (args) => {
+      const id = optionalNumber(args, "institution_id");
+      if (!id) throw new ToolArgumentError("institution_id is required");
+      const peerIds = args.peer_ids;
+      let peers: string | undefined;
+      if (Array.isArray(peerIds)) {
+        if (!peerIds.every((p) => (typeof p === "number" && Number.isInteger(p)) || (typeof p === "string" && /^\d+$/.test(p)))) {
+          throw new ToolArgumentError("peer_ids must be institution ids");
+        }
+        peers = peerIds.length > 0 ? peerIds.join(",") : undefined;
+      } else {
+        peers = optionalString(args, "peer_ids");
+      }
+      const group = Object.fromEntries(PEER_GROUP_PARAMS.map((p) => {
+        const value = args[p.name];
+        return [p.name, typeof value === "number" ? String(value) : optionalString(args, p.name)];
+      }));
+      return compact({ institution_id: id, peer_ids: peers, ...group });
+    },
+  },
+  {
+    name: "get_rate_fees",
+    title: "Fees stated as a rate",
+    description:
+      "Fees an institution states as a percentage, such as a foreign transaction fee of 3% of the transaction: the rate, any dollar minimum or maximum, the source link and publish date. Filter by institution_id, state, category or charter. These are never pooled with dollar amounts.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        institution_id: { type: "integer", minimum: 1, description: "Institution id from find_institutions" },
+        state: stateProperty,
+        category: { type: "string", description: "Optional category key, e.g. card_foreign_txn" },
+        charter: charterProperty,
+        updated_since: { type: "string", description: "Optional ISO 8601 date or date-time; only fees published at or after it" },
+        page: { type: "integer", minimum: 1, default: 1 },
+        limit: { type: "integer", minimum: 1, maximum: 500, default: 100 },
+      },
+      additionalProperties: false,
+    },
+    endpoint: "rateFees",
+    toParams: (args) =>
+      compact({
+        institution_id: optionalNumber(args, "institution_id"),
+        state: optionalString(args, "state"),
+        category: optionalString(args, "category"),
+        charter: optionalString(args, "charter"),
+        updated_since: optionalString(args, "updated_since"),
+        page: optionalNumber(args, "page"),
+        limit: optionalNumber(args, "limit"),
+      }),
+  },
 ];
 
 type JsonRpcId = string | number | null;
@@ -409,7 +491,7 @@ async function handleMessage(
       return rpcResult(id, {
         protocolVersion,
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "bank-fee-index", title: PRODUCT_NAME, version: "1.0.0" },
+        serverInfo: { name: "bank-fee-index", title: PRODUCT_NAME, version: API_VERSION },
         instructions: SERVER_INSTRUCTIONS,
       });
     }
@@ -441,7 +523,7 @@ export async function handleMcpPost(request: NextRequest, handlers: McpV1Handler
     return Response.json(
       {
         error: auth.error ?? "An API key is required. Ask hello@bankfeeindex.com for access.",
-        code: auth.error ? "invalid_api_key" : "api_key_required",
+        code: auth.error ? (auth.code ?? "invalid_api_key") : "api_key_required",
       },
       { status: 401, headers: { "WWW-Authenticate": "Bearer" } },
     );
@@ -467,3 +549,14 @@ export async function handleMcpPost(request: NextRequest, handlers: McpV1Handler
 }
 
 export const MCP_TOOL_NAMES = TOOLS.map((t) => t.name);
+
+/** The connector's tools as /api-docs lists them, and as api-docs-sync.test.ts checks them against the spec. */
+export const MCP_TOOLS = TOOLS.map((t) => ({
+  name: t.name,
+  title: t.title,
+  description: t.description,
+  path: ENDPOINT_PATHS[t.endpoint].replace("/api/v1", ""),
+  inputProperties: Object.keys((t.inputSchema.properties ?? {}) as Record<string, unknown>),
+  required: ((t.inputSchema.required ?? []) as string[]),
+  toParams: t.toParams,
+}));

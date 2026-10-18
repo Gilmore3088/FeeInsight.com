@@ -452,3 +452,107 @@ describe("account table reads carry their column's product (v73, #1100)", () => 
     expect(reads).toEqual([["Great Checking Monthly Service Fees", "Great Checking"], ["Better Checking Monthly Service Fees", "Better Checking"]]);
   });
 });
+
+describe("a price-first row keeps its own price (#1827)", () => {
+  const amountsOf = (rows: Row[], name: string) => rows.filter(([fee]) => fee === name).map(([, amount]) => amount);
+
+  // Valley Strong CU, doc 36716 (text 34862, Oct 17): every box rent was read at the next row's price.
+  const valleyStrong = [
+    "| Skip A Loan Payment | $25 |",
+    "",
+    "| Safe Deposit Boxes | |",
+    "| ------------------ | ------------------------------------- |",
+    "| **$195** | Drilling of Box by Locksmith/New Lock |",
+    "| **$20** | Key Deposit |",
+    "| **$11** | Key Replacement |",
+    "| **$45** | Rental of 3 × 5 Box Annual Fee |",
+    "| **$55** | Rental of 5 × 5 Box Annual Fee |",
+    "| **$80** | Rental of 3 × 10 Box Annual Fee |",
+    "| **$100** | Rental of 5 × 10 Box Annual Fee |",
+    "| **$120** | Rental of 6 × 10 Box Annual Fee |",
+    "| **$175** | Rental of 10 × 10 Box Annual Fee |",
+    "",
+    "Rates effective as of 08/01/2026.",
+  ].join("\n");
+
+  it("pairs each markdown row's price with the name after it (Valley Strong CU)", () => {
+    const rows = fees(valleyStrong);
+    expect(amountsOf(rows, "Drilling of Box by Locksmith/New Lock")).toEqual([195]);
+    expect(amountsOf(rows, "Key Deposit")).toEqual([20]);
+    expect(amountsOf(rows, "Key Replacement")).toEqual([11]);
+    expect(amountsOf(rows, "Rental of 3 × 5 Box Annual Fee")).toEqual([45]);
+    expect(amountsOf(rows, "Rental of 5 × 5 Box Annual Fee")).toEqual([55]);
+    expect(amountsOf(rows, "Rental of 3 × 10 Box Annual Fee")).toEqual([80]);
+    expect(amountsOf(rows, "Rental of 5 × 10 Box Annual Fee")).toEqual([100]);
+    expect(amountsOf(rows, "Rental of 6 × 10 Box Annual Fee")).toEqual([120]);
+    expect(amountsOf(rows, "Rental of 10 × 10 Box Annual Fee")).toEqual([175]);
+  });
+
+  it("gives a name that says its price varies none of the price-first line below (Citadel FCU)", () => {
+    // Citadel FCU, doc 32251 (text 30203): "Mortgage satisfaction fee (varies)" was read at $1,000.
+    const citadel = [
+      "Citadel Mortgage Fees:",
+      "Mortgage recording fee (varies)",
+      "Mortgage satisfaction fee (varies)",
+      "$1,000.00 Mortgage modification",
+      "$5.95 for one-time real estate loan payment by ACH transfer or debit card",
+      "Contact Us",
+    ].join("\n");
+    expect(fees(citadel).filter(([name]) => /satisfaction|recording/i.test(name))).toEqual([]);
+  });
+
+  it("reads a price-first cell row under a heading line as its own row, not a wrapped chain", () => {
+    // Doc 2491 (live 74628 read "Replacement Debit Card" at the Rush row's $30).
+    const text = ["Card Service Fees", "$10 | Replacement Debit Card", "$30 | Replacement Debit Card Rush", "$25 | Returned Credit Card Payment"].join("\n");
+    const rows = fees(text);
+    expect(amountsOf(rows, "Replacement Debit Card")).toEqual([10]);
+    expect(rows.some(([name]) => name === "Card Service Fees")).toBe(false);
+  });
+
+  it("lets a bare direction after the price borrow the name line above", () => {
+    const text = ["Outgoing Wire Transfers", "$25 | Domestic", "$50 | International"].join("\n");
+    expect(fees(text, "extract.table")).toEqual([["Outgoing Wire Transfers: Domestic", 25, "wire_domestic_outgoing"]]);
+  });
+
+  it("still gives a bare price to the name above it, even one that says it varies", () => {
+    const text = ["Stop Payment Order | $40.00", "Skip-A-Payment Fee (Varies with payment)", "$25.00", "Legal Order Processing Fee | $30.00"].join("\n");
+    expect(amountsOf(fees(text), "Skip-A-Payment Fee (Varies with payment)")).toEqual([25]);
+  });
+
+  it("keeps the price of a name that runs on in a two-column page", () => {
+    // Doc 26170 (live 127034): the left column's name wraps around its price; the right column's
+    // fee beside the price is priced on the next line.
+    const text = ["Inactivity Fee - Savings Account per", "$5 | Cross-border transaction fee", "Month After 24 Months | 0.90%"].join("\n");
+    expect(amountsOf(fees(text, "extract.table"), "Inactivity Fee - Savings Account per")).toEqual([5]);
+  });
+
+  it("keeps a name line's price over a lone price-first row (two columns or a description cell)", () => {
+    const twoColumns = ["Overdraft Fee", "$35.00 | Stop Payment Fee", "Per item | $30.00"].join("\n");
+    expect(amountsOf(fees(twoColumns, "extract.table"), "Overdraft Fee")).toEqual([35]);
+    const inactivity = ["Inactivity Fee", "$5 | Cross-border transaction fee", "Month After 24 Months | 0.90%"].join("\n");
+    expect(amountsOf(fees(inactivity, "extract.table"), "Inactivity Fee")).toEqual([5]);
+    expect(amountsOf(fees(["Overdraft Fee", "$35 | Charged when an item is paid"].join("\n")), "Overdraft Fee")).toEqual([35]);
+    expect(amountsOf(fees(["Stop Payment", "$30 | Online Banking request"].join("\n")), "Stop Payment")).toEqual([30]);
+  });
+
+  it("reads a period word followed by a capitalized name as the row's name", () => {
+    const text = ["| **$10** | Monthly Service Charge |", "| **$45** | Annual Rental 3 x 5 Box |"].join("\n");
+    expect(priceWindows(text).map((window) => window.rawName)).toEqual(["Monthly Service Charge", "Annual Rental 3 x 5 Box"]);
+    expect(fees("| $5 | Monthly for paper statements |").some(([name]) => /^Monthly for/.test(name))).toBe(false);
+    const daily = ["Overdraft Fee", "$35 | Charged per item paid", "$5 | Daily after 7 days negative"].join("\n");
+    expect(amountsOf(fees(daily, "extract.table"), "Overdraft Fee")).toEqual([35]);
+  });
+
+  it("reads a lone price-first row under a markdown header and rule row", () => {
+    const text = ["| Amount | Service |", "| --- | --- |", "| $20 | Key Deposit |"].join("\n");
+    expect(amountsOf(fees(text), "Key Deposit")).toEqual([20]);
+  });
+
+  it("never reads a period or a waiver after the price as the row's name", () => {
+    const windows = priceWindows(["Overdraft Fee", "| $35 | Per item |", "Stop Payment", "| $30 | Waived for seniors |"].join("\n"));
+    expect(windows.map((window) => [window.rawName, window.amount])).toEqual([
+      ["Overdraft Fee | ", 35],
+      ["Stop Payment | ", 30],
+    ]);
+  });
+});

@@ -19,6 +19,7 @@ import {
 import { getInstitutionFeeScheduleEvidence } from "@/lib/data-store/institution";
 import { getDisplayName, getFeeFamily, getFeeTier } from "@/lib/fee-taxonomy";
 import { getFeePublicationStatusLabel } from "@/lib/institution-quality";
+import { countedInstitutionCount } from "@/lib/data-store/fee-stats";
 
 /**
  * Public tools — wrap the same logic as /api/v1/ routes but call DB directly
@@ -48,9 +49,7 @@ export const searchFees = tool({
         family: getFeeFamily(category),
         tier: getFeeTier(category),
         summary: {
-          institution_count: new Set(
-            detail.fees.map((f) => f.institution_id)
-          ).size,
+          institution_count: countedInstitutionCount(detail.fees),
           observation_count: detail.fees.length,
         },
         by_charter_type: detail.by_charter_type,

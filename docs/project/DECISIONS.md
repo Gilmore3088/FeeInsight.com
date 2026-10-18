@@ -3,6 +3,16 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-17
+
+**The homepage carries no standalone report promotion.** James, 2026-10-17 18:16, reviewing the
+homepage cuts (#1826): the Report example "promotes a standalone report 'from $300,' which
+competes with your primary goal." The homepage (`/`) has no Competitive Fee Position Report link
+or price, so Hamilton Pro (`/subscribe`) is its only paid path, next to the demo request. The
+paid report is still offered on `/reports` (its request form, `REPORT_OFFER`) and
+`/for-institutions` (`ReportOfferSection`). Don't restore the `request_report_click` link on the
+homepage from the money thesis; the report stays a lead into Pro from those pages.
+
 ## 2026-10-16
 
 **Admin fee corrections are new versions, admin-only, with source evidence.** James, 2026-10-16,
@@ -1124,3 +1134,90 @@ republishing) until someone asks. Planning notes: `/mnt/project-files/api-mcp/pl
 finance and the user an analyst). The payer and each active seat on their workspace (up to 5
 people) make one key each on the account page. All keys draw on the plan's one allowance of 10,000
 calls a month. A seat's key stops when the seat is removed, and every key stops when the plan ends.
+
+**The taxonomy may hold 52 types; the public site publishes only the top 50.** James, 2026-10-17
+(approving the account research split, #1398). Public pages and API listings that list fee types
+show at most 50: the top 50 by institution count, the national index's own order
+(`publicFeeTypes` in `src/lib/fee-taxonomy.ts`, applied to the shared public snapshot in
+`src/lib/public-stats.ts`). Internal, admin and Pro views keep all 52.
+
+**Hamilton is the paid product; there is no "Hamilton Pro".** James, 2026-10-17 08:27 UTC (Website
+thread): "there is no Hamilton and Hamilton pro. Hamilton is 'pro'. Pro is just a term to
+distinguish who has paid or not." Visitor copy names the subscription Hamilton ("See Hamilton
+plans", "Your Hamilton subscription"), never "Hamilton Pro", "Fee Insight Pro" or "the Pro
+workspace". "Pro" may still mark paid status (a Pro badge, `isPro`). The 2026-10-15 rule still
+holds: the header and footer name the workspace generically ("Workspace", "Plans").
+
+**Four data fixes switched on.** James, 2026-10-17 10:47 UTC (decision card "Switch on these four
+data fixes as recommended?", option "All four"). `CARD_PRODUCT_TAKEDOWN_LIVE` (#1766, guard v70):
+62 card-product fees come down after the second look (39 non-network ATM, 22 dormant account, and
+Navy Federal 122350 by hand). `COUNT_SHARED_SCHEDULE_ONCE` (#1764, #1441): sister charters that
+publish one schedule count once in statistics (126 institution values, 285 rows; no fee moves).
+`PAGE_COPY_COLLAPSE_LIVE` (#1764, #1439): 499 live page copies close as "duplicate of #… (copy of
+the page)" and 27 kept rows take the fuller name. Knox rules v78 (#1770) ships in its own PR. Each
+switch can be turned back off; the page-copy closes undo by clearing `rolled_back_at` on rows whose
+reason ends "(copy of the page)".
+
+**ATM surcharge takedowns switched on.** James, 2026-10-17 11:28 UTC (decision card "Take down 28
+ATM surcharges that banks charge only non-customers?", option "Take down").
+`ATM_SURCHARGE_TAKEDOWN_LIVE` (#1775, guard v71): 28 live non-network ATM rows come down as hand
+takedowns: 13 surcharges non-customers pay at the bank's own ATMs (#1772) and 15 lines that are not
+the fee (#1773). All 28 were live on the dry read (SELECT-only, 11:35 UTC). Archived, never deleted;
+set the switch false to stop, and restore by clearing `rolled_back_at`.
+
+**API docs move with the API.** James, 2026-10-17 11:37 UTC (API & MCP thread): "any update to the
+API automatically triggers documentation update." Every route, query parameter and connector tool
+must be in the OpenAPI spec and on /api-docs (`src/lib/api-docs-sync.test.ts`), and a PR that
+changes API code must bump `API_VERSION` in `src/lib/api-v1.ts`, which the spec and the connector
+both report (`scripts/ci-guards.sh api-docs-kill`).
+
+**Three state lanes side by side.** James, 2026-10-17 13:08 UTC (speed audit thread): "Run 3 at a
+time." The tick advances up to `PARALLEL_STATE_LANES` (3) lane runs at once
+(`executeQueuedAgentRuns`, `src/lib/agents/run-store.ts`); other runs still go one after another.
+Lanes take turns at publish steps, which share one database lock. The earlier stop (lanes held the
+database, Oct 2026) predates the read fixes in #1793 and #1798. Set the constant to 1 to go back.
+
+**Outreach in three waves of 15 from November 1.** James, 2026-10-17 15:04-15:05 UTC (Sales
+thread): "we should Target 15 to over 2 weeks. Let's just say starting maybe November 1st. And then
+middle of November we roll out the next and then December 1st we roll out another. And hopefully we
+can get four paying clients by the end of the year." Until then "we aren't ready to send": outreach
+stays parked. He approved all three ways to reach more buyers (same thread, "All three should be
+done"): keep named leaders printed without an address, widen the contact finder to every
+comparison-ready institution, and add rural institutions with a statewide comparison. On Oct 17
+only 11 of 256 comparison-ready $500M-$2B metro institutions had a decision-maker contact
+(`/mnt/project-files/sales/contact-gap-2026-10-17.md`); the three waves need 45.
+
+**Public data gets its own agent, Hoovie, and the data comes first.** James, 2026-10-17 (Public
+data loaders thread). At 17:40 UTC: "I think they should have their own agent", and "we need a play
+for all data, and easy future connections". At 17:51 UTC: "It's an internal name, so call him
+Hoovie", "we need to map it so it's used in the site and in Hamilton", and "Let's get the data first".
+
+Hoovie owns the registry loaders: collect, validate, link, store, roll up, serve and monitor.
+Magellan keeps bank fee schedules. The play is one contract per source (`src/lib/agents/hoovie/`),
+so that a new connection needs only a contract and a parser.
+
+Work order: first get the data (unblock the failing sources, collect faster, and add a health check
+so failures show), then map it into the site and Hamilton. Hoovie is internal only and never appears
+to customers.
+
+**No non-commercial data.** James, 2026-10-17 19:11 UTC (Public data loaders thread): "No finra
+data. No non-commercial data. Strike it if it violated that." Fee Insight is a paid product, so a
+source whose terms allow only non-commercial, academic, personal or research use is never loaded,
+held or shown; its loader is removed, not paused. The FINRA Foundation's National Financial
+Capability Study (terms: "ONLY for your academic research and publication for non-commercial
+purposes") was removed; it had loaded no rows. Every new source's terms are read before its loader
+is built.
+The same day's licence audit struck these too (loader or part removed; rows already on prod are
+left in place and no reader returns them): Nacha ACH volumes (personal, non-commercial use only);
+the Kansas City Fed small business lending survey and the Atlanta Fed payment choice tables
+(reproduction "not for private gain"); the Fed Small Business Credit Survey (CC BY-NC 4.0); the
+frbservices.org FedNow and Fed check pages and the frbservices.org FedACH page (Federal Reserve
+Financial Services need written permission for commercial use; FedACH is now read from the Federal
+Reserve Board's own page); the Zelle, FedNow and RTP participant lists; the FHLBank advance-rate
+pages (several banks say noncommercial informational use only, Chicago needs written permission,
+the rest unchecked); the Bank On certified-accounts list ("solely for your own noncommercial use");
+CourtListener fee lawsuits (personal, educational or research use); Florida's qualified public
+depository list (CFO site: "educational, personal, or training purposes"); and FRED's UMCSENT
+(University of Michigan consumer sentiment needs a licence for a sold product). World Bank
+Remittance Prices Worldwide is held: its code stays, no partition is scheduled and no reader returns
+its rows until James confirms its terms.
