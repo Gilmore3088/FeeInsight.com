@@ -1421,6 +1421,11 @@ describe("agentic run store", () => {
     expect(expectedMsToFirstWork(["classify", "publish"], readNow)).toBe(60_000);
   });
 
+  it("prices the publish-sweeps step at the moved sweeps' measured p99 and keeps the publish price (PR B)", () => {
+    expect(expectedStepMs("publish-sweeps")).toBe(205_000);
+    expect(expectedStepMs("publish")).toBe(225_000);
+  });
+
   it("starts a Read-now run's next step in the next tick behind a fresh lane, without waiting out lane room", async () => {
     getExecutionBackendMock.mockReturnValue("agentic_v1");
     // A fresh lane's first work (enhance + state-expert + discover, 195 s) leaves the Read-now run

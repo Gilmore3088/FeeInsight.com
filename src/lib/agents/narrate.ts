@@ -168,6 +168,12 @@ function narrateFinished(
         detail.index_refreshed === true && `index refreshed (${count(n(detail, "index_categories"), "category", "categories")})`,
       ])}.`;
     }
+    case "publish-sweeps": {
+      const changed = n(detail, "changed");
+      const verb = detail.dry_run === true ? "Would change" : "Changed";
+      if (changed === 0) return detail.dry_run === true ? "Publish sweeps dry run: nothing to change." : "Publish sweeps: nothing to change.";
+      return `${verb} ${count(changed, "live fee row")} across the moved publish sweeps${detail.dry_run === true ? " (dry run, nothing written)" : ""}.`;
+    }
     case "category-guard": {
       const failing = n(detail, "failing_fees");
       if (failing === 0) return `Checked ${count(n(detail, "scanned_fees"), "live fee")}; every one matches its category.`;
@@ -751,6 +757,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   publish: "gutenberg",
   "publish-index": "gutenberg",
   "publish-context": "gutenberg",
+  "publish-sweeps": "gutenberg",
   "report-render": "hamilton",
   "report-reconcile": "hamilton",
   "report-close": "hamilton",

@@ -343,6 +343,19 @@ transaction. A takedown is a soft rollback (`rolled_back_at`, batch `agentic-run
 unless named, the reason below); a dry run reports and writes nothing. Sections below give
 the detail.
 
+The publish-sweeps split (`hamilton/publish-sweeps.ts`, off: `PUBLISH_SWEEPS_SPLIT_LIVE`;
+turning it on is James's call). Of the step's 51 timed calls, 40 are scoped only by
+institution or not at all (`MOVED_PUBLISH_SWEEPS`), so in a state lane they run over every
+state's live fees. With the switch on, a state lane's `publish` skips those 40 and keeps its 11
+state-scoped and own-row calls (`KEPT_PUBLISH_CALLS`); a `publish-sweeps` step runs the 40 in
+this same order under the same lock, from a `hamilton.publish_sweeps` run queued by the tick
+at most one at a time and only after a lane publish completed. A Read-now or hand-found
+publish keeps every sweep, scoped to its institution, except the global `feedbackSync`. While
+the switch is off, every publish still runs all 51, and the `publish-sweeps` step is a dry run
+at most hourly. That dry run passes `dryRun: true` to every sweep, runs inside a savepoint that
+is always rolled back, takes no lock, and records `dry_run_write_check`. It writes
+`sweep_counts` and `would_take_down_ids` beside the lanes' own `sweep_counts`.
+
 The step must end inside the tick's 300 s function limit (2026-10-17 finding, steps overrun
 the tick budget). Its row loop (`runHamiltonPublish`) stops `PUBLISH_ROW_DEADLINE_MS` (120 s)
 after the step began, once it has decided `PUBLISH_MIN_ROWS_PER_STEP` (50) rows. Rows it did
