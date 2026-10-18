@@ -37,13 +37,14 @@ export function isVaultKey(value: string | null | undefined): value is string {
   return typeof value === "string" && /^[0-9a-f]{2}\/[0-9a-f]{64}$/.test(value);
 }
 
-function documentsBucket(): string {
+export function documentsBucket(): string {
   return process.env.R2_DOCUMENTS_BUCKET?.trim() || DEFAULT_DOCUMENTS_BUCKET;
 }
 
 let cachedClient: S3Client | null = null;
 
-function r2Client(): S3Client | null {
+/** The shared R2 client (S3 API), or null without R2 credentials. Also used by Hoovie's cold files. */
+export function r2Client(): S3Client | null {
   const endpoint = process.env.R2_ENDPOINT;
   const accessKeyId = process.env.R2_ACCESS_KEY_ID;
   const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;

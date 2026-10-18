@@ -12,6 +12,12 @@ vi.mock("@/lib/data-store/connection", () => {
   Object.assign(tx, { unsafe: (text: string) => ({ unsafe: text }) });
   return { sql: tx, withTransaction: (cb: (db: typeof tx) => Promise<unknown>) => cb(tx) };
 });
+// Archived quarters (#1870): none unless a test supplies them.
+vi.mock("./cold-reads", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./cold-reads")>()),
+  prunedCallFiles: vi.fn(async () => []),
+  readColdCallRows: vi.fn(async () => ({ rows: [], failed: [] })),
+}));
 vi.mock("@/lib/data-store/economy-aggregates", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/data-store/economy-aggregates")>()),
   getInstitutionHqLocation: vi.fn(),
@@ -30,6 +36,7 @@ vi.mock("@/lib/data-store/peer-sets", async (importOriginal) => ({
   peerSetMemberIds: vi.fn(),
 }));
 
+import { prunedCallFiles, readColdCallRows } from "./cold-reads";
 import { getInstitutionHqLocation } from "@/lib/data-store/economy-aggregates";
 import { getInstitutionFeeRows, getNationalIndexCached, getPeerIndex, getStateFeeIndexes } from "@/lib/data-store/fee-index";
 import { getPeerSubject, peerSetMemberIds, resolvePeerRequest, resolvePeerSet } from "@/lib/data-store/peer-sets";
@@ -376,6 +383,31 @@ describe("queryData: call-report lines", () => {
     const before = queries().length;
     expect(await queryData({ measure: CALL, scope: { kind: "county", id: "48201" } })).toMatchObject({ ok: false, reason: expect.stringContaining("not rolled up by county") });
     expect(queries()).toHaveLength(before);
+  });
+
+  it("adds an archived (pruned) quarter from its cold file, behind the hot quarters, with the same citation", async () => {
+    nextRows = [
+      { period: "2026-06-30", item_code: "RIAD4080", item_description: "SERVICE CHARGES", schedule: "RI", value: 1_234_000, unit: "USD", period_basis: "ytd", source: "ffiec", source_url: "https://cdr.ffiec.gov/x", fetched_at: "2026-08-01T00:00:00Z" },
+    ];
+    const file = { source: "ffiec", period: "2019-06-30", objectKey: "k", rowCount: 1, sha256: "a".repeat(64) };
+    vi.mocked(prunedCallFiles).mockResolvedValueOnce([file, { ...file, source: "ncua", objectKey: "n" }]);
+    vi.mocked(readColdCallRows).mockResolvedValueOnce({
+      rows: [{ institution_id: 12, source: "ffiec", report_date: "2019-06-30", item_code: "RIAD4080", item_key: "service_charges_deposits_ytd", item_description: "SERVICE CHARGES", schedule: "RI", value: 900, unit: "thousands", period_basis: "ytd", source_url: "https://cdr.ffiec.gov/old", fetched_at: "2026-10-17T00:00:00Z" }],
+      failed: [],
+    });
+    const result = await queryData({ measure: CALL, scope: { kind: "institution", id: "12" } });
+    expect(readColdCallRows).toHaveBeenCalledWith([file, expect.objectContaining({ source: "ncua" })], { itemKey: "service_charges_deposits_ytd", institutionIds: [12] });
+    expect(result).toMatchObject({
+      ok: true,
+      rows: [expect.objectContaining({ period: "2026-06-30" }), expect.objectContaining({ period: "2019-06-30", value: 900_000, unit: "USD" })],
+      citation: { source_url: "https://cdr.ffiec.gov/x", as_of: "2026-06-30" },
+    });
+  });
+
+  it("reads no cold file when the hot rows already fill the limit", async () => {
+    nextRows = [{ period: "2026-06-30", item_code: "RIAD4080", item_description: null, schedule: "RI", value: 1, unit: "USD", period_basis: "ytd", source: "ffiec", source_url: null, fetched_at: null }];
+    await queryData({ measure: CALL, scope: { kind: "institution", id: "12" }, limit: 1 });
+    expect(prunedCallFiles).not.toHaveBeenCalled();
   });
 
   it("shows no median, never zero, for a thin group", async () => {
