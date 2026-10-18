@@ -1235,3 +1235,15 @@ scheduled and no reader returns its rows. Released: World Bank Remittance Prices
 (ODC-By 1.0; attribution "Braga et al., Debt in America, Urban Institute"), each carrying its
 attribution on every stored row and read. Rows already loaded from struck sources stay on prod and
 no reader returns them (`src/lib/data-store/struck-sources.ts`).
+
+**PRs merge without James; accuracy comes from recorded reviews.** James, 2026-10-18 06:40-06:43 UTC
+(Triage thread, after a PR pipeline review): "i jsut want the most accurate but autonomous way", "i
+cant merge every PR how quickly we are shipping them", then "yes, make the rule change". Page PRs no
+longer wait for his typed yes (this replaces the Oct 17 hold after #1815). A page PR merges when a
+growthOS reviewer approves its desktop and phone screenshots, an independent reviewer finds no
+blockers on the exact head, and CI is green. Every merge gets a receipt comment with the head SHA
+and both verdicts. Batch to at most one PR per page or area a day. From Oct 15 to 18, 286 PRs merged
+(median 23 minutes from open to merge, 1,249 CI runs), and about half of a 21-PR sample had no review
+on record. The day's merges go to him as one digest with screenshots, and he can ask for a revert.
+Migrations, production-data changes and the other gated actions in CLAUDE.md still need his yes.
+
