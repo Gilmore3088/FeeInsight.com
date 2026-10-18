@@ -66,7 +66,7 @@ describe("H01 retained Hamilton shell navigation", () => {
     route.pathname = "/pro/reports";
     route.search = "instId=1535";
     view.rerender(<HamiltonShell {...seed}>Addition body</HamiltonShell>);
-    expect(screen.getByLabelText("Institution context").textContent).not.toContain(`Looking at: ${homeName}`);
+    expect(screen.getByLabelText("Institution context").textContent).not.toContain(`Researching: ${homeName}`);
     const nav = within(screen.getByRole("navigation", { name: "Hamilton workspace" }));
     await waitFor(() => expect(nav.getByRole("link", { name: "Research" })).toHaveAttribute("href", "/pro/intelligence?instId=1535"));
     expect(screen.getByLabelText("Institution context").textContent).toContain(`Your institution: ${homeName}`);
@@ -87,7 +87,7 @@ describe("H01 retained Hamilton shell navigation", () => {
     view.rerender(<HamiltonShell {...seed}>B</HamiltonShell>);
     await act(async () => resolveB({ id: "1535", name: "Addition Financial Credit Union" }));
     await act(async () => resolveA({ id: "2945", name: "Delayed old A" }));
-    expect(screen.getByLabelText("Institution context").textContent).toContain("Looking at: Addition Financial Credit Union");
+    expect(screen.getByLabelText("Institution context").textContent).toContain("Researching: Addition Financial Credit Union");
     expect(screen.getByLabelText("Institution context").textContent).not.toContain("Delayed old A");
     expect(screen.getByRole("link", { name: `Back to ${homeName}` })).toHaveAttribute("href", "/pro/hamilton");
     expect(screen.getByRole("link", { name: "Research" })).toHaveAttribute("href", "/pro/intelligence?instId=1535");
@@ -101,13 +101,13 @@ describe("H01 retained Hamilton shell navigation", () => {
     route.pathname = "/pro/reports";
     view.rerender(<HamiltonShell {...initial}>Saved preference B</HamiltonShell>);
     await waitFor(() => expect(route.resolve).toHaveBeenCalledWith(null));
-    await waitFor(() => expect(screen.getByLabelText("Institution context").textContent).toContain("Looking at: Addition Financial Credit Union"));
+    await waitFor(() => expect(screen.getByLabelText("Institution context").textContent).toContain("Researching: Addition Financial Credit Union"));
     expect(screen.getByRole("link", { name: "Research" })).toHaveAttribute("href", "/pro/intelligence?instId=1535");
     route.pathname = "/pro/research";
     view.rerender(<HamiltonShell {...initial}>Returned fresh default B</HamiltonShell>);
     await waitFor(() => expect(route.resolve).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(screen.getByLabelText("Institution context").textContent).toContain("Looking at: Addition Financial Credit Union"));
-    expect(screen.getByLabelText("Institution context").textContent).not.toContain(`Looking at: ${homeName}`);
+    await waitFor(() => expect(screen.getByLabelText("Institution context").textContent).toContain("Researching: Addition Financial Credit Union"));
+    expect(screen.getByLabelText("Institution context").textContent).not.toContain(`Researching: ${homeName}`);
   });
 
   it("does not reuse a cached default when returning before another lookup finishes", async () => {
@@ -117,14 +117,14 @@ describe("H01 retained Hamilton shell navigation", () => {
     const view = render(<HamiltonShell {...seed}>Initial</HamiltonShell>);
     route.pathname = "/pro/reports"; route.search = "";
     view.rerender(<HamiltonShell {...seed}>Default A</HamiltonShell>);
-    // Back on the home institution, the bar names no separate subject.
-    await waitFor(() => expect(screen.getByLabelText("Institution context").textContent).not.toContain("Looking at:"));
+    // Back on the home institution, the bar names it as the reader's own.
+    await waitFor(() => expect(screen.getByLabelText("Institution context").textContent).toContain(`Researching: ${homeName} (your institution)`));
     route.pathname = "/pro/simulate";
     view.rerender(<HamiltonShell {...seed}>Pending</HamiltonShell>);
     route.pathname = "/pro/reports";
     view.rerender(<HamiltonShell {...seed}>Returned</HamiltonShell>);
-    expect(screen.getByLabelText("Institution context").textContent).not.toContain(`Looking at: ${homeName}`);
-    await waitFor(() => expect(screen.getByLabelText("Institution context").textContent).toContain("Looking at: Addition Financial Credit Union"));
+    expect(screen.getByLabelText("Institution context").textContent).not.toContain(`Researching: ${homeName}`);
+    await waitFor(() => expect(screen.getByLabelText("Institution context").textContent).toContain("Researching: Addition Financial Credit Union"));
   });
 
   it("keeps explicit B intent when Reports is clicked before canonical resolution completes", () => {
@@ -141,7 +141,7 @@ describe("H01 retained Hamilton shell navigation", () => {
     }, { once: true });
     fireEvent.click(reports);
     expect(clickedDestination).toBe("/pro/reports?instId=1535");
-    expect(screen.getByLabelText("Institution context").textContent).not.toContain("Looking at:");
+    expect(screen.getByLabelText("Institution context").textContent).not.toContain("Researching:");
   });
 
   it.each(["instId=999999", "research=invalid", "report_id=private-missing&instId=1535"])("never borrows a retained seed for unavailable or frozen selection %s", async (search) => {
@@ -149,16 +149,17 @@ describe("H01 retained Hamilton shell navigation", () => {
     const view = render(<HamiltonShell {...seed}>Initial</HamiltonShell>);
     route.pathname = "/pro/reports"; route.search = search;
     view.rerender(<HamiltonShell {...seed}>Unavailable</HamiltonShell>);
-    if (search.startsWith("instId")) await waitFor(() => expect(screen.getByLabelText("Institution context").textContent).not.toContain("Looking at:"));
+    if (search.startsWith("instId")) await waitFor(() => expect(screen.getByLabelText("Institution context").textContent).not.toContain("Researching:"));
     else expect(route.resolve).not.toHaveBeenCalled();
-    expect(screen.getByLabelText("Institution context").textContent).not.toContain(`Looking at: ${homeName}`);
+    expect(screen.getByLabelText("Institution context").textContent).not.toContain(`Researching: ${homeName}`);
     expect(screen.getByRole("link", { name: "Research" })).toHaveAttribute("href", search.startsWith("instId") ? "/pro/intelligence?instId=999999" : "/pro/intelligence");
   });
 
   it("uses authorized saved report A as the shell subject despite a conflicting URL B", () => {
     route.pathname = "/pro/reports"; route.search = "report_id=saved-a&instId=1535";
     render(<HamiltonShell {...seed} initialRequestPath={`/pro/reports?${route.search}`}>Saved A</HamiltonShell>);
-    expect(screen.getByLabelText("Institution context").textContent).not.toContain("Looking at:");
+    expect(screen.getByLabelText("Institution context").textContent).toContain(`Researching: ${homeName} (your institution)`);
+    expect(screen.getByLabelText("Institution context").textContent).not.toContain("Addition");
     expect(screen.getByRole("link", { name: "Research" })).toHaveAttribute("href", "/pro/intelligence?instId=8109");
     expect(route.resolve).not.toHaveBeenCalled();
   });
@@ -167,8 +168,24 @@ describe("H01 retained Hamilton shell navigation", () => {
     route.pathname = "/pro/reports"; route.search = "report_id=unscoped&instId=1535";
     render(<HamiltonShell {...seed} initialRequestPath={`/pro/reports?${route.search}`} selectedInstitutionId={null}
       institutionContext={{ ...seed.institutionContext, name: null }}>Unscoped</HamiltonShell>);
-    expect(screen.getByLabelText("Institution context").textContent).not.toContain("Looking at:");
+    expect(screen.getByLabelText("Institution context").textContent).not.toContain("Researching:");
     expect(screen.getByRole("link", { name: "Research" })).toHaveAttribute("href", "/pro/intelligence");
     expect(route.resolve).not.toHaveBeenCalled();
+  });
+
+  it("names the account, the subject and the peer group separately when the account is not linked", () => {
+    render(<HamiltonShell {...seed} accountContext={{ status: "unlinked", institution: null }}>Ask</HamiltonShell>);
+    const bar = screen.getByLabelText("Institution context").textContent;
+    expect(bar).toContain("Your institution: Not linked");
+    expect(bar).toContain(`Researching: ${homeName}`);
+    expect(bar).not.toContain("(your institution)");
+    expect(bar).toContain("Compared with: no peer group saved");
+    expect(screen.getByRole("link", { name: "Link your institution" })).toHaveAttribute("href", "/pro/settings#account-institution");
+    expect(screen.getByRole("link", { name: "Choose peers" })).toHaveAttribute("href", "/pro/settings#peer-sets");
+  });
+
+  it("names the saved peer group for the subject", () => {
+    render(<HamiltonShell {...seed} peerLabel="Florida credit unions">Research</HamiltonShell>);
+    expect(screen.getByLabelText("Institution context").textContent).toContain("Compared with: Florida credit unions");
   });
 });

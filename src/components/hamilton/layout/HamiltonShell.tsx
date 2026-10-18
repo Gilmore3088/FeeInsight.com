@@ -41,6 +41,8 @@ interface HamiltonShellProps {
     selectedFromUrl?: boolean;
   };
   selectedInstitutionId?: string | null;
+  /** The active peer set's name for the server-selected subject; null when none is saved. */
+  peerLabel?: string | null;
   accountContext?: Pick<HamiltonAccountContext, "status" | "institution">;
   children: React.ReactNode;
 }
@@ -61,6 +63,7 @@ export function HamiltonShell({
   viewAsCustomer = false,
   institutionContext,
   selectedInstitutionId,
+  peerLabel = null,
   accountContext,
   children,
 }: HamiltonShellProps) {
@@ -105,12 +108,16 @@ export function HamiltonShell({
   };
   // Only a confirmed subject is named; loading, unavailable and invalid states show no label,
   // never the home institution and never an internal state as if it were a name.
-  // The reader's own institution is the default subject, so the bar only names a different one.
+  // The subject is always named, the reader's own institution included, so the account
+  // institution is never silently taken for the one being researched (James's Oct 18 audit).
   const homeId = accountContext?.status === "identified" ? accountContext.institution?.id : undefined;
   const isHome = homeId != null && currentInstitution?.id === String(homeId);
-  const researchLabel = selection.invalid || isHome ? null
+  const researchLabel = selection.invalid ? null
     : currentInstitution?.name
     ?? (selection.artifact ? (canUseSeed && institutionContext.name ? institutionContext.name : null) : null);
+  const marketScope = marketScopeLabel(pathname, selection, searchParams.get("view"));
+  // The peer set was read for the server's subject; a different client subject shows none.
+  const peerContext = marketScope || !researchLabel || currentInstitution?.id !== selectedInstitutionId ? undefined : peerLabel;
   return (
     <SessionChromeProvider value={session}>
       <HamiltonNavigationProvider value={navigation}>
@@ -144,8 +151,11 @@ export function HamiltonShell({
           pathname={pathname}
           isAdmin={isAdmin}
           accountLabel={accountLabel(accountContext)}
+          accountLinked={accountContext?.status === "identified"}
           homeName={accountContext?.status === "identified" ? accountContext.institution?.name ?? null : null}
-          researchLabel={marketScopeLabel(pathname, selection, searchParams.get("view")) ?? researchLabel}
+          researchLabel={marketScope ?? researchLabel}
+          researchIsHome={!marketScope && isHome}
+          peerLabel={peerContext}
         />
 
         {canUseSeed && institutionContext.makeDefaultHref ? (

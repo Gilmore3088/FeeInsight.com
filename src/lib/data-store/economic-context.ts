@@ -1,7 +1,7 @@
 import { CPI_BANK_SERVICES_SERIES } from "@/lib/regulatory/fed";
 import { sql } from "./connection";
 import { getBeigeBookThemes, getLatestBeigeBook } from "./fed";
-import { STATE_NEWS_SOURCE_PATTERNS } from "./news";
+import { STATE_NEWS_SOURCE_PATTERNS, TOPIC_SQL } from "./news";
 
 /**
  * Economic and regulatory context for a state report, read from the tables the registry
@@ -72,7 +72,7 @@ export interface StateEconomicContext {
 }
 
 const HISTORY_POINTS = 72;
-const REGULATORY_TOPICS = ["overdraft", "fees_pricing", "rulemaking_compliance", "consumer_lending"];
+const REGULATORY_TOPICS = ["overdraft", "fees_pricing", "rulemaking_compliance", "enforcement", "consumer_lending"];
 const REGULATORY_LIMIT = 5;
 const BANKING_SECTION = /bank|financ|credit|lending|loan/i;
 
@@ -213,9 +213,9 @@ async function loadDistrictResearch(district: number): Promise<DistrictResearchI
 async function loadRegulatory(): Promise<RegulatoryItem[]> {
   try {
     const rows = await sql`
-      SELECT source, title, link, topic, published_at
+      SELECT source, title, link, ${sql.unsafe(TOPIC_SQL)} AS topic, published_at
         FROM reg_articles
-       WHERE topic = ANY(${REGULATORY_TOPICS}::text[])
+       WHERE ${sql.unsafe(TOPIC_SQL)} = ANY(${REGULATORY_TOPICS}::text[])
          AND NOT (source LIKE ANY(${STATE_NEWS_SOURCE_PATTERNS}::text[]))
        ORDER BY published_at DESC NULLS LAST, created_at DESC
        LIMIT ${REGULATORY_LIMIT}

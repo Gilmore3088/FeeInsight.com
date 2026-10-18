@@ -17,6 +17,7 @@ import {
 } from "@/lib/hamilton/artifact-context";
 import { getHamiltonArtifactInstitutionId } from "@/lib/hamilton/artifact-context-store";
 import { subscribeReason } from "@/lib/subscribe-reason";
+import { getActivePeerSet } from "@/lib/hamilton/peer-index";
 import { sanitizeInternalRedirect } from "@/lib/safe-redirect";
 
 export const metadata: Metadata = {
@@ -136,6 +137,12 @@ async function HamiltonLayoutInner({
         selectedSource: "none" as const,
         selectedFromUrl: false,
       };
+  const accountContext = await loadHamiltonAccountContext(user);
+  // The comparison group is the third context the bar names: the peer set answers use, which is
+  // the account workspace's default, else the reader's own (as the Ask route reads it).
+  const activePeers = selectedInstitution
+    ? await getActivePeerSet({ userId: user.id, institutionId: accountContext.institution?.id ?? selectedInstitution.id }).catch(() => null)
+    : null;
   return (
     <HamiltonShell
       initialRequestPath={requestPath}
@@ -144,7 +151,8 @@ async function HamiltonLayoutInner({
       viewAsCustomer={isAdmin && isViewAsCustomerCookie((await cookies()).get(VIEW_AS_CUSTOMER_COOKIE)?.value)}
       institutionContext={institutionContext}
       selectedInstitutionId={selectedInstitutionId}
-      accountContext={await loadHamiltonAccountContext(user)}
+      peerLabel={activePeers?.label ?? null}
+      accountContext={accountContext}
     >
       {children}
     </HamiltonShell>

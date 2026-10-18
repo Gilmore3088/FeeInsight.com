@@ -35,8 +35,13 @@ export function median(values: number[]): number | null {
   return computeStats(values).median;
 }
 
-/** Each state's median of one fee, one value per institution; states under the cohort floor are withheld. */
-export function buildFeeMap(category: string, values: Array<{ state_code: string | null; amount: number }>, scopeState: string | null = null): FeeMap {
+/**
+ * Each state's median of one fee, one value per institution; states under the cohort floor are
+ * withheld. Charters that share one fee schedule count once (statistics rule 7: a value carrying
+ * `counted_as` is represented by that charter), so the map's count is the landscape table's.
+ */
+export function buildFeeMap(category: string, rows: Array<{ state_code: string | null; amount: number; counted_as?: number }>, scopeState: string | null = null): FeeMap {
+  const values = rows.filter((row) => row.counted_as === undefined);
   const byState = new Map<string, number[]>();
   for (const value of values) {
     if (!value.state_code || !Number.isFinite(value.amount)) continue;

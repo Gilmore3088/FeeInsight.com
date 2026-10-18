@@ -11,13 +11,19 @@ const icons = { Activity, Bookmark, Calculator, ChartNoAxesColumnIncreasing, Fil
 
 /**
  * The workspace's left navigation and institution bar, from #1011 (James's Oct 11 unified
- * workspace). One sidebar serves desktop and, behind the menu button, phones. The signed-in
- * institution and the research subject are shown separately.
+ * workspace). One sidebar serves desktop and, behind the menu button, phones. The bar names
+ * three things separately: the reader's own institution, the institution being researched and
+ * the peer group it is compared with.
  */
-export function WorkspaceNavigation({ pathname, isAdmin, accountLabel, researchLabel, homeName = null }: {
+export function WorkspaceNavigation({ pathname, isAdmin, accountLabel, researchLabel, homeName = null, accountLinked = false, researchIsHome = false, peerLabel }: {
   pathname: string; isAdmin: boolean; accountLabel: string; researchLabel: string | null;
   /** The reader's own institution, when their account is linked to exactly one. */
   homeName?: string | null;
+  accountLinked?: boolean;
+  /** The subject is the reader's own institution. */
+  researchIsHome?: boolean;
+  /** The subject's saved peer group: a name, null for none saved, undefined when not shown. */
+  peerLabel?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const hrefFor = useHamiltonNavigationHref();
@@ -43,10 +49,19 @@ export function WorkspaceNavigation({ pathname, isAdmin, accountLabel, researchL
     </aside>
     <section aria-label="Institution context">
       <header className="workspace-topbar print:hidden">
-        <div><span className="workspace-muted">Your institution: </span><strong>{accountLabel}</strong></div>
+        <div>
+          <span className="workspace-muted">Your institution: </span><strong>{accountLabel}</strong>
+          {accountLinked ? null : <> · <Link href="/pro/settings#account-institution">Link your institution</Link></>}
+        </div>
         <NavAccount />
       </header>
-      {researchLabel ? <div className="workspace-research-context print:hidden"><span>Looking at: {researchLabel}</span>{homeName && !researchLabel.endsWith(" market") ? <Link href="/pro/hamilton">Back to {homeName}</Link> : null}</div> : null}
+      {researchLabel ? <div className="workspace-research-context print:hidden">
+        <span>Researching: <strong>{researchLabel}</strong>{researchIsHome ? " (your institution)" : null}</span>
+        {peerLabel === undefined ? null : peerLabel
+          ? <span>Compared with: <strong>{peerLabel}</strong></span>
+          : <span>Compared with: no peer group saved · <Link href="/pro/settings#peer-sets">Choose peers</Link></span>}
+        {homeName && !researchIsHome && !researchLabel.endsWith(" market") ? <Link href="/pro/hamilton">Back to {homeName}</Link> : null}
+      </div> : null}
     </section>
   </>;
 }

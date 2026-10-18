@@ -6,6 +6,12 @@ import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { buildFeeMap, buildFeeSpread, joinSeries, loadComplaintTrend, percentChange, yearOverYear } from "./intelligence-data";
 
 describe("buildFeeMap", () => {
+  it("counts charters that share one fee schedule once, as the landscape table does", () => {
+    const rows = Array.from({ length: 6 }, (_, i) => ({ state_code: "FL", amount: 30 + i }));
+    const map = buildFeeMap("overdraft", [...rows, { state_code: "FL", amount: 30, counted_as: 1 }]);
+    expect(map.nationalInstitutions).toBe(6);
+  });
+
   it("withholds a state under the cohort floor instead of reporting its median", () => {
     const thick = Array.from({ length: MIN_INSTITUTIONS_FOR_MEDIAN }, (_, i) => ({ state_code: "TX", amount: 30 + i }));
     const map = buildFeeMap("overdraft", [...thick, { state_code: "VT", amount: 10 }, { state_code: null, amount: 99 }]);

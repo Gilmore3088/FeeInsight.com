@@ -310,8 +310,9 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
   const institution = resolved.institution;
   if (!institution) return { status: 400, body: { error: resolved.error ?? "Choose an institution first." } };
   const institutionId = Number(institution.id);
-  // The peer group the bank picked in Settings leads every comparison in the answer.
-  const peers: EnginePeerOptions = { peerSet: await getActivePeerSet({ userId: user.id, institutionId }).catch(() => null) };
+  // The peer group the bank picked in Settings leads every comparison in the answer. Peer sets
+  // belong to the account's workspace, so they are read for it, never for the research subject.
+  const peers: EnginePeerOptions = { peerSet: await getActivePeerSet({ userId: user.id, institutionId: account.institution?.id ?? institutionId }).catch(() => null) };
   const actor = actorOf(user);
   const ready = await workspaceSchemaReady();
   const objective = OBJECTIVES.includes(body.objective as AskObjective) ? (body.objective as AskObjective) : null;
@@ -608,7 +609,7 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
     // Reuse the evidence bound when the answer was saved; never rebuild it from today's data.
     factEvidence = (savedResponse as EvidenceBoundAnalyzeResponse).factEvidence ?? null;
   } else {
-    const peers: EnginePeerOptions = { peerSet: await getActivePeerSet({ userId: user.id, institutionId }).catch(() => null) };
+    const peers: EnginePeerOptions = { peerSet: await getActivePeerSet({ userId: user.id, institutionId: account.institution?.id ?? institutionId }).catch(() => null) };
     const ready = await workspaceSchemaReady();
     const decision = ready && typeof body.decisionId === "string" ? await getDecision(user.id, body.decisionId).catch(() => null) : null;
     const { intent, schedule, why } = await resolveAskIntent(
