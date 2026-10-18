@@ -50,7 +50,7 @@ const PRICE_BELOW_MAX_LENGTH = 40;
  * deposit required", "$25 minimum deposit to open") is what it takes to open the account, never
  * the heading's price, so the heading stays a heading (#1810).
  */
-const OPENING_DEPOSIT_LINE = /^\s*\$\s?\d[\d,]*(?:\.\d{2})?\s+(?:[a-z]+\s+){0,3}?(?:(?:required\s+)?to\s+open\b|opening\b(?!\s*(?:fees?|charges?)\b))/i;
+const OPENING_DEPOSIT_LINE = /^\s*\$\s?\d[\d,]*(?:\.\d{2})?\+?\s+(?:(?:minimum|min\.?|initial|opening|required|deposit|balance)\s+){0,3}?(?:deposit\b(?:\s+(?:is\s+)?required)?(?:\s+to\s+open\b(?:\s+(?:the|this|an|your)\s+account)?)?|to\s+open\b(?:\s+(?:the|this|an|your)\s+account)?)\s*\.?\s*$/i;
 /**
  * A longer price line is still the price when its first cell is only the price and the
  * rest is a lowercase note about it ("$30.00 | everyday debit card transactions ... are

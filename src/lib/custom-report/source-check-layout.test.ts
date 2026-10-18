@@ -17,8 +17,18 @@ describe("checkFeeAgainstSource layouts", () => {
     // The opening deposit is never a fee's price ("Send and receive money fast with Zelle®" / "$25 deposit to open").
     expect(checkFeeAgainstSource("Send and receive money fast with Zelle®\n$25 deposit to open", "Send and receive money fast with Zelle®", 25, ".").ok).toBe(false);
     expect(checkFeeAgainstSource("Christmas Club\n$5 to open", "Christmas Club", 5, ".").ok).toBe(false);
-    // An opening fee is still a price.
-    expect(checkFeeAgainstSource("Safe Deposit Box Rental\n$10 opening fee", "Safe Deposit Box Rental", 10, ".").ok).toBe(true);
+    for (const deposit of ["$25 initial deposit", "$100 minimum deposit", "$100 min. opening deposit", "$1,000.00+ to open", "$50 to open this account."]) {
+      expect(checkFeeAgainstSource(`Basic Club\n${deposit}`, "Basic Club", Number(deposit.replace(/[^\d.]/g, "").replace(/\.$/, "")), ".").ok, deposit).toBe(false);
+    }
+    // Opening wording on a real fee's price is still the price.
+    for (const [name, price, amount] of [
+      ["Safe Deposit Box Rental", "$10 opening fee", 10],
+      ["Account Opening Fee", "$25 opening service charge", 25],
+      ["Vault Access", "$10 per opening", 10],
+      ["Box Drilling", "$125 plus cost to open", 125],
+    ] as const) {
+      expect(checkFeeAgainstSource(`${name}\n${price}`, name, amount, ".").ok, price).toBe(true);
+    }
   });
 
   it("reads a price printed under its fee's name", () => {

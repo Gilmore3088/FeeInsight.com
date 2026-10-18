@@ -40,12 +40,13 @@ export function accountHeading(line: string): string | null {
   if (/\b(fee|charge|minimum|balance|deposit|interest|open|opening|require|waive|statement)\b/i.test(text.replace(INTEREST_ACCOUNT, ""))) return null;
   // Page furniture and group headings name no one account: "Compare Personal Checking", "Learn
   // more about Advantage Checking", "Account Details", "Money Market Accounts".
-  if (/\b(compare|comparison|learn|more|overview|details?|info|explore|gift|access|banking|app|mobile|see|section|qualification|benefits?|features?|requirements?|accounts|options|types|our|your|you|find|right|why|how|what|disclosures?|information|rates?|truth|greater|less|than|over|under|is|are|available|from|and|choose|type|services?|charges?|kit|switch|qualified|holders?|with|essentials|for|the|all|higher|earn(ings)?|security|solution|makes|life|simple|that)\b|[&:/,]/i.test(text)) return null;
+  if (/\b(compare|comparison|learn|more|overview|details?|info|explore|gift|access|banking|app|mobile|see|section|qualification|benefits?|features?|requirements?|accounts|options|types|our|your|you|find|right|why|how|what|disclosures?|information|rates?|truth|greater|less|than|over|under|is|are|available|from|and|choose|type|services?|charges?|kit|switch|qualified|holders?|with|essentials|for|the|all|higher|earns?|earnings|get|pay|security|solution|makes|life|simple|that)\b|[&:/,]/i.test(text)) return null;
   // A heading starts with a capital or a digit-free brand ("legacy Checking" is a sentence's tail).
   if (/^[a-z]/.test(text)) return null;
   // The heading must name more than the kind of account ("Account" alone says nothing new).
   // A number ("Club 2 Checking") names one, and so does "Money Market Checking" beside plain checking.
-  if (!text.replace(new RegExp(ACCOUNT_WORDS.source, "gi"), "").replace(/[^A-Za-z0-9]/g, "") && !/^money market (checking|savings)$/i.test(text)) return null;
+  // A rate ("Checking 1%") names nothing.
+  if (!text.replace(new RegExp(ACCOUNT_WORDS.source, "gi"), "").replace(/\d*\.?\d+\s*%/g, "").replace(/[^A-Za-z0-9]/g, "") && !/^money market checking$/i.test(text)) return null;
   if (/[…]|\.{3}/.test(text)) return null;
   return text.split(/\s+/).length <= 7 ? titleCase(text) : null;
 }
