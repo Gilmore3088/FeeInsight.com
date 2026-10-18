@@ -137,12 +137,14 @@ async function HamiltonLayoutInner({
         selectedSource: "none" as const,
         selectedFromUrl: false,
       };
-  const accountContext = await loadHamiltonAccountContext(user);
-  // The comparison group is the third context the bar names: the peer set answers use, which is
-  // the account workspace's default, else the reader's own (as the Ask route reads it).
-  const activePeers = selectedInstitution
-    ? await getActivePeerSet({ userId: user.id, institutionId: accountContext.institution?.id ?? selectedInstitution.id }).catch(() => null)
-    : null;
+  // The comparison group is the third context the bar names: the subject's active peer set, the
+  // one Ask, Reports and the briefing read. Read beside the account; a failed read names no group.
+  const [accountContext, activePeers] = await Promise.all([
+    loadHamiltonAccountContext(user),
+    selectedInstitution
+      ? getActivePeerSet({ userId: user.id, institutionId: selectedInstitution.id }).then((set) => set ?? null, () => undefined)
+      : Promise.resolve(undefined),
+  ]);
   return (
     <HamiltonShell
       initialRequestPath={requestPath}
@@ -151,7 +153,7 @@ async function HamiltonLayoutInner({
       viewAsCustomer={isAdmin && isViewAsCustomerCookie((await cookies()).get(VIEW_AS_CUSTOMER_COOKIE)?.value)}
       institutionContext={institutionContext}
       selectedInstitutionId={selectedInstitutionId}
-      peerLabel={activePeers?.label ?? null}
+      peerLabel={activePeers === undefined ? undefined : activePeers?.label ?? null}
       accountContext={accountContext}
     >
       {children}

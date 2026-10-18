@@ -43,14 +43,18 @@ export interface RegArticle {
 // ---------------------------------------------------------------------------
 
 /**
- * Enforcement actions, orders and their terminations. Checked before every keyword topic, and
- * applied when releases are read (TOPIC_SQL), so rows stored before this topic existed read
- * as Enforcement too rather than as Rulemaking.
+ * Enforcement actions, orders and their terminations. Checked after the fee and lending topics
+ * (a consent order over overdraft fees stays an overdraft item) and before rulemaking. Plain
+ * words only, so the same pattern runs in JavaScript and as a Postgres regex.
  */
-export const ENFORCEMENT_TITLE = /enforcement (action|order)|consent order|civil money penalt|cease and desist|prohibition order/i;
+const ENFORCEMENT_KEYWORDS = ["enforcement action", "enforcement order", "consent order", "civil money penalt", "cease and desist", "prohibition order"];
+export const ENFORCEMENT_TITLE = new RegExp(ENFORCEMENT_KEYWORDS.join("|"), "i");
 
-/** reg_articles' topic as the readers see it: the stored topic, or enforcement by title. */
-export const TOPIC_SQL = `(CASE WHEN title ~* '${ENFORCEMENT_TITLE.source}' THEN 'enforcement' ELSE topic END)`;
+/**
+ * reg_articles' topic as the readers see it. Rows stored as Rulemaking or General before the
+ * enforcement topic existed read as Enforcement when their title says so; no row is rewritten.
+ */
+export const TOPIC_SQL = `(CASE WHEN topic IN ('rulemaking_compliance', 'general') AND title ~* '${ENFORCEMENT_KEYWORDS.join("|")}' THEN 'enforcement' ELSE topic END)`;
 
 const TOPICS: Record<string, string[]> = {
   overdraft: [
@@ -69,6 +73,7 @@ const TOPICS: Record<string, string[]> = {
     "branch sale", "purchase and assumption", "consolidation",
     "acquir", "application by",
   ],
+  enforcement: ENFORCEMENT_KEYWORDS,
   rulemaking_compliance: [
     "proposed rule", "final rule", "nprm", "regulatory guidance",
     "supervisory guidance", "interagency", "comment period",
@@ -99,7 +104,6 @@ export const SOURCE_LABELS: Record<string, string> = {
 };
 
 export function classify(title: string): string {
-  if (ENFORCEMENT_TITLE.test(title)) return "enforcement";
   const lower = title.toLowerCase();
   for (const [topic, keywords] of Object.entries(TOPICS)) {
     if (keywords.some((kw) => lower.includes(kw))) return topic;

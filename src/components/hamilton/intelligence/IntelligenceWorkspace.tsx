@@ -204,7 +204,7 @@ export function readFindings(data: Loaded, place: string, state: string | null, 
     findings.push({
       lens: "complaints",
       title: `${year.total.toLocaleString()} CFPB complaints in ${yearLabel(year.year)} named institutions headquartered in ${place}.`,
-      body: `${((year.feeRelated / year.total) * 100).toFixed(1)}% were about fees${prior ? `; the year before there were ${prior.total.toLocaleString()}` : ""}. Counts follow who complains and how complaints are matched, so they do not rank institutions.`,
+      body: `${((year.feeRelated / year.total) * 100).toFixed(1)}% were about fees${prior ? `; ${prior.year}${isCurrentYear(year.year) ? ", a full year," : ""} had ${prior.total.toLocaleString()}` : ""}. Counts follow who complains and how complaints are matched, so they do not rank institutions.`,
       source: "CFPB Consumer Complaint Database",
     });
   }
@@ -390,10 +390,10 @@ function ComplaintPanel({ complaints, place, compact, exploreHref }: { complaint
     {!complaints ? <Unavailable>Complaint records could not load.</Unavailable> : years.length === 0 ? <Unavailable>No complaint records are matched to institutions in this scope.</Unavailable> : <>
       {latest ? <p className="mt-3 text-sm"><span className="text-2xl font-semibold" style={{ fontVariantNumeric: "tabular-nums" }}>{latest.total.toLocaleString()}</span> complaints in {yearLabel(latest.year)}, {latest.total ? `${((latest.feeRelated / latest.total) * 100).toFixed(1)}%` : "0%"} about fees, across {latest.institutions.toLocaleString()} institutions.</p> : null}
       <div className="mt-3"><MultiTrend rows={years.map(y => ({ period: isCurrentYear(y.year) ? `${y.year} to date` : y.year, total: y.total, fees: y.feeRelated }))} series={[{ key: "total", name: "All complaints" }, { key: "fees", name: "Fee-related" }]} label="Complaints per year" unit="complaints" height={compact ? 200 : 240} /></div>
-      {!compact && complaints.products.length ? <div className="mt-5"><h3 className="text-sm font-semibold">Products complained about, {latest?.year}</h3><HorizontalBars label="Complaints by product" valueLabel="Complaints" rows={complaints.products.map(p => ({ name: p.product, value: p.count }))} /></div> : null}
+      {!compact && complaints.products.length ? <div className="mt-5"><h3 className="text-sm font-semibold">Products complained about, {latest ? yearLabel(latest.year) : null}</h3><HorizontalBars label="Complaints by product" valueLabel="Complaints" rows={complaints.products.map(p => ({ name: p.product, value: p.count }))} /></div> : null}
     </>}
     <p className="mt-3 text-xs text-[var(--fi-muted)]">Counts reflect who complains and how complaints are matched; they do not rank institutions.</p>
-    <EvidenceDetails source="CFPB Consumer Complaint Database" period={latest ? `${years[0].year}–${latest.year}` : "Unavailable"} geography={`${place}, by institution headquarters (not the consumer's location)`} coverage="Complaints matched to institutions in the registry; unmatched complaints are not counted" method="Annual totals; the current year counts complaints received so far. Fee-related uses the shared fee-issue definition." />
+    <EvidenceDetails source="CFPB Consumer Complaint Database" period={latest ? `${years[0].year}–${latest.year}${isCurrentYear(latest.year) ? " (latest year to date)" : ""}` : "Unavailable"} geography={`${place}, by institution headquarters (not the consumer's location)`} coverage="Complaints matched to institutions in the registry; unmatched complaints are not counted" method="Annual totals; the current year counts complaints received so far. Fee-related uses the shared fee-issue definition." />
   </Panel>;
 }
 

@@ -41,7 +41,7 @@ interface HamiltonShellProps {
     selectedFromUrl?: boolean;
   };
   selectedInstitutionId?: string | null;
-  /** The active peer set's name for the server-selected subject; null when none is saved. */
+  /** The server-selected subject's active peer set: its name, null when none is saved, undefined when unread. */
   peerLabel?: string | null;
   accountContext?: Pick<HamiltonAccountContext, "status" | "institution">;
   children: React.ReactNode;
@@ -63,7 +63,7 @@ export function HamiltonShell({
   viewAsCustomer = false,
   institutionContext,
   selectedInstitutionId,
-  peerLabel = null,
+  peerLabel,
   accountContext,
   children,
 }: HamiltonShellProps) {
@@ -151,7 +151,7 @@ export function HamiltonShell({
           pathname={pathname}
           isAdmin={isAdmin}
           accountLabel={accountLabel(accountContext)}
-          accountLinked={accountContext?.status === "identified"}
+          accountUnlinked={!accountContext || accountContext.status === "unlinked"}
           homeName={accountContext?.status === "identified" ? accountContext.institution?.name ?? null : null}
           researchLabel={marketScope ?? researchLabel}
           researchIsHome={!marketScope && isHome}

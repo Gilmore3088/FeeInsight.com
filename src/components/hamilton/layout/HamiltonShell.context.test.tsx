@@ -174,7 +174,7 @@ describe("H01 retained Hamilton shell navigation", () => {
   });
 
   it("names the account, the subject and the peer group separately when the account is not linked", () => {
-    render(<HamiltonShell {...seed} accountContext={{ status: "unlinked", institution: null }}>Ask</HamiltonShell>);
+    render(<HamiltonShell {...seed} peerLabel={null} accountContext={{ status: "unlinked", institution: null }}>Ask</HamiltonShell>);
     const bar = screen.getByLabelText("Institution context").textContent;
     expect(bar).toContain("Your institution: Not linked");
     expect(bar).toContain(`Researching: ${homeName}`);
@@ -187,5 +187,11 @@ describe("H01 retained Hamilton shell navigation", () => {
   it("names the saved peer group for the subject", () => {
     render(<HamiltonShell {...seed} peerLabel="Florida credit unions">Research</HamiltonShell>);
     expect(screen.getByLabelText("Institution context").textContent).toContain("Compared with: Florida credit unions");
+  });
+
+  it("offers linking only when no membership exists, not for several memberships", () => {
+    render(<HamiltonShell {...seed} accountContext={{ status: "ambiguous", institution: null }}>Ask</HamiltonShell>);
+    expect(screen.getByLabelText("Institution context").textContent).toContain("Your institution: Multiple memberships");
+    expect(screen.queryByRole("link", { name: "Link your institution" })).toBeNull();
   });
 });
