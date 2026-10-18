@@ -48,10 +48,10 @@ export interface FlowSnapshot {
 }
 
 /**
- * Institutions waiting in front of each data agent; growth handles no institutions. Gutenberg
+ * Institutions waiting in front of each data agent; growth and Hoovie (public data) handle no institutions. Gutenberg
  * took over publishing in #1075 step 2, so Hamilton (the product) has no column.
  */
-export type FlowWaiting = Record<Exclude<AdminAgent, "atlas" | "growth" | "hamilton">, number> & { published: number; total: number };
+export type FlowWaiting = Record<Exclude<AdminAgent, "atlas" | "growth" | "hamilton" | "hoovie">, number> & { published: number; total: number };
 
 export type Sample = Record<string, unknown>;
 

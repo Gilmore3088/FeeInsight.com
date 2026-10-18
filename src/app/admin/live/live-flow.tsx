@@ -9,8 +9,8 @@ import { formatAdminTime } from "@/lib/admin-time";
 const POLL_MS = 10_000;
 
 type Data = FlowSnapshot & { waiting: FlowWaiting | null };
-/** The data agents institutions flow through; growth (marketing) handles no institutions. */
-type Worker = Exclude<AdminAgent, "atlas" | "growth" | "hamilton">;
+/** The data agents institutions flow through; growth (marketing) and hoovie (public data) handle no institutions. */
+type Worker = Exclude<AdminAgent, "atlas" | "growth" | "hamilton" | "hoovie">;
 
 const WORKERS: Worker[] = ["magellan", "rosetta", "knox", "darwin", "gutenberg"];
 
@@ -23,6 +23,7 @@ const AGENT_COLOR: Record<AdminAgent, { bar: string; badge: string; dot: string;
   darwin: { bar: "bg-teal-500", badge: "bg-teal-600 text-white", dot: "bg-teal-500", flash: "rgb(20 184 166 / 0.15)" },
   hamilton: { bar: "bg-[var(--brand-primary)]", badge: "bg-[var(--brand-primary)] text-white", dot: "bg-[var(--brand-primary)]", flash: "rgb(194 65 12 / 0.12)" },
   gutenberg: { bar: "bg-emerald-500", badge: "bg-emerald-600 text-white", dot: "bg-emerald-500", flash: "rgb(16 185 129 / 0.15)" },
+  hoovie: { bar: "bg-indigo-500", badge: "bg-indigo-600 text-white", dot: "bg-indigo-500", flash: "rgb(99 102 241 / 0.15)" },
   growth: { bar: "bg-rose-500", badge: "bg-rose-600 text-white", dot: "bg-rose-500", flash: "rgb(244 63 94 / 0.15)" },
 };
 

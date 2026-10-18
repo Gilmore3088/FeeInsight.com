@@ -15,7 +15,9 @@ import {
   pickDueCandidate,
   PRIORITY_REGISTRY_SOURCES,
   registryCandidates,
+  registryLedgerAgent,
   registryPartitionsBySource,
+  resetRegistryLedgerAgentCache,
   scheduleDueRegistryRuns,
 } from "./registry-scheduler";
 
@@ -149,6 +151,7 @@ describe("registry scheduler", () => {
     beforeEach(() => {
       sqlMock.mockReset();
       startAgentRunMock.mockReset();
+      resetRegistryLedgerAgentCache();
     });
 
     function routeSql(handlers: Array<[string, unknown[]]>) {
@@ -166,26 +169,66 @@ describe("registry scheduler", () => {
       expect(startAgentRunMock).not.toHaveBeenCalled();
     });
 
-    it("claims the next partition and starts a one-step Magellan run", async () => {
+    it("claims the next partition and starts a one-step Hoovie run under the unchanged run marker (#1865)", async () => {
       routeSql([
         ["FROM agent_runs", [{ active: false }]],
         ["FROM registry_ingest_partitions", [{ source: "fdic-universe", partition_key: "current", due: false }]],
         ["INSERT INTO registry_ingest_partitions", [{ id: 1 }]],
+        ["FROM agent_registry", [{ present: true }]],
       ]);
       startAgentRunMock.mockResolvedValue({ run: { id: 501, status: "queued" }, steps: [], reused: false });
 
       const result = await scheduleDueRegistryRuns({ now, triggeredBy: "test" });
 
       expect(result).toMatchObject({ scheduled: true, source: "ncua-financials", partitionKey: "2026Q2", runId: 501 });
+      expect(startAgentRunMock.mock.calls[0][0].params).not.toHaveProperty("ledger_agent_fallback");
       expect(startAgentRunMock).toHaveBeenCalledWith(
         expect.objectContaining({
-          agent: "magellan",
+          agent: "hoovie",
+          title: "Hoovie registry: Pull NCUA 5300 call-report financials 2026Q2",
           kind: "workflow",
           idempotencyKey: "magellan:registry:ncua-financials:2026Q2",
           params: expect.objectContaining({ source: "magellan.registry", partition_key: "2026Q2" }),
-          steps: [expect.objectContaining({ key: "registry-ncua-financials", input: { partition_key: "2026Q2" } })],
+          steps: [expect.objectContaining({ key: "registry-ncua-financials", agent: "hoovie", input: { partition_key: "2026Q2" } })],
         }),
       );
+    });
+
+    it("keeps Magellan's name, and says why, while the hoovie agent_registry row is missing (#1865)", async () => {
+      routeSql([
+        ["FROM agent_runs", [{ active: false }]],
+        ["FROM registry_ingest_partitions", [{ source: "fdic-universe", partition_key: "current", due: false }]],
+        ["INSERT INTO registry_ingest_partitions", [{ id: 1 }]],
+        ["FROM agent_registry", [{ present: false }]],
+      ]);
+      startAgentRunMock.mockResolvedValue({ run: { id: 502, status: "queued" }, steps: [], reused: false });
+
+      await scheduleDueRegistryRuns({ now, triggeredBy: "test" });
+
+      expect(startAgentRunMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agent: "magellan",
+          title: "Magellan registry: Pull NCUA 5300 call-report financials 2026Q2",
+          idempotencyKey: "magellan:registry:ncua-financials:2026Q2",
+          params: expect.objectContaining({ source: "magellan.registry", ledger_agent_fallback: "hoovie row missing" }),
+          steps: [expect.objectContaining({ key: "registry-ncua-financials", agent: "magellan" })],
+        }),
+      );
+    });
+
+    it("reads the agent_registry row once per process, and asks again after a failed read", async () => {
+      const registryReads = () => sqlMock.mock.calls.filter(([strings]) => templateText(strings).includes("FROM agent_registry")).length;
+      routeSql([["FROM agent_registry", [{ present: true }]]]);
+      await expect(registryLedgerAgent()).resolves.toEqual({ agent: "hoovie" });
+      await expect(registryLedgerAgent()).resolves.toEqual({ agent: "hoovie" });
+      expect(registryReads()).toBe(1);
+
+      resetRegistryLedgerAgentCache();
+      sqlMock.mockImplementation(() => Promise.reject(new Error("connection refused")));
+      await expect(registryLedgerAgent()).resolves.toEqual({ agent: "magellan", fallback: "hoovie row check failed" });
+      routeSql([["FROM agent_registry", [{ present: true }]]]);
+      await expect(registryLedgerAgent()).resolves.toEqual({ agent: "hoovie" });
+      expect(registryReads()).toBe(3);
     });
 
     function sourceLists(): string[][] {

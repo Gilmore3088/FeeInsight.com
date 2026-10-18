@@ -605,7 +605,7 @@ const JOB_INVENTORY: Array<
 > = [
   { job_name: "atlas_state_lanes", display_name: "Atlas state lanes",                 source: "agent_runs",      expected_within_hours: 26 },
   { job_name: "agent_executor",    display_name: "Agent tick (every 5 minutes)",      source: "agent_run_steps", expected_within_hours: 1 },
-  { job_name: "registry_sync",     display_name: "Magellan registry sync",            source: "agent_runs",      expected_within_hours: 26 },
+  { job_name: "registry_sync",     display_name: "Hoovie registry sync",              source: "agent_runs",      expected_within_hours: 26 },
   { job_name: "monthly_pulse",     display_name: "Hamilton monthly pulse (3rd of the month)", source: "report_jobs", expected_within_hours: 24 * 35 },
 ];
 

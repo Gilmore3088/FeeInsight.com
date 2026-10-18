@@ -75,5 +75,30 @@ James's rule (2026-10-17): "Let's get the data first." The order follows the pub
    anything not servable. Wiring it into Hamilton's chat tools is a separate PR.
 6. Shared roll-ups by peer, state, metro and size (`src/lib/peer-set-dimensions.ts`).
 
-Until the `hoovie` row exists in `agent_registry`, runs keep the ledger name `magellan`. Adding
-that row is a migration and needs James's yes.
+## Daily health check (contract)
+
+`agent-health.ts` runs with the daily scoreboard step and stores these numbers in
+`pipeline_scoreboard_snapshots.detail.agent_health`, next to yesterday's. A broken rule, or any
+number that moved more than 25% since yesterday, is named in the scoreboard step's summary.
+Change this table and `agent-health.ts` in the same PR. Registry steps written under Magellan's
+name before #1865 count as Hoovie's.
+
+| Rule | Number | Holds when |
+|---|---|---|
+| Steps do not fail | `stepsFailed` (24 h) | 0 |
+
+Also recorded, without a rule: `stepsCompleted`, `spendUsd`.
+
+## Run ledger name
+
+Registry runs and steps are written as `hoovie` (#1865; the `agent_registry` row is migration
+`20270110000061_hoovie_agent.sql`). Rows written before the switch keep the name `magellan` and
+are never relabelled; readers that group the ledger by agent file a `registry-*` step under
+Magellan's name as Hoovie's (`names.ts`). The run marker `params_json.source = 'magellan.registry'`
+and the idempotency key prefix `magellan:registry:` are unchanged, so the registry tick finds old
+and new runs alike and a run queued before the switch is reused, not doubled.
+
+`agent_runs.agent_name` references `agent_registry`, so before it writes `hoovie` the scheduler
+reads the `hoovie` row once per process (`registryLedgerAgent` in `registry-scheduler.ts`). While
+the row is missing, or the read fails, runs keep the name `magellan` and record why in
+`params_json.ledger_agent_fallback`.

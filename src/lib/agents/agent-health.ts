@@ -4,6 +4,7 @@ import { DARWIN_RELEASE_STRATEGY } from "./darwin/release-held";
 import { KNOX_RULES_STRATEGY } from "./knox/specialists";
 import { SOURCE_CHECK_REASON, SOURCE_CHECK_RESTORE_PREFIX, SOURCE_CHECK_STRATEGY } from "./hamilton/source-check";
 import { GUTENBERG_AGENT, PUBLISHER_AGENT_NAMES, PUBLISHER_STEP_KEYS } from "@/lib/agents/gutenberg/names";
+import { HOOVIE_AGENT, registryLedgerNames } from "@/lib/agents/hoovie/names";
 
 /**
  * Agent health check: the same numbers for every agent every day, stored with the daily
@@ -19,7 +20,7 @@ import { GUTENBERG_AGENT, PUBLISHER_AGENT_NAMES, PUBLISHER_STEP_KEYS } from "@/l
 
 type SqlTag = typeof sql;
 
-export const HEALTH_AGENTS = ["atlas", "magellan", "rosetta", "knox", "darwin", "hamilton", "gutenberg", "growth"] as const;
+export const HEALTH_AGENTS = ["atlas", "magellan", "rosetta", "knox", "darwin", "hamilton", "gutenberg", "growth", "hoovie"] as const;
 export type HealthAgent = (typeof HEALTH_AGENTS)[number];
 
 /** A number that moved more than this share (and by at least 2) since yesterday is flagged. */
@@ -96,19 +97,23 @@ function pct(value: number): string {
  * is Gutenberg: a publisher step written under Hamilton's name before the switch counts as
  * Gutenberg's (`ledgerAgent`), so Hamilton's row holds only the product's steps. Spend is read by
  * the agent's own name: `agent:hamilton` is product spend, and Gutenberg makes no paid calls.
+ * Likewise since #1865 a registry step written under Magellan's name counts as Hoovie's, so
+ * Magellan's row holds only fee-schedule work.
  */
 async function readCommon(db: SqlTag, agent: HealthAgent): Promise<{ stepsCompleted: number; stepsFailed: number; spendUsd: number }> {
-  const stepAgents = agent === GUTENBERG_AGENT ? [...PUBLISHER_AGENT_NAMES] : [agent];
+  const stepAgents = agent === GUTENBERG_AGENT ? [...PUBLISHER_AGENT_NAMES] : registryLedgerNames(agent);
   const publisherKeys = [...PUBLISHER_STEP_KEYS];
   const [row] = await db`
     SELECT
       (SELECT COUNT(*) FROM agent_run_steps
         WHERE agent_name = ANY(${stepAgents}::text[]) AND status = 'completed'
-          AND (CASE WHEN agent_name = 'hamilton' AND step_key = ANY(${publisherKeys}::text[]) THEN 'gutenberg' ELSE agent_name END) = ${agent}
+          AND (CASE WHEN agent_name = 'hamilton' AND step_key = ANY(${publisherKeys}::text[]) THEN 'gutenberg'
+                    WHEN agent_name = 'magellan' AND step_key LIKE 'registry-%' THEN 'hoovie' ELSE agent_name END) = ${agent}
           AND started_at > NOW() - INTERVAL '24 hours')::int AS steps_completed,
       (SELECT COUNT(*) FROM agent_run_steps
         WHERE agent_name = ANY(${stepAgents}::text[]) AND status = 'failed'
-          AND (CASE WHEN agent_name = 'hamilton' AND step_key = ANY(${publisherKeys}::text[]) THEN 'gutenberg' ELSE agent_name END) = ${agent}
+          AND (CASE WHEN agent_name = 'hamilton' AND step_key = ANY(${publisherKeys}::text[]) THEN 'gutenberg'
+                    WHEN agent_name = 'magellan' AND step_key LIKE 'registry-%' THEN 'hoovie' ELSE agent_name END) = ${agent}
           AND started_at > NOW() - INTERVAL '24 hours')::int AS steps_failed,
       (SELECT COALESCE(SUM(estimated_cost_microusd), 0) FROM ai_api_usage_events
         WHERE agent_name = ${agent} AND created_at > NOW() - INTERVAL '24 hours') AS spend_microusd
@@ -369,6 +374,21 @@ export async function readMagellanNumbers(db: SqlTag): Promise<HealthNumbers> {
 
 export function magellanRules(n: HealthNumbers): HealthRule[] {
   return [noFailedSteps(n), noRepeatFailures(n, "fee link")];
+}
+
+// ---------------------------------------------------------------- Hoovie
+
+/**
+ * Hoovie (public data, #1865): its registry steps, including those written under Magellan's name
+ * before the switch. Spend is read by its own name; the Wire's research step bills `magellan`
+ * (`registry/wire-research.ts`), so this is normally 0.
+ */
+export async function readHoovieNumbers(db: SqlTag): Promise<HealthNumbers> {
+  return readCommon(db, HOOVIE_AGENT);
+}
+
+export function hoovieRules(n: HealthNumbers): HealthRule[] {
+  return [noFailedSteps(n)];
 }
 
 // ---------------------------------------------------------------- Rosetta
@@ -728,6 +748,7 @@ export function growthRules(n: HealthNumbers): HealthRule[] {
 const READERS: Record<HealthAgent, (db: SqlTag) => Promise<HealthNumbers>> = {
   atlas: readAtlasNumbers,
   magellan: readMagellanNumbers,
+  hoovie: readHoovieNumbers,
   rosetta: readRosettaNumbers,
   knox: readKnoxNumbers,
   darwin: readDarwinNumbers,
@@ -739,6 +760,7 @@ const READERS: Record<HealthAgent, (db: SqlTag) => Promise<HealthNumbers>> = {
 const RULES: Record<HealthAgent, (numbers: HealthNumbers) => HealthRule[]> = {
   atlas: atlasRules,
   magellan: magellanRules,
+  hoovie: hoovieRules,
   rosetta: rosettaRules,
   knox: knoxRules,
   darwin: darwinRules,
