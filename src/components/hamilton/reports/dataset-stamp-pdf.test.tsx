@@ -102,7 +102,7 @@ describe("analysis PDF prints the saved stamp (#1924 step 4)", () => {
     expect(savedEvidenceAppendix(stamped).dataset?.summary).toBe(SUMMARY);
     expect(text).toContain("About these figures");
     expect(text).toContain(SUMMARY);
-    expect(text).toContain("Who is counted: Institutions in Tennessee, The institution being compared left out, under the index's standard rules (open the saved answer for the full list).");
+    expect(text).toContain("Who is counted: Institutions in Tennessee, the institution being compared left out, under the index's standard rules (open the saved answer for the full list).");
     expect(text).toContain("Applies only to your peer group: Institutions in Tennessee");
     expect(text).toContain(`Data reference (for support): ${peerStamp.id}, ${nationalStamp.id}.`);
     expect(text.indexOf("About these figures")).toBeGreaterThan(text.indexOf("Evidence Record"));
@@ -128,7 +128,7 @@ describe("report PDF prints the saved stamp (#1924 step 4)", () => {
     expect(at).toBeGreaterThan(text.indexOf("Your overdraft fee sits $1 above"));
     expect(at).toBeLessThan(text.indexOf("Method and Sources"));
     expect(text).toContain(SUMMARY);
-    expect(text).toContain("Who is counted: Institutions in Tennessee, The institution being compared left out, under the index's standard rules (open the report in Hamilton for the full list).");
+    expect(text).toContain("Who is counted: Institutions in Tennessee, the institution being compared left out, under the index's standard rules (open the report in Hamilton for the full list).");
     expect(text).toContain(`Data reference (for support): ${peerStamp.id}.`);
     expect(passage(text)).not.toContain("\u2014");
     expect(passage(text)).not.toMatch(AGENT_NAMES);

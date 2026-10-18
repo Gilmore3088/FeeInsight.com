@@ -107,7 +107,7 @@ describe("saved evidence keeps the stamp from save time (#1924 step 3)", () => {
     expect(readStampedFigures(brief.datasetStamps)).toEqual(answer.provenance.stamps);
     const line = brief.sources?.find((s) => s.label === "Bank Fee Index figures in this brief");
     expect(line?.detail).toContain("Published fee schedules, read live 18 Oct 2026 14:10 UTC. Institutions sharing one fee schedule count once.");
-    expect(line?.detail).toMatch(/Who is counted: Institutions in Tennessee, Credit unions only, The institution being compared left out, under the index's standard rules/);
+    expect(line?.detail).toMatch(/Who is counted: Institutions in Tennessee, credit unions only, the institution being compared left out, under the index's standard rules/);
     expect(line?.detail).not.toContain("Only fees traced to a stored copy");
     expect(line?.detail).toContain(`Data reference (for support): ${peerStamp.id}, ${nationalStamp.id}, ${stateStamp.id}.`);
     expect(line?.detail).not.toMatch(/—/);

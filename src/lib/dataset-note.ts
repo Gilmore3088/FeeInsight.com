@@ -139,7 +139,10 @@ const GROUP_FILTER = /^(peers|segment|exclude):/;
 export function datasetPassage(figures: readonly StampedFigure[], fullList: string): string[] | null {
   const words = datasetNoteWords(figures);
   if (!words) return null;
-  const group = figures[0].stamp.filters.filter((f) => GROUP_FILTER.test(f.key)).map((f) => f.label);
+  // Mid-sentence, every label after the first starts lower case ("..., the institution being compared left out").
+  const group = figures[0].stamp.filters
+    .filter((f) => GROUP_FILTER.test(f.key))
+    .map((f, i) => (i === 0 ? f.label : f.label.charAt(0).toLowerCase() + f.label.slice(1)));
   const counted = group.length
     ? `Who is counted: ${group.join(", ")}, under the index's standard rules (${fullList}).`
     : `Who is counted: the index's standard rules (${fullList}).`;
