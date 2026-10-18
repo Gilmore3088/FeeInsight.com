@@ -4,6 +4,7 @@ vi.mock("./connection", () => ({ sql: vi.fn(), getSql: vi.fn() }));
 
 import type { MarketLeader } from "./market-leaders";
 import { summarizeTopTen } from "./top-ten-coverage";
+import { NON_RETAIL_INSTITUTIONS } from "@/lib/non-retail";
 
 function leader(state_code: string, institution_id: number, deposit_rank: number): MarketLeader {
   return {
@@ -36,5 +37,21 @@ describe("top 10 per state coverage", () => {
       { stateCode: "NY", rank: 2 },
       { stateCode: "UT", rank: 2 },
     ]);
+  });
+
+  it("skips a non-retail institution and gives its slot to the next one in that state (James, 2026-10-18)", () => {
+    // 10 (BNY Mellon) holds NY rank 1; ranks 2-11 move up so NY still has ten slots.
+    const leaders = [leader("NY", 10, 1), ...Array.from({ length: 11 }, (_, i) => leader("NY", 1000 + i, i + 2))];
+    const coverage = summarizeTopTen(leaders, new Map());
+    expect(coverage.slots).toBe(10);
+    expect(coverage.missing.has(10)).toBe(false);
+    expect(coverage.missing.get(1000)).toEqual([{ stateCode: "NY", rank: 1 }]);
+    expect(coverage.missing.get(1008)).toEqual([{ stateCode: "NY", rank: 9 }]);
+    expect(coverage.missing.get(1009)).toEqual([{ stateCode: "NY", rank: 10 }]);
+    expect(coverage.missing.has(1010)).toBe(false);
+  });
+
+  it("lists the seven non-retail institutions James named", () => {
+    expect([...NON_RETAIL_INSTITUTIONS.keys()]).toEqual([10, 11, 13, 28, 72, 99, 183]);
   });
 });
