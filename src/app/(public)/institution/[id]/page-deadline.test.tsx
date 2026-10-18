@@ -45,7 +45,12 @@ vi.mock("@/lib/data-store/financial", () => ({
 vi.mock("@/lib/data-store/regulatory-watch", () => ({ getRegulatoryWatch: vi.fn(async () => null) }));
 vi.mock("@/lib/data-store/institution", () => ({ getInstitutionFeeScheduleEvidence: vi.fn(async () => null) }));
 vi.mock("@/lib/data-store/alerts", () => ({ getAlertSubscriptionForInstitution: vi.fn(async () => null) }));
-vi.mock("@/lib/data-store/public-cached-reads", () => ({ getComparableMarketIndexCached: vi.fn(async () => []) }));
+vi.mock("@/lib/data-store/public-cached-reads", () => ({
+  getComparableMarketIndexCached: vi.fn(async () => []),
+  getInstitutionFinancialHistoryCached: vi.fn(async () => []),
+  getInstitutionCallItemHistoryCached: vi.fn(async () => []),
+  getFeeShareCohortCached: vi.fn(async () => null),
+}));
 vi.mock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => null) }));
 vi.mock("@/lib/custom-report/sample-report", () => ({ sampleReportAvailable: vi.fn(async () => false) }));
 const shortenPageLife = vi.hoisted(() => vi.fn(async () => undefined));
