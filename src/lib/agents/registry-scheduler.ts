@@ -22,7 +22,7 @@ import {
   FDIC_HISTORY_SOURCE,
   fdicHistoryPartitions,
 } from "@/lib/agents/magellan/registry/fdic-history";
-import { BEIGE_BOOK_SOURCE, beigeBookCandidates } from "@/lib/agents/magellan/registry/fed";
+import { BEIGE_BOOK_SOURCE, beigeBookCandidates, FED_INDICATORS_PARSER_VERSION, FRED_SOURCE } from "@/lib/agents/magellan/registry/fed";
 import { NCUA_FILING_LAG_DAYS, NCUA_FINANCIALS_SOURCE, NCUA_PARSER_VERSION } from "@/lib/agents/magellan/registry/ncua-financials";
 import { CFPB_PARSER_VERSION, CFPB_SOURCE } from "@/lib/agents/magellan/registry/cfpb";
 import { CENSUS_ACS_PARSER_VERSION, CENSUS_ACS_SOURCE, censusAcsPartitions } from "@/lib/agents/magellan/registry/census-acs";
@@ -143,6 +143,7 @@ const CLAIM_RETRY_HOURS = 6;
  */
 export const REGISTRY_PARSER_VERSIONS: Record<string, number> = {
   [NCUA_FINANCIALS_SOURCE]: NCUA_PARSER_VERSION,
+  [FRED_SOURCE]: FED_INDICATORS_PARSER_VERSION,
   [FDIC_UNIVERSE_SOURCE]: FDIC_UNIVERSE_PARSER_VERSION,
   [ENFORCEMENT_SOURCE]: ENFORCEMENT_MATCHER_VERSION,
   [STATE_ENFORCEMENT_SOURCE]: STATE_ENFORCEMENT_PARSER_VERSION,

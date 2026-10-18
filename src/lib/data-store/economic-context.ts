@@ -1,12 +1,13 @@
 import { CPI_BANK_SERVICES_SERIES } from "@/lib/regulatory/fed";
 import { sql } from "./connection";
+import { fedIndicatorServedSql } from "./struck-sources";
 import { getBeigeBookThemes, getLatestBeigeBook } from "./fed";
 import { STATE_NEWS_SOURCE_PATTERNS } from "./news";
 
 /**
  * Economic and regulatory context for a state report, read from the tables the registry
  * steps already keep fresh: fed_beige_book (+ beige_book_themes), fed_economic_indicators
- * (FRED and BLS series), fed_fomc_minutes, fed_publications and reg_articles. Nothing here
+ * (BLS, BEA and Fed Board series), fed_fomc_minutes, fed_publications and reg_articles. Nothing here
  * fetches from outside.
  */
 
@@ -115,6 +116,7 @@ async function loadSeries(seriesIds: string[]): Promise<Map<string, IndicatorSer
                ROW_NUMBER() OVER (PARTITION BY series_id ORDER BY observation_date DESC) AS rn
           FROM fed_economic_indicators
          WHERE series_id = ANY(${seriesIds}::text[]) AND value IS NOT NULL
+           AND ${sql.unsafe(fedIndicatorServedSql())}
       ) ranked
      WHERE rn <= ${HISTORY_POINTS}
      ORDER BY series_id, observation_date DESC

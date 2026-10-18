@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("./connection", () => ({ sql: vi.fn() }));
+vi.mock("./connection", () => ({ sql: Object.assign(vi.fn(), { unsafe: (text: string) => ({ unsafe: text }) }) }));
 
 import { sql } from "./connection";
 import { changeOver, compareStateToNation, getNationalCreditSummary, medianWithCount, summarizeSeries } from "./national-credit-aggregates";

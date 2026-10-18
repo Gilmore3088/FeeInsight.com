@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { BLS_SERIES_TITLES, blsSeriesRequest, CPI_BANK_SERVICES_SERIES, parseBlsCatalogTitle, REQUIRED_FRED_SERIES } from "./fed";
+import { BLS_SERIES_TITLES, blsSeriesRequest, CPI_BANK_SERVICES_SERIES, parseBlsCatalogTitle } from "./fed";
+import { PUBLISHER_INDICATORS } from "./federal-indicators";
 
 describe("blsSeriesRequest", () => {
   const now = new Date("2026-10-05T00:00:00Z");
@@ -22,7 +23,7 @@ describe("blsSeriesRequest", () => {
 describe("CPI bank services series", () => {
   it("tracks SS68021 and labels SEMC01 as the medical series it is", () => {
     expect(CPI_BANK_SERVICES_SERIES).toBe("CUUR0000SS68021");
-    expect(REQUIRED_FRED_SERIES.map((s) => s.series_id)).toContain("CUUR0000SS68021");
+    expect(PUBLISHER_INDICATORS.map((s) => s.series_id)).toContain("CUUR0000SS68021");
     expect(BLS_SERIES_TITLES.CUUR0000SEMC01).toMatch(/Physicians/);
   });
 

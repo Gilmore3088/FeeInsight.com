@@ -12,7 +12,7 @@ import {
   type IndexEntry,
 } from "@/lib/data-store/fee-index";
 import { PeerSetError, definitionFor, getPeerSubject, resolvePeerRequest, resolvePeerSet, type PeerSetRequest } from "@/lib/data-store/peer-sets";
-import { STRUCK_AREA_SERIES_KEYS, STRUCK_FRED_SERIES, STRUCK_SOURCE_URL_PATTERN } from "@/lib/data-store/struck-sources";
+import { STRUCK_AREA_SERIES_KEYS, STRUCK_FRED_SERIES, areaRowServedSql, notYetFromPublisherReason } from "@/lib/data-store/struck-sources";
 import { FEE_FAMILIES, getDisplayName } from "@/lib/fee-taxonomy";
 import { MAX_NEAREST_PEERS, PEER_REGULATORS, type PeerRegulator } from "@/lib/peer-set-dimensions";
 import { catalogEntry, scopeForAreaGeoType, type CatalogScopeKind } from "./catalog";
@@ -213,6 +213,9 @@ async function queryArea(input: QueryDataInput, source: string, seriesKey: strin
   if (!entry || entry.kind !== "public-data") return refuse(input.measure, `"${source}" is not a source in the data catalog.`);
   if (!entry.servable) return refuse(input.measure, entry.notServableReason ?? "This source may not be shown to customers.");
   if (entry.areaGeoTypes.length === 0) return refuse(input.measure, `${entry.label} holds no area figures to query.`);
+  // Dropped for want of a confirmed publisher file, not for their terms: say so.
+  const notYet = notYetFromPublisherReason(seriesKey);
+  if (notYet) return refuse(input.measure, notYet);
   if (STRUCK_FRED_SERIES.includes(seriesKey) || STRUCK_AREA_SERIES_KEYS.includes(seriesKey)) return refuse(input.measure, "This series was struck: its terms do not allow commercial use.");
 
   const resolved = await areaTargets(input.scope, entry.areaGeoTypes);
@@ -236,7 +239,7 @@ async function queryArea(input: QueryDataInput, source: string, seriesKey: strin
        WHERE a.source = ${source}
          AND a.series_key = ${seriesKey}
          -- Struck rows (DECISIONS.md "No non-commercial data") are never returned.
-         AND COALESCE(a.source_url, '') NOT ILIKE ${STRUCK_SOURCE_URL_PATTERN}
+         AND ${tx.unsafe(areaRowServedSql("a"))}
          -- A row counts when its own span of months overlaps the bounds. A period in no known shape is
          -- left out once a bound is given.
          -- Same month rule as periodMonths().

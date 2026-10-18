@@ -187,14 +187,14 @@ export function readFindings(data: Loaded, place: string, state: string | null, 
       lens: "economy",
       title: `${place} unemployment is ${e.state_unemployment.latest.value.toFixed(1)}%.`,
       body: `${e.national_unemployment ? `The U.S. rate is ${e.national_unemployment.latest.value.toFixed(1)}% (${e.national_unemployment.latest.date.slice(0, 7)})` : "The U.S. comparison is unavailable"}; state figure as of ${e.state_unemployment.latest.date.slice(0, 7)}.`,
-      source: "BLS via FRED",
+      source: "Bureau of Labor Statistics",
     });
   } else if (bankYoY !== null) {
     findings.push({
       lens: "economy",
       title: `Prices for bank services rose ${pct(bankYoY)} over twelve months.`,
       body: `${allYoY !== null ? `All consumer prices rose ${pct(allYoY)} over the same period` : "The all-items comparison is unavailable"}, to ${bank!.latest.date.slice(0, 7)}.`,
-      source: "BLS consumer price index via FRED",
+      source: "BLS consumer price index",
     });
   }
   const years = data.complaints?.years ?? [];
@@ -370,7 +370,7 @@ function EconomyPanel({ economy, place, state, district, compact, exploreHref }:
         <p className="mt-2 text-xs text-[var(--fi-muted)]">District commentary covers the whole {DISTRICT_NAMES[district] ?? ""} Federal Reserve district, not {place} alone.{economy.beige_book.source_url ? <> <a href={economy.beige_book.source_url} target="_blank" rel="noreferrer" className="text-[var(--fi-brick)]">Source ↗</a></> : null}</p>
       </div> : null}
     </> : null}
-    <EvidenceDetails source="BLS (LAUS, CES, CPI) and Federal Reserve, via FRED; Beige Book" period={[economy.state_unemployment?.latest.date, economy.national_unemployment?.latest.date, economy.cpi_bank_services?.latest.date].filter(Boolean).map(d => d!.slice(0, 7)).join(" · ") || "Unavailable"} geography={state ? `${place} and United States` : "United States"} coverage="Monthly observations as published; months BLS did not publish stay gaps" method="Rates as reported; price and payroll lines are twelve-month percent changes. State and national dates are shown separately." />
+    <EvidenceDetails source="BLS (LAUS, CES, CPI) and Federal Reserve Board (H.15); Beige Book" period={[economy.state_unemployment?.latest.date, economy.national_unemployment?.latest.date, economy.cpi_bank_services?.latest.date].filter(Boolean).map(d => d!.slice(0, 7)).join(" · ") || "Unavailable"} geography={state ? `${place} and United States` : "United States"} coverage="Monthly observations as published; months BLS did not publish stay gaps" method="Rates as reported; price and payroll lines are twelve-month percent changes. State and national dates are shown separately." />
   </Panel>;
 }
 

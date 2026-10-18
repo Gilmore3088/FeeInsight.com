@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { STRUCK_NATIONAL_SERIES_IDS } from "@/lib/data-store/struck-sources";
+import { CHGDEL_DELINQUENCY_SA_HTML, SLOOS_CHART_DATA_HTML } from "@/lib/regulatory/fed-board-fixtures";
 import {
   monthPartition,
   NATIONAL_CREDIT_DEFINITIONS,
@@ -47,34 +48,36 @@ describe("national credit partitions", () => {
 });
 
 describe("runRegistryNationalCredit", () => {
-  it("loads the FRED series it gets, names the ones it does not, and records the partition", async () => {
+  it("loads the Board series it gets, names the ones it does not, and records each row's file", async () => {
     const { db, statements } = createDb();
     const fetchImpl = vi.fn(async (url: string) => {
-      const id = new URL(String(url)).searchParams.get("id");
-      if (id === "SNDR") return new Response("observation_date,SNDR\n2026-08-01,0.39\n2026-09-01,0.38\n");
-      if (id === "DRTSCILM") return new Response("observation_date,DRTSCILM\n2026-07-01,-3.1\n");
+      if (String(url).endsWith("delallsa.htm")) return new Response(CHGDEL_DELINQUENCY_SA_HTML);
+      if (String(url).includes("-chart-data.htm")) return new Response(SLOOS_CHART_DATA_HTML);
       return new Response("", { status: 404 });
     }) as unknown as typeof fetch;
     const r = await runRegistryNationalCredit({ source: "national-series", partitionKey: "2026-10", db, fetchOptions: { fetchImpl, backoffMs: 0 } });
-    expect(r).toMatchObject({ empty: false, rows: 3, writtenRows: 3 });
+    expect(r.empty).toBe(false);
     expect(r.missingFields).toContain("DPSACBW027SBOG (HTTP 404)");
     expect(r.checks?.flagged).toEqual([]);
     const p = partition(statements)!;
     expect(p.status).toBe("succeeded");
-    expect(p.detail.per_series.SNDR).toEqual({ rows: 2, latest: "2026-09", problem: null });
+    expect(p.detail.per_series.DRCCLACBS).toEqual({ rows: 3, latest: "2026Q2", problem: null });
     expect(p.detail.parser_version).toBe(NATIONAL_CREDIT_PARSER_VERSION);
+    const urls = statements.filter((s) => s.text.includes("INSERT INTO area_statistics")).map((s) => s.values.find((v) => typeof v === "string" && v.startsWith("https://")));
+    expect(urls).toEqual(expect.arrayContaining(["https://www.federalreserve.gov/releases/chargeoff/delallsa.htm", expect.stringMatching(/sloos-\d{6}-chart-data\.htm$/)]));
   });
 
-  it("never asks FRED for a struck series (Freddie Mac PMMS, Philadelphia Fed cards; 2026-10-18)", async () => {
+  it("never asks FRED, nor for a struck series (Freddie Mac PMMS, Philadelphia Fed cards; 2026-10-18)", async () => {
     const { db } = createDb();
     const asked: string[] = [];
     const fetchImpl = vi.fn(async (url: string) => {
-      asked.push(new URL(String(url)).searchParams.get("id") ?? "");
+      asked.push(String(url));
       return new Response("", { status: 404 });
     }) as unknown as typeof fetch;
     await runRegistryNationalCredit({ source: "national-series", partitionKey: "2026-10", db, fetchOptions: { fetchImpl, backoffMs: 0 } });
     expect(asked.length).toBeGreaterThan(0);
-    expect(asked.filter((id) => STRUCK_NATIONAL_SERIES_IDS.includes(id))).toEqual([]);
+    expect(asked.filter((u) => /stlouisfed|fredgraph/.test(u))).toEqual([]);
+    expect(asked.filter((u) => STRUCK_NATIONAL_SERIES_IDS.some((id) => u.includes(id)))).toEqual([]);
   });
 
   it("records the partition empty, never failing, when nothing comes back", async () => {

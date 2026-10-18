@@ -1235,6 +1235,21 @@ scheduled and no reader returns its rows. Released: World Bank Remittance Prices
 (ODC-By 1.0; attribution "Braga et al., Debt in America, Urban Institute"), each carrying its
 attribution on every stored row and read. Rows already loaded from struck sources stay on prod and
 no reader returns them (`src/lib/data-store/struck-sources.ts`).
+FRED replaced by the original publishers, 2026-10-18 (James, card answer "Use publishers"): "Same
+series, fetched from BLS, Treasury and the Fed Board; FRED is no longer used." FRED's terms bar
+commercial use without the St. Louis Fed's written consent and bar storing FRED content in a
+database; most series we read through FRED are public-domain federal data. registry-fred now reads
+BLS (CPI, unemployment, payrolls, each state's LAUS and CES series), BEA NIPA (real GDP, the GDP
+price index, the saving rate; BEA_API_KEY) and the Fed Board's H.15 package (fed funds), keeping our
+series ids; national-series reads the Board's H.8 package (Z.1, about 592 MB, not yet), its charge-off and delinquency
+table and the SLOOS chart data. Dropped, with no publisher file confirmed: the FDIC national deposit
+rates (SNDR, ICNDR, MMNDR, NDR12MCD), the FDIC QBP service-charge series (QBPQYTNIYSRVDP) and
+DRCBLACBS. FRED-era rows stay on prod (none deleted) and are retired per series, so a publisher
+parser that fails cannot blank a chart: a series keeps showing its FRED-era values until its
+first row from the publisher lands, then only publisher rows are served
+(`fedIndicatorServedSql`, from `publisher_cutover_at`; `areaRowServedSql`, a national-series key
+with a Board row). Struck and dropped series, and series no publisher loads, are hidden at once.
+registry-fred names the series "still on FRED-era values" in its step output.
 
 **PRs merge without James; accuracy comes from recorded reviews.** James, 2026-10-18 06:40-06:43 UTC
 (project thread "Triage open GitHub issues", after a PR pipeline review that proposed these rules):
