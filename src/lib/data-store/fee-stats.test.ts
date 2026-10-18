@@ -201,8 +201,8 @@ it("leaves fees charged on a different basis than their category's out of every 
   const predicate = statsRowFilter("c");
   expect(predicate).toContain(`AND NOT ${basisMismatchSql("c")}`);
   expect(basisMismatchSql("c")).toBe(
-    "COALESCE((c.fee_category IN ('dormant_account', 'minimum_balance', 'monthly_maintenance') AND lower(btrim(c.frequency)) IN ('quarterly', 'annual', 'daily', 'hourly', 'one_time'))" +
-      " OR (c.fee_category IN ('safe_deposit_box', 'ira_administration') AND lower(btrim(c.frequency)) IN ('monthly', 'quarterly', 'daily', 'hourly', 'one_time')), false)",
+    "COALESCE((c.fee_category IN ('dormant_account', 'minimum_balance', 'monthly_maintenance') AND lower(btrim(c.frequency, E' \\t\\r\\n')) IN ('quarterly', 'annual', 'daily', 'hourly', 'one_time'))" +
+      " OR (c.fee_category IN ('safe_deposit_box', 'ira_administration') AND lower(btrim(c.frequency, E' \\t\\r\\n')) IN ('monthly', 'quarterly', 'daily', 'hourly', 'one_time')), false)",
   );
 });
 
