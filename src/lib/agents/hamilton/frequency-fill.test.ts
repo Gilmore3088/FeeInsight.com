@@ -258,7 +258,8 @@ describe("v15: a stored line cut before its price is read on its full line (#190
   const dbWith = (text: string) => {
     const db = createDbMock([]);
     db.unsafe = vi.fn((sql: string) => {
-      if (sql.includes("v15 full lines")) return Promise.resolve([{ source_document_id: 15428, normalized_text: text }]);
+      // The SQL read returns the lines of a document with line breaks; the fill keeps those holding the key.
+      if (sql.includes("v15 full lines")) return Promise.resolve(text.includes("\n") ? [{ fee_published_id: 80997, lines: text.split("\n") }] : []);
       if (sql.includes("fp.fee_name ~*")) return Promise.resolve([]);
       return Promise.resolve([navy]);
     });
@@ -281,6 +282,29 @@ describe("v15: a stored line cut before its price is read on its full line (#190
       const result = await fillBlankFrequencies(asDb(dbWith(text)), { runId: 5, dryRun: true });
       expect(result.filled, text.slice(0, 40)).toEqual([]);
     }
+  });
+
+  it("never reads a v15-only row on its excerpt, when the read says false or NULL", async () => {
+    // Postgres gives NULL, not false, when a blank row fails every pre-v15 arm (#1929 review).
+    const oneTime = (before: boolean | null) => ({
+      ...row(5, "5.00", `${"Account research and reconciliation services requested by the member for any reason, billed at the rate shown here and ".repeat(2).slice(0, 170)} | $5.00 one-time`),
+      canonical_fee_key: "account_research",
+      before_v15: before,
+    });
+    for (const before of [false, null]) {
+      const db = createDbMock([oneTime(before)]);
+      const result = await fillBlankFrequencies(asDb(db), { runId: 5, dryRun: true });
+      expect(result.filled, String(before)).toEqual([]);
+    }
+  });
+
+  it("reads only the matching lines in SQL, never whole documents", async () => {
+    const db = dbWith(fullText);
+    await fillBlankFrequencies(asDb(db), { runId: 5, dryRun: true });
+    const read = db.unsafe.mock.calls.map((call) => String(call[0])).find((sql) => sql.includes("v15 full lines"))!;
+    expect(read).toContain("regexp_split_to_table(t.normalized_text, E'\\r?\\n')");
+    expect(read).toContain("strpos(l.line, w.key) > 0");
+    expect(read).not.toMatch(/SELECT w\.fee_published_id, [^\n]*normalized_text/);
   });
 
   it("finds the one full line that prints the price", () => {

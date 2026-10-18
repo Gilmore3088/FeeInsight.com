@@ -485,8 +485,9 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     80997). A blank whose stored line is at least `CUT_EXCERPT_CHARS` long and does not print
     its price is read on the one line of its own stored document that holds the cut line's
     opening and prints the price (`fullStoredLine`; "... | $3.00 per quarter" fills quarterly).
-    Up to `FULL_LINE_DOCUMENT_LIMIT` documents are read per step, and a flattened document (no
-    line breaks) gives no line. The fill logs it with basis `full_stored_line`; without a full
+    The lines are found in SQL, so only lines holding the opening come back and every cut row is
+    read on every step; a flattened document (no line breaks) gives no line. A line holding
+    another fee's price can still lend its period when Knox's amount came from that fee. The fill logs it with basis `full_stored_line`; without a full
     line the row is read only if it was a pre-v15 candidate.
     Overdraft plan hold (#1360, no version change, `OVERDRAFT_PLAN_HOLD_LIVE` on since Oct 16,
     James 04:53 UTC: "Retire wrong copy"): an overdraft program the keep above leaves monthly was,

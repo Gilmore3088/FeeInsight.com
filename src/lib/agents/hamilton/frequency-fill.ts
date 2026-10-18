@@ -61,7 +61,8 @@ export const FREQUENCY_FILL_CHECK = "hamilton.frequency_fill";
 // v15 (#1901): a blank fee whose stored line Knox cut before its price ("Dormant Checking fee:
 // Assessed to the checking account if ... no other Navy Fede", Navy Federal 80997) is read on the
 // full line of its own stored document ("... | $3.00 per quarter"), found by the cut line's opening
-// (`fullStoredLine`), so the period the schedule prints is filled and logged with basis
+// (`fullStoredLine`, read in SQL so only the matching lines come back), so the period the
+// schedule prints is filled and logged with basis
 // `full_stored_line`.
 export const FREQUENCY_FILL_VERSION = 15;
 /**
@@ -86,8 +87,6 @@ export const OVERDRAFT_PLAN_HOLD_REASON = "an optional overdraft plan priced by 
 export const FREQUENCY_HOLD_REASON = "frequency_hold";
 /** Knox cuts its stored line at 180 characters; a line this long may end before its price (v15). */
 export const CUT_EXCERPT_CHARS = 170;
-/** Documents read per step for v15's full lines; later steps take the rest. */
-export const FULL_LINE_DOCUMENT_LIMIT = 300;
 /** How much of a cut line's opening must match the document's line. */
 const FULL_LINE_KEY_CHARS = 120;
 /** Documents read per step for box-table headers; later steps take the rest. */
@@ -187,9 +186,21 @@ function squash(text: string): string {
  * breaks (one flattened paragraph) gives nothing: its "line" is the whole schedule.
  */
 export function fullStoredLine(text: string, excerpt: string, amount: number): string | null {
+  if (!text.includes("\n")) return null;
+  return oneFullLine(text.split(/\r?\n/), excerpt, amount);
+}
+
+/** The opening of a cut stored line that its document's line must hold, or null when too short to tell. */
+function fullLineKey(excerpt: string): string | null {
   const key = squash(excerpt).slice(0, FULL_LINE_KEY_CHARS);
-  if (key.length < 40 || !text.includes("\n")) return null;
-  const lines = new Set(text.split(/\r?\n/).map(squash).filter((line) => line.includes(key)));
+  return key.length < 40 ? null : key;
+}
+
+/** `fullStoredLine` over a document's lines (the full text's, or those the SQL read returned). */
+function oneFullLine(candidates: string[], excerpt: string, amount: number): string | null {
+  const key = fullLineKey(excerpt);
+  if (!key) return null;
+  const lines = new Set(candidates.map(squash).filter((line) => line.includes(key)));
   if (lines.size !== 1) return null;
   const [line] = lines;
   if (line.length > 1_000 || !printsAmount(line, amount)) return null;
@@ -213,7 +224,8 @@ export async function fillBlankFrequencies(
     rows = await inSavepoint(db, (scope) => scope.unsafe<BlankFrequencyRow[]>(
       `SELECT fp.fee_published_id, fv.fee_verified_id, fr.fee_raw_id, fp.institution_id, fr.source_document_id,
               fp.canonical_fee_key, fp.amount, fp.frequency, COALESCE(fr.extraction_note, fr.conditions) AS conditions, fp.fee_name,
-              ${BEFORE_V15_CANDIDATE} AS before_v15,
+              -- Never NULL: a blank row's "frequency = 'daily'" arm is NULL, not false (#1929 review).
+              COALESCE(${BEFORE_V15_CANDIDATE}, false) AS before_v15,
               (fp.canonical_fee_key = 'overdraft' AND EXISTS (
                 SELECT 1 FROM published_fee_records other
                  WHERE other.institution_id = fp.institution_id
@@ -289,22 +301,39 @@ export async function fillBlankFrequencies(
   const fullLines = new Map<number, string>();
   try {
     const cut = rows.filter((row) => row.source_document_id != null && cutBeforePrice(row, excerptOf(row.conditions)));
-    const documentIds = [...new Set(cut.map((row) => Number(row.source_document_id)))].slice(0, FULL_LINE_DOCUMENT_LIMIT);
-    if (documentIds.length > 0) {
-      const texts = await inSavepoint(db, (scope) => scope.unsafe<Array<{ source_document_id: number | string; normalized_text: string | null }>>(
-        `SELECT DISTINCT ON (source_document_id) source_document_id, normalized_text
-           FROM agent_source_texts
-          WHERE source_document_id = ANY($1::bigint[])
-            AND status = 'completed'
-            AND normalized_text IS NOT NULL
-          ORDER BY source_document_id, id DESC -- v15 full lines`,
-        [documentIds],
+    const keyed = cut.flatMap((row) => {
+      const key = fullLineKey(excerptOf(row.conditions)!);
+      return key ? [{ row, key }] : [];
+    });
+    if (keyed.length > 0) {
+      // Only the lines holding each cut line's opening come back, not whole documents, so every
+      // cut row is read on every step without loading its document's text.
+      const found = await inSavepoint(db, (scope) => scope.unsafe<Array<{ fee_published_id: number | string; lines: string[] | null }>>(
+        `WITH want AS (
+           SELECT * FROM unnest($1::bigint[], $2::bigint[], $3::text[]) AS w(fee_published_id, source_document_id, key)
+         ), txt AS (
+           SELECT DISTINCT ON (source_document_id) source_document_id, normalized_text
+             FROM agent_source_texts
+            WHERE source_document_id IN (SELECT source_document_id FROM want)
+              AND status = 'completed'
+              AND normalized_text IS NOT NULL
+            ORDER BY source_document_id, id DESC
+         )
+         SELECT w.fee_published_id, array_agg(DISTINCT l.line) AS lines -- v15 full lines
+           FROM want w
+           JOIN txt t ON t.source_document_id = w.source_document_id
+           CROSS JOIN LATERAL (
+             SELECT btrim(regexp_replace(x, '\\s+', ' ', 'g')) AS line
+               FROM regexp_split_to_table(t.normalized_text, E'\\r?\\n') AS x
+           ) l
+          WHERE strpos(t.normalized_text, E'\\n') > 0
+            AND strpos(l.line, w.key) > 0
+          GROUP BY w.fee_published_id`,
+        [keyed.map(({ row }) => Number(row.fee_published_id)), keyed.map(({ row }) => Number(row.source_document_id)), keyed.map(({ key }) => key)],
       ));
-      const byDocument = new Map(texts.flatMap((text) =>
-        typeof text.normalized_text === "string" ? [[Number(text.source_document_id), text.normalized_text] as const] : []));
-      for (const row of cut) {
-        const text = byDocument.get(Number(row.source_document_id));
-        const line = text ? fullStoredLine(text, excerptOf(row.conditions)!, Number(row.amount)) : null;
+      const linesById = new Map(found.map((hit) => [Number(hit.fee_published_id), hit.lines ?? []] as const));
+      for (const { row } of keyed) {
+        const line = oneFullLine(linesById.get(Number(row.fee_published_id)) ?? [], excerptOf(row.conditions)!, Number(row.amount));
         if (line) fullLines.set(Number(row.fee_published_id), line);
       }
     }
@@ -343,7 +372,8 @@ export async function fillBlankFrequencies(
     const sourceLine = fullLine ?? excerpt;
     if (!sourceLine || !Number.isFinite(amount)) continue;
     // v15: a cut line with no full line found reads only as before (its own frequency wording).
-    if (!fullLine && row.before_v15 === false) continue;
+    // NULL reads as false too, so a SQL slip never lets a v15-only row through on its excerpt.
+    if (!fullLine && row.before_v15 !== true && row.before_v15 !== undefined) continue;
     const stated = row.frequency ?? null;
     const check = perEventPeriodCheck(row.canonical_fee_key, stated, sourceLine, amount, row.fee_name)
       ?? continuousOverdraftPeriodCheck(row.canonical_fee_key, stated, sourceLine, amount, row.fee_name);
