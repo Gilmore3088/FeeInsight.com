@@ -35,6 +35,7 @@ import { LayerTabs } from "@/components/hamilton/memo/LayerTabs";
 import { CheckingLineupPanel } from "@/components/hamilton/memo/checking-lineup";
 import { loadMarketCheckingLineup } from "@/lib/custom-report/checking-lineup-data";
 import { LINEUP_CATEGORY } from "@/lib/agents/knox/lineup";
+import { ownFeeList, statedFeeLabel } from "@/lib/own-fee";
 
 export const metadata: Metadata = { title: "My fees" };
 
@@ -384,7 +385,10 @@ export default async function ResearchPage({ searchParams }: PageProps) {
                       <td className="px-4 py-2 text-right [font-variant-numeric:tabular-nums] text-warm-700">
                         {b.marketDeposits != null ? fmtFiledThousands(b.marketDeposits / 1000) : <span className="text-warm-600">Not in the Summary of Deposits</span>}
                       </td>
-                      <td className="px-4 py-2 text-right [font-variant-numeric:tabular-nums] text-warm-800">{fmtMoney(b.amount)}</td>
+                      <td className="px-4 py-2 text-right [font-variant-numeric:tabular-nums] text-warm-800">
+                        {statedFeeLabel(b.amount, b.several, fmtMoney)}
+                        {b.several ? <span className="block text-xs text-warm-600">{ownFeeList(b.several, fmtMoney)}</span> : null}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

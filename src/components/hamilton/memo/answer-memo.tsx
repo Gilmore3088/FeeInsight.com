@@ -27,6 +27,7 @@ export function keyFiguresFor(exhibit: Exhibit | null): KeyFigure[] {
   }
   if (exhibit.kind === "competitor_range") {
     if (exhibit.items.length === 0) return [];
+    // Range and count read the same one value per institution; named fees stay on the rows (#1931).
     const amounts = exhibit.items.map((i) => i.amount);
     const lo = Math.min(...amounts);
     const hi = Math.max(...amounts);

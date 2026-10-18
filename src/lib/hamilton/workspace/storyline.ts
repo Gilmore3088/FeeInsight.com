@@ -12,6 +12,7 @@
 import { revenueLineName } from "./revenue";
 import { subjectPossessive, subjectName } from "./subject";
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
+import { statedFeeText, type SeveralFees } from "@/lib/own-fee";
 import { formatRatePercent } from "@/lib/percent-fees";
 import { MAX_STORY_LINE_WORDS, words } from "./four-roles";
 import { plainName, proseFeeName } from "./names";
@@ -209,6 +210,7 @@ function localPiece(research: FeeResearch, name: string): Piece | null {
   const items = list.slice(0, MAX_MATRIX_ROWS).sort((a, b) => a.amount - b.amount);
   // The title counts every local competitor, as the market lens does, so the exhibit's line and
   // the memo never give two different counts; the chart shows the largest and its note says so.
+  // Range and counts come from the same one value per institution; named fees stay on the rows (#1931).
   const amounts = list.map((p) => p.amount);
   const lo = Math.min(...amounts);
   const hi = Math.max(...amounts);
@@ -236,7 +238,7 @@ function localPiece(research: FeeResearch, name: string): Piece | null {
       unit: "dollars",
       own: research.current,
       ownLabel: research.institutionName,
-      items: items.map((p) => ({ name: p.institutionName, amount: p.amount, url: p.documentUrls[0] ?? null, deposits: p.marketDeposits ?? null })),
+      items: items.map((p) => ({ name: p.institutionName, amount: p.amount, url: p.documentUrls[0] ?? null, deposits: p.marketDeposits ?? null, ...(p.several ? { several: p.several } : {}) })),
       ...(list.length > MAX_MATRIX_ROWS ? { allAmounts: amounts } : {}),
       sources: [research.localMarket?.source ?? feeSource(research)],
       note: list.length > MAX_MATRIX_ROWS ? `The ${MAX_MATRIX_ROWS} largest by local deposits of ${list.length}.` : undefined,
@@ -321,7 +323,7 @@ function structurePiece(research: FeeResearch): Piece | null {
       columns: set.columns.map((c) => c.label),
       rows: shown.map((r) => ({
         name: r.name,
-        cells: set.columns.map((c) => (r.values[c.category] === undefined ? null : money(r.values[c.category]))),
+        cells: set.columns.map((c) => (r.values[c.category] === undefined ? null : statedFeeText(r.values[c.category], r.several?.[c.category], money))),
         own: r.own || undefined,
       })),
       sources: [{ ...set.source, asOf: set.source.asOf ?? research.provenance.dataAsOf.fees ?? null }],
@@ -627,7 +629,7 @@ function financeLens(research: FeeResearch, answer: HamiltonAnswer, intent: Stor
 }
 
 /** The group a customer would compare the bank against: the segment asked about, the local market, or peers. */
-function customerGroup(research: FeeResearch): { label: string; members: { name: string; amount: number }[]; source: SourceRef } | null {
+function customerGroup(research: FeeResearch): { label: string; members: { name: string; amount: number; several?: SeveralFees }[]; source: SourceRef } | null {
   const seg = research.segment;
   if (seg && seg.problem === null && seg.members.length > 0) {
     return { label: shortSegmentLabel(seg.segment), members: seg.members.map((m) => ({ name: m.institutionName, amount: m.amount })), source: seg.source };
@@ -636,12 +638,12 @@ function customerGroup(research: FeeResearch): { label: string; members: { name:
   if (local.length > 0) {
     return {
       label: "local competitors",
-      members: local.map((p) => ({ name: p.institutionName, amount: p.amount })),
+      members: local.map((p) => ({ name: p.institutionName, amount: p.amount, several: p.several })),
       source: research.localMarket?.source ?? feeSource(research),
     };
   }
   if (research.peers.length >= MIN_PEERS_FOR_POSITION) {
-    return { label: "peers", members: research.peers.map((p) => ({ name: p.institutionName, amount: p.amount })), source: feeSource(research) };
+    return { label: "peers", members: research.peers.map((p) => ({ name: p.institutionName, amount: p.amount, several: p.several })), source: feeSource(research) };
   }
   return null;
 }
@@ -692,23 +694,31 @@ function marketLens(research: FeeResearch, name: string): Fact[] {
     const n = group.members.length;
     if (cheaper.length === 0) {
       // Neutral: who is higher, by name, never whether that helps or hurts.
-      const highest = [...dearer].sort((a, b) => b.amount - a.amount)[0];
+      // Named only by a stated price: an institution stating several different fees has none (#1931).
+      const top = [...dearer].sort((a, b) => b.amount - a.amount)[0];
+      const highest = top && !top.several ? top : undefined;
       out.push({
         text: highest
           ? namedWithin(
               `None of the ${count(n)} ${group.label} charge less than ${subjectPossessive(research, false)} ${money(current)}; the highest is ${plainName(highest.name)} (${money(highest.amount)}).`,
               `None of the ${count(n)} ${group.label} charge less than ${subjectPossessive(research, false)} ${money(current)}; the highest charges ${money(highest.amount)}.`,
             )
-          : `All ${count(n)} ${group.label} charge the same ${money(current)} ${subjectName(research)} ${research.subjectName ? "does" : "do"}.`,
+          : dearer.length > 0
+            ? `None of the ${count(n)} ${group.label} charge less than ${subjectPossessive(research, false)} ${money(current)}.`
+            : `All ${count(n)} ${group.label} charge the same ${money(current)} ${subjectName(research)} ${research.subjectName ? "does" : "do"}.`,
         source: group.source,
         sampleSize: n,
       });
     } else {
+      const lowest = cheaper[0].several ? undefined : cheaper[0];
+      const fewer = `${count(cheaper.length)} of ${count(n)} ${group.label} charge less than ${subjectPossessive(research, false)} ${money(current)}`;
       out.push({
-        text: namedWithin(
-          `${count(cheaper.length)} of ${count(n)} ${group.label} charge less than ${subjectPossessive(research, false)} ${money(current)}; the lowest is ${plainName(cheaper[0].name)} (${money(cheaper[0].amount)}).`,
-          `${count(cheaper.length)} of ${count(n)} ${group.label} charge less than ${subjectPossessive(research, false)} ${money(current)}; the lowest charges ${money(cheaper[0].amount)}.`,
-        ),
+        text: lowest
+          ? namedWithin(
+              `${fewer}; the lowest is ${plainName(lowest.name)} (${money(lowest.amount)}).`,
+              `${fewer}; the lowest charges ${money(lowest.amount)}.`,
+            )
+          : `${fewer}.`,
         source: group.source,
         sampleSize: n,
       });

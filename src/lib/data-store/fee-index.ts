@@ -5,7 +5,7 @@ import { getFeeFamily, FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import { frequencyFamily } from "@/lib/fee-frequency";
 import { COMPARABILITY_SCREEN } from "@/lib/fee-comparability";
 import { BUSINESS_URL_SCREEN, MARKET_AUDIENCES, countsInMarketComparison } from "@/lib/market-eligibility";
-import { ownFeeFrom, type InstitutionOwnFee } from "@/lib/own-fee";
+import { ownFeeFrom, ownFeeFromRows, severalFeesOf, type InstitutionOwnFee, type SeveralFees } from "@/lib/own-fee";
 import {
   HIGHEST_TIER_CATEGORIES,
   MIN_INSTITUTIONS_FOR_MEDIAN,
@@ -1064,6 +1064,12 @@ export interface PeerFeeValue {
    */
   fee_records?: PeerFeeRecord[];
   /**
+   * Present when the peer's schedule states several different fees in the category (#1931):
+   * `amount` is then their median, a statistic and no price of its own, so a row naming the
+   * peer shows this range and the fees by name. Absent means `amount` is the stated price.
+   */
+  several?: SeveralFees;
+  /**
    * Statistics rule 7 (count once): the sister charter this value counts as, when this charter
    * shares its fee schedule with a lower-id charter of the same holding company among the rows
    * read. Absent when the institution counts as itself (always, while the rule is off).
@@ -1175,6 +1181,7 @@ export async function getPeerFeeValues(
           document_urls: urls,
           published_at: published,
           fee_records: peerFeeRecords(own),
+          ...severalField(category, own, amount),
           ...(countedAs !== undefined && countedAs !== id ? { counted_as: countedAs } : {}),
         });
       }
@@ -1328,6 +1335,50 @@ export async function getDailyFeeLimits(
     }
   }
   return limits;
+}
+
+/** `{ several }` when these rows (one institution, one category) state several different fees; empty otherwise. */
+function severalField(
+  category: string,
+  rows: readonly { fee_name?: string | null; amount: unknown }[],
+  value: number,
+): { several?: SeveralFees } {
+  const several = severalFeesOf(ownFeeFromRows(category, rows, value, HIGHEST_TIER_CATEGORIES.has(category)));
+  return several ? { several } : {};
+}
+
+/**
+ * Each listed institution's own fees per category, kept apart (src/lib/own-fee.ts): the
+ * statistics value, the price its schedule states (null when it states several different
+ * fees) and each fee by name. For rows that name an institution; medians and percentiles
+ * read `getFeeValuesForInstitutions` (the same `value`).
+ */
+export async function getOwnFeesForInstitutions(
+  institutionIds: number[],
+  categories: string[],
+): Promise<Map<number, Map<string, InstitutionOwnFee>>> {
+  const out = new Map<number, Map<string, InstitutionOwnFee>>();
+  if (institutionIds.length === 0 || categories.length === 0) return out;
+  const rows = (await sql.unsafe(
+    `SELECT ef.institution_id, ef.fee_category, ef.fee_name, ef.amount
+       FROM published_fee_catalog ef
+      WHERE ef.institution_id = ANY($1::int[])
+        AND ef.fee_category = ANY($2::text[])
+        AND ef.review_status = 'approved'
+        AND ${STATS_ROW_FILTER}`,
+    [institutionIds, categories] as never[],
+  )) as { institution_id: number | string; fee_category: string; fee_name: string | null; amount: number | string | null }[];
+  for (const category of categories) {
+    const list = rows.filter((r) => r.fee_category === category).map((r) => ({ ...r, institution_id: Number(r.institution_id) }));
+    for (const [id, value] of valuePerInstitution(list)) {
+      const fee = ownFeeFromRows(category, list.filter((r) => r.institution_id === id), value, HIGHEST_TIER_CATEGORIES.has(category));
+      if (!fee) continue;
+      const own = out.get(id) ?? new Map<string, InstitutionOwnFee>();
+      own.set(category, fee);
+      out.set(id, own);
+    }
+  }
+  return out;
 }
 
 /**

@@ -12,6 +12,7 @@
 
 import type { LineupAccount, LineupSummary } from "@/lib/data-store/account-lineup";
 import type { Storyline, StorylineExhibit } from "./storyline-types";
+import type { SeveralFees } from "@/lib/own-fee";
 
 /** A source behind a fact, named so the reader can check it. */
 export interface SourceRef {
@@ -119,8 +120,12 @@ export interface LocalMarketInfo {
 /** The bank's largest local competitors (by market deposits) and their published fees. */
 export interface BriefingLocalMarket {
   info: LocalMarketInfo;
-  /** The bank first, then competitors largest first. Values are one per institution, as peers are read. */
-  rows: { institutionId: number; name: string; own: boolean; marketDeposits: number | null; values: Record<string, number> }[];
+  /**
+   * The bank first, then competitors largest first. Values are one per institution, as peers are
+   * read: the stated price, except where `several` has the fee (#1931). There the institution
+   * states several different fees, the value is their median, and a row shows `several` instead.
+   */
+  rows: { institutionId: number; name: string; own: boolean; marketDeposits: number | null; values: Record<string, number>; several?: Record<string, SeveralFees> }[];
 }
 
 export interface IncomeQuarter {
@@ -214,6 +219,12 @@ export interface PeerValue {
   documentUrls: string[];
   publishedAt: string | null;
   /**
+   * Present when the institution's schedule states several different fees in the category
+   * (#1931): `amount` is then their median, which counts toward group statistics but is no price
+   * of its own, so a row naming the institution shows this range and each fee by name.
+   */
+  several?: SeveralFees;
+  /**
    * The published_fee_catalog rows behind `amount` (#981, H06-T04), so the peer median can name its
    * records. Absent on answers saved before them and where a reader does not load them.
    */
@@ -293,8 +304,13 @@ export interface FeeStructureSet {
   /** e.g. "institutions with $10 billion or more in assets" or "peers (Banks in Texas)". */
   groupLabel: string;
   columns: { category: string; label: string }[];
-  /** The bank first, then the group in its display order. Amounts by fee category. */
-  rows: { institutionId: number; name: string; own: boolean; values: Record<string, number> }[];
+  /**
+   * The bank first, then the group in its display order. Amounts by fee category, one per
+   * institution: the stated price, except where `several` has the fee (#1931). There the
+   * institution states several different fees, the amount is their median (for counts and
+   * medians), and a cell shows `several` instead.
+   */
+  rows: { institutionId: number; name: string; own: boolean; values: Record<string, number>; several?: Record<string, SeveralFees> }[];
   source: SourceRef;
 }
 
@@ -517,7 +533,8 @@ export type Exhibit =
       own: number | null;
       ownLabel: string;
       /** deposits: the institution's deposits in the bank's market counties (FDIC Summary of Deposits), local competitors only. */
-      items: { name: string; amount: number; url: string | null; deposits?: number | null }[];
+      /** several: the institution states several different fees here; amount is then their median and the row shows this range (#1931). */
+      items: { name: string; amount: number; url: string | null; deposits?: number | null; several?: SeveralFees }[];
       /** Every competitor's amount when items shows only the largest, so counts use the whole market. */
       allAmounts?: number[];
       sources: SourceRef[];

@@ -9,9 +9,9 @@ import { sql } from "@/lib/data-store/connection";
 import { getInstitutionById } from "@/lib/data-store/core";
 import { loadConfirmedFeeChanges } from "@/lib/report-assemblers/monthly-pulse";
 import {
-  getFeeValuesForInstitutions,
   getInstitutionFeeRows,
   getInstitutionOwnFees,
+  getOwnFeesForInstitutions,
   getPeerFeeValues,
   getSegmentFeeValues,
   type PeerFeeValue,
@@ -27,6 +27,7 @@ import { getComplaintBenchmark, getInstitutionComplaintYears } from "@/lib/data-
 import { getAccountLineups, summarizeLineup, type LineupAccount } from "@/lib/data-store/account-lineup";
 import { LINEUP_CATEGORY } from "@/lib/agents/knox/lineup";
 import { getDisplayName } from "@/lib/fee-taxonomy";
+import { severalFeesOf, type InstitutionOwnFee, type SeveralFees } from "@/lib/own-fee";
 import { percentFeeAllowed } from "@/lib/percent-fees";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
@@ -269,6 +270,7 @@ export function toPeerValue(v: PeerFeeValue): PeerValue {
     sourceDocumentIds: v.source_document_ids,
     documentUrls: v.document_urls,
     publishedAt: v.published_at,
+    ...(v.several ? { several: v.several } : {}),
     ...(v.fee_published_ids?.length ? { feePublishedIds: v.fee_published_ids } : {}),
     ...(v.counted_as !== undefined ? { countedAs: v.counted_as } : {}),
   };
@@ -624,27 +626,35 @@ export function briefingLocalMarket(
   if (!market) return null;
   const national = base.layers.find((l) => l.scope === "national")?.values;
   if (!national) return null;
-  const valueOf = new Map<number, Record<string, number>>();
+  // One value per competitor and fee, as peers are read; a fee it states several different
+  // amounts for also carries their range and names (#1931), shown in place of that median.
+  const valueOf = new Map<number, { values: Record<string, number>; several: Record<string, SeveralFees> }>();
   // Columns follow the bank's own priced row (LocalCompetitors keys off it), so a fee it
   // states several amounts for is left out here rather than shown as an empty column.
   for (const category of base.ownValues.keys()) {
     for (const v of national.get(category) ?? []) {
-      const values = valueOf.get(v.institution_id) ?? {};
-      values[category] = v.amount;
-      valueOf.set(v.institution_id, values);
+      const id = Number(v.institution_id);
+      const entry = valueOf.get(id) ?? { values: {}, several: {} };
+      entry.values[category] = v.amount;
+      if (v.several) entry.several[category] = v.several;
+      valueOf.set(id, entry);
     }
   }
   const others = market.members.filter((m) => !m.is_subject);
   const rows = others
-    .filter((m) => valueOf.has(m.institution_id))
+    .filter((m) => valueOf.has(Number(m.institution_id)))
     .slice(0, limit)
-    .map((m) => ({
-      institutionId: m.institution_id,
-      name: m.institution_name,
-      own: false,
-      marketDeposits: m.market_deposits,
-      values: valueOf.get(m.institution_id) as Record<string, number>,
-    }));
+    .map((m) => {
+      const entry = valueOf.get(Number(m.institution_id))!;
+      return {
+        institutionId: m.institution_id,
+        name: m.institution_name,
+        own: false,
+        marketDeposits: m.market_deposits,
+        values: entry.values,
+        ...(Object.keys(entry.several).length > 0 ? { several: entry.several } : {}),
+      };
+    });
   if (rows.length === 0) return null;
   return {
     info: {
@@ -847,13 +857,19 @@ async function loadStructure(
   if (group.members.length === 0) return null;
   try {
     const ids = [base.institutionId, ...group.members.map((m) => m.institutionId)];
-    const values = await getFeeValuesForInstitutions(ids, STRUCTURE_COLUMNS.map((c) => c.category));
-    const row = (institutionId: number, name: string, own: boolean) => ({
-      institutionId,
-      name,
-      own,
-      values: Object.fromEntries(values.get(institutionId) ?? new Map<string, number>()),
-    });
+    const fees = await getOwnFeesForInstitutions(ids, STRUCTURE_COLUMNS.map((c) => c.category));
+    // One value per institution and fee, as before; several different fees in one also carry
+    // their range and names (#1931), shown in place of that median.
+    const row = (institutionId: number, name: string, own: boolean) => {
+      const values: Record<string, number> = {};
+      const several: Record<string, SeveralFees> = {};
+      for (const [category, fee] of fees.get(Number(institutionId)) ?? new Map<string, InstitutionOwnFee>()) {
+        values[category] = fee.value;
+        const span = severalFeesOf(fee);
+        if (span) several[category] = span;
+      }
+      return { institutionId, name, own, values, ...(Object.keys(several).length > 0 ? { several } : {}) };
+    };
     return {
       groupLabel: group.label,
       columns: STRUCTURE_COLUMNS,

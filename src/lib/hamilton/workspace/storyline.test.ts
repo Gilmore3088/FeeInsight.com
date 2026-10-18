@@ -212,6 +212,46 @@ describe("storyline", () => {
     expect([...lowest, ...highest].join(" ")).not.toMatch(/favou?r|against you|advantage/i);
   });
 
+  it("names a competitor by its stated price only, and shows several fees as their range (#1931)", () => {
+    const base = research();
+    const several = { low: 30, high: 40, fees: [{ name: "Overdraft item", amount: 30 }, { name: "Overdraft ACH", amount: 40 }] };
+    const localCompetitors = base.localCompetitors!.map((c) => (c.institutionName === "Peer 101" ? { ...c, several } : c));
+    const answer = buildFeeAnswer({ ...base, current: 20, localCompetitors });
+    // Peer 101 is the highest by its one value, but it states no single price to name.
+    expect(answer.storyline!.lenses.market[0].text).toBe("None of the 3 local competitors charge less than your $20.");
+    const local = answer.storyline!.exhibits.find((e) => e.exhibit.kind === "competitor_range" && /market/.test(e.actionTitle))!;
+    if (local.exhibit.kind === "competitor_range") {
+      expect(local.exhibit.items.find((i) => i.name === "Peer 101")?.several).toEqual(several);
+    }
+  });
+
+  it("keeps the local range on the same one value per institution as the counts (#1931)", () => {
+    const base = research();
+    const template = base.localCompetitors![0];
+    const localCompetitors = [
+      { ...template, institutionId: 701, institutionName: "Rival A", amount: 170 },
+      { ...template, institutionId: 702, institutionName: "Rival B", amount: 162.5, several: { low: 150, high: 175, fees: [{ name: "Levy", amount: 150 }, { name: "Garnishment", amount: 175 }] } },
+    ];
+    const answer = buildFeeAnswer({ ...base, current: 160, localCompetitors });
+    const local = answer.storyline!.exhibits.find((e) => e.exhibit.kind === "competitor_range" && /market/.test(e.actionTitle))!;
+    expect(local.actionTitle).toBe("All 2 competitors in your market charge more than your $160; their range is $162.50 to $170.");
+    expect(local.actionTitle).not.toContain("$150");
+  });
+
+  it("shows a structure cell with several fees as their range and names, a single fee as its price (#1931)", () => {
+    const rows = structure!.rows.map((r) =>
+      r.institutionId === 2 && !r.own ? { ...r, several: { nsf: { low: 20, high: 30, fees: [{ name: "NSF item", amount: 20 }, { name: "NSF ACH", amount: 30 }] } } } : r,
+    );
+    const story = buildFeeAnswer(research({ structure: { ...structure!, rows } }), { story: { structure: true } }).storyline!;
+    const matrix = story.exhibits[0];
+    // The counts stay one per institution.
+    expect(matrix.actionTitle).toBe("Of 6 peers: 4 publish an NSF fee, 2 a transfer fee, 1 a daily cap.");
+    if (matrix.exhibit.kind === "structure_matrix") {
+      expect(matrix.exhibit.rows.find((r) => r.name === "Peer 2")?.cells[1]).toBe("$20 to $30 (NSF item $20; NSF ACH $30)");
+      expect(matrix.exhibit.rows.find((r) => r.name === "Peer 1")?.cells[1]).toBe("$25");
+    }
+  });
+
   it("drops a long competitor name rather than run past a storyline line's 20 words", () => {
     const base = research();
     const local = base.localCompetitors!.map((c, i) => (i === 0 ? { ...c, institutionName: "Second Federal Savings and Loan Association of Philadelphia", amount: 40 } : c));
