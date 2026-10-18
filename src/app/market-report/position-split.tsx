@@ -8,9 +8,9 @@ import "@/app/landing-motion.css";
 type Part = "above" | "inside" | "below";
 
 const PARTS: Record<Part, { label: string; Icon: LucideIcon; text: string; chip: string; bar: string }> = {
-  above: { label: "above", Icon: ArrowUp, text: "text-brick", chip: "bg-brick-tint text-brick", bar: "bg-brick" },
+  above: { label: "above", Icon: ArrowUp, text: "text-variance-above", chip: "bg-variance-above/10 text-variance-above", bar: "bg-variance-above" },
   inside: { label: "inside", Icon: Equal, text: "text-ink", chip: "bg-surface-200 text-ink", bar: "bg-ink-soft" },
-  below: { label: "below", Icon: ArrowDown, text: "text-below-market", chip: "bg-below-market/10 text-below-market", bar: "bg-below-market" },
+  below: { label: "below", Icon: ArrowDown, text: "text-variance-below", chip: "bg-variance-below/10 text-variance-below", bar: "bg-variance-below" },
 };
 
 function Figure({ part, n }: { part: Part; n: number }) {

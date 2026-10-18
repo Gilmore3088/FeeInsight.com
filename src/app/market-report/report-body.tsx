@@ -54,13 +54,6 @@ export function notComparableNote(line: Pick<ReportLine, "own" | "peers">): stri
   return "Too few local competitors";
 }
 
-const DOT_CLASS: Record<LinePosition, string> = {
-  above_market: "bg-brick",
-  in_market: "bg-ink",
-  below_market: "bg-below-market",
-  free: "bg-below-market",
-};
-
 /**
  * The line as a picture: the local middle 50% shaded, the local median as a tick, the
  * institution's own amount as a dot. The axis widens so the dot always fits.
@@ -79,10 +72,10 @@ export function LineRange({ line }: { line: ReportLine }) {
   return (
     <span className="relative block h-4 w-full min-w-[7rem] [print-color-adjust:exact]" aria-hidden="true">
       <span className="absolute inset-x-0 top-1/2 border-t border-border" />
-      <span className="absolute top-1/2 h-2 -translate-y-1/2 rounded-full bg-brick-tint" style={{ left: `${x(p25)}%`, width: `${Math.max(x(p75) - x(p25), 1)}%` }} />
+      <span className="absolute top-1/2 h-2 -translate-y-1/2 rounded-full bg-surface-200" style={{ left: `${x(p25)}%`, width: `${Math.max(x(p75) - x(p25), 1)}%` }} />
       <span className="absolute top-0 h-4 w-[2px] bg-ink/60" style={{ left: `${x(median)}%` }} />
       <span
-        className={`absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-surface-0 ${DOT_CLASS[line.position]}`}
+        className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brick ring-2 ring-surface-0"
         style={{ left: `${x(own)}%` }}
       />
     </span>
@@ -319,9 +312,9 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
               <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-muted sm:mx-0" aria-hidden="true">
                 <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-5 bg-surface-200" /> Middle 50% of local competitors</span>
                 <span className="inline-flex items-center gap-1.5"><span className="h-3 w-px bg-ink-muted" /> Local median</span>
-                <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-brick" /> Above</span>
-                <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-ink-soft" /> Inside</span>
-                <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-below-market" /> Below</span>
+                <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-brick" /> {name}</span>
+                <span className="text-variance-above">&#9650; Above the local median</span>
+                <span className="text-variance-below">&#9660; Below it</span>
               </p>
               {leftOut && <p className="mt-3 text-[13px] text-ink-muted sm:mx-0 sm:text-left">{leftOut}</p>}
             </figure>

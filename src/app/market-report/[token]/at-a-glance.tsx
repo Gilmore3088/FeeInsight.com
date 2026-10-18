@@ -12,10 +12,12 @@ function money(value: number | null | undefined): string {
 
 export type PlottedLine = ReportLine & { own: NonNullable<ReportLine["own"]>; peers: NonNullable<ReportLine["peers"]> };
 
+// The dot is the institution itself (brick); the gap carries the direction in the site's variance
+// colors, above red and below blue, with its ▲/▼ mark.
 const TONE: Record<"above" | "inside" | "below", { dot: string; text: string }> = {
-  above: { dot: "bg-brick", text: "text-brick" },
-  inside: { dot: "bg-ink-soft", text: "text-ink" },
-  below: { dot: "bg-below-market", text: "text-below-market" },
+  above: { dot: "bg-brick", text: "text-variance-above" },
+  inside: { dot: "bg-brick", text: "text-ink" },
+  below: { dot: "bg-brick", text: "text-variance-below" },
 };
 
 function toneFor(line: ReportLine): keyof typeof TONE {
@@ -50,7 +52,7 @@ export function ordinal(n: number): string {
 function gap(line: PlottedLine): string {
   const diff = line.own.amount - line.peers.median;
   if (Math.abs(diff) < 0.005) return "at median";
-  return `${diff > 0 ? "+" : "−"}${money(Math.abs(diff))}`;
+  return `${diff > 0 ? "▲ +" : "▼ −"}${money(Math.abs(diff))}`;
 }
 
 /**

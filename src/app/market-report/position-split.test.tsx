@@ -28,4 +28,15 @@ describe("PositionSplit", () => {
     const bar = container.querySelector(".fi-grow-x");
     expect(bar?.children).toHaveLength(2);
   });
+
+  it("colors above red and below blue, each beside its arrow and word (site variance rule)", () => {
+    stubBrowser({ reduced: true });
+    const { container } = render(<PositionSplit above={2} inside={6} below={1} summary="x" />);
+    const [above, , below] = [...container.querySelectorAll("[aria-hidden='true'] .font-mono")];
+    expect(above).toHaveClass("text-variance-above");
+    expect(below).toHaveClass("text-variance-below");
+    expect(container.innerHTML).not.toMatch(/below-market|text-brick/);
+    expect(container.textContent).toContain("above");
+    expect(container.textContent).toContain("below");
+  });
 });

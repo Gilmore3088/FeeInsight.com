@@ -29,7 +29,9 @@ describe("LineRange", () => {
     expect(left(tick)).toBeGreaterThan(left(band));
     expect(left(dot)).toBeGreaterThan(left(tick));
     expect(left(dot)).toBeLessThan(100);
+    // The institution is brick and the peers' middle 50% is neutral, whatever its position.
     expect(dot.className).toContain("bg-brick");
+    expect(band.className).toContain("bg-surface-200");
   });
 
   it("draws nothing for a line that can't be compared", () => {

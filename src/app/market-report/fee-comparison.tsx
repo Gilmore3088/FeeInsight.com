@@ -14,8 +14,9 @@ import { EXTRA_BLOCK_ROW, ROWS_SHOWN, comparedAt, comparedLines, medianMethod, m
 
 type Tone = "above" | "inside" | "below";
 
-const DOT: Record<Tone, string> = { above: "bg-brick", inside: "bg-ink-soft", below: "bg-below-market" };
-const TEXT: Record<Tone, string> = { above: "text-brick", inside: "text-ink", below: "text-below-market" };
+// The dot is the institution itself, so it is always brick; the gap and position words carry the
+// direction in the site's variance colors (above red, below blue), each with its own mark.
+const TEXT: Record<Tone, string> = { above: "text-variance-above", inside: "text-ink", below: "text-variance-below" };
 
 function toneOf(line: ReportLine): Tone {
   if (line.position === "above_market") return "above";
@@ -26,7 +27,7 @@ function toneOf(line: ReportLine): Tone {
 function gapText(line: PlottedLine): string {
   const diff = line.own.amount - line.peers.median;
   if (Math.abs(diff) < 0.005) return "at median";
-  return `${diff > 0 ? "+" : "\u2212"}${money(Math.abs(diff))}`;
+  return `${diff > 0 ? "\u25B2 +" : "\u25BC \u2212"}${money(Math.abs(diff))}`;
 }
 
 /** One record behind an amount: its account or product, price, quoted line, source and read date. */
@@ -150,7 +151,7 @@ export function FeeComparison({ name, lines, names, branches, footprint }: FeeCo
                   <span className="absolute inset-x-0 top-1/2 h-px bg-border" aria-hidden="true" />
                   <span
                     aria-hidden="true"
-                    className={`absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-surface-0 [print-color-adjust:exact] ${DOT[tone]}`}
+                    className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brick ring-2 ring-surface-0 [print-color-adjust:exact]"
                     style={{ left: `${Math.min(98, Math.max(2, rank))}%` }}
                   />
                   <span className="sr-only">
