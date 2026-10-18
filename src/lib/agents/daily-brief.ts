@@ -242,10 +242,11 @@ async function latestStorageWarning(): Promise<StorageWarning | null> {
   return { alerts, at: new Date(row.created_at as string | Date).toISOString() };
 }
 
-/** Steps each agent finished in the last 24 hours, straight from the ledger (no feed cap). */
+/** Steps each agent finished in the last 24 hours, straight from the ledger (no feed cap). Registry steps under Magellan's name before #1865 are Hoovie's. */
 async function stepsFinishedByAgent(): Promise<Record<string, number>> {
   const rows = await sql`
-    SELECT COALESCE(s.agent_name, r.agent_name) AS agent, COUNT(*)::int AS steps
+    SELECT CASE WHEN COALESCE(s.agent_name, r.agent_name) = 'magellan' AND s.step_key LIKE 'registry-%' THEN 'hoovie'
+                ELSE COALESCE(s.agent_name, r.agent_name) END AS agent, COUNT(*)::int AS steps
       FROM agent_run_events e
       JOIN agent_runs r ON r.id = e.agent_run_id
       LEFT JOIN agent_run_steps s ON s.id = e.step_id

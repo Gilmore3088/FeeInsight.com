@@ -166,7 +166,7 @@ describe("registry scheduler", () => {
       expect(startAgentRunMock).not.toHaveBeenCalled();
     });
 
-    it("claims the next partition and starts a one-step Magellan run", async () => {
+    it("claims the next partition and starts a one-step Hoovie run under the unchanged run marker (#1865)", async () => {
       routeSql([
         ["FROM agent_runs", [{ active: false }]],
         ["FROM registry_ingest_partitions", [{ source: "fdic-universe", partition_key: "current", due: false }]],
@@ -179,11 +179,12 @@ describe("registry scheduler", () => {
       expect(result).toMatchObject({ scheduled: true, source: "ncua-financials", partitionKey: "2026Q2", runId: 501 });
       expect(startAgentRunMock).toHaveBeenCalledWith(
         expect.objectContaining({
-          agent: "magellan",
+          agent: "hoovie",
+          title: "Hoovie registry: Pull NCUA 5300 call-report financials 2026Q2",
           kind: "workflow",
           idempotencyKey: "magellan:registry:ncua-financials:2026Q2",
           params: expect.objectContaining({ source: "magellan.registry", partition_key: "2026Q2" }),
-          steps: [expect.objectContaining({ key: "registry-ncua-financials", input: { partition_key: "2026Q2" } })],
+          steps: [expect.objectContaining({ key: "registry-ncua-financials", agent: "hoovie", input: { partition_key: "2026Q2" } })],
         }),
       );
     });

@@ -108,6 +108,7 @@ import { STATE_BILL_NEWS_SOURCE } from "@/lib/agents/magellan/registry/state-bil
 import { CFPB_FIRST_YEAR } from "@/lib/regulatory/cfpb";
 import { readLatestTableSizes } from "@/lib/agents/atlas/storage-retention";
 import { sourcesHeldForSize } from "@/lib/agents/hoovie/size-budgets";
+import { HOOVIE_AGENT } from "@/lib/agents/hoovie/names";
 import {
   compareQuarters,
   latestPublishableQuarter,
@@ -131,6 +132,12 @@ import {
  * (default 2010Q1).
  */
 
+/**
+ * The run marker every registry run carries (`params_json.source`), before and after #1865 moved
+ * the runs from Magellan to Hoovie. It stays as it is: the registry tick, the queued-run lookup and
+ * the one-run-at-a-time check find registry runs by it, never by agent name, so runs written under
+ * either name are found alike.
+ */
 export const REGISTRY_RUN_SOURCE = "magellan.registry";
 export const DEFAULT_BACKFILL_FROM: Quarter = { year: 2010, quarter: 1 };
 /** If a scheduled run dies without recording an outcome, retry after this long. */
@@ -434,10 +441,12 @@ export async function startRegistryRun(input: {
   const definition = REGISTRY_SOURCES.find((entry) => entry.source === input.source);
   if (!definition) throw new Error(`Unknown registry source: ${input.source}`);
   const label = input.partitionKey === definition.fixedPartition ? "" : ` ${input.partitionKey}`;
+  // Hoovie owns public data (#1865). The idempotency key keeps its `magellan:registry:` prefix so
+  // a run queued under Magellan's name before the switch is reused rather than started twice.
   return startAgentRun({
-    agent: "magellan",
+    agent: HOOVIE_AGENT,
     kind: input.dryRun ? "dry_run" : "workflow",
-    title: `Magellan registry: ${definition.title}${label}`,
+    title: `Hoovie registry: ${definition.title}${label}`,
     params: {
       source: REGISTRY_RUN_SOURCE,
       registry_source: input.source,
@@ -449,14 +458,14 @@ export async function startRegistryRun(input: {
     steps: [
       {
         key: definition.stepKey,
-        agent: "magellan",
+        agent: HOOVIE_AGENT,
         title: `${definition.title}${label}`,
         input: { partition_key: input.partitionKey },
       },
     ],
     summary: isProviderStep(definition.stepKey)
-      ? `Magellan registry run for ${input.source} ${input.partitionKey}. Provider step: budget-checked model calls, each logged with its cost.`
-      : `Magellan registry run for ${input.source} ${input.partitionKey}. Deterministic: published regulator data only, no provider calls.`,
+      ? `Hoovie registry run for ${input.source} ${input.partitionKey}. Provider step: budget-checked model calls, each logged with its cost.`
+      : `Hoovie registry run for ${input.source} ${input.partitionKey}. Deterministic: published regulator data only, no provider calls.`,
   });
 }
 

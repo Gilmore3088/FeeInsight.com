@@ -82,7 +82,7 @@ describe("agent health", () => {
 
   it("lists every pipeline agent, quiet when the log has nothing for it", () => {
     const agents = summarizeAgentHealth([], NOW);
-    expect(agents.map((agent) => agent.agent)).toEqual(["atlas", "magellan", "rosetta", "knox", "darwin", "hamilton", "gutenberg"]);
+    expect(agents.map((agent) => agent.agent)).toEqual(["atlas", "magellan", "rosetta", "knox", "darwin", "hamilton", "gutenberg", "hoovie"]);
     expect(agents.every((agent) => agent.tone === "quiet")).toBe(true);
   });
 });
