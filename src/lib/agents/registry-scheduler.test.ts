@@ -51,10 +51,15 @@ describe("registry scheduler", () => {
   it("schedules nothing for a held source, and no partition of a struck one", () => {
     const lists = registryPartitionsBySource(now, { year: 2025, quarter: 4 });
     const of = (source: string) => lists.find((entry) => entry.source === source);
-    expect(of("world-bank-remittance-prices")?.partitions).toEqual([]);
+    expect(of("state-bill-news")?.partitions).toEqual([]);
     for (const struck of ["nacha-volume", "kcfed-sb-lending", "atlanta-fed-payment-choice", "fed-sbcs", "fhlb-advance-rates"]) expect(of(struck)).toBeUndefined();
     expect(of("fed-payments")?.partitions).toEqual(["fedach", "frps"]);
-    expect(registryCandidates(now, { year: 2025, quarter: 4 }).some((c) => c.source === "world-bank-remittance-prices")).toBe(false);
+    expect(registryCandidates(now, { year: 2025, quarter: 4 }).some((c) => c.source === "state-bill-news")).toBe(false);
+  });
+
+  it("schedules World Bank remittance prices again once released from held (CC BY 4.0, 2026-10-18)", () => {
+    const lists = registryPartitionsBySource(now, { year: 2025, quarter: 4 });
+    expect(lists.find((entry) => entry.source === "world-bank-remittance-prices")?.partitions).toEqual(["current"]);
   });
 
   it("schedules nothing for a source held because a table it writes is over its size budget", () => {

@@ -210,8 +210,9 @@ export const HOOVIE_SOURCES_01: HoovieSourceContract[] = [
     source: "world-bank-remittance-prices",
     publisher: "World Bank (Remittance Prices Worldwide)",
     licence: {
-      status: "held",
-      note: "Held 2026-10-17 (DECISIONS.md \"No non-commercial data\"): World Bank site material is non-commercial by default and the RPW dataset's own licence is unconfirmed. The code is kept; no partitions are scheduled and no reader returns its rows until James confirms the terms.",
+      status: "open-licence",
+      licenceName: "CC BY 4.0",
+      note: "Released from held 2026-10-18: the RPW dataset page states \"License: Creative Commons Attribution 4.0\", and the World Bank's dataset terms incorporate it. Cite as \"The World Bank: Remittance Prices Worldwide\" (REMITTANCE_PRICES_ATTRIBUTION), carried on every stored row and every read.",
     },
     connection: "bulk-file",
     cadence: "irregular",

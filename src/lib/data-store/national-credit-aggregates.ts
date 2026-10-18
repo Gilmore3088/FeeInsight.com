@@ -1,4 +1,5 @@
 import { sql } from "./connection";
+import { STRUCK_AREA_SERIES_KEYS } from "./struck-sources";
 
 /**
  * Reads over the national and state credit context Magellan's national-credit steps load into
@@ -102,6 +103,8 @@ export async function getNationalCreditSummary(options: { sources?: string[]; se
          WHERE geo_type = 'nation' AND geo_code = 'US'
            AND source = ANY(${sources})
            AND (${keys}::text[] IS NULL OR series_key = ANY(${keys}::text[]))
+           -- Struck series (PMMS, Philadelphia Fed cards; DECISIONS.md "No non-commercial data"): never returned.
+           AND series_key <> ALL(${[...STRUCK_AREA_SERIES_KEYS]}::text[])
       ) ranked
      WHERE rn <= ${DEPTH}
   `;

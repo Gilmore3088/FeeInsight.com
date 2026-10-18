@@ -1394,6 +1394,13 @@ export async function fetchConfiguredCsv(
 // World Bank Remittance Prices Worldwide: corridors sending from the United States
 // ---------------------------------------------------------------------------
 
+/**
+ * Licence read 2026-10-18 (licence audit): CC BY 4.0, commercial use allowed with attribution.
+ * Every stored row and every read carries this attribution.
+ */
+export const REMITTANCE_PRICES_LICENCE = "CC BY 4.0";
+export const REMITTANCE_PRICES_ATTRIBUTION = "The World Bank: Remittance Prices Worldwide";
+
 /** The RPW dataset is published as a workbook; the URL of a CSV export is configuration. */
 export const RPW_URL_ENV = "WORLD_BANK_RPW_CSV_URL";
 

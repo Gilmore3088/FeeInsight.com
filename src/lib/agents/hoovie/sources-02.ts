@@ -74,10 +74,10 @@ export const HOOVIE_SOURCES_02: HoovieSourceContract[] = [
   {
     // magellan/registry/national-credit.ts (nationalSeries), regulatory/national-credit.ts (FRED keyless fredgraph.csv per series)
     source: "national-series",
-    publisher: "FRED (Federal Reserve Bank of St. Louis), carrying Fed H.8, Z.1 and SLOOS, Freddie Mac PMMS and Philadelphia Fed series",
+    publisher: "FRED (Federal Reserve Bank of St. Louis), carrying Fed H.8, Z.1 and SLOOS series and FDIC national deposit rates",
     licence: {
       status: "terms-unconfirmed",
-      note: "FRED series come from many publishers (Fed Board, Freddie Mac, Philadelphia Fed); each series' terms must be checked before showing it to customers.",
+      note: "FRED's own terms bar commercial use and databasing of FRED content without the St. Louis Fed's consent; the owner is deciding the FRED channel. The series' owners here are federal (Fed Board, FDIC). Freddie Mac PMMS and the Philadelphia Fed card series were struck 2026-10-18 (non-commercial terms).",
     },
     connection: "rest-api",
     cadence: "weekly",
@@ -90,8 +90,9 @@ export const HOOVIE_SOURCES_02: HoovieSourceContract[] = [
     source: "nyfed-household-debt",
     publisher: "Federal Reserve Bank of New York (Household Debt and Credit)",
     licence: {
-      status: "terms-unconfirmed",
-      note: "A Reserve Bank is not a federal agency under 17 U.S.C. 105; the code states no terms.",
+      status: "open-licence",
+      licenceName: "FRBNY Terms of Use",
+      note: "NY Fed licence \"to use, copy, and distribute Content\" for \"your personal or business purposes\" (licence audit 2026-10-17). Cite \"New York Fed Consumer Credit Panel / Equifax\" and \"© [year] Federal Reserve Bank of New York\".",
     },
     connection: "bulk-file",
     cadence: "quarterly",
@@ -104,8 +105,9 @@ export const HOOVIE_SOURCES_02: HoovieSourceContract[] = [
     source: "nyfed-sce-credit",
     publisher: "Federal Reserve Bank of New York (Survey of Consumer Expectations)",
     licence: {
-      status: "terms-unconfirmed",
-      note: "A Reserve Bank is not a federal agency under 17 U.S.C. 105; the code states no terms.",
+      status: "open-licence",
+      licenceName: "FRBNY SCE licence",
+      note: "SCE licence: \"a worldwide, royalty-free, nonexclusive right to reproduce, use, and distribute\" (licence audit 2026-10-18); no FRBNY logos or implied endorsement. Cite \"Source: Survey of Consumer Expectations, © 2013-2019 Federal Reserve Bank of New York (FRBNY).\"",
     },
     connection: "bulk-file",
     cadence: "irregular",

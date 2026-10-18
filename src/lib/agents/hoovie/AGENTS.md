@@ -43,6 +43,10 @@ under a budget. A new table in a contract gets the default budget unless one is 
   `missing_fields`).
 - A `held` licence is not loaded or shown until James confirms the terms. A `terms-unconfirmed`
   licence is not shown to customers until the terms are checked.
+- An open licence that requires attribution (World Bank RPW, CC BY 4.0; Urban Institute Debt in
+  America, ODC-By 1.0) carries its attribution on every stored row and every read.
+- Struck sources and parts, and the rows they loaded before they were struck, are listed in
+  `src/lib/data-store/struck-sources.ts`; every reader excludes them.
 - Every run writes a visible run, step and event, and honours the pipeline pause.
 
 ## Order of work

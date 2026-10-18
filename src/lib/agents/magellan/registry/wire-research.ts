@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { sql } from "@/lib/data-store/connection";
 import { isBankingPost } from "@/lib/data-store/state-news";
+import { isHiddenRegArticleSource, STRUCK_REG_ARTICLE_SOURCES } from "@/lib/data-store/struck-sources";
 import { paidModelCall, paidResponseJson, type PaidMessageCreator } from "@/lib/agents/paid-pass";
 import { RegistryHttpError, registryFetch, type RegistryFetchOptions } from "@/lib/regulatory/http";
 import {
@@ -123,7 +124,8 @@ function iso(value: string | Date | null): string | null {
 export function pickCandidates(articles: ArticleCandidateRow[], bills: BillCandidateRow[], limit: number): WireResearchCandidate[] {
   const out: WireResearchCandidate[] = [];
   for (const a of articles) {
-    if (a.source.startsWith("news:")) continue;
+    // Press, and posts from states with non-commercial site terms (NY, NC, FL), are never read.
+    if (isHiddenRegArticleSource(a.source)) continue;
     const isState = a.source.startsWith("state:");
     if (isState && !isBankingPost(a.title)) continue;
     if (!/^https?:\/\//i.test(a.link)) continue;
@@ -162,12 +164,14 @@ export function pickCandidates(articles: ArticleCandidateRow[], bills: BillCandi
 /** Newest wire items without a note, federal releases, banking posts and bills. */
 export async function loadWireResearchCandidates(db: RegistryDb, limit: number, now: Date): Promise<WireResearchCandidate[]> {
   const since = new Date(now.getTime() - WIRE_RESEARCH_LOOKBACK_DAYS * 86_400_000).toISOString();
-  // Every reg_articles item but press ("news:XX"): federal releases and state regulator
-  // posts. Read extra: department-wide state feeds lose many posts to the banking filter.
+  // Every reg_articles item but press ("news:XX") and struck states' posts (DECISIONS.md "No
+  // non-commercial data"): federal releases and state regulator posts. Read extra:
+  // department-wide state feeds lose many posts to the banking filter.
   const articles = (await db`
     SELECT a.guid, a.source, a.title, a.link, COALESCE(a.published_at, a.created_at::text) AS published
       FROM reg_articles a
      WHERE a.source NOT LIKE 'news:%'
+       AND a.source <> ALL(${[...STRUCK_REG_ARTICLE_SOURCES]}::text[])
        AND COALESCE(a.published_at, a.created_at::text) >= ${since}
        AND NOT EXISTS (SELECT 1 FROM reg_wire_research r WHERE r.item_kind = 'article' AND r.item_id = a.guid)
      ORDER BY COALESCE(a.published_at, a.created_at::text) DESC

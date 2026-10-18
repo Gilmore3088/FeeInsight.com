@@ -1,7 +1,13 @@
-import { STATE_FROM_FIPS } from "@/lib/regulatory/economy";
+import { REMITTANCE_PRICES_ATTRIBUTION, REMITTANCE_PRICES_LICENCE, STATE_FROM_FIPS } from "@/lib/regulatory/economy";
+import { URBAN_DEBT_ATTRIBUTION } from "@/lib/regulatory/state-lists";
 import { groupExpression, MIN_GROUP, type CallItemGroup } from "./call-report-items";
 import { sql } from "./connection";
-import { HELD_SOURCES, STRUCK_AREA_SOURCES, STRUCK_SOURCE_URL_PATTERN } from "./struck-sources";
+import { STRUCK_AREA_SERIES_KEYS, STRUCK_AREA_SOURCES, STRUCK_SOURCE_URL_PATTERN } from "./struck-sources";
+
+/** area_statistics sources whose licence requires attribution, carried on every row read. */
+export const AREA_SOURCE_ATTRIBUTION: Readonly<Record<string, string>> = {
+  "urban-debt-in-america": URBAN_DEBT_ATTRIBUTION,
+};
 
 /**
  * Reads over the local-economy tables Magellan's economy steps fill: area_statistics (one value
@@ -27,6 +33,8 @@ export interface AreaStatistic {
   /** The period before `period` for the same series, when loaded. */
   previous_period: string | null;
   previous_value: number | null;
+  /** The credit the source's licence requires (AREA_SOURCE_ATTRIBUTION); absent when none is required. */
+  attribution?: string;
 }
 
 /** Normalises a caller's area code: state as postal code (FIPS accepted), county as 5-digit FIPS, metro as 5-digit CBSA. */
@@ -71,6 +79,7 @@ export function latestPerSeries(
       geo_name: latest.geo_name,
       previous_period: previous?.period ?? null,
       previous_value: previous?.value ?? null,
+      ...(AREA_SOURCE_ATTRIBUTION[latest.source] ? { attribution: AREA_SOURCE_ATTRIBUTION[latest.source] } : {}),
     });
   }
   return out.sort((a, b) => a.source.localeCompare(b.source) || a.series_key.localeCompare(b.series_key));
@@ -92,6 +101,7 @@ export async function getAreaStatistics(geoType: AreaGeoType, code: string): Pro
            -- Struck sources (DECISIONS.md "No non-commercial data"): rows already loaded are never returned.
            AND a.source <> ALL(${[...STRUCK_AREA_SOURCES]}::text[])
            AND COALESCE(a.source_url, '') NOT ILIKE ${STRUCK_SOURCE_URL_PATTERN}
+           AND a.series_key <> ALL(${[...STRUCK_AREA_SERIES_KEYS]}::text[])
       ) ranked
      WHERE rn <= 2
   `;
@@ -264,12 +274,11 @@ export async function getUrbanRuralCounts(groupBy: CallItemGroup) {
 
 /**
  * US-send remittance quotes for the newest period, by corridor: median fee and total cost with the
- * quote count. Held: World Bank RPW terms are unconfirmed (DECISIONS.md "No non-commercial data",
- * 2026-10-17), so this returns nothing until James confirms them; the query is kept for then.
+ * quote count. World Bank RPW is CC BY 4.0 (released from held 2026-10-18, DECISIONS.md "No
+ * non-commercial data"), so every row carries the attribution the licence requires.
  */
 export async function getRemittanceCorridors(): Promise<RemittanceCorridorRow[]> {
-  if (HELD_SOURCES.includes("world-bank-remittance-prices")) return [];
-  return sql<RemittanceCorridorRow[]>`
+  const rows = await sql<Array<Omit<RemittanceCorridorRow, "licence" | "attribution">>>`
     WITH latest AS (SELECT MAX(period) AS period FROM remittance_prices)
     SELECT r.destination_country, r.period, COUNT(*)::int AS quotes, COUNT(DISTINCT r.firm)::int AS firms,
            percentile_cont(0.5) WITHIN GROUP (ORDER BY r.fee)::float8 AS median_fee,
@@ -279,6 +288,12 @@ export async function getRemittanceCorridors(): Promise<RemittanceCorridorRow[]>
      GROUP BY 1, 2
      ORDER BY 1
   `;
+  return withRemittanceAttribution([...rows]);
+}
+
+/** Adds the CC BY 4.0 licence and its required attribution to each corridor row. */
+export function withRemittanceAttribution(rows: Array<Omit<RemittanceCorridorRow, "licence" | "attribution">>): RemittanceCorridorRow[] {
+  return rows.map((r) => ({ ...r, licence: REMITTANCE_PRICES_LICENCE, attribution: REMITTANCE_PRICES_ATTRIBUTION }));
 }
 
 export interface RemittanceCorridorRow {
@@ -288,4 +303,8 @@ export interface RemittanceCorridorRow {
   firms: number;
   median_fee: number | null;
   median_total_cost_pct: number | null;
+  /** "CC BY 4.0". */
+  licence: string;
+  /** "The World Bank: Remittance Prices Worldwide", shown wherever the figures are. */
+  attribution: string;
 }
