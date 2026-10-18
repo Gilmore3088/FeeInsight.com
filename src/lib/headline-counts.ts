@@ -96,3 +96,21 @@ export function stateCoverageCounts(
     counted: row.counted_institutions ?? null,
   };
 }
+
+const COUNT_FORMAT = new Intl.NumberFormat("en-US");
+
+/**
+ * The state page's coverage sentence, every number from one coverage read (#1955): "{withFees} of
+ * the {monitored} institutions headquartered in {state} have published fees here, and {counted} of
+ * them have fees that count toward the medians on this page." The medians clause is left out when
+ * the counted number is unknown (an entry cached before the field existed) or larger than the
+ * institutions with fees, which a nested count can never be. Empty when there is nothing to say.
+ */
+export function stateCoverageSentence(counts: StateCoverageCounts | null, stateName: string): string {
+  if (!counts || counts.monitored <= 0 || counts.withFees <= 0) return "";
+  const fmt = (n: number) => COUNT_FORMAT.format(Math.max(0, Math.round(n)));
+  const lead = `${fmt(counts.withFees)} of the ${fmt(counts.monitored)} institutions headquartered in ${stateName} have published fees here`;
+  const { counted } = counts;
+  if (counted == null || counted <= 0 || counted > counts.withFees) return `${lead}. `;
+  return `${lead}, and ${fmt(counted)} of them have fees that count toward the medians on this page. `;
+}

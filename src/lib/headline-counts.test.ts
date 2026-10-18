@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FEE_FAMILIES, PUBLIC_FEE_TYPE_LIMIT, TAXONOMY_COUNT, publicFeeTypes } from "./fee-taxonomy";
-import { COUNT_DEFINITIONS, feeHeadlineCounts, publicCategoryCount, stateCoverageCounts } from "./headline-counts";
+import { COUNT_DEFINITIONS, feeHeadlineCounts, publicCategoryCount, stateCoverageCounts, stateCoverageSentence } from "./headline-counts";
 import { UNAVAILABLE_LABEL, withPublicCategoryCount, type PublicStatsSummary } from "./public-stats";
 import type { FeeCategorySummary } from "./data-store/fees";
 
@@ -125,5 +125,30 @@ describe("COUNT_DEFINITIONS", () => {
       expect(text).not.toMatch(/—/);
       expect(text).not.toMatch(/\b(Atlas|Magellan|Rosetta|Knox|Darwin)\b/);
     }
+  });
+});
+
+describe("stateCoverageSentence: all three numbers from one coverage read (#1955)", () => {
+  it("states headquartered, with fees and counted, nested", () => {
+    expect(stateCoverageSentence({ monitored: 188, withFees: 112, counted: 109 }, "Florida")).toBe(
+      "112 of the 188 institutions headquartered in Florida have published fees here, and 109 of them have fees that count toward the medians on this page. ",
+    );
+  });
+
+  it("drops the medians clause when counted exceeds the institutions with fees", () => {
+    const line = stateCoverageSentence({ monitored: 188, withFees: 112, counted: 115 }, "Florida");
+    expect(line).toBe("112 of the 188 institutions headquartered in Florida have published fees here. ");
+    expect(line).not.toContain("115");
+  });
+
+  it("drops the medians clause when counted is unknown, and says nothing without coverage", () => {
+    expect(stateCoverageSentence({ monitored: 188, withFees: 112, counted: null }, "Florida")).not.toContain("medians");
+    expect(stateCoverageSentence(null, "Florida")).toBe("");
+    expect(stateCoverageSentence({ monitored: 188, withFees: 0, counted: 0 }, "Florida")).toBe("");
+  });
+
+  it("reads the counted figure from the same coverage entry as the other two", () => {
+    const coverage = { states: [{ state_code: "FL", monitored: 188, verified_institutions: 112, counted_institutions: 109 }] };
+    expect(stateCoverageSentence(stateCoverageCounts(coverage, "FL"), "Florida")).toContain("and 109 of them");
   });
 });

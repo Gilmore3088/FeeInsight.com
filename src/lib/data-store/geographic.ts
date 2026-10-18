@@ -1,5 +1,6 @@
 import { sql } from "./connection";
 import { statsRowFilter } from "./fee-stats";
+import { activeInstitutionFilter } from "./district-hub";
 import {
   aggregateCityFeeAverages,
   type CityFeeAverage,
@@ -432,8 +433,9 @@ export function rollUpCoverage(rows: CoverageGroupRow[]): ResearchCoverage {
 /**
  * Monitored vs verified coverage by state and Fed district, from one grouped scan: the one
  * source for a state's or district's coverage counts on public pages (headline-counts.ts
- * stateCoverageCounts, #1951). Monitored is every institution headquartered there, as the
- * national "monitored" headline counts; verified is at least one approved published fee, as
+ * stateCoverageCounts, #1951). Monitored is every active institution headquartered there, by the
+ * state hub's rule (district-hub.ts activeInstitutionFilter, #1955), so a state page's
+ * "headquartered" total and its hub figures count one population; verified is at least one approved published fee, as
  * the national "institutions with published fees" headline counts; counted is at least one fee
  * the statistics contract keeps, the population behind the medians.
  */
@@ -448,6 +450,7 @@ export async function getResearchCoverage(): Promise<ResearchCoverage> {
     FROM institution_sources ct
     LEFT JOIN published_fee_catalog ef
       ON ef.institution_id = ct.id AND ef.review_status = 'approved'
+    WHERE ${sql.unsafe(activeInstitutionFilter("ct"))}
     GROUP BY ct.state_code, ct.fed_district
   ` as CoverageGroupRow[];
   return rollUpCoverage(rows);

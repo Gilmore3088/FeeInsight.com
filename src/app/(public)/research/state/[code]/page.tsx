@@ -64,7 +64,7 @@ import { DistrictCompare, LayerHead, LayerNav } from "./state-layers";
 import { CITY_FEES } from "@/lib/data-store/city-market";
 import { stateMarketMap } from "@/lib/geo/state-market-map";
 import { getResearchCoverageCached } from "@/lib/data-store/public-cached-reads";
-import { stateCoverageCounts } from "@/lib/headline-counts";
+import { stateCoverageCounts, stateCoverageSentence } from "@/lib/headline-counts";
 
 const NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
 
@@ -141,7 +141,7 @@ export default async function StateReportPage({ params }: PageProps) {
 
   // Every read is served from the public cache between publishes.
   const district = STATE_TO_DISTRICT[stateCode];
-  const [summary, indexes, nationalIndex, districtIndex, sampleLive, marketFees, hub, beigeHeadline, beigeSections] = await Promise.all([
+  const [summary, indexes, nationalIndex, districtIndex, sampleLive, marketFees, hub, beigeHeadline, beigeSections, coverageRead] = await Promise.all([
     getPublicStatsSummary(),
     getStateFeeIndexesCached(stateCode).catch(() => EMPTY_INDEXES),
     getPublicNationalIndex(),
@@ -152,6 +152,9 @@ export default async function StateReportPage({ params }: PageProps) {
     getStateHubCached(stateCode).catch(() => null),
     district ? getBeigeBookHeadline(district, 400) : Promise.resolve(null),
     district && showFullDistrict ? getLatestBeigeBook(district) : Promise.resolve([]),
+    // The shared coverage read (#1951). No read deadline yet: this branch predates
+    // src/lib/read-deadline.ts; a failed read drops the coverage sentence, never the page.
+    getResearchCoverageCached().catch(() => null),
   ]);
   const asOf = summary.refreshedOn;
 
@@ -223,11 +226,12 @@ export default async function StateReportPage({ params }: PageProps) {
   // The state's own hub: every institution in the state, its income, branches and economy.
   const institutionsTracked = hub ? hub.institutions.reduce((sum, g) => sum + g.institutions, 0) : 0;
   // The state's coverage from the one shared read /research and the directory count from
-  // (headline-counts.ts, #1951): headquartered here, with published fees, and of those the ones in
-  // this page's medians (the state index's own population, so it always matches the medians).
-  const coverage = stateCoverageCounts(await getResearchCoverageCached().catch(() => null), stateCode);
+  // (headline-counts.ts, #1951): active institutions headquartered here (the hub's rule, #1955),
+  // those with published fees, and of those the ones counted toward medians, all from one read.
+  const coverage = stateCoverageCounts(coverageRead, stateCode);
   const headquartered = coverage?.monitored ?? institutionsTracked;
   const withFees = coverage?.withFees ?? 0;
+  // Only when the coverage read is missing: the state index's own population.
   const inMedians = indexes.verified_institutions;
   const revenue = hub ? revenueTrend(hub) : [];
   const bankTrend = incomeTrend(revenue, "banks");
@@ -320,11 +324,7 @@ export default async function StateReportPage({ params }: PageProps) {
           <LayerHead
             id="state-heading"
             title={`${stateName}'s banks and credit unions`}
-            line={`${
-              headquartered > 0 && withFees > 0
-                ? `${formatCount(withFees)} of the ${formatCount(headquartered)} institutions headquartered in ${stateName} have published fees here, and ${formatCount(inMedians)} of them have fees that count toward the medians on this page. `
-                : ""
-            }Figures here count those headquartered institutions, except branches and deposits, which count every institution serving the state.`}
+            line={`${stateCoverageSentence(coverage, stateName)}Figures here count those headquartered institutions, except branches and deposits, which count every institution serving the state.`}
           />
         {/* Banks against credit unions, as one field of fees. */}
         {charter.length > 0 && (
