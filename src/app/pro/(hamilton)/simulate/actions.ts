@@ -3,7 +3,7 @@
 import { sql } from "@/lib/data-store/connection";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
-import { getInstitutionFeeValues, getNationalIndex } from "@/lib/data-store/fee-index";
+import { getInstitutionOwnFees, getNationalIndex } from "@/lib/data-store/fee-index";
 import { getInstitutionById } from "@/lib/data-store";
 import { computeConfidenceTier, canSimulate } from "@/lib/hamilton/confidence";
 import { getHamiltonScenarioById } from "@/lib/hamilton/pro-tables";
@@ -128,11 +128,11 @@ export async function getInstitutionFee(
   const numericInstitutionId = Number(canonicalInstitutionId);
 
   try {
-    // The institution's value under the statistics contract (median of its approved,
-    // sourced amounts), measured the same way as the benchmark it is compared with.
-    const values = await getInstitutionFeeValues(numericInstitutionId, [feeCategory]);
-    const value = values.get(feeCategory);
-    return value === undefined ? null : { amount: value };
+    // The price the institution's schedule states. With several different fees in the
+    // category there is none: their median is no price to start a scenario from (#1913).
+    const own = await getInstitutionOwnFees(numericInstitutionId, [feeCategory]);
+    const price = own.get(feeCategory)?.price;
+    return price === undefined || price === null ? null : { amount: price };
   } catch {
     return null;
   }

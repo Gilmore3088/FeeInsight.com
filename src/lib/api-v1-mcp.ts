@@ -339,7 +339,7 @@ const TOOLS: ToolDefinition[] = [
     title: "Fees against peers",
     description:
       `One institution's published dollar fees, category by category, next to its peers: the peer median, 25th and 75th percentiles, how many peers publish the fee, and the institution's percentile among them (the share of peers with a lower amount, counting half of ties). Peers default to the same charter type, asset size and Fed district. Or define them with any of charter, asset_tier, asset_min, asset_max, state, district, regulator, cu_charter, holding_company, market and nearest (only those given apply; \"same\" means the institution's own value), or name up to ${MAX_CHOSEN_PEERS} with peer_ids. ` +
-      `Figures are left out when fewer than ${MIN_INSTITUTIONS_FOR_MEDIAN} peers publish a fee. Fees stated as a rate are listed apart, not compared.`,
+      `Figures are left out when fewer than ${MIN_INSTITUTIONS_FOR_MEDIAN} peers publish a fee. Where the institution charges several different fees in one category, amount and percentile are null and fees lists each one by name. Fees stated as a rate are listed apart, not compared.`,
     inputSchema: {
       type: "object",
       properties: {

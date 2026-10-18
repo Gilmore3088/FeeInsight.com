@@ -25,6 +25,14 @@ import {
 import { getInstitutionStateDirectorySummariesCached, searchInstitutionsCached } from "@/lib/data-store/public-cached-reads";
 import { getInstitutionHeadlineCoverage } from "@/lib/data-store/market-readiness";
 import { PAGE_HEADER } from "@/components/public/page-header";
+import { createReadBudget } from "@/lib/read-deadline";
+
+/**
+ * One deadline for the directory's database reads (#1919): with the connection pool
+ * saturated the page sat on its loading skeleton for minutes. Past it, the error
+ * boundary answers instead, and the per-row fee coverage drops out.
+ */
+const DIRECTORY_READ_BUDGET_MS = 15_000;
 
 export const metadata: Metadata = {
   title: `Find Your Bank — Search the ${PRODUCT_NAME}`,
@@ -93,29 +101,27 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
   const hasQuery = query.trim().length >= 2;
   const hasState = Boolean(stateCode);
   const shouldShowResults = hasQuery || hasState;
+  const budget = createReadBudget(DIRECTORY_READ_BUDGET_MS, "Directory");
   const [stats, stateSummaries, results, summaries] = await Promise.all([
-    getPublicStatsSummary(),
-    getInstitutionStateDirectorySummariesCached({ charter_type: charterType || undefined }),
+    budget.required(getPublicStatsSummary(), "public stats"),
+    budget.required(getInstitutionStateDirectorySummariesCached({ charter_type: charterType || undefined }), "state summaries"),
     shouldShowResults
-      ? loadResults({
+      ? budget.required(loadResults({
           query: hasQuery ? query : undefined,
           state_code: stateCode || undefined,
           charter_type: charterType || undefined,
           fee_category: focusCategory || undefined,
           page,
-        })
+        }), "search results")
       : Promise.resolve<DirectoryResults>({ rows: [], total: 0 }),
-    focusCategory ? getPublicCategorySummaries() : Promise.resolve([]),
+    focusCategory ? budget.optional(getPublicCategorySummaries(), "category summaries", []) : Promise.resolve([]),
   ]);
 
   // One read for the visible page only. On failure the rows fall back to "Fees published"
   // rather than showing a made-up count.
   const coverage =
     results.rows.length > 0
-      ? await getInstitutionHeadlineCoverage(results.rows.map((row) => row.id)).catch((error: unknown) => {
-          console.error("Directory headline coverage failed:", error);
-          return null;
-        })
+      ? await budget.optional(getInstitutionHeadlineCoverage(results.rows.map((row) => row.id)), "headline coverage", null)
       : null;
 
   const focus: FeeFocus | null = focusCategory

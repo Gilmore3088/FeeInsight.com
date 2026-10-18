@@ -24,6 +24,27 @@ export class RegistryHttpError extends Error {
   }
 }
 
+/**
+ * A publisher host that refuses the request outright (HTTP 401 or 403), as opposed to a file it
+ * has not posted (404). Loaders record that as a named missing source instead of failing the run.
+ */
+export interface RegistryBlockedHost {
+  host: string;
+  url: string;
+  status: number;
+}
+
+export function blockedHost(error: unknown): RegistryBlockedHost | null {
+  if (!(error instanceof RegistryHttpError) || (error.status !== 401 && error.status !== 403)) return null;
+  let host = error.url;
+  try {
+    host = new URL(error.url).host;
+  } catch {
+    // keep the raw url
+  }
+  return { host, url: error.url, status: error.status };
+}
+
 export interface RegistryFetchOptions {
   fetchImpl?: FetchImpl;
   retries?: number;

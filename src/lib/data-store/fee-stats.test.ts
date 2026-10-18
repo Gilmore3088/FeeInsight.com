@@ -22,7 +22,7 @@ import {
   STATS_METHOD_VERSION,
 } from "./fee-stats";
 import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL, isBusinessOnlyLink } from "@/lib/agents/magellan/link-coverage";
-import { SAFE_DEPOSIT_SERVICE_SQL } from "@/lib/fee-comparability";
+import { SAFE_DEPOSIT_SERVICE_SQL, basisMismatchSql } from "@/lib/fee-comparability";
 
 function rowsFor(amounts: (number | string | null)[], charter = "bank") {
   return amounts.map((amount, index) => ({ institution_id: index + 1, amount, charter_type: charter }));
@@ -197,6 +197,15 @@ it("leaves safe deposit service charges out of every median, on any alias (#1816
   expect(STATS_ROW_FILTER).toContain("ef.fee_category = 'safe_deposit_box'");
 });
 
+it("leaves fees charged on a different basis than their category's out of every median, on any alias (#1901, rule 9)", () => {
+  const predicate = statsRowFilter("c");
+  expect(predicate).toContain(`AND NOT ${basisMismatchSql("c")}`);
+  expect(basisMismatchSql("c")).toBe(
+    "COALESCE((c.fee_category IN ('dormant_account', 'minimum_balance', 'monthly_maintenance') AND lower(btrim(c.frequency, E' \\t\\r\\n')) IN ('quarterly', 'annual', 'daily', 'hourly', 'one_time'))" +
+      " OR (c.fee_category IN ('safe_deposit_box', 'ira_administration') AND lower(btrim(c.frequency, E' \\t\\r\\n')) IN ('monthly', 'quarterly', 'daily', 'hourly', 'one_time')), false)",
+  );
+});
+
 describe("count once: sibling charters sharing one schedule (#1441, rule 7)", () => {
   // IBC's five charters (one holding company) read the same schedule and charge $30;
   // four unrelated banks charge $10, $12, $14 and $16.
@@ -339,7 +348,7 @@ describe("count once: sibling charters sharing one schedule (#1441, rule 7)", ()
     expect(COUNT_SHARED_SCHEDULE_ONCE).toBe(true);
     expect(summarizeFees(rows).institution_count).toBe(5);
     expect(STATS_SCHEDULE_KEYS).toBe(`${scheduleKeysSql("ef", true)} AS schedule_keys, ${scheduleGroupSql("ef", true)} AS schedule_group`);
-    expect(STATS_METHOD_VERSION).toBe(9);
+    expect(STATS_METHOD_VERSION).toBe(11);
   });
 
   it("switched off, selects no keys and counts each charter", () => {

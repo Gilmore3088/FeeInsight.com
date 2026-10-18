@@ -7,8 +7,8 @@
  */
 import { sql } from "@/lib/data-store/connection";
 import type { HamiltonIdentitySnapshot } from "./account-context";
-import { statsRowFilter } from "@/lib/data-store/fee-stats";
 import { getLocalMarketCompetitors } from "@/lib/data-store/local-market";
+import { getInstitutionOwnFees } from "@/lib/data-store/fee-index";
 import { getBranchesForInstitution, getMarketBranchFootprint } from "@/lib/data-store/branches";
 import { getMarketStudyData } from "@/lib/data-store/market-study";
 import { getBranchlessIds, getLiveFeeFacts, summarizeMarketCoverage, type MarketCoverage } from "@/lib/data-store/competitor-coverage";
@@ -104,12 +104,6 @@ function marketMap(
 
 const MAX_COMPETITORS = 20;
 
-function num(value: unknown): number | null {
-  if (value === null || value === undefined || value === "") return null;
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
-}
-
 type BranchPoint = { city: string | null; state: string | null; latitude?: number | null; longitude?: number | null };
 
 /** The bank's branches grouped by city, most first, each placed at the mean of its located branches. */
@@ -151,22 +145,12 @@ export function rankCompetitors(list: MarketCompetitor[]): MarketCompetitor[] {
     .slice(0, MAX_COMPETITORS);
 }
 
+/** The price the institution's schedule states per category; a category with several different fees has none. */
 async function ownFees(institutionId: number, categories: readonly string[]): Promise<Record<string, number>> {
-  const rows = await sql`
-    SELECT c.fee_category,
-           CASE WHEN c.fee_category = 'overdraft' THEN MAX(c.amount)
-                ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY c.amount) END AS amount
-      FROM published_fee_catalog c
-     WHERE c.institution_id = ${institutionId}
-       AND c.review_status = 'approved'
-       AND c.amount IS NOT NULL AND c.amount >= 0
-       AND ${sql.unsafe(statsRowFilter("c"))}
-       AND c.fee_category = ANY(${[...categories]})
-     GROUP BY c.fee_category`;
+  const own = await getInstitutionOwnFees(institutionId, [...categories]);
   const out: Record<string, number> = {};
-  for (const r of rows) {
-    const amount = num(r.amount);
-    if (amount !== null) out[String(r.fee_category)] = Math.round(amount * 100) / 100;
+  for (const [category, fee] of own) {
+    if (fee.price !== null) out[category] = Math.round(fee.price * 100) / 100;
   }
   return out;
 }

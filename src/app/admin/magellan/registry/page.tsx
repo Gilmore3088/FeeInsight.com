@@ -35,8 +35,8 @@ export default async function RegistryPage() {
   return (
     <div className="space-y-7">
       <header>
-        <Breadcrumbs items={[{ label: "Atlas", href: "/admin" }, { label: "Magellan", href: "/admin/magellan" }, { label: "Regulatory registry" }]} />
-        <p className="admin-eyebrow mt-3">Agent · Published regulator data</p>
+        <Breadcrumbs items={[{ label: "Atlas", href: "/admin" }, { label: "Hoovie" }, { label: "Regulatory registry" }]} />
+        <p className="admin-eyebrow mt-3">Hoovie · Published regulator data</p>
         <h1 className="admin-display-title mt-1">Regulatory registry</h1>
         <p className="admin-lede mt-2">
           FDIC, NCUA, CFPB, SEC, and Federal Reserve data, loaded one partition per run by the cron tick. Each run is in

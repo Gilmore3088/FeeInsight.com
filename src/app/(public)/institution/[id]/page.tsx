@@ -74,6 +74,8 @@ import { InstitutionJsonLd } from "./profile-jsonld";
 import { ProfileHero, type HeroFact } from "./profile-hero";
 import { SERIF } from "./profile-serif";
 import { profileSerif } from "./profile-serif-font";
+import { createReadBudget } from "@/lib/read-deadline";
+import { degradedMetadata, METADATA_READ_BUDGET_MS, PAGE_READ_BUDGET_MS } from "./profile-budget";
 import "./profile.css";
 import { ProfileFootnote } from "./profile-footnote";
 import { HamiltonBand, type HamiltonInsight } from "./hamilton-band";
@@ -104,12 +106,6 @@ const FINDING = "mt-3 max-w-3xl text-[16px] leading-relaxed text-ink-soft sm:tex
 const SOURCE = "mt-3 text-[12px] leading-relaxed text-ink-muted";
 const LINK = "font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink";
 
-function fallbackTo<T>(label: string, fallback: T) {
-  return (error: unknown): T => {
-    console.error(`Institution page ${label} failed:`, error);
-    return fallback;
-  };
-}
 
 /** Schedule rows shown before "Show all". */
 const SCHEDULE_ROWS = 5;
@@ -120,10 +116,19 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   // notFound() here, before the page streams, so a missing institution answers 404, not 200.
   if (Number.isNaN(instId)) notFound();
 
-  const inst = await getPublicInstitutionForPage(instId);
+  const budget = createReadBudget(METADATA_READ_BUDGET_MS, "Institution metadata");
+  let inst: Awaited<ReturnType<typeof getPublicInstitutionForPage>>;
+  try {
+    inst = await budget.required(getPublicInstitutionForPage(instId), "institution");
+  } catch (error) {
+    // A slow or failed database must not hold the page: a metadata read that never answers
+    // left the stream to be cut at 300 seconds, which the browser showed as "Application error".
+    console.error("Institution metadata institution failed:", error);
+    return degradedMetadata(instId);
+  }
   if (!inst) notFound();
 
-  const fees = Number(inst.fee_count ?? 0) > 0 ? await getVisibleFeesForPage(instId) : [];
+  const fees = Number(inst.fee_count ?? 0) > 0 ? await budget.optional(getVisibleFeesForPage(instId), "fees", []) : [];
   const verifiedFees = fees.filter(isVerifiedFee);
   // The title quotes the same values as the comparison table (the index's own rule), so a tab or
   // search result never shows a different amount from the page.
@@ -165,7 +170,8 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
   const requestedFee = (await searchParams)?.fee ?? "";
   const focusFeeCategory = TAXONOMY.has(requestedFee) ? requestedFee : null;
 
-  const inst = await getPublicInstitutionForPage(instId);
+  const budget = createReadBudget(PAGE_READ_BUDGET_MS, "Institution page");
+  const inst = await budget.required(getPublicInstitutionForPage(instId), "institution");
   if (!inst) notFound();
 
   const catalogVisibleFeeCount = Number(inst.fee_count ?? 0);
@@ -174,19 +180,21 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
     Boolean(inst.fee_schedule_url || inst.latest_source_status || (inst.latest_extracted_fee_count ?? 0) > 0);
 
   const [visibleFees, rateFees, evidence, financials, user] = await Promise.all([
-    catalogVisibleFeeCount > 0 ? getVisibleFeesForPage(instId) : Promise.resolve([]),
-    getRateFeesForPage(instId),
+    catalogVisibleFeeCount > 0 ? budget.required(getVisibleFeesForPage(instId), "fees") : Promise.resolve([]),
+    budget.required(getRateFeesForPage(instId), "rate fees"),
     shouldLoadPipelineEvidence
-      ? getInstitutionFeeScheduleEvidence(instId).catch(fallbackTo("fee evidence", null))
+      ? budget.optional(getInstitutionFeeScheduleEvidence(instId), "fee evidence", null)
       : Promise.resolve(null),
-    getFinancialsByInstitution(instId, FINANCIAL_HISTORY_QUARTERS * FINANCIAL_SOURCES_PER_QUARTER).catch(
-      fallbackTo("financial context", []),
+    budget.optional(
+      getFinancialsByInstitution(instId, FINANCIAL_HISTORY_QUARTERS * FINANCIAL_SOURCES_PER_QUARTER),
+      "financial context",
+      [],
     ),
-    getCurrentUser().catch(() => null),
+    budget.optional(getCurrentUser(), "session", null),
   ]);
 
   const alertSubscription = user
-    ? await getAlertSubscriptionForInstitution(user.id, instId).catch(fallbackTo("alert subscription", null))
+    ? await budget.optional(getAlertSubscriptionForInstitution(user.id, instId), "alert subscription", null)
     : null;
   const alertCategoryLabels = Object.fromEntries(
     [focusFeeCategory, ...(alertSubscription?.fee_categories ?? [])]
@@ -202,18 +210,18 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
   ] = await Promise.all([
     isPro
       ? Promise.all([
-          getFinancialHistory(instId).catch(fallbackTo("financial history", [])),
-          getPeerFinancialMedians(instId).catch(fallbackTo("peer medians", null)),
-          getPeerPercentiles(instId).catch(fallbackTo("peer percentiles", null)),
-          getRegulatoryWatch(instId).catch(fallbackTo("regulatory watch", null)),
+          budget.optional(getFinancialHistory(instId), "financial history", [] as InstitutionFinancialHistoryRow[]),
+          budget.optional(getPeerFinancialMedians(instId), "peer medians", null),
+          budget.optional(getPeerPercentiles(instId), "peer percentiles", null),
+          budget.optional(getRegulatoryWatch(instId), "regulatory watch", null),
         ])
       : Promise.resolve([[], null, null, null] as [InstitutionFinancialHistoryRow[], null, null, null]),
     Promise.all([
-      getBranchFootprint(instId).catch(fallbackTo("branch footprint", null)),
-      getComplaintTrend(instId).catch(fallbackTo("complaint trend", null)),
-      getHoldingCompanyProfile(instId).catch(fallbackTo("holding company", null)),
-      getEnforcementRecord(instId).catch(fallbackTo("enforcement actions", null)),
-      getRegulatorInfo(instId).catch(fallbackTo("regulator info", null)),
+      budget.optional(getBranchFootprint(instId), "branch footprint", null),
+      budget.optional(getComplaintTrend(instId), "complaint trend", null),
+      budget.optional(getHoldingCompanyProfile(instId), "holding company", null),
+      budget.optional(getEnforcementRecord(instId), "enforcement actions", null),
+      budget.optional(getRegulatorInfo(instId), "regulator info", null),
     ]),
   ]);
   const financialSeries = buildFinancialSeries(financialHistory);
@@ -250,12 +258,12 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
   const hasFees = verifiedFees.length > 0;
   const [nationalIndex, stateIndex, districtIndex] = hasFees
     ? await Promise.all([
-        getComparableMarketIndexCached({ kind: "us" }).catch(fallbackTo("national index", [] as IndexEntry[])),
+        budget.optional(getComparableMarketIndexCached({ kind: "us" }), "national index", [] as IndexEntry[]),
         stateCode
-          ? getComparableMarketIndexCached({ kind: "state", code: stateCode }).catch(fallbackTo("state index", [] as IndexEntry[]))
+          ? budget.optional(getComparableMarketIndexCached({ kind: "state", code: stateCode }), "state index", [] as IndexEntry[])
           : Promise.resolve([] as IndexEntry[]),
         district
-          ? getComparableMarketIndexCached({ kind: "district", district }).catch(fallbackTo("district index", [] as IndexEntry[]))
+          ? budget.optional(getComparableMarketIndexCached({ kind: "district", district }), "district index", [] as IndexEntry[])
           : Promise.resolve([] as IndexEntry[]),
       ])
     : [[] as IndexEntry[], [] as IndexEntry[], [] as IndexEntry[]];
@@ -348,9 +356,11 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
   // same quarter's call reports (a Pro visitor already has the full financial profile).
   const [freePeerMedians, sampleLive] = await Promise.all([
     showHamiltonBand && latestFinancial
-      ? getPeerFinancialMedians(instId).catch(fallbackTo("peer medians", null))
+      ? budget.optional(getPeerFinancialMedians(instId), "peer medians", null)
       : Promise.resolve(null),
-    showHamiltonBand || (sparse && !isPro) ? sampleReportAvailable().catch(() => false) : Promise.resolve(false),
+    showHamiltonBand || (sparse && !isPro)
+      ? budget.optional(sampleReportAvailable(), "sample report", false)
+      : Promise.resolve(false),
   ]);
   const sampleHref = sampleLive ? "/reports/sample-competitive-fee-position" : null;
   const hamiltonInsight: HamiltonInsight | null =
@@ -456,7 +466,8 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                   <dt className="font-medium text-ink-soft">Same rules</dt>
                   <dd>
                     Its fees and every median use the same rules. Business-only fees are left out. So are CD, IRA, card
-                    inactivity, box drilling and key fees filed under a fee they don&rsquo;t match.
+                    inactivity, box drilling and key fees filed under a fee they don&rsquo;t match, and fees charged by a
+                    different period than the median (a quarterly fee beside monthly ones).
                   </dd>
                   {stateName && (
                     <>

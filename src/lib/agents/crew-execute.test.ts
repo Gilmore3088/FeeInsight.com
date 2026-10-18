@@ -125,9 +125,14 @@ describe("executeCrewWrite", () => {
     // The mock applies the query's own filter to the values it binds.
     const queryFailed = () =>
       mocks.sql.mockImplementation(async (strings: TemplateStringsArray, names: string[], keys: string[], agent: string) => {
-        expect(strings.join("$")).toContain("THEN 'gutenberg' ELSE s.agent_name END) = $");
+        const text = strings.join("$");
+        expect(text).toContain("THEN 'gutenberg'");
+        expect(text).toContain("WHEN s.agent_name = 'magellan' AND s.step_key LIKE 'registry-%' THEN 'hoovie'");
+        expect(text).toContain("ELSE s.agent_name END) = $");
         const owner = (row: (typeof failedSteps)[number]) =>
-          row.agent_name === "hamilton" && keys.includes(row.step_key) ? "gutenberg" : row.agent_name;
+          row.agent_name === "hamilton" && keys.includes(row.step_key)
+            ? "gutenberg"
+            : row.agent_name === "magellan" && row.step_key.startsWith("registry-") ? "hoovie" : row.agent_name;
         return failedSteps.filter((row) => names.includes(row.agent_name) && owner(row) === agent).slice(0, 1);
       });
 
@@ -151,6 +156,27 @@ describe("executeCrewWrite", () => {
         steps: [{ key: "hamilton-answer-eval", agent: "hamilton", title: "Retry hamilton-answer-eval" }],
       }));
       failedSteps.shift();
+    });
+
+    it("Magellan skips a registry failure written under its name before #1865; Hoovie retries it", async () => {
+      failedSteps.unshift(
+        { id: 906, state_code: null, step_key: "registry-fdic-financials", agent_name: "magellan" },
+        { id: 905, state_code: "OH", step_key: "fetch", agent_name: "magellan" },
+      );
+      queryFailed();
+      mocks.startAgentRun.mockResolvedValue({ run: { id: 952 }, reused: false });
+      await executeCrewWrite(parseCrewCommand("Magellan, retry failed"), "owner");
+      expect(mocks.startAgentRun).toHaveBeenLastCalledWith(expect.objectContaining({
+        agent: "magellan",
+        steps: [{ key: "fetch", agent: "magellan", title: "Retry fetch" }],
+      }));
+      // Hoovie has no command-bar name, so its retry is exercised through the parsed command shape.
+      await executeCrewWrite({ kind: "retry", agent: "hoovie" }, "owner");
+      expect(mocks.startAgentRun).toHaveBeenLastCalledWith(expect.objectContaining({
+        agent: "hoovie",
+        steps: [{ key: "registry-fdic-financials", agent: "hoovie", title: "Retry registry-fdic-financials" }],
+      }));
+      failedSteps.splice(0, 2);
     });
   });
 
