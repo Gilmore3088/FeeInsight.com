@@ -43,8 +43,9 @@ export interface RegArticle {
 // ---------------------------------------------------------------------------
 
 /**
- * Enforcement actions, orders and their terminations. Checked after the fee and lending topics
- * (a consent order over overdraft fees stays an overdraft item) and before rulemaking. Plain
+ * Enforcement actions, orders and their terminations. Checked after the overdraft, lending and
+ * M&A topics (a consent order over overdraft fees stays an overdraft item) and before rulemaking
+ * and fees & pricing. Plain
  * words only, so the same pattern runs in JavaScript and as a Postgres regex.
  */
 const ENFORCEMENT_KEYWORDS = ["enforcement action", "enforcement order", "consent order", "civil money penalt", "cease and desist", "prohibition order"];
