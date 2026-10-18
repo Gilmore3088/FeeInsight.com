@@ -84,7 +84,7 @@ async function seed(db: FixtureDb): Promise<void> {
   await clear(db);
   for (const ws of Object.values(SEAT_WORKSPACES)) {
     await db`INSERT INTO institution_sources (id, institution_name, charter_type, source, city, state, state_code, fed_district, status, website_url)
-             VALUES (${ws.id}, ${ws.name}, 'bank', 'fdic', 'Tallahassee', 'FL', 'FL', 6, 'active', ${`https://fixture.test/${ws.id}`})`;
+             VALUES (${ws.id}, ${ws.name}, 'bank', 'fdic', 'Testville', 'FL', 'FL', 6, 'active', ${`https://fixture.test/${ws.id}`})`;
   }
   for (const a of ACCOUNTS) {
     const pastDueSince = a.pastDueDays === null ? null : new Date(Date.now() - a.pastDueDays * 86_400_000).toISOString();

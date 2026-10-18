@@ -46,8 +46,8 @@ export const ACCESS_ID_MIN = 9_708_000;
 export const ACCESS_ID_MAX = 9_708_999;
 /** Synthetic workspaces for the two seat accounts (demo-cast names). */
 export const SEAT_WORKSPACES = {
-  paidOwner: { id: 9_708_001, name: "Capital City Bank (access fixture)", owner: "paid" as BillingState },
-  lapsedOwner: { id: 9_708_002, name: "M&T Bank (access fixture)", owner: "past_due_lapsed" as BillingState },
+  paidOwner: { id: 9_708_001, name: "Harbor Point Test Bank (access fixture)", owner: "paid" as BillingState },
+  lapsedOwner: { id: 9_708_002, name: "Ridgeline Test Bank (access fixture)", owner: "past_due_lapsed" as BillingState },
 };
 
 export interface AccessAccount {
