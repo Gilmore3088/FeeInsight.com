@@ -537,7 +537,7 @@ export interface IntelligenceSnapshot {
 
 export async function getIntelligenceSnapshot(): Promise<IntelligenceSnapshot> {
   const user = await getCurrentUser();
-  if (!user) return { tier: "Unknown", savedAnalyses: 0, savedScenarios: 0, lastActivity: null };
+  if (!user || !canAccessPremium(user)) return { tier: "Unknown", savedAnalyses: 0, savedScenarios: 0, lastActivity: null };
 
   let savedAnalyses = 0;
   let savedScenarios = 0;

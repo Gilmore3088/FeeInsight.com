@@ -512,7 +512,7 @@ export async function generateReport(
  */
 export async function loadRecentReports() {
   const user = await getCurrentUser();
-  if (!user) return [];
+  if (!user || !canAccessPremium(user)) return [];
   return getRecentHamiltonReports(user.id);
 }
 
@@ -521,7 +521,7 @@ export async function loadRecentReports() {
  */
 export async function loadActiveScenarios() {
   const user = await getCurrentUser();
-  if (!user) return [];
+  if (!user || !canAccessPremium(user)) return [];
   return getActiveScenarios(user.id);
 }
 
@@ -540,7 +540,7 @@ export async function loadReport(reportId: string) {
  */
 export async function loadScenarioById(scenarioId: string) {
   const user = await getCurrentUser();
-  if (!user) return null;
+  if (!user || !canAccessPremium(user)) return null;
   return getHamiltonScenarioById(scenarioId, user.id);
 }
 
