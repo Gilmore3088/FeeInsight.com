@@ -82,13 +82,28 @@ export interface FeeShareCohort {
  * counts in the distribution (a share above zero, the subject left out), so the counts it shows
  * are counted from these rows.
  */
+/**
+ * A quarter as "YYYY-MM-DD", whether it arrives as that text, "YYYYMMDD", a longer ISO string or a Date
+ * (a cached read can hand back either). Null when it is not a date.
+ */
+export function quarterKey(value: string | Date): string | null {
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value.toISOString().slice(0, 10);
+  const text = String(value).trim();
+  const dashed = /^(\d{4}-\d{2}-\d{2})/.exec(text);
+  if (dashed) return dashed[1];
+  const compact = /^(\d{4})(\d{2})(\d{2})$/.exec(text);
+  return compact ? `${compact[1]}-${compact[2]}-${compact[3]}` : null;
+}
+
 export async function getFeeShareCohort(
   charterType: string,
   assetSizeTier: string | null,
-  reportDate: string,
+  reportDate: string | Date,
   source: string,
 ): Promise<FeeShareCohort | null> {
   if (source !== "fdic" && source !== "ncua") return null;
+  const quarter = quarterKey(reportDate);
+  if (!quarter) return null;
   const rows = await sql<FeeShareCohortMember[]>`
     SELECT s.id::int AS id, s.institution_name AS name, s.city, s.state_code AS state,
            f.total_assets::float8 AS total_assets,
@@ -100,7 +115,9 @@ export async function getFeeShareCohort(
         ON f.institution_id = s.id
        AND f.source IN ('fdic', 'ncua')
        AND f.source = ${source}
-       AND f.report_date = ${reportDate}
+       -- report_date is text in the table; both sides are cast to date so the match holds
+       -- whichever type the parameter binds as (text = date has no operator).
+       AND f.report_date::date = ${quarter}::date
      WHERE s.charter_type = ${charterType}
        AND s.asset_size_tier IS NOT DISTINCT FROM ${assetSizeTier}
      ORDER BY s.id
@@ -108,7 +125,7 @@ export async function getFeeShareCohort(
   const byId = new Map<number, FeeShareCohortMember>();
   for (const row of rows) if (!byId.has(row.id)) byId.set(row.id, { ...row, id: Number(row.id) });
   return {
-    report_date: reportDate,
+    report_date: quarter,
     source,
     charter_type: charterType,
     asset_size_tier: assetSizeTier,
