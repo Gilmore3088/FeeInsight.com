@@ -47,10 +47,12 @@ type SqlTag = typeof sql;
  * published as a rate (`published_fee_rate_catalog`), which can match a key fee keyed as
  * "varies". v4 is v3 plus the bank's documents holding the same text as the key's document (one
  * page Magellan stored under several URLs). v1 (the bank's newest stored page, every document's
- * fees) and v2 keep running for their history. The headline stays v3 until James moves it: v4 is a
- * change of measure, not of data.
+ * fees) and v2 keep running for their history. v5 is v4 with the key's lines read in today's
+ * taxonomy: a line under a category a live split has since divided is scored under the category the
+ * split gives its printed line (`keyFeesForVersion`, answer-key-score.ts). The headline stays v3
+ * until James moves it: v4 and v5 are changes of measure, not of data.
  */
-export const ANSWER_KEY_SCORER_VERSIONS = [1, 2, 3, 4] as const;
+export const ANSWER_KEY_SCORER_VERSIONS = [1, 2, 3, 4, 5] as const;
 export type AnswerKeyScorerVersion = (typeof ANSWER_KEY_SCORER_VERSIONS)[number];
 /** The series the scoreboard, the admin page and the goal read. */
 export const ANSWER_KEY_SCORER_VERSION: AnswerKeyScorerVersion = 3;
@@ -569,14 +571,15 @@ export interface ConfirmedAnswerKeyEntry {
   documentUrl: string;
   documentType: AnswerKeyDocumentType;
   contentHash: string | null;
-  fees: Array<{ canonicalKey: string; amount: number | null; amountKind: AnswerKeyAmountKind }>;
+  /** `sourceLine` is the schedule line the key's reader confirmed; v5 reads its category through live splits. */
+  fees: Array<{ canonicalKey: string; amount: number | null; amountKind: AnswerKeyAmountKind; sourceLine?: string | null }>;
 }
 
 export async function getConfirmedAnswerKey(db: SqlTag = sql): Promise<ConfirmedAnswerKeyEntry[]> {
   const rows = await db`
     SELECT ak.institution_id, ak.document_url, ak.document_type, ak.content_hash,
            COALESCE(
-             jsonb_agg(jsonb_build_object('canonical_key', f.canonical_key, 'amount', f.amount, 'amount_kind', f.amount_kind)
+             jsonb_agg(jsonb_build_object('canonical_key', f.canonical_key, 'amount', f.amount, 'amount_kind', f.amount_kind, 'source_line', f.source_line)
                        ORDER BY f.id) FILTER (WHERE f.id IS NOT NULL),
              '[]'::jsonb
            ) AS fees
@@ -593,10 +596,11 @@ export async function getConfirmedAnswerKey(db: SqlTag = sql): Promise<Confirmed
     documentUrl: String(row.document_url),
     documentType: row.document_type as AnswerKeyDocumentType,
     contentHash: (row.content_hash as string | null) ?? null,
-    fees: (row.fees as Array<{ canonical_key: string; amount: number | string | null; amount_kind: AnswerKeyAmountKind }>).map((fee) => ({
+    fees: (row.fees as Array<{ canonical_key: string; amount: number | string | null; amount_kind: AnswerKeyAmountKind; source_line?: string | null }>).map((fee) => ({
       canonicalKey: fee.canonical_key,
       amount: fee.amount == null ? null : Number(fee.amount),
       amountKind: fee.amount_kind,
+      sourceLine: fee.source_line ?? null,
     })),
   }));
 }
