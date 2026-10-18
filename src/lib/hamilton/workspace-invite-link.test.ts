@@ -100,7 +100,9 @@ describe("signed workspace invite links", () => {
     const contextCall = mocks.tx.mock.calls.find((call) => String((call[0] as string[]).join("?")).includes("hamilton_workspace_contexts"));
     expect(contextCall).toBeDefined();
     expect((contextCall![0] as string[]).join("?")).toContain("WHERE hamilton_workspace_contexts.selected_institution_id IS NULL");
-    expect(contextCall!.slice(1)).toEqual([8, 2945]);
+    expect((contextCall![0] as string[]).join("?")).toContain("OR hamilton_workspace_contexts.last_intent = ?");
+    // A bank picked before paying gives way to the team's bank.
+    expect(contextCall!.slice(1)).toEqual([8, 2945, "before_pro_checkout"]);
   });
 
   it("rejects a wrong token", async () => {

@@ -15,12 +15,14 @@ const icons = { Activity, Bookmark, Calculator, ChartNoAxesColumnIncreasing, Fil
  * three things separately: the reader's own institution, the institution being researched and
  * the peer group it is compared with.
  */
-export function WorkspaceNavigation({ pathname, isAdmin, accountLabel, researchLabel, homeName = null, homeHref = "/pro/research", accountUnlinked = false, researchIsHome = false, peerLabel }: {
+export function WorkspaceNavigation({ pathname, isAdmin, accountLabel, researchLabel, homeName = null, homeHref = "/pro/research", accountUnlinked = false, accountNeedsInfo = false, researchIsHome = false, peerLabel }: {
   pathname: string; isAdmin: boolean; accountLabel: string; researchLabel: string | null;
   /** The reader's own institution, when their account is linked to exactly one. */
   homeName?: string | null;
   /** No membership links the account to an institution yet (not ambiguous, not a load error). */
   accountUnlinked?: boolean;
+  /** The pending link request waits on more from the user; Settings says what. */
+  accountNeedsInfo?: boolean;
   /** The reader's own institution page (Your institution), where "Back to" returns. */
   homeHref?: string;
   /** The subject is the reader's own institution. */
@@ -55,6 +57,7 @@ export function WorkspaceNavigation({ pathname, isAdmin, accountLabel, researchL
         <div>
           <span className="workspace-muted">Your institution: </span><strong>{accountLabel}</strong>
           {accountUnlinked ? <> · <Link href="/pro/settings#account-institution">Link your institution</Link></> : null}
+          {accountNeedsInfo ? <> · <Link href="/pro/settings#account-institution">More information needed</Link></> : null}
         </div>
         <NavAccount />
       </header>

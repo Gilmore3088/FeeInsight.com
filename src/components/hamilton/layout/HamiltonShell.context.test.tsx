@@ -194,4 +194,28 @@ describe("H01 retained Hamilton shell navigation", () => {
     expect(screen.getByLabelText("Institution context").textContent).toContain("Your institution: Multiple memberships");
     expect(screen.queryByRole("link", { name: "Link your institution" })).toBeNull();
   });
+
+  it("names a pending link request as pending verification, not unlinked, and offers no second link", () => {
+    render(<HamiltonShell {...seed} accountContext={{ status: "unlinked", institution: null }}
+      pendingInstitution={{ name: "Capital City Bank", needsInfo: false }}>Ask</HamiltonShell>);
+    const bar = screen.getByLabelText("Institution context").textContent;
+    expect(bar).toContain("Your institution: Capital City Bank, pending verification");
+    expect(bar).not.toContain("Not linked");
+    expect(screen.queryByRole("link", { name: "Link your institution" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "More information needed" })).toBeNull();
+  });
+
+  it("points to Settings when the admin check asked for more", () => {
+    render(<HamiltonShell {...seed} accountContext={{ status: "unlinked", institution: null }}
+      pendingInstitution={{ name: "Capital City Bank", needsInfo: true }}>Ask</HamiltonShell>);
+    expect(screen.getByLabelText("Institution context").textContent).toContain("Capital City Bank, pending verification");
+    expect(screen.getByRole("link", { name: "More information needed" })).toHaveAttribute("href", "/pro/settings#account-institution");
+  });
+
+  it("a made link wins over any pending request", () => {
+    render(<HamiltonShell {...seed} pendingInstitution={{ name: "Capital City Bank", needsInfo: false }}>Ask</HamiltonShell>);
+    const bar = screen.getByLabelText("Institution context").textContent;
+    expect(bar).toContain(`Your institution: ${homeName}`);
+    expect(bar).not.toContain("pending verification");
+  });
 });

@@ -44,6 +44,11 @@ interface HamiltonShellProps {
   /** The server-selected subject's active peer set: its name, null when none is saved, undefined when unread. */
   peerLabel?: string | null;
   accountContext?: Pick<HamiltonAccountContext, "status" | "institution">;
+  /**
+   * The institution the user named at Pro signup that waits for an admin check (#1407), when the
+   * account has no membership yet. Display only: it grants nothing until the link is made.
+   */
+  pendingInstitution?: { name: string; needsInfo: boolean } | null;
   children: React.ReactNode;
 }
 
@@ -65,6 +70,7 @@ export function HamiltonShell({
   selectedInstitutionId,
   peerLabel,
   accountContext,
+  pendingInstitution = null,
   children,
 }: HamiltonShellProps) {
   const pathname = usePathname();
@@ -150,8 +156,9 @@ export function HamiltonShell({
         <WorkspaceNavigation
           pathname={pathname}
           isAdmin={isAdmin}
-          accountLabel={accountLabel(accountContext)}
-          accountUnlinked={!accountContext || accountContext.status === "unlinked"}
+          accountLabel={accountLabel(accountContext, pendingInstitution)}
+          accountUnlinked={(!accountContext || accountContext.status === "unlinked") && !pendingInstitution}
+          accountNeedsInfo={Boolean(pendingInstitution?.needsInfo) && (!accountContext || accountContext.status === "unlinked")}
           homeName={accountContext?.status === "identified" ? accountContext.institution?.name ?? null : null}
           homeHref={homeId != null ? `/pro/research?instId=${homeId}` : undefined}
           researchLabel={marketScope ?? researchLabel}
@@ -178,10 +185,15 @@ export function HamiltonShell({
   );
 }
 
-function accountLabel(accountContext: HamiltonShellProps["accountContext"]): string {
+export function accountLabel(
+  accountContext: HamiltonShellProps["accountContext"],
+  pendingInstitution: HamiltonShellProps["pendingInstitution"] = null,
+): string {
   if (accountContext?.status === "identified" && accountContext.institution) return accountContext.institution.name;
   if (accountContext?.status === "ambiguous") return "Multiple memberships";
   if (accountContext?.status === "unavailable") return "Unavailable";
+  // The same request Settings names under "Your institution", so the bar and Settings agree.
+  if (pendingInstitution?.name) return `${pendingInstitution.name}, pending verification`;
   return "Not linked";
 }
 
