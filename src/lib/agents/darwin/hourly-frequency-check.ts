@@ -66,7 +66,7 @@ export const HOURLY_FREQUENCY_LIVE = true;
  * dry-run count (`countHourlyFees`, the verify step's `hourly_full_count` param, `would_set_from_line`).
  */
 export const HOURLY_LINE_LIVE = false;
-/** Live fees read per step; a name-only regex read. */
+/** Live fees read per step, each with its stored line. */
 export const HOURLY_CHECK_BATCH = 2_000;
 export const HOURLY_CHECK_SAMPLES = 20;
 /** A period in the name besides the hour: the fee's basis is not clear from the name alone. */
@@ -153,7 +153,11 @@ export function hourlyVerdict(
   if (!basis) return null;
   if (partial) return { action: "exempt", exemptReason: "partial_hour", basis };
   if (canonicalFeeKey != null && HOURLY_EXEMPT_KEYS.has(canonicalFeeKey)) return { action: "exempt", exemptReason: "category", basis };
-  if (HOURLY_PERIOD_WORD.test(text)) return { action: "exempt", exemptReason: "period_word", basis };
+  // A line-only fee is read on its line, so a period anywhere on that line ("$25.00 per hour,
+  // monthly") leaves its basis unclear too; over-exempting leaves the fee as it is.
+  if (HOURLY_PERIOD_WORD.test(text) || (basis === "line" && HOURLY_PERIOD_WORD.test(sourceLine ?? ""))) {
+    return { action: "exempt", exemptReason: "period_word", basis };
+  }
   if (frequency != null && frequencyFamily(frequency) !== "per_item") return { action: "exempt", exemptReason: "stated_period", basis };
   return { action: "set", basis };
 }
