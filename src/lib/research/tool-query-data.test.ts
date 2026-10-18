@@ -54,6 +54,15 @@ describe("listData", () => {
     expect(out.note).toContain(`${LIST_DATA_MAX_SERIES + 5} series match`);
   });
 
+  it("ranks series by how many of the question's words they match, ignoring filler words", async () => {
+    vi.mocked(getAreaSeries).mockResolvedValue([
+      ...Array.from({ length: LIST_DATA_MAX_SERIES + 5 }, (_, i) => series("bls-oews", `oews_mean_wage_rate_${i}`)),
+      series("bls-laus", "laus_unemployment_rate"),
+    ] as never);
+    const out = await listDataCatalog({ query: "unemployment rate in Harris county" });
+    expect(out.series[0].measure).toBe("area:bls-laus:laus_unemployment_rate");
+  });
+
   it("answers with sources and fee measures when the series list is slow or unavailable", async () => {
     vi.mocked(getAreaSeries).mockReturnValue(new Promise(() => undefined));
     const slow = await listDataCatalog({ query: "overdraft" }, 5);

@@ -190,22 +190,25 @@ const cachedAreaSeries = unstable_cache(
   { revalidate: SERIES_CACHE_SECONDS },
 );
 
-/** After a failed or empty read, how long callers get an empty list before the table is read again. */
+/** After a failed or empty read, how long before the table is read again. */
 export const SERIES_RETRY_COOLDOWN_MS = 10 * 60 * 1000;
 let retryAfter = 0;
+let inFlight: Promise<CatalogSeries[]> | null = null;
 
-/** Test hook: forget a cooldown. */
-export function resetAreaSeriesCooldown(): void {
-  retryAfter = 0;
+/** Thrown while a failed or empty read's cooldown runs: the list is unavailable, not empty. */
+export class AreaSeriesUnavailable extends Error {
+  constructor() {
+    super("area series list unavailable until the retry cooldown ends");
+  }
 }
 
-/**
- * Every area series, cached for a day. For the catalog and tool listings; not for per-question reads.
- * A failed or empty read is not cached by Next, so it starts a cooldown: until it ends, callers get an
- * empty list instead of another whole-table GROUP BY.
- */
-export async function getAreaSeries(): Promise<CatalogSeries[]> {
-  if (Date.now() < retryAfter) return [];
+/** Test hook: forget a cooldown and any read in flight. */
+export function resetAreaSeriesCooldown(): void {
+  retryAfter = 0;
+  inFlight = null;
+}
+
+async function loadAreaSeries(): Promise<CatalogSeries[]> {
   try {
     return await cachedAreaSeries();
   } catch (error) {
@@ -215,4 +218,20 @@ export async function getAreaSeries(): Promise<CatalogSeries[]> {
     if (error instanceof EmptySeriesRead) return [];
     throw error;
   }
+}
+
+/**
+ * Every area series, cached for a day. For the catalog and tool listings; not for per-question reads.
+ * Callers at the same moment share one read, so a cold cache costs one whole-table GROUP BY, not one
+ * per request. A failed or empty read is not cached by Next, so it starts a cooldown: until it ends,
+ * callers get AreaSeriesUnavailable instead of another read.
+ */
+export function getAreaSeries(): Promise<CatalogSeries[]> {
+  if (Date.now() < retryAfter) return Promise.reject(new AreaSeriesUnavailable());
+  if (!inFlight) {
+    inFlight = loadAreaSeries().finally(() => {
+      inFlight = null;
+    });
+  }
+  return inFlight;
 }

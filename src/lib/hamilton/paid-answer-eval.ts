@@ -300,6 +300,12 @@ const FEE_PRICE_KEY = /amount|median|^p\d{2}|avg|mean|average|^min|^max|price|fe
 /** Never money: ids, counts and ranks, whatever else the key says. */
 const NOT_MONEY_KEY = /(^|_)(id|ids|n|rank)$|count|number|^total$/i;
 
+/** queryData on a public-data measure reads another source; its figures sit under `value`. Fee measures stay with the catalog. */
+function publicDataQuery(result: { toolName: string; input?: unknown }): boolean {
+  const input = result.input as { measure?: unknown } | null | undefined;
+  return result.toolName === "queryData" && typeof input?.measure === "string" && input.measure.startsWith("area:");
+}
+
 /**
  * Money values the written answer's tools read from sources other than the fee catalog, which it
  * may state as read. Fee prices from catalog tools are left out: the live catalog decides those.
@@ -316,9 +322,9 @@ function catalogDerived(result: { toolName: string; input?: unknown }): boolean 
 
 export function toolMoneyFigures(results: ReadonlyArray<{ toolName: string; input?: unknown; output: unknown }>): number[] {
   const out: number[] = [];
-  const walk = (value: unknown, key: string, depth: number, otherSource: boolean) => {
+  const walk = (value: unknown, key: string, depth: number, otherSource: boolean, area: boolean) => {
     if (depth > 8 || value === null || value === undefined) return;
-    const money = !NOT_MONEY_KEY.test(key) && (OTHER_MONEY_KEY.test(key) || (otherSource && FEE_PRICE_KEY.test(key)));
+    const money = !NOT_MONEY_KEY.test(key) && (OTHER_MONEY_KEY.test(key) || (otherSource && FEE_PRICE_KEY.test(key)) || (area && key === "value"));
     if (typeof value === "number") {
       if (Number.isFinite(value) && money) out.push(value);
     } else if (typeof value === "string") {
@@ -326,18 +332,18 @@ export function toolMoneyFigures(results: ReadonlyArray<{ toolName: string; inpu
       // Compacted tool results carry their JSON as text.
       if (text.startsWith("{") || text.startsWith("[")) {
         try {
-          walk(JSON.parse(text), key, depth + 1, otherSource);
+          walk(JSON.parse(text), key, depth + 1, otherSource, area);
         } catch {
           // Not JSON: nothing to read.
         }
       } else if (money && /^-?\$?\d[\d,]*(\.\d+)?$/.test(text)) out.push(Number(text.replace(/[$,]/g, "")));
     } else if (Array.isArray(value)) {
-      for (const item of value) walk(item, key, depth + 1, otherSource);
+      for (const item of value) walk(item, key, depth + 1, otherSource, area);
     } else if (typeof value === "object") {
-      for (const [k, v] of Object.entries(value as Record<string, unknown>)) walk(v, k, depth + 1, otherSource);
+      for (const [k, v] of Object.entries(value as Record<string, unknown>)) walk(v, k, depth + 1, otherSource, area);
     }
   };
-  for (const r of results) if (!catalogDerived(r)) walk(r.output, "", 0, OTHER_SOURCE_TOOLS.has(r.toolName));
+  for (const r of results) if (!catalogDerived(r)) walk(r.output, "", 0, OTHER_SOURCE_TOOLS.has(r.toolName) || publicDataQuery(r), publicDataQuery(r));
   return out;
 }
 

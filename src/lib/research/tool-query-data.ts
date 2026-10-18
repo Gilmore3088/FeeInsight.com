@@ -22,14 +22,25 @@ export function warmDataCatalog(): void {
   void getAreaSeries().catch(() => undefined);
 }
 
+/** Words that say nothing about which dataset a question needs. */
+const STOPWORDS = new Set([
+  "a", "an", "and", "are", "as", "at", "by", "data", "for", "from", "how", "in", "is", "of", "on", "or",
+  "the", "to", "what", "which", "with", "county", "counties", "state", "states", "metro", "national", "nation",
+]);
+
 function words(query: string | undefined): string[] {
-  return (query ?? "").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 1);
+  return (query ?? "").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 1 && !STOPWORDS.has(w));
+}
+
+/** How many of the terms appear in the text; every text scores 1 when there are no terms. */
+function score(text: string, terms: string[]): number {
+  if (terms.length === 0) return 1;
+  const hay = text.toLowerCase();
+  return terms.filter((term) => hay.includes(term)).length;
 }
 
 function matches(text: string, terms: string[]): boolean {
-  if (terms.length === 0) return true;
-  const hay = text.toLowerCase();
-  return terms.some((term) => hay.includes(term));
+  return score(text, terms) > 0;
 }
 
 async function seriesWithin(ms: number): Promise<CatalogSeries[] | null> {
@@ -52,12 +63,13 @@ export async function listDataCatalog(input: { query?: string; scope?: CatalogSc
   const servableIds = new Set(servable.filter((e) => e.kind === "public-data").map((e) => e.id));
   const labelById = new Map(servable.map((e) => [e.id, e.label]));
 
-  const matchedSeries = (series ?? []).filter(
-    (s) =>
-      servableIds.has(s.source)
-      && (!input.scope || s.geo_types.includes(input.scope) || input.scope === "institution")
-      && matches(`${s.source} ${s.series_key} ${labelById.get(s.source) ?? ""}`, terms),
-  );
+  // Best match first: the series hitting the most terms, so a broad word cannot push the right one past the cap.
+  const matchedSeries = (series ?? [])
+    .filter((s) => servableIds.has(s.source) && (!input.scope || s.geo_types.includes(input.scope) || input.scope === "institution"))
+    .map((s) => ({ s, hits: score(`${s.source} ${s.series_key} ${labelById.get(s.source) ?? ""}`, terms) }))
+    .filter(({ hits }) => hits > 0)
+    .sort((a, b) => b.hits - a.hits)
+    .map(({ s }) => s);
   const sourcesWithSeries = new Set(matchedSeries.map((s) => s.source));
   const sources = servable
     .filter((e) => e.kind === "fee-data" || sourcesWithSeries.has(e.id) || matches(`${e.id} ${e.label}`, terms))

@@ -6,7 +6,7 @@ vi.mock("next/cache", () => ({ unstable_cache: (fn: unknown) => fn }));
 vi.mock("@/lib/data-store/connection", () => ({ withTransaction: vi.fn() }));
 
 import { withTransaction } from "@/lib/data-store/connection";
-import { getAreaSeries, mergeGroupRows, readAreaSeries, resetAreaSeriesCooldown, seriesFromPartitionDetail } from "./series";
+import { AreaSeriesUnavailable, getAreaSeries, mergeGroupRows, readAreaSeries, resetAreaSeriesCooldown, seriesFromPartitionDetail } from "./series";
 
 const partition = { source_url: "https://www.bls.gov/lau/", fetched_at: "2026-10-12T00:00:00Z" };
 
@@ -63,20 +63,34 @@ describe("area series discovery", () => {
     expect(tx).toHaveBeenCalled();
   });
 
-  it("does not read the table again for a while after a failed or empty read", async () => {
+  it("does not read the table again for a while after a failed or empty read, and says it is unavailable", async () => {
     const read = vi.mocked(withTransaction);
     read.mockReset();
     read.mockResolvedValueOnce([] as never);
     resetAreaSeriesCooldown();
     expect(await getAreaSeries()).toEqual([]);
-    expect(await getAreaSeries()).toEqual([]);
+    await expect(getAreaSeries()).rejects.toBeInstanceOf(AreaSeriesUnavailable);
     expect(read).toHaveBeenCalledTimes(1);
 
     read.mockRejectedValueOnce(new Error("canceling statement due to statement timeout"));
     resetAreaSeriesCooldown();
     await expect(getAreaSeries()).rejects.toThrow("statement timeout");
-    expect(await getAreaSeries()).toEqual([]);
+    await expect(getAreaSeries()).rejects.toBeInstanceOf(AreaSeriesUnavailable);
     expect(read).toHaveBeenCalledTimes(2);
+    resetAreaSeriesCooldown();
+  });
+
+  it("shares one read between callers that ask at the same time", async () => {
+    const read = vi.mocked(withTransaction);
+    read.mockReset();
+    let finish: (rows: unknown) => void = () => undefined;
+    read.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }) as never);
+    resetAreaSeriesCooldown();
+    const a = getAreaSeries();
+    const b = getAreaSeries();
+    finish([{ source: "bls-laus", series_key: "u" }]);
+    expect(await a).toEqual(await b);
+    expect(read).toHaveBeenCalledTimes(1);
     resetAreaSeriesCooldown();
   });
 

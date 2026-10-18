@@ -319,6 +319,13 @@ describe("Hamilton's paid answer eval (#1079)", () => {
     ])).toEqual([5000000]);
   });
 
+  it("accepts public-data figures from queryData as stated, but leaves its fee measures to the live catalog", () => {
+    expect(toolMoneyFigures([
+      { toolName: "queryData", input: { measure: "area:census-saipe:saipe_median_household_income", scope: { kind: "state", id: "FL" } }, output: { ok: true, rows: [{ geo_code: "12", period: "2023", value: 74580 }] } },
+      { toolName: "queryData", input: { measure: "fee:overdraft", scope: { kind: "national" } }, output: { ok: true, rows: [{ median_amount: 30, institution_count: 900 }] } },
+    ])).toEqual([74580]);
+  });
+
   describe("the report answer page", () => {
     const prepared: PreparedReportAnswer = {
       institutionId: 1001,
