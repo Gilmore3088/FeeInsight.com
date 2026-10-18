@@ -107,4 +107,15 @@ export const NON_DEPOSIT_URL_FIXTURES: Array<{ url: string; kind: NonDepositDocu
   { url: "https://www.example.com/business/payroll-cards/", kind: null, why: "business documents stay out of scope" },
   { url: "https://www.example.com/fees/prepaid-finance-charge", kind: null, why: "a loan's prepaid finance charge is not a card" },
   { url: "https://www.example.com/prepayment-penalty/", kind: null, why: "prepayment is not prepaid" },
+  // Review of #1914: a card program never overrides a loan or brokerage verdict, and a general schedule that mentions a card stays.
+  { url: "https://www.example.com/credit-cards/prepaid-card/", kind: "loan", why: "under a credit card section it stays a loan page" },
+  { url: "https://www.example.com/credit-cards/visa-signature-travel-card/", kind: "loan", why: "a travel-rewards credit card" },
+  { url: "https://www.example.com/loans/credit-cards/gift-cards/", kind: "loan", why: "loan section wins" },
+  { url: "https://www.example.com/mortgage/prepaid-items.pdf", kind: "loan", why: "a mortgage's prepaid items" },
+  { url: "https://www.example.com/wealth-management/prepaid-card-fees.pdf", kind: "brokerage", why: "brokerage section wins" },
+  { url: "https://www.example.com/credit-cards/pay-card-bill/", kind: "loan", why: "a bare pay card is not a card program" },
+  { url: "https://www.example.com/docs/fee-schedule-including-gift-cards.pdf", kind: null, why: "a general schedule that mentions gift cards" },
+  { url: "https://www.example.com/personal/fees-and-gift-cards/", kind: null, why: "fee words before the card" },
+  { url: "https://www.example.com/docs/membership-fee-schedule-prepaid.pdf", kind: null, why: "a membership schedule" },
+  { url: "https://www.example.com/docs/prepaid-items.pdf", kind: null, why: "prepaid items outside a loan section" },
 ];

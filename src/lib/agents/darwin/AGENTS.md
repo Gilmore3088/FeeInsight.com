@@ -772,9 +772,13 @@ Darwin owns verification and classification.
   prepaid, payroll, gift, travel or TravelMoney card's own document, named by the address's last
   segment (`CARD_PROGRAM_LAST_SEGMENT`: SchoolsFirst's `payroll-card-statement-of-fees-disclosure`,
   Acadia's `/checking/cards/prepaid-travel-card/`, "Gift_Card_Terms_and_Conditions.pdf"). It is
-  read before the deposit-word rule, since such pages often sit under a checking section, but a
-  deposit word in that last segment ("prepaid-checking-account") still wins, business documents
-  still pass, and a loan's "prepaid finance charge" is not a card. `card_program_document` takes
+  asked only where the v2 classifier said null: after the brokerage and loan tests (so
+  `/credit-cards/travel-card/` stays a loan page) and in place of the deposit-word null, since such
+  pages often sit under a checking section. A deposit word in the last segment itself
+  ("prepaid-checking-account") still wins, business documents still pass, a general schedule that
+  names the card only after its own fee words ("fee-schedule-including-gift-cards",
+  `GENERAL_SCHEDULE_BEFORE_CARD`) stays, a bare "pay card" is not a card, and a loan's "prepaid
+  finance charge" or a mortgage's "prepaid items" is not a card. `card_program_document` takes
   every fee on such a document except the card's purchase and reload price (`CARD_PROGRAM_KEEP_KEYS`:
   gift_card_purchase, prepaid_card_reload; `kept_card_purchase`). Its own sub-switch,
   `CARD_PROGRAM_TAKEDOWN_LIVE`, is off until James's yes on the count: on Oct 18 (prod, read-only)
