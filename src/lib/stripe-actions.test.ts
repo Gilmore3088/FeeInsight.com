@@ -224,6 +224,15 @@ describe("createCheckoutSession", () => {
     );
   });
 
+  it("keeps a long Pro destination on the success URL but out of metadata, which Stripe caps at 500 characters", async () => {
+    const { createCheckoutSession } = await import("./stripe-actions");
+    const returnTo = `/pro/analyze?${new URLSearchParams({ instId: "323", intent: "institution", q: "Why? ".repeat(100) })}`;
+    await createCheckoutSession({ plan: "annual", institutionId: 2945, returnTo });
+    const args = mocks.stripeCheckoutCreateMock.mock.calls[0][0];
+    expect(new URL(args.success_url).searchParams.get("from")).toBe(returnTo);
+    expect(args.metadata.return_to).toBeUndefined();
+  });
+
   it("checks out against the user's lazily created Stripe customer", async () => {
     const { createCheckoutSession } = await import("./stripe-actions");
     await createCheckoutSession({ plan: "annual", institutionId: 2945 });

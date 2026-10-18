@@ -62,6 +62,8 @@ import { FeeAlertIsland, FreeOnly, HamiltonLink, ProFinancialProfile, ProOnly } 
 import { ProfileFootnote } from "./profile-footnote";
 import { HamiltonBand, type HamiltonInsight } from "./hamilton-band";
 import { CompareTable } from "./compare-table";
+import { ConnectedPanel } from "./connected-panel";
+import { buildConnectedPanel } from "./connected-panel-view";
 import {
   compareCounts,
   compareRows,
@@ -341,6 +343,18 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
         }
       : null;
 
+  const connectedPanel = hamiltonInsight
+    ? buildConnectedPanel({
+        institutionId: instId,
+        institutionName: inst.institution_name,
+        insight: hamiltonInsight,
+        rows,
+        stateCode,
+        stateName,
+        city,
+      })
+    : null;
+
   const scheduleLink = inst.fee_schedule_url ? (
     <a href={inst.fee_schedule_url} target="_blank" rel="noopener noreferrer" className={LINK}>
       its fee schedule
@@ -471,8 +485,11 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
             </section>
           )}
 
-          {/* The fee position beside its call-report context: the band a visitor sees right after the comparison. */}
-          {showHamiltonBand && (
+          {/* Fee income beside fee prices, with Hamilton hand-offs that carry this comparison (James's brief, step 4).
+              Without call-report figures to connect, the Hamilton band stands in, as before. */}
+          {connectedPanel ? (
+            <ConnectedPanel panel={connectedPanel} sampleReportHref={sampleHref} />
+          ) : showHamiltonBand && (
             <FreeOnly>
               <HamiltonBand
                 institutionName={inst.institution_name}
