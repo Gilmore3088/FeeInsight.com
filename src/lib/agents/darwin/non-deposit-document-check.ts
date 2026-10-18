@@ -66,7 +66,7 @@ type SqlTag = typeof sql;
  * except the price of buying or reloading the card (`CARD_PROGRAM_KEEP_KEYS`). SchoolsFirst's
  * payroll card disclosure gave 10 live rows (Monthly Fee $0, Account inactivity $0, ATM and
  * replacement fees) that are the payroll card's, not the credit union's accounts'. Its own
- * sub-switch, `CARD_PROGRAM_TAKEDOWN_LIVE`, off until James sees the dry-run count; off, they pass.
+ * sub-switch, `CARD_PROGRAM_TAKEDOWN_LIVE`, on since 2026-10-18 (James's yes on the count); off, they pass.
  *
  * Each Darwin verify step reads the next `NON_DEPOSIT_BATCH` live fees after a cursor kept on the
  * run ledger (the `darwin.non_deposit_document` event's `next_after_id`, 0 once a pass reaches the
@@ -99,12 +99,13 @@ export const NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE = true;
 export const BROKERAGE_DOCUMENT_TAKEDOWN_LIVE = true;
 /**
  * The sub-switch for the `card_program_document` rule (#1908). It acts only with
- * `NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE`. Off (shadow) until James sees the dry-run count: on Oct 18
- * (prod, read-only) 44 live fees on 12 card program documents at 12 institutions would come down
- * (SchoolsFirst's 10 among them), and 4 card purchase or reload fees there would stay. Turn on by
- * PR; roll back by setting it to false.
+ * `NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE`. On since 2026-10-18 (James, "Take them down" on the decision
+ * card, 11:34 UTC), on the dry-run count of 44 live fees on 12 card program documents at 12
+ * institutions (SchoolsFirst's 10 among them, 9 already taken down by hand); re-counted before the
+ * switch (prod, read-only, 11:36 UTC): 35 on 12 documents at 12 institutions, 4 card purchase or
+ * reload fees kept. Roll back by setting it to false.
  */
-export const CARD_PROGRAM_TAKEDOWN_LIVE = false;
+export const CARD_PROGRAM_TAKEDOWN_LIVE = true;
 /** On a card program's document, the card's own purchase and reload prices stay live (they are real fees in those categories). */
 export const CARD_PROGRAM_KEEP_KEYS: ReadonlySet<string> = new Set(["gift_card_purchase", "prepaid_card_reload"]);
 export const NON_DEPOSIT_REASON = "non_deposit_document";
