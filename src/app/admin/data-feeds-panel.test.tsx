@@ -9,8 +9,8 @@ afterEach(() => cleanup());
 const freshness: FeedFreshness = {
   readAt: "2026-10-05T20:00:00.000Z",
   feeds: [
-    { source: "fdic-financials", latestPeriod: "2026Q2", lastSuccessAt: "2026-10-05T11:17:43.000Z", nextAttemptAt: null, failed: 0, scheduled: 0, lastError: null },
-    { source: "cfpb", latestPeriod: "2026", lastSuccessAt: "2026-10-04T16:47:57.000Z", nextAttemptAt: null, failed: 2, scheduled: 0, lastError: "HTTP 503" },
+    { source: "fdic-financials", latestPeriod: "2026Q2", lastSuccessAt: "2026-10-05T11:17:43.000Z", nextAttemptAt: null, failed: 0, scheduled: 0, lastError: null, blocked: 0, blockedHost: null },
+    { source: "cfpb", latestPeriod: "2026", lastSuccessAt: "2026-10-04T16:47:57.000Z", nextAttemptAt: null, failed: 2, scheduled: 0, lastError: "HTTP 503", blocked: 0, blockedHost: null },
   ],
   callReports: [
     { source: "ffiec", latestPeriod: "2026-03-31", lastFetchedAt: "2026-08-10T10:51:17.000Z", behind: true },
@@ -52,6 +52,22 @@ describe("DataFeedsPanel", () => {
     expect(screen.getByText("FFIEC call report figures")).toBeTruthy();
     expect(screen.getByText(/No registry feed loads this source/)).toBeTruthy();
     expect(screen.getByText("(7 minutes old)")).toBeTruthy();
+  });
+
+  it("shows a feed whose host refuses us as blocked, naming the host (#1806)", () => {
+    render(
+      <DataFeedsPanel
+        freshness={{
+          ...freshness,
+          feeds: [
+            { source: "fr-y9c", latestPeriod: null, lastSuccessAt: null, nextAttemptAt: null, failed: 0, scheduled: 0, lastError: null, blocked: 3, blockedHost: "www.ffiec.gov" },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByText(/Blocked: www\.ffiec\.gov refuses our requests \(3 periods not loaded\)/)).toBeTruthy();
+    expect(screen.getByText(/· 1 blocked/)).toBeTruthy();
+    expect(screen.queryByText("None")).toBeNull();
   });
 
   it("counts whole days", () => {

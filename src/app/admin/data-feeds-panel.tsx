@@ -270,6 +270,7 @@ export function DataFeedsPanel({ freshness, now }: { freshness: FeedFreshness; n
         const groupCalls = group.key === "national" ? unmatched : [];
         if (groupFeeds.length === 0 && groupCalls.length === 0) return null;
         const failed = groupFeeds.filter((feed) => feed.failed > 0).length;
+        const blocked = groupFeeds.filter((feed) => feed.blocked > 0).length;
         return (
           <details key={group.key} open className="group rounded-lg border border-black/[0.06] dark:border-white/[0.08]">
             <summary className="flex cursor-pointer flex-wrap items-baseline justify-between gap-2 px-3 py-2">
@@ -277,9 +278,10 @@ export function DataFeedsPanel({ freshness, now }: { freshness: FeedFreshness; n
                 {group.title}
                 <span className="admin-meta ml-2 font-normal">{group.note}</span>
               </span>
-              <span className={`text-xs ${failed > 0 ? warn : "admin-meta"}`}>
+              <span className={`text-xs ${failed > 0 || blocked > 0 ? warn : "admin-meta"}`}>
                 {groupFeeds.length + groupCalls.length} {groupFeeds.length + groupCalls.length === 1 ? "feed" : "feeds"}
                 {failed > 0 ? ` · ${failed} failing` : ""}
+                {blocked > 0 ? ` · ${blocked} blocked` : ""}
               </span>
             </summary>
             <div className="overflow-x-auto px-1 pb-2">
@@ -317,6 +319,11 @@ export function DataFeedsPanel({ freshness, now }: { freshness: FeedFreshness; n
                           {feed.failed > 0 ? (
                             <span className={warn} title={feed.lastError ?? undefined}>
                               {feed.failed} failed{feed.lastError ? `: ${feed.lastError.slice(0, 120)}` : ""}
+                            </span>
+                          ) : feed.blocked > 0 ? (
+                            <span className={warn}>
+                              Blocked: {feed.blockedHost ?? "the publisher's host"} refuses our requests ({feed.blocked}{" "}
+                              {feed.blocked === 1 ? "period" : "periods"} not loaded)
                             </span>
                           ) : feed.scheduled > 0 ? (
                             `${feed.scheduled} waiting${feed.nextAttemptAt ? `, next ${when(feed.nextAttemptAt)}` : ""}`

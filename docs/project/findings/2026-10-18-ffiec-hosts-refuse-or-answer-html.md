@@ -12,7 +12,8 @@ title, visible messages and form fields, and posts the Download control the page
 so the failed quarter retries on the next tick). NIC and Y-9C record an empty partition with
 `detail.missing_source` naming the host; NIC's says how far the FDIC BankFind RSSDHCR fallback
 reaches (direct holding company only), and Y-9C's that there is no official second host. Both are
-marked `missingSource` in their Hoovie contracts.
+marked `missingSource` in their Hoovie contracts. The admin Data feeds panel no longer counts those
+empty partitions as a pull; it shows the feed as blocked and names the host.
 **Lesson:** when a publisher answers with a page instead of a file, record what the page says
 before guessing at the form. A host that refuses production is a named gap in the contract and the
 partition detail, never a repeated silent failure. Use no proxies or spoofed user agents to get

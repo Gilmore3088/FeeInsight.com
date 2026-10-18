@@ -114,6 +114,7 @@ describe("FFIEC bulk form", () => {
 describe("describeFfiecPage", () => {
   const html = `<html><head><title> Download Bulk Data </title></head><body>
     <input type="hidden" name="__VIEWSTATE" value="huge" />
+    <input type="email" name="contact" value="someone@example.com" />
     <span id="ctl00_MainContentHolder_ErrorMessage" class="err">Please select a   file format.</span>
     <div class="validation-summary">Please select a file format.</div>
     <script>alert('Session expired');</script>
@@ -129,6 +130,7 @@ describe("describeFfiecPage", () => {
     expect(page.messages).toEqual(["Please select a file format.", "Session expired"]);
     expect(page.fields).toEqual([
       "__VIEWSTATE",
+      "contact",
       "ctl00$MainContentHolder$FormatType[radio=TSVRadioButton]",
       "ctl00$MainContentHolder$FormatType[radio=XBRLRadioButton*]",
       "ctl00$MainContentHolder$TabStrip1$Download_0[submit=Download]",
@@ -137,6 +139,7 @@ describe("describeFfiecPage", () => {
     const line = formatFfiecPage(page);
     expect(line).toMatch(/^title "Download Bulk Data"; messages: "Please select a file format\." \| "Session expired"; fields: __VIEWSTATE, /);
     expect(line).not.toContain("huge");
+    expect(line).not.toContain("someone@example.com");
   });
 
   it("finds the Download control by its label", () => {

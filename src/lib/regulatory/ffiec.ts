@@ -71,7 +71,7 @@ export interface FfiecPageDescription {
   /** Visible message text: validation summaries, error or message labels, script alerts. */
   messages: string[];
   /**
-   * Form fields: a bare name for text and hidden inputs (no values), "name[type=value]" for
+   * Form fields: a bare name for hidden and typed-value inputs (text, email, number, search...; no values), "name[type=value]" for
    * radios, checkboxes and buttons, "name[select N options, label*]" for selects; "*" marks the
    * checked or selected one.
    */
@@ -120,7 +120,7 @@ export function describeFfiecPage(html: string): FfiecPageDescription {
     const name = attr(m[0], "name");
     if (!name) continue;
     const type = (attr(m[0], "type") ?? "text").toLowerCase();
-    if (type === "hidden" || type === "text" || type === "password") addField(name);
+    if (["hidden", "text", "password", "email", "number", "search", "tel", "url"].includes(type)) addField(name);
     else addField(`${name}[${type}=${attr(m[0], "value") ?? ""}${/\schecked\b/i.test(m[0]) ? "*" : ""}]`);
   }
   for (const m of html.matchAll(/<select\b([^>]*)>([\s\S]*?)<\/select>/gi)) {
