@@ -2,6 +2,25 @@ import { describe, expect, it } from "vitest";
 import { checkFeeAgainstSource, joinLabeledFeeCards, stripPriceFootnoteMarks } from "./source-check";
 
 describe("checkFeeAgainstSource layouts", () => {
+  it("reads an opening deposit under an account heading as the account's, not the heading's price (#1810)", () => {
+    // Frontier Bank's checking page (prod source document of fee 117602, Oct 18).
+    const text = [
+      "Frontier Bank Classic Checking",
+      "$100.00 opening deposit required",
+      "Monthly maintenance fee of $7.00",
+      "Now Checking",
+      "$1,000.00 opening deposit required",
+      "Monthly maintenance fee $10.00",
+    ].join("\n\n");
+    expect(checkFeeAgainstSource(text, "Now Checking Monthly Maintenance Fee", 10, ".", "monthly_maintenance").ok).toBe(true);
+    expect(checkFeeAgainstSource(text, "Frontier Bank Classic Checking Monthly Maintenance Fee", 7, ".", "monthly_maintenance").ok).toBe(true);
+    // The opening deposit is never a fee's price ("Send and receive money fast with Zelle®" / "$25 deposit to open").
+    expect(checkFeeAgainstSource("Send and receive money fast with Zelle®\n$25 deposit to open", "Send and receive money fast with Zelle®", 25, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource("Christmas Club\n$5 to open", "Christmas Club", 5, ".").ok).toBe(false);
+    // An opening fee is still a price.
+    expect(checkFeeAgainstSource("Safe Deposit Box Rental\n$10 opening fee", "Safe Deposit Box Rental", 10, ".").ok).toBe(true);
+  });
+
   it("reads a price printed under its fee's name", () => {
     const text = "Overnight Courier Service\n$50.00\n/Item";
     expect(checkFeeAgainstSource(text, "Overnight Courier Service", 50, ".").ok).toBe(true);

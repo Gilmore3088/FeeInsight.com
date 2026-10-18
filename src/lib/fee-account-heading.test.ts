@@ -37,6 +37,17 @@ describe("account headings for generic fee names (Chase, Oct 8)", () => {
     }
   });
 
+  it("reads interest, numbered and money market checking accounts as accounts (#1810)", () => {
+    expect(accountHeading("Interest Checking")).toBe("Interest Checking");
+    expect(accountHeading("SUPER NOW INTEREST CHECKING")).toBe("Super NOW Interest Checking");
+    expect(accountHeading("Interest Bearing Account")).toBe("Interest Bearing Account");
+    expect(accountHeading("Club 2 Checking")).toBe("Club 2 Checking");
+    expect(accountHeading("Money Market Checking")).toBe("Money Market Checking");
+    for (const line of ["Earn interest on Checking", "Interest rates on checking", "Checking Account", "Money Market", "Checking Savings"]) {
+      expect(accountHeading(line), line).toBeNull();
+    }
+  });
+
   it("stops at another account's monthly fee and needs the excerpt on one line", () => {
     const text = "Rewards Checking\nMonthly Service Fee | $10\nMonthly Service Fee | $12";
     expect(accountHeadingForExcerpt(text, "Monthly Service Fee | $12")).toBeNull();

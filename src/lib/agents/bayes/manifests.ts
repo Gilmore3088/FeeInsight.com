@@ -376,11 +376,12 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v1 (#1455): a new shadow pass. Its selector reads every shared or vendor-path document pair not
   // yet read at v1 (25 a verify step), and documentOwnerCountSql counts the whole backlog read-only.
   DOCUMENT_OWNER_STRATEGY: "A new shadow pass; its selector reads every shared or vendor-path pair not yet read at v1, and documentOwnerCountSql counts the backlog; nothing to replay.",
-  // v17 (#1646): name words match where a word begins. The version is in each institution's check
-  // fingerprint, so every publish step's batch re-checks institutions not yet checked at v17.
+  // v18 (#1810): an opening deposit under an account heading is not the heading's price. The version
+  // is in each institution's check fingerprint, so every publish step's batch re-checks institutions
+  // not yet checked at v18.
   SOURCE_CHECK_STRATEGY: "Its fingerprint carries the version, so each publish step's batch re-checks every institution not yet checked at the new version; nothing to replay.",
-  // v2 (#1810): a fee with no heading above it takes the account Knox recorded on its raw row.
-  ACCOUNT_NAME_STRATEGY: "Its fingerprint carries the version, so each publish step's batch (40 institutions) re-reads every institution with a generic monthly name not yet read at v2; nothing to replay.",
+  // v3 (#1810): headings over an opening deposit, "Interest Checking" and numbered accounts name a fee.
+  ACCOUNT_NAME_STRATEGY: "Its fingerprint carries the version, so each publish step's batch (40 institutions) re-reads every institution with a generic monthly name not yet read at v3; nothing to replay.",
   STATE_LISTS_PARSER_VERSION: "New sources (depositories, non-bank lenders, Urban debt held until its license is confirmed); no older rows to replay.",
 };
 

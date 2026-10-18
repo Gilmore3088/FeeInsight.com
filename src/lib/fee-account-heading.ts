@@ -13,6 +13,8 @@ const ACCOUNT_WORDS = /\b(checking|savings|money market|share draft|share accoun
 /** A line naming a monthly fee belongs to the block above: the heading search stops there. */
 const MONTHLY_FEE_LINE = /\b(monthly|maintenance|service)\s+(fee|charge)/i;
 const PRICE = /\$\s?\.?\d/;
+/** "Interest" naming the account itself: "Interest Checking", "Super NOW Interest Checking", "Interest Bearing Account". */
+const INTEREST_ACCOUNT = /\binterest(?=\s+(?:bearing\s+)?(?:checking|savings|money market|share draft|account)\b)/gi;
 /** Lines a heading search looks up before giving up. */
 const HEADING_LOOKBACK = 8;
 const HEADING_MAX_CHARS = 60;
@@ -33,14 +35,17 @@ export function accountHeading(line: string): string | null {
     .replace(/[:\-–]\s*$/, "")
     .trim();
   if (!ACCOUNT_WORDS.test(text) || /\d{2,}/.test(text) || /[.!?]$/.test(text)) return null;
-  if (/\b(fee|charge|minimum|balance|deposit|interest|open|opening|require|waive|statement)\b/i.test(text)) return null;
+  // "Interest Checking" and "Interest Bearing Account" are accounts; "interest" anywhere else is
+  // a sentence about the rate.
+  if (/\b(fee|charge|minimum|balance|deposit|interest|open|opening|require|waive|statement)\b/i.test(text.replace(INTEREST_ACCOUNT, ""))) return null;
   // Page furniture and group headings name no one account: "Compare Personal Checking", "Learn
   // more about Advantage Checking", "Account Details", "Money Market Accounts".
   if (/\b(compare|comparison|learn|more|overview|details?|info|explore|gift|access|banking|app|mobile|see|section|qualification|benefits?|features?|requirements?|accounts|options|types|our|your|you|find|right|why|how|what|disclosures?|information|rates?|truth|greater|less|than|over|under|is|are|available|from|and|choose|type|services?|charges?|kit|switch|qualified|holders?|with|essentials|for|the|all|higher|earn(ings)?|security|solution|makes|life|simple|that)\b|[&:/,]/i.test(text)) return null;
   // A heading starts with a capital or a digit-free brand ("legacy Checking" is a sentence's tail).
   if (/^[a-z]/.test(text)) return null;
   // The heading must name more than the kind of account ("Account" alone says nothing new).
-  if (!text.replace(new RegExp(ACCOUNT_WORDS.source, "gi"), "").replace(/[^A-Za-z]/g, "")) return null;
+  // A number ("Club 2 Checking") names one, and so does "Money Market Checking" beside plain checking.
+  if (!text.replace(new RegExp(ACCOUNT_WORDS.source, "gi"), "").replace(/[^A-Za-z0-9]/g, "") && !/^money market (checking|savings)$/i.test(text)) return null;
   if (/[…]|\.{3}/.test(text)) return null;
   return text.split(/\s+/).length <= 7 ? titleCase(text) : null;
 }
