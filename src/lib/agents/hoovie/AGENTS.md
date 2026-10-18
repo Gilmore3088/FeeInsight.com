@@ -13,7 +13,10 @@ contract in `sources.ts` (type in `contract.ts`) that records:
 - publisher and licence;
 - connection kind, plus the env key when one is needed, and any optional keys;
 - cadence and grain;
-- link keys and the tables it writes.
+- link keys and the tables it writes;
+- `missingSource`, when the publisher's host refuses production: the host, what it answered,
+  the official fallback (or none) and the issue. The loader then records an empty partition with
+  `detail.missing_source` instead of failing. Today: `nic-structure` and `fr-y9c` (#1806).
 
 `sources.test.ts` fails when a source has no contract, names a table no migration creates, names
 a table that no INSERT, UPDATE or DELETE in its loader writes, or names a key its loader never
