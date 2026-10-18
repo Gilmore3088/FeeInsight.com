@@ -5,7 +5,7 @@
 - The alert is now 13,000 MB (the 300 MB a day growth alert stays).
 - Every table a Hoovie source writes has a size budget (`src/lib/agents/hoovie/size-budgets.ts`): 7,000 MB for call report items, 2,000 MB for `area_statistics`, 3,000 MB for financial records and 1,000 MB for the rest.
 - Atlas's daily storage step measures each budgeted table and records which are over budget.
-- The registry scheduler schedules nothing for a source that writes an over-budget table until the table is measured back under budget or a PR raises the budget. With no measurement, it holds nothing.
+- A table over the 1,000 MB default is a warning only. The registry scheduler schedules nothing for a source that writes a table over its own budget until the table is measured back under budget or a PR raises the budget. With no measurement, it holds nothing.
 - The morning brief email carries the storage warnings, only on a day with one.
 - No data is deleted.
 **Lesson:** a loader that can back-fill years of history needs a size limit before its first run, and a warning has to reach someone to count. Most budgets are not based on a measured size yet; tighten them once Atlas has recorded a week of sizes.

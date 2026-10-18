@@ -65,7 +65,7 @@ table a Hoovie source writes against its size budget (`src/lib/agents/hoovie/siz
 records the sizes (`budget_tables`), the tables over budget and the registry sources the
 scheduler holds for them, and warns for each table over budget. The registry scheduler reads the
 newest recorded sizes (`readLatestTableSizes`) and schedules no partition for a source that writes
-an over-budget table; with no measurement it holds nothing. Nothing is deleted from those tables.
+a table over its own budget (a table over the unmeasured default is warned about, not held); with no measurement it holds nothing. Nothing is deleted from those tables.
 The morning brief (`daily-brief.ts`) emails James the step's warnings, only on a day with one. Supabase grew the disk from 8 to 12 GB on Oct 17, 2026; that day 2.5 of
 the 6.3 GB was log history nothing trimmed. Three trims count what they would delete every day and
 delete (at most 20,000 rows each a run) only while their `RETENTION_LIVE` switch is true; each

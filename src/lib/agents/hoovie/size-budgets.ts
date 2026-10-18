@@ -8,8 +8,9 @@ import { HOOVIE_SOURCES } from "./sources";
  * extras, 1.5 million FFIEC call detail) and `area_statistics` about 1 GB.
  *
  * Atlas's daily storage step (`atlas-storage-retention`) measures every table here. While a
- * table's latest measurement is above its budget, the registry scheduler starts no partition for
- * any source whose contract writes that table. Nothing is deleted: the hold stops new growth until
+ * table's latest measurement is above its own budget (`TABLE_BUDGET_MB`), the registry scheduler
+ * starts no partition for any source whose contract writes that table; a table over the default
+ * is flagged only. Nothing is deleted: the hold stops new growth until
  * the table is back under budget or a PR raises the budget. Budgets are per table, not per source,
  * because a shared table (`area_statistics` has 29 writers) has one size.
  */
@@ -60,8 +61,10 @@ export function overBudgetTables(
 }
 
 /**
- * Pure: each source held because a table it writes is over budget, with those tables. Null
- * sizes (no measurement yet) hold nothing.
+ * Pure: each source held because a table it writes is over its own budget, with those tables. Null
+ * sizes (no measurement yet) hold nothing. Only a table listed in `TABLE_BUDGET_MB` holds sources: a
+ * table over the unmeasured default is a warning (in the storage step and the morning brief) until a
+ * PR gives it a budget from a real measurement, so a guessed number never stops a roster sync.
  */
 export function sourcesHeldForSize(
   sizesMb: Readonly<Record<string, number>> | null,
@@ -69,7 +72,7 @@ export function sourcesHeldForSize(
 ): Map<string, string[]> {
   const held = new Map<string, string[]>();
   if (!sizesMb) return held;
-  const over = new Set(overBudgetTables(sizesMb, budgets).map((entry) => entry.table));
+  const over = new Set(overBudgetTables(sizesMb, budgets).map((entry) => entry.table).filter((table) => table in TABLE_BUDGET_MB));
   if (over.size === 0) return held;
   for (const contract of HOOVIE_SOURCES) {
     const tables = contract.tables.filter((table) => over.has(table));

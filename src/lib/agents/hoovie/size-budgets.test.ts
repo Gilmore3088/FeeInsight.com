@@ -47,6 +47,11 @@ describe("Hoovie table size budgets", () => {
     expect(sourcesHeldForSize({}).size).toBe(0);
   });
 
+  it("only warns, never holds, for a table over the unmeasured default", () => {
+    expect(overBudgetTables({ demographics: 1_500 }).map((t) => t.table)).toEqual(["demographics"]);
+    expect(sourcesHeldForSize({ demographics: 1_500 }).size).toBe(0);
+  });
+
   it("holds every writer of a shared table", () => {
     const writers = HOOVIE_SOURCES.filter((contract) => contract.tables.includes("area_statistics")).map((c) => c.source);
     const held = sourcesHeldForSize({ area_statistics: 2_500 });
