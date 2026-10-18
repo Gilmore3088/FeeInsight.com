@@ -59,7 +59,7 @@ export function TryAPricePanel({ scenario, typed }: { scenario: AnalyzeScenario;
         </div>
       </div>
       <p className="mt-auto max-w-none border-t border-border/80 bg-white/50 px-4 py-2.5 text-xs leading-relaxed text-ink-muted sm:px-5">
-        A scenario, not advice. In Pro, ask about any fee against your own peers.
+        A scenario, not advice. In Hamilton, ask about any fee against your own peers.
       </p>
     </>
   );

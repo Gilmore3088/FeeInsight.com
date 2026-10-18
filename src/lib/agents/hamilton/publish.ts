@@ -27,17 +27,22 @@ import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, typ
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 import { confirmFeeChange } from "@/lib/report-assemblers/monthly-pulse";
 import { mayBeSameSchedule } from "@/lib/agents/hamilton/schedule-edition";
-import { isArticlePage } from "@/lib/agents/hamilton/article-page";
+import { ARTICLE_PAGE_REASON, isArticlePage } from "@/lib/agents/hamilton/article-page";
 import { FREE_READ_PREFIX, isProductPage, productPageTakedownEnabled } from "@/lib/agents/hamilton/product-page";
 import { DARWIN_SCHEDULE_REFILED_FLAG } from "@/lib/agents/darwin/schedule-refile";
 import { priceInName, RULE_WHY, ruleFor } from "@/lib/agents/hamilton/eval-verdicts";
 import { feeKey, reproducibleFees, RULES_RECHECK_REASON } from "@/lib/agents/hamilton/rules-recheck";
 import { closedInstitutionSql } from "@/lib/agents/hamilton/closed-institution";
+import { nonDepositTakedownReason } from "@/lib/agents/darwin/non-deposit-document-check";
 import {
+  collapseKeepOrder,
+  collapseLineKey,
   exactDuplicateDecision,
   PUBLISH_DUPLICATE_REFUSE_REASON_PREFIX,
   PUBLISH_REFUSE_DUPLICATES_LIVE,
   selectExactCopies,
+  type CollapseLine,
+  type ExactCopyRow,
   type ExactDuplicateDecision,
   type PublishDuplicateCheck,
 } from "@/lib/agents/hamilton/exact-duplicate";
@@ -57,6 +62,12 @@ export const HAMILTON_PUBLISH_STRATEGY = { strategy: "publish.rules", version: 3
 
 export const HAMILTON_PUBLISH_DEFAULT_LIMIT = 100;
 export const HAMILTON_PUBLISH_MAX_LIMIT = 500;
+/**
+ * A publish step's row loop stops at its deadline (`RunHamiltonPublishOptions.deadlineAt`) once it
+ * has decided at least this many rows, so a slow step still makes progress. Rows it did not reach
+ * get no attempt, stay selectable and are decided by the next publish step.
+ */
+export const PUBLISH_MIN_ROWS_PER_STEP = 50;
 export const HAMILTON_PUBLISH_DEFAULT_MIN_CONFIDENCE = 0.8;
 /**
  * An institution enters the catalog only once it has this many distinct fees (canonical
@@ -73,6 +84,9 @@ export const HAMILTON_PUBLISH_MIN_INSTITUTION_FEES = 3;
  */
 export const CATALOG_DEPTH_LIVE_SQL = (alias: string) =>
   `${alias}.rolled_back_at IS NULL AND ${alias}.quarantined_at IS NULL`;
+
+/** Skip reason of a row Darwin's non-deposit re-check would take down (`nonDepositTakedownReason`). */
+export const NON_DEPOSIT_PUBLISH_REASON_PREFIX = "Refused at publish, Darwin's re-check would take it down: ";
 
 const VALID_CANONICAL_KEYS = new Set(Object.values(CANONICAL_KEY_MAP));
 const BLOCKING_FLAGS = new Set([
@@ -169,6 +183,13 @@ export interface RunHamiltonPublishOptions {
   refuseDuplicatesLive?: boolean;
   /** Refuse rows a sweep would take down (`publish-sweep-rules.ts`); defaults to `PUBLISH_REFUSE_SWEEP_RULES_LIVE`. */
   refuseSweepRulesLive?: boolean;
+  /**
+   * Epoch ms after which the row loop stops (after `PUBLISH_MIN_ROWS_PER_STEP` rows), so the step
+   * ends inside the tick (2026-10-17 finding).
+   */
+  deadlineAt?: number;
+  /** Epoch ms after which the cross-state top-up is not read; defaults to `deadlineAt`. */
+  topUpDeadlineAt?: number;
 }
 
 export interface HeldThinInstitution {
@@ -203,6 +224,8 @@ export interface RunHamiltonPublishResult {
   duplicateCheck: PublishDuplicateCheck;
   /** #1069 step 2: rows a sweep (another bank's or an unconfirmed host's document, a business schedule) would take down. */
   sweepCheck: PublishSweepCheck;
+  /** Rows the loop left for the next step because it reached `deadlineAt`, and whether the top-up was skipped. */
+  timeBox: { stopped: boolean; rowsLeft: number; topUpSkipped: boolean };
 }
 
 function boundedLimit(value: unknown): number {
@@ -273,8 +296,20 @@ export function publishSkipReason(row: VerifiedFeeRow, minConfidence: number, pr
   const sourceReason = sourceLinkSkipReason(row);
   if (sourceReason) return sourceReason;
   if (!row.verified_by_agent_event_id?.trim()) return "Missing Darwin verification event";
-  // A blog post or story quotes national averages, not this bank's price (article-page.ts).
-  if (isArticlePage(row.source_url)) return "Read from an article page, not a fee schedule";
+  // A blog post, story, learning or advice page quotes national averages, not this bank's price
+  // (article-page.ts). The read's own link or its document's: TD's /learning/ article reached
+  // publish through its document's link (#1774).
+  if (isArticlePage(row.source_url) || isArticlePage(row.document_url)) return ARTICLE_PAGE_SKIP_REASON;
+  // A lending fee on a loan, rate, card or brokerage page: Darwin's live re-check would take it
+  // down (`non-deposit-document-check.ts`), so it is refused before it is live (takedowns at the
+  // source, 2026-10-17). Same rule, reason and switches.
+  const nonDeposit = nonDepositTakedownReason({
+    documentUrl: row.document_url,
+    sourceDocumentId: row.source_document_id,
+    canonicalFeeKey: row.canonical_fee_key,
+    feeName: publishedFeeName(row.fee_name, row.canonical_fee_key),
+  });
+  if (nonDeposit) return `${NON_DEPOSIT_PUBLISH_REASON_PREFIX}${nonDeposit}`;
   // A $0 benefit bullet on a product page, once James turns the check on (product-page.ts).
   if (row.free_read && normalizedAmount(row.amount) === 0 && isProductPage(row.document_url) && productPageOn) {
     return "Read from a product page's benefits, not a fee schedule";
@@ -412,6 +447,7 @@ function undecidedAtThisVersionSql(params: Array<number | string | number[]>): s
             AND NOT (pa.outcome = 'unchanged' AND ${THRESHOLD_RESELECT_SQL})
             AND NOT (pa.outcome = 'unchanged' AND ${OLDER_DOCUMENT_RESELECT_SQL})
             AND NOT (pa.outcome = 'unchanged' AND ${QUALIFIER_RESELECT_SQL})
+            AND NOT (pa.outcome = 'unchanged' AND ${ARTICLE_PAGE_RESELECT_SQL})
        )`;
 }
 
@@ -427,42 +463,58 @@ async function selectVerifiedFees(
   const params: Array<number | string> = [limit];
   // An institution that no longer operates publishes nothing (#1200, `closed-institution.ts`).
   const filters: string[] = [`AND NOT ${closedInstitutionSql("inst")}`];
-  if (minInstitutionFees > 1) {
-    // Rough cut in SQL so thin institutions' rows do not fill every batch and starve
-    // the rest of the queue; the exact count (with every publish rule) runs after.
-    const confidenceParam = `$${params.push(minConfidence)}`;
-    const minFeesParam = `$${params.push(minInstitutionFees)}`;
-    filters.push(`AND (
-           SELECT COUNT(DISTINCT depth.canonical_fee_key)
-             FROM (
-               SELECT fp.canonical_fee_key
-                 FROM published_fee_records fp
-                WHERE fp.institution_id = fv.institution_id
-                  AND fp.rolled_back_at IS NULL
-                  AND fp.quarantined_at IS NULL
-               UNION
-               SELECT pv.canonical_fee_key
-                 FROM verified_fee_observations pv
-                WHERE pv.institution_id = fv.institution_id
-                  AND pv.review_status IN ('verified', 'approved')
-                  AND pv.outlier_flags ? 'agentic_darwin_verified'
-                  AND COALESCE(pv.extraction_confidence, 0) >= ${confidenceParam}
-             ) depth
-         ) >= ${minFeesParam}`);
-  }
+  // The depth count reads only the institutions this call can select.
+  const depthScope: Array<(alias: string) => string> = [];
   if (institutionId) {
     params.push(institutionId);
     filters.push(`AND fv.institution_id = $${params.length}`);
+    const idParam = `$${params.length}`;
+    depthScope.push((alias) => `AND ${alias}.institution_id = ${idParam}`);
   }
   const normalizedState = normalizeStateCode(stateCode);
   if (normalizedState) {
     params.push(normalizedState);
     filters.push(`AND upper(btrim(inst.state_code)) = $${params.length}`);
+    const stateParam = `$${params.length}`;
+    depthScope.push(
+      (alias) =>
+        `AND ${alias}.institution_id IN (SELECT scope.id FROM institution_sources scope WHERE upper(btrim(scope.state_code)) = ${stateParam})`,
+    );
+  }
+  // Institutions with at least the minimum of distinct fees, live or verified, counted once each.
+  let deepCte = "";
+  if (minInstitutionFees > 1) {
+    // Rough cut in SQL so thin institutions' rows do not fill every batch and starve
+    // the rest of the queue; the exact count (with every publish rule) runs after.
+    // One grouped count per institution, not a count per verified row: correlated, it ran
+    // 164k times and took 32 s of the national fill (findings/2026-10-17-lane-publish-and-discover-reads.md).
+    const confidenceParam = `$${params.push(minConfidence)}`;
+    const minFeesParam = `$${params.push(minInstitutionFees)}`;
+    deepCte = `deep AS MATERIALIZED (
+        SELECT depth.institution_id
+          FROM (
+            SELECT fp.institution_id, fp.canonical_fee_key
+              FROM published_fee_records fp
+             WHERE fp.rolled_back_at IS NULL
+               AND fp.quarantined_at IS NULL
+               ${depthScope.map((scope) => scope("fp")).join(" ")}
+            UNION
+            SELECT pv.institution_id, pv.canonical_fee_key
+              FROM verified_fee_observations pv
+             WHERE pv.review_status IN ('verified', 'approved')
+               AND pv.outlier_flags ? 'agentic_darwin_verified'
+               AND COALESCE(pv.extraction_confidence, 0) >= ${confidenceParam}
+               ${depthScope.map((scope) => scope("pv")).join(" ")}
+          ) depth
+         GROUP BY depth.institution_id
+        HAVING COUNT(DISTINCT depth.canonical_fee_key) >= ${minFeesParam}
+      ),`;
+    filters.push(`AND fv.institution_id IN (SELECT deep.institution_id FROM deep)`);
   }
   if (learning) filters.push(undecidedAtThisVersionSql(params));
   return db.unsafe<VerifiedFeeRow[]>(
     `
-      WITH eligible AS (
+      WITH ${deepCte} eligible AS (
       SELECT fv.fee_verified_id,
              fv.fee_raw_id,
              fv.institution_id,
@@ -839,6 +891,11 @@ export function nameBeforeLeaders(name: string): string {
  */
 const ADDON_PRICE_NAME = /(?:\bplus|\band|\+)\s*[(\s]*$/i;
 export function publishNameHold(name: string, canonicalKey: string, amount: number | null): { code: string; reason: string } | null {
+  // No stored line here, on purpose: Darwin's verify already ran `ruleFor` with the traced line
+  // (`postSourceCheck`) on every row it verified, and the live eval-verdict pass reads the line
+  // on every live fee its prefilter selects, so a row verified under an older rule version comes
+  // down after its second look. Passing the line here would also switch on
+  // `two_fees_one_line` at publish, a separate change that needs its own dry run.
   const rule = ruleFor(canonicalKey, name, amount);
   // The price-in-name rule keeps its own hold code (PR 797); the eval check is its live-row twin.
   if (rule === "price_in_name") return { code: rule, reason: `Price in name ($${priceInName(name)?.toFixed(2)}) is not the amount ($${amount?.toFixed(2)})` };
@@ -1036,6 +1093,22 @@ const THRESHOLD_RESELECT_SQL = `(COALESCE((pa.detail->>'same_line_check')::int, 
                      AND th_prev.rolled_back_at IS NULL
                      AND th_prev.fee_name ~* ${BALANCE_THRESHOLD_SQL}
                 ))`;
+
+/** Skip reason of a row read from an article, learning or advice page (`isArticlePage`). */
+export const ARTICLE_PAGE_SKIP_REASON = "Read from an article page, not a fee schedule";
+
+/**
+ * Re-sourcing (#1774): a row skipped as identical to a live fee that the article-page check later
+ * took down (`article_page: #<doc>`) is decided again, so the bank's own copy of the same fee goes
+ * live in its place; one from another article is refused (`ARTICLE_PAGE_SKIP_REASON`). Prod,
+ * Oct 17: TD's two "$35 overdraft" rows from its overdraft-services page (172361, 171709) and
+ * SchoolsFirst's $2 ATM row from its fee schedule PDF (93092) sat behind the article rows.
+ */
+export const ARTICLE_PAGE_RESELECT_SQL = `EXISTS (
+                  SELECT 1 FROM published_fee_records art_prev
+                   WHERE art_prev.fee_published_id = NULLIF(pa.detail->>'previous_fee_published_id', '')::bigint
+                     AND art_prev.rolled_back_reason LIKE '${ARTICLE_PAGE_REASON}:%'
+                )`;
 
 /** A balance-named row skipped as an older document before check 3 is decided again (`newerCopyPrintsLine`). */
 const OLDER_DOCUMENT_RESELECT_SQL = `(COALESCE((pa.detail->>'same_line_check')::int, 0) < 3
@@ -1940,7 +2013,11 @@ export async function runHamiltonPublish(
   // for its own state's lane to come round (the 100 re-filed returned-check fees sat across 37
   // states while lanes published 0-44 rows each). A lane whose own queue is short now fills the
   // rest with the oldest eligible rows from any state, as the release review does.
-  if (options.stateCode && !options.institutionId && selected.length < limit) {
+  // The top-up is a second catalog read; a step already past `topUpDeadlineAt` leaves it to the
+  // next step. On Oct 17 the whole rows phase, top-up included, took under 8 s (AK, 242 rows).
+  const topUpDeadlineAt = options.topUpDeadlineAt ?? options.deadlineAt;
+  const topUpSkipped = topUpDeadlineAt != null && Date.now() > topUpDeadlineAt;
+  if (options.stateCode && !options.institutionId && selected.length < limit && !topUpSkipped) {
     const taken = new Set(selected.map((row) => Number(row.fee_verified_id)));
     const others = await selectVerifiedFees(db, limit - selected.length, learning, minConfidence, minInstitutionFees);
     selected.push(...others.filter((row) => !taken.has(Number(row.fee_verified_id))));
@@ -1977,8 +2054,31 @@ export async function runHamiltonPublish(
   // #1069 step 2: the sweeps' own rules, read once for the batch. Counted always; refused only
   // while `refuseSweepRulesLive` is on. A failed read refuses nothing.
   const sweepReads = await selectPublishSweepRefusals(db, rows.map((row) => Number(row.fee_verified_id)));
+  // #1069: of the rows on one exact-duplicate collapse line, the copy the collapse would keep is
+  // decided first, and a later twin is refused against it (`exactDuplicateDecision`), so a step
+  // publishes one copy of a fee instead of two the collapse then closes down to one.
+  const collapseLineOf = (row: (typeof rows)[number]): CollapseLine => {
+    const percent = isPercentFee(row);
+    return {
+      institutionId: Number(row.institution_id),
+      canonicalFeeKey: row.canonical_fee_key,
+      variantType: row.variant_type,
+      amount: percent ? null : normalizedAmount(row.amount),
+      ratePercent: percent ? ratePercentOf(row) : null,
+      feeName: publishedFeeName(row.fee_name, row.canonical_fee_key),
+    };
+  };
+  const stepCopies = new Map<string, ExactCopyRow[]>();
 
-  for (const row of rows) {
+  const ordered = collapseKeepOrder(rows, (row) => collapseLineKey(collapseLineOf(row)));
+  let reached = 0;
+  let rowsLeft = 0;
+  for (const row of ordered) {
+    if (options.deadlineAt != null && reached >= PUBLISH_MIN_ROWS_PER_STEP && Date.now() > options.deadlineAt) {
+      rowsLeft = ordered.length - reached;
+      break;
+    }
+    reached += 1;
     const base = {
       feeVerifiedId: Number(row.fee_verified_id),
       institutionId: Number(row.institution_id),
@@ -2052,20 +2152,22 @@ export async function runHamiltonPublish(
     // #1069: a row about to publish whose line is already live under the collapse's own test
     // (same category, variant, value and name; frequencies that agree) is closed by the exact
     // duplicate collapse later. Counted always; refused only while `refuseDuplicatesLive` is on.
+    // Copies published earlier in this step are marked, and a dry run, which inserts nothing,
+    // adds the ones it would have published.
     let exactDuplicate: ExactDuplicateDecision = { kind: "none" };
+    const line = collapseLineOf(row);
+    const lineKey = collapseLineKey(line);
     if (!skipReason && decision?.kind !== "identical" && decision?.kind !== "older_document") {
-      const percent = isPercentFee(row);
-      exactDuplicate = exactDuplicateDecision(
-        row,
-        await selectExactCopies(db, {
-          institutionId: Number(row.institution_id),
-          canonicalFeeKey: row.canonical_fee_key,
-          variantType: row.variant_type,
-          amount: percent ? null : normalizedAmount(row.amount),
-          ratePercent: percent ? ratePercentOf(row) : null,
-          feeName: publishedFeeName(row.fee_name, row.canonical_fee_key),
-        }),
+      const inStep = stepCopies.get(lineKey) ?? [];
+      const inStepIds = new Set(inStep.map((copy) => Number(copy.fee_published_id)));
+      const live = (await selectExactCopies(db, line)).map((copy) =>
+        inStepIds.has(Number(copy.fee_published_id)) ? { ...copy, in_step: true } : copy,
       );
+      const liveIds = new Set(live.map((copy) => Number(copy.fee_published_id)));
+      exactDuplicate = exactDuplicateDecision(row, [
+        ...live,
+        ...inStep.filter((copy) => !liveIds.has(Number(copy.fee_published_id))),
+      ]);
     }
     const sweepRule =
       !skipReason && decision?.kind !== "identical" && decision?.kind !== "older_document"
@@ -2158,6 +2260,18 @@ export async function runHamiltonPublish(
     }
     if (exactDuplicate.kind !== "none") result.exactDuplicate = exactDuplicate;
     if (sweepRule) result.sweepRule = sweepRule;
+    if (result.status === "published") {
+      stepCopies.set(lineKey, [
+        ...(stepCopies.get(lineKey) ?? []),
+        {
+          fee_published_id: result.feePublishedId ?? 0,
+          frequency: row.frequency ?? null,
+          fee_audience: row.fee_audience ?? null,
+          published_at: null,
+          in_step: true,
+        },
+      ]);
+    }
     results.push(result);
 
     if (learning) {
@@ -2257,5 +2371,6 @@ export async function runHamiltonPublish(
     results,
     duplicateCheck,
     sweepCheck,
+    timeBox: { stopped: rowsLeft > 0, rowsLeft, topUpSkipped },
   };
 }

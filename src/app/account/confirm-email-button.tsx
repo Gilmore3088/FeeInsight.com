@@ -24,7 +24,7 @@ export function ConfirmEmailButton() {
         {pending ? "Sending…" : "Email me the link"}
       </button>
       {message && (
-        <span role={message.ok ? "status" : "alert"} className={`text-[13px] ${message.ok ? "text-emerald-700" : "text-red-700"}`}>
+        <span role={message.ok ? "status" : "alert"} className={`text-[13px] ${message.ok ? "text-below-market" : "text-brick"}`}>
           {message.text}
         </span>
       )}

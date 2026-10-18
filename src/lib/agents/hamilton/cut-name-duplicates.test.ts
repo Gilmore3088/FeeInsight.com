@@ -118,7 +118,7 @@ describe("#1196 cut-name duplicates", () => {
 });
 
 describe("#1196 hand renames", () => {
-  it("renames each of the 13 rows in place, keeping its category and price", () => {
+  it("renames 12 of the 13 rows in place, keeping its category and price", () => {
     const moves = planHandRefiles(RENAME_ROWS);
     expect(moves.map((move) => [move.refile.feePublishedId, move.refile.from, move.refile.to, move.refile.name])).toEqual([
       [99578, "paper_statement", "paper_statement", "Mailed statement service charge"],
@@ -133,7 +133,8 @@ describe("#1196 hand renames", () => {
       [57548, "money_order", "money_order", "Money Order Fee for First Step Accounts"],
       [108912, "dormant_account", "dormant_account", "Dormant Account (after first 12 months)"],
       [131129, "atm_non_network", "atm_non_network", "ATM Transactions at DFCU ATM (Local ATM)"],
-      [70319, "dormant_account", "dormant_account", "VISA Gift Card Inactivity Fee"],
+      // 70319 ("VISA Gift Card Inactivity Fee") is not renamed: guard v70 (#1765) refuses a gift
+      // card's inactivity as a dormant account fee, and the row has been down since Oct 16 (#1196).
     ]);
     // Done once: a row already carrying its new name is not moved again, and a row whose name
     // changed since (a later read or retidy) is left alone.

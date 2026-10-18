@@ -3,7 +3,7 @@
  * Single source of truth for fee families, display names, and colors in the UI.
  */
 
-import { RESEARCH_SPLIT_LIVE, researchSplitTarget } from "@/lib/fee-fold";
+import { RESEARCH_SPLIT_KEYS, RESEARCH_SPLIT_LIVE, researchSplitTarget } from "@/lib/fee-fold";
 
 /**
  * The top 50 fee types (James, Oct 8 2026), plus excess withdrawals and returned mail once they
@@ -325,10 +325,10 @@ export const CANONICAL_KEY_MAP: Record<string, string> = {
   escheatment: "dormant_account",
   escheat_processing_fee: "dormant_account",
   abandoned_property_fee: "dormant_account",
-  // --- Skip-a-pay / late payment variants ---
-  skip_a_pay: "late_payment",
-  skipapay: "late_payment",
-  skipapayment: "late_payment",
+  // --- Skip-a-pay: a lending fee, not a late payment (James, Oct 17; guard v70) ---
+  skip_a_pay: "other_lending_fee",
+  skipapay: "other_lending_fee",
+  skipapayment: "other_lending_fee",
   reinstatement: "late_payment",
   // --- Fax / research / admin variants ---
   // A fax or a document copy is document reproduction (Oct 9: one home for fax and copies).
@@ -410,8 +410,8 @@ export const CANONICAL_KEY_MAP: Record<string, string> = {
   fax_services: "document_reproduction",
   christmas_club_early_withdrawal: "early_closure",
   christmas_club_withdrawal_fee: "early_closure",
-  skipapayment_fee: "late_payment",
-  skipapay_fee: "late_payment",
+  skipapayment_fee: "other_lending_fee",
+  skipapay_fee: "other_lending_fee",
   zipper_bags: "night_deposit",
   membership_share: "monthly_maintenance",
   western_union: "wire_domestic_outgoing",
@@ -613,4 +613,40 @@ export function getSpotlightCategories(): string[] {
 
 /** Total number of categories in the taxonomy. */
 export const TAXONOMY_COUNT = Object.values(FEE_FAMILIES).flat().length;
+
+/**
+ * James, Oct 17 2026: the taxonomy may hold 52 types, and the public site publishes only the top
+ * 50. Public pages and API listings that list fee types show at most this many.
+ */
+export const PUBLIC_FEE_TYPE_LIMIT = 50;
+
+const TIER_RANK: Record<FeeTier, number> = { spotlight: 0, core: 1, extended: 2, comprehensive: 3 };
+
+/**
+ * The taxonomy types public pages and API listings may list: the top `PUBLIC_FEE_TYPE_LIMIT` by
+ * institution count, the national index's own order (`getNationalIndex` sorts by
+ * `institution_count`). A type with no count ranks at 0; ties put the types added after the top 50
+ * last (excess withdrawals and returned mail, `RESEARCH_SPLIT_KEYS`), then go by tier and taxonomy
+ * order, so with no counts at all (a failed read) the public list is the original 50.
+ * Categories outside the taxonomy are not ranked and not returned. Pure.
+ */
+export function publicFeeTypes(
+  entries: Iterable<{ fee_category: string; institution_count: number | null | undefined }>,
+  limit: number = PUBLIC_FEE_TYPE_LIMIT,
+): Set<string> {
+  const counts = new Map<string, number>();
+  for (const entry of entries) counts.set(entry.fee_category, Number(entry.institution_count ?? 0) || 0);
+  const order = Object.values(FEE_FAMILIES).flat();
+  const ranked = order
+    .map((key, index) => ({ key, index, count: counts.get(key) ?? 0, added: RESEARCH_SPLIT_KEYS.has(key) ? 1 : 0, tier: TIER_RANK[getFeeTier(key)] }))
+    .sort((a, b) => b.count - a.count || a.added - b.added || a.tier - b.tier || a.index - b.index);
+  return new Set(ranked.slice(0, limit).map((entry) => entry.key));
+}
+
+/** Drops the taxonomy types outside the public top 50 from a list of category rows; other rows stay. Pure. */
+export function onlyPublicFeeTypes<T extends { fee_category: string; institution_count: number | null | undefined }>(rows: T[]): T[] {
+  const keep = publicFeeTypes(rows);
+  const taxonomy = new Set(Object.values(FEE_FAMILIES).flat());
+  return rows.filter((row) => !taxonomy.has(row.fee_category) || keep.has(row.fee_category));
+}
 export const FEATURED_COUNT = getFeaturedCategories().length;

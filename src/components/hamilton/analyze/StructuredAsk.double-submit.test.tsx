@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AskResponse } from "@/lib/hamilton/workspace/types";
 import { StructuredAsk } from "./StructuredAsk";
@@ -46,7 +46,11 @@ describe("StructuredAsk clarification double-submit guard (#979 H04-T07)", () =>
     const view = render(<StructuredAsk {...props} />);
     await screen.findByText("What price are you testing?");
     expect(screen.queryByRole("textbox")).toBeNull();
-    expect(onClarification).toHaveBeenLastCalledWith(expect.objectContaining({ fieldKey: "scenario.tested_price" }), null);
+    // The question text can appear before React runs the effect that hands it to the composer,
+    // so wait for that hand-off rather than reading it the moment the text shows.
+    await waitFor(() =>
+      expect(onClarification).toHaveBeenLastCalledWith(expect.objectContaining({ fieldKey: "scenario.tested_price" }), null),
+    );
     act(() => {
       view.rerender(<StructuredAsk {...props} clarificationReply={{ value: "25", seq: 1 }} />);
       view.rerender(<StructuredAsk {...props} clarificationReply={{ value: "25", seq: 2 }} />);

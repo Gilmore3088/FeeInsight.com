@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { feeLineIndex, hasBusinessFees, nameAudience, sectionHeadingAudience, suggestAudience } from "./audience-context";
+import { feeLineIndex, hasBusinessFees, nameAudience, scheduleSectionTitle, sectionHeadingAudience, suggestAudience } from "./audience-context";
 
 const suggest = (documentUrl: string | null, text: string, feeName: string, amount: number | null = 30) =>
   suggestAudience({ documentUrl, text, feeName, amount });
@@ -720,5 +720,70 @@ describe("Knox audience: fewer unknowns from neutral headings and prose (#1059 u
   it("still withholds a consumer heading in a mixed schedule (F2 not taken: #1059 holdout 4)", () => {
     // Industrial Bank's "PERSONAL CHECKING ACCOUNTS" sits right above the fee, but the Oct 14 rule holds.
     expect(suggest(null, industrial, "Monthly maintenance fee if minimum daily balance is not met", 8)).toBeNull();
+  });
+});
+
+describe("a schedule's own title decides the fees under it (#1687)", () => {
+  // Kaw Valley 53479: the title is set on two lines, and a night-drop row mentions business access.
+  const kawValley = [
+    "Kaw Valley Bank", "Consumer Deposit Account", "Fee Schedule", "Safe Deposit Boxes - Size | Annual Rate",
+    "2-1/2 x 5 | $18.00", "3 x 5 | $18.00", "Replacement Key | $70.00",
+    "Night Drop Key Deposit | Charge for night deposit key for after hours business access. | $5.00",
+    "Overdrafts | $25.00",
+  ].join("\n");
+  // F&M 143832: a personal schedule, then a business one, in one document.
+  const fm = [
+    "TABLE OF CONTENTS", "PERSONAL SCHEDULE OF FEES ........................................................ 4",
+    "BUSINESS & ACCOUNT ANALYSIS SCHEDULE OF FEES............................................. 5",
+    "ACCOUNTS........................................................................................ 7",
+    "Bankruptcy Trustee Account...................................................................... 7",
+    "Effective July 2026",
+    "PERSONAL SCHEDULE OF FEES", "SERVICES | FEE | CURRENCY (IN OR OUT) | FEE", "Cashier's Check | $10.00",
+    "Endorsement Stamp | Per Catalog Pricing | SAFE DEPOSIT BOX | FEE", "Escheatment Notice | $2.00 | Annual Rent – 2 x 5 | $25.00",
+    "Effective July 2026 | 4", "BUSINESS & ACCOUNT ANALYSIS", "ACH | FEE | BUSINESS ONLINE BANKING & BILL PAY | FEE",
+    "ACH Stop Payment Per Request | $30.00 | Custom File Creation Monthly | $50.00",
+    "Debit Item Business Analyzed Checking (Checks Paid) | $0.25 | Coin & Currency Change Order | $5.00",
+  ].join("\n");
+
+  it("reads a two-line title, and a personal schedule's title over its fees", () => {
+    expect(suggest("https://www.kawvalleybank.com/assets/files/1CYOAjQ6", kawValley, "3 x 5", 18)).toMatchObject({
+      audience: "consumer", source: "document_title", evidence: "Consumer Deposit Account Fee Schedule",
+    });
+    expect(suggest("https://www.kawvalleybank.com/assets/files/1CYOAjQ6", kawValley, "Overdrafts", 25)).toMatchObject({ audience: "consumer", source: "document_title" });
+    expect(suggest(null, fm, "Annual Rent – 2 x 5", 25)).toMatchObject({ audience: "consumer", source: "schedule_section_title", evidence: "PERSONAL SCHEDULE OF FEES" });
+  });
+
+  it("never reaches a title past a line that names another audience", () => {
+    expect(suggest(null, fm, "ACH Stop Payment Per Request", 30)).not.toMatchObject({ audience: "consumer" });
+    expect(suggest(null, fm, "Coin & Currency Change Order", 5)).not.toMatchObject({ audience: "consumer" });
+    expect(scheduleSectionTitle(["PERSONAL FEE SCHEDULE", "Personal | Business", "Stop Payment | $30.00"], 2)).toBeNull();
+  });
+
+  it("takes no title from a menu of two schedules, a title naming none, or a sentence", () => {
+    expect(scheduleSectionTitle(["Personal Fee Schedule", "Business Fee Schedule", "Stop Payment | $30.00"], 2)).toBeNull();
+    const neutralTitle = ["PERSONAL SCHEDULE OF FEES", "Stop Payment | $30.00", "FEE SCHEDULE", "Wire | $25.00"];
+    expect(scheduleSectionTitle(neutralTitle, 3)).toBeNull();
+    expect(scheduleSectionTitle(neutralTitle, 1)).toMatchObject({ audience: "consumer" });
+    expect(scheduleSectionTitle(["See the Personal Fee Schedule for details.", "Stop Payment | $30.00"], 1)).toBeNull();
+  });
+
+  it("takes only a whole audience's schedule: never a product's, a joined audience, a menu or a line cut mid-sentence (dry run, Oct 17)", () => {
+    for (const title of [
+      "Business Remote Deposit Capture Fee Schedule",
+      "General and Business Membership Fee Schedule",
+      "Dividend Rates · Loan Rates · Business Rates & Fees · Fee Schedule",
+      "of Fees and/or Business & Account Analysis Schedule of Fees.",
+    ]) {
+      expect(scheduleSectionTitle([title, "Safe Deposit Box 3 x 5 | $35.00"], 1)).toBeNull();
+    }
+    for (const [title, audience] of [
+      ["Commercial Account FEE SCHEDULE", "business"],
+      ["SCHEDULE OF FEES - BUSINESS", "business"],
+      ["First National Bank of Middle Tennessee Schedule of Fees for Businesses", "business"],
+      ["Northwest Personal Additional Account Fee Schedule", "consumer"],
+      ["PERSONAL ACCOUNTS SCHEDULE OF FEES & CHARGES", "consumer"],
+    ]) {
+      expect(scheduleSectionTitle([title, "Safe Deposit Box 3 x 5 | $35.00"], 1)).toMatchObject({ audience });
+    }
   });
 });

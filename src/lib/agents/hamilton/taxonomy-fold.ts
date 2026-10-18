@@ -695,6 +695,69 @@ export const HAND_REFILES: readonly HandRefile[] = [
   // Undo: re-file back under `from`; the run event and `pipeline_feedback` row keep both.
   { feePublishedId: 112882, from: "nsf", amount: 17, to: "stop_payment", name: "Stop Payment, if item would not cause NSF",
     why: "#1668, inst 7204, doc 35662: \"Stop Payment, if item would not cause NSF | $17.00 per item\"; a stop payment fee (the NSF line is \"NSF Draft, NSF ACH item or NSF Bill Pay item | $36.00 per item\", live as 112881)" },
+  // #1025 (read-only, Oct 17; James's Oct 16 rule for fewer than 20 wrong fees): Kitsap CU's
+  // incoming wire, filed as outgoing. The price and name are right; the page prints the outgoing
+  // wire as its own line, live as 15709 ($25), which stays. Undo: re-file back under `from`.
+  { feePublishedId: 63888, from: "wire_domestic_outgoing", amount: 15, to: "wire_domestic_incoming", name: "Wire Transfer Fee - Inbound Domestic",
+    why: "#1025, inst 8543, doc 15663: \"Wire Transfer Fee - Inbound Domestic | $15.00 per wire\" beside \"Wire Transfer Fee - Outgoing Domestic | $25.00 per wire\" (live as 15709)" },
+  // #1746 (read-only, Oct 17, after the knox.name_retidy v20 pass reached all 26 banks of #1689's
+  // footnote set): the price and the fee are right; the category or the name is not. Each runs once
+  // (`oldName`, the live name read on Oct 17). Undo: re-file back under `from` with the old name;
+  // the run event and `pipeline_feedback` row keep both.
+  { feePublishedId: 98236, from: "continuous_od", amount: 35, to: "overdraft", name: "OverDraft Fee (PAID ITEM)",
+    oldName: "OverDraft Fee (PAID ITEM) Standard/Extended OD Privilege Program",
+    why: "#1746, inst 7239, doc 3516: \"$35.00 each | 11OverDraft Fee (PAID ITEM) Standard/Extended OD Privilege Program\", footnote 11 \"OVERDRAFT FEE: ... IMPOSED FOR OVERDRAFTS CREATED BY CHECKS, IN-PERSON WITHDRAWALS ...\"; the per-item overdraft fee (the bank has no other live overdraft fee), not a continuous one" },
+  // Excess transfers live under account research while RESEARCH_SPLIT_LIVE is off; switching it on
+  // moves account research rows by name (`EXCESS_WITHDRAWAL` matches "Excess transfers"), so these two
+  // move to excess_withdrawal then with no further entry.
+  { feePublishedId: 140622, from: "bill_pay", amount: 1, to: "account_research", name: "Excess transfers",
+    oldName: "Transfers and payments made through online banking and bill pay count toward the limit of six per month. Excess transfe",
+    why: "#1746, inst 2044, doc 31609: \"Excess transfers are not permitted and will be assessed $1 each in excess of six.\"; an excess transfer fee, not bill pay" },
+  { feePublishedId: 140624, from: "bill_pay", amount: 10, to: "account_research", name: "Excess transfers",
+    oldName: "Transfers and payments made through online banking and bill pay count toward the limit of six per month. Excess transfe",
+    why: "#1746, inst 2044, doc 31611: \"Excess transfers will be assessed $10 each in excess of six.\"; an excess transfer fee, not bill pay" },
+  // Renamed in place: the name was the footnote's sentence; each new name traces on its own line.
+  { feePublishedId: 54140, from: "paper_statement", amount: 3, to: "paper_statement", name: "Paper statements",
+    oldName: "To receive paper statements, it",
+    why: "#1746, inst 2128, doc 16725: \"4To receive paper statements, it is $3 a month.\"" },
+  { feePublishedId: 73740, from: "atm_non_network", amount: 2, to: "atm_non_network", name: "ATM fee per withdrawal",
+    oldName: "If using any international, non-Allpoint or non-Alpine Bank ATM, a",
+    why: "#1746, inst 228, doc 20544: \"3If using any international, non-Allpoint or non-Alpine Bank ATM, a $2.00 ATM fee per withdrawal will apply\"" },
+  { feePublishedId: 96352, from: "monthly_maintenance", amount: 10, to: "monthly_maintenance", name: "myChance Checking (Draft) Account service charge",
+    oldName: "myChance Checking (Draft) Account will have a Monthly service charge",
+    why: "#1746, inst 4500, doc 22443: \"2A myChance Checking (Draft) Account will have a $10.00 per month service charge applied.\"" },
+  { feePublishedId: 87357, from: "monthly_maintenance", amount: 8, to: "monthly_maintenance", name: "Monthly fee if the minimum balance falls below $100",
+    oldName: "6A monthly fee will be assessed if the minimum balance falls below $2,500",
+    why: "#1746, inst 8159, doc 16559: \"6A $8 monthly fee will be assessed if the minimum balance falls below $100.\"; the live name carried footnote 5's \"$2,500\" (the $10 fee's)" },
+  { feePublishedId: 132373, from: "continuous_od", amount: 1, to: "continuous_od", name: "Overdraft fee per day",
+    oldName: "The categories of transactions for which an overdraft fee may be imposed are those by any of the following means: check",
+    why: "#1746, inst 2709, doc 28474: footnote 2 \"... After one day in overdraft, customer will be charged a $1.00 fee per day.\"" },
+  { feePublishedId: 66351, from: "bill_pay", amount: 5.95, to: "bill_pay", name: "Bill pay monthly fee",
+    oldName: "3If you opt-in to the bill pay feature, then bill pay must be utilized monthly to avoid",
+    why: "#1746, inst 2291, doc 25538: \"3If you opt-in to the bill pay feature, then bill pay must be utilized monthly to avoid $5.95 monthly fee.\"" },
+  // #1788 (guard v72, read-only Oct 17): the name says only "Domestic Wire Transfer Fees", so
+  // `INCOMING_WIRE` cannot reach it; the $10 is the incoming price (outgoing is $20, live as 66596).
+  { feePublishedId: 66594, from: "wire_domestic_outgoing", amount: 10, to: "wire_domestic_incoming", name: "Domestic Wire Transfer Fees: Incoming",
+    why: "#1788, inst 113 (ServisFirst), doc 19655: \"Domestic Wire Transfer Fees | Incoming - $10.00 Outgoing - $20.00\"" },
+  // #1829 (#1691 cleanup, read-only Oct 17): fax fees filed as account research; a fax is document
+  // reproduction (`fax_fee` in the fold map). Neither bank has a live fax fee under document reproduction.
+  { feePublishedId: 152977, from: "account_research", amount: 1, to: "document_reproduction", name: "Fax (Domestic & International)",
+    why: "#1829, inst 480 (Open Bank), doc 36784: \"Fax (Domestic & International)\" then \"$1\"" },
+  { feePublishedId: 152288, from: "account_research", amount: 2, to: "document_reproduction", name: "Faxes (Domestic only)",
+    why: "#1829, inst 1229 (PromiseOne Bank), doc 36945: \"Faxes (Domestic only) | $2.00\"" },  // #1828 (read-only, Oct 17): a two-column loan fee table read across its columns. The left column's
+  // CUDL late fee is 5% (live in the rate catalog as 83791); the $4.95 is the right column's
+  // Personal Credit Line returned payment. No returned payment fee is live at the bank (152591, the
+  // same $4.95 under "Reconveyance", came down in #1834), so the row is re-filed, not taken down.
+  // Returned loan payments are other lending (Knox v72, #1534).
+  { feePublishedId: 83794, from: "late_payment", amount: 4.95, to: "other_lending_fee", name: "Returned payment",
+    why: "#1828, inst 7859 (Oregon Community FCU), doc 13272: \"Credit Union Direct Lending (CUDL) late payment…… 5% | Returned payment…… | $4.95\" under \"Loan fees | Personal Credit Line fees\"" },  // #1828 (read-only, Oct 17): the same schedule's card column joined to the safe deposit box
+  // column's heading and first rent. The page prints "Expedited card delivery" with "Domestic ... $30"
+  // and "International (Int'l) ... $45" under it, so rush_card $30 is right and only the name is
+  // renamed in place (the $45 international price is not live). Runs once, only while the live name
+  // is still the joined one.
+  { feePublishedId: 83792, from: "rush_card", amount: 30, to: "rush_card", name: "Expedited card delivery (domestic)",
+    oldName: "Safe deposit box fees Expedited card delivery 2 X 5 annual rent (Downtown Branch only)",
+    why: "#1828, inst 7859 (Oregon Community FCU), doc 13272: \"Expedited card delivery | 2 X 5 annual rent (Downtown Branch only)…… $30\" then \"Domestic…… $30 | 3 X 5 annual rent…… $35\" and \"International (Int'l)…… $45\"" },
 ];
 
 interface HandRow {

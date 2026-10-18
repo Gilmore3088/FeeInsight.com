@@ -40,8 +40,17 @@ export function isErrorPageLink(url: string | null | undefined): boolean {
   }
 }
 
-/** Folders where banks post articles, blog posts and news, not their fee schedule. */
-const ARTICLE_PATH = /\/(blogs?|articles?|news|newsroom|insights?|press-releases?|stories|learning-center|education-center)\//i;
+/**
+ * Folders where banks post articles, blog posts, news, learning and advice pages, not their fee
+ * schedule. The one article rule: Magellan's link check, Hamilton's publish refusal and live
+ * re-check (`hamilton/article-page.ts`) and Knox's paid read all use it (Oct 17, #1774:
+ * "/learning/", "/advice/" and "/post/" pages were refused nowhere but here, or nowhere).
+ * "/learn/" and "/resources/" are left out: banks file real fee pages there ("/learn/fees",
+ * "/resources/fee-schedule").
+ */
+const ARTICLE_PATH = /\/(blogs?|articles?|posts?|news|newsroom|insights?|press-releases?|stories|story|learning|learning-center|education-center|advice)\//i;
+/** A dated blog post: "/2022/01/how-to-choose-between-a-time-deposit-or-money-market-account/". */
+const DATED_POST_PATH = /\/(19|20)\d{2}\/[01]?\d\/[^/.?#]+\/?$/i;
 /**
  * A path segment that names a fee document even inside such a folder
  * ("/articles/schedule-of-fees/", "/education-center/service-fees"), with at most one
@@ -51,7 +60,8 @@ const ARTICLE_PATH = /\/(blogs?|articles?|news|newsroom|insights?|press-releases
 const FEE_DOCUMENT_NAME =
   /((^|\/)([a-z0-9]+-)?(fee-?schedule|schedule-?of-?(fees|charges|service-charges)|service-?fees|fees-?and-?charges|disclosures?|truth-?in-?savings)([/.?#-]|$)|\.pdf($|\?))/i;
 /** The same tests for SQL, on the lowercased link. */
-export const ARTICLE_LINK_SQL = "/(blogs?|articles?|news|newsroom|insights?|press-releases?|stories|learning-center|education-center)/";
+export const ARTICLE_LINK_SQL = "/(blogs?|articles?|posts?|news|newsroom|insights?|press-releases?|stories|story|learning|learning-center|education-center|advice)/";
+export const DATED_POST_LINK_SQL = "/(19|20)[0-9]{2}/[01]?[0-9]/[^/.?#]+/?([?#].*)?$";
 export const FEE_DOCUMENT_NAME_SQL =
   "(/([a-z0-9]+-)?(fee-?schedule|schedule-?of-?(fees|charges|service-charges)|service-?fees|fees-?and-?charges|disclosures?|truth-?in-?savings)([/.?#-]|$)|\\.pdf($|\\?))";
 
@@ -107,17 +117,27 @@ export function isNonFeeDocumentLink(url: string | null | undefined): boolean {
  * about fees in general ("common checking account fees to avoid", Space Coast CU; a 2021
  * Chase press release), whose amounts are national figures or old news, never the bank's
  * own schedule. A fee document filed in such a folder ("/articles/schedule-of-fees/",
- * MTC Federal CU) is not one.
+ * MTC Federal CU) is not one. Nor is a PDF.
  */
 export function isArticleLink(url: string | null | undefined): boolean {
   if (!url) return false;
   try {
     const parsed = new URL(url);
     const path = decodeURIComponent(parsed.pathname + parsed.search);
-    return ARTICLE_PATH.test(path) && !FEE_DOCUMENT_NAME.test(path);
+    const dated = DATED_POST_PATH.test(decodeURIComponent(parsed.pathname));
+    return (ARTICLE_PATH.test(path) || dated) && !FEE_DOCUMENT_NAME.test(path);
   } catch {
     return false;
   }
+}
+
+/**
+ * `isArticleLink` for SQL built as text (`db.unsafe`), on a link column: its path and query,
+ * lowercased, host removed. Hamilton's live re-check and Knox's paid-read filter use it.
+ */
+export function articleLinkSql(column: string): string {
+  const path = `lower(regexp_replace(COALESCE(${column}, ''), '^[a-z]+://[^/]+', '', 'i'))`;
+  return `((${path} ~ '${ARTICLE_LINK_SQL}' OR ${path} ~ '${DATED_POST_LINK_SQL}') AND ${path} !~ '${FEE_DOCUMENT_NAME_SQL}')`;
 }
 
 /** A deposit product with its own disclosure: CDs, share certificates, time deposits. */

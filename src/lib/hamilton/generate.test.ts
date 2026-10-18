@@ -58,7 +58,6 @@ function makeThesisInput(scopeOverride: ThesisInput["scope"] = "quarterly"): The
         fed_funds_rate: 5.25,
         unemployment_rate: 3.9,
         cpi_yoy_pct: 3.1,
-        consumer_sentiment: 72.5,
         as_of: "2024-12-01",
       },
       beige_book_themes: ["Boston: moderate activity.", "New York: tightening."],

@@ -23,7 +23,7 @@ const DISPLAY = { fontFamily: "var(--fi-font-sans)" };
 export function OtherOptions() {
   const rows = [
     {
-      name: "A Pro demo",
+      name: "A Hamilton demo",
       note: "A walkthrough of Hamilton on your own market",
       link: (
         <TrackLink event="contact_sales" eventProps={{ placement: "pricing_demo" }} href={DEMO_REQUEST_NAV.href} className={LINK_CLASS}>
@@ -108,7 +108,7 @@ function faqItems(summary: PublicStatsSummary) {
       answer: `Yes, for annual plans. Email ${CONTACT_EMAIL} and we will send an invoice or work from your PO.`,
     },
     {
-      question: "How is the Pro price set?",
+      question: "How is the Hamilton price set?",
       answer: `By your institution's total assets in its latest call report. ${CONSULTANT_PRICE_NOTE} If we don't have your institution's total assets, email ${CONTACT_EMAIL} and we'll set your price. If the plan is used for a larger institution, we'll email you before changing the price.`,
     },
     {

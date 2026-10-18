@@ -42,7 +42,7 @@ describe("validateApiKey on subscriber keys", () => {
     seatStillCovered.mockResolvedValue(true);
     const result = await validateApiKey(request());
     expect(seatStillCovered).toHaveBeenCalledWith(12, 7);
-    expect(result).toMatchObject({ valid: true, organizationId: 9 });
+    expect(result).toMatchObject({ valid: true, organizationId: 9, keyId: 1 });
   });
 
   it("stops a removed seat's key", async () => {
@@ -50,6 +50,8 @@ describe("validateApiKey on subscriber keys", () => {
     seatStillCovered.mockResolvedValue(false);
     const result = await validateApiKey(request());
     expect(result.valid).toBe(false);
+    expect(result.keyId).toBeUndefined();
+    expect(result.code).toBe("seat_removed");
     expect(result.error).toMatch(/no longer has a seat/);
   });
 
@@ -57,7 +59,21 @@ describe("validateApiKey on subscriber keys", () => {
     queue({ ...KEY, slug: "pro-user-7", name: "Pro user 12" }, { subscription_status: "canceled", past_due_since: null });
     const result = await validateApiKey(request());
     expect(result.valid).toBe(false);
+    expect(result.code).toBe("subscription_inactive");
     expect(seatStillCovered).not.toHaveBeenCalled();
+  });
+
+  it("gives an unknown key and a revoked key their own codes, each saying the fix", async () => {
+    sqlMock.mockReset();
+    sqlMock.mockResolvedValueOnce([]);
+    const unknown = await validateApiKey(request());
+    expect(unknown).toMatchObject({ valid: false, code: "invalid_api_key" });
+    expect(unknown.error).toMatch(/^Invalid API key/);
+
+    queue({ ...KEY, revoked_at: "2026-10-01T00:00:00Z", slug: "pro-user-7", name: "Pro user 7" });
+    const revoked = await validateApiKey(request());
+    expect(revoked).toMatchObject({ valid: false, code: "key_revoked" });
+    expect(revoked.error).toMatch(/revoked\. Make a new key on your account page/);
   });
 
   it("leaves hand-made partner keys alone", async () => {

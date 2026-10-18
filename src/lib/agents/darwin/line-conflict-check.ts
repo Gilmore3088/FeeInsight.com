@@ -79,7 +79,7 @@ export const LINE_MODEL_MIN = 0.95;
 export const LINE_MODEL_OTHER_MAX = 0.05;
 /**
  * Lending categories whose borders the taxonomy has not settled: its aliases file a loan modification
- * and a loan extension under loan origination and a skip-a-pay under late payment, while the fold
+ * and a loan extension under loan origination (a skip-a-pay is other lending since guard v70), while the fold
  * files a mortgage modification under other lending fee. The model, trained on the live catalog,
  * leans to other lending fee for all of them ("Mortgage loan application fee", "Loan Processing
  * Fee"), so it never decides a line with any of them on it: "Faxed Documentation" (55406) was other

@@ -119,8 +119,15 @@ export interface FfiecBulkDownload {
   fileName: string | null;
 }
 
-/** Download one quarter's "Call Reports -- Single Period" tab-delimited bulk zip. */
-export async function fetchFfiecCallBulk(q: Quarter, options: RegistryFetchOptions = {}): Promise<FfiecBulkDownload> {
+/**
+ * Download one quarter's "Call Reports -- Single Period" tab-delimited bulk zip, keeping the
+ * schedule files whose names match `schedules` (Schedule RI alone by default).
+ */
+export async function fetchFfiecCallBulk(
+  q: Quarter,
+  options: RegistryFetchOptions = {},
+  schedules: RegExp = SCHEDULE_RI,
+): Promise<FfiecBulkDownload> {
   const cookies = new Map<string, string>();
   const first = await request(options, cookies);
   let state = readFormState(await first.text(), cookies);
@@ -148,13 +155,21 @@ export async function fetchFfiecCallBulk(q: Quarter, options: RegistryFetchOptio
   }
   const name = /filename="?([^";]+)"?/i.exec(disposition)?.[1] ?? null;
   if (!download.body) throw new RegistryHttpError("FFIEC sent an empty bulk download", FFIEC_BULK_URL, download.status);
-  return { files: await unzipScheduleRi(download.body), fileName: name };
+  return { files: await unzipSchedules(download.body, schedules), fileName: name };
 }
 
 /** Schedule RI files only ("Schedule RI 06302026.txt", or "Schedule RI(1 of 2) ..."), not RIA, RIB... */
 const SCHEDULE_RI = /Schedule RI\s*(\(\d of \d\))?\s*\d{8}\.txt$/i;
 
-function cells(line: string): string[] {
+/**
+ * Bulk-zip file names for the given schedule codes, e.g. ["RI", "RIBI", "RCN"]. Wide schedules
+ * come in parts, and the part marker follows the date ("Schedule RCO 03312026(1 of 2).txt").
+ */
+export function schedulePattern(codes: readonly string[]): RegExp {
+  return new RegExp(`Schedule (${codes.join("|")})\\s*(\\(\\d of \\d\\))?\\s*\\d{8}\\s*(\\(\\d of \\d\\))?\\.txt$`, "i");
+}
+
+export function cells(line: string): string[] {
   return line.split("\t").map((cell) => cell.trim().replace(/^"(.*)"$/, "$1").trim());
 }
 
@@ -181,11 +196,19 @@ const MAX_SCHEDULE_BYTES = 256 * 1024 * 1024;
  * prod with "Array buffer allocation failed" (Oct 2026).
  */
 export async function unzipScheduleRi(source: Uint8Array | ReadableStream<Uint8Array>): Promise<Record<string, Uint8Array>> {
+  return unzipSchedules(source, SCHEDULE_RI);
+}
+
+/** Same streaming read as unzipScheduleRi, for any set of schedule files. */
+export async function unzipSchedules(
+  source: Uint8Array | ReadableStream<Uint8Array>,
+  pattern: RegExp,
+): Promise<Record<string, Uint8Array>> {
   const files: Record<string, Uint8Array> = {};
   const pending: Array<Promise<void>> = [];
   let failure: Error | null = null;
   const unzip = new Unzip((file) => {
-    if (!SCHEDULE_RI.test(file.name)) return;
+    if (!pattern.test(file.name)) return;
     const parts: Uint8Array[] = [];
     let size = 0;
     pending.push(

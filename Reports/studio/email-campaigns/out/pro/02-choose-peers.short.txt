@@ -1,0 +1,17 @@
+Choose the peers you're measured against
+========================================
+
+Build a peer group from the institutions your customers compare you with, by charter, asset size, district or county. Use the national median for broader context.
+
+Build your peer group: https://feeinsight.com/pro/settings#peer-sets
+
+In Settings, open Peer groups.
+
+Not sure which peers? Building a Peer Set (https://feeinsight.com/guides/pro/building-a-peer-set) shows how to pick a set that holds up in a board meeting.
+
+James Gilmore, Fee Insight
+
+--
+3522 Southwest Barton Street, Seattle, United States of America
+You're getting this because your team subscribes to Hamilton.
+Unsubscribe: {$unsubscribe}

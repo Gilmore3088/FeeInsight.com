@@ -48,6 +48,7 @@ import {
 } from "./envelopes";
 import { darwinEnvelopeFor, loadLearnedEnvelopes, type LearnedEnvelope } from "./learned-envelopes";
 import {
+  DARWIN_PEER_GRADED_VERSIONS,
   DARWIN_PEER_STRATEGY,
   entersPeerCheck,
   DARWIN_SECOND_SOURCE_STRATEGY,
@@ -1052,6 +1053,10 @@ export function darwinStandingDecisionSql(currentCopy = true): string {
   //   so a fix to the shared source check reaches the rows it was made for;
   // - a hold outside a hand-set amount envelope that today's envelope takes (the account_research
   //   floor went from $5 to $1 on 2026-10-09); learned envelopes move with the data and never re-select.
+  // - a peer hold under an older peer version (v5, #1112). Attempts record `peer_version` from v5
+  //   on; an older hold is re-decided only when its own run's peer attempt was a graded version
+  //   (DARWIN_PEER_GRADED_VERSIONS: v3 and v4, Oct 10 on) and held it, so the ungraded v1/v2 holds
+  //   of Oct 5–10 stay held.
   return `EXISTS (
            SELECT 1
              FROM pipeline_attempts pa
@@ -1065,6 +1070,23 @@ export function darwinStandingDecisionSql(currentCopy = true): string {
               AND NOT (
                 pa.detail->>'reason_code' = 'not_in_source'
                 AND COALESCE((pa.detail->>'source_check_version')::int, 0) < ${DARWIN_SOURCE_CHECK_VERSION}
+              )
+              AND NOT (
+                pa.detail->>'reason_code' = 'peer_outlier'
+                AND (
+                  (pa.detail->>'peer_version' IS NOT NULL
+                   AND (pa.detail->>'peer_version')::int < ${DARWIN_PEER_STRATEGY.version})
+                  OR (pa.detail->>'peer_version' IS NULL
+                      AND EXISTS (
+                        SELECT 1
+                          FROM pipeline_attempts peer
+                         WHERE peer.input_fingerprint = pa.input_fingerprint
+                           AND peer.strategy = ${sqlLiteral(DARWIN_PEER_STRATEGY.strategy)}
+                           AND peer.strategy_version IN (${DARWIN_PEER_GRADED_VERSIONS.join(", ")})
+                           AND peer.agent_run_id = pa.agent_run_id
+                           AND (peer.detail->>'peer_held')::boolean
+                      ))
+                )
               )
               AND NOT (
                 pa.detail->>'reason_code' = 'outside_envelope'
@@ -1422,7 +1444,7 @@ async function recordPassTwoAttempts(
         amount: result.amount,
         peer_outlier: result.peerCheck.outlier,
         peer_scope: result.peerCheck.scope,
-        peer_held: holdsForPeerReview(result.peerCheck),
+        peer_held: holdsForPeerReview(result.peerCheck, result.canonicalFeeKey),
         peer_low: result.peerCheck.low,
         peer_high: result.peerCheck.high,
         peer_p25: result.peerCheck.p25,
@@ -1634,7 +1656,7 @@ export async function runDarwinVerify(
         },
         sourceCopies,
       );
-      if (holdsForPeerReview(peer)) reasonCode = "peer_outlier";
+      if (holdsForPeerReview(peer, canonicalFeeKey)) reasonCode = "peer_outlier";
     }
 
     let result: DarwinVerificationResult;
@@ -1713,6 +1735,8 @@ export async function runDarwinVerify(
           reason: result.reason,
           category_guard_version: CATEGORY_GUARD_VERSION,
           source_check_version: DARWIN_SOURCE_CHECK_VERSION,
+          // A peer hold is re-decided once when the peer check's version rises (v5, #1112).
+          peer_version: DARWIN_PEER_STRATEGY.version,
           batch_key_version: DARWIN_BATCH_KEY_VERSION,
           // Darwin's audience decision (#1059), when it made one; else the raw row's stands.
           fee_audience: row.fee_audience ?? "unknown",

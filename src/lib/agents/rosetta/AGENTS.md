@@ -15,6 +15,10 @@ Rosetta owns source text normalization.
   `institution_additional_sources`; it never sends the bank's main link back to Magellan,
   and its reads never change the bank's source profile or playbook.
 - Rosetta writes normalized text artifacts to `agent_source_texts`.
+- A document a person supplied by hand (`magellan/hand-supplied.ts`) is read from the uploaded
+  bytes as it is stored (`readHandSuppliedDocument`): the same reader, fee-page check, text record
+  and attempts as the read step (`settleRead`), with every outside request answered as refused,
+  so the bank's site that blocked us is never asked. Later re-reads take the bytes from the vault.
 - Rosetta may classify unreadable, scanned, truncated, or unsupported source documents for manual/OCR follow-up.
 
 ## Required Behavior

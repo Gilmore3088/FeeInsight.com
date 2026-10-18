@@ -22,18 +22,31 @@ describe("Darwin peer check fallback", () => {
   it("uses the state when it has enough peers", () => {
     const check = peerCheck([level("all", 9)], "overdraft", "community_mid", 5, wider, 1);
     expect(check).toMatchObject({ scope: "state", outlier: true, peerCount: 9 });
-    expect(holdsForPeerReview(check)).toBe(true);
+    expect(holdsForPeerReview(check, "overdraft")).toBe(true);
   });
 
   it("falls back to the Fed district, then the nation, and never holds on a fallback", () => {
     const district = peerCheck([level("all", 7)], "overdraft", "community_mid", 5, wider, 1);
     expect(district).toMatchObject({ scope: "district", levelTier: "all", outlier: true, peerCount: 40 });
-    expect(holdsForPeerReview(district)).toBe(false);
+    expect(holdsForPeerReview(district, "overdraft")).toBe(false);
     expect(peerOutlierReason(district!, 5)).toContain("outside the district peer range");
 
     const national = peerCheck([], "overdraft", "community_mid", 5, wider, 9);
     expect(national).toMatchObject({ scope: "national", levelTier: "community_mid", peerCount: 300 });
     expect(peerOutlierReason(national!, 5)).toContain("community mid national peer range");
+  });
+
+  it("holds a state outlier only where an outlier is usually a misread (v5, #1112)", () => {
+    const check = peerCheck([level("all", 9)], "overdraft", "community_mid", 5, wider, 1);
+    for (const key of ["atm_non_network", "overdraft", "od_protection_transfer", "rush_card", "minimum_balance", "wire_domestic_outgoing"]) {
+      expect(holdsForPeerReview(check, key), key).toBe(true);
+    }
+    // A real fee at an unusual printed price: photocopies, box drilling, a $5 stop payment, returned mail.
+    for (const key of ["document_reproduction", "safe_deposit_box", "stop_payment", "account_research", "monthly_maintenance", "notary_fee", "dormant_account"]) {
+      expect(holdsForPeerReview(check, key), key).toBe(false);
+    }
+    expect(holdsForPeerReview(check, null)).toBe(false);
+    expect(holdsForPeerReview(null, "overdraft")).toBe(false);
   });
 
   it("finds no comparison without peers anywhere, or for a free fee", () => {

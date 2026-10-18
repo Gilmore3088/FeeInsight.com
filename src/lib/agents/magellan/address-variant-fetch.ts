@@ -43,6 +43,9 @@ export const ADDRESS_VARIANT_MIN_FAILURES = 2;
 export const ADDRESS_VARIANT_RETRY_DAYS = 7;
 /** Per request: a host that answers at all answers well inside this. */
 const VARIANT_REQUEST_TIMEOUT_MS = 10_000;
+/** Less time than this left in the pass starts no further spelling: a timer can fire a
+ * millisecond before `Date.now()` reaches the deadline, which left a request with 1 ms to run. */
+const VARIANT_MIN_REQUEST_MS = 10;
 /** The whole pass, so the fetch step's companion pages still get their time. Requests and
  * body reads are cut at this deadline, not only refused a start after it. */
 export const ADDRESS_VARIANT_BUDGET_MS = 30_000;
@@ -230,7 +233,7 @@ export async function runAddressVariantFetch(options: {
 
     for (const variant of addressVariants(link, row.website_url)) {
       const remaining = deadline - Date.now();
-      if (remaining <= 0) break;
+      if (remaining < VARIANT_MIN_REQUEST_MS) break;
       const entry: AddressVariantTry = { url: variant.url, kind: variant.kind, verdict: "" };
       tries.push(entry);
       const checked = await checkVariant(options.fetchImpl, variant.url, link, row.website_url ?? "", Math.min(VARIANT_REQUEST_TIMEOUT_MS, remaining));

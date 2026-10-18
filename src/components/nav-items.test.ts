@@ -31,7 +31,7 @@ describe("navItemsFor", () => {
       ["/research", "/research/national-fee-index"],
       ["/for-institutions#hamilton", "/subscribe"],
     ]);
-    expect(PRODUCT_NAV_GROUPS[2].items.map((i) => i.label)).toEqual(["Pro workspace", "Pro plans"]);
+    expect(PRODUCT_NAV_GROUPS[2].items.map((i) => i.label)).toEqual(["Workspace", "Plans"]);
   });
 
   it("never names Hamilton in the signed-out header or phone drawer (James, 2026-10-15)", () => {
@@ -58,7 +58,7 @@ describe("navItemsFor", () => {
 
   it("gives the phone drawer the short grouped list", () => {
     expect(MOBILE_NAV_SECTIONS.map((s) => [s.heading ?? null, s.items.map((i) => i.label)])).toEqual([
-      ["Product", ["Find your institution", "Bank Fee Index", "Market data", "Pro workspace"]],
+      ["Product", ["Find your institution", "Bank Fee Index", "Market data", "Workspace"]],
       [null, ["Reports", "Pricing"]],
       ["Resources", ["Guides", "Methodology", "API"]],
     ]);

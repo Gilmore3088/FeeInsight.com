@@ -917,6 +917,18 @@
       "excerpt": "Balance Inquiry at Foreign ATM $2 per inquiry",
       "expected": "ok",
       "fee_published_id": 137887
+    },
+    {
+      "case_key": "live:88513:bill_pay",
+      "canonical_fee_key": "bill_pay",
+      "fee_name": "Check/ACH/Bill Pay Payment",
+      "amount": "32.00",
+      "source_document_id": 6200,
+      "text_hash": "63cb45eeea6d74276483de7de6949b5dace61014dc03ea66e032bcb5ca09370b",
+      "excerpt": "Courtesy Pay (Paid NSF) Check/ACH/Bill Pay Payment | $32.00/item",
+      "expected": "schedule_contradicts",
+      "fee_published_id": 88513,
+      "note": "Live on 2026-10-14 as bill pay. The line is the courtesy pay (paid NSF) fee on a check, ACH or bill payment: an overdraft fee. Live as overdraft under its full name by Oct 17; guard v68 (#1304) refuses it as bill pay on its own line."
     }
   ],
   "documents": [
@@ -1301,19 +1313,6 @@
   "known_misses": {
     "about": "Cases today's rules still get wrong. Each runs as an expected failure: when a rule starts getting one right, its test fails, and the case moves into the gate above.",
     "same_price": [],
-    "category": [
-      {
-        "case_key": "live:88513:bill_pay",
-        "canonical_fee_key": "bill_pay",
-        "fee_name": "Check/ACH/Bill Pay Payment",
-        "amount": "32.00",
-        "source_document_id": 6200,
-        "text_hash": "63cb45eeea6d74276483de7de6949b5dace61014dc03ea66e032bcb5ca09370b",
-        "excerpt": "Courtesy Pay (Paid NSF) Check/ACH/Bill Pay Payment | $32.00/item",
-        "expected": "not_ok",
-        "fee_published_id": 88513,
-        "note": "Live on 2026-10-14 as bill pay. The line is the courtesy pay (paid NSF) fee on a check, ACH or bill payment: an overdraft fee."
-      }
-    ]
+    "category": []
   }
 }

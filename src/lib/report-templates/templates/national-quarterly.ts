@@ -340,9 +340,6 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
     if (data.fred.cpi_yoy_pct !== null) {
       econCards.push({ label: "CPI YoY", value: `${data.fred.cpi_yoy_pct > 0 ? "+" : ""}${data.fred.cpi_yoy_pct.toFixed(1)}%`, source: "BLS Consumer Price Index" });
     }
-    if (data.fred.consumer_sentiment !== null) {
-      econCards.push({ label: "Consumer Sentiment", value: data.fred.consumer_sentiment.toFixed(1), source: "Univ. of Michigan" });
-    }
     if (data.fred.gdp_growth_yoy_pct !== null) {
       econCards.push({
         label: "GDP Growth YoY",

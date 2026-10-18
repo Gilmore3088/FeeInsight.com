@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { researchSplitTarget } from "@/lib/fee-fold";
 
 const trackAnthropicRequest = vi.fn(async (_context: unknown, request: () => PromiseLike<unknown>) => request());
 vi.mock("@/lib/ai-provider-usage", async (importOriginal) => ({
@@ -223,10 +224,10 @@ describe("Darwin held-fee release review", () => {
 
   it("puts the schedule line and the category's own names in the prompt", () => {
     const prompt = releaseReviewPrompt([
-      { row: row({ fee_name: "Bad Address Fee", held_canonical_fee_key: "account_research" }) as unknown as HeldFeeRow, sourceLine: "Bad Address Fee | $5.00/month" },
+      { row: row({ fee_name: "Bad Address Fee", held_canonical_fee_key: researchSplitTarget("returned_mail") }) as unknown as HeldFeeRow, sourceLine: "Bad Address Fee | $5.00/month" },
     ]);
     expect(prompt).toContain("Bad Address Fee | $5.00/month");
-    expect(prompt).toContain("account_research");
+    expect(prompt).toContain(researchSplitTarget("returned_mail"));
     expect(prompt).toContain("bad address");
     expect(prompt).toContain("removing or releasing a stop payment");
     expect(prompt).toContain("expedited, rush, emergency or overnight");
@@ -449,7 +450,8 @@ describe("releasing the recorded v17 passes", () => {
     [recorded("Vacation Club Excessive Withdrawals (Over 3 per Year)", "account_research", "annual", "Vacation Club Excessive Withdrawals (Over 3 per Year) | $5.00"), "frequency_word_disagrees"],
     [recorded("Monthly Service Charge, Minimum Bal", "monthly_maintenance", "per_item", "Monthly Service Charge, $1000 Minimum Bal. $25.00 Check Copy Fee, Each Check $7.50"), "frequency_word_disagrees"],
     [recorded("Account Fees: Excessive Withdrawal Fee (Share Account)", "account_research", null, "Account Fees | Excessive Withdrawal Fee (Share Account) | $5.00 (at the 5th withdrawal in the same month)"), "glued_or_cut_name"],
-    [recorded("Notary: Outgoing", "notary_fee", "per_item", "This fee is charged by | Outgoing | $55.00 per item"), "glued_or_cut_name"],
+    // Guard v73 (#1837): a bare direction row under a heading it did not sit under fails the guard first.
+    [recorded("Notary: Outgoing", "notary_fee", "per_item", "This fee is charged by | Outgoing | $55.00 per item"), "category_guard"],
     [recorded("Savings Excessive Withdrawal - 5 free per month then", "account_research", "per_item", "Savings Excessive Withdrawal - 5 free per month then | $2.00 per withdrawal"), "glued_or_cut_name"],
     // Released: the allowance's period agrees with a per-item price, and a real qualifier stays.
     [recorded("Withdrawal Limit Fee charged for each withdrawal, transfer, and payment that exceeds 6 per monthly statement cycle", "account_research", "per_item", "$3 Withdrawal Limit Fee charged for each withdrawal, transfer, and payment that exceeds 6 per monthly statement cycle4"), null],

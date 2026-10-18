@@ -29,11 +29,24 @@ writes fee data. James approved it on 2026-10-08 (`growth-os/BUILD-PLAN.md`, pha
 ### Prospect contacts (`contacts.ts`)
 
 The same walk Magellan makes for fee schedules, aimed at people. For each prospect (assets
-$100M to $5B, 10+ live fees, a website; biggest local markets first) it reads robots.txt, the
+$100M to $5B with a website, and either 10+ live fees or comparison-ready: a live row on 3+
+market-snapshot fees each held by 5+ other local institutions, or for an institution in no metro
+a live row on 3+ snapshot fees, since its comparison is statewide) it reads robots.txt, the
 homepage, and up to three same-site leadership, about or contact pages, as `FeeInsightBot
-(Growth)`. It keeps only addresses the institution publishes under its own domain, with the name
+(Growth)`. Comparison-ready sites go first, $500M-$2B before the rest, never-read before
+re-reads, then biggest local markets. It keeps only addresses the institution publishes under its own domain, with the name
 and title printed just before each one. Nothing is guessed from a name pattern, and nothing
 sends: the contacts feed outreach drafts James sends himself. Rechecks after 30 days.
+
+Most sites print their leadership team with no address (138 of 154 comparison-ready sites read
+by Oct 17), so it also keeps named leaders (`extractLeaders`, James, Oct 17): a decision-maker's
+name and title as the page prints them, in a buying role at a decision-maker's rank, with lenders,
+branch staff, junior ranks and the board left out. A leader whose address was kept is a contact,
+not a leader. Leaders go to `prospect_leaders` (migration `20270110000060`), never into outreach
+drafts; James reaches them himself, and the CSV lists them under the contacts as kind `leader`.
+`prospect_contact_checks.leaders_found` is null for reads made before leaders were kept, so those
+comparison-ready sites are read again ahead of their 30-day recheck. Before the migration the
+finder runs as before.
 
 Each contact has a confidence (`contactConfidence`): high for a named person with a title in a
 buying role, medium for a person's own address with a name or title, low for anything else or a
@@ -79,7 +92,10 @@ names and amounts. The snapshot compares everyday consumer fees (`SNAPSHOT_FEE_K
 no wire fees, never a non-customer price) with the open institutions in the prospect's CBSA, leaving out banks that gather deposits
 nationally from one office (FDIC Summary of Deposits: $3B+ through at most 4 offices, one holding
 90%+, e.g. Ally, SoFi, Schwab), and a value counts as verified only when every catalog row behind it passes `checkFeeAgainstSource`.
-Comparisons are local only. All emails sign off "Founder, Fee Insight" with one ask. Each run reads every candidate, scores it with the plan's
+Figures are quoted for local comparisons only. An institution in no metro is compared with the
+`SNAPSHOT_STATE_PEERS` (40) open institutions in its state closest to it in assets (`loadMarket`,
+scope `state`; James, Oct 17: rural prospects with a statewide comparison) and gets campaign A or B,
+never C; B names the state ("5 Kansas institutions closest to it in size"). All emails sign off "Founder, Fee Insight" with one ask. Each run reads every candidate, scores it with the plan's
 weights (`prospect-score.ts`: fit 25, buyer 20, research 20, data confidence 20, commercial 15) and
 drafts the highest scores first. Every fee type gets a comparison tier (A: prospect and 5+ local
 verify; B: fewer verified peers; C: the source check fails; D: a row waits on a takedown second
@@ -352,7 +368,8 @@ The provider (`global`) stop still blocks growth's paid step, `marketing-write`.
   it through the intake route above.
 - Prospect contacts go to `prospect_contacts` and `prospect_contact_checks` (migration
   `20270110000028`); their stored confidence and primary/backup pick are columns on
-  `prospect_contacts` (migration `20270110000031`).
+  `prospect_contacts` (migration `20270110000031`). Named leaders printed without an address go
+  to `prospect_leaders` (migration `20270110000060`).
 - Snapshot page events go to `snapshot_events`, and outreach outcomes to `outreach_outcomes`
   (migration `20270110000029`).
 - The qualified mark is two columns on `leads` (migration `20270110000032`); quote drafts go to

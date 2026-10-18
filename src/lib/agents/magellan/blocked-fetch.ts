@@ -154,6 +154,8 @@ export async function selectBlockedCompanions(db: SqlTag, limit: number): Promis
       JOIN institution_sources inst ON inst.id = ias.institution_id
       LEFT JOIN source_documents latest ON latest.id = ias.last_source_document_id
      WHERE ias.document_role <> 'business'
+       -- A hand-supplied copy (hand-supplied.ts) is already stored; the paid fetch never asks for it.
+       AND ias.found_by_strategy <> 'supply.hand_supplied'
        AND (
          COALESCE(inst.status, 'active') = 'active'
          -- As in companion fetch: a hand-found schedule is fetched for a dormant bank (Stock

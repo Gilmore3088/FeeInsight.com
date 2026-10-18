@@ -105,6 +105,8 @@ const PAGE_LINES: Record<number, string> = {
   63055: "Stop Payments\nWire Trans. (Dom. Outgoing) …........…$18.00 per Wire\nDebit, ACH, Personal Check…..$35.00 per Item\nWire Trans. (Intern. Outgoing) ………...$35.00 per Wire\nStop Payment",
   // #1668: Beacon's current fee schedule page (text 33767, prod, read-only, Oct 16).
   112882: "Courtesy Pay Fee (if applicable) | $36.00 per item\n\nStop Payment, if item would not cause NSF | $17.00 per item\n\nStop Payment, if item would cause NSF | $36.00 per item",
+  // #1025: Kitsap CU's business fee page (doc 15663, text 9778, prod, read-only, Oct 17).
+  63888: "Temporary Checks (4 Checks) | $2.00\n\nWire Transfer Fee - Inbound Domestic | $15.00 per wire\n\nWire Transfer Fee - Outgoing Domestic | $25.00 per wire\n\nView Full Rate & Fee Schedule",
   // #1646 re-review: cut-off names renamed to the page's own words.
   138829: "credited and compounded to your account quarterly. | the dividend rate last declared on Regular Share Savings from | Judicial Attachment (Garnishment) $34.00\n• If you close your account before the accrued dividends are | the date of issuance or renewal until the date of withdrawal. | Notary Public Free",
   137077: "Replace Lost Card | $7.00\nyour account. | Replace Damaged Card | $3.50\nInsufficient Funds (per item) | $35.00",
@@ -116,6 +118,24 @@ const PAGE_LINES: Record<number, string> = {
   // #1646: names v17 cannot find where the price is printed, renamed to the page's own words (docs 22481, 20748).
   96663: "Free notary services\n\n$50 minimum deposit to open\n\nAccounts with balances below $50 on the last day of the month are subject to a $2 fee.\n\n{{ savings-goal-calc }}",
   88058: "MONEY MARKET ACCOUNTS\nMoney Market Account\nLow Balance Fee\n(charged if the average daily balance is less than $2,500 for the calendar month) ...... $15.00\nDEBIT CARDS",
+  // #1746: the fees #1689's footnote cut left as sentences or under the wrong type (prod, read-only, Oct 17).
+  98236: "$35.00 each | NSF Charge/Return Fee (PER PRESENTMENT) Due to Non-Sufficient Funds\n\n$35.00 each | 11OverDraft Fee (PAID ITEM) Standard/Extended OD Privilege Program\n\n$35.00 each | 12REG-D Transfer Fee (FROM Savings/Daily Action ONLY, Exceeding 6 per month)",
+  140622: "1Transfers and payments made through online banking and bill pay count toward the limit of six per month. Excess transfers are not permitted and will be assessed $1 each in excess of six. In-person withdrawals are unlimited.",
+  140624: "1Transfers and payments made through online banking and bill pay count toward the limit of six per month. Excess transfers will be assessed $10 each in excess of six. In-person withdrawals are unlimited.",
+  54140: "* Monthly maintenance fee is $4 - HOWEVER, if you have 20 Debit Card Purchase Transactions during the statement cycle, your maintenance fee is $0.\n\n4To receive paper statements, it is $3 a month.\n\nOpen e-checking 2.0 accounts",
+  73740: "3If using any international, non-Allpoint or non-Alpine Bank ATM, a $2.00 ATM fee per withdrawal will apply, as well as any fee charged by the third-party ATM holder.",
+  96352: "myChance Checking Account2\n\nEverything in myChoice Checking\n\n2A myChance Checking (Draft) Account will have a $10.00 per month service charge applied.",
+  87357: "5A $10 monthly fee will be assessed if the minimum balance falls below $2,500. 6A $8 monthly fee will be assessed if the minimum balance falls below $100. 7ATM – automated teller machine.",
+  132373: "2The categories of transactions for which an overdraft fee may be imposed are those by any of the following means: check, in-person withdrawal, ATM withdrawal, or other electronic means. After one day in overdraft, customer will be charged a $1.00 fee per day.",
+  66351: "2You will receive a refund of 3 foreign ATM transaction fees per statement cycle ($6.00 maximum per statement cycle.)\n\n3If you opt-in to the bill pay feature, then bill pay must be utilized monthly to avoid $5.95 monthly fee.",
+  66594: "Stop Payment Fee | $20.00\n\nDomestic Wire Transfer Fees | Incoming - $10.00 Outgoing - $20.00\n\nInternational Wire Transfer Fees | Incoming - $20.00 Outgoing - $20.00",
+  // #1829 (#1691 cleanup): the two fax fees' stored lines, read-only Oct 17 (texts 34913 and 35062).
+  152977: "Escheatment Notice\n\n$29\n\nFax (Domestic & International)\n\n$1\n\nLegal Process\n\n$100",
+  152288: "Early Account Closure (within 180days) | $25.00\nFaxes (Domestic only) | $2.00\nHold Statement for pickup | $2.00",
+  // #1828: Oregon Community FCU's card and safe deposit box columns (doc 13272, read-only Oct 17).
+  83792: "Card fees\nATM transaction service (withdrawals at non-CO-OP ATMs) 2 …….… $1 | Safe deposit box fees\nExpedited card delivery | 2 X 5 annual rent (Downtown Branch only)….…………….…....……. $30\nDomestic…………………………………………………………………… $30 | 3 X 5 annual rent………………………………………….......……….... $35\nInternational (Int'l)…………………………………………….…………… $45 | 5 X 5 annual rent………………………………………………...………. $45",
+  // #1828: Oregon Community FCU's loan fee table (doc 13272, read-only Oct 17), its two columns.
+  83794: "Loan fees | Personal Credit Line fees\nLate payment 4 ……………………………………………….……….…… $25 | Late Payment…………………………………………………………….. $25\nCredit Union Direct Lending (CUDL) late payment……………….…… 5% | Returned payment…………………………………………………….. | $4.95\n(5% of outstanding monthly payment due; no minimum)\nCredit Union Direct Lending (CUDL) & direct loan non-qualification… $250 | Credit card fees",
 };
 
 /** Renames whose price the page ties to a balance band (`tiered_fee`), before and after (#1664). */
@@ -126,9 +146,50 @@ function liveRow(id: number, key: string, amount: string, name = "(misread cell)
 }
 
 describe("hand re-files of misread live fees (retidy v15 review, Oct 9)", () => {
+  it("#1828: renames Oregon Community's joined expedited card name in place, once, keeping rush_card $30", () => {
+    const oldName = "Safe deposit box fees Expedited card delivery 2 X 5 annual rent (Downtown Branch only)";
+    const row = { ...liveRow(83792, "rush_card", "30.00", oldName), fee_verified_id: 93010, institution_id: 7859, source_document_id: 13272 };
+    expect(planHandRefiles([row]).map((move) => [move.refile.feePublishedId, move.currentKey, move.refile.to, move.oldName, move.refile.name])).toEqual([
+      [83792, "rush_card", "rush_card", oldName, "Expedited card delivery (domestic)"],
+    ]);
+    // Once renamed, or if a later read gave it another name, it is left alone.
+    expect(planHandRefiles([{ ...row, fee_name: "Expedited card delivery (domestic)" }])).toEqual([]);
+    expect(planHandRefiles([{ ...row, fee_name: "Expedited card delivery" }])).toEqual([]);
+  });
+
+  it("#1828: re-files Oregon Community's $4.95 from the CUDL late fee to its own returned payment line", () => {
+    const row = { ...liveRow(83794, "late_payment", "4.95", "Credit Union Direct Lending (CUDL) late payment . 5% Returned payment"), fee_verified_id: 93017, institution_id: 7859, source_document_id: 13272 };
+    expect(planHandRefiles([row]).map((move) => [move.refile.feePublishedId, move.currentKey, move.refile.to, move.refile.name])).toEqual([
+      [83794, "late_payment", "other_lending_fee", "Returned payment"],
+    ]);
+    // Once filed, or at another price, nothing moves again.
+    expect(planHandRefiles([{ ...row, canonical_fee_key: "other_lending_fee" }])).toEqual([]);
+    expect(planHandRefiles([{ ...row, amount: "5.00" }])).toEqual([]);
+  });
+
+  it("#1829: re-files the two fax fees v5 released as account research under document reproduction", () => {
+    const rows = [
+      { ...liveRow(152977, "account_research", "1.00", "Fax (Domestic & International)"), fee_verified_id: 189563, institution_id: 480, source_document_id: 36784 },
+      { ...liveRow(152288, "account_research", "2.00", "Faxes (Domestic only)"), fee_verified_id: 187871, institution_id: 1229, source_document_id: 36945 },
+    ];
+    expect(planHandRefiles(rows).map((move) => [move.refile.feePublishedId, move.currentKey, move.refile.to, move.refile.name])).toEqual([
+      [152977, "account_research", "document_reproduction", "Fax (Domestic & International)"],
+      [152288, "account_research", "document_reproduction", "Faxes (Domestic only)"],
+    ]);
+    // Once filed, or at another price, nothing moves again.
+    expect(planHandRefiles(rows.map((row) => ({ ...row, canonical_fee_key: "document_reproduction" })))).toEqual([]);
+    expect(planHandRefiles([{ ...rows[1], amount: "3.00" }])).toEqual([]);
+  });
+
   it("files every one under one of the 50, where the guard and price range accept its new name", () => {
     for (const refile of HAND_REFILES) {
       expect(RETIRED_CATEGORY_KEYS.has(refile.to), `${refile.feePublishedId}`).toBe(false);
+      // Guard v70 (#1765) answers 70319's open question: a gift card's inactivity is not a dormant
+      // account, so its rename no longer applies (the row has been down since Oct 16, #1196).
+      if (refile.feePublishedId === 70319) {
+        expect(passesDarwinChecks(refile.to, refile.name, refile.amount)).toBe(false);
+        continue;
+      }
       expect(passesDarwinChecks(refile.to, refile.name, refile.amount), `${refile.feePublishedId}`).toBe(true);
     }
   });
@@ -171,6 +232,18 @@ describe("hand re-files of misread live fees (retidy v15 review, Oct 9)", () => 
     // Moved already, or re-priced since: left alone.
     expect(planHandRefiles([{ ...row, canonical_fee_key: "stop_payment" }])).toEqual([]);
     expect(planHandRefiles([{ ...row, amount: "36.00" }])).toEqual([]);
+  });
+
+  it("#1025: moves Kitsap's inbound wire from outgoing to incoming and leaves the outgoing wire alone", () => {
+    const name = "Wire Transfer Fee - Inbound Domestic";
+    // 63888 and 15709 as they read live on prod, read-only, Oct 17.
+    const row = { ...liveRow(63888, "wire_domestic_outgoing", "15.00", name), fee_verified_id: 67772, institution_id: 8543, source_document_id: 15663 };
+    const outgoing = { ...liveRow(15709, "wire_domestic_outgoing", "25.00", "Wire Transfer Fee - Outgoing Domestic"), institution_id: 8543, source_document_id: 15663 };
+    expect(planHandRefiles([row, outgoing]).map((move) => [move.refile.feePublishedId, move.currentKey, move.refile.to])).toEqual([
+      [63888, "wire_domestic_outgoing", "wire_domestic_incoming"],
+    ]);
+    expect(checkFeeAgainstSource(PAGE_LINES[63888], name, 15, ".", "wire_domestic_incoming")).toMatchObject({ ok: true, sourceLine: "Wire Transfer Fee - Inbound Domestic | $15.00 per wire" });
+    expect(planHandRefiles([{ ...row, canonical_fee_key: "wire_domestic_incoming" }])).toEqual([]);
   });
 
   it("moves a live fee only while it is still under its old category at its listed price", () => {
@@ -330,3 +403,37 @@ describe("research split dry run (#1398)", () => {
     expect(preview.refusedSample.map((sample) => sample.feePublishedId)).toEqual([5]);
   });
 });
+
+describe("#1746: the footnote cut's leftovers (Oct 17)", () => {
+  it("moves 98236 to overdraft and 140622/140624 to account research, and renames six in place, each once", () => {
+    const live = [
+      { ...liveRow(98236, "continuous_od", "35.00", "OverDraft Fee (PAID ITEM) Standard/Extended OD Privilege Program"), fee_verified_id: 111608, institution_id: 7239, source_document_id: 3516 },
+      { ...liveRow(140622, "bill_pay", "1.00", "Transfers and payments made through online banking and bill pay count toward the limit of six per month. Excess transfe"), fee_verified_id: 166013, institution_id: 2044, source_document_id: 31609 },
+      { ...liveRow(140624, "bill_pay", "10.00", "Transfers and payments made through online banking and bill pay count toward the limit of six per month. Excess transfe"), fee_verified_id: 166016, institution_id: 2044, source_document_id: 31611 },
+      { ...liveRow(54140, "paper_statement", "3.00", "To receive paper statements, it"), fee_verified_id: 57493, institution_id: 2128, source_document_id: 16725 },
+      { ...liveRow(73740, "atm_non_network", "2.00", "If using any international, non-Allpoint or non-Alpine Bank ATM, a"), fee_verified_id: 86275, institution_id: 228, source_document_id: 20544 },
+      { ...liveRow(96352, "monthly_maintenance", "10.00", "myChance Checking (Draft) Account will have a Monthly service charge"), fee_verified_id: 109097, institution_id: 4500, source_document_id: 22443 },
+      { ...liveRow(87357, "monthly_maintenance", "8.00", "6A monthly fee will be assessed if the minimum balance falls below $2,500"), fee_verified_id: 96646, institution_id: 8159, source_document_id: 16559 },
+      { ...liveRow(132373, "continuous_od", "1.00", "The categories of transactions for which an overdraft fee may be imposed are those by any of the following means: check"), fee_verified_id: 152542, institution_id: 2709, source_document_id: 28474 },
+      { ...liveRow(66351, "bill_pay", "5.95", "3If you opt-in to the bill pay feature, then bill pay must be utilized monthly to avoid"), fee_verified_id: 73925, institution_id: 2291, source_document_id: 25538 },
+    ];
+    expect(planHandRefiles(live).map((move) => [move.refile.feePublishedId, move.refile.to, move.refile.name])).toEqual([
+      [98236, "overdraft", "OverDraft Fee (PAID ITEM)"],
+      [140622, "account_research", "Excess transfers"],
+      [140624, "account_research", "Excess transfers"],
+      [54140, "paper_statement", "Paper statements"],
+      [73740, "atm_non_network", "ATM fee per withdrawal"],
+      [96352, "monthly_maintenance", "myChance Checking (Draft) Account service charge"],
+      [87357, "monthly_maintenance", "Monthly fee if the minimum balance falls below $100"],
+      [132373, "continuous_od", "Overdraft fee per day"],
+      [66351, "bill_pay", "Bill pay monthly fee"],
+    ]);
+    // Done once: a renamed or moved fee is left alone.
+    const done = live.map((row) => {
+      const refile = HAND_REFILES.find((entry) => entry.feePublishedId === Number(row.fee_published_id))!;
+      return { ...row, canonical_fee_key: refile.to, fee_name: refile.name };
+    });
+    expect(planHandRefiles(done)).toEqual([]);
+  });
+});
+

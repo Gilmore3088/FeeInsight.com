@@ -3,11 +3,14 @@ import { readerFeeConditions } from "../fee-conditions";
 import { dailyFeeLimitFor, type DailyFeeLimit } from "@/lib/fee-daily-limit";
 import { getFeeFamily, FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import { frequencyFamily } from "@/lib/fee-frequency";
+import { COMPARABILITY_SCREEN } from "@/lib/fee-comparability";
+import { BUSINESS_URL_SCREEN, MARKET_AUDIENCES, countsInMarketComparison } from "@/lib/market-eligibility";
 import {
   MIN_INSTITUTIONS_FOR_MEDIAN,
   STATS_METHOD_VERSION,
   STATS_ROW_FILTER,
   STATS_SCHEDULE_KEYS,
+  countedRepresentatives,
   summarizeFeesBy,
   valuePerInstitution,
 } from "./fee-stats";
@@ -957,6 +960,76 @@ export async function getDistrictFeeIndexes(district: number): Promise<StateFeeI
   return buildStateFeeIndexes(rows);
 }
 
+/** Which market a comparable index covers: the U.S., one state, or one Fed district. */
+export type MarketScope = { kind: "us" } | { kind: "state"; code: string } | { kind: "district"; district: number };
+
+/** A catalog row read for a comparable index: the index row plus what the eligibility test reads. */
+export interface ComparableMarketRow extends IndexRow {
+  source_document_id: number | string | null;
+  /** Null unless the address could name a business-only schedule (BUSINESS_URL_SCREEN). */
+  source_url: string | null;
+  /** Null unless the row's text could trip the comparability rule (COMPARABILITY_SCREEN). */
+  fee_name: string | null;
+  account_product_type: string | null;
+  source_line: string | null;
+}
+
+/** The rows of a market that the institution profile's own fees would be compared by (market-eligibility). */
+export function comparableMarketRows(rows: ComparableMarketRow[]): ComparableMarketRow[] {
+  return rows.filter((row) =>
+    countsInMarketComparison({
+      category: row.fee_category,
+      amount: row.amount == null ? null : Number(row.amount),
+      audience: row.fee_audience ?? null,
+      sourced: row.source_document_id != null,
+      sourceUrl: row.source_url,
+      feeName: row.fee_name,
+      accountProduct: row.account_product_type,
+      sourceLine: row.source_line,
+    }),
+  );
+}
+
+const sqlList = (values: readonly string[]) => values.map((v) => `'${v.replace(/'/g, "''")}'`).join(",");
+
+/**
+ * A market's index (U.S., state or Fed district) under exactly the eligibility the institution
+ * profile applies to its own fees (James's review, 2026-10-17): `countsInMarketComparison` runs on
+ * every row, so business-only fees and a CD/IRA, card inactivity or safe deposit service fee filed
+ * under another category drop out of the median as they drop out of the subject's value. The SQL
+ * only narrows the read: each WHERE clause is a check the predicate repeats, and the text columns
+ * are fetched only for rows the predicate's own screens could flag, so it reads what it needs
+ * without loading every fee's schedule line. Read-only.
+ */
+export async function getComparableMarketIndex(scope: MarketScope): Promise<IndexEntry[]> {
+  const where =
+    scope.kind === "us"
+      ? `ef.fee_category = ANY(ARRAY[${sqlList(CANONICAL_CATEGORIES)}])`
+      : scope.kind === "state"
+        ? "ct.state_code = $1 AND ef.fee_category IS NOT NULL"
+        : "ct.fed_district = $1 AND ef.fee_category IS NOT NULL";
+  const params = scope.kind === "us" ? [] : [scope.kind === "state" ? scope.code : scope.district];
+  const text = `concat_ws(' ', ef.fee_name, ef.account_product_type, ef.extraction_note) ~* '${COMPARABILITY_SCREEN}'`;
+  const rows = (await sql.unsafe(
+    `SELECT ef.fee_category, ef.amount, ef.institution_id, ef.fee_audience,
+            ef.review_status, ef.created_at, ct.charter_type, ${STATS_SCHEDULE_KEYS},
+            ef.source_document_id,
+            CASE WHEN ef.source_url ~* '${BUSINESS_URL_SCREEN}' THEN ef.source_url END AS source_url,
+            CASE WHEN ${text} THEN ef.fee_name END AS fee_name,
+            CASE WHEN ${text} THEN ef.account_product_type END AS account_product_type,
+            CASE WHEN ${text} THEN substring(ef.extraction_note from 'excerpt="(.*)"$') END AS source_line
+       FROM published_fee_catalog ef
+       JOIN institution_sources ct ON ef.institution_id = ct.id
+      WHERE ${where}
+        AND ef.review_status = 'approved'
+        AND ef.amount IS NOT NULL AND ef.amount >= 0
+        AND ef.source_document_id IS NOT NULL
+        AND COALESCE(ef.fee_audience, 'unknown') IN (${sqlList(MARKET_AUDIENCES)})`,
+    params,
+  )) as ComparableMarketRow[];
+  return buildIndexEntries(comparableMarketRows(rows));
+}
+
 export interface PeerFeeValue {
   institution_id: number;
   institution_name: string;
@@ -974,6 +1047,12 @@ export interface PeerFeeValue {
    * name the records behind it. Absent where a reader does not load them.
    */
   fee_records?: PeerFeeRecord[];
+  /**
+   * Statistics rule 7 (count once): the sister charter this value counts as, when this charter
+   * shares its fee schedule with a lower-id charter of the same holding company among the rows
+   * read. Absent when the institution counts as itself (always, while the rule is off).
+   */
+  counted_as?: number;
 }
 
 /** One published_fee_catalog row behind a peer's value. */
@@ -1027,7 +1106,7 @@ export async function getPeerFeeValues(
     `SELECT ef.id, ef.fee_category, ef.amount, ef.institution_id, ct.institution_name,
             ct.charter_type, ct.asset_size_tier, ct.fed_district, ct.state_code,
             ef.source_document_id, ef.document_url, ef.created_at, ef.fee_published_id,
-            ef.fee_name, ef.frequency, ef.fee_audience
+            ef.fee_name, ef.frequency, ef.fee_audience, ${STATS_SCHEDULE_KEYS}
        FROM published_fee_catalog ef
        JOIN institution_sources ct ON ef.institution_id = ct.id
       WHERE ef.fee_category = ANY($1::text[])
@@ -1058,7 +1137,9 @@ export async function getPeerFeeValues(
     const result = new Map<string, PeerFeeValue[]>();
     for (const [category, list] of byCategory) {
       const values: PeerFeeValue[] = [];
+      const representatives = countedRepresentatives(list);
       for (const [id, amount] of valuePerInstitution(list)) {
+        const countedAs = representatives?.get(id);
         const row = meta.get(id);
         const own = list.filter((r) => Number(r.institution_id) === id);
         const docIds = [...new Set(own.map((r) => Number(r.source_document_id)).filter((v) => Number.isFinite(v) && v > 0))];
@@ -1078,6 +1159,7 @@ export async function getPeerFeeValues(
           document_urls: urls,
           published_at: published,
           fee_records: peerFeeRecords(own),
+          ...(countedAs !== undefined && countedAs !== id ? { counted_as: countedAs } : {}),
         });
       }
       result.set(category, values.sort((a, b) => a.amount - b.amount));
@@ -1139,7 +1221,8 @@ export async function getSegmentFeeValues(
   const rows = (await sql.unsafe(
     `WITH seg AS (${segmentSql})
      SELECT ef.fee_category, ef.amount, ef.institution_id, ct.institution_name, ct.charter_type,
-            ct.state_code, ct.asset_size, ef.source_document_id, ef.document_url, ef.created_at, ef.fee_published_id
+            ct.state_code, ct.asset_size, ef.source_document_id, ef.document_url, ef.created_at, ef.fee_published_id,
+            ${STATS_SCHEDULE_KEYS}
        FROM published_fee_catalog ef
        JOIN institution_sources ct ON ef.institution_id = ct.id
        JOIN seg ON seg.id = ct.id
@@ -1159,14 +1242,18 @@ export async function getSegmentFeeValues(
     document_url: string | null;
     created_at: Date | string | null;
     fee_published_id?: number | string | null;
+    schedule_keys?: string[] | null;
+    schedule_group?: string | null;
   }[];
   const kept = rows.filter((r) => Number(r.institution_id) !== excludeInstitutionId);
   const iso = (v: Date | string | null) => (v instanceof Date ? v.toISOString() : v ? String(v) : null);
   const feeRows = kept.filter((r) => r.fee_category === feeCategory);
   const values: SegmentFeeValue[] = [];
+  const representatives = countedRepresentatives(feeRows);
   for (const [id, amount] of valuePerInstitution(feeRows.map((r) => ({ ...r, institution_id: Number(r.institution_id) })))) {
     const own = feeRows.filter((r) => Number(r.institution_id) === id);
     const first = own[0];
+    const countedAs = representatives?.get(id);
     values.push({
       institution_id: id,
       institution_name: first?.institution_name ?? `Institution ${id}`,
@@ -1178,6 +1265,7 @@ export async function getSegmentFeeValues(
       published_at: own.map((r) => iso(r.created_at)).filter((v): v is string => !!v).sort().pop() ?? null,
       total_assets: first?.asset_size === null || first?.asset_size === undefined ? null : Number(first.asset_size),
       charter_type: first?.charter_type ?? null,
+      ...(countedAs !== undefined && countedAs !== id ? { counted_as: countedAs } : {}),
     });
   }
   const capRows = capCategory ? kept.filter((r) => r.fee_category === capCategory) : [];

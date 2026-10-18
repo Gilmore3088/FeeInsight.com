@@ -21,7 +21,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Workspace Invitation",
-  description: "Accept an institution workspace invitation for Hamilton Pro.",
+  description: "Accept an institution workspace invitation for Hamilton.",
 };
 
 function roleLabel(role: string): string {
@@ -181,14 +181,14 @@ export default async function WorkspaceInvitePage({
                   <p className="mt-2 text-sm text-ink-muted">
                     Open the invite link the institution owner sent you. If you don&apos;t have one,
                     ask them to invite this exact email from Hamilton Settings and send you the link.
-                    {!hasAccess && " If you want a workspace of your own, see the Pro plans."}
+                    {!hasAccess && " If you want a workspace of your own, see the Hamilton plans."}
                   </p>
                   {!hasAccess && (
                     <Link
                       href="/subscribe"
                       className="mt-4 inline-flex rounded-full border border-[#D8CDBD] px-4 py-2 text-sm font-semibold text-ink no-underline"
                     >
-                      See Pro plans
+                      See Hamilton plans
                     </Link>
                   )}
                 </div>
