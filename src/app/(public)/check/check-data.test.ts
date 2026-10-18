@@ -5,6 +5,7 @@ import type { CityMarket, CityMarketInstitution } from "@/lib/data-store/city-ma
 import type { Guide } from "@/lib/guides/types";
 import { accountPricesText } from "@/lib/fee-representative";
 import {
+  checkComparedAt,
   avoidGuideHref,
   buildAlternatives,
   buildCheckRows,
@@ -111,7 +112,7 @@ describe("several prices for one fee (the shared rule)", () => {
   it("shows the range, never the computed value, and labels the compared value", () => {
     expect(rowPriceText(row)).toBe("$7.95 to $8.95, depending on account");
     expect(row.value).toBeCloseTo(8.45);
-    expect(row.comparedAt).toBe("Compared at $8.45, the middle of its prices");
+    expect(row.comparedAt).toBe("Compared at $8.45, the middle of its two prices");
     expect(row.prices).toEqual([
       { account: "Carefree Checking", amount: 7.95 },
       { account: "Everyday Checking", amount: 8.95 },
@@ -123,7 +124,7 @@ describe("several prices for one fee (the shared rule)", () => {
     expect(checkFinding([row], "Capital City Bank", "Florida")).toEqual({
       price: "Capital City Bank's monthly maintenance fee runs $7.95 to $8.95, depending on account.",
       accounts: "Carefree Checking $7.95 \u00b7 Everyday Checking $8.95",
-      benchmark: "Compared at $8.45, the middle of its prices, it sits $1.45 above the $7 Florida median (40 institutions).",
+      benchmark: "Compared at $8.45, the middle of its two prices, it sits $1.45 above the $7 Florida median (40 institutions).",
     });
   });
 
@@ -137,7 +138,11 @@ describe("several prices for one fee (the shared rule)", () => {
       stateIndex: [],
       fallbackSourceUrl: null,
     });
-    expect(od.comparedAt).toBe("Compared at $35, its standard fee, the highest of its prices");
+    expect(od.comparedAt).toBe("Compared at $35, the highest of its prices");
+  });
+
+  it("drops \"two\" when it lists three or more prices", () => {
+    expect(checkComparedAt(9, [7, 9, 11], false)).toBe("Compared at $9, the middle of its prices");
   });
 
   it("names no compared value for one price", () => {

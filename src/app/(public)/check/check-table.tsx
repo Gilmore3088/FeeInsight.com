@@ -169,7 +169,7 @@ function Row({
             {gapLabel && <span className="text-[12px] text-ink-muted sm:sr-only">{gapLabel}</span>}
             <Gap row={row} band={ref?.band ?? null} />
             {row.comparedAt && (
-              <span className="block text-[11px] text-ink-muted">Compared at {money(row.value)}</span>
+              <span className="block text-[11px] text-ink-muted">{row.comparedAt}</span>
             )}
           </span>
         </summary>

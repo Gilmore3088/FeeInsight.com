@@ -6,7 +6,7 @@ import { HEADLINE_FEE_KEYS } from "@/lib/data-store/market-readiness";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import type { Guide } from "@/lib/guides/types";
 import { productNameFromFeeName } from "@/lib/agents/knox/lineup";
-import { accountPricesText, comparedAtText, priceRangeText, type AccountPrice } from "@/lib/fee-representative";
+import { accountPricesText, priceRangeText, type AccountPrice } from "@/lib/fee-representative";
 import { STATE_NAMES } from "@/lib/us-states";
 import { marketEligibilityOf, pickHeadlineValues } from "../institution/[id]/profile-data";
 import { countsInMarketComparison } from "@/lib/market-eligibility";
@@ -117,6 +117,18 @@ export function accountPrices(rows: ExtractedFee[]): AccountPrice[] {
  * The state band is the state page's (every bank and credit union headquartered in the state),
  * the same population the institution profile compares against.
  */
+/**
+ * The comparison price named for what it is, worded as the institution page words it:
+ * "Compared at $8.45, the middle of its two prices", or for overdraft "Compared at $35, the
+ * highest of its prices". Null when it publishes one distinct price.
+ */
+export function checkComparedAt(value: number, amounts: number[], highestTier: boolean): string | null {
+  const distinct = new Set(amounts).size;
+  if (distinct < 2) return null;
+  const which = highestTier ? "the highest of its prices" : `the middle of its ${distinct === 2 ? "two " : ""}prices`;
+  return `Compared at ${money(value)}, ${which}`;
+}
+
 export function buildCheckRows(input: {
   verifiedFees: ExtractedFee[];
   nationalIndex: IndexEntry[];
@@ -137,11 +149,7 @@ export function buildCheckRows(input: {
         high: value.high,
         prices: value.low === value.high ? [] : accountPrices(rows),
         amounts,
-        comparedAt: comparedAtText({
-          value: value.amount,
-          amounts,
-          highestTier: HIGHEST_TIER_CATEGORIES.has(value.category),
-        }),
+        comparedAt: checkComparedAt(value.amount, amounts, HIGHEST_TIER_CATEGORIES.has(value.category)),
         sourceUrl: value.sourceUrl ?? input.fallbackSourceUrl,
         state: marketBand(state.get(value.category)),
         nation: marketBand(nation.get(value.category)),
