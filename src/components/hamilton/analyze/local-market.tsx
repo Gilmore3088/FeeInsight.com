@@ -335,7 +335,7 @@ export function LocalMarketView({ data }: { data: LocalMarketAnswer }) {
             { label: "· no published amount on file" },
           ],
           notice: cats.length === 0 || !feeRows ? "No institution in this market publishes these fees yet." : undefined,
-          source: "Source: Bank Fee Index, published fee schedules (median where a schedule lists more than one amount).",
+          source: "Source: Bank Fee Index, published fee schedules. Where a schedule lists more than one amount, the table shows each and the counts use their median.",
         }}
       >
         {cats.length > 0 && feeRows ? <FeeTable data={data} cats={cats} /> : null}
