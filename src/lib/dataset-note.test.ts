@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { makeStamp, type DatasetStampInput } from "./dataset-stamp";
-import { datasetCitation, datasetNoteWords, noteTime, readStampedFigures, uniqueStampedFigures } from "./dataset-note";
+import { datasetCitation, datasetNoteWords, datasetPassage, noteTime, readStampedFigures, uniqueStampedFigures } from "./dataset-note";
 
 const POPULATION = [{ key: "sourced", label: "Only fees traced to a stored copy of the institution's own fee schedule" }];
 
@@ -122,5 +122,28 @@ describe("saved stamps and tool citations (#1924 step 3)", () => {
       summary: "Published fee schedules, read live 18 Oct 2026 14:10 UTC. Institutions sharing one fee schedule count once.",
       filters: [POPULATION[0].label],
     });
+  });
+});
+
+describe("dataset passage (#1924 step 4)", () => {
+  const base = { dataset: "published_fee_catalog" as const, mode: "live" as const, readAt: "2026-10-18T14:10:00Z", runId: null, newestRecordAt: null, methodVersion: 13, counting: "counted_once" as const };
+  const leftOut = { key: "exclude:institution:1", label: "The institution being compared left out" };
+
+  it("says all institutions but the one compared when only that filter sets the group", () => {
+    const passage = datasetPassage([{ label: "National", stamp: makeStamp({ ...base, filters: [leftOut] }) }], "see the report");
+    expect(passage).toContain("Who is counted: all institutions except the institution being compared, under the index's standard rules (see the report).");
+  });
+
+  it("names each figure's limits once, in one clause, and skips a limit its name already says", () => {
+    const peers = makeStamp({ ...base, filters: [{ key: "peers:state:TN", label: "Institutions in Tennessee" }, { key: "peers:charter:credit_union", label: "Credit unions only" }, leftOut] });
+    const district = makeStamp({ ...base, filters: [{ key: "peers:fed_districts:6", label: "Fed district 6" }, leftOut] });
+    const passage = datasetPassage([
+      { label: "your peer group", stamp: peers },
+      { label: "National", stamp: makeStamp({ ...base, filters: [leftOut] }) },
+      { label: "Fed district 6 (Atlanta)", stamp: district },
+    ], "see the report");
+    const differ = passage?.find((s) => s.startsWith("Why these figures can differ"));
+    expect(differ).toBe("Why these figures can differ: only your peer group is limited to institutions in Tennessee and credit unions.");
+    expect(passage?.[1]).toMatch(/^Who is counted for your peer group: institutions in Tennessee, credit unions only, with the institution/);
   });
 });

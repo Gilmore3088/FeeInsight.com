@@ -131,6 +131,30 @@ function lowerFirst(label: string): string {
   return /^Fed /.test(label) ? label : label.charAt(0).toLowerCase() + label.slice(1);
 }
 
+/**
+ * Difference lines as prose with one colon per sentence: every "Applies only to X: Y" for one
+ * figure becomes "only X is limited to y and z". A filter the figure's own name already says
+ * ("Fed district 6 (Atlanta)" limited to "Fed district 6") is left out; other lines stay as they are.
+ */
+function differenceProse(lines: readonly string[]): string[] {
+  const limits = new Map<string, string[]>();
+  const out: (string | { who: string })[] = [];
+  for (const line of lines) {
+    const match = /^Applies only to (.+?): (.+)$/.exec(line);
+    if (!match) { out.push(line); continue; }
+    const [, who, what] = match;
+    if (!limits.has(who)) { limits.set(who, []); out.push({ who }); }
+    if (!who.toLowerCase().startsWith(what.toLowerCase())) limits.get(who)!.push(lowerFirst(what.replace(/ only$/, "")));
+  }
+  return out.flatMap((entry) => {
+    if (typeof entry === "string") return [entry];
+    const parts = limits.get(entry.who)!;
+    if (parts.length === 0) return [];
+    const list = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+    return [`only ${entry.who} is limited to ${list}`];
+  });
+}
+
 /** Stamp filters that set a figure's group (peers, segment, the bank left out); the rest are the index's standard rules. */
 const GROUP_FILTER = /^(peers|segment|exclude):/;
 
@@ -149,14 +173,11 @@ export function datasetPassage(figures: readonly StampedFigure[], fullList: stri
   const group = own.filter((f) => !f.key.startsWith("exclude:")).map((f) => lowerFirst(f.label));
   const leftOut = own.some((f) => f.key.startsWith("exclude:")) ? "with the institution being compared left out, " : "";
   // With several reads, "who is counted" describes the first figure's, so it says whose.
-  const whose = new Set(figures.map((f) => f.stamp.id)).size > 1 ? ` in ${first.label}` : "";
+  const whose = new Set(figures.map((f) => f.stamp.id)).size > 1 ? ` for ${first.label}` : "";
   const counted = group.length
     ? `Who is counted${whose}: ${group.join(", ")}, ${leftOut}under the index's standard rules (${fullList}).`
-    : `Who is counted${whose}: ${leftOut}under the index's standard rules (${fullList}).`;
-  // In prose, "Applies only to X: Y" reads "only X is limited to y", so a sentence carries one colon.
-  const prose = (line: string) =>
-    line.replace(/^Applies only to (.+?): (.+)$/, (_m, who: string, what: string) => `only ${who} is limited to ${lowerFirst(what.replace(/ only$/, ""))}`);
-  const differ = words.differences ? `${words.differences.heading}: ${words.differences.lines.map(prose).join("; ")}.` : null;
+    : `Who is counted${whose}: all institutions${leftOut ? " except the institution being compared" : ""}, under the index's standard rules (${fullList}).`;
+  const differ = words.differences ? `${words.differences.heading}: ${differenceProse(words.differences.lines).join("; ")}.` : null;
   const reference = `Data reference (for support): ${[...new Set(figures.map((f) => f.stamp.id))].join(", ")}.`;
   return [words.summary, counted, ...(differ ? [differ] : []), reference];
 }

@@ -102,7 +102,7 @@ describe("analysis PDF prints the saved stamp (#1924 step 4)", () => {
     expect(savedEvidenceAppendix(stamped).dataset?.summary).toBe(SUMMARY);
     expect(text).toContain("About these figures");
     expect(text).toContain(SUMMARY);
-    expect(text).toContain("Who is counted in your peer group: institutions in Tennessee, with the institution being compared left out, under the index's standard rules (the full list is in the saved answer in Hamilton).");
+    expect(text).toContain("Who is counted for your peer group: institutions in Tennessee, with the institution being compared left out, under the index's standard rules (the full list is in the saved answer in Hamilton).");
     expect(text).toContain("How your peer group and National differ: only your peer group is limited to institutions in Tennessee.");
     expect(text).toContain(`Data reference (for support): ${peerStamp.id}, ${nationalStamp.id}.`);
     expect(text.indexOf("About these figures")).toBeGreaterThan(text.indexOf("Evidence Record"));
