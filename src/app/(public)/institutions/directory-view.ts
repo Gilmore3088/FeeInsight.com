@@ -1,6 +1,6 @@
 import type { InstitutionStateDirectorySummary } from "@/lib/data-store/search";
 import type { PublicStatsSummary } from "@/lib/public-stats";
-import { STATE_NAMES } from "@/lib/us-states";
+import { OVERSEAS_TERRITORIES, STATE_NAMES, US_STATES_ONLY } from "@/lib/us-states";
 import { REPORT_OFFER } from "@/lib/constants";
 
 /**
@@ -188,8 +188,23 @@ export function stateFinding(rows: StateRow[]): string | null {
   const withAny = rows.filter((r) => r.published > 0).length;
   const mid = median(rows.map((r) => r.share));
   if (withAny === 0 || mid === null) return null;
-  const count = withAny === rows.length ? `All ${rows.length}` : `${withAny} of the ${rows.length}`;
-  return `${count} states, DC and territories have at least one institution with published fees; the median state share is ${percentLabel(mid)}.`;
+  const places = placesLabel(rows.map((r) => r.code));
+  const count = withAny === rows.length ? `All ${places}` : `${withAny} of the ${places}`;
+  return `${count} ${withAny === 1 ? "has" : "have"} at least one institution with published fees; the median state share is ${percentLabel(mid)}.`;
+}
+
+/**
+ * The places a state list covers, counted so no total reads as states alone: "50 states, DC and
+ * the territories (54 in all)", or "3 states" when the list holds only states.
+ */
+function placesLabel(codes: string[]): string {
+  const states = codes.filter((code) => US_STATES_ONLY.has(code)).length;
+  const parts = [`${states} ${states === 1 ? "state" : "states"}`];
+  if (codes.includes("DC")) parts.push("DC");
+  if (codes.some((code) => OVERSEAS_TERRITORIES.has(code))) parts.push("the territories");
+  if (parts.length === 1) return parts[0];
+  const listed = `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+  return `${listed} (${codes.length} in all)`;
 }
 
 /**
@@ -212,4 +227,46 @@ export function reportCta(sampleLive: boolean): {
   return sampleLive
     ? { href: "/reports/sample-competitive-fee-position", label: "See a sample fee report", event: "see_sample_report" }
     : { href: "/reports?report=institution&src=institutions#request", label: REPORT_OFFER.institutionCtaLabel, event: "request_report_click" };
+}
+
+/** Acronyms the registry spells as words ("Campus Usa"), keyed by that spelling. */
+const NAME_ACRONYMS: Record<string, string> = {
+  Usa: "USA",
+  Fcu: "FCU",
+  Cu: "CU",
+  Ecu: "ECU",
+  Fsb: "FSB",
+  Ssb: "SSB",
+};
+
+/**
+ * An institution name as the directory prints it, display only: a word the registry spells as a
+ * title-cased acronym ("Campus Usa Credit Union") is set back in capitals. Everything else,
+ * including a truncated name, is shown as stored.
+ */
+export function directoryName(name: string): string {
+  return name
+    .replace(/(?<![\w.'])[A-Z][a-z]+(?![\w'])/g, (word) => NAME_ACRONYMS[word] ?? word)
+    .replace(/(?<![\w.])N\.a\.(?!\w)/g, "N.A.");
+}
+
+const CITY_SMALL_WORDS = new Set(["of", "and", "the", "on", "at", "in", "by", "de", "la", "del"]);
+
+/**
+ * A city as the directory prints it, display only: all capitals or a lowercase word
+ * ("FORT LAUDERDALE", "Fort lauderdale") becomes "Fort Lauderdale". A word that already has a
+ * capital ("McAllen") is kept.
+ */
+export function directoryCity(city: string | null | undefined): string | null {
+  const trimmed = city?.trim();
+  if (!trimmed) return null;
+  const base = trimmed === trimmed.toUpperCase() ? trimmed.toLowerCase() : trimmed;
+  return base
+    .split(/(\s+|-|\/)/)
+    .map((part, index) => {
+      if (!/^[a-z]/.test(part) || part !== part.toLowerCase()) return part;
+      if (index > 0 && CITY_SMALL_WORDS.has(part)) return part;
+      return part.charAt(0).toUpperCase() + part.slice(1);
+    })
+    .join("");
 }

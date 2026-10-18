@@ -2,10 +2,11 @@ import Link from "next/link";
 import { ArrowLeft, ArrowRight, CircleDashed, Clock3, FileCheck2, MapPin } from "lucide-react";
 import type { InstitutionSearchResult } from "@/lib/data-store/search";
 import { formatAmount } from "@/lib/format";
-import { getCharterLabel, getSegmentLabel, toTitleCase } from "../institution/[id]/enum-labels";
+import { getCharterLabel, getSegmentLabel } from "../institution/[id]/enum-labels";
 import { HEADLINE_FEE_KEYS, isInstitutionRich } from "@/lib/data-store/market-readiness";
 import { getHeadlineCoverageLabel } from "../institution/[id]/enum-labels";
 import { hasVerifiedFees } from "./directory-sort";
+import { directoryCity, directoryName } from "./directory-view";
 
 /** Headline categories published per institution id; null when the count could not be read. */
 export type HeadlineCoverage = Map<number, number> | null;
@@ -95,7 +96,7 @@ function FocusAmount({ row, focus, align = "right" }: { row: InstitutionSearchRe
 }
 
 function locationLabel(row: InstitutionSearchResult): string {
-  return [toTitleCase(row.city), row.state_code].filter(Boolean).join(", ");
+  return [directoryCity(row.city), row.state_code].filter(Boolean).join(", ");
 }
 
 function StatusChip({
@@ -165,7 +166,7 @@ export function InstitutionResultsTable({
                     href={institutionHref(row.id, focus)}
                     className="group flex min-w-0 items-center gap-2 break-words font-medium text-ink transition-colors hover:text-brick"
                   >
-                    <span className="min-w-0 break-words">{row.institution_name}</span>
+                    <span className="min-w-0 break-words">{directoryName(row.institution_name)}</span>
                     <ArrowRight className="h-3.5 w-3.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
                   </Link>
                   <div className="mt-1 md:hidden">
@@ -248,7 +249,7 @@ export function InstitutionMobileCards({
               className="fi-row-interaction flex min-h-11 items-center gap-3 rounded-xl border border-border bg-surface-0 px-4 py-3"
             >
               <span className="min-w-0 flex-1">
-                <span className="block break-words text-[15px] font-semibold leading-snug text-ink">{row.institution_name}</span>
+                <span className="block break-words text-[15px] font-semibold leading-snug text-ink">{directoryName(row.institution_name)}</span>
                 {where && (
                   <span className="mt-1 flex items-center gap-1 text-[13px] text-ink-muted">
                     <MapPin aria-hidden="true" className="size-3.5 shrink-0" strokeWidth={1.75} />

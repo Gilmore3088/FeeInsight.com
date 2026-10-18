@@ -11,6 +11,8 @@ import {
   percentLabel,
   shareBand,
   stateFinding,
+  directoryCity,
+  directoryName,
   stateSummaryLine,
   stateRows,
 } from "./directory-view";
@@ -96,8 +98,10 @@ describe("states", () => {
 
   it("says how many states have any and the median state share, which the list doesn't show", () => {
     expect(stateFinding(rows)).toBe(
-      "2 of the 3 states, DC and territories have at least one institution with published fees; the median state share is 16%.",
+      "2 of the 3 states have at least one institution with published fees; the median state share is 16%.",
     );
+    const all = stateRows([summary("GA", 66, 205), summary("DC", 5, 20), summary("PR", 2, 9), summary("GU", 1, 4)]);
+    expect(stateFinding(all)).toMatch(/^All 1 state, DC and the territories \(4 in all\) have at least one/);
     expect(stateFinding(stateRows([summary("VT", 0, 27)]))).toBeNull();
   });
 
@@ -111,5 +115,23 @@ describe("states", () => {
     expect(shareBand(0.1)).toBe(1);
     expect(shareBand(0.8)).toBe(4);
     expect(bandsInUse([summary("GA", 66, 205), summary("VT", 0, 27)])).toEqual([0, 2]);
+  });
+});
+
+describe("display names", () => {
+  it("sets registry acronyms back in capitals and leaves other words as stored", () => {
+    expect(directoryName("Campus Usa Credit Union")).toBe("Campus USA Credit Union");
+    expect(directoryName("Ecu Credit Union")).toBe("ECU Credit Union");
+    expect(directoryName("First Bank, N.a.")).toBe("First Bank, N.A.");
+    expect(directoryName("Usaa Federal Savings Bank")).toBe("Usaa Federal Savings Bank");
+    expect(directoryName("Community First Credit Union of Flo")).toBe("Community First Credit Union of Flo");
+  });
+
+  it("capitalizes each word of a city without touching mixed-case words", () => {
+    expect(directoryCity("Fort lauderdale")).toBe("Fort Lauderdale");
+    expect(directoryCity("FORT LAUDERDALE")).toBe("Fort Lauderdale");
+    expect(directoryCity("McAllen")).toBe("McAllen");
+    expect(directoryCity("Port of spain")).toBe("Port of Spain");
+    expect(directoryCity(" ")).toBeNull();
   });
 });
