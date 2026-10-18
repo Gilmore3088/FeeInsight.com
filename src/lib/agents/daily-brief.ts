@@ -13,6 +13,7 @@ import { getFailureAlerts } from "./failure-alerts";
 import { goalBriefLines, readGoalScorecard, type GoalScorecard } from "./goal-scorecard";
 import { qualityLedgerLines, readQualityLedger, type QualityLedger } from "./quality-ledger";
 import { STORAGE_STEP_KEY } from "./atlas/storage-retention";
+import { readSourceHealth, sourceHealthLines, urgentSourceCount, type SourceHealthReport } from "./hoovie/source-health";
 
 /**
  * Atlas's morning brief: what ran, how the database moved since the last brief,
@@ -104,6 +105,7 @@ export function buildDailyBrief({
   goal,
   ledger,
   storage,
+  sources,
   now = new Date(),
 }: {
   health: PipelineHealth;
@@ -121,6 +123,11 @@ export function buildDailyBrief({
   ledger?: QualityLedger | null;
   /** Atlas's storage warnings; the brief mentions storage only on a day with a warning. */
   storage?: StorageWarning | null;
+  /**
+   * Hoovie's source health report (#1866), read when the brief runs; the brief lists only the
+   * sources that are not fresh, and says nothing about public data when every source is fresh.
+   */
+  sources?: SourceHealthReport | null;
   now?: Date;
 }): DailyBrief {
   const problems = pipelineHealthProblems(health);
@@ -164,6 +171,11 @@ export function buildDailyBrief({
     );
   }
 
+  const sourceLines = sourceHealthLines(sources);
+  if (sourceLines.length > 0) lines.push(sourceLines.join("\n"));
+  const urgentSources = urgentSourceCount(sources);
+  const sourceSubject = urgentSources > 0 ? `, ${urgentSources} public source${urgentSources === 1 ? "" : "s"} failed or empty` : "";
+
   const status = !health.pipeline_enabled ? "paused" : problems.length > 0 ? "needs attention" : "running";
   const storageLines = storageWarningLines(storage);
 
@@ -172,19 +184,19 @@ export function buildDailyBrief({
     const more = needsYou.length > shown.length ? [`- and ${needsYou.length - shown.length} more in the console`] : [];
     const problemLines = [...problems, ...storageLines].map((problem) => `- ${problem}`);
     const headline = needsYou.length === 0 && problems.length === 0
-      ? storageLines.length > 0 ? "Storage warning." : "Nothing needs you."
+      ? storageLines.length > 0 ? "Storage warning." : urgentSources > 0 ? "Public data warning." : "Nothing needs you."
       : needsYouHeadline(needsYou);
     lines.unshift([headline, ...problemLines, ...shown, ...more].join("\n"));
     const storageSubject = storageLines.length > 0 && headline !== "Storage warning." ? ", storage warning" : "";
     return {
-      subject: `Morning brief: ${headline.replace(/\.$/, "").toLowerCase()}${storageSubject}, pipeline ${status}`,
+      subject: `Morning brief: ${headline.replace(/\.$/, "").toLowerCase()}${storageSubject}${headline === "Public data warning." ? "" : sourceSubject}, pipeline ${status}`,
       lines,
       needsYou,
     };
   }
 
   const errors = feed24h.filter((item) => item.tone === "error").slice(0, 2);
-  if (problems.length === 0 && errors.length === 0 && storageLines.length === 0) {
+  if (problems.length === 0 && errors.length === 0 && storageLines.length === 0 && urgentSources === 0) {
     lines.push("Nothing is stuck. Nothing needs you.");
   } else if (problems.length > 0 || errors.length > 0) {
     lines.push(`Needs you: ${[...problems, ...errors.map((item) => item.text)].slice(0, 3).join(" ")}`);
@@ -192,7 +204,7 @@ export function buildDailyBrief({
   lines.push(...storageLines);
 
   return {
-    subject: `Atlas daily brief: pipeline ${status}${storageLines.length > 0 ? ", storage warning" : ""}, ${funnel.sourcedInstitutions.toLocaleString("en-US")} institutions published`,
+    subject: `Atlas daily brief: pipeline ${status}${storageLines.length > 0 ? ", storage warning" : ""}${sourceSubject}, ${funnel.sourcedInstitutions.toLocaleString("en-US")} institutions published`,
     lines,
   };
 }
@@ -270,7 +282,7 @@ export interface DailyBriefResult {
 /** Gathers the numbers, writes the brief and emails it. Never throws on delivery. */
 export async function runDailyBrief({ dryRun = false }: { dryRun?: boolean } = {}): Promise<DailyBriefResult> {
   const now = new Date();
-  const [health, funnel, previous, stepsByAgent, feed, center, failureAlerts, leads, spend, goal, ledger, storage] = await Promise.all([
+  const [health, funnel, previous, stepsByAgent, feed, center, failureAlerts, leads, spend, goal, ledger, storage, sources] = await Promise.all([
     getPipelineHealth(),
     getPipelineFunnel(),
     previousBrief(now),
@@ -298,12 +310,18 @@ export async function runDailyBrief({ dryRun = false }: { dryRun?: boolean } = {
       console.error("Morning brief storage read failed", error);
       return null;
     }),
+    // Read now, not from Deming's step: the scoreboard run (12:17 UTC) comes after the brief (12:00
+    // UTC), so its report would be a day late for a load that failed overnight.
+    readSourceHealth({ now }).catch((error) => {
+      console.error("Morning brief source health read failed", error);
+      return null;
+    }),
   ]);
   const since = now.getTime() - DAY_MS;
   const feed24h = feed.filter((item) => new Date(item.at).getTime() >= since);
   // Without Atlas's attention list the Needs-you count would be short, so the brief falls back to its older summary.
   const needsYou = center ? buildNeedsYou({ attention: center.attention, failureAlerts, leads, now }) : undefined;
-  const brief = buildDailyBrief({ health, funnel, previous, stepsByAgent, feed24h, needsYou, spend, goal, ledger, storage, now });
+  const brief = buildDailyBrief({ health, funnel, previous, stepsByAgent, feed24h, needsYou, spend, goal, ledger, storage, sources, now });
   const { to: recipient, cc } = briefRecipients();
   const from = getTransactionalFromAddress();
 

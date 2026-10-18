@@ -36,6 +36,9 @@ describe("getRegistryFeedFreshness", () => {
         lastError: null,
         blocked: 0,
         blockedHost: null,
+        succeeded: 0,
+        lastFailedAt: null,
+        lastBlockedAt: null,
       },
     ]);
   });
