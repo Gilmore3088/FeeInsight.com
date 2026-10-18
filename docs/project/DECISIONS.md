@@ -1258,5 +1258,5 @@ counts for Oct 15 05:00 to Oct 18 06:40 UTC: 318 PRs merged (`pulls?state=closed
 a median of 21 minutes from open to merge, and 1,123 CI workflow runs (`actions/runs?created=...`,
 `total_count`). Of 21 merged PRs sampled on Oct 18 (#1883, #1847, #1834, #1804, #1791, #1766, #1752,
 #1729, #1700, #1564, #1624, #1647, #1631, #1629, #1589, #1558, #1529, #1506, #1486, #1461, #1429),
-11 had no GitHub review and no verdict comment. Migrations, production-data changes and the other
-gated actions in CLAUDE.md still need his yes.
+15 had no submitted GitHub review, which the Oct 14 "Reviewed" rule requires. Migrations,
+production-data changes and the other gated actions in CLAUDE.md still need his yes.
