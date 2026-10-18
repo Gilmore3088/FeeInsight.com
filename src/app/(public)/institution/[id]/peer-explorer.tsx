@@ -4,18 +4,19 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type React
 import { ArrowRight, ChevronDown, ChevronUp, Grid3x3, MapPin, ScatterChart, SlidersHorizontal, X } from "lucide-react";
 import Link from "next/link";
 import { TrackLink } from "@/components/track-link";
+import { displayCity } from "@/lib/format";
 import {
   EXPLORER_FEE_KEYS,
   EXPLORER_FEE_LABELS,
   EXPLORER_FEE_SHORT,
   LANDSCAPE_AXIS_LABELS,
-  NEAR_MEDIAN_SHARE,
   assetDifference,
   assetRadius,
   assetScale,
   assetsLabel,
   cellShade,
   comparisonLabel,
+  ABOUT_SAME_RULE,
   feeCoverage,
   feeFindings,
   gapText,
@@ -27,6 +28,10 @@ import {
   linearScale,
   locationGroups,
   matrixSummary,
+  publishingPeers,
+  peerSnapshot,
+  briefingCarries,
+  formatIsoDate,
   money,
   scalePosition,
   signedMoney,
@@ -132,6 +137,7 @@ export function PeerExplorer({
   const initialPeer = Number(initial.peer);
   const [selectedId, setSelectedId] = useState<number>(byId.has(initialPeer) ? initialPeer : set.subject.id);
   const [highlight, setHighlight] = useState<Highlight | null>(null);
+  const [preview, setPreview] = useState(false);
 
   const select = useCallback(
     (id: number) => {
@@ -154,12 +160,16 @@ export function PeerExplorer({
   const selected = byId.get(selectedId) ?? set.subject;
   const findings = feeFindings(set, fee, selected.id);
   const median = set.medians[fee];
-  const href = hamiltonPeerSetHref(set.subject.id, set.peers.map((peer) => peer.id), setName, fee);
+  const href = hamiltonPeerSetHref(set.subject.id, set.peers.map((peer) => peer.id), setName, fee, set.asOf);
+  const snapshot = peerSnapshot(set, setKey, fee);
   const viewProps = { set, fee, selectedId: selected.id, highlight, onSelect: select };
 
   return (
-    <div className="mt-5">
-      <Coverage set={set} fee={fee} />
+    <div className="mt-3">
+      <Roster set={set} fee={fee} />
+      <div className="mt-5">
+        <Coverage set={set} fee={fee} />
+      </div>
 
       {/* Views and the fee: tabs first on a phone, the fee below them. */}
       <div className="mt-4 flex flex-col gap-3 border-t border-border pt-4 xl:flex-row xl:items-center xl:justify-between">
@@ -200,6 +210,15 @@ export function PeerExplorer({
           </select>
         </label>
       </div>
+
+      <section aria-labelledby="peer-snapshot-heading" className="mt-4 rounded-lg border border-border bg-paper px-4 py-3 sm:px-5 sm:py-4">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">Peer pricing snapshot</p>
+        <h3 id="peer-snapshot-heading" className="mt-1 text-[20px] leading-snug text-ink sm:text-[22px]" style={{ fontFamily: "var(--fi-home-serif, Georgia), Georgia, serif" }}>
+          {snapshot.headline}
+        </h3>
+        <p className="mt-1.5 text-[14px] leading-relaxed text-ink-soft tabular-nums">{snapshot.facts}</p>
+        <p className="mt-1 text-[12px] text-ink-muted">{snapshot.caveat}</p>
+      </section>
 
       <div className="mt-4 grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_19rem] lg:gap-8">
         <div id="peer-view-panel" role="tabpanel" aria-labelledby={`peer-view-${view}`} className="min-w-0">
@@ -253,16 +272,45 @@ export function PeerExplorer({
 
       {/* Hamilton actions for this set and fee (instId, peers, name, fee); Hamilton routes a visitor who is not signed in. */}
       <div className="mt-6 flex flex-col gap-3 border-t border-border pt-5 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4">
-        <HamiltonLink isPro={isPro} href={href} placement="institution_peer_briefing" primary>
-          Generate a pricing committee briefing
+        <button
+          type="button"
+          aria-expanded={preview}
+          aria-controls="peer-briefing-preview"
+          onClick={() => setPreview((open) => !open)}
+          className="fi-btn fi-btn-brick min-h-12 w-full gap-2 px-6 text-[15px] sm:w-auto"
+        >
+          Generate a pricing committee briefing in Hamilton
           <ArrowRight aria-hidden="true" className="size-4" />
-        </HamiltonLink>
+        </button>
         {setKey === "metro" && (
           <HamiltonLink isPro={isPro} href={href} placement="institution_peer_local_competitors">
-            Compare local deposit competitors
+            Compare local deposit competitors in Hamilton
           </HamiltonLink>
         )}
       </div>
+      {preview && (
+        <div id="peer-briefing-preview" role="region" aria-label="Before you open Hamilton" className="mt-3 max-w-xl rounded-lg border border-border bg-paper p-4 text-[13px]">
+          <p className="text-[14px] font-semibold text-ink">The briefing starts from this view</p>
+          <p className="mt-1 text-ink-soft">This link opens Hamilton with:</p>
+          <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5">
+            {briefingCarries(set, setName, fee, `Published prices against the peer median${median ? ` of ${median.peers.toLocaleString("en-US")} publishing peers` : ""}`).map((row) => (
+              <Fragment key={row.label}>
+                <dt className="text-ink-muted">{row.label}</dt>
+                <dd className="min-w-0 text-ink">{row.value}</dd>
+              </Fragment>
+            ))}
+          </dl>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <HamiltonLink isPro={isPro} href={href} placement="institution_peer_briefing" primary>
+              Continue to Hamilton
+              <ArrowRight aria-hidden="true" className="size-4" />
+            </HamiltonLink>
+            <button type="button" onClick={() => setPreview(false)} className="min-h-11 text-[13px] font-medium text-ink underline underline-offset-2">
+              Not now
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -279,6 +327,127 @@ function HamiltonLink({ isPro, href, placement, primary = false, children }: { i
     <TrackLink event="upgrade_click" eventProps={{ placement }} href={href} className={className}>
       {children}
     </TrackLink>
+  );
+}
+
+/** One institution's row in the roster: coverage (which fees it publishes) or the selected fee's price, gap and source. */
+function RosterRow({ inst, fee, median, mode, subject = false }: { inst: ExplorerInstitution; fee: ExplorerFeeKey; median: number | undefined; mode: "coverage" | "prices"; subject?: boolean }) {
+  const place = [inst.city ? displayCity(inst.city) : null, inst.state].filter(Boolean).join(", ");
+  const own = inst.fees[fee];
+  return (
+    <tr className={subject ? "bg-paper" : "border-t border-border"}>
+      <th scope="row" className={`px-3 py-2 text-left text-ink ${subject ? "font-semibold" : "font-medium"}`}>
+        {inst.name}
+        {subject && <span className="ml-1 font-normal text-ink-muted">(this institution)</span>}
+      </th>
+      <td className="px-3 py-2 text-ink-soft">{place || "Not on record"}</td>
+      <td className="px-3 py-2 text-right tabular-nums text-ink-soft">{assetsLabel(inst.assets) ?? "Not on record"}</td>
+      {mode === "coverage" ? (
+        EXPLORER_FEE_KEYS.map((key) => {
+          const published = inst.fees[key] !== undefined;
+          return (
+            <td key={key} className={`px-3 py-2 text-center ${published ? "text-ink" : "text-ink-muted"}`}>
+              <span aria-hidden="true">{published ? "✓" : "–"}</span>
+              <span className="sr-only">{published ? `Publishes ${EXPLORER_FEE_LABELS[key]}` : `${EXPLORER_FEE_LABELS[key]} not published`}</span>
+            </td>
+          );
+        })
+      ) : (
+        <>
+          <td className="px-3 py-2 text-right tabular-nums text-ink">{own ? money(own.amount) : <span className="text-ink-muted">Not published</span>}</td>
+          <td className="px-3 py-2 text-right tabular-nums text-ink-soft">{own && median !== undefined ? signedMoney(own.amount - median) : "–"}</td>
+          <td className="px-3 py-2 text-ink-soft">
+            {own?.source?.url ? (
+              <a href={own.source.url} target="_blank" rel="noopener noreferrer nofollow" className="text-ink underline underline-offset-2">
+                Schedule
+              </a>
+            ) : own ? (
+              "Not linked"
+            ) : (
+              "–"
+            )}
+            {own?.source?.published ? <span className="text-ink-muted"> · {formatIsoDate(own.source.published)}</span> : null}
+          </td>
+        </>
+      )}
+    </tr>
+  );
+}
+
+/**
+ * "See the 25 institutions": exactly who is in the set, so a reader can check the cohort. Coverage
+ * shows which fees each publishes; Prices shows the selected fee's amount, its difference from the
+ * peer median and the schedule it was read from, for the same institutions.
+ */
+function Roster({ set, fee }: { set: PeerExplorerSet; fee: ExplorerFeeKey }) {
+  const [mode, setMode] = useState<"coverage" | "prices">("coverage");
+  const peers = [...set.peers].sort((a, b) => a.name.localeCompare(b.name));
+  if (peers.length === 0) return null;
+  const median = set.medians[fee]?.median;
+  const head = "px-3 py-2 font-medium";
+  return (
+    <details className="text-[13px]" data-peer-list>
+      <summary className="inline-flex min-h-11 cursor-pointer items-center font-medium text-ink">
+        See the {peers.length} {peers.length === 1 ? "institution" : "institutions"}
+        {set.whole ? " shown" : ""}
+      </summary>
+      <div role="radiogroup" aria-label="Roster shows" className="mt-1 inline-flex rounded-full border border-border bg-paper p-0.5 text-[13px]">
+        {(["coverage", "prices"] as const).map((option) => (
+          <button
+            key={option}
+            type="button"
+            role="radio"
+            aria-checked={mode === option}
+            onClick={() => setMode(option)}
+            className={`min-h-9 rounded-full px-3.5 font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink ${mode === option ? "bg-ink text-on-ink" : "text-ink-soft hover:text-ink"}`}
+          >
+            {option === "coverage" ? "Coverage" : `Prices: ${EXPLORER_FEE_LABELS[fee].toLowerCase()}`}
+          </button>
+        ))}
+      </div>
+      <div className="relative mt-2 max-h-[28rem] overflow-auto rounded-lg border border-border">
+        <table className="w-full min-w-[720px] border-collapse text-[13px]">
+          <caption className="sr-only">
+            {mode === "coverage"
+              ? "The institutions in this peer set, with the fees each publishes"
+              : `The institutions in this peer set, with each one's ${EXPLORER_FEE_LABELS[fee].toLowerCase()} fee, its difference from the peer median and its source`}
+          </caption>
+          <thead className="sticky top-0 bg-surface-0 text-[12px] text-ink-muted">
+            <tr>
+              <th scope="col" className={`${head} text-left`}>Institution</th>
+              <th scope="col" className={`${head} text-left`}>City, state</th>
+              <th scope="col" className={`${head} text-right`}>Assets</th>
+              {mode === "coverage" ? (
+                EXPLORER_FEE_KEYS.map((key) => (
+                  <th key={key} scope="col" className={`${head} text-center`}>
+                    {EXPLORER_FEE_SHORT[key]}
+                  </th>
+                ))
+              ) : (
+                <>
+                  <th scope="col" className={`${head} text-right`}>{EXPLORER_FEE_SHORT[fee]}</th>
+                  <th scope="col" className={`${head} text-right`}>Vs median{median !== undefined ? ` ${money(median)}` : ""}</th>
+                  <th scope="col" className={`${head} text-left`}>Source, in the index since</th>
+                </>
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            <RosterRow inst={set.subject} fee={fee} median={median} mode={mode} subject />
+            {peers.map((inst) => (
+              <RosterRow key={inst.id} inst={inst} fee={fee} median={median} mode={mode} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-1 text-[12px] text-ink-muted">
+        {mode === "coverage"
+          ? "✓ publishes the fee. – not published."
+          : median !== undefined
+            ? "Vs median: the published value minus the peer median. Not published is never counted as zero."
+            : "Too few peers publish this fee for a median. Not published is never counted as zero."}
+      </p>
+    </details>
   );
 }
 
@@ -340,6 +509,11 @@ function Tooltip({ inst, fee, left, top, extra }: { inst: ExplorerInstitution; f
   );
 }
 
+/** "comparison value (midpoint)", or for overdraft, whose value is its highest price, "(highest)". */
+function comparisonMarkerLabel(fee: ExplorerFeeKey): string {
+  return fee === "overdraft" ? "comparison value (highest)" : "comparison value (midpoint)";
+}
+
 const DIST_MARGIN = { left: 16, right: 16 };
 const BREAK_WIDTH = 64;
 
@@ -351,9 +525,13 @@ const BREAK_WIDTH = 64;
 function Distribution({ set, fee, selectedId, highlight, onSelect }: ViewProps) {
   const [ref, width] = useWidth<HTMLDivElement>(720);
   const [hover, setHover] = useState<number | null>(null);
+  const [hoverPrice, setHoverPrice] = useState<number | null>(null);
   const [include, setInclude] = useState(false);
   const everyone = [set.subject, ...set.peers];
   const publishing = everyone.filter((inst) => feeOf(inst, fee) !== undefined);
+  // The institution's own account prices, when its value is built from several: each drawn as a
+  // price, and the value itself as a hollow marker, so the comparison value never reads as a price.
+  const ownPrices = set.subject.fees[fee]?.prices ?? [];
   const median = set.medians[fee]?.median;
   if (publishing.length === 0) {
     return <p className="rounded-lg border border-dashed border-border p-6 text-[14px] text-ink-muted">Not published by any institution in this set.</p>;
@@ -363,7 +541,7 @@ function Distribution({ set, fee, selectedId, highlight, onSelect }: ViewProps) 
   const outlierAll = splitOutliers(values, false).outliers;
   const broken = split.outliers.length > 0;
   const plotRight = width - DIST_MARGIN.right - (broken ? BREAK_WIDTH : 0);
-  const scale = linearScale([...split.shown, median ?? 0], width < 480 ? 3 : 5);
+  const scale = linearScale([...split.shown, ...ownPrices.map((price) => price.amount).filter((v) => !split.outliers.includes(v)), median ?? 0], width < 480 ? 3 : 5);
   const px = (v: number) => DIST_MARGIN.left + scalePosition(scale, v) * (plotRight - DIST_MARGIN.left);
   const outlierSorted = [...split.outliers].sort((a, b) => a - b);
   const breakX = (v: number) => plotRight + 24 + (outlierSorted.length > 1 ? (outlierSorted.indexOf(v) / (outlierSorted.length - 1)) * (BREAK_WIDTH - 32) : 0);
@@ -382,7 +560,8 @@ function Distribution({ set, fee, selectedId, highlight, onSelect }: ViewProps) 
     });
   const maxLevel = Math.max(0, ...placed.map((p) => p.level));
   const base = 44 + Math.min(maxLevel, 12) * 11;
-  const height = base + 40;
+  const priceRow = base + 62;
+  const height = ownPrices.length >= 2 ? priceRow + 34 : base + 40;
   const yOf = (level: number) => base - Math.min(level, 12) * 11;
   const hovered = hover !== null ? placed.find((p) => p.inst.id === hover) : null;
   const subjectValue = feeOf(set.subject, fee);
@@ -429,7 +608,16 @@ function Distribution({ set, fee, selectedId, highlight, onSelect }: ViewProps) 
                 >
                   <circle cx={x} cy={cy} r={10} fill="transparent" />
                   {isSubject ? (
-                    <rect x={x - 6} y={cy - 6} width={12} height={12} transform={`rotate(45 ${x} ${cy})`} fill={SUBJECT} stroke="var(--fi-surface-0)" strokeWidth={2} />
+                    <rect
+                      x={x - 6}
+                      y={cy - 6}
+                      width={12}
+                      height={12}
+                      transform={`rotate(45 ${x} ${cy})`}
+                      fill={ownPrices.length >= 2 ? "var(--fi-surface-0)" : SUBJECT}
+                      stroke={ownPrices.length >= 2 ? SUBJECT : "var(--fi-surface-0)"}
+                      strokeWidth={2}
+                    />
                   ) : (
                     <circle cx={x} cy={cy} r={isSelected ? 6 : 4.5} fill={isSelected || highlight?.ids.has(inst.id) ? SELECTED : PEER} stroke="var(--fi-surface-0)" strokeWidth={2} />
                   )}
@@ -449,20 +637,65 @@ function Distribution({ set, fee, selectedId, highlight, onSelect }: ViewProps) 
               textAnchor={xOf(subjectValue) > width - 120 ? "end" : xOf(subjectValue) < 120 ? "start" : "middle"}
               className="pointer-events-none fill-brick text-[11px] font-semibold"
             >
-              {short(set.subject.name)} {money(subjectValue)}
+              {ownPrices.length >= 2 ? `${short(set.subject.name)}: ${comparisonMarkerLabel(fee)} ${money(subjectValue)}` : `${short(set.subject.name)} ${money(subjectValue)}`}
             </text>
+          )}
+          {ownPrices.length >= 2 && (
+            <g aria-label={`${set.subject.name}'s account prices`}>
+              <text x={DIST_MARGIN.left} y={priceRow - 16} className="fill-ink-muted text-[11px] font-medium">
+                {short(set.subject.name)}&apos;s account prices
+              </text>
+              {ownPrices.map((price, i) => {
+                const x = xOf(price.amount);
+                const anchor = x > width - 120 ? "end" : x < 120 ? "start" : "middle";
+                return (
+                  <g key={i} className="cursor-default" onMouseEnter={() => setHoverPrice(i)} onMouseLeave={() => setHoverPrice(null)}>
+                    <circle cx={x} cy={priceRow} r={10} fill="transparent" />
+                    <rect x={x - 5} y={priceRow - 5} width={10} height={10} transform={`rotate(45 ${x} ${priceRow})`} fill={SUBJECT} stroke="var(--fi-surface-0)" strokeWidth={1.5} />
+                    <text x={x} y={priceRow + (i % 2 === 0 ? 20 : 31)} textAnchor={anchor} className="fill-ink text-[11px]">
+                      {short(price.name ?? `Price ${i + 1}`)} {money(price.amount)}
+                    </text>
+                  </g>
+                );
+              })}
+            </g>
           )}
         </svg>
         {hovered && (
           <Tooltip inst={hovered.inst} fee={fee} left={`${(hovered.x / width) * 100}%`} top={`calc(${(yOf(hovered.level) / height) * 100}% - 10px)`} />
         )}
+        {hoverPrice !== null && ownPrices[hoverPrice] && (
+          <div
+            className="pointer-events-none absolute z-20 w-max max-w-[18rem] -translate-x-1/2 -translate-y-full rounded-md border border-border bg-surface-0 px-2.5 py-1.5 text-[12px] leading-snug shadow-fi-1"
+            style={{ left: `${(xOf(ownPrices[hoverPrice].amount) / width) * 100}%`, top: `calc(${(priceRow / height) * 100}% - 10px)` }}
+          >
+            <p className="font-semibold text-ink">{ownPrices[hoverPrice].name ?? "Account not named"}</p>
+            <p className="tabular-nums text-ink-muted">{money(ownPrices[hoverPrice].amount)}, a price on the schedule</p>
+            {ownPrices[hoverPrice].conditions && <p className="mt-0.5 text-ink-muted">{ownPrices[hoverPrice].conditions}</p>}
+          </div>
+        )}
       </div>
       <figcaption className="mt-2 space-y-1.5 text-[12px] text-ink-muted">
         <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
-          <span className="inline-flex items-center gap-1.5">
-            <span aria-hidden="true" className="inline-block size-2.5 rotate-45" style={{ background: SUBJECT }} />
-            {short(set.subject.name)}
-          </span>
+          {ownPrices.length >= 2 ? (
+            <>
+              <span className="inline-flex items-center gap-1.5">
+                <span aria-hidden="true" className="inline-block size-2.5 rotate-45" style={{ background: SUBJECT }} />
+                {short(set.subject.name)}: an account price
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span aria-hidden="true" className="inline-block size-2.5 rotate-45 border-2" style={{ borderColor: SUBJECT }} />
+                {fee === "overdraft"
+                  ? "Its comparison value (highest price), compared with the median"
+                  : "Its comparison value (midpoint), compared with the median; not a price anyone pays"}
+              </span>
+            </>
+          ) : (
+            <span className="inline-flex items-center gap-1.5">
+              <span aria-hidden="true" className="inline-block size-2.5 rotate-45" style={{ background: SUBJECT }} />
+              {short(set.subject.name)}
+            </span>
+          )}
           <span className="inline-flex items-center gap-1.5">
             <span aria-hidden="true" className="inline-block size-2.5 rounded-full" style={{ background: PEER }} />
             Peer (equal prices stack)
@@ -751,15 +984,15 @@ function Locations({ set, fee, selectedId, highlight, onSelect }: ViewProps) {
 
 const BAND_WORDS: Record<MatrixBand, { mark: string; label: string }> = {
   below: { mark: "▼", label: "Below the median" },
-  near: { mark: "≈", label: `Near the median, within ${Math.round(NEAR_MEDIAN_SHARE * 100)}%` },
+  same: { mark: "≈", label: ABOUT_SAME_RULE },
   above: { mark: "▲", label: "Above the median" },
   none: { mark: "", label: "Not published" },
 };
 
-/** The cell fill: blue below, red above, deeper toward the cohort's tails; neutral near; hatched when not published. */
+/** The cell fill: blue below, red above, deeper toward the cohort's tails; neutral when about the same; hatched when not published. */
 function cellBackground(band: MatrixBand, step: number): string {
   if (band === "none") return "repeating-linear-gradient(135deg, transparent 0 5px, color-mix(in srgb, var(--fi-ink) 8%, transparent) 5px 6px)";
-  if (band === "near") return "color-mix(in srgb, var(--fi-ink) 6%, var(--fi-surface-0))";
+  if (band === "same") return "color-mix(in srgb, var(--fi-ink) 6%, var(--fi-surface-0))";
   const tone = band === "below" ? BELOW_TONE : ABOVE_TONE;
   return `color-mix(in srgb, ${tone} ${[12, 12, 22, 34][step]}%, var(--fi-surface-0))`;
 }
@@ -916,7 +1149,7 @@ function Matrix({ set, fee, selectedId, highlight, onSelect, onFee }: ViewProps 
                             title={`${inst.name}, ${EXPLORER_FEE_LABELS[key]}: ${value !== undefined ? money(value) : "not published"}${proxy ? ` (${proxy.toLowerCase()})` : ""}${value !== undefined ? `, ${words}` : ""}`}
                             aria-expanded={open && evidence?.fee === key}
                             className={`flex min-h-10 w-full items-center justify-center gap-1 rounded-[4px] px-1.5 tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink ${key === fee ? "ring-1 ring-inset ring-ink/20" : ""}`}
-                            style={{ background: cellBackground(median === undefined && value !== undefined ? "near" : band, step) }}
+                            style={{ background: cellBackground(median === undefined && value !== undefined ? "same" : band, step) }}
                           >
                             {value === undefined ? (
                               <span className="text-[11px] text-ink-muted">Not published</span>
@@ -955,7 +1188,7 @@ function Matrix({ set, fee, selectedId, highlight, onSelect, onFee }: ViewProps 
         </button>
       )}
       <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[12px] text-ink-muted">
-        {(["below", "near", "above", "none"] as const).map((band) => (
+        {(["below", "same", "above", "none"] as const).map((band) => (
           <li key={band} className="inline-flex items-center gap-1.5">
             <span aria-hidden="true" className="inline-flex h-4 w-6 items-center justify-center rounded-[3px] border border-border text-[9px] text-ink-soft" style={{ background: cellBackground(band, 2) }}>
               {BAND_WORDS[band].mark}
@@ -1166,12 +1399,12 @@ function SidePanel({
           </div>
           <div>
             <dt className="text-[12px] text-ink-muted">Peers publishing</dt>
-            <dd className="mt-0.5 text-[20px] font-semibold tabular-nums text-ink">{set.peers.filter((p) => p.fees[fee]).length}</dd>
+            <dd className="mt-0.5 text-[20px] font-semibold tabular-nums text-ink">{publishingPeers(set, fee).toLocaleString("en-US")}</dd>
           </div>
         </dl>
         {gap && (
           <p className="mt-2 text-[14px] font-semibold" style={{ color: gap.direction === "above" ? ABOVE_TONE : gap.direction === "below" ? BELOW_TONE : undefined }}>
-            {gap.direction === "above" ? "▲ " : gap.direction === "below" ? "▼ " : ""}
+            {gap.direction === "above" ? "▲ " : gap.direction === "below" ? "▼ " : "≈ "}
             {gap.text}
           </p>
         )}

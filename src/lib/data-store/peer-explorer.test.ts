@@ -85,6 +85,29 @@ describe("getPeerExplorerSet", () => {
   });
 });
 
+describe("getPeerExplorerSet for a large set", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("reads amounts for every member, then prices and conditions for the 50 closest in assets only", async () => {
+    const db = sql as unknown as ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
+    const ids = Array.from({ length: 3000 }, (_, i) => i + 2);
+    db.mockResolvedValueOnce([{ id: 1, charter_type: "bank", asset_size: 1_000_000 }]);
+    db.mockResolvedValueOnce([fact(1, "Capital City Bank", 1_000_000), ...ids.map((id) => fact(id, `Peer ${id}`, id * 1_000))]);
+    db.unsafe.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    const set = await getPeerExplorerSet(1, { institutionIds: ids });
+    expect(set?.peers).toHaveLength(50);
+    expect(set?.whole?.peers).toBe(3000);
+    // Closest to $1B: 1,000 (=$1.0B) first, then 999 and 1,001, and so on.
+    expect(set?.peers[0].id).toBe(1000);
+    const [wholeQuery, wholeParams] = db.unsafe.mock.calls[0];
+    expect(wholeQuery).not.toContain("ef.conditions");
+    expect(wholeParams[1]).toHaveLength(3001);
+    const [shownQuery, shownParams] = db.unsafe.mock.calls[1];
+    expect(shownQuery).toContain("ef.conditions");
+    expect(shownParams[1]).toHaveLength(51);
+  });
+});
+
 describe("getPeerExplorerSet for the home metro", () => {
   it("adds the metro's branch cities for the institutions shown", async () => {
     const db = sql as unknown as ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };

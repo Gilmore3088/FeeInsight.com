@@ -206,7 +206,7 @@ export async function getInstitutionPeerSetsCached(institutionId: number, reques
  * the key, so a set that resolves to new members is read again.
  */
 // v3: fees carry their source link and date; a home metro set carries branch cities and deposit presence.
-export const getPeerExplorerSetCached = cachedPublicRead("peer-explorer-set-v3", getPeerExplorerSet);
+export const getPeerExplorerSetCached = cachedPublicRead("peer-explorer-set-v4", getPeerExplorerSet);
 /** The state page's peer sets (size, regulator, credit union charter) with their fee medians. */
 export const getStatePeerSetIndexesCached = cachedPublicRead("state-peer-sets-v1", getStatePeerSetIndexes);
 export const getMarketBranchFootprintCached = cachedPublicRead("market-branch-footprint", getMarketBranchFootprint);

@@ -75,8 +75,15 @@ export interface PeerExplorerSet {
   /** The set's other institutions, closest in assets first is not assumed: callers sort. */
   peers: ExplorerInstitution[];
   charterType: string | null;
-  /** Each fee's peer median, present only when enough peers publish it. */
+  /** Each fee's peer median, present only when enough peers publish it. Always the whole set's. */
   medians: Partial<Record<ExplorerFeeKey, ExplorerMedian>>;
+  /** The newest date any fee behind the set's figures joined the index (YYYY-MM-DD), whole set included. */
+  asOf?: string | null;
+  /**
+   * Present only when the set has more peers than the page draws (PEER_EXPLORER_MAX_SHOWN): the
+   * whole set's counts, computed on the server. `peers` then holds the closest in assets.
+   */
+  whole?: ExplorerWholeSet;
   /**
    * For a metro set: the metro's name and, per city inside it, the institutions with a branch
    * there (branch records, the same ones that define the metro). Absent for other sets.
@@ -89,6 +96,68 @@ export interface PeerExplorerSet {
     /** Every institution's deposits in the metro (FDIC Summary of Deposits), for a local share. */
     totalDeposits?: number;
   };
+}
+
+/** The whole set behind a capped explorer set: every count and median on the page uses it. */
+export interface ExplorerWholeSet {
+  /** Peers in the set (the subject left out). */
+  peers: number;
+  /** Peers publishing each fee. */
+  publish: Partial<Record<ExplorerFeeKey, number>>;
+  /** Headquarters states of the peers, for "spread over N states". */
+  states: string[];
+  /** Smallest and largest total assets among the peers, in dollars. */
+  assets: { min: number; max: number } | null;
+}
+
+/** At most this many peers reach the page; a larger set ships its closest in assets. */
+export const PEER_EXPLORER_MAX_SHOWN = 50;
+
+/**
+ * Caps a set at `max` peers, the closest in total assets to the subject (ties and unknown assets by
+ * id), and keeps the whole set's counts beside them. Medians were computed before the cap, so they
+ * stay the whole set's. A set at or under the cap comes back unchanged.
+ */
+export function capPeerExplorerSet(set: PeerExplorerSet, max = PEER_EXPLORER_MAX_SHOWN): PeerExplorerSet {
+  if (set.peers.length <= max) return set;
+  const own = set.subject.assets;
+  const distance = (inst: ExplorerInstitution) => (inst.assets === null ? Infinity : own === null ? -inst.assets : Math.abs(inst.assets - own));
+  const shown = [...set.peers].sort((a, b) => distance(a) - distance(b) || a.id - b.id).slice(0, max);
+  const publish: Partial<Record<ExplorerFeeKey, number>> = {};
+  for (const key of EXPLORER_FEE_KEYS) publish[key] = set.peers.filter((peer) => peer.fees[key] !== undefined).length;
+  const assets = set.peers.map((peer) => peer.assets).filter((v): v is number => v !== null && v > 0);
+  return {
+    ...set,
+    peers: shown,
+    whole: {
+      peers: set.peers.length,
+      publish,
+      states: [...new Set(set.peers.map((peer) => peer.state).filter((state): state is string => !!state))].sort(),
+      assets: assets.length > 0 ? { min: Math.min(...assets), max: Math.max(...assets) } : null,
+    },
+  };
+}
+
+/** "Showing the 50 closest in assets of 1,204 peers; medians use all 1,204." Null for an uncapped set. */
+export function shownLine(set: PeerExplorerSet): string | null {
+  if (!set.whole) return null;
+  const total = set.whole.peers.toLocaleString("en-US");
+  return `Showing the ${set.peers.length} closest in assets of ${total} peers; medians use all ${total}.`;
+}
+
+/** Peers publishing a fee across the whole set. */
+export function publishingPeers(set: PeerExplorerSet, key: ExplorerFeeKey): number {
+  return set.whole ? (set.whole.publish[key] ?? 0) : set.peers.filter((peer) => peer.fees[key] !== undefined).length;
+}
+
+function peerStates(set: PeerExplorerSet): string[] {
+  return set.whole ? set.whole.states : [...new Set(set.peers.map((peer) => peer.state).filter((state): state is string => !!state))];
+}
+
+function peerAssetRange(set: PeerExplorerSet): { min: number; max: number } | null {
+  if (set.whole) return set.whole.assets;
+  const assets = set.peers.map((peer) => peer.assets).filter((v): v is number => v !== null && v > 0);
+  return assets.length > 0 ? { min: Math.min(...assets), max: Math.max(...assets) } : null;
 }
 
 export const money = (n: number) => formatFeeAmount(n) ?? `$${n.toFixed(2)}`;
@@ -104,27 +173,43 @@ export function assetsLabel(dollars: number | null): string | null {
 
 /** How many institutions are in the set and how many of them publish one fee. */
 export function feeCoverage(set: PeerExplorerSet, key: ExplorerFeeKey): { selected: number; publish: number } {
-  return { selected: set.peers.length, publish: set.peers.filter((peer) => peer.fees[key] !== undefined).length };
+  return { selected: set.whole?.peers ?? set.peers.length, publish: publishingPeers(set, key) };
 }
 
-/** Within this share of the median a matrix cell reads as near it. */
-export const NEAR_MEDIAN_SHARE = 0.1;
+/**
+ * Within this share of the median a fee is "about the same" as it: the site's one rule, as on the
+ * state and district pages and the institution overview. Further than that is above or below.
+ */
+export const ABOUT_SAME_SHARE = 0.01;
 
-export type MatrixBand = "below" | "near" | "above" | "none";
+/** The rule in words, shown once near each place the phrase is used. */
+export const ABOUT_SAME_RULE = "About the same: within 1% of the median.";
+
+/** True when a value is within 1% of the median (a zero median needs the value to be within 1 cent). */
+export function aboutSameAsMedian(value: number, median: number): boolean {
+  const gap = Math.abs(value - median);
+  return median > 0 ? gap <= median * ABOUT_SAME_SHARE : gap < 0.005;
+}
+
+export type MatrixBand = "below" | "same" | "above" | "none";
 
 /** A matrix cell's band against its column's peer median; "none" when the fee or the median is missing. */
 export function matrixBand(value: number | undefined, median: number | undefined): MatrixBand {
   if (value === undefined || median === undefined) return "none";
-  const gap = value - median;
-  const share = median > 0 ? Math.abs(gap) / median : Math.abs(gap);
-  if (share <= NEAR_MEDIAN_SHARE) return "near";
-  return gap > 0 ? "above" : "below";
+  if (aboutSameAsMedian(value, median)) return "same";
+  return value > median ? "above" : "below";
 }
 
-/** "$1.55 below the peer median" / "Matches the peer median". Within half a cent is the same. */
+/**
+ * "$1.55 below the peer median", or within 1% "About the same as the peer median ($0.03 below)",
+ * the matrix's own rule, so the panel and the matrix never classify one fee two ways.
+ */
 export function gapText(value: number, median: number): { direction: "below" | "above" | "same"; text: string } {
   const gap = value - median;
-  if (Math.abs(gap) < 0.005) return { direction: "same", text: "Matches the peer median" };
+  if (aboutSameAsMedian(value, median)) {
+    const detail = Math.abs(gap) < 0.005 ? "the same price" : `${money(Math.abs(gap))} ${gap > 0 ? "above" : "below"}`;
+    return { direction: "same", text: `About the same as the peer median (${detail})` };
+  }
   return gap > 0
     ? { direction: "above", text: `${money(gap)} above the peer median` }
     : { direction: "below", text: `${money(-gap)} below the peer median` };
@@ -187,13 +272,13 @@ export function whyThesePeers(set: PeerExplorerSet): string[] {
   const parts: string[] = [];
   const kind = set.charterType ? CHARTER_WORDS[set.charterType] : null;
   if (kind) parts.push(`${kind} only`);
-  const assets = set.peers.map((peer) => peer.assets).filter((value): value is number => value !== null && value > 0);
-  if (assets.length > 0) {
-    const low = assetsLabel(Math.min(...assets));
-    const high = assetsLabel(Math.max(...assets));
+  const range = peerAssetRange(set);
+  if (range) {
+    const low = assetsLabel(range.min);
+    const high = assetsLabel(range.max);
     parts.push(low === high ? `${low} in assets` : `${low} to ${high} in assets`);
   }
-  const states = [...new Set(set.peers.map((peer) => peer.state).filter((state): state is string => !!state))];
+  const states = peerStates(set);
   if (states.length === 1) parts.push(`Headquartered in ${STATE_NAMES[states[0]] ?? states[0]}`);
   else if (states.length > 1) parts.push(`Headquartered in ${states.length} states`);
   return parts;
@@ -333,12 +418,13 @@ export function isExplorerView(value: unknown): value is ExplorerView {
  * Hamilton can hold them (a saved set takes at most MAX_CHOSEN_PEERS), and the set's name.
  * Hamilton routes a visitor who is not signed in itself.
  */
-export function hamiltonPeerSetHref(subjectId: number, peerIds: number[], name: string, fee?: ExplorerFeeKey): string {
+export function hamiltonPeerSetHref(subjectId: number, peerIds: number[], name: string, fee?: ExplorerFeeKey, asOf?: string | null): string {
   const params = new URLSearchParams({ instId: String(subjectId) });
   const ids = [...new Set(peerIds)].filter((id) => Number.isSafeInteger(id) && id > 0);
   if (ids.length > 0 && ids.length <= MAX_CHOSEN_PEERS) params.set("peers", ids.join(","));
   if (name) params.set("name", name);
   if (fee) params.set("fee", fee);
+  if (asOf && /^\d{4}-\d{2}-\d{2}$/.test(asOf)) params.set("asof", asOf);
   return `/pro/settings?${params.toString()}#peer-sets`;
 }
 
@@ -358,7 +444,7 @@ export const PEER_SET_PURPOSE_GROUP: Record<string, "Pricing peers" | "Market co
  */
 export function purposeLine(key: string, set: PeerExplorerSet): string {
   const kind = set.charterType === "credit_union" ? "Credit unions" : "Banks";
-  const states = [...new Set(set.peers.map((peer) => peer.state).filter((state): state is string => !!state))];
+  const states = peerStates(set);
   const spread =
     states.length > 1
       ? ` Not local competitors: they're spread over ${states.length} states.`
@@ -383,9 +469,9 @@ export function purposeLine(key: string, set: PeerExplorerSet): string {
 }
 
 function assetRangeWords(set: PeerExplorerSet): string {
-  const assets = set.peers.map((peer) => peer.assets).filter((v): v is number => v !== null && v > 0);
-  if (assets.length === 0) return "unknown";
-  return `${assetsLabel(Math.min(...assets))} to ${assetsLabel(Math.max(...assets))}`;
+  const range = peerAssetRange(set);
+  if (!range) return "unknown";
+  return `${assetsLabel(range.min)} to ${assetsLabel(range.max)}`;
 }
 
 /**
@@ -402,11 +488,11 @@ export function matrixSummary(set: PeerExplorerSet): string {
   if (compared.length === 0) return `${name} has no fee here with enough peers publishing it for a median.`;
   const above = compared.filter((c) => c.band === "above").length;
   const below = compared.filter((c) => c.band === "below").length;
-  const near = compared.length - above - below;
+  const same = compared.length - above - below;
   const of = `${compared.length} compared ${compared.length === 1 ? "fee" : "fees"}`;
   const largest = [...compared].sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap))[0];
   const gap = Math.abs(largest.gap) < 0.005 ? "" : ` Largest gap: ${EXPLORER_FEE_LABELS[largest.key]}, ${signedMoney(largest.gap)}.`;
-  return `Of ${of}, ${name} is above the peer median on ${above}, below on ${below} and near it on ${near}.${gap}`;
+  return `Of ${of}, ${name} is above the peer median on ${above}, below on ${below} and about the same on ${same}.${gap}`;
 }
 
 /** "+$0.4B", "-$120M", "Same": an institution's total assets against the subject's. */
@@ -436,12 +522,12 @@ export function percentileRank(value: number, values: number[]): number {
 }
 
 /**
- * A matrix cell's shading: its band against the median (the 10% rule) and how far into the
+ * A matrix cell's shading: its band against the median (the 1% rule) and how far into the
  * cohort's tail it sits by percentile, 1 (toward the middle) to 3 (the far end).
  */
 export function cellShade(value: number | undefined, values: number[], median: number | undefined): { band: MatrixBand; step: 0 | 1 | 2 | 3 } {
   const band = matrixBand(value, median);
-  if (band === "none" || band === "near" || value === undefined) return { band, step: 0 };
+  if (band === "none" || band === "same" || value === undefined) return { band, step: 0 };
   const distance = Math.abs(percentileRank(value, values) - 0.5);
   return { band, step: distance >= 0.4 ? 3 : distance >= 0.25 ? 2 : 1 };
 }
@@ -521,4 +607,108 @@ export function landscapeValue(set: PeerExplorerSet, inst: ExplorerInstitution, 
   if (axis === "branches") return presence.branches;
   const total = set.market?.totalDeposits ?? 0;
   return presence.deposits !== null && total > 0 ? presence.deposits / total : null;
+}
+
+const COUNT_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
+
+function listWords(items: string[]): string {
+  return items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+/** Who the set's peers are, in the snapshot's words: "similar-sized banks", "local competitors". */
+export function snapshotPeersNoun(key: string, set: PeerExplorerSet): string {
+  const kind = set.charterType === "credit_union" ? "credit unions" : "banks";
+  switch (key) {
+    case "nearest":
+    case "size":
+      return `similar-sized ${kind}`;
+    case "metro":
+      return "local competitors";
+    case "state":
+      return set.subject.state ? `${kind} in ${STATE_NAMES[set.subject.state] ?? set.subject.state}` : `${kind} in its state`;
+    case "district":
+      return `${kind} in its Fed district`;
+    case "regulator":
+      return set.charterType === "credit_union" ? "credit unions with the same charter" : "banks with the same primary regulator";
+    default:
+      return `peer ${kind}`;
+  }
+}
+
+export interface PeerSnapshot {
+  headline: string;
+  facts: string;
+  caveat: string;
+}
+
+/** The caveat under every snapshot: what published prices leave out. */
+export const SNAPSHOT_CAVEAT = "Published prices only. Account mix, waivers and fee revenue are not shown.";
+
+/**
+ * The interpretation panel above the views: one sentence on where the institution's published
+ * price sits against the chosen set's median, a line of the facts behind it, and the caveat. Fixed
+ * templates on live values, the 1% "about the same" rule, and never a recommendation or a cause.
+ */
+export function peerSnapshot(set: PeerExplorerSet, key: string, fee: ExplorerFeeKey): PeerSnapshot {
+  const label = EXPLORER_FEE_LABELS[fee];
+  const lower = label.replace(/^[A-Z][a-z]/, (m) => m.toLowerCase());
+  const aFee = `${/^[aeiou]/i.test(lower) ? "an" : "a"} ${lower} fee`;
+  const noun = snapshotPeersNoun(key, set);
+  const own = set.subject.fees[fee];
+  const median = set.medians[fee];
+  const publishing = publishingPeers(set, fee);
+  const peersWord = (n: number) => `${n.toLocaleString("en-US")} publishing ${n === 1 ? "peer" : "peers"}`;
+  if (!own) {
+    return {
+      headline: `${set.subject.name} does not publish ${aFee} in the index.`,
+      facts: median ? `The median among ${peersWord(median.peers)} is ${money(median.median)}.` : `${peersWord(publishing)}, too few for a median.`,
+      caveat: SNAPSHOT_CAVEAT,
+    };
+  }
+  const several = (own.prices?.length ?? 0) >= 2;
+  const valueWords = several ? `Comparison value ${money(own.amount)}` : `Published price ${money(own.amount)}`;
+  const prices = several
+    ? ` Its ${COUNT_WORDS[own.prices!.length] ?? own.prices!.length} ${fee === "monthly_maintenance" ? "checking " : ""}prices are ${listWords(own.prices!.map((p) => money(p.amount)))}.`
+    : "";
+  if (!median) {
+    return {
+      headline: `Too few ${noun} publish ${aFee} for a median.`,
+      facts: `${valueWords}; ${peersWord(publishing)}.${prices}`,
+      caveat: SNAPSHOT_CAVEAT,
+    };
+  }
+  const gap = own.amount - median.median;
+  const headline = aboutSameAsMedian(own.amount, median.median)
+    ? `${label} is about the same as ${noun}.`
+    : `${label} is ${money(Math.abs(gap))} ${gap > 0 ? "above" : "below"} the median of ${noun}.`;
+  return {
+    headline,
+    facts: `${valueWords} vs a ${money(median.median)} median among ${peersWord(median.peers)}.${prices}`,
+    caveat: SNAPSHOT_CAVEAT,
+  };
+}
+
+/** The hand-off preview: what the Hamilton link carries, in plain words. */
+export function briefingCarries(set: PeerExplorerSet, setName: string, fee: ExplorerFeeKey, scope: string): { label: string; value: string }[] {
+  const ids = set.peers.map((peer) => peer.id);
+  const listed = ids.length > 0 && ids.length <= MAX_CHOSEN_PEERS;
+  return [
+    { label: "Institution", value: set.subject.name },
+    { label: "Peer set", value: setName },
+    {
+      label: "Peers",
+      value: listed
+        ? `${ids.length} named: ${listWords(set.peers.slice(0, 6).map((peer) => peer.name).concat(ids.length > 6 ? [`${ids.length - 6} more`] : []))}`
+        : `More than ${MAX_CHOSEN_PEERS}, so the link carries the set's name, not each peer`,
+    },
+    { label: "Fee", value: EXPLORER_FEE_LABELS[fee] },
+    { label: "Comparison", value: scope },
+    { label: "Data as of", value: set.asOf ? formatIsoDate(set.asOf) : "Not on record" },
+  ];
+}
+
+/** "Oct 17, 2026" from an ISO date. */
+export function formatIsoDate(iso: string): string {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? iso : date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 }

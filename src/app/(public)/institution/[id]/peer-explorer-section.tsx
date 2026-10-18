@@ -6,16 +6,13 @@ import "@/app/landing-motion.css";
 import { PRODUCT_NAME } from "@/lib/constants";
 import type { InstitutionPeerSets } from "@/lib/data-store/peer-fee-rank";
 import { MIN_PEERS_FOR_PEER_SET_MEDIAN } from "@/lib/data-store/peer-fee-rank";
-import { displayCity } from "@/lib/format";
 import {
   assetsLabel,
-  EXPLORER_FEE_KEYS,
-  EXPLORER_FEE_LABELS,
-  EXPLORER_FEE_SHORT,
   PEER_SET_PURPOSE_GROUP,
+  PEER_EXPLORER_MAX_SHOWN,
   purposeLine,
+  shownLine,
   whyThesePeers,
-  type ExplorerInstitution,
   type PeerExplorerSet,
 } from "@/lib/peer-explorer";
 import { PeerExplorer } from "./peer-explorer";
@@ -64,6 +61,7 @@ export function PeerExplorerSection({
   const assets = assetsLabel(set.subject.assets);
   const why = whyThesePeers(set);
   const purpose = purposeLine(selected.key, set);
+  const shown = shownLine(set);
   return (
     <section
       id="peers"
@@ -104,7 +102,7 @@ export function PeerExplorerSection({
             ))}
           </ul>
         )}
-        <PeerList set={set} />
+        {shown && <p className="mt-2 text-[13px] font-medium text-ink-soft">{shown}</p>}
         <PeerExplorer set={set} setKey={selected.key} setName={selected.label} initial={initial} isPro={isPro} />
       </div>
       <p className="mt-4 text-[12px] leading-relaxed text-ink-muted">Source: {PRODUCT_NAME}, published fee schedules. Total assets from FDIC and NCUA records.</p>
@@ -120,71 +118,10 @@ export function PeerExplorerSection({
           <li>Each institution counts once per fee: the middle of its prices, or for overdraft its highest.</li>
           <li>A peer median needs at least {MIN_PEERS_FOR_PEER_SET_MEDIAN} peers that publish the fee. With fewer, the fee reads &quot;too few to compare&quot;.</li>
           <li>A fee an institution does not publish is shown as not published, never as zero.</li>
-          <li>Near the median, in the fee matrix: within 10% of the peer median. Above or below means further than that.</li>
-          <li>About the same, where this page compares the institution with its state: within 1%.</li>
+          <li>About the same: within 1% of the median, in this section and everywhere on this page. Above or below means further than that.</li>
+          <li>A set with more than {PEER_EXPLORER_MAX_SHOWN} peers shows the {PEER_EXPLORER_MAX_SHOWN} closest in assets. Its medians and counts still use every peer in the set.</li>
         </ul>
       </details>
     </section>
-  );
-}
-
-/** One institution's row in the set's list: where it is, its assets, and which of the five fees it publishes. */
-function PeerListRow({ inst, subject = false }: { inst: ExplorerInstitution; subject?: boolean }) {
-  const place = [inst.city ? displayCity(inst.city) : null, inst.state].filter(Boolean).join(", ");
-  return (
-    <tr className={subject ? "bg-paper" : "border-t border-border"}>
-      <th scope="row" className={`px-3 py-2 text-left text-ink ${subject ? "font-semibold" : "font-medium"}`}>
-        {inst.name}
-        {subject && <span className="ml-1 font-normal text-ink-muted">(this institution)</span>}
-      </th>
-      <td className="px-3 py-2 text-ink-soft">{place || "Not on record"}</td>
-      <td className="px-3 py-2 text-right tabular-nums text-ink-soft">{assetsLabel(inst.assets) ?? "Not on record"}</td>
-      {EXPLORER_FEE_KEYS.map((key) => {
-        const published = inst.fees[key] !== undefined;
-        return (
-          <td key={key} className={`px-3 py-2 text-center ${published ? "text-ink" : "text-ink-muted"}`}>
-            <span aria-hidden="true">{published ? "✓" : "–"}</span>
-            <span className="sr-only">{published ? `Publishes ${EXPLORER_FEE_LABELS[key]}` : `${EXPLORER_FEE_LABELS[key]} not published`}</span>
-          </td>
-        );
-      })}
-    </tr>
-  );
-}
-
-/** "See the 25 institutions": exactly who is in the set, so a reader can check the cohort. */
-function PeerList({ set }: { set: PeerExplorerSet }) {
-  const peers = [...set.peers].sort((a, b) => a.name.localeCompare(b.name));
-  if (peers.length === 0) return null;
-  return (
-    <details className="mt-3 text-[13px]" data-peer-list>
-      <summary className="inline-flex min-h-11 cursor-pointer items-center font-medium text-ink">
-        See the {peers.length} {peers.length === 1 ? "institution" : "institutions"}
-      </summary>
-      <div className="relative mt-1 max-h-[28rem] overflow-auto rounded-lg border border-border">
-        <table className="w-full min-w-[720px] border-collapse text-[13px]">
-          <caption className="sr-only">The institutions in this peer set, with the fees each publishes</caption>
-          <thead className="sticky top-0 bg-surface-0 text-[12px] text-ink-muted">
-            <tr>
-              <th scope="col" className="px-3 py-2 text-left font-medium">Institution</th>
-              <th scope="col" className="px-3 py-2 text-left font-medium">City, state</th>
-              <th scope="col" className="px-3 py-2 text-right font-medium">Assets</th>
-              {EXPLORER_FEE_KEYS.map((key) => (
-                <th key={key} scope="col" className="px-3 py-2 text-center font-medium">
-                  {EXPLORER_FEE_SHORT[key]}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            <PeerListRow inst={set.subject} subject />
-            {peers.map((inst) => (
-              <PeerListRow key={inst.id} inst={inst} />
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <p className="mt-1 text-[12px] text-ink-muted">✓ publishes the fee. – not published.</p>
-    </details>
   );
 }

@@ -30,6 +30,7 @@ const SET: PeerExplorerSet = {
   ],
   charterType: "bank",
   medians: { monthly_maintenance: { median: 10, peers: 3 } },
+  asOf: "2026-10-17",
 };
 
 const SETS: InstitutionPeerSets = {
@@ -41,9 +42,9 @@ const SETS: InstitutionPeerSets = {
   selectedFilters: { institutionIds: [2, 3, 4] },
 };
 
-function renderSection(initial = {}) {
+function renderSection(initial = {}, extra: Partial<typeof SET> = {}) {
   return render(
-    <PeerExplorerSection sets={SETS} set={SET} hrefFor={(key) => `/institution/323?peers=${key}#peers`} initial={initial} isPro={false} />,
+    <PeerExplorerSection sets={SETS} set={{ ...SET, ...extra }} hrefFor={(key) => `/institution/323?peers=${key}#peers`} initial={initial} isPro={false} />,
   );
 }
 
@@ -71,10 +72,16 @@ describe("PeerExplorerSection", () => {
     expect(within(list).getAllByText("Overdraft not published").length).toBe(2);
   });
 
-  it("defines both thresholds where peers are explained", () => {
+  it("defines one threshold, about the same within 1%, where peers are explained", () => {
     renderSection();
-    expect(screen.getByText(/Near the median, in the fee matrix: within 10%/)).toBeTruthy();
-    expect(screen.getByText(/About the same, where this page compares the institution with its state: within 1%/)).toBeTruthy();
+    expect(screen.getByText(/About the same: within 1% of the median, in this section and everywhere on this page/)).toBeTruthy();
+    expect(screen.queryByText(/within 10%/)).toBeNull();
+  });
+
+  it("says when a large set shows its closest 50 and that medians use every peer", () => {
+    renderSection({ view: "matrix" }, { whole: { peers: 1204, publish: { monthly_maintenance: 900 }, states: ["FL", "GA"], assets: { min: 1e8, max: 9e8 } } });
+    expect(screen.getByText("Showing the 3 closest in assets of 1,204 peers; medians use all 1,204.")).toBeTruthy();
+    expect(screen.getByText("See the 3 institutions shown")).toBeTruthy();
   });
 
   it("shows the subject's fee, the median, the gap, and each price behind the middle value", () => {
@@ -108,11 +115,19 @@ describe("PeerExplorerSection", () => {
     expect(screen.getByRole("button", { name: "Pine State Bank, $14.50" }).style.opacity).toBe("1");
   });
 
-  it("carries the set, its peers and the selected fee to Hamilton", () => {
+  it("previews what goes to Hamilton, then carries the set, its peers, the fee and the data date", () => {
     renderSection();
-    const brief = screen.getByRole("link", { name: /Generate a pricing committee briefing/ });
-    expect(brief.getAttribute("href")).toBe(
-      "/pro/settings?instId=323&peers=2%2C3%2C4&name=The+25+banks+closest+in+assets&fee=monthly_maintenance#peer-sets",
+    expect(screen.queryByRole("region", { name: "Before you open Hamilton" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Generate a pricing committee briefing in Hamilton/ }));
+    const preview = screen.getByRole("region", { name: "Before you open Hamilton" });
+    expect(within(preview).getByText("Capital City Bank")).toBeTruthy();
+    expect(within(preview).getByText("The 25 banks closest in assets")).toBeTruthy();
+    expect(within(preview).getByText("3 named: Pine State Bank, Summit Bank and First US Bank")).toBeTruthy();
+    expect(within(preview).getByText("Monthly maintenance")).toBeTruthy();
+    expect(within(preview).getByText("Published prices against the peer median of 3 publishing peers")).toBeTruthy();
+    expect(within(preview).getByText("Oct 17, 2026")).toBeTruthy();
+    expect(within(preview).getByRole("link", { name: /Continue to Hamilton/ }).getAttribute("href")).toBe(
+      "/pro/settings?instId=323&peers=2%2C3%2C4&name=The+25+banks+closest+in+assets&fee=monthly_maintenance&asof=2026-10-17#peer-sets",
     );
     expect(screen.queryByRole("link", { name: /Compare local deposit competitors/ })).toBeNull();
   });
@@ -132,7 +147,7 @@ describe("PeerExplorerSection", () => {
 
   it("summarises the matrix, opens a cell's evidence and compares ticked rows", () => {
     renderSection({ view: "matrix" });
-    expect(screen.getByText(/Of 1 compared fee, Capital City Bank is above the peer median on 0, below on 1 and near it on 0\./)).toBeTruthy();
+    expect(screen.getByText(/Of 1 compared fee, Capital City Bank is above the peer median on 0, below on 1 and about the same on 0\./)).toBeTruthy();
     fireEvent.click(screen.getByTitle(/^Summit Bank, Monthly maintenance: \$16\.20/));
     expect(screen.getByText("Summit Bank: evidence")).toBeTruthy();
     expect(screen.getByRole("link", { name: "The bank's fee schedule" }).getAttribute("href")).toBe("https://summit.example/fees.pdf");
@@ -148,6 +163,32 @@ describe("PeerExplorerSection", () => {
     fireEvent.click(screen.getByRole("radio", { name: /Difference/ }));
     expect(screen.getAllByText("+$6.20").length).toBeGreaterThan(0);
     expect(screen.getAllByText("-$1.55").length).toBeGreaterThan(0);
+  });
+
+  it("leads with a peer pricing snapshot in fixed words, with the facts and the caveat", () => {
+    renderSection();
+    const snapshot = screen.getByRole("region", { name: /Monthly maintenance is \$1\.55 below the median of similar-sized banks\./ });
+    expect(within(snapshot).getByText("Peer pricing snapshot")).toBeTruthy();
+    expect(within(snapshot).getByText("Comparison value $8.45 vs a $10 median among 3 publishing peers. Its two checking prices are $5 and $11.90.")).toBeTruthy();
+    expect(within(snapshot).getByText("Published prices only. Account mix, waivers and fee revenue are not shown.")).toBeTruthy();
+  });
+
+  it("draws each account price apart from the hollow comparison value", () => {
+    renderSection();
+    expect(screen.getByText("Capital City Bank: comparison value (midpoint) $8.45")).toBeTruthy();
+    expect(screen.getByText("Basic Checking Monthly Se… $5")).toBeTruthy();
+    expect(screen.getByText(/Its comparison value \(midpoint\), compared with the median; not a price anyone pays/)).toBeTruthy();
+  });
+
+  it("switches the roster to the selected fee's prices, gaps and sources", () => {
+    renderSection();
+    fireEvent.click(screen.getByRole("radio", { name: "Prices: monthly maintenance" }));
+    const list = screen.getByRole("table", { name: /each one's monthly maintenance fee/ });
+    const summit = within(list).getByRole("row", { name: /Summit Bank/ });
+    expect(within(summit).getByText("$16.20")).toBeTruthy();
+    expect(within(summit).getByText("+$6.20")).toBeTruthy();
+    expect(within(summit).getByRole("link", { name: "Schedule" }).getAttribute("href")).toBe("https://summit.example/fees.pdf");
+    expect(within(summit).getByText(/Sep 2, 2026/)).toBeTruthy();
   });
 
   it("has short chip names", () => {

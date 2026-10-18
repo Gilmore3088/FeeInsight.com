@@ -13,7 +13,9 @@ import { MIN_PEERS_FOR_PEER_SET_MEDIAN } from "./peer-fee-rank";
 import { institutionDisplayName } from "@/lib/institution-display-name";
 import { displayCity } from "@/lib/format";
 import {
+  capPeerExplorerSet,
   EXPLORER_FEE_KEYS,
+  PEER_EXPLORER_MAX_SHOWN,
   type ExplorerFee,
   type ExplorerFeeKey,
   type ExplorerInstitution,
@@ -104,7 +106,13 @@ export function buildPeerExplorerSet(
       if (median !== null) medians[key] = { median, peers: values.length };
     }
   }
-  return { subject: toInstitution(subjectRow), peers, charterType: subjectRow.charter_type ?? null, medians };
+  const shownIds = new Set([subjectId, ...peers.map((peer) => peer.id)]);
+  const dates = [...byCategory.values()]
+    .flat()
+    .filter((value) => shownIds.has(value.institution_id) && value.published_at)
+    .map((value) => (value.published_at as string).slice(0, 10))
+    .sort();
+  return { subject: toInstitution(subjectRow), peers, charterType: subjectRow.charter_type ?? null, medians, asOf: dates.pop() ?? null };
 }
 
 /**
@@ -131,13 +139,7 @@ export async function getPeerExplorerSet(
        AND (s.id = ${institutionId}
             OR EXISTS (SELECT 1 FROM published_fee_catalog p WHERE p.institution_id = s.id AND p.review_status = 'approved'))
   `) as FactRow[];
-  const [byCategory] = await getPeerFeeValues(
-    [{ institutionIds: facts.map((row) => Number(row.id)) }],
-    [...EXPLORER_FEE_KEYS],
-    undefined,
-    { onlyInstitutionIds: facts.map((row) => Number(row.id)), withConditions: true },
-  );
-  const set = buildPeerExplorerSet(institutionId, facts, byCategory ?? new Map());
+  const set = await readCappedSet(institutionId, facts);
   if (!set || !homeMarket) return set;
   const market = await getHomeMarket(institutionId);
   if (!market) return set;
@@ -151,6 +153,38 @@ export async function getPeerExplorerSet(
       presence: Object.fromEntries(presence.rows.map((row) => [row.institution_id, { branches: row.branches, deposits: row.deposits }])),
       totalDeposits: presence.totalDeposits,
     },
+  };
+}
+
+/** Each institution's explorer fees, with every price and its conditions only when asked. */
+async function readFees(facts: FactRow[], withConditions: boolean): Promise<Map<string, PeerFeeValue[]>> {
+  const ids = facts.map((row) => Number(row.id));
+  const [byCategory] = await getPeerFeeValues([{ institutionIds: ids }], [...EXPLORER_FEE_KEYS], undefined, { onlyInstitutionIds: ids, withConditions });
+  return byCategory ?? new Map();
+}
+
+/**
+ * The set as the page receives it. A set at or under PEER_EXPLORER_MAX_SHOWN reads every price
+ * and condition at once. A larger one (an asset band, a regulator, a state or a Fed district can
+ * hold thousands) reads amounts for every member, so medians and counts are the whole set's, then
+ * keeps the closest in assets and reads prices and conditions for those alone.
+ */
+async function readCappedSet(institutionId: number, facts: FactRow[]): Promise<PeerExplorerSet | null> {
+  if (facts.length <= PEER_EXPLORER_MAX_SHOWN + 1) return buildPeerExplorerSet(institutionId, facts, await readFees(facts, true));
+  const whole = buildPeerExplorerSet(institutionId, facts, await readFees(facts, false));
+  if (!whole) return null;
+  const capped = capPeerExplorerSet(whole);
+  const kept = new Set([institutionId, ...capped.peers.map((peer) => peer.id)]);
+  const keptFacts = facts.filter((row) => kept.has(Number(row.id)));
+  const detailed = buildPeerExplorerSet(institutionId, keptFacts, await readFees(keptFacts, true));
+  if (!detailed) return null;
+  const order = new Map(capped.peers.map((peer, i) => [peer.id, i]));
+  return {
+    ...detailed,
+    peers: [...detailed.peers].sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0)),
+    medians: capped.medians,
+    asOf: capped.asOf,
+    whole: capped.whole,
   };
 }
 

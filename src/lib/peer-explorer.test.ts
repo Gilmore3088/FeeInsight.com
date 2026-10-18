@@ -24,6 +24,11 @@ import {
   matrixRows,
   scalePosition,
   whyThesePeers,
+  capPeerExplorerSet,
+  peerSnapshot,
+  SNAPSHOT_CAVEAT,
+  shownLine,
+  PEER_EXPLORER_MAX_SHOWN,
   type ExplorerInstitution,
   type PeerExplorerSet,
 } from "./peer-explorer";
@@ -86,6 +91,9 @@ describe("selection math", () => {
     expect(gapText(8.45, 10)).toEqual({ direction: "below", text: "$1.55 below the peer median" });
     expect(gapText(12, 10)).toEqual({ direction: "above", text: "$2 above the peer median" });
     expect(gapText(10.004, 10).direction).toBe("same");
+    // A $0.03 gap on $8.48 is within 1%: about the same, with the gap still stated.
+    expect(gapText(8.45, 8.48)).toEqual({ direction: "same", text: "About the same as the peer median ($0.03 below)" });
+    expect(gapText(10, 10)).toEqual({ direction: "same", text: "About the same as the peer median (the same price)" });
   });
 });
 
@@ -101,14 +109,17 @@ describe("equivalent products", () => {
 });
 
 describe("matrix", () => {
-  it("bands a cell below, near or above its column median, and marks a missing one", () => {
-    expect(matrixBand(10, 10)).toBe("near");
-    expect(matrixBand(10.9, 10)).toBe("near");
+  it("bands a cell below, about the same (within 1%) or above its column median, and marks a missing one", () => {
+    expect(matrixBand(10, 10)).toBe("same");
+    expect(matrixBand(10.1, 10)).toBe("same");
+    expect(matrixBand(8.45, 8.48)).toBe("same");
+    expect(matrixBand(10.2, 10)).toBe("above");
+    expect(matrixBand(9.8, 10)).toBe("below");
     expect(matrixBand(11.5, 10)).toBe("above");
     expect(matrixBand(8, 10)).toBe("below");
     expect(matrixBand(undefined, 10)).toBe("none");
     expect(matrixBand(5, undefined)).toBe("none");
-    expect(matrixBand(0, 0)).toBe("near");
+    expect(matrixBand(0, 0)).toBe("same");
   });
 
   it("puts the subject first, then the peers by total assets, largest first", () => {
@@ -176,6 +187,8 @@ describe("Hamilton hand-off", () => {
     expect(hamiltonPeerSetHref(323, [10, 11, 10], "The 25 banks closest in assets")).toBe(
       "/pro/settings?instId=323&peers=10%2C11&name=The+25+banks+closest+in+assets#peer-sets",
     );
+    expect(hamiltonPeerSetHref(323, [10], "Set", "overdraft", "2026-10-17")).toBe("/pro/settings?instId=323&peers=10&name=Set&fee=overdraft&asof=2026-10-17#peer-sets");
+    expect(hamiltonPeerSetHref(323, [10], "Set", "overdraft", "not a date")).not.toContain("asof");
   });
 
   it("leaves the peers off when Hamilton could not hold them all", () => {
@@ -216,7 +229,7 @@ describe("matrix investigation", () => {
       medians: { ...set.medians, overdraft: { median: 33, peers: 8 }, wire_domestic_outgoing: { median: 25, peers: 8 } },
     };
     expect(matrixSummary(withWire)).toBe(
-      "Of 3 compared fees, Bank 1 is above the peer median on 1, below on 0 and near it on 2. Largest gap: Domestic wire, +$5.",
+      "Of 3 compared fees, Bank 1 is above the peer median on 2, below on 0 and about the same on 1. Largest gap: Domestic wire, +$5.",
     );
     expect(matrixSummary({ ...set, medians: {} })).toBe("Bank 1 has no fee here with enough peers publishing it for a median.");
   });
@@ -237,7 +250,7 @@ describe("matrix investigation", () => {
     expect(percentileRank(1, values)).toBeCloseTo(0.05);
     expect(cellShade(10, values, 5.5)).toEqual({ band: "above", step: 3 });
     expect(cellShade(1, values, 5.5)).toEqual({ band: "below", step: 3 });
-    expect(cellShade(5.6, values, 5.5)).toEqual({ band: "near", step: 0 });
+    expect(cellShade(5.53, values, 5.5)).toEqual({ band: "same", step: 0 });
     expect(cellShade(undefined, values, 5.5)).toEqual({ band: "none", step: 0 });
   });
 
@@ -269,5 +282,109 @@ describe("landscape axes", () => {
     expect(landscapeValue(metro, metro.peers[0], "share")).toBeNull();
     expect(landscapeValue(metro, metro.peers[1], "branches")).toBeNull();
     expect(landscapeValue(metro, metro.subject, "assets")).toBe(4.4e9);
+  });
+});
+
+describe("large sets", () => {
+  /**
+   * A heavy peer: all five fees, each from three account prices, one with a waiver note at the
+   * 220-character limit, and a source link. Most published values have one price and no note.
+   */
+  const heavyPeer = (id: number): ExplorerInstitution => {
+    const fee = {
+      amount: 10 + (id % 7),
+      prices: Array.from({ length: 3 }, (_, i) => ({ amount: 5 + i, name: `Checking account ${i} monthly service fee`, conditions: i === 0 ? "x".repeat(220) : null })),
+      source: { url: `https://bank${id}.example.com/fee-schedule.pdf`, published: "2026-10-17" },
+    };
+    return { ...inst(id, id * 1e6, { monthly_maintenance: fee, overdraft: fee, wire_intl_outgoing: fee, atm_non_network: fee, wire_domestic_outgoing: fee }, "Springfield", id % 2 ? "IL" : "MO"), name: `Community Bank ${id} of Springfield` };
+  };
+  const big: PeerExplorerSet = {
+    subject: heavyPeer(1),
+    peers: Array.from({ length: 3000 }, (_, i) => heavyPeer(i + 2)),
+    charterType: "bank",
+    medians: { monthly_maintenance: { median: 13, peers: 3000 } },
+  };
+
+  it("ships the 50 closest in assets and keeps the whole set's counts and medians", () => {
+    const capped = capPeerExplorerSet(big);
+    expect(capped.peers).toHaveLength(PEER_EXPLORER_MAX_SHOWN);
+    expect(capped.peers.map((p) => p.id).slice(0, 3)).toEqual([2, 3, 4]);
+    expect(capped.medians).toBe(big.medians);
+    expect(capped.whole).toEqual({ peers: 3000, publish: { monthly_maintenance: 3000, atm_non_network: 3000, wire_domestic_outgoing: 3000, wire_intl_outgoing: 3000, overdraft: 3000 }, states: ["IL", "MO"], assets: { min: 2e6, max: 3001e6 } });
+    expect(feeCoverage(capped, "overdraft")).toEqual({ selected: 3000, publish: 3000 });
+    expect(coverageLine(capped, "overdraft")).toBe("3,000 peers selected · 3,000 publish this fee");
+    expect(whyThesePeers(capped)).toEqual(["Banks only", "$2M to $3B in assets", "Headquartered in 2 states"]);
+    expect(shownLine(capped)).toBe("Showing the 50 closest in assets of 3,000 peers; medians use all 3,000.");
+  });
+
+  it("leaves a set at or under the cap as it is", () => {
+    expect(capPeerExplorerSet(set)).toBe(set);
+    expect(shownLine(set)).toBeNull();
+  });
+
+  it("keeps the serialized props for a heavy 3,000-member set under 200 KB", () => {
+    const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value), "utf8");
+    // Uncapped, the same set is megabytes: the budget is a real limit, not a formality.
+    expect(bytes({ set: big })).toBeGreaterThan(1_000_000);
+    expect(bytes({ set: capPeerExplorerSet(big) })).toBeLessThan(200 * 1024);
+  });
+});
+
+describe("peer pricing snapshot", () => {
+  const withMedian = (median: number, peers = 16): PeerExplorerSet => ({ ...set, medians: { monthly_maintenance: { median, peers } } });
+  const mm = (amount: number, prices?: number[]) => ({
+    ...set,
+    subject: { ...set.subject, fees: { monthly_maintenance: { amount, ...(prices ? { prices: prices.map((p) => ({ amount: p, name: null, conditions: null })) } : {}) } } },
+  });
+
+  it("reads about the same within 1%, with the facts and both checking prices", () => {
+    const s = { ...mm(8.45, [7.95, 8.95]), medians: withMedian(8.48).medians };
+    expect(peerSnapshot(s, "nearest", "monthly_maintenance")).toEqual({
+      headline: "Monthly maintenance is about the same as similar-sized banks.",
+      facts: "Comparison value $8.45 vs a $8.48 median among 16 publishing peers. Its two checking prices are $7.95 and $8.95.",
+      caveat: SNAPSHOT_CAVEAT,
+    });
+  });
+
+  it("states the dollar gap above or below, in the set's own words", () => {
+    expect(peerSnapshot({ ...mm(12), medians: withMedian(10).medians }, "size", "monthly_maintenance").headline).toBe(
+      "Monthly maintenance is $2 above the median of similar-sized banks.",
+    );
+    expect(peerSnapshot({ ...mm(8), medians: withMedian(10).medians }, "metro", "monthly_maintenance").headline).toBe(
+      "Monthly maintenance is $2 below the median of local competitors.",
+    );
+    expect(peerSnapshot({ ...mm(8), medians: withMedian(10).medians }, "state", "monthly_maintenance").headline).toBe(
+      "Monthly maintenance is $2 below the median of banks in Florida.",
+    );
+    expect(peerSnapshot({ ...mm(8), medians: withMedian(10).medians, charterType: "credit_union" }, "regulator", "monthly_maintenance").headline).toBe(
+      "Monthly maintenance is $2 below the median of credit unions with the same charter.",
+    );
+    expect(peerSnapshot({ ...mm(12), medians: withMedian(10).medians }, "nearest", "monthly_maintenance").facts).toBe(
+      "Published price $12 vs a $10 median among 16 publishing peers.",
+    );
+  });
+
+  it("says when the fee is not published or too few peers publish it", () => {
+    expect(peerSnapshot(set, "nearest", "wire_intl_outgoing").headline).toBe("Bank 1 does not publish an international wire fee in the index.");
+    expect(peerSnapshot({ ...mm(8), medians: {} }, "nearest", "monthly_maintenance").headline).toBe("Too few similar-sized banks publish a monthly maintenance fee for a median.");
+  });
+
+  it("never recommends a price or names a cause", () => {
+    const forbidden = /\b(should|recommend\w*|consider|raise|lower(ing)?|cut|increase|decrease|reduce|because|due to|driven|caus\w*|opportunit\w*|overpriced|underpriced|too high|too low|must|need to)\b/i;
+    const cases: PeerExplorerSet[] = [
+      { ...mm(8.45, [7.95, 8.95]), medians: withMedian(8.48).medians },
+      { ...mm(12), medians: withMedian(10).medians },
+      { ...mm(8), medians: withMedian(10).medians },
+      { ...mm(8), medians: {} },
+      set,
+    ];
+    for (const s of cases) {
+      for (const key of ["nearest", "size", "metro", "state", "district", "regulator", "other"]) {
+        for (const fee of ["monthly_maintenance", "overdraft", "wire_intl_outgoing"] as const) {
+          const out = peerSnapshot(s, key, fee);
+          expect(`${out.headline} ${out.facts} ${out.caveat}`).not.toMatch(forbidden);
+        }
+      }
+    }
   });
 });
