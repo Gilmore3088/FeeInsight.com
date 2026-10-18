@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { makeStamp, type DatasetStampInput } from "./dataset-stamp";
-import { datasetCitation, datasetNoteWords, noteTime, readStampedFigures, uniqueStampedFigures } from "./dataset-note";
+import { datasetCitation, datasetNoteWords, datasetPassage, noteTime, readStampedFigures, uniqueStampedFigures } from "./dataset-note";
 
 const POPULATION = [{ key: "sourced", label: "Only fees traced to a stored copy of the institution's own fee schedule" }];
 
@@ -122,5 +122,63 @@ describe("saved stamps and tool citations (#1924 step 3)", () => {
       summary: "Published fee schedules, read live 18 Oct 2026 14:10 UTC. Institutions sharing one fee schedule count once.",
       filters: [POPULATION[0].label],
     });
+  });
+});
+
+describe("dataset passage (#1924 step 4)", () => {
+  const base = { dataset: "published_fee_catalog" as const, mode: "live" as const, readAt: "2026-10-18T14:10:00Z", runId: null, newestRecordAt: null, methodVersion: 13, counting: "counted_once" as const };
+  const leftOut = { key: "exclude:institution:1", label: "The institution being compared left out" };
+
+  it("says all institutions but the one compared when only that filter sets the group", () => {
+    const passage = datasetPassage([{ label: "National", stamp: makeStamp({ ...base, filters: [leftOut] }) }], "see the report");
+    expect(passage).toContain("Who is counted: all institutions except the institution being compared, under the index's standard rules (see the report).");
+  });
+
+  it("names each figure's limits once, in one clause, and skips a limit its name already says", () => {
+    const peers = makeStamp({ ...base, filters: [{ key: "peers:state:TN", label: "Institutions in Tennessee" }, { key: "peers:charter:credit_union", label: "Credit unions only" }, leftOut] });
+    const district = makeStamp({ ...base, filters: [{ key: "peers:fed_districts:6", label: "Fed district 6" }, leftOut] });
+    const passage = datasetPassage([
+      { label: "your peer group", stamp: peers },
+      { label: "National", stamp: makeStamp({ ...base, filters: [leftOut] }) },
+      { label: "Fed district 6 (Atlanta)", stamp: district },
+    ], "see the report");
+    const differ = passage?.find((s) => s.startsWith("Why these figures can differ"));
+    expect(differ).toBe("Why these figures can differ: only your peer group is narrowed by these filters (institutions in Tennessee, credit unions only).");
+    expect(passage?.[1]).toMatch(/^Who is counted for your peer group: institutions in Tennessee, credit unions only, with the institution/);
+  });
+
+  it("says a figure leaves the bank out, never that its group is limited to it", () => {
+    const peers = makeStamp({ ...base, filters: [{ key: "peers:state:TN", label: "Institutions in Tennessee" }, leftOut] });
+    const passage = datasetPassage([
+      { label: "your peer group", stamp: peers },
+      { label: "National", stamp: makeStamp({ ...base, filters: [] }) },
+    ], "see the report");
+    const differ = passage?.find((s) => s.startsWith("How your peer group and National differ"));
+    expect(differ).toBe("How your peer group and National differ: only your peer group is limited to institutions in Tennessee and leaves out the institution being compared.");
+    expect(passage?.join(" ")).not.toMatch(/limited to the institution being compared/);
+  });
+
+  it("says in one sentence that a figure comes from a snapshot, with no run, dataset or second time format", () => {
+    const peers = makeStamp({ ...base, filters: [{ key: "peers:state:TN", label: "Institutions in Tennessee" }, leftOut] });
+    const national = makeStamp({ ...base, dataset: "fee_index_cache", derivedFrom: "published_fee_catalog", mode: "cached", readAt: "2026-10-17T02:00:00Z", runId: 9, filters: [] });
+    const passage = datasetPassage([{ label: "your peer group", stamp: peers }, { label: "the U.S. median", stamp: national }], "see the report");
+    const differ = passage?.find((s) => s.startsWith("How your peer group and the U.S. median differ"));
+    expect(differ).toBe("How your peer group and the U.S. median differ: the U.S. median comes from a snapshot computed 17 Oct 2026 02:00 UTC, and your peer group was read live 18 Oct 2026 14:10 UTC; only your peer group is limited to institutions in Tennessee and leaves out the institution being compared.");
+    expect(differ).not.toMatch(/Run:|Dataset:|Computed from:|2026-10-1/);
+  });
+
+  it("names a method or counting difference in words", () => {
+    const a = makeStamp({ ...base, filters: [] });
+    const b = makeStamp({ ...base, readAt: "2026-10-18T15:00:00Z", methodVersion: 12, counting: "per_charter", filters: [] });
+    const passage = datasetPassage([{ label: "Texas", stamp: a }, { label: "National", stamp: b }], "see the report");
+    expect(passage?.find((s) => s.startsWith("How Texas and National differ"))).toBe(
+      "How Texas and National differ: Texas and National were read at different times (18 Oct 2026 14:10 UTC and 18 Oct 2026 15:00 UTC); Texas and National use different versions of the statistics method; Texas and National count institutions that share a fee schedule differently.",
+    );
+  });
+
+  it("drops a segment's prefix inside a sentence, so the passage keeps one colon each", () => {
+    const seg = makeStamp({ ...base, filters: [{ key: "segment:charter:bank", label: "Segment: Banks" }] });
+    const passage = datasetPassage([{ label: "This segment", stamp: seg }], "see the report");
+    expect(passage?.[1]).toBe("Who is counted: banks, under the index's standard rules (see the report).");
   });
 });

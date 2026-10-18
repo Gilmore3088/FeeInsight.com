@@ -125,3 +125,97 @@ export function datasetCitation(stamp: DatasetStamp): { stamp_id: string; summar
   const words = datasetNoteWords([{ label: "figures", stamp }]);
   return { stamp_id: stamp.id, summary: words?.summary ?? "", filters: words?.filters ?? [] };
 }
+
+/** A label set mid-sentence: lower case first letter, except a proper name ("Fed district 6"). */
+function lowerFirst(label: string): string {
+  return /^Fed /.test(label) ? label : label.charAt(0).toLowerCase() + label.slice(1);
+}
+
+/**
+ * Difference lines as prose with one colon per sentence: every "Applies only to X: Y" for one
+ * figure becomes "only X is limited to y and z". A filter the figure's own name already says
+ * ("Fed district 6 (Atlanta)" limited to "Fed district 6") is left out.
+ */
+function differenceProse(lines: readonly string[]): string[] {
+  const limits = new Map<string, string[]>();
+  const leavesOut = new Set<string>();
+  const out: (string | { who: string })[] = [];
+  for (const line of lines) {
+    const match = /^Applies only to (.+?): (.+)$/.exec(line);
+    if (!match) { out.push(line); continue; }
+    const [, who, label] = match;
+    if (!limits.has(who)) { limits.set(who, []); out.push({ who }); }
+    // Leaving the bank out narrows a group by one; it is never what the group is limited to.
+    if (label === LEFT_OUT_LABEL) { leavesOut.add(who); continue; }
+    const what = groupWords(label);
+    if (!who.toLowerCase().startsWith(what.toLowerCase())) limits.get(who)!.push(lowerFirst(what));
+  }
+  return out.flatMap((entry) => {
+    if (typeof entry === "string") return [entry];
+    const parts = limits.get(entry.who)!;
+    // One limit reads inline; several read as a named list ("and" would read as two groups).
+    const limit = parts.length === 1 ? `is limited to ${parts[0].replace(/ only$/, "")}` : `is narrowed by these filters (${parts.join(", ")})`;
+    const clauses = [
+      ...(parts.length ? [limit] : []),
+      ...(leavesOut.has(entry.who) ? ["leaves out the institution being compared"] : []),
+    ];
+    return clauses.length ? [`only ${entry.who} ${clauses.join(" and ")}`] : [];
+  });
+}
+
+/** The label of the filter that leaves the compared institution out (research.ts excludeOwnFilter). */
+const LEFT_OUT_LABEL = "The institution being compared left out";
+
+/** A filter label in a sentence: a segment's "Segment: " prefix dropped, so a sentence keeps one colon. */
+function groupWords(label: string): string {
+  return label.replace(/^Segment: /, "");
+}
+
+/**
+ * How two reads differ, other than who they count, as clauses for a printed sentence. The
+ * dataset, the table it was computed from and the run id stay out of prose: the read clause
+ * already says which figure is the snapshot, and the data reference lets support trace the rest.
+ */
+function readProse(a: StampedFigure, b: StampedFigure): string[] {
+  const out: string[] = [];
+  if (a.stamp.mode !== b.stamp.mode) {
+    const [cached, live] = a.stamp.mode === "cached" ? [a, b] : [b, a];
+    out.push(`${cached.label} comes from a snapshot computed ${noteTime(cached.stamp.readAt)}, and ${live.label} was read live ${noteTime(live.stamp.readAt)}`);
+  } else if ((toIsoTime(a.stamp.readAt) ?? a.stamp.readAt) !== (toIsoTime(b.stamp.readAt) ?? b.stamp.readAt)) {
+    out.push(`${a.label} and ${b.label} were read at different times (${noteTime(a.stamp.readAt)} and ${noteTime(b.stamp.readAt)})`);
+  }
+  if (a.stamp.methodVersion !== b.stamp.methodVersion) out.push(`${a.label} and ${b.label} use different versions of the statistics method`);
+  if (a.stamp.counting !== b.stamp.counting) out.push(`${a.label} and ${b.label} count institutions that share a fee schedule differently`);
+  return out;
+}
+
+/** Stamp filters that set a figure's group (peers, segment, the bank left out); the rest are the index's standard rules. */
+const GROUP_FILTER = /^(peers|segment|exclude):/;
+
+/**
+ * The stamps as the sentences a printed document sets as prose (#1924 step 4): the note's line
+ * (where the figures came from, when they were read, the counting rule), who is counted (the
+ * group's own filters; the standard rules every figure shares are named, not listed), how the
+ * reads differ, and the reference ids support can trace. `fullList` says where the reader finds
+ * every filter ("open the saved answer for the full list"). Null without stamps.
+ */
+export function datasetPassage(figures: readonly StampedFigure[], fullList: string): string[] | null {
+  const words = datasetNoteWords(figures);
+  if (!words) return null;
+  const [first] = figures;
+  const own = first.stamp.filters.filter((f) => GROUP_FILTER.test(f.key));
+  const group = own.filter((f) => !f.key.startsWith("exclude:")).map((f) => lowerFirst(groupWords(f.label)));
+  const leftOut = own.some((f) => f.key.startsWith("exclude:")) ? "with the institution being compared left out, " : "";
+  // With several reads, "who is counted" describes the first figure's, so it says whose.
+  const whose = group.length && new Set(figures.map((f) => f.stamp.id)).size > 1 ? ` for ${first.label}` : "";
+  const counted = group.length
+    ? `Who is counted${whose}: ${group.join(", ")}, ${leftOut}under the index's standard rules (${fullList}).`
+    : `Who is counted${whose}: all institutions${leftOut ? " except the institution being compared" : ""}, under the index's standard rules (${fullList}).`;
+  const others = figures.slice(1).filter((f) => f.stamp.id !== first.stamp.id);
+  const reasons = [...new Set(others.flatMap((other) => readProse(first, other)))];
+  const filterLines = words.differences?.lines.filter((line) => line.startsWith("Applies only to ")) ?? [];
+  const sentences = [...reasons, ...differenceProse(filterLines)];
+  const differ = words.differences && sentences.length ? `${words.differences.heading}: ${sentences.join("; ")}.` : null;
+  const reference = `Data reference (for support): ${[...new Set(figures.map((f) => f.stamp.id))].join(", ")}.`;
+  return [words.summary, counted, ...(differ ? [differ] : []), reference];
+}
