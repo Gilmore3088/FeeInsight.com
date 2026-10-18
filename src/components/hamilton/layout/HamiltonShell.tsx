@@ -153,6 +153,7 @@ export function HamiltonShell({
           accountLabel={accountLabel(accountContext)}
           accountUnlinked={!accountContext || accountContext.status === "unlinked"}
           homeName={accountContext?.status === "identified" ? accountContext.institution?.name ?? null : null}
+          homeHref={homeId != null ? `/pro/research?instId=${homeId}` : undefined}
           researchLabel={marketScope ?? researchLabel}
           researchIsHome={!marketScope && isHome}
           peerLabel={peerContext}

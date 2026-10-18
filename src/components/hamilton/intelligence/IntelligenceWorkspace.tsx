@@ -380,7 +380,7 @@ function isCurrentYear(year: string | number): boolean {
 }
 
 function yearLabel(year: string | number): string {
-  return isCurrentYear(year) ? `${year} to date (partial year)` : String(year);
+  return isCurrentYear(year) ? `${year} to date` : String(year);
 }
 
 function ComplaintPanel({ complaints, place, compact, exploreHref }: { complaints: ComplaintTrend | null; place: string; compact: boolean; exploreHref: string | null }) {

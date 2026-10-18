@@ -15,12 +15,14 @@ const icons = { Activity, Bookmark, Calculator, ChartNoAxesColumnIncreasing, Fil
  * three things separately: the reader's own institution, the institution being researched and
  * the peer group it is compared with.
  */
-export function WorkspaceNavigation({ pathname, isAdmin, accountLabel, researchLabel, homeName = null, accountUnlinked = false, researchIsHome = false, peerLabel }: {
+export function WorkspaceNavigation({ pathname, isAdmin, accountLabel, researchLabel, homeName = null, homeHref = "/pro/research", accountUnlinked = false, researchIsHome = false, peerLabel }: {
   pathname: string; isAdmin: boolean; accountLabel: string; researchLabel: string | null;
   /** The reader's own institution, when their account is linked to exactly one. */
   homeName?: string | null;
   /** No membership links the account to an institution yet (not ambiguous, not a load error). */
   accountUnlinked?: boolean;
+  /** The reader's own institution page (Your institution), where "Back to" returns. */
+  homeHref?: string;
   /** The subject is the reader's own institution. */
   researchIsHome?: boolean;
   /** The subject's saved peer group: a name, null for none saved, undefined when not shown. */
@@ -61,7 +63,7 @@ export function WorkspaceNavigation({ pathname, isAdmin, accountLabel, researchL
         {peerLabel === undefined ? null : peerLabel
           ? <span>Compared with: <strong>{peerLabel}</strong></span>
           : <span>Compared with: no peer group saved · <Link href="/pro/settings#peer-sets">Choose peers</Link></span>}
-        {homeName && !researchIsHome && !researchLabel.endsWith(" market") ? <Link href="/pro/hamilton">Back to {homeName}</Link> : null}
+        {homeName && !researchIsHome && !researchLabel.endsWith(" market") ? <Link href={homeHref}>Back to {homeName}</Link> : null}
       </div> : null}
     </section>
   </>;
