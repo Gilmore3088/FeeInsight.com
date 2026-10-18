@@ -52,6 +52,7 @@ import { countedAmounts } from "./counted-amounts";
 export { countedAmounts };
 import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL } from "@/lib/agents/magellan/link-coverage";
 import { SAFE_DEPOSIT_CATEGORY, SAFE_DEPOSIT_SERVICE_SQL, basisMismatchSql } from "@/lib/fee-comparability";
+import type { CountingRule, PopulationFilter } from "@/lib/dataset-stamp";
 
 import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT, maturityTier, type MaturityTier } from "./maturity";
 
@@ -104,6 +105,49 @@ export function statsRowFilter(alias = "ef"): string {
 
 /** Compatibility predicate for readers using the conventional ef alias. */
 export const STATS_ROW_FILTER = statsRowFilter();
+
+/**
+ * One plain-language description per predicate in statsRowFilter, in the same order (#1924).
+ * `sqlMarker` is text only that predicate contains; fee-stats.test.ts splits the SQL into its
+ * top-level predicates and fails when one has no description here, so words and SQL can't drift.
+ */
+export const STATS_POPULATION_FILTERS: ReadonlyArray<PopulationFilter & { sqlMarker: string }> = [
+  {
+    key: "sourced",
+    label: "Only fees traced to a stored copy of the institution's own fee schedule",
+    sqlMarker: ".source_document_id IS NOT NULL",
+  },
+  {
+    key: "consumer_audience",
+    label: "Consumer fees, including fees whose schedule names no audience; business fees left out",
+    sqlMarker: ".fee_audience IN (",
+  },
+  {
+    key: "no_business_schedule",
+    label: "Fees from business, commercial, corporate or treasury schedules left out",
+    sqlMarker: ".source_url",
+  },
+  {
+    key: "safe_deposit_rent_only",
+    label: "Safe deposit box charges for drilling, keys, lockouts or late payment left out of box rent",
+    sqlMarker: ".fee_name",
+  },
+  {
+    key: "one_charging_basis",
+    label: "Fees charged over a different period than their category's usual basis left out",
+    sqlMarker: ".frequency",
+  },
+];
+
+/** The statistics population filters as stamp data (dataset-stamp.ts). */
+export function statsPopulationFilters(): PopulationFilter[] {
+  return STATS_POPULATION_FILTERS.map(({ key, label }) => ({ key, label }));
+}
+
+/** The counting rule in force (rule 7). */
+export function statsCounting(enabled: boolean = COUNT_SHARED_SCHEDULE_ONCE): CountingRule {
+  return enabled ? "counted_once" : "per_charter";
+}
 
 /**
  * Path segments of vendor download services that host many unrelated institutions' files

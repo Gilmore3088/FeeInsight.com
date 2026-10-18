@@ -13,9 +13,15 @@ import {
   STATS_ROW_FILTER,
   STATS_SCHEDULE_KEYS,
   countedRepresentatives,
+  statsCounting,
+  statsPopulationFilters,
   summarizeFeesBy,
   valuePerInstitution,
 } from "./fee-stats";
+import { makeStamp, toIsoTime, toRunId, type DatasetStamp, type PopulationFilter, type StampMode } from "@/lib/dataset-stamp";
+import { peerFilterParts } from "@/lib/peer-filter-words";
+import { segmentLabel } from "@/lib/hamilton/workspace/segment";
+import type { AskSegment } from "@/lib/hamilton/workspace/types";
 
 /** The canonical fee catalog — only these categories appear in indexes and reports */
 const CANONICAL_CATEGORIES = Object.values(FEE_FAMILIES).flat();
@@ -34,6 +40,12 @@ export interface IndexEntry {
   bank_count: number;
   cu_count: number;
   maturity_tier: "strong" | "provisional" | "insufficient";
+  /**
+   * Means two things today (#1924): on a live read, the newest catalog row's created_at for the
+   * category; from fee_index_cache, the time the cache was computed. Screens already show it
+   * either way, so it is left as is; the entry's DatasetStamp says which (`readAt` for the read
+   * or snapshot time, `newestRecordAt` for the newest record).
+   */
   last_updated: string | null;
   /**
    * Institutions behind the figures with at least one fee whose audience the schedule does not
@@ -48,6 +60,104 @@ export interface IndexEntry {
  */
 export async function getNationalIndex(approvedOnly = true): Promise<IndexEntry[]> {
   return buildIndexEntries(await loadNationalRows(sql, approvedOnly));
+}
+
+/** An index with the stamp naming the data it was computed from (#1924). */
+export interface StampedIndex {
+  entries: IndexEntry[];
+  stamp: DatasetStamp;
+}
+
+/** The clock for live reads' `readAt`; tests inject one. */
+export interface StampClock {
+  now?: () => Date;
+}
+
+/** Which slice of the market an index covers: a peer filter set, a segment named in a question, or the nation. */
+export type StampScope = PeerFilterSet | AskSegment | null | undefined;
+
+function isAskSegment(scope: StampScope): scope is AskSegment {
+  return !!scope && "minAssets" in scope && "largest" in scope;
+}
+
+/** The scope's filters, in the words describePeerFilters and segmentLabel already use. */
+export function scopeFilters(scope: StampScope): PopulationFilter[] {
+  if (!scope) return [];
+  if (isAskSegment(scope)) {
+    const none = { minAssets: null, maxAssets: null, charterType: null, stateCode: null, largest: null } as const;
+    const out: PopulationFilter[] = [];
+    if (scope.charterType) {
+      out.push({ key: `segment:charter:${scope.charterType}`, label: `Segment: ${segmentLabel({ ...none, charterType: scope.charterType })}` });
+    }
+    if (scope.minAssets !== null || scope.maxAssets !== null) {
+      out.push({
+        key: `segment:assets:${scope.minAssets ?? ""}-${scope.maxAssets ?? ""}`,
+        label: `Segment: ${segmentLabel({ ...none, minAssets: scope.minAssets, maxAssets: scope.maxAssets })}`,
+      });
+    }
+    if (scope.stateCode) {
+      out.push({ key: `segment:state:${scope.stateCode}`, label: `Segment: ${segmentLabel({ ...none, stateCode: scope.stateCode })}` });
+    }
+    if (scope.largest !== null) {
+      out.push({ key: `segment:largest:${scope.largest}`, label: `Segment: ${segmentLabel({ ...scope })}` });
+    }
+    return out;
+  }
+  return peerFilterParts(scope).map((part) => ({ key: part.key, label: `Peers: ${part.label}` }));
+}
+
+/** The newest record time across entries (live reads' last_updated), or null. */
+function newestRecordOf(entries: Pick<IndexEntry, "last_updated">[]): string | null {
+  let newest: string | null = null;
+  for (const entry of entries) {
+    const at = toIsoTime(entry.last_updated);
+    if (at && (!newest || at > newest)) newest = at;
+  }
+  return newest;
+}
+
+/**
+ * The one stamp builder for dollar-fee statistics: a live read of published_fee_catalog, or the
+ * fee_index_cache snapshot computed from it. The population is the statistics contract's filters
+ * (fee-stats.ts statsPopulationFilters) plus the scope's; counting and method version are the
+ * ones in force.
+ */
+export function catalogStamp(params: {
+  mode: StampMode;
+  readAt: string | Date;
+  runId?: number | string | null;
+  newestRecordAt?: string | Date | null;
+  scope?: StampScope;
+  /** A snapshot computed under another method (cache rows carry their own). */
+  methodVersion?: number;
+}): DatasetStamp {
+  return makeStamp({
+    dataset: params.mode === "cached" ? "fee_index_cache" : "published_fee_catalog",
+    ...(params.mode === "cached" ? { derivedFrom: "published_fee_catalog" as const } : {}),
+    mode: params.mode,
+    readAt: toIsoTime(params.readAt) ?? String(params.readAt),
+    runId: toRunId(params.runId),
+    newestRecordAt: toIsoTime(params.newestRecordAt),
+    methodVersion: params.methodVersion ?? STATS_METHOD_VERSION,
+    counting: statsCounting(),
+    filters: [...statsPopulationFilters(), ...scopeFilters(params.scope)],
+  });
+}
+
+function liveStamp(entries: IndexEntry[], clock: StampClock | undefined, scope?: StampScope): DatasetStamp {
+  return catalogStamp({
+    mode: "live",
+    readAt: (clock?.now ?? (() => new Date()))(),
+    runId: null,
+    newestRecordAt: newestRecordOf(entries),
+    scope,
+  });
+}
+
+/** getNationalIndex with its stamp; `readAt` is when the query returned. */
+export async function getNationalIndexStamped(approvedOnly = true, clock?: StampClock): Promise<StampedIndex> {
+  const entries = await getNationalIndex(approvedOnly);
+  return { entries, stamp: liveStamp(entries, clock) };
 }
 
 type IndexRow = {
@@ -415,6 +525,16 @@ export async function getPeerIndex(
   return buildIndexEntries(rows);
 }
 
+/** getPeerIndex with its stamp; `readAt` is when the query returned. */
+export async function getPeerIndexStamped(
+  filters: PeerFilterSet,
+  approvedOnly = true,
+  clock?: StampClock,
+): Promise<StampedIndex> {
+  const entries = await getPeerIndex(filters, approvedOnly);
+  return { entries, stamp: liveStamp(entries, clock, filters) };
+}
+
 export interface PeerFilterSet {
   charter_type?: string;
   asset_tiers?: string[];
@@ -492,6 +612,20 @@ export async function getPeerIndexes(
     params as never[],
   ) as PeerRow[];
   return filterSets.map((filters) => buildIndexEntries(rows.filter((row) => matchesPeerFilters(row, filters))));
+}
+
+/** getPeerIndexes with a stamp per set (one read, so one `readAt`), in the order of `filterSets`. */
+export async function getPeerIndexesStamped(
+  filterSets: PeerFilterSet[],
+  approvedOnly = true,
+  clock?: StampClock,
+): Promise<StampedIndex[]> {
+  const indexes = await getPeerIndexes(filterSets, approvedOnly);
+  const readAt = (clock?.now ?? (() => new Date()))();
+  return indexes.map((entries, index) => ({
+    entries,
+    stamp: catalogStamp({ mode: "live", readAt, runId: null, newestRecordAt: newestRecordOf(entries), scope: filterSets[index] }),
+  }));
 }
 
 export interface PeerGroupCount {
@@ -699,9 +833,9 @@ const NATIONAL_INDEX_CACHE_TTL_MS = 60_000;
 const NATIONAL_INDEX_CACHE_MAX_AGE_MS = 36 * 60 * 60 * 1000;
 let nationalIndexCache: {
   expiresAt: number;
-  value: IndexEntry[];
+  value: StampedIndex;
 } | null = null;
-let nationalIndexCachePromise: Promise<IndexEntry[]> | null = null;
+let nationalIndexCachePromise: Promise<StampedIndex> | null = null;
 let unstatedCountsCache: { expiresAt: number; value: Map<string, number> } | null = null;
 
 /**
@@ -719,7 +853,17 @@ export async function getNationalUnstatedAudienceCountsCached(): Promise<Map<str
   return value;
 }
 
+/** The national index from fee_index_cache (or live when the cache is unusable), entries only. */
 export async function getNationalIndexCached(): Promise<IndexEntry[]> {
+  return (await getNationalIndexCachedStamped()).entries;
+}
+
+/**
+ * The national index from fee_index_cache with its stamp: the snapshot's computed_at, the run
+ * that wrote it (agent_run_id) and its method version. When the cache is empty, stale or from
+ * an older method, the live index and a live stamp. Memoised for a minute like before.
+ */
+export async function getNationalIndexCachedStamped(clock?: StampClock): Promise<StampedIndex> {
   const now = Date.now();
   if (nationalIndexCache && nationalIndexCache.expiresAt > now) {
     return nationalIndexCache.value;
@@ -728,7 +872,7 @@ export async function getNationalIndexCached(): Promise<IndexEntry[]> {
     return nationalIndexCachePromise;
   }
 
-  nationalIndexCachePromise = readNationalIndexCached()
+  nationalIndexCachePromise = readNationalIndexCached(clock)
     .then((value) => {
       nationalIndexCache = {
         value,
@@ -742,41 +886,51 @@ export async function getNationalIndexCached(): Promise<IndexEntry[]> {
   return nationalIndexCachePromise;
 }
 
-async function readNationalIndexCached(): Promise<IndexEntry[]> {
+type FeeIndexCacheRow = {
+  fee_category: string;
+  fee_family: string | null;
+  median_amount: number | null;
+  p25_amount: number | null;
+  p75_amount: number | null;
+  min_amount: number | null;
+  max_amount: number | null;
+  institution_count: number;
+  observation_count: number;
+  approved_count: number;
+  bank_count: number;
+  cu_count: number;
+  maturity_tier: string;
+  /** postgres.js gives a Date for timestamptz; a string in fixtures. */
+  computed_at: string | Date | null;
+  stats_method_version?: number | string | null;
+  /** bigint: a string from postgres.js. */
+  agent_run_id?: number | string | null;
+};
+
+async function readNationalIndexCached(clock?: StampClock): Promise<StampedIndex> {
   try {
     const rows = await sql`
-      SELECT * FROM fee_index_cache ORDER BY institution_count DESC` as {
-      fee_category: string;
-      fee_family: string | null;
-      median_amount: number | null;
-      p25_amount: number | null;
-      p75_amount: number | null;
-      min_amount: number | null;
-      max_amount: number | null;
-      institution_count: number;
-      observation_count: number;
-      approved_count: number;
-      bank_count: number;
-      cu_count: number;
-      maturity_tier: string;
-      computed_at: string;
-      stats_method_version?: number | null;
-    }[];
+      SELECT * FROM fee_index_cache ORDER BY institution_count DESC` as FeeIndexCacheRow[];
 
     // The cache is only trustworthy when a publish step rebuilt it recently. A stale
     // cache (e.g. left over from before the agentic pipeline) must never be served.
-    const newest = rows.reduce<number>((max, row) => {
+    let newest = 0;
+    let snapshot: FeeIndexCacheRow | null = null;
+    for (const row of rows) {
       const at = row.computed_at ? new Date(row.computed_at).getTime() : 0;
-      return Number.isFinite(at) && at > max ? at : max;
-    }, 0);
+      if (Number.isFinite(at) && at > newest) {
+        newest = at;
+        snapshot = row;
+      }
+    }
     const oldMethod = rows.some((row) => Number(row.stats_method_version ?? 0) !== STATS_METHOD_VERSION);
-    if (rows.length === 0 || oldMethod || Date.now() - newest > NATIONAL_INDEX_CACHE_MAX_AGE_MS) {
-      return getNationalIndex();
+    if (!snapshot || oldMethod || Date.now() - newest > NATIONAL_INDEX_CACHE_MAX_AGE_MS) {
+      return getNationalIndexStamped(true, clock);
     }
 
     // No unstated-audience count here: callers that show it read
     // `getNationalUnstatedAudienceCountsCached` (#1595).
-    return rows.map((row) => ({
+    const entries: IndexEntry[] = rows.map((row) => ({
       fee_category: row.fee_category,
       fee_family: row.fee_family,
       median_amount: row.median_amount,
@@ -790,10 +944,19 @@ async function readNationalIndexCached(): Promise<IndexEntry[]> {
       bank_count: row.bank_count,
       cu_count: row.cu_count,
       maturity_tier: row.maturity_tier as IndexEntry["maturity_tier"],
-      last_updated: row.computed_at,
+      last_updated: row.computed_at as string,
     }));
+    const stamp = catalogStamp({
+      mode: "cached",
+      readAt: new Date(newest),
+      runId: snapshot.agent_run_id ?? null,
+      // The cache has no record-time column; unknown rather than guessed.
+      newestRecordAt: null,
+      methodVersion: Number(snapshot.stats_method_version),
+    });
+    return { entries, stamp };
   } catch {
-    return getNationalIndex();
+    return getNationalIndexStamped(true, clock);
   }
 }
 
