@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { REPORT_INCLUDES, REPORT_OFFER } from "@/lib/constants";
+import { REPORT_INCLUDES, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
 import { reportFaqItems, reportFaqJsonLd } from "./report-faq";
 
 describe("report FAQ (#1174)", () => {
@@ -16,7 +16,7 @@ describe("report FAQ (#1174)", () => {
   it("says who it is for, with Hamilton as the next step (#1174)", () => {
     const who = items.find((item) => item.question === "Who is it for?");
     expect(who?.answer).toContain(REPORT_OFFER.audience);
-    expect(who?.answer).toContain("Hamilton");
+    expect(who?.answer).toContain(`To keep it current, use Hamilton, the ${SITE_NAME} workspace.`);
     expect(who?.answer).not.toContain("Hamilton Pro");
   });
 

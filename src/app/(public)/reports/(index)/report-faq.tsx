@@ -17,7 +17,7 @@ export function reportFaqItems(): FaqItem[] {
     },
     {
       question: "Who is it for?",
-      answer: `${REPORT_OFFER.audience}. Teams that want it kept current use Hamilton, the ${SITE_NAME} workspace.`,
+      answer: `${REPORT_OFFER.audience}. To keep it current, use Hamilton, the ${SITE_NAME} workspace.`,
     },
     {
       question: "What does it cost?",
