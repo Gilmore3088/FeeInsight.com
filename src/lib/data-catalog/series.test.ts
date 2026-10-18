@@ -43,11 +43,11 @@ describe("area series discovery", () => {
 
   it("sets a statement timeout and skips the GROUP BY for sources described by their partition", async () => {
     const seen: string[] = [];
-    const db = vi.fn((strings: TemplateStringsArray) => {
+    const db = Object.assign(vi.fn((strings: TemplateStringsArray) => {
       const text = strings.join("?");
       seen.push(text);
       return Promise.resolve([]);
-    });
+    }), { unsafe: (text: string) => text });
     await readAreaSeries(db as never);
     expect(seen[0]).toContain("statement_timeout");
     expect(seen.some((t) => t.includes("registry_ingest_partitions"))).toBe(true);
@@ -56,20 +56,20 @@ describe("area series discovery", () => {
 
   it("never lists a struck series", async () => {
     const struck = STRUCK_AREA_SERIES_KEYS[0];
-    const db = vi.fn((strings: TemplateStringsArray) =>
+    const db = Object.assign(vi.fn((strings: TemplateStringsArray) =>
       Promise.resolve(strings.join("?").includes("GROUP BY")
         ? [
             { source: "bls-laus", series_key: "laus_unemployment_rate", geo_type: "state", unit: "percent", period_min: "2020", period_max: "2026", source_url: null, fetched_at: null },
             { source: "bls-laus", series_key: struck, geo_type: "state", unit: "percent", period_min: "2020", period_max: "2026", source_url: null, fetched_at: null },
           ]
-        : []));
+        : [])), { unsafe: (text: string) => text });
     const keys = (await readAreaSeries(db as never)).map((s) => s.series_key);
     expect(keys).toContain("laus_unemployment_rate");
     expect(keys).not.toContain(struck);
   });
 
   it("runs a root handle inside its own transaction, so the statement timeout holds", async () => {
-    const tx = vi.fn(() => Promise.resolve([]));
+    const tx = Object.assign(vi.fn(() => Promise.resolve([])), { unsafe: (text: string) => text });
     const begin = vi.fn((cb: (t: typeof tx) => Promise<unknown>) => cb(tx));
     const root = Object.assign(vi.fn(() => Promise.resolve([])), { begin });
     await readAreaSeries(root as never);

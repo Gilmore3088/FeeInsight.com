@@ -1,5 +1,5 @@
 import { sql } from "./connection";
-import { STRUCK_AREA_SERIES_KEYS, STRUCK_SOURCE_URL_PATTERNS } from "./struck-sources";
+import { STRUCK_AREA_SERIES_KEYS, areaRowServedSql } from "./struck-sources";
 
 /**
  * Reads over the national and state credit context Magellan's national-credit steps load into
@@ -105,8 +105,8 @@ export async function getNationalCreditSummary(options: { sources?: string[]; se
            AND (${keys}::text[] IS NULL OR series_key = ANY(${keys}::text[]))
            -- Struck series (PMMS, Philadelphia Fed cards; DECISIONS.md "No non-commercial data"): never returned.
            AND series_key <> ALL(${[...STRUCK_AREA_SERIES_KEYS]}::text[])
-           -- Rows stored from FRED that no publisher re-fetch overwrote (2026-10-18): never returned.
-           AND COALESCE(source_url, '') NOT ILIKE ALL(${[...STRUCK_SOURCE_URL_PATTERNS]}::text[])
+           -- Rows stored from FRED (2026-10-18): served only until the key has a Board row (areaRowServedSql).
+           AND ${sql.unsafe(areaRowServedSql())}
       ) ranked
      WHERE rn <= ${DEPTH}
   `;

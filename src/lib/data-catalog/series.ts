@@ -2,7 +2,7 @@ import { unstable_cache } from "next/cache";
 
 import { withTransaction } from "@/lib/data-store/connection";
 import type { AreaGeoType } from "@/lib/data-store/economy-aggregates";
-import { STRUCK_AREA_SERIES_KEYS, STRUCK_AREA_SOURCES, STRUCK_FRED_SERIES, STRUCK_SOURCE_URL_PATTERNS } from "@/lib/data-store/struck-sources";
+import { STRUCK_AREA_SERIES_KEYS, STRUCK_AREA_SOURCES, STRUCK_FRED_SERIES, areaRowServedSql } from "@/lib/data-store/struck-sources";
 import { areaCatalogEntries, scopeForAreaGeoType, type CatalogScopeKind } from "./catalog";
 
 /**
@@ -162,7 +162,7 @@ export async function readAreaSeries(db?: Db): Promise<CatalogSeries[]> {
         FROM area_statistics
        WHERE source = ANY(${needGroupBy}::text[])
          -- Struck rows (DECISIONS.md "No non-commercial data") are never listed.
-         AND COALESCE(source_url, '') NOT ILIKE ALL(${[...STRUCK_SOURCE_URL_PATTERNS]}::text[])
+         AND ${tx.unsafe(areaRowServedSql())}
        GROUP BY source, series_key, geo_type, unit
     `;
     return [...described, ...mergeGroupRows([...groupRows], partitions)].filter(allowed).sort(

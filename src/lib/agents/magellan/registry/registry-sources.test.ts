@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { runRegistryCfpb } from "./cfpb";
 import { runRegistryFdicSod, latestSodYear } from "./fdic-sod";
-import { beigeEmptyRetryHours, FED_INDICATORS_PARSER_VERSION, runRegistryBeigeBook, runRegistryFomcMinutes, runRegistryFred } from "./fed";
+import { beigeEmptyRetryHours, expectedLatestPeriod, FED_INDICATORS_PARSER_VERSION, frbPackageDue, runRegistryBeigeBook, runRegistryFomcMinutes, runRegistryFred } from "./fed";
 import { STRUCK_FRED_SERIES } from "@/lib/data-store/struck-sources";
 import { sdmxPackage } from "@/lib/regulatory/fed-board-fixtures";
 import { PUBLISHER_INDICATORS } from "@/lib/regulatory/federal-indicators";
@@ -453,6 +453,57 @@ describe("registry Federal Reserve workers", () => {
     expect(result.missingSeries).toContain("GDPCTPI (bea: BEA_API_KEY is not set)");
     const partition = statements.find((s) => s.text.includes("INSERT INTO registry_ingest_partitions"))!;
     expect(String(partition.values.find((v) => typeof v === "string" && v.startsWith("{")))).toContain('"publisher_cutover_at":"2026-10-18T12:00:00.000Z"');
+  });
+
+  it("skips a recent H.15 download and names series still on FRED-era values", async () => {
+    vi.stubEnv("BEA_API_KEY", "");
+    const now = new Date("2026-10-20T12:00:00Z");
+    const { db, statements } = createDb([
+      ["publisher_cutover_at", () => [{ cutover: "2026-10-18T12:00:00.000Z", frb_fetched: { h15: "2026-10-20T06:00:00.000Z" } }]],
+      // Rows written by a publisher since the cutover: FEDFUNDS (H.15) and UNRATE (BLS).
+      ["GROUP BY series_id", () => [{ series_id: "FEDFUNDS", latest: "2026-09-01" }, { series_id: "UNRATE", latest: "2026-09-01" }]],
+      [
+        "FROM fed_economic_indicators",
+        () => ["UNRATE", "FEDFUNDS", "GDPC1", "TXUR", "T10YIE"].map((id) => ({ series_id: id, series_title: id, fed_district: null, units: null })),
+      ],
+    ]);
+    // Every request fails, so no BLS or BEA series gets a publisher row this run.
+    const fetchImpl = vi.fn().mockImplementation(async () => new Response("down", { status: 404 }));
+    const result = await runRegistryFred({ db, now, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    vi.unstubAllEnvs();
+
+    const urls = fetchImpl.mock.calls.map((call) => String(call[0]));
+    expect(urls.some((u) => u.includes("FRB_h15_xml.zip"))).toBe(false);
+    expect(result.skippedPackages).toEqual(["H15 (downloaded within the last day)"]);
+    expect(result.missingSeries.some((m) => m.startsWith("FEDFUNDS"))).toBe(false);
+    // Stored, publisher-loaded, no publisher row yet: still served from FRED-era rows, and named.
+    expect(result.stillOnFredEra).toEqual(["GDPC1", "TXUR"]);
+    // UNRATE has a publisher row from an earlier run (its FRED-era rows are hidden); T10YIE is loaded by no publisher.
+    expect(result.stillOnFredEra).not.toContain("UNRATE");
+    expect(result.stillOnFredEra).not.toContain("T10YIE");
+    const partition = statements.find((s) => s.text.includes("INSERT INTO registry_ingest_partitions"))!;
+    const detail = JSON.parse(String(partition.values.find((v) => typeof v === "string" && v.startsWith("{"))));
+    expect(detail.still_on_fred_era_values).toEqual(["GDPC1", "TXUR"]);
+    expect(detail.frb_package_fetched_at).toEqual({ h15: "2026-10-20T06:00:00.000Z" });
+    expect(detail.publisher_series).toEqual(expect.arrayContaining(["UNRATE", "FEDFUNDS", "GDPC1", "TXUR"]));
+    expect(detail.publisher_series).not.toContain("T10YIE");
+    expect(detail.publisher_series.some((id: string) => STRUCK_FRED_SERIES.includes(id))).toBe(false);
+  });
+
+  it("downloads a Fed Board package at most daily, daily while a new period is due, and otherwise weekly", () => {
+    const now = new Date("2026-11-03T12:00:00Z");
+    expect(expectedLatestPeriod("monthly", now)).toBe("2026-10-01");
+    expect(expectedLatestPeriod("quarterly", now)).toBe("2026-07-01");
+    expect(expectedLatestPeriod("monthly", new Date("2026-01-15T00:00:00Z"))).toBe("2025-12-01");
+    expect(frbPackageDue(null, [], now)).toEqual({ due: true, reason: "never downloaded" });
+    // Within a day: never, even when October's FEDFUNDS is not in yet.
+    expect(frbPackageDue("2026-11-03T01:00:00Z", [{ latest: "2026-09-01", frequency: "monthly" }], now).due).toBe(false);
+    // Over a day and October is missing: fetch.
+    expect(frbPackageDue("2026-11-02T06:00:00Z", [{ latest: "2026-09-01", frequency: "monthly" }], now)).toEqual({ due: true, reason: "a new period is due" });
+    expect(frbPackageDue("2026-11-02T06:00:00Z", [{ latest: null, frequency: "monthly" }], now).due).toBe(true);
+    // Up to date: wait for the weekly refresh.
+    expect(frbPackageDue("2026-11-02T06:00:00Z", [{ latest: "2026-10-01", frequency: "monthly" }], now).due).toBe(false);
+    expect(frbPackageDue("2026-10-27T06:00:00Z", [{ latest: "2026-10-01", frequency: "monthly" }], now)).toEqual({ due: true, reason: "weekly refresh" });
   });
 
   it("writes nothing on a dry run", async () => {

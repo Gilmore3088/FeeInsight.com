@@ -131,7 +131,7 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     publisher: "US Bureau of Labor Statistics, US Bureau of Economic Analysis and the Federal Reserve Board (H.15)",
     licence: {
       status: "public-domain",
-      note: "Each series from its original publisher since 2026-10-18; FRED is no longer read (its terms bar commercial use and storing FRED content). BLS: \"everything that we publish ... is in the public domain\" (bls.gov/opub/copyright-information.htm); Fed Board: public domain (federalreserve.gov/disclaimer.htm); BEA data are federal works (17 USC 105). QBPQYTNIYSRVDP and DRCBLACBS have no confirmed publisher file and are struck; rows written before the publisher cutover are not served.",
+      note: "Each series from its original publisher since 2026-10-18; FRED is no longer read (its terms bar commercial use and storing FRED content). BLS: \"everything that we publish ... is in the public domain\" (bls.gov/opub/copyright-information.htm); Fed Board: public domain (federalreserve.gov/disclaimer.htm); BEA data are federal works (17 USC 105). QBPQYTNIYSRVDP and DRCBLACBS have no confirmed publisher file and are struck. FRED-era rows are retired per series: served until the series' first publisher row lands (fedIndicatorServedSql); registry-fred names any still on FRED-era values.",
     },
     connection: "rest-api",
     optionalEnvKeys: ["BLS_API_KEY", "BEA_API_KEY"],

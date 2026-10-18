@@ -1,5 +1,5 @@
 import { sql } from "./connection";
-import { STRUCK_SOURCE_URL_PATTERNS } from "./struck-sources";
+import { areaRowServedSql } from "./struck-sources";
 
 /**
  * Reads over the payment volume series Magellan's fed-payments step loads into area_statistics
@@ -121,7 +121,7 @@ async function nationalSeries(sources: readonly string[], prefix: string | null)
      WHERE source = ANY(${[...sources]}::text[])
        AND geo_type = 'nation' AND geo_code = 'US'
        AND (${prefix}::text IS NULL OR series_key LIKE ${`${prefix ?? ""}%`})
-       AND COALESCE(source_url, '') NOT ILIKE ALL(${[...STRUCK_SOURCE_URL_PATTERNS]}::text[])
+       AND ${sql.unsafe(areaRowServedSql())}
   `;
   return [...rows];
 }

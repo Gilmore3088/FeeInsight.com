@@ -2,7 +2,7 @@ import { REMITTANCE_PRICES_ATTRIBUTION, REMITTANCE_PRICES_LICENCE, STATE_FROM_FI
 import { URBAN_DEBT_ATTRIBUTION } from "@/lib/regulatory/state-lists";
 import { groupExpression, MIN_GROUP, type CallItemGroup } from "./call-report-items";
 import { sql } from "./connection";
-import { STRUCK_AREA_SERIES_KEYS, STRUCK_AREA_SOURCES, STRUCK_SOURCE_URL_PATTERNS } from "./struck-sources";
+import { STRUCK_AREA_SERIES_KEYS, STRUCK_AREA_SOURCES, areaRowServedSql } from "./struck-sources";
 
 /** area_statistics sources whose licence requires attribution, carried on every row read. */
 export const AREA_SOURCE_ATTRIBUTION: Readonly<Record<string, string>> = {
@@ -100,7 +100,7 @@ export async function getAreaStatistics(geoType: AreaGeoType, code: string): Pro
          WHERE a.geo_type = ${geoType} AND a.geo_code = ${geoCode}
            -- Struck sources (DECISIONS.md "No non-commercial data"): rows already loaded are never returned.
            AND a.source <> ALL(${[...STRUCK_AREA_SOURCES]}::text[])
-           AND COALESCE(a.source_url, '') NOT ILIKE ALL(${[...STRUCK_SOURCE_URL_PATTERNS]}::text[])
+           AND ${sql.unsafe(areaRowServedSql("a"))}
            AND a.series_key <> ALL(${[...STRUCK_AREA_SERIES_KEYS]}::text[])
       ) ranked
      WHERE rn <= 2

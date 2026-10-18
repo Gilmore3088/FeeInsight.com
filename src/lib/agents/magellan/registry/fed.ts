@@ -145,8 +145,51 @@ export interface RegistryFredResult {
   series: number;
   refreshedSeries: number;
   missingSeries: string[];
+  /**
+   * Series readers still serve from their FRED-era rows: stored before the publisher cutover and
+   * with no row from their publisher yet (each fetch so far failed). Reported as "still on
+   * FRED-era values" until the first publisher row lands (fedIndicatorServedSql).
+   */
+  stillOnFredEra: string[];
+  /** Fed Board packages not downloaded this run because the last download is recent enough (frbPackageDue). */
+  skippedPackages: string[];
   observations: number;
   dryRun: boolean;
+}
+
+/** A Fed Board package is never downloaded twice within this many hours. */
+export const FRB_PACKAGE_MIN_HOURS = 24;
+/** ... and is downloaded at least this often (weekly), even when no new period is expected. */
+export const FRB_PACKAGE_MAX_HOURS = 24 * 7;
+
+/** The first day of the period before the one `now` is in: what a monthly or quarterly series should hold once published. */
+export function expectedLatestPeriod(frequency: "monthly" | "quarterly", now: Date): string {
+  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth();
+  const start = frequency === "monthly" ? new Date(Date.UTC(year, month - 1, 1)) : new Date(Date.UTC(year, Math.floor(month / 3) * 3 - 3, 1));
+  return start.toISOString().slice(0, 10);
+}
+
+/**
+ * Whether to download a Fed Board package this run. The H.15 zip is tens of megabytes (the Board
+ * lists about 68 MB) and FEDFUNDS is a monthly average published early the next month, so a
+ * daily download is wasted: the package is fetched when it never has been, at most once a day
+ * while a member series lacks the period just ended (so a new month lands within a day), and
+ * otherwise once a week (to pick up any revision).
+ */
+export function frbPackageDue(
+  lastFetchedAt: string | null,
+  members: Array<{ latest: string | null; frequency: "monthly" | "quarterly" }>,
+  now: Date,
+): { due: boolean; reason: string } {
+  if (!lastFetchedAt) return { due: true, reason: "never downloaded" };
+  const last = Date.parse(lastFetchedAt);
+  if (!Number.isFinite(last)) return { due: true, reason: "never downloaded" };
+  const hours = (now.getTime() - last) / 3_600_000;
+  if (hours < FRB_PACKAGE_MIN_HOURS) return { due: false, reason: "downloaded within the last day" };
+  if (hours >= FRB_PACKAGE_MAX_HOURS) return { due: true, reason: "weekly refresh" };
+  const behind = members.some((m) => !m.latest || m.latest < expectedLatestPeriod(m.frequency, now));
+  return behind ? { due: true, reason: "a new period is due" } : { due: false, reason: "up to date; refreshed weekly" };
 }
 
 /** The series one publisher returned, by our series_id, with why any came back empty. */
@@ -209,11 +252,35 @@ async function pullBea(series: PublisherIndicator[], options: FedOptions): Promi
   return out;
 }
 
-async function pullFrb(series: PublisherIndicator[], options: FedOptions): Promise<PublisherPull> {
-  const out: PublisherPull = { observations: new Map(), problems: {} };
+interface FrbPull extends PublisherPull {
+  /** Packages downloaded this run, with when. */
+  fetched: Record<string, string>;
+  /** Packages skipped this run (not due), whose members keep their stored rows. */
+  skipped: string[];
+  skippedSeries: Set<string>;
+}
+
+async function pullFrb(
+  series: PublisherIndicator[],
+  options: FedOptions,
+  lastFetched: Record<string, string>,
+  publisherLatest: Map<string, string>,
+): Promise<FrbPull> {
+  const out: FrbPull = { observations: new Map(), problems: {}, fetched: {}, skipped: [], skippedSeries: new Set() };
+  const now = options.now ?? new Date();
   const byPackage = new Map<keyof typeof FRB_XML_PACKAGES, PublisherIndicator[]>();
   for (const s of series) if (s.frb) byPackage.set(s.frb.pkg, [...(byPackage.get(s.frb.pkg) ?? []), s]);
   for (const [pkg, members] of byPackage) {
+    const due = frbPackageDue(
+      lastFetched[pkg] ?? null,
+      members.map((m) => ({ latest: publisherLatest.get(m.series_id) ?? null, frequency: m.frb?.frequency ?? "monthly" })),
+      now,
+    );
+    if (!due.due) {
+      out.skipped.push(`${pkg.toUpperCase()} (${due.reason})`);
+      for (const m of members) out.skippedSeries.add(m.series_id);
+      continue;
+    }
     try {
       const { found } = await fetchSdmxPackage(FRB_XML_PACKAGES[pkg], members.map((m) => m.publisher_id), options.fetchOptions);
       for (const s of members) {
@@ -221,6 +288,7 @@ async function pullFrb(series: PublisherIndicator[], options: FedOptions): Promi
         if (obs.length > 0) out.observations.set(s.series_id, obs);
         else out.problems[s.series_id] = found.has(s.publisher_id) ? "series had no values" : `${s.publisher_id} not in the ${pkg.toUpperCase()} package`;
       }
+      out.fetched[pkg] = now.toISOString();
     } catch (error) {
       for (const s of members) out.problems[s.series_id] = error instanceof Error ? error.message : String(error);
     }
@@ -231,10 +299,11 @@ async function pullFrb(series: PublisherIndicator[], options: FedOptions): Promi
 /**
  * Refreshes every indicator in PUBLISHER_INDICATORS from its original publisher (BLS, BEA, the
  * Federal Reserve Board), plus any other BLS CPI series already tracked. FRED is no longer read
- * (2026-10-18). The first run records `publisher_cutover_at` in the partition detail: readers
- * serve a row only when it was written at or after that moment (fedIndicatorServedSql), so rows
- * stored from FRED (series no publisher replaces, and observations older than a publisher's
- * window) stay hidden without deleting them.
+ * (2026-10-18). The first run records `publisher_cutover_at` in the partition detail, and every
+ * run records the series it loads (`publisher_series`). Readers apply the rule per series
+ * (fedIndicatorServedSql): a series keeps showing its FRED-era rows until its publisher's first
+ * row lands, then only rows written since the cutover; a series no publisher loads is hidden. No
+ * row is deleted. Series still on FRED-era values are named in the step output.
  */
 export async function runRegistryFred(options: FedOptions = {}): Promise<RegistryFredResult> {
   const db = options.db ?? sql;
@@ -264,29 +333,45 @@ export async function runRegistryFred(options: FedOptions = {}): Promise<Registr
     series: series.length,
     refreshedSeries: 0,
     missingSeries: [],
+    stillOnFredEra: [],
+    skippedPackages: [],
     observations: 0,
     dryRun: Boolean(options.dryRun),
   };
   if (options.dryRun) return result;
 
   // The cutover is fixed by the first publisher run and carried forward on every later one.
-  const previous = await db<Array<{ cutover: string | null }>>`
-    SELECT detail->>'publisher_cutover_at' AS cutover
+  const previous = await db<Array<{ cutover: string | null; frb_fetched: Record<string, string> | null }>>`
+    SELECT detail->>'publisher_cutover_at' AS cutover, detail->'frb_package_fetched_at' AS frb_fetched
       FROM registry_ingest_partitions
      WHERE source = ${FRED_SOURCE} AND partition_key = ${FRED_PARTITION}
   `;
   let cutover = previous[0]?.cutover ?? null;
-  if (!cutover) {
+  const lastFrbFetched: Record<string, string> = { ...(previous[0]?.frb_fetched ?? {}) };
+  // Each series' latest observation written by its publisher since the cutover (none on the first run).
+  const publisherLatest = new Map<string, string>();
+  if (cutover) {
+    const rows = await db<Array<{ series_id: string; latest: string | null }>>`
+      SELECT series_id, MAX(observation_date)::text AS latest
+        FROM fed_economic_indicators
+       WHERE fetched_at >= ${cutover}::timestamptz
+       GROUP BY series_id
+    `;
+    for (const row of rows) publisherLatest.set(row.series_id, String(row.latest ?? "").slice(0, 10));
+  } else {
     const [row] = await db<Array<{ now: Date | string }>>`SELECT NOW() AS now`;
     cutover = row?.now instanceof Date ? row.now.toISOString() : String(row?.now ?? new Date().toISOString());
   }
 
   const catalogTitles: Record<string, string> = {};
+  const frbPull = pullFrb(series.filter((s) => s.publisher === "frb"), options, lastFrbFetched, publisherLatest);
   const pulls = await Promise.all([
     pullBls(series.filter((s) => s.publisher === "bls"), options, catalogTitles),
     pullBea(series.filter((s) => s.publisher === "bea"), options),
-    pullFrb(series.filter((s) => s.publisher === "frb"), options),
+    frbPull,
   ]);
+  const frb = await frbPull;
+  result.skippedPackages = frb.skipped;
   const observationsById = new Map<string, IndicatorObservation[]>();
   const problems: Record<string, string> = {};
   for (const pull of pulls) {
@@ -299,6 +384,8 @@ export async function runRegistryFred(options: FedOptions = {}): Promise<Registr
     const counts = (perPublisher[meta.publisher] ??= { series: 0, refreshed: 0 });
     counts.series += 1;
     const observations = observationsById.get(meta.series_id) ?? [];
+    // Not downloaded this run on purpose (package not due): the stored publisher rows stand.
+    if (observations.length === 0 && frb.skippedSeries.has(meta.series_id)) return;
     if (observations.length === 0) {
       result.missingSeries.push(`${meta.series_id} (${meta.publisher}: ${problems[meta.series_id] ?? "no values"})`);
       return;
@@ -328,8 +415,15 @@ export async function runRegistryFred(options: FedOptions = {}): Promise<Registr
     counts.refreshed += 1;
     result.refreshedSeries += 1;
     result.observations += observations.length;
+    publisherLatest.set(meta.series_id, observations.reduce((max, o) => (o.observation_date > max ? o.observation_date : max), ""));
   });
   result.missingSeries.sort();
+  // Stored series with no publisher row yet: readers still serve their FRED-era values.
+  const stored = new Set(tracked.map((row) => row.series_id));
+  result.stillOnFredEra = series
+    .map((s) => s.series_id)
+    .filter((id) => stored.has(id) && !publisherLatest.has(id))
+    .sort();
 
   await recordRegistryPartition(db, {
     source: FRED_SOURCE,
@@ -347,6 +441,10 @@ export async function runRegistryFred(options: FedOptions = {}): Promise<Registr
       publisher_cutover_at: cutover,
       publishers: perPublisher,
       missing_series: result.missingSeries.slice(0, 80),
+      still_on_fred_era_values: result.stillOnFredEra,
+      publisher_series: series.map((s) => s.series_id),
+      frb_package_fetched_at: { ...lastFrbFetched, ...frb.fetched },
+      frb_packages_skipped: frb.skipped,
       bls_catalog_titles: catalogTitles,
     },
   });
