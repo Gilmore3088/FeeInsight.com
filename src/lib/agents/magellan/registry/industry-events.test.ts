@@ -34,14 +34,13 @@ function failuresFetch() {
 }
 
 describe("industry-events partitions", () => {
-  it("lists every family, comment topics always, lawsuit years newest first", () => {
+  it("lists every family and comment topics always, and no lawsuit years", () => {
     const parts = industryEventsPartitions(new Date("2026-10-17T00:00:00Z"));
     expect(parts.slice(0, 3)).toEqual(["fed-h2", "occ-bulletin", "fdic-failures"]);
     expect(parts).toContain("sec:batch-7");
     expect(parts).toContain("sba:7a-fy2020-present");
     expect(parts).toContain("comments:overdraft");
-    expect(parts.filter((p) => p.startsWith("lawsuits:"))[0]).toBe("lawsuits:2026");
-    expect(parts.at(-1)).toBe("lawsuits:2010");
+    expect(parts.some((p) => p.startsWith("lawsuits:"))).toBe(false);
     expect(new Set(parts).size).toBe(parts.length);
     expect(partitionFamily("sba:504-fy2010-present")).toBe("sba");
   });
@@ -77,16 +76,10 @@ describe("registry industry-events", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it("records lawsuits as skipped when CourtListener wants a token", async () => {
-    const { db } = createDb();
-    const fetchImpl = vi.fn(async () => new Response("{}", { status: 403 })) as unknown as typeof fetch;
-    const r = await runRegistryIndustryEvents({ partitionKey: "lawsuits:2025", db, env: {} as NodeJS.ProcessEnv, fetchOptions: { fetchImpl, backoffMs: 0 } });
-    expect(r).toMatchObject({ empty: true, skipped: true });
-  });
-
   it("rejects an unknown partition", async () => {
     const { db } = createDb();
     await expect(runRegistryIndustryEvents({ partitionKey: "sba:nope", db })).rejects.toThrow(/SBA partition/);
     await expect(runRegistryIndustryEvents({ partitionKey: "sec:batch-9", db })).rejects.toThrow(/SEC partition/);
+    await expect(runRegistryIndustryEvents({ partitionKey: "lawsuits:2025", db })).rejects.toThrow(/Unknown industry-events partition/);
   });
 });

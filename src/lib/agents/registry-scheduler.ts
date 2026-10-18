@@ -66,7 +66,7 @@ import {
   INDUSTRY_EVENTS_SOURCE,
   industryEventsPartitions,
 } from "@/lib/agents/magellan/registry/industry-events";
-import { ECONOMY_DEFINITIONS, ECONOMY_PARSER_VERSION } from "@/lib/agents/magellan/registry/economy";
+import { ECONOMY_DEFINITIONS, ECONOMY_PARSER_VERSION, ECONOMY_SOURCES } from "@/lib/agents/magellan/registry/economy";
 import { MAKING_ENDS_MEET_PARSER_VERSION, MAKING_ENDS_MEET_SOURCE } from "@/lib/agents/magellan/registry/making-ends-meet";
 import { PAYDAY_REPORTS_PARSER_VERSION, PAYDAY_REPORTS_SOURCE, paydayReportsPartitions } from "@/lib/agents/magellan/registry/payday-reports";
 import {
@@ -86,10 +86,8 @@ import {
 } from "@/lib/agents/magellan/registry/alltheplaces";
 import { GLEIF_PARSER_VERSION, GLEIF_SOURCE, gleifRegistryPartitions } from "@/lib/agents/magellan/registry/gleif";
 import { SEC_MARKET_VALUE_PARSER_VERSION, SEC_MARKET_VALUE_SOURCE, secMarketValuePartitions } from "@/lib/agents/magellan/registry/sec-market-value";
-import { FHLB_ADVANCE_RATES_PARSER_VERSION, FHLB_ADVANCE_RATES_SOURCE, fhlbAdvanceRatesPartitions } from "@/lib/agents/magellan/registry/fhlb-advance-rates";
 import { BANK_MERGER_ORDERS_PARSER_VERSION, BANK_MERGER_ORDERS_SOURCE, bankMergerOrdersPartitions } from "@/lib/agents/magellan/registry/bank-merger-orders";
 import { BLS_OEWS_PARSER_VERSION, BLS_OEWS_SOURCE, blsOewsPartitions } from "@/lib/agents/magellan/registry/bls-oews";
-import { FINRA_NFCS_PARSER_VERSION, FINRA_NFCS_SOURCE, finraNfcsPartitions } from "@/lib/agents/magellan/registry/finra-nfcs";
 import { USDA_FARM_PARSER_VERSION, USDA_FARM_SOURCE, usdaFarmPartitions } from "@/lib/agents/magellan/registry/usda-farm";
 import {
   USCOURTS_BANKRUPTCY_PARSER_VERSION,
@@ -108,6 +106,8 @@ import { STATE_ENFORCEMENT_PARSER_VERSION, STATE_ENFORCEMENT_SOURCE } from "@/li
 import { STATE_NEWS_PARSER_VERSION, STATE_REG_NEWS_SOURCE } from "@/lib/agents/magellan/registry/state-reg-news";
 import { STATE_BILL_NEWS_SOURCE } from "@/lib/agents/magellan/registry/state-bill-news";
 import { CFPB_FIRST_YEAR } from "@/lib/regulatory/cfpb";
+import { readLatestTableSizes } from "@/lib/agents/atlas/storage-retention";
+import { sourcesHeldForSize } from "@/lib/agents/hoovie/size-budgets";
 import {
   compareQuarters,
   latestPublishableQuarter,
@@ -162,8 +162,6 @@ export const REGISTRY_PARSER_VERSIONS: Record<string, number> = {
   [USCOURTS_BANKRUPTCY_SOURCE]: USCOURTS_BANKRUPTCY_PARSER_VERSION,
   [USDA_FARM_SOURCE]: USDA_FARM_PARSER_VERSION,
   [BLS_OEWS_SOURCE]: BLS_OEWS_PARSER_VERSION,
-  [FINRA_NFCS_SOURCE]: FINRA_NFCS_PARSER_VERSION,
-  [FHLB_ADVANCE_RATES_SOURCE]: FHLB_ADVANCE_RATES_PARSER_VERSION,
   [BANK_MERGER_ORDERS_SOURCE]: BANK_MERGER_ORDERS_PARSER_VERSION,
   [MAKING_ENDS_MEET_SOURCE]: MAKING_ENDS_MEET_PARSER_VERSION,
   [PAYDAY_REPORTS_SOURCE]: PAYDAY_REPORTS_PARSER_VERSION,
@@ -227,6 +225,8 @@ export interface RegistryScheduleResult {
   partitionKey?: string;
   runId?: number;
   reused?: boolean;
+  /** Sources skipped because a table they write is over its size budget, with those tables. */
+  heldForSize?: Array<{ source: string; tables: string[] }>;
 }
 
 export function backfillStart(env: string | undefined = process.env.REGISTRY_BACKFILL_FROM): Quarter {
@@ -239,11 +239,22 @@ function years(from: number, to: number): string[] {
   return out;
 }
 
-/** Each source's partitions, newest first. Fixed-partition sources come from REGISTRY_SOURCES. */
+/**
+ * Sources whose data terms are unconfirmed: the loader code stays, but no partition is scheduled
+ * (nor offered to a manual run) until James confirms the terms. Their Hoovie contracts say `held`.
+ */
+export const HELD_REGISTRY_SOURCES: ReadonlySet<string> = new Set([ECONOMY_SOURCES.remittances]);
+
+/**
+ * Each source's partitions, newest first. Fixed-partition sources come from REGISTRY_SOURCES.
+ * `sizeHeld` names sources held because a table they write is over its size budget
+ * (`src/lib/agents/hoovie/size-budgets.ts`); like held sources, they get no partitions.
+ */
 export function registryPartitionsBySource(
   now: Date,
   from: Quarter = backfillStart(),
   env: NodeJS.ProcessEnv = process.env,
+  sizeHeld: ReadonlySet<string> = new Set(),
 ): Array<{ source: string; partitions: string[] }> {
   const quarters = (lagDays: number) =>
     quartersNewestFirst(from, latestPublishableQuarter(now, lagDays)).map(quarterKey);
@@ -274,10 +285,6 @@ export function registryPartitionsBySource(
     [USCOURTS_BANKRUPTCY_SOURCE]: uscourtsBankruptcyPartitions(now),
     [USDA_FARM_SOURCE]: usdaFarmPartitions(now),
     [BLS_OEWS_SOURCE]: blsOewsPartitions(now),
-    // Held: the FINRA Foundation's terms allow only non-commercial academic use, so nothing is
-    // fetched until James confirms otherwise (Hoovie contract, licence "held").
-    [FINRA_NFCS_SOURCE]: env.FINRA_NFCS_LICENSE_CONFIRMED?.trim() === "true" ? finraNfcsPartitions(now) : [],
-    [FHLB_ADVANCE_RATES_SOURCE]: fhlbAdvanceRatesPartitions(now),
     [BANK_MERGER_ORDERS_SOURCE]: bankMergerOrdersPartitions(now),
     [PAYDAY_REPORTS_SOURCE]: paydayReportsPartitions(now),
     [ALLTHEPLACES_SOURCE]: alltheplacesPartitions(now),
@@ -295,7 +302,13 @@ export function registryPartitionsBySource(
   };
   return REGISTRY_SOURCES.map((definition) => ({
     source: definition.source,
-    partitions: definition.fixedPartition ? [definition.fixedPartition] : dynamic[definition.source] ?? [],
+    // Held sources schedule nothing: DECISIONS.md "No non-commercial data" (2026-10-17).
+    // Size-held sources wait until Atlas measures their table back under budget, or a PR raises it.
+    partitions: HELD_REGISTRY_SOURCES.has(definition.source) || sizeHeld.has(definition.source)
+      ? []
+      : definition.fixedPartition
+        ? [definition.fixedPartition]
+        : dynamic[definition.source] ?? [],
   }));
 }
 
@@ -331,8 +344,12 @@ function roundRobin(lists: Array<{ source: string; partitions: string[] }>): Reg
  * REGISTRY_SOURCES order applies, which puts identity syncs (FDIC universe, SEC links) ahead
  * of the data that depends on them.
  */
-export function registryCandidates(now: Date, from: Quarter = backfillStart()): RegistryPartitionCandidate[] {
-  const lists = registryPartitionsBySource(now, from);
+export function registryCandidates(
+  now: Date,
+  from: Quarter = backfillStart(),
+  sizeHeld: ReadonlySet<string> = new Set(),
+): RegistryPartitionCandidate[] {
+  const lists = registryPartitionsBySource(now, from, process.env, sizeHeld);
   const priority = new Set(PRIORITY_REGISTRY_SOURCES);
   return [
     ...roundRobin(lists.filter((list) => priority.has(list.source))),
@@ -447,7 +464,11 @@ export async function scheduleDueRegistryRuns({
   try {
     if (await hasActiveRegistryRun()) return { scheduled: false, reason: "active_run" };
 
-    const candidates = registryCandidates(now);
+    // Atlas's latest measurement of the public-data tables. No measurement (or a failed read) holds nothing.
+    const sizes = await readLatestTableSizes().catch(() => null);
+    const held = sourcesHeldForSize(sizes);
+    const heldForSize = held.size > 0 ? { heldForSize: [...held].map(([source, tables]) => ({ source, tables })) } : {};
+    const candidates = registryCandidates(now, backfillStart(), new Set(held.keys()));
     const rows = await sql<(PartitionStateRow & { status: string | null; parser_version: string | null; claimed_parser_version: string | null; keyless_skip: boolean })[]>`
       SELECT source, partition_key, (next_attempt_after <= NOW()) AS due, status,
              detail->>'parser_version' AS parser_version,
@@ -467,8 +488,8 @@ export async function scheduleDueRegistryRuns({
       ),
     }));
     const candidate = pickDueCandidate(candidates, states);
-    if (!candidate) return { scheduled: false, reason: "nothing_due" };
-    if (!(await claimPartition(candidate))) return { scheduled: false, reason: "claim_lost" };
+    if (!candidate) return { scheduled: false, reason: "nothing_due", ...heldForSize };
+    if (!(await claimPartition(candidate))) return { scheduled: false, reason: "claim_lost", ...heldForSize };
 
     const started = await startRegistryRun({ ...candidate, triggeredBy });
     await sql`
@@ -483,6 +504,7 @@ export async function scheduleDueRegistryRuns({
       partitionKey: candidate.partitionKey,
       runId: started.run.id,
       reused: started.reused,
+      ...heldForSize,
     };
   } catch (error) {
     if (isMissingSchemaError(error)) return { scheduled: false, reason: "schema_missing" };

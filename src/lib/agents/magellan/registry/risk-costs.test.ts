@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { blsOewsPartitions, BLS_OEWS_SOURCE, runRegistryBlsOews } from "./bls-oews";
-import { finraNfcsPartitions, runRegistryFinraNfcs } from "./finra-nfcs";
 import type { RegistryDb } from "./partitions";
 import { runRiskCostArea } from "./risk-costs";
 import { runRegistryUsdaFarm, usdaFarmPartitions, USDA_FARM_SOURCE } from "./usda-farm";
@@ -38,7 +37,6 @@ describe("partitions", () => {
     expect(blsOewsPartitions(new Date("2026-02-01T00:00:00Z"))[0]).toBe("2024");
     expect(usdaFarmPartitions(NOW)[0]).toBe("2026");
     expect(usdaFarmPartitions(NOW)).toHaveLength(10);
-    expect(finraNfcsPartitions(NOW)).toEqual(["2024", "2021", "2018"]);
   });
 });
 
@@ -93,13 +91,6 @@ describe("registry steps", () => {
     expect(r.empty).toBe(true);
     expect(r.source).toBe(BLS_OEWS_SOURCE);
     expect(partition(statements).detail.missing_fields).toEqual(["nat file", "st file", "ma file"]);
-  });
-
-  it("records a missing NFCS wave as empty", async () => {
-    const { db, statements } = createDb();
-    const r = await runRegistryFinraNfcs({ partitionKey: "2024", db, env: {}, fetchOptions: { fetchImpl: notFound, retries: 0 } });
-    expect(r.empty).toBe(true);
-    expect(partition(statements).status).toBe("empty");
   });
 
   it("rejects a malformed partition", async () => {

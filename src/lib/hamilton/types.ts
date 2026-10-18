@@ -174,7 +174,6 @@ export interface ThesisSummaryPayload {
     fed_funds_rate: number | null;
     unemployment_rate: number | null;
     cpi_yoy_pct: number | null;
-    consumer_sentiment: number | null;
     as_of: string;
   } | null;
   /** Beige Book headline text snippets, one per Fed district that has data. */

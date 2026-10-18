@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { amountEnvelopeFor } from "@/lib/agents/darwin/envelopes";
 
-import { cardProductMisfile, checkFeeCategory, GUARDED_CATEGORIES, refileCategory, refileFromLine } from "./fee-category-guard";
+import { borrowedDirection, cardProductMisfile, checkFeeCategory, GUARDED_CATEGORIES, refileCategory, refileFromLine } from "./fee-category-guard";
 
 describe("checkFeeCategory", () => {
   it("passes keys it does not guard", () => {
@@ -1880,5 +1880,53 @@ describe("guard v72 (#1788): international ATM fees, add-ons, sustained overdraf
     for (const name of ["All Wires - In/Out", "Wire Out/Wire In", "Wire Transfer - Domestic outbound/inbound", "Outgoing Wire (In Person)", "Domestic Wire Transfer Fee - Out Going", "Domestic outgoing wire charge in branch"]) {
       expect(refileCategory("wire_domestic_outgoing", name)).toBe("wire_domestic_outgoing");
     }
+  });
+});
+
+describe("borrowed direction (#1837): a direction row read under the other column's heading", () => {
+  it.each([
+    ["check_printing", "Check Printing: Incoming"],
+    ["check_printing", "Check Printing: Outgoing"],
+    ["safe_deposit_box", "SAFE DEPOSIT BOXES15: Outgoing (domestic)"],
+    ["stop_payment", "Stop Payment: Incoming"],
+    ["notary_fee", "Notary Service: Foreign Incoming"],
+    ["coin_counting", "Coin Counting: International Outgoing"],
+  ])("flags %s %s when switched on", (key, name) => {
+    expect(borrowedDirection(key, name, true)).not.toBeNull();
+    const result = checkFeeCategory(key, name, undefined, { borrowedDirection: true });
+    expect(result.ok).toBe(false);
+    expect(result.ok ? "" : result.reason).toContain("borrowed direction");
+  });
+
+  it.each([
+    ["wire_domestic_incoming", "Wire Transfers: Incoming"],
+    ["wire_intl_outgoing", "Wires: Outgoing (international)"],
+    ["document_reproduction", "Fax: Incoming"],
+    ["collection_item", "Collections: Foreign"],
+    ["card_foreign_txn", "Debit Card: International"],
+    ["atm_non_network", "ATM Withdrawal: Foreign"],
+    ["card_replacement", "Card Replacement: International"],
+    ["returned_mail", "Returned Mail: Domestic/Foreign"],
+    ["stop_payment", "Stop Payment: Outgoing Wire"],
+    ["account_research", "Research: International Wire"],
+  ])("leaves a category priced by direction alone: %s %s", (key, name) => {
+    expect(borrowedDirection(key, name, true)).toBeNull();
+  });
+
+  it.each([
+    ["check_printing", "Check Printing"],
+    ["check_printing", "Check Printing: Personal"],
+    ["overdraft", "Non-Sufficient Funds / Overdraft: Non-members"],
+    ["stop_payment", "International Wire Stop Payment: Outgoing"],
+    ["stop_payment", "Stop Payment: Outgoing ACH item placed by phone or online"],
+  ])("leaves a name that is not a bare direction row: %s %s", (key, name) => {
+    expect(borrowedDirection(key, name, true)).toBeNull();
+  });
+
+  it("is on since guard v73, and reads nothing when switched off", () => {
+    expect(borrowedDirection("check_printing", "Check Printing: Incoming")).toBe("Incoming");
+    expect(checkFeeCategory("check_printing", "Check Printing: Incoming").ok).toBe(false);
+    expect(borrowedDirection("check_printing", "Check Printing: Incoming", false)).toBeNull();
+    expect(checkFeeCategory("check_printing", "Check Printing: Incoming", undefined, { borrowedDirection: false }).ok).toBe(true);
   });
 });

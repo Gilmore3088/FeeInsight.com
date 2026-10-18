@@ -1,5 +1,6 @@
 import { CPI_BANK_SERVICES_SERIES } from "@/lib/regulatory/fed";
 import { sql } from "./connection";
+import { STRUCK_FRED_SERIES } from "./struck-sources";
 
 // Dollar amounts are stored in whole dollars (migration 023 + Phase 60.1
 // ingest scaling). No query-layer multiplication needed.
@@ -250,6 +251,8 @@ export interface IndicatorObservation {
 export async function getLatestIndicators(
   seriesIds: string[]
 ): Promise<IndicatorObservation[]> {
+  // Struck series (DECISIONS.md "No non-commercial data") are never returned.
+  seriesIds = seriesIds.filter((id) => !STRUCK_FRED_SERIES.includes(id));
   if (seriesIds.length === 0) return [];
   const rows = await sql`
     SELECT e.series_id, e.series_title, e.fed_district,
@@ -269,6 +272,7 @@ export async function getIndicatorTimeSeries(
   seriesId: string,
   opts?: { fromDate?: string; limit?: number }
 ): Promise<IndicatorObservation[]> {
+  if (STRUCK_FRED_SERIES.includes(seriesId)) return [];
   const from = opts?.fromDate ?? "2020-01-01";
   const limit = opts?.limit ?? 500;
   const rows = await sql`

@@ -2,8 +2,8 @@ import { sql } from "./connection";
 import { MIN_GROUP, groupExpression, type CallItemGroup } from "./call-report-items";
 
 /**
- * Reads over institution_network_memberships (Zelle and FedNow participants, the Fed's
- * Regulation II covered-issuer list) and reg_ii_interchange_figures. Server only.
+ * Reads over institution_network_memberships (the Fed's Regulation II exempt and covered-issuer
+ * lists) and reg_ii_interchange_figures. Server only.
  *
  * A share is members over the institutions we track in the group (institution_sources rows
  * from FDIC or NCUA that are not marked inactive), and always carries both counts. A group
@@ -18,7 +18,13 @@ export type NetworkGroup = CallItemGroup;
  * debit issuers. Allpoint, MoneyPass and CO-OP publish locators only; OpenStreetMap's ATM
  * `network` tag (getOsmNetworkTagCounts) is the partial stand-in.
  */
-export const LOADED_NETWORKS = ["zelle", "fednow", "rtp", "reg-ii-not-exempt", "reg-ii-exempt"] as const;
+export const LOADED_NETWORKS = ["reg-ii-not-exempt", "reg-ii-exempt"] as const;
+/**
+ * Zelle, FedNow and RTP lists were struck on 2026-10-17 (their terms allow only personal or
+ * non-commercial use; DECISIONS.md "No non-commercial data"). Rows already loaded stay in the
+ * table until removed, so every read here names its networks and never returns them.
+ */
+const READABLE_NETWORKS: readonly string[] = LOADED_NETWORKS;
 export const COVERED_ISSUER_NETWORK = "reg-ii-not-exempt";
 export type LoadedNetwork = (typeof LOADED_NETWORKS)[number];
 
@@ -39,6 +45,7 @@ export function coveredIssuerSql(alias = "s"): string {
 }
 
 export async function latestNetworkSnapshot(network: string): Promise<string | null> {
+  if (!READABLE_NETWORKS.includes(network)) return null;
   const [row] = await sql<{ as_of: string | null }[]>`
     SELECT MAX(as_of)::text AS as_of FROM institution_network_memberships WHERE network = ${network}
   `;
@@ -54,6 +61,7 @@ export interface NetworkShareRow {
 
 /** Share of tracked institutions on a network's newest list, by state, district, tier, charter or metro. */
 export async function getNetworkShare(network: LoadedNetwork, groupBy: NetworkGroup, asOf?: string): Promise<{ asOf: string | null; rows: NetworkShareRow[] }> {
+  if (!READABLE_NETWORKS.includes(network)) return { asOf: null, rows: [] };
   const date = asOf ?? (await latestNetworkSnapshot(network));
   if (!date) return { asOf: null, rows: [] };
   const group = sql.unsafe(groupExpression(groupBy));
@@ -99,6 +107,7 @@ export async function getNetworkListSummary(): Promise<NetworkListSummaryRow[]> 
       FROM institution_network_memberships m
       JOIN (SELECT network, MAX(as_of) AS as_of FROM institution_network_memberships GROUP BY network) l
         ON l.network = m.network AND l.as_of = m.as_of
+     WHERE m.network IN ${sql([...READABLE_NETWORKS])}
      GROUP BY m.network, m.as_of
      ORDER BY m.network
   `;
@@ -107,6 +116,7 @@ export async function getNetworkListSummary(): Promise<NetworkListSummaryRow[]> 
 
 /** Listed rows on a network's newest list that matched no institution, for review. */
 export async function getUnmatchedListings(network: LoadedNetwork, limit = 200) {
+  if (!READABLE_NETWORKS.includes(network)) return [];
   return sql<Array<{ listed_name: string; listed_city: string | null; listed_state: string | null; listed_rssd: string | null; listed_cert: string | null }>>`
     SELECT listed_name, listed_city, listed_state, listed_rssd, listed_cert
       FROM institution_network_memberships
@@ -126,6 +136,7 @@ export async function getInstitutionNetworks(institutionId: number) {
       JOIN (SELECT network, MAX(as_of) AS as_of FROM institution_network_memberships GROUP BY network) l
         ON l.network = m.network AND l.as_of = m.as_of
      WHERE m.institution_id = ${institutionId}
+       AND m.network IN ${sql([...READABLE_NETWORKS])}
      ORDER BY m.network, m.listed_name
   `;
 }

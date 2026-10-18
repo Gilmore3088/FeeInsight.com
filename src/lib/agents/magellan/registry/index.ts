@@ -9,10 +9,8 @@ import { runRegistryStateLists, STATE_DEPOSITORIES_SOURCE, STATE_NONBANK_LENDERS
 import { ALLTHEPLACES_SOURCE, runRegistryAlltheplaces } from "./alltheplaces";
 import { GLEIF_SOURCE, runRegistryGleif } from "./gleif";
 import { SEC_MARKET_VALUE_SOURCE, runRegistrySecMarketValue } from "./sec-market-value";
-import { FHLB_ADVANCE_RATES_SOURCE, runRegistryFhlbAdvanceRates } from "./fhlb-advance-rates";
 import { BANK_MERGER_ORDERS_SOURCE, runRegistryBankMergerOrders } from "./bank-merger-orders";
 import { BLS_OEWS_SOURCE, runRegistryBlsOews } from "./bls-oews";
-import { FINRA_NFCS_SOURCE, runRegistryFinraNfcs } from "./finra-nfcs";
 import { runRegistryUsdaFarm, USDA_FARM_SOURCE } from "./usda-farm";
 import { runRegistryUscourtsBankruptcy, USCOURTS_BANKRUPTCY_SOURCE } from "./uscourts-bankruptcy";
 import { MARKET_GROWTH_DEFINITIONS, runRegistryMarketGrowth } from "./market-growth";
@@ -446,7 +444,7 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
   {
     source: DESIGNATION_LISTS_SOURCE,
     stepKey: "registry-designation-lists",
-    title: "Pull designation lists (FDIC MDI and charter flags, NCUA low-income and FOM, NCUA MDI, CDFI Fund, Bank On)",
+    title: "Pull designation lists (FDIC MDI and charter flags, NCUA low-income and FOM, NCUA MDI, CDFI Fund)",
     run: async (input) => {
       const r = await runRegistryDesignationLists({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
       const gaps = r.fieldsMissing.length > 0 ? `; fields not found: ${r.fieldsMissing.join(", ")}` : "";
@@ -527,7 +525,7 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
   {
     source: PAYMENT_NETWORKS_SOURCE,
     stepKey: "registry-payment-networks",
-    title: "Pull payment-network lists (Zelle, FedNow, RTP, Reg II exempt / not exempt, Reg II interchange tables, OpenStreetMap ATMs and branches)",
+    title: "Pull payment-network lists (Reg II exempt / not exempt, Reg II interchange tables, OpenStreetMap ATMs and branches)",
     run: async (input) => {
       const r = await runRegistryPaymentNetworks({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
       const what = r.network === null ? `${n(r.figures)} Regulation II table cells` : r.network === "osm" ? `${n(r.listedRows)} OpenStreetMap ATMs and branches` : `${n(r.listedRows)} listed institutions`;
@@ -558,7 +556,7 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
   {
     source: INDUSTRY_EVENTS_SOURCE,
     stepKey: "registry-industry-events",
-    title: "Pull industry events (failures, mergers, applications, fee lawsuits, rule comments, SBA lending, CDFI awards, FHLBank members, SEC fee lines)",
+    title: "Pull industry events (failures, mergers, applications, rule comments, SBA lending, CDFI awards, FHLBank members, SEC fee lines)",
     run: async (input) => {
       const r = await runRegistryIndustryEvents({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
       const gaps = r.missingFields.length > 0 ? `; fields not found: ${r.missingFields.join(", ")}` : "";
@@ -799,24 +797,6 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
     run: async (input) => {
       const r = await runRegistryBlsOews({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
       return { summary: r.summary, detail: r.detail };
-    },
-  },
-  {
-    source: FINRA_NFCS_SOURCE,
-    stepKey: "registry-finra-nfcs",
-    title: "Pull FINRA NFCS state survey shares",
-    run: async (input) => {
-      const r = await runRegistryFinraNfcs({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
-      return { summary: r.summary, detail: r.detail };
-    },
-  },
-  {
-    source: FHLB_ADVANCE_RATES_SOURCE,
-    stepKey: "registry-fhlb-advance-rates",
-    title: "Pull FHLBank posted advance rates",
-    run: async (input) => {
-      const r = await runRegistryFhlbAdvanceRates({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
-      return { skipped: r.skipped, summary: r.summary, detail: { ...r.detail, source_url: r.sourceUrl, rows: r.rows, written_rows: r.writtenRows, empty: r.empty, empty_reason: r.emptyReason } };
     },
   },
   {

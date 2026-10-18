@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 
-import { briefRecipients, buildDailyBrief } from "./daily-brief";
+import { briefRecipients, buildDailyBrief, storageWarningLines } from "./daily-brief";
 import type { PipelineHealth } from "@/lib/job-health";
 import type { PipelineFunnel } from "@/lib/data-store/pipeline-funnel";
 
@@ -142,6 +142,33 @@ describe("morning brief", () => {
     const brief = buildDailyBrief({ ...base, needsYou: [] });
     expect(brief.subject).toBe("Morning brief: nothing needs you, pipeline running");
     expect(brief.lines[0]).toBe("Nothing needs you.");
+  });
+
+  it("says nothing about storage on a day with no storage warning", () => {
+    const brief = buildDailyBrief({ ...base, needsYou: [], storage: { alerts: [], at: "2026-10-05T12:17:00Z" } });
+    expect(brief.subject).toBe("Morning brief: nothing needs you, pipeline running");
+    expect(brief.lines.join("\n")).not.toContain("Storage");
+    expect(storageWarningLines(null)).toEqual([]);
+  });
+
+  it("emails Atlas's storage warnings when there are any (Oct 18)", () => {
+    const storage = { alerts: ["area_statistics is 2,100 MB, above its 2,000 MB budget; the sources that write it are held"], at: "2026-10-05T12:17:00Z" };
+    const brief = buildDailyBrief({ ...base, needsYou: [], storage });
+    expect(brief.subject).toBe("Morning brief: storage warning, pipeline running");
+    expect(brief.lines[0]).toBe("Storage warning.\n- Storage: area_statistics is 2,100 MB, above its 2,000 MB budget; the sources that write it are held.");
+
+    const busy = buildDailyBrief({
+      ...base,
+      needsYou: [{ id: "lead:1", severity: "critical", area: "Customers", title: "Reply overdue", detail: "", href: "/admin/leads", action: "Open lead" }],
+      storage,
+    });
+    expect(busy.subject).toBe("Morning brief: 1 thing needs you, storage warning, pipeline running");
+    expect(busy.lines[0]).toContain("- Storage: area_statistics is 2,100 MB");
+
+    const older = buildDailyBrief({ ...base, storage });
+    expect(older.subject).toContain("storage warning");
+    expect(older.lines).toContain("Storage: area_statistics is 2,100 MB, above its 2,000 MB budget; the sources that write it are held.");
+    expect(older.lines).not.toContain("Nothing is stuck. Nothing needs you.");
   });
 
   it("copies the owner's Gmail unless told otherwise", () => {

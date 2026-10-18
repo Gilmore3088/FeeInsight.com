@@ -1,6 +1,6 @@
 import { withinAmountEnvelope } from "@/lib/agents/darwin/envelopes";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
-import { MAX_REASONABLE_FEE_AMOUNT, nameFrom, stripFootnoteMarks, usableName } from "@/lib/agents/knox/rules";
+import { MAX_REASONABLE_FEE_AMOUNT, nameFrom, stripFootnoteMarks, usableName, VARIES_PRICE } from "@/lib/agents/knox/rules";
 
 /**
  * Layout helpers shared by Knox's pass 2 specialists (`table-rows.ts`, `families.ts`).
@@ -82,6 +82,77 @@ export function titleTail(name: string): string | null {
   while (start < words.length && TITLE_CONNECTORS.has(words[start].toLowerCase())) start += 1;
   if (start === 0 || words.length - start < 2) return null;
   return words.slice(start).join(" ");
+}
+
+/**
+ * #1827: a fee name that says its price varies ("Mortgage satisfaction fee (varies)"), so a price-first
+ * line below it ("$1,000.00 Mortgage modification", Citadel FCU) is the name after that price, not
+ * this one's. A bare price below it is still its own ("Skip-A-Payment Fee (Varies with payment)" /
+ * "$25.00").
+ */
+export function statesItsPriceVaries(name: string): boolean {
+  return VARIES_PRICE.test(name);
+}
+
+/**
+ * #1827: a name line that runs on ("Inactivity Fee - Savings Account per", "Overdraft Protection
+ * Transfer (From"): a two-column page wrapped it, and the price below is still its own, whatever the
+ * other column prints beside that price ("$5 | Cross-border transaction fee").
+ */
+export function runsOn(name: string): boolean {
+  // A markdown table's rule row ("| --- | --- |") names nothing.
+  if (!/[a-z]{2,}/i.test(name)) return false;
+  const open = (name.match(/\(/g) ?? []).length > (name.match(/\)/g) ?? []).length;
+  return open || /(?:(?:^|\s)(?:per|of|for|from|to|and|or|with|the|a|an|in|on|at|by|if|than|over|under)|[-–—&/,])\s*$/i.test(name.replace(/[\s|*]+$/, ""));
+}
+
+/** A word that opens a condition or a period after a price, never the next fee's name. */
+// A period word opens a fee's own name when a capitalized word follows it ("Monthly Service Charge",
+// "Annual Rental 3 x 5 Box"); alone or before lower-case words it is the price's period.
+const CONDITION_OPENING = /^(?:per|each|every|a|an|one-time|waived?|max(?:imum)?|min(?:imum)?|if|unless|plus|up|after|when|with|for|or|and|to|of|on|in|at|by|the|fee|charge|varies)\b|^[/(]/i;
+// Case-sensitive on the next word, so no /i: "Monthly Service Charge" is a name, "Monthly for paper
+// statements" is a period.
+const PERIOD_OPENING = /^(?:[Mm]onthly|[Aa]nnual(?:ly)?|[Yy]early|[Qq]uarterly|[Dd]aily|[Ww]eekly|MONTHLY|ANNUAL(?:LY)?|YEARLY|QUARTERLY|DAILY|WEEKLY)\b(?!\s+[A-Z])/;
+
+/**
+ * #1827: the fee a price-first row names: the words printed after the price on its own line or in a
+ * later cell of its row ("| **$20** | Key Deposit |", "$1,000.00 Mortgage modification"). `rest` is
+ * the line after the price and its qualifier. Only a capitalized name that does not open as a
+ * condition or a period ("$5.00 per month", "| $25 | Waived for seniors |") and holds two letters
+ * or more; else null, and the price keeps whatever name it had.
+ */
+export function nameAfterPrice(rest: string): string | null {
+  const cell = rest
+    .replace(/[*_`]+/g, " ")
+    .split(/\s*\|\s*/)
+    .map((part) => part.replace(/\s+/g, " ").trim())
+    .find((part) => /[a-z]{2,}/i.test(part));
+  if (!cell || !/^[A-Z]/.test(cell) || CONDITION_OPENING.test(cell) || PERIOD_OPENING.test(cell) || /\$\s*\d/.test(cell)) return null;
+  const name = cleanFeeName(cell);
+  return name && /[a-z]{2,}/i.test(name) ? name : null;
+}
+
+/**
+ * #1827: a table row that opens with its price and names its fee after it ("| **$20** | Key Deposit |",
+ * "$10 | Replacement Debit Card"), with one price on the line.
+ */
+export function priceFirstRow(line: string): boolean {
+  if (!line.includes(" | ")) return false;
+  const row = line.replace(/^[\s|*_`]+/, "");
+  const lead = row.match(LEADING_VALUE);
+  if (!lead || /^(?:free|none|no charge|n\/c)$/i.test(lead[1]) || (row.match(/\$\s*\d/g) ?? []).length !== 1) return false;
+  const rest = row.slice(lead[0].length);
+  return nameAfterPrice(rest.slice(rest.match(QUALIFIER)?.[0].length ?? 0)) != null;
+}
+
+/**
+ * #1827: a price-first row is read as one only in a run of them (the line above or below is one too),
+ * or with no name line above it. A single "$35.00 | Stop Payment Fee" under "Overdraft Fee" is a
+ * two-column page's right column beside the left name's price, or a description cell ("$35 |
+ * Charged when an item is paid"), so the price stays with the name above.
+ */
+export function inPriceFirstRun(lines: readonly string[], index: number): boolean {
+  return priceFirstRow(lines[index] ?? "") && (priceFirstRow(lines[index - 1] ?? "") || priceFirstRow(lines[index + 1] ?? ""));
 }
 
 /**

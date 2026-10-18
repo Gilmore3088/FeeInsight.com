@@ -159,6 +159,8 @@ import {
   TICK_EXCLUDED_STEP_KEYS,
   isLaneRoomRun,
   LANE_ROOM_MAX_IDLE_MS,
+  waitedOutMaxSteps,
+  timedSweep,
   createStepTurns,
   executeQueuedAgentRuns,
   PARALLEL_STATE_LANES,
@@ -1176,6 +1178,44 @@ describe("agentic run store", () => {
     ).resolves.toMatchObject({ executedSteps: 1 });
   });
 
+  it("times each publish sweep under its key and returns its result unchanged (sweep_ms)", async () => {
+    const times: Record<string, number> = {};
+    await expect(timedSweep(times, "taxonomyFold", async () => ({ moved: 3 }))).resolves.toEqual({ moved: 3 });
+    await expect(timedSweep(times, "categoryGuard", async () => { throw new Error("boom"); })).rejects.toThrow("boom");
+    expect(Object.keys(times).sort()).toEqual(["categoryGuard", "taxonomyFold"]);
+    expect(Object.values(times).every((ms) => Number.isFinite(ms) && ms >= 0)).toBe(true);
+  });
+
+  it("a waited-out Read-now run given every step stops at the deadline: it runs what fits, then defers the next (#1846 review)", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    getPipelineControlMock.mockResolvedValue({ enabled: true, reason: null });
+    const briefStep = [{ ...queuedStepRows[0], step_key: "daily-brief", agent_name: "atlas", title: "Daily brief" }];
+    const readNowRun = { ...runRow, progress_total: 3, params_json: { source: "atlas.priority_institution" } };
+    const runSteps = [...briefStep, { ...briefStep[0], id: 9002, step_key: "publish", sequence: 2 }, { ...briefStep[0], id: 9003, step_key: "publish", sequence: 3 }];
+    installSqlMocks({ finalRun: readNowRun, finalSteps: runSteps });
+    installTxMocks(runSteps, readNowRun);
+    // The run's queue: the brief runs as the tick's first step; then its publish (55 s at Read-now
+    // prices) does not fit the 50 s left, nor would a third step.
+    const queue = ["daily-brief", "publish", "publish"];
+    let peeks = 0;
+    const base = sqlMock.getMockImplementation()!;
+    sqlMock.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("SELECT step_key") && text.includes("LIMIT 1")) {
+        const key = queue[Math.min(peeks, queue.length - 1)];
+        peeks += 1;
+        return Promise.resolve([{ step_key: key }]);
+      }
+      return base(strings, ...values);
+    });
+
+    const result = await executeAgentRun(101, { maxSteps: waitedOutMaxSteps("atlas.priority_institution", 10), deadlineAt: Date.now() + 50_000 });
+    expect(result.executedSteps).toBe(1);
+    const deferred = sqlMock.mock.calls.filter(([strings]) => templateText(strings as TemplateStringsArray).includes("'step.deferred'"));
+    expect(deferred).toHaveLength(1);
+    expect(JSON.parse(String(deferred[0][3]))).toMatchObject({ step_key: "publish", expected_ms: 55_000 });
+  });
+
   it("starts no step in a later run of the tick when that step cannot finish by the deadline", async () => {
     getExecutionBackendMock.mockReturnValue("agentic_v1");
     getPipelineControlMock.mockResolvedValue({ enabled: false, reason: "Operator maintenance" });
@@ -1187,6 +1227,23 @@ describe("agentic run store", () => {
     await expect(
       executeAgentRun(101, { maxSteps: 5, deadlineAt: Date.now() + 60_000, alwaysRunFirstStep: false }),
     ).resolves.toMatchObject({ executedSteps: 0 });
+  });
+
+  it("writes one step.deferred event naming the step, its expected time and the time left (2026-10-17)", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    getPipelineControlMock.mockResolvedValue({ enabled: false, reason: "Operator maintenance" });
+    const briefStep = [{ ...queuedStepRows[0], step_key: "daily-brief", agent_name: "atlas", title: "Daily brief" }];
+    const briefRun = { ...runRow, progress_total: 1 };
+    installSqlMocks({ finalRun: briefRun, finalSteps: briefStep });
+    installTxMocks(briefStep, briefRun);
+
+    await executeAgentRun(101, { maxSteps: 5, deadlineAt: Date.now() + 60_000, alwaysRunFirstStep: false });
+    const deferred = sqlMock.mock.calls.filter(([strings]) => templateText(strings as TemplateStringsArray).includes("'step.deferred'"));
+    expect(deferred).toHaveLength(1);
+    const values = deferred[0].slice(1) as unknown[];
+    expect(values[0]).toBe(101);
+    expect(String(values[1])).toMatch(/left queued: it needs about \d+ s and the tick has \d+ s left/);
+    expect(JSON.parse(String(values[2]))).toMatchObject({ step_key: "daily-brief", expected_ms: expect.any(Number) });
   });
 
   it("starts no lower lane in a tick once a higher lane is held for the deadline", async () => {
@@ -1340,29 +1397,95 @@ describe("agentic run store", () => {
     expect(started.heldForDeadline).toBeUndefined();
     expect(withTransactionMock).toHaveBeenCalled();
 
-    // A Read-now run keeps leaving the lane its room however long it waits.
+    // A Read-now run's publish (225 s since the 2026-10-17 re-measure) never fits the room a fresh
+    // lane leaves either, so it waits out lane room the same way and starts by the fourth tick.
     const readNow = { source: "atlas.priority_institution", step: "publish" };
-    for (const n of [0, 3, 12]) {
+    for (const n of [0, 1, 2]) {
       expect(await tick(n, readNow)).toMatchObject({ runId: 101, executedSteps: 0, heldForDeadline: true });
     }
+    withTransactionMock.mockClear();
+    const readNowStarted = await tick(3, readNow);
+    expect(readNowStarted.heldForDeadline).toBeUndefined();
+    expect(withTransactionMock).toHaveBeenCalled();
+  });
+
+  it("prices a Read-now run's steps at its own p99s, not a lane's (Oct 17, runs 8086 and 8104)", () => {
+    const readNow = "atlas.priority_institution";
+    expect(expectedStepMs("publish", readNow)).toBe(55_000);
+    expect(expectedStepMs("extract", readNow)).toBe(110_000);
+    expect(expectedStepMs("classify", readNow)).toBe(60_000);
+    // Unlisted steps and other runs keep the lane's prices.
+    expect(expectedStepMs("discover", readNow)).toBe(expectedStepMs("discover"));
+    expect(expectedStepMs("publish", "atlas.priority_state_research")).toBe(expectedStepMs("publish"));
+    expect(expectedStepMs("publish", null)).toBe(225_000);
+    expect(expectedMsToFirstWork(["classify", "publish"], readNow)).toBe(60_000);
+  });
+
+  it("starts a Read-now run's next step in the next tick behind a fresh lane, without waiting out lane room", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    // A fresh lane's first work (enhance + state-expert + discover, 195 s) leaves the Read-now run
+    // 75 s of the 270 s tick. Its classify (60 s here, 160 s at lane prices) fits, so it does not
+    // wait LANE_ROOM_MAX_IDLE_MS: each tick takes its next step.
+    const tick = async (step: string) => {
+      sqlMock.mockReset();
+      withTransactionMock.mockClear();
+      txMock.mockResolvedValue([]);
+      sqlMock.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+        const text = templateText(strings);
+        if (text.includes("SELECT r.id")) {
+          return Promise.resolve([
+            { id: 101, run_kind: "manual_repair", source: "atlas.priority_institution", idle_ms: "600000" },
+            { id: 202, run_kind: "workflow_lane", source: null, idle_ms: "0" },
+          ]);
+        }
+        if (text.includes("SELECT step_key")) {
+          return Promise.resolve(values[0] === 101 ? [{ step_key: step }] : [{ step_key: "enhance" }, { step_key: "state-expert" }, { step_key: "discover" }]);
+        }
+        if (text.includes("FROM agent_runs")) {
+          return Promise.resolve([{ ...runRow, id: values[0], status: values[0] === 101 ? "queued" : "completed", params_json: values[0] === 101 ? { source: "atlas.priority_institution" } : {} }]);
+        }
+        return Promise.resolve([]);
+      });
+      const result = await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10, deadlineAt: Date.now() + 270_000 });
+      return { result: result.results[0], claimed: withTransactionMock.mock.calls.length > 0 };
+    };
+    for (const step of ["classify", "publish"]) {
+      const { result, claimed } = await tick(step);
+      expect(result.heldForDeadline, step).toBeUndefined();
+      expect(claimed, step).toBe(true);
+    }
+    // Waited out (idle past LANE_ROOM_MAX_IDLE_MS), a Read-now run takes every step that fits;
+    // a state re-search run still takes one (#1586).
+    expect(waitedOutMaxSteps("atlas.priority_institution", 10)).toBe(10);
+    expect(waitedOutMaxSteps("atlas.priority_state_research", 10)).toBe(1);
+    // At lane prices the same classify would not fit the room the lane leaves.
+    expect(expectedMsToFirstWork(["classify"])).toBeGreaterThan(270_000 - expectedMsToFirstWork(["enhance", "state-expert", "discover"]));
   });
 
   it("counts a lane run's quick first steps together with the first real step", () => {
     // enhance + state-expert are quick; a later run must also fit discover, or it would
     // count as under way after only the quick steps and jump ahead of retries.
-    expect(expectedMsToFirstWork(["enhance", "state-expert", "discover", "discover-paid"])).toBe(175_000);
-    expect(expectedMsToFirstWork(["fetch", "read"])).toBe(30_000);
-    expect(expectedMsToFirstWork(["public-discovery"])).toBe(30_000);
+    expect(expectedMsToFirstWork(["enhance", "state-expert", "discover", "discover-paid"])).toBe(195_000);
+    expect(expectedMsToFirstWork(["fetch", "read"])).toBe(45_000);
+    // public-discovery has its own measured entry now, so it is real work, not a quick step.
+    expect(expectedMsToFirstWork(["public-discovery"])).toBe(60_000);
     expect(expectedMsToFirstWork([])).toBe(0);
   });
 
   it("expects long steps to need most of a tick and quick ones only seconds", () => {
-    // Re-measured 2026-10-15 (about p90 with a margin): discover-paid runs in seconds, publish about 80 s.
-    expect(expectedStepMs("discover-paid")).toBe(10_000);
+    // Re-measured 2026-10-17 at about p99 over 24 hours: publish, extract, classify and
+    // discover-paid ran past their old settings and were killed at the tick's 300 s limit.
+    expect(expectedStepMs("discover-paid")).toBe(165_000);
     expect(expectedStepMs("hamilton-answer-eval")).toBe(400_000);
     expect(TICK_EXCLUDED_STEP_KEYS).toContain("hamilton-answer-eval");
-    expect(expectedStepMs("publish")).toBe(105_000);
-    expect(expectedStepMs("public-discovery")).toBe(30_000);
+    expect(expectedStepMs("publish")).toBe(225_000);
+    expect(expectedStepMs("extract")).toBe(165_000);
+    expect(expectedStepMs("classify")).toBe(160_000);
+    expect(expectedStepMs("public-discovery")).toBe(60_000);
+    // Every measured step still fits inside the tick's 270 s budget from the start of a tick.
+    for (const key of ["publish", "extract", "classify", "discover-paid", "discover", "extract-paid", "fetch", "read"]) {
+      expect(expectedStepMs(key), key).toBeLessThan(270_000);
+    }
     expect(expectedStepMs("registry-fdic-sod")).toBe(30_000);
     // registry-cfpb ran 172 s, so its own entry wins over the quick registry- prefix.
     expect(expectedStepMs("registry-cfpb")).toBe(180_000);

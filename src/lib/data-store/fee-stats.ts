@@ -33,6 +33,10 @@
  *    download paths (VENDOR_DOWNLOAD_PATH_SEGMENTS) never link anyone. Each charter keeps its
  *    own rows and its own value (valuePerInstitution is unchanged), so every charter's page
  *    still shows its fees.
+ * 8. Safe deposit rent only (#1816): a safe deposit row named as drilling, a key, a lockout or
+ *    paying late is a service charge, not the box's rent, and stays out of the rent's medians,
+ *    ranges and counts (safeDepositServiceSql). It stays on the bank's own page, marked as not
+ *    compared, by the same name rule (fee-comparability.ts).
  */
 import { computePercentile, computeStats } from "./fees";
 import { countedAmounts } from "./counted-amounts";
@@ -41,6 +45,7 @@ import { countedAmounts } from "./counted-amounts";
 // database imports, because client components reach it through hamilton/workspace/segment.ts.
 export { countedAmounts };
 import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL } from "@/lib/agents/magellan/link-coverage";
+import { SAFE_DEPOSIT_CATEGORY, SAFE_DEPOSIT_SERVICE_SQL } from "@/lib/fee-comparability";
 
 import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT, maturityTier, type MaturityTier } from "./maturity";
 
@@ -62,8 +67,11 @@ export { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT, maturityTier, ty
  */
 export const COUNT_SHARED_SCHEDULE_ONCE: boolean = true;
 
-/** Bump when these rules change; fee_index_cache rows carry it and older ones are ignored. */
-export const STATS_METHOD_VERSION = COUNT_SHARED_SCHEDULE_ONCE ? 8 : 7;
+/**
+ * Bump when these rules change; fee_index_cache rows carry it and older ones are ignored.
+ * 9/10 (#1816): safe deposit drilling, key, lock and late charges leave every median.
+ */
+export const STATS_METHOD_VERSION = COUNT_SHARED_SCHEDULE_ONCE ? 9 : 10;
 
 /** SQL predicate: the row's source address names a business-only schedule (rule 6). */
 export function businessSourceSql(alias: string): string {
@@ -71,10 +79,19 @@ export function businessSourceSql(alias: string): string {
   return `(${path} ~ '${BUSINESS_PATH_SQL}' AND ${path} !~ '${CONSUMER_PATH_SQL}')`;
 }
 
+/**
+ * SQL predicate: a safe deposit row that is a service charge (drilling, a key, a lockout, paying
+ * late), not the box's rent (rule 8, #1816). The same rule the institution page applies
+ * (fee-comparability.ts notComparableReason), so a $250 drilling fee never sits in the rent median.
+ */
+export function safeDepositServiceSql(alias: string): string {
+  return `(${alias}.fee_category = '${SAFE_DEPOSIT_CATEGORY}' AND COALESCE(${alias}.fee_name, '') ~* '${SAFE_DEPOSIT_SERVICE_SQL}')`;
+}
+
 /** Shared audience/source boundary for dollar and rate catalogs. Alias is code, not input. */
 export function statsRowFilter(alias = "ef"): string {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(alias)) throw new Error("Invalid statistics table alias");
-  return `${alias}.source_document_id IS NOT NULL AND ${alias}.fee_audience IN ('consumer', 'both', 'unknown') AND NOT ${businessSourceSql(alias)}`;
+  return `${alias}.source_document_id IS NOT NULL AND ${alias}.fee_audience IN ('consumer', 'both', 'unknown') AND NOT ${businessSourceSql(alias)} AND NOT ${safeDepositServiceSql(alias)}`;
 }
 
 /** Compatibility predicate for readers using the conventional ef alias. */

@@ -54,6 +54,11 @@ import {
   type PublishSweepRefusal,
   type PublishSweepRule,
 } from "@/lib/agents/hamilton/publish-sweep-rules";
+import {
+  PUBLISH_PAGE_COPY_REFUSE_REASON_PREFIX,
+  PUBLISH_REFUSE_PAGE_COPIES_LIVE,
+  selectPageCopyKeeper,
+} from "@/lib/agents/hamilton/page-copy-refuse";
 
 type SqlTag = typeof sql;
 
@@ -62,6 +67,12 @@ export const HAMILTON_PUBLISH_STRATEGY = { strategy: "publish.rules", version: 3
 
 export const HAMILTON_PUBLISH_DEFAULT_LIMIT = 100;
 export const HAMILTON_PUBLISH_MAX_LIMIT = 500;
+/**
+ * A publish step's row loop stops at its deadline (`RunHamiltonPublishOptions.deadlineAt`) once it
+ * has decided at least this many rows, so a slow step still makes progress. Rows it did not reach
+ * get no attempt, stay selectable and are decided by the next publish step.
+ */
+export const PUBLISH_MIN_ROWS_PER_STEP = 50;
 export const HAMILTON_PUBLISH_DEFAULT_MIN_CONFIDENCE = 0.8;
 /**
  * An institution enters the catalog only once it has this many distinct fees (canonical
@@ -160,6 +171,8 @@ export interface HamiltonPublishResult {
   exactDuplicate?: Exclude<ExactDuplicateDecision, { kind: "none" }> | null;
   /** #1069 step 2: the sweep that would take this row down once live (rows about to publish only). */
   sweepRule?: PublishSweepRefusal | null;
+  /** The live row the page-copy collapse would keep over this one once live (rows about to publish only). */
+  pageCopyOf?: number | null;
 }
 
 export interface RunHamiltonPublishOptions {
@@ -177,6 +190,23 @@ export interface RunHamiltonPublishOptions {
   refuseDuplicatesLive?: boolean;
   /** Refuse rows a sweep would take down (`publish-sweep-rules.ts`); defaults to `PUBLISH_REFUSE_SWEEP_RULES_LIVE`. */
   refuseSweepRulesLive?: boolean;
+  /** Refuse rows the page-copy collapse would close; defaults to `PUBLISH_REFUSE_PAGE_COPIES_LIVE`. */
+  refusePageCopiesLive?: boolean;
+  /**
+   * Epoch ms after which the row loop stops (after `PUBLISH_MIN_ROWS_PER_STEP` rows), so the step
+   * ends inside the tick (2026-10-17 finding).
+   */
+  deadlineAt?: number;
+  /** Epoch ms after which the cross-state top-up is not read; defaults to `deadlineAt`. */
+  topUpDeadlineAt?: number;
+}
+
+export interface PublishPageCopyCheck {
+  /** True when the step refuses the rows the page-copy collapse would close. */
+  live: boolean;
+  wouldRefuse: number;
+  refused: number;
+  samples: Array<{ fee_verified_id: number; fee_published_id: number | null; kept_fee_published_id: number; fee_name: string; amount: number | null }>;
 }
 
 export interface HeldThinInstitution {
@@ -211,6 +241,10 @@ export interface RunHamiltonPublishResult {
   duplicateCheck: PublishDuplicateCheck;
   /** #1069 step 2: rows a sweep (another bank's or an unconfirmed host's document, a business schedule) would take down. */
   sweepCheck: PublishSweepCheck;
+  /** Rows the page-copy collapse would close after this step publishes them (page-copy-refuse.ts). */
+  pageCopyCheck: PublishPageCopyCheck;
+  /** Rows the loop left for the next step because it reached `deadlineAt`, and whether the top-up was skipped. */
+  timeBox: { stopped: boolean; rowsLeft: number; topUpSkipped: boolean };
 }
 
 function boundedLimit(value: unknown): number {
@@ -1983,6 +2017,7 @@ export async function runHamiltonPublish(
   const dryRun = Boolean(options.dryRun);
   const refuseDuplicatesLive = options.refuseDuplicatesLive ?? PUBLISH_REFUSE_DUPLICATES_LIVE;
   const refuseSweepRulesLive = options.refuseSweepRulesLive ?? PUBLISH_REFUSE_SWEEP_RULES_LIVE;
+  const refusePageCopiesLive = options.refusePageCopiesLive ?? PUBLISH_REFUSE_PAGE_COPIES_LIVE;
   const learning = !dryRun && (await learningSchemaReady(db));
   const batchId = `agentic-run-${options.runId}`;
   const selected = await selectVerifiedFees(
@@ -1998,7 +2033,11 @@ export async function runHamiltonPublish(
   // for its own state's lane to come round (the 100 re-filed returned-check fees sat across 37
   // states while lanes published 0-44 rows each). A lane whose own queue is short now fills the
   // rest with the oldest eligible rows from any state, as the release review does.
-  if (options.stateCode && !options.institutionId && selected.length < limit) {
+  // The top-up is a second catalog read; a step already past `topUpDeadlineAt` leaves it to the
+  // next step. On Oct 17 the whole rows phase, top-up included, took under 8 s (AK, 242 rows).
+  const topUpDeadlineAt = options.topUpDeadlineAt ?? options.deadlineAt;
+  const topUpSkipped = topUpDeadlineAt != null && Date.now() > topUpDeadlineAt;
+  if (options.stateCode && !options.institutionId && selected.length < limit && !topUpSkipped) {
     const taken = new Set(selected.map((row) => Number(row.fee_verified_id)));
     const others = await selectVerifiedFees(db, limit - selected.length, learning, minConfidence, minInstitutionFees);
     selected.push(...others.filter((row) => !taken.has(Number(row.fee_verified_id))));
@@ -2051,7 +2090,15 @@ export async function runHamiltonPublish(
   };
   const stepCopies = new Map<string, ExactCopyRow[]>();
 
-  for (const row of collapseKeepOrder(rows, (row) => collapseLineKey(collapseLineOf(row)))) {
+  const ordered = collapseKeepOrder(rows, (row) => collapseLineKey(collapseLineOf(row)));
+  let reached = 0;
+  let rowsLeft = 0;
+  for (const row of ordered) {
+    if (options.deadlineAt != null && reached >= PUBLISH_MIN_ROWS_PER_STEP && Date.now() > options.deadlineAt) {
+      rowsLeft = ordered.length - reached;
+      break;
+    }
+    reached += 1;
     const base = {
       feeVerifiedId: Number(row.fee_verified_id),
       institutionId: Number(row.institution_id),
@@ -2146,6 +2193,29 @@ export async function runHamiltonPublish(
       !skipReason && decision?.kind !== "identical" && decision?.kind !== "older_document"
         ? (sweepReads.refusals.get(Number(row.fee_verified_id)) ?? null)
         : null;
+    // A dollar row whose line is already live from another copy of the same page ("?print=1",
+    // "www.") is closed by the page-copy collapse later; read with its own test, and refused only
+    // while `refusePageCopiesLive` is on (page-copy-refuse.ts).
+    const pageCopyOf =
+      !skipReason &&
+      decision?.kind !== "identical" &&
+      decision?.kind !== "older_document" &&
+      exactDuplicate.kind !== "refuse" &&
+      !sweepRule &&
+      line.amount != null &&
+      line.ratePercent == null &&
+      row.source_document_id != null
+        ? await selectPageCopyKeeper(db, {
+            institutionId: line.institutionId,
+            canonicalFeeKey: line.canonicalFeeKey,
+            variantType: line.variantType,
+            amount: line.amount,
+            feeName: line.feeName,
+            frequency: row.frequency,
+            feeAudience: row.fee_audience,
+            sourceDocumentId: Number(row.source_document_id),
+          })
+        : null;
     if (skipReason) {
       result = { ...base, status: "skipped", reason: skipReason, feePublishedId: null, ...NO_MOVEMENT };
     } else if (decision?.kind === "identical") {
@@ -2181,6 +2251,14 @@ export async function runHamiltonPublish(
         ...base,
         status: "skipped",
         reason: `${PUBLISH_SWEEP_REFUSE_REASON_PREFIX}${sweepRule.sweepReason}`,
+        feePublishedId: null,
+        ...NO_MOVEMENT,
+      };
+    } else if (refusePageCopiesLive && pageCopyOf != null) {
+      result = {
+        ...base,
+        status: "skipped",
+        reason: `${PUBLISH_PAGE_COPY_REFUSE_REASON_PREFIX}${pageCopyOf}`,
         feePublishedId: null,
         ...NO_MOVEMENT,
       };
@@ -2233,6 +2311,7 @@ export async function runHamiltonPublish(
     }
     if (exactDuplicate.kind !== "none") result.exactDuplicate = exactDuplicate;
     if (sweepRule) result.sweepRule = sweepRule;
+    if (pageCopyOf != null) result.pageCopyOf = pageCopyOf;
     if (result.status === "published") {
       stepCopies.set(lineKey, [
         ...(stepCopies.get(lineKey) ?? []),
@@ -2271,6 +2350,7 @@ export async function runHamiltonPublish(
           same_line_check: SAME_LINE_CHECK_VERSION,
           ...(result.exactDuplicate ? { exact_duplicate: result.exactDuplicate } : {}),
           ...(result.sweepRule ? { sweep_rule: result.sweepRule } : {}),
+          ...(result.pageCopyOf != null ? { page_copy_of: result.pageCopyOf } : {}),
         },
       });
     }
@@ -2325,6 +2405,19 @@ export async function runHamiltonPublish(
     })),
     error: sweepReads.error,
   };
+  const pageCopyHits = results.filter((result) => result.pageCopyOf != null);
+  const pageCopyCheck: PublishPageCopyCheck = {
+    live: refusePageCopiesLive,
+    wouldRefuse: pageCopyHits.length,
+    refused: refusePageCopiesLive ? pageCopyHits.filter((result) => result.status === "skipped").length : 0,
+    samples: pageCopyHits.slice(0, 10).map((result) => ({
+      fee_verified_id: result.feeVerifiedId,
+      fee_published_id: result.feePublishedId,
+      kept_fee_published_id: result.pageCopyOf!,
+      fee_name: result.feeName,
+      amount: result.amount,
+    })),
+  };
   return {
     selectedVerifiedFees: selected.length,
     processedVerifiedFees: results.length,
@@ -2344,5 +2437,7 @@ export async function runHamiltonPublish(
     results,
     duplicateCheck,
     sweepCheck,
+    pageCopyCheck,
+    timeBox: { stopped: rowsLeft > 0, rowsLeft, topUpSkipped },
   };
 }

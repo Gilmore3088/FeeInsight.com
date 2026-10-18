@@ -337,6 +337,15 @@ transaction. A takedown is a soft rollback (`rolled_back_at`, batch `agentic-run
 unless named, the reason below); a dry run reports and writes nothing. Sections below give
 the detail.
 
+The step must end inside the tick's 300 s function limit (2026-10-17 finding, steps overrun
+the tick budget). Its row loop (`runHamiltonPublish`) stops `PUBLISH_ROW_DEADLINE_MS` (120 s)
+after the step began, once it has decided `PUBLISH_MIN_ROWS_PER_STEP` (50) rows. Rows it did
+not reach get no attempt and publish on the next step. The cross-state top-up read is
+skipped only when the step is already `PUBLISH_TOP_UP_DEADLINE_MS` (160 s) in; the sweeps before
+the rows take 96-129 s, so a skip tied to the row deadline cut NC's and WI's publishes to their
+own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (each sweep's milliseconds, keyed by its result) and `phase_ms`
+(`sweeps_before`, `publish_rows`, `sweeps_after`).
+
 1. Outlier restore (`restoreOutliersNowInRange`, `outlier-rollback.ts`): brings back an
    outlier takedown whose amount is inside today's range, unless the bank already shows that
    fee at that amount. No reason written; it clears one.
@@ -499,7 +508,9 @@ the detail.
     above it, up to 40 banks a step (`name_account_added` feedback row). No rollback. v2 (#1810):
     with no heading above it, the account Knox's lineup recorded on the raw row names it, when that
     account reads as an account name, is printed in the fee's own schedule and is on no other
-    generic fee of that schedule (`evidence.heading_from` says which).
+    generic fee of that schedule (`evidence.heading_from` says which). v3: a heading followed by its
+    opening deposit traces (source check v18), and "Interest Checking", "Club 2 Checking" and
+    "Money Market Checking" read as accounts.
 26. Lineup correct (`correctStoredLineups`, `knox/lineup-correct.ts`): lineup values stored
     before Knox v55 that came from a neighbouring account are corrected from the stored text,
     up to 200 documents a step (`lineup_corrected` feedback row). No rollback.
@@ -785,6 +796,16 @@ when a read failed; a failed read refuses nothing). `PUBLISH_REFUSE_SWEEP_RULES_
 on (James's OK, 2026-10-17): such a row is skipped (skip reason `Refused at publish, a sweep would
 take it down: <the sweep's reason>`). Set it back to false to count only.
 
+**Page copies at publish (live).** Each dollar row about to publish is read with the page-copy
+collapse's own test (`pageCopyRepeats`, via `page-copy-refuse.ts`) against the live rows of its
+institution, category, variant and amount from other documents. A row the collapse would close
+behind a live copy of the same page is counted in the step's `page_copy_check` and, while
+`PUBLISH_REFUSE_PAGE_COPIES_LIVE` is on, skipped (`Copy of the page of live fee #<kept id>`). A row
+the collapse would keep (the newer edition) publishes as before. The collapse stays the live
+re-check; this check takes nothing down, and a failed read refuses nothing. Dry count: 51 of the 53
+rows closed as page copies in the 30 hours to Oct 18 02:40 UTC were closed behind a row already live
+when they published.
+
 ## Rules Re-check
 
 In state-lane (or single-institution) publish steps, `rules-recheck.ts` re-runs Knox's
@@ -1053,7 +1074,7 @@ fails a PR that changes one of these constants without updating its line here (#
 
 | Constant | Strategy | Version | File |
 |---|---|---|---|
-| `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v2 | `hamilton/account-names.ts` |
+| `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v3 | `hamilton/account-names.ts` |
 | `CURRENT_COPY_STRATEGY` | `hamilton.current_copy_check` | v2 | `hamilton/current-copy.ts` |
 | `EVAL_VERDICT_VERSION` | — | v8 | `hamilton/eval-verdicts.ts` |
 | `FREQUENCY_FILL_VERSION` | — | v14 | `hamilton/frequency-fill.ts` |
@@ -1062,7 +1083,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `HAMILTON_PUBLISH_STRATEGY` | `publish.rules` | v3 | `hamilton/publish.ts` |
 | `REFRESH_COPY_STRATEGY` | `hamilton.refresh_copy` | v2 | `hamilton/refresh-copy.ts` |
 | `RULES_RECHECK_STRATEGY` | `hamilton.rules_recheck` | v4 | `hamilton/rules-recheck.ts` |
-| `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v17 | `hamilton/source-check.ts` |
+| `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v18 | `hamilton/source-check.ts` |
 | `SOURCE_LINK_VERSION` | `hamilton.source_link` | v2 | `hamilton/source-link.ts` |
 | `SOURCE_LINK_DRIFT_VERSION` | `hamilton.source_link_drift` | v1 | `hamilton/source-link.ts` |
 | `FEE_DEPENDENCE_VERSION` | — | v1 | `hamilton/studies/fee-dependence.ts` |

@@ -2,6 +2,8 @@ import { sql } from "./connection";
 import { stateAgencyCode } from "@/lib/regulatory/state-enforcement";
 import { buildLocalOfficeMap, localMapBounds, LOCAL_MAP_MAX_STATES, type LocalOfficeMap } from "@/lib/geo/local-office-map";
 import { getLocalMarketMembers } from "./custom-report-market";
+import { getDepositShareChange } from "./deposit-share-change";
+import { institutionDisplayName } from "@/lib/institution-display-name";
 import { latestSodYear } from "@/lib/agents/magellan/registry/fdic-sod";
 
 /**
@@ -27,6 +29,26 @@ export interface BranchMarket {
   msa_name: string;
   branches: number;
   deposits: number;
+  /** Banks: the metro's code; null outside a metro area and for credit unions. */
+  msa_code?: number | null;
+  /** The city holding most of its offices in this market, for the city fee page link. */
+  city?: string | null;
+  state?: string | null;
+  /** Banks, metros only: its deposit share there and who it competes with (FDIC Summary of Deposits). */
+  share?: MarketShareDetail | null;
+}
+
+export interface MarketShareDetail {
+  /** Its share of the bank deposits in the metro, in percent. */
+  sharePct: number;
+  /** Change in percentage points over five years; null when the metro has no rows that year. */
+  change5yPp: number | null;
+  /** Its rank by deposits in the metro, 1 = largest. */
+  rank: number;
+  /** FDIC-insured institutions with offices in the metro. */
+  institutions: number;
+  /** The largest other institutions there, by deposit share. */
+  competitors: { name: string; sharePct: number }[];
 }
 
 export interface BranchState {
@@ -55,6 +77,10 @@ export interface BranchFootprint {
   nearbyCount?: number;
   /** Banks only: this bank's share of the bank deposits in its local market, in percent. */
   ownDepositSharePct?: number | null;
+  /** The local market named for a reader: "Leon, Alachua and Gadsden counties, FL"; null when unknown. */
+  marketName?: string | null;
+  /** branch_counties: the counties holding most of its deposits; hq_city: its headquarters city's counties. */
+  marketBasis?: "branch_counties" | "hq_city" | null;
   /** Offices placed on the zoomed map (credit union coordinates are added over time). */
   mappedOffices?: number;
   /** True when the zoomed map applies but too few offices are placed yet to draw it. */
@@ -116,12 +142,36 @@ async function otherOfficesIn(
   return [...rows];
 }
 
+/** "Leon", "Leon and Wakulla", "Leon, Alachua and Gadsden". */
+function joinNames(names: string[]): string {
+  return names.length <= 2 ? names.join(" and ") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+/** The market counties by name (USDA county list), in market order: "Leon, Alachua and Gadsden counties, FL". */
+async function marketCountyName(countyFips: string[], fallbackPlaces: string[]): Promise<string | null> {
+  if (countyFips.length === 0) return null;
+  const rows = await sql<{ geo_code: string; geo_name: string; state_code: string | null }[]>`
+    SELECT DISTINCT ON (LPAD(geo_code, 5, '0')) LPAD(geo_code, 5, '0') AS geo_code, geo_name, state_code
+      FROM area_statistics
+     WHERE source = 'usda-rucc' AND geo_type = 'county' AND LPAD(geo_code, 5, '0') = ANY(${countyFips})
+     ORDER BY LPAD(geo_code, 5, '0')`.catch(() => []);
+  const byFips = new Map(rows.map((r) => [r.geo_code, r]));
+  const found = countyFips.map((f) => byFips.get(f)).filter((r): r is NonNullable<typeof r> => Boolean(r));
+  if (found.length !== countyFips.length) return fallbackPlaces.length > 0 ? fallbackPlaces.join("; ") : null;
+  const short = found.map((r) => r.geo_name.replace(/\s+(County|Parish|Borough|Census Area|Municipality)$/i, ""));
+  const states = [...new Set(found.map((r) => r.state_code).filter(Boolean))];
+  const kind = /Parish$/i.test(found[0].geo_name) ? "parish" : "county";
+  const noun = found.length === 1 ? kind : kind === "parish" ? "parishes" : "counties";
+  return `${joinNames(short)} ${noun}${states.length === 1 ? `, ${states[0]}` : ""}`;
+}
+
 /** The largest competitors in the institution's local market, and a bank's own deposit share there. */
 async function marketCompetitors(
   institutionId: number,
-): Promise<Pick<BranchFootprint, "nearby" | "nearbyCount" | "ownDepositSharePct">> {
+): Promise<Pick<BranchFootprint, "nearby" | "nearbyCount" | "ownDepositSharePct" | "marketName" | "marketBasis">> {
   const market = await getLocalMarketMembers(institutionId).catch(() => null);
   if (!market) return { nearby: [], nearbyCount: 0, ownDepositSharePct: null };
+  const marketName = await marketCountyName(market.county_fips, market.places);
   const total = market.members.reduce((sum, m) => sum + (m.market_deposits ?? 0), 0);
   const share = (deposits: number | null) =>
     deposits === null || total <= 0 ? null : Math.round((deposits / total) * 1000) / 10;
@@ -135,6 +185,8 @@ async function marketCompetitors(
     })),
     nearbyCount: rivals.length,
     ownDepositSharePct: subject ? share(subject.market_deposits) : null,
+    marketName,
+    marketBasis: market.basis,
   };
 }
 
@@ -152,7 +204,7 @@ async function localMapFor(
   points: OfficePoint[],
   isBank: boolean,
   totalOffices: number,
-): Promise<Pick<BranchFootprint, "localMap" | "mappedOffices" | "mapPending" | "approxOffices" | "nearby" | "nearbyCount" | "ownDepositSharePct">> {
+): Promise<Pick<BranchFootprint, "localMap" | "mappedOffices" | "mapPending" | "approxOffices" | "nearby" | "nearbyCount" | "ownDepositSharePct" | "marketName" | "marketBasis">> {
   if (states.length === 0 || states.length > LOCAL_MAP_MAX_STATES) return { localMap: null, mappedOffices: 0 };
   const own = points.map((p) => ({
     latitude: Number(p.latitude),
@@ -180,6 +232,38 @@ async function localMapFor(
   return { localMap, mappedOffices: map.dots.length, approxOffices, ...(await marketCompetitors(institutionId)) };
 }
 
+const MARKET_COMPETITORS = 5;
+
+/** Each metro's deposit share, five-year change and largest competitors, from the shared share reader. */
+async function withMarketShares(institutionId: number, year: number, markets: BranchMarket[]): Promise<BranchMarket[]> {
+  const codes = markets.map((m) => m.msa_code).filter((c): c is number => c != null);
+  if (codes.length === 0) return markets;
+  const result = await getDepositShareChange({ geo: "metro", markets: codes, endYear: year }).catch(() => null);
+  if (!result) return markets;
+  const byCode = new Map(result.markets.map((m) => [Number(m.market), m]));
+  return markets.map((m) => {
+    const summary = m.msa_code == null ? null : byCode.get(m.msa_code);
+    const own = summary?.rows.find((r) => r.institution_id === institutionId);
+    if (!summary || !own) return m;
+    const rows = summary.rows as Array<(typeof summary.rows)[number] & { name?: string | null }>;
+    const competitors = rows
+      .filter((r) => r.institution_id !== institutionId && r.name)
+      .sort((a, b) => b.share - a.share)
+      .slice(0, MARKET_COMPETITORS)
+      .map((r) => ({ name: institutionDisplayName(r.name ?? ""), sharePct: Math.round(r.share * 10) / 10 }));
+    return {
+      ...m,
+      share: {
+        sharePct: Math.round(own.share * 10) / 10,
+        change5yPp: own.change_5y_pp === null ? null : Math.round(own.change_5y_pp * 10) / 10,
+        rank: own.rank,
+        institutions: summary.institutions,
+        competitors,
+      },
+    };
+  });
+}
+
 export async function getBranchFootprint(institutionId: number): Promise<BranchFootprint | null> {
   const byYear = await sql<Array<{ year: number; branches: number; deposits: string }>>`
     SELECT year, COUNT(*)::int AS branches, COALESCE(SUM(deposits), 0) AS deposits
@@ -196,13 +280,14 @@ export async function getBranchFootprint(institutionId: number): Promise<BranchF
        WHERE institution_id = ${institutionId} AND year = ${latestYear} AND state IS NOT NULL
        GROUP BY state
        ORDER BY branches DESC`,
-    sql<Array<{ msa_name: string; branches: number; deposits: string }>>`
-      SELECT COALESCE(msa_name, 'Outside a metro area') AS msa_name, COUNT(*)::int AS branches,
-             COALESCE(SUM(deposits), 0) AS deposits
+    sql<Array<{ msa_name: string; msa_code: number | null; city: string | null; state: string | null; branches: number; deposits: string }>>`
+      SELECT COALESCE(MAX(msa_name), 'Outside a metro area') AS msa_name, NULLIF(msa_code, 0) AS msa_code,
+             MODE() WITHIN GROUP (ORDER BY INITCAP(city)) AS city, MODE() WITHIN GROUP (ORDER BY state) AS state,
+             COUNT(*)::int AS branches, COALESCE(SUM(deposits), 0) AS deposits
         FROM institution_branch_deposits
        WHERE institution_id = ${institutionId} AND year = ${latestYear}
-       GROUP BY 1
-       ORDER BY 3 DESC
+       GROUP BY NULLIF(msa_code, 0)
+       ORDER BY 6 DESC
        LIMIT 8`,
   ]);
   const points =
@@ -218,7 +303,18 @@ export async function getBranchFootprint(institutionId: number): Promise<BranchF
     latestYear,
     byYear: byYear.map((r) => ({ year: Number(r.year), branches: Number(r.branches), deposits: Number(r.deposits) })),
     byState: byState.map((r) => ({ state: r.state, branches: Number(r.branches), deposits: Number(r.deposits) })),
-    topMarkets: topMarkets.map((r) => ({ msa_name: r.msa_name, branches: Number(r.branches), deposits: Number(r.deposits) })),
+    topMarkets: await withMarketShares(
+      institutionId,
+      latestYear,
+      topMarkets.map((r) => ({
+        msa_name: r.msa_name,
+        msa_code: r.msa_code === null ? null : Number(r.msa_code),
+        city: r.city,
+        state: r.state,
+        branches: Number(r.branches),
+        deposits: Number(r.deposits),
+      })),
+    ),
     ...(await localMapFor(institutionId, byState.map((r) => r.state), [...points], true, Number(byYear[byYear.length - 1]?.branches ?? 0))),
   };
 }

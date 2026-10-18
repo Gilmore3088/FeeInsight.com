@@ -65,11 +65,12 @@ Sunshine Bank,Miami,Florida`);
   });
 
   it("finds spreadsheet links on the page and reports PDF-only ones", () => {
-    const list = STATE_DEPOSITORY_LISTS[0];
+    expect(STATE_DEPOSITORY_LISTS).toEqual([]);
+    const list = { state: "ZZ", title: "Example public depositories", pageUrl: "https://treasury.example.gov/qpd", urlEnv: "ZZ_QPD_LIST_URL", linkHint: /qpd|qualified|depositor/i };
     const html = `<a href="/docs-sf/treasury/QPD-List.xlsx">List</a><a href="/forms/other.xlsx">Form</a><a href="/notice/qualified-depositories.pdf">PDF</a>`;
     expect(findDepositoryFiles(html, list)).toEqual({
-      files: ["https://www.myfloridacfo.com/docs-sf/treasury/QPD-List.xlsx"],
-      unreadable: ["https://www.myfloridacfo.com/notice/qualified-depositories.pdf"],
+      files: ["https://treasury.example.gov/docs-sf/treasury/QPD-List.xlsx"],
+      unreadable: ["https://treasury.example.gov/notice/qualified-depositories.pdf"],
     });
   });
 

@@ -1301,15 +1301,15 @@ export async function fetchIndustryRecords(repdte: string, options: RegistryFetc
 
 // ---------------------------------------------------------------------------
 // National series from a plain "one date column, one column per series" CSV:
-// FDIC national rates and rate caps; Atlanta Fed consumer payment choice summary tables.
+// FDIC national rates and rate caps. (The Atlanta Fed payment choice tables were struck on
+// 2026-10-17: their terms allow reproduction only "not for private gain"; DECISIONS.md.)
 // ---------------------------------------------------------------------------
 
 /**
- * Neither publisher's plain-file download could be confirmed from the sandbox, so each URL is
+ * The FDIC's plain-file download could not be confirmed from the sandbox, so its URL is
  * configuration; with none set the step skips with that reason.
  */
 export const FDIC_NATIONAL_RATES_URL_ENV = "FDIC_NATIONAL_RATES_CSV_URL";
-export const ATLANTA_FED_PAYMENTS_URL_ENV = "ATLANTA_FED_PAYMENT_CHOICE_CSV_URL";
 
 export function seriesSlug(header: string): string {
   return header

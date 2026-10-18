@@ -1217,6 +1217,12 @@ only on what the free team could not read.
     borrowed only by a bare direction or unit ("Wire Transfers" + "Incoming Domestic").
     `tableRowsFromText` is the only adapter over Rosetta's output (today the " | " cell
     lines in `normalized_text`); re-point it when Rosetta stores structured rows.
+    A price-first row keeps its own price (v7, #1827): a cell row that opens with its price
+    ("$10 | Replacement Debit Card") is the name after it, never a wrapped chain from the name
+    line above, and a name that says its price varies gives a price-first line below it to the
+    name after that price. A bare price still goes to the name above, and so does any price under
+    a name that runs on ("Inactivity Fee - Savings Account per"). The family experts' price
+    windows (`priceWindows`) follow the same rule (`nameAfterPrice`, `runsOn` in `layout.ts`).
   - `extract.account_table` (`account-table.ts`, #1100 gap 3): an account comparison table's
     monthly fee row, one fee per product column ("Monthly Service Fees | $0 | $5 | $10" under
     "Account | Great Checking | Better Checking | Best Checking"). Each read is named by its
@@ -1331,7 +1337,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v22 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v78 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v79 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
-| `KNOX_TABLE_STRATEGY` | `extract.table` | v6 | `knox/table-rows.ts` |
+| `KNOX_TABLE_STRATEGY` | `extract.table` | v7 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v1 | `knox/takedown-lessons.ts` |

@@ -720,7 +720,7 @@ const NO_CHARGE_FOR = /^(?:there (?:is|are) )?no (?:charge|fees?|cost)s? (?:for|
  * `knox_review:varies`, no `needs_darwin_verification`), as AGENTS.md holds every price no rule can
  * read as one exact amount. The name is the row's label, or the words before the varying price.
  */
-const VARIES_PRICE =
+export const VARIES_PRICE =
   /\b(?:(?:prices?|pricing|fees?|charges?|costs?)\s+)?(?:may\s+|will\s+)?var(?:y|ies)\b|\b(?:fee|charge|price|cost)s?\s+(?:is\s+|are\s+)?(?:depends?|dependent|depending|based)\s+(?:up)?on\b|\b(?:call|ask|inquire)\s+for\s+(?:current\s+)?(?:pricing|quotes?|prices?)\b|\bprinter[’']?s\s+current\s+price\b/i;
 
 /**

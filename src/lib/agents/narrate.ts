@@ -261,6 +261,11 @@ function narrateFinished(
       const failedCount = uncounted > 0 ? ` ${count(uncounted, "trim")} could not count.` : "";
       const deleted = trims.reduce((sum, t) => sum + n(t, "deleted"), 0);
       const eligible = trims.reduce((sum, t) => sum + n(t, "eligible"), 0);
+      const held = Array.isArray(detail.held_sources) ? (detail.held_sources as Detail[]) : [];
+      if (held.length > 0) {
+        const over = [...new Set(held.flatMap((h) => (Array.isArray(h.tables) ? h.tables.map(String) : [])))];
+        return `Atlas ${size}; ${over.join(", ")} ${over.length === 1 ? "is" : "are"} over budget, so ${count(held.length, "registry source")} ${held.length === 1 ? "is" : "are"} held.${failedCount}`;
+      }
       return deleted > 0
         ? `Atlas ${size} and trimmed ${count(deleted, "row")} of log history.${failedCount}`
         : uncounted === trims.length

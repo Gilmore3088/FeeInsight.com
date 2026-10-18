@@ -1101,322 +1101,328 @@ async function executeAgenticStep(
       // state's live rows. One publish step at a time keeps two sweeps from locking the
       // same rows in opposite orders; the lock ends with this step's transaction.
       await tx`SELECT pg_advisory_xact_lock(hashtext('agents.hamilton.publish'))`;
+      // Phase times go on the step's detail (`phase_ms`), so a slow publish names its slow part.
+      const publishStartedAt = Date.now();
+      // Each sweep's milliseconds, keyed by the result it returns (`sweep_ms` on the step detail):
+      // measurement only, to show which sweeps hold the step (2026-10-17 finding).
+      const sweepMs: Record<string, number> = {};
       const institutionId = numericRunParam(params, ["institution_id"]);
       // A takedown is never final: fees an earlier sweep took down come back once a range
       // widens or the taxonomy gains their category.
-      const outlierRestores = await restoreOutliersNowInRange(tx, {
+      const outlierRestores = await timedSweep(sweepMs, "outlierRestores", () => restoreOutliersNowInRange(tx, {
         runId: run.id,
         dryRun: run.runKind === "dry_run",
         institutionId,
-      });
-      const offTaxonomyRestores = await restoreFeesNowInTaxonomy(tx, {
+      }));
+      const offTaxonomyRestores = await timedSweep(sweepMs, "offTaxonomyRestores", () => restoreFeesNowInTaxonomy(tx, {
         runId: run.id,
         dryRun: run.runKind === "dry_run",
         institutionId,
-      });
+      }));
       // The top-50 fold: fees under the fifteen retired categories move to the one their
       // wording places them in, before any sweep judges them by category (fee-fold.ts).
-      const taxonomyFold = await foldRetiredCategories(tx, {
+      const taxonomyFold = await timedSweep(sweepMs, "taxonomyFold", () => foldRetiredCategories(tx, {
         runId: run.id,
         dryRun: run.runKind === "dry_run",
         institutionId,
         // The research split's exact dry-run count over every row, on request (#1398).
         researchSplitFullCount: params.research_split_full_count === true || params.research_split_full_count === "true",
-      });
-      const outlierRollbacks = await rollBackPublishedOutliers(tx, {
+      }));
+      const outlierRollbacks = await timedSweep(sweepMs, "outlierRollbacks", () => rollBackPublishedOutliers(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
         institutionId,
-      });
-      const offTaxonomyRollbacks = await rollBackOffTaxonomyFees(tx, {
+      }));
+      const offTaxonomyRollbacks = await timedSweep(sweepMs, "offTaxonomyRollbacks", () => rollBackOffTaxonomyFees(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
         institutionId,
-      });
+      }));
       // A transfer or deposit limit read as a price ("Zelle® transfer limit | $1,000").
-      const limitRollbacks = await rollBackLimitsPublishedAsFees(tx, {
+      const limitRollbacks = await timedSweep(sweepMs, "limitRollbacks", () => rollBackLimitsPublishedAsFees(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
         institutionId,
-      });
+      }));
       // A business schedule's fee beside the bank's consumer fee in the same category.
-      const businessSchedule = await retireBusinessScheduleFees(tx, {
+      const businessSchedule = await timedSweep(sweepMs, "businessSchedule", () => retireBusinessScheduleFees(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
         institutionId,
-      });
+      }));
       // A fee the same-line re-decide (9 Oct) published beside an older live line of itself.
-      const sameLineDuplicates = await retireSameLineDuplicates(tx, {
+      const sameLineDuplicates = await timedSweep(sweepMs, "sameLineDuplicates", () => retireSameLineDuplicates(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
         institutionId,
-      });
+      }));
       // Another bank's fee: read from a document on another institution's own website.
-      const otherBank = await retireOtherBankDocumentFees(tx, {
+      const otherBank = await timedSweep(sweepMs, "otherBank", () => retireOtherBankDocumentFees(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
         institutionId,
-      });
+      }));
       // The complete-record eval's critical rows (down now, James Oct 8) and the two name
       // shapes they taught: a rebate published as an ATM fee, a "no fee for" sentence as a fee.
-      const evalVerdicts = await retireEvalVerdictFees(tx, {
+      const evalVerdicts = await timedSweep(sweepMs, "evalVerdicts", () => retireEvalVerdictFees(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
         institutionId,
-      });
+      }));
       // #1334: eight live fees read with their cents cut off are corrected in place, and the
       // unpublished copies of those reads rejected, before this step publishes anything.
-      const handAmounts = await applyHandAmountCorrections(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
+      const handAmounts = await timedSweep(sweepMs, "handAmounts", () => applyHandAmountCorrections(tx, { runId: run.id, dryRun: run.runKind === "dry_run" }));
       // #1196: five live cut-name rows that repeat a clean live row come down; the clean row stays.
-      const cutNameDuplicates = await applyCutNameDuplicates(tx, {
+      const cutNameDuplicates = await timedSweep(sweepMs, "cutNameDuplicates", () => applyCutNameDuplicates(tx, {
         runId: run.id,
         stepId: step.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
-      });
+      }));
       // #1100 gap 1 (James, Oct 16): a non-checking account's monthly fee is held as verified with
       // its account type and never published as consumer checking monthly maintenance.
-      const accountTypeHold = await applyAccountTypeHold(tx, {
+      const accountTypeHold = await timedSweep(sweepMs, "accountTypeHold", () => applyAccountTypeHold(tx, {
         runId: run.id,
         stepId: step.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
-      });
+      }));
       // Listed live fees confirmed wrong against their bank's own text (James, Oct 16; #1496 first).
-      const handTakedowns = await applyHandTakedowns(tx, {
+      const handTakedowns = await timedSweep(sweepMs, "handTakedowns", () => applyHandTakedowns(tx, {
         runId: run.id,
         stepId: step.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
-      });
+      }));
       // Listed live fees whose audience is wrong against their bank's own text (#1302 first).
-      const handAudience = await applyHandAudienceFixes(tx, { runId: run.id, stepId: step.id, dryRun: run.runKind === "dry_run" });
+      const handAudience = await timedSweep(sweepMs, "handAudience", () => applyHandAudienceFixes(tx, { runId: run.id, stepId: step.id, dryRun: run.runKind === "dry_run" }));
       // An institution that no longer operates keeps no live fee (#1200).
-      const closedInstitution = await retireClosedInstitutionFees(tx, {
+      const closedInstitution = await timedSweep(sweepMs, "closedInstitution", () => retireClosedInstitutionFees(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
         institutionId,
-      });
+      }));
       // A fee read from an article (a blog post quoting a national average), not a schedule.
-      const articlePage = await retireArticlePageFees(tx, {
+      const articlePage = await timedSweep(sweepMs, "articlePage", () => retireArticlePageFees(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
         institutionId,
-      });
+      }));
       // A $0 benefit bullet read from a product page, not a schedule (off until James answers).
-      const productPage = await retireProductPageFees(tx, {
+      const productPage = await timedSweep(sweepMs, "productPage", () => retireProductPageFees(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
         institutionId,
-      });
+      }));
       // A product-page fee the bank's own schedule prices differently: the schedule wins
       // (James, 2026-10-13). Off until a hand check of 10 conflicts finds 9 right; logs first looks.
-      const productPageConflict = await retireProductPageConflicts(tx, {
+      const productPageConflict = await timedSweep(sweepMs, "productPageConflict", () => retireProductPageConflicts(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
         institutionId,
-      });
+      }));
       // One product priced differently on two current pages: the older page's price comes down.
-      const crossPage = await retireCrossPageConflicts(tx, {
+      const crossPage = await timedSweep(sweepMs, "crossPage", () => retireCrossPageConflicts(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
         institutionId,
-      });
+      }));
       // A live fee whose own name contradicts its category (an ATM fee filed as a card's
       // foreign transaction fee, a rate's figure read as dollars) comes down each step, so
       // a guard change takes effect without anyone starting the repair run by hand.
-      const categoryGuard = await runHamiltonCategoryGuard({
+      const categoryGuard = await timedSweep(sweepMs, "categoryGuard", () => runHamiltonCategoryGuard({
         runId: run.id,
         dryRun: run.runKind === "dry_run",
         limit: CATEGORY_GUARD_STEP_LIMIT,
         institutionId,
         db: tx,
-      });
+      }));
       const categoryGuardRollbacks = categoryGuard.dryRun
         ? Math.min(categoryGuard.failingFees, categoryGuard.limit)
         : categoryGuard.rolledBackFees;
       // A verified row the guard rejected at publish and never published is re-read once per
       // guard version under publish's own name; one today's guard passes goes back in the queue.
-      const guardRequeue = await requeueGuardRejectedFees(tx, {
+      const guardRequeue = await timedSweep(sweepMs, "guardRequeue", () => requeueGuardRejectedFees(tx, {
         runId: run.id,
         stepId: step.id,
         dryRun: run.runKind === "dry_run",
         institutionId,
-      });
+      }));
       // Fees read from companion pages Magellan has since retired (a HELOC PDF, a
       // derivatives notice) come down before anything new publishes.
-      const companionRetire = await rollBackRetiredCompanionFees(tx, {
+      const companionRetire = await timedSweep(sweepMs, "companionRetire", () => rollBackRetiredCompanionFees(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
         institutionId,
         stateCode,
-      });
+      }));
       const companionRollbacks = companionRetire.rollbacks;
-      const earlyDuplicateCollapses = await collapsePublishedDuplicates(tx, {
+      const earlyDuplicateCollapses = await timedSweep(sweepMs, "earlyDuplicateCollapses", () => collapsePublishedDuplicates(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
         institutionId,
-      });
+      }));
       // #1302: a live row that repeats another live line of its page under a near name ("Research
       // fee" / "Account Research fee"), when the page prints one line. Live while
       // NEAR_NAME_COLLAPSE_LIVE is on; a dry run reports and changes nothing.
-      const nearNameCollapse = await collapseNearNameDuplicates(tx, {
+      const nearNameCollapse = await timedSweep(sweepMs, "nearNameCollapse", () => collapseNearNameDuplicates(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
         institutionId,
-      });
+      }));
       // #1439 item 3: a copy the page-copy collapse closed comes back when the copy it was kept
       // for came down for its own reasons (not the fee's), so the fee does not vanish. Runs
       // before the collapse; it never makes a second live copy of a price.
-      const pageCopyRestore = await restorePageCopiesOfDownedKeepers(tx, {
+      const pageCopyRestore = await timedSweep(sweepMs, "pageCopyRestore", () => restorePageCopiesOfDownedKeepers(tx, {
         runId: run.id,
         dryRun: run.runKind === "dry_run",
         institutionId,
-      });
+      }));
       // #1439: a live row that repeats a line of a newer copy of its page stored under another
       // address ("?print=1", "www.", a mirror). Closes them while PAGE_COPY_COLLAPSE_LIVE is on (James, Oct 17).
-      const pageCopyCollapse = await collapsePageCopies(tx, {
+      const pageCopyCollapse = await timedSweep(sweepMs, "pageCopyCollapse", () => collapsePageCopies(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
         institutionId,
-      });
+      }));
       // A live fee's frequency follows its own schedule row: a blank gets the one the row states
       // ("$6.00 each"), and one read from another fee's row is corrected or cleared.
       // A failed fill write is a warning here, never a failed publish (#1349 review).
-      const frequencyFill = await fillFrequenciesInPublish(tx, {
+      const frequencyFill = await timedSweep(sweepMs, "frequencyFill", () => fillFrequenciesInPublish(tx, {
         runId: run.id,
         stepId: step.id,
         dryRun: run.runKind === "dry_run",
         institutionId,
-      });
+      }));
       // A fee line the bank removed from a newer copy of its page comes down (shadow
       // mode until NEWER_COPY_RETIRE_LIVE is turned on: it reports and changes nothing).
-      const newerCopy = await retireFeesDroppedFromNewerCopy(tx, {
+      const newerCopy = await timedSweep(sweepMs, "newerCopy", () => retireFeesDroppedFromNewerCopy(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
         institutionId,
         stateCode,
-      });
+      }));
       const newerCopyRetired = newerCopy.live ? newerCopy.retired.length : 0;
       const newerCopyRestored = newerCopy.live ? newerCopy.restored : 0;
       // A current copy whose text is identical to the superseded one has no rows of its
       // own (Knox skips text it has read), so the superseded copy's rows move to it.
-      const identicalCopy = await moveRowsToIdenticalCopy(tx, {
+      const identicalCopy = await timedSweep(sweepMs, "identicalCopy", () => moveRowsToIdenticalCopy(tx, {
         runId: run.id,
         dryRun: run.runKind === "dry_run",
         institutionId,
-      });
+      }));
       // A live fee the current copy of its page still states at the same amount moves to
       // that copy, so it no longer points at a superseded copy and its date is current.
-      const refreshCopy = await refreshFeesFromCurrentCopy(tx, {
+      const refreshCopy = await timedSweep(sweepMs, "refreshCopy", () => refreshFeesFromCurrentCopy(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
         institutionId,
         stateCode,
-      });
+      }));
       // A live fee the current copy does not restate at its price is read against the
       // current copy's text; one it no longer states comes down only on a second look.
-      const currentCopy = await secondLookFeesNotOnCurrentCopy(tx, {
+      const currentCopy = await timedSweep(sweepMs, "currentCopy", () => secondLookFeesNotOnCurrentCopy(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
         institutionId,
         stateCode,
-      });
+      }));
       // State lanes re-check their live Knox fees against today's rules, a batch of
       // documents per step, once per Knox version.
       const rulesRecheck = stateCode || institutionId
-        ? await rollBackUnreproducedFees(tx, {
+        ? await timedSweep(sweepMs, "rulesRecheck", () => rollBackUnreproducedFees(tx, {
             runId: run.id,
             batchId: `agentic-run-${run.id}`,
             dryRun: run.runKind === "dry_run",
             institutionId,
             stateCode,
-          })
+          }))
         : null;
       // Live names stored before Knox tidied its reads ("Stop Payment | Item", "A dormant fee
       // of") take their tidy name, a batch of banks per step; the old name stays in
       // pipeline_feedback and a rename never makes a fee fail the source check.
-      const nameRetidy = await retidyLiveFeeNames(tx, {
+      const nameRetidy = await timedSweep(sweepMs, "nameRetidy", () => retidyLiveFeeNames(tx, {
         runId: run.id,
         dryRun: run.runKind === "dry_run",
         institutionId,
-      });
+      }));
       // #1234 step 2: Knox's note leaves `conditions` for `extraction_note`, a batch per step.
-      const extractionNotes = await moveExtractionNotes(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
+      const extractionNotes = await timedSweep(sweepMs, "extractionNotes", () => moveExtractionNotes(tx, { runId: run.id, dryRun: run.runKind === "dry_run" }));
       // A live fee named only "Monthly Service Fee" takes the account heading above it in its
       // schedule ("Chase Total Checking Monthly Service Fee"); the old name stays in pipeline_feedback.
-      const accountNames = await nameLiveFeesByAccount(tx, {
+      const accountNames = await timedSweep(sweepMs, "accountNames", () => nameLiveFeesByAccount(tx, {
         runId: run.id,
         dryRun: run.runKind === "dry_run",
         institutionId,
-      });
+      }));
       // Lineup values stored before Knox v55 that came from a neighbouring account (a balance,
       // waiver or name) are corrected from the stored text; old values stay in pipeline_feedback.
-      const lineupCorrect = await correctStoredLineups(tx, {
+      const lineupCorrect = await timedSweep(sweepMs, "lineupCorrect", () => correctStoredLineups(tx, {
         runId: run.id,
         dryRun: run.runKind === "dry_run",
         institutionId,
-      });
+      }));
       const recheckRollbacks = rulesRecheck?.rollbacks.length ?? 0;
       // Fees an older re-check restored with no check at all get the restore bar on a second look.
-      const restoreRecheck = await recheckUncheckedRestores(tx, {
+      const restoreRecheck = await timedSweep(sweepMs, "restoreRecheck", () => recheckUncheckedRestores(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
         institutionId,
-      });
+      }));
       // #1071: fees the re-check took down on Oct 5-11 (before #1022) that are not live again are
       // judged once by the restore bar against their document's newest text; those that pass return.
-      const lostRestore = await restoreLostRecheckTakedowns(tx, {
+      const lostRestore = await timedSweep(sweepMs, "lostRestore", () => restoreLostRecheckTakedowns(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
         institutionId,
-      });
+      }));
       // Recorded fee changes name their two rows and whether they compare one page with
       // itself, before the restore below reopens any superseded row.
-      const changePairing = await pairFeeChangeRecords(tx, {
+      const changePairing = await timedSweep(sweepMs, "changePairing", () => pairFeeChangeRecords(tx, {
         runId: run.id,
         dryRun: run.runKind === "dry_run",
         institutionId,
-      });
+      }));
       // Live fees another page's price superseded come back through the restore bar.
-      const crossPageRestore = await restoreCrossPageSupersedes(tx, {
+      const crossPageRestore = await timedSweep(sweepMs, "crossPageRestore", () => restoreCrossPageSupersedes(tx, {
         runId: run.id,
         dryRun: run.runKind === "dry_run",
         institutionId,
-      });
+      }));
       // #1342: imported fees with no traceable document take a stored document of their own
       // institution that prints them (shared source check); those the source-link repair took
       // down for want of one come back. Off with SOURCE_LINK_RESOURCE_ON.
-      const sourceLinkResource = await resourceSourceLinks(tx, {
+      const sourceLinkResource = await timedSweep(sweepMs, "sourceLinkResource", () => resourceSourceLinks(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
         institutionId,
         stateCode,
-      });
+      }));
       const recheckRestores = rulesRecheck?.restores.length ?? 0;
-      const published = await runHamiltonPublish({
+      const publishRowsStartedAt = Date.now();
+      const published = await timedSweep(sweepMs, "published", () => runHamiltonPublish({
         runId: run.id,
         stepId: step.id,
         dryRun: run.runKind === "dry_run",
@@ -1429,19 +1435,24 @@ async function executeAgenticStep(
           "confidence_threshold",
         ]),
         minInstitutionFees: numericRunParam(params, ["publish_min_institution_fees"]),
+        // The row loop stops here (after PUBLISH_MIN_ROWS_PER_STEP rows) so the whole step ends
+        // inside the tick; the rows it leaves publish on the next step (2026-10-17 finding).
+        deadlineAt: publishStartedAt + PUBLISH_ROW_DEADLINE_MS,
+        topUpDeadlineAt: publishStartedAt + PUBLISH_TOP_UP_DEADLINE_MS,
         db: tx,
-      });
+      }));
+      const publishRowsEndedAt = Date.now();
       // #1069: a fee this step just published that repeats a live row (a new read that only
       // fills its frequency or names its audience) is collapsed now, not on the state's next
       // step: until then the catalog listed the fee twice (88 a day, about 40 hours, Oct 13).
       const lateDuplicateCollapses = published.dryRun || published.publishedFees === 0
         ? []
-        : await collapsePublishedDuplicates(tx, {
+        : await timedSweep(sweepMs, "lateDuplicateCollapses", () => collapsePublishedDuplicates(tx, {
             runId: run.id,
             batchId: `agentic-run-${run.id}`,
             dryRun: false,
             institutionId,
-          });
+          }));
       const duplicateCollapses = [
         ...earlyDuplicateCollapses,
         ...(nearNameCollapse.live ? nearNameCollapse.collapses : []),
@@ -1452,46 +1463,46 @@ async function executeAgenticStep(
       // step source-checks a batch of institutions (its state's or institution's when it
       // has one, any state's otherwise) after publishing, so fees published in this step
       // are checked too.
-      const sourceCheck = await takeDownUntraceableFees(tx, {
+      const sourceCheck = await timedSweep(sweepMs, "sourceCheck", () => takeDownUntraceableFees(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
         institutionId,
         stateCode,
-      });
+      }));
       const sourceTakedowns = sourceCheck?.takedowns.length ?? 0;
       // Imported fees with no document take their schedule through an identical imported
       // row the source check could not relink them past.
-      const importedTwins = await linkImportedFeesToTwins(tx, {
+      const importedTwins = await timedSweep(sweepMs, "importedTwins", () => linkImportedFeesToTwins(tx, {
         runId: run.id,
         dryRun: run.runKind === "dry_run",
         institutionId,
-      });
+      }));
       // #1342: a live fee with no link (one the source check restored after the hand repair,
       // say) takes its own document's URL. Never a takedown. Off with SOURCE_LINK_FILL_ON.
-      const sourceLinkFill = await fillSourceLinks(tx, {
+      const sourceLinkFill = await timedSweep(sweepMs, "sourceLinkFill", () => fillSourceLinks(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
         institutionId,
-      });
+      }));
       // #1347: a live fee whose link opens neither its document's URL nor the page its text was
       // read from takes its document's link when it traces there; one that does not goes through
       // the second look and is archived. Off with SOURCE_LINK_DRIFT_LIVE (then it only reports).
-      const linkDrift = await repairLinkDrift(tx, {
+      const linkDrift = await timedSweep(sweepMs, "linkDrift", () => repairLinkDrift(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
         institutionId,
-      });
+      }));
       // Every agent learns from what happened to its output: this step's takedowns and
       // restores (and a batch of older outcomes) go into the shared learning store.
-      const feedbackSync = await syncPipelineFeedback(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
+      const feedbackSync = await timedSweep(sweepMs, "feedbackSync", () => syncPipelineFeedback(tx, { runId: run.id, dryRun: run.runKind === "dry_run" }));
       // #1100: the sync's old rows for account type holds go to weight 0, behind a switch (off).
-      const holdFeedback = await repairAccountTypeHoldFeedback(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
+      const holdFeedback = await timedSweep(sweepMs, "holdFeedback", () => repairAccountTypeHoldFeedback(tx, { runId: run.id, dryRun: run.runKind === "dry_run" }));
       const indexRefresh = published.dryRun
         ? null
-        : await refreshFeeIndexCache(tx, {
+        : await timedSweep(sweepMs, "indexRefresh", () => refreshFeeIndexCache(tx, {
             runId: run.id,
             force:
               published.publishedFees > 0 ||
@@ -1533,7 +1544,7 @@ async function executeAgenticStep(
               lostRestore.restored > 0 ||
               sourceTakedowns > 0 ||
               (sourceCheck?.restored ?? 0) > 0,
-          });
+          }));
       const outlierNote =
         outlierRollbacks.length > 0
           ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${outlierRollbacks.length.toLocaleString()} live fee(s) outside their category range.`
@@ -2083,6 +2094,13 @@ async function executeAgenticStep(
             error: published.sweepCheck.error,
             samples: published.sweepCheck.samples,
           },
+          // Rows this step was about to publish that the page-copy collapse would close (page-copy-refuse.ts).
+          page_copy_check: {
+            live: published.pageCopyCheck.live,
+            would_refuse: published.pageCopyCheck.wouldRefuse,
+            refused: published.pageCopyCheck.refused,
+            samples: published.pageCopyCheck.samples,
+          },
           near_name_collapse: {
             live: nearNameCollapse.live,
             documents: nearNameCollapse.documents,
@@ -2161,6 +2179,19 @@ async function executeAgenticStep(
           outcomes: published.outcomes,
           learning_log: published.learning,
           publish_limit: published.limit,
+          publish_time_box: {
+            deadline_ms: PUBLISH_ROW_DEADLINE_MS,
+            top_up_deadline_ms: PUBLISH_TOP_UP_DEADLINE_MS,
+            stopped: published.timeBox.stopped,
+            rows_left: published.timeBox.rowsLeft,
+            top_up_skipped: published.timeBox.topUpSkipped,
+          },
+          sweep_ms: sweepMs,
+          phase_ms: {
+            sweeps_before: publishRowsStartedAt - publishStartedAt,
+            publish_rows: publishRowsEndedAt - publishRowsStartedAt,
+            sweeps_after: Date.now() - publishRowsEndedAt,
+          },
           publish_min_confidence: published.minConfidence,
           publish_min_institution_fees: published.minInstitutionFees,
           held_thin_fees: published.heldFees,
@@ -3542,9 +3573,15 @@ async function providerStepGate(
  * discover-paid 2 / 5 / 5, read-paid 60 / 127 / 153, extract 52 / 76 / 153 (23 / 62 before #1291's
  * scans), extract-paid 14 / 50 / 66, classify 15 / 28 / 46, verify-paid 0.4 / 3.5 / 13,
  * publish 78 / 131 / 164. Steps not re-measured keep their 2026-10-07 p99.
+ *
+ * Re-measured 2026-10-17 over 24 hours (`docs/project/findings/2026-10-17-steps-overrun-tick-budget.md`):
+ * eleven steps ran past their setting at p99, and publish, extract, classify and discover-paid
+ * were killed at the tick's 300 s limit (21 reaped steps started inside a tick). Each is now about
+ * its p99, so a step starts only when it can finish inside the 270 s budget.
  */
 const STEP_EXPECTED_MS: Record<string, number> = {
-  "discover-paid": 10_000,
+  // Re-measured 2026-10-17: p50 65 s, p90 143 s, p99 160 s.
+  "discover-paid": 165_000,
   "registry-cfpb": 180_000,
   // Paced to about ten Open States requests a minute; a run ends within about two minutes.
   "registry-state-bills": 120_000,
@@ -3554,16 +3591,19 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   // No new item starts after 100 s; up to three page reads and model calls in flight.
   "registry-wire-research": 150_000,
   "read-paid": 110_000,
-  read: 15_000,
-  discover: 115_000,
+  read: 30_000,
+  discover: 135_000,
   "report-render": 110_000,
   rescue: 110_000,
-  "extract-paid": 40_000,
+  "extract-paid": 80_000,
   "verify-paid": 10_000,
-  fetch: 30_000,
-  extract: 40_000,
-  publish: 105_000,
-  classify: 25_000,
+  fetch: 45_000,
+  // 2026-10-17: Knox lessons' restored-fee read alone averages 53 s (pg_stat_statements).
+  extract: 165_000,
+  // 2026-10-17: p50 38 s, p90 133 s, p99 221 s, max 278 s (TX). The row loop now stops at
+  // PUBLISH_ROW_DEADLINE_MS; re-measure from `phase_ms` before lowering this.
+  publish: 225_000,
+  classify: 160_000,
   // p50 238 s, p90 367 s, max 1,101 s: it never fits a tick, so the tick does not start it
   // (`TICK_EXCLUDED_STEP_KEYS`); its own route runs it.
   "hamilton-answer-eval": 400_000,
@@ -3571,6 +3611,10 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   "hamilton-paid-answer-eval": 280_000,
   // A few dozen draft rows and one catalog check each (growth/withdraw.ts).
   "growth-withdraw": 30_000,
+  // Quick-prefixed steps measured over the 30 s quick default (2026-10-17 p99: 57 s, 89-110 s, 48 s).
+  "public-discovery": 60_000,
+  "registry-ncua-extras": 110_000,
+  "registry-cfpb-card-agreements": 50_000,
 };
 /**
  * Steps the tick never starts, because they do not fit its 270 s budget even alone: the tick
@@ -3581,6 +3625,32 @@ const STEP_EXPECTED_MS: Record<string, number> = {
 export const TICK_EXCLUDED_STEP_KEYS = ["hamilton-answer-eval", "hamilton-paid-answer-eval"] as const;
 /** Steps not listed above: most run in seconds, so this keeps an unknown long one safe. */
 const DEFAULT_STEP_EXPECTED_MS = 120_000;
+/**
+ * Expected runtimes for a direct run, where they differ from a lane's. A Read-now / hand-found run
+ * (`atlas.priority_institution`) reads one institution, so its steps are far shorter than a
+ * state lane's; priced at lane p99s it waited 17-20 minutes per step (runs 8086 and 8104, Oct 17).
+ * Re-measured over the 24 hours to 22:20 UTC 2026-10-17 (about p99, `agent_run_steps`): publish
+ * 50 s, extract 106 s, classify 58 s, fetch 15 s, read 2 s. A state re-search run
+ * (`atlas.priority_state_research`) ran no step in that window, so it keeps the lane's prices.
+ * A step not listed here uses `STEP_EXPECTED_MS`.
+ */
+const RUN_SOURCE_STEP_EXPECTED_MS: Record<string, Record<string, number>> = {
+  "atlas.priority_institution": { publish: 55_000, extract: 110_000, classify: 60_000, fetch: 20_000, read: 5_000 },
+};
+/**
+ * A publish step's row loop stops this long after the step began (once it has decided
+ * PUBLISH_MIN_ROWS_PER_STEP rows); the rows left publish on the next step. TX's 278 s publish
+ * (run 8004, Oct 17) ran past the tick's 300 s limit when it started 163 s in.
+ */
+export const PUBLISH_ROW_DEADLINE_MS = 120_000;
+/**
+ * The cross-state top-up read is skipped only when the publish step is already this far in. On
+ * Oct 17 the sweeps before the rows took 96-129 s, so tying the skip to the row deadline (120 s)
+ * skipped it on NC and WI. The rows phase with a top-up took under 8 s (AK, 242 rows) and the
+ * sweeps after up to 31 s, so a step that starts the top-up by 160 s ends well under publish's
+ * 225 s setting.
+ */
+export const PUBLISH_TOP_UP_DEADLINE_MS = 160_000;
 /** Steps measured at a few seconds at most (state-expert, enhance, public-*, registry-*). */
 const QUICK_STEP_EXPECTED_MS = 30_000;
 const QUICK_STEP_PREFIXES = ["registry-", "public-", "state-expert", "enhance", "lead-watch", "indexnow-ping", "category-guard"];
@@ -3626,10 +3696,10 @@ function isQuickStep(stepKey: string): boolean {
  * that ran its quick first steps counts as under way and goes ahead of failed-lane
  * retries in the next tick's order.
  */
-export function expectedMsToFirstWork(stepKeys: string[]): number {
+export function expectedMsToFirstWork(stepKeys: string[], runSource: string | null = null): number {
   let total = 0;
   for (const key of stepKeys) {
-    total += expectedStepMs(key);
+    total += expectedStepMs(key, runSource);
     if (!isQuickStep(key)) break;
   }
   return total;
@@ -3643,11 +3713,13 @@ export function isLaneRoomRun(source: string | null | undefined): boolean {
 }
 
 /**
- * A state re-search run (`atlas.priority_state_research`) idle this long, with no step finished
- * since it was queued or since its last step, takes one step without leaving lane room: about three
- * 5-minute ticks. Its `discover` (115 s) never fits the ~95 s a fresh lane's first work (~175 s)
- * leaves of the 270 s tick, so while fresh lanes kept arriving behind it, it never started (#1421).
- * Read-now runs keep lane room: their steps are short.
+ * A direct run (`LANE_ROOM_SOURCES`: a state re-search or a Read-now / hand-found institution run)
+ * idle this long, with no step finished since it was queued or since its last step, takes one step
+ * without leaving lane room. A state re-search's `discover` never fit the room a fresh lane's
+ * first work leaves of the 270 s tick, so while fresh lanes kept arriving behind it, it never
+ * started (#1421). Since the 2026-10-17 re-measure a fresh lane's first work is ~185 s, so a
+ * Read-now run's publish (225 s) or extract (165 s) no longer fits the ~85 s left either; it now
+ * waits out lane room the same way.
  *
  * The bound is firm only when the re-search run is the tick's first row. Several waiting re-search
  * runs in one tick can each take a step ahead of the lane, so together they can still eat into
@@ -3655,8 +3727,18 @@ export function isLaneRoomRun(source: string | null | undefined): boolean {
  */
 export const LANE_ROOM_MAX_IDLE_MS = 15 * 60_000;
 
+/**
+ * Steps a direct run takes once it has waited out lane room. A state re-search run takes one: its
+ * steps are lane-sized, and several waiting ones could eat a lane's room (#1586). A Read-now run
+ * takes every step that fits the tick: its steps are seconds long, and one per wait-out left run
+ * 8086 queued at publish 47+ minutes after its fetch (Oct 17).
+ */
+export function waitedOutMaxSteps(source: string | null | undefined, maxStepsPerRun: number): number {
+  return source === "atlas.priority_institution" ? maxStepsPerRun : 1;
+}
+
 export function waitedOutLaneRoom(source: string | null | undefined, idleMs: number | null | undefined): boolean {
-  return source === "atlas.priority_state_research" && Number(idleMs ?? 0) >= LANE_ROOM_MAX_IDLE_MS;
+  return isLaneRoomRun(source) && Number(idleMs ?? 0) >= LANE_ROOM_MAX_IDLE_MS;
 }
 
 /** Expected time to a lane run's first real work, from its queued steps (`expectedMsToFirstWork`). */
@@ -3674,8 +3756,40 @@ async function laneFirstWorkMs(runId: number): Promise<number> {
   }
 }
 
-export function expectedStepMs(stepKey: string | null): number {
+/** Runs one publish sweep and adds its milliseconds to `times` under `key`; the result is unchanged. */
+export async function timedSweep<T>(times: Record<string, number>, key: string, run: () => Promise<T>): Promise<T> {
+  const started = Date.now();
+  try {
+    return await run();
+  } finally {
+    times[key] = (times[key] ?? 0) + (Date.now() - started);
+  }
+}
+
+/**
+ * A step left queued because it could not finish by the tick's deadline: one `step.deferred`
+ * event on the run ledger, naming the step, its expected time and the time the tick had left.
+ * The step runs in a later tick. A failed write never stops the tick.
+ */
+export async function recordStepDeferral(runId: number, stepKey: string | null, expectedMs: number, msLeft: number): Promise<void> {
+  try {
+    await sql`
+      INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+      VALUES (
+        ${runId}, 'step.deferred', 'queued',
+        ${`${stepKey ?? "Next step"} left queued: it needs about ${Math.round(expectedMs / 1000)} s and the tick has ${Math.max(0, Math.round(msLeft / 1000))} s left.`},
+        ${JSON.stringify({ step_key: stepKey, expected_ms: expectedMs, ms_left: Math.max(0, Math.round(msLeft)) })}::jsonb
+      )
+    `;
+  } catch (error) {
+    console.error("recordStepDeferral failed:", error);
+  }
+}
+
+export function expectedStepMs(stepKey: string | null, runSource: string | null = null): number {
   if (!stepKey) return DEFAULT_STEP_EXPECTED_MS;
+  const bySource = runSource ? RUN_SOURCE_STEP_EXPECTED_MS[runSource]?.[stepKey] : undefined;
+  if (bySource != null) return bySource;
   if (stepKey in STEP_EXPECTED_MS) return STEP_EXPECTED_MS[stepKey];
   if (QUICK_STEP_PREFIXES.some((prefix) => stepKey.startsWith(prefix))) return QUICK_STEP_EXPECTED_MS;
   return DEFAULT_STEP_EXPECTED_MS;
@@ -3764,6 +3878,8 @@ export async function executeAgentRun(
   if (getExecutionBackend() !== "agentic_v1") {
     return blockRunForBackend(runId);
   }
+  // Steps are priced by the run that holds them (`RUN_SOURCE_STEP_EXPECTED_MS`).
+  const runSource = typeof existing.params?.source === "string" ? existing.params.source : null;
 
   // Deterministic work is paused by the pipeline control, growth's marketing steps by the
   // marketing control; each leaves the other's runs going. A paused run stays queued
@@ -3787,7 +3903,8 @@ export async function executeAgentRun(
 
   if (options.alwaysRunFirstStep === false && options.deadlineAt != null) {
     const keys = await peekQueuedStepKeys(runId, maxSteps);
-    if (Date.now() + expectedMsToFirstWork(keys) > options.deadlineAt) {
+    if (Date.now() + expectedMsToFirstWork(keys, runSource) > options.deadlineAt) {
+      await recordStepDeferral(runId, keys[0] ?? null, expectedMsToFirstWork(keys, runSource), options.deadlineAt - Date.now());
       return {
         runId,
         status: existing.status,
@@ -3807,7 +3924,10 @@ export async function executeAgentRun(
     if (index > 0 && nextStepKey && heldByPause(nextStepKey, pipeline, marketing)) break;
     const firstOfTick = index === 0 && (options.alwaysRunFirstStep ?? true);
     if (!firstOfTick && options.deadlineAt != null
-      && Date.now() + expectedStepMs(nextStepKey) > options.deadlineAt) break;
+      && Date.now() + expectedStepMs(nextStepKey, runSource) > options.deadlineAt) {
+      await recordStepDeferral(runId, nextStepKey, expectedStepMs(nextStepKey, runSource), options.deadlineAt - Date.now());
+      break;
+    }
     // Provider steps (paid model calls) additionally require the global automation
     // stop to be clear and the caller to have provider budget for this tick.
     if (nextStepKey && isProviderStep(nextStepKey)) {
@@ -3851,8 +3971,9 @@ export async function executeAgentRun(
     if (options.stepTurns && nextStepKey && SERIAL_STEP_KEYS.has(nextStepKey)) {
       releaseTurn = await options.stepTurns.take();
       // The wait used tick time: start the step only if it still fits.
-      if (options.deadlineAt != null && Date.now() + expectedStepMs(nextStepKey) > options.deadlineAt) {
+      if (options.deadlineAt != null && Date.now() + expectedStepMs(nextStepKey, runSource) > options.deadlineAt) {
         releaseTurn();
+        await recordStepDeferral(runId, nextStepKey, expectedStepMs(nextStepKey, runSource), options.deadlineAt - Date.now());
         break;
       }
     }
@@ -4092,7 +4213,7 @@ export async function executeQueuedAgentRuns({
     const waitedOut = laneRoomRun && waitedOutLaneRoom(row.source, row.idle_ms);
     const leavesLaneRoom = laneRoomRun && !waitedOut;
     const result = await executeAgentRun(runId, {
-      maxSteps: waitedOut ? 1 : maxStepsPerRun,
+      maxSteps: waitedOut ? waitedOutMaxSteps(row.source, maxStepsPerRun) : maxStepsPerRun,
       allowProviderSteps,
       deadlineAt: leavesLaneRoom && deadlineAt != null ? deadlineAt - laneRoomMs : deadlineAt,
       // The tick's first step always runs, unless it is a direct run that would take the lane's room.
