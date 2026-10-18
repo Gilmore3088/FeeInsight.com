@@ -275,6 +275,9 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
  * in a manifest above.
  */
 export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
+  // v1 (#1868): the first LEI match rules. Every institution is checked by the gleif registry's
+  // lei-match partitions in bounded batches; nothing was matched under an earlier version.
+  LEI_MATCH_PARSER_VERSION: "First version: the gleif lei-match partitions check every institution in bounded batches; nothing older to replay.",
   // v8 (#1112): new no-fee, discount, allowance and loan-amount name rules. Each step's eval-verdict
   // pass reads every live fee whose name or line matches one of their prefilter clauses
   // (`V8_PREFILTER`), then the second look; Darwin reads each new row under them. There is no
