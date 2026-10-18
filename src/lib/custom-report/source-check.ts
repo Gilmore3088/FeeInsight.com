@@ -46,6 +46,12 @@ const SIZE = /\b(\d+)\s*["”']?\s*x\s*(\d+)\b(?:\s*["”']?\s*x\s*\d+\b)?/gi;
 const PRICE_BELOW_LINES = 2;
 const PRICE_BELOW_MAX_LENGTH = 40;
 /**
+ * An account's opening deposit printed under its heading ("Now Checking" / "$1,000.00 opening
+ * deposit required", "$25 minimum deposit to open") is what it takes to open the account, never
+ * the heading's price, so the heading stays a heading (#1810).
+ */
+const OPENING_DEPOSIT_LINE = /^\s*\$\s?\d[\d,]*(?:\.\d{2})?\+?\s+(?:(?:(?:minimum|min\.?|initial|opening|required)\s+(?:(?:minimum|min\.?|initial|opening|required|deposit|balance)\s+){0,2}?deposit\b(?:\s+(?:is\s+)?required)?|deposit\s+(?:is\s+required|required)\b)(?:\s+to\s+open\b(?:\s+(?:the|this|an|your)\s+account)?)?|(?:(?:minimum|min\.?|initial|opening|required|deposit|balance)\s+){0,3}?to\s+open\b(?:\s+(?:the|this|an|your)\s+account)?)\s*\.?\s*$/i;
+/**
  * A longer price line is still the price when its first cell is only the price and the
  * rest is a lowercase note about it ("$30.00 | everyday debit card transactions ... are
  * not covered unless you opt in"), never another fee's name.
@@ -796,7 +802,8 @@ function feeRow(lines: string[], index: number): string {
     .slice(index + 1, index + 1 + PRICE_BELOW_LINES)
     .find(
       (next, k) =>
-        PRICE_THEN_QUALIFIER.test(next) ||
+        !OPENING_DEPOSIT_LINE.test(next) &&
+        (PRICE_THEN_QUALIFIER.test(next) ||
         PRICE_THEN_SENTENCE.test(next) ||
         // Only under a statement-label description (River City's layout); elsewhere a long
         // "$30 for each ..." sentence under a bare name is not read as that name's price.
@@ -804,7 +811,7 @@ function feeRow(lines: string[], index: number): string {
         PRICE_THEN_DASH_NOTE.test(next) ||
         ((next.length <= PRICE_BELOW_MAX_LENGTH || PRICE_THEN_NOTE.test(next) || PRICE_THEN_PAREN_NOTE.test(next)) &&
           PRICE_LINE.test(next) &&
-          (moneyTokens(next).length > 0 || ZERO_WORDS.test(next))),
+          (moneyTokens(next).length > 0 || ZERO_WORDS.test(next)))),
     );
   if (!price) {
     // A count-cap note after the name's wrapped last words pushes the price one line further down.
