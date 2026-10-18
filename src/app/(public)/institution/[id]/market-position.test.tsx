@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { MarketPositionCard } from "./market-position";
+import { MarketPositionCard, SUBJECT } from "./market-position";
 import type { MarketPosition, MetroPosition } from "@/lib/data-store/market-position";
 
 function metro(overrides: Partial<MetroPosition>): MetroPosition {
@@ -64,6 +64,12 @@ describe("MarketPositionCard", () => {
     expect(container.textContent).toContain("3 offices of 3 institutions shown.");
     fireEvent.click(screen.getByRole("button", { name: "Credit unions" }));
     expect(container.textContent).toContain("2 offices of 2 institutions shown.");
+  });
+
+  it("draws the subject in ink, never the variance red or blue", () => {
+    expect(SUBJECT).toContain("--color-ink");
+    const { container } = render(<MarketPositionCard position={POSITION} institutionName="Subject Bank" selectedCode={45220} onSelect={() => {}} />);
+    expect(container.innerHTML).not.toMatch(/fi-subject|2a6fc4|variance-(above|below)/);
   });
 
   it("says how many offices a capped map shows", () => {

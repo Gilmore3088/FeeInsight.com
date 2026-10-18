@@ -10,11 +10,11 @@ import { SERIF } from "./profile-serif";
 /*
  * Market position for the selected metro: offices on a map with competitor toggles, the ranked
  * deposit share (FDIC SOD, banks only), the bank's own share, offices and rank over the survey
- * years, and the credit unions there (NCUA) kept separate. One accent for the subject, neutral
- * slate for everyone else (the overview's tokens from PR 1864, with the same values as fallback);
- * every chart has its numbers in text beside it.
+ * years, and the credit unions there (NCUA) kept separate. The subject is ink and everyone else
+ * neutral slate: red and blue mean above and below a median on this site, so the subject takes
+ * neither. Every chart has its numbers in text beside it.
  */
-const SUBJECT = "var(--fi-subject, #2a6fc4)";
+export const SUBJECT = "var(--color-ink, #132338)";
 const PEER = "var(--fi-peer, #a3abb7)";
 const GRID = "var(--fi-chart-grid, #e7e0d2)";
 const METRO_FILL = "#EEF1F5";
