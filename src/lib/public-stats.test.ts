@@ -23,6 +23,8 @@ describe("public stats formatting", () => {
   it("formats absolute dates and tolerates bad input", () => {
     expect(formatAbsoluteDate("2026-08-12T00:00:00.000Z")).toMatch(/Aug 1[12], 2026/);
     expect(formatAbsoluteDate(null)).toBeNull();
+    // Read in U.S. Eastern time: 02:00 UTC on Oct 18 is still Oct 17 there.
+    expect(formatAbsoluteDate("2026-10-18T02:00:00.000Z")).toBe("Oct 17, 2026");
     expect(formatAbsoluteDate("not a date")).toBeNull();
   });
 

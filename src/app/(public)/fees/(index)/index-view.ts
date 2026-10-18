@@ -160,8 +160,20 @@ export function statsFor(rows: IndexRow[], fee: string, state: string | null, ch
   return summarizeFees(rows.filter((r) => matches(r, state, charter)).map((r) => ({ ...r, fee_category: fee })));
 }
 
+/**
+ * The distribution's bars. A published $0 gets a bar of its own, so a fee an institution states it
+ * doesn't charge never blurs into "Under $14" with low prices. An institution that publishes no
+ * price for the fee isn't in the list at all, so it is never counted as $0.
+ */
 export function histogram(institutions: IndexInstitution[]): HistogramBucket[] {
-  return buildHistogramBuckets(institutions.map((i) => ({ value: i.value, isBank: i.charter === "bank" })));
+  const zero = institutions.filter((i) => i.value === 0);
+  const priced = institutions.filter((i) => i.value !== 0);
+  const buckets = buildHistogramBuckets(priced.map((i) => ({ value: i.value, isBank: i.charter === "bank" })));
+  if (zero.length === 0) return buckets;
+  // The bars after $0 start above it, so no institution sits in two bars.
+  const rest = buckets.map((b, i) => (i === 0 && (b.min === null || b.min === 0) ? { ...b, min: 0.01, label: b.label.replace(/^\$0(?=–|$)/, "$0.01") } : b));
+  const banks = zero.filter((i) => i.charter === "bank").length;
+  return [{ label: "$0", min: 0, max: 0, banks, creditUnions: zero.length - banks, total: zero.length }, ...rest];
 }
 
 export function inBucket(b: HistogramBucket, value: number): boolean {
@@ -305,4 +317,50 @@ export function findings(rows: IndexRow[], sel: Selection, institutions: IndexIn
     }
   }
   return out.slice(0, 3);
+}
+
+/** A state's median against the U.S.: the 1% rule the state reports use for "about the same". */
+export type StateBand = "above" | "same" | "below" | "thin";
+
+export const ABOUT_THE_SAME = 0.01;
+
+export function stateBand(state: number | null, us: number | null): StateBand {
+  if (state == null || us == null) return "thin";
+  if (us === 0) return state === 0 ? "same" : "above";
+  const gap = (state - us) / us;
+  return Math.abs(gap) < ABOUT_THE_SAME ? "same" : gap > 0 ? "above" : "below";
+}
+
+/** One state on the map: its median for the selection, how many institutions count, and its band. */
+export interface StateCell {
+  code: string;
+  median: number | null;
+  institutions: number;
+  band: StateBand;
+}
+
+/**
+ * Every state's median for the fee and charter, by headquarters, beside the national median.
+ * A state with fewer than MIN_INSTITUTIONS_FOR_MEDIAN institutions has no median and is "thin".
+ */
+export function stateCells(rows: IndexRow[], fee: string, charter: Charter): StateCell[] {
+  const us = statsFor(rows, fee, null, charter).median_amount;
+  const codes = Object.keys(STATE_NAMES).filter((s) => !NOT_STATES.has(s) || s === "DC");
+  return codes.map((code) => {
+    const stats = statsFor(rows, fee, code, charter);
+    const median = stats.institution_count >= MIN_INSTITUTIONS_FOR_MEDIAN ? stats.median_amount : null;
+    return { code, median, institutions: stats.institution_count, band: stateBand(median, us) };
+  });
+}
+
+/** Who is in one price band: banks against credit unions, and the states with the most of them. */
+export function bandBreakdown(listed: IndexInstitution[], top = 5): { banks: number; creditUnions: number; states: { code: string; count: number }[] } {
+  const banks = listed.filter((i) => i.charter === "bank").length;
+  const byState = new Map<string, number>();
+  for (const i of listed) if (i.state) byState.set(i.state, (byState.get(i.state) ?? 0) + 1);
+  const states = [...byState.entries()]
+    .map(([code, count]) => ({ code, count }))
+    .sort((a, b) => b.count - a.count || a.code.localeCompare(b.code))
+    .slice(0, top);
+  return { banks, creditUnions: listed.length - banks, states };
 }
