@@ -37,6 +37,8 @@ function normalizeHttpUrl(value: string): string {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error("URL must use http or https");
   }
+  // "https://HTTP://WWW.BANKWITHCHOICE.COM" parses with the host "http" (#1754).
+  if (!url.hostname.includes(".")) throw new Error("URL needs a full domain name, like https://www.example.com");
   return url.toString();
 }
 
@@ -110,6 +112,33 @@ export async function setInstitutionFeeUrl(
       if (updated.length > 0) await rememberPersonFeeUrl(tx, institutionId, url);
       return updated;
     });
+    if (rows.length === 0) return { success: false, error: "Institution not found" };
+    revalidateInstitutionSurfaces(institutionId, String(rows[0].state_code ?? ""));
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/**
+ * An institution's website, set by a person on its admin page (#1754: Choice Financial's was stored
+ * as "https://HTTP://WWW.BANKWITHCHOICE.COM" and James had no way to fix it). The homepage, without
+ * a trailing slash, as the registry stores it.
+ */
+export async function setInstitutionWebsiteUrl(
+  institutionId: number,
+  value: string,
+): Promise<InstitutionCommandResult> {
+  await requireAuth("edit");
+  try {
+    validateInstitutionId(institutionId);
+    const url = normalizeHttpUrl(value).replace(/\/$/, "");
+    const rows = await sql`
+      UPDATE institution_sources
+         SET website_url = ${url}
+       WHERE id = ${institutionId}
+       RETURNING state_code
+    `;
     if (rows.length === 0) return { success: false, error: "Institution not found" };
     revalidateInstitutionSurfaces(institutionId, String(rows[0].state_code ?? ""));
     return { success: true };

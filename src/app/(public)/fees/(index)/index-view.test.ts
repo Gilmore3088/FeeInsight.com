@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { IndexRow } from "@/lib/data-store";
 import {
   accountName,
+  bandBreakdown,
   companion,
   countedAs,
   findings,
@@ -14,6 +15,10 @@ import {
   parseListState,
   parseSelection,
   selectionHref,
+  stateBand,
+  stateCells,
+  stateRanking,
+  parseStateView,
   statsFor,
 } from "./index-view";
 
@@ -132,5 +137,60 @@ describe("countedAs", () => {
     expect(countedAs("monthly_maintenance").headline).toBe("Median of each institution's median published price");
     expect(countedAs("monthly_maintenance").label).toBe("institution median");
     expect(countedAs("overdraft").label).toBe("highest published price");
+  });
+});
+
+describe("Bank Fee Index v2 views", () => {
+  it("gives a published $0 its own bar, never shared with low prices", () => {
+    const priced = [0, 0, 5, 10, 12, 15, 20, 25, 30, 30, 32, 35].map((a, i) => row(500 + i, a, "FL", i % 2 ? "bank" : "credit_union"));
+    const buckets = histogram(institutionsFor(priced, "nsf", null, "all"));
+    expect(buckets[0]).toMatchObject({ label: "$0", min: 0, max: 0, total: 2 });
+    const zeroIn = buckets.filter((b) => inBucket(b, 0));
+    expect(zeroIn).toHaveLength(1);
+    expect(buckets.reduce((n, b) => n + b.total, 0)).toBe(12);
+  });
+
+  it("bands a state against the U.S. by the 1% rule, and too few as thin", () => {
+    expect(stateBand(30, 30)).toBe("same");
+    expect(stateBand(30.2, 30)).toBe("same");
+    expect(stateBand(31, 30)).toBe("above");
+    expect(stateBand(25, 30)).toBe("below");
+    expect(stateBand(null, 30)).toBe("thin");
+  });
+
+  it("gives every state a cell, with a median only at the institution floor", () => {
+    const cells = stateCells(rows, "overdraft", "all");
+    const fl = cells.find((c) => c.code === "FL")!;
+    const ca = cells.find((c) => c.code === "CA")!;
+    expect(fl.institutions).toBe(6);
+    expect(ca).toMatchObject({ institutions: 0, median: null, band: "thin" });
+    expect(cells.some((c) => c.code === "PR")).toBe(false);
+  });
+
+  it("breaks a band down by charter and state", () => {
+    const b = bandBreakdown(institutionsFor(rows, "overdraft", null, "all"));
+    expect(b.banks + b.creditUnions).toBe(12);
+    expect(b.states.map((s) => s.code).sort()).toEqual(["FL", "TX"]);
+  });
+
+  it("ranks states with a median first, with each one's gap and price shade", () => {
+    const cells = [
+      { code: "AK", median: null, institutions: 2, band: "thin" as const },
+      { code: "MS", median: 35, institutions: 40, band: "above" as const },
+      { code: "CA", median: 25, institutions: 90, band: "below" as const },
+      { code: "TX", median: 30, institutions: 300, band: "same" as const },
+      { code: "VT", median: null, institutions: 4, band: "thin" as const },
+    ];
+    const ranked = stateRanking(cells, 30);
+    expect(ranked.map((r) => r.code)).toEqual(["MS", "TX", "CA", "VT", "AK"]);
+    expect(ranked[0]).toMatchObject({ gap: 5, step: 4 });
+    expect(ranked[2]).toMatchObject({ gap: -5, step: 0 });
+    expect(ranked[3]).toMatchObject({ gap: null, step: null });
+  });
+
+  it("reads the state view, defaulting to the gap from the U.S. median", () => {
+    expect(parseStateView({})).toBe("gap");
+    expect(parseStateView({ sv: "price" })).toBe("price");
+    expect(parseStateView({ sv: "nonsense" })).toBe("gap");
   });
 });
