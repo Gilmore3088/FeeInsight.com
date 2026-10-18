@@ -5,7 +5,7 @@ vi.mock("./peer-markets", () => ({ getHomeMarket: vi.fn(), getMarketInstitutionI
 
 import { sql } from "./connection";
 import { getHomeMarket, getMarketInstitutionIds } from "./peer-markets";
-import { PeerSetError, definitionFor, describePeerSet, resolvePeerRequest, resolvePeerSet, type PeerSubject } from "./peer-sets";
+import { PeerSetError, definitionFor, describePeerSet, peerSetMemberIds, resolvePeerRequest, resolvePeerSet, type PeerSubject } from "./peer-sets";
 
 const BANK: PeerSubject = {
   id: 12, charter_type: "bank", asset_size: 800_000, asset_size_tier: "community_mid", fed_district: 11,
@@ -90,5 +90,23 @@ describe("resolvePeerSet", () => {
   it("refuses an unknown metro", async () => {
     vi.mocked(getMarketInstitutionIds).mockResolvedValue(null);
     await expect(resolvePeerSet({ market_code: 1 }, BANK)).rejects.toThrow(/No metro market/);
+  });
+});
+
+describe("peerSetMemberIds", () => {
+  it("returns resolved ids as they are, none for an empty group, and every match for a basic definition", async () => {
+    unsafe().mockReset();
+    expect(await peerSetMemberIds({ definition: { nearest: 3 }, filters: { institutionIds: [4, 5, 6] }, label: "x", market: null })).toEqual([4, 5, 6]);
+    expect(await peerSetMemberIds({ definition: { states: ["WY"] }, filters: null, label: "x", market: null })).toEqual([]);
+    expect(unsafe()).not.toHaveBeenCalled();
+
+    unsafe().mockResolvedValue([{ id: "7" }, { id: 8 }]);
+    expect(await peerSetMemberIds({ definition: { charter_type: "bank", states: ["TX"] }, filters: { charter_type: "bank", states: ["TX"] }, label: "x", market: null })).toEqual([7, 8]);
+    const [query, params] = unsafe().mock.calls[0];
+    expect(query).toContain("s.charter_type = $1");
+    expect(query).toContain("s.state_code = ANY($2::text[])");
+    // A basic group keeps every matching institution, as the fee index does: no subject is left out.
+    expect(query).not.toContain("s.id <>");
+    expect(params).toEqual(["bank", ["TX"]]);
   });
 });

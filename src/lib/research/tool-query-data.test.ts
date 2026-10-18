@@ -43,6 +43,16 @@ describe("listData", () => {
     for (const name of PIPELINE_AGENT_NAMES) expect(text.toLowerCase()).not.toContain(name.toLowerCase());
   });
 
+  it("lists bank call-report lines with their levels, and peer_set on sources a peer's headquarters can be placed in", async () => {
+    vi.mocked(getAreaSeries).mockResolvedValue([series("bls-laus", "laus_unemployment_rate")] as never);
+    const out = await listDataCatalog({ query: "service charges unemployment" });
+    expect(out.call_measures).toContainEqual(expect.objectContaining({ measure: "call:service_charges_deposits_ytd", unit: "USD", levels: expect.arrayContaining(["institution", "peer_set"]) }));
+    expect(out.sources.find((s) => s.id === "bls-laus")?.levels).toContain("peer_set");
+    expect((await listDataCatalog({ query: "unemployment" })).call_measures).toBeUndefined();
+    const peer = await listDataCatalog({ query: "unemployment", scope: "peer_set" });
+    expect(peer.series.map((s) => s.measure)).toContain("area:bls-laus:laus_unemployment_rate");
+  });
+
   it("keeps series that cover the asked level and caps the list", async () => {
     vi.mocked(getAreaSeries).mockResolvedValue([
       series("bls-laus", "metro_missing", ["national", "state"]),
