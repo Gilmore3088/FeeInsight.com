@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { formatCompactDollars } from "@/lib/format";
 import { pct } from "./overview-observations";
-import { aboutSame, amountText, isRange, money, reference, type CompareRow } from "./profile-view";
+import { aboutSame, amountText, isRange, lowerLabel, money, reference, type CompareRow } from "./profile-view";
 import { SERIF } from "./profile-serif";
 
 /**
@@ -22,6 +22,22 @@ export function pickRelatedFees(rows: CompareRow[], n = 3): CompareRow[] {
     return i === -1 ? RELATED.length : i;
   };
   return [...priced].sort((a, b) => rank(a) - rank(b)).slice(0, n);
+}
+
+/**
+ * The small line under a fee listed at several prices: the comparison price named for what it
+ * is, then the gap. "Compared at $8.45, the middle of its two prices: $0.95 above".
+ */
+export function comparedLine(row: CompareRow, gap: string): string | null {
+  if (!isRange(row) || row.amount == null) return null;
+  const which = row.highestTier ? "the highest of its prices" : `the middle of its ${row.count === 2 ? "two " : ""}prices`;
+  return `Compared at ${money(row.amount)}, ${which}: ${gap}`;
+}
+
+/** "Monthly maintenance", "Non-network ATM": sentence case, acronyms kept. */
+function sentenceLabel(label: string): string {
+  const lower = lowerLabel(label);
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
 }
 
 function Tag({ children }: { children: React.ReactNode }) {
@@ -85,16 +101,19 @@ export function ConnectedPanel({
               const gap = aboutSame(row.amount, ref.median.median)
                 ? "about the same"
                 : `${money(Math.abs(diff))} ${diff > 0 ? "above" : "below"}`;
+              // Several prices: the headline shows them all and the small line names the comparison price.
+              const compared = comparedLine(row, gap);
               return (
                 <li key={row.key}>
                   <span className="font-semibold text-ink">
-                    {row.label.replace(/\s*\([^)]*\)/g, "")} {isRange(row) ? money(row.amount) : amountText(row)}
+                    {sentenceLabel(row.label)} {amountText(row)}
                   </span>
                   <span className="text-ink-soft">
                     {" "}
-                    vs {place} {money(ref.median.median)} ({gap})
+                    vs {place} {money(ref.median.median)}
+                    {compared ? "" : ` (${gap})`}
                   </span>
-                  {isRange(row) && <span className="block text-[12px] text-ink-muted">Compared at {money(row.amount)}, a proxy across {amountText(row)}</span>}
+                  {compared && <span className="block text-[12px] text-ink-muted">{compared}</span>}
                 </li>
               );
             })}

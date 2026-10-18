@@ -112,19 +112,22 @@ export function CohortStrip(props: CohortStripProps) {
   const tallest = Math.max(1, ...counts);
 
   // Search and "Show all" read the members from the route; the page itself ships only the nearest.
+  // Only the latest request may set state, so a slow, stale search cannot overwrite the current one.
+  const latest = useRef<string | null>(null);
   const load = useCallback(
     async (key: string, params: string) => {
+      latest.current = key;
       setLoading(true);
       setFailed(false);
       try {
         const res = await fetch(`/api/institutions/${institutionId}/cohort?${params}`);
         if (!res.ok) throw new Error(String(res.status));
         const body = (await res.json()) as { total: number; members: CohortPoint[] };
-        setRemote({ key, total: body.total, members: body.members });
+        if (latest.current === key) setRemote({ key, total: body.total, members: body.members });
       } catch {
-        setFailed(true);
+        if (latest.current === key) setFailed(true);
       } finally {
-        setLoading(false);
+        if (latest.current === key) setLoading(false);
       }
     },
     [institutionId],
