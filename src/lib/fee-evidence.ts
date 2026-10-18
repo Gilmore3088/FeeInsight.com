@@ -101,44 +101,42 @@ function tidy(line: string): string {
 
 /** Longest gap between the fee's own name and its price for the name to open the line. */
 const NAME_TO_PRICE_CHARS = 80;
-const ANOTHER_PRICE = /\$\s?\.?\d/;
-const FEE_WORD = /\b(?:fees?|charges?)\b/i;
 /**
  * Where a clause ends inside a flattened paragraph: a sentence stop, a semicolon or a table bar, or
- * a price with its lower-case unit ("$100 per levy order", "$35 each"), so a capitalised account
- * name after it ("$100 per order Basic Checking") starts the next clause.
+ * a price with its lower-case unit ("$100 per levy order", "$35 each").
  */
 const CLAUSE_END = /[.;|](?=\s)|\|\s*|\$\s?\d[\d,]*(?:\.\d+)?(?:\s+(?:each|per\s+(?:levy\s+)?[a-z]+|an?\s+[a-z]+))?/g;
+/** Another fee priced the way a schedule prints one: "Levy Fee $100", "Stop Payment | $30". */
+const PRICED_FEE = /\b(?:fee|charge)s?\s*[:|–-]?\s*\$\s?\.?\d|\|\s*\$\s?\.?\d/i;
+/** Words of a waiver or condition, which belong to the fee that follows and are never cut. */
+const CONDITION_WORDS = /\b(?:waive[ds]?|avoid|minimum|balance|unless|if|when|with|no\s+(?:fee|charge)|free)\b/i;
 /** A clause that opens with "Fee"/"Charge" and runs this many words is a fee's description. */
 const DESCRIPTION_WORDS = 4;
 /** Capitalised words right before the name: its account or direction ("Student Checking"). */
 const CAPITALISED_RUN = /(?:\b[A-Z][\w&'-]*\s+)+$/;
 
-/**
- * The clause just before a cut is another fee's when it prints a price beside a fee word or a
- * table bar ("Levy Processing Fee $100 per levy order", "Stop Payment | $30"); a minimum deposit
- * or "no overdraft fees" is the account's own text and keeps the line whole.
- */
+/** The sentence a cut would drop last is another fee, priced, and no condition of this one. */
 function anotherFeesClause(dropped: string): boolean {
   const clause = dropped.replace(/[\s.;|]+$/, "").split(/[.;](?=\s)/).pop() ?? "";
-  return ANOTHER_PRICE.test(clause) && (FEE_WORD.test(clause) || clause.includes("|"));
+  return PRICED_FEE.test(clause) && !CONDITION_WORDS.test(clause);
 }
 
 /**
  * A line that opens with another fee's words starts at this fee's own clause (#1902): a schedule
  * stored as one paragraph gave 1st Source Bank's dormant fee the line "Fee applied to process a
  * tax liability Dormant Account Fee $5 per month", the levy fee's description first. It reads
- * "… Dormant Account Fee $5 per month".
+ * "… Dormant Account Fee $5 per month". It errs toward the whole line: a cut that drops this fee's
+ * account or condition misleads more than another fee's words left in front.
  *
- * Two cuts, both only when the fee's own name prints its price within NAME_TO_PRICE_CHARS and the
- * dropped words neither print this price nor end on a price right before the name (catalog
- * 30013's "$2.00 paper statement charge, $5.00 early withdraw penalty", where a reader must see
- * both):
- * - after the last clause end before the name, when the clause before it is another fee's
- *   (`anotherFeesClause`), so the fee's own account or direction stays ("… Basic Checking Monthly
- *   Service Fee $10");
- * - inside a clause that opens with "Fee" or "Charge" and runs past DESCRIPTION_WORDS words (another
- *   fee's description), at the capitalised words right before the name, else at the name.
+ * Nothing is cut unless the fee's own name prints its price within NAME_TO_PRICE_CHARS, the opening
+ * neither prints this price nor ends on a price (catalog 30013's "$2.00 paper statement charge,
+ * $5.00 early withdraw penalty"), and it holds no condition word. Then one of two cuts:
+ * - after the last clause end, when the sentence before it is another priced fee
+ *   (`anotherFeesClause`) and only capitalised words (an account or direction, kept) sit between
+ *   it and the name: "… Basic Checking Monthly Service Fee $10";
+ * - with no clause end, inside a clause that opens with "Fee" or "Charge" and runs past
+ *   DESCRIPTION_WORDS words (another fee's description), at the capitalised words right before the
+ *   name, else at the name.
  */
 export function fromOwnName(line: string, feeName: string | null, amount: number): string {
   const name = (feeName ?? "").replace(/\s+/g, " ").trim();
@@ -151,12 +149,13 @@ export function fromOwnName(line: string, feeName: string | null, amount: number
   if (printsAmount(opening, amount) || /\$\s?\d[\d,]*(?:\.\d+)?\s*$/.test(opening)) return line;
   let end = 0;
   for (const match of opening.matchAll(CLAUSE_END)) end = (match.index ?? 0) + match[0].length;
-  const clause = opening.slice(end);
-  const words = clause.trim().split(/\s+/).filter(Boolean);
+  const clause = opening.slice(end).replace(/^[.;,|]+/, "");
+  const run = CAPITALISED_RUN.exec(clause)?.[0] ?? "";
   let cut = 0;
-  if (words.length > DESCRIPTION_WORDS && /^(?:fees?|charges?)$/i.test(words[0])) {
-    cut = at - (CAPITALISED_RUN.exec(clause)?.[0].length ?? 0);
-  } else if (end > 0 && anotherFeesClause(opening.slice(0, end))) {
+  if (end === 0) {
+    const words = clause.trim().split(/\s+/).filter(Boolean);
+    if (words.length > DESCRIPTION_WORDS && /^(?:fees?|charges?)$/i.test(words[0]) && !CONDITION_WORDS.test(clause)) cut = at - run.length;
+  } else if (anotherFeesClause(opening.slice(0, end)) && clause.trim().length === run.trim().length) {
     cut = end;
   }
   if (cut <= 0) return line;

@@ -524,7 +524,9 @@ describe("a line opening with another fee's words (#1902)", () => {
   it("keeps the account or direction that opens the fee's own clause (#1902 review)", () => {
     expect(fromOwnName("Overdraft Fee $35 per item. Basic Checking Monthly Service Fee $10 per month", "Monthly Service Fee", 10)).toBe("… Basic Checking Monthly Service Fee $10 per month");
     expect(fromOwnName("Levy Fee $100 per order Basic Checking Monthly Service Fee $10 per month", "Monthly Service Fee", 10)).toBe("… Basic Checking Monthly Service Fee $10 per month");
-    expect(fromOwnName("Outgoing international wire fee $45. Outgoing domestic Wire Transfer Fee $25", "Wire Transfer Fee", 25)).toBe("… Outgoing domestic Wire Transfer Fee $25");
+    // A lower-case word in the fee's own qualifier keeps the line whole rather than guess.
+    expect(fromOwnName("Outgoing international wire fee $45. Outgoing domestic Wire Transfer Fee $25", "Wire Transfer Fee", 25)).toBe("Outgoing international wire fee $45. Outgoing domestic Wire Transfer Fee $25");
+    expect(fromOwnName("Outgoing international wire fee $45. Outgoing Domestic Wire Transfer Fee $25", "Wire Transfer Fee", 25)).toBe("… Outgoing Domestic Wire Transfer Fee $25");
     expect(fromOwnName("Levy fee $100. Dormant Account Fee $5 per month", "Account Fee", 5)).toBe("… Dormant Account Fee $5 per month");
     expect(fromOwnName("Stop Payment | $30 | Dormant Account Fee | $5 per month", "Dormant Account Fee", 5)).toBe("… Dormant Account Fee | $5 per month");
   });
@@ -539,6 +541,17 @@ describe("a line opening with another fee's words (#1902)", () => {
     ]) {
       const name = line.includes("Wire") ? "Wire Transfer Fee" : "Monthly Service Fee";
       const amount = Number(/\$(\d+)(?!.*\$\d)/.exec(line)?.[1]);
+      expect(fromOwnName(line, name, amount)).toBe(line);
+    }
+  });
+
+  it("keeps this fee's own waiver, an earlier account sentence and a unit's trailing words (#1902 round 3)", () => {
+    for (const [line, name, amount] of [
+      ["Fee waived if you maintain a $500 balance Monthly Service Fee $10", "Monthly Service Fee", 10],
+      ["No fee with $500 daily balance; Monthly Service Fee $10", "Monthly Service Fee", 10],
+      ["Basic Checking. Fees for this account are listed below Monthly Service Fee $10", "Monthly Service Fee", 10],
+      ["Excessive withdrawal fee $5 per item over 6 per month Monthly Service Fee $10", "Monthly Service Fee", 10],
+    ] as const) {
       expect(fromOwnName(line, name, amount)).toBe(line);
     }
   });
