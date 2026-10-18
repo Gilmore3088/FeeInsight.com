@@ -267,36 +267,34 @@ export function buildFeeAlertEmail(
     subject = `Fee changes at ${digest.institutions.length} of your saved institutions`;
   }
 
-  const lines: string[] = [];
-  for (const institution of digest.institutions) {
+  const sections = digest.institutions.map((institution) => {
     const profile = `${site}/institution/${institution.institutionId}`;
-    lines.push(institution.institutionName);
+    const lines: string[] = [];
     for (const change of institution.changes) {
-      lines.push(`${changeLine(change)}\n${profile}?fee=${change.category}#fee-${change.category}`);
+      lines.push(`${changeLine(change)}\n${profile}?fee=${change.category}#fee-${change.category}`, "");
     }
     if (institution.newlyPublished.length > 0) {
       const listed = institution.newlyPublished.slice(0, MAX_NEW_FEES_LISTED).map((item) =>
         item.amount === null ? plainLabel(item.category) : `${plainLabel(item.category)} ${formatAmount(item.amount)}`,
       );
       const more = institution.newlyPublished.length - listed.length;
-      lines.push(
-        `Now verified: ${listed.join(", ")}${more > 0 ? `, and ${more} more` : ""}.\n${profile}`,
-      );
+      lines.push(`Now verified: ${listed.join(", ")}${more > 0 ? `, and ${more} more` : ""}.\n${profile}`);
     }
-    lines.push("");
-  }
-  lines.push(`Compare any fee with the national median at ${site}/fees.`);
-  lines.push("");
-  lines.push(
-    digest.watchlistMaxSignalAt
-      ? `You get these because you saved these institutions on Fee Insight or watch them in Hamilton. Manage alerts: ${site}/account#alerts\nYour watchlist: ${site}/pro/monitor\nStop all fee alerts: ${urls.unsubscribePage}`
-      : `You get these because you saved these institutions on Fee Insight. Manage alerts: ${site}/account#alerts\nStop all fee alerts: ${urls.unsubscribePage}`,
-  );
+    return { heading: institution.institutionName, lines };
+  });
 
   const content = {
     subject,
-    lines,
+    lines: [],
+    sections,
     cta: { label: "Manage your alerts", href: `${site}/account#alerts` },
+    closing: [
+      `Compare any fee with the national median at ${site}/fees.`,
+      "",
+      digest.watchlistMaxSignalAt
+        ? `You get these because you saved these institutions on Fee Insight or watch them in Hamilton. Manage alerts: ${site}/account#alerts\nYour watchlist: ${site}/pro/monitor\nStop all fee alerts: ${urls.unsubscribePage}`
+        : `You get these because you saved these institutions on Fee Insight. Manage alerts: ${site}/account#alerts\nStop all fee alerts: ${urls.unsubscribePage}`,
+    ],
   };
   return { subject, text: renderLeadEmailText(content), html: renderLeadEmailHtml(content) };
 }
