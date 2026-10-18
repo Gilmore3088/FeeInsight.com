@@ -30,7 +30,7 @@ vi.mock("@/lib/data-store/peer-sets", async (importOriginal) => ({
 import { getInstitutionHqLocation } from "@/lib/data-store/economy-aggregates";
 import { getInstitutionFeeRows, getNationalIndexCached, getPeerIndex, getStateFeeIndexes } from "@/lib/data-store/fee-index";
 import { resolvePeerSet } from "@/lib/data-store/peer-sets";
-import { QUERY_DATA_MAX_LIMIT, parseMeasure, queryData, queryDataInputSchema } from "./query-data";
+import { QUERY_DATA_MAX_LIMIT, parseMeasure, periodMonths, queryData, queryDataInputSchema } from "./query-data";
 
 const AREA = "area:bls-laus:laus_unemployment_rate";
 const queries = () => calls.filter((c) => !c.text.includes("SET LOCAL"));
@@ -144,7 +144,20 @@ describe("queryData: area measures", () => {
       citation: { source_url: "https://www.bls.gov/x", as_of: "2026-09", fetched_at: "2026-10-12T00:00:00.000Z" },
     });
     if (result.ok) expect(result.citation.publisher).toMatch(/Bureau of Labor Statistics/);
-    expect(lastQuery().values).toContain("2026");
+    expect(lastQuery().values).toContain("2026-01");
+  });
+
+  it("turns any bound into months, so quarter, month and year bounds work on any series", async () => {
+    expect(periodMonths("2026")).toEqual({ start: "2026-01", end: "2026-12" });
+    expect(periodMonths("2026Q2")).toEqual({ start: "2026-04", end: "2026-06" });
+    expect(periodMonths("2026Q4")).toEqual({ start: "2026-10", end: "2026-12" });
+    expect(periodMonths("2026-09")).toEqual({ start: "2026-09", end: "2026-09" });
+    await queryData({ measure: AREA, scope: { kind: "national" }, period: { from: "2026Q2", to: "2026-09" } });
+    const { text, values } = lastQuery();
+    expect(values).toContain("2026-04");
+    expect(values).toContain("2026-09");
+    expect(values).not.toContain("2026Q2");
+    expect(text).toMatch(/NOT ILIKE/);
   });
 });
 

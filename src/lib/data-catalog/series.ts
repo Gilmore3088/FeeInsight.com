@@ -136,7 +136,6 @@ export async function readAreaSeries(db?: Db): Promise<CatalogSeries[]> {
   const sources = areaCatalogEntries().map((entry) => entry.id).filter((id) => !STRUCK_AREA_SOURCES.includes(id));
   const run = async (tx: Db): Promise<CatalogSeries[]> => {
     // The GROUP BY reads the whole table; it gives up rather than hold a connection.
-    // The GROUP BY reads the whole table: it gives up rather than hold a connection.
     await tx`SET LOCAL statement_timeout = '20s'`;
     const partitionRows = await tx<PartitionRow[]>`
       SELECT DISTINCT ON (source) source, detail->'series' AS series, source_url, fetched_at

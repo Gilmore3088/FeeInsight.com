@@ -27,6 +27,18 @@ import { catalogEntry, scopeForAreaGeoType, type CatalogScopeKind } from "./cata
  * - `fee:<category>`: a fee category from the published fee index.
  */
 
+/** The first and last month ("YYYY-MM") a period spans: a year, a quarter or a month. */
+export function periodMonths(period: string): { start: string; end: string } {
+  const year = period.slice(0, 4);
+  const quarter = /^\d{4}Q([1-4])$/.exec(period);
+  if (quarter) {
+    const q = Number(quarter[1]);
+    return { start: `${year}-${String(q * 3 - 2).padStart(2, "0")}`, end: `${year}-${String(q * 3).padStart(2, "0")}` };
+  }
+  if (/^\d{4}-\d{2}/.test(period)) return { start: period.slice(0, 7), end: period.slice(0, 7) };
+  return { start: `${year}-01`, end: `${year}-12` };
+}
+
 export const QUERY_DATA_MAX_LIMIT = 200;
 export const QUERY_DATA_DEFAULT_LIMIT = 50;
 
@@ -204,8 +216,9 @@ async function queryArea(input: QueryDataInput, source: string, seriesKey: strin
 
   const geoTypes = resolved.targets.map((t) => t.geoType);
   const codes = resolved.targets.map((t) => t.code);
-  const from = input.period?.from ?? null;
-  const to = input.period?.to ?? null;
+  // Bounds become months ("2026Q2" -> 2026-04 .. 2026-06), so a quarter, month or year bound works on any series.
+  const from = input.period?.from ? periodMonths(input.period.from).start : null;
+  const to = input.period?.to ? periodMonths(input.period.to).end : null;
   const limit = Math.min(input.limit ?? QUERY_DATA_DEFAULT_LIMIT, QUERY_DATA_MAX_LIMIT);
 
   const rows = await withTransaction(async (tx) => {
@@ -220,9 +233,19 @@ async function queryArea(input: QueryDataInput, source: string, seriesKey: strin
          AND a.series_key = ${seriesKey}
          -- Struck rows (DECISIONS.md "No non-commercial data") are never returned.
          AND COALESCE(a.source_url, '') NOT ILIKE ${STRUCK_SOURCE_URL_PATTERN}
-         -- A year bound covers that year's quarters and months: compare on the bound's own length.
-         AND (${from}::text IS NULL OR left(a.period, length(${from}::text)) >= ${from}::text)
-         AND (${to}::text IS NULL OR left(a.period, length(${to}::text)) <= ${to}::text)
+         -- A row counts when its own span of months overlaps the bounds. A period in no known shape is
+         -- left out once a bound is given.
+         -- Same month rule as periodMonths().
+         AND (${from}::text IS NULL OR (CASE
+               WHEN a.period ~ '^[0-9]{4}$' THEN a.period || '-12'
+               WHEN a.period ~ '^[0-9]{4}Q[1-4]$' THEN left(a.period, 4) || '-' || lpad((substr(a.period, 6, 1)::int * 3)::text, 2, '0')
+               WHEN a.period ~ '^[0-9]{4}-[0-9]{2}' THEN left(a.period, 7)
+             END) >= ${from}::text)
+         AND (${to}::text IS NULL OR (CASE
+               WHEN a.period ~ '^[0-9]{4}$' THEN a.period || '-01'
+               WHEN a.period ~ '^[0-9]{4}Q[1-4]$' THEN left(a.period, 4) || '-' || lpad(((substr(a.period, 6, 1)::int - 1) * 3 + 1)::text, 2, '0')
+               WHEN a.period ~ '^[0-9]{4}-[0-9]{2}' THEN left(a.period, 7)
+             END) <= ${to}::text)
        ORDER BY a.period DESC, a.geo_type, a.geo_code
        LIMIT ${limit}
     `;
@@ -311,6 +334,8 @@ async function queryFee(input: QueryDataInput, category: string): Promise<QueryD
     case "peer_set": {
       const peer = scope.peer as PeerSetRequest;
       const usesSame = Object.values(peer).some((value) => value === "same");
+      if (Object.values(peer).every((value) => value === undefined)) return refuse(input.measure, "A peer group needs at least one filter, such as charter_type, asset_tiers or states.");
+      if (peer.nearest !== undefined && !scope.id) return refuse(input.measure, '"nearest" peers need scope.id, the institution to measure distance from.');
       let resolved;
       if (scope.id) {
         if (!/^\d{1,10}$/.test(scope.id)) return refuse(input.measure, "scope.id is the institution's numeric id.");
