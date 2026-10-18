@@ -5,6 +5,17 @@ import Link from "next/link";
 import { CONTACT_EMAIL } from "@/lib/constants";
 import { saveOnboardingProfile } from "../actions";
 import { InstitutionPicker } from "@/components/hamilton/InstitutionPicker";
+import {
+  UTILITY_FORM,
+  UTILITY_H1,
+  UTILITY_INPUT,
+  UTILITY_LABEL,
+  UTILITY_LEDE,
+  UTILITY_LINK,
+  UTILITY_SUBMIT,
+  utilityButton,
+  utilityNotice,
+} from "@/components/utility/form-style";
 import type {
   InstitutionWorkspaceInvitation,
   InstitutionWorkspaceMembership,
@@ -104,7 +115,7 @@ export function WelcomeSteps({
     !!user.institution_type && user.institution_type !== "bank" && user.institution_type !== "credit_union"
   );
 
-  const inputClass = "w-full rounded-md border border-border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brick focus:border-transparent";
+  const inputClass = UTILITY_INPUT;
 
   async function handleProfileSave(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -123,19 +134,19 @@ export function WelcomeSteps({
   }
 
   return (
-    <div className="max-w-2xl mx-auto">
+    <div className="mx-auto max-w-2xl">
       {activationPending && (
-        <div role="status" className="mb-6 rounded-xl border border-brick/30 bg-brick-tint/40 p-4 text-sm text-ink">
+        <div role="status" className={`mb-6 ${utilityNotice("info")}`}>
           <p className="font-semibold">Payment received. Activating your Pro access.</p>
           <p className="mt-1">
-            Stripe usually confirms within a minute. <Link href={refreshHref} className="font-semibold underline">Refresh this page</Link>{" "}
+            Stripe usually confirms within a minute. <Link href={refreshHref} className={UTILITY_LINK}>Refresh this page</Link>{" "}
             to check; you won&apos;t be charged again. If it still isn&apos;t active after a few minutes, write to {CONTACT_EMAIL}.
           </p>
         </div>
       )}
 
       {pendingWorkspaceInvitations.length > 0 && !isPro && (
-        <div className="mb-6 rounded-xl border border-brick/30 bg-brick-tint/40 p-4 text-sm text-ink">
+        <div className={`mb-6 ${utilityNotice("info")}`}>
           <p className="font-semibold">Workspace invitation waiting</p>
           <p className="mt-1">
             Your email has been invited to an institution account. It includes up to five teammates, so you don&apos;t need to pay. Open the invite link the account owner sent you to join:
@@ -144,7 +155,7 @@ export function WelcomeSteps({
             {pendingWorkspaceInvitations.map((invitation) => (
               <span
                 key={invitation.id}
-                className="rounded-full border border-brick/30 bg-white/70 px-2.5 py-1 text-xs font-semibold"
+                className="rounded-full border border-border bg-surface-0 px-2.5 py-1 text-[12px] font-semibold"
               >
                 {invitation.institutionName} · {invitation.role}
               </span>
@@ -152,7 +163,7 @@ export function WelcomeSteps({
           </div>
           <Link
             href="/workspace-invite"
-            className="mt-4 inline-flex rounded-full bg-brick px-4 py-2 text-xs font-semibold text-white no-underline"
+            className={`mt-4 ${utilityButton("primary")}`}
           >
             Accept invitation
           </Link>
@@ -160,11 +171,11 @@ export function WelcomeSteps({
       )}
 
       {workspaceMemberships.length > 0 && (
-        <div className="mb-6 rounded-xl border border-below-market/30 bg-below-market/10 p-4 text-sm text-ink">
+        <div className={`mb-6 ${utilityNotice("success")}`}>
           <p className="font-semibold">Hamilton workspace access is active</p>
           <div className="mt-3 grid gap-2">
             {workspaceMemberships.slice(0, 3).map((membership) => (
-              <div key={membership.id} className="rounded-lg border border-below-market/20 bg-white/70 px-3 py-2">
+              <div key={membership.id} className="rounded-md border border-border bg-surface-0 px-3 py-2">
                 <p className="font-semibold text-ink">{membership.institutionName}</p>
                 <p className="text-xs text-ink-muted">
                   {membership.role} access · institution ID {membership.institutionId}
@@ -174,7 +185,7 @@ export function WelcomeSteps({
           </div>
           <Link
             href={`/pro/analyze?instId=${workspaceMemberships[0].institutionId}`}
-            className="mt-4 inline-flex rounded-full bg-ink px-4 py-2 text-xs font-semibold text-white no-underline"
+            className={`mt-4 ${utilityButton("primary")}`}
           >
             Open Hamilton
           </Link>
@@ -196,25 +207,22 @@ export function WelcomeSteps({
       {/* Step 1: Profile */}
       {step === 1 && (
         <div>
-          <h1
-            className="text-2xl font-extrabold tracking-tight text-ink mb-2"
-            style={{ fontFamily: "var(--fi-font-sans)" }}
-          >
+          <h1 className={UTILITY_H1} style={{ fontFamily: "var(--fi-font-sans)" }}>
             Welcome to Fee Insight, {userName.split(" ")[0]}!
           </h1>
-          <p className="text-sm text-ink-muted mb-6">
+          <p className={`${UTILITY_LEDE} mb-6`}>
             Which institution do you work for? Hamilton compares its fees with its peers.
           </p>
 
-          <form onSubmit={handleProfileSave} className="bg-surface-0 rounded-xl border border-border p-6 space-y-4">
+          <form onSubmit={handleProfileSave} className={UTILITY_FORM}>
             {notAnInstitution ? (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
-                  <label htmlFor="welcome_organization" className="block text-xs font-medium text-ink mb-1">Organization</label>
+                  <label htmlFor="welcome_organization" className={UTILITY_LABEL}>Organization</label>
                   <input id="welcome_organization" name="institution_name" defaultValue={user.institution_name || ""} className={inputClass} placeholder="Your company" />
                 </div>
                 <div>
-                  <label htmlFor="welcome_organization_type" className="block text-xs font-medium text-ink mb-1">Type</label>
+                  <label htmlFor="welcome_organization_type" className={UTILITY_LABEL}>Type</label>
                   <select id="welcome_organization_type" name="institution_type" defaultValue={user.institution_type || ""} className={inputClass}>
                     {ORGANIZATION_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
                   </select>
@@ -228,7 +236,7 @@ export function WelcomeSteps({
                 initialName={workspaceInstitution?.name ?? null}
                 initialId={workspaceInstitution?.id ?? null}
                 onSelect={(result) => setPickedInstitution(result !== null)}
-                labelClassName="block text-xs font-medium text-ink mb-1"
+                labelClassName={UTILITY_LABEL}
                 labelStyle={{}}
                 inputClassName={inputClass}
                 inputStyle={{}}
@@ -237,23 +245,23 @@ export function WelcomeSteps({
             <button
               type="button"
               onClick={() => setNotAnInstitution((value) => !value)}
-              className="inline-flex min-h-11 items-center text-xs font-medium text-brick underline-offset-2 hover:underline"
+              className={`inline-flex min-h-11 items-center text-[13px] ${UTILITY_LINK}`}
             >
               {notAnInstitution ? "I work at a bank or credit union" : "I don't work at a bank or credit union"}
             </button>
             <div>
-              <label htmlFor="welcome_job_role" className="block text-xs font-medium text-ink mb-1">Your role</label>
+              <label htmlFor="welcome_job_role" className={UTILITY_LABEL}>Your role</label>
               <select id="welcome_job_role" name="job_role" defaultValue={user.job_role || ""} className={inputClass}>
                 {JOB_ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
               </select>
             </div>
             {saveError && (
-              <p role="alert" className="text-sm text-brick">{saveError}</p>
+              <p role="alert" className={utilityNotice("error")}>{saveError}</p>
             )}
             <button
               type="submit"
               disabled={saving || (!notAnInstitution && !pickedInstitution)}
-              className="w-full rounded-md bg-brick px-4 py-2.5 text-sm font-medium text-white hover:bg-brick-ink disabled:opacity-50 transition-colors"
+              className={UTILITY_SUBMIT}
             >
               {saving ? "Saving..." : "Continue"}
             </button>
@@ -261,7 +269,7 @@ export function WelcomeSteps({
               <button
                 type="button"
                 onClick={() => setStep(2)}
-                className="min-h-11 w-full text-center text-xs font-medium text-ink-muted hover:text-ink"
+                className="min-h-11 w-full text-center text-[13px] font-medium text-ink-muted hover:text-ink"
               >
                 Can&apos;t find it? Skip for now; you can choose it later in Settings.
               </button>
@@ -273,18 +281,15 @@ export function WelcomeSteps({
       {/* Step 2: Fee Preview */}
       {step === 2 && (
         <div>
-          <h1
-            className="text-2xl font-extrabold tracking-tight text-ink mb-2"
-            style={{ fontFamily: "var(--fi-font-sans)" }}
-          >
+          <h1 className={UTILITY_H1} style={{ fontFamily: "var(--fi-font-sans)" }}>
             Your fee intelligence
           </h1>
-          <p className="text-sm text-ink-muted mb-6">
+          <p className={`${UTILITY_LEDE} mb-6`}>
             {savedInstitution ? `${savedInstitution} is saved as your institution. ` : ""}
             Here are the national median fees across key categories (each institution counted once). With your account, you can drill into the full fee catalog with peer filters.
           </p>
 
-          <div className="bg-surface-0 rounded-xl border border-border overflow-hidden mb-6">
+          <div className="mb-6 overflow-hidden rounded-xl border border-border bg-surface-0 shadow-sm">
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-border bg-paper">
@@ -303,16 +308,16 @@ export function WelcomeSteps({
             </table>
           </div>
 
-          <div className="flex gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row">
             <button
               onClick={() => setStep(3)}
-              className="flex-1 rounded-md bg-brick px-4 py-2.5 text-sm font-medium text-white hover:bg-brick-ink transition-colors"
+              className={`flex-1 ${utilityButton("primary")}`}
             >
               Continue
             </button>
             <Link
               href="/fees"
-              className="flex-1 text-center rounded-md border border-border px-4 py-2.5 text-sm font-medium text-ink hover:border-ink transition-colors"
+              className={`flex-1 ${utilityButton("secondary")}`}
             >
               Explore the Bank Fee Index
             </Link>
@@ -323,13 +328,10 @@ export function WelcomeSteps({
       {/* Step 3: Tools */}
       {step === 3 && (
         <div>
-          <h1
-            className="text-2xl font-extrabold tracking-tight text-ink mb-2"
-            style={{ fontFamily: "var(--fi-font-sans)" }}
-          >
+          <h1 className={UTILITY_H1} style={{ fontFamily: "var(--fi-font-sans)" }}>
             Your tools
           </h1>
-          <p className="text-sm text-ink-muted mb-6">
+          <p className={`${UTILITY_LEDE} mb-6`}>
             Everything you need for fee intelligence research and analysis.
           </p>
 
@@ -343,7 +345,7 @@ export function WelcomeSteps({
                 <Link
                   key={tool.name}
                   href={href}
-                  className="bg-surface-0 rounded-xl border border-border p-4 no-underline transition-colors hover:border-brick/30 hover:bg-white"
+                  className="rounded-xl border border-border bg-surface-0 p-4 no-underline shadow-sm transition-colors hover:border-control-border"
                 >
                   <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-5 w-5 text-brick mb-2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                     <path d={tool.icon} />
@@ -362,7 +364,7 @@ export function WelcomeSteps({
 
           <button
             onClick={() => setStep(4)}
-            className="w-full rounded-md bg-brick px-4 py-2.5 text-sm font-medium text-white hover:bg-brick-ink transition-colors"
+            className={UTILITY_SUBMIT}
           >
             Continue
           </button>
@@ -377,25 +379,22 @@ export function WelcomeSteps({
               <path d="M20 6L9 17l-5-5" />
             </svg>
           </div>
-          <h1
-            className="text-2xl font-extrabold tracking-tight text-ink mb-2"
-            style={{ fontFamily: "var(--fi-font-sans)" }}
-          >
+          <h1 className={UTILITY_H1} style={{ fontFamily: "var(--fi-font-sans)" }}>
             You&apos;re all set
           </h1>
-          <p className="text-sm text-ink-muted mb-8">
+          <p className={`${UTILITY_LEDE} mb-8`}>
             Your account is ready. Start exploring fee intelligence data.
           </p>
           <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
             <Link
               href={isPro ? "/pro/hamilton" : "/account"}
-              className="rounded-md bg-brick px-6 py-2.5 text-center text-sm font-medium text-white hover:bg-brick-ink transition-colors"
+              className={utilityButton("primary")}
             >
               {isPro ? "Open Hamilton" : "Go to Account"}
             </Link>
             <Link
               href="/fees"
-              className="rounded-md border border-border px-6 py-2.5 text-center text-sm font-medium text-ink hover:border-ink transition-colors"
+              className={utilityButton("secondary")}
             >
               Browse the Bank Fee Index
             </Link>

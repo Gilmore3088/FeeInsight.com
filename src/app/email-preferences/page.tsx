@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { isAccountUnsubscribeAction, isSubscriptionAction } from "@/lib/email/subscription-token";
 import { SubscriptionActionForm } from "./subscription-action-form";
+import { UtilityHeading, UtilityShell } from "@/components/utility/utility-shell";
+import { UTILITY_CARD, UTILITY_LINK } from "@/components/utility/form-style";
 
 export const metadata: Metadata = {
   title: "Email preferences",
@@ -27,13 +29,8 @@ export default async function EmailPreferencesPage({ searchParams }: PageProps) 
     (isSubscriptionAction(action) || (isAccountLink && Boolean(uid))) && Boolean(email) && Boolean(token);
 
   return (
-    <div className="mx-auto max-w-lg px-6 py-20">
-      <h1
-        className="text-center font-extrabold text-[1.75rem] leading-[1.15] tracking-[-0.02em] text-ink sm:text-left"
-        style={{ fontFamily: "var(--fi-font-sans)" }}
-      >
-        Email preferences
-      </h1>
+    <UtilityShell>
+      <UtilityHeading title="Email preferences" />
       {valid && action && email && token ? (
         <SubscriptionActionForm
           action={isAccountLink ? action : (action as "confirm" | "unsubscribe")}
@@ -42,14 +39,16 @@ export default async function EmailPreferencesPage({ searchParams }: PageProps) 
           uid={uid}
         />
       ) : (
-        <p className="mt-4 text-[15px] leading-relaxed text-ink-soft">
-          This link is incomplete. Use the link from your email, or{" "}
-          <Link href="/contact" className="text-brick underline">
-            contact us
-          </Link>{" "}
-          and we&apos;ll update your preferences.
-        </p>
+        <div className={UTILITY_CARD}>
+          <p className="text-[15px] leading-relaxed text-ink-soft">
+            This link is incomplete. Use the link from your email, or{" "}
+            <Link href="/contact" className={UTILITY_LINK}>
+              contact us
+            </Link>{" "}
+            and we&apos;ll update your preferences.
+          </p>
+        </div>
       )}
-    </div>
+    </UtilityShell>
   );
 }
