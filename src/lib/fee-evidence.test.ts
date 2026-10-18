@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { feeEvidence, headingAbove, printsAmount, storedLineOf, EVIDENCE_MAX_CHARS } from "./fee-evidence";
+import { feeEvidence, fromOwnName, headingAbove, printsAmount, storedLineOf, EVIDENCE_MAX_CHARS } from "./fee-evidence";
 
 // 1NB Bank's stored schedule (agent_source_texts 13604, doc 18090), its checking accounts as stored,
 // read Oct 16. The two live monthly maintenance fees are catalog ids 60939 and 60940.
@@ -497,5 +497,31 @@ describe("review fixes (PR #1679)", () => {
       "$10.00 monthly service charge. Free Perks checking tools include YOUR$ digital banking and BillPay, unlimited Visa® debit card usage, and eStatements. Cell phone protection – receive up to $600 per claim ($1,200 per year) if your cell phone is broken or stolen. ID theft aid includes payment card fraud resolution, $10,000 in personal identity theft benefit and identity restoration. Your personal information and your credit report are monitored for suspicious activity, and a free quarterly credit report and quarterly updated credit score are provided (activation required for these services to begin). Buyer’s protection and extended warranty protects newly purchased items for up to $2,500 per item if theft or accidental breakage occurs during the first 180 days of purchase, when purchased using your TVFCU Perks Platinum checking account. Shop local, save local with TVFCU Perks savings. Roadside assistance available 24/7 and free to use, up to $80 in covered service charges. Includes $25,000 accidental death coverage and a Health Savings Card. This account pays monthly dividends. Dividends are calculated by the daily balance method, which applies a daily periodic rate to the balance in the account each day. There is no minimum required to open.",
     ].join("\n");
     expect(feeEvidence({ fee_name: "Monthly service charge", amount: "10.00", fee_category: "monthly_maintenance" }, text)?.heading).toBe("TVFCU Perks Platinum Checking");
+  });
+});
+
+describe("a line opening with another fee's words (#1902)", () => {
+  const note = (line: string) => `Knox deterministic extraction. excerpt="${line}"`;
+  it("starts 1st Source Bank's dormant fee at its own name, not the levy fee's description (catalog 31779)", () => {
+    const evidence = feeEvidence(
+      { fee_name: "Dormant Account Fee", amount: 5, fee_category: "dormant_account", extraction_note: note("Fee applied to process a tax liability Dormant Account Fee $5 per month") },
+      null,
+    );
+    expect(evidence?.line).toBe("… Dormant Account Fee $5 per month");
+  });
+
+  it("keeps an account named before the fee, and a line whose opening prints this price", () => {
+    expect(fromOwnName("Basic Checking Monthly Service Fee $10", "Monthly Service Fee", 10)).toBe("Basic Checking Monthly Service Fee $10");
+    expect(fromOwnName("Stop Payment $5 each; see Stop Payment Fee $5 note", "Stop Payment Fee", 5)).toBe("Stop Payment $5 each; see Stop Payment Fee $5 note");
+    expect(fromOwnName("Levy Fee $100 Dormant Account Fee applies after one year", "Dormant Account Fee", 5)).toBe("Levy Fee $100 Dormant Account Fee applies after one year");
+  });
+
+  it("keeps a line whose price sits just before the name (catalog 30013)", () => {
+    const line = "Christmas Club Savings $10.00 opening deposit, $2.00 paper statement charge, $5.00 early withdraw penalty per early withdraw";
+    expect(fromOwnName(line, "Paper statement charge", 5)).toBe(line);
+  });
+
+  it("cuts after another fee's price", () => {
+    expect(fromOwnName("Levy Processing Fee $100 per levy order Dormant Account Fee $5 per month", "Dormant Account Fee", 5)).toBe("… Dormant Account Fee $5 per month");
   });
 });

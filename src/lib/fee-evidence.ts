@@ -99,6 +99,41 @@ function tidy(line: string): string {
   return line.replace(DOT_LEADER, " … ").replace(/\s+/g, " ").replace(/(?:\s…)+/g, " …").trim();
 }
 
+/** Longest gap between the fee's own name and its price for the name to open the line. */
+const NAME_TO_PRICE_CHARS = 80;
+/** Words that make a line's opening another fee's text: a price, or a fee or charge of its own. */
+const ANOTHER_PRICE = /\$\s?\.?\d/;
+const FEE_WORD = /\b(?:fees?|charges?)\b/i;
+/** A fee word this close before the name is the name's own label ("Account Fees: The monthly service charge"). */
+const OWN_LABEL_CHARS = 20;
+/** A price this close before the name may be the name's own, printed price-first. */
+const PRICE_BEFORE_NAME_CHARS = 12;
+
+/**
+ * A line that opens with another fee's words before this fee's name and price starts at the name
+ * (#1902): a schedule stored as one paragraph gave 1st Source Bank's dormant fee the line "Fee
+ * applied to process a tax liability Dormant Account Fee $5 per month", the levy fee's
+ * description first. It reads "… Dormant Account Fee $5 per month". Cut only when the opening
+ * holds a price, or a fee word more than OWN_LABEL_CHARS before the name, and the
+ * fee's own name prints the price within NAME_TO_PRICE_CHARS, so an account named before the
+ * fee ("Basic Checking Monthly Fee $10") stays.
+ */
+export function fromOwnName(line: string, feeName: string | null, amount: number): string {
+  const name = (feeName ?? "").replace(/\s+/g, " ").trim();
+  if (name.length < 8) return line;
+  const at = line.toLowerCase().indexOf(name.toLowerCase());
+  if (at <= 0) return line;
+  const opening = line.slice(0, at);
+  if (!ANOTHER_PRICE.test(opening) && !FEE_WORD.test(opening.slice(0, Math.max(0, opening.length - OWN_LABEL_CHARS)))) return line;
+  const after = line.slice(at + name.length, at + name.length + NAME_TO_PRICE_CHARS);
+  if (!printsAmount(after, amount)) return line;
+  // The opening must not print this fee's price itself (then the name is a later mention), and a
+  // price just before the name may be its own ("$2.00 paper statement charge, $5.00 early
+  // withdraw penalty", catalog 30013): the line stays whole so a reader sees both.
+  if (printsAmount(opening, amount) || ANOTHER_PRICE.test(opening.slice(-PRICE_BEFORE_NAME_CHARS))) return line;
+  return `… ${line.slice(at)}`;
+}
+
 /** A long line cut to the part around its price, so the reader sees the price and what precedes it. */
 function aroundPrice(line: string, amount: number): string {
   if (line.length <= EVIDENCE_MAX_CHARS) return line;
@@ -653,7 +688,7 @@ export function feeEvidence(fee: EvidenceFee, text: string | null | undefined): 
     // the fee's own name says another account, so the line's heading is not this fee's.
     const named = accountInFeeName(fee.fee_name);
     const heading = part.heading && named && !sameAccount(named, part.heading) ? null : part.heading;
-    return { line: aroundPrice(tidy(part.line), amount), heading, condition: part.condition, basis };
+    return { line: aroundPrice(fromOwnName(tidy(part.line), fee.fee_name, amount), amount), heading, condition: part.condition, basis };
   };
   if (text && fee.fee_name) {
     const traced = checkFeeAgainstSource(text, fee.fee_name, amount, ".", fee.fee_category);
