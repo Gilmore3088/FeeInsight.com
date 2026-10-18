@@ -34,7 +34,7 @@ describe("ConnectedPanel", () => {
       row("nsf", "NSF", 30, { state: { median: 30, institutions: 30 } }),
     ];
     const { container } = render(
-      <ConnectedPanel institutionId={323} incomeName="service-charge income" stateName="Florida" stateShort="FL" facts={[]} share={null} fees={fees} />,
+      <ConnectedPanel institutionId={323} institutionName="Capital City Bank" incomeName="service-charge income" stateName="Florida" stateShort="FL" facts={[]} share={null} fees={fees} />,
     );
     const text = container.textContent ?? "";
     expect(text).toContain("Monthly maintenance $7.95 to $8.95 vs FL $7.50");
@@ -46,9 +46,17 @@ describe("ConnectedPanel", () => {
   it("names the highest price for a fee compared at its standard tier", () => {
     const fees = [row("overdraft", "Overdraft (OD)", 36, { count: 3, low: 10, high: 36, highestTier: true, state: { median: 32, institutions: 40 } })];
     const { container } = render(
-      <ConnectedPanel institutionId={323} incomeName="service-charge income" stateName="Florida" stateShort="FL" facts={[]} share={null} fees={fees} />,
+      <ConnectedPanel institutionId={323} institutionName="Capital City Bank" incomeName="service-charge income" stateName="Florida" stateShort="FL" facts={[]} share={null} fees={fees} />,
     );
     expect(container.textContent).toContain("Overdraft $10 to $36 vs FL $32");
     expect(container.textContent).toContain("Compared at $36, the highest of its prices: $4 above");
+  });
+
+  it("sends a signed-out reader's Hamilton action to the Pro plans, not straight into Pro settings", () => {
+    const { container } = render(
+      <ConnectedPanel institutionId={323} institutionName="Capital City Bank" incomeName="service-charge income" stateName="Florida" stateShort="FL" facts={[]} share={null} fees={[row("nsf", "NSF", 30)]} />,
+    );
+    const link = [...container.querySelectorAll("a")].find((a) => a.textContent?.includes("in Hamilton"));
+    expect(link?.getAttribute("href")).toBe("/subscribe?inst=323&from=%2Fpro%2Fsettings%3FinstId%3D323%23peer-sets#pro");
   });
 });

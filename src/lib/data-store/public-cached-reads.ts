@@ -1,7 +1,7 @@
 import { cachedPublicRead } from "./public-read-cache";
 import { getCityMarket, getStateMarketCities } from "./city-market";
 import { getStateMarketFees } from "./state-markets";
-import { getDataFreshness, getPublicStats, getStats } from "./core";
+import { getDataFreshness, getPublicInstitutionById, getPublicStats, getStats } from "./core";
 import { getDistrictMetrics } from "./dashboard";
 import { getCheapestAndMostExpensive, getFeeCategoryDetail, getIndexRows } from "./fees";
 import { getFeeEvidence } from "./fee-evidence";
@@ -195,3 +195,21 @@ export const getStateHubCached = cachedPublicRead("state-hub-v1", getStateHub, i
 export const getInstitutionFinancialHistoryCached = cachedPublicRead("institution-financial-history-v1", getFinancialHistory);
 export const getInstitutionCallItemHistoryCached = cachedPublicRead("institution-call-items-v1", getInstitutionCallItemHistory);
 export const getFeeShareCohortCached = cachedPublicRead("fee-share-cohort-v1", getFeeShareCohort);
+
+export type InstitutionCohortKey = { found: true; charterType: string; assetSizeTier: string | null } | { found: false };
+
+/**
+ * The charter and asset tier the cohort route reads one institution's cohort by. An id the site
+ * does not show is cached as `{ found: false }` too (never treated as empty), so a request for a
+ * random id reaches the database once per cache life rather than on every request. A failed read
+ * throws and is not cached.
+ */
+export const getInstitutionCohortKeyCached = cachedPublicRead(
+  "institution-cohort-key-v1",
+  async (institutionId: number): Promise<InstitutionCohortKey> => {
+    const inst = await getPublicInstitutionById(institutionId);
+    if (!inst?.charter_type) return { found: false };
+    return { found: true, charterType: inst.charter_type, assetSizeTier: inst.asset_size_tier ?? null };
+  },
+  () => false,
+);

@@ -1,15 +1,16 @@
-import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { formatCompactDollars } from "@/lib/format";
 import { pct } from "./overview-observations";
 import { aboutSame, amountText, isRange, lowerLabel, money, reference, type CompareRow } from "./profile-view";
 import { SERIF } from "./profile-serif";
+import { HamiltonLink } from "./viewer-islands";
 
 /**
  * The connected panel (James's brief, section 6, small version): the call-report income beside
  * three of its published fees against the state median, then the questions those numbers raise.
  * Reported facts, calculated comparisons and open questions are labelled apart; nothing here
- * concludes a cause. Its one Hamilton action opens the institution's peer sets for now.
+ * concludes a cause. Its one Hamilton action opens the institution's peer sets for a signed-in reader
+ * and the Pro plans for everyone else (a client island: this panel is in the cached page).
  */
 
 /** Everyday fees first, in the order a reader looks for them. */
@@ -46,6 +47,7 @@ function Tag({ children }: { children: React.ReactNode }) {
 
 export function ConnectedPanel({
   institutionId,
+  institutionName,
   stateName,
   stateShort,
   facts,
@@ -54,6 +56,7 @@ export function ConnectedPanel({
   incomeName,
 }: {
   institutionId: number;
+  institutionName: string;
   /** "service-charge income" or "fee income" (feeIncomeTerms), lower case. */
   incomeName: string;
   stateName: string | null;
@@ -129,13 +132,15 @@ export function ConnectedPanel({
         </div>
       </div>
       <div className="mt-6 border-t border-border pt-4">
-        <Link
-          href={`/pro/settings?instId=${institutionId}#peer-sets`}
+        <HamiltonLink
+          institutionId={institutionId}
+          institutionName={institutionName}
+          to="peerSets"
           className="inline-flex min-h-11 items-center gap-2 text-[15px] font-medium text-ink underline decoration-border underline-offset-[6px] hover:decoration-ink"
         >
           Analyze the drivers of {incomeName} in Hamilton
           <ArrowRight aria-hidden="true" className="size-4" />
-        </Link>
+        </HamiltonLink>
       </div>
     </section>
   );

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { formatCompactDollars } from "@/lib/format";
-import type { CohortPoint, CohortStripData } from "./fee-share-cohort";
+import { COHORT_LIST_CAP, type CohortPoint, type CohortStripData } from "./fee-share-cohort";
 
 /**
  * Financial performance B: where the institution's service-charge share of revenue sits in its
@@ -246,6 +246,11 @@ export function CohortStrip(props: CohortStripProps) {
           className="mt-1 min-h-11 w-full rounded-lg border border-control-border bg-surface-0 px-3 text-[15px] text-ink placeholder:text-ink-muted"
         />
         {!q && !showingAll && <p className="mt-2 text-[12px] text-ink-muted">The {data.nearest.length} closest to {subjectName} by share.</p>}
+        {showingAll && remote!.total > remote!.members.length && (
+          <p className="mt-2 text-[12px] text-ink-muted">
+            The {remote!.members.length.toLocaleString("en-US")} highest by share. Search to find the rest.
+          </p>
+        )}
         <ul className="mt-2 max-h-72 overflow-y-auto rounded-lg border border-border bg-surface-0" aria-label="Cohort members" aria-busy={loading}>
           {rows.length === 0 && <li className="px-3 py-3 text-[13px] text-ink-muted">{loading ? "Searching." : failed ? "The list could not load. Try again." : "No match."}</li>}
           {rows.map((p) => (
@@ -273,7 +278,11 @@ export function CohortStrip(props: CohortStripProps) {
             onClick={() => void load("all", "all=1")}
             className="mt-1 inline-flex min-h-11 items-center text-[13px] font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
           >
-            {loading ? "Loading." : `Show all ${data.listed.toLocaleString("en-US")}`}
+            {loading
+              ? "Loading."
+              : data.listed > COHORT_LIST_CAP
+                ? `Show the top ${COHORT_LIST_CAP.toLocaleString("en-US")} by share`
+                : `Show all ${data.listed.toLocaleString("en-US")}`}
           </button>
         )}
       </div>

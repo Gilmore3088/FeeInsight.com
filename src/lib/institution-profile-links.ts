@@ -42,6 +42,8 @@ export interface PublicInstitutionProfileLinks {
   analyzeHref: string;
   briefHref: string;
   scenarioHref: string;
+  /** This institution's peer sets in Hamilton settings; signed-out viewers go to the plans first. */
+  peerSetsHref: string;
 }
 
 /**
@@ -68,5 +70,6 @@ export function buildPublicInstitutionProfileLinks({
     analyzeHref: gate(`/pro/analyze?instId=${instId}&intent=institution`),
     briefHref: gate(`/pro/reports?instId=${instId}&intent=competitive-brief`),
     scenarioHref: gate(`/pro/simulate?instId=${instId}`),
+    peerSetsHref: gate(`/pro/settings?instId=${instId}#peer-sets`),
   };
 }

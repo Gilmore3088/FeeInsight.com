@@ -179,6 +179,9 @@ export function cohortStripData(cohort: CohortDistribution, bins = COHORT_BINS, 
 }
 
 /** The route's answer: listable members matching a name, city or state, highest share first. */
+/** "Show all" lists at most this many members, highest share first; a search reaches the rest. */
+export const COHORT_LIST_CAP = 1000;
+
 export function searchCohort(cohort: CohortDistribution, query: string, limit: number): { total: number; members: CohortPoint[] } {
   const q = query.trim().toLowerCase();
   const rows = listablePeers(cohort.peers).filter((p) => !q || `${p.name} ${p.city ?? ""} ${p.state ?? ""}`.toLowerCase().includes(q));

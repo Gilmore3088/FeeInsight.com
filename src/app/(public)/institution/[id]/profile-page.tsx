@@ -448,6 +448,7 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
             >
               <ConnectedPanel
                 institutionId={instId}
+                institutionName={inst.institution_name}
                 stateName={stateName}
                 stateShort={stateCode}
                 facts={connectedFacts}

@@ -19,25 +19,29 @@ interface InstitutionRef {
 }
 
 /**
- * "Explore Hamilton" for everyone, "Open in Hamilton" for Pro; signed-in readers go straight to Hamilton.
- * `label` is a plain string: this is a client component, so a server page cannot pass it a function.
+ * "Explore Hamilton" for everyone, "Open in Hamilton" for Pro; signed-in readers go straight to Hamilton,
+ * signed-out readers to the Pro plans with that screen as `from`. `to` picks the screen (analysis by
+ * default, or the institution's peer sets). `label` is a plain string and `children` plain markup:
+ * this is a client component, so a server page cannot pass it a function.
  */
 export function HamiltonLink({
   institutionId,
   institutionName,
   className,
   label,
-}: InstitutionRef & { className: string; label?: string }) {
+  to = "analyze",
+  children,
+}: InstitutionRef & { className: string; label?: string; to?: "analyze" | "peerSets"; children?: ReactNode }) {
   const session = useSessionChrome();
   const isPro = Boolean(session?.isPro);
-  const { analyzeHref } = buildPublicInstitutionProfileLinks({
+  const links = buildPublicInstitutionProfileLinks({
     institutionId,
     institutionName,
     isAuthenticated: Boolean(session?.signedIn),
   });
   return (
-    <Link href={analyzeHref} className={className}>
-      {label ?? (isPro ? "Open in Hamilton" : "Explore Hamilton")}
+    <Link href={to === "peerSets" ? links.peerSetsHref : links.analyzeHref} className={className}>
+      {children ?? label ?? (isPro ? "Open in Hamilton" : "Explore Hamilton")}
     </Link>
   );
 }

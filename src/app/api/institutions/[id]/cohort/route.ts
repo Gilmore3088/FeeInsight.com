@@ -1,11 +1,12 @@
 import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 import { NextResponse, type NextRequest } from "next/server";
-import { getPublicInstitutionById } from "@/lib/data-store";
-import { getFeeShareCohortCached, getInstitutionFinancialHistoryCached } from "@/lib/data-store/public-cached-reads";
-import { buildCohortDistribution, searchCohort } from "@/app/(public)/institution/[id]/fee-share-cohort";
+import {
+  getFeeShareCohortCached,
+  getInstitutionCohortKeyCached,
+  getInstitutionFinancialHistoryCached,
+} from "@/lib/data-store/public-cached-reads";
+import { buildCohortDistribution, COHORT_LIST_CAP, searchCohort } from "@/app/(public)/institution/[id]/fee-share-cohort";
 
-/** At most this many members in one answer; "Show all" asks for the whole listable cohort. */
-const MAX_MEMBERS = 5000;
 const SEARCH_LIMIT = 50;
 
 interface RouteProps {
@@ -24,20 +25,22 @@ async function handleGET(request: NextRequest, { params }: RouteProps) {
   if (!Number.isSafeInteger(institutionId) || institutionId <= 0) {
     return NextResponse.json({ error: "Invalid institution ID" }, { status: 400 });
   }
-  const inst = await getPublicInstitutionById(institutionId).catch(() => null);
-  if (!inst?.charter_type) return NextResponse.json({ error: "Institution not found" }, { status: 404 });
+  // Every read here is cached: a public route must not add a per-request database read.
+  const key = await getInstitutionCohortKeyCached(institutionId).catch(() => null);
+  if (!key) return NextResponse.json({ error: "Cohort unavailable" }, { status: 503 });
+  if (!key.found) return NextResponse.json({ error: "Institution not found" }, { status: 404 });
   const history = await getInstitutionFinancialHistoryCached(institutionId).catch(() => []);
   const newest = [...history]
     .filter((row) => row.source === "fdic" || row.source === "ncua")
     .sort((a, b) => b.report_date.localeCompare(a.report_date))[0];
   const rows = newest
-    ? await getFeeShareCohortCached(inst.charter_type, inst.asset_size_tier ?? null, newest.report_date, newest.source).catch(() => null)
+    ? await getFeeShareCohortCached(key.charterType, key.assetSizeTier, newest.report_date, newest.source).catch(() => null)
     : null;
   const cohort = buildCohortDistribution(rows, institutionId);
   if (!cohort) return NextResponse.json({ total: 0, members: [] });
   const all = request.nextUrl.searchParams.get("all") === "1";
   const query = (request.nextUrl.searchParams.get("q") ?? "").slice(0, 80);
-  const result = searchCohort(cohort, all ? "" : query, all ? MAX_MEMBERS : SEARCH_LIMIT);
+  const result = searchCohort(cohort, all ? "" : query, all ? COHORT_LIST_CAP : SEARCH_LIMIT);
   return NextResponse.json(result, { headers: { "Cache-Control": "public, max-age=300, s-maxage=3600" } });
 }
 
