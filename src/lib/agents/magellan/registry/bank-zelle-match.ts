@@ -81,7 +81,11 @@ const NARROW_QUALIFIER = new RegExp(
  */
 const WARNING_CONTEXT = new RegExp(
   [
-    String.raw`\b(?:never|only|criminals?|pose\s+as|posing\s+as|impersonat\w*|trust|trusted|beware|warning|caution|careful)\b`,
+    String.raw`\b(?:never|criminals?|pose\s+as|posing\s+as|impersonat\w*|beware|warning|caution|careful)\b`,
+    // "only" and "trust" are warnings only in the warning's shape: "only send ... to", "know and
+    // trust". "Available only in our app" and "friends you trust, right from our app" are offers.
+    String.raw`\bonly\s+(?:send|pay|use|transfer)\b`,
+    String.raw`\bknow\s+and\s+trust\b`,
     String.raw`\b(?:cannot|can['’]?t|can\s+not)\s+(?:be\s+)?(?:cancel|cancell?ed|reverse|reversed|undo|recall)\w*`,
     String.raw`\bpeople\s+you\s+know\b`,
     String.raw`\bsomeone\s+you\s+(?:don['’]?t|do\s+not)\s+know\b`,

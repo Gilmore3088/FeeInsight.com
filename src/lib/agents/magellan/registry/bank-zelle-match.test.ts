@@ -40,6 +40,16 @@ describe("classifyZelleSentence", () => {
     expect(classifyZelleSentence(sentence).kind).not.toBe("offers");
   });
 
+  // "only" and "trust" outside the warning's shape stay offers (#1963 follow-up).
+  it.each([
+    ["Send money with Zelle® to friends and family you trust, right from our mobile app.", "send_money_with"],
+    ["You can send money with Zelle through our online banking to almost anyone you trust", "send_money_with"],
+    ["Zelle is available only in our mobile app.", "in_our_banking"],
+    ["Enrolling in Zelle only takes a few minutes in our app.", "enroll"],
+  ])("still reads %j as offering Zelle", (sentence, rule) => {
+    expect(classifyZelleSentence(sentence)).toMatchObject({ kind: "offers", rule });
+  });
+
   // Review B2 (#1963): a condition or scope on a service is a limit, not "does not offer".
   it.each([
     "Zelle transfers are not available until your account has been open 30 days.",
