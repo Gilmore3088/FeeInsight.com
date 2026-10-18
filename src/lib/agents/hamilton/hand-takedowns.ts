@@ -200,6 +200,35 @@ const TEXAS_CAPITAL_WAITING_VERIFIED_IDS: readonly number[] = [
   ...Array.from({ length: 32 }, (_, index) => 191907 + index),
 ];
 
+/**
+ * #1908 (James's live-fee check, Oct 18; re-read on the stored text): SchoolsFirst FCU (6741) rows
+ * read from its payroll card disclosure (doc 24009, text 21182, "Payroll Card — Statement of Fees
+ * and Disclosure & Agreement of Terms and Conditions ... part of the contract for your Payroll Card
+ * account"), a card program, not the credit union's deposit accounts. Its "Monthly Fee $0" and
+ * "Account inactivity $0" pulled SchoolsFirst's monthly and dormant figures down. The tenth row,
+ * "Currency conversion fee" (104601), has no dollar amount and waits for Darwin's card program rule.
+ */
+type SchoolsFirstRow = [feePublishedId: number, canonicalFeeKey: string, amount: number, feeName: string];
+const SCHOOLSFIRST_PAYROLL_CARD_ROWS: SchoolsFirstRow[] = [
+  [104597, "atm_non_network", 2, "ATM withdrawal at non-SchoolsFirst FCU and non-CO-OP Network locations"],
+  [104598, "cashiers_check", 5, "Cashier's check payable to Payroll Cardholder"],
+  [104599, "card_foreign_txn", 2, "ATM withdrawal at international ATM locations"],
+  [104600, "rush_card", 20, "Rush Payroll Card replacement (per card)"],
+  [104602, "monthly_maintenance", 0, "Monthly Fee"],
+  [104603, "atm_non_network", 0, "Balance inquiry at SchoolsFirst FCU and CO-OP Network ATMs"],
+  [104604, "card_foreign_txn", 0, "Balance inquiry at international ATM locations"],
+  [104605, "dormant_account", 0, "Account inactivity"],
+  [104606, "document_reproduction", 0, "eStatement copies (per copy)"],
+];
+
+function schoolsFirstPayrollCardTakedowns(): HandTakedown[] {
+  return SCHOOLSFIRST_PAYROLL_CARD_ROWS.map(([feePublishedId, canonicalFeeKey, amount, feeName]) => ({
+    feePublishedId, institutionId: 6741, canonicalFeeKey, amount, feeName,
+    reason: "source_mismatch: #1908", issue: 1908, kind: "not_on_schedule" as const,
+    evidence: `SchoolsFirst FCU (doc 24009, text 21182), the Payroll Card Statement of Fees: "${feeName}" is the payroll card's fee, not a deposit account's; the credit union's own schedule is mk360-fees.pdf.`,
+  }));
+}
+
 /** The #1880 waiting rows, listed only while `TEXAS_CAPITAL_TAKEDOWN_LIVE` is on (`live` for tests). */
 export function texasCapitalWaitingRejections(live: boolean = TEXAS_CAPITAL_TAKEDOWN_LIVE): HandWaitingRejection[] {
   if (!live) return [];
@@ -696,6 +725,7 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
   { feePublishedId: 15730, institutionId: 4956, canonicalFeeKey: "late_payment", amount: 10, feeName: "Generally a maximum late charge",
     reason: "source_mismatch: #1905", issue: 1905, kind: "wrong_amount",
     evidence: "Navy Federal (doc 13439; the current copy doc 26712 prints the same), Mortgage Loans: \"Generally a maximum late charge of $10, $25 in KS, $50 in MO for equity loans\": a cap on an equity loan's percentage late charge, not a flat $10 fee." },
+  ...schoolsFirstPayrollCardTakedowns(),
 ];
 
 export interface LiveTakedownRow {
