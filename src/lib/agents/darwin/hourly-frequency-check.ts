@@ -4,6 +4,7 @@ import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback
 import { inSavepoint } from "@/lib/agents/savepoint";
 import {
   frequencyFamily,
+  hourlyFromLine,
   HOURLY_EXEMPT_KEYS,
   HOURLY_FREQUENCY,
   HOURLY_WORDING,
@@ -45,7 +46,14 @@ type SqlTag = typeof sql;
  * `hourly` frequency (`settledFrequency`), so a later publish does not undo it.
  */
 export const HOURLY_CHECK = "darwin.hourly_frequency_check";
-export const HOURLY_CHECK_VERSION = 1;
+/**
+ * v2 (#1456, James's live-fee check Oct 18: per-hour fees shown as flat charges at 7 of 15
+ * institutions): a fee whose name says nothing of the hour but whose own schedule line prices it by
+ * the hour ("Account Research Fee $20 per hour", 1st Source; "Research | $25.00/hr") is read too,
+ * by `hourlyFromLine` on the line Knox stored (`excerpt="..."`), with the same exemptions. Those
+ * are written only with `HOURLY_LINE_LIVE` on; until then a step counts them (`wouldSetFromLine`).
+ */
+export const HOURLY_CHECK_VERSION = 2;
 /**
  * The switch. It turned on by PR after the dry-run count over the whole live table
  * (`hourlyCountSql`, or the verify step's `hourly_full_count` param) was shown to James: on
@@ -53,6 +61,11 @@ export const HOURLY_CHECK_VERSION = 1;
  * frequency, 4 `per_item`, 1 `per_occurrence`) and 17 exempt. Roll back by setting it to false.
  */
 export const HOURLY_FREQUENCY_LIVE = true;
+/**
+ * v2's switch for fees read from their line, not their name. Off until James has seen the full
+ * dry-run count (`countHourlyFees`, the verify step's `hourly_full_count` param, `would_set_from_line`).
+ */
+export const HOURLY_LINE_LIVE = false;
 /** Live fees read per step; a name-only regex read. */
 export const HOURLY_CHECK_BATCH = 2_000;
 export const HOURLY_CHECK_SAMPLES = 20;
@@ -61,6 +74,8 @@ export const HOURLY_PERIOD_WORD = /\b(?:monthly|per\s+month|annual(?:ly)?|yearly
 
 export type HourlyAction = "set" | "exempt";
 export type HourlyExemptReason = "partial_hour" | "category" | "period_word" | "stated_period";
+/** v2: what priced the fee by the hour: its name, or only its own schedule line. */
+export type HourlyBasis = "name" | "line";
 
 export interface HourlyRow {
   fee_published_id: number | string;
@@ -70,6 +85,8 @@ export interface HourlyRow {
   amount: number | string | null;
   canonical_fee_key: string | null;
   frequency: string | null;
+  /** v2: the line Knox stored with the fee (the excerpt), when read. */
+  source_line?: string | null;
 }
 
 export interface HourlyMatch {
@@ -82,6 +99,7 @@ export interface HourlyMatch {
   from: string | null;
   action: HourlyAction;
   exemptReason?: HourlyExemptReason;
+  basis: HourlyBasis;
 }
 
 export interface HourlyFindings {
@@ -92,12 +110,15 @@ export interface HourlyFindings {
   exemptByReason: Record<HourlyExemptReason, number>;
   /** `set` matches by their current frequency ("none" for a blank). */
   wouldSetByFrequency: Record<string, number>;
+  /** v2: `set` matches priced by the hour only on their line, written only with `HOURLY_LINE_LIVE`. */
+  wouldSetFromLine: number;
   setSamples: HourlyMatch[];
   exemptSamples: HourlyMatch[];
 }
 
 export interface HourlyResult extends HourlyFindings {
   live: boolean;
+  lineLive: boolean;
   dryRun: boolean;
   afterId: number | null;
   nextAfterId: number | null;
@@ -119,16 +140,22 @@ export function hourlyVerdict(
   name: string | null | undefined,
   canonicalFeeKey: string | null | undefined,
   frequency: string | null | undefined,
-): { action: HourlyAction; exemptReason?: HourlyExemptReason } | null {
+  sourceLine?: string | null,
+  amount?: number | null,
+): { action: HourlyAction; exemptReason?: HourlyExemptReason; basis: HourlyBasis } | null {
   const text = (name ?? "").replace(/\s+/g, " ").trim();
   if (!text || frequency === HOURLY_FREQUENCY) return null;
   const partial = PARTIAL_HOUR_WORDING.test(text);
-  if (!partial && !HOURLY_WORDING.test(text)) return null;
-  if (partial) return { action: "exempt", exemptReason: "partial_hour" };
-  if (canonicalFeeKey != null && HOURLY_EXEMPT_KEYS.has(canonicalFeeKey)) return { action: "exempt", exemptReason: "category" };
-  if (HOURLY_PERIOD_WORD.test(text)) return { action: "exempt", exemptReason: "period_word" };
-  if (frequency != null && frequencyFamily(frequency) !== "per_item") return { action: "exempt", exemptReason: "stated_period" };
-  return { action: "set" };
+  // v2: a name silent on the hour is read on its own line, which must print the fee's price.
+  const basis: HourlyBasis | null = partial || HOURLY_WORDING.test(text)
+    ? "name"
+    : hourlyFromLine(sourceLine, amount ?? null) ? "line" : null;
+  if (!basis) return null;
+  if (partial) return { action: "exempt", exemptReason: "partial_hour", basis };
+  if (canonicalFeeKey != null && HOURLY_EXEMPT_KEYS.has(canonicalFeeKey)) return { action: "exempt", exemptReason: "category", basis };
+  if (HOURLY_PERIOD_WORD.test(text)) return { action: "exempt", exemptReason: "period_word", basis };
+  if (frequency != null && frequencyFamily(frequency) !== "per_item") return { action: "exempt", exemptReason: "stated_period", basis };
+  return { action: "set", basis };
 }
 
 /** Pure: the live rows that name an hourly basis, counted by action and reason, with every match kept. */
@@ -137,7 +164,7 @@ export function findHourlyFees(rows: HourlyRow[]): HourlyFindings & { matches: H
   const wouldSetByFrequency: Record<string, number> = {};
   const matches: HourlyMatch[] = [];
   for (const row of [...rows].sort((a, b) => Number(a.fee_published_id) - Number(b.fee_published_id))) {
-    const verdict = hourlyVerdict(row.fee_name, row.canonical_fee_key, row.frequency);
+    const verdict = hourlyVerdict(row.fee_name, row.canonical_fee_key, row.frequency, row.source_line, num(row.amount));
     if (!verdict) continue;
     if (verdict.exemptReason) exemptByReason[verdict.exemptReason] += 1;
     if (verdict.action === "set") {
@@ -153,6 +180,7 @@ export function findHourlyFees(rows: HourlyRow[]): HourlyFindings & { matches: H
       canonicalFeeKey: row.canonical_fee_key ?? null,
       from: row.frequency ?? null,
       action: verdict.action,
+      basis: verdict.basis,
       ...(verdict.exemptReason ? { exemptReason: verdict.exemptReason } : {}),
     });
   }
@@ -165,6 +193,7 @@ export function findHourlyFees(rows: HourlyRow[]): HourlyFindings & { matches: H
     exempt: exempts.length,
     exemptByReason,
     wouldSetByFrequency,
+    wouldSetFromLine: sets.filter((fee) => fee.basis === "line").length,
     setSamples: sets.slice(0, HOURLY_CHECK_SAMPLES),
     exemptSamples: exempts.slice(0, HOURLY_CHECK_SAMPLES),
     matches,
@@ -195,19 +224,23 @@ async function readCursor(db: SqlTag): Promise<number> {
  */
 export async function recheckHourlyFrequencies(
   db: SqlTag,
-  options: { runId: number; stepId?: number | null; dryRun: boolean; institutionId?: number; live?: boolean; limit?: number },
+  options: { runId: number; stepId?: number | null; dryRun: boolean; institutionId?: number; live?: boolean; lineLive?: boolean; limit?: number },
 ): Promise<HourlyResult> {
   const live = options.live ?? HOURLY_FREQUENCY_LIVE;
+  const lineLive = options.lineLive ?? HOURLY_LINE_LIVE;
   const limit = Math.max(1, Math.min(options.limit ?? HOURLY_CHECK_BATCH, 20_000));
   const scoped = options.institutionId != null;
-  const result: HourlyResult = { live, dryRun: options.dryRun, ...withoutMatches(findHourlyFees([])), afterId: null, nextAfterId: null, set: [] };
+  const result: HourlyResult = { live, lineLive, dryRun: options.dryRun, ...withoutMatches(findHourlyFees([])), afterId: null, nextAfterId: null, set: [] };
   let rows: HourlyRow[];
   try {
     const afterId = scoped ? 0 : await readCursor(db);
     rows = await inSavepoint(db, (scope) => scope<HourlyRow[]>`
       SELECT fp.fee_published_id, fp.lineage_ref AS fee_verified_id, fp.institution_id, fp.fee_name, fp.amount,
-             fp.canonical_fee_key, fp.frequency
+             fp.canonical_fee_key, fp.frequency,
+             substring(COALESCE(fr.extraction_note, fr.conditions) from 'excerpt="(.*)"\\s*$') AS source_line
         FROM published_fee_records fp
+        LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+        LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
        WHERE fp.rolled_back_at IS NULL
          AND fp.quarantined_at IS NULL
          AND fp.amount_kind = 'flat'
@@ -227,7 +260,8 @@ export async function recheckHourlyFrequencies(
 
   const found = findHourlyFees(rows);
   Object.assign(result, withoutMatches(found));
-  const sets = found.matches.filter((fee) => fee.action === "set");
+  // v2: a fee read from its line is written only with the line switch on.
+  const sets = found.matches.filter((fee) => fee.action === "set" && (fee.basis === "name" || lineLive));
 
   if (live && !options.dryRun && sets.length > 0) {
     try {
@@ -276,7 +310,7 @@ export async function recheckHourlyFrequencies(
         feePublishedId: fee.feePublishedId,
         canonicalFeeKey: fee.canonicalFeeKey,
         amount: fee.amount,
-        evidence: { from: fee.from, to: HOURLY_FREQUENCY, fee_name: fee.feeName },
+        evidence: { from: fee.from, to: HOURLY_FREQUENCY, fee_name: fee.feeName, basis: fee.basis },
         runId: options.runId,
         dedupeKey: `${HOURLY_CHECK}:v${HOURLY_CHECK_VERSION}:${fee.feePublishedId}:${fee.from ?? "none"}`,
       }));
@@ -316,7 +350,7 @@ export async function recheckHourlyFrequencies(
         INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, ${options.stepId ?? null}, ${HOURLY_CHECK}, 'completed',
-          ${`Read ${result.checked} live fee name(s): ${result.matched} name an hourly basis, ${result.wouldSet} would be set hourly, ${result.exempt} exempt; ${live ? `${result.set.length} set` : "switch off, nothing written"}`},
+          ${`Read ${result.checked} live fee(s): ${result.matched} priced by the hour, ${result.wouldSet} would be set hourly (${result.wouldSetFromLine} only on their line), ${result.exempt} exempt; ${live ? `${result.set.length} set${lineLive ? "" : ", line-only fees not written"}` : "switch off, nothing written"}`},
           ${JSON.stringify(hourlyDetail(result))}::jsonb
         )
       `);
@@ -336,6 +370,7 @@ function sampleDetail(fee: HourlyMatch) {
     canonical_fee_key: fee.canonicalFeeKey,
     from: fee.from,
     action: fee.action,
+    basis: fee.basis,
     ...(fee.exemptReason ? { exempt_reason: fee.exemptReason } : {}),
   };
 }
@@ -349,6 +384,7 @@ export function hourlyFindingsDetail(found: HourlyFindings) {
     exempt: found.exempt,
     exempt_by_reason: found.exemptByReason,
     would_set_by_frequency: found.wouldSetByFrequency,
+    would_set_from_line: found.wouldSetFromLine,
     samples_set: found.setSamples.map(sampleDetail),
     samples_exempt: found.exemptSamples.map(sampleDetail),
   };
@@ -360,6 +396,7 @@ export function hourlyDetail(result: HourlyResult) {
     check: HOURLY_CHECK,
     version: HOURLY_CHECK_VERSION,
     switch_live: result.live,
+    line_switch_live: result.lineLive,
     dry_run: result.dryRun,
     batch: HOURLY_CHECK_BATCH,
     after_id: result.afterId,
@@ -377,12 +414,16 @@ export async function countHourlyFees(db: SqlTag): Promise<HourlyFindings | null
   try {
     const rows = await inSavepoint(db, (scope) => scope<HourlyRow[]>`
       SELECT fp.fee_published_id, fp.lineage_ref AS fee_verified_id, fp.institution_id, fp.fee_name, fp.amount,
-             fp.canonical_fee_key, fp.frequency
+             fp.canonical_fee_key, fp.frequency,
+             substring(COALESCE(fr.extraction_note, fr.conditions) from 'excerpt="(.*)"\\s*$') AS source_line
         FROM published_fee_records fp
+        LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+        LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
        WHERE fp.rolled_back_at IS NULL
          AND fp.quarantined_at IS NULL
          AND fp.amount_kind = 'flat'
-         AND fp.fee_name ~* '(hour|hr|min)'
+         -- v2: a name or a stored line that could price the fee by the hour.
+         AND (fp.fee_name ~* '(hour|hr|min)' OR COALESCE(fr.extraction_note, fr.conditions) ~* 'excerpt=.*(hour|hr)')
        ORDER BY fp.fee_published_id
     `);
     return withoutMatches(findHourlyFees(rows));
@@ -398,8 +439,9 @@ function postgresPattern(re: RegExp): string {
 }
 
 /**
- * The `CASE` that mirrors `hourlyVerdict` over the columns `name`, `canonical_fee_key` and
- * `frequency`: 'set', an exempt reason, or NULL for no hourly basis.
+ * The `CASE` that mirrors `hourlyVerdict`'s name rule over the columns `name`, `canonical_fee_key` and
+ * `frequency`: 'set', an exempt reason, or NULL for no hourly basis. v2's line rule (`hourlyFromLine`)
+ * has no SQL mirror; `countHourlyFees` counts it (`would_set_from_line`).
  */
 function hourlyVerdictSql(): string {
   const exemptKeys = [...HOURLY_EXEMPT_KEYS].map((key) => `'${key}'`).join(", ");
