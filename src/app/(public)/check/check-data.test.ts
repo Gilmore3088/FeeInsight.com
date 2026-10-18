@@ -8,7 +8,9 @@ import {
   avoidGuideHref,
   buildAlternatives,
   buildCheckRows,
+  checkCounts,
   checkFinding,
+  leadChip,
   marketBand,
   parseCheckId,
   localFeeWords,
@@ -297,5 +299,36 @@ describe("localOptionsLine", () => {
 
   it("says a ZIP's city has no published fees yet", () => {
     expect(localOptionsLine({ kind: "no-fees", city: "Quincy, FL" }, [], "overdraft", "Test Bank")).toBe("No published fees for Quincy, FL yet.");
+  });
+});
+
+describe("checkCounts and leadChip", () => {
+  const band = (median: number) => ({ min: 0, p25: median * 0.8, median, p75: median * 1.2, max: median * 2, institutions: 40 });
+  const row = (category: string, value: number, state: number | null, nation: number | null) => ({
+    category,
+    label: category === "overdraft" ? "Overdraft (OD)" : "Monthly Maintenance",
+    value,
+    low: value,
+    high: value,
+    prices: [],
+    amounts: [value],
+    comparedAt: null,
+    sourceUrl: null,
+    state: state === null ? null : band(state),
+    nation: nation === null ? null : band(nation),
+  });
+
+  it("counts each fee against its state median, else the U.S.", () => {
+    const rows = [row("overdraft", 36, 30, 32), row("monthly_maintenance", 5, null, 10)];
+    expect(checkCounts(rows)).toEqual({ above: 1, below: 1, same: 0, compared: 2, level: "mixed" });
+    expect(checkCounts([rows[0]])?.level).toBe("state");
+    expect(checkCounts([])).toBeNull();
+  });
+
+  it("names the fee furthest above its median with the gap to that median", () => {
+    const rows = [row("overdraft", 36, 30, 32), row("monthly_maintenance", 12.5, null, 10)];
+    expect(leadChip(rows, "FL")).toEqual({ label: "Monthly Maintenance", gap: "$2.50 above the U.S. median" });
+    expect(leadChip([rows[0]], "FL")).toEqual({ label: "Overdraft (OD)", gap: "$6 above the FL median" });
+    expect(leadChip([row("overdraft", 20, 30, 32)], "FL")).toBeNull();
   });
 });

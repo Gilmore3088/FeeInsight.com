@@ -1,7 +1,9 @@
 import Link from "next/link";
 import type { CityMarket } from "@/lib/data-store/city-market";
 import { STATE_NAMES } from "@/lib/us-states";
+import { SERIF } from "@/app/landing-shared";
 import { ALTERNATIVES_SHOWN, hasLocalComparison, localOptionsLine, lowerLabel, money, type AlternativeList } from "./check-data";
+import { FeeIcon } from "./check-result";
 
 const LINK = "font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink";
 
@@ -13,7 +15,7 @@ export type LocalStatus =
   | { kind: "no-fees"; city: string }
   | { kind: "found"; market: CityMarket; city: string; state: string; viaZip: string | null };
 
-/** One fee's lower-priced institutions in the city, named with their account and price. */
+/** One fee's lower-priced institutions in the city, each a compact card with its price and the saving. */
 function AlternativeFee({
   list,
   name,
@@ -27,40 +29,47 @@ function AlternativeFee({
 }) {
   const fee = lowerLabel(list.label);
   const shown = list.lower.slice(0, ALTERNATIVES_SHOWN);
-  const kind = list.category === "monthly_maintenance" ? " for a checking account" : "";
-  const floor = `${money(list.floor)}${list.floorAccount ? ` (${list.floorAccount})` : ""}`;
-  const line =
+  const floor = `${money(list.floor)}${list.floorAccount ? `, ${list.floorAccount}` : ""}`;
+  const chip =
     list.publishing === 0
-      ? `No other bank or credit union with a branch in ${city} publishes this fee${kind} yet.`
-      : list.lower.length > 0
-        ? `${list.lower.length} of ${list.publishing} list a lower price${kind} than ${name}'s lowest, ${floor}.`
-        : `None of ${list.publishing} list a lower price${kind} than ${name}'s lowest, ${floor}.`;
+      ? "None publish it yet"
+      : `${list.lower.length} of ${list.publishing} ${list.lower.length === 1 ? "is" : "are"} lower`;
   return (
-    <figure className="min-w-0 rounded-xl border border-border bg-surface-0 p-4 shadow-fi-1 sm:p-5">
-      <figcaption className="text-[15px] font-semibold text-ink">{list.label}</figcaption>
-      <p className="mt-1 text-[13px] leading-snug text-ink-soft sm:mx-0 sm:text-left">{line}</p>
+    <div className="min-w-0">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <h3 className="flex items-center gap-2 text-[16px] font-semibold text-ink">
+          <FeeIcon category={list.category} className="size-[18px] text-brick" />
+          {list.label}
+          {list.category === "monthly_maintenance" ? <span className="text-[13px] font-normal text-ink-muted">checking</span> : null}
+        </h3>
+        <span className="rounded-full bg-paper px-2.5 py-0.5 text-[12px] font-semibold text-ink-soft ring-1 ring-border">{chip}</span>
+      </div>
+      <p className="mt-1 text-[13px] text-ink-muted">{name}&apos;s lowest: {floor}</p>
       {shown.length > 0 && (
-        <ul className="mt-2 divide-y divide-border">
-          {shown.map((alt) => (
-            <li key={alt.id}>
+        <ul className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          {shown.map((alt, i) => (
+            <li key={alt.id} className="fi-home-fade min-w-0" style={{ animationDelay: `${i * 60}ms` }}>
               <Link
                 href={`/check?id=${alt.id}`}
-                className="grid min-h-11 grid-cols-[minmax(0,1fr)_auto] items-baseline gap-3 py-2 text-[14px] text-ink hover:text-brick"
+                className="flex h-full min-h-11 flex-col rounded-xl border border-border bg-surface-0 p-3 shadow-fi-1 hover:border-ink"
               >
-                <span className="min-w-0">
-                  <span className="font-medium">{alt.name}</span>
-                  {alt.account && <span className="block text-[12px] text-ink-muted">{alt.account}</span>}
+                <span className="text-[14px] font-medium leading-snug text-ink">{alt.name}</span>
+                {alt.account && <span className="mt-0.5 text-[12px] leading-snug text-ink-muted">{alt.account}</span>}
+                <span className="mt-auto flex items-baseline justify-between gap-2 pt-2">
+                  <span className="font-mono text-[20px] font-semibold tabular-nums text-ink">{money(alt.amount)}</span>
+                  <span className="rounded-full bg-below-market/10 px-2 py-0.5 text-[12px] font-semibold text-below-market">
+                    {money(Math.round((list.floor - alt.amount) * 100) / 100)} less
+                  </span>
                 </span>
-                <span className="font-mono tabular-nums">{money(alt.amount)}</span>
               </Link>
             </li>
           ))}
         </ul>
       )}
-      <Link href={`${cityHref}?fee=${list.category}&sort=low#compare`} className={`mt-2 inline-flex min-h-11 items-center text-[13px] ${LINK}`}>
-        {list.lower.length > shown.length ? `Show all ${list.lower.length} in ${city}` : `Compare every ${fee} fee in ${city}`}
+      <Link href={`${cityHref}?fee=${list.category}&sort=low#compare`} className={`mt-1 inline-flex min-h-11 items-center text-[13px] ${LINK}`}>
+        {list.lower.length > shown.length ? `Show all ${list.lower.length} in ${city}` : `Every ${fee} fee in ${city}`}
       </Link>
-    </figure>
+    </div>
   );
 }
 
@@ -123,7 +132,11 @@ export function LocalOptions({
   const showHeadquarters = headquarters && !found && near.trim() === "";
   return (
     <section aria-labelledby="alternatives-heading" className="border-t border-border pt-6">
-      <h2 id="alternatives-heading" className="text-center text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-left sm:text-[24px]">
+      <h2
+        id="alternatives-heading"
+        className="text-center text-[28px] font-medium leading-[1.08] tracking-[-0.02em] text-ink sm:text-left sm:text-[36px]"
+        style={SERIF}
+      >
         {place ? `Compare local options in ${place}` : "Compare local options"}
       </h2>
       <p
@@ -147,7 +160,7 @@ export function LocalOptions({
       </div>
       {found && cityHref && hasLocalComparison(lists) && (
         <>
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <div className="mt-6 space-y-6">
             {lists.map((list) => (
               <AlternativeFee key={list.category} list={list} name={name} city={found.city} cityHref={cityHref} />
             ))}

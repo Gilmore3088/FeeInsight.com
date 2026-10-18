@@ -6,8 +6,9 @@ import { STATE_NAMES } from "@/lib/us-states";
 import { SourceNote } from "../research/district/[id]/district-hub";
 import { getPublicInstitutionForPage, getVisibleFeesForPage, isVerifiedFee } from "../institution/[id]/profile-data";
 import { titleCase } from "../fees/city/[state]/[city]/city-lookup";
-import { avoidGuideHref, buildCheckRows, checkFinding, stateGroupLabel } from "../check/check-data";
+import { avoidGuideHref, buildCheckRows, checkCounts, leadChip, stateGroupLabel } from "../check/check-data";
 import { CheckTable } from "../check/check-table";
+import { ResultStat } from "../check/check-result";
 
 /** Rows the consumer page shows; the full check shows every headline fee. */
 const EXAMPLE_ROWS = 3;
@@ -27,51 +28,53 @@ export async function CheckExample({ id, guides }: { id: number; guides: Guide[]
     getPublicNationalIndex().catch(() => []),
     stateCode ? getStateFeeIndexesCached(stateCode).catch(() => null) : Promise.resolve(null),
   ]);
-  const rows = buildCheckRows({
+  const allRows = buildCheckRows({
     verifiedFees,
     nationalIndex,
     stateIndex: stateIndexes?.all ?? [],
     fallbackSourceUrl: inst.fee_schedule_url ?? null,
-  }).slice(0, EXAMPLE_ROWS);
+  });
+  const rows = allRows.slice(0, EXAMPLE_ROWS);
   if (rows.length === 0) return null;
-  const stateLabel = stateGroupLabel(rows, stateName);
-  const finding = checkFinding(rows, inst.institution_name, stateName);
+  // The figure counts every headline fee, as the full check does; the table shows the first few.
+  const stateLabel = stateGroupLabel(allRows, stateName);
+  const counts = checkCounts(allRows);
+  const chip = leadChip(allRows, stateLabel ? stateCode : null);
   const guideHrefs = Object.fromEntries(rows.map((row) => [row.category, avoidGuideHref(row.category, guides)]));
   const place = [inst.city ? titleCase(inst.city) : null, inst.state_code].filter(Boolean).join(", ");
   const collectedOn = formatAbsoluteDate(inst.latest_source_collected_at ?? null);
 
   return (
-    <figure className="min-w-0 space-y-3">
-      <figcaption className="text-left">
-        <span className="text-[13px] text-ink-muted">
+    <figure className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:gap-10">
+      <figcaption className="min-w-0 text-left">
+        <p className="text-[13px] text-ink-muted">
           <span className="font-semibold text-ink">Example:</span> {inst.institution_name}
           {place ? `, ${place}` : ""}
-        </span>
-        {finding?.price && (
-          <span className="mt-1 block text-[15px] font-medium leading-snug text-ink">{finding.price}</span>
+        </p>
+        {counts && (
+          <div className="mt-3">
+            <ResultStat counts={counts} chip={chip} stateName={stateLabel ? stateName : null} size="md" center={false} />
+          </div>
         )}
-        {finding?.benchmark && (
-          <span className="mt-0.5 block text-[13px] leading-snug text-ink-muted">{finding.benchmark}</span>
-        )}
-      </figcaption>
-      <CheckTable
-        rows={rows}
-        stateCode={stateLabel ? stateCode : null}
-        stateLabel={stateLabel}
-        guideHrefs={guideHrefs}
-      />
-      <SourceNote>
-        From {inst.institution_name}&apos;s own published fee schedule
-        {collectedOn ? `, collected ${collectedOn}` : ""}.
-      </SourceNote>
-      <p className="mx-0 flex flex-wrap gap-x-6 text-left">
         <Link
           href={`/check?id=${id}`}
-          className="inline-flex min-h-11 items-center text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+          className="mt-3 inline-flex min-h-11 items-center text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
         >
           See {inst.institution_name}&apos;s full fee check
         </Link>
-      </p>
+      </figcaption>
+      <div className="min-w-0 space-y-3">
+        <CheckTable
+          rows={rows}
+          stateCode={stateLabel ? stateCode : null}
+          stateLabel={stateLabel}
+          guideHrefs={guideHrefs}
+        />
+        <SourceNote>
+          From {inst.institution_name}&apos;s own published fee schedule
+          {collectedOn ? `, collected ${collectedOn}` : ""}.
+        </SourceNote>
+      </div>
     </figure>
   );
 }

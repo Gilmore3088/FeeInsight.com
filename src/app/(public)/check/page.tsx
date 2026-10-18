@@ -17,7 +17,9 @@ import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { formatAbsoluteDate, getPublicNationalIndex, getPublicStatsSummary } from "@/lib/public-stats";
 import { STATE_NAMES } from "@/lib/us-states";
 import { SITE_URL } from "@/lib/constants";
-import { REPORT_SHOWCASE } from "@/lib/report-showcase";
+import { homeSerif } from "@/app/landing-serif";
+import { SERIF } from "@/app/landing-shared";
+import "@/app/landing-motion.css";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { PAGE_HEADER } from "@/components/public/page-header";
 import { InstitutionSearchBar } from "../institutions/search-bar";
@@ -33,10 +35,10 @@ import {
   avoidGuideHref,
   buildAlternatives,
   buildCheckRows,
-  checkFinding,
+  checkCounts,
+  leadChip,
   leadRow,
   localFeeWords,
-  lowerLabel,
   parseCheckId,
   parseLocation,
   stateGroupLabel,
@@ -44,6 +46,7 @@ import {
 import { CheckTable } from "./check-table";
 import { LocalOptions, type LocalStatus } from "./alternatives";
 import { CheckAnswerFocus } from "./answer-focus";
+import { AvoidChips, HamiltonEmployeeBand, ResultStat } from "./check-result";
 
 const TITLE = "Check a Bank's Fees Against the Market";
 const DESCRIPTION =
@@ -91,19 +94,18 @@ export default async function CheckPage({ searchParams }: PageProps) {
   const stats = await getPublicStatsSummary();
 
   return (
-    <div className="min-h-screen bg-paper text-ink">
+    <div className={`${homeSerif.variable} min-h-screen overflow-x-clip bg-paper text-ink`}>
       <BreadcrumbJsonLd items={[{ name: "Home", href: "/" }, { name: "Fee check", href: "/check" }]} />
       <div className="mx-auto max-w-page px-4 py-7 sm:px-6 sm:py-9">
         {/* `relative z-20` keeps the suggestions above the answer below. */}
         <section className="relative z-20 border-b border-border pb-6">
           <div className={`max-w-3xl ${PAGE_HEADER}`}>
             <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-brick">Fee check</p>
-            <h1 className="mt-2 text-[32px] font-semibold leading-[1.05] tracking-[-0.03em] text-ink sm:text-[44px]">
+            <h1 className="mt-2 text-[38px] font-medium leading-[1.04] tracking-[-0.025em] text-ink sm:text-[56px]" style={SERIF}>
               How do your bank&apos;s fees compare?
             </h1>
             <p className="mt-3 text-[15px] leading-relaxed text-ink-soft sm:mx-0 sm:text-left">
-              Published fees for {stats.institutionsLabel} banks and credit unions, each set beside the U.S. and state
-              medians.
+              {stats.institutionsLabel} banks and credit unions, each beside the state and U.S. medians.
             </p>
             <div className="mx-auto mt-5 max-w-xl text-left sm:mx-0">
               <InstitutionSearchBar
@@ -280,49 +282,37 @@ async function CheckAnswer({ id, near, refreshedOn }: { id: number; near: string
       : thin
         ? `Only ${verifiedFees.length} of its fees are published so far; the comparison covers those.`
         : null;
-  const finding = sparseLine ? null : checkFinding(rows, inst.institution_name, stateName);
+  const counts = checkCounts(rows);
+  const chip = leadChip(rows, stateLabel ? stateCode : null);
 
-  // The next step is the consumer's: the account terms behind the lead fee, then how to avoid it.
+  // The next step is the consumer's: the account terms behind the lead fee.
   const lead = leadRow(rows) ?? rows[0] ?? null;
   const termsHref = lead?.sourceUrl ?? inst.fee_schedule_url ?? null;
-  const avoidHref = lead ? guideHrefs[lead.category] : null;
   // One tap for a visitor who banks where it is headquartered; still the visitor's choice.
   const headquarters = stateCode && cityName ? `${cityName}, ${stateCode}` : null;
 
   return (
-    <div className="mt-8 space-y-8 sm:mt-10 sm:space-y-10">
+    <div className="mt-8 space-y-10 sm:mt-10 sm:space-y-12">
       <CheckAnswerFocus targetId="answer-heading" />
       <section
         aria-labelledby="answer-heading"
-        className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,860px)] lg:gap-10"
+        className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,820px)] lg:gap-12"
       >
-        <div className={`min-w-0 ${PAGE_HEADER}`}>
-          <p className="text-[13px] text-ink-muted">{[getCharterLabel(inst.charter_type), place].filter(Boolean).join(" · ")}</p>
-          <h2
-            id="answer-heading"
-            tabIndex={-1}
-            className="mt-1 scroll-mt-24 text-[26px] font-semibold leading-[1.1] tracking-[-0.03em] text-ink focus:outline-none sm:text-[36px]"
-          >
-            {inst.institution_name}
-          </h2>
-          {sparseLine ? (
-            <p className="mt-3 text-[15px] leading-relaxed text-ink-soft sm:mx-0 sm:text-left">{sparseLine}</p>
-          ) : (
-            <div className="mt-3 space-y-1.5">
-              {finding?.price && (
-                <p className="text-[16px] font-medium leading-snug text-ink sm:mx-0 sm:text-left">{finding.price}</p>
-              )}
-              {finding?.accounts && (
-                <p className="text-[14px] leading-snug text-ink sm:mx-0 sm:text-left">{finding.accounts}</p>
-              )}
-              <p
-                className={`leading-relaxed sm:mx-0 sm:text-left ${finding?.price ? "text-[13px] text-ink-muted" : "text-[15px] text-ink-soft"}`}
-              >
-                {finding?.benchmark ?? `Its main fees against the ${stateLabel ?? "U.S."} median.`}
-              </p>
-            </div>
-          )}
-          <div className="mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 sm:justify-start">
+        <div className={`min-w-0 space-y-6 ${PAGE_HEADER}`}>
+          <div>
+            <p className="text-[13px] text-ink-muted">{[getCharterLabel(inst.charter_type), place].filter(Boolean).join(" · ")}</p>
+            <h2
+              id="answer-heading"
+              tabIndex={-1}
+              className="mt-1 scroll-mt-24 break-words text-[34px] font-medium leading-[1.04] tracking-[-0.025em] text-ink focus:outline-none sm:text-[46px]"
+              style={SERIF}
+            >
+              {inst.institution_name}
+            </h2>
+            {sparseLine && <p className="mt-3 text-[15px] leading-relaxed text-ink-soft sm:mx-0 sm:text-left">{sparseLine}</p>}
+          </div>
+          {counts && <ResultStat counts={counts} chip={chip} stateName={stateLabel ? stateName : null} />}
+          <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-1 sm:justify-start">
             {termsHref ? (
               <a
                 href={termsHref}
@@ -334,25 +324,20 @@ async function CheckAnswer({ id, near, refreshedOn }: { id: number; near: string
                 <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
               </a>
             ) : null}
-            {avoidHref && lead ? (
-              <Link href={avoidHref} className={`inline-flex min-h-11 items-center text-[14px] ${LINK}`}>
-                Ways to avoid the {lowerLabel(lead.label)} fee
-              </Link>
-            ) : null}
+            <Link href={`/institution/${id}`} className={`inline-flex min-h-11 items-center text-[14px] ${LINK}`}>
+              {publishedCount > 0 ? `All ${publishedCount.toLocaleString("en-US")} fees` : "Its profile"}
+            </Link>
           </div>
-          <Link href={`/institution/${id}`} className={`mt-1 inline-flex min-h-11 items-center text-[13px] ${LINK}`}>
-            {publishedCount > 0
-              ? `See all ${publishedCount.toLocaleString("en-US")} fees at ${inst.institution_name}`
-              : `Open ${inst.institution_name}'s profile`}
-          </Link>
+          <HamiltonEmployeeBand name={inst.institution_name} placement="check_employee_band" />
         </div>
 
         {rows.length > 0 && (
-          <div className="min-w-0 space-y-3">
+          <div className="min-w-0 space-y-4">
             <h3 className="text-center text-[16px] font-semibold text-ink sm:text-left">
               Its main fees against {stateLabel ? `${stateName} and the U.S.` : "the U.S."}
             </h3>
             <CheckTable rows={rows} stateCode={stateLabel ? stateCode : null} stateLabel={stateLabel} guideHrefs={guideHrefs} />
+            <AvoidChips rows={rows} guideHrefs={guideHrefs} />
             <SourceNote>
               {inst.institution_name}&apos;s own published fee schedule{collectedOn ? `, collected ${collectedOn}` : ""}.
               {stateLabel
@@ -399,13 +384,6 @@ async function CheckAnswer({ id, near, refreshedOn }: { id: number; near: string
           feeCategories: alertSubscription?.fee_categories ?? null,
         }}
       />
-
-      <p className="text-center text-[13px] text-ink-muted sm:text-left">
-        For bank and credit union teams:{" "}
-        <Link href={REPORT_SHOWCASE.sampleHref} className={`inline-flex min-h-11 items-center ${LINK}`}>
-          a sample Competitive Fee Position report
-        </Link>
-      </p>
     </div>
   );
 }

@@ -19,6 +19,10 @@ import { SourceNote } from "../research/district/[id]/district-hub";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { StatePicker, type StateOption } from "./state-picker";
 import { CheckExample } from "./check-example";
+import { HamiltonEmployeeBand } from "../check/check-result";
+import { homeSerif } from "@/app/landing-serif";
+import { SERIF } from "@/app/landing-shared";
+import "@/app/landing-motion.css";
 
 const TITLE = "Bank Fees Explained: Check and Avoid Them";
 const DESCRIPTION =
@@ -59,7 +63,7 @@ const count = (n: number) => n.toLocaleString("en-US");
 const BAND = "min-w-0 scroll-mt-24 border-t border-border pt-6";
 /** The fee-check example: Capital City Bank, a well-covered demo institution. */
 const CHECK_EXAMPLE_ID = 323;
-const BAND_H2 = "text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-left sm:text-[22px]";
+const BAND_H2 = "text-[28px] font-medium leading-[1.08] tracking-[-0.02em] text-ink sm:text-left sm:text-[36px]";
 const BAND_LINE = "mx-0 mt-1.5 text-left text-[15px] leading-relaxed text-ink-soft";
 const LINK = "font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink";
 const ICON_BADGE = "flex size-10 shrink-0 items-center justify-center rounded-full bg-brick-tint text-brick";
@@ -110,13 +114,13 @@ export default async function ConsumerPage() {
   const unstatedShown = charges.some((c) => medianHasUnstatedAudience(c.stat));
 
   return (
-    <div className="min-h-screen bg-paper text-ink">
+    <div className={`${homeSerif.variable} min-h-screen overflow-x-clip bg-paper text-ink`}>
       <BreadcrumbJsonLd items={[{ name: "Home", href: "/" }, { name: "For consumers", href: "/consumer" }]} />
       <div className="mx-auto max-w-page px-4 py-7 sm:px-6 sm:py-10">
         {/* `relative z-20` keeps the search suggestions above the tiles below. */}
         <section className={`relative z-20 max-w-3xl ${PAGE_HEADER}`}>
           <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-brick">For consumers</p>
-          <h1 className="mt-2 text-[32px] font-semibold leading-[1.05] tracking-[-0.03em] text-ink sm:text-[44px]">
+          <h1 className="mt-2 text-[38px] font-medium leading-[1.04] tracking-[-0.025em] text-ink sm:text-[56px]" style={SERIF}>
             Understand your bank fees. Find ways to pay less.
           </h1>
           <div id="find-bank" className="mt-5 max-w-xl scroll-mt-24 text-left">
@@ -155,7 +159,7 @@ export default async function ConsumerPage() {
 
         <div className="mt-10 space-y-10 sm:space-y-12">
           <section id="check" aria-labelledby="check-heading" className={BAND}>
-            <h2 id="check-heading" className={BAND_H2}>
+            <h2 id="check-heading" className={BAND_H2} style={SERIF}>
               What a fee check shows
             </h2>
             <div className="mt-4 max-w-4xl">
@@ -164,17 +168,16 @@ export default async function ConsumerPage() {
           </section>
 
           <section id="charges" aria-labelledby="charges-heading" className={BAND}>
-            <h2 id="charges-heading" className={BAND_H2}>
+            <h2 id="charges-heading" className={BAND_H2} style={SERIF}>
               Understand a charge
             </h2>
-            <p className={BAND_LINE}>What each charge is, and how to avoid it.</p>
             {charges.length > 0 ? (
               <ul className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-3 sm:gap-3 lg:grid-cols-5">
-                {charges.map((charge) => {
+                {charges.map((charge, i) => {
                   const { slug, label, stat, Icon } = charge;
                   const note = "note" in charge ? charge.note : null;
                   return (
-                    <li key={slug} className="min-w-0">
+                    <li key={slug} className="fi-home-fade min-w-0" style={{ animationDelay: `${i * 60}ms` }}>
                       <Link
                         href={`/guides/${slug}`}
                         className="flex h-full min-h-11 items-center gap-3 rounded-xl border border-border bg-surface-0 p-3 hover:border-ink hover:bg-paper focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink sm:flex-col sm:items-start sm:gap-0 sm:p-4"
@@ -222,7 +225,7 @@ export default async function ConsumerPage() {
           {atmExample && (
             <section id="atm" aria-labelledby="atm-heading" className={`${BAND} grid items-center gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-10`}>
               <div className="min-w-0">
-                <h2 id="atm-heading" className={BAND_H2}>
+                <h2 id="atm-heading" className={BAND_H2} style={SERIF}>
                   One ATM withdrawal, two fees
                 </h2>
                 <p className={BAND_LINE}>Your bank charges one. The ATM&apos;s owner can add another.</p>
@@ -239,10 +242,9 @@ export default async function ConsumerPage() {
           )}
 
           <section id="compare" aria-labelledby="compare-heading" className={BAND}>
-            <h2 id="compare-heading" className={BAND_H2}>
+            <h2 id="compare-heading" className={BAND_H2} style={SERIF}>
               Compare local options
             </h2>
-            <p className={BAND_LINE}>Pick a state to see who publishes fees in each city.</p>
             <div className="mt-4 max-w-4xl">
               {stateOptions.length > 0 ? (
                 <StatePicker states={stateOptions} initial="FL" />
@@ -254,6 +256,10 @@ export default async function ConsumerPage() {
         </div>
 
         <div className="mt-10">
+          <HamiltonEmployeeBand name="a bank or credit union" placement="consumer_employee_band" />
+        </div>
+
+        <div className="mt-6">
           <Link
             href="/methodology"
             className="inline-flex min-h-11 items-center text-[13px] font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink"

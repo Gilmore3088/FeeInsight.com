@@ -170,6 +170,39 @@ export function leadRow(rows: CheckRow[]): CheckRow | null {
   return best?.row ?? null;
 }
 
+/** How the compared fees sit against their medians, for the result's one big figure. */
+export interface CheckCounts {
+  above: number;
+  below: number;
+  same: number;
+  compared: number;
+  /** "state" when every compared fee is read against its state median, "us" when every one is national, else "mixed". */
+  level: "state" | "us" | "mixed";
+}
+
+export function checkCounts(rows: CheckRow[]): CheckCounts | null {
+  const counts = { above: 0, below: 0, same: 0, compared: 0 };
+  const levels = new Set<"state" | "us">();
+  for (const row of rows) {
+    const ref = referenceOf(row);
+    if (!ref) continue;
+    counts[positionOf(row.value, ref.band.median)] += 1;
+    counts.compared += 1;
+    levels.add(ref.level);
+  }
+  if (counts.compared === 0) return null;
+  return { ...counts, level: levels.size > 1 ? "mixed" : [...levels][0] };
+}
+
+/** The lead fee as a chip: its name, and "$3 above the FL median". Null when no fee sits above. */
+export function leadChip(rows: CheckRow[], stateCode: string | null): { label: string; gap: string } | null {
+  const lead = leadRow(rows);
+  const ref = lead ? referenceOf(lead) : null;
+  if (!lead || !ref) return null;
+  const where = ref.level === "state" && stateCode ? stateCode : "U.S.";
+  return { label: lead.label, gap: `${money(Math.round((lead.value - ref.band.median) * 100) / 100)} above the ${where} median` };
+}
+
 /**
  * The one finding, prices first: the fee furthest above its median as its range and named
  * account prices, then, as benchmark detail, the value compared and its gap to the median.
