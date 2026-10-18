@@ -34,6 +34,11 @@ export function InstitutionActions({
     setQueuedJob(null);
     startTransition(async () => {
       if (pdf) {
+        // The box opens on the old link; saving a PDF under it would keep the wrong fee link.
+        if (url.trim() === (currentUrl ?? "").trim()) {
+          setError("That is still the old link. Paste the PDF's own address (or the page it came from), then save.");
+          return;
+        }
         // A PDF the person downloaded is stored and read now; its link becomes the fee link.
         const uploaded = await uploadSchedulePdf(institutionId, url.trim(), pdf);
         if (uploaded.error) {
@@ -118,7 +123,7 @@ export function InstitutionActions({
               onKeyDown={(e) => e.key === "Enter" && handleSaveUrl()}
             />
             <label className="block text-[11px] text-gray-500 dark:text-gray-400">
-              PDF from the bank&rsquo;s site (optional, for a site that blocks our fetcher)
+              PDF from the bank&rsquo;s site (optional, for a site that blocks our fetcher). Put the PDF&rsquo;s own address in the box above.
               <input
                 type="file"
                 accept="application/pdf,.pdf"
