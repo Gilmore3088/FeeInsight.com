@@ -156,10 +156,9 @@ export function readPeerCoverage(coverage: PeerCoverage | null | undefined): str
     ? LEFT_OUT_WORDS[reasons[0][0]]
     : reasons.map(([reason, n]) => `${n} ${LEFT_OUT_WORDS[reason]}`).join(", ");
   const peers = coverage.total === 1 ? "peer" : "peers";
-  const lead = coverage.context === "peer_median"
+  return coverage.context === "peer_median"
     ? `${coverage.leftOut} of ${coverage.total} ${peers} left out of the record check: ${why}.`
     : `${coverage.leftOut} of ${coverage.total} ${peers} left out: ${why}.`;
-  return coverage.context === "peer_median" ? `${lead} The peer median is directional.` : lead;
 }
 
 function coverageOf(context: PeerCoverage["context"], total: number, reasons: readonly (PeerLeftOutReason | null)[]): PeerCoverage | null {
@@ -538,19 +537,24 @@ function peerValueRecord(peer: PeerValue): PeerFeeRecordRef | null {
 }
 
 /**
+ * The peers left out of the peer median's record check (#1717): a peer with no published row of its
+ * value from one stored schedule is not yet verified. Null when every peer has one, and when the
+ * group can't take the record check at all (no band, a size that differs from the band's, more than
+ * MAX_PEER_MEDIAN_RECORDS peers, or a repeated peer), so the line never names a check that didn't run.
+ */
+export function peerMedianCoverage(research: Pick<FeeResearch, "peers" | "band">): PeerCoverage | null {
+  const { band, peers } = research;
+  if (!band || peers.length === 0 || peers.length !== band.n || peers.length > MAX_PEER_MEDIAN_RECORDS) return null;
+  if (new Set(peers.map((peer) => peer.institutionId)).size !== peers.length) return null;
+  return coverageOf("peer_median", peers.length, peers.map((peer) => (peerValueRecord(peer) ? null : "not_verified")));
+}
+
+/**
  * The peer median with its records (#981, H06-T04): one published row per peer, the row whose amount
  * is that peer's value, and a `peer_median` derivation over them that recomputes to the band's median.
  * Null when any peer has no such row, the rows' frequencies differ, the group is larger than
  * MAX_PEER_MEDIAN_RECORDS, or the rows do not reproduce the median: the median then stays directional.
  */
-/**
- * The peers left out of the peer median's record check (#1717): a peer with no published row of its
- * value from one stored schedule is not yet verified. Null when every peer has one, or with no band.
- */
-export function peerMedianCoverage(research: Pick<FeeResearch, "peers" | "band">): PeerCoverage | null {
-  if (!research.band || research.peers.length === 0) return null;
-  return coverageOf("peer_median", research.peers.length, research.peers.map((peer) => (peerValueRecord(peer) ? null : "not_verified")));
-}
 
 export function peerMedianEvidence(research: Pick<FeeResearch, "institutionId" | "feeCategory" | "peers" | "band">): { facts: HamiltonEvidenceFact[]; derivation: HamiltonDerivedFact } | null {
   const band = research.band;
