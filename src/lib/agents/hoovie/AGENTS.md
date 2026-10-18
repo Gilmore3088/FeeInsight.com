@@ -57,7 +57,14 @@ James's rule (2026-10-17): "Let's get the data first." The order follows the pub
 2. Unblock the failing sources: CRA, NIC, Y-9C and UBPR (#1805, #1806).
 3. Faster collection, still within the pipeline pause.
 4. One health report, with alerts when a load fails or comes back empty.
-5. One read door for Hamilton and the site.
+5. One read door for Hamilton and the site: `src/lib/data-catalog/`. `catalog.ts` lists every
+   dataset (one entry per contract, plus published fees and institution financials) with a
+   customer-facing label (publisher and dataset, never an agent name) and `servable`: the licence
+   is public domain or a named open licence and the source is not struck or held.
+   `series.ts` lists each source's area_statistics series, cached for a day (a loader that writes
+   full series objects to `detail.series` skips the GROUP BY). `query-data.ts` is the one query:
+   a zod-checked measure and scope, bound parameters only, and a refusal with a plain reason for
+   anything not servable. Wiring it into Hamilton's chat tools is a separate PR.
 6. Shared roll-ups by peer, state, metro and size (`src/lib/peer-set-dimensions.ts`).
 
 Until the `hoovie` row exists in `agent_registry`, runs keep the ledger name `magellan`. Adding
