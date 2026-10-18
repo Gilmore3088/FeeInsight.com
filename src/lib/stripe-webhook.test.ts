@@ -1,14 +1,16 @@
 import type Stripe from "stripe";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { listSubscriptions, retrievePaymentIntent, retrieveCustomer } = vi.hoisted(() => ({
-  listSubscriptions: vi.fn(), retrievePaymentIntent: vi.fn(), retrieveCustomer: vi.fn(),
+const { listSubscriptions, retrievePaymentIntent, retrieveCustomer, listSessions, listInvoicePayments } = vi.hoisted(() => ({
+  listSubscriptions: vi.fn(), retrievePaymentIntent: vi.fn(), retrieveCustomer: vi.fn(), listSessions: vi.fn(), listInvoicePayments: vi.fn(),
 }));
 vi.mock("@/lib/stripe", () => ({
   getStripe: () => ({
     subscriptions: { list: listSubscriptions },
     paymentIntents: { retrieve: retrievePaymentIntent },
     customers: { retrieve: retrieveCustomer },
+    checkout: { sessions: { list: listSessions } },
+    invoicePayments: { list: listInvoicePayments },
   }),
 }));
 
@@ -254,51 +256,97 @@ describe("institution report payments", () => {
 });
 
 describe("institution report refunds", () => {
+  // The lead as stored: paid by `recorded` (a checkout session or invoice id), refunded or not.
+  let lead: { id: string; name: string; email: string; stripe_checkout_session_id: string; refunded: boolean } | null;
   beforeEach(() => {
+    lead = { id: "23", name: "Pat Lee", email: "pat@example.com", stripe_checkout_session_id: "cs_paid", refunded: false };
     tx.mockReset();
-    tx.mockResolvedValue([]);
+    tx.mockImplementation(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      const query = strings.join("?");
+      if (!lead || Number(lead.id) !== values.find((v) => typeof v === "number")) return [];
+      if (query.includes("SET refunded_at")) {
+        if (lead.refunded || values[1] !== lead.stripe_checkout_session_id) return [];
+        lead.refunded = true;
+        return [{ id: lead.id, name: lead.name, email: lead.email }];
+      }
+      if (query.includes("SELECT id, name, email, stripe_checkout_session_id")) return [lead];
+      return [];
+    });
     retrievePaymentIntent.mockReset();
     retrievePaymentIntent.mockResolvedValue({ metadata: { kind: "institution_report", lead_id: "23" } });
     retrieveCustomer.mockReset();
     retrieveCustomer.mockResolvedValue({ id: "cus_pro", metadata: {} });
+    listSessions.mockReset();
+    listSessions.mockResolvedValue({ data: [{ id: "cs_paid" }] });
+    listInvoicePayments.mockReset();
+    listInvoicePayments.mockResolvedValue({ data: [{ invoice: "in_paid" }] });
   });
 
   const refund = (overrides: Record<string, unknown> = {}) =>
     event("charge.refunded", { id: "ch_1", refunded: true, amount_refunded: 100, payment_intent: "pi_1", metadata: {}, ...overrides });
+  const alert = (revoked: boolean, leadId = 23) =>
+    [{ leadId, name: "Pat Lee", email: "pat@example.com", cents: 100, chargeId: "ch_1", revoked }];
+  const revokes = () => issued().filter((query) => query.includes("SET refunded_at"));
 
-  it("marks a fully refunded report request refunded once and queues James's alert", async () => {
-    tx.mockResolvedValueOnce([{ id: "23", name: "Pat Lee", email: "pat@example.com" }]);
+  it("closes the request when its recorded card payment is refunded in full", async () => {
     const effects = await applyStripeEvent(tx as never, refund());
     expect(retrievePaymentIntent).toHaveBeenCalledWith("pi_1");
-    const [sql] = issued();
-    expect(sql).toContain("SET refunded_at = NOW(), status = 'refunded'");
-    expect(sql).toContain("paid_at IS NOT NULL AND refunded_at IS NULL");
-    expect(tx.mock.calls[0].slice(1)).toEqual([23]);
-    expect(effects.reportRefunded).toEqual([{ leadId: 23, name: "Pat Lee", email: "pat@example.com", cents: 100, chargeId: "ch_1" }]);
+    expect(listSessions).toHaveBeenCalledWith({ payment_intent: "pi_1", limit: 1 });
+    expect(listInvoicePayments).not.toHaveBeenCalled();
+    expect(revokes()[0]).toContain("paid_at IS NOT NULL AND refunded_at IS NULL AND stripe_checkout_session_id = ?");
+    expect(lead!.refunded).toBe(true);
+    expect(effects.reportRefunded).toEqual(alert(true));
+  });
+
+  it("keeps the report open when a duplicate card payment is refunded, and still alerts James", async () => {
+    listSessions.mockResolvedValue({ data: [{ id: "cs_duplicate" }] });
+    const effects = await applyStripeEvent(tx as never, refund());
+    expect(lead!.refunded).toBe(false);
+    expect(effects.reportRefunded).toEqual(alert(false));
   });
 
   it("reads the request from the charge itself when it carries the report metadata", async () => {
     await applyStripeEvent(tx as never, refund({ metadata: { kind: "institution_report", lead_id: "23" } }));
     expect(retrievePaymentIntent).not.toHaveBeenCalled();
-    expect(tx.mock.calls[0].slice(1)).toEqual([23]);
+    expect(lead!.refunded).toBe(true);
   });
 
-  it("finds an invoice-paid report through the customer made for its invoice (#1973)", async () => {
+  it("closes an invoice-paid request found through its invoice customer when that invoice is refunded (#1973)", async () => {
+    lead = { id: "31", name: "Pat Lee", email: "pat@example.com", stripe_checkout_session_id: "in_paid", refunded: false };
     retrievePaymentIntent.mockResolvedValue({ metadata: {} });
     retrieveCustomer.mockResolvedValue({ id: "cus_inv", metadata: { kind: "institution_report", lead_id: "31" } });
-    tx.mockResolvedValueOnce([{ id: "31", name: "Pat Lee", email: "pat@example.com" }]);
     const effects = await applyStripeEvent(tx as never, refund({ customer: "cus_inv" }));
     expect(retrieveCustomer).toHaveBeenCalledWith("cus_inv");
-    expect(issued()[0]).toContain("SET refunded_at = NOW(), status = 'refunded'");
-    expect(tx.mock.calls[0].slice(1)).toEqual([31]);
-    expect(effects.reportRefunded).toEqual([{ leadId: 31, name: "Pat Lee", email: "pat@example.com", cents: 100, chargeId: "ch_1" }]);
+    expect(listInvoicePayments).toHaveBeenCalledWith({ payment: { type: "payment_intent", payment_intent: "pi_1" }, limit: 1 });
+    expect(listSessions).not.toHaveBeenCalled();
+    expect(lead!.refunded).toBe(true);
+    expect(effects.reportRefunded).toEqual(alert(true, 31));
+  });
+
+  it("keeps the report open when a duplicate invoice payment is refunded", async () => {
+    lead = { id: "31", name: "Pat Lee", email: "pat@example.com", stripe_checkout_session_id: "in_paid", refunded: false };
+    retrievePaymentIntent.mockResolvedValue({ metadata: {} });
+    retrieveCustomer.mockResolvedValue({ id: "cus_dup", metadata: { kind: "institution_report", lead_id: "31" } });
+    listInvoicePayments.mockResolvedValue({ data: [{ invoice: { id: "in_duplicate" } }] });
+    const effects = await applyStripeEvent(tx as never, refund({ customer: "cus_dup" }));
+    expect(lead!.refunded).toBe(false);
+    expect(effects.reportRefunded).toEqual(alert(false, 31));
+  });
+
+  it("keeps the report open when Stripe names no payment for the charge", async () => {
+    listSessions.mockResolvedValue({ data: [] });
+    const effects = await applyStripeEvent(tx as never, refund());
+    expect(revokes()).toEqual([]);
+    expect(lead!.refunded).toBe(false);
+    expect(effects.reportRefunded).toEqual(alert(false));
   });
 
   it("reads an expanded invoice customer without another Stripe call, and skips a deleted one", async () => {
+    lead = { id: "31", name: "Pat Lee", email: "pat@example.com", stripe_checkout_session_id: "in_paid", refunded: false };
     retrievePaymentIntent.mockResolvedValue({ metadata: {} });
     await applyStripeEvent(tx as never, refund({ customer: { id: "cus_inv", metadata: { kind: "institution_report", lead_id: "31" } } }));
     expect(retrieveCustomer).not.toHaveBeenCalled();
-    expect(tx.mock.calls[0].slice(1)).toEqual([31]);
+    expect(lead!.refunded).toBe(true);
     tx.mockClear();
     const effects = await applyStripeEvent(tx as never, refund({ customer: { id: "cus_gone", deleted: true } }));
     expect(tx).not.toHaveBeenCalled();
@@ -310,16 +358,15 @@ describe("institution report refunds", () => {
     expect(retrieveCustomer).not.toHaveBeenCalled();
   });
 
-  it("leaves a partly refunded invoice report paid without any Stripe lookup", async () => {
-    retrievePaymentIntent.mockResolvedValue({ metadata: {} });
-    retrieveCustomer.mockResolvedValue({ id: "cus_inv", metadata: { kind: "institution_report", lead_id: "31" } });
-    const effects = await applyStripeEvent(tx as never, refund({ refunded: false, amount_refunded: 50, customer: "cus_inv" }));
+  it.each([{}, { customer: "cus_inv" }])("leaves a partly refunded report paid without any Stripe lookup (%j)", async (more) => {
+    const effects = await applyStripeEvent(tx as never, refund({ refunded: false, amount_refunded: 50, ...more }));
     expect(tx).not.toHaveBeenCalled();
+    expect(retrievePaymentIntent).not.toHaveBeenCalled();
     expect(retrieveCustomer).not.toHaveBeenCalled();
     expect(effects.reportRefunded).toEqual([]);
   });
 
-  it("ignores a refunded Pro charge whose customer carries no report metadata", async () => {
+  it("ignores refunds of anything that isn't a report, such as a Pro charge", async () => {
     retrievePaymentIntent.mockResolvedValue({ metadata: {} });
     const effects = await applyStripeEvent(tx as never, refund({ customer: "cus_pro" }));
     expect(retrieveCustomer).toHaveBeenCalledWith("cus_pro");
@@ -327,20 +374,14 @@ describe("institution report refunds", () => {
     expect(effects.reportRefunded).toEqual([]);
   });
 
-  it("leaves a partly refunded report paid", async () => {
-    const effects = await applyStripeEvent(tx as never, refund({ refunded: false, amount_refunded: 50 }));
-    expect(tx).not.toHaveBeenCalled();
-    expect(effects.reportRefunded).toEqual([]);
-  });
-
-  it("ignores refunds of anything that isn't a report, such as a Pro charge", async () => {
-    retrievePaymentIntent.mockResolvedValue({ metadata: {} });
-    const effects = await applyStripeEvent(tx as never, refund());
-    expect(tx).not.toHaveBeenCalled();
-    expect(effects.reportRefunded).toEqual([]);
-  });
-
   it("alerts nothing for a redelivered refund of a request already marked refunded", async () => {
+    lead!.refunded = true;
+    const effects = await applyStripeEvent(tx as never, refund());
+    expect(effects.reportRefunded).toEqual([]);
+  });
+
+  it("alerts nothing for a request that was never paid", async () => {
+    lead = null;
     const effects = await applyStripeEvent(tx as never, refund());
     expect(effects.reportRefunded).toEqual([]);
   });

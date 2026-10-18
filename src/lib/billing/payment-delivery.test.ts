@@ -31,3 +31,25 @@ describe("stagePaymentEmails welcome (#1972)", () => {
     expect(m.enqueue).toHaveBeenCalledWith({}, expect.objectContaining({ key: "welcome/cs_1/7" }));
   });
 });
+
+describe("stagePaymentEmails refund alert (#1973)", () => {
+  beforeEach(() => {
+    m.enqueue.mockReset();
+    m.enqueue.mockResolvedValue(true);
+    vi.stubEnv("TRANSACTIONAL_EMAIL_FROM", "Fee Insight <test@example.invalid>");
+  });
+  const refund = (revoked: boolean): StripeEventEffects => ({ welcome: [], reportPaid: [], reportDuplicate: [],
+    reportRefunded: [{ leadId: 31, name: "Pat", email: "pat@example.invalid", cents: 30000, chargeId: "ch_1", revoked }] });
+  const text = () => String((m.enqueue.mock.calls[0][1] as { message: { text: string } }).message.text);
+
+  it("tells James the report closed when the recorded payment was refunded", async () => {
+    await stagePaymentEmails({} as never, "evt_refund", refund(true));
+    expect(m.enqueue).toHaveBeenCalledWith({}, expect.objectContaining({ key: "evt_refund/refund/ch_1", kind: "refund_admin", leadId: 31 }));
+    expect(text()).toContain("uses the refunded payment state");
+  });
+
+  it("tells James the report stays open when a duplicate payment was refunded", async () => {
+    await stagePaymentEmails({} as never, "evt_refund", refund(false));
+    expect(text()).toContain("not the payment recorded for the request, so the report stays open");
+  });
+});

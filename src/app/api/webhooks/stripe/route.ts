@@ -46,7 +46,8 @@ async function handlePOST(req: Request) {
     return new Response("Processing failed", { status: 500 });
   }
 
-  // Preserve activation telemetry once per freshly committed event, not per email retry.
+  // The one pro_activated count: once per checkout session, when its welcome is first staged.
+  // activateIfPaid no longer counts it, so a fallback activation is not counted twice.
   for (const email of activated) {
     await trackServerEvent("pro_activated", { source: "webhook" }).catch(() => {});
     // Pro onboarding emails start, and every free sequence and upgrade prompt stops.

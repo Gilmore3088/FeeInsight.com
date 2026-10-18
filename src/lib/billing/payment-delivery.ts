@@ -48,7 +48,10 @@ export async function stagePaymentEmails(tx: typeof sql, eventId: string, effect
     await enqueuePaymentEmail(tx, { eventId, key: `${eventId}/refund/${refund.chargeId}`, kind: "refund_admin", leadId: refund.leadId,
       message: envelope(CONTACT_EMAIL, { subject: `Report refund recorded: request ${refund.leadId}`,
         lines: [`A full refund of $${(refund.cents/100).toFixed(2)} was recorded for ${refund.name}.`,
-          `Stripe charge: ${refund.chargeId}`, "The report access check uses the refunded payment state. No customer email was sent by this alert."] }) });
+          `Stripe charge: ${refund.chargeId}`,
+          refund.revoked
+            ? "The report access check uses the refunded payment state. No customer email was sent by this alert."
+            : "This charge is not the payment recorded for the request, so the report stays open. No customer email was sent by this alert."] }) });
   }
   return welcomed;
 }
