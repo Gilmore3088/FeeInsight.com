@@ -20,6 +20,7 @@ import { getPeerServiceChargeMedians, getRevenueTrend } from "@/lib/data-store/c
 import { getLocalMarketMembers, type LocalMarketMembers } from "@/lib/data-store/custom-report-market";
 import { getStateEconomicContext } from "@/lib/data-store/economic-context";
 import { STATE_NEWS_SOURCE_PATTERNS } from "@/lib/data-store/news";
+import { STRUCK_ENFORCEMENT_AGENCIES, STRUCK_REG_ARTICLE_SOURCES } from "@/lib/data-store/struck-sources";
 import { getNationalRateStats, getRateFeesByInstitution } from "@/lib/data-store/rate-fees";
 import { getInstitutionRegulators } from "@/lib/data-store/regulators";
 import { getComplaintBenchmark, getInstitutionComplaintYears } from "@/lib/data-store/complaints";
@@ -491,6 +492,8 @@ export async function loadWire(
             FROM institution_enforcement_actions
            WHERE start_date >= ${actionSince.toISOString().slice(0, 10)}::date
              AND (agency = ${federal} OR upper(party_state) = ${state})
+             -- Struck states' orders (DECISIONS.md "No non-commercial data") are never read.
+             AND agency <> ALL(${[...STRUCK_ENFORCEMENT_AGENCIES]}::text[])
              AND subject ~* ${CONSUMER_LAW_PG}
              -- Rows the reader would drop for having no link must not use up the LIMIT (#1359).
              AND (document_url IS NOT NULL OR agency = 'OCC')
@@ -502,6 +505,7 @@ export async function loadWire(
           SELECT source, title, link, published_at
             FROM reg_articles
            WHERE source = ${`state:${state}`}
+             AND source <> ALL(${[...STRUCK_REG_ARTICLE_SOURCES]}::text[])
              AND published_at >= ${sinceDate(WIRE_POST_DAYS, now)}
            ORDER BY published_at DESC
            LIMIT 200`.catch(empty("state posts"))

@@ -27,6 +27,8 @@ import {
   parseRemittancePrices,
   placeAddressesInTracts,
   placePointInTract,
+  REMITTANCE_PRICES_ATTRIBUTION,
+  REMITTANCE_PRICES_LICENCE,
   RPW_URL_ENV,
   RUCC_VINTAGES,
   sumIndustry,
@@ -778,6 +780,8 @@ async function runRemittances(db: RegistryDb, options: RegistryEconomyOptions): 
   const unique = [...new Map(parsed.rows.map((r) => [`${r.period}|${r.destination_country}|${r.firm}|${r.product ?? ""}`, r])).values()];
   const detail = {
     parser_version: ECONOMY_PARSER_VERSION,
+    licence: REMITTANCE_PRICES_LICENCE,
+    attribution: REMITTANCE_PRICES_ATTRIBUTION,
     rows: unique.length,
     duplicate_keys: parsed.rows.length - unique.length,
     non_us_rows: parsed.nonUsRows,
@@ -796,7 +800,8 @@ async function runRemittances(db: RegistryDb, options: RegistryEconomyOptions): 
   let written = 0;
   let linked = 0;
   for (const group of chunk(unique, UPSERT_CHUNK)) {
-    const payload = JSON.stringify(group.map((r) => ({ ...r, raw_json: r.raw, raw: undefined })));
+    // CC BY 4.0: each stored quote carries the attribution its licence requires.
+    const payload = JSON.stringify(group.map((r) => ({ ...r, raw_json: { ...r.raw, attribution: REMITTANCE_PRICES_ATTRIBUTION }, raw: undefined })));
     const out = await db<Array<{ linked: boolean }>>`
       WITH r AS (
         SELECT * FROM jsonb_to_recordset(${payload}::jsonb) AS x(

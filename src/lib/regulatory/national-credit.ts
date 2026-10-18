@@ -11,8 +11,10 @@ import { parseCsvTable } from "./industry-events";
  *
  * - `national-series`: FRED's keyless graph CSV (fredCsvUrl in ./fed) for a fixed list of series:
  *   Fed H.8 deposits and loans (all, large and small domestically chartered commercial banks),
- *   Freddie Mac PMMS mortgage rates, the Philadelphia Fed's large-bank credit card series, Fed
- *   SLOOS net tightening and demand, CRE exposure (H.8 and Z.1) and bank delinquency rates.
+ *   Fed SLOOS net tightening and demand, CRE exposure (H.8 and Z.1), bank delinquency rates and
+ *   FDIC national deposit rates. Freddie Mac PMMS and the Philadelphia Fed's large-bank credit
+ *   card series were struck on 2026-10-18 (DECISIONS.md "No non-commercial data"; their
+ *   publishers' terms bar commercial use); data-store/struck-sources.ts hides rows already loaded.
  *   Each file's header must name the series id asked for; a series FRED does not return, or
  *   returns under another id, is reported in missing_fields and never substituted.
  * - `nyfed-household-debt`: NY Fed Household Debt and Credit state-level workbook (balance per
@@ -85,7 +87,7 @@ export function checkNationalCreditStats(rows: AreaStat[], signedSeries: Readonl
 
 export type FredFrequency = "weekly" | "monthly" | "quarterly";
 
-export type NationalSeriesGroup = "h8" | "pmms" | "lbccm" | "sloos" | "cre" | "delinquency" | "deposit_rates";
+export type NationalSeriesGroup = "h8" | "sloos" | "cre" | "delinquency" | "deposit_rates";
 
 export interface NationalSeriesConfig {
   /** FRED series id, checked against the CSV header. */
@@ -102,7 +104,6 @@ export interface NationalSeriesConfig {
 
 const h8 = (id: string, key: string, title: string): NationalSeriesConfig => ({ id, key: `natl_h8_${key}`, title, group: "h8", frequency: "weekly", unit: "billions_dollars" });
 const sloos = (id: string, key: string, title: string): NationalSeriesConfig => ({ id, key: `natl_sloos_${key}`, title, group: "sloos", frequency: "quarterly", unit: "percent", signed: true });
-const lbccm = (id: string, key: string, title: string, unit = "percent"): NationalSeriesConfig => ({ id, key: `natl_lbccm_${key}`, title, group: "lbccm", frequency: "quarterly", unit });
 const delinquency = (id: string, key: string, title: string): NationalSeriesConfig => ({ id, key: `natl_delinq_${key}`, title, group: "delinquency", frequency: "quarterly", unit: "percent" });
 // FDIC national deposit rates (the averages behind the national rate caps), as FRED republishes
 // them. Series ids, titles, units and monthly frequency checked on fred.stlouisfed.org/series/SNDR,
@@ -127,13 +128,6 @@ export const NATIONAL_SERIES: NationalSeriesConfig[] = [
   { ...h8("CREACBW027SBOG", "cre_loans_all", "Commercial real estate loans, all commercial banks"), group: "cre" },
   { ...h8("CRELCBW027SBOG", "cre_loans_large", "Commercial real estate loans, large domestically chartered commercial banks"), group: "cre" },
   { ...h8("CRESCBW027SBOG", "cre_loans_small", "Commercial real estate loans, small domestically chartered commercial banks"), group: "cre" },
-  { id: "MORTGAGE30US", key: "natl_pmms_30y_fixed", title: "Freddie Mac PMMS 30-year fixed mortgage rate", group: "pmms", frequency: "weekly", unit: "percent" },
-  { id: "MORTGAGE15US", key: "natl_pmms_15y_fixed", title: "Freddie Mac PMMS 15-year fixed mortgage rate", group: "pmms", frequency: "weekly", unit: "percent" },
-  lbccm("RCCCBAPRAVGPCTGP", "apr_avg", "Large bank credit cards: average APR"),
-  lbccm("RCCCBBALTOT", "balances_total", "Large bank credit cards: total balances", "billions_dollars"),
-  lbccm("RCCCBUTILAVGPCT", "utilization_avg", "Large bank credit cards: average utilization"),
-  lbccm("RCCCBPMTMINPCT", "paying_minimum_share", "Large bank credit cards: share of accounts paying the minimum"),
-  lbccm("RCCCBPMTFULLPCT", "paying_full_share", "Large bank credit cards: share of accounts paying the full balance"),
   sloos("DRTSCILM", "ci_large_mid_tightening", "Net share of banks tightening C&I standards, large and middle-market firms"),
   sloos("DRTSCIS", "ci_small_tightening", "Net share of banks tightening C&I standards, small firms"),
   sloos("DRSDCILM", "ci_large_mid_demand", "Net share of banks reporting stronger C&I demand, large and middle-market firms"),

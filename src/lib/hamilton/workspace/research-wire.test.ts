@@ -40,7 +40,14 @@ describe("loadWire enforcement read (#1254)", () => {
     expect(call.text).toContain("agency = ? OR upper(party_state) = ?");
     expect(call.text).toContain("subject ~* ?");
     expect(call.text).not.toContain("IN ('OCC', 'FRB')");
-    expect(call.values).toEqual(["2023-10-14", "FRB", "IL", CONSUMER_LAW_PG]);
+    expect(call.values).toEqual(["2023-10-14", "FRB", "IL", ["STATE_NY", "STATE_NC", "STATE_FL"], CONSUMER_LAW_PG]);
+  });
+
+  it("never reads a struck state's orders or posts (New York, North Carolina, Florida; 2026-10-18)", async () => {
+    await loadWire("NY", "FDIC", now);
+    expect(enforcementCall()!.text).toContain("agency <> ALL(?::text[])");
+    const posts = calls().find((c) => c.text.includes("FROM reg_articles"))!;
+    expect(posts.values).toEqual(expect.arrayContaining([["state:NY", "state:NC", "state:FL"]]));
   });
 
   it("passes no federal code for an FDIC or NCUA bank, so only its state's actions are read", async () => {

@@ -22,8 +22,11 @@ import { chunk, recordRegistryPartition, type RegistryDb } from "./partitions";
  * shows up in the run ledger rather than as an empty card.
  */
 
-/** Bumped when a reader changes, so the scheduler re-reads at once (REGISTRY_PARSER_VERSIONS). 6: stated subjects (#1428). */
-export const STATE_ENFORCEMENT_PARSER_VERSION = 6;
+/**
+ * Bumped when a reader changes, so the scheduler re-reads at once (REGISTRY_PARSER_VERSIONS).
+ * 6: stated subjects (#1428). 7: New York and North Carolina struck (non-commercial terms, 2026-10-18).
+ */
+export const STATE_ENFORCEMENT_PARSER_VERSION = 7;
 export const STATE_ENFORCEMENT_SOURCE = "state-enforcement";
 export const STATE_ENFORCEMENT_PARTITION = "current";
 const REFRESH_HOURS = 24 * 7;

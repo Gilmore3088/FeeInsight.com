@@ -1,4 +1,5 @@
 import { sql } from "./connection";
+import { STRUCK_ENFORCEMENT_AGENCIES } from "./struck-sources";
 import { stateAgencyCode } from "@/lib/regulatory/state-enforcement";
 import { buildLocalOfficeMap, localMapBounds, LOCAL_MAP_MAX_STATES, type LocalOfficeMap } from "@/lib/geo/local-office-map";
 import { getLocalMarketMembers } from "./custom-report-market";
@@ -587,15 +588,19 @@ export async function getEnforcementRecord(institutionId: number): Promise<Enfor
     SELECT charter_type, primary_regulator, holding_company_name, state_code, charter_agency FROM institution_sources WHERE id = ${institutionId}`;
   if (!inst || inst.charter_type !== "bank") return null;
   const holding = inst.holding_company_name ? String(inst.holding_company_name) : null;
+  // Struck states' orders (non-commercial site terms; DECISIONS.md "No non-commercial data") are never read.
   const loaded = await sql<Array<Record<string, unknown>>>`
-    SELECT agency, MAX(fetched_at) AS fetched_at FROM institution_enforcement_actions GROUP BY agency`;
+    SELECT agency, MAX(fetched_at) AS fetched_at FROM institution_enforcement_actions
+     WHERE agency <> ALL(${[...STRUCK_ENFORCEMENT_AGENCIES]}::text[])
+     GROUP BY agency`;
   const loadedAgencies = new Set(loaded.map((r) => String(r.agency)));
   const rows = await sql<Array<Record<string, unknown>>>`
     SELECT agency, party_name, institution_id, action_type, subject, start_date, termination_date,
            penalty_amount, document_url
       FROM institution_enforcement_actions
-     WHERE institution_id = ${institutionId}
-        OR (${holding}::text IS NOT NULL AND holding_company = ${holding})
+     WHERE (institution_id = ${institutionId}
+            OR (${holding}::text IS NOT NULL AND holding_company = ${holding}))
+       AND agency <> ALL(${[...STRUCK_ENFORCEMENT_AGENCIES]}::text[])
      ORDER BY start_date DESC NULLS LAST, id DESC`;
   const actions: EnforcementActionRow[] = rows.map((r) => ({
     agency: String(r.agency),

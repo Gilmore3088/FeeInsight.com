@@ -1221,3 +1221,17 @@ depository list (CFO site: "educational, personal, or training purposes"); and F
 (University of Michigan consumer sentiment needs a licence for a sold product). World Bank
 Remittance Prices Worldwide is held: its code stays, no partition is scheduled and no reader returns
 its rows until James confirms its terms.
+Round 2, 2026-10-18 (licence audit addendum,
+`api-mcp/loader-notes/licence-audit-2026-10-17.md`): struck the Philadelphia Fed large-bank credit
+card series (RCCCBAPRAVGPCTGP, RCCCBBALTOT, RCCCBUTILAVGPCT, RCCCBPMTMINPCT, RCCCBPMTFULLPCT;
+"informational, educational, and research purposes only") and Freddie Mac PMMS (MORTGAGE30US,
+MORTGAGE15US; freddiemac.com/terms: "may not redistribute ... or commercially exploit Data") from
+national-series; the New York (DFS: "for non-commercial purposes"), North Carolina (nc.gov: "for
+non-commercial use") and Florida regulator sites from state-reg-news and state-enforcement, so
+wire-research no longer reads their posts (New Jersey and the other states stay). Google News press
+(state-bill-news) is held: its terms are unread and reported as non-commercial, nothing is
+scheduled and no reader returns its rows. Released: World Bank Remittance Prices Worldwide (CC BY
+4.0; attribution "The World Bank: Remittance Prices Worldwide") and Urban Institute Debt in America
+(ODC-By 1.0; attribution "Braga et al., Debt in America, Urban Institute"), each carrying its
+attribution on every stored row and read. Rows already loaded from struck sources stay on prod and
+no reader returns them (`src/lib/data-store/struck-sources.ts`).

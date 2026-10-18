@@ -3,6 +3,7 @@ import { likePattern, type WireKind } from "@/lib/regulatory/wire";
 import { hasFeeType, type FeeType } from "@/lib/regulatory/wire-fee-types";
 import { trackerItemId } from "@/lib/regulatory/wire-research";
 import { sql } from "./connection";
+import { STRUCK_REG_ARTICLE_SOURCES } from "./struck-sources";
 
 /**
  * State-level news for the Pro news page and the State report: the state regulators' own
@@ -190,12 +191,15 @@ export function toFeeBills(rows: BillRow[]): StateFeeBill[] {
 }
 
 async function readArticles(prefix: "state" | "news", options: StateNewsOptions, limit: number): Promise<ArticleRow[]> {
+  // Press stories (Google News, state-bill-news) are held: DECISIONS.md "No non-commercial data".
+  if (prefix === "news") return [];
   const pattern = options.stateCode ? `${prefix}:${options.stateCode.toUpperCase()}` : `${prefix}:%`;
   const since = options.since ?? null;
   return (await sql`
     SELECT source, title, link, published_at
       FROM reg_articles
      WHERE source LIKE ${pattern}
+       AND source <> ALL(${[...STRUCK_REG_ARTICLE_SOURCES]}::text[])
        AND (${since}::text IS NULL OR published_at >= ${since})
      ORDER BY published_at DESC NULLS LAST, created_at DESC
      LIMIT ${limit}
@@ -237,7 +241,8 @@ export async function getStateNews(options: StateNewsOptions = {}): Promise<Stat
 export async function getStatesWithNews(): Promise<string[]> {
   try {
     const rows = (await sql`
-      SELECT DISTINCT upper(split_part(source, ':', 2)) AS state_code FROM reg_articles WHERE source LIKE 'state:%' OR source LIKE 'news:%'
+      SELECT DISTINCT upper(split_part(source, ':', 2)) AS state_code FROM reg_articles
+       WHERE source LIKE 'state:%' AND source <> ALL(${[...STRUCK_REG_ARTICLE_SOURCES]}::text[])
       UNION
       SELECT DISTINCT upper(jurisdiction) FROM reg_tracker_items WHERE source = 'open_states' AND cardinality(topics) > 0
       ORDER BY 1
@@ -410,6 +415,8 @@ export function wireStates(options: Pick<StateWireOptions, "stateCode" | "stateC
 }
 
 async function readWireArticles(prefix: "state" | "news", options: StateWireOptions, cap: number): Promise<ArticleRow[]> {
+  // Press stories (Google News, state-bill-news) are held: DECISIONS.md "No non-commercial data".
+  if (prefix === "news") return [];
   const states = wireStates(options);
   const patterns = states ? states.map((code) => `${prefix}:${code}`) : [`${prefix}:%`];
   const since = options.since ?? null;
@@ -418,6 +425,7 @@ async function readWireArticles(prefix: "state" | "news", options: StateWireOpti
     SELECT guid, source, title, link, published_at
       FROM reg_articles
      WHERE source LIKE ANY(${patterns}::text[])
+       AND source <> ALL(${[...STRUCK_REG_ARTICLE_SOURCES]}::text[])
        AND (${since}::text IS NULL OR published_at >= ${since})
        AND (${q}::text IS NULL OR title ILIKE ${q})
      ORDER BY published_at DESC NULLS LAST, created_at DESC

@@ -845,7 +845,7 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
   {
     source: URBAN_DEBT_SOURCE,
     stepKey: "registry-urban-debt",
-    title: "Read Urban Institute debt in collections by county and state (held until license confirmed)",
+    title: "Read Urban Institute debt in collections by county and state",
     fixedPartition: URBAN_DEBT_PARTITION,
     run: async (input) => {
       const r = await runRegistryStateLists({ source: URBAN_DEBT_SOURCE, runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
@@ -857,7 +857,6 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
           area_rows: r.areaRows,
           written_rows: r.writtenRows,
           missing_fields: r.missingFields,
-          held: r.held,
           dry_run: r.dryRun,
           empty: r.empty,
           empty_reason: r.emptyReason,
@@ -916,7 +915,6 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
           removed_rows: r.removedRows,
           area_rows: r.areaRows,
           missing_fields: r.missingFields,
-          held: r.held,
           dry_run: r.dryRun,
           empty: r.empty,
           empty_reason: r.emptyReason,
@@ -942,7 +940,6 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
           removed_rows: r.removedRows,
           area_rows: r.areaRows,
           missing_fields: r.missingFields,
-          held: r.held,
           dry_run: r.dryRun,
           empty: r.empty,
           empty_reason: r.emptyReason,

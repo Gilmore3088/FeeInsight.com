@@ -66,7 +66,7 @@ import {
   INDUSTRY_EVENTS_SOURCE,
   industryEventsPartitions,
 } from "@/lib/agents/magellan/registry/industry-events";
-import { ECONOMY_DEFINITIONS, ECONOMY_PARSER_VERSION, ECONOMY_SOURCES } from "@/lib/agents/magellan/registry/economy";
+import { ECONOMY_DEFINITIONS, ECONOMY_PARSER_VERSION } from "@/lib/agents/magellan/registry/economy";
 import { MAKING_ENDS_MEET_PARSER_VERSION, MAKING_ENDS_MEET_SOURCE } from "@/lib/agents/magellan/registry/making-ends-meet";
 import { PAYDAY_REPORTS_PARSER_VERSION, PAYDAY_REPORTS_SOURCE, paydayReportsPartitions } from "@/lib/agents/magellan/registry/payday-reports";
 import {
@@ -242,8 +242,10 @@ function years(from: number, to: number): string[] {
 /**
  * Sources whose data terms are unconfirmed: the loader code stays, but no partition is scheduled
  * (nor offered to a manual run) until James confirms the terms. Their Hoovie contracts say `held`.
+ * state-bill-news (Google News RSS) since 2026-10-18; World Bank remittance prices left on
+ * 2026-10-18 (CC BY 4.0, DECISIONS.md "No non-commercial data").
  */
-export const HELD_REGISTRY_SOURCES: ReadonlySet<string> = new Set([ECONOMY_SOURCES.remittances]);
+export const HELD_REGISTRY_SOURCES: ReadonlySet<string> = new Set([STATE_BILL_NEWS_SOURCE]);
 
 /**
  * Each source's partitions, newest first. Fixed-partition sources come from REGISTRY_SOURCES.

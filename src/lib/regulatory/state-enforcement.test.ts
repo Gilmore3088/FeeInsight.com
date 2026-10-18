@@ -15,7 +15,9 @@ import {
   stateOrderKey,
   statedSubject,
   parseLabelled,
+  STATE_ORDER_SOURCES,
 } from "./state-enforcement";
+import { STRUCK_REGULATOR_STATES } from "@/lib/data-store/struck-sources";
 
 describe("state enforcement readers", () => {
   it("reads a table by its headers, keeps bank rows only, and resolves the order link", () => {
@@ -70,6 +72,12 @@ describe("state enforcement readers", () => {
     expect(enforcementAgencyLabel("FRB")).toBe("Federal Reserve");
     expect(enforcementAgencyList(["OCC", "FRB"])).toBe("OCC and Federal Reserve");
     expect(enforcementAgencyList(["OCC", "FRB", "STATE_NJ", "STATE_NY"])).toBe("OCC, Federal Reserve and 2 state banking departments");
+  });
+
+  it("reads no state whose site terms are non-commercial (NY, NC, FL; DECISIONS.md 2026-10-18)", () => {
+    const states = STATE_ORDER_SOURCES.map((s) => s.state);
+    expect(states.filter((s) => STRUCK_REGULATOR_STATES.includes(s))).toEqual([]);
+    expect(states).toContain("NJ");
   });
 });
 

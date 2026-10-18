@@ -16,8 +16,9 @@ import { recordRegistryPartition, type RegistryDb } from "./partitions";
 /**
  * Magellan registry steps for national and state funding and credit context, one source per
  * step, all into area_statistics:
- * - `national-series`: the configured FRED series (H.8, PMMS, Philadelphia Fed large-bank cards,
- *   SLOOS, CRE, bank delinquency rates), nation.
+ * - `national-series`: the configured FRED series (H.8, SLOOS, CRE, bank delinquency rates, FDIC
+ *   national deposit rates), nation. PMMS and the Philadelphia Fed card series were struck on
+ *   2026-10-18 (DECISIONS.md "No non-commercial data").
  * - `nyfed-household-debt`: NY Fed household debt per capita and 90+ day delinquency by loan type
  *   and state (plus the nation when the workbook carries it).
  * - `nyfed-sce-credit`: NY Fed SCE credit access survey, nation.
@@ -30,7 +31,8 @@ import { recordRegistryPartition, type RegistryDb } from "./partitions";
  * workbook/file sources use one standing `current` partition.
  */
 
-export const NATIONAL_CREDIT_PARSER_VERSION = 2;
+/** v3: Freddie Mac PMMS and the Philadelphia Fed card series removed from national-series (2026-10-18). */
+export const NATIONAL_CREDIT_PARSER_VERSION = 3;
 
 export const NATIONAL_CREDIT_SOURCES = {
   nationalSeries: "national-series",
@@ -63,7 +65,7 @@ export interface NationalCreditDefinition {
 export const NATIONAL_CREDIT_DEFINITIONS: NationalCreditDefinition[] = [
   {
     source: NATIONAL_CREDIT_SOURCES.nationalSeries,
-    title: "Pull national bank funding and credit series from FRED (H.8, PMMS, SLOOS, large-bank cards, CRE)",
+    title: "Pull national bank funding and credit series from FRED (H.8, SLOOS, CRE, delinquency, FDIC rates)",
     label: "FRED national credit series",
     partitions: (now) => [monthPartition(now)],
     refreshHours: HOURS.week,

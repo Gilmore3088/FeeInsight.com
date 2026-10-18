@@ -1,6 +1,7 @@
 import { strToU8, zipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
 
+import { STRUCK_AREA_SERIES_KEYS, STRUCK_NATIONAL_SERIES_IDS } from "@/lib/data-store/struck-sources";
 import {
   checkNationalCreditStats,
   excelSerialDate,
@@ -120,13 +121,18 @@ describe("FRED national series", () => {
     expect(new Set(NATIONAL_SERIES.map((s) => s.key)).size).toBe(NATIONAL_SERIES.length);
     for (const s of NATIONAL_SERIES) expect(s.key).toMatch(/^natl_[a-z0-9_]+$/);
   });
+
+  it("configures no struck series (Freddie Mac PMMS, Philadelphia Fed cards; DECISIONS.md 2026-10-18)", () => {
+    expect(NATIONAL_SERIES.filter((s) => STRUCK_NATIONAL_SERIES_IDS.includes(s.id)).map((s) => s.id)).toEqual([]);
+    expect(NATIONAL_SERIES.filter((s) => STRUCK_AREA_SERIES_KEYS.includes(s.key)).map((s) => s.key)).toEqual([]);
+  });
 });
 
 describe("cleaning pass", () => {
   it("lets SLOOS net percentages go negative but flags other negatives", () => {
     const row = (series_key: string, value: number) => ({ geo_type: "nation" as const, geo_code: "US", geo_name: null, state_code: null, period: "2026Q3", series_key, value, unit: "percent", note: null, raw: {} });
-    const checks = checkNationalCreditStats([row("natl_sloos_ci_large_mid_tightening", -5), row("natl_pmms_30y_fixed", -1)], new Set(["natl_sloos_ci_large_mid_tightening"]));
-    expect(checks.flagged.map((f) => f.key)).toEqual(["natl_pmms_30y_fixed/nation"]);
+    const checks = checkNationalCreditStats([row("natl_sloos_ci_large_mid_tightening", -5), row("natl_fdic_rate_savings", -1)], new Set(["natl_sloos_ci_large_mid_tightening"]));
+    expect(checks.flagged.map((f) => f.key)).toEqual(["natl_fdic_rate_savings/nation"]);
   });
 });
 

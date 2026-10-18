@@ -84,8 +84,8 @@ export const HOOVIE_SOURCES_00: HoovieSourceContract[] = [
     source: "cfpb-card-agreements",
     publisher: "CFPB (Credit Card Agreement Database, Prepaid Product Agreements Database, TCCP survey)",
     licence: {
-      status: "terms-unconfirmed",
-      note: "CFPB hosts the issuers' own agreement PDFs; the CFPB did not write them, so 17 U.S.C. 105 does not cover the text. Fee facts read from them are not in question; quoting agreement text needs the terms checked.",
+      status: "public-domain",
+      note: "Fee facts only: \"Information created by the CFPB is in the public domain\" (licence audit 2026-10-18), but the agreement PDFs are the issuers' own text, which copyright may cover. Never republish agreement text.",
     },
     connection: "bulk-file",
     cadence: "quarterly",

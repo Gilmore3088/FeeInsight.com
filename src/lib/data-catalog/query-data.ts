@@ -12,7 +12,7 @@ import {
   type IndexEntry,
 } from "@/lib/data-store/fee-index";
 import { PeerSetError, definitionFor, getPeerSubject, resolvePeerRequest, resolvePeerSet, type PeerSetRequest } from "@/lib/data-store/peer-sets";
-import { STRUCK_FRED_SERIES, STRUCK_SOURCE_URL_PATTERN } from "@/lib/data-store/struck-sources";
+import { STRUCK_AREA_SERIES_KEYS, STRUCK_FRED_SERIES, STRUCK_SOURCE_URL_PATTERN } from "@/lib/data-store/struck-sources";
 import { FEE_FAMILIES, getDisplayName } from "@/lib/fee-taxonomy";
 import { MAX_NEAREST_PEERS, PEER_REGULATORS, type PeerRegulator } from "@/lib/peer-set-dimensions";
 import { catalogEntry, scopeForAreaGeoType, type CatalogScopeKind } from "./catalog";
@@ -209,7 +209,7 @@ async function queryArea(input: QueryDataInput, source: string, seriesKey: strin
   if (!entry || entry.kind !== "public-data") return refuse(input.measure, `"${source}" is not a source in the data catalog.`);
   if (!entry.servable) return refuse(input.measure, entry.notServableReason ?? "This source may not be shown to customers.");
   if (entry.areaGeoTypes.length === 0) return refuse(input.measure, `${entry.label} holds no area figures to query.`);
-  if (STRUCK_FRED_SERIES.includes(seriesKey)) return refuse(input.measure, "This series was struck: its terms do not allow commercial use.");
+  if (STRUCK_FRED_SERIES.includes(seriesKey) || STRUCK_AREA_SERIES_KEYS.includes(seriesKey)) return refuse(input.measure, "This series was struck: its terms do not allow commercial use.");
 
   const resolved = await areaTargets(input.scope, entry.areaGeoTypes);
   if ("reason" in resolved) return refuse(input.measure, resolved.reason);
