@@ -117,8 +117,11 @@ export default async function PlanPage({ searchParams }: PageProps) {
     .map((l) => ({ layer: l, now: peerPosition(l.amounts, from), after: peerPosition(l.amounts, to) }));
 
   // The chosen layer's stamp leads the note; each other layer shown says how its read differs.
-  const stampedLayers = [mainLayer, ...layerRows.map((r) => r.layer).filter((l) => l.key !== mainLayer.key)]
-    .flatMap((l) => (l.stamp ? [{ label: l.label, stamp: l.stamp }] : []));
+  // A chosen layer with no stamp (the local market) gets no note rather than another layer's.
+  const stampedLayers = mainLayer.stamp
+    ? [mainLayer, ...layerRows.map((r) => r.layer).filter((l) => l.key !== mainLayer.key)]
+        .flatMap((l) => (l.stamp ? [{ label: l.label, stamp: l.stamp }] : []))
+    : [];
   const marketTable = (
     <>
       <PositionShift

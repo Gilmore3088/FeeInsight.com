@@ -119,7 +119,7 @@ export const STATS_POPULATION_FILTERS: ReadonlyArray<PopulationFilter & { sqlMar
   },
   {
     key: "consumer_audience",
-    label: "Consumer fees, fees for both consumers and businesses, and fees whose schedule names no audience; business-only fees and fees with no audience recorded left out",
+    label: "Consumer fees, fees for both consumers and businesses, and fees whose schedule names no audience; business-only fees and fees not yet sorted by audience left out",
     sqlMarker: ".fee_audience IN (",
   },
   {

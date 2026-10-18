@@ -34,14 +34,14 @@ describe("dataset note words (#1924 step 2)", () => {
   it("says a live read's source, time and counting rule in one line, with the details and filters behind it", () => {
     const stamp = makeStamp(live);
     const words = datasetNoteWords([{ label: "Texas", stamp }]);
-    expect(words?.summary).toBe("Published fee schedules, read live 18 Oct 2026 14:10 UTC. Sibling charters sharing one schedule count once.");
+    expect(words?.summary).toBe("Published fee schedules, read live 18 Oct 2026 14:10 UTC. Institutions sharing one fee schedule count once.");
     expect(words?.details).toEqual([
       "Source: Published dollar fees",
       "Read live: 18 Oct 2026 14:10 UTC",
       "Newest fee record: 18 Oct 2026 09:30 UTC",
-      "Statistics method: version 13",
-      "Counting: Sibling charters that share one fee schedule count as one institution",
-      `Reference: ${stamp.id}`,
+      "Method version: 13",
+      "Counting: Institutions that share one fee schedule count as one institution",
+      `Data reference (for support): ${stamp.id}`,
     ]);
     expect(words?.filters).toEqual([POPULATION[0].label]);
     expect(words?.differences).toBeNull();
@@ -49,9 +49,9 @@ describe("dataset note words (#1924 step 2)", () => {
 
   it("names a snapshot's computed time and run", () => {
     const words = datasetNoteWords([{ label: "National medians", stamp: makeStamp(snapshot) }]);
-    expect(words?.summary).toBe("Snapshot of published fee schedules, computed 17 Oct 2026 02:00 UTC. Sibling charters sharing one schedule count once.");
+    expect(words?.summary).toBe("Snapshot of published fee schedules, computed 17 Oct 2026 02:00 UTC. Institutions sharing one fee schedule count once.");
     expect(words?.details).toContain("Computed from: Published dollar fees");
-    expect(words?.details).toContain("Snapshot run: 9001");
+    expect(words?.details.some((d) => d.includes("9001"))).toBe(false);
   });
 
   it("says each charter counts on its own when count-once is off", () => {
@@ -60,12 +60,25 @@ describe("dataset note words (#1924 step 2)", () => {
   });
 
   it("says how two figures on one screen differ, in their own names", () => {
-    const state = makeStamp({ ...live, filters: [...POPULATION, { key: "peers:state:TX", label: "Peers: TX" }] });
+    const state = makeStamp({ ...live, filters: [...POPULATION, { key: "peers:state:TX", label: "Institutions in TX" }] });
     const national = makeStamp(live);
     const words = datasetNoteWords([{ label: "Texas", stamp: state }, { label: "the U.S. reference", stamp: national }]);
-    expect(words?.differences).toEqual({ heading: "How Texas and the U.S. reference differ", lines: ["Only Texas: Peers: TX"] });
+    expect(words?.differences).toEqual({ heading: "How Texas and the U.S. reference differ", lines: ["Only Texas: Institutions in TX"] });
     const other = datasetNoteWords([{ label: "the U.S. reference", stamp: national }, { label: "Texas", stamp: state }]);
-    expect(other?.differences?.lines).toEqual(["Only Texas: Peers: TX"]);
+    expect(other?.differences?.lines).toEqual(["Only Texas: Institutions in TX"]);
+  });
+
+  it("names each reason once when three or more figures differ from the first", () => {
+    const state = makeStamp({ ...live, filters: [...POPULATION, { key: "peers:state:TX", label: "Institutions in TX" }] });
+    const words = datasetNoteWords([
+      { label: "Texas", stamp: state },
+      { label: "National", stamp: makeStamp(live) },
+      { label: "Fed district 11", stamp: makeStamp({ ...live, filters: [...POPULATION, { key: "peers:fed_districts:11", label: "Fed district 11" }] }) },
+      { label: "Banks, $1B to $10B in assets", stamp: makeStamp({ ...live, filters: [...POPULATION, { key: "peers:charter:bank", label: "Banks only" }] }) },
+    ]);
+    expect(words?.differences?.heading).toBe("Why these figures can differ");
+    expect(words?.differences?.lines.filter((l) => l === "Only Texas: Institutions in TX")).toHaveLength(1);
+    expect(new Set(words?.differences?.lines).size).toBe(words?.differences?.lines.length);
   });
 
   it("explains a snapshot against a live read, and stays quiet when every figure shares one stamp", () => {

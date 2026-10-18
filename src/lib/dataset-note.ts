@@ -41,7 +41,7 @@ function readWords(stamp: DatasetStamp): string {
 }
 
 const COUNTING_SHORT: Record<DatasetStamp["counting"], string> = {
-  counted_once: "Sibling charters sharing one schedule count once.",
+  counted_once: "Institutions sharing one fee schedule count once.",
   per_charter: "Each charter counts on its own.",
 };
 
@@ -51,17 +51,16 @@ function detailLines(stamp: DatasetStamp): string[] {
     `Source: ${datasetLabel(stamp.dataset)}`,
     ...(stamp.derivedFrom ? [`Computed from: ${datasetLabel(stamp.derivedFrom)}`] : []),
     stamp.mode === "cached" ? `Snapshot computed: ${noteTime(stamp.readAt)}` : `Read live: ${noteTime(stamp.readAt)}`,
-    ...(stamp.runId !== null ? [`Snapshot run: ${stamp.runId}`] : []),
     ...(stamp.newestRecordAt ? [`Newest fee record: ${noteTime(stamp.newestRecordAt)}`] : []),
-    `Statistics method: version ${stamp.methodVersion}`,
+    `Method version: ${stamp.methodVersion}`,
     `Counting: ${countingLabel(stamp.counting)}`,
-    `Reference: ${stamp.id}`,
+    `Data reference (for support): ${stamp.id}`,
   ];
 }
 
 /**
  * stampDifferences in the figures' own names: a filter only one figure has reads
- * "Only Texas: Peers: TX" rather than "added" or "removed".
+ * "Only Texas: Institutions in TX" rather than "added" or "removed".
  */
 function differenceLines(a: StampedFigure, b: StampedFigure): string[] {
   return stampDifferences(a.stamp, b.stamp).map((line) => {
@@ -73,20 +72,21 @@ function differenceLines(a: StampedFigure, b: StampedFigure): string[] {
 
 /**
  * The note for the figures on one screen. The first figure's stamp sets the line and details;
- * every other figure whose stamp differs adds why, against the first. Null with no figures.
+ * every other figure whose stamp differs adds why, against the first, each reason once (a filter
+ * only the first figure has would otherwise repeat per figure). Null with no figures.
  */
 export function datasetNoteWords(figures: readonly StampedFigure[]): DatasetNoteWords | null {
   const [first, ...rest] = figures;
   if (!first) return null;
   const others = rest.filter((f) => f.stamp.id !== first.stamp.id);
-  const lines = others.flatMap((other) => differenceLines(first, other));
+  const lines = [...new Set(others.flatMap((other) => differenceLines(first, other)))];
   const names = [first, ...others].map((f) => f.label);
   return {
     summary: `${readWords(first.stamp)}. ${COUNTING_SHORT[first.stamp.counting]}`,
     details: detailLines(first.stamp),
     filters: first.stamp.filters.map((f) => f.label),
     differences: lines.length > 0
-      ? { heading: `How ${names.slice(0, -1).join(", ")} and ${names[names.length - 1]} differ`, lines }
+      ? { heading: names.length === 2 ? `How ${names[0]} and ${names[1]} differ` : "Why these figures can differ", lines }
       : null,
   };
 }

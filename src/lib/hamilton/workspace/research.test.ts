@@ -177,7 +177,7 @@ describe("market layer stamps (#1924)", () => {
     const stamps = feeLayerStamps(base, "overdraft");
     expect(stamps.national).toMatchObject({ dataset: "published_fee_catalog", mode: "live", readAt: "2026-10-18T14:10:00.000Z", newestRecordAt: "2026-10-01T00:00:00.000Z" });
     expect(stamps.national?.filters.map((f) => f.key)).toContain("exclude:institution:7");
-    expect(stamps.state?.filters.map((f) => f.label)).toContain("Peers: TX");
+    expect(stamps.state?.filters.map((f) => f.label)).toContain("Institutions in TX");
     expect(stamps.national?.filters.some((f) => f.key.startsWith("peers:"))).toBe(false);
     expect(stamps.state?.newestRecordAt).toBeNull();
   });

@@ -61,7 +61,7 @@ const DATASET_LABELS: Record<DatasetId, string> = {
 };
 
 const COUNTING_LABELS: Record<CountingRule, string> = {
-  counted_once: "Sibling charters that share one fee schedule count as one institution",
+  counted_once: "Institutions that share one fee schedule count as one institution",
   per_charter: "Every charter counts as its own institution",
 };
 

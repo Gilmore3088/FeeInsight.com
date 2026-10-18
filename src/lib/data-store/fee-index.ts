@@ -102,7 +102,16 @@ export function scopeFilters(scope: StampScope): PopulationFilter[] {
     }
     return out;
   }
-  return peerFilterParts(scope).map((part) => ({ key: part.key, label: `Peers: ${part.label}` }));
+  return peerFilterParts(scope).map((part) => ({ key: part.key, label: peerStampLabel(part) }));
+}
+
+/** A peer filter as a stamp line: "Institutions in TX", "Credit unions only", "Assets $1B to $10B". */
+function peerStampLabel(part: { key: string; label: string }): string {
+  const kind = part.key.split(":")[1];
+  if (kind === "state" || kind === "states") return `Institutions in ${part.label}`;
+  if (kind === "charter") return part.key.endsWith(":credit_union") ? "Credit unions only" : part.key.endsWith(":bank") ? "Banks only" : `Charter: ${part.label}`;
+  if (kind === "asset_tiers") return `Assets ${part.label}`;
+  return part.label;
 }
 
 /** The newest record time across entries (live reads' last_updated), or null. */

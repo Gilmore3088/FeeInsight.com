@@ -82,7 +82,7 @@ describe("formatStamp", () => {
       "Snapshot computed: 2026-10-17 02:00 UTC",
       "Built by run 9001",
       "Statistics method version 13",
-      "Counting: Sibling charters that share one fee schedule count as one institution",
+      "Counting: Institutions that share one fee schedule count as one institution",
       `Filter: ${POPULATION[0].label}`,
       `Filter: ${POPULATION[1].label}`,
       `Stamp ${stamp.id}`,
@@ -128,14 +128,14 @@ describe("stampDifferences: why 2,495, 2,503 and 2,505 differ", () => {
   it("names count-once against per-charter counting", () => {
     expect(stampDifferences(overview, publicSite)).toEqual([
       "Statistics method version: 13 vs 14",
-      "Counting: Sibling charters that share one fee schedule count as one institution vs Every charter counts as its own institution",
+      "Counting: Institutions that share one fee schedule count as one institution vs Every charter counts as its own institution",
     ]);
   });
 
   it("names an added scope filter, and a removed one the other way round", () => {
-    const peers = makeStamp({ ...overviewLive, filters: [...POPULATION, { key: "peers:fed_districts:7", label: "Peers: Fed district 7" }] });
-    expect(stampDifferences(overview, peers)).toEqual(["Filter added: Peers: Fed district 7"]);
-    expect(stampDifferences(peers, overview)).toEqual(["Filter removed: Peers: Fed district 7"]);
+    const peers = makeStamp({ ...overviewLive, filters: [...POPULATION, { key: "peers:fed_districts:7", label: "Fed district 7" }] });
+    expect(stampDifferences(overview, peers)).toEqual(["Filter added: Fed district 7"]);
+    expect(stampDifferences(peers, overview)).toEqual(["Filter removed: Fed district 7"]);
   });
 
   it("names a later live read by its time", () => {
