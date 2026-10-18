@@ -122,3 +122,21 @@ and new runs alike and a run queued before the switch is reused, not doubled.
 reads the `hoovie` row once per process (`registryLedgerAgent` in `registry-scheduler.ts`). While
 the row is missing, or the read fails, runs keep the name `magellan` and record why in
 `params_json.ledger_agent_fallback`.
+
+## LEI links (#1868)
+
+The `gleif` source's `lei-match-*` partitions (`magellan/registry/gleif-lei-match.ts`) link each
+tracked bank and credit union to its GLEIF LEI in `institution_lei_links`, with the basis:
+the institution's own LEI, then the record GLEIF holds under the Fed's National Information
+Center (RSSD), the FDIC (cert) or the NCUA (charter), each authority found by name in GLEIF's
+list, then one record with the exact legal name in the institution's state. A name alone never
+links; two candidates are never settled by picking one. Rows with status `ambiguous` or
+`unmatched` are the one review queue. A key link replaces a name link; two keys that disagree go
+to review. `getLeiLinkCoverage` gives the share linked; Hamilton reads a family through
+`queryData` with measure `family:lei`.
+
+Database load: every statement runs under a 15 s statement timeout, writes go in chunks of 250,
+and one run writes at most 1,000 changed rows (key partitions) or 60 institutions (name search,
+one GLEIF call a second). Leftover work waits for the next run of the partition, an hour or two
+later; a register longer than 75 pages is walked over several runs (`detail.walk_resume`), and
+only a walk that read every page in one run may clear a link its key no longer finds.

@@ -35,7 +35,7 @@ import { getInstitutionFeeRows, getNationalIndexCached, getPeerIndex, getStateFe
 import { getPeerSubject, peerSetMemberIds, resolvePeerRequest, resolvePeerSet } from "@/lib/data-store/peer-sets";
 import { areaRowServedSql } from "@/lib/data-store/struck-sources";
 import { URBAN_DEBT_ATTRIBUTION } from "@/lib/regulatory/state-lists";
-import { QUERY_DATA_MAX_LIMIT, parseMeasure, periodMonths, queryData, queryDataInputSchema } from "./query-data";
+import { QUERY_DATA_MAX_LIMIT, familyRows, parseMeasure, periodMonths, queryData, queryDataInputSchema } from "./query-data";
 
 const AREA = "area:bls-laus:laus_unemployment_rate";
 const queries = () => calls.filter((c) => !c.text.includes("SET LOCAL"));
@@ -384,5 +384,39 @@ describe("queryData: call-report lines", () => {
     nextRows = [{ period: "2026-06-30", unit: "USD", median: 0, p25: 0, p75: 0, institution_count: 2, period_basis: "ytd", sources: ["ffiec"], source_url: null, fetched_at: null }];
     const result = await queryData({ measure: CALL, scope: { kind: "peer_set", peer: { charter_type: "bank" } } });
     expect(result).toMatchObject({ ok: true, rows: [expect.objectContaining({ median: null, p25: null, p75: null, institution_count: 2 })] });
+  });
+});
+
+describe("queryData corporate family", () => {
+  type Node = Parameters<typeof familyRows>[0];
+  const node = (lei: string, children: Node[] = [], institutionId: number | null = null): Node => ({
+    lei,
+    legal_name: `Entity ${lei}`,
+    jurisdiction: null,
+    legal_country: "US",
+    entity_status: "ACTIVE",
+    registration_status: "ISSUED",
+    direct_parent_lei: null,
+    rssd_id: null,
+    institution_id: institutionId,
+    institution_name: institutionId ? "Tracked Bank" : null,
+    link_method: null,
+    has_record: true,
+    children,
+  });
+
+  it("parses family:lei and refuses it outside one institution, before any SQL", async () => {
+    expect(parseMeasure("family:lei")).toEqual({ kind: "family" });
+    calls.length = 0;
+    expect(await queryData({ measure: "family:lei", scope: { kind: "state", id: "TX" } })).toMatchObject({ ok: false, reason: expect.stringContaining("one institution") });
+    expect(calls).toEqual([]);
+  });
+
+  it("names each member's relation to the institution", () => {
+    const tree = node("HOLDCO", [node("MID", [node("BANK", [node("SUB")], 7)]), node("OTHER")]);
+    const rows = familyRows(tree, new Set(["BANK"]));
+    const relation = Object.fromEntries(rows.map((r) => [r.lei, r.relation]));
+    expect(relation).toEqual({ HOLDCO: "ultimate_parent", MID: "parent", BANK: "subject", SUB: "subsidiary", OTHER: "affiliate" });
+    expect(rows.find((r) => r.lei === "SUB")).toMatchObject({ depth: 3, parent_lei: "BANK" });
   });
 });

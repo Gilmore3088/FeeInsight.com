@@ -25,7 +25,13 @@ import {
 import { STRUCK_AREA_SERIES_KEYS, STRUCK_FRED_SERIES, areaRowServedSql, notYetFromPublisherReason } from "@/lib/data-store/struck-sources";
 import { FEE_FAMILIES, getDisplayName } from "@/lib/fee-taxonomy";
 import { MAX_NEAREST_PEERS, PEER_REGULATORS, type PeerRegulator } from "@/lib/peer-set-dimensions";
-import { CALL_REPORT_ROW_SOURCES, callReportEntries, catalogEntry, scopeForAreaGeoType, type CatalogEntry, type CatalogScopeKind } from "./catalog";
+import {
+  getCorporateFamily,
+  getGleifLinkSummary,
+  getInstitutionLeiLink,
+  type FamilyNode,
+} from "@/lib/data-store/locations-gleif-aggregates";
+import { CALL_REPORT_ROW_SOURCES, FAMILY_MEASURE, callReportEntries, catalogEntry, scopeForAreaGeoType, type CatalogEntry, type CatalogScopeKind } from "./catalog";
 import {
   AREA_PERIOD_FIRST_MONTH_SQL,
   AREA_PERIOD_LAST_MONTH_SQL,
@@ -46,6 +52,7 @@ import {
  * - `area:<source>:<series_key>`: a public-data series from area_statistics.
  * - `fee:<category>`: a fee category from the published fee index.
  * - `call:<item_key>`: a call-report line from institution_call_report_items (FFIEC and NCUA).
+ * - `family:lei`: one institution's corporate family from GLEIF (parents and subsidiaries).
  *
  * A peer group (`peer_set`) is resolved by the shared definition in data-store/peer-sets.ts, the
  * one Hamilton's saved groups and the API use. Public data and call-report lines roll up over its
@@ -97,8 +104,8 @@ export const queryDataInputSchema = z
       .string()
       .max(160)
       .regex(
-        /^(?:area:[a-z0-9-]+:[A-Za-z0-9_.-]+|fee:[a-z0-9_]+|call:[a-z0-9_]+)$/,
-        'measure is "area:<source>:<series_key>", "fee:<category>" or "call:<item_key>"',
+        /^(?:area:[a-z0-9-]+:[A-Za-z0-9_.-]+|fee:[a-z0-9_]+|call:[a-z0-9_]+|family:lei)$/,
+        'measure is "area:<source>:<series_key>", "fee:<category>", "call:<item_key>" or "family:lei"',
       ),
     scope: z
       .object({
@@ -167,7 +174,8 @@ function iso(value: unknown): string | null {
 /** Parses a measure; the schema has already checked the characters. */
 export function parseMeasure(
   measure: string,
-): { kind: "area"; source: string; seriesKey: string } | { kind: "fee"; category: string } | { kind: "call"; itemKey: string } {
+): { kind: "area"; source: string; seriesKey: string } | { kind: "fee"; category: string } | { kind: "call"; itemKey: string } | { kind: "family" } {
+  if (measure === FAMILY_MEASURE) return { kind: "family" };
   if (measure.startsWith("fee:")) return { kind: "fee", category: measure.slice(4) };
   if (measure.startsWith("call:")) return { kind: "call", itemKey: measure.slice(5) };
   const rest = measure.slice(5);
@@ -185,6 +193,7 @@ export async function queryData(raw: unknown): Promise<QueryDataResult> {
   try {
     if (measure.kind === "area") return await queryArea(input, measure.source, measure.seriesKey);
     if (measure.kind === "call") return await queryCall(input, measure.itemKey);
+    if (measure.kind === "family") return await queryFamily(input);
     return await queryFee(input, measure.category);
   } catch (error) {
     if (error instanceof PeerSetError) return refuse(input.measure, error.message);
@@ -612,4 +621,121 @@ async function queryCall(input: QueryDataInput, itemKey: string): Promise<QueryD
     citation: citation(rows, [...new Set(rows.flatMap((r) => r.sources ?? []))]),
     note: coverageNote(rows, memberCount, "a filed figure"),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Corporate family (GLEIF level 1 and level 2, through institution_lei_links)
+// ---------------------------------------------------------------------------
+
+const GLEIF_CATALOG_ID = "gleif";
+
+/** Why an institution has no family to show, from its LEI match. */
+async function noFamilyNote(institutionId: number, leis: string[]): Promise<string> {
+  if (leis.length > 0) return `This institution's LEI (${leis.join(", ")}) is known, but its GLEIF record is not loaded yet.`;
+  const link = await getInstitutionLeiLink(institutionId);
+  if (!link) return "This institution has not been matched to an LEI yet.";
+  if (link.status === "linked") return `This institution's LEI is ${link.lei}; its GLEIF record is not loaded yet.`;
+  if (link.status === "ambiguous") return "More than one LEI could be this institution's, so none is shown until a person reviews the match.";
+  return "No LEI was found for this institution in GLEIF's register, so it has no corporate family on record.";
+}
+
+/**
+ * One institution's corporate family by GLEIF accounting-consolidation parents: the ultimate
+ * parent, every member under it, and each member's relation to the institution (its parents, the
+ * institution itself, its subsidiaries, and other members of the family).
+ */
+async function queryFamily(input: QueryDataInput): Promise<QueryDataResult> {
+  const entry = catalogEntry(GLEIF_CATALOG_ID);
+  if (!entry) return refuse(input.measure, "GLEIF data is not in the data catalog.");
+  if (!entry.servable) return refuse(input.measure, entry.notServableReason ?? "This source may not be shown to customers.");
+  if (input.scope.kind !== "institution") return refuse(input.measure, "A corporate family is read for one institution; use scope institution with its id.");
+  const institutionId = Number(input.scope.id);
+  const family = await getCorporateFamily(institutionId);
+  const citation = async (lei: string | null): Promise<QueryDataCitation> => {
+    let asOf: string | null = null;
+    try {
+      asOf = (await getGleifLinkSummary()).latest_publish;
+    } catch {
+      asOf = null;
+    }
+    return {
+      publisher: entry.publisher,
+      source_url: lei ? `https://search.gleif.org/#/record/${lei}` : null,
+      as_of: asOf,
+      fetched_at: null,
+      ...(entry.licence.licenceName ? { licence: entry.licence.licenceName } : {}),
+    };
+  };
+  if (!family.tree) {
+    return {
+      ok: true,
+      measure: input.measure,
+      scope: "institution",
+      rows: [],
+      unit: null,
+      citation: await citation(family.institution_leis[0] ?? null),
+      note: await noFamilyNote(institutionId, family.institution_leis),
+    };
+  }
+  const rows = familyRows(family.tree, new Set(family.institution_leis));
+  const limit = Math.min(input.limit ?? QUERY_DATA_DEFAULT_LIMIT, QUERY_DATA_MAX_LIMIT);
+  return {
+    ok: true,
+    measure: input.measure,
+    scope: "institution",
+    rows: rows.slice(0, limit),
+    unit: null,
+    citation: await citation(family.institution_leis[0] ?? null),
+    note: `${family.members} ${family.members === 1 ? "entity is" : "entities are"} in this corporate family, ${family.linked_members} of them banks or credit unions we track.${rows.length > limit ? ` The first ${limit} are listed.` : ""}`,
+  };
+}
+
+/**
+ * The family tree as rows, root first. relation: "subject" (the institution), "ultimate_parent",
+ * "parent" (on the path from the institution up to the root), "subsidiary" (under the
+ * institution) or "affiliate" (elsewhere in the family).
+ */
+export function familyRows(root: FamilyNode, subjectLeis: Set<string>): QueryDataRow[] {
+  const byLei = new Map<string, { node: FamilyNode; parent: string | null; depth: number }>();
+  const walk = (node: FamilyNode, parent: string | null, depth: number) => {
+    byLei.set(node.lei, { node, parent, depth });
+    node.children.forEach((c) => walk(c, node.lei, depth + 1));
+  };
+  walk(root, null, 0);
+  const above = new Set<string>();
+  const below = new Set<string>();
+  const down = (n: FamilyNode) => {
+    for (const c of n.children) {
+      below.add(c.lei);
+      down(c);
+    }
+  };
+  for (const lei of subjectLeis) {
+    let up = byLei.get(lei)?.parent ?? null;
+    while (up) {
+      above.add(up);
+      up = byLei.get(up)?.parent ?? null;
+    }
+    const subject = byLei.get(lei)?.node;
+    if (subject) down(subject);
+  }
+  return [...byLei.values()].map(({ node, parent, depth }) => ({
+    relation: subjectLeis.has(node.lei)
+      ? "subject"
+      : node.lei === root.lei
+        ? "ultimate_parent"
+        : above.has(node.lei)
+          ? "parent"
+          : below.has(node.lei)
+            ? "subsidiary"
+            : "affiliate",
+    depth,
+    lei: node.lei,
+    legal_name: node.legal_name,
+    legal_country: node.legal_country,
+    parent_lei: parent,
+    entity_status: node.entity_status,
+    institution_id: node.institution_id,
+    institution_name: node.institution_name,
+  }));
 }
