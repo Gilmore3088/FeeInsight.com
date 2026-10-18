@@ -41,6 +41,32 @@ the storage step's summary names the held sources and the morning brief warns Ja
 when the table is measured back under budget or a PR raises the budget. Never delete data to get
 under a budget. A new table in a contract gets the default budget unless one is set.
 
+## Storage tiers (#1870)
+
+Hot data stays in Postgres; older periods can live in compressed files in R2 (the document
+vault's account and bucket, under `public-data-cold/`, or `R2_COLD_BUCKET`). The policy is in
+`storage-tiers.ts`:
+
+| Table | Hot | Cold |
+|---|---|---|
+| `institution_call_report_items` | newest 8 report dates per source (`ffiec`, `ncua`) | every older report date, one file per source and date |
+| `area_statistics` | all of it | not tiered yet: 29 sources, three period shapes and struck-row rules need a per-source policy first |
+
+- **Plan (runs daily).** In Atlas's storage step, on its one connection with a 10 s statement
+  timeout: lists each source's report dates (a loose index scan), counts at most
+  `PLAN_COUNTS_PER_RUN` uncounted cold dates a run (counts carry over in the step's
+  `detail.cold_tier.counts`) and estimates the MB a prune would free. Read-only.
+- **Export (off).** `COLD_EXPORT_LIVE` writes the oldest cold date without a file to
+  `cold-files.ts`'s `jsonl.gz` format, reads it back, checks the SHA-256 and row count, and records
+  one verified row in `public_data_cold_files`. At most one date a run. It writes no existing row.
+  Turned on by PR after James's yes.
+- **Prune (not built).** Removing the hot rows of a verified file is a production data change and
+  waits for James's yes, with the plan's dry-run count and size. Before it, the loaders' first
+  quarters must sit at or after the cold boundary, or a re-read loads the pruned rows again.
+- **Read.** `src/lib/data-catalog/cold-reads.ts`: `queryData`'s `call:` measures read a date from its
+  file only when its index row has `pruned_at` set, behind the hot rows, through the same citation,
+  at most four files a question, each checked against its index row first.
+
 ## Rules
 
 - Free, public sources only. Use no proxies and no spoofed user agents.

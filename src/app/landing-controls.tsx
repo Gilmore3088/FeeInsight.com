@@ -19,7 +19,7 @@ export function SlideControls({
 }: {
   clock: AutoAdvance;
   count: number;
-  /** What the slides are, for the buttons' names: "Hamilton examples". */
+  /** What the slides are, for the buttons' names: "Hamilton investigation". */
   name: string;
   small?: boolean;
   children?: ReactNode;
@@ -35,6 +35,7 @@ export function SlideControls({
           // One fixed name; the pressed state says whether it is paused.
           aria-label={`Pause ${name}`}
           aria-pressed={clock.paused}
+          title={clock.paused ? "Play" : "Pause"}
           className={`${round} inline-flex items-center justify-center rounded-full border border-control-border text-ink transition-colors hover:bg-surface-0`}
         >
           {clock.paused ? <Play aria-hidden="true" className={icon} /> : <Pause aria-hidden="true" className={icon} />}

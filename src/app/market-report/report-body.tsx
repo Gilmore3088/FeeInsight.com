@@ -23,6 +23,8 @@ import { HamiltonClose } from "./[token]/hamilton-close";
 import type { CheckingLineupView } from "@/lib/custom-report/checking-lineup";
 import { CheckingLineupSection } from "./checking-lineup-section";
 import { NamedCompetitorsPhone } from "./named-competitors-phone";
+import { PeerSection } from "./peer-section";
+import type { ReportPeerContext } from "@/lib/custom-report/peer-context";
 
 const SERIF = { fontFamily: "var(--fi-font-sans)" };
 const MONO_FIGURE = { fontFamily: "var(--fi-font-mono)" } as const;
@@ -126,6 +128,8 @@ export interface MarketReportBodyProps {
   branches?: MarketBranchFootprint | null;
   /** The checking account lineup against local competitors; the section is left out when null. */
   lineup?: CheckingLineupView | null;
+  /** Fees and reported figures against institutions of the same size; the section is left out when null. */
+  peers?: ReportPeerContext | null;
   /** "h2" when the page already has its own h1 (the public sample); a page has one h1. */
   titleAs?: "h1" | "h2";
 }
@@ -199,7 +203,7 @@ function RevenueSection({ name, charterType, revenue }: { name: string; charterT
       <p className="mt-4 text-[13px] leading-relaxed text-ink-soft">
         {name} reported these figures in its {filing}.
         {revenue.peer &&
-          ` Among the ${revenue.peer.count.toLocaleString("en-US")} institutions of its size (${revenue.peer.tierLabel} in assets) that reported for the quarter, it ranks ${revenue.peer.rank.toLocaleString("en-US")} by this income, where 1 is the highest.`}{" "}
+          ` Among the ${revenue.peer.count.toLocaleString("en-US")} banks and credit unions of its size (${revenue.peer.tierLabel} in assets) that reported for the quarter, it ranks ${revenue.peer.rank.toLocaleString("en-US")} by this income, where 1 is the highest.`}{" "}
         A published schedule does not say how often each fee is charged, so this report does not estimate what any one
         fee earns.
       </p>
@@ -207,7 +211,7 @@ function RevenueSection({ name, charterType, revenue }: { name: string; charterT
   );
 }
 
-export function MarketReportBody({ report, eyebrow, preparedOn, actions, contactHref, correctionNote, revenue, branches, lineup, titleAs: Title = "h1" }: MarketReportBodyProps) {
+export function MarketReportBody({ report, eyebrow, preparedOn, actions, contactHref, correctionNote, revenue, branches, lineup, peers, titleAs: Title = "h1" }: MarketReportBodyProps) {
   const { data, analysis, savedAt, sinceBought } = report;
   const market = data.market!;
   const droppedCount = Object.values(data.dropped ?? {}).reduce((sum, n) => sum + (n ?? 0), 0);
@@ -297,17 +301,17 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                 <span className="h-2.5 w-2.5 rounded-full bg-below-market" /> Below
               </span>
             </p>
-            {/* Phones get the four columns that fit; every figure is also in the named competitors and method below. */}
-            <table className="mt-4 w-full text-left text-sm sm:min-w-[760px] print:min-w-0">
+            {/* Phones and tablets get the four columns that fit; every figure is also in the named competitors and method below. */}
+            <table className="mt-4 w-full text-left text-sm lg:min-w-[760px] print:min-w-0">
               <thead className="border-b border-border text-[11px] uppercase tracking-[0.08em] text-ink-muted">
                 <tr>
                   <th className="py-2 pr-3 font-semibold">Fee</th>
                   <th className="py-2 pr-3 text-right font-semibold">Yours</th>
-                  <td className="hidden w-[22%] py-2 pr-4 sm:table-cell print:hidden" aria-hidden="true" />
+                  <td className="hidden w-[22%] py-2 pr-4 lg:table-cell print:hidden" aria-hidden="true" />
                   <th className="py-2 pr-3 text-right font-semibold">Local median</th>
-                  <th className="hidden py-2 pr-3 text-right font-semibold sm:table-cell print:table-cell">Middle half</th>
-                  <th className="hidden py-2 pr-3 text-right font-semibold sm:table-cell print:table-cell">Competitors</th>
-                  <th className="hidden py-2 pr-3 text-right font-semibold sm:table-cell print:table-cell">Charging less</th>
+                  <th className="hidden py-2 pr-3 text-right font-semibold lg:table-cell print:table-cell">Middle half</th>
+                  <th className="hidden py-2 pr-3 text-right font-semibold lg:table-cell print:table-cell">Competitors</th>
+                  <th className="hidden py-2 pr-3 text-right font-semibold lg:table-cell print:table-cell">Charging less</th>
                   <th className="py-2 font-semibold">Position</th>
                 </tr>
               </thead>
@@ -323,15 +327,15 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                         </span>
                       )}
                     </td>
-                    <td className="hidden py-2 pr-4 sm:table-cell print:hidden" aria-hidden="true">
+                    <td className="hidden py-2 pr-4 lg:table-cell print:hidden" aria-hidden="true">
                       <LineRange line={line} />
                     </td>
                     <td className="py-2 pr-3 text-right tabular-nums">{line.comparable ? money(line.peers?.median) : "—"}</td>
-                    <td className="hidden py-2 pr-3 text-right tabular-nums sm:table-cell print:table-cell">
+                    <td className="hidden py-2 pr-3 text-right tabular-nums lg:table-cell print:table-cell">
                       {line.comparable && line.peers ? `${money(line.peers.p25)}–${money(line.peers.p75)}` : "—"}
                     </td>
-                    <td className="hidden py-2 pr-3 text-right tabular-nums sm:table-cell print:table-cell">{line.peers?.n ?? 0}</td>
-                    <td className="hidden py-2 pr-3 text-right tabular-nums sm:table-cell print:table-cell">
+                    <td className="hidden py-2 pr-3 text-right tabular-nums lg:table-cell print:table-cell">{line.peers?.n ?? 0}</td>
+                    <td className="hidden py-2 pr-3 text-right tabular-nums lg:table-cell print:table-cell">
                       {line.chargingLess !== null && line.peers ? `${line.chargingLess} of ${line.peers.n}` : "—"}
                     </td>
                     <td className="py-2">
@@ -346,6 +350,8 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
           {lineup && <CheckingLineupSection name={name} lineup={lineup} live={Boolean(savedAt)} />}
 
           {revenue && <RevenueSection name={name} charterType={data.subject.charter_type} revenue={revenue} />}
+
+          {peers && <PeerSection name={name} peers={peers} />}
 
           {analysis.named.length > 0 && (
             <section className="mt-8 rounded-xl border border-border bg-surface-0 p-4 sm:overflow-x-auto sm:p-6" aria-labelledby="named-heading">
@@ -383,7 +389,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                   ),
                 }))}
               />
-              <table className="mt-4 hidden w-full min-w-[760px] text-left text-sm sm:table print:table">
+              <table className="mt-4 hidden w-full text-left text-sm lg:table print:table">
                 <thead className="border-b border-border text-[11px] uppercase tracking-[0.08em] text-ink-muted">
                   <tr>
                     <th className="min-w-[240px] py-2 pr-3 font-semibold">Institution</th>
@@ -414,9 +420,11 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                         <a href={`/institution/${competitor.institution_id}`} className="text-ink underline-offset-2 hover:underline">
                           {competitor.institution_name}
                         </a>
-                        {competitor.city && <span className="whitespace-nowrap text-[12px] text-ink-muted"> · {cityLabel(competitor.city)}</span>}
-                        {footprintLine(branches, competitor.institution_id) && (
-                          <span className="block whitespace-nowrap text-[12px] text-ink-muted">{footprintLine(branches, competitor.institution_id)}</span>
+                        {/* City and footprint share one line under the name, so a long name never strands "· City". */}
+                        {(competitor.city || footprintLine(branches, competitor.institution_id)) && (
+                          <span className="block text-[12px] text-ink-muted">
+                            {[competitor.city ? cityLabel(competitor.city) : null, footprintLine(branches, competitor.institution_id)].filter(Boolean).join(" · ")}
+                          </span>
                         )}
                       </td>
                       {tableKeys.map((key) => {

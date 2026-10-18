@@ -726,6 +726,30 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
     reason: "source_mismatch: #1905", issue: 1905, kind: "wrong_amount",
     evidence: "Navy Federal (doc 13439; the current copy doc 26712 prints the same), Mortgage Loans: \"Generally a maximum late charge of $10, $25 in KS, $50 in MO for equity loans\": a cap on an equity loan's percentage late charge, not a flat $10 fee." },
   ...schoolsFirstPayrollCardTakedowns(),
+  // #1946 (read-only, Oct 18): a footnote mark set after "$0" ("$0³") was stored flattened as "$03"
+  // and read as the price. Each confirmed against its bank's stored text; Truliant's "$02" row (doc
+  // 27356) stays, because its middle column really charges $2.
+  { feePublishedId: 60838, institutionId: 796, canonicalFeeKey: "monthly_maintenance", amount: 3, feeName: "Monthly Fee",
+    reason: "source_mismatch: #1946", issue: 1946, kind: "wrong_amount",
+    evidence: "North State Bank (doc 18044, text 13545): \"Monthly Fee | $03 or $10 | $03 or $10 | $03 or $20 | $03 or $5\": $0 (footnote 3) or $10, $10, $20 and $5 by account; no $3 fee." },
+  { feePublishedId: 61840, institutionId: 3125, canonicalFeeKey: "monthly_maintenance", amount: 3, feeName: "Monthly Service Charge",
+    reason: "source_mismatch: #1946", issue: 1946, kind: "wrong_amount",
+    evidence: "Security Savings Bank (doc 18292, text 13798): \"Monthly Service Charge: $03\" then \"3If your balance falls below the minimum daily balance of $500 you will be assessed a $5.00 charge\": $0 with footnote 3, not $3." },
+  { feePublishedId: 61841, institutionId: 3125, canonicalFeeKey: "monthly_maintenance", amount: 4, feeName: "Monthly Service Charge",
+    reason: "source_mismatch: #1946", issue: 1946, kind: "wrong_amount",
+    evidence: "Security Savings Bank (doc 18292, text 13798): \"Monthly Service Charge: $04\" then \"4No monthly fee with a daily balance of $500 or an average daily balance of $800\": $0 with footnote 4, not $4." },
+  { feePublishedId: 61842, institutionId: 3125, canonicalFeeKey: "monthly_maintenance", amount: 5, feeName: "Monthly Service Charge",
+    reason: "source_mismatch: #1946", issue: 1946, kind: "wrong_amount",
+    evidence: "Security Savings Bank (doc 18292, text 13798): \"Monthly Service Charge: $05\" then \"5No monthly fee with an average daily balance of $2,000. You will be assessed a $10.00 charge\": $0 with footnote 5, not $5." },
+  { feePublishedId: 97256, institutionId: 162, canonicalFeeKey: "monthly_maintenance", amount: 1, feeName: "Safe Start Checking Account Monthly service charge",
+    reason: "source_mismatch: #1946", issue: 1946, kind: "wrong_amount",
+    evidence: "The Park National Bank (doc 21374, text 17644): \"Monthly service charge: $01\" and \"No monthly service charge1\": $0 with footnote 1, not $1." },
+  { feePublishedId: 137275, institutionId: 6942, canonicalFeeKey: "monthly_maintenance", amount: 1, feeName: "Monthly Fee",
+    reason: "source_mismatch: #1946", issue: 1946, kind: "wrong_amount",
+    evidence: "Orion Federal Credit Union (doc 29978, text 27542): \"Monthly Fee | $01 | $0\": $0 with footnote 1 beside the other account's $0, not $1." },
+  { feePublishedId: 59691, institutionId: 418, canonicalFeeKey: "atm_non_network", amount: 1, feeName: "Non-Penn Community Bank network ATM transactions",
+    reason: "source_mismatch: #1946", issue: 1946, kind: "wrong_amount",
+    evidence: "Penn Community Bank (doc 13627, text 1096): \"Non-Penn Community Bank network ATM transactions | $01\" among rows of \"$0\": $0 with footnote 1, not $1." },
 ];
 
 export interface LiveTakedownRow {

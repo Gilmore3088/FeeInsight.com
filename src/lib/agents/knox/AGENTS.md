@@ -1095,6 +1095,23 @@ are not plain words keep their capitals ("ATM", "NSF", "IRA", "NCB"), and so do 
 initials ("HLEFCU"); joining words go lower case; an ordinal after its number too ("2nd"). A name
 with another flaw (a ":" cell, a glued footnote) is left for the rest of the tidy. A case-only
 rename is checked against the institution's other live rows, not its own.
+v23 (Oct 18, #1596, James's live-fee check): footnote marks leave every category's live names, not
+only maintenance and minimum balance (`footnoteMarkFreeName`): "^", "*" and "∞" count as marks
+beside "†", "‡", "§" and superscripts, a number glued to a word before ":" or ")" is a mark
+("Wire Transfer1: Domestic – Outgoing", "ATM3:", "(all items4)") unless the word numbers the name
+("Tier3:", "Level", "Plan", "Step", "Age55)", "Months12)", "Page1)", "COVID19:"), and a colon left
+doubled closes up ("Domestic Wires**: :"). "^" or "*" between numbers or standing alone between words
+is arithmetic and the name is left ("2^3", "$25 * hours"). Product codes ("(MT103)"), plain words'
+glued numbers and quotes still come off only maintenance and minimum balance names. A
+mark standing alone before words ("^^ If your account ...") or glued to the next word mid-name
+("Withdrawals§ §Non-TEFCU owned ATMs only") opens a footnote's sentence and is left; a web page's
+footnote link ("Fee[4](#disclaimer4)") goes, and so does a comma left dangling ("OD Charge‡, ‡‡").
+The guards: the category guard; no other live row of the institution's category may have the new
+name at any price, and two rows whose marks come off to the same name ("Wire (MT103)", "Wire (MT202)",
+"Treasurer’s Checks†^" $7 beside "Treasurer’s Checks" $8) are both left; and the fee must still trace.
+Dry run Oct 18 over the 266 live rows of every institution and category with a marked name (186
+marked): 148 renames before the trace guard, 11 left as twins, 105 with no better name, 2 keeping a
+condition.
 
 `isCutoffName` (publish's `cutoff_name` hold) has a narrow live twin beside it, `liveFragmentName`
 (#1443), built from the same regex pieces: a dangling joining word (lower-case "a/an/the" only;
@@ -1335,7 +1352,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_LAYOUT_SIGNATURE_VERSION` | — | v1 | `knox/layout-signature.ts` |
 | `KNOX_LESSONS_VERSION` | — | v3 | `knox/lessons.ts` |
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
-| `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v22 | `knox/name-retidy.ts` |
+| `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v23 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
 | `KNOX_RULES_STRATEGY` | `extract.rules` | v79 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |

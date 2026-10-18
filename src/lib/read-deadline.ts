@@ -31,6 +31,8 @@ export interface ReadBudget {
   required<T>(read: Promise<T>, label: string): Promise<T>;
   /** The read's value, or `fallback` when it fails or the budget runs out first (both logged). */
   optional<T>(read: Promise<T>, label: string, fallback: T): Promise<T>;
+  /** Whether any optional read fell back, so a cached page can expire early (shortenPageLife). */
+  failed(): boolean;
 }
 
 /**
@@ -40,6 +42,7 @@ export interface ReadBudget {
 export function createReadBudget(totalMs: number, logPrefix: string, now: () => number = Date.now): ReadBudget {
   const endsAt = now() + totalMs;
   const remaining = () => Math.max(0, endsAt - now());
+  let fellBack = false;
 
   function required<T>(read: Promise<T>, label: string): Promise<T> {
     // A read that settles after the deadline must not surface as an unhandled rejection.
@@ -56,9 +59,10 @@ export function createReadBudget(totalMs: number, logPrefix: string, now: () => 
   function optional<T>(read: Promise<T>, label: string, fallback: T): Promise<T> {
     return required(read, label).catch((error: unknown) => {
       console.error(`${logPrefix} ${label} failed:`, error);
+      fellBack = true;
       return fallback;
     });
   }
 
-  return { remaining, required, optional };
+  return { remaining, required, optional, failed: () => fellBack };
 }
