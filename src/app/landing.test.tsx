@@ -335,7 +335,10 @@ describe("research behind each answer", () => {
     const lit = [...container.querySelectorAll('[data-lit="true"]')].map((el) => el.getAttribute("data-source"));
     expect(lit.sort()).toEqual([...RESEARCH_EXAMPLES[1].sources].sort());
     // Only sources Hamilton reads are shown; USDA geography is not one of them.
-    expect(SOURCES.map((s) => s.provider).join(" ")).not.toContain("USDA");
+    const named = [...SOURCES.map((s) => `${s.provider} ${s.detail}`), ...RESEARCH_EXAMPLES.map((e) => `${e.excerpt} ${e.cites}`)].join(" ");
+    expect(named).not.toContain("USDA");
+    // FRED moved to its original agencies and regional Fed text can't be quoted (Oct 18).
+    expect(named).not.toMatch(/FRED|regional Federal Reserve/);
     // An unlit tile fades its icon only: the tile and its name keep full opacity.
     const unlit = container.querySelector('[data-lit="false"]')!;
     expect(unlit.className).not.toMatch(/opacity/);

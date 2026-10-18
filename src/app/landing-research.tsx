@@ -20,7 +20,7 @@ import { SlideControls } from "./landing-controls";
 import { REPORT_SHOWCASE } from "@/lib/report-showcase";
 import { useAutoAdvance } from "./landing-motion";
 
-type SourceKey = "fees" | "financials" | "branches" | "income" | "cfpb" | "rules" | "fred" | "regional";
+type SourceKey = "fees" | "financials" | "branches" | "income" | "cfpb" | "rules" | "rates" | "fed";
 
 /**
  * The source families (James accepted the list, Oct 17: "we are building towards it"). Only
@@ -35,8 +35,8 @@ export const SOURCES: { key: SourceKey; icon: LucideIcon; name: string; provider
   { key: "income", icon: UsersRound, name: "Local income", provider: "Census · IRS", detail: "Household income from the Census ACS and IRS ZIP-level data." },
   { key: "cfpb", icon: MessagesSquare, name: "Complaints", provider: "CFPB", detail: "CFPB consumer complaints, where an institution can be matched." },
   { key: "rules", icon: ScrollText, name: "Rules & actions", provider: "Regulators · States", detail: "Federal and state rules, fee bills, regulator announcements and actions." },
-  { key: "fred", icon: Percent, name: "Rates & credit", provider: "FRED", detail: "National FRED series for interest-rate and credit context." },
-  { key: "regional", icon: Building2, name: "Regional Fed", provider: "Beige Book · FOMC", detail: "Beige Book, FOMC and regional Federal Reserve publications." },
+  { key: "rates", icon: Percent, name: "Rates & industry", provider: "FDIC national data", detail: "FDIC national deposit rates and industry totals." },
+  { key: "fed", icon: Building2, name: "Federal Reserve", provider: "Beige Book · FOMC", detail: "The Beige Book and FOMC minutes." },
 ];
 
 /**
@@ -61,14 +61,14 @@ export const RESEARCH_EXAMPLES: { question: string; sources: SourceKey[]; title:
   },
   {
     question: "What’s happening across our region?",
-    sources: ["fees", "financials", "income", "fred", "regional"],
+    sources: ["fees", "financials", "income", "rates", "fed"],
     title: "Regional outlook",
-    excerpt: "Fee levels across your Fed district, read against the latest Beige Book and national rate and credit series.",
-    cites: "Fee schedules · Beige Book · FRED",
+    excerpt: "Fee levels across your Fed district, read against the latest Beige Book and national rates.",
+    cites: "Fee schedules · Beige Book · FDIC national rates",
   },
   {
     question: "Which fees should we review next?",
-    sources: ["fees", "financials", "cfpb", "rules", "fred"],
+    sources: ["fees", "financials", "cfpb", "rules", "rates"],
     title: "Pricing study",
     excerpt: "The fees furthest from your peers, with the complaints, rules and fee income behind each. You make the call.",
     cites: "Fee schedules · FFIEC Call Reports · CFPB",
