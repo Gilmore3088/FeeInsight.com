@@ -13,6 +13,7 @@ import {
 } from "./resend";
 import { getSubscriptionTokenSecret, subscriptionPageUrl } from "./subscription-token";
 import { RD, RD_FONTS } from "@/lib/report-design/tokens";
+import { colors } from "@/brand/tokens/tokens";
 
 export interface LeadNotificationOutcome {
   /** Internal heads-up delivered to CONTACT_EMAIL. */
@@ -39,6 +40,8 @@ export interface LeadEmailContent {
   closing?: string[];
   /** Signed by James (requester-facing emails). */
   signed?: boolean;
+  /** Headed sections after the body, e.g. one per institution in an alert. */
+  sections?: { heading: string; lines: string[] }[];
 }
 
 const FROM_ENV_VARS = [
@@ -95,23 +98,29 @@ const C = {
   ink: RD.ink,
   ink2: RD.ink2,
   text2: RD.inkSoft,
-  muted: RD.muted,
+  // Footer and caption text: the brand's muted (4.5:1 on paper). RD.muted is control-border, not for text.
+  muted: RD.inkSoft,
   paper: RD.paper,
   cream: RD.cream,
   sand: RD.sand,
   terra: RD.terra,
   terraSoft: RD.terraSoft,
+  terraInk: RD.terraDeep,
+  onTerra: colors.light["on-brick"],
   good: RD.good,
   goodSoft: "#EEF2E8",
   line: RD.rule2,
 };
-// The brand's Geist stacks; single quotes, since these go inside style="..." attributes.
+// The brand's Geist stack; single quotes, since it goes inside style="..." attributes.
 const SANS = RD_FONTS.sans.replace(/"/g, "'");
-const MONO = RD_FONTS.mono.replace(/"/g, "'");
 const PARAGRAPH = `margin:0 0 16px;font-family:${SANS};font-size:17px;line-height:1.6;color:${C.ink2};`;
 const LINK = `color:${C.terra};text-decoration:underline;`;
+// The brand label (tokens.ts typography.label), as on report eyebrows: sans, bold, tracked capitals.
+const LABEL = `font-family:${SANS};font-size:12px;line-height:16px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;`;
+const FIGURES = "font-variant-numeric:tabular-nums lining-nums;";
 
-const URL_PATTERN = /https?:\/\/[^\s<>"]+/g;
+// A URL ending a sentence leaves its final period (or comma, etc.) outside the link.
+const URL_PATTERN = /https?:\/\/[^\s<>"]*[^\s<>".,;:!?)]/g;
 const TRAILING_LINK = /^([\s\S]*?):\s*(https?:\/\/\S+)$/;
 const DETAIL_LINE = /^([A-Z][A-Za-z ]{0,24}):\s+(.+)$/;
 const EMAIL_VALUE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -123,7 +132,7 @@ function linkify(text: string): string {
   for (const match of text.matchAll(URL_PATTERN)) {
     const index = match.index ?? 0;
     html += escapeHtml(text.slice(last, index));
-    html += `<a href="${escapeHtml(match[0])}" style="${LINK}word-break:break-all;">${escapeHtml(match[0])}</a>`;
+    html += `<a href="${escapeHtml(match[0])}" style="${LINK}word-break:break-word;">${escapeHtml(match[0])}</a>`;
     last = index + match[0].length;
   }
   return html + escapeHtml(text.slice(last));
@@ -143,8 +152,8 @@ function renderDetails(lines: string[]): string | null {
   const cells = rows
     .map(
       (row) =>
-        `<tr><td valign="top" width="34%" style="padding:10px 12px 10px 0;border-bottom:1px solid ${C.line};font-family:${MONO};font-size:11px;letter-spacing:1px;text-transform:uppercase;color:${C.text2};">${escapeHtml(row![1])}</td>` +
-        `<td valign="top" style="padding:10px 0;border-bottom:1px solid ${C.line};font-family:${SANS};font-size:15px;line-height:1.45;color:${C.ink};">${detailValue(row![2])}</td></tr>`,
+        `<tr><td valign="top" width="34%" style="padding:10px 12px 10px 0;border-bottom:1px solid ${C.line};${LABEL}color:${C.text2};">${escapeHtml(row![1])}</td>` +
+        `<td valign="top" style="padding:10px 0;border-bottom:1px solid ${C.line};font-family:${SANS};font-size:15px;line-height:1.45;color:${C.ink};${FIGURES}">${detailValue(row![2])}</td></tr>`,
     )
     .join("");
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:6px 0 24px;border-top:2px solid ${C.ink};border-collapse:collapse;">${cells}</table>`;
@@ -166,30 +175,50 @@ function renderTrailingLink(block: string): string | null {
   return `<p style="${PARAGRAPH}">${lead ? `${escapeHtml(lead)} ` : ""}${link}.</p>`;
 }
 
+/** A line with its link on the next line ("Overdraft: $32 → $35\nhttps://...") reads as that line, linked. */
+function renderLineOverLink(block: string): string | null {
+  const lines = block.split("\n");
+  if (lines.length !== 2 || !/^https?:\/\/\S+$/.test(lines[1].trim()) || /https?:\/\//.test(lines[0])) return null;
+  return `<p style="${PARAGRAPH}${FIGURES}"><a href="${escapeHtml(lines[1].trim())}" style="${LINK}">${escapeHtml(lines[0])}</a></p>`;
+}
+
+/** A bare link on its own (the copy-paste fallback for a button) is set small and quiet. */
+function renderBareLink(block: string): string | null {
+  if (!/^https?:\/\/\S+$/.test(block)) return null;
+  return `<p style="margin:0 0 16px;font-family:${SANS};font-size:13px;line-height:1.5;color:${C.muted};"><a href="${escapeHtml(block)}" style="color:${C.muted};text-decoration:underline;word-break:break-all;">${escapeHtml(block)}</a></p>`;
+}
+
 function renderBlock(block: string): string {
   return (
     renderDetails(block.split("\n")) ??
+    renderBareLink(block) ??
+    renderLineOverLink(block) ??
     renderTrailingLink(block) ??
-    `<p style="${PARAGRAPH}">${linkify(block).replace(/\n/g, "<br />")}</p>`
+    `<p style="${PARAGRAPH}${FIGURES}">${linkify(block).replace(/\n/g, "<br />")}</p>`
   );
 }
 
+function renderSection(section: NonNullable<LeadEmailContent["sections"]>[number]): string {
+  return `<h2 style="margin:26px 0 10px;padding-top:18px;border-top:1px solid ${C.line};font-family:${SANS};font-size:20px;line-height:28px;font-weight:700;letter-spacing:-0.01em;color:${C.ink};text-wrap:balance;">${keepLastWordsTogether(escapeHtml(section.heading))}</h2>
+${toBlocks(section.lines).map(renderBlock).join("\n")}`;
+}
+
 function renderStatus(status: NonNullable<LeadEmailContent["status"]>): string {
-  const [background, color] = status.tone === "good" ? [C.goodSoft, C.good] : [C.terraSoft, C.terra];
-  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 22px;"><tr><td style="background:${background};border-left:3px solid ${color};padding:7px 12px;font-family:${MONO};font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:${color};">${escapeHtml(status.label)}</td></tr></table>`;
+  const [background, color] = status.tone === "good" ? [C.goodSoft, C.good] : [C.terraSoft, C.terraInk];
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 22px;"><tr><td style="background:${background};border-radius:4px;padding:5px 10px;${LABEL}color:${color};">${escapeHtml(status.label)}</td></tr></table>`;
 }
 
 function renderSteps(steps: NonNullable<LeadEmailContent["steps"]>): string {
   const title = steps.title
-    ? `<p style="margin:0 0 12px;font-family:${MONO};font-size:11px;letter-spacing:2px;text-transform:uppercase;color:${C.terra};">${escapeHtml(steps.title)}</p>`
+    ? `<p style="margin:0 0 12px;${LABEL}color:${C.terra};">${escapeHtml(steps.title)}</p>`
     : "";
   const rows = steps.items
     .map(
       (item, index) =>
-        `<tr><td valign="top" style="width:28px;padding:0 0 10px;font-family:${MONO};font-size:13px;line-height:1.55;color:${C.terra};">${index + 1}.</td><td style="padding:0 0 10px;font-family:${SANS};font-size:16px;line-height:1.55;color:${C.ink2};">${linkify(item)}</td></tr>`,
+        `<tr><td valign="top" style="width:28px;padding:0 0 10px;font-family:${SANS};font-size:16px;line-height:1.55;font-weight:700;color:${C.terra};${FIGURES}">${index + 1}.</td><td style="padding:0 0 10px;font-family:${SANS};font-size:16px;line-height:1.55;color:${C.ink2};">${linkify(item)}</td></tr>`,
     )
     .join("");
-  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:4px 0 18px;"><tr><td style="background:${C.cream};border-left:4px solid ${C.terra};padding:16px 18px 6px;">${title}<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">${rows}</table></td></tr></table>`;
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:4px 0 18px;"><tr><td style="background:${C.sand};border-left:3px solid ${C.terra};padding:16px 18px 6px;">${title}<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">${rows}</table></td></tr></table>`;
 }
 
 /** Headings never leave one word alone on the last line (CLAUDE.md), even in clients without text-wrap. */
@@ -209,16 +238,21 @@ function toBlocks(lines: string[] | undefined): string[] {
 export function renderLeadEmailHtml(content: LeadEmailContent) {
   const blocks = toBlocks(content.lines);
   const closing = toBlocks(content.closing);
-  const preheader = blocks[0]?.split("\n")[0] ?? "";
+  const firstSection = content.sections?.[0];
+  const sectionLead = toBlocks(firstSection?.lines)[0]?.split("\n")[0];
+  const preheader =
+    blocks[0]?.split("\n")[0] ??
+    (firstSection ? [firstSection.heading, sectionLead].filter(Boolean).join(": ") : closing[0]?.split("\n")[0]) ??
+    "";
   const site = SITE_URL.replace(/\/$/, "");
   const eyebrow = content.eyebrow
-    ? `<p style="margin:0 0 8px;font-family:${MONO};font-size:11px;letter-spacing:2px;text-transform:uppercase;color:${C.terra};">${escapeHtml(content.eyebrow)}</p>`
+    ? `<p style="margin:0 0 10px;${LABEL}color:${C.terra};">${escapeHtml(content.eyebrow)}</p>`
     : "";
   const cta = content.cta
-    ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 24px;"><tr><td style="background:${C.terra};border-radius:3px;"><a href="${escapeHtml(content.cta.href)}" style="display:inline-block;padding:13px 22px;font-family:${SANS};font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;">${escapeHtml(content.cta.label)} &rarr;</a></td></tr></table>`
+    ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 24px;"><tr><td style="background:${C.terra};border-radius:8px;"><a href="${escapeHtml(content.cta.href)}" style="display:inline-block;padding:13px 22px;font-family:${SANS};font-size:15px;line-height:20px;font-weight:600;color:${C.onTerra};text-decoration:none;">${escapeHtml(content.cta.label)} &rarr;</a></td></tr></table>`
     : "";
   const signature = content.signed
-    ? `<p style="${PARAGRAPH}margin-top:22px;">James Gilmore<br /><span style="font-family:${SANS};font-size:13px;color:${C.text2};">Founder, ${escapeHtml(SITE_NAME)}</span></p>`
+    ? `<p style="${PARAGRAPH}margin-top:22px;"><strong style="font-weight:600;color:${C.ink};">James Gilmore</strong><br /><span style="font-family:${SANS};font-size:13px;color:${C.text2};">Founder, ${escapeHtml(SITE_NAME)}</span></p>`
     : "";
   return `<!doctype html>
 <html lang="en">
@@ -235,15 +269,16 @@ export function renderLeadEmailHtml(content: LeadEmailContent) {
 <tr><td style="padding:22px 32px 16px;border-bottom:2px solid ${C.ink};"><a href="${escapeHtml(site)}" style="text-decoration:none;"><img src="${escapeHtml(EMAIL_LOGO_URL)}" width="124" height="22" alt="${escapeHtml(SITE_NAME)}" style="display:block;border:0;width:124px;height:22px;font-family:${SANS};font-size:18px;color:${C.ink};" /></a></td></tr>
 <tr><td style="padding:30px 32px 10px;">
 ${eyebrow}
-<h1 style="margin:0 0 18px;font-family:${SANS};font-size:28px;line-height:1.2;font-weight:normal;color:${C.ink};text-wrap:balance;">${keepLastWordsTogether(escapeHtml(content.heading ?? content.subject))}</h1>
+<h1 style="margin:0 0 18px;font-family:${SANS};font-size:30px;line-height:36px;font-weight:800;letter-spacing:-0.025em;color:${C.ink};text-wrap:balance;">${keepLastWordsTogether(escapeHtml(content.heading ?? content.subject))}</h1>
 ${content.status ? renderStatus(content.status) : ""}
 ${blocks.map(renderBlock).join("\n")}
+${(content.sections ?? []).map(renderSection).join("\n")}
 ${content.steps ? renderSteps(content.steps) : ""}
 ${cta}
 ${closing.map(renderBlock).join("\n")}
 ${signature}
 </td></tr>
-<tr><td style="padding:20px 32px 26px;background:${C.cream};border-top:1px solid ${C.line};">
+<tr><td style="padding:20px 32px 26px;background:${C.paper};border-top:1px solid ${C.line};">
 <p style="margin:0 0 8px;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.muted};"><strong style="color:${C.ink2};">${escapeHtml(SITE_NAME)}</strong> publishes the ${escapeHtml(PRODUCT_NAME)}, built from U.S. banks' and credit unions' own published fee schedules.</p>
 ${MAILING_ADDRESS ? `<p style="margin:0 0 8px;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.muted};">${escapeHtml(MAILING_ADDRESS)}</p>\n` : ""}<p style="margin:0;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.muted};">Questions? Just reply, or write to <a href="mailto:${escapeHtml(CONTACT_EMAIL)}" style="color:${C.text2};">${escapeHtml(CONTACT_EMAIL)}</a> &middot; <a href="${escapeHtml(site)}" style="color:${C.text2};">${escapeHtml(SITE_DOMAIN)}</a></p>
 </td></tr>
@@ -265,7 +300,10 @@ export function renderLeadEmailText(content: LeadEmailContent) {
   const signature = content.signed ? ["", "James Gilmore", `Founder, ${SITE_NAME}`] : [];
   const cta = content.cta ? ["", `${content.cta.label}: ${content.cta.href}`] : [];
   const closing = content.closing?.length ? ["", ...content.closing] : [];
-  return [...status, ...content.lines, ...steps, ...cta, ...closing, ...signature, "", "--", MAILING_ADDRESS ? `${SITE_NAME} · ${MAILING_ADDRESS}` : SITE_NAME].join("\n");
+  const sections = (content.sections ?? []).flatMap((section, index) =>
+    index === 0 && content.lines.length === 0 ? [section.heading, ...section.lines] : ["", section.heading, ...section.lines],
+  );
+  return [...status, ...content.lines, ...sections, ...steps, ...cta, ...closing, ...signature, "", "--", MAILING_ADDRESS ? `${SITE_NAME} · ${MAILING_ADDRESS}` : SITE_NAME].join("\n");
 }
 
 /**
