@@ -46,6 +46,8 @@ function PeerExplorerFromAddress({
   const search = useSearchParams();
   const peers = search.get("peers");
   const [loaded, setLoaded] = useState<{ peers: string | null; node: ReactNode } | null>(null);
+  // The set whose load failed or came back empty: the explorer falls back to the cached default.
+  const [failed, setFailed] = useState<{ peers: string | null } | null>(null);
 
   useEffect(() => {
     // The rest of the state is read once per set, from the address as it stands now.
@@ -56,17 +58,22 @@ function PeerExplorerFromAddress({
     let live = true;
     loadPeerExplorerSection({ institutionId, peers, ...state, fee: query.get("fee") })
       .then((node) => {
-        if (live && node) setLoaded({ peers, node });
+        if (!live) return;
+        if (node) setLoaded({ peers, node });
+        else setFailed({ peers });
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (live) setFailed({ peers });
+      });
     return () => {
       live = false;
     };
   }, [institutionId, defaultSet, peers]);
 
   if (loaded && loaded.peers === peers) return <>{loaded.node}</>;
-  // Back on the default set with nothing else chosen: the cached explorer.
-  if (peers === null || peers === defaultSet) return <>{children}</>;
+  // Back on the default set with nothing else chosen, or the asked-for set could not load: the
+  // cached explorer, not left dimmed and busy.
+  if (peers === null || peers === defaultSet || (failed && failed.peers === peers)) return <>{children}</>;
   // Another set is loading: keep the current explorer, marked busy.
   return (
     <div aria-busy="true" className="opacity-60 transition-opacity">

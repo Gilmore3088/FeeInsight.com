@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 
 const nav = vi.hoisted(() => ({ search: new URLSearchParams() }));
 const action = vi.hoisted(() => vi.fn());
@@ -58,5 +58,21 @@ describe("PeerExplorerIsland (#1811: the cached page never reads ?peers=)", () =
       </PeerExplorerIsland>,
     );
     expect(await screen.findByText("default set, overdraft")).toBeTruthy();
+  });
+
+  it.each([
+    ["fails", () => action.mockRejectedValue(new Error("network"))],
+    ["comes back empty", () => action.mockResolvedValue(null)],
+  ])("falls back to the cached explorer, not busy, when the set's load %s", async (_label, arrange) => {
+    arrange();
+    at("peers=metro");
+    const { container } = render(
+      <PeerExplorerIsland institutionId={323} defaultSet="nearest">
+        <p>default set</p>
+      </PeerExplorerIsland>,
+    );
+    expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
+    await waitFor(() => expect(container.querySelector('[aria-busy="true"]')).toBeNull());
+    expect(screen.getByText("default set")).toBeTruthy();
   });
 });

@@ -188,7 +188,15 @@ export async function getInstitutionPeerRankCached(institutionId: number): Promi
 }
 /** The institution page's peer-set choices, resolved once per institution between publishes. */
 // v2: closest in assets is listed first, so it is the default set.
-const getInstitutionPeerChoicesCached = cachedPublicRead("institution-peer-sets-v2", getInstitutionPeerChoices);
+// v3: wrapped, so an id with no choices (no such institution) is cached too: the explorer's server
+// action takes any id from the address, and an empty list would otherwise reach the database on
+// every request. A failed read throws and is not cached.
+const getInstitutionPeerChoicesEntryCached = cachedPublicRead(
+  "institution-peer-sets-v3",
+  async (institutionId: number) => ({ choices: await getInstitutionPeerChoices(institutionId) }),
+  () => false,
+);
+const getInstitutionPeerChoicesCached = async (institutionId: number) => (await getInstitutionPeerChoicesEntryCached(institutionId)).choices;
 /**
  * The peer sets an institution page offers and the one it shows (pickPeerSet): the choices
  * resolve per institution, the values filter the shared national list in code.
