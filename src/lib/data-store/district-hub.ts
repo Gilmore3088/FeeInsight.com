@@ -255,6 +255,16 @@ function sizeGroupSql(charter: keyof typeof REGULATOR_SIZE_GROUPS): string {
   return groups.map((g) => (g.below == null ? `ELSE '${g.key}'` : `WHEN ct.asset_size < ${g.below} THEN '${g.key}'`)).join(" ");
 }
 
+/**
+ * The hub's rule for which headquartered institutions count: every institution_sources row the
+ * regulator has not marked inactive. The state hub's institution counts and the shared coverage
+ * read (geographic.ts getResearchCoverage) both use it, so a state page's "headquartered" total and
+ * its hub figures count one population (#1955).
+ */
+export function activeInstitutionFilter(alias = "ct"): string {
+  return `${alias}.regulatory_status IS DISTINCT FROM 'inactive'`;
+}
+
 async function loadInstitutions(scope: HubScope): Promise<HubInstitutionGroup[]> {
   const rows = (await sql.unsafe(
     `SELECT ct.state_code, ct.charter_type, ct.asset_size_tier AS tier,
@@ -269,7 +279,7 @@ async function loadInstitutions(scope: HubScope): Promise<HubInstitutionGroup[]>
             ))::int AS with_fees
        FROM institution_sources ct
       WHERE ${scopeSql(scope)}
-        AND ct.regulatory_status IS DISTINCT FROM 'inactive'
+        AND ${activeInstitutionFilter("ct")}
       GROUP BY 1, 2, 3, 4`,
     [scope.value],
   )) as unknown as Record<string, unknown>[];

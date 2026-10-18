@@ -41,6 +41,32 @@ the storage step's summary names the held sources and the morning brief warns Ja
 when the table is measured back under budget or a PR raises the budget. Never delete data to get
 under a budget. A new table in a contract gets the default budget unless one is set.
 
+## Storage tiers (#1870)
+
+Hot data stays in Postgres; older periods can live in compressed files in R2 (the document
+vault's account and bucket, under `public-data-cold/`, or `R2_COLD_BUCKET`). The policy is in
+`storage-tiers.ts`:
+
+| Table | Hot | Cold |
+|---|---|---|
+| `institution_call_report_items` | newest 8 report dates per source (`ffiec`, `ncua`) | every older report date, one file per source and date |
+| `area_statistics` | all of it | not tiered yet: 29 sources, three period shapes and struck-row rules need a per-source policy first |
+
+- **Plan (runs daily).** In Atlas's storage step, on its one connection with a 10 s statement
+  timeout: lists each source's report dates (a loose index scan), counts at most
+  `PLAN_COUNTS_PER_RUN` uncounted cold dates a run (counts carry over in the step's
+  `detail.cold_tier.counts`) and estimates the MB a prune would free. Read-only.
+- **Export (off).** `COLD_EXPORT_LIVE` writes the oldest cold date without a file to
+  `cold-files.ts`'s `jsonl.gz` format, reads it back, checks the SHA-256 and row count, and records
+  one verified row in `public_data_cold_files`. At most one date a run. It writes no existing row.
+  Turned on by PR after James's yes.
+- **Prune (not built).** Removing the hot rows of a verified file is a production data change and
+  waits for James's yes, with the plan's dry-run count and size. Before it, the loaders' first
+  quarters must sit at or after the cold boundary, or a re-read loads the pruned rows again.
+- **Read.** `src/lib/data-catalog/cold-reads.ts`: `queryData`'s `call:` measures read a date from its
+  file only when its index row has `pruned_at` set, behind the hot rows, through the same citation,
+  at most four files a question, each checked against its index row first.
+
 ## Rules
 
 - Free, public sources only. Use no proxies and no spoofed user agents.
@@ -147,3 +173,21 @@ and new runs alike and a run queued before the switch is reused, not doubled.
 reads the `hoovie` row once per process (`registryLedgerAgent` in `registry-scheduler.ts`). While
 the row is missing, or the read fails, runs keep the name `magellan` and record why in
 `params_json.ledger_agent_fallback`.
+
+## LEI links (#1868)
+
+The `gleif` source's `lei-match-*` partitions (`magellan/registry/gleif-lei-match.ts`) link each
+tracked bank and credit union to its GLEIF LEI in `institution_lei_links`, with the basis:
+the institution's own LEI, then the record GLEIF holds under the Fed's National Information
+Center (RSSD), the FDIC (cert) or the NCUA (charter), each authority found by name in GLEIF's
+list, then one record with the exact legal name in the institution's state. A name alone never
+links; two candidates are never settled by picking one. Rows with status `ambiguous` or
+`unmatched` are the one review queue. A key link replaces a name link; two keys that disagree go
+to review. `getLeiLinkCoverage` gives the share linked; Hamilton reads a family through
+`queryData` with measure `family:lei`.
+
+Database load: every statement runs under a 15 s statement timeout, writes go in chunks of 250,
+and one run writes at most 1,000 changed rows (key partitions) or 60 institutions (name search,
+one GLEIF call a second). Leftover work waits for the next run of the partition, an hour or two
+later; a register longer than 75 pages is walked over several runs (`detail.walk_resume`), and
+only a walk that read every page in one run may clear a link its key no longer finds.

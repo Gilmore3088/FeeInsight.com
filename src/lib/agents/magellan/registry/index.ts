@@ -887,16 +887,18 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
   {
     source: GLEIF_SOURCE,
     stepKey: "registry-gleif",
-    title: "Pull GLEIF legal entities (level 1) and parent relationships (level 2) for tracked institutions",
+    title: "Link tracked institutions to GLEIF LEIs, then pull GLEIF legal entities (level 1) and parent relationships (level 2)",
     run: async (input) => {
       const r = await runRegistryGleif({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
       return {
         summary: r.empty
           ? `No GLEIF rows for ${r.partitionKey}: ${r.emptyReason}.`
+          : r.leiMatch
+            ? `GLEIF LEI match ${r.partitionKey}: ${n(r.leiMatch.read)} ${r.leiMatch.basis === "name_state" ? "institutions searched" : "GLEIF records read"}, ${n(r.leiMatch.changes)} link changes, ${n(r.writtenRows)} written${r.leiMatch.remaining > 0 ? ", more next run" : ""}${r.leiMatch.coverage ? `; ${n(r.leiMatch.coverage.linked)} of ${n(r.leiMatch.coverage.institutions)} institutions linked` : ""}${dry(r.dryRun)}.`
           : r.partitionKey === "level2"
             ? `Magellan read ${n(r.relationships)} GLEIF parent relationships for ${n(r.seeds)} tracked LEIs (publish ${r.publishDate}), ${n(r.writtenRows)} written${dry(r.dryRun)}.`
             : `Magellan read ${n(r.entities)} GLEIF entities for ${r.partitionKey}: ${n(r.linked)} linked, ${n(r.unlinked)} unlinked, ${n(r.writtenRows)} written${dry(r.dryRun)}.`,
-        detail: { source_url: r.sourceUrl, publish_date: r.publishDate, seeds: r.seeds, entities: r.entities, relationships: r.relationships, linked: r.linked, unlinked: r.unlinked, written_rows: r.writtenRows, missing_fields: r.missingFields, checks: r.checks, empty: r.empty, empty_reason: r.emptyReason },
+        detail: { source_url: r.sourceUrl, publish_date: r.publishDate, seeds: r.seeds, entities: r.entities, relationships: r.relationships, linked: r.linked, unlinked: r.unlinked, written_rows: r.writtenRows, missing_fields: r.missingFields, checks: r.checks, ...(r.leiMatch ? { lei_match: { basis: r.leiMatch.basis, proposals: r.leiMatch.proposals, changes: r.leiMatch.changes, remaining: r.leiMatch.remaining, coverage: r.leiMatch.coverage, ...r.leiMatch.detail } } : {}), empty: r.empty, empty_reason: r.emptyReason },
       };
     },
   },

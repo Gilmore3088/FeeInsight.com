@@ -595,6 +595,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `REMITTANCE_PARSER_VERSION` | — | v2 (reads the RPW xlsx workbook found on the World Bank data page, no env var needed; `WORLD_BANK_RPW_CSV_URL` is an optional override; refuses a file over 50 MB as `rpw_file_too_large`) | `magellan/registry/economy.ts` (world-bank-remittance-prices) |
 | `ALLTHEPLACES_PARSER_VERSION` | — | v1 | `magellan/registry/alltheplaces.ts` |
 | `GLEIF_PARSER_VERSION` | — | v1 | `magellan/registry/gleif.ts` |
+| `LEI_MATCH_PARSER_VERSION` | — | v1 | `magellan/registry/gleif-lei-match.ts` |
 | `MAKING_ENDS_MEET_PARSER_VERSION` | — | v1 (questions found by codebook wording; weight named in the codebook) | `magellan/registry/making-ends-meet.ts` |
 | `PAYDAY_REPORTS_PARSER_VERSION` | — | v1 | `magellan/registry/payday-reports.ts` |
 | `STATE_LISTS_PARSER_VERSION` | — | v1 | `magellan/registry/state-lists.ts` (shared empty-partition record; state-nonbank-lenders) |

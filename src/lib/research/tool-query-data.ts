@@ -12,6 +12,7 @@ import {
   DATA_CATALOG,
   FACT_MEASURE_PREFIX,
   FACT_MEASURES,
+  FAMILY_MEASURE,
   type CatalogScopeKind,
 } from "@/lib/data-catalog/catalog";
 import { queryData as runQueryData, queryDataInputSchema } from "@/lib/data-catalog/query-data";
@@ -32,6 +33,9 @@ const CALL_LEVELS: CatalogScopeKind[] = ["institution", "peer_set", "state", "me
 export function warmDataCatalog(): void {
   void getAreaSeries().catch(() => undefined);
 }
+
+/** Words that find the corporate-family measure (family:lei) in listData. */
+const FAMILY_WORDS = "corporate family parent parents subsidiary subsidiaries holding company owner owns ownership affiliate lei";
 
 /** Words that say nothing about which dataset a question needs. */
 const STOPWORDS = new Set([
@@ -83,7 +87,7 @@ export async function listDataCatalog(input: { query?: string; scope?: CatalogSc
     .map(({ s }) => s);
   const sourcesWithSeries = new Set(matchedSeries.map((s) => s.source));
   const sources = servable
-    .filter((e) => e.kind === "fee-data" || sourcesWithSeries.has(e.id) || matches(`${e.id} ${e.label}`, terms))
+    .filter((e) => e.kind === "fee-data" || sourcesWithSeries.has(e.id) || matches(`${e.id} ${e.label}${e.measurePrefix === FAMILY_MEASURE ? ` ${FAMILY_WORDS}` : ""}`, terms))
     .map((e) => ({
       id: e.id,
       label: e.label,
@@ -91,7 +95,9 @@ export async function listDataCatalog(input: { query?: string; scope?: CatalogSc
       cadence: e.cadence,
       levels: e.kind === "fee-data"
         ? ["institution", "peer_set", "state", "national"]
-        : e.measurePrefix === CALL_MEASURE_PREFIX
+        : e.measurePrefix === FAMILY_MEASURE
+          ? ["institution"]
+          : e.measurePrefix === CALL_MEASURE_PREFIX
           ? CALL_LEVELS
           : e.measurePrefix === FACT_MEASURE_PREFIX
             ? ["institution"]
@@ -142,7 +148,7 @@ export async function listDataCatalog(input: { query?: string; scope?: CatalogSc
 
 export const listData = tool({
   description:
-    "List the datasets you can query with queryData: public data (Census Bureau, BLS, BEA, FDIC, FHFA, CFPB and other public publishers) by county, metro, state or nation, published fees by category, and bank call-report lines (service-charge income, deposits, expenses). Pass keywords from the question (for example 'unemployment', 'median household income', 'overdraft'). Returns each measure id to pass to queryData, its unit, the levels it covers and the periods loaded.",
+    "List the datasets you can query with queryData: public data (Census Bureau, BLS, BEA, FDIC, FHFA, CFPB and other public publishers) by county, metro, state or nation, published fees by category, bank call-report lines (service-charge income, deposits, expenses), and an institution's corporate family (parent companies and subsidiaries, from GLEIF). Pass keywords from the question (for example 'unemployment', 'median household income', 'overdraft'). Returns each measure id to pass to queryData, its unit, the levels it covers and the periods loaded.",
   inputSchema: z.object({
     query: z.string().max(200).optional().describe("Keywords from the question"),
     scope: z.enum(SCOPES).optional().describe("The level the question is about"),
@@ -152,7 +158,7 @@ export const listData = tool({
 
 export const queryData = tool({
   description:
-    "Read one measure from the data catalog at one scope. measure is an id from listData: 'area:<source>:<series_key>' for public data, 'fee:<category>' for published fees, 'call:<item_key>' for a call-report line or 'fact:<name>' for an institution fact read from its own documents (for example 'fact:offers_zelle'; institution scope only, answered yes, no or unclear with the document link). scope.kind is institution (scope.id is the institution id; public data resolves to its headquarters county, metro and state; a call-report line is the institution's own filed values), peer_set (scope.peer holds the filters, scope.id the subject institution; public data and call-report lines come back as the group's median with institution_count behind it, and no median when fewer than 5 institutions have a figure), state (two-letter code), county (5-digit FIPS), metro (5-digit CBSA) or national. period.from and period.to take a year, 2026Q2 or 2026-09. Returns rows and a citation (publisher, source URL, as-of date), or ok:false with the reason it cannot answer.",
+    "Read one measure from the data catalog at one scope. measure is an id from listData: 'area:<source>:<series_key>' for public data, 'fee:<category>' for published fees, 'call:<item_key>' for a call-report line, 'fact:<name>' for an institution fact read from its own documents (for example 'fact:offers_zelle'; institution scope only, answered yes, no or unclear with the document link), or 'family:lei' for an institution's corporate family (its parents, subsidiaries and affiliates from GLEIF, with scope institution only). scope.kind is institution (scope.id is the institution id; public data resolves to its headquarters county, metro and state; a call-report line is the institution's own filed values), peer_set (scope.peer holds the filters, scope.id the subject institution; public data and call-report lines come back as the group's median with institution_count behind it, and no median when fewer than 5 institutions have a figure), state (two-letter code), county (5-digit FIPS), metro (5-digit CBSA) or national. period.from and period.to take a year, 2026Q2 or 2026-09. Returns rows and a citation (publisher, source URL, as-of date), or ok:false with the reason it cannot answer.",
   inputSchema: queryDataInputSchema,
   execute: async (input) => runQueryData(input),
 });

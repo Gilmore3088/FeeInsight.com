@@ -89,6 +89,7 @@ describe("data catalog", () => {
     for (const entry of DATA_CATALOG.filter((e) => e.kind === "public-data")) {
       if (entry.tables.includes("area_statistics")) expect(entry.measurePrefix, entry.id).toBe(`area:${entry.id}:`);
       else if (entry.tables.includes("institution_call_report_items")) expect(entry.measurePrefix, entry.id).toBe("call:");
+      else if (entry.tables.includes("gleif_entities")) expect(entry.measurePrefix, entry.id).toBe("family:lei");
       else if (entry.tables.includes("institution_payment_features")) expect(entry.measurePrefix, entry.id).toBe("fact:");
       else expect(entry.measurePrefix, entry.id).toBeNull();
     }
