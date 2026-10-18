@@ -558,13 +558,22 @@ describe("a line opening with another fee's words (#1902)", () => {
       ["Students under 18: Returned Item Fee $25; Overdraft Fee $35", "Overdraft Fee", 35],
       ["Basic Checking Overdraft Fee $35 per item Monthly Service Fee $10", "Monthly Service Fee", 10],
       ["Wire Transfers: Incoming Fee $15; Outgoing Wire Transfer Fee $25", "Wire Transfer Fee", 25],
+      // A lower-case scope or an effective date says which accounts or when (round 5).
+      ["Fees charged to business accounts Monthly Service Fee $10", "Monthly Service Fee", 10],
+      ["Fees for accounts opened before 2020 Monthly Service Fee $10", "Monthly Service Fee", 10],
+      ["Fees effective January 1, 2027 Monthly Service Fee $12", "Monthly Service Fee", 12],
+      ["Fees changing on 1/1/2027 are shown below Monthly Service Fee $12", "Monthly Service Fee", 12],
+      ["Effective 1/1/2027 Overdraft Fee $35 per item. Monthly Service Fee $10", "Monthly Service Fee", 10],
+      ["Seniors 62 and over Overdraft Fee $25 per item Monthly Service Fee $10", "Monthly Service Fee", 10],
     ] as const) {
       expect(fromOwnName(line, name, amount)).toBe(line);
     }
   });
 
   it("keeps the account named at the end of another fee's description", () => {
-    expect(fromOwnName("Fees vary by account and are listed here Student Checking Monthly Maintenance Fee $12", "Monthly Maintenance Fee", 12)).toBe("… Student Checking Monthly Maintenance Fee $12");
+    expect(fromOwnName("Fee applied to process a tax liability Student Checking Monthly Maintenance Fee $12", "Monthly Maintenance Fee", 12)).toBe("… Student Checking Monthly Maintenance Fee $12");
+    // A description that mentions accounts may scope the fee: kept whole.
+    expect(fromOwnName("Fees vary by account and are listed here Student Checking Monthly Maintenance Fee $12", "Monthly Maintenance Fee", 12)).toBe("Fees vary by account and are listed here Student Checking Monthly Maintenance Fee $12");
   });
 
   it("drops a stop left after another fee's price", () => {

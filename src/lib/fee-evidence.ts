@@ -116,7 +116,13 @@ const DESCRIPTION_WORDS = 4;
 const CAPITALISED_RUN = /(?:\b[A-Z][\w&'-]*\s+)+$/;
 
 /** Words naming an account or a customer group, which scope the fees after them. */
-const ACCOUNT_WORDS = /\b(?:checking|savings|accounts?|business|personal|consumer|students?|club|money\s+market|certificates?|cds?|iras?|members?|customers?|only)\b/i;
+const ACCOUNT_WORDS = /\b(?:checking|savings|accounts?|business|personal|consumer|students?|seniors?|club|money\s+market|certificates?|cds?|iras?|members?|customers?|only|\d+\s+and\s+(?:over|older|under|younger))\b/i;
+/** A date or effective period, which says when the fees after it apply. */
+const DATE_WORDS = /\beffective\b|\bas\s+of\b|\b(?:before|after|beginning|starting|until|through)\b|\b\d{1,2}\/\d{1,2}\/\d{2,4}\b|\b(?:19|20)\d{2}\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d/i;
+/** Dropped words that could scope this fee: a condition, an account or group, or a date. */
+function scopesTheFee(dropped: string): boolean {
+  return CONDITION_WORDS.test(dropped) || ACCOUNT_WORDS.test(dropped) || DATE_WORDS.test(dropped);
+}
 
 /**
  * Every sentence a cut would drop is another fee, priced the way a schedule prints one, with no
@@ -124,7 +130,7 @@ const ACCOUNT_WORDS = /\b(?:checking|savings|accounts?|business|personal|consume
  * the fee after it ("Basic Checking. Overdraft Fee $35 …" keeps the line whole).
  */
 function anotherFeesClause(dropped: string): boolean {
-  if (dropped.includes(":")) return false;
+  if (dropped.includes(":") || scopesTheFee(dropped)) return false;
   const pieces = dropped.replace(/[\s.;|]+$/, "").split(/[.;](?=\s)/).map((piece) => piece.trim()).filter(Boolean);
   return pieces.length > 0 && pieces.every((piece) => PRICED_FEE.test(piece) && !CONDITION_WORDS.test(piece) && !ACCOUNT_WORDS.test(piece));
 }
@@ -138,7 +144,8 @@ function anotherFeesClause(dropped: string): boolean {
  *
  * Nothing is cut unless the fee's own name prints its price within NAME_TO_PRICE_CHARS, the opening
  * neither prints this price nor ends on a price (catalog 30013's "$2.00 paper statement charge,
- * $5.00 early withdraw penalty"), and it holds no condition word. Then one of two cuts:
+ * $5.00 early withdraw penalty"), and the dropped words hold no condition, account or customer
+ * group, or date (`scopesTheFee`). Then one of two cuts:
  * - after the last clause end, when every sentence before it is another priced fee
  *   (`anotherFeesClause`) and only capitalised words (an account or direction, kept) sit between
  *   it and the name: "… Basic Checking Monthly Service Fee $10";
@@ -162,7 +169,7 @@ export function fromOwnName(line: string, feeName: string | null, amount: number
   let cut = 0;
   if (end === 0) {
     const words = clause.trim().split(/\s+/).filter(Boolean);
-    if (words.length > DESCRIPTION_WORDS && /^(?:fees?|charges?)$/i.test(words[0]) && !CONDITION_WORDS.test(clause)) cut = at - run.length;
+    if (words.length > DESCRIPTION_WORDS && /^(?:fees?|charges?)$/i.test(words[0]) && !scopesTheFee(clause.slice(0, clause.length - run.length))) cut = at - run.length;
   } else if (anotherFeesClause(opening.slice(0, end)) && clause.trim().length === run.trim().length) {
     cut = end;
   }
