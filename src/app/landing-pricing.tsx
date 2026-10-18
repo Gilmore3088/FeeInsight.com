@@ -1,8 +1,12 @@
+import Link from "next/link";
 import { DEMO_REQUEST_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
 import { TrackLink } from "@/components/track-link";
 import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import { PRO_TIERS, tierAmountLabel } from "@/lib/pro-tiers";
 import { HOME_WRAP, SERIF } from "./landing-shared";
+
+/** The billing and data questions live with the plans on /subscribe (James, Oct 18: "put an FAQ link"). */
+export const FAQ_HREF = `${PRO_PLANS_NAV.href}#faq`;
 
 const MONTH_WORDS = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
 
@@ -26,7 +30,7 @@ export function pricingLine(
 
 /**
  * Pricing (James's example, Oct 17; heading by growth): "One plan for your whole pricing team." Three tiers by assets,
- * every price from PRO_TIERS (the subhead carries the seat count), then the plan button and the demo link.
+ * every price from PRO_TIERS (the subhead carries the seat count), then the plan button, the demo link and the FAQ link.
  * No standalone report offer here or anywhere on the homepage (James, Oct 17).
  */
 export function LandingPricing() {
@@ -66,6 +70,9 @@ export function LandingPricing() {
           >
             Ask for a demo
           </TrackLink>
+          <Link href={FAQ_HREF} className="text-[14px] text-ink-muted underline decoration-ink-muted/40 underline-offset-4 hover:text-ink">
+            Questions? Read the FAQ
+          </Link>
         </div>
       </div>
     </section>

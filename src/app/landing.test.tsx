@@ -121,6 +121,20 @@ describe("hero Bank Fee Index card", () => {
     fireEvent.change(screen.getByLabelText("State"), { target: { value: "WY" } });
     expect(screen.getAllByText("Too few for a median yet").length).toBeGreaterThan(0);
   });
+  it("shows the benchmark first on a phone, with the pickers behind Change comparison", () => {
+    const { container } = render(<IndexCard data={card} freshness="Oct 14, 2026" />);
+    const toggle = screen.getByRole("button", { name: "Change comparison" });
+    const group = container.querySelector('[role="group"][aria-label="Benchmark scope"]')!;
+    expect(toggle.getAttribute("aria-controls")).toBe(group.id);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    // Hidden below sm only; from sm up the pickers always show.
+    expect(group.className).toMatch(/(^| )hidden( |$)/);
+    expect(group.className).toContain("sm:grid");
+    expect(container.querySelector("[data-index-scope]")?.textContent).toBe("Monthly maintenance");
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(group.className).not.toMatch(/(^| )hidden( |$)/);
+  });
 });
 
 describe("hero and proof strip", () => {
@@ -286,8 +300,20 @@ describe("research behind each answer", () => {
     expect(html).toContain(RESEARCH_EXAMPLES[0].question);
     expect(html).toContain(RESEARCH_EXAMPLES[0].title);
     expect(html).toContain('data-answered="true"');
-    // Tile names and the question only: no source lines, eyebrows, phase text or label (James, Oct 17).
-    expect(html).not.toMatch(/Illustrative|Hey Hamilton|uppercase|FDIC · NCUA|Connecting|Ten source families\./);
+    // No eyebrows, phase text or labels (James, Oct 17).
+    expect(html).not.toMatch(/Illustrative|uppercase|Connecting|Ten source families\./);
+    // A phone reads the ask, the question, then the sources, then the answer (James, Oct 18).
+    const order = ["Hey Hamilton,", "data-research-question", "data-source=", "data-research-output", "Get Hamilton for your institution"].map((m) => html.indexOf(m));
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    // Each tile names its providers; the answer has substance, its sources and a way to read one.
+    for (const s of SOURCES) expect(html).toContain(s.provider.replace("&", "&amp;"));
+    expect(html).toContain(RESEARCH_EXAMPLES[0].excerpt);
+    expect(html).toContain(`Sources: ${RESEARCH_EXAMPLES[0].cites}`);
+    expect(html).toMatch(/<a href="\/reports\/sample-competitive-fee-position"[^>]*>View the sample report</);
+    expect(html).toMatch(/<a href="\/subscribe"[^>]*data-event="upgrade_click" data-placement="home_research"[^>]*>Get Hamilton for your institution</);
+    // The excerpts carry no figures: none is read from live data.
+    for (const e of RESEARCH_EXAMPLES) expect(e.excerpt).not.toMatch(/\d|\$/);
     // No tile count is typed into the copy.
     expect(html).not.toMatch(/\b(nine|ten|9|10) source/i);
     expect(html.match(/data-source=/g)).toHaveLength(SOURCES.length);
@@ -312,8 +338,8 @@ describe("research behind each answer", () => {
     expect(unlit.className).not.toMatch(/opacity/);
     const label = [...unlit.querySelectorAll("span")].find((el) => !el.classList.contains("sr-only"))!;
     expect(label.className).not.toMatch(/opacity/);
-    expect(label.className).toContain("text-ink-soft");
-    expect(unlit.querySelector("svg")!.getAttribute("class")).toContain("opacity-30");
+    expect(label.className).toContain("text-ink");
+    expect(unlit.querySelector("svg")!.getAttribute("class")).toContain("opacity-60");
     // The visitor's move is announced.
     expect(screen.getByText(RESEARCH_EXAMPLES[1].question).getAttribute("aria-live")).toBe("polite");
     vi.useRealTimers();
@@ -340,7 +366,11 @@ describe("licence rule", () => {
         <LandingPricing />
       </>,
     );
-    const words = [html, ...SOURCES.map((s) => s.detail), ...RESEARCH_EXAMPLES.map((e) => e.question + e.title)].join(" ");
+    const words = [
+      html,
+      ...SOURCES.map((s) => `${s.detail} ${s.provider}`),
+      ...RESEARCH_EXAMPLES.map((e) => `${e.question} ${e.title} ${e.excerpt} ${e.cites}`),
+    ].join(" ");
     expect(words).not.toMatch(
       /FINRA|Zelle|FedNow|\bRTP\b|Clearing House|frbservices|Fed Financial Services|Nacha|Payment services|payment choice|remittance|World Bank|Small Business Credit Survey|small-business lending|Kansas City Fed|KC Fed|Atlanta Fed/i,
     );
@@ -371,6 +401,8 @@ describe("pricing", () => {
     }
     expect(html).toMatch(/<a href="\/subscribe"[^>]*data-event="upgrade_click" data-placement="home_pricing">Choose your plan</);
     expect(html).toMatch(/<a href="\/contact\?source=demo"[^>]*data-event="contact_sales" data-placement="home_pricing_demo">Ask for a demo</);
+    // The FAQ link (James, Oct 18) opens the plan page's questions.
+    expect(html).toMatch(/<a [^>]*href="\/subscribe#faq"[^>]*>Questions\? Read the FAQ</);
     // No eyebrow; the seat count is said once, in the subhead; no report offer.
     expect(html).not.toMatch(/uppercase/);
     expect(html).not.toContain("users.");

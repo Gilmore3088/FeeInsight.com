@@ -153,6 +153,8 @@ export function IndexCard({ data, freshness, children }: { data: IndexCardData; 
   const [fee, setFee] = useState(defaultFee);
   const [place, setPlace] = useState(US);
   const [charter, setCharter] = useState<Charter>("all");
+  const [scopeOpen, setScopeOpen] = useState(false);
+  const scopeId = useId();
   const feeDef = data.fees.find((f) => f.key === fee) ?? data.fees[0];
   const places = data.cells[fee] ?? {};
   const ci = CHARTERS.indexOf(charter);
@@ -193,7 +195,29 @@ export function IndexCard({ data, freshness, children }: { data: IndexCardData; 
         <p className="mt-6 text-[14px] text-ink-soft">The live figures are being refreshed. The full index is open on its own page.</p>
       ) : (
         <>
-          <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3" role="group" aria-label="Benchmark scope">
+          {/* On a phone the benchmark shows first; the three pickers open from one control (James, Oct 18). */}
+          <div className="mt-3 flex items-center justify-between gap-3 sm:hidden">
+            <p className="min-w-0 truncate text-[12px] text-ink-soft" data-index-scope="">
+              {feeDef?.label}
+              {charter === "all" ? "" : ` · ${CHARTER_LABELS[charter]}`}
+            </p>
+            <button
+              type="button"
+              aria-expanded={scopeOpen}
+              aria-controls={scopeId}
+              onClick={() => setScopeOpen((v) => !v)}
+              className="inline-flex min-h-11 shrink-0 items-center gap-1 text-[12px] font-semibold text-ink underline decoration-border underline-offset-4"
+            >
+              Change comparison
+              <ChevronDown aria-hidden="true" className={`size-3.5 transition-transform ${scopeOpen ? "rotate-180" : ""}`} />
+            </button>
+          </div>
+          <div
+            id={scopeId}
+            className={`mt-2 grid-cols-1 gap-2 sm:mt-4 sm:grid sm:grid-cols-3 ${scopeOpen ? "grid" : "hidden"}`}
+            role="group"
+            aria-label="Benchmark scope"
+          >
             <Picker
               label="Fee"
               value={fee}
@@ -219,7 +243,7 @@ export function IndexCard({ data, freshness, children }: { data: IndexCardData; 
               ? `${feeDef?.label}, ${CHARTER_WORDS[charter]} in ${placeName}: median ${money(pick.median)}, ${institutions(pick.n)}.`
               : `${feeDef?.label}, ${CHARTER_WORDS[charter]} in ${placeName}: no median yet.`}
           </p>
-          <div className="mt-4 grid gap-5 sm:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] sm:gap-5">
+          <div className="mt-3 grid gap-5 sm:mt-4 sm:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] sm:gap-5">
             <div className="min-w-0">
               <h3 className="text-[13px] font-semibold text-ink">{benchmarkTitle}</h3>
               {hasMedian(pick) ? (
