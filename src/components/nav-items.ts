@@ -47,14 +47,16 @@ export const HEADER_PLANS_NAV = { label: "Plans", href: "/subscribe" } as const;
 export const PRO_PLANS_NAV = { label: "See Hamilton plans", href: "/subscribe" } as const;
 
 /**
- * The Pro demo request: the contact form with the demo option chosen, never a booking link (brief 03 §4).
+ * The Pro demo request: the demo form on /for-institutions, never a booking link (brief 03 §4). One
+ * destination site-wide (site audit #1952: demo links went to two places); /contact?source=demo
+ * still works for old links.
  * One verb site-wide (growth OS review N3): `label` follows another link ("See Hamilton plans · Or ask
  * for a demo"); `standaloneLabel` is the same words when the link stands alone.
  */
 export const DEMO_REQUEST_NAV = {
   label: "Or ask for a demo",
   standaloneLabel: "Ask for a demo",
-  href: "/contact?source=demo",
+  href: "/for-institutions#demo",
 } as const;
 
 /** The institution search, the main action inside page bodies (brief 03, Q1 option B). */

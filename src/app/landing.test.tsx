@@ -736,7 +736,7 @@ describe("pricing", () => {
       expect(html).toContain(`or ${tierAmountLabel(tier.key, "annual")} / year`);
     }
     expect(html).toMatch(/<a href="\/subscribe"[^>]*data-event="upgrade_click" data-placement="home_pricing">Choose your plan</);
-    expect(html).toMatch(/<a href="\/contact\?source=demo"[^>]*data-event="contact_sales" data-placement="home_pricing_demo">Ask for a demo</);
+    expect(html).toMatch(/<a href="\/for-institutions#demo"[^>]*data-event="contact_sales" data-placement="home_pricing_demo">Ask for a demo</);
     // The FAQ link (James, Oct 18) opens the plan page's questions.
     expect(html).toMatch(/<a [^>]*href="\/subscribe#faq"[^>]*>Questions\? Read the FAQ</);
     // No eyebrow; the seat count is said once, in the subhead; no report offer.
