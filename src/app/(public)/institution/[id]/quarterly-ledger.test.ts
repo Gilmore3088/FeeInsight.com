@@ -1,0 +1,159 @@
+import { describe, expect, it } from "vitest";
+import type { InstitutionFinancialHistoryRow } from "@/lib/data-store/financial";
+import type { CallItemHistoryRow } from "@/lib/data-store/institution-quarterly";
+import { fieldNotes } from "./ledger-fields";
+import { buildLedger, change, latestOf, previousQuarterEnd, rangeQuarters, toStandaloneQuarters } from "./quarterly-ledger";
+
+function record(partial: Partial<InstitutionFinancialHistoryRow> & { report_date: string; source: string }): InstitutionFinancialHistoryRow {
+  return {
+    institution_id: 1,
+    total_assets: null,
+    total_deposits: null,
+    total_loans: null,
+    service_charge_income: null,
+    other_noninterest_income: null,
+    net_interest_margin: null,
+    efficiency_ratio: null,
+    roa: null,
+    roe: null,
+    tier1_capital_ratio: null,
+    branch_count: null,
+    employee_count: null,
+    member_count: null,
+    total_revenue: null,
+    fee_income_ratio: null,
+    overdraft_revenue: null,
+    net_income: null,
+    fetched_at: null,
+    ...partial,
+  } as InstitutionFinancialHistoryRow;
+}
+
+function item(report_date: string, item_key: string, item_code: string, value: number, period_basis = "ytd"): CallItemHistoryRow {
+  return { report_date, item_key, item_code, item_description: null, value, unit: "thousands", period_basis, fetched_at: "2026-10-01T00:00:00Z" };
+}
+
+describe("toStandaloneQuarters", () => {
+  it("keeps Q1 and differences later quarters within the year", () => {
+    const out = toStandaloneQuarters(new Map([
+      ["2025-03-31", 100],
+      ["2025-06-30", 250],
+      ["2025-09-30", 420],
+      ["2025-12-31", 600],
+      ["2026-03-31", 90],
+    ]));
+    expect([...out.entries()]).toEqual([
+      ["2025-03-31", 100],
+      ["2025-06-30", 150],
+      ["2025-09-30", 170],
+      ["2025-12-31", 180],
+      ["2026-03-31", 90],
+    ]);
+  });
+
+  it("leaves a quarter empty when the prior quarter of its year is missing", () => {
+    const out = toStandaloneQuarters(new Map([["2025-03-31", 100], ["2025-09-30", 420]]));
+    expect(out.get("2025-09-30")).toBeNull();
+  });
+
+  it("never differences across a year end", () => {
+    expect(previousQuarterEnd("2026-03-31")).toBe("2025-12-31");
+    expect(previousQuarterEnd("2026-12-31")).toBe("2026-09-30");
+    const out = toStandaloneQuarters(new Map([["2025-12-31", 600], ["2026-03-31", 90]]));
+    expect(out.get("2026-03-31")).toBe(90);
+  });
+});
+
+describe("buildLedger", () => {
+  it("converts FFIEC year-to-date lines and keeps balances point in time", () => {
+    const items = [
+      item("2026-03-31", "service_charges_deposits_ytd", "RIAD4080", 5_000),
+      item("2026-06-30", "service_charges_deposits_ytd", "RIAD4080", 10_700),
+      item("2026-03-31", "net_interest_income_ytd", "RIAD4074", 40_000),
+      item("2026-06-30", "net_interest_income_ytd", "RIAD4074", 81_000),
+      item("2026-03-31", "noninterest_income_total_ytd", "RIAD4079", 15_000),
+      item("2026-06-30", "noninterest_income_total_ytd", "RIAD4079", 30_000),
+      item("2026-03-31", "total_assets", "RCFD2170", 4_300_000, "point_in_time"),
+      item("2026-06-30", "total_assets", "RCFD2170", 4_400_000, "point_in_time"),
+    ];
+    const ledger = buildLedger([], items);
+    const q2 = ledger.quarters.find((q) => q.reportDate === "2026-06-30")!;
+    expect(q2.values.serviceCharges).toEqual({ value: 5_700_000, source: "ffiec" });
+    expect(q2.values.revenue?.value).toBe((41_000 + 15_000) * 1_000);
+    expect(q2.values.assets?.value).toBe(4_400_000_000);
+    expect(q2.values.sharePct?.value).toBeCloseTo((5_700 / 56_000) * 100, 6);
+    expect(fieldNotes(ledger, "revenue")[0].fields).toBe("RIAD4074 + RIAD4079");
+    expect(fieldNotes(ledger, "sharePct")[0].fields).toBe("RIAD4080 / (RIAD4074 + RIAD4079)");
+    expect(fieldNotes(ledger, "serviceCharges")[0].calculation).toMatch(/Standalone quarter/);
+    expect(fieldNotes(ledger, "assets")[0].calculation).toMatch(/Point in time/);
+  });
+
+  it("takes FDIC quarterly income as reported, and leaves legacy rows' income empty", () => {
+    const ledger = buildLedger(
+      [
+        record({ report_date: "2022-12-31", source: "fdic", total_assets: 4_000_000, service_charge_income: 9_999 }),
+        record({ report_date: "2023-03-31", source: "fdic", total_assets: 4_100_000, service_charge_income: 5_100, total_revenue: 50_000, net_income: 12_000, roa: 1.2 }),
+      ],
+      [],
+    );
+    expect(ledger.quarters[0].values.serviceCharges).toBeUndefined();
+    expect(ledger.quarters[0].values.assets?.value).toBe(4_000_000_000);
+    expect(ledger.quarters[1].values.serviceCharges).toEqual({ value: 5_100_000, source: "fdic" });
+    expect(ledger.quarters[1].values.netIncome?.value).toBe(12_000_000);
+    expect(ledger.filer).toBe("bank");
+    expect(fieldNotes(ledger, "serviceCharges")[0].fields).toBe("ISERCHGQ");
+  });
+
+  it("makes NCUA year-to-date income standalone", () => {
+    const ledger = buildLedger(
+      [
+        record({ report_date: "2026-03-31", source: "ncua", service_charge_income: 300, total_revenue: 3_000, net_income: 100 }),
+        record({ report_date: "2026-06-30", source: "ncua", service_charge_income: 700, total_revenue: 6_400, net_income: 150 }),
+      ],
+      [],
+    );
+    const q2 = latestOf(ledger, "serviceCharges")!;
+    expect(q2.value).toEqual({ value: 400_000, source: "ncua" });
+    expect(latestOf(ledger, "netIncome")!.value.value).toBe(50_000);
+    expect(latestOf(ledger, "sharePct")!.value.value).toBeCloseTo((400 / 3_400) * 100, 6);
+    expect(ledger.filer).toBe("credit_union");
+  });
+
+  it("prefers the FFIEC line and falls back to the FDIC row per quarter", () => {
+    const ledger = buildLedger(
+      [
+        record({ report_date: "2026-03-31", source: "fdic", service_charge_income: 5_000, total_revenue: 55_000, net_income: 1 }),
+        record({ report_date: "2026-06-30", source: "fdic", service_charge_income: 5_700, total_revenue: 56_000, net_income: 1 }),
+      ],
+      [item("2026-03-31", "service_charges_deposits_ytd", "RIAD4080", 5_000)],
+    );
+    expect(ledger.quarters.map((q) => q.values.serviceCharges?.source)).toEqual(["ffiec", "fdic"]);
+    // The share divides within one filing only: Q1 has no FFIEC revenue, so it takes neither.
+    expect(ledger.quarters[0].values.sharePct).toBeUndefined();
+    expect(fieldNotes(ledger, "serviceCharges").map((n) => n.source)).toEqual(["ffiec", "fdic"]);
+  });
+});
+
+describe("change and ranges", () => {
+  it("states dollars and percent, and no percent from a non-positive base", () => {
+    expect(change(110, 100)).toEqual({ dollars: 10, pct: expect.closeTo(10, 6) });
+    expect(change(5, -5)?.pct).toBeNull();
+    expect(change(null, 5)).toBeNull();
+  });
+
+  it("shows the newest N quarters that carry the measure", () => {
+    const ledger = buildLedger(
+      ["2025-03-31", "2025-06-30", "2025-09-30", "2025-12-31", "2026-03-31"].map((d, i) =>
+        record({ report_date: d, source: "fdic", total_assets: 1_000 + i }),
+      ),
+      [],
+    );
+    expect(rangeQuarters(ledger.quarters, "assets", "4").map((q) => q.reportDate)).toEqual([
+      "2025-06-30",
+      "2025-09-30",
+      "2025-12-31",
+      "2026-03-31",
+    ]);
+    expect(rangeQuarters(ledger.quarters, "assets", "all")).toHaveLength(5);
+  });
+});

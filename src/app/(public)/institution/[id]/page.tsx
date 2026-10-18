@@ -5,12 +5,7 @@ import Link from "next/link";
 import { ArrowRight, ArrowUpRight } from "lucide-react";
 import { notFound } from "next/navigation";
 import { getFinancialsByInstitution } from "@/lib/data-store";
-import {
-  getFinancialHistory,
-  getPeerFinancialMedians,
-  getPeerPercentiles,
-  type InstitutionFinancialHistoryRow,
-} from "@/lib/data-store/financial";
+import { getPeerFinancialMedians, getPeerPercentiles } from "@/lib/data-store/financial";
 import {
   getBranchFootprint,
   getEnforcementRecord,
@@ -30,7 +25,12 @@ import { getDisplayName } from "@/lib/fee-taxonomy";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { HEADLINE_FEE_KEYS } from "@/lib/data-store/market-readiness";
 import { FeeAlertControl } from "./fee-alert-control";
-import { getComparableMarketIndexCached } from "@/lib/data-store/public-cached-reads";
+import {
+  getComparableMarketIndexCached,
+  getFeeShareCohortCached,
+  getInstitutionCallItemHistoryCached,
+  getInstitutionFinancialHistoryCached,
+} from "@/lib/data-store/public-cached-reads";
 import { PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import { buildPublicInstitutionProfileLinks } from "@/lib/institution-profile-links";
@@ -57,7 +57,13 @@ import {
 } from "./financial-history";
 import { RegistryCards } from "./registry-cards";
 import { FinancialProfileSection } from "./financial-profile-section";
-import { assetSizeToDollars, formatReportQuarter, selectFinancialsByQuarter } from "./financial-units";
+import { assetSizeToDollars, feeIncomeTerms, formatReportQuarter, selectFinancialsByQuarter } from "./financial-units";
+import { buildLedger, latestOf } from "./quarterly-ledger";
+import { buildCohortDistribution } from "./fee-share-cohort";
+import { buildObservations } from "./overview-observations";
+import { cohortLabel, ExecutiveOverview } from "./executive-overview";
+import { FinancialPerformanceSection } from "./financial-performance-section";
+import { ConnectedPanel, pickRelatedFees } from "./connected-panel";
 import { MIN_VERIFIED_FEES_FOR_OFFER } from "./profile-copy";
 import {
   buildProfileTitle,
@@ -76,7 +82,7 @@ import { SERIF } from "./profile-serif";
 import { profileSerif } from "./profile-serif-font";
 import "./profile.css";
 import { ProfileFootnote } from "./profile-footnote";
-import { HamiltonBand, type HamiltonInsight } from "./hamilton-band";
+import { HamiltonBand } from "./hamilton-band";
 import { CompareTable } from "./compare-table";
 import {
   compareCounts,
@@ -193,21 +199,27 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
       .filter((category): category is string => Boolean(category))
       .map((category) => [category, getDisplayName(category).replace(/\s*\([^)]*\)/g, "")]),
   );
-  // Financial history is Pro-only; free users never receive it in the RSC payload. The branch
+  // Call-report history and its asset-size cohort are public filings, read by every visitor for the
+  // overview and financial performance sections (James's brief, Oct 18). Peer ranks, peer medians
+  // and the regulatory watch stay Pro, with the deeper Financial profile charts. The branch
   // footprint, complaints, enforcement and holding company are public records every visitor sees.
   const isPro = canAccessPremium(user);
   const [
-    [financialHistory, peerMedians, peerPercentiles, regulatoryWatch],
+    [financialHistory, callItems],
+    [peerMedians, peerPercentiles, regulatoryWatch],
     [footprint, complaints, holdingCompany, enforcement, regulator],
   ] = await Promise.all([
+    Promise.all([
+      getInstitutionFinancialHistoryCached(instId).catch(fallbackTo("financial history", [])),
+      getInstitutionCallItemHistoryCached(instId).catch(fallbackTo("call-report lines", [])),
+    ]),
     isPro
       ? Promise.all([
-          getFinancialHistory(instId).catch(fallbackTo("financial history", [])),
           getPeerFinancialMedians(instId).catch(fallbackTo("peer medians", null)),
           getPeerPercentiles(instId).catch(fallbackTo("peer percentiles", null)),
           getRegulatoryWatch(instId).catch(fallbackTo("regulatory watch", null)),
         ])
-      : Promise.resolve([[], null, null, null] as [InstitutionFinancialHistoryRow[], null, null, null]),
+      : Promise.resolve([null, null, null] as [null, null, null]),
     Promise.all([
       getBranchFootprint(instId).catch(fallbackTo("branch footprint", null)),
       getComplaintTrend(instId).catch(fallbackTo("complaint trend", null)),
@@ -310,7 +322,6 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
 
   const city = toTitleCase(inst.city);
   const charterLabel = getCharterLabel(inst.charter_type);
-  const kind = inst.charter_type === "bank" ? "bank" : "credit union";
   const districtName = district ? DISTRICT_NAMES[district] : null;
   const segmentLabel = getSegmentLabel(inst.asset_size_tier, inst.charter_type);
   const collectedOn = formatAbsoluteDate(inst.latest_source_collected_at ?? null);
@@ -344,27 +355,34 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
   ].filter((fact) => fact.value);
 
   const showHamiltonBand = !isPro && !sparse && published.length > 0;
-  // The one Hamilton finding shown free: its fee-income share against the peer median from the
-  // same quarter's call reports (a Pro visitor already has the full financial profile).
-  const [freePeerMedians, sampleLive] = await Promise.all([
-    showHamiltonBand && latestFinancial
-      ? getPeerFinancialMedians(instId).catch(fallbackTo("peer medians", null))
+
+  // The overview and financial performance: one row per quarter from both call-report stores, and
+  // the asset-size cohort (same charter and tier, the newest quarter it filed) for its share.
+  const ledger = buildLedger(financialHistory, callItems);
+  const newestRecord = [...financialHistory]
+    .filter((row) => row.source === "fdic" || row.source === "ncua")
+    .sort((a, b) => b.report_date.localeCompare(a.report_date))[0];
+  const terms = feeIncomeTerms(newestRecord?.source ?? (ledger.filer === "credit_union" ? "ncua" : "fdic"));
+  const sizeRange = segmentLabel?.split(", ")[1] ?? null;
+  const [cohortRows, sampleLive] = await Promise.all([
+    newestRecord && inst.charter_type
+      ? getFeeShareCohortCached(inst.charter_type, inst.asset_size_tier ?? null, newestRecord.report_date, newestRecord.source).catch(
+          fallbackTo("fee share cohort", null),
+        )
       : Promise.resolve(null),
     showHamiltonBand || (sparse && !isPro) ? sampleReportAvailable().catch(() => false) : Promise.resolve(false),
   ]);
+  const cohort = buildCohortDistribution(cohortRows, instId);
+  const cohortName = cohort ? cohortLabel(inst.charter_type === "credit_union" ? "credit_union" : "bank", sizeRange) : null;
   const sampleHref = sampleLive ? "/reports/sample-competitive-fee-position" : null;
-  const hamiltonInsight: HamiltonInsight | null =
-    showHamiltonBand && normalizedFinancials.length > 0
-      ? {
-          quarters: normalizedFinancials,
-          ownSharePct: latestFinancial?.feeIncomeRatioPct ?? null,
-          peerSharePct: freePeerMedians?.fee_income_ratio != null ? freePeerMedians.fee_income_ratio * 100 : null,
-          peerCount: freePeerMedians?.fee_income_peer_count ?? null,
-          filerCount: freePeerMedians?.peer_count ?? null,
-          sizeRange: segmentLabel?.split(", ")[1] ?? null,
-          kind,
-        }
-      : null;
+  const observations = buildObservations({ ledger, cohort, cohortName, counts, stateName, terms });
+  const latestServiceCharges = latestOf(ledger, "serviceCharges");
+  const latestRevenue = latestOf(ledger, "revenue");
+  const connectedFacts = [
+    latestServiceCharges && { label: terms.amount, value: latestServiceCharges.value.value, quarter: latestServiceCharges.quarter.quarter },
+    latestRevenue && { label: "Revenue", value: latestRevenue.value.value, quarter: latestRevenue.quarter.quarter },
+  ].filter((f): f is { label: string; value: number; quarter: string } => Boolean(f));
+  const showOverview = ledger.quarters.length > 0 || Boolean(counts && !sparse);
 
   const scheduleLink = inst.fee_schedule_url ? (
     <a href={inst.fee_schedule_url} target="_blank" rel="noopener noreferrer" className={LINK}>
@@ -413,7 +431,56 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
         />
 
         <div className="mx-auto max-w-page space-y-14 px-4 pb-16 pt-12 sm:space-y-16 sm:px-6 sm:pt-16">
-          {/* 2. Every published fee beside the state, district and U.S. medians. */}
+          {/* 2. The executive overview (James's brief, Oct 18): call-report cards, the service-charge trend, what stands out. */}
+          {showOverview && (
+            <ExecutiveOverview
+              institutionName={inst.institution_name}
+              ledger={ledger}
+              cohort={cohort}
+              cohortName={cohortName}
+              counts={sparse ? null : counts}
+              stateName={stateName}
+              feesReadOn={collectedOn}
+              terms={terms}
+              observations={observations}
+            />
+          )}
+
+          {/* 3. Financial performance: any measure by quarter, the size cohort, income beside prices. */}
+          {ledger.quarters.length > 0 && (
+            <FinancialPerformanceSection
+              institutionName={inst.institution_name}
+              ledger={ledger}
+              terms={terms}
+              cohort={cohort}
+              cohortName={cohortName}
+            >
+              <ConnectedPanel
+                institutionId={instId}
+                stateName={stateName}
+                stateShort={stateCode}
+                facts={connectedFacts}
+                share={cohort?.subject && cohortName ? { own: cohort.subject.sharePct, median: cohort.median, cohort: cohortName } : null}
+                fees={sparse ? [] : pickRelatedFees(rows)}
+                incomeName={terms.amount.toLowerCase()}
+              />
+            </FinancialPerformanceSection>
+          )}
+
+          {/* 4. Where it operates and its public record: FDIC, NCUA, CFPB and SEC data, for every visitor. */}
+          {(footprint || complaints || enforcement || holdingCompany) && (
+            <section aria-labelledby="record-heading">
+              <h2 id="record-heading" className={H2} style={SERIF}>
+                Branches and public record
+              </h2>
+              <p className={FINDING}>Where {inst.institution_name} operates, and what regulators and customers have on file.</p>
+              <div className="mt-6">
+                <RegistryCards footprint={footprint} complaints={complaints} enforcement={enforcement} holdingCompany={holdingCompany} />
+              </div>
+            </section>
+          )}
+
+          {/* 5. Every published fee beside the state, district and U.S. medians. */}
           {published.length > 0 && (
             <section aria-labelledby="compare-heading" className="scroll-mt-20">
               <h2 id="compare-heading" className={H2} style={SERIF}>
@@ -489,14 +556,14 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
           {showHamiltonBand && (
             <HamiltonBand
               institutionName={inst.institution_name}
-              insight={hamiltonInsight}
+              insight={null}
               plansHref={links.plansHref}
               reportOfferHref={links.reportOfferHref}
               sampleReportHref={sampleHref}
             />
           )}
 
-          {/* 3. The whole schedule, grouped by type. */}
+          {/* 6. The whole schedule, grouped by type. */}
           {displayFees.length > 0 && (
             <section aria-labelledby="schedule-heading">
               <h2 id="schedule-heading" className={`${H2} scroll-mt-24`} style={SERIF}>
@@ -543,19 +610,6 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
             <Link href={links.analyzeHref} className="fi-btn fi-btn-primary">
               Open {inst.institution_name} in Hamilton
             </Link>
-          )}
-
-          {/* 4. Where it operates and its public record: FDIC, NCUA, CFPB and SEC data, for every visitor. */}
-          {(footprint || complaints || enforcement || holdingCompany) && (
-            <section aria-labelledby="record-heading">
-              <h2 id="record-heading" className={H2} style={SERIF}>
-                Branches and public record
-              </h2>
-              <p className={FINDING}>Where {inst.institution_name} operates, and what regulators and customers have on file.</p>
-              <div className="mt-6">
-                <RegistryCards footprint={footprint} complaints={complaints} enforcement={enforcement} holdingCompany={holdingCompany} />
-              </div>
-            </section>
           )}
 
           {isPro && (financialSeries.length > 0 || Boolean(regulatoryWatch)) && (

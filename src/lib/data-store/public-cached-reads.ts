@@ -15,7 +15,8 @@ import {
   getStateStats,
   getStatesWithFeeData,
 } from "./geographic";
-import { getDataCoverageSummary, getMarketConcentration, getStateDemographics } from "./financial";
+import { getDataCoverageSummary, getFinancialHistory, getMarketConcentration, getStateDemographics } from "./financial";
+import { getFeeShareCohort, getInstitutionCallItemHistory } from "./institution-quarterly";
 import {
   getCharterFeeRevenueSummary,
   getFeeRevenueData,
@@ -186,3 +187,11 @@ export const getMarketBranchFootprintCached = cachedPublicRead("market-branch-fo
 export const getDistrictHubCached = cachedPublicRead("district-hub-v3", getDistrictHub, isEmptyDistrictHub);
 /** The same exhibits for one whole state's page (getStateHub), one entry per state. */
 export const getStateHubCached = cachedPublicRead("state-hub-v1", getStateHub, isEmptyDistrictHub);
+/**
+ * The institution page's overview and financial performance reads: its call-report history (both
+ * stores) and the asset-size cohort its service-charge share is read against. The cohort is keyed
+ * by charter, tier, quarter and source, so every institution in one cohort shares one entry.
+ */
+export const getInstitutionFinancialHistoryCached = cachedPublicRead("institution-financial-history-v1", getFinancialHistory);
+export const getInstitutionCallItemHistoryCached = cachedPublicRead("institution-call-items-v1", getInstitutionCallItemHistory);
+export const getFeeShareCohortCached = cachedPublicRead("fee-share-cohort-v1", getFeeShareCohort);
