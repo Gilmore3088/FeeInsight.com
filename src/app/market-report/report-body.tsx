@@ -260,8 +260,8 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                 {priorities.map((item) => {
                   return (
                     <li key={item.href + item.text}>
-                      <a href={item.href} className="group flex min-h-11 items-center gap-3 py-1">
-                        <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-brick-tint text-brick" aria-hidden="true">
+                      <a href={item.href} className="group flex min-h-11 items-start gap-3 py-1">
+                        <span className="mt-[-2px] inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-brick-tint text-brick" aria-hidden="true">
                           <PriorityIcon item={item} />
                         </span>
                         <span className="underline decoration-border underline-offset-4 group-hover:decoration-ink">{item.text}</span>
