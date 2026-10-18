@@ -166,7 +166,7 @@ export function PeerExplorer({
         </label>
       </div>
 
-      <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_19rem] lg:gap-8">
+      <div className="mt-4 grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_19rem] lg:gap-8">
         <div id="peer-view-panel" role="tabpanel" aria-labelledby={`peer-view-${view}`} className="min-w-0">
           <div key={view} className="fi-home-fade">
             {view === "landscape" && <Landscape set={set} fee={fee} selectedId={selected.id} highlight={highlight} onSelect={select} />}
@@ -229,7 +229,7 @@ export function PeerExplorer({
         )}
         <Link
           href={hamiltonHref}
-          className="inline-flex min-h-11 items-center justify-center rounded-full border border-ink px-5 text-[14px] font-semibold text-ink transition-colors hover:bg-ink hover:text-on-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2"
+          className="inline-flex min-h-11 items-center justify-center rounded-[22px] border border-ink px-5 py-2 text-center text-[14px] leading-snug font-semibold text-ink transition-colors hover:bg-ink hover:text-on-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2"
         >
           Create a committee brief from this peer set
         </Link>
@@ -414,7 +414,9 @@ function Locations({ set, fee, selectedId, highlight, onSelect }: ViewProps) {
   const [all, setAll] = useState(false);
   const shown = all ? groups : groups.slice(0, GROUPS_SHOWN);
   const maxAssets = Math.max(1, ...[set.subject, ...set.peers].map((inst) => inst.assets ?? 0));
-  const legend = [maxAssets, maxAssets / 4, maxAssets / 25].filter((v) => v > 0);
+  // The legend uses the set's own largest, middle and smallest total assets.
+  const sizes = [set.subject, ...set.peers].map((inst) => inst.assets ?? 0).filter((v) => v > 0).sort((a, b) => b - a);
+  const legend = [...new Set([sizes[0], sizes[Math.floor(sizes.length / 2)], sizes[sizes.length - 1]])].filter((v): v is number => v !== undefined);
   return (
     <div>
       <p className="text-[12px] text-ink-muted">Grouped by headquarters {by}. Circle area shows total assets.</p>
@@ -524,7 +526,7 @@ function Matrix({ set, fee, selectedId, highlight, onSelect, onFee }: ViewProps 
   }
   return (
     <div>
-      <div className="max-w-full overflow-x-auto rounded-lg border border-border">
+      <div className="relative max-w-full overflow-x-auto rounded-lg border border-border">
         <table className="w-full min-w-[640px] border-separate border-spacing-0 text-[13px]">
           <caption className="sr-only">Each institution&apos;s fees against the peer median</caption>
           <thead>
@@ -555,7 +557,7 @@ function Matrix({ set, fee, selectedId, highlight, onSelect, onFee }: ViewProps 
                 <tr key={inst.id} className="group" style={{ opacity: faded ? 0.3 : 1 }}>
                   <th
                     scope="row"
-                    className={`sticky left-0 z-10 max-w-[11rem] border-t border-border px-0 py-0 text-left font-normal ${isSelected ? "bg-paper" : "bg-surface-0"}`}
+                    className={`sticky left-0 z-10 max-w-[8.5rem] border-t sm:max-w-[11rem] border-border px-0 py-0 text-left font-normal ${isSelected ? "bg-paper" : "bg-surface-0"}`}
                   >
                     <button
                       type="button"
