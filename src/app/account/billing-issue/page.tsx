@@ -26,8 +26,8 @@ export default async function BillingIssuePage() {
       <div className={`${UTILITY_CARD} space-y-5`}>
         <p className="text-[15px] leading-relaxed text-ink-soft">
           We couldn&apos;t charge the card on file for your Hamilton subscription, and the {PAST_DUE_GRACE_DAYS}-day
-          grace period has ended. Update your payment method and your workspace, saved reports and analyses come back
-          right away. Nothing has been deleted.
+          grace period has ended. Update your payment method to restore your workspace, saved reports and analyses.
+          Nothing has been deleted.
         </p>
         <div className="flex flex-wrap items-center gap-4">
           <ManageBillingButton label="Update payment method" variant="primary" />

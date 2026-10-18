@@ -97,7 +97,7 @@ export default async function WorkspaceInvitePage({
     <UtilityShell>
       <UtilityHeading
         title="Join your institution's workspace"
-        lede={`An institution account covers up to ${WORKSPACE_SEAT_LIMIT} people. Open the invite link while signed in with the invited email, and you join with full Pro access at no cost to you.`}
+        lede={`Your institution's plan covers up to ${WORKSPACE_SEAT_LIMIT} people. Sign in with the invited email to join at no cost.`}
       />
 
       {!user && (

@@ -327,7 +327,7 @@ function HamiltonCard({ href }: { href: string }) {
       <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3">
         <Link
           href={href}
-          className={utilityButton("brick")}
+          className={utilityButton("inverse")}
         >
           Open Hamilton
         </Link>

@@ -38,7 +38,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
     return (
       <div role="status" className={`${UTILITY_CARD} space-y-4`}>
         <p className="text-[15px] leading-relaxed text-ink">Your password is changed, and you&apos;re signed out on every device.</p>
-        <Link href="/login" className={`block text-center ${UTILITY_SUBMIT}`}>
+        <Link href="/login" className={UTILITY_SUBMIT}>
           Sign in
         </Link>
       </div>

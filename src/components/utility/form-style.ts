@@ -28,17 +28,17 @@ export const UTILITY_FIELDSET_TITLE = "text-[13px] font-semibold text-ink";
 const BUTTON_BASE =
   "inline-flex min-h-11 items-center justify-center rounded-md px-5 text-[15px] font-semibold no-underline transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brick disabled:cursor-not-allowed disabled:opacity-50";
 
-export type UtilityButtonVariant = "primary" | "secondary" | "brick";
+export type UtilityButtonVariant = "primary" | "secondary" | "inverse";
 
 /**
  * primary = navy, the page's main action; secondary = outlined, everything else;
- * brick = the accent, for the main action on a navy band where navy would disappear.
+ * inverse = the main action on a navy band, where a navy button would disappear.
  */
 export function utilityButton(variant: UtilityButtonVariant = "primary", options: { block?: boolean } = {}): string {
   const tone = {
     primary: "bg-ink text-on-ink hover:bg-ink/90",
     secondary: "border border-control-border bg-surface-0 text-ink hover:bg-surface-200",
-    brick: "bg-brick text-on-brick hover:bg-brick-ink",
+    inverse: "bg-on-ink text-ink hover:bg-on-ink/90",
   }[variant];
   return [BUTTON_BASE, tone, options.block ? "w-full" : ""].filter(Boolean).join(" ");
 }

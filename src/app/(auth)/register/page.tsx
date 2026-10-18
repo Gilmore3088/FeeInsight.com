@@ -75,9 +75,6 @@ export default async function RegisterPage({
               </li>
             ))}
           </ul>
-          {plan && (
-            <p className="mt-4 text-[13px] leading-snug text-ink-muted">Your plan is active as soon as payment clears.</p>
-          )}
         </>
       }
     >
@@ -85,11 +82,11 @@ export default async function RegisterPage({
         title={variant === "consumer" ? "Create a free account" : "Create your account"}
         lede={
           plan
-            ? `Create your account, then continue to checkout for Hamilton: ${PLAN_DISPLAY_NAME[plan]}, ${PLAN_TEAM_LABEL}.`
+            ? `Next: checkout for Hamilton ${PLAN_DISPLAY_NAME[plan]}, ${PLAN_TEAM_LABEL}. Your plan is active as soon as payment clears.`
             : variant === "consumer"
               ? feeLabel
                 ? `Then pick your bank or credit union and we'll tell you when its ${feeLabel} changes.`
-                : "Save your bank or credit union and get an email when its fees change."
+                : "Follow your bank and hear when its fees change."
               : `Save your institution and peer group; upgrade to Hamilton whenever you need benchmarks.`
         }
       />
