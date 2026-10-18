@@ -222,7 +222,7 @@ function MetroMapPanel({ metro, institutionName }: { metro: MetroPosition; insti
           { label: "Source", value: `FDIC Summary of Deposits (bank offices, ${sodDate(metro.year)}); NCUA credit union branch file${metro.creditUnions.reportDate ? ` (quarter ending ${formatDay(metro.creditUnions.reportDate)})` : ""}` },
           { label: "Area", value: `${metro.name} metro (FDIC metro code ${metro.code}), drawn from its counties` },
           { label: "Coverage", value: "Bank offices the FDIC places in the metro. Credit union offices in the cities those bank offices are in." },
-          { label: "Asset band", value: "Each institution's total assets from its latest call report on file" },
+          { label: "Asset band", value: "Each institution's total assets as on file in our institution registry" },
           { label: "Not drawn", value: metro.unmappedOffices > 0 ? `${plural(metro.unmappedOffices, "office has", "offices have")} no coordinates on file` : null },
         ]}
       />
@@ -405,7 +405,7 @@ function Spark({
       <p className="text-[12px] font-medium text-ink">{title}</p>
       <svg
         viewBox={`0 0 ${SPARK_W} ${SPARK_H}`}
-        className="mt-1 h-auto w-full touch-manipulation overflow-visible"
+        className="mt-1 h-auto w-full max-w-[360px] touch-manipulation overflow-visible"
         role="img"
         aria-label={`${title}: ${format(value(points[0]))} in ${first}, ${format(value(end))} in ${last}`}
         onPointerMove={onMove}
@@ -413,6 +413,15 @@ function Spark({
         onPointerLeave={() => onHover(null)}
       >
         <line x1={PAD_X} x2={SPARK_W - PAD_X} y1={SPARK_H - PAD_BOTTOM} y2={SPARK_H - PAD_BOTTOM} stroke={GRID} strokeWidth={1} />
+        {invert && Math.max(...vals) > Math.min(...vals) && (
+          // Rank: mark the lowest position reached so a one-place move doesn't read as a fall.
+          <>
+            <line x1={PAD_X} x2={SPARK_W - PAD_X} y1={y(Math.max(...vals))} y2={y(Math.max(...vals))} stroke={GRID} strokeWidth={1} />
+            <text x={PAD_X} y={y(Math.max(...vals)) - 3} fontSize={11} fill="#767c87">
+              {format(Math.max(...vals))}
+            </text>
+          </>
+        )}
         {hovered && <line x1={x(hovered.year)} x2={x(hovered.year)} y1={PAD_TOP - 6} y2={SPARK_H - PAD_BOTTOM} stroke="#9aa1ab" strokeWidth={1} />}
         {segments.map((seg, i) =>
           seg.length > 1 ? (
