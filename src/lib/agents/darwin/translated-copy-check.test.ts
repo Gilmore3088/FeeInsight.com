@@ -108,6 +108,15 @@ describe("recheckTranslatedCopies", () => {
     expect(JSON.stringify(db.mock.calls)).toContain(TRANSLATED_COPY_CHECK);
   });
 
+  it("by default (switch on), a first look flags the fee and archives nothing", async () => {
+    const db = dbFor(ROWS);
+    const result = await recheckTranslatedCopies(asDb(db), { runId: 7, stepId: 70, dryRun: false });
+    expect(result.live).toBe(true);
+    expect(result.matched).toBe(2);
+    expect(result.takenDown).toEqual([]);
+    expect(texts(db).some((text) => text.includes("UPDATE published_fee_records"))).toBe(false);
+  });
+
   it("a dry run writes nothing at all, even switched on", async () => {
     const db = dbFor(ROWS);
     await recheckTranslatedCopies(asDb(db), { runId: 7, dryRun: true, live: true });

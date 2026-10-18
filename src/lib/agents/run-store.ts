@@ -921,7 +921,7 @@ async function executeAgenticStep(
         institutionId: numericRunParam(params, ["institution_id"]),
       });
       // #1909: fees read from a bank's Spanish copy of a schedule whose English line is live
-      // (translated-copy-check.ts); a report only while its switch is off.
+      // (translated-copy-check.ts); a report only on a dry run or with its switch off.
       const translatedCopy = await recheckTranslatedCopies(tx, {
         runId: run.id,
         stepId: step.id,
@@ -929,7 +929,7 @@ async function executeAgenticStep(
         institutionId: numericRunParam(params, ["institution_id"]),
       });
       const translatedCopyNote = translatedCopy.matched > 0
-        ? ` Spanish copy re-check: ${translatedCopy.matched.toLocaleString()} of ${translatedCopy.checked.toLocaleString()} live fee(s) on Spanish copies of a schedule have an English twin at the same price (${translatedCopy.live && !translatedCopy.dryRun ? `${translatedCopy.flagged.toLocaleString()} flagged, ${translatedCopy.takenDown.length.toLocaleString()} archived` : "switch off: would take down, nothing written"}); ${(translatedCopy.keptSpanishOnly + translatedCopy.keptEnglishName).toLocaleString()} stay.`
+        ? ` Spanish copy re-check: ${translatedCopy.matched.toLocaleString()} of ${translatedCopy.checked.toLocaleString()} live fee(s) on Spanish copies of a schedule have an English twin at the same price (${translatedCopy.live && !translatedCopy.dryRun ? `${translatedCopy.flagged.toLocaleString()} flagged, ${translatedCopy.takenDown.length.toLocaleString()} archived` : translatedCopy.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}); ${(translatedCopy.keptSpanishOnly + translatedCopy.keptEnglishName).toLocaleString()} stay.`
         : "";
       // #1440: one printed line live under two categories or two frequencies; Darwin keeps one
       // reading (line-conflict-check.ts). Every conflicting line each step; a report only while its
