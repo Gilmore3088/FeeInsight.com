@@ -1,32 +1,19 @@
-export const dynamic = "force-dynamic";
-
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { buildAdminRedirectPath, type AdminSearchParams } from "@/lib/admin-redirect-path";
 import { requireAuth } from "@/lib/auth";
 import { getGoldStandardCandidates } from "@/lib/admin-queries";
-import { Breadcrumbs } from "@/components/breadcrumbs";
 import { formatAssets } from "@/lib/format";
 
-export async function GoldStandardView({ embedded = false }: { embedded?: boolean } = {}) {
+/**
+ * The gold-standard spot check: the largest banks with extracted fees, each opening its
+ * /admin/verify/[id] form. Knox's page embeds it (#1122: the old /admin/verify screen was the same view).
+ */
+export async function GoldStandardView() {
   await requireAuth("view");
 
   const candidates = await getGoldStandardCandidates(50);
 
   return (
     <div className="admin-content space-y-6">
-      {!embedded && <Breadcrumbs items={[{ label: "Verify" }]} />}
-
-      {!embedded && <div>
-        <h1 className="text-xl font-bold tracking-tight text-gray-900">
-          Gold Standard Verification
-        </h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Top institutions by asset size with extracted fees. Verify extraction
-          accuracy against original fee schedules.
-        </p>
-      </div>}
-
       <div className="admin-card overflow-x-auto">
         <table className="w-full min-w-[720px] text-sm">
           <thead>
@@ -130,12 +117,4 @@ export async function GoldStandardView({ embedded = false }: { embedded?: boolea
       </div>
     </div>
   );
-}
-
-export default async function RedirectVerifyPage({
-  searchParams,
-}: {
-  searchParams: Promise<AdminSearchParams>;
-}) {
-  redirect(buildAdminRedirectPath("/admin/knox", await searchParams, { queue: "gold" }));
 }
