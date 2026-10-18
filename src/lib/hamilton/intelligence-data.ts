@@ -1,7 +1,7 @@
 /**
  * Read models for the Hamilton intelligence workspace (Overview and Research). Every figure comes
  * from a governed reader: published_fee_catalog under the statistics contract (fee-index), FDIC Call
- * Reports and NCUA 5300 filings (call-reports), BLS/FRED series and the Beige Book
+ * Reports and NCUA 5300 filings (call-reports), BLS, BEA and Fed Board series and the Beige Book
  * (economic-context), and CFPB complaint records matched to institutions. Thin cohorts are withheld,
  * never filled; a reader that fails returns null so its exhibit says so instead of showing zeros.
  */

@@ -530,7 +530,7 @@ items wait.
 | `registry-sec-links` | `current` | `institution_identity_links` (`sec_cik`), `institution_sources.sec_cik` |
 | `registry-sec-filings` | `batch-0`..`batch-7` | `institution_filings`, `holding_company_financials` |
 | `registry-beige-book` | release `YYYYMM` | `fed_beige_book` |
-| `registry-fred` | `current` | `fed_economic_indicators` (FRED-native series only) |
+| `registry-fred` | `current` | `fed_economic_indicators` (each indicator from its original publisher, `PUBLISHER_INDICATORS` in `regulatory/federal-indicators.ts`: BLS for CPI, unemployment and payrolls including each state's LAUS and CES series, BEA NIPA for real GDP, the GDP price index and the saving rate (`BEA_API_KEY`), the Fed Board's H.15 package for fed funds; FRED is no longer read, 2026-10-18. The first publisher run records `publisher_cutover_at` in the partition detail and readers serve only rows written since, so FRED-era rows stay on prod unserved) |
 | `registry-fomc-minutes` | `current` | `fed_fomc_minutes` (full text of each FOMC meeting's minutes linked from the Fed's FOMC calendar page; 8 new meetings per run until the backfill is done) |
 | `registry-fed-publications` | `current` (daily) | `fed_publications` (research, regional reports and speeches from the 12 Reserve Banks' RSS feeds, found on the Fed in Print RSS page at fedinprint.org/rss, with a few banks' own feeds as fallback; each bank's count and any failed feed are in the partition detail) |
 | `registry-federal-register` | `current` | `reg_tracker_items` (CFPB, FDIC, OCC, Fed and NCUA proposed and final rules from the Federal Register API, last 400 days; shadow mode, nothing stored, until `FEDERAL_REGISTER_TRACKER_LIVE=true`) |
@@ -590,6 +590,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `FDIC_HISTORY_PARSER_VERSION` | — | v1 | `magellan/registry/fdic-history.ts` |
 | `FFIEC_CALL_DETAIL_PARSER_VERSION` | — | v4 (adds deposit interest expense, cost lines, total deposits and assets; v3 reads RC-O account-size labels as filed; v2 matches the bulk file's abbreviated descriptions; reads split "(1 of 2)" schedules) | `magellan/registry/ffiec-call-detail.ts` |
 | `NCUA_EXTRAS_PARSER_VERSION` | — | v3 (adds dividend expense and share mix; v2 reads AcctDesc.txt, not the trade-names file) | `magellan/registry/ncua-extras.ts` |
+| `FED_INDICATORS_PARSER_VERSION` | — | v2 (each indicator from BLS, BEA or the Fed Board, not FRED; 2026-10-18) | `magellan/registry/fed.ts` (registry-fred) |
 | `ECONOMY_PARSER_VERSION` | — | v1 | `magellan/registry/economy.ts` (15 economy sources) |
 | `ALLTHEPLACES_PARSER_VERSION` | — | v1 | `magellan/registry/alltheplaces.ts` |
 | `GLEIF_PARSER_VERSION` | — | v1 | `magellan/registry/gleif.ts` |
@@ -606,7 +607,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `BLS_OEWS_PARSER_VERSION` | — | v1 | `magellan/registry/bls-oews.ts` |
 | `MARKET_GROWTH_PARSER_VERSION` | — | v1 | `magellan/registry/market-growth.ts` (census-permits, census-popest, irs-migration, census-bfs, bls-laus, census-lehd) |
 | `SMALLBIZ_PAYMENTS_PARSER_VERSION` | — | v2 (FedACH read from the Fed Board's page; struck sources removed) | `magellan/registry/smallbiz-payments.ts` (fed-payments) |
-| `NATIONAL_CREDIT_PARSER_VERSION` | — | v3 (Freddie Mac PMMS and Philadelphia Fed card series struck) | `magellan/registry/national-credit.ts` (national-series, nyfed-household-debt, nyfed-sce-credit, cfpb-credit-trends) |
+| `NATIONAL_CREDIT_PARSER_VERSION` | — | v4 (national-series read from the Fed Board's H.8 and Z.1 packages, charge-off and delinquency table and SLOOS chart data, not FRED; FDIC national rates dropped; v3 struck Freddie Mac PMMS and the Philadelphia Fed card series) | `magellan/registry/national-credit.ts` (national-series, nyfed-household-debt, nyfed-sce-credit, cfpb-credit-trends) |
 | `INDUSTRY_EVENTS_PARSER_VERSION` | — | v3 (CourtListener fee lawsuits removed; v2 reads H.2 release links when relative) | `magellan/registry/industry-events.ts` |
 | `PAYMENT_NETWORKS_PARSER_VERSION` | — | v1 | `magellan/registry/payment-networks.ts` |
 | `HMDA_PARSER_VERSION` | — | v2 (reads the public LAR's "derived_msa-md" header) | `magellan/registry/hmda.ts` |

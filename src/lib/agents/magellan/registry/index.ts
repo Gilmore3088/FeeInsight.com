@@ -1012,12 +1012,12 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
   {
     source: FRED_SOURCE,
     stepKey: "registry-fred",
-    title: "Refresh FRED economic indicators",
+    title: "Refresh economic indicators from BLS, BEA and the Federal Reserve Board",
     fixedPartition: FRED_PARTITION,
     run: async (input) => {
       const r = await runRegistryFred({ runId: input.runId, dryRun: input.dryRun, db: input.db });
       return {
-        summary: `Magellan refreshed ${r.refreshedSeries} of ${r.series} FRED series (${n(r.observations)} observations)${dry(r.dryRun)}.`,
+        summary: `Magellan refreshed ${r.refreshedSeries} of ${r.series} economic indicators from BLS, BEA and the Fed Board (${n(r.observations)} observations)${dry(r.dryRun)}.`,
         detail: { series: r.series, refreshed_series: r.refreshedSeries, missing_series: r.missingSeries, observations: r.observations },
       };
     },

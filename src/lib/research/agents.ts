@@ -278,7 +278,7 @@ export async function getHamilton(role: HamiltonRole): Promise<AgentConfig> {
   if (role !== "consumer") warmDataCatalog();
   const s = await getPromptStats();
 
-  const dataStats = `You have access to ${s.total_observations.toLocaleString()}+ fee observations across ${s.total_categories} categories from ${s.total_institutions.toLocaleString()}+ institutions, plus: FDIC Call Reports (revenue trends), FRED economic indicators, Fed Beige Book narratives, Fed speeches and research papers (Fed Content), CFPB complaint data, industry health metrics (ROA, efficiency, deposits, loans), BLS labor indicators, Census ACS demographics, NY Fed research data, OFR financial stability data, FDIC Summary of Deposits (market share), derived analytics (revenue concentration, fee dependency trends, per-institution averages), and admin-curated external intelligence (industry research, surveys, regulatory reports).`;
+  const dataStats = `You have access to ${s.total_observations.toLocaleString()}+ fee observations across ${s.total_categories} categories from ${s.total_institutions.toLocaleString()}+ institutions, plus: FDIC Call Reports (revenue trends), economic indicators (BLS, BEA, Federal Reserve Board), Fed Beige Book narratives, Fed speeches and research papers (Fed Content), CFPB complaint data, industry health metrics (ROA, efficiency, deposits, loans), BLS labor indicators, Census ACS demographics, NY Fed research data, OFR financial stability data, FDIC Summary of Deposits (market share), derived analytics (revenue concentration, fee dependency trends, per-institution averages), and admin-curated external intelligence (industry research, surveys, regulatory reports).`;
 
   switch (role) {
     case "consumer": {

@@ -1235,3 +1235,15 @@ scheduled and no reader returns its rows. Released: World Bank Remittance Prices
 (ODC-By 1.0; attribution "Braga et al., Debt in America, Urban Institute"), each carrying its
 attribution on every stored row and read. Rows already loaded from struck sources stay on prod and
 no reader returns them (`src/lib/data-store/struck-sources.ts`).
+FRED replaced by the original publishers, 2026-10-18 (James, card answer "Use publishers"): "Same
+series, fetched from BLS, Treasury and the Fed Board; FRED is no longer used." FRED's terms bar
+commercial use without the St. Louis Fed's written consent and bar storing FRED content in a
+database; most series we read through FRED are public-domain federal data. registry-fred now reads
+BLS (CPI, unemployment, payrolls, each state's LAUS and CES series), BEA NIPA (real GDP, the GDP
+price index, the saving rate; BEA_API_KEY) and the Fed Board's H.15 package (fed funds), keeping our
+series ids; national-series reads the Board's H.8 and Z.1 packages, its charge-off and delinquency
+table and the SLOOS chart data. Dropped, with no publisher file confirmed: the FDIC national deposit
+rates (SNDR, ICNDR, MMNDR, NDR12MCD), the FDIC QBP service-charge series (QBPQYTNIYSRVDP) and
+DRCBLACBS. FRED-era rows stay on prod and are not served: area_statistics rows by their
+fred.stlouisfed.org source_url, fed_economic_indicators rows written before registry-fred's first
+publisher run (`publisher_cutover_at`).

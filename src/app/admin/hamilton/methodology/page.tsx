@@ -139,7 +139,7 @@ export default async function MethodologyPage() {
                 ["FDIC API", "~4,500 insured commercial banks", "Quarterly re-seed"],
                 ["NCUA API", "~4,800 credit unions", "Quarterly re-seed"],
                 ["Institution websites", "Fee schedules (PDF, HTML)", "Continuous agent collection"],
-                ["FRED (Federal Reserve)", "District economic indicators", "Monthly"],
+                ["BLS, BEA and Fed Board", "Economic indicators (unemployment, payrolls, CPI, GDP, fed funds)", "Monthly"],
                 ["Fed Beige Book", "Regional economic commentary", "8x per year"],
               ].map(([source, coverage, cadence]) => (
                 <tr key={source} className="border-b border-gray-50 dark:border-gray-800 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">

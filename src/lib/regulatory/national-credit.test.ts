@@ -1,23 +1,28 @@
 import { strToU8, zipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
 
-import { STRUCK_AREA_SERIES_KEYS, STRUCK_NATIONAL_SERIES_IDS } from "@/lib/data-store/struck-sources";
+import { DROPPED_FDIC_RATE_SERIES_IDS, STRUCK_AREA_SERIES_KEYS, STRUCK_NATIONAL_SERIES_IDS } from "@/lib/data-store/struck-sources";
+import { parseHtmlGridTables, readSdmxPackage } from "./fed-board-data";
+import { CHGDEL_DELINQUENCY_SA_HTML, SLOOS_CHART_DATA_HTML, sdmxPackage } from "./fed-board-fixtures";
 import {
   checkNationalCreditStats,
   excelSerialDate,
   fetchCct,
   fetchHhdcState,
   fetchNationalSeries,
-  fredPeriod,
   hhdcSheetKind,
   NATIONAL_SERIES,
+  nationalPeriod,
+  nationalRowsFromHtml,
+  nationalRowsFromSdmx,
+  nationalSeriesSourceUrl,
   NYFED_HHDC_STATE_URL_ENV,
   parseCctCsv,
-  parseFredSeriesCsv,
   parseHhdcWorkbook,
   parseSceCreditWorkbook,
   quarterFromLabel,
   readWorkbookSheets,
+  sloosReleaseCandidates,
   CFPB_CCT_FILES,
   CFPB_CCT_MARKETS,
   type NationalSeriesConfig,
@@ -63,68 +68,103 @@ function makeXlsx(sheets: Record<string, Array<Array<string | number>>>): Uint8A
 
 const DEPOSITS = NATIONAL_SERIES.find((s) => s.id === "DPSACBW027SBOG")!;
 const SLOOS = NATIONAL_SERIES.find((s) => s.id === "DRTSCILM")!;
+const CARD_DELINQUENCY = NATIONAL_SERIES.find((s) => s.id === "DRCCLACBS")!;
 
-describe("FRED national series", () => {
-  it("maps dates to periods by frequency and rejects dates that do not fit", () => {
-    expect(fredPeriod("2026-10-07", "weekly")).toBe("2026-10-07");
-    expect(fredPeriod("2026-09-01", "monthly")).toBe("2026-09");
-    expect(fredPeriod("2026-07-01", "quarterly")).toBe("2026Q3");
-    expect(fredPeriod("2026-08-01", "quarterly")).toBeNull();
-    expect(fredPeriod("2026-09-15", "monthly")).toBeNull();
+describe("national series from the Federal Reserve Board", () => {
+  it("maps Board periods to area_statistics periods by frequency", () => {
+    expect(nationalPeriod("2026-10-07", "weekly")).toBe("2026-10-07");
+    expect(nationalPeriod("2026-09", "monthly")).toBe("2026-09");
+    expect(nationalPeriod("2026-09-30", "quarterly")).toBe("2026Q3");
+    expect(nationalPeriod("2026:3", "quarterly")).toBe("2026Q3");
+    expect(nationalPeriod("2026:3", "weekly")).toBeNull();
   });
 
-  it("reads a graph CSV whose header names the series, keeping blanks as null with the flag", () => {
-    const csv = "observation_date,DPSACBW027SBOG\n1999-12-29,4500.1\n2026-09-24,18001.5\n2026-10-01,.\n2026-10-08,18050.25\n";
-    const r = parseFredSeriesCsv(csv, DEPOSITS);
+  it("reads H.8 levels from the SDMX package in billions, keeping no-data weeks as null with the flag", () => {
+    const { found } = readSdmxPackage(
+      sdmxPackage("H8_H8", [
+        { name: "B1058NCBA", unitMult: "1000000000", obs: [["1999-12-29", "4500.1"], ["2026-09-24", "18001.5"], ["2026-10-01", "-9999", "ND"], ["2026-10-08", "18050.25"]] },
+      ]),
+      ["B1058NCBA"],
+    );
+    const r = nationalRowsFromSdmx(DEPOSITS, found.get("B1058NCBA"));
     expect(r.problem).toBeNull();
     expect(r.skipped).toEqual({ before_first_date: 1 });
     expect(r.rows.map((x) => [x.period, x.value, x.note])).toEqual([
       ["2026-09-24", 18001.5, null],
-      ["2026-10-01", null, "."],
+      ["2026-10-01", null, "ND"],
       ["2026-10-08", 18050.25, null],
     ]);
     expect(r.rows[0]).toMatchObject({ geo_type: "nation", geo_code: "US", series_key: "natl_h8_deposits_all", unit: "billions_dollars" });
+    expect(r.rows[0].raw).toMatchObject({ series_id: "DPSACBW027SBOG", publisher_series: "B1058NCBA", source_url: "https://www.federalreserve.gov/releases/h8/data/FRB_h8_xml.zip" });
+    expect(nationalRowsFromSdmx(DEPOSITS, undefined).problem).toMatch(/B1058NCBA not in the package/);
   });
 
-  it("refuses a file whose header names another series (never substituted)", () => {
-    const r = parseFredSeriesCsv("observation_date,DPSALLW027SBOG\n2026-10-08,1\n", DEPOSITS);
-    expect(r.rows).toEqual([]);
-    expect(r.problem).toMatch(/not DPSACBW027SBOG/);
-    expect(parseFredSeriesCsv("<html>Error</html>", DEPOSITS).problem).toMatch(/HTML/);
-  });
-
-  it("reads quarterly SLOOS dates as quarters and counts off-quarter dates", () => {
-    const r = parseFredSeriesCsv("DATE,DRTSCILM\n2026-04-01,-5.2\n2026-07-01,7.9\n2026-08-01,1\n", SLOOS);
-    expect(r.rows.map((x) => [x.period, x.value])).toEqual([
-      ["2026Q2", -5.2],
-      ["2026Q3", 7.9],
+  it("reads delinquency rates and SLOOS net percentages from the Board's tables", () => {
+    const delinquency = nationalRowsFromHtml(CARD_DELINQUENCY, parseHtmlGridTables(CHGDEL_DELINQUENCY_SA_HTML), "https://example.test/chg");
+    expect(delinquency.rows.map((x) => [x.period, x.value])).toEqual([
+      ["2026Q2", 2.85],
+      ["2026Q1", 2.91],
+      ["2025Q4", 2.95],
     ]);
-    expect(r.skipped).toEqual({ date_not_quarterly: 1 });
+    expect(delinquency.skipped).toEqual({ before_first_date: 1 });
+    const cre = nationalRowsFromHtml(NATIONAL_SERIES.find((s) => s.id === "DRCRELEXFACBS")!, parseHtmlGridTables(CHGDEL_DELINQUENCY_SA_HTML), "u");
+    expect(cre.rows[0]).toMatchObject({ period: "2026Q2", value: 1.53 });
+    const consumer = nationalRowsFromHtml(NATIONAL_SERIES.find((s) => s.id === "DRCLACBS")!, parseHtmlGridTables(CHGDEL_DELINQUENCY_SA_HTML), "u");
+    expect(consumer.rows[0]).toMatchObject({ period: "2026Q2", value: 2.62 });
+
+    const sloos = nationalRowsFromHtml(SLOOS, parseHtmlGridTables(SLOOS_CHART_DATA_HTML), "https://example.test/sloos");
+    expect(sloos.rows.map((x) => [x.period, x.value])).toEqual([
+      ["2026Q2", 8.1],
+      ["2026Q3", 0],
+    ]);
+    const smallDemand = nationalRowsFromHtml(NATIONAL_SERIES.find((s) => s.id === "DRSDCIS")!, parseHtmlGridTables(SLOOS_CHART_DATA_HTML), "u");
+    expect(smallDemand.rows.map((x) => x.value)).toEqual([0, 3.6]);
+    const cards = nationalRowsFromHtml(NATIONAL_SERIES.find((s) => s.id === "DRTSCLCC")!, parseHtmlGridTables(SLOOS_CHART_DATA_HTML), "u");
+    expect(cards.problem).toMatch(/no table column/);
   });
 
-  it("names every series FRED does not return and loads the rest", async () => {
-    const series: NationalSeriesConfig[] = [DEPOSITS, SLOOS];
-    const fetchImpl = vi.fn(async (url: string) =>
-      String(url).includes("DPSACBW027SBOG")
-        ? new Response("observation_date,DPSACBW027SBOG\n2026-10-08,18050\n")
-        : new Response("not found", { status: 404 }),
-    ) as unknown as typeof fetch;
-    const r = await fetchNationalSeries(series, { fetchImpl, backoffMs: 0 });
-    expect(r.rows).toHaveLength(1);
-    expect(r.missingFields).toEqual(["DRTSCILM (HTTP 404)"]);
+  it("names every series the Board's files do not carry and loads the rest, never asking FRED", async () => {
+    const series: NationalSeriesConfig[] = [DEPOSITS, SLOOS, CARD_DELINQUENCY, NATIONAL_SERIES.find((s) => s.id === "BOGZ1FL893065505Q")!];
+    const h8 = sdmxPackage("H8_H8", [{ name: "B1058NCBA", unitMult: "9", obs: [["2026-10-08", "18050"]] }]);
+    const asked: string[] = [];
+    const fetchImpl = vi.fn(async (url: string) => {
+      asked.push(String(url));
+      if (String(url).endsWith("FRB_h8_xml.zip")) return new Response(Buffer.from(h8));
+      if (String(url).endsWith("delallsa.htm")) return new Response(CHGDEL_DELINQUENCY_SA_HTML);
+      if (String(url).includes("sloos-202607-chart-data")) return new Response(SLOOS_CHART_DATA_HTML);
+      return new Response("not found", { status: 404 });
+    }) as unknown as typeof fetch;
+    const r = await fetchNationalSeries(series, { fetchImpl, backoffMs: 0 }, undefined, new Date("2026-10-18T00:00:00Z"));
+    expect(asked.some((u) => u.includes("stlouisfed"))).toBe(false);
+    expect(r.sloosRelease).toBe("202607");
+    expect(r.missingFields).toEqual(["BOGZ1FL893065505Q (HTTP 404)"]);
     expect(r.perSeries.DPSACBW027SBOG).toEqual({ rows: 1, latest: "2026-10-08", problem: null });
+    expect(r.perSeries.DRTSCILM).toEqual({ rows: 2, latest: "2026Q3", problem: null });
+    expect(r.perSeries.DRCCLACBS.latest).toBe("2026Q2");
+    expect(r.rows.find((x) => x.series_key === "natl_sloos_ci_large_mid_tightening")?.raw.source_url).toBe(
+      "https://www.federalreserve.gov/data/sloos/sloos-202607-chart-data.htm",
+    );
     expect(r.emptyReason).toBeNull();
   });
 
-  it("gives every configured series a unique id and key", () => {
-    expect(new Set(NATIONAL_SERIES.map((s) => s.id)).size).toBe(NATIONAL_SERIES.length);
-    expect(new Set(NATIONAL_SERIES.map((s) => s.key)).size).toBe(NATIONAL_SERIES.length);
-    for (const s of NATIONAL_SERIES) expect(s.key).toMatch(/^natl_[a-z0-9_]+$/);
+  it("tries SLOOS releases newest first", () => {
+    expect(sloosReleaseCandidates(new Date("2026-02-10T00:00:00Z"), 3)).toEqual(["202602", "202601", "202512"]);
   });
 
-  it("configures no struck series (Freddie Mac PMMS, Philadelphia Fed cards; DECISIONS.md 2026-10-18)", () => {
+  it("gives every configured series a unique id and key, and a Board source", () => {
+    expect(new Set(NATIONAL_SERIES.map((s) => s.id)).size).toBe(NATIONAL_SERIES.length);
+    expect(new Set(NATIONAL_SERIES.map((s) => s.key)).size).toBe(NATIONAL_SERIES.length);
+    for (const s of NATIONAL_SERIES) {
+      expect(s.key).toMatch(/^natl_[a-z0-9_]+$/);
+      expect(s.frbSeries ?? s.column).toBeTruthy();
+      expect(nationalSeriesSourceUrl(s.publisher)).toMatch(/^https:\/\/www\.federalreserve\.gov\//);
+    }
+  });
+
+  it("configures no struck or dropped series (PMMS, Philadelphia Fed cards, FDIC national rates; 2026-10-18)", () => {
     expect(NATIONAL_SERIES.filter((s) => STRUCK_NATIONAL_SERIES_IDS.includes(s.id)).map((s) => s.id)).toEqual([]);
     expect(NATIONAL_SERIES.filter((s) => STRUCK_AREA_SERIES_KEYS.includes(s.key)).map((s) => s.key)).toEqual([]);
+    expect(NATIONAL_SERIES.filter((s) => DROPPED_FDIC_RATE_SERIES_IDS.includes(s.id))).toEqual([]);
   });
 });
 

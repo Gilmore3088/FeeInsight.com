@@ -72,14 +72,15 @@ export const HOOVIE_SOURCES_02: HoovieSourceContract[] = [
     tables: ["area_statistics"],
   },
   {
-    // magellan/registry/national-credit.ts (nationalSeries), regulatory/national-credit.ts (FRED keyless fredgraph.csv per series)
+    // magellan/registry/national-credit.ts (nationalSeries), regulatory/national-credit.ts and regulatory/fed-board-data.ts
+    // (federalreserve.gov: FRB_h8_xml.zip, FRB_Z1_xml.zip, chargeoff/delallsa.htm, data/sloos/sloos-YYYYMM-chart-data.htm)
     source: "national-series",
-    publisher: "FRED (Federal Reserve Bank of St. Louis), carrying Fed H.8, Z.1 and SLOOS series and FDIC national deposit rates",
+    publisher: "Board of Governors of the Federal Reserve System (H.8, Z.1, charge-off and delinquency rates, SLOOS)",
     licence: {
-      status: "terms-unconfirmed",
-      note: "FRED's own terms bar commercial use and databasing of FRED content without the St. Louis Fed's consent; the owner is deciding the FRED channel. The series' owners here are federal (Fed Board, FDIC). Freddie Mac PMMS and the Philadelphia Fed card series were struck 2026-10-18 (non-commercial terms).",
+      status: "public-domain",
+      note: "Read from the Board's own files since 2026-10-18 (FRED replaced by the original publishers: FRED's terms bar commercial use and storing FRED content). Board site: \"information on Board's website is in the public domain and may be copied and distributed without permission\" (federalreserve.gov/disclaimer.htm); cite the Board. FDIC national deposit rates dropped (no FDIC file confirmed); Freddie Mac PMMS and the Philadelphia Fed card series struck 2026-10-18 (non-commercial terms). Rows stored from FRED are hidden by their fred.stlouisfed.org source_url.",
     },
-    connection: "rest-api",
+    connection: "bulk-file",
     cadence: "weekly",
     grain: ["national"],
     linkKeys: [],

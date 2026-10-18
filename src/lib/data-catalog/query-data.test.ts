@@ -89,7 +89,7 @@ describe("queryData: area measures", () => {
   });
 
   it("refuses a measure the catalog may not show", async () => {
-    for (const measure of ["area:national-series:mortgage30", "area:state-bill-news:x", "area:kcfed-sb-lending:x", "area:fdic-sod:x"]) {
+    for (const measure of ["area:national-series:natl_pmms_30y_fixed","area:state-bill-news:x", "area:kcfed-sb-lending:x", "area:fdic-sod:x"]) {
       const result = await queryData({ measure, scope: { kind: "national" } });
       expect(result.ok, measure).toBe(false);
       if (!result.ok) expect(result.reason.length, measure).toBeGreaterThan(10);

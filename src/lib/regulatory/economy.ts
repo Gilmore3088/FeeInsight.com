@@ -13,7 +13,7 @@ import { parseCsv } from "./ncua";
  *
  * Every source lands as area statistics: one value for one area (nation, state, county or
  * metro), one period and one series, with its unit and source. Census ACS income and population
- * (`demographics`), IRS ZIP income (`irs_zip_income`) and FRED state unemployment and payrolls
+ * (`demographics`), IRS ZIP income (`irs_zip_income`) and BLS state unemployment and payrolls
  * (`fed_economic_indicators`) are loaded elsewhere and are not repeated here.
  *
  * The regulator and statistics sites are blocked from the sandbox this was written in, so every

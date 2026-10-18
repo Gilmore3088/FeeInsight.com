@@ -5,23 +5,28 @@ import {
   BEIGE_BOOK_DISTRICTS,
   beigeBookPageUrl,
   BLS_SERIES_TITLES,
-  blsSeriesRequest,
   fetchText,
   FOMC_CALENDAR_URL,
   fomcMinutesUrl,
-  fredCsvUrl,
   isBlsSeries,
-  isFredNativeSeries,
-  parseBlsCatalogTitle,
-  parseBlsSeries,
   parseBeigeBookPage,
   parseFomcMinutesDates,
   parseFomcMinutesPage,
-  parseFredCsv,
-  REQUIRED_FRED_SERIES,
-  type FredObservation,
+  type IndicatorObservation,
 } from "@/lib/regulatory/fed";
-import { registryFetchJson } from "@/lib/regulatory/http";
+import { fetchSdmxPackage, FRB_XML_PACKAGES } from "@/lib/regulatory/fed-board-data";
+import {
+  beaNipaUrl,
+  blsBatchRequest,
+  blsBatchSize,
+  frbObservations,
+  parseBeaNipaLine,
+  parseBlsBatch,
+  PUBLISHER_INDICATORS,
+  type PublisherIndicator,
+} from "@/lib/regulatory/federal-indicators";
+import { registryFetchJson, RegistryHttpError } from "@/lib/regulatory/http";
+import { BEA_KEY_ENV } from "./economy";
 import { chunk, mapWithConcurrency, recordRegistryPartition, type RegistryDb } from "./partitions";
 
 /**
@@ -29,16 +34,19 @@ import { chunk, mapWithConcurrency, recordRegistryPartition, type RegistryDb } f
  *
  * registry-beige-book (partition = release code YYYYMM): the national summary
  * and 12 district reports, one row per section, into fed_beige_book.
- * registry-fred (partition "current"): refreshes every FRED-native series
- * already tracked in fed_economic_indicators (plus REQUIRED_FRED_SERIES) from the
- * keyless graph CSV, and the BLS CPI series (FRED lacks the detailed ones, such as
- * "checking account and other bank services") from the BLS public API.
+ * registry-fred (partition "current"; the step keeps its name): refreshes the economic
+ * indicators in fed_economic_indicators, each from its original publisher (BLS, BEA, the
+ * Federal Reserve Board; PUBLISHER_INDICATORS in regulatory/federal-indicators.ts). FRED is no
+ * longer read (DECISIONS.md "No non-commercial data", 2026-10-18).
  * registry-fomc-minutes (partition "current"): the full text of each FOMC meeting's
  * minutes linked from the FOMC calendar page, into fed_fomc_minutes.
  */
 
 export const BEIGE_BOOK_SOURCE = "beige-book";
+/** Registry source key, kept from the FRED era so the step, schedule and run history stay joined. */
 export const FRED_SOURCE = "fred";
+/** v2: each series from its original publisher (BLS, BEA, Fed Board), not FRED (2026-10-18). */
+export const FED_INDICATORS_PARSER_VERSION = 2;
 export const FRED_PARTITION = "current";
 export const BEIGE_BOOK_FIRST_YEAR = 2015;
 const FED_CONCURRENCY = 3;
@@ -141,20 +149,115 @@ export interface RegistryFredResult {
   dryRun: boolean;
 }
 
+/** The series one publisher returned, by our series_id, with why any came back empty. */
+interface PublisherPull {
+  observations: Map<string, IndicatorObservation[]>;
+  problems: Record<string, string>;
+}
+
+async function pullBls(series: PublisherIndicator[], options: FedOptions, catalogTitles: Record<string, string>): Promise<PublisherPull> {
+  const out: PublisherPull = { observations: new Map(), problems: {} };
+  const key = process.env.BLS_API_KEY || null;
+  const ids = [...new Set(series.map((s) => s.publisher_id))];
+  const byPublisherId = new Map<string, IndicatorObservation[]>();
+  const idProblems: Record<string, string> = {};
+  for (const batch of chunk(ids, blsBatchSize(key))) {
+    const request = blsBatchRequest(batch, key, options.now);
+    try {
+      const body = await registryFetchJson<unknown>(request.url, options.fetchOptions, { json: request.json });
+      const parsed = parseBlsBatch(body);
+      for (const [id, obs] of parsed.bySeries) byPublisherId.set(id, obs);
+      Object.assign(catalogTitles, parsed.catalogTitles);
+      for (const id of batch) {
+        if (!parsed.bySeries.has(id)) idProblems[id] = parsed.messages.find((m) => m.includes(id)) ?? parsed.messages[0] ?? "BLS returned no data";
+      }
+    } catch (error) {
+      for (const id of batch) idProblems[id] = error instanceof Error ? error.message : String(error);
+    }
+  }
+  for (const s of series) {
+    const obs = byPublisherId.get(s.publisher_id);
+    if (obs) out.observations.set(s.series_id, obs);
+    else out.problems[s.series_id] = idProblems[s.publisher_id] ?? "BLS returned no data";
+  }
+  return out;
+}
+
+async function pullBea(series: PublisherIndicator[], options: FedOptions): Promise<PublisherPull> {
+  const out: PublisherPull = { observations: new Map(), problems: {} };
+  const key = process.env[BEA_KEY_ENV];
+  if (!key) {
+    for (const s of series) out.problems[s.series_id] = `${BEA_KEY_ENV} is not set`;
+    return out;
+  }
+  const tables = new Map<string, unknown>();
+  for (const s of series) {
+    if (!s.bea) continue;
+    const tableKey = `${s.bea.table}/${s.bea.frequency}`;
+    try {
+      if (!tables.has(tableKey)) {
+        tables.set(tableKey, await registryFetchJson<unknown>(beaNipaUrl(key, s.bea.table, s.bea.frequency, options.now), options.fetchOptions));
+      }
+      const parsed = parseBeaNipaLine(tables.get(tableKey), s.bea.line, s.bea.scaleTo);
+      if (parsed.observations.length > 0) out.observations.set(s.series_id, parsed.observations);
+      else out.problems[s.series_id] = parsed.problem ?? "no values";
+    } catch (error) {
+      // The key travels in the URL: report the status only, never the URL.
+      out.problems[s.series_id] = error instanceof RegistryHttpError && error.status ? `BEA HTTP ${error.status}` : "BEA request failed";
+    }
+  }
+  return out;
+}
+
+async function pullFrb(series: PublisherIndicator[], options: FedOptions): Promise<PublisherPull> {
+  const out: PublisherPull = { observations: new Map(), problems: {} };
+  const byPackage = new Map<keyof typeof FRB_XML_PACKAGES, PublisherIndicator[]>();
+  for (const s of series) if (s.frb) byPackage.set(s.frb.pkg, [...(byPackage.get(s.frb.pkg) ?? []), s]);
+  for (const [pkg, members] of byPackage) {
+    try {
+      const { found } = await fetchSdmxPackage(FRB_XML_PACKAGES[pkg], members.map((m) => m.publisher_id), options.fetchOptions);
+      for (const s of members) {
+        const obs = frbObservations(found.get(s.publisher_id), s.frb?.frequency ?? "monthly");
+        if (obs.length > 0) out.observations.set(s.series_id, obs);
+        else out.problems[s.series_id] = found.has(s.publisher_id) ? "series had no values" : `${s.publisher_id} not in the ${pkg.toUpperCase()} package`;
+      }
+    } catch (error) {
+      for (const s of members) out.problems[s.series_id] = error instanceof Error ? error.message : String(error);
+    }
+  }
+  return out;
+}
+
+/**
+ * Refreshes every indicator in PUBLISHER_INDICATORS from its original publisher (BLS, BEA, the
+ * Federal Reserve Board), plus any other BLS CPI series already tracked. FRED is no longer read
+ * (2026-10-18). The first run records `publisher_cutover_at` in the partition detail: readers
+ * serve a row only when it was written at or after that moment (fedIndicatorServedSql), so rows
+ * stored from FRED (series no publisher replaces, and observations older than a publisher's
+ * window) stay hidden without deleting them.
+ */
 export async function runRegistryFred(options: FedOptions = {}): Promise<RegistryFredResult> {
   const db = options.db ?? sql;
-  const tracked = await db<Array<{ series_id: string; series_title: string | null; fed_district: number | null; units: string | null; frequency: string | null }>>`
-    SELECT DISTINCT ON (series_id) series_id, series_title, fed_district, units, frequency
+  const tracked = await db<Array<{ series_id: string; series_title: string | null; fed_district: number | null; units: string | null }>>`
+    SELECT DISTINCT ON (series_id) series_id, series_title, fed_district, units
       FROM fed_economic_indicators
      ORDER BY series_id, observation_date DESC
   `;
-  const known = new Set(tracked.map((row) => row.series_id));
-  const required = REQUIRED_FRED_SERIES.filter((meta) => !known.has(meta.series_id));
-  // Struck series (UMCSENT; DECISIONS.md "No non-commercial data") are never refreshed, even though
-  // rows loaded before 2026-10-17 keep them "tracked".
-  const series = [...tracked, ...required].filter(
-    (row) => !STRUCK_FRED_SERIES.includes(row.series_id) && (isFredNativeSeries(row.series_id) || isBlsSeries(row.series_id)),
-  );
+  const known = new Set(PUBLISHER_INDICATORS.map((s) => s.series_id));
+  // BLS CPI series stored by earlier runs and not in the catalogue keep refreshing from BLS.
+  const trackedBls: PublisherIndicator[] = tracked
+    .filter((row) => isBlsSeries(row.series_id) && !known.has(row.series_id))
+    .map((row) => ({
+      series_id: row.series_id,
+      publisher_id: row.series_id,
+      series_title: BLS_SERIES_TITLES[row.series_id] ?? row.series_title ?? row.series_id,
+      units: row.units ?? "Index",
+      frequency: "Monthly" as const,
+      fed_district: row.fed_district,
+      publisher: "bls" as const,
+    }));
+  // Struck series (DECISIONS.md "No non-commercial data") are never fetched.
+  const series = [...PUBLISHER_INDICATORS, ...trackedBls].filter((s) => !STRUCK_FRED_SERIES.includes(s.series_id));
   const result: RegistryFredResult = {
     source: FRED_SOURCE,
     partitionKey: FRED_PARTITION,
@@ -166,50 +269,67 @@ export async function runRegistryFred(options: FedOptions = {}): Promise<Registr
   };
   if (options.dryRun) return result;
 
-  const blsKey = process.env.BLS_API_KEY || null;
-  const blsCatalogTitles: Record<string, string> = {};
+  // The cutover is fixed by the first publisher run and carried forward on every later one.
+  const previous = await db<Array<{ cutover: string | null }>>`
+    SELECT detail->>'publisher_cutover_at' AS cutover
+      FROM registry_ingest_partitions
+     WHERE source = ${FRED_SOURCE} AND partition_key = ${FRED_PARTITION}
+  `;
+  let cutover = previous[0]?.cutover ?? null;
+  if (!cutover) {
+    const [row] = await db<Array<{ now: Date | string }>>`SELECT NOW() AS now`;
+    cutover = row?.now instanceof Date ? row.now.toISOString() : String(row?.now ?? new Date().toISOString());
+  }
+
+  const catalogTitles: Record<string, string> = {};
+  const pulls = await Promise.all([
+    pullBls(series.filter((s) => s.publisher === "bls"), options, catalogTitles),
+    pullBea(series.filter((s) => s.publisher === "bea"), options),
+    pullFrb(series.filter((s) => s.publisher === "frb"), options),
+  ]);
+  const observationsById = new Map<string, IndicatorObservation[]>();
+  const problems: Record<string, string> = {};
+  for (const pull of pulls) {
+    for (const [id, obs] of pull.observations) observationsById.set(id, obs);
+    Object.assign(problems, pull.problems);
+  }
+
+  const perPublisher: Record<string, { series: number; refreshed: number }> = {};
   await mapWithConcurrency(series, FED_CONCURRENCY, async (meta) => {
-    let observations: FredObservation[];
-    if (isBlsSeries(meta.series_id)) {
-      const request = blsSeriesRequest(meta.series_id, blsKey);
-      const body = await registryFetchJson<unknown>(request.url, options.fetchOptions, { json: request.json });
-      observations = parseBlsSeries(body);
-      const catalogTitle = parseBlsCatalogTitle(body);
-      if (catalogTitle) blsCatalogTitles[meta.series_id] = catalogTitle;
-    } else {
-      const csv = await fetchText(fredCsvUrl(meta.series_id), options.fetchOptions);
-      observations = csv ? parseFredCsv(csv) : [];
-    }
+    const counts = (perPublisher[meta.publisher] ??= { series: 0, refreshed: 0 });
+    counts.series += 1;
+    const observations = observationsById.get(meta.series_id) ?? [];
     if (observations.length === 0) {
-      result.missingSeries.push(meta.series_id);
+      result.missingSeries.push(`${meta.series_id} (${meta.publisher}: ${problems[meta.series_id] ?? "no values"})`);
       return;
     }
-    const title = BLS_SERIES_TITLES[meta.series_id] ?? meta.series_title;
     for (const group of chunk(observations, 2_000)) {
       const payload = JSON.stringify(group);
       await db`
         INSERT INTO fed_economic_indicators (series_id, series_title, fed_district, observation_date, value, units, frequency, fetched_at)
-        SELECT ${meta.series_id}, ${title}, ${meta.fed_district}, r.observation_date, r.value,
+        SELECT ${meta.series_id}, ${meta.series_title}, ${meta.fed_district}, r.observation_date, r.value,
                ${meta.units}, ${meta.frequency}, NOW()
           FROM jsonb_to_recordset(${payload}::jsonb) AS r(observation_date text, value double precision)
         ON CONFLICT (series_id, observation_date) DO UPDATE SET
           value = EXCLUDED.value,
           series_title = EXCLUDED.series_title,
+          units = EXCLUDED.units,
+          frequency = EXCLUDED.frequency,
           fetched_at = NOW()
       `;
     }
-    if (BLS_SERIES_TITLES[meta.series_id]) {
-      // Observations older than the 7-year pull keep the label they were stored with; correct them too.
-      await db`
-        UPDATE fed_economic_indicators
-           SET series_title = ${title}, units = ${meta.units}
-         WHERE series_id = ${meta.series_id}
-           AND (series_title IS DISTINCT FROM ${title} OR units IS DISTINCT FROM ${meta.units})
-      `;
-    }
+    // Observations older than the pull window keep the label they were stored with; correct them too.
+    await db`
+      UPDATE fed_economic_indicators
+         SET series_title = ${meta.series_title}, units = ${meta.units}
+       WHERE series_id = ${meta.series_id}
+         AND (series_title IS DISTINCT FROM ${meta.series_title} OR units IS DISTINCT FROM ${meta.units})
+    `;
+    counts.refreshed += 1;
     result.refreshedSeries += 1;
     result.observations += observations.length;
   });
+  result.missingSeries.sort();
 
   await recordRegistryPartition(db, {
     source: FRED_SOURCE,
@@ -219,10 +339,16 @@ export async function runRegistryFred(options: FedOptions = {}): Promise<Registr
     matchedCount: result.refreshedSeries,
     unmatchedCount: result.missingSeries.length,
     insertedCount: result.observations,
-    sourceUrl: "https://fred.stlouisfed.org/graph/fredgraph.csv",
+    sourceUrl: null,
     runId: options.runId ?? null,
     nextAttemptAfterHours: FRED_REFRESH_HOURS,
-    detail: { missing_series: result.missingSeries.slice(0, 50), bls_catalog_titles: blsCatalogTitles },
+    detail: {
+      parser_version: FED_INDICATORS_PARSER_VERSION,
+      publisher_cutover_at: cutover,
+      publishers: perPublisher,
+      missing_series: result.missingSeries.slice(0, 80),
+      bls_catalog_titles: catalogTitles,
+    },
   });
   return result;
 }

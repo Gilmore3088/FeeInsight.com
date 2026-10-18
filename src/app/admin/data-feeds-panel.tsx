@@ -22,7 +22,7 @@ const FEED_LABELS: Record<string, string> = {
   "bls-laus": "BLS county labor force and unemployment (LAUS)",
   "census-lehd": "LEHD jobs by workplace and home county (LODES)",
   "fed-payments": "FedACH commercial and Payments Study volumes (Fed Board)",
-  "national-series": "National credit series (FRED: H.8, SLOOS, CRE, delinquency, FDIC rates)",
+  "national-series": "National credit series (Fed Board: H.8, Z.1, SLOOS, delinquency)",
   "nyfed-household-debt": "NY Fed household debt by state",
   "nyfed-sce-credit": "NY Fed consumer credit access survey",
   "cfpb-credit-trends": "CFPB Consumer Credit Trends originations",
@@ -30,7 +30,7 @@ const FEED_LABELS: Record<string, string> = {
   "fdic-financials": "FDIC call reports",
   "ncua-financials": "NCUA call reports",
   "fdic-sod": "FDIC branch deposits (SOD)",
-  fred: "FRED economic series",
+  fred: "Economic indicators (BLS, BEA, Fed Board H.15)",
   "beige-book": "Fed Beige Book",
   "reg-news": "Regulator news",
   cfpb: "CFPB complaints",
@@ -86,7 +86,7 @@ const FEED_LABELS: Record<string, string> = {
 export const FEED_GROUPS = [
   { key: "national", title: "National: banks and credit unions", note: "FDIC, NCUA, FFIEC and SEC" },
   { key: "oversight", title: "National: rules, regulators and news", note: "Congress, Federal Register, enforcement, CFPB" },
-  { key: "economy", title: "Economy and markets", note: "FRED, Fed, Census and IRS" },
+  { key: "economy", title: "Economy and markets", note: "BLS, BEA, Fed, Census and IRS" },
   { key: "state", title: "State", note: "fee bills, enforcement, regulators and news" },
   { key: "other", title: "Other", note: "feeds not yet sorted into a section" },
 ] as const;

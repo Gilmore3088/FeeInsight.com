@@ -21,6 +21,18 @@ export const STRUCK_AREA_SOURCES: readonly string[] = [
 /** fed-payments rows read from Federal Reserve Financial Services pages (FedNow, Fed check, the old FedACH page). */
 export const STRUCK_SOURCE_URL_PATTERN = "%frbservices.org%";
 
+/**
+ * area_statistics rows stored from FRED (fred.stlouisfed.org; national-series before 2026-10-18).
+ * FRED's terms bar commercial use and storing FRED content without the St. Louis Fed's consent, so
+ * the series now come from their original publishers (DECISIONS.md "No non-commercial data", FRED
+ * replaced by original publishers, 2026-10-18). A re-fetched row is overwritten with its
+ * publisher's URL; a row nothing overwrites keeps this URL and is never returned.
+ */
+export const FRED_SOURCE_URL_PATTERN = "%stlouisfed.org%";
+
+/** Every source_url pattern readers exclude: `COALESCE(source_url, '') NOT ILIKE ALL(...)`. */
+export const STRUCK_SOURCE_URL_PATTERNS: readonly string[] = [STRUCK_SOURCE_URL_PATTERN, FRED_SOURCE_URL_PATTERN];
+
 /** institution_designations values from a struck list: Bank On certified accounts (joinbankon.org). */
 export const STRUCK_DESIGNATIONS: readonly string[] = ["bank_on_certified"];
 
@@ -43,6 +55,14 @@ export const STRUCK_NATIONAL_SERIES_IDS: readonly string[] = [
   "MORTGAGE15US",
 ];
 
+/**
+ * FDIC national deposit rates the national-series loader read from FRED until 2026-10-18 (SNDR,
+ * ICNDR, MMNDR, NDR12MCD). FDIC data is public, but the FDIC's own page could not be fetched and
+ * no FDIC machine-readable file was confirmed, so they are no longer loaded; rows stored from FRED
+ * are never returned.
+ */
+export const DROPPED_FDIC_RATE_SERIES_IDS: readonly string[] = ["SNDR", "ICNDR", "MMNDR", "NDR12MCD"];
+
 /** The area_statistics series_key values those ids were stored under (source national-series). */
 export const STRUCK_AREA_SERIES_KEYS: readonly string[] = [
   "natl_lbccm_apr_avg",
@@ -52,13 +72,50 @@ export const STRUCK_AREA_SERIES_KEYS: readonly string[] = [
   "natl_lbccm_paying_full_share",
   "natl_pmms_30y_fixed",
   "natl_pmms_15y_fixed",
+  "natl_fdic_rate_savings",
+  "natl_fdic_rate_interest_checking",
+  "natl_fdic_rate_money_market",
+  "natl_fdic_rate_cd_12_month",
 ];
 
 /**
- * FRED series struck: UMCSENT (University of Michigan consumer sentiment; a sold product needs a
- * licence), and the national-series ids above in case any reached fed_economic_indicators.
+ * fed_economic_indicators series read from FRED until 2026-10-18 that no original publisher
+ * replaces (DECISIONS.md "No non-commercial data", FRED replaced by original publishers):
+ * - QBPQYTNIYSRVDP: the FDIC Quarterly Banking Profile's deposit service charges. The FDIC is the
+ *   publisher, but its site could not be fetched and no QBP time-series file was confirmed.
+ * - DRCBLACBS: not matched to a Federal Reserve Board charge-off and delinquency column; its
+ *   definition could not be confirmed, so it is not substituted.
  */
-export const STRUCK_FRED_SERIES: readonly string[] = ["UMCSENT", ...STRUCK_NATIONAL_SERIES_IDS];
+export const DROPPED_FRED_INDICATORS: readonly string[] = ["QBPQYTNIYSRVDP", "DRCBLACBS"];
+
+/**
+ * FRED series struck: UMCSENT (University of Michigan consumer sentiment; a sold product needs a
+ * licence), the national-series ids above in case any reached fed_economic_indicators, and the
+ * series FRED carried that no original publisher replaces.
+ */
+export const STRUCK_FRED_SERIES: readonly string[] = [
+  "UMCSENT",
+  ...STRUCK_NATIONAL_SERIES_IDS,
+  ...DROPPED_FDIC_RATE_SERIES_IDS,
+  ...DROPPED_FRED_INDICATORS,
+];
+
+/**
+ * fed_economic_indicators has no source_url, so FRED-era rows are hidden by when they were
+ * written: registry-fred's first run from the original publishers records `publisher_cutover_at`
+ * in its partition detail (source "fred", partition "current"), and a row is served only when it
+ * was written at or after that moment. Rows written by the publishers' loader refresh fetched_at
+ * on every run; a FRED-era row nothing overwrote keeps its older fetched_at and stays hidden (no
+ * row is deleted). Until that first run, no such row is served. NYFED_ and OFR_ series come from
+ * other, older loaders and are not FRED rows.
+ */
+export const FED_INDICATOR_CUTOVER = { source: "fred", partitionKey: "current", detailKey: "publisher_cutover_at" } as const;
+
+/** SQL condition (constants only, no parameters) for a servable fed_economic_indicators row; `alias` is the table alias. */
+export function fedIndicatorServedSql(alias?: string): string {
+  const col = (name: string) => (alias ? `${alias}.${name}` : name);
+  return `(${col("series_id")} ~ '^(NYFED|OFR)_' OR ${col("fetched_at")} >= (SELECT (cut.detail->>'${FED_INDICATOR_CUTOVER.detailKey}')::timestamptz FROM registry_ingest_partitions cut WHERE cut.source = '${FED_INDICATOR_CUTOVER.source}' AND cut.partition_key = '${FED_INDICATOR_CUTOVER.partitionKey}'))`;
+}
 
 /**
  * States whose regulator sites allow only non-commercial reuse (2026-10-18): New York DFS
