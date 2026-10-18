@@ -658,7 +658,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
           method="GET"
           path="/institutions?id={id}"
           summary="Get institution detail"
-          description="One institution's profile with its published fees and source links, call report figures and complaint counts. Add view=benchmark for its fees beside peer medians (format=csv for a spreadsheet) or view=regulatory_watch for enforcement actions and complaints. Where it charges several different fees in one category, amount is null and each fee is listed by name."
+          description="One institution's profile with its published fees and source links, call report figures and complaint counts. Add view=benchmark for its fees beside peer medians (format=csv for a spreadsheet) or view=regulatory_watch for enforcement actions and complaints. Where it charges several different fees in one category, amount is null and each fee is listed by name (in view=regulatory_watch, with the lowest and highest amounts)."
           tierNote="Pro"
           params={[
             { name: "id", type: "integer", required: true, description: "Institution ID" },

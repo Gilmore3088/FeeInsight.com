@@ -625,7 +625,9 @@ export function briefingLocalMarket(
   const national = base.layers.find((l) => l.scope === "national")?.values;
   if (!national) return null;
   const valueOf = new Map<number, Record<string, number>>();
-  for (const category of base.ownCategories) {
+  // Columns follow the bank's own priced row (LocalCompetitors keys off it), so a fee it
+  // states several amounts for is left out here rather than shown as an empty column.
+  for (const category of base.ownValues.keys()) {
     for (const v of national.get(category) ?? []) {
       const values = valueOf.get(v.institution_id) ?? {};
       values[category] = v.amount;

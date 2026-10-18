@@ -105,7 +105,7 @@ export default async function PlanPage({ searchParams }: PageProps) {
     clientFigures: { paidItems, waiverRate },
     enteredBy: user.display_name || user.username,
     extraAssumptions: [
-      `${fmtMoney(from)} is the starting price${ws.ownAmount === from ? ", your published fee" : ", as entered"}; ${fmtMoney(to)} is the price management is weighing.`,
+      `${fmtMoney(from)} is the starting price${ws.ownAmount === from ? ", your published fee" : params.from ? ", as entered" : ws.ownSeveral ? `, since your schedule lists several fees (${ws.ownSeveral})` : ", with no published fee"}; ${fmtMoney(to)} is the price management is weighing.`,
       `Notice dates assume notice goes out on ${longDate(noticeDate)}.`,
       "Notice periods follow Reg DD (banks) or NCUA Truth in Savings (credit unions) for consumer accounts. Confirm with compliance.",
     ],

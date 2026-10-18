@@ -586,7 +586,7 @@ const spec = {
         operationId: "listInstitutions",
         summary: "List institutions",
         description:
-          "Paginated list of financial institutions. Filter by state, charter, asset_tier, city or has_fees; search by name with q; rank by one fee with fee_category and sort. Maximum 200 results per page. Pass `id` for one institution's profile with fees, call reports and complaints (Pro and Enterprise only); add view=benchmark for its fees beside peer medians (also as CSV with format=csv; a category where it states several different fees has a null amount, with amount_low, amount_high and each fee by name) or view=regulatory_watch for its enforcement actions and complaint counts. view=fees lists published fees one row each and does not take q, fee_category, asset_tier, city or has_fees=true.",
+          "Paginated list of financial institutions. Filter by state, charter, asset_tier, city or has_fees; search by name with q; rank by one fee with fee_category and sort. Maximum 200 results per page. Pass `id` for one institution's profile with fees, call reports and complaints (Pro and Enterprise only); add view=benchmark for its fees beside peer medians (also as CSV with format=csv; a category where it states several different fees has a null amount, with amount_low, amount_high and each fee by name) or view=regulatory_watch for its enforcement actions and complaint counts (a fee tie there likewise has a null amount, with amount_low and amount_high, when it states several different fees). view=fees lists published fees one row each and does not take q, fee_category, asset_tier, city or has_fees=true.",
         tags: ["Institutions"],
         parameters: [
           {
