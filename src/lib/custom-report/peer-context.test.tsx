@@ -18,6 +18,7 @@ describe("report peer context", () => {
     expect(rows[0].own).toBeCloseTo(5.2);
     expect(rows[0].median).toBeCloseTo(4);
     expect(rows[1].percentile).toBeNull();
+    expect(buildPeerFinancialRows({ efficiency_ratio: 340 }, { efficiency_ratio: 61 }, {})).toEqual([]);
   });
 
   it("names quarters and ranks in plain words", () => {
@@ -40,6 +41,8 @@ describe("report peer context", () => {
     expect(html).toContain("not the competitors in your market");
     expect(html).toContain('data-peer-fee="overdraft"');
     expect(html).toContain("$32");
+    expect(html).toContain("$30 to $35");
+    expect(html).toContain("640 peers filed");
     expect(html).toContain("312");
     expect(html).toContain("5.20%");
     expect(html).toContain("Higher than 71% of peers");

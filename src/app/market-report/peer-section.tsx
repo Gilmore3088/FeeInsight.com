@@ -9,7 +9,7 @@ import {
 const SERIF = { fontFamily: "var(--fi-font-sans)" };
 
 function money(value: number | null): string {
-  if (value === null || Number.isNaN(value)) return "—";
+  if (value === null || Number.isNaN(value)) return "n/a";
   return Number.isInteger(value) ? `$${value}` : `$${value.toFixed(2)}`;
 }
 
@@ -67,7 +67,7 @@ export function PeerSection({ name, peers }: { name: string; peers: ReportPeerCo
                 <td className="py-2 pr-3 text-right tabular-nums">{money(row.own)}</td>
                 <td className="py-2 pr-3 text-right tabular-nums">{money(row.median)}</td>
                 <td className="hidden py-2 pr-3 text-right tabular-nums sm:table-cell print:table-cell">
-                  {row.p25 !== null && row.p75 !== null ? `${money(row.p25)}–${money(row.p75)}` : "—"}
+                  {row.p25 !== null && row.p75 !== null ? `${money(row.p25)} to ${money(row.p75)}` : "n/a"}
                 </td>
                 <td className="hidden py-2 pr-3 text-right tabular-nums sm:table-cell print:table-cell">
                   {row.peerCount.toLocaleString("en-US")}
@@ -111,7 +111,7 @@ export function PeerSection({ name, peers }: { name: string; peers: ReportPeerCo
       <p className="mt-4 text-[12px] leading-relaxed text-ink-muted">
         Fee medians count each institution once, from its own published schedule.
         {peers.financial &&
-          ` Reported figures are as each institution filed them in its ${filing} for the quarter (${peers.financial.peerCount.toLocaleString("en-US")} institutions filed). The efficiency ratio is noninterest expense as a share of revenue.`}{" "}
+          ` Reported figures are as each institution filed them in its ${filing} for the quarter (${peers.financial.peerCount.toLocaleString("en-US")} peers filed). The efficiency ratio is noninterest expense as a share of revenue.`}{" "}
         A published price does not say how often a fee is charged or waived.
       </p>
     </section>

@@ -51,12 +51,13 @@ export interface ReportPeerContext {
   /** "Banks with $1B to $10B in assets". */
   groupLabel: string;
   fees: PeerFeeRow[];
-  /** Report lines the institution prices that too few peers publish to give a median. */
+  /** Report lines the institution prices that fewer than MIN_PEERS_FOR_RANK peers publish. */
   thinFeeKeys: string[];
   financial: {
     /** Calendar quarter end, YYYY-MM-DD. */
     reportDate: string;
     source: "fdic" | "ncua";
+    /** Peers that filed for the quarter, the institution itself left out. */
     peerCount: number;
     rows: PeerFinancialRow[];
   } | null;
@@ -86,6 +87,7 @@ export function buildPeerFinancialRows(
     // A zero fee share or return is a missing line, not a figure (getPeerFinancialMedians' rule).
     if (mine === null || mine === undefined || median === null || median === undefined) continue;
     if ((key === "fee_income_ratio" || key === "roa") && mine === 0) continue;
+    if (key === "efficiency_ratio" && (mine < 0 || mine > 200)) continue;
     rows.push({ key, own: financialPercent(key, mine), median: financialPercent(key, median), percentile: percentiles[key] ?? null });
   }
   return rows;
@@ -110,7 +112,8 @@ async function getReportPeerContext(institutionId: number, lines: [key: string, 
   const thinFeeKeys: string[] = [];
   for (const [key, amount] of lines) {
     const row = comparePeerCategory(key, amount, values.get(key) ?? []);
-    if (row.peer_median === null) {
+    // A median from fewer than MIN_PEERS_FOR_RANK peers is named as thin, never shown.
+    if (row.peer_median === null || row.peer_count < MIN_PEERS_FOR_RANK) {
       thinFeeKeys.push(key);
       continue;
     }
@@ -119,13 +122,14 @@ async function getReportPeerContext(institutionId: number, lines: [key: string, 
 
   const own = ownRows[0];
   // Own figures and medians must come from the same filing and quarter.
-  const sameQuarter = own && medians && String(own.report_date).slice(0, 10) === medians.report_date.slice(0, 10) && own.source === medians.source;
+  // The median counts the institution itself; under MIN_PEERS_FOR_RANK others there is no comparison.
+  const sameQuarter = own && medians && medians.peer_count - 1 >= MIN_PEERS_FOR_RANK && String(own.report_date).slice(0, 10) === medians.report_date.slice(0, 10) && own.source === medians.source;
   const financial =
     sameQuarter && (medians.source === "fdic" || medians.source === "ncua")
       ? {
           reportDate: medians.report_date.slice(0, 10),
           source: medians.source as "fdic" | "ncua",
-          peerCount: medians.peer_count,
+          peerCount: medians.peer_count - 1,
           rows: buildPeerFinancialRows(
             own,
             { ...medians, fee_income_ratio: medians.fee_income_peer_count >= MIN_PEERS_FOR_RANK ? medians.fee_income_ratio : null },
