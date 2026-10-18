@@ -106,6 +106,8 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
   /** A link to another selection that keeps the state map's view, so following it never resets the map. */
   const linkTo = (to: Parameters<typeof selectionHref>[0], extra: Record<string, string> = {}, hash?: string) =>
     selectionHref(to, stateView === "price" ? { sv: "price", ...extra } : extra, hash);
+  // Switching the map's view leaves the institutions unchanged, so it keeps the picked bar.
+  const keepBin: Record<string, string> = params.bin === "all" ? { bin: "all" } : sel.bin != null ? { bin: String(sel.bin) } : {};
   // A name search with no bar picked looks through every institution, not only the median's bar.
   // "bin=all" shows every institution; otherwise the list opens on the median's bar.
   const allBars = params.bin === "all";
@@ -257,9 +259,9 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
               { href: "#institutions", label: "Institutions" },
               { href: "#catalog", label: "Categories" },
             ].map((s) => (
-              <a key={s.href} href={s.href} className="inline-flex min-h-9 items-center rounded-full px-3 font-medium text-ink hover:bg-surface-200">
+              <Link key={s.href} href={s.href} className="inline-flex min-h-9 items-center rounded-full px-3 font-medium text-ink hover:bg-surface-200">
                 {s.label}
-              </a>
+              </Link>
             ))}
           </nav>
           <ul aria-label="Filters in force" className="flex min-w-0 flex-wrap items-center gap-1.5 text-[13px]">
@@ -532,7 +534,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
           ).map((v) => (
             <Link
               key={v.view}
-              href={selectionHref(sel, v.view === "price" ? { sv: "price" } : {}, "states")}
+              href={selectionHref(sel, { ...(v.view === "price" ? { sv: "price" } : {}), ...keepBin }, "states")}
               scroll={false}
               aria-current={stateView === v.view ? "true" : undefined}
               className={`inline-flex min-h-9 items-center rounded-full px-3 font-medium ${stateView === v.view ? "bg-ink text-on-ink" : "text-ink hover:bg-surface-200"}`}
@@ -550,12 +552,12 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
                 : `${picked.institutions.toLocaleString()} ${picked.institutions === 1 ? "institution" : "institutions"}, too few for a median`}
             </p>
             <p className="flex flex-wrap gap-4 text-[14px]">
-              <a href="#explorer" className={LINK}>
+              <Link href="#explorer" className={LINK}>
                 Its prices
-              </a>
-              <a href="#institutions" className={LINK}>
+              </Link>
+              <Link href="#institutions" className={LINK}>
                 Its institutions
-              </a>
+              </Link>
               <Link href={selectionHref({ ...sel, state: null }, stateView === "price" ? { sv: "price" } : {}, "states")} scroll={false} className={LINK}>
                 Back to the U.S.
               </Link>
