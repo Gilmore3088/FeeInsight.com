@@ -414,10 +414,21 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
             )}
             {shown.matching === 0 ? (
               <p className="mt-3 rounded-2xl border border-border bg-surface-0 p-4 text-[14px] text-ink-soft">
-                No institution here matches &ldquo;{list.q}&rdquo;.{" "}
-                <Link href={listHref({})} scroll={false} className={LINK}>
-                  Clear the search
-                </Link>
+                {list.q ? (
+                  <>
+                    No institution here matches &ldquo;{list.q}&rdquo;.{" "}
+                    <Link href={listHref({})} scroll={false} className={LINK}>
+                      Clear the search
+                    </Link>
+                  </>
+                ) : (
+                  <>
+                    No institution publishes a price in this range.{" "}
+                    <Link href={selectionHref(sel, {}, "explorer")} scroll={false} className={LINK}>
+                      See every price
+                    </Link>
+                  </>
+                )}
               </p>
             ) : (
               <ul className="mt-3 divide-y divide-border rounded-2xl border border-border bg-surface-0">
@@ -693,20 +704,25 @@ function Histogram({
         <ul className="relative flex h-52 items-end gap-1 sm:h-64" aria-label={`Institutions by ${unit}`}>
         {buckets.map((b, i) => (
           <li key={b.label} className="relative flex h-full min-w-0 flex-1">
-            <Link
-              href={hrefFor(i)}
-              scroll={false}
-              title={`${b.total} institutions with a ${unit} of ${b.label}`}
-              aria-label={`${b.total} institutions with a ${unit} of ${b.label}`}
-              aria-current={i === activeBin ? "true" : undefined}
-              className="group flex h-full w-full flex-col justify-end"
-            >
-              <span className="relative z-10 mx-auto mb-1 rounded bg-surface-0 px-0.5 text-center font-mono text-[10px] tabular-nums text-ink-muted sm:text-[11px]">{b.total > 0 ? b.total : ""}</span>
-              <span
-                className={`block w-full rounded-t-md transition-colors ${i === activeBin ? "bg-ink" : "bg-ink/20 group-hover:bg-ink/40"}`}
-                style={{ height: `${Math.max((b.total / top) * 100, b.total > 0 ? 2 : 0)}%` }}
-              />
-            </Link>
+            {/* An empty bar has no one to list, so it is not a link. */}
+            {b.total === 0 ? (
+              <span className="flex h-full w-full" aria-label={`No institutions with a ${unit} of ${b.label}`} />
+            ) : (
+              <Link
+                href={hrefFor(i)}
+                scroll={false}
+                title={`${plural(b.total, "institution")} with a ${unit} of ${b.label}`}
+                aria-label={`${plural(b.total, "institution")} with a ${unit} of ${b.label}`}
+                aria-current={i === activeBin ? "true" : undefined}
+                className="group flex h-full w-full flex-col justify-end"
+              >
+                <span className="relative z-10 mx-auto mb-1 rounded bg-surface-0 px-0.5 text-center font-mono text-[10px] tabular-nums text-ink-muted sm:text-[11px]">{b.total}</span>
+                <span
+                  className={`block w-full rounded-t-md transition-colors ${i === activeBin ? "bg-ink" : "bg-ink/20 group-hover:bg-ink/40"}`}
+                  style={{ height: `${Math.max((b.total / top) * 100, 2)}%` }}
+                />
+              </Link>
+            )}
           </li>
         ))}
         </ul>
@@ -901,6 +917,10 @@ const PRICE_SWATCH = ["bg-ink/10", "bg-ink/25", "bg-ink/45", "bg-ink/70", "bg-in
 const SMALL_SAMPLE = 15;
 
 /** "$5.00 above the U.S.", "$2.50 below the U.S.", or "the same as the U.S.". */
+function plural(n: number, noun: string): string {
+  return `${n.toLocaleString()} ${noun}${n === 1 ? "" : "s"}`;
+}
+
 function gapText(gap: number | null): string {
   if (gap == null) return "no comparison";
   if (gap === 0) return "the same as the U.S.";
@@ -949,7 +969,7 @@ function StateMap({
   return (
     <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
       <figure className="self-start rounded-2xl border border-border bg-surface-0 p-4 sm:p-6">
-        <svg viewBox="0 0 960 600" className="h-auto w-full" role="img" aria-label={`${feeLabel} ${view === "price" ? "medians" : "against the U.S. median"} by state`}>
+        <svg viewBox="0 0 960 600" className="h-auto w-full" role="group" aria-label={`${feeLabel} ${view === "price" ? "medians" : "against the U.S. median"} by state`}>
           <defs>
             <pattern id="fees-thin-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
               <rect width="6" height="6" className="fill-paper" />
