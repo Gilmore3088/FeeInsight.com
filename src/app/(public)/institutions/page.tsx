@@ -43,6 +43,7 @@ import {
   percentLabel,
   reportCta,
   stateCoverage,
+  coverageFinding,
   stateFinding,
   stateSummaryLine,
   stateRows,
@@ -382,6 +383,10 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
             <h2 id="results-heading" className={`${H2} text-center sm:text-left`}>
               {resultsTitle}
             </h2>
+            {/* On a phone the hero's coverage meter steps aside for the results; a state view keeps its figure here. */}
+            {hasState && picked && (
+              <p className={`${FINDING} text-center sm:hidden`}>{coverageFinding(picked, charter, stateName)}</p>
+            )}
             {(resultsFinding || focus) && (
               <p className={`${FINDING} text-center`}>
                 {resultsFinding}
@@ -463,7 +468,7 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
               <span className="block text-brick">Hey Hamilton,</span>
               <span className="block">how do our fees compare with our peers?</span>
             </h2>
-            <p className="mt-4 text-[16px] leading-relaxed text-ink-soft">Named peers in your market, each fee linked to its schedule.</p>
+            <p className="mt-4 text-[16px] leading-relaxed text-ink-soft sm:mx-0 sm:text-left">Named peers in your market, each fee linked to its schedule.</p>
           </div>
           <div className="mt-6 flex flex-col items-center gap-3 sm:flex-row sm:flex-wrap sm:gap-x-7 lg:mt-0">
             <TrackLink
