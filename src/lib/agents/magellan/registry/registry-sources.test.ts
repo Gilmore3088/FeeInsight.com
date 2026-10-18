@@ -1004,6 +1004,7 @@ describe("registry dispatch", () => {
       "enforcement",
       "state-enforcement",
       "wire-research",
+      "bank-zelle",
     ]);
   });
 

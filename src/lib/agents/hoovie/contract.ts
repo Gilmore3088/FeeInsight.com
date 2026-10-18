@@ -64,7 +64,12 @@ export type HoovieLicenceStatus =
   /** Free to read, but the terms for showing it to customers are not yet confirmed. */
   | "terms-unconfirmed"
   /** Not loaded or shown until a person confirms the terms. */
-  | "held";
+  | "held"
+  /**
+   * Fee Insight's own reading of each institution's own public documents, the same documents the
+   * published fees come from: a fact and one evidence sentence with the link, never a copy of a page.
+   */
+  | "fee-insight";
 
 export interface HoovieLicence {
   status: HoovieLicenceStatus;

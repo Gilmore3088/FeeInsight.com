@@ -89,9 +89,12 @@ describe("data catalog", () => {
     for (const entry of DATA_CATALOG.filter((e) => e.kind === "public-data")) {
       if (entry.tables.includes("area_statistics")) expect(entry.measurePrefix, entry.id).toBe(`area:${entry.id}:`);
       else if (entry.tables.includes("institution_call_report_items")) expect(entry.measurePrefix, entry.id).toBe("call:");
+      else if (entry.tables.includes("institution_payment_features")) expect(entry.measurePrefix, entry.id).toBe("fact:");
       else expect(entry.measurePrefix, entry.id).toBeNull();
     }
     expect(catalogEntry("published-fees")?.measurePrefix).toBe("fee:");
+    // Offers Zelle is read from each institution's own documents, so it is servable like the fees.
+    expect(catalogEntry("bank-zelle")).toMatchObject({ servable: true, measurePrefix: "fact:", grain: ["institution"] });
     // Every row source maps to a catalog entry that loads it.
     expect(callReportEntries().map((e) => e.id).sort()).toEqual(Object.values(CALL_REPORT_ROW_SOURCES).sort());
   });

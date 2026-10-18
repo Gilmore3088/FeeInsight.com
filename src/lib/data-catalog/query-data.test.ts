@@ -386,3 +386,38 @@ describe("queryData: call-report lines", () => {
     expect(result).toMatchObject({ ok: true, rows: [expect.objectContaining({ median: null, p25: null, p75: null, institution_count: 2 })] });
   });
 });
+
+describe("queryData institution facts (fact:<name>)", () => {
+  const FACT = "fact:offers_zelle";
+
+  it("parses a fact measure", () => {
+    expect(parseMeasure(FACT)).toEqual({ kind: "fact", name: "offers_zelle" });
+    expect(queryDataInputSchema.safeParse({ measure: FACT, scope: { kind: "institution", id: "12" } }).success).toBe(true);
+  });
+
+  it("answers one institution with the sentence and its own document's link", async () => {
+    nextRows = [{ status: "offers", evidence_url: "https://bank.example/fees.pdf", evidence_snippet: "Send money with Zelle® in our app.", read_at: "2026-10-18T10:00:00Z", rule: "send_money_with" }];
+    const result = await queryData({ measure: FACT, scope: { kind: "institution", id: "12" } });
+    expect(result).toMatchObject({
+      ok: true,
+      rows: [{ answer: "yes", evidence: "Send money with Zelle® in our app.", document_url: "https://bank.example/fees.pdf" }],
+      citation: { source_url: "https://bank.example/fees.pdf", as_of: "2026-10-18" },
+    });
+    expect(lastQuery().values).toEqual([12, "zelle"]);
+  });
+
+  it("says unknown, never no, when no document names the service", async () => {
+    nextRows = [];
+    const result = await queryData({ measure: FACT, scope: { kind: "institution", id: "12" } });
+    expect(result).toMatchObject({ ok: true, rows: [] });
+    if (result.ok) expect(result.note).toContain("not known");
+  });
+
+  it("refuses other scopes and unknown facts without a query", async () => {
+    const state = await queryData({ measure: FACT, scope: { kind: "state", id: "TX" } });
+    expect(state.ok).toBe(false);
+    const unknown = await queryData({ measure: "fact:offers_venmo", scope: { kind: "institution", id: "12" } });
+    expect(unknown.ok).toBe(false);
+    expect(calls).toHaveLength(0);
+  });
+});

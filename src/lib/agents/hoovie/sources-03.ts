@@ -328,4 +328,20 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     linkKeys: [],
     tables: ["reg_wire_research"],
   },
+  {
+    // magellan/registry/bank-zelle.ts, bank-zelle-match.ts (#1875): reads the current copy of each institution's own
+    // stored documents (source_documents, agent_source_texts); fetches nothing. Never Zelle's participant list (struck #1840).
+    source: "bank-zelle",
+    loader: "bank-zelle",
+    publisher: "Each institution's own website and fee schedule",
+    licence: {
+      status: "fee-insight",
+      note: "Fee Insight's own reading of the documents the published fees come from. Each row is one fact with one evidence sentence and the link to the institution's own document. Zelle's participant list is never read (struck 2026-10-17, #1840).",
+    },
+    connection: "derived",
+    cadence: "weekly",
+    grain: ["institution"],
+    linkKeys: [],
+    tables: ["institution_payment_features"],
+  },
 ];

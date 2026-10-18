@@ -75,6 +75,28 @@ James's rule (2026-10-17): "Let's get the data first." The order follows the pub
    anything not servable. Wiring it into Hamilton's chat tools is a separate PR.
 6. Shared roll-ups by peer, state, metro and size (`src/lib/peer-set-dimensions.ts`).
 
+## Offers Zelle, from each institution's own documents (#1875)
+
+Zelle's participant list was struck on 2026-10-17 (#1840): its terms allow only personal,
+non-commercial use. `registry-bank-zelle` (`magellan/registry/bank-zelle.ts`) reads the fact
+from each institution's own documents the pipeline already stores (the current copy in
+`source_documents`, its text in `agent_source_texts`) and fetches nothing. A document on
+Zelle's own sites (`ZELLE_LIST_HOSTS`, `struck-sources.ts`) is never read or cited.
+
+- Rules (`bank-zelle-match.ts`, `BANK_ZELLE_MATCHER_VERSION`): deterministic text, no model call.
+  Each sentence that names Zelle is read as offers (a fee or limit line, "send money with Zelle",
+  enrolling, Zelle in "our" app, the brand notice a participant prints), does not offer (a plain
+  "not offered" with no narrower qualifier) or a mention (scam warnings, app lists). Offers only
+  is `offers`; does-not-offer only is `does_not_offer`; both, or mentions only, is `unclear`. No
+  mention means no row: silence is never "does not offer".
+- Rows (`institution_payment_features`, feature `zelle`) carry the evidence sentence and the
+  link to the institution's own document.
+- Bounded: one partition (`current`) walks institutions in id order, 300 per run, every query
+  under a 30 s statement timeout; the next batch runs an hour later, and a finished pass waits a
+  week. A new matcher version restarts the pass.
+- Read through `queryData` as `fact:offers_zelle`, one institution at a time (yes, no or unclear,
+  with the document link). The catalog licence is `fee-insight`, as for the published fees.
+
 ## Daily health check (contract)
 
 `agent-health.ts` runs with the daily scoreboard step and stores these numbers in
