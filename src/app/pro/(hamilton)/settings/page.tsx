@@ -93,23 +93,29 @@ export default async function SettingsPage({
   const isAdmin = user.role === "admin" || user.role === "analyst";
 
   // Parallel data fetching
-  const [snapshot, cappedConsultant, accountContext, pendingLink, [fetchedMembership, workspaceMembers, workspaceInvitations]] = await Promise.all([
+  const [snapshot, cappedConsultant, accountContext, pendingLink, fetchedMembership] = await Promise.all([
     getIntelligenceSnapshot(),
     isCappedConsultant(user).catch(() => false),
     loadHamiltonAccountContext(user),
     getPendingInstitutionLink(sql, user.id),
     selectedInstitution
-      ? Promise.all([
-          getActiveInstitutionMembership({ userId: user.id, institutionId: selectedInstitution.id }).catch(() => null),
-          getInstitutionWorkspaceMembers(selectedInstitution.id).catch(() => []),
-          getPendingInstitutionWorkspaceInvitations(selectedInstitution.id).catch(() => []),
-        ])
-      : Promise.resolve([null, [] as InstitutionWorkspaceMembership[], [] as InstitutionWorkspaceInvitation[]] as const),
+      ? getActiveInstitutionMembership({ userId: user.id, institutionId: selectedInstitution.id }).catch(() => null)
+      : Promise.resolve(null),
   ]);
   const selectedMembership = fetchedMembership?.userId === user.id &&
     fetchedMembership.institutionId === selectedInstitution?.id && fetchedMembership.status === "active"
       ? fetchedMembership
       : null;
+  // The research subject can be any institution (?instId=), so its team (names, emails, pending
+  // invites) is read only for an active member of that institution or platform staff (#1922).
+  const canSeeTeam = isAdmin || selectedMembership !== null;
+  const [workspaceMembers, workspaceInvitations]: [InstitutionWorkspaceMembership[], InstitutionWorkspaceInvitation[]] =
+    selectedInstitution && canSeeTeam
+      ? await Promise.all([
+          getInstitutionWorkspaceMembers(selectedInstitution.id).catch(() => []),
+          getPendingInstitutionWorkspaceInvitations(selectedInstitution.id).catch(() => []),
+        ])
+      : [[], []];
   const peerSetWorkspace = selectedMembership
     ? { institutionId: selectedMembership.institutionId, role: selectedMembership.role }
     : null;
@@ -117,8 +123,8 @@ export default async function SettingsPage({
     String(user.id),
     peerSetWorkspace?.institutionId ?? null,
   ).catch(() => []);
-  // Creator-owned shared groups from another institution remain available in the
-  // store, but they cannot become the displayed baseline for this research subject.
+  // Team groups from another institution the user belongs to stay in the store, but
+  // they cannot become the displayed baseline for this research subject.
   const peerSets: SavedPeerSet[] = loadedPeerSets.filter((set) =>
     set.institution_id === null || set.institution_id === peerSetWorkspace?.institutionId,
   );
@@ -308,14 +314,20 @@ export default async function SettingsPage({
         note="Manage institution workspace access separately from research selection."
       >
         <div className={`${panel} scroll-mt-24`}>
-          <WorkspaceAccessManager
-            institutionId={selectedInstitution?.id ?? null}
-            members={workspaceMembers}
-            invitations={workspaceInvitations}
-            canManage={canManageWorkspaceAccess}
-            inviteLinks={workspaceInviteLinks}
-            inviteLinksReady={inviteLinksReady}
-          />
+          {selectedInstitution && !canSeeTeam ? (
+            <p className="text-sm text-warm-700">
+              Only people on {selectedInstitution.name}&apos;s team can see who has access to it.
+            </p>
+          ) : (
+            <WorkspaceAccessManager
+              institutionId={selectedInstitution?.id ?? null}
+              members={workspaceMembers}
+              invitations={workspaceInvitations}
+              canManage={canManageWorkspaceAccess}
+              inviteLinks={workspaceInviteLinks}
+              inviteLinksReady={inviteLinksReady}
+            />
+          )}
         </div>
       </MemoSection>
 
