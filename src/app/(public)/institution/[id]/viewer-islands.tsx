@@ -18,13 +18,16 @@ interface InstitutionRef {
   institutionName: string;
 }
 
-/** "Explore Hamilton" for everyone, "Open in Hamilton" for Pro; signed-in readers go straight to Hamilton. */
+/**
+ * "Explore Hamilton" for everyone, "Open in Hamilton" for Pro; signed-in readers go straight to Hamilton.
+ * `label` is a plain string: this is a client component, so a server page cannot pass it a function.
+ */
 export function HamiltonLink({
   institutionId,
   institutionName,
   className,
   label,
-}: InstitutionRef & { className: string; label?: (isPro: boolean) => string }) {
+}: InstitutionRef & { className: string; label?: string }) {
   const session = useSessionChrome();
   const isPro = Boolean(session?.isPro);
   const { analyzeHref } = buildPublicInstitutionProfileLinks({
@@ -34,7 +37,7 @@ export function HamiltonLink({
   });
   return (
     <Link href={analyzeHref} className={className}>
-      {label ? label(isPro) : isPro ? "Open in Hamilton" : "Explore Hamilton"}
+      {label ?? (isPro ? "Open in Hamilton" : "Explore Hamilton")}
     </Link>
   );
 }

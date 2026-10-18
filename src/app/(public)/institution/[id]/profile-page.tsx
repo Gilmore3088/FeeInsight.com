@@ -533,7 +533,7 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
                 institutionId={instId}
                 institutionName={inst.institution_name}
                 className="fi-btn fi-btn-primary"
-                label={() => `Open ${inst.institution_name} in Hamilton`}
+                label={`Open ${inst.institution_name} in Hamilton`}
               />
             </ProOnly>
           )}
