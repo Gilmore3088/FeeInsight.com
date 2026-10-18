@@ -18,7 +18,7 @@ describe("classifyZelleSentence", () => {
   });
 
   it.each([
-    ["We do not offer Zelle at this time.", "not_offered"],
+    ["We do not offer Zelle.", "not_offered"],
     ["Zelle is not available to our members.", "not_available"],
     ["We don't currently support Zelle.", "not_offered"],
   ])("reads %j as not offering Zelle", (sentence, rule) => {
@@ -27,6 +27,28 @@ describe("classifyZelleSentence", () => {
 
   it("keeps a narrowed no (one account type) as a mention", () => {
     expect(classifyZelleSentence("Zelle is not available for business accounts.")).toMatchObject({ kind: "mentioned", rule: "not_available_narrowed" });
+  });
+
+  // Review B1 (#1963): safety warnings without the word "scam" are advice, never offers.
+  it.each([
+    "Never send money with Zelle to someone you don't know.",
+    "Only send money with Zelle to people you know and trust.",
+    "Criminals may pose as your bank and ask you to send money with Zelle.",
+    "once you send money using Zelle, you generally cannot cancel it",
+    "Send money with Zelle to friends and family.",
+  ])("does not read the warning or bare phrase %j as offering Zelle", (sentence) => {
+    expect(classifyZelleSentence(sentence).kind).not.toBe("offers");
+  });
+
+  // Review B2 (#1963): a condition or scope on a service is a limit, not "does not offer".
+  it.each([
+    "Zelle transfers are not available until your account has been open 30 days.",
+    "Zelle is not available on weekends.",
+    "We cannot support Zelle payments to recipients outside the U.S.",
+    "We do not offer Zelle at this time.",
+    "Zelle is temporarily not available.",
+  ])("does not read the conditional %j as not offering Zelle", (sentence) => {
+    expect(classifyZelleSentence(sentence).kind).not.toBe("does_not_offer");
   });
 
   it.each([

@@ -9,10 +9,15 @@
  *   amount, "send money with Zelle", enrolling in Zelle, Zelle in "our" app or online banking, or
  *   the brand notice a participating institution prints ("Zelle and the Zelle related marks are
  *   wholly owned by ... used herein under license").
- * - does_not_offer: the document says plainly that Zelle is not offered or not available, with no
- *   narrower qualifier ("for business accounts").
- * - mentioned: every other sentence (a scam warning, a list of payment apps). A mention alone is
- *   never read as offering Zelle.
+ *   "Send money with Zelle" counts only beside an own-service cue ("our app", "your account",
+ *   enrolling), and no rule but the brand notice counts inside a safety warning ("never",
+ *   "only ... people you know", "criminals", "cannot cancel").
+ * - does_not_offer: only a plain, unconditional statement that Zelle is not offered. Any condition
+ *   or scope ("for business accounts", "until your account is 30 days old", "on weekends", "to
+ *   recipients outside the U.S.", "at this time") describes a limit on a service the institution
+ *   has, so the sentence is a mention.
+ * - mentioned: every other sentence (a scam or safety warning, a list of payment apps, a limit). A
+ *   mention alone is never read as offering Zelle.
  *
  * Per institution: any offers sentence and no does_not_offer sentence is "offers"; a
  * does_not_offer sentence and no offers sentence is "does_not_offer"; both, or mentions only, is
@@ -51,8 +56,41 @@ const NEGATIVE_RULES: Array<[string, RegExp]> = [
   ["not_participant", /\bnot\s+(?:a\s+)?(?:zelle\s*®?\s+)?(?:participant|participating\s+(?:bank|institution|financial\s+institution|credit\s+union))\b[^.;]{0,40}\bzelle\b|\bzelle\b[^.;]{0,40}\bnot\s+(?:a\s+)?participa/i],
 ];
 
-/** A narrower qualifier makes a "not available" sentence about one product, not the institution. */
-const NARROW_QUALIFIER = /\b(?:for|on|with|to)\s+(?:business|commercial|corporate|trust|estate|minor|youth|student|teen|joint|ira|health\s+savings)\b|\bbusiness\s+(?:accounts?|customers?|members?)\b/i;
+/**
+ * does_not_offer is strict: only a plain, unconditional "we do not offer Zelle". Any condition or
+ * scope (one account type, a waiting period, weekends, recipients abroad, an amount, "at this
+ * time") describes a limit on a service the institution has, so the sentence is only a mention.
+ */
+const NARROW_QUALIFIER = new RegExp(
+  [
+    String.raw`\b(?:for|on|with|to)\s+(?:business|commercial|corporate|trust|estate|minor|youth|student|teen|joint|ira|health\s+savings)\b`,
+    String.raw`\bbusiness\s+(?:accounts?|customers?|members?)\b`,
+    String.raw`\b(?:until|unless|after|before|during|while|if|when|once|within|except|outside|temporarily|weekends?|holidays?|international|abroad|exceed|exceeds|over|more\s+than|less\s+than)\b`,
+    String.raw`\bat\s+this\s+time\b`,
+    String.raw`\b(?:to|for)\s+(?:recipients?|amounts?|accounts?|transfers?|payments?|new)\b`,
+    String.raw`\brecipients?\b`,
+    String.raw`\$\s?\d`,
+    String.raw`\b\d+\s+(?:days?|hours?|business\s+days?)\b`,
+  ].join("|"),
+  "i",
+);
+
+/**
+ * A safety warning about Zelle ("never send money with Zelle to someone you don't know") is advice,
+ * not a statement that the institution offers it, so it never counts as offers.
+ */
+const WARNING_CONTEXT = new RegExp(
+  [
+    String.raw`\b(?:never|only|criminals?|pose\s+as|posing\s+as|impersonat\w*|trust|trusted|beware|warning|caution|careful)\b`,
+    String.raw`\b(?:cannot|can['’]?t|can\s+not)\s+(?:be\s+)?(?:cancel|cancell?ed|reverse|reversed|undo|recall)\w*`,
+    String.raw`\bpeople\s+you\s+know\b`,
+    String.raw`\bsomeone\s+you\s+(?:don['’]?t|do\s+not)\s+know\b`,
+  ].join("|"),
+  "i",
+);
+
+/** send_money_with counts only beside a cue that the service is the institution's own. */
+const OWN_SERVICE_CUE = /\b(?:our|your)\s+(?:\w+\s+){0,2}(?:app|application|account|accounts|online\s+banking|mobile\s+banking|digital\s+banking|internet\s+banking|banking)\b|\b(?:enroll|enrol|enrolled|enrolling)\b/i;
 
 /** Sentences that state Zelle as the institution's own service. */
 const POSITIVE_RULES: Array<[string, RegExp]> = [
@@ -106,12 +144,13 @@ export function classifyZelleSentence(sentence: string): ZelleSentence {
       return { kind: "does_not_offer", rule, snippet };
     }
   }
-  const otherContext = OTHER_CONTEXT.test(sentence);
+  const otherContext = OTHER_CONTEXT.test(sentence) || WARNING_CONTEXT.test(sentence);
   for (const [rule, pattern] of POSITIVE_RULES) {
     if (!pattern.test(sentence)) continue;
-    // The brand notice and enrolment hold in any company; the weaker rules do not survive a scam
+    // Only the brand notice holds in any company; every other rule fails in a scam or safety
     // warning or a list of other payment apps in the same sentence.
-    if (otherContext && rule !== "brand_notice" && rule !== "enroll") continue;
+    if (otherContext && rule !== "brand_notice") continue;
+    if (rule === "send_money_with" && !OWN_SERVICE_CUE.test(sentence)) continue;
     return { kind: "offers", rule, snippet };
   }
   return { kind: "mentioned", rule: "mention", snippet };

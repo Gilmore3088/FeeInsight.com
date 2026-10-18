@@ -85,8 +85,11 @@ Zelle's own sites (`ZELLE_LIST_HOSTS`, `struck-sources.ts`) is never read or cit
 
 - Rules (`bank-zelle-match.ts`, `BANK_ZELLE_MATCHER_VERSION`): deterministic text, no model call.
   Each sentence that names Zelle is read as offers (a fee or limit line, "send money with Zelle",
-  enrolling, Zelle in "our" app, the brand notice a participant prints), does not offer (a plain
-  "not offered" with no narrower qualifier) or a mention (scam warnings, app lists). Offers only
+  enrolling, Zelle in "our" app, the brand notice a participant prints), does not offer (only a
+  plain, unconditional "not offered": any condition or scope such as "until", "on weekends", "to
+  recipients outside the U.S." or "at this time" makes it a mention) or a mention (scam and safety
+  warnings such as "never send money with Zelle to someone you don't know", app lists). "Send
+  money with Zelle" counts as offers only beside "our app", "your account" or enrolling. Offers only
   is `offers`; does-not-offer only is `does_not_offer`; both, or mentions only, is `unclear`. No
   mention means no row: silence is never "does not offer".
 - Rows (`institution_payment_features`, feature `zelle`) carry the evidence sentence and the
