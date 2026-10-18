@@ -212,15 +212,40 @@ export function isParserStale(
 }
 
 /**
- * A Census vintage skipped because no CENSUS_API_KEY was set is due as soon as a key is set,
- * instead of waiting out its daily re-check. A vintage Census rejected with a key stays put.
+ * A partition skipped because its free API key was not set is due as soon as that key is set,
+ * instead of waiting out its normal re-check (a day for Census and BEA, a month for USDA farm
+ * data, whose ERS half loads without a key while the NASS cash-rent half is skipped). A partition
+ * the publisher rejected with a key stays put.
  */
 export function isKeylessSkipNowKeyed(keylessSkip: boolean, key: string | undefined = process.env.CENSUS_API_KEY): boolean {
   return keylessSkip && Boolean(key?.trim());
 }
 
-/** SQL test for a partition recorded as skipped because no Census key was set. */
-const KEYLESS_SKIP_REASON = "No CENSUS_API_KEY set%";
+/** The keyed sources whose keyless skips re-run once the key appears, and which key each waits for. */
+export const KEYLESS_SKIP_KEYS = ["CENSUS_API_KEY", "BEA_API_KEY", "NASS_API_KEY"] as const;
+export type KeylessSkipKey = (typeof KEYLESS_SKIP_KEYS)[number];
+
+/** The keys, among those a keyless skip waits for, that are set now. */
+export function keylessSkipKeysSet(env: Record<string, string | undefined> = process.env): Record<KeylessSkipKey, boolean> {
+  // Not via isKeylessSkipNowKeyed: its default would read an unset key as CENSUS_API_KEY.
+  const set = (key: KeylessSkipKey) => Boolean(env[key]?.trim());
+  return { CENSUS_API_KEY: set("CENSUS_API_KEY"), BEA_API_KEY: set("BEA_API_KEY"), NASS_API_KEY: set("NASS_API_KEY") };
+}
+
+/**
+ * SQL test, per key, for a partition recorded as skipped because that key was not set. Census and
+ * BEA record the year as empty with a "No <KEY> set" reason; USDA farm records its ERS rows as a
+ * success (or empty) with detail.nass.skipped_no_key.
+ */
+function keylessSkipSql(alias: "p" | "registry_ingest_partitions", keys: Record<KeylessSkipKey, boolean>) {
+  const t = sql(alias);
+  return sql`(
+       (${keys.CENSUS_API_KEY}::boolean AND ${t}.status = 'empty' AND COALESCE(${t}.detail->>'reason', '') LIKE 'No CENSUS_API_KEY set%')
+    OR (${keys.BEA_API_KEY}::boolean AND ${t}.status = 'empty' AND COALESCE(${t}.detail->>'reason', '') LIKE 'No BEA_API_KEY set%')
+    OR (${keys.NASS_API_KEY}::boolean AND ${t}.source = 'usda-farm' AND ${t}.status IN ('succeeded', 'empty')
+        AND COALESCE(${t}.detail->'nass'->>'skipped_no_key', 'false') = 'true')
+  )`;
+}
 
 export interface RegistryPartitionCandidate {
   source: string;
@@ -406,7 +431,7 @@ async function hasActiveRegistryRun(): Promise<boolean> {
 /** Atomically claim a partition so two ticks never schedule the same one. */
 async function claimPartition(candidate: RegistryPartitionCandidate): Promise<boolean> {
   const parserVersion = REGISTRY_PARSER_VERSIONS[candidate.source] ?? 0;
-  const censusKeySet = isKeylessSkipNowKeyed(true);
+  const keysSet = keylessSkipKeysSet();
   const rows = await sql`
     INSERT INTO registry_ingest_partitions (source, partition_key, status, attempts, next_attempt_after, detail)
     VALUES (${candidate.source}, ${candidate.partitionKey}, 'scheduled', 1,
@@ -424,9 +449,7 @@ async function claimPartition(candidate: RegistryPartitionCandidate): Promise<bo
            AND COALESCE((registry_ingest_partitions.detail->>'parser_version')::int, 1) < ${parserVersion})
        OR (registry_ingest_partitions.status = 'scheduled'
            AND COALESCE((registry_ingest_partitions.detail->>'claimed_parser_version')::int, 1) < ${parserVersion})
-       OR (${censusKeySet}::boolean
-           AND registry_ingest_partitions.status = 'empty'
-           AND registry_ingest_partitions.detail->>'reason' LIKE ${KEYLESS_SKIP_REASON})
+       OR ${keylessSkipSql("registry_ingest_partitions", keysSet)}
     RETURNING id
   `;
   return [...rows].length > 0;
@@ -519,17 +542,17 @@ export async function scheduleDueRegistryRuns({
     const heldForSize = held.size > 0 ? { heldForSize: [...held].map(([source, tables]) => ({ source, tables })) } : {};
     const candidates = registryCandidates(now, backfillStart(), new Set(held.keys()));
     const rows = await sql<(PartitionStateRow & { status: string | null; parser_version: string | null; claimed_parser_version: string | null; keyless_skip: boolean })[]>`
-      SELECT source, partition_key, (next_attempt_after <= NOW()) AS due, status,
-             detail->>'parser_version' AS parser_version,
-             detail->>'claimed_parser_version' AS claimed_parser_version,
-             (status = 'empty' AND COALESCE(detail->>'reason', '') LIKE ${KEYLESS_SKIP_REASON}) AS keyless_skip
-        FROM registry_ingest_partitions
-       WHERE source IN ${sql([...new Set(candidates.map((c) => c.source))])}
+      SELECT p.source, p.partition_key, (p.next_attempt_after <= NOW()) AS due, p.status,
+             p.detail->>'parser_version' AS parser_version,
+             p.detail->>'claimed_parser_version' AS claimed_parser_version,
+             ${keylessSkipSql("p", keylessSkipKeysSet())} AS keyless_skip
+        FROM registry_ingest_partitions p
+       WHERE p.source IN ${sql([...new Set(candidates.map((c) => c.source))])}
     `;
     const states = [...rows].map((row) => ({
       source: row.source,
       partition_key: row.partition_key,
-      due: row.due || isKeylessSkipNowKeyed(Boolean(row.keyless_skip)) || isParserStale(
+      due: row.due || Boolean(row.keyless_skip) || isParserStale(
         row.source,
         row.status,
         row.parser_version === null ? null : Number(row.parser_version),

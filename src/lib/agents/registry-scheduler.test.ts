@@ -11,6 +11,7 @@ vi.mock("@/lib/agents/run-store", () => ({ startAgentRun: startAgentRunMock }));
 import {
   backfillStart,
   isKeylessSkipNowKeyed,
+  keylessSkipKeysSet,
   isParserStale,
   pickDueCandidate,
   PRIORITY_REGISTRY_SOURCES,
@@ -93,6 +94,24 @@ describe("registry scheduler", () => {
     expect(isKeylessSkipNowKeyed(true, undefined)).toBe(false);
     expect(isKeylessSkipNowKeyed(true, "  ")).toBe(false);
     expect(isKeylessSkipNowKeyed(false, "abc123")).toBe(false);
+  });
+
+  it("re-pulls BEA years and USDA cash rents skipped without a key once that key is set", () => {
+    expect(keylessSkipKeysSet({})).toEqual({ CENSUS_API_KEY: false, BEA_API_KEY: false, NASS_API_KEY: false });
+    expect(keylessSkipKeysSet({ BEA_API_KEY: "k", NASS_API_KEY: " n ", CENSUS_API_KEY: "  " })).toEqual({
+      CENSUS_API_KEY: false,
+      BEA_API_KEY: true,
+      NASS_API_KEY: true,
+    });
+    // A Census key in the process env must not make an unset BEA or NASS key count as set.
+    const saved = process.env.CENSUS_API_KEY;
+    process.env.CENSUS_API_KEY = "census";
+    try {
+      expect(keylessSkipKeysSet({ CENSUS_API_KEY: "census" })).toEqual({ CENSUS_API_KEY: true, BEA_API_KEY: false, NASS_API_KEY: false });
+    } finally {
+      if (saved === undefined) delete process.env.CENSUS_API_KEY;
+      else process.env.CENSUS_API_KEY = saved;
+    }
   });
 
   it("re-pulls succeeded NCUA quarters recorded under an older parser", () => {
