@@ -61,7 +61,7 @@ export const RESEARCH_EXAMPLES: { question: string; sources: SourceKey[]; title:
   },
   {
     question: "What’s happening across our region?",
-    sources: ["fees", "financials", "income", "rates", "fed"],
+    sources: ["fees", "rates", "fed"],
     title: "Regional outlook",
     excerpt: "Fee levels across your Fed district, read against the latest Beige Book and national rates.",
     cites: "Fee schedules · Beige Book · FDIC national rates",
