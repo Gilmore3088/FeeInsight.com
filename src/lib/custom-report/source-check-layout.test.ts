@@ -26,6 +26,7 @@ describe("checkFeeAgainstSource layouts", () => {
       ["Account Opening Fee", "$25 opening service charge", 25],
       ["Vault Access", "$10 per opening", 10],
       ["Box Drilling", "$125 plus cost to open", 125],
+      ["Night Depository Bag", "$25 deposit", 25],
     ] as const) {
       expect(checkFeeAgainstSource(`${name}\n${price}`, name, amount, ".").ok, price).toBe(true);
     }

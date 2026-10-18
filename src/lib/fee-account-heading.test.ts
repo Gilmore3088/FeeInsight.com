@@ -43,6 +43,8 @@ describe("account headings for generic fee names (Chase, Oct 8)", () => {
     expect(accountHeading("Interest Bearing Account")).toBe("Interest Bearing Account");
     expect(accountHeading("Club 2 Checking")).toBe("Club 2 Checking");
     expect(accountHeading("Money Market Checking")).toBe("Money Market Checking");
+    expect(accountHeading("Get Paid Checking")).toBe("Get Paid Checking");
+    expect(accountHeading("Simply Pay Checking")).toBe("Simply Pay Checking");
     for (const line of ["Earn interest on Checking", "Interest rates on checking", "Checking Account", "Money Market", "Checking Savings", "Checking 1%", "Checking 0.5%", "Money Market Savings", "Earns Interest Checking", "Get Interest Checking"]) {
       expect(accountHeading(line), line).toBeNull();
     }

@@ -14,7 +14,7 @@ const ACCOUNT_WORDS = /\b(checking|savings|money market|share draft|share accoun
 const MONTHLY_FEE_LINE = /\b(monthly|maintenance|service)\s+(fee|charge)/i;
 const PRICE = /\$\s?\.?\d/;
 /** "Interest" naming the account itself: "Interest Checking", "Super NOW Interest Checking", "Interest Bearing Account". */
-const INTEREST_ACCOUNT = /\binterest(?=\s+(?:bearing\s+)?(?:checking|savings|money market|share draft|account)\b)/gi;
+const INTEREST_ACCOUNT = /(?<!\b(?:earns?|get|pay)\s+)\binterest(?=\s+(?:bearing\s+)?(?:checking|savings|money market|share draft|account)\b)/gi;
 /** Lines a heading search looks up before giving up. */
 const HEADING_LOOKBACK = 8;
 const HEADING_MAX_CHARS = 60;
@@ -40,7 +40,7 @@ export function accountHeading(line: string): string | null {
   if (/\b(fee|charge|minimum|balance|deposit|interest|open|opening|require|waive|statement)\b/i.test(text.replace(INTEREST_ACCOUNT, ""))) return null;
   // Page furniture and group headings name no one account: "Compare Personal Checking", "Learn
   // more about Advantage Checking", "Account Details", "Money Market Accounts".
-  if (/\b(compare|comparison|learn|more|overview|details?|info|explore|gift|access|banking|app|mobile|see|section|qualification|benefits?|features?|requirements?|accounts|options|types|our|your|you|find|right|why|how|what|disclosures?|information|rates?|truth|greater|less|than|over|under|is|are|available|from|and|choose|type|services?|charges?|kit|switch|qualified|holders?|with|essentials|for|the|all|higher|earns?|earnings|get|pay|security|solution|makes|life|simple|that)\b|[&:/,]/i.test(text)) return null;
+  if (/\b(compare|comparison|learn|more|overview|details?|info|explore|gift|access|banking|app|mobile|see|section|qualification|benefits?|features?|requirements?|accounts|options|types|our|your|you|find|right|why|how|what|disclosures?|information|rates?|truth|greater|less|than|over|under|is|are|available|from|and|choose|type|services?|charges?|kit|switch|qualified|holders?|with|essentials|for|the|all|higher|earn(ings)?|security|solution|makes|life|simple|that)\b|[&:/,]/i.test(text)) return null;
   // A heading starts with a capital or a digit-free brand ("legacy Checking" is a sentence's tail).
   if (/^[a-z]/.test(text)) return null;
   // The heading must name more than the kind of account ("Account" alone says nothing new).
