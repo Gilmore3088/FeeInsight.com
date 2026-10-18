@@ -1,5 +1,5 @@
 import { CohortStrip } from "./cohort-strip";
-import { listablePeers, MIN_COHORT_PEERS, ordinal, type CohortDistribution } from "./fee-share-cohort";
+import { cohortStripData, MIN_COHORT_PEERS, ordinal, type CohortDistribution } from "./fee-share-cohort";
 import { FinancialPerformanceChart } from "./financial-performance";
 import type { FeeIncomeTerms } from "./financial-units";
 import { formatReportQuarter } from "./financial-units";
@@ -16,6 +16,7 @@ const H2 = "text-[36px] font-medium leading-[1.04] tracking-[-0.02em] text-ink s
 const SELECTOR: LedgerMetric[] = ["assets", "deposits", "revenue", "serviceCharges", "netIncome", "roaPct", "sharePct"];
 
 export function FinancialPerformanceSection({
+  institutionId,
   institutionName,
   ledger,
   terms,
@@ -23,6 +24,7 @@ export function FinancialPerformanceSection({
   cohortName,
   children,
 }: {
+  institutionId: number;
   institutionName: string;
   ledger: Ledger;
   terms: FeeIncomeTerms;
@@ -41,9 +43,9 @@ export function FinancialPerformanceSection({
   }
 
   const quarter = cohort ? (formatReportQuarter(cohort.reportDate) ?? cohort.reportDate) : null;
-  // A peer the site never names (listablePeers) keeps its dot but travels without its name.
-  const listedIds = new Set((cohort ? listablePeers(cohort.peers) : []).map((p) => p.id));
-  const stripPeers = (cohort?.peers ?? []).map((p) => (listedIds.has(p.id) ? p : { ...p, name: "", city: null, state: null }));
+  // The strip gets bins and the nearest few peers, never the cohort itself; a peer the site never
+  // names is in neither (its share still counts in the quartiles computed above).
+  const strip = cohort ? cohortStripData(cohort) : null;
   const yearToDate = cohort?.source === "ncua";
   const cohortRows: ProvenanceRow[] = cohort
     ? [
@@ -101,12 +103,9 @@ export function FinancialPerformanceSection({
             </dl>
             <div className="mt-4">
               <CohortStrip
+                institutionId={institutionId}
                 subjectName={institutionName}
-                subject={cohort.subject}
-                peers={stripPeers}
-                p25={cohort.p25}
-                median={cohort.median}
-                p75={cohort.p75}
+                data={strip!}
                 quarter={quarter}
                 sourceName={SOURCE_NAMES[cohort.source]}
                 measureName={terms.amount}

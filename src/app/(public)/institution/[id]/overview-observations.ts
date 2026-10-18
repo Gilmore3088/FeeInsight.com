@@ -42,10 +42,10 @@ export function buildObservations(input: {
 
   if (cohort?.subject && cohort.percentileRank !== null && cohortName) {
     const own = cohort.subject.sharePct;
-    const relation = Math.abs(own - cohort.median) <= cohort.median * 0.01 ? "in line with" : own > cohort.median ? "above" : "below";
+    const relation = Math.abs(own - cohort.median) <= cohort.median * 0.01 ? "about the same as" : own > cohort.median ? "above" : "below";
     out.push({
       key: "share",
-      fact: `${terms.subject} ${terms.was} ${pct(own)} of revenue, ${relation} the ${pct(cohort.median)} median of ${cohort.peers.length.toLocaleString("en-US")} ${cohortName} (${ordinal(cohort.percentileRank)} percentile).`,
+      fact: `${terms.subject} ${terms.was} ${pct(own)} of revenue, ${relation} the ${pct(cohort.median)} median of ${cohort.peers.length.toLocaleString("en-US")} ${cohortName} (${ordinal(cohort.percentileRank)} percentile).${relation === "about the same as" ? " About the same: within 1% of the median." : ""}`,
       notEstablished: "The share alone does not show whether prices, account volumes or the size of the revenue base set it.",
     });
   }

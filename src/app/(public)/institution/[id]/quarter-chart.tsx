@@ -2,6 +2,9 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { formatCompactDollars } from "@/lib/format";
+import { niceTicks } from "./chart-ticks";
+
+export { niceTicks };
 
 /**
  * One measure by quarter, as SVG: columns for income over a quarter, a line for balances and
@@ -15,22 +18,6 @@ export interface ChartPoint {
   value: number | null;
 }
 
-export function niceTicks(min: number, max: number, count = 4): number[] {
-  if (!Number.isFinite(min) || !Number.isFinite(max)) return [0];
-  if (min === max) {
-    const pad = Math.abs(min) * 0.1 || 1;
-    min -= pad;
-    max += pad;
-  }
-  const raw = (max - min) / count;
-  const mag = 10 ** Math.floor(Math.log10(raw));
-  const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) ?? 10 * mag;
-  const start = Math.floor(min / step) * step;
-  const ticks: number[] = [];
-  for (let v = start; v <= max + step * 0.5; v += step) ticks.push(Number(v.toFixed(10)));
-  if (ticks[ticks.length - 1] < max) ticks.push(ticks[ticks.length - 1] + step);
-  return ticks;
-}
 
 function axisLabel(unit: "dollars" | "percent", v: number): string {
   if (unit === "percent") return `${Number(v.toFixed(2))}%`;

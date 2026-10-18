@@ -133,7 +133,7 @@ export function ExecutiveOverview({
     label: `Fees above the ${place} median`,
     value: counts ? { n: counts.above, unit: "count" } : null,
     empty: "Insufficient sample",
-    context: counts ? `of ${counts.compared} comparable published fees; ${counts.below} below, ${counts.same} about the same` : null,
+    context: counts ? `of ${counts.compared} comparable published fees; ${counts.below} below, ${counts.same} about the same (within 1% of the median)` : null,
     asOf: feesReadOn ? `Schedule read ${feesReadOn}` : null,
     entity: "Published fee schedule",
     details: counts

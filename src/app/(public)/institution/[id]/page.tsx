@@ -449,6 +449,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
           {/* 3. Financial performance: any measure by quarter, the size cohort, income beside prices. */}
           {ledger.quarters.length > 0 && (
             <FinancialPerformanceSection
+              institutionId={instId}
               institutionName={inst.institution_name}
               ledger={ledger}
               terms={terms}

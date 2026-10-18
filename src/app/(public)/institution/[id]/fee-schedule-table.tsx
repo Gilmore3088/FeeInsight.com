@@ -225,18 +225,18 @@ export function groupFeesByFamily(fees: DisplayFee[]): FeeGroup[] {
   });
 }
 
+/**
+ * A group's state. A live catalog fee carries no chip: the catalog marks every published row
+ * "approved" (published_fee_catalog sets review_status to the constant 'approved'), so a
+ * "Verified" chip told the reader nothing specific (James's viz brief, section 7). Rows still under
+ * review say so.
+ */
 function GroupBadge({ group }: { group: FeeGroup }) {
-  const verified = group.verifiedCount > 0;
-  const className = verified ? "border-border bg-surface-0 text-ink-soft" : "border-brick/30 bg-brick-tint text-ink";
+  if (group.verifiedCount > 0) {
+    return group.provisionalCount > 0 ? <span className="text-[11px] text-ink-muted">{group.provisionalCount} under review</span> : null;
+  }
   return (
-    <span className="inline-flex items-center gap-2">
-      <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-semibold ${className}`}>
-        {verified ? "Verified" : "Under review"}
-      </span>
-      {verified && group.provisionalCount > 0 && (
-        <span className="text-[11px] text-ink-muted">{group.provisionalCount} under review</span>
-      )}
-    </span>
+    <span className="inline-flex items-center rounded-md border border-brick/30 bg-brick-tint px-1.5 py-0.5 text-[11px] font-semibold text-ink">Under review</span>
   );
 }
 

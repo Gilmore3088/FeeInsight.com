@@ -127,6 +127,7 @@ export function ProfileHero({
               <span className="sr-only">, </span>
               {counts.same} about the same.
             </p>
+            <p className="mt-1 text-[13px] text-[#d9e2e9]">About the same: within 1% of the median.</p>
           </div>
         )}
       </div>

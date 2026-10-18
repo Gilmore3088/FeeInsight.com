@@ -73,6 +73,7 @@ describe("overview and financial performance", () => {
   it("names the cohort with its size and lists its members", () => {
     render(
       <FinancialPerformanceSection
+        institutionId={1}
         institutionName="Subject Bank"
         ledger={ledger}
         terms={feeIncomeTerms("fdic")}

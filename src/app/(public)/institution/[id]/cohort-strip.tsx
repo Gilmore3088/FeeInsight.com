@@ -1,26 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { formatCompactDollars } from "@/lib/format";
-import type { CohortPoint } from "./fee-share-cohort";
-import { niceTicks } from "./quarter-chart";
+import type { CohortPoint, CohortStripData } from "./fee-share-cohort";
 
 /**
  * Financial performance B: where the institution's service-charge share of revenue sits in its
- * asset-size cohort. A box (quartiles, from the real cohort) over a strip of every peer, the
- * subject in the one accent, peers in neutral slate. Hover or tap a dot, or pick a name in the
- * searchable list, to read that peer's quarter, amounts and calculation. Peers past the axis are
- * counted at its edge, never dropped silently.
+ * asset-size cohort. A box (quartiles, from the real cohort) over a histogram of the cohort's
+ * shares, the subject in the one accent. The page ships bins and the nearest few peers, never
+ * the whole cohort; a search or "Show all" reads members from /api/institutions/[id]/cohort.
+ * Peers past the axis are counted at its edge, never dropped silently.
  */
 export interface CohortStripProps {
+  institutionId: number;
   subjectName: string;
-  subject: CohortPoint | null;
-  /** Every peer in the distribution, sorted by share; one the site never names comes without a name. */
-  peers: CohortPoint[];
-  p25: number;
-  median: number;
-  p75: number;
+  data: CohortStripData;
   quarter: string;
   /** "FDIC BankFind Suite (call report data)". */
   sourceName: string;
@@ -29,8 +24,6 @@ export interface CohortStripProps {
   yearToDate: boolean;
 }
 
-/** Rows the member list shows before "Show all"; a search always lists every match. */
-const LIST_PREVIEW = 15;
 const H = 132;
 const PAD = { left: 12, right: 12 };
 const BOX_Y = 18;
@@ -38,11 +31,6 @@ const BOX_H = 22;
 const STRIP_Y = 56;
 const STRIP_H = 52;
 
-function hash(id: number): number {
-  let h = id * 2654435761;
-  h ^= h >>> 16;
-  return ((h >>> 0) % 1000) / 1000;
-}
 
 const pct = (n: number) => `${n.toFixed(1)}%`;
 
@@ -97,8 +85,8 @@ function Detail({ point, quarter, sourceName, measureName, yearToDate, onClear, 
 }
 
 export function CohortStrip(props: CohortStripProps) {
-  const { subject, peers, p25, median, p75, quarter, sourceName, measureName, yearToDate, subjectName } = props;
-  const svgRef = useRef<SVGSVGElement>(null);
+  const { institutionId, data, quarter, sourceName, measureName, yearToDate, subjectName } = props;
+  const { subject, p25, median, p75, ticks, axisMax, counts, beyond } = data;
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(640);
   useEffect(() => {
@@ -111,66 +99,62 @@ export function CohortStrip(props: CohortStripProps) {
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
-  const [hover, setHover] = useState<CohortPoint | null>(null);
+  const [hoverBin, setHoverBin] = useState<number | null>(null);
   const [picked, setPicked] = useState<CohortPoint | null>(null);
   const [query, setQuery] = useState("");
-  const [showAll, setShowAll] = useState(false);
+  const [remote, setRemote] = useState<{ key: string; total: number; members: CohortPoint[] } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
 
-  const sorted = peers.map((p) => p.sharePct);
-  const p98 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.98))] ?? 0;
-  const ticks = niceTicks(0, Math.max(p98, subject?.sharePct ?? 0, p75) * 1.05, 4);
-  const axisMax = ticks[ticks.length - 1];
-  const beyond = peers.filter((p) => p.sharePct > axisMax).length;
   const plotW = width - PAD.left - PAD.right;
   const x = (v: number) => PAD.left + (Math.min(v, axisMax) / axisMax) * plotW;
-  const listed = useMemo(() => peers.filter((p) => p.name), [peers]);
-  const listedIds = useMemo(() => new Set(listed.map((p) => p.id)), [listed]);
+  const binW = plotW / counts.length;
+  const tallest = Math.max(1, ...counts);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const rows = q ? listed.filter((p) => `${p.name} ${p.city ?? ""} ${p.state ?? ""}`.toLowerCase().includes(q)) : listed;
-    return [...rows].sort((a, b) => b.sharePct - a.sharePct);
-  }, [listed, query]);
-
-  const nearest = (clientX: number, clientY: number) => {
-    const svg = svgRef.current;
-    if (!svg) return null;
-    const rect = svg.getBoundingClientRect();
-    const sx = ((clientX - rect.left) / rect.width) * width;
-    const sy = ((clientY - rect.top) / rect.height) * H;
-    let best: CohortPoint | null = null;
-    let bestD = Infinity;
-    for (const p of peers) {
-      if (!listedIds.has(p.id)) continue;
-      const dx = x(p.sharePct) - sx;
-      const dy = STRIP_Y + hash(p.id) * STRIP_H - sy;
-      const d = dx * dx + dy * dy;
-      if (d < bestD) {
-        bestD = d;
-        best = p;
+  // Search and "Show all" read the members from the route; the page itself ships only the nearest.
+  const load = useCallback(
+    async (key: string, params: string) => {
+      setLoading(true);
+      setFailed(false);
+      try {
+        const res = await fetch(`/api/institutions/${institutionId}/cohort?${params}`);
+        if (!res.ok) throw new Error(String(res.status));
+        const body = (await res.json()) as { total: number; members: CohortPoint[] };
+        setRemote({ key, total: body.total, members: body.members });
+      } catch {
+        setFailed(true);
+      } finally {
+        setLoading(false);
       }
-    }
-    return bestD <= 24 * 24 ? best : null;
-  };
+    },
+    [institutionId],
+  );
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) return;
+    const timer = setTimeout(() => void load(`q:${q}`, `q=${encodeURIComponent(q)}`), 250);
+    return () => clearTimeout(timer);
+  }, [query, load]);
 
-  const focus = picked ?? hover;
+  const q = query.trim();
+  const showingAll = remote?.key === "all" && !q;
+  const rows = q ? (remote?.key === `q:${q}` ? remote.members : []) : showingAll ? remote!.members : data.nearest;
+  const binLabel = (i: number) => {
+    const lo = (i / counts.length) * axisMax;
+    const hi = ((i + 1) / counts.length) * axisMax;
+    return `${counts[i].toLocaleString("en-US")} ${counts[i] === 1 ? "peer" : "peers"} from ${pct(lo)} to ${i === counts.length - 1 && beyond > 0 ? `${pct(hi)} and above` : pct(hi)}`;
+  };
 
   return (
     <div className="min-w-0" ref={wrapRef}>
       <svg
-        ref={svgRef}
         viewBox={`0 0 ${width} ${H}`}
         width={width}
         height={H}
         className="block h-auto max-w-full touch-pan-y"
         role="img"
         aria-label={`${subjectName} ${subject ? pct(subject.sharePct) : "not reported"}; cohort quartiles ${pct(p25)}, ${pct(median)}, ${pct(p75)}.`}
-        onPointerMove={(e) => setHover(nearest(e.clientX, e.clientY))}
-        onPointerLeave={() => setHover(null)}
-        onClick={(e) => {
-          const p = nearest(e.clientX, e.clientY);
-          if (p) setPicked(p);
-        }}
+        onPointerLeave={() => setHoverBin(null)}
       >
         {ticks.map((t) => (
           <g key={t}>
@@ -182,16 +166,24 @@ export function CohortStrip(props: CohortStripProps) {
         ))}
         <rect x={x(p25)} y={BOX_Y} width={Math.max(1, x(p75) - x(p25))} height={BOX_H} rx={4} fill="var(--fi-peer)" opacity={0.35} />
         <line x1={x(median)} x2={x(median)} y1={BOX_Y - 4} y2={BOX_Y + BOX_H + 4} stroke="var(--color-ink)" strokeWidth={2} />
-        {peers.map((p) => (
-          <circle
-            key={p.id}
-            cx={x(p.sharePct)}
-            cy={STRIP_Y + hash(p.id) * STRIP_H}
-            r={focus?.id === p.id ? 5 : 2.6}
-            fill={focus?.id === p.id ? "var(--color-ink)" : "var(--fi-peer)"}
-            opacity={focus && focus.id !== p.id ? 0.55 : 0.85}
-          />
-        ))}
+        {counts.map((n, i) => {
+          const h = n === 0 ? 0 : Math.max(2, (n / tallest) * STRIP_H);
+          return (
+            <g key={i} onPointerEnter={() => setHoverBin(i)}>
+              <rect x={PAD.left + i * binW} y={STRIP_Y} width={binW} height={STRIP_H} fill="transparent" />
+              {n > 0 && (
+                <rect
+                  x={PAD.left + i * binW + 0.5}
+                  y={STRIP_Y + STRIP_H - h}
+                  width={Math.max(1, binW - 1)}
+                  height={h}
+                  fill={hoverBin === i ? "var(--color-ink)" : "var(--fi-peer)"}
+                  opacity={0.85}
+                />
+              )}
+            </g>
+          );
+        })}
         {subject && (
           <g>
             <line x1={x(subject.sharePct)} x2={x(subject.sharePct)} y1={BOX_Y - 8} y2={STRIP_Y + STRIP_H + 4} stroke="var(--fi-subject)" strokeWidth={2} />
@@ -199,6 +191,9 @@ export function CohortStrip(props: CohortStripProps) {
           </g>
         )}
       </svg>
+      <p className="min-h-[1.25rem] text-[12px] text-ink-muted" aria-live="polite">
+        {hoverBin !== null ? binLabel(hoverBin) : ""}
+      </p>
       <div className="mt-1 flex flex-wrap items-center gap-x-5 gap-y-1 text-[12px] text-ink-muted">
         {subject && (
           <span className="inline-flex items-center gap-1.5">
@@ -215,29 +210,29 @@ export function CohortStrip(props: CohortStripProps) {
           Middle half {pct(p25)} to {pct(p75)}
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span aria-hidden="true" className="inline-block size-2 rounded-full bg-[var(--fi-peer)]" />
-          Each peer
+          <span aria-hidden="true" className="inline-block h-2.5 w-1.5 bg-[var(--fi-peer)]" />
+          Peers at each share
         </span>
-        {beyond > 0 && <span>{beyond} above {`${Number(axisMax.toFixed(1))}%`}, drawn at the right edge</span>}
+        {beyond > 0 && <span>{beyond} above {`${Number(axisMax.toFixed(1))}%`}, counted in the last bar</span>}
       </div>
 
       <div className="mt-3 min-h-[1px]" aria-live="polite">
-        {focus && (
+        {picked && (
           <Detail
-            point={focus}
+            point={picked}
             quarter={quarter}
             sourceName={sourceName}
             measureName={measureName}
             yearToDate={yearToDate}
             isSubject={false}
-            onClear={picked ? () => setPicked(null) : undefined}
+            onClear={() => setPicked(null)}
           />
         )}
       </div>
 
       <div className="mt-4">
         <label className="block text-[12px] font-medium text-ink-muted" htmlFor="cohort-search">
-          Find a peer ({listed.length.toLocaleString("en-US")})
+          Find a peer ({data.listed.toLocaleString("en-US")})
         </label>
         <input
           id="cohort-search"
@@ -247,9 +242,10 @@ export function CohortStrip(props: CohortStripProps) {
           placeholder="Name, city or state"
           className="mt-1 min-h-11 w-full rounded-lg border border-control-border bg-surface-0 px-3 text-[15px] text-ink placeholder:text-ink-muted"
         />
-        <ul className="mt-2 max-h-72 overflow-y-auto rounded-lg border border-border bg-surface-0" aria-label="Cohort members">
-          {filtered.length === 0 && <li className="px-3 py-3 text-[13px] text-ink-muted">No match.</li>}
-          {(query.trim() || showAll ? filtered : filtered.slice(0, LIST_PREVIEW)).map((p) => (
+        {!q && !showingAll && <p className="mt-2 text-[12px] text-ink-muted">The {data.nearest.length} closest to {subjectName} by share.</p>}
+        <ul className="mt-2 max-h-72 overflow-y-auto rounded-lg border border-border bg-surface-0" aria-label="Cohort members" aria-busy={loading}>
+          {rows.length === 0 && <li className="px-3 py-3 text-[13px] text-ink-muted">{loading ? "Searching." : failed ? "The list could not load. Try again." : "No match."}</li>}
+          {rows.map((p) => (
             <li key={p.id} className="border-t border-border first:border-t-0">
               <button
                 type="button"
@@ -267,13 +263,14 @@ export function CohortStrip(props: CohortStripProps) {
             </li>
           ))}
         </ul>
-        {!query.trim() && !showAll && filtered.length > LIST_PREVIEW && (
+        {!q && !showingAll && data.listed > data.nearest.length && (
           <button
             type="button"
-            onClick={() => setShowAll(true)}
+            disabled={loading}
+            onClick={() => void load("all", "all=1")}
             className="mt-1 inline-flex min-h-11 items-center text-[13px] font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
           >
-            Show all {filtered.length.toLocaleString("en-US")}
+            {loading ? "Loading." : `Show all ${data.listed.toLocaleString("en-US")}`}
           </button>
         )}
       </div>

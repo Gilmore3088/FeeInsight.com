@@ -1,4 +1,5 @@
 import type { FeeShareCohort } from "@/lib/data-store/institution-quarterly";
+import { niceTicks } from "./chart-ticks";
 
 /**
  * The service-charge share distribution of an institution's asset-size cohort, computed from
@@ -120,4 +121,66 @@ export function ordinal(n: number): string {
   const mod100 = r % 100;
   const suffix = mod100 >= 11 && mod100 <= 13 ? "th" : r % 10 === 1 ? "st" : r % 10 === 2 ? "nd" : r % 10 === 3 ? "rd" : "th";
   return `${r}${suffix}`;
+}
+
+/** Bins the strip draws across its axis. */
+export const COHORT_BINS = 50;
+/** Members the list ships with the page: the closest by share to the subject. */
+export const COHORT_NEAREST = 15;
+
+/**
+ * What the cohort strip receives: the distribution as bin counts (never the members), the
+ * quartiles, the subject and its few nearest peers by share. Percentiles and rank stay on the
+ * server; a search or "Show all" reads the members from /api/institutions/[id]/cohort.
+ */
+export interface CohortStripData {
+  /** The axis from 0 to here, in percent; peers above it are counted at its right edge. */
+  axisMax: number;
+  ticks: number[];
+  /** Peers per bin, COHORT_BINS bins of equal width from 0 to axisMax; the last bin also holds those beyond. */
+  counts: number[];
+  beyond: number;
+  subject: CohortPoint | null;
+  /** The listable peers closest to the subject by share (or the middle of the cohort without one). */
+  nearest: CohortPoint[];
+  /** Listable peers in all, for "Find a peer (N)" and "Show all N". */
+  listed: number;
+  p25: number;
+  median: number;
+  p75: number;
+}
+
+/** The cohort as the strip draws it. A peer the site never names is left out of the bins and the list alike. */
+export function cohortStripData(cohort: CohortDistribution, bins = COHORT_BINS, nearestCount = COHORT_NEAREST): CohortStripData {
+  const listable = listablePeers(cohort.peers);
+  const shares = listable.map((p) => p.sharePct);
+  const p98 = shares[Math.min(shares.length - 1, Math.floor(shares.length * 0.98))] ?? 0;
+  const ticks = niceTicks(0, Math.max(p98, cohort.subject?.sharePct ?? 0, cohort.p75) * 1.05, 4);
+  const axisMax = ticks[ticks.length - 1];
+  const counts = new Array<number>(bins).fill(0);
+  for (const v of shares) counts[Math.min(bins - 1, Math.max(0, Math.floor((v / axisMax) * bins)))] += 1;
+  const anchor = cohort.subject?.sharePct ?? cohort.median;
+  const nearest = [...listable]
+    .sort((a, b) => Math.abs(a.sharePct - anchor) - Math.abs(b.sharePct - anchor) || a.id - b.id)
+    .slice(0, nearestCount)
+    .sort((a, b) => b.sharePct - a.sharePct);
+  return {
+    axisMax,
+    ticks,
+    counts,
+    beyond: shares.filter((v) => v > axisMax).length,
+    subject: cohort.subject,
+    nearest,
+    listed: listable.length,
+    p25: cohort.p25,
+    median: cohort.median,
+    p75: cohort.p75,
+  };
+}
+
+/** The route's answer: listable members matching a name, city or state, highest share first. */
+export function searchCohort(cohort: CohortDistribution, query: string, limit: number): { total: number; members: CohortPoint[] } {
+  const q = query.trim().toLowerCase();
+  const rows = listablePeers(cohort.peers).filter((p) => !q || `${p.name} ${p.city ?? ""} ${p.state ?? ""}`.toLowerCase().includes(q));
+  return { total: rows.length, members: [...rows].sort((a, b) => b.sharePct - a.sharePct).slice(0, limit) };
 }
