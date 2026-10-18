@@ -123,8 +123,8 @@ export default async function SettingsPage({
     String(user.id),
     peerSetWorkspace?.institutionId ?? null,
   ).catch(() => []);
-  // Creator-owned shared groups from another institution remain available in the
-  // store, but they cannot become the displayed baseline for this research subject.
+  // Team groups from another institution the user belongs to stay in the store, but
+  // they cannot become the displayed baseline for this research subject.
   const peerSets: SavedPeerSet[] = loadedPeerSets.filter((set) =>
     set.institution_id === null || set.institution_id === peerSetWorkspace?.institutionId,
   );
