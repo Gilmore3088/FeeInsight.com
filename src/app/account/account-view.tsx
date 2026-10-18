@@ -14,6 +14,7 @@ import { ManageBillingButton } from "./manage-billing-button";
 import { ProfileForm } from "./profile-form";
 import { ApiAccessCard, type ApiAccess } from "./api-access-card";
 import { SubscriptionStatusNotice } from "./subscription-status-notice";
+import { UTILITY_H1, utilityButton, utilityNotice } from "@/components/utility/form-style";
 
 export type AccountPlan =
   | {
@@ -102,7 +103,7 @@ function PlanCard({ plan, ended }: { plan: AccountPlan; ended: boolean }) {
         </p>
         <Link
           href="/subscribe?from=%2Faccount"
-          className="mt-4 inline-flex min-h-11 items-center rounded-md border border-border bg-surface-0 px-4 text-[14px] font-semibold text-ink no-underline hover:border-ink"
+          className={`mt-4 ${utilityButton("secondary")}`}
         >
           {ended ? "Restart Hamilton" : "See Hamilton plans"}
         </Link>
@@ -288,7 +289,7 @@ function ReportsCard({
           <p className="text-[14px] text-ink">You haven&rsquo;t made a Hamilton report yet.</p>
           <Link
             href="/pro/reports/new"
-            className="mt-3 inline-flex min-h-11 items-center rounded-md border border-border bg-surface-0 px-4 text-[14px] font-medium text-ink no-underline hover:border-ink"
+            className={`mt-3 ${utilityButton("secondary")}`}
           >
             Make a report
           </Link>
@@ -326,7 +327,7 @@ function HamiltonCard({ href }: { href: string }) {
       <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3">
         <Link
           href={href}
-          className="inline-flex min-h-11 items-center rounded-md bg-brick px-5 text-[14px] font-semibold text-white no-underline hover:bg-brick-ink"
+          className={utilityButton("brick")}
         >
           Open Hamilton
         </Link>
@@ -355,13 +356,13 @@ function FeeScheduleReminder({ institution }: { institution: OwnInstitution }) {
       <div className="mt-3 flex flex-wrap gap-2">
         <Link
           href={submitHref}
-          className="inline-flex min-h-11 items-center rounded-md bg-brick px-4 text-[14px] font-semibold text-white no-underline hover:bg-brick-ink"
+          className={utilityButton("primary")}
         >
           Send the link
         </Link>
         <a
           href={mailHref}
-          className="inline-flex min-h-11 items-center rounded-md border border-border bg-surface-0 px-4 text-[14px] font-medium text-ink no-underline hover:border-ink"
+          className={utilityButton("secondary")}
         >
           Email it to us
         </a>
@@ -419,8 +420,7 @@ export function AccountView({ data }: { data: AccountViewData }) {
     <div className="mx-auto w-full max-w-page px-4 py-8 sm:px-6 sm:py-12">
       <header className="mb-8 flex items-start justify-between gap-4 border-b border-border pb-6">
         <div className="min-w-0">
-          <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-brick">Account</p>
-          <h1 className="font-extrabold mt-1 text-[2rem] leading-[1.15] tracking-[-0.02em] text-ink" style={SERIF}>
+          <h1 className={UTILITY_H1} style={SERIF}>
             {data.heading}
           </h1>
           <p className="mt-1 break-words text-[14px] text-ink-muted">{data.email}</p>
@@ -430,7 +430,7 @@ export function AccountView({ data }: { data: AccountViewData }) {
 
       <div className="space-y-4">
         {data.justSubscribed && (
-          <div role="status" className="rounded-xl border border-below-market/30 bg-below-market/10 px-5 py-4 text-[14px] text-below-market">
+          <div role="status" className={utilityNotice("success")}>
             Your Hamilton subscription is active. Welcome to Hamilton.
           </div>
         )}

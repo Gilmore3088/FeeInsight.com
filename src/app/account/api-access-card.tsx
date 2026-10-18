@@ -6,6 +6,7 @@ import { API_MONTHLY_CALLS_LABEL, API_PLANS_LABEL } from "@/lib/api-subscriber-a
 import { AccountCard } from "./account-card";
 import { createAccountApiKey, revokeAccountApiKey } from "./api-key-actions";
 import type { ApiUsageSummary } from "@/lib/api-usage-summary";
+import { utilityButton } from "@/components/utility/form-style";
 
 /** What the account page knows about the subscriber's API access. */
 export type ApiAccess =
@@ -17,8 +18,7 @@ export type ApiAccess =
     }
   | { kind: "upgrade" };
 
-const BUTTON =
-  "inline-flex min-h-10 items-center rounded-md border border-border bg-surface-0 px-4 text-[14px] font-medium text-ink hover:border-ink disabled:opacity-50";
+const BUTTON = utilityButton("secondary");
 
 function count(value: number): string {
   return value.toLocaleString("en-US");

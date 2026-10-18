@@ -1,9 +1,8 @@
 export const dynamic = "force-dynamic";
 
 import Link from "next/link";
-import { CustomerFooter } from "@/components/customer-footer";
-import { ConsumerNav } from "@/components/consumer-nav";
-import { SearchModal } from "@/components/public/search-modal";
+import { UtilityHeading, UtilityShell } from "@/components/utility/utility-shell";
+import { UTILITY_CARD, utilityButton, utilityNotice } from "@/components/utility/form-style";
 import { canAccessPremium, hasTeamSeat } from "@/lib/access";
 import { getCurrentUser, hasWorkspaceSeat } from "@/lib/auth";
 import {
@@ -34,19 +33,19 @@ function locationLabel(item: { city: string | null; stateCode: string | null }):
 
 function MembershipCard({ membership }: { membership: InstitutionWorkspaceMembership }) {
   return (
-    <div className="rounded-lg border border-emerald-100 bg-emerald-50/70 px-4 py-3">
+    <div className="rounded-lg border border-border bg-paper px-4 py-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-ink">
+          <p className="truncate text-[15px] font-semibold text-ink">
             {membership.institutionName}
           </p>
-          <p className="mt-1 text-xs text-ink-muted">
+          <p className="mt-1 text-[13px] text-ink-muted">
             {[locationLabel(membership), roleLabel(membership.role)].filter(Boolean).join(" · ")}
           </p>
         </div>
         <Link
           href={`/pro/analyze?instId=${membership.institutionId}`}
-          className="inline-flex w-fit rounded-full bg-ink px-3 py-1.5 text-[11px] font-semibold text-white no-underline"
+          className={`w-fit ${utilityButton("primary")}`}
         >
           Open Hamilton
         </Link>
@@ -95,111 +94,73 @@ export default async function WorkspaceInvitePage({
   const hasAccess = user ? canAccessPremium({ ...user, workspace_seat: hasSeat }) : false;
 
   return (
-    <div className="min-h-screen bg-paper">
-      <ConsumerNav />
+    <UtilityShell>
+      <UtilityHeading
+        title="Join your institution's workspace"
+        lede={`An institution account covers up to ${WORKSPACE_SEAT_LIMIT} people. Open the invite link while signed in with the invited email, and you join with full Pro access at no cost to you.`}
+      />
 
-      <main id="main-content" className="mx-auto max-w-3xl px-4 py-12">
-        <div className="rounded-xl border border-border bg-surface-0 p-6 shadow-sm">
-          <div className="mb-6">
-            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-brick">
-              Hamilton Workspace
-            </p>
-            <h1
-              className="mt-2 text-3xl font-extrabold tracking-tight text-ink"
-              style={{ fontFamily: "var(--fi-font-sans)" }}
-            >
-              Institution workspace invitation
-            </h1>
-            <p className="mt-3 text-sm leading-6 text-ink-muted">
-              An institution account includes up to {WORKSPACE_SEAT_LIMIT} teammates. Open the
-              invite link the account owner sent you while signed in with the invited email, and you
-              join with full Pro access and no payment of your own. Hamilton then carries that institution into Analyze, Reports,
-              Simulate, Monitor, and Settings.
+      {!user && (
+        <div className={`${UTILITY_CARD} space-y-4`}>
+          <div>
+            <h2 className="text-[17px] font-semibold text-ink">Sign in with the invited email</h2>
+            <p className="mt-1.5 text-[14px] leading-relaxed text-ink-muted">
+              No account yet? Create a free one with that email.
             </p>
           </div>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <Link href={`/login?from=${fromParam}`} className={utilityButton("primary", { block: true })}>
+              Sign in
+            </Link>
+            <Link href={`/register?from=${fromParam}`} className={utilityButton("secondary", { block: true })}>
+              Create account
+            </Link>
+          </div>
+        </div>
+      )}
 
-          {!user && (
-            <div className="rounded-lg border border-border bg-white/70 p-4">
-              <h2 className="text-base font-semibold text-ink">
-                Sign in with the invited email
-              </h2>
-              <p className="mt-2 text-sm text-ink-muted">
-                Use the same email address your institution owner invited. If you don&apos;t have an
-                account yet, create a free one with that email.
-              </p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Link
-                  href={`/register?from=${fromParam}`}
-                  className="rounded-full bg-brick px-4 py-2 text-sm font-semibold text-white no-underline"
-                >
-                  Create Account
-                </Link>
-                <Link
-                  href={`/login?from=${fromParam}`}
-                  className="rounded-full border border-[#D8CDBD] px-4 py-2 text-sm font-semibold text-ink no-underline"
-                >
-                  Sign In
-                </Link>
-              </div>
+      {user && (
+        <div className="space-y-4">
+          {result && (
+            <div
+              role="status"
+              className={utilityNotice(
+                result.status === "accepted" || result.status === "already_accepted" ? "success" : "error",
+              )}
+            >
+              {signedInviteMessage(result, userEmail)}
             </div>
           )}
-
-          {user && (
-            <div className="space-y-4">
-              {result && (
-                <div
-                  role="status"
-                  className={
-                    result.status === "accepted" || result.status === "already_accepted"
-                      ? "rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800"
-                      : "rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900"
-                  }
-                >
-                  {signedInviteMessage(result, userEmail)}
-                </div>
+          {activeMemberships.length > 0 ? (
+            <div className={`${UTILITY_CARD} space-y-3`}>
+              <h2 className="text-[17px] font-semibold text-ink">Your institution workspaces</h2>
+              {activeMemberships.map((membership) => (
+                <MembershipCard key={membership.id} membership={membership} />
+              ))}
+              {!hasAccess && (
+                <p className="text-[14px] leading-relaxed text-ink-muted">
+                  This institution account isn&apos;t active right now, so Pro access is paused.
+                  Ask the person who owns the account.
+                </p>
               )}
-              {activeMemberships.length > 0 ? (
-                <div className="space-y-2">
-                  <p className="text-sm font-semibold text-ink">
-                    Active institution workspaces
-                  </p>
-                  {activeMemberships.map((membership) => (
-                    <MembershipCard key={membership.id} membership={membership} />
-                  ))}
-                  {!hasAccess && (
-                    <p className="text-sm text-ink-muted">
-                      This institution account isn&apos;t active right now, so Pro access is paused.
-                      Ask the person who owns the account.
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <div className="rounded-lg border border-border bg-white/70 p-4">
-                  <p className="text-sm font-semibold text-ink">
-                    No institution workspace for {userEmail} yet
-                  </p>
-                  <p className="mt-2 text-sm text-ink-muted">
-                    Open the invite link the institution owner sent you. If you don&apos;t have one,
-                    ask them to invite this exact email from Hamilton Settings and send you the link.
-                    {!hasAccess && " If you want a workspace of your own, see the Hamilton plans."}
-                  </p>
-                  {!hasAccess && (
-                    <Link
-                      href="/subscribe"
-                      className="mt-4 inline-flex rounded-full border border-[#D8CDBD] px-4 py-2 text-sm font-semibold text-ink no-underline"
-                    >
-                      See Hamilton plans
-                    </Link>
-                  )}
-                </div>
+            </div>
+          ) : (
+            <div className={`${UTILITY_CARD} space-y-3`}>
+              <h2 className="text-[17px] font-semibold text-ink">No workspace for {userEmail} yet</h2>
+              <p className="text-[14px] leading-relaxed text-ink-muted">
+                Open the invite link the account owner sent you. No link? Ask them to invite this exact
+                email from Hamilton Settings.
+                {!hasAccess && " For a workspace of your own, see the Hamilton plans."}
+              </p>
+              {!hasAccess && (
+                <Link href="/subscribe" className={utilityButton("secondary")}>
+                  See Hamilton plans
+                </Link>
               )}
             </div>
           )}
         </div>
-      </main>
-
-      <CustomerFooter />
-      <SearchModal />
-    </div>
+      )}
+    </UtilityShell>
   );
 }

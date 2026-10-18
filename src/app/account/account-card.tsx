@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-/** One section of the account page: a serif heading, an optional one-line note, then the body. */
+/** One section of the account page: a heading, an optional one-line note, then the body. */
 export function AccountCard({
   id,
   title,
@@ -22,7 +22,7 @@ export function AccountCard({
     <section
       id={id}
       aria-labelledby={headingId}
-      className={`scroll-mt-24 rounded-xl border border-border bg-white/70 ${compact ? "p-4" : "p-5"}`}
+      className={`scroll-mt-24 rounded-xl border border-border bg-surface-0 shadow-sm ${compact ? "p-4" : "p-5"}`}
     >
       <div className="mb-4 flex items-start justify-between gap-3">
         <div className="min-w-0">
