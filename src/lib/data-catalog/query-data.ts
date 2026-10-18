@@ -6,11 +6,13 @@ import { withTransaction } from "@/lib/data-store/connection";
 import { getInstitutionHqLocation, normalizeGeoCode, type AreaGeoType } from "@/lib/data-store/economy-aggregates";
 import {
   getInstitutionFeeRows,
-  getNationalIndexCached,
-  getPeerIndex,
+  getNationalIndexCachedStamped,
+  getPeerIndexStamped,
   getStateFeeIndexes,
   type IndexEntry,
 } from "@/lib/data-store/fee-index";
+import { datasetCitation } from "@/lib/dataset-note";
+import type { DatasetStamp } from "@/lib/dataset-stamp";
 import {
   PeerSetError,
   definitionFor,
@@ -178,7 +180,17 @@ export interface QueryDataCitation {
 export type QueryDataRow = Record<string, string | number | null>;
 
 export type QueryDataResult =
-  | { ok: true; measure: string; scope: CatalogScopeKind; rows: QueryDataRow[]; unit: string | null; citation: QueryDataCitation; note?: string }
+  | {
+      ok: true;
+      measure: string;
+      scope: CatalogScopeKind;
+      rows: QueryDataRow[];
+      unit: string | null;
+      citation: QueryDataCitation;
+      note?: string;
+      /** Which index read the fee figures came from (#1924), so an answer can cite it; only where the read is stamped. */
+      dataset?: ReturnType<typeof datasetCitation>;
+    }
   | { ok: false; measure: string; reason: string };
 
 function refuse(measure: string, reason: string): QueryDataResult {
@@ -493,17 +505,20 @@ function feeResult(input: QueryDataInput, category: string, rows: QueryDataRow[]
   };
 }
 
-function fromIndex(input: QueryDataInput, category: string, entries: IndexEntry[], label: string): QueryDataResult {
+function fromIndex(input: QueryDataInput, category: string, entries: IndexEntry[], label: string, stamp?: DatasetStamp): QueryDataResult {
   const entry = entries.find((e) => e.fee_category === category);
-  return feeResult(input, category, entry ? [indexRow(entry, label)] : [], entry?.last_updated ?? null, null);
+  const result = feeResult(input, category, entry ? [indexRow(entry, label)] : [], entry?.last_updated ?? null, null);
+  return result.ok && stamp && entry ? { ...result, dataset: datasetCitation(stamp) } : result;
 }
 
 async function queryFee(input: QueryDataInput, category: string): Promise<QueryDataResult> {
   if (!CANONICAL_CATEGORIES.has(category)) return refuse(input.measure, `"${category}" is not a fee category in the ${PRODUCT_NAME}.`);
   const { scope } = input;
   switch (scope.kind) {
-    case "national":
-      return fromIndex(input, category, await getNationalIndexCached(), "United States");
+    case "national": {
+      const { entries, stamp } = await getNationalIndexCachedStamped();
+      return fromIndex(input, category, entries, "United States", stamp);
+    }
     case "state": {
       const state = normalizeGeoCode("state", scope.id ?? "");
       if (!state) return refuse(input.measure, `"${scope.id}" is not a valid state code.`);
@@ -515,7 +530,8 @@ async function queryFee(input: QueryDataInput, category: string): Promise<QueryD
       if ("reason" in scoped) return refuse(input.measure, scoped.reason);
       const { resolved } = scoped;
       if (!resolved.filters) return feeResult(input, category, [], null, null, `No institutions match the peer group (${resolved.label}).`);
-      return fromIndex(input, category, await getPeerIndex(resolved.filters), resolved.label);
+      const { entries, stamp } = await getPeerIndexStamped(resolved.filters);
+      return fromIndex(input, category, entries, resolved.label, stamp);
     }
     case "institution": {
       const rows = await getInstitutionFeeRows(Number(scope.id), category);

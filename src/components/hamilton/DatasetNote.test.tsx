@@ -29,7 +29,7 @@ describe("DatasetNote (#1924 step 2)", () => {
   it("says how two figures differ when their stamps do", () => {
     const html = renderToString(<DatasetNote figures={[{ label: "Texas", stamp: texas }, { label: "the U.S. reference", stamp }]} />);
     expect(html).toContain("How Texas and the U.S. reference differ");
-    expect(html).toContain("Only Texas: Institutions in Texas");
+    expect(html).toContain("Applies only to Texas: Institutions in Texas");
   });
 
   it("renders nothing without a stamp", () => {

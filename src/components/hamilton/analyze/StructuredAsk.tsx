@@ -22,6 +22,7 @@ import { isLocalMarketQuestion } from "@/lib/hamilton/local-market-question";
 import { matchFeeCategory } from "@/lib/hamilton/workspace/ask";
 import type { LocalMarketAnswer } from "@/lib/hamilton/local-market-answer";
 import { hamiltonIdentityLines, readHamiltonIdentitySnapshot } from "@/lib/hamilton/identity-display";
+import { readStampedFigures } from "@/lib/dataset-note";
 
 /** The engine answered on its own (an answer, every fee's position, or sourced findings), so no written answer is needed. */
 export function engineAnswered(res: AskResponse): boolean {
@@ -617,6 +618,7 @@ function StructuredAskConversation({
         <StorylineView
           story={storyline}
           identityContext={response.identityContext}
+          stamps={readStampedFigures(response.answer.provenance?.stamps)}
           memo={memo}
           nextSteps={
             researchHrefFor ? (
@@ -633,6 +635,7 @@ function StructuredAskConversation({
       ) : response.answer ? (
         <AnswerMemo
           answer={{ ...response.answer, question: null }}
+          stamps={readStampedFigures(response.answer.provenance?.stamps)}
           nextSteps={
             researchHrefFor ? (
               <>

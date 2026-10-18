@@ -197,3 +197,44 @@ export function stampDifferences(a: DatasetStamp, b: DatasetStamp): string[] {
   for (const f of a.filters) if (!bKeys.has(f.key)) out.push(`Filter removed: ${f.label}`);
   return out;
 }
+
+const DATASET_IDS: readonly DatasetId[] = ["published_fee_catalog", "published_fee_rate_catalog", "fee_index_cache"];
+const MODES: readonly StampMode[] = ["live", "cached"];
+const COUNTING_RULES: readonly CountingRule[] = ["counted_once", "per_charter"];
+
+/**
+ * A stamp read back from saved JSON (a saved answer, a report) exactly as it was saved, or null
+ * when the value is not a whole stamp. It never rebuilds or refreshes one: a saved item shows the
+ * stamp it was saved with, and an older item saved without one shows none.
+ */
+export function readDatasetStamp(value: unknown): DatasetStamp | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const s = value as Record<string, unknown>;
+  if (!DATASET_IDS.includes(s.dataset as DatasetId) || !MODES.includes(s.mode as StampMode)) return null;
+  if (s.derivedFrom !== undefined && !DATASET_IDS.includes(s.derivedFrom as DatasetId)) return null;
+  if (!COUNTING_RULES.includes(s.counting as CountingRule)) return null;
+  if (typeof s.readAt !== "string" || toIsoTime(s.readAt) === null) return null;
+  if (s.runId !== null && !(typeof s.runId === "number" && Number.isSafeInteger(s.runId))) return null;
+  if (s.newestRecordAt !== null && typeof s.newestRecordAt !== "string") return null;
+  if (typeof s.methodVersion !== "number" || !Number.isFinite(s.methodVersion)) return null;
+  if (typeof s.id !== "string" || !s.id.startsWith("ds_")) return null;
+  if (!Array.isArray(s.filters)) return null;
+  const filters: PopulationFilter[] = [];
+  for (const f of s.filters as unknown[]) {
+    const filter = f as Partial<PopulationFilter> | null;
+    if (!filter || typeof filter !== "object" || typeof filter.key !== "string" || typeof filter.label !== "string") return null;
+    filters.push({ key: filter.key, label: filter.label });
+  }
+  return {
+    dataset: s.dataset as DatasetId,
+    ...(s.derivedFrom ? { derivedFrom: s.derivedFrom as DatasetId } : {}),
+    mode: s.mode as StampMode,
+    readAt: s.readAt,
+    runId: s.runId as number | null,
+    newestRecordAt: s.newestRecordAt as string | null,
+    methodVersion: s.methodVersion,
+    counting: s.counting as CountingRule,
+    filters,
+    id: s.id,
+  };
+}

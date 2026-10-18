@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { briefingLocalMarket, choosePeers, feeLayerStamps, localMarketView, marketLayerSets, peerAmounts } from "./research";
+import { briefingLocalMarket, choosePeers, feeLayerStamps, feePeerStamp, localMarketView, marketLayerSets, peerAmounts } from "./research";
 
 const peer = (amount: number, id: number) => ({ institution_id: id, institution_name: `Bank ${id}`, state_code: "TX", amount, source_document_ids: [id], document_urls: [], published_at: null });
 
@@ -184,5 +184,30 @@ describe("market layer stamps (#1924)", () => {
 
   it("gives no stamp without the read time, rather than a guessed one", () => {
     expect(feeLayerStamps({ ...base, readAt: undefined }, "overdraft")).toEqual({});
+  });
+});
+
+describe("peer group stamp (#1924 step 3)", () => {
+  const candidates = [{ state_code: "TX", charter_type: "bank" }, {}];
+  const narrow = new Map([["overdraft", [1, 2, 3, 4, 5].map((i) => ({ ...peer(30 + i, i), published_at: `2026-09-0${i}T00:00:00Z` }))]]);
+  const peers = choosePeers(candidates, [narrow, new Map()], ["overdraft", "nsf"]);
+  const readAt = new Date("2026-10-18T14:10:00Z");
+
+  it("stamps the band with the chosen group's own filters, the same read time, and the bank left out", () => {
+    expect(peers.get("overdraft")?.filters).toEqual({ state_code: "TX", charter_type: "bank" });
+    const stamp = feePeerStamp({ institutionId: 7, readAt, peers }, "overdraft");
+    expect(stamp).toMatchObject({ dataset: "published_fee_catalog", mode: "live", readAt: "2026-10-18T14:10:00.000Z", newestRecordAt: "2026-09-05T00:00:00.000Z" });
+    expect(stamp?.filters.map((f) => f.label)).toEqual(expect.arrayContaining(["Institutions in Texas", "The institution being compared left out"]));
+  });
+
+  it("stamps a fee that widened to national with the national filters only", () => {
+    const stamp = feePeerStamp({ institutionId: 7, readAt, peers }, "nsf");
+    expect(peers.get("nsf")?.filters).toEqual({});
+    expect(stamp?.filters.some((f) => f.label === "Institutions in Texas")).toBe(false);
+  });
+
+  it("gives none without the read time or a chosen group", () => {
+    expect(feePeerStamp({ institutionId: 7, readAt: undefined, peers }, "overdraft")).toBeNull();
+    expect(feePeerStamp({ institutionId: 7, readAt, peers }, "wire_domestic")).toBeNull();
   });
 });

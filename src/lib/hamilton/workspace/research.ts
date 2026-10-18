@@ -106,6 +106,8 @@ export const REGULATION_NEWS_WINDOW_DAYS = 365;
 
 interface CategoryPeers {
   label: string;
+  /** The filters of the peer group chosen, for its dataset stamp. */
+  filters?: HamiltonPeerFilters;
   values: PeerFeeValue[];
 }
 
@@ -174,7 +176,7 @@ export function choosePeers(
           : options.activeFirst
             ? `${peerLabel(filters)}; your group ${peerLabel(candidates[0])} has ${ownCount} publishing this fee`
             : `${peerLabel(filters)}; ${ownCount === 0 ? "none" : `only ${ownCount}`} of ${peerLabel(candidates[0])} publish this fee`;
-        chosen.set(category, { label, values });
+        chosen.set(category, { label, filters, values });
         break;
       }
     }
@@ -340,10 +342,32 @@ export function feeLayerStamps(base: WorkspaceBase, feeCategory: string): Partia
       runId: null,
       newestRecordAt: newest((layer.values.get(feeCategory) ?? []).map((v) => v.published_at)),
       scope: layer.filters,
-      extraFilters: [{ key: `exclude:institution:${base.institutionId}`, label: "The institution being compared left out" }],
+      extraFilters: [excludeOwnFilter(base.institutionId)],
     });
   }
   return out;
+}
+
+function excludeOwnFilter(institutionId: number) {
+  return { key: `exclude:institution:${institutionId}`, label: "The institution being compared left out" };
+}
+
+/**
+ * The dataset stamp of the peer group a fee's band was read from (#1924): the same one read as the
+ * layers, under the chosen group's filters with the bank left out. Null without the read time or
+ * the group's filters.
+ */
+export function feePeerStamp(base: Pick<WorkspaceBase, "institutionId" | "readAt" | "peers">, feeCategory: string): DatasetStamp | null {
+  const chosen = base.peers.get(feeCategory);
+  if (!base.readAt || !chosen?.filters) return null;
+  return catalogStamp({
+    mode: "live",
+    readAt: base.readAt,
+    runId: null,
+    newestRecordAt: newest(chosen.values.map((v) => v.published_at)),
+    scope: chosen.filters,
+    extraFilters: [excludeOwnFilter(base.institutionId)],
+  });
 }
 
 const FEE_SOURCE: SourceRef = {
@@ -1013,6 +1037,10 @@ export async function getFeeResearch(
   const chosen = base.peers.get(feeCategory);
   const peers: PeerValue[] = (chosen?.values ?? []).map(toPeerValueWithRecords);
   const sorted = countedAmounts(peers);
+  const band = sorted.length > 0
+    ? { p25: quantile(sorted, 0.25), median: quantile(sorted, 0.5), p75: quantile(sorted, 0.75), n: sorted.length }
+    : null;
+  const peerStamp = feePeerStamp(base, feeCategory);
   const current = base.ownValues.get(feeCategory) ?? null;
   const structureGroup =
     segment && !segment.problem
@@ -1043,12 +1071,11 @@ export async function getFeeResearch(
     current,
     peerLabel: chosen?.label ?? base.peerLabel,
     peers,
-    band: sorted.length > 0
-      ? { p25: quantile(sorted, 0.25), median: quantile(sorted, 0.5), p75: quantile(sorted, 0.75), n: sorted.length }
-      : null,
+    band,
     bands: priceBands(sorted, current),
     layers,
     layerStamps: feeLayerStamps(base, feeCategory),
+    ...(peerStamp ? { peerStamp } : {}),
     localCompetitors: local.competitors,
     localMarket: local.info,
     recentChanges,

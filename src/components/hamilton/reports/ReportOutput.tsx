@@ -4,6 +4,8 @@ import type {
   ReportSummaryResponse,
 } from "@/lib/hamilton/types";
 import { InterpretationBox, SERIF } from "@/components/hamilton/memo/memo";
+import { DatasetNote } from "@/components/hamilton/DatasetNote";
+import { readStampedFigures } from "@/lib/dataset-note";
 import { ReportSection } from "./ReportSection";
 import { StatCalloutBox } from "./StatCalloutBox";
 import {
@@ -78,6 +80,9 @@ export function ReportOutput({
             </span>
           </p>
         )}
+        {/* Where the report's medians came from, as saved with it (#1924); nothing on older reports. */}
+        {/* A board brief prints the stamp in its sources instead, the copy a committee sees. */}
+        {!report.boardBrief ? <DatasetNote className="mt-3" figures={readStampedFigures(report.datasetStamps)} /> : null}
       </header>
 
       <div className="max-w-3xl">

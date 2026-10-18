@@ -35,6 +35,7 @@ import { AddToReportButton } from "@/components/hamilton/basket/AddToReportButto
 import { DownloadAnswerPdf, type StructuredAnswerInfo } from "./StructuredAsk";
 import { PeerAwareStructuredAsk as StructuredAsk } from "./PeerAwareStructuredAsk";
 import { StorylineView } from "@/components/hamilton/storyline/StorylineView";
+import { readStampedFigures } from "@/lib/dataset-note";
 import { ANSWER_TYPE, AuditPanel, Callout, InterpretationBox, LinkButton, MemoHeader, MemoPage, MemoSection, More, SERIF, SectionHeading } from "@/components/hamilton/memo/memo";
 import type { NarrativeBinding } from "@/lib/hamilton/narrative-bound";
 import { proseFeeName } from "@/lib/hamilton/workspace/names";
@@ -1153,6 +1154,8 @@ function AnalyzeConversationWorkspace({
         <StorylineView
           story={reopenedStory}
           identityContext={answerIdentity}
+          // The stamps saved with the answer (#1924), never a fresh read; none on older answers.
+          stamps={readStampedFigures(initialAnalysis?.datasetStamps)}
           memo={initialAnalysis?.memo ? { state: "written", memo: initialAnalysis.memo } : undefined}
           nextSteps={initialAnalysisId && !readOnlyReason ? <><LinkButton href={`/pro/reports?from_analysis=${encodeURIComponent(initialAnalysisId)}`}>Build board brief</LinkButton><DownloadAnswerPdf analysisId={initialAnalysisId} /></> : null}
         />

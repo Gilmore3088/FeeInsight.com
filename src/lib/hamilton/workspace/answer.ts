@@ -17,6 +17,8 @@ import { segmentClaims, segmentExhibit, segmentHeadline } from "./segment";
 import { buildStoryline, type StoryIntent } from "./storyline";
 import { ownRate, rateClaims, rateHeadline, rateVolumeQuestion } from "./rates";
 
+import { uniqueStampedFigures, type StampedFigure } from "@/lib/dataset-note";
+
 export { proseFeeName };
 import type {
   ClarifyingQuestion,
@@ -359,6 +361,31 @@ function evidenceLevel(research: FeeResearch): EvidenceLevel {
   return "market";
 }
 
+/**
+ * The dataset stamps behind the medians, percentiles and counts an answer quotes (#1924): the
+ * peer band, then each market layer with a median, each stamp once. A segment-led answer leads
+ * with the segment, whose read has no stamp yet, so it gets none: the national stamp alone would
+ * read as the source of the segment's figures. A figure from a read with no stamp (local market,
+ * segment, rates) adds none.
+ */
+export function answerStamps(research: Pick<FeeResearch, "band" | "layers" | "layerStamps" | "peerStamp">, segmentLed = false): StampedFigure[] {
+  if (segmentLed) return [];
+  const layerStamps = research.layerStamps ?? {};
+  return uniqueStampedFigures([
+    research.band && research.peerStamp ? { label: "your peer group", stamp: research.peerStamp } : null,
+    ...research.layers
+      .filter((layer) => layer.median !== null)
+      .map((layer) => {
+        const stamp = layerStamps[layer.scope];
+        return stamp ? { label: layer.label, stamp } : null;
+      }),
+  ]);
+}
+
+function withStamps(stamps: StampedFigure[]): { stamps?: StampedFigure[] } {
+  return stamps.length > 0 ? { stamps } : {};
+}
+
 export function buildFeeAnswer(research: FeeResearch, options: { focus?: ExhibitFocus; story?: StoryIntent } = {}): HamiltonAnswer {
   const name = proseFeeName(research.feeCategory);
   const seg = research.segment ?? null;
@@ -386,7 +413,7 @@ export function buildFeeAnswer(research: FeeResearch, options: { focus?: Exhibit
     exhibit: (segmentLed ? segmentExhibit(seg, research.feeCategory, research.current, research.institutionName) : null) ?? buildExhibit(research, options.focus),
     question: missingFigure(research),
     evidenceLevel: level,
-    provenance: { ...research.provenance, evidenceLevel: level },
+    provenance: { ...research.provenance, evidenceLevel: level, ...withStamps(answerStamps(research, segmentLed)) },
   };
   return { ...answer, storyline: buildStoryline(research, answer, { focus: options.focus, ...options.story }) };
 }

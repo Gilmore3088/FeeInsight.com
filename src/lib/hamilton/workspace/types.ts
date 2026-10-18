@@ -14,6 +14,7 @@ import type { LineupAccount, LineupSummary } from "@/lib/data-store/account-line
 import type { Storyline, StorylineExhibit } from "./storyline-types";
 import type { SeveralFees } from "@/lib/own-fee";
 import type { DatasetStamp } from "@/lib/dataset-stamp";
+import type { StampedFigure } from "@/lib/dataset-note";
 
 /** A source behind a fact, named so the reader can check it. */
 export interface SourceRef {
@@ -28,7 +29,7 @@ export interface SourceRef {
 }
 
 /** Bump when any builder's math or wording changes, so a saved output names the engine that made it. */
-export const WORKSPACE_ENGINE_VERSION = "1.18.3";
+export const WORKSPACE_ENGINE_VERSION = "1.18.4";
 
 /** A figure the bank gave Hamilton, with who gave it and when. */
 export interface ClientFactRef {
@@ -53,6 +54,12 @@ export interface Provenance {
   sources: SourceRef[];
   assumptions: string[];
   clientFacts: ClientFactRef[];
+  /**
+   * The dataset stamp of each read behind the medians, percentiles and counts the output quotes
+   * (#1924): peers first, then each market layer. Only stamped reads appear; a figure from a read
+   * with no stamp (the local market, a segment, a rate) has none. Absent on older outputs.
+   */
+  stamps?: StampedFigure[];
 }
 
 export interface Fact {
@@ -403,6 +410,8 @@ export interface FeeResearch {
   layers: MarketLayer[];
   /** Each layer's dataset stamp by scope (#1924); none for the local market. Shown on Research and Try a price. */
   layerStamps?: Partial<Record<MarketLayerScope, DatasetStamp>>;
+  /** The dataset stamp of the read behind `peers` and `band` (#1924); absent without one. */
+  peerStamp?: DatasetStamp;
   /** Named competitors in the bank's local market that publish this fee, largest deposits first; null when no market is on file. */
   localCompetitors: PeerValue[] | null;
   localMarket: LocalMarketInfo | null;
