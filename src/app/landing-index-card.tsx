@@ -19,6 +19,7 @@ import {
   institutionHref,
   noFeeSentence,
   plansHref,
+  measurePhrase,
   positionSentence,
   type Charter,
   type IndexCardData,
@@ -287,14 +288,14 @@ export function IndexCard({ data, freshness }: { data: IndexCardData; freshness:
   // The marker names what it counts in a word ("median", or "highest" for overdraft), as the sentence does in full.
   const marker =
     institution && own !== undefined
-      ? { name: institution.name, cents: own, word: feeDef?.measure === "highest published price" ? "highest" : "median" }
+      ? { name: institution.name, cents: own, word: feeDef?.highest ? "highest" : "median" }
       : undefined;
   const position =
     !institution?.fees || !hasMedian(pick)
       ? null
       : own === undefined
         ? noFeeSentence(institution.name, feeDef?.label ?? "")
-        : positionSentence(institution.name, feeDef?.measure ?? "institution median", own, pick.median, benchmarkPhrase(placeName, charter));
+        : positionSentence(institution.name, measurePhrase(feeDef?.label ?? "", feeDef?.highest ?? false), own, pick.median, benchmarkPhrase(placeName, charter));
 
   function choose(p: PickedInstitution) {
     const seq = ++pickSeq.current;

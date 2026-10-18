@@ -16,9 +16,9 @@ import { HamiltonCarousel, type HamiltonSlide } from "./landing-hamilton-carouse
 import { buildIndexCard, plainFeeName } from "./landing-index";
 import { institutionCardFees } from "./landing-index-actions";
 import { IndexCard } from "./landing-index-card";
-import { cardHref, cellBars, hasMedian, noFeeSentence, positionSentence, US, type IndexCardData } from "./landing-index-view";
+import { cardHref, cellBars, hasMedian, measurePhrase, noFeeSentence, positionSentence, US, type IndexCardData } from "./landing-index-view";
 import { LandingPricing, pricingLine } from "./landing-pricing";
-import { EVIDENCE_GROUPS, EVIDENCE_OUTPUTS } from "./landing-research";
+import { EVIDENCE_GROUPS, EVIDENCE_REPORTS } from "./landing-research";
 import { LandingDeliverable, deliverableCover, deliverableOutline } from "./landing-deliverable";
 import type { RevenueContext } from "@/lib/custom-report/revenue-context";
 import { LandingResearch } from "./landing-research-section";
@@ -97,7 +97,7 @@ describe("hero Bank Fee Index card", () => {
     expect(card.cells.monthly_maintenance.WY[0]).toEqual({ n: 2 });
     expect(card.states.map((s) => s.name)).toEqual(["Florida", "Georgia", "Wyoming"]);
     expect(card.fees).toEqual([
-      { key: "monthly_maintenance", label: "Monthly maintenance", headline: "Median of each institution's median published price", plural: "institution medians", measure: "institution median" },
+      { key: "monthly_maintenance", label: "Monthly maintenance", headline: "Median of each institution's median published price", plural: "institution medians", highest: false },
     ]);
   });
 
@@ -179,13 +179,13 @@ describe("hero Bank Fee Index card: your institution", () => {
     expect(marker?.textContent).toBe(`Institution 5median${dollars(ownCents)}`);
     expect(container.querySelectorAll("[data-marker-bar]")).toHaveLength(1);
     const usMedian = medianOf(withInstitution, US, 0);
-    expect(container.querySelector("[data-index-position]")?.textContent).toBe(positionSentence("Institution 5", "institution median", ownCents, usMedian, "U.S."));
-    expect(container.querySelector("[data-index-position]")?.textContent).toMatch(/^Institution 5’s institution median, \$[\d.]+, (is (higher|lower) than the U\.S\. median of \$[\d.]+|matches the U\.S\. median)\.$/);
+    expect(container.querySelector("[data-index-position]")?.textContent).toBe(positionSentence("Institution 5", "median monthly maintenance price", ownCents, usMedian, "U.S."));
+    expect(container.querySelector("[data-index-position]")?.textContent).toMatch(/^Institution 5’s median monthly maintenance price, \$[\d.]+, (is (higher|lower) than the U\.S\. median of \$[\d.]+|matches the U\.S\. median)\.$/);
     // The scope follows the pickers: state, then charter.
     fireEvent.change(screen.getByLabelText("State"), { target: { value: "FL" } });
     fireEvent.change(screen.getByLabelText("Institutions"), { target: { value: "bank" } });
     expect(container.querySelector("[data-index-position]")?.textContent).toBe(
-      positionSentence("Institution 5", "institution median", ownCents, medianOf(withInstitution, "FL", 1), "Florida bank"),
+      positionSentence("Institution 5", "median monthly maintenance price", ownCents, medianOf(withInstitution, "FL", 1), "Florida bank"),
     );
     // The selection carries through: the index with its name search, its own page on this fee, the plans priced for it.
     expect(screen.getByRole("link", { name: /See this fee in the index/ }).getAttribute("href")).toBe(
@@ -196,10 +196,12 @@ describe("hero Bank Fee Index card: your institution", () => {
   });
 
   it("words the position neutrally", () => {
-    // The counted value is a calculation, so it is named, never "charged" (James, Oct 16).
-    expect(positionSentence("Capital City Bank", "institution median", 800, 500, "Florida")).toBe("Capital City Bank’s institution median, $8, is higher than the Florida median of $5.");
-    expect(positionSentence("Capital City Bank", "highest published price", 395, 500, "U.S. credit union")).toBe("Capital City Bank’s highest published price, $3.95, is lower than the U.S. credit union median of $5.");
-    expect(positionSentence("Capital City Bank", "institution median", 500, 500, "Florida bank")).toBe("Capital City Bank’s institution median, $5, matches the Florida bank median.");
+    // The counted value is a calculation, so it is named in plain words, never "charged" (James, Oct 16).
+    expect(measurePhrase("Monthly maintenance", false)).toBe("median monthly maintenance price");
+    expect(measurePhrase("Overdraft fee", true)).toBe("highest published overdraft price");
+    expect(positionSentence("Capital City Bank", "median monthly maintenance price", 800, 500, "Florida")).toBe("Capital City Bank’s median monthly maintenance price, $8, is higher than the Florida median of $5.");
+    expect(positionSentence("Capital City Bank", "highest published overdraft price", 395, 500, "U.S. credit union")).toBe("Capital City Bank’s highest published overdraft price, $3.95, is lower than the U.S. credit union median of $5.");
+    expect(positionSentence("Capital City Bank", "median monthly maintenance price", 500, 500, "Florida bank")).toBe("Capital City Bank’s median monthly maintenance price, $5, matches the Florida bank median.");
     expect(noFeeSentence("Capital City Bank", "Monthly maintenance")).toBe("No published monthly maintenance fee for Capital City Bank yet.");
     expect(noFeeSentence("Capital City Bank", "NSF")).toBe("No published NSF fee for Capital City Bank yet.");
   });
@@ -254,7 +256,7 @@ describe("hero Bank Fee Index card: your institution", () => {
       expect(container.querySelector("[data-index-reading]")).toBeNull();
       expect(container.querySelector("[data-index-marker]")?.textContent).toBe("Harbor Bankmedian$12");
       expect(container.querySelector("[data-index-position]")?.textContent).toBe(
-        positionSentence("Harbor Bank", "institution median", 1200, medianOf(withInstitution, US, 0), "U.S."),
+        positionSentence("Harbor Bank", "median monthly maintenance price", 1200, medianOf(withInstitution, US, 0), "U.S."),
       );
       expect(screen.getByRole("link", { name: /See its fees/ }).getAttribute("href")).toBe("/institution/77?fee=monthly_maintenance");
       expect(screen.getByRole("link", { name: /See Hamilton plans/ }).getAttribute("href")).toBe("/subscribe?inst=77");
@@ -567,17 +569,31 @@ describe("motion", () => {
 });
 
 describe("evidence flow", () => {
-  it("runs the four source groups into Hamilton and out to analysis and board reports, in reading order", () => {
+  it("runs the four source groups into Hamilton and out to the reports it writes, in reading order", () => {
     const html = renderToStaticMarkup(<LandingResearch />);
     expect(html).toMatch(/Ask Hamilton\.<\/span> <span class="block">Every answer shows its sources\./);
     expect(EVIDENCE_GROUPS.map((g) => g.name)).toEqual(["Published fees", "Financial filings", "Branches and markets", "Regulatory sources"]);
-    expect(EVIDENCE_OUTPUTS.map((o) => o.name)).toEqual(["Analysis", "Board reports"]);
+    expect(EVIDENCE_REPORTS.map((r) => r.name)).toEqual([
+      "Board report",
+      "Competitive fee position",
+      "Fee income review",
+      "Peer comparison",
+      "Local market brief",
+      "Regional outlook",
+      "Rules and complaints scan",
+    ]);
+    // Every report names real sources, and every report reads the published fees.
+    const keys = new Set(EVIDENCE_GROUPS.flatMap((g) => g.items.map((i) => i.key)));
+    for (const r of EVIDENCE_REPORTS) {
+      expect(r.sources).toContain("schedules");
+      for (const s of r.sources) expect(keys.has(s)).toBe(true);
+    }
     // The sources the carousel credited stay credited, each in its group.
     const providers = EVIDENCE_GROUPS.flatMap((g) => g.items.map((i) => i.provider)).join(" | ");
     for (const name of ["FDIC · NCUA", "SEC", "Census · IRS", "CFPB", "Beige Book · FOMC", "Regulators · States"]) expect(providers).toContain(name);
     expect(EVIDENCE_GROUPS.find((g) => g.key === "filings")!.items.map((i) => i.name)).toContain("Industry totals");
     // A screen reader reads three lists: the sources, Hamilton, what it delivers. The lines are decoration.
-    const order = ['aria-label="Evidence Hamilton reads"', "data-evidence-hub", "Connect evidence to institutional questions", 'aria-label="What Hamilton delivers"', "Get Hamilton for your institution"].map((m) => html.indexOf(m));
+    const order = ['aria-label="Evidence Hamilton reads"', "data-evidence-hub", "Connect evidence to institutional questions", 'aria-label="Reports Hamilton writes"', "Get Hamilton for your institution"].map((m) => html.indexOf(m));
     expect(order.every((at) => at >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(html.match(/data-evidence-group=/g)).toHaveLength(EVIDENCE_GROUPS.length);
@@ -586,8 +602,13 @@ describe("evidence flow", () => {
     expect(html.match(/fi-home-evidence-lines/g)).toHaveLength(4);
     // A phone gets the vertical flow; the side-by-side layout starts at lg.
     expect(html).toContain("lg:grid-cols-[minmax(0,1.5fr)");
-    // Nothing rotates: no carousel, controls or slide counter.
-    expect(html).not.toMatch(/carousel|Pause|01 \/ 0|Hey Hamilton/);
+    // The first report is lit, with exactly its sources; the rest wait their turn. No question line.
+    expect(html.match(/data-active="true"/g)).toHaveLength(1);
+    expect(html).toContain('data-evidence-report="board" data-active="true"');
+    const lit = [...html.matchAll(/data-evidence-source="([^"]+)" data-lit="true"/g)].map((m) => m[1]).sort();
+    expect(lit).toEqual([...EVIDENCE_REPORTS[0].sources].sort());
+    expect(html).toContain('aria-roledescription="carousel"');
+    expect(html).not.toMatch(/Hey Hamilton/);
     // One action, the subscription; the sample link moved to the deliverable.
     expect(html).toMatch(/<a href="\/subscribe"[^>]*data-event="upgrade_click" data-placement="home_research"[^>]*>Get Hamilton for your institution</);
     expect(html.match(/<a /g)).toHaveLength(1);
@@ -599,7 +620,7 @@ describe("evidence flow", () => {
     const named = [
       renderToStaticMarkup(<LandingResearch />),
       ...EVIDENCE_GROUPS.flatMap((g) => [g.name, ...g.items.map((i) => `${i.name} ${i.provider}`)]),
-      ...EVIDENCE_OUTPUTS.map((o) => `${o.name} ${o.detail}`),
+      ...EVIDENCE_REPORTS.map((r) => `${r.name} ${r.detail}`),
     ].join(" ");
     expect(named).not.toMatch(/FRED|USDA|FINRA|regional Fed|Reserve Bank|national deposit rate|deposit rates/i);
   });

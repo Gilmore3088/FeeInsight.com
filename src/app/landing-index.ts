@@ -2,6 +2,7 @@ import type { IndexRow } from "@/lib/data-store";
 import { FEE_LINE_LABELS } from "@/lib/custom-report/rules";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { STATE_NAMES } from "@/lib/us-states";
+import { HIGHEST_TIER_CATEGORIES } from "@/lib/data-store/fee-stats";
 import { countedAs, histogram, institutionsFor, statsFor } from "./(public)/fees/(index)/index-view";
 import {
   CHARTERS,
@@ -89,7 +90,7 @@ export function buildIndexCard(rowsByFee: Map<string, IndexRow[]>, readAheadIds:
   for (const [fee, rows] of rowsByFee) {
     if (rows.length === 0) continue;
     const words = countedAs(fee);
-    fees.push({ key: fee, label: plainFeeName(fee), headline: words.headline, plural: words.labels, measure: words.label });
+    fees.push({ key: fee, label: plainFeeName(fee), headline: words.headline, plural: words.labels, highest: HIGHEST_TIER_CATEGORIES.has(fee) });
     const byState = new Map<string, IndexRow[]>();
     for (const row of rows) {
       if (!row.state_code || !STATE_NAMES[row.state_code]) continue;

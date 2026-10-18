@@ -37,8 +37,8 @@ export interface IndexCardFee {
   headline: string;
   /** "institution medians" (or the highest-price wording for overdraft). */
   plural: string;
-  /** One institution's counted value, in words: "institution median" or "highest published price". */
-  measure: string;
+  /** True when the Index counts an institution's highest published price (overdraft), not its median. */
+  highest: boolean;
 }
 
 /**
@@ -138,9 +138,18 @@ export function positionSentence(name: string, measure: string, cents: number, m
   return `${name}’s ${measure}, ${own}, is ${cents > medianCents ? "higher" : "lower"} than the ${phrase} median of ${median}.`;
 }
 
-/** "No published monthly maintenance fee for Capital City Bank yet." An acronym keeps its capitals. */
-export function noFeeSentence(name: string, feeLabel: string): string {
+/** "monthly maintenance" from "Monthly maintenance fee". An acronym keeps its capitals. */
+function lowerFee(feeLabel: string): string {
   const base = feeLabel.replace(/\s+fee$/i, "");
-  const label = /^[A-Z][a-z]/.test(base) ? base[0].toLowerCase() + base.slice(1) : base;
-  return `No published ${label} fee for ${name} yet.`;
+  return /^[A-Z][a-z]/.test(base) ? base[0].toLowerCase() + base.slice(1) : base;
+}
+
+/** What the Index counts for one institution, in plain words: "median monthly maintenance price". */
+export function measurePhrase(feeLabel: string, highest: boolean): string {
+  return `${highest ? "highest published" : "median"} ${lowerFee(feeLabel)} price`;
+}
+
+/** "No published monthly maintenance fee for Capital City Bank yet." */
+export function noFeeSentence(name: string, feeLabel: string): string {
+  return `No published ${lowerFee(feeLabel)} fee for ${name} yet.`;
 }

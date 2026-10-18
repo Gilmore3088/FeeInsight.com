@@ -68,22 +68,10 @@
   visibility: visible;
 }
 
-/* Evidence flow: a short brick dash runs along each connector toward Hamilton, then on to the outputs. */
-.fi-home-evidence-pulse {
-  stroke-dasharray: 14 86;
-  /* Three passes, under 5 seconds in all, then the lines stay still (WCAG 2.2.2 needs no pause control then). */
-  animation: fi-home-evidence 1.6s linear 3;
-  animation-fill-mode: forwards;
-}
-@keyframes fi-home-evidence {
-  from { stroke-dashoffset: 100; }
-  to { stroke-dashoffset: 0; }
-}
 .fi-home-question { transition: opacity 0.3s ease, transform 0.3s ease; }
 
 @media (prefers-reduced-motion: reduce) {
   .fi-home-fade { animation: none; }
-  .fi-home-evidence-pulse { display: none; }
   .fi-home-slide,
   .fi-home-slide[data-active="true"],
   .fi-home-question { transition: none; }

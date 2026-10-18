@@ -1,13 +1,20 @@
-import { FileChartColumn, Files, Landmark, MapPinned, Presentation, ScrollText, type LucideIcon } from "lucide-react";
+"use client";
+
+import { Files, Landmark, MapPinned, ScrollText, type LucideIcon } from "lucide-react";
+import { useRef } from "react";
+import { SlideControls } from "./landing-controls";
+import { useAutoAdvance } from "./landing-motion";
 
 type GroupKey = "fees" | "filings" | "markets" | "regulatory";
+/** One source, so a report can light exactly the sources it reads. */
+export type SourceKey = "schedules" | "callReports" | "sec" | "industry" | "branches" | "income" | "economy" | "rules" | "complaints";
 
 export interface EvidenceGroup {
   key: GroupKey;
   icon: LucideIcon;
   name: string;
   /** Each source in the group: what it is and who publishes it. */
-  items: { name: string; provider: string }[];
+  items: { key: SourceKey; name: string; provider: string }[];
 }
 
 /**
@@ -21,16 +28,16 @@ export const EVIDENCE_GROUPS: EvidenceGroup[] = [
     key: "fees",
     icon: Files,
     name: "Published fees",
-    items: [{ name: "Fee schedules", provider: "Banks and credit unions" }],
+    items: [{ key: "schedules", name: "Fee schedules", provider: "Banks and credit unions" }],
   },
   {
     key: "filings",
     icon: Landmark,
     name: "Financial filings",
     items: [
-      { name: "Call Reports", provider: "FDIC · NCUA" },
-      { name: "Public filings", provider: "SEC" },
-      { name: "Industry totals", provider: "FDIC" },
+      { key: "callReports", name: "Call Reports", provider: "FDIC · NCUA" },
+      { key: "sec", name: "Public filings", provider: "SEC" },
+      { key: "industry", name: "Industry totals", provider: "FDIC" },
     ],
   },
   {
@@ -38,9 +45,9 @@ export const EVIDENCE_GROUPS: EvidenceGroup[] = [
     icon: MapPinned,
     name: "Branches and markets",
     items: [
-      { name: "Branches and deposits", provider: "FDIC · NCUA" },
-      { name: "Household income", provider: "Census · IRS" },
-      { name: "Economic conditions", provider: "Beige Book · FOMC" },
+      { key: "branches", name: "Branches and deposits", provider: "FDIC · NCUA" },
+      { key: "income", name: "Household income", provider: "Census · IRS" },
+      { key: "economy", name: "Economic conditions", provider: "Beige Book · FOMC" },
     ],
   },
   {
@@ -48,86 +55,162 @@ export const EVIDENCE_GROUPS: EvidenceGroup[] = [
     icon: ScrollText,
     name: "Regulatory sources",
     items: [
-      { name: "Rules and actions", provider: "Regulators · States" },
-      { name: "Consumer complaints", provider: "CFPB" },
+      { key: "rules", name: "Rules and actions", provider: "Regulators · States" },
+      { key: "complaints", name: "Consumer complaints", provider: "CFPB" },
     ],
   },
 ];
 
-/** What comes out of Hamilton. */
-export const EVIDENCE_OUTPUTS: { key: string; icon: LucideIcon; name: string; detail: string }[] = [
-  { key: "analysis", icon: FileChartColumn, name: "Analysis", detail: "Your fees in the context of your market and your financials." },
-  { key: "board", icon: Presentation, name: "Board reports", detail: "Ready for committee, every figure linked to its source." },
+/**
+ * The reports Hamilton writes, each with the sources it reads (James, Oct 18: "a few more report
+ * options", "the sources highlighted for each type of report", no question line). The flow lights
+ * a report's sources in turn. Descriptions name what each covers and carry no figures.
+ */
+export const EVIDENCE_REPORTS: { key: string; name: string; detail: string; sources: SourceKey[] }[] = [
+  {
+    key: "board",
+    name: "Board report",
+    detail: "Where each fee sits against your market, ready for committee, every figure linked to its source.",
+    sources: ["schedules", "callReports", "branches", "rules", "complaints"],
+  },
+  {
+    key: "position",
+    name: "Competitive fee position",
+    detail: "Every fee against the competitors in your market, fee by fee.",
+    sources: ["schedules", "branches"],
+  },
+  {
+    key: "income",
+    name: "Fee income review",
+    detail: "Your service-charge income beside institutions of your size, quarter by quarter.",
+    sources: ["schedules", "callReports", "industry"],
+  },
+  {
+    key: "peers",
+    name: "Peer comparison",
+    detail: "Your fees and financials beside banks and credit unions of your size.",
+    sources: ["schedules", "callReports", "sec"],
+  },
+  {
+    key: "market",
+    name: "Local market brief",
+    detail: "Who competes in your counties and the household income behind that market.",
+    sources: ["schedules", "branches", "income"],
+  },
+  {
+    key: "regional",
+    name: "Regional outlook",
+    detail: "Fee levels across your region, read against the latest Beige Book and industry totals.",
+    sources: ["schedules", "economy", "industry"],
+  },
+  {
+    key: "compliance",
+    name: "Rules and complaints scan",
+    detail: "The fee rules, regulator actions and consumer complaints that touch your fees.",
+    sources: ["schedules", "rules", "complaints"],
+  },
 ];
 
+/** Each report shows this long before the next. */
+const REPORT_MS = 5200;
+
 /*
- * Connector geometry. From lg up the sources sit in four equal rows and the outputs in two, so
- * each line runs from a row's middle (12.5%, 37.5%, 62.5%, 87.5% of the height) to Hamilton's
- * middle (50%), and out to 25% and 75%. The SVGs stretch to their column (preserveAspectRatio
- * none) with a non-scaling stroke, so the lines stay 1px whatever the height.
+ * Connector geometry. From lg up the sources sit in four equal rows, so each line runs from a
+ * row's middle (12.5%, 37.5%, 62.5%, 87.5% of the height) to Hamilton's middle (50%), and one
+ * line runs out to the reports. The SVGs stretch to their column (preserveAspectRatio none) with
+ * a non-scaling stroke, so the lines stay 1px whatever the height. A group the shown report reads
+ * has its line drawn strong; the others stay faint.
  */
 const IN_PATHS = [12.5, 37.5, 62.5, 87.5].map((y) => `M0,${y} C55,${y} 45,50 100,50`);
-const OUT_PATHS = [25, 75].map((y) => `M0,50 C55,50 45,${y} 100,${y}`);
-/* Below lg the flow runs down the page: two columns of sources join under Hamilton, which splits to two outputs. */
+const OUT_PATHS = ["M0,50 C50,50 50,50 100,50"];
+/* Below lg the flow runs down the page: two columns of sources join under Hamilton, then one line down to the reports. */
 const MERGE_PATHS = ["M25,0 C25,60 50,40 50,100", "M75,0 C75,60 50,40 50,100"];
-const SPLIT_PATHS = ["M50,0 C50,60 25,40 25,100", "M50,0 C50,60 75,40 75,100"];
+const SPLIT_PATHS = ["M50,0 C50,40 50,60 50,100"];
 
-function Connectors({ paths, className, viewBox = "0 0 100 100" }: { paths: string[]; className: string; viewBox?: string }) {
+function Connectors({ paths, lit, className }: { paths: string[]; lit: boolean[]; className: string }) {
   return (
-    <svg className={`fi-home-evidence-lines ${className}`} viewBox={viewBox} preserveAspectRatio="none" aria-hidden="true" focusable="false">
-      {paths.map((d) => (
-        <g key={d}>
-          <path d={d} fill="none" stroke="var(--color-brick)" strokeOpacity={0.28} strokeWidth={1} vectorEffect="non-scaling-stroke" />
-          <path d={d} fill="none" stroke="var(--color-brick)" strokeOpacity={0.8} strokeWidth={1.5} vectorEffect="non-scaling-stroke" className="fi-home-evidence-pulse" />
-        </g>
+    <svg className={`fi-home-evidence-lines ${className}`} viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+      {paths.map((d, i) => (
+        <path
+          key={d}
+          d={d}
+          fill="none"
+          stroke="var(--color-brick)"
+          strokeOpacity={lit[i] ? 0.85 : 0.18}
+          strokeWidth={lit[i] ? 1.6 : 1}
+          vectorEffect="non-scaling-stroke"
+          className="transition-[stroke-opacity] duration-500"
+        />
       ))}
     </svg>
   );
 }
 
 /**
- * The evidence flow (James's critique §5, "Demonstration 2"): four source groups run into
- * Hamilton, which connects them to the institution's questions, then out to analysis and board
- * reports. A screen reader reads it as three lists in order; the lines are decoration. Nothing
- * rotates; with reduced motion the lines are drawn still.
+ * The evidence flow (James's critique §5, "Demonstration 2", and his Oct 18 note): four source
+ * groups run into Hamilton and out to the reports it writes. The reports take turns; each one
+ * lights the sources it reads. A visitor can pick a report, pause, or step through; the clock
+ * stops off screen, in a hidden tab, on hover or focus, and never runs with reduced motion. The
+ * first report renders lit on the server, so the flow is never blank.
  */
 export function EvidenceFlow() {
+  const root = useRef<HTMLDivElement>(null);
+  const clock = useAutoAdvance({ count: EVIDENCE_REPORTS.length, duration: REPORT_MS, rootRef: root });
+  const active = EVIDENCE_REPORTS[clock.index];
+  const lit = new Set<SourceKey>(active.sources);
+  const groupLit = EVIDENCE_GROUPS.map((g) => g.items.some((i) => lit.has(i.key)));
+  const mergeLit = [groupLit[0] || groupLit[2], groupLit[1] || groupLit[3]];
   return (
     <div
-      className="grid gap-y-0 lg:grid-cols-[minmax(0,1.5fr)_minmax(2.5rem,0.4fr)_minmax(0,1fr)_minmax(2.5rem,0.4fr)_minmax(0,0.9fr)] lg:items-stretch"
+      ref={root}
+      className="grid gap-y-0 lg:grid-cols-[minmax(0,1.5fr)_minmax(2.5rem,0.4fr)_minmax(0,0.9fr)_minmax(2rem,0.3fr)_minmax(0,1.1fr)] lg:items-stretch"
       data-evidence-flow=""
+      role="region"
+      aria-roledescription="carousel"
+      aria-label="Reports Hamilton writes and the sources each reads"
     >
       <ul
         className="grid grid-cols-2 gap-2 sm:gap-3 lg:col-start-1 lg:grid-cols-1 lg:grid-rows-4"
         aria-label="Evidence Hamilton reads"
       >
-        {EVIDENCE_GROUPS.map((g) => (
+        {EVIDENCE_GROUPS.map((g, gi) => (
           <li
             key={g.key}
-            className="flex min-w-0 flex-col gap-2 rounded-[6px] border border-border bg-surface-0 p-3 shadow-[3px_3px_0_rgb(9_39_71/0.03)] lg:flex-row lg:items-center lg:gap-4 lg:px-4"
+            className={`flex min-w-0 flex-col gap-2 rounded-[6px] border bg-surface-0 p-3 shadow-[3px_3px_0_rgb(9_39_71/0.03)] transition-colors duration-500 lg:flex-row lg:items-center lg:gap-4 lg:px-4 ${
+              groupLit[gi] ? "border-brick/45" : "border-border"
+            }`}
             data-evidence-group={g.key}
+            data-lit={groupLit[gi] ? "true" : "false"}
           >
             <span className="flex items-center gap-2 lg:w-[9.5rem] lg:shrink-0">
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-[5px] bg-brick-tint">
-                <g.icon aria-hidden="true" strokeWidth={1.5} className="size-[18px] text-brick" />
+              <span className={`flex size-8 shrink-0 items-center justify-center rounded-[5px] transition-colors duration-500 ${groupLit[gi] ? "bg-brick" : "bg-brick-tint"}`}>
+                <g.icon aria-hidden="true" strokeWidth={1.5} className={`size-[18px] ${groupLit[gi] ? "text-white" : "text-brick"}`} />
               </span>
               <span className="text-[14px] font-semibold leading-tight text-ink">{g.name}</span>
             </span>
             <ul className="flex min-w-0 flex-col gap-1 lg:gap-0.5" aria-label={g.name}>
-              {g.items.map((item) => (
-                <li key={item.name} className="text-[12px] leading-snug text-ink-soft">
-                  <span className="text-ink">{item.name}</span>
-                  <span className="text-ink-muted"> · </span>
-                  <span data-evidence-provider="">{item.provider}</span>
-                </li>
-              ))}
+              {g.items.map((item) => {
+                const on = lit.has(item.key);
+                return (
+                  <li
+                    key={item.key}
+                    className={`text-[12px] leading-snug transition-opacity duration-500 ${on ? "opacity-100" : "opacity-45"}`}
+                    data-evidence-source={item.key}
+                    data-lit={on ? "true" : "false"}
+                  >
+                    <span className={on ? "font-semibold text-brick" : "text-ink"}>{item.name}</span>
+                    <span className="text-ink-muted"> · </span>
+                    <span className="text-ink-soft" data-evidence-provider="">{item.provider}</span>
+                  </li>
+                );
+              })}
             </ul>
           </li>
         ))}
       </ul>
 
-      <Connectors paths={MERGE_PATHS} className="h-10 w-full lg:hidden" />
-      <Connectors paths={IN_PATHS} className="hidden h-full w-full lg:col-start-2 lg:block" />
+      <Connectors paths={MERGE_PATHS} lit={mergeLit} className="h-10 w-full lg:hidden" />
+      <Connectors paths={IN_PATHS} lit={groupLit} className="hidden h-full w-full lg:col-start-2 lg:block" />
 
       <div className="flex items-center lg:col-start-3">
         <div
@@ -142,24 +225,32 @@ export function EvidenceFlow() {
         </div>
       </div>
 
-      <Connectors paths={SPLIT_PATHS} className="h-10 w-full lg:hidden" />
-      <Connectors paths={OUT_PATHS} className="hidden h-full w-full lg:col-start-4 lg:block" />
+      <Connectors paths={SPLIT_PATHS} lit={[true]} className="h-10 w-full lg:hidden" />
+      <Connectors paths={OUT_PATHS} lit={[true]} className="hidden h-full w-full lg:col-start-4 lg:block" />
 
-      <ul className="grid grid-cols-2 gap-2 sm:gap-3 lg:col-start-5 lg:grid-cols-1 lg:grid-rows-2" aria-label="What Hamilton delivers">
-        {EVIDENCE_OUTPUTS.map((o) => (
-          <li
-            key={o.key}
-            className="flex min-w-0 flex-col justify-center gap-1.5 rounded-[6px] border border-brick/40 bg-brick-tint p-3 lg:my-5 lg:p-4"
-            data-evidence-output={o.key}
-          >
-            <span className="flex items-center gap-2">
-              <o.icon aria-hidden="true" strokeWidth={1.5} className="size-5 shrink-0 text-brick" />
-              <span className="text-[15px] font-semibold leading-tight text-ink">{o.name}</span>
-            </span>
-            <span className="text-[12px] leading-snug text-ink-soft">{o.detail}</span>
-          </li>
-        ))}
-      </ul>
+      <div className="flex min-w-0 flex-col justify-center gap-3 lg:col-start-5">
+        <ul className="flex flex-col gap-1.5" aria-label="Reports Hamilton writes">
+          {EVIDENCE_REPORTS.map((r, i) => {
+            const on = i === clock.index;
+            return (
+              <li key={r.key} data-evidence-report={r.key} data-active={on ? "true" : "false"}>
+                <button
+                  type="button"
+                  onClick={() => clock.go(i)}
+                  aria-pressed={on}
+                  className={`w-full rounded-[6px] border px-3 py-2 text-left transition-colors duration-300 ${
+                    on ? "border-brick/50 bg-brick-tint" : "border-transparent hover:bg-paper"
+                  }`}
+                >
+                  <span className={`block text-[14px] leading-tight ${on ? "font-semibold text-ink" : "text-ink-soft"}`}>{r.name}</span>
+                  {on ? <span className="mt-1 block text-[12px] leading-snug text-ink-soft">{r.detail}</span> : null}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+        <SlideControls clock={clock} count={EVIDENCE_REPORTS.length} name="Hamilton reports" small />
+      </div>
     </div>
   );
 }
