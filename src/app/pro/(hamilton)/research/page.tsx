@@ -292,7 +292,9 @@ export default async function ResearchPage({ searchParams }: PageProps) {
           inst
             ? ws.ownAmount != null
               ? `${inst.name}'s published fee is ${fmtMoney(ws.ownAmount)}.`
-              : `No published ${ws.feeName.toLowerCase()} fee for ${inst.name} yet; this shows the market alone.`
+              : ws.ownSeveral
+                ? `${inst.name}'s schedule lists several ${ws.feeName.toLowerCase()} fees: ${ws.ownSeveral}.`
+                : `No published ${ws.feeName.toLowerCase()} fee for ${inst.name} yet; this shows the market alone.`
             : "Choose your institution in Settings to see your own position."
         }
         actions={
@@ -316,7 +318,7 @@ export default async function ResearchPage({ searchParams }: PageProps) {
           label="Fee"
           items={ws.ownFees.slice(0, 10).map((f) => ({
             label: f.name,
-            meta: fmtMoney(f.amount),
+            meta: f.label,
             href: researchHref({ fee: f.category, layer: layerKey }, instId),
             active: f.category === ws.fee,
           }))}
