@@ -82,7 +82,7 @@ export function IndexCatalog({ entries, selected }: { entries: CatalogEntry[]; s
           })}
         </ul>
       )}
-      <p className="mt-3 text-[12px] text-ink-muted">Each number is how many institutions publish that fee.</p>
+      <p className="mt-3 text-[12px] text-ink-muted">Each number is how many U.S. institutions publish that fee.</p>
     </div>
   );
 }

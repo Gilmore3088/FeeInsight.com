@@ -1027,7 +1027,7 @@ function StateMap({
                       />
                     </span>
                     <span className="text-right font-mono tabular-nums text-ink">
-                      {view === "gap" ? (c.gap === 0 ? "$0" : `${c.gap! > 0 ? "+" : "−"}${money(Math.abs(c.gap!))}`) : money(c.median!)}
+                      {view === "gap" ? (c.gap === 0 ? "Same" : `${c.gap! > 0 ? "+" : "−"}${money(Math.abs(c.gap!))}`) : money(c.median!)}
                     </span>
                     <span className="text-right font-mono tabular-nums text-ink-muted">{c.institutions.toLocaleString()}</span>
                   </Link>
