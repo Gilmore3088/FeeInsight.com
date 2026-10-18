@@ -103,6 +103,15 @@ describe("registry scheduler", () => {
       BEA_API_KEY: true,
       NASS_API_KEY: true,
     });
+    // A Census key in the process env must not make an unset BEA or NASS key count as set.
+    const saved = process.env.CENSUS_API_KEY;
+    process.env.CENSUS_API_KEY = "census";
+    try {
+      expect(keylessSkipKeysSet({ CENSUS_API_KEY: "census" })).toEqual({ CENSUS_API_KEY: true, BEA_API_KEY: false, NASS_API_KEY: false });
+    } finally {
+      if (saved === undefined) delete process.env.CENSUS_API_KEY;
+      else process.env.CENSUS_API_KEY = saved;
+    }
   });
 
   it("re-pulls succeeded NCUA quarters recorded under an older parser", () => {

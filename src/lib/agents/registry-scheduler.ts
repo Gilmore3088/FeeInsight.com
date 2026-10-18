@@ -227,11 +227,9 @@ export type KeylessSkipKey = (typeof KEYLESS_SKIP_KEYS)[number];
 
 /** The keys, among those a keyless skip waits for, that are set now. */
 export function keylessSkipKeysSet(env: Record<string, string | undefined> = process.env): Record<KeylessSkipKey, boolean> {
-  return {
-    CENSUS_API_KEY: isKeylessSkipNowKeyed(true, env.CENSUS_API_KEY),
-    BEA_API_KEY: isKeylessSkipNowKeyed(true, env.BEA_API_KEY),
-    NASS_API_KEY: isKeylessSkipNowKeyed(true, env.NASS_API_KEY),
-  };
+  // Not via isKeylessSkipNowKeyed: its default would read an unset key as CENSUS_API_KEY.
+  const set = (key: KeylessSkipKey) => Boolean(env[key]?.trim());
+  return { CENSUS_API_KEY: set("CENSUS_API_KEY"), BEA_API_KEY: set("BEA_API_KEY"), NASS_API_KEY: set("NASS_API_KEY") };
 }
 
 /**
