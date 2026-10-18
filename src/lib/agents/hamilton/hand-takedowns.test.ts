@@ -217,10 +217,17 @@ const LIVE: LiveTakedownRow[] = [
   { fee_published_id: 104603, lineage_ref: 119765, institution_id: 6741, canonical_fee_key: "atm_non_network", fee_name: "Balance inquiry at SchoolsFirst FCU and CO-OP Network ATMs", amount: "0.00" },
   { fee_published_id: 104604, lineage_ref: 119766, institution_id: 6741, canonical_fee_key: "card_foreign_txn", fee_name: "Balance inquiry at international ATM locations", amount: "0.00" },
   { fee_published_id: 104605, lineage_ref: 119767, institution_id: 6741, canonical_fee_key: "dormant_account", fee_name: "Account inactivity", amount: "0.00" },
-  { fee_published_id: 104606, lineage_ref: 119768, institution_id: 6741, canonical_fee_key: "document_reproduction", fee_name: "eStatement copies (per copy)", amount: "0.00" },
+  { fee_published_id: 104606, lineage_ref: 119768, institution_id: 6741, canonical_fee_key: "document_reproduction", fee_name: "eStatement copies (per copy)", amount: "0.00" },  // #1946: footnoted $0 rows read as the footnote's number, live on prod, read-only, Oct 18.
+  { fee_published_id: 60838, lineage_ref: 63716, institution_id: 796, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Fee", amount: "3.00" },
+  { fee_published_id: 61840, lineage_ref: 64932, institution_id: 3125, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Service Charge", amount: "3.00" },
+  { fee_published_id: 61841, lineage_ref: 64933, institution_id: 3125, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Service Charge", amount: "4.00" },
+  { fee_published_id: 61842, lineage_ref: 64934, institution_id: 3125, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Service Charge", amount: "5.00" },
+  { fee_published_id: 97256, lineage_ref: 103695, institution_id: 162, canonical_fee_key: "monthly_maintenance", fee_name: "Safe Start Checking Account Monthly service charge", amount: "1.00" },
+  { fee_published_id: 137275, lineage_ref: 159774, institution_id: 6942, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Fee", amount: "1.00" },
+  { fee_published_id: 59691, lineage_ref: 51654, institution_id: 418, canonical_fee_key: "atm_non_network", fee_name: "Non-Penn Community Bank network ATM transactions", amount: "1.00" },
 ];
 const CONDITIONAL_ZERO = [43512, 54014, 61335, 68893, 70121, 73737, 77121, 77122, 77618, 84553, 87079, 87461, 88213, 91505, 120559];
-const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689, 138828, 138832, 138833, 138839, 138827, 138834, 138841, 148352, 138831, 138830, 138848, 138849, 138850, 138851, 42961, 86536, 66721, 66722, 83125, 97335, 97904, 58414, 106021, 33705, 149143, 149806, 137241, 68335, 79402, 74149, 49817, 125584, 109893, 130622, 147193, 133860, 119352, 143826, 97434, 49606, 148620, 107546, 81215, 20420, 102296, 147811, 125359, 146800, 74560, 125809, 102758, 13031, 11722, 11427, 141821, 232, 101170, 64716, 65870, 122350, 81615, 16733, 142748, 152166, 107315, 152973, 152366, 152591, 152306, 45157, 145735, 122351, 129718, 19884, 15730, 104597, 104598, 104599, 104600, 104602, 104603, 104604, 104605, 104606];
+const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689, 138828, 138832, 138833, 138839, 138827, 138834, 138841, 148352, 138831, 138830, 138848, 138849, 138850, 138851, 42961, 86536, 66721, 66722, 83125, 97335, 97904, 58414, 106021, 33705, 149143, 149806, 137241, 68335, 79402, 74149, 49817, 125584, 109893, 130622, 147193, 133860, 119352, 143826, 97434, 49606, 148620, 107546, 81215, 20420, 102296, 147811, 125359, 146800, 74560, 125809, 102758, 13031, 11722, 11427, 141821, 232, 101170, 64716, 65870, 122350, 81615, 16733, 142748, 152166, 107315, 152973, 152366, 152591, 152306, 45157, 145735, 122351, 129718, 19884, 15730, 104597, 104598, 104599, 104600, 104602, 104603, 104604, 104605, 104606, 60838, 61840, 61841, 61842, 97256, 137275, 59691];
 
 // The standing list without the #1772/#1773 ATM rows and #1880's Texas Capital rows, which have their own tests below.
 const STANDING = HAND_TAKEDOWNS.filter((entry) => ![1772, 1773, 1880].includes(entry.issue));
@@ -355,6 +362,13 @@ describe("hand takedowns (James, Oct 16)", () => {
       [104604, "source_mismatch: #1908"],
       [104605, "source_mismatch: #1908"],
       [104606, "source_mismatch: #1908"],
+      [60838, "source_mismatch: #1946"],
+      [61840, "source_mismatch: #1946"],
+      [61841, "source_mismatch: #1946"],
+      [61842, "source_mismatch: #1946"],
+      [97256, "source_mismatch: #1946"],
+      [137275, "source_mismatch: #1946"],
+      [59691, "source_mismatch: #1946"],
     ]);
     expect(CARD_PRODUCT_TAKEDOWN_LIVE).toBe(true);
     // A wrong read names its issue; a second read of one printed fee names the live copy it repeats too.
@@ -483,6 +497,13 @@ describe("hand takedowns (James, Oct 16)", () => {
         { feePublishedId: 104604, feeVerifiedId: 119766, reason: "source_mismatch: #1908" },
         { feePublishedId: 104605, feeVerifiedId: 119767, reason: "source_mismatch: #1908" },
         { feePublishedId: 104606, feeVerifiedId: 119768, reason: "source_mismatch: #1908" },
+        { feePublishedId: 60838, feeVerifiedId: 63716, reason: "source_mismatch: #1946" },
+        { feePublishedId: 61840, feeVerifiedId: 64932, reason: "source_mismatch: #1946" },
+        { feePublishedId: 61841, feeVerifiedId: 64933, reason: "source_mismatch: #1946" },
+        { feePublishedId: 61842, feeVerifiedId: 64934, reason: "source_mismatch: #1946" },
+        { feePublishedId: 97256, feeVerifiedId: 103695, reason: "source_mismatch: #1946" },
+        { feePublishedId: 137275, feeVerifiedId: 159774, reason: "source_mismatch: #1946" },
+        { feePublishedId: 59691, feeVerifiedId: 51654, reason: "source_mismatch: #1946" },
       ],
       skipped: [],
     });
