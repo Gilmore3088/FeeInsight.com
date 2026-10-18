@@ -45,11 +45,12 @@ export function CommandPalette() {
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
-    if (query.length < 2) return;
+    const trimmed = query.trim();
+    if (trimmed.length < 2) return;
 
     debounceRef.current = setTimeout(async () => {
       setLoading(true);
-      const data = await searchDashboard(query);
+      const data = await searchDashboard(trimmed);
       setResults(data);
       setSelectedIndex(0);
       setLoading(false);
