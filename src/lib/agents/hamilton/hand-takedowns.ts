@@ -853,6 +853,10 @@ export async function applyHandTakedowns(
            WHERE fee_verified_id = ${feeVerifiedId}
              AND institution_id = ${entry.institutionId}
              AND review_status IN ('verified', 'approved')
+             AND NOT EXISTS (
+               SELECT 1 FROM published_fee_records fp
+                WHERE fp.lineage_ref = verified_fee_observations.fee_verified_id AND fp.rolled_back_at IS NULL
+             )
           RETURNING fee_verified_id
         `;
         if (rejected.length > 0) result.waitingRejected.push(feeVerifiedId);

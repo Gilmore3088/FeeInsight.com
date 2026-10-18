@@ -967,7 +967,19 @@ export function withRequestedUrl(row: FetchCandidateRow, institutionId?: number,
   if (institutionId == null || Number(row.id) !== institutionId) return row;
   const requested = normalizeHttpUrl(requestedUrl ?? null);
   if (!requested || requested !== normalizeHttpUrl(row.fee_schedule_url)) return row;
+  // A remembered spelling of the same page (`?print=1`, no `:443`, https or `www`) is kept.
+  const remembered = normalizeHttpUrl(row.profile_canonical_source_url ?? null);
+  if (!remembered || samePage(remembered, requested)) return row;
   return { ...row, profile_canonical_source_url: null };
+}
+
+/** Same host (without `www.`) and path (without a trailing slash); scheme, port and query aside. */
+function samePage(a: string, b: string): boolean {
+  const key = (value: string) => {
+    const url = new URL(value);
+    return `${url.hostname.toLowerCase().replace(/^www\./, "")}${url.pathname.replace(/\/+$/, "")}`;
+  };
+  return key(a) === key(b);
 }
 
 export async function runMagellanFetch(

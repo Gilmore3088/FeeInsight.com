@@ -10,7 +10,7 @@ and `bulkSetInstitutionFeeUrls` changed only `fee_schedule_url`, and the extract
 `params.fee_schedule_url` was never passed to the fetch step.
 
 **Fix (#1881).** The admin fee-link commands also set the profile's canonical URL. A run that names
-a `fee_schedule_url` (admin Extract) fetches it when it is the bank's saved link, and the fetch
+a `fee_schedule_url` (admin Extract) fetches it when it is the bank's saved link (a remembered spelling of the same page, such as `?print=1`, is kept), and the fetch
 then remembers that address itself unless a correction locks the profile.
 
 **Not done, and why.** "Always prefer the saved link" was rejected. The profile's address is often

@@ -58,6 +58,11 @@ describe("Magellan agentic fetch", () => {
     expect(withRequestedUrl(row, 70, TEXAS_CAPITAL.fee_schedule_url)).toBe(row);
     expect(withRequestedUrl(row, 69, "https://texascapitalbank.com/other.pdf")).toBe(row);
     expect(withRequestedUrl(row, 69, ` ${TEXAS_CAPITAL.fee_schedule_url} `)).toEqual({ ...row, profile_canonical_source_url: null });
+    // A remembered spelling of the saved page is kept on an extract (navigatorcu's `?print=1`, read-only, Oct 18).
+    const variant = { ...row, id: 7024, fee_schedule_url: "https://navigatorcu.org/checking/free-checking/", profile_canonical_source_url: "https://navigatorcu.org/checking/free-checking/?print=1" };
+    expect(withRequestedUrl(variant, 7024, variant.fee_schedule_url)).toBe(variant);
+    const port = { ...row, id: 4527, fee_schedule_url: "https://www.newcenturyfcu.org:443/images/pdfs/fee-schedule.pdf", profile_canonical_source_url: "https://www.newcenturyfcu.org/images/pdfs/fee-schedule.pdf" };
+    expect(withRequestedUrl(port, 4527, port.fee_schedule_url)).toBe(port);
   });
 
   it("fetches a source document and writes crawl result plus target health", async () => {
