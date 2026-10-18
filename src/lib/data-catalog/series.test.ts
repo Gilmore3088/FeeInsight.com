@@ -5,7 +5,8 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("next/cache", () => ({ unstable_cache: (fn: unknown) => fn }));
 vi.mock("@/lib/data-store/connection", () => ({ withTransaction: vi.fn() }));
 
-import { mergeGroupRows, readAreaSeries, seriesFromPartitionDetail } from "./series";
+import { withTransaction } from "@/lib/data-store/connection";
+import { getAreaSeries, mergeGroupRows, readAreaSeries, resetAreaSeriesCooldown, seriesFromPartitionDetail } from "./series";
 
 const partition = { source_url: "https://www.bls.gov/lau/", fetched_at: "2026-10-12T00:00:00Z" };
 
@@ -50,6 +51,33 @@ describe("area series discovery", () => {
     expect(seen[0]).toContain("statement_timeout");
     expect(seen.some((t) => t.includes("registry_ingest_partitions"))).toBe(true);
     expect(seen.some((t) => t.includes("GROUP BY"))).toBe(true);
+  });
+
+  it("runs a root handle inside its own transaction, so the statement timeout holds", async () => {
+    const tx = vi.fn(() => Promise.resolve([]));
+    const begin = vi.fn((cb: (t: typeof tx) => Promise<unknown>) => cb(tx));
+    const root = Object.assign(vi.fn(() => Promise.resolve([])), { begin });
+    await readAreaSeries(root as never);
+    expect(begin).toHaveBeenCalledTimes(1);
+    expect(root).not.toHaveBeenCalled();
+    expect(tx).toHaveBeenCalled();
+  });
+
+  it("does not read the table again for a while after a failed or empty read", async () => {
+    const read = vi.mocked(withTransaction);
+    read.mockReset();
+    read.mockResolvedValueOnce([] as never);
+    resetAreaSeriesCooldown();
+    expect(await getAreaSeries()).toEqual([]);
+    expect(await getAreaSeries()).toEqual([]);
+    expect(read).toHaveBeenCalledTimes(1);
+
+    read.mockRejectedValueOnce(new Error("canceling statement due to statement timeout"));
+    resetAreaSeriesCooldown();
+    await expect(getAreaSeries()).rejects.toThrow("statement timeout");
+    expect(await getAreaSeries()).toEqual([]);
+    expect(read).toHaveBeenCalledTimes(2);
+    resetAreaSeriesCooldown();
   });
 
   it("is never read per question: queryData does not import it", () => {

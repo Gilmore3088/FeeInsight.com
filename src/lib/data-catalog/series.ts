@@ -167,7 +167,10 @@ export async function readAreaSeries(db?: Db): Promise<CatalogSeries[]> {
       (a, b) => a.source.localeCompare(b.source) || a.series_key.localeCompare(b.series_key),
     );
   };
-  return db ? run(db) : withTransaction(run);
+  if (!db) return withTransaction(run);
+  // SET LOCAL holds only inside a transaction: a root handle (it has begin) gets one of its own.
+  const root = db as Db & { begin?: (cb: (tx: Db) => Promise<CatalogSeries[]>) => Promise<CatalogSeries[]> };
+  return typeof root.begin === "function" ? root.begin(run) : run(db);
 }
 
 class EmptySeriesRead extends Error {
@@ -187,14 +190,29 @@ const cachedAreaSeries = unstable_cache(
   { revalidate: SERIES_CACHE_SECONDS },
 );
 
-/** Every area series, cached for a day. For the catalog and tool listings; not for per-question reads. */
+/** After a failed or empty read, how long callers get an empty list before the table is read again. */
+export const SERIES_RETRY_COOLDOWN_MS = 10 * 60 * 1000;
+let retryAfter = 0;
+
+/** Test hook: forget a cooldown. */
+export function resetAreaSeriesCooldown(): void {
+  retryAfter = 0;
+}
+
+/**
+ * Every area series, cached for a day. For the catalog and tool listings; not for per-question reads.
+ * A failed or empty read is not cached by Next, so it starts a cooldown: until it ends, callers get an
+ * empty list instead of another whole-table GROUP BY.
+ */
 export async function getAreaSeries(): Promise<CatalogSeries[]> {
+  if (Date.now() < retryAfter) return [];
   try {
     return await cachedAreaSeries();
   } catch (error) {
-    if (error instanceof EmptySeriesRead) return [];
     // Outside a Next request (tests, scripts) there is no incremental cache: read directly.
     if (error instanceof Error && error.message.startsWith("Invariant: incrementalCache missing")) return readAreaSeries();
+    retryAfter = Date.now() + SERIES_RETRY_COOLDOWN_MS;
+    if (error instanceof EmptySeriesRead) return [];
     throw error;
   }
 }
