@@ -115,10 +115,18 @@ const DESCRIPTION_WORDS = 4;
 /** Capitalised words right before the name: its account or direction ("Student Checking"). */
 const CAPITALISED_RUN = /(?:\b[A-Z][\w&'-]*\s+)+$/;
 
-/** The sentence a cut would drop last is another fee, priced, and no condition of this one. */
+/** Words naming an account or a customer group, which scope the fees after them. */
+const ACCOUNT_WORDS = /\b(?:checking|savings|accounts?|business|personal|consumer|students?|club|money\s+market|certificates?|cds?|iras?|members?|customers?|only)\b/i;
+
+/**
+ * Every sentence a cut would drop is another fee, priced the way a schedule prints one, with no
+ * condition of this fee, no heading (a colon) and no account or customer group that could scope
+ * the fee after it ("Basic Checking. Overdraft Fee $35 …" keeps the line whole).
+ */
 function anotherFeesClause(dropped: string): boolean {
-  const clause = dropped.replace(/[\s.;|]+$/, "").split(/[.;](?=\s)/).pop() ?? "";
-  return PRICED_FEE.test(clause) && !CONDITION_WORDS.test(clause);
+  if (dropped.includes(":")) return false;
+  const pieces = dropped.replace(/[\s.;|]+$/, "").split(/[.;](?=\s)/).map((piece) => piece.trim()).filter(Boolean);
+  return pieces.length > 0 && pieces.every((piece) => PRICED_FEE.test(piece) && !CONDITION_WORDS.test(piece) && !ACCOUNT_WORDS.test(piece));
 }
 
 /**
@@ -131,7 +139,7 @@ function anotherFeesClause(dropped: string): boolean {
  * Nothing is cut unless the fee's own name prints its price within NAME_TO_PRICE_CHARS, the opening
  * neither prints this price nor ends on a price (catalog 30013's "$2.00 paper statement charge,
  * $5.00 early withdraw penalty"), and it holds no condition word. Then one of two cuts:
- * - after the last clause end, when the sentence before it is another priced fee
+ * - after the last clause end, when every sentence before it is another priced fee
  *   (`anotherFeesClause`) and only capitalised words (an account or direction, kept) sit between
  *   it and the name: "… Basic Checking Monthly Service Fee $10";
  * - with no clause end, inside a clause that opens with "Fee" or "Charge" and runs past

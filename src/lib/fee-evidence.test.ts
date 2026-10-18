@@ -551,6 +551,13 @@ describe("a line opening with another fee's words (#1902)", () => {
       ["No fee with $500 daily balance; Monthly Service Fee $10", "Monthly Service Fee", 10],
       ["Basic Checking. Fees for this account are listed below Monthly Service Fee $10", "Monthly Service Fee", 10],
       ["Excessive withdrawal fee $5 per item over 6 per month Monthly Service Fee $10", "Monthly Service Fee", 10],
+      // A heading, account or customer group before another fee scopes this one too (round 4).
+      ["Basic Checking. Overdraft Fee $35 per item. Monthly Service Fee $10", "Monthly Service Fee", 10],
+      ["Premier Checking: Paper Statement Fee $3; Monthly Service Fee $10", "Monthly Service Fee", 10],
+      ["Business accounts only. Returned Item Fee $25; Overdraft Fee $35", "Overdraft Fee", 35],
+      ["Students under 18: Returned Item Fee $25; Overdraft Fee $35", "Overdraft Fee", 35],
+      ["Basic Checking Overdraft Fee $35 per item Monthly Service Fee $10", "Monthly Service Fee", 10],
+      ["Wire Transfers: Incoming Fee $15; Outgoing Wire Transfer Fee $25", "Wire Transfer Fee", 25],
     ] as const) {
       expect(fromOwnName(line, name, amount)).toBe(line);
     }
