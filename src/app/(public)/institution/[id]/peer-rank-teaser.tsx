@@ -83,7 +83,7 @@ export function peerSetFinding(label: string, lines: PeerSetLine[]): string {
 }
 
 /** This institution, the peer median and the gap (the fee name joins them wider): one grid for the header and every row. */
-const COLUMNS = "grid grid-cols-3 gap-x-3 sm:grid-cols-[minmax(0,1.3fr)_repeat(3,minmax(0,1fr))] sm:gap-x-4";
+const COLUMNS = "grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_7.5rem] gap-x-3 sm:grid-cols-[minmax(0,1.3fr)_repeat(3,minmax(0,1fr))] sm:gap-x-4";
 
 const CTA_CLASS = "fi-btn fi-btn-brick min-h-12 gap-2 px-6 text-[15px]";
 
@@ -124,13 +124,13 @@ export function PeerRankTeaser({
         />
       </div>
       {/* Keyed by the group, so a new group's figures fade in (landing-motion.css, off under reduced motion). */}
-      <figure key={selected.key} className="fi-home-fade mt-5">
+      <figure key={selected.key} className="fi-home-fade mt-5 max-w-4xl">
         <figcaption className="flex items-center gap-2 text-[14px] font-semibold text-ink">
           <Users aria-hidden="true" className="size-4 shrink-0 text-ink-muted" />
           <span className="min-w-0">{selected.label}</span>
         </figcaption>
-        <p className="mt-1 text-[14px] leading-snug text-ink-soft">{peerSetFinding(selected.label, selected.lines)}</p>
-        <div className={`${COLUMNS} mt-4 border-b border-border pb-2 text-[11px] font-medium uppercase tracking-[0.06em] text-ink-muted`} aria-hidden="true">
+        <p className="mt-1 max-w-2xl text-[14px] leading-snug text-ink-soft">{peerSetFinding(selected.label, selected.lines)}</p>
+        <div className={`${COLUMNS} mt-4 border-b border-border pb-2 text-[12px] font-medium text-ink-muted`} aria-hidden="true">
           <span className="hidden sm:block">Fee</span>
           <span>This institution</span>
           <span>Peer median</span>

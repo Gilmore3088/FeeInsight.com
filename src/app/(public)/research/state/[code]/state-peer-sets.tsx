@@ -114,7 +114,7 @@ export function statePeerSetView(
 }
 
 /** Group median, the whole state's and the gap (the fee name joins them wider): one grid for the header and every row. */
-const COLUMNS = "grid grid-cols-3 gap-x-3 sm:grid-cols-[minmax(0,1.6fr)_repeat(3,minmax(0,1fr))] sm:gap-x-4";
+const COLUMNS = "grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_7.5rem] gap-x-3 sm:grid-cols-[minmax(0,1.6fr)_repeat(3,minmax(0,1fr))] sm:gap-x-4";
 
 function Row({ row }: { row: PeerSetRow }) {
   return (
@@ -159,7 +159,7 @@ export function StatePeerSets({
   hrefFor: (key: string) => string;
 }) {
   const head = (
-    <div className={`${COLUMNS} border-b border-border pb-2 text-[11px] font-medium uppercase tracking-[0.06em] text-ink-muted`} aria-hidden="true">
+    <div className={`${COLUMNS} border-b border-border pb-2 text-[12px] font-medium text-ink-muted`} aria-hidden="true">
       <span className="hidden sm:block">Fee</span>
       <span>Group median</span>
       <span>All {stateName}</span>
@@ -181,12 +181,12 @@ export function StatePeerSets({
         }))}
       />
       {/* Keyed by the group, so a new group's figures fade in (landing-motion.css, off under reduced motion). */}
-      <figure key={view.key} className="fi-home-fade min-w-0">
+      <figure key={view.key} className="fi-home-fade min-w-0 max-w-4xl">
         <figcaption className="flex items-center gap-2 text-[14px] font-semibold text-ink">
           <Users aria-hidden="true" className="size-4 shrink-0 text-ink-muted" />
           <span className="min-w-0">{view.label}</span>
         </figcaption>
-        <p className="mt-1 text-[14px] leading-snug text-ink-soft">{view.finding}</p>
+        <p className="mt-1 max-w-2xl text-[14px] leading-snug text-ink-soft">{view.finding}</p>
         <div className="mt-4">
           {head}
           <ul className="divide-y divide-border border-b border-border">

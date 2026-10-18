@@ -18,7 +18,7 @@ export function peerGap(value: number, median: number): { direction: "above" | "
 const TONE = {
   above: { color: "var(--fi-viz-above)", backgroundColor: "color-mix(in srgb, var(--fi-viz-above) 12%, transparent)" },
   below: { color: "var(--fi-viz-below)", backgroundColor: "color-mix(in srgb, var(--fi-viz-below) 12%, transparent)" },
-  same: undefined,
+  same: { backgroundColor: "color-mix(in srgb, var(--fi-ink) 7%, transparent)" },
 } as const;
 
 /** A fee's gap from its peer median as a small colored chip with an up or down arrow. */
@@ -27,8 +27,8 @@ export function PeerGapChip({ value, median }: { value: number; median: number }
   const Icon = direction === "above" ? ArrowUp : direction === "below" ? ArrowDown : Minus;
   return (
     <span
-      className={`inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1 font-sans text-[13px] font-semibold leading-none tabular-nums ${
-        direction === "same" ? "bg-paper text-ink-soft" : ""
+      className={`inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-full px-2 py-1 font-sans text-[12px] sm:px-2.5 sm:text-[13px] font-semibold leading-none tabular-nums ${
+        direction === "same" ? "text-ink-soft" : ""
       }`}
       style={TONE[direction]}
     >
