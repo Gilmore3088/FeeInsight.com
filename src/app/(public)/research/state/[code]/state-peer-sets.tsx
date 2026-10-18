@@ -1,6 +1,6 @@
 import { Users } from "lucide-react";
 import { PeerSetPicker } from "@/components/public/peer-set-picker";
-import { PeerGapChip } from "@/components/public/peer-gap-chip";
+import { PeerGapChip, peerGap } from "@/components/public/peer-gap-chip";
 import "@/app/landing-motion.css";
 import { formatFeeAmount } from "@/lib/format";
 import { MIN_PEERS_FOR_PEER_SET_MEDIAN } from "@/lib/data-store/peer-fee-rank";
@@ -74,19 +74,23 @@ function rowsFor(set: PeerSetIndex, fees: StateFee[]): PeerSetRow[] {
   });
 }
 
-/** The fee where the group sits furthest from the state, in dollars; about the same within 1%. */
+/**
+ * One short line under the group's name: the fee where the group sits furthest from the whole
+ * state, by share, and the dollar gap ("Overdraft runs $1.75 above the Florida median."). The
+ * rows carry the amounts and counts. Within 1% on every fee reads as matching.
+ */
 export function peerSetStateFinding(label: string, stateName: string, rows: PeerSetRow[]): string {
   const compared = rows
     .filter((r): r is PeerSetRow & { median: number; stateMedian: number } => r.median !== null && r.stateMedian !== null && r.stateMedian > 0)
-    .map((r) => ({ r, gap: r.median - r.stateMedian, share: Math.abs(r.median - r.stateMedian) / r.stateMedian }))
+    .map((r) => ({ r, gap: peerGap(r.median, r.stateMedian), share: Math.abs(r.median - r.stateMedian) / r.stateMedian }))
     .sort((a, b) => b.share - a.share);
   const top = compared[0];
   if (!top) return `Too few ${label.charAt(0).toLowerCase()}${label.slice(1)} publish these fees for a median.`;
-  if (top.share <= 0.01) {
-    return `${label} have about the same median as all ${stateName} banks and credit unions together on ${compared.length === 1 ? "the one fee" : `all ${compared.length} fees`} compared.`;
+  if (top.gap.direction === "same") {
+    return compared.length === 1 ? `Matches the ${stateName} median, within 1%.` : `Matches the ${stateName} median on all ${compared.length} fees.`;
   }
-  const fee = top.r.name.replace(/\s*\([^)]*\)/g, "").toLowerCase();
-  return `${label} have a ${top.gap < 0 ? "lower" : "higher"} ${fee} median than all ${stateName} banks and credit unions together (${money(top.r.median)} across ${count(top.r.institutions)} against ${money(top.r.stateMedian)} across ${count(top.r.stateInstitutions)}).`;
+  const fee = top.r.name.replace(/\s*\([^)]*\)/g, "");
+  return `${fee} runs ${money(top.gap.amount)} ${top.gap.direction} the ${stateName} median.`;
 }
 
 /**

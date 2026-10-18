@@ -24,8 +24,7 @@ describe("statePeerSetView", () => {
     const view = statePeerSetView(SETS, FEES, "Texas", null)!;
     expect(view.options.map((o) => o.key)).toEqual(["occ", "fdic"]);
     expect(view.key).toBe("occ");
-    expect(view.finding).toBe("Banks regulated by OCC in TX have a lower overdraft median than all Texas banks and credit unions together ($27 across 12 against $30 across 214).",
-    );
+    expect(view.finding).toBe("Overdraft runs $3 below the Texas median.");
     expect(view.rows[0]).toEqual({ key: "overdraft", name: "Overdraft (OD)", median: 27, institutions: 12, stateMedian: 30, stateInstitutions: 214 });
   });
 
@@ -49,7 +48,7 @@ describe("statePeerSetView", () => {
 
   it("says about the same within 1%", () => {
     expect(peerSetStateFinding("Banks in TX", "Texas", [{ key: "nsf", name: "NSF", median: 28.1, institutions: 9, stateMedian: 28, stateInstitutions: 190 }])).toBe(
-      "Banks in TX have about the same median as all Texas banks and credit unions together on the one fee compared.",
+      "Matches the Texas median, within 1%.",
     );
   });
 });

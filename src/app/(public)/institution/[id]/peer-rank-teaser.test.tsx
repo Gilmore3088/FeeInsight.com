@@ -30,10 +30,10 @@ const SETS: InstitutionPeerSets = {
 };
 
 describe("PeerRankTeaser", () => {
-  it("leads with one finding that names the group, and shows each median over its peer count", () => {
+  it("leads with one short finding under the group, and shows each median over its peer count", () => {
     render(<PeerRankTeaser sets={SETS} hrefFor={(key) => `/institution/1?peers=${key}#peers`} />);
     expect(screen.getByRole("heading", { name: "Overdraft and maintenance against peers" })).toBeInTheDocument();
-    expect(screen.getByText("Its overdraft fee, $35, is $5 above the $30 median of the 42 banks in TX that publish it.")).toBeInTheDocument();
+    expect(screen.getByText("Overdraft runs $5 above the peer median.")).toBeInTheDocument();
     expect(screen.getByText("of 42 peers")).toBeInTheDocument();
     expect(screen.getByText("Too few to compare")).toBeInTheDocument();
     expect(screen.getByText("6 peers publish it")).toBeInTheDocument();
@@ -92,24 +92,23 @@ describe("PeerRankTeaser", () => {
     expect(screen.getByText("None found")).toBeInTheDocument();
   });
 
-  it("compares a fee with several prices at their middle, never as its fee", () => {
+  it("names the fee furthest from its peer median and the dollar gap", () => {
     expect(
-      peerSetFinding("Banks with $1B to $10B in assets", [
-        { key: "monthly_maintenance", own: 12, ownPrices: 3, median: 10, peers: 41, lower: 30, same: 1, higher: 10 },
-      ]),
-    ).toBe("Compared at $12, the middle of its monthly maintenance prices, it sits $2 above the $10 median of the 41 banks with $1B to $10B in assets that publish it.");
+      peerSetFinding([{ key: "monthly_maintenance", own: 12, ownPrices: 3, median: 10, peers: 41, lower: 30, same: 1, higher: 10 }]),
+    ).toBe("Monthly maintenance runs $2 above the peer median.");
     expect(
-      peerSetFinding("The 25 banks closest in assets", [
+      peerSetFinding([
         { key: "overdraft", own: 25, ownPrices: 1, median: 30, peers: 24, lower: 2, same: 0, higher: 22 },
+        { key: "monthly_maintenance", own: 10.5, ownPrices: 1, median: 10, peers: 24, lower: 2, same: 0, higher: 22 },
       ]),
-    ).toBe("Its overdraft fee, $25, is $5 below the $30 median of the 24 of the 25 banks closest in assets that publish it.");
+    ).toBe("Overdraft runs $5 below the peer median.");
   });
 
-  it("says about the same within 1% and never forces a finding", () => {
-    expect(peerSetFinding("Banks in TX", [{ key: "overdraft", own: 30.2, ownPrices: 1, median: 30, peers: 9, lower: 4, same: 0, higher: 5 }])).toMatch(
-      /about the same as the \$30 median of the 9 banks in TX/,
+  it("says within 1% and never forces a finding", () => {
+    expect(peerSetFinding([{ key: "overdraft", own: 30.2, ownPrices: 1, median: 30, peers: 9, lower: 4, same: 0, higher: 5 }])).toBe(
+      "Overdraft matches the peer median, within 1%.",
     );
-    expect(peerSetFinding("Banks in TX", [{ key: "overdraft", own: 30, ownPrices: 1, median: null, peers: 3, lower: 0, same: 0, higher: 0 }])).toBe(
+    expect(peerSetFinding([{ key: "overdraft", own: 30, ownPrices: 1, median: null, peers: 3, lower: 0, same: 0, higher: 0 }])).toBe(
       "Too few peers in this group publish its fees for a median.",
     );
   });

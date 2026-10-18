@@ -4,7 +4,7 @@ import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { formatFeeAmount } from "@/lib/format";
 import { STATE_NAMES } from "@/lib/us-states";
 import { PeerSetPicker } from "@/components/public/peer-set-picker";
-import { PeerGapChip } from "@/components/public/peer-gap-chip";
+import { PeerGapChip, peerGap } from "@/components/public/peer-gap-chip";
 import { TrackLink } from "@/components/track-link";
 import "@/app/landing-motion.css";
 import { PRODUCT_NAME } from "@/lib/constants";
@@ -45,41 +45,28 @@ const CHIPS: Record<string, string> = {
   nearest: `${NEAREST_PEER_COUNT} closest in assets`,
 };
 
-/**
- * "the 41 banks with $300M to $1B in assets that publish it"; a "The 25 banks closest..." set
- * reads "the 24 of the 25 banks closest in assets that publish it".
- */
-function peersPublishing(label: string, peers: number): string {
-  const group = `${label.charAt(0).toLowerCase()}${label.slice(1)}`;
-  const n = peers.toLocaleString("en-US");
-  return `the ${/^the /.test(group) ? `${n} of ${group}` : `${n} ${group}`} that publish it`;
-}
-
 /** Above one price, the institution's value is the middle of its prices, never its fee. */
 const isMiddle = (line: PeerSetLine) => line.ownPrices > 1;
 
 /**
- * The one line the section leads with: the ranked fee furthest from its peer median, in dollars,
- * naming the group and how many peers its median counts. Within 1% reads as about the same.
+ * The one short line under the group's name: the fee furthest from its peer median, by share,
+ * and the dollar gap ("Monthly maintenance runs $1.55 below the peer median."). The rows below
+ * carry the amounts, the middle-of-prices note and the peer counts.
  */
-export function peerSetFinding(label: string, lines: PeerSetLine[]): string {
+export function peerSetFinding(lines: PeerSetLine[]): string {
   const measured = lines
     .filter((line): line is PeerSetLine & { own: number; median: number } => line.own !== null && line.median !== null)
-    .map((line) => ({ line, gap: line.own - line.median, share: line.median > 0 ? Math.abs(line.own - line.median) / line.median : Math.abs(line.own - line.median) }))
+    .map((line) => ({ line, gap: peerGap(line.own, line.median), share: line.median > 0 ? Math.abs(line.own - line.median) / line.median : Math.abs(line.own - line.median) }))
     .sort((a, b) => b.share - a.share);
   const top = measured[0];
   if (!top) {
     return lines.some((line) => line.own !== null)
       ? "Too few peers in this group publish its fees for a median."
-      : "Its schedule lists no overdraft or monthly maintenance fee to compare.";
+      : "No overdraft or monthly maintenance fee to compare.";
   }
-  const fee = FEE_LABELS[top.line.key].toLowerCase();
-  const median = `the ${money(top.line.median)} median of ${peersPublishing(label, top.line.peers)}`;
-  const gap = top.share <= 0.01 ? "about the same as" : `${money(Math.abs(top.gap))} ${top.gap > 0 ? "above" : "below"}`;
-  if (isMiddle(top.line)) {
-    return `Compared at ${money(top.line.own)}, the middle of its ${fee} prices, it ${top.share <= 0.01 ? "is" : "sits"} ${gap} ${median}.`;
-  }
-  return `Its ${fee} fee, ${money(top.line.own)}, is ${gap} ${median}.`;
+  const fee = FEE_LABELS[top.line.key];
+  if (top.gap.direction === "same") return `${fee} matches the peer median, within 1%.`;
+  return `${fee} runs ${money(top.gap.amount)} ${top.gap.direction} the peer median.`;
 }
 
 /** This institution, the peer median and the gap (the fee name joins them wider): one grid for the header and every row. */
@@ -129,7 +116,7 @@ export function PeerRankTeaser({
           <Users aria-hidden="true" className="size-4 shrink-0 text-ink-muted" />
           <span className="min-w-0">{selected.label}</span>
         </figcaption>
-        <p className="mt-1 max-w-2xl text-[14px] leading-snug text-ink-soft">{peerSetFinding(selected.label, selected.lines)}</p>
+        <p className="mt-1 max-w-2xl text-[14px] leading-snug text-ink-soft">{peerSetFinding(selected.lines)}</p>
         <div className={`${COLUMNS} mt-4 border-b border-border pb-2 text-[12px] font-medium text-ink-muted`} aria-hidden="true">
           <span className="hidden sm:block">Fee</span>
           <span>This institution</span>
