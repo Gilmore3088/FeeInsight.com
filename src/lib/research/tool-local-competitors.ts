@@ -8,6 +8,7 @@ import { tool } from "ai";
 import { z } from "zod";
 import { getFeesByInstitution, getInstitutionById } from "@/lib/data-store";
 import { getLocalMarketCompetitors } from "@/lib/data-store/local-market";
+import { selectMarketStated } from "@/lib/hamilton/local-market-request";
 
 export const getLocalCompetitors = tool({
   description:
@@ -38,7 +39,16 @@ export const getLocalCompetitors = tool({
       your_fees: yourFees,
       market: market.label,
       source: `FDIC Summary of Deposits ${market.sod_year}; verified published fee amounts`,
-      competitors: market.competitors.map((c) => ({ name: c.institution_name.replace(/\s+/g, " ").trim(), fees: c.fees })),
+      // fees: each stated price. several_fees: a fee the competitor states several different
+      // amounts for, as its range and each fee by name; their median is no price of its own (#1931).
+      competitors: market.competitors.map((c) => {
+        const stated = selectMarketStated(c.fees, c.several, Object.keys(c.fees));
+        return {
+          name: c.institution_name.replace(/\s+/g, " ").trim(),
+          fees: stated.fees,
+          ...(Object.keys(stated.several).length > 0 ? { several_fees: stated.several } : {}),
+        };
+      }),
     };
   },
 });

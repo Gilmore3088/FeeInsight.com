@@ -127,4 +127,29 @@ describe("localMarketView", () => {
     expect(briefingLocalMarket(base, market, 1)?.rows).toHaveLength(2);
     expect(briefingLocalMarket(base, null)).toBeNull();
   });
+
+  // #1931: a competitor stating several different fees shows them, not their median as its price.
+  const levy = { low: 25, high: 45, fees: [{ name: "Overdraft item", amount: 25 }, { name: "Overdraft ACH", amount: 45 }] };
+  const severalBase = {
+    ...base,
+    layers: [{ scope: "national" as const, label: "National", values: new Map([["overdraft", [peer(35, 2), { ...peer(35, 3), several: levy }, peer(32, 9)]]]) }],
+  };
+
+  it("carries a competitor's several fees beside its one value, and a single fee as its price", () => {
+    const table = briefingLocalMarket(severalBase, market);
+    const bank2 = table?.rows.find((r) => r.institutionId === 2);
+    const bank3 = table?.rows.find((r) => r.institutionId === 3);
+    expect(bank2?.values.overdraft).toBe(35);
+    expect(bank2?.several).toBeUndefined();
+    expect(bank3?.several?.overdraft).toEqual(levy);
+    // The value behind counts stays one per institution.
+    expect(bank3?.values.overdraft).toBe(35);
+  });
+
+  it("keeps the local layer's statistics one value per institution", () => {
+    const view = localMarketView(severalBase, market, "overdraft");
+    expect(view.competitors?.find((c) => c.institutionId === 3)?.several).toEqual(levy);
+    expect(view.competitors?.find((c) => c.institutionId === 2)?.several).toBeUndefined();
+    expect(view.layer?.amounts).toEqual([35, 35]);
+  });
 });

@@ -7,6 +7,7 @@
  */
 
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
+import { statedFeeText } from "@/lib/own-fee";
 import { buildFeeAnswer } from "./answer";
 import { proseFeeName } from "./names";
 import type {
@@ -183,7 +184,7 @@ function sectionsFor(kind: DeliverableKind, input: DeliverableInput): Deliverabl
                 paragraphs: [],
                 table: {
                   columns: ["Institution", "Fee", "Schedule"],
-                  rows: [...local].sort((a, b) => a.amount - b.amount).map((p) => [p.institutionName, money(p.amount), p.documentUrls[0] ?? ""]),
+                  rows: [...local].sort((a, b) => a.amount - b.amount).map((p) => [p.institutionName, statedFeeText(p.amount, p.several, money), p.documentUrls[0] ?? ""]),
                 },
               },
             ]

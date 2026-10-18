@@ -6,6 +6,7 @@
  * Server only.
  */
 
+import type { SeveralFees } from "@/lib/own-fee";
 import { getServiceChargeIntensity } from "@/lib/data-store/call-reports";
 import { ASSET_TIER_RANGES } from "./peer-index";
 import { getFeeResearch, getWorkspaceBriefing, loadDependenceSeries, loadStudyPlacements, type EnginePeerOptions } from "./workspace/research";
@@ -37,7 +38,8 @@ export interface LocalCompetitorFee {
   displayName: string;
   own: number;
   /** Largest local deposits first. */
-  competitors: { name: string; amount: number }[];
+  /** several: the competitor states several different fees here; amount is then their median, shown as this range (#1931). */
+  competitors: { name: string; amount: number; several?: SeveralFees }[];
   /** Where the market is drawn from, e.g. "Melbourne, FL". */
   place: string | null;
 }
@@ -88,7 +90,7 @@ export async function loadAnswerBrief(institutionId: number, peers: EnginePeerOp
       feeCategory: p.feeCategory,
       displayName: p.displayName,
       own: p.current,
-      competitors: local.slice(0, 8).map((c) => ({ name: c.institutionName, amount: c.amount })),
+      competitors: local.slice(0, 8).map((c) => ({ name: c.institutionName, amount: c.amount, ...(c.several ? { several: c.several } : {}) })),
       place: research?.localMarket?.places[0] ?? null,
     });
   }

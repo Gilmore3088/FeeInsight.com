@@ -30,6 +30,24 @@ describe("LocalCompetitors", () => {
     expect(html).not.toMatch(/raise|recommend/i);
   });
 
+  it("shows a competitor's several fees as their range with each by name (#1931)", () => {
+    const several: BriefingLocalMarket = {
+      ...market,
+      rows: market.rows.map((r) =>
+        r.institutionId === 3
+          ? { ...r, values: { ...r.values, stop_payment: 32.5 }, several: { stop_payment: { low: 30, high: 35, fees: [{ name: "Stop payment", amount: 30 }, { name: "Stop payment, all checks", amount: 35 }] } } }
+          : r,
+      ),
+    };
+    const html = renderToStaticMarkup(<LocalCompetitors market={several} />);
+    expect(html).toContain("$30 to $35");
+    expect(html).toContain("Stop payment $30; Stop payment, all checks $35");
+    expect(html).not.toContain("$32.50");
+    // A fee the same competitor states once still shows as its price.
+    expect(html).toContain('<td class="px-4 py-2 text-right">$36</td>');
+    expect(competitorColumns(several)).toEqual(competitorColumns(market));
+  });
+
   it("renders nothing when no fee is published by enough competitors", () => {
     const thin = { ...market, rows: market.rows.slice(0, 2) };
     expect(renderToStaticMarkup(<LocalCompetitors market={thin} />)).toBe("");

@@ -40,4 +40,24 @@ describe("LocalMarketView", () => {
     expect(html).not.toContain("NSF");
     expect(html).not.toMatch(/\b(?:Your|your|with you|\(you\))\b/);
   });
+
+  it("shows a competitor's one fee as its price and several fees as their range with names (#1931)", () => {
+    const several: LocalMarketAnswer = {
+      ...data,
+      categories: ["overdraft", "garnishment"],
+      competitors: [
+        { ...data.competitors[0], fees: { overdraft: 35 } },
+        {
+          ...data.competitors[1],
+          fees: { overdraft: 25 },
+          several: { garnishment: { low: 150, high: 175, fees: [{ name: "Levy", amount: 150 }, { name: "Garnishment", amount: 175 }] } },
+        },
+      ],
+    };
+    const html = renderToStaticMarkup(<LocalMarketView data={several} />);
+    expect(html).toContain("$35");
+    expect(html).toContain("$150 to $175");
+    expect(html).toContain("Levy $150; Garnishment $175");
+    expect(html).not.toContain("$162.50");
+  });
 });

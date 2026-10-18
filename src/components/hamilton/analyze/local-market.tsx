@@ -12,6 +12,7 @@ import { RD } from "@/lib/report-design/tokens";
 import { Exhibit, HeroFigures } from "@/components/report-design";
 import { shortBankName } from "@/lib/hamilton/studies-exhibits/market";
 import { hamiltonIdentityLines } from "@/lib/hamilton/identity-display";
+import { ownFeeList, statedFeeLabel, type SeveralFees } from "@/lib/own-fee";
 
 /** "$1.2B", "$850M", "$40K". */
 export function fmtDeposits(v: number): string {
@@ -33,6 +34,7 @@ function holders(data: LocalMarketAnswer): Row[] {
     branches: data.you.branchesInMarket,
     deposits: data.you.depositsInMarket,
     fees: data.you.fees,
+    several: data.you.several,
     own: true,
   };
   return ([own, ...data.competitors] as Row[])
@@ -131,9 +133,23 @@ function feeMark(theirs: number | undefined, yours: number | undefined) {
   return theirs > yours ? { sign: "▲", color: RD.ink, label: "higher than the research subject" } : { sign: "▼", color: RD.terraText, label: "lower than the research subject" };
 }
 
-/** What the market publishes for the main fees, the bank's row first; each cell marked against the bank's own price. */
+/** Several different fees in one category: their range, with each fee by name beneath (#1931). */
+function SeveralCell({ span }: { span: SeveralFees }) {
+  return (
+    <>
+      {statedFeeLabel(span.low, span, fmtMoney)}
+      <span className="block text-[10px] font-normal" style={{ color: RD.muted }}>
+        {ownFeeList(span, fmtMoney)}
+      </span>
+    </>
+  );
+}
+
+const hasFees = (r: Pick<MarketCompetitor, "fees" | "several">) => Object.keys(r.fees).length > 0 || Object.keys(r.several ?? {}).length > 0;
+
+/** What the market publishes for the main fees, the bank's row first; each stated price marked against the bank's own. */
 function FeeTable({ data, cats }: { data: LocalMarketAnswer; cats: string[] }) {
-  const rows = data.competitors.filter((r) => Object.keys(r.fees).length > 0);
+  const rows = data.competitors.filter(hasFees);
   return (
     <div className="rd-table-wrap overflow-x-auto">
       <table className="rd-table min-w-[32rem]">
@@ -152,7 +168,13 @@ function FeeTable({ data, cats }: { data: LocalMarketAnswer; cats: string[] }) {
             <td>{shortBankName(data.institutionName)} (research subject)</td>
             {cats.map((c) => (
               <td key={c} className="num">
-                {data.you.fees[c] != null ? fmtMoney(data.you.fees[c]) : <span style={{ color: RD.muted }}>·</span>}
+                {data.you.fees[c] != null ? (
+                  fmtMoney(data.you.fees[c])
+                ) : data.you.several?.[c] ? (
+                  <SeveralCell span={data.you.several[c]} />
+                ) : (
+                  <span style={{ color: RD.muted }}>·</span>
+                )}
               </td>
             ))}
           </tr>
@@ -172,6 +194,8 @@ function FeeTable({ data, cats }: { data: LocalMarketAnswer; cats: string[] }) {
                           </span>
                         ) : null}
                       </>
+                    ) : r.several?.[c] ? (
+                      <SeveralCell span={r.several[c]} />
                     ) : (
                       <span style={{ color: RD.muted }}>·</span>
                     )}
@@ -196,7 +220,9 @@ function feeHeadline(data: LocalMarketAnswer, cats: string[]): string {
   const theirs = data.competitors.map((r) => r.fees[cat]).filter((v): v is number => v != null);
   const higher = theirs.filter((v) => v - yours >= 0.005).length;
   const lower = theirs.filter((v) => yours - v >= 0.005).length;
-  return `Of ${plural(theirs.length, "competitor", "competitors")} with ${article(shortFee(cat))} ${shortFee(cat).toLowerCase()} fee on file, ${higher} ${higher === 1 ? "is" : "are"} higher than ${data.institutionName}’s ${fmtMoney(yours)} and ${lower} lower`;
+  // A competitor stating several different fees here has no one price to set against the bank's.
+  const fee = data.competitors.some((r) => r.several?.[cat]) ? `single ${shortFee(cat).toLowerCase()}` : shortFee(cat).toLowerCase();
+  return `Of ${plural(theirs.length, "competitor", "competitors")} with ${article(fee)} ${fee} fee on file, ${higher} ${higher === 1 ? "is" : "are"} higher than ${data.institutionName}’s ${fmtMoney(yours)} and ${lower} lower`;
 }
 
 export function LocalMarketView({ data }: { data: LocalMarketAnswer }) {
@@ -210,8 +236,9 @@ export function LocalMarketView({ data }: { data: LocalMarketAnswer }) {
   const sod = `FDIC Summary of Deposits, June 30, ${data.market.sodYear}`;
   const ranked = holders(data);
   const leader = ranked.find((r) => !r.own);
-  const cats = data.categories.filter((c) => data.you.fees[c] != null || data.competitors.some((r) => r.fees[c] != null));
-  const feeRows = data.competitors.some((r) => Object.keys(r.fees).length > 0);
+  const published = (r: Pick<MarketCompetitor, "fees" | "several">, c: string) => r.fees[c] != null || r.several?.[c] != null;
+  const cats = data.categories.filter((c) => published(data.you, c) || data.competitors.some((r) => published(r, c)));
+  const feeRows = data.competitors.some(hasFees);
   let n = 0;
   const next = () => ++n;
   const topCity = data.you.cities[0];
