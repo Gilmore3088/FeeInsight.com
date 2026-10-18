@@ -81,7 +81,7 @@ describe("rawCanonicalHint", () => {
 });
 
 describe("scoreAnswerKey", () => {
-  it.each([1, 2, 3, 4] as const)("scores a perfect pipeline at precision and recall 1 on every stage (v%i)", (version) => {
+  it.each([1, 2, 3, 4, 5] as const)("scores a perfect pipeline at precision and recall 1 on every stage (v%i)", (version) => {
     const score = scoreAnswerKey([ENTRY], new Map([[7, evidence()]]), version);
     expect(score.scorerVersion).toBe(version);
     expect(score.overall).toMatchObject({ precision: 1, recall: 1, expected: 4 });
