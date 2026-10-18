@@ -50,6 +50,8 @@ export interface ExplorerFee {
   amount: number;
   /** Every price behind the value, only when there is more than one. */
   prices?: ExplorerPrice[];
+  /** The bank's own schedule the value was read from, and when its newest row joined the index (ISO date). */
+  source?: { url: string | null; published: string | null };
 }
 
 export interface ExplorerInstitution {
@@ -79,7 +81,14 @@ export interface PeerExplorerSet {
    * For a metro set: the metro's name and, per city inside it, the institutions with a branch
    * there (branch records, the same ones that define the metro). Absent for other sets.
    */
-  market?: { name: string; cities: { city: string; state: string; ids: number[] }[] };
+  market?: {
+    name: string;
+    cities: { city: string; state: string; ids: number[] }[];
+    /** Branches in the metro and, for banks, deposits there (whole dollars), by institution id. */
+    presence?: Record<number, { branches: number; deposits: number | null }>;
+    /** Every institution's deposits in the metro (FDIC Summary of Deposits), for a local share. */
+    totalDeposits?: number;
+  };
 }
 
 export const money = (n: number) => formatFeeAmount(n) ?? `$${n.toFixed(2)}`;
@@ -158,13 +167,14 @@ export function feeFindings(set: PeerExplorerSet, key: ExplorerFeeKey, selectedI
 }
 
 /**
- * The words for a value built from several prices: the middle of them, or the highest for
- * overdraft, as the statistics contract counts it. Null for a single price.
+ * The words for a value built from several prices. The account prices lead; this value is only the
+ * comparison proxy the statistics contract counts: the middle of them, or for overdraft the highest.
+ * Null for a single price.
  */
-export function pricesSummary(key: ExplorerFeeKey, fee: ExplorerFee | undefined): string | null {
+export function comparisonLabel(key: ExplorerFeeKey, fee: ExplorerFee | undefined): string | null {
   const count = fee?.prices?.length ?? 0;
   if (count < 2) return null;
-  return key === "overdraft" ? `The highest of ${count} prices` : `The middle of ${count} prices`;
+  return key === "overdraft" ? `Comparison price: highest of ${count} prices` : `Comparison price: middle of ${count} account prices`;
 }
 
 const CHARTER_WORDS: Record<string, string> = { bank: "Banks", credit_union: "Credit unions" };
@@ -311,7 +321,7 @@ export function scalePosition(scale: AxisScale, value: number): number {
 }
 
 /** The views a visitor switches between. */
-export const EXPLORER_VIEWS = ["landscape", "locations", "matrix"] as const;
+export const EXPLORER_VIEWS = ["distribution", "landscape", "locations", "matrix"] as const;
 export type ExplorerView = (typeof EXPLORER_VIEWS)[number];
 
 export function isExplorerView(value: unknown): value is ExplorerView {
@@ -323,10 +333,192 @@ export function isExplorerView(value: unknown): value is ExplorerView {
  * Hamilton can hold them (a saved set takes at most MAX_CHOSEN_PEERS), and the set's name.
  * Hamilton routes a visitor who is not signed in itself.
  */
-export function hamiltonPeerSetHref(subjectId: number, peerIds: number[], name: string): string {
+export function hamiltonPeerSetHref(subjectId: number, peerIds: number[], name: string, fee?: ExplorerFeeKey): string {
   const params = new URLSearchParams({ instId: String(subjectId) });
   const ids = [...new Set(peerIds)].filter((id) => Number.isSafeInteger(id) && id > 0);
   if (ids.length > 0 && ids.length <= MAX_CHOSEN_PEERS) params.set("peers", ids.join(","));
   if (name) params.set("name", name);
+  if (fee) params.set("fee", fee);
   return `/pro/settings?${params.toString()}#peer-sets`;
+}
+
+/** What each peer set is for: comparing published prices, or the local market a bank competes in. */
+export const PEER_SET_PURPOSE_GROUP: Record<string, "Pricing peers" | "Market competitors"> = {
+  nearest: "Pricing peers",
+  size: "Pricing peers",
+  regulator: "Pricing peers",
+  state: "Pricing peers",
+  district: "Pricing peers",
+  metro: "Market competitors",
+};
+
+/**
+ * One line on what the chosen set is for, with its geography made explicit: "Banks of similar
+ * size, for comparing published prices. Not local competitors: they're spread over 15 states."
+ */
+export function purposeLine(key: string, set: PeerExplorerSet): string {
+  const kind = set.charterType === "credit_union" ? "Credit unions" : "Banks";
+  const states = [...new Set(set.peers.map((peer) => peer.state).filter((state): state is string => !!state))];
+  const spread =
+    states.length > 1
+      ? ` Not local competitors: they're spread over ${states.length} states.`
+      : states.length === 1
+        ? ` All are headquartered in ${STATE_NAMES[states[0]] ?? states[0]}.`
+        : "";
+  switch (key) {
+    case "metro":
+      return `${kind} with branches in the ${set.market?.name ? `${set.market.name} ` : "home "}metro: the local competitors for deposits and customers. They range from ${assetRangeWords(set)} in assets, so compare prices here, not size.`;
+    case "nearest":
+      return `${kind} of similar size, for comparing published prices.${spread}`;
+    case "size":
+      return `${kind} in the same asset-size band, for comparing published prices.${spread}`;
+    case "regulator":
+      return `${kind} with the same ${set.charterType === "credit_union" ? "charter" : "primary regulator"}, for comparing published prices.${spread}`;
+    case "state":
+    case "district":
+      return `${kind} headquartered in the same ${key === "state" ? "state" : "Fed district"}, for comparing published prices.`;
+    default:
+      return `${kind} for comparing published prices.${spread}`;
+  }
+}
+
+function assetRangeWords(set: PeerExplorerSet): string {
+  const assets = set.peers.map((peer) => peer.assets).filter((v): v is number => v !== null && v > 0);
+  if (assets.length === 0) return "unknown";
+  return `${assetsLabel(Math.min(...assets))} to ${assetsLabel(Math.max(...assets))}`;
+}
+
+/**
+ * The one line above the matrix: where the subject sits across the compared fees and its largest
+ * dollar gap. Only fees with both a value and a peer median count.
+ */
+export function matrixSummary(set: PeerExplorerSet): string {
+  const compared = EXPLORER_FEE_KEYS.flatMap((key) => {
+    const own = set.subject.fees[key]?.amount;
+    const median = set.medians[key]?.median;
+    return own === undefined || median === undefined ? [] : [{ key, gap: own - median, band: matrixBand(own, median) }];
+  });
+  const name = set.subject.name;
+  if (compared.length === 0) return `${name} has no fee here with enough peers publishing it for a median.`;
+  const above = compared.filter((c) => c.band === "above").length;
+  const below = compared.filter((c) => c.band === "below").length;
+  const near = compared.length - above - below;
+  const of = `${compared.length} compared ${compared.length === 1 ? "fee" : "fees"}`;
+  const largest = [...compared].sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap))[0];
+  const gap = Math.abs(largest.gap) < 0.005 ? "" : ` Largest gap: ${EXPLORER_FEE_LABELS[largest.key]}, ${signedMoney(largest.gap)}.`;
+  return `Of ${of}, ${name} is above the peer median on ${above}, below on ${below} and near it on ${near}.${gap}`;
+}
+
+/** "+$0.4B", "-$120M", "Same": an institution's total assets against the subject's. */
+export function assetDifference(assets: number | null, subjectAssets: number | null): string {
+  if (assets === null || subjectAssets === null) return "Not on record";
+  const gap = assets - subjectAssets;
+  if (Math.abs(gap) < 5e5) return "Same";
+  return `${gap > 0 ? "+" : "-"}${assetsLabel(Math.abs(gap))}`;
+}
+
+/** "+$1.20" / "-$0.50" / "$0": a fee's dollar difference from the peer median. */
+export function signedMoney(gap: number): string {
+  if (Math.abs(gap) < 0.005) return "$0";
+  return `${gap > 0 ? "+" : "-"}${money(Math.abs(gap))}`;
+}
+
+/** The share of the cohort's values below this one, counting ties as half (0 to 1). */
+export function percentileRank(value: number, values: number[]): number {
+  if (values.length === 0) return 0.5;
+  let below = 0;
+  let same = 0;
+  for (const v of values) {
+    if (Math.abs(v - value) < 0.005) same += 1;
+    else if (v < value) below += 1;
+  }
+  return (below + same / 2) / values.length;
+}
+
+/**
+ * A matrix cell's shading: its band against the median (the 10% rule) and how far into the
+ * cohort's tail it sits by percentile, 1 (toward the middle) to 3 (the far end).
+ */
+export function cellShade(value: number | undefined, values: number[], median: number | undefined): { band: MatrixBand; step: 0 | 1 | 2 | 3 } {
+  const band = matrixBand(value, median);
+  if (band === "none" || band === "near" || value === undefined) return { band, step: 0 };
+  const distance = Math.abs(percentileRank(value, values) - 0.5);
+  return { band, step: distance >= 0.4 ? 3 : distance >= 0.25 ? 2 : 1 };
+}
+
+export interface Distribution {
+  /** The values drawn to scale. */
+  shown: number[];
+  /** Values far outside the rest (beyond three interquartile ranges), drawn past an axis break when not included. */
+  outliers: number[];
+}
+
+/**
+ * Splits a fee's values into those drawn to scale and far outliers. Outliers are only split off
+ * when not included and with at least five values; nothing is ever dropped, the caller draws them
+ * past an axis break with their amounts.
+ */
+export function splitOutliers(values: number[], include: boolean): Distribution {
+  const sorted = [...values].sort((a, b) => a - b);
+  if (include || sorted.length < 5) return { shown: sorted, outliers: [] };
+  const q = (p: number) => {
+    const idx = p * (sorted.length - 1);
+    const lo = Math.floor(idx);
+    return sorted[lo] + (idx - lo) * (sorted[Math.ceil(idx)] - sorted[lo]);
+  };
+  const iqr = Math.max(q(0.75) - q(0.25), 0.01);
+  const high = q(0.75) + 3 * iqr;
+  const low = q(0.25) - 3 * iqr;
+  return { shown: sorted.filter((v) => v >= low && v <= high), outliers: sorted.filter((v) => v < low || v > high) };
+}
+
+export type MatrixSortKey = "name" | "state" | "assets" | ExplorerFeeKey;
+
+/**
+ * The matrix rows, the subject always first, the rest sorted by name, state, total assets, or a
+ * fee's dollar difference from its peer median (institutions without the fee last).
+ */
+export function sortMatrixRows(set: PeerExplorerSet, key: MatrixSortKey, direction: "asc" | "desc"): ExplorerInstitution[] {
+  const sign = direction === "asc" ? 1 : -1;
+  const byName = (a: ExplorerInstitution, b: ExplorerInstitution) => a.name.localeCompare(b.name);
+  const peers = [...set.peers].sort((a, b) => {
+    if (key === "name") return sign * byName(a, b);
+    if (key === "state") return sign * (a.state ?? "").localeCompare(b.state ?? "") || byName(a, b);
+    if (key === "assets") {
+      if (a.assets === null || b.assets === null) return (a.assets === null ? 1 : 0) - (b.assets === null ? 1 : 0) || byName(a, b);
+      return sign * (a.assets - b.assets) || byName(a, b);
+    }
+    const va = a.fees[key]?.amount;
+    const vb = b.fees[key]?.amount;
+    if (va === undefined || vb === undefined) return (va === undefined ? 1 : 0) - (vb === undefined ? 1 : 0) || byName(a, b);
+    return sign * (va - vb) || byName(a, b);
+  });
+  return [set.subject, ...peers];
+}
+
+/** Landscape's horizontal measures; the metro ones only exist for a metro set. */
+export type LandscapeAxis = "assets" | "branches" | "share";
+
+export const LANDSCAPE_AXIS_LABELS: Record<LandscapeAxis, string> = {
+  assets: "Total assets",
+  branches: "Branches in the metro",
+  share: "Share of metro deposits",
+};
+
+/** The axes a set can offer: assets always; branches and deposit share when the metro's branch records are there. */
+export function landscapeAxes(set: PeerExplorerSet): LandscapeAxis[] {
+  const presence = set.market?.presence;
+  if (!presence || Object.keys(presence).length === 0) return ["assets"];
+  const hasShare = (set.market?.totalDeposits ?? 0) > 0 && Object.values(presence).some((p) => p.deposits !== null);
+  return hasShare ? ["assets", "branches", "share"] : ["assets", "branches"];
+}
+
+/** An institution's position on a Landscape axis, or null when it has none on record. */
+export function landscapeValue(set: PeerExplorerSet, inst: ExplorerInstitution, axis: LandscapeAxis): number | null {
+  if (axis === "assets") return inst.assets;
+  const presence = set.market?.presence?.[inst.id];
+  if (!presence) return null;
+  if (axis === "branches") return presence.branches;
+  const total = set.market?.totalDeposits ?? 0;
+  return presence.deposits !== null && total > 0 ? presence.deposits / total : null;
 }

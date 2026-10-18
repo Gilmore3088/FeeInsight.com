@@ -8,7 +8,7 @@ import { sql } from "./connection";
 import { getPeerFeeValues, peerInstitutionIds, type PeerFeeValue, type PeerFilterSet } from "./fee-index";
 import { computeStats } from "./fees";
 import { getPeerSubject, resolvePeerInstitutionIds } from "./peer-sets";
-import { getHomeMarket, getMarketBranchCities } from "./peer-markets";
+import { getHomeMarket, getMarketBranchCities, getMarketPresence } from "./peer-markets";
 import { MIN_PEERS_FOR_PEER_SET_MEDIAN } from "./peer-fee-rank";
 import { institutionDisplayName } from "@/lib/institution-display-name";
 import { displayCity } from "@/lib/format";
@@ -38,13 +38,17 @@ function clip(text: string | null | undefined): string | null {
 /** One institution's value for one fee, with every price behind it when there is more than one. */
 export function explorerFee(value: PeerFeeValue): ExplorerFee {
   const records = value.fee_records ?? [];
-  if (records.length < 2) return { amount: value.amount };
+  const url = value.document_urls.find((u) => /^https?:\/\//i.test(u)) ?? null;
+  const published = value.published_at ? value.published_at.slice(0, 10) : null;
+  const source = url || published ? { source: { url, published } } : {};
+  if (records.length < 2) return { amount: value.amount, ...source };
   return {
     amount: value.amount,
     prices: [...records]
       .sort((a, b) => a.amount - b.amount || a.id - b.id)
       .slice(0, PRICES_MAX)
       .map((record) => ({ amount: record.amount, name: record.fee_name?.trim() || null, conditions: clip(record.conditions) })),
+    ...source,
   };
 }
 
@@ -138,7 +142,16 @@ export async function getPeerExplorerSet(
   const market = await getHomeMarket(institutionId);
   if (!market) return set;
   const shown = [set.subject.id, ...set.peers.map((peer) => peer.id)];
-  return { ...set, market: { name: market.name, cities: groupBranchCities(await getMarketBranchCities(market.code, shown)) } };
+  const [cities, presence] = await Promise.all([getMarketBranchCities(market.code, shown), getMarketPresence(market.code, shown)]);
+  return {
+    ...set,
+    market: {
+      name: market.name,
+      cities: groupBranchCities(cities),
+      presence: Object.fromEntries(presence.rows.map((row) => [row.institution_id, { branches: row.branches, deposits: row.deposits }])),
+      totalDeposits: presence.totalDeposits,
+    },
+  };
 }
 
 /** Branch rows (one per institution and city) as one entry per city. */

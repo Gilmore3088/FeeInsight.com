@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./connection", () => ({ sql: Object.assign(vi.fn(), { unsafe: vi.fn() }) }));
-vi.mock("./peer-markets", () => ({ getHomeMarket: vi.fn(), getMarketInstitutionIds: vi.fn(), getMarketBranchCities: vi.fn() }));
+vi.mock("./peer-markets", () => ({ getHomeMarket: vi.fn(), getMarketInstitutionIds: vi.fn(), getMarketBranchCities: vi.fn(), getMarketPresence: vi.fn() }));
 
 import { sql } from "./connection";
-import { getHomeMarket, getMarketBranchCities } from "./peer-markets";
+import { getHomeMarket, getMarketBranchCities, getMarketPresence } from "./peer-markets";
 import type { PeerFeeValue } from "./fee-index";
 import { buildPeerExplorerSet, explorerFee, getPeerExplorerSet, groupBranchCities } from "./peer-explorer";
 
@@ -93,9 +93,15 @@ describe("getPeerExplorerSet for the home metro", () => {
     db.unsafe.mockResolvedValueOnce([]);
     vi.mocked(getHomeMarket).mockResolvedValue({ code: 45220, name: "Tallahassee, FL" });
     vi.mocked(getMarketBranchCities).mockResolvedValue([{ institution_id: 2, city: "QUINCY", state: "FL" }]);
+    vi.mocked(getMarketPresence).mockResolvedValue({ totalDeposits: 1e10, rows: [{ institution_id: 2, branches: 3, deposits: 5e8 }] });
     const set = await getPeerExplorerSet(1, { institutionIds: [2] }, true);
     expect(getMarketBranchCities).toHaveBeenCalledWith(45220, [1, 2]);
-    expect(set?.market).toEqual({ name: "Tallahassee, FL", cities: [{ city: "QUINCY", state: "FL", ids: [2] }] });
+    expect(set?.market).toEqual({
+      name: "Tallahassee, FL",
+      cities: [{ city: "QUINCY", state: "FL", ids: [2] }],
+      presence: { 2: { branches: 3, deposits: 5e8 } },
+      totalDeposits: 1e10,
+    });
   });
 });
 

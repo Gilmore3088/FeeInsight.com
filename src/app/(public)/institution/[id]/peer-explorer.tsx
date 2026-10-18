@@ -1,49 +1,62 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowRight, BarChart3, Grid3x3, MapPin, X } from "lucide-react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ArrowRight, ChevronDown, ChevronUp, Grid3x3, MapPin, ScatterChart, SlidersHorizontal, X } from "lucide-react";
 import Link from "next/link";
 import { TrackLink } from "@/components/track-link";
 import {
   EXPLORER_FEE_KEYS,
   EXPLORER_FEE_LABELS,
   EXPLORER_FEE_SHORT,
+  LANDSCAPE_AXIS_LABELS,
   NEAR_MEDIAN_SHARE,
+  assetDifference,
   assetRadius,
   assetScale,
   assetsLabel,
-  coverageLine,
+  cellShade,
+  comparisonLabel,
+  feeCoverage,
   feeFindings,
   gapText,
+  hamiltonPeerSetHref,
   isExplorerFeeKey,
   isExplorerView,
+  landscapeAxes,
+  landscapeValue,
   linearScale,
   locationGroups,
-  matrixBand,
-  matrixRows,
+  matrixSummary,
   money,
-  pricesSummary,
   scalePosition,
+  signedMoney,
+  sortMatrixRows,
+  splitOutliers,
+  type AxisScale,
   type ExplorerFeeKey,
   type ExplorerInstitution,
   type ExplorerView,
+  type LandscapeAxis,
   type MatrixBand,
+  type MatrixSortKey,
   type PeerExplorerSet,
 } from "@/lib/peer-explorer";
 
-/** The subject is brick (the site's accent); a selected peer is ink; the rest are a quiet gray. */
+/** One accent for the subject (brick), ink for a selected peer, neutral slate for the rest. */
 const SUBJECT = "var(--fi-brick)";
 const PEER = "var(--fi-viz-inside)";
 const SELECTED = "var(--fi-ink)";
 /**
  * Against the peer median, below is blue and above is red, as in James's Oct 18 peer-set mockups
- * (the site tokens are named for the market pages, where the pair runs the other way).
+ * (the site tokens are named for the market pages, where the pair runs the other way). Every use
+ * pairs the colour with a word or an arrow.
  */
 const BELOW_TONE = "var(--fi-viz-above)";
 const ABOVE_TONE = "var(--fi-viz-below)";
 
 const VIEWS: { key: ExplorerView; label: string; icon: ReactNode }[] = [
-  { key: "landscape", label: "Landscape", icon: <BarChart3 aria-hidden="true" className="size-4" /> },
+  { key: "distribution", label: "Distribution", icon: <SlidersHorizontal aria-hidden="true" className="size-4" /> },
+  { key: "landscape", label: "Landscape", icon: <ScatterChart aria-hidden="true" className="size-4" /> },
   { key: "locations", label: "Locations", icon: <MapPin aria-hidden="true" className="size-4" /> },
   { key: "matrix", label: "Fee matrix", icon: <Grid3x3 aria-hidden="true" className="size-4" /> },
 ];
@@ -80,27 +93,42 @@ function useWidth<T extends HTMLElement>(fallback: number) {
   return [ref, width] as const;
 }
 
+const feeOf = (inst: ExplorerInstitution, fee: ExplorerFeeKey): number | undefined => inst.fees[fee]?.amount;
+
+/** Peers outside a highlighted finding fade back; the subject and the selection never do. */
+function dimmed(inst: ExplorerInstitution, highlight: Highlight | null, keepIds: number[]): boolean {
+  return Boolean(highlight && !highlight.ids.has(inst.id) && !keepIds.includes(inst.id));
+}
+
+/** A name short enough for a chart label. */
+function short(name: string): string {
+  return name.length > 26 ? `${name.slice(0, 25).trimEnd()}…` : name;
+}
+
 /**
- * One peer set, three linked views (James, Oct 18: "One peer set, three views"). The selected
- * institution, the fee and the view are one state, kept across views and in the address
- * (?peer=, ?pfee=, ?pview=). A finding's peers stay highlighted in every view until cleared.
+ * One peer set, four linked views (James, Oct 18: "One peer set, three views", then the fee
+ * distribution as the lead pricing chart). The selected institution, the fee and the view are one
+ * state, kept across views and in the address (?peer=, ?pfee=, ?pview=). A finding's peers stay
+ * highlighted in every view until cleared.
  */
 export function PeerExplorer({
   set,
+  setKey,
+  setName,
   initial,
-  hamiltonHref,
   isPro,
 }: {
   set: PeerExplorerSet;
+  setKey: string;
+  setName: string;
   initial: { peer?: string | null; fee?: string | null; view?: string | null };
-  hamiltonHref: string;
   isPro: boolean;
 }) {
   const everyone = useMemo(() => [set.subject, ...set.peers], [set]);
   const byId = useMemo(() => new Map(everyone.map((inst) => [inst.id, inst])), [everyone]);
   const firstFee = EXPLORER_FEE_KEYS.find((key) => set.medians[key]) ?? EXPLORER_FEE_KEYS[0];
   const [fee, setFee] = useState<ExplorerFeeKey>(isExplorerFeeKey(initial.fee) ? initial.fee : firstFee);
-  const [view, setView] = useState<ExplorerView>(isExplorerView(initial.view) ? initial.view : "landscape");
+  const [view, setView] = useState<ExplorerView>(isExplorerView(initial.view) ? initial.view : "distribution");
   const initialPeer = Number(initial.peer);
   const [selectedId, setSelectedId] = useState<number>(byId.has(initialPeer) ? initialPeer : set.subject.id);
   const [highlight, setHighlight] = useState<Highlight | null>(null);
@@ -120,21 +148,22 @@ export function PeerExplorer({
   };
   const chooseView = (key: ExplorerView) => {
     setView(key);
-    writeUrl({ pview: key === "landscape" ? null : key });
+    writeUrl({ pview: key === "distribution" ? null : key });
   };
 
   const selected = byId.get(selectedId) ?? set.subject;
   const findings = feeFindings(set, fee, selected.id);
   const median = set.medians[fee];
-  const ctaProps = { className: "fi-btn fi-btn-brick min-h-12 w-full gap-2 px-6 text-[15px] sm:w-auto", href: hamiltonHref };
+  const href = hamiltonPeerSetHref(set.subject.id, set.peers.map((peer) => peer.id), setName, fee);
+  const viewProps = { set, fee, selectedId: selected.id, highlight, onSelect: select };
 
   return (
     <div className="mt-5">
-      <p className="text-[13px] font-medium text-ink">{coverageLine(set, fee)}</p>
+      <Coverage set={set} fee={fee} />
 
       {/* Views and the fee: tabs first on a phone, the fee below them. */}
-      <div className="mt-4 flex flex-col gap-3 border-t border-border pt-4 lg:flex-row lg:items-center lg:justify-between">
-        <div role="tablist" aria-label="View" className="grid grid-cols-3 gap-1 rounded-[14px] border border-border bg-paper p-1 lg:inline-grid lg:w-auto">
+      <div className="mt-4 flex flex-col gap-3 border-t border-border pt-4 xl:flex-row xl:items-center xl:justify-between">
+        <div role="tablist" aria-label="View" className="grid grid-cols-2 gap-1 rounded-[14px] border border-border bg-paper p-1 sm:grid-cols-4 xl:inline-grid xl:w-auto">
           {VIEWS.map((option) => {
             const active = option.key === view;
             return (
@@ -161,7 +190,7 @@ export function PeerExplorer({
           <select
             value={fee}
             onChange={(e) => isExplorerFeeKey(e.target.value) && chooseFee(e.target.value)}
-            className="min-h-11 min-w-0 flex-1 rounded-full border border-border bg-surface-0 px-4 text-[14px] font-semibold text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink lg:flex-none"
+            className="min-h-11 min-w-0 flex-1 rounded-full border border-border bg-surface-0 px-4 text-[14px] font-semibold text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink xl:flex-none"
           >
             {EXPLORER_FEE_KEYS.map((key) => (
               <option key={key} value={key}>
@@ -175,9 +204,10 @@ export function PeerExplorer({
       <div className="mt-4 grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_19rem] lg:gap-8">
         <div id="peer-view-panel" role="tabpanel" aria-labelledby={`peer-view-${view}`} className="min-w-0">
           <div key={view} className="fi-home-fade">
-            {view === "landscape" && <Landscape set={set} fee={fee} selectedId={selected.id} highlight={highlight} onSelect={select} />}
-            {view === "locations" && <Locations set={set} fee={fee} selectedId={selected.id} highlight={highlight} onSelect={select} />}
-            {view === "matrix" && <Matrix set={set} fee={fee} selectedId={selected.id} highlight={highlight} onSelect={select} onFee={chooseFee} />}
+            {view === "distribution" && <Distribution {...viewProps} />}
+            {view === "landscape" && <Landscape {...viewProps} />}
+            {view === "locations" && <Locations {...viewProps} />}
+            {view === "matrix" && <Matrix {...viewProps} onFee={chooseFee} />}
           </div>
           {findings.length > 0 && (
             <div className="mt-4">
@@ -221,36 +251,67 @@ export function PeerExplorer({
         <SidePanel set={set} fee={fee} selected={selected} median={median?.median} onSelect={select} />
       </div>
 
-      <div className="mt-6 flex flex-col gap-3 border-t border-border pt-5 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-6">
-        {isPro ? (
-          <Link {...ctaProps}>
-            Explore this peer set in Hamilton
-            <ArrowRight aria-hidden="true" className="size-4" />
-          </Link>
-        ) : (
-          <TrackLink event="upgrade_click" eventProps={{ placement: "institution_peer_explorer" }} {...ctaProps}>
-            Explore this peer set in Hamilton
-            <ArrowRight aria-hidden="true" className="size-4" />
-          </TrackLink>
+      {/* Hamilton actions for this set and fee (instId, peers, name, fee); Hamilton routes a visitor who is not signed in. */}
+      <div className="mt-6 flex flex-col gap-3 border-t border-border pt-5 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4">
+        <HamiltonLink isPro={isPro} href={href} placement="institution_peer_briefing" primary>
+          Generate a pricing committee briefing
+          <ArrowRight aria-hidden="true" className="size-4" />
+        </HamiltonLink>
+        {setKey === "metro" && (
+          <HamiltonLink isPro={isPro} href={href} placement="institution_peer_local_competitors">
+            Compare local deposit competitors
+          </HamiltonLink>
         )}
-        <Link
-          href={hamiltonHref}
-          className="inline-flex min-h-11 items-center justify-center rounded-[22px] border border-ink px-5 py-2 text-center text-[14px] leading-snug font-semibold text-ink transition-colors hover:bg-ink hover:text-on-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2"
-        >
-          Create a committee brief from this peer set
-        </Link>
       </div>
     </div>
   );
 }
 
-function feeOf(inst: ExplorerInstitution, fee: ExplorerFeeKey): number | undefined {
-  return inst.fees[fee]?.amount;
+function HamiltonLink({ isPro, href, placement, primary = false, children }: { isPro: boolean; href: string; placement: string; primary?: boolean; children: ReactNode }) {
+  const className = primary
+    ? "fi-btn fi-btn-brick min-h-12 w-full gap-2 px-6 text-[15px] sm:w-auto"
+    : "inline-flex min-h-11 items-center justify-center rounded-[22px] border border-ink px-5 py-2 text-center text-[14px] font-semibold leading-snug text-ink transition-colors hover:bg-ink hover:text-on-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2";
+  return isPro ? (
+    <Link href={href} className={className}>
+      {children}
+    </Link>
+  ) : (
+    <TrackLink event="upgrade_click" eventProps={{ placement }} href={href} className={className}>
+      {children}
+    </TrackLink>
+  );
 }
 
-/** Peers outside a highlighted finding fade back; the subject and the selection never do. */
-function dimmed(inst: ExplorerInstitution, highlight: Highlight | null, keepIds: number[]): boolean {
-  return Boolean(highlight && !highlight.ids.has(inst.id) && !keepIds.includes(inst.id));
+/** How many of the set publish the fee, as a meter, and what happens to the rest. */
+function Coverage({ set, fee }: { set: PeerExplorerSet; fee: ExplorerFeeKey }) {
+  const { selected, publish } = feeCoverage(set, fee);
+  const missing = selected - publish;
+  const share = selected > 0 ? (publish / selected) * 100 : 0;
+  return (
+    <div className="rounded-lg bg-paper px-4 py-3">
+      <p className="flex flex-wrap items-baseline gap-x-2 text-[15px] text-ink">
+        <span className="font-semibold tabular-nums">
+          {selected.toLocaleString("en-US")} {selected === 1 ? "peer" : "peers"} selected · {publish.toLocaleString("en-US")} publish this fee
+        </span>
+        <span className="text-[13px] text-ink-muted">({EXPLORER_FEE_LABELS[fee].toLowerCase()})</span>
+      </p>
+      <div
+        role="meter"
+        aria-valuemin={0}
+        aria-valuemax={selected}
+        aria-valuenow={publish}
+        aria-label={`${publish} of ${selected} peers publish this fee`}
+        className="mt-2 h-2 w-full max-w-md overflow-hidden rounded-full bg-border"
+      >
+        <span className="block h-full rounded-full bg-ink" style={{ width: `${share}%` }} />
+      </div>
+      {missing > 0 && (
+        <p className="mt-1.5 text-[13px] text-ink-soft">
+          {missing.toLocaleString("en-US")} {missing === 1 ? "doesn't" : "don't"} publish it: shown as not published, never as zero.
+        </p>
+      )}
+    </div>
+  );
 }
 
 interface ViewProps {
@@ -261,130 +322,303 @@ interface ViewProps {
   onSelect: (id: number) => void;
 }
 
-const MARGIN = { top: 16, right: 16, bottom: 44, left: 52 };
+function Tooltip({ inst, fee, left, top, extra }: { inst: ExplorerInstitution; fee: ExplorerFeeKey; left: string; top: string; extra?: string }) {
+  const value = feeOf(inst, fee);
+  const proxy = comparisonLabel(fee, inst.fees[fee]);
+  return (
+    <div
+      className="pointer-events-none absolute z-20 w-max max-w-[16rem] -translate-x-1/2 -translate-y-full rounded-md border border-border bg-surface-0 px-2.5 py-1.5 text-[12px] leading-snug shadow-fi-1"
+      style={{ left, top }}
+    >
+      <p className="font-semibold text-ink">{inst.name}</p>
+      <p className="tabular-nums text-ink-muted">
+        {value !== undefined ? money(value) : "Not published"}
+        {proxy ? ` · ${proxy.replace("Comparison price: ", "")}` : ""}
+      </p>
+      <p className="text-ink-muted">{extra ?? `${assetsLabel(inst.assets) ?? "Assets not on record"}${inst.assets ? " in assets" : ""}`}</p>
+    </div>
+  );
+}
 
-/** Total assets across, the chosen fee up: one dot per institution that publishes it. */
-function Landscape({ set, fee, selectedId, highlight, onSelect }: ViewProps) {
+const DIST_MARGIN = { left: 16, right: 16 };
+const BREAK_WIDTH = 64;
+
+/**
+ * The lead pricing chart: every institution's fee on one horizontal axis, the peer median as a
+ * line, the institution as a diamond. Far outliers are drawn past an axis break with their
+ * amounts until included, so no value is dropped.
+ */
+function Distribution({ set, fee, selectedId, highlight, onSelect }: ViewProps) {
   const [ref, width] = useWidth<HTMLDivElement>(720);
   const [hover, setHover] = useState<number | null>(null);
-  const height = width < 480 ? 280 : 360;
+  const [include, setInclude] = useState(false);
   const everyone = [set.subject, ...set.peers];
-  const plotted = everyone.filter((inst) => feeOf(inst, fee) !== undefined && inst.assets !== null);
-  const missing = everyone.length - plotted.length;
+  const publishing = everyone.filter((inst) => feeOf(inst, fee) !== undefined);
   const median = set.medians[fee]?.median;
-  const x = assetScale(plotted.map((inst) => inst.assets as number));
-  const y = linearScale([...plotted.map((inst) => feeOf(inst, fee) as number), median ?? 0], width < 480 ? 3 : 4);
-  const innerW = Math.max(10, width - MARGIN.left - MARGIN.right);
-  const innerH = height - MARGIN.top - MARGIN.bottom;
-  const px = (assets: number) => MARGIN.left + scalePosition(x, assets) * innerW;
-  const py = (amount: number) => MARGIN.top + (1 - scalePosition(y, amount)) * innerH;
-
-  if (plotted.length === 0) {
-    return <p className="rounded-lg border border-dashed border-border p-6 text-[14px] text-ink-muted">No institution in this set publishes this fee.</p>;
+  if (publishing.length === 0) {
+    return <p className="rounded-lg border border-dashed border-border p-6 text-[14px] text-ink-muted">Not published by any institution in this set.</p>;
   }
+  const values = publishing.map((inst) => feeOf(inst, fee) as number);
+  const split = splitOutliers(values, include);
+  const outlierAll = splitOutliers(values, false).outliers;
+  const broken = split.outliers.length > 0;
+  const plotRight = width - DIST_MARGIN.right - (broken ? BREAK_WIDTH : 0);
+  const scale = linearScale([...split.shown, median ?? 0], width < 480 ? 3 : 5);
+  const px = (v: number) => DIST_MARGIN.left + scalePosition(scale, v) * (plotRight - DIST_MARGIN.left);
+  const outlierSorted = [...split.outliers].sort((a, b) => a - b);
+  const breakX = (v: number) => plotRight + 24 + (outlierSorted.length > 1 ? (outlierSorted.indexOf(v) / (outlierSorted.length - 1)) * (BREAK_WIDTH - 32) : 0);
+  const xOf = (v: number) => (split.outliers.includes(v) ? breakX(v) : px(v));
 
-  // A few named points: the subject, the selection, and the lowest and highest fees.
-  const sortedByFee = [...plotted].filter((inst) => inst.id !== set.subject.id).sort((a, b) => (feeOf(a, fee) as number) - (feeOf(b, fee) as number));
-  const named = new Set<number>([set.subject.id, selectedId]);
-  if (sortedByFee[0]) named.add(sortedByFee[0].id);
-  if (sortedByFee.length > 1) named.add(sortedByFee[sortedByFee.length - 1].id);
-  if (hover !== null) named.add(hover);
-  const order = [...plotted].sort((a, b) => Number(a.id === selectedId || a.id === set.subject.id) - Number(b.id === selectedId || b.id === set.subject.id));
-  const hovered = hover !== null ? plotted.find((inst) => inst.id === hover) : null;
+  // Stack dots that would overlap, so equal prices read as a column, not one dot.
+  const stacks = new Map<number, number>();
+  const placed = [...publishing]
+    .sort((a, b) => (feeOf(a, fee) as number) - (feeOf(b, fee) as number))
+    .map((inst) => {
+      const x = xOf(feeOf(inst, fee) as number);
+      const slot = Math.round(x / 10);
+      const level = stacks.get(slot) ?? 0;
+      stacks.set(slot, level + 1);
+      return { inst, x, level };
+    });
+  const maxLevel = Math.max(0, ...placed.map((p) => p.level));
+  const base = 44 + Math.min(maxLevel, 12) * 11;
+  const height = base + 40;
+  const yOf = (level: number) => base - Math.min(level, 12) * 11;
+  const hovered = hover !== null ? placed.find((p) => p.inst.id === hover) : null;
+  const subjectValue = feeOf(set.subject, fee);
+  const outlierWords = outlierAll.map((v) => money(v)).join(", ");
 
   return (
     <figure className="m-0">
       <div ref={ref} className="relative w-full">
-        <svg width="100%" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${EXPLORER_FEE_LABELS[fee]} fee by total assets for ${plotted.length} institutions`} className="block overflow-visible">
-          {y.ticks.map((tick) => (
-            <g key={`y${tick}`}>
-              <line x1={MARGIN.left} x2={width - MARGIN.right} y1={py(tick)} y2={py(tick)} stroke="var(--color-border)" strokeWidth={1} />
-              <text x={MARGIN.left - 8} y={py(tick)} dy="0.32em" textAnchor="end" className="fill-ink-muted text-[11px] tabular-nums">
-                {money(tick)}
-              </text>
-            </g>
-          ))}
-          {x.ticks.map((tick) => (
-            <text key={`x${tick}`} x={px(tick)} y={height - MARGIN.bottom + 18} textAnchor="middle" className="fill-ink-muted text-[11px] tabular-nums">
-              {assetsLabel(tick) ?? "$0"}
+        <svg width="100%" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${EXPLORER_FEE_LABELS[fee]} fees of ${publishing.length} institutions on one axis`} className="block overflow-visible">
+          <line x1={DIST_MARGIN.left} x2={plotRight} y1={base + 8} y2={base + 8} stroke="var(--color-border)" strokeWidth={1} />
+          {scale.ticks.map((tick) => (
+            <text key={tick} x={px(tick)} y={base + 26} textAnchor="middle" className="fill-ink-muted text-[11px] tabular-nums">
+              {money(tick)}
             </text>
           ))}
-          <text x={MARGIN.left + innerW / 2} y={height - 6} textAnchor="middle" className="fill-ink-muted text-[11px]">
-            Total assets{x.kind === "log" ? " (log scale)" : ""}
-          </text>
+          {broken && (
+            <g aria-hidden="true">
+              <path d={`M ${plotRight + 6} ${base + 14} l 6 -12 M ${plotRight + 12} ${base + 14} l 6 -12`} stroke="var(--fi-ink)" strokeWidth={1.25} fill="none" />
+              <line x1={plotRight + 20} x2={width - DIST_MARGIN.right} y1={base + 8} y2={base + 8} stroke="var(--color-border)" strokeWidth={1} strokeDasharray="2 3" />
+            </g>
+          )}
           {median !== undefined && (
             <g>
-              <line x1={MARGIN.left} x2={width - MARGIN.right} y1={py(median)} y2={py(median)} stroke="var(--fi-ink)" strokeWidth={1.25} strokeDasharray="5 4" />
-              <text x={width - MARGIN.right} y={py(median) - 6} textAnchor="end" className="fill-ink text-[12px] font-semibold">
+              <line x1={px(median)} x2={px(median)} y1={8} y2={base + 12} stroke="var(--fi-ink)" strokeWidth={1.25} strokeDasharray="4 3" />
+              <text x={px(median)} y={4} textAnchor={px(median) > plotRight - 80 ? "end" : "middle"} className="fill-ink text-[12px] font-semibold tabular-nums">
                 Peer median {money(median)}
               </text>
             </g>
           )}
-          {order.map((inst) => {
-            const cx = px(inst.assets as number);
-            const cy = py(feeOf(inst, fee) as number);
-            const isSubject = inst.id === set.subject.id;
-            const isSelected = inst.id === selectedId;
-            const faded = dimmed(inst, highlight, [set.subject.id, selectedId]);
-            return (
-              <g
-                key={inst.id}
-                className="cursor-pointer"
-                opacity={faded ? 0.2 : 1}
-                onClick={() => onSelect(inst.id)}
-                onMouseEnter={() => setHover(inst.id)}
-                onMouseLeave={() => setHover(null)}
-              >
-                <circle cx={cx} cy={cy} r={12} fill="transparent" />
-                {isSubject ? (
-                  <rect x={cx - 6} y={cy - 6} width={12} height={12} transform={`rotate(45 ${cx} ${cy})`} fill={SUBJECT} stroke="var(--fi-surface-0)" strokeWidth={2} />
-                ) : (
-                  <circle
-                    cx={cx}
-                    cy={cy}
-                    r={isSelected ? 6 : highlight?.ids.has(inst.id) ? 5 : 4.5}
-                    fill={isSelected || highlight?.ids.has(inst.id) ? SELECTED : PEER}
-                    stroke="var(--fi-surface-0)"
-                    strokeWidth={2}
-                  />
-                )}
-                {isSelected && !isSubject && <circle cx={cx} cy={cy} r={10} fill="none" stroke={SELECTED} strokeWidth={1.5} />}
+          {placed
+            .sort((a, b) => Number(a.inst.id === set.subject.id || a.inst.id === selectedId) - Number(b.inst.id === set.subject.id || b.inst.id === selectedId))
+            .map(({ inst, x, level }) => {
+              const cy = yOf(level);
+              const isSubject = inst.id === set.subject.id;
+              const isSelected = inst.id === selectedId;
+              return (
+                <g
+                  key={inst.id}
+                  className="cursor-pointer"
+                  opacity={dimmed(inst, highlight, [set.subject.id, selectedId]) ? 0.2 : 1}
+                  onClick={() => onSelect(inst.id)}
+                  onMouseEnter={() => setHover(inst.id)}
+                  onMouseLeave={() => setHover(null)}
+                >
+                  <circle cx={x} cy={cy} r={10} fill="transparent" />
+                  {isSubject ? (
+                    <rect x={x - 6} y={cy - 6} width={12} height={12} transform={`rotate(45 ${x} ${cy})`} fill={SUBJECT} stroke="var(--fi-surface-0)" strokeWidth={2} />
+                  ) : (
+                    <circle cx={x} cy={cy} r={isSelected ? 6 : 4.5} fill={isSelected || highlight?.ids.has(inst.id) ? SELECTED : PEER} stroke="var(--fi-surface-0)" strokeWidth={2} />
+                  )}
+                  {isSelected && !isSubject && <circle cx={x} cy={cy} r={10} fill="none" stroke={SELECTED} strokeWidth={1.5} />}
+                </g>
+              );
+            })}
+          {split.outliers.map((v) => (
+            <text key={`o${v}`} x={breakX(v)} y={base + 26} textAnchor="middle" className="fill-ink text-[11px] font-semibold tabular-nums">
+              {money(v)}
+            </text>
+          ))}
+          {subjectValue !== undefined && (
+            <text
+              x={xOf(subjectValue)}
+              y={base + 40}
+              textAnchor={xOf(subjectValue) > width - 120 ? "end" : xOf(subjectValue) < 120 ? "start" : "middle"}
+              className="pointer-events-none fill-brick text-[11px] font-semibold"
+            >
+              {short(set.subject.name)} {money(subjectValue)}
+            </text>
+          )}
+        </svg>
+        {hovered && (
+          <Tooltip inst={hovered.inst} fee={fee} left={`${(hovered.x / width) * 100}%`} top={`calc(${(yOf(hovered.level) / height) * 100}% - 10px)`} />
+        )}
+      </div>
+      <figcaption className="mt-2 space-y-1.5 text-[12px] text-ink-muted">
+        <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <span className="inline-flex items-center gap-1.5">
+            <span aria-hidden="true" className="inline-block size-2.5 rotate-45" style={{ background: SUBJECT }} />
+            {short(set.subject.name)}
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span aria-hidden="true" className="inline-block size-2.5 rounded-full" style={{ background: PEER }} />
+            Peer (equal prices stack)
+          </span>
+          {median === undefined && <span>Peer median: too few to compare.</span>}
+        </span>
+        {outlierAll.length > 0 && (
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <label className="inline-flex min-h-10 cursor-pointer items-center gap-2 text-[13px] font-medium text-ink">
+              <input type="checkbox" checked={include} onChange={(e) => setInclude(e.target.checked)} className="size-4 accent-[var(--fi-ink)]" />
+              Include {outlierAll.length === 1 ? `${outlierWords} outlier` : `${outlierAll.length} outliers (${outlierWords})`}
+            </label>
+            {!include && <span>Shown past the axis break, not to scale, so the rest of the set has room.</span>}
+          </span>
+        )}
+      </figcaption>
+    </figure>
+  );
+}
+
+const MARGIN = { top: 20, right: 16, bottom: 44, left: 52 };
+
+function axisTick(axis: LandscapeAxis, value: number): string {
+  if (axis === "assets") return assetsLabel(value) ?? "$0";
+  if (axis === "share") return `${+(value * 100).toFixed(value < 0.1 ? 1 : 0)}%`;
+  return String(value);
+}
+
+/** The chosen fee up, total assets (or, for a metro set, branches or deposit share) across. */
+function Landscape({ set, fee, selectedId, highlight, onSelect }: ViewProps) {
+  const [ref, width] = useWidth<HTMLDivElement>(720);
+  const [hover, setHover] = useState<number | null>(null);
+  const axes = landscapeAxes(set);
+  const [axis, setAxis] = useState<LandscapeAxis>("assets");
+  const height = width < 480 ? 320 : 440;
+  const everyone = [set.subject, ...set.peers];
+  const plotted = everyone.filter((inst) => feeOf(inst, fee) !== undefined && landscapeValue(set, inst, axis) !== null);
+  const notPublished = everyone.filter((inst) => feeOf(inst, fee) === undefined).length;
+  const noX = everyone.filter((inst) => feeOf(inst, fee) !== undefined && landscapeValue(set, inst, axis) === null).length;
+  const median = set.medians[fee]?.median;
+  const xValues = plotted.map((inst) => landscapeValue(set, inst, axis) as number);
+  const x: AxisScale = axis === "assets" ? assetScale(xValues) : linearScale(xValues, 4);
+  const y = linearScale([...plotted.map((inst) => feeOf(inst, fee) as number), median ?? 0], width < 480 ? 4 : 5);
+  const innerW = Math.max(10, width - MARGIN.left - MARGIN.right);
+  const innerH = height - MARGIN.top - MARGIN.bottom;
+  const px = (v: number) => MARGIN.left + scalePosition(x, v) * innerW;
+  const py = (amount: number) => MARGIN.top + (1 - scalePosition(y, amount)) * innerH;
+  const hovered = hover !== null ? plotted.find((inst) => inst.id === hover) : null;
+  const named = plotted.filter((inst) => (inst.id === set.subject.id || inst.id === selectedId) && inst.id !== hover);
+  const order = [...plotted].sort((a, b) => Number(a.id === selectedId || a.id === set.subject.id) - Number(b.id === selectedId || b.id === set.subject.id));
+
+  return (
+    <figure className="m-0">
+      {axes.length > 1 && (
+        <div role="radiogroup" aria-label="Across" className="mb-3 flex flex-wrap items-center gap-2 text-[13px]">
+          <span className="text-ink-muted">Across:</span>
+          {axes.map((option) => (
+            <button
+              key={option}
+              type="button"
+              role="radio"
+              aria-checked={axis === option}
+              onClick={() => setAxis(option)}
+              className={`min-h-10 rounded-full border px-3.5 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink ${axis === option ? "border-ink bg-ink text-on-ink" : "border-border text-ink hover:border-ink"}`}
+            >
+              {LANDSCAPE_AXIS_LABELS[option]}
+            </button>
+          ))}
+        </div>
+      )}
+      {plotted.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-border p-6 text-[14px] text-ink-muted">Not published by any institution in this set.</p>
+      ) : (
+        <div ref={ref} className="relative w-full">
+          <svg width="100%" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${EXPLORER_FEE_LABELS[fee]} fee by ${LANDSCAPE_AXIS_LABELS[axis].toLowerCase()} for ${plotted.length} institutions`} className="block overflow-visible">
+            {y.ticks.map((tick) => (
+              <g key={`y${tick}`}>
+                <line x1={MARGIN.left} x2={width - MARGIN.right} y1={py(tick)} y2={py(tick)} stroke="var(--color-border)" strokeWidth={1} />
+                <text x={MARGIN.left - 8} y={py(tick)} dy="0.32em" textAnchor="end" className="fill-ink-muted text-[11px] tabular-nums">
+                  {money(tick)}
+                </text>
               </g>
-            );
-          })}
-          {plotted
-            .filter((inst) => named.has(inst.id) && inst.id !== hover)
-            .map((inst) => {
-              const cx = px(inst.assets as number);
+            ))}
+            {x.ticks.map((tick) => (
+              <text key={`x${tick}`} x={px(tick)} y={height - MARGIN.bottom + 18} textAnchor="middle" className="fill-ink-muted text-[11px] tabular-nums">
+                {axisTick(axis, tick)}
+              </text>
+            ))}
+            <text x={MARGIN.left + innerW / 2} y={height - 6} textAnchor="middle" className="fill-ink-muted text-[11px]">
+              {LANDSCAPE_AXIS_LABELS[axis]}
+              {x.kind === "log" ? " (log scale)" : ""}
+            </text>
+            {median !== undefined && (
+              <g>
+                <line x1={MARGIN.left} x2={width - MARGIN.right} y1={py(median)} y2={py(median)} stroke="var(--fi-ink)" strokeWidth={1.25} strokeDasharray="5 4" />
+                <text x={width - MARGIN.right} y={py(median) - 6} textAnchor="end" className="fill-ink text-[12px] font-semibold tabular-nums">
+                  Peer median {money(median)}
+                </text>
+              </g>
+            )}
+            {order.map((inst) => {
+              const cx = px(landscapeValue(set, inst, axis) as number);
+              const cy = py(feeOf(inst, fee) as number);
+              const isSubject = inst.id === set.subject.id;
+              const isSelected = inst.id === selectedId;
+              return (
+                <g
+                  key={inst.id}
+                  className="cursor-pointer"
+                  opacity={dimmed(inst, highlight, [set.subject.id, selectedId]) ? 0.2 : 1}
+                  onClick={() => onSelect(inst.id)}
+                  onMouseEnter={() => setHover(inst.id)}
+                  onMouseLeave={() => setHover(null)}
+                >
+                  <circle cx={cx} cy={cy} r={12} fill="transparent" />
+                  {isSubject ? (
+                    <rect x={cx - 6} y={cy - 6} width={12} height={12} transform={`rotate(45 ${cx} ${cy})`} fill={SUBJECT} stroke="var(--fi-surface-0)" strokeWidth={2} />
+                  ) : (
+                    <circle cx={cx} cy={cy} r={isSelected ? 6 : 4.5} fill={isSelected || highlight?.ids.has(inst.id) ? SELECTED : PEER} stroke="var(--fi-surface-0)" strokeWidth={2} />
+                  )}
+                  {isSelected && !isSubject && <circle cx={cx} cy={cy} r={10} fill="none" stroke={SELECTED} strokeWidth={1.5} />}
+                </g>
+              );
+            })}
+            {named.map((inst) => {
+              const cx = px(landscapeValue(set, inst, axis) as number);
               const cy = py(feeOf(inst, fee) as number);
               const right = cx < MARGIN.left + innerW * 0.7;
               const isSubject = inst.id === set.subject.id;
+              const proxy = comparisonLabel(fee, inst.fees[fee]);
               return (
                 <text
                   key={`l${inst.id}`}
                   x={cx + (right ? 10 : -10)}
-                  y={cy - 9}
+                  y={cy - 10}
                   textAnchor={right ? "start" : "end"}
-                  className={`pointer-events-none text-[11px] ${isSubject ? "fill-brick font-semibold" : "fill-ink-soft"}`}
+                  className={`pointer-events-none text-[11px] tabular-nums ${isSubject ? "fill-brick font-semibold" : "fill-ink font-semibold"}`}
                   style={{ paintOrder: "stroke", stroke: "var(--fi-surface-0)", strokeWidth: 3 }}
                 >
                   {short(inst.name)} · {money(feeOf(inst, fee) as number)}
+                  {proxy ? ` (${proxy.replace("Comparison price: ", "")})` : ""}
                 </text>
               );
             })}
-        </svg>
-        {hovered && (
-          <div
-            className="pointer-events-none absolute z-10 w-max max-w-[15rem] -translate-x-1/2 -translate-y-full rounded-md border border-border bg-surface-0 px-2.5 py-1.5 text-[12px] leading-snug shadow-fi-1"
-            style={{ left: `${(px(hovered.assets as number) / width) * 100}%`, top: `calc(${(py(feeOf(hovered, fee) as number) / height) * 100}% - 10px)` }}
-          >
-            <p className="font-semibold text-ink">{hovered.name}</p>
-            <p className="text-ink-muted">
-              {money(feeOf(hovered, fee) as number)} · {assetsLabel(hovered.assets)} in assets
-            </p>
-          </div>
-        )}
-      </div>
+          </svg>
+          {hovered && (
+            <Tooltip
+              inst={hovered}
+              fee={fee}
+              left={`${(px(landscapeValue(set, hovered, axis) as number) / width) * 100}%`}
+              top={`calc(${(py(feeOf(hovered, fee) as number) / height) * 100}% - 10px)`}
+              extra={axis === "assets" ? undefined : `${LANDSCAPE_AXIS_LABELS[axis]}: ${axisTick(axis, landscapeValue(set, hovered, axis) as number)}`}
+            />
+          )}
+        </div>
+      )}
       <figcaption className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-muted">
         <span className="inline-flex items-center gap-1.5">
           <span aria-hidden="true" className="inline-block size-2.5 rotate-45" style={{ background: SUBJECT }} />
@@ -392,29 +626,27 @@ function Landscape({ set, fee, selectedId, highlight, onSelect }: ViewProps) {
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span aria-hidden="true" className="inline-block size-2.5 rounded-full" style={{ background: PEER }} />
-          Peer
+          Peer (hover for its name)
         </span>
-        {median !== undefined && (
+        {median !== undefined ? (
           <span className="inline-flex items-center gap-1.5">
             <span aria-hidden="true" className="inline-block w-4 border-t-[1.5px] border-dashed border-ink" />
             Peer median
           </span>
+        ) : (
+          <span>Peer median: too few to compare.</span>
         )}
-        {missing > 0 && <span>{missing.toLocaleString("en-US")} not shown: no {EXPLORER_FEE_LABELS[fee].toLowerCase()} fee published.</span>}
+        {notPublished > 0 && <span>{notPublished.toLocaleString("en-US")} not shown: fee not published.</span>}
+        {noX > 0 && <span>{noX.toLocaleString("en-US")} not shown: no {LANDSCAPE_AXIS_LABELS[axis].toLowerCase()} on record.</span>}
       </figcaption>
     </figure>
   );
 }
 
-/** A name short enough for a chart label. */
-function short(name: string): string {
-  return name.length > 26 ? `${name.slice(0, 25).trimEnd()}…` : name;
-}
-
 const GROUPS_SHOWN = 12;
 const CIRCLES_PER_GROUP = 40;
 
-/** Where the set is headquartered: one cluster per city (or state), circles sized by total assets. */
+/** Where the set is: one cluster per city (or state), circles sized by total assets. */
 function Locations({ set, fee, selectedId, highlight, onSelect }: ViewProps) {
   const { by, groups } = locationGroups(set);
   const [all, setAll] = useState(false);
@@ -435,13 +667,10 @@ function Locations({ set, fee, selectedId, highlight, onSelect }: ViewProps) {
           const hasSubject = group.members.some((m) => m.id === set.subject.id);
           const visible = group.members.slice(0, CIRCLES_PER_GROUP);
           return (
-            <li
-              key={group.key}
-              className={`min-w-0 rounded-[18px] border p-3 ${hasSubject ? "border-brick/30 bg-brick-tint/40" : "border-border bg-paper"}`}
-            >
+            <li key={group.key} className={`min-w-0 rounded-[18px] border p-3 ${hasSubject && by !== "branch" ? "border-brick/30 bg-brick-tint/40" : "border-border bg-paper"}`}>
               <p className="flex items-baseline justify-between gap-2">
                 <span className="min-w-0 truncate text-[14px] font-semibold text-ink">{group.name}</span>
-                <span className="shrink-0 text-[12px] text-ink-muted">{group.members.length.toLocaleString("en-US")}</span>
+                <span className="shrink-0 text-[12px] tabular-nums text-ink-muted">{group.members.length.toLocaleString("en-US")}</span>
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 {visible.map((inst) => {
@@ -449,7 +678,6 @@ function Locations({ set, fee, selectedId, highlight, onSelect }: ViewProps) {
                   const isSubject = inst.id === set.subject.id;
                   const isSelected = inst.id === selectedId;
                   const value = feeOf(inst, fee);
-                  const faded = dimmed(inst, highlight, [set.subject.id, selectedId]);
                   return (
                     <button
                       key={inst.id}
@@ -459,7 +687,7 @@ function Locations({ set, fee, selectedId, highlight, onSelect }: ViewProps) {
                       aria-label={`${inst.name}, ${value !== undefined ? money(value) : "not published"}`}
                       aria-pressed={isSelected}
                       className="grid place-items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink"
-                      style={{ width: Math.max(24, r * 2), height: Math.max(24, r * 2), opacity: faded ? 0.2 : 1 }}
+                      style={{ width: Math.max(24, r * 2), height: Math.max(24, r * 2), opacity: dimmed(inst, highlight, [set.subject.id, selectedId]) ? 0.2 : 1 }}
                     >
                       {isSubject ? (
                         <span className="block rotate-45" style={{ width: Math.max(10, r * 1.3), height: Math.max(10, r * 1.3), background: SUBJECT }} />
@@ -513,46 +741,116 @@ function Locations({ set, fee, selectedId, highlight, onSelect }: ViewProps) {
   );
 }
 
-const BAND_STYLE: Record<MatrixBand, { background: string; label: string }> = {
-  below: { background: `color-mix(in srgb, ${BELOW_TONE} 22%, var(--fi-surface-0))`, label: "Below median" },
-  near: { background: "color-mix(in srgb, var(--fi-ink) 7%, var(--fi-surface-0))", label: "Near median" },
-  above: { background: `color-mix(in srgb, ${ABOVE_TONE} 22%, var(--fi-surface-0))`, label: "Above median" },
-  none: {
-    background: "repeating-linear-gradient(135deg, transparent 0 5px, color-mix(in srgb, var(--fi-ink) 8%, transparent) 5px 6px)",
-    label: "Not available",
-  },
+const BAND_WORDS: Record<MatrixBand, { mark: string; label: string }> = {
+  below: { mark: "▼", label: "Below the median" },
+  near: { mark: "≈", label: `Near the median, within ${Math.round(NEAR_MEDIAN_SHARE * 100)}%` },
+  above: { mark: "▲", label: "Above the median" },
+  none: { mark: "", label: "Not published" },
 };
+
+/** The cell fill: blue below, red above, deeper toward the cohort's tails; neutral near; hatched when not published. */
+function cellBackground(band: MatrixBand, step: number): string {
+  if (band === "none") return "repeating-linear-gradient(135deg, transparent 0 5px, color-mix(in srgb, var(--fi-ink) 8%, transparent) 5px 6px)";
+  if (band === "near") return "color-mix(in srgb, var(--fi-ink) 6%, var(--fi-surface-0))";
+  const tone = band === "below" ? BELOW_TONE : ABOVE_TONE;
+  return `color-mix(in srgb, ${tone} ${[12, 12, 22, 34][step]}%, var(--fi-surface-0))`;
+}
 
 const ROWS_SHOWN = 30;
 
-/** Every institution against each fee's peer median: rows by total assets, the subject first. */
+/**
+ * Every institution against each fee's peer median, as an investigation table: sortable, the
+ * subject pinned, amounts or differences, a row's evidence on click, and side-by-side compare.
+ */
 function Matrix({ set, fee, selectedId, highlight, onSelect, onFee }: ViewProps & { onFee: (key: ExplorerFeeKey) => void }) {
-  const rows = matrixRows(set);
+  const [sort, setSort] = useState<{ key: MatrixSortKey; dir: "asc" | "desc" }>({ key: "assets", dir: "desc" });
+  const [mode, setMode] = useState<"amount" | "difference">("amount");
   const [all, setAll] = useState(false);
+  const [evidence, setEvidence] = useState<{ id: number; fee: ExplorerFeeKey } | null>(null);
+  const [checked, setChecked] = useState<number[]>([]);
+  const rows = sortMatrixRows(set, sort.key, sort.dir);
   const shown = all ? rows : rows.slice(0, ROWS_SHOWN);
-  if (shown.every((row) => row.id !== selectedId)) {
+  if (!all && shown.every((row) => row.id !== selectedId)) {
     const sel = rows.find((row) => row.id === selectedId);
     if (sel) shown.push(sel);
   }
+  const columnValues = useMemo(
+    () => Object.fromEntries(EXPLORER_FEE_KEYS.map((key) => [key, [set.subject, ...set.peers].map((inst) => inst.fees[key]?.amount).filter((v): v is number => v !== undefined)])) as Record<ExplorerFeeKey, number[]>,
+    [set],
+  );
+  const sortBy = (key: MatrixSortKey) =>
+    setSort((current) => (current.key === key ? { key, dir: current.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "name" || key === "state" ? "asc" : "desc" }));
+  const ariaSort = (key: MatrixSortKey) => (sort.key === key ? (sort.dir === "asc" ? "ascending" : "descending") : "none");
+  const sortIcon = (k: MatrixSortKey) =>
+    sort.key === k ? (sort.dir === "asc" ? <ChevronUp aria-hidden="true" className="inline size-3.5" /> : <ChevronDown aria-hidden="true" className="inline size-3.5" />) : null;
+  const toggleCheck = (id: number) => setChecked((list) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id]));
+  const compare = checked.map((id) => rows.find((row) => row.id === id)).filter((row): row is ExplorerInstitution => row !== undefined);
+  const headBtn = "inline-flex min-h-9 items-center gap-0.5 rounded px-1 font-medium hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink";
+  const subjectStickyTop = "sticky top-[41px] z-[5]";
+
   return (
     <div>
-      <div className="relative max-w-full overflow-x-auto rounded-lg border border-border">
-        <table className="w-full min-w-[640px] border-separate border-spacing-0 text-[13px]">
+      <p className="text-[14px] font-medium leading-snug text-ink">{matrixSummary(set)}</p>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+        <div role="radiogroup" aria-label="Cells show" className="inline-flex rounded-full border border-border bg-paper p-0.5 text-[13px]">
+          {(["amount", "difference"] as const).map((option) => (
+            <button
+              key={option}
+              type="button"
+              role="radio"
+              aria-checked={mode === option}
+              onClick={() => setMode(option)}
+              className={`min-h-9 rounded-full px-3.5 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink ${mode === option ? "bg-ink text-on-ink" : "text-ink-soft hover:text-ink"}`}
+            >
+              {option === "amount" ? "Amounts" : "Difference from median"}
+            </button>
+          ))}
+        </div>
+        <p className="text-[12px] text-ink-muted">Click a cell for its evidence. Tick two or more rows to compare.</p>
+      </div>
+      <div className="mt-3">
+        <p className="text-[12px] font-medium text-ink-muted">{EXPLORER_FEE_LABELS[fee]} across the set</p>
+        <DotStrip set={set} fee={fee} selectedId={selectedId} median={set.medians[fee]?.median} onSelect={onSelect} />
+      </div>
+      <div className="relative mt-3 max-h-[36rem] max-w-full overflow-auto rounded-lg border border-border">
+        <table className="w-full min-w-[860px] border-separate border-spacing-0 text-[13px]">
           <caption className="sr-only">Each institution&apos;s fees against the peer median</caption>
-          <thead>
-            <tr className="text-left text-[12px] font-medium text-ink-muted">
-              <th scope="col" className="sticky left-0 z-10 bg-surface-0 px-3 py-2 font-medium">Institution</th>
-              <th scope="col" className="px-2 py-2 text-right font-medium">Assets</th>
+          <thead className="sticky top-0 z-10 bg-surface-0">
+            <tr className="text-left text-[12px] text-ink-muted">
+              <th scope="col" className="w-8 border-b border-border bg-surface-0 px-2">
+                <span className="sr-only">Compare</span>
+              </th>
+              <th scope="col" aria-sort={ariaSort("name")} className="sticky left-0 z-10 border-b border-border bg-surface-0 px-2 py-1">
+                <button type="button" onClick={() => sortBy("name")} className={headBtn}>
+                  Institution {sortIcon("name")}
+                </button>
+              </th>
+              <th scope="col" aria-sort={ariaSort("state")} className="border-b border-border px-1 py-1">
+                <button type="button" onClick={() => sortBy("state")} className={headBtn}>
+                  State {sortIcon("state")}
+                </button>
+              </th>
+              <th scope="col" aria-sort={ariaSort("assets")} className="border-b border-border px-1 py-1 text-right">
+                <button type="button" onClick={() => sortBy("assets")} className={headBtn}>
+                  Assets {sortIcon("assets")}
+                </button>
+              </th>
+              <th scope="col" className="border-b border-border px-2 py-1 text-right font-medium">vs. this bank</th>
               {EXPLORER_FEE_KEYS.map((key) => (
-                <th key={key} scope="col" className="px-1 py-2 text-center font-medium">
+                <th key={key} scope="col" aria-sort={ariaSort(key)} className="border-b border-border px-1 py-1 text-center">
                   <button
                     type="button"
-                    onClick={() => onFee(key)}
-                    aria-pressed={key === fee}
-                    className={`rounded px-1.5 py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink ${key === fee ? "font-semibold text-ink underline decoration-2 underline-offset-4" : "hover:text-ink"}`}
+                    onClick={() => {
+                      onFee(key);
+                      sortBy(key);
+                    }}
+                    className={`${headBtn} ${key === fee ? "font-semibold text-ink underline decoration-2 underline-offset-4" : ""}`}
                   >
-                    {EXPLORER_FEE_SHORT[key]}
+                    {EXPLORER_FEE_SHORT[key]} {sortIcon(key)}
                   </button>
+                  <span className="block text-[11px] font-normal tabular-nums">
+                    {set.medians[key] ? `median ${money(set.medians[key]!.median)}` : "too few to compare"}
+                  </span>
                 </th>
               ))}
             </tr>
@@ -562,51 +860,82 @@ function Matrix({ set, fee, selectedId, highlight, onSelect, onFee }: ViewProps 
               const isSubject = inst.id === set.subject.id;
               const isSelected = inst.id === selectedId;
               const faded = dimmed(inst, highlight, [set.subject.id, selectedId]);
-              const always = isSubject || isSelected;
+              const rowBg = isSubject ? "bg-paper" : isSelected ? "bg-paper" : "bg-surface-0";
+              const sticky = isSubject ? subjectStickyTop : "";
+              const open = evidence?.id === inst.id;
               return (
-                <tr key={inst.id} className="group" style={{ opacity: faded ? 0.3 : 1 }}>
-                  <th
-                    scope="row"
-                    className={`sticky left-0 z-10 max-w-[8.5rem] border-t sm:max-w-[11rem] border-border px-0 py-0 text-left font-normal ${isSelected ? "bg-paper" : "bg-surface-0"}`}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => onSelect(inst.id)}
-                      aria-pressed={isSelected}
-                      className={`flex min-h-10 w-full items-center gap-2 border-l-[3px] px-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink ${
-                        isSubject ? "border-brick font-semibold text-ink" : isSelected ? "border-ink font-semibold text-ink" : "border-transparent text-ink-soft hover:text-ink"
-                      }`}
-                    >
-                      <span className="min-w-0 truncate">{inst.name}</span>
-                    </button>
-                  </th>
-                  <td className="border-t border-border px-2 text-right tabular-nums text-ink-muted">{assetsLabel(inst.assets) ?? "Not on record"}</td>
-                  {EXPLORER_FEE_KEYS.map((key) => {
-                    const value = feeOf(inst, key);
-                    const band = matrixBand(value, set.medians[key]?.median);
-                    return (
-                      <td key={key} className="border-t border-border p-[2px]">
-                        <span
-                          className={`flex min-h-9 items-center justify-center rounded-[4px] px-1 tabular-nums ${key === fee ? "ring-1 ring-inset ring-ink/15" : ""}`}
-                          style={{ background: BAND_STYLE[band].background }}
-                          title={`${inst.name}, ${EXPLORER_FEE_LABELS[key]}: ${value !== undefined ? money(value) : "not available"}`}
-                        >
-                          {value === undefined ? (
-                            <span className="text-ink-muted">
-                              <span aria-hidden="true">–</span>
-                              <span className="sr-only">Not available</span>
-                            </span>
-                          ) : (
-                            <span className={`${always ? "font-semibold text-ink" : "text-ink opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`}>
-                              {money(value)}
-                              <span className="sr-only">, {BAND_STYLE[band].label.toLowerCase()}</span>
-                            </span>
-                          )}
-                        </span>
+                <Fragment key={inst.id}>
+                  <tr style={{ opacity: faded ? 0.3 : 1 }}>
+                    <td className={`border-t border-border px-2 text-center ${rowBg} ${sticky}`}>
+                      {!isSubject && (
+                        <input
+                          type="checkbox"
+                          checked={checked.includes(inst.id)}
+                          onChange={() => toggleCheck(inst.id)}
+                          aria-label={`Compare ${inst.name}`}
+                          className="size-4 accent-[var(--fi-ink)]"
+                        />
+                      )}
+                    </td>
+                    <th scope="row" className={`sticky left-0 z-[6] max-w-[9rem] border-t border-border p-0 text-left font-normal sm:max-w-[13rem] ${rowBg} ${isSubject ? "top-[41px]" : ""}`}>
+                      <button
+                        type="button"
+                        onClick={() => onSelect(inst.id)}
+                        aria-pressed={isSelected}
+                        className={`flex min-h-11 w-full items-center gap-2 border-l-[3px] px-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink ${
+                          isSubject ? "border-brick font-semibold text-ink" : isSelected ? "border-ink font-semibold text-ink" : "border-transparent text-ink-soft hover:text-ink"
+                        }`}
+                      >
+                        <span className="min-w-0 truncate">{inst.name}</span>
+                      </button>
+                    </th>
+                    <td className={`border-t border-border px-2 text-ink-muted ${rowBg} ${sticky}`}>{inst.state ?? "Not on record"}</td>
+                    <td className={`border-t border-border px-2 text-right tabular-nums text-ink-muted ${rowBg} ${sticky}`}>{assetsLabel(inst.assets) ?? "Not on record"}</td>
+                    <td className={`border-t border-border px-2 text-right tabular-nums text-ink-muted ${rowBg} ${sticky}`}>{isSubject ? "This bank" : assetDifference(inst.assets, set.subject.assets)}</td>
+                    {EXPLORER_FEE_KEYS.map((key) => {
+                      const value = inst.fees[key]?.amount;
+                      const median = set.medians[key]?.median;
+                      const { band, step } = cellShade(value, columnValues[key], median);
+                      const words = median === undefined && value !== undefined ? "no median: too few to compare" : BAND_WORDS[band].label.toLowerCase();
+                      const proxy = comparisonLabel(key, inst.fees[key]);
+                      const text =
+                        value === undefined ? "Not published" : mode === "difference" && median !== undefined ? signedMoney(value - median) : money(value);
+                      return (
+                        <td key={key} className={`border-t border-border p-[2px] ${rowBg} ${sticky}`}>
+                          <button
+                            type="button"
+                            onClick={() => setEvidence(open && evidence?.fee === key ? null : { id: inst.id, fee: key })}
+                            title={`${inst.name}, ${EXPLORER_FEE_LABELS[key]}: ${value !== undefined ? money(value) : "not published"}${proxy ? ` (${proxy.toLowerCase()})` : ""}${value !== undefined ? `, ${words}` : ""}`}
+                            aria-expanded={open && evidence?.fee === key}
+                            className={`flex min-h-10 w-full items-center justify-center gap-1 rounded-[4px] px-1.5 tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink ${key === fee ? "ring-1 ring-inset ring-ink/20" : ""}`}
+                            style={{ background: cellBackground(median === undefined && value !== undefined ? "near" : band, step) }}
+                          >
+                            {value === undefined ? (
+                              <span className="text-[11px] text-ink-muted">Not published</span>
+                            ) : (
+                              <>
+                                <span className={isSubject ? "font-semibold text-ink" : "text-ink"}>{text}</span>
+                                {median !== undefined && (
+                                  <span aria-hidden="true" className="text-[10px] text-ink-soft">
+                                    {BAND_WORDS[band].mark}
+                                  </span>
+                                )}
+                                <span className="sr-only">, {words}</span>
+                              </>
+                            )}
+                          </button>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                  {open && evidence && (
+                    <tr>
+                      <td colSpan={5 + EXPLORER_FEE_KEYS.length} className="border-t border-border bg-paper p-0">
+                        <Evidence inst={inst} focus={evidence.fee} set={set} onClose={() => setEvidence(null)} />
                       </td>
-                    );
-                  })}
-                </tr>
+                    </tr>
+                  )}
+                </Fragment>
               );
             })}
           </tbody>
@@ -620,17 +949,149 @@ function Matrix({ set, fee, selectedId, highlight, onSelect, onFee }: ViewProps 
       <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[12px] text-ink-muted">
         {(["below", "near", "above", "none"] as const).map((band) => (
           <li key={band} className="inline-flex items-center gap-1.5">
-            <span aria-hidden="true" className="inline-block h-3 w-5 rounded-[3px] border border-border" style={{ background: BAND_STYLE[band].background }} />
-            {band === "near" ? `Within ${Math.round(NEAR_MEDIAN_SHARE * 100)}% of the median` : BAND_STYLE[band].label}
+            <span aria-hidden="true" className="inline-flex h-4 w-6 items-center justify-center rounded-[3px] border border-border text-[9px] text-ink-soft" style={{ background: cellBackground(band, 2) }}>
+              {BAND_WORDS[band].mark}
+            </span>
+            {BAND_WORDS[band].label}
           </li>
         ))}
-        <li>Hover or focus a row for its values.</li>
+        <li>Deeper colour: further from the middle of the set.</li>
+      </ul>
+      {compare.length >= 2 && <Compare set={set} rows={[set.subject, ...compare]} onClear={() => setChecked([])} />}
+      {compare.length === 1 && <p className="mt-3 text-[13px] text-ink-muted">Tick one more institution to compare side by side.</p>}
+    </div>
+  );
+}
+
+/** One institution's evidence for every fee, the clicked fee first: amounts, account prices, conditions, the schedule and its date. */
+function Evidence({ inst, focus, set, onClose }: { inst: ExplorerInstitution; focus: ExplorerFeeKey; set: PeerExplorerSet; onClose: () => void }) {
+  const keys = [focus, ...EXPLORER_FEE_KEYS.filter((key) => key !== focus)];
+  return (
+    <div className="sticky left-0 max-w-[min(100vw-4rem,52rem)] px-3 py-3 text-[13px]">
+      <div className="flex items-center justify-between gap-3">
+        <p className="font-semibold text-ink">{inst.name}: evidence</p>
+        <button type="button" onClick={onClose} className="inline-flex min-h-9 items-center gap-1 text-[12px] text-ink-muted hover:text-ink">
+          <X aria-hidden="true" className="size-3.5" />
+          Close
+        </button>
+      </div>
+      <ul className="mt-2 grid gap-2 sm:grid-cols-2">
+        {keys.map((key) => {
+          const f = inst.fees[key];
+          const median = set.medians[key]?.median;
+          const proxy = comparisonLabel(key, f);
+          return (
+            <li key={key} className={`rounded-md border bg-surface-0 px-3 py-2 ${key === focus ? "border-ink" : "border-border"}`}>
+              <p className="flex items-baseline justify-between gap-2">
+                <span className="font-medium text-ink">{EXPLORER_FEE_LABELS[key]}</span>
+                <span className="tabular-nums font-semibold text-ink">{f ? money(f.amount) : <span className="font-normal text-ink-muted">Not published</span>}</span>
+              </p>
+              {f && (
+                <p className="text-[12px] text-ink-muted">
+                  {proxy ? `${proxy}. ` : ""}
+                  {median !== undefined ? `${signedMoney(f.amount - median)} against the peer median of ${money(median)}.` : "Peer median: too few to compare."}
+                </p>
+              )}
+              {f?.prices && (
+                <ul className="mt-1 space-y-1">
+                  {f.prices.map((price, i) => (
+                    <li key={i} className="text-[12px]">
+                      <span className="tabular-nums font-medium text-ink">{money(price.amount)}</span> <span className="text-ink-soft">{price.name ?? "Account not named"}</span>
+                      {price.conditions && <span className="block text-ink-muted">{price.conditions}</span>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {f?.source && (
+                <p className="mt-1 text-[12px] text-ink-muted">
+                  {f.source.url ? (
+                    <a href={f.source.url} target="_blank" rel="noopener noreferrer" className="font-medium text-ink underline underline-offset-2">
+                      The bank&apos;s fee schedule
+                    </a>
+                  ) : (
+                    "Schedule link not on record"
+                  )}
+                  {f.source.published ? ` · in the index since ${formatDate(f.source.published)}` : ""}
+                </p>
+              )}
+              {f && !f.source && <p className="mt-1 text-[12px] text-ink-muted">Schedule link and date not on record.</p>}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
 }
 
-/** The selected institution's fee, the peer median and the gap, then where every peer sits. */
+function formatDate(iso: string): string {
+  const date = new Date(`${iso}T00:00:00Z`);
+  return Number.isNaN(date.getTime()) ? iso : date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+}
+
+/** The ticked institutions side by side with this one: each fee's amount and its difference from the median. */
+function Compare({ set, rows, onClear }: { set: PeerExplorerSet; rows: ExplorerInstitution[]; onClear: () => void }) {
+  return (
+    <section aria-label="Side-by-side comparison" className="mt-4 rounded-lg border border-ink/20 bg-paper p-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[14px] font-semibold text-ink">Side by side</p>
+        <button type="button" onClick={onClear} className="inline-flex min-h-9 items-center gap-1 text-[12px] text-ink-muted hover:text-ink">
+          <X aria-hidden="true" className="size-3.5" />
+          Clear
+        </button>
+      </div>
+      <div className="relative mt-2 max-w-full overflow-x-auto">
+        <table className="w-full border-separate border-spacing-0 text-[13px]">
+          <thead>
+            <tr className="text-left text-[12px] text-ink-muted">
+              <th scope="col" className="px-2 py-1 font-medium">Fee</th>
+              {rows.map((inst) => (
+                <th key={inst.id} scope="col" className={`px-2 py-1 text-right font-semibold ${inst.id === set.subject.id ? "text-brick" : "text-ink"}`}>
+                  {short(inst.name)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row" className="border-t border-border px-2 py-1.5 text-left font-normal text-ink-soft">Assets</th>
+              {rows.map((inst) => (
+                <td key={inst.id} className="border-t border-border px-2 text-right tabular-nums text-ink">{assetsLabel(inst.assets) ?? "Not on record"}</td>
+              ))}
+            </tr>
+            {EXPLORER_FEE_KEYS.map((key) => {
+              const median = set.medians[key]?.median;
+              return (
+                <tr key={key}>
+                  <th scope="row" className="border-t border-border px-2 py-1.5 text-left font-normal text-ink-soft">
+                    {EXPLORER_FEE_LABELS[key]}
+                    <span className="block text-[11px] tabular-nums text-ink-muted">{median !== undefined ? `median ${money(median)}` : "too few to compare"}</span>
+                  </th>
+                  {rows.map((inst) => {
+                    const value = inst.fees[key]?.amount;
+                    return (
+                      <td key={inst.id} className="border-t border-border px-2 text-right tabular-nums">
+                        {value === undefined ? (
+                          <span className="text-[12px] text-ink-muted">Not published</span>
+                        ) : (
+                          <>
+                            <span className="text-ink">{money(value)}</span>
+                            {median !== undefined && <span className="block text-[11px] text-ink-muted">{signedMoney(value - median)}</span>}
+                          </>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+/** The selected institution's fee, led by its account prices, then the peer median and the gap. */
 function SidePanel({
   set,
   fee,
@@ -647,7 +1108,7 @@ function SidePanel({
   const own = selected.fees[fee];
   const isSubject = selected.id === set.subject.id;
   const gap = own && median !== undefined ? gapText(own.amount, median) : null;
-  const summary = pricesSummary(fee, own);
+  const proxy = comparisonLabel(fee, own);
   return (
     <aside aria-live="polite" className="min-w-0 border-t border-border pt-5 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
       <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">{isSubject ? "This institution" : "Selected peer"}</p>
@@ -666,22 +1127,29 @@ function SidePanel({
       )}
       <div className="mt-4 border-t border-border pt-4">
         <p className="text-[13px] font-semibold text-ink">{EXPLORER_FEE_LABELS[fee]}</p>
-        <p className="mt-1 text-[36px] font-semibold leading-none tracking-[-0.02em] text-ink tabular-nums">{own ? money(own.amount) : <span className="text-[15px] font-medium text-ink-muted">Not published</span>}</p>
-        {summary && own?.prices && (
-          <details className="mt-2 text-[13px]">
-            <summary className="inline-flex min-h-10 cursor-pointer items-center font-medium text-ink">{summary}: see each account</summary>
-            <ul className="mt-1 space-y-2">
+        {own?.prices && proxy ? (
+          <>
+            <p className="mt-1 text-[12px] font-medium text-ink-muted">Account prices</p>
+            <ul className="mt-1 space-y-1.5">
               {own.prices.map((price, i) => (
-                <li key={i} className="rounded-md bg-paper px-3 py-2">
+                <li key={i} className="rounded-md bg-paper px-3 py-2 text-[13px]">
                   <p className="flex items-baseline justify-between gap-3">
-                    <span className="min-w-0 text-ink">{price.name ?? "Name not printed"}</span>
-                    <span className="shrink-0 font-semibold tabular-nums text-ink">{money(price.amount)}</span>
+                    <span className="min-w-0 text-ink">{price.name ?? "Account not named"}</span>
+                    <span className="shrink-0 text-[16px] font-semibold tabular-nums text-ink">{money(price.amount)}</span>
                   </p>
                   {price.conditions && <p className="mt-0.5 text-[12px] leading-snug text-ink-muted">{price.conditions}</p>}
                 </li>
               ))}
             </ul>
-          </details>
+            <p className="mt-3 flex items-baseline justify-between gap-3 border-t border-border pt-2">
+              <span className="text-[12px] text-ink-muted">{proxy}</span>
+              <span className="text-[24px] font-semibold tabular-nums text-ink">{money(own.amount)}</span>
+            </p>
+          </>
+        ) : (
+          <p className="mt-1 text-[36px] font-semibold leading-none tracking-[-0.02em] text-ink tabular-nums">
+            {own ? money(own.amount) : <span className="text-[15px] font-medium text-ink-muted">Not published</span>}
+          </p>
         )}
         <dl className="mt-4 grid grid-cols-2 gap-3">
           <div>
@@ -690,11 +1158,12 @@ function SidePanel({
           </div>
           <div>
             <dt className="text-[12px] text-ink-muted">Peers publishing</dt>
-            <dd className="mt-0.5 text-[20px] font-semibold tabular-nums text-ink">{set.medians[fee]?.peers ?? set.peers.filter((p) => p.fees[fee]).length}</dd>
+            <dd className="mt-0.5 text-[20px] font-semibold tabular-nums text-ink">{set.peers.filter((p) => p.fees[fee]).length}</dd>
           </div>
         </dl>
         {gap && (
           <p className="mt-2 text-[14px] font-semibold" style={{ color: gap.direction === "above" ? ABOVE_TONE : gap.direction === "below" ? BELOW_TONE : undefined }}>
+            {gap.direction === "above" ? "▲ " : gap.direction === "below" ? "▼ " : ""}
             {gap.text}
           </p>
         )}
@@ -704,17 +1173,17 @@ function SidePanel({
   );
 }
 
-/** Every institution's fee on one track: the selection a diamond (subject) or ringed dot, the median a tick. */
+/** Every institution's fee on one track: the subject a diamond, the selection a ringed dot, the median a tick. */
 function DotStrip({ set, fee, selectedId, median, onSelect }: { set: PeerExplorerSet; fee: ExplorerFeeKey; selectedId: number; median: number | undefined; onSelect: (id: number) => void }) {
   const everyone = [set.subject, ...set.peers].filter((inst) => feeOf(inst, fee) !== undefined);
-  if (everyone.length < 2) return null;
+  if (everyone.length < 2) return <p className="mt-3 text-[12px] text-ink-muted">Too few to compare.</p>;
   const values = everyone.map((inst) => feeOf(inst, fee) as number);
   const low = Math.min(...values);
   const high = Math.max(...values);
   const at = (v: number) => (high === low ? 50 : ((v - low) / (high - low)) * 100);
   const front = (inst: ExplorerInstitution) => (inst.id === selectedId || inst.id === set.subject.id ? 1 : 0);
   return (
-    <div className="mt-5">
+    <div className="mt-4">
       <div className="relative mx-2 h-6" role="group" aria-label={`${EXPLORER_FEE_LABELS[fee]} fees from ${money(low)} to ${money(high)}`}>
         <span aria-hidden="true" className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-border" />
         {median !== undefined && <span aria-hidden="true" className="absolute top-0 h-6 w-[2px] -translate-x-1/2 bg-ink" style={{ left: `${at(median)}%` }} />}
@@ -743,6 +1212,7 @@ function DotStrip({ set, fee, selectedId, median, onSelect }: { set: PeerExplore
       </div>
       <p className="mt-1 flex justify-between text-[11px] tabular-nums text-ink-muted">
         <span>{money(low)}</span>
+        {median !== undefined && <span>median {money(median)}</span>}
         <span>{money(high)}</span>
       </p>
     </div>

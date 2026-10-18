@@ -1,6 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
+  assetDifference,
   assetScale,
+  cellShade,
+  comparisonLabel,
+  landscapeAxes,
+  landscapeValue,
+  matrixSummary,
+  PEER_SET_PURPOSE_GROUP,
+  percentileRank,
+  purposeLine,
+  signedMoney,
+  sortMatrixRows,
+  splitOutliers,
   coverageLine,
   feeCoverage,
   feeFindings,
@@ -10,7 +22,6 @@ import {
   locationGroups,
   matrixBand,
   matrixRows,
-  pricesSummary,
   scalePosition,
   whyThesePeers,
   type ExplorerInstitution,
@@ -80,12 +91,12 @@ describe("selection math", () => {
 
 describe("equivalent products", () => {
   it("labels a value built from several prices as their middle, or overdraft's highest", () => {
-    expect(pricesSummary("monthly_maintenance", set.subject.fees.monthly_maintenance)).toBe("The middle of 2 prices");
-    expect(pricesSummary("overdraft", { amount: 35, prices: [{ amount: 30, name: null, conditions: null }, { amount: 35, name: null, conditions: null }, { amount: 35, name: null, conditions: null }] })).toBe(
-      "The highest of 3 prices",
+    expect(comparisonLabel("monthly_maintenance", set.subject.fees.monthly_maintenance)).toBe("Comparison price: middle of 2 account prices");
+    expect(comparisonLabel("overdraft", { amount: 35, prices: [{ amount: 30, name: null, conditions: null }, { amount: 35, name: null, conditions: null }, { amount: 35, name: null, conditions: null }] })).toBe(
+      "Comparison price: highest of 3 prices",
     );
-    expect(pricesSummary("overdraft", set.subject.fees.overdraft)).toBeNull();
-    expect(pricesSummary("atm_non_network", undefined)).toBeNull();
+    expect(comparisonLabel("overdraft", set.subject.fees.overdraft)).toBeNull();
+    expect(comparisonLabel("atm_non_network", undefined)).toBeNull();
   });
 });
 
@@ -170,5 +181,93 @@ describe("Hamilton hand-off", () => {
   it("leaves the peers off when Hamilton could not hold them all", () => {
     const many = Array.from({ length: 26 }, (_, i) => i + 1);
     expect(hamiltonPeerSetHref(323, many, "Banks in Florida")).toBe("/pro/settings?instId=323&name=Banks+in+Florida#peer-sets");
+  });
+
+  it("carries the selected fee to Hamilton", () => {
+    expect(hamiltonPeerSetHref(323, [10], "Home metro", "monthly_maintenance")).toBe(
+      "/pro/settings?instId=323&peers=10&name=Home+metro&fee=monthly_maintenance#peer-sets",
+    );
+  });
+});
+
+describe("peer set purpose", () => {
+  it("groups the sets into pricing peers and market competitors", () => {
+    expect(PEER_SET_PURPOSE_GROUP.nearest).toBe("Pricing peers");
+    expect(PEER_SET_PURPOSE_GROUP.regulator).toBe("Pricing peers");
+    expect(PEER_SET_PURPOSE_GROUP.metro).toBe("Market competitors");
+  });
+
+  it("states what the set is for and how spread out it is", () => {
+    expect(purposeLine("nearest", set)).toBe("Banks of similar size, for comparing published prices. Not local competitors: they're spread over 2 states.");
+    expect(purposeLine("size", { ...set, peers: set.peers.slice(0, 3) })).toBe(
+      "Banks in the same asset-size band, for comparing published prices. All are headquartered in Florida.",
+    );
+    expect(purposeLine("metro", { ...set, market: { name: "Tallahassee, FL", cities: [] } })).toBe(
+      "Banks with branches in the Tallahassee, FL metro: the local competitors for deposits and customers. They range from $2.1B to $6.1B in assets, so compare prices here, not size.",
+    );
+  });
+});
+
+describe("matrix investigation", () => {
+  it("summarises where the subject sits and its largest gap", () => {
+    const withWire: PeerExplorerSet = {
+      ...set,
+      subject: { ...set.subject, fees: { ...set.subject.fees, wire_domestic_outgoing: { amount: 30 } } },
+      medians: { ...set.medians, overdraft: { median: 33, peers: 8 }, wire_domestic_outgoing: { median: 25, peers: 8 } },
+    };
+    expect(matrixSummary(withWire)).toBe(
+      "Of 3 compared fees, Bank 1 is above the peer median on 1, below on 0 and near it on 2. Largest gap: Domestic wire, +$5.",
+    );
+    expect(matrixSummary({ ...set, medians: {} })).toBe("Bank 1 has no fee here with enough peers publishing it for a median.");
+  });
+
+  it("states asset and dollar differences with a sign", () => {
+    expect(assetDifference(5.8e9, 4.4e9)).toBe("+$1.4B");
+    expect(assetDifference(2.1e9, 4.4e9)).toBe("-$2.3B");
+    expect(assetDifference(4.4e9, 4.4e9)).toBe("Same");
+    expect(assetDifference(null, 4.4e9)).toBe("Not on record");
+    expect(signedMoney(1.2)).toBe("+$1.20");
+    expect(signedMoney(-0.5)).toBe("-$0.50");
+    expect(signedMoney(0.001)).toBe("$0");
+  });
+
+  it("shades a cell by its band and how far into the cohort's tail it sits", () => {
+    const values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    expect(percentileRank(10, values)).toBeCloseTo(0.95);
+    expect(percentileRank(1, values)).toBeCloseTo(0.05);
+    expect(cellShade(10, values, 5.5)).toEqual({ band: "above", step: 3 });
+    expect(cellShade(1, values, 5.5)).toEqual({ band: "below", step: 3 });
+    expect(cellShade(5.6, values, 5.5)).toEqual({ band: "near", step: 0 });
+    expect(cellShade(undefined, values, 5.5)).toEqual({ band: "none", step: 0 });
+  });
+
+  it("splits far outliers off only when asked, never dropping one", () => {
+    const values = [10, 8, 9, 11, 10, 45];
+    expect(splitOutliers(values, false)).toEqual({ shown: [8, 9, 10, 10, 11], outliers: [45] });
+    expect(splitOutliers(values, true)).toEqual({ shown: [8, 9, 10, 10, 11, 45], outliers: [] });
+    expect(splitOutliers([1, 2, 45], false).outliers).toEqual([]);
+  });
+
+  it("sorts rows with the subject always first and missing fees last", () => {
+    expect(sortMatrixRows(set, "monthly_maintenance", "asc").map((r) => r.id)).toEqual([1, 4, 3, 2, 5]);
+    expect(sortMatrixRows(set, "monthly_maintenance", "desc").map((r) => r.id)).toEqual([1, 2, 3, 4, 5]);
+    expect(sortMatrixRows(set, "assets", "desc").map((r) => r.id)).toEqual([1, 5, 4, 3, 2]);
+    expect(sortMatrixRows(set, "name", "asc").map((r) => r.id)).toEqual([1, 2, 3, 4, 5]);
+  });
+});
+
+describe("landscape axes", () => {
+  it("offers metro branches and deposit share only when the branch records are there", () => {
+    expect(landscapeAxes(set)).toEqual(["assets"]);
+    const metro: PeerExplorerSet = {
+      ...set,
+      market: { name: "Tallahassee, FL", cities: [], totalDeposits: 1000, presence: { 1: { branches: 15, deposits: 400 }, 2: { branches: 3, deposits: null } } },
+    };
+    expect(landscapeAxes(metro)).toEqual(["assets", "branches", "share"]);
+    expect(landscapeValue(metro, metro.subject, "share")).toBeCloseTo(0.4);
+    expect(landscapeValue(metro, metro.peers[0], "branches")).toBe(3);
+    expect(landscapeValue(metro, metro.peers[0], "share")).toBeNull();
+    expect(landscapeValue(metro, metro.peers[1], "branches")).toBeNull();
+    expect(landscapeValue(metro, metro.subject, "assets")).toBe(4.4e9);
   });
 });

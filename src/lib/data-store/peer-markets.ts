@@ -92,3 +92,42 @@ export async function getMarketBranchCities(
   `) as { institution_id: unknown; city: string; state: string }[];
   return rows.map((r) => ({ institution_id: Number(r.institution_id), city: r.city, state: r.state }));
 }
+
+/**
+ * Each institution's presence in a metro: its branches there (FDIC Summary of Deposits for banks,
+ * NCUA branches in the metro's cities for credit unions) and, for banks, the deposits they hold
+ * (whole dollars), with every institution's deposits in the metro for a share. Credit unions report
+ * no deposits by branch, so theirs is null.
+ */
+export async function getMarketPresence(
+  code: number,
+  institutionIds: number[],
+): Promise<{ totalDeposits: number; rows: { institution_id: number; branches: number; deposits: number | null }[] }> {
+  if (institutionIds.length === 0) return { totalDeposits: 0, rows: [] };
+  const year = await latestSodYear();
+  const [total] = (await sql`
+    SELECT COALESCE(SUM(deposits), 0) AS deposits FROM institution_branch_deposits WHERE year = ${year} AND msa_code = ${code}
+  `) as { deposits: unknown }[];
+  const rows = (await sql`
+    WITH places AS (
+      SELECT DISTINCT state, UPPER(city) AS city FROM institution_branch_deposits WHERE year = ${year} AND msa_code = ${code}
+    )
+    SELECT institution_id, COUNT(*)::int AS branches, SUM(deposits) AS deposits FROM institution_branch_deposits
+     WHERE year = ${year} AND msa_code = ${code} AND institution_id = ANY(${institutionIds}::bigint[])
+     GROUP BY institution_id
+    UNION ALL
+    SELECT c.institution_id, COUNT(*)::int, NULL FROM credit_union_branches c
+      JOIN places p ON c.state = p.state AND UPPER(c.city) = p.city
+     WHERE c.institution_id = ANY(${institutionIds}::bigint[])
+     GROUP BY c.institution_id
+  `) as { institution_id: unknown; branches: unknown; deposits: unknown }[];
+  const SOD_THOUSANDS = 1_000;
+  return {
+    totalDeposits: Number(total?.deposits ?? 0) * SOD_THOUSANDS,
+    rows: rows.map((r) => ({
+      institution_id: Number(r.institution_id),
+      branches: Number(r.branches),
+      deposits: r.deposits === null || r.deposits === undefined ? null : Number(r.deposits) * SOD_THOUSANDS,
+    })),
+  };
+}
