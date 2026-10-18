@@ -62,6 +62,18 @@ describe("Hoovie source contracts", () => {
     expect(unknown).toEqual([]);
   });
 
+  it("names the host, what it answered and the issue for every missing source", () => {
+    const missing = HOOVIE_SOURCES.filter((c) => c.missingSource);
+    expect(missing.map((c) => c.source).sort()).toEqual(["fr-y9c", "nic-structure"]);
+    for (const contract of missing) {
+      expect(contract.missingSource?.host, contract.source).toMatch(/^[a-z0-9.-]+$/);
+      expect(contract.missingSource?.observed.trim(), contract.source).not.toBe("");
+      expect(contract.missingSource?.issue, contract.source).toBeGreaterThan(0);
+    }
+    expect(hoovieSourceContract("fr-y9c")?.missingSource?.fallback).toBeNull();
+    expect(hoovieSourceContract("nic-structure")?.missingSource?.fallback).toMatch(/RSSDHCR/);
+  });
+
   it("looks a contract up by source key", () => {
     const first = HOOVIE_SOURCES[0];
     expect(hoovieSourceContract(first.source)).toBe(first);

@@ -616,7 +616,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `CRA_PARSER_VERSION` | — | v2 (FFIEC ratings and flat-file URLs; headerless ratings file, ID by regulator; revised 2022-23 files) | `magellan/registry/cra.ts` |
 | `FR_Y9C_PARSER_VERSION` | — | v1 | `magellan/registry/fr-y9c.ts` |
 | `NIC_STRUCTURE_PARSER_VERSION` | — | v1 | `magellan/registry/nic-structure.ts` |
-| `UBPR_PEER_GROUPS_PARSER_VERSION` | — | v1 | `magellan/registry/ubpr-peer-groups.ts` |
+| `UBPR_PEER_GROUPS_PARSER_VERSION` | — | v2 (Download control read from the bulk page; an HTML answer names the page's title, messages and form fields, #1806) | `magellan/registry/ubpr-peer-groups.ts` |
 | `CFPB_CARD_AGREEMENTS_PARSER_VERSION` | — | v1 | `magellan/registry/cfpb-card-agreements.ts` |
 | `ENFORCEMENT_MATCHER_VERSION` | — | v3 | `magellan/registry/enforcement.ts` |
 | `FDIC_UNIVERSE_PARSER_VERSION` | — | v2 | `magellan/registry/fdic-universe.ts` |

@@ -114,6 +114,12 @@ export const HOOVIE_SOURCES_00: HoovieSourceContract[] = [
     grain: ["holding-company"],
     linkKeys: ["rssd"],
     tables: ["holding_company_y9c_filers", "holding_company_y9c_items"],
+    missingSource: {
+      host: "www.ffiec.gov",
+      observed: "HTTP 403 from www.ffiec.gov/npw to production (Vercel), read 2026-10-17",
+      fallback: null,
+      issue: 1806,
+    },
   },
   {
     // magellan/registry/nic-structure.ts, regulatory/nic-structure.ts (ffiec.gov/npw bulk CSV)
@@ -125,6 +131,13 @@ export const HOOVIE_SOURCES_00: HoovieSourceContract[] = [
     grain: ["holding-company", "institution"],
     linkKeys: ["rssd"],
     tables: ["nic_relationships", "nic_entities"],
+    missingSource: {
+      host: "www.ffiec.gov",
+      observed: "HTTP 403 from www.ffiec.gov/npw to production (Vercel), read 2026-10-17",
+      fallback:
+        "FDIC BankFind RSSDHCR and NAMEHCR, loaded by the fdic-universe step into institution_sources.holding_company_rssd and holding_company_name: each bank's current direct holding company only, with no parent history, parent chain or parent attributes",
+      issue: 1806,
+    },
   },
   {
     // magellan/registry/cra.ts, regulatory/cra.ts (apps.ffiec.gov craratng.zip, ffiec.gov CRA flat files)
