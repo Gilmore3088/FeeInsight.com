@@ -2,6 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { printsAmount } from "@/lib/fee-evidence";
 import {
   boxTableAnnualHeader,
   continuousOverdraftPeriodCheck,
@@ -57,7 +58,12 @@ export const FREQUENCY_FILL_CHECK = "hamilton.frequency_fill";
 // v14 (#1339): every value the fill writes is one its own per-event check keeps, so a v13 correction
 // is not written back on the next pass; feedback dedupe keys name the version, so a later version's
 // write is always logged; the excerpt is read from `extraction_note` when it is set (#1336).
-export const FREQUENCY_FILL_VERSION = 14;
+// v15 (#1901): a blank fee whose stored line Knox cut before its price ("Dormant Checking fee:
+// Assessed to the checking account if ... no other Navy Fede", Navy Federal 80997) is read on the
+// full line of its own stored document ("... | $3.00 per quarter"), found by the cut line's opening
+// (`fullStoredLine`), so the period the schedule prints is filled and logged with basis
+// `full_stored_line`.
+export const FREQUENCY_FILL_VERSION = 15;
 /**
  * #1360: an overdraft "program" the v11 keep leaves monthly is, in every case James and the review
  * checked on the bank's own page, an optional plan or add-on (Independent Bank's $10 Advanced
@@ -78,6 +84,12 @@ export const OVERDRAFT_PLAN_HOLD_REASON = "an optional overdraft plan priced by 
 
 /** The rolled_back_reason prefix of a fee the frequency fill holds (v11). */
 export const FREQUENCY_HOLD_REASON = "frequency_hold";
+/** Knox cuts its stored line at 180 characters; a line this long may end before its price (v15). */
+export const CUT_EXCERPT_CHARS = 170;
+/** Documents read per step for v15's full lines; later steps take the rest. */
+export const FULL_LINE_DOCUMENT_LIMIT = 300;
+/** How much of a cut line's opening must match the document's line. */
+const FULL_LINE_KEY_CHARS = 120;
 /** Documents read per step for box-table headers; later steps take the rest. */
 export const BOX_HEADER_DOCUMENT_LIMIT = 300;
 export const FREQUENCY_FILL_LIMIT = 2_000;
@@ -86,6 +98,23 @@ const CANDIDATE_WORDING = String.raw`excerpt=.*(each|every|per |monthly|annual|q
 const PERIOD_KEYS_SQL = `ARRAY[${[...PERIOD_FEE_KEYS].map((key) => `'${key}'`).join(", ")}]::text[]`;
 /** Postgres pre-filter for a stated frequency: a line holding more than one cell or price. */
 const SHARED_LINE = String.raw`excerpt=.*(\|.*\$|\$.*\$)`;
+/**
+ * The rows the fill read before v15. A blank whose stored line may be cut (v15) is read on its full
+ * line when one is found, and otherwise only when it is one of these, exactly as before.
+ */
+const BEFORE_V15_CANDIDATE = `(
+               -- A blank is read only on a line with frequency wording; a stated frequency only on a
+               -- line it may have been borrowed across.
+               (fp.frequency IS NULL AND COALESCE(fr.extraction_note, fr.conditions) ~* '${CANDIDATE_WORDING}')
+               OR (fp.frequency IS NOT NULL AND COALESCE(fr.extraction_note, fr.conditions) ~ '${SHARED_LINE}')
+               -- v4: a stated period on a per-event fee, which the line may never state.
+               OR fp.frequency = 'daily'
+               OR (fp.frequency IN ('monthly', 'annual', 'quarterly') AND fp.canonical_fee_key <> ALL(${PERIOD_KEYS_SQL}))
+               -- v13: a continuous overdraft fee stored by the period, and a blank maintenance fee
+               -- whose own name or line names a month or a statement cycle.
+               OR (fp.canonical_fee_key = 'continuous_od' AND fp.frequency IN ('monthly', 'annual', 'quarterly'))
+               OR (fp.frequency IS NULL AND fp.canonical_fee_key = 'monthly_maintenance'
+                   AND (fp.fee_name ILIKE '%month%' OR COALESCE(fr.extraction_note, fr.conditions) ~* 'excerpt=.*(month|statement cycle)')))`;
 
 interface BlankFrequencyRow {
   fee_published_id: number | string;
@@ -100,6 +129,8 @@ interface BlankFrequencyRow {
   fee_name?: string | null;
   /** #1360: an overdraft row whose bank has another live overdraft fee charged per item above $0. */
   has_per_item_overdraft?: boolean | null;
+  /** v15: the row is one the fill read before v15 (false when only a possibly cut line selected it). */
+  before_v15?: boolean | null;
 }
 
 export interface FrequencyFill {
@@ -113,7 +144,7 @@ export interface FrequencyFill {
   from: string | null;
   frequency: string | null;
   sourceLine: string;
-  /** v10: "box_table_header" when the period came from the box table's column header. */
+  /** v10: "box_table_header" when the period came from the box table's column header; v15: "full_stored_line". */
   basis?: string;
 }
 
@@ -146,6 +177,30 @@ export function excerptOf(conditions: string | null | undefined): string | null 
   return match ? match[1] : null;
 }
 
+function squash(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * v15: the one line of the stored document that holds a cut stored line's opening and prints the
+ * fee's price, or null when no line or more than one distinct line does. A document with no line
+ * breaks (one flattened paragraph) gives nothing: its "line" is the whole schedule.
+ */
+export function fullStoredLine(text: string, excerpt: string, amount: number): string | null {
+  const key = squash(excerpt).slice(0, FULL_LINE_KEY_CHARS);
+  if (key.length < 40 || !text.includes("\n")) return null;
+  const lines = new Set(text.split(/\r?\n/).map(squash).filter((line) => line.includes(key)));
+  if (lines.size !== 1) return null;
+  const [line] = lines;
+  if (line.length > 1_000 || !printsAmount(line, amount)) return null;
+  return line;
+}
+
+/** A blank whose stored line may have been cut before its price (v15). */
+function cutBeforePrice(row: BlankFrequencyRow, excerpt: string | null): excerpt is string {
+  return row.frequency == null && excerpt != null && excerpt.length >= CUT_EXCERPT_CHARS && !printsAmount(excerpt, Number(row.amount));
+}
+
 export async function fillBlankFrequencies(
   db: SqlTag,
   options: { runId: number; dryRun: boolean; institutionId?: number; limit?: number; planHoldLive?: boolean },
@@ -158,6 +213,7 @@ export async function fillBlankFrequencies(
     rows = await inSavepoint(db, (scope) => scope.unsafe<BlankFrequencyRow[]>(
       `SELECT fp.fee_published_id, fv.fee_verified_id, fr.fee_raw_id, fp.institution_id, fr.source_document_id,
               fp.canonical_fee_key, fp.amount, fp.frequency, COALESCE(fr.extraction_note, fr.conditions) AS conditions, fp.fee_name,
+              ${BEFORE_V15_CANDIDATE} AS before_v15,
               (fp.canonical_fee_key = 'overdraft' AND EXISTS (
                 SELECT 1 FROM published_fee_records other
                  WHERE other.institution_id = fp.institution_id
@@ -175,18 +231,10 @@ export async function fillBlankFrequencies(
           AND fp.amount_kind = 'flat'
           AND fp.amount IS NOT NULL
           AND COALESCE(fr.extraction_note, fr.conditions) LIKE '%excerpt=%'
-          -- A blank is read only on a line with frequency wording; a stated frequency only on a
-          -- line it may have been borrowed across.
-          AND ((fp.frequency IS NULL AND COALESCE(fr.extraction_note, fr.conditions) ~* '${CANDIDATE_WORDING}')
-               OR (fp.frequency IS NOT NULL AND COALESCE(fr.extraction_note, fr.conditions) ~ '${SHARED_LINE}')
-               -- v4: a stated period on a per-event fee, which the line may never state.
-               OR fp.frequency = 'daily'
-               OR (fp.frequency IN ('monthly', 'annual', 'quarterly') AND fp.canonical_fee_key <> ALL(${PERIOD_KEYS_SQL}))
-               -- v13: a continuous overdraft fee stored by the period, and a blank maintenance fee
-               -- whose own name or line names a month or a statement cycle.
-               OR (fp.canonical_fee_key = 'continuous_od' AND fp.frequency IN ('monthly', 'annual', 'quarterly'))
-               OR (fp.frequency IS NULL AND fp.canonical_fee_key = 'monthly_maintenance'
-                   AND (fp.fee_name ILIKE '%month%' OR COALESCE(fr.extraction_note, fr.conditions) ~* 'excerpt=.*(month|statement cycle)')))
+          AND (${BEFORE_V15_CANDIDATE}
+               -- v15: a blank whose stored line may end before its price.
+               OR (fp.frequency IS NULL AND fr.source_document_id IS NOT NULL
+                   AND length(substring(COALESCE(fr.extraction_note, fr.conditions) from 'excerpt="(.*)"\\s*$')) >= ${CUT_EXCERPT_CHARS}))
           ${options.institutionId ? "AND fp.institution_id = $1" : ""}
         ORDER BY fp.fee_published_id`,
       options.institutionId ? [options.institutionId] : [],
@@ -237,6 +285,32 @@ export async function fillBlankFrequencies(
     console.error("fillBlankFrequencies box header read failed:", error);
     boxRows = [];
   }
+  // v15: full lines for blanks whose stored line ends before the price.
+  const fullLines = new Map<number, string>();
+  try {
+    const cut = rows.filter((row) => row.source_document_id != null && cutBeforePrice(row, excerptOf(row.conditions)));
+    const documentIds = [...new Set(cut.map((row) => Number(row.source_document_id)))].slice(0, FULL_LINE_DOCUMENT_LIMIT);
+    if (documentIds.length > 0) {
+      const texts = await inSavepoint(db, (scope) => scope.unsafe<Array<{ source_document_id: number | string; normalized_text: string | null }>>(
+        `SELECT DISTINCT ON (source_document_id) source_document_id, normalized_text
+           FROM agent_source_texts
+          WHERE source_document_id = ANY($1::bigint[])
+            AND status = 'completed'
+            AND normalized_text IS NOT NULL
+          ORDER BY source_document_id, id DESC -- v15 full lines`,
+        [documentIds],
+      ));
+      const byDocument = new Map(texts.flatMap((text) =>
+        typeof text.normalized_text === "string" ? [[Number(text.source_document_id), text.normalized_text] as const] : []));
+      for (const row of cut) {
+        const text = byDocument.get(Number(row.source_document_id));
+        const line = text ? fullStoredLine(text, excerptOf(row.conditions)!, Number(row.amount)) : null;
+        if (line) fullLines.set(Number(row.fee_published_id), line);
+      }
+    }
+  } catch (error) {
+    console.error("fillBlankFrequencies full line read failed:", error);
+  }
   const seen = new Set(rows.map((row) => Number(row.fee_published_id)));
   result.scanned = rows.length + boxRows.filter((row) => !seen.has(Number(row.fee_published_id))).length;
   for (const row of boxRows) {
@@ -264,8 +338,12 @@ export async function fillBlankFrequencies(
   }
   for (const row of rows) {
     const amount = Number(row.amount);
-    const sourceLine = excerptOf(row.conditions);
+    const excerpt = excerptOf(row.conditions);
+    const fullLine = fullLines.get(Number(row.fee_published_id));
+    const sourceLine = fullLine ?? excerpt;
     if (!sourceLine || !Number.isFinite(amount)) continue;
+    // v15: a cut line with no full line found reads only as before (its own frequency wording).
+    if (!fullLine && row.before_v15 === false) continue;
     const stated = row.frequency ?? null;
     const check = perEventPeriodCheck(row.canonical_fee_key, stated, sourceLine, amount, row.fee_name)
       ?? continuousOverdraftPeriodCheck(row.canonical_fee_key, stated, sourceLine, amount, row.fee_name);
@@ -343,6 +421,7 @@ export async function fillBlankFrequencies(
       from: stated,
       frequency,
       sourceLine: sourceLine.slice(0, 300),
+      ...(fullLine ? { basis: "full_stored_line" } : {}),
     });
   }
   if (options.dryRun) return result;
