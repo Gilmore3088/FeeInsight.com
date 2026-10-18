@@ -1,5 +1,6 @@
 "use server";
 
+import { checkoutFailure } from "@/lib/billing/checkout-failure";
 import { createGuardedCheckout } from "@/lib/billing/checkout";
 import { getStripe } from "@/lib/stripe";
 import { getCurrentUser } from "@/lib/auth";
@@ -135,9 +136,9 @@ export async function createCheckoutSession(input: ProCheckoutInput): Promise<Pr
   });
 
     return "error" in result ? { url: null, error: result.error } : { url: result.url };
-  } catch {
+  } catch (error) {
     // Ambiguous provider/database failures retain the reservation; never make a new key here.
-    console.error("[checkout] Could not confirm the persisted checkout attempt", { userId: user.id });
+    console.error("[checkout] Could not confirm the persisted checkout attempt", { userId: user.id, ...checkoutFailure(error) });
     return { url: null, error: "We could not confirm checkout. Please retry from your account; do not submit a second payment." };
   }
 }
