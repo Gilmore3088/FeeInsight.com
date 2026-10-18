@@ -6,6 +6,7 @@ import {
   companion,
   countedAs,
   findings,
+  headlineInstitutionCount,
   histogram,
   inBucket,
   institutionsFor,
@@ -20,6 +21,7 @@ import {
   stateRanking,
   parseStateView,
   statsFor,
+  zeroBarNote,
 } from "./index-view";
 
 let nextId = 1;
@@ -192,5 +194,36 @@ describe("Bank Fee Index v2 views", () => {
     expect(parseStateView({})).toBe("gap");
     expect(parseStateView({ sv: "price" })).toBe("price");
     expect(parseStateView({ sv: "nonsense" })).toBe("gap");
+  });
+});
+
+describe("headline counts from the shared snapshot (#1951)", () => {
+  const snapshot = [
+    { fee_category: "overdraft", institution_count: 2502, zero_count: 4 },
+    { fee_category: "monthly_maintenance", institution_count: 1825, zero_count: 112 },
+  ];
+
+  it("prints the snapshot's count for the U.S. with all charters, not the explorer rows'", () => {
+    expect(headlineInstitutionCount(snapshot, "overdraft", null, "all", 2510)).toBe(2502);
+    expect(headlineInstitutionCount(snapshot, "monthly_maintenance", null, "all", 1833)).toBe(1825);
+  });
+
+  it("keeps the explorer rows' count for a state or charter cut", () => {
+    expect(headlineInstitutionCount(snapshot, "overdraft", "FL", "all", 120)).toBe(120);
+    expect(headlineInstitutionCount(snapshot, "overdraft", null, "bank", 1400)).toBe(1400);
+    expect(headlineInstitutionCount(snapshot, "overdraft", null, "credit_union", 1100)).toBe(1100);
+  });
+
+  it("falls back to the rows when the snapshot has no row for the fee or failed to read", () => {
+    expect(headlineInstitutionCount(snapshot, "wire_domestic_outgoing", null, "all", 2519)).toBe(2519);
+    expect(headlineInstitutionCount([], "overdraft", null, "all", 2510)).toBe(2510);
+  });
+});
+
+describe("the $0 bar's definition", () => {
+  it("names the middle published price, or the highest for highest-price fees, without an em-dash", () => {
+    expect(zeroBarNote("monthly_maintenance")).toBe("$0 bar: institutions whose middle published price is $0.");
+    expect(zeroBarNote("overdraft")).toMatch(/whose (highest|middle) published price is \$0\.$/);
+    for (const fee of ["monthly_maintenance", "overdraft", "nsf"]) expect(zeroBarNote(fee)).not.toContain("\u2014");
   });
 });

@@ -28,6 +28,7 @@ import {
   companion,
   countedAs,
   findings,
+  headlineInstitutionCount,
   accountName,
   chargedWhen,
   histogram,
@@ -48,6 +49,7 @@ import {
   type StateBand,
   type StateRank,
   type StateView,
+  zeroBarNote,
 } from "./index-view";
 
 interface PageProps {
@@ -86,7 +88,6 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
   const [user, { summary, categories }, publicTypes] = await Promise.all([getCurrentUser(), getPublicSnapshot(), getPublicFeeTypes()]);
   // The public site lists the top 50 fee types by institution count (James, Oct 17 2026).
   const publicFees = ALL_FEES.filter((key) => publicTypes.has(key));
-  const typeCount = publicFees.length;
   const familyCount = new Set(publicFees.map((key) => FAMILY_OF.get(key) ?? "Other")).size;
   // Hamilton subscribers already have the workspace, so the closing Hamilton band is for everyone else.
   const subscriber = canAccessAllCategories(user);
@@ -142,6 +143,10 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
   const compare = companion(rows, sel);
   const takeaways = findings(rows, sel, institutions);
   const usStats = sel.state ? statsFor(rows, sel.fee, null, sel.charter) : stats;
+  // Headline counts for the U.S. with all charters come from the shared snapshot, so /fees prints the
+  // homepage's and /research's number (#1951). Cuts by state or charter count the explorer's rows.
+  const headlineCount = headlineInstitutionCount(categories, sel.fee, sel.state, sel.charter, institutions.length);
+  const usHeadlineCount = headlineInstitutionCount(categories, sel.fee, null, sel.charter, usStats.institution_count);
   const cells = stateCells(rows, sel.fee, sel.charter);
   const ranking = stateRanking(cells, usStats.median_amount);
   const picked = sel.state ? ranking.find((r) => r.code === sel.state) ?? null : null;
@@ -176,9 +181,9 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
     family: FAMILY_OF.get(key) ?? "Other",
     locked: false,
   }));
-  // The explored fee's count is the explorer's own national population (the institutions the chart and
-  // list count), so the explorer and the catalog never disagree on one screen.
-  coverage.set(sel.fee, institutionsFor(rows, sel.fee, null, "all").length);
+  // The explored fee's catalog count is the same U.S. all-charter headline the explorer prints, so the
+  // two never disagree on one screen.
+  coverage.set(sel.fee, headlineInstitutionCount(categories, sel.fee, null, "all", institutionsFor(rows, sel.fee, null, "all").length));
   const catalog: CatalogEntry[] = publicFees.map((key) => {
     const n = coverage.get(key) ?? 0;
     return {
@@ -215,7 +220,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
           <dl className="mx-auto mt-6 grid max-w-[34rem] grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border text-left sm:mx-0 sm:max-w-none sm:grid-cols-4">
             {[
               { term: "Institutions", value: summary.institutionsLabel },
-              { term: "Fee categories", value: typeCount.toLocaleString() },
+              { term: "Fee categories", value: summary.categoriesLabel },
               { term: "Fee groups", value: familyCount.toLocaleString() },
               { term: "Data updated (U.S. Eastern)", value: summary.refreshedOn ?? "Pending" },
             ].map((m) => (
@@ -319,7 +324,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
                   term="Middle 50%"
                   value={stats.p25_amount != null && stats.p75_amount != null && stats.median_amount != null ? `${money(stats.p25_amount)}–${money(stats.p75_amount)}` : "—"}
                 />
-                <Kpi term="Institutions" value={institutions.length.toLocaleString()} />
+                <Kpi term="Institutions" value={headlineCount.toLocaleString()} />
                 <Kpi term={common ? `At exactly ${money(common.value)}` : "Most common"} value={common ? `${common.share}%` : "—"} />
               </dl>
               {stats.median_amount == null && (
@@ -328,7 +333,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
               {/* Why a category has fewer institutions: schedules not read yet, against schedules that don't list the fee. */}
               {!sel.state && sel.charter === "all" && summary.institutions > 0 && (
                 <p className="mt-3 text-[12px] text-ink-muted">
-                  {institutions.length.toLocaleString()} of the {summary.institutionsLabel} institutions with a schedule read publish this fee.
+                  {headlineCount.toLocaleString()} of the {summary.institutionsLabel} institutions with a schedule read publish this fee.
                   {summary.monitored > summary.institutions ? ` Another ${(summary.monitored - summary.institutions).toLocaleString()} are tracked but have no schedule read yet.` : ""}
                 </p>
               )}
@@ -342,6 +347,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
                 p25={stats.p25_amount}
                 p75={stats.p75_amount}
                 unit={counted.measure}
+                zeroNote={zeroBarNote(sel.fee)}
                 hrefFor={(i) => linkTo(sel, { bin: String(i) }, "institutions")}
                 allHref={linkTo(sel, { bin: "all" }, "institutions")}
               />
@@ -499,7 +505,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
               </div>
               <div>
                 <dt className="text-[12px] text-ink-muted">Publishing institutions</dt>
-                <dd className="font-mono text-[24px] font-semibold tabular-nums text-ink">{usStats.institution_count.toLocaleString()}</dd>
+                <dd className="font-mono text-[24px] font-semibold tabular-nums text-ink">{usHeadlineCount.toLocaleString()}</dd>
               </div>
             </dl>
             <div>
@@ -671,6 +677,7 @@ function Histogram({
   p25,
   p75,
   unit,
+  zeroNote,
   hrefFor,
   allHref,
 }: {
@@ -681,6 +688,8 @@ function Histogram({
   p25: number | null;
   p75: number | null;
   unit: string;
+  /** What the $0 bar counts, shown when there is one. */
+  zeroNote: string;
   hrefFor: (i: number) => string;
   allHref: string;
 }) {
@@ -778,6 +787,7 @@ function Histogram({
           </Link>
         )}
       </p>
+      {buckets[0]?.label === "$0" && <p className="mt-1 text-[12px] text-ink-muted">{zeroNote}</p>}
     </div>
   );
 }

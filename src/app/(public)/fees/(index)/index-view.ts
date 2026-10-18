@@ -3,6 +3,7 @@ import { HIGHEST_TIER_CATEGORIES, countedRepresentatives, countedValuePerInstitu
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { buildHistogramBuckets, type HistogramBucket } from "@/lib/fee-histogram-buckets";
 import { STATE_NAMES } from "@/lib/us-states";
+import { feeHeadlineCounts } from "@/lib/headline-counts";
 
 /**
  * The Bank Fee Index explorer's numbers, all from one read (the category's published rows)
@@ -253,6 +254,28 @@ export function countedAs(fee: string): {
         of: "the median",
         headline: "Median of each institution's median published price",
       };
+}
+
+/**
+ * The headline institution count for a selection. For the U.S. with all charters it is the shared
+ * snapshot's count (headline-counts.ts feeHeadlineCounts), the number the homepage, /research and
+ * the benchmark report print (#1951); the explorer's rows are a separate cache entry that can trail
+ * it. A state or charter cut, or a fee the snapshot has no row for, counts the explorer's rows.
+ */
+export function headlineInstitutionCount(
+  categories: Parameters<typeof feeHeadlineCounts>[0],
+  fee: string,
+  state: string | null,
+  charter: Charter,
+  rowsCount: number,
+): number {
+  if (state || charter !== "all") return rowsCount;
+  return feeHeadlineCounts(categories, fee)?.institutions ?? rowsCount;
+}
+
+/** What the histogram's $0 bar counts, in the words the shared definition uses (#1955). */
+export function zeroBarNote(fee: string): string {
+  return `$0 bar: institutions whose ${HIGHEST_TIER_CATEGORIES.has(fee) ? "highest" : "middle"} published price is $0.`;
 }
 
 export function money(n: number): string {
