@@ -218,22 +218,33 @@ export default function TermsPage() {
             11. Automated Access and Bulk Data
           </h2>
           <p>
-            Bank Fee Index pages are free to read. Bulk copies of the underlying
-            data are available only under a data licensing agreement. Unless you
-            have a written agreement with us or are using the API within your plan
-            (section 7), you agree not to:
+            Bank Fee Index pages are free to read. Fee amounts come from banks&apos;
+            and credit unions&apos; own public documents; these terms cover our
+            compilation, organization and presentation of that data. Bulk copies
+            of the underlying data are available only under a data licensing
+            agreement. Unless you have a written agreement with us or are using
+            the API within your plan (section 7), you agree, whether or not you
+            have an account or are signed in, not to:
           </p>
           <ul className="list-disc pl-6 space-y-1.5 mt-2">
             <li>
               Use scrapers, crawlers, bots, headless browsers or rotating proxies
               to copy, harvest or bulk-download data from the Service
             </li>
-            <li>Get around rate limits, CAPTCHAs or other security checks</li>
-            <li>Use data from the Service to build a competing dataset, or resell it</li>
+            <li>
+              Get around rate limits, CAPTCHAs, IP blocks or other access
+              controls, including by rotating IP addresses or disguising
+              automated traffic as a person, or send automated requests at a
+              volume that burdens the Service
+            </li>
+            <li>
+              Use data from the Service to build or supply a database or product
+              that offers bank or credit union fee data to others, or resell it
+            </li>
           </ul>
           <p className="mt-2">
-            Search engines may crawl the Service to index pages for search
-            results. We may block, rate-limit or suspend any access that we
+            Search engines and AI assistants that follow our robots.txt may
+            crawl the Service to show pages in search results and answers. We may block, rate-limit or suspend any access that we
             believe breaks this section. For bulk data or a data license, email{" "}
             <a href={`mailto:${CONTACT_EMAIL}`} className="text-brick hover:underline">
               {CONTACT_EMAIL}
@@ -265,8 +276,8 @@ export default function TermsPage() {
             We may suspend or terminate your access to the Service at any time
             for violation of these terms, with or without notice. Upon
             termination, your right to use the Service ceases immediately.
-            Sections regarding data licensing, liability, and governing law
-            survive termination.
+            Sections 5, 6, 8, 9, 10, 11, 12 and 14 survive termination,
+            including any block or suspension of your access.
           </p>
         </section>
 
