@@ -20,7 +20,7 @@ export const revalidate = 900;
 import type { Metadata } from "next";
 import { getPublicSnapshot } from "@/lib/public-stats";
 import { CONTACT_EMAIL, LEGAL_ENTITY_NAME, PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
-import { loadSampleReport } from "@/lib/custom-report/sample-report";
+import { DEMO_SAMPLE_INSTITUTION_ID, loadSampleReport } from "@/lib/custom-report/sample-report";
 import { getRevenueContextCached, type RevenueContext } from "@/lib/custom-report/revenue-context";
 import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
@@ -132,7 +132,8 @@ export default async function LandingPage() {
   });
   // A render with a failed read is cached for a minute, not fifteen (see the note at the top).
   if (!cacheable) await shortenPageLife();
-  const index = buildIndexCard(new Map(indexReads.map((r) => [r.fee, r.rows])));
+  // The demo bank's own fees come from the same rows, so the card can mark it with no extra read.
+  const index = buildIndexCard(new Map(indexReads.map((r) => [r.fee, r.rows])), [DEMO_SAMPLE_INSTITUTION_ID]);
 
   return (
     <div className={`${homeSerif.variable} min-h-screen overflow-x-clip bg-paper consumer-brand`}>

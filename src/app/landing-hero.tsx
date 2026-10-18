@@ -3,14 +3,17 @@ import { PRODUCT_NAME } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
 import { IndexCard } from "./landing-index-card";
 import type { IndexCardData } from "./landing-index-view";
-import { HOME_WRAP, InstitutionSearchForm, SANS, SERIF, hasFigure } from "./landing-shared";
+import { TrackLink } from "@/components/track-link";
+import { HOME_WRAP, SAMPLE_REPORT_HREF, SANS, SERIF, hasFigure } from "./landing-shared";
 
 /**
  * The hero (James's example, Oct 17): a textured navy band whose bottom edge is a shallow curve
  * (`.fi-home-hero::before` in landing-motion.css), the buyer, the promise and one action on the
  * left, and a working Bank Fee Index card on the right that hangs over the curve into the light
- * section below. The institution search closes the card, the free way in to an institution's page.
- * On a phone the card follows the copy and still overlaps the curve.
+ * section below. The visitor picks their institution inside the card (landing-index-card.tsx),
+ * which replaced the separate search under it. The main action jumps to the card; the quieter
+ * one opens the public sample report. On a phone the card follows the copy and still overlaps
+ * the curve.
  */
 export function LandingHero({ index, freshness }: { index: IndexCardData; freshness: string }) {
   return (
@@ -27,20 +30,22 @@ export function LandingHero({ index, freshness }: { index: IndexCardData; freshn
             Understand your institution’s financial position, compare your fees with competitors, and identify what
             deserves a closer look, all supported by published data and verifiable sources.
           </p>
-          <div className="mt-7 lg:mt-9">
-            <a href="#hamilton" className="fi-btn fi-btn-brick min-h-12 px-6 text-[15px]">
+          <div className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-3 lg:mt-9">
+            <a href="#bank-fee-index" className="fi-btn fi-btn-brick min-h-12 px-6 text-[15px]">
               See a live fee comparison
             </a>
+            <TrackLink
+              href={SAMPLE_REPORT_HREF}
+              event="sample_report_click"
+              eventProps={{ placement: "home_hero" }}
+              className="inline-flex min-h-12 items-center text-[15px] font-semibold text-white underline decoration-white/40 underline-offset-4 hover:decoration-white"
+            >
+              View sample analysis
+            </TrackLink>
           </div>
         </div>
         <div className="min-w-0 lg:self-start">
-          <IndexCard data={index} freshness={freshness}>
-            <InstitutionSearchForm
-              id="hero-institution-search"
-              secondary
-              className="mt-4 border-t border-border pt-4 [&_.fi-field]:max-w-none"
-            />
-          </IndexCard>
+          <IndexCard data={index} freshness={freshness} />
         </div>
       </div>
     </section>

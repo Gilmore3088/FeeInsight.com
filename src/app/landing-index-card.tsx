@@ -1,19 +1,28 @@
 "use client";
 
 import { ArrowUpRight, ChevronDown } from "lucide-react";
-import { useId, useState, type ReactNode } from "react";
+import { useId, useRef, useState } from "react";
 import { Logo } from "@/brand/components";
+import { TrackLink } from "@/components/track-link";
 import { PRODUCT_NAME } from "@/lib/constants";
+import { InstitutionCombobox, type PickedInstitution } from "./for-institutions/institution-combobox";
+import { institutionCardFees } from "./landing-index-actions";
 import {
   CHARTERS,
   US,
+  benchmarkPhrase,
   cardHref,
   cardMoney,
   cellBars,
   hasMedian,
   inBar,
+  institutionHref,
+  noFeeSentence,
+  plansHref,
+  positionSentence,
   type Charter,
   type IndexCardData,
+  type IndexCardInstitution,
   type IndexCell,
 } from "./landing-index-view";
 
@@ -27,6 +36,12 @@ const CHARTER_WORDS: Record<Charter, string> = {
   bank: "banks",
   credit_union: "credit unions",
 };
+
+/** "Banks and credit unions" after a place: "U.S. banks and credit unions", "Florida credit unions". */
+const scopeLabel = (placeName: string, charter: Charter) => `${placeName} ${CHARTER_WORDS[charter]}`;
+
+/** The institution in the card: read ahead on the server, or picked from the search (fees null until read, or when the read failed). */
+type CardInstitution = Pick<IndexCardInstitution, "id" | "name" | "state"> & { fees: Record<string, number> | null };
 
 const money = (cents: number) => cardMoney(cents / 100);
 const count = (n: number) => n.toLocaleString("en-US");
@@ -77,17 +92,29 @@ function barLabel(bar: { min: number | null; max: number | null }): string {
   return cardMoney(bar.min);
 }
 
-function Histogram({ cell, label }: { cell: IndexCell; label: string }) {
+/** The picked institution's fee on the chart: its bar is outlined and its name and price sit under the axis. */
+interface ChartMarker {
+  name: string;
+  cents: number;
+}
+
+function Histogram({ cell, label, marker }: { cell: IndexCell; label: string; marker?: ChartMarker }) {
   const bars = cellBars(cell);
   const median = cell.median / 100;
   const top = Math.max(...bars.map((b) => b.total), 1);
+  const markerBar = marker ? bars.findIndex((b) => inBar(b, marker.cents / 100)) : -1;
+  const markerAt = markerBar >= 0 ? ((markerBar + 0.5) / bars.length) * 100 : 0;
   return (
     <figure className="mt-3" aria-label={`${label}: how many institutions fall in each price range`}>
       <div className="flex h-[9.5rem] items-end gap-[3px] border-b border-border sm:h-[10.5rem]" data-index-bars="">
         {bars.map((bar, i) => {
           const isMedian = inBar(bar, median);
           return (
-            <div key={i} className="flex h-full min-w-0 flex-1 flex-col justify-end">
+            <div
+              key={i}
+              className={`flex h-full min-w-0 flex-1 flex-col justify-end ${i === markerBar ? "rounded-t-[3px] outline outline-2 outline-offset-1 outline-brick" : ""}`}
+              data-marker-bar={i === markerBar ? "" : undefined}
+            >
               {isMedian ? (
                 <span className="mb-1 self-center whitespace-nowrap rounded-[3px] bg-brick px-1.5 py-0.5 text-[10px] font-semibold leading-none text-on-brick">
                   Median {cardMoney(median)}
@@ -102,6 +129,19 @@ function Histogram({ cell, label }: { cell: IndexCell; label: string }) {
           );
         })}
       </div>
+      {marker && markerBar >= 0 ? (
+        <div className="relative mt-1.5 h-6" data-index-marker="">
+          <span
+            className={`absolute top-0 inline-flex max-w-[70%] items-center gap-1 whitespace-nowrap rounded-[3px] border border-brick bg-surface-0 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-ink ${
+              markerAt < 25 ? "" : markerAt > 75 ? "-translate-x-full" : "-translate-x-1/2"
+            }`}
+            style={{ left: markerAt < 25 ? `calc(${markerAt}% - 0.5rem)` : markerAt > 75 ? `calc(${markerAt}% + 0.5rem)` : `${markerAt}%` }}
+          >
+            <span className="min-w-0 truncate">{marker.name}</span>
+            <span>{money(marker.cents)}</span>
+          </span>
+        </div>
+      ) : null}
       <div className="mt-1 flex justify-between font-mono text-[11px] text-ink-muted" aria-hidden="true">
         <span>{bars.length ? barLabel(bars[0]) : ""}</span>
         <span>{bars.length > 1 ? barLabel(bars[bars.length - 1]) : ""}</span>
@@ -143,39 +183,155 @@ function RangeRow({ label, cell, scale }: { label: string; cell: IndexCell | { n
 }
 
 /**
- * The hero's working Bank Fee Index: pick a free fee, a state and a charter, and the card shows
- * that pick's median, middle half, distribution and the comparison /fees pairs with it (a state
- * against the U.S., or banks against credit unions). Every figure was worked out on the server
- * by the /fees explorer's functions; this component only chooses which to show.
+ * The card's institution: the one picked, with a link to its page and the plans priced for it,
+ * or the search to pick one (the public /api/institutions search the report form uses).
  */
-export function IndexCard({ data, freshness, children }: { data: IndexCardData; freshness: string; children?: ReactNode }) {
+function InstitutionPick({
+  picked,
+  fee,
+  onPick,
+  onChange,
+}: {
+  picked: CardInstitution | null;
+  fee: string;
+  onPick: (p: PickedInstitution) => void;
+  onChange: () => void;
+}) {
+  const id = useId();
+  return (
+    <div className="mt-4 border-t border-border pt-4" data-index-institution="">
+      <label htmlFor={picked ? undefined : id} className="mb-1 block text-[11px] text-ink-muted">
+        Your institution
+      </label>
+      {picked ? (
+        <div className="flex min-h-9 flex-wrap items-center gap-x-4 gap-y-2">
+          <p className="flex min-w-0 items-center gap-2 text-[13px] font-semibold text-ink">
+            <span className="min-w-0 truncate">{picked.name}</span>
+            <button
+              type="button"
+              onClick={onChange}
+              className="inline-flex min-h-9 shrink-0 items-center text-[12px] font-semibold text-ink-muted underline decoration-border underline-offset-4 hover:text-ink"
+            >
+              Change
+            </button>
+          </p>
+          <span className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] sm:ml-auto">
+            <a
+              href={institutionHref(picked.id, fee)}
+              className="inline-flex items-center gap-1 font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+            >
+              See its fees
+              <ArrowUpRight aria-hidden="true" className="size-3.5" />
+            </a>
+            <TrackLink
+              href={plansHref(picked.id)}
+              event="upgrade_click"
+              eventProps={{ placement: "home_index_card" }}
+              className="inline-flex items-center gap-1 font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+            >
+              See Hamilton plans
+              <ArrowUpRight aria-hidden="true" className="size-3.5" />
+            </TrackLink>
+          </span>
+        </div>
+      ) : (
+        <InstitutionCombobox
+          id={id}
+          name="institution"
+          defaultValue=""
+          readOnly={false}
+          onPick={(p) => {
+            if (p) onPick(p);
+          }}
+          className="h-10 w-full min-w-0 rounded-full border border-control-border bg-surface-0 px-4 text-[13px] text-ink outline-offset-2 placeholder:text-ink-muted hover:border-ink-muted"
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * The hero's working Bank Fee Index: pick a free fee, a state, a charter and your institution,
+ * and the card shows that pick's median, middle half, distribution and the comparison /fees
+ * pairs with it (a state against the U.S., or banks against credit unions), with the
+ * institution's own fee marked on the distribution. Every figure was worked out on the server
+ * by the /fees explorer's functions; this component only chooses which to show. The demo bank's
+ * fees come read ahead; any other pick asks the server for its own published fees
+ * (institutionCardFees, the same rows the chart counts). Until that answers, or when it fails,
+ * the card shows the institution's links and no marker, never a made-up figure.
+ */
+export function IndexCard({ data, freshness }: { data: IndexCardData; freshness: string }) {
   const defaultFee = data.fees.find((f) => f.key === "monthly_maintenance")?.key ?? data.fees[0]?.key ?? "";
+  const readAhead = data.institutions ?? [];
   const [fee, setFee] = useState(defaultFee);
   const [place, setPlace] = useState(US);
   const [charter, setCharter] = useState<Charter>("all");
+  const [institution, setInstitution] = useState<CardInstitution | null>(readAhead[0] ?? null);
+  const [reading, setReading] = useState(false);
+  // Only the latest pick may set the fees: an earlier, slower answer is dropped.
+  const pickSeq = useRef(0);
   const [scopeOpen, setScopeOpen] = useState(false);
   const scopeId = useId();
   const feeDef = data.fees.find((f) => f.key === fee) ?? data.fees[0];
   const places = data.cells[fee] ?? {};
   const ci = CHARTERS.indexOf(charter);
   const pick = places[place]?.[ci];
-  const placeName = place === US ? "the U.S." : (data.states.find((s) => s.code === place)?.name ?? place);
-  const benchmarkTitle = place === US ? "U.S. benchmark" : `${placeName} benchmark`;
+  const placeName = place === US ? "U.S." : (data.states.find((s) => s.code === place)?.name ?? place);
+  const placeWords = place === US ? "the U.S." : placeName;
+  const benchmarkTitle = scopeLabel(placeName, charter);
+
+  const own = institution?.fees ? institution.fees[fee] : undefined;
+  const marker = institution && own !== undefined ? { name: institution.name, cents: own } : undefined;
+  const position =
+    !institution?.fees || !hasMedian(pick)
+      ? null
+      : own === undefined
+        ? noFeeSentence(institution.name, feeDef?.label ?? "")
+        : positionSentence(institution.name, own, pick.median, benchmarkPhrase(placeName, charter));
+
+  function choose(p: PickedInstitution) {
+    const seq = ++pickSeq.current;
+    const known = readAhead.find((i) => i.id === p.id);
+    if (known) {
+      setReading(false);
+      setInstitution(known);
+      return;
+    }
+    setInstitution({ id: p.id, name: p.name, state: p.stateCode, fees: null });
+    setReading(true);
+    institutionCardFees(p.id, data.fees.map((f) => f.key))
+      .then(
+        (fees) => {
+          if (seq !== pickSeq.current || !fees) return;
+          setInstitution((cur) => (cur && cur.id === p.id ? { ...cur, fees } : cur));
+        },
+        () => undefined,
+      )
+      .finally(() => {
+        if (seq === pickSeq.current) setReading(false);
+      });
+  }
+
+  function clear() {
+    pickSeq.current++;
+    setReading(false);
+    setInstitution(null);
+  }
 
   const compare =
     place === US
       ? {
-          title: "Banks against credit unions",
+          title: "U.S. banks against credit unions",
           rows: [
-            { label: "Banks", cell: places[US]?.[1] },
-            { label: "Credit unions", cell: places[US]?.[2] },
+            { label: scopeLabel("U.S.", "bank"), cell: places[US]?.[1] },
+            { label: scopeLabel("U.S.", "credit_union"), cell: places[US]?.[2] },
           ],
         }
       : {
           title: `${placeName} against the U.S.`,
           rows: [
-            { label: placeName, cell: places[place]?.[ci] },
-            { label: "U.S.", cell: places[US]?.[ci] },
+            { label: scopeLabel(placeName, charter), cell: places[place]?.[ci] },
+            { label: scopeLabel("U.S.", charter), cell: places[US]?.[ci] },
           ],
         };
   const scaleCents =
@@ -183,7 +339,8 @@ export function IndexCard({ data, freshness, children }: { data: IndexCardData; 
 
   return (
     <div
-      className="relative z-[1] rounded-[11px] bg-surface-0 p-4 text-ink shadow-[0_14px_28px_rgb(21_37_55/0.15),0_3px_8px_rgb(21_37_55/0.05)] sm:p-6"
+      id="bank-fee-index"
+      className="relative z-[1] scroll-mt-20 rounded-[11px] bg-surface-0 p-4 text-ink shadow-[0_14px_28px_rgb(21_37_55/0.15),0_3px_8px_rgb(21_37_55/0.05)] sm:p-6"
       data-index-card=""
     >
       <div className="flex items-center">
@@ -240,12 +397,13 @@ export function IndexCard({ data, freshness, children }: { data: IndexCardData; 
           {/* One short line is announced when a picker changes, not the whole result area. */}
           <p className="sr-only" aria-live="polite" aria-atomic="true" data-index-summary="">
             {hasMedian(pick)
-              ? `${feeDef?.label}, ${CHARTER_WORDS[charter]} in ${placeName}: median ${money(pick.median)}, ${institutions(pick.n)}.`
-              : `${feeDef?.label}, ${CHARTER_WORDS[charter]} in ${placeName}: no median yet.`}
+              ? `${feeDef?.label}, ${CHARTER_WORDS[charter]} in ${placeWords}: median ${money(pick.median)}, ${institutions(pick.n)}.`
+              : `${feeDef?.label}, ${CHARTER_WORDS[charter]} in ${placeWords}: no median yet.`}
+            {position ? ` ${position}` : ""}
           </p>
           <div className="mt-3 grid gap-5 sm:mt-4 sm:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] sm:gap-5">
             <div className="min-w-0">
-              <h3 className="text-[13px] font-semibold text-ink">{benchmarkTitle}</h3>
+              <h3 className="text-[13px] font-semibold text-ink" data-index-benchmark="">{benchmarkTitle}</h3>
               {hasMedian(pick) ? (
                 <>
                   <div className="mt-3 flex items-center gap-3">
@@ -254,7 +412,16 @@ export function IndexCard({ data, freshness, children }: { data: IndexCardData; 
                     </strong>
                     <p className="text-[12px] text-ink-muted">{institutions(pick.n)}</p>
                   </div>
-                  <Histogram cell={pick} label={`${feeDef?.label}, ${placeName}`} />
+                  <Histogram cell={pick} label={`${feeDef?.label}, ${benchmarkTitle}`} marker={marker} />
+                  {reading && institution ? (
+                    <p className="mt-2 text-[12px] leading-snug text-ink-muted" role="status" data-index-reading="">
+                      Finding {institution.name}’s fees…
+                    </p>
+                  ) : position ? (
+                    <p className="mt-2 text-[12px] leading-snug text-ink-soft" data-index-position="">
+                      {position}
+                    </p>
+                  ) : null}
                 </>
               ) : (
                 <p className="mt-4 rounded-md bg-paper px-3 py-6 text-center text-[13px] text-ink-soft">
@@ -272,14 +439,17 @@ export function IndexCard({ data, freshness, children }: { data: IndexCardData; 
           </div>
         </>
       )}
+      <InstitutionPick picked={institution} fee={fee} onPick={choose} onChange={clear} />
       <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-border pt-3 text-[11px] text-ink-muted">
         <span>Published fee schedules · {freshness}</span>
-        <a href={data.fees.length ? cardHref(fee, place, charter) : "/fees"} className="inline-flex items-center gap-1 font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
+        <a
+          href={data.fees.length ? cardHref(fee, place, charter, institution?.name) : "/fees"}
+          className="inline-flex items-center gap-1 font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+        >
           See this fee in the index
           <ArrowUpRight aria-hidden="true" className="size-3.5" />
         </a>
       </div>
-      {children}
     </div>
   );
 }

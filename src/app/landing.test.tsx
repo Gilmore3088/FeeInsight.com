@@ -14,8 +14,9 @@ import { LandingHero, LandingProof } from "./landing-hero";
 import { LandingHamilton, analyzePicks, positionCounts } from "./landing-hamilton";
 import { HamiltonCarousel, type HamiltonSlide } from "./landing-hamilton-carousel";
 import { buildIndexCard, plainFeeName } from "./landing-index";
+import { institutionCardFees } from "./landing-index-actions";
 import { IndexCard } from "./landing-index-card";
-import { cardHref, cellBars, hasMedian, US } from "./landing-index-view";
+import { cardHref, cellBars, hasMedian, noFeeSentence, positionSentence, US, type IndexCardData } from "./landing-index-view";
 import { LandingPricing, pricingLine } from "./landing-pricing";
 import { RESEARCH_EXAMPLES, ResearchStage, SOURCES } from "./landing-research";
 import { LandingResearch } from "./landing-research-section";
@@ -32,6 +33,10 @@ vi.mock("@/components/track-link", () => ({
     </a>
   ),
 }));
+
+// The card's server action, so a pick's fee read is under the test's control.
+vi.mock("./landing-index-actions", () => ({ institutionCardFees: vi.fn(async () => null) }));
+const institutionCardFeesMock = vi.mocked(institutionCardFees);
 
 const summary: PublicStatsSummary = {
   institutions: 1234,
@@ -109,7 +114,11 @@ describe("hero Bank Fee Index card", () => {
     if (!hasMedian(us)) throw new Error("expected a median");
     const median = `$${Number.isInteger(us.median / 100) ? us.median / 100 : (us.median / 100).toFixed(2)}`;
     expect(screen.getByText(median, { selector: "strong" })).toBeTruthy();
-    expect(screen.getByText("Banks against credit unions")).toBeTruthy();
+    expect(screen.getByText("U.S. banks against credit unions")).toBeTruthy();
+    // Every scope names its place and its charter.
+    expect(screen.getByText("U.S. banks and credit unions", { selector: "h3" })).toBeTruthy();
+    expect(screen.getByText("U.S. banks")).toBeTruthy();
+    expect(screen.getByText("U.S. credit unions")).toBeTruthy();
     // One source line closes the card; the explainer lines are gone (James, Oct 17).
     expect(screen.getByText("Published fee schedules · Oct 14, 2026")).toBeTruthy();
     expect(screen.queryByText(/middle half/)).toBeNull();
@@ -117,6 +126,8 @@ describe("hero Bank Fee Index card", () => {
     fireEvent.change(screen.getByLabelText("State"), { target: { value: "FL" } });
     expect(screen.getByText("Florida against the U.S.")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Institutions"), { target: { value: "bank" } });
+    expect(screen.getByText("Florida banks", { selector: "h3" })).toBeTruthy();
+    expect(screen.getByText("U.S. banks")).toBeTruthy();
     expect(screen.getByRole("link", { name: /See this fee in the index/ }).getAttribute("href")).toBe(cardHref("monthly_maintenance", "FL", "bank"));
     expect(cardHref("monthly_maintenance", "FL", "bank")).toBe("/fees?fee=monthly_maintenance&state=FL&charter=bank#explorer");
     fireEvent.change(screen.getByLabelText("State"), { target: { value: "WY" } });
@@ -138,8 +149,149 @@ describe("hero Bank Fee Index card", () => {
   });
 });
 
+describe("hero Bank Fee Index card: your institution", () => {
+  const all = rows();
+  // Institution 5 is a Florida bank; its value is the one the chart counts for it.
+  const ownValue = institutionsFor(all, "monthly_maintenance", null, "all").find((i) => i.id === 5)!.value;
+  const withInstitution = buildIndexCard(new Map([["monthly_maintenance", all]]), [5, 9999]);
+  const dollars = (cents: number) => `$${Number.isInteger(cents / 100) ? cents / 100 : (cents / 100).toFixed(2)}`;
+  const medianOf = (data: IndexCardData, place: string, ci: number) => {
+    const c = data.cells.monthly_maintenance[place][ci];
+    if (!hasMedian(c)) throw new Error("expected a median");
+    return c.median;
+  };
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("reads the demo institution ahead from the same rows, and leaves out one with no published row", () => {
+    expect(withInstitution.institutions).toEqual([
+      { id: 5, name: "Institution 5", state: "FL", fees: { monthly_maintenance: Math.round(ownValue * 100) } },
+    ]);
+    expect(buildIndexCard(new Map([["monthly_maintenance", all]]), [9999]).institutions).toBeUndefined();
+  });
+
+  it("marks the institution's fee on the distribution and says where it sits against the benchmark on screen", () => {
+    const { container } = render(<IndexCard data={withInstitution} freshness="Oct 14, 2026" />);
+    const ownCents = Math.round(ownValue * 100);
+    const marker = container.querySelector("[data-index-marker]");
+    expect(marker?.textContent).toBe(`Institution 5${dollars(ownCents)}`);
+    expect(container.querySelectorAll("[data-marker-bar]")).toHaveLength(1);
+    const usMedian = medianOf(withInstitution, US, 0);
+    expect(container.querySelector("[data-index-position]")?.textContent).toBe(positionSentence("Institution 5", ownCents, usMedian, "U.S."));
+    expect(container.querySelector("[data-index-position]")?.textContent).toMatch(/^Institution 5’s \$[\d.]+ (is (higher|lower) than the U\.S\. median of \$[\d.]+|matches the U\.S\. median)\.$/);
+    // The scope follows the pickers: state, then charter.
+    fireEvent.change(screen.getByLabelText("State"), { target: { value: "FL" } });
+    fireEvent.change(screen.getByLabelText("Institutions"), { target: { value: "bank" } });
+    expect(container.querySelector("[data-index-position]")?.textContent).toBe(
+      positionSentence("Institution 5", ownCents, medianOf(withInstitution, "FL", 1), "Florida bank"),
+    );
+    // The selection carries through: the index with its name search, its own page on this fee, the plans priced for it.
+    expect(screen.getByRole("link", { name: /See this fee in the index/ }).getAttribute("href")).toBe(
+      "/fees?fee=monthly_maintenance&state=FL&charter=bank&q=Institution+5#explorer",
+    );
+    expect(screen.getByRole("link", { name: /See its fees/ }).getAttribute("href")).toBe("/institution/5?fee=monthly_maintenance");
+    expect(screen.getByRole("link", { name: /See Hamilton plans/ }).getAttribute("href")).toBe("/subscribe?inst=5");
+  });
+
+  it("words the position neutrally", () => {
+    expect(positionSentence("Capital City Bank", 800, 500, "Florida")).toBe("Capital City Bank’s $8 is higher than the Florida median of $5.");
+    expect(positionSentence("Capital City Bank", 395, 500, "U.S. credit union")).toBe("Capital City Bank’s $3.95 is lower than the U.S. credit union median of $5.");
+    expect(positionSentence("Capital City Bank", 500, 500, "Florida bank")).toBe("Capital City Bank’s $5 matches the Florida bank median.");
+    expect(noFeeSentence("Capital City Bank", "Monthly maintenance")).toBe("No published monthly maintenance fee for Capital City Bank yet.");
+    expect(noFeeSentence("Capital City Bank", "NSF")).toBe("No published NSF fee for Capital City Bank yet.");
+  });
+
+  it("shows the card without a marker when the institution's fees could not be read, never a zero", () => {
+    const { container } = render(<IndexCard data={card} freshness="Oct 14, 2026" />);
+    expect(container.querySelector("[data-index-marker]")).toBeNull();
+    expect(container.querySelector("[data-marker-bar]")).toBeNull();
+    expect(container.querySelector("[data-index-position]")).toBeNull();
+    expect(screen.getByLabelText("Your institution").getAttribute("role")).toBe("combobox");
+    expect(container.textContent).not.toMatch(/\$0(?![.\d])/);
+    expect(screen.getByRole("link", { name: /See this fee in the index/ }).getAttribute("href")).toBe(cardHref("monthly_maintenance", US, "all"));
+  });
+
+  it("says plainly when the institution publishes no fee of the picked type, with no marker", () => {
+    const other: IndexCardData = { ...card, institutions: [{ id: 5, name: "Institution 5", state: "FL", fees: { overdraft: 3000 } }] };
+    const { container } = render(<IndexCard data={other} freshness="Oct 14, 2026" />);
+    expect(container.querySelector("[data-index-marker]")).toBeNull();
+    expect(container.querySelector("[data-index-position]")?.textContent).toBe("No published monthly maintenance fee for Institution 5 yet.");
+  });
+
+  /** Changes the pick to Harbor Bank (id 77) through the search, with fetch mocked. */
+  async function pickHarbor() {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => [{ id: 77, institution_name: "Harbor Bank", city: "Tampa", state_code: "FL" }] })));
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    fireEvent.change(screen.getByLabelText("Your institution"), { target: { value: "Harbor" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250);
+    });
+    expect(String((vi.mocked(fetch).mock.calls[0] as unknown[])[0])).toBe("/api/institutions?q=Harbor");
+    fireEvent.mouseDown(screen.getByRole("option", { name: /Harbor Bank/ }));
+  }
+
+  it("keeps Capital City's stand-in preselected without asking the server", () => {
+    institutionCardFeesMock.mockClear();
+    render(<IndexCard data={withInstitution} freshness="Oct 14, 2026" />);
+    expect(institutionCardFeesMock).not.toHaveBeenCalled();
+  });
+
+  it("reads another pick's fees from the server action, shows a quiet wait, then its marker and sentence", async () => {
+    vi.useFakeTimers();
+    let answer: (v: Record<string, number> | null) => void = () => undefined;
+    institutionCardFeesMock.mockClear();
+    institutionCardFeesMock.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)));
+    try {
+      const { container } = render(<IndexCard data={withInstitution} freshness="Oct 14, 2026" />);
+      await pickHarbor();
+      expect(institutionCardFeesMock).toHaveBeenCalledWith(77, ["monthly_maintenance"]);
+      expect(container.querySelector("[data-index-reading]")?.textContent).toBe("Finding Harbor Bank’s fees…");
+      expect(container.querySelector("[data-index-marker]")).toBeNull();
+      await act(async () => answer({ monthly_maintenance: 1200 }));
+      expect(container.querySelector("[data-index-reading]")).toBeNull();
+      expect(container.querySelector("[data-index-marker]")?.textContent).toBe("Harbor Bank$12");
+      expect(container.querySelector("[data-index-position]")?.textContent).toBe(
+        positionSentence("Harbor Bank", 1200, medianOf(withInstitution, US, 0), "U.S."),
+      );
+      expect(screen.getByRole("link", { name: /See its fees/ }).getAttribute("href")).toBe("/institution/77?fee=monthly_maintenance");
+      expect(screen.getByRole("link", { name: /See Hamilton plans/ }).getAttribute("href")).toBe("/subscribe?inst=77");
+      expect(screen.getByRole("link", { name: /See this fee in the index/ }).getAttribute("href")).toBe(
+        "/fees?fee=monthly_maintenance&q=Harbor+Bank#explorer",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("says so when the pick publishes no fee of this type, and shows no marker when the read failed", async () => {
+    vi.useFakeTimers();
+    try {
+      institutionCardFeesMock.mockResolvedValueOnce({});
+      const first = render(<IndexCard data={withInstitution} freshness="Oct 14, 2026" />);
+      await pickHarbor();
+      await act(async () => undefined);
+      expect(first.container.querySelector("[data-index-marker]")).toBeNull();
+      expect(first.container.querySelector("[data-index-position]")?.textContent).toBe("No published monthly maintenance fee for Harbor Bank yet.");
+      first.unmount();
+      vi.unstubAllGlobals();
+
+      institutionCardFeesMock.mockResolvedValueOnce(null);
+      const failed = render(<IndexCard data={withInstitution} freshness="Oct 14, 2026" />);
+      await pickHarbor();
+      await act(async () => undefined);
+      expect(failed.container.querySelector("[data-index-reading]")).toBeNull();
+      expect(failed.container.querySelector("[data-index-marker]")).toBeNull();
+      expect(failed.container.querySelector("[data-index-position]")).toBeNull();
+      expect(failed.container.textContent).not.toMatch(/\$0(?![.\d])/);
+      expect(screen.getByRole("link", { name: /See its fees/ }).getAttribute("href")).toBe("/institution/77?fee=monthly_maintenance");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("hero and proof strip", () => {
-  it("names the buyer, carries James's promise, one action and the institution search", () => {
+  it("names the buyer, carries James's promise, a main action to the card and a quieter one to the sample", () => {
     const html = renderToStaticMarkup(<LandingHero index={card} freshness="Oct 14, 2026" />);
     // James's own eyebrow and headline, and the subhead he chose (Oct 18).
     expect(html).toMatch(/<p[^>]*>For banks and credit unions<\/p>(<!-- -->)?<h1/);
@@ -149,11 +301,15 @@ describe("hero and proof strip", () => {
     expect(html.replace(/<!-- -->/g, "").replace(/\s+/g, " ")).toContain(
       "Understand your institution’s financial position, compare your fees with competitors, and identify what deserves a closer look, all supported by published data and verifiable sources.",
     );
-    expect(html).toMatch(/<a href="#hamilton"[^>]*fi-btn-brick[^>]*>See a live fee comparison</);
+    expect(html).toMatch(/<a href="#bank-fee-index"[^>]*fi-btn-brick[^>]*>See a live fee comparison</);
+    expect(html).toContain('id="bank-fee-index"');
+    expect(html).toMatch(/<a href="\/reports\/sample-competitive-fee-position"[^>]*data-event="sample_report_click" data-placement="home_hero"[^>]*>View sample analysis</);
     expect(html).not.toContain("Explore the Index");
     // The h1 is set in the homepage serif (James, Oct 17).
     expect(html).toMatch(/<h1 id="hero-title"[^>]*style="font-family:var\(--fi-home-serif/);
-    expect(html).toMatch(/<form[^>]*action="\/institutions"[^>]*method="get"/);
+    // The institution is picked inside the card now; the separate search under it is gone.
+    expect(html).not.toContain("<form");
+    expect(html).toContain("Your institution");
     // Both h1 lines stay whole: a word is never left on its own line.
     expect(html.match(/class="block whitespace-nowrap"/g)).toHaveLength(2);
   });
