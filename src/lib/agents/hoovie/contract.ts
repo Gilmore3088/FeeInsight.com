@@ -79,6 +79,12 @@ export interface HoovieLicence {
 export interface HoovieSourceContract {
   /** The registry source key (`RegistrySourceDefinition.source`). */
   source: string;
+  /**
+   * The registry module that runs this source, as its file name under `magellan/registry/` without
+   * `.ts`. The contract test reads it, and the registry modules it imports, for the SQL that writes
+   * each table in `tables` and for every key the contract names.
+   */
+  loader: string;
   /** Who publishes the data, as a reader would name them. */
   publisher: string;
   licence: HoovieLicence;
