@@ -48,6 +48,7 @@ import {
   type StateBand,
   type StateRank,
   type StateView,
+  zeroBarNote,
 } from "./index-view";
 
 interface PageProps {
@@ -86,7 +87,6 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
   const [user, { summary, categories }, publicTypes] = await Promise.all([getCurrentUser(), getPublicSnapshot(), getPublicFeeTypes()]);
   // The public site lists the top 50 fee types by institution count (James, Oct 17 2026).
   const publicFees = ALL_FEES.filter((key) => publicTypes.has(key));
-  const typeCount = publicFees.length;
   const familyCount = new Set(publicFees.map((key) => FAMILY_OF.get(key) ?? "Other")).size;
   // Hamilton subscribers already have the workspace, so the closing Hamilton band is for everyone else.
   const subscriber = canAccessAllCategories(user);
@@ -215,7 +215,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
           <dl className="mx-auto mt-6 grid max-w-[34rem] grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border text-left sm:mx-0 sm:max-w-none sm:grid-cols-4">
             {[
               { term: "Institutions", value: summary.institutionsLabel },
-              { term: "Fee categories", value: typeCount.toLocaleString() },
+              { term: "Fee categories", value: summary.categoriesLabel },
               { term: "Fee groups", value: familyCount.toLocaleString() },
               { term: "Data updated (U.S. Eastern)", value: summary.refreshedOn ?? "Pending" },
             ].map((m) => (
@@ -342,6 +342,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
                 p25={stats.p25_amount}
                 p75={stats.p75_amount}
                 unit={counted.measure}
+                zeroNote={zeroBarNote(sel.fee)}
                 hrefFor={(i) => linkTo(sel, { bin: String(i) }, "institutions")}
                 allHref={linkTo(sel, { bin: "all" }, "institutions")}
               />
@@ -671,6 +672,7 @@ function Histogram({
   p25,
   p75,
   unit,
+  zeroNote,
   hrefFor,
   allHref,
 }: {
@@ -681,6 +683,8 @@ function Histogram({
   p25: number | null;
   p75: number | null;
   unit: string;
+  /** What the $0 bar counts, shown when there is one. */
+  zeroNote: string;
   hrefFor: (i: number) => string;
   allHref: string;
 }) {
@@ -778,6 +782,7 @@ function Histogram({
           </Link>
         )}
       </p>
+      {buckets[0]?.label === "$0" && <p className="mt-1 text-[12px] text-ink-muted">{zeroNote}</p>}
     </div>
   );
 }

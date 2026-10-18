@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { IndexRow } from "@/lib/data-store";
 import { STATE_NAMES } from "@/lib/us-states";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
@@ -104,4 +106,34 @@ describe("Bank Fee Index explorer invariants", () => {
       });
     }
   }
+});
+
+describe("the page prints the explorer rows' institution count (#1964 review)", () => {
+  // The KPI, the "N of M publish this fee" line, the catalog count for the explored fee and
+  // "Publishing institutions" print the population the median, the histogram and the lists count.
+  // A count from another read (the shared snapshot) can trail these rows and break that rule.
+  const page = readFileSync(join(__dirname, "page.tsx"), "utf8");
+
+  it("the Institutions KPI and the publish line read the listed institutions", () => {
+    expect(page).toContain('<Kpi term="Institutions" value={institutions.length.toLocaleString()} />');
+    expect(page).toContain("{institutions.length.toLocaleString()} of the {summary.institutionsLabel}");
+    expect(page).toMatch(/const institutions = institutionsFor\(rows, sel\.fee, sel\.state, sel\.charter\)/);
+  });
+
+  it("the catalog and Publishing institutions read the same rows", () => {
+    expect(page).toContain("coverage.set(sel.fee, institutionsFor(rows, sel.fee, null, \"all\").length);");
+    expect(page).toContain("{usStats.institution_count.toLocaleString()}</dd>");
+    expect(page).not.toMatch(/feeHeadlineCounts|headlineInstitutionCount/);
+  });
+
+  it("the KPI count equals the rows' length for every cut", () => {
+    const rows = makeRows(11, 160);
+    for (const charter of CHARTERS) {
+      for (const state of PLACES) {
+        const institutions = institutionsFor(rows, "overdraft", state, charter);
+        const stats = statsFor(rows, "overdraft", state, charter);
+        expect(stats.institution_count).toBe(institutions.length);
+      }
+    }
+  });
 });
