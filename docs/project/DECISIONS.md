@@ -1235,3 +1235,28 @@ scheduled and no reader returns its rows. Released: World Bank Remittance Prices
 (ODC-By 1.0; attribution "Braga et al., Debt in America, Urban Institute"), each carrying its
 attribution on every stored row and read. Rows already loaded from struck sources stay on prod and
 no reader returns them (`src/lib/data-store/struck-sources.ts`).
+
+**PRs merge without James; accuracy comes from recorded reviews.** James, 2026-10-18 06:40-06:43 UTC
+(project thread "Triage open GitHub issues", after a PR pipeline review that proposed these rules):
+"i jsut want the most accurate but autonomous way", "i cant merge every PR how quickly we are
+shipping them", then "yes, make the rule change". Page PRs, redesigns included, no longer wait for
+his review or typed yes. This replaces the 2026-10-05 entry ("redesigns wait for James's review"),
+the Oct 8 Pro price picker's wait for his review, the Oct 9 entry ("public, Pro and Hamilton screens
+still wait for his review"), the 2026-10-12 entry ("copy and page changes wait as open PRs"), the
+Oct 13 limit ("no lane opens a new copy preview while five are waiting for James"), the Oct 14
+design-system rollout's review on the Vercel preview, and the Oct 17 coordinator hold after #1815,
+which lived in project memory, not here. A page PR merges when three verdicts are on the PR: the
+growthOS review approves its desktop and phone screenshots; an independent reviewer finds no
+blockers on the exact head; CI is green. The growthOS review is the page lane's walkthrough of the
+screens against the site brief (#1294) in the roles of growth-os/agents/ (NORMAN, DRAPER, ERNEST,
+SHERLOCK), posted as a PR comment. James asked for it on 2026-10-15 (project memory: the growthOS
+team approves the whole user experience). The #1121 pause covers the growth agents' own marketing
+work, not this review. Every merge gets a receipt comment with the head SHA and both review
+verdicts, on top of the Oct 14 "Reviewed" rule. Batch to at most one PR per page or area a day. The
+day's merges go to him as one digest with screenshots, and he can ask for a revert. GitHub REST
+counts for Oct 15 05:00 to Oct 18 06:40 UTC: 318 PRs merged (`pulls?state=closed`, by `merged_at`),
+a median of 21 minutes from open to merge, and 1,123 CI workflow runs (`actions/runs?created=...`,
+`total_count`). Of 21 merged PRs sampled on Oct 18 (#1883, #1847, #1834, #1804, #1791, #1766, #1752,
+#1729, #1700, #1564, #1624, #1647, #1631, #1629, #1589, #1558, #1529, #1506, #1486, #1461, #1429),
+15 had no submitted GitHub review, which the Oct 14 "Reviewed" rule requires. Migrations,
+production-data changes and the other gated actions in CLAUDE.md still need his yes.
