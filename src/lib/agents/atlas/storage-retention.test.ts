@@ -132,6 +132,9 @@ describe("storageAlerts and summary", () => {
     expect(storageAlerts(10_000, 20, [{ table: "area_statistics", totalMb: 2_100, budgetMb: 2_000 }])).toEqual([
       "area_statistics is 2,100 MB, above its 2,000 MB budget; the sources that write it are held",
     ]);
+    expect(storageAlerts(10_000, 20, [{ table: "demographics", totalMb: 1_100, budgetMb: 1_000 }])).toEqual([
+      "demographics is 1,100 MB, above the 1,000 MB default; nothing is held until a PR gives it a budget",
+    ]);
   });
   it("says what each trim would remove while it is off", async () => {
     const { db } = mockDb({ legacy: 1200, runEvents: 0, attemptRead: { read: "10", through_id: "10", repeats: "4" } });

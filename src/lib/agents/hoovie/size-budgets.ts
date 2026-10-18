@@ -29,9 +29,6 @@ export const TABLE_BUDGET_MB: Readonly<Record<string, number>> = {
   institution_call_report_items: 7_000,
   // About double the Oct 17 size (about 1 GB, written by 29 sources).
   area_statistics: 2_000,
-  // Not measured yet; FDIC and NCUA quarterly financials back to 2010 were the largest part of the
-  // roughly 3 GB of real data before the back-fill, so this stays above that whole figure.
-  institution_financial_records: 3_000,
 };
 
 /** Every table some contract writes, with its budget in MB. */

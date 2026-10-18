@@ -24,7 +24,7 @@ unconfirmed, never guessed.
 
 Every table a source writes has a size budget in MB (`size-budgets.ts`): 7,000 for
 `institution_call_report_items` and 2,000 for `area_statistics` (about double their Oct 17, 2026
-sizes after the back-fill), 3,000 for `institution_financial_records`, and 1,000 for every other
+sizes after the back-fill), and 1,000 for every other
 table until a measured size says otherwise. Atlas's daily storage step measures each one. While a
 table with its own budget is over it, the registry scheduler starts no partition for any source
 that writes it; a table over the unmeasured 1,000 MB default is only warned about, until a PR

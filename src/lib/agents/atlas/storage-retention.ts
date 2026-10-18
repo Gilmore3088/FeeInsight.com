@@ -1,6 +1,6 @@
 import { sql } from "@/lib/data-store/connection";
 import { inSavepoint } from "@/lib/agents/savepoint";
-import { hoovieTableBudgets, overBudgetTables, sourcesHeldForSize, type OverBudgetTable } from "@/lib/agents/hoovie/size-budgets";
+import { TABLE_BUDGET_MB, hoovieTableBudgets, overBudgetTables, sourcesHeldForSize, type OverBudgetTable } from "@/lib/agents/hoovie/size-budgets";
 
 type SqlTag = typeof sql;
 
@@ -366,7 +366,9 @@ export function storageAlerts(databaseMb: number | null, growthMb: number | null
   if (databaseMb != null && databaseMb > STORAGE_ALERT_MB) alerts.push(`database is ${databaseMb.toLocaleString("en-US")} MB, above ${STORAGE_ALERT_MB.toLocaleString("en-US")} MB`);
   if (growthMb != null && growthMb > STORAGE_ALERT_GROWTH_MB) alerts.push(`grew ${growthMb.toLocaleString("en-US")} MB since the last run, above ${STORAGE_ALERT_GROWTH_MB} MB`);
   for (const entry of overBudget) {
-    alerts.push(`${entry.table} is ${entry.totalMb.toLocaleString("en-US")} MB, above its ${entry.budgetMb.toLocaleString("en-US")} MB budget; the sources that write it are held`);
+    alerts.push(entry.table in TABLE_BUDGET_MB
+      ? `${entry.table} is ${entry.totalMb.toLocaleString("en-US")} MB, above its ${entry.budgetMb.toLocaleString("en-US")} MB budget; the sources that write it are held`
+      : `${entry.table} is ${entry.totalMb.toLocaleString("en-US")} MB, above the ${entry.budgetMb.toLocaleString("en-US")} MB default; nothing is held until a PR gives it a budget`);
   }
   return alerts;
 }
@@ -470,7 +472,9 @@ export function summarizeStorageRetention(result: StorageResult): string {
     ? " Could not measure the public-data tables against their budgets."
     : result.heldSources.length > 0
       ? ` Registry sources held for size: ${result.heldSources.map((h) => `${h.source} (${h.tables.join(", ")})`).join("; ")}.`
-      : ` All ${result.budgetTables.length} public-data tables are within budget.`;
+      : result.overBudget.length > 0
+        ? " No registry source is held; the tables over the default are warnings only."
+        : ` All ${result.budgetTables.length} public-data tables are within budget.`;
   const trims = result.trims.map((t) => {
     if (t.eligible == null) return `${TRIM_NAMES[t.policy]}: could not count`;
     const n = t.eligible.toLocaleString("en-US");
