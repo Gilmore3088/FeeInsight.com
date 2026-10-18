@@ -6,7 +6,6 @@ import {
   companion,
   countedAs,
   findings,
-  headlineInstitutionCount,
   histogram,
   inBucket,
   institutionsFor,
@@ -194,29 +193,6 @@ describe("Bank Fee Index v2 views", () => {
     expect(parseStateView({})).toBe("gap");
     expect(parseStateView({ sv: "price" })).toBe("price");
     expect(parseStateView({ sv: "nonsense" })).toBe("gap");
-  });
-});
-
-describe("headline counts from the shared snapshot (#1951)", () => {
-  const snapshot = [
-    { fee_category: "overdraft", institution_count: 2502, zero_count: 4 },
-    { fee_category: "monthly_maintenance", institution_count: 1825, zero_count: 112 },
-  ];
-
-  it("prints the snapshot's count for the U.S. with all charters, not the explorer rows'", () => {
-    expect(headlineInstitutionCount(snapshot, "overdraft", null, "all", 2510)).toBe(2502);
-    expect(headlineInstitutionCount(snapshot, "monthly_maintenance", null, "all", 1833)).toBe(1825);
-  });
-
-  it("keeps the explorer rows' count for a state or charter cut", () => {
-    expect(headlineInstitutionCount(snapshot, "overdraft", "FL", "all", 120)).toBe(120);
-    expect(headlineInstitutionCount(snapshot, "overdraft", null, "bank", 1400)).toBe(1400);
-    expect(headlineInstitutionCount(snapshot, "overdraft", null, "credit_union", 1100)).toBe(1100);
-  });
-
-  it("falls back to the rows when the snapshot has no row for the fee or failed to read", () => {
-    expect(headlineInstitutionCount(snapshot, "wire_domestic_outgoing", null, "all", 2519)).toBe(2519);
-    expect(headlineInstitutionCount([], "overdraft", null, "all", 2510)).toBe(2510);
   });
 });
 

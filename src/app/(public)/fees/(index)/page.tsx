@@ -28,7 +28,6 @@ import {
   companion,
   countedAs,
   findings,
-  headlineInstitutionCount,
   accountName,
   chargedWhen,
   histogram,
@@ -143,10 +142,6 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
   const compare = companion(rows, sel);
   const takeaways = findings(rows, sel, institutions);
   const usStats = sel.state ? statsFor(rows, sel.fee, null, sel.charter) : stats;
-  // Headline counts for the U.S. with all charters come from the shared snapshot, so /fees prints the
-  // homepage's and /research's number (#1951). Cuts by state or charter count the explorer's rows.
-  const headlineCount = headlineInstitutionCount(categories, sel.fee, sel.state, sel.charter, institutions.length);
-  const usHeadlineCount = headlineInstitutionCount(categories, sel.fee, null, sel.charter, usStats.institution_count);
   const cells = stateCells(rows, sel.fee, sel.charter);
   const ranking = stateRanking(cells, usStats.median_amount);
   const picked = sel.state ? ranking.find((r) => r.code === sel.state) ?? null : null;
@@ -181,9 +176,9 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
     family: FAMILY_OF.get(key) ?? "Other",
     locked: false,
   }));
-  // The explored fee's catalog count is the same U.S. all-charter headline the explorer prints, so the
-  // two never disagree on one screen.
-  coverage.set(sel.fee, headlineInstitutionCount(categories, sel.fee, null, "all", institutionsFor(rows, sel.fee, null, "all").length));
+  // The explored fee's count is the explorer's own national population (the institutions the chart and
+  // list count), so the explorer and the catalog never disagree on one screen.
+  coverage.set(sel.fee, institutionsFor(rows, sel.fee, null, "all").length);
   const catalog: CatalogEntry[] = publicFees.map((key) => {
     const n = coverage.get(key) ?? 0;
     return {
@@ -324,7 +319,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
                   term="Middle 50%"
                   value={stats.p25_amount != null && stats.p75_amount != null && stats.median_amount != null ? `${money(stats.p25_amount)}–${money(stats.p75_amount)}` : "—"}
                 />
-                <Kpi term="Institutions" value={headlineCount.toLocaleString()} />
+                <Kpi term="Institutions" value={institutions.length.toLocaleString()} />
                 <Kpi term={common ? `At exactly ${money(common.value)}` : "Most common"} value={common ? `${common.share}%` : "—"} />
               </dl>
               {stats.median_amount == null && (
@@ -333,7 +328,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
               {/* Why a category has fewer institutions: schedules not read yet, against schedules that don't list the fee. */}
               {!sel.state && sel.charter === "all" && summary.institutions > 0 && (
                 <p className="mt-3 text-[12px] text-ink-muted">
-                  {headlineCount.toLocaleString()} of the {summary.institutionsLabel} institutions with a schedule read publish this fee.
+                  {institutions.length.toLocaleString()} of the {summary.institutionsLabel} institutions with a schedule read publish this fee.
                   {summary.monitored > summary.institutions ? ` Another ${(summary.monitored - summary.institutions).toLocaleString()} are tracked but have no schedule read yet.` : ""}
                 </p>
               )}
@@ -505,7 +500,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
               </div>
               <div>
                 <dt className="text-[12px] text-ink-muted">Publishing institutions</dt>
-                <dd className="font-mono text-[24px] font-semibold tabular-nums text-ink">{usHeadlineCount.toLocaleString()}</dd>
+                <dd className="font-mono text-[24px] font-semibold tabular-nums text-ink">{usStats.institution_count.toLocaleString()}</dd>
               </div>
             </dl>
             <div>
