@@ -13,8 +13,8 @@ export function LandingResearch() {
     <section id="research" aria-labelledby="research-title" className="border-y border-border bg-surface-0 py-10 sm:py-14">
       <div className={HOME_WRAP}>
         <h2 id="research-title" className="mb-7 max-w-3xl text-[34px] !font-medium leading-[1.06] tracking-[-0.025em] text-ink sm:mb-9 sm:text-[48px]" style={SERIF}>
-          {/* Each sentence starts its own line, so the break never splits "Every answer". */}
-          <span className="block">Ask Hamilton.</span> <span className="block">Every answer shows its sources.</span>
+          {/* Each sentence starts its own line, so a break never strands a word (audit, Oct 18). */}
+          <span className="block">One question.</span> <span className="block">Your institution’s full context.</span>
         </h2>
         <EvidenceFlow />
         <div className="mt-8 flex justify-center lg:justify-start">

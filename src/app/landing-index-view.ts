@@ -146,7 +146,9 @@ function lowerFee(feeLabel: string): string {
 
 /** What the Index counts for one institution, in plain words: "median monthly maintenance price". */
 export function measurePhrase(feeLabel: string, highest: boolean): string {
-  return `${highest ? "highest published" : "median"} ${lowerFee(feeLabel)} price`;
+  // "across its accounts": the card's figure is the median over every account it publishes, not
+  // one account, so it can differ from the report's entry-checking line (audit, Oct 18).
+  return highest ? `highest published ${lowerFee(feeLabel)} price` : `median ${lowerFee(feeLabel)} price across its accounts`;
 }
 
 /** "No published monthly maintenance fee for Capital City Bank yet." */

@@ -301,17 +301,17 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                 <span className="h-2.5 w-2.5 rounded-full bg-below-market" /> Below
               </span>
             </p>
-            {/* Phones get the four columns that fit; every figure is also in the named competitors and method below. */}
-            <table className="mt-4 w-full text-left text-sm sm:min-w-[760px] print:min-w-0">
+            {/* Phones and tablets get the four columns that fit; every figure is also in the named competitors and method below. */}
+            <table className="mt-4 w-full text-left text-sm lg:min-w-[760px] print:min-w-0">
               <thead className="border-b border-border text-[11px] uppercase tracking-[0.08em] text-ink-muted">
                 <tr>
                   <th className="py-2 pr-3 font-semibold">Fee</th>
                   <th className="py-2 pr-3 text-right font-semibold">Yours</th>
-                  <td className="hidden w-[22%] py-2 pr-4 sm:table-cell print:hidden" aria-hidden="true" />
+                  <td className="hidden w-[22%] py-2 pr-4 lg:table-cell print:hidden" aria-hidden="true" />
                   <th className="py-2 pr-3 text-right font-semibold">Local median</th>
-                  <th className="hidden py-2 pr-3 text-right font-semibold sm:table-cell print:table-cell">Middle half</th>
-                  <th className="hidden py-2 pr-3 text-right font-semibold sm:table-cell print:table-cell">Competitors</th>
-                  <th className="hidden py-2 pr-3 text-right font-semibold sm:table-cell print:table-cell">Charging less</th>
+                  <th className="hidden py-2 pr-3 text-right font-semibold lg:table-cell print:table-cell">Middle half</th>
+                  <th className="hidden py-2 pr-3 text-right font-semibold lg:table-cell print:table-cell">Competitors</th>
+                  <th className="hidden py-2 pr-3 text-right font-semibold lg:table-cell print:table-cell">Charging less</th>
                   <th className="py-2 font-semibold">Position</th>
                 </tr>
               </thead>
@@ -327,15 +327,15 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                         </span>
                       )}
                     </td>
-                    <td className="hidden py-2 pr-4 sm:table-cell print:hidden" aria-hidden="true">
+                    <td className="hidden py-2 pr-4 lg:table-cell print:hidden" aria-hidden="true">
                       <LineRange line={line} />
                     </td>
                     <td className="py-2 pr-3 text-right tabular-nums">{line.comparable ? money(line.peers?.median) : "—"}</td>
-                    <td className="hidden py-2 pr-3 text-right tabular-nums sm:table-cell print:table-cell">
+                    <td className="hidden py-2 pr-3 text-right tabular-nums lg:table-cell print:table-cell">
                       {line.comparable && line.peers ? `${money(line.peers.p25)}–${money(line.peers.p75)}` : "—"}
                     </td>
-                    <td className="hidden py-2 pr-3 text-right tabular-nums sm:table-cell print:table-cell">{line.peers?.n ?? 0}</td>
-                    <td className="hidden py-2 pr-3 text-right tabular-nums sm:table-cell print:table-cell">
+                    <td className="hidden py-2 pr-3 text-right tabular-nums lg:table-cell print:table-cell">{line.peers?.n ?? 0}</td>
+                    <td className="hidden py-2 pr-3 text-right tabular-nums lg:table-cell print:table-cell">
                       {line.chargingLess !== null && line.peers ? `${line.chargingLess} of ${line.peers.n}` : "—"}
                     </td>
                     <td className="py-2">
@@ -389,7 +389,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                   ),
                 }))}
               />
-              <table className="mt-4 hidden w-full min-w-[760px] text-left text-sm sm:table print:table">
+              <table className="mt-4 hidden w-full text-left text-sm lg:table print:table">
                 <thead className="border-b border-border text-[11px] uppercase tracking-[0.08em] text-ink-muted">
                   <tr>
                     <th className="min-w-[240px] py-2 pr-3 font-semibold">Institution</th>
@@ -420,9 +420,11 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                         <a href={`/institution/${competitor.institution_id}`} className="text-ink underline-offset-2 hover:underline">
                           {competitor.institution_name}
                         </a>
-                        {competitor.city && <span className="whitespace-nowrap text-[12px] text-ink-muted"> · {cityLabel(competitor.city)}</span>}
-                        {footprintLine(branches, competitor.institution_id) && (
-                          <span className="block whitespace-nowrap text-[12px] text-ink-muted">{footprintLine(branches, competitor.institution_id)}</span>
+                        {/* City and footprint share one line under the name, so a long name never strands "· City". */}
+                        {(competitor.city || footprintLine(branches, competitor.institution_id)) && (
+                          <span className="block text-[12px] text-ink-muted">
+                            {[competitor.city ? cityLabel(competitor.city) : null, footprintLine(branches, competitor.institution_id)].filter(Boolean).join(" · ")}
+                          </span>
                         )}
                       </td>
                       {tableKeys.map((key) => {

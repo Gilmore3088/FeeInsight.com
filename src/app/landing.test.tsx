@@ -11,7 +11,7 @@ import { PRO_TIERS, tierAmountLabel } from "@/lib/pro-tiers";
 import type { PublicStatsSummary } from "@/lib/public-stats";
 import { histogram, institutionsFor, statsFor } from "./(public)/fees/(index)/index-view";
 import { LandingHero, LandingProof } from "./landing-hero";
-import { LandingHamilton, analyzePicks, positionCounts } from "./landing-hamilton";
+import { LandingHamilton, analyzePicks, feeShareOf, positionCounts } from "./landing-hamilton";
 import { HamiltonCarousel, type HamiltonSlide } from "./landing-hamilton-carousel";
 import { buildIndexCard, plainFeeName } from "./landing-index";
 import { institutionCardFees } from "./landing-index-actions";
@@ -179,25 +179,25 @@ describe("hero Bank Fee Index card: your institution", () => {
     expect(marker?.textContent).toBe(`Institution 5median${dollars(ownCents)}`);
     expect(container.querySelectorAll("[data-marker-bar]")).toHaveLength(1);
     const usMedian = medianOf(withInstitution, US, 0);
-    expect(container.querySelector("[data-index-position]")?.textContent).toBe(positionSentence("Institution 5", "median monthly maintenance price", ownCents, usMedian, "U.S."));
-    expect(container.querySelector("[data-index-position]")?.textContent).toMatch(/^Institution 5’s median monthly maintenance price, \$[\d.]+, (is (higher|lower) than the U\.S\. median of \$[\d.]+|matches the U\.S\. median)\.$/);
+    expect(container.querySelector("[data-index-position]")?.textContent).toBe(positionSentence("Institution 5", "median monthly maintenance price across its accounts", ownCents, usMedian, "U.S."));
+    expect(container.querySelector("[data-index-position]")?.textContent).toMatch(/^Institution 5’s median monthly maintenance price across its accounts, \$[\d.]+, (is (higher|lower) than the U\.S\. median of \$[\d.]+|matches the U\.S\. median)\.$/);
     // The scope follows the pickers: state, then charter.
     fireEvent.change(screen.getByLabelText("State"), { target: { value: "FL" } });
     fireEvent.change(screen.getByLabelText("Institutions"), { target: { value: "bank" } });
     expect(container.querySelector("[data-index-position]")?.textContent).toBe(
-      positionSentence("Institution 5", "median monthly maintenance price", ownCents, medianOf(withInstitution, "FL", 1), "Florida bank"),
+      positionSentence("Institution 5", "median monthly maintenance price across its accounts", ownCents, medianOf(withInstitution, "FL", 1), "Florida bank"),
     );
     // The selection carries through: the index with its name search, its own page on this fee, the plans priced for it.
     expect(screen.getByRole("link", { name: /See this fee in the index/ }).getAttribute("href")).toBe(
       "/fees?fee=monthly_maintenance&state=FL&charter=bank&q=Institution+5#explorer",
     );
     expect(screen.getByRole("link", { name: /See its fees/ }).getAttribute("href")).toBe("/institution/5?fee=monthly_maintenance");
-    expect(screen.getByRole("link", { name: /See Hamilton plans/ }).getAttribute("href")).toBe("/subscribe?inst=5");
+    expect(screen.getByRole("link", { name: /Explore Hamilton/ }).getAttribute("href")).toBe("/subscribe?inst=5");
   });
 
   it("words the position neutrally", () => {
     // The counted value is a calculation, so it is named in plain words, never "charged" (James, Oct 16).
-    expect(measurePhrase("Monthly maintenance", false)).toBe("median monthly maintenance price");
+    expect(measurePhrase("Monthly maintenance", false)).toBe("median monthly maintenance price across its accounts");
     expect(measurePhrase("Overdraft fee", true)).toBe("highest published overdraft price");
     expect(positionSentence("Capital City Bank", "median monthly maintenance price", 800, 500, "Florida")).toBe("Capital City Bank’s median monthly maintenance price, $8, is higher than the Florida median of $5.");
     expect(positionSentence("Capital City Bank", "highest published overdraft price", 395, 500, "U.S. credit union")).toBe("Capital City Bank’s highest published overdraft price, $3.95, is lower than the U.S. credit union median of $5.");
@@ -256,10 +256,10 @@ describe("hero Bank Fee Index card: your institution", () => {
       expect(container.querySelector("[data-index-reading]")).toBeNull();
       expect(container.querySelector("[data-index-marker]")?.textContent).toBe("Harbor Bankmedian$12");
       expect(container.querySelector("[data-index-position]")?.textContent).toBe(
-        positionSentence("Harbor Bank", "median monthly maintenance price", 1200, medianOf(withInstitution, US, 0), "U.S."),
+        positionSentence("Harbor Bank", "median monthly maintenance price across its accounts", 1200, medianOf(withInstitution, US, 0), "U.S."),
       );
       expect(screen.getByRole("link", { name: /See its fees/ }).getAttribute("href")).toBe("/institution/77?fee=monthly_maintenance");
-      expect(screen.getByRole("link", { name: /See Hamilton plans/ }).getAttribute("href")).toBe("/subscribe?inst=77");
+      expect(screen.getByRole("link", { name: /Explore Hamilton/ }).getAttribute("href")).toBe("/subscribe?inst=77");
       expect(screen.getByRole("link", { name: /See this fee in the index/ }).getAttribute("href")).toBe(
         "/fees?fee=monthly_maintenance&q=Harbor+Bank#explorer",
       );
@@ -306,7 +306,7 @@ describe("hero and proof strip", () => {
     expect(html.replace(/<!-- -->/g, "").replace(/\s+/g, " ")).toContain(
       "Understand your institution’s financial position, compare your fees with competitors, and identify what deserves a closer look, all supported by published data and verifiable sources.",
     );
-    expect(html).toMatch(/<a href="#bank-fee-index"[^>]*fi-btn-brick[^>]*>See a live fee comparison</);
+    expect(html).toMatch(/<a href="#bank-fee-index"[^>]*fi-btn-brick[^>]*>Compare fees in your market</);
     expect(html).toContain('id="bank-fee-index"');
     expect(html).toMatch(/<a href="\/reports\/sample-competitive-fee-position"[^>]*data-event="sample_report_click" data-placement="home_hero"[^>]*>View sample analysis</);
     expect(html).not.toContain("Explore the Index");
@@ -354,8 +354,8 @@ describe("Hamilton band", () => {
 
   it("draws one investigation of Capital City Bank from the live sample report", () => {
     const html = renderToStaticMarkup(<LandingHamilton report={report} revenue={revenue} />);
-    expect(html).toContain("Defend each fee");
-    expect(html).toContain("with its source.");
+    expect(html).toContain("Make fee decisions");
+    expect(html).toContain("you can defend.");
     expect(html).not.toMatch(/Frost/i);
     // The sample institution is named once, above every stage.
     expect(html.match(/Capital City Bank/g)).toHaveLength(1);
@@ -571,7 +571,7 @@ describe("motion", () => {
 describe("evidence flow", () => {
   it("runs the four source groups into Hamilton and out to the reports it writes, in reading order", () => {
     const html = renderToStaticMarkup(<LandingResearch />);
-    expect(html).toMatch(/Ask Hamilton\.<\/span> <span class="block">Every answer shows its sources\./);
+    expect(html).toMatch(/One question\.<\/span> <span class="block">Your institution’s full context\./);
     expect(EVIDENCE_GROUPS.map((g) => g.name)).toEqual(["Published fees", "Financial filings", "Branches and markets", "Regulatory sources"]);
     expect(EVIDENCE_REPORTS.map((r) => r.name)).toEqual([
       "Board brief",
@@ -634,7 +634,7 @@ describe("sample deliverable", () => {
   it("draws the cover from the live sample report: its bank, date and figures", () => {
     const html = renderToStaticMarkup(<LandingDeliverable report={report} revenue={revenue} preparedOn={preparedOn} />);
     const cover = deliverableCover(report, revenue)!;
-    expect(html).toContain("Read the report before you choose a plan.");
+    expect(html).toContain("See what your next pricing committee could walk in with.");
     expect(html).toContain("Capital City Bank against its local market");
     expect(html).toContain("Today’s sample for Capital City Bank");
     expect(html).toContain("October 18, 2026");
@@ -656,12 +656,25 @@ describe("sample deliverable", () => {
     expect(html.match(/<a /g)).toHaveLength(2);
   });
 
+  it("sets fee income against revenue, not only in dollars, when the Call Report peer read has it", () => {
+    const financial = { reportDate: "2026-06-30", source: "fdic" as const, peerCount: 893, rows: [{ key: "fee_income_ratio" as const, own: 8.712, median: 2.174, percentile: 98 }] };
+    expect(feeShareOf(financial)).toEqual({ own: "8.7%", median: "2.2%" });
+    expect(feeShareOf(null)).toBeNull();
+    const html = renderToStaticMarkup(<LandingHamilton report={report} revenue={revenue} financial={financial} />).replace(/<!-- -->/g, "");
+    expect(html).toContain("8.7% of its revenue, against a 2.2% median for its size");
+    expect(html).toContain("8.7% / 2.2%");
+    // Without the read, no share line and no zero.
+    expect(renderToStaticMarkup(<LandingHamilton report={report} revenue={revenue} />)).not.toContain("data-benchmark-share");
+  });
+
   it("outlines only what the sample report contains", () => {
     expect(deliverableOutline(report, revenue).map((i) => i.key)).toEqual(["findings", "pricing", "financial", "peers", "method"]);
     // No Call Report figures: no financial-state line.
     expect(deliverableOutline(report, null).map((i) => i.key)).toEqual(["findings", "pricing", "peers", "method"]);
     const bare = { ...report, analysis: { ...report.analysis, named: [], findings: [] } };
     expect(deliverableOutline(bare, null).map((i) => i.key)).toEqual(["pricing", "method"]);
+    // The peers-of-its-size section is named only when its Call Report read came back.
+    expect(deliverableOutline(report, revenue, true).map((i) => i.key)).toEqual(["findings", "pricing", "financial", "size", "peers", "method"]);
     // The report has no risk or regulatory section, so the outline names none.
     const words = deliverableOutline(report, revenue).map((i) => `${i.name} ${i.detail}`).join(" ");
     expect(words).not.toMatch(/risk|regulat/i);
@@ -673,7 +686,7 @@ describe("sample deliverable", () => {
   it("hides the figures and keeps the outline when the read failed", () => {
     const html = renderToStaticMarkup(<LandingDeliverable report={null} revenue={revenue} preparedOn={preparedOn} />);
     expect(deliverableCover(null, revenue)).toBeNull();
-    expect(html).toContain("Read the report before you choose a plan.");
+    expect(html).toContain("See what your next pricing committee could walk in with.");
     expect(html).toContain("Each report is built live, every amount linked to its fee schedule.");
     expect(html).not.toContain("data-deliverable-cover");
     expect(html).not.toMatch(/\$\d|Capital City|October/);

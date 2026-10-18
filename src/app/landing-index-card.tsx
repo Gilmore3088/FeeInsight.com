@@ -233,7 +233,7 @@ function InstitutionPick({
               eventProps={{ placement: "home_index_card" }}
               className="inline-flex items-center gap-1 font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
             >
-              See Hamilton plans
+              Explore Hamilton
               <ArrowUpRight aria-hidden="true" className="size-3.5" />
             </TrackLink>
           </span>
@@ -418,7 +418,7 @@ export function IndexCard({ data, freshness }: { data: IndexCardData; freshness:
                     <strong key={`${fee}-${place}-${charter}`} className="fi-home-fade text-[2.25rem] font-semibold leading-none tracking-[-0.035em] text-ink">
                       {money(pick.median)}
                     </strong>
-                    <p className="text-[12px] text-ink-muted">{institutions(pick.n)}</p>
+                    <p className="text-[12px] text-ink-muted">{institutions(pick.n)} publish this fee</p>
                   </div>
                   <Histogram cell={pick} label={`${feeDef?.label}, ${benchmarkTitle}`} marker={marker} />
                   {reading && institution ? (

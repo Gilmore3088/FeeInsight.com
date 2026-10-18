@@ -22,6 +22,7 @@ import { getPublicSnapshot } from "@/lib/public-stats";
 import { CONTACT_EMAIL, LEGAL_ENTITY_NAME, PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { DEMO_SAMPLE_INSTITUTION_ID, loadSampleReport } from "@/lib/custom-report/sample-report";
 import { getRevenueContextCached, type RevenueContext } from "@/lib/custom-report/revenue-context";
+import { getReportPeerFinancialCached, type ReportPeerFinancial } from "@/lib/custom-report/peer-context";
 import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
@@ -100,18 +101,29 @@ export default async function LandingPage() {
   const [sampleRead, indexReads] = await Promise.all([
     loadSampleReport().then(
       async (report) => {
-        if (!report) return { report, revenue: null, failed: false };
-        return getRevenueContextCached(report.data.subject.institution_id).then(
-          (revenue) => ({ report, revenue, failed: false }),
-          (error: unknown) => {
-            console.error("[home] sample bank revenue read failed; Prioritize shown without income figures", error);
-            return { report, revenue: null as RevenueContext | null, failed: true };
-          },
-        );
+        if (!report) return { report, revenue: null, financial: null, failed: false };
+        const id = report.data.subject.institution_id;
+        const [revenue, financial] = await Promise.all([
+          getRevenueContextCached(id).then(
+            (value) => ({ value, failed: false }),
+            (error: unknown) => {
+              console.error("[home] sample bank revenue read failed; Prioritize shown without income figures", error);
+              return { value: null as RevenueContext | null, failed: true };
+            },
+          ),
+          getReportPeerFinancialCached(id).then(
+            (value) => ({ value, failed: false }),
+            (error: unknown) => {
+              console.error("[home] sample bank peer financial read failed; share of revenue left out", error);
+              return { value: null as ReportPeerFinancial | null, failed: true };
+            },
+          ),
+        ]);
+        return { report, revenue: revenue.value, financial: financial.value, failed: revenue.failed || financial.failed };
       },
       (error: unknown) => {
         console.error("[home] sample report read failed; Hamilton examples shown without figures", error);
-        return { report: null, revenue: null, failed: true };
+        return { report: null, revenue: null, financial: null, failed: true };
       },
     ),
     Promise.all(
@@ -153,9 +165,9 @@ export default async function LandingPage() {
             and the proof strip), the Hamilton investigation, the evidence, the deliverable, the plans. */}
         <LandingHero index={index} freshness={summary.refreshedOn || summary.freshnessLabel} />
         <LandingProof summary={summary} feeTypes={publicKeys.size} />
-        <LandingHamilton report={sampleRead.report} revenue={sampleRead.revenue} />
+        <LandingHamilton report={sampleRead.report} revenue={sampleRead.revenue} financial={sampleRead.financial} />
         <LandingResearch />
-        <LandingDeliverable report={sampleRead.report} revenue={sampleRead.revenue} preparedOn={new Date()} />
+        <LandingDeliverable report={sampleRead.report} revenue={sampleRead.revenue} sizePeers={sampleRead.financial !== null} preparedOn={new Date()} />
         <LandingPricing />
       </main>
       <CustomerFooter />

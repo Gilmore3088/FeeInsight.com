@@ -49,7 +49,7 @@ export function PeerSection({ name, peers }: { name: string; peers: ReportPeerCo
       </p>
 
       {peers.fees.length > 0 && (
-        <table className="mt-4 w-full text-left text-sm sm:min-w-[640px] print:min-w-0">
+        <table className="mt-4 w-full text-left text-sm">
           <caption className="sr-only">Published fees against institutions of the same size</caption>
           <thead className="border-b border-border text-[11px] uppercase tracking-[0.08em] text-ink-muted">
             <tr>
@@ -85,7 +85,7 @@ export function PeerSection({ name, peers }: { name: string; peers: ReportPeerCo
       )}
 
       {peers.financial && (
-        <table className="mt-6 w-full text-left text-sm sm:min-w-[640px] print:min-w-0">
+        <table className="mt-6 w-full text-left text-sm">
           <caption className="sr-only">Reported figures against institutions of the same size</caption>
           <thead className="border-b border-border text-[11px] uppercase tracking-[0.08em] text-ink-muted">
             <tr>

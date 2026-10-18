@@ -23,7 +23,7 @@ const POSITION: Record<LinePosition, { label: string; className: string }> = {
 };
 
 export interface OutlineItem {
-  key: "findings" | "pricing" | "financial" | "peers" | "method";
+  key: "findings" | "pricing" | "financial" | "size" | "peers" | "method";
   name: string;
   detail: string;
 }
@@ -35,15 +35,17 @@ export interface OutlineItem {
  * report (a failed read, or no sample today) the outline keeps the parts every report has.
  * The report carries no risk or regulatory section, so the outline names none.
  */
-export function deliverableOutline(report: MarketReport | null, revenue: RevenueContext | null): OutlineItem[] {
+export function deliverableOutline(report: MarketReport | null, revenue: RevenueContext | null, sizePeers = false): OutlineItem[] {
   const items: OutlineItem[] = [];
   if (!report || report.analysis.findings.length > 0)
     items.push({ key: "findings", name: "Research conclusions", detail: "The fees that stand out from the local market." });
   items.push({ key: "pricing", name: "Pricing evidence", detail: "Every fee against local competitors, each linked to its schedule." });
   if (report && revenue)
     items.push({ key: "financial", name: "Current financial state", detail: "Fee income from the latest Call Report, beside institutions of its size." });
+  if (report && sizePeers)
+    items.push({ key: "size", name: "Institutions its size", detail: "Its fees and Call Report figures beside peers of its size nationwide." });
   if (report && report.analysis.named.length > 0)
-    items.push({ key: "peers", name: "Comparable institutions", detail: "Named competitors in its market, fee by fee." });
+    items.push({ key: "peers", name: "Named competitors", detail: "The banks and credit unions in its market, fee by fee." });
   items.push({ key: "method", name: "Sources and method", detail: "How the market, the competitors and each figure were chosen." });
   return items;
 }
@@ -138,20 +140,23 @@ export function LandingDeliverable({
   report,
   revenue,
   preparedOn,
+  sizePeers = false,
 }: {
   report: MarketReport | null;
   revenue: RevenueContext | null;
   preparedOn: Date;
+  /** The sample report carries its peers-of-its-size section (a Call Report peer read came back). */
+  sizePeers?: boolean;
 }) {
   const cover = deliverableCover(report, revenue);
-  const outline = deliverableOutline(cover ? report : null, cover ? revenue : null);
+  const outline = deliverableOutline(cover ? report : null, cover ? revenue : null, sizePeers);
   return (
     <section id="sample" aria-labelledby="deliverable-title" className="bg-paper py-10 sm:py-14" data-deliverable="">
       <div className={`${HOME_WRAP} grid items-center gap-6 sm:gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-x-14 lg:gap-y-6`}>
         {/* A phone reads the heading, then the page itself, then what it holds; from lg up the page sits beside both. */}
         <div className="min-w-0 lg:col-start-1 lg:row-start-1 lg:self-end">
           <h2 id="deliverable-title" className="text-[34px] !font-medium leading-[1.06] tracking-[-0.025em] text-ink sm:text-[48px]" style={SERIF}>
-            Read the report before you choose a plan.
+            See what your next pricing committee could walk in with.
           </h2>
           <p className="mt-3 text-[15px] leading-relaxed text-ink-soft sm:text-[16px]">
             {cover

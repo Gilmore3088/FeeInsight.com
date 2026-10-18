@@ -32,7 +32,7 @@ export function LandingHero({ index, freshness }: { index: IndexCardData; freshn
           </p>
           <div className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-3 lg:mt-9">
             <a href="#bank-fee-index" className="fi-btn fi-btn-brick min-h-12 px-6 text-[15px]">
-              See a live fee comparison
+              Compare fees in your market
             </a>
             <TrackLink
               href={SAMPLE_REPORT_HREF}

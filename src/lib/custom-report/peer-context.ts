@@ -93,6 +93,42 @@ export function buildPeerFinancialRows(
   return rows;
 }
 
+export type ReportPeerFinancial = NonNullable<ReportPeerContext["financial"]>;
+
+/**
+ * The institution's own call-report figures beside its peers' medians, only when both come from
+ * the same filing and quarter and at least MIN_PEERS_FOR_RANK other institutions filed (the
+ * median counts the institution itself). Null otherwise, or when no figure survives.
+ */
+function peerFinancialFrom(
+  own: Awaited<ReturnType<typeof getFinancialsByInstitution>>[number] | undefined,
+  medians: Awaited<ReturnType<typeof getPeerFinancialMedians>>,
+  ranks: Awaited<ReturnType<typeof getPeerPercentiles>>,
+): ReportPeerFinancial | null {
+  if (!own || !medians || medians.peer_count - 1 < MIN_PEERS_FOR_RANK) return null;
+  const quarter = medians.report_date.slice(0, 10);
+  if (String(own.report_date).slice(0, 10) !== quarter || own.source !== medians.source) return null;
+  if (medians.source !== "fdic" && medians.source !== "ncua") return null;
+  const rows = buildPeerFinancialRows(
+    own,
+    { ...medians, fee_income_ratio: medians.fee_income_peer_count >= MIN_PEERS_FOR_RANK ? medians.fee_income_ratio : null },
+    ranks && ranks.report_date.slice(0, 10) === quarter ? ranks.percentiles : {},
+  );
+  return rows.length ? { reportDate: quarter, source: medians.source, peerCount: medians.peer_count - 1, rows } : null;
+}
+
+async function getReportPeerFinancial(institutionId: number): Promise<ReportPeerFinancial | null> {
+  const [ownRows, medians, ranks] = await Promise.all([
+    getFinancialsByInstitution(institutionId, 1),
+    getPeerFinancialMedians(institutionId),
+    getPeerPercentiles(institutionId),
+  ]);
+  return peerFinancialFrom(ownRows[0], medians, ranks);
+}
+
+/** The call-report half alone, for the homepage's Hamilton example (one cheap read, no fee rows). */
+export const getReportPeerFinancialCached = cachedPublicRead("report-peer-financial", getReportPeerFinancial);
+
 async function getReportPeerContext(institutionId: number, lines: [key: string, amount: number][]): Promise<ReportPeerContext | null> {
   const subject = await getPeerSubject(institutionId);
   if (!subject?.charter_type || !subject.asset_size_tier) return null;
@@ -120,26 +156,10 @@ async function getReportPeerContext(institutionId: number, lines: [key: string, 
     fees.push({ key, own: amount, peerCount: row.peer_count, median: row.peer_median, p25: row.peer_p25, p75: row.peer_p75, percentile: row.percentile });
   }
 
-  const own = ownRows[0];
-  // Own figures and medians must come from the same filing and quarter.
-  // The median counts the institution itself; under MIN_PEERS_FOR_RANK others there is no comparison.
-  const sameQuarter = own && medians && medians.peer_count - 1 >= MIN_PEERS_FOR_RANK && String(own.report_date).slice(0, 10) === medians.report_date.slice(0, 10) && own.source === medians.source;
-  const financial =
-    sameQuarter && (medians.source === "fdic" || medians.source === "ncua")
-      ? {
-          reportDate: medians.report_date.slice(0, 10),
-          source: medians.source as "fdic" | "ncua",
-          peerCount: medians.peer_count - 1,
-          rows: buildPeerFinancialRows(
-            own,
-            { ...medians, fee_income_ratio: medians.fee_income_peer_count >= MIN_PEERS_FOR_RANK ? medians.fee_income_ratio : null },
-            ranks && ranks.report_date.slice(0, 10) === medians.report_date.slice(0, 10) ? ranks.percentiles : {},
-          ),
-        }
-      : null;
+  const financial = peerFinancialFrom(ownRows[0], medians, ranks);
 
-  if (fees.length === 0 && !financial?.rows.length) return null;
-  return { groupLabel: resolved.label, fees, thinFeeKeys, financial: financial?.rows.length ? financial : null };
+  if (fees.length === 0 && !financial) return null;
+  return { groupLabel: resolved.label, fees, thinFeeKeys, financial };
 }
 
 export const getReportPeerContextCached = cachedPublicRead("report-peer-context", getReportPeerContext);

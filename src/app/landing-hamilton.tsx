@@ -4,6 +4,7 @@ import { PRO_PLANS_NAV } from "@/components/nav-items";
 import { TrackLink } from "@/components/track-link";
 import type { MarketReport } from "@/lib/custom-report/report-data";
 import { incomeLabel, quarterLabel, type RevenueContext } from "@/lib/custom-report/revenue-context";
+import type { ReportPeerFinancial } from "@/lib/custom-report/peer-context";
 import { placeLabel } from "./market-report/report-body";
 import { HamiltonCarousel, type HamiltonSlide } from "./landing-hamilton-carousel";
 import { cardMoney } from "./landing-index-view";
@@ -62,7 +63,13 @@ function Step({ n, name, children }: { n: number; name: string; children: ReactN
  * for its size (getRevenueContextCached, the read the sample report page shows), or, without that
  * read, the questions and where each answer comes from. Never a fee's revenue (editorial policy).
  */
-function PrioritizeContext({ revenue, filing }: { revenue: RevenueContext | null; filing: string }) {
+/** Service charges as a share of revenue beside the median for its size, when the Call Report read has it. */
+export function feeShareOf(financial: ReportPeerFinancial | null | undefined): { own: string; median: string } | null {
+  const row = financial?.rows.find((r) => r.key === "fee_income_ratio");
+  return row ? { own: `${row.own.toFixed(1)}%`, median: `${row.median.toFixed(1)}%` } : null;
+}
+
+function PrioritizeContext({ revenue, filing, financial }: { revenue: RevenueContext | null; filing: string; financial: ReportPeerFinancial | null }) {
   if (!revenue) {
     return (
       <p className="mt-0.5 text-[12px] leading-snug text-ink-muted">
@@ -75,6 +82,8 @@ function PrioritizeContext({ revenue, filing }: { revenue: RevenueContext | null
     { line: `Deposit service charges, ${quarterLabel(latest.quarter)}`, value: incomeLabel(latest.thousands) },
     ...(revenue.peer ? [{ line: `Median for its size (${revenue.peer.tierLabel})`, value: incomeLabel(revenue.peer.medianThousands) }] : []),
   ];
+  const share = feeShareOf(financial);
+  if (share) items.push({ line: "Share of revenue, its own / median for its size", value: `${share.own} / ${share.median}` });
   return (
     <>
       <dl className="mt-1 text-[12px]" data-prioritize-income>
@@ -123,7 +132,8 @@ function IncomeTrend({ revenue }: { revenue: RevenueContext }) {
  * figure is the sample report's or the revenue read's; a read that is missing hides its figures.
  * Nothing here works out a fee's revenue or says what a fee should be (editorial policy §3).
  */
-function sampleSlides(sample: SampleView, revenue: RevenueContext | null, filing: string): HamiltonSlide[] {
+function sampleSlides(sample: SampleView, revenue: RevenueContext | null, filing: string, financial: ReportPeerFinancial | null): HamiltonSlide[] {
+  const share = feeShareOf(financial);
   const rows = sample.rows;
   const picks = analyzePicks(rows);
   const counts = positionCounts(rows);
@@ -143,6 +153,11 @@ function sampleSlides(sample: SampleView, revenue: RevenueContext | null, filing
               {revenue.peer ? (
                 <p className="mt-2 text-[12px] text-ink-soft" data-benchmark-rank>
                   Ranks {revenue.peer.rank.toLocaleString("en-US")} of {revenue.peer.count.toLocaleString("en-US")} institutions its size, where 1 is the highest
+                </p>
+              ) : null}
+              {share ? (
+                <p className="mt-1 text-[12px] text-ink-soft" data-benchmark-share>
+                  {share.own} of its revenue, against a {share.median} median for its size
                 </p>
               ) : null}
               <p className="mt-1 text-[11px] text-ink-muted">Source: {filing}</p>
@@ -167,7 +182,7 @@ function sampleSlides(sample: SampleView, revenue: RevenueContext | null, filing
               <FeeRow row={first} />
             </Step>
             <Step n={2} name="Context">
-              <PrioritizeContext revenue={revenue} filing={filing} />
+              <PrioritizeContext revenue={revenue} filing={filing} financial={financial} />
             </Step>
             <Step n={3} name="Next research step">
               <p className="mt-0.5 text-[12px] leading-snug text-ink-muted">See which local competitors publish this fee, then prepare a documented assessment.</p>
@@ -268,12 +283,21 @@ const MIN_SAMPLE_ROWS = 3;
  * (`revenue`, getRevenueContextCached). One primary action, the subscription, and one quiet link to
  * the sample report (critique §7: one primary action per section).
  */
-export function LandingHamilton({ report, revenue = null }: { report: MarketReport | null; revenue?: RevenueContext | null }) {
+export function LandingHamilton({
+  report,
+  revenue = null,
+  financial = null,
+}: {
+  report: MarketReport | null;
+  revenue?: RevenueContext | null;
+  /** Call Report figures beside peers of its size; the share-of-revenue lines are left out when null. */
+  financial?: ReportPeerFinancial | null;
+}) {
   const sample = buildSampleView(report);
   const market = report?.data.market?.places[0] ? placeLabel(report.data.market.places[0]) : null;
   const filing = report?.data.subject.charter_type === "credit_union" ? "NCUA 5300 Call Report" : "FDIC Call Report";
   const ready = sample !== null && sample.rows.length >= MIN_SAMPLE_ROWS;
-  const slides = ready ? sampleSlides(sample, revenue, filing) : plainSlides();
+  const slides = ready ? sampleSlides(sample, revenue, filing, financial) : plainSlides();
   return (
     <section id="hamilton" aria-labelledby="hamilton-title" className="scroll-mt-20 bg-paper py-12 sm:py-16 lg:py-20">
       <div className={HOME_WRAP}>
@@ -283,11 +307,12 @@ export function LandingHamilton({ report, revenue = null }: { report: MarketRepo
           intro={
             <>
               <h2 id="hamilton-title" className="fi-home-h2 !font-medium text-ink" style={SERIF}>
-                <span className="block whitespace-nowrap">Defend each fee</span>
-                <span className="block whitespace-nowrap">with its source.</span>
+                <span className="block whitespace-nowrap">Make fee decisions</span>
+                <span className="block whitespace-nowrap">you can defend.</span>
               </h2>
               <p className="mt-5 text-[18px] leading-[1.45] text-ink-soft sm:text-[21px]">
-                Hamilton is your on-demand fee consultant.
+                Hamilton connects your financial performance, competitive position and published evidence, so your team
+                knows what to investigate next.
               </p>
               <div className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-3">
                 <TrackLink
