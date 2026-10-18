@@ -4,9 +4,12 @@ import { revalidatePath } from "next/cache";
 import { requireAuth } from "@/lib/auth";
 import { createArticle, updateArticle, deleteArticle } from "@/lib/data-store/articles";
 
-/** The cached public pages that list or show articles (#1811): every article page and the research hub. */
+/**
+ * The cached public pages that list or show articles (#1811): every article page and the
+ * research hub. A route pattern is matched with its route group, so the group is named here.
+ */
 function revalidatePublicArticles() {
-  revalidatePath("/research/articles/[slug]", "page");
+  revalidatePath("/(public)/research/articles/[slug]", "page");
   revalidatePath("/research");
 }
 

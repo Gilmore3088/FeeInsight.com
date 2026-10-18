@@ -30,8 +30,9 @@ interface PageProps {
 const H2 = "text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-[24px]";
 const LINK = "font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink";
 
-async function loadMarket(state: string, city: string, area: CityArea): Promise<CityMarket | null> {
-  return getCityMarketCached(city, state, area).catch(() => null);
+/** The market, null when the city has none, or "failed" when the read failed. */
+async function loadMarket(state: string, city: string, area: CityArea): Promise<CityMarket | null | "failed"> {
+  return getCityMarketCached(city, state, area).catch(() => "failed" as const);
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
@@ -40,11 +41,12 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const stateName = STATE_NAMES[stateCode];
   const cityName = titleCase(city);
   if (!stateName) notFound();
-  const market = await loadMarket(stateCode, cityName, "city");
+  const read = await loadMarket(stateCode, cityName, "city");
+  const market = read === "failed" ? null : read;
   const cov = market ? coverage(market) : null;
   // A city with no fee published by enough institutions for a local median is a thin page:
-  // rendered, not indexed.
-  const indexable = market ? localFees(market, [], []).some((f) => f.median != null) : false;
+  // rendered, not indexed. A failed read keeps the page indexable, since the page is cached.
+  const indexable = read === "failed" || (market ? localFees(market, [], []).some((f) => f.median != null) : false);
 
   return {
     robots: { index: indexable, follow: true },
