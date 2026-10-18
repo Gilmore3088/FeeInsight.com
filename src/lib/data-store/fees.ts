@@ -95,6 +95,14 @@ export function computePercentile(sorted: number[], p: number): number {
   return loValue + (idx - lo) * (Number(sorted[hi]) - loValue);
 }
 
+/**
+ * Rounds to cents, half up, on the decimal value: a median of $4.22 and $4.23 is $4.225, which
+ * binary floating point holds as 4.22499..., so plain Math.round(x * 100) / 100 gave $4.22.
+ */
+export function roundCents(x: number): number {
+  return Math.round(Number(`${x.toFixed(6)}e2`)) / 100;
+}
+
 export function computeStats(amounts: number[]): {
   min: number | null;
   max: number | null;
@@ -110,10 +118,10 @@ export function computeStats(amounts: number[]): {
   return {
     min: sorted[0],
     max: sorted[sorted.length - 1],
-    avg: Math.round((sorted.reduce((s, v) => s + v, 0) / sorted.length) * 100) / 100,
-    median: Math.round(computePercentile(sorted, 50) * 100) / 100,
-    p25: Math.round(computePercentile(sorted, 25) * 100) / 100,
-    p75: Math.round(computePercentile(sorted, 75) * 100) / 100,
+    avg: roundCents(sorted.reduce((s, v) => s + v, 0) / sorted.length),
+    median: roundCents(computePercentile(sorted, 50)),
+    p25: roundCents(computePercentile(sorted, 25)),
+    p75: roundCents(computePercentile(sorted, 75)),
   };
 }
 

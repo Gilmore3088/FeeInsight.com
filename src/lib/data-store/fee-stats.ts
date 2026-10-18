@@ -70,8 +70,9 @@ export const COUNT_SHARED_SCHEDULE_ONCE: boolean = true;
 /**
  * Bump when these rules change; fee_index_cache rows carry it and older ones are ignored.
  * 9/10 (#1816): safe deposit drilling, key, lock and late charges leave every median.
+ * 11/12 (#1879): medians and quartiles round half a cent up on the decimal value (roundCents).
  */
-export const STATS_METHOD_VERSION = COUNT_SHARED_SCHEDULE_ONCE ? 9 : 10;
+export const STATS_METHOD_VERSION = COUNT_SHARED_SCHEDULE_ONCE ? 11 : 12;
 
 /** SQL predicate: the row's source address names a business-only schedule (rule 6). */
 export function businessSourceSql(alias: string): string {

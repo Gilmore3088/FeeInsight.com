@@ -102,6 +102,10 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
   const buckets = histogram(institutions);
   const medianBin = stats.median_amount != null ? buckets.findIndex((b) => inBucket(b, stats.median_amount!)) : -1;
   const list = parseListState(params);
+  const stateView = parseStateView(params);
+  /** A link to another selection that keeps the state map's view, so following it never resets the map. */
+  const linkTo = (to: Parameters<typeof selectionHref>[0], extra: Record<string, string> = {}, hash?: string) =>
+    selectionHref(to, stateView === "price" ? { sv: "price", ...extra } : extra, hash);
   // A name search with no bar picked looks through every institution, not only the median's bar.
   // "bin=all" shows every institution; otherwise the list opens on the median's bar.
   const allBars = params.bin === "all";
@@ -137,7 +141,6 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
   const takeaways = findings(rows, sel, institutions);
   const usStats = sel.state ? statsFor(rows, sel.fee, null, sel.charter) : stats;
   const cells = stateCells(rows, sel.fee, sel.charter);
-  const stateView = parseStateView(params);
   const ranking = stateRanking(cells, usStats.median_amount);
   const picked = sel.state ? ranking.find((r) => r.code === sel.state) ?? null : null;
   const band = activeBin != null ? bandBreakdown(listed) : null;
@@ -162,7 +165,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
     else if (allBars) keep.bin = "all";
     if (list.q && !("q" in extra) && Object.keys(extra).length > 0) keep.q = list.q;
     if (list.all && !("view" in extra)) keep.view = "all";
-    return selectionHref(sel, { ...keep, ...extra }, "institutions");
+    return linkTo(sel, { ...keep, ...extra }, "institutions");
   };
 
   const feeOptions: FeeOption[] = publicFees.map((key) => ({
@@ -184,7 +187,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
       institutions: n,
       status: n < MIN_INSTITUTIONS_FOR_MEDIAN ? "limited" : "public",
       // A new fee keeps the place and charter already picked, so the reader never starts over.
-      href: selectionHref({ fee: key, state: sel.state, charter: sel.charter }),
+      href: linkTo({ fee: key, state: sel.state, charter: sel.charter }),
     };
   });
 
@@ -262,9 +265,9 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
           <ul aria-label="Filters in force" className="flex min-w-0 flex-wrap items-center gap-1.5 text-[13px]">
             <li className="inline-flex min-h-8 items-center rounded-full bg-ink px-3 font-semibold text-on-ink">{feeLabel}</li>
             {[
-              sel.state ? { label: where, clear: selectionHref({ ...sel, state: null }) } : null,
-              sel.charter !== "all" ? { label: CHARTER_LABELS[sel.charter], clear: selectionHref({ ...sel, charter: "all" }) } : null,
-              activeBin != null && sel.bin != null ? { label: buckets[activeBin].label, clear: selectionHref(sel, { bin: "all" }, "institutions") } : null,
+              sel.state ? { label: where, clear: linkTo({ ...sel, state: null }) } : null,
+              sel.charter !== "all" ? { label: CHARTER_LABELS[sel.charter], clear: linkTo({ ...sel, charter: "all" }) } : null,
+              activeBin != null && sel.bin === activeBin ? { label: buckets[activeBin].label, clear: linkTo(sel, { bin: "all" }, "institutions") } : null,
             ]
               .filter((f): f is { label: string; clear: string } => f != null)
               .map((f) => (
@@ -295,6 +298,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
         <div className="mt-5">
           <ExplorerControls
             key={`${sel.fee}-${sel.state}-${sel.charter}`}
+            keep={stateView === "price" ? { sv: "price" } : {}}
             fees={feeOptions}
             states={STATES}
             fee={sel.fee}
@@ -336,8 +340,8 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
                 p25={stats.p25_amount}
                 p75={stats.p75_amount}
                 unit={counted.measure}
-                hrefFor={(i) => selectionHref(sel, { bin: String(i) }, "institutions")}
-                allHref={selectionHref(sel, { bin: "all" }, "institutions")}
+                hrefFor={(i) => linkTo(sel, { bin: String(i) }, "institutions")}
+                allHref={linkTo(sel, { bin: "all" }, "institutions")}
               />
             )}
           </figure>
@@ -359,9 +363,11 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
                 <h3 className="text-[18px] font-semibold text-ink">
-                  {activeBin != null
-                    ? `${listed.length.toLocaleString()} ${listed.length === 1 ? "institution has a" : "institutions have a"} ${counted.measure} of ${buckets[activeBin].label}`
-                    : `${listed.length.toLocaleString()} institutions`}
+                  {list.q
+                    ? `${shown.matching.toLocaleString()} of ${listed.length.toLocaleString()} ${listed.length === 1 ? "institution matches" : "institutions match"} “${list.q}”`
+                    : activeBin != null
+                      ? `${listed.length.toLocaleString()} ${listed.length === 1 ? "institution has a" : "institutions have a"} ${counted.measure} of ${buckets[activeBin].label}`
+                      : `${listed.length.toLocaleString()} institutions`}
                 </h3>
                 <p className="mt-1 text-[13px] text-ink-muted">
                   {HIGHEST_TIER_CATEGORIES.has(sel.fee)
@@ -371,7 +377,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
                   {activeBin != null ? (
                     <>
                       {" "}
-                      <Link href={selectionHref(sel, { bin: "all" }, "institutions")} scroll={false} className={LINK}>
+                      <Link href={linkTo(sel, { bin: "all" }, "institutions")} scroll={false} className={LINK}>
                         Show all {institutions.length.toLocaleString()}
                       </Link>
                     </>
@@ -388,6 +394,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
                   <input type="hidden" name="bin" value="all" />
                 ) : null}
                 {list.all && <input type="hidden" name="view" value="all" />}
+                {stateView === "price" && <input type="hidden" name="sv" value="price" />}
                 <label className="min-w-0 flex-1 sm:w-64">
                   <span className="sr-only">{searchLabel}</span>
                   <input
@@ -408,8 +415,8 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
                 label={buckets[activeBin].label}
                 band={band}
                 total={listed.length}
-                charterHref={(c) => selectionHref({ ...sel, charter: c }, {}, "explorer")}
-                stateHref={(code) => selectionHref({ ...sel, state: code }, {}, "explorer")}
+                charterHref={(c) => linkTo({ ...sel, charter: c }, {}, "explorer")}
+                stateHref={(code) => linkTo({ ...sel, state: code }, {}, "explorer")}
               />
             )}
             {shown.matching === 0 ? (
@@ -424,7 +431,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
                 ) : (
                   <>
                     No institution publishes a price in this range.{" "}
-                    <Link href={selectionHref(sel, { bin: "all" }, "institutions")} scroll={false} className={LINK}>
+                    <Link href={linkTo(sel, { bin: "all" }, "institutions")} scroll={false} className={LINK}>
                       See every price
                     </Link>
                   </>
@@ -646,7 +653,9 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
 /** A bar's short axis label: its lower bound, or the open end ("<$5", "$60+"). The full range is the bar's name. */
 function barLabel(b: ReturnType<typeof histogram>[number]): string {
   if (b.label.startsWith("Under ")) return `<${b.label.slice("Under ".length)}`;
-  if (b.min == null) return `<${money(Math.round((b.max! + 0.01) * 100) / 100)}`;
+  // A first bar of low prices ($0.01 or $0 up to its top) reads "<$5", never "$0", which is the
+  // $0 bar's own label.
+  if (b.min == null || (b.min <= 0.01 && b.max != null && b.max > 0)) return `<${money(Math.round((b.max! + 0.01) * 100) / 100)}`;
   if (b.max == null) return `${money(b.min)}+`;
   return money(b.min);
 }
