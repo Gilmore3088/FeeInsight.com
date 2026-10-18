@@ -111,7 +111,8 @@ export function QuarterChart({
   const pointerAt = (clientX: number) => {
     const rect = wrap.current?.getBoundingClientRect();
     if (!rect) return;
-    const i = Math.floor((clientX - rect.left - PAD.left) / band);
+    const sx = ((clientX - rect.left) / (rect.width || 1)) * width;
+    const i = Math.floor((sx - PAD.left) / band);
     setActive(Math.min(lastIndex, Math.max(0, i)));
   };
 
@@ -138,7 +139,7 @@ export function QuarterChart({
       }}
       aria-describedby={tip ? tipId : undefined}
     >
-      <svg width={width} height={height} className="block overflow-visible" aria-hidden="true">
+      <svg viewBox={`0 0 ${width} ${height}`} width={width} height={height} className="block h-auto max-w-full overflow-visible" aria-hidden="true">
         {ticks.map((t) => (
           <g key={t}>
             <line x1={PAD.left} x2={width - PAD.right} y1={y(t)} y2={y(t)} stroke="var(--fi-chart-grid)" strokeWidth={1} />

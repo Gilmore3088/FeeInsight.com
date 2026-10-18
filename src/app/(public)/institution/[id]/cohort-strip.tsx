@@ -136,8 +136,8 @@ export function CohortStrip(props: CohortStripProps) {
     const svg = svgRef.current;
     if (!svg) return null;
     const rect = svg.getBoundingClientRect();
-    const sx = clientX - rect.left;
-    const sy = clientY - rect.top;
+    const sx = ((clientX - rect.left) / rect.width) * width;
+    const sy = ((clientY - rect.top) / rect.height) * H;
     let best: CohortPoint | null = null;
     let bestD = Infinity;
     for (const p of peers) {
@@ -159,9 +159,10 @@ export function CohortStrip(props: CohortStripProps) {
     <div className="min-w-0" ref={wrapRef}>
       <svg
         ref={svgRef}
+        viewBox={`0 0 ${width} ${H}`}
         width={width}
         height={H}
-        className="block touch-pan-y"
+        className="block h-auto max-w-full touch-pan-y"
         role="img"
         aria-label={`${subjectName} ${subject ? pct(subject.sharePct) : "not reported"}; cohort quartiles ${pct(p25)}, ${pct(median)}, ${pct(p75)}.`}
         onPointerMove={(e) => setHover(nearest(e.clientX, e.clientY))}
