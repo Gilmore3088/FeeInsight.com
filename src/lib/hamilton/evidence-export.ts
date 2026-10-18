@@ -8,6 +8,7 @@
  */
 import {
   CLAIM_BINDING_LIMITATION,
+  normalizeFrequency,
   normalizeLegacyAnalyzeConfidence,
   type EvidenceBoundAnalyzeResponse,
   type HamiltonDerivedFact,
@@ -211,7 +212,7 @@ export function savedEvidenceAppendix(
         ? fact.unit !== "percent" || fact.currency !== null
         : inputs.some((row) => row.unit !== fact.unit || row.currency !== fact.currency));
     const currencyMismatched = inputs.some((row) => row.currency !== first?.currency);
-    const frequencies = inputs.map((row) => row.frequency?.trim().toLowerCase() ?? null);
+    const frequencies = inputs.map((row) => normalizeFrequency(row.frequency));
     const frequencyMismatched = frequencies.length > 1 && frequencies.some((frequency) => frequency !== frequencies[0]);
     const comparisonPeriodMismatched = fact.derivation.kind === "difference"
       && (inputs.length !== 2 || !inputs[0].scope.reportingDate || !inputs[1].scope.reportingDate
