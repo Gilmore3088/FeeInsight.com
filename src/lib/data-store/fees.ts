@@ -552,6 +552,9 @@ export interface IndexRow {
   amount: number;
   charter_type: string;
   state_code: string | null;
+  /** Rule 7 (fee-stats.ts): the schedule the row was read from, so sibling charters count once. */
+  schedule_keys?: string[] | null;
+  schedule_group?: string | null;
 }
 
 /**
@@ -561,7 +564,8 @@ export interface IndexRow {
  */
 export async function getIndexRows(category: string): Promise<IndexRow[]> {
   const rows = (await sql`
-    SELECT ef.id, ef.institution_id, ct.institution_name, ef.amount, ct.charter_type, ct.state_code
+    SELECT ef.id, ef.institution_id, ct.institution_name, ef.amount, ct.charter_type, ct.state_code,
+           ${sql.unsafe(STATS_SCHEDULE_KEYS)}
       FROM published_fee_catalog ef
       JOIN institution_sources ct ON ef.institution_id = ct.id
      WHERE ef.fee_category = ${category} AND ef.review_status = 'approved'
@@ -575,6 +579,8 @@ export async function getIndexRows(category: string): Promise<IndexRow[]> {
     amount: Number(r.amount),
     charter_type: String(r.charter_type),
     state_code: r.state_code == null ? null : String(r.state_code),
+    schedule_keys: Array.isArray(r.schedule_keys) ? (r.schedule_keys as unknown[]).map(String) : null,
+    schedule_group: r.schedule_group == null ? null : String(r.schedule_group),
   }));
 }
 

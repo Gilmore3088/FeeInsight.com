@@ -212,7 +212,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
               { term: "Institutions", value: summary.institutionsLabel },
               { term: "Fee categories", value: typeCount.toLocaleString() },
               { term: "Fee groups", value: familyCount.toLocaleString() },
-              { term: "Updated", value: summary.refreshedOn ?? "Pending" },
+              { term: "Data updated (U.S. Eastern)", value: summary.refreshedOn ?? "Pending" },
             ].map((m) => (
               <div key={m.term} className="bg-surface-0 px-4 py-3">
                 <dt className="text-[12px] text-ink-muted">{m.term}</dt>
@@ -1119,6 +1119,7 @@ function InstitutionRow({
               {inst.state ? ` · ${STATE_NAMES[inst.state] ?? inst.state}` : ""}
               {readOn ? ` · read ${READ.format(new Date(`${readOn}T00:00:00Z`))}` : ""}
               {verified === 0 ? " · not verified" : verified === listed.length ? " · verified" : ` · ${verified} of ${listed.length} verified`}
+              {inst.shared > 0 ? ` · counts once with ${inst.shared} sibling ${inst.shared === 1 ? "charter" : "charters"} on the same schedule` : ""}
             </span>
           </span>
           <span className="shrink-0 text-right">

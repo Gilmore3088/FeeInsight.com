@@ -1,5 +1,5 @@
 import type { IndexRow } from "@/lib/data-store";
-import { HIGHEST_TIER_CATEGORIES, summarizeFees, valuePerInstitution, type FeeStatistics } from "@/lib/data-store/fee-stats";
+import { HIGHEST_TIER_CATEGORIES, countedRepresentatives, countedValuePerInstitution, summarizeFees, type FeeStatistics } from "@/lib/data-store/fee-stats";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { buildHistogramBuckets, type HistogramBucket } from "@/lib/fee-histogram-buckets";
 import { STATE_NAMES } from "@/lib/us-states";
@@ -135,11 +135,18 @@ export interface IndexInstitution {
   charter: string;
   value: number;
   row: IndexRow;
+  /** Sibling charters that publish from this institution's schedule and count with it (rule 7). */
+  shared: number;
 }
 
 export function institutionsFor(rows: IndexRow[], fee: string, state: string | null, charter: Charter): IndexInstitution[] {
-  const picked = rows.filter((r) => matches(r, state, charter));
-  const values = valuePerInstitution(picked.map((r) => ({ ...r, fee_category: fee })));
+  const picked = rows.filter((r) => matches(r, state, charter)).map((r) => ({ ...r, fee_category: fee }));
+  // The median's own population (rule 7): sibling charters on one shared schedule count once, as
+  // the lowest id, so the chart, the list and the KPIs always count the same institutions.
+  const values = countedValuePerInstitution(picked);
+  const reps = countedRepresentatives(picked);
+  const shared = new Map<number, number>();
+  if (reps) for (const [id, rep] of reps) if (id !== rep) shared.set(rep, (shared.get(rep) ?? 0) + 1);
   const byId = new Map<number, IndexRow[]>();
   for (const r of picked) {
     const list = byId.get(r.institution_id) ?? [];
@@ -151,7 +158,7 @@ export function institutionsFor(rows: IndexRow[], fee: string, state: string | n
     const list = byId.get(id) ?? [];
     const row = [...list].sort((a, b) => Math.abs(a.amount - value) - Math.abs(b.amount - value) || a.id - b.id)[0];
     if (!row) continue;
-    out.push({ id, name: row.institution_name, state: row.state_code, charter: row.charter_type, value, row });
+    out.push({ id, name: row.institution_name, state: row.state_code, charter: row.charter_type, value, row, shared: shared.get(id) ?? 0 });
   }
   return out.sort((a, b) => a.value - b.value || a.name.localeCompare(b.name));
 }
