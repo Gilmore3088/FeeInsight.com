@@ -30,10 +30,15 @@ describe("explorerFee", () => {
     expect(explorerFee(value(1, 8.45, [[7, 11.9, "Premier Checking Monthly Service Fee", null], [3, 5, "Basic Checking Monthly Service Fee", "Waived with   $500 balance"]]))).toEqual({
       amount: 8.45,
       prices: [
-        { amount: 5, name: "Basic Checking Monthly Service Fee", conditions: "Waived with $500 balance" },
-        { amount: 11.9, name: "Premier Checking Monthly Service Fee", conditions: null },
+        { amount: 5, name: "Basic Checking Monthly Service Fee", account: "Basic Checking", conditions: "Waived with $500 balance" },
+        { amount: 11.9, name: "Premier Checking Monthly Service Fee", account: "Premier Checking", conditions: null },
       ],
     });
+  });
+
+  it("derives each price's short account name from the fee's own name, or none", () => {
+    const fee = explorerFee(value(1, 8.45, [[1, 7.95, "Carefree Checking Monthly Maintenance Fee", null], [2, 8.95, "Monthly service charge (Everyday Checking)", null], [3, 9.5, "Monthly Service Fee", null]]));
+    expect(fee.prices?.map((price) => price.account)).toEqual(["Carefree Checking", "Everyday Checking", null]);
   });
 
   it("keeps a single price as the value alone", () => {

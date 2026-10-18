@@ -30,7 +30,7 @@ import {
   matrixSummary,
   publishingPeers,
   peerSnapshot,
-  briefingCarries,
+  briefingSet,
   formatIsoDate,
   money,
   scalePosition,
@@ -47,10 +47,13 @@ import {
   type PeerExplorerSet,
 } from "@/lib/peer-explorer";
 
-/** One accent for the subject (brick), ink for a selected peer, neutral slate for the rest. */
-const SUBJECT = "var(--fi-brick)";
+/**
+ * The subject is ink: red and blue mean above and below the median on this site, so the subject
+ * never takes either. A selected peer is dark slate, the rest neutral slate.
+ */
+export const SUBJECT = "var(--fi-ink)";
 const PEER = "var(--fi-viz-inside)";
-const SELECTED = "var(--fi-ink)";
+const SELECTED = "var(--fi-viz-bar)";
 /**
  * Against the peer median, below is blue and above is red, as in James's Oct 18 peer-set mockups
  * (the site tokens are named for the market pages, where the pair runs the other way). Every use
@@ -271,7 +274,11 @@ export function PeerExplorer({
         <SidePanel set={set} fee={fee} selected={selected} median={median?.median} onSelect={select} />
       </div>
 
-      {/* Hamilton actions for this set and fee (instId, peers, name, fee); Hamilton routes a visitor who is not signed in. */}
+      {/*
+        Hamilton actions for this set. Hamilton's settings page reads only instId today, so the button
+        and the preview claim only that it opens for the institution; the link still carries peers,
+        name, fee and asof for when Hamilton reads them. Hamilton routes a visitor who is not signed in.
+      */}
       <div className="mt-6 flex flex-col gap-3 border-t border-border pt-5 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4">
         <button
           type="button"
@@ -280,7 +287,7 @@ export function PeerExplorer({
           onClick={() => setPreview((open) => !open)}
           className="fi-btn fi-btn-brick min-h-12 w-full gap-2 px-6 text-[15px] sm:w-auto"
         >
-          Generate a pricing committee briefing in Hamilton
+          Open this peer set in Hamilton
           <ArrowRight aria-hidden="true" className="size-4" />
         </button>
         {setKey === "metro" && (
@@ -291,10 +298,9 @@ export function PeerExplorer({
       </div>
       {preview && (
         <div id="peer-briefing-preview" role="region" aria-label="Before you open Hamilton" className="mt-3 max-w-xl rounded-lg border border-border bg-paper p-4 text-[13px]">
-          <p className="text-[14px] font-semibold text-ink">The briefing starts from this view</p>
-          <p className="mt-1 text-ink-soft">This link opens Hamilton with:</p>
+          <p className="text-[14px] font-semibold text-ink">Hamilton opens for {set.subject.name}. Bring this set:</p>
           <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5">
-            {briefingCarries(set, setName, fee, `Published prices against the peer median${median ? ` of ${median.peers.toLocaleString("en-US")} publishing peers` : ""}`).map((row) => (
+            {briefingSet(set, setName, fee, `Published prices against the peer median${median ? ` of ${median.peers.toLocaleString("en-US")} publishing peers` : ""}`).map((row) => (
               <Fragment key={row.label}>
                 <dt className="text-ink-muted">{row.label}</dt>
                 <dd className="min-w-0 text-ink">{row.value}</dd>
@@ -510,10 +516,13 @@ function Tooltip({ inst, fee, left, top, extra }: { inst: ExplorerInstitution; f
   );
 }
 
-/** "comparison value (midpoint)", or for overdraft, whose value is its highest price, "(highest)". */
+/** "comparison price (midpoint)", or for overdraft, whose value is its highest price, "(highest)". */
 function comparisonMarkerLabel(fee: ExplorerFeeKey): string {
-  return fee === "overdraft" ? "comparison value (highest)" : "comparison value (midpoint)";
+  return fee === "overdraft" ? "comparison price (highest)" : "comparison price (midpoint)";
 }
+
+/** Below this chart width the account-price labels are dropped; the side panel lists each price in full. */
+const PRICE_LABELS_MIN_WIDTH = 480;
 
 const DIST_MARGIN = { left: 16, right: 16 };
 const BREAK_WIDTH = 64;
@@ -531,7 +540,7 @@ function Distribution({ set, fee, selectedId, highlight, onSelect }: ViewProps) 
   const everyone = [set.subject, ...set.peers];
   const publishing = everyone.filter((inst) => feeOf(inst, fee) !== undefined);
   // The institution's own account prices, when its value is built from several: each drawn as a
-  // price, and the value itself as a hollow marker, so the comparison value never reads as a price.
+  // price, and the value itself as a hollow marker, so the comparison price never reads as a price.
   const ownPrices = set.subject.fees[fee]?.prices ?? [];
   const median = set.medians[fee]?.median;
   if (publishing.length === 0) {
@@ -574,7 +583,7 @@ function Distribution({ set, fee, selectedId, highlight, onSelect }: ViewProps) 
         <svg width="100%" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${EXPLORER_FEE_LABELS[fee]} fees of ${publishing.length} institutions on one axis`} className="block overflow-visible">
           <line x1={DIST_MARGIN.left} x2={plotRight} y1={base + 8} y2={base + 8} stroke="var(--color-border)" strokeWidth={1} />
           {scale.ticks.map((tick) => (
-            <text key={tick} x={px(tick)} y={base + 26} textAnchor="middle" className="fill-ink-muted text-[11px] tabular-nums">
+            <text key={tick} x={px(tick)} y={base + 26} textAnchor="middle" className="fill-ink-muted text-[12px] tabular-nums">
               {money(tick)}
             </text>
           ))}
@@ -627,7 +636,7 @@ function Distribution({ set, fee, selectedId, highlight, onSelect }: ViewProps) 
               );
             })}
           {split.outliers.map((v) => (
-            <text key={`o${v}`} x={breakX(v)} y={base + 26} textAnchor="middle" className="fill-ink text-[11px] font-semibold tabular-nums">
+            <text key={`o${v}`} x={breakX(v)} y={base + 26} textAnchor="middle" className="fill-ink text-[12px] font-semibold tabular-nums">
               {money(v)}
             </text>
           ))}
@@ -636,14 +645,14 @@ function Distribution({ set, fee, selectedId, highlight, onSelect }: ViewProps) 
               x={xOf(subjectValue)}
               y={base + 40}
               textAnchor={xOf(subjectValue) > width - 120 ? "end" : xOf(subjectValue) < 120 ? "start" : "middle"}
-              className="pointer-events-none fill-brick text-[11px] font-semibold"
+              className="pointer-events-none fill-ink text-[12px] font-semibold"
             >
               {ownPrices.length >= 2 ? `${short(set.subject.name)}: ${comparisonMarkerLabel(fee)} ${money(subjectValue)}` : `${short(set.subject.name)} ${money(subjectValue)}`}
             </text>
           )}
           {ownPrices.length >= 2 && (
             <g aria-label={`${set.subject.name}'s account prices`}>
-              <text x={DIST_MARGIN.left} y={priceRow - 16} className="fill-ink-muted text-[11px] font-medium">
+              <text x={DIST_MARGIN.left} y={priceRow - 16} className="fill-ink-muted text-[12px] font-medium">
                 {short(set.subject.name)}&apos;s account prices
               </text>
               {ownPrices.map((price, i) => {
@@ -660,9 +669,12 @@ function Distribution({ set, fee, selectedId, highlight, onSelect }: ViewProps) 
                   <g key={i} className="cursor-default" onMouseEnter={() => setHoverPrice(i)} onMouseLeave={() => setHoverPrice(null)}>
                     <circle cx={x} cy={priceRow} r={10} fill="transparent" />
                     <rect x={x - 5} y={priceRow - 5} width={10} height={10} transform={`rotate(45 ${x} ${priceRow})`} fill={SUBJECT} stroke="var(--fi-surface-0)" strokeWidth={1.5} />
-                    <text x={lx} y={ly} textAnchor={anchor} className="fill-ink text-[11px]">
-                      {short(price.name ?? `Price ${i + 1}`)} {money(price.amount)}
-                    </text>
+                    {/* The account's short name ("Carefree Checking $7.95"); dropped on a narrow chart. */}
+                    {width >= PRICE_LABELS_MIN_WIDTH && (
+                      <text x={lx} y={ly} textAnchor={anchor} className="fill-ink text-[12px] max-sm:hidden">
+                        {price.account ?? short(price.name ?? `Price ${i + 1}`)} {money(price.amount)}
+                      </text>
+                    )}
                   </g>
                 );
               })}
@@ -694,8 +706,8 @@ function Distribution({ set, fee, selectedId, highlight, onSelect }: ViewProps) 
               <span className="inline-flex items-center gap-1.5">
                 <span aria-hidden="true" className="inline-block size-2.5 rotate-45 border-2" style={{ borderColor: SUBJECT }} />
                 {fee === "overdraft"
-                  ? "Its comparison value (highest price), compared with the median"
-                  : "Its comparison value (midpoint), compared with the median; not a price anyone pays"}
+                  ? "Its comparison price, the highest of its prices"
+                  : "Its comparison price, the middle of its account prices; not a price anyone pays"}
               </span>
             </>
           ) : (
@@ -782,17 +794,17 @@ function Landscape({ set, fee, selectedId, highlight, onSelect }: ViewProps) {
             {y.ticks.map((tick) => (
               <g key={`y${tick}`}>
                 <line x1={MARGIN.left} x2={width - MARGIN.right} y1={py(tick)} y2={py(tick)} stroke="var(--color-border)" strokeWidth={1} />
-                <text x={MARGIN.left - 8} y={py(tick)} dy="0.32em" textAnchor="end" className="fill-ink-muted text-[11px] tabular-nums">
+                <text x={MARGIN.left - 8} y={py(tick)} dy="0.32em" textAnchor="end" className="fill-ink-muted text-[12px] tabular-nums">
                   {money(tick)}
                 </text>
               </g>
             ))}
             {x.ticks.map((tick) => (
-              <text key={`x${tick}`} x={px(tick)} y={height - MARGIN.bottom + 18} textAnchor="middle" className="fill-ink-muted text-[11px] tabular-nums">
+              <text key={`x${tick}`} x={px(tick)} y={height - MARGIN.bottom + 18} textAnchor="middle" className="fill-ink-muted text-[12px] tabular-nums">
                 {axisTick(axis, tick)}
               </text>
             ))}
-            <text x={MARGIN.left + innerW / 2} y={height - 6} textAnchor="middle" className="fill-ink-muted text-[11px]">
+            <text x={MARGIN.left + innerW / 2} y={height - 6} textAnchor="middle" className="fill-ink-muted text-[12px]">
               {LANDSCAPE_AXIS_LABELS[axis]}
               {x.kind === "log" ? " (log scale)" : ""}
             </text>
@@ -844,7 +856,7 @@ function Landscape({ set, fee, selectedId, highlight, onSelect }: ViewProps) {
                   x={lx}
                   y={ly}
                   textAnchor={right ? "start" : "end"}
-                  className={`pointer-events-none text-[11px] tabular-nums ${isSubject ? "fill-brick font-semibold" : "fill-ink font-semibold"}`}
+                  className={`pointer-events-none text-[12px] tabular-nums ${isSubject ? "fill-ink font-semibold" : "fill-ink-soft font-semibold"}`}
                   style={{ paintOrder: "stroke", stroke: "var(--fi-surface-0)", strokeWidth: 3 }}
                 >
                   {short(inst.name)} · {money(feeOf(inst, fee) as number)}
@@ -916,7 +928,7 @@ function Locations({ set, fee, selectedId, highlight, onSelect }: ViewProps) {
           const hasSubject = group.members.some((m) => m.id === set.subject.id);
           const visible = group.members.slice(0, CIRCLES_PER_GROUP);
           return (
-            <li key={group.key} className={`min-w-0 rounded-[18px] border p-3 ${hasSubject && by !== "branch" ? "border-brick/30 bg-brick-tint/40" : "border-border bg-paper"}`}>
+            <li key={group.key} className={`min-w-0 rounded-[18px] border p-3 ${hasSubject && by !== "branch" ? "border-ink/30 bg-ink/[0.04]" : "border-border bg-paper"}`}>
               <p className="flex items-baseline justify-between gap-2">
                 <span className="min-w-0 truncate text-[14px] font-semibold text-ink">{group.name}</span>
                 <span className="shrink-0 text-[12px] tabular-nums text-ink-muted">{group.members.length.toLocaleString("en-US")}</span>
@@ -1132,7 +1144,7 @@ function Matrix({ set, fee, selectedId, highlight, onSelect, onFee }: ViewProps 
                         onClick={() => onSelect(inst.id)}
                         aria-pressed={isSelected}
                         className={`flex min-h-11 w-full items-center gap-2 border-l-[3px] px-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink ${
-                          isSubject ? "border-brick font-semibold text-ink" : isSelected ? "border-ink font-semibold text-ink" : "border-transparent text-ink-soft hover:text-ink"
+                          isSubject ? "border-ink font-semibold text-ink" : isSelected ? "border-[var(--fi-viz-bar)] font-semibold text-ink" : "border-transparent text-ink-soft hover:text-ink"
                         }`}
                       >
                         <span className="min-w-0 truncate">{inst.name}</span>
@@ -1294,7 +1306,7 @@ function Compare({ set, rows, onClear }: { set: PeerExplorerSet; rows: ExplorerI
             <tr className="text-left text-[12px] text-ink-muted">
               <th scope="col" className="px-2 py-1 font-medium">Fee</th>
               {rows.map((inst) => (
-                <th key={inst.id} scope="col" className={`px-2 py-1 text-right font-semibold ${inst.id === set.subject.id ? "text-brick" : "text-ink"}`}>
+                <th key={inst.id} scope="col" className={`px-2 py-1 text-right font-semibold ${inst.id === set.subject.id ? "text-ink underline decoration-ink underline-offset-4" : "text-ink-soft"}`}>
                   {short(inst.name)}
                 </th>
               ))}

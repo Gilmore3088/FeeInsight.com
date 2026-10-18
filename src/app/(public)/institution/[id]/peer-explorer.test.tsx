@@ -17,8 +17,8 @@ const SET: PeerExplorerSet = {
     monthly_maintenance: {
       amount: 8.45,
       prices: [
-        { amount: 5, name: "Basic Checking Monthly Service Fee", conditions: "Waived with direct deposit" },
-        { amount: 11.9, name: "Premier Checking Monthly Service Fee", conditions: null },
+        { amount: 5, name: "Basic Checking Monthly Service Fee", account: "Basic Checking", conditions: "Waived with direct deposit" },
+        { amount: 11.9, name: "Premier Checking Monthly Service Fee", account: "Premier Checking", conditions: null },
       ],
     },
     overdraft: { amount: 35 },
@@ -115,14 +115,17 @@ describe("PeerExplorerSection", () => {
     expect(screen.getByRole("button", { name: "Pine State Bank, $14.50" }).style.opacity).toBe("1");
   });
 
-  it("previews what goes to Hamilton, then carries the set, its peers, the fee and the data date", () => {
+  it("previews the set to bring to Hamilton, claiming only that Hamilton opens for the institution", () => {
     renderSection();
     expect(screen.queryByRole("region", { name: "Before you open Hamilton" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /Generate a pricing committee briefing in Hamilton/ }));
+    expect(screen.queryByText(/briefing/i)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Open this peer set in Hamilton/ }));
     const preview = screen.getByRole("region", { name: "Before you open Hamilton" });
-    expect(within(preview).getByText("Capital City Bank")).toBeTruthy();
+    // Hamilton's settings page reads only instId today: the panel never says the link loads the set.
+    expect(within(preview).getByText("Hamilton opens for Capital City Bank. Bring this set:")).toBeTruthy();
+    expect(preview.textContent).not.toMatch(/This link opens|opens Hamilton with|briefing/i);
     expect(within(preview).getByText("The 25 banks closest in assets")).toBeTruthy();
-    expect(within(preview).getByText("3 named: Pine State Bank, Summit Bank and First US Bank")).toBeTruthy();
+    expect(within(preview).getByText("3: Pine State Bank, Summit Bank and First US Bank")).toBeTruthy();
     expect(within(preview).getByText("Monthly maintenance")).toBeTruthy();
     expect(within(preview).getByText("Published prices against the peer median of 3 publishing peers")).toBeTruthy();
     expect(within(preview).getByText("Oct 17, 2026")).toBeTruthy();
@@ -169,15 +172,18 @@ describe("PeerExplorerSection", () => {
     renderSection();
     const snapshot = screen.getByRole("region", { name: /Monthly maintenance is \$1\.55 below the median of similar-sized banks\./ });
     expect(within(snapshot).getByText("Peer pricing snapshot")).toBeTruthy();
-    expect(within(snapshot).getByText("Comparison value $8.45 vs a $10 median among 3 publishing peers. Its two checking prices are $5 and $11.90.")).toBeTruthy();
+    expect(within(snapshot).getByText("Comparison price $8.45, the middle of its two checking prices ($5 and $11.90), against a $10 median among 3 publishing peers.")).toBeTruthy();
     expect(within(snapshot).getByText("Published prices only. Account mix, waivers and fee revenue are not shown.")).toBeTruthy();
   });
 
-  it("draws each account price apart from the hollow comparison value", () => {
-    renderSection();
-    expect(screen.getByText("Capital City Bank: comparison value (midpoint) $8.45")).toBeTruthy();
-    expect(screen.getByText("Basic Checking Monthly Se… $5")).toBeTruthy();
-    expect(screen.getByText(/Its comparison value \(midpoint\), compared with the median; not a price anyone pays/)).toBeTruthy();
+  it("draws each account price apart from the hollow comparison price, in ink, labelled by account", () => {
+    const { container } = renderSection();
+    expect(screen.getByText("Capital City Bank: comparison price (midpoint) $8.45")).toBeTruthy();
+    expect(screen.getByText("Basic Checking $5")).toBeTruthy();
+    expect(screen.getByText(/Its comparison price, the middle of its account prices; not a price anyone pays/)).toBeTruthy();
+    expect(screen.queryByText(/comparison value/i)).toBeNull();
+    // The subject is never the variance red or blue.
+    expect(container.innerHTML).not.toMatch(/fi-brick|fill-brick|text-brick|border-brick/);
   });
 
   it("switches the roster to the selected fee's prices, gaps and sources", () => {
@@ -189,6 +195,19 @@ describe("PeerExplorerSection", () => {
     expect(within(summit).getByText("+$6.20")).toBeTruthy();
     expect(within(summit).getByRole("link", { name: "Schedule" }).getAttribute("href")).toBe("https://summit.example/fees.pdf");
     expect(within(summit).getByText(/Sep 2, 2026/)).toBeTruthy();
+  });
+
+  it("titles an asset-band set as a pricing set apart from the financial cohort, with its actual range and a dated source", () => {
+    const sizeSets: InstitutionPeerSets = {
+      ...SETS,
+      options: [...SETS.options, { key: "size", label: "Banks with $1B to $10B in assets", count: 468 }],
+      selected: { key: "size", label: "Banks with $1B to $10B in assets", lines: [] },
+    };
+    render(<PeerExplorerSection sets={sizeSets} set={SET} hrefFor={(key) => `/institution/323?peers=${key}#peers`} initial={{}} isPro={false} />);
+    expect(screen.getByText("Banks with $1B to $10B in assets that publish fees")).toBeTruthy();
+    expect(screen.getByText(/A pricing set: it is not the financial cohort under Financial performance/)).toBeTruthy();
+    expect(screen.getByText("Actual range: $2.1B to $7.3B")).toBeTruthy();
+    expect(screen.getByText(/published fee schedules, as of Oct 17, 2026\./)).toBeTruthy();
   });
 
   it("has short chip names", () => {

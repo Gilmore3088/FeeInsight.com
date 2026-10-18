@@ -8,6 +8,7 @@ import type { InstitutionPeerSets } from "@/lib/data-store/peer-fee-rank";
 import { MIN_PEERS_FOR_PEER_SET_MEDIAN } from "@/lib/data-store/peer-fee-rank";
 import {
   assetsLabel,
+  formatIsoDate,
   PEER_SET_PURPOSE_GROUP,
   PEER_EXPLORER_MAX_SHOWN,
   purposeLine,
@@ -59,7 +60,11 @@ export function PeerExplorerSection({
     option.key === selected.key && option.key === "nearest" ? { ...option, count: set.peers.length } : option,
   );
   const assets = assetsLabel(set.subject.assets);
-  const why = whyThesePeers(set);
+  const why = whyThesePeers(set, selected.key);
+  // An asset-band set counts only banks that publish fees; the title says so, so its count is not
+  // read as the financial cohort's for the same band.
+  const title = selected.key === "size" ? `${selected.label} that publish fees` : selected.label;
+  const asOf = set.asOf ? formatIsoDate(set.asOf) : null;
   const purpose = purposeLine(selected.key, set);
   const shown = shownLine(set);
   return (
@@ -90,7 +95,7 @@ export function PeerExplorerSection({
       <div key={selected.key} className="fi-home-fade mt-4">
         <p className="flex items-start gap-2 text-[14px] font-semibold text-ink">
           <Users aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-ink-muted" />
-          <span className="min-w-0">{selected.label}</span>
+          <span className="min-w-0">{title}</span>
         </p>
         <p className="mt-1 max-w-[68ch] text-[14px] leading-relaxed text-ink-soft">{purpose}</p>
         {why.length > 0 && (
@@ -103,9 +108,9 @@ export function PeerExplorerSection({
           </ul>
         )}
         {shown && <p className="mt-2 text-[13px] font-medium text-ink-soft">{shown}</p>}
-        <PeerExplorer set={set} setKey={selected.key} setName={selected.label} initial={initial} isPro={isPro} />
+        <PeerExplorer set={set} setKey={selected.key} setName={title} initial={initial} isPro={isPro} />
       </div>
-      <p className="mt-4 text-[12px] leading-relaxed text-ink-muted">Source: {PRODUCT_NAME}, published fee schedules. Total assets from FDIC and NCUA records.</p>
+      <p className="mt-4 text-[12px] leading-relaxed text-ink-muted">Source: {PRODUCT_NAME}, published fee schedules{asOf ? `, as of ${asOf}` : ""}. Total assets from FDIC and NCUA records.</p>
       <details className="mt-1 text-[12px] text-ink-muted">
         <summary className="inline-flex min-h-11 cursor-pointer items-center font-medium text-ink">How peers are chosen and counted</summary>
         <ul className="mt-1 list-disc space-y-1 pl-5 text-left">

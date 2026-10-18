@@ -42,6 +42,8 @@ export function isExplorerFeeKey(value: unknown): value is ExplorerFeeKey {
 export interface ExplorerPrice {
   amount: number;
   name: string | null;
+  /** The account's own short name from the fee's name ("Carefree Checking"), when it names one. */
+  account?: string | null;
   conditions: string | null;
 }
 
@@ -201,14 +203,14 @@ export function matrixBand(value: number | undefined, median: number | undefined
 }
 
 /**
- * "$1.55 below the peer median", or within 1% "About the same as the peer median ($0.03 below)",
+ * "$1.55 below the peer median", or within 1% "About the same as the peer median: within 1% ($0.03 below)",
  * the matrix's own rule, so the panel and the matrix never classify one fee two ways.
  */
 export function gapText(value: number, median: number): { direction: "below" | "above" | "same"; text: string } {
   const gap = value - median;
   if (aboutSameAsMedian(value, median)) {
     const detail = Math.abs(gap) < 0.005 ? "the same price" : `${money(Math.abs(gap))} ${gap > 0 ? "above" : "below"}`;
-    return { direction: "same", text: `About the same as the peer median (${detail})` };
+    return { direction: "same", text: `About the same as the peer median: within 1% (${detail})` };
   }
   return gap > 0
     ? { direction: "above", text: `${money(gap)} above the peer median` }
@@ -268,7 +270,7 @@ const CHARTER_WORDS: Record<string, string> = { bank: "Banks", credit_union: "Cr
  * Why these institutions belong, in plain words from the set itself: their charter, the range of
  * their total assets, and where they are headquartered.
  */
-export function whyThesePeers(set: PeerExplorerSet): string[] {
+export function whyThesePeers(set: PeerExplorerSet, key?: string): string[] {
   const parts: string[] = [];
   const kind = set.charterType ? CHARTER_WORDS[set.charterType] : null;
   if (kind) parts.push(`${kind} only`);
@@ -276,7 +278,9 @@ export function whyThesePeers(set: PeerExplorerSet): string[] {
   if (range) {
     const low = assetsLabel(range.min);
     const high = assetsLabel(range.max);
-    parts.push(low === high ? `${low} in assets` : `${low} to ${high} in assets`);
+    const words = low === high ? `${low}` : `${low} to ${high}`;
+    // An asset-band set is titled by its band; the chip gives the peers' actual range inside it.
+    parts.push(key === "size" ? `Actual range: ${words}` : `${words} in assets`);
   }
   const states = peerStates(set);
   if (states.length === 1) parts.push(`Headquartered in ${STATE_NAMES[states[0]] ?? states[0]}`);
@@ -457,7 +461,7 @@ export function purposeLine(key: string, set: PeerExplorerSet): string {
     case "nearest":
       return `${kind} of similar size, for comparing published prices.${spread}`;
     case "size":
-      return `${kind} in the same asset-size band, for comparing published prices.${spread}`;
+      return `${kind} in the same asset-size band that publish fees, for comparing published prices.${spread} A pricing set: it is not the financial cohort under Financial performance, which counts every call report filer in the band.`;
     case "regulator":
       return `${kind} with the same ${set.charterType === "credit_union" ? "charter" : "primary regulator"}, for comparing published prices.${spread}`;
     case "state":
@@ -666,14 +670,17 @@ export function peerSnapshot(set: PeerExplorerSet, key: string, fee: ExplorerFee
     };
   }
   const several = (own.prices?.length ?? 0) >= 2;
-  const valueWords = several ? `Comparison value ${money(own.amount)}` : `Published price ${money(own.amount)}`;
-  const prices = several
-    ? ` Its ${COUNT_WORDS[own.prices!.length] ?? own.prices!.length} ${fee === "monthly_maintenance" ? "checking " : ""}prices are ${listWords(own.prices!.map((p) => money(p.amount)))}.`
-    : "";
+  // One name for the value built from several prices: the comparison price, with the prices behind it.
+  const count = own.prices?.length ?? 0;
+  const which = fee === "overdraft" ? "the highest" : "the middle";
+  const kindWord = fee === "monthly_maintenance" ? "checking " : "";
+  const valueWords = several
+    ? `Comparison price ${money(own.amount)}, ${which} of its ${COUNT_WORDS[count] ?? count} ${kindWord}prices (${listWords(own.prices!.map((p) => money(p.amount)))})`
+    : `Published price ${money(own.amount)}`;
   if (!median) {
     return {
       headline: `Too few ${noun} publish ${aFee} for a median.`,
-      facts: `${valueWords}; ${peersWord(publishing)}.${prices}`,
+      facts: `${valueWords}; ${peersWord(publishing)}.`,
       caveat: SNAPSHOT_CAVEAT,
     };
   }
@@ -683,23 +690,24 @@ export function peerSnapshot(set: PeerExplorerSet, key: string, fee: ExplorerFee
     : `${label} is ${money(Math.abs(gap))} ${gap > 0 ? "above" : "below"} the median of ${noun}.`;
   return {
     headline,
-    facts: `${valueWords} vs a ${money(median.median)} median among ${peersWord(median.peers)}.${prices}`,
+    facts: `${valueWords}, against a ${money(median.median)} median among ${peersWord(median.peers)}.`,
     caveat: SNAPSHOT_CAVEAT,
   };
 }
 
-/** The hand-off preview: what the Hamilton link carries, in plain words. */
-export function briefingCarries(set: PeerExplorerSet, setName: string, fee: ExplorerFeeKey, scope: string): { label: string; value: string }[] {
-  const ids = set.peers.map((peer) => peer.id);
-  const listed = ids.length > 0 && ids.length <= MAX_CHOSEN_PEERS;
+/**
+ * The hand-off preview: the set a visitor brings to Hamilton, in plain words. Hamilton opens for
+ * the institution; these rows say what to bring, never that the link loads them.
+ */
+export function briefingSet(set: PeerExplorerSet, setName: string, fee: ExplorerFeeKey, scope: string): { label: string; value: string }[] {
+  const total = set.whole?.peers ?? set.peers.length;
+  const names = set.peers.slice(0, 6).map((peer) => peer.name);
+  const rest = total - names.length;
   return [
-    { label: "Institution", value: set.subject.name },
     { label: "Peer set", value: setName },
     {
       label: "Peers",
-      value: listed
-        ? `${ids.length} named: ${listWords(set.peers.slice(0, 6).map((peer) => peer.name).concat(ids.length > 6 ? [`${ids.length - 6} more`] : []))}`
-        : `More than ${MAX_CHOSEN_PEERS}, so the link carries the set's name, not each peer`,
+      value: `${total.toLocaleString("en-US")}: ${listWords(names.concat(rest > 0 ? [`${rest.toLocaleString("en-US")} more, listed on this page`] : []))}`,
     },
     { label: "Fee", value: EXPLORER_FEE_LABELS[fee] },
     { label: "Comparison", value: scope },

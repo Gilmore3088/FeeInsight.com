@@ -10,6 +10,7 @@ import {
   PEER_SET_PURPOSE_GROUP,
   percentileRank,
   purposeLine,
+  briefingSet,
   signedMoney,
   sortMatrixRows,
   splitOutliers,
@@ -66,6 +67,8 @@ describe("peer explorer coverage", () => {
 
   it("says why these peers belong from the set's own charter, assets and states", () => {
     expect(whyThesePeers(set)).toEqual(["Banks only", "$2.1B to $6.1B in assets", "Headquartered in 2 states"]);
+    // An asset-band set is titled by its band, so its chip names the peers' actual range.
+    expect(whyThesePeers(set, "size")).toEqual(["Banks only", "Actual range: $2.1B to $6.1B", "Headquartered in 2 states"]);
     expect(whyThesePeers({ ...set, peers: set.peers.slice(0, 2), charterType: "credit_union" })).toEqual([
       "Credit unions only",
       "$2.1B to $3.1B in assets",
@@ -92,8 +95,8 @@ describe("selection math", () => {
     expect(gapText(12, 10)).toEqual({ direction: "above", text: "$2 above the peer median" });
     expect(gapText(10.004, 10).direction).toBe("same");
     // A $0.03 gap on $8.48 is within 1%: about the same, with the gap still stated.
-    expect(gapText(8.45, 8.48)).toEqual({ direction: "same", text: "About the same as the peer median ($0.03 below)" });
-    expect(gapText(10, 10)).toEqual({ direction: "same", text: "About the same as the peer median (the same price)" });
+    expect(gapText(8.45, 8.48)).toEqual({ direction: "same", text: "About the same as the peer median: within 1% ($0.03 below)" });
+    expect(gapText(10, 10)).toEqual({ direction: "same", text: "About the same as the peer median: within 1% (the same price)" });
   });
 });
 
@@ -196,6 +199,13 @@ describe("Hamilton hand-off", () => {
     expect(hamiltonPeerSetHref(323, many, "Banks in Florida")).toBe("/pro/settings?instId=323&name=Banks+in+Florida#peer-sets");
   });
 
+  it("lists the set to bring to Hamilton without claiming the link loads it", () => {
+    const rows = briefingSet({ ...set, asOf: "2026-10-17" }, "Home metro", "monthly_maintenance", "Published prices against the peer median");
+    expect(rows.map((row) => row.label)).toEqual(["Peer set", "Peers", "Fee", "Comparison", "Data as of"]);
+    expect(rows[4].value).toBe("Oct 17, 2026");
+    expect(rows.map((row) => row.value).join(" ")).not.toMatch(/link|carries|opens/i);
+  });
+
   it("carries the selected fee to Hamilton", () => {
     expect(hamiltonPeerSetHref(323, [10], "Home metro", "monthly_maintenance")).toBe(
       "/pro/settings?instId=323&peers=10&name=Home+metro&fee=monthly_maintenance#peer-sets",
@@ -213,7 +223,7 @@ describe("peer set purpose", () => {
   it("states what the set is for and how spread out it is", () => {
     expect(purposeLine("nearest", set)).toBe("Banks of similar size, for comparing published prices. Not local competitors: they're spread over 2 states.");
     expect(purposeLine("size", { ...set, peers: set.peers.slice(0, 3) })).toBe(
-      "Banks in the same asset-size band, for comparing published prices. All are headquartered in Florida.",
+      "Banks in the same asset-size band that publish fees, for comparing published prices. All are headquartered in Florida. A pricing set: it is not the financial cohort under Financial performance, which counts every call report filer in the band.",
     );
     expect(purposeLine("metro", { ...set, market: { name: "Tallahassee, FL", cities: [] } })).toBe(
       "Banks with branches in the Tallahassee, FL metro: the local competitors for deposits and customers. They range from $2.1B to $6.1B in assets, so compare prices here, not size.",
@@ -341,7 +351,7 @@ describe("peer pricing snapshot", () => {
     const s = { ...mm(8.45, [7.95, 8.95]), medians: withMedian(8.48).medians };
     expect(peerSnapshot(s, "nearest", "monthly_maintenance")).toEqual({
       headline: "Monthly maintenance is about the same as similar-sized banks.",
-      facts: "Comparison value $8.45 vs a $8.48 median among 16 publishing peers. Its two checking prices are $7.95 and $8.95.",
+      facts: "Comparison price $8.45, the middle of its two checking prices ($7.95 and $8.95), against a $8.48 median among 16 publishing peers.",
       caveat: SNAPSHOT_CAVEAT,
     });
   });
@@ -360,8 +370,13 @@ describe("peer pricing snapshot", () => {
       "Monthly maintenance is $2 below the median of credit unions with the same charter.",
     );
     expect(peerSnapshot({ ...mm(12), medians: withMedian(10).medians }, "nearest", "monthly_maintenance").facts).toBe(
-      "Published price $12 vs a $10 median among 16 publishing peers.",
+      "Published price $12, against a $10 median among 16 publishing peers.",
     );
+  });
+
+  it("names overdraft's comparison price as the highest of its prices", () => {
+    const od = { ...set, subject: { ...set.subject, fees: { overdraft: { amount: 36, prices: [10, 25, 36].map((p) => ({ amount: p, name: null, conditions: null })) } } }, medians: { overdraft: { median: 32, peers: 16 } } };
+    expect(peerSnapshot(od, "nearest", "overdraft").facts).toBe("Comparison price $36, the highest of its three prices ($10, $25 and $36), against a $32 median among 16 publishing peers.");
   });
 
   it("says when the fee is not published or too few peers publish it", () => {

@@ -12,6 +12,7 @@ import { getHomeMarket, getMarketBranchCities, getMarketPresence } from "./peer-
 import { MIN_PEERS_FOR_PEER_SET_MEDIAN } from "./peer-fee-rank";
 import { institutionDisplayName } from "@/lib/institution-display-name";
 import { displayCity } from "@/lib/format";
+import { productNameFromFeeName } from "@/lib/agents/knox/lineup";
 import {
   capPeerExplorerSet,
   EXPLORER_FEE_KEYS,
@@ -49,7 +50,11 @@ export function explorerFee(value: PeerFeeValue): ExplorerFee {
     prices: [...records]
       .sort((a, b) => a.amount - b.amount || a.id - b.id)
       .slice(0, PRICES_MAX)
-      .map((record) => ({ amount: record.amount, name: record.fee_name?.trim() || null, conditions: clip(record.conditions) })),
+      .map((record) => {
+        const name = record.fee_name?.trim() || null;
+        // The account's own short name ("Carefree Checking Monthly Maintenance Fee" -> "Carefree Checking").
+        return { amount: record.amount, name, account: name ? productNameFromFeeName(name) : null, conditions: clip(record.conditions) };
+      }),
     ...source,
   };
 }
