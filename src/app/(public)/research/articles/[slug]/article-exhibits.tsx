@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRevealOnScroll } from "@/app/landing-motion";
 import "@/app/landing-motion.css";
 import { renderInlineMarkdown } from "@/lib/article-markdown";
@@ -58,7 +58,35 @@ function Bars({ rows, label }: { rows: BarsRow[]; label: string }) {
 }
 
 /**
- * The table, five rows first when it is long; it scrolls sideways inside its own box on a phone.
+ * Whether a box scrolls sideways and has more to show to the right. Null until measured, so the
+ * first render falls back to the narrow-screen CSS cue.
+ */
+function useMoreToRight<T extends HTMLElement>() {
+  const ref = useRef<T>(null);
+  const [more, setMore] = useState<boolean | null>(null);
+  useEffect(() => {
+    const box = ref.current;
+    if (!box) return;
+    const measure = () => setMore(box.scrollWidth - box.clientWidth - box.scrollLeft > 2);
+    measure();
+    box.addEventListener("scroll", measure, { passive: true });
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    observer?.observe(box);
+    return () => {
+      box.removeEventListener("scroll", measure);
+      observer?.disconnect();
+    };
+  }, []);
+  return { ref, more };
+}
+
+/** The fade on the box's right edge: shown while more columns sit off screen. */
+const FADE = "[mask-image:linear-gradient(to_right,black_85%,transparent)]";
+const FADE_NARROW = "max-sm:[mask-image:linear-gradient(to_right,black_85%,transparent)]";
+
+/**
+ * The table, five rows first when it is long; it scrolls sideways inside its own box on a phone,
+ * with a fade on the right edge and a "Scroll for more columns" line while columns sit off screen.
  * Folded rows stay in the HTML (hidden), so search and AI readers see the whole table.
  */
 function Table({ table, label }: { table: TableData; label: string }) {
@@ -70,9 +98,16 @@ function Table({ table, label }: { table: TableData; label: string }) {
     const cells = table.rows.map((r) => r[c] ?? "").filter((cell) => !isEmptyCell(cell));
     return cells.length > 0 && cells.every((cell) => NUMERIC.test(cell));
   });
+  const { ref, more } = useMoreToRight<HTMLDivElement>();
+  // Before measuring, a wide table cues on narrow screens only; after, only while it overflows.
+  const cue = more === null ? (wide ? "sm:hidden" : "hidden") : more ? "" : "hidden";
+  const fade = more === null ? (wide ? FADE_NARROW : "") : more ? FADE : "";
   return (
     <div className={wide ? undefined : "lg:max-w-3xl"}>
-      <div role="region" aria-label={label} tabIndex={0} className={`overflow-x-auto ${FOCUS}`}>
+      <p aria-hidden="true" className={`mb-2 text-[12px] text-ink-muted ${cue}`}>
+        Scroll for more columns <span className="font-mono">&rarr;</span>
+      </p>
+      <div ref={ref} role="region" aria-label={label} tabIndex={0} className={`overflow-x-auto overscroll-x-contain ${fade} ${FOCUS}`}>
         <table aria-label={label} className={`w-full border-collapse text-[14px] ${wide ? "min-w-[30rem]" : ""}`}>
           <thead>
             <tr className="border-b border-ink/70">

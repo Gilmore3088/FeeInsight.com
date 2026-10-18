@@ -45,6 +45,16 @@ describe("ArticleExhibit", () => {
     expect(screen.getByRole("region", { name: "Long chart, figures" }).getAttribute("tabindex")).toBe("0");
   });
 
+  it("cues a wide table to scroll sideways on narrow screens", () => {
+    const head = ["State", "Institutions", "Lowest", "Median", "Highest"];
+    const { container } = render(
+      <ArticleExhibit exhibit={{ kind: "table", label: "Wide", table: { head, rows: [["GA", "20", "$5", "$30", "$40"]] } }} />,
+    );
+    expect(screen.getByText(/Scroll for more columns/)).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Wide" }).className).toContain("overflow-x-auto");
+    expect(container.querySelector("table")?.className).toContain("min-w-[30rem]");
+  });
+
   it("escapes raw HTML in cells", () => {
     const { container } = render(
       <ArticleExhibit exhibit={{ kind: "table", label: "T", table: { head: ["A"], rows: [["<script>x</script>"]] } }} />,
