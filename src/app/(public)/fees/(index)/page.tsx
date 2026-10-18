@@ -2,13 +2,14 @@ export const dynamic = "force-dynamic";
 import { PAGE_HEADER, PAGE_LEDE } from "@/components/public/page-header";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight, BarChart3, Building2, Lightbulb, Map as MapIcon } from "lucide-react";
+import { ArrowRight, BarChart3, Building2, Lightbulb, Map as MapIcon, X } from "lucide-react";
 import { FEE_FAMILIES, getDisplayName } from "@/lib/fee-taxonomy";
 import { getFeeDefinition } from "@/lib/fee-definitions";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { PRODUCT_NAME, SITE_URL } from "@/lib/constants";
 import { DEMO_REQUEST_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
 import { Logo } from "@/brand/components";
+import { InfoTip } from "@/components/public/info-tip";
 import { getPublicFeeTypes, getPublicSnapshot } from "@/lib/public-stats";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessAllCategories } from "@/lib/access";
@@ -36,14 +37,17 @@ import {
   money,
   parseListState,
   parseSelection,
+  parseStateView,
   placeName,
   selectionHref,
   stateCells,
+  stateRanking,
   statsFor,
   type CompareGroup,
   type IndexInstitution,
   type StateBand,
-  type StateCell,
+  type StateRank,
+  type StateView,
 } from "./index-view";
 
 interface PageProps {
@@ -133,6 +137,9 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
   const takeaways = findings(rows, sel, institutions);
   const usStats = sel.state ? statsFor(rows, sel.fee, null, sel.charter) : stats;
   const cells = stateCells(rows, sel.fee, sel.charter);
+  const stateView = parseStateView(params);
+  const ranking = stateRanking(cells, usStats.median_amount);
+  const picked = sel.state ? ranking.find((r) => r.code === sel.state) ?? null : null;
   const band = activeBin != null ? bandBreakdown(listed) : null;
   // The single most common counted value and its share, for the KPI strip.
   const common = (() => {
@@ -176,7 +183,8 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
       definition: getFeeDefinition(key),
       institutions: n,
       status: n < MIN_INSTITUTIONS_FOR_MEDIAN ? "limited" : "public",
-      href: selectionHref({ fee: key, state: null, charter: "all" }),
+      // A new fee keeps the place and charter already picked, so the reader never starts over.
+      href: selectionHref({ fee: key, state: sel.state, charter: sel.charter }),
     };
   });
 
@@ -236,8 +244,48 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
         </div>
       </section>
 
+      {/* One bar for the whole workspace: the sections, and every filter in force, each removable. */}
+      <div className="sticky top-[57px] z-30 border-b border-border bg-paper/95 backdrop-blur">
+        <div className="mx-auto flex max-w-page flex-wrap items-center gap-x-6 gap-y-1 px-4 py-2 sm:px-6">
+          <nav aria-label="Index sections" className="flex gap-1 text-[14px]">
+            {[
+              { href: "#explorer", label: "Pricing" },
+              { href: "#states", label: "States" },
+              { href: "#institutions", label: "Institutions" },
+              { href: "#catalog", label: "Categories" },
+            ].map((s) => (
+              <a key={s.href} href={s.href} className="inline-flex min-h-9 items-center rounded-full px-3 font-medium text-ink hover:bg-surface-200">
+                {s.label}
+              </a>
+            ))}
+          </nav>
+          <ul aria-label="Filters in force" className="flex min-w-0 flex-wrap items-center gap-1.5 text-[13px]">
+            <li className="inline-flex min-h-8 items-center rounded-full bg-ink px-3 font-semibold text-on-ink">{feeLabel}</li>
+            {[
+              sel.state ? { label: where, clear: selectionHref({ ...sel, state: null }) } : null,
+              sel.charter !== "all" ? { label: CHARTER_LABELS[sel.charter], clear: selectionHref({ ...sel, charter: "all" }) } : null,
+              activeBin != null && sel.bin != null ? { label: buckets[activeBin].label, clear: selectionHref(sel, { bin: "all" }, "institutions") } : null,
+            ]
+              .filter((f): f is { label: string; clear: string } => f != null)
+              .map((f) => (
+                <li key={f.label}>
+                  <Link
+                    href={f.clear}
+                    scroll={false}
+                    aria-label={`Remove ${f.label}`}
+                    className="inline-flex min-h-8 items-center gap-1 rounded-full border border-ink bg-surface-0 pl-3 pr-2 text-ink hover:bg-surface-200"
+                  >
+                    {f.label}
+                    <X aria-hidden="true" className="h-3.5 w-3.5" />
+                  </Link>
+                </li>
+              ))}
+          </ul>
+        </div>
+      </div>
+
       {/* 2. The explorer */}
-      <section id="explorer" aria-labelledby="explorer-heading" className="mx-auto max-w-page scroll-mt-20 px-4 pt-8 sm:px-6 sm:pt-10">
+      <section id="explorer" aria-labelledby="explorer-heading" className="mx-auto max-w-page scroll-mt-32 px-4 pt-8 sm:px-6 sm:pt-10">
         <h2 id="explorer-heading" className={H2}>
           {feeLabel} {sel.state ? `in ${where}` : "across the U.S."}
         </h2>
@@ -271,6 +319,13 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
               {stats.median_amount == null && (
                 <p className="mt-2 text-[13px] text-ink-soft">Fewer than {MIN_INSTITUTIONS_FOR_MEDIAN} institutions publish it here, too few for a median.</p>
               )}
+              {/* Why a category has fewer institutions: schedules not read yet, against schedules that don't list the fee. */}
+              {!sel.state && sel.charter === "all" && summary.institutions > 0 && (
+                <p className="mt-3 text-[12px] text-ink-muted">
+                  {institutions.length.toLocaleString()} of the {summary.institutionsLabel} institutions with a schedule read publish this fee.
+                  {summary.monitored > summary.institutions ? ` Another ${(summary.monitored - summary.institutions).toLocaleString()} are tracked but have no schedule read yet.` : ""}
+                </p>
+              )}
             </figcaption>
             {buckets.length > 0 && (
               <Histogram
@@ -300,7 +355,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
         )}
 
         {institutions.length > 0 && (
-          <div id="institutions" className="mt-8 scroll-mt-20">
+          <div id="institutions" className="mt-8 scroll-mt-32">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
                 <h3 className="text-[18px] font-semibold text-ink">
@@ -412,23 +467,69 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
       </section>
 
       {/* 3. Every state on one map, for the same fee and charter */}
-      <section id="states" aria-labelledby="states-heading" className="mx-auto max-w-page scroll-mt-20 px-4 pt-14 sm:px-6 sm:pt-20">
+      <section id="states" aria-labelledby="states-heading" className="mx-auto max-w-page scroll-mt-32 px-4 pt-14 sm:px-6 sm:pt-20">
         <h2 id="states-heading" className={H2}>
           {feeLabel} by state
         </h2>
         <p className="mt-1 text-[14px] text-ink-muted">
-          Each state&apos;s median against the U.S. median of {usStats.median_amount != null ? money(usStats.median_amount) : "no median"} · {who}, by headquarters. Pick a state to explore it.
+          U.S. median {usStats.median_amount != null ? money(usStats.median_amount) : "not available"} · {who}, by headquarters. Pick a state to filter the whole page to it.
         </p>
-        <StateMap cells={cells} selected={sel.state} hrefFor={(code) => selectionHref({ ...sel, state: code })} feeLabel={feeLabel} />
+        <nav aria-label="State view" className="mt-4 inline-flex rounded-full border border-border bg-surface-0 p-1 text-[13px]">
+          {(
+            [
+              { view: "gap", label: "Against the U.S. median" },
+              { view: "price", label: "State median" },
+            ] as { view: StateView; label: string }[]
+          ).map((v) => (
+            <Link
+              key={v.view}
+              href={selectionHref(sel, v.view === "price" ? { sv: "price" } : {}, "states")}
+              scroll={false}
+              aria-current={stateView === v.view ? "true" : undefined}
+              className={`inline-flex min-h-9 items-center rounded-full px-3 font-medium ${stateView === v.view ? "bg-ink text-on-ink" : "text-ink hover:bg-surface-200"}`}
+            >
+              {v.label}
+            </Link>
+          ))}
+        </nav>
+        {picked && (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-ink bg-surface-0 p-4">
+            <p className="text-[15px] text-ink">
+              <span className="font-semibold">{STATE_NAMES[picked.code]}</span>{" "}
+              {picked.median != null
+                ? `${money(picked.median)} median, ${gapText(picked.gap)}, ${picked.institutions.toLocaleString()} institutions`
+                : `${picked.institutions.toLocaleString()} ${picked.institutions === 1 ? "institution" : "institutions"}, too few for a median`}
+            </p>
+            <p className="flex flex-wrap gap-4 text-[14px]">
+              <a href="#explorer" className={LINK}>
+                Its prices
+              </a>
+              <a href="#institutions" className={LINK}>
+                Its institutions
+              </a>
+              <Link href={selectionHref({ ...sel, state: null }, stateView === "price" ? { sv: "price" } : {}, "states")} scroll={false} className={LINK}>
+                Back to the U.S.
+              </Link>
+            </p>
+          </div>
+        )}
+        <StateMap
+          ranking={ranking}
+          us={usStats.median_amount}
+          view={stateView}
+          selected={sel.state}
+          hrefFor={(code) => selectionHref({ ...sel, state: code }, stateView === "price" ? { sv: "price" } : {}, "states")}
+          feeLabel={feeLabel}
+        />
       </section>
 
       {/* 4. Every category */}
-      <section aria-labelledby="catalog-heading" className="mx-auto max-w-page px-4 pt-14 sm:px-6 sm:pt-20">
+      <section id="catalog" aria-labelledby="catalog-heading" className="mx-auto max-w-page scroll-mt-32 px-4 pt-14 sm:px-6 sm:pt-20">
         <h2 id="catalog-heading" className={H2}>
           Every category in the Index
         </h2>
         <p className="mt-2 max-w-2xl text-[15px] text-ink-soft">
-          Pick any fee to explore it above.
+          Pick any fee to explore it {sel.state || sel.charter !== "all" ? `for ${who} in ${where}` : "above"}.
         </p>
         <div className="mt-6">
           <IndexCatalog entries={catalog} selected={sel.fee} />
@@ -761,33 +862,62 @@ const BAND_STYLE: Record<StateBand, { fill: string; swatch: string; label: strin
   below: { fill: "fill-ink/15", swatch: "bg-ink/15", label: "Below the U.S. median" },
   thin: { fill: "fill-[url(#fees-thin-hatch)]", swatch: "bg-[repeating-linear-gradient(45deg,var(--color-border)_0_2px,transparent_2px_5px)]", label: "Too few institutions for a median" },
 };
+/** Five ordered navy shades for the state-median view, lowest fifth of the range to highest. */
+const PRICE_FILL = ["fill-ink/10", "fill-ink/25", "fill-ink/45", "fill-ink/70", "fill-ink"];
+const PRICE_SWATCH = ["bg-ink/10", "bg-ink/25", "bg-ink/45", "bg-ink/70", "bg-ink"];
+/** Below this many institutions a state median is shown, but marked as a small sample. */
+const SMALL_SAMPLE = 15;
+
+/** "$5.00 above the U.S.", "$2.50 below the U.S.", or "the same as the U.S.". */
+function gapText(gap: number | null): string {
+  if (gap == null) return "no comparison";
+  if (gap === 0) return "the same as the U.S.";
+  return `${money(Math.abs(gap))} ${gap > 0 ? "above" : "below"} the U.S.`;
+}
 
 /**
- * Every state shaded by where its median sits against the U.S. median: three ordered shades of
- * navy, never red, since a higher price is not by itself bad. States without enough institutions
- * are hatched, not shaded. Each state is a link that re-opens the explorer on it.
+ * Every state on a map and in a ranking that read off one ordering. The map shades each state
+ * by its gap from the U.S. median (three navy shades, never red, since a higher price is not by
+ * itself bad) or by its own median (five shades). States without enough institutions are hatched.
+ * The ranking beside it plots every state as a dot, with its institutions, so a state of 8 never
+ * reads like a state of 300. Each state is a link that filters the whole page to it.
  */
 function StateMap({
-  cells,
+  ranking,
+  us,
+  view,
   selected,
   hrefFor,
   feeLabel,
 }: {
-  cells: StateCell[];
+  ranking: StateRank[];
+  us: number | null;
+  view: StateView;
   selected: string | null;
   hrefFor: (code: string) => string;
   feeLabel: string;
 }) {
-  const byCode = new Map(cells.map((c) => [c.code, c]));
-  const ranked = cells.filter((c) => c.median != null).sort((a, b) => b.median! - a.median! || a.code.localeCompare(b.code));
-  const describe = (c: StateCell | undefined, name: string) =>
+  const byCode = new Map(ranking.map((c) => [c.code, c]));
+  const ranked = ranking.filter((c) => c.median != null);
+  const thin = ranking.filter((c) => c.median == null);
+  const describe = (c: StateRank | undefined, name: string) =>
     c?.median != null
-      ? `${name}: ${money(c.median)} median, ${c.institutions.toLocaleString()} institutions`
+      ? `${name}: ${money(c.median)} median, ${gapText(c.gap)}, ${c.institutions.toLocaleString()} institutions`
       : `${name}: ${c?.institutions ?? 0} ${c?.institutions === 1 ? "institution" : "institutions"}, too few for a median`;
+  const fillOf = (c: StateRank | undefined) =>
+    c?.median == null ? BAND_STYLE.thin.fill : view === "price" ? PRICE_FILL[c.step ?? 2] : BAND_STYLE[c.band].fill;
+  // The ranking's scale: gaps around a centred U.S. line, or medians from the lowest to the highest.
+  const medians = ranked.map((c) => c.median!);
+  const lo = medians.length ? Math.min(...medians) : 0;
+  const hi = medians.length ? Math.max(...medians) : 1;
+  const reach = Math.max(...ranked.map((c) => Math.abs(c.gap ?? 0)), 0.01);
+  const pos = (c: StateRank) =>
+    view === "gap" ? 50 + ((c.gap ?? 0) / reach) * 46 : hi > lo ? 4 + ((c.median! - lo) / (hi - lo)) * 92 : 50;
+  const usPos = view === "gap" ? 50 : us != null && hi > lo ? Math.min(Math.max(4 + ((us - lo) / (hi - lo)) * 92, 0), 100) : null;
   return (
-    <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-      <figure className="rounded-2xl border border-border bg-surface-0 p-4 sm:p-6">
-        <svg viewBox="0 0 960 600" className="h-auto w-full" role="img" aria-label={`${feeLabel} medians by state against the U.S. median`}>
+    <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+      <figure className="self-start rounded-2xl border border-border bg-surface-0 p-4 sm:p-6">
+        <svg viewBox="0 0 960 600" className="h-auto w-full" role="img" aria-label={`${feeLabel} ${view === "price" ? "medians" : "against the U.S. median"} by state`}>
           <defs>
             <pattern id="fees-thin-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
               <rect width="6" height="6" className="fill-paper" />
@@ -801,7 +931,7 @@ function StateMap({
               <Link key={st.id} href={hrefFor(st.id)} scroll={false} aria-label={describe(c, st.name)}>
                 <path
                   d={st.d}
-                  className={`${BAND_STYLE[c?.band ?? "thin"].fill} stroke-surface-0 transition-opacity hover:opacity-80 ${isSel ? "stroke-brick" : ""}`}
+                  className={`${fillOf(c)} stroke-surface-0 transition-opacity hover:opacity-80 ${isSel ? "stroke-brick" : ""}`}
                   strokeWidth={isSel ? 3 : 1.25}
                 >
                   <title>{describe(c, st.name)}</title>
@@ -810,57 +940,99 @@ function StateMap({
             );
           })}
         </svg>
-        <figcaption className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-ink-muted">
-          {(Object.keys(BAND_STYLE) as StateBand[]).map((b) => (
-            <span key={b} className="inline-flex items-center gap-1.5">
-              <span className={`inline-block h-3 w-3 rounded-sm border border-border ${BAND_STYLE[b].swatch}`} aria-hidden="true" />
-              {b === "thin" ? `Fewer than ${MIN_INSTITUTIONS_FOR_MEDIAN} institutions` : BAND_STYLE[b].label}
+        <figcaption className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-muted">
+          {view === "price" ? (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="font-mono tabular-nums">{money(lo)}</span>
+              {PRICE_SWATCH.map((s) => (
+                <span key={s} className={`inline-block h-3 w-5 border border-border ${s}`} aria-hidden="true" />
+              ))}
+              <span className="font-mono tabular-nums">{money(hi)}</span>
             </span>
-          ))}
+          ) : (
+            (["above", "same", "below"] as StateBand[]).map((b) => (
+              <span key={b} className="inline-flex items-center gap-1.5">
+                <span className={`inline-block h-3 w-3 rounded-sm border border-border ${BAND_STYLE[b].swatch}`} aria-hidden="true" />
+                {BAND_STYLE[b].label}
+              </span>
+            ))
+          )}
+          <span className="inline-flex items-center gap-1.5">
+            <span className={`inline-block h-3 w-3 rounded-sm border border-border ${BAND_STYLE.thin.swatch}`} aria-hidden="true" />
+            Fewer than {MIN_INSTITUTIONS_FOR_MEDIAN} institutions
+          </span>
         </figcaption>
       </figure>
+
       <div className="self-start rounded-2xl border border-border bg-surface-0 p-4 sm:p-6">
+        <div className="flex items-baseline justify-between gap-3">
+          <p className="text-[15px] font-semibold text-ink">{ranked.length} states ranked</p>
+          <p className="text-[12px] text-ink-muted">{view === "gap" ? "Gap from U.S." : "Median"} · institutions</p>
+        </div>
         {ranked.length === 0 ? (
-          <p className="text-[14px] text-ink-soft">No state has enough institutions for a median yet.</p>
+          <p className="mt-3 text-[14px] text-ink-soft">No state has enough institutions for a median yet.</p>
         ) : (
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-1">
-            {[
-              { title: "Highest state medians", list: ranked.slice(0, 5) },
-              { title: "Lowest state medians", list: ranked.slice(-5).reverse() },
-            ].map(({ title, list }) => (
-              <div key={title}>
-                <p className="text-[13px] font-semibold text-ink">{title}</p>
-                <ol className="mt-2 divide-y divide-border">
-                  {list.map((c) => (
-                    <li key={c.code}>
-                      <Link href={hrefFor(c.code)} scroll={false} className="flex min-h-10 items-center justify-between gap-3 text-[14px] hover:underline">
-                        <span className={c.code === selected ? "font-semibold text-ink" : "text-ink"}>{STATE_NAMES[c.code]}</span>
-                        <span className="font-mono tabular-nums text-ink">{money(c.median!)}</span>
-                      </Link>
-                    </li>
-                  ))}
-                </ol>
-              </div>
-            ))}
-          </div>
-        )}
-        <details className="mt-4 border-t border-border pt-3">
-          <summary className="cursor-pointer text-[13px] font-semibold text-ink">All {cells.length} as a list</summary>
-          <ul className="mt-2 max-h-80 divide-y divide-border overflow-y-auto text-[13px]">
-            {[...cells]
-              .sort((a, b) => STATE_NAMES[a.code].localeCompare(STATE_NAMES[b.code]))
-              .map((c) => (
+          <ol className="mt-3 max-h-[30rem] overflow-y-auto pr-1">
+            {ranked.map((c) => {
+              const isSel = c.code === selected;
+              const small = c.institutions < SMALL_SAMPLE;
+              return (
                 <li key={c.code}>
-                  <Link href={hrefFor(c.code)} scroll={false} className="flex min-h-9 items-center justify-between gap-3 hover:underline">
-                    <span className="text-ink">{STATE_NAMES[c.code]}</span>
-                    <span className="font-mono tabular-nums text-ink-muted">
-                      {c.median != null ? `${money(c.median)} · ${c.institutions.toLocaleString()}` : `${c.institutions} · too few`}
+                  <Link
+                    href={hrefFor(c.code)}
+                    scroll={false}
+                    aria-current={isSel ? "true" : undefined}
+                    aria-label={describe(c, STATE_NAMES[c.code])}
+                    className={`grid min-h-9 grid-cols-[6.5rem_minmax(0,1fr)_3.75rem_2.5rem] items-center gap-2 rounded-lg px-1.5 text-[13px] hover:bg-paper ${isSel ? "bg-paper font-semibold ring-1 ring-ink" : ""}`}
+                  >
+                    <span className="truncate text-ink">{STATE_NAMES[c.code]}</span>
+                    <span className="relative h-4" aria-hidden="true">
+                      <span className="absolute inset-x-0 top-1/2 h-px bg-border" />
+                      {usPos != null && <span className="absolute inset-y-0 w-px bg-brick" style={{ left: `${usPos}%` }} />}
+                      <span
+                        className={`absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-ink ${small ? "bg-surface-0" : "bg-ink"}`}
+                        style={{ left: `${pos(c)}%` }}
+                      />
                     </span>
+                    <span className="text-right font-mono tabular-nums text-ink">
+                      {view === "gap" ? (c.gap === 0 ? "$0" : `${c.gap! > 0 ? "+" : "−"}${money(Math.abs(c.gap!))}`) : money(c.median!)}
+                    </span>
+                    <span className="text-right font-mono tabular-nums text-ink-muted">{c.institutions.toLocaleString()}</span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+        <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border pt-3 text-[12px] text-ink-muted">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="inline-block h-3 w-px bg-brick" aria-hidden="true" /> U.S. median
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="inline-block h-2.5 w-2.5 rounded-full border-2 border-ink bg-surface-0" aria-hidden="true" /> Fewer than {SMALL_SAMPLE} institutions
+          </span>
+        </p>
+        {thin.length > 0 && (
+          <details className="mt-3 border-t border-border pt-3">
+            <summary className="cursor-pointer text-[13px] font-semibold text-ink">
+              {thin.length} {thin.length === 1 ? "state" : "states"} with too few institutions
+            </summary>
+            <ul className="mt-2 flex flex-wrap gap-1.5 text-[13px]">
+              {thin.map((c) => (
+                <li key={c.code}>
+                  <Link
+                    href={hrefFor(c.code)}
+                    scroll={false}
+                    className={`inline-flex min-h-8 items-center gap-1.5 rounded-full border px-2.5 hover:border-ink ${c.code === selected ? "border-ink" : "border-border"}`}
+                  >
+                    {STATE_NAMES[c.code]}
+                    <span className="font-mono text-[11px] tabular-nums text-ink-muted">{c.institutions}</span>
                   </Link>
                 </li>
               ))}
-          </ul>
-        </details>
+            </ul>
+          </details>
+        )}
       </div>
     </div>
   );
@@ -914,7 +1086,7 @@ function InstitutionRow({
               {inst.charter === "credit_union" ? "Credit union" : "Bank"}
               {inst.state ? ` · ${STATE_NAMES[inst.state] ?? inst.state}` : ""}
               {readOn ? ` · read ${READ.format(new Date(`${readOn}T00:00:00Z`))}` : ""}
-              {verified === 0 ? " · not verified" : ""}
+              {verified === 0 ? " · not verified" : verified === listed.length ? " · verified" : ` · ${verified} of ${listed.length} verified`}
             </span>
           </span>
           <span className="shrink-0 text-right">
@@ -941,9 +1113,11 @@ function InstitutionRow({
             </p>
           )}
           {named === 0 && (
-            <p className="text-ink-muted">
-              <span className="font-semibold text-ink">Accounts not identified.</span> The Index hasn&apos;t yet matched each price to
-              its account in the schedule, so these prices can&apos;t be compared account by account.
+            <p className="flex items-center gap-1 text-[12px] text-ink-muted">
+              <span className="rounded-full border border-border px-2 py-0.5">Account mapping unavailable</span>
+              <InfoTip label="About account mapping">
+                The Index hasn&apos;t yet matched each price to its account in the schedule, so these prices can&apos;t be compared account by account.
+              </InfoTip>
             </p>
           )}
           <ul className="divide-y divide-border rounded-xl border border-border bg-paper">
@@ -968,9 +1142,9 @@ function InstitutionRow({
                         &ldquo;{p.evidence.line.replace(/\s*\|\s*/g, " … ").replace(/\s+/g, " ").trim()}&rdquo;
                       </p>
                     ) : (
-                      <p className="text-[12px] text-ink-muted">
-                        <span className="font-semibold text-ink">Not verified.</span> The schedule&apos;s line
-                        {d?.fee_name ? <> (&ldquo;{d.fee_name}&rdquo;)</> : null} doesn&apos;t state {money(p.amount)}.
+                      <p className="text-[12px] text-ink-muted" title={`The schedule's line doesn't state ${money(p.amount)}.`}>
+                        <span className="font-semibold text-ink">Not verified</span>
+                        {d?.fee_name ? <> · &ldquo;{d.fee_name}&rdquo;</> : null}
                       </p>
                     )}
                     {condition && <p className="text-[12px] text-ink-muted">Condition: {condition}</p>}

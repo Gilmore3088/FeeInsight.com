@@ -17,6 +17,8 @@ import {
   selectionHref,
   stateBand,
   stateCells,
+  stateRanking,
+  parseStateView,
   statsFor,
 } from "./index-view";
 
@@ -169,5 +171,26 @@ describe("Bank Fee Index v2 views", () => {
     const b = bandBreakdown(institutionsFor(rows, "overdraft", null, "all"));
     expect(b.banks + b.creditUnions).toBe(12);
     expect(b.states.map((s) => s.code).sort()).toEqual(["FL", "TX"]);
+  });
+
+  it("ranks states with a median first, with each one's gap and price shade", () => {
+    const cells = [
+      { code: "AK", median: null, institutions: 2, band: "thin" as const },
+      { code: "MS", median: 35, institutions: 40, band: "above" as const },
+      { code: "CA", median: 25, institutions: 90, band: "below" as const },
+      { code: "TX", median: 30, institutions: 300, band: "same" as const },
+      { code: "VT", median: null, institutions: 4, band: "thin" as const },
+    ];
+    const ranked = stateRanking(cells, 30);
+    expect(ranked.map((r) => r.code)).toEqual(["MS", "TX", "CA", "VT", "AK"]);
+    expect(ranked[0]).toMatchObject({ gap: 5, step: 4 });
+    expect(ranked[2]).toMatchObject({ gap: -5, step: 0 });
+    expect(ranked[3]).toMatchObject({ gap: null, step: null });
+  });
+
+  it("reads the state view, defaulting to the gap from the U.S. median", () => {
+    expect(parseStateView({})).toBe("gap");
+    expect(parseStateView({ sv: "price" })).toBe("price");
+    expect(parseStateView({ sv: "nonsense" })).toBe("gap");
   });
 });

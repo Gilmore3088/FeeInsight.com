@@ -353,6 +353,49 @@ export function stateCells(rows: IndexRow[], fee: string, charter: Charter): Sta
   });
 }
 
+/** How the state map and ranking show each state: its gap from the U.S. median, or its own median. */
+export type StateView = "gap" | "price";
+
+export function parseStateView(params: Record<string, string | string[] | undefined>): StateView {
+  const v = params.sv;
+  return (Array.isArray(v) ? v[0] : v) === "price" ? "price" : "gap";
+}
+
+/** One row of the state ranking: the state's median, its gap from the U.S. median, and how many count. */
+export interface StateRank extends StateCell {
+  /** Dollars above (+) or below (-) the U.S. median; null without a median. */
+  gap: number | null;
+  /** Price shade from 0 (lowest fifth of state medians) to 4 (highest fifth); null without a median. */
+  step: number | null;
+}
+
+/**
+ * Every state ranked: states with a median first, highest first, then the thin ones by how many
+ * institutions they have. Each carries its gap from the U.S. median and a fifth-of-the-range price
+ * shade, so the map and the ranking can switch between the two views on one ordering.
+ */
+export function stateRanking(cells: StateCell[], us: number | null): StateRank[] {
+  const medians = cells.map((c) => c.median).filter((m): m is number => m != null).sort((a, b) => a - b);
+  const lo = medians[0] ?? 0;
+  const hi = medians[medians.length - 1] ?? 0;
+  const step = (m: number) => (hi > lo ? Math.min(4, Math.floor(((m - lo) / (hi - lo)) * 5)) : 2);
+  return cells
+    .map((c) => ({
+      ...c,
+      gap: c.median != null && us != null ? Math.round((c.median - us) * 100) / 100 : null,
+      step: c.median != null ? step(c.median) : null,
+    }))
+    .sort((a, b) =>
+      a.median != null && b.median != null
+        ? b.median - a.median || b.institutions - a.institutions || a.code.localeCompare(b.code)
+        : a.median != null
+          ? -1
+          : b.median != null
+            ? 1
+            : b.institutions - a.institutions || a.code.localeCompare(b.code),
+    );
+}
+
 /** Who is in one price band: banks against credit unions, and the states with the most of them. */
 export function bandBreakdown(listed: IndexInstitution[], top = 5): { banks: number; creditUnions: number; states: { code: string; count: number }[] } {
   const banks = listed.filter((i) => i.charter === "bank").length;
