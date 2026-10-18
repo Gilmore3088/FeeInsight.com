@@ -238,6 +238,18 @@ describe("v2: a fee priced by the hour only on its own line (#1456)", () => {
     await recheckHourlyFrequencies(asDb(db), { runId: 7, stepId: 70, dryRun: false });
     const update = db.mock.calls.find(([strings]) => (strings as TemplateStringsArray).join("?").includes("UPDATE published_fee_records"));
     expect(update?.[2]).toEqual([101, 102]);
+    // No feedback row or set event names a line-only fee.
+    const writes = db.mock.calls
+      .filter(([strings]) => /pipeline_feedback|hourly_frequency_set/.test((strings as TemplateStringsArray).join("?")))
+      .map((call) => JSON.stringify(call.slice(1)));
+    expect(writes.length).toBeGreaterThan(0);
+    expect(writes.some((text) => /\b20[12]\b/.test(text))).toBe(false);
+  });
+
+  it("exempts a line-only fee whose line names a period", () => {
+    expect(hourlyVerdict("Research", "account_research", null, "Research | $25.00 per hour, billed monthly", 25)).toEqual({ action: "exempt", exemptReason: "period_word", basis: "line" });
+    // A partial hour on the line is no hourly basis at all.
+    expect(hourlyVerdict("Research", "account_research", null, "Research | $10.00 per 15 minutes", 10)).toBeNull();
   });
 
   it("with the line switch on, writes line-only fees too", async () => {

@@ -699,7 +699,7 @@ Darwin owns verification and classification.
   a fee whose name is silent on the hour but whose own stored line prices it by the hour
   ("Account Research Fee $20 per hour") is read too, by `hourlyFromLine` on Knox's `excerpt="..."`,
   which must print the fee's price; the same exemptions apply and matches carry `basis` (`name` or
-  `line`). Line-only fees are written only with `HOURLY_LINE_LIVE` on (off until James sees the
+  `line`); a line-only fee is also exempt for a period word anywhere on its line. Line-only fees are written only with `HOURLY_LINE_LIVE` on (off until James sees the
   count); step detail `would_set_from_line` counts them, and the whole-table count reads any fee
   whose name or line mentions the hour. Prod read Oct 18: 1,894 live fees at 1,433 institutions
   print "$X per/an hour" on their line with a silent name and a non-hourly frequency (a regex
