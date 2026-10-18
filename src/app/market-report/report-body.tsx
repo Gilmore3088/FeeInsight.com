@@ -23,6 +23,8 @@ import { HamiltonClose } from "./[token]/hamilton-close";
 import type { CheckingLineupView } from "@/lib/custom-report/checking-lineup";
 import { CheckingLineupSection } from "./checking-lineup-section";
 import { NamedCompetitorsPhone } from "./named-competitors-phone";
+import { PeerSection } from "./peer-section";
+import type { ReportPeerContext } from "@/lib/custom-report/peer-context";
 
 const SERIF = { fontFamily: "var(--fi-font-sans)" };
 const MONO_FIGURE = { fontFamily: "var(--fi-font-mono)" } as const;
@@ -126,6 +128,8 @@ export interface MarketReportBodyProps {
   branches?: MarketBranchFootprint | null;
   /** The checking account lineup against local competitors; the section is left out when null. */
   lineup?: CheckingLineupView | null;
+  /** Fees and reported figures against institutions of the same size; the section is left out when null. */
+  peers?: ReportPeerContext | null;
   /** "h2" when the page already has its own h1 (the public sample); a page has one h1. */
   titleAs?: "h1" | "h2";
 }
@@ -207,7 +211,7 @@ function RevenueSection({ name, charterType, revenue }: { name: string; charterT
   );
 }
 
-export function MarketReportBody({ report, eyebrow, preparedOn, actions, contactHref, correctionNote, revenue, branches, lineup, titleAs: Title = "h1" }: MarketReportBodyProps) {
+export function MarketReportBody({ report, eyebrow, preparedOn, actions, contactHref, correctionNote, revenue, branches, lineup, peers, titleAs: Title = "h1" }: MarketReportBodyProps) {
   const { data, analysis, savedAt, sinceBought } = report;
   const market = data.market!;
   const droppedCount = Object.values(data.dropped ?? {}).reduce((sum, n) => sum + (n ?? 0), 0);
@@ -346,6 +350,8 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
           {lineup && <CheckingLineupSection name={name} lineup={lineup} live={Boolean(savedAt)} />}
 
           {revenue && <RevenueSection name={name} charterType={data.subject.charter_type} revenue={revenue} />}
+
+          {peers && <PeerSection name={name} peers={peers} />}
 
           {analysis.named.length > 0 && (
             <section className="mt-8 rounded-xl border border-border bg-surface-0 p-4 sm:overflow-x-auto sm:p-6" aria-labelledby="named-heading">
