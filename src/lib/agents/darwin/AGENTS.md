@@ -790,8 +790,9 @@ Darwin owns verification and classification.
   finance charge" or a mortgage's "prepaid items" is not a card. `card_program_document` takes
   every fee on such a document except the card's purchase and reload price (`CARD_PROGRAM_KEEP_KEYS`:
   gift_card_purchase, prepaid_card_reload; `kept_card_purchase`). Its own sub-switch,
-  `CARD_PROGRAM_TAKEDOWN_LIVE`, is off until James's yes on the count: on Oct 18 (prod, read-only)
-  44 live fees on 12 documents at 12 institutions, 4 purchase or reload fees kept. Step detail adds
+  `CARD_PROGRAM_TAKEDOWN_LIVE`, is on since 2026-10-18 (James, "Take them down", 11:34 UTC) on the
+  count: on Oct 18 (prod, read-only) 44 live fees on 12 documents at 12 institutions, 4 purchase or
+  reload fees kept; 35 at switch-on after SchoolsFirst's 9 hand takedowns. Step detail adds
   `card_program_document`, `card_program_documents`, `card_program_institutions`,
   `kept_card_purchase`, `card_program_switch_live` and `samples_card_program_document`. Magellan's
   companion filter skips these documents too. A card program's section inside one fee page (Navy
