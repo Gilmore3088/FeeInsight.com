@@ -90,7 +90,7 @@ describe("NextAction", () => {
       "href",
       "/reports?report=institution&src=methodology#request",
     );
-    expect(screen.getByRole("link", { name: "Or ask for a demo" })).toHaveAttribute("href", "/contact?source=demo");
+    expect(screen.getByRole("link", { name: "Or ask for a demo" })).toHaveAttribute("href", "/for-institutions#demo");
     expect(screen.getByRole("link", { name: "Or look up your own institution" })).toHaveAttribute("href", "/institutions");
   });
 });

@@ -97,6 +97,8 @@ import {
 import { MARKET_GROWTH_DEFINITIONS, MARKET_GROWTH_PARSER_VERSION } from "@/lib/agents/magellan/registry/market-growth";
 import { SMALLBIZ_PAYMENTS_DEFINITIONS, SMALLBIZ_PAYMENTS_PARSER_VERSION } from "@/lib/agents/magellan/registry/smallbiz-payments";
 import { NATIONAL_CREDIT_DEFINITIONS, NATIONAL_CREDIT_PARSER_VERSION } from "@/lib/agents/magellan/registry/national-credit";
+import { BANK_ZELLE_SOURCE } from "@/lib/agents/magellan/registry/bank-zelle";
+import { BANK_ZELLE_MATCHER_VERSION } from "@/lib/agents/magellan/registry/bank-zelle-match";
 import { REGISTRY_SOURCES } from "@/lib/agents/magellan/registry";
 import { isProviderStep } from "@/lib/agents/types";
 import { STATE_BILLS_PARTITION, STATE_BILLS_SOURCE } from "@/lib/agents/magellan/registry/state-bills";
@@ -190,6 +192,7 @@ export const REGISTRY_PARSER_VERSIONS: Record<string, number> = {
   [NIC_STRUCTURE_SOURCE]: NIC_STRUCTURE_PARSER_VERSION,
   [UBPR_PEER_GROUPS_SOURCE]: UBPR_PEER_GROUPS_PARSER_VERSION,
   [CFPB_CARD_AGREEMENTS_SOURCE]: CFPB_CARD_AGREEMENTS_PARSER_VERSION,
+  [BANK_ZELLE_SOURCE]: BANK_ZELLE_MATCHER_VERSION,
 };
 
 /**

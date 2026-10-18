@@ -12,6 +12,12 @@ vi.mock("@/lib/data-store/connection", () => {
   Object.assign(tx, { unsafe: (text: string) => ({ unsafe: text }) });
   return { sql: tx, withTransaction: (cb: (db: typeof tx) => Promise<unknown>) => cb(tx) };
 });
+// Archived quarters (#1870): none unless a test supplies them.
+vi.mock("./cold-reads", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./cold-reads")>()),
+  prunedCallFiles: vi.fn(async () => []),
+  readColdCallRows: vi.fn(async () => ({ rows: [], failed: [] })),
+}));
 vi.mock("@/lib/data-store/economy-aggregates", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/data-store/economy-aggregates")>()),
   getInstitutionHqLocation: vi.fn(),
@@ -30,12 +36,13 @@ vi.mock("@/lib/data-store/peer-sets", async (importOriginal) => ({
   peerSetMemberIds: vi.fn(),
 }));
 
+import { prunedCallFiles, readColdCallRows } from "./cold-reads";
 import { getInstitutionHqLocation } from "@/lib/data-store/economy-aggregates";
 import { getInstitutionFeeRows, getNationalIndexCached, getPeerIndex, getStateFeeIndexes } from "@/lib/data-store/fee-index";
 import { getPeerSubject, peerSetMemberIds, resolvePeerRequest, resolvePeerSet } from "@/lib/data-store/peer-sets";
 import { areaRowServedSql } from "@/lib/data-store/struck-sources";
 import { URBAN_DEBT_ATTRIBUTION } from "@/lib/regulatory/state-lists";
-import { QUERY_DATA_MAX_LIMIT, parseMeasure, periodMonths, queryData, queryDataInputSchema } from "./query-data";
+import { QUERY_DATA_MAX_LIMIT, familyRows, parseMeasure, periodMonths, queryData, queryDataInputSchema } from "./query-data";
 
 const AREA = "area:bls-laus:laus_unemployment_rate";
 const queries = () => calls.filter((c) => !c.text.includes("SET LOCAL"));
@@ -378,11 +385,105 @@ describe("queryData: call-report lines", () => {
     expect(queries()).toHaveLength(before);
   });
 
+  it("adds an archived (pruned) quarter from its cold file, behind the hot quarters, with the same citation", async () => {
+    nextRows = [
+      { period: "2026-06-30", item_code: "RIAD4080", item_description: "SERVICE CHARGES", schedule: "RI", value: 1_234_000, unit: "USD", period_basis: "ytd", source: "ffiec", source_url: "https://cdr.ffiec.gov/x", fetched_at: "2026-08-01T00:00:00Z" },
+    ];
+    const file = { source: "ffiec", period: "2019-06-30", objectKey: "k", rowCount: 1, sha256: "a".repeat(64) };
+    vi.mocked(prunedCallFiles).mockResolvedValueOnce([file, { ...file, source: "ncua", objectKey: "n" }]);
+    vi.mocked(readColdCallRows).mockResolvedValueOnce({
+      rows: [{ institution_id: 12, source: "ffiec", report_date: "2019-06-30", item_code: "RIAD4080", item_key: "service_charges_deposits_ytd", item_description: "SERVICE CHARGES", schedule: "RI", value: 900, unit: "thousands", period_basis: "ytd", source_url: "https://cdr.ffiec.gov/old", fetched_at: "2026-10-17T00:00:00Z" }],
+      failed: [],
+    });
+    const result = await queryData({ measure: CALL, scope: { kind: "institution", id: "12" } });
+    expect(readColdCallRows).toHaveBeenCalledWith([file, expect.objectContaining({ source: "ncua" })], { itemKey: "service_charges_deposits_ytd", institutionIds: [12] });
+    expect(result).toMatchObject({
+      ok: true,
+      rows: [expect.objectContaining({ period: "2026-06-30" }), expect.objectContaining({ period: "2019-06-30", value: 900_000, unit: "USD" })],
+      citation: { source_url: "https://cdr.ffiec.gov/x", as_of: "2026-06-30" },
+    });
+  });
+
+  it("reads no cold file when the hot rows already fill the limit", async () => {
+    nextRows = [{ period: "2026-06-30", item_code: "RIAD4080", item_description: null, schedule: "RI", value: 1, unit: "USD", period_basis: "ytd", source: "ffiec", source_url: null, fetched_at: null }];
+    await queryData({ measure: CALL, scope: { kind: "institution", id: "12" }, limit: 1 });
+    expect(prunedCallFiles).not.toHaveBeenCalled();
+  });
+
   it("shows no median, never zero, for a thin group", async () => {
     vi.mocked(resolvePeerSet).mockResolvedValue(BANKS);
     vi.mocked(peerSetMemberIds).mockResolvedValue([11, 12]);
     nextRows = [{ period: "2026-06-30", unit: "USD", median: 0, p25: 0, p75: 0, institution_count: 2, period_basis: "ytd", sources: ["ffiec"], source_url: null, fetched_at: null }];
     const result = await queryData({ measure: CALL, scope: { kind: "peer_set", peer: { charter_type: "bank" } } });
     expect(result).toMatchObject({ ok: true, rows: [expect.objectContaining({ median: null, p25: null, p75: null, institution_count: 2 })] });
+  });
+});
+
+describe("queryData institution facts (fact:<name>)", () => {
+  const FACT = "fact:offers_zelle";
+
+  it("parses a fact measure", () => {
+    expect(parseMeasure(FACT)).toEqual({ kind: "fact", name: "offers_zelle" });
+    expect(queryDataInputSchema.safeParse({ measure: FACT, scope: { kind: "institution", id: "12" } }).success).toBe(true);
+  });
+
+  it("answers one institution with the sentence and its own document's link", async () => {
+    nextRows = [{ status: "offers", evidence_url: "https://bank.example/fees.pdf", evidence_snippet: "Send money with Zelle® in our app.", read_at: "2026-10-18T10:00:00Z", rule: "send_money_with" }];
+    const result = await queryData({ measure: FACT, scope: { kind: "institution", id: "12" } });
+    expect(result).toMatchObject({
+      ok: true,
+      rows: [{ answer: "yes", evidence: "Send money with Zelle® in our app.", document_url: "https://bank.example/fees.pdf" }],
+      citation: { source_url: "https://bank.example/fees.pdf", as_of: "2026-10-18" },
+    });
+    expect(lastQuery().values).toEqual([12, "zelle"]);
+  });
+
+  it("says unknown, never no, when no document names the service", async () => {
+    nextRows = [];
+    const result = await queryData({ measure: FACT, scope: { kind: "institution", id: "12" } });
+    expect(result).toMatchObject({ ok: true, rows: [] });
+    if (result.ok) expect(result.note).toContain("not known");
+  });
+
+  it("refuses other scopes and unknown facts without a query", async () => {
+    const state = await queryData({ measure: FACT, scope: { kind: "state", id: "TX" } });
+    expect(state.ok).toBe(false);
+    const unknown = await queryData({ measure: "fact:offers_venmo", scope: { kind: "institution", id: "12" } });
+    expect(unknown.ok).toBe(false);
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe("queryData corporate family", () => {
+  type Node = Parameters<typeof familyRows>[0];
+  const node = (lei: string, children: Node[] = [], institutionId: number | null = null): Node => ({
+    lei,
+    legal_name: `Entity ${lei}`,
+    jurisdiction: null,
+    legal_country: "US",
+    entity_status: "ACTIVE",
+    registration_status: "ISSUED",
+    direct_parent_lei: null,
+    rssd_id: null,
+    institution_id: institutionId,
+    institution_name: institutionId ? "Tracked Bank" : null,
+    link_method: null,
+    has_record: true,
+    children,
+  });
+
+  it("parses family:lei and refuses it outside one institution, before any SQL", async () => {
+    expect(parseMeasure("family:lei")).toEqual({ kind: "family" });
+    calls.length = 0;
+    expect(await queryData({ measure: "family:lei", scope: { kind: "state", id: "TX" } })).toMatchObject({ ok: false, reason: expect.stringContaining("one institution") });
+    expect(calls).toEqual([]);
+  });
+
+  it("names each member's relation to the institution", () => {
+    const tree = node("HOLDCO", [node("MID", [node("BANK", [node("SUB")], 7)]), node("OTHER")]);
+    const rows = familyRows(tree, new Set(["BANK"]));
+    const relation = Object.fromEntries(rows.map((r) => [r.lei, r.relation]));
+    expect(relation).toEqual({ HOLDCO: "ultimate_parent", MID: "parent", BANK: "subject", SUB: "subsidiary", OTHER: "affiliate" });
+    expect(rows.find((r) => r.lei === "SUB")).toMatchObject({ depth: 3, parent_lei: "BANK" });
   });
 });

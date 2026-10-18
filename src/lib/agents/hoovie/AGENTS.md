@@ -41,6 +41,32 @@ the storage step's summary names the held sources and the morning brief warns Ja
 when the table is measured back under budget or a PR raises the budget. Never delete data to get
 under a budget. A new table in a contract gets the default budget unless one is set.
 
+## Storage tiers (#1870)
+
+Hot data stays in Postgres; older periods can live in compressed files in R2 (the document
+vault's account and bucket, under `public-data-cold/`, or `R2_COLD_BUCKET`). The policy is in
+`storage-tiers.ts`:
+
+| Table | Hot | Cold |
+|---|---|---|
+| `institution_call_report_items` | newest 8 report dates per source (`ffiec`, `ncua`) | every older report date, one file per source and date |
+| `area_statistics` | all of it | not tiered yet: 29 sources, three period shapes and struck-row rules need a per-source policy first |
+
+- **Plan (runs daily).** In Atlas's storage step, on its one connection with a 10 s statement
+  timeout: lists each source's report dates (a loose index scan), counts at most
+  `PLAN_COUNTS_PER_RUN` uncounted cold dates a run (counts carry over in the step's
+  `detail.cold_tier.counts`) and estimates the MB a prune would free. Read-only.
+- **Export (off).** `COLD_EXPORT_LIVE` writes the oldest cold date without a file to
+  `cold-files.ts`'s `jsonl.gz` format, reads it back, checks the SHA-256 and row count, and records
+  one verified row in `public_data_cold_files`. At most one date a run. It writes no existing row.
+  Turned on by PR after James's yes.
+- **Prune (not built).** Removing the hot rows of a verified file is a production data change and
+  waits for James's yes, with the plan's dry-run count and size. Before it, the loaders' first
+  quarters must sit at or after the cold boundary, or a re-read loads the pruned rows again.
+- **Read.** `src/lib/data-catalog/cold-reads.ts`: `queryData`'s `call:` measures read a date from its
+  file only when its index row has `pruned_at` set, behind the hot rows, through the same citation,
+  at most four files a question, each checked against its index row first.
+
 ## Rules
 
 - Free, public sources only. Use no proxies and no spoofed user agents.
@@ -74,6 +100,31 @@ James's rule (2026-10-17): "Let's get the data first." The order follows the pub
    a zod-checked measure and scope, bound parameters only, and a refusal with a plain reason for
    anything not servable. Wiring it into Hamilton's chat tools is a separate PR.
 6. Shared roll-ups by peer, state, metro and size (`src/lib/peer-set-dimensions.ts`).
+
+## Offers Zelle, from each institution's own documents (#1875)
+
+Zelle's participant list was struck on 2026-10-17 (#1840): its terms allow only personal,
+non-commercial use. `registry-bank-zelle` (`magellan/registry/bank-zelle.ts`) reads the fact
+from each institution's own documents the pipeline already stores (the current copy in
+`source_documents`, its text in `agent_source_texts`) and fetches nothing. A document on
+Zelle's own sites (`ZELLE_LIST_HOSTS`, `struck-sources.ts`) is never read or cited.
+
+- Rules (`bank-zelle-match.ts`, `BANK_ZELLE_MATCHER_VERSION`): deterministic text, no model call.
+  Each sentence that names Zelle is read as offers (a fee or limit line, "send money with Zelle",
+  enrolling, Zelle in "our" app, the brand notice a participant prints), does not offer (only a
+  plain, unconditional "not offered": any condition or scope such as "until", "on weekends", "to
+  recipients outside the U.S." or "at this time" makes it a mention) or a mention (scam and safety
+  warnings such as "never send money with Zelle to someone you don't know"; "only" and "trust" count only as "only send ... to" and "know and trust"; app lists). "Send
+  money with Zelle" counts as offers only beside "our app", "your account" or enrolling. Offers only
+  is `offers`; does-not-offer only is `does_not_offer`; both, or mentions only, is `unclear`. No
+  mention means no row: silence is never "does not offer".
+- Rows (`institution_payment_features`, feature `zelle`) carry the evidence sentence and the
+  link to the institution's own document.
+- Bounded: one partition (`current`) walks institutions in id order, 300 per run, every query
+  under a 30 s statement timeout; the next batch runs an hour later, and a finished pass waits a
+  week. A new matcher version restarts the pass.
+- Read through `queryData` as `fact:offers_zelle`, one institution at a time (yes, no or unclear,
+  with the document link). The catalog licence is `fee-insight`, as for the published fees.
 
 ## Daily health check (contract)
 
@@ -122,3 +173,21 @@ and new runs alike and a run queued before the switch is reused, not doubled.
 reads the `hoovie` row once per process (`registryLedgerAgent` in `registry-scheduler.ts`). While
 the row is missing, or the read fails, runs keep the name `magellan` and record why in
 `params_json.ledger_agent_fallback`.
+
+## LEI links (#1868)
+
+The `gleif` source's `lei-match-*` partitions (`magellan/registry/gleif-lei-match.ts`) link each
+tracked bank and credit union to its GLEIF LEI in `institution_lei_links`, with the basis:
+the institution's own LEI, then the record GLEIF holds under the Fed's National Information
+Center (RSSD), the FDIC (cert) or the NCUA (charter), each authority found by name in GLEIF's
+list, then one record with the exact legal name in the institution's state. A name alone never
+links; two candidates are never settled by picking one. Rows with status `ambiguous` or
+`unmatched` are the one review queue. A key link replaces a name link; two keys that disagree go
+to review. `getLeiLinkCoverage` gives the share linked; Hamilton reads a family through
+`queryData` with measure `family:lei`.
+
+Database load: every statement runs under a 15 s statement timeout, writes go in chunks of 250,
+and one run writes at most 1,000 changed rows (key partitions) or 60 institutions (name search,
+one GLEIF call a second). Leftover work waits for the next run of the partition, an hour or two
+later; a register longer than 75 pages is walked over several runs (`detail.walk_resume`), and
+only a walk that read every page in one run may clear a link its key no longer finds.

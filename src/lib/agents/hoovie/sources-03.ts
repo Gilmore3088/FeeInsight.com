@@ -35,7 +35,10 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
   },
   {
     // magellan/registry/gleif.ts, regulatory/gleif.ts (api.gleif.org level 1 API; goldencopy.gleif.org level 2 RR file;
-    // GLEIF_LICENSE_NOTE). Level 1 is the API; level 2 is a streamed golden-copy file.
+    // GLEIF_LICENSE_NOTE). Level 1 is the API; level 2 is a streamed golden-copy file. The lei-match-*
+    // partitions (magellan/registry/gleif-lei-match.ts, #1868) link institutions to LEIs by RSSD, FDIC cert,
+    // NCUA charter (the registered id under each regulator's GLEIF registration authority), else exact
+    // legal name plus state; unmatched and ambiguous institutions stay in institution_lei_links for review.
     source: "gleif",
     loader: "gleif",
     publisher: "Global Legal Entity Identifier Foundation (GLEIF)",
@@ -47,8 +50,8 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     connection: "rest-api",
     cadence: "irregular",
     grain: ["institution", "holding-company"],
-    linkKeys: ["lei", "rssd"],
-    tables: ["gleif_relationships", "gleif_entities"],
+    linkKeys: ["lei", "rssd", "fdic-cert", "ncua-charter", "institution-name", "state"],
+    tables: ["institution_lei_links", "gleif_relationships", "gleif_entities"],
   },
   {
     // magellan/registry/state-lists.ts (runRegistryStateNonbankLenders), regulatory/state-lists.ts (Socrata
@@ -327,5 +330,21 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     grain: ["document"],
     linkKeys: [],
     tables: ["reg_wire_research"],
+  },
+  {
+    // magellan/registry/bank-zelle.ts, bank-zelle-match.ts (#1875): reads the current copy of each institution's own
+    // stored documents (source_documents, agent_source_texts); fetches nothing. Never Zelle's participant list (struck #1840).
+    source: "bank-zelle",
+    loader: "bank-zelle",
+    publisher: "Each institution's own website and fee schedule",
+    licence: {
+      status: "fee-insight",
+      note: "Fee Insight's own reading of the documents the published fees come from. Each row is one fact with one evidence sentence and the link to the institution's own document. Zelle's participant list is never read (struck 2026-10-17, #1840).",
+    },
+    connection: "derived",
+    cadence: "weekly",
+    grain: ["institution"],
+    linkKeys: [],
+    tables: ["institution_payment_features"],
   },
 ];

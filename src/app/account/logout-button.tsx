@@ -4,7 +4,7 @@ export function LogoutButton() {
   return (
     <SignOutForm
       next="/login"
-      buttonClassName="inline-flex min-h-9 items-center rounded-md border border-border bg-white px-3 text-[13px] font-medium text-ink hover:border-brick hover:text-brick transition-colors"
+      buttonClassName="inline-flex min-h-11 items-center rounded-md border border-control-border bg-surface-0 px-4 text-[14px] font-medium text-ink transition-colors hover:bg-surface-200"
     />
   );
 }

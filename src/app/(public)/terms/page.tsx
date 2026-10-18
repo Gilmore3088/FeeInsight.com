@@ -12,13 +12,6 @@ export default function TermsPage() {
   return (
     <div className="mx-auto max-w-3xl px-6 py-14">
       <header className={PAGE_HEADER}>
-        <div className="flex items-center justify-center gap-2 mb-4 sm:justify-start">
-          <span className="h-px w-8 bg-brick/40" />
-          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
-            Legal
-          </span>
-        </div>
-
         <h1
           className="font-extrabold text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-ink"
           style={{ fontFamily: "var(--fi-font-sans)" }}

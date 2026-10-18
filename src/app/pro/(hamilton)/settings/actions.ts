@@ -251,7 +251,7 @@ export async function revokeWorkspaceAccess(
     return { success: false, error: "Only institution owners or admins can revoke workspace access." };
   }
 
-  const rows = await sql<Array<{ user_id: number; membership_role: string }>>`
+  const rows = await sql<Array<{ user_id: number | string; membership_role: string }>>`
     SELECT user_id, membership_role
     FROM institution_workspace_memberships
     WHERE id = ${parsed.data.membership_id}
@@ -261,7 +261,8 @@ export async function revokeWorkspaceAccess(
   `;
   const target = rows[0];
   if (!target) return { success: false, error: "Active workspace membership not found." };
-  if (target.user_id === user.id) {
+  // user_id is a bigint and arrives as text ("26"); user.id is a number (#1970).
+  if (Number(target.user_id) === user.id) {
     return { success: false, error: "You cannot revoke your own active workspace access here." };
   }
   if (target.membership_role === "owner" && user.role !== "admin") {

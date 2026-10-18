@@ -595,6 +595,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `REMITTANCE_PARSER_VERSION` | — | v2 (reads the RPW xlsx workbook found on the World Bank data page, no env var needed; `WORLD_BANK_RPW_CSV_URL` is an optional override; refuses a file over 50 MB as `rpw_file_too_large`) | `magellan/registry/economy.ts` (world-bank-remittance-prices) |
 | `ALLTHEPLACES_PARSER_VERSION` | — | v1 | `magellan/registry/alltheplaces.ts` |
 | `GLEIF_PARSER_VERSION` | — | v1 | `magellan/registry/gleif.ts` |
+| `LEI_MATCH_PARSER_VERSION` | — | v1 | `magellan/registry/gleif-lei-match.ts` |
 | `MAKING_ENDS_MEET_PARSER_VERSION` | — | v1 (questions found by codebook wording; weight named in the codebook) | `magellan/registry/making-ends-meet.ts` |
 | `PAYDAY_REPORTS_PARSER_VERSION` | — | v1 | `magellan/registry/payday-reports.ts` |
 | `STATE_LISTS_PARSER_VERSION` | — | v1 | `magellan/registry/state-lists.ts` (shared empty-partition record; state-nonbank-lenders) |
@@ -611,6 +612,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NATIONAL_CREDIT_PARSER_VERSION` | — | v4 (national-series read from the Fed Board's H.8 package (Z.1 not read yet), charge-off and delinquency table and SLOOS chart data, not FRED; FDIC national rates dropped; v3 struck Freddie Mac PMMS and the Philadelphia Fed card series) | `magellan/registry/national-credit.ts` (national-series, nyfed-household-debt, nyfed-sce-credit, cfpb-credit-trends) |
 | `INDUSTRY_EVENTS_PARSER_VERSION` | — | v3 (CourtListener fee lawsuits removed; v2 reads H.2 release links when relative) | `magellan/registry/industry-events.ts` |
 | `PAYMENT_NETWORKS_PARSER_VERSION` | — | v1 | `magellan/registry/payment-networks.ts` |
+| `BANK_ZELLE_MATCHER_VERSION` | — | v1 (offers Zelle from each institution's own stored documents, #1875) | `magellan/registry/bank-zelle-match.ts` |
 | `HMDA_PARSER_VERSION` | — | v2 (reads the public LAR's "derived_msa-md" header) | `magellan/registry/hmda.ts` |
 | `HMDA_APOR_PARSER_VERSION` | — | v2 | `magellan/registry/hmda.ts` |
 | `DESIGNATION_LISTS_PARSER_VERSION` | — | v2 (Bank On list removed) | `magellan/registry/designation-lists.ts` |

@@ -62,6 +62,7 @@ import { STATE_REGULATORS_PARTITION, STATE_REGULATORS_SOURCE, runRegistryStateRe
 import { STATE_REG_NEWS_PARTITION, STATE_REG_NEWS_SOURCE, runRegistryStateRegNews } from "./state-reg-news";
 import { STATE_BILL_NEWS_PARTITION, STATE_BILL_NEWS_SOURCE, runRegistryStateBillNews } from "./state-bill-news";
 import { WIRE_RESEARCH_PARTITION, WIRE_RESEARCH_SOURCE, WIRE_RESEARCH_STEP_KEY, runRegistryWireResearch } from "./wire-research";
+import { BANK_ZELLE_PARTITION, BANK_ZELLE_SOURCE, runRegistryBankZelle } from "./bank-zelle";
 
 /**
  * Magellan regulatory registry: deterministic, run-ledger-visible ingestion of
@@ -886,16 +887,18 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
   {
     source: GLEIF_SOURCE,
     stepKey: "registry-gleif",
-    title: "Pull GLEIF legal entities (level 1) and parent relationships (level 2) for tracked institutions",
+    title: "Link tracked institutions to GLEIF LEIs, then pull GLEIF legal entities (level 1) and parent relationships (level 2)",
     run: async (input) => {
       const r = await runRegistryGleif({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
       return {
         summary: r.empty
           ? `No GLEIF rows for ${r.partitionKey}: ${r.emptyReason}.`
+          : r.leiMatch
+            ? `GLEIF LEI match ${r.partitionKey}: ${n(r.leiMatch.read)} ${r.leiMatch.basis === "name_state" ? "institutions searched" : "GLEIF records read"}, ${n(r.leiMatch.changes)} link changes, ${n(r.writtenRows)} written${r.leiMatch.remaining > 0 ? ", more next run" : ""}${r.leiMatch.coverage ? `; ${n(r.leiMatch.coverage.linked)} of ${n(r.leiMatch.coverage.institutions)} institutions linked` : ""}${dry(r.dryRun)}.`
           : r.partitionKey === "level2"
             ? `Magellan read ${n(r.relationships)} GLEIF parent relationships for ${n(r.seeds)} tracked LEIs (publish ${r.publishDate}), ${n(r.writtenRows)} written${dry(r.dryRun)}.`
             : `Magellan read ${n(r.entities)} GLEIF entities for ${r.partitionKey}: ${n(r.linked)} linked, ${n(r.unlinked)} unlinked, ${n(r.writtenRows)} written${dry(r.dryRun)}.`,
-        detail: { source_url: r.sourceUrl, publish_date: r.publishDate, seeds: r.seeds, entities: r.entities, relationships: r.relationships, linked: r.linked, unlinked: r.unlinked, written_rows: r.writtenRows, missing_fields: r.missingFields, checks: r.checks, empty: r.empty, empty_reason: r.emptyReason },
+        detail: { source_url: r.sourceUrl, publish_date: r.publishDate, seeds: r.seeds, entities: r.entities, relationships: r.relationships, linked: r.linked, unlinked: r.unlinked, written_rows: r.writtenRows, missing_fields: r.missingFields, checks: r.checks, ...(r.leiMatch ? { lei_match: { basis: r.leiMatch.basis, proposals: r.leiMatch.proposals, changes: r.leiMatch.changes, remaining: r.leiMatch.remaining, coverage: r.leiMatch.coverage, ...r.leiMatch.detail } } : {}), empty: r.empty, empty_reason: r.emptyReason },
       };
     },
   },
@@ -1306,6 +1309,34 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
           budget_waiting: r.items.filter((i) => i.outcome === "budget_stopped").length,
           cost_microusd: r.costMicrousd,
           items: r.items,
+        },
+      };
+    },
+  },
+  {
+    source: BANK_ZELLE_SOURCE,
+    stepKey: "registry-bank-zelle",
+    title: "Read whether each institution offers Zelle from its own documents",
+    fixedPartition: BANK_ZELLE_PARTITION,
+    run: async (input) => {
+      const r = await runRegistryBankZelle({ runId: input.runId, dryRun: input.dryRun, db: input.db });
+      const next = r.passFinished ? "the pass is finished and starts again in a week" : `the next run starts after institution ${r.cursorTo}`;
+      return {
+        summary: `Hoovie read ${n(r.documentsRead)} current documents of ${n(r.institutionsRead)} institutions for Zelle: ${n(r.documentsNamingZelle)} name it; ${n(r.offers)} institutions offer it, ${n(r.doesNotOffer)} say they do not, ${n(r.unclear)} unclear; ${n(r.written)} rows written, ${n(r.removed)} removed; ${next}${dry(r.dryRun)}.`,
+        detail: {
+          matcher_version: r.matcherVersion,
+          cursor_from: r.cursorFrom,
+          cursor_to: r.cursorTo,
+          pass_finished: r.passFinished,
+          institutions_read: r.institutionsRead,
+          documents_read: r.documentsRead,
+          documents_naming_zelle: r.documentsNamingZelle,
+          documents_skipped: r.documentsSkipped,
+          offers: r.offers,
+          does_not_offer: r.doesNotOffer,
+          unclear: r.unclear,
+          written: r.written,
+          removed: r.removed,
         },
       };
     },

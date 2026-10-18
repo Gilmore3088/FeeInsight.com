@@ -49,6 +49,14 @@ describe("createReadBudget", () => {
     expect(console.error).toHaveBeenCalledWith("Test page complaints failed:", expect.any(Error));
   });
 
+  it("reports whether any optional read fell back, so a cached page can expire early", async () => {
+    const budget = createReadBudget(1_000, "Test page");
+    await budget.optional(Promise.resolve("ok"), "fees", "fallback");
+    expect(budget.failed()).toBe(false);
+    await budget.optional(Promise.reject(new Error("timeout")), "complaints", null);
+    expect(budget.failed()).toBe(true);
+  });
+
   it("shares one deadline across reads started at different times", async () => {
     const budget = createReadBudget(1_000, "Test page");
     await vi.advanceTimersByTimeAsync(700);

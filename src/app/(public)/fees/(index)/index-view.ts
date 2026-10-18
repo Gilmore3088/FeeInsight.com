@@ -255,6 +255,11 @@ export function countedAs(fee: string): {
       };
 }
 
+/** What the histogram's $0 bar counts, in the words the shared definition uses (#1955). */
+export function zeroBarNote(fee: string): string {
+  return `$0 bar: institutions whose ${HIGHEST_TIER_CATEGORIES.has(fee) ? "highest" : "middle"} published price is $0.`;
+}
+
 export function money(n: number): string {
   return Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`;
 }

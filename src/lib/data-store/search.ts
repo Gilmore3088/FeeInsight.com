@@ -1,4 +1,5 @@
 import { sql } from "./connection";
+import { boundedSearchTerm, escapeLikePattern } from "@/lib/api-hardening/query-caps";
 import { statsRowFilter } from "./fee-stats";
 import {
   classifyInstitutionQuality,
@@ -236,7 +237,7 @@ export async function searchInstitutions(params: {
   if (params.query && params.query.trim().length >= 2) {
     paramIdx++;
     conditions.push(`ct.institution_name ILIKE $${paramIdx}`);
-    queryParams.push(`%${params.query.trim()}%`);
+    queryParams.push(`%${escapeLikePattern(params.query.trim())}%`);
   }
   if (params.state_code) {
     paramIdx++;
@@ -364,7 +365,12 @@ export function institutionSearchPatterns(query: string): { pattern: string; squ
   const squashedTerm = squashName(term);
   const short = squashedTerm.replace(/\s+bank$/, "");
   const alias = SHORT_NAMES[squashedTerm] ?? SHORT_NAMES[short] ?? SHORT_NAMES[short.replace(/&/g, "")];
-  return { pattern: `%${term}%`, squashed: `%${squashedTerm}%`, aliases: alias ? [`${alias}%`] : [] };
+  // The typed term is matched literally (`%` and `_` escaped). A term with under two letters or
+  // digits once punctuation is dropped would squash to `%%` and match every institution, so its
+  // squashed pattern falls back to the literal one.
+  const pattern = `%${escapeLikePattern(term)}%`;
+  const squashed = squashedTerm.replace(/[^a-z0-9]/g, "").length >= 2 ? `%${squashedTerm}%` : pattern;
+  return { pattern, squashed, aliases: alias ? [`${alias}%`] : [] };
 }
 
 // Matches the typed name, the name with punctuation dropped, or a short name's registry prefix.
@@ -372,9 +378,16 @@ const NAME_MATCH = `(ct.institution_name ILIKE $1
   OR regexp_replace(lower(ct.institution_name), '[^a-z0-9& ]+', '', 'g') LIKE $4
   OR ct.institution_name ILIKE ANY($5::text[]))`;
 
+/** An autocomplete list is a handful of suggestions: 1 to 25 rows, whatever a caller passes. */
+export const AUTOCOMPLETE_MAX_ROWS = 25;
+function clampAutocompleteLimit(limit: number): number {
+  return Number.isFinite(limit) ? Math.min(Math.max(1, Math.floor(limit)), AUTOCOMPLETE_MAX_ROWS) : 8;
+}
+
 export async function autocompleteInstitutions(query: string, limit = 8): Promise<InstitutionSearchResult[]> {
-  if (!query || query.trim().length < 2) return [];
-  const term = query.trim();
+  // Bounded and literal: at most 100 characters, at least two letters or digits.
+  const term = boundedSearchTerm(query);
+  if (!term) return [];
   const { pattern, squashed, aliases } = institutionSearchPatterns(term);
   const rows = await sql.unsafe<InstitutionSearchRow[]>(
     `${searchQualityCte(`SELECT ct.id FROM institution_sources ct WHERE ${NAME_MATCH}`)}
@@ -418,7 +431,7 @@ export async function autocompleteInstitutions(query: string, limit = 8): Promis
       ) DESC,
       ct.institution_name ASC
     LIMIT $3`,
-    [pattern, term, limit, squashed, aliases],
+    [pattern, term, clampAutocompleteLimit(limit), squashed, aliases],
   );
   return rows.map(mapInstitutionSearchRow);
 }

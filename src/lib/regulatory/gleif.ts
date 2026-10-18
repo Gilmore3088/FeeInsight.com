@@ -29,9 +29,18 @@ export const GLEIF_LICENSE_NOTE = "GLEIF data, CC0 1.0 under GLEIF's terms of us
 export const GLEIF_LEVEL2_PARTITION = "level2";
 export const GLEIF_LEVEL1_SHARDS = 8;
 
-/** Level 2 first, so the level-1 shards also pick up the parents and siblings it names. */
+/**
+ * LEI matching for tracked institutions (#1868), keys before the name search. Only the
+ * partition keys live here; the matching is gleif-lei-match.ts.
+ */
+export const GLEIF_LEI_MATCH_PARTITIONS = ["lei-match-rssd", "lei-match-fdic", "lei-match-ncua", "lei-match-name"] as const;
+
+/**
+ * LEI matching first, so level 2 has LEIs to look up; then level 2, so the level-1 shards also
+ * pick up the parents and siblings it names.
+ */
 export function gleifPartitions(): string[] {
-  return [GLEIF_LEVEL2_PARTITION, ...Array.from({ length: GLEIF_LEVEL1_SHARDS }, (_, i) => `level1-${i}`)];
+  return [...GLEIF_LEI_MATCH_PARTITIONS, GLEIF_LEVEL2_PARTITION, ...Array.from({ length: GLEIF_LEVEL1_SHARDS }, (_, i) => `level1-${i}`)];
 }
 
 export function level1ShardOf(partitionKey: string): number | null {

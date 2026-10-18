@@ -10,6 +10,16 @@ import {
   PRO_DIGEST_UNSUBSCRIBE_ACTION,
   SUBSCRIPTION_API_PATH,
 } from "@/lib/email/subscription-paths";
+import {
+  UTILITY_CARD,
+  UTILITY_FORM,
+  UTILITY_HINT,
+  UTILITY_LABEL,
+  UTILITY_LINK,
+  UTILITY_SELECT,
+  UTILITY_SUBMIT,
+  utilityNotice,
+} from "@/components/utility/form-style";
 
 type PreferenceAction =
   | SubscriptionAction
@@ -72,61 +82,54 @@ export function SubscriptionActionForm({
         return;
       }
       const body = (await resp.json().catch(() => ({}))) as { error?: string };
-      setError(body.error ?? "Something went wrong — try again.");
+      setError(body.error ?? "Something went wrong. Try again.");
       setStatus("error");
     } catch {
-      setError("Something went wrong — try again.");
+      setError("Something went wrong. Try again.");
       setStatus("error");
     }
   }
 
   if (status === "done") {
     return (
-      <p className="mt-4 text-[15px] leading-relaxed text-ink" role="status">
-        {copy.done} <strong>{email}</strong>.
+      <div className={`${UTILITY_CARD} space-y-3`} role="status">
+        <p className="text-[15px] leading-relaxed text-ink">
+          {copy.done} <strong>{email}</strong>.
+        </p>
         {action === "confirm" ? (
-          <span className="mt-4 block text-[14px] text-ink-soft">
+          <p className="text-[14px] leading-relaxed text-ink-soft">
             While you wait for the first one:{" "}
-            <Link href="/reports/benchmark/national" className="text-brick underline">open the national report</Link>
+            <Link href="/reports/benchmark/national" className={UTILITY_LINK}>open the national report</Link>
             {" "}or{" "}
-            <Link href="/research" className="text-brick underline">see your state&apos;s fees</Link>.
-          </span>
+            <Link href="/research" className={UTILITY_LINK}>see your state&apos;s fees</Link>.
+          </p>
         ) : null}
-      </p>
+      </div>
     );
   }
 
   return (
-    <div className="mt-4 space-y-4">
+    <div className={UTILITY_FORM}>
       <p className="text-[15px] leading-relaxed text-ink-soft">
         {copy.prompt} <strong className="text-ink">{email}</strong>?
       </p>
       {action === "confirm" ? (
-        <div className="space-y-1">
-          <label htmlFor="preferences-state" className="block text-[13px] text-ink-soft">
-            Pick your state to also get its numbers each month.
+        <div>
+          <label htmlFor="preferences-state" className={UTILITY_LABEL}>
+            Your state
           </label>
-          <StateSelect
-            id="preferences-state"
-            value={state}
-            onChange={setState}
-            className="w-full max-w-xs rounded-md border border-border bg-paper px-3 py-2 text-[14px] text-ink focus:outline-none focus:ring-1 focus:ring-brick/30"
-          />
+          <StateSelect id="preferences-state" value={state} onChange={setState} className={UTILITY_SELECT} />
+          <p className={UTILITY_HINT}>Pick your state to also get its numbers each month.</p>
         </div>
       ) : null}
-      <button
-        type="button"
-        onClick={submit}
-        disabled={status === "loading"}
-        className="rounded-md bg-brick px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brick-ink disabled:opacity-50"
-      >
-        {status === "loading" ? "Saving…" : copy.button}
-      </button>
       {status === "error" && (
-        <p className="text-[13px] text-red-600" role="alert">
+        <p className={utilityNotice("error")} role="alert">
           {error}
         </p>
       )}
+      <button type="button" onClick={submit} disabled={status === "loading"} className={UTILITY_SUBMIT}>
+        {status === "loading" ? "Saving…" : copy.button}
+      </button>
     </div>
   );
 }
