@@ -8,6 +8,7 @@ import {
   STATS_ROW_FILTER,
   businessSourceSql,
   statsRowFilter,
+  safeDepositServiceSql,
   sharedScheduleRepresentatives,
   countedAmounts,
   countedInstitutionCount,
@@ -21,6 +22,7 @@ import {
   STATS_METHOD_VERSION,
 } from "./fee-stats";
 import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL, isBusinessOnlyLink } from "@/lib/agents/magellan/link-coverage";
+import { SAFE_DEPOSIT_SERVICE_SQL } from "@/lib/fee-comparability";
 
 function rowsFor(amounts: (number | string | null)[], charter = "bank") {
   return amounts.map((amount, index) => ({ institution_id: index + 1, amount, charter_type: charter }));
@@ -187,6 +189,14 @@ it("shares the same audience boundary across SQL aliases without filtering out z
   expect(() => statsRowFilter("c; SELECT 1")).toThrow("Invalid statistics table alias");
 });
 
+it("leaves safe deposit service charges out of every median, on any alias (#1816, rule 8)", () => {
+  const predicate = statsRowFilter("c");
+  expect(predicate).toContain(`AND NOT ${safeDepositServiceSql("c")}`);
+  expect(safeDepositServiceSql("c")).toContain("c.fee_category = 'safe_deposit_box'");
+  expect(safeDepositServiceSql("c")).toContain(`COALESCE(c.fee_name, '') ~* '${SAFE_DEPOSIT_SERVICE_SQL}'`);
+  expect(STATS_ROW_FILTER).toContain("ef.fee_category = 'safe_deposit_box'");
+});
+
 describe("count once: sibling charters sharing one schedule (#1441, rule 7)", () => {
   // IBC's five charters (one holding company) read the same schedule and charge $30;
   // four unrelated banks charge $10, $12, $14 and $16.
@@ -329,7 +339,7 @@ describe("count once: sibling charters sharing one schedule (#1441, rule 7)", ()
     expect(COUNT_SHARED_SCHEDULE_ONCE).toBe(true);
     expect(summarizeFees(rows).institution_count).toBe(5);
     expect(STATS_SCHEDULE_KEYS).toBe(`${scheduleKeysSql("ef", true)} AS schedule_keys, ${scheduleGroupSql("ef", true)} AS schedule_group`);
-    expect(STATS_METHOD_VERSION).toBe(8);
+    expect(STATS_METHOD_VERSION).toBe(9);
   });
 
   it("switched off, selects no keys and counts each charter", () => {
