@@ -30,7 +30,7 @@ import { getDisplayName } from "@/lib/fee-taxonomy";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { HEADLINE_FEE_KEYS } from "@/lib/data-store/market-readiness";
 import { FeeAlertControl } from "./fee-alert-control";
-import { getComparableMarketIndexCached } from "@/lib/data-store/public-cached-reads";
+import { getComparableMarketIndexCached, getMarketPositionCached } from "@/lib/data-store/public-cached-reads";
 import { PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import { buildPublicInstitutionProfileLinks } from "@/lib/institution-profile-links";
@@ -198,7 +198,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
   const isPro = canAccessPremium(user);
   const [
     [financialHistory, peerMedians, peerPercentiles, regulatoryWatch],
-    [footprint, complaints, holdingCompany, enforcement, regulator],
+    [footprint, complaints, holdingCompany, enforcement, regulator, marketPosition],
   ] = await Promise.all([
     isPro
       ? Promise.all([
@@ -214,6 +214,9 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
       getHoldingCompanyProfile(instId).catch(fallbackTo("holding company", null)),
       getEnforcementRecord(instId).catch(fallbackTo("enforcement actions", null)),
       getRegulatorInfo(instId).catch(fallbackTo("regulator info", null)),
+      inst.charter_type === "credit_union"
+        ? Promise.resolve(null)
+        : getMarketPositionCached(instId).catch(fallbackTo("market position", null)),
     ]),
   ]);
   const financialSeries = buildFinancialSeries(financialHistory);
@@ -553,7 +556,14 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
               </h2>
               <p className={FINDING}>Where {inst.institution_name} operates, and what regulators and customers have on file.</p>
               <div className="mt-6">
-                <RegistryCards footprint={footprint} complaints={complaints} enforcement={enforcement} holdingCompany={holdingCompany} />
+                <RegistryCards
+                  footprint={footprint}
+                  complaints={complaints}
+                  enforcement={enforcement}
+                  holdingCompany={holdingCompany}
+                  market={marketPosition}
+                  institutionName={inst.institution_name}
+                />
               </div>
             </section>
           )}

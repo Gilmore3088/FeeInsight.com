@@ -14,6 +14,8 @@ import type {
   EnforcementRecord,
   HoldingCompanyProfile,
 } from "@/lib/data-store/registry-profile";
+import type { MarketPosition } from "@/lib/data-store/market-position";
+import { MarketPositionCard } from "./market-position";
 
 /*
  * Registry cards for the profile's public record section (branches, complaints, enforcement and
@@ -85,15 +87,36 @@ export function RegistryCards({
   complaints,
   enforcement,
   holdingCompany,
+  market = null,
+  institutionName = "This bank",
 }: {
   footprint: BranchFootprint | null;
   complaints: ComplaintTrend | null;
   enforcement: EnforcementRecord | null;
   holdingCompany: HoldingCompanyProfile | null;
+  /** Bank metros' deposit share, history and competitor offices; null for credit unions or when not on file. */
+  market?: MarketPosition | null;
+  institutionName?: string;
 }) {
+  // One selected metro drives both the footprint's metro list and the market position section.
+  const [metroCode, setMetroCode] = useState<number | null>(market?.metros[0]?.code ?? null);
+  const marketCodes = useMemo(() => new Set(market?.metros.map((m) => m.code) ?? []), [market]);
+  const selectMetro = (code: number) => {
+    setMetroCode(code);
+    if (typeof document !== "undefined") document.getElementById("market-position-heading")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  };
   return (
     <div className="grid gap-4">
-      {footprint && <BranchFootprintCard footprint={footprint} />}
+      {footprint && (
+        <BranchFootprintCard
+          footprint={footprint}
+          selectedCode={market ? metroCode : undefined}
+          onSelectMarket={market ? (code) => (marketCodes.has(code) ? selectMetro(code) : setMetroCode(code)) : undefined}
+        />
+      )}
+      {market && market.metros.length > 0 && (
+        <MarketPositionCard position={market} institutionName={institutionName} selectedCode={metroCode} onSelect={setMetroCode} />
+      )}
       {(complaints || enforcement || holdingCompany) && (
         <div className="grid gap-4 lg:grid-cols-2">
           {complaints && <ComplaintsCard trend={complaints} />}
@@ -152,7 +175,16 @@ function MarketPanel({ market }: { market: BranchMarket }) {
   );
 }
 
-export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint }) {
+export function BranchFootprintCard({
+  footprint,
+  selectedCode,
+  onSelectMarket,
+}: {
+  footprint: BranchFootprint;
+  /** When set (with onSelectMarket), the selected metro is controlled by the market position section. */
+  selectedCode?: number | null;
+  onSelectMarket?: (code: number) => void;
+}) {
   const [hovered, setHovered] = useState<string | null>(null);
   const byState = useMemo(() => new Map(footprint.byState.map((s) => [s.state, s])), [footprint]);
   const max = Math.max(1, ...footprint.byState.map((s) => s.branches));
@@ -170,7 +202,16 @@ export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint 
   const mapped = footprint.mappedOffices ?? 0;
   const nearby = footprint.nearby ?? [];
   const nearbyCount = footprint.nearbyCount ?? nearby.length;
-  const [selectedName, setSelectedName] = useState<string | null>(null);
+  const [ownSelectedName, setOwnSelectedName] = useState<string | null>(null);
+  const controlled = Boolean(onSelectMarket);
+  const selectedName = controlled
+    ? (footprint.topMarkets.find((m) => m.msa_code != null && m.msa_code === selectedCode)?.msa_name ?? null)
+    : ownSelectedName;
+  const setSelectedName = (name: string) => {
+    const code = footprint.topMarkets.find((m) => m.msa_name === name)?.msa_code;
+    if (onSelectMarket && code != null) onSelectMarket(code);
+    else setOwnSelectedName(name);
+  };
   const selected =
     footprint.topMarkets.find((m) => m.msa_name === selectedName && m.share) ?? footprint.topMarkets.find((m) => m.share) ?? null;
   const stateCount = `${footprint.byState.length} ${footprint.byState.length === 1 ? "state" : "states"}`;
