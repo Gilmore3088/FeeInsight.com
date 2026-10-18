@@ -63,6 +63,8 @@ import { districtComparison, districtFinding, marketPanels } from "./market-comp
 import { DistrictCompare, LayerHead, LayerNav } from "./state-layers";
 import { CITY_FEES } from "@/lib/data-store/city-market";
 import { stateMarketMap } from "@/lib/geo/state-market-map";
+import { getResearchCoverageCached } from "@/lib/data-store/public-cached-reads";
+import { stateCoverageCounts } from "@/lib/headline-counts";
 
 const NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
 
@@ -220,6 +222,13 @@ export default async function StateReportPage({ params }: PageProps) {
 
   // The state's own hub: every institution in the state, its income, branches and economy.
   const institutionsTracked = hub ? hub.institutions.reduce((sum, g) => sum + g.institutions, 0) : 0;
+  // The state's coverage from the one shared read /research and the directory count from
+  // (headline-counts.ts, #1951): headquartered here, with published fees, and of those the ones in
+  // this page's medians (the state index's own population, so it always matches the medians).
+  const coverage = stateCoverageCounts(await getResearchCoverageCached().catch(() => null), stateCode);
+  const headquartered = coverage?.monitored ?? institutionsTracked;
+  const withFees = coverage?.withFees ?? 0;
+  const inMedians = indexes.verified_institutions;
   const revenue = hub ? revenueTrend(hub) : [];
   const bankTrend = incomeTrend(revenue, "banks");
   const cuTrend = incomeTrend(revenue, "creditUnions");
@@ -248,15 +257,17 @@ export default async function StateReportPage({ params }: PageProps) {
   const beigeSummary = beigeSections.find((s) => s.section_name === "Summary of Economic Activity")?.content_text ?? null;
 
   const facts = [
-    ...(indexes.verified_institutions > 0
+    ...(withFees > 0
       ? [
           {
-            value: formatCount(indexes.verified_institutions),
+            value: formatCount(withFees),
             label: "institutions with published fees",
-            ...(institutionsTracked > 0 ? { note: `${formatCount(institutionsTracked)} headquartered in ${stateName}` } : {}),
+            ...(headquartered > 0 ? { note: `of ${formatCount(headquartered)} headquartered in ${stateName}` } : {}),
           },
         ]
-      : []),
+      : inMedians > 0
+        ? [{ value: formatCount(inMedians), label: "institutions in these medians" }]
+        : []),
     ...(againstUs.length >= 3 ? [{ value: `${insideBand} of ${againstUs.length}`, label: "medians fall within the national middle 50%" }] : []),
   ];
   // The opening takeaway is the state's sharpest specific gap; the band count sits beside it as context.
@@ -310,8 +321,8 @@ export default async function StateReportPage({ params }: PageProps) {
             id="state-heading"
             title={`${stateName}'s banks and credit unions`}
             line={`${
-              institutionsTracked > 0
-                ? `${formatCount(indexes.verified_institutions)} of the ${formatCount(institutionsTracked)} institutions headquartered in ${stateName} publish verified fee schedules. `
+              headquartered > 0 && withFees > 0
+                ? `${formatCount(withFees)} of the ${formatCount(headquartered)} institutions headquartered in ${stateName} have published fees here, and ${formatCount(inMedians)} of them have fees that count toward the medians on this page. `
                 : ""
             }Figures here count those headquartered institutions, except branches and deposits, which count every institution serving the state.`}
           />
@@ -340,8 +351,8 @@ export default async function StateReportPage({ params }: PageProps) {
               leaders
                 ? `The ${NUMBER_WORDS[leaders.banks] ?? leaders.banks} largest banks hold ${Math.round(leaders.pct)}% of bank deposits in ${stateName}.`
                 : null,
-              institutionsTracked > 0
-                ? `${count(institutionsTracked)} banks and credit unions are headquartered here${
+              headquartered > 0
+                ? `${count(headquartered)} banks and credit unions are headquartered here${
                     bankBranches != null ? `; ${count(bankBranches)} bank branches${cuBranches ? ` and ${count(cuBranches)} credit union branches` : ""} serve the state, wherever headquartered` : ""
                   }.`
                 : null,

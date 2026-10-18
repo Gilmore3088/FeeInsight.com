@@ -6,6 +6,7 @@ import { FEE_FAMILIES, getFeeFamily, onlyPublicFeeTypes, publicFeeTypes } from "
 import type { IndexEntry } from "@/lib/data-store/fee-index";
 import { maturityTier } from "@/lib/data-store/maturity";
 import { US_STATES_ONLY, VALID_US_CODES } from "@/lib/us-states";
+import { feeHeadlineCounts, publicCategoryCount } from "@/lib/headline-counts";
 
 /**
  * Single source of truth for every public-facing headline number.
@@ -21,7 +22,10 @@ export interface PublicStatsSummary {
   /** Verified fee observations. */
   observations: number;
   observationsLabel: string;
-  /** Canonical taxonomy fee categories that have verified data (raw catalog labels outside the taxonomy are not counted). */
+  /**
+   * Fee categories the public site covers: the public top-50 taxonomy types with at least one
+   * counted institution (headline-counts.ts publicCategoryCount, set on read by getPublicSnapshot).
+   */
   categories: number;
   categoriesLabel: string;
   /** U.S. states (50) with at least one verified fee; DC and territories are excluded from this figure. */
@@ -215,8 +219,40 @@ const cachedPublicSnapshot = cachedPublicRead(
  */
 export const getPublicSnapshot = cache(async (): Promise<PublicSnapshot> => {
   const snapshot = await cachedPublicSnapshot();
-  return { ...snapshot, categories: onlyPublicFeeTypes(snapshot.categories) };
+  return { summary: withPublicCategoryCount(snapshot), categories: onlyPublicFeeTypes(snapshot.categories) };
 });
+
+/**
+ * The summary with its category count set to the public one (headline-counts.ts
+ * publicCategoryCount): the top-50 types with a counted institution, the number /fees lists.
+ * The raw count read every taxonomy type with an approved row, so /research and /api-docs said
+ * 52 while the homepage and /fees said 50 (#1951). Applied on read, like the top-50 rule, so a
+ * snapshot cached before this change reads the same way. A failed read stays unavailable.
+ */
+export function withPublicCategoryCount(snapshot: PublicSnapshot): PublicStatsSummary {
+  const { summary } = snapshot;
+  if (summary.categoriesLabel === UNAVAILABLE_LABEL) return summary;
+  const categories = publicCategoryCount(snapshot.categories);
+  return {
+    ...summary,
+    categories: categories ?? 0,
+    categoriesLabel: formatCountOrUnavailable(categories),
+    complete: summary.complete && categories !== null,
+  };
+}
+
+/**
+ * A fee's national counts (institutions behind its median, and those publishing only $0) from the
+ * shared snapshot, dated by the snapshot. Pages that state a fee's institution count read it here
+ * so the homepage, /fees, /research, the benchmark report and the guides print one number (#1951).
+ */
+export const getPublicFeeCounts = cache(
+  async (fee: string): Promise<{ institutions: number; zeroOnly: number; refreshedOn: string | null } | null> => {
+    const { summary, categories } = await getPublicSnapshot();
+    const counts = feeHeadlineCounts(categories, fee);
+    return counts ? { ...counts, refreshedOn: summary.refreshedOn } : null;
+  },
+);
 
 /** The fee types public pages may list (at most 50), ranked on the shared snapshot's institution counts. */
 export const getPublicFeeTypes = cache(async (): Promise<Set<string>> => publicFeeTypes((await cachedPublicSnapshot()).categories));

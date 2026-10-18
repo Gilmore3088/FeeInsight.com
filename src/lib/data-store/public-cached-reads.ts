@@ -125,7 +125,8 @@ export const searchInstitutionsCached = cachedPublicRead(
   (result) => result.rows.length === 0,
 );
 export const getResearchCoverageCached = cachedPublicRead(
-  "research-coverage",
+  // v2 (#1951): each area carries counted_institutions, the population behind its medians.
+  "research-coverage-v2",
   getResearchCoverage,
   (coverage) => coverage.states.length === 0,
 );

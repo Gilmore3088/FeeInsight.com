@@ -2,13 +2,12 @@ export const dynamic = "force-dynamic";
 
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { getNationalIndexCached } from "@/lib/data-store";
 import type { IndexEntry } from "@/lib/data-store/fee-index";
 import { getDistrictStatsCached, getPeerIndexCached } from "@/lib/data-store/public-cached-reads";
 import { HEADLINE_FEE_KEYS } from "@/lib/data-store/market-readiness";
 import { benchmarkReportTitle, parseBenchmarkScope, type BenchmarkScope } from "@/lib/benchmark-report";
 import { DISTRICT_NAMES, STATE_TO_DISTRICT } from "@/lib/fed-districts";
-import { formatCount, getPublicStatsSummary } from "@/lib/public-stats";
+import { formatCount, getPublicNationalIndex, getPublicStatsSummary } from "@/lib/public-stats";
 import { STATE_NAMES } from "@/lib/us-states";
 import { PRODUCT_NAME } from "@/lib/constants";
 import { TrackView } from "@/components/track-view";
@@ -55,9 +54,11 @@ interface Indexes {
 
 async function loadIndexes(scope: BenchmarkScope): Promise<Indexes> {
   const area = scope.kind === "district" ? { fed_districts: [scope.district] } : {};
+  // The U.S. figures come from the shared public snapshot, the read /research, /fees/[category],
+  // the guides and the homepage state them from, so a fee's institution count matches (#1951).
   const [areaIndex, national, bank, cu] = await Promise.all([
-    scope.kind === "district" ? getPeerIndexCached(area) : getNationalIndexCached(),
-    scope.kind === "district" ? getNationalIndexCached() : Promise.resolve(null),
+    scope.kind === "district" ? getPeerIndexCached(area) : getPublicNationalIndex(),
+    scope.kind === "district" ? getPublicNationalIndex() : Promise.resolve(null),
     getPeerIndexCached({ ...area, charter_type: "bank" }),
     getPeerIndexCached({ ...area, charter_type: "credit_union" }),
   ]);
