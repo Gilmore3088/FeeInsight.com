@@ -15,7 +15,7 @@
  * reporting date and URL are not recorded there, so the cases leave them unknown. No case here is
  * drawn from the demo cast yet: the public fee API could not be reached when this version was
  * built (2026-10-18). The expected outcomes were written by the builder from the contract's rules
- * (see HUMAN_REVIEW). The results say how these cases behave, never how accurate the live data is.
+ * and James approved them (see HUMAN_REVIEW). The results say how these cases behave, never how accurate the live data is.
  */
 import { checkNarrativeFigures, confidenceFromFigureCheck } from "./figure-check";
 import {
@@ -35,9 +35,10 @@ export const EVIDENCE_REGRESSION_SET_VERSION = "2026-10-18.1";
 
 /** Who has checked the expected outcomes. Change only with a link to the actual review record. */
 export const HUMAN_REVIEW = {
-  status: "not_reviewed" as const,
+  status: "reviewed" as const,
   tracker: "#1717",
-  note: "James reviewed the 2026-10-16.1 cases on #1717 and asked for five changes on 2026-10-18; they are in this version. It waits on his final yes on #1717.",
+  record: "https://github.com/Gilmore3088/FeeInsight.com/issues/1717#issuecomment-6248897808",
+  note: "James approved version 2026-10-18.1 on 2026-10-18 (\"cases ok\"). A new version needs his review again.",
 };
 
 const BANK_A = 9001;

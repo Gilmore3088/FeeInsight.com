@@ -18,10 +18,11 @@ describe("Hamilton evidence regression set (#981, H06-T09)", () => {
     expect(new Set(EVIDENCE_REGRESSION_CASES.map((c) => c.id)).size).toBe(EVIDENCE_REGRESSION_CASES.length);
   });
 
-  it("reports its denominator and never claims a human review it hasn't had", () => {
+  it("reports its denominator and claims a human review only with a link to its record", () => {
     expect(run.total).toBe(EVIDENCE_REGRESSION_CASES.length);
     expect(run.passed).toBe(run.total);
-    expect(HUMAN_REVIEW.status).toBe("not_reviewed");
+    expect(HUMAN_REVIEW.status).toBe("reviewed");
+    expect(HUMAN_REVIEW.record).toMatch(/^https:\/\/github\.com\/Gilmore3088\/FeeInsight\.com\/issues\/1717#issuecomment-\d+$/);
   });
 
   it("fails a case whose expectation is wrong, so the runner can't pass everything", () => {
