@@ -140,13 +140,13 @@ describe("hero Bank Fee Index card", () => {
 describe("hero and proof strip", () => {
   it("names the buyer, carries James's promise, one action and the institution search", () => {
     const html = renderToStaticMarkup(<LandingHero index={card} freshness="Oct 14, 2026" />);
-    // James's own hero copy, word for word (Oct 18).
+    // James's own eyebrow and headline, and the subhead he chose (Oct 18).
     expect(html).toMatch(/<p[^>]*>For banks and credit unions<\/p>(<!-- -->)?<h1/);
     expect(html).not.toMatch(/uppercase|tracking-\[0\.1/);
     expect(html).toContain("Your next fee review");
     expect(html).toContain("doesn’t need to take weeks.");
     expect(html.replace(/<!-- -->/g, "").replace(/\s+/g, " ")).toContain(
-      "Fee Insight helps you compare your fees with competitors using the Bank Fee Index. Turn the evidence into analysis and board reports with Hamilton.",
+      "Understand your institution’s financial position, compare your fees with competitors, and identify what deserves a closer look, all supported by published data and verifiable sources.",
     );
     expect(html).toMatch(/<a href="#hamilton"[^>]*fi-btn-brick[^>]*>See a live fee comparison</);
     expect(html).not.toContain("Explore the Index");
