@@ -180,6 +180,7 @@ export const HOOVIE_SOURCES_00: HoovieSourceContract[] = [
     licence: {
       status: "open-licence",
       licenceName: "ODbL 1.0 (OpenStreetMap); Reg II lists are Federal Reserve Board works",
+      attribution: "© OpenStreetMap contributors, ODbL 1.0 (https://www.openstreetmap.org/copyright)",
       note: "OpenStreetMap rows carry attribution on every row. The Zelle, FedNow and RTP participant lists were removed on 2026-10-17: their terms allow only personal or non-commercial use.",
     },
     connection: "web-pages",

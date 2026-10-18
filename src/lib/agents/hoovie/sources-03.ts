@@ -10,6 +10,7 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     licence: {
       status: "open-licence",
       licenceName: "ODC-By 1.0",
+      attribution: "Braga et al., Debt in America, Urban Institute",
       note: "Released from held 2026-10-18: ODC-By 1.0, \"These rights explicitly include commercial use\". Cite as \"Braga et al., Debt in America, Urban Institute\" (URBAN_DEBT_ATTRIBUTION), carried on every stored row and every read.",
     },
     connection: "bulk-file",
@@ -23,7 +24,7 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // weekly run output.zip read by HTTP Range; ATP_LICENSE "CC0-1.0")
     source: "alltheplaces",
     publisher: "AllThePlaces (alltheplaces.xyz)",
-    licence: { status: "open-licence", licenceName: "CC0 1.0", note: "Cite as \"AllThePlaces (alltheplaces.xyz), CC0 1.0\" (ATP_ATTRIBUTION)." },
+    licence: { status: "open-licence", licenceName: "CC0 1.0", attribution: "AllThePlaces (alltheplaces.xyz), CC0 1.0", note: "Cite as \"AllThePlaces (alltheplaces.xyz), CC0 1.0\" (ATP_ATTRIBUTION)." },
     connection: "bulk-file",
     cadence: "weekly",
     grain: ["branch", "county", "state", "national"],

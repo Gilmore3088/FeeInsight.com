@@ -30,6 +30,7 @@ vi.mock("@/lib/data-store/peer-sets", async (importOriginal) => ({
 import { getInstitutionHqLocation } from "@/lib/data-store/economy-aggregates";
 import { getInstitutionFeeRows, getNationalIndexCached, getPeerIndex, getStateFeeIndexes } from "@/lib/data-store/fee-index";
 import { resolvePeerSet } from "@/lib/data-store/peer-sets";
+import { URBAN_DEBT_ATTRIBUTION } from "@/lib/regulatory/state-lists";
 import { QUERY_DATA_MAX_LIMIT, parseMeasure, periodMonths, queryData, queryDataInputSchema } from "./query-data";
 
 const AREA = "area:bls-laus:laus_unemployment_rate";
@@ -145,6 +146,17 @@ describe("queryData: area measures", () => {
     });
     if (result.ok) expect(result.citation.publisher).toMatch(/Bureau of Labor Statistics/);
     expect(lastQuery().values).toContain("2026-01");
+  });
+
+  it("carries the licence and the credit it requires on an open-licence source's citation", async () => {
+    nextRows = [
+      { geo_type: "state", geo_code: "TX", geo_name: "Texas", period: "2023", value: 0.3, unit: "share", note: null, source_url: "https://datacatalog.urban.org/x", fetched_at: "2026-10-18T00:00:00Z" },
+    ];
+    const urban = await queryData({ measure: "area:urban-debt-in-america:collections_share", scope: { kind: "state", id: "TX" } });
+    expect(urban).toMatchObject({ ok: true, citation: { licence: "ODC-By 1.0", attribution: URBAN_DEBT_ATTRIBUTION } });
+    // A public-domain source needs no credit beyond its publisher.
+    const laus = await queryData({ measure: AREA, scope: { kind: "national" } });
+    if (laus.ok) expect(laus.citation).not.toHaveProperty("attribution");
   });
 
   it("turns any bound into months, so quarter, month and year bounds work on any series", async () => {
