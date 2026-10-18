@@ -1,4 +1,11 @@
-export const dynamic = "force-dynamic";
+/**
+ * Regenerated in the background (ISR) at most hourly, and sooner when a takedown
+ * invalidates the public read cache its reads carry (#1811). The page reads no session,
+ * cookies or search params; the header's signed-in parts are client islands. A render
+ * with a failed read is cached for a minute instead (`shortenPageLife`, as the homepage).
+ */
+export const revalidate = 3600;
+
 import type { Metadata } from "next";
 import { US_TERRITORIES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
@@ -9,6 +16,8 @@ import {
   getResearchCoverageCached,
 } from "@/lib/data-store/public-cached-reads";
 import type { ArticleSummary } from "@/lib/data-store/articles";
+import { shortenPageLife } from "@/lib/data-store/public-read-cache";
+import { softRead } from "@/lib/soft-read";
 import { ResearchHero, ResearchSectionNav, SectionHeading } from "../research-hero";
 import { BenchmarkBoard, pickBenchmarks } from "../benchmark-board";
 import { GeoReports } from "../geo-reports";
@@ -25,23 +34,20 @@ export const metadata: Metadata = {
 
 const ARTICLE_LIMIT = 5;
 
-async function loadArticles(): Promise<ArticleSummary[]> {
-  try {
-    return await getPublishedArticleSummariesCached(ARTICLE_LIMIT);
-  } catch {
-    // The article list is optional; a failed read hides it rather than failing the page.
-    return [];
-  }
-}
-
 export default async function ResearchHubPage() {
   // All reads are served from the public cache between publishes. Counts and benchmarks
   // come from one shared snapshot, so they match the homepage and fee index.
-  const [{ summary, categories: summaries }, coverage, articles] = await Promise.all([
+  // The coverage read is required: without it the page would state a wrong state count, so a
+  // failure goes to the error boundary (not cached; a failed background regeneration keeps
+  // serving the last good page). A failed article read hides the library, and a render with
+  // it or an incomplete snapshot is cached for a minute, not an hour.
+  const [{ summary, categories: summaries }, coverage, articlesRead] = await Promise.all([
     getPublicSnapshot(),
     getResearchCoverageCached(),
-    loadArticles(),
+    softRead(getPublishedArticleSummariesCached(ARTICLE_LIMIT), [] as ArticleSummary[]),
   ]);
+  if (!summary.complete || summaries.length === 0 || articlesRead.failed) await shortenPageLife();
+  const articles = articlesRead.value;
 
   const statesWithFees = coverage.states.filter((s) => s.verified_institutions > 0);
   // US_TERRITORIES includes DC; count DC separately.

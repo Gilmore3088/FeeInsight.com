@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { SESSION_COOKIE } from "@/lib/session-cookie";
+import { cityMetroPath, isSignedInVariantPath, signedInVariantPath } from "@/lib/viewer-variant";
 
 function requestHeadersWithPath(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
@@ -87,6 +89,19 @@ export function proxy(request: NextRequest) {
       loginUrl.searchParams.set("from", `${pathname}${request.nextUrl.search}`);
       return NextResponse.redirect(loginUrl);
     }
+  }
+
+  // Cached pages' per-request and query-string routes (#1811, see viewer-variant.ts).
+  if (isSignedInVariantPath(pathname)) {
+    return new NextResponse("Not found", { status: 404 });
+  }
+  const rewriteTo =
+    signedInVariantPath(pathname, request.cookies.get(SESSION_COOKIE)?.value) ??
+    cityMetroPath(pathname, request.nextUrl.searchParams);
+  if (rewriteTo) {
+    const url = request.nextUrl.clone();
+    url.pathname = rewriteTo;
+    return NextResponse.rewrite(url, { request: { headers: requestHeadersWithPath(request) } });
   }
 
   return NextResponse.next({
