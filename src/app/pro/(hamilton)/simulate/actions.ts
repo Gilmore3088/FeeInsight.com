@@ -337,7 +337,7 @@ export async function getScenario(
     created_at: string;
 } | null> {
   const user = await getCurrentUser();
-  if (!user) return null;
+  if (!user || !canAccessPremium(user)) return null;
 
   try {
     const scenario = await getHamiltonScenarioById(scenarioId, user.id);
