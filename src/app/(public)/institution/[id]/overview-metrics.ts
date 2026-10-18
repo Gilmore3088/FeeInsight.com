@@ -54,12 +54,17 @@ export function metricDefs(terms: FeeIncomeTerms, filer: "bank" | "credit_union"
     },
     sharePct: {
       key: "sharePct",
-      label: `${terms.subject} share of revenue`,
+      label: `${shareName(terms)} of revenue`,
       measure: `${terms.definition} divided by ${revenueLabel.charAt(0).toLowerCase()}${revenueLabel.slice(1)}`,
       unit: "percent",
       flow: false,
     },
   };
+}
+
+/** "Service-charge share" or "Fee-income share", the name of the share as an adjective phrase. */
+export function shareName(terms: FeeIncomeTerms): string {
+  return terms.subject === "Fee income" ? "Fee-income share" : "Service-charge share";
 }
 
 export function formatMetric(def: Pick<MetricDef, "unit">, value: number | null | undefined): string {

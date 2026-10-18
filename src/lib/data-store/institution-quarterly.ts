@@ -100,7 +100,7 @@ export async function getFeeShareCohort(
         ON f.institution_id = s.id
        AND f.source IN ('fdic', 'ncua')
        AND f.source = ${source}
-       AND f.report_date = ${reportDate}::date
+       AND f.report_date = ${reportDate}
      WHERE s.charter_type = ${charterType}
        AND s.asset_size_tier IS NOT DISTINCT FROM ${assetSizeTier}
      ORDER BY s.id

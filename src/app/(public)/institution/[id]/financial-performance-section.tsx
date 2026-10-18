@@ -4,7 +4,7 @@ import { FinancialPerformanceChart } from "./financial-performance";
 import type { FeeIncomeTerms } from "./financial-units";
 import { formatReportQuarter } from "./financial-units";
 import { SOURCE_NAMES } from "./ledger-fields";
-import { entityLabel, ledgerProvenance, metricDefs, quarterEndLabel } from "./overview-metrics";
+import { entityLabel, ledgerProvenance, metricDefs, quarterEndLabel, shareName } from "./overview-metrics";
 import { pct } from "./overview-observations";
 import { Provenance, type ProvenanceRow } from "./provenance";
 import { LEDGER_METRICS, RANGES, rangeQuarters, type Ledger, type LedgerMetric, type RangeKey } from "./quarterly-ledger";
@@ -76,7 +76,7 @@ export function FinancialPerformanceSection({
 
       <div className="rounded-xl border border-border bg-surface-0 p-4 sm:p-5">
         <h3 className="text-[22px] font-medium leading-tight text-ink sm:text-[26px]" style={SERIF}>
-          {terms.subject} share against its size cohort
+          {shareName(terms)} against its size cohort
         </h3>
         {cohort && cohortName && quarter ? (
           <>

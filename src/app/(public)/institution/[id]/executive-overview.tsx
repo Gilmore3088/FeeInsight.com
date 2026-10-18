@@ -4,7 +4,7 @@ import type { CohortDistribution } from "./fee-share-cohort";
 import { ordinal } from "./fee-share-cohort";
 import type { FeeIncomeTerms } from "./financial-units";
 import { formatReportQuarter } from "./financial-units";
-import { entityLabel, ledgerProvenance, metricDefs, quarterEndLabel, type MetricDef } from "./overview-metrics";
+import { entityLabel, ledgerProvenance, metricDefs, quarterEndLabel, shareName, type MetricDef } from "./overview-metrics";
 import { pct, type Observation } from "./overview-observations";
 import type { CompareCounts } from "./profile-view";
 import { Provenance, type ProvenanceRow } from "./provenance";
@@ -97,7 +97,7 @@ export function ExecutiveOverview({
   const cohortQuarter = cohort ? formatReportQuarter(cohort.reportDate) : null;
   const shareCard: Card = {
     key: "share",
-    label: `${terms.subject} share of revenue`,
+    label: `${shareName(terms)} of revenue`,
     value: cohort?.subject ? { n: cohort.subject.sharePct, unit: "percent" } : null,
     empty: cohort ? "Not reported" : "Insufficient sample",
     context:
