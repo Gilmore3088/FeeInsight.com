@@ -1,7 +1,15 @@
-export const dynamic = "force-dynamic";
+/**
+ * Regenerated in the background (ISR) at most hourly, and sooner when a takedown
+ * invalidates the public read cache its reads carry (#1811). The page reads no session,
+ * cookies or search params; the header's signed-in parts are client islands. A render
+ * with a failed read is cached for a minute instead (`shortenPageLife`, as the homepage).
+ */
+export const revalidate = 3600;
+
 import type { Metadata } from "next";
 import { getPublicStatsSummary } from "@/lib/public-stats";
-import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
+import { loadSampleReport } from "@/lib/custom-report/sample-report";
+import { shortenPageLife } from "@/lib/data-store/public-read-cache";
 import { CONTACT_EMAIL, LEGAL_ENTITY_LINE, PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { ABOUT_BLOCKS, aboutNextAction, aboutProof } from "./about-view";
 import { AboutBlocks, AboutContact, AboutHero, AboutNextAction } from "./about-sections";
@@ -18,10 +26,15 @@ export const metadata: Metadata = {
 
 export default async function AboutPage() {
   // Both reads come from the public cache; a failed read hides its number or falls back to the request form.
-  const [summary, sampleLive] = await Promise.all([
+  const [summary, sample] = await Promise.all([
     getPublicStatsSummary().catch(() => null),
-    sampleReportAvailable().catch(() => false),
+    loadSampleReport().then(
+      (report) => ({ live: report !== null, failed: false }),
+      () => ({ live: false, failed: true }),
+    ),
   ]);
+  if (!summary?.complete || sample.failed) await shortenPageLife();
+  const sampleLive = sample.live;
   const proof = summary ? aboutProof(summary) : { figures: [], publishedShare: null, freshness: null };
 
   return (

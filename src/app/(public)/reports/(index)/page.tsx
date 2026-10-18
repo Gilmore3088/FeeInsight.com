@@ -11,8 +11,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getSql } from "@/lib/data-store/connection";
-import type { PublishedReport, ReportType } from "@/lib/report-engine/types";
+import type { PublishedReport } from "@/lib/report-engine/types";
 import { timeAgo } from "@/lib/format";
+import { shortenPageLife } from "@/lib/data-store/public-read-cache";
 import { TrackLink } from "@/components/track-link";
 import { CONTACT_EMAIL, REPORT_INCLUDES, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
 import { REPORT_SHOWCASE } from "@/lib/report-showcase";
@@ -24,11 +25,16 @@ import { RequestReportForm } from "@/app/for-institutions/request-report-form";
 import { getMarketReadinessCached, getStatesWithFeeDataCached } from "@/lib/data-store/public-cached-reads";
 import type { MarketReadiness } from "@/lib/data-store/market-readiness";
 import { STATE_CODES, STATE_NAMES } from "@/lib/us-states";
-import { REPORT_TYPE_LABELS, ReportFilters } from "./report-filters";
+import { PublishedResearch, RequestSection, type PublishedReportItemView } from "./report-query";
 import { ReportShowcase } from "./report-cover";
 import { SampleLines, StateReportMap } from "./report-exhibits";
 import { formatReadOn, mapStates, sampleExhibit, type StateCoverage } from "./report-view";
 
+/**
+ * Regenerated in the background (ISR) at most hourly (#1811). The page reads no session and no
+ * search params: `?report=`, `?type=` and `?range=` are read in the browser (report-query.tsx).
+ * A render with a failed read is cached for a minute instead (`shortenPageLife`, as the homepage).
+ */
 export const revalidate = 3600;
 
 export const metadata: Metadata = {
@@ -47,13 +53,6 @@ const STEPS = [
   { title: "Get the report", body: "A PDF with a source for every figure." },
 ];
 
-const VALID_REPORT_TYPES: Set<string> = new Set<ReportType>([
-  "national_index",
-  "state_index",
-  "peer_brief",
-  "monthly_pulse",
-]);
-
 const QUERY_DEADLINE_MS = 2_500;
 
 function withDeadline<T>(promise: Promise<T>, fallback: T, timeoutMs: number): Promise<T> {
@@ -67,28 +66,31 @@ function withDeadline<T>(promise: Promise<T>, fallback: T, timeoutMs: number): P
   );
 }
 
-function dateRangeToIso(range: string): string | null {
-  const days: Record<string, number> = { "30d": 30, "90d": 90, "180d": 180, "365d": 365 };
-  const n = days[range];
-  if (!n) return null;
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return d.toISOString();
+function isoOrNull(value: unknown): string | null {
+  const at = value instanceof Date ? value : new Date(String(value));
+  return Number.isNaN(at.getTime()) ? null : at.toISOString();
 }
 
-interface PageProps {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
+function toItemView(report: PublishedReport): PublishedReportItemView {
+  const publishedAt = isoOrNull(report.published_at);
+  return {
+    id: String(report.id),
+    report_type: report.report_type,
+    slug: report.slug,
+    title: report.title,
+    published_at: publishedAt,
+    ago: publishedAt ? timeAgo(publishedAt) : "",
+  };
 }
 
-async function loadReports(typeFilter: string | null, fromIso: string | null) {
+/** Every public report; the `?type=` and `?range=` filters apply in the browser. */
+async function loadReports() {
   try {
     const sql = getSql();
     const reportQuery = sql<PublishedReport[]>`
       SELECT id, report_type, slug, title, published_at
       FROM published_reports
       WHERE is_public = true
-        ${typeFilter ? sql` AND report_type = ${typeFilter}` : sql``}
-        ${fromIso ? sql` AND published_at >= ${fromIso}` : sql``}
       ORDER BY published_at DESC
       LIMIT 100
     `.then((rows) => ({ reports: [...rows] as PublishedReport[], unavailable: false }));
@@ -110,8 +112,13 @@ async function loadStateCoverage(): Promise<StateCoverage[] | null> {
   }
 }
 
+/** `failed` is a read that errored or ran out of time, apart from a day with no sample. */
 async function loadSample() {
-  return withDeadline(loadSampleReport().then(sampleExhibit), null, QUERY_DEADLINE_MS * 2);
+  return withDeadline(
+    loadSampleReport().then((report) => ({ sample: sampleExhibit(report), failed: false })),
+    { sample: null, failed: true },
+    QUERY_DEADLINE_MS * 2,
+  );
 }
 
 async function loadMarketReadiness(): Promise<MarketReadiness[] | null> {
@@ -125,39 +132,9 @@ async function loadMarketReadiness(): Promise<MarketReadiness[] | null> {
   }
 }
 
-function PublishedReportItem({ report }: { report: PublishedReport }) {
-  const typeLabel = REPORT_TYPE_LABELS[report.report_type as ReportType] ?? report.report_type;
-  return (
-    <li className="flex flex-col gap-2 border-b border-border py-6">
-      <div className="flex flex-wrap items-center gap-2.5">
-        <span className="rounded bg-paper px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-soft">
-          {typeLabel}
-        </span>
-        <span className="text-[12px] text-ink-muted">{timeAgo(report.published_at)}</span>
-      </div>
-      <Link href={`/reports/${report.slug}`} className="text-[20px] font-semibold leading-snug tracking-[-0.01em] text-ink no-underline hover:text-brick">
-        {report.title}
-      </Link>
-    </li>
-  );
-}
-
-export default async function ReportsPage({ searchParams }: PageProps) {
-  const params = await searchParams;
-  // A link that asks for a free report (`?report=national|district#request`, from the research
-  // pages) lands on the free form; every other #request lands on the paid one.
-  const rawReport = Array.isArray(params.report) ? params.report[0] : params.report;
-  const freeAsked = rawReport === "national" || rawReport === "district";
-  const rawType = Array.isArray(params.type) ? params.type[0] : params.type;
-  const rawRange = Array.isArray(params.range) ? params.range[0] : params.range;
-
-  // Sanitize inputs (T-16-03)
-  const typeFilter = rawType && VALID_REPORT_TYPES.has(rawType) ? rawType : null;
-  const fromIso = rawRange ? dateRangeToIso(rawRange) : null;
-  const filtersActive = Boolean(typeFilter || rawRange);
-
-  const [{ reports, unavailable }, stateCoverage, readiness, sample, coverage] = await Promise.all([
-    loadReports(typeFilter, fromIso),
+export default async function ReportsPage() {
+  const [{ reports, unavailable }, stateCoverage, readiness, sampleRead, coverage] = await Promise.all([
+    loadReports(),
     loadStateCoverage(),
     loadMarketReadiness(),
     loadSample(),
@@ -165,9 +142,10 @@ export default async function ReportsPage({ searchParams }: PageProps) {
     // the per-state reader below only shades the map.
     getPublicStatsSummary(),
   ]);
+  const sample = sampleRead.sample;
   const hasReports = reports.length > 0;
-  // Only show filter controls once there is a catalog to filter (or a filter is already applied).
-  const showFilters = hasReports || filtersActive;
+  // A render with a failed read is cached for a minute, not an hour (see the note at the top).
+  if (unavailable || !stateCoverage || !readiness || sampleRead.failed || !coverage.complete) await shortenPageLife();
 
   const readyStates = new Set((readiness ?? []).filter((m) => m.ready).map((m) => m.state_code));
   const states = stateCoverage ? mapStates(stateCoverage.filter((s) => s.institution_count > 0), STATE_NAMES, readyStates) : [];
@@ -244,7 +222,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
       )}
 
       {/* 4. The paid request: how it runs, what the price includes, then the form, in one column. */}
-      <section id={freeAsked ? "institution-request" : "request"} aria-labelledby="request-heading" className="scroll-mt-24 mx-auto max-w-page px-4 pt-14 sm:px-6 sm:pt-20">
+      <RequestSection kind="paid" aria-labelledby="request-heading" className="scroll-mt-24 mx-auto max-w-page px-4 pt-14 sm:px-6 sm:pt-20">
         <div className="mx-auto max-w-[36rem]">
           <h2 id="request-heading" className={`${H2} text-center`}>
             Get your fee report
@@ -280,10 +258,10 @@ export default async function ReportsPage({ searchParams }: PageProps) {
             />
           </div>
         </div>
-      </section>
+      </RequestSection>
 
       {/* 5. The free reports, apart from the paid request. */}
-      <section id={freeAsked ? "request" : "free-reports"} aria-labelledby="free-heading" className="scroll-mt-24 mx-auto max-w-page px-4 pt-14 sm:px-6 sm:pt-20">
+      <RequestSection kind="free" aria-labelledby="free-heading" className="scroll-mt-24 mx-auto max-w-page px-4 pt-14 sm:px-6 sm:pt-20">
         <div className="mx-auto max-w-[36rem]">
           <h2 id="free-heading" className={`${H2} text-center`}>
             Free national and Fed district reports
@@ -293,7 +271,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
             <RequestReportForm contactEmail={CONTACT_EMAIL} defaultSrc="reports-hub-free" defaultReportType="national" offer="free" idScope="-free" />
           </div>
         </div>
-      </section>
+      </RequestSection>
 
       {/* 6. Every state's free report on one map, full width. */}
       <section aria-labelledby="states-heading" className="mx-auto max-w-page px-4 pt-14 sm:px-6 sm:pt-20">
@@ -335,28 +313,11 @@ export default async function ReportsPage({ searchParams }: PageProps) {
 
       <ReportFaq />
 
-      {/* Published research: hidden while nothing is published (#1174), shown when filters or an outage explain an empty list. */}
-      {(hasReports || filtersActive || unavailable) && (
+      {/* Published research: hidden while nothing is published (#1174), shown when an outage explains an empty list. */}
+      {(hasReports || unavailable) && (
         <section className="mx-auto max-w-page px-4 pt-16 sm:px-6" id="research">
           <h2 className={H2}>Research and analysis from {SITE_NAME}</h2>
-          {showFilters && (
-            <ReportFilters typeFilter={typeFilter} rawRange={rawRange} filtersActive={filtersActive} />
-          )}
-          {hasReports ? (
-            <ul className="m-0 max-w-[800px] list-none p-0">
-              {reports.map((report) => (
-                <PublishedReportItem key={report.id} report={report} />
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-3 max-w-[640px] text-[14px] leading-relaxed text-ink-muted">
-              {unavailable
-                ? "The research catalog is temporarily unavailable. Try again shortly."
-                : filtersActive
-                  ? "No published reports match these filters."
-                  : "No national or peer reports are published yet."}
-            </p>
-          )}
+          <PublishedResearch reports={reports.map(toItemView)} unavailable={unavailable} />
         </section>
       )}
     </div>

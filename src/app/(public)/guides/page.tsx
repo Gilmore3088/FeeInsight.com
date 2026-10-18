@@ -1,18 +1,16 @@
 /**
- * Rendered per request, deliberately — unlike the guide pages themselves, which are
- * statically prerendered.
+ * Regenerated in the background (ISR) at most hourly, like the guide pages themselves
+ * (#1811). Publishing a guide from admin revalidates this path, and a takedown
+ * invalidates the public read cache the medians come from.
  *
  * This page reads no session; the professional set is labelled by what it is rather than
- * by who is reading. It could be prerendered on that basis, and it is not, for one
- * reason: it has no route params, so there is no `generateStaticParams` to skip
- * prerendering through when the database is unreachable at build time. A build during a
- * database blip would bake an index with no medians and serve it until the next
- * revalidation. The guide pages avoid that by prerendering nothing in that case.
- *
- * The cost of rendering per request is small — the benchmark summaries are cached and
- * invalidated on publish — so correctness is the better trade here.
+ * by who is reading. It used to render per request so that a build during a database
+ * blip could not bake an index with no medians for the whole interval. The homepage's
+ * guard covers that now (#1572): the snapshot is never cached while a read failed, and a
+ * render with a failed read is cached for one minute instead of an hour
+ * (`shortenPageLife`), so the next render reads the database again.
  */
-export const dynamic = "force-dynamic";
+export const revalidate = 3600;
 
 import type { Metadata } from "next";
 import { ProLock } from "@/components/public/pro-lock";
@@ -27,6 +25,7 @@ import { SITE_URL } from "@/lib/constants";
 import { COVERAGE_LABELS, getPublicSnapshot } from "@/lib/public-stats";
 import { UnstatedAudienceFootnote, UnstatedAudienceMark, medianHasUnstatedAudience } from "@/components/unstated-audience";
 import { PAGE_HEADER } from "@/components/public/page-header";
+import { shortenPageLife } from "@/lib/data-store/public-read-cache";
 
 const TITLE = "Consumer Guides — Understanding Bank Fees";
 const DESCRIPTION =
@@ -217,6 +216,8 @@ export default async function GuidesIndexPage() {
       loadConsumerGuides(),
       loadProfessionalGuides(),
     ]);
+  // A render with a failed snapshot read is cached for a minute, not an hour (see the note at the top).
+  if (!summary.complete || allSummaries.length === 0) await shortenPageLife();
 
   const summaryFor = new Map(allSummaries.map((s) => [s.fee_category, s]));
 

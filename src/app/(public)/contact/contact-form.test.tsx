@@ -5,11 +5,14 @@ import { ContactForm } from "./contact-form";
 
 vi.mock("@/lib/marketing-touch", () => ({ readFirstTouch: () => null }));
 
+// The form reads the query in the browser, so the page itself can be prerendered (#1811).
+let params = new URLSearchParams();
+vi.mock("next/navigation", () => ({ useSearchParams: () => params }));
+
 async function renderPage(source?: string) {
-  const params = Promise.resolve(source ? { source } : {});
-  const page = await ContactPage({ searchParams: params });
+  params = new URLSearchParams(source ? { source } : {});
   await act(async () => {
-    render(page);
+    render(<ContactPage />);
   });
 }
 
@@ -57,7 +60,8 @@ describe("/contact", () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({}), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     await act(async () => {
-      render(<ContactForm searchParamsPromise={Promise.resolve({ source: "demo" })} />);
+      params = new URLSearchParams({ source: "demo" });
+      render(<ContactForm />);
     });
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Jane" } });
     fireEvent.change(screen.getByLabelText("Work email"), { target: { value: "jane@example.com" } });
