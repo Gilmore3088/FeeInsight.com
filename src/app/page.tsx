@@ -21,6 +21,7 @@ import type { Metadata } from "next";
 import { getPublicSnapshot } from "@/lib/public-stats";
 import { CONTACT_EMAIL, LEGAL_ENTITY_NAME, PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { loadSampleReport } from "@/lib/custom-report/sample-report";
+import { getRevenueContextCached, type RevenueContext } from "@/lib/custom-report/revenue-context";
 import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
@@ -87,7 +88,8 @@ export default async function LandingPage() {
   // read /fees makes; a failed fee read only leaves that fee out of the card. The live sample
   // report (the one /for-institutions and the sample page show) gives the Hamilton examples
   // their figures; a failed read shows the examples without figures. It is null both when none
-  // passes the bar today and on error.
+  // passes the bar today and on error. The sample bank's reported service-charge income (the
+  // read the sample report page shows) gives Prioritize its context; without it, no figures.
   const { summary, categories } = await getPublicSnapshot();
   // The fee types the public site lists (the top 50, as /fees counts them) that have published fees.
   const listed = publicFeeTypes(categories);
@@ -95,10 +97,19 @@ export default async function LandingPage() {
   const cardFees = getSpotlightCategories().filter((fee) => publicKeys.has(fee));
   const [sampleRead, indexReads] = await Promise.all([
     loadSampleReport().then(
-      (report) => ({ report, failed: false }),
+      async (report) => {
+        if (!report) return { report, revenue: null, failed: false };
+        return getRevenueContextCached(report.data.subject.institution_id).then(
+          (revenue) => ({ report, revenue, failed: false }),
+          (error: unknown) => {
+            console.error("[home] sample bank revenue read failed; Prioritize shown without income figures", error);
+            return { report, revenue: null as RevenueContext | null, failed: true };
+          },
+        );
+      },
       (error: unknown) => {
         console.error("[home] sample report read failed; Hamilton examples shown without figures", error);
-        return { report: null, failed: true };
+        return { report: null, revenue: null, failed: true };
       },
     ),
     Promise.all(
@@ -139,7 +150,7 @@ export default async function LandingPage() {
             examples, the connected research, then the plans. */}
         <LandingHero index={index} freshness={summary.refreshedOn || summary.freshnessLabel} />
         <LandingProof summary={summary} feeTypes={publicKeys.size} />
-        <LandingHamilton report={sampleRead.report} />
+        <LandingHamilton report={sampleRead.report} revenue={sampleRead.revenue} />
         <LandingResearch />
         <LandingPricing />
       </main>

@@ -5,12 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { IndexRow } from "@/lib/data-store";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
 import { REPORT_OFFER } from "@/lib/constants";
+import { buildRevenueContext, incomeLabel } from "@/lib/custom-report/revenue-context";
 import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import { PRO_TIERS, tierAmountLabel } from "@/lib/pro-tiers";
 import type { PublicStatsSummary } from "@/lib/public-stats";
 import { histogram, institutionsFor, statsFor } from "./(public)/fees/(index)/index-view";
 import { LandingHero, LandingProof } from "./landing-hero";
-import { LandingHamilton, analyzeAnswer, analyzePicks, positionCounts } from "./landing-hamilton";
+import { LandingHamilton, analyzePicks, positionCounts } from "./landing-hamilton";
 import { HamiltonCarousel, type HamiltonSlide } from "./landing-hamilton-carousel";
 import { buildIndexCard, plainFeeName } from "./landing-index";
 import { IndexCard } from "./landing-index-card";
@@ -201,13 +202,49 @@ describe("Hamilton band", () => {
     for (const row of analyzePicks(sample.rows)) expect(html).toContain(row.label);
   });
 
-  it("names the fees furthest above the local market first, and counts the report's positions", () => {
+  it("selects the fees furthest above the local market first, and counts the report's positions", () => {
     const picks = analyzePicks(sample.rows);
     expect(picks[0].position).toBe("above_market");
-    expect(analyzeAnswer(picks)).toMatch(/^Start with your .+ fees?\.$/);
-    expect(analyzeAnswer([])).toBe("Start where your fees sit furthest from the market.");
     const counts = positionCounts(sample.rows);
     expect(counts.above + counts.inside + counts.below).toBeLessThanOrEqual(sample.rows.length);
+  });
+
+  // Made-up call report figures (thousands of dollars), test data only.
+  const revenue = buildRevenueContext(
+    [
+      { quarter: "2026-Q2", service_charge_income: 1_840 },
+      { quarter: "2026-Q1", service_charge_income: 1_790 },
+    ],
+    { tier: "community", sc_rank: 12, peer_count: 140, peer_median_sc: 610 },
+  );
+  const prioritize = (html: string) => html.slice(html.indexOf('data-hamilton-slide="analyze"'), html.indexOf('data-hamilton-slide="monitor"'));
+
+  it("lays Prioritize out as observation, context and next step, with the income read passed in", () => {
+    const slide = prioritize(renderToStaticMarkup(<LandingHamilton report={report} revenue={revenue} />)).replace(/<!-- -->/g, "");
+    const order = ["Observation", "Context", "Next research step"].map((m) => slide.indexOf(m));
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    // The observation is the first selected benchmark difference, with the sample's own figures.
+    const [first] = analyzePicks(sample.rows);
+    expect(slide).toContain("Benchmark difference selected for review");
+    expect(slide).toContain(first.label);
+    expect(slide).toContain(`Local median $${first.median}`);
+    // The context figures are the read's, with its quarter and source.
+    expect(slide).toContain("Deposit service charges, Q2 2026");
+    expect(slide).toContain(incomeLabel(1_840));
+    expect(slide).toContain(incomeLabel(610));
+    expect(slide).toContain("Source: FDIC Call Report");
+    expect(slide).not.toMatch(/most material|Hamilton Pro|Knox|Darwin|revenue impact|should charge/i);
+  });
+
+  it("names the context's sources without figures when the income read is missing", () => {
+    const slide = prioritize(renderToStaticMarkup(<LandingHamilton report={report} />));
+    expect(slide).toContain("Context");
+    expect(slide).toContain("Service-charge income (Call Report)");
+    expect(slide).not.toContain("data-prioritize-income");
+    expect(slide).not.toMatch(/million|Deposit service charges,/);
+    // Only the observation's own sample figures remain.
+    expect(slide.match(/\$\d/g)).toHaveLength(2);
   });
 
   it("shows the examples without figures when there is no sample", () => {

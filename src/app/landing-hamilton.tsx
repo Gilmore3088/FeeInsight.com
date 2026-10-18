@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { DEMO_REQUEST_NAV, HAMILTON_PAGE_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
 import { TrackLink } from "@/components/track-link";
 import type { MarketReport } from "@/lib/custom-report/report-data";
+import { incomeLabel, quarterLabel, type RevenueContext } from "@/lib/custom-report/revenue-context";
 import { placeLabel } from "./market-report/report-body";
 import { HamiltonCarousel, type HamiltonSlide } from "./landing-hamilton-carousel";
 import { cardMoney } from "./landing-index-view";
@@ -10,7 +11,7 @@ import { HOME_WRAP, SAMPLE_REPORT_HREF, SERIF, buildSampleView, type SampleRow, 
 
 /** Benchmark rows shown, in report order. */
 const BENCHMARK_ROWS = 3;
-/** Fees the Analyze answer names. */
+/** Fees the Monitor example names. */
 const ANALYZE_ROWS = 2;
 
 /** The one source line under a slide's question: the sample bank and its market. */
@@ -27,8 +28,8 @@ function SourceLink({ href, children }: { href: string; children: ReactNode }) {
 }
 
 /**
- * The fees the Analyze answer starts with: those above the local middle half first, then the
- * furthest from the local median relative to it. It names where a fee sits; it never says what
+ * The benchmark differences selected for review: fees above the local middle half first, then
+ * the furthest from the local median relative to it. Prioritize shows the first; Monitor both. It names where a fee sits; it never says what
  * a fee should be (editorial policy §3).
  */
 export function analyzePicks(rows: SampleRow[]): SampleRow[] {
@@ -36,13 +37,6 @@ export function analyzePicks(rows: SampleRow[]): SampleRow[] {
   return [...rows]
     .sort((a, b) => Number(b.position === "above_market") - Number(a.position === "above_market") || gap(b) - gap(a))
     .slice(0, ANALYZE_ROWS);
-}
-
-/** "Start with your outgoing international wire and stop payment fees." */
-export function analyzeAnswer(picks: SampleRow[]): string {
-  const names = picks.map((p) => p.label.toLowerCase());
-  if (names.length === 0) return "Start where your fees sit furthest from the market.";
-  return `Start with your ${names.join(" and ")} ${names.length === 1 ? "fee" : "fees"}.`;
 }
 
 export function positionCounts(rows: SampleRow[]): { above: number; inside: number; below: number } {
@@ -55,7 +49,7 @@ export function positionCounts(rows: SampleRow[]): { above: number; inside: numb
 
 function FeeRow({ row }: { row: SampleRow }) {
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_3.5rem_minmax(0,1fr)] items-center gap-3 border-b border-border py-2.5 text-[13px]">
+    <div className="mt-1.5 grid grid-cols-[minmax(0,1fr)_3.5rem_minmax(0,1fr)] items-center gap-3 text-[13px]" data-prioritize-fee>
       <span className="text-ink">{row.label}</span>
       <strong className="text-[19px] font-semibold leading-none tabular-nums text-ink">{cardMoney(row.amount)}</strong>
       <span className="text-right text-[12px] text-ink-muted">Local median {cardMoney(row.median)}</span>
@@ -63,7 +57,53 @@ function FeeRow({ row }: { row: SampleRow }) {
   );
 }
 
-function sampleSlides(sample: SampleView, market: string | null): HamiltonSlide[] {
+/** One step of the Prioritize example: its name, then what it holds. */
+function Step({ n, name, children }: { n: number; name: string; children: ReactNode }) {
+  return (
+    <li className="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-x-2 border-b border-border py-2.5">
+      <span aria-hidden="true" className="text-[12px] font-semibold tabular-nums text-brick">{n}</span>
+      <div className="min-w-0">
+        <p className="text-[12px] font-semibold text-ink">{name}</p>
+        {children}
+      </div>
+    </li>
+  );
+}
+
+/**
+ * What Hamilton checks next: the sample bank's own reported service-charge income and the median
+ * for its size (getRevenueContextCached, the read the sample report page shows), or, without that
+ * read, the questions and where each answer comes from. Never a fee's revenue (editorial policy).
+ */
+function PrioritizeContext({ revenue, filing }: { revenue: RevenueContext | null; filing: string }) {
+  if (!revenue) {
+    return (
+      <p className="mt-0.5 text-[12px] leading-snug text-ink-muted">
+        Service-charge income (Call Report), competitors&rsquo; published schedules, complaint and rule records
+      </p>
+    );
+  }
+  const latest = revenue.quarters[0];
+  const items = [
+    { line: `Deposit service charges, ${quarterLabel(latest.quarter)}`, value: incomeLabel(latest.thousands) },
+    ...(revenue.peer ? [{ line: `Median for its size (${revenue.peer.tierLabel})`, value: incomeLabel(revenue.peer.medianThousands) }] : []),
+  ];
+  return (
+    <>
+      <dl className="mt-1 text-[12px]" data-prioritize-income>
+        {items.map((item) => (
+          <div key={item.line} className="flex items-baseline justify-between gap-3">
+            <dt className="min-w-0 text-ink-soft">{item.line}</dt>
+            <dd className="shrink-0 font-semibold tabular-nums text-ink">{item.value}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mt-0.5 text-[11px] text-ink-muted">Source: {filing}</p>
+    </>
+  );
+}
+
+function sampleSlides(sample: SampleView, market: string | null, revenue: RevenueContext | null, filing: string): HamiltonSlide[] {
   const rows = sample.rows;
   const picks = analyzePicks(rows);
   const counts = positionCounts(rows);
@@ -105,10 +145,20 @@ function sampleSlides(sample: SampleView, market: string | null): HamiltonSlide[
         <>
           <p className={QUESTION}>Which fees should we review next?</p>
           <p className={SAMPLE}>Sample: {name}{market ? ` · ${market}` : ""}</p>
-          <p className="mb-3 mt-2 text-[24px] font-semibold leading-[1.1] tracking-[-0.03em] text-ink sm:text-[28px]">{analyzeAnswer(picks)}</p>
-          {picks.map((row) => (
-            <FeeRow key={row.key} row={row} />
-          ))}
+          <ol className="mt-2">
+            {picks[0] ? (
+              <Step n={1} name="Observation">
+                <p className="mt-0.5 text-[12px] text-ink-muted">Benchmark difference selected for review</p>
+                <FeeRow row={picks[0]} />
+              </Step>
+            ) : null}
+            <Step n={2} name="Context">
+              <PrioritizeContext revenue={revenue} filing={filing} />
+            </Step>
+            <Step n={3} name="Next research step">
+              <p className="mt-0.5 text-[12px] leading-snug text-ink-muted">Compare that income with peers of similar assets and prepare a documented assessment.</p>
+            </Step>
+          </ol>
           <SourceLink href={SAMPLE_REPORT_HREF}>View the sample report</SourceLink>
         </>
       ),
@@ -194,12 +244,14 @@ const MIN_SAMPLE_ROWS = 3;
 
 /**
  * The Hamilton band (James's example, Oct 17; headings by growth): "Defend each fee with its source." with four
- * examples from the live sample report for Capital City Bank, the demo bank (loadSampleReport).
+ * examples from the live sample report for Capital City Bank, the demo bank (loadSampleReport). Prioritize
+ * adds the bank's own reported service-charge income (`revenue`) when that read answered.
  */
-export function LandingHamilton({ report }: { report: MarketReport | null }) {
+export function LandingHamilton({ report, revenue = null }: { report: MarketReport | null; revenue?: RevenueContext | null }) {
   const sample = buildSampleView(report);
   const market = report?.data.market?.places[0] ? placeLabel(report.data.market.places[0]) : null;
-  const slides = sample && sample.rows.length >= MIN_SAMPLE_ROWS ? sampleSlides(sample, market) : plainSlides();
+  const filing = report?.data.subject.charter_type === "credit_union" ? "NCUA 5300 Call Report" : "FDIC Call Report";
+  const slides = sample && sample.rows.length >= MIN_SAMPLE_ROWS ? sampleSlides(sample, market, revenue, filing) : plainSlides();
   return (
     <section id="hamilton" aria-labelledby="hamilton-title" className="scroll-mt-20 bg-paper py-12 sm:py-16 lg:py-20">
       <div className={HOME_WRAP}>
