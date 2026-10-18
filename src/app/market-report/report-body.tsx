@@ -203,7 +203,7 @@ function RevenueSection({ name, charterType, revenue }: { name: string; charterT
       <p className="mt-4 text-[13px] leading-relaxed text-ink-soft">
         {name} reported these figures in its {filing}.
         {revenue.peer &&
-          ` Among the ${revenue.peer.count.toLocaleString("en-US")} institutions of its size (${revenue.peer.tierLabel} in assets) that reported for the quarter, it ranks ${revenue.peer.rank.toLocaleString("en-US")} by this income, where 1 is the highest.`}{" "}
+          ` Among the ${revenue.peer.count.toLocaleString("en-US")} banks and credit unions of its size (${revenue.peer.tierLabel} in assets) that reported for the quarter, it ranks ${revenue.peer.rank.toLocaleString("en-US")} by this income, where 1 is the highest.`}{" "}
         A published schedule does not say how often each fee is charged, so this report does not estimate what any one
         fee earns.
       </p>

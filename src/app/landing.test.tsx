@@ -390,7 +390,7 @@ describe("Hamilton band", () => {
     for (const t of [1_720, 1_760, 1_790, 1_840, 610]) expect(benchmark).toContain(incomeLabel(t));
     expect(benchmark.indexOf("Q3 2025")).toBeLessThan(benchmark.indexOf("Q2 2026"));
     expect(benchmark).toContain("Median for its size ($100M-$1B), Q2 2026");
-    expect(text(benchmark)).toMatch(/Ranks 12 of 140 institutions its size, where 1 is the highest/);
+    expect(text(benchmark)).toMatch(/Ranks 12 of 140 banks and credit unions its size, where 1 is the highest/);
     expect(benchmark).toContain("Source: FDIC Call Report");
     // Prioritize: the first selected benchmark difference, with Benchmark's latest quarter beside it.
     const prioritize = stage(html, "analyze");
@@ -661,7 +661,7 @@ describe("sample deliverable", () => {
     expect(feeShareOf(financial)).toEqual({ own: "8.7%", median: "2.2%" });
     expect(feeShareOf(null)).toBeNull();
     const html = renderToStaticMarkup(<LandingHamilton report={report} revenue={revenue} financial={financial} />).replace(/<!-- -->/g, "");
-    expect(html).toContain("8.7% of its revenue, against a 2.2% median for its size");
+    expect(html).toContain("8.7% of its revenue, against a 2.2% median for banks its size");
     expect(html).toContain("8.7% / 2.2%");
     // Without the read, no share line and no zero.
     expect(renderToStaticMarkup(<LandingHamilton report={report} revenue={revenue} />)).not.toContain("data-benchmark-share");

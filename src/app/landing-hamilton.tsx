@@ -69,7 +69,7 @@ export function feeShareOf(financial: ReportPeerFinancial | null | undefined): {
   return row ? { own: `${row.own.toFixed(1)}%`, median: `${row.median.toFixed(1)}%` } : null;
 }
 
-function PrioritizeContext({ revenue, filing, financial }: { revenue: RevenueContext | null; filing: string; financial: ReportPeerFinancial | null }) {
+function PrioritizeContext({ revenue, filing, financial, peerNoun }: { revenue: RevenueContext | null; filing: string; financial: ReportPeerFinancial | null; peerNoun: string }) {
   if (!revenue) {
     return (
       <p className="mt-0.5 text-[12px] leading-snug text-ink-muted">
@@ -83,7 +83,7 @@ function PrioritizeContext({ revenue, filing, financial }: { revenue: RevenueCon
     ...(revenue.peer ? [{ line: `Median for its size (${revenue.peer.tierLabel})`, value: incomeLabel(revenue.peer.medianThousands) }] : []),
   ];
   const share = feeShareOf(financial);
-  if (share) items.push({ line: "Share of revenue, its own / median for its size", value: `${share.own} / ${share.median}` });
+  if (share) items.push({ line: `Share of revenue, its own / median for ${peerNoun} its size`, value: `${share.own} / ${share.median}` });
   return (
     <>
       <dl className="mt-1 text-[12px]" data-prioritize-income>
@@ -132,7 +132,7 @@ function IncomeTrend({ revenue }: { revenue: RevenueContext }) {
  * figure is the sample report's or the revenue read's; a read that is missing hides its figures.
  * Nothing here works out a fee's revenue or says what a fee should be (editorial policy §3).
  */
-function sampleSlides(sample: SampleView, revenue: RevenueContext | null, filing: string, financial: ReportPeerFinancial | null): HamiltonSlide[] {
+function sampleSlides(sample: SampleView, revenue: RevenueContext | null, filing: string, financial: ReportPeerFinancial | null, peerNoun: string): HamiltonSlide[] {
   const share = feeShareOf(financial);
   const rows = sample.rows;
   const picks = analyzePicks(rows);
@@ -152,12 +152,12 @@ function sampleSlides(sample: SampleView, revenue: RevenueContext | null, filing
               <IncomeTrend revenue={revenue} />
               {revenue.peer ? (
                 <p className="mt-2 text-[12px] text-ink-soft" data-benchmark-rank>
-                  Ranks {revenue.peer.rank.toLocaleString("en-US")} of {revenue.peer.count.toLocaleString("en-US")} institutions its size, where 1 is the highest
+                  Ranks {revenue.peer.rank.toLocaleString("en-US")} of {revenue.peer.count.toLocaleString("en-US")} banks and credit unions its size, where 1 is the highest
                 </p>
               ) : null}
               {share ? (
                 <p className="mt-1 text-[12px] text-ink-soft" data-benchmark-share>
-                  {share.own} of its revenue, against a {share.median} median for its size
+                  {share.own} of its revenue, against a {share.median} median for {peerNoun} its size
                 </p>
               ) : null}
               <p className="mt-1 text-[11px] text-ink-muted">Source: {filing}</p>
@@ -182,7 +182,7 @@ function sampleSlides(sample: SampleView, revenue: RevenueContext | null, filing
               <FeeRow row={first} />
             </Step>
             <Step n={2} name="Context">
-              <PrioritizeContext revenue={revenue} filing={filing} financial={financial} />
+              <PrioritizeContext revenue={revenue} filing={filing} financial={financial} peerNoun={peerNoun} />
             </Step>
             <Step n={3} name="Next research step">
               <p className="mt-0.5 text-[12px] leading-snug text-ink-muted">See which local competitors publish this fee, then prepare a documented assessment.</p>
@@ -297,7 +297,7 @@ export function LandingHamilton({
   const market = report?.data.market?.places[0] ? placeLabel(report.data.market.places[0]) : null;
   const filing = report?.data.subject.charter_type === "credit_union" ? "NCUA 5300 Call Report" : "FDIC Call Report";
   const ready = sample !== null && sample.rows.length >= MIN_SAMPLE_ROWS;
-  const slides = ready ? sampleSlides(sample, revenue, filing, financial) : plainSlides();
+  const slides = ready ? sampleSlides(sample, revenue, filing, financial, report?.data.subject.charter_type === "credit_union" ? "credit unions" : "banks") : plainSlides();
   return (
     <section id="hamilton" aria-labelledby="hamilton-title" className="scroll-mt-20 bg-paper py-12 sm:py-16 lg:py-20">
       <div className={HOME_WRAP}>
@@ -307,8 +307,8 @@ export function LandingHamilton({
           intro={
             <>
               <h2 id="hamilton-title" className="fi-home-h2 !font-medium text-ink" style={SERIF}>
-                <span className="block whitespace-nowrap">Make fee decisions</span>
-                <span className="block whitespace-nowrap">you can defend.</span>
+                {/* No nowrap: the longer first line could overflow a 320px phone; balance keeps both words paired. */}
+                <span className="block">Make fee decisions</span> <span className="block">you can defend.</span>
               </h2>
               <p className="mt-5 text-[18px] leading-[1.45] text-ink-soft sm:text-[21px]">
                 Hamilton connects your financial performance, competitive position and published evidence, so your team
