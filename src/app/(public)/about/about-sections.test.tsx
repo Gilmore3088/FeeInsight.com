@@ -59,7 +59,7 @@ describe("AboutNextAction", () => {
       "href",
       "/reports?report=institution&src=about#request",
     );
-    expect(screen.getByRole("link", { name: "Or ask for a demo" })).toHaveAttribute("href", "/contact?source=demo");
+    expect(screen.getByRole("link", { name: "Or ask for a demo" })).toHaveAttribute("href", "/for-institutions#demo");
     expect(screen.getByRole("link", { name: "Look up your own bank" })).toHaveAttribute("href", "/institutions");
     expect(container.querySelector(".fi-on-navy")).not.toBeNull();
   });
