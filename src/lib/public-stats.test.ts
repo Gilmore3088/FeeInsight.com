@@ -21,7 +21,9 @@ describe("public stats formatting", () => {
   });
 
   it("formats absolute dates and tolerates bad input", () => {
-    expect(formatAbsoluteDate("2026-08-12T00:00:00.000Z")).toMatch(/Aug 1[12], 2026/);
+    // A calendar date keeps its own day.
+    expect(formatAbsoluteDate("2026-08-12T00:00:00.000Z")).toBe("Aug 12, 2026");
+    expect(formatAbsoluteDate("2026-08-12")).toBe("Aug 12, 2026");
     // A U.S. evening publish (01:00 UTC) keeps the U.S. date.
     expect(formatAbsoluteDate("2026-10-18T01:00:00.000Z")).toBe("Oct 17, 2026");
     expect(formatAbsoluteDate(null)).toBeNull();

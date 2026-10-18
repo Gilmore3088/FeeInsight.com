@@ -35,7 +35,7 @@ export const SOURCES: { key: SourceKey; icon: LucideIcon; name: string; provider
   { key: "income", icon: UsersRound, name: "Local income", provider: "Census · IRS", detail: "Household income from the Census ACS and IRS ZIP-level data." },
   { key: "cfpb", icon: MessagesSquare, name: "Complaints", provider: "CFPB", detail: "CFPB consumer complaints, where an institution can be matched." },
   { key: "rules", icon: ScrollText, name: "Rules & actions", provider: "Regulators · States", detail: "Federal and state rules, fee bills, regulator announcements and actions." },
-  { key: "rates", icon: Percent, name: "Rates & industry", provider: "FDIC national data", detail: "FDIC national deposit rates and industry totals." },
+  { key: "rates", icon: Percent, name: "Industry totals", provider: "FDIC", detail: "FDIC industry totals for banks nationwide." },
   { key: "fed", icon: Building2, name: "Federal Reserve", provider: "Beige Book · FOMC", detail: "The Beige Book and FOMC minutes." },
 ];
 
@@ -63,8 +63,8 @@ export const RESEARCH_EXAMPLES: { question: string; sources: SourceKey[]; title:
     question: "What’s happening across our region?",
     sources: ["fees", "rates", "fed"],
     title: "Regional outlook",
-    excerpt: "Fee levels across your Fed district, read against the latest Beige Book and national rates.",
-    cites: "Fee schedules · Beige Book · FDIC national rates",
+    excerpt: "Fee levels across your Fed district, read against the latest Beige Book and FDIC industry totals.",
+    cites: "Fee schedules · Beige Book · FDIC industry totals",
   },
   {
     question: "Which fees should we review next?",
