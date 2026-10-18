@@ -212,7 +212,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
               </div>
             ))}
           </dl>
-          <nav aria-label="Ways into the Index" className="mt-4 grid gap-3 text-left sm:grid-cols-2 lg:grid-cols-4">
+          <nav aria-label="Ways into the Index" className="mt-4 grid grid-cols-2 gap-3 text-left lg:grid-cols-4">
             {[
               { href: "#explorer", icon: BarChart3, title: "Fee pricing", line: "Medians, spread and the institutions behind them" },
               { href: "#states", icon: MapIcon, title: "States", line: "Every state against the U.S. median" },
@@ -222,12 +222,12 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
               <Link
                 key={title}
                 href={href}
-                className="group flex min-h-11 items-start gap-3 rounded-2xl border border-border bg-surface-0 p-4 transition-colors hover:border-ink"
+                className="group flex min-h-11 items-start gap-2 rounded-2xl border border-border bg-surface-0 p-3 transition-colors hover:border-ink sm:gap-3 sm:p-4"
               >
                 <Icon aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-ink" strokeWidth={1.75} />
                 <span className="min-w-0 flex-1">
                   <span className="block text-[15px] font-semibold text-ink">{title}</span>
-                  <span className="block text-[13px] text-ink-muted">{line}</span>
+                  <span className="hidden text-[13px] text-ink-muted sm:block">{line}</span>
                 </span>
                 <ArrowRight aria-hidden="true" className="mt-1 h-4 w-4 shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-ink" />
               </Link>
@@ -716,6 +716,8 @@ function BandBreakdown({
   stateHref: (code: string) => string;
 }) {
   const pct = (n: number) => `${Math.round((n / total) * 100)}%`;
+  // State bars share one scale, the largest state's count, so the longest bar fills its track.
+  const topState = Math.max(...band.states.map((st) => st.count), 1);
   return (
     <div className="mt-3 grid gap-4 rounded-2xl border border-border bg-paper p-4 sm:grid-cols-2">
       <div>
@@ -742,7 +744,7 @@ function BandBreakdown({
                 <Link href={stateHref(st.code)} scroll={false} className="truncate text-ink underline decoration-border underline-offset-2 hover:decoration-ink">
                   {STATE_NAMES[st.code] ?? st.code}
                 </Link>
-                <span className="h-2 rounded-full bg-ink/25" style={{ width: pct(st.count) }} aria-hidden="true" />
+                <span className="h-2 rounded-full bg-ink/35" style={{ width: `${(st.count / topState) * 100}%` }} aria-hidden="true" />
                 <span className="text-right font-mono tabular-nums text-ink-muted">{st.count}</span>
               </li>
             ))}

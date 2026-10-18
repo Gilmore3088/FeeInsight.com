@@ -48,7 +48,7 @@ export function IndexCatalog({ entries, selected }: { entries: CatalogEntry[]; s
       {families.length === 0 ? (
         <p className="mt-4 text-[14px] text-ink-muted">No category matches that. Try a shorter word.</p>
       ) : (
-        <ul className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <ul className="mt-4 grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {families.map((family) => {
             const members = shown.filter((e) => e.family === family);
             return (
