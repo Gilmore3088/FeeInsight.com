@@ -51,7 +51,8 @@ export function buildHistogramBuckets(points: HistogramPoint[]): HistogramBucket
   }
   for (let start = lo; start < hi; start += step) {
     buckets.push({
-      label: step === 1 ? dollars(start) : `${dollars(start)}–${dollars(start + step - 0.01)}`,
+      // Every bar names its whole range: a $1 step from $0 holds $0.60, so it can't read "$0".
+      label: `${dollars(start)}–${dollars(start + step - 0.01)}`,
       min: start,
       max: start + step - 0.01,
       banks: 0,
