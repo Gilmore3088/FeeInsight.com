@@ -153,10 +153,10 @@ function differenceProse(lines: readonly string[]): string[] {
   return out.flatMap((entry) => {
     if (typeof entry === "string") return [entry];
     const parts = limits.get(entry.who)!;
-    // Commas, not "and": "institutions in Tennessee and credit unions" reads as two groups.
-    const list = parts.length === 1 ? parts[0].replace(/ only$/, "") : parts.join(", ");
+    // One limit reads inline; several read as a named list ("and" would read as two groups).
+    const limit = parts.length === 1 ? `is limited to ${parts[0].replace(/ only$/, "")}` : `is narrowed by these filters (${parts.join(", ")})`;
     const clauses = [
-      ...(parts.length ? [`is limited to ${list}`] : []),
+      ...(parts.length ? [limit] : []),
       ...(leavesOut.has(entry.who) ? ["leaves out the institution being compared"] : []),
     ];
     return clauses.length ? [`only ${entry.who} ${clauses.join(" and ")}`] : [];

@@ -143,7 +143,7 @@ describe("dataset passage (#1924 step 4)", () => {
       { label: "Fed district 6 (Atlanta)", stamp: district },
     ], "see the report");
     const differ = passage?.find((s) => s.startsWith("Why these figures can differ"));
-    expect(differ).toBe("Why these figures can differ: only your peer group is limited to institutions in Tennessee, credit unions only.");
+    expect(differ).toBe("Why these figures can differ: only your peer group is narrowed by these filters (institutions in Tennessee, credit unions only).");
     expect(passage?.[1]).toMatch(/^Who is counted for your peer group: institutions in Tennessee, credit unions only, with the institution/);
   });
 
