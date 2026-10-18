@@ -310,7 +310,7 @@ describe("research behind each answer", () => {
     for (const s of SOURCES) expect(html).toContain(s.provider.replace("&", "&amp;"));
     expect(html).toContain(RESEARCH_EXAMPLES[0].excerpt);
     expect(html).toContain(`Sources: ${RESEARCH_EXAMPLES[0].cites}`);
-    expect(html).toMatch(/<a href="\/reports\/sample-competitive-fee-position"[^>]*>View the sample report</);
+    expect(html).toMatch(/<a href="\/reports\/sample-competitive-fee-position"[^>]*data-event="sample_report_click" data-placement="home_research"[^>]*>See a sample report</);
     expect(html).toMatch(/<a href="\/subscribe"[^>]*data-event="upgrade_click" data-placement="home_research"[^>]*>Get Hamilton for your institution</);
     // The excerpts carry no figures: none is read from live data.
     for (const e of RESEARCH_EXAMPLES) expect(e.excerpt).not.toMatch(/\d|\$/);

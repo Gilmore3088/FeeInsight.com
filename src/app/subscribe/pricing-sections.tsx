@@ -126,7 +126,7 @@ function faqItems(summary: PublicStatsSummary) {
     },
     {
       question: "What if my market has only a few institutions?",
-      answer: `Under ${MIN_INSTITUTIONS_FOR_MEDIAN} institutions, a market is marked thin and gets no median. Your state, district, peer group and the nation still compare.`,
+      answer: `Under ${MIN_INSTITUTIONS_FOR_MEDIAN} institutions, a market shows "Too few for a median yet" instead of a median. You still see your state, district, peer group and the nation.`,
     },
     {
       question: "Does Hamilton tell us what to charge?",

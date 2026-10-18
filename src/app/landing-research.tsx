@@ -51,7 +51,7 @@ export const RESEARCH_EXAMPLES: { question: string; sources: SourceKey[]; title:
     question: "Make me a board report.",
     sources: ["fees", "financials", "branches", "cfpb", "rules"],
     title: "Board report",
-    excerpt: "Where each of your fees sits against your market, and which ones are worth a closer look. Every line links to its schedule.",
+    excerpt: "Where each of your fees sits against your market, and which ones are worth a closer look. Every fee links to its schedule.",
     cites: "Fee schedules · FDIC · NCUA · CFPB",
   },
   {
@@ -65,15 +65,15 @@ export const RESEARCH_EXAMPLES: { question: string; sources: SourceKey[]; title:
     question: "What’s happening across our region?",
     sources: ["fees", "financials", "income", "geography", "fred", "regional"],
     title: "Regional outlook",
-    excerpt: "Fee levels across your Fed district, read against the latest Beige Book and national rate and credit series.",
-    cites: "Fee schedules · Beige Book · FRED",
+    excerpt: "Fee levels across your Fed district, read against its institutions' filings and household income.",
+    cites: "Fee schedules · FFIEC · NCUA · Census",
   },
   {
     question: "Which fees should we review next?",
     sources: ["fees", "financials", "cfpb", "rules", "fred"],
     title: "Pricing study",
-    excerpt: "The fees furthest from your peers, with the complaints, rules and fee income behind each. The decision stays yours.",
-    cites: "Fee schedules · Call reports · CFPB",
+    excerpt: "The fees furthest from your peers, with the complaints, rules and fee income behind each. You make the call.",
+    cites: "Fee schedules · FFIEC Call Reports · CFPB",
   },
   {
     question: "How do we compare with credit union peers?",
@@ -164,7 +164,14 @@ export function ResearchStage() {
 
   return (
     <div ref={root}>
-      <div ref={stage} className="relative isolate grid gap-4 sm:gap-5 lg:grid-cols-[minmax(0,1.32fr)_minmax(0,1fr)] lg:gap-x-[76px] lg:gap-y-4" data-research-stage="">
+      <div
+        ref={stage}
+        className="relative isolate grid gap-4 sm:gap-5 lg:grid-cols-[minmax(0,1.32fr)_minmax(0,1fr)] lg:gap-x-[76px] lg:gap-y-4"
+        data-research-stage=""
+        role="region"
+        aria-roledescription="carousel"
+        aria-label="Hamilton connects sources to answers"
+      >
         <svg
           className="fi-home-flow pointer-events-none absolute inset-0 -z-10 h-full w-full overflow-visible max-lg:hidden"
           viewBox={`0 0 ${box.w || 1} ${box.h || 1}`}
@@ -227,16 +234,11 @@ export function ResearchStage() {
             );
           })}
         </ul>
-        <div
-          className="relative min-w-0 lg:col-start-2 lg:row-start-2 lg:pl-1"
-          role="region"
-          aria-roledescription="carousel"
-          aria-label="Hamilton connects sources to answers"
-        >
+        <div className="relative min-w-0 lg:col-start-2 lg:row-start-2 lg:pl-1">
           <div
             ref={output}
             className={`fi-home-output relative rounded-[6px] border border-border bg-surface-0 p-4 shadow-[3px_3px_0_rgb(9_39_71/0.02)] ${
-              answered ? "opacity-100" : "translate-y-1 opacity-45"
+              answered ? "opacity-100" : "translate-y-1 opacity-70"
             }`}
             data-research-output=""
             data-answered={answered}
@@ -255,9 +257,14 @@ export function ResearchStage() {
             </p>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-border pt-2.5 text-[12px]">
               <span className="text-ink-muted" data-research-cites="">Sources: {example.cites}</span>
-              <a href={REPORT_SHOWCASE.sampleHref} className="font-medium text-brick underline decoration-brick/40 underline-offset-4 hover:decoration-brick">
-                View the sample report
-              </a>
+              <TrackLink
+                event="sample_report_click"
+                eventProps={{ placement: "home_research" }}
+                href={REPORT_SHOWCASE.sampleHref}
+                className="font-medium text-brick underline decoration-brick/40 underline-offset-4 hover:decoration-brick"
+              >
+                See a sample report
+              </TrackLink>
             </div>
           </div>
         </div>
