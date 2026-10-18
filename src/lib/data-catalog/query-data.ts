@@ -36,6 +36,15 @@ import {
   hqLevelFor,
   type RollupRow,
 } from "./roll-ups";
+import {
+  MAX_COLD_FILES_PER_QUERY,
+  coldCallRollup,
+  coldFilesInRange,
+  coldInstitutionSeries,
+  prunedCallFiles,
+  readColdCallRows,
+  type ColdCallRow,
+} from "./cold-reads";
 
 /**
  * One safe query over the data catalog, for Hamilton's tools and the site. The caller names a
@@ -540,10 +549,11 @@ async function queryCall(input: QueryDataInput, itemKey: string): Promise<QueryD
   };
 
   if (scope.kind === "institution") {
-    const rows = await withTransaction(async (tx) => {
+    const hotRows = await withTransaction(async (tx) => {
       await tx`SET LOCAL statement_timeout = '5s'`;
       return callInstitutionSeries(tx, { itemKey, rowSources, institutionId: Number(scope.id), from, to, limit });
     });
+    const { rows, note: coldNote } = await withColdQuarters(hotRows, { itemKey, rowSources, from, to, limit, institutionIds: [Number(scope.id)] }, coldInstitutionSeries);
     const units = [...new Set(rows.map((r) => r.unit))];
     return {
       ok: true,
@@ -560,7 +570,9 @@ async function queryCall(input: QueryDataInput, itemKey: string): Promise<QueryD
       })),
       unit: units.length === 1 ? units[0] : units.length > 1 ? "mixed" : null,
       citation: citation(rows, [...new Set(rows.map((r) => r.source))]),
-      ...(rows.length === 0 ? { note: "This institution has no filed figures for this line in the loaded quarters." } : {}),
+      ...(rows.length === 0
+        ? { note: `This institution has no filed figures for this line in the loaded quarters.${coldNote ? ` ${coldNote}` : ""}` }
+        : coldNote ? { note: coldNote } : {}),
     };
   }
 
@@ -597,10 +609,11 @@ async function queryCall(input: QueryDataInput, itemKey: string): Promise<QueryD
     }
   }
 
-  const rows = await withTransaction(async (tx) => {
+  const hotRows = await withTransaction(async (tx) => {
     await tx`SET LOCAL statement_timeout = '10s'`;
     return callPeerRollup(tx, { itemKey, rowSources, memberIds, from, to, limit });
   });
+  const { rows, note: coldNote } = await withColdQuarters(hotRows, { itemKey, rowSources, from, to, limit, institutionIds: memberIds }, coldCallRollup);
   const units = [...new Set(rows.map((r) => r.unit))];
   const memberCount = memberIds?.length ?? null;
   return {
@@ -610,6 +623,30 @@ async function queryCall(input: QueryDataInput, itemKey: string): Promise<QueryD
     rows: rows.map((r) => ({ ...rollupRow(r, label, memberCount), period_basis: r.period_basis })),
     unit: units.length === 1 ? units[0] : units.length > 1 ? "mixed" : null,
     citation: citation(rows, [...new Set(rows.flatMap((r) => r.sources ?? []))]),
-    note: coverageNote(rows, memberCount, "a filed figure"),
+    note: `${coverageNote(rows, memberCount, "a filed figure")}${coldNote ? ` ${coldNote}` : ""}`,
   };
+}
+
+/**
+ * Adds archived quarters (#1870): when the hot rows leave room under the limit, quarters whose
+ * rows were pruned to cold files are read from those files and shaped like the hot rows. Hot
+ * periods always win; at most MAX_COLD_FILES_PER_QUERY files are read per question.
+ */
+async function withColdQuarters<T extends { period: string }>(
+  hotRows: T[],
+  args: { itemKey: string; rowSources: string[]; from: string | null; to: string | null; limit: number; institutionIds: number[] | null },
+  shape: (rows: ColdCallRow[]) => T[],
+): Promise<{ rows: T[]; note: string | null }> {
+  if (hotRows.length >= args.limit) return { rows: hotRows, note: null };
+  const files = coldFilesInRange(await prunedCallFiles(), { ...args, hotPeriods: new Set(hotRows.map((r) => r.period)) });
+  if (files.length === 0) return { rows: hotRows, note: null };
+  const read = files.slice(0, MAX_COLD_FILES_PER_QUERY);
+  const cold = await readColdCallRows(read, { itemKey: args.itemKey, institutionIds: args.institutionIds });
+  const rows = [...hotRows, ...shape(cold.rows)]
+    .sort((a, b) => (a.period === b.period ? 0 : a.period < b.period ? 1 : -1))
+    .slice(0, args.limit);
+  const notes: string[] = [];
+  if (files.length > read.length) notes.push(`Older quarters are archived; at most ${MAX_COLD_FILES_PER_QUERY} archived quarter files are read per question, so ask with a narrower period to read the rest.`);
+  if (cold.failed.length > 0) notes.push(`Archived quarters that could not be read are left out: ${cold.failed.join(", ")}.`);
+  return { rows, note: notes.length > 0 ? notes.join(" ") : null };
 }

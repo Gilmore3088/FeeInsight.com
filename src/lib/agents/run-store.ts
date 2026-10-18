@@ -113,6 +113,7 @@ import { runBayesLedger, summarizeBayesLedger, BAYES_LEDGER_VERSION } from "@/li
 import { runScheduleCheck, summarizeScheduleCheck, SCHEDULE_CHECK_VERSION } from "@/lib/agents/atlas/schedule-check";
 import { cityRepairDetail, runCityRepair, summarizeCityRepair } from "@/lib/agents/atlas/city-repair";
 import { runStorageRetention, storageRetentionDetail, summarizeStorageRetention } from "@/lib/agents/atlas/storage-retention";
+import { coldTierDetail, runColdTier, summarizeColdTier } from "@/lib/agents/hoovie/storage-tiers";
 import { answerKeyRelabelDetail, runAnswerKeyRelabels, summarizeAnswerKeyRelabels } from "@/lib/agents/atlas/answer-key-relabels";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { MARKET_SPREAD_WORKFLOW, runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
@@ -2713,7 +2714,13 @@ async function executeAgenticStep(
     }
     case "atlas-storage-retention": {
       const result = await runStorageRetention({ db: tx, dryRun: run.runKind === "dry_run" });
-      return { status: "completed", summary: summarizeStorageRetention(result), detail: storageRetentionDetail(result) };
+      // #1870: Hoovie's cold-tier plan on the same connection. Counts only; export is off and nothing prunes.
+      const cold = await runColdTier({ db: tx, dryRun: run.runKind === "dry_run", runId: run.id });
+      return {
+        status: "completed",
+        summary: `${summarizeStorageRetention(result)} ${summarizeColdTier(cold)}`,
+        detail: { ...storageRetentionDetail(result), cold_tier: coldTierDetail(cold) },
+      };
     }
     case "schedule-check": {
       const result = await runScheduleCheck({ db: tx });
