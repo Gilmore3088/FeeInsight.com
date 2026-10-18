@@ -21,12 +21,12 @@ const WATCH: RegulatoryWatch = {
     action({ peer_id: 5, peer_name: "Other Bank", agency: "FRB", party_name: "Other Bancorp", against_holding_company: true, action_type: "Written Agreement", subject: "BSA/AML", consumer_law: false, theme: "bsa_aml", no_end_date_on_file: true, start_date: "2025-02-01", penalty_amount: null, document_url: null }),
   ],
   fee_focus: [
-    { fee_category: "overdraft", display_name: "Overdraft (OD)", amount: 35, market_median: 32, market_count: 6 },
-    { fee_category: "stop_payment", display_name: "Stop Payment", amount: 25, market_median: 30, market_count: 8 },
+    { fee_category: "overdraft", display_name: "Overdraft (OD)", amount: 35, amount_low: 35, amount_high: 35, market_median: 32, market_count: 6 },
+    { fee_category: "stop_payment", display_name: "Stop Payment", amount: 25, amount_low: 25, amount_high: 25, market_median: 30, market_count: 8 },
   ],
   rule_changes: [
     { source: "federal_register", title: "Overdraft Lending: Very Large Financial Institutions", kind: "final_rule", stage: "in_effect", agencies: ["Consumer Financial Protection Bureau"], published_on: "2024-12-30", comments_close_on: null, effective_on: "2025-10-01", url: "https://www.federalregister.gov/x", topics: ["overdraft_nsf"], all_fees: false,
-      fees: [{ fee_category: "overdraft", display_name: "Overdraft (OD)", amount: 35, market_median: 32, market_count: 6 }] },
+      fees: [{ fee_category: "overdraft", display_name: "Overdraft (OD)", amount: 35, amount_low: 35, amount_high: 35, market_median: 32, market_count: 6 }] },
   ],
 };
 
@@ -51,6 +51,13 @@ describe("RegulatoryWatchSection", () => {
     expect(screen.getByRole("link", { name: /Download its fees and peer benchmarks/ })).toHaveAttribute("href", "/api/v1/institutions?id=12&view=benchmark&format=csv");
   });
 
+  it("ties a rule to a fee the schedule states several amounts for, by its range (#1913)", () => {
+    const rule = { ...WATCH.rule_changes[0], topics: ["overdraft_nsf"], fees: [{ fee_category: "nsf", display_name: "NSF", amount: null, amount_low: 25, amount_high: 35, market_median: 30, market_count: 6 }] };
+    const { container } = render(<RegulatoryWatchSection watch={{ ...WATCH, rule_changes: [rule] }} />);
+    expect(container.textContent).toContain("$25.00 to $35.00");
+    expect(container.textContent).not.toContain("$30.00 NSF");
+  });
+
   it("drops empty exhibits and says when no competitor has an action", () => {
     render(<RegulatoryWatchSection watch={{ ...WATCH, peer_actions: [], rule_changes: [], fee_focus: [] }} />);
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("None of this institution's 20 largest Austin competitors has a federal enforcement action since Oct 2023.");
@@ -72,7 +79,7 @@ describe("state exhibit", () => {
     state_code: "IL", state_name: "Illinois",
     supervisor: { agency: "Illinois Department of Financial and Professional Regulation", website: "https://idfpr.illinois.gov" },
     laws: [{ id: "il_dormancy", name: "Conditions on dormancy charges", citation: "765 ILCS 1026/15-602", summary: "A holder may deduct a dormancy charge only under a contract.", url: null, topic: "dormancy", all_fees: false,
-      fees: [{ fee_category: "dormant_account", display_name: "Dormant Account", amount: 10, market_median: 15, market_count: 7 }] }],
+      fees: [{ fee_category: "dormant_account", display_name: "Dormant Account", amount: 10, amount_low: 10, amount_high: 10, market_median: 15, market_count: 7 }] }],
     laws_reviewed: true,
     bills: [],
     bills_tracked: false,

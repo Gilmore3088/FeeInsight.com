@@ -5,7 +5,9 @@ import { getFeeFamily, FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import { frequencyFamily } from "@/lib/fee-frequency";
 import { COMPARABILITY_SCREEN } from "@/lib/fee-comparability";
 import { BUSINESS_URL_SCREEN, MARKET_AUDIENCES, countsInMarketComparison } from "@/lib/market-eligibility";
+import { ownFeeFrom, type InstitutionOwnFee } from "@/lib/own-fee";
 import {
+  HIGHEST_TIER_CATEGORIES,
   MIN_INSTITUTIONS_FOR_MEDIAN,
   STATS_METHOD_VERSION,
   STATS_ROW_FILTER,
@@ -288,10 +290,15 @@ export async function getInstitutionFeeRows(institutionId: number, category: str
   }));
 }
 
-export async function getInstitutionFeeValues(
+/**
+ * The institution's own fees per category: the statistics value, the price its schedule
+ * states (null when it states several different fees) and each fee by name. Show `price`
+ * or the fees, never `value`, as the institution's own price (src/lib/own-fee.ts).
+ */
+export async function getInstitutionOwnFees(
   institutionId: number,
   categories?: string[],
-): Promise<Map<string, number>> {
+): Promise<Map<string, InstitutionOwnFee>> {
   const params: (number | string[])[] = [institutionId];
   let categoryFilter = "";
   if (categories && categories.length > 0) {
@@ -299,7 +306,7 @@ export async function getInstitutionFeeValues(
     categoryFilter = "AND ef.fee_category = ANY($2::text[])";
   }
   const rows = await sql.unsafe(
-    `SELECT ef.fee_category, ef.amount
+    `SELECT ef.fee_category, ef.fee_name, ef.amount
        FROM published_fee_catalog ef
       WHERE ef.institution_id = $1
         AND ef.fee_category IS NOT NULL
@@ -307,20 +314,26 @@ export async function getInstitutionFeeValues(
         AND ${STATS_ROW_FILTER}
         ${categoryFilter}`,
     params as never[],
-  ) as { fee_category: string; amount: number | string | null }[];
+  ) as { fee_category: string; fee_name: string | null; amount: number | string | null }[];
 
-  const byCategory = new Map<string, { institution_id: number; amount: number | string | null; fee_category: string }[]>();
+  const byCategory = new Map<string, { institution_id: number; amount: number | string | null; fee_category: string; fee_name: string | null }[]>();
   for (const row of rows) {
     const list = byCategory.get(row.fee_category) ?? [];
-    list.push({ institution_id: institutionId, amount: row.amount, fee_category: row.fee_category });
+    list.push({ institution_id: institutionId, amount: row.amount, fee_category: row.fee_category, fee_name: row.fee_name });
     byCategory.set(row.fee_category, list);
   }
-  const values = new Map<string, number>();
+  const fees = new Map<string, InstitutionOwnFee>();
   for (const [category, list] of byCategory) {
     const value = valuePerInstitution(list).get(institutionId);
-    if (value !== undefined) values.set(category, value);
+    if (value === undefined) continue;
+    // The same rows valuePerInstitution counts: a non-negative amount.
+    const counted = list
+      .map((r) => ({ fee_name: r.fee_name, amount: r.amount === null || r.amount === "" ? NaN : Number(r.amount) }))
+      .filter((r) => Number.isFinite(r.amount) && r.amount >= 0);
+    const fee = ownFeeFrom(category, counted, value, HIGHEST_TIER_CATEGORIES.has(category));
+    if (fee) fees.set(category, fee);
   }
-  return values;
+  return fees;
 }
 
 /** Distinct institutions with at least one fee that counts toward statistics. */

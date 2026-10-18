@@ -107,6 +107,7 @@ import { freshAuditDetail, runFreshAudit, summarizeFreshAudit } from "@/lib/agen
 import { benchmarkHealthDetail, runBenchmarkHealth, summarizeBenchmarkHealth } from "@/lib/agents/deming/benchmark-health";
 import { playbookContradictionsDetail, runPlaybookContradictions, summarizePlaybookContradictions } from "@/lib/agents/deming/playbook-contradictions";
 import { dataQualityDetail, runDataQuality, summarizeDataQuality } from "@/lib/agents/deming/data-quality";
+import { readSourceHealth, sourceHealthDetail, summarizeSourceHealth } from "@/lib/agents/hoovie/source-health";
 import { knoxMissesDetail, runKnoxMisses, summarizeKnoxMisses } from "@/lib/agents/deming/knox-misses";
 import { runBayesLedger, summarizeBayesLedger, BAYES_LEDGER_VERSION } from "@/lib/agents/bayes/ledger";
 import { runScheduleCheck, summarizeScheduleCheck, SCHEDULE_CHECK_VERSION } from "@/lib/agents/atlas/schedule-check";
@@ -2690,6 +2691,11 @@ async function executeAgenticStep(
       // Read-only (#1065): two SELECTs over the live catalogs and one over the step's own history.
       const result = await runDataQuality({ db: tx });
       return { status: "completed", summary: summarizeDataQuality(result), detail: dataQualityDetail(result) };
+    }
+    case "deming-source-health": {
+      // Read-only (#1866): one SELECT over registry_ingest_partitions and one over Atlas's newest table sizes.
+      const report = await readSourceHealth({ db: tx });
+      return { status: "completed", summary: summarizeSourceHealth(report), detail: sourceHealthDetail(report) };
     }
     case "deming-knox-misses": {
       // #1099: writes only eval_cases (new missed-fee cases and each case's replay); never a fee row.

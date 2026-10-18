@@ -79,7 +79,7 @@ export const getFeeCategoryDetailCached = cachedPublicRead(
 // The Bank Fee Index explorer's rows: numbers only, so the largest category stays well under 2 MB.
 export const getIndexRowsCached = cachedPublicRead("index-rows-v2", getIndexRows);
 /** Fee evidence for one page of listed rows, as entries (a Map does not survive the cache). */
-export const getFeeEvidenceEntriesCached = cachedPublicRead("fee-evidence-v1", async (ids: number[]) => [
+export const getFeeEvidenceEntriesCached = cachedPublicRead("fee-evidence-v2", async (ids: number[]) => [
   ...(await getFeeEvidence(ids)).entries(),
 ]);
 export const getCheapestAndMostExpensiveCached = cachedPublicRead(

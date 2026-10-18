@@ -5,6 +5,20 @@ vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 import { briefRecipients, buildDailyBrief, storageWarningLines } from "./daily-brief";
 import type { PipelineHealth } from "@/lib/job-health";
 import type { PipelineFunnel } from "@/lib/data-store/pipeline-funnel";
+import type { RegistryFeedFreshness } from "@/lib/data-store/feed-freshness";
+import type { HoovieCadence, HoovieSourceContract } from "./hoovie/contract";
+import { buildSourceHealthReport } from "./hoovie/source-health";
+
+function contract(source: string, cadence: HoovieCadence): HoovieSourceContract {
+  return { source, loader: source, publisher: "test", licence: { status: "public-domain" }, connection: "bulk-file", cadence, grain: ["institution"], linkKeys: [], tables: [] };
+}
+
+function feed(source: string, partial: Partial<RegistryFeedFreshness>): RegistryFeedFreshness {
+  return {
+    source, latestPeriod: null, lastSuccessAt: null, nextAttemptAt: null, failed: 0, scheduled: 0, lastError: null,
+    blocked: 0, blockedHost: null, succeeded: 0, lastFailedAt: null, lastBlockedAt: null, ...partial,
+  };
+}
 
 const health: PipelineHealth = {
   pipeline_enabled: true,
@@ -169,6 +183,51 @@ describe("morning brief", () => {
     expect(older.subject).toContain("storage warning");
     expect(older.lines).toContain("Storage: area_statistics is 2,100 MB, above its 2,000 MB budget; the sources that write it are held.");
     expect(older.lines).not.toContain("Nothing is stuck. Nothing needs you.");
+  });
+
+  it("names a public source that failed or loaded empty, with its reason (#1866)", () => {
+    const report = buildSourceHealthReport({
+      contracts: [contract("fr-y9c", "quarterly"), contract("hmda", "annual"), contract("fdic-financials", "quarterly")],
+      feeds: [
+        feed("fr-y9c", { blocked: 2, blockedHost: "www.ffiec.gov", lastBlockedAt: "2026-10-05T03:00:00.000Z" }),
+        feed("hmda", { lastSuccessAt: "2026-09-01T00:00:00.000Z", succeeded: 3, failed: 1, lastFailedAt: "2026-10-05T02:00:00.000Z", lastError: "HTTP 503 from ffiec.cfpb.gov" }),
+        feed("fdic-financials", { lastSuccessAt: "2026-10-04T00:00:00.000Z", succeeded: 60 }),
+      ],
+      skips: new Map(),
+      now: new Date("2026-10-05T12:00:00Z"),
+    });
+    const brief = buildDailyBrief({ ...base, needsYou: [], sources: report });
+    expect(brief.subject).toBe("Morning brief: public data warning, pipeline running");
+    expect(brief.lines[0]).toBe("Public data warning.");
+    const section = brief.lines.find((line) => line.startsWith("Public data:"));
+    expect(section).toBe([
+      "Public data: 2 of 3 sources not fresh (1 failed, 1 empty).",
+      "- hmda: failed, 1 partition failed: HTTP 503 from ffiec.cfpb.gov; last success 2026-09-01",
+      "- fr-y9c: empty, www.ffiec.gov refused production's request; never succeeded",
+    ].join("\n"));
+
+    const busy = buildDailyBrief({
+      ...base,
+      needsYou: [{ id: "lead:1", severity: "critical", area: "Customers", title: "Reply overdue", detail: "", href: "/admin/leads", action: "Open lead" }],
+      sources: report,
+    });
+    expect(busy.subject).toBe("Morning brief: 1 thing needs you, 2 public sources failed or empty, pipeline running");
+
+    const older = buildDailyBrief({ ...base, sources: report });
+    expect(older.subject).toContain(", 2 public sources failed or empty,");
+    expect(older.lines).not.toContain("Nothing is stuck. Nothing needs you.");
+  });
+
+  it("says nothing about public data when every source is fresh", () => {
+    const report = buildSourceHealthReport({
+      contracts: [contract("fdic-financials", "quarterly")],
+      feeds: [feed("fdic-financials", { lastSuccessAt: "2026-10-04T00:00:00.000Z", succeeded: 60 })],
+      skips: new Map(),
+      now: new Date("2026-10-05T12:00:00Z"),
+    });
+    const brief = buildDailyBrief({ ...base, needsYou: [], sources: report });
+    expect(brief.subject).toBe("Morning brief: nothing needs you, pipeline running");
+    expect(brief.lines.join("\n")).not.toContain("Public data");
   });
 
   it("copies the owner's Gmail unless told otherwise", () => {

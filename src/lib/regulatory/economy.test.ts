@@ -1,5 +1,7 @@
 import { strToU8, zipSync } from "fflate";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+import { RPW_DATA_PAGE_HTML, RPW_NEW_SHEET, RPW_NOTES_SHEET, RPW_OLD_SHEET, rpwWorkbook } from "./rpw-fixtures";
 
 import {
   checkAreaStats,
@@ -17,7 +19,18 @@ import {
   parseNationalWideCsv,
   parsePointTract,
   parseQcew,
+  locateRpwWorkbook,
+  parseRemittanceFile,
   parseRemittancePrices,
+  parseRemittanceWorkbook,
+  readRpwBytes,
+  RPW_DATA_PAGE_URL,
+  RPW_DEFAULT_WORKBOOK_URL,
+  RPW_MAX_BYTES,
+  RPW_TOO_LARGE_PROBLEM,
+  RPW_URL_ENV,
+  RpwFileTooLargeError,
+  rpwWorkbookLinks,
   parseRucc,
   parseSaipeTable,
   parseTractLine,
@@ -255,6 +268,82 @@ describe("remittance prices", () => {
     const r = parseRemittancePrices(csv);
     expect(r.nonUsRows).toBe(1);
     expect(r.rows).toEqual([expect.objectContaining({ destination_country: "Mexico", firm: "Acme Bank", fee: 5, fx_margin_pct: 1.5, total_cost_pct: 4.2, product: null })]);
+  });
+});
+
+describe("remittance prices workbook", () => {
+  const book = () => rpwWorkbook([RPW_NOTES_SHEET, RPW_OLD_SHEET, RPW_NEW_SHEET]);
+
+  it("reads both data sheets, passes over the notes sheet and keeps US-send rows", () => {
+    const r = parseRemittanceWorkbook(book());
+    expect(r.emptyReason).toBeNull();
+    expect(r.nonUsRows).toBe(1);
+    expect(r.missingFields).toEqual([]);
+    expect(r.sheets?.map((s) => [s.sheet, s.rows, s.us_rows])).toEqual([
+      ["xl/worksheets/sheet2.xml", 1, 1],
+      ["xl/worksheets/sheet3.xml", 3, 2],
+    ]);
+    expect(r.rows.map((x) => [x.period, x.firm, x.product, x.amount_sent, x.fee, x.fx_margin_pct, x.total_cost_pct])).toEqual([
+      ["2011_1Q", "Old Bank", "Account transfer", 200, 12, 1.1, 7.1],
+      ["2025_1Q", "Acme Bank", "Cash", 200, 5, 1.5, 4.2],
+      ["2025_1Q", "Acme Bank", "Account", 200, 3, 0.05, 1.55],
+    ]);
+  });
+
+  it("keeps only the columns the loader reads", () => {
+    const raw = parseRemittanceWorkbook(book()).rows[1].raw;
+    expect(Object.keys(raw).sort()).toEqual(
+      ["CC1 FX MARGIN", "CC1 LCU AMOUNT", "CC1 LCU FEE", "CC1 TOTAL COST %", "DESTINATION_NAME", "FIRM", "FIRM_TYPE", "PAYMENT INSTRUMENT", "PERIOD", "SOURCE_NAME"].sort(),
+    );
+  });
+
+  it("says what it saw when no sheet has the RPW header", () => {
+    const r = parseRemittanceWorkbook(rpwWorkbook([RPW_NOTES_SHEET, [["country", "value"], ["Mexico", "1"]]]));
+    expect(r.rows).toEqual([]);
+    expect(r.emptyReason).toMatch(/not in the expected layout.*headers seen: REMITTANCE PRICES WORLDWIDE, COUNTRY, VALUE/);
+  });
+
+  it("reads a workbook or a CSV by its bytes", () => {
+    expect(parseRemittanceFile(book()).rows).toHaveLength(3);
+    const csv = "period,source_name,destination_name,firm\n2026_2Q,United States,Mexico,Acme Bank\n";
+    expect(parseRemittanceFile(strToU8(csv)).rows).toHaveLength(1);
+  });
+});
+
+describe("finding the RPW workbook", () => {
+  const page = (body: string, status = 200) => vi.fn(async () => new Response(body, { status })) as unknown as typeof fetch;
+
+  it("orders the data page's workbook links newest first", () => {
+    expect(rpwWorkbookLinks(RPW_DATA_PAGE_HTML, RPW_DATA_PAGE_URL)).toEqual([
+      "https://remittanceprices.worldbank.org/sites/default/files/rpw_dataset_2011_2025_q1.xlsx",
+      "https://remittanceprices.worldbank.org/sites/default/files/rpw_dataset_2011_2024_q4.xlsx",
+    ]);
+  });
+
+  it("uses the env override, then the data page, then the default", async () => {
+    expect(await locateRpwWorkbook({ [RPW_URL_ENV]: " https://example.org/rpw.csv " })).toEqual({ url: "https://example.org/rpw.csv", via: "env", pageProblem: null });
+    expect(await locateRpwWorkbook({}, { fetchImpl: page(RPW_DATA_PAGE_HTML), backoffMs: 0 })).toMatchObject({ url: expect.stringMatching(/2025_q1\.xlsx$/), via: "data-page" });
+    expect(await locateRpwWorkbook({}, { fetchImpl: page("<html></html>"), backoffMs: 0 })).toMatchObject({ url: RPW_DEFAULT_WORKBOOK_URL, via: "default", pageProblem: expect.stringMatching(/linked no/) });
+    expect(await locateRpwWorkbook({}, { fetchImpl: page("no", 403), backoffMs: 0 })).toMatchObject({ url: RPW_DEFAULT_WORKBOOK_URL, via: "default", pageProblem: expect.stringMatching(/could not be read/) });
+  });
+});
+
+describe("RPW size guard", () => {
+  it("refuses a declared length over the cap without reading the body", async () => {
+    const response = new Response("x", { headers: { "content-length": String(RPW_MAX_BYTES + 1) } });
+    await expect(readRpwBytes(response, "u")).rejects.toMatchObject({ problem: RPW_TOO_LARGE_PROBLEM });
+  });
+
+  it("refuses a body that passes the cap while streaming, and reads one under it", async () => {
+    const stream = () =>
+      new ReadableStream<Uint8Array>({
+        start(c) {
+          for (let i = 0; i < 4; i += 1) c.enqueue(new Uint8Array(10));
+          c.close();
+        },
+      });
+    await expect(readRpwBytes(new Response(stream()), "u", 25)).rejects.toBeInstanceOf(RpwFileTooLargeError);
+    expect((await readRpwBytes(new Response(stream()), "u", 40)).length).toBe(40);
   });
 });
 

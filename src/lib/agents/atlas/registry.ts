@@ -13,7 +13,7 @@ import { cronEntries, nextScheduledAt, pathnameOf, routeIdFor, type CronEntry } 
 /** Which crew member a scheduled route belongs to. The tick and registry tick drive several agents; Atlas owns the schedule. */
 export const CRON_OWNER: Record<string, AdminAgent> = {
   "/api/admin/agents/tick": "atlas",
-  "/api/admin/registry/tick": "magellan",
+  "/api/admin/registry/tick": "hoovie",
   "/api/admin/crew/daily-brief": "atlas",
   "/api/admin/crew/fee-alerts": "hamilton",
   "/api/admin/crew/pro-digest": "atlas",

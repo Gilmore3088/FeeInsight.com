@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/data-store", () => ({ getInstitutionById: vi.fn() }));
-vi.mock("@/lib/data-store/fee-index", () => ({ getInstitutionFeeValues: vi.fn() }));
+vi.mock("@/lib/data-store/fee-index", () => ({ getInstitutionOwnFees: vi.fn() }));
 vi.mock("./peer-index", () => ({ resolveHamiltonPeerIndex: vi.fn() }));
 
 import { buildInstitutionPositioning, gapPriority } from "./institution-position";
@@ -13,6 +13,12 @@ function benchmark(fee_category: string, median_amount: number | null, instituti
     institution_count,
     maturity_tier: (median_amount === null ? "insufficient" : "strong") as "strong" | "insufficient",
   };
+}
+
+/** Own fees as the reader gives them: one stated price per category. */
+type Own = { price: number | null; low: number; high: number; fees: { name: string; amount: number }[] };
+function own(entries: [string, number][]): Map<string, Own> {
+  return new Map(entries.map(([category, price]) => [category, { price, low: price, high: price, fees: [{ name: "Fee", amount: price }] }]));
 }
 
 describe("gapPriority", () => {
@@ -37,7 +43,7 @@ describe("buildInstitutionPositioning", () => {
     const result = buildInstitutionPositioning({
       ...base,
       benchmark: [benchmark("overdraft", 28), benchmark("nsf", 20), benchmark("wire_domestic_outgoing", null, 3)],
-      ownValues: new Map([
+      ownFees: own([
         ["overdraft", 35],
         ["nsf", 19],
         ["wire_domestic_outgoing", 25],
@@ -53,7 +59,7 @@ describe("buildInstitutionPositioning", () => {
   });
 
   it("has no gap or priority when the institution has no fees", () => {
-    const result = buildInstitutionPositioning({ ...base, benchmark: [benchmark("overdraft", 28)], ownValues: new Map() });
+    const result = buildInstitutionPositioning({ ...base, benchmark: [benchmark("overdraft", 28)], ownFees: own([]) });
 
     expect(result.entries).toEqual([]);
     expect(result.topGap).toBeNull();
@@ -64,10 +70,26 @@ describe("buildInstitutionPositioning", () => {
     const result = buildInstitutionPositioning({
       ...base,
       benchmark: [benchmark("account_research", 0)],
-      ownValues: new Map([["account_research", 5]]),
+      ownFees: own([["account_research", 5]]),
     });
 
     expect(result.entries[0]).toMatchObject({ gapAmount: 5, gapPct: null });
     expect(result.priority).toBe("low");
+  });
+
+  it("shows several different fees as their range, with no gap or headline figure", () => {
+    const result = buildInstitutionPositioning({
+      ...base,
+      benchmark: [benchmark("garnishment", 125), benchmark("overdraft", 28)],
+      ownFees: new Map<string, Own>([
+        ["garnishment", { price: null, low: 150, high: 175, fees: [{ name: "Levy", amount: 150 }, { name: "Garnishment", amount: 175 }] }],
+        ...own([["overdraft", 30]]),
+      ]),
+    });
+
+    const garnishment = result.entries.find((entry) => entry.feeCategory === "garnishment");
+    expect(garnishment).toMatchObject({ yourAmount: null, yourLow: 150, yourHigh: 175, gapAmount: null, gapPct: null });
+    // The $162.50 median of the two never becomes the bank's price or its largest gap.
+    expect(result.topGap?.feeCategory).toBe("overdraft");
   });
 });

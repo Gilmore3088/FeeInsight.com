@@ -224,7 +224,7 @@ export const HOOVIE_SOURCES_01: HoovieSourceContract[] = [
     tables: ["area_statistics"],
   },
   {
-    // magellan/registry/economy.ts (runRemittances), regulatory/economy.ts (WORLD_BANK_RPW_CSV_URL)
+    // magellan/registry/economy.ts (runRemittances), regulatory/economy.ts (RPW xlsx workbook from remittanceprices.worldbank.org/data-download; WORLD_BANK_RPW_CSV_URL optional override)
     source: "world-bank-remittance-prices",
     loader: "economy",
     publisher: "World Bank (Remittance Prices Worldwide)",
