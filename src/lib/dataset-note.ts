@@ -134,7 +134,7 @@ function lowerFirst(label: string): string {
 /**
  * Difference lines as prose with one colon per sentence: every "Applies only to X: Y" for one
  * figure becomes "only X is limited to y and z". A filter the figure's own name already says
- * ("Fed district 6 (Atlanta)" limited to "Fed district 6") is left out; other lines stay as they are.
+ * ("Fed district 6 (Atlanta)" limited to "Fed district 6") is left out.
  */
 function differenceProse(lines: readonly string[]): string[] {
   const limits = new Map<string, string[]>();
@@ -148,13 +148,15 @@ function differenceProse(lines: readonly string[]): string[] {
     // Leaving the bank out narrows a group by one; it is never what the group is limited to.
     if (label === LEFT_OUT_LABEL) { leavesOut.add(who); continue; }
     const what = groupWords(label);
-    if (!who.toLowerCase().startsWith(what.toLowerCase())) limits.get(who)!.push(lowerFirst(what.replace(/ only$/, "")));
+    if (!who.toLowerCase().startsWith(what.toLowerCase())) limits.get(who)!.push(lowerFirst(what));
   }
   return out.flatMap((entry) => {
     if (typeof entry === "string") return [entry];
     const parts = limits.get(entry.who)!;
+    // Commas, not "and": "institutions in Tennessee and credit unions" reads as two groups.
+    const list = parts.length === 1 ? parts[0].replace(/ only$/, "") : parts.join(", ");
     const clauses = [
-      ...(parts.length ? [`is limited to ${parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`}`] : []),
+      ...(parts.length ? [`is limited to ${list}`] : []),
       ...(leavesOut.has(entry.who) ? ["leaves out the institution being compared"] : []),
     ];
     return clauses.length ? [`only ${entry.who} ${clauses.join(" and ")}`] : [];
@@ -167,6 +169,24 @@ const LEFT_OUT_LABEL = "The institution being compared left out";
 /** A filter label in a sentence: a segment's "Segment: " prefix dropped, so a sentence keeps one colon. */
 function groupWords(label: string): string {
   return label.replace(/^Segment: /, "");
+}
+
+/**
+ * How two reads differ, other than who they count, as clauses for a printed sentence. The
+ * dataset, the table it was computed from and the run id stay out of prose: the read clause
+ * already says which figure is the snapshot, and the data reference lets support trace the rest.
+ */
+function readProse(a: StampedFigure, b: StampedFigure): string[] {
+  const out: string[] = [];
+  if (a.stamp.mode !== b.stamp.mode) {
+    const [cached, live] = a.stamp.mode === "cached" ? [a, b] : [b, a];
+    out.push(`${cached.label} comes from a snapshot computed ${noteTime(cached.stamp.readAt)}, and ${live.label} was read live ${noteTime(live.stamp.readAt)}`);
+  } else if ((toIsoTime(a.stamp.readAt) ?? a.stamp.readAt) !== (toIsoTime(b.stamp.readAt) ?? b.stamp.readAt)) {
+    out.push(`${a.label} and ${b.label} were read at different times (${noteTime(a.stamp.readAt)} and ${noteTime(b.stamp.readAt)})`);
+  }
+  if (a.stamp.methodVersion !== b.stamp.methodVersion) out.push(`${a.label} and ${b.label} use different versions of the statistics method`);
+  if (a.stamp.counting !== b.stamp.counting) out.push(`${a.label} and ${b.label} count institutions that share a fee schedule differently`);
+  return out;
 }
 
 /** Stamp filters that set a figure's group (peers, segment, the bank left out); the rest are the index's standard rules. */
@@ -191,7 +211,11 @@ export function datasetPassage(figures: readonly StampedFigure[], fullList: stri
   const counted = group.length
     ? `Who is counted${whose}: ${group.join(", ")}, ${leftOut}under the index's standard rules (${fullList}).`
     : `Who is counted${whose}: all institutions${leftOut ? " except the institution being compared" : ""}, under the index's standard rules (${fullList}).`;
-  const differ = words.differences ? `${words.differences.heading}: ${differenceProse(words.differences.lines).join("; ")}.` : null;
+  const others = figures.slice(1).filter((f) => f.stamp.id !== first.stamp.id);
+  const reasons = [...new Set(others.flatMap((other) => readProse(first, other)))];
+  const filterLines = words.differences?.lines.filter((line) => line.startsWith("Applies only to ")) ?? [];
+  const sentences = [...reasons, ...differenceProse(filterLines)];
+  const differ = words.differences && sentences.length ? `${words.differences.heading}: ${sentences.join("; ")}.` : null;
   const reference = `Data reference (for support): ${[...new Set(figures.map((f) => f.stamp.id))].join(", ")}.`;
   return [words.summary, counted, ...(differ ? [differ] : []), reference];
 }

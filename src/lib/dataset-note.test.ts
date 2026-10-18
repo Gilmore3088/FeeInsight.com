@@ -143,7 +143,7 @@ describe("dataset passage (#1924 step 4)", () => {
       { label: "Fed district 6 (Atlanta)", stamp: district },
     ], "see the report");
     const differ = passage?.find((s) => s.startsWith("Why these figures can differ"));
-    expect(differ).toBe("Why these figures can differ: only your peer group is limited to institutions in Tennessee and credit unions.");
+    expect(differ).toBe("Why these figures can differ: only your peer group is limited to institutions in Tennessee, credit unions only.");
     expect(passage?.[1]).toMatch(/^Who is counted for your peer group: institutions in Tennessee, credit unions only, with the institution/);
   });
 
@@ -156,6 +156,24 @@ describe("dataset passage (#1924 step 4)", () => {
     const differ = passage?.find((s) => s.startsWith("How your peer group and National differ"));
     expect(differ).toBe("How your peer group and National differ: only your peer group is limited to institutions in Tennessee and leaves out the institution being compared.");
     expect(passage?.join(" ")).not.toMatch(/limited to the institution being compared/);
+  });
+
+  it("says in one sentence that a figure comes from a snapshot, with no run, dataset or second time format", () => {
+    const peers = makeStamp({ ...base, filters: [{ key: "peers:state:TN", label: "Institutions in Tennessee" }, leftOut] });
+    const national = makeStamp({ ...base, dataset: "fee_index_cache", derivedFrom: "published_fee_catalog", mode: "cached", readAt: "2026-10-17T02:00:00Z", runId: 9, filters: [] });
+    const passage = datasetPassage([{ label: "your peer group", stamp: peers }, { label: "the U.S. median", stamp: national }], "see the report");
+    const differ = passage?.find((s) => s.startsWith("How your peer group and the U.S. median differ"));
+    expect(differ).toBe("How your peer group and the U.S. median differ: the U.S. median comes from a snapshot computed 17 Oct 2026 02:00 UTC, and your peer group was read live 18 Oct 2026 14:10 UTC; only your peer group is limited to institutions in Tennessee and leaves out the institution being compared.");
+    expect(differ).not.toMatch(/Run:|Dataset:|Computed from:|2026-10-1/);
+  });
+
+  it("names a method or counting difference in words", () => {
+    const a = makeStamp({ ...base, filters: [] });
+    const b = makeStamp({ ...base, readAt: "2026-10-18T15:00:00Z", methodVersion: 12, counting: "per_charter", filters: [] });
+    const passage = datasetPassage([{ label: "Texas", stamp: a }, { label: "National", stamp: b }], "see the report");
+    expect(passage?.find((s) => s.startsWith("How Texas and National differ"))).toBe(
+      "How Texas and National differ: Texas and National were read at different times (18 Oct 2026 14:10 UTC and 18 Oct 2026 15:00 UTC); Texas and National use different versions of the statistics method; Texas and National count institutions that share a fee schedule differently.",
+    );
   });
 
   it("drops a segment's prefix inside a sentence, so the passage keeps one colon each", () => {
