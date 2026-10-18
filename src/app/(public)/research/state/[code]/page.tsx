@@ -348,7 +348,6 @@ export default async function StateReportPage({ params, searchParams }: PageProp
           <HubSection
             id="peers"
             title="Fee medians by peer group"
-            line={peerView.finding}
             source={
               <>
                 Institutions headquartered in {stateName} with verified fees, {PRODUCT_NAME}; size, regulator and charter from FDIC and NCUA

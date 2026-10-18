@@ -581,7 +581,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
           )}
 
           {/* Overdraft and maintenance against a peer group the visitor picks. */}
-          {!sparse && peerSets && <PeerRankTeaser sets={peerSets} hrefFor={peerSetHref} />}
+          {!sparse && peerSets && <PeerRankTeaser sets={peerSets} hrefFor={peerSetHref} hamiltonHref={links.analyzeHref} isPro={isPro} />}
 
           {/* The fee position beside its call-report context: the band a visitor sees right after the comparison. */}
           {showHamiltonBand && (

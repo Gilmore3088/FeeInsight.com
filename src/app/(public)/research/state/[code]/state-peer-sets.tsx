@@ -1,5 +1,7 @@
-import type { ReactNode } from "react";
+import { Users } from "lucide-react";
 import { PeerSetPicker } from "@/components/public/peer-set-picker";
+import { PeerGapChip } from "@/components/public/peer-gap-chip";
+import "@/app/landing-motion.css";
 import { formatFeeAmount } from "@/lib/format";
 import { MIN_PEERS_FOR_PEER_SET_MEDIAN } from "@/lib/data-store/peer-fee-rank";
 import { ASSET_TIER_RANGES } from "@/lib/hamilton/peer-index";
@@ -111,44 +113,42 @@ export function statePeerSetView(
   };
 }
 
-function Row({ row, stateName }: { row: PeerSetRow; stateName: string }) {
+/** Group median, the whole state's and the gap (the fee name joins them wider): one grid for the header and every row. */
+const COLUMNS = "grid grid-cols-3 gap-x-3 sm:grid-cols-[minmax(0,1.6fr)_repeat(3,minmax(0,1fr))] sm:gap-x-4";
+
+function Row({ row }: { row: PeerSetRow }) {
   return (
-    <li className="grid grid-cols-3 gap-x-4 gap-y-2 py-3 sm:grid-cols-[minmax(0,1.6fr)_repeat(3,minmax(0,1fr))] sm:items-baseline">
-      <p className="col-span-3 text-[14px] font-medium text-ink sm:col-span-1 sm:text-left">{row.name}</p>
-      <Cell label="Group median">
-        {row.median !== null ? (
-          <span className="text-[15px] font-semibold text-ink">{money(row.median)}</span>
+    <li className={`${COLUMNS} items-start gap-y-1.5 py-3`}>
+      <p className="col-span-3 text-[14px] font-medium text-ink sm:col-span-1 sm:pt-0.5">{row.name}</p>
+      <Cell label="Group median" value={row.median} institutions={row.institutions} />
+      <Cell label="State median" value={row.stateMedian} institutions={row.stateInstitutions} />
+      <div className="min-w-0">
+        <span className="sr-only">Difference: </span>
+        {row.median !== null && row.stateMedian !== null ? (
+          <PeerGapChip value={row.median} median={row.stateMedian} />
         ) : (
-          <span className="text-[13px] text-ink-muted">Too few to compare</span>
+          <span className="text-[13px] leading-snug text-ink-muted">Not compared</span>
         )}
-      </Cell>
-      <Cell label="Institutions">
-        <span className="text-[14px] text-ink-soft">{count(row.institutions)}</span>
-      </Cell>
-      <Cell label={`All ${stateName}`}>
-        {row.stateMedian !== null ? (
-          <>
-            <span className="text-[14px] text-ink-soft">{money(row.stateMedian)}</span>
-            <span className="block font-sans text-[12px] text-ink-muted">of {count(row.stateInstitutions)}</span>
-          </>
-        ) : (
-          <span className="text-[13px] text-ink-muted">Too few to compare</span>
-        )}
-      </Cell>
+      </div>
     </li>
   );
 }
 
-function Cell({ label, children }: { label: string; children: ReactNode }) {
+function Cell({ label, value, institutions }: { label: string; value: number | null; institutions: number }) {
   return (
-    <div className="min-w-0 sm:text-right">
-      <p className="text-[11px] text-ink-muted sm:sr-only">{label}</p>
-      <p className="mt-0.5 font-mono tabular-nums sm:mt-0 sm:text-right">{children}</p>
+    <div className="min-w-0">
+      <span className="sr-only">{label}: </span>
+      {value !== null ? (
+        <p className="font-mono text-[17px] font-semibold leading-tight tabular-nums text-ink">{money(value)}</p>
+      ) : (
+        <p className="text-[13px] leading-snug text-ink-muted">Too few to compare</p>
+      )}
+      <p className="mt-0.5 text-[12px] leading-snug text-ink-muted">of {count(institutions)}</p>
     </div>
   );
 }
 
-/** The exhibit: a picker of peer groups, then each fee's group median and count against the whole state. */
+/** The exhibit: the peer-group picker first, then the group's finding and each fee's group median against the whole state's, with the gap as a chip. */
 export function StatePeerSets({
   view,
   stateName,
@@ -159,11 +159,11 @@ export function StatePeerSets({
   hrefFor: (key: string) => string;
 }) {
   const head = (
-    <div className="hidden grid-cols-[minmax(0,1.6fr)_repeat(3,minmax(0,1fr))] gap-x-4 pb-2 text-[12px] font-medium text-ink-muted sm:grid" aria-hidden="true">
-      <span>Fee</span>
-      <span className="text-right">Group median</span>
-      <span className="text-right">Institutions</span>
-      <span className="text-right">All {stateName} banks and credit unions</span>
+    <div className={`${COLUMNS} border-b border-border pb-2 text-[11px] font-medium uppercase tracking-[0.06em] text-ink-muted`} aria-hidden="true">
+      <span className="hidden sm:block">Fee</span>
+      <span>Group median</span>
+      <span>All {stateName}</span>
+      <span>Difference</span>
     </div>
   );
   const shown = view.rows.slice(0, ROWS_SHOWN);
@@ -173,7 +173,6 @@ export function StatePeerSets({
       <PeerSetPicker
         label="Peer group"
         current={view.key}
-        surface="paper"
         options={view.options.map((option) => ({
           key: option.key,
           label: CHIPS[option.key]?.label ?? option.label,
@@ -181,13 +180,18 @@ export function StatePeerSets({
           href: hrefFor(option.key),
         }))}
       />
-      <figure className="min-w-0">
-        <figcaption className="text-[14px] font-semibold text-ink sm:text-left">{view.label}</figcaption>
-        <div className="mt-3">
+      {/* Keyed by the group, so a new group's figures fade in (landing-motion.css, off under reduced motion). */}
+      <figure key={view.key} className="fi-home-fade min-w-0">
+        <figcaption className="flex items-center gap-2 text-[14px] font-semibold text-ink">
+          <Users aria-hidden="true" className="size-4 shrink-0 text-ink-muted" />
+          <span className="min-w-0">{view.label}</span>
+        </figcaption>
+        <p className="mt-1 text-[14px] leading-snug text-ink-soft">{view.finding}</p>
+        <div className="mt-4">
           {head}
-          <ul className="divide-y divide-border border-y border-border">
+          <ul className="divide-y divide-border border-b border-border">
             {shown.map((row) => (
-              <Row key={row.key} row={row} stateName={stateName} />
+              <Row key={row.key} row={row} />
             ))}
           </ul>
         </div>
@@ -198,7 +202,7 @@ export function StatePeerSets({
             </summary>
             <ul className="divide-y divide-border border-b border-border">
               {rest.map((row) => (
-                <Row key={row.key} row={row} stateName={stateName} />
+                <Row key={row.key} row={row} />
               ))}
             </ul>
           </details>

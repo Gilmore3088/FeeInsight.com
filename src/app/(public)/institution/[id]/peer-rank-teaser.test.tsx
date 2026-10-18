@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+
+const push = vi.fn();
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 import { PeerRankTeaser, peerGroupLabel, peerSetFinding } from "./peer-rank-teaser";
 import type { InstitutionPeerRank, InstitutionPeerSets } from "@/lib/data-store/peer-fee-rank";
 
@@ -36,7 +39,33 @@ describe("PeerRankTeaser", () => {
     expect(screen.getByText("6 peers publish it")).toBeInTheDocument();
     expect(screen.queryByText("Peers that publish it")).not.toBeInTheDocument();
     expect(screen.getByText(/30 of 42 publish a lower fee, 4 the same and 8 a higher one/)).toBeInTheDocument();
-    expect(screen.getByText("This institution (middle of its prices)")).toBeInTheDocument();
+    expect(screen.getByText("middle of 3 prices")).toBeInTheDocument();
+  });
+
+  it("shows the gap from the peer median as a chip, and not compared without a median", () => {
+    render(<PeerRankTeaser sets={SETS} hrefFor={(key) => `/institution/1?peers=${key}#peers`} />);
+    expect(screen.getByText("$5 above")).toBeInTheDocument();
+    expect(screen.getByText("Not compared")).toBeInTheDocument();
+  });
+
+  it("puts the peer group picker above the results and ends on one Hamilton action", () => {
+    const { container } = render(
+      <PeerRankTeaser sets={SETS} hrefFor={(key) => `/institution/1?peers=${key}#peers`} hamiltonHref="/subscribe?inst=1#pro" />,
+    );
+    const picker = screen.getByRole("navigation", { name: "Peer group" });
+    const results = container.querySelector("figure")!;
+    expect(picker.compareDocumentPosition(results) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "Peer group" })).toHaveValue("state");
+    expect(screen.getByRole("link", { name: "See every peer in Hamilton" })).toHaveAttribute("href", "/subscribe?inst=1#pro");
+  });
+
+  it("switches group from the phone's select without moving the page, with a plain GET form as the fallback", () => {
+    const { container } = render(<PeerRankTeaser sets={SETS} hrefFor={(key) => `/institution/1?fee=overdraft&peers=${key}#peers`} />);
+    const form = container.querySelector("form")!;
+    expect(form).toHaveAttribute("action", "/institution/1#peers");
+    expect(form.querySelector('input[type="hidden"][name="fee"]')).toHaveValue("overdraft");
+    fireEvent.change(screen.getByRole("combobox", { name: "Peer group" }), { target: { value: "size" } });
+    expect(push).toHaveBeenCalledWith("/institution/1?fee=overdraft&peers=size#peers", { scroll: false });
   });
 
   it("keeps one short source line and the counting rules in the details", () => {
@@ -51,7 +80,7 @@ describe("PeerRankTeaser", () => {
     render(<PeerRankTeaser sets={SETS} hrefFor={(key) => `/institution/1?peers=${key}#peers`} />);
     expect(screen.getByRole("link", { name: "Asset size" })).toHaveAttribute("href", "/institution/1?peers=size#peers");
     expect(screen.getByRole("link", { name: "State" })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByText("Banks in TX", { selector: "figcaption" })).toBeInTheDocument();
+    expect(screen.getByText("Banks in TX", { selector: "figcaption span" })).toBeInTheDocument();
   });
 
   it("shows an empty fee as none found", () => {
