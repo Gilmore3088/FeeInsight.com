@@ -45,7 +45,7 @@ export async function CheckExample({ id, guides }: { id: number; guides: Guide[]
   const collectedOn = formatAbsoluteDate(inst.latest_source_collected_at ?? null);
 
   return (
-    <figure className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:gap-10">
+    <figure className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] lg:gap-10">
       <figcaption className="min-w-0 text-left">
         <p className="text-[13px] text-ink-muted">
           <span className="font-semibold text-ink">Example:</span> {inst.institution_name}

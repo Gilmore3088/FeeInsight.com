@@ -96,7 +96,7 @@ export function AvoidChips({ rows, guideHrefs }: { rows: CheckRow[]; guideHrefs:
   if (chips.length === 0) return null;
   return (
     <nav aria-label="Ways to avoid these fees" className="min-w-0">
-      <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-ink-muted">Ways to avoid</p>
+      <p className="text-center text-[12px] font-semibold uppercase tracking-[0.14em] text-ink-muted sm:mx-0 sm:text-left">Ways to avoid</p>
       <ul className="mt-2 flex flex-wrap justify-center gap-2 sm:justify-start">
         {chips.map(({ row, href }) => {
           return (
@@ -123,7 +123,7 @@ export function HamiltonEmployeeBand({ name, placement }: { name: string; placem
       aria-label="For bank and credit union teams"
       className="flex flex-col items-center gap-3 rounded-xl border border-border bg-surface-0 px-4 py-3 text-center shadow-fi-1 sm:flex-row sm:justify-between sm:text-left"
     >
-      <p className="flex min-w-0 items-center gap-3 text-[15px] font-semibold text-ink">
+      <p className="flex min-w-0 items-center gap-3 text-[15px] font-semibold text-ink sm:mx-0">
         <span aria-hidden="true" className="flex size-9 shrink-0 items-center justify-center rounded-full bg-brick-tint text-brick">
           <Landmark className="size-[18px]" strokeWidth={1.75} />
         </span>

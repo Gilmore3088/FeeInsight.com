@@ -148,7 +148,7 @@ export function LocalOptions({
       <div className="mt-4">
         <LocationForm id={id} near={near} />
         {showHeadquarters && (
-          <p className="mt-1 text-center text-[13px] text-ink-muted sm:text-left">
+          <p className="mt-1 text-center text-[13px] text-ink-muted sm:mx-0 sm:text-left">
             <Link
               href={`/check?${new URLSearchParams({ id: String(id), near: headquarters }).toString()}#alternatives-heading`}
               className={`inline-flex min-h-11 items-center ${LINK}`}

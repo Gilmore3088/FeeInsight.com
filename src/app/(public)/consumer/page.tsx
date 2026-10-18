@@ -119,14 +119,14 @@ export default async function ConsumerPage() {
       <div className="mx-auto max-w-page px-4 py-7 sm:px-6 sm:py-10">
         {/* `relative z-20` keeps the search suggestions above the tiles below. */}
         <section className={`relative z-20 max-w-3xl ${PAGE_HEADER}`}>
-          <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-brick">For consumers</p>
+          <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-brick sm:mx-0">For consumers</p>
           <h1 className="mt-2 text-[38px] font-medium leading-[1.04] tracking-[-0.025em] text-ink sm:text-[56px]" style={SERIF}>
             Understand your bank fees. Find ways to pay less.
           </h1>
           <div id="find-bank" className="mt-5 max-w-xl scroll-mt-24 text-left">
             <InstitutionSearchBar resultPath="/check" ariaLabel="Your bank or credit union" placeholder="Your bank or credit union" />
           </div>
-          <p className="mt-1 flex flex-wrap items-center justify-center gap-x-4 text-[14px] text-ink-muted sm:justify-start">
+          <p className="mt-1 flex flex-wrap items-center justify-center gap-x-4 text-[14px] text-ink-muted sm:mx-0 sm:justify-start">
             <span>Or try</span>
             {EXAMPLES.map((example) => (
               <Link key={example.id} href={`/check?id=${example.id}`} className={`inline-flex min-h-11 items-center ${LINK}`}>
@@ -162,7 +162,7 @@ export default async function ConsumerPage() {
             <h2 id="check-heading" className={BAND_H2} style={SERIF}>
               What a fee check shows
             </h2>
-            <div className="mt-4 max-w-4xl">
+            <div className="mt-4">
               <CheckExample id={CHECK_EXAMPLE_ID} guides={guides} />
             </div>
           </section>

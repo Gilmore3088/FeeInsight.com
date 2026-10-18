@@ -100,7 +100,7 @@ export default async function CheckPage({ searchParams }: PageProps) {
         {/* `relative z-20` keeps the suggestions above the answer below. */}
         <section className="relative z-20 border-b border-border pb-6">
           <div className={`max-w-3xl ${PAGE_HEADER}`}>
-            <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-brick">Fee check</p>
+            <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-brick sm:mx-0">Fee check</p>
             <h1 className="mt-2 text-[38px] font-medium leading-[1.04] tracking-[-0.025em] text-ink sm:text-[56px]" style={SERIF}>
               How do your bank&apos;s fees compare?
             </h1>
