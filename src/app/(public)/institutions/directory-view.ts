@@ -111,6 +111,19 @@ export function coverageFinding(c: Coverage, charter: Charter, stateName?: strin
   return `${COUNT.format(c.published)} of the ${COUNT.format(c.monitored)} ${noun} monitored${where} have published fees (${percentLabel(publishedShare(c))}).`;
 }
 
+/**
+ * The caption under the hero's coverage meter, which shows the share itself: "3,911 of the
+ * 8,775 banks and credit unions monitored have published fees." A state reads "in Georgia".
+ */
+export function coverageCaption(c: Coverage, charter: Charter, stateName?: string): string {
+  const where = stateName ? ` in ${stateName}` : "";
+  const noun = charterNoun(charter);
+  if (c.published === 0) {
+    return `None of the ${COUNT.format(c.monitored)} ${noun} monitored${where} have published fees yet.`;
+  }
+  return `${COUNT.format(c.published)} of the ${COUNT.format(c.monitored)} ${noun} monitored${where} have published fees.`;
+}
+
 /** The map's shading bands, lightest first; all from the brick ramp. */
 export const SHARE_BANDS = [
   { min: 0, label: "None", fill: "var(--fi-surface-200)" },
@@ -177,6 +190,17 @@ export function stateFinding(rows: StateRow[]): string | null {
   if (withAny === 0 || mid === null) return null;
   const count = withAny === rows.length ? `All ${rows.length}` : `${withAny} of the ${rows.length}`;
   return `${count} states, DC and territories have at least one institution with published fees; the median state share is ${percentLabel(mid)}.`;
+}
+
+/**
+ * The state section folded to one line once a search or filter is on: "Median state: 40%
+ * published". Null when no state has published fees.
+ */
+export function stateSummaryLine(rows: StateRow[]): string | null {
+  const withAny = rows.filter((r) => r.published > 0).length;
+  const mid = median(rows.map((r) => r.share));
+  if (withAny === 0 || mid === null) return null;
+  return `Median state: ${percentLabel(mid)} published`;
 }
 
 /** The one next step for bank staff: the live sample report when it exists, else the request form. */

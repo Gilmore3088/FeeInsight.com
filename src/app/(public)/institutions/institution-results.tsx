@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowLeft, ArrowRight, CircleDashed, Clock3, FileCheck2, MapPin } from "lucide-react";
 import type { InstitutionSearchResult } from "@/lib/data-store/search";
 import { formatAmount } from "@/lib/format";
 import { getCharterLabel, getSegmentLabel, toTitleCase } from "../institution/[id]/enum-labels";
@@ -29,6 +29,29 @@ function statusChip(row: InstitutionSearchResult, coverage: HeadlineCoverage): {
     return { label: "Under review", className: "border-dashed border-border bg-surface-0 text-ink-soft" };
   }
   return null;
+}
+
+/**
+ * The table's coverage column: a small meter of the headline fees published, one segment per
+ * headline fee, with the count beside it. Rows without a count keep the status chip.
+ */
+function CoverageCell({ row, coverage }: { row: InstitutionSearchResult; coverage: HeadlineCoverage }) {
+  const categories = coverage?.get(row.id);
+  if (!hasVerifiedFees(row) || categories === undefined) return <StatusChip row={row} coverage={coverage} />;
+  const total = HEADLINE_FEE_KEYS.length;
+  return (
+    <span className="inline-flex items-center gap-2" title={getHeadlineCoverageLabel(categories, total)}>
+      <span aria-hidden="true" className="flex gap-0.5">
+        {HEADLINE_FEE_KEYS.map((key, i) => (
+          <span key={key} className={`h-2.5 w-1.5 rounded-sm ${i < categories ? "bg-brick" : "bg-surface-200"}`} />
+        ))}
+      </span>
+      <span className="whitespace-nowrap text-[12px] tabular-nums text-ink-soft">
+        {categories} of {total}
+        <span className="sr-only"> headline fees published</span>
+      </span>
+    </span>
+  );
 }
 
 /**
@@ -97,17 +120,6 @@ function StatusChip({
   );
 }
 
-/** The phone card's figure: published fees only, with its label, so the card stays short. */
-function PublishedFigure({ row }: { row: InstitutionSearchResult }) {
-  if (!hasVerifiedFees(row)) return <span className="text-[12px] text-ink-muted">None yet</span>;
-  return (
-    <span className="block">
-      <span className="block text-[17px] font-semibold tabular-nums text-ink">{row.published_fee_count.toLocaleString("en-US")}</span>
-      <span className="block text-[11px] text-ink-muted">published</span>
-    </span>
-  );
-}
-
 function FeeCount({ row }: { row: InstitutionSearchResult }) {
   if (hasVerifiedFees(row)) {
     return <span className="font-semibold tabular-nums text-ink">{row.published_fee_count.toLocaleString("en-US")}</span>;
@@ -142,7 +154,7 @@ export function InstitutionResultsTable({
                 </th>
               )}
               <th className={`text-right ${TH_CLASS}`}>Published fees</th>
-              <th className={`hidden md:table-cell ${TH_CLASS}`}>Coverage</th>
+              <th className={`hidden md:table-cell ${TH_CLASS}`}>Headline fees</th>
             </tr>
           </thead>
           <tbody>
@@ -173,7 +185,7 @@ export function InstitutionResultsTable({
                   <FeeCount row={row} />
                 </td>
                 <td className="hidden px-4 py-3 md:table-cell">
-                  <StatusChip row={row} coverage={coverage} />
+                  <CoverageCell row={row} coverage={coverage} />
                 </td>
               </tr>
             ))}
@@ -184,50 +196,82 @@ export function InstitutionResultsTable({
   );
 }
 
+/**
+ * The phone's coverage indicator, up front on each card: an icon and the published fee count
+ * ("26 published fees"), "Under review", or "None yet".
+ */
+function CoverageChip({ row }: { row: InstitutionSearchResult }) {
+  if (hasVerifiedFees(row)) {
+    const n = row.published_fee_count;
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-brick/30 bg-brick-tint px-2.5 py-1 text-[13px] font-semibold text-brick-ink">
+        <FileCheck2 aria-hidden="true" className="size-3.5" strokeWidth={2} />
+        <span className="tabular-nums">{n.toLocaleString("en-US")}</span> published {n === 1 ? "fee" : "fees"}
+      </span>
+    );
+  }
+  if (row.provisional_fee_count > 0 || row.fee_publication_status === "under_review") {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-border bg-surface-0 px-2.5 py-1 text-[13px] font-medium text-ink-soft">
+        <Clock3 aria-hidden="true" className="size-3.5" strokeWidth={2} />
+        Under review
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-0 px-2.5 py-1 text-[13px] text-ink-muted">
+      <CircleDashed aria-hidden="true" className="size-3.5" strokeWidth={2} />
+      None yet
+    </span>
+  );
+}
+
+/**
+ * Phone results: the name, where it is, and its coverage. Type, asset tier and the headline-fee
+ * label are on the profile and in the wider table.
+ */
 export function InstitutionMobileCards({
   rows,
-  coverage,
   focus = null,
 }: {
   rows: InstitutionSearchResult[];
-  coverage: HeadlineCoverage;
   focus?: FeeFocus | null;
 }) {
   return (
-    <div className="grid gap-2 sm:hidden">
-      {rows.map((row) => (
-        <Link
-          key={row.id}
-          href={institutionHref(row.id, focus)}
-          className="fi-row-interaction block min-h-11 rounded-xl border border-border bg-surface-0 px-4 py-3"
-        >
-          <div className="flex min-w-0 items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="break-words text-sm font-semibold leading-snug text-ink">
-                {row.institution_name}
-              </p>
-              <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-ink-muted">
-                <span>{getSegmentLabel(row.asset_size_tier, row.charter_type) ?? getCharterLabel(row.charter_type)}</span>
-                {locationLabel(row) && <span>{locationLabel(row)}</span>}
-              </div>
-              <div className="mt-2">
-                <StatusChip row={row} coverage={coverage} small />
-              </div>
-            </div>
-            <div className="shrink-0 text-right text-sm">
+    <ul className="grid gap-2 sm:hidden">
+      {rows.map((row) => {
+        const where = locationLabel(row);
+        return (
+          <li key={row.id}>
+            <Link
+              href={institutionHref(row.id, focus)}
+              className="fi-row-interaction flex min-h-11 items-center gap-3 rounded-xl border border-border bg-surface-0 px-4 py-3"
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block break-words text-[15px] font-semibold leading-snug text-ink">{row.institution_name}</span>
+                {where && (
+                  <span className="mt-1 flex items-center gap-1 text-[13px] text-ink-muted">
+                    <MapPin aria-hidden="true" className="size-3.5 shrink-0" strokeWidth={1.75} />
+                    {where}
+                  </span>
+                )}
+                <span className="mt-2 block">
+                  <CoverageChip row={row} />
+                </span>
+              </span>
               {focus ? (
-                <>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-muted">{focus.label}</p>
+                <span className="shrink-0 text-right text-sm">
+                  <span className="block text-[12px] font-semibold text-ink-muted">{focus.label}</span>
                   <FocusAmount row={row} focus={focus} />
-                </>
+                </span>
               ) : (
-                <PublishedFigure row={row} />
+                <ArrowRight aria-hidden="true" className="size-4 shrink-0 text-ink-muted" />
               )}
-            </div>
-          </div>
-        </Link>
-      ))}
-    </div>
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

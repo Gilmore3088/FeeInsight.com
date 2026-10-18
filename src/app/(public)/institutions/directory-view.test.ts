@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { InstitutionStateDirectorySummary } from "@/lib/data-store/search";
 import {
   bandsInUse,
+  coverageCaption,
   coverageFinding,
   directoryHref,
   nationalCoverage,
@@ -10,6 +11,7 @@ import {
   percentLabel,
   shareBand,
   stateFinding,
+  stateSummaryLine,
   stateRows,
 } from "./directory-view";
 
@@ -74,6 +76,17 @@ describe("coverage lines", () => {
   });
 });
 
+describe("coverage caption", () => {
+  it("leaves the share to the meter and says plainly when none are published", () => {
+    expect(coverageCaption({ published: 3911, monitored: 8775 }, "")).toBe(
+      "3,911 of the 8,775 banks and credit unions monitored have published fees.",
+    );
+    expect(coverageCaption({ published: 0, monitored: 4 }, "credit_union", "Guam")).toBe(
+      "None of the 4 credit unions monitored in Guam have published fees yet.",
+    );
+  });
+});
+
 describe("states", () => {
   const rows = stateRows([summary("GA", 66, 205), summary("TX", 120, 741), summary("VT", 0, 27), summary("FM", 0, 1)]);
 
@@ -86,6 +99,11 @@ describe("states", () => {
       "2 of the 3 states, DC and territories have at least one institution with published fees; the median state share is 16%.",
     );
     expect(stateFinding(stateRows([summary("VT", 0, 27)]))).toBeNull();
+  });
+
+  it("folds to one line with the median state share once a search is on", () => {
+    expect(stateSummaryLine(rows)).toBe("Median state: 16% published");
+    expect(stateSummaryLine(stateRows([summary("VT", 0, 27)]))).toBeNull();
   });
 
   it("keys only the shading bands a state falls in", () => {

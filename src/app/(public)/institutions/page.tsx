@@ -12,7 +12,9 @@ import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import { PRO_PLANS_NAV } from "@/components/nav-items";
 import { TrackLink } from "@/components/track-link";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
-import { PAGE_H1, PAGE_HEADER, PAGE_LEDE } from "@/components/public/page-header";
+import { ArrowLeft, Users } from "lucide-react";
+import { SERIF } from "@/app/landing-shared";
+import { homeSerif } from "@/app/landing-serif";
 import { getInstitutionStateDirectorySummariesCached, searchInstitutionsCached } from "@/lib/data-store/public-cached-reads";
 import { HEADLINE_FEE_KEYS, getInstitutionHeadlineCoverage } from "@/lib/data-store/market-readiness";
 import { SourceNote } from "../research/district/[id]/district-hub";
@@ -20,6 +22,9 @@ import { InstitutionSearchBar } from "./search-bar";
 import { StateDirectoryMap } from "./state-directory-map";
 import { StatePicker } from "./directory-filters";
 import { StateList } from "./state-list";
+import { CoverageMeter } from "./coverage-meter";
+import { CoverageDisclosure } from "./coverage-disclosure";
+import "./directory.css";
 import {
   DirectoryPagination,
   InstitutionMobileCards,
@@ -31,7 +36,6 @@ import {
   CHARTER_OPTIONS,
   bandsInUse,
   charterNoun,
-  coverageFinding,
   directoryHref,
   nationalCoverage,
   normalizeCharter,
@@ -40,6 +44,7 @@ import {
   reportCta,
   stateCoverage,
   stateFinding,
+  stateSummaryLine,
   stateRows,
   type Charter,
 } from "./directory-view";
@@ -175,7 +180,7 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
   const stateName = stateCode ? STATE_NAMES[stateCode] : "";
   const national = nationalCoverage(stats, summaries, charter);
   const picked = stateCode ? stateCoverage(summaries.find((s) => s.state_code === stateCode)) : null;
-  const headline = hasState ? (picked ? coverageFinding(picked, charter, stateName) : null) : national ? coverageFinding(national, charter) : null;
+  const heroCoverage = hasState ? picked : national;
 
   const rows = stateRows(summaries);
   const bands = bandsInUse(summaries.filter((s) => STATE_NAMES[s.state_code]));
@@ -247,8 +252,44 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
   </details>
   );
 
+  const coverageBody = (
+    <>
+      {byState && <p className={`${FINDING} text-center`}>{byState}</p>}
+      <figure className="mt-6 min-w-0">
+        <figcaption className="text-[13px] font-semibold text-ink">
+          {charter
+            ? `Share of ${charterNoun(charter)} with published fees, by state`
+            : "Share of institutions with published fees, by state"}
+        </figcaption>
+        <div className="mx-auto mt-3 hidden max-w-[860px] lg:block">
+          <StateDirectoryMap rows={rows} bands={bands} hrefFor={stateHref} />
+        </div>
+        <div className="mt-3 lg:mt-6">
+          <StateList
+            rows={rows.map((r) => ({
+              code: r.code,
+              name: r.name,
+              href: stateHref(r.code),
+              published: COUNT.format(r.published),
+              monitored: COUNT.format(r.monitored),
+              share: percentLabel(r.share),
+            }))}
+            shown={STATE_ROWS_SHOWN}
+          />
+        </div>
+      </figure>
+      <div className="mt-6">
+        <SourceNote label="Source">
+          Institutions monitored in the {PRODUCT_NAME}, from FDIC and NCUA records and counted by headquarters state, against
+          those with at least one fee published from their own schedule. {stats.freshnessLabel}.
+        </SourceNote>
+      </div>
+      {!(shouldShowResults && results.total > 0) && method}
+    </>
+  );
+
   return (
-    <div className="min-h-screen bg-paper text-ink">
+    <div className={`${homeSerif.variable} min-h-screen overflow-x-clip bg-paper text-ink`}>
       <BreadcrumbJsonLd
         items={[
           { name: "Home", href: "/" },
@@ -256,23 +297,54 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
           ...(stateCode ? [{ name: stateName, href: `/institutions?state=${stateCode}` }] : []),
         ]}
       />
-      <div className="mx-auto max-w-page px-4 pb-14 pt-7 sm:px-6 sm:pb-20 sm:pt-10">
-        {/* `relative z-20` keeps the search suggestions above the sections that follow; see .fi-reveal. */}
-        <section aria-labelledby="directory-heading" className="fi-reveal relative z-20">
-          <div className={PAGE_HEADER}>
-            <h1 id="directory-heading" className={PAGE_H1}>
-              {hasState ? `${stateName} ${charterNoun(charter)}` : "Bank and credit union fees by institution"}
-            </h1>
-            {headline && <p className={`mt-3 ${PAGE_LEDE}`}>{headline}</p>}
-            {focus && !shouldShowResults && (
-              <p className={`mt-2 ${PAGE_LEDE}`}>
-                Results show each institution&apos;s published {focus.label.toLowerCase()} fee beside the national median
-                {focus.median !== null && ` of ${formatAmount(focus.median)}`}.
-              </p>
+      {/* The search hero: navy band with a curved edge, the coverage figure, and the search card hanging
+          over the curve. `relative z-20` keeps the search suggestions above the sections that follow. */}
+      <section aria-labelledby="directory-heading" className="fi-directory-hero relative isolate z-20 pt-8 sm:pt-10 lg:pt-14">
+        <div className="mx-auto max-w-page px-4 sm:px-6">
+          <div
+            className={
+              heroCoverage
+                ? "lg:grid lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] lg:items-end lg:gap-14"
+                : undefined
+            }
+          >
+            <div className="fi-reveal min-w-0">
+              {hasState && (
+                <Link
+                  href={directoryHref({ ...keep, state: "" })}
+                  prefetch={false}
+                  className="inline-flex min-h-11 items-center gap-1.5 text-[14px] text-[#d9e2e9] hover:text-white"
+                >
+                  <ArrowLeft aria-hidden="true" className="size-4" />
+                  All states
+                </Link>
+              )}
+              <h1
+                id="directory-heading"
+                className={`${hasState ? "mt-1" : ""} text-[38px] font-medium leading-[1.04] tracking-[-0.025em] text-white sm:text-[52px] lg:text-[64px]`}
+                style={SERIF}
+              >
+                {hasState ? `${stateName} ${charterNoun(charter)}` : "Find any bank or credit union’s fees"}
+              </h1>
+              {focus && (
+                <p className="mt-4 max-w-2xl text-[16px] leading-snug text-[#e0e9ee] sm:text-[18px]">
+                  Each result shows its {focus.label.toLowerCase()} fee
+                  {focus.median !== null && ` beside the ${formatAmount(focus.median)} national median`}.
+                </p>
+              )}
+            </div>
+            {heroCoverage && (
+              <CoverageMeter
+                coverage={heroCoverage}
+                charter={charter}
+                stateName={hasState ? stateName : undefined}
+                // With results on a phone, the results come first; the coverage line folds below them.
+                className={`fi-reveal fi-reveal-delay-1 mt-8 lg:mt-0 ${shouldShowResults ? "hidden sm:block" : ""}`}
+              />
             )}
           </div>
 
-          <div className="mt-6 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_220px] lg:items-center">
+          <div className="fi-reveal fi-reveal-delay-1 mt-8 grid gap-3 rounded-2xl border border-border bg-surface-0 p-3 shadow-[0_18px_40px_-24px_rgba(16,45,67,0.45)] sm:p-4 lg:mt-12 lg:grid-cols-[minmax(0,1fr)_auto_220px] lg:items-center">
             <InstitutionSearchBar
               initialQuery={query}
               ariaLabel="Search by bank or credit union name"
@@ -301,10 +373,12 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
             </nav>
             <StatePicker query={keep.q} stateCode={stateCode} charter={charter} fee={focusCategory} />
           </div>
-        </section>
+        </div>
+      </section>
 
+      <div className="mx-auto max-w-page px-4 pb-14 sm:px-6 sm:pb-20">
         {shouldShowResults && (
-          <section aria-labelledby="results-heading" className="fi-reveal fi-reveal-delay-1 mt-10 sm:mt-12">
+          <section aria-labelledby="results-heading" className="fi-reveal fi-reveal-delay-2 mt-8 sm:mt-12">
             <h2 id="results-heading" className={`${H2} text-center sm:text-left`}>
               {resultsTitle}
             </h2>
@@ -325,7 +399,7 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
 
             {results.total > 0 ? (
               <div className="mt-5">
-                <InstitutionMobileCards rows={results.rows} coverage={coverage} focus={focus} />
+                <InstitutionMobileCards rows={results.rows} focus={focus} />
                 <InstitutionResultsTable rows={results.rows} coverage={coverage} focus={focus} />
                 <DirectoryPagination page={page} totalPages={totalPages} buildHref={buildPageHref} />
                 <div className="mt-6">{resultsSource}</div>
@@ -356,76 +430,61 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
           </section>
         )}
 
-        {!hasState && rows.length > 0 && (
-          <section aria-labelledby="states-heading" className="fi-reveal fi-reveal-delay-2 mt-10 border-t border-border pt-8 sm:mt-12 sm:pt-10">
-            <h2 id="states-heading" className={`${H2} text-center sm:text-left`}>
-              Coverage by state
-            </h2>
-            {byState && <p className={`${FINDING} text-center`}>{byState}</p>}
-
-            <figure className="mt-6 min-w-0">
-              <figcaption className="text-[13px] font-semibold text-ink">
-                {charter
-                  ? `Share of ${charterNoun(charter)} with published fees, by state`
-                  : "Share of institutions with published fees, by state"}
-              </figcaption>
-              <div className="mx-auto mt-3 hidden max-w-[860px] lg:block">
-                <StateDirectoryMap rows={rows} bands={bands} hrefFor={stateHref} />
-              </div>
-              <div className="mt-3 lg:mt-6">
-                <StateList
-                  rows={rows.map((r) => ({
-                    code: r.code,
-                    name: r.name,
-                    href: stateHref(r.code),
-                    published: COUNT.format(r.published),
-                    monitored: COUNT.format(r.monitored),
-                    share: percentLabel(r.share),
-                  }))}
-                  shown={STATE_ROWS_SHOWN}
-                />
-              </div>
-            </figure>
-            <div className="mt-6">
-              <SourceNote label="Source">
-                Institutions monitored in the {PRODUCT_NAME}, from FDIC and NCUA records and counted by headquarters state, against
-                those with at least one fee published from their own schedule. {stats.freshnessLabel}.
-              </SourceNote>
-            </div>
-            {!(shouldShowResults && results.total > 0) && method}
+        {rows.length > 0 && (
+          <section
+            aria-labelledby="states-heading"
+            className={`fi-reveal fi-reveal-delay-2 ${
+              shouldShowResults ? "mt-10 sm:mt-12" : "mt-12 sm:mt-16"
+            }`}
+          >
+            <CoverageDisclosure
+              collapsed={shouldShowResults}
+              headingId="states-heading"
+              title="Coverage by state"
+              summary={stateSummaryLine(rows)}
+              heading={
+                <h2 id="states-heading" className={`${H2} text-center sm:text-left`}>
+                  Coverage by state
+                </h2>
+              }
+            >
+              {coverageBody}
+            </CoverageDisclosure>
           </section>
         )}
 
-        {/* One next step for bank and credit union teams, leading to the sample report and then Pro. */}
-        <section aria-labelledby="teams-heading" className="mt-12 rounded-2xl border border-border bg-surface-0 p-5 sm:mt-16 sm:flex sm:items-center sm:justify-between sm:gap-8 sm:p-7">
+        {/* The page's one next step: Hamilton, with the sample report for teams not ready to subscribe. */}
+        <section
+          aria-labelledby="hamilton-heading"
+          className="fi-reveal mt-14 border-t border-border pt-10 sm:mt-16 lg:grid lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end lg:gap-12"
+        >
           <div className="min-w-0 text-center sm:text-left">
-            <h2 id="teams-heading" className="text-[18px] font-semibold text-ink sm:text-[20px]">
-              For bank and credit union teams
+            <h2 id="hamilton-heading" className="text-[34px] font-medium leading-[1.05] tracking-[-0.02em] text-ink sm:text-[44px]" style={SERIF}>
+              <span className="block text-brick">Hey Hamilton,</span>
+              <span className="block">how do our fees compare with our peers?</span>
             </h2>
-            <p className="mt-1 text-[14px] leading-relaxed text-ink-soft sm:mx-0 sm:max-w-2xl sm:text-left">
-              The Competitive Fee Position Report sets one institution&apos;s fees beside its market, with the source for each figure.
-            </p>
+            <p className="mt-4 text-[16px] leading-relaxed text-ink-soft">Named peers in your market, each fee linked to its schedule.</p>
           </div>
-          <div className="mt-4 flex shrink-0 flex-col items-center gap-2 sm:mt-0 sm:items-end">
+          <div className="mt-6 flex flex-col items-center gap-3 sm:flex-row sm:flex-wrap sm:gap-x-7 lg:mt-0">
+            <TrackLink
+              event="upgrade_click"
+              eventProps={{ placement: "institutions_hamilton_band" }}
+              href={PRO_PLANS_NAV.href}
+              className="fi-btn fi-btn-brick min-h-12 px-7 text-[15px]"
+            >
+              <Users aria-hidden="true" className="size-4" />
+              Track your peers in Hamilton
+            </TrackLink>
             <TrackLink
               event={cta.event}
-              eventProps={{ placement: "institutions_teams_band" }}
+              eventProps={{ placement: "institutions_hamilton_band" }}
               href={cta.href}
-              className="inline-flex min-h-11 items-center rounded-full bg-ink px-5 text-[14px] font-semibold text-on-ink hover:opacity-90"
+              className={`inline-flex min-h-11 items-center text-[15px] ${LINK}`}
             >
               {cta.label}
             </TrackLink>
-            <TrackLink
-              event="upgrade_click"
-              eventProps={{ placement: "institutions_teams_band" }}
-              href={PRO_PLANS_NAV.href}
-              className={`inline-flex min-h-11 items-center text-[14px] ${LINK}`}
-            >
-              {PRO_PLANS_NAV.label}
-            </TrackLink>
           </div>
         </section>
-
       </div>
     </div>
   );
