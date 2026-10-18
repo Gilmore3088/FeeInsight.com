@@ -52,7 +52,7 @@ function Dumbbell({ label, own, median, ownText, medianText, direction }: {
   const [lo, hi] = own < median ? [own, median] : [median, own];
   return (
     <li className="grid grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)_auto] items-center gap-x-3 py-2.5 sm:grid-cols-[10rem_minmax(0,1fr)_auto]">
-      <span className="text-[13px] leading-snug text-ink-soft">{label}</span>
+      <span className="text-[13px] leading-snug text-ink-soft">{label.replace(/-/g, "\u2011")}</span>
       <span
         className="relative h-5"
         role="img"
