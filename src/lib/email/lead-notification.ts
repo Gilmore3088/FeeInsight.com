@@ -182,7 +182,7 @@ function renderLineOverLink(block: string): string | null {
   return `<p style="${PARAGRAPH}${FIGURES}"><a href="${escapeHtml(lines[1].trim())}" style="${LINK}">${escapeHtml(lines[0])}</a></p>`;
 }
 
-/** A bare link on its own (the copy-paste fallback under a button) is set small and quiet. */
+/** A bare link on its own (the copy-paste fallback for a button) is set small and quiet. */
 function renderBareLink(block: string): string | null {
   if (!/^https?:\/\/\S+$/.test(block)) return null;
   return `<p style="margin:0 0 16px;font-family:${SANS};font-size:13px;line-height:1.5;color:${C.muted};"><a href="${escapeHtml(block)}" style="color:${C.muted};text-decoration:underline;word-break:break-all;">${escapeHtml(block)}</a></p>`;
@@ -239,7 +239,11 @@ export function renderLeadEmailHtml(content: LeadEmailContent) {
   const blocks = toBlocks(content.lines);
   const closing = toBlocks(content.closing);
   const firstSection = content.sections?.[0];
-  const preheader = (blocks[0] ?? toBlocks(firstSection?.lines)[0])?.split("\n")[0] ?? "";
+  const sectionLead = toBlocks(firstSection?.lines)[0]?.split("\n")[0];
+  const preheader =
+    blocks[0]?.split("\n")[0] ??
+    (firstSection ? [firstSection.heading, sectionLead].filter(Boolean).join(": ") : closing[0]?.split("\n")[0]) ??
+    "";
   const site = SITE_URL.replace(/\/$/, "");
   const eyebrow = content.eyebrow
     ? `<p style="margin:0 0 10px;${LABEL}color:${C.terra};">${escapeHtml(content.eyebrow)}</p>`

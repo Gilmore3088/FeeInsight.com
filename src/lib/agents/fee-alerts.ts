@@ -280,6 +280,7 @@ export function buildFeeAlertEmail(
       const more = institution.newlyPublished.length - listed.length;
       lines.push(`Now verified: ${listed.join(", ")}${more > 0 ? `, and ${more} more` : ""}.\n${profile}`);
     }
+    if (lines.at(-1) === "") lines.pop();
     return { heading: institution.institutionName, lines };
   });
 

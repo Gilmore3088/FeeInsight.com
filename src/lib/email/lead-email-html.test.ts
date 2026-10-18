@@ -42,6 +42,7 @@ describe("renderLeadEmailHtml", () => {
     const html = renderLeadEmailHtml(content);
     expect(html).toContain(">Capital City&nbsp;Bank</h2>");
     expect(html).toContain(">M&amp;T&nbsp;Bank</h2>");
+    expect(html).toContain(">Capital City Bank: One</div>");
     expect(renderLeadEmailText(content)).toMatch(/^Capital City Bank\nOne\n\nM&T Bank\nTwo\n/);
   });
 
