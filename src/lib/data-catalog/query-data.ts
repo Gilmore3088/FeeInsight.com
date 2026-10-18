@@ -114,6 +114,10 @@ export interface QueryDataCitation {
   as_of: string | null;
   /** When Fee Insight last loaded the rows; null for fee data, whose date is as_of. */
   fetched_at: string | null;
+  /** The open licence the data is published under (e.g. "CC BY 4.0"); absent for public-domain and our own data. */
+  licence?: string;
+  /** The credit the licence requires, word for word. Show it with every figure from these rows. */
+  attribution?: string;
 }
 
 export type QueryDataRow = Record<string, string | number | null>;
@@ -274,6 +278,8 @@ async function queryArea(input: QueryDataInput, source: string, seriesKey: strin
       source_url: newest?.source_url ?? null,
       as_of: newest?.period ?? null,
       fetched_at: fetched,
+      ...(entry.licence.licenceName ? { licence: entry.licence.licenceName } : {}),
+      ...(entry.licence.attribution ? { attribution: entry.licence.attribution } : {}),
     },
     ...(list.length === 0 ? { note: "No figures are loaded for this series at this scope and period." } : {}),
   };

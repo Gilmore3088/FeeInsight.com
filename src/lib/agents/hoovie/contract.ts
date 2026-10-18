@@ -72,6 +72,8 @@ export interface HoovieLicence {
   licenceName?: string;
   /** What a person must still check, or how the source must be cited. */
   note?: string;
+  /** The credit the licence requires next to every figure shown, word for word; absent when none is required. */
+  attribution?: string;
 }
 
 export interface HoovieSourceContract {
