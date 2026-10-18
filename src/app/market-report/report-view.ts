@@ -45,7 +45,7 @@ export function headlineFinding(lines: ReportLine[]): string {
 }
 
 /** " Monthly maintenance rests on incomplete inputs." after a count that includes such a line. */
-function incompleteTail(lines: ReportLine[]): string {
+export function incompleteTail(lines: ReportLine[]): string {
   const open = comparedLines(lines).filter(isIncomplete).map((l) => l.label);
   if (open.length === 0) return "";
   return ` ${join(open)} ${open.length === 1 ? "rests" : "rest"} on incomplete inputs.`;

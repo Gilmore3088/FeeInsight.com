@@ -32,7 +32,7 @@ export function HamiltonClose({
       <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-3">
         <a
           href={`/subscribe?${params.toString()}#pro`}
-          className="fi-btn fi-btn-primary min-h-11"
+          className="fi-btn fi-btn-brick min-h-12 px-6 text-[15px]"
         >
           See Hamilton plans
         </a>

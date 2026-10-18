@@ -11,6 +11,7 @@ import type { ReactNode } from "react";
 import { SITE_NAME } from "@/lib/constants";
 import {
   MIN_LOCAL_PEERS_PER_LINE,
+  positionCounts,
   type LinePosition,
   type ReportLine,
 } from "@/lib/custom-report/analysis";
@@ -24,9 +25,11 @@ import { CheckingLineupSection } from "./checking-lineup-section";
 import { HubSection, KICKER } from "@/app/(public)/research/district/[id]/district-hub";
 import { Disclosure } from "./disclosure";
 import { ShowAll } from "./show-all";
-import { EXTRA_ROW, ROWS_SHOWN, bandText, countiesText, headlineFinding, identifiedText, leftOutNote, marketFinding, reviewPriorities, widestGapFinding } from "./report-view";
+import { EXTRA_ROW, ROWS_SHOWN, bandText, countiesText, headlineFinding, identifiedText, incompleteTail, leftOutNote, marketFinding, reviewPriorities, widestGapFinding, type ReviewPriority } from "./report-view";
 import { FeeComparison } from "./fee-comparison";
 import { PrintOpen } from "./print-open";
+import { PositionSplit } from "./position-split";
+import { ArrowUp, ChartPie, Scale } from "lucide-react";
 
 const DATE = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
 
@@ -127,6 +130,14 @@ export function footprintLine(branches: MarketBranchFootprint | null | undefined
   return `${own.branches} ${own.branches === 1 ? "branch" : "branches"}${shareText}`;
 }
 
+/** One icon per priority: fees above the market, checking, fee income. */
+function PriorityIcon({ item }: { item: ReviewPriority }) {
+  const props = { className: "size-3.5", strokeWidth: 2.25 };
+  if (item.href === "#revenue") return <ChartPie {...props} />;
+  if (item.href === "#lineup" || item.text.startsWith("Checking")) return <Scale {...props} />;
+  return <ArrowUp {...props} />;
+}
+
 const FIGURE_CAPTION = "text-[14px] font-semibold text-ink";
 
 function Tile({ value, label }: { value: string; label: string }) {
@@ -214,6 +225,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
   const ownDeposits = branches?.byInstitution[data.subject.institution_id]?.deposits ?? null;
   const PriorityHeading = Title === "h1" ? "h2" : "h3";
   const priorities = reviewPriorities(analysis.lines, { lineup, revenue });
+  const split = positionCounts(analysis.lines);
   const ownShare = branches && ownDeposits !== null && branches.totalDeposits > 0 ? (ownDeposits / branches.totalDeposits) * 100 : null;
 
   return (
@@ -225,26 +237,38 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
           <Title className="mt-2 text-[30px] font-semibold leading-[1.08] tracking-[-0.03em] text-ink sm:text-[44px]">
             {name}: competitive fee position
           </Title>
-          {analysis.readiness.ready && (
-            <p className="mx-auto mt-3 text-[18px] font-semibold leading-snug text-ink sm:mx-0 sm:text-[21px]">{headlineFinding(analysis.lines)}</p>
-          )}
           <p className="mx-auto mt-3 text-[14px] text-ink-soft sm:mx-0">
             {counties} · prepared {DATE.format(preparedOn)} by {SITE_NAME}
           </p>
+          {analysis.readiness.ready && split.above + split.inside + split.below > 0 ? (
+            <>
+              <PositionSplit {...split} summary={headlineFinding(analysis.lines)} />
+              {incompleteTail(analysis.lines) && (
+                <p className="mx-auto mt-2 max-w-[34rem] text-left text-[13px] text-ink-muted sm:mx-0">{incompleteTail(analysis.lines).trim()}</p>
+              )}
+            </>
+          ) : analysis.readiness.ready ? (
+            <p className="mx-auto mt-3 text-[18px] font-semibold leading-snug text-ink sm:mx-0 sm:text-[21px]">{headlineFinding(analysis.lines)}</p>
+          ) : null}
           <div className="mt-5 flex flex-wrap justify-center gap-3 sm:justify-start print:hidden">{actions}</div>
           {analysis.readiness.ready && priorities.length > 0 && (
-            <section aria-labelledby="priorities-heading" className="mx-auto mt-6 max-w-3xl border-l-2 border-border pl-4 text-left sm:mx-0">
+            <section aria-labelledby="priorities-heading" className="mx-auto mt-8 max-w-3xl text-left sm:mx-0">
               <PriorityHeading id="priorities-heading" className={KICKER}>
                 Priorities for review
               </PriorityHeading>
-              <ul className="mt-1 text-[15px] leading-snug text-ink">
-                {priorities.map((item) => (
-                  <li key={item.href + item.text}>
-                    <a href={item.href} className="flex min-h-11 items-center underline decoration-border underline-offset-4 hover:decoration-ink">
-                      {item.text}
-                    </a>
-                  </li>
-                ))}
+              <ul className="mt-2 space-y-1 text-[15px] leading-snug text-ink">
+                {priorities.map((item) => {
+                  return (
+                    <li key={item.href + item.text}>
+                      <a href={item.href} className="group flex min-h-11 items-center gap-3 py-1">
+                        <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-brick-tint text-brick" aria-hidden="true">
+                          <PriorityIcon item={item} />
+                        </span>
+                        <span className="underline decoration-border underline-offset-4 group-hover:decoration-ink">{item.text}</span>
+                      </a>
+                    </li>
+                  );
+                })}
               </ul>
             </section>
           )}

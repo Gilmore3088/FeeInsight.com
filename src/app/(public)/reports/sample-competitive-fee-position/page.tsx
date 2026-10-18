@@ -8,6 +8,8 @@
  */
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Download, FileText, LineChart } from "lucide-react";
+import { DEMO_REQUEST_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
 import { TrackLink } from "@/components/track-link";
 import { TrackView } from "@/components/track-view";
 import { PAGE_CRUMBS, PAGE_HEADER } from "@/components/public/page-header";
@@ -44,10 +46,88 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-const PRIMARY_BUTTON =
-  "inline-flex min-h-11 items-center rounded-full bg-ink px-5 text-[14px] font-semibold text-on-ink transition-opacity hover:opacity-90";
-const SECONDARY_BUTTON =
-  "inline-flex min-h-11 items-center rounded-full border border-control-border px-5 text-[14px] font-semibold text-ink transition-colors hover:border-ink";
+// The homepage's CTA pair (landing-hamilton.tsx): Hamilton is the goal, the report the second step.
+const HAMILTON_BUTTON = "fi-btn fi-btn-brick min-h-12 px-6 text-[15px]";
+const REPORT_BUTTON = "fi-btn fi-btn-secondary min-h-12 px-6 text-[15px]";
+const QUIET_LINK =
+  "inline-flex min-h-11 items-center gap-1.5 px-1 text-[14px] font-medium text-ink-soft underline decoration-border underline-offset-4 hover:text-ink hover:decoration-ink";
+
+/** The sample's two next steps, Hamilton first. `placement` names where on the page they sit. */
+function NextSteps({ placement }: { placement: string }) {
+  return (
+    <>
+      <TrackLink event="upgrade_click" eventProps={{ placement: `sample_report_${placement}` }} href={PRO_PLANS_NAV.href} className={HAMILTON_BUTTON}>
+        Get Hamilton for your institution
+      </TrackLink>
+      <TrackLink event="request_report_click" eventProps={{ placement: `sample_report_${placement}` }} href={REQUEST_HREF} className={REPORT_BUTTON}>
+        {REPORT_OFFER.institutionCtaLabel}
+      </TrackLink>
+    </>
+  );
+}
+
+/**
+ * The page's close (James, Oct 18: "add a Hamilton subscription action alongside the report
+ * offer"): Hamilton, the subscription, on the wider navy side; the one-off report beside it.
+ */
+function SampleClose() {
+  return (
+    <section
+      aria-labelledby="sample-close-heading"
+      className="fi-on-navy mt-14 grid overflow-hidden rounded-2xl bg-ink text-paper lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] print:hidden"
+    >
+      <div className="p-6 sm:p-10">
+        <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-brick-on-navy">
+          <LineChart aria-hidden="true" className="size-4" />
+          Hamilton
+        </p>
+        <h2 id="sample-close-heading" className="mt-3 text-[28px] font-semibold leading-[1.1] tracking-[-0.03em] text-white sm:text-[36px]">
+          Track your own market in Hamilton
+        </h2>
+        <p className="mt-3 max-w-xl text-[16px] leading-relaxed text-paper/80">
+          Hamilton compares your fees with the schedules your local competitors publish.
+        </p>
+        <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3">
+          <TrackLink event="upgrade_click" eventProps={{ placement: "sample_report_footer" }} href={PRO_PLANS_NAV.href} className={HAMILTON_BUTTON}>
+            Get Hamilton for your institution
+          </TrackLink>
+          <TrackLink
+            event="contact_sales"
+            eventProps={{ placement: "sample_report_footer_demo" }}
+            href={DEMO_REQUEST_NAV.href}
+            className="inline-flex min-h-11 items-center text-[15px] font-medium text-paper underline decoration-paper/40 underline-offset-4 hover:decoration-paper"
+          >
+            {DEMO_REQUEST_NAV.label}
+          </TrackLink>
+        </div>
+      </div>
+      <div className="border-t border-white/15 p-6 sm:p-10 lg:border-l lg:border-t-0">
+        <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-paper/70">
+          <FileText aria-hidden="true" className="size-4" />
+          One report
+        </p>
+        <p className="mt-3 text-[20px] font-semibold leading-snug tracking-[-0.02em] text-white">This report, for your institution</p>
+        <p className="mt-2 text-[14px] text-paper/75">
+          {REPORT_OFFER.priceLabel}. {REPORT_OFFER.refreshLabel}.
+        </p>
+        <TrackLink
+          event="request_report_click"
+          eventProps={{ placement: "sample_report_footer" }}
+          href={REQUEST_HREF}
+          className="mt-5 inline-flex min-h-12 items-center rounded-full border border-paper/40 px-6 text-[15px] font-semibold text-paper transition-colors hover:border-paper"
+        >
+          {REPORT_OFFER.institutionCtaLabel}
+        </TrackLink>
+        <p className="mt-5 text-[13px] text-paper/70">
+          Questions:{" "}
+          <a href={`mailto:${CONTACT_EMAIL}`} className="text-paper underline">
+            {CONTACT_EMAIL}
+          </a>
+        </p>
+      </div>
+    </section>
+  );
+}
 
 /** The report's cover, drawn without figures: what arrives, while the live sample is rebuilt. */
 function SampleCoverArt() {
@@ -94,15 +174,8 @@ function SampleComingSoon() {
         We are rebuilding it from current, source-checked data. You can still request one for your institution.
       </p>
       <div className="mt-6 flex flex-wrap items-center justify-center gap-3 sm:justify-start">
-        <TrackLink
-          event="request_report_click"
-          eventProps={{ placement: "sample_report_offline" }}
-          href={REQUEST_HREF}
-          className={PRIMARY_BUTTON}
-        >
-          {REPORT_OFFER.institutionCtaLabel}
-        </TrackLink>
-        <Link href="/research" className={SECONDARY_BUTTON}>
+        <NextSteps placement="offline" />
+        <Link href="/research" className={QUIET_LINK}>
           Browse the research
         </Link>
       </div>
@@ -154,18 +227,14 @@ export default async function SampleReportPage() {
           contactHref="/contact?source=sample_report"
           actions={
             <>
-              <TrackLink
-                event="request_report_click"
-                eventProps={{ placement: "sample_report_header" }}
-                href={REQUEST_HREF}
-                className={PRIMARY_BUTTON}
-              >
-                {REPORT_OFFER.institutionCtaLabel}
-              </TrackLink>
-              <PrintButton className={SECONDARY_BUTTON} />
-              <a href={SAMPLE_CSV_PATH} className={SECONDARY_BUTTON}>
-                Download CSV
-              </a>
+              <NextSteps placement="header" />
+              <span className="flex w-full flex-wrap justify-center gap-x-4 sm:justify-start">
+                <PrintButton icon className={QUIET_LINK} />
+                <a href={SAMPLE_CSV_PATH} className={QUIET_LINK}>
+                  <Download aria-hidden="true" className="size-4" />
+                  Download CSV
+                </a>
+              </span>
             </>
           }
           correctionNote={
@@ -180,27 +249,7 @@ export default async function SampleReportPage() {
         />
       </div>
 
-      <section className="mt-10 flex flex-col items-start gap-4 rounded-xl border border-border bg-surface-0 p-6 sm:flex-row sm:items-center sm:justify-between print:hidden">
-        <div>
-          <p className="text-[20px] font-semibold tracking-[-0.02em] text-ink">Get this report for your institution.</p>
-          <p className="mt-1 text-[13px] text-ink-muted">
-            {REPORT_OFFER.priceLabel}. {REPORT_OFFER.refreshLabel}. Questions:{" "}
-            <a href={`mailto:${CONTACT_EMAIL}`} className="text-ink-soft underline">
-              {CONTACT_EMAIL}
-            </a>
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
-          <TrackLink
-            event="request_report_click"
-            eventProps={{ placement: "sample_report_footer" }}
-            href={REQUEST_HREF}
-            className={PRIMARY_BUTTON}
-          >
-            {REPORT_OFFER.institutionCtaLabel}
-          </TrackLink>
-        </div>
-      </section>
+      <SampleClose />
     </div>
   );
 }
