@@ -119,7 +119,7 @@ const TAKEAWAY_COLS = ["", "", "lg:grid-cols-2", "lg:grid-cols-3"];
 function Takeaways({ points }: { points: Takeaway[] }) {
   if (points.length === 0) return null;
   return (
-    <ul aria-label="Key points" className={`mx-auto mt-6 grid max-w-[34rem] gap-2 text-left sm:mx-0 sm:max-w-none ${TAKEAWAY_COLS[points.length] ?? ""}`}>
+    <ul aria-label="Key points" className={`mx-auto mt-6 grid max-w-[34rem] gap-3 text-left sm:mx-0 sm:max-w-none ${TAKEAWAY_COLS[points.length] ?? ""}`}>
       {points.map((point) => {
         const { icon: Icon, label } = EVIDENCE[point.evidence];
         return (
@@ -286,7 +286,7 @@ export default async function ArticlePage({ params }: PageProps) {
           <Takeaways points={points} />
           {brief.lead.length > 0 && (
             <div
-              className={`mt-6 border-t border-border pt-5 text-[17px] leading-relaxed text-ink sm:text-[19px] [&_strong]:font-semibold ${PAGE_HEADER_BLOCK}`}
+              className={`mt-6 text-[17px] leading-relaxed text-ink sm:text-[19px] [&_strong]:font-semibold ${PAGE_HEADER_BLOCK}`}
               dangerouslySetInnerHTML={{ __html: renderArticleMarkdown(brief.lead.join("\n\n")) }}
             />
           )}
