@@ -59,7 +59,14 @@ keeps the cut (`fullCityForCut`). It is a data step, so the pipeline pause holds
 
 `atlas-storage-retention`, after the city repair in the daily scoreboard run, records the database
 size, the 12 largest tables and the growth since its last run, and warns in its summary above
-9,000 MB or 300 MB a day. Supabase grew the disk from 8 to 12 GB on Oct 17, 2026; that day 2.5 of
+13,000 MB or 300 MB a day (raised from 9,000 MB on Oct 18, 2026: the public-data back-fill left
+the database at about 10 GB on an 18 GB disk, so 9,000 warned every day). It also measures every
+table a Hoovie source writes against its size budget (`src/lib/agents/hoovie/size-budgets.ts`),
+records the sizes (`budget_tables`), the tables over budget and the registry sources the
+scheduler holds for them, and warns for each table over budget. The registry scheduler reads the
+newest recorded sizes (`readLatestTableSizes`) and schedules no partition for a source that writes
+an over-budget table; with no measurement it holds nothing. Nothing is deleted from those tables.
+The morning brief (`daily-brief.ts`) emails James the step's warnings, only on a day with one. Supabase grew the disk from 8 to 12 GB on Oct 17, 2026; that day 2.5 of
 the 6.3 GB was log history nothing trimmed. Three trims count what they would delete every day and
 delete (at most 20,000 rows each a run) only while their `RETENTION_LIVE` switch is true; each
 switch turns on by PR after James's yes naming it (he chose all three on Oct 17, 2026): `legacy_event_log` (retired `agent_events`

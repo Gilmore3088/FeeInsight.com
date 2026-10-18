@@ -20,6 +20,17 @@ To add a source: write the parser and the run module, then add its contract.
 Each fact comes from the loader's own code. A fact the code doesn't state is marked
 unconfirmed, never guessed.
 
+## Size budgets
+
+Every table a source writes has a size budget in MB (`size-budgets.ts`): 7,000 for
+`institution_call_report_items` and 2,000 for `area_statistics` (about double their Oct 17, 2026
+sizes after the back-fill), 3,000 for `institution_financial_records`, and 1,000 for every other
+table until a measured size says otherwise. Atlas's daily storage step measures each one. While a
+table is over budget, the registry scheduler starts no partition for any source that writes it;
+the storage step's summary names the held sources and the morning brief warns James. A hold ends
+when the table is measured back under budget or a PR raises the budget. Never delete data to get
+under a budget. A new table in a contract gets the default budget unless one is set.
+
 ## Rules
 
 - Free, public sources only. Use no proxies and no spoofed user agents.
