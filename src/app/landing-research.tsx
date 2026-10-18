@@ -64,12 +64,14 @@ export const EVIDENCE_GROUPS: EvidenceGroup[] = [
 /**
  * The reports Hamilton writes, each with the sources it reads (James, Oct 18: "a few more report
  * options", "the sources highlighted for each type of report", no question line). The flow lights
- * a report's sources in turn. Descriptions name what each covers and carry no figures.
+ * a report's sources in turn. Descriptions name what each covers and carry no figures. The
+ * board, market and peer briefs and the Competitive Fee Position Report are named outputs; the
+ * other three are questions Hamilton answers, so they are named by subject, not as reports.
  */
 export const EVIDENCE_REPORTS: { key: string; name: string; detail: string; sources: SourceKey[] }[] = [
   {
     key: "board",
-    name: "Board report",
+    name: "Board brief",
     detail: "Where each fee sits against your market, ready for committee, every figure linked to its source.",
     sources: ["schedules", "callReports", "branches", "rules", "complaints"],
   },
@@ -81,31 +83,31 @@ export const EVIDENCE_REPORTS: { key: string; name: string; detail: string; sour
   },
   {
     key: "income",
-    name: "Fee income review",
+    name: "Fee income against peers",
     detail: "Your service-charge income beside institutions of your size, quarter by quarter.",
     sources: ["schedules", "callReports", "industry"],
   },
   {
     key: "peers",
-    name: "Peer comparison",
+    name: "Peer brief",
     detail: "Your fees and financials beside banks and credit unions of your size.",
     sources: ["schedules", "callReports", "sec"],
   },
   {
     key: "market",
-    name: "Local market brief",
+    name: "Market brief",
     detail: "Who competes in your counties and the household income behind that market.",
     sources: ["schedules", "branches", "income"],
   },
   {
     key: "regional",
-    name: "Regional outlook",
+    name: "Regional conditions",
     detail: "Fee levels across your region, read against the latest Beige Book and industry totals.",
     sources: ["schedules", "economy", "industry"],
   },
   {
     key: "compliance",
-    name: "Rules and complaints scan",
+    name: "Rules and complaints",
     detail: "The fee rules, regulator actions and consumer complaints that touch your fees.",
     sources: ["schedules", "rules", "complaints"],
   },
@@ -167,7 +169,7 @@ export function EvidenceFlow() {
       data-evidence-flow=""
       role="region"
       aria-roledescription="carousel"
-      aria-label="Reports Hamilton writes and the sources each reads"
+      aria-label="What Hamilton writes and the sources each reads"
     >
       <ul
         className="grid grid-cols-2 gap-2 sm:gap-3 lg:col-start-1 lg:grid-cols-1 lg:grid-rows-4"
@@ -229,7 +231,7 @@ export function EvidenceFlow() {
       <Connectors paths={OUT_PATHS} lit={[true]} className="hidden h-full w-full lg:col-start-4 lg:block" />
 
       <div className="flex min-w-0 flex-col justify-center gap-3 lg:col-start-5">
-        <ul className="flex flex-col gap-1.5" aria-label="Reports Hamilton writes">
+        <ul className="flex flex-col gap-1.5" aria-label="What Hamilton writes">
           {EVIDENCE_REPORTS.map((r, i) => {
             const on = i === clock.index;
             return (
@@ -249,7 +251,7 @@ export function EvidenceFlow() {
             );
           })}
         </ul>
-        <SlideControls clock={clock} count={EVIDENCE_REPORTS.length} name="Hamilton reports" small />
+        <SlideControls clock={clock} count={EVIDENCE_REPORTS.length} name="Hamilton outputs" small />
       </div>
     </div>
   );

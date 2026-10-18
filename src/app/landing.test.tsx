@@ -574,13 +574,13 @@ describe("evidence flow", () => {
     expect(html).toMatch(/Ask Hamilton\.<\/span> <span class="block">Every answer shows its sources\./);
     expect(EVIDENCE_GROUPS.map((g) => g.name)).toEqual(["Published fees", "Financial filings", "Branches and markets", "Regulatory sources"]);
     expect(EVIDENCE_REPORTS.map((r) => r.name)).toEqual([
-      "Board report",
+      "Board brief",
       "Competitive fee position",
-      "Fee income review",
-      "Peer comparison",
-      "Local market brief",
-      "Regional outlook",
-      "Rules and complaints scan",
+      "Fee income against peers",
+      "Peer brief",
+      "Market brief",
+      "Regional conditions",
+      "Rules and complaints",
     ]);
     // Every report names real sources, and every report reads the published fees.
     const keys = new Set(EVIDENCE_GROUPS.flatMap((g) => g.items.map((i) => i.key)));
@@ -593,7 +593,7 @@ describe("evidence flow", () => {
     for (const name of ["FDIC · NCUA", "SEC", "Census · IRS", "CFPB", "Beige Book · FOMC", "Regulators · States"]) expect(providers).toContain(name);
     expect(EVIDENCE_GROUPS.find((g) => g.key === "filings")!.items.map((i) => i.name)).toContain("Industry totals");
     // A screen reader reads three lists: the sources, Hamilton, what it delivers. The lines are decoration.
-    const order = ['aria-label="Evidence Hamilton reads"', "data-evidence-hub", "Connect evidence to institutional questions", 'aria-label="Reports Hamilton writes"', "Get Hamilton for your institution"].map((m) => html.indexOf(m));
+    const order = ['aria-label="Evidence Hamilton reads"', "data-evidence-hub", "Connect evidence to institutional questions", 'aria-label="What Hamilton writes"', "Get Hamilton for your institution"].map((m) => html.indexOf(m));
     expect(order.every((at) => at >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(html.match(/data-evidence-group=/g)).toHaveLength(EVIDENCE_GROUPS.length);
