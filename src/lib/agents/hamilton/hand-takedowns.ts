@@ -676,6 +676,26 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
   { feePublishedId: 45157, institutionId: 5622, canonicalFeeKey: "overdraft", amount: 0, feeName: "Non-Sufficient Funds / Overdraft: Non-members",
     reason: "source_mismatch: #1837", issue: 1837, kind: "wrong_category",
     evidence: "East River FCU (doc 16371, text 11087): the left column's \"Non-Sufficient Funds / Overdraft\" heading sits over the right column's \"Notary Service\" rows; \"Non-members ... FREE\" is the free notary row, not an overdraft price." },
+  // #1905 (read-only, Oct 18; James's Navy Federal review): rows read from its fees-and-charges page
+  // (doc 26712, text 23988, which holds every accordion section) that are not the account's fee.
+  // 5 entries, under James's fewer-than-20 rule. Its "ATM fees: Transfer" $1.00 (145758) stays: the
+  // non-network column prices a transfer at $1.00.
+  { feePublishedId: 145735, institutionId: 4956, canonicalFeeKey: "cash_advance", amount: 0.5, feeName: "Credit card cash advance§ | None",
+    reason: "duplicate of #28173 (#1905)", issue: 1905, kind: "duplicate",
+    requiresLive: { feePublishedId: 28173, amount: 0.5, feeName: "Credit card cash advance§" },
+    evidence: "Navy Federal (doc 15428, the Oct 4 copy of fees-and-charges): \"Credit card cash advance§ | None | $0.50 | $1.00\", the CO-OP column's $0.50 with the Navy Federal column's \"None\" joined to the name; the same line is live from the current copy (doc 26712) as 28173." },
+  { feePublishedId: 122351, institutionId: 4956, canonicalFeeKey: "card_replacement", amount: 5, feeName: "Lost/Stolen Card",
+    reason: "source_mismatch: #1905", issue: 1905, kind: "wrong_category",
+    evidence: "Navy Federal (doc 26712, text 23988), under \"Prepaid and Gift Cards | Visa® Gift Cards\": \"Lost/Stolen Card | $5.00\", a gift card's replacement, not a deposit account's debit card (\"First-class USPS, new or replacement card | Free\")." },
+  { feePublishedId: 129718, institutionId: 4956, canonicalFeeKey: "atm_non_network", amount: 1, feeName: "Visa/PLUS Network ATM domestic and foreign cash withdrawal and balance inquiry",
+    reason: "source_mismatch: #1905", issue: 1905, kind: "wrong_category",
+    evidence: "Navy Federal (doc 26712, text 23988), under \"GO Prepaid Cards\": \"Visa/PLUS Network ATM domestic and foreign cash withdrawal and balance inquiry\": a prepaid card's ATM fee, not the account's (its ATM table prices a non-network withdrawal at $1.00 in the Non-Navy Federal/Non-CO-OP column)." },
+  { feePublishedId: 19884, institutionId: 4956, canonicalFeeKey: "late_payment", amount: 30, feeName: "Generally 4% of principal and interest for government loans (VA &amp; FHA); maximum late charge of",
+    reason: "source_mismatch: #1905", issue: 1905, kind: "wrong_amount",
+    evidence: "Navy Federal (doc 13439; the current copy doc 26712 prints the same), Mortgage Loans: \"Late charges† | ... Generally 4% of principal and interest for government loans (VA & FHA); maximum late charge of $30 in WV for VA loans ...\": a percentage late charge; $30 is West Virginia's cap, not a flat fee." },
+  { feePublishedId: 15730, institutionId: 4956, canonicalFeeKey: "late_payment", amount: 10, feeName: "Generally a maximum late charge",
+    reason: "source_mismatch: #1905", issue: 1905, kind: "wrong_amount",
+    evidence: "Navy Federal (doc 13439; the current copy doc 26712 prints the same), Mortgage Loans: \"Generally a maximum late charge of $10, $25 in KS, $50 in MO for equity loans\": a cap on an equity loan's percentage late charge, not a flat $10 fee." },
 ];
 
 export interface LiveTakedownRow {

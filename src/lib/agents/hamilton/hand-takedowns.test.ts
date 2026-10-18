@@ -201,9 +201,16 @@ const LIVE: LiveTakedownRow[] = [
   { fee_published_id: 53765, lineage_ref: 208, institution_id: 8579, canonical_fee_key: "stop_payment", fee_name: "Stop Payment Order for Bill Payment, ACH, or Check (one free per calendar year)", amount: "35.00" },
   // #1837: lineage ref is a fixture number.
   { fee_published_id: 45157, lineage_ref: 209, institution_id: 5622, canonical_fee_key: "overdraft", fee_name: "Non-Sufficient Funds / Overdraft: Non-members", amount: "0.00" },
+  // #1905: Navy Federal's five rows and the cash advance row its repeat waits on, live on prod, read-only, Oct 18.
+  { fee_published_id: 145735, lineage_ref: 15218, institution_id: 4956, canonical_fee_key: "cash_advance", fee_name: "Credit card cash advance§ | None", amount: "0.50" },
+  { fee_published_id: 28173, lineage_ref: 176232, institution_id: 4956, canonical_fee_key: "cash_advance", fee_name: "Credit card cash advance§", amount: "0.50" },
+  { fee_published_id: 122351, lineage_ref: 142958, institution_id: 4956, canonical_fee_key: "card_replacement", fee_name: "Lost/Stolen Card", amount: "5.00" },
+  { fee_published_id: 129718, lineage_ref: 142959, institution_id: 4956, canonical_fee_key: "atm_non_network", fee_name: "Visa/PLUS Network ATM domestic and foreign cash withdrawal and balance inquiry", amount: "1.00" },
+  { fee_published_id: 19884, lineage_ref: 14884, institution_id: 4956, canonical_fee_key: "late_payment", fee_name: "Generally 4% of principal and interest for government loans (VA &amp; FHA); maximum late charge of", amount: "30.00" },
+  { fee_published_id: 15730, lineage_ref: 9070, institution_id: 4956, canonical_fee_key: "late_payment", fee_name: "Generally a maximum late charge", amount: "10.00" },
 ];
 const CONDITIONAL_ZERO = [43512, 54014, 61335, 68893, 70121, 73737, 77121, 77122, 77618, 84553, 87079, 87461, 88213, 91505, 120559];
-const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689, 138828, 138832, 138833, 138839, 138827, 138834, 138841, 148352, 138831, 138830, 138848, 138849, 138850, 138851, 42961, 86536, 66721, 66722, 83125, 97335, 97904, 58414, 106021, 33705, 149143, 149806, 137241, 68335, 79402, 74149, 49817, 125584, 109893, 130622, 147193, 133860, 119352, 143826, 97434, 49606, 148620, 107546, 81215, 20420, 102296, 147811, 125359, 146800, 74560, 125809, 102758, 13031, 11722, 11427, 141821, 232, 101170, 64716, 65870, 122350, 81615, 16733, 142748, 152166, 107315, 152973, 152366, 152591, 152306, 45157];
+const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689, 138828, 138832, 138833, 138839, 138827, 138834, 138841, 148352, 138831, 138830, 138848, 138849, 138850, 138851, 42961, 86536, 66721, 66722, 83125, 97335, 97904, 58414, 106021, 33705, 149143, 149806, 137241, 68335, 79402, 74149, 49817, 125584, 109893, 130622, 147193, 133860, 119352, 143826, 97434, 49606, 148620, 107546, 81215, 20420, 102296, 147811, 125359, 146800, 74560, 125809, 102758, 13031, 11722, 11427, 141821, 232, 101170, 64716, 65870, 122350, 81615, 16733, 142748, 152166, 107315, 152973, 152366, 152591, 152306, 45157, 145735, 122351, 129718, 19884, 15730];
 
 // The standing list without the #1772/#1773 ATM rows and #1880's Texas Capital rows, which have their own tests below.
 const STANDING = HAND_TAKEDOWNS.filter((entry) => ![1772, 1773, 1880].includes(entry.issue));
@@ -327,6 +334,8 @@ describe("hand takedowns (James, Oct 16)", () => {
       [152591, "source_mismatch: #1828"],
       [152306, "duplicate of #53765 (#1830)"],
       [45157, "source_mismatch: #1837"],
+      [145735, "duplicate of #28173 (#1905)"], [122351, "source_mismatch: #1905"], [129718, "source_mismatch: #1905"],
+      [19884, "source_mismatch: #1905"], [15730, "source_mismatch: #1905"],
     ]);
     expect(CARD_PRODUCT_TAKEDOWN_LIVE).toBe(true);
     // A wrong read names its issue; a second read of one printed fee names the live copy it repeats too.
@@ -441,6 +450,11 @@ describe("hand takedowns (James, Oct 16)", () => {
         { feePublishedId: 152591, feeVerifiedId: 188726, reason: "source_mismatch: #1828" },
         { feePublishedId: 152306, feeVerifiedId: 187951, reason: "duplicate of #53765 (#1830)" },
         { feePublishedId: 45157, feeVerifiedId: 209, reason: "source_mismatch: #1837" },
+        { feePublishedId: 145735, feeVerifiedId: 15218, reason: "duplicate of #28173 (#1905)" },
+        { feePublishedId: 122351, feeVerifiedId: 142958, reason: "source_mismatch: #1905" },
+        { feePublishedId: 129718, feeVerifiedId: 142959, reason: "source_mismatch: #1905" },
+        { feePublishedId: 19884, feeVerifiedId: 14884, reason: "source_mismatch: #1905" },
+        { feePublishedId: 15730, feeVerifiedId: 9070, reason: "source_mismatch: #1905" },
       ],
       skipped: [],
     });
