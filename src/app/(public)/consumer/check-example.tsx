@@ -1,7 +1,8 @@
 import Link from "next/link";
 import type { Guide } from "@/lib/guides/types";
+import { PRODUCT_NAME } from "@/lib/constants";
 import { getStateFeeIndexesCached } from "@/lib/data-store/public-cached-reads";
-import { formatAbsoluteDate, getPublicNationalIndex } from "@/lib/public-stats";
+import { formatAbsoluteDate, getPublicNationalIndex, getPublicStatsSummary } from "@/lib/public-stats";
 import { STATE_NAMES } from "@/lib/us-states";
 import { SourceNote } from "../research/district/[id]/district-hub";
 import { getPublicInstitutionForPage, getVisibleFeesForPage, isVerifiedFee } from "../institution/[id]/profile-data";
@@ -24,9 +25,10 @@ export async function CheckExample({ id, guides }: { id: number; guides: Guide[]
   if (verifiedFees.length === 0) return null;
   const stateCode = inst.state_code && STATE_NAMES[inst.state_code] ? inst.state_code : null;
   const stateName = stateCode ? STATE_NAMES[stateCode] : null;
-  const [nationalIndex, stateIndexes] = await Promise.all([
+  const [nationalIndex, stateIndexes, stats] = await Promise.all([
     getPublicNationalIndex().catch(() => []),
     stateCode ? getStateFeeIndexesCached(stateCode).catch(() => null) : Promise.resolve(null),
+    getPublicStatsSummary().catch(() => null),
   ]);
   const allRows = buildCheckRows({
     verifiedFees,
@@ -43,6 +45,9 @@ export async function CheckExample({ id, guides }: { id: number; guides: Guide[]
   const guideHrefs = Object.fromEntries(rows.map((row) => [row.category, avoidGuideHref(row.category, guides)]));
   const place = [inst.city ? titleCase(inst.city) : null, inst.state_code].filter(Boolean).join(", ");
   const collectedOn = formatAbsoluteDate(inst.latest_source_collected_at ?? null);
+  // The same date /check gives its medians.
+  const mediansOn = stats?.refreshedOn ?? null;
+  const medianScope = stateLabel && stateName ? `${stateName} and U.S. medians` : "U.S. medians";
 
   return (
     <figure className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] lg:gap-10">
@@ -71,8 +76,12 @@ export async function CheckExample({ id, guides }: { id: number; guides: Guide[]
           guideHrefs={guideHrefs}
         />
         <SourceNote>
-          From {inst.institution_name}&apos;s own published fee schedule
-          {collectedOn ? `, collected ${collectedOn}` : ""}.
+          {inst.institution_name}&apos;s own published fee schedule
+          {collectedOn ? `, collected ${collectedOn}` : ""}. {medianScope} from the {PRODUCT_NAME}
+          {mediansOn ? `, as of ${mediansOn}` : ""}.{" "}
+          <Link href="/methodology" className="underline decoration-border underline-offset-2 hover:decoration-ink">
+            Methodology
+          </Link>
         </SourceNote>
       </div>
     </figure>
