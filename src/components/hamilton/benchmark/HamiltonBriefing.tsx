@@ -39,6 +39,7 @@ const TOPIC_LABELS: Record<string, string> = {
   overdraft: "Overdraft & NSF",
   fees_pricing: "Fees & pricing",
   rulemaking_compliance: "Rulemaking",
+  enforcement: "Enforcement",
   consumer_lending: "Consumer lending",
 };
 

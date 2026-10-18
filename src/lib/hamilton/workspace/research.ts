@@ -19,7 +19,7 @@ import {
 import { getPeerServiceChargeMedians, getRevenueTrend } from "@/lib/data-store/call-reports";
 import { getLocalMarketMembers, type LocalMarketMembers } from "@/lib/data-store/custom-report-market";
 import { getStateEconomicContext } from "@/lib/data-store/economic-context";
-import { STATE_NEWS_SOURCE_PATTERNS } from "@/lib/data-store/news";
+import { STATE_NEWS_SOURCE_PATTERNS, TOPIC_SQL } from "@/lib/data-store/news";
 import { STRUCK_ENFORCEMENT_AGENCIES, STRUCK_REG_ARTICLE_SOURCES } from "@/lib/data-store/struck-sources";
 import { getNationalRateStats, getRateFeesByInstitution } from "@/lib/data-store/rate-fees";
 import { getInstitutionRegulators } from "@/lib/data-store/regulators";
@@ -414,7 +414,7 @@ export async function loadStudyPlacements(institutionId: number): Promise<StudyP
 async function loadRegArticles(days: number, now = new Date()): Promise<RegArticleRow[]> {
   try {
     const rows = await sql`
-      SELECT source, title, link, topic, published_at
+      SELECT source, title, link, ${sql.unsafe(TOPIC_SQL)} AS topic, published_at
         FROM reg_articles
        WHERE published_at >= ${sinceDate(days, now)}
          AND NOT (source LIKE ANY(${STATE_NEWS_SOURCE_PATTERNS}::text[]))
