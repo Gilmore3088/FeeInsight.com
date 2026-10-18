@@ -130,4 +130,24 @@ describe("proxy", () => {
 
     expect(response.headers.get("x-middleware-next")).toBe("1");
   });
+  it("rewrites a signed-in reader of a cached research page to its per-request route (#1811)", async () => {
+    const { signSessionId } = await import("@/lib/session-cookie");
+    const signedIn = proxy(
+      request("https://feeinsight.com/research/state/TX", "feeinsight.com", { cookie: `fsh_session=${signSessionId("b".repeat(64))}` }),
+    );
+    expect(signedIn.headers.get("x-middleware-rewrite")).toBe("https://feeinsight.com/research/state/TX/signed-in");
+
+    const signedOut = proxy(request("https://feeinsight.com/research/state/TX"));
+    expect(signedOut.headers.get("x-middleware-rewrite")).toBeNull();
+    expect(signedOut.headers.get("x-middleware-next")).toBe("1");
+  });
+
+  it("answers 404 to a direct request for a per-request route, so it cannot skip the cache", () => {
+    expect(proxy(request("https://feeinsight.com/research/national-fee-index/signed-in")).status).toBe(404);
+  });
+
+  it("serves a city's metro view from its cached route, keeping the address", () => {
+    const response = proxy(request("https://feeinsight.com/fees/city/tx/austin?area=metro&fee=nsf"));
+    expect(response.headers.get("x-middleware-rewrite")).toBe("https://feeinsight.com/fees/city/tx/austin/metro?area=metro&fee=nsf");
+  });
 });

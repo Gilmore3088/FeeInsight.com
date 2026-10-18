@@ -4,48 +4,14 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { sql, withTransaction } from "@/lib/data-store/connection";
+import { SESSION_COOKIE, signSessionId, verifyAndExtractSessionId } from "@/lib/session-cookie";
 
-export const SESSION_COOKIE = "fsh_session";
+export { SESSION_COOKIE, getCookieSecret } from "@/lib/session-cookie";
+
 /** Sessions last 30 days and slide: any visit with under 15 days left renews them. */
 /** Keep in step with the `interval '30 days'` renewal in `getCurrentUser`. */
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export const SESSION_RENEW_BELOW_MS = 15 * 24 * 60 * 60 * 1000;
-/** The secret that signs session cookies and password-reset links. */
-export function getCookieSecret(): string {
-  const secret = process.env.BFI_COOKIE_SECRET;
-  if (!secret && process.env.NODE_ENV === "production") {
-    throw new Error("BFI_COOKIE_SECRET must be set in production");
-  }
-  return secret || "dev-secret-change-in-production";
-}
-
-function signSessionId(sessionId: string): string {
-  const sig = crypto
-    .createHmac("sha256", getCookieSecret())
-    .update(sessionId)
-    .digest("hex");
-  return `${sessionId}.${sig}`;
-}
-
-function verifyAndExtractSessionId(signed: string): string | null {
-  const dotIdx = signed.lastIndexOf(".");
-  if (dotIdx === -1) return null;
-  const sessionId = signed.substring(0, dotIdx);
-  const sig = signed.substring(dotIdx + 1);
-  if (!sessionId || !sig || sig.length !== 64) return null;
-  try {
-    const expected = crypto
-      .createHmac("sha256", getCookieSecret())
-      .update(sessionId)
-      .digest("hex");
-    if (!crypto.timingSafeEqual(Buffer.from(sig, "hex"), Buffer.from(expected, "hex"))) {
-      return null;
-    }
-    return sessionId;
-  } catch {
-    return null;
-  }
-}
 
 export interface User {
   id: number;

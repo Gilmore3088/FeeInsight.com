@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { SESSION_COOKIE } from "@/lib/session-cookie";
+import { cityMetroPath, isSignedInVariantPath, signedInVariantPath } from "@/lib/viewer-variant";
 import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
 
 const FEE_CATEGORIES = new Set<string>(Object.values(FEE_FAMILIES).flat());
@@ -113,7 +115,14 @@ export function proxy(request: NextRequest) {
     }
   }
 
-  const variant = cachedVariantPath(pathname, request.nextUrl.searchParams);
+  // Cached pages' per-request and query-string routes (#1811, see viewer-variant.ts).
+  if (isSignedInVariantPath(pathname)) {
+    return new NextResponse("Not found", { status: 404 });
+  }
+  const variant =
+    cachedVariantPath(pathname, request.nextUrl.searchParams) ??
+    signedInVariantPath(pathname, request.cookies.get(SESSION_COOKIE)?.value) ??
+    cityMetroPath(pathname, request.nextUrl.searchParams);
   if (variant) {
     const url = request.nextUrl.clone();
     url.pathname = variant;
