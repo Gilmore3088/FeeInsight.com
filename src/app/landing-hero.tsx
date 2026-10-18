@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { PRODUCT_NAME } from "@/lib/constants";
+import { PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
 import { IndexCard } from "./landing-index-card";
 import type { IndexCardData } from "./landing-index-view";
@@ -17,14 +17,15 @@ export function LandingHero({ index, freshness }: { index: IndexCardData; freshn
     <section className="fi-home-hero relative isolate overflow-visible bg-surface-0 pt-9 lg:pt-14" aria-labelledby="hero-title">
       <div className={`${HOME_WRAP} grid items-center gap-8 lg:grid-cols-[minmax(0,0.96fr)_minmax(0,1.04fr)] lg:gap-[34px]`}>
         <div className="fi-home-hero-copy min-w-0 pb-1 lg:pb-12 lg:pt-2">
-          <p className="text-[15px] text-[#e0e9ee] sm:text-[16px]">Current competitor fees for bank and credit union teams</p>
+          {/* James's own hero copy, word for word (Oct 18). */}
+          <p className="text-[15px] text-[#e0e9ee] sm:text-[16px]">For banks and credit unions</p>
           <h1 id="hero-title" className="fi-home-h1 mt-5 !font-medium text-white lg:mt-6" style={SERIF}>
-            <span className="block whitespace-nowrap">See where your fees sit</span>
-            <span className="block whitespace-nowrap">before your board asks.</span>
+            <span className="block whitespace-nowrap">Your next fee review</span>
+            <span className="block whitespace-nowrap">doesn’t need to take weeks.</span>
           </h1>
           <p className="mt-6 text-[17px] leading-[1.45] text-[#e0e9ee] sm:text-[19px] lg:mt-7 lg:text-[clamp(18px,1.6vw,23px)]">
-            Hamilton compares each of your fees with the schedules your competitors publish. Every fee links to the
-            schedule it came from.
+            {SITE_NAME} helps you compare your fees with competitors using the {PRODUCT_NAME}. Turn the evidence into
+            analysis and board reports with Hamilton.
           </p>
           <div className="mt-7 lg:mt-9">
             <a href="#hamilton" className="fi-btn fi-btn-brick min-h-12 px-6 text-[15px]">

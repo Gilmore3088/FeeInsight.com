@@ -38,10 +38,10 @@ import { homeSerif } from "./landing-serif";
 import "./landing-motion.css";
 
 // The title follows the hero h1 (conversion headlines, Oct 17); neither line carries a count, so nothing goes stale.
-const HOME_TITLE = `See where your fees sit before your board asks | ${SITE_NAME}`;
+const HOME_TITLE = `Your next fee review doesn’t need to take weeks | ${SITE_NAME}`;
 const HOME_DESCRIPTION =
-  "See where your fees sit against your competitors' own published fee schedules. " +
-  "Hamilton links every fee to the schedule it came from.";
+  `Compare your fees with competitors using the ${PRODUCT_NAME}. ` +
+  "Turn the evidence into analysis and board reports with Hamilton.";
 
 export const metadata: Metadata = {
   title: { absolute: HOME_TITLE },

@@ -29,7 +29,8 @@
    the copy column's own width, so the longer line always stops short of the card. */
 .fi-home-hero-copy { container-type: inline-size; }
 .fi-home-h1 {
-  font-size: clamp(1.25rem, 10.2cqi, 4.5rem);
+  /* Sized so the longer line, "doesn’t need to take weeks.", fits the copy column on one line. */
+  font-size: clamp(1.25rem, 8.6cqi, 4rem);
   line-height: 1.06;
   letter-spacing: -0.03em;
 }
