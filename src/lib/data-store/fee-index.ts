@@ -972,6 +972,8 @@ export interface ComparableMarketRow extends IndexRow {
   fee_name: string | null;
   account_product_type: string | null;
   source_line: string | null;
+  /** The stated frequency, always read: the basis rule (#1901) needs no text screen. */
+  frequency: string | null;
 }
 
 /** The rows of a market that the institution profile's own fees would be compared by (market-eligibility). */
@@ -986,6 +988,7 @@ export function comparableMarketRows(rows: ComparableMarketRow[]): ComparableMar
       feeName: row.fee_name,
       accountProduct: row.account_product_type,
       sourceLine: row.source_line,
+      frequency: row.frequency,
     }),
   );
 }
@@ -1013,7 +1016,7 @@ export async function getComparableMarketIndex(scope: MarketScope): Promise<Inde
   const rows = (await sql.unsafe(
     `SELECT ef.fee_category, ef.amount, ef.institution_id, ef.fee_audience,
             ef.review_status, ef.created_at, ct.charter_type, ${STATS_SCHEDULE_KEYS},
-            ef.source_document_id,
+            ef.source_document_id, ef.frequency,
             CASE WHEN ef.source_url ~* '${BUSINESS_URL_SCREEN}' THEN ef.source_url END AS source_url,
             CASE WHEN ${text} THEN ef.fee_name END AS fee_name,
             CASE WHEN ${text} THEN ef.account_product_type END AS account_product_type,
