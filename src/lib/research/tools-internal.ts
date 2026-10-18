@@ -46,7 +46,8 @@ import {
   getOfrData,
 } from "@/lib/data-store/financial";
 import { getDistrictComplaintSummary, getNationalComplaintSummary } from "@/lib/data-store/complaints";
-import { getContractFeeRows, getIndexSnapshot, getPeerIndex } from "@/lib/data-store/fee-index";
+import { getContractFeeRows, getNationalIndexStamped, getPeerIndexStamped } from "@/lib/data-store/fee-index";
+import { datasetCitation } from "@/lib/dataset-note";
 import { institutionPositions } from "@/lib/data-store/fee-stats";
 import {
   getRevenueConcentration,
@@ -661,13 +662,16 @@ async function handleFeeIndex(
   tiers: string[] | undefined,
   limit: number
 ) {
+  // #1924: each read's stamp travels with its figures, so an answer can cite it.
   if (charter || tiers) {
     const filters: { charter_type?: string; asset_tiers?: string[] } = {};
     if (charter) filters.charter_type = charter;
     if (tiers) filters.asset_tiers = tiers;
-    return { index: await getPeerIndex(filters) };
+    const { entries, stamp } = await getPeerIndexStamped(filters);
+    return { index: entries, dataset: datasetCitation(stamp) };
   }
-  return { index: await getIndexSnapshot(undefined, limit) };
+  const { entries, stamp } = await getNationalIndexStamped();
+  return { index: entries.slice(0, limit), dataset: datasetCitation(stamp) };
 }
 
 async function handleDerived(

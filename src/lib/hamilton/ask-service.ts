@@ -169,6 +169,8 @@ async function fileAnalysis(
         WORKSPACE_ENGINE_VERSION,
         research ? buildFeeResearchEvidence(research) : null,
         response.identityContext,
+        // #1924: the stamps of the reads behind the figures, frozen with the answer.
+        response.answer?.provenance.stamps,
       ),
       // The same request sent twice in quick succession files one row, not two. A storyline
       // never replaces a written answer, or a storyline read against another decision,

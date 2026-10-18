@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { makeStamp, type DatasetStampInput } from "./dataset-stamp";
-import { datasetNoteWords, noteTime } from "./dataset-note";
+import { datasetCitation, datasetNoteWords, noteTime, readStampedFigures, uniqueStampedFigures } from "./dataset-note";
 
 const POPULATION = [{ key: "sourced", label: "Only fees traced to a stored copy of the institution's own fee schedule" }];
 
@@ -92,5 +92,35 @@ describe("dataset note words (#1924 step 2)", () => {
     const same = makeStamp(live);
     expect(datasetNoteWords([{ label: "A", stamp: same }, { label: "B", stamp: same }])?.differences).toBeNull();
     expect(datasetNoteWords([])).toBeNull();
+  });
+});
+
+describe("saved stamps and tool citations (#1924 step 3)", () => {
+  it("reads saved figures back exactly as saved, after a JSON round trip", () => {
+    const figures = [{ label: "Peers", stamp: makeStamp(live) }, { label: "National medians", stamp: makeStamp(snapshot) }];
+    expect(readStampedFigures(JSON.parse(JSON.stringify(figures)))).toEqual(figures);
+  });
+
+  it("gives none for an older record, and drops entries that are not a whole stamp", () => {
+    expect(readStampedFigures(undefined)).toEqual([]);
+    expect(readStampedFigures({ label: "Peers" })).toEqual([]);
+    const stamp = makeStamp(live);
+    const noId: Record<string, unknown> = { ...stamp };
+    delete noId.id;
+    expect(readStampedFigures([{ label: "Peers", stamp: noId }, { label: "Peers", stamp: { ...stamp, mode: "guessed" } }, { stamp }, null])).toEqual([]);
+  });
+
+  it("names each stamp once", () => {
+    const stamp = makeStamp(live);
+    expect(uniqueStampedFigures([{ label: "Peers", stamp }, null, { label: "National", stamp }])).toEqual([{ label: "Peers", stamp }]);
+  });
+
+  it("hands a tool's model the stamp id, the one line and the filters", () => {
+    const stamp = makeStamp(live);
+    expect(datasetCitation(stamp)).toEqual({
+      stamp_id: stamp.id,
+      summary: "Published fee schedules, read live 18 Oct 2026 14:10 UTC. Institutions sharing one fee schedule count once.",
+      filters: [POPULATION[0].label],
+    });
   });
 });

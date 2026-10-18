@@ -6,9 +6,9 @@
 import { confidenceFromFigureCheck } from "../figure-check";
 import { structuredEvidenceConfidence, type EvidenceBoundAnalyzeResponse, type HamiltonEvidenceBundle } from "../evidence-contract";
 import type { AnalysisFocus } from "../navigation";
-import type { AnalyzeResponse } from "../types";
 import type { Storyline, StorylineKind, StorylineMemo } from "./storyline-types";
 import type { HamiltonIdentitySnapshot } from "../account-context";
+import type { StampedFigure } from "@/lib/dataset-note";
 
 const FOCUS: Record<StorylineKind, AnalysisFocus> = {
   position: "Peer Position",
@@ -37,6 +37,8 @@ export function storylineAnalysis(
   engineVersion: string,
   factEvidence?: HamiltonEvidenceBundle | null,
   identity?: HamiltonIdentitySnapshot,
+  /** The stamps of the data behind the storyline's figures (#1924), saved as they are now. */
+  datasetStamps?: readonly StampedFigure[] | null,
 ): EvidenceBoundAnalyzeResponse {
   return {
     ...(identity ? { identityContext: identity } : {}),
@@ -50,6 +52,7 @@ export function storylineAnalysis(
     storyline,
     engineVersion,
     ...(factEvidence ? { factEvidence } : {}),
+    ...(datasetStamps && datasetStamps.length > 0 ? { datasetStamps: [...datasetStamps] } : {}),
   };
 }
 

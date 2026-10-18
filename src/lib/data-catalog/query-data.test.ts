@@ -23,9 +23,9 @@ vi.mock("@/lib/data-store/economy-aggregates", async (importOriginal) => ({
   getInstitutionHqLocation: vi.fn(),
 }));
 vi.mock("@/lib/data-store/fee-index", () => ({
-  getNationalIndexCached: vi.fn(),
+  getNationalIndexCachedStamped: vi.fn(),
   getStateFeeIndexes: vi.fn(),
-  getPeerIndex: vi.fn(),
+  getPeerIndexStamped: vi.fn(),
   getInstitutionFeeRows: vi.fn(),
 }));
 vi.mock("@/lib/data-store/peer-sets", async (importOriginal) => ({
@@ -38,7 +38,8 @@ vi.mock("@/lib/data-store/peer-sets", async (importOriginal) => ({
 
 import { prunedCallFiles, readColdCallRows } from "./cold-reads";
 import { getInstitutionHqLocation } from "@/lib/data-store/economy-aggregates";
-import { getInstitutionFeeRows, getNationalIndexCached, getPeerIndex, getStateFeeIndexes } from "@/lib/data-store/fee-index";
+import { getInstitutionFeeRows, getNationalIndexCachedStamped, getPeerIndexStamped, getStateFeeIndexes } from "@/lib/data-store/fee-index";
+import { makeStamp } from "@/lib/dataset-stamp";
 import { getPeerSubject, peerSetMemberIds, resolvePeerRequest, resolvePeerSet } from "@/lib/data-store/peer-sets";
 import { areaRowServedSql } from "@/lib/data-store/struck-sources";
 import { URBAN_DEBT_ATTRIBUTION } from "@/lib/regulatory/state-lists";
@@ -208,9 +209,23 @@ describe("queryData: fee measures", () => {
   });
 
   it("routes national, state, institution and peer scopes to the index readers", async () => {
-    vi.mocked(getNationalIndexCached).mockResolvedValue([ENTRY]);
+    const snapshot = makeStamp({
+      dataset: "fee_index_cache", derivedFrom: "published_fee_catalog", mode: "cached", readAt: "2026-10-18T02:00:00Z", runId: 41,
+      newestRecordAt: null, methodVersion: 3, counting: "counted_once", filters: [{ key: "sourced", label: "Only sourced fees" }],
+    });
+    vi.mocked(getNationalIndexCachedStamped).mockResolvedValue({ entries: [ENTRY], stamp: snapshot });
     const national = await queryData({ measure: "fee:overdraft", scope: { kind: "national" } });
     expect(national).toMatchObject({ ok: true, unit: "USD", rows: [expect.objectContaining({ median_amount: 30, institution_count: 40 })] });
+    // #1924: the snapshot's stamp id and words travel with the figure, so the answer can cite them.
+    expect(national).toMatchObject({
+      dataset: {
+        stamp_id: snapshot.id,
+        summary: "Snapshot of published fee schedules, computed 18 Oct 2026 02:00 UTC. Institutions sharing one fee schedule count once.",
+        filters: ["Only sourced fees"],
+      },
+    });
+    // A category the index has no row for carries no stamp: there is no figure to cite.
+    expect(await queryData({ measure: "fee:nsf", scope: { kind: "national" } })).not.toHaveProperty("dataset");
 
     vi.mocked(getStateFeeIndexes).mockResolvedValue({ all: [ENTRY], bank: [], credit_union: [], verified_institutions: 1, verified_bank_institutions: 1, verified_cu_institutions: 0, verified_fees: 1 });
     await queryData({ measure: "fee:overdraft", scope: { kind: "state", id: "tx" } });
@@ -221,10 +236,10 @@ describe("queryData: fee measures", () => {
     expect(getInstitutionFeeRows).toHaveBeenCalledWith(12, "overdraft");
 
     vi.mocked(resolvePeerSet).mockResolvedValue({ definition: { charter_type: "bank" }, filters: { charter_type: "bank" }, label: "Banks", market: null });
-    vi.mocked(getPeerIndex).mockResolvedValue([ENTRY]);
+    vi.mocked(getPeerIndexStamped).mockResolvedValue({ entries: [ENTRY], stamp: snapshot });
     const peer = await queryData({ measure: "fee:overdraft", scope: { kind: "peer_set", peer: { charter_type: "bank" } } });
-    expect(getPeerIndex).toHaveBeenCalledWith({ charter_type: "bank" });
-    expect(peer).toMatchObject({ ok: true, rows: [expect.objectContaining({ scope_label: "Banks" })] });
+    expect(getPeerIndexStamped).toHaveBeenCalledWith({ charter_type: "bank" });
+    expect(peer).toMatchObject({ ok: true, rows: [expect.objectContaining({ scope_label: "Banks" })], dataset: { stamp_id: snapshot.id } });
   });
 
   it("refuses county and metro, and same without an institution", async () => {
@@ -247,7 +262,7 @@ describe("queryData: fee measures", () => {
       reason: expect.stringContaining('"nearest" peers need scope.id'),
     });
     expect(resolvePeerSet).not.toHaveBeenCalled();
-    expect(getPeerIndex).not.toHaveBeenCalled();
+    expect(getPeerIndexStamped).not.toHaveBeenCalled();
   });
 });
 

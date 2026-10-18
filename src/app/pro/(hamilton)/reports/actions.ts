@@ -403,6 +403,8 @@ export async function generateReport(
     const report: ReportSummaryResponse = {
       title: reportTitle,
       identityContext,
+      // #1924: the stamp of the peer index read behind the report's medians, saved with it.
+      datasetStamps: [{ label: peerIndex.label, stamp: peerIndex.stamp }],
       ...(answer ? { answer: { ...answer, goal: params.clientGoal && params.clientGoal !== "balanced" ? reportGoal(params.clientGoal).label : null } } : {}),
       exhibits: [
         ...exhibitSet.exhibits,

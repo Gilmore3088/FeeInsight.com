@@ -19,6 +19,7 @@ import {
 } from "./evidence-export";
 import type { SourceRef } from "./workspace/types";
 import { exportedAnswer } from "./written-answer-binding";
+import { datasetNoteWords, readStampedFigures, type StampedFigure } from "@/lib/dataset-note";
 
 /** A source date as a board reads it: "2026-10-12T00:00:00.000Z" -> "Oct 12, 2026"; anything else as saved. */
 export function readerAsOf(asOf: string): string {
@@ -140,6 +141,9 @@ export function boardBriefFromAnalysis(analysis: AnalyzeResponse & { factEvidenc
     ...analysis.storyline.watch.map(f => f.source),
   ] : [];
   const unique = [...new Map(sources.map(s => [`${s.label}|${s.asOf ?? ""}|${s.url ?? ""}`, s])).values()];
+  // #1924: the stamps saved with the answer, carried into the brief as saved; none for an older answer.
+  const datasetStamps = readStampedFigures(analysis.datasetStamps);
+  const dataset = savedDatasetSource(datasetStamps);
   const subject = analysis.identityContext?.researchInstitutionName;
   const fallback = subject && !analysis.title.includes(subject) ? `${subject}: ${analysis.title}` : analysis.title;
   const title = edits.title.trim().slice(0,200) || fallback;
@@ -166,9 +170,26 @@ export function boardBriefFromAnalysis(analysis: AnalyzeResponse & { factEvidenc
       ...(edits.includeEvidence && analysis.evidence.metrics.length ? [{ id: "statistical_appendix" as const, title: "Evidence from the saved answer", subtitle: "Original values and source notes; not refreshed", columns: ["Measure", "Value", "Source / note"], rows: analysis.evidence.metrics.map(m => [m.label, m.value, m.note ?? ""]), note: "Values as first saved with the answer." }] : []),
       ...(records ? [records] : []),
     ],
-    sources: unique.length ? unique.map(s => ({ label: s.label, detail: s.asOf ? `As of ${readerAsOf(s.asOf)}` : "As cited in the saved answer", url: s.url ?? null })) : [{ label: "Saved Hamilton analysis", detail: records ? "Each figure's source is in the records table above." : "Source details were not saved with this answer. Open the saved answer to see its evidence.", url: null }],
+    sources: [
+      ...(unique.length ? unique.map(s => ({ label: s.label, detail: s.asOf ? `As of ${readerAsOf(s.asOf)}` : "As cited in the saved answer", url: s.url ?? null })) : [{ label: "Saved Hamilton analysis", detail: records ? "Each figure's source is in the records table above." : "Source details were not saved with this answer. Open the saved answer to see its evidence.", url: null }]),
+      ...(dataset ? [dataset] : []),
+    ],
+    ...(datasetStamps.length ? { datasetStamps } : {}),
     exportControls: { pdfEnabled: true, shareEnabled: false },
   };
+}
+
+/**
+ * The saved answer's dataset stamps as one source line (#1924): the note's line, then the filters
+ * that set who is counted and the reference support can trace. Null without stamps.
+ */
+export function savedDatasetSource(figures: readonly StampedFigure[]): { label: string; detail: string; url: null } | null {
+  const words = datasetNoteWords(figures);
+  if (!words) return null;
+  const counted = words.filters.length ? `What is counted: ${words.filters.join("; ")}.` : null;
+  const differ = words.differences ? `${words.differences.heading}: ${words.differences.lines.join("; ")}.` : null;
+  const reference = `Data reference (for support): ${[...new Set(figures.map((f) => f.stamp.id))].join(", ")}.`;
+  return { label: words.summary, detail: [counted, differ, reference].filter(Boolean).join(" "), url: null };
 }
 
 /** Editing preserves the frozen report exhibits, source references and original identity. */

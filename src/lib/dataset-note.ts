@@ -4,7 +4,7 @@
  * line, the details behind it, and, when two figures on one screen come from different
  * stamps, why they can differ (stampDifferences). Pure and client-safe.
  */
-import { countingLabel, datasetLabel, stampDifferences, toIsoTime, type DatasetStamp } from "@/lib/dataset-stamp";
+import { countingLabel, datasetLabel, readDatasetStamp, stampDifferences, toIsoTime, type DatasetStamp } from "@/lib/dataset-stamp";
 
 /** A figure on screen and the stamp of the data behind it. */
 export interface StampedFigure {
@@ -89,4 +89,39 @@ export function datasetNoteWords(figures: readonly StampedFigure[]): DatasetNote
       ? { heading: names.length === 2 ? `How ${names[0]} and ${names[1]} differ` : "Why these figures can differ", lines }
       : null,
   };
+}
+
+/**
+ * Stamped figures read back from saved JSON, as saved: an entry that is not a label and a whole
+ * stamp is dropped, and anything that is not a list (an older record with no stamps) gives none.
+ */
+export function readStampedFigures(value: unknown): StampedFigure[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    const figure = entry as Partial<StampedFigure> | null;
+    if (!figure || typeof figure !== "object" || typeof figure.label !== "string") return [];
+    const stamp = readDatasetStamp(figure.stamp);
+    return stamp ? [{ label: figure.label, stamp }] : [];
+  });
+}
+
+/** The figures with each stamp once, in order: a second figure read from the same stamp adds nothing to the note. */
+export function uniqueStampedFigures(figures: readonly (StampedFigure | null | undefined)[]): StampedFigure[] {
+  const seen = new Set<string>();
+  const out: StampedFigure[] = [];
+  for (const f of figures) {
+    if (!f || seen.has(f.stamp.id)) continue;
+    seen.add(f.stamp.id);
+    out.push(f);
+  }
+  return out;
+}
+
+/**
+ * What a research tool hands the model beside index figures, so an answer can cite them: the
+ * stamp's id, the note's one line, and the filters that set who is counted.
+ */
+export function datasetCitation(stamp: DatasetStamp): { stamp_id: string; summary: string; filters: string[] } {
+  const words = datasetNoteWords([{ label: "figures", stamp }]);
+  return { stamp_id: stamp.id, summary: words?.summary ?? "", filters: words?.filters ?? [] };
 }
