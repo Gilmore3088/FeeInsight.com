@@ -6,8 +6,9 @@ import { registryFetch, RegistryHttpError, type RegistryFetchOptions } from "./h
  * population for every state, county, ZIP code tabulation area and census tract.
  *
  * ZIP areas join to bank and credit union branches by ZIP; tracts are the small-area view for
- * branches with map coordinates. The API needs no key at this volume; CENSUS_API_KEY is sent when
- * set. Census marks a suppressed or unavailable estimate with a large negative number, which is
+ * branches with map coordinates. The data API needs a key: CENSUS_API_KEY is sent when set, and
+ * Census's "Missing Key" / "Invalid Key" answer is raised as CensusKeyError, which the registry
+ * step records as a skipped vintage. Census marks a suppressed or unavailable estimate with a large negative number, which is
  * stored as unknown, never as a value.
  */
 

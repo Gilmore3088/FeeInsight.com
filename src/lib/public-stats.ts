@@ -6,6 +6,7 @@ import { FEE_FAMILIES, getFeeFamily, onlyPublicFeeTypes, publicFeeTypes } from "
 import type { IndexEntry } from "@/lib/data-store/fee-index";
 import { maturityTier } from "@/lib/data-store/maturity";
 import { US_STATES_ONLY, VALID_US_CODES } from "@/lib/us-states";
+import { feeHeadlineCounts, publicCategoryCount } from "@/lib/headline-counts";
 
 /**
  * Single source of truth for every public-facing headline number.
@@ -21,7 +22,10 @@ export interface PublicStatsSummary {
   /** Verified fee observations. */
   observations: number;
   observationsLabel: string;
-  /** Canonical taxonomy fee categories that have verified data (raw catalog labels outside the taxonomy are not counted). */
+  /**
+   * Fee categories the public site covers: the public top-50 taxonomy types with at least one
+   * counted institution (headline-counts.ts publicCategoryCount, set on read by getPublicSnapshot).
+   */
   categories: number;
   categoriesLabel: string;
   /** U.S. states (50) with at least one verified fee; DC and territories are excluded from this figure. */
@@ -62,7 +66,18 @@ export function formatAbsoluteDate(value: string | Date | null | undefined): str
   if (!value) return null;
   const d = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  // A calendar date (a "YYYY-MM-DD" string, or a date column read as UTC midnight) keeps its own day.
+  // Any other timestamp is dated in U.S. Eastern, so a fee published on a U.S. evening is never dated
+  // tomorrow (the server runs on UTC).
+  const calendarDate =
+    (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) ||
+    (d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0 && d.getUTCMilliseconds() === 0);
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: calendarDate ? "UTC" : "America/New_York",
+  });
 }
 
 export function formatFreshness(value: string | Date | null | undefined): string {
@@ -215,8 +230,40 @@ const cachedPublicSnapshot = cachedPublicRead(
  */
 export const getPublicSnapshot = cache(async (): Promise<PublicSnapshot> => {
   const snapshot = await cachedPublicSnapshot();
-  return { ...snapshot, categories: onlyPublicFeeTypes(snapshot.categories) };
+  return { summary: withPublicCategoryCount(snapshot), categories: onlyPublicFeeTypes(snapshot.categories) };
 });
+
+/**
+ * The summary with its category count set to the public one (headline-counts.ts
+ * publicCategoryCount): the top-50 types with a counted institution, the number /fees lists.
+ * The raw count read every taxonomy type with an approved row, so /research and /api-docs said
+ * 52 while the homepage and /fees said 50 (#1951). Applied on read, like the top-50 rule, so a
+ * snapshot cached before this change reads the same way. A failed read stays unavailable.
+ */
+export function withPublicCategoryCount(snapshot: PublicSnapshot): PublicStatsSummary {
+  const { summary } = snapshot;
+  if (summary.categoriesLabel === UNAVAILABLE_LABEL) return summary;
+  const categories = publicCategoryCount(snapshot.categories);
+  return {
+    ...summary,
+    categories: categories ?? 0,
+    categoriesLabel: formatCountOrUnavailable(categories),
+    complete: summary.complete && categories !== null,
+  };
+}
+
+/**
+ * A fee's national counts (institutions behind its median, and those publishing only $0) from the
+ * shared snapshot, dated by the snapshot. Pages that state a fee's institution count read it here
+ * so the homepage, /fees, /research, the benchmark report and the guides print one number (#1951).
+ */
+export const getPublicFeeCounts = cache(
+  async (fee: string): Promise<{ institutions: number; zeroOnly: number; refreshedOn: string | null } | null> => {
+    const { summary, categories } = await getPublicSnapshot();
+    const counts = feeHeadlineCounts(categories, fee);
+    return counts ? { ...counts, refreshedOn: summary.refreshedOn } : null;
+  },
+);
 
 /** The fee types public pages may list (at most 50), ranked on the shared snapshot's institution counts. */
 export const getPublicFeeTypes = cache(async (): Promise<Set<string>> => publicFeeTypes((await cachedPublicSnapshot()).categories));
@@ -234,8 +281,33 @@ export const getPublicCategorySummaries = cache(
  * snapshot, for public pages that compare against national medians. Same figures as
  * the fee index; admin and Pro keep reading fee_index_cache directly.
  */
-export const getPublicNationalIndex = cache(async (): Promise<IndexEntry[]> => {
-  const categories = await getPublicCategorySummaries();
+export const getPublicNationalIndex = cache(async (): Promise<IndexEntry[]> =>
+  nationalIndexEntries(await getPublicCategorySummaries()),
+);
+
+/**
+ * The public national index plus every fee in `keys`, read from the same snapshot even when a
+ * key ranks outside the public top 50. The U.S. benchmark report reads it so none of its 15
+ * headline fees silently drops off the report because the top-50 rule left it out (#1955).
+ */
+export const getPublicNationalIndexWith = cache(async (keys: readonly string[]): Promise<IndexEntry[]> => {
+  const snapshot = await cachedPublicSnapshot();
+  return nationalIndexEntries(withRequiredFees(onlyPublicFeeTypes(snapshot.categories), snapshot.categories, keys));
+});
+
+/**
+ * The public rows, plus each row of `all` whose fee is in `keys` and missing from the public
+ * rows, in the order of `all`. Pure, so the benchmark's every-headline-fee rule is tested.
+ */
+export function withRequiredFees<T extends { fee_category: string }>(publicRows: T[], all: T[], keys: readonly string[]): T[] {
+  const have = new Set(publicRows.map((r) => r.fee_category));
+  const required = new Set(keys);
+  const added = all.filter((r) => required.has(r.fee_category) && !have.has(r.fee_category));
+  return added.length === 0 ? publicRows : [...publicRows, ...added];
+}
+
+/** Snapshot category rows in IndexEntry shape (canonical categories only). */
+export function nationalIndexEntries(categories: FeeCategorySummary[]): IndexEntry[] {
   return categories
     .filter((c) => CANONICAL_CATEGORIES.has(c.fee_category))
     .map((c) => ({
@@ -255,7 +327,7 @@ export const getPublicNationalIndex = cache(async (): Promise<IndexEntry[]> => {
       maturity_tier: c.median_amount === null ? "insufficient" : maturityTier(c.institution_count),
       last_updated: null,
     }));
-});
+}
 
 /**
  * What a benchmark measures, for the line beside it:

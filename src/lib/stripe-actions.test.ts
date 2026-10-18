@@ -106,6 +106,17 @@ describe("createCheckoutSession", () => {
     );
   });
 
+  it("hands checkout a numeric owner id when the database returns the id as text", async () => {
+    // users.id is a bigint; postgres.js returns it as "26", and the checkout lock rejects a string.
+    mocks.getCurrentUserMock.mockResolvedValue(user({ id: "26" }));
+    mocks.institutionMock.mockResolvedValue({ id: 7, name: "Big Bank", city: null, stateCode: null, assetsThousands: 3_000_000 });
+    const { createGuardedCheckout } = await import("@/lib/billing/checkout");
+    const { createCheckoutSession } = await import("./stripe-actions");
+    await createCheckoutSession({ plan: "annual", institutionId: 7 });
+    expect(vi.mocked(createGuardedCheckout)).toHaveBeenLastCalledWith(26, expect.any(String),
+      expect.objectContaining({ metadata: expect.objectContaining({ user_id: "26" }) }));
+  });
+
   it("puts a $3B bank on the large tier", async () => {
     mocks.institutionMock.mockResolvedValue({ id: 7, name: "Big Bank", city: null, stateCode: null, assetsThousands: 3_000_000 });
     const { createCheckoutSession } = await import("./stripe-actions");

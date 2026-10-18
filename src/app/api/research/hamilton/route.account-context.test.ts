@@ -174,7 +174,7 @@ describe("live written-answer account/subject boundary", () => {
     mocks.peerSet.mockResolvedValue(savedSet);
     mocks.generate.mockResolvedValue({ text: "Test written answer", totalUsage: { inputTokens: 1, outputTokens: 1 }, steps: [peersCall] });
     const response = await POST(request());
-    expect(mocks.peerSet).toHaveBeenCalledWith({ userId: 7, institutionId: 101 });
+    expect(mocks.peerSet).toHaveBeenCalledWith({ userId: 7, institutionId: 202 });
     expect(mocks.generate.mock.calls[0][0].system).toContain("SAVED PEER SET 55.");
     expect((await response.json()).identityContext).toMatchObject({ peerSetId: 55, peerBaselineLabel: "Synthetic peers", peerBaselineSource: "saved-peer-set", peerBaselineFallbackReason: null });
   });

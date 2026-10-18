@@ -295,6 +295,11 @@ function narrateFinished(
       const dollar = (detail.dollar ?? {}) as Record<string, unknown>;
       return `Deming ran the daily data checks on ${count(n(dollar, "live_fees"), "live dollar fee")}: ${failing === 0 ? "no check failed its threshold" : `ALARM: ${count(failing, "check")} failed its threshold`}.`;
     }
+    case "deming-source-health": {
+      const counts = (detail.counts ?? {}) as Detail;
+      const urgent = n(counts, "failed") + n(counts, "empty");
+      return `Deming checked the public-data sources: ${n(counts, "fresh")} fresh, ${n(counts, "stale")} stale, ${n(counts, "skipped")} skipped, ${urgent === 0 ? "none failed or empty" : `ALARM: ${count(urgent, "source")} failed or empty`}.`;
+    }
     case "deming-knox-misses": {
       if (detail.ready === false) return "Deming could not replay Knox's answer-key misses: the case store or the answer key is not there.";
       const regressions = Array.isArray(detail.regressions) ? detail.regressions.length : 0;
@@ -536,7 +541,11 @@ function narrateRegistryStep(stepKey: string, detail: Detail): string | null {
     case "registry-beige-book":
       return detail.empty ? null : `Loaded the ${String(detail.release_date ?? partition)} Beige Book (${count(n(detail, "sections"), "section")}).`;
     case "registry-fred":
-      return `Refreshed ${count(n(detail, "refreshed_series"), "economic indicator")} from FRED.`;
+      return `Refreshed ${count(n(detail, "refreshed_series"), "economic indicator")} from BLS, BEA and the Fed Board${
+        Array.isArray(detail.still_on_fred_era_values) && detail.still_on_fred_era_values.length > 0
+          ? `; ${detail.still_on_fred_era_values.length} still on FRED-era values`
+          : ""
+      }.`;
     case "registry-reg-news":
       return `Stored ${count(n(detail, "inserted"), "new regulator press release")} of ${n(detail, "fetched")} read.`;
     case "registry-fomc-minutes":
@@ -687,6 +696,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "deming-fresh-audit": "atlas",
   "deming-benchmark-health": "atlas",
   "deming-data-quality": "atlas",
+  "deming-source-health": "atlas",
   "deming-knox-misses": "atlas",
   "deming-playbook-check": "atlas",
   "deming-change-outcomes": "atlas",
@@ -706,29 +716,29 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   fetch: "magellan",
   "public-discovery": "magellan",
   "public-audit": "magellan",
-  "registry-fdic-universe": "magellan",
-  "registry-fdic-financials": "magellan",
-  "registry-ncua-financials": "magellan",
-  "registry-fdic-sod": "magellan",
-  "registry-ncua-branches": "magellan",
-  "registry-ncua-branch-geocode": "magellan",
-  "registry-cfpb": "magellan",
-  "registry-sec-links": "magellan",
-  "registry-sec-filings": "magellan",
-  "registry-beige-book": "magellan",
-  "registry-fred": "magellan",
-  "registry-reg-news": "magellan",
-  "registry-fomc-minutes": "magellan",
-  "registry-fed-publications": "magellan",
-  "registry-federal-register": "magellan",
-  "registry-federal-bills": "magellan",
-  "registry-state-bills": "magellan",
-  "registry-state-regulators": "magellan",
-  "registry-state-reg-news": "magellan",
-  "registry-state-bill-news": "magellan",
-  "registry-enforcement": "magellan",
-  "registry-state-enforcement": "magellan",
-  "registry-wire-research": "magellan",
+  "registry-fdic-universe": "hoovie",
+  "registry-fdic-financials": "hoovie",
+  "registry-ncua-financials": "hoovie",
+  "registry-fdic-sod": "hoovie",
+  "registry-ncua-branches": "hoovie",
+  "registry-ncua-branch-geocode": "hoovie",
+  "registry-cfpb": "hoovie",
+  "registry-sec-links": "hoovie",
+  "registry-sec-filings": "hoovie",
+  "registry-beige-book": "hoovie",
+  "registry-fred": "hoovie",
+  "registry-reg-news": "hoovie",
+  "registry-fomc-minutes": "hoovie",
+  "registry-fed-publications": "hoovie",
+  "registry-federal-register": "hoovie",
+  "registry-federal-bills": "hoovie",
+  "registry-state-bills": "hoovie",
+  "registry-state-regulators": "hoovie",
+  "registry-state-reg-news": "hoovie",
+  "registry-state-bill-news": "hoovie",
+  "registry-enforcement": "hoovie",
+  "registry-state-enforcement": "hoovie",
+  "registry-wire-research": "hoovie",
   read: "rosetta",
   "read-paid": "rosetta",
   extract: "knox",

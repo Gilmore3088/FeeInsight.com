@@ -9,12 +9,20 @@ the public pages as context beside the fee data. James created the agent and nam
 Every registry source (`REGISTRY_SOURCES`, `src/lib/agents/magellan/registry/index.ts`) has one
 contract in `sources.ts` (type in `contract.ts`) that records:
 
+- the registry module that runs it (`loader`);
 - publisher and licence;
 - connection kind, plus the env key when one is needed, and any optional keys;
 - cadence and grain;
-- link keys and the tables it writes.
+- link keys and the tables it writes;
+- `missingSource`, when the publisher's host refuses production: the host, what it answered,
+  the official fallback (or none) and the issue. The loader then records an empty partition with
+  `detail.missing_source` instead of failing. Today: `nic-structure` and `fr-y9c` (#1806).
 
-`sources.test.ts` fails when a source has no contract or names a table no migration creates.
+`sources.test.ts` fails when a source has no contract, names a table no migration creates, names
+a table that no INSERT, UPDATE or DELETE in its loader writes, or names a key its loader never
+reads. The loader check also reads the registry modules the loader imports (shared writers such as
+`economy.ts`), so it catches a table that left the write path, not one that moved between
+functions of a shared module.
 To add a source: write the parser and the run module, then add its contract.
 
 Each fact comes from the loader's own code. A fact the code doesn't state is marked
@@ -43,6 +51,10 @@ under a budget. A new table in a contract gets the default budget unless one is 
   `missing_fields`).
 - A `held` licence is not loaded or shown until James confirms the terms. A `terms-unconfirmed`
   licence is not shown to customers until the terms are checked.
+- An open licence that requires attribution (World Bank RPW, CC BY 4.0; Urban Institute Debt in
+  America, ODC-By 1.0) carries its attribution on every stored row and every read.
+- Struck sources and parts, and the rows they loaded before they were struck, are listed in
+  `src/lib/data-store/struck-sources.ts`; every reader excludes them.
 - Every run writes a visible run, step and event, and honours the pipeline pause.
 
 ## Order of work
@@ -52,9 +64,61 @@ James's rule (2026-10-17): "Let's get the data first." The order follows the pub
 1. Contract (this guide).
 2. Unblock the failing sources: CRA, NIC, Y-9C and UBPR (#1805, #1806).
 3. Faster collection, still within the pipeline pause.
-4. One health report, with alerts when a load fails or comes back empty.
-5. One read door for Hamilton and the site.
+4. One health report, with alerts when a load fails or comes back empty: `source-health.ts` (#1866), below.
+5. One read door for Hamilton and the site: `src/lib/data-catalog/`. `catalog.ts` lists every
+   dataset (one entry per contract, plus published fees and institution financials) with a
+   customer-facing label (publisher and dataset, never an agent name) and `servable`: the licence
+   is public domain or a named open licence and the source is not struck or held.
+   `series.ts` lists each source's area_statistics series, cached for a day (a loader that writes
+   full series objects to `detail.series` skips the GROUP BY). `query-data.ts` is the one query:
+   a zod-checked measure and scope, bound parameters only, and a refusal with a plain reason for
+   anything not servable. Wiring it into Hamilton's chat tools is a separate PR.
 6. Shared roll-ups by peer, state, metro and size (`src/lib/peer-set-dimensions.ts`).
 
-Until the `hoovie` row exists in `agent_registry`, runs keep the ledger name `magellan`. Adding
-that row is a migration and needs James's yes.
+## Daily health check (contract)
+
+`agent-health.ts` runs with the daily scoreboard step and stores these numbers in
+`pipeline_scoreboard_snapshots.detail.agent_health`, next to yesterday's. A broken rule, or any
+number that moved more than 25% since yesterday, is named in the scoreboard step's summary.
+Change this table and `agent-health.ts` in the same PR. Registry steps written under Magellan's
+name before #1865 count as Hoovie's.
+
+| Rule | Number | Holds when |
+|---|---|---|
+| Steps do not fail | `stepsFailed` (24 h) | 0 |
+
+Also recorded, without a rule: `stepsCompleted`, `spendUsd`.
+
+## Source health report (#1866)
+
+`source-health.ts` gives every contract one status, a reason and its last success date, from one
+read over `registry_ingest_partitions` (`getRegistryFeedFreshness`) and the scheduler's own plan
+(`registryPartitionsBySource`, with Atlas's newest table sizes for size holds). First match wins:
+
+| Status | When |
+|---|---|
+| skipped | the scheduler plans no partition: held licence, a table over its own size budget, or the API key not set |
+| empty | nothing loaded yet; the host refused production since the last success (`missing_source`); or every load came back empty |
+| failed | a partition failed after the last success (newest error is the reason) |
+| stale | the last success is older than the cadence allows: daily 3, weekly 14, monthly 45, quarterly 120, annual 400, irregular 90 days; one-time never |
+| fresh | otherwise |
+
+A success is the registry's own: a partition that loaded rows, or an unblocked empty check.
+Deming records the report every day (`deming-source-health` in Atlas's scoreboard run). The
+morning brief reads it when it runs (the scoreboard runs after the brief) and lists only the
+sources that are not fresh: every failed and empty source by name with its reason, stale and
+skipped ones up to 25 lines. Read-only; internal only.
+
+## Run ledger name
+
+Registry runs and steps are written as `hoovie` (#1865; the `agent_registry` row is migration
+`20270110000061_hoovie_agent.sql`). Rows written before the switch keep the name `magellan` and
+are never relabelled; readers that group the ledger by agent file a `registry-*` step under
+Magellan's name as Hoovie's (`names.ts`). The run marker `params_json.source = 'magellan.registry'`
+and the idempotency key prefix `magellan:registry:` are unchanged, so the registry tick finds old
+and new runs alike and a run queued before the switch is reused, not doubled.
+
+`agent_runs.agent_name` references `agent_registry`, so before it writes `hoovie` the scheduler
+reads the `hoovie` row once per process (`registryLedgerAgent` in `registry-scheduler.ts`). While
+the row is missing, or the read fails, runs keep the name `magellan` and record why in
+`params_json.ledger_agent_fallback`.

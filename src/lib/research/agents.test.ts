@@ -59,6 +59,13 @@ vi.mock("./tool-local-competitors", () => ({
   getLocalCompetitors: { description: "getLocalCompetitors", inputSchema: {}, execute: vi.fn() },
 }));
 
+vi.mock("./tool-query-data", () => ({
+  listData: { description: "listData", inputSchema: {}, execute: vi.fn() },
+  queryData: { description: "queryData", inputSchema: {}, execute: vi.fn() },
+  warmDataCatalog: vi.fn(),
+  DATA_CATALOG_INSTRUCTION: "PUBLIC DATA: call listData, then queryData.",
+}));
+
 // Import after mocks
 import { buildMonitorModeSuffix, buildSavedPeerSetPrompt, getHamilton, savedPeerSetUsed } from "./agents";
 
@@ -121,6 +128,16 @@ describe("getHamilton", () => {
     expect(toolNames).not.toContain("queryJobStatus");
     expect(config.systemPrompt).toContain("getLocalCompetitors(institution_id)");
     expect(config.systemPrompt).toContain("queryFeeRevenueCorrelation(view='peers'");
+  });
+
+  it("pro and admin answers can read the data catalog; the consumer answer cannot", async () => {
+    for (const role of ["pro", "admin"] as const) {
+      const config = await getHamilton(role);
+      expect(Object.keys(config.tools)).toEqual(expect.arrayContaining(["listData", "queryData"]));
+      expect(config.systemPrompt).toContain("PUBLIC DATA: call listData, then queryData.");
+    }
+    const consumer = await getHamilton("consumer");
+    expect(Object.keys(consumer.tools)).not.toContain("queryData");
   });
 
   it("pro: a question the data cannot answer is said so first, never swapped for another question (#1077)", async () => {

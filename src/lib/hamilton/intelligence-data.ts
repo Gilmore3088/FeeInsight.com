@@ -1,14 +1,16 @@
 /**
  * Read models for the Hamilton intelligence workspace (Overview and Research). Every figure comes
  * from a governed reader: published_fee_catalog under the statistics contract (fee-index), FDIC Call
- * Reports and NCUA 5300 filings (call-reports), BLS/FRED series and the Beige Book
+ * Reports and NCUA 5300 filings (call-reports), BLS, BEA and Fed Board series and the Beige Book
  * (economic-context), and CFPB complaint records matched to institutions. Thin cohorts are withheld,
  * never filled; a reader that fails returns null so its exhibit says so instead of showing zeros.
  */
 import { getSql } from "@/lib/data-store/connection";
+import { STRUCK_REG_ARTICLE_SOURCES } from "@/lib/data-store/struck-sources";
 import { getPeerFeeValues, getSegmentFeeValues, type PeerFilterSet } from "@/lib/data-store/fee-index";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { computeStats } from "@/lib/data-store/fees";
+import { countedAmounts } from "@/lib/data-store/counted-amounts";
 import { feeComplaintFilterSql } from "@/lib/data-store/complaints";
 import type { LandingResearchHandoff } from "./landing-research-handoff";
 
@@ -34,21 +36,32 @@ export function median(values: number[]): number | null {
   return computeStats(values).median;
 }
 
-/** Each state's median of one fee, one value per institution; states under the cohort floor are withheld. */
-export function buildFeeMap(category: string, values: Array<{ state_code: string | null; amount: number }>, scopeState: string | null = null): FeeMap {
-  const byState = new Map<string, number[]>();
+/**
+ * Each state's median of one fee, one value per institution; states under the cohort floor are
+ * withheld. Charters that share one fee schedule count once, at the lower middle of their values
+ * (statistics rule 7, countedAmounts), so the map's count and median are the landscape table's.
+ */
+export function buildFeeMap(category: string, rows: Array<{ institution_id?: number; state_code: string | null; amount: number; counted_as?: number }>, scopeState: string | null = null): FeeMap {
+  const values = rows.filter((row) => Number.isFinite(row.amount)).map((row, i) => ({
+    institutionId: row.institution_id ?? -(i + 1),
+    amount: row.amount,
+    countedAs: row.counted_as,
+    state: row.state_code,
+  }));
+  const statesOf = new Map<string, typeof values>();
   for (const value of values) {
-    if (!value.state_code || !Number.isFinite(value.amount)) continue;
-    const list = byState.get(value.state_code) ?? [];
-    list.push(value.amount);
-    byState.set(value.state_code, list);
+    if (!value.state) continue;
+    const list = statesOf.get(value.state) ?? [];
+    list.push(value);
+    statesOf.set(value.state, list);
   }
+  const byState = new Map([...statesOf].map(([state, list]) => [state, countedAmounts(list)] as const));
   const states = [...byState].map(([stateCode, amounts]) => ({
     stateCode,
     institutions: amounts.length,
     median: amounts.length >= MIN_INSTITUTIONS_FOR_MEDIAN ? median(amounts) : null,
   }));
-  const all = values.filter(v => Number.isFinite(v.amount)).map(v => v.amount);
+  const all = countedAmounts(values);
   return {
     category,
     states,
@@ -215,6 +228,8 @@ export interface StatePost {
 
 /** A state regulator's own posts (Regulatory Wire source "state:XX"), newest first. Never cited as federal releases. */
 export async function loadStatePosts(stateCode: string, limit = 6): Promise<StatePost[] | null> {
+  // Struck states' posts (non-commercial site terms; DECISIONS.md "No non-commercial data") are never read.
+  if (STRUCK_REG_ARTICLE_SOURCES.includes(`state:${stateCode.toUpperCase()}`)) return [];
   try {
     const rows = await getSql().unsafe(
       `SELECT title, link, published_at

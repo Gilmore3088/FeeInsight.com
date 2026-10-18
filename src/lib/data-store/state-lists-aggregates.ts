@@ -1,5 +1,4 @@
-import { flagOn } from "@/lib/agents/magellan/registry/live-flag";
-import { COUNTED_LENDER_CATEGORIES, lenderSeriesKey, URBAN_DEBT_LICENSE_CONFIRMED_ENV, urbanSeriesKey } from "@/lib/regulatory/state-lists";
+import { COUNTED_LENDER_CATEGORIES, lenderSeriesKey, URBAN_DEBT_ATTRIBUTION, URBAN_DEBT_LICENCE, urbanSeriesKey } from "@/lib/regulatory/state-lists";
 import { sql } from "./connection";
 import { STRUCK_DEPOSITORY_STATES } from "./struck-sources";
 
@@ -12,8 +11,8 @@ import { STRUCK_DEPOSITORY_STATES } from "./struck-sources";
  *   check cashers, money transmitters, licensed lenders) per county and state, compared with the
  *   state's and the nation's county medians. Only states with a loaded dataset are in "the
  *   nation", and each median says how many areas it is over.
- * - area_statistics, source urban-debt-in-america: share with debt in collections. Its license
- *   is unconfirmed, so every read returns nothing until URBAN_DEBT_LICENSE_CONFIRMED=true.
+ * - area_statistics, source urban-debt-in-america: share with debt in collections. Licence
+ *   ODC-By 1.0: every read carries the attribution it requires (URBAN_DEBT_ATTRIBUTION).
  */
 
 export const STATE_NONBANK_LENDERS_SOURCE = "state-nonbank-lenders";
@@ -210,12 +209,12 @@ export async function getNonbankLenderStates(category: (typeof COUNTED_LENDER_CA
 
 export const URBAN_DEBT_SERIES = ["any", "medical", "student", "auto", "retail", "auto_retail"].map(urbanSeriesKey);
 
-/** Urban Debt in America for one county against its state and the nation; nothing until the license is confirmed. */
-export async function getUrbanDebtComparison(countyFips: string, env: Record<string, string | undefined> = process.env): Promise<{ held: boolean; series: CountyComparison[] }> {
-  if (!flagOn(env[URBAN_DEBT_LICENSE_CONFIRMED_ENV])) return { held: true, series: [] };
+/** Urban Debt in America for one county against its state and the nation, with the attribution its licence requires. */
+export async function getUrbanDebtComparison(countyFips: string): Promise<{ licence: string; attribution: string; series: CountyComparison[] }> {
+  const cite = { licence: URBAN_DEBT_LICENCE, attribution: URBAN_DEBT_ATTRIBUTION };
   const fips = countyCode(countyFips);
-  if (!fips) return { held: false, series: [] };
+  if (!fips) return { ...cite, series: [] };
   const rows = await newestAreaRows(URBAN_DEBT_SOURCE, URBAN_DEBT_SERIES);
   const present = URBAN_DEBT_SERIES.filter((s) => rows.some((r) => r.series_key === s));
-  return { held: false, series: compareCounty(rows, fips, present) };
+  return { ...cite, series: compareCounty(rows, fips, present) };
 }

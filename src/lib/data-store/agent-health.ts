@@ -7,8 +7,8 @@ import { sql } from "./connection";
  * Read straight from `agent_run_steps`; cancelled and skipped steps count as neither.
  */
 
-/** Gutenberg is the publisher from #1075 step 2; its pre-switch steps carry Hamilton's name (`ledgerAgent`). */
-export const HEALTH_AGENTS = ["atlas", "magellan", "rosetta", "knox", "darwin", "hamilton", "gutenberg"] as const;
+/** Gutenberg is the publisher from #1075 step 2 and Hoovie loads public data from #1865; their pre-switch steps carry Hamilton's and Magellan's names (`ledgerAgent`). */
+export const HEALTH_AGENTS = ["atlas", "magellan", "rosetta", "knox", "darwin", "hamilton", "gutenberg", "hoovie"] as const;
 export type HealthAgent = (typeof HEALTH_AGENTS)[number];
 
 /**

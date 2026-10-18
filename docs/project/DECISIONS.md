@@ -1221,3 +1221,57 @@ depository list (CFO site: "educational, personal, or training purposes"); and F
 (University of Michigan consumer sentiment needs a licence for a sold product). World Bank
 Remittance Prices Worldwide is held: its code stays, no partition is scheduled and no reader returns
 its rows until James confirms its terms.
+Round 2, 2026-10-18 (licence audit addendum,
+`api-mcp/loader-notes/licence-audit-2026-10-17.md`): struck the Philadelphia Fed large-bank credit
+card series (RCCCBAPRAVGPCTGP, RCCCBBALTOT, RCCCBUTILAVGPCT, RCCCBPMTMINPCT, RCCCBPMTFULLPCT;
+"informational, educational, and research purposes only") and Freddie Mac PMMS (MORTGAGE30US,
+MORTGAGE15US; freddiemac.com/terms: "may not redistribute ... or commercially exploit Data") from
+national-series; the New York (DFS: "for non-commercial purposes"), North Carolina (nc.gov: "for
+non-commercial use") and Florida regulator sites from state-reg-news and state-enforcement, so
+wire-research no longer reads their posts (New Jersey and the other states stay). Google News press
+(state-bill-news) is held: its terms are unread and reported as non-commercial, nothing is
+scheduled and no reader returns its rows. Released: World Bank Remittance Prices Worldwide (CC BY
+4.0; attribution "The World Bank: Remittance Prices Worldwide") and Urban Institute Debt in America
+(ODC-By 1.0; attribution "Braga et al., Debt in America, Urban Institute"), each carrying its
+attribution on every stored row and read. Rows already loaded from struck sources stay on prod and
+no reader returns them (`src/lib/data-store/struck-sources.ts`).
+FRED replaced by the original publishers, 2026-10-18 (James, card answer "Use publishers"): "Same
+series, fetched from BLS, Treasury and the Fed Board; FRED is no longer used." FRED's terms bar
+commercial use without the St. Louis Fed's written consent and bar storing FRED content in a
+database; most series we read through FRED are public-domain federal data. registry-fred now reads
+BLS (CPI, unemployment, payrolls, each state's LAUS and CES series), BEA NIPA (real GDP, the GDP
+price index, the saving rate; BEA_API_KEY) and the Fed Board's H.15 package (fed funds), keeping our
+series ids; national-series reads the Board's H.8 package (Z.1, about 592 MB, not yet), its charge-off and delinquency
+table and the SLOOS chart data. Dropped, with no publisher file confirmed: the FDIC national deposit
+rates (SNDR, ICNDR, MMNDR, NDR12MCD), the FDIC QBP service-charge series (QBPQYTNIYSRVDP) and
+DRCBLACBS. FRED-era rows stay on prod (none deleted) and are retired per series, so a publisher
+parser that fails cannot blank a chart: a series keeps showing its FRED-era values until its
+first row from the publisher lands, then only publisher rows are served
+(`fedIndicatorServedSql`, from `publisher_cutover_at`; `areaRowServedSql`, a national-series key
+with a Board row). Struck and dropped series, and series no publisher loads, are hidden at once.
+registry-fred names the series "still on FRED-era values" in its step output.
+
+**PRs merge without James; accuracy comes from recorded reviews.** James, 2026-10-18 06:40-06:43 UTC
+(project thread "Triage open GitHub issues", after a PR pipeline review that proposed these rules):
+"i jsut want the most accurate but autonomous way", "i cant merge every PR how quickly we are
+shipping them", then "yes, make the rule change". Page PRs, redesigns included, no longer wait for
+his review or typed yes. This replaces the 2026-10-05 entry ("redesigns wait for James's review"),
+the Oct 8 Pro price picker's wait for his review, the Oct 9 entry ("public, Pro and Hamilton screens
+still wait for his review"), the 2026-10-12 entry ("copy and page changes wait as open PRs"), the
+Oct 13 limit ("no lane opens a new copy preview while five are waiting for James"), the Oct 14
+design-system rollout's review on the Vercel preview, and the Oct 17 coordinator hold after #1815,
+which lived in project memory, not here. A page PR merges when three verdicts are on the PR: the
+growthOS review approves its desktop and phone screenshots; an independent reviewer finds no
+blockers on the exact head; CI is green. The growthOS review is the page lane's walkthrough of the
+screens against the site brief (#1294) in the roles of growth-os/agents/ (NORMAN, DRAPER, ERNEST,
+SHERLOCK), posted as a PR comment. James asked for it on 2026-10-15 (project memory: the growthOS
+team approves the whole user experience). The #1121 pause covers the growth agents' own marketing
+work, not this review. Every merge gets a receipt comment with the head SHA and both review
+verdicts, on top of the Oct 14 "Reviewed" rule. Batch to at most one PR per page or area a day. The
+day's merges go to him as one digest with screenshots, and he can ask for a revert. GitHub REST
+counts for Oct 15 05:00 to Oct 18 06:40 UTC: 318 PRs merged (`pulls?state=closed`, by `merged_at`),
+a median of 21 minutes from open to merge, and 1,123 CI workflow runs (`actions/runs?created=...`,
+`total_count`). Of 21 merged PRs sampled on Oct 18 (#1883, #1847, #1834, #1804, #1791, #1766, #1752,
+#1729, #1700, #1564, #1624, #1647, #1631, #1629, #1589, #1558, #1529, #1506, #1486, #1461, #1429),
+15 had no submitted GitHub review, which the Oct 14 "Reviewed" rule requires. Migrations,
+production-data changes and the other gated actions in CLAUDE.md still need his yes.

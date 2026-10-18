@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowRight, ChevronDown, ChevronUp, Grid3x3, MapPin, ScatterChart, SlidersHorizontal, X } from "lucide-react";
 import Link from "next/link";
+import { useSessionChrome } from "@/components/use-session-chrome";
 import { TrackLink } from "@/components/track-link";
 import { displayCity } from "@/lib/format";
 import {
@@ -131,14 +132,14 @@ export function PeerExplorer({
   setKey,
   setName,
   initial,
-  isPro,
 }: {
   set: PeerExplorerSet;
   setKey: string;
   setName: string;
   initial: { peer?: string | null; fee?: string | null; view?: string | null };
-  isPro: boolean;
 }) {
+  // Read after hydration: the page is cached for every visitor, so it never knows who is looking.
+  const isPro = Boolean(useSessionChrome()?.isPro);
   const everyone = useMemo(() => [set.subject, ...set.peers], [set]);
   const byId = useMemo(() => new Map(everyone.map((inst) => [inst.id, inst])), [everyone]);
   const firstFee = EXPLORER_FEE_KEYS.find((key) => set.medians[key]) ?? EXPLORER_FEE_KEYS[0];

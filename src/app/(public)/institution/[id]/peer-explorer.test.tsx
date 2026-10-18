@@ -2,9 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock("@/components/use-session-chrome", () => ({ useSessionChrome: () => null }));
 vi.mock("@/app/landing-serif", () => ({ homeSerif: { variable: "serif-var" } }));
 
-import { PeerExplorerSection, peerSetChipLabel } from "./peer-explorer-section";
+import { PeerExplorerSection, peerSetChipLabel, peerSetHrefs } from "./peer-explorer-section";
 import type { InstitutionPeerSets } from "@/lib/data-store/peer-fee-rank";
 import type { ExplorerInstitution, PeerExplorerSet } from "@/lib/peer-explorer";
 
@@ -44,7 +45,7 @@ const SETS: InstitutionPeerSets = {
 
 function renderSection(initial = {}, extra: Partial<typeof SET> = {}) {
   return render(
-    <PeerExplorerSection sets={SETS} set={{ ...SET, ...extra }} hrefFor={(key) => `/institution/323?peers=${key}#peers`} initial={initial} isPro={false} />,
+    <PeerExplorerSection sets={SETS} set={{ ...SET, ...extra }} hrefFor={(key) => `/institution/323?peers=${key}#peers`} initial={initial} />,
   );
 }
 
@@ -146,7 +147,6 @@ describe("PeerExplorerSection", () => {
         set={SET}
         hrefFor={(key) => `/institution/323?peers=${key}#peers`}
         initial={{}}
-        isPro={false}
       />,
     );
     expect(screen.getByRole("link", { name: /Compare local deposit competitors/ })).toBeTruthy();
@@ -272,7 +272,7 @@ describe("PeerExplorerSection", () => {
       options: [...SETS.options, { key: "size", label: "Banks with $1B to $10B in assets", count: 468 }],
       selected: { key: "size", label: "Banks with $1B to $10B in assets", lines: [] },
     };
-    render(<PeerExplorerSection sets={sizeSets} set={SET} hrefFor={(key) => `/institution/323?peers=${key}#peers`} initial={{}} isPro={false} />);
+    render(<PeerExplorerSection sets={sizeSets} set={SET} hrefFor={(key) => `/institution/323?peers=${key}#peers`} initial={{}} />);
     expect(screen.getByText("Banks with $1B to $10B in assets that publish fees")).toBeTruthy();
     expect(screen.getByText(/A pricing set: it is not the financial cohort under Financial performance, which is drawn from Call Report filings in the band\./)).toBeTruthy();
     expect(screen.getByText("Actual range: $2.1B to $7.3B")).toBeTruthy();
@@ -282,5 +282,12 @@ describe("PeerExplorerSection", () => {
   it("has short chip names", () => {
     expect(peerSetChipLabel({ key: "nearest", label: "x", count: 25 })).toBe("25 closest in assets");
     expect(peerSetChipLabel({ key: "metro", label: "x" })).toBe("Home metro");
+  });
+});
+
+describe("peerSetHrefs", () => {
+  it("links each set on the bare profile, keeping a fee focus", () => {
+    expect(peerSetHrefs(323, null)("metro")).toBe("/institution/323?peers=metro#peers");
+    expect(peerSetHrefs(323, "nsf")("state")).toBe("/institution/323?fee=nsf&peers=state#peers");
   });
 });

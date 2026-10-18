@@ -35,6 +35,15 @@ open issues, PRs and `main` for the same outcome, and reuse or explicitly supers
   The lane that owns an agent keeps that agent's tracker current (Data quality: Magellan, Rosetta,
   Knox, Darwin and Foundation; Hamilton: #975): when a PR merges or an issue closes, its line is
   ticked in the same pass.
+- Merging runs without James (DECISIONS, 2026-10-18). Batch: at most one PR per page or area a
+  day, and fixes from one review ride that PR. A page PR, redesigns included, merges once the
+  growthOS review (defined in DECISIONS, 2026-10-18) approves its desktop and phone screenshots,
+  an independent reviewer of the exact head finds no blockers, and CI is green. It does not wait
+  for James's yes. Other PRs keep the Oct 14 "Reviewed" rule and green CI. Every merge leaves a
+  receipt comment naming the head SHA and both review verdicts, on top of the Oct 14 "Reviewed"
+  rule, and a PR merges only with that record. The day's merges go to James as one digest with
+  screenshots; he can ask for any of them to be reverted. Migrations, production-data changes and
+  the other actions Standing rules excludes still need James's yes.
 - No scheduled Claude routines run for Fee Insight without James's say-so. A session ends when
   its PR is open and green.
 - Words a visitor reads (pages, headlines, buttons, emails): use the `copywriting` and

@@ -1011,16 +1011,92 @@ describe("v21 (#1450): footnote marks, product codes and quotes in live maintena
     expect(planRetidy([coded], code).renames.map((rename) => rename.newName)).toEqual(["Rewards Checking Monthly service charge"]);
   });
 
-  it("leaves other categories' marks for their own review, and never takes another live fee's name", () => {
+  it("v23: renames other categories' marked names too, and never takes another live fee's name", () => {
     const page = own(70, "Overdraft Fee‡ | $30.00\nMonthly Service Charge¹ | $10\nMonthly Service Charge | $10");
     const overdraft = fee({ fee_published_id: 1, canonical_fee_key: "overdraft", fee_name: "Overdraft Fee‡", amount: 30 });
     expect(footnoteMarkFreeName(overdraft.fee_name)).toBe("Overdraft Fee");
-    expect(planRetidy([overdraft], page).renames).toEqual([]);
+    expect(planRetidy([overdraft], page).renames.map((rename) => rename.newName)).toEqual(["Overdraft Fee"]);
     const marked = maintenance({ fee_published_id: 2, fee_name: "Monthly Service Charge¹", amount: 10 });
     const twin = maintenance({ fee_published_id: 3, fee_name: "Monthly Service Charge", amount: 10 });
     const plan = planRetidy([marked], page, [marked, twin]);
     expect(plan.renames).toEqual([]);
     expect(plan.skipped.same_name_live).toBe(1);
+  });
+});
+
+describe("v23 (#1596): footnote marks in every category's live names (James's live-fee check, Oct 18)", () => {
+  // Live names on prod (read-only, Oct 18): [live name, new name or null to leave it].
+  const LIVE: Array<[string, string | null]> = [
+    ["Wire Transfer1: Domestic – Outgoing", "Wire Transfer: Domestic – Outgoing"],
+    ["Non-Commerce Bank ATM1: Overdraft Transfer Fee", "Non-Commerce Bank ATM: Overdraft Transfer Fee"],
+    ["Domestic Outgoing Wire Transfer†", "Domestic Outgoing Wire Transfer"],
+    ["Commercial Account Continuous Overdraft Fee^", "Commercial Account Continuous Overdraft Fee"],
+    ["Money Market Account Excessive Debit Fee****: Domestic Outgoing", "Money Market Account Excessive Debit Fee: Domestic Outgoing"],
+    ["Domestic Wires**: : Incoming Domestic Fee", "Domestic Wires: Incoming Domestic Fee"],
+    ["Cashier's check**", "Cashier's check"],
+    ["Returned UCF/NSF Fee ^^ ∞", "Returned UCF/NSF Fee"],
+    ["Stop Payment (all items4) ^", "Stop Payment (all items)"],
+    ["^Dormant Account Fee (charged after 24 months of inactivity)", "Dormant Account Fee (charged after 24 months of inactivity)"],
+    ["Overdraft Protection Fees†: Transaction fee", "Overdraft Protection Fees: Transaction fee"],
+    // A footnote's own sentence, and numbers that belong to the name.
+    ["^^ If your account balance remains overdrawn for longer than 5 business days, we will charge your account a daily overdr", null],
+    ["Tier3: Overdraft", null],
+    ["Level 2: Overdraft Fee", null],
+    ["Savings4Kids Monthly Fee", null],
+    // Dry run over every live marked name (Oct 18): a footnote link, a dangling comma, a footnote's text.
+    ["Inactive Account Fee[4](#disclaimer4)", "Inactive Account Fee"],
+    ["Zelle Payment Dispute[6](#disclaimer6)", "Zelle Payment Dispute"],
+    ["Courtesy Pay Item Paid / OD Charge‡, ‡‡", "Courtesy Pay Item Paid / OD Charge"],
+    ["ATM Withdrawals§ §Non-TEFCU owned ATMs only. Fee charged per ATM withdrawal after the 3rd ATM withdrawal for the month", null],
+    ["Privilege Pay Visa® Debit Card Overdrafts13: Debit Card Purchases Overdraft Protection", "Privilege Pay Visa® Debit Card Overdrafts: Debit Card Purchases Overdraft Protection"],
+    ["Safe Deposit* Boxes Annual Cost (Subject to availability): 4 ½ x 4 x 21 ½", "Safe Deposit Boxes Annual Cost (Subject to availability): 4 ½ x 4 x 21 ½"],
+  ];
+
+  it("is version 23 or later", () => {
+    expect(NAME_RETIDY_STRATEGY.version).toBeGreaterThanOrEqual(23);
+  });
+
+  it("drops the marks and nothing else", () => {
+    expect(LIVE.map(([name]) => footnoteMarkFreeName(name))).toEqual(LIVE.map(([, next]) => next));
+  });
+
+  it("renames U.S. Bank's wire fee whose page prints the mark", () => {
+    const page = [{ source_document_id: 5, normalized_text: "Wire Transfer1: | Domestic – Outgoing | $30.00\nDomestic – Incoming | $20.00" }];
+    const row = fee({ fee_published_id: 75931, institution_id: 5, source_document_id: 5, canonical_fee_key: "wire_domestic_outgoing", fee_name: "Wire Transfer1: Domestic – Outgoing", amount: 30 });
+    expect(planRetidy([row], page).renames.map((rename) => rename.newName)).toEqual(["Wire Transfer: Domestic – Outgoing"]);
+  });
+
+  it("keeps product codes, ages, terms and arithmetic outside maintenance and minimum balance", () => {
+    const cases: Array<[string, string]> = [
+      ["Wire (MT103)", "wire_domestic_outgoing"],
+      ["Copy of Tax Form (W-9)", "research"],
+      ["Safe Deposit Box (A1)", "safe_deposit_box"],
+      ["Senior (Age55)", "monthly_maintenance"],
+      ["CD Early Withdrawal (Months12)", "cd_early_withdrawal"],
+      ["COVID19: Fee waiver", "overdraft"],
+      ["Statement Copy (Page1)", "statement_copy"],
+      ["Research 2^3", "research"],
+      ["Research Fee $25 * hours", "research"],
+      ["Stop Payment * 2", "stop_payment"],
+    ];
+    expect(cases.map(([name, key]) => footnoteMarkFreeName(name, key))).toEqual(cases.map(() => null));
+    expect(footnoteMarkFreeName("Rewards Checking (CK06) Monthly service charge", "monthly_maintenance")).toBe("Rewards Checking Monthly service charge");
+  });
+
+  it("leaves a rename that lands on another live row's name at any price, or that two rows would share", () => {
+    const at = (id: number, name: string, amount: number, key = "wire_domestic_outgoing") =>
+      fee({ fee_published_id: id, institution_id: 9, source_document_id: 9, canonical_fee_key: key, fee_name: name, amount });
+    const rows = [
+      at(1, "Wire Transfer¹", 25),
+      at(2, "Wire Transfer²", 30),
+      at(3, "Platinum50: Monthly fee", 12, "monthly_maintenance"),
+      at(4, "Platinum: Monthly fee", 8, "monthly_maintenance"),
+      at(5, "Stop Payment†", 30, "stop_payment"),
+    ];
+    const page = [{ source_document_id: 9, normalized_text: rows.map((row) => `${row.fee_name} | $${row.amount}`).join("\n") }];
+    const plan = planRetidy(rows, page);
+    expect(plan.renames.map((rename) => [rename.feePublishedId, rename.newName])).toEqual([[5, "Stop Payment"]]);
+    expect(plan.skipped.same_name_live).toBe(3);
   });
 });
 
@@ -1049,8 +1125,8 @@ describe("capsCasedName (v22, #1810)", () => {
     ["MONTHLY SERVICE FEE IF MINIMUM BALANCE IS NOT MET", null],
   ];
 
-  it("is version 22", () => {
-    expect(NAME_RETIDY_STRATEGY.version).toBe(22);
+  it("is version 22 or later", () => {
+    expect(NAME_RETIDY_STRATEGY.version).toBeGreaterThanOrEqual(22);
   });
 
   it("title-cases live all-caps names and keeps their acronyms", () => {

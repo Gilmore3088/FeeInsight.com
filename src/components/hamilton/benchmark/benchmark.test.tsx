@@ -22,9 +22,9 @@ const positioning: InstitutionPositioning = {
   priority: "high",
   topGap: null,
   entries: [
-    { feeCategory: "overdraft", displayName: "Overdraft", yourAmount: 35, benchmarkMedian: 28, benchmarkP25: 25, benchmarkP75: 32, benchmarkCount: 40, maturityTier: "strong", gapAmount: 7, gapPct: 25 },
-    { feeCategory: "wire_domestic_outgoing", displayName: "Outgoing domestic wire", yourAmount: 20, benchmarkMedian: 25, benchmarkP25: 20, benchmarkP75: 30, benchmarkCount: 30, maturityTier: "strong", gapAmount: -5, gapPct: -20 },
-    { feeCategory: "stop_payment", displayName: "Stop payment", yourAmount: 30, benchmarkMedian: 30, benchmarkP25: 25, benchmarkP75: 32, benchmarkCount: 33, maturityTier: "strong", gapAmount: 0, gapPct: 0 },
+    { feeCategory: "overdraft", displayName: "Overdraft", yourAmount: 35, yourLow: 35, yourHigh: 35, yourFees: [{ name: "Overdraft fee", amount: 35 }], benchmarkMedian: 28, benchmarkP25: 25, benchmarkP75: 32, benchmarkCount: 40, maturityTier: "strong", gapAmount: 7, gapPct: 25 },
+    { feeCategory: "wire_domestic_outgoing", displayName: "Outgoing domestic wire", yourAmount: 20, yourLow: 20, yourHigh: 20, yourFees: [{ name: "Outgoing wire", amount: 20 }], benchmarkMedian: 25, benchmarkP25: 20, benchmarkP75: 30, benchmarkCount: 30, maturityTier: "strong", gapAmount: -5, gapPct: -20 },
+    { feeCategory: "stop_payment", displayName: "Stop payment", yourAmount: 30, yourLow: 30, yourHigh: 30, yourFees: [{ name: "Stop payment", amount: 30 }], benchmarkMedian: 30, benchmarkP25: 25, benchmarkP75: 32, benchmarkCount: 33, maturityTier: "strong", gapAmount: 0, gapPct: 0 },
   ],
 };
 positioning.topGap = positioning.entries[0];

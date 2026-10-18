@@ -65,6 +65,8 @@ import { districtComparison, districtFinding, marketPanels } from "./market-comp
 import { DistrictCompare, LayerHead, LayerNav } from "./state-layers";
 import { CITY_FEES } from "@/lib/data-store/city-market";
 import { stateMarketMap } from "@/lib/geo/state-market-map";
+import { getResearchCoverageCached } from "@/lib/data-store/public-cached-reads";
+import { stateCoverageCounts, stateCoverageSentence } from "@/lib/headline-counts";
 
 const NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
 
@@ -144,7 +146,7 @@ export default async function StateReportPage({ params, searchParams }: PageProp
 
   // Every read is served from the public cache between publishes.
   const district = STATE_TO_DISTRICT[stateCode];
-  const [summary, indexes, nationalIndex, districtIndex, sampleLive, marketFees, hub, beigeHeadline, beigeSections, peerSets] = await Promise.all([
+  const [summary, indexes, nationalIndex, districtIndex, sampleLive, marketFees, hub, beigeHeadline, beigeSections, coverageRead, peerSets] = await Promise.all([
     getPublicStatsSummary(),
     getStateFeeIndexesCached(stateCode).catch(() => EMPTY_INDEXES),
     getPublicNationalIndex(),
@@ -155,6 +157,9 @@ export default async function StateReportPage({ params, searchParams }: PageProp
     getStateHubCached(stateCode).catch(() => null),
     district ? getBeigeBookHeadline(district, 400) : Promise.resolve(null),
     district && showFullDistrict ? getLatestBeigeBook(district) : Promise.resolve([]),
+    // The shared coverage read (#1951). No read deadline yet: this branch predates
+    // src/lib/read-deadline.ts; a failed read drops the coverage sentence, never the page.
+    getResearchCoverageCached().catch(() => null),
     getStatePeerSetIndexesCached(stateCode).catch(() => []),
   ]);
   const asOf = summary.refreshedOn;
@@ -233,6 +238,14 @@ export default async function StateReportPage({ params, searchParams }: PageProp
 
   // The state's own hub: every institution in the state, its income, branches and economy.
   const institutionsTracked = hub ? hub.institutions.reduce((sum, g) => sum + g.institutions, 0) : 0;
+  // The state's coverage from the one shared read /research and the directory count from
+  // (headline-counts.ts, #1951): active institutions headquartered here (the hub's rule, #1955),
+  // those with published fees, and of those the ones counted toward medians, all from one read.
+  const coverage = stateCoverageCounts(coverageRead, stateCode);
+  const headquartered = coverage?.monitored ?? institutionsTracked;
+  const withFees = coverage?.withFees ?? 0;
+  // Only when the coverage read is missing: the state index's own population.
+  const inMedians = indexes.verified_institutions;
   const revenue = hub ? revenueTrend(hub) : [];
   const bankTrend = incomeTrend(revenue, "banks");
   const cuTrend = incomeTrend(revenue, "creditUnions");
@@ -261,15 +274,17 @@ export default async function StateReportPage({ params, searchParams }: PageProp
   const beigeSummary = beigeSections.find((s) => s.section_name === "Summary of Economic Activity")?.content_text ?? null;
 
   const facts = [
-    ...(indexes.verified_institutions > 0
+    ...(withFees > 0
       ? [
           {
-            value: formatCount(indexes.verified_institutions),
+            value: formatCount(withFees),
             label: "institutions with published fees",
-            ...(institutionsTracked > 0 ? { note: `${formatCount(institutionsTracked)} headquartered in ${stateName}` } : {}),
+            ...(headquartered > 0 ? { note: `of ${formatCount(headquartered)} headquartered in ${stateName}` } : {}),
           },
         ]
-      : []),
+      : inMedians > 0
+        ? [{ value: formatCount(inMedians), label: "institutions in these medians" }]
+        : []),
     ...(againstUs.length >= 3 ? [{ value: `${insideBand} of ${againstUs.length}`, label: "medians fall within the national middle 50%" }] : []),
   ];
   // The opening takeaway is the state's sharpest specific gap; the band count sits beside it as context.
@@ -322,11 +337,7 @@ export default async function StateReportPage({ params, searchParams }: PageProp
           <LayerHead
             id="state-heading"
             title={`${stateName}'s banks and credit unions`}
-            line={`${
-              institutionsTracked > 0
-                ? `${formatCount(indexes.verified_institutions)} of the ${formatCount(institutionsTracked)} institutions headquartered in ${stateName} publish verified fee schedules. `
-                : ""
-            }Figures here count those headquartered institutions, except branches and deposits, which count every institution serving the state.`}
+            line={`${stateCoverageSentence(coverage, stateName)}Figures here count those headquartered institutions, except branches and deposits, which count every institution serving the state.`}
           />
         {/* Banks against credit unions, as one field of fees. */}
         {charter.length > 0 && (
@@ -373,8 +384,8 @@ export default async function StateReportPage({ params, searchParams }: PageProp
               leaders
                 ? `The ${NUMBER_WORDS[leaders.banks] ?? leaders.banks} largest banks hold ${Math.round(leaders.pct)}% of bank deposits in ${stateName}.`
                 : null,
-              institutionsTracked > 0
-                ? `${count(institutionsTracked)} banks and credit unions are headquartered here${
+              headquartered > 0
+                ? `${count(headquartered)} banks and credit unions are headquartered here${
                     bankBranches != null ? `; ${count(bankBranches)} bank branches${cuBranches ? ` and ${count(cuBranches)} credit union branches` : ""} serve the state, wherever headquartered` : ""
                   }.`
                 : null,
@@ -551,7 +562,7 @@ export default async function StateReportPage({ params, searchParams }: PageProp
             }
             source={
               <>
-                BLS unemployment and the CPI for checking accounts and other bank services via FRED
+                BLS unemployment and the BLS CPI for checking accounts and other bank services
                 {income ? `; Census ACS ${income.year} median household income` : ""}. The CPI is national; it has no state figure.
               </>
             }

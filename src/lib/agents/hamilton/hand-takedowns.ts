@@ -42,7 +42,7 @@ export interface HandTakedown {
   reason: string;
   /** The issue that holds the evidence; the entries under one issue are one batch. */
   issue: number;
-  kind: Extract<FeedbackKind, "wrong_amount" | "wrong_category" | "not_a_fee" | "duplicate">;
+  kind: Extract<FeedbackKind, "wrong_amount" | "wrong_category" | "not_a_fee" | "duplicate" | "not_on_schedule">;
   /** What the bank's own text says, in one line. */
   evidence: string;
   /**
@@ -117,6 +117,127 @@ export function atmSurchargeTakedowns(live: boolean = ATM_SURCHARGE_TAKEDOWN_LIV
     ...ATM_NOT_THE_FEE_ROWS.map(atmTakedown(1773, "not_a_fee")),
   ];
 }
+
+/**
+ * #1880 (read-only, Oct 18): every live Texas Capital fee comes from its services-fees page's table
+ * for accounts "previously offered and no longer available to open by Texas Capital Bank as of May
+ * 3, 2023"; its current schedule is the Personal Banking Fee Schedule PDF (#1881 is why it was not
+ * read). 32 rows, more than one batch may hold, so they waited on James: he chose "Take them down"
+ * on Oct 18 (05:57 UTC). Set false and none of them is listed.
+ */
+export const TEXAS_CAPITAL_TAKEDOWN_LIVE = true;
+
+/** Batches James approved by name although they hold more than `HAND_TAKEDOWN_BATCH_LIMIT` entries. */
+export const JAMES_APPROVED_BATCHES: ReadonlyMap<number, string> = new Map([
+  [1880, "James chose \"Take them down\", Oct 18 05:57 UTC"],
+]);
+
+type TexasCapitalRow = [feePublishedId: number, canonicalFeeKey: string, amount: number, feeName: string, sourceDocumentId: number];
+
+const TEXAS_CAPITAL_LEGACY_ROWS: readonly TexasCapitalRow[] = [
+  [5821, "counter_check", 0, "Temporary Checks", 30],
+  [134779, "overdraft", 15, "Paid Overdraft Fee", 29087],
+  [134780, "stop_payment", 30, "Stop Payment", 29087],
+  [134781, "deposited_item_return", 12, "Deposited Item Chargeback", 29087],
+  [134782, "account_research", 25, "Account Research", 29087],
+  [134783, "safe_deposit_box", 50, "Safe Deposit Box 3x103", 29087],
+  [134784, "safe_deposit_box", 75, "Safe Deposit Box 5x103", 29087],
+  [134785, "safe_deposit_box", 125, "Safe Deposit Box 10x103", 29087],
+  [134786, "late_payment", 10, "Late Payment (Over 90 Days)", 29087],
+  [134787, "safe_deposit_box", 25, "Additional Safe Deposit Box Keys", 29087],
+  [134788, "nsf", 0, "Return NSF Item Fee", 29087],
+  [134789, "card_replacement", 0, "Replacement Debit Card", 29087],
+  [134790, "monthly_maintenance", 0, "Monthly service charge", 29087],
+  [134791, "wire_intl_outgoing", 35, "International Outbound Wires (Online/Manual)", 29087],
+  [134792, "wire_domestic_outgoing", 35, "Domestic Outbound Wires (Online/Manual)", 29087],
+  [134793, "deposited_item_return", 7, "Re-clear Returned Deposit Item", 29087],
+  [134794, "check_image", 3, "Check Copies", 29087],
+  [134795, "document_reproduction", 5, "Statement Copies", 29087],
+  [134796, "cashiers_check", 0, "Cashier’s Checks", 29087],
+  [134797, "document_reproduction", 0, "Duplicate Statement", 29087],
+  [134798, "early_closure", 0, "Account Closure — Within 90 Days of Opening", 29087],
+  [134799, "collection_item", 0, "Collection Items — Incoming/Outgoing", 29087],
+  [134826, "safe_deposit_box", 50, "Safe Deposit Box 3x104", 29087],
+  [134827, "safe_deposit_box", 75, "Safe Deposit Box 5x104", 29087],
+  [134828, "safe_deposit_box", 125, "Safe Deposit Box 10x104", 29087],
+  [134846, "garnishment_levy", 0, "Admin Fee — Garnishments and Tax Levies", 29087],
+  [146101, "rush_card", 30, "Rushed Debit Card Request", 29087],
+  [146102, "safe_deposit_box", 25, "Save Deposit Box Key Deposit (Refundable)", 29087],
+  [147936, "monthly_maintenance", 25, "Premier checking Monthly service charge", 29087],
+  [147937, "monthly_maintenance", 0, "capital interest checking Monthly service charge", 29087],
+  [153189, "wire_intl_outgoing", 75, "International Outbound Wires (Manual)", 29087],
+  [153190, "wire_domestic_outgoing", 60, "Domestic Outbound Wires (Manual)", 29087],
+];
+
+/** The #1880 entries, listed only while `TEXAS_CAPITAL_TAKEDOWN_LIVE` is on (`live` for tests). */
+export function texasCapitalTakedowns(live: boolean = TEXAS_CAPITAL_TAKEDOWN_LIVE): HandTakedown[] {
+  if (!live) return [];
+  return TEXAS_CAPITAL_LEGACY_ROWS.map(([feePublishedId, canonicalFeeKey, amount, feeName, sourceDocumentId]) => ({
+    feePublishedId, institutionId: 69, canonicalFeeKey, amount, feeName,
+    reason: "source_mismatch: #1880", issue: 1880, kind: "not_on_schedule" as const,
+    evidence: `Texas Capital services-fees page (doc ${sourceDocumentId}): "${feeName}" is priced in the table for "Capital Interest Checking, Money Market, Personal Savings | Premier Checking, Premier Money Market", accounts the same page lists as "previously offered and no longer available to open by Texas Capital Bank as of May 3, 2023". The bank's current schedule is its Personal Banking Fee Schedule PDF (effective 7/15/2024).`,
+  }));
+}
+
+/**
+ * A verified row of a listed batch that never went live (a later read of the same table, decided
+ * as identical to a live row) and is rejected with it, so no later publish rule brings the batch's
+ * fees back. Rejected only while still verified, unpublished and at the listed institution.
+ */
+export interface HandWaitingRejection {
+  feeVerifiedId: number;
+  institutionId: number;
+  issue: number;
+  reason: string;
+}
+
+/**
+ * #1880: Texas Capital's verified rows from the same closed-accounts table that are not live:
+ * docs 22052 and 29087 (2 each) and doc 37585 (read Oct 18 05:40 UTC, 32 rows), read-only, Oct 18.
+ */
+const TEXAS_CAPITAL_WAITING_VERIFIED_IDS: readonly number[] = [
+  78999, 123405, 190244, 190246,
+  ...Array.from({ length: 32 }, (_, index) => 191907 + index),
+];
+
+/**
+ * #1908 (James's live-fee check, Oct 18; re-read on the stored text): SchoolsFirst FCU (6741) rows
+ * read from its payroll card disclosure (doc 24009, text 21182, "Payroll Card — Statement of Fees
+ * and Disclosure & Agreement of Terms and Conditions ... part of the contract for your Payroll Card
+ * account"), a card program, not the credit union's deposit accounts. Its "Monthly Fee $0" and
+ * "Account inactivity $0" pulled SchoolsFirst's monthly and dormant figures down. The tenth row,
+ * "Currency conversion fee" (104601), has no dollar amount and waits for Darwin's card program rule.
+ */
+type SchoolsFirstRow = [feePublishedId: number, canonicalFeeKey: string, amount: number, feeName: string];
+const SCHOOLSFIRST_PAYROLL_CARD_ROWS: SchoolsFirstRow[] = [
+  [104597, "atm_non_network", 2, "ATM withdrawal at non-SchoolsFirst FCU and non-CO-OP Network locations"],
+  [104598, "cashiers_check", 5, "Cashier's check payable to Payroll Cardholder"],
+  [104599, "card_foreign_txn", 2, "ATM withdrawal at international ATM locations"],
+  [104600, "rush_card", 20, "Rush Payroll Card replacement (per card)"],
+  [104602, "monthly_maintenance", 0, "Monthly Fee"],
+  [104603, "atm_non_network", 0, "Balance inquiry at SchoolsFirst FCU and CO-OP Network ATMs"],
+  [104604, "card_foreign_txn", 0, "Balance inquiry at international ATM locations"],
+  [104605, "dormant_account", 0, "Account inactivity"],
+  [104606, "document_reproduction", 0, "eStatement copies (per copy)"],
+];
+
+function schoolsFirstPayrollCardTakedowns(): HandTakedown[] {
+  return SCHOOLSFIRST_PAYROLL_CARD_ROWS.map(([feePublishedId, canonicalFeeKey, amount, feeName]) => ({
+    feePublishedId, institutionId: 6741, canonicalFeeKey, amount, feeName,
+    reason: "source_mismatch: #1908", issue: 1908, kind: "not_on_schedule" as const,
+    evidence: `SchoolsFirst FCU (doc 24009, text 21182), the Payroll Card Statement of Fees: "${feeName}" is the payroll card's fee, not a deposit account's; the credit union's own schedule is mk360-fees.pdf.`,
+  }));
+}
+
+/** The #1880 waiting rows, listed only while `TEXAS_CAPITAL_TAKEDOWN_LIVE` is on (`live` for tests). */
+export function texasCapitalWaitingRejections(live: boolean = TEXAS_CAPITAL_TAKEDOWN_LIVE): HandWaitingRejection[] {
+  if (!live) return [];
+  return TEXAS_CAPITAL_WAITING_VERIFIED_IDS.map((feeVerifiedId) => ({
+    feeVerifiedId, institutionId: 69, issue: 1880, reason: "source_mismatch: #1880",
+  }));
+}
+
+export const HAND_WAITING_REJECTIONS: readonly HandWaitingRejection[] = [...texasCapitalWaitingRejections()];
 
 export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
   // #1496 (James approved, Oct 16): Barksdale FCU's two-column fee schedule (text 17003) read line by line.
@@ -540,6 +661,8 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
     : []),
   // #1772, #1773: 28 non-network ATM rows, listed while `ATM_SURCHARGE_TAKEDOWN_LIVE` is on (James, Oct 17).
   ...atmSurchargeTakedowns(),
+  // #1880: Texas Capital's 32 closed-account rows, listed while `TEXAS_CAPITAL_TAKEDOWN_LIVE` is on (James, Oct 18).
+  ...texasCapitalTakedowns(),
   // #1788 (read-only, Oct 17; James's sample-report review): rows guard v72 cannot read by name, each
   // confirmed against its bank's stored text. Two international ATM fees filed as the non-network ATM
   // fee that repeat a live International ATM & Card fee, and three optional add-ons filed as monthly
@@ -582,6 +705,51 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
   { feePublishedId: 45157, institutionId: 5622, canonicalFeeKey: "overdraft", amount: 0, feeName: "Non-Sufficient Funds / Overdraft: Non-members",
     reason: "source_mismatch: #1837", issue: 1837, kind: "wrong_category",
     evidence: "East River FCU (doc 16371, text 11087): the left column's \"Non-Sufficient Funds / Overdraft\" heading sits over the right column's \"Notary Service\" rows; \"Non-members ... FREE\" is the free notary row, not an overdraft price." },
+  // #1905 (read-only, Oct 18; James's Navy Federal review): rows read from its fees-and-charges page
+  // (doc 26712, text 23988, which holds every accordion section) that are not the account's fee.
+  // 5 entries, under James's fewer-than-20 rule. Its "ATM fees: Transfer" $1.00 (145758) stays: the
+  // non-network column prices a transfer at $1.00.
+  { feePublishedId: 145735, institutionId: 4956, canonicalFeeKey: "cash_advance", amount: 0.5, feeName: "Credit card cash advance§ | None",
+    reason: "duplicate of #28173 (#1905)", issue: 1905, kind: "duplicate",
+    requiresLive: { feePublishedId: 28173, amount: 0.5, feeName: "Credit card cash advance§" },
+    evidence: "Navy Federal (doc 15428, the Oct 4 copy of fees-and-charges): \"Credit card cash advance§ | None | $0.50 | $1.00\", the CO-OP column's $0.50 with the Navy Federal column's \"None\" joined to the name; the same line is live from the current copy (doc 26712) as 28173." },
+  { feePublishedId: 122351, institutionId: 4956, canonicalFeeKey: "card_replacement", amount: 5, feeName: "Lost/Stolen Card",
+    reason: "source_mismatch: #1905", issue: 1905, kind: "wrong_category",
+    evidence: "Navy Federal (doc 26712, text 23988), under \"Prepaid and Gift Cards | Visa® Gift Cards\": \"Lost/Stolen Card | $5.00\", a gift card's replacement, not a deposit account's debit card (\"First-class USPS, new or replacement card | Free\")." },
+  { feePublishedId: 129718, institutionId: 4956, canonicalFeeKey: "atm_non_network", amount: 1, feeName: "Visa/PLUS Network ATM domestic and foreign cash withdrawal and balance inquiry",
+    reason: "source_mismatch: #1905", issue: 1905, kind: "wrong_category",
+    evidence: "Navy Federal (doc 26712, text 23988), under \"GO Prepaid Cards\": \"Visa/PLUS Network ATM domestic and foreign cash withdrawal and balance inquiry\": a prepaid card's ATM fee, not the account's (its ATM table prices a non-network withdrawal at $1.00 in the Non-Navy Federal/Non-CO-OP column)." },
+  { feePublishedId: 19884, institutionId: 4956, canonicalFeeKey: "late_payment", amount: 30, feeName: "Generally 4% of principal and interest for government loans (VA &amp; FHA); maximum late charge of",
+    reason: "source_mismatch: #1905", issue: 1905, kind: "wrong_amount",
+    evidence: "Navy Federal (doc 13439; the current copy doc 26712 prints the same), Mortgage Loans: \"Late charges† | ... Generally 4% of principal and interest for government loans (VA & FHA); maximum late charge of $30 in WV for VA loans ...\": a percentage late charge; $30 is West Virginia's cap, not a flat fee." },
+  { feePublishedId: 15730, institutionId: 4956, canonicalFeeKey: "late_payment", amount: 10, feeName: "Generally a maximum late charge",
+    reason: "source_mismatch: #1905", issue: 1905, kind: "wrong_amount",
+    evidence: "Navy Federal (doc 13439; the current copy doc 26712 prints the same), Mortgage Loans: \"Generally a maximum late charge of $10, $25 in KS, $50 in MO for equity loans\": a cap on an equity loan's percentage late charge, not a flat $10 fee." },
+  ...schoolsFirstPayrollCardTakedowns(),
+  // #1946 (read-only, Oct 18): a footnote mark set after "$0" ("$0³") was stored flattened as "$03"
+  // and read as the price. Each confirmed against its bank's stored text; Truliant's "$02" row (doc
+  // 27356) stays, because its middle column really charges $2.
+  { feePublishedId: 60838, institutionId: 796, canonicalFeeKey: "monthly_maintenance", amount: 3, feeName: "Monthly Fee",
+    reason: "source_mismatch: #1946", issue: 1946, kind: "wrong_amount",
+    evidence: "North State Bank (doc 18044, text 13545): \"Monthly Fee | $03 or $10 | $03 or $10 | $03 or $20 | $03 or $5\": $0 (footnote 3) or $10, $10, $20 and $5 by account; no $3 fee." },
+  { feePublishedId: 61840, institutionId: 3125, canonicalFeeKey: "monthly_maintenance", amount: 3, feeName: "Monthly Service Charge",
+    reason: "source_mismatch: #1946", issue: 1946, kind: "wrong_amount",
+    evidence: "Security Savings Bank (doc 18292, text 13798): \"Monthly Service Charge: $03\" then \"3If your balance falls below the minimum daily balance of $500 you will be assessed a $5.00 charge\": $0 with footnote 3, not $3." },
+  { feePublishedId: 61841, institutionId: 3125, canonicalFeeKey: "monthly_maintenance", amount: 4, feeName: "Monthly Service Charge",
+    reason: "source_mismatch: #1946", issue: 1946, kind: "wrong_amount",
+    evidence: "Security Savings Bank (doc 18292, text 13798): \"Monthly Service Charge: $04\" then \"4No monthly fee with a daily balance of $500 or an average daily balance of $800\": $0 with footnote 4, not $4." },
+  { feePublishedId: 61842, institutionId: 3125, canonicalFeeKey: "monthly_maintenance", amount: 5, feeName: "Monthly Service Charge",
+    reason: "source_mismatch: #1946", issue: 1946, kind: "wrong_amount",
+    evidence: "Security Savings Bank (doc 18292, text 13798): \"Monthly Service Charge: $05\" then \"5No monthly fee with an average daily balance of $2,000. You will be assessed a $10.00 charge\": $0 with footnote 5, not $5." },
+  { feePublishedId: 97256, institutionId: 162, canonicalFeeKey: "monthly_maintenance", amount: 1, feeName: "Safe Start Checking Account Monthly service charge",
+    reason: "source_mismatch: #1946", issue: 1946, kind: "wrong_amount",
+    evidence: "The Park National Bank (doc 21374, text 17644): \"Monthly service charge: $01\" and \"No monthly service charge1\": $0 with footnote 1, not $1." },
+  { feePublishedId: 137275, institutionId: 6942, canonicalFeeKey: "monthly_maintenance", amount: 1, feeName: "Monthly Fee",
+    reason: "source_mismatch: #1946", issue: 1946, kind: "wrong_amount",
+    evidence: "Orion Federal Credit Union (doc 29978, text 27542): \"Monthly Fee | $01 | $0\": $0 with footnote 1 beside the other account's $0, not $1." },
+  { feePublishedId: 59691, institutionId: 418, canonicalFeeKey: "atm_non_network", amount: 1, feeName: "Non-Penn Community Bank network ATM transactions",
+    reason: "source_mismatch: #1946", issue: 1946, kind: "wrong_amount",
+    evidence: "Penn Community Bank (doc 13627, text 1096): \"Non-Penn Community Bank network ATM transactions | $01\" among rows of \"$0\": $0 with footnote 1, not $1." },
 ];
 
 export interface LiveTakedownRow {
@@ -604,6 +772,8 @@ export interface HandTakedownResult {
   takenDown: PlannedHandTakedown[];
   /** Listed rows left alone, with why (not live, or changed since it was listed). */
   skipped: Array<{ feePublishedId: number; reason: string }>;
+  /** Listed waiting verified rows rejected (`HAND_WAITING_REJECTIONS`); on a dry run, those it would reject. */
+  waitingRejected: number[];
   /** A failed read or write (nothing written); also a `step.warning` run event. */
   error: string | null;
 }
@@ -651,29 +821,52 @@ export function planHandTakedowns(live: LiveTakedownRow[], list: readonly HandTa
  */
 export async function applyHandTakedowns(
   db: SqlTag,
-  options: { runId: number; stepId?: number | null; batchId: string; dryRun: boolean; list?: readonly HandTakedown[] },
+  options: {
+    runId: number; stepId?: number | null; batchId: string; dryRun: boolean;
+    list?: readonly HandTakedown[]; waiting?: readonly HandWaitingRejection[];
+  },
 ): Promise<HandTakedownResult> {
   const list = options.list ?? HAND_TAKEDOWNS;
-  const result: HandTakedownResult = { dryRun: options.dryRun, takenDown: [], skipped: [], error: null };
-  if (list.length === 0) return result;
+  const waiting = options.waiting ?? HAND_WAITING_REJECTIONS;
+  const result: HandTakedownResult = { dryRun: options.dryRun, takenDown: [], skipped: [], waitingRejected: [], error: null };
+  if (list.length === 0 && waiting.length === 0) return result;
   // Each listed row, and each live row an entry waits on (`requiresLive`).
   const ids = [...new Set(list.flatMap((entry) => entry.requiresLive ? [entry.feePublishedId, entry.requiresLive.feePublishedId] : [entry.feePublishedId]))];
-  let live: LiveTakedownRow[];
+  const waitingIds = [...new Set(waiting.map((entry) => entry.feeVerifiedId))];
+  let live: LiveTakedownRow[] = [];
+  let pending: Array<{ fee_verified_id: number | string; institution_id: number | string }> = [];
   try {
-    live = await inSavepoint(db, (scope) => scope<LiveTakedownRow[]>`
-      SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fp.canonical_fee_key, fp.fee_name, fp.amount
-        FROM published_fee_records fp
-       WHERE fp.fee_published_id = ANY(${ids}::bigint[])
-         AND fp.rolled_back_at IS NULL
-    `);
+    if (ids.length > 0) {
+      live = await inSavepoint(db, (scope) => scope<LiveTakedownRow[]>`
+        SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fp.canonical_fee_key, fp.fee_name, fp.amount
+          FROM published_fee_records fp
+         WHERE fp.fee_published_id = ANY(${ids}::bigint[])
+           AND fp.rolled_back_at IS NULL
+      `);
+    }
+    if (waitingIds.length > 0) {
+      pending = await inSavepoint(db, (scope) => scope<Array<{ fee_verified_id: number | string; institution_id: number | string }>>`
+        SELECT v.fee_verified_id, v.institution_id
+          FROM verified_fee_observations v
+         WHERE v.fee_verified_id = ANY(${waitingIds}::bigint[])
+           AND v.review_status IN ('verified', 'approved')
+           AND NOT EXISTS (
+             SELECT 1 FROM published_fee_records fp
+              WHERE fp.lineage_ref = v.fee_verified_id AND fp.rolled_back_at IS NULL
+           )
+      `);
+    }
   } catch (error) {
     console.error("hand takedowns read failed:", error);
     return { ...result, error: await recordStepWarning(db, { runId: options.runId, stepId: options.stepId, check: HAND_TAKEDOWN_CHECK, what: "Hand takedowns read", error }) };
   }
   const plan = planHandTakedowns(live, list);
   result.skipped = plan.skipped;
-  if (options.dryRun) return { ...result, takenDown: plan.takenDown };
-  if (plan.takenDown.length === 0) return result;
+  const waitingPlan = pending
+    .filter((row) => waiting.some((entry) => entry.feeVerifiedId === Number(row.fee_verified_id) && entry.institutionId === Number(row.institution_id)))
+    .map((row) => Number(row.fee_verified_id));
+  if (options.dryRun) return { ...result, takenDown: plan.takenDown, waitingRejected: waitingPlan };
+  if (plan.takenDown.length === 0 && waitingPlan.length === 0) return result;
 
   try {
     await inSavepoint(db, async (scope) => {
@@ -724,15 +917,40 @@ export async function applyHandTakedowns(
         };
       });
       if (feedback.length > 0) await recordFeedback(scope, feedback);
-      if (result.takenDown.length > 0) {
+      for (const feeVerifiedId of waitingPlan) {
+        const entry = waiting.find((candidate) => candidate.feeVerifiedId === feeVerifiedId)!;
+        const rejected = await scope<{ fee_verified_id: number | string }[]>`
+          UPDATE verified_fee_observations
+             SET review_status = 'rejected',
+                 outlier_flags = CASE WHEN outlier_flags ? ${HAND_TAKEDOWN_FLAG} THEN outlier_flags
+                                      ELSE COALESCE(outlier_flags, '[]'::jsonb) || jsonb_build_array(${HAND_TAKEDOWN_FLAG}::text) END
+           WHERE fee_verified_id = ${feeVerifiedId}
+             AND institution_id = ${entry.institutionId}
+             AND review_status IN ('verified', 'approved')
+             AND NOT EXISTS (
+               SELECT 1 FROM published_fee_records fp
+                WHERE fp.lineage_ref = verified_fee_observations.fee_verified_id AND fp.rolled_back_at IS NULL
+             )
+          RETURNING fee_verified_id
+        `;
+        if (rejected.length > 0) result.waitingRejected.push(feeVerifiedId);
+      }
+      if (result.takenDown.length > 0 || result.waitingRejected.length > 0) {
+        const message = result.waitingRejected.length > 0
+          ? `Took down ${result.takenDown.length} listed live fee(s) confirmed wrong against their bank's own text and rejected ${result.waitingRejected.length} waiting cop${result.waitingRejected.length === 1 ? "y" : "ies"}`
+          : `Took down ${result.takenDown.length} listed live fee(s) confirmed wrong against their bank's own text`;
         await scope`
           INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
           VALUES (
             ${options.runId}, ${options.stepId ?? null}, ${HAND_TAKEDOWN_CHECK}, 'completed',
-            ${`Took down ${result.takenDown.length} listed live fee(s) confirmed wrong against their bank's own text`},
+            ${message},
             ${JSON.stringify({
               taken_down: result.takenDown.map((item) => ({ fee_published_id: item.feePublishedId, fee_verified_id: item.feeVerifiedId, reason: item.reason })),
               skipped: result.skipped,
+              waiting_rejected: result.waitingRejected.map((feeVerifiedId) => ({
+                fee_verified_id: feeVerifiedId,
+                reason: waiting.find((entry) => entry.feeVerifiedId === feeVerifiedId)!.reason,
+              })),
             })}::jsonb
           )
         `;
@@ -740,7 +958,7 @@ export async function applyHandTakedowns(
     });
   } catch (error) {
     console.error("hand takedowns write failed:", error);
-    return { ...result, takenDown: [], error: await recordStepWarning(db, { runId: options.runId, stepId: options.stepId, check: HAND_TAKEDOWN_CHECK, what: "Hand takedowns write", error }) };
+    return { ...result, takenDown: [], waitingRejected: [], error: await recordStepWarning(db, { runId: options.runId, stepId: options.stepId, check: HAND_TAKEDOWN_CHECK, what: "Hand takedowns write", error }) };
   }
   if (result.takenDown.length > 0) invalidatePublicReadCache();
   return result;

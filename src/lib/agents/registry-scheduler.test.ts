@@ -11,11 +11,14 @@ vi.mock("@/lib/agents/run-store", () => ({ startAgentRun: startAgentRunMock }));
 import {
   backfillStart,
   isKeylessSkipNowKeyed,
+  keylessSkipKeysSet,
   isParserStale,
   pickDueCandidate,
   PRIORITY_REGISTRY_SOURCES,
   registryCandidates,
+  registryLedgerAgent,
   registryPartitionsBySource,
+  resetRegistryLedgerAgentCache,
   scheduleDueRegistryRuns,
 } from "./registry-scheduler";
 
@@ -51,10 +54,15 @@ describe("registry scheduler", () => {
   it("schedules nothing for a held source, and no partition of a struck one", () => {
     const lists = registryPartitionsBySource(now, { year: 2025, quarter: 4 });
     const of = (source: string) => lists.find((entry) => entry.source === source);
-    expect(of("world-bank-remittance-prices")?.partitions).toEqual([]);
+    expect(of("state-bill-news")?.partitions).toEqual([]);
     for (const struck of ["nacha-volume", "kcfed-sb-lending", "atlanta-fed-payment-choice", "fed-sbcs", "fhlb-advance-rates"]) expect(of(struck)).toBeUndefined();
     expect(of("fed-payments")?.partitions).toEqual(["fedach", "frps"]);
-    expect(registryCandidates(now, { year: 2025, quarter: 4 }).some((c) => c.source === "world-bank-remittance-prices")).toBe(false);
+    expect(registryCandidates(now, { year: 2025, quarter: 4 }).some((c) => c.source === "state-bill-news")).toBe(false);
+  });
+
+  it("schedules World Bank remittance prices again once released from held (CC BY 4.0, 2026-10-18)", () => {
+    const lists = registryPartitionsBySource(now, { year: 2025, quarter: 4 });
+    expect(lists.find((entry) => entry.source === "world-bank-remittance-prices")?.partitions).toEqual(["current"]);
   });
 
   it("schedules nothing for a source held because a table it writes is over its size budget", () => {
@@ -86,6 +94,24 @@ describe("registry scheduler", () => {
     expect(isKeylessSkipNowKeyed(true, undefined)).toBe(false);
     expect(isKeylessSkipNowKeyed(true, "  ")).toBe(false);
     expect(isKeylessSkipNowKeyed(false, "abc123")).toBe(false);
+  });
+
+  it("re-pulls BEA years and USDA cash rents skipped without a key once that key is set", () => {
+    expect(keylessSkipKeysSet({})).toEqual({ CENSUS_API_KEY: false, BEA_API_KEY: false, NASS_API_KEY: false });
+    expect(keylessSkipKeysSet({ BEA_API_KEY: "k", NASS_API_KEY: " n ", CENSUS_API_KEY: "  " })).toEqual({
+      CENSUS_API_KEY: false,
+      BEA_API_KEY: true,
+      NASS_API_KEY: true,
+    });
+    // A Census key in the process env must not make an unset BEA or NASS key count as set.
+    const saved = process.env.CENSUS_API_KEY;
+    process.env.CENSUS_API_KEY = "census";
+    try {
+      expect(keylessSkipKeysSet({ CENSUS_API_KEY: "census" })).toEqual({ CENSUS_API_KEY: true, BEA_API_KEY: false, NASS_API_KEY: false });
+    } finally {
+      if (saved === undefined) delete process.env.CENSUS_API_KEY;
+      else process.env.CENSUS_API_KEY = saved;
+    }
   });
 
   it("re-pulls succeeded NCUA quarters recorded under an older parser", () => {
@@ -144,6 +170,7 @@ describe("registry scheduler", () => {
     beforeEach(() => {
       sqlMock.mockReset();
       startAgentRunMock.mockReset();
+      resetRegistryLedgerAgentCache();
     });
 
     function routeSql(handlers: Array<[string, unknown[]]>) {
@@ -161,26 +188,66 @@ describe("registry scheduler", () => {
       expect(startAgentRunMock).not.toHaveBeenCalled();
     });
 
-    it("claims the next partition and starts a one-step Magellan run", async () => {
+    it("claims the next partition and starts a one-step Hoovie run under the unchanged run marker (#1865)", async () => {
       routeSql([
         ["FROM agent_runs", [{ active: false }]],
         ["FROM registry_ingest_partitions", [{ source: "fdic-universe", partition_key: "current", due: false }]],
         ["INSERT INTO registry_ingest_partitions", [{ id: 1 }]],
+        ["FROM agent_registry", [{ present: true }]],
       ]);
       startAgentRunMock.mockResolvedValue({ run: { id: 501, status: "queued" }, steps: [], reused: false });
 
       const result = await scheduleDueRegistryRuns({ now, triggeredBy: "test" });
 
       expect(result).toMatchObject({ scheduled: true, source: "ncua-financials", partitionKey: "2026Q2", runId: 501 });
+      expect(startAgentRunMock.mock.calls[0][0].params).not.toHaveProperty("ledger_agent_fallback");
       expect(startAgentRunMock).toHaveBeenCalledWith(
         expect.objectContaining({
-          agent: "magellan",
+          agent: "hoovie",
+          title: "Hoovie registry: Pull NCUA 5300 call-report financials 2026Q2",
           kind: "workflow",
           idempotencyKey: "magellan:registry:ncua-financials:2026Q2",
           params: expect.objectContaining({ source: "magellan.registry", partition_key: "2026Q2" }),
-          steps: [expect.objectContaining({ key: "registry-ncua-financials", input: { partition_key: "2026Q2" } })],
+          steps: [expect.objectContaining({ key: "registry-ncua-financials", agent: "hoovie", input: { partition_key: "2026Q2" } })],
         }),
       );
+    });
+
+    it("keeps Magellan's name, and says why, while the hoovie agent_registry row is missing (#1865)", async () => {
+      routeSql([
+        ["FROM agent_runs", [{ active: false }]],
+        ["FROM registry_ingest_partitions", [{ source: "fdic-universe", partition_key: "current", due: false }]],
+        ["INSERT INTO registry_ingest_partitions", [{ id: 1 }]],
+        ["FROM agent_registry", [{ present: false }]],
+      ]);
+      startAgentRunMock.mockResolvedValue({ run: { id: 502, status: "queued" }, steps: [], reused: false });
+
+      await scheduleDueRegistryRuns({ now, triggeredBy: "test" });
+
+      expect(startAgentRunMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agent: "magellan",
+          title: "Magellan registry: Pull NCUA 5300 call-report financials 2026Q2",
+          idempotencyKey: "magellan:registry:ncua-financials:2026Q2",
+          params: expect.objectContaining({ source: "magellan.registry", ledger_agent_fallback: "hoovie row missing" }),
+          steps: [expect.objectContaining({ key: "registry-ncua-financials", agent: "magellan" })],
+        }),
+      );
+    });
+
+    it("reads the agent_registry row once per process, and asks again after a failed read", async () => {
+      const registryReads = () => sqlMock.mock.calls.filter(([strings]) => templateText(strings).includes("FROM agent_registry")).length;
+      routeSql([["FROM agent_registry", [{ present: true }]]]);
+      await expect(registryLedgerAgent()).resolves.toEqual({ agent: "hoovie" });
+      await expect(registryLedgerAgent()).resolves.toEqual({ agent: "hoovie" });
+      expect(registryReads()).toBe(1);
+
+      resetRegistryLedgerAgentCache();
+      sqlMock.mockImplementation(() => Promise.reject(new Error("connection refused")));
+      await expect(registryLedgerAgent()).resolves.toEqual({ agent: "magellan", fallback: "hoovie row check failed" });
+      routeSql([["FROM agent_registry", [{ present: true }]]]);
+      await expect(registryLedgerAgent()).resolves.toEqual({ agent: "hoovie" });
+      expect(registryReads()).toBe(3);
     });
 
     function sourceLists(): string[][] {

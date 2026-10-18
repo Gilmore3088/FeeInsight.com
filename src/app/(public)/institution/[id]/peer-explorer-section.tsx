@@ -18,6 +18,17 @@ import {
 import { PeerExplorer } from "./peer-explorer";
 import { PeerSetLinks } from "./peer-set-links";
 
+/**
+ * The peer-set links: `?peers=key#peers`, keeping the `?fee=` focus when the page has one. The
+ * cached page never reads the query string; the explorer island (peer-explorer-island.tsx) reads it.
+ */
+export function peerSetHrefs(institutionId: number, focusFee: string | null): (key: string) => string {
+  return (key) => {
+    const params = new URLSearchParams({ ...(focusFee ? { fee: focusFee } : {}), peers: key });
+    return `/institution/${institutionId}?${params.toString()}#peers`;
+  };
+}
+
 /** Short names for the choices; the full plain-words name is the set's caption. */
 export function peerSetChipLabel(option: { key: string; label: string; count?: number }): string {
   switch (option.key) {
@@ -47,13 +58,11 @@ export function PeerExplorerSection({
   set,
   hrefFor,
   initial,
-  isPro,
 }: {
   sets: InstitutionPeerSets;
   set: PeerExplorerSet;
   hrefFor: (key: string) => string;
   initial: { peer?: string | null; fee?: string | null; view?: string | null };
-  isPro: boolean;
 }) {
   const { selected } = sets;
   const options = sets.options.map((option) =>
@@ -108,7 +117,7 @@ export function PeerExplorerSection({
           </ul>
         )}
         {shown && <p className="mt-2 text-[13px] font-medium text-ink-soft">{shown}</p>}
-        <PeerExplorer set={set} setKey={selected.key} setName={title} initial={initial} isPro={isPro} />
+        <PeerExplorer set={set} setKey={selected.key} setName={title} initial={initial} />
       </div>
       <p className="mt-4 text-[12px] leading-relaxed text-ink-muted">Source: {PRODUCT_NAME}, published fee schedules{asOf ? `, as of ${asOf}` : ""}. Total assets from FDIC and NCUA records.</p>
       <details className="mt-1 text-[12px] text-ink-muted">

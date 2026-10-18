@@ -33,9 +33,14 @@ const yearsBack = (today: Date, from: number) => {
   return out;
 };
 
+/**
+ * New York DFS ("for non-commercial purposes") and North Carolina (nc.gov: "for non-commercial
+ * use") were struck on 2026-10-18 (DECISIONS.md "No non-commercial data"); readers hide their
+ * stored orders (STRUCK_ENFORCEMENT_AGENCIES). Add a state only once its site's terms allow
+ * commercial reuse.
+ */
 export const STATE_ORDER_SOURCES: readonly StateOrderSource[] = [
   { state: "NJ", reader: "table", urls: () => ["https://www.nj.gov/dobi/division_banking/bankdivenforce.html"] },
-  { state: "NY", reader: "links", urls: () => ["https://www.dfs.ny.gov/industry_guidance/enforcement_actions"] },
   {
     state: "IL",
     reader: "table",
@@ -48,12 +53,6 @@ export const STATE_ORDER_SOURCES: readonly StateOrderSource[] = [
   },
   { state: "WA", reader: "table", urls: () => ["https://dfi.wa.gov/banks/administrative-actions"] },
   { state: "TX", reader: "table", urls: () => ["https://www.dob.texas.gov/laws-regulations/enforcement-orders-bank"] },
-  {
-    state: "NC",
-    reader: "links",
-    follow: /state[- ]chartered bank enforcement/i,
-    urls: () => ["https://nccob.nc.gov/consumer-information/enforcement-actions"],
-  },
 ];
 
 /** "STATE_NJ": the agency code stored on institution_enforcement_actions. */

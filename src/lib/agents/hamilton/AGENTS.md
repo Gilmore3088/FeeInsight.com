@@ -152,7 +152,13 @@ Hamilton supports the decision; it does not make it.
   its read-only tools, `getLocalCompetitors` (shared with chat, `research/tool-local-competitors.ts`),
   `queryFeeRevenueCorrelation` (its `peers` view compares one institution's service charge
   income with a peer group's median on the same quarter and filer, `research/fee-income-peers.ts`),
-  `queryDistrictData` and `queryStateData` (#1084). The reader's saved default peer set
+  `queryDistrictData` and `queryStateData` (#1084), and the data catalog through `listData` and
+  `queryData` (shared with chat, `research/tool-query-data.ts`, #1855): listData names the servable
+  public-data series, fee measures and bank call-report lines for a question, queryData reads one at one scope through
+  `data-catalog/query-data.ts` and returns its citation or a refusal. A `peer_set` scope resolves the
+  group through the shared `data-store/peer-sets.ts` definition; public data and call-report lines roll
+  up over its members when read (`data-catalog/roll-ups.ts`: median, spread, `institution_count`, no
+  median under 5 institutions), with nothing stored. The reader's saved default peer set
   (`getActivePeerSet`) is in its prompt; the answer's identity snapshot names it as the peer
   baseline only when a tool call used it (the `peers` view with the set's filters).
 - The bank's own numbers arrive by answer or upload. `POST /api/hamilton/uploads` reads a
@@ -477,6 +483,15 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     (`hamilton.frequency_fill:v<N>:fix:<id>:<from>:<to>`), because `pipeline_feedback` upserts
     on its key and an old key was silently overwritten. The excerpt is read from
     `COALESCE(extraction_note, conditions)`.
+    v15 (#1901): Knox cuts its stored line at 180 characters, so a blank fee's line can end
+    before its price ("Dormant Checking fee: Assessed ... no other Navy Fede", Navy Federal
+    80997). A blank whose stored line is at least `CUT_EXCERPT_CHARS` long and does not print
+    its price is read on the one line of its own stored document that holds the cut line's
+    opening and prints the price (`fullStoredLine`; "... | $3.00 per quarter" fills quarterly).
+    The lines are found in SQL, so only lines holding the opening come back and every cut row is
+    read on every step; a flattened document (no line breaks) gives no line. A line holding
+    another fee's price can still lend its period when Knox's amount came from that fee. The fill logs it with basis `full_stored_line`; without a full
+    line the row is read only if it was a pre-v15 candidate.
     Overdraft plan hold (#1360, no version change, `OVERDRAFT_PLAN_HOLD_LIVE` on since Oct 16,
     James 04:53 UTC: "Retire wrong copy"): an overdraft program the keep above leaves monthly was,
     in every case checked on the bank's own page, an optional plan, not the overdraft fee. It is
@@ -1077,7 +1092,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v3 | `hamilton/account-names.ts` |
 | `CURRENT_COPY_STRATEGY` | `hamilton.current_copy_check` | v2 | `hamilton/current-copy.ts` |
 | `EVAL_VERDICT_VERSION` | — | v8 | `hamilton/eval-verdicts.ts` |
-| `FREQUENCY_FILL_VERSION` | — | v14 | `hamilton/frequency-fill.ts` |
+| `FREQUENCY_FILL_VERSION` | — | v15 | `hamilton/frequency-fill.ts` |
 | `GUARD_REQUEUE_STRATEGY` | `publish.guard_requeue` | v1 | `hamilton/guard-requeue.ts` |
 | `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v1 | `hamilton/newer-copy-retire.ts` |
 | `HAMILTON_PUBLISH_STRATEGY` | `publish.rules` | v3 | `hamilton/publish.ts` |

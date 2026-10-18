@@ -4,7 +4,8 @@
  * local market and its named competitors, filings and rules), so each figure on screen has one
  * source. Missing pieces come back empty rather than failing the page.
  */
-import { getInstitutionFeeValues } from "@/lib/data-store/fee-index";
+import { getInstitutionOwnFees } from "@/lib/data-store/fee-index";
+import { ownFeeLabel, ownFeeList, type InstitutionOwnFee } from "@/lib/own-fee";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { plainFeeName } from "./briefing-observations";
 import { directionalTitle } from "./workspace/names";
@@ -35,10 +36,14 @@ export interface WorkspaceLocal extends LocalMarketInfo {
 export interface FeeWorkspace {
   institution: HamiltonSelectedInstitutionContext | null;
   /** The bank's published fees, featured fees first. */
-  ownFees: { category: string; name: string; amount: number }[];
+  /** amount is null when the schedule states several different fees in the category; label then gives their range. */
+  ownFees: { category: string; name: string; amount: number | null; label: string }[];
   fee: string;
   feeName: string;
+  /** The price the schedule states for the fee; null when it has none, or several different ones. */
   ownAmount: number | null;
+  /** "Levy $150.00; Garnishment $175.00" when the schedule states several different fees for this one. */
+  ownSeveral: string | null;
   /** The engine's research for this fee; null without an institution or when it couldn't load. */
   research: FeeResearch | null;
   local: WorkspaceLocal | null;
@@ -67,22 +72,24 @@ export async function loadFeeWorkspace(params: {
   }).catch(() => ({ institution: null }));
 
   const ownValues = institution
-    ? await getInstitutionFeeValues(institution.id).catch(() => {
+    ? await getInstitutionOwnFees(institution.id).catch(() => {
         unavailable.push("your published fees");
-        return new Map<string, number>();
+        return new Map<string, InstitutionOwnFee>();
       })
-    : new Map<string, number>();
+    : new Map<string, InstitutionOwnFee>();
 
   const rank = (c: string) => {
     const i = (FEATURED_FEES as readonly string[]).indexOf(c);
     return i === -1 ? FEATURED_FEES.length : i;
   };
   const ownFees = [...ownValues.entries()]
-    .map(([category, amount]) => ({ category, name: feeName(category), amount }))
+    .map(([category, own]) => ({ category, name: feeName(category), amount: own.price, label: ownFeeLabel(own) }))
     .sort((a, b) => rank(a.category) - rank(b.category) || a.name.localeCompare(b.name));
 
   const fee = params.fee && /^[a-z0-9_]+$/.test(params.fee) ? params.fee : (ownFees[0]?.category ?? "overdraft");
-  const ownAmount = ownValues.get(fee) ?? null;
+  const ownFee = ownValues.get(fee);
+  const ownAmount = ownFee?.price ?? null;
+  const ownSeveral = ownFee && ownFee.price === null ? ownFeeList(ownFee) : null;
 
   // Named like Ask names it, so an admin or a linked user viewing another bank never reads "your".
   const loaded = institution
@@ -100,7 +107,7 @@ export async function loadFeeWorkspace(params: {
     ? layersFromEngine(research.layers, ownAmount, research.localMarket)
     : [summarizeLayer("national", "National", "Every institution with this fee published", [], null)];
 
-  return { institution, ownFees, fee, feeName: feeName(fee), ownAmount, research, local, layers, ownFeeRows, unavailable };
+  return { institution, ownFees, fee, feeName: feeName(fee), ownAmount, ownSeveral, research, local, layers, ownFeeRows, unavailable };
 }
 
 /** Every member's publish date, so the trail's "as of" spans oldest to newest; the engine's date otherwise. */

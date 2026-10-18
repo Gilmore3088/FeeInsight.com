@@ -10,7 +10,7 @@ const FEED_LABELS: Record<string, string> = {
   "sec-market-value": "SEC public float and shares outstanding",
   "cfpb-making-ends-meet": "CFPB Making Ends Meet survey (overdraft, bills, savings, alternative credit)",
   "state-payday-reports": "State payday and small-dollar lending reports (WA, TX)",
-  "urban-debt-in-america": "Urban Institute debt in collections (held until license confirmed)",
+  "urban-debt-in-america": "Urban Institute debt in collections",
   "bank-merger-orders": "Fed and OCC merger decisions",
   "uscourts-bankruptcy": "US Courts bankruptcy filings",
   "usda-farm": "USDA farm income and cash rents",
@@ -22,7 +22,7 @@ const FEED_LABELS: Record<string, string> = {
   "bls-laus": "BLS county labor force and unemployment (LAUS)",
   "census-lehd": "LEHD jobs by workplace and home county (LODES)",
   "fed-payments": "FedACH commercial and Payments Study volumes (Fed Board)",
-  "national-series": "National credit series (FRED: H.8, PMMS, SLOOS, large-bank cards, CRE)",
+  "national-series": "National credit series (Fed Board: H.8, SLOOS, delinquency)",
   "nyfed-household-debt": "NY Fed household debt by state",
   "nyfed-sce-credit": "NY Fed consumer credit access survey",
   "cfpb-credit-trends": "CFPB Consumer Credit Trends originations",
@@ -30,7 +30,7 @@ const FEED_LABELS: Record<string, string> = {
   "fdic-financials": "FDIC call reports",
   "ncua-financials": "NCUA call reports",
   "fdic-sod": "FDIC branch deposits (SOD)",
-  fred: "FRED economic series",
+  fred: "Economic indicators (BLS, BEA, Fed Board H.15)",
   "beige-book": "Fed Beige Book",
   "reg-news": "Regulator news",
   cfpb: "CFPB complaints",
@@ -38,7 +38,7 @@ const FEED_LABELS: Record<string, string> = {
   "sec-filings": "SEC filings",
   "state-regulators": "State regulators",
   "state-reg-news": "State regulator news",
-  "state-bill-news": "News on state fee bills",
+  "state-bill-news": "News on state fee bills (held: terms unconfirmed)",
   enforcement: "OCC and Fed enforcement actions",
   "census-acs": "Census income and population (ACS)",
   "irs-zip-income": "IRS income by ZIP code",
@@ -64,7 +64,7 @@ const FEED_LABELS: Record<string, string> = {
   "fed-shed": "Fed household survey (SHED) banking questions",
   "fdic-industry-totals": "FDIC industry totals",
   "fdic-national-rates": "FDIC national rates and rate caps",
-  "world-bank-remittance-prices": "World Bank remittance prices (held: terms unconfirmed)",
+  "world-bank-remittance-prices": "World Bank remittance prices",
   "hud-zip-county": "HUD ZIP-to-county crosswalk",
   "industry-events": "Industry events (failures, mergers, SBA, FHLBank)",
   "payment-networks": "Payment networks (Reg II, OSM ATMs)",
@@ -86,7 +86,7 @@ const FEED_LABELS: Record<string, string> = {
 export const FEED_GROUPS = [
   { key: "national", title: "National: banks and credit unions", note: "FDIC, NCUA, FFIEC and SEC" },
   { key: "oversight", title: "National: rules, regulators and news", note: "Congress, Federal Register, enforcement, CFPB" },
-  { key: "economy", title: "Economy and markets", note: "FRED, Fed, Census and IRS" },
+  { key: "economy", title: "Economy and markets", note: "BLS, BEA, Fed, Census and IRS" },
   { key: "state", title: "State", note: "fee bills, enforcement, regulators and news" },
   { key: "other", title: "Other", note: "feeds not yet sorted into a section" },
 ] as const;
@@ -270,6 +270,7 @@ export function DataFeedsPanel({ freshness, now }: { freshness: FeedFreshness; n
         const groupCalls = group.key === "national" ? unmatched : [];
         if (groupFeeds.length === 0 && groupCalls.length === 0) return null;
         const failed = groupFeeds.filter((feed) => feed.failed > 0).length;
+        const blocked = groupFeeds.filter((feed) => feed.blocked > 0).length;
         return (
           <details key={group.key} open className="group rounded-lg border border-black/[0.06] dark:border-white/[0.08]">
             <summary className="flex cursor-pointer flex-wrap items-baseline justify-between gap-2 px-3 py-2">
@@ -277,9 +278,10 @@ export function DataFeedsPanel({ freshness, now }: { freshness: FeedFreshness; n
                 {group.title}
                 <span className="admin-meta ml-2 font-normal">{group.note}</span>
               </span>
-              <span className={`text-xs ${failed > 0 ? warn : "admin-meta"}`}>
+              <span className={`text-xs ${failed > 0 || blocked > 0 ? warn : "admin-meta"}`}>
                 {groupFeeds.length + groupCalls.length} {groupFeeds.length + groupCalls.length === 1 ? "feed" : "feeds"}
                 {failed > 0 ? ` · ${failed} failing` : ""}
+                {blocked > 0 ? ` · ${blocked} blocked` : ""}
               </span>
             </summary>
             <div className="overflow-x-auto px-1 pb-2">
@@ -317,6 +319,11 @@ export function DataFeedsPanel({ freshness, now }: { freshness: FeedFreshness; n
                           {feed.failed > 0 ? (
                             <span className={warn} title={feed.lastError ?? undefined}>
                               {feed.failed} failed{feed.lastError ? `: ${feed.lastError.slice(0, 120)}` : ""}
+                            </span>
+                          ) : feed.blocked > 0 ? (
+                            <span className={warn}>
+                              Blocked: {feed.blockedHost ?? "the publisher's host"} refuses our requests ({feed.blocked}{" "}
+                              {feed.blocked === 1 ? "period" : "periods"} not loaded)
                             </span>
                           ) : feed.scheduled > 0 ? (
                             `${feed.scheduled} waiting${feed.nextAttemptAt ? `, next ${when(feed.nextAttemptAt)}` : ""}`

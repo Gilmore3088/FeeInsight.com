@@ -11,7 +11,7 @@ vi.mock("@/components/track-link", () => ({
   ),
 }));
 
-import { GatedOptions, OtherOptions } from "./pricing-sections";
+import { GatedOptions, OtherOptions, PricingFaq } from "./pricing-sections";
 
 describe("/subscribe demo links (growth OS review N3)", () => {
   it("gated state: offers the demo first, in the site's one wording", () => {
@@ -34,5 +34,15 @@ describe("/subscribe demo links (growth OS review N3)", () => {
     // Its own placement, apart from the Hamilton window's link (pricing_exhibit_demo).
     expect(demo).toHaveAttribute("data-placement", "pricing_demo");
     expect(document.body.textContent).not.toContain("Request a demo");
+  });
+});
+
+describe("/subscribe FAQ", () => {
+  it("sits at #faq, the homepage FAQ link's target, and answers the buyer's two questions", () => {
+    const summary = { freshnessLabel: "Read this month" } as Parameters<typeof PricingFaq>[0]["summary"];
+    render(<PricingFaq summary={summary} />);
+    expect(document.getElementById("faq")).toHaveAttribute("aria-labelledby", "pricing-faq-heading");
+    expect(document.body.textContent).toContain("What if my market has only a few institutions?");
+    expect(document.body.textContent).toContain("Does Hamilton tell us what to charge?");
   });
 });

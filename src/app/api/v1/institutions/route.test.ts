@@ -245,6 +245,7 @@ describe("/api/v1/institutions", () => {
         groups: { national: "All banks", state: "Banks in TX", asset_peers: "Banks of the same asset size", local_market: null },
         rows: [{
           fee_category: "overdraft", display_name: "Overdraft (OD)", family: "Overdraft & NSF", amount: 35,
+          amount_low: 35, amount_high: 35, fees: [{ name: "Overdraft fee", amount: 35 }],
           national: { median: 30, p25: 25, p75: 35, institutions: 900 },
           state: { median: 32, p25: 28, p75: 35, institutions: 80 },
           asset_peers: { median: 30, p25: 26, p75: 34, institutions: 300 },
@@ -262,7 +263,7 @@ describe("/api/v1/institutions", () => {
       expect(response.headers.get("Content-Disposition")).toBe("attachment; filename=example-bank-n-a-fee-benchmarks.csv");
       const [header, row] = (await response.text()).split("\n");
       expect(header.split(",")[0]).toBe("fee_category");
-      expect(row).toBe("overdraft,Overdraft (OD),Overdraft & NSF,35,30,25,35,900,32,80,30,26,34,300,33,6,higher,https://example.com/fees.pdf,dollars,,,,,,,");
+      expect(row).toBe("overdraft,Overdraft (OD),Overdraft & NSF,35,30,25,35,900,32,80,30,26,34,300,33,6,higher,https://example.com/fees.pdf,dollars,,,,,,,,35,35,Overdraft fee $35.00");
     });
 
     it("keeps the benchmark behind a paid key", async () => {

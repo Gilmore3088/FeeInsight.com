@@ -42,6 +42,21 @@ export interface RegArticle {
 // Topic classification
 // ---------------------------------------------------------------------------
 
+/**
+ * Enforcement actions, orders and their terminations. Checked after the overdraft, lending and
+ * M&A topics (a consent order over overdraft fees stays an overdraft item) and before rulemaking
+ * and fees & pricing. Plain
+ * words only, so the same pattern runs in JavaScript and as a Postgres regex.
+ */
+const ENFORCEMENT_KEYWORDS = ["enforcement action", "enforcement order", "consent order", "civil money penalt", "cease and desist", "prohibition order"];
+export const ENFORCEMENT_TITLE = new RegExp(ENFORCEMENT_KEYWORDS.join("|"), "i");
+
+/**
+ * reg_articles' topic as the readers see it. Rows stored as Rulemaking or General before the
+ * enforcement topic existed read as Enforcement when their title says so; no row is rewritten.
+ */
+export const TOPIC_SQL = `(CASE WHEN topic IN ('rulemaking_compliance', 'general') AND title ~* '${ENFORCEMENT_KEYWORDS.join("|")}' THEN 'enforcement' ELSE topic END)`;
+
 const TOPICS: Record<string, string[]> = {
   overdraft: [
     "overdraft fee", "overdraft fees", "nsf fee", "non-sufficient funds",
@@ -59,10 +74,10 @@ const TOPICS: Record<string, string[]> = {
     "branch sale", "purchase and assumption", "consolidation",
     "acquir", "application by",
   ],
+  enforcement: ENFORCEMENT_KEYWORDS,
   rulemaking_compliance: [
     "proposed rule", "final rule", "nprm", "regulatory guidance",
-    "supervisory guidance", "enforcement action", "consent order",
-    "civil money penalty", "interagency", "comment period",
+    "supervisory guidance", "interagency", "comment period",
     "examination", "supervisory letter",
   ],
   fees_pricing: [
@@ -77,6 +92,7 @@ export const TOPIC_LABELS: Record<string, string> = {
   consumer_lending: "Consumer Lending",
   mergers_acquisitions: "M&A",
   rulemaking_compliance: "Rulemaking",
+  enforcement: "Enforcement",
   fees_pricing: "Fees & Pricing",
   general: "General",
 };
@@ -147,7 +163,7 @@ export function buildArticleFilter(opts: ArticleFilter = {}): { where: string; p
     conditions.push(clause(params.length));
   };
   if (opts.source) add((n) => `source = $${n}`, opts.source);
-  if (opts.topic) add((n) => `topic = $${n}`, opts.topic);
+  if (opts.topic) add((n) => `${TOPIC_SQL} = $${n}`, opts.topic);
   if (opts.since) add((n) => `published_at >= $${n}`, opts.since);
   const pattern = likePattern(opts.q);
   if (pattern) add((n) => `title ILIKE $${n}`, pattern);
@@ -175,7 +191,7 @@ export async function getArticles(opts: GetArticlesOptions = {}): Promise<RegArt
   const offset = Math.max(0, opts.offset ?? 0);
 
   return await sql.unsafe(
-    `SELECT guid, source, title, link, topic, published_at, created_at
+    `SELECT guid, source, title, link, ${TOPIC_SQL} AS topic, published_at, created_at
      FROM reg_articles
      ${where}
      ORDER BY published_at DESC NULLS LAST, created_at DESC
@@ -194,8 +210,9 @@ export async function getArticleCount(opts: ArticleFilter = {}): Promise<number>
 async function countBy(column: "topic" | "source", since?: string, q?: string, fee?: FeeType): Promise<Record<string, number>> {
   if (!(await hasArticlesTable())) return {};
   const { where, params } = buildArticleFilter({ since, q, fee });
+  const key = column === "topic" ? TOPIC_SQL : column;
   const rows = await sql.unsafe(
-    `SELECT ${column} AS key, COUNT(*) as cnt FROM reg_articles ${where} GROUP BY ${column} ORDER BY cnt DESC`,
+    `SELECT ${key} AS key, COUNT(*) as cnt FROM reg_articles ${where} GROUP BY 1 ORDER BY cnt DESC`,
     params,
   ) as unknown as { key: string; cnt: number }[];
   const counts: Record<string, number> = {};

@@ -5,6 +5,7 @@ export const HOOVIE_SOURCES_01: HoovieSourceContract[] = [
   {
     // magellan/registry/ncua-branches.ts (runRegistryNcuaBranches), regulatory/ncua-branches.ts (5300 zip)
     source: "ncua-branches",
+    loader: "ncua-branches",
     publisher: "National Credit Union Administration (NCUA)",
     licence: { status: "public-domain" },
     connection: "bulk-file",
@@ -17,6 +18,7 @@ export const HOOVIE_SOURCES_01: HoovieSourceContract[] = [
     // magellan/registry/ncua-branches.ts (runRegistryNcuaBranchGeocode), regulatory/census-geocoder.ts,
     // magellan/registry/fdic-universe.ts (deriveOtherDistricts)
     source: "ncua-branch-geocode",
+    loader: "ncua-branches",
     publisher: "US Census Bureau geocoder, applied to NCUA branch addresses already held",
     licence: { status: "public-domain" },
     connection: "derived",
@@ -28,6 +30,7 @@ export const HOOVIE_SOURCES_01: HoovieSourceContract[] = [
   {
     // magellan/registry/cfpb.ts, regulatory/cfpb.ts (consumerfinance.gov search API), magellan/registry/identity.ts
     source: "cfpb",
+    loader: "cfpb",
     publisher: "Consumer Financial Protection Bureau (CFPB)",
     licence: { status: "public-domain" },
     connection: "rest-api",
@@ -39,6 +42,7 @@ export const HOOVIE_SOURCES_01: HoovieSourceContract[] = [
   {
     // magellan/registry/census-acs.ts, regulatory/census-acs.ts (api.census.gov ACS 5-year)
     source: "census-acs",
+    loader: "census-acs",
     publisher: "US Census Bureau (American Community Survey)",
     licence: { status: "public-domain" },
     connection: "keyed-api",
@@ -51,6 +55,7 @@ export const HOOVIE_SOURCES_01: HoovieSourceContract[] = [
   {
     // magellan/registry/irs-zip-income.ts, regulatory/irs-soi.ts (irs.gov/pub/irs-soi zpallnoagi.csv)
     source: "irs-zip-income",
+    loader: "irs-zip-income",
     publisher: "Internal Revenue Service, Statistics of Income (IRS SOI)",
     licence: { status: "public-domain" },
     connection: "bulk-file",
@@ -62,6 +67,7 @@ export const HOOVIE_SOURCES_01: HoovieSourceContract[] = [
   {
     // magellan/registry/economy.ts (rucc), regulatory/economy.ts (fetchRucc, ers.usda.gov CSV, one vintage per decade)
     source: "usda-rucc",
+    loader: "economy",
     publisher: "USDA Economic Research Service",
     licence: { status: "public-domain" },
     connection: "bulk-file",
@@ -73,6 +79,7 @@ export const HOOVIE_SOURCES_01: HoovieSourceContract[] = [
   {
     // magellan/registry/economy.ts (runFfiecTracts), regulatory/economy.ts (ffiec.gov CensusFlatFile{year}.zip)
     source: "ffiec-census-tracts",
+    loader: "economy",
     publisher: "Federal Financial Institutions Examination Council (FFIEC)",
     licence: { status: "public-domain" },
     connection: "bulk-file",
@@ -84,6 +91,7 @@ export const HOOVIE_SOURCES_01: HoovieSourceContract[] = [
   {
     // magellan/registry/economy.ts (runBranchTracts), regulatory/economy.ts (Census geographies geocoder)
     source: "branch-census-tracts",
+    loader: "economy",
     publisher: "US Census Bureau geocoder, applied to FDIC SOD and NCUA branch addresses already held",
     licence: { status: "public-domain" },
     connection: "derived",
@@ -95,6 +103,7 @@ export const HOOVIE_SOURCES_01: HoovieSourceContract[] = [
   {
     // magellan/registry/economy.ts (runUrbanRural; writes only when ECONOMY_URBAN_RURAL_WRITE=true)
     source: "urban-rural-fill",
+    loader: "economy",
     publisher: "Derived from USDA ERS Rural-Urban Continuum Codes and institution HQ counties already held",
     licence: { status: "public-domain" },
     connection: "derived",
@@ -106,6 +115,7 @@ export const HOOVIE_SOURCES_01: HoovieSourceContract[] = [
   {
     // magellan/registry/economy.ts (qcew), regulatory/economy.ts (data.bls.gov/cew annual-average CSV)
     source: "bls-qcew",
+    loader: "economy",
     publisher: "US Bureau of Labor Statistics (BLS)",
     licence: { status: "public-domain" },
     connection: "bulk-file",
@@ -117,6 +127,7 @@ export const HOOVIE_SOURCES_01: HoovieSourceContract[] = [
   {
     // magellan/registry/economy.ts (cbp), regulatory/economy.ts (cbpUrl, api.census.gov/data/{year}/cbp)
     source: "census-cbp",
+    loader: "economy",
     publisher: "US Census Bureau (County Business Patterns)",
     licence: { status: "public-domain" },
     connection: "keyed-api",
@@ -129,6 +140,7 @@ export const HOOVIE_SOURCES_01: HoovieSourceContract[] = [
   {
     // magellan/registry/economy.ts (saipe), regulatory/economy.ts (SAIPE_URL timeseries API)
     source: "census-saipe",
+    loader: "economy",
     publisher: "US Census Bureau (Small Area Income and Poverty Estimates)",
     licence: { status: "public-domain" },
     connection: "keyed-api",
@@ -141,6 +153,7 @@ export const HOOVIE_SOURCES_01: HoovieSourceContract[] = [
   {
     // magellan/registry/economy.ts (bea, BEA_KEY_ENV), regulatory/economy.ts (apps.bea.gov CAINC1)
     source: "bea-personal-income",
+    loader: "economy",
     publisher: "US Bureau of Economic Analysis (BEA)",
     licence: { status: "public-domain" },
     connection: "keyed-api",
@@ -153,6 +166,7 @@ export const HOOVIE_SOURCES_01: HoovieSourceContract[] = [
   {
     // magellan/registry/economy.ts (fhfa), regulatory/economy.ts (fhfa.gov hpi_master.csv, quarterly all-transactions rows)
     source: "fhfa-hpi",
+    loader: "economy",
     publisher: "Federal Housing Finance Agency (FHFA)",
     licence: { status: "public-domain" },
     connection: "bulk-file",
@@ -164,6 +178,7 @@ export const HOOVIE_SOURCES_01: HoovieSourceContract[] = [
   {
     // magellan/registry/economy.ts (fdicSurvey; biennial, odd years), regulatory/economy.ts (FDIC_HOUSEHOLD_SURVEY_CSV_URL)
     source: "fdic-household-survey",
+    loader: "economy",
     publisher: "Federal Deposit Insurance Corporation (FDIC)",
     licence: { status: "public-domain" },
     connection: "bulk-file",
@@ -175,6 +190,7 @@ export const HOOVIE_SOURCES_01: HoovieSourceContract[] = [
   {
     // magellan/registry/economy.ts (shed), regulatory/economy.ts (federalreserve.gov SHED public-use zip)
     source: "fed-shed",
+    loader: "economy",
     publisher: "Board of Governors of the Federal Reserve System",
     licence: { status: "public-domain" },
     connection: "bulk-file",
@@ -186,6 +202,7 @@ export const HOOVIE_SOURCES_01: HoovieSourceContract[] = [
   {
     // magellan/registry/economy.ts (runFdicIndustry), regulatory/economy.ts (fetchIndustryRecords, FDIC financials API)
     source: "fdic-industry-totals",
+    loader: "economy",
     publisher: "Federal Deposit Insurance Corporation (FDIC)",
     licence: { status: "public-domain" },
     connection: "rest-api",
@@ -197,6 +214,7 @@ export const HOOVIE_SOURCES_01: HoovieSourceContract[] = [
   {
     // magellan/registry/economy.ts (fdicRates), regulatory/economy.ts (FDIC_NATIONAL_RATES_CSV_URL)
     source: "fdic-national-rates",
+    loader: "economy",
     publisher: "Federal Deposit Insurance Corporation (FDIC)",
     licence: { status: "public-domain" },
     connection: "bulk-file",
@@ -206,12 +224,15 @@ export const HOOVIE_SOURCES_01: HoovieSourceContract[] = [
     tables: ["area_statistics"],
   },
   {
-    // magellan/registry/economy.ts (runRemittances), regulatory/economy.ts (WORLD_BANK_RPW_CSV_URL)
+    // magellan/registry/economy.ts (runRemittances), regulatory/economy.ts (RPW xlsx workbook from remittanceprices.worldbank.org/data-download; WORLD_BANK_RPW_CSV_URL optional override)
     source: "world-bank-remittance-prices",
+    loader: "economy",
     publisher: "World Bank (Remittance Prices Worldwide)",
     licence: {
-      status: "held",
-      note: "Held 2026-10-17 (DECISIONS.md \"No non-commercial data\"): World Bank site material is non-commercial by default and the RPW dataset's own licence is unconfirmed. The code is kept; no partitions are scheduled and no reader returns its rows until James confirms the terms.",
+      status: "open-licence",
+      licenceName: "CC BY 4.0",
+      attribution: "The World Bank: Remittance Prices Worldwide",
+      note: "Released from held 2026-10-18: the RPW dataset page states \"License: Creative Commons Attribution 4.0\", and the World Bank's dataset terms incorporate it. Cite as \"The World Bank: Remittance Prices Worldwide\" (REMITTANCE_PRICES_ATTRIBUTION), carried on every stored row and every read.",
     },
     connection: "bulk-file",
     cadence: "irregular",
@@ -222,6 +243,7 @@ export const HOOVIE_SOURCES_01: HoovieSourceContract[] = [
   {
     // magellan/registry/economy.ts (runHudCrosswalk), regulatory/economy.ts (huduser.gov USPS crosswalk API, HUD_USER_TOKEN)
     source: "hud-zip-county",
+    loader: "economy",
     publisher: "US Department of Housing and Urban Development (HUD)",
     licence: { status: "public-domain" },
     connection: "keyed-api",
@@ -234,6 +256,7 @@ export const HOOVIE_SOURCES_01: HoovieSourceContract[] = [
   {
     // magellan/registry/market-growth.ts (permits), regulatory/market-growth.ts (www2.census.gov/econ/bps/County monthly and annual files)
     source: "census-permits",
+    loader: "market-growth",
     publisher: "US Census Bureau (Building Permits Survey)",
     licence: { status: "public-domain" },
     connection: "bulk-file",
