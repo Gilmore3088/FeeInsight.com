@@ -270,8 +270,33 @@ export const getPublicCategorySummaries = cache(
  * snapshot, for public pages that compare against national medians. Same figures as
  * the fee index; admin and Pro keep reading fee_index_cache directly.
  */
-export const getPublicNationalIndex = cache(async (): Promise<IndexEntry[]> => {
-  const categories = await getPublicCategorySummaries();
+export const getPublicNationalIndex = cache(async (): Promise<IndexEntry[]> =>
+  nationalIndexEntries(await getPublicCategorySummaries()),
+);
+
+/**
+ * The public national index plus every fee in `keys`, read from the same snapshot even when a
+ * key ranks outside the public top 50. The U.S. benchmark report reads it so none of its 15
+ * headline fees silently drops off the report because the top-50 rule left it out (#1955).
+ */
+export const getPublicNationalIndexWith = cache(async (keys: readonly string[]): Promise<IndexEntry[]> => {
+  const snapshot = await cachedPublicSnapshot();
+  return nationalIndexEntries(withRequiredFees(onlyPublicFeeTypes(snapshot.categories), snapshot.categories, keys));
+});
+
+/**
+ * The public rows, plus each row of `all` whose fee is in `keys` and missing from the public
+ * rows, in the order of `all`. Pure, so the benchmark's every-headline-fee rule is tested.
+ */
+export function withRequiredFees<T extends { fee_category: string }>(publicRows: T[], all: T[], keys: readonly string[]): T[] {
+  const have = new Set(publicRows.map((r) => r.fee_category));
+  const required = new Set(keys);
+  const added = all.filter((r) => required.has(r.fee_category) && !have.has(r.fee_category));
+  return added.length === 0 ? publicRows : [...publicRows, ...added];
+}
+
+/** Snapshot category rows in IndexEntry shape (canonical categories only). */
+export function nationalIndexEntries(categories: FeeCategorySummary[]): IndexEntry[] {
   return categories
     .filter((c) => CANONICAL_CATEGORIES.has(c.fee_category))
     .map((c) => ({
@@ -291,7 +316,7 @@ export const getPublicNationalIndex = cache(async (): Promise<IndexEntry[]> => {
       maturity_tier: c.median_amount === null ? "insufficient" : maturityTier(c.institution_count),
       last_updated: null,
     }));
-});
+}
 
 /**
  * What a benchmark measures, for the line beside it:
