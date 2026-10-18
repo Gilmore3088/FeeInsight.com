@@ -593,17 +593,25 @@ function Landscape({ set, fee, selectedId, highlight, onSelect }: ViewProps) {
               const right = cx < MARGIN.left + innerW * 0.7;
               const isSubject = inst.id === set.subject.id;
               const proxy = comparisonLabel(fee, inst.fees[fee]);
+              // Below the point when the median line (and its label) runs just above it.
+              const below = median !== undefined && Math.abs(cy - py(median)) < 24;
+              const lx = cx + (right ? 10 : -10);
+              const ly = below ? cy + 20 : proxy ? cy - 24 : cy - 10;
               return (
                 <text
                   key={`l${inst.id}`}
-                  x={cx + (right ? 10 : -10)}
-                  y={cy - 10}
+                  x={lx}
+                  y={ly}
                   textAnchor={right ? "start" : "end"}
                   className={`pointer-events-none text-[11px] tabular-nums ${isSubject ? "fill-brick font-semibold" : "fill-ink font-semibold"}`}
                   style={{ paintOrder: "stroke", stroke: "var(--fi-surface-0)", strokeWidth: 3 }}
                 >
                   {short(inst.name)} · {money(feeOf(inst, fee) as number)}
-                  {proxy ? ` (${proxy.replace("Comparison price: ", "")})` : ""}
+                  {proxy && (
+                    <tspan x={lx} dy="1.3em" className="fill-ink-soft font-normal">
+                      {proxy.toLowerCase()}
+                    </tspan>
+                  )}
                 </text>
               );
             })}
@@ -1210,7 +1218,7 @@ function DotStrip({ set, fee, selectedId, median, onSelect }: { set: PeerExplore
           );
         })}
       </div>
-      <p className="mt-1 flex justify-between text-[11px] tabular-nums text-ink-muted">
+      <p className="mt-1 flex max-w-none justify-between text-[11px] tabular-nums text-ink-muted">
         <span>{money(low)}</span>
         {median !== undefined && <span>median {money(median)}</span>}
         <span>{money(high)}</span>

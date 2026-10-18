@@ -132,8 +132,8 @@ export function PeerExplorerSection({
 function PeerListRow({ inst, subject = false }: { inst: ExplorerInstitution; subject?: boolean }) {
   const place = [inst.city ? displayCity(inst.city) : null, inst.state].filter(Boolean).join(", ");
   return (
-    <tr className={subject ? "bg-paper font-semibold" : "border-t border-border"}>
-      <th scope="row" className="px-3 py-2 text-left font-medium text-ink">
+    <tr className={subject ? "bg-paper" : "border-t border-border"}>
+      <th scope="row" className={`px-3 py-2 text-left text-ink ${subject ? "font-semibold" : "font-medium"}`}>
         {inst.name}
         {subject && <span className="ml-1 font-normal text-ink-muted">(this institution)</span>}
       </th>
