@@ -9,12 +9,17 @@ the public pages as context beside the fee data. James created the agent and nam
 Every registry source (`REGISTRY_SOURCES`, `src/lib/agents/magellan/registry/index.ts`) has one
 contract in `sources.ts` (type in `contract.ts`) that records:
 
+- the registry module that runs it (`loader`);
 - publisher and licence;
 - connection kind, plus the env key when one is needed, and any optional keys;
 - cadence and grain;
 - link keys and the tables it writes.
 
-`sources.test.ts` fails when a source has no contract or names a table no migration creates.
+`sources.test.ts` fails when a source has no contract, names a table no migration creates, names
+a table that no INSERT, UPDATE or DELETE in its loader writes, or names a key its loader never
+reads. The loader check also reads the registry modules the loader imports (shared writers such as
+`economy.ts`), so it catches a table that left the write path, not one that moved between
+functions of a shared module.
 To add a source: write the parser and the run module, then add its contract.
 
 Each fact comes from the loader's own code. A fact the code doesn't state is marked
