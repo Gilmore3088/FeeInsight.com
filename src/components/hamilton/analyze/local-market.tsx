@@ -182,10 +182,14 @@ function FeeTable({ data, cats }: { data: LocalMarketAnswer; cats: string[] }) {
             <tr key={r.institutionId}>
               <td>{shortBankName(r.name)}</td>
               {cats.map((c) => {
-                const m = feeMark(r.fees[c], data.you.fees[c]);
+                const several = r.several?.[c];
+                // Several different fees have no one price to mark against the bank's (#1931).
+                const m = several ? null : feeMark(r.fees[c], data.you.fees[c]);
                 return (
                   <td key={c} className="num">
-                    {r.fees[c] != null ? (
+                    {several ? (
+                      <SeveralCell span={several} />
+                    ) : r.fees[c] != null ? (
                       <>
                         {fmtMoney(r.fees[c])}
                         {m ? (
@@ -194,8 +198,6 @@ function FeeTable({ data, cats }: { data: LocalMarketAnswer; cats: string[] }) {
                           </span>
                         ) : null}
                       </>
-                    ) : r.several?.[c] ? (
-                      <SeveralCell span={r.several[c]} />
                     ) : (
                       <span style={{ color: RD.muted }}>·</span>
                     )}
@@ -220,9 +222,8 @@ function feeHeadline(data: LocalMarketAnswer, cats: string[]): string {
   const theirs = data.competitors.map((r) => r.fees[cat]).filter((v): v is number => v != null);
   const higher = theirs.filter((v) => v - yours >= 0.005).length;
   const lower = theirs.filter((v) => yours - v >= 0.005).length;
-  // A competitor stating several different fees here has no one price to set against the bank's.
-  const fee = data.competitors.some((r) => r.several?.[cat]) ? `single ${shortFee(cat).toLowerCase()}` : shortFee(cat).toLowerCase();
-  return `Of ${plural(theirs.length, "competitor", "competitors")} with ${article(fee)} ${fee} fee on file, ${higher} ${higher === 1 ? "is" : "are"} higher than ${data.institutionName}’s ${fmtMoney(yours)} and ${lower} lower`;
+  // Counted from each competitor's one value, as the storyline counts them (#1931).
+  return `Of ${plural(theirs.length, "competitor", "competitors")} with ${article(shortFee(cat))} ${shortFee(cat).toLowerCase()} fee on file, ${higher} ${higher === 1 ? "is" : "are"} higher than ${data.institutionName}’s ${fmtMoney(yours)} and ${lower} lower`;
 }
 
 export function LocalMarketView({ data }: { data: LocalMarketAnswer }) {

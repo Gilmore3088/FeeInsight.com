@@ -12,7 +12,7 @@ import { selectMarketStated } from "@/lib/hamilton/local-market-request";
 
 export const getLocalCompetitors = tool({
   description:
-    "Name an institution's local competitors (institutions with branches in the counties holding most of its deposits, from the FDIC Summary of Deposits) with their published fee amounts beside the institution's own. Use it whenever the user asks how an institution compares locally, in its county or market, or against named competitors.",
+    "Name an institution's local competitors (institutions with branches in the counties holding most of its deposits, from the FDIC Summary of Deposits) with their published fee amounts beside the institution's own: fees holds each stated price, and a fee a competitor states several different amounts for is in several_fees (their range and each fee by name), not in fees. Use it whenever the user asks how an institution compares locally, in its county or market, or against named competitors.",
   inputSchema: z.object({
     institution_id: z.number().int().positive().describe("The institution's id"),
   }),

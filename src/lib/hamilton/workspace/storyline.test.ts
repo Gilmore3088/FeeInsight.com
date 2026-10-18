@@ -225,6 +225,19 @@ describe("storyline", () => {
     }
   });
 
+  it("keeps the local range on the same one value per institution as the counts (#1931)", () => {
+    const base = research();
+    const template = base.localCompetitors![0];
+    const localCompetitors = [
+      { ...template, institutionId: 701, institutionName: "Rival A", amount: 170 },
+      { ...template, institutionId: 702, institutionName: "Rival B", amount: 162.5, several: { low: 150, high: 175, fees: [{ name: "Levy", amount: 150 }, { name: "Garnishment", amount: 175 }] } },
+    ];
+    const answer = buildFeeAnswer({ ...base, current: 160, localCompetitors });
+    const local = answer.storyline!.exhibits.find((e) => e.exhibit.kind === "competitor_range" && /market/.test(e.actionTitle))!;
+    expect(local.actionTitle).toBe("All 2 competitors in your market charge more than your $160; their range is $162.50 to $170.");
+    expect(local.actionTitle).not.toContain("$150");
+  });
+
   it("shows a structure cell with several fees as their range and names, a single fee as its price (#1931)", () => {
     const rows = structure!.rows.map((r) =>
       r.institutionId === 2 && !r.own ? { ...r, several: { nsf: { low: 20, high: 30, fees: [{ name: "NSF item", amount: 20 }, { name: "NSF ACH", amount: 30 }] } } } : r,

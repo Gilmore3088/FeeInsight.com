@@ -16,7 +16,7 @@ import { bankStyles, footprintLegend, footprintMap, responsive } from "@/lib/ham
 import { branchNetworkMap, type NetworkCity } from "@/lib/hamilton/branch-network-map";
 import { geoContains } from "d3-geo";
 import { countyFeature } from "@/lib/geo/counties";
-import { DEFAULT_LOCAL_MARKET_CATEGORIES, resolveLocalMarketCategories, selectMarketStated } from "./local-market-request";
+import { DEFAULT_LOCAL_MARKET_CATEGORIES, resolveLocalMarketCategories, selectMarketFees, selectMarketStated } from "./local-market-request";
 import { severalFeesOf, type SeveralFees } from "@/lib/own-fee";
 
 /** The fees compared across the market, in reading order. */
@@ -32,7 +32,11 @@ export interface MarketCompetitor {
   branches: number | null;
   /** Deposits held in the market's branches, whole dollars; null for credit unions (NCUA reports none by branch). */
   deposits: number | null;
-  /** The price its schedule states per requested fee category; a category with several different fees is in `several` instead. */
+  /**
+   * One value per requested fee category under the statistics contract, for counts: the stated
+   * price, except where `several` has the category (#1931). There it is the median of several
+   * different fees, and a cell shows `several` instead.
+   */
   fees: Record<string, number>;
   /** Categories where its schedule states several different fees: their range and each by name. */
   several?: Record<string, SeveralFees>;
@@ -139,7 +143,7 @@ export function citiesOf(rows: BranchPoint[]): NetworkCity[] {
  */
 /** How many requested fees a competitor publishes: stated prices and several-fee categories alike. */
 export function feesOnFile(c: Pick<MarketCompetitor, "fees" | "several">): number {
-  return Object.keys(c.fees).length + Object.keys(c.several ?? {}).length;
+  return new Set([...Object.keys(c.fees), ...Object.keys(c.several ?? {})]).size;
 }
 
 export function rankCompetitors(list: MarketCompetitor[]): MarketCompetitor[] {
@@ -224,14 +228,15 @@ export async function getLocalMarketAnswer(
     names.filter(row => !options.charter || options.charter === "all" || row.charter_type === options.charter).map((row) => {
       const id = Number(row.id);
       const spot = footprint?.byInstitution[id];
-      const stated = selectMarketStated(feeBy.get(id)?.fees ?? {}, feeBy.get(id)?.several, categories);
+      const values = feeBy.get(id)?.fees ?? {};
+      const stated = selectMarketStated(values, feeBy.get(id)?.several, categories);
       return {
         institutionId: id,
         name: String(row.institution_name),
         charterType: row.charter_type ? String(row.charter_type) : null,
         branches: spot?.branches ?? null,
         deposits: spot?.deposits ?? null,
-        fees: stated.fees,
+        fees: selectMarketFees(values, categories),
         ...(Object.keys(stated.several).length > 0 ? { several: stated.several } : {}),
         evidenceUrl: feeBy.get(id)?.document_url ?? null,
         evidenceDate: feeBy.get(id)?.document_date ?? null,

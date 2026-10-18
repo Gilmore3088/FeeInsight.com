@@ -49,7 +49,7 @@ describe("LocalMarketView", () => {
         { ...data.competitors[0], fees: { overdraft: 35 } },
         {
           ...data.competitors[1],
-          fees: { overdraft: 25 },
+          fees: { overdraft: 25, garnishment: 162.5 },
           several: { garnishment: { low: 150, high: 175, fees: [{ name: "Levy", amount: 150 }, { name: "Garnishment", amount: 175 }] } },
         },
       ],
@@ -59,5 +59,23 @@ describe("LocalMarketView", () => {
     expect(html).toContain("$150 to $175");
     expect(html).toContain("Levy $150; Garnishment $175");
     expect(html).not.toContain("$162.50");
+  });
+
+  it("counts a several-fee competitor in the headline by its one value, and shows its range in the table (#1931)", () => {
+    const levy = { low: 150, high: 175, fees: [{ name: "Levy", amount: 150 }, { name: "Garnishment", amount: 175 }] };
+    const counted: LocalMarketAnswer = {
+      ...data,
+      categories: ["nsf"],
+      you: { ...data.you, fees: { nsf: 160 } },
+      competitors: [
+        { ...data.competitors[0], fees: { nsf: 170 } },
+        { ...data.competitors[1], fees: { nsf: 162.5 }, several: { nsf: levy } },
+      ],
+    };
+    const html = renderToStaticMarkup(<LocalMarketView data={counted} />);
+    expect(html).toContain("Of 2 competitors with a nsf / returned item fee on file, 2 are higher than Test Credit Union’s $160 and 0 lower");
+    expect(html).toContain("$150 to $175");
+    expect(html).not.toContain("$162.50");
+    expect(html).not.toContain("single");
   });
 });

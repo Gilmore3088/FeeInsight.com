@@ -27,16 +27,15 @@ export function keyFiguresFor(exhibit: Exhibit | null): KeyFigure[] {
   }
   if (exhibit.kind === "competitor_range") {
     if (exhibit.items.length === 0) return [];
-    // The range runs over the fees each names: a competitor stating several spans them (#1931).
-    const spans = exhibit.items.flatMap((i) => (i.several ? [i.several.low, i.several.high] : [i.amount]));
-    const lo = Math.min(...spans);
-    const hi = Math.max(...spans);
+    // Range and count read the same one value per institution; named fees stay on the rows (#1931).
+    const amounts = exhibit.items.map((i) => i.amount);
+    const lo = Math.min(...amounts);
+    const hi = Math.max(...amounts);
     const out: KeyFigure[] = [];
     if (exhibit.own != null) out.push({ value: fmtMoney(exhibit.own), label: exhibit.ownLabel });
     out.push({ value: `${fmtMoney(lo)} to ${fmtMoney(hi)}`, label: `Range across ${exhibit.items.length} named institutions` });
     if (exhibit.own != null) {
       const own = exhibit.own;
-      const amounts = exhibit.items.map((i) => i.amount);
       const less = amounts.filter((a) => a < own - 0.005).length;
       out.push({ value: `${less} of ${amounts.length}`, label: `Charge less than ${exhibit.ownLabel}` });
     }

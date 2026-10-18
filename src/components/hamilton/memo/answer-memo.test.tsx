@@ -50,3 +50,22 @@ describe("withFiguresBold units", () => {
     expect(html).toContain("$209 thousand</strong>");
   });
 });
+
+describe("competitor range key figures with several fees (#1931)", () => {
+  it("takes the range from the same one value per institution as the charge-less count", () => {
+    const figures = keyFiguresFor({
+      kind: "competitor_range",
+      title: "Local",
+      unit: "dollars",
+      own: 160,
+      ownLabel: "Subject",
+      items: [
+        { name: "A", amount: 170, url: null },
+        { name: "B", amount: 162.5, url: null, several: { low: 150, high: 175, fees: [{ name: "Levy", amount: 150 }, { name: "Garnishment", amount: 175 }] } },
+      ],
+      sources: [],
+    });
+    expect(figures).toContainEqual({ value: "$162.50 to $170", label: "Range across 2 named institutions" });
+    expect(figures).toContainEqual({ value: "0 of 2", label: "Charge less than Subject" });
+  });
+});

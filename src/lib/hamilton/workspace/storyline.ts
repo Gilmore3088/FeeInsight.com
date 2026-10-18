@@ -210,11 +210,10 @@ function localPiece(research: FeeResearch, name: string): Piece | null {
   const items = list.slice(0, MAX_MATRIX_ROWS).sort((a, b) => a.amount - b.amount);
   // The title counts every local competitor, as the market lens does, so the exhibit's line and
   // the memo never give two different counts; the chart shows the largest and its note says so.
+  // Range and counts come from the same one value per institution; named fees stay on the rows (#1931).
   const amounts = list.map((p) => p.amount);
-  // The range runs over the fees each competitor states; one stating several spans them (#1931).
-  const spans = list.flatMap((p) => (p.several ? [p.several.low, p.several.high] : [p.amount]));
-  const lo = Math.min(...spans);
-  const hi = Math.max(...spans);
+  const lo = Math.min(...amounts);
+  const hi = Math.max(...amounts);
   const below = research.current !== null ? list.filter((i) => i.amount < research.current!).length : null;
   const above = research.current !== null ? list.filter((i) => i.amount > research.current!).length : null;
   const n = list.length;
