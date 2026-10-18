@@ -104,8 +104,7 @@ export async function createCheckoutSession(input: ProCheckoutInput): Promise<Pr
   const customerId = await ensureStripeCustomer(user);
 
   try {
-    // users.id is a bigint, which the database driver returns as a string ("26"); the checkout
-    // lock only accepts a whole number, so every checkout failed with "Invalid checkout owner".
+    // getCurrentUser already returns a number (#1970); the checkout lock only accepts one.
     const result = await createGuardedCheckout(Number(user.id), customerId, {
     mode: "subscription",
     line_items: [{ price: priceId, quantity: 1 }],

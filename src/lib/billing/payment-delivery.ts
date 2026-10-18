@@ -12,11 +12,17 @@ function envelope(to: string, content: LeadEmailContent): ResendMessage {
   return { from: getLeadNotificationFromAddress(), to, replyTo: CONTACT_EMAIL,
     subject: content.subject, html: renderLeadEmailHtml(content), text: renderLeadEmailText(content) };
 }
-/** This is part of the payment transaction. Rendering and insertion never send email. */
-export async function stagePaymentEmails(tx: typeof sql, eventId: string, effects: StripeEventEffects): Promise<void> {
-  for (const [index, welcome] of effects.welcome.entries()) {
-    await enqueuePaymentEmail(tx, { eventId, key: `${eventId}/welcome/${index}`, kind: "welcome",
+/**
+ * This is part of the payment transaction. Rendering and insertion never send email.
+ * Returns the addresses whose Pro welcome was newly staged, so activation follow-ups run once
+ * per checkout: the welcome key names the session and user, not the event.
+ */
+export async function stagePaymentEmails(tx: typeof sql, eventId: string, effects: StripeEventEffects): Promise<string[]> {
+  const welcomed: string[] = [];
+  for (const welcome of effects.welcome) {
+    const staged = await enqueuePaymentEmail(tx, { eventId, key: `welcome/${welcome.checkoutSessionId}/${welcome.userId}`, kind: "welcome",
       message: envelope(welcome.email, buildProWelcomeEmail(welcome.name)) });
+    if (staged) welcomed.push(welcome.email);
   }
   for (const paid of effects.reportPaid) {
     const [institution] = paid.institutionId
@@ -42,8 +48,12 @@ export async function stagePaymentEmails(tx: typeof sql, eventId: string, effect
     await enqueuePaymentEmail(tx, { eventId, key: `${eventId}/refund/${refund.chargeId}`, kind: "refund_admin", leadId: refund.leadId,
       message: envelope(CONTACT_EMAIL, { subject: `Report refund recorded: request ${refund.leadId}`,
         lines: [`A full refund of $${(refund.cents/100).toFixed(2)} was recorded for ${refund.name}.`,
-          `Stripe charge: ${refund.chargeId}`, "The report access check uses the refunded payment state. No customer email was sent by this alert."] }) });
+          `Stripe charge: ${refund.chargeId}`,
+          refund.revoked
+            ? "The report access check uses the refunded payment state. No customer email was sent by this alert."
+            : "This charge could not be matched to the payment recorded for the request (a duplicate, or a payment Stripe did not name), so the report stays open. Check it in Stripe. No customer email was sent by this alert."] }) });
   }
+  return welcomed;
 }
 
 /** Safe to run again after an interrupted webhook. An accepted envelope is never claimed. */

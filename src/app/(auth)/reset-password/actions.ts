@@ -28,9 +28,10 @@ export async function resetPassword(formData: FormData): Promise<ResetPasswordRe
   if (!parsed) return { ok: false, error: EXPIRED };
 
   try {
-    const rows = await sql<{ id: number; password_hash: string }[]>`
+    const rows = await sql<{ id: number | string; password_hash: string }[]>`
       SELECT id, password_hash FROM users WHERE id = ${parsed.userId} AND is_active = true`;
-    const user = rows[0];
+    // users.id is a bigint and arrives as text ("26"); later writes take it as a number.
+    const user = rows[0] ? { id: Number(rows[0].id), password_hash: rows[0].password_hash } : undefined;
     if (!user?.password_hash || !verifyPasswordResetToken(token, user)) return { ok: false, error: EXPIRED };
 
     const newHash = await hashPassword(password);

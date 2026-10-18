@@ -84,6 +84,24 @@ describe("session lifetime", () => {
     expect(mocks.queries.some((q) => q.includes("INSERT INTO sessions"))).toBe(true);
   });
 
+  it("login returns users.id as a number when the bigint arrives as text (#1970)", async () => {
+    mocks.setRows([{ id: "26", username: "a@b.com", password_hash: "x", role: "viewer" }]);
+    const { login } = await import("./auth");
+    const user = await login("a@b.com", "password1");
+    expect(user?.id).toBe(26);
+    expect(user).not.toHaveProperty("password_hash");
+  });
+
+  it("getCurrentUser returns users.id as a number when the bigint arrives as text (#1970)", async () => {
+    const { getCurrentUser, issueSession, SESSION_COOKIE } = await import("./auth");
+    const { signed } = await issueSession(26);
+    mocks.cookieJar.set(SESSION_COOKIE, signed);
+    mocks.setRows([{ id: "26", role: "admin", session_expires_at: new Date(Date.now() + 25 * DAY) }]);
+    const user = await getCurrentUser();
+    expect(user?.id).toBe(26);
+    expect(Number.isSafeInteger(user?.id)).toBe(true);
+  });
+
   it("slides the session row when it is close to expiry, and not otherwise", async () => {
     const { getCurrentUser, issueSession, SESSION_COOKIE } = await import("./auth");
     const { signed } = await issueSession(4);
