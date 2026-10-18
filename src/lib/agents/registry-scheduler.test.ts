@@ -57,6 +57,13 @@ describe("registry scheduler", () => {
     expect(registryCandidates(now, { year: 2025, quarter: 4 }).some((c) => c.source === "world-bank-remittance-prices")).toBe(false);
   });
 
+  it("schedules nothing for a source held because a table it writes is over its size budget", () => {
+    const lists = registryPartitionsBySource(now, { year: 2025, quarter: 4 }, process.env, new Set(["ncua-extras"]));
+    expect(lists.find((entry) => entry.source === "ncua-extras")?.partitions).toEqual([]);
+    expect(lists.find((entry) => entry.source === "ffiec-call-detail")?.partitions.length).toBeGreaterThan(0);
+    expect(registryCandidates(now, { year: 2025, quarter: 4 }, new Set(["ncua-extras"])).some((c) => c.source === "ncua-extras")).toBe(false);
+  });
+
   it("schedules state bills only once the Open States key is set", () => {
     const bills = (env: Record<string, string>) =>
       registryPartitionsBySource(now, { year: 2025, quarter: 4 }, env as NodeJS.ProcessEnv).find((entry) => entry.source === "state-bills")?.partitions ?? [];
@@ -174,6 +181,50 @@ describe("registry scheduler", () => {
           steps: [expect.objectContaining({ key: "registry-ncua-financials", input: { partition_key: "2026Q2" } })],
         }),
       );
+    });
+
+    function sourceLists(): string[][] {
+      return sqlMock.mock.calls
+        .map(([first]) => first)
+        .filter((first): first is string[] => Array.isArray(first) && !("raw" in (first as object)));
+    }
+
+    it("holds the sources that write a table Atlas last measured over budget", async () => {
+      routeSql([
+        ["FROM agent_runs", [{ active: false }]],
+        ["budget_tables", [{ budget_tables: { institution_call_report_items: 7_400, area_statistics: 900 } }]],
+        ["INSERT INTO registry_ingest_partitions", [{ id: 1 }]],
+      ]);
+      startAgentRunMock.mockResolvedValue({ run: { id: 502, status: "queued" }, steps: [], reused: false });
+
+      const result = await scheduleDueRegistryRuns({ now, triggeredBy: "test" });
+
+      expect(result.scheduled).toBe(true);
+      expect(result.source).not.toBe("ffiec-call-detail");
+      expect(result.source).not.toBe("ncua-extras");
+      expect(result.heldForSize).toEqual(expect.arrayContaining([
+        { source: "ffiec-call-detail", tables: ["institution_call_report_items"] },
+        { source: "ncua-extras", tables: ["institution_call_report_items"] },
+      ]));
+      const [sources] = sourceLists();
+      expect(sources).not.toContain("ncua-extras");
+      expect(sources).not.toContain("ffiec-call-detail");
+      expect(sources).toContain("fdic-financials");
+    });
+
+    it("holds nothing when no storage run has measured the tables", async () => {
+      routeSql([
+        ["FROM agent_runs", [{ active: false }]],
+        ["INSERT INTO registry_ingest_partitions", [{ id: 1 }]],
+      ]);
+      startAgentRunMock.mockResolvedValue({ run: { id: 503, status: "queued" }, steps: [], reused: false });
+
+      const result = await scheduleDueRegistryRuns({ now, triggeredBy: "test" });
+
+      expect(result.heldForSize).toBeUndefined();
+      const [sources] = sourceLists();
+      expect(sources).toContain("ncua-extras");
+      expect(sources).toContain("ffiec-call-detail");
     });
 
     it("does not start a run when another tick already claimed the partition", async () => {
