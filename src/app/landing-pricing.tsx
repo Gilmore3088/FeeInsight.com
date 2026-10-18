@@ -37,7 +37,7 @@ export function pricingLine(
  */
 export function LandingPricing() {
   return (
-    <section id="plans" aria-labelledby="pricing-title" className="scroll-mt-20 bg-paper py-10 sm:py-14">
+    <section id="plans" aria-labelledby="pricing-title" className="scroll-mt-20 border-t border-border bg-paper py-10 sm:py-14">
       <div className={HOME_WRAP}>
         <h2 id="pricing-title" className="text-[35px] !font-medium leading-[1.06] tracking-[-0.025em] text-ink sm:text-[50px]" style={SERIF}>
           One plan for your whole pricing team.

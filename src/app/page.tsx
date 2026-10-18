@@ -32,6 +32,7 @@ import { getSpotlightCategories, publicFeeTypes } from "@/lib/fee-taxonomy";
 import { LandingHero, LandingProof } from "./landing-hero";
 import { LandingHamilton } from "./landing-hamilton";
 import { LandingResearch } from "./landing-research-section";
+import { LandingDeliverable } from "./landing-deliverable";
 import { LandingPricing } from "./landing-pricing";
 import { buildIndexCard } from "./landing-index";
 import { homeReadsCacheable } from "./landing-shared";
@@ -90,6 +91,7 @@ export default async function LandingPage() {
   // their figures; a failed read shows the examples without figures. It is null both when none
   // passes the bar today and on error. The sample bank's reported service-charge income (the
   // read the sample report page shows) gives Prioritize its context; without it, no figures.
+  // The same report and income draw the deliverable before the plans.
   const { summary, categories } = await getPublicSnapshot();
   // The fee types the public site lists (the top 50, as /fees counts them) that have published fees.
   const listed = publicFeeTypes(categories);
@@ -147,12 +149,13 @@ export default async function LandingPage() {
       />
       <ConsumerNav />
       <main id="main-content">
-        {/* James's example (Oct 17): the hero with the working Index, the proof strip, Hamilton's
-            examples, the connected research, then the plans. */}
+        {/* James's landing critique (Oct 17, §8), six sections: the hero, live data (the Index card
+            and the proof strip), the Hamilton investigation, the evidence, the deliverable, the plans. */}
         <LandingHero index={index} freshness={summary.refreshedOn || summary.freshnessLabel} />
         <LandingProof summary={summary} feeTypes={publicKeys.size} />
         <LandingHamilton report={sampleRead.report} revenue={sampleRead.revenue} />
         <LandingResearch />
+        <LandingDeliverable report={sampleRead.report} revenue={sampleRead.revenue} preparedOn={new Date()} />
         <LandingPricing />
       </main>
       <CustomerFooter />

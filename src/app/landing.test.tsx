@@ -18,7 +18,9 @@ import { institutionCardFees } from "./landing-index-actions";
 import { IndexCard } from "./landing-index-card";
 import { cardHref, cellBars, hasMedian, noFeeSentence, positionSentence, US, type IndexCardData } from "./landing-index-view";
 import { LandingPricing, pricingLine } from "./landing-pricing";
-import { RESEARCH_EXAMPLES, ResearchStage, SOURCES } from "./landing-research";
+import { EVIDENCE_GROUPS, EVIDENCE_OUTPUTS } from "./landing-research";
+import { LandingDeliverable, deliverableCover, deliverableOutline } from "./landing-deliverable";
+import type { RevenueContext } from "@/lib/custom-report/revenue-context";
 import { LandingResearch } from "./landing-research-section";
 import { buildSampleView, homeReadsCacheable } from "./landing-shared";
 import { sampleWorkflowReport } from "./landing-workflow.test-fixture";
@@ -563,71 +565,100 @@ describe("motion", () => {
   });
 });
 
-describe("research behind each answer", () => {
-  it("renders the first question and its answer on the server, so the panel is never empty", () => {
+describe("evidence flow", () => {
+  it("runs the four source groups into Hamilton and out to analysis and board reports, in reading order", () => {
     const html = renderToStaticMarkup(<LandingResearch />);
     expect(html).toMatch(/Ask Hamilton\.<\/span> <span class="block">Every answer shows its sources\./);
-    expect(html).toContain("Answers draw on published fee schedules, financial filings, market data and regulatory sources.");
-    expect(html).toContain(RESEARCH_EXAMPLES[0].question);
-    expect(html).toContain(RESEARCH_EXAMPLES[0].title);
-    expect(html).toContain('data-answered="true"');
-    // No eyebrows, phase text or labels (James, Oct 17).
-    expect(html).not.toMatch(/Illustrative|uppercase|Connecting|Ten source families\./);
-    // A phone reads the ask, the question, then the sources, then the answer (James, Oct 18).
-    const order = ["Hey Hamilton,", "data-research-question", "data-source=", "data-research-output", "Get Hamilton for your institution"].map((m) => html.indexOf(m));
+    expect(EVIDENCE_GROUPS.map((g) => g.name)).toEqual(["Published fees", "Financial filings", "Branches and markets", "Regulatory sources"]);
+    expect(EVIDENCE_OUTPUTS.map((o) => o.name)).toEqual(["Analysis", "Board reports"]);
+    // The sources the carousel credited stay credited, each in its group.
+    const providers = EVIDENCE_GROUPS.flatMap((g) => g.items.map((i) => i.provider)).join(" | ");
+    for (const name of ["FDIC · NCUA", "SEC", "Census · IRS", "CFPB", "Beige Book · FOMC", "Regulators · States"]) expect(providers).toContain(name);
+    expect(EVIDENCE_GROUPS.find((g) => g.key === "filings")!.items.map((i) => i.name)).toContain("Industry totals");
+    // A screen reader reads three lists: the sources, Hamilton, what it delivers. The lines are decoration.
+    const order = ['aria-label="Evidence Hamilton reads"', "data-evidence-hub", "Connect evidence to institutional questions", 'aria-label="What Hamilton delivers"', "Get Hamilton for your institution"].map((m) => html.indexOf(m));
     expect(order.every((at) => at >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
-    // Each tile names its providers; the answer has substance, its sources and a way to read one.
-    for (const s of SOURCES) expect(html).toContain(s.provider.replace("&", "&amp;"));
-    expect(html).toContain(RESEARCH_EXAMPLES[0].excerpt);
-    expect(html).toContain(`Sources: ${RESEARCH_EXAMPLES[0].cites}`);
-    expect(html).toMatch(/<a href="\/reports\/sample-competitive-fee-position"[^>]*data-event="sample_report_click" data-placement="home_research"[^>]*>See a sample report</);
+    expect(html.match(/data-evidence-group=/g)).toHaveLength(EVIDENCE_GROUPS.length);
+    for (const g of EVIDENCE_GROUPS) for (const item of g.items) expect(html).toContain(item.provider);
+    for (const svg of html.match(/<svg[^>]*fi-home-evidence-lines[^>]*>/g) ?? []) expect(svg).toContain('aria-hidden="true"');
+    expect(html.match(/fi-home-evidence-lines/g)).toHaveLength(4);
+    // A phone gets the vertical flow; the side-by-side layout starts at lg.
+    expect(html).toContain("lg:grid-cols-[minmax(0,1.5fr)");
+    // Nothing rotates: no carousel, controls or slide counter.
+    expect(html).not.toMatch(/carousel|Pause|01 \/ 0|Hey Hamilton/);
+    // One action, the subscription; the sample link moved to the deliverable.
     expect(html).toMatch(/<a href="\/subscribe"[^>]*data-event="upgrade_click" data-placement="home_research"[^>]*>Get Hamilton for your institution</);
-    // The excerpts carry no figures: none is read from live data.
-    for (const e of RESEARCH_EXAMPLES) expect(e.excerpt).not.toMatch(/\d|\$/);
-    // No tile count is typed into the copy.
-    expect(html).not.toMatch(/\b(nine|ten|9|10) source/i);
-    expect(html.match(/data-source=/g)).toHaveLength(SOURCES.length);
-    // The first question's sources are lit from the start.
-    for (const key of RESEARCH_EXAMPLES[0].sources) expect(html).toContain(`data-source="${key}" data-lit="true"`);
-    expect(html).toContain("01 / 05");
+    expect(html.match(/<a /g)).toHaveLength(1);
+    expect(html).not.toMatch(/Illustrative|uppercase/);
+    expect(html).not.toMatch(/\b(four|nine|ten|4|9|10) source/i);
   });
 
-  it("lands on the finished example when moved while paused, never half-drawn", () => {
-    vi.useFakeTimers();
-    stubBrowser();
-    const { container } = render(<ResearchStage />);
-    fireEvent.click(screen.getByRole("button", { name: "Pause research examples" }));
-    expect(screen.getByRole("button", { name: "Pause research examples" }).getAttribute("aria-pressed")).toBe("true");
-    fireEvent.click(screen.getByRole("button", { name: "Next: research examples" }));
-    act(() => vi.advanceTimersByTime(5000));
-    expect(container.querySelector("[data-research-output]")?.getAttribute("data-answered")).toBe("true");
-    const lit = [...container.querySelectorAll('[data-lit="true"]')].map((el) => el.getAttribute("data-source"));
-    expect(lit.sort()).toEqual([...RESEARCH_EXAMPLES[1].sources].sort());
-    // Only sources Hamilton reads are shown; USDA geography is not one of them.
-    const named = [...SOURCES.map((s) => `${s.provider} ${s.detail}`), ...RESEARCH_EXAMPLES.map((e) => `${e.excerpt} ${e.cites}`)].join(" ");
-    expect(named).not.toContain("USDA");
-    // FRED moved to its original agencies and regional Fed text can't be quoted (Oct 18).
-    expect(named).not.toMatch(/FRED|regional Federal Reserve/);
-    // An unlit tile fades its icon only: the tile and its name keep full opacity.
-    const unlit = container.querySelector('[data-lit="false"]')!;
-    expect(unlit.className).not.toMatch(/opacity/);
-    const label = unlit.querySelector("span > span")!;
-    expect(label.className).not.toMatch(/opacity/);
-    expect(label.className).toContain("text-ink");
-    expect(unlit.querySelector("svg")!.getAttribute("class")).toContain("opacity-60");
-    // The visitor's move is announced.
-    expect(screen.getByText(RESEARCH_EXAMPLES[1].question).getAttribute("aria-live")).toBe("polite");
-    vi.useRealTimers();
-    vi.unstubAllGlobals();
+  it("credits no source the licence rule or #1885 took off the page", () => {
+    const named = [
+      renderToStaticMarkup(<LandingResearch />),
+      ...EVIDENCE_GROUPS.flatMap((g) => [g.name, ...g.items.map((i) => `${i.name} ${i.provider}`)]),
+      ...EVIDENCE_OUTPUTS.map((o) => `${o.name} ${o.detail}`),
+    ].join(" ");
+    expect(named).not.toMatch(/FRED|USDA|FINRA|regional Fed|Reserve Bank|national deposit rate|deposit rates/i);
+  });
+});
+
+describe("sample deliverable", () => {
+  const report = sampleWorkflowReport();
+  const revenue: RevenueContext = { quarters: [{ quarter: "2026-Q2", thousands: 1_850 }], trailingThousands: null, peer: null };
+  const preparedOn = new Date("2026-10-18T15:00:00Z");
+
+  it("draws the cover from the live sample report: its bank, date and figures", () => {
+    const html = renderToStaticMarkup(<LandingDeliverable report={report} revenue={revenue} preparedOn={preparedOn} />);
+    const cover = deliverableCover(report, revenue)!;
+    expect(html).toContain("Read the report before you choose a plan.");
+    expect(html).toContain("Capital City Bank against its local market");
+    expect(html).toContain("Today’s sample for Capital City Bank");
+    expect(html).toContain("October 18, 2026");
+    expect(html).toContain("Tallahassee, FL area · verified fees for 21 of 24 local competitors");
+    // The first comparable lines, each with the bank's amount and the local median.
+    const view = buildSampleView(report)!;
+    expect(cover.rows.map((r) => r.key)).toEqual(view.rows.slice(0, 3).map((r) => r.key));
+    expect(html).toContain('data-deliverable-row="wire_intl_outgoing"');
+    expect(html).toMatch(/\$75<\/td><td[^>]*>\$50</);
+    // The fee income comes from the Call Report read.
+    expect(html).toContain("Deposit service charges, Q2 2026");
+    expect(html).toContain("$1.9 million");
+    expect(html).not.toMatch(/Frost/i);
+    // No price and no buy: the sample shows the work.
+    expect(html).not.toContain(REPORT_OFFER.priceLabel);
+    expect(html).not.toMatch(/\bbuy\b|request_report_click|\/month/i);
+    expect(html).toMatch(/<a href="\/subscribe"[^>]*data-event="upgrade_click" data-placement="home_deliverable"[^>]*>Get Hamilton for your institution</);
+    expect(html).toMatch(/<a href="\/reports\/sample-competitive-fee-position"[^>]*data-event="sample_report_click" data-placement="home_deliverable"[^>]*>Open the full sample/);
+    expect(html.match(/<a /g)).toHaveLength(2);
   });
 
-  it("moves to the next question with the arrow", () => {
-    stubBrowser({ reduced: true });
-    render(<ResearchStage />);
-    fireEvent.click(screen.getByRole("button", { name: "Next: research examples" }));
-    expect(screen.getByText(RESEARCH_EXAMPLES[1].question)).toBeTruthy();
-    vi.unstubAllGlobals();
+  it("outlines only what the sample report contains", () => {
+    expect(deliverableOutline(report, revenue).map((i) => i.key)).toEqual(["findings", "pricing", "financial", "peers", "method"]);
+    // No Call Report figures: no financial-state line.
+    expect(deliverableOutline(report, null).map((i) => i.key)).toEqual(["findings", "pricing", "peers", "method"]);
+    const bare = { ...report, analysis: { ...report.analysis, named: [], findings: [] } };
+    expect(deliverableOutline(bare, null).map((i) => i.key)).toEqual(["pricing", "method"]);
+    // The report has no risk or regulatory section, so the outline names none.
+    const words = deliverableOutline(report, revenue).map((i) => `${i.name} ${i.detail}`).join(" ");
+    expect(words).not.toMatch(/risk|regulat/i);
+    const html = renderToStaticMarkup(<LandingDeliverable report={report} revenue={null} preparedOn={preparedOn} />);
+    expect(html).not.toContain("data-deliverable-income");
+    expect(html).not.toContain("Current financial state");
+  });
+
+  it("hides the figures and keeps the outline when the read failed", () => {
+    const html = renderToStaticMarkup(<LandingDeliverable report={null} revenue={revenue} preparedOn={preparedOn} />);
+    expect(deliverableCover(null, revenue)).toBeNull();
+    expect(html).toContain("Read the report before you choose a plan.");
+    expect(html).toContain("Each report is built live, every amount linked to its fee schedule.");
+    expect(html).not.toContain("data-deliverable-cover");
+    expect(html).not.toMatch(/\$\d|Capital City|October/);
+    expect(html.match(/data-outline=/g)).toHaveLength(3);
+    // The sample link would land on its "on its way" note, so only the subscription remains.
+    expect(html).not.toContain("Open the full sample");
+    expect(html.match(/<a /g)).toHaveLength(1);
   });
 });
 
@@ -639,22 +670,16 @@ describe("licence rule", () => {
         <LandingProof summary={summary} feeTypes={47} />
         <LandingHamilton report={sampleWorkflowReport()} />
         <LandingResearch />
+        <LandingDeliverable report={sampleWorkflowReport()} revenue={null} preparedOn={new Date("2026-10-18T15:00:00Z")} />
         <LandingPricing />
       </>,
     );
-    const words = [
-      html,
-      ...SOURCES.map((s) => `${s.detail} ${s.provider}`),
-      ...RESEARCH_EXAMPLES.map((e) => `${e.question} ${e.title} ${e.excerpt} ${e.cites}`),
-    ].join(" ");
+    const words = [html, ...EVIDENCE_GROUPS.flatMap((g) => g.items.map((i) => `${i.name} ${i.provider}`))].join(" ");
     expect(words).not.toMatch(
       /FINRA|Zelle|FedNow|\bRTP\b|Clearing House|frbservices|Fed Financial Services|Nacha|Payment services|payment choice|remittance|World Bank|Small Business Credit Survey|small-business lending|Kansas City Fed|KC Fed|Atlanta Fed/i,
     );
-    // Every example still lights only tiles that exist.
-    const keys = new Set(SOURCES.map((s) => s.key));
-    for (const e of RESEARCH_EXAMPLES) for (const key of e.sources) expect(keys.has(key)).toBe(true);
-    // Every answer starts from published fees, so every example lights the fees tile.
-    for (const e of RESEARCH_EXAMPLES) expect(e.sources).toContain("fees");
+    // Every answer starts from published fees, so the flow leads with them.
+    expect(EVIDENCE_GROUPS[0].key).toBe("fees");
   });
 });
 
@@ -695,11 +720,28 @@ describe("page copy", () => {
         <LandingProof summary={summary} feeTypes={47} />
         <LandingHamilton report={sampleWorkflowReport()} />
         <LandingResearch />
+        <LandingDeliverable report={sampleWorkflowReport()} revenue={null} preparedOn={new Date("2026-10-18T15:00:00Z")} />
         <LandingPricing />
       </>,
     );
     const words = html.replace(/<[^>]+>/g, " ");
     expect(words).not.toMatch(/—|!|real-time|recommend|cheapest|gouging|\bAI\b|99%|raise your/i);
+  });
+});
+
+describe("page order", () => {
+  it("runs the critique's six sections: hero, live data, Hamilton, evidence, deliverable, plans", async () => {
+    const { readFileSync } = await import("node:fs");
+    const source = readFileSync(`${process.cwd()}/src/app/page.tsx`, "utf8");
+    const main = source.slice(source.indexOf("<main"), source.indexOf("</main>"));
+    expect(main.match(/<Landing\w+/g)).toEqual([
+      "<LandingHero",
+      "<LandingProof",
+      "<LandingHamilton",
+      "<LandingResearch",
+      "<LandingDeliverable",
+      "<LandingPricing",
+    ]);
   });
 });
 
