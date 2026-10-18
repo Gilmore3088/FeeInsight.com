@@ -253,15 +253,46 @@ export function feeFindings(set: PeerExplorerSet, key: ExplorerFeeKey, selectedI
     .filter((finding) => finding.ids.length > 0);
 }
 
+/** Words that follow a comparison price everywhere it appears: it stands in for several prices. */
+export const PROXY_NOTE = "not a fee anyone is charged";
+
+/**
+ * True when a value is a constructed comparison price: built from two or more prices and equal to
+ * none of them (the middle of an even count). The middle of an odd count, or overdraft's highest,
+ * is one of the institution's own prices, so it is charged.
+ */
+export function isComparisonProxy(fee: ExplorerFee | undefined): boolean {
+  const prices = fee?.prices ?? [];
+  if (prices.length < 2 || !fee) return false;
+  return prices.every((price) => Math.abs(price.amount - fee.amount) >= 0.005);
+}
+
 /**
  * The words for a value built from several prices. The account prices lead; this value is only the
- * comparison proxy the statistics contract counts: the middle of them, or for overdraft the highest.
- * Null for a single price.
+ * comparison price the statistics contract counts: the middle of them, or for overdraft the highest.
+ * A constructed one (equal to none of the prices) always says it is not charged. Null for a single price.
  */
 export function comparisonLabel(key: ExplorerFeeKey, fee: ExplorerFee | undefined): string | null {
   const count = fee?.prices?.length ?? 0;
   if (count < 2) return null;
-  return key === "overdraft" ? `Comparison price: highest of ${count} prices` : `Comparison price: middle of ${count} account prices`;
+  const base = key === "overdraft" ? `Comparison price: highest of ${count} prices` : `Comparison price: middle of ${count} account prices`;
+  return isComparisonProxy(fee) ? `${base}, ${PROXY_NOTE}` : base;
+}
+
+/** The short chart label for a value built from several prices: "comparison price, not charged to anyone". */
+export function comparisonTag(key: ExplorerFeeKey, fee: ExplorerFee | undefined): string | null {
+  if ((fee?.prices?.length ?? 0) < 2) return null;
+  if (isComparisonProxy(fee)) return "comparison price, not charged to anyone";
+  return key === "overdraft" ? "comparison price, its highest" : "comparison price, its middle price";
+}
+
+/** "+2.4%" / "-12%" / "0%": a value's difference from the median as a share of the median. */
+export function signedPercent(value: number, median: number): string | null {
+  if (median <= 0) return null;
+  const pct = ((value - median) / median) * 100;
+  if (Math.abs(pct) < 0.05) return "0%";
+  const abs = Math.abs(pct);
+  return `${pct > 0 ? "+" : "-"}${abs < 10 ? +abs.toFixed(1) : Math.round(abs)}%`;
 }
 
 const CHARTER_WORDS: Record<string, string> = { bank: "Banks", credit_union: "Credit unions" };
@@ -407,6 +438,22 @@ export function scalePosition(scale: AxisScale, value: number): number {
     return (Math.log10(v) - Math.log10(scale.min)) / (Math.log10(scale.max) - Math.log10(scale.min) || 1);
   }
   return (value - scale.min) / (scale.max - scale.min || 1);
+}
+
+/** Fired when the explorer's fee or view changes; its detail is { fee, view }. */
+export const PEER_EXPLORER_STATE_EVENT = "peer-explorer-state";
+
+/**
+ * A peer-set link carrying the explorer's current fee and view (?pfee=, ?pview=), so choosing
+ * another set keeps them. The fee is always written: the default fee can differ between sets. The
+ * selected peer is left out: it may not be in the new set.
+ */
+export function carryExplorerState(href: string, state: { fee: string; view: string }): string {
+  const target = new URL(href, "https://fee.invalid");
+  target.searchParams.set("pfee", state.fee);
+  if (state.view === "distribution") target.searchParams.delete("pview");
+  else target.searchParams.set("pview", state.view);
+  return `${target.pathname}${target.search}${target.hash}`;
 }
 
 /** The views a visitor switches between. */
@@ -640,18 +687,26 @@ export function snapshotPeersNoun(key: string, set: PeerExplorerSet): string {
 }
 
 export interface PeerSnapshot {
+  /** One plain conclusion: broadly aligned (within 1%), or above or below with the dollar and percent gap. */
   headline: string;
-  facts: string;
+  /** The facts behind it, one sentence each: the compared value against the median, the account prices, the proxy note. */
+  facts: string[];
   caveat: string;
 }
 
 /** The caveat under every snapshot: what published prices leave out. */
-export const SNAPSHOT_CAVEAT = "Published prices only. Account mix, waivers and fee revenue are not shown.";
+export const SNAPSHOT_CAVEAT = "This describes published pricing only. Account mix, waivers and actual fee revenue are not represented.";
+
+/** "2.4%", "12%": a gap's share of the median, for the snapshot's headline. */
+function percentWords(gap: number, median: number): string {
+  const pct = Math.abs(gap / median) * 100;
+  return `${pct < 10 ? +pct.toFixed(1) : Math.round(pct)}%`;
+}
 
 /**
  * The interpretation panel above the views: one sentence on where the institution's published
- * price sits against the chosen set's median, a line of the facts behind it, and the caveat. Fixed
- * templates on live values, the 1% "about the same" rule, and never a recommendation or a cause.
+ * price sits against the chosen set's median, the facts behind it, and the caveat. Fixed templates
+ * on live values and the 1% rule (within it, "broadly aligned"); never a recommendation or a cause.
  */
 export function peerSnapshot(set: PeerExplorerSet, key: string, fee: ExplorerFeeKey): PeerSnapshot {
   const label = EXPLORER_FEE_LABELS[fee];
@@ -665,34 +720,85 @@ export function peerSnapshot(set: PeerExplorerSet, key: string, fee: ExplorerFee
   if (!own) {
     return {
       headline: `${set.subject.name} does not publish ${aFee} in the index.`,
-      facts: median ? `The median among ${peersWord(median.peers)} is ${money(median.median)}.` : `${peersWord(publishing)}, too few for a median.`,
+      facts: [median ? `The peer median is ${money(median.median)} among ${peersWord(median.peers)}.` : `${capitalize(peersWord(publishing))}, too few for a median.`],
       caveat: SNAPSHOT_CAVEAT,
     };
   }
-  const several = (own.prices?.length ?? 0) >= 2;
-  // One name for the value built from several prices: the comparison price, with the prices behind it.
-  const count = own.prices?.length ?? 0;
+  const prices = own.prices ?? [];
+  const several = prices.length >= 2;
+  const count = COUNT_WORDS[prices.length] ?? String(prices.length);
   const which = fee === "overdraft" ? "the highest" : "the middle";
   const kindWord = fee === "monthly_maintenance" ? "checking " : "";
-  const valueWords = several
-    ? `Comparison price ${money(own.amount)}, ${which} of its ${COUNT_WORDS[count] ?? count} ${kindWord}prices (${listWords(own.prices!.map((p) => money(p.amount)))})`
-    : `Published price ${money(own.amount)}`;
+  // The value compared: "Compared at $8.45, the middle of its two prices", or the one published price.
+  const compared = several ? `Compared at ${money(own.amount)}, ${which} of its ${count} prices` : `Its published price is ${money(own.amount)}`;
+  const priceLine = several ? `Its ${count} ${kindWord}prices are ${listWords(prices.map((p) => money(p.amount)))}.` : null;
+  const proxyLine = isComparisonProxy(own) ? `${money(own.amount)} is a comparison price, ${PROXY_NOTE}.` : null;
+  const extra = [priceLine, proxyLine].filter((line): line is string => line !== null);
   if (!median) {
     return {
       headline: `Too few ${noun} publish ${aFee} for a median.`,
-      facts: `${valueWords}; ${peersWord(publishing)}.`,
+      facts: [`${compared}; ${peersWord(publishing)}.`, ...extra],
       caveat: SNAPSHOT_CAVEAT,
     };
   }
   const gap = own.amount - median.median;
   const headline = aboutSameAsMedian(own.amount, median.median)
-    ? `${label} is about the same as ${noun}.`
-    : `${label} is ${money(Math.abs(gap))} ${gap > 0 ? "above" : "below"} the median of ${noun}.`;
+    ? `${label} is broadly aligned with ${noun}: within 1% of their median.`
+    : `${label} is ${money(Math.abs(gap))} (${percentWords(gap, median.median)}) ${gap > 0 ? "above" : "below"} the median of ${noun}.`;
   return {
     headline,
-    facts: `${valueWords}, against a median of ${money(median.median)} among ${peersWord(median.peers)}.`,
+    facts: [`${compared}, against a peer median of ${money(median.median)} among ${peersWord(median.peers)}.`, ...extra],
     caveat: SNAPSHOT_CAVEAT,
   };
+}
+
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+export interface RosterPricingRow {
+  id: number;
+  name: string;
+  subject: boolean;
+  /** The value compared (null when not published). */
+  amount: number | null;
+  /** True when the amount is a constructed comparison price, not one anyone is charged. */
+  proxy: boolean;
+  /** The institution's own prices behind the value, when it has more than one. */
+  prices: number[];
+  /** Difference from the peer median in dollars and as a share, and its band; null without both values. */
+  gap: { dollars: string; percent: string | null; band: MatrixBand } | null;
+  source: { url: string | null; published: string | null } | null;
+}
+
+/**
+ * The roster's Pricing view: for the same institutions in the same order as its coverage view (the
+ * subject, then the peers by name), the selected fee's value, its difference from the peer median
+ * and the schedule it was read from.
+ */
+export function rosterPricing(set: PeerExplorerSet, fee: ExplorerFeeKey): RosterPricingRow[] {
+  const median = set.medians[fee]?.median;
+  return rosterOrder(set).map((inst) => {
+    const own = inst.fees[fee];
+    return {
+      id: inst.id,
+      name: inst.name,
+      subject: inst.id === set.subject.id,
+      amount: own ? own.amount : null,
+      proxy: isComparisonProxy(own),
+      prices: (own?.prices?.length ?? 0) >= 2 ? own!.prices!.map((p) => p.amount) : [],
+      gap:
+        own && median !== undefined
+          ? { dollars: signedMoney(own.amount - median), percent: signedPercent(own.amount, median), band: matrixBand(own.amount, median) }
+          : null,
+      source: own?.source ?? null,
+    };
+  });
+}
+
+/** The roster's one order, shared by its coverage and pricing views: the subject, then the peers by name. */
+export function rosterOrder(set: PeerExplorerSet): ExplorerInstitution[] {
+  return [set.subject, ...[...set.peers].sort((a, b) => a.name.localeCompare(b.name))];
 }
 
 /**

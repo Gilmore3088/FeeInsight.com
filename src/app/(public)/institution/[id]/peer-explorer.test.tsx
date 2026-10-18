@@ -93,7 +93,7 @@ describe("PeerExplorerSection", () => {
     expect(gap.textContent).toBe("▼ $1.55 below the peer median");
     expect(gap.style.color).toBe("var(--fi-viz-above)");
     expect(within(panel).getByText("Peers publishing")).toBeTruthy();
-    expect(within(panel).getByText("Comparison price: middle of 2 account prices")).toBeTruthy();
+    expect(within(panel).getByText("Comparison price: middle of 2 account prices, not a fee anyone is charged")).toBeTruthy();
     expect(within(panel).getByText("Basic Checking Monthly Service Fee")).toBeTruthy();
     expect(within(panel).getByText("Waived with direct deposit")).toBeTruthy();
   });
@@ -174,31 +174,96 @@ describe("PeerExplorerSection", () => {
 
   it("leads with a peer pricing snapshot in fixed words, with the facts and the caveat", () => {
     renderSection();
-    const snapshot = screen.getByRole("region", { name: /Monthly maintenance is \$1\.55 below the median of similar-sized banks\./ });
+    const snapshot = screen.getByRole("region", { name: /Monthly maintenance is \$1\.55 \(16%\) below the median of similar-sized banks\./ });
     expect(within(snapshot).getByText("Peer pricing snapshot")).toBeTruthy();
-    expect(within(snapshot).getByText("Comparison price $8.45, the middle of its two checking prices ($5 and $11.90), against a median of $10 among 3 publishing peers.")).toBeTruthy();
-    expect(within(snapshot).getByText("Published prices only. Account mix, waivers and fee revenue are not shown.")).toBeTruthy();
+    expect(within(snapshot).getByText("Compared at $8.45, the middle of its two prices, against a peer median of $10 among 3 publishing peers.")).toBeTruthy();
+    expect(within(snapshot).getByText("Its two checking prices are $5 and $11.90.")).toBeTruthy();
+    expect(within(snapshot).getByText("$8.45 is a comparison price, not a fee anyone is charged.")).toBeTruthy();
+    expect(within(snapshot).getByText("This describes published pricing only. Account mix, waivers and actual fee revenue are not represented.")).toBeTruthy();
   });
 
-  it("draws each account price apart from the hollow comparison price, in ink, labelled by account", () => {
+  it("reads broadly aligned when the comparison price is within 1% of the median", () => {
+    renderSection({}, { medians: { monthly_maintenance: { median: 8.48, peers: 16 } } });
+    expect(screen.getByRole("region", { name: "Monthly maintenance is broadly aligned with similar-sized banks: within 1% of their median." })).toBeTruthy();
+  });
+
+  it("draws each account price apart from the hollow comparison price, beside the peer dots and the median", () => {
     const { container } = renderSection();
-    expect(screen.getByText("Capital City Bank: comparison price (midpoint) $8.45")).toBeTruthy();
+    const accounts = [...container.querySelectorAll('[data-mark="account-price"]')];
+    expect(accounts.map((mark) => mark.getAttribute("data-amount"))).toEqual(["5", "11.9"]);
+    // The comparison price is one hollow marker, apart from the account prices, never filled like them.
+    const comparison = container.querySelectorAll('[data-mark="comparison-price"]');
+    expect(comparison.length).toBe(1);
+    expect(comparison[0].querySelector("rect")?.getAttribute("fill")).toBe("var(--fi-surface-0)");
+    expect(accounts[0].querySelector("rect")?.getAttribute("fill")).toBe("var(--fi-ink)");
+    expect(container.querySelectorAll('[data-mark="peer"]').length).toBe(3);
+    expect(container.querySelector('[data-mark="median"]')?.textContent).toBe("Peer median $10");
+    expect(screen.getByText("Capital City Bank: comparison price $8.45")).toBeTruthy();
+    expect(screen.getByText("the middle of its two prices, not a fee anyone is charged")).toBeTruthy();
     expect(screen.getByText("Basic Checking $5")).toBeTruthy();
-    expect(screen.getByText(/Its comparison price, the middle of its account prices; not a price anyone pays/)).toBeTruthy();
-    expect(screen.queryByText(/comparison value/i)).toBeNull();
+    expect(screen.getByText("Its comparison price, the middle of its prices: not a fee anyone is charged")).toBeTruthy();
+    expect(screen.queryByText(/comparison value|midpoint/i)).toBeNull();
     // The subject is never the variance red or blue.
     expect(container.innerHTML).not.toMatch(/fi-brick|fill-brick|text-brick|border-brick/);
   });
 
-  it("switches the roster to the selected fee's prices, gaps and sources", () => {
+  it("draws a single published price as one filled marker, with no comparison price", () => {
+    const single = { ...SET, subject: { ...SET.subject, fees: { monthly_maintenance: { amount: 9 } } } };
+    const { container } = renderSection({}, { subject: single.subject });
+    expect(container.querySelectorAll('[data-mark="account-price"]').length).toBe(0);
+    expect(container.querySelectorAll('[data-mark="comparison-price"]').length).toBe(0);
+    expect(container.querySelector('[data-mark="subject-price"] rect')?.getAttribute("fill")).toBe("var(--fi-ink)");
+    expect(screen.queryByText(/comparison price/i)).toBeNull();
+  });
+
+  it("switches the roster to Pricing: the same institutions in the same order, with amounts, gaps and sources", () => {
     renderSection();
-    fireEvent.click(screen.getByRole("radio", { name: "Prices: monthly maintenance" }));
+    const coverage = screen.getByRole("table", { name: /with the fees each publishes/ });
+    const order = within(coverage).getAllByRole("rowheader").map((cell) => cell.textContent);
+    fireEvent.click(screen.getByRole("radio", { name: "Pricing" }));
     const list = screen.getByRole("table", { name: /each one's monthly maintenance fee/ });
+    expect(within(list).getAllByRole("rowheader").map((cell) => cell.textContent)).toEqual(order);
     const summit = within(list).getByRole("row", { name: /Summit Bank/ });
     expect(within(summit).getByText("$16.20")).toBeTruthy();
-    expect(within(summit).getByText("+$6.20")).toBeTruthy();
-    expect(within(summit).getByRole("link", { name: "Schedule" }).getAttribute("href")).toBe("https://summit.example/fees.pdf");
+    const gap = within(summit).getByText(/\+\$6\.20 \(\+62%\)/);
+    expect(gap.style.color).toBe("var(--fi-viz-below)");
+    expect(gap.textContent).toContain("▲");
+    expect(within(summit).getByRole("link", { name: "Fee schedule" }).getAttribute("href")).toBe("https://summit.example/fees.pdf");
     expect(within(summit).getByText(/Sep 2, 2026/)).toBeTruthy();
+    const subject = within(list).getByRole("row", { name: /Capital City Bank/ });
+    expect(subject.textContent).toContain("$8.45†");
+    expect(subject.textContent).toContain("Prices $5, $11.90");
+    expect(screen.getByText(/† Comparison price: the middle of an institution's account prices, not a fee anyone is charged\./)).toBeTruthy();
+  });
+
+  it("keeps the fee, the selected institution and view settings across all four views", () => {
+    renderSection();
+    fireEvent.change(screen.getByRole("combobox", { name: "Fee type" }), { target: { value: "overdraft" } });
+    fireEvent.click(screen.getByRole("tab", { name: "Fee matrix" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pine State Bank" }));
+    for (const tab of ["Distribution", "Landscape", "Locations", "Fee matrix"]) {
+      fireEvent.click(screen.getByRole("tab", { name: tab }));
+      expect(screen.getByRole("combobox", { name: "Fee type" })).toHaveProperty("value", "overdraft");
+      const panel = screen.getByRole("complementary");
+      expect(within(panel).getByText("Selected peer")).toBeTruthy();
+      expect(within(panel).getByText("Pine State Bank")).toBeTruthy();
+      expect(within(panel).getByText("Overdraft")).toBeTruthy();
+    }
+    expect(window.location.search).toContain("pfee=overdraft");
+    expect(window.location.search).toContain("peer=2");
+  });
+
+  it("says when the selected institution does not publish the fee, instead of dropping it silently", () => {
+    renderSection({ peer: "3", fee: "overdraft" });
+    expect(screen.getByText("Summit Bank does not publish an overdraft fee, so it is not on this chart.")).toBeTruthy();
+  });
+
+  it("carries a changed fee and view into the other peer-set links", () => {
+    renderSection();
+    fireEvent.change(screen.getByRole("combobox", { name: "Fee type" }), { target: { value: "overdraft" } });
+    fireEvent.click(screen.getByRole("tab", { name: "Landscape" }));
+    const metro = screen.getByRole("link", { name: "Home metro" });
+    expect(metro.getAttribute("href")).toBe("/institution/323?peers=metro&pfee=overdraft&pview=landscape#peers");
   });
 
   it("titles an asset-band set as a pricing set apart from the financial cohort, with its actual range and a dated source", () => {

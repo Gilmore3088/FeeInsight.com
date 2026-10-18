@@ -28,6 +28,12 @@ import {
   capPeerExplorerSet,
   peerSnapshot,
   SNAPSHOT_CAVEAT,
+  carryExplorerState,
+  comparisonTag,
+  isComparisonProxy,
+  rosterOrder,
+  rosterPricing,
+  signedPercent,
   shownLine,
   PEER_EXPLORER_MAX_SHOWN,
   type ExplorerInstitution,
@@ -102,7 +108,7 @@ describe("selection math", () => {
 
 describe("equivalent products", () => {
   it("labels a value built from several prices as their middle, or overdraft's highest", () => {
-    expect(comparisonLabel("monthly_maintenance", set.subject.fees.monthly_maintenance)).toBe("Comparison price: middle of 2 account prices");
+    expect(comparisonLabel("monthly_maintenance", set.subject.fees.monthly_maintenance)).toBe("Comparison price: middle of 2 account prices, not a fee anyone is charged");
     expect(comparisonLabel("overdraft", { amount: 35, prices: [{ amount: 30, name: null, conditions: null }, { amount: 35, name: null, conditions: null }, { amount: 35, name: null, conditions: null }] })).toBe(
       "Comparison price: highest of 3 prices",
     );
@@ -347,36 +353,55 @@ describe("peer pricing snapshot", () => {
     subject: { ...set.subject, fees: { monthly_maintenance: { amount, ...(prices ? { prices: prices.map((p) => ({ amount: p, name: null, conditions: null })) } : {}) } } },
   });
 
-  it("reads about the same within 1%, with the facts and both checking prices", () => {
+  it("reads broadly aligned within 1%, with the comparison price, both checking prices and the proxy note", () => {
     const s = { ...mm(8.45, [7.95, 8.95]), medians: withMedian(8.48).medians };
     expect(peerSnapshot(s, "nearest", "monthly_maintenance")).toEqual({
-      headline: "Monthly maintenance is about the same as similar-sized banks.",
-      facts: "Comparison price $8.45, the middle of its two checking prices ($7.95 and $8.95), against a median of $8.48 among 16 publishing peers.",
+      headline: "Monthly maintenance is broadly aligned with similar-sized banks: within 1% of their median.",
+      facts: [
+        "Compared at $8.45, the middle of its two prices, against a peer median of $8.48 among 16 publishing peers.",
+        "Its two checking prices are $7.95 and $8.95.",
+        "$8.45 is a comparison price, not a fee anyone is charged.",
+      ],
       caveat: SNAPSHOT_CAVEAT,
     });
   });
 
-  it("states the dollar gap above or below, in the set's own words", () => {
-    expect(peerSnapshot({ ...mm(12), medians: withMedian(10).medians }, "size", "monthly_maintenance").headline).toBe(
-      "Monthly maintenance is $2 above the median of similar-sized banks.",
+  it("puts the 1% edge in the right band", () => {
+    // $10.10 on a $10 median is exactly 1%: broadly aligned. $10.11 is above.
+    expect(peerSnapshot({ ...mm(10.1), medians: withMedian(10).medians }, "nearest", "monthly_maintenance").headline).toMatch(/broadly aligned/);
+    expect(peerSnapshot({ ...mm(9.9), medians: withMedian(10).medians }, "nearest", "monthly_maintenance").headline).toMatch(/broadly aligned/);
+    expect(peerSnapshot({ ...mm(10.11), medians: withMedian(10).medians }, "nearest", "monthly_maintenance").headline).toBe(
+      "Monthly maintenance is $0.11 (1.1%) above the median of similar-sized banks.",
     );
-    expect(peerSnapshot({ ...mm(8), medians: withMedian(10).medians }, "metro", "monthly_maintenance").headline).toBe(
-      "Monthly maintenance is $2 below the median of local competitors.",
-    );
-    expect(peerSnapshot({ ...mm(8), medians: withMedian(10).medians }, "state", "monthly_maintenance").headline).toBe(
-      "Monthly maintenance is $2 below the median of banks in Florida.",
-    );
-    expect(peerSnapshot({ ...mm(8), medians: withMedian(10).medians, charterType: "credit_union" }, "regulator", "monthly_maintenance").headline).toBe(
-      "Monthly maintenance is $2 below the median of credit unions with the same charter.",
-    );
-    expect(peerSnapshot({ ...mm(12), medians: withMedian(10).medians }, "nearest", "monthly_maintenance").facts).toBe(
-      "Published price $12, against a median of $10 among 16 publishing peers.",
+    expect(peerSnapshot({ ...mm(9.89), medians: withMedian(10).medians }, "nearest", "monthly_maintenance").headline).toBe(
+      "Monthly maintenance is $0.11 (1.1%) below the median of similar-sized banks.",
     );
   });
 
-  it("names overdraft's comparison price as the highest of its prices", () => {
+  it("states the dollar and percent gap above or below, in the set's own words", () => {
+    expect(peerSnapshot({ ...mm(12), medians: withMedian(10).medians }, "size", "monthly_maintenance").headline).toBe(
+      "Monthly maintenance is $2 (20%) above the median of similar-sized banks.",
+    );
+    expect(peerSnapshot({ ...mm(8), medians: withMedian(10).medians }, "metro", "monthly_maintenance").headline).toBe(
+      "Monthly maintenance is $2 (20%) below the median of local competitors.",
+    );
+    expect(peerSnapshot({ ...mm(8), medians: withMedian(10).medians }, "state", "monthly_maintenance").headline).toBe(
+      "Monthly maintenance is $2 (20%) below the median of banks in Florida.",
+    );
+    expect(peerSnapshot({ ...mm(8), medians: withMedian(10).medians, charterType: "credit_union" }, "regulator", "monthly_maintenance").headline).toBe(
+      "Monthly maintenance is $2 (20%) below the median of credit unions with the same charter.",
+    );
+    expect(peerSnapshot({ ...mm(12), medians: withMedian(10).medians }, "nearest", "monthly_maintenance").facts).toEqual([
+      "Its published price is $12, against a peer median of $10 among 16 publishing peers.",
+    ]);
+  });
+
+  it("names overdraft's comparison price as its highest, a price it charges, so no proxy note", () => {
     const od = { ...set, subject: { ...set.subject, fees: { overdraft: { amount: 36, prices: [10, 25, 36].map((p) => ({ amount: p, name: null, conditions: null })) } } }, medians: { overdraft: { median: 32, peers: 16 } } };
-    expect(peerSnapshot(od, "nearest", "overdraft").facts).toBe("Comparison price $36, the highest of its three prices ($10, $25 and $36), against a median of $32 among 16 publishing peers.");
+    expect(peerSnapshot(od, "nearest", "overdraft").facts).toEqual([
+      "Compared at $36, the highest of its three prices, against a peer median of $32 among 16 publishing peers.",
+      "Its three prices are $10, $25 and $36.",
+    ]);
   });
 
   it("says when the fee is not published or too few peers publish it", () => {
@@ -397,9 +422,64 @@ describe("peer pricing snapshot", () => {
       for (const key of ["nearest", "size", "metro", "state", "district", "regulator", "other"]) {
         for (const fee of ["monthly_maintenance", "overdraft", "wire_intl_outgoing"] as const) {
           const out = peerSnapshot(s, key, fee);
-          expect(`${out.headline} ${out.facts} ${out.caveat}`).not.toMatch(forbidden);
+          expect(`${out.headline} ${out.facts.join(" ")} ${out.caveat}`).not.toMatch(forbidden);
         }
       }
     }
+  });
+});
+
+describe("comparison price as a proxy", () => {
+  const p = (amount: number) => ({ amount, name: null, conditions: null });
+  it("is a proxy only when it equals none of the prices behind it", () => {
+    expect(isComparisonProxy({ amount: 8.45, prices: [p(7.95), p(8.95)] })).toBe(true);
+    expect(isComparisonProxy({ amount: 8, prices: [p(5), p(8), p(11)] })).toBe(false);
+    expect(isComparisonProxy({ amount: 36, prices: [p(30), p(36)] })).toBe(false);
+    expect(isComparisonProxy({ amount: 8 })).toBe(false);
+    expect(comparisonTag("monthly_maintenance", { amount: 8.45, prices: [p(7.95), p(8.95)] })).toBe("comparison price, not charged to anyone");
+    expect(comparisonTag("overdraft", { amount: 36, prices: [p(30), p(36)] })).toBe("comparison price, its highest");
+    expect(comparisonLabel("overdraft", { amount: 36, prices: [p(30), p(36)] })).toBe("Comparison price: highest of 2 prices");
+  });
+
+  it("writes a percent gap", () => {
+    expect(signedPercent(12, 10)).toBe("+20%");
+    expect(signedPercent(8.45, 8.48)).toBe("-0.4%");
+    expect(signedPercent(10, 10)).toBe("0%");
+    expect(signedPercent(5, 0)).toBeNull();
+  });
+});
+
+describe("roster pricing", () => {
+  it("lists the same institutions in the same order as coverage, with amount, gap and source", () => {
+    const priced: PeerExplorerSet = {
+      ...set,
+      peers: set.peers.map((peer) => (peer.id === 2 ? { ...peer, fees: { ...peer.fees, monthly_maintenance: { amount: 10, source: { url: "https://bank2.example/fees.pdf", published: "2026-09-02" } } } } : peer)),
+      medians: { monthly_maintenance: { median: 8, peers: 3 } },
+    };
+    const rows = rosterPricing(priced, "monthly_maintenance");
+    expect(rows.map((row) => row.id)).toEqual(rosterOrder(priced).map((inst) => inst.id));
+    expect(rows[0]).toMatchObject({ id: 1, subject: true, amount: 8.45, proxy: true, prices: [5, 11.9], gap: { dollars: "+$0.45", percent: "+5.6%", band: "above" } });
+    expect(rows.find((row) => row.id === 2)).toMatchObject({ amount: 10, proxy: false, prices: [], gap: { dollars: "+$2", percent: "+25%", band: "above" }, source: { url: "https://bank2.example/fees.pdf", published: "2026-09-02" } });
+    expect(rows.find((row) => row.id === 4)).toMatchObject({ amount: 6, gap: { dollars: "-$2", percent: "-25%", band: "below" } });
+    expect(rows.find((row) => row.id === 5)).toMatchObject({ amount: null, gap: null, source: null });
+  });
+
+  it("has no gap without a median", () => {
+    expect(rosterPricing({ ...set, medians: {} }, "monthly_maintenance").every((row) => row.gap === null)).toBe(true);
+  });
+});
+
+describe("peer-set links keep the explorer's fee and view", () => {
+  it("writes the fee always and the view unless it is the default", () => {
+    expect(carryExplorerState("/institution/323?peers=metro#peers", { fee: "overdraft", view: "matrix" })).toBe("/institution/323?peers=metro&pfee=overdraft&pview=matrix#peers");
+    expect(carryExplorerState("/institution/323?peers=metro&pview=matrix#peers", { fee: "monthly_maintenance", view: "distribution" })).toBe(
+      "/institution/323?peers=metro&pfee=monthly_maintenance#peers",
+    );
+  });
+});
+
+describe("snapshot caveat", () => {
+  it("is the fixed wording", () => {
+    expect(SNAPSHOT_CAVEAT).toBe("This describes published pricing only. Account mix, waivers and actual fee revenue are not represented.");
   });
 });

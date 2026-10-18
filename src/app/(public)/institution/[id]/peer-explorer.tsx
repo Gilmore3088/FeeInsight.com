@@ -16,6 +16,12 @@ import {
   assetsLabel,
   cellShade,
   comparisonLabel,
+  comparisonTag,
+  isComparisonProxy,
+  PROXY_NOTE,
+  rosterOrder,
+  rosterPricing,
+  PEER_EXPLORER_STATE_EVENT,
   ABOUT_SAME_RULE,
   feeCoverage,
   feeFindings,
@@ -85,6 +91,7 @@ function writeUrl(values: Record<string, string | null>) {
   window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash || "#peers"}`);
 }
 
+
 function useWidth<T extends HTMLElement>(fallback: number) {
   const ref = useRef<T>(null);
   const [width, setWidth] = useState(fallback);
@@ -141,6 +148,14 @@ export function PeerExplorer({
   const [selectedId, setSelectedId] = useState<number>(byId.has(initialPeer) ? initialPeer : set.subject.id);
   const [highlight, setHighlight] = useState<Highlight | null>(null);
   const [preview, setPreview] = useState(false);
+  // View settings that outlive a switch of view: the outlier toggle and Landscape's axis.
+  const [includeOutliers, setIncludeOutliers] = useState(false);
+  const [axis, setAxis] = useState<LandscapeAxis>("assets");
+
+  // The peer-set links carry the fee and view to the next set (peer-set-links.tsx listens).
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent(PEER_EXPLORER_STATE_EVENT, { detail: { fee, view } }));
+  }, [fee, view]);
 
   const select = useCallback(
     (id: number) => {
@@ -219,15 +234,19 @@ export function PeerExplorer({
         <h3 id="peer-snapshot-heading" className="mt-1 text-[20px] leading-snug text-ink sm:text-[22px]" style={{ fontFamily: "var(--fi-home-serif, Georgia), Georgia, serif" }}>
           {snapshot.headline}
         </h3>
-        <p className="mt-1.5 text-[14px] leading-relaxed text-ink-soft tabular-nums">{snapshot.facts}</p>
-        <p className="mt-1 text-[12px] text-ink-muted">{snapshot.caveat}</p>
+        <div className="mt-1.5 space-y-0.5 text-[14px] leading-relaxed text-ink-soft tabular-nums">
+          {snapshot.facts.map((line) => (
+            <p key={line}>{line}</p>
+          ))}
+        </div>
+        <p className="mt-1.5 text-[12px] text-ink-muted">{snapshot.caveat}</p>
       </section>
 
       <div className="mt-4 grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_19rem] lg:gap-8">
         <div id="peer-view-panel" role="tabpanel" aria-labelledby={`peer-view-${view}`} className="min-w-0">
           <div key={view} className="fi-home-fade">
-            {view === "distribution" && <Distribution {...viewProps} />}
-            {view === "landscape" && <Landscape {...viewProps} />}
+            {view === "distribution" && <Distribution {...viewProps} include={includeOutliers} onInclude={setIncludeOutliers} />}
+            {view === "landscape" && <Landscape {...viewProps} axis={axis} onAxis={setAxis} />}
             {view === "locations" && <Locations {...viewProps} />}
             {view === "matrix" && <Matrix {...viewProps} onFee={chooseFee} />}
           </div>
@@ -337,69 +356,28 @@ function HamiltonLink({ isPro, href, placement, primary = false, children }: { i
   );
 }
 
-/** One institution's row in the roster: coverage (which fees it publishes) or the selected fee's price, gap and source. */
-function RosterRow({ inst, fee, median, mode, subject = false }: { inst: ExplorerInstitution; fee: ExplorerFeeKey; median: number | undefined; mode: "coverage" | "prices"; subject?: boolean }) {
-  const place = [inst.city ? displayCity(inst.city) : null, inst.state].filter(Boolean).join(", ");
-  const own = inst.fees[fee];
-  return (
-    <tr className={subject ? "bg-paper" : "border-t border-border"}>
-      <th scope="row" className={`px-3 py-2 text-left text-ink ${subject ? "font-semibold" : "font-medium"}`}>
-        {inst.name}
-        {subject && <span className="ml-1 font-normal text-ink-muted">(this institution)</span>}
-      </th>
-      <td className="px-3 py-2 text-ink-soft">{place || "Not on record"}</td>
-      <td className="px-3 py-2 text-right tabular-nums text-ink-soft">{assetsLabel(inst.assets) ?? "Not on record"}</td>
-      {mode === "coverage" ? (
-        EXPLORER_FEE_KEYS.map((key) => {
-          const published = inst.fees[key] !== undefined;
-          return (
-            <td key={key} className={`px-3 py-2 text-center ${published ? "text-ink" : "text-ink-muted"}`}>
-              <span aria-hidden="true">{published ? "✓" : "–"}</span>
-              <span className="sr-only">{published ? `Publishes ${EXPLORER_FEE_LABELS[key]}` : `${EXPLORER_FEE_LABELS[key]} not published`}</span>
-            </td>
-          );
-        })
-      ) : (
-        <>
-          <td className="px-3 py-2 text-right tabular-nums text-ink">{own ? money(own.amount) : <span className="text-ink-muted">Not published</span>}</td>
-          <td className="px-3 py-2 text-right tabular-nums text-ink-soft">{own && median !== undefined ? signedMoney(own.amount - median) : "–"}</td>
-          <td className="px-3 py-2 text-ink-soft">
-            {own?.source?.url ? (
-              <a href={own.source.url} target="_blank" rel="noopener noreferrer nofollow" className="text-ink underline underline-offset-2">
-                Schedule
-              </a>
-            ) : own ? (
-              "Not linked"
-            ) : (
-              "–"
-            )}
-            {own?.source?.published ? <span className="text-ink-muted"> · {formatIsoDate(own.source.published)}</span> : null}
-          </td>
-        </>
-      )}
-    </tr>
-  );
-}
-
 /**
  * "See the 25 institutions": exactly who is in the set, so a reader can check the cohort. Coverage
- * shows which fees each publishes; Prices shows the selected fee's amount, its difference from the
- * peer median and the schedule it was read from, for the same institutions.
+ * shows which fees each publishes; Pricing shows the selected fee's amount, its difference from the
+ * peer median and the schedule it was read from, for the same institutions in the same order.
  */
 function Roster({ set, fee }: { set: PeerExplorerSet; fee: ExplorerFeeKey }) {
-  const [mode, setMode] = useState<"coverage" | "prices">("coverage");
-  const peers = [...set.peers].sort((a, b) => a.name.localeCompare(b.name));
-  if (peers.length === 0) return null;
+  const [mode, setMode] = useState<"coverage" | "pricing">("coverage");
+  if (set.peers.length === 0) return null;
+  const rows = rosterOrder(set);
+  const pricing = rosterPricing(set, fee);
   const median = set.medians[fee]?.median;
+  const anyProxy = pricing.some((row) => row.proxy);
   const head = "px-3 py-2 font-medium";
+  const label = EXPLORER_FEE_LABELS[fee].toLowerCase();
   return (
     <details className="text-[13px]" data-peer-list>
       <summary className="inline-flex min-h-11 cursor-pointer items-center font-medium text-ink">
-        See the {peers.length} {peers.length === 1 ? "institution" : "institutions"}
+        See the {set.peers.length} {set.peers.length === 1 ? "institution" : "institutions"}
         {set.whole ? " shown" : ""}
       </summary>
       <div role="radiogroup" aria-label="Roster shows" className="mt-1 inline-flex rounded-full border border-border bg-paper p-0.5 text-[13px]">
-        {(["coverage", "prices"] as const).map((option) => (
+        {(["coverage", "pricing"] as const).map((option) => (
           <button
             key={option}
             type="button"
@@ -408,16 +386,17 @@ function Roster({ set, fee }: { set: PeerExplorerSet; fee: ExplorerFeeKey }) {
             onClick={() => setMode(option)}
             className={`min-h-9 rounded-full px-3.5 font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink ${mode === option ? "bg-ink text-on-ink" : "text-ink-soft hover:text-ink"}`}
           >
-            {option === "coverage" ? "Coverage" : `Prices: ${EXPLORER_FEE_LABELS[fee].toLowerCase()}`}
+            {option === "coverage" ? "Coverage" : "Pricing"}
           </button>
         ))}
       </div>
+      {mode === "pricing" && <p className="mt-1 text-[12px] text-ink-muted">{EXPLORER_FEE_LABELS[fee]}, the fee chosen below. Change it with Fee type.</p>}
       <div className="relative mt-2 max-h-[28rem] overflow-auto rounded-lg border border-border">
         <table className="w-full min-w-[720px] border-collapse text-[13px]">
           <caption className="sr-only">
             {mode === "coverage"
               ? "The institutions in this peer set, with the fees each publishes"
-              : `The institutions in this peer set, with each one's ${EXPLORER_FEE_LABELS[fee].toLowerCase()} fee, its difference from the peer median and its source`}
+              : `The institutions in this peer set, with each one's ${label} fee, its difference from the peer median and its source`}
           </caption>
           <thead className="sticky top-0 bg-surface-0 text-[12px] text-ink-muted">
             <tr>
@@ -433,17 +412,70 @@ function Roster({ set, fee }: { set: PeerExplorerSet; fee: ExplorerFeeKey }) {
               ) : (
                 <>
                   <th scope="col" className={`${head} text-right`}>{EXPLORER_FEE_SHORT[fee]}</th>
-                  <th scope="col" className={`${head} text-right`}>Vs median{median !== undefined ? ` ${money(median)}` : ""}</th>
-                  <th scope="col" className={`${head} text-left`}>Source, in the index since</th>
+                  <th scope="col" className={`${head} text-right`}>Difference from median{median !== undefined ? ` ${money(median)}` : ""}</th>
+                  <th scope="col" className={`${head} text-left`}>Source</th>
                 </>
               )}
             </tr>
           </thead>
           <tbody>
-            <RosterRow inst={set.subject} fee={fee} median={median} mode={mode} subject />
-            {peers.map((inst) => (
-              <RosterRow key={inst.id} inst={inst} fee={fee} median={median} mode={mode} />
-            ))}
+            {rows.map((inst, i) => {
+              const subject = inst.id === set.subject.id;
+              const place = [inst.city ? displayCity(inst.city) : null, inst.state].filter(Boolean).join(", ");
+              const price = pricing[i];
+              return (
+                <tr key={inst.id} className={subject ? "bg-paper" : "border-t border-border"}>
+                  <th scope="row" className={`px-3 py-2 text-left text-ink ${subject ? "font-semibold" : "font-medium"}`}>
+                    {inst.name}
+                    {subject && <span className="ml-1 font-normal text-ink-muted">(this institution)</span>}
+                  </th>
+                  <td className="px-3 py-2 text-ink-soft">{place || "Not on record"}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-ink-soft">{assetsLabel(inst.assets) ?? "Not on record"}</td>
+                  {mode === "coverage" ? (
+                    EXPLORER_FEE_KEYS.map((key) => {
+                      const published = inst.fees[key] !== undefined;
+                      return (
+                        <td key={key} className={`px-3 py-2 text-center ${published ? "text-ink" : "text-ink-muted"}`}>
+                          <span aria-hidden="true">{published ? "✓" : "–"}</span>
+                          <span className="sr-only">{published ? `Publishes ${EXPLORER_FEE_LABELS[key]}` : `${EXPLORER_FEE_LABELS[key]} not published`}</span>
+                        </td>
+                      );
+                    })
+                  ) : (
+                    <>
+                      <td className="px-3 py-2 text-right tabular-nums text-ink">
+                        {price.amount === null ? (
+                          <span className="text-ink-muted">Not published</span>
+                        ) : (
+                          <>
+                            {money(price.amount)}
+                            {price.proxy && <ProxyMark />}
+                            {price.prices.length > 0 && (
+                              <span className="block text-[11px] text-ink-muted">Prices {price.prices.map((v) => money(v)).join(", ")}</span>
+                            )}
+                          </>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {price.gap ? <GapCell gap={price.gap} /> : <span className="text-ink-muted">–</span>}
+                      </td>
+                      <td className="px-3 py-2 text-ink-soft">
+                        {price.source?.url ? (
+                          <a href={price.source.url} target="_blank" rel="noopener noreferrer nofollow" className="text-ink underline underline-offset-2">
+                            Fee schedule
+                          </a>
+                        ) : price.amount !== null ? (
+                          "Link not on record"
+                        ) : (
+                          "–"
+                        )}
+                        {price.source?.published ? <span className="text-ink-muted"> · in the index since {formatIsoDate(price.source.published)}</span> : null}
+                      </td>
+                    </>
+                  )}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -451,10 +483,40 @@ function Roster({ set, fee }: { set: PeerExplorerSet; fee: ExplorerFeeKey }) {
         {mode === "coverage"
           ? "✓ publishes the fee. – not published."
           : median !== undefined
-            ? "Vs median: the published value minus the peer median. Not published is never counted as zero."
+            ? `Difference from median: the published value minus the peer median. ▲ above, ▼ below, ≈ within 1%. Not published is never counted as zero.`
             : "Too few peers publish this fee for a median. Not published is never counted as zero."}
+        {mode === "pricing" && anyProxy ? ` ${PROXY_FOOTNOTE}` : ""}
       </p>
     </details>
+  );
+}
+
+/** The footnote for the † beside a comparison price, wherever one is listed. */
+const PROXY_FOOTNOTE = `† Comparison price: the middle of an institution's account prices, ${PROXY_NOTE}.`;
+
+/** The † beside a constructed comparison price, with its words for a screen reader. */
+function ProxyMark() {
+  return (
+    <>
+      <span aria-hidden="true" className="ml-0.5 text-ink-muted">
+        †
+      </span>
+      <span className="sr-only">, comparison price, {PROXY_NOTE}</span>
+    </>
+  );
+}
+
+/** "▲ +$6.20 (+62%)": a difference from the median, red above and blue below, always with its mark. */
+function GapCell({ gap }: { gap: { dollars: string; percent: string | null; band: MatrixBand } }) {
+  const mark = gap.band === "above" ? "▲" : gap.band === "below" ? "▼" : "≈";
+  const color = gap.band === "above" ? ABOVE_TONE : gap.band === "below" ? BELOW_TONE : undefined;
+  return (
+    <span className="font-medium" style={{ color }}>
+      <span aria-hidden="true">{mark} </span>
+      {gap.dollars}
+      {gap.percent ? ` (${gap.percent})` : ""}
+      <span className="sr-only">, {gap.band === "same" ? "about the same as the median" : `${gap.band} the median`}</span>
+    </span>
   );
 }
 
@@ -509,16 +571,11 @@ function Tooltip({ inst, fee, left, top, extra }: { inst: ExplorerInstitution; f
       <p className="font-semibold text-ink">{inst.name}</p>
       <p className="tabular-nums text-ink-muted">
         {value !== undefined ? money(value) : "Not published"}
-        {proxy ? ` · ${proxy.replace("Comparison price: ", "")}` : ""}
+        {proxy ? ` · ${proxy.replace("Comparison price: ", "comparison price, ")}` : ""}
       </p>
       <p className="text-ink-muted">{extra ?? `${assetsLabel(inst.assets) ?? "Assets not on record"}${inst.assets ? " in assets" : ""}`}</p>
     </div>
   );
-}
-
-/** "comparison price (midpoint)", or for overdraft, whose value is its highest price, "(highest)". */
-function comparisonMarkerLabel(fee: ExplorerFeeKey): string {
-  return fee === "overdraft" ? "comparison price (highest)" : "comparison price (midpoint)";
 }
 
 /** Below this chart width the account-price labels are dropped; the side panel lists each price in full. */
@@ -527,24 +584,43 @@ const PRICE_LABELS_MIN_WIDTH = 480;
 const DIST_MARGIN = { left: 16, right: 16 };
 const BREAK_WIDTH = 64;
 
+/** "Summit Bank does not publish this fee, so it is not on this chart.": the selection is never silently missing. */
+function NotOnChart({ set, fee, selectedId }: { set: PeerExplorerSet; fee: ExplorerFeeKey; selectedId: number }) {
+  const selected = [set.subject, ...set.peers].find((inst) => inst.id === selectedId);
+  if (!selected || feeOf(selected, fee) !== undefined) return null;
+  return (
+    <p className="mt-2 text-[12px] font-medium text-ink-soft">
+      {selected.name} does not publish {/^[aeiou]/i.test(EXPLORER_FEE_LABELS[fee]) ? "an" : "a"} {EXPLORER_FEE_LABELS[fee].toLowerCase()} fee, so it is not on this chart.
+    </p>
+  );
+}
+
 /**
  * The lead pricing chart: every institution's fee on one horizontal axis, the peer median as a
- * line, the institution as a diamond. Far outliers are drawn past an axis break with their
- * amounts until included, so no value is dropped.
+ * line, the institution as a diamond. When its value is built from several account prices, each
+ * price is a filled diamond on its own row, joined by a line, and the comparison price a hollow
+ * diamond named as such. Far outliers are drawn past an axis break with their amounts until
+ * included, so no value is dropped.
  */
-function Distribution({ set, fee, selectedId, highlight, onSelect }: ViewProps) {
+function Distribution({ set, fee, selectedId, highlight, onSelect, include, onInclude }: ViewProps & { include: boolean; onInclude: (value: boolean) => void }) {
   const [ref, width] = useWidth<HTMLDivElement>(720);
   const [hover, setHover] = useState<number | null>(null);
   const [hoverPrice, setHoverPrice] = useState<number | null>(null);
-  const [include, setInclude] = useState(false);
   const everyone = [set.subject, ...set.peers];
   const publishing = everyone.filter((inst) => feeOf(inst, fee) !== undefined);
-  // The institution's own account prices, when its value is built from several: each drawn as a
-  // price, and the value itself as a hollow marker, so the comparison price never reads as a price.
-  const ownPrices = set.subject.fees[fee]?.prices ?? [];
+  const ownFee = set.subject.fees[fee];
+  // The institution's own account prices, when its value is built from several.
+  const ownPrices = ownFee?.prices ?? [];
+  const several = ownPrices.length >= 2;
+  const proxy = isComparisonProxy(ownFee);
   const median = set.medians[fee]?.median;
   if (publishing.length === 0) {
-    return <p className="rounded-lg border border-dashed border-border p-6 text-[14px] text-ink-muted">Not published by any institution in this set.</p>;
+    return (
+      <>
+        <p className="rounded-lg border border-dashed border-border p-6 text-[14px] text-ink-muted">Not published by any institution in this set.</p>
+        <NotOnChart set={set} fee={fee} selectedId={selectedId} />
+      </>
+    );
   }
   const values = publishing.map((inst) => feeOf(inst, fee) as number);
   const split = splitOutliers(values, include);
@@ -570,12 +646,18 @@ function Distribution({ set, fee, selectedId, highlight, onSelect }: ViewProps) 
     });
   const maxLevel = Math.max(0, ...placed.map((p) => p.level));
   const base = 44 + Math.min(maxLevel, 12) * 11;
-  const priceRow = base + 62;
-  const height = ownPrices.length >= 2 ? priceRow + 34 : base + 40;
+  // The subject's label takes two lines when its value is a comparison price; the price row sits below.
+  const labelRows = several ? 2 : 1;
+  const priceRow = base + 40 + labelRows * 14 + 30;
+  const height = several ? priceRow + 34 : base + 40 + labelRows * 14;
   const yOf = (level: number) => base - Math.min(level, 12) * 11;
   const hovered = hover !== null ? placed.find((p) => p.inst.id === hover) : null;
   const subjectValue = feeOf(set.subject, fee);
   const outlierWords = outlierAll.map((v) => money(v)).join(", ");
+  const subjectX = subjectValue !== undefined ? xOf(subjectValue) : 0;
+  const subjectAnchor = subjectX > width - 120 ? "end" : subjectX < 120 ? "start" : "middle";
+  const countWord = ["zero", "one", "two", "three", "four", "five", "six"][ownPrices.length] ?? String(ownPrices.length);
+  const which = fee === "overdraft" ? "the highest" : "the middle";
 
   return (
     <figure className="m-0">
@@ -594,7 +676,7 @@ function Distribution({ set, fee, selectedId, highlight, onSelect }: ViewProps) 
             </g>
           )}
           {median !== undefined && (
-            <g>
+            <g data-mark="median">
               <line x1={px(median)} x2={px(median)} y1={8} y2={base + 12} stroke="var(--fi-ink)" strokeWidth={1.25} strokeDasharray="4 3" />
               <text x={px(median)} y={4} textAnchor={px(median) > plotRight - 80 ? "end" : "middle"} className="fill-ink text-[12px] font-semibold tabular-nums">
                 Peer median {money(median)}
@@ -611,6 +693,7 @@ function Distribution({ set, fee, selectedId, highlight, onSelect }: ViewProps) 
                 <g
                   key={inst.id}
                   className="cursor-pointer"
+                  data-mark={isSubject ? (several ? "comparison-price" : "subject-price") : "peer"}
                   opacity={dimmed(inst, highlight, [set.subject.id, selectedId]) ? 0.2 : 1}
                   onClick={() => onSelect(inst.id)}
                   onMouseEnter={() => setHover(inst.id)}
@@ -624,8 +707,8 @@ function Distribution({ set, fee, selectedId, highlight, onSelect }: ViewProps) 
                       width={12}
                       height={12}
                       transform={`rotate(45 ${x} ${cy})`}
-                      fill={ownPrices.length >= 2 ? "var(--fi-surface-0)" : SUBJECT}
-                      stroke={ownPrices.length >= 2 ? SUBJECT : "var(--fi-surface-0)"}
+                      fill={several ? "var(--fi-surface-0)" : SUBJECT}
+                      stroke={several ? SUBJECT : "var(--fi-surface-0)"}
                       strokeWidth={2}
                     />
                   ) : (
@@ -641,20 +724,35 @@ function Distribution({ set, fee, selectedId, highlight, onSelect }: ViewProps) 
             </text>
           ))}
           {subjectValue !== undefined && (
-            <text
-              x={xOf(subjectValue)}
-              y={base + 40}
-              textAnchor={xOf(subjectValue) > width - 120 ? "end" : xOf(subjectValue) < 120 ? "start" : "middle"}
-              className="pointer-events-none fill-ink text-[12px] font-semibold"
-            >
-              {ownPrices.length >= 2 ? `${short(set.subject.name)}: ${comparisonMarkerLabel(fee)} ${money(subjectValue)}` : `${short(set.subject.name)} ${money(subjectValue)}`}
+            <text x={subjectX} y={base + 44} textAnchor={subjectAnchor} className="pointer-events-none fill-ink text-[12px] font-semibold tabular-nums">
+              {several ? `${short(set.subject.name)}: comparison price ${money(subjectValue)}` : `${short(set.subject.name)} ${money(subjectValue)}`}
+              {several && (
+                <tspan x={subjectX} dy="1.25em" className="fill-ink-soft font-normal">
+                  {proxy ? (width < 480 ? PROXY_NOTE : `${which} of its ${countWord} prices, ${PROXY_NOTE}`) : `${which} of its ${countWord} prices`}
+                </tspan>
+              )}
             </text>
           )}
-          {ownPrices.length >= 2 && (
+          {several && (
             <g aria-label={`${set.subject.name}'s account prices`}>
-              <text x={DIST_MARGIN.left} y={priceRow - 16} className="fill-ink-muted text-[12px] font-medium">
+              <text x={DIST_MARGIN.left} y={priceRow - 18} className="fill-ink-muted text-[12px] font-medium">
                 {short(set.subject.name)}&apos;s account prices
               </text>
+              {/* The span the comparison price is taken from: lowest to highest price. */}
+              <line
+                x1={xOf(ownPrices[0].amount)}
+                x2={xOf(ownPrices[ownPrices.length - 1].amount)}
+                y1={priceRow}
+                y2={priceRow}
+                stroke={SUBJECT}
+                strokeWidth={1.25}
+                opacity={0.5}
+              />
+              {proxy && subjectValue !== undefined && (
+                <g data-mark="comparison-price-on-span" aria-hidden="true">
+                  <line x1={subjectX} x2={subjectX} y1={priceRow - 7} y2={priceRow + 7} stroke={SUBJECT} strokeWidth={1.25} strokeDasharray="2 2" />
+                </g>
+              )}
               {ownPrices.map((price, i) => {
                 const x = xOf(price.amount);
                 // The lowest price is labelled to its left and the highest to its right, beside the
@@ -666,12 +764,12 @@ function Distribution({ set, fee, selectedId, highlight, onSelect }: ViewProps) 
                 const lx = side ? x + (first ? -10 : 10) : x;
                 const ly = side ? priceRow + 4 : priceRow + (i % 2 === 0 ? 20 : 31);
                 return (
-                  <g key={i} className="cursor-default" onMouseEnter={() => setHoverPrice(i)} onMouseLeave={() => setHoverPrice(null)}>
+                  <g key={i} data-mark="account-price" data-amount={price.amount} className="cursor-default" onMouseEnter={() => setHoverPrice(i)} onMouseLeave={() => setHoverPrice(null)}>
                     <circle cx={x} cy={priceRow} r={10} fill="transparent" />
                     <rect x={x - 5} y={priceRow - 5} width={10} height={10} transform={`rotate(45 ${x} ${priceRow})`} fill={SUBJECT} stroke="var(--fi-surface-0)" strokeWidth={1.5} />
                     {/* The account's short name ("Carefree Checking $7.95"); dropped on a narrow chart. */}
                     {width >= PRICE_LABELS_MIN_WIDTH && (
-                      <text x={lx} y={ly} textAnchor={anchor} className="fill-ink text-[12px] max-sm:hidden">
+                      <text x={lx} y={ly} textAnchor={anchor} className="fill-ink text-[12px] tabular-nums max-sm:hidden">
                         {price.account ?? short(price.name ?? `Price ${i + 1}`)} {money(price.amount)}
                       </text>
                     )}
@@ -695,19 +793,18 @@ function Distribution({ set, fee, selectedId, highlight, onSelect }: ViewProps) 
           </div>
         )}
       </div>
+      <NotOnChart set={set} fee={fee} selectedId={selectedId} />
       <figcaption className="mt-2 space-y-1.5 text-[12px] text-ink-muted">
         <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
-          {ownPrices.length >= 2 ? (
+          {several ? (
             <>
               <span className="inline-flex items-center gap-1.5">
                 <span aria-hidden="true" className="inline-block size-2.5 rotate-45" style={{ background: SUBJECT }} />
-                {short(set.subject.name)}: an account price
+                {short(set.subject.name)}: an account price on its schedule
               </span>
               <span className="inline-flex items-center gap-1.5">
                 <span aria-hidden="true" className="inline-block size-2.5 rotate-45 border-2" style={{ borderColor: SUBJECT }} />
-                {fee === "overdraft"
-                  ? "Its comparison price, the highest of its prices"
-                  : "Its comparison price, the middle of its account prices; not a price anyone pays"}
+                {proxy ? `Its comparison price, the middle of its prices: ${PROXY_NOTE}` : `Its comparison price, ${which} of its prices`}
               </span>
             </>
           ) : (
@@ -720,12 +817,19 @@ function Distribution({ set, fee, selectedId, highlight, onSelect }: ViewProps) 
             <span aria-hidden="true" className="inline-block size-2.5 rounded-full" style={{ background: PEER }} />
             Peer (equal prices stack)
           </span>
-          {median === undefined && <span>Peer median: too few to compare.</span>}
+          {median !== undefined ? (
+            <span className="inline-flex items-center gap-1.5">
+              <span aria-hidden="true" className="inline-block w-4 border-t-[1.5px] border-dashed border-ink" />
+              Peer median
+            </span>
+          ) : (
+            <span>Peer median: too few to compare.</span>
+          )}
         </span>
         {outlierAll.length > 0 && (
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <label className="inline-flex min-h-10 cursor-pointer items-center gap-2 text-[13px] font-medium text-ink">
-              <input type="checkbox" checked={include} onChange={(e) => setInclude(e.target.checked)} className="size-4 accent-[var(--fi-ink)]" />
+              <input type="checkbox" checked={include} onChange={(e) => onInclude(e.target.checked)} className="size-4 accent-[var(--fi-ink)]" />
               Include {outlierAll.length === 1 ? `${outlierWords} outlier` : `${outlierAll.length} outliers (${outlierWords})`}
             </label>
             {!include && <span>Shown past the axis break, not to scale, so the rest of the set has room.</span>}
@@ -745,11 +849,11 @@ function axisTick(axis: LandscapeAxis, value: number): string {
 }
 
 /** The chosen fee up, total assets (or, for a metro set, branches or deposit share) across. */
-function Landscape({ set, fee, selectedId, highlight, onSelect }: ViewProps) {
+function Landscape({ set, fee, selectedId, highlight, onSelect, axis: chosenAxis, onAxis: setAxis }: ViewProps & { axis: LandscapeAxis; onAxis: (axis: LandscapeAxis) => void }) {
   const [ref, width] = useWidth<HTMLDivElement>(720);
   const [hover, setHover] = useState<number | null>(null);
   const axes = landscapeAxes(set);
-  const [axis, setAxis] = useState<LandscapeAxis>("assets");
+  const axis = axes.includes(chosenAxis) ? chosenAxis : "assets";
   const height = width < 480 ? 320 : 440;
   const everyone = [set.subject, ...set.peers];
   const plotted = everyone.filter((inst) => feeOf(inst, fee) !== undefined && landscapeValue(set, inst, axis) !== null);
@@ -845,7 +949,7 @@ function Landscape({ set, fee, selectedId, highlight, onSelect }: ViewProps) {
               const cy = py(feeOf(inst, fee) as number);
               const right = cx < MARGIN.left + innerW * 0.7;
               const isSubject = inst.id === set.subject.id;
-              const proxy = comparisonLabel(fee, inst.fees[fee]);
+              const proxy = comparisonTag(fee, inst.fees[fee]);
               // Below the point when the median line (and its label) runs just above it.
               const below = median !== undefined && Math.abs(cy - py(median)) < 24;
               const lx = cx + (right ? 10 : -10);
@@ -862,7 +966,7 @@ function Landscape({ set, fee, selectedId, highlight, onSelect }: ViewProps) {
                   {short(inst.name)} · {money(feeOf(inst, fee) as number)}
                   {proxy && (
                     <tspan x={lx} dy="1.3em" className="fill-ink-soft font-normal">
-                      {proxy.toLowerCase()}
+                      {proxy}
                     </tspan>
                   )}
                 </text>
@@ -899,7 +1003,9 @@ function Landscape({ set, fee, selectedId, highlight, onSelect }: ViewProps) {
         )}
         {notPublished > 0 && <span>{notPublished.toLocaleString("en-US")} not shown: fee not published.</span>}
         {noX > 0 && <span>{noX.toLocaleString("en-US")} not shown: no {LANDSCAPE_AXIS_LABELS[axis].toLowerCase()} on record.</span>}
+        {plotted.some((inst) => isComparisonProxy(inst.fees[fee])) && <span>A comparison price is the middle of an institution&apos;s account prices, {PROXY_NOTE}.</span>}
       </figcaption>
+      <NotOnChart set={set} fee={fee} selectedId={selectedId} />
     </figure>
   );
 }
@@ -1175,7 +1281,10 @@ function Matrix({ set, fee, selectedId, highlight, onSelect, onFee }: ViewProps 
                               <span className="text-[11px] text-ink-muted">Not published</span>
                             ) : (
                               <>
-                                <span className={isSubject ? "font-semibold text-ink" : "text-ink"}>{text}</span>
+                                <span className={isSubject ? "font-semibold text-ink" : "text-ink"}>
+                                  {text}
+                                  {isComparisonProxy(inst.fees[key]) && <ProxyMark />}
+                                </span>
                                 {median !== undefined && (
                                   <span aria-hidden="true" className="text-[10px] text-ink-soft">
                                     {BAND_WORDS[band].mark}
@@ -1217,6 +1326,7 @@ function Matrix({ set, fee, selectedId, highlight, onSelect, onFee }: ViewProps 
           </li>
         ))}
         <li>Deeper colour: further from the middle of the set.</li>
+        {rows.some((row) => EXPLORER_FEE_KEYS.some((key) => isComparisonProxy(row.fees[key]))) && <li>{PROXY_FOOTNOTE}</li>}
       </ul>
       {compare.length >= 2 && <Compare set={set} rows={[set.subject, ...compare]} onClear={() => setChecked([])} />}
       {compare.length === 1 && <p className="mt-3 text-[13px] text-ink-muted">Tick one more institution to compare side by side.</p>}
@@ -1335,7 +1445,10 @@ function Compare({ set, rows, onClear }: { set: PeerExplorerSet; rows: ExplorerI
                           <span className="text-[12px] text-ink-muted">Not published</span>
                         ) : (
                           <>
-                            <span className="text-ink">{money(value)}</span>
+                            <span className="text-ink">
+                              {money(value)}
+                              {isComparisonProxy(inst.fees[key]) && <ProxyMark />}
+                            </span>
                             {median !== undefined && <span className="block text-[11px] text-ink-muted">{signedMoney(value - median)}</span>}
                           </>
                         )}
@@ -1348,6 +1461,7 @@ function Compare({ set, rows, onClear }: { set: PeerExplorerSet; rows: ExplorerI
           </tbody>
         </table>
       </div>
+      {rows.some((inst) => EXPLORER_FEE_KEYS.some((key) => isComparisonProxy(inst.fees[key]))) && <p className="mt-2 text-[12px] text-ink-muted">{PROXY_FOOTNOTE}</p>}
     </section>
   );
 }
@@ -1458,7 +1572,7 @@ function DotStrip({ set, fee, selectedId, median, onSelect }: { set: PeerExplore
               type="button"
               tabIndex={-1}
               onClick={() => onSelect(inst.id)}
-              title={`${inst.name}: ${money(v)}`}
+              title={`${inst.name}: ${money(v)}${isComparisonProxy(inst.fees[fee]) ? `, comparison price, ${PROXY_NOTE}` : ""}`}
               className="absolute top-1/2 grid size-5 -translate-x-1/2 -translate-y-1/2 place-items-center"
               style={{ left: `${at(v)}%` }}
             >

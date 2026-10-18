@@ -1,5 +1,4 @@
 import { Users } from "lucide-react";
-import { PeerSetPicker } from "@/components/public/peer-set-picker";
 import { homeSerif } from "@/app/landing-serif";
 import { SERIF } from "@/app/landing-shared";
 import "@/app/landing-motion.css";
@@ -17,6 +16,7 @@ import {
   type PeerExplorerSet,
 } from "@/lib/peer-explorer";
 import { PeerExplorer } from "./peer-explorer";
+import { PeerSetLinks } from "./peer-set-links";
 
 /** Short names for the choices; the full plain-words name is the set's caption. */
 export function peerSetChipLabel(option: { key: string; label: string; count?: number }): string {
@@ -81,7 +81,7 @@ export function PeerExplorerSection({
         {assets ? ` · ${assets} in assets` : ""}
       </p>
       <div className="mt-4">
-        <PeerSetPicker
+        <PeerSetLinks
           label="Peer set"
           current={selected.key}
           options={options.map((option) => ({
