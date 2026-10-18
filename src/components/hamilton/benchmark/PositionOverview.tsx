@@ -7,6 +7,7 @@
 
 import Link from "next/link";
 import { formatAmount } from "@/lib/format";
+import { ownFeeLabel, ownFeeList } from "@/lib/own-fee";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 import {
   MEDIUM_PRIORITY_GAP_PCT,
@@ -19,6 +20,8 @@ import { AddToReportButton } from "@/components/hamilton/basket/AddToReportButto
 import { basketItemId } from "@/lib/hamilton/report-basket";
 
 export function positionTone(entry: Pick<InstitutionPositionEntry, "gapPct" | "gapAmount">): PositionTone {
+  // Several different fees in the category: no single price to place against the median.
+  if (entry.gapAmount === null) return "none";
   if (entry.gapPct === null) {
     if (Math.abs(entry.gapAmount) < 0.005) return "inline";
     return entry.gapAmount > 0 ? "above" : "below";
@@ -28,7 +31,13 @@ export function positionTone(entry: Pick<InstitutionPositionEntry, "gapPct" | "g
   return "inline";
 }
 
+/** The institution's own price, or the range of its fees when it states several. */
+function yoursText(entry: InstitutionPositionEntry): string {
+  return ownFeeLabel({ price: entry.yourAmount, low: entry.yourLow, high: entry.yourHigh });
+}
+
 function gapText(entry: InstitutionPositionEntry): string {
+  if (entry.gapAmount === null) return ownFeeList({ fees: entry.yourFees });
   if (Math.abs(entry.gapAmount) < 0.005) return "At median";
   const sign = entry.gapAmount > 0 ? "+" : "−";
   const pct = entry.gapPct === null ? "" : ` · ${sign}${Math.round(Math.abs(entry.gapPct))}%`;
@@ -37,7 +46,7 @@ function gapText(entry: InstitutionPositionEntry): string {
 
 export function headlineFor(positioning: InstitutionPositioning): string | null {
   const top = positioning.topGap;
-  if (!top) return null;
+  if (!top || top.gapAmount === null || top.yourAmount === null) return null;
   const tone = positionTone(top);
   if (tone === "inline") {
     return `${positioning.institutionName}'s fees track its peers closely; the largest gap is ${top.displayName} at ${gapText(top).replace(" · ", ", ")}.`;
@@ -109,7 +118,7 @@ export function PositionOverview({
       )}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Tile label="Fees compared" value={entries.length} note={`against ${positioning.benchmarkLabel}`} />
+        <Tile label="Fees compared" value={above + inline + below} note={`against ${positioning.benchmarkLabel}`} />
         <Tile label="Above peers" value={above} color={TONE_COLORS.above} note={`${MEDIUM_PRIORITY_GAP_PCT}%+ over the median`} />
         <Tile label="In line" value={inline} color={TONE_COLORS.inline} note={`within ${MEDIUM_PRIORITY_GAP_PCT}% of the median`} />
         <Tile label="Below peers" value={below} color={TONE_COLORS.below} note={`${MEDIUM_PRIORITY_GAP_PCT}%+ under the median`} />
@@ -153,7 +162,7 @@ export function PositionOverview({
                     <Link
                       href={hrefWithInstitutionContext(
                         `/pro/analyze?q=${encodeURIComponent(
-                          `Why is our ${entry.displayName} fee ${formatAmount(entry.yourAmount)} against a peer median of ${formatAmount(entry.benchmarkMedian)}, and what should we do about it?`,
+                          `Why is our ${entry.displayName} fee ${yoursText(entry)} against a peer median of ${formatAmount(entry.benchmarkMedian)}, and what should we do about it?`,
                         )}`,
                         institutionId,
                       )}
@@ -167,7 +176,7 @@ export function PositionOverview({
                       item={{
                         id: basketItemId("Position", institutionId, entry.feeCategory),
                         source: "Position",
-                        title: `${entry.displayName}: ${formatAmount(entry.yourAmount)} against a peer median of ${formatAmount(entry.benchmarkMedian)}`,
+                        title: `${entry.displayName}: ${yoursText(entry)} against a peer median of ${formatAmount(entry.benchmarkMedian)}`,
                         detail: `${gapText(entry)}, compared with ${entry.benchmarkCount} peer institutions.`,
                         feeCategory: entry.feeCategory,
                         institutionId,
@@ -183,12 +192,12 @@ export function PositionOverview({
                     yours={entry.yourAmount}
                     stateMedian={stateLevel?.median ?? null}
                     tone={tone}
-                    label={`${entry.displayName}: yours ${formatAmount(entry.yourAmount)}, peer median ${formatAmount(entry.benchmarkMedian)}`}
+                    label={`${entry.displayName}: yours ${yoursText(entry)}, peer median ${formatAmount(entry.benchmarkMedian)}`}
                   />
                 </div>
                 <div className="col-start-2 row-start-1 text-right md:col-start-auto md:row-start-auto">
                   <div className="text-sm font-semibold [font-variant-numeric:tabular-nums]" style={{ color: "var(--hamilton-on-surface)" }}>
-                    {formatAmount(entry.yourAmount)}
+                    {yoursText(entry)}
                     <span className="font-normal" style={{ color: "var(--hamilton-text-tertiary)" }}> vs {formatAmount(entry.benchmarkMedian)}</span>
                   </div>
                   <div className="text-xs font-medium [font-variant-numeric:tabular-nums]" style={{ color: tone === "inline" ? "var(--hamilton-text-secondary)" : TONE_COLORS[tone] }}>

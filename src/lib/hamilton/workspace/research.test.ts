@@ -85,6 +85,7 @@ describe("localMarketView", () => {
     assetTier: "community_mid",
     peerLabel: "TX peers",
     ownValues: new Map([["overdraft", 30]]),
+    ownCategories: new Set(["overdraft"]),
     peers: new Map(),
     layers: [{ scope: "national" as const, label: "National", values: new Map([["overdraft", [peer(35, 2), peer(25, 3), peer(32, 9)]]]) }],
   };

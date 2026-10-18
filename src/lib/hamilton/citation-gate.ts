@@ -91,7 +91,7 @@ const FOOTNOTE_RE = /\[\^[^\]]+\]/;
 const BRACKETED_SOURCE_RE =
   /\[(?:source|src|published_fee_records|call_report|beige_book|fred|cfpb)[:\s][^\]]+\]/i;
 const SOURCE_PHRASE_RE =
-  /\b(?:per|via|from|according to|source:|cited in|reported by)\s+(?:the\s+)?(?:published fee records|published_fee_records|call report|beige book|fred|cfpb|pipeline|bank fee index|bfi)/i;
+  /\b(?:per|via|from|according to|source:|cited in|reported by)\s+(?:the\s+)?(?:published fee records|published_fee_records|call report|beige book|fred|bls|bea|bureau of labor statistics|bureau of economic analysis|cfpb|pipeline|bank fee index|bfi)/i;
 const DATA_SOURCE_MENTION_RE =
   /\b(published fee records|published_fee_records|call reports?|beige book|fred(?:\s+series)?|cfpb\s+complaints?|h\.8\s+release|ncua\s+5300|ffiec\s+\d{3})\b/i;
 const INSTITUTION_ANCHOR_RE =
@@ -243,7 +243,7 @@ function buildSuggestion(metrics: CitationGateMetrics): string {
     return "This report contains no quantified claims. Hamilton refuses to render content without evidence. Narrow to a specific fee category or institution with published data.";
   }
   if (citations < countThreshold) {
-    return `This report has ${claims} quantified claim${claims === 1 ? "" : "s"} but only ${citations} cite${citations === 1 ? "s" : ""} a specific data source (pipeline-verified fees, Call Reports, Beige Book, or FRED). The minimum is ${countThreshold} citations per report. Try narrowing to a specific fee category or institution tier with denser coverage.`;
+    return `This report has ${claims} quantified claim${claims === 1 ? "" : "s"} but only ${citations} cite${citations === 1 ? "s" : ""} a specific data source (pipeline-verified fees, Call Reports, Beige Book, BLS, BEA or the Fed Board). The minimum is ${countThreshold} citations per report. Try narrowing to a specific fee category or institution tier with denser coverage.`;
   }
   return `This report has ${claims} quantified claim${claims === 1 ? "" : "s"} but only ${citations} cite a specific data source — a density of ${metrics.density.toFixed(2)} against the required ${threshold.toFixed(2)}. At least half of quantified claims must trace back to pipeline data. Narrow the scope or cite more specific institutions.`;
 }

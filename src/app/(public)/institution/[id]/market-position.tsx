@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { formatCompactDollars } from "@/lib/format";
 import { ASSET_BANDS, type HistoryPoint } from "@/lib/market-position";
@@ -104,12 +105,14 @@ function MetroSummary({ metro, institutionName, home }: { metro: MetroPosition; 
         )}
       </p>
       {home && (
-        <a
+        // The peer explorer reads ?peers= in the browser (the profile is cached), so a soft
+        // navigation to the same cached page switches its set.
+        <Link
           href="?peers=metro#peers"
           className="inline-flex min-h-11 shrink-0 items-center text-[14px] font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
         >
           {metro.isHome ? "Compare fees with these local competitors" : `Compare fees with competitors in ${home.name}`} &rarr;
-        </a>
+        </Link>
       )}
     </div>
   );

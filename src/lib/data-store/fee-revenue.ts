@@ -51,9 +51,9 @@ export async function getFeeRevenueData(): Promise<FeeRevenueCorrelation[]> {
       ifin.total_assets,
       ifin.service_charge_income,
       CASE WHEN ifin.total_assets > 0
-           THEN ROUND(ifin.service_charge_income * 1.0 / ifin.total_assets * 10000, 2)
+           THEN ROUND((ifin.service_charge_income * 1.0 / ifin.total_assets * 10000)::numeric, 2)
            ELSE NULL END as fee_income_ratio,
-      ROUND(ef.avg_fee, 2) as avg_fee,
+      ROUND(ef.avg_fee::numeric, 2) as avg_fee,
       ef.fee_count as fee_count,
       NULL as median_overdraft
     FROM institution_sources ct
@@ -113,13 +113,13 @@ export async function getTierFeeRevenueSummary(): Promise<TierFeeRevenueSummary[
     SELECT
       ct.asset_size_tier,
       COUNT(DISTINCT ct.id) as institution_count,
-      ROUND(AVG(ifin.service_charge_income), 0) as avg_service_charge_income,
-      ROUND(AVG(ef_avg.avg_fee), 2) as avg_fee_amount,
+      ROUND(AVG(ifin.service_charge_income)::numeric, 0) as avg_service_charge_income,
+      ROUND(AVG(ef_avg.avg_fee)::numeric, 2) as avg_fee_amount,
       ROUND(AVG(
         CASE WHEN ifin.total_assets > 0
              THEN ifin.service_charge_income * 1.0 / ifin.total_assets * 10000
              ELSE NULL END
-      ), 2) as avg_fee_income_ratio
+      )::numeric, 2) as avg_fee_income_ratio
     FROM institution_sources ct
     JOIN (
       SELECT institution_id, AVG(amount) as avg_fee
@@ -171,13 +171,13 @@ export async function getCharterFeeRevenueSummary(): Promise<CharterFeeRevenueSu
     SELECT
       ct.charter_type,
       COUNT(DISTINCT ct.id) as institution_count,
-      ROUND(AVG(ifin.service_charge_income), 0) as avg_service_charge_income,
-      ROUND(AVG(ef_avg.avg_fee), 2) as avg_fee_amount,
+      ROUND(AVG(ifin.service_charge_income)::numeric, 0) as avg_service_charge_income,
+      ROUND(AVG(ef_avg.avg_fee)::numeric, 2) as avg_fee_amount,
       ROUND(AVG(
         CASE WHEN ifin.total_assets > 0
              THEN ifin.service_charge_income * 1.0 / ifin.total_assets * 10000
              ELSE NULL END
-      ), 2) as avg_fee_income_ratio
+      )::numeric, 2) as avg_fee_income_ratio
     FROM institution_sources ct
     JOIN (
       SELECT institution_id, AVG(amount) as avg_fee

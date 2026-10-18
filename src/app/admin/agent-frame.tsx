@@ -140,6 +140,8 @@ async function readRecentSteps(agent: FrameAgent): Promise<RecentStep[]> {
     SELECT id, step_key, title, status, summary, error_summary, queued_at, started_at, completed_at
       FROM agent_run_steps
      WHERE agent_name = ${agent}
+       -- Registry steps under Magellan's name before #1865 are Hoovie's, not Magellan's.
+       AND NOT (agent_name = 'magellan' AND step_key LIKE 'registry-%')
        AND updated_at > NOW() - INTERVAL '7 days'
      ORDER BY COALESCE(completed_at, started_at, queued_at) DESC
      LIMIT ${RECENT_STEP_LIMIT}

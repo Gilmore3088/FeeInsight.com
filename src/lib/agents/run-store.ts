@@ -87,6 +87,7 @@ import { runDarwinAdjudicate } from "@/lib/agents/darwin/adjudicate";
 import { countLiveFragmentNames, liveFragmentDetail, liveFragmentFindingsDetail, recheckLiveFragmentNames } from "@/lib/agents/darwin/live-fragment-check";
 import { countHourlyFees, hourlyDetail, hourlyFindingsDetail, recheckHourlyFrequencies } from "@/lib/agents/darwin/hourly-frequency-check";
 import { countNonDepositFees, nonDepositDetail, nonDepositFindingsDetail, recheckNonDepositDocuments } from "@/lib/agents/darwin/non-deposit-document-check";
+import { recheckTranslatedCopies, translatedCopyDetail } from "@/lib/agents/darwin/translated-copy-check";
 import { lineConflictDetail, recheckLineConflicts } from "@/lib/agents/darwin/line-conflict-check";
 import { documentOwnerDetail } from "@/lib/agents/darwin/document-owner";
 import { findingsDetail as releaseRepairFindingsDetail, releaseRepairDetail, runReleaseRepairStep } from "@/lib/agents/darwin/release-repair";
@@ -107,11 +108,13 @@ import { freshAuditDetail, runFreshAudit, summarizeFreshAudit } from "@/lib/agen
 import { benchmarkHealthDetail, runBenchmarkHealth, summarizeBenchmarkHealth } from "@/lib/agents/deming/benchmark-health";
 import { playbookContradictionsDetail, runPlaybookContradictions, summarizePlaybookContradictions } from "@/lib/agents/deming/playbook-contradictions";
 import { dataQualityDetail, runDataQuality, summarizeDataQuality } from "@/lib/agents/deming/data-quality";
+import { readSourceHealth, sourceHealthDetail, summarizeSourceHealth } from "@/lib/agents/hoovie/source-health";
 import { knoxMissesDetail, runKnoxMisses, summarizeKnoxMisses } from "@/lib/agents/deming/knox-misses";
 import { runBayesLedger, summarizeBayesLedger, BAYES_LEDGER_VERSION } from "@/lib/agents/bayes/ledger";
 import { runScheduleCheck, summarizeScheduleCheck, SCHEDULE_CHECK_VERSION } from "@/lib/agents/atlas/schedule-check";
 import { cityRepairDetail, runCityRepair, summarizeCityRepair } from "@/lib/agents/atlas/city-repair";
 import { runStorageRetention, storageRetentionDetail, summarizeStorageRetention } from "@/lib/agents/atlas/storage-retention";
+import { coldTierDetail, runColdTier, summarizeColdTier } from "@/lib/agents/hoovie/storage-tiers";
 import { answerKeyRelabelDetail, runAnswerKeyRelabels, summarizeAnswerKeyRelabels } from "@/lib/agents/atlas/answer-key-relabels";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { MARKET_SPREAD_WORKFLOW, runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
@@ -504,6 +507,7 @@ async function executeAgenticStep(
         institutionId: numericRunParam(params, ["institution_id"]),
         stateCode,
         newLinksOnly: params.new_links_only === true,
+        requestedUrl: typeof params.fee_schedule_url === "string" ? params.fee_schedule_url : null,
       });
       // Fee links the plain fetch keeps failing to reach, tried at the bank's other
       // spellings of the address (#1051). Free; a failure here never fails the step.
@@ -916,6 +920,17 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId: numericRunParam(params, ["institution_id"]),
       });
+      // #1909: fees read from a bank's Spanish copy of a schedule whose English line is live
+      // (translated-copy-check.ts); a report only while its switch is off.
+      const translatedCopy = await recheckTranslatedCopies(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      const translatedCopyNote = translatedCopy.matched > 0
+        ? ` Spanish copy re-check: ${translatedCopy.matched.toLocaleString()} of ${translatedCopy.checked.toLocaleString()} live fee(s) on Spanish copies of a schedule have an English twin at the same price (${translatedCopy.live && !translatedCopy.dryRun ? `${translatedCopy.flagged.toLocaleString()} flagged, ${translatedCopy.takenDown.length.toLocaleString()} archived` : "switch off: would take down, nothing written"}); ${(translatedCopy.keptSpanishOnly + translatedCopy.keptEnglishName).toLocaleString()} stay.`
+        : "";
       // #1440: one printed line live under two categories or two frequencies; Darwin keeps one
       // reading (line-conflict-check.ts). Every conflicting line each step; a report only while its
       // switch is off.
@@ -953,10 +968,10 @@ async function executeAgenticStep(
         ? ` Live name re-check: ${liveFragments.matched.toLocaleString()} of ${liveFragments.checked.toLocaleString()} live fee(s) read have a fragment name: ${liveFragments.wouldTakeDown.toLocaleString()} takedown, ${liveFragments.wouldRename.toLocaleString()} rename (${liveFragments.wouldRenameByVia.tail.toLocaleString()} by the fee the line ends on), ${liveFragments.exempt.toLocaleString()} exempt, ${liveFragments.wouldReread.toLocaleString()} kept live to ask Knox to re-read (${liveFragments.live && !liveFragments.dryRun ? `${liveFragments.takenDown.length.toLocaleString()} archived, ${liveFragments.renamed.length.toLocaleString()} renamed, ${liveFragments.rereadRequested.length.toLocaleString()} re-read request(s)` : "switch off: nothing written"}).`
         : "";
       const hourlyNote = hourly.matched > 0
-        ? ` Hourly re-check: ${hourly.wouldSet.toLocaleString()} of ${hourly.checked.toLocaleString()} live fee(s) read are priced by the hour with no hourly frequency, ${hourly.exempt.toLocaleString()} exempt (${hourly.live && !hourly.dryRun ? `${hourly.set.length.toLocaleString()} set hourly` : "switch off: nothing written"}).`
+        ? ` Hourly re-check: ${hourly.wouldSet.toLocaleString()} of ${hourly.checked.toLocaleString()} live fee(s) read are priced by the hour with no hourly frequency (${hourly.wouldSetFromLine.toLocaleString()} only on their line${hourly.lineLive ? "" : ", line switch off: not written"}), ${hourly.exempt.toLocaleString()} exempt (${hourly.live && !hourly.dryRun ? `${hourly.set.length.toLocaleString()} set hourly` : "switch off: nothing written"}).`
         : "";
       const hourlyFullNote = hourlyFull
-        ? ` Whole live table: ${hourlyFull.wouldSet.toLocaleString()} live fees would be set hourly, ${hourlyFull.exempt.toLocaleString()} exempt.`
+        ? ` Whole live table: ${hourlyFull.wouldSet.toLocaleString()} live fees would be set hourly (${hourlyFull.wouldSetFromLine.toLocaleString()} only on their line), ${hourlyFull.exempt.toLocaleString()} exempt.`
         : "";
       const nonDepositNote = nonDeposit.matched > 0 || nonDeposit.brokerageDocument > 0
         ? ` Non-deposit document re-check: ${nonDeposit.matched.toLocaleString()} of ${nonDeposit.checked.toLocaleString()} live fee(s) read would come down from a brokerage or wealth (${nonDeposit.byKind.brokerage.toLocaleString()}) or loan, card or rate (${nonDeposit.byKind.loan.toLocaleString()}) document (${nonDeposit.byRule.lending_category.toLocaleString()} lending category, ${nonDeposit.byRule.lending_wording_on_loan_document.toLocaleString()} lending wording on a loan document); ${nonDeposit.brokerageDocument.toLocaleString()} deposit-category fee(s) on brokerage documents (own sub-switch${nonDeposit.live && nonDeposit.brokerageLive ? "" : ", off: they stay"}); ${(nonDeposit.keptDepositCategory + nonDeposit.keptGenericOnRatePage).toLocaleString()} fee(s) there stay live. Takedowns: ${nonDeposit.live && !nonDeposit.dryRun ? `${nonDeposit.flagged.toLocaleString()} flagged, ${nonDeposit.takenDown.length.toLocaleString()} archived` : "switch off, none made, nothing written"}.`
@@ -974,7 +989,7 @@ async function executeAgenticStep(
         : "";
       return {
         status: "completed",
-        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${conditionalZero.selected > 0 ? ` Settled ${conditionalZero.selected.toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${nonDepositNote}${nonDepositFullNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}`,
+        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${conditionalZero.selected > 0 ? ` Settled ${conditionalZero.selected.toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}`,
         detail: {
           selected_raw_fees: verification.selectedRawFees,
           processed_raw_fees: verification.processedRawFees,
@@ -1001,6 +1016,7 @@ async function executeAgenticStep(
           hourly_frequency_check: hourlyDetail(hourly),
           ...(hourlyFull ? { hourly_frequency_full_count: hourlyFindingsDetail(hourlyFull) } : {}),
           non_deposit_document_check: nonDepositDetail(nonDeposit),
+          translated_copy_check: translatedCopyDetail(translatedCopy),
           line_conflict_check: lineConflictDetail(lineConflict),
           ...(nonDepositFull ? { non_deposit_document_full_count: nonDepositFindingsDetail(nonDepositFull) } : {}),
           release_repair: releaseRepair ? releaseRepairDetail(releaseRepair) : { error: releaseRepairError },
@@ -1777,6 +1793,7 @@ async function executeAgenticStep(
           hand_takedown: {
             taken_down: handTakedowns.takenDown.map((item) => ({ fee_published_id: item.feePublishedId, reason: item.reason })),
             skipped: handTakedowns.skipped.length,
+            waiting_rejected: handTakedowns.waitingRejected.length,
             error: handTakedowns.error,
           },
           hand_audience_fix: {
@@ -2689,6 +2706,11 @@ async function executeAgenticStep(
       const result = await runDataQuality({ db: tx });
       return { status: "completed", summary: summarizeDataQuality(result), detail: dataQualityDetail(result) };
     }
+    case "deming-source-health": {
+      // Read-only (#1866): one SELECT over registry_ingest_partitions and one over Atlas's newest table sizes.
+      const report = await readSourceHealth({ db: tx });
+      return { status: "completed", summary: summarizeSourceHealth(report), detail: sourceHealthDetail(report) };
+    }
     case "deming-knox-misses": {
       // #1099: writes only eval_cases (new missed-fee cases and each case's replay); never a fee row.
       const result = await runKnoxMisses({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
@@ -2705,7 +2727,13 @@ async function executeAgenticStep(
     }
     case "atlas-storage-retention": {
       const result = await runStorageRetention({ db: tx, dryRun: run.runKind === "dry_run" });
-      return { status: "completed", summary: summarizeStorageRetention(result), detail: storageRetentionDetail(result) };
+      // #1870: Hoovie's cold-tier plan on the same connection. Counts only; export is off and nothing prunes.
+      const cold = await runColdTier({ db: tx, dryRun: run.runKind === "dry_run", runId: run.id });
+      return {
+        status: "completed",
+        summary: `${summarizeStorageRetention(result)} ${summarizeColdTier(cold)}`,
+        detail: { ...storageRetentionDetail(result), cold_tier: coldTierDetail(cold) },
+      };
     }
     case "schedule-check": {
       const result = await runScheduleCheck({ db: tx });
@@ -3615,6 +3643,10 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   "public-discovery": 60_000,
   "registry-ncua-extras": 110_000,
   "registry-cfpb-card-agreements": 50_000,
+  // Not measured yet (2026-10-18): each downloads and inflates a Board SDMX zip, H.15 about 68 MB
+  // and H.8 about 75 MB, before the BLS/BEA or table reads; priced so a tick starts them early.
+  "registry-fred": 150_000,
+  "registry-national-series": 150_000,
 };
 /**
  * Steps the tick never starts, because they do not fit its 270 s budget even alone: the tick

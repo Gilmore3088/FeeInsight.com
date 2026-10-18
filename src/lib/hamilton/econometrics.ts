@@ -5,7 +5,7 @@
  *
  * Methods (quarterly data):
  * - Real dollars: nominal x (base deflator / quarter deflator), using BEA's chained
- *   GDP price index (FRED GDPCTPI), expressed in the latest quarter's dollars.
+ *   GDP price index (BEA GDPCTPI), expressed in the latest quarter's dollars.
  * - Seasonal adjustment: classical multiplicative decomposition (centered 2x4 moving
  *   average, mean ratio per quarter of the year, factors normalized to average 1).
  * - Trend: OLS of log real seasonally adjusted income on time, Newey-West standard errors.

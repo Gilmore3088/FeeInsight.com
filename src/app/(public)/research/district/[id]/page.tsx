@@ -505,7 +505,7 @@ export default async function DistrictReportPage({ params }: PageProps) {
             }
             source={
               <>
-                CPI for checking accounts and other bank services and BLS unemployment via FRED
+                BLS CPI for checking accounts and other bank services and BLS unemployment
                 {incomeYear ? `; Census ACS ${incomeYear} median household income` : ""}; Federal Reserve Beige Book.
               </>
             }

@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  CUT_EXCERPT_CHARS,
   excerptOf,
   fillBlankFrequencies,
   fillFrequenciesInPublish,
   FREQUENCY_FILL_VERSION,
+  fullStoredLine,
   OVERDRAFT_PLAN_HOLD_LIVE,
   OVERDRAFT_PLAN_HOLD_REASON,
 } from "./frequency-fill";
@@ -242,6 +244,73 @@ describe("Hamilton frequency fill", () => {
     expect(result.filled.map((fee) => [fee.feePublishedId, fee.frequency, fee.basis])).toEqual([[4, "annual", "box_table_header"]]);
     const sqlText = db.mock.calls.map((call) => (call[0] as TemplateStringsArray).join("?")).join("\n");
     expect(sqlText).toContain("INSERT INTO pipeline_feedback");
+  });
+});
+
+describe("v15: a stored line cut before its price is read on its full line (#1901)", () => {
+  const cut = "Dormant Checking fee: Assessed to the checking account if the member has a combined savings and checking balance with less than $50, no activity in 12 months and no other Navy Fede";
+  const navy = { ...row(80997, "3.00", cut), canonical_fee_key: "dormant_account", source_document_id: 15428, fee_name: "Dormant Checking fee", before_v15: false };
+  const fullText = [
+    "Fee | Amount",
+    "Dormant Checking fee: Assessed to the checking account if the member has a combined savings and checking balance with less than $50, no activity in 12 months and no other Navy Federal products. This is not applicable to a member under the age of 24. | $3.00 per quarter",
+    "Account Number Reassignment (more than once in the same calendar year) | $25.00",
+  ].join("\n\n");
+  const dbWith = (text: string) => {
+    const db = createDbMock([]);
+    db.unsafe = vi.fn((sql: string) => {
+      // The SQL read returns the lines of a document with line breaks; the fill keeps those holding the key.
+      if (sql.includes("v15 full lines")) return Promise.resolve(text.includes("\n") ? [{ fee_published_id: 80997, lines: text.split("\n") }] : []);
+      if (sql.includes("fp.fee_name ~*")) return Promise.resolve([]);
+      return Promise.resolve([navy]);
+    });
+    return db;
+  };
+
+  it("fills Navy Federal's $3 dormant fee quarterly from its document's full line and logs the basis", async () => {
+    expect(FREQUENCY_FILL_VERSION).toBe(15);
+    const db = dbWith(fullText);
+    const result = await fillBlankFrequencies(asDb(db), { runId: 5, dryRun: false });
+    expect(result.filled.map((fee) => [fee.feePublishedId, fee.frequency, fee.basis])).toEqual([[80997, "quarterly", "full_stored_line"]]);
+    expect(result.filled[0].sourceLine).toContain("$3.00 per quarter");
+    const sqlText = String(db.unsafe.mock.calls[0][0]);
+    expect(sqlText).toContain("AS before_v15");
+    expect(sqlText).toContain(`>= ${CUT_EXCERPT_CHARS}`);
+  });
+
+  it("reads nothing when no line, two lines or a flattened document holds the cut line", async () => {
+    for (const text of ["Fee | Amount\nAccount Number Reassignment | $25.00", `${fullText}\n${fullText.replace("$3.00", "$4.00")}`, fullText.replace(/\n/g, " ")]) {
+      const result = await fillBlankFrequencies(asDb(dbWith(text)), { runId: 5, dryRun: true });
+      expect(result.filled, text.slice(0, 40)).toEqual([]);
+    }
+  });
+
+  it("never reads a v15-only row on its excerpt, when the read says false or NULL", async () => {
+    // Postgres gives NULL, not false, when a blank row fails every pre-v15 arm (#1929 review).
+    const oneTime = (before: boolean | null) => ({
+      ...row(5, "5.00", `${"Account research and reconciliation services requested by the member for any reason, billed at the rate shown here and ".repeat(2).slice(0, 170)} | $5.00 one-time`),
+      canonical_fee_key: "account_research",
+      before_v15: before,
+    });
+    for (const before of [false, null]) {
+      const db = createDbMock([oneTime(before)]);
+      const result = await fillBlankFrequencies(asDb(db), { runId: 5, dryRun: true });
+      expect(result.filled, String(before)).toEqual([]);
+    }
+  });
+
+  it("reads only the matching lines in SQL, never whole documents", async () => {
+    const db = dbWith(fullText);
+    await fillBlankFrequencies(asDb(db), { runId: 5, dryRun: true });
+    const read = db.unsafe.mock.calls.map((call) => String(call[0])).find((sql) => sql.includes("v15 full lines"))!;
+    expect(read).toContain("regexp_split_to_table(t.normalized_text, E'\\r?\\n')");
+    expect(read).toContain("strpos(l.line, w.key) > 0");
+    expect(read).not.toMatch(/SELECT w\.fee_published_id, [^\n]*normalized_text/);
+  });
+
+  it("finds the one full line that prints the price", () => {
+    expect(fullStoredLine(fullText, cut, 3)).toContain("| $3.00 per quarter");
+    expect(fullStoredLine(fullText, cut, 5)).toBeNull();
+    expect(fullStoredLine(fullText, "too short", 3)).toBeNull();
   });
 });
 

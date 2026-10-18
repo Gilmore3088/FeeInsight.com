@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./core", () => ({ getInstitutionById: vi.fn() }));
 vi.mock("./fee-index", () => ({
-  getInstitutionFeeValues: vi.fn(),
+  getInstitutionOwnFees: vi.fn(),
   getPeerFeeValues: vi.fn(),
   peerInstitutionIds: (f: { institutionIds?: number[] }) => (f.institutionIds?.length ? f.institutionIds : null),
 }));
@@ -10,7 +10,7 @@ vi.mock("./connection", () => ({ sql: vi.fn() }));
 vi.mock("./rate-fees", () => ({ getRateFeesByInstitution: vi.fn(() => Promise.resolve([])) }));
 
 import { getInstitutionById } from "./core";
-import { getInstitutionFeeValues, getPeerFeeValues, type PeerFeeValue } from "./fee-index";
+import { getInstitutionOwnFees, getPeerFeeValues, type PeerFeeValue } from "./fee-index";
 import { getRateFeesByInstitution } from "./rate-fees";
 import {
   comparePeerCategory,
@@ -19,6 +19,9 @@ import {
   getPeerComparison,
   midRankPercentile,
 } from "./peer-comparison";
+
+/** One stated price, as the own-fee reader gives it. */
+const one = (price: number) => ({ category: "", value: price, price, low: price, high: price, fees: [{ name: "Fee", amount: price }] });
 
 const peer = (institution_id: number, amount: number): PeerFeeValue => ({
   institution_id,
@@ -43,7 +46,7 @@ describe("peer comparison math", () => {
   });
 
   it("gives the peers' median and middle half at the minimum sample", () => {
-    const row = comparePeerCategory("nsf", 30, [peer(1, 20), peer(2, 25), peer(3, 30), peer(4, 35), peer(5, 40)]);
+    const row = comparePeerCategory("nsf", one(30), [peer(1, 20), peer(2, 25), peer(3, 30), peer(4, 35), peer(5, 40)]);
     expect(row).toMatchObject({
       category: "nsf",
       amount: 30,
@@ -59,8 +62,16 @@ describe("peer comparison math", () => {
     });
   });
 
+  it("ranks no price when the institution states several different fees in the category", () => {
+    const several = { price: null, low: 150, high: 175, fees: [{ name: "Levy", amount: 150 }, { name: "Garnishment", amount: 175 }] };
+    const row = comparePeerCategory("garnishment", several, [peer(1, 100), peer(2, 125), peer(3, 150), peer(4, 160), peer(5, 200)]);
+    // The peers' median still shows; the bank's $162.50 median of two fees is never placed among them.
+    expect(row).toMatchObject({ amount: null, amount_low: 150, amount_high: 175, peer_median: 150, percentile: null, peers_lower: null });
+    expect(row.fees.map((f) => f.name)).toEqual(["Levy", "Garnishment"]);
+  });
+
   it("withholds median, percentiles and placement below the minimum sample", () => {
-    const row = comparePeerCategory("nsf", 30, [peer(1, 20), peer(2, 25), peer(3, 35), peer(4, 40)]);
+    const row = comparePeerCategory("nsf", one(30), [peer(1, 20), peer(2, 25), peer(3, 35), peer(4, 40)]);
     expect(row).toMatchObject({
       peer_count: 4,
       peer_median: null,
@@ -89,7 +100,7 @@ describe("getPeerComparison", () => {
     vi.mocked(getInstitutionById).mockResolvedValue({
       id: 12, institution_name: "Example Bank", state_code: "TX", charter_type: "bank", asset_size_tier: "community_mid", fed_district: 11,
     } as never);
-    vi.mocked(getInstitutionFeeValues).mockResolvedValue(new Map([["overdraft", 35], ["wire_domestic_outgoing", 25]]));
+    vi.mocked(getInstitutionOwnFees).mockResolvedValue(new Map([["overdraft", one(35)], ["wire_domestic_outgoing", one(25)]]));
     vi.mocked(getPeerFeeValues).mockResolvedValue([
       new Map([
         ["overdraft", [peer(1, 25), peer(2, 30), peer(3, 30), peer(4, 32), peer(5, 36), peer(6, 38)]],

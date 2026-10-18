@@ -1,6 +1,6 @@
 import { CPI_BANK_SERVICES_SERIES } from "@/lib/regulatory/fed";
 import { sql } from "./connection";
-import { STRUCK_FRED_SERIES } from "./struck-sources";
+import { fedIndicatorServedSql, STRUCK_FRED_SERIES } from "./struck-sources";
 
 // Dollar amounts are stored in whole dollars (migration 023 + Phase 60.1
 // ingest scaling). No query-layer multiplication needed.
@@ -236,7 +236,7 @@ export async function getCountyDemographics(
   return [...rows] as DemographicData[];
 }
 
-// --- Economic Indicators (FRED / BLS / NY Fed / OFR) ---
+// --- Economic Indicators (BLS / BEA / Fed Board; older NY Fed and OFR rows) ---
 
 export interface IndicatorObservation {
   series_id: string;
@@ -262,9 +262,11 @@ export async function getLatestIndicators(
       SELECT series_id, MAX(observation_date) as max_date
       FROM fed_economic_indicators
       WHERE series_id IN ${sql(seriesIds)}
+        AND ${sql.unsafe(fedIndicatorServedSql())}
       GROUP BY series_id
     ) latest ON e.series_id = latest.series_id
-             AND e.observation_date = latest.max_date`;
+             AND e.observation_date = latest.max_date
+    WHERE ${sql.unsafe(fedIndicatorServedSql("e"))}`;
   return [...rows] as IndicatorObservation[];
 }
 
@@ -280,6 +282,7 @@ export async function getIndicatorTimeSeries(
            observation_date, value, units, frequency
     FROM fed_economic_indicators
     WHERE series_id = ${seriesId} AND observation_date >= ${from}
+      AND ${sql.unsafe(fedIndicatorServedSql())}
     ORDER BY observation_date DESC
     LIMIT ${limit}`;
   return [...rows] as IndicatorObservation[];
@@ -315,6 +318,7 @@ export async function getCpiContext(): Promise<CpiContext> {
       FROM fed_economic_indicators
       WHERE series_id = ${seriesId}
         AND (${asOf ?? null}::text IS NULL OR observation_date <= ${asOf ?? null}::text)
+        AND ${sql.unsafe(fedIndicatorServedSql())}
       ORDER BY observation_date DESC
       LIMIT 25` as { observation_date: string; value: number }[];
 

@@ -110,7 +110,7 @@ export default async function PeerDetailPage({
             {institution.city}, {institution.state_code}
           </span>
           <Link
-            href={`/admin/fees?id=${targetId}`}
+            href={`/admin/institution/${targetId}`}
             className="text-gray-500 hover:text-blue-600 transition-colors"
           >
             View fees

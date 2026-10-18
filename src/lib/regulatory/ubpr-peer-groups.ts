@@ -1,5 +1,5 @@
 import { strFromU8, Unzip, UnzipInflate } from "fflate";
-import { cells, FFIEC_BULK_URL, periodOptionValue, readFormState } from "./ffiec";
+import { cells, describeFfiecPage, downloadButtonName, FFIEC_BULK_URL, formatFfiecPage, periodOptionValue, readFormState } from "./ffiec";
 import { REGISTRY_USER_AGENT, RegistryHttpError, type RegistryFetchOptions } from "./http";
 import { quarterEndDate, type Quarter } from "./quarters";
 
@@ -25,11 +25,17 @@ import { quarterEndDate, type Quarter } from "./quarters";
  *
  * The zip is read as a stream and each file is cut down to the columns that might matter while
  * it inflates, so a UBPR zip with thousands of columns never sits whole in memory.
+ *
+ * In prod (2026Q2, #1806) the final Download post came back as the HTML form page, not the zip.
+ * When that happens the error names the page's title, any message it shows and its form fields,
+ * so the next run says what the form wants. That page has not been seen from here either.
  */
 
 export const UBPR_BULK_URL = FFIEC_BULK_URL;
 const FIELD = "ctl00$MainContentHolder$";
 const FORMAT = "TSVRadioButton";
+/** The call-report page's Download control; used only when the UBPR page names none. */
+const DOWNLOAD_BUTTON = `${FIELD}TabStrip1$Download_0`;
 
 /** Bulk-page product labels. Matched against the option text, never a remembered option value. */
 export const UBPR_RATIO_PRODUCT = /UBPR\s*Ratio\s*-+\s*Single\s*Period/i;
@@ -720,16 +726,27 @@ export async function fetchUbprBulk(
   const periodPage = await request(options, cookies, postBack(state, `${FIELD}DatesDropDownList`, base));
   state = readFormState(await periodPage.text(), cookies);
   const formatPage = await request(options, cookies, postBack(state, `${FIELD}${FORMAT}`, { ...base, [`${FIELD}FormatType`]: FORMAT }));
-  state = readFormState(await formatPage.text(), cookies);
+  const formatHtml = await formatPage.text();
+  state = readFormState(formatHtml, cookies);
 
+  // The Download control's name is read from the page; the call-report page's name is the fallback.
+  const button = downloadButtonName(formatHtml) ?? DOWNLOAD_BUTTON;
   const download = await request(options, cookies, {
     ...postBack(state, "", { ...base, [`${FIELD}FormatType`]: FORMAT }),
-    [`${FIELD}TabStrip1$Download_0`]: "Download",
+    [button]: "Download",
   });
   const type = download.headers.get("content-type") ?? "";
   const disposition = download.headers.get("content-disposition") ?? "";
   if (!/octet-stream|zip/i.test(type) && !/attachment/i.test(disposition)) {
-    throw new RegistryHttpError(`FFIEC returned ${type || "no content type"} instead of the UBPR bulk zip`, UBPR_BULK_URL, download.status);
+    // Name what FFIEC showed instead of the file (#1806), so the next run says what the form wants.
+    const answer = /html/i.test(type) ? formatFfiecPage(describeFfiecPage(await download.text())) : "no page read";
+    const formatOffered = /value="TSVRadioButton"/.test(formatHtml) ? "offered" : "not offered on the format page";
+    throw new RegistryHttpError(
+      `FFIEC returned ${type || "no content type"} instead of the UBPR bulk zip for "${label ?? "?"}" ${quarterEndDate(q)} ` +
+        `(posted ${button}; tab-delimited format ${formatOffered}). Page: ${answer}`,
+      UBPR_BULK_URL,
+      download.status,
+    );
   }
   if (!download.body) throw new RegistryHttpError("FFIEC sent an empty UBPR bulk download", UBPR_BULK_URL, download.status);
   const fileName = /filename="?([^";]+)"?/i.exec(disposition)?.[1] ?? null;

@@ -35,9 +35,14 @@ async function handleGET(request: NextRequest) {
     return NextResponse.json({ error: "Too many requests" }, { status: 429 });
   }
 
+  // autocompleteInstitutions bounds the term (literal, 2 to 100 characters) and the rows (8).
   const q = request.nextUrl.searchParams.get("q") || "";
   const results = await autocompleteInstitutions(q, 8);
-  return NextResponse.json(results);
+  // The same public suggestions for every visitor: the edge answers a repeated query for five
+  // minutes, so neither the read nor this route's audit row runs again.
+  return NextResponse.json(results, {
+    headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=3600" },
+  });
 }
 
 export const GET = withApiRoutePolicy("api.institutions", "GET", handleGET);

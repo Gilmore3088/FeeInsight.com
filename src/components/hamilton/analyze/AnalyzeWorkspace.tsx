@@ -1084,7 +1084,7 @@ function AnalyzeConversationWorkspace({
               What are you working on?
             </h1>
             <p className="text-lg text-[var(--fi-muted)]">
-              Ask a question. Get a research brief built around {instName ?? "your institution"}.
+              {instName ? `Ask a question. Get a research brief built around ${instName}.` : "Choose an institution, then ask a question."}
             </p>
           </header>
           <div className="flex flex-col gap-3">

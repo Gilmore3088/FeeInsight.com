@@ -11,11 +11,40 @@ import {
   getStateFeeIndexes,
   type IndexEntry,
 } from "@/lib/data-store/fee-index";
-import { PeerSetError, definitionFor, getPeerSubject, resolvePeerRequest, resolvePeerSet, type PeerSetRequest } from "@/lib/data-store/peer-sets";
-import { STRUCK_AREA_SERIES_KEYS, STRUCK_FRED_SERIES, STRUCK_SOURCE_URL_PATTERN } from "@/lib/data-store/struck-sources";
+import {
+  PeerSetError,
+  definitionFor,
+  getPeerSubject,
+  peerSetMemberIds,
+  resolvePeerRequest,
+  resolvePeerSet,
+  type PeerSetDefinition,
+  type PeerSetRequest,
+  type ResolvedPeerSet,
+} from "@/lib/data-store/peer-sets";
+import { STRUCK_AREA_SERIES_KEYS, STRUCK_FRED_SERIES, areaRowServedSql, notYetFromPublisherReason } from "@/lib/data-store/struck-sources";
 import { FEE_FAMILIES, getDisplayName } from "@/lib/fee-taxonomy";
 import { MAX_NEAREST_PEERS, PEER_REGULATORS, type PeerRegulator } from "@/lib/peer-set-dimensions";
-import { catalogEntry, scopeForAreaGeoType, type CatalogScopeKind } from "./catalog";
+import { CALL_REPORT_ROW_SOURCES, callReportEntries, catalogEntry, scopeForAreaGeoType, type CatalogEntry, type CatalogScopeKind } from "./catalog";
+import {
+  AREA_PERIOD_FIRST_MONTH_SQL,
+  AREA_PERIOD_LAST_MONTH_SQL,
+  ROLLUP_MIN_INSTITUTIONS,
+  areaPeerRollup,
+  callInstitutionSeries,
+  callPeerRollup,
+  hqLevelFor,
+  type RollupRow,
+} from "./roll-ups";
+import {
+  MAX_COLD_FILES_PER_QUERY,
+  coldCallRollup,
+  coldFilesInRange,
+  coldInstitutionSeries,
+  prunedCallFiles,
+  readColdCallRows,
+  type ColdCallRow,
+} from "./cold-reads";
 
 /**
  * One safe query over the data catalog, for Hamilton's tools and the site. The caller names a
@@ -25,6 +54,11 @@ import { catalogEntry, scopeForAreaGeoType, type CatalogScopeKind } from "./cata
  *
  * - `area:<source>:<series_key>`: a public-data series from area_statistics.
  * - `fee:<category>`: a fee category from the published fee index.
+ * - `call:<item_key>`: a call-report line from institution_call_report_items (FFIEC and NCUA).
+ *
+ * A peer group (`peer_set`) is resolved by the shared definition in data-store/peer-sets.ts, the
+ * one Hamilton's saved groups and the API use. Public data and call-report lines roll up over its
+ * members when read (roll-ups.ts): a median, its spread and how many members stand behind it.
  */
 
 /** The first and last month ("YYYY-MM") a period spans: a year, a quarter or a month. */
@@ -71,7 +105,10 @@ export const queryDataInputSchema = z
     measure: z
       .string()
       .max(160)
-      .regex(/^(?:area:[a-z0-9-]+:[A-Za-z0-9_.-]+|fee:[a-z0-9_]+)$/, 'measure is "area:<source>:<series_key>" or "fee:<category>"'),
+      .regex(
+        /^(?:area:[a-z0-9-]+:[A-Za-z0-9_.-]+|fee:[a-z0-9_]+|call:[a-z0-9_]+)$/,
+        'measure is "area:<source>:<series_key>", "fee:<category>" or "call:<item_key>"',
+      ),
     scope: z
       .object({
         kind: z.enum(["institution", "peer_set", "state", "county", "metro", "national"]),
@@ -136,9 +173,12 @@ function iso(value: unknown): string | null {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
-/** Parses "area:<source>:<series_key>"; the schema has already checked the characters. */
-export function parseMeasure(measure: string): { kind: "area"; source: string; seriesKey: string } | { kind: "fee"; category: string } {
+/** Parses a measure; the schema has already checked the characters. */
+export function parseMeasure(
+  measure: string,
+): { kind: "area"; source: string; seriesKey: string } | { kind: "fee"; category: string } | { kind: "call"; itemKey: string } {
   if (measure.startsWith("fee:")) return { kind: "fee", category: measure.slice(4) };
+  if (measure.startsWith("call:")) return { kind: "call", itemKey: measure.slice(5) };
   const rest = measure.slice(5);
   const cut = rest.indexOf(":");
   return { kind: "area", source: rest.slice(0, cut), seriesKey: rest.slice(cut + 1) };
@@ -152,13 +192,67 @@ export async function queryData(raw: unknown): Promise<QueryDataResult> {
   const input = parsed.data;
   const measure = parseMeasure(input.measure);
   try {
-    return measure.kind === "area"
-      ? await queryArea(input, measure.source, measure.seriesKey)
-      : await queryFee(input, measure.category);
+    if (measure.kind === "area") return await queryArea(input, measure.source, measure.seriesKey);
+    if (measure.kind === "call") return await queryCall(input, measure.itemKey);
+    return await queryFee(input, measure.category);
   } catch (error) {
     if (error instanceof PeerSetError) return refuse(input.measure, error.message);
     throw error;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Peer groups (the shared definition in data-store/peer-sets.ts)
+// ---------------------------------------------------------------------------
+
+/**
+ * A peer_set scope resolved into its group, or the reason it cannot be. One path for every
+ * measure, so "peers" means the same institutions for fees, public data and call-report lines.
+ * PeerSetError (an unknown metro, a "same" the institution lacks) propagates to queryData.
+ */
+export async function resolveScopePeers(scope: QueryDataInput["scope"]): Promise<{ resolved: ResolvedPeerSet } | { reason: string }> {
+  const peer = (scope.peer ?? {}) as PeerSetRequest;
+  if (Object.values(peer).every((value) => value === undefined)) return { reason: "A peer group needs at least one filter, such as charter_type, asset_tiers or states." };
+  if (peer.nearest !== undefined && !scope.id) return { reason: '"nearest" peers need scope.id, the institution to measure distance from.' };
+  if (scope.id) {
+    if (!/^\d{1,10}$/.test(scope.id)) return { reason: "scope.id is the institution's numeric id." };
+    const subject = await getPeerSubject(Number(scope.id));
+    if (!subject) return { reason: `No institution with id ${scope.id}.` };
+    return { resolved: await resolvePeerRequest(subject, peer) };
+  }
+  if (Object.values(peer).some((value) => value === "same")) return { reason: '"same" in a peer group needs scope.id, the institution it is the same as.' };
+  return { resolved: await resolvePeerSet(definitionFor({ id: 0 }, peer, null), null) };
+}
+
+/** A roll-up row: no median (null, never zero) when too few members have a figure. */
+function rollupRow(row: RollupRow, label: string, memberCount: number | null): QueryDataRow {
+  const enough = row.institution_count >= ROLLUP_MIN_INSTITUTIONS;
+  return {
+    scope_label: label,
+    period: row.period,
+    median: enough ? row.median : null,
+    p25: enough ? row.p25 : null,
+    p75: enough ? row.p75 : null,
+    unit: row.unit,
+    institution_count: row.institution_count,
+    ...(memberCount !== null ? { member_count: memberCount } : {}),
+    note: enough
+      ? null
+      : `Only ${row.institution_count} ${row.institution_count === 1 ? "institution has" : "institutions have"} a figure for this period; a median needs at least ${ROLLUP_MIN_INSTITUTIONS}.`,
+  };
+}
+
+/** How many of the group stand behind the newest figure. */
+function coverageNote(rows: RollupRow[], memberCount: number | null, what: string): string {
+  if (rows.length === 0) return `No institution in the group has ${what} for this period.`;
+  const newest = rows[0];
+  const thin = rows.some((r) => r.institution_count < ROLLUP_MIN_INSTITUTIONS);
+  const behind = memberCount !== null ? `${newest.institution_count} of the group's ${memberCount} institutions` : `${newest.institution_count} institutions`;
+  return `${behind} have ${what} for ${newest.period}.${thin ? ` A period with fewer than ${ROLLUP_MIN_INSTITUTIONS} shows no median.` : ""}`;
+}
+
+function newestFetched(rows: Array<{ fetched_at: string | Date | null }>): string | null {
+  return rows.map((r) => iso(r.fetched_at)).filter((d): d is string => Boolean(d)).sort().pop() ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -182,7 +276,8 @@ export async function areaTargets(
   scope: QueryDataInput["scope"],
   servedGeoTypes: readonly AreaGeoType[],
 ): Promise<{ targets: Array<{ geoType: AreaGeoType; code: string }> } | { reason: string }> {
-  if (scope.kind === "peer_set") return { reason: "Peer groups are not supported for public-data measures yet; ask by institution, state, county, metro or national." };
+  // queryArea rolls a peer group up from each member's headquarters instead (queryAreaPeers).
+  if (scope.kind === "peer_set") return { reason: "A peer group is not one area; it is rolled up from each member's headquarters." };
   if (scope.kind === "institution") {
     const location = await getInstitutionHqLocation(Number(scope.id));
     if (!location) return { reason: `No institution with id ${scope.id}.` };
@@ -213,17 +308,23 @@ async function queryArea(input: QueryDataInput, source: string, seriesKey: strin
   if (!entry || entry.kind !== "public-data") return refuse(input.measure, `"${source}" is not a source in the data catalog.`);
   if (!entry.servable) return refuse(input.measure, entry.notServableReason ?? "This source may not be shown to customers.");
   if (entry.areaGeoTypes.length === 0) return refuse(input.measure, `${entry.label} holds no area figures to query.`);
+  // Dropped for want of a confirmed publisher file, not for their terms: say so.
+  const notYet = notYetFromPublisherReason(seriesKey);
+  if (notYet) return refuse(input.measure, notYet);
   if (STRUCK_FRED_SERIES.includes(seriesKey) || STRUCK_AREA_SERIES_KEYS.includes(seriesKey)) return refuse(input.measure, "This series was struck: its terms do not allow commercial use.");
+
+  // Bounds become months ("2026Q2" -> 2026-04 .. 2026-06), so a quarter, month or year bound works on any series.
+  const from = input.period?.from ? periodMonths(input.period.from).start : null;
+  const to = input.period?.to ? periodMonths(input.period.to).end : null;
+  const limit = Math.min(input.limit ?? QUERY_DATA_DEFAULT_LIMIT, QUERY_DATA_MAX_LIMIT);
+
+  if (input.scope.kind === "peer_set") return queryAreaPeers(input, entry, seriesKey, from, to, limit);
 
   const resolved = await areaTargets(input.scope, entry.areaGeoTypes);
   if ("reason" in resolved) return refuse(input.measure, resolved.reason);
 
   const geoTypes = resolved.targets.map((t) => t.geoType);
   const codes = resolved.targets.map((t) => t.code);
-  // Bounds become months ("2026Q2" -> 2026-04 .. 2026-06), so a quarter, month or year bound works on any series.
-  const from = input.period?.from ? periodMonths(input.period.from).start : null;
-  const to = input.period?.to ? periodMonths(input.period.to).end : null;
-  const limit = Math.min(input.limit ?? QUERY_DATA_DEFAULT_LIMIT, QUERY_DATA_MAX_LIMIT);
 
   const rows = await withTransaction(async (tx) => {
     await tx`SET LOCAL statement_timeout = '5s'`;
@@ -236,20 +337,12 @@ async function queryArea(input: QueryDataInput, source: string, seriesKey: strin
        WHERE a.source = ${source}
          AND a.series_key = ${seriesKey}
          -- Struck rows (DECISIONS.md "No non-commercial data") are never returned.
-         AND COALESCE(a.source_url, '') NOT ILIKE ${STRUCK_SOURCE_URL_PATTERN}
+         AND ${tx.unsafe(areaRowServedSql("a"))}
          -- A row counts when its own span of months overlaps the bounds. A period in no known shape is
          -- left out once a bound is given.
          -- Same month rule as periodMonths().
-         AND (${from}::text IS NULL OR (CASE
-               WHEN a.period ~ '^[0-9]{4}$' THEN a.period || '-12'
-               WHEN a.period ~ '^[0-9]{4}Q[1-4]$' THEN left(a.period, 4) || '-' || lpad((substr(a.period, 6, 1)::int * 3)::text, 2, '0')
-               WHEN a.period ~ '^[0-9]{4}-[0-9]{2}' THEN left(a.period, 7)
-             END) >= ${from}::text)
-         AND (${to}::text IS NULL OR (CASE
-               WHEN a.period ~ '^[0-9]{4}$' THEN a.period || '-01'
-               WHEN a.period ~ '^[0-9]{4}Q[1-4]$' THEN left(a.period, 4) || '-' || lpad(((substr(a.period, 6, 1)::int - 1) * 3 + 1)::text, 2, '0')
-               WHEN a.period ~ '^[0-9]{4}-[0-9]{2}' THEN left(a.period, 7)
-             END) <= ${to}::text)
+         AND (${from}::text IS NULL OR ${tx.unsafe(AREA_PERIOD_LAST_MONTH_SQL)} >= ${from}::text)
+         AND (${to}::text IS NULL OR ${tx.unsafe(AREA_PERIOD_FIRST_MONTH_SQL)} <= ${to}::text)
        ORDER BY a.period DESC, a.geo_type, a.geo_code
        LIMIT ${limit}
     `;
@@ -258,7 +351,7 @@ async function queryArea(input: QueryDataInput, source: string, seriesKey: strin
   const list = [...rows];
   const units = [...new Set(list.map((r) => r.unit))];
   const newest = list[0];
-  const fetched = list.map((r) => iso(r.fetched_at)).filter((d): d is string => Boolean(d)).sort().pop() ?? null;
+  const fetched = newestFetched(list);
   return {
     ok: true,
     measure: input.measure,
@@ -273,15 +366,68 @@ async function queryArea(input: QueryDataInput, source: string, seriesKey: strin
       note: r.note,
     })),
     unit: units.length === 1 ? units[0] : units.length > 1 ? "mixed" : null,
-    citation: {
-      publisher: entry.publisher,
-      source_url: newest?.source_url ?? null,
-      as_of: newest?.period ?? null,
-      fetched_at: fetched,
-      ...(entry.licence.licenceName ? { licence: entry.licence.licenceName } : {}),
-      ...(entry.licence.attribution ? { attribution: entry.licence.attribution } : {}),
-    },
+    citation: areaCitation(entry, newest?.source_url ?? null, newest?.period ?? null, fetched),
     ...(list.length === 0 ? { note: "No figures are loaded for this series at this scope and period." } : {}),
+  };
+}
+
+function areaCitation(entry: CatalogEntry, sourceUrl: string | null, asOf: string | null, fetchedAt: string | null): QueryDataCitation {
+  return {
+    publisher: entry.publisher,
+    source_url: sourceUrl,
+    as_of: asOf,
+    fetched_at: fetchedAt,
+    ...(entry.licence.licenceName ? { licence: entry.licence.licenceName } : {}),
+    ...(entry.licence.attribution ? { attribution: entry.licence.attribution } : {}),
+  };
+}
+
+/**
+ * A public-data series over a peer group. Each member's figure is its headquarters area's, at the
+ * finest level the source covers (county, then metro, then state), and the median is taken over
+ * members, so two peers in one county both count.
+ */
+async function queryAreaPeers(
+  input: QueryDataInput,
+  entry: CatalogEntry,
+  seriesKey: string,
+  from: string | null,
+  to: string | null,
+  limit: number,
+): Promise<QueryDataResult> {
+  const geoType = hqLevelFor(entry.areaGeoTypes);
+  if (!geoType) return refuse(input.measure, `${entry.label} has only national figures, so every peer group would get the national value; ask with scope national.`);
+  const scoped = await resolveScopePeers(input.scope);
+  if ("reason" in scoped) return refuse(input.measure, scoped.reason);
+  const { resolved } = scoped;
+  const memberIds = await peerSetMemberIds(resolved);
+  if (memberIds.length === 0) {
+    return {
+      ok: true,
+      measure: input.measure,
+      scope: input.scope.kind,
+      rows: [],
+      unit: null,
+      citation: areaCitation(entry, null, null, null),
+      note: `No institutions match the peer group (${resolved.label}).`,
+    };
+  }
+
+  const rows = await withTransaction(async (tx) => {
+    await tx`SET LOCAL statement_timeout = '10s'`;
+    return areaPeerRollup(tx, { source: entry.id, seriesKey, geoType, memberIds, from, to, limit, servedSql: areaRowServedSql("a") });
+  });
+  const level = scopeForAreaGeoType(geoType);
+  const units = [...new Set(rows.map((r) => r.unit))];
+  const newest = rows[0];
+  return {
+    ok: true,
+    measure: input.measure,
+    scope: input.scope.kind,
+    rows: rows.map((r) => ({ ...rollupRow(r, resolved.label, memberIds.length), geo_level: level, area_count: r.area_count })),
+    unit: units.length === 1 ? units[0] : units.length > 1 ? "mixed" : null,
+    citation: areaCitation(entry, newest?.source_url ?? null, newest?.period ?? null, newestFetched(rows)),
+    note: `Each institution counts once, at its headquarters ${level}. ${coverageNote(rows, memberIds.length, `a ${level} figure`)}`,
   };
 }
 
@@ -338,20 +484,9 @@ async function queryFee(input: QueryDataInput, category: string): Promise<QueryD
       return fromIndex(input, category, indexes.all, state);
     }
     case "peer_set": {
-      const peer = scope.peer as PeerSetRequest;
-      const usesSame = Object.values(peer).some((value) => value === "same");
-      if (Object.values(peer).every((value) => value === undefined)) return refuse(input.measure, "A peer group needs at least one filter, such as charter_type, asset_tiers or states.");
-      if (peer.nearest !== undefined && !scope.id) return refuse(input.measure, '"nearest" peers need scope.id, the institution to measure distance from.');
-      let resolved;
-      if (scope.id) {
-        if (!/^\d{1,10}$/.test(scope.id)) return refuse(input.measure, "scope.id is the institution's numeric id.");
-        const subject = await getPeerSubject(Number(scope.id));
-        if (!subject) return refuse(input.measure, `No institution with id ${scope.id}.`);
-        resolved = await resolvePeerRequest(subject, peer);
-      } else {
-        if (usesSame) return refuse(input.measure, '"same" in a peer group needs scope.id, the institution it is the same as.');
-        resolved = await resolvePeerSet(definitionFor({ id: 0 }, peer, null), null);
-      }
+      const scoped = await resolveScopePeers(scope);
+      if ("reason" in scoped) return refuse(input.measure, scoped.reason);
+      const { resolved } = scoped;
       if (!resolved.filters) return feeResult(input, category, [], null, null, `No institutions match the peer group (${resolved.label}).`);
       return fromIndex(input, category, await getPeerIndex(resolved.filters), resolved.label);
     }
@@ -378,4 +513,140 @@ async function queryFee(input: QueryDataInput, category: string): Promise<QueryD
     case "metro":
       return refuse(input.measure, `Fee figures by ${scope.kind} are not supported yet; ask by institution, peer group, state or national.`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Call-report lines (institution_call_report_items)
+// ---------------------------------------------------------------------------
+
+/**
+ * A call-report line for one institution (its own filed values), or rolled up over a group: a
+ * peer group, the institutions with a branch in a metro (the peer definition's market), a state's
+ * institutions, or every filer. Dollar lines come back in dollars whichever regulator filed them.
+ */
+async function queryCall(input: QueryDataInput, itemKey: string): Promise<QueryDataResult> {
+  const entries = callReportEntries();
+  const servable = entries.filter((e) => e.servable);
+  if (servable.length === 0) return refuse(input.measure, entries[0]?.notServableReason ?? "Call-report lines may not be shown to customers.");
+  const rowSources = Object.entries(CALL_REPORT_ROW_SOURCES)
+    .filter(([, id]) => servable.some((e) => e.id === id))
+    .map(([rowSource]) => rowSource);
+  const from = input.period?.from ? periodMonths(input.period.from).start : null;
+  const to = input.period?.to ? periodMonths(input.period.to).end : null;
+  const limit = Math.min(input.limit ?? QUERY_DATA_DEFAULT_LIMIT, QUERY_DATA_MAX_LIMIT);
+  const { scope } = input;
+  const citation = (
+    rows: Array<{ source_url: string | null; fetched_at: string | Date | null; period: string }>,
+    rowSourcesSeen: string[],
+  ): QueryDataCitation => {
+    const named = servable.filter((e) => rowSourcesSeen.some((src) => CALL_REPORT_ROW_SOURCES[src] === e.id));
+    return {
+      publisher: (named.length ? named : servable).map((e) => e.publisher).join("; "),
+      source_url: rows[0]?.source_url ?? null,
+      as_of: rows[0]?.period ?? null,
+      fetched_at: newestFetched(rows),
+    };
+  };
+
+  if (scope.kind === "institution") {
+    const hotRows = await withTransaction(async (tx) => {
+      await tx`SET LOCAL statement_timeout = '5s'`;
+      return callInstitutionSeries(tx, { itemKey, rowSources, institutionId: Number(scope.id), from, to, limit });
+    });
+    const { rows, note: coldNote } = await withColdQuarters(hotRows, { itemKey, rowSources, from, to, limit, institutionIds: [Number(scope.id)] }, coldInstitutionSeries);
+    const units = [...new Set(rows.map((r) => r.unit))];
+    return {
+      ok: true,
+      measure: input.measure,
+      scope: scope.kind,
+      rows: rows.map((r) => ({
+        period: r.period,
+        value: r.value,
+        unit: r.unit,
+        period_basis: r.period_basis,
+        item_code: r.item_code,
+        item_description: r.item_description,
+        schedule: r.schedule,
+      })),
+      unit: units.length === 1 ? units[0] : units.length > 1 ? "mixed" : null,
+      citation: citation(rows, [...new Set(rows.map((r) => r.source))]),
+      ...(rows.length === 0
+        ? { note: `This institution has no filed figures for this line in the loaded quarters.${coldNote ? ` ${coldNote}` : ""}` }
+        : coldNote ? { note: coldNote } : {}),
+    };
+  }
+
+  if (scope.kind === "county") return refuse(input.measure, "Call-report lines are not rolled up by county; ask by institution, peer group, metro, state or national.");
+
+  let label: string;
+  let memberIds: number[] | null;
+  if (scope.kind === "national") {
+    label = "All filers";
+    memberIds = null;
+  } else {
+    let resolved: ResolvedPeerSet;
+    if (scope.kind === "peer_set") {
+      const scoped = await resolveScopePeers(scope);
+      if ("reason" in scoped) return refuse(input.measure, scoped.reason);
+      resolved = scoped.resolved;
+    } else {
+      const def: PeerSetDefinition = {};
+      if (scope.kind === "state") {
+        const state = normalizeGeoCode("state", scope.id ?? "");
+        if (!state) return refuse(input.measure, `"${scope.id}" is not a valid state code.`);
+        def.states = [state];
+      } else {
+        const metro = normalizeGeoCode("metro", scope.id ?? "");
+        if (!metro) return refuse(input.measure, `"${scope.id}" is not a valid metro (5-digit CBSA) code.`);
+        def.market_code = Number(metro);
+      }
+      resolved = await resolvePeerSet(def, null);
+    }
+    label = resolved.label;
+    memberIds = await peerSetMemberIds(resolved);
+    if (memberIds.length === 0) {
+      return { ok: true, measure: input.measure, scope: scope.kind, rows: [], unit: null, citation: citation([], []), note: `No institutions match the group (${label}).` };
+    }
+  }
+
+  const hotRows = await withTransaction(async (tx) => {
+    await tx`SET LOCAL statement_timeout = '10s'`;
+    return callPeerRollup(tx, { itemKey, rowSources, memberIds, from, to, limit });
+  });
+  const { rows, note: coldNote } = await withColdQuarters(hotRows, { itemKey, rowSources, from, to, limit, institutionIds: memberIds }, coldCallRollup);
+  const units = [...new Set(rows.map((r) => r.unit))];
+  const memberCount = memberIds?.length ?? null;
+  return {
+    ok: true,
+    measure: input.measure,
+    scope: scope.kind,
+    rows: rows.map((r) => ({ ...rollupRow(r, label, memberCount), period_basis: r.period_basis })),
+    unit: units.length === 1 ? units[0] : units.length > 1 ? "mixed" : null,
+    citation: citation(rows, [...new Set(rows.flatMap((r) => r.sources ?? []))]),
+    note: `${coverageNote(rows, memberCount, "a filed figure")}${coldNote ? ` ${coldNote}` : ""}`,
+  };
+}
+
+/**
+ * Adds archived quarters (#1870): when the hot rows leave room under the limit, quarters whose
+ * rows were pruned to cold files are read from those files and shaped like the hot rows. Hot
+ * periods always win; at most MAX_COLD_FILES_PER_QUERY files are read per question.
+ */
+async function withColdQuarters<T extends { period: string }>(
+  hotRows: T[],
+  args: { itemKey: string; rowSources: string[]; from: string | null; to: string | null; limit: number; institutionIds: number[] | null },
+  shape: (rows: ColdCallRow[]) => T[],
+): Promise<{ rows: T[]; note: string | null }> {
+  if (hotRows.length >= args.limit) return { rows: hotRows, note: null };
+  const files = coldFilesInRange(await prunedCallFiles(), { ...args, hotPeriods: new Set(hotRows.map((r) => r.period)) });
+  if (files.length === 0) return { rows: hotRows, note: null };
+  const read = files.slice(0, MAX_COLD_FILES_PER_QUERY);
+  const cold = await readColdCallRows(read, { itemKey: args.itemKey, institutionIds: args.institutionIds });
+  const rows = [...hotRows, ...shape(cold.rows)]
+    .sort((a, b) => (a.period === b.period ? 0 : a.period < b.period ? 1 : -1))
+    .slice(0, args.limit);
+  const notes: string[] = [];
+  if (files.length > read.length) notes.push(`Older quarters are archived; at most ${MAX_COLD_FILES_PER_QUERY} archived quarter files are read per question, so ask with a narrower period to read the rest.`);
+  if (cold.failed.length > 0) notes.push(`Archived quarters that could not be read are left out: ${cold.failed.join(", ")}.`);
+  return { rows, note: notes.length > 0 ? notes.join(" ") : null };
 }
