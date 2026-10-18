@@ -174,32 +174,94 @@ describe("Hamilton band", () => {
   const report = sampleWorkflowReport();
   const sample = buildSampleView(report)!;
 
-  it("draws its four examples from the live sample report for Capital City Bank", () => {
-    const html = renderToStaticMarkup(<LandingHamilton report={report} />);
+  // Made-up call report figures (thousands of dollars), test data only.
+  const revenue = buildRevenueContext(
+    [
+      { quarter: "2026-Q2", service_charge_income: 1_840 },
+      { quarter: "2026-Q1", service_charge_income: 1_790 },
+      { quarter: "2025-Q4", service_charge_income: 1_760 },
+      { quarter: "2025-Q3", service_charge_income: 1_720 },
+    ],
+    { tier: "community", sc_rank: 12, peer_count: 140, peer_median_sc: 610 },
+  );
+  const stage = (html: string, key: string) => {
+    const at = html.indexOf(`data-hamilton-slide="${key}"`);
+    const next = html.indexOf("data-hamilton-slide=", at + 1);
+    return html.slice(at, next < 0 ? html.indexOf("data-hamilton-card=") : next).replace(/<!-- -->/g, "");
+  };
+  const text = (html: string) => html.replace(/<!-- -->/g, "").replace(/<[^>]+>/g, " ");
+
+  it("draws one investigation of Capital City Bank from the live sample report", () => {
+    const html = renderToStaticMarkup(<LandingHamilton report={report} revenue={revenue} />);
     expect(html).toContain("Defend each fee");
     expect(html).toContain("with its source.");
-    expect(html).toContain("Capital City Bank");
     expect(html).not.toMatch(/Frost/i);
+    // The sample institution is named once, above every stage.
+    expect(html.match(/Capital City Bank/g)).toHaveLength(1);
+    expect(html).toMatch(/data-hamilton-subject[^>]*>Sample: Capital City Bank · Tallahassee, FL</);
     expect(html.match(/data-hamilton-slide=/g)).toHaveLength(4);
     expect(html.match(/data-hamilton-card=/g)).toHaveLength(4);
-    // Opens on the second example (Prioritize), as James's example does.
-    expect(html).toMatch(/data-active="true"[^>]*data-hamilton-slide="analyze"/);
-    expect(html).toContain("02 / 04");
     // No timer or progress bar anywhere (James, Oct 17).
     expect(html).not.toMatch(/progress/i);
-    // The subscription sits beside the demo; the homepage promotes no standalone report (James, Oct 17).
-    expect(html).toMatch(/<a href="\/subscribe"[^>]*data-event="upgrade_click" data-placement="home_hamilton">Get Hamilton for your institution</);
-    expect(html).toMatch(/<a href="\/contact\?source=demo"[^>]*data-event="contact_sales" data-placement="home_hamilton_demo">Or ask for a demo</);
-    expect(html).toContain("Prioritize");
-    expect(html).toContain("Which local competitors can we watch?");
-    expect(html).not.toContain("request_report_click");
-    expect(html).not.toContain(REPORT_OFFER.priceLabel);
     // No eyebrows, frame headings, card sub-lines or "illustrative" labels.
     expect(html).not.toMatch(/uppercase|Illustrative|Published sample|Answer:|Analyze your options|Compare local, state and national fees/);
-    // Benchmark and Prioritize each name the sample bank under their question.
-    expect(html.match(/Sample: Capital City Bank/g)).toHaveLength(2);
-    // Every figure in the examples is a sample figure.
-    for (const row of analyzePicks(sample.rows)) expect(html).toContain(row.label);
+    expect(text(html)).not.toMatch(/Hamilton Pro|Knox|Darwin|revenue impact|should charge|most material|—/i);
+  });
+
+  it("reads Benchmark, Prioritize, Monitor, Report in order and opens on Benchmark", () => {
+    const html = renderToStaticMarkup(<LandingHamilton report={report} revenue={revenue} />);
+    const keys = [...html.matchAll(/data-hamilton-slide="([a-z]+)"/g)].map((m) => m[1]);
+    expect(keys).toEqual(["benchmark", "analyze", "monitor", "report"]);
+    const cards = [...html.matchAll(/data-hamilton-card="([a-z]+)"[^>]*>.*?>(Benchmark|Prioritize|Monitor|Report)</g)].map((m) => m[2]);
+    expect(cards).toEqual(["Benchmark", "Prioritize", "Monitor", "Report"]);
+    expect(html).toMatch(/data-active="true"[^>]*data-hamilton-slide="benchmark"/);
+    expect(html).toContain("01 / 04");
+    const questions = ["Where does our fee income stand?", "Which fees should we review next?", "Which local competitors can we watch?", "What do we take to management?"].map((q) => html.indexOf(q));
+    expect(questions.every((at) => at >= 0)).toBe(true);
+    expect([...questions].sort((a, b) => a - b)).toEqual(questions);
+  });
+
+  it("carries the same live figures from stage to stage", () => {
+    const html = renderToStaticMarkup(<LandingHamilton report={report} revenue={revenue} />);
+    const [first, second] = analyzePicks(sample.rows);
+    // Benchmark: four quarters of reported income, the median for its size, its rank and source.
+    const benchmark = stage(html, "benchmark");
+    for (const t of [1_720, 1_760, 1_790, 1_840, 610]) expect(benchmark).toContain(incomeLabel(t));
+    expect(benchmark.indexOf("Q3 2025")).toBeLessThan(benchmark.indexOf("Q2 2026"));
+    expect(benchmark).toContain("Median for its size ($100M-$1B), Q2 2026");
+    expect(text(benchmark)).toMatch(/Ranks 12 of 140 institutions its size, where 1 is the highest/);
+    expect(benchmark).toContain("Source: FDIC Call Report");
+    // Prioritize: the first selected benchmark difference, with Benchmark's latest quarter beside it.
+    const prioritize = stage(html, "analyze");
+    expect(prioritize).toContain("Benchmark difference selected for review");
+    expect(prioritize).toContain(first.label);
+    expect(prioritize).toContain(`Local median $${first.median}`);
+    expect(prioritize).toContain(incomeLabel(1_840));
+    // Monitor: the competitors that publish those same fees.
+    const monitor = stage(html, "monitor");
+    expect(monitor).toContain(`${sample.competitors} with published fees`);
+    for (const p of [first, second]) expect(monitor).toContain(`${p.label}`);
+    expect(monitor).toContain(`Published by ${first.competitors} local competitors`);
+    // Report: the positions, the same income, and the evidence's question for management.
+    const reportStage = stage(html, "report");
+    const counts = positionCounts(sample.rows);
+    expect(text(reportStage)).toMatch(new RegExp(`${counts.above}\\s+above local range`));
+    expect(reportStage).toContain(`${sample.rows.length} fees against ${sample.competitors} local competitors`);
+    expect(reportStage).toContain(`${incomeLabel(1_840)} in deposit service charges, Q2 2026`);
+    expect(reportStage).toContain(
+      `${first.label} is $${first.amount} against a $${first.median} local median. What volume and fee income sit behind it?`,
+    );
+  });
+
+  it("has one primary action, the subscription, and one quiet sample report link", () => {
+    const html = renderToStaticMarkup(<LandingHamilton report={report} revenue={revenue} />);
+    expect(html).toMatch(/<a href="\/subscribe"[^>]*data-event="upgrade_click" data-placement="home_hamilton">Get Hamilton for your institution</);
+    expect(html.match(/data-event=/g)).toHaveLength(1);
+    expect(html.match(/fi-btn/g)).toHaveLength(2); // "fi-btn fi-btn-brick" on the one button
+    expect(html.match(/See the sample report/g)).toHaveLength(1);
+    expect(html.match(/<a /g)).toHaveLength(2);
+    expect(html).not.toMatch(/Or ask for a demo|contact_sales|Explore Hamilton|Read the sample report|View the sample report|request_report_click/);
+    expect(html).not.toContain(REPORT_OFFER.priceLabel);
   });
 
   it("selects the fees furthest above the local market first, and counts the report's positions", () => {
@@ -209,48 +271,37 @@ describe("Hamilton band", () => {
     expect(counts.above + counts.inside + counts.below).toBeLessThanOrEqual(sample.rows.length);
   });
 
-  // Made-up call report figures (thousands of dollars), test data only.
-  const revenue = buildRevenueContext(
-    [
-      { quarter: "2026-Q2", service_charge_income: 1_840 },
-      { quarter: "2026-Q1", service_charge_income: 1_790 },
-    ],
-    { tier: "community", sc_rank: 12, peer_count: 140, peer_median_sc: 610 },
-  );
-  const prioritize = (html: string) => html.slice(html.indexOf('data-hamilton-slide="analyze"'), html.indexOf('data-hamilton-slide="monitor"'));
-
-  it("lays Prioritize out as observation, context and next step, with the income read passed in", () => {
-    const slide = prioritize(renderToStaticMarkup(<LandingHamilton report={report} revenue={revenue} />)).replace(/<!-- -->/g, "");
-    const order = ["Observation", "Context", "Next research step"].map((m) => slide.indexOf(m));
-    expect(order.every((at) => at >= 0)).toBe(true);
-    expect([...order].sort((a, b) => a - b)).toEqual(order);
-    // The observation is the first selected benchmark difference, with the sample's own figures.
-    const [first] = analyzePicks(sample.rows);
-    expect(slide).toContain("Benchmark difference selected for review");
-    expect(slide).toContain(first.label);
-    expect(slide).toContain(`Local median $${first.median}`);
-    // The context figures are the read's, with its quarter and source.
-    expect(slide).toContain("Deposit service charges, Q2 2026");
-    expect(slide).toContain(incomeLabel(1_840));
-    expect(slide).toContain(incomeLabel(610));
-    expect(slide).toContain("Source: FDIC Call Report");
-    expect(slide).not.toMatch(/most material|Hamilton Pro|Knox|Darwin|revenue impact|should charge/i);
-  });
-
-  it("names the context's sources without figures when the income read is missing", () => {
-    const slide = prioritize(renderToStaticMarkup(<LandingHamilton report={report} />));
-    expect(slide).toContain("Context");
-    expect(slide).toContain("Service-charge income (Call Report)");
-    expect(slide).not.toContain("data-prioritize-income");
-    expect(slide).not.toMatch(/million|Deposit service charges,/);
+  it("hides every income figure when the income read is missing, and names the sources instead", () => {
+    const html = renderToStaticMarkup(<LandingHamilton report={report} />);
+    expect(html).not.toMatch(/million|data-benchmark-income|data-benchmark-rank|data-prioritize-income|data-report-income|Deposit service charges/);
+    expect(stage(html, "benchmark")).toContain("Service-charge income from each quarter’s FDIC Call Report, against institutions of its size");
+    expect(stage(html, "benchmark")).not.toMatch(/\$\d/);
+    const prioritize = stage(html, "analyze");
+    expect(prioritize).toContain("Service-charge income (Call Report)");
     // Only the observation's own sample figures remain.
-    expect(slide.match(/\$\d/g)).toHaveLength(2);
+    expect(prioritize.match(/\$\d/g)).toHaveLength(2);
+    // The fee figures still carry through to the question for management.
+    expect(stage(html, "report")).toContain("data-report-question");
   });
 
-  it("shows the examples without figures when there is no sample", () => {
-    const html = renderToStaticMarkup(<LandingHamilton report={null} />);
+  it("leaves out the size comparison when the read has no peer median", () => {
+    const own = buildRevenueContext([{ quarter: "2026-Q2", service_charge_income: 1_840 }], null);
+    const benchmark = stage(renderToStaticMarkup(<LandingHamilton report={report} revenue={own} />), "benchmark");
+    expect(benchmark).toContain(incomeLabel(1_840));
+    expect(benchmark).not.toMatch(/Median for its size|Ranks|data-benchmark-peer/);
+  });
+
+  it("names a credit union's own filing", () => {
+    const cu = sampleWorkflowReport();
+    cu.data.subject.charter_type = "credit_union";
+    expect(stage(renderToStaticMarkup(<LandingHamilton report={cu} revenue={revenue} />), "benchmark")).toContain("Source: NCUA 5300 Call Report");
+  });
+
+  it("shows the stages without figures or the sample link when there is no sample", () => {
+    const html = renderToStaticMarkup(<LandingHamilton report={null} revenue={revenue} />);
     expect(html.match(/data-hamilton-slide=/g)).toHaveLength(4);
-    expect(html).not.toMatch(/\$\d/);
+    expect(html).not.toMatch(/\$\d|million|data-hamilton-subject|See the sample report/);
+    expect(html).toContain("Get Hamilton for your institution");
   });
 });
 
@@ -293,28 +344,54 @@ describe("motion", () => {
     vi.unstubAllGlobals();
   });
 
-  it("advances on its own, stops when paused, and a card picks its slide", () => {
+  it("opens on Benchmark, advances on its own, and stops when paused", () => {
     stubBrowser();
     render(<HamiltonCarousel intro={<h2>Intro</h2>} slides={slides} />);
+    expect(screen.getByText("01 / 04")).toBeTruthy();
+    const pause = screen.getByRole("button", { name: "Pause Hamilton investigation" });
+    expect(pause.getAttribute("aria-pressed")).toBe("false");
+    act(() => vi.advanceTimersByTime(9000));
     expect(screen.getByText("02 / 04")).toBeTruthy();
+    fireEvent.click(pause);
+    expect(pause.getAttribute("aria-pressed")).toBe("true");
+    act(() => vi.advanceTimersByTime(20000));
+    expect(screen.getByText("02 / 04")).toBeTruthy();
+    // Play resumes it.
+    fireEvent.click(pause);
+    expect(pause.getAttribute("aria-pressed")).toBe("false");
     act(() => vi.advanceTimersByTime(9000));
     expect(screen.getByText("03 / 04")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Pause Hamilton examples" }));
-    act(() => vi.advanceTimersByTime(20000));
-    expect(screen.getByText("03 / 04")).toBeTruthy();
-    fireEvent.click(within(screen.getByRole("group", { name: "Choose a Hamilton example" })).getByRole("button", { name: /Report/ }));
-    expect(screen.getByText("04 / 04")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Report/, pressed: true })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Next: Hamilton examples" }));
-    expect(screen.getByText("01 / 04")).toBeTruthy();
   });
 
-  it("never advances with reduced motion, and has no pause button there", () => {
+  it("keeps a stage the visitor picks: a card or an arrow also pauses it", () => {
+    stubBrowser();
+    render(<HamiltonCarousel intro={<h2>Intro</h2>} slides={slides} />);
+    fireEvent.click(within(screen.getByRole("group", { name: "Choose a stage" })).getByRole("button", { name: /Report/ }));
+    expect(screen.getByText("04 / 04")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Report/, pressed: true })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Pause Hamilton investigation" }).getAttribute("aria-pressed")).toBe("true");
+    act(() => vi.advanceTimersByTime(30000));
+    expect(screen.getByText("04 / 04")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Next: Hamilton investigation" }));
+    expect(screen.getByText("01 / 04")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Previous: Hamilton investigation" }));
+    expect(screen.getByText("04 / 04")).toBeTruthy();
+  });
+
+  it("never advances with reduced motion, has no pause button there, and still reaches every stage", () => {
     stubBrowser({ reduced: true });
     render(<HamiltonCarousel intro={<h2>Intro</h2>} slides={slides} />);
     act(() => vi.advanceTimersByTime(30000));
-    expect(screen.getByText("02 / 04")).toBeTruthy();
+    expect(screen.getByText("01 / 04")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Pause/ })).toBeNull();
+    const cards = within(screen.getByRole("group", { name: "Choose a stage" })).getAllByRole("button");
+    expect(cards).toHaveLength(4);
+    cards.forEach((card, i) => {
+      fireEvent.click(card);
+      expect(screen.getByText(`0${i + 1} / 04`)).toBeTruthy();
+      act(() => vi.advanceTimersByTime(30000));
+      expect(screen.getByText(`0${i + 1} / 04`)).toBeTruthy();
+    });
   });
 
   it("holds while the tab is hidden", () => {
@@ -325,7 +402,7 @@ describe("motion", () => {
       document.dispatchEvent(new Event("visibilitychange"));
     });
     act(() => vi.advanceTimersByTime(20000));
-    expect(screen.getByText("02 / 04")).toBeTruthy();
+    expect(screen.getByText("01 / 04")).toBeTruthy();
     Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
   });
 });
