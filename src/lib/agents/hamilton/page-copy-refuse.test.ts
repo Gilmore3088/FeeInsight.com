@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PageCopyRow } from "./page-copy-collapse";
-import { pageCopyKeeper, selectPageCopyKeeper } from "./page-copy-refuse";
+import { inFoldedCategory, pageCopyKeeper, selectPageCopyKeeper } from "./page-copy-refuse";
 
 const row = (over: Partial<PageCopyRow>): PageCopyRow => ({
   fee_published_id: 1,
@@ -46,6 +46,31 @@ describe("pageCopyKeeper: refuse at publish what the page-copy collapse would cl
     const candidate = row({ fee_published_id: CANDIDATE, source_document_id: 100, document_url: "https://www.bank.com/fee-schedule.pdf" });
     // Same read time: the higher document id wins first, as in the collapse.
     expect(pageCopyKeeper(candidate, [live], both)).toBe(5);
+  });
+});
+
+describe("inFoldedCategory: a twin joins the row's split category only when its own name splits", () => {
+  it("moves a returned mail twin filed under account research, and leaves a research line put", () => {
+    expect(inFoldedCategory({ canonical_fee_key: "account_research", fee_name: "Returned Mail" }, "returned_mail")).toBe(true);
+    expect(inFoldedCategory({ canonical_fee_key: "account_research", fee_name: "Account Research (per hour)" }, "returned_mail")).toBe(false);
+    expect(inFoldedCategory({ canonical_fee_key: "returned_mail", fee_name: "Return Mail" }, "returned_mail")).toBe(true);
+  });
+
+  it("never pairs the row with a near-name twin that stays under the old category", async () => {
+    // The row ("Address Research") moves to returned mail; the live twin "Research" does not,
+    // so the collapse, which groups by category, never closes the row behind it.
+    const live = [{ fee_published_id: 5, institution_id: 7, source_document_id: 200, document_url: "https://www.bank.com/fee-schedule.pdf",
+      crawled_at: "2026-10-10", superseded: false, superseded_by_id: null, canonical_fee_key: "account_research", variant_type: null,
+      amount: 30, fee_name: "Research", frequency: "per_item", fee_audience: "unknown" }];
+    const own = [{ document_url: "https://bank.com/fee-schedule.pdf?print=1", crawled_at: "2026-09-01", superseded: false, superseded_by_id: null }];
+    const texts = [{ source_document_id: 100, normalized_text: "Fee Schedule Research $30.00 Cashier Check $10.00 Wire Transfer $15.00" }, { source_document_id: 200, normalized_text: "Fee Schedule Research $30.00 Cashier Check $10.00 Wire Transfer $15.00" }];
+    const replies = [live, own, texts];
+    const db = vi.fn(async () => replies.shift() ?? []);
+    const keeper = await selectPageCopyKeeper(db as unknown as Parameters<typeof selectPageCopyKeeper>[0], {
+      institutionId: 7, canonicalFeeKey: "account_research", variantType: null, amount: 30, feeName: "Address Research",
+      frequency: "per_item", feeAudience: "unknown", sourceDocumentId: 100,
+    });
+    expect(keeper).toBeNull();
   });
 });
 

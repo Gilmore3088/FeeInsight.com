@@ -2,6 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { collapseCategories } from "@/lib/agents/hamilton/exact-duplicate";
 import { pageCopyRepeats, type PageCopyRow } from "@/lib/agents/hamilton/page-copy-collapse";
+import { splitLiveCategory } from "@/lib/fee-fold";
 
 type SqlTag = typeof sql;
 
@@ -43,6 +44,11 @@ export function pageCopyKeeper(candidate: PageCopyRow, live: PageCopyRow[], text
   const id = Number(candidate.fee_published_id);
   const found = pageCopyRepeats([...live.filter((row) => Number(row.fee_published_id) !== id), candidate], texts);
   return found.collapses.find((collapse) => collapse.feePublishedId === id)?.keptFeePublishedId ?? null;
+}
+
+/** Pure: the live row sits under `category` once the fold has run (already there, or its own name splits it there). */
+export function inFoldedCategory(copy: Pick<PageCopyRow, "canonical_fee_key" | "fee_name">, category: string): boolean {
+  return copy.canonical_fee_key === category || splitLiveCategory(copy.canonical_fee_key, copy.fee_name)?.to === category;
 }
 
 /**
@@ -96,9 +102,10 @@ export async function selectPageCopyKeeper(db: SqlTag, row: PageCopyCandidate): 
         frequency: row.frequency ?? null,
         fee_audience: row.feeAudience ?? null,
       };
-      // The collapse groups by the category a row is live under; the row's twins filed under the
-      // category it moves from are read under the one it moves to, as the fold will leave them.
-      const rows = live.map((copy) => (categories.includes(copy.canonical_fee_key) ? { ...copy, canonical_fee_key: category } : copy));
+      // The collapse groups by the category a row is live under. A twin filed under the category
+      // the row moves from is read under the one it moves to only when its own name moves it there
+      // too, as the fold will leave it; one whose name stays put is never paired with the row.
+      const rows = live.map((copy) => (inFoldedCategory(copy, category) ? { ...copy, canonical_fee_key: category } : copy));
       const documentIds = [...new Set([row.sourceDocumentId, ...rows.map((copy) => Number(copy.source_document_id))])];
       const stored = await scope<{ source_document_id: number | string; normalized_text: string }[]>`
         SELECT DISTINCT ON (source_document_id) source_document_id, normalized_text
