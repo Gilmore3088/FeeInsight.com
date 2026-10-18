@@ -124,9 +124,18 @@ function fromContract(contract: HoovieSourceContract): CatalogEntry {
     licence: { ...contract.licence },
     servable,
     notServableReason: reason,
-    measurePrefix: areaGeoTypes.length > 0 ? `area:${contract.source}:` : null,
+    measurePrefix: areaGeoTypes.length > 0
+      ? `area:${contract.source}:`
+      : contract.tables.includes(CALL_REPORT_TABLE) ? CALL_MEASURE_PREFIX : null,
   };
 }
+
+/** Call-report lines: institution grain, read for one institution or rolled up over a group. */
+export const CALL_REPORT_TABLE = "institution_call_report_items";
+export const CALL_MEASURE_PREFIX = "call:";
+
+/** institution_call_report_items.source → the catalog entry (registry source) that loads it. */
+export const CALL_REPORT_ROW_SOURCES: Readonly<Record<string, string>> = { ffiec: "ffiec-call-detail", ncua: "ncua-extras" };
 
 const FEE_PUBLISHER = `${SITE_NAME}, ${PRODUCT_NAME}`;
 
@@ -186,6 +195,11 @@ const BY_ID = new Map(DATA_CATALOG.map((entry) => [entry.id, entry]));
 
 export function catalogEntry(id: string): CatalogEntry | null {
   return BY_ID.get(id) ?? null;
+}
+
+/** Public-data entries that load call-report lines, servable or not. */
+export function callReportEntries(): CatalogEntry[] {
+  return DATA_CATALOG.filter((entry) => entry.kind === "public-data" && entry.measurePrefix === CALL_MEASURE_PREFIX);
 }
 
 /** Public-data entries that write area_statistics, servable or not. */
