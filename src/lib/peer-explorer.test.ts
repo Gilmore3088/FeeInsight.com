@@ -115,6 +115,26 @@ describe("locations", () => {
     ]);
   });
 
+  it("groups a metro set by the cities where each institution has a branch, one institution in several", () => {
+    const metro = {
+      ...set,
+      market: {
+        name: "Tallahassee, FL",
+        cities: [
+          { city: "QUINCY", state: "FL", ids: [2] },
+          { city: "TALLAHASSEE", state: "FL", ids: [1, 2, 4, 99] },
+        ],
+      },
+    };
+    const { by, groups } = locationGroups(metro);
+    expect(by).toBe("branch");
+    // The subject's city first; an id outside the shown set is dropped.
+    expect(groups.map((g) => [g.name, g.members.map((m) => m.id)])).toEqual([
+      ["Tallahassee, FL", [4, 1, 2]],
+      ["Quincy, FL", [2]],
+    ]);
+  });
+
   it("groups by city when the whole set is in one state", () => {
     const { by, groups } = locationGroups({ ...set, peers: set.peers.slice(0, 3) });
     expect(by).toBe("city");

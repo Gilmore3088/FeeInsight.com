@@ -66,3 +66,29 @@ export async function getMarketInstitutionIds(code: number): Promise<{ market: P
   `) as { institution_id: unknown }[];
   return { market: { code, name: names[0].msa_name }, ids: new Set(rows.map((r) => Number(r.institution_id))) };
 }
+
+/**
+ * The cities inside a metro where each of these institutions has a branch, from the same branch
+ * records that define the metro (FDIC Summary of Deposits; NCUA branches in the metro's cities).
+ * One row per institution and city.
+ */
+export async function getMarketBranchCities(
+  code: number,
+  institutionIds: number[],
+): Promise<{ institution_id: number; city: string; state: string }[]> {
+  if (institutionIds.length === 0) return [];
+  const year = await latestSodYear();
+  const rows = (await sql`
+    WITH places AS (
+      SELECT DISTINCT state, UPPER(city) AS city FROM institution_branch_deposits WHERE year = ${year} AND msa_code = ${code}
+    )
+    SELECT DISTINCT institution_id, UPPER(city) AS city, state FROM institution_branch_deposits
+     WHERE year = ${year} AND msa_code = ${code} AND institution_id = ANY(${institutionIds}::bigint[])
+       AND city IS NOT NULL AND state IS NOT NULL
+    UNION
+    SELECT DISTINCT c.institution_id, UPPER(c.city) AS city, c.state FROM credit_union_branches c
+      JOIN places p ON c.state = p.state AND UPPER(c.city) = p.city
+     WHERE c.institution_id = ANY(${institutionIds}::bigint[])
+  `) as { institution_id: unknown; city: string; state: string }[];
+  return rows.map((r) => ({ institution_id: Number(r.institution_id), city: r.city, state: r.state }));
+}

@@ -63,7 +63,9 @@ describe("PeerExplorerSection", () => {
     renderSection();
     const panel = screen.getByRole("complementary");
     expect(within(panel).getByText("$8.45")).toBeTruthy();
-    expect(within(panel).getByText("$1.55 below the peer median")).toBeTruthy();
+    // Below the median is blue, as in the mockups; above is red.
+    expect(within(panel).getByText("$1.55 below the peer median").style.color).toBe("var(--fi-viz-above)");
+    expect(within(panel).getByText("Peers publishing")).toBeTruthy();
     expect(within(panel).getByText("The middle of 2 prices: see each account")).toBeTruthy();
     expect(within(panel).getByText("Basic Checking Monthly Service Fee")).toBeTruthy();
     expect(within(panel).getByText("Waived with direct deposit")).toBeTruthy();
@@ -74,7 +76,7 @@ describe("PeerExplorerSection", () => {
     fireEvent.click(screen.getByRole("button", { name: "Summit Bank" }));
     const panel = screen.getByRole("complementary");
     expect(within(panel).getByText("Selected peer")).toBeTruthy();
-    expect(within(panel).getByText("$6.20 above the peer median")).toBeTruthy();
+    expect(within(panel).getByText("$6.20 above the peer median").style.color).toBe("var(--fi-viz-below)");
     expect(window.location.search).toContain("peer=3");
     fireEvent.click(screen.getByRole("tab", { name: "Locations" }));
     expect(within(screen.getByRole("complementary")).getByText("Summit Bank")).toBeTruthy();

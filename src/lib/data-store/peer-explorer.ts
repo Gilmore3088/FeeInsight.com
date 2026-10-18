@@ -8,6 +8,7 @@ import { sql } from "./connection";
 import { getPeerFeeValues, peerInstitutionIds, type PeerFeeValue, type PeerFilterSet } from "./fee-index";
 import { computeStats } from "./fees";
 import { getPeerSubject, resolvePeerInstitutionIds } from "./peer-sets";
+import { getHomeMarket, getMarketBranchCities } from "./peer-markets";
 import { MIN_PEERS_FOR_PEER_SET_MEDIAN } from "./peer-fee-rank";
 import { institutionDisplayName } from "@/lib/institution-display-name";
 import { displayCity } from "@/lib/format";
@@ -108,7 +109,12 @@ export function buildPeerExplorerSet(
  * members peer-sets.ts finds. Members are the institutions that publish at least one approved fee,
  * the same rule the nearest set uses, so every listed peer has a schedule to compare.
  */
-export async function getPeerExplorerSet(institutionId: number, filters: PeerFilterSet): Promise<PeerExplorerSet | null> {
+export async function getPeerExplorerSet(
+  institutionId: number,
+  filters: PeerFilterSet,
+  /** True for the home metro set: Locations then groups by branch city inside the metro. */
+  homeMarket = false,
+): Promise<PeerExplorerSet | null> {
   const subject = await getPeerSubject(institutionId);
   if (!subject) return null;
   const chosen = peerInstitutionIds(filters);
@@ -127,5 +133,22 @@ export async function getPeerExplorerSet(institutionId: number, filters: PeerFil
     undefined,
     { onlyInstitutionIds: facts.map((row) => Number(row.id)), withConditions: true },
   );
-  return buildPeerExplorerSet(institutionId, facts, byCategory ?? new Map());
+  const set = buildPeerExplorerSet(institutionId, facts, byCategory ?? new Map());
+  if (!set || !homeMarket) return set;
+  const market = await getHomeMarket(institutionId);
+  if (!market) return set;
+  const shown = [set.subject.id, ...set.peers.map((peer) => peer.id)];
+  return { ...set, market: { name: market.name, cities: groupBranchCities(await getMarketBranchCities(market.code, shown)) } };
+}
+
+/** Branch rows (one per institution and city) as one entry per city. */
+export function groupBranchCities(rows: { institution_id: number; city: string; state: string }[]): { city: string; state: string; ids: number[] }[] {
+  const cities = new Map<string, { city: string; state: string; ids: number[] }>();
+  for (const row of rows) {
+    const key = `${row.city.toUpperCase()}|${row.state}`;
+    const entry = cities.get(key) ?? { city: row.city, state: row.state, ids: [] };
+    if (!entry.ids.includes(row.institution_id)) entry.ids.push(row.institution_id);
+    cities.set(key, entry);
+  }
+  return [...cities.values()];
 }

@@ -3,7 +3,7 @@
  * once on the server, then drawn three ways (Landscape, Locations, Fee matrix) around one shared
  * selection. Nothing here reads the database; src/lib/data-store/peer-explorer.ts fills the set.
  */
-import { formatFeeAmount } from "@/lib/format";
+import { displayCity, formatFeeAmount } from "@/lib/format";
 import { MAX_CHOSEN_PEERS } from "@/lib/peer-set-dimensions";
 import { STATE_NAMES } from "@/lib/us-states";
 
@@ -75,6 +75,11 @@ export interface PeerExplorerSet {
   charterType: string | null;
   /** Each fee's peer median, present only when enough peers publish it. */
   medians: Partial<Record<ExplorerFeeKey, ExplorerMedian>>;
+  /**
+   * For a metro set: the metro's name and, per city inside it, the institutions with a branch
+   * there (branch records, the same ones that define the metro). Absent for other sets.
+   */
+  market?: { name: string; cities: { city: string; state: string; ids: number[] }[] };
 }
 
 export const money = (n: number) => formatFeeAmount(n) ?? `$${n.toFixed(2)}`;
@@ -197,11 +202,27 @@ export interface LocationGroup {
 }
 
 /**
- * The set grouped by where each institution is headquartered: by city when the whole set sits in
- * one state, otherwise by state. The subject's group comes first, then the larger groups.
+ * The set grouped by place. A metro set groups by the cities inside the metro where each
+ * institution has a branch, so one institution can sit in several cities. Otherwise by
+ * headquarters: by city when the whole set sits in one state, else by state. The subject's
+ * group comes first, then the larger groups.
  */
-export function locationGroups(set: PeerExplorerSet): { by: "city" | "state"; groups: LocationGroup[] } {
+export function locationGroups(set: PeerExplorerSet): { by: "branch" | "city" | "state"; groups: LocationGroup[] } {
   const everyone = [set.subject, ...set.peers];
+  const byId = new Map(everyone.map((inst) => [inst.id, inst]));
+  const sortGroups = (list: LocationGroup[]) => {
+    for (const group of list) group.members.sort((a, b) => (b.assets ?? 0) - (a.assets ?? 0));
+    const hasSubject = (g: LocationGroup) => (g.members.some((m) => m.id === set.subject.id) ? 1 : 0);
+    return list.sort((a, b) => hasSubject(b) - hasSubject(a) || b.members.length - a.members.length || a.name.localeCompare(b.name));
+  };
+  const branchGroups = (set.market?.cities ?? [])
+    .map((place) => ({
+      key: `${place.city.toLowerCase()}|${place.state}`,
+      name: `${displayCity(place.city)}, ${place.state}`,
+      members: [...new Set(place.ids)].map((id) => byId.get(id)).filter((inst): inst is ExplorerInstitution => inst !== undefined),
+    }))
+    .filter((group) => group.members.length > 0);
+  if (branchGroups.length > 0) return { by: "branch", groups: sortGroups(branchGroups) };
   const states = new Set(everyone.map((inst) => inst.state ?? ""));
   const by = states.size <= 1 ? "city" : "state";
   const groups = new Map<string, LocationGroup>();
@@ -214,14 +235,7 @@ export function locationGroups(set: PeerExplorerSet): { by: "city" | "state"; gr
     group.members.push(inst);
     groups.set(key, group);
   }
-  const list = [...groups.values()];
-  for (const group of list) group.members.sort((a, b) => (b.assets ?? 0) - (a.assets ?? 0));
-  list.sort((a, b) => {
-    const subjectA = a.members.some((m) => m.id === set.subject.id) ? 1 : 0;
-    const subjectB = b.members.some((m) => m.id === set.subject.id) ? 1 : 0;
-    return subjectB - subjectA || b.members.length - a.members.length || a.name.localeCompare(b.name);
-  });
-  return { by, groups: list };
+  return { by, groups: sortGroups([...groups.values()]) };
 }
 
 /** A circle's radius for total assets: area follows assets, between the given bounds. */

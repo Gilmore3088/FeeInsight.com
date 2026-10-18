@@ -35,6 +35,12 @@ import {
 const SUBJECT = "var(--fi-brick)";
 const PEER = "var(--fi-viz-inside)";
 const SELECTED = "var(--fi-ink)";
+/**
+ * Against the peer median, below is blue and above is red, as in James's Oct 18 peer-set mockups
+ * (the site tokens are named for the market pages, where the pair runs the other way).
+ */
+const BELOW_TONE = "var(--fi-viz-above)";
+const ABOVE_TONE = "var(--fi-viz-below)";
 
 const VIEWS: { key: ExplorerView; label: string; icon: ReactNode }[] = [
   { key: "landscape", label: "Landscape", icon: <BarChart3 aria-hidden="true" className="size-4" /> },
@@ -419,7 +425,11 @@ function Locations({ set, fee, selectedId, highlight, onSelect }: ViewProps) {
   const legend = [...new Set([sizes[0], sizes[Math.floor(sizes.length / 2)], sizes[sizes.length - 1]])].filter((v): v is number => v !== undefined);
   return (
     <div>
-      <p className="text-[12px] text-ink-muted">Grouped by headquarters {by}. Circle area shows total assets.</p>
+      <p className="text-[12px] text-ink-muted">
+        {by === "branch"
+          ? `Grouped by the cities in the ${set.market?.name ?? "home"} metro where each institution has a branch, so one can appear in several. Circle area shows total assets.`
+          : `Grouped by headquarters ${by}. Circle area shows total assets.`}
+      </p>
       <ul className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {shown.map((group) => {
           const hasSubject = group.members.some((m) => m.id === set.subject.id);
@@ -504,9 +514,9 @@ function Locations({ set, fee, selectedId, highlight, onSelect }: ViewProps) {
 }
 
 const BAND_STYLE: Record<MatrixBand, { background: string; label: string }> = {
-  below: { background: "color-mix(in srgb, var(--fi-viz-below) 22%, var(--fi-surface-0))", label: "Below median" },
+  below: { background: `color-mix(in srgb, ${BELOW_TONE} 22%, var(--fi-surface-0))`, label: "Below median" },
   near: { background: "color-mix(in srgb, var(--fi-ink) 7%, var(--fi-surface-0))", label: "Near median" },
-  above: { background: "color-mix(in srgb, var(--fi-viz-above) 22%, var(--fi-surface-0))", label: "Above median" },
+  above: { background: `color-mix(in srgb, ${ABOVE_TONE} 22%, var(--fi-surface-0))`, label: "Above median" },
   none: {
     background: "repeating-linear-gradient(135deg, transparent 0 5px, color-mix(in srgb, var(--fi-ink) 8%, transparent) 5px 6px)",
     label: "Not available",
@@ -679,12 +689,12 @@ function SidePanel({
             <dd className="mt-0.5 text-[20px] font-semibold tabular-nums text-ink">{median !== undefined ? money(median) : <span className="text-[13px] font-medium text-ink-muted">Too few to compare</span>}</dd>
           </div>
           <div>
-            <dt className="text-[12px] text-ink-muted">Publish it</dt>
+            <dt className="text-[12px] text-ink-muted">Peers publishing</dt>
             <dd className="mt-0.5 text-[20px] font-semibold tabular-nums text-ink">{set.medians[fee]?.peers ?? set.peers.filter((p) => p.fees[fee]).length}</dd>
           </div>
         </dl>
         {gap && (
-          <p className="mt-2 text-[14px] font-semibold" style={{ color: gap.direction === "above" ? "var(--fi-viz-above)" : gap.direction === "below" ? "var(--fi-viz-below)" : undefined }}>
+          <p className="mt-2 text-[14px] font-semibold" style={{ color: gap.direction === "above" ? ABOVE_TONE : gap.direction === "below" ? BELOW_TONE : undefined }}>
             {gap.text}
           </p>
         )}

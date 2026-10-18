@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./connection", () => ({ sql: Object.assign(vi.fn(), { unsafe: vi.fn() }) }));
-vi.mock("./peer-markets", () => ({ getHomeMarket: vi.fn(), getMarketInstitutionIds: vi.fn() }));
+vi.mock("./peer-markets", () => ({ getHomeMarket: vi.fn(), getMarketInstitutionIds: vi.fn(), getMarketBranchCities: vi.fn() }));
 
 import { sql } from "./connection";
+import { getHomeMarket, getMarketBranchCities } from "./peer-markets";
 import type { PeerFeeValue } from "./fee-index";
-import { buildPeerExplorerSet, explorerFee, getPeerExplorerSet } from "./peer-explorer";
+import { buildPeerExplorerSet, explorerFee, getPeerExplorerSet, groupBranchCities } from "./peer-explorer";
 
 const value = (institution_id: number, amount: number, records: [number, number, string | null, string | null][] = []): PeerFeeValue => ({
   institution_id,
@@ -81,5 +82,35 @@ describe("getPeerExplorerSet", () => {
     expect(query).toContain("ef.conditions");
     expect(query).toContain("ef.institution_id = ANY($2::bigint[])");
     expect(params[1]).toEqual([1, 2]);
+  });
+});
+
+describe("getPeerExplorerSet for the home metro", () => {
+  it("adds the metro's branch cities for the institutions shown", async () => {
+    const db = sql as unknown as ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
+    db.mockResolvedValueOnce([{ id: 1, charter_type: "bank", asset_size: 4_447_362 }]);
+    db.mockResolvedValueOnce([fact(1, "Capital City Bank", 4_447_362), fact(2, "Peer 2", 2_000_000)]);
+    db.unsafe.mockResolvedValueOnce([]);
+    vi.mocked(getHomeMarket).mockResolvedValue({ code: 45220, name: "Tallahassee, FL" });
+    vi.mocked(getMarketBranchCities).mockResolvedValue([{ institution_id: 2, city: "QUINCY", state: "FL" }]);
+    const set = await getPeerExplorerSet(1, { institutionIds: [2] }, true);
+    expect(getMarketBranchCities).toHaveBeenCalledWith(45220, [1, 2]);
+    expect(set?.market).toEqual({ name: "Tallahassee, FL", cities: [{ city: "QUINCY", state: "FL", ids: [2] }] });
+  });
+});
+
+describe("groupBranchCities", () => {
+  it("lists each city once with every institution that has a branch there", () => {
+    expect(
+      groupBranchCities([
+        { institution_id: 1, city: "TALLAHASSEE", state: "FL" },
+        { institution_id: 2, city: "TALLAHASSEE", state: "FL" },
+        { institution_id: 2, city: "QUINCY", state: "FL" },
+        { institution_id: 1, city: "Tallahassee", state: "FL" },
+      ]),
+    ).toEqual([
+      { city: "TALLAHASSEE", state: "FL", ids: [1, 2] },
+      { city: "QUINCY", state: "FL", ids: [2] },
+    ]);
   });
 });

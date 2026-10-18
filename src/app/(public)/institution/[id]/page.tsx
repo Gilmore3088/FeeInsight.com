@@ -209,7 +209,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
     return `/institution/${instId}?${params.toString()}#peers`;
   };
   const peerExplorerSet = peerSets
-    ? await getPeerExplorerSetCached(instId, peerSets.selectedFilters).catch(fallbackTo("peer explorer", null))
+    ? await getPeerExplorerSetCached(instId, peerSets.selectedFilters, peerSets.selected.key === "metro").catch(fallbackTo("peer explorer", null))
     : null;
 
   const alertSubscription = user
