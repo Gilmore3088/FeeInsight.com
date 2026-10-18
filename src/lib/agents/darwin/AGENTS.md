@@ -796,6 +796,23 @@ Darwin owns verification and classification.
   `kept_card_purchase`, `card_program_switch_live` and `samples_card_program_document`. Magellan's
   companion filter skips these documents too. A card program's section inside one fee page (Navy
   Federal's "GO Prepaid Cards", #1905) has no address of its own and is not caught here.
+- Spanish copies of an English schedule (`translated-copy-check.ts`, #1909, James's live-fee check
+  Oct 18). M&T publishes its checking fee guide in English and Spanish, both were read, and "Cargo
+  por sobregiro" $15 sat beside "Overdraft Fee" $15. A live fee comes down only when its document's
+  address names a Spanish copy (`spanishCopyDocument`: "spanish", "español", a "/es/" path or an
+  "-es."/"_ES-" token), its name reads as Spanish (`readsSpanish`: an accented letter or two Spanish
+  words; East West's `/es/` page was stored with English names and stays), and the institution has a
+  live fee in the same category at the same amount from a document that is not a Spanish copy (the
+  English twin). A Spanish-only fee stays until its English line is live (M&T's non-network ATM and
+  outgoing wires, Express CU and Travis CU, whose English schedules are not on file, Puerto Rico).
+  Every verify step reads every live fee on a Spanish-copy document (no cursor). Shadow first:
+  `TRANSLATED_COPY_TAKEDOWN_LIVE` is off until James sees the count; on, a match goes through the
+  12-hour second look (check `darwin.translated_copy`) and is archived on its second failure (rolled
+  back with `translated_copy: #<doc> twin #<fee>`, batch `darwin-translated-copy-<run>`, the verified
+  row rejected with the `translated_copy` flag, never deleted; event `darwin.translated_copy_takedown`).
+  Step detail `translated_copy_check`. Dry run Oct 18 (prod, read-only, `translatedCopyRowsSql`): 127
+  live fees on 12 Spanish-copy documents at 11 institutions; 35 would come down (Sound 22, OnPoint 6,
+  M&T 5, FirstBank PR 2) and 92 stay.
 - One printed line, two reads (`line-conflict-check.ts`, #1440). James's catalog review (Oct 15)
   found live fees sharing institution, name, amount and source address under two categories (1st
   Summit's "Prepaid Card" $5 as document reproduction and gift card purchase) or one category with
@@ -1399,6 +1416,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v2 | `darwin/hourly-frequency-check.ts` |
 | `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v3 | `darwin/non-deposit-document-check.ts` |
 | `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v1 | `darwin/line-conflict-check.ts` |
+| `TRANSLATED_COPY_CHECK_VERSION` | `darwin.translated_copy` | v1 | `darwin/translated-copy-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |
 | `DARWIN_SOURCE_CHECK_VERSION` | — | v2 | `darwin/verify.ts` |
