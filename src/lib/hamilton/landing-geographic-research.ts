@@ -6,10 +6,12 @@
  * H06/#986; therefore do not expose the live CTA until preview acceptance.
  */
 import {
-  getPeerIndexes,
+  getPeerIndexesStamped,
   type IndexEntry,
   type PeerFilterSet,
+  type StampedIndex,
 } from "@/lib/data-store/fee-index";
+import type { DatasetStamp } from "@/lib/dataset-stamp";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import {
   LandingResearchError,
@@ -42,6 +44,8 @@ export interface GeographicResearchResult {
   comparisons: GeographicFeeComparison[];
   method: "published_fee_index_by_institution";
   source: "published_fee_catalog";
+  /** The data behind the selected scope and its national reference (#1924); absent from readers without stamps. */
+  stamps?: { selected: DatasetStamp; national: DatasetStamp | null };
 }
 
 export function measureFromIndex(row: IndexEntry | undefined): GeographicFeeMeasure {
@@ -78,6 +82,7 @@ export function buildGeographicResearchResult(
   selection: LandingResearchHandoff,
   selectedIndex: IndexEntry[],
   referenceIndex: IndexEntry[] | null,
+  stamps?: GeographicResearchResult["stamps"],
 ): GeographicResearchResult {
   if (selection.task !== "compare" || selection.scope.kind === "local") {
     throw new LandingResearchError("Use the dedicated local-market or board-report workflow.");
@@ -105,6 +110,7 @@ export function buildGeographicResearchResult(
     comparisons,
     method: "published_fee_index_by_institution",
     source: "published_fee_catalog",
+    ...(stamps ? { stamps } : {}),
   };
 }
 
@@ -115,7 +121,7 @@ export function buildGeographicResearchResult(
  */
 export async function loadLandingGeographicResearch(
   rawSelection: unknown,
-  reader: (filters: PeerFilterSet[]) => Promise<IndexEntry[][]> = getPeerIndexes,
+  reader: (filters: PeerFilterSet[]) => Promise<(IndexEntry[] | StampedIndex)[]> = getPeerIndexesStamped,
   /** Asset tiers applied to both the selected scope and its national reference, so they stay comparable. */
   assetTiers: readonly string[] | null = null,
 ): Promise<GeographicResearchResult> {
@@ -130,9 +136,12 @@ export async function loadLandingGeographicResearch(
   const filters: PeerFilterSet[] = selection.scope.kind === "state"
     ? [{ ...charter, state_code: selection.scope.stateCode }, { ...charter }]
     : [{ ...charter }];
-  const results = await reader(filters);
-  if (results.length !== filters.length || results.some((rows) => !Array.isArray(rows))) {
+  const read = await reader(filters);
+  const results = read.map((r) => (Array.isArray(r) ? { entries: r, stamp: null } : r));
+  if (results.length !== filters.length || results.some((r) => !r || !Array.isArray(r.entries))) {
     throw new LandingResearchError("Market research is temporarily unavailable; no comparison was produced.");
   }
-  return buildGeographicResearchResult(selection, results[0], results[1] ?? null);
+  const [selected, national] = results;
+  const stamps = selected.stamp ? { selected: selected.stamp, national: national?.stamp ?? null } : undefined;
+  return buildGeographicResearchResult(selection, selected.entries, national?.entries ?? null, stamps);
 }

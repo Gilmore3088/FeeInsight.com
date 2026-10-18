@@ -15,7 +15,7 @@ import {
 } from "@/lib/data-store/saved-peers";
 import type { InstitutionDetail } from "@/lib/data-store/types";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/fee-stats";
-import { ASSET_TIER_RANGES, chosenInstitutionsLabel, peerFilterParts } from "@/lib/peer-filter-words";
+import { ASSET_TIER_RANGES, chosenInstitutionIds, chosenInstitutionsLabel, peerFilterParts } from "@/lib/peer-filter-words";
 
 export interface HamiltonPeerFilters {
   charter_type?: string;
@@ -119,7 +119,9 @@ export { ASSET_TIER_RANGES };
 export function describePeerFilters(filters: HamiltonPeerFilters | null): string {
   if (!filters) return "Verified national index";
   if (filters.label?.trim()) return filters.label.trim();
-  if (filters.institutionIds?.length) return chosenInstitutionsLabel(filters.institutionIds.length);
+  // Counted as the stamp counts them: invalid and repeated ids dropped (#2007).
+  const chosen = chosenInstitutionIds(filters.institutionIds);
+  if (chosen.length) return chosenInstitutionsLabel(chosen.length);
   const parts = peerFilterParts(filters).map((part) => part.label);
   return parts.length > 0 ? `${parts.join(" · ")} peers` : "Configured peer set";
 }

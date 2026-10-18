@@ -37,7 +37,10 @@ export interface DatasetStamp {
   mode: StampMode;
   /** ISO time: when the live query returned, or when the snapshot was computed. */
   readAt: string;
-  /** The agent run that built the snapshot; null for a live read or when unknown. */
+  /**
+   * The agent run that built the snapshot; null for a live read or when unknown. For
+   * fee_index_cache, the run of the newest cache row only (#2007).
+   */
   runId: number | null;
   /** ISO time of the newest record behind the figures, when known. Context only: not part of `id`. */
   newestRecordAt: string | null;
@@ -54,11 +57,11 @@ export type DatasetStampInput = Omit<DatasetStamp, "id">;
 const DATASET_LABELS: Record<DatasetId, string> = {
   published_fee_catalog: "Published dollar fees",
   published_fee_rate_catalog: "Published rate fees",
-  fee_index_cache: "National index snapshot",
+  fee_index_cache: "Bank Fee Index national snapshot",
 };
 
 const COUNTING_LABELS: Record<CountingRule, string> = {
-  counted_once: "Sibling charters that share one fee schedule count as one institution",
+  counted_once: "Institutions that share one fee schedule count as one institution",
   per_charter: "Every charter counts as its own institution",
 };
 

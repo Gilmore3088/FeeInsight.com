@@ -14,8 +14,10 @@ import {
   getOwnFeesForInstitutions,
   getPeerFeeValues,
   getSegmentFeeValues,
+  catalogStamp,
   type PeerFeeValue,
 } from "@/lib/data-store/fee-index";
+import type { DatasetStamp } from "@/lib/dataset-stamp";
 import { getPeerServiceChargeMedians, getRevenueTrend } from "@/lib/data-store/call-reports";
 import { getLocalMarketMembers, type LocalMarketMembers } from "@/lib/data-store/custom-report-market";
 import { getStateEconomicContext } from "@/lib/data-store/economic-context";
@@ -110,6 +112,8 @@ interface CategoryPeers {
 interface LayerSet {
   scope: MarketLayerScope;
   label: string;
+  /** The filters the layer's values were read with, for its dataset stamp. */
+  filters?: HamiltonPeerFilters;
   values: Map<string, PeerFeeValue[]>;
 }
 
@@ -124,6 +128,8 @@ interface WorkspaceBase {
   totalAssets?: number | null;
   /** National, Fed district, state, and charter and size, each loaded whole. */
   layers: LayerSet[];
+  /** When the layers' read returned, for their dataset stamps (#1924); no stamps without it. */
+  readAt?: Date;
   /** The narrowest default peer group, named on the Briefing. */
   peerLabel: string;
   /**
@@ -241,6 +247,7 @@ async function loadBase(
   // One read for the peer candidates and the layers; national is already the last candidate.
   const extra = layerSets.filter((l) => l.scope !== "national");
   const valuesBySet = await getPeerFeeValues([...candidates, ...extra.map((l) => l.filters)], wanted, institutionId);
+  const readAt = new Date();
   const national = valuesBySet[candidates.length - 1] ?? new Map();
   return {
     institutionId,
@@ -251,9 +258,10 @@ async function loadBase(
     assetTier: institution.asset_size_tier,
     totalAssets: institution.asset_size === null || institution.asset_size === undefined ? null : Number(institution.asset_size),
     layers: [
-      { scope: "national", label: "National", values: national },
-      ...extra.map((l, i) => ({ scope: l.scope, label: l.label, values: valuesBySet[candidates.length + i] ?? new Map() })),
+      { scope: "national", label: "National", filters: {}, values: national },
+      ...extra.map((l, i) => ({ scope: l.scope, label: l.label, filters: l.filters, values: valuesBySet[candidates.length + i] ?? new Map() })),
     ],
+    readAt,
     peerLabel: peerLabel(candidates[0]),
     ownValues,
     ownCategories,
@@ -314,6 +322,28 @@ function feeLayers(base: WorkspaceBase, feeCategory: string): MarketLayer[] {
       values.map(toPeerValue),
     );
   });
+}
+
+/**
+ * Each market layer's dataset stamp for one fee (#1924): a live read of the published catalog
+ * under the statistics contract, the layer's filters, and the bank itself left out, as
+ * getPeerFeeValues reads it. The local market has no filter set, so no stamp.
+ */
+export function feeLayerStamps(base: WorkspaceBase, feeCategory: string): Partial<Record<MarketLayerScope, DatasetStamp>> {
+  const out: Partial<Record<MarketLayerScope, DatasetStamp>> = {};
+  if (!base.readAt) return out;
+  for (const layer of base.layers) {
+    if (!layer.filters) continue;
+    out[layer.scope] = catalogStamp({
+      mode: "live",
+      readAt: base.readAt,
+      runId: null,
+      newestRecordAt: newest((layer.values.get(feeCategory) ?? []).map((v) => v.published_at)),
+      scope: layer.filters,
+      extraFilters: [{ key: `exclude:institution:${base.institutionId}`, label: "The institution being compared left out" }],
+    });
+  }
+  return out;
 }
 
 const FEE_SOURCE: SourceRef = {
@@ -1018,6 +1048,7 @@ export async function getFeeResearch(
       : null,
     bands: priceBands(sorted, current),
     layers,
+    layerStamps: feeLayerStamps(base, feeCategory),
     localCompetitors: local.competitors,
     localMarket: local.info,
     recentChanges,

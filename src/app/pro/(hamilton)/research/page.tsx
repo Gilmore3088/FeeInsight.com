@@ -32,6 +32,7 @@ import {
 import { buildFeeAnswer } from "@/lib/hamilton/workspace/answer";
 import { AnswerView } from "@/components/hamilton/memo/exhibit-view";
 import { LayerTabs } from "@/components/hamilton/memo/LayerTabs";
+import { DatasetNote } from "@/components/hamilton/DatasetNote";
 import { CheckingLineupPanel } from "@/components/hamilton/memo/checking-lineup";
 import { loadMarketCheckingLineup } from "@/lib/custom-report/checking-lineup-data";
 import { LINEUP_CATEGORY } from "@/lib/agents/knox/lineup";
@@ -354,6 +355,7 @@ export default async function ResearchPage({ searchParams }: PageProps) {
             panel: (
               <div className="flex flex-col gap-4">
                 <LayerExhibit layer={l} ownAmount={ws.ownAmount} feeName={ws.feeName} />
+                <DatasetNote className="mt-3" figures={[l.stamp ? { label: l.label, stamp: l.stamp } : null]} />
                 <AuditPanel trail={trailFor(l)} downloadHref={csvHrefFor(l)} />
                 {l.key === "local" && ws.local ? (
         <MemoSection

@@ -28,6 +28,15 @@ export interface PeerFilterFields {
   institutionIds?: number[];
 }
 
+/**
+ * The hand-picked peer ids that count: whole positive numbers, each once, ascending. The stamp's
+ * label and describePeerFilters both count these, so [12, 11, 12] is "2 chosen institutions"
+ * everywhere (#2007).
+ */
+export function chosenInstitutionIds(ids: readonly unknown[] | null | undefined): number[] {
+  return [...new Set((ids ?? []).map(Number).filter((id) => Number.isInteger(id) && id > 0))].sort((a, b) => a - b);
+}
+
 /** "5 chosen institutions": a hand-picked peer group. */
 export function chosenInstitutionsLabel(n: number): string {
   return `${n} chosen ${n === 1 ? "institution" : "institutions"}`;
@@ -39,10 +48,10 @@ export function chosenInstitutionsLabel(n: number): string {
  * exactly those institutions; the other filters do not apply then.
  */
 export function peerFilterParts(filters: PeerFilterFields): { key: string; label: string }[] {
-  const ids = [...new Set((filters.institutionIds ?? []).map(Number).filter((id) => Number.isInteger(id) && id > 0))];
+  const ids = chosenInstitutionIds(filters.institutionIds);
   if (ids.length > 0) {
     return [{
-      key: `peers:institutions:${[...ids].sort((a, b) => a - b).join(",")}`,
+      key: `peers:institutions:${ids.join(",")}`,
       label: chosenInstitutionsLabel(ids.length),
     }];
   }

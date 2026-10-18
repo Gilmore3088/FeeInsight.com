@@ -54,13 +54,13 @@ describe("catalogStamp", () => {
 
   it("adds a peer group's filters in describePeerFilters' words", () => {
     expect(scopeFilters({ state_code: "GA", charter_type: "credit_union", asset_tiers: ["community_large"], fed_districts: [6] })).toEqual([
-      { key: "peers:state:GA", label: "Peers: GA" },
-      { key: "peers:charter:credit_union", label: "Peers: credit union" },
-      { key: "peers:asset_tiers:community_large", label: "Peers: $1B to $10B" },
-      { key: "peers:fed_districts:6", label: "Peers: Fed district 6" },
+      { key: "peers:state:GA", label: "Institutions in Georgia" },
+      { key: "peers:charter:credit_union", label: "Credit unions only" },
+      { key: "peers:asset_tiers:community_large", label: "Assets $1B to $10B" },
+      { key: "peers:fed_districts:6", label: "Fed district 6" },
     ]);
     expect(scopeFilters({ institutionIds: [12, 11, 12] })).toEqual([
-      { key: "peers:institutions:11,12", label: "Peers: 2 chosen institutions" },
+      { key: "peers:institutions:11,12", label: "2 chosen institutions" },
     ]);
     expect(scopeFilters(null)).toEqual([]);
   });
@@ -125,8 +125,8 @@ describe("live stamped readers", () => {
     db.unsafe.mockResolvedValueOnce([1, 2, 3, 4, 5].map((id) => row(id, 30)));
     const [ga, banks] = await getPeerIndexesStamped([{ state_code: "GA" }, { charter_type: "bank" }], true, clock("2026-10-18T14:00:00Z"));
     expect(ga.stamp.readAt).toBe(banks.stamp.readAt);
-    expect(ga.stamp.filters.at(-1)).toEqual({ key: "peers:state:GA", label: "Peers: GA" });
-    expect(banks.stamp.filters.at(-1)).toEqual({ key: "peers:charter:bank", label: "Peers: bank" });
+    expect(ga.stamp.filters.at(-1)).toEqual({ key: "peers:state:GA", label: "Institutions in Georgia" });
+    expect(banks.stamp.filters.at(-1)).toEqual({ key: "peers:charter:bank", label: "Banks only" });
     expect(ga.stamp.id).not.toBe(banks.stamp.id);
   });
 
