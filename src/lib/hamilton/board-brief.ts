@@ -183,7 +183,7 @@ export function boardBriefFromAnalysis(analysis: AnalyzeResponse & { factEvidenc
 export const SAVED_DATASET_SOURCE_LABEL = "Bank Fee Index figures in this brief";
 
 /** Where a saved answer's reader finds every filter behind its figures. */
-export const SAVED_ANSWER_FULL_LIST = "open the saved answer for the full list";
+export const SAVED_ANSWER_FULL_LIST = "the full list is in the saved answer in Hamilton";
 
 /**
  * The saved answer's dataset stamps as one sources entry, the copy a committee reads

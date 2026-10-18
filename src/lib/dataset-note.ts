@@ -126,6 +126,11 @@ export function datasetCitation(stamp: DatasetStamp): { stamp_id: string; summar
   return { stamp_id: stamp.id, summary: words?.summary ?? "", filters: words?.filters ?? [] };
 }
 
+/** A label set mid-sentence: lower case first letter, except a proper name ("Fed district 6"). */
+function lowerFirst(label: string): string {
+  return /^Fed /.test(label) ? label : label.charAt(0).toLowerCase() + label.slice(1);
+}
+
 /** Stamp filters that set a figure's group (peers, segment, the bank left out); the rest are the index's standard rules. */
 const GROUP_FILTER = /^(peers|segment|exclude):/;
 
@@ -139,14 +144,19 @@ const GROUP_FILTER = /^(peers|segment|exclude):/;
 export function datasetPassage(figures: readonly StampedFigure[], fullList: string): string[] | null {
   const words = datasetNoteWords(figures);
   if (!words) return null;
-  // Mid-sentence, every label after the first starts lower case ("..., the institution being compared left out").
-  const group = figures[0].stamp.filters
-    .filter((f) => GROUP_FILTER.test(f.key))
-    .map((f, i) => (i === 0 ? f.label : f.label.charAt(0).toLowerCase() + f.label.slice(1)));
+  const [first] = figures;
+  const own = first.stamp.filters.filter((f) => GROUP_FILTER.test(f.key));
+  const group = own.filter((f) => !f.key.startsWith("exclude:")).map((f) => lowerFirst(f.label));
+  const leftOut = own.some((f) => f.key.startsWith("exclude:")) ? "with the institution being compared left out, " : "";
+  // With several reads, "who is counted" describes the first figure's, so it says whose.
+  const whose = new Set(figures.map((f) => f.stamp.id)).size > 1 ? ` in ${first.label}` : "";
   const counted = group.length
-    ? `Who is counted: ${group.join(", ")}, under the index's standard rules (${fullList}).`
-    : `Who is counted: the index's standard rules (${fullList}).`;
-  const differ = words.differences ? `${words.differences.heading}: ${words.differences.lines.join(". ")}.` : null;
+    ? `Who is counted${whose}: ${group.join(", ")}, ${leftOut}under the index's standard rules (${fullList}).`
+    : `Who is counted${whose}: ${leftOut}under the index's standard rules (${fullList}).`;
+  // In prose, "Applies only to X: Y" reads "only X is limited to y", so a sentence carries one colon.
+  const prose = (line: string) =>
+    line.replace(/^Applies only to (.+?): (.+)$/, (_m, who: string, what: string) => `only ${who} is limited to ${lowerFirst(what.replace(/ only$/, ""))}`);
+  const differ = words.differences ? `${words.differences.heading}: ${words.differences.lines.map(prose).join("; ")}.` : null;
   const reference = `Data reference (for support): ${[...new Set(figures.map((f) => f.stamp.id))].join(", ")}.`;
   return [words.summary, counted, ...(differ ? [differ] : []), reference];
 }

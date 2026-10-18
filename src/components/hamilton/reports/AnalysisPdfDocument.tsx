@@ -291,7 +291,7 @@ export function AnalysisPdfDocument({
   const meaningAsList = meaningSentences.length > 3;
 
   const record = savedEvidence(analysis);
-  // The appendix's dataset words (savedEvidenceAppendix(...).dataset come from the same saved
+  // The appendix's dataset words (savedEvidenceAppendix(...).dataset comes from the same saved
   // stamps): read as saved, never refreshed (#1924 step 4). None for an answer saved without them.
   const about = datasetPassage(readStampedFigures(analysis.datasetStamps), SAVED_ANSWER_FULL_LIST);
   const identity = readHamiltonIdentitySnapshot(analysis.identityContext);

@@ -102,8 +102,8 @@ describe("analysis PDF prints the saved stamp (#1924 step 4)", () => {
     expect(savedEvidenceAppendix(stamped).dataset?.summary).toBe(SUMMARY);
     expect(text).toContain("About these figures");
     expect(text).toContain(SUMMARY);
-    expect(text).toContain("Who is counted: Institutions in Tennessee, the institution being compared left out, under the index's standard rules (open the saved answer for the full list).");
-    expect(text).toContain("Applies only to your peer group: Institutions in Tennessee");
+    expect(text).toContain("Who is counted in your peer group: institutions in Tennessee, with the institution being compared left out, under the index's standard rules (the full list is in the saved answer in Hamilton).");
+    expect(text).toContain("How your peer group and National differ: only your peer group is limited to institutions in Tennessee.");
     expect(text).toContain(`Data reference (for support): ${peerStamp.id}, ${nationalStamp.id}.`);
     expect(text.indexOf("About these figures")).toBeGreaterThan(text.indexOf("Evidence Record"));
     expect(passage(text)).not.toContain("\u2014");
@@ -128,7 +128,7 @@ describe("report PDF prints the saved stamp (#1924 step 4)", () => {
     expect(at).toBeGreaterThan(text.indexOf("Your overdraft fee sits $1 above"));
     expect(at).toBeLessThan(text.indexOf("Method and Sources"));
     expect(text).toContain(SUMMARY);
-    expect(text).toContain("Who is counted: Institutions in Tennessee, the institution being compared left out, under the index's standard rules (open the report in Hamilton for the full list).");
+    expect(text).toContain("Who is counted: institutions in Tennessee, with the institution being compared left out, under the index's standard rules (open the report in Hamilton for the full list).");
     expect(text).toContain(`Data reference (for support): ${peerStamp.id}.`);
     expect(passage(text)).not.toContain("\u2014");
     expect(passage(text)).not.toMatch(AGENT_NAMES);
@@ -161,6 +161,8 @@ describe("board brief PDF prints the saved stamp once (#1924 step 4)", () => {
     expect(text).toContain("About these figures");
     expect(text).toContain(source!.detail);
     expect(text).not.toContain(SAVED_DATASET_SOURCE_LABEL);
+    // Only the dataset entry leaves the sources; the brief's own source stays.
+    for (const other of brief.sources!.filter((s) => s.label !== SAVED_DATASET_SOURCE_LABEL)) expect(text).toContain(other.label);
     expect(count(text, "Data reference (for support)")).toBe(1);
     expect(count(text, SUMMARY)).toBe(1);
     expect(readStampedFigures(brief.datasetStamps)).toEqual(stamps);
