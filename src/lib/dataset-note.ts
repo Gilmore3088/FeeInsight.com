@@ -125,3 +125,25 @@ export function datasetCitation(stamp: DatasetStamp): { stamp_id: string; summar
   const words = datasetNoteWords([{ label: "figures", stamp }]);
   return { stamp_id: stamp.id, summary: words?.summary ?? "", filters: words?.filters ?? [] };
 }
+
+/** Stamp filters that set a figure's group (peers, segment, the bank left out); the rest are the index's standard rules. */
+const GROUP_FILTER = /^(peers|segment|exclude):/;
+
+/**
+ * The stamps as the sentences a printed document sets as prose (#1924 step 4): the note's line
+ * (where the figures came from, when they were read, the counting rule), who is counted (the
+ * group's own filters; the standard rules every figure shares are named, not listed), how the
+ * reads differ, and the reference ids support can trace. `fullList` says where the reader finds
+ * every filter ("open the saved answer for the full list"). Null without stamps.
+ */
+export function datasetPassage(figures: readonly StampedFigure[], fullList: string): string[] | null {
+  const words = datasetNoteWords(figures);
+  if (!words) return null;
+  const group = figures[0].stamp.filters.filter((f) => GROUP_FILTER.test(f.key)).map((f) => f.label);
+  const counted = group.length
+    ? `Who is counted: ${group.join(", ")}, under the index's standard rules (${fullList}).`
+    : `Who is counted: the index's standard rules (${fullList}).`;
+  const differ = words.differences ? `${words.differences.heading}: ${words.differences.lines.join(". ")}.` : null;
+  const reference = `Data reference (for support): ${[...new Set(figures.map((f) => f.stamp.id))].join(", ")}.`;
+  return [words.summary, counted, ...(differ ? [differ] : []), reference];
+}

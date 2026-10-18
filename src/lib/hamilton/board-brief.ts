@@ -19,7 +19,7 @@ import {
 } from "./evidence-export";
 import type { SourceRef } from "./workspace/types";
 import { exportedAnswer } from "./written-answer-binding";
-import { datasetNoteWords, readStampedFigures, type StampedFigure } from "@/lib/dataset-note";
+import { datasetPassage, readStampedFigures, type StampedFigure } from "@/lib/dataset-note";
 
 /** A source date as a board reads it: "2026-10-12T00:00:00.000Z" -> "Oct 12, 2026"; anything else as saved. */
 export function readerAsOf(asOf: string): string {
@@ -179,28 +179,21 @@ export function boardBriefFromAnalysis(analysis: AnalyzeResponse & { factEvidenc
   };
 }
 
-/**
- * The saved answer's dataset stamps as one source line (#1924): the note's line, then the filters
- * that set who is counted and the reference support can trace. Null without stamps.
- */
-/** Stamp filters that set a figure's group (peers, segment, the bank left out); the rest are the index's standard rules. */
-const GROUP_FILTER = /^(peers|segment|exclude):/;
+/** The sources entry that carries a saved answer's stamps; a printed brief sets its words as prose instead (#1924 step 4). */
+export const SAVED_DATASET_SOURCE_LABEL = "Bank Fee Index figures in this brief";
+
+/** Where a saved answer's reader finds every filter behind its figures. */
+export const SAVED_ANSWER_FULL_LIST = "open the saved answer for the full list";
 
 /**
- * The stamp as one sources entry, the copy a committee reads: the summary, the filters that set
- * the group (the standard rules every figure shares are named, not listed), how figures differ,
- * and the reference ids.
+ * The saved answer's dataset stamps as one sources entry, the copy a committee reads
+ * (datasetPassage): the summary, the filters that set the group (the standard rules every figure
+ * shares are named, not listed), how figures differ, and the reference ids. Null without stamps.
  */
 export function savedDatasetSource(figures: readonly StampedFigure[]): { label: string; detail: string; url: null } | null {
-  const words = datasetNoteWords(figures);
-  if (!words) return null;
-  const group = figures[0].stamp.filters.filter((f) => GROUP_FILTER.test(f.key)).map((f) => f.label);
-  const counted = group.length
-    ? `Who is counted: ${group.join(", ")}, under the index's standard rules (open the saved answer for the full list).`
-    : "Who is counted: the index's standard rules (open the saved answer for the full list).";
-  const differ = words.differences ? `${words.differences.heading}: ${words.differences.lines.join(". ")}.` : null;
-  const reference = `Data reference (for support): ${[...new Set(figures.map((f) => f.stamp.id))].join(", ")}.`;
-  return { label: "Bank Fee Index figures in this brief", detail: [words.summary, counted, differ, reference].filter(Boolean).join(" "), url: null };
+  const passage = datasetPassage(figures, SAVED_ANSWER_FULL_LIST);
+  if (!passage) return null;
+  return { label: SAVED_DATASET_SOURCE_LABEL, detail: passage.join(" "), url: null };
 }
 
 /** Editing preserves the frozen report exhibits, source references and original identity. */

@@ -26,6 +26,8 @@ import type { EvidenceBoundAnalyzeResponse } from "@/lib/hamilton/evidence-contr
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { exportedAnswer } from "@/lib/hamilton/written-answer-binding";
 import { INTERPRETATION_LABEL } from "@/lib/hamilton/narrative-bound";
+import { datasetPassage, readStampedFigures } from "@/lib/dataset-note";
+import { SAVED_ANSWER_FULL_LIST } from "@/lib/hamilton/board-brief";
 
 // Words wrap whole; react-pdf's default hyphenation broke figures and words mid-way ("medi-an").
 Font.registerHyphenationCallback((word) => [word]);
@@ -289,6 +291,9 @@ export function AnalysisPdfDocument({
   const meaningAsList = meaningSentences.length > 3;
 
   const record = savedEvidence(analysis);
+  // The appendix's dataset words (savedEvidenceAppendix(...).dataset come from the same saved
+  // stamps): read as saved, never refreshed (#1924 step 4). None for an answer saved without them.
+  const about = datasetPassage(readStampedFigures(analysis.datasetStamps), SAVED_ANSWER_FULL_LIST);
   const identity = readHamiltonIdentitySnapshot(analysis.identityContext);
   const identityLines = identity ? hamiltonIdentityLines(identity) : ["Historical institution, account and peer context: Not recorded"];
   const readOnlyLine = identity?.researchInstitutionName
@@ -428,6 +433,14 @@ export function AnalysisPdfDocument({
               </View>
             ))}
             {evidenceRecordNotes(record).map((line) => <Text key={line} style={styles.evidenceNote}>{line}</Text>)}
+          </View>
+        ) : null}
+
+        {/* Where the figures came from: prose at the body size, after the record */}
+        {about ? (
+          <View style={styles.lastSection} wrap={false}>
+            <Text style={styles.sectionHeading}>About these figures</Text>
+            <Text style={styles.paragraph}>{about.join(" ")}</Text>
           </View>
         ) : null}
 
