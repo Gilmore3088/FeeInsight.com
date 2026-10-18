@@ -1,11 +1,12 @@
 "use client";
 
 import { ArrowUpRight, ChevronDown } from "lucide-react";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { Logo } from "@/brand/components";
 import { TrackLink } from "@/components/track-link";
 import { PRODUCT_NAME } from "@/lib/constants";
 import { InstitutionCombobox, type PickedInstitution } from "./for-institutions/institution-combobox";
+import { institutionCardFees } from "./landing-index-actions";
 import {
   CHARTERS,
   US,
@@ -39,7 +40,7 @@ const CHARTER_WORDS: Record<Charter, string> = {
 /** "Banks and credit unions" after a place: "U.S. banks and credit unions", "Florida credit unions". */
 const scopeLabel = (placeName: string, charter: Charter) => `${placeName} ${CHARTER_WORDS[charter]}`;
 
-/** The institution in the card: read ahead on the server (with its fees) or picked from the search (without). */
+/** The institution in the card: read ahead on the server, or picked from the search (fees null until read, or when the read failed). */
 type CardInstitution = Pick<IndexCardInstitution, "id" | "name" | "state"> & { fees: Record<string, number> | null };
 
 const money = (cents: number) => cardMoney(cents / 100);
@@ -254,9 +255,10 @@ function InstitutionPick({
  * and the card shows that pick's median, middle half, distribution and the comparison /fees
  * pairs with it (a state against the U.S., or banks against credit unions), with the
  * institution's own fee marked on the distribution. Every figure was worked out on the server
- * by the /fees explorer's functions; this component only chooses which to show. An institution
- * whose fees the server did not read ahead (any pick from the search but the demo bank) gets
- * its page link and no marker, never a made-up figure.
+ * by the /fees explorer's functions; this component only chooses which to show. The demo bank's
+ * fees come read ahead; any other pick asks the server for its own published fees
+ * (institutionCardFees, the same rows the chart counts). Until that answers, or when it fails,
+ * the card shows the institution's links and no marker, never a made-up figure.
  */
 export function IndexCard({ data, freshness }: { data: IndexCardData; freshness: string }) {
   const defaultFee = data.fees.find((f) => f.key === "monthly_maintenance")?.key ?? data.fees[0]?.key ?? "";
@@ -265,6 +267,9 @@ export function IndexCard({ data, freshness }: { data: IndexCardData; freshness:
   const [place, setPlace] = useState(US);
   const [charter, setCharter] = useState<Charter>("all");
   const [institution, setInstitution] = useState<CardInstitution | null>(readAhead[0] ?? null);
+  const [reading, setReading] = useState(false);
+  // Only the latest pick may set the fees: an earlier, slower answer is dropped.
+  const pickSeq = useRef(0);
   const [scopeOpen, setScopeOpen] = useState(false);
   const scopeId = useId();
   const feeDef = data.fees.find((f) => f.key === fee) ?? data.fees[0];
@@ -285,8 +290,32 @@ export function IndexCard({ data, freshness }: { data: IndexCardData; freshness:
         : positionSentence(institution.name, own, pick.median, benchmarkPhrase(placeName, charter));
 
   function choose(p: PickedInstitution) {
+    const seq = ++pickSeq.current;
     const known = readAhead.find((i) => i.id === p.id);
-    setInstitution(known ?? { id: p.id, name: p.name, state: p.stateCode, fees: null });
+    if (known) {
+      setReading(false);
+      setInstitution(known);
+      return;
+    }
+    setInstitution({ id: p.id, name: p.name, state: p.stateCode, fees: null });
+    setReading(true);
+    institutionCardFees(p.id, data.fees.map((f) => f.key))
+      .then(
+        (fees) => {
+          if (seq !== pickSeq.current || !fees) return;
+          setInstitution((cur) => (cur && cur.id === p.id ? { ...cur, fees } : cur));
+        },
+        () => undefined,
+      )
+      .finally(() => {
+        if (seq === pickSeq.current) setReading(false);
+      });
+  }
+
+  function clear() {
+    pickSeq.current++;
+    setReading(false);
+    setInstitution(null);
   }
 
   const compare =
@@ -384,7 +413,11 @@ export function IndexCard({ data, freshness }: { data: IndexCardData; freshness:
                     <p className="text-[12px] text-ink-muted">{institutions(pick.n)}</p>
                   </div>
                   <Histogram cell={pick} label={`${feeDef?.label}, ${benchmarkTitle}`} marker={marker} />
-                  {position ? (
+                  {reading && institution ? (
+                    <p className="mt-2 text-[12px] leading-snug text-ink-muted" role="status" data-index-reading="">
+                      Finding {institution.name}’s fees…
+                    </p>
+                  ) : position ? (
                     <p className="mt-2 text-[12px] leading-snug text-ink-soft" data-index-position="">
                       {position}
                     </p>
@@ -406,7 +439,7 @@ export function IndexCard({ data, freshness }: { data: IndexCardData; freshness:
           </div>
         </>
       )}
-      <InstitutionPick picked={institution} fee={fee} onPick={choose} onChange={() => setInstitution(null)} />
+      <InstitutionPick picked={institution} fee={fee} onPick={choose} onChange={clear} />
       <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-border pt-3 text-[11px] text-ink-muted">
         <span>Published fee schedules · {freshness}</span>
         <a

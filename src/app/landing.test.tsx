@@ -13,6 +13,7 @@ import { LandingHero, LandingProof } from "./landing-hero";
 import { LandingHamilton, analyzeAnswer, analyzePicks, positionCounts } from "./landing-hamilton";
 import { HamiltonCarousel, type HamiltonSlide } from "./landing-hamilton-carousel";
 import { buildIndexCard, plainFeeName } from "./landing-index";
+import { institutionCardFees } from "./landing-index-actions";
 import { IndexCard } from "./landing-index-card";
 import { cardHref, cellBars, hasMedian, noFeeSentence, positionSentence, US, type IndexCardData } from "./landing-index-view";
 import { LandingPricing, pricingLine } from "./landing-pricing";
@@ -31,6 +32,10 @@ vi.mock("@/components/track-link", () => ({
     </a>
   ),
 }));
+
+// The card's server action, so a pick's fee read is under the test's control.
+vi.mock("./landing-index-actions", () => ({ institutionCardFees: vi.fn(async () => null) }));
+const institutionCardFeesMock = vi.mocked(institutionCardFees);
 
 const summary: PublicStatsSummary = {
   institutions: 1234,
@@ -212,24 +217,72 @@ describe("hero Bank Fee Index card: your institution", () => {
     expect(container.querySelector("[data-index-position]")?.textContent).toBe("No published monthly maintenance fee for Institution 5 yet.");
   });
 
-  it("picks another institution from the search, links to it and shows no marker for fees it has not read", async () => {
+  /** Changes the pick to Harbor Bank (id 77) through the search, with fetch mocked. */
+  async function pickHarbor() {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => [{ id: 77, institution_name: "Harbor Bank", city: "Tampa", state_code: "FL" }] })));
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    fireEvent.change(screen.getByLabelText("Your institution"), { target: { value: "Harbor" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250);
+    });
+    expect(String((vi.mocked(fetch).mock.calls[0] as unknown[])[0])).toBe("/api/institutions?q=Harbor");
+    fireEvent.mouseDown(screen.getByRole("option", { name: /Harbor Bank/ }));
+  }
+
+  it("keeps Capital City's stand-in preselected without asking the server", () => {
+    institutionCardFeesMock.mockClear();
+    render(<IndexCard data={withInstitution} freshness="Oct 14, 2026" />);
+    expect(institutionCardFeesMock).not.toHaveBeenCalled();
+  });
+
+  it("reads another pick's fees from the server action, shows a quiet wait, then its marker and sentence", async () => {
     vi.useFakeTimers();
-    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => [{ id: 77, institution_name: "Harbor Bank", city: "Tampa", state_code: "FL" }] }));
-    vi.stubGlobal("fetch", fetchMock);
+    let answer: (v: Record<string, number> | null) => void = () => undefined;
+    institutionCardFeesMock.mockClear();
+    institutionCardFeesMock.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)));
     try {
       const { container } = render(<IndexCard data={withInstitution} freshness="Oct 14, 2026" />);
-      fireEvent.click(screen.getByRole("button", { name: "Change" }));
-      fireEvent.change(screen.getByLabelText("Your institution"), { target: { value: "Harbor" } });
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(250);
-      });
-      expect(String((fetchMock.mock.calls[0] as unknown[])[0])).toBe("/api/institutions?q=Harbor");
-      fireEvent.mouseDown(screen.getByRole("option", { name: /Harbor Bank/ }));
-      expect(container.querySelector("[data-index-institution]")?.textContent).toContain("Harbor Bank");
+      await pickHarbor();
+      expect(institutionCardFeesMock).toHaveBeenCalledWith(77, ["monthly_maintenance"]);
+      expect(container.querySelector("[data-index-reading]")?.textContent).toBe("Finding Harbor Bank’s fees…");
       expect(container.querySelector("[data-index-marker]")).toBeNull();
-      expect(container.querySelector("[data-index-position]")).toBeNull();
+      await act(async () => answer({ monthly_maintenance: 1200 }));
+      expect(container.querySelector("[data-index-reading]")).toBeNull();
+      expect(container.querySelector("[data-index-marker]")?.textContent).toBe("Harbor Bank$12");
+      expect(container.querySelector("[data-index-position]")?.textContent).toBe(
+        positionSentence("Harbor Bank", 1200, medianOf(withInstitution, US, 0), "U.S."),
+      );
       expect(screen.getByRole("link", { name: /See its fees/ }).getAttribute("href")).toBe("/institution/77?fee=monthly_maintenance");
       expect(screen.getByRole("link", { name: /See Hamilton plans/ }).getAttribute("href")).toBe("/subscribe?inst=77");
+      expect(screen.getByRole("link", { name: /See this fee in the index/ }).getAttribute("href")).toBe(
+        "/fees?fee=monthly_maintenance&q=Harbor+Bank#explorer",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("says so when the pick publishes no fee of this type, and shows no marker when the read failed", async () => {
+    vi.useFakeTimers();
+    try {
+      institutionCardFeesMock.mockResolvedValueOnce({});
+      const first = render(<IndexCard data={withInstitution} freshness="Oct 14, 2026" />);
+      await pickHarbor();
+      await act(async () => undefined);
+      expect(first.container.querySelector("[data-index-marker]")).toBeNull();
+      expect(first.container.querySelector("[data-index-position]")?.textContent).toBe("No published monthly maintenance fee for Harbor Bank yet.");
+      first.unmount();
+      vi.unstubAllGlobals();
+
+      institutionCardFeesMock.mockResolvedValueOnce(null);
+      const failed = render(<IndexCard data={withInstitution} freshness="Oct 14, 2026" />);
+      await pickHarbor();
+      await act(async () => undefined);
+      expect(failed.container.querySelector("[data-index-reading]")).toBeNull();
+      expect(failed.container.querySelector("[data-index-marker]")).toBeNull();
+      expect(failed.container.querySelector("[data-index-position]")).toBeNull();
+      expect(failed.container.textContent).not.toMatch(/\$0(?![.\d])/);
+      expect(screen.getByRole("link", { name: /See its fees/ }).getAttribute("href")).toBe("/institution/77?fee=monthly_maintenance");
     } finally {
       vi.useRealTimers();
     }

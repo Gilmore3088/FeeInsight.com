@@ -62,7 +62,7 @@ function cell(rows: IndexRow[], fee: string, charter: Charter): IndexPick {
  * each fee, the one value per institution the chart counts (`institutionsFor`). An institution
  * with no published row for any card fee is left out, so the card shows no marker for it.
  */
-function readAhead(rowsByFee: Map<string, IndexRow[]>, ids: readonly number[]): IndexCardInstitution[] {
+export function readAhead(rowsByFee: Map<string, IndexRow[]>, ids: readonly number[]): IndexCardInstitution[] {
   const out: IndexCardInstitution[] = [];
   for (const id of ids) {
     let found: IndexCardInstitution | null = null;
