@@ -3,6 +3,14 @@ import { ArrowRight } from "lucide-react";
 import type { CompareCounts } from "./profile-view";
 import { SERIF } from "./profile-serif";
 
+export interface HeroFact {
+  label: string;
+  value: string;
+  href?: string;
+  /** Spans both columns on a phone (long values such as a holding company's name). */
+  wide?: boolean;
+}
+
 /**
  * The profile's hero (James's design file, Oct 17): a navy band with the institution, where it
  * sits and its size, the page's two actions, and on the right the one count the page leads with:
@@ -14,9 +22,6 @@ export function ProfileHero({
   stateName,
   stateCode,
   facts,
-  recordFacts,
-  districtName,
-  district,
   counts,
   finding,
   source,
@@ -26,12 +31,8 @@ export function ProfileHero({
   name: string;
   stateName: string | null;
   stateCode: string | null;
-  /** "Tallahassee, Florida · Bank · $4.4B assets". */
-  facts: string;
-  /** "Regulator: OCC · Holding company: Capital City Bank Group"; empty when unknown. */
-  recordFacts: string;
-  districtName: string | null;
-  district: number | null;
+  /** Headquarters, charter, assets, Fed district, regulator, holding company: only the ones known. */
+  facts: HeroFact[];
   counts: CompareCounts | null;
   finding: string;
   /** The source line under the finding, shown only when there is no count. */
@@ -69,15 +70,24 @@ export function ProfileHero({
           >
             {name}
           </h1>
-          {facts && <p className="mt-4 text-[17px] text-[#e0e9ee] sm:text-[19px]">{facts}</p>}
-          {districtName && district && (
-            <p className="mt-1 text-[15px] text-[#d9e2e9] sm:text-[17px]">
-              <Link href={`/research/district/${district}`} className="hover:text-white hover:underline">
-                {districtName} Fed district
-              </Link>
-            </p>
+          {facts.length > 0 && (
+            <dl className="mt-6 grid max-w-3xl grid-cols-2 gap-x-6 gap-y-4 border-t border-white/20 pt-5 sm:grid-cols-3">
+              {facts.map((fact) => (
+                <div key={fact.label} className={`min-w-0 ${fact.wide ? "col-span-2 sm:col-span-1" : ""}`}>
+                  <dt className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#b9c8d4]">{fact.label}</dt>
+                  <dd className="mt-1 break-words text-[15px] leading-snug text-white sm:text-[16px]">
+                    {fact.href ? (
+                      <Link href={fact.href} className="underline decoration-white/40 underline-offset-4 hover:decoration-white">
+                        {fact.value}
+                      </Link>
+                    ) : (
+                      fact.value
+                    )}
+                  </dd>
+                </div>
+              ))}
+            </dl>
           )}
-          {recordFacts && <p className="mt-1 text-[14px] text-[#d9e2e9] sm:text-[15px]">{recordFacts}</p>}
           {!counts && (
             <>
               <p className="mt-6 max-w-2xl text-[18px] font-semibold leading-snug text-white sm:text-[20px]">{finding}</p>

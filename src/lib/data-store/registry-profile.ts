@@ -2,6 +2,8 @@ import { sql } from "./connection";
 import { stateAgencyCode } from "@/lib/regulatory/state-enforcement";
 import { buildLocalOfficeMap, localMapBounds, LOCAL_MAP_MAX_STATES, type LocalOfficeMap } from "@/lib/geo/local-office-map";
 import { getLocalMarketMembers } from "./custom-report-market";
+import { getDepositShareChange } from "./deposit-share-change";
+import { institutionDisplayName } from "@/lib/institution-display-name";
 import { latestSodYear } from "@/lib/agents/magellan/registry/fdic-sod";
 
 /**
@@ -27,6 +29,26 @@ export interface BranchMarket {
   msa_name: string;
   branches: number;
   deposits: number;
+  /** Banks: the metro's code; null outside a metro area and for credit unions. */
+  msa_code?: number | null;
+  /** The city holding most of its offices in this market, for the city fee page link. */
+  city?: string | null;
+  state?: string | null;
+  /** Banks, metros only: its deposit share there and who it competes with (FDIC Summary of Deposits). */
+  share?: MarketShareDetail | null;
+}
+
+export interface MarketShareDetail {
+  /** Its share of the bank deposits in the metro, in percent. */
+  sharePct: number;
+  /** Change in percentage points over five years; null when the metro has no rows that year. */
+  change5yPp: number | null;
+  /** Its rank by deposits in the metro, 1 = largest. */
+  rank: number;
+  /** FDIC-insured institutions with offices in the metro. */
+  institutions: number;
+  /** The largest other institutions there, by deposit share. */
+  competitors: { name: string; sharePct: number }[];
 }
 
 export interface BranchState {
@@ -210,6 +232,38 @@ async function localMapFor(
   return { localMap, mappedOffices: map.dots.length, approxOffices, ...(await marketCompetitors(institutionId)) };
 }
 
+const MARKET_COMPETITORS = 5;
+
+/** Each metro's deposit share, five-year change and largest competitors, from the shared share reader. */
+async function withMarketShares(institutionId: number, year: number, markets: BranchMarket[]): Promise<BranchMarket[]> {
+  const codes = markets.map((m) => m.msa_code).filter((c): c is number => c != null);
+  if (codes.length === 0) return markets;
+  const result = await getDepositShareChange({ geo: "metro", markets: codes, endYear: year }).catch(() => null);
+  if (!result) return markets;
+  const byCode = new Map(result.markets.map((m) => [Number(m.market), m]));
+  return markets.map((m) => {
+    const summary = m.msa_code == null ? null : byCode.get(m.msa_code);
+    const own = summary?.rows.find((r) => r.institution_id === institutionId);
+    if (!summary || !own) return m;
+    const rows = summary.rows as Array<(typeof summary.rows)[number] & { name?: string | null }>;
+    const competitors = rows
+      .filter((r) => r.institution_id !== institutionId && r.name)
+      .sort((a, b) => b.share - a.share)
+      .slice(0, MARKET_COMPETITORS)
+      .map((r) => ({ name: institutionDisplayName(r.name ?? ""), sharePct: Math.round(r.share * 10) / 10 }));
+    return {
+      ...m,
+      share: {
+        sharePct: Math.round(own.share * 10) / 10,
+        change5yPp: own.change_5y_pp === null ? null : Math.round(own.change_5y_pp * 10) / 10,
+        rank: own.rank,
+        institutions: summary.institutions,
+        competitors,
+      },
+    };
+  });
+}
+
 export async function getBranchFootprint(institutionId: number): Promise<BranchFootprint | null> {
   const byYear = await sql<Array<{ year: number; branches: number; deposits: string }>>`
     SELECT year, COUNT(*)::int AS branches, COALESCE(SUM(deposits), 0) AS deposits
@@ -226,13 +280,14 @@ export async function getBranchFootprint(institutionId: number): Promise<BranchF
        WHERE institution_id = ${institutionId} AND year = ${latestYear} AND state IS NOT NULL
        GROUP BY state
        ORDER BY branches DESC`,
-    sql<Array<{ msa_name: string; branches: number; deposits: string }>>`
-      SELECT COALESCE(msa_name, 'Outside a metro area') AS msa_name, COUNT(*)::int AS branches,
-             COALESCE(SUM(deposits), 0) AS deposits
+    sql<Array<{ msa_name: string; msa_code: number | null; city: string | null; state: string | null; branches: number; deposits: string }>>`
+      SELECT COALESCE(MAX(msa_name), 'Outside a metro area') AS msa_name, NULLIF(msa_code, 0) AS msa_code,
+             MODE() WITHIN GROUP (ORDER BY INITCAP(city)) AS city, MODE() WITHIN GROUP (ORDER BY state) AS state,
+             COUNT(*)::int AS branches, COALESCE(SUM(deposits), 0) AS deposits
         FROM institution_branch_deposits
        WHERE institution_id = ${institutionId} AND year = ${latestYear}
-       GROUP BY 1
-       ORDER BY 3 DESC
+       GROUP BY NULLIF(msa_code, 0)
+       ORDER BY 6 DESC
        LIMIT 8`,
   ]);
   const points =
@@ -248,7 +303,18 @@ export async function getBranchFootprint(institutionId: number): Promise<BranchF
     latestYear,
     byYear: byYear.map((r) => ({ year: Number(r.year), branches: Number(r.branches), deposits: Number(r.deposits) })),
     byState: byState.map((r) => ({ state: r.state, branches: Number(r.branches), deposits: Number(r.deposits) })),
-    topMarkets: topMarkets.map((r) => ({ msa_name: r.msa_name, branches: Number(r.branches), deposits: Number(r.deposits) })),
+    topMarkets: await withMarketShares(
+      institutionId,
+      latestYear,
+      topMarkets.map((r) => ({
+        msa_name: r.msa_name,
+        msa_code: r.msa_code === null ? null : Number(r.msa_code),
+        city: r.city,
+        state: r.state,
+        branches: Number(r.branches),
+        deposits: Number(r.deposits),
+      })),
+    ),
     ...(await localMapFor(institutionId, byState.map((r) => r.state), [...points], true, Number(byYear[byYear.length - 1]?.branches ?? 0))),
   };
 }

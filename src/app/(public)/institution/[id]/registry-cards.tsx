@@ -8,6 +8,7 @@ import { formatCompactDollars } from "@/lib/format";
 import { enforcementAgencyLabel, enforcementAgencyList } from "@/lib/regulatory/state-enforcement";
 import type {
   BranchFootprint,
+  BranchMarket,
   ComplaintTrend,
   EnforcementActionRow,
   EnforcementRecord,
@@ -104,6 +105,53 @@ export function RegistryCards({
   );
 }
 
+/** One metro: its deposit share there, its rank, the five-year change and the largest other banks, with its city's fee page. */
+function MarketPanel({ market }: { market: BranchMarket }) {
+  const share = market.share!;
+  const change =
+    share.change5yPp === null
+      ? null
+      : share.change5yPp === 0
+        ? "unchanged over five years"
+        : `${share.change5yPp > 0 ? "up" : "down"} ${Math.abs(share.change5yPp)} points over five years`;
+  const cityHref =
+    market.city && market.state
+      ? `/fees/city/${market.state.toLowerCase()}/${encodeURIComponent(market.city.toLowerCase())}`
+      : null;
+  return (
+    <div className="mt-3 rounded-lg border border-border bg-[#FAF8F4] p-3" aria-live="polite">
+      <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-ink-muted">{market.msa_name}</p>
+      <p className="mt-1 text-[12px] leading-snug text-ink">
+        <span className="font-semibold">{share.sharePct}% of bank deposits</span>, #{share.rank} of {share.institutions}
+        {change ? `, ${change}` : ""}.
+      </p>
+      {share.competitors.length > 0 && (
+        <table className="mt-2 w-full text-left text-[11px] tabular-nums">
+          <thead className="text-[10px] text-ink-muted">
+            <tr>
+              <th className="py-1 pr-2 font-normal">Largest competitors here</th>
+              <th className="py-1 pl-2 text-right font-normal">Deposit share</th>
+            </tr>
+          </thead>
+          <tbody className="text-ink">
+            {share.competitors.map((c) => (
+              <tr key={c.name} className="border-t border-surface-200">
+                <td className="py-1 pr-2">{c.name}</td>
+                <td className="py-1 pl-2 text-right">{c.sharePct}%</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {cityHref && market.city && (
+        <a href={cityHref} className="mt-2 inline-flex min-h-11 items-center text-[12px] font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
+          Fees in {market.city} &rarr;
+        </a>
+      )}
+    </div>
+  );
+}
+
 export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint }) {
   const [hovered, setHovered] = useState<string | null>(null);
   const byState = useMemo(() => new Map(footprint.byState.map((s) => [s.state, s])), [footprint]);
@@ -122,6 +170,9 @@ export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint 
   const mapped = footprint.mappedOffices ?? 0;
   const nearby = footprint.nearby ?? [];
   const nearbyCount = footprint.nearbyCount ?? nearby.length;
+  const [selectedName, setSelectedName] = useState<string | null>(null);
+  const selected =
+    footprint.topMarkets.find((m) => m.msa_name === selectedName && m.share) ?? footprint.topMarkets.find((m) => m.share) ?? null;
   const stateCount = `${footprint.byState.length} ${footprint.byState.length === 1 ? "state" : "states"}`;
   const subtitle = isCu
     ? `${latest.branches.toLocaleString("en-US")} ${latest.branches === 1 ? "office" : "offices"} in ${stateCount}${footprint.reportDate ? ` (${formatQuarterEnd(footprint.reportDate)})` : ""}`
@@ -248,48 +299,76 @@ export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint 
           </p>
           <table className="mt-1 w-full text-left text-[11px] tabular-nums">
             <tbody className="text-ink">
-              {footprint.topMarkets.map((m) => (
-                <tr key={m.msa_name} className="border-t border-surface-200">
-                  <td className="py-1 pr-2">{m.msa_name}</td>
-                  <td className="py-1 text-right text-ink-soft">{m.branches}</td>
-                  {!isCu && <td className="py-1 pl-2 text-right">{formatCompactDollars(thousandsToDollars(m.deposits))}</td>}
-                </tr>
-              ))}
+              {footprint.topMarkets.map((m) => {
+                const selectable = Boolean(m.share);
+                const isSelected = selectable && selected?.msa_name === m.msa_name;
+                return (
+                  <tr
+                    key={m.msa_name}
+                    className={`border-t border-surface-200 ${isSelected ? "bg-[#EEF4FB]" : ""} ${selectable ? "cursor-pointer hover:bg-[#F4F1EC]" : ""}`}
+                    onClick={selectable ? () => setSelectedName(m.msa_name) : undefined}
+                  >
+                    <td className="py-1.5 pr-2">
+                      {selectable ? (
+                        <button
+                          type="button"
+                          aria-pressed={isSelected}
+                          className={`text-left underline-offset-2 hover:underline ${isSelected ? "font-semibold" : ""}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedName(m.msa_name);
+                          }}
+                        >
+                          {m.msa_name}
+                        </button>
+                      ) : (
+                        m.msa_name
+                      )}
+                    </td>
+                    <td className="py-1.5 text-right text-ink-soft">{m.branches}</td>
+                    {!isCu && <td className="py-1.5 pl-2 text-right">{formatCompactDollars(thousandsToDollars(m.deposits))}</td>}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
-          {nearby.length > 0 && (
-            <>
-              <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.1em] text-ink-muted">Largest competitors nearby</p>
-              {footprint.marketName && (
-                <p className="mt-1 text-[11px] text-ink-soft">
-                  Local market: {footprint.marketName}
-                  {footprint.marketBasis === "hq_city"
-                    ? ", around its headquarters."
-                    : `, where it holds the most deposits${footprint.byState.length > 1 ? " in its main state" : ""}.`}
-                </p>
-              )}
-              <table className="mt-1 w-full text-left text-[11px] tabular-nums">
-                <thead className="text-[10px] text-ink-muted">
-                  <tr>
-                    <th className="py-1 pr-2 font-normal">{nearbyCount.toLocaleString("en-US")} in its local market</th>
-                    <th className="py-1 pl-2 text-right font-normal">Deposit share</th>
-                  </tr>
-                </thead>
-                <tbody className="text-ink">
-                  {nearby.map((n) => (
-                    <tr key={n.name} className="border-t border-surface-200">
-                      <td className="py-1 pr-2">{n.name}</td>
-                      <td className="py-1 pl-2 text-right">{n.depositSharePct === null ? "Credit union" : `${n.depositSharePct}%`}</td>
+          {selected?.share ? (
+            <MarketPanel market={selected} />
+          ) : (
+            nearby.length > 0 && (
+              <>
+                <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.1em] text-ink-muted">Largest competitors nearby</p>
+                {footprint.marketName && (
+                  <p className="mt-1 text-[11px] text-ink-soft">
+                    Local market: {footprint.marketName}
+                    {footprint.marketBasis === "hq_city"
+                      ? ", around its headquarters."
+                      : `, where it holds the most deposits${footprint.byState.length > 1 ? " in its main state" : ""}.`}
+                  </p>
+                )}
+                <table className="mt-1 w-full text-left text-[11px] tabular-nums">
+                  <thead className="text-[10px] text-ink-muted">
+                    <tr>
+                      <th className="py-1 pr-2 font-normal">{nearbyCount.toLocaleString("en-US")} in its local market</th>
+                      <th className="py-1 pl-2 text-right font-normal">Deposit share</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-              {footprint.ownDepositSharePct != null && (
-                <p className="mt-1 text-[11px] text-ink-soft">
-                  This bank holds {footprint.ownDepositSharePct}% of the deposits {footprint.marketName ? "there" : "in its local market"}.
-                </p>
-              )}
-            </>
+                  </thead>
+                  <tbody className="text-ink">
+                    {nearby.map((n) => (
+                      <tr key={n.name} className="border-t border-surface-200">
+                        <td className="py-1 pr-2">{n.name}</td>
+                        <td className="py-1 pl-2 text-right">{n.depositSharePct === null ? "Credit union" : `${n.depositSharePct}%`}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {footprint.ownDepositSharePct != null && (
+                  <p className="mt-1 text-[11px] text-ink-soft">
+                    This bank holds {footprint.ownDepositSharePct}% of the deposits {footprint.marketName ? "there" : "in its local market"}.
+                  </p>
+                )}
+              </>
+            )
           )}
           {trend.length > 1 && (
             <>

@@ -71,7 +71,7 @@ import {
   toRateDisplayFees,
 } from "./profile-data";
 import { InstitutionJsonLd } from "./profile-jsonld";
-import { ProfileHero } from "./profile-hero";
+import { ProfileHero, type HeroFact } from "./profile-hero";
 import { SERIF } from "./profile-serif";
 import { profileSerif } from "./profile-serif-font";
 import "./profile.css";
@@ -320,30 +320,28 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
     isAuthenticated: Boolean(user),
   });
 
-  // "Tallahassee, Florida · Bank · $4.4B assets", the hero's one line of facts.
-  const heroFacts = [
-    [city, stateName].filter(Boolean).join(", "),
-    charterLabel,
-    assetsDollars ? `${formatCompactDollars(assetsDollars)} assets` : segmentLabel,
-  ]
-    .filter((part): part is string => Boolean(part))
-    .join(" \u00b7 ");
-  // The regulator line under the district: who supervises it, its holding company, and whether it
-  // has closed or merged.
+  // The hero's details, one labelled cell each: where it is, what it is, how big, who supervises it.
   const holdingName = regulator?.holding_company_name
     ? (toTitleCase(regulator.holding_company_name) ?? regulator.holding_company_name)
     : null;
-  const recordFacts = [
-    regulator?.primary_regulator ? `Regulator: ${regulator.primary_regulator}` : null,
-    holdingName ? `Holding company: ${holdingName}` : null,
-    regulator?.regulatory_status === "inactive"
-      ? regulator.closed_date
-        ? `Closed or merged ${regulator.closed_date}`
-        : "Closed or merged"
-      : null,
-  ]
-    .filter((part): part is string => Boolean(part))
-    .join(" \u00b7 ");
+  const heroFacts: HeroFact[] = [
+    { label: "Headquarters", value: [city, stateName].filter(Boolean).join(", ") },
+    { label: "Charter", value: charterLabel },
+    { label: "Assets", value: assetsDollars ? formatCompactDollars(assetsDollars) : (segmentLabel ?? "") },
+    { label: "Fed district", value: districtName ?? "", href: district ? `/research/district/${district}` : undefined },
+    { label: "Regulator", value: regulator?.primary_regulator ?? "" },
+    { label: "Holding company", value: holdingName ?? "", wide: true },
+    {
+      label: "Status",
+      value:
+        regulator?.regulatory_status === "inactive"
+          ? regulator.closed_date
+            ? `Closed or merged ${regulator.closed_date}`
+            : "Closed or merged"
+          : "",
+      wide: true,
+    },
+  ].filter((fact) => fact.value);
 
   const showHamiltonBand = !isPro && !sparse && published.length > 0;
   // The one Hamilton finding shown free: its fee-income share against the peer median from the
@@ -396,9 +394,6 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
           stateName={stateName}
           stateCode={stateCode}
           facts={heroFacts}
-          recordFacts={recordFacts}
-          districtName={districtName}
-          district={district}
           counts={sparse ? null : counts}
           finding={finding}
           source={
