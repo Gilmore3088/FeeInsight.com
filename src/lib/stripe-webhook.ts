@@ -29,7 +29,8 @@ export interface ReportPaidEffect {
  * James's alert plus the requester's report link per paid institution report.
  */
 export interface StripeEventEffects {
-  welcome: Array<{ email: string; name: string | null }>;
+  /** Keyed by checkout session and user when staged, so one checkout welcomes its buyer once. */
+  welcome: Array<{ email: string; name: string | null; checkoutSessionId: string; userId: number }>;
   reportPaid: ReportPaidEffect[];
   /** A second paid session for a request already paid: James refunds it in Stripe. */
   reportDuplicate: Array<{ leadId: number; cents: number; checkoutSessionId: string }>;
@@ -120,8 +121,10 @@ async function markReportPaid(
 
 /**
  * The report request a charge paid for. Card checkout copies kind and lead_id onto the
- * PaymentIntent (payment_intent_data.metadata); older charges are looked up there. A
- * Stripe error throws, so the webhook returns 500 and Stripe redelivers.
+ * PaymentIntent (payment_intent_data.metadata); older charges are looked up there. A report
+ * paid on a Stripe invoice carries them on the invoice and on the customer made for it
+ * (/pay/report "Get an invoice"), never on the charge or PaymentIntent, so the customer is
+ * read last (#1973). A Stripe error throws, so the webhook returns 500 and Stripe redelivers.
  */
 async function reportLeadIdForCharge(charge: Stripe.Charge): Promise<number | null> {
   let metadata: Stripe.Metadata | null | undefined = charge.metadata;
@@ -131,6 +134,12 @@ async function reportLeadIdForCharge(charge: Stripe.Charge): Promise<number | nu
         ? await getStripe().paymentIntents.retrieve(charge.payment_intent)
         : charge.payment_intent;
     metadata = intent.metadata;
+  }
+  if (metadata?.kind !== REPORT_PAYMENT_KIND && charge.customer) {
+    const customer =
+      typeof charge.customer === "string" ? await getStripe().customers.retrieve(charge.customer) : charge.customer;
+    // A deleted customer keeps no metadata.
+    if (!("deleted" in customer && customer.deleted)) metadata = (customer as Stripe.Customer).metadata;
   }
   if (metadata?.kind !== REPORT_PAYMENT_KIND) return null;
   const leadId = Number(metadata.lead_id);
@@ -173,18 +182,18 @@ async function applyEvent(tx: Tx, event: Stripe.Event, effects: StripeEventEffec
       // different customer id saved for the account since then.
       await lockBillingCustomer(tx, customerId);
       const linked = Number.isInteger(userId) && userId > 0
-        ? await tx<Array<{ id: number; email: string | null; display_name: string | null; subscription_status: SubscriptionStatus }>>`
+        ? await tx<Array<{ id: number | string; email: string | null; display_name: string | null }>>`
             UPDATE users SET stripe_customer_id = ${customerId}
             WHERE id = ${userId} AND role IN ('viewer', 'premium')
               AND (stripe_customer_id IS NULL OR stripe_customer_id = ${customerId})
-            RETURNING id, email, display_name, subscription_status
+            RETURNING id, email, display_name
           `
         : email
-          ? await tx<Array<{ id: number; email: string | null; display_name: string | null; subscription_status: SubscriptionStatus }>>`
+          ? await tx<Array<{ id: number | string; email: string | null; display_name: string | null }>>`
               UPDATE users SET stripe_customer_id = ${customerId}
               WHERE (email = ${email} OR username = ${email}) AND role IN ('viewer', 'premium')
                 AND (stripe_customer_id IS NULL OR stripe_customer_id = ${customerId})
-              RETURNING id, email, display_name, subscription_status
+              RETURNING id, email, display_name
             `
           : [];
       const status = await reconcileSubscription(tx, customerId);
@@ -192,9 +201,15 @@ async function applyEvent(tx: Tx, event: Stripe.Event, effects: StripeEventEffec
       const institutionId = paidInstitutionId(session.metadata);
       for (const user of linked) {
         const to = user.email ?? email;
-        if (to && user.subscription_status !== "active") effects.welcome.push({ email: to, name: user.display_name ?? null });
+        // Not gated on the stored status: /account/welcome, invoice.paid and
+        // customer.subscription.created usually mark the account active first (#1972). The
+        // outbox keys this by session and user, so a replay or a second event for the same
+        // checkout (completed, then async_payment_succeeded) never welcomes twice.
+        if (to) {
+          effects.welcome.push({ email: to, name: user.display_name ?? null, checkoutSessionId: session.id ?? event.id, userId: Number(user.id) });
+        }
         if (institutionId) {
-          await anchorPaidInstitution(tx, { userId: user.id, institutionId, note: `Filed at Pro checkout (${session.id}).` });
+          await anchorPaidInstitution(tx, { userId: Number(user.id), institutionId, note: `Filed at Pro checkout (${session.id}).` });
         }
       }
       return;

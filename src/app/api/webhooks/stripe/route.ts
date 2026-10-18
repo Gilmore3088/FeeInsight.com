@@ -38,8 +38,8 @@ async function handlePOST(req: Request) {
       if (!(await recordStripeEvent(tx, event))) return; // Already processed
 
       const effects = await applyStripeEvent(tx, event);
-      await stagePaymentEmails(tx, event.id, effects);
-      activated = effects.welcome.map((welcome) => welcome.email);
+      // Only welcomes staged now: a second event for the same checkout adds none.
+      activated = await stagePaymentEmails(tx, event.id, effects);
     });
   } catch (err) {
     console.error(`[stripe-webhook] Failed to process ${event.id} (${event.type}):`, err);
