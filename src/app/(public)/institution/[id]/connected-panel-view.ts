@@ -52,6 +52,8 @@ export interface PanelFee {
   label: string;
   /** "$35": the compared value. */
   amount: string;
+  value: number;
+  medianValue: number;
   /** "Middle of $7.95 to $8.95", set when it lists several prices. */
   basis: string | null;
   median: string;
@@ -101,6 +103,8 @@ function panelFee(row: CompareRow, stateCode: string | null): PanelFee | null {
     key: row.key,
     label: sentenceCase(lowerLabel(row.label)),
     amount: money(row.amount),
+    value: row.amount,
+    medianValue: ref.median.median,
     basis: isRange(row)
       ? `Listed at ${money(row.low as number)} to ${money(row.high as number)}; we compare the ${row.highestTier ? "highest" : "midpoint"}.`
       : null,

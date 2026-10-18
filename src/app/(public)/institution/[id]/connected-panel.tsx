@@ -11,18 +11,6 @@ import { SERIF } from "./profile-serif";
 const pct = (n: number) => `${n >= 10 ? n.toFixed(0) : n.toFixed(1)}%`;
 const NUM = "[font-variant-numeric:tabular-nums]";
 const KIND = "text-[12px] font-semibold uppercase tracking-[0.14em] text-ink-muted";
-const SOURCE = "mt-3 text-[12px] leading-relaxed text-ink-muted";
-
-/** Above and below in words beside a neutral mark: no red or green price judgement (brief §8). */
-function Position({ direction }: { direction: Direction }) {
-  const word = direction === "same" ? "about the same" : direction;
-  return (
-    <span className="inline-flex items-center gap-1 text-[12px] text-ink-muted">
-      <span aria-hidden="true">{direction === "above" ? "▲" : direction === "below" ? "▼" : "●"}</span>
-      {word}
-    </span>
-  );
-}
 
 function QuarterBars({ panel }: { panel: Panel }) {
   const { quarters, incomeLabel } = panel.reported;
@@ -50,10 +38,43 @@ function QuarterBars({ panel }: { panel: Panel }) {
   );
 }
 
+/** One row of the exhibit: its value as a dot against the median as a tick, on its own scale. */
+function Dumbbell({ label, own, median, ownText, medianText, direction }: {
+  label: string;
+  own: number;
+  median: number;
+  ownText: string;
+  medianText: string;
+  direction: Direction;
+}) {
+  const top = Math.max(own, median) * 1.15 || 1;
+  const at = (n: number) => `${(Math.max(0, n) / top) * 100}%`;
+  const [lo, hi] = own < median ? [own, median] : [median, own];
+  return (
+    <li className="grid grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)_auto] items-center gap-x-3 py-2.5 sm:grid-cols-[10rem_minmax(0,1fr)_auto]">
+      <span className="truncate text-[13px] text-ink-soft">{label}</span>
+      <span
+        className="relative h-5"
+        role="img"
+        aria-label={`${label}: ${ownText}, median ${medianText}, ${direction === "same" ? "about the same" : direction}`}
+      >
+        <span className="absolute inset-x-0 top-1/2 h-px bg-border" />
+        <span className="absolute top-1/2 h-[3px] -translate-y-1/2 bg-ink/25" style={{ left: at(lo), width: `calc(${at(hi)} - ${at(lo)})` }} />
+        <span className="absolute top-0 h-5 w-0.5 -translate-x-1/2 bg-ink-muted" style={{ left: at(median) }} />
+        <span className="absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-ink" style={{ left: at(own) }} />
+      </span>
+      <span className={`text-right text-[14px] ${NUM}`}>
+        <span className="font-medium text-ink">{ownText}</span>
+        <span className="text-ink-muted"> / {medianText}</span>
+      </span>
+    </li>
+  );
+}
+
 /**
- * Fee income beside fee prices (James's brief §6): reported call-report figures, calculated
- * comparisons with their medians, and the questions neither answers, each in its own column,
- * then the Hamilton hand-offs that carry this institution, cohort, quarter and fees with them.
+ * Fee income beside fee prices (James's brief §6), cut to two exhibits (James, Oct 18: "too much
+ * text"): the reported quarters, and its share and fees against their medians. Sources and the
+ * questions the figures can't answer sit in one drawer; the Hamilton hand-offs carry the rest.
  */
 export function ConnectedPanel({
   panel,
@@ -65,6 +86,7 @@ export function ConnectedPanel({
 }) {
   const { reported, share, fees, questions } = panel;
   const handoffs = hamiltonHandoffs(panel.handoff);
+  const placeOf = fees[0]?.place;
   return (
     <section aria-labelledby="connected-heading" className="scroll-mt-20 border-t border-border pt-10">
       <h2
@@ -75,106 +97,91 @@ export function ConnectedPanel({
         Fee income beside fee prices
       </h2>
       <p className="mt-3 max-w-3xl text-[16px] leading-relaxed text-ink-soft sm:text-[18px]">{panel.observation}</p>
-      {panel.caution && <p className="mt-2 text-[13px] text-ink-muted">{panel.caution}</p>}
 
-      <div className="mt-8 grid gap-8 lg:grid-cols-3 lg:gap-0 lg:divide-x lg:divide-border">
-        {/* Reported: the filing's own figures. */}
-        <div className="min-w-0 lg:pr-8">
-          <p className={KIND}>Reported</p>
-          <p className="mt-3 text-[13px] text-ink-soft">
+      <div className="mt-8 grid gap-10 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:gap-12">
+        <figure className="min-w-0">
+          <figcaption className={KIND}>
             {reported.incomeLabel}, {reported.latest.label}
-          </p>
-          <p className={`mt-1 text-[40px] font-medium leading-none tracking-[-0.02em] text-ink ${NUM}`} style={SERIF}>
+          </figcaption>
+          <p className={`mt-2 text-[44px] font-medium leading-none tracking-[-0.02em] text-ink ${NUM}`} style={SERIF}>
             {formatCompactDollars(reported.latest.value)}
           </p>
           <QuarterBars panel={panel} />
-          <p className={SOURCE}>
-            {reported.source}, {reported.entity.toLowerCase()} level, standalone quarters.
-          </p>
-        </div>
+        </figure>
 
-        {/* Compared: calculated against a stated median. */}
-        <div className="min-w-0 border-t border-border pt-8 lg:border-t-0 lg:px-8 lg:pt-0">
-          <p className={KIND}>Compared</p>
-          <dl className="mt-3 divide-y divide-border">
+        <figure className="min-w-0">
+          <figcaption className={KIND}>Against the median{placeOf ? ` (${placeOf === "U.S." ? "U.S." : placeOf} for fees)` : ""}</figcaption>
+          <ul className="mt-2 divide-y divide-border">
             {share && (
-              <div className="pb-3">
-                <dt className="text-[13px] text-ink-soft">Share of revenue</dt>
-                <dd className="mt-1">
-                  <div className={`flex flex-wrap items-baseline gap-x-3 gap-y-1 ${NUM}`}>
-                    <span className="text-[22px] font-medium text-ink">{pct(share.own)}</span>
-                    <span className="text-[14px] text-ink-muted">median {pct(share.median)}</span>
-                    <Position direction={share.direction} />
-                  </div>
-                  <p className="mt-1 text-[12px] leading-snug text-ink-muted">
-                    {reported.source}s, {panel.handoff.quarter}: median of {share.peers.toLocaleString("en-US")} {share.cohort}.
-                  </p>
-                </dd>
-              </div>
+              <Dumbbell
+                label="Share of revenue"
+                own={share.own}
+                median={share.median}
+                ownText={pct(share.own)}
+                medianText={pct(share.median)}
+                direction={share.direction}
+              />
             )}
             {fees.map((fee) => (
-              <div key={fee.key} className="py-3">
-                <dt className="text-[13px] text-ink-soft">{fee.label}</dt>
-                <dd className="mt-1">
-                  <div className={`flex flex-wrap items-baseline gap-x-3 gap-y-1 ${NUM}`}>
-                    <span className="text-[22px] font-medium text-ink">{fee.amount}</span>
-                    <span className="text-[14px] text-ink-muted">
-                      {fee.place} median {fee.median}
-                    </span>
-                    {fee.difference ? (
-                      <span className="inline-flex items-center gap-2">
-                        <span className="text-[13px] text-ink-soft">{fee.difference}</span>
-                        <Position direction={fee.direction} />
-                      </span>
-                    ) : (
-                      <Position direction={fee.direction} />
-                    )}
-                  </div>
-                  <p className="mt-1 text-[12px] leading-snug text-ink-muted">
-                    {fee.basis ? `${fee.basis} ` : ""}
-                    {fee.institutions.toLocaleString("en-US")} institutions in the median.
-                  </p>
-                </dd>
-              </div>
-            ))}
-          </dl>
-          <p className={SOURCE}>Fees from each institution&rsquo;s own schedule, against {PRODUCT_NAME} medians. Not weighted by revenue.</p>
-        </div>
-
-        {/* Open questions: what the figures raise and can't settle. */}
-        <div className="min-w-0 border-t border-border pt-8 lg:border-t-0 lg:pl-8 lg:pt-0">
-          <p className={KIND}>Open questions</p>
-          <ul className="mt-3 space-y-3 text-[15px] leading-relaxed text-ink">
-            {questions.map((question) => (
-              <li key={question} className="flex gap-2">
-                <span aria-hidden="true" className="text-ink-muted">
-                  ?
-                </span>
-                <span>{question}</span>
-              </li>
+              <Dumbbell
+                key={fee.key}
+                label={fee.label}
+                own={fee.value}
+                median={fee.medianValue}
+                ownText={`${fee.amount}${fee.basis ? "*" : ""}`}
+                medianText={fee.median}
+                direction={fee.direction}
+              />
             ))}
           </ul>
-          <p className={SOURCE}>Prices alone can&rsquo;t explain a revenue share. Fee volumes and account mix aren&rsquo;t public.</p>
-        </div>
+          <p className="mt-2 flex items-center gap-4 text-[12px] text-ink-muted">
+            <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-ink" aria-hidden="true" />{panel.handoff.institutionName}</span>
+            <span className="inline-flex items-center gap-1.5"><span className="h-3 w-0.5 bg-ink-muted" aria-hidden="true" />Median</span>
+          </p>
+        </figure>
       </div>
 
-      <div className="mt-10">
-        <p className="text-[15px] font-medium text-ink">Look into this in Hamilton</p>
-        <p className="mt-1 text-[13px] text-ink-muted">Each opens on this {panel.handoff.kind} in Hamilton, part of a paid subscription.</p>
-        <div className="mt-4">
-          <HandoffLinks institutionId={panel.handoff.institutionId} handoffs={handoffs} />
-        </div>
+      <div className="mt-8">
+        <HandoffLinks institutionId={panel.handoff.institutionId} handoffs={handoffs} />
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-start gap-x-6 gap-y-1">
+        <details className="group/src min-w-0 flex-1">
+          <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-2 text-[13px] text-ink-muted hover:text-ink [&::-webkit-details-marker]:hidden">
+            <span aria-hidden="true" className="text-[10px] transition-transform group-open/src:rotate-90">&#9654;</span>
+            Sources and open questions
+          </summary>
+          <div className="max-w-3xl space-y-2 text-[12px] leading-relaxed text-ink-muted">
+            <p>
+              {reported.source}s, {reported.entity.toLowerCase()} level, standalone quarters.{panel.caution ? ` ${panel.caution}` : ""}
+            </p>
+            {share && (
+              <p>
+                Share of revenue: median of {share.peers.toLocaleString("en-US")} {share.cohort}, {panel.handoff.quarter}.
+              </p>
+            )}
+            {fees.length > 0 && (
+              <p>
+                Fees from each institution&rsquo;s own schedule against {PRODUCT_NAME} medians, not weighted by revenue
+                {fees.some((fee) => fee.basis) ? `. *${fees.filter((fee) => fee.basis).map((fee) => `${fee.label}: ${fee.basis}`).join(" ")}` : "."}
+              </p>
+            )}
+            <ul className="list-disc space-y-1 pl-4">
+              {questions.map((question) => (
+                <li key={question}>{question}</li>
+              ))}
+            </ul>
+          </div>
+        </details>
         {sampleReportHref && (
           <FreeOnly>
-            <p className="mt-4">
-              <Link
-                href={sampleReportHref}
-                className="inline-flex min-h-11 items-center gap-2 text-[14px] font-medium text-ink underline decoration-border underline-offset-[6px] hover:decoration-ink"
-              >
-                See a free sample report
-                <ArrowRight className="size-4" aria-hidden="true" />
-              </Link>
-            </p>
+            <Link
+              href={sampleReportHref}
+              className="inline-flex min-h-11 items-center gap-2 text-[13px] font-medium text-ink underline decoration-border underline-offset-[6px] hover:decoration-ink"
+            >
+              See a free sample report
+              <ArrowRight className="size-4" aria-hidden="true" />
+            </Link>
           </FreeOnly>
         )}
       </div>
