@@ -21,6 +21,7 @@ import type { Metadata } from "next";
 import { getPublicSnapshot } from "@/lib/public-stats";
 import { CONTACT_EMAIL, LEGAL_ENTITY_NAME, PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { loadSampleReport } from "@/lib/custom-report/sample-report";
+import { getRevenueContextCached } from "@/lib/custom-report/revenue-context";
 import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
@@ -31,6 +32,7 @@ import { getSpotlightCategories, publicFeeTypes } from "@/lib/fee-taxonomy";
 import { LandingHero, LandingProof } from "./landing-hero";
 import { LandingHamilton } from "./landing-hamilton";
 import { LandingResearch } from "./landing-research-section";
+import { LandingDeliverable } from "./landing-deliverable";
 import { LandingPricing } from "./landing-pricing";
 import { buildIndexCard } from "./landing-index";
 import { homeReadsCacheable } from "./landing-shared";
@@ -87,7 +89,8 @@ export default async function LandingPage() {
   // read /fees makes; a failed fee read only leaves that fee out of the card. The live sample
   // report (the one /for-institutions and the sample page show) gives the Hamilton examples
   // their figures; a failed read shows the examples without figures. It is null both when none
-  // passes the bar today and on error.
+  // passes the bar today and on error. The same report, with its bank's Call Report fee income
+  // (the read the sample page makes), draws the deliverable before the plans.
   const { summary, categories } = await getPublicSnapshot();
   // The fee types the public site lists (the top 50, as /fees counts them) that have published fees.
   const listed = publicFeeTypes(categories);
@@ -121,6 +124,13 @@ export default async function LandingPage() {
   });
   // A render with a failed read is cached for a minute, not fifteen (see the note at the top).
   if (!cacheable) await shortenPageLife();
+  const subjectId = sampleRead.report?.data.subject.institution_id;
+  const revenue = subjectId
+    ? await getRevenueContextCached(subjectId).catch((error: unknown) => {
+        console.error("[home] sample fee income read failed; deliverable shown without it", error);
+        return null;
+      })
+    : null;
   const index = buildIndexCard(new Map(indexReads.map((r) => [r.fee, r.rows])));
 
   return (
@@ -135,12 +145,13 @@ export default async function LandingPage() {
       />
       <ConsumerNav />
       <main id="main-content">
-        {/* James's example (Oct 17): the hero with the working Index, the proof strip, Hamilton's
-            examples, the connected research, then the plans. */}
+        {/* James's landing critique (Oct 17, §8), six sections: the hero, live data (the Index card
+            and the proof strip), the Hamilton investigation, the evidence, the deliverable, the plans. */}
         <LandingHero index={index} freshness={summary.refreshedOn || summary.freshnessLabel} />
         <LandingProof summary={summary} feeTypes={publicKeys.size} />
         <LandingHamilton report={sampleRead.report} />
         <LandingResearch />
+        <LandingDeliverable report={sampleRead.report} revenue={revenue} preparedOn={new Date()} />
         <LandingPricing />
       </main>
       <CustomerFooter />
