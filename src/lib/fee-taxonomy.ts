@@ -509,6 +509,14 @@ export const FAMILY_COLORS: Record<string, FamilyColors> = {
   },
 };
 
+/**
+ * A fee's name inside a sentence: the bracketed short form dropped, words lowercase, acronyms
+ * kept. "Overdraft (OD)" reads "overdraft"; "NSF / Returned Item" reads "NSF / returned item".
+ */
+export function sentenceFeeName(displayName: string): string {
+  return displayName.replace(/\s*\([^)]*\)/g, "").replace(/\b[A-Z][a-z]+/g, (w) => w.toLowerCase());
+}
+
 export function getDisplayName(category: string): string {
   return DISPLAY_NAMES[category] ?? category.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }

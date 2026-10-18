@@ -14,8 +14,6 @@ interface PageProps {
   params: Promise<{ state: string }>;
 }
 
-/** Markets offered as one-tap links under the search. */
-const SHORTCUTS = 6;
 
 const LINK = "font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink";
 
@@ -74,7 +72,8 @@ export default async function StateCityDirectory({ params }: PageProps) {
             </p>
           </div>
           <div className="mt-6">
-            <CityList cities={links} stateName={stateName} stateCode={stateCode} shortcuts={links.slice(0, SHORTCUTS)} />
+            <CityList cities={links} stateName={stateName} stateCode={stateCode} />
+            {/* No shortcut chips: the six largest markets are already in the list, so they showed twice (#1953). */}
           </div>
           <p className="mt-4 text-[12px] text-ink-muted">
             A city is listed once at least one bank or credit union with a branch there has published fees. Counts are

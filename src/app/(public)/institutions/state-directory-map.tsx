@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { ArrowRight } from "lucide-react";
 import type { InstitutionStateDirectorySummary } from "@/lib/data-store/search";
 import { US_STATES } from "@/lib/us-map-paths";
@@ -75,6 +75,47 @@ function formatStateCounts(summary: InstitutionStateDirectorySummary | undefined
   const verified = summary?.verified_institution_count ?? 0;
   const monitored = summary?.institution_count ?? 0;
   return `${formatCount(verified)} with fees · ${formatCount(monitored)} monitored`;
+}
+
+/**
+ * One state on the map. While its link is loading the state turns navy at once (#1953: a click
+ * looked like a hover while the directory took seconds to answer).
+ */
+function StatePath({
+  d,
+  value,
+  max,
+  active,
+  hovered,
+  title,
+  onEnter,
+  onLeave,
+}: {
+  d: string;
+  value: number;
+  max: number;
+  active: boolean;
+  hovered: boolean;
+  title: string;
+  onEnter: () => void;
+  onLeave: () => void;
+}) {
+  const { pending } = useLinkStatus();
+  const selected = active || pending;
+  return (
+    <path
+      d={d}
+      fill={getFill({ value, max, active: selected, hovered })}
+      stroke={selected ? "#132338" : "#fbf9f4"}
+      strokeWidth={selected ? 2.2 : 1.2}
+      aria-busy={pending || undefined}
+      className={`cursor-pointer transition-[fill,stroke,filter] duration-150 hover:brightness-95 focus:outline-none ${pending ? "animate-pulse" : ""}`}
+      onMouseEnter={onEnter}
+      onMouseLeave={onLeave}
+    >
+      <title>{title}</title>
+    </path>
+  );
 }
 
 export function StateDirectoryMap({
@@ -164,22 +205,16 @@ export function StateDirectoryMap({
                     aria-label={`${state.name}: ${formatStateCounts(summary)}`}
                     prefetch={false}
                   >
-                    <path
+                    <StatePath
                       d={state.d}
-                      fill={getFill({
-                        value: summary?.verified_institution_count ?? 0,
-                        max: maxVerified,
-                        active,
-                        hovered,
-                      })}
-                      stroke={active ? "#132338" : "#fbf9f4"}
-                      strokeWidth={active ? 2.2 : 1.2}
-                      className="cursor-pointer transition-[fill,stroke,filter] duration-150 hover:brightness-95 focus:outline-none"
-                      onMouseEnter={() => setHoveredState(state.id)}
-                      onMouseLeave={() => setHoveredState(null)}
-                    >
-                      <title>{`${state.name}: ${formatStateCounts(summary)}`}</title>
-                    </path>
+                      value={summary?.verified_institution_count ?? 0}
+                      max={maxVerified}
+                      active={active}
+                      hovered={hovered}
+                      title={`${state.name}: ${formatStateCounts(summary)}`}
+                      onEnter={() => setHoveredState(state.id)}
+                      onLeave={() => setHoveredState(null)}
+                    />
                   </Link>
                 );
               })}

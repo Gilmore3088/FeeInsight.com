@@ -10,8 +10,8 @@
 
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getSql } from "@/lib/data-store/connection";
-import type { PublishedReport, ReportType } from "@/lib/report-engine/types";
+import { filterReportCatalog, getPublicReportCatalogCached, type PublicReportRow } from "@/lib/data-store/published-reports";
+import type { ReportType } from "@/lib/report-engine/types";
 import { timeAgo } from "@/lib/format";
 import { TrackLink } from "@/components/track-link";
 import { CONTACT_EMAIL, REPORT_INCLUDES, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
@@ -80,23 +80,16 @@ interface PageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
+/**
+ * The public catalog from the data cache, filtered here. A cold cache on a slow pool can still
+ * miss the deadline; the section then hides instead of printing an error (#1953).
+ */
 async function loadReports(typeFilter: string | null, fromIso: string | null) {
-  try {
-    const sql = getSql();
-    const reportQuery = sql<PublishedReport[]>`
-      SELECT id, report_type, slug, title, published_at
-      FROM published_reports
-      WHERE is_public = true
-        ${typeFilter ? sql` AND report_type = ${typeFilter}` : sql``}
-        ${fromIso ? sql` AND published_at >= ${fromIso}` : sql``}
-      ORDER BY published_at DESC
-      LIMIT 100
-    `.then((rows) => ({ reports: [...rows] as PublishedReport[], unavailable: false }));
-    return await withDeadline(reportQuery, { reports: [], unavailable: true }, QUERY_DEADLINE_MS);
-  } catch {
-    // Render the rest of the hub gracefully if the DB is unavailable at build time
-    return { reports: [] as PublishedReport[], unavailable: true };
-  }
+  const read = getPublicReportCatalogCached().then((rows) => ({
+    reports: filterReportCatalog(rows, typeFilter, fromIso),
+    unavailable: false,
+  }));
+  return withDeadline(read, { reports: [] as PublicReportRow[], unavailable: true }, QUERY_DEADLINE_MS);
 }
 
 async function loadStateCoverage(): Promise<StateCoverage[] | null> {
@@ -125,7 +118,7 @@ async function loadMarketReadiness(): Promise<MarketReadiness[] | null> {
   }
 }
 
-function PublishedReportItem({ report }: { report: PublishedReport }) {
+function PublishedReportItem({ report }: { report: PublicReportRow }) {
   const typeLabel = REPORT_TYPE_LABELS[report.report_type as ReportType] ?? report.report_type;
   return (
     <li className="flex flex-col gap-2 border-b border-border py-6">
@@ -335,8 +328,8 @@ export default async function ReportsPage({ searchParams }: PageProps) {
 
       <ReportFaq />
 
-      {/* Published research: hidden while nothing is published (#1174), shown when filters or an outage explain an empty list. */}
-      {(hasReports || filtersActive || unavailable) && (
+      {/* Published research: hidden while nothing is published (#1174) or the catalog read is slow (#1953); shown when filters explain an empty list. */}
+      {(hasReports || filtersActive) && (
         <section className="mx-auto max-w-page px-4 pt-16 sm:px-6" id="research">
           <h2 className={H2}>Research and analysis from {SITE_NAME}</h2>
           {showFilters && (
@@ -351,7 +344,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
           ) : (
             <p className="mt-3 max-w-[640px] text-[14px] leading-relaxed text-ink-muted">
               {unavailable
-                ? "The research catalog is temporarily unavailable. Try again shortly."
+                ? "Published reports could not be loaded just now. Try again in a minute."
                 : filtersActive
                   ? "No published reports match these filters."
                   : "No national or peer reports are published yet."}

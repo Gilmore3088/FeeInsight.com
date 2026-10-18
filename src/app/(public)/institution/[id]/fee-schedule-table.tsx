@@ -4,6 +4,11 @@ import { FEE_FAMILIES, getFeeFamily } from "@/lib/fee-taxonomy";
 import { notComparableReason } from "@/lib/fee-comparability";
 import { countsInMarketComparison } from "@/lib/market-eligibility";
 import { formatFeeAmount } from "@/lib/format";
+
+/** A schedule's amount as a reader sees it: a $0 fee says "No charge", not a $0 price (#1953). */
+export function scheduleAmount(amount: number | null): string | null {
+  return amount === 0 ? "No charge" : formatFeeAmount(amount);
+}
 import { getFrequencyLabel } from "./enum-labels";
 import { FeeAudienceTabs, type FeeAudienceTab } from "./fee-audience-tabs";
 
@@ -446,7 +451,7 @@ function FeeRow({
   benchmark: FeeBenchmark | null;
 }) {
   const sourceUrl = fee.sourceUrl ?? disclosureUrl;
-  const amount = formatFeeAmount(fee.amount);
+  const amount = scheduleAmount(fee.amount);
   const basis = getFrequencyLabel(fee.frequency);
   const showUnderReview = mixedGroup && fee.status === "provisional";
 
@@ -530,7 +535,7 @@ function FeeScheduleStack({
                     </span>
                     <span className="shrink-0 font-semibold text-base text-ink" style={FIGURE}>
                       <AmountLink href={sourceUrl} fallback={!fee.sourceUrl}>
-                        {fee.rate ? <RateValue rate={fee.rate} /> : formatFeeAmount(fee.amount) ?? "Not stated"}
+                        {fee.rate ? <RateValue rate={fee.rate} /> : scheduleAmount(fee.amount) ?? "Not stated"}
                       </AmountLink>
                     </span>
                   </div>

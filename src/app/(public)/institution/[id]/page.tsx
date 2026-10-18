@@ -36,7 +36,7 @@ import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import { buildPublicInstitutionProfileLinks } from "@/lib/institution-profile-links";
 import { formatAbsoluteDate } from "@/lib/public-stats";
 import { formatCompactDollars } from "@/lib/format";
-import { getCharterLabel, getSegmentLabel, toTitleCase } from "./enum-labels";
+import { getCharterLabel, getSegmentLabel, holdingCompanyName, placeName } from "./enum-labels";
 import { FeeFocusScroll } from "./fee-focus-scroll";
 import {
   FeeScheduleTable,
@@ -135,7 +135,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     return v.low === v.high ? v.amount : category === "overdraft" ? v.high : null;
   };
   const headline = { overdraft: valueOf("overdraft"), nsf: valueOf("nsf"), monthly: valueOf("monthly_maintenance") };
-  const city = toTitleCase(inst.city);
+  const city = placeName(inst.city);
   const place = [city, inst.state_code].filter(Boolean).join(", ");
   const stateName = inst.state_code ? STATE_NAMES[inst.state_code] : null;
   const kind = inst.charter_type === "bank" ? "bank" : "credit union";
@@ -308,7 +308,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
   const financialsAsOf = latestFinancial ? formatReportQuarter(latestFinancial.reportDate) : null;
   const assetsDollars = latestFinancial?.totalAssets ?? assetSizeToDollars(inst.asset_size);
 
-  const city = toTitleCase(inst.city);
+  const city = placeName(inst.city);
   const charterLabel = getCharterLabel(inst.charter_type);
   const kind = inst.charter_type === "bank" ? "bank" : "credit union";
   const districtName = district ? DISTRICT_NAMES[district] : null;
@@ -322,7 +322,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
 
   // The hero's details, one labelled cell each: where it is, what it is, how big, who supervises it.
   const holdingName = regulator?.holding_company_name
-    ? (toTitleCase(regulator.holding_company_name) ?? regulator.holding_company_name)
+    ? (holdingCompanyName(regulator.holding_company_name) ?? regulator.holding_company_name)
     : null;
   const heroFacts: HeroFact[] = [
     { label: "Headquarters", value: [city, stateName].filter(Boolean).join(", ") },

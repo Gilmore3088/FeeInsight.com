@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useTransition } from "react";
+import { useOptimistic, useTransition } from "react";
 import { STATE_NAMES } from "@/lib/us-states";
 
 interface DirectoryFiltersProps {
@@ -34,10 +34,18 @@ function buildHref(next: {
 export function DirectoryFilters({ query, stateCode, charterType, feeCategory = "" }: DirectoryFiltersProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  // The pick shows at once and stays while the directory loads (#1953: the dropdown snapped back
+  // to the old value for seconds, so a reader thought the first choice was lost).
+  const [picked, setPicked] = useOptimistic({ stateCode, charterType });
 
-  function apply(next: Partial<DirectoryFiltersProps>) {
-    const href = buildHref({ query, stateCode, charterType, feeCategory, ...next });
-    startTransition(() => router.push(href));
+  function apply(next: { stateCode?: string; charterType?: string }) {
+    const merged = { ...picked, ...next };
+    const href = buildHref({ query, feeCategory, ...merged });
+    // An async action stays pending until the new page commits, and the pick shows until then.
+    startTransition(async () => {
+      setPicked(merged);
+      await router.push(href);
+    });
   }
 
   return (
@@ -48,8 +56,7 @@ export function DirectoryFilters({ query, stateCode, charterType, feeCategory = 
       <select
         id="institution-state-filter"
         name="state"
-        value={stateCode}
-        disabled={isPending}
+        value={picked.stateCode}
         onChange={(event) => apply({ stateCode: event.target.value })}
         className={SELECT_CLASS}
       >
@@ -66,8 +73,7 @@ export function DirectoryFilters({ query, stateCode, charterType, feeCategory = 
       <select
         id="institution-charter-filter"
         name="charter"
-        value={charterType}
-        disabled={isPending}
+        value={picked.charterType}
         onChange={(event) => apply({ charterType: event.target.value })}
         className={SELECT_CLASS}
       >

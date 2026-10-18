@@ -3,7 +3,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { CONTACT_EMAIL, SITE_URL } from "@/lib/constants";
-import { getPublicStatsSummary } from "@/lib/public-stats";
+import { getPublicCategorySummaries, getPublicStatsSummary } from "@/lib/public-stats";
+import { DEMO, overdraftExample } from "./api-docs-example";
 import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT } from "@/lib/data-store/maturity";
 import { API_MONTHLY_CALLS_LABEL, API_PLANS_LABEL, BURST_CALLS_PER_MINUTE } from "@/lib/api-subscriber-access";
 import { PAST_DUE_GRACE_DAYS } from "@/lib/access";
@@ -16,6 +17,7 @@ import { API_ERROR_CODES } from "@/lib/api-v1";
 import { MCP_TOOLS } from "@/lib/api-v1-mcp";
 
 const PRO_LABEL = "Hamilton";
+
 
 export const metadata: Metadata = {
   title: "API Documentation",
@@ -143,13 +145,16 @@ function Endpoint({
           <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
             Parameters
           </p>
-          <table className="mt-2 w-full text-left">
-            <tbody>
-              {params.map((p) => (
-                <ParamRow key={p.name} {...p} />
-              ))}
-            </tbody>
-          </table>
+          {/* Scrolls sideways on a phone instead of widening the page (#1953). */}
+          <div className="mt-2 overflow-x-auto">
+            <table className="w-full text-left">
+              <tbody>
+                {params.map((p) => (
+                  <ParamRow key={p.name} {...p} />
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -224,7 +229,11 @@ function TierCard({
 const BASE = `${SITE_URL}/api/v1`;
 
 export default async function ApiDocsPage() {
-  const summary = await getPublicStatsSummary();
+  const [summary, categories] = await Promise.all([
+    getPublicStatsSummary(),
+    getPublicCategorySummaries().catch(() => []),
+  ]);
+  const od = overdraftExample(categories.find((c) => c.fee_category === "overdraft"));
   const categoriesLabel = summary.categoriesLabel;
   return (
     <div className="mx-auto max-w-4xl px-6 py-14">
@@ -404,7 +413,7 @@ export default async function ApiDocsPage() {
           <ResponseField name="X-RateLimit-Reset" type="header" note="ISO 8601 UTC time when the monthly window resets" />
           <ResponseField name="Retry-After" type="header" note="On 429 burst_limited, seconds to wait" />
         </div>
-        <div className="mt-4 overflow-hidden rounded-lg border border-border/60">
+        <div className="mt-4 overflow-x-auto rounded-lg border border-border/60">
           <table className="w-full text-left text-[13px]">
             <thead>
               <tr className="bg-paper">
@@ -459,12 +468,12 @@ export default async function ApiDocsPage() {
       "display_name": "Overdraft (OD)",
       "family": "Overdraft & NSF",
       "tier": "spotlight",
-      "median": 35.00,
-      "p25": 30.00,
-      "p75": 36.00,
-      "min": 5.00,
-      "max": 40.00,
-      "institution_count": 842
+      "median": ${od.median},
+      "p25": ${od.p25},
+      "p75": ${od.p75},
+      "min": ${od.min},
+      "max": ${od.max},
+      "institution_count": ${od.institutions}
     },
     ...
   ]
@@ -499,12 +508,12 @@ export default async function ApiDocsPage() {
   "family": "Overdraft & NSF",
   "tier": "spotlight",
   "summary": {
-    "institution_count": 842,
-    "observation_count": 1156
+    "institution_count": ${od.institutions},
+    "observation_count": ${od.observations}
   },
   "by_charter_type": {
-    "bank": { "median": 36.00, "p25": 33.00, "p75": 36.00, "count": 510 },
-    "credit_union": { "median": 30.00, "p25": 25.00, "p75": 35.00, "count": 332 }
+    "bank": { "median": ${od.bankMedian}, "count": ${od.bankCount}, ... },
+    "credit_union": { "median": ${od.cuMedian}, "count": ${od.cuCount}, ... }
   },
   "by_asset_tier": { ... },
   "by_fed_district": { ... },
@@ -625,7 +634,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
             { name: "limit", type: "integer", description: "Results per page (default: 50, max: 200)" },
           ]}
           curlExample={`curl -H "Authorization: Bearer YOUR_API_KEY" \\
-  "${BASE}/institutions?state=MN&has_fees=true&limit=10"`}
+  "${BASE}/institutions?state=FL&has_fees=true&limit=10"`}
           responseFields={[
             { name: "total", type: "integer", note: "Total matching institutions" },
             { name: "page", type: "integer", note: "Current page" },
@@ -633,21 +642,21 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
             { name: "data[].asset_tier", type: "string", note: "e.g., community_mid" },
           ]}
           responseExample={`{
-  "total": 44,
+  "total": 73,
   "page": 1,
   "page_size": 10,
-  "pages": 5,
+  "pages": 8,
   "data": [
     {
-      "id": 2466,
-      "name": "Gateway Bank",
-      "state": "MN",
-      "city": "Mendota Heights",
+      "id": ${DEMO.id},
+      "name": "${DEMO.name}",
+      "state": "${DEMO.state}",
+      "city": "${DEMO.city}",
       "charter_type": "bank",
-      "asset_size": 319549,
-      "asset_tier": "community_mid",
-      "fed_district": 9,
-      "fee_count": 33
+      "asset_size": ${DEMO.assetThousands},
+      "asset_tier": "${DEMO.assetTier}",
+      "fed_district": ${DEMO.fedDistrict},
+      "fee_count": ${DEMO.feeCount}
     },
     ...
   ]
@@ -672,7 +681,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
             },
           ]}
           curlExample={`curl -H "Authorization: Bearer YOUR_API_KEY" \\
-  "${BASE}/institutions?id=2466"`}
+  "${BASE}/institutions?id=${DEMO.id}"`}
           responseFields={[
             { name: "fees[]", type: "array", note: "Every published fee for this institution" },
             { name: "fees[].source_url", type: "string", note: "The fee schedule the fee was read from" },
@@ -706,28 +715,28 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
             { name: "rate_fees[].rate_terms", type: "string", note: 'The rate in words, e.g. "3% of the transaction"' },
           ]}
           responseExample={`{
-  "id": 2466,
-  "name": "Gateway Bank",
-  "state": "MN",
-  "city": "Mendota Heights",
+  "id": ${DEMO.id},
+  "name": "${DEMO.name}",
+  "state": "${DEMO.state}",
+  "city": "${DEMO.city}",
   "charter_type": "bank",
-  "asset_size": 319549,
-  "asset_tier": "community_mid",
-  "fed_district": 9,
-  "fee_count": 33,
+  "asset_size": ${DEMO.assetThousands},
+  "asset_tier": "${DEMO.assetTier}",
+  "fed_district": ${DEMO.fedDistrict},
+  "fee_count": ${DEMO.feeCount},
   "fees": [
     {
-      "fee_name": "Overdraft Fee",
+      "fee_name": "Overdraft Item Fee",
       "name_is_category_fallback": false,
-      "amount": 30.00,
-      "frequency": "per_occurrence",
-      "conditions": "Per item; created by check, in-person withdrawal, or other electronic means",
+      "amount": 35.00,
+      "frequency": "per_item",
+      "conditions": null,
       "review_status": "approved"
     },
     {
-      "fee_name": "Account Maintenance",
+      "fee_name": "Paper statements",
       "name_is_category_fallback": false,
-      "amount": 17.00,
+      "amount": 2.00,
       "frequency": "monthly",
       "conditions": null,
       "review_status": "approved"
@@ -772,14 +781,14 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
   "data": [
     {
       "fee_id": 501,
-      "institution_id": 2466,
-      "institution_name": "Gateway Bank",
-      "state": "MN",
+      "institution_id": ${DEMO.id},
+      "institution_name": "${DEMO.name}",
+      "state": "${DEMO.state}",
       "charter_type": "bank",
-      "fee_name": "Overdraft Fee",
+      "fee_name": "Overdraft Item Fee",
       "name_is_category_fallback": false,
       "category": "overdraft",
-      "amount": 30.00,
+      "amount": 35.00,
       "frequency": "per_occurrence",
       "conditions": null,
       "source_url": "https://example.com/fee-schedule.pdf",
@@ -807,11 +816,11 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
             ...PEER_GROUP_PARAMS.map((p) => ({ name: p.name, type: "string", description: `${p.description}, e.g. ${p.example}` })),
           ]}
           curlExample={`curl -H "Authorization: Bearer YOUR_API_KEY" \\
-  "${BASE}/peers?institution_id=2466"
+  "${BASE}/peers?institution_id=${DEMO.id}"
 
-# Banks with branches in the same metro, $500M to $2B in assets
+# Banks with branches in the same metro, $1B to $10B in assets
 curl -H "Authorization: Bearer YOUR_API_KEY" \\
-  "${BASE}/peers?institution_id=2466&charter=bank&market=same&asset_min=500000000&asset_max=2000000000"`}
+  "${BASE}/peers?institution_id=${DEMO.id}&charter=bank&market=same&asset_min=1000000000&asset_max=10000000000"`}
           responseFields={[
             { name: "peer_group.label", type: "string", note: "Which institutions were compared" },
             { name: "categories[].amount", type: "number", note: "The institution's amount in USD; null when it charges several different fees in the category" },
@@ -822,10 +831,10 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
             { name: "rate_fees[]", type: "array", note: "Fees stated as a percentage, listed apart" },
           ]}
           responseExample={`{
-  "institution": { "id": 2466, "name": "Gateway Bank", "state": "MN", "charter_type": "bank", "asset_tier": "community_mid", "fed_district": 9 },
+  "institution": { "id": ${DEMO.id}, "name": "${DEMO.name}", "state": "${DEMO.state}", "charter_type": "bank", "asset_tier": "${DEMO.assetTier}", "fed_district": ${DEMO.fedDistrict} },
   "peer_group": {
     "basis": "default",
-    "label": "Banks with $300M to $1B in assets in the Minneapolis Fed district",
+    "label": "Banks with $1B to $10B in assets in the Atlanta Fed district",
     "peers_with_fees": 41
   },
   "min_peers": ${MIN_INSTITUTIONS_FOR_MEDIAN},
@@ -833,10 +842,10 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
     {
       "category": "overdraft",
       "display_name": "Overdraft (OD)",
-      "amount": 30.00,
-      "amount_low": 30.00,
-      "amount_high": 30.00,
-      "fees": [{ "name": "Overdraft fee", "amount": 30.00 }],
+      "amount": 35.00,
+      "amount_low": 35.00,
+      "amount_high": 35.00,
+      "fees": [{ "name": "Overdraft Item Fee", "amount": 35.00 }],
       "peer_count": 38,
       "peer_median": 30.00,
       "peer_p25": 27.00,
@@ -874,7 +883,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
             { name: "limit", type: "integer", description: "Results per page (default: 100, max: 500)" },
           ]}
           curlExample={`curl -H "Authorization: Bearer YOUR_API_KEY" \\
-  "${BASE}/rate-fees?state=MN&category=card_foreign_txn"`}
+  "${BASE}/rate-fees?state=FL&category=card_foreign_txn"`}
           responseFields={[
             { name: "data[].rate_percent", type: "number", note: "The rate in percent, e.g. 3 for 3%" },
             { name: "data[].rate_min_amount", type: "number", note: "Dollar minimum, when the schedule states one" },
@@ -890,9 +899,9 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
   "data": [
     {
       "id": 9001,
-      "institution_id": 2466,
-      "institution_name": "Gateway Bank",
-      "state": "MN",
+      "institution_id": 1001,
+      "institution_name": "Example Bank",
+      "state": "FL",
       "charter_type": "bank",
       "fee_name": "Foreign Transaction Fee",
       "category": "card_foreign_txn",

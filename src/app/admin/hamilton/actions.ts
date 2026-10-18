@@ -1,6 +1,7 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
+import { PUBLISHED_REPORTS_TAG } from "@/lib/data-store/published-reports";
 import { getSql, withTransaction } from "@/lib/data-store/connection";
 import { requireAuth } from "@/lib/auth";
 import { cancelAgentRun } from "@/lib/agents/run-store";
@@ -69,6 +70,7 @@ export async function publishReport(
     const finalSlug = outcome.slug;
 
     // Trigger ISR revalidation per D-04
+    revalidateTag(PUBLISHED_REPORTS_TAG, "max");
     revalidatePath("/reports");
     revalidatePath(`/reports/${finalSlug}`, "page");
     revalidatePath("/admin/hamilton");

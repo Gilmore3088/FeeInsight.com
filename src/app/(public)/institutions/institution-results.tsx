@@ -2,7 +2,8 @@ import Link from "next/link";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import type { InstitutionSearchResult } from "@/lib/data-store/search";
 import { formatAmount } from "@/lib/format";
-import { getCharterLabel, getPublicStatusLabel, getSegmentLabel, toTitleCase } from "../institution/[id]/enum-labels";
+import { getCharterLabel, getPublicStatusLabel, getSegmentLabel, placeName } from "../institution/[id]/enum-labels";
+import { institutionDisplayName } from "@/lib/institution-display-name";
 import { HEADLINE_FEE_KEYS, isInstitutionRich } from "@/lib/data-store/market-readiness";
 import { getHeadlineCoverageLabel } from "../institution/[id]/enum-labels";
 import { hasVerifiedFees } from "./directory-sort";
@@ -69,7 +70,7 @@ function FocusAmount({ row, focus, align = "right" }: { row: InstitutionSearchRe
 }
 
 function locationLabel(row: InstitutionSearchResult): string {
-  return [toTitleCase(row.city), row.state_code].filter(Boolean).join(", ");
+  return [placeName(row.city), row.state_code].filter(Boolean).join(", ");
 }
 
 function StatusChip({
@@ -99,7 +100,7 @@ function FeeCount({ row }: { row: InstitutionSearchResult }) {
       <span className="tabular-nums">
         <span className="font-medium text-brick">{row.published_fee_count.toLocaleString("en-US")}</span>
         {row.provisional_fee_count > 0 && (
-          <span className="ml-1 text-xs text-ink-muted">+{row.provisional_fee_count} under review</span>
+          <span className="ml-1 text-xs text-ink-muted">({row.provisional_fee_count} more under review)</span>
         )}
       </span>
     );
@@ -143,7 +144,7 @@ export function InstitutionResultsTable({
                     href={institutionHref(row.id, focus)}
                     className="group flex min-w-0 items-center gap-2 break-words font-medium text-ink transition-colors hover:text-brick"
                   >
-                    <span className="min-w-0 break-words">{row.institution_name}</span>
+                    <span className="min-w-0 break-words">{institutionDisplayName(row.institution_name)}</span>
                     <ArrowRight className="h-3.5 w-3.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
                   </Link>
                   <div className="mt-1 md:hidden">
@@ -199,7 +200,7 @@ export function InstitutionMobileCards({
           <div className="flex min-w-0 items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="break-words text-sm font-semibold leading-snug text-ink">
-                {row.institution_name}
+                {institutionDisplayName(row.institution_name)}
               </p>
               <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-ink-muted">
                 <span>{getCharterLabel(row.charter_type)}</span>

@@ -71,6 +71,8 @@ export default async function ResearchHubPage() {
         <BenchmarkBoard benchmarks={benchmarks} asOf={asOf} />
 
         <section id="geography" className="scroll-mt-28">
+          {/* /districts redirects to /research#districts (proxy.ts); land on the district reports, not the page top (#1953). */}
+          <span id="districts" aria-hidden="true" className="block scroll-mt-28" />
           <SectionHeading eyebrow="Regional reports" title="States and Federal Reserve districts">
             The same benchmarks for one state or district, with its coverage and economic context.
           </SectionHeading>
