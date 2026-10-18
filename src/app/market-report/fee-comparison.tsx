@@ -14,8 +14,8 @@ import { EXTRA_BLOCK_ROW, ROWS_SHOWN, comparedAt, comparedLines, medianMethod, m
 
 type Tone = "above" | "inside" | "below";
 
-// The dot is the institution itself, so it is always brick; the gap and position words carry the
-// direction in the site's variance colors (above red, below blue), each with its own mark.
+// The dot is the institution itself, so it is always ink (never the variance red or blue); the gap
+// and position words carry the direction in the site's variance colors, each with its own mark.
 const TEXT: Record<Tone, string> = { above: "text-variance-above", inside: "text-ink", below: "text-variance-below" };
 
 function toneOf(line: ReportLine): Tone {
@@ -151,7 +151,7 @@ export function FeeComparison({ name, lines, names, branches, footprint }: FeeCo
                   <span className="absolute inset-x-0 top-1/2 h-px bg-border" aria-hidden="true" />
                   <span
                     aria-hidden="true"
-                    className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brick ring-2 ring-surface-0 [print-color-adjust:exact]"
+                    className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-ink ring-2 ring-surface-0 [print-color-adjust:exact]"
                     style={{ left: `${Math.min(98, Math.max(2, rank))}%` }}
                   />
                   <span className="sr-only">

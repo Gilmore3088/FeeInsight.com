@@ -12,12 +12,12 @@ function money(value: number | null | undefined): string {
 
 export type PlottedLine = ReportLine & { own: NonNullable<ReportLine["own"]>; peers: NonNullable<ReportLine["peers"]> };
 
-// The dot is the institution itself (brick); the gap carries the direction in the site's variance
-// colors, above red and below blue, with its ▲/▼ mark.
+// The dot is the institution itself, in ink: red and blue mean above and below the median on this
+// site, so the subject never takes either. The gap carries the direction, with its ▲/▼ mark.
 const TONE: Record<"above" | "inside" | "below", { dot: string; text: string }> = {
-  above: { dot: "bg-brick", text: "text-variance-above" },
-  inside: { dot: "bg-brick", text: "text-ink" },
-  below: { dot: "bg-brick", text: "text-variance-below" },
+  above: { dot: "bg-ink", text: "text-variance-above" },
+  inside: { dot: "bg-ink", text: "text-ink" },
+  below: { dot: "bg-ink", text: "text-variance-below" },
 };
 
 function toneFor(line: ReportLine): keyof typeof TONE {

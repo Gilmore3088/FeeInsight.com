@@ -75,7 +75,7 @@ export function LineRange({ line }: { line: ReportLine }) {
       <span className="absolute top-1/2 h-2 -translate-y-1/2 rounded-full bg-surface-200" style={{ left: `${x(p25)}%`, width: `${Math.max(x(p75) - x(p25), 1)}%` }} />
       <span className="absolute top-0 h-4 w-[2px] bg-ink/60" style={{ left: `${x(median)}%` }} />
       <span
-        className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brick ring-2 ring-surface-0"
+        className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-ink ring-2 ring-surface-0"
         style={{ left: `${x(own)}%` }}
       />
     </span>
@@ -312,7 +312,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
               <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-muted sm:mx-0" aria-hidden="true">
                 <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-5 bg-surface-200" /> Middle 50% of local competitors</span>
                 <span className="inline-flex items-center gap-1.5"><span className="h-3 w-px bg-ink-muted" /> Local median</span>
-                <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-brick" /> {name}</span>
+                <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-ink" /> {name}</span>
                 <span className="text-variance-above">&#9650; Above the local median</span>
                 <span className="text-variance-below">&#9660; Below it</span>
               </p>
