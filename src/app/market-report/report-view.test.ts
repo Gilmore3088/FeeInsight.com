@@ -77,7 +77,7 @@ describe("priorities for review", () => {
   const revenue: RevenueContext = {
     quarters: [{ quarter: "2026-Q2", thousands: 5656 }],
     trailingThousands: null,
-    peer: { tierLabel: "$1B-$10B", medianThousands: 449, rank: 13, count: 872, population: "banks", feeShare: 0.087089, peerMedianFeeShare: 0.021662, peerShareCount: 870 },
+    peer: { tierLabel: "$1B-$10B", medianThousands: 449, rank: 13, count: 872, population: "banks", feeShare: 0.087089, peerMedianFeeShare: 0.021662, peerShareCount: 869 },
   };
 
   it("names where to look from the report's own figures, never a price to change, each linked to its section", () => {
@@ -85,7 +85,7 @@ describe("priorities for review", () => {
     expect(items).toEqual([
       { text: "Wires: investigate the two fees above the local middle 50% (outgoing domestic and outgoing international).", href: "#position" },
       { text: "Checking: compare equivalent account types and waiver conditions. Lineups are on file for 20 local competitors.", href: "#lineup" },
-      { text: "Fee income: 8.7% of revenue against a 2.2% median for 870 banks with $1B to $10B in assets.", href: "#revenue" },
+      { text: "Deposit service charges: 8.7% of revenue against a 2.2% median for 869 banks with $1B to $10B in assets.", href: "#revenue" },
     ]);
     expect(items.map((i) => i.text).join(" ")).not.toMatch(/\b(raise|lower|cut|increase|reduce|should)\b/i);
   });
@@ -95,7 +95,7 @@ describe("priorities for review", () => {
     const noShare = { ...revenue, peer: { ...revenue.peer!, feeShare: null } };
     expect(reviewPriorities([lines[0]], { revenue: noShare })).toEqual([
       { text: "Overdraft: investigate the fee above the local middle 50%.", href: "#position" },
-      { text: "Fee income: rank 13 of 872 banks with $1B to $10B in assets in dollars.", href: "#revenue" },
+      { text: "Deposit service charges: rank 13 of 872 banks with $1B to $10B in assets in dollars.", href: "#revenue" },
     ]);
   });
 

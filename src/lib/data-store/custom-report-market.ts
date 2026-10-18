@@ -467,7 +467,7 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
       let check: ReturnType<typeof checkFeeAgainstSource> = { ok: false, reason: "no_source_text" };
       let source: StoredText | null = null;
       for (const candidate of candidates) {
-        check = checkFeeAgainstSource(candidate.text, row.fee_name, amount, include);
+        check = checkFeeAgainstSource(candidate.text, row.fee_name, amount, include, undefined, { sectionHeadingCategory: true });
         if (check.ok) {
           source = candidate;
           break;

@@ -345,7 +345,11 @@ export interface PeerRanking {
   peer_median_sc: number | null;
   fee_income_ratio: number | null;
   peer_median_fee_ratio: number | null;
-  /** Peers with a fee income ratio filed: the population of peer_median_fee_ratio. */
+  /**
+   * Peers with a fee income ratio filed: the population of peer_median_fee_ratio. With sameCharter,
+   * the institution page's financial cohort (same charter and stored asset tier, share above 0%,
+   * the institution left out).
+   */
   peer_ratio_count?: number;
   /** The filing the figures come from ("fdic" for banks, "ncua" for credit unions). */
   source?: string;
@@ -432,12 +436,36 @@ export async function getInstitutionPeerRanking(
     [inst.report_date, tierMin, tierMax, scIncome, ...charterParam]
   ) as { better_count: string }[];
 
+  // With sameCharter (the fee position report) the share median is read against the institution
+  // page's financial cohort: same charter and stored asset-size tier (institution_sources), same
+  // quarter and filing, a share above 0% (a zero is a missing line), the institution itself left
+  // out. So both pages count one cohort for one median.
+  const shareRows = options.sameCharter
+    ? ((await sql.unsafe(
+        `SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY f.fee_income_ratio) AS median_fee_ratio,
+                COUNT(*)::int AS ratio_count
+         FROM institution_sources subject
+         JOIN institution_sources s
+           ON s.charter_type = subject.charter_type
+          AND s.asset_size_tier IS NOT DISTINCT FROM subject.asset_size_tier
+          AND s.id <> subject.id
+         JOIN institution_financial_records f
+           ON f.institution_id = s.id
+          AND f.report_date = $2
+          AND f.source = $3
+         WHERE subject.id = $1
+           AND f.fee_income_ratio > 0`,
+        [targetId, inst.report_date, inst.source]
+      )) as { median_fee_ratio: string | null; ratio_count: string | number | null }[])
+    : null;
+
   const stats = statsRows[0];
   const peerCount = stats ? Number(stats.peer_count) : 0;
   // Same minimum sample as the fee statistics contract: no peer median from a handful.
   const enoughPeers = peerCount >= MIN_INSTITUTIONS_FOR_MEDIAN;
   // PERCENTILE_CONT skips peers with no ratio filed, so the ratio median has its own count.
-  const ratioCount = stats ? Number(stats.ratio_count ?? 0) : 0;
+  const shareStats = shareRows ? shareRows[0] : stats;
+  const ratioCount = shareStats ? Number(shareStats.ratio_count ?? 0) : 0;
   const enoughRatios = ratioCount >= MIN_INSTITUTIONS_FOR_MEDIAN;
   const rank = rankRows[0] ? Number(rankRows[0].better_count) + 1 : peerCount;
 
@@ -449,7 +477,7 @@ export async function getInstitutionPeerRanking(
     peer_count: peerCount,
     peer_median_sc: enoughPeers && stats?.median_sc != null ? Number(stats.median_sc) : null,
     fee_income_ratio: feeRatio,
-    peer_median_fee_ratio: enoughRatios && stats?.median_fee_ratio ? Number(stats.median_fee_ratio) : null,
+    peer_median_fee_ratio: enoughRatios && shareStats?.median_fee_ratio ? Number(shareStats.median_fee_ratio) : null,
     peer_ratio_count: ratioCount,
     source: inst.source,
     report_date: inst.report_date,

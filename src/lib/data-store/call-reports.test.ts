@@ -585,8 +585,9 @@ describe("getInstitutionPeerRanking", () => {
       .mockResolvedValueOnce([
         { institution_name: "Capital City Bank", total_assets: "4447362", service_charge_income: "5000", fee_income_ratio: null, report_date: "2026-06-30", source: "fdic" },
       ])
-      .mockResolvedValueOnce([{ peer_count: "872", median_sc: "1200", median_fee_ratio: null }])
-      .mockResolvedValueOnce([{ better_count: "20" }]);
+      .mockResolvedValueOnce([{ peer_count: "872", median_sc: "1200", median_fee_ratio: "0.03", ratio_count: 870 }])
+      .mockResolvedValueOnce([{ better_count: "20" }])
+      .mockResolvedValueOnce([{ median_fee_ratio: "0.022", ratio_count: 869 }]);
     getMock().unsafe = unsafe;
 
     const result = await getInstitutionPeerRanking(323, { sameCharter: true });
@@ -595,6 +596,17 @@ describe("getInstitutionPeerRanking", () => {
     expect(unsafe.mock.calls[1][1]).toEqual(["2026-06-30", 1_000_000, 10_000_000, "fdic"]);
     expect(unsafe.mock.calls[2][0]).toContain("AND inf.source = $5");
     expect(unsafe.mock.calls[2][1]).toEqual(["2026-06-30", 1_000_000, 10_000_000, 5000, "fdic"]);
+    // The share median is the institution page's financial cohort: same charter and stored asset
+    // tier, same quarter and filing, a share above 0%, the institution itself left out.
+    const share = String(unsafe.mock.calls[3][0]);
+    expect(share).toContain("s.charter_type = subject.charter_type");
+    expect(share).toContain("s.asset_size_tier IS NOT DISTINCT FROM subject.asset_size_tier");
+    expect(share).toContain("s.id <> subject.id");
+    expect(share).toContain("f.fee_income_ratio > 0");
+    expect(unsafe.mock.calls[3][1]).toEqual([323, "2026-06-30", "fdic"]);
+    expect(result!.peer_ratio_count).toBe(869);
+    expect(result!.peer_median_fee_ratio).toBe(0.022);
+    expect(result!.peer_count).toBe(872);
   });
 
   it("uses same asset tier as the target institution (not hardcoded)", async () => {

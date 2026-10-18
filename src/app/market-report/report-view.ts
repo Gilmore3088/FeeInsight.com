@@ -179,7 +179,8 @@ export interface ReviewPriority {
  * linked to its section. They name where to look, never a price to change.
  *   - the fees above the local middle 50% ("Wires: investigate the two fees above the local middle 50%", James's verb);
  *   - checking, where account types and waiver conditions differ more than one fee shows;
- *   - fee income as a share of revenue, a measure that scales with size, beside the dollar rank.
+ *   - deposit service charges (NCUA fee income for a credit union) as a share of revenue, a
+ *     measure that scales with size, beside the dollar rank.
  */
 export function reviewPriorities(
   lines: ReportLine[],
@@ -215,11 +216,14 @@ export function reviewPriorities(
   if (peer) {
     const who = (n: number) => `${n.toLocaleString("en-US")} ${peer.population ?? "institutions"} with ${bandText(peer.tierLabel)} in assets`;
     // A credit union's NCUA share is of total income (interest plus noninterest), year to date.
-    const base = peer.population === "credit unions" ? "total income" : "revenue";
+    const creditUnion = peer.population === "credit unions";
+    const base = creditUnion ? "total income" : "revenue";
+    // A bank's line is deposit service charges; "fee income" reads as the wider noninterest line.
+    const measure = creditUnion ? "Fee income" : "Deposit service charges";
     const text =
       peer.feeShare != null && peer.peerMedianFeeShare != null
-        ? `Fee income: ${shareLabel(peer.feeShare)} of ${base} against a ${shareLabel(peer.peerMedianFeeShare)} median for ${who(peer.peerShareCount ?? peer.count)}.`
-        : `Fee income: rank ${peer.rank.toLocaleString("en-US")} of ${who(peer.count)} in dollars.`;
+        ? `${measure}: ${shareLabel(peer.feeShare)} of ${base} against a ${shareLabel(peer.peerMedianFeeShare)} median for ${who(peer.peerShareCount ?? peer.count)}.`
+        : `${measure}: rank ${peer.rank.toLocaleString("en-US")} of ${who(peer.count)} in dollars.`;
     items.push({ text, href: "#revenue" });
   }
   return items;

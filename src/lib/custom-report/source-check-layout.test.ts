@@ -835,10 +835,17 @@ describe("checkFeeAgainstSource joined prices (Knox v76)", () => {
       "Wire Transfer Confirmation Fee", "$5",
       "Collection Services", "Incoming Domestic Item Fee", "$20", "Incoming International Item Fee", "$20",
     ].join("\n\n");
+    const report = { sectionHeadingCategory: true };
     for (const key of [undefined, "wire_domestic_incoming"]) {
-      expect(checkFeeAgainstSource(page, "Wire Transfers: Incoming Domestic Fee", 25, "wire", key)).toEqual({
+      // The report path (custom-report-market.ts) reads the category word from the section heading.
+      expect(checkFeeAgainstSource(page, "Wire Transfers: Incoming Domestic Fee", 25, "wire", key, report)).toEqual({
         ok: true,
         sourceLine: "Incoming Domestic Fee | $25",
+      });
+      // Every other caller keeps main's verdict: the category word must sit in the nearby lines.
+      expect(checkFeeAgainstSource(page, "Wire Transfers: Incoming Domestic Fee", 25, "wire", key)).toEqual({
+        ok: false,
+        reason: "category_not_in_text",
       });
     }
     // A heading further up belongs to an earlier section: a fax fee filed as an ATM fee stays out.
@@ -847,7 +854,33 @@ describe("checkFeeAgainstSource joined prices (Knox v76)", () => {
       "Check Cashing Fee (Customers) | No charge", "(We do not cash checks for non-customers)",
       "Check Printing | Prices vary", "Faxes – | Outgoing | $4.00 for first page",
     ].join("\n\n");
+    expect(checkFeeAgainstSource(fees, "ATM Service Charge: Outgoing", 4, "atm", undefined, report)).toEqual({ ok: false, reason: "category_not_in_text" });
     expect(checkFeeAgainstSource(fees, "ATM Service Charge: Outgoing", 4, "atm")).toEqual({ ok: false, reason: "category_not_in_text" });
+  });
+
+  it("leaves Darwin's verdict on a heading-only row as it is on main (#1835 scoped to the report)", () => {
+    // Darwin (verify.ts, adjudicate.ts, release-held.ts) calls with "." and a canonical key and no
+    // options; the report-only heading rule must not change what it decides.
+    const page = ["Wire Transfers", "Outgoing Domestic Fee", "$35", "Outgoing International Fee", "$75", "Incoming Domestic Fee", "$25"].join("\n\n");
+    const fees = ["ATM Service Charge", "All other ATMs | $1.50 per withdrawal", "Check Printing | Prices vary", "Faxes – | Outgoing | $4.00 for first page"].join("\n\n");
+    for (const [text, name, amount, key] of [
+      [page, "Wire Transfers: Incoming Domestic Fee", 25, "wire_domestic_incoming"],
+      [fees, "ATM Service Charge: Outgoing", 4, "atm_non_network"],
+    ] as const) {
+      const darwin = checkFeeAgainstSource(text, name, amount, ".", key);
+      expect(darwin).toEqual(checkFeeAgainstSource(text, name, amount, ".", key, {}));
+      expect(darwin).toEqual(checkFeeAgainstSource(text, name, amount, ".", key, { sectionHeadingCategory: false }));
+    }
+    // Verdict recorded by running main's source-check.ts on this row: stated either way,
+    // because Darwin's "." category pattern never asks for a category word.
+    expect(checkFeeAgainstSource(page, "Wire Transfers: Incoming Domestic Fee", 25, ".", "wire_domestic_incoming")).toEqual({
+      ok: true,
+      sourceLine: "Incoming Domestic Fee | $25",
+    });
+    expect(checkFeeAgainstSource(fees, "ATM Service Charge: Outgoing", 4, ".", "atm_non_network")).toEqual({
+      ok: true,
+      sourceLine: "Faxes – | Outgoing | $4.00 for first page",
+    });
   });
 
   it("quotes the fee's own row, not an earlier line at the same price for another fee", () => {

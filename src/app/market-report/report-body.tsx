@@ -130,7 +130,7 @@ export function footprintLine(branches: MarketBranchFootprint | null | undefined
   return `${own.branches} ${own.branches === 1 ? "branch" : "branches"}${shareText}`;
 }
 
-/** One icon per priority: fees above the market, checking, fee income. */
+/** One icon per priority: fees above the market, checking, deposit service charges. */
 function PriorityIcon({ item }: { item: ReviewPriority }) {
   const props = { className: "size-3.5", strokeWidth: 2.25 };
   if (item.href === "#revenue") return <ChartPie {...props} />;
@@ -159,13 +159,18 @@ function RevenueSection({ name, charterType, revenue }: { name: string; charterT
   const population = peer
     ? `${peer.count.toLocaleString("en-US")} ${peer.population ?? "banks and credit unions"} with ${bandText(peer.tierLabel)} in assets that reported ${reported} for ${quarterLabel(latest.quarter)}`
     : null;
+  // The two peer counts answer different questions; one line says which institutions each counts.
+  const shareCohort =
+    peer && peer.feeShare != null && peer.peerMedianFeeShare != null && peer.peerShareCount != null
+      ? `The share median counts the ${peer.peerShareCount.toLocaleString("en-US")} other ${peer.population ?? "institutions"} its size with a share above 0%; the rank in dollars counts all ${peer.count.toLocaleString("en-US")} that reported ${reported}, ${name} included.`
+      : null;
   const finding = peer
     ? `${name} reported ${incomeLabel(latest.thousands)} in ${reported} for ${quarterLabel(latest.quarter)}, ranking ${peer.rank.toLocaleString("en-US")} of ${peer.count.toLocaleString("en-US")} ${peer.population ?? "institutions"} its size, where 1 is the highest.`
     : `${name} reported ${incomeLabel(latest.thousands)} in ${reported} for ${quarterLabel(latest.quarter)}.`;
   return (
     <HubSection
       id="revenue"
-      title="Fee income"
+      title={creditUnion ? "Fee income" : "Deposit service charges"}
       line={finding}
       source={`${name}'s ${filing}, ${quarterLabel(latest.quarter)}${peer ? `; the peer median and rank come from the same quarter's filings` : ""}.`}
     >
@@ -191,7 +196,7 @@ function RevenueSection({ name, charterType, revenue }: { name: string; charterT
               {/* Keeps the share median under the dollar median, in the third column. */}
               {revenue.trailingThousands !== null && <div className="hidden sm:block" aria-hidden="true" />}
               <Tile
-                label={`Median of ${(peer.peerShareCount ?? peer.count).toLocaleString("en-US")} ${peer.population ?? "institutions"} with a share filed${creditUnion ? `, year to date through ${quarterLabel(latest.quarter)}` : ""}`}
+                label={`Median of ${(peer.peerShareCount ?? peer.count).toLocaleString("en-US")} other ${peer.population ?? "institutions"} its size with a share above 0%${creditUnion ? `, year to date through ${quarterLabel(latest.quarter)}` : ""}`}
                 value={shareLabel(peer.peerMedianFeeShare)}
               />
             </dl>
@@ -200,6 +205,7 @@ function RevenueSection({ name, charterType, revenue }: { name: string; charterT
         {population && (
           <p className="mt-4 text-[13px] text-ink-soft sm:mx-0 sm:text-left">
             Compared with {population}. That asset band is broad, so the rank in dollars partly reflects size. {peer?.population === "banks" ? "Credit unions are left out: their NCUA fee income is a wider measure than bank service charges." : peer?.population === "credit unions" ? "Banks are left out: their service charges are a narrower measure than NCUA fee income." : ""}
+            {shareCohort && ` ${shareCohort}`}
           </p>
         )}
       </figure>

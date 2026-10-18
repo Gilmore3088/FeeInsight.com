@@ -29,7 +29,10 @@ export interface RevenueContext {
      */
     feeShare?: number | null;
     peerMedianFeeShare?: number | null;
-    /** Peers with a share filed, the population of peerMedianFeeShare. */
+    /**
+     * The population of peerMedianFeeShare: the institution page's financial cohort (same charter
+     * and asset-size tier, same quarter and filing, a share above 0%, the institution left out).
+     */
     peerShareCount?: number | null;
   } | null;
 }
@@ -94,7 +97,7 @@ async function getRevenueContext(institutionId: number): Promise<RevenueContext 
   return buildRevenueContext(trend, ranking);
 }
 
-export const getRevenueContextCached = cachedPublicRead("report-revenue-context-v4", getRevenueContext);
+export const getRevenueContextCached = cachedPublicRead("report-revenue-context-v5", getRevenueContext);
 
 /** "2026-Q2" -> "Q2 2026". */
 export function quarterLabel(quarter: string): string {
