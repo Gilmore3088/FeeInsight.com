@@ -125,9 +125,26 @@ describe("state law fee ties", () => {
   it("names the fees a state law lists, and none for a disclosure rule that covers every fee", () => {
     expect(stateLawFees({ topic: "dormancy", applies_to: ["dormant_account"] }, own, market)).toEqual({
       all_fees: false,
-      fees: [{ fee_category: "dormant_account", display_name: expect.any(String), amount: 10, market_median: 15, market_count: 7 }],
+      fees: [{ fee_category: "dormant_account", display_name: expect.any(String), amount: 10, amount_low: 10, amount_high: 10, market_median: 15, market_count: 7 }],
     });
     expect(stateLawFees({ topic: "fee_change_notice", applies_to: [] }, own, market)).toEqual({ all_fees: true, fees: [] });
     expect(stateLawFees({ topic: "basic_account", applies_to: ["monthly_maintenance"] }, own, market)).toEqual({ all_fees: false, fees: [] });
+  });
+});
+
+describe("ties for a category with several different fees (#1913)", () => {
+  const several = { price: null, low: 25, high: 35 };
+  const market = new Map([["nsf", { median: 30, count: 6 }]]);
+
+  it("still ties a law and an item to the fee, by its range", () => {
+    const own = new Map([["nsf", several]]);
+    expect(stateLawFees({ topic: "nsf_limits", applies_to: ["nsf"] }, own, market).fees).toEqual([
+      { fee_category: "nsf", display_name: expect.any(String), amount: null, amount_low: 25, amount_high: 35, market_median: 30, market_count: 6 },
+    ]);
+    expect(feesTouched(["overdraft_nsf"], own, market).fees.map((f) => f.fee_category)).toContain("nsf");
+  });
+
+  it("never sets a range against the market median", () => {
+    expect(focusFees(new Map([["nsf", several]]), market)).toEqual([]);
   });
 });

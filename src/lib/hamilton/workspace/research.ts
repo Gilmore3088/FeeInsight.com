@@ -625,7 +625,7 @@ export function briefingLocalMarket(
   const national = base.layers.find((l) => l.scope === "national")?.values;
   if (!national) return null;
   const valueOf = new Map<number, Record<string, number>>();
-  for (const category of base.ownValues.keys()) {
+  for (const category of base.ownCategories) {
     for (const v of national.get(category) ?? []) {
       const values = valueOf.get(v.institution_id) ?? {};
       values[category] = v.amount;
