@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { ECONOMY_DEFINITIONS, ECONOMY_SOURCES, economyPartitions, runRegistryEconomy } from "./economy";
+import { RPW_DATA_PAGE_URL } from "@/lib/regulatory/economy";
+import { RPW_DATA_PAGE_HTML, RPW_NEW_SHEET, RPW_NOTES_SHEET, RPW_OLD_SHEET, rpwWorkbook } from "@/lib/regulatory/rpw-fixtures";
+
+import { ECONOMY_DEFINITIONS, ECONOMY_SOURCES, economyPartitions, REMITTANCE_PARSER_VERSION, runRegistryEconomy } from "./economy";
 import type { RegistryDb } from "./partitions";
 
 function createDb(urbanRural: Array<Record<string, unknown>> = []) {
@@ -122,6 +125,34 @@ describe("FFIEC tracts", () => {
     const r = await runRegistryEconomy({ source: ECONOMY_SOURCES.ffiecTracts, partitionKey: "2024", db, fetchOptions: { fetchImpl } });
     expect(r.emptyReason).toMatch(/layout not confirmed/);
     expect(statements.some((s) => s.text.includes("INSERT INTO census_tracts"))).toBe(false);
+  });
+});
+
+describe("World Bank remittance prices", () => {
+  const WORKBOOK_URL = "https://remittanceprices.worldbank.org/sites/default/files/rpw_dataset_2011_2025_q1.xlsx";
+  const route = (workbook: Response) =>
+    vi.fn(async (url: string | URL | Request) =>
+      String(url) === RPW_DATA_PAGE_URL ? new Response(RPW_DATA_PAGE_HTML, { status: 200 }) : workbook,
+    ) as unknown as typeof fetch;
+
+  it("reads the workbook from the data page with no env var set", async () => {
+    const { db, statements } = createDb();
+    const book = rpwWorkbook([RPW_NOTES_SHEET, RPW_OLD_SHEET, RPW_NEW_SHEET]);
+    const fetchImpl = route(new Response(book as unknown as BodyInit, { status: 200 }));
+    const r = await runRegistryEconomy({ source: ECONOMY_SOURCES.remittances, partitionKey: "current", dryRun: true, db, env: {}, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    expect(r).toMatchObject({ sourceUrl: WORKBOOK_URL, rows: 3, skipped: false, empty: false });
+    expect(r.detail).toMatchObject({ parser_version: REMITTANCE_PARSER_VERSION, located_via: "data-page", attribution: "The World Bank: Remittance Prices Worldwide", licence: "CC BY 4.0", corridors: 1 });
+    expect(statements).toHaveLength(0);
+  });
+
+  it("refuses a file over the size cap with a named problem", async () => {
+    const { db, statements } = createDb();
+    const big = new Response("x", { status: 200, headers: { "content-length": String(60 * 1024 * 1024) } });
+    const r = await runRegistryEconomy({ source: ECONOMY_SOURCES.remittances, partitionKey: "current", db, env: {}, fetchOptions: { fetchImpl: route(big), backoffMs: 0 } });
+    expect(r.empty).toBe(true);
+    expect(r.emptyReason).toMatch(/^rpw_file_too_large: /);
+    expect(partitionDetail(statements)).toMatchObject({ status: "empty", detail: { problem: "rpw_file_too_large", parser_version: REMITTANCE_PARSER_VERSION } });
+    expect(statements.some((s) => s.text.includes("INSERT INTO remittance_prices"))).toBe(false);
   });
 });
 
