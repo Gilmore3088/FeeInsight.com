@@ -20,6 +20,13 @@ import {
 } from "@/lib/hamilton/peer-index";
 import { MIN_PEERS_FOR_POSITION } from "@/lib/hamilton/workspace/scenario";
 import {
+  hasPeerSetPrefill,
+  parsePeerSetPrefillParams,
+  peerSetPrefillSearch,
+  resolvePeerSetPrefill,
+  type PeerSetPrefillParams,
+} from "@/lib/hamilton/peer-set-prefill";
+import {
   getIntelligenceSnapshot,
 } from "./actions";
 import { FeatureToggles } from "./FeatureToggles";
@@ -61,14 +68,18 @@ const PLAN_LABEL: Record<string, string> = {
 export default async function SettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ instId?: string }>;
+  searchParams: Promise<{ instId?: string } & PeerSetPrefillParams>;
 }) {
   const params = await searchParams;
+  // A peer set handed over by a public page (#1981), each parameter checked and dropped if bad.
+  const prefillParams = parsePeerSetPrefillParams(params);
   const user = await getCurrentUser();
   if (!user) {
-    const returnPath = params.instId
-      ? `/pro/settings?instId=${encodeURIComponent(params.instId)}`
-      : "/pro/settings";
+    const returnSearch = new URLSearchParams();
+    if (typeof params.instId === "string" && params.instId) returnSearch.set("instId", params.instId);
+    for (const [key, value] of peerSetPrefillSearch(prefillParams)) returnSearch.set(key, value);
+    const query = returnSearch.toString();
+    const returnPath = `/pro/settings${query ? `?${query}` : ""}${hasPeerSetPrefill(prefillParams) ? "#peer-sets" : ""}`;
     redirect(`/login?from=${encodeURIComponent(returnPath)}`);
   }
 
@@ -111,8 +122,9 @@ export default async function SettingsPage({
   const peerSets: SavedPeerSet[] = loadedPeerSets.filter((set) =>
     set.institution_id === null || set.institution_id === peerSetWorkspace?.institutionId,
   );
-  // Real counts of the institutions each set resolves to, and names for the chosen-peer chips.
-  const [peerSetCounts, peerInstitutionNames] = await Promise.all([
+  // Real counts of the institutions each set resolves to, names for the chosen-peer chips, and
+  // the handed-over set's peers (unknown institutions dropped). Nothing is saved here.
+  const [peerSetCounts, peerInstitutionNames, peerSetPrefill] = await Promise.all([
     getPeerGroupCounts(
       peerSets.map((set) => parseSavedPeerSetFilters(set)),
       peerSetWorkspace?.institutionId ?? selectedInstitution?.id ?? null,
@@ -120,6 +132,7 @@ export default async function SettingsPage({
     getPeerInstitutionNames(peerSets.flatMap((set) => set.institution_ids ?? [])).catch(
       () => new Map<number, string>(),
     ),
+    resolvePeerSetPrefill(prefillParams, getPeerInstitutionNames),
   ]);
   // Where a set is too thin for a fee, charts fall back to the bank's own default group.
   const firstDefaultGroup = selectedInstitution
@@ -267,7 +280,12 @@ export default async function SettingsPage({
       >
         <div className={`${panel} scroll-mt-24`}>
           <PeerSetManager
-            key={JSON.stringify([user.id, selectedInstitution?.id ?? null, peerSetWorkspace?.institutionId ?? null])}
+            key={JSON.stringify([
+              user.id,
+              selectedInstitution?.id ?? null,
+              peerSetWorkspace?.institutionId ?? null,
+              peerSetPrefill ? [peerSetPrefill.peers.map((peer) => peer.id), peerSetPrefill.name, peerSetPrefill.fee?.key, peerSetPrefill.asOf] : null,
+            ])}
             researchInstitutionId={selectedInstitution?.id ?? null}
             initialPeerSets={peerSets}
             initialCounts={Object.fromEntries(
@@ -279,6 +297,7 @@ export default async function SettingsPage({
             currentUserId={String(user.id)}
             minPeers={MIN_PEERS_FOR_POSITION}
             widerGroupLabel={widerGroupLabel}
+            prefill={peerSetPrefill}
           />
         </div>
       </MemoSection>
