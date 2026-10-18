@@ -25,8 +25,8 @@ import { parseCsvTable } from "./industry-events";
  *
  * - `national-series`: Federal Reserve Board files, each series from its original publisher
  *   (FRED is no longer read; DECISIONS.md "No non-commercial data", 2026-10-18): H.8 deposits and
- *   loans (all, large and small domestically chartered commercial banks) and Z.1 commercial
- *   mortgages from the release XML packages, bank delinquency rates from the charge-off and
+ *   loans (all, large and small domestically chartered commercial banks) from the H.8 XML
+ *   package (Z.1 is not read yet: its package is about 592 MB), bank delinquency rates from the charge-off and
  *   delinquency rates table, and SLOOS net tightening and demand from the survey's chart-data page
  *   (./fed-board-data). Freddie Mac PMMS and the Philadelphia Fed's large-bank credit card series
  *   were struck on 2026-10-18 (their publishers' terms bar commercial use), and the FDIC national

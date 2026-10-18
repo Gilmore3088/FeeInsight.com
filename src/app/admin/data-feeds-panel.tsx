@@ -22,7 +22,7 @@ const FEED_LABELS: Record<string, string> = {
   "bls-laus": "BLS county labor force and unemployment (LAUS)",
   "census-lehd": "LEHD jobs by workplace and home county (LODES)",
   "fed-payments": "FedACH commercial and Payments Study volumes (Fed Board)",
-  "national-series": "National credit series (Fed Board: H.8, Z.1, SLOOS, delinquency)",
+  "national-series": "National credit series (Fed Board: H.8, SLOOS, delinquency)",
   "nyfed-household-debt": "NY Fed household debt by state",
   "nyfed-sce-credit": "NY Fed consumer credit access survey",
   "cfpb-credit-trends": "CFPB Consumer Credit Trends originations",

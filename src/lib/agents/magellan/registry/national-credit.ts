@@ -16,7 +16,7 @@ import { recordRegistryPartition, type RegistryDb } from "./partitions";
 /**
  * Magellan registry steps for national and state funding and credit context, one source per
  * step, all into area_statistics:
- * - `national-series`: the configured Federal Reserve Board series (H.8, Z.1, SLOOS, bank
+ * - `national-series`: the configured Federal Reserve Board series (H.8, SLOOS, bank
  *   delinquency rates), nation, each from the Board's own files; FRED is no longer read and the
  *   FDIC national deposit rates were dropped (2026-10-18). PMMS and the Philadelphia Fed card
  *   series were struck on 2026-10-18 (DECISIONS.md "No non-commercial data"). Each row's
@@ -70,7 +70,7 @@ export interface NationalCreditDefinition {
 export const NATIONAL_CREDIT_DEFINITIONS: NationalCreditDefinition[] = [
   {
     source: NATIONAL_CREDIT_SOURCES.nationalSeries,
-    title: "Pull national bank funding and credit series from the Federal Reserve Board (H.8, Z.1, SLOOS, delinquency)",
+    title: "Pull national bank funding and credit series from the Federal Reserve Board (H.8, SLOOS, delinquency)",
     label: "Fed Board national credit series",
     partitions: (now) => [monthPartition(now)],
     refreshHours: HOURS.week,

@@ -1241,7 +1241,7 @@ commercial use without the St. Louis Fed's written consent and bar storing FRED 
 database; most series we read through FRED are public-domain federal data. registry-fred now reads
 BLS (CPI, unemployment, payrolls, each state's LAUS and CES series), BEA NIPA (real GDP, the GDP
 price index, the saving rate; BEA_API_KEY) and the Fed Board's H.15 package (fed funds), keeping our
-series ids; national-series reads the Board's H.8 and Z.1 packages, its charge-off and delinquency
+series ids; national-series reads the Board's H.8 package (Z.1, about 592 MB, not yet), its charge-off and delinquency
 table and the SLOOS chart data. Dropped, with no publisher file confirmed: the FDIC national deposit
 rates (SNDR, ICNDR, MMNDR, NDR12MCD), the FDIC QBP service-charge series (QBPQYTNIYSRVDP) and
 DRCBLACBS. FRED-era rows stay on prod (none deleted) and are retired per series, so a publisher
