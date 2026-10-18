@@ -146,4 +146,21 @@ describe("dataset passage (#1924 step 4)", () => {
     expect(differ).toBe("Why these figures can differ: only your peer group is limited to institutions in Tennessee and credit unions.");
     expect(passage?.[1]).toMatch(/^Who is counted for your peer group: institutions in Tennessee, credit unions only, with the institution/);
   });
+
+  it("says a figure leaves the bank out, never that its group is limited to it", () => {
+    const peers = makeStamp({ ...base, filters: [{ key: "peers:state:TN", label: "Institutions in Tennessee" }, leftOut] });
+    const passage = datasetPassage([
+      { label: "your peer group", stamp: peers },
+      { label: "National", stamp: makeStamp({ ...base, filters: [] }) },
+    ], "see the report");
+    const differ = passage?.find((s) => s.startsWith("How your peer group and National differ"));
+    expect(differ).toBe("How your peer group and National differ: only your peer group is limited to institutions in Tennessee and leaves out the institution being compared.");
+    expect(passage?.join(" ")).not.toMatch(/limited to the institution being compared/);
+  });
+
+  it("drops a segment's prefix inside a sentence, so the passage keeps one colon each", () => {
+    const seg = makeStamp({ ...base, filters: [{ key: "segment:charter:bank", label: "Segment: Banks" }] });
+    const passage = datasetPassage([{ label: "This segment", stamp: seg }], "see the report");
+    expect(passage?.[1]).toBe("Who is counted: banks, under the index's standard rules (see the report).");
+  });
 });

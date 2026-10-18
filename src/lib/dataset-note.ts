@@ -138,21 +138,35 @@ function lowerFirst(label: string): string {
  */
 function differenceProse(lines: readonly string[]): string[] {
   const limits = new Map<string, string[]>();
+  const leavesOut = new Set<string>();
   const out: (string | { who: string })[] = [];
   for (const line of lines) {
     const match = /^Applies only to (.+?): (.+)$/.exec(line);
     if (!match) { out.push(line); continue; }
-    const [, who, what] = match;
+    const [, who, label] = match;
     if (!limits.has(who)) { limits.set(who, []); out.push({ who }); }
+    // Leaving the bank out narrows a group by one; it is never what the group is limited to.
+    if (label === LEFT_OUT_LABEL) { leavesOut.add(who); continue; }
+    const what = groupWords(label);
     if (!who.toLowerCase().startsWith(what.toLowerCase())) limits.get(who)!.push(lowerFirst(what.replace(/ only$/, "")));
   }
   return out.flatMap((entry) => {
     if (typeof entry === "string") return [entry];
     const parts = limits.get(entry.who)!;
-    if (parts.length === 0) return [];
-    const list = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
-    return [`only ${entry.who} is limited to ${list}`];
+    const clauses = [
+      ...(parts.length ? [`is limited to ${parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`}`] : []),
+      ...(leavesOut.has(entry.who) ? ["leaves out the institution being compared"] : []),
+    ];
+    return clauses.length ? [`only ${entry.who} ${clauses.join(" and ")}`] : [];
   });
+}
+
+/** The label of the filter that leaves the compared institution out (research.ts excludeOwnFilter). */
+const LEFT_OUT_LABEL = "The institution being compared left out";
+
+/** A filter label in a sentence: a segment's "Segment: " prefix dropped, so a sentence keeps one colon. */
+function groupWords(label: string): string {
+  return label.replace(/^Segment: /, "");
 }
 
 /** Stamp filters that set a figure's group (peers, segment, the bank left out); the rest are the index's standard rules. */
@@ -170,10 +184,10 @@ export function datasetPassage(figures: readonly StampedFigure[], fullList: stri
   if (!words) return null;
   const [first] = figures;
   const own = first.stamp.filters.filter((f) => GROUP_FILTER.test(f.key));
-  const group = own.filter((f) => !f.key.startsWith("exclude:")).map((f) => lowerFirst(f.label));
+  const group = own.filter((f) => !f.key.startsWith("exclude:")).map((f) => lowerFirst(groupWords(f.label)));
   const leftOut = own.some((f) => f.key.startsWith("exclude:")) ? "with the institution being compared left out, " : "";
   // With several reads, "who is counted" describes the first figure's, so it says whose.
-  const whose = new Set(figures.map((f) => f.stamp.id)).size > 1 ? ` for ${first.label}` : "";
+  const whose = group.length && new Set(figures.map((f) => f.stamp.id)).size > 1 ? ` for ${first.label}` : "";
   const counted = group.length
     ? `Who is counted${whose}: ${group.join(", ")}, ${leftOut}under the index's standard rules (${fullList}).`
     : `Who is counted${whose}: all institutions${leftOut ? " except the institution being compared" : ""}, under the index's standard rules (${fullList}).`;
