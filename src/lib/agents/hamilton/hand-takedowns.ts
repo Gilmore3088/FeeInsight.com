@@ -42,7 +42,7 @@ export interface HandTakedown {
   reason: string;
   /** The issue that holds the evidence; the entries under one issue are one batch. */
   issue: number;
-  kind: Extract<FeedbackKind, "wrong_amount" | "wrong_category" | "not_a_fee" | "duplicate">;
+  kind: Extract<FeedbackKind, "wrong_amount" | "wrong_category" | "not_a_fee" | "duplicate" | "not_on_schedule">;
   /** What the bank's own text says, in one line. */
   evidence: string;
   /**
@@ -117,6 +117,98 @@ export function atmSurchargeTakedowns(live: boolean = ATM_SURCHARGE_TAKEDOWN_LIV
     ...ATM_NOT_THE_FEE_ROWS.map(atmTakedown(1773, "not_a_fee")),
   ];
 }
+
+/**
+ * #1880 (read-only, Oct 18): every live Texas Capital fee comes from its services-fees page's table
+ * for accounts "previously offered and no longer available to open by Texas Capital Bank as of May
+ * 3, 2023"; its current schedule is the Personal Banking Fee Schedule PDF (#1881 is why it was not
+ * read). 32 rows, more than one batch may hold, so they waited on James: he chose "Take them down"
+ * on Oct 18 (05:57 UTC). Set false and none of them is listed.
+ */
+export const TEXAS_CAPITAL_TAKEDOWN_LIVE = true;
+
+/** Batches James approved by name although they hold more than `HAND_TAKEDOWN_BATCH_LIMIT` entries. */
+export const JAMES_APPROVED_BATCHES: ReadonlyMap<number, string> = new Map([
+  [1880, "James chose \"Take them down\", Oct 18 05:57 UTC"],
+]);
+
+type TexasCapitalRow = [feePublishedId: number, canonicalFeeKey: string, amount: number, feeName: string, sourceDocumentId: number];
+
+const TEXAS_CAPITAL_LEGACY_ROWS: readonly TexasCapitalRow[] = [
+  [5821, "counter_check", 0, "Temporary Checks", 30],
+  [134779, "overdraft", 15, "Paid Overdraft Fee", 29087],
+  [134780, "stop_payment", 30, "Stop Payment", 29087],
+  [134781, "deposited_item_return", 12, "Deposited Item Chargeback", 29087],
+  [134782, "account_research", 25, "Account Research", 29087],
+  [134783, "safe_deposit_box", 50, "Safe Deposit Box 3x103", 29087],
+  [134784, "safe_deposit_box", 75, "Safe Deposit Box 5x103", 29087],
+  [134785, "safe_deposit_box", 125, "Safe Deposit Box 10x103", 29087],
+  [134786, "late_payment", 10, "Late Payment (Over 90 Days)", 29087],
+  [134787, "safe_deposit_box", 25, "Additional Safe Deposit Box Keys", 29087],
+  [134788, "nsf", 0, "Return NSF Item Fee", 29087],
+  [134789, "card_replacement", 0, "Replacement Debit Card", 29087],
+  [134790, "monthly_maintenance", 0, "Monthly service charge", 29087],
+  [134791, "wire_intl_outgoing", 35, "International Outbound Wires (Online/Manual)", 29087],
+  [134792, "wire_domestic_outgoing", 35, "Domestic Outbound Wires (Online/Manual)", 29087],
+  [134793, "deposited_item_return", 7, "Re-clear Returned Deposit Item", 29087],
+  [134794, "check_image", 3, "Check Copies", 29087],
+  [134795, "document_reproduction", 5, "Statement Copies", 29087],
+  [134796, "cashiers_check", 0, "Cashier’s Checks", 29087],
+  [134797, "document_reproduction", 0, "Duplicate Statement", 29087],
+  [134798, "early_closure", 0, "Account Closure — Within 90 Days of Opening", 29087],
+  [134799, "collection_item", 0, "Collection Items — Incoming/Outgoing", 29087],
+  [134826, "safe_deposit_box", 50, "Safe Deposit Box 3x104", 29087],
+  [134827, "safe_deposit_box", 75, "Safe Deposit Box 5x104", 29087],
+  [134828, "safe_deposit_box", 125, "Safe Deposit Box 10x104", 29087],
+  [134846, "garnishment_levy", 0, "Admin Fee — Garnishments and Tax Levies", 29087],
+  [146101, "rush_card", 30, "Rushed Debit Card Request", 29087],
+  [146102, "safe_deposit_box", 25, "Save Deposit Box Key Deposit (Refundable)", 29087],
+  [147936, "monthly_maintenance", 25, "Premier checking Monthly service charge", 29087],
+  [147937, "monthly_maintenance", 0, "capital interest checking Monthly service charge", 29087],
+  [153189, "wire_intl_outgoing", 75, "International Outbound Wires (Manual)", 29087],
+  [153190, "wire_domestic_outgoing", 60, "Domestic Outbound Wires (Manual)", 29087],
+];
+
+/** The #1880 entries, listed only while `TEXAS_CAPITAL_TAKEDOWN_LIVE` is on (`live` for tests). */
+export function texasCapitalTakedowns(live: boolean = TEXAS_CAPITAL_TAKEDOWN_LIVE): HandTakedown[] {
+  if (!live) return [];
+  return TEXAS_CAPITAL_LEGACY_ROWS.map(([feePublishedId, canonicalFeeKey, amount, feeName, sourceDocumentId]) => ({
+    feePublishedId, institutionId: 69, canonicalFeeKey, amount, feeName,
+    reason: "source_mismatch: #1880", issue: 1880, kind: "not_on_schedule" as const,
+    evidence: `Texas Capital services-fees page (doc ${sourceDocumentId}): "${feeName}" is priced in the table for "Capital Interest Checking, Money Market, Personal Savings | Premier Checking, Premier Money Market", accounts the same page lists as "previously offered and no longer available to open by Texas Capital Bank as of May 3, 2023". The bank's current schedule is its Personal Banking Fee Schedule PDF (effective 7/15/2024).`,
+  }));
+}
+
+/**
+ * A verified row of a listed batch that never went live (a later read of the same table, decided
+ * as identical to a live row) and is rejected with it, so no later publish rule brings the batch's
+ * fees back. Rejected only while still verified, unpublished and at the listed institution.
+ */
+export interface HandWaitingRejection {
+  feeVerifiedId: number;
+  institutionId: number;
+  issue: number;
+  reason: string;
+}
+
+/**
+ * #1880: Texas Capital's verified rows from the same closed-accounts table that are not live:
+ * docs 22052 and 29087 (2 each) and doc 37585 (read Oct 18 05:40 UTC, 32 rows), read-only, Oct 18.
+ */
+const TEXAS_CAPITAL_WAITING_VERIFIED_IDS: readonly number[] = [
+  78999, 123405, 190244, 190246,
+  ...Array.from({ length: 32 }, (_, index) => 191907 + index),
+];
+
+/** The #1880 waiting rows, listed only while `TEXAS_CAPITAL_TAKEDOWN_LIVE` is on (`live` for tests). */
+export function texasCapitalWaitingRejections(live: boolean = TEXAS_CAPITAL_TAKEDOWN_LIVE): HandWaitingRejection[] {
+  if (!live) return [];
+  return TEXAS_CAPITAL_WAITING_VERIFIED_IDS.map((feeVerifiedId) => ({
+    feeVerifiedId, institutionId: 69, issue: 1880, reason: "source_mismatch: #1880",
+  }));
+}
+
+export const HAND_WAITING_REJECTIONS: readonly HandWaitingRejection[] = [...texasCapitalWaitingRejections()];
 
 export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
   // #1496 (James approved, Oct 16): Barksdale FCU's two-column fee schedule (text 17003) read line by line.
@@ -540,6 +632,8 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
     : []),
   // #1772, #1773: 28 non-network ATM rows, listed while `ATM_SURCHARGE_TAKEDOWN_LIVE` is on (James, Oct 17).
   ...atmSurchargeTakedowns(),
+  // #1880: Texas Capital's 32 closed-account rows, listed while `TEXAS_CAPITAL_TAKEDOWN_LIVE` is on (James, Oct 18).
+  ...texasCapitalTakedowns(),
   // #1788 (read-only, Oct 17; James's sample-report review): rows guard v72 cannot read by name, each
   // confirmed against its bank's stored text. Two international ATM fees filed as the non-network ATM
   // fee that repeat a live International ATM & Card fee, and three optional add-ons filed as monthly
@@ -604,6 +698,8 @@ export interface HandTakedownResult {
   takenDown: PlannedHandTakedown[];
   /** Listed rows left alone, with why (not live, or changed since it was listed). */
   skipped: Array<{ feePublishedId: number; reason: string }>;
+  /** Listed waiting verified rows rejected (`HAND_WAITING_REJECTIONS`); on a dry run, those it would reject. */
+  waitingRejected: number[];
   /** A failed read or write (nothing written); also a `step.warning` run event. */
   error: string | null;
 }
@@ -651,29 +747,52 @@ export function planHandTakedowns(live: LiveTakedownRow[], list: readonly HandTa
  */
 export async function applyHandTakedowns(
   db: SqlTag,
-  options: { runId: number; stepId?: number | null; batchId: string; dryRun: boolean; list?: readonly HandTakedown[] },
+  options: {
+    runId: number; stepId?: number | null; batchId: string; dryRun: boolean;
+    list?: readonly HandTakedown[]; waiting?: readonly HandWaitingRejection[];
+  },
 ): Promise<HandTakedownResult> {
   const list = options.list ?? HAND_TAKEDOWNS;
-  const result: HandTakedownResult = { dryRun: options.dryRun, takenDown: [], skipped: [], error: null };
-  if (list.length === 0) return result;
+  const waiting = options.waiting ?? HAND_WAITING_REJECTIONS;
+  const result: HandTakedownResult = { dryRun: options.dryRun, takenDown: [], skipped: [], waitingRejected: [], error: null };
+  if (list.length === 0 && waiting.length === 0) return result;
   // Each listed row, and each live row an entry waits on (`requiresLive`).
   const ids = [...new Set(list.flatMap((entry) => entry.requiresLive ? [entry.feePublishedId, entry.requiresLive.feePublishedId] : [entry.feePublishedId]))];
-  let live: LiveTakedownRow[];
+  const waitingIds = [...new Set(waiting.map((entry) => entry.feeVerifiedId))];
+  let live: LiveTakedownRow[] = [];
+  let pending: Array<{ fee_verified_id: number | string; institution_id: number | string }> = [];
   try {
-    live = await inSavepoint(db, (scope) => scope<LiveTakedownRow[]>`
-      SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fp.canonical_fee_key, fp.fee_name, fp.amount
-        FROM published_fee_records fp
-       WHERE fp.fee_published_id = ANY(${ids}::bigint[])
-         AND fp.rolled_back_at IS NULL
-    `);
+    if (ids.length > 0) {
+      live = await inSavepoint(db, (scope) => scope<LiveTakedownRow[]>`
+        SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fp.canonical_fee_key, fp.fee_name, fp.amount
+          FROM published_fee_records fp
+         WHERE fp.fee_published_id = ANY(${ids}::bigint[])
+           AND fp.rolled_back_at IS NULL
+      `);
+    }
+    if (waitingIds.length > 0) {
+      pending = await inSavepoint(db, (scope) => scope<Array<{ fee_verified_id: number | string; institution_id: number | string }>>`
+        SELECT v.fee_verified_id, v.institution_id
+          FROM verified_fee_observations v
+         WHERE v.fee_verified_id = ANY(${waitingIds}::bigint[])
+           AND v.review_status IN ('verified', 'approved')
+           AND NOT EXISTS (
+             SELECT 1 FROM published_fee_records fp
+              WHERE fp.lineage_ref = v.fee_verified_id AND fp.rolled_back_at IS NULL
+           )
+      `);
+    }
   } catch (error) {
     console.error("hand takedowns read failed:", error);
     return { ...result, error: await recordStepWarning(db, { runId: options.runId, stepId: options.stepId, check: HAND_TAKEDOWN_CHECK, what: "Hand takedowns read", error }) };
   }
   const plan = planHandTakedowns(live, list);
   result.skipped = plan.skipped;
-  if (options.dryRun) return { ...result, takenDown: plan.takenDown };
-  if (plan.takenDown.length === 0) return result;
+  const waitingPlan = pending
+    .filter((row) => waiting.some((entry) => entry.feeVerifiedId === Number(row.fee_verified_id) && entry.institutionId === Number(row.institution_id)))
+    .map((row) => Number(row.fee_verified_id));
+  if (options.dryRun) return { ...result, takenDown: plan.takenDown, waitingRejected: waitingPlan };
+  if (plan.takenDown.length === 0 && waitingPlan.length === 0) return result;
 
   try {
     await inSavepoint(db, async (scope) => {
@@ -724,15 +843,36 @@ export async function applyHandTakedowns(
         };
       });
       if (feedback.length > 0) await recordFeedback(scope, feedback);
-      if (result.takenDown.length > 0) {
+      for (const feeVerifiedId of waitingPlan) {
+        const entry = waiting.find((candidate) => candidate.feeVerifiedId === feeVerifiedId)!;
+        const rejected = await scope<{ fee_verified_id: number | string }[]>`
+          UPDATE verified_fee_observations
+             SET review_status = 'rejected',
+                 outlier_flags = CASE WHEN outlier_flags ? ${HAND_TAKEDOWN_FLAG} THEN outlier_flags
+                                      ELSE COALESCE(outlier_flags, '[]'::jsonb) || jsonb_build_array(${HAND_TAKEDOWN_FLAG}::text) END
+           WHERE fee_verified_id = ${feeVerifiedId}
+             AND institution_id = ${entry.institutionId}
+             AND review_status IN ('verified', 'approved')
+          RETURNING fee_verified_id
+        `;
+        if (rejected.length > 0) result.waitingRejected.push(feeVerifiedId);
+      }
+      if (result.takenDown.length > 0 || result.waitingRejected.length > 0) {
+        const message = result.waitingRejected.length > 0
+          ? `Took down ${result.takenDown.length} listed live fee(s) confirmed wrong against their bank's own text and rejected ${result.waitingRejected.length} waiting cop${result.waitingRejected.length === 1 ? "y" : "ies"}`
+          : `Took down ${result.takenDown.length} listed live fee(s) confirmed wrong against their bank's own text`;
         await scope`
           INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
           VALUES (
             ${options.runId}, ${options.stepId ?? null}, ${HAND_TAKEDOWN_CHECK}, 'completed',
-            ${`Took down ${result.takenDown.length} listed live fee(s) confirmed wrong against their bank's own text`},
+            ${message},
             ${JSON.stringify({
               taken_down: result.takenDown.map((item) => ({ fee_published_id: item.feePublishedId, fee_verified_id: item.feeVerifiedId, reason: item.reason })),
               skipped: result.skipped,
+              waiting_rejected: result.waitingRejected.map((feeVerifiedId) => ({
+                fee_verified_id: feeVerifiedId,
+                reason: waiting.find((entry) => entry.feeVerifiedId === feeVerifiedId)!.reason,
+              })),
             })}::jsonb
           )
         `;
@@ -740,7 +880,7 @@ export async function applyHandTakedowns(
     });
   } catch (error) {
     console.error("hand takedowns write failed:", error);
-    return { ...result, takenDown: [], error: await recordStepWarning(db, { runId: options.runId, stepId: options.stepId, check: HAND_TAKEDOWN_CHECK, what: "Hand takedowns write", error }) };
+    return { ...result, takenDown: [], waitingRejected: [], error: await recordStepWarning(db, { runId: options.runId, stepId: options.stepId, check: HAND_TAKEDOWN_CHECK, what: "Hand takedowns write", error }) };
   }
   if (result.takenDown.length > 0) invalidatePublicReadCache();
   return result;

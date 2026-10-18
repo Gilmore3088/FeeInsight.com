@@ -126,6 +126,11 @@ export interface RunMagellanFetchOptions {
    * MAGELLAN_STALE_LINK_REFETCH_DAYS ago (hourly backlog runs).
    */
   newLinksOnly?: boolean;
+  /**
+   * The fee link a person asked for (an admin extract's `fee_schedule_url`, #1881). When it is the
+   * bank's saved link, it is fetched instead of the profile's remembered address.
+   */
+  requestedUrl?: string | null;
   dryRun?: boolean;
   db?: SqlTag;
   fetchImpl?: Fetcher;
@@ -951,6 +956,20 @@ export async function fetchAndRecordLink(
   return { result, sourceDocumentId, supersededCopies };
 }
 
+/**
+ * Pure: the candidate as a person's extract asked for it (#1881). The profile's remembered address
+ * wins over the saved link at fetch time, and an admin's new link only changed the saved one, so
+ * Texas Capital's extract on Oct 18 (run 8472, its current PDF) re-read the old page. When the
+ * requested link is the bank's saved link, the remembered address is set aside for this fetch; the
+ * fetch then remembers the new page itself (unless a correction locks the profile).
+ */
+export function withRequestedUrl(row: FetchCandidateRow, institutionId?: number, requestedUrl?: string | null): FetchCandidateRow {
+  if (institutionId == null || Number(row.id) !== institutionId) return row;
+  const requested = normalizeHttpUrl(requestedUrl ?? null);
+  if (!requested || requested !== normalizeHttpUrl(row.fee_schedule_url)) return row;
+  return { ...row, profile_canonical_source_url: null };
+}
+
 export async function runMagellanFetch(
   options: RunMagellanFetchOptions,
 ): Promise<RunMagellanFetchResult> {
@@ -966,7 +985,8 @@ export async function runMagellanFetch(
 
   const results: FetchResult[] = [];
   let supersededCopies = 0;
-  for (const row of rows) {
+  for (const candidate of rows) {
+    const row = withRequestedUrl(candidate, options.institutionId, options.requestedUrl);
     const fetched = await fetchAndRecordLink(db, row, fetchImpl, {
       learning,
       vaultSchema,

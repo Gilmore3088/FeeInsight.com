@@ -504,6 +504,7 @@ async function executeAgenticStep(
         institutionId: numericRunParam(params, ["institution_id"]),
         stateCode,
         newLinksOnly: params.new_links_only === true,
+        requestedUrl: typeof params.fee_schedule_url === "string" ? params.fee_schedule_url : null,
       });
       // Fee links the plain fetch keeps failing to reach, tried at the bank's other
       // spellings of the address (#1051). Free; a failure here never fails the step.
@@ -1777,6 +1778,7 @@ async function executeAgenticStep(
           hand_takedown: {
             taken_down: handTakedowns.takenDown.map((item) => ({ fee_published_id: item.feePublishedId, reason: item.reason })),
             skipped: handTakedowns.skipped.length,
+            waiting_rejected: handTakedowns.waitingRejected.length,
             error: handTakedowns.error,
           },
           hand_audience_fix: {
