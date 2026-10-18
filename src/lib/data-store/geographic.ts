@@ -6,6 +6,7 @@ import {
   type CityInstitutionFeeRow,
 } from "./city-fee-aggregation";
 import { VALID_US_CODES } from "../us-states";
+import { escapeLikePattern } from "@/lib/api-hardening/query-caps";
 
 export interface GeoStats {
   institution_count: number;
@@ -317,7 +318,8 @@ export async function getTopCitiesByState(
 }
 
 export async function getCityAutocomplete(query: string, limit: number = 10): Promise<{ city: string; state_code: string; count: number }[]> {
-  const pattern = `${query}%`;
+  // A city-name prefix, matched literally: an unescaped `%` read every city in the country.
+  const pattern = `${escapeLikePattern(query)}%`;
   return await sql`
     SELECT (array_agg(ct.city ORDER BY (ct.city = UPPER(ct.city)), ct.city))[1] AS city, ct.state_code, COUNT(DISTINCT ct.id) as count
     FROM institution_sources ct
@@ -325,7 +327,7 @@ export async function getCityAutocomplete(query: string, limit: number = 10): Pr
     AND ct.id IN (SELECT DISTINCT institution_id FROM published_fee_catalog WHERE review_status = 'approved')
     GROUP BY LOWER(ct.city), ct.state_code
     ORDER BY count DESC
-    LIMIT ${limit}
+    LIMIT ${Math.min(Math.max(1, Math.floor(limit) || 1), 25)}
   ` as { city: string; state_code: string; count: number }[];
 }
 
