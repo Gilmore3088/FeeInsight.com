@@ -702,7 +702,7 @@ export async function getJobFreshness(): Promise<JobHealthSummary> {
 // Reliability Roadmap #11 — URL freshness surface.
 // Stale URLs are surfaced by the admin data-quality checks and agentic run queue.
 // by setting failure_reason='url_stale'. This helper counts them per state
-// so /admin/coverage can expose the pool that is not being rechecked.
+// so /admin/magellan can expose the pool that is not being rechecked.
 export interface UrlFreshnessStats {
   total_with_url: number;
   stale_count: number;
@@ -777,7 +777,7 @@ export async function getClassificationHistory(
 
 // Reliability Roadmap #14 — surface how many institutions are in each
 // backoff tier so humans can see where Magellan is choosing not to retry and
-// why. Exposed on /admin/coverage so dormant URLs are visible, not silently
+// why. Exposed on /admin/magellan so dormant URLs are visible, not silently
 // ignored.
 export interface CollectionHealthTiers {
   healthy: number;
