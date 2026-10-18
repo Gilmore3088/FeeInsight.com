@@ -264,7 +264,7 @@ export async function assembleNationalQuarterly(): Promise<NationalQuarterlyPayl
     });
   }
 
-  // Query 5: FRED economic indicators (graceful degradation)
+  // Query 5: economic indicators from BLS, BEA and the Fed Board (graceful degradation)
   let fred: NationalQuarterlyPayload["fred"] = null;
   try {
     const fredData = await getFredSummary();
@@ -283,7 +283,7 @@ export async function assembleNationalQuarterly(): Promise<NationalQuarterlyPayl
       executed_at: assembled_at,
     });
   } catch (e) {
-    console.warn("[assembler] FRED query failed, skipping:", e);
+    console.warn("[assembler] economic indicator query failed, skipping:", e);
     manifestEntries.push({
       sql: "getFredSummary()",
       row_count: 0,

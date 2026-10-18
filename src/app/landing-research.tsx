@@ -37,7 +37,7 @@ export const SOURCES: { key: SourceKey; icon: LucideIcon; name: string; provider
   { key: "geography", icon: MapPin, name: "Market geography", provider: "USDA", detail: "USDA urban and rural county classifications." },
   { key: "cfpb", icon: MessagesSquare, name: "Complaints", provider: "CFPB", detail: "CFPB consumer complaints, where an institution can be matched." },
   { key: "rules", icon: ScrollText, name: "Rules & actions", provider: "Regulators · States", detail: "Federal and state rules, fee bills, regulator announcements and actions." },
-  { key: "fred", icon: Percent, name: "Rates & credit", provider: "FRED", detail: "National FRED series for interest-rate and credit context." },
+  { key: "fred", icon: Percent, name: "Rates & credit", provider: "Fed Board · BLS · BEA", detail: "National interest-rate, credit and price series from the Federal Reserve Board, BLS and BEA." },
   { key: "regional", icon: Building2, name: "Regional Fed", provider: "Beige Book · FOMC", detail: "Beige Book, FOMC and regional Federal Reserve publications." },
 ];
 

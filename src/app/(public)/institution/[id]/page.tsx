@@ -456,7 +456,8 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                   <dt className="font-medium text-ink-soft">Same rules</dt>
                   <dd>
                     Its fees and every median use the same rules. Business-only fees are left out. So are CD, IRA, card
-                    inactivity, box drilling and key fees filed under a fee they don&rsquo;t match.
+                    inactivity, box drilling and key fees filed under a fee they don&rsquo;t match, and fees charged by a
+                    different period than the median (a quarterly fee beside monthly ones).
                   </dd>
                   {stateName && (
                     <>

@@ -768,6 +768,25 @@ Darwin owns verification and classification.
   the fee fixtures in `darwin/non-deposit-document-check.fixtures.ts` crossed with the URL fixtures
   on a local Postgres 16 (UTF8). The `documents` and `judged` CTEs are `MATERIALIZED` (the
   reviewer's prod-size run went from over 5 minutes to about 1 second with the same output).
+  v3 (#1908, James's live-fee check, Oct 18): the classifier's third kind, `card_program`, is a
+  prepaid, payroll, gift, travel or TravelMoney card's own document, named by the address's last
+  segment (`CARD_PROGRAM_LAST_SEGMENT`: SchoolsFirst's `payroll-card-statement-of-fees-disclosure`,
+  Acadia's `/checking/cards/prepaid-travel-card/`, "Gift_Card_Terms_and_Conditions.pdf"). It is
+  asked only where the v2 classifier said null: after the brokerage and loan tests (so
+  `/credit-cards/travel-card/` stays a loan page) and in place of the deposit-word null, since such
+  pages often sit under a checking section. A deposit word in the last segment itself
+  ("prepaid-checking-account") still wins, business documents still pass, a general schedule that
+  names the card only after its own fee words ("fee-schedule-including-gift-cards",
+  `GENERAL_SCHEDULE_BEFORE_CARD`) stays, a bare "pay card" is not a card, and a loan's "prepaid
+  finance charge" or a mortgage's "prepaid items" is not a card. `card_program_document` takes
+  every fee on such a document except the card's purchase and reload price (`CARD_PROGRAM_KEEP_KEYS`:
+  gift_card_purchase, prepaid_card_reload; `kept_card_purchase`). Its own sub-switch,
+  `CARD_PROGRAM_TAKEDOWN_LIVE`, is off until James's yes on the count: on Oct 18 (prod, read-only)
+  44 live fees on 12 documents at 12 institutions, 4 purchase or reload fees kept. Step detail adds
+  `card_program_document`, `card_program_documents`, `card_program_institutions`,
+  `kept_card_purchase`, `card_program_switch_live` and `samples_card_program_document`. Magellan's
+  companion filter skips these documents too. A card program's section inside one fee page (Navy
+  Federal's "GO Prepaid Cards", #1905) has no address of its own and is not caught here.
 - One printed line, two reads (`line-conflict-check.ts`, #1440). James's catalog review (Oct 15)
   found live fees sharing institution, name, amount and source address under two categories (1st
   Summit's "Prepaid Card" $5 as document reproduction and gift card purchase) or one category with
@@ -1369,7 +1388,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v5 | `darwin/verified-recheck.ts` |
 | `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v6 | `darwin/live-fragment-check.ts` |
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v1 | `darwin/hourly-frequency-check.ts` |
-| `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v2 | `darwin/non-deposit-document-check.ts` |
+| `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v3 | `darwin/non-deposit-document-check.ts` |
 | `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v1 | `darwin/line-conflict-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |

@@ -45,7 +45,8 @@ describe("data catalog", () => {
     // Released 2026-10-18 with attribution (CC BY 4.0; ODC-By 1.0).
     expect(catalogEntry("world-bank-remittance-prices")?.servable).toBe(true);
     expect(catalogEntry("urban-debt-in-america")?.servable).toBe(true);
-    expect(catalogEntry("national-series")?.servable).toBe(false);
+    // Read from the Fed Board's own public-domain files since 2026-10-18 (FRED replaced).
+    expect(catalogEntry("national-series")?.servable).toBe(true);
     expect(catalogEntry("bls-laus")?.servable).toBe(true);
   });
 

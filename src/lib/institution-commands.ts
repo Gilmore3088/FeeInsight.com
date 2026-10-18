@@ -48,6 +48,20 @@ function revalidateInstitutionSurfaces(institutionId: number, stateCode?: string
   revalidatePath("/admin");
 }
 
+/**
+ * A fee link a person sets replaces the profile's remembered address too (#1881). Magellan fetches
+ * the remembered address first, so changing only `fee_schedule_url` left Texas Capital's new PDF
+ * unread on Oct 18. A person's link wins over a locked correction as well: it is the newer word.
+ */
+async function rememberPersonFeeUrl(tx: typeof sql, institutionId: number, url: string): Promise<void> {
+  await tx`
+    UPDATE institution_source_profiles
+       SET canonical_source_url = ${url},
+           updated_at = NOW()
+     WHERE institution_id = ${institutionId}
+  `;
+}
+
 export async function createInstitutionCommand(
   input: CreateInstitutionInput,
 ): Promise<InstitutionCommandResult & { id?: number }> {
@@ -85,13 +99,17 @@ export async function setInstitutionFeeUrl(
   try {
     validateInstitutionId(institutionId);
     const url = normalizeHttpUrl(value);
-    const rows = await sql`
-      UPDATE institution_sources
-         SET fee_schedule_url = ${url},
-             document_type = NULL
-       WHERE id = ${institutionId}
-       RETURNING state_code
-    `;
+    const rows = await withTransaction(async (tx) => {
+      const updated = await tx`
+        UPDATE institution_sources
+           SET fee_schedule_url = ${url},
+               document_type = NULL
+         WHERE id = ${institutionId}
+         RETURNING state_code
+      `;
+      if (updated.length > 0) await rememberPersonFeeUrl(tx, institutionId, url);
+      return updated;
+    });
     if (rows.length === 0) return { success: false, error: "Institution not found" };
     revalidateInstitutionSurfaces(institutionId, String(rows[0].state_code ?? ""));
     return { success: true };
@@ -220,6 +238,7 @@ export async function bulkSetInstitutionFeeUrls(
            WHERE id = ${item.id}
           RETURNING id
         `;
+        if (rows.length > 0) await rememberPersonFeeUrl(tx, item.id, item.url);
         if (rows.length > 0) updated += 1;
         else errors.push(`Institution ID ${item.id} not found`);
       }

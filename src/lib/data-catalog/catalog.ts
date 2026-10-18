@@ -21,7 +21,7 @@ import { HELD_SOURCES, STRUCK_AREA_SOURCES } from "@/lib/data-store/struck-sourc
  * `servable` is the one gate: the licence lets us show the data to customers (public domain, a
  * named open licence, or Fee Insight's own published data) and the source is not struck or held
  * under DECISIONS.md "No non-commercial data". Row-level strikes (one struck URL, one struck
- * FRED series) are filtered by the readers, not here.
+ * series) are filtered by the readers, not here.
  */
 
 /** Licence statuses a catalog entry can carry: a contract's, or Fee Insight's own published data. */

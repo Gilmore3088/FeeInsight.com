@@ -16,9 +16,11 @@ import { recordRegistryPartition, type RegistryDb } from "./partitions";
 /**
  * Magellan registry steps for national and state funding and credit context, one source per
  * step, all into area_statistics:
- * - `national-series`: the configured FRED series (H.8, SLOOS, CRE, bank delinquency rates, FDIC
- *   national deposit rates), nation. PMMS and the Philadelphia Fed card series were struck on
- *   2026-10-18 (DECISIONS.md "No non-commercial data").
+ * - `national-series`: the configured Federal Reserve Board series (H.8, SLOOS, bank
+ *   delinquency rates), nation, each from the Board's own files; FRED is no longer read and the
+ *   FDIC national deposit rates were dropped (2026-10-18). PMMS and the Philadelphia Fed card
+ *   series were struck on 2026-10-18 (DECISIONS.md "No non-commercial data"). Each row's
+ *   source_url is the Board file it came from.
  * - `nyfed-household-debt`: NY Fed household debt per capita and 90+ day delinquency by loan type
  *   and state (plus the nation when the workbook carries it).
  * - `nyfed-sce-credit`: NY Fed SCE credit access survey, nation.
@@ -31,8 +33,11 @@ import { recordRegistryPartition, type RegistryDb } from "./partitions";
  * workbook/file sources use one standing `current` partition.
  */
 
-/** v3: Freddie Mac PMMS and the Philadelphia Fed card series removed from national-series (2026-10-18). */
-export const NATIONAL_CREDIT_PARSER_VERSION = 3;
+/**
+ * v4: national-series read from the Federal Reserve Board's own files, not FRED; FDIC national rates
+ * dropped (2026-10-18). v3: Freddie Mac PMMS and the Philadelphia Fed card series removed.
+ */
+export const NATIONAL_CREDIT_PARSER_VERSION = 4;
 
 export const NATIONAL_CREDIT_SOURCES = {
   nationalSeries: "national-series",
@@ -65,8 +70,8 @@ export interface NationalCreditDefinition {
 export const NATIONAL_CREDIT_DEFINITIONS: NationalCreditDefinition[] = [
   {
     source: NATIONAL_CREDIT_SOURCES.nationalSeries,
-    title: "Pull national bank funding and credit series from FRED (H.8, SLOOS, CRE, delinquency, FDIC rates)",
-    label: "FRED national credit series",
+    title: "Pull national bank funding and credit series from the Federal Reserve Board (H.8, SLOOS, delinquency)",
+    label: "Fed Board national credit series",
     partitions: (now) => [monthPartition(now)],
     refreshHours: HOURS.week,
     emptyRetryHours: HOURS.day,
@@ -141,7 +146,7 @@ async function fetchFor(source: string, options: RegistryNationalCreditOptions):
   switch (source) {
     case NATIONAL_CREDIT_SOURCES.nationalSeries: {
       const r = await fetchNationalSeries(NATIONAL_SERIES, options.fetchOptions);
-      return { ...r, extra: { per_series: r.perSeries, series_configured: NATIONAL_SERIES.length } };
+      return { ...r, extra: { per_series: r.perSeries, series_configured: NATIONAL_SERIES.length, sloos_release: r.sloosRelease } };
     }
     case NATIONAL_CREDIT_SOURCES.householdDebt:
       return fetchHhdcState(env, options.fetchOptions);
@@ -228,7 +233,16 @@ export async function runRegistryNationalCredit(options: RegistryNationalCreditO
   if (dryRun) {
     return { ...base, rows: rows.length, writtenRows: 0, checks, empty: false, emptyReason: null, summary: `${definition.label} ${options.partitionKey}: read ${n(rows.length)} values (${geoText})${gaps} (dry run).`, detail };
   }
-  const written = await upsertAreaStats(db, options.source, rows, fetched.url, options.runId ?? null);
+  // A row that names its own file (national-series: the Board package or page it came from) cites it.
+  const byUrl = new Map<string | null, typeof rows>();
+  for (const row of rows) {
+    const url = typeof row.raw?.source_url === "string" ? row.raw.source_url : fetched.url;
+    const group = byUrl.get(url);
+    if (group) group.push(row);
+    else byUrl.set(url, [row]);
+  }
+  let written = 0;
+  for (const [url, group] of byUrl) written += await upsertAreaStats(db, options.source, group, url, options.runId ?? null);
   await recordRegistryPartition(db, {
     source: options.source,
     partitionKey: options.partitionKey,

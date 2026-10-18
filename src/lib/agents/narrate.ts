@@ -536,7 +536,11 @@ function narrateRegistryStep(stepKey: string, detail: Detail): string | null {
     case "registry-beige-book":
       return detail.empty ? null : `Loaded the ${String(detail.release_date ?? partition)} Beige Book (${count(n(detail, "sections"), "section")}).`;
     case "registry-fred":
-      return `Refreshed ${count(n(detail, "refreshed_series"), "economic indicator")} from FRED.`;
+      return `Refreshed ${count(n(detail, "refreshed_series"), "economic indicator")} from BLS, BEA and the Fed Board${
+        Array.isArray(detail.still_on_fred_era_values) && detail.still_on_fred_era_values.length > 0
+          ? `; ${detail.still_on_fred_era_values.length} still on FRED-era values`
+          : ""
+      }.`;
     case "registry-reg-news":
       return `Stored ${count(n(detail, "inserted"), "new regulator press release")} of ${n(detail, "fetched")} read.`;
     case "registry-fomc-minutes":
