@@ -1243,13 +1243,15 @@ shipping them", then "yes, make the rule change". Page PRs, redesigns included, 
 his review or typed yes. This replaces the 2026-10-05 entry ("redesigns wait for James's review"),
 the Oct 9 entry ("public, Pro and Hamilton screens still wait for his review"), the 2026-10-12 entry
 ("copy and page changes wait as open PRs"), the Oct 14 design-system rollout's review on the
-Vercel preview, and the Oct 17 coordinator hold after #1815, which lived in project memory, not here.
+Vercel preview, the Oct 13 "no new copy preview while five are waiting for James" limit, the Oct 8
+Pro price picker's wait for his review, and the Oct 17 coordinator hold after #1815, which lived in project memory, not here.
 A page PR merges when the growthOS review (the Oct 15 rule that the growthOS team approves the
 experience) approves its desktop and phone screenshots, an independent reviewer finds no blockers
 on the exact head, and CI is green. Every merge gets a receipt comment with the head SHA and both
 verdicts, on top of the Oct 14 "Reviewed" rule. Batch to at most one PR per page or area a day. The
-day's merges go to him as one digest with screenshots, and he can ask for a revert. The review
-counted, from the GitHub REST pulls and actions/runs endpoints, PRs closed Oct 15 05:00 UTC to Oct 18
-06:40 UTC: 286 merged (median 23 minutes from open to merge), 1,249 CI workflow runs, and about half
-of a sample of 21 merged PRs had no review verdict on the PR. Migrations, production-data changes
+day's merges go to him as one digest with screenshots, and he can ask for a revert. GitHub REST
+counts for Oct 15 05:00 to Oct 18 06:40 UTC: 318 PRs merged (`pulls?state=closed`, by `merged_at`),
+a median of 21 minutes from open to merge, and 1,123 CI workflow runs (`actions/runs?created=...`,
+`total_count`). In every 14th merged PR from Oct 15 (21 PRs), 11 had no GitHub review and no
+verdict comment. Migrations, production-data changes
 and the other gated actions in CLAUDE.md still need his yes.
