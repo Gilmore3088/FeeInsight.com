@@ -424,7 +424,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
                 ) : (
                   <>
                     No institution publishes a price in this range.{" "}
-                    <Link href={selectionHref(sel, {}, "explorer")} scroll={false} className={LINK}>
+                    <Link href={selectionHref(sel, { bin: "all" }, "institutions")} scroll={false} className={LINK}>
                       See every price
                     </Link>
                   </>
@@ -706,7 +706,7 @@ function Histogram({
           <li key={b.label} className="relative flex h-full min-w-0 flex-1">
             {/* An empty bar has no one to list, so it is not a link. */}
             {b.total === 0 ? (
-              <span className="flex h-full w-full" aria-label={`No institutions with a ${unit} of ${b.label}`} />
+              <span className="flex h-full w-full" role="img" aria-label={`No institutions with a ${unit} of ${b.label}`} />
             ) : (
               <Link
                 href={hrefFor(i)}
@@ -916,11 +916,11 @@ const PRICE_SWATCH = ["bg-ink/10", "bg-ink/25", "bg-ink/45", "bg-ink/70", "bg-in
 /** Below this many institutions a state median is shown, but marked as a small sample. */
 const SMALL_SAMPLE = 15;
 
-/** "$5.00 above the U.S.", "$2.50 below the U.S.", or "the same as the U.S.". */
 function plural(n: number, noun: string): string {
   return `${n.toLocaleString()} ${noun}${n === 1 ? "" : "s"}`;
 }
 
+/** "$5.00 above the U.S.", "$2.50 below the U.S.", or "the same as the U.S.". */
 function gapText(gap: number | null): string {
   if (gap == null) return "no comparison";
   if (gap === 0) return "the same as the U.S.";
