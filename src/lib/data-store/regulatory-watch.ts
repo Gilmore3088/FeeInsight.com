@@ -10,7 +10,7 @@
 import { sql } from "./connection";
 import { getLocalMarketMembers } from "./custom-report-market";
 import { STRUCK_ENFORCEMENT_AGENCIES } from "./struck-sources";
-import { getFeeValuesForInstitutions, getInstitutionFeeValues } from "./fee-index";
+import { getFeeValuesForInstitutions, getInstitutionOwnFees } from "./fee-index";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "./fee-stats";
 import { FEE_FAMILIES, getDisplayName } from "@/lib/fee-taxonomy";
 import { trackerStage, type TrackerStage } from "@/lib/regulatory/federal-register";
@@ -370,7 +370,10 @@ export async function getRegulatoryWatch(
     sql<{ n: number }[]>`SELECT COUNT(*)::int AS n FROM reg_tracker_items WHERE source = 'open_states'`,
   ]);
 
-  const ownFees = await getInstitutionFeeValues(institutionId).catch(() => new Map<string, number>());
+  // The price each fee's schedule states; a category with several different fees has none to tie (#1913).
+  const ownFees = await getInstitutionOwnFees(institutionId)
+    .then((own) => new Map([...own].flatMap(([category, fee]) => (fee.price === null ? [] : [[category, fee.price] as const]))))
+    .catch(() => new Map<string, number>());
   const peerFees = feePeerIds.length > 0 && ownFees.size > 0
     ? await getFeeValuesForInstitutions(feePeerIds, [...ownFees.keys()]).catch(() => new Map<number, Map<string, number>>())
     : new Map<number, Map<string, number>>();

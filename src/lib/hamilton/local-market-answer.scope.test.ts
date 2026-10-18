@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ sql: vi.fn(), market: vi.fn(), footprint: vi.fn(), branches: vi.fn(), study: vi.fn() }));
+const mocks = vi.hoisted(() => ({ sql: vi.fn(), market: vi.fn(), footprint: vi.fn(), branches: vi.fn(), study: vi.fn(), ownFees: vi.fn() }));
+vi.mock("@/lib/data-store/fee-index", () => ({ getInstitutionOwnFees: mocks.ownFees }));
 vi.mock("@/lib/data-store/connection", () => ({ sql: Object.assign(mocks.sql, { unsafe: vi.fn((value: string) => value) }) }));
 vi.mock("@/lib/data-store/local-market", () => ({ getLocalMarketCompetitors: mocks.market }));
 vi.mock("@/lib/data-store/branches", () => ({ getMarketBranchFootprint: mocks.footprint, getBranchesForInstitution: mocks.branches }));
@@ -24,15 +25,18 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.sql.mockImplementation(async (strings: TemplateStringsArray) => {
     const query = strings.join("?");
-    if (query.includes("PERCENTILE_CONT")) return [
-      { fee_category: "paper_statement", amount: "0" },
-      { fee_category: "money_order", amount: "4.00" },
-      // Intentional over-return from the synthetic boundary; never allowed into the result.
-      { fee_category: "overdraft", amount: "30" },
-    ];
     if (query.includes("ANY(")) return [{ id: 202, institution_name: "Synthetic Peer", charter_type: "bank" }];
     return [{ id: 101, institution_name: "Synthetic Subject", charter_type: "bank", cert_number: "987654", city: "Synthetic City", state_code: "WA" }];
   });
+  const priced = (price: number | null, low = price ?? 0, high = price ?? 0) => ({ price, low, high, fees: [] });
+  mocks.ownFees.mockResolvedValue(new Map([
+    ["paper_statement", priced(0)],
+    ["money_order", priced(4)],
+    // Intentional over-return from the synthetic boundary; never allowed into the result.
+    ["overdraft", priced(30)],
+    // Several different fees: no price of the bank's own, never their median (#1913).
+    ["cashiers_check", priced(null, 8, 10)],
+  ]));
   mocks.market.mockResolvedValue({
     label: "Synthetic County", basis: "branch_counties", sod_year: 2025, county_fips: ["53033"],
     competitors: [{ institution_id: 202, fees: { paper_statement: 2, money_order: 3, nsf: 30 } }],
@@ -55,14 +59,9 @@ describe("local-market category propagation through the real service", () => {
     const categories = ["money_order", "paper_statement"];
     const result = await getLocalMarketAnswer(101, { categories });
     expect(mocks.market).toHaveBeenCalledWith(expect.objectContaining({ institutionId: 101, categories }));
-    const ownFeeCall = mocks.sql.mock.calls.find(([strings]) => strings.join("?").includes("PERCENTILE_CONT"));
-    expect(ownFeeCall?.[1]).toBe(101);
-    expect(String(ownFeeCall?.[2])).toContain("fee_audience IN ('consumer', 'both', 'unknown')");
-    expect(ownFeeCall?.[3]).toEqual(categories);
+    expect(mocks.ownFees).toHaveBeenCalledWith(101, categories);
     expect(result?.categories).toEqual(categories);
     expect(result?.you.fees).toEqual({ money_order: 4, paper_statement: 0 });
-    expect(ownFeeCall?.[0].join("?")).toContain("c.amount >= 0");
-    expect(ownFeeCall?.[0].join("?")).toContain("CASE WHEN c.fee_category = 'overdraft' THEN MAX(c.amount)");
     expect(result?.competitors[0].fees).toEqual({ money_order: 3, paper_statement: 2 });
     expect(result?.institutionId).toBe(101);
     expect(result?.market.basis).toBe("branch_counties");

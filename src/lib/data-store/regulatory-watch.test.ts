@@ -75,6 +75,7 @@ describe("benchmark export", () => {
       groups: { national: "", state: "", asset_peers: "", local_market: null },
       rows: [{
         fee_category: "nsf", display_name: "NSF", family: "Overdraft & NSF", amount: 30,
+        amount_low: 30, amount_high: 30, fees: [{ name: "NSF fee", amount: 30 }],
         national: { median: 29.99, p25: 25, p75: 35, institutions: 900 },
         state: { median: null, p25: null, p75: null, institutions: 2 },
         asset_peers: { median: 30, p25: 26, p75: 34, institutions: 300 },
@@ -90,10 +91,10 @@ describe("benchmark export", () => {
     });
     expect(rows).toEqual([
       ["nsf", "NSF", "Overdraft & NSF", 30, 29.99, 25, 35, 900, null, 2, 30, 26, 34, 300, null, 1, "typical", null,
-        "dollars", null, null, null, null, null, null, null],
+        "dollars", null, null, null, null, null, null, null, 30, 30, "NSF fee $30.00"],
       // A rate fee gets its own row: no dollar amount or dollar benchmark, only other rates.
       ["foreign_transaction", "Foreign Transaction", "Card", null, null, null, null, null, null, null, null, null, null, null, null, null, null, "https://example.com/fees.pdf",
-        "percent", 1, "1% of the transaction", 1, 1, 3, 120, "typical"],
+        "percent", 1, "1% of the transaction", 1, 1, 3, 120, "typical", null, null, null],
     ]);
   });
 });

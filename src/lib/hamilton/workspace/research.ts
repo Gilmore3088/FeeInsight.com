@@ -11,7 +11,7 @@ import { loadConfirmedFeeChanges } from "@/lib/report-assemblers/monthly-pulse";
 import {
   getFeeValuesForInstitutions,
   getInstitutionFeeRows,
-  getInstitutionFeeValues,
+  getInstitutionOwnFees,
   getPeerFeeValues,
   getSegmentFeeValues,
   type PeerFeeValue,
@@ -125,7 +125,13 @@ interface WorkspaceBase {
   layers: LayerSet[];
   /** The narrowest default peer group, named on the Briefing. */
   peerLabel: string;
+  /**
+   * The price the bank's schedule states per fee. A fee it states several different amounts
+   * for is left out: their median is no price of its own (#1913). ownCategories lists both.
+   */
   ownValues: Map<string, number>;
+  /** Every fee category the bank publishes, priced or not. */
+  ownCategories: Set<string>;
   /** Per fee, the narrowest peer group with enough institutions publishing it. */
   peers: Map<string, CategoryPeers>;
 }
@@ -219,8 +225,11 @@ async function loadBase(
 ): Promise<WorkspaceBase | null> {
   const institution = await getInstitutionById(institutionId);
   if (!institution) return null;
-  const ownValues = await getInstitutionFeeValues(institutionId, categories);
-  const wanted = categories ?? [...ownValues.keys()];
+  const ownFees = await getInstitutionOwnFees(institutionId, categories);
+  const ownValues = new Map<string, number>();
+  for (const [category, fee] of ownFees) if (fee.price !== null) ownValues.set(category, fee.price);
+  const ownCategories = new Set(ownFees.keys());
+  const wanted = categories ?? [...ownCategories];
   const activeFirst = Boolean(options.peerSet);
   const candidates: HamiltonPeerFilters[] = [
     ...(options.peerSet ? [peerSetCandidate(options.peerSet)] : []),
@@ -246,6 +255,7 @@ async function loadBase(
     ],
     peerLabel: peerLabel(candidates[0]),
     ownValues,
+    ownCategories,
     peers: choosePeers(candidates, valuesBySet.slice(0, candidates.length), wanted, { activeFirst }),
   };
 }
@@ -709,7 +719,7 @@ export async function getWorkspaceBriefing(
   const trend = serviceChargeTrend(financialRows);
   const financials = await withPeerMedian(base, institutionFinancials(financialRows));
   const shift = revenueShiftObservation(trend, base.institutionName);
-  const bankCategories = new Set(base.ownValues.keys());
+  const bankCategories = base.ownCategories;
   const rules = ruleChangeObservations(articles, bankCategories);
   const studies = studyObservations(studyRows, base.institutionName);
   const observations = withStudyPlace(
@@ -730,10 +740,10 @@ export async function getWorkspaceBriefing(
     observations,
     institutionFinancials: financials,
     localMarket: briefingLocalMarket(base, market),
-    overdraftIncome: base.ownValues.has("overdraft") ? feeRevenueLine(financialRows, "overdraft", base.charterType) : null,
+    overdraftIncome: base.ownCategories.has("overdraft") ? feeRevenueLine(financialRows, "overdraft", base.charterType) : null,
     nationalIncome,
     nationalIncomeSeries,
-    feesReviewed: base.ownValues.size,
+    feesReviewed: base.ownCategories.size,
     positions: feePositionRows(positions),
     peerLabel: base.peerLabel,
     generatedAt: now.toISOString(),
