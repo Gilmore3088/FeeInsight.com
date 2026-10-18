@@ -30,6 +30,12 @@ export interface RegistryFeedFreshness {
   blocked: number;
   /** Host named by the newest blocked partition. */
   blockedHost: string | null;
+  /** Partitions that loaded rows. */
+  succeeded: number;
+  /** When a partition last failed (its newest failure), for the source health report (#1866). */
+  lastFailedAt: string | null;
+  /** When the newest blocked partition was recorded. */
+  lastBlockedAt: string | null;
 }
 
 export interface CallReportFreshness {
@@ -71,8 +77,8 @@ export const SCHEDULED_REPORT_TRIGGERS = [
   "growth.learning",
 ] as const;
 
-export async function getRegistryFeedFreshness(): Promise<RegistryFeedFreshness[]> {
-  const rows = await sql<Array<Record<string, unknown>>>`
+export async function getRegistryFeedFreshness(db: typeof sql = sql): Promise<RegistryFeedFreshness[]> {
+  const rows = await db<Array<Record<string, unknown>>>`
     SELECT source,
            (ARRAY_AGG(partition_key ORDER BY partition_key DESC) FILTER (WHERE status = 'succeeded'))[1] AS latest_period,
            MAX(fetched_at) FILTER (
@@ -84,7 +90,10 @@ export async function getRegistryFeedFreshness(): Promise<RegistryFeedFreshness[
            (ARRAY_AGG(last_error ORDER BY updated_at DESC) FILTER (WHERE status = 'failed' AND last_error IS NOT NULL))[1] AS last_error,
            COUNT(*) FILTER (WHERE status = 'empty' AND detail ? 'missing_source')::int AS blocked,
            (ARRAY_AGG(detail->'missing_source'->>'host' ORDER BY updated_at DESC)
-              FILTER (WHERE status = 'empty' AND detail ? 'missing_source'))[1] AS blocked_host
+              FILTER (WHERE status = 'empty' AND detail ? 'missing_source'))[1] AS blocked_host,
+           COUNT(*) FILTER (WHERE status = 'succeeded')::int AS succeeded,
+           MAX(updated_at) FILTER (WHERE status = 'failed') AS last_failed_at,
+           MAX(fetched_at) FILTER (WHERE status = 'empty' AND detail ? 'missing_source') AS last_blocked_at
       FROM registry_ingest_partitions
      GROUP BY source
      ORDER BY source`;
@@ -98,6 +107,9 @@ export async function getRegistryFeedFreshness(): Promise<RegistryFeedFreshness[
     lastError: r.last_error ? String(r.last_error) : null,
     blocked: Number(r.blocked ?? 0),
     blockedHost: r.blocked_host ? String(r.blocked_host) : null,
+    succeeded: Number(r.succeeded ?? 0),
+    lastFailedAt: iso(r.last_failed_at),
+    lastBlockedAt: iso(r.last_blocked_at),
   }));
 }
 

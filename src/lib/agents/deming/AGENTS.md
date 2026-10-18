@@ -176,6 +176,16 @@ It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model c
   checks failing" card on /admin/scoreboard and a line in the morning brief.
 - Read-only, deterministic, no model calls, pause-exempt. Up to 20 fee ids per check in the detail.
 
+## Public-data source health (#1866)
+
+- `deming-source-health`: a step in Atlas's daily scoreboard run, after `deming-data-quality`. It
+  records Hoovie's source health report (`src/lib/agents/hoovie/source-health.ts`): one status per
+  public-data source (fresh, stale, empty, failed or skipped), its reason and its last success.
+  The summary names failed and empty sources as an ALARM. The morning brief reads the same report
+  live and lists the sources that are not fresh.
+- Read-only, deterministic, no model calls, pause-exempt: one SELECT over
+  `registry_ingest_partitions` and one over Atlas's newest table sizes.
+
 ## Boundaries
 
 - Deming never writes fee rows, flags or takedowns. It reads `pipeline_feedback` and the fee tiers.

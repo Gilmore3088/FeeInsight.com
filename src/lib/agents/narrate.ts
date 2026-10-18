@@ -295,6 +295,11 @@ function narrateFinished(
       const dollar = (detail.dollar ?? {}) as Record<string, unknown>;
       return `Deming ran the daily data checks on ${count(n(dollar, "live_fees"), "live dollar fee")}: ${failing === 0 ? "no check failed its threshold" : `ALARM: ${count(failing, "check")} failed its threshold`}.`;
     }
+    case "deming-source-health": {
+      const counts = (detail.counts ?? {}) as Detail;
+      const urgent = n(counts, "failed") + n(counts, "empty");
+      return `Deming checked the public-data sources: ${n(counts, "fresh")} fresh, ${n(counts, "stale")} stale, ${n(counts, "skipped")} skipped, ${urgent === 0 ? "none failed or empty" : `ALARM: ${count(urgent, "source")} failed or empty`}.`;
+    }
     case "deming-knox-misses": {
       if (detail.ready === false) return "Deming could not replay Knox's answer-key misses: the case store or the answer key is not there.";
       const regressions = Array.isArray(detail.regressions) ? detail.regressions.length : 0;
@@ -691,6 +696,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "deming-fresh-audit": "atlas",
   "deming-benchmark-health": "atlas",
   "deming-data-quality": "atlas",
+  "deming-source-health": "atlas",
   "deming-knox-misses": "atlas",
   "deming-playbook-check": "atlas",
   "deming-change-outcomes": "atlas",

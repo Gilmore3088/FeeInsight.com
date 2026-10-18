@@ -64,7 +64,7 @@ James's rule (2026-10-17): "Let's get the data first." The order follows the pub
 1. Contract (this guide).
 2. Unblock the failing sources: CRA, NIC, Y-9C and UBPR (#1805, #1806).
 3. Faster collection, still within the pipeline pause.
-4. One health report, with alerts when a load fails or comes back empty.
+4. One health report, with alerts when a load fails or comes back empty: `source-health.ts` (#1866), below.
 5. One read door for Hamilton and the site: `src/lib/data-catalog/`. `catalog.ts` lists every
    dataset (one entry per contract, plus published fees and institution financials) with a
    customer-facing label (publisher and dataset, never an agent name) and `servable`: the licence
@@ -88,6 +88,26 @@ name before #1865 count as Hoovie's.
 | Steps do not fail | `stepsFailed` (24 h) | 0 |
 
 Also recorded, without a rule: `stepsCompleted`, `spendUsd`.
+
+## Source health report (#1866)
+
+`source-health.ts` gives every contract one status, a reason and its last success date, from one
+read over `registry_ingest_partitions` (`getRegistryFeedFreshness`) and the scheduler's own plan
+(`registryPartitionsBySource`, with Atlas's newest table sizes for size holds). First match wins:
+
+| Status | When |
+|---|---|
+| skipped | the scheduler plans no partition: held licence, a table over its own size budget, or the API key not set |
+| empty | nothing loaded yet; the host refused production since the last success (`missing_source`); or every load came back empty |
+| failed | a partition failed after the last success (newest error is the reason) |
+| stale | the last success is older than the cadence allows: daily 3, weekly 14, monthly 45, quarterly 120, annual 400, irregular 90 days; one-time never |
+| fresh | otherwise |
+
+A success is the registry's own: a partition that loaded rows, or an unblocked empty check.
+Deming records the report every day (`deming-source-health` in Atlas's scoreboard run). The
+morning brief reads it when it runs (the scoreboard runs after the brief) and lists only the
+sources that are not fresh: every failed and empty source by name with its reason, stale and
+skipped ones up to 25 lines. Read-only; internal only.
 
 ## Run ledger name
 
