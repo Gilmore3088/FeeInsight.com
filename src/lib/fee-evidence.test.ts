@@ -526,7 +526,7 @@ describe("a line opening with another fee's words (#1902)", () => {
     expect(fromOwnName("Levy Fee $100 per order Basic Checking Monthly Service Fee $10 per month", "Monthly Service Fee", 10)).toBe("… Basic Checking Monthly Service Fee $10 per month");
     // A lower-case word in the fee's own qualifier keeps the line whole rather than guess.
     expect(fromOwnName("Outgoing international wire fee $45. Outgoing domestic Wire Transfer Fee $25", "Wire Transfer Fee", 25)).toBe("Outgoing international wire fee $45. Outgoing domestic Wire Transfer Fee $25");
-    expect(fromOwnName("Outgoing international wire fee $45. Outgoing Domestic Wire Transfer Fee $25", "Wire Transfer Fee", 25)).toBe("… Outgoing Domestic Wire Transfer Fee $25");
+    expect(fromOwnName("Outgoing International Wire Fee $45. Outgoing Domestic Wire Transfer Fee $25", "Wire Transfer Fee", 25)).toBe("… Outgoing Domestic Wire Transfer Fee $25");
     expect(fromOwnName("Levy fee $100. Dormant Account Fee $5 per month", "Account Fee", 5)).toBe("… Dormant Account Fee $5 per month");
     expect(fromOwnName("Stop Payment | $30 | Dormant Account Fee | $5 per month", "Dormant Account Fee", 5)).toBe("… Dormant Account Fee | $5 per month");
   });
@@ -565,6 +565,14 @@ describe("a line opening with another fee's words (#1902)", () => {
       ["Fees changing on 1/1/2027 are shown below Monthly Service Fee $12", "Monthly Service Fee", 12],
       ["Effective 1/1/2027 Overdraft Fee $35 per item. Monthly Service Fee $10", "Monthly Service Fee", 10],
       ["Seniors 62 and over Overdraft Fee $25 per item Monthly Service Fee $10", "Monthly Service Fee", 10],
+      // Only a fee's description, or fees priced name first, is cut (round 6).
+      ["Fees applicable to Texas residents Monthly Service Fee $10", "Monthly Service Fee", 10],
+      ["Fees for military families stationed overseas Monthly Service Fee $10", "Monthly Service Fee", 10],
+      ["Fees listed here are for paper statement users Monthly Service Fee $10", "Monthly Service Fee", 10],
+      ["Fee schedule for youth savers Monthly Service Fee $10", "Monthly Service Fee", 10],
+      ["Simply Basic, Overdraft Fee $35 each, Monthly Service Fee $10", "Monthly Service Fee", 10],
+      ["Simply Basic - Overdraft Fee $35 each Monthly Service Fee $10", "Monthly Service Fee", 10],
+      ["In Ohio Overdraft Fee $35 per item. Monthly Service Fee $10", "Monthly Service Fee", 10],
     ] as const) {
       expect(fromOwnName(line, name, amount)).toBe(line);
     }

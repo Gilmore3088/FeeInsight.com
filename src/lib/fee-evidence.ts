@@ -106,11 +106,15 @@ const NAME_TO_PRICE_CHARS = 80;
  * a price with its lower-case unit ("$100 per levy order", "$35 each").
  */
 const CLAUSE_END = /[.;|](?=\s)|\|\s*|\$\s?\d[\d,]*(?:\.\d+)?(?:\s+(?:each|per\s+(?:levy\s+)?[a-z]+|an?\s+[a-z]+))?/g;
-/** Another fee priced the way a schedule prints one: "Levy Fee $100", "Stop Payment | $30". */
-const PRICED_FEE = /\b(?:fee|charge)s?\s*[:|–-]?\s*\$\s?\.?\d|\|\s*\$\s?\.?\d/i;
+/**
+ * Another fee priced the way a schedule prints one, its own name first: title-case words, the fee
+ * word and the price ("Levy Processing Fee $100", "Levy fee $100"), or a name and a priced cell
+ * ("Stop Payment | $30"). A place or group in front ("In Ohio …", "Simply Basic, …") fails it.
+ */
+const PRICED_FEE = /^(?!(?:In|For|At|To|On|By)\b)[A-Z][\w'&/]*(?:\s+[A-Z][\w'&/]*)*\s*(?:\s(?:[Ff]ee|[Cc]harge)s?\s*[|:–-]?\s*|\|\s*)\$\s?\.?\d/;
 /** Words of a waiver or condition, which belong to the fee that follows and are never cut. */
 const CONDITION_WORDS = /\b(?:waive[ds]?|avoid|minimum|balance|unless|if|when|with|no\s+(?:fee|charge)|free)\b/i;
-/** A clause that opens with "Fee"/"Charge" and runs this many words is a fee's description. */
+/** A clause past this many words that opens "Fee applied …" is a fee's description. */
 const DESCRIPTION_WORDS = 4;
 /** Capitalised words right before the name: its account or direction ("Student Checking"). */
 const CAPITALISED_RUN = /(?:\b[A-Z][\w&'-]*\s+)+$/;
@@ -149,9 +153,9 @@ function anotherFeesClause(dropped: string): boolean {
  * - after the last clause end, when every sentence before it is another priced fee
  *   (`anotherFeesClause`) and only capitalised words (an account or direction, kept) sit between
  *   it and the name: "… Basic Checking Monthly Service Fee $10";
- * - with no clause end, inside a clause that opens with "Fee" or "Charge" and runs past
- *   DESCRIPTION_WORDS words (another fee's description), at the capitalised words right before the
- *   name, else at the name.
+ * - with no clause end, inside a clause shaped like another fee's description ("Fee applied to
+ *   …", "Charge assessed when …": singular "Fee"/"Charge", a past participle, more than
+ *   DESCRIPTION_WORDS words), at the capitalised words right before the name, else at the name.
  */
 export function fromOwnName(line: string, feeName: string | null, amount: number): string {
   const name = (feeName ?? "").replace(/\s+/g, " ").trim();
@@ -169,7 +173,7 @@ export function fromOwnName(line: string, feeName: string | null, amount: number
   let cut = 0;
   if (end === 0) {
     const words = clause.trim().split(/\s+/).filter(Boolean);
-    if (words.length > DESCRIPTION_WORDS && /^(?:fees?|charges?)$/i.test(words[0]) && !scopesTheFee(clause.slice(0, clause.length - run.length))) cut = at - run.length;
+    if (words.length > DESCRIPTION_WORDS && /^(?:fee|charge)$/i.test(words[0]) && /^[a-z]+ed$/.test(words[1]) && !scopesTheFee(clause.slice(0, clause.length - run.length))) cut = at - run.length;
   } else if (anotherFeesClause(opening.slice(0, end)) && clause.trim().length === run.trim().length) {
     cut = end;
   }
