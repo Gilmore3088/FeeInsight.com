@@ -164,9 +164,9 @@ export function footprintLine(branches: MarketBranchFootprint | null | undefined
   return `${own.branches} ${own.branches === 1 ? "branch" : "branches"}${shareText}`;
 }
 
-function RevenueSection({ name, charterType, revenue }: { name: string; charterType: string | null; revenue: RevenueContext }) {
+export function RevenueSection({ name, revenue }: { name: string; revenue: RevenueContext }) {
   const latest = revenue.quarters[0];
-  const filing = charterType === "credit_union" ? "NCUA 5300 Call Report" : "FDIC Call Report";
+  const filing = revenue.source === "ncua" ? "NCUA 5300 Call Report" : "FDIC Call Report";
   return (
     <section className="mt-8 rounded-xl border border-border bg-surface-0 p-6" aria-labelledby="revenue-heading">
       <h2 id="revenue-heading" className="font-bold text-xl text-ink" style={SERIF}>
@@ -175,7 +175,7 @@ function RevenueSection({ name, charterType, revenue }: { name: string; charterT
       <dl className="mt-4 grid gap-4 sm:grid-cols-3">
         <div>
           <dt className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
-            Deposit service charges, {quarterLabel(latest.quarter)}
+            {revenue.measureLabel}, {quarterLabel(latest.quarter)}
           </dt>
           <dd className="font-semibold mt-1 text-[1.35rem] tabular-nums text-ink" style={MONO_FIGURE}>
             {incomeLabel(latest.thousands)}
@@ -192,7 +192,7 @@ function RevenueSection({ name, charterType, revenue }: { name: string; charterT
         {revenue.peer && (
           <div>
             <dt className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
-              Median for its size, {quarterLabel(latest.quarter)}
+              Median for {revenue.peer.charterLabel} its size, {quarterLabel(latest.quarter)}
             </dt>
             <dd className="font-semibold mt-1 text-[1.35rem] tabular-nums text-ink" style={MONO_FIGURE}>
               {incomeLabel(revenue.peer.medianThousands)}
@@ -203,7 +203,8 @@ function RevenueSection({ name, charterType, revenue }: { name: string; charterT
       <p className="mt-4 text-[13px] leading-relaxed text-ink-soft">
         {name} reported these figures in its {filing}.
         {revenue.peer &&
-          ` Among the ${revenue.peer.count.toLocaleString("en-US")} banks and credit unions of its size (${revenue.peer.tierLabel} in assets) that reported for the quarter, it ranks ${revenue.peer.rank.toLocaleString("en-US")} by this income, where 1 is the highest.`}{" "}
+          ` Among the ${revenue.peer.count.toLocaleString("en-US")} ${revenue.peer.charterLabel} of its size (${revenue.peer.tierLabel} in assets), including ${name}, that reported this measure for the quarter, it ranks ${revenue.peer.rank.toLocaleString("en-US")} by this income, where 1 is the highest.`}{" "}
+        {revenue.source === "ncua" ? "Broad fee income includes member-service and membership fees; it is not deposit-only or overdraft-only income. " : ""}
         A published schedule does not say how often each fee is charged, so this report does not estimate what any one
         fee earns.
       </p>
@@ -349,7 +350,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
 
           {lineup && <CheckingLineupSection name={name} lineup={lineup} live={Boolean(savedAt)} />}
 
-          {revenue && <RevenueSection name={name} charterType={data.subject.charter_type} revenue={revenue} />}
+          {revenue && <RevenueSection name={name} revenue={revenue} />}
 
           {peers && <PeerSection name={name} peers={peers} />}
 

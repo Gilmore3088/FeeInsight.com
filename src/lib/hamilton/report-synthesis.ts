@@ -1,3 +1,5 @@
+import { financialMeasureDefinition, financialSourceForCharter, validFinancialPeerComparison } from "@/lib/data-store/financial-peer-contract";
+import type { FinancialSource } from "@/lib/data-store/financial-sources";
 import type { FeePublicationStatus } from "@/lib/institution-quality";
 import type { HamiltonEvidencePolicy } from "@/lib/hamilton/request-contract";
 import type { SelectedInstitutionFeeDelta, UnlikeFeeComparison } from "@/lib/hamilton/report-evidence";
@@ -5,6 +7,7 @@ import type { SelectedInstitutionFeeDelta, UnlikeFeeComparison } from "@/lib/ham
 export interface ReportSynthesisInstitutionInput {
   id: number;
   institution_name: string;
+  charter_type?: string | null;
   fee_publication_status?: FeePublicationStatus | null;
   insight_readiness?: string | null;
   confidence_summary?: string | null;
@@ -69,6 +72,8 @@ export interface ReportSynthesisPeerContextInput {
 
 /** Call Report figures as a customer reads them: whole dollars and percents. */
 export interface CustomerFinancials {
+  source: FinancialSource;
+  measure_definition: Record<string, unknown>;
   report_date: string | null;
   total_assets_dollars: number | null;
   total_deposits_dollars: number | null;
@@ -124,7 +129,7 @@ SELECTED-INSTITUTION RULES:
 3. Provisional rows are directional only. When evidence_tier is provisional or excluded_from_verified_benchmark is true, label the conclusion as provisional and do not treat it as a verified benchmark score.
 4. Do not turn national category medians into conclusions about the selected institution unless selected_institution.fee_peer_deltas contains a matching selected institution row.
 5. selected_institution.fee_comparisons_not_like_for_like lists fees charged on another basis or schedule than the peers' (for example per item against a monthly median, or a business schedule against consumer peers). For these, say the comparison is not like for like and give no above or below position.
-6. Dollar figures in selected_institution are whole dollars and ratios are percents; quote them as given. Never describe data collection, sources, review steps, duplicates or reconciliation work: if evidence is thin, say so in one sentence about confidence.
+6. Financial comparisons use only the canonical regulator and charter in peer_ranking.comparison: bank deposit-account service charges and broad credit-union fee income are different measures. Retain its date, period basis, asset criterion, reporting counts and subject inclusion. A saved fee-price peer baseline does not define this financial cohort. Dollar figures in selected_institution are whole dollars and ratios are percents; quote them as given. Never describe data collection, sources, review steps, duplicates or reconciliation work: if evidence is thin, say so in one sentence about confidence.
 `.trim();
 }
 
@@ -168,7 +173,7 @@ export function buildSelectedInstitutionReportData(params: {
     confidence_summary: selectedInstitution.confidence_summary ?? null,
     verified_fee_count: selectedInstitution.published_fee_count ?? 0,
     provisional_fee_count: selectedInstitution.provisional_fee_count ?? 0,
-    financials: customerFinancials(params.latestFinancial),
+    financials: customerFinancials(params.latestFinancial, financialSourceForCharter(selectedInstitution.charter_type)),
     fee_rows: params.selectedVisibleFees.slice(0, 25).map((fee) => ({
       fee_name: fee.fee_name,
       fee_category: fee.fee_category ?? null,
@@ -185,8 +190,8 @@ export function buildSelectedInstitutionReportData(params: {
     can_generate_verified_benchmark_conclusions: params.selectedFeeDeltas.some(
       (delta) => delta.evidence_tier === "verified",
     ),
-    revenue_trend: params.selectedRevenueTrend.slice(0, 8).map(customerRevenueQuarter),
-    peer_ranking: customerPeerRanking(params.selectedPeerRanking),
+    revenue_trend: (financialSourceForCharter(selectedInstitution.charter_type) ? params.selectedRevenueTrend : []).slice(0, 8).map((row) => customerRevenueQuarter(row, financialSourceForCharter(selectedInstitution.charter_type))),
+    peer_ranking: customerPeerRanking(params.selectedPeerRanking, financialSourceForCharter(selectedInstitution.charter_type)),
   };
 }
 
@@ -215,11 +220,12 @@ function fractionToPct(value: unknown): number | null {
   return n === null ? null : Math.round(n * 1_000) / 10;
 }
 
-function customerFinancials(record: ReportSynthesisFinancialInput | null): CustomerFinancials | null {
-  if (!record) return null;
-  if (record.source && !["fdic", "ncua"].includes(record.source.toLowerCase())) return null;
+function customerFinancials(record: ReportSynthesisFinancialInput | null, source: FinancialSource | null): CustomerFinancials | null {
+  if (!record || !source || record.source !== source) return null;
   const roa = finiteNumber(record.roa);
   return {
+    source,
+    measure_definition: { ...financialMeasureDefinition(source), unit: "USD", period_basis: source === "ncua" ? "year_to_date" : "standalone_quarter", ratio_unit: "percent", ratio_period_basis: source === "ncua" ? "year_to_date" : "standalone_quarter" },
     report_date: record.report_date,
     total_assets_dollars: thousandsToDollars(record.total_assets),
     total_deposits_dollars: thousandsToDollars(record.total_deposits),
@@ -231,10 +237,11 @@ function customerFinancials(record: ReportSynthesisFinancialInput | null): Custo
   };
 }
 
-function customerRevenueQuarter(row: unknown): Record<string, unknown> {
+function customerRevenueQuarter(row: unknown, source: FinancialSource | null): Record<string, unknown> {
   const quarter = (row ?? {}) as Record<string, unknown>;
   return {
     quarter: quarter.quarter ?? null,
+    measure_definition: source ? { ...financialMeasureDefinition(source), unit: "USD", ratio_unit: "percent", ratio_period_basis: source === "ncua" ? "year_to_date" : "standalone_quarter" } : null,
     service_charge_income_dollars: thousandsToDollars(quarter.service_charge_income),
     fee_income_ratio_pct: fractionToPct(quarter.fee_income_ratio),
     yoy_change_pct: finiteNumber(quarter.yoy_change_pct),
@@ -249,18 +256,24 @@ const PEER_TIER_LABELS: Record<string, string> = {
   mega: "institutions over $250B in assets",
 };
 
-function customerPeerRanking(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== "object") return null;
+function customerPeerRanking(value: unknown, source: FinancialSource | null): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || !source) return null;
   const ranking = value as Record<string, unknown>;
+  const comparison = ranking.comparison;
+  if (!validFinancialPeerComparison(comparison) || comparison.source !== source
+    || ranking.peer_count !== comparison.reported_count) return null;
   const tier = typeof ranking.tier === "string" ? ranking.tier : null;
+  const charter = source === "ncua" ? "credit unions" : "banks";
+  const group = tier ? (PEER_TIER_LABELS[tier] ?? "institutions of similar size").replace("institutions", charter) : charter;
   return {
-    peer_group: tier ? PEER_TIER_LABELS[tier] ?? "institutions of similar size" : null,
+    peer_group: group,
+    comparison: { ...comparison, unit: "USD", ratio_unit: "percent" },
     service_charge_income_dollars: thousandsToDollars(ranking.sc_income),
     rank: finiteNumber(ranking.sc_rank),
     peer_count: finiteNumber(ranking.peer_count),
-    peer_median_service_charge_income_dollars: thousandsToDollars(ranking.peer_median_sc),
+    peer_median_service_charge_income_dollars: comparison.reported_count >= comparison.minimum_median_count ? thousandsToDollars(ranking.peer_median_sc) : null,
     fee_income_ratio_pct: fractionToPct(ranking.fee_income_ratio),
-    peer_median_fee_income_ratio_pct: fractionToPct(ranking.peer_median_fee_ratio),
+    peer_median_fee_income_ratio_pct: comparison.ratio_reported_count >= comparison.minimum_median_count ? fractionToPct(ranking.peer_median_fee_ratio) : null,
   };
 }
 

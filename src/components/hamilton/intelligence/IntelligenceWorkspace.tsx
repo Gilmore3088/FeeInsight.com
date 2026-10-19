@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 import { decodeLandingResearch, encodeLandingResearch, RESEARCH_STATE_CODES, type LandingResearchHandoff, type ResearchStateCode } from "@/lib/hamilton/landing-research-handoff";
 import { loadLandingGeographicResearch, type GeographicResearchResult } from "@/lib/hamilton/landing-geographic-research";
 import { getStateEconomicContext, type IndicatorSeries, type StateEconomicContext } from "@/lib/data-store/economic-context";
+import { FINANCIAL_SOURCES, type FinancialSource } from "@/lib/data-store/financial-sources";
+import { financialMeasureDefinition, financialSourceForCharter } from "@/lib/data-store/financial-peer-contract";
 import { getRevenueByTier, getRevenueTrend, type RevenueTrend, type TierRevenue } from "@/lib/data-store/call-reports";
 import { getArticles, SOURCE_LABELS, TOPIC_LABELS, type RegArticle } from "@/lib/data-store/news";
 import { getDisplayName } from "@/lib/fee-taxonomy";
@@ -33,7 +35,15 @@ const pct = (v: number | null | undefined, digits = 1) => v == null ? "Unavailab
 const CHARTER_LABEL: Record<LandingResearchHandoff["charter"], string> = { all: "Banks & credit unions", bank: "Banks", credit_union: "Credit unions" };
 const TIER_LABEL: Record<string, string> = { micro: "Under $100M", community: "$100M–$1B", midsize: "$1B–$10B", regional: "$10B–$250B", mega: "$250B and up" };
 
+export interface IntelligenceFinancialGroup {
+  source: FinancialSource;
+  definition: ReturnType<typeof financialMeasureDefinition>;
+  revenue: RevenueTrend | null;
+  tiers: TierRevenue[] | null;
+}
+
 export interface Loaded {
+  financialGroups?: IntelligenceFinancialGroup[] | null;
   fees: GeographicResearchResult | null;
   feeMap: FeeMap | null;
   peers: PeerTable | null;
@@ -103,12 +113,22 @@ export async function loadIntelligence(selection: LandingResearchHandoff, lenses
   const primary = selection.categories[0];
   const want = (id: Lens) => lenses.includes(id);
   const tiers = segment?.tiers ?? null;
+  const expectedSource = financialSourceForCharter(selection.charter);
+  const financialSources = selection.charter === "all" ? FINANCIAL_SOURCES : expectedSource ? [expectedSource] : [];
   return Object.fromEntries(await Promise.all(([
     ["fees", want("fees") ? loadLandingGeographicResearch(selection, undefined, tiers).catch(() => null) : null],
     ["feeMap", want("fees") && primary ? loadFeeMap(primary, selection.charter, state, tiers) : null],
     ["peers", want("fees") && primary && (state || !compact) ? loadPeerTable(state, selection.charter, primary, compact ? 10 : 25, segment) : null],
-    ["revenue", want("financials") ? getRevenueTrend(12).catch(() => null) : null],
-    ["tiers", !compact && want("financials") ? getRevenueByTier().catch(() => null) : null],
+    // Old pooled fields stay empty; only explicit regulator groups can feed Hamilton.
+    ["revenue", null],
+    ["tiers", null],
+    ["financialGroups", want("financials") ? Promise.all(financialSources.map(async source => {
+      const [revenue, tiers] = await Promise.all([
+        getRevenueTrend(12, source).catch(() => null),
+        compact ? null : getRevenueByTier(undefined, source).catch(() => null),
+      ]);
+      return { source, definition: financialMeasureDefinition(source), revenue, tiers };
+    })) : null],
     ["economy", want("economy") ? getStateEconomicContext(state ?? "US", district).catch(() => null) : null],
     ["complaints", want("complaints") ? loadComplaintTrend(state) : null],
     ["articles", want("regulation") ? getArticles({ limit: compact ? 5 : 12 }).catch(() => null) : null],
@@ -167,7 +187,7 @@ export function lensPanels({ data, selection, stateHrefs, compact, explore, peer
   const district = state ? STATE_TO_DISTRICT[state] ?? null : null;
   return {
     fees: <FeePanels data={data} selection={selection} place={place} state={state} stateHrefs={stateHrefs} compact={compact} exploreHref={explore("fees")} peerNote={peerNote ?? (size.id === "all" ? undefined : `(${size.label} only)`)} sizeNote={size.id === "all" ? undefined : `(${size.label} only)`} focusHref={category => feeFocusHref(selection, category, size)} />,
-    financials: <FinancialPanel revenue={data.revenue} tiers={data.tiers} state={state} compact={compact} exploreHref={explore("financials")} />,
+    financials: <FinancialPanels groups={data.financialGroups} state={state} compact={compact} exploreHref={explore("financials")} />,
     economy: <EconomyPanel economy={data.economy} place={place} state={state} district={district} compact={compact} exploreHref={explore("economy")} />,
     complaints: <ComplaintPanel complaints={data.complaints} place={place} compact={compact} exploreHref={explore("complaints")} />,
     regulation: <RegulationPanel articles={data.articles} statePosts={data.statePosts} place={place} compact={compact} exploreHref={explore("regulation")} />,
@@ -192,7 +212,7 @@ function midSentence(name: string): string {
 
 export interface Finding { lens: Lens; title: string; body: string; source: string }
 
-/** Observed facts from loaded data, one per lens at most, each naming its source; no interpretation, no pricing advice. */
+/** Observed facts with separate financial regulator groups, each naming its source. */
 export function readFindings(data: Loaded, place: string, state: string | null, primary: string | undefined): Finding[] {
   const findings: Finding[] = [];
   const row = data.fees?.comparisons.find(c => c.category === primary) ?? data.fees?.comparisons.find(c => c.selected.status === "available");
@@ -205,13 +225,14 @@ export function readFindings(data: Loaded, place: string, state: string | null, 
       source: "Bank Fee Index published catalog",
     });
   }
-  const latest = data.revenue?.latest;
-  if (latest) {
+  for (const group of data.financialGroups ?? []) {
+    const latest = group.revenue?.latest;
+    if (!latest) continue;
     findings.push({
       lens: "financials",
-      title: `Deposit service-charge income was $${(latest.total_service_charges / 1_000_000).toFixed(2)}B in ${latest.quarter}.`,
-      body: `${latest.yoy_change_pct != null ? `${pct(latest.yoy_change_pct)} on the same quarter a year earlier` : "No same-quarter comparison a year earlier"}, across ${latest.total_institutions.toLocaleString()} filers nationally${state ? "; a state aggregate is not available" : ""}.`,
-      source: "FDIC Call Reports and NCUA 5300",
+      title: `${group.source === "ncua" ? "Broad credit-union fee income" : "Bank deposit service-charge income"} was $${(latest.total_service_charges / 1_000_000).toFixed(2)}B in ${latest.quarter}.`,
+      body: `${latest.yoy_change_pct != null ? `${pct(latest.yoy_change_pct)} on the same quarter a year earlier` : "No same-quarter comparison a year earlier"}, across ${latest.total_institutions.toLocaleString()} ${group.definition.charter_type === "bank" ? "bank" : "credit-union"} filers nationally${state ? "; a state aggregate is not available" : ""}. Standalone quarterly income; reporting populations can change.`,
+      source: group.definition.publisher,
     });
   }
   const e = data.economy;
@@ -371,22 +392,29 @@ function SpreadPanel({ spread, place, primaryName, charter, note }: { spread: Fe
   </Panel>;
 }
 
-function FinancialPanel({ revenue, tiers, state, compact, exploreHref }: { revenue: RevenueTrend | null; tiers: TierRevenue[] | null; state: string | null; compact: boolean; exploreHref: string | null }) {
+function FinancialPanels({ groups, ...props }: { groups?: IntelligenceFinancialGroup[] | null; state: string | null; compact: boolean; exploreHref: string | null }) {
+  return groups?.length ? <>{groups.map(group => <FinancialPanel key={group.source} group={group} {...props} />)}</>
+    : <Panel title="Financial income" explore={props.exploreHref}><Unavailable>The national filing trend could not load.</Unavailable></Panel>;
+}
+
+function FinancialPanel({ group, state, compact, exploreHref }: { group: IntelligenceFinancialGroup; state: string | null; compact: boolean; exploreHref: string | null }) {
+  const { revenue, tiers, source, definition } = group;
+  const label = source === "ncua" ? "Broad credit-union fee income" : "Bank deposit service-charge income";
   const quarters = [...(revenue?.quarters ?? [])].reverse();
-  const rows = quarters.map(q => ({ period: q.quarter, total: q.total_service_charges / 1_000_000, bank: q.bank_service_charges / 1_000_000, cu: q.cu_service_charges / 1_000_000 }));
-  return <Panel title="Deposit service-charge income" subtitle={`United States · quarterly, USD billions${state ? " · a state aggregate is not available" : ""}`} explore={exploreHref}>
-    {rows.length ? <div className="mt-4"><MultiTrend rows={rows} series={[{ key: "total", name: "All filers" }, { key: "bank", name: "Banks" }, { key: "cu", name: "Credit unions" }]} label="Deposit service-charge income" unit="USD billions" format="billions" height={compact ? 220 : 280} /></div>
+  const rows = quarters.map(q => ({ period: q.quarter, total: q.total_service_charges / 1_000_000 }));
+  return <Panel title={label} subtitle={`United States · standalone quarterly income, USD billions${state ? " · a state aggregate is not available" : ""}`} explore={exploreHref}>
+    {rows.length ? <div className="mt-4"><MultiTrend rows={rows} series={[{ key: "total", name: label }]} label={label} unit="USD billions" format="billions" height={compact ? 220 : 280} /></div>
       : <Unavailable>The national filing trend could not load.</Unavailable>}
-    {!compact && revenue?.quarters.length ? <div className="mt-4 overflow-x-auto" tabIndex={0} role="region" aria-label="Quarterly filings">
-      <table className="w-full text-left text-sm"><thead><tr className="border-b border-[var(--fi-border)] text-xs uppercase tracking-wide text-[var(--fi-muted)]">{["Quarter", "All filers", "Banks", "Credit unions", "Year over year", "Filers"].map(h => <th key={h} scope="col" className="p-2.5 font-semibold">{h}</th>)}</tr></thead>
+    {!compact && revenue?.quarters.length ? <div className="mt-4 overflow-x-auto" tabIndex={0} role="region" aria-label={`${label} quarterly filings`}>
+      <table className="w-full text-left text-sm"><thead><tr className="border-b border-[var(--fi-border)] text-xs uppercase tracking-wide text-[var(--fi-muted)]">{["Quarter", label, "Year over year", "Filers"].map(h => <th key={h} scope="col" className="p-2.5 font-semibold">{h}</th>)}</tr></thead>
         <tbody>{revenue.quarters.map(q => <tr key={q.quarter} className="border-b border-[var(--fi-border)] tabular-nums">
-          <th scope="row" className="p-2.5 font-medium">{q.quarter}</th><td className="p-2.5">${(q.total_service_charges / 1_000_000).toFixed(2)}B</td><td className="p-2.5">${(q.bank_service_charges / 1_000_000).toFixed(2)}B</td><td className="p-2.5">${(q.cu_service_charges / 1_000_000).toFixed(2)}B</td><td className="p-2.5">{pct(q.yoy_change_pct)}</td><td className="p-2.5">{q.total_institutions.toLocaleString()}</td>
+          <th scope="row" className="p-2.5 font-medium">{q.quarter}</th><td className="p-2.5">${(q.total_service_charges / 1_000_000).toFixed(2)}B</td><td className="p-2.5">{pct(q.yoy_change_pct)}</td><td className="p-2.5">{q.total_institutions.toLocaleString()}</td>
         </tr>)}</tbody></table>
     </div> : null}
     {!compact && tiers?.length ? <div className="mt-6"><h3 className="text-base font-semibold">By asset size, latest quarter</h3>
-      <HorizontalBars label="Deposit service-charge income by asset size" valueLabel="USD billions" format="billions" rows={tiers.map(t => ({ name: `${TIER_LABEL[t.tier] ?? t.tier} (${t.institution_count.toLocaleString()})`, value: t.total_sc_income / 1_000_000 }))} />
+      <HorizontalBars label={`${label} by asset size`} valueLabel="USD billions" format="billions" rows={tiers.map(t => ({ name: `${TIER_LABEL[t.tier] ?? t.tier} (${t.institution_count.toLocaleString()})`, value: t.total_sc_income / 1_000_000 }))} />
     </div> : null}
-    <EvidenceDetails source="FDIC Call Reports (RIAD 4080) and NCUA 5300 filings" period={revenue?.latest?.quarter ?? "Unavailable"} geography="United States" coverage="Banks and credit unions that filed a positive service-charge figure; coverage varies by quarter" method="Credit union year-to-date lines converted to quarters. Deposit service charges are not wire- or overdraft-specific income." />
+    <EvidenceDetails source={definition.publisher} period={revenue?.latest?.quarter ?? "Unavailable"} geography="United States" coverage={`${definition.charter_type === "bank" ? "Banks" : "Credit unions"} with a positive computable quarter; coverage varies by quarter; all asset sizes`} method={`${definition.definition}. ${source === "ncua" ? "Year-to-date income converted to standalone quarters. " : ""}Reporting populations can change; this is not constant-cohort growth. The two regulators' income definitions are not pooled.`} />
   </Panel>;
 }
 

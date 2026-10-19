@@ -37,7 +37,7 @@ export function checkAnswerEvidence(text: string, data: unknown, options: Figure
   if (internal) problems.push(`Internal name in the text: "${internal[0]}".`);
   const cheap = text.match(CHEAP_WORDING);
   if (cheap) problems.push(`"${cheap[0]}" is not house wording. Say "lower" or "higher" price.`);
-  problems.push(...checkAnswerInterpretations(text, data));
+  problems.push(...checkAnswerInterpretations(text, data, options.question));
   return { passed: problems.length === 0, problems, figureCheck };
 }
 

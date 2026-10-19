@@ -55,6 +55,8 @@ import {
 } from "./roll-ups";
 import {
   MAX_COLD_FILES_PER_QUERY,
+  callSourcePeriodKey,
+  canonicalColdCallRows,
   coldCallRollup,
   coldFilesInRange,
   coldInstitutionSeries,
@@ -178,7 +180,64 @@ export interface QueryDataCitation {
   attribution?: string;
 }
 
-export type QueryDataRow = Record<string, string | number | null>;
+export type QueryDataRow = Record<string, string | number | boolean | null>;
+
+export interface CallReportPeerComparison {
+  kind: "call_report_peer_comparison";
+  label: string;
+  definition: PeerSetDefinition | null;
+  filters: ResolvedPeerSet["filters"];
+  member_count: number | null;
+  subject_institution_id: number | null;
+  subject_in_requested_cohort: boolean | null;
+  minimum_median_count: number;
+  size_criterion: {
+    basis: "current institution registry assets";
+    asset_tiers: string[] | null;
+    minimum_usd_inclusive: number | null;
+    maximum_usd_inclusive: number | null;
+    nearest_count: number | null;
+    nearest_order: string | null;
+  };
+  nearest_requires_approved_published_fee: boolean;
+  selection_limitations: string[];
+  income_basis_warning: string | null;
+}
+
+export const CALL_REPORT_YTD_COMPARISON_WARNING = "These are year-to-date filed values. YTD equals standalone-quarter income only in Q1. For later quarters, a standalone-quarter peer median requires each same institution's current YTD minus its prior-quarter YTD, then a median over the matched, comparable cohort. Never subtract independently rolled-up quarter medians.";
+
+function callPeerComparison(
+  label: string, resolved: ResolvedPeerSet | null, memberIds: number[] | null,
+  subjectId: number | null, hasYtd: boolean,
+): CallReportPeerComparison {
+  const definition = resolved?.definition ?? null;
+  const nearest = definition?.nearest ?? null;
+  return {
+    kind: "call_report_peer_comparison", label,
+    definition, filters: resolved?.filters ?? null,
+    member_count: memberIds?.length ?? null,
+    subject_institution_id: subjectId,
+    subject_in_requested_cohort: subjectId === null || memberIds === null ? null : memberIds.includes(subjectId),
+    minimum_median_count: ROLLUP_MIN_INSTITUTIONS,
+    size_criterion: {
+      basis: "current institution registry assets",
+      asset_tiers: definition?.asset_tiers ?? null,
+      minimum_usd_inclusive: definition?.asset_min ?? null,
+      maximum_usd_inclusive: definition?.asset_max ?? null,
+      nearest_count: nearest,
+      nearest_order: nearest === null ? null : "Absolute distance from the subject's current registry total assets, then institution id",
+    },
+    nearest_requires_approved_published_fee: nearest !== null,
+    selection_limitations: [
+      "Definition and filters describe the resolved requested cohort; member_count is its membership, not each source/period's reporting sample.",
+      "Each result row separately counts canonical same-source reporters for its report date, unit and period basis; subject_included comes from those actual reporters.",
+      "Registry asset tiers and asset distances are current registry attributes, not a reconstruction of filing-date assets.",
+      "This is a filing cross-section, not a constant historical cohort or a merger-adjusted growth series.",
+      ...(nearest !== null ? ["Nearest peers exclude the subject and require at least one approved published fee; this is not all NCUA filers or all institutions nearest in assets."] : []),
+    ],
+    income_basis_warning: hasYtd ? CALL_REPORT_YTD_COMPARISON_WARNING : null,
+  };
+}
 
 export type QueryDataResult =
   | {
@@ -192,6 +251,7 @@ export type QueryDataResult =
       /** Which index read the fee figures came from (#1924), so an answer can cite it; only where the read is stamped. */
       dataset?: ReturnType<typeof datasetCitation>;
       /** Curated call-report semantics to preserve when Hamilton explains or compares figures. */
+      peer_comparison?: CallReportPeerComparison;
       measure_metadata?: {
         item_code: string;
         name: string;
@@ -651,6 +711,8 @@ async function queryCall(input: QueryDataInput, itemKey: string): Promise<QueryD
 
   let label: string;
   let memberIds: number[] | null;
+  let cohort: ResolvedPeerSet | null = null;
+  const subjectId = scope.kind === "peer_set" && scope.id ? Number(scope.id) : null;
   if (scope.kind === "national") {
     label = measure ? "NCUA credit union filers" : "All filers";
     memberIds = null;
@@ -673,29 +735,37 @@ async function queryCall(input: QueryDataInput, itemKey: string): Promise<QueryD
       }
       resolved = await resolvePeerSet(def, null);
     }
+    cohort = resolved;
     label = resolved.label;
     memberIds = await peerSetMemberIds(resolved);
     if (memberIds.length === 0) {
-      return { ok: true, measure: input.measure, scope: scope.kind, ...metadata, rows: [], unit: null, citation: citation([], []), note: `No institutions match the group (${label}).` };
+      return { ok: true, measure: input.measure, scope: scope.kind, ...metadata, rows: [], unit: null, citation: citation([], []),
+        peer_comparison: callPeerComparison(label, cohort, memberIds, subjectId, measure?.periodBasis === "ytd"),
+        note: `No institutions match the group (${label}).` };
     }
   }
 
   const hotRows = await withTransaction(async (tx) => {
     await tx`SET LOCAL statement_timeout = '10s'`;
-    return callPeerRollup(tx, { itemKey, rowSources, memberIds, from, to, limit });
+    return callPeerRollup(tx, { itemKey, rowSources, memberIds, subjectId, from, to, limit });
   });
-  const { rows, note: coldNote } = await withColdQuarters(hotRows, { itemKey, rowSources, from, to, limit, institutionIds: memberIds }, coldCallRollup);
+  const { rows, note: coldNote } = await withColdQuarters(hotRows, { itemKey, rowSources, from, to, limit, institutionIds: memberIds }, (coldRows) => coldCallRollup(coldRows, subjectId));
   const units = [...new Set(rows.map((r) => r.unit))];
   const memberCount = memberIds?.length ?? null;
+  const comparison = callPeerComparison(label, cohort, memberIds, subjectId, rows.some((row) => row.period_basis === "ytd") || measure?.periodBasis === "ytd");
   return {
     ok: true,
     measure: input.measure,
     scope: scope.kind,
     ...metadata,
-    rows: rows.map((r) => ({ ...rollupRow(r, label, memberCount), period_basis: r.period_basis, sources: (r.sources ?? []).join(", ") })),
+    peer_comparison: comparison,
+    rows: rows.map((r) => ({ ...rollupRow(r, `${label} — ${(r.sources ?? []).join("/").toUpperCase()} filers only`, memberCount),
+      period_basis: r.period_basis, sources: (r.sources ?? []).join(", "), reported_count: r.institution_count,
+      minimum_median_count: ROLLUP_MIN_INSTITUTIONS, subject_included: r.subject_included ?? null,
+    })),
     unit: units.length === 1 ? units[0] : units.length > 1 ? "mixed" : null,
     citation: citation(rows, [...new Set(rows.flatMap((r) => r.sources ?? []))]),
-    note: `${measure && rows.length === 0 ? `No comparable loaded figures for this line with unit ${measure.unit} and period basis ${measure.periodBasis}. ` : ""}${coverageNote(rows, memberCount, "a filed figure")}${coldNote ? ` ${coldNote}` : ""}`,
+    note: `${measure && rows.length === 0 ? `No comparable loaded figures for this line with unit ${measure.unit} and period basis ${measure.periodBasis}. ` : ""}${coverageNote(rows, memberCount, "a filed figure")}${coldNote ? ` ${coldNote}` : ""}${comparison.income_basis_warning ? ` ${comparison.income_basis_warning}` : ""}`,
   };
 }
 
@@ -885,22 +955,35 @@ export function familyRows(root: FamilyNode, subjectLeis: Set<string>): QueryDat
 /**
  * Adds archived quarters (#1870): when the hot rows leave room under the limit, quarters whose
  * rows were pruned to cold files are read from those files and shaped like the hot rows. Hot
- * periods always win; at most MAX_COLD_FILES_PER_QUERY files are read per question.
+ * source/period pairs always win; at most MAX_COLD_FILES_PER_QUERY files are read per question.
  */
-async function withColdQuarters<T extends { period: string }>(
+async function withColdQuarters<T extends { period: string; source?: string; sources?: readonly string[] | null }>(
   hotRows: T[],
   args: { itemKey: string; rowSources: string[]; from: string | null; to: string | null; limit: number; institutionIds: number[] | null },
   shape: (rows: ColdCallRow[]) => T[],
 ): Promise<{ rows: T[]; note: string | null }> {
   if (hotRows.length >= args.limit) return { rows: hotRows, note: null };
-  const files = coldFilesInRange(await prunedCallFiles(), { ...args, hotPeriods: new Set(hotRows.map((r) => r.period)) });
+  const hotSourcePeriods = new Set(hotRows.flatMap((row) =>
+    (row.source ? [row.source] : row.sources ?? []).map((source) => callSourcePeriodKey(source, row.period)),
+  ));
+  const files = coldFilesInRange(await prunedCallFiles(), { ...args, hotSourcePeriods });
   if (files.length === 0) return { rows: hotRows, note: null };
   const read = files.slice(0, MAX_COLD_FILES_PER_QUERY);
   const cold = await readColdCallRows(read, { itemKey: args.itemKey, institutionIds: args.institutionIds });
-  const rows = [...hotRows, ...shape(cold.rows)]
+  const institutionIds = [...new Set(cold.rows.map((row) => row.institution_id))]
+    .filter((id) => Number.isSafeInteger(id) && id > 0);
+  const identities = institutionIds.length === 0 ? [] : await withTransaction(async (tx) => {
+    await tx`SET LOCAL statement_timeout = '5s'`;
+    return tx<Array<{ id: number | string; charter_type: string }>>`
+      SELECT id, charter_type FROM institution_sources WHERE id = ANY(${institutionIds}::bigint[])
+    `;
+  });
+  const comparableRows = canonicalColdCallRows(cold.rows, identities);
+  const rows = [...hotRows, ...shape(comparableRows)]
     .sort((a, b) => (a.period === b.period ? 0 : a.period < b.period ? 1 : -1))
     .slice(0, args.limit);
   const notes: string[] = [];
+  if (comparableRows.length < cold.rows.length) notes.push("Archived rows with unknown or mismatched canonical institution identity are excluded.");
   if (files.length > read.length) notes.push(`Older quarters are archived; at most ${MAX_COLD_FILES_PER_QUERY} archived quarter files are read per question, so ask with a narrower period to read the rest.`);
   if (cold.failed.length > 0) notes.push(`Archived quarters that could not be read are left out: ${cold.failed.join(", ")}.`);
   return { rows, note: notes.length > 0 ? notes.join(" ") : null };

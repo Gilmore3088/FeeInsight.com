@@ -19,6 +19,7 @@ import {
   type PeerFeeValue,
 } from "@/lib/data-store/fee-index";
 import type { DatasetStamp } from "@/lib/dataset-stamp";
+import { financialMeasureDefinition, financialSourceForCharter } from "@/lib/data-store/financial-peer-contract";
 import { getPeerServiceChargeMedians, getRevenueTrend } from "@/lib/data-store/call-reports";
 import { getLocalMarketMembers, type LocalMarketMembers } from "@/lib/data-store/custom-report-market";
 import { getStateEconomicContext } from "@/lib/data-store/economic-context";
@@ -508,12 +509,14 @@ async function loadOwnSchedule(institutionId: number, feeCategory: string): Prom
   }
 }
 
-async function loadServiceChargeRows(institutionId: number): Promise<ServiceChargeRow[]> {
+async function loadServiceChargeRows(institutionId: number, charterType: unknown): Promise<ServiceChargeRow[]> {
+  const source = financialSourceForCharter(charterType);
+  if (!source) return [];
   const rows = await sql`
     SELECT report_date, source, service_charge_income, overdraft_revenue, nsf_revenue
       FROM institution_financial_records
      WHERE institution_id = ${institutionId}
-       AND source IN ('fdic', 'ncua')
+       AND source IN ('fdic', 'ncua') AND source = ${source}
      ORDER BY report_date DESC
      LIMIT 24`;
   return rows.map((r) => ({
@@ -724,20 +727,24 @@ export async function loadWire(
   };
 }
 
-/** Industry deposit service charge income, newest quarter first, in dollars (eight quarters). */
-export async function loadNationalIncomeSeries(): Promise<MarketIncome[]> {
+/** Canonical regulator income, newest quarter first, in dollars (eight quarters). */
+export async function loadNationalIncomeSeries(charterType: unknown): Promise<MarketIncome[]> {
+  const source = financialSourceForCharter(charterType);
+  if (!source) return [];
   // Twelve quarters so each of the newest eight has its year-earlier quarter for the change.
-  const trend = await getRevenueTrend(12);
+  const trend = await getRevenueTrend(12, source);
   const thousands = 1000;
   return trend.quarters.slice(0, 8).map((q) => ({
     quarter: q.quarter,
+    financialSource: source,
+    measureDefinition: { ...financialMeasureDefinition(source), unit: "USD" },
     total: q.total_service_charges * thousands,
     banks: q.bank_service_charges * thousands,
     creditUnions: q.cu_service_charges * thousands,
     institutions: q.total_institutions,
     yoyPct: q.yoy_change_pct === null ? null : Math.round(q.yoy_change_pct * 10) / 10,
     sourceRef: {
-      label: "FDIC call reports and NCUA 5300 reports, service charges on deposit accounts, all filers on file",
+      label: `${financialMeasureDefinition(source).publisher}: ${financialMeasureDefinition(source).definition}; standalone quarters, canonical ${source === "ncua" ? "credit-union" : "bank"} filers on file; reporting populations can change`,
       table: "institution_financial_records",
       asOf: q.quarter,
     },
@@ -756,7 +763,7 @@ async function withPeerMedian(base: WorkspaceBase, financials: InstitutionFinanc
       label,
       quarters: medians.map((m) => ({ quarterEnd: m.quarter_end, amount: m.median_thousands * 1000, institutions: m.institutions })),
       sourceRef: {
-        label: `${financials.source === "ncua" ? "NCUA 5300" : "FDIC call report"} filers, ${label}, median quarterly service charges`,
+        label: `${financials.source === "ncua" ? "NCUA 5300" : "FDIC call report"} filers, ${label}, ${financials.source === "ncua" ? "median quarterly broad credit-union fee income" : "median quarterly bank deposit service charges"}`,
         table: "institution_financial_records",
         asOf: medians[0].quarter_end,
       },
@@ -865,9 +872,9 @@ export async function getWorkspaceBriefing(
   if (!base) return null;
   const [changes, financialRows, articles, nationalIncomeSeries, studyRows, market] = await Promise.all([
     loadStateChanges(base.stateCode),
-    loadServiceChargeRows(institutionId),
+    loadServiceChargeRows(institutionId, base.charterType),
     loadRegArticles(RULE_CHANGE_WINDOW_DAYS, now),
-    loadNationalIncomeSeries(),
+    loadNationalIncomeSeries(base.charterType),
     loadStudyPlacements(institutionId),
     getLocalMarketMembers(institutionId).catch(() => null),
   ]);
@@ -1150,11 +1157,11 @@ export async function getFeeResearch(
   const peerGroupSizeRead = !options.listPeers && groupFilters ? loadPeerGroupSize(groupFilters, institutionId, feeCategory) : Promise.resolve(undefined);
   const [changes, financialRows, articles, market, ownFeeRows, nationalIncomeSeries, economy, segment, rates, regulators, complaints, complaintBenchmark, wireRows] = await Promise.all([
     loadStateChanges(base.stateCode, feeCategory),
-    loadServiceChargeRows(institutionId),
+    loadServiceChargeRows(institutionId, base.charterType),
     loadRegArticles(REGULATION_NEWS_WINDOW_DAYS, now),
     getLocalMarketMembers(institutionId).catch(() => null),
     getInstitutionFeeRows(institutionId, feeCategory),
-    loadNationalIncomeSeries(),
+    loadNationalIncomeSeries(base.charterType),
     loadEconomy(base.stateCode, base.fedDistrict),
     options.segment ? loadSegment(base, feeCategory, options.segment) : Promise.resolve(null),
     loadRates(institutionId, feeCategory, now.toISOString().slice(0, 10)),

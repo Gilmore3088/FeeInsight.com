@@ -98,7 +98,7 @@ export function PeerSection({ name, peers }: { name: string; peers: ReportPeerCo
           <tbody>
             {peers.financial.rows.map((row) => (
               <tr key={row.key} data-peer-financial={row.key} className="border-b border-surface-200 last:border-0">
-                <td className="py-2 pr-3 text-ink">{PEER_FINANCIAL_LABELS[row.key]}</td>
+                <td className="py-2 pr-3 text-ink">{row.key === "fee_income_ratio" && peers.financial?.source === "ncua" ? "Broad credit-union fee income as a share of revenue" : PEER_FINANCIAL_LABELS[row.key]}</td>
                 <td className="py-2 pr-3 text-right tabular-nums">{percent(row, row.own)}</td>
                 <td className="py-2 pr-3 text-right tabular-nums">{percent(row, row.median)}</td>
                 <td className="hidden py-2 text-ink-soft sm:table-cell print:table-cell">{rankText(row.percentile)}</td>

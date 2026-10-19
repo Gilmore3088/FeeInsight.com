@@ -27,7 +27,9 @@ function collectLists(value: Json, path: string, out: ListRef[]): void {
     for (const key of Object.keys(obj)) {
       const child = obj[key];
       const childPath = path ? `${path}.${key}` : key;
-      if (Array.isArray(child)) {
+      // A financial group is a measure boundary, not a ranked list. Keep both bank and
+      // credit-union groups; compact their data lists without silently dropping a source.
+      if (Array.isArray(child) && key !== "financial_groups") {
         out.push({ path: childPath, get: () => obj[key] as Json[], set: (next) => { obj[key] = next; } });
       }
       collectLists(child, childPath, out);
