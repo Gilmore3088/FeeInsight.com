@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   assetSizeTier,
+  fetchFdicActiveInstitutions,
   fetchFdicFinancialsForQuarter,
   normalizeWebsite,
   parseFdicDate,
@@ -125,6 +126,16 @@ describe("FDIC financial parser", () => {
 });
 
 describe("FDIC institution parser", () => {
+  it("normalizes the institution's reported LEI independently of holding-company identifiers", () => {
+    const row = parseFdicInstitution({ ...STATE_STREET_INSTITUTION, LEI: "  549300ossfhx7abq2y81  " });
+    expect(row).toMatchObject({ lei: "549300OSSFHX7ABQ2Y81", holding_company_rssd: "1111435" });
+  });
+
+  it.each([undefined, null, "", "N/A", "-1", "549300OSSFHX7ABQ2Y8", "549300OSSFHX7ABQ2Y8X", "549300OSSF X7ABQ2Y81"])(
+    "keeps missing or malformed institution LEI %s null",
+    (LEI) => expect(parseFdicInstitution({ ...STATE_STREET_INSTITUTION, LEI })?.lei).toBeNull(),
+  );
+
   it("extracts identity, regulator, and tier", () => {
     expect(parseFdicInstitution(STATE_STREET_INSTITUTION)).toMatchObject({
       cert: "14",
@@ -167,6 +178,14 @@ describe("FDIC institution parser", () => {
 });
 
 describe("FDIC client", () => {
+  it("requests own LEI alongside exact FDIC and RSSD identifiers", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({ meta: { total: 0 }, data: [] }), { status: 200 }));
+    await fetchFdicActiveInstitutions({ fetchImpl, backoffMs: 0 });
+    const url = new URL(String(fetchImpl.mock.calls[0][0]));
+    expect(url.searchParams.get("filters")).toBe("ACTIVE:1");
+    expect(url.searchParams.get("fields")?.split(",")).toEqual(expect.arrayContaining(["CERT", "FED_RSSD", "LEI"]));
+  });
+
   it("requests one quarter by REPDTE and unwraps BankFind envelopes", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ meta: { total: 1 }, data: [{ data: JPM_2026Q1 }] }), { status: 200 }),

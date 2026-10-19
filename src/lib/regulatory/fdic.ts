@@ -1,5 +1,6 @@
 import { registryFetchJson, type RegistryFetchOptions } from "./http";
 import { validCoordinates } from "./coordinates";
+import { normalizeLei } from "./gleif";
 import { fdicRepdte, quarterEndDate, type Quarter } from "./quarters";
 
 /**
@@ -64,6 +65,7 @@ export const FDIC_INSTITUTION_FIELDS = [
   "ACTIVE",
   "INACTIVE",
   "FED_RSSD",
+  "LEI",
   "RSSDHCR",
   "NAMEHCR",
   "REGAGNT",
@@ -334,6 +336,8 @@ export interface FdicInstitutionRow {
   name: string;
   active: boolean;
   rssd_id: string | null;
+  /** The institution's own LEI reported by FDIC, never its holding company's identifier. */
+  lei: string | null;
   holding_company_rssd: string | null;
   holding_company_name: string | null;
   primary_regulator: string | null;
@@ -370,6 +374,7 @@ export function parseFdicInstitution(record: FdicRecord): FdicInstitutionRow | n
     name,
     active,
     rssd_id: rssd && rssd !== "0" ? rssd : null,
+    lei: normalizeLei(record.LEI),
     holding_company_rssd: hcRssd && hcRssd !== "0" ? hcRssd : null,
     holding_company_name: str(record.NAMEHCR),
     primary_regulator: regulatorLabel(record.REGAGNT),

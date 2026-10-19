@@ -633,7 +633,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `INDUSTRY_EVENTS_PARSER_VERSION` | — | v3 (CourtListener fee lawsuits removed; v2 reads H.2 release links when relative) | `magellan/registry/industry-events.ts` |
 | `PAYMENT_NETWORKS_PARSER_VERSION` | — | v1 | `magellan/registry/payment-networks.ts` |
 | `BANK_ZELLE_MATCHER_VERSION` | — | v1 (offers Zelle from each institution's own stored documents, #1875) | `magellan/registry/bank-zelle-match.ts` |
-| `HMDA_PARSER_VERSION` | — | v2 (reads the public LAR's "derived_msa-md" header) | `magellan/registry/hmda.ts` |
+| `HMDA_PARSER_VERSION` | — | v3 (canonical exact identity matching, retired panel explicit; v2 reads the public LAR's "derived_msa-md" header) | `magellan/registry/hmda.ts` |
 | `HMDA_APOR_PARSER_VERSION` | — | v2 | `magellan/registry/hmda.ts` |
 | `DESIGNATION_LISTS_PARSER_VERSION` | — | v2 (Bank On list removed) | `magellan/registry/designation-lists.ts` |
 | `CRA_PARSER_VERSION` | — | v2 (FFIEC ratings and flat-file URLs; headerless ratings file, ID by regulator; revised 2022-23 files) | `magellan/registry/cra.ts` |
@@ -642,7 +642,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `UBPR_PEER_GROUPS_PARSER_VERSION` | — | v2 (Download control read from the bulk page; an HTML answer names the page's title, messages and form fields, #1806) | `magellan/registry/ubpr-peer-groups.ts` |
 | `CFPB_CARD_AGREEMENTS_PARSER_VERSION` | — | v1 | `magellan/registry/cfpb-card-agreements.ts` |
 | `ENFORCEMENT_MATCHER_VERSION` | — | v3 | `magellan/registry/enforcement.ts` |
-| `FDIC_UNIVERSE_PARSER_VERSION` | — | v2 | `magellan/registry/fdic-universe.ts` |
+| `FDIC_UNIVERSE_PARSER_VERSION` | — | v3 (collects FDIC's own institution LEI; shared source keys are held and known keys survive missing values or conflicts) | `magellan/registry/fdic-universe.ts` |
 | `FFIEC_OVERDRAFT_PARSER_VERSION` | — | v2 | `magellan/registry/ffiec-overdraft.ts` |
 | `NCUA_PARSER_VERSION` | — | v3 | `magellan/registry/ncua-financials.ts` |
 | `SEC_LINKS_PARSER_VERSION` | — | v2 | `magellan/registry/sec.ts` |

@@ -11,7 +11,7 @@ export const HOOVIE_SOURCES_00: HoovieSourceContract[] = [
     connection: "rest-api",
     cadence: "irregular",
     grain: ["institution"],
-    linkKeys: ["fdic-cert", "rssd"],
+    linkKeys: ["fdic-cert", "rssd", "lei"],
     tables: ["institution_sources"],
   },
   {

@@ -6,12 +6,13 @@ import {
   type FdicInstitutionRow,
 } from "@/lib/regulatory/fdic";
 import type { RegistryFetchOptions } from "@/lib/regulatory/http";
+import { normalizeLei } from "@/lib/regulatory/gleif";
 import { chunk, recordRegistryPartition, type RegistryDb } from "./partitions";
 
 /**
  * Magellan registry step: keep the FDIC-insured bank universe current.
  *
- * - Refreshes identity on existing rows (RSSD, holding company, primary
+ * - Refreshes identity on existing rows (RSSD, own LEI, holding company, primary
  *   regulator, asset size/tier) and backfills missing websites.
  * - Adds newly chartered banks (status 'active', so the fee pipeline picks them up).
  * - Marks banks FDIC reports as closed or merged inactive instead of deleting
@@ -30,10 +31,12 @@ const MAX_CERT_LOOKUPS = 500;
 const REFRESH_HOURS = 24 * 7;
 /**
  * Bumped when the step starts writing something new, so a finished partition runs
- * again on the next registry tick. 2: FDIC's district replaces the stored one, and
+ * again on the next registry tick. 3: collects FDIC's own institution LEI, holding shared
+ * source identifiers and preserving known keys on missing values or conflicts.
+ * 2: FDIC's district replaces the stored one, and
  * credit unions take theirs from nearby banks.
  */
-export const FDIC_UNIVERSE_PARSER_VERSION = 2;
+export const FDIC_UNIVERSE_PARSER_VERSION = 3;
 
 export interface RegistryFdicUniverseOptions {
   runId?: number | null;
@@ -57,27 +60,81 @@ export interface RegistryFdicUniverseResult {
   banksDistrictChanged: number;
   /** Credit unions and closed banks whose district changed to match the banks around them. */
   othersDistrictChanged: number;
+  leiIdentity: FdicLeiIdentityReport;
   dryRun: boolean;
 }
 
-async function loadKnownCerts(db: RegistryDb): Promise<Map<string, string | null>> {
-  const rows = await db<{ cert_number: string; regulatory_status: string | null }[]>`
-    SELECT cert_number, regulatory_status
+interface FdicLeiConflict {
+  certificate: string;
+  stored_lei: string;
+  reported_lei: string;
+}
+
+interface FdicLeiIdentityReport {
+  reported_institutions: number;
+  unique_source_institutions: number;
+  shared_source_institutions: number;
+  duplicate_leis: Array<{
+    lei: string;
+    certificates: string[];
+    reported_values: Array<{ certificate: string; value: string }>;
+  }>;
+  conflicts: FdicLeiConflict[];
+}
+
+/** Check the entire downloaded universe before separating tracked banks or write chunks. */
+function prepareLeiIdentity(records: Array<Record<string, unknown>>, active: FdicInstitutionRow[]) {
+  const owners = new Map<string, Map<string, Set<string>>>();
+  for (const record of records) {
+    const lei = normalizeLei(record.LEI);
+    const certificate = String(record.CERT ?? "").trim();
+    if (!lei || !/^\d+$/.test(certificate)) continue;
+    const byCertificate = owners.get(lei) ?? new Map<string, Set<string>>();
+    const values = byCertificate.get(certificate) ?? new Set<string>();
+    values.add(String(record.LEI));
+    byCertificate.set(certificate, values);
+    owners.set(lei, byCertificate);
+  }
+  const duplicateLeis = [...owners.entries()]
+    .filter(([, certificates]) => certificates.size > 1)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([lei, certificates]) => ({
+      lei,
+      certificates: [...certificates.keys()].sort(),
+      reported_values: [...certificates.entries()].sort(([a], [b]) => a.localeCompare(b))
+        .flatMap(([certificate, values]) => [...values].sort().map((value) => ({ certificate, value }))),
+    }));
+  const held = new Set(duplicateLeis.map((entry) => entry.lei));
+  // Keep the fetched records untouched; the receipt retains ambiguous source values and owners.
+  const rows = active.map((row) => row.lei && held.has(row.lei) ? { ...row, lei: null } : row);
+  const report: FdicLeiIdentityReport = {
+    reported_institutions: active.filter((row) => row.lei !== null).length,
+    unique_source_institutions: rows.filter((row) => row.lei !== null).length,
+    shared_source_institutions: active.filter((row) => row.lei !== null && held.has(row.lei)).length,
+    duplicate_leis: duplicateLeis,
+    conflicts: [],
+  };
+  return { rows, report };
+}
+
+async function loadKnownCerts(db: RegistryDb): Promise<Map<string, { status: string | null; lei: string | null }>> {
+  const rows = await db<{ cert_number: string; regulatory_status: string | null; lei: string | null }[]>`
+    SELECT cert_number, regulatory_status, lei
       FROM institution_sources
      WHERE source = 'fdic' AND cert_number IS NOT NULL
   `;
-  return new Map(rows.map((row) => [String(row.cert_number), row.regulatory_status ?? null]));
+  return new Map(rows.map((row) => [String(row.cert_number), { status: row.regulatory_status ?? null, lei: row.lei?.trim() || null }]));
 }
 
 async function updateExisting(
   db: RegistryDb,
   rows: FdicInstitutionRow[],
-): Promise<{ updated: number; districtChanged: number }> {
+): Promise<{ updated: number; districtChanged: number; leiConflicts: FdicLeiConflict[] }> {
   const payload = JSON.stringify(rows);
-  const result = await db<{ id: number; district_changed: boolean | null }[]>`
+  const result = await db<{ id: number; district_changed: boolean | null; lei_conflict: FdicLeiConflict | null }[]>`
     WITH r AS (
       SELECT * FROM jsonb_to_recordset(${payload}::jsonb) AS x(
-        cert text, rssd_id text, holding_company_rssd text, holding_company_name text,
+        cert text, rssd_id text, lei text, holding_company_rssd text, holding_company_name text,
         primary_regulator text, charter_agency text, website_url text, asset_size bigint,
         asset_size_tier text, fed_district integer, cbsa_code text, cbsa_name text, established_date text
       )
@@ -89,6 +146,7 @@ async function updateExisting(
                AND NOT EXISTS (SELECT 1 FROM institution_sources x WHERE x.rssd_id = r.rssd_id)
              THEN r.rssd_id END
       ),
+      lei = COALESCE(NULLIF(BTRIM(s.lei), ''), r.lei),
       holding_company_rssd = r.holding_company_rssd,
       holding_company_name = r.holding_company_name,
       primary_regulator = r.primary_regulator,
@@ -106,10 +164,15 @@ async function updateExisting(
       registry_synced_at = NOW()
     FROM r, institution_sources o
     WHERE s.source = 'fdic' AND s.cert_number = r.cert AND o.id = s.id
-    RETURNING s.id, (o.fed_district IS DISTINCT FROM s.fed_district) AS district_changed
+    RETURNING s.id, (o.fed_district IS DISTINCT FROM s.fed_district) AS district_changed,
+      CASE WHEN NULLIF(BTRIM(o.lei), '') IS NOT NULL AND r.lei IS NOT NULL
+                  AND UPPER(BTRIM(o.lei)) <> r.lei
+           THEN jsonb_build_object('certificate', r.cert, 'stored_lei', o.lei, 'reported_lei', r.lei)
+      END AS lei_conflict
   `;
   const out = [...result];
-  return { updated: out.length, districtChanged: out.filter((row) => row.district_changed === true).length };
+  return { updated: out.length, districtChanged: out.filter((row) => row.district_changed === true).length,
+    leiConflicts: out.flatMap((row) => row.lei_conflict ? [row.lei_conflict] : []) };
 }
 
 /**
@@ -185,7 +248,7 @@ async function insertNew(db: RegistryDb, rows: FdicInstitutionRow[]): Promise<nu
   const result = await db`
     WITH r AS (
       SELECT * FROM jsonb_to_recordset(${payload}::jsonb) AS x(
-        cert text, name text, rssd_id text, holding_company_rssd text, holding_company_name text,
+        cert text, name text, rssd_id text, lei text, holding_company_rssd text, holding_company_name text,
         primary_regulator text, charter_agency text, state_code text, state_name text, city text,
         website_url text, asset_size bigint, asset_size_tier text, fed_district integer,
         cbsa_code text, cbsa_name text, established_date text
@@ -194,7 +257,7 @@ async function insertNew(db: RegistryDb, rows: FdicInstitutionRow[]): Promise<nu
     INSERT INTO institution_sources (
       institution_name, website_url, charter_type, state, state_code, city, asset_size,
       asset_size_tier, cert_number, source, status, fed_district, cbsa_code, cbsa_name,
-      established_date, rssd_id, holding_company_rssd, holding_company_name, primary_regulator,
+      established_date, rssd_id, lei, holding_company_rssd, holding_company_name, primary_regulator,
       charter_agency, regulatory_status, registry_synced_at
     )
     SELECT r.name, r.website_url, 'bank', r.state_name, r.state_code, r.city, r.asset_size,
@@ -203,7 +266,7 @@ async function insertNew(db: RegistryDb, rows: FdicInstitutionRow[]): Promise<nu
            CASE WHEN r.rssd_id IS NOT NULL
                   AND NOT EXISTS (SELECT 1 FROM institution_sources x WHERE x.rssd_id = r.rssd_id)
                 THEN r.rssd_id END,
-           r.holding_company_rssd, r.holding_company_name, r.primary_regulator, r.charter_agency,
+           r.lei, r.holding_company_rssd, r.holding_company_name, r.primary_regulator, r.charter_agency,
            'active', NOW()
       FROM r
     ON CONFLICT (source, cert_number) DO NOTHING
@@ -238,16 +301,17 @@ export async function runRegistryFdicUniverse(
   const dryRun = Boolean(options.dryRun);
 
   const page = await fetchFdicActiveInstitutions(options.fetchOptions);
-  const active = page.rows
+  const parsedActive = page.rows
     .map(parseFdicInstitution)
     .filter((row): row is FdicInstitutionRow => row !== null && row.active);
+  const { rows: active, report: leiIdentity } = prepareLeiIdentity(page.rows, parsedActive);
   const known = await loadKnownCerts(db);
   const activeCerts = new Set(active.map((row) => row.cert));
 
   const existing = active.filter((row) => known.has(row.cert));
   const fresh = active.filter((row) => !known.has(row.cert));
   const missing = [...known.entries()]
-    .filter(([cert, status]) => !activeCerts.has(cert) && status !== "inactive")
+    .filter(([cert, record]) => !activeCerts.has(cert) && record.status !== "inactive")
     .map(([cert]) => cert);
   const toLookup = missing.slice(0, MAX_CERT_LOOKUPS);
 
@@ -273,9 +337,15 @@ export async function runRegistryFdicUniverse(
     lookupsSkipped: Math.max(0, missing.length - toLookup.length),
     banksDistrictChanged: 0,
     othersDistrictChanged: 0,
+    leiIdentity,
     dryRun,
   };
   if (dryRun) {
+    leiIdentity.conflicts = existing.flatMap((row) => {
+      const storedLei = known.get(row.cert)?.lei;
+      return storedLei && row.lei && storedLei.toUpperCase() !== row.lei
+        ? [{ certificate: row.cert, stored_lei: storedLei, reported_lei: row.lei }] : [];
+    });
     return { ...result, insertedInstitutions: fresh.length, deactivatedInstitutions: closed.length };
   }
   if (active.length === 0) {
@@ -287,6 +357,7 @@ export async function runRegistryFdicUniverse(
     const counts = await updateExisting(db, group);
     result.updatedInstitutions += counts.updated;
     result.banksDistrictChanged += counts.districtChanged;
+    result.leiIdentity.conflicts.push(...counts.leiConflicts);
   }
   for (const group of chunk(fresh, UPDATE_CHUNK)) {
     result.insertedInstitutions += await insertNew(db, group);
@@ -313,6 +384,7 @@ export async function runRegistryFdicUniverse(
       banks_district_changed: result.banksDistrictChanged,
       others_district_changed: result.othersDistrictChanged,
       parser_version: FDIC_UNIVERSE_PARSER_VERSION,
+      lei_identity: result.leiIdentity,
     },
   });
 
