@@ -495,6 +495,7 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v75 (Oct 19, #2023, James's "Take down"): a club or holiday account withdrawal fails early closure.
     // v76 (Oct 19, #2037, James's "Split"): an ATM used abroad re-files from card_foreign_txn and
     // atm_non_network to atm_international, its own type again.
+    // v77 (Oct 19, #2388): a card that draws only on credit fails card replacement and rush card.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

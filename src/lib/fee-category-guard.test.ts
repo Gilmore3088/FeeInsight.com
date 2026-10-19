@@ -2062,12 +2062,15 @@ describe("guard v76 (#2037, James's \"Split\"): International ATM is its own typ
       "HELOC Access Card Replacement",
       "Credit Card Replacement Fee (Subsequent occurrence within 6 months)",
       "Lost/Replacement Credit Card",
+      "Travel Rewards Credit Card Replacement",
+      "CreditCard Replacement",
+      "Reemplazo de tarjeta de crédito",
     ]) {
       expect(checkFeeCategory("card_replacement", name).ok, name).toBe(false);
       // No other type takes it: the fee keeps its key and fails, so it is not published.
       expect(refileCategory("card_replacement", name), name).toBe("card_replacement");
     }
-    for (const name of ["Credit Card Rush Fee", "Credit Card Replacement - Expedited"]) {
+    for (const name of ["Credit Card Rush Fee", "Credit Card Replacement - Expedited", "Plastic Card Rush (Credit)"]) {
       expect(checkFeeCategory("rush_card", name).ok, name).toBe(false);
     }
     for (const name of [
@@ -2078,6 +2081,12 @@ describe("guard v76 (#2037, James's \"Split\"): International ATM is its own typ
       "Credit Union Membership Card (Replacement Fee)",
       "Replacement card (fee credited back if fraud)",
       "Debit Card Replacement",
+      // Review of #2389: a refund, a hyphenated credit union, "debit" glued to the card brand.
+      "Replacement Card ($5 credit to your account if fraud)",
+      "Card Replacement - credit given for fraud",
+      "Credit-Union Card Replacement",
+      "VisaDebit/Credit Card Replacement",
+      "Replacement Travel Card",
     ]) {
       expect(checkFeeCategory("card_replacement", name), name).toEqual({ ok: true });
     }
